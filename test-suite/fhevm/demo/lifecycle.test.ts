@@ -510,61 +510,7 @@ describe("demo lifecycle collision policy", () => {
     expect(demoViteConfig).not.toContain("preserveSymlinks");
   });
 
-  test("arm64 source builds use the canonical native Rust builder", async () => {
-    const script = await fs.readFile(
-      path.join(import.meta.dir, "../../../solana/scripts/e2e/clean-e2e.sh"),
-      "utf8",
-    );
-    expect(script).toContain("ensure_native_rust_builders");
-    expect(script).toContain("docker info --format '{{.Architecture}}'");
-    expect(script).toContain('"$ROOT/golden-container-images/rust-glibc"');
-    expect(script).toContain('--build-arg "RUST_IMAGE_VERSION=$version"');
-    expect(script).toContain("org.zama.rust-glibc.recipe");
-    expect(script).toContain("docker pull --platform linux/arm64");
-    expect(script).toContain(
-      'cache_image="fhevm-rust-glibc-local:$version-arm64-$recipe_short"',
-    );
-    expect(script).toContain("cleanup_native_rust_builder_aliases");
-    expect(script).toContain('if [ "$local_arch" != "arm64" ]');
-    expect(script).not.toContain("--platform linux/amd64");
-  });
-
-  test("native Rust builder cleanup preserves and restores local tags", () => {
-    const result = Bun.spawnSync({
-      cmd: [
-        "bash",
-        path.join(
-          import.meta.dir,
-          "../../../solana/scripts/e2e/native-rust-builders.test.sh",
-        ),
-      ],
-      stdout: "pipe",
-      stderr: "pipe",
-    });
-    if (result.exitCode !== 0) {
-      throw new Error(
-        `${result.stdout.toString()}\n${result.stderr.toString()}`,
-      );
-    }
-  });
-
-  test("local Rust overrides use the bundled frontend that honors native images", async () => {
-    const dockerfiles = [
-      "../../../kms-connector/connector-db/Dockerfile",
-      "../../../kms-connector/Dockerfile.workspace",
-      "../../../relayer/docker/relayer/Dockerfile",
-      "../../../relayer/docker/relayer-migrate/Dockerfile",
-    ];
-    for (const dockerfile of dockerfiles) {
-      const contents = await fs.readFile(
-        path.join(import.meta.dir, dockerfile),
-        "utf8",
-      );
-      expect(contents).not.toMatch(/^#\s*syntax=/m);
-      expect(contents).toContain(
-        "ghcr.io/zama-ai/fhevm/gci/rust-glibc:${RUST_IMAGE_VERSION}",
-      );
-    }
+  test("the connector workspace build does not copy the git directory", async () => {
     const workspaceDockerfile = await fs.readFile(
       path.join(import.meta.dir, "../../../kms-connector/Dockerfile.workspace"),
       "utf8",

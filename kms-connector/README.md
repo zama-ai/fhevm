@@ -72,18 +72,24 @@ At least one of these two options must be provided.
 
 See the [architecture documentation](./docs/architecture.md) for more detail.
 
-Solana user-decryption shares the `user_decryption_requests` table with the EVM path. Names
-that look related but are not interchangeable:
+Solana user decrypt uses the existing `user_decryption_requests` queue and worker.
+The Gateway's `UserDecryptionRequest_4` overload is decoded and checked at ingress; its
+canonical request bytes are not persisted. `POST /v1/user-decrypt` accepts the same data
+under `{attestationType, payload, signature}` with `attestationType` set to
+`solana-srfc38-user-decrypt-v1`. The EVM value remains `eip712-unified-user-decrypt-v1`.
+The Solana permit chain ID is derived from the handles; the HTTP payload has no numeric
+`chainId` field. This preserves the full chain ID in JavaScript clients.
 
-| Name | What it is |
-| --- | --- |
-| Gateway ABI `UserDecryptionRequest_4` / Rust `UserDecryptionRequestV3` | Solana host-generic event |
-| `solanaRequest` / `solana_request` | Opaque canonical request bytes on the event and in the DB |
-| Relayer `UserDecryptRequest::SolanaSrfc38V1` | Relayer-internal request after the typed-attestation envelope |
+A Solana row has the typed columns `user_pubkey`, `handle_allowed_keys`,
+`handle_encrypted_stores`, `allowed_scopes` and `verifying_program_id`, and a NULL
+`user_address`. The generated `attestation_type` column (`legacy`, `eip712` or `solana`)
+follows from those columns, and a CHECK makes a row that mixes the EVM and Solana shapes unwritable. `from_user_decryption_row`
+is the only reader; it rebuilds the signed permit, so the worker authorizes exactly what the
+user signed.
 
-Solana rows write `user_address` as 20 zero bytes (and leave the EVM ACL columns empty). The
-row reader keys on `solana_request IS NOT NULL` and does not treat those placeholders as an
-EVM identity. See `publish_user_decryption_v3` in `gw-listener`.
+Solana is not deployed yet. The migration refuses rows in the earlier opaque `solana_request`
+format instead of converting them: clear that disposable preview state before upgrading. EVM
+rows are kept and tagged.
 
 ## Support
 
@@ -101,41 +107,19 @@ EVM identity. See `publish_user_decryption_v3` in `gw-listener`.
 
 ## Solana decryption and the shared worker lifecycle
 
-Solana uses the same database picker, KMS worker, response publisher and stale-operation
-recovery as EVM. The chain-specific authorization step checks the signed permit, a coherent
-Solana account observation, and coprocessor MMR proofs against that observation. It does not
-introduce a separate worker restart policy.
+Every processing attempt, including an already-sent poll, checks the permit signature,
+window, deployment, KMS context, confirmed account snapshot, invalidation watermark,
+scope, allow leaf named by `allowed_key`, and any required delegation. A poll does not
+prepare or resend the KMS request. KMS preparation, response publishing and retry limits
+use the existing user-decrypt flow.
 
-| Authorization outcome | Solana classification | Shared Connector handling |
-| --- | --- | --- |
-| Malformed request, invalid signature, deployment/scope mismatch, invalidated or expired permit | Terminal | Irrecoverable, `Unprocessable` |
-| RPC/proof transport failure, missing account/delegation that may reflect lag, unavailable KMS pair | Transient | Recoverable, `UpstreamTransient` |
-| Proof record behind, unknown account in proof record, mismatched proof or out-of-range leaf | Retryable | One selective proof refresh, then recoverable `UpstreamTransient` if unresolved |
-| No leaf in a record caught up with the observed account, revoked/expired delegation, incomplete proof history, inconsistent MMR state | Terminal | Irrecoverable, `Unprocessable` |
-| Internal proof-planning or request-encoding defect | Terminal | Fail closed through the existing irrecoverable path; inspect diagnostics rather than repeatedly retrying |
+Transport failures and observations that may catch up are recoverable. Static invalid
+requests and definite authorization failures are irrecoverable. The context manager's
+error codes pass through unchanged. If the exact delegation is dead but its wildcard row
+is missing, both reasons are retained and the request remains recoverable.
 
-The detailed classifications remain in `crates/kms-worker/src/core/solana/failure.rs`.
-A terminal outcome stops the current request; it does not mean that a later grant or operator
-repair can never make a new request succeed. Several EVM ACL denials remain recoverable,
-whereas Solana rejects an observed missing leaf or revoked grant without waiting for a future
-authorization change. Incomplete proof history requires operator recovery, not repeated reads.
-A failing peer does not override another peer's valid proof.
-
-Request source controls what happens after authorization:
-
-- **On-chain requests:** recoverable errors return to `pending`, with the existing decryption
-  attempt limit; irrecoverable errors become `failed`. Errors are logged and request status is
-  persisted. KMS aborts retain the existing `aborted` behavior.
-- **HTTP-sourced requests:** any processing error produces a stored error response for the
-  waiting caller, without internal request retries. The worker handles V3 rows this way too;
-  this does not add Solana support to the HTTP endpoint, which currently accepts EVM requests.
-
-Ordinary request errors do not exit the service. Event tasks are detached in the shared worker:
-this PR does not change panic supervision. Stale `under_process` rows can be recovered by the
-transaction sender's existing recovery routine. Improving supervision and distinguishing
-internal defects with a new shared API error code are separate Connector changes.
-
-`decryption_error_lifecycle` exercises the real picker and database publisher with injected
-processor outcomes for EVM V2 and Solana V3. It checks retry limits, HTTP error responses, and
-successful processing after a failed request. It does not exercise KMS cryptography or the
-HTTP endpoint; the authorization suites separately exercise permit and proof verification.
+Coprocessor proofs are verified against the account snapshot; a valid candidate can carry
+a request despite another peer's failure. Unresolved proofs receive one selective refresh.
+Source controls response handling: Gateway requests use the worker's retry budget; HTTP
+requests receive the stored error response and can be retried by the caller. The relayer's
+end-to-end Solana path still enters through the Gateway event.

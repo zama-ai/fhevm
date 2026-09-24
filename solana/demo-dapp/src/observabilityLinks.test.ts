@@ -18,7 +18,8 @@ describe('observability links', () => {
     expect(url.searchParams.get('service')).toBe('kms-connector-gw-listener');
     expect(url.searchParams.get('operation')).toBe('handle_gateway_event');
     expect(JSON.parse(url.searchParams.get('tags')!)).toEqual({
-      operation: 'solana-user-decryption-v2',
+      event_type: 'user_decryption_request',
+      source: 'onchain',
       ciphertext_handle: handle,
     });
     expect(url.searchParams.get('lookback')).toBe('24h');

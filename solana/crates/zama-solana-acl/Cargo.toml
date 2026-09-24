@@ -16,8 +16,8 @@ name = "zama_solana_acl"
 unexpected_cfgs = { level = "warn", check-cfg = ['cfg(target_os, values("solana"))'] }
 
 [dependencies]
-# Pure-Rust, solana-version-agnostic so the on-chain programs (solana 3.x), the
-# coprocessor, and the KMS connector (solana 2.x) can depend on this one crate.
+# Pure-Rust, solana-version-agnostic so the on-chain programs, the coprocessor, the
+# relayer and the KMS connector can depend on this one crate.
 # Software hashes are byte-identical to the on-chain syscall hashers.
 borsh = { version = "1", features = ["derive"] }
 

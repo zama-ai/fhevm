@@ -133,6 +133,12 @@ expression = "MIT AND ISC AND OpenSSL"
 # depending on the rest of your configuration
 license-files = [{ path = "LICENSE", hash = 0xbd0eed23 }]
 
+# The published crate supplies the Apache-2.0 text without the optional appendix.
+[[licenses.clarify]]
+crate = "solana-config-interface@2.0.1"
+expression = "Apache-2.0"
+license-files = [{ path = "LICENSE", hash = 0xd0891cfa }]
+
 [licenses.private]
 # If true, ignores workspace crates that aren't published, or are only
 # published to private registries.

@@ -32,6 +32,10 @@ const operatorProxy = async (): Promise<ProxyOptions> => {
 };
 
 export default defineConfig(async ({ command, mode }) => ({
+  // The SDK is linked rather than installed, so Vite serves it unbundled and leaves
+  // `process.env.NODE_ENV` in place, where an installed dependency would have it replaced.
+  // Its generated Solana code reads it, following the @solana/kit convention.
+  define: { 'process.env.NODE_ENV': JSON.stringify(mode) },
   server: {
     host: '127.0.0.1',
     port: Number(dappUrl.port),

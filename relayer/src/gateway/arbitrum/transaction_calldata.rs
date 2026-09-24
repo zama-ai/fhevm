@@ -267,8 +267,8 @@ mod solana_calldata_tests {
     #[test]
     fn the_solana_arm_encodes_the_solana_overload() {
         // The Solana arm must select the Solana `userDecryptionRequest` overload and place the
-        // pre-computed pieces in the right slots — the connector-auth vectors cover the request
-        // bytes, this covers where they land in the gateway calldata.
+        // pre-computed pieces in the right slots — the zama-solana-request codec tests cover the
+        // request bytes, this covers where they land in the gateway calldata.
         let solana_request = Bytes::from(vec![0x01, 0xaa, 0xbb, 0xcc]);
         let mut extra = vec![0x02u8];
         extra.extend_from_slice(&[0u8; 64]);
