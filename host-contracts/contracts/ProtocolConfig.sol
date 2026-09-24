@@ -902,8 +902,7 @@ contract ProtocolConfig is IProtocolConfig, UUPSUpgradeableEmptyProxy, ACLOwnabl
      * @dev Returns true if the context exists and is currently in the `Active` lifecycle state.
      */
     function _isValidKmsContext(uint256 kmsContextId) internal view virtual returns (bool) {
-        ProtocolConfigStorage storage $ = _getProtocolConfigStorage();
-        return _isLiveKmsContext(kmsContextId) && $.contextState[kmsContextId] == ContextState.Active;
+        return _getProtocolConfigStorage().contextState[kmsContextId] == ContextState.Active;
     }
 
     function _requireValidContext(uint256 kmsContextId) internal view virtual {
