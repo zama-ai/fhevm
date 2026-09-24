@@ -49,7 +49,6 @@ pub(super) struct BlockValidator {
     start: StartPosition,
     checkpoint_observed: bool,
     last_observed: Option<(BlockCheckpoint, BlockIdentity)>,
-    last_committed: Option<BlockCheckpoint>,
 }
 
 impl BlockValidator {
@@ -58,7 +57,6 @@ impl BlockValidator {
             checkpoint_observed: matches!(start, StartPosition::Tip),
             start,
             last_observed: None,
-            last_committed: None,
         }
     }
 
@@ -97,7 +95,6 @@ impl BlockValidator {
             self.checkpoint_observed = true;
             if matches!(self.start, StartPosition::Resume(_)) {
                 self.last_observed = Some((checkpoint.clone(), identity));
-                self.last_committed = Some(checkpoint.clone());
                 return Ok(SealDecision::Replay);
             }
         }
@@ -135,15 +132,6 @@ impl BlockValidator {
         };
         self.last_observed = Some((sealed.checkpoint(), identity));
         Ok(SealDecision::Process(sealed))
-    }
-
-    pub fn commit(&mut self, block: &SealedBlock) {
-        self.last_committed = Some(block.checkpoint());
-    }
-
-    #[cfg(test)]
-    fn current_checkpoint(&self) -> Option<&BlockCheckpoint> {
-        self.last_committed.as_ref()
     }
 }
 
@@ -304,7 +292,7 @@ mod tests {
     }
 
     #[test]
-    fn empty_block_advances_checkpoint() {
+    fn empty_block_is_processed() {
         let mut validator = BlockValidator::new(StartPosition::Tip);
         let decision = validator
             .seal(block(2, hash(2), 1, hash(1), vec![]))
@@ -312,8 +300,7 @@ mod tests {
         let SealDecision::Process(block) = decision else {
             panic!()
         };
-        validator.commit(&block);
-        assert_eq!(validator.current_checkpoint().unwrap().slot, 2);
+        assert_eq!(block.checkpoint().slot, 2);
     }
 
     #[test]
@@ -352,12 +339,11 @@ mod tests {
         let mut original = block(2, hash(2), 1, hash(1), vec![failed(1)]);
         original.block_time = Some(Default::default());
         original.block_time.as_mut().unwrap().timestamp = 100;
-        let SealDecision::Process(processed) =
+        let SealDecision::Process(_) =
             validator.seal(original.clone()).unwrap()
         else {
             panic!()
         };
-        validator.commit(&processed);
         assert!(matches!(
             validator.seal(original.clone()).unwrap(),
             SealDecision::Replay
@@ -446,7 +432,6 @@ mod tests {
             .unwrap();
 
         assert!(matches!(decision, SealDecision::Process(_)));
-        assert!(validator.current_checkpoint().is_none());
     }
 
     #[test]

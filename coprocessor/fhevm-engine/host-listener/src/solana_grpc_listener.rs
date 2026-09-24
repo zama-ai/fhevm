@@ -469,7 +469,6 @@ async fn subscribe_loop(
                             if !apply_prepared_block(
                                 db,
                                 config,
-                                &mut validator,
                                 &prepared,
                                 progress,
                                 cancel,
@@ -542,7 +541,6 @@ fn prepare_block(mut block: SealedBlock) -> Result<PreparedBlock> {
 async fn apply_prepared_block(
     db: &Database,
     config: &SolanaGrpcListenerConfig,
-    validator: &mut BlockValidator,
     prepared: &PreparedBlock,
     progress: &mut IngestionProgress,
     cancel: &CancellationToken,
@@ -550,7 +548,6 @@ async fn apply_prepared_block(
     progress.observe_unapplied(prepared.block.checkpoint());
     match ingest_block(db, config, prepared, cancel).await {
         Ok(BlockIngestOutcome::Complete) => {
-            validator.commit(&prepared.block);
             progress.commit(prepared.block.checkpoint());
             metrics::record_applied(config.chain_id, &prepared.block);
             Ok(true)
@@ -631,7 +628,6 @@ mod replay_status_tests {
         else {
             panic!()
         };
-        retry_validator.commit(&retried);
         progress.commit(retried.checkpoint());
 
         assert_eq!(progress.applied, Some(checkpoint));

@@ -3806,6 +3806,48 @@ fn mollusk_fhe_execute_prefunded_empty_meter_is_created_not_griefed() {
 }
 
 #[test]
+fn mollusk_fhe_execute_creating_both_prefunded_pdas_stays_within_the_trace_bound() {
+    // Worst case of `FheExecutionCost::instruction_trace_worst_case`: a first metered rand
+    // execution whose meter and nonce were both prefunded, so each creation takes three CPIs.
+    let fixture = FheExecutionFixture::with_block_cap(500_000);
+    let meter = fixture.meter_pda();
+    let nonce = host::rand_nonce_address(fixture.block_cap_app()).0;
+    fixture.seed_account(meter, system_account(1));
+    fixture.seed_account(nonce, system_account(1));
+
+    let result = check_host_context(
+        &fixture.context,
+        &fixture.input_free_instruction(
+            vec![FheExecuteStep::Rand { fhe_type: 5 }],
+            Some(meter),
+            None,
+            Some(nonce),
+        ),
+        &[Check::success()],
+    );
+    for created in [meter, nonce] {
+        assert_eq!(
+            fixture.context.account_store.borrow()[&created].owner,
+            host::id()
+        );
+    }
+    // This test calls the host top level; an application adds its own instruction on top.
+    let application_trace = 1 + 1 + result.inner_instructions.len();
+    let bound = zama_fhe::FheExecutionCost {
+        steps: 1,
+        store_outputs: 0,
+        packet_bytes: 0,
+        build_heap_bytes: 0,
+        invoke_heap_bytes: 0,
+        remaining_accounts: 0,
+        dynamic_accounts: 0,
+        value_authorities: 0,
+    }
+    .instruction_trace_worst_case();
+    assert_eq!(application_trace, bound);
+}
+
+#[test]
 fn mollusk_fhe_execute_overfunded_empty_meter_is_created_preserving_surplus() {
     // A donation far above rent is equally harmless: no top-up transfer occurs, the meter is
     // created, and the surplus lamports are preserved (the account is simply
