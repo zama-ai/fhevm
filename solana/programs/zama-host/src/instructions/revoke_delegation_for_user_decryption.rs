@@ -49,28 +49,17 @@ pub fn revoke_delegation_for_user_decryption(
             scope: record.scope,
         },
     );
-    require_keys_eq!(
-        expected,
-        record.key(),
-        ZamaHostError::DelegationPdaMismatch
-    );
+    require_keys_eq!(expected, record.key(), ZamaHostError::DelegationPdaMismatch);
     require!(
-        record.to_account_info().data_len()
-            == 8 + UserDecryptionDelegation::SPACE,
+        record.to_account_info().data_len() == 8 + UserDecryptionDelegation::SPACE,
         ZamaHostError::InvalidDelegation
     );
-    require!(
-        record.bump == bump,
-        ZamaHostError::DelegationPdaMismatch
-    );
+    require!(record.bump == bump, ZamaHostError::DelegationPdaMismatch);
     require!(
         record.last_update_slot < clock.slot,
         ZamaHostError::DelegationUpdatedInCurrentSlot
     );
-    require!(
-        record.expires_at != 0,
-        ZamaHostError::NotDelegatedYet
-    );
+    require!(record.expires_at != 0, ZamaHostError::NotDelegatedYet);
     let delegation_counter = record
         .delegation_counter
         .checked_add(1)

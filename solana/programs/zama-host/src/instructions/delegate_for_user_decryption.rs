@@ -79,10 +79,18 @@ pub fn delegate_for_user_decryption(
     );
     let info = ctx.accounts.delegation_record.to_account_info();
     let current = read_existing_delegation(&info, bump)?;
-    let (delegator_bytes, delegate_bytes, program_bytes) =
-        (delegator.to_bytes(), delegate.to_bytes(), program.to_bytes());
+    let (delegator_bytes, delegate_bytes, program_bytes) = (
+        delegator.to_bytes(),
+        delegate.to_bytes(),
+        program.to_bytes(),
+    );
     let [seed, delegator_seed, delegate_seed, program_seed, scope_seed] =
-        zama_solana_acl::delegation_seeds(&delegator_bytes, &delegate_bytes, &program_bytes, &scope);
+        zama_solana_acl::delegation_seeds(
+            &delegator_bytes,
+            &delegate_bytes,
+            &program_bytes,
+            &scope,
+        );
     create_pda_if_needed(
         &ctx.accounts.payer.to_account_info(),
         &info,

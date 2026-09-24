@@ -1439,7 +1439,10 @@ fn the_shared_clock_decoder_reads_the_runtimes_clock() {
         zama_solana_acl::CLOCK_SYSVAR_ID,
         solana_sdk::sysvar::clock::ID.to_bytes()
     );
-    assert_eq!(zama_solana_acl::SYSVAR_OWNER_ID, solana_sdk::sysvar::ID.to_bytes());
+    assert_eq!(
+        zama_solana_acl::SYSVAR_OWNER_ID,
+        solana_sdk::sysvar::ID.to_bytes()
+    );
     let clock = solana_sdk::clock::Clock {
         slot: 1,
         epoch_start_timestamp: 2,
