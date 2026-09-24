@@ -85,15 +85,14 @@ database_url = "postgres://postgres:postgres@localhost/kms-connector"
 # ENV: KMS_CONNECTOR_S3_MAX_CONCURRENT_HEADS_PER_BUCKET
 # s3_max_concurrent_heads_per_bucket = 64
 
-# Maximum number of ciphertext GET requests in flight, across all requests and buckets (optional, defaults to 16)
-# Kept low: SNS ciphertexts are big, so too many buffered at once would OOM the worker.
+# Maximum number of ciphertext GET requests in flight, across all requests and buckets (optional, defaults to 256)
 # ENV: KMS_CONNECTOR_S3_MAX_CONCURRENT_GETS
-# s3_max_concurrent_gets = 16
+# s3_max_concurrent_gets = 256
 
-# Maximum size of a single ciphertext body, in bytes (optional, defaults to 69206016, 66MiB)
-# The default is MAX_SNS_CIPHERTEXT_SERIALIZED_SIZE, also used by the sns-worker when uploading ciphertexts.
+# Maximum size of a single ciphertext body, in bytes (optional, defaults to 131072, 128KiB)
+# Only compressed SNS ciphertexts reach S3, the largest being ~97.3KiB with the current tfhe parameters.
 # ENV: KMS_CONNECTOR_S3_MAX_CIPHERTEXT_SIZE
-# s3_max_ciphertext_size = 69206016
+# s3_max_ciphertext_size = 131072
 
 # Refresh interval of the Coprocessor registry read from the GatewayConfig contract (optional, defaults to 60s)
 # ENV: KMS_CONNECTOR_COPRO_REGISTRY_REFRESH (format: https://docs.rs/humantime/latest/humantime/)
