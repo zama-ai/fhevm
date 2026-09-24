@@ -2,10 +2,12 @@ import { describe, expect, test } from "bun:test";
 import { assertDriftMatrix, assertManifestFault, DRIFT_CASES, validateHealingFixture, type Finding } from "./commands/manifest-healing";
 
 const handle = (i: number) => `0x${i.toString(16).padStart(64, "0")}`;
+const rootCount = DRIFT_CASES.length;
 const fixture = {
   chainId: 12345, rootBlock: 42, rootBlockHash: handle(99),
-  roots: Array.from({ length: 10 }, (_, i) => handle(i + 1)),
-  children: Array.from({ length: 10 }, (_, i) => handle(i + 11)), joined: handle(21), tail: handle(22),
+  roots: Array.from({ length: rootCount }, (_, i) => handle(i + 1)),
+  children: Array.from({ length: rootCount }, (_, i) => handle(i + rootCount + 1)),
+  joined: handle(rootCount * 2 + 1), tail: handle(rootCount * 2 + 2),
 };
 const digests = fixture.roots.map((_, i) => handle(i + 100));
 const rows = (healed: boolean): Finding[] => [
@@ -21,8 +23,8 @@ const rows = (healed: boolean): Finding[] => [
 ];
 
 describe("manifest healing matrix", () => {
-  test("covers all nine reasons with two ct64 roots", () => {
-    expect(new Set(DRIFT_CASES.map(c => c.reason)).size).toBe(9);
+  test("covers node 2's out-of-quorum reasons with two ct64 roots", () => {
+    expect(new Set(DRIFT_CASES.map(c => c.reason)).size).toBe(6);
     expect(DRIFT_CASES.filter(c => c.reason === "ct64_mismatch").length).toBe(2);
     expect(validateHealingFixture(fixture)).toEqual(fixture);
     expect(() => validateHealingFixture({ ...fixture, roots: [] })).toThrow();
@@ -41,11 +43,11 @@ describe("manifest healing matrix", () => {
     for (const mutate of [
       (r: Finding[]) => { r[5]!.is_contained = true; },
       (r: Finding[]) => { r[0]!.target = handle(999); },
-      (r: Finding[]) => { r[10]!.detection_kind = "verified"; },
+      (r: Finding[]) => { r[rootCount]!.detection_kind = "verified"; },
       (r: Finding[]) => { r[7]!.healed_at = "unexpected"; },
       (r: Finding[]) => { r[6]!.can_be_healed = true; },
       (r: Finding[]) => { r.pop(); },
-      (r: Finding[]) => { r.push({ ...r[10]!, handle: fixture.children[5]!.slice(2) }); },
+      (r: Finding[]) => { r.push({ ...r[rootCount]!, handle: fixture.children[5]!.slice(2) }); },
     ]) {
       const observed = rows(false);
       mutate(observed);

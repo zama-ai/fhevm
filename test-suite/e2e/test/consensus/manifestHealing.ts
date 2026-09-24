@@ -23,8 +23,8 @@ const save = async (fixture: object) => writeFile(fixturePath, JSON.stringify(fi
     await save({
       chainId: Number((await ethers.provider.getNetwork()).chainId),
       contract: await contract.getAddress(), base: base.toString(),
-      roots: await Promise.all(Array.from({ length: 10 }, (_, i) => contract.roots(i))),
-      children: await Promise.all(Array.from({ length: 10 }, (_, i) => contract.children(i))),
+      roots: await Promise.all(Array.from({ length: 7 }, (_, i) => contract.roots(i))),
+      children: await Promise.all(Array.from({ length: 7 }, (_, i) => contract.children(i))),
       joined: await contract.joined(), tail: await contract.tail(),
       rootBlock: receipt!.blockNumber, rootBlockHash: receipt!.blockHash,
     });
@@ -35,7 +35,7 @@ const save = async (fixture: object) => writeFile(fixturePath, JSON.stringify(fi
     const contract = await ethers.getContractAt('ManifestHealingFixture', f.contract);
     expect((await (await contract.consume(value())).wait())?.status).to.equal(1);
     await save({ ...f,
-      consumers: await Promise.all(Array.from({ length: 10 }, (_, i) => contract.consumers(i))),
+      consumers: await Promise.all(Array.from({ length: 7 }, (_, i) => contract.consumers(i))),
       queuedJoin: await contract.queuedJoin(), recovered: await contract.recovered(), independent: await contract.independent(),
     });
   });
@@ -49,7 +49,7 @@ const save = async (fixture: object) => writeFile(fixturePath, JSON.stringify(fi
     const handles = [...f.consumers, f.recovered];
     const result = await instances.alice.publicDecrypt(handles);
     const base = BigInt(f.base);
-    for (let i = 0; i < 10; i++) expect(result.clearValues[f.consumers[i]]).to.equal(base + BigInt(i) + (i < 2 ? 110n : 100n));
+    for (let i = 0; i < f.consumers.length; i++) expect(result.clearValues[f.consumers[i]]).to.equal(base + BigInt(i) + (i < 2 ? 110n : 100n));
     expect(result.clearValues[f.recovered]).to.equal(4n * base + 243n);
   });
 

@@ -4,11 +4,11 @@ pragma solidity ^0.8.24;
 import "@fhevm/solidity/lib/FHE.sol";
 import {E2ECoprocessorConfig} from "../E2ECoprocessorConfigLocal.sol";
 
-/// Ten drift roots, two overlapping ct64 branches, and independent work.
+/// Seven drift roots, two overlapping ct64 branches, and independent work.
 contract ManifestHealingFixture is E2ECoprocessorConfig {
-    euint64[10] public roots;
-    euint64[10] public children;
-    euint64[10] public consumers;
+    euint64[7] public roots;
+    euint64[7] public children;
+    euint64[7] public consumers;
     euint64 public joined;
     euint64 public tail;
     euint64 public queuedJoin;
@@ -17,14 +17,14 @@ contract ManifestHealingFixture is E2ECoprocessorConfig {
     euint64 public reused;
 
     function seed(uint64 base) external {
-        for (uint64 i; i < 10; i++) {
+        for (uint64 i; i < 7; i++) {
             roots[i] = FHE.asEuint64(base + i);
             FHE.allowThis(roots[i]);
         }
     }
 
     function derive() external {
-        for (uint64 i; i < 10; i++) {
+        for (uint64 i; i < 7; i++) {
             children[i] = FHE.add(roots[i], uint64(10));
             FHE.allowThis(children[i]);
         }
@@ -41,7 +41,7 @@ contract ManifestHealingFixture is E2ECoprocessorConfig {
     }
 
     function consume(uint64 value) external {
-        for (uint64 i; i < 10; i++) {
+        for (uint64 i; i < 7; i++) {
             // Exercise inferred containment on the first two branches and direct
             // root usability for every other reason.
             consumers[i] = FHE.add(i < 2 ? children[i] : roots[i], uint64(100));

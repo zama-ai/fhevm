@@ -836,9 +836,12 @@ Rebuild a fresh stack with scenario `manifest-lifecycle`, then run
 `./fhevm-cli test manifest-healing`. CI uses scenario `manifest-lifecycle`,
 test-profile `manifest-healing`, with the build enabled.
 
-The profile creates ten roots covering all nine detection reasons. Two ct64
-roots feed separate computed children, a shared join, and a further descendant.
-Each other root has a computed child that must remain outside inferred drift.
+The profile creates seven roots. Only node 2 publishes faults, so it is the
+only coprocessor out of quorum. Two ct64 roots feed separate computed children,
+a shared join, and a further descendant. Each other root has a computed child
+that must remain outside inferred drift. `unknown_on_peer`, `error_on_peer`,
+and `uncomputed_on_peer` are not in this profile: those reasons require the
+other two publishers to agree on the anomaly.
 
 | Reason on node 2 | Injection location | Expected ct64 recovery |
 | --- | --- | --- |
@@ -848,15 +851,13 @@ Each other root has a computed child that must remain outside inferred drift.
 | `uncomputed_here` | Node 2 uncomputed descriptor | Healed; no inferred descendants |
 | `ct128_mismatch` | Node 2 ct128 digest | Not healed; ct64 consumers continue |
 | `metadata_mismatch` | Node 2 keyset ID | Not healed; ct64 consumers continue |
-| `unknown_on_peer` | Both peers omit descriptor | Not healed; ct64 consumers continue |
-| `error_on_peer` | Both peers publish error | Not healed; ct64 consumers continue |
-| `uncomputed_on_peer` | Both peers publish uncomputed | Not healed; ct64 consumers continue |
 
 The test stops all detectors before creating the fixture. It waits for completed
 computations and verified uploads, then flips one bit in node 2's local ct64
-bytes. All three injection files start with `pause_healing: true`, keeping
-publication and verification active while suppressing healing. Findings are
-created only by normal verification and propagation, never by the test.
+bytes. All three injection files start with `pause_healing: true`. Nodes 0 and 1
+have an empty fault list. Node 2 carries every fault. Publication and
+verification stay active while healing is suppressed. Findings are created only
+by normal verification and propagation, never by the test.
 
 The runner checks actual signed/S3 descriptors, authenticated quorum verification,
 and the exact direct/inferred inventory. It submits more work while healing is

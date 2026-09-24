@@ -122,7 +122,7 @@ const PAUSE_PROFILE_SCOPE: Record<string, string> = {
 const TEST_PROFILE_DESCRIPTIONS: Partial<Record<(typeof TEST_PROFILE_NAMES)[number], string>> = {
   "manifest-lifecycle-no-drift": "Check healthy manifest publication, quorum, and continued computation without fault injection (requires --scenario manifest-lifecycle).",
   "manifest-healing-stress": "Mix four computation chains with 25% database corruption on one node, then require healing convergence under continued traffic (requires --scenario manifest-lifecycle).",
-  "manifest-healing": "Exercise every drift reason, inferred containment, ct64 restoration, and computation recovery (requires --scenario manifest-lifecycle).",
+  "manifest-healing": "Exercise node 2's out-of-quorum fault matrix, inferred containment, ct64 restoration, and computation recovery (requires --scenario manifest-lifecycle).",
   "manifest-lifecycle": "Publish a signed manifest fault and verify containment and independent progress (requires --scenario manifest-lifecycle).",
   light: "Run the lightweight smoke suite.",
   "rollout-standard": "Run rollout-safe write-path coverage without pause, DB revert, or drift recovery.",

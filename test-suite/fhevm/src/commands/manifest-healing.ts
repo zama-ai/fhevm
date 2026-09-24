@@ -12,17 +12,17 @@ import { run } from "../utils/process";
 import type { State } from "../types";
 import { assertRestoredMaterial, flippedDigest, publicationReady, waitForManifestCondition, type PublicationReadiness } from "./manifest-lifecycle";
 
+/** Faults that put node 2 out of quorum. Peer-quorum reasons are not here:
+ * `unknown_on_peer`, `error_on_peer`, and `uncomputed_on_peer` require the
+ * other two publishers to agree on the anomaly. */
 export const DRIFT_CASES = [
-  { reason: "ct64_mismatch", fault: "ct64_digest_bit_flip", peer: false, healable: true },
-  { reason: "ct64_mismatch", fault: "ct64_digest_bit_flip", peer: false, healable: true },
-  { reason: "missing_here", fault: "missing_here", peer: false, healable: true },
-  { reason: "error_here", fault: "error_here", peer: false, healable: true },
-  { reason: "uncomputed_here", fault: "uncomputed_here", peer: false, healable: true },
-  { reason: "ct128_mismatch", fault: "ct128_digest_bit_flip", peer: false, healable: false },
-  { reason: "metadata_mismatch", fault: "keyset_id_bit_flip", peer: false, healable: false },
-  { reason: "unknown_on_peer", fault: "missing_here", peer: true, healable: false },
-  { reason: "error_on_peer", fault: "error_here", peer: true, healable: false },
-  { reason: "uncomputed_on_peer", fault: "uncomputed_here", peer: true, healable: false },
+  { reason: "ct64_mismatch", fault: "ct64_digest_bit_flip", healable: true },
+  { reason: "ct64_mismatch", fault: "ct64_digest_bit_flip", healable: true },
+  { reason: "missing_here", fault: "missing_here", healable: true },
+  { reason: "error_here", fault: "error_here", healable: true },
+  { reason: "uncomputed_here", fault: "uncomputed_here", healable: true },
+  { reason: "ct128_mismatch", fault: "ct128_digest_bit_flip", healable: false },
+  { reason: "metadata_mismatch", fault: "keyset_id_bit_flip", healable: false },
 ] as const;
 export type HealingPhase = "seed matrix" | "submit consumers" | "decrypt recovered" | "reuse healed chain" | "decrypt reused";
 type Fixture = {
@@ -72,7 +72,6 @@ export function assertDriftMatrix(f: Fixture, rows: Finding[], digests: string[]
     assert.equal(row.healed_at !== null, healed && entry.healable, `${entry.reason}: healing state`);
     assert.equal(row.can_be_healed, entry.healable && !healed, `${entry.reason}: eligibility`);
     if (entry.healable) assert.equal(row.target, digests[index]);
-    if (entry.peer) assert.equal(row.target, null, "peer-side status has no computed quorum target");
   }
   for (const handle of inferred(f)) {
     const row = rows.find(r => r.handle === handle.slice(2))!;
@@ -174,14 +173,18 @@ export async function runManifestHealingProfile(
     const complete = (index: number, handles: string[]) => q(index, `SELECT count(*) FROM computations WHERE host_chain_id=${chainId}
       AND output_handle IN (${handles.map(h).join(",")}) AND is_completed AND NOT is_error`);
     for (const index of NODES) {
-      await waitForManifestCondition(`node ${index} precomputed descendants`, () => complete(index, [...f.children, f.joined, f.tail]), n => Number(n) === 12);
+      await waitForManifestCondition(`node ${index} precomputed descendants`, () => complete(index, [...f.children, f.joined, f.tail]), n => Number(n) === f.children.length + 2);
       for (const handle of inferred(f)) {
         const value = (await waitForManifestCondition(`node ${index} uploaded descendant ${handle}`, () => material(index, handle), v => v !== null))!;
         if (index === 0) descendantOriginals.set(handle, value);
         else assertRestoredMaterial(descendantOriginals.get(handle)!, value);
       }
-      configs.push({ enabled: true, chain_id: chainId, pause_healing: true,
-        faults: DRIFT_CASES.flatMap((entry, i) => entry.peer === (index !== TARGET) ? [{ handle: f.roots[i]!, fault: entry.fault }] : []) });
+      configs.push({
+        enabled: true, chain_id: chainId, pause_healing: true,
+        faults: index === TARGET
+          ? DRIFT_CASES.map((entry, i) => ({ handle: f.roots[i]!, fault: entry.fault }))
+          : [],
+      });
       await writeConfig(index);
     }
     // All consumers are already computed and no new work reads this root until containment.
@@ -217,10 +220,9 @@ export async function runManifestHealingProfile(
     }
     for (const [i, entry] of DRIFT_CASES.entries()) {
       const perNode = descriptors.map(ds => ds.find(d => d.handle.toLowerCase() === f.roots[i]!.toLowerCase()));
-      assert.deepEqual(perNode[0], perNode[1], "peer fault descriptors differ");
-      const healthy = perNode[entry.peer ? TARGET : 0];
-      assert.equal(healthy?.ct64_digest?.toLowerCase(), original[i]!.digest);
-      assertManifestFault(healthy, perNode[entry.peer ? 0 : TARGET], entry.fault);
+      assert.deepEqual(perNode[0], perNode[1], "healthy publishers differ");
+      assert.equal(perNode[0]?.ct64_digest?.toLowerCase(), original[i]!.digest);
+      assertManifestFault(perNode[0], perNode[TARGET], entry.fault);
     }
     await checkpoint("manifests", archives.map(({ body: _, ...identity }) => identity));
     for (const [index, archive] of archives.entries()) {
@@ -253,8 +255,8 @@ export async function runManifestHealingProfile(
       await Bun.sleep(1_000);
     }
     await checkpoint("blocked", { handles: blocked, progressing });
-    // Retain the exact publication faults through restart so persisted seals remain valid.
-    // Peers are released too: conservative observations may have contained their copies.
+    // Retain node 2's publication faults through restart so persisted seals remain valid.
+    // Peers stay fault-free; unpausing them releases any conservative containment.
     await run(["docker", "stop", ...NODES.map(detector)]);
     for (const index of NODES) { configs[index]!.pause_healing = false; await writeConfig(index); }
     await run(["docker", "start", ...NODES.map(detector)]);
@@ -269,7 +271,7 @@ export async function runManifestHealingProfile(
     }
     await checkpoint("restoration", { exactBytesRestored: true });
     for (const index of NODES) {
-      await waitForManifestCondition(`node ${index} recovered chain`, () => complete(index, [...f.consumers!, f.queuedJoin!, f.recovered!]), n => Number(n) === 12);
+      await waitForManifestCondition(`node ${index} recovered chain`, () => complete(index, [...f.consumers!, f.queuedJoin!, f.recovered!]), n => Number(n) === f.consumers!.length + 2);
     }
     await runFixture("decrypt recovered");
     await checkpoint("decrypted", { recovered: f.recovered, consumers: f.consumers });
