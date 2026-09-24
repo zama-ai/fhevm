@@ -7,6 +7,7 @@ pub mod keyurl_poller;
 pub mod provider;
 pub mod signature_prechecker;
 pub mod solana_delegation_precheck;
+pub mod solana_permit_prechecker;
 pub mod threshold_resolver;
 
 pub use acl_checker::{HostAclChecker, HostAclError};
@@ -14,5 +15,6 @@ pub use chain_id_validator::HostChainIdChecker;
 pub use error_redact::redact_alloy_error;
 pub use handle_chain_id::{extract_chain_id_from_handle, extract_chain_id_from_u256};
 pub use keyurl_poller::KeyUrlPoller;
-pub use signature_prechecker::{SigPreCheckError, UserDecryptSignaturePreChecker};
+pub use signature_prechecker::{PreCheckSigner, SigPreCheckError, UserDecryptSignaturePreChecker};
+pub use solana_permit_prechecker::verify_solana_permit;
 pub use threshold_resolver::ThresholdResolver;
