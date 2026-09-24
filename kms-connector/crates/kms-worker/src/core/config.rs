@@ -1,5 +1,4 @@
 use alloy::{primitives::Address, transports::http::reqwest::Url};
-use ciphertext_attestation::MAX_SNS_CIPHERTEXT_SERIALIZED_SIZE;
 use connector_utils::{
     config::{
         ContractConfig, DeserializeConfig,
@@ -263,12 +262,13 @@ fn default_s3_max_concurrent_heads_per_bucket() -> NonZeroUsize {
 }
 
 fn default_s3_max_concurrent_gets() -> NonZeroUsize {
-    // Kept low: SNS ciphertexts are big, so too many buffered at once would OOM the worker.
-    NonZeroUsize::new(16).unwrap()
+    NonZeroUsize::new(256).unwrap()
 }
 
 fn default_s3_max_ciphertext_size() -> NonZeroUsize {
-    NonZeroUsize::new(MAX_SNS_CIPHERTEXT_SERIALIZED_SIZE as usize).unwrap()
+    // Only compressed SNS ciphertexts reach S3, and the largest is ~97.3KiB with the current tfhe
+    // parameters. Revisit this ceiling whenever those parameters change.
+    NonZeroUsize::new(128 * 1024).unwrap()
 }
 
 fn default_erc1271_gas_limit() -> u64 {
