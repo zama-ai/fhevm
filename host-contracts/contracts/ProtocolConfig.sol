@@ -785,7 +785,7 @@ contract ProtocolConfig is IProtocolConfig, UUPSUpgradeableEmptyProxy, ACLOwnabl
     function _storeAndActivateKmsContextAndEpoch(
         uint256 contextId,
         uint256 epochId,
-        KmsNodeParams[] memory kmsNodeParams,
+        KmsNodeParams[] calldata kmsNodeParams,
         KmsThresholds calldata thresholds
     ) internal virtual {
         ProtocolConfigStorage storage $ = _getProtocolConfigStorage();
@@ -800,7 +800,7 @@ contract ProtocolConfig is IProtocolConfig, UUPSUpgradeableEmptyProxy, ACLOwnabl
 
     function _storeKmsContext(
         uint256 contextId,
-        KmsNodeParams[] memory kmsNodeParams,
+        KmsNodeParams[] calldata kmsNodeParams,
         KmsThresholds calldata thresholds
     ) internal virtual {
         if (kmsNodeParams.length == 0) {
@@ -824,7 +824,7 @@ contract ProtocolConfig is IProtocolConfig, UUPSUpgradeableEmptyProxy, ACLOwnabl
         $.currentKmsContextId = contextId;
 
         for (uint256 i = 0; i < kmsNodeParams.length; i++) {
-            KmsNodeParams memory params = kmsNodeParams[i];
+            KmsNodeParams calldata params = kmsNodeParams[i];
             KmsNode memory node = KmsNode({
                 txSenderAddress: params.txSenderAddress,
                 signerAddress: params.signerAddress,
