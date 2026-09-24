@@ -1,4 +1,3 @@
-import { toBigIntBE } from 'bigint-buffer';
 import { toBufferBE } from 'bigint-buffer';
 import crypto from 'crypto';
 import dotenv from 'dotenv';
@@ -39,15 +38,6 @@ enum Types {
 }
 
 const sum = (arr: number[]) => arr.reduce((acc, val) => acc + val, 0);
-
-function bytesToBigInt(byteArray: Uint8Array): bigint {
-  if (!byteArray || byteArray?.length === 0) {
-    return BigInt(0);
-  }
-  const buffer = Buffer.from(byteArray);
-  const result = toBigIntBE(buffer);
-  return result;
-}
 
 function createUintToUint8ArrayFunction(numBits: number) {
   const numBytes = Math.ceil(numBits / 8);
@@ -334,7 +324,7 @@ function uint8ArrayToHexString(uint8Array: Uint8Array) {
 }
 
 function numberToHex(num: number) {
-  let hex = num.toString(16);
+  const hex = num.toString(16);
   return hex.length % 2 ? '0' + hex : hex;
 }
 
@@ -375,7 +365,7 @@ async function computeInputSignaturesCopro(
 ): Promise<string[]> {
   const signatures: string[] = [];
   const numSigners = +process.env.NUM_COPROCESSORS!;
-  let signers = await getCoprocessorSigners();
+  const signers = await getCoprocessorSigners();
 
   for (let idx = 0; idx < numSigners; idx++) {
     const coprocSigner = signers[idx];

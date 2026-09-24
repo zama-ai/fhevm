@@ -9,7 +9,7 @@ import { getUint, removeTemplateComments } from './utils';
 export function generateFhevmECDSALib() {
   const file = resolveTemplatePath('FhevmECDSA.sol-template');
   const template = readFileSync(file, 'utf8');
-  let code = removeTemplateComments(template);
+  const code = removeTemplateComments(template);
   return code;
 }
 

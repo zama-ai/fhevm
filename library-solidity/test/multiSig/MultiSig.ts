@@ -1,4 +1,4 @@
-import { assert, expect } from 'chai';
+import { expect } from 'chai';
 import dotenv from 'dotenv';
 import fs from 'fs';
 import hre from 'hardhat';

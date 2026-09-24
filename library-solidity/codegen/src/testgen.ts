@@ -255,6 +255,14 @@ export function splitOverloadsToShards(
   return res;
 }
 
+// The decryption helpers used by a test split are only known once all its tests are generated.
+const DECRYPT_IMPORTS_PLACEHOLDER = '__DECRYPT_IMPORTS__';
+
+function resolveDecryptImports(code: string): string {
+  const used = [...new Set(code.match(/\bdecrypt(?:8|16|32|64|128|256|Bool)(?=\()/g) ?? [])].sort();
+  return code.replace(`, ${DECRYPT_IMPORTS_PLACEHOLDER}`, used.map((name) => `, ${name}`).join(''));
+}
+
 function generateIntroTestCode(
   shards: OverloadShard[],
   idxSplit: number,
@@ -290,8 +298,7 @@ function generateIntroTestCodeUserDecrypt(
   intro.push(`
     import { expect } from 'chai';
     import { ethers } from 'hardhat';
-    import { HardhatEthersSigner } from "@nomicfoundation/hardhat-ethers/signers";
-    import { createInstances, decrypt8, decrypt16, decrypt32, decrypt64, decrypt128, decrypt256, decryptBool } from '${typescriptImports.instance}';
+    import { createInstances, ${DECRYPT_IMPORTS_PLACEHOLDER} } from '${typescriptImports.instance}';
     import { getSigners, initSigners } from '${typescriptImports.signers}';
 
   `);
@@ -541,7 +548,7 @@ export function generateTypeScriptTestCode(
         res.push(`
       });
     `);
-        listRes.push(res.join(''));
+        listRes.push(resolveDecryptImports(res.join('')));
         res = [];
       }
     });

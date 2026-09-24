@@ -1,10 +1,34 @@
+import type { HardhatEthersSigner } from '@nomicfoundation/hardhat-ethers/signers';
 import { assert, expect } from 'chai';
 import hre from 'hardhat';
 
+import type { EncryptedERC20 } from '../../typechain-types';
 import { createInstances } from '../instance';
 import { getSigners, initSigners } from '../signers';
 import { userDecryptSingleHandle } from '../utils';
 import { deployEncryptedERC20Fixture } from './EncryptedERC20.fixture';
+
+const handleOperations = ['transfer', 'approve', 'transferFrom'] as const;
+
+// Calls the `bytes32` handle overload of `operation`, moving `amount` from `from` to `to`.
+const sendWithHandle = (
+  erc20: EncryptedERC20,
+  operation: (typeof handleOperations)[number],
+  caller: HardhatEthersSigner,
+  from: string,
+  to: string,
+  amount: string,
+) => {
+  const token = erc20.connect(caller);
+  switch (operation) {
+    case 'transfer':
+      return token['transfer(address,bytes32)'](to, amount);
+    case 'approve':
+      return token['approve(address,bytes32)'](to, amount);
+    case 'transferFrom':
+      return token['transferFrom(address,address,bytes32)'](from, to, amount);
+  }
+};
 
 describe('EncryptedERC20', function () {
   before(async function () {
@@ -55,34 +79,34 @@ describe('EncryptedERC20', function () {
     expect(totalSupply).to.equal(1000n);
   });
 
-  for (const operation of ['transfer', 'approve', 'transferFrom']) {
-    const signature =
-      operation === 'transferFrom' ? 'transferFrom(address,address,bytes32)' : `${operation}(address,bytes32)`;
-
+  for (const operation of handleOperations) {
     it(`should reject ${operation} with a handle the caller cannot access`, async function () {
       await (await this.erc20.mint(1000)).wait();
       const amount = await this.erc20.balanceOf(this.signers.alice.address);
-      const args =
-        operation === 'transferFrom'
-          ? [this.signers.alice.address, this.signers.bob.address, amount]
-          : [this.signers.bob.address, amount];
 
-      await expect(this.erc20.connect(this.signers.bob)[signature](...args)).to.be.reverted;
+      await expect(
+        sendWithHandle(
+          this.erc20,
+          operation,
+          this.signers.bob,
+          this.signers.alice.address,
+          this.signers.bob.address,
+          amount,
+        ),
+      ).to.be.reverted;
     });
 
     it(`should allow ${operation} with a handle the caller can access`, async function () {
       await (await this.erc20.mint(1000)).wait();
       const amount = await this.erc20.balanceOf(this.signers.alice.address);
-      const args =
-        operation === 'transferFrom'
-          ? [this.signers.alice.address, this.signers.bob.address, amount]
-          : [this.signers.bob.address, amount];
 
       if (operation === 'transferFrom') {
         await (await this.erc20['approve(address,bytes32)'](this.signers.bob.address, amount)).wait();
       }
       const caller = operation === 'transferFrom' ? this.signers.bob : this.signers.alice;
-      await expect(this.erc20.connect(caller)[signature](...args))
+      await expect(
+        sendWithHandle(this.erc20, operation, caller, this.signers.alice.address, this.signers.bob.address, amount),
+      )
         .to.emit(this.erc20, operation === 'approve' ? 'Approval' : 'Transfer')
         .withArgs(this.signers.alice.address, this.signers.bob.address);
     });

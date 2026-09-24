@@ -63,21 +63,6 @@ export const waitNBlocks = async (Nblocks: number) => {
   await waitForBlock(currentBlock + Nblocks);
 };
 
-export const waitForBalance = async (address: string): Promise<void> => {
-  return new Promise((resolve, reject) => {
-    const checkBalance = async () => {
-      const balance = await ethers.provider.getBalance(address);
-      if (balance > 0) {
-        await ethers.provider.off('block', checkBalance);
-        resolve();
-      }
-    };
-    ethers.provider.on('block', checkBalance).catch((err) => {
-      reject(err);
-    });
-  });
-};
-
 export const createTransaction = async <A extends [...{ [I in keyof A]-?: A[I] | Typed }]>(
   method: TypedContractMethod<A>,
   ...params: A
