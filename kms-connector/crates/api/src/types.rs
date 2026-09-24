@@ -48,19 +48,66 @@ sol! {
         uint64 durationSeconds;
     }
 
-    /// `POST v1/user-decrypt` request body: the protocol inputs of a user decryption
-    /// (unified shape per RFC 016).
+    /// The protocol inputs of a user decryption, i.e. the `payload` of a [`UserDecryptionRequest`].
     #[derive(Debug, PartialEq, Serialize, Deserialize)]
     #[serde(deny_unknown_fields)]
-    struct UserDecryptionRequest {
+    struct UserDecryptionPayload {
         HandleEntry[] handles;
         address userAddress;
         bytes publicKey;
         address[] allowedContracts;
         RequestValidity requestValidity;
-        /// The user's EIP-712 signature.
-        bytes signature;
         bytes extraData;
+    }
+
+    /// `POST v1/user-decrypt` request body: the user's signature over the protocol inputs of a
+    /// user decryption, tagged with the scheme it was produced with.
+    #[derive(Debug, PartialEq, Serialize, Deserialize)]
+    #[serde(deny_unknown_fields)]
+    struct UserDecryptionRequest {
+        string attestationType;
+        UserDecryptionPayload payload;
+        /// The user's signature, in the scheme named by `attestationType`.
+        bytes signature;
+    }
+}
+
+sol! {
+    #[derive(Debug, PartialEq, Serialize, Deserialize)]
+    #[serde(deny_unknown_fields)]
+    struct SolanaHandleEntry {
+        bytes32 handle;
+        bytes32 allowedKey;
+        bytes32 encryptedStore;
+    }
+
+    /// Solana permit fields and the ordered ciphertext entries authorized under that permit.
+    #[derive(Debug, PartialEq, Serialize, Deserialize)]
+    #[serde(deny_unknown_fields)]
+    struct SolanaUserDecryptionPayload {
+        SolanaHandleEntry[] handles;
+        bytes32 userPubkey;
+        bytes publicKey;
+        bytes[] allowedScopes;
+        RequestValidity requestValidity;
+        bytes32 verifyingProgramId;
+        bytes extraData;
+    }
+
+    /// The Solana body of `POST v1/user-decrypt`. The signature covers the canonical permit;
+    /// the HTTP request ID additionally binds every ordered handle entry.
+    #[derive(Debug, PartialEq, Serialize, Deserialize)]
+    #[serde(deny_unknown_fields)]
+    struct SolanaUserDecryptionRequest {
+        string attestationType;
+        SolanaUserDecryptionPayload payload;
+        bytes signature;
+    }
+}
+
+impl SolanaUserDecryptionRequest {
+    pub fn id(&self) -> B256 {
+        self.eip712_signing_hash(&DECRYPTION_EIP712_DOMAIN)
     }
 }
 
@@ -107,6 +154,7 @@ pub struct UserDecryptionResponse {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::AttestationType;
     use alloy::primitives::Address;
 
     fn public_request() -> PublicDecryptionRequest {
@@ -118,21 +166,84 @@ mod tests {
 
     fn user_request() -> UserDecryptionRequest {
         UserDecryptionRequest {
-            handles: vec![HandleEntry {
-                handle: B256::repeat_byte(0xaa),
-                contractAddress: Address::repeat_byte(0x33),
-                ownerAddress: Address::repeat_byte(0x44),
-            }],
-            userAddress: Address::repeat_byte(0x55),
-            publicKey: Bytes::from(vec![0x20, 0x00, 0x20, 0x00]),
-            allowedContracts: vec![Address::repeat_byte(0x33)],
-            requestValidity: RequestValidity {
-                startTimestamp: 1_770_000_000,
-                durationSeconds: 300,
+            attestationType: AttestationType::Eip712UnifiedUserDecryptV1.to_string(),
+            payload: UserDecryptionPayload {
+                handles: vec![HandleEntry {
+                    handle: B256::repeat_byte(0xaa),
+                    contractAddress: Address::repeat_byte(0x33),
+                    ownerAddress: Address::repeat_byte(0x44),
+                }],
+                userAddress: Address::repeat_byte(0x55),
+                publicKey: Bytes::from(vec![0x20, 0x00, 0x20, 0x00]),
+                allowedContracts: vec![Address::repeat_byte(0x33)],
+                requestValidity: RequestValidity {
+                    startTimestamp: 1_770_000_000,
+                    durationSeconds: 300,
+                },
+                extraData: Bytes::from(vec![0x00]),
             },
             signature: Bytes::from(vec![0x66; 65]),
-            extraData: Bytes::from(vec![0x00]),
         }
+    }
+
+    #[test]
+    fn solana_id_binds_scheme_signature_and_ordered_entries() {
+        let request = SolanaUserDecryptionRequest {
+            attestationType: "solana-srfc38-user-decrypt-v1".into(),
+            payload: SolanaUserDecryptionPayload {
+                handles: vec![SolanaHandleEntry {
+                    handle: B256::repeat_byte(1),
+                    allowedKey: B256::repeat_byte(2),
+                    encryptedStore: B256::repeat_byte(3),
+                }],
+                userPubkey: B256::ZERO,
+                publicKey: Bytes::new(),
+                allowedScopes: vec![],
+                requestValidity: RequestValidity {
+                    startTimestamp: 1,
+                    durationSeconds: 60,
+                },
+                verifyingProgramId: B256::ZERO,
+                extraData: Bytes::new(),
+            },
+            signature: vec![4; 64].into(),
+        };
+        let id = request.id();
+        // Independently encoded EIP-712 words, hashed with Foundry cast keccak.
+        assert_eq!(
+            id,
+            "0x92c9850b3f6d2d4daef38a9862829738a8975d91cbdf93459e0758dfd449c3d6"
+                .parse::<B256>()
+                .unwrap()
+        );
+        let roundtrip: SolanaUserDecryptionRequest =
+            serde_json::from_str(&serde_json::to_string(&request).unwrap()).unwrap();
+        assert_eq!(id, roundtrip.id());
+        let mut other = request.clone();
+        other.attestationType.push('2');
+        assert_ne!(id, other.id());
+        let mut other = request.clone();
+        other.signature = vec![5; 64].into();
+        assert_ne!(id, other.id());
+        let mut other = request.clone();
+        other.payload.handles[0].allowedKey = B256::repeat_byte(6);
+        assert_ne!(id, other.id());
+        let mut other = request.clone();
+        other.payload.handles[0].encryptedStore = B256::repeat_byte(6);
+        assert_ne!(id, other.id());
+        let mut other = request.clone();
+        other.payload.handles[0].handle = B256::repeat_byte(6);
+        assert_ne!(id, other.id());
+        let mut other = request.clone();
+        other.payload.handles.push(other.payload.handles[0].clone());
+        assert_ne!(id, other.id());
+        other.payload.handles[1].handle = B256::repeat_byte(9);
+        let ordered = other.id();
+        other.payload.handles.swap(0, 1);
+        assert_ne!(ordered, other.id());
+        let mut json = serde_json::to_value(&request).unwrap();
+        json["payload"]["authority"] = serde_json::json!("invented");
+        assert!(serde_json::from_value::<SolanaUserDecryptionRequest>(json).is_err());
     }
 
     #[test]
@@ -143,6 +254,25 @@ mod tests {
             "sneaky": true
         }"#;
         assert!(serde_json::from_str::<PublicDecryptionRequest>(json).is_err());
+
+        // Both the envelope and the payload deny unknown fields.
+        let mut json = serde_json::to_value(user_request()).unwrap();
+        json["sneaky"] = serde_json::Value::Bool(true);
+        assert!(serde_json::from_value::<UserDecryptionRequest>(json).is_err());
+        let mut json = serde_json::to_value(user_request()).unwrap();
+        json["payload"]["sneaky"] = serde_json::Value::Bool(true);
+        assert!(serde_json::from_value::<UserDecryptionRequest>(json).is_err());
+    }
+
+    #[test]
+    fn attestation_type_is_not_enforced_by_serde() {
+        // Deserialization accepts any string: the endpoint answers a dedicated error code for
+        // unsupported schemes, which requires a parsed body.
+        let mut request = user_request();
+        request.attestationType = "random_attestation_type".to_owned();
+        let json = serde_json::to_string(&request).unwrap();
+        let back: UserDecryptionRequest = serde_json::from_str(&json).unwrap();
+        assert_eq!(back.attestationType, "random_attestation_type");
     }
 
     #[test]
@@ -157,7 +287,13 @@ mod tests {
         let user = user_request();
         assert_eq!(user.id(), user.id());
         let mut other = user.clone();
-        other.requestValidity.durationSeconds += 1;
+        other.payload.requestValidity.durationSeconds += 1;
+        assert_ne!(user.id(), other.id());
+
+        // The discriminant is part of the id: the same payload and signature under another
+        // scheme is another request.
+        let mut other = user.clone();
+        other.attestationType = "random_attestation_type".to_owned();
         assert_ne!(user.id(), other.id());
     }
 }

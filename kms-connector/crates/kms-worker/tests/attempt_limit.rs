@@ -139,7 +139,7 @@ async fn test_request_processing(#[case] event_type: TestEventType) -> anyhow::R
         ProtocolEventKind::PublicDecryption(_)
         | ProtocolEventKind::UserDecryption(_)
         | ProtocolEventKind::UserDecryptionV2(_)
-        | ProtocolEventKind::UserDecryptionV3(_) => {
+        | ProtocolEventKind::SolanaUserDecryptionV1(_) => {
             while check_no_uncompleted_request_in_db(test_instance.db(), event_type)
                 .await
                 .is_err()
@@ -175,7 +175,9 @@ fn prepare_mocks(req: &ProtocolEventKind) -> MockSet {
         ProtocolEventKind::PublicDecryption(_) => ("PublicDecrypt", "GetPublicDecryptionResult"),
         ProtocolEventKind::UserDecryption(_)
         | ProtocolEventKind::UserDecryptionV2(_)
-        | ProtocolEventKind::UserDecryptionV3(_) => ("UserDecrypt", "GetUserDecryptionResult"),
+        | ProtocolEventKind::SolanaUserDecryptionV1(_) => {
+            ("UserDecrypt", "GetUserDecryptionResult")
+        }
         ProtocolEventKind::PrepKeygen(_) => ("KeyGenPreproc", "GetKeyGenPreprocResult"),
         ProtocolEventKind::Keygen(_) => ("KeyGen", "GetKeyGenResult"),
         ProtocolEventKind::Crsgen(_) => ("CrsGen", "GetCrsGenResult"),

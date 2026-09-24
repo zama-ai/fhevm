@@ -20,33 +20,20 @@
 mod solana_support;
 
 use kms_worker::core::solana::{
-    failure::{AuthorizationFailure, FailureClass},
+    failure::AuthorizationFailure,
     pipeline::{AuthorizationContext, authorize_request},
     snapshot::{SYSTEM_PROGRAM_ID, SnapshotAccount, SnapshotKeys},
     watermark::{
-        WatermarkFailure, WindowFailure, check_not_invalidated, check_window,
-        permit_invalidation_address, read_watermark,
+        WatermarkFailure, WindowFailure, check_not_invalidated, check_window, read_watermark,
     },
 };
 use solana_support::*;
 
 /// Reads the watermark of `user` out of a world.
 fn watermark_in(world: &World, user: [u8; 32]) -> Result<u64, WatermarkFailure> {
-    let (key, _) = permit_invalidation_address(PROGRAM_ID, user);
-    let snapshot = world
-        .read(&SnapshotKeys::new([key]))
-        .expect("the world reads");
+    let (key, _) = invalidation_address(user);
+    let snapshot = world.read(&SnapshotKeys::new([key]));
     read_watermark(&snapshot, PROGRAM_ID, user)
-}
-
-fn context_at<'a>(
-    deployment: &'a kms_worker::core::solana::deployment::DeploymentIdentity,
-    now: u64,
-) -> AuthorizationContext<'a> {
-    AuthorizationContext {
-        deployment,
-        now_unix_seconds: now,
-    }
 }
 
 // ---------------------------------------------------------------------------
@@ -97,10 +84,7 @@ fn an_expired_permit_is_terminal() {
 
     let failure = check_window(DEFAULT_START, DEFAULT_DURATION, now).expect_err("expired");
 
-    assert_eq!(
-        AuthorizationFailure::Window(failure).class(),
-        FailureClass::Terminal
-    );
+    assert!(!AuthorizationFailure::Window(failure).is_recoverable());
 }
 
 /// A permit whose window has not opened is rejected — without this rule the duration cap is
@@ -123,10 +107,7 @@ fn a_permit_whose_window_has_not_opened_is_transient() {
         WindowFailure::NotYetValid { start_timestamp, now: n }
             if start_timestamp == DEFAULT_START && n == now
     ));
-    assert_eq!(
-        AuthorizationFailure::Window(failure).class(),
-        FailureClass::Transient
-    );
+    assert!(AuthorizationFailure::Window(failure).is_recoverable());
 }
 
 // ---------------------------------------------------------------------------
@@ -153,7 +134,7 @@ fn an_absent_invalidation_record_reads_as_zero() {
 #[test]
 fn a_prefunded_invalidation_address_reads_as_zero() {
     let user = Wallet::new(1).pubkey();
-    let (key, _) = permit_invalidation_address(PROGRAM_ID, user);
+    let (key, _) = invalidation_address(user);
     let world = World::running_at_slot(1).with_account(key, prefunded_account());
 
     let watermark = watermark_in(&world, user).expect("a pre-funded address is a zero");
@@ -166,7 +147,7 @@ fn a_prefunded_invalidation_address_reads_as_zero() {
 #[test]
 fn a_system_owned_invalidation_account_carrying_data_is_rejected() {
     let user = Wallet::new(1).pubkey();
-    let (key, _) = permit_invalidation_address(PROGRAM_ID, user);
+    let (key, _) = invalidation_address(user);
     let mut impostor = invalidation_account(user, DEFAULT_START + 5);
     impostor.owner = SYSTEM_PROGRAM_ID;
     let world = World::running_at_slot(1).with_account(key, impostor);
@@ -203,9 +184,8 @@ fn a_permit_starting_below_the_watermark_is_dead() {
             watermark
         } if start_timestamp == DEFAULT_START && watermark == DEFAULT_START + 1
     ));
-    assert_eq!(
-        AuthorizationFailure::Watermark(failure).class(),
-        FailureClass::Terminal,
+    assert!(
+        !AuthorizationFailure::Watermark(failure).is_recoverable(),
         "no later observation resurrects it"
     );
 }
@@ -226,7 +206,7 @@ fn a_permit_signed_at_or_after_the_revocation_is_unaffected() {
 fn an_invalidation_record_naming_another_user_is_rejected() {
     let user = Wallet::new(1).pubkey();
     let other = Wallet::new(2).pubkey();
-    let (key, _) = permit_invalidation_address(PROGRAM_ID, user);
+    let (key, _) = invalidation_address(user);
     // A record for another user, placed at this user's address.
     let world =
         World::running_at_slot(1).with_account(key, invalidation_account(other, DEFAULT_START));
@@ -244,7 +224,7 @@ fn an_invalidation_record_naming_another_user_is_rejected() {
 #[test]
 fn an_account_that_is_not_an_invalidation_record_is_rejected() {
     let user = Wallet::new(1).pubkey();
-    let (key, _) = permit_invalidation_address(PROGRAM_ID, user);
+    let (key, _) = invalidation_address(user);
     let encrypted_store = EncryptedStoreFixture::allowing(handle(0x10, FHE_TYPE_UINT64), user);
     let world = World::running_at_slot(1).with_account(key, encrypted_store.account());
 
@@ -261,7 +241,7 @@ fn an_account_that_is_not_an_invalidation_record_is_rejected() {
 #[test]
 fn an_invalidation_record_owned_by_another_program_is_rejected() {
     let user = Wallet::new(1).pubkey();
-    let (key, _) = permit_invalidation_address(PROGRAM_ID, user);
+    let (key, _) = invalidation_address(user);
     let mut impostor = invalidation_account(user, DEFAULT_START + 5);
     impostor.owner = [0xee; 32];
     let world = World::running_at_slot(1).with_account(key, impostor);
@@ -278,7 +258,7 @@ fn an_invalidation_record_owned_by_another_program_is_rejected() {
 #[test]
 fn an_invalidation_record_storing_a_non_canonical_bump_is_rejected() {
     let user = Wallet::new(1).pubkey();
-    let (key, canonical_bump) = permit_invalidation_address(PROGRAM_ID, user);
+    let (key, canonical_bump) = invalidation_address(user);
     let mut wrong_bump = invalidation_account(user, DEFAULT_START);
     let last = wrong_bump.data.len() - 1;
     assert_eq!(
@@ -300,7 +280,7 @@ fn an_invalidation_record_storing_a_non_canonical_bump_is_rejected() {
 #[test]
 fn a_truncated_invalidation_record_is_rejected() {
     let user = Wallet::new(1).pubkey();
-    let (key, _) = permit_invalidation_address(PROGRAM_ID, user);
+    let (key, _) = invalidation_address(user);
     let full = invalidation_account(user, DEFAULT_START);
     let truncated = SnapshotAccount {
         owner: PROGRAM_ID,
@@ -309,21 +289,6 @@ fn a_truncated_invalidation_record_is_rejected() {
     let world = World::running_at_slot(1).with_account(key, truncated);
 
     assert!(watermark_in(&world, user).is_err());
-}
-
-/// The eight bytes this Connector looks for, pinned twice: as the literal a foreign
-/// implementation can be compared against, and as the preimage it comes from.
-///
-/// The host program pins the same pair on its side. Neither side computes it through the other's
-/// framework, which is the point — a rename or a derivation change has to fail in both places
-/// rather than move them together.
-#[test]
-fn the_invalidation_record_discriminator_is_the_hash_of_the_account_name() {
-    assert_eq!(
-        PERMIT_INVALIDATION_DISCRIMINATOR,
-        permit_invalidation_discriminator(),
-        "the literal and its preimage have diverged"
-    );
 }
 
 // ---------------------------------------------------------------------------
@@ -351,17 +316,10 @@ async fn the_watermark_is_keyed_by_the_signer_not_the_handle_owner() {
         .with_delegation(&delegation);
     let proofs = ScriptedProofReader::constant(world.record());
     let reader = ScriptedReader::constant(world);
-    let deployment = deployment();
 
-    authorize_request(
-        &reader,
-        &ServableKmsPair,
-        &proofs,
-        context_at(&deployment, NOW_INSIDE_WINDOW),
-        &request,
-    )
-    .await
-    .expect("the delegator's revocation does not reach the delegate's permit");
+    authorize_request(&reader, &proofs, context_at(NOW_INSIDE_WINDOW), &request)
+        .await
+        .expect("the delegator's revocation does not reach the delegate's permit");
 }
 
 /// The signer's own revocation does stop the request, delegated or not.
@@ -381,17 +339,10 @@ async fn a_revocation_by_the_signer_stops_a_delegated_request() {
         .with_delegation(&delegation);
     let proofs = ScriptedProofReader::constant(world.record());
     let reader = ScriptedReader::constant(world);
-    let deployment = deployment();
 
-    let failure = authorize_request(
-        &reader,
-        &ServableKmsPair,
-        &proofs,
-        context_at(&deployment, NOW_INSIDE_WINDOW),
-        &request,
-    )
-    .await
-    .expect_err("the signer's own revocation kills their permit");
+    let failure = authorize_request(&reader, &proofs, context_at(NOW_INSIDE_WINDOW), &request)
+        .await
+        .expect_err("the signer's own revocation kills their permit");
 
     assert!(matches!(
         failure,
@@ -411,23 +362,16 @@ async fn a_prefunded_invalidation_address_does_not_deny_service() {
     let request = RequestBuilder::new(&wallet)
         .direct(&encrypted_store, live)
         .typed();
-    let (key, _) = permit_invalidation_address(PROGRAM_ID, wallet.pubkey());
+    let (key, _) = invalidation_address(wallet.pubkey());
     let world = World::running_at_slot(100)
         .with_encrypted_store(&encrypted_store)
         .with_account(key, prefunded_account());
     let proofs = ScriptedProofReader::constant(world.record());
     let reader = ScriptedReader::constant(world);
-    let deployment = deployment();
 
-    authorize_request(
-        &reader,
-        &ServableKmsPair,
-        &proofs,
-        context_at(&deployment, NOW_INSIDE_WINDOW),
-        &request,
-    )
-    .await
-    .expect("a donated lamport is not a revocation");
+    authorize_request(&reader, &proofs, context_at(NOW_INSIDE_WINDOW), &request)
+        .await
+        .expect("a donated lamport is not a revocation");
 }
 
 /// The window is evaluated against the time handed to authorization, so a permit that expired
@@ -446,13 +390,11 @@ async fn a_permit_that_expired_before_processing_is_refused() {
         .with_watermark(wallet.pubkey(), 0);
     let proofs = ScriptedProofReader::constant(world.record());
     let reader = ScriptedReader::constant(world);
-    let deployment = deployment();
 
     let failure = authorize_request(
         &reader,
-        &ServableKmsPair,
         &proofs,
-        context_at(&deployment, DEFAULT_START + DEFAULT_DURATION + 1),
+        context_at(DEFAULT_START + DEFAULT_DURATION + 1),
         &request,
     )
     .await
@@ -467,4 +409,42 @@ async fn a_permit_that_expired_before_processing_is_refused() {
         0,
         "a permit outside its window costs no account read"
     );
+}
+
+/// A permit names the host program it is valid on, as an EIP-712 permit names its verifying
+/// contract. A permit signed for another program is refused without reading this one's state.
+#[tokio::test]
+async fn a_permit_for_another_host_program_is_refused_before_any_read() {
+    let wallet = Wallet::new(1);
+    let live = handle(0x23, FHE_TYPE_UINT64);
+    let encrypted_store = EncryptedStoreFixture::allowing(live, wallet.pubkey());
+    let request = RequestBuilder::new(&wallet)
+        .direct(&encrypted_store, live)
+        .typed();
+    let world = World::running_at_slot(100).with_encrypted_store(&encrypted_store);
+    let proofs = ScriptedProofReader::constant(world.record());
+    let reader = ScriptedReader::constant(world);
+    let other_program = [8; 32];
+
+    let failure = authorize_request(
+        &reader,
+        &proofs,
+        AuthorizationContext {
+            program_id: other_program,
+            ..CONTEXT
+        },
+        &request,
+    )
+    .await
+    .expect_err("a permit for another program authorizes nothing here");
+
+    assert_eq!(
+        failure,
+        AuthorizationFailure::ProgramIdMismatch {
+            signed: PROGRAM_ID,
+            own: other_program,
+        }
+    );
+    assert!(!failure.is_recoverable());
+    assert_eq!(reader.call_count(), 0);
 }

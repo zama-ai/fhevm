@@ -107,7 +107,7 @@ pub fn register_event_latency(event: &ProtocolEvent) {
         ProtocolEventKind::PublicDecryption(_)
             | ProtocolEventKind::UserDecryption(_)
             | ProtocolEventKind::UserDecryptionV2(_)
-            | ProtocolEventKind::UserDecryptionV3(_)
+            | ProtocolEventKind::SolanaUserDecryptionV1(_)
     ) {
         let elapsed = Utc::now() - event.created_at;
         DECRYPTION_LATENCY_HISTOGRAM
@@ -119,27 +119,17 @@ pub fn register_event_latency(event: &ProtocolEvent) {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use alloy::primitives::{Bytes, U256};
+    use alloy::primitives::U256;
     use connector_utils::monitoring::otlp::PropagationContext;
-    use fhevm_gateway_bindings::decryption::{
-        Decryption::UserDecryptionRequest_4 as UserDecryptionRequestV3,
-        IDecryption::RequestValiditySeconds,
-    };
-
     #[test]
-    fn records_solana_request_v3_latency() {
+    fn records_solana_user_decryption_latency() {
         let event = ProtocolEvent::new(
-            ProtocolEventKind::UserDecryptionV3(UserDecryptionRequestV3 {
-                decryptionId: U256::ZERO,
-                ctHandles: Vec::new(),
-                requestValidity: RequestValiditySeconds {
-                    startTimestamp: U256::ZERO,
-                    durationSeconds: U256::ZERO,
-                },
-                publicKey: Bytes::new(),
-                extraData: Bytes::new(),
-                solanaRequest: Bytes::new(),
-            }),
+            ProtocolEventKind::SolanaUserDecryptionV1(
+                connector_utils::tests::rand::solana_user_decryption_request(
+                    U256::ZERO,
+                    [0; 32].into(),
+                ),
+            ),
             None,
             PropagationContext::default(),
             connector_utils::types::db::RequestSource::OnChain,

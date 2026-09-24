@@ -14,33 +14,36 @@
 //! a test per value is the only way to know all of them are in the preimage.
 //!
 //! The record's answer is classified only once it carries no proof, and the classification is the
-//! second half of this file: a record with the chain's history and no leaf is terminal; a record
-//! behind the chain, a record that does not know the account yet, and a proof from a record ahead
-//! of this observation are disagreements to retry; a record whose history has a gap is terminal.
+//! second half of this file: a record with the observed history and no leaf is an ACL denial to
+//! retry; a record behind the chain, a record that does not know the account yet, and a proof from
+//! a record ahead of this observation are disagreements to retry; a record whose history has a gap
+//! is terminal.
 //! Two accepts carry as much weight as the rejections: a proof from a record behind the chain still
 //! verifies when the append that followed left its peak alone, and it must be taken.
 
 mod solana_support;
 
 use kms_worker::core::solana::{
+    SolanaPubkeyBytes,
     encrypted_store::{ResolvedEncryptedStore, resolve_encrypted_store},
-    failure::{AuthorizationFailure, FailureClass},
-    handle_binding::{HandleBindingFailure, check_handle_binding, check_public_binding},
-    pipeline::{AuthorizationContext, authorize_request},
-    proof::{LeafKind, LeafProofOutcome, LeafQuery},
+    failure::AuthorizationFailure,
+    handle_binding::{HandleBindingFailure, check_handle_binding, verify_proofs_with_one_retry},
+    pipeline::authorize_request,
+    proof::{
+        HostProofReader, LeafKind, LeafProofOutcome, LeafQuery, ProofReadError, ProofResponses,
+    },
     snapshot::SnapshotKeys,
 };
-use kms_worker::core::solana_acl::SolanaPubkeyBytes;
+use rstest::rstest;
 use solana_support::*;
+use std::{collections::VecDeque, sync::Mutex};
 use zama_solana_acl::{historical_access_leaf_commitment, public_decrypt_leaf_commitment};
 
 /// Resolves an encrypted store the way the pipeline does, so the binding rules are
 /// exercised against a validated account rather than a hand-made value.
 fn resolved(encrypted_store: &EncryptedStoreFixture) -> ResolvedEncryptedStore {
     let world = World::running_at_slot(1).with_encrypted_store(encrypted_store);
-    let snapshot = world
-        .read(&SnapshotKeys::new([encrypted_store.account_key]))
-        .expect("the world reads");
+    let snapshot = world.read(&SnapshotKeys::new([encrypted_store.account_key]));
     resolve_encrypted_store(&snapshot, PROGRAM_ID, encrypted_store.account_key)
         .expect("the fixture encrypted store resolves")
 }
@@ -52,15 +55,6 @@ fn answer(
     key: SolanaPubkeyBytes,
 ) -> LeafProofOutcome {
     encrypted_store.outcome(&encrypted_store.allowed_query(handle, key))
-}
-
-fn context<'a>(
-    deployment: &'a kms_worker::core::solana::deployment::DeploymentIdentity,
-) -> AuthorizationContext<'a> {
-    AuthorizationContext {
-        deployment,
-        now_unix_seconds: NOW_INSIDE_WINDOW,
-    }
 }
 
 // ---------------------------------------------------------------------------
@@ -129,14 +123,6 @@ fn a_leaf_on_one_handle_does_not_bind_another() {
             live_leaf_count: 1
         }
     ));
-    assert_eq!(
-        AuthorizationFailure::HandleBinding {
-            index: 0,
-            source: failure
-        }
-        .class(),
-        FailureClass::Terminal
-    );
 }
 
 /// Several keys allowed on one handle each hold their own leaf, and each is proven on its own.
@@ -196,13 +182,12 @@ fn assert_does_not_verify(verdict: Result<(), HandleBindingFailure>) {
         matches!(failure, HandleBindingFailure::ProofDoesNotVerify { .. }),
         "expected a proof that does not verify, got {failure}"
     );
-    assert_eq!(
+    assert!(
         AuthorizationFailure::HandleBinding {
             index: 0,
             source: failure
         }
-        .class(),
-        FailureClass::Retryable
+        .is_recoverable()
     );
 }
 
@@ -247,41 +232,6 @@ fn a_public_decrypt_leaf_does_not_bind_a_key() {
     }));
 }
 
-/// The mirror: an allow leaf does not make a handle public.
-#[test]
-fn an_allow_leaf_does_not_prove_public_ness() {
-    let key = Wallet::new(1).pubkey();
-    let live = handle(0x21, FHE_TYPE_UINT64);
-    let encrypted_store = EncryptedStoreFixture::allowing(live, key);
-
-    let failure = check_public_binding(
-        &resolved(&encrypted_store),
-        live,
-        &answer(&encrypted_store, live, key),
-    )
-    .expect_err("an allow leaf is not a public leaf");
-
-    assert!(matches!(
-        failure,
-        HandleBindingFailure::ProofDoesNotVerify { .. }
-    ));
-}
-
-/// And a public leaf the record serves does prove public-ness.
-#[test]
-fn a_public_decrypt_leaf_the_record_serves_proves_public_ness() {
-    let live = handle(0x22, FHE_TYPE_UINT64);
-    let mut encrypted_store = EncryptedStoreFixture::new(live);
-    encrypted_store.mark_public();
-
-    check_public_binding(
-        &resolved(&encrypted_store),
-        live,
-        &encrypted_store.outcome(&encrypted_store.public_query(live)),
-    )
-    .expect("a public leaf proven against the peaks makes the handle public");
-}
-
 /// A sibling path with one hash altered does not reach the peak. The record supplies the path
 /// and the chain decides.
 #[test]
@@ -317,10 +267,11 @@ fn a_tampered_sibling_path_does_not_verify() {
 // The record's answer when it carries no proof
 // ---------------------------------------------------------------------------
 
-/// A record that has sealed at least as much history as the chain shows and has no leaf: the
-/// permission was never granted, and repeating the request changes nothing.
+/// A record that has sealed at least the observed history and has no leaf: nothing grants the key
+/// yet. The node this connector reads can be behind the grant the user saw, so the request is
+/// retried within the attempt budget, as an EVM ACL denial is.
 #[test]
-fn no_leaf_in_a_record_with_the_chains_history_is_terminal() {
+fn no_leaf_in_a_record_with_the_observed_history_is_retried() {
     let key = Wallet::new(1).pubkey();
     let live = handle(0x30, FHE_TYPE_UINT64);
     let encrypted_store = EncryptedStoreFixture::allowing(live, Wallet::new(9).pubkey());
@@ -340,21 +291,19 @@ fn no_leaf_in_a_record_with_the_chains_history_is_terminal() {
             live_leaf_count: 1
         }
     ));
-    assert_eq!(
+    assert!(
         AuthorizationFailure::HandleBinding {
             index: 0,
             source: failure
         }
-        .class(),
-        FailureClass::Terminal
+        .is_recoverable()
     );
 }
 
 /// A record ahead of the chain — more history sealed than this observation shows — and still no
-/// leaf is the same terminal answer: whatever the chain adds next, the record has already seen
-/// past it.
+/// leaf is a missing leaf, not a record to wait for.
 #[test]
-fn no_leaf_in_a_record_ahead_of_the_chain_is_terminal() {
+fn no_leaf_in_a_record_ahead_of_the_chain_is_a_missing_leaf() {
     let key = Wallet::new(1).pubkey();
     let live = handle(0x31, FHE_TYPE_UINT64);
     let encrypted_store = EncryptedStoreFixture::allowing(live, Wallet::new(9).pubkey());
@@ -393,13 +342,12 @@ fn no_leaf_in_a_record_behind_the_chain_is_retryable() {
             live_leaf_count: 1
         }
     ));
-    assert_eq!(
+    assert!(
         AuthorizationFailure::HandleBinding {
             index: 0,
             source: failure
         }
-        .class(),
-        FailureClass::Retryable
+        .is_recoverable()
     );
 }
 
@@ -423,13 +371,12 @@ fn an_account_unknown_to_the_record_is_retryable() {
         failure,
         HandleBindingFailure::AccountUnknownToProofRecord
     ));
-    assert_eq!(
+    assert!(
         AuthorizationFailure::HandleBinding {
             index: 0,
             source: failure
         }
-        .class(),
-        FailureClass::Retryable
+        .is_recoverable()
     );
 }
 
@@ -450,13 +397,12 @@ fn an_incomplete_history_is_terminal() {
     .expect_err("a broken record proves nothing");
 
     assert!(matches!(failure, HandleBindingFailure::HistoryIncomplete));
-    assert_eq!(
-        AuthorizationFailure::HandleBinding {
+    assert!(
+        !AuthorizationFailure::HandleBinding {
             index: 0,
             source: failure
         }
-        .class(),
-        FailureClass::Terminal
+        .is_recoverable()
     );
 }
 
@@ -508,13 +454,12 @@ fn a_proof_whose_peak_was_merged_does_not_verify_and_is_retryable() {
             live_leaf_count: 2
         }
     ));
-    assert_eq!(
+    assert!(
         AuthorizationFailure::HandleBinding {
             index: 0,
             source: failure
         }
-        .class(),
-        FailureClass::Retryable
+        .is_recoverable()
     );
 }
 
@@ -538,43 +483,12 @@ fn a_leaf_position_the_account_does_not_have_is_retryable() {
             leaf_count: 0
         }
     ));
-    assert_eq!(
+    assert!(
         AuthorizationFailure::HandleBinding {
             index: 0,
             source: failure
         }
-        .class(),
-        FailureClass::Retryable
-    );
-}
-
-/// An account whose peak count does not match its leaf count is the host program's own
-/// inconsistency. No proof can match it, and none is tried.
-#[test]
-fn resolver_rejects_inconsistent_mmr_state_as_terminal() {
-    let key = Wallet::new(1).pubkey();
-    let live = handle(0x43, FHE_TYPE_UINT64);
-    let mut encrypted_store = EncryptedStoreFixture::allowing(live, key);
-    encrypted_store.encrypted_store.peaks.push([0; 32]);
-
-    let world = World::running_at_slot(1).with_encrypted_store(&encrypted_store);
-    let snapshot = world
-        .read(&SnapshotKeys::new([encrypted_store.account_key]))
-        .expect("the world reads");
-    let failure = resolve_encrypted_store(&snapshot, PROGRAM_ID, encrypted_store.account_key)
-        .expect_err("two peaks for one leaf is not a valid state");
-
-    assert!(matches!(
-        failure,
-        kms_worker::core::solana::encrypted_store::EncryptedStoreFailure::Malformed { .. }
-    ));
-    assert_eq!(
-        AuthorizationFailure::EncryptedStore {
-            index: 0,
-            source: failure
-        }
-        .class(),
-        FailureClass::Terminal
+        .is_recoverable()
     );
 }
 
@@ -598,17 +512,10 @@ async fn the_pipeline_asks_the_record_for_the_leaf_the_entry_claims() {
         .with_watermark(wallet.pubkey(), 0);
     let proofs = ScriptedProofReader::constant(world.record());
     let reader = ScriptedReader::constant(world);
-    let deployment = deployment();
 
-    authorize_request(
-        &reader,
-        &ServableKmsPair,
-        &proofs,
-        context(&deployment),
-        &request,
-    )
-    .await
-    .expect("the signer's own leaf authorizes");
+    authorize_request(&reader, &proofs, CONTEXT, &request)
+        .await
+        .expect("the signer's own leaf authorizes");
 
     assert_eq!(
         proofs.calls(),
@@ -622,10 +529,9 @@ async fn the_pipeline_asks_the_record_for_the_leaf_the_entry_claims() {
     );
 }
 
-/// One batch for the request, one query per distinct leaf: two entries naming the same leaf cost
-/// one query, and two entries on two accounts cost two, in request order.
+/// One batch for the request, one query per entry in request order, so each result is its entry's.
 #[tokio::test]
-async fn the_pipeline_reads_one_batch_with_one_query_per_distinct_leaf() {
+async fn the_pipeline_reads_one_batch_with_one_query_per_entry() {
     let wallet = Wallet::new(1);
     let first = handle(0x51, FHE_TYPE_UINT64);
     let second = handle(0x52, FHE_TYPE_UINT64);
@@ -646,23 +552,11 @@ async fn the_pipeline_reads_one_batch_with_one_query_per_distinct_leaf() {
         .with_watermark(wallet.pubkey(), 0);
     let proofs = ScriptedProofReader::constant(world.record());
     let reader = ScriptedReader::constant(world);
-    let deployment = deployment();
 
-    let authorized = authorize_request(
-        &reader,
-        &ServableKmsPair,
-        &proofs,
-        context(&deployment),
-        &request,
-    )
-    .await
-    .expect("every entry holds a leaf");
+    authorize_request(&reader, &proofs, CONTEXT, &request)
+        .await
+        .expect("every entry holds a leaf");
 
-    assert_eq!(
-        authorized.entries().len(),
-        3,
-        "the entry set is the request's"
-    );
     let calls = proofs.calls();
     assert_eq!(calls.len(), 1, "one batch");
     assert_eq!(
@@ -670,8 +564,8 @@ async fn the_pipeline_reads_one_batch_with_one_query_per_distinct_leaf() {
         vec![
             first_account.allowed_query(first, wallet.pubkey()),
             second_account.allowed_query(second, wallet.pubkey()),
-        ],
-        "distinct leaves in first-seen order, the repeat collapsed"
+            first_account.allowed_query(first, wallet.pubkey()),
+        ]
     );
 }
 
@@ -689,20 +583,13 @@ async fn an_unreachable_record_rejects_transiently() {
         .with_encrypted_store(&encrypted_store)
         .with_watermark(wallet.pubkey(), 0);
     let reader = ScriptedReader::constant(world);
-    let deployment = deployment();
 
-    let failure = authorize_request(
-        &reader,
-        &ServableKmsPair,
-        &UnavailableProofReader,
-        context(&deployment),
-        &request,
-    )
-    .await
-    .expect_err("no record, no verdict");
+    let failure = authorize_request(&reader, &UnavailableProofReader, CONTEXT, &request)
+        .await
+        .expect_err("no record, no verdict");
 
     assert!(matches!(failure, AuthorizationFailure::ProofRead(_)));
-    assert_eq!(failure.class(), FailureClass::Transient);
+    assert!(failure.is_recoverable());
 }
 
 /// In a batch, the failure names the entry whose leaf is missing — in request coordinates.
@@ -722,17 +609,10 @@ async fn a_batch_failure_names_the_entry_without_a_leaf() {
         .with_watermark(wallet.pubkey(), 0);
     let proofs = ScriptedProofReader::constant(world.record());
     let reader = ScriptedReader::constant(world);
-    let deployment = deployment();
 
-    let failure = authorize_request(
-        &reader,
-        &ServableKmsPair,
-        &proofs,
-        context(&deployment),
-        &request,
-    )
-    .await
-    .expect_err("the second entry was never allowed");
+    let failure = authorize_request(&reader, &proofs, CONTEXT, &request)
+        .await
+        .expect_err("the second entry was never allowed");
 
     assert!(
         matches!(
@@ -781,44 +661,47 @@ async fn valid_older_proof_does_not_trigger_a_refresh() {
         .with_encrypted_store(&after)
         .with_watermark(wallet.pubkey(), 0);
     let proofs = ScriptedProofReader::scripted(vec![ProofRecord::of(&[&before])]);
-    authorize_request(
-        &ScriptedReader::constant(world),
-        &ServableKmsPair,
-        &proofs,
-        context(&deployment()),
-        &request,
-    )
-    .await
-    .expect("surviving peak needs no refresh");
+    authorize_request(&ScriptedReader::constant(world), &proofs, CONTEXT, &request)
+        .await
+        .expect("surviving peak needs no refresh");
     assert_eq!(proofs.call_count(), 1);
+}
+
+/// Scripted answers from every peer at once: one reply per read, each holding every peer's
+/// candidates per query.
+struct ScriptedPeers {
+    replies: Mutex<VecDeque<Result<Vec<Vec<LeafProofOutcome>>, ProofReadError>>>,
+    calls: Mutex<Vec<Vec<LeafQuery>>>,
+}
+
+impl ScriptedPeers {
+    fn new(
+        replies: impl IntoIterator<Item = Result<Vec<Vec<LeafProofOutcome>>, ProofReadError>>,
+    ) -> Self {
+        Self {
+            replies: Mutex::new(replies.into_iter().collect()),
+            calls: Mutex::new(Vec::new()),
+        }
+    }
+}
+
+impl HostProofReader for ScriptedPeers {
+    async fn read_proofs(&self, queries: &[LeafQuery]) -> Result<ProofResponses, ProofReadError> {
+        self.calls.lock().unwrap().push(queries.to_vec());
+        self.replies
+            .lock()
+            .unwrap()
+            .pop_front()
+            .expect("no extra reads")
+            .map(|candidates| ProofResponses {
+                candidates,
+                unavailable: None,
+            })
+    }
 }
 
 #[tokio::test]
 async fn peer_candidates_and_failed_refreshes_preserve_valid_bindings() {
-    use kms_worker::core::solana::{
-        handle_binding::verify_proofs_with_one_retry,
-        proof::{HostProofReader, ProofBatch, ProofReadError},
-    };
-    use std::{collections::VecDeque, sync::Mutex};
-
-    struct Reader {
-        replies: Mutex<VecDeque<Result<Vec<Vec<LeafProofOutcome>>, ProofReadError>>>,
-        calls: Mutex<Vec<Vec<LeafQuery>>>,
-    }
-    impl HostProofReader for Reader {
-        async fn read_proofs(
-            &self,
-            queries: &[LeafQuery],
-        ) -> Result<Vec<Vec<LeafProofOutcome>>, ProofReadError> {
-            self.calls.lock().unwrap().push(queries.to_vec());
-            self.replies
-                .lock()
-                .unwrap()
-                .pop_front()
-                .expect("no extra reads")
-        }
-    }
-
     let key = Wallet::new(1).pubkey();
     let sealed = handle(0x63, FHE_TYPE_UINT64);
     let mut fixture = EncryptedStoreFixture::allowing(sealed, key);
@@ -829,7 +712,7 @@ async fn peer_candidates_and_failed_refreshes_preserve_valid_bindings() {
         handle: handle(0x64, FHE_TYPE_UINT64),
         ..query
     };
-    let batch = ProofBatch::new([(query, query.handle), (missing, missing.handle)]);
+    let batch = [(query, query.handle), (missing, missing.handle)];
     let valid = answer(&fixture, sealed, key);
     let invalid = LeafProofOutcome::Found {
         leaf_index: 0,
@@ -847,13 +730,10 @@ async fn peer_candidates_and_failed_refreshes_preserve_valid_bindings() {
             vec![invalid.clone(), valid.clone()],
             vec![valid.clone(), invalid.clone()],
         ] {
-            let reader = Reader {
-                replies: Mutex::new(VecDeque::from([
-                    Ok(vec![candidates, vec![LeafProofOutcome::UnknownAccount]]),
-                    refresh.clone(),
-                ])),
-                calls: Mutex::new(Vec::new()),
-            };
+            let reader = ScriptedPeers::new([
+                Ok(vec![candidates, vec![LeafProofOutcome::UnknownAccount]]),
+                refresh.clone(),
+            ]);
             let results = verify_proofs_with_one_retry(&reader, &batch, |handle, outcome| {
                 check_handle_binding(&account, *handle, key, outcome)
             })
@@ -867,4 +747,112 @@ async fn peer_candidates_and_failed_refreshes_preserve_valid_bindings() {
             );
         }
     }
+}
+
+/// Peers that disagree are read again whichever answers first: one holds no leaf, the other a
+/// proof that does not verify.
+#[rstest]
+#[case::missing_leaf_first(false)]
+#[case::missing_leaf_last(true)]
+#[tokio::test]
+async fn peers_that_disagree_on_a_missing_leaf_are_read_again(#[case] missing_leaf_last: bool) {
+    let key = Wallet::new(1).pubkey();
+    let sealed = handle(0x65, FHE_TYPE_UINT64);
+    let fixture = EncryptedStoreFixture::allowing(sealed, key);
+    let account = resolved(&fixture);
+    let query = LeafQuery {
+        handle: handle(0x66, FHE_TYPE_UINT64),
+        ..fixture.allowed_query(sealed, key)
+    };
+    let mut candidates = vec![
+        fixture.outcome(&query),
+        LeafProofOutcome::Found {
+            leaf_index: 0,
+            leaf_count: 1,
+            siblings: vec![],
+        },
+    ];
+    if missing_leaf_last {
+        candidates.reverse();
+    }
+    let reader = ScriptedPeers::new([Ok(vec![candidates.clone()]), Ok(vec![candidates])]);
+
+    verify_proofs_with_one_retry(&reader, &[(query, ())], |(), outcome| {
+        check_handle_binding(&account, query.handle, key, outcome)
+    })
+    .await
+    .unwrap();
+
+    assert_eq!(reader.calls.lock().unwrap().len(), 2);
+}
+
+/// While a peer is down, a missing leaf at the others is reported as the outage: the peer that did
+/// not answer may hold the leaf.
+#[tokio::test]
+async fn an_unavailable_peer_reports_the_outage_not_a_missing_leaf() {
+    use kms_worker::core::solana::proof::CoprocessorProofClient;
+    use mocktail::{StatusCode, server::MockServer};
+    let key = Wallet::new(1).pubkey();
+    let sealed = handle(0x71, FHE_TYPE_UINT64);
+    let fixture = EncryptedStoreFixture::allowing(sealed, key);
+    let account = resolved(&fixture);
+    let query = fixture.allowed_query(sealed, key);
+    let batch = [(query, ())];
+    let mut absent = MockServer::new_http("no-leaf");
+    serve_proofs(
+        &mut absent,
+        &[(query, LeafProofOutcome::NotFound { leaf_count: 1 })],
+    );
+    absent.start().await.unwrap();
+    let mut unavailable = MockServer::new_http("unavailable-peer");
+    unavailable.mock(|when, then| {
+        when.post();
+        then.status(StatusCode::BAD_GATEWAY);
+    });
+    unavailable.start().await.unwrap();
+    let client = CoprocessorProofClient::new(
+        &[
+            absent.base_url().unwrap().clone(),
+            unavailable.base_url().unwrap().clone(),
+        ],
+        "secret".into(),
+        reqwest::Client::new(),
+    );
+    let error = verify_proofs_with_one_retry(&client, &batch, |(), proof| {
+        check_handle_binding(&account, sealed, key, proof)
+    })
+    .await
+    .unwrap_err();
+    assert!(matches!(error, ProofReadError::Unavailable { .. }));
+    assert!(error.to_string().contains("502"));
+
+    serve_proofs(&mut absent, &[(query, fixture.outcome(&query))]);
+    let results = verify_proofs_with_one_retry(&client, &batch, |(), proof| {
+        check_handle_binding(&account, sealed, key, proof)
+    })
+    .await
+    .unwrap();
+    assert_eq!(results, vec![Ok(())]);
+}
+
+/// A duplicate handle is legal, as on the EVM path, where the Gateway does not deduplicate: both
+/// occurrences of an authorized handle are authorized.
+#[tokio::test]
+async fn both_occurrences_of_a_duplicate_handle_are_authorized() {
+    let wallet = Wallet::new(1);
+    let repeated = handle(0x21, FHE_TYPE_UINT64);
+    let encrypted_store = EncryptedStoreFixture::allowing(repeated, wallet.pubkey());
+    let request = RequestBuilder::new(&wallet)
+        .direct(&encrypted_store, repeated)
+        .direct(&encrypted_store, repeated)
+        .typed();
+    let world = World::running_at_slot(100)
+        .with_encrypted_store(&encrypted_store)
+        .with_watermark(wallet.pubkey(), 0);
+    let proofs = ScriptedProofReader::constant(world.record());
+    let reader = ScriptedReader::constant(world);
+
+    authorize_request(&reader, &proofs, CONTEXT, &request)
+        .await
+        .expect("a duplicate of an authorized handle is authorized");
 }

@@ -93,7 +93,10 @@ serde_json = { version = "=1.0.145", default-features = false, features = [
 ] }
 sha2 = { version = "=0.11.0", default-features = false }
 sha3 = { version = "=0.10.8", default-features = false }
-solana-pubkey = { version = "=2.4.0", default-features = false, features = [
+solana-rpc-client = { version = "=3.1.14", default-features = false }
+solana-commitment-config = "=3.1.1"
+solana-account-decoder-client-types = "=3.1.14"
+solana-pubkey = { version = "=3.0.0", default-features = false, features = [
     "curve25519",
 ] }
 sqlx = { version = "=0.8.6", default-features = false, features = [
@@ -106,7 +109,7 @@ sqlx = { version = "=0.8.6", default-features = false, features = [
 ] }
 subtle = { version = "=2.6.1", default-features = false }
 thiserror = { version = "=2.0.18", default-features = false }
-tokio = { version = "=1.47.1", default-features = false, features = [
+tokio = { version = "=1.48.0", default-features = false, features = [
     "macros",
     "rt-multi-thread",
     "signal",
@@ -135,6 +138,7 @@ url = { version = "=2.5.8", default-features = false, features = ["serde"] }
 #                       Testing dependencies                        #
 #####################################################################
 mocktail = "=0.3.2"
+prost = { version = "=0.14.4", default-features = false }
 rand = "=0.9.2"
 rcgen = { version = "=0.14.10", default-features = false, features = [
     "aws_lc_rs",

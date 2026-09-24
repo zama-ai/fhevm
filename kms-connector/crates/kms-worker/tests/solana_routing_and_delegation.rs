@@ -24,36 +24,33 @@
 //! wildcard row — and the last section pins that rule from both sides: either row alone authorizes,
 //! neither vetoes the other, and revoking one leaves the other standing. That last property is the
 //! price of wildcard scope and is asserted deliberately, not tolerated.
+use connector_utils::types::solana_request::SolanaUserDecryptionRequestV1;
 
 mod solana_support;
 
 use kms_worker::core::solana::{
-    delegation::{AuthorizedRow, DelegationFailure, check_delegation, wildcard_delegation_address},
+    SolanaPubkeyBytes,
+    delegation::{AuthorizedRow, DelegationFailure, check_delegation},
     encrypted_store::EncryptedStoreFailure,
-    failure::{AuthorizationFailure, FailureClass},
+    failure::AuthorizationFailure,
     handle_binding::HandleBindingFailure,
-    pipeline::{AuthorizationContext, AuthorizedRequest, authorize_request},
-    request::SolanaUserDecryptRequest,
-    snapshot::{SnapshotAccount, SnapshotError, SnapshotKeys},
+    pipeline::authorize_request,
+    snapshot::{SnapshotAccount, SnapshotKeys},
 };
-use kms_worker::core::solana_acl::{SolanaPubkeyBytes, WILDCARD_AUTHORITY};
 use solana_support::*;
+use zama_solana_acl::WILDCARD_AUTHORITY;
 
 const OBSERVED_SLOT: u64 = 500;
 
 /// Authorizes a request against a world, returning the outcome and how many reads it cost.
 async fn authorize_in(
     world: World,
-    request: &SolanaUserDecryptRequest,
-) -> (Result<AuthorizedRequest, AuthorizationFailure>, usize) {
+    request: &SolanaUserDecryptionRequestV1,
+) -> (Result<(), AuthorizationFailure>, usize) {
     let proofs = ScriptedProofReader::constant(world.record());
     let reader = ScriptedReader::constant(world);
-    let deployment = deployment();
-    let context = AuthorizationContext {
-        deployment: &deployment,
-        now_unix_seconds: NOW_INSIDE_WINDOW,
-    };
-    let outcome = authorize_request(&reader, &ServableKmsPair, &proofs, context, request).await;
+    let context = CONTEXT;
+    let outcome = authorize_request(&reader, &proofs, context, request).await;
     (outcome, reader.call_count())
 }
 
@@ -82,8 +79,7 @@ async fn a_direct_entry_authorizes_as_the_signer() {
     let (outcome, reads) =
         authorize_in(world_with(&encrypted_store, signer.pubkey()), &request).await;
 
-    let authorized = outcome.expect("the signer holds the allow leaf on the handle");
-    assert_eq!(authorized.entries()[0].allowed_key, signer.pubkey());
+    outcome.expect("the signer holds the allow leaf on the handle");
     assert_eq!(reads, 1, "a direct entry needs no delegation record");
 }
 
@@ -107,12 +103,7 @@ async fn a_delegated_entry_authorizes_as_the_delegator() {
     )
     .await;
 
-    let authorized = outcome.expect("a live delegation lets the signer use the delegator's access");
-    assert_eq!(
-        authorized.entries()[0].allowed_key,
-        delegator.pubkey(),
-        "the allowed key of a delegated entry is the delegator, not the delegate"
-    );
+    outcome.expect("a live delegation lets the signer use the delegator's access");
     assert_eq!(reads, 2);
 }
 
@@ -196,17 +187,7 @@ async fn a_batch_mixes_a_direct_entry_and_two_delegators() {
 
     let (outcome, reads) = authorize_in(world, &request).await;
 
-    let authorized = outcome.expect("a mixed batch is an ordinary request");
-    let allowed_keys: Vec<SolanaPubkeyBytes> =
-        authorized.entries().iter().map(|e| e.allowed_key).collect();
-    assert_eq!(
-        allowed_keys,
-        vec![
-            signer.pubkey(),
-            first_delegator.pubkey(),
-            second_delegator.pubkey()
-        ]
-    );
+    outcome.expect("a mixed batch is an ordinary request");
     assert_eq!(
         reads, 2,
         "two delegators still cost one extra read, not two"
@@ -218,9 +199,7 @@ async fn a_batch_mixes_a_direct_entry_and_two_delegators() {
 // ---------------------------------------------------------------------------
 
 /// A delegated scenario, parameterised by what the delegation record says.
-async fn authorize_delegated(
-    delegation: DelegationFixture,
-) -> Result<AuthorizedRequest, AuthorizationFailure> {
+async fn authorize_delegated(delegation: DelegationFixture) -> Result<(), AuthorizationFailure> {
     let signer = Wallet::new(1);
     let delegator = Wallet::new(2);
     let live = handle(0x30, FHE_TYPE_UINT64);
@@ -241,8 +220,7 @@ fn live_delegation() -> DelegationFixture {
     )
 }
 
-/// A revoked delegation stops the request immediately — while the signer's own permit is
-/// untouched, which is the whole point of having two independent levers.
+/// A revoked exact delegation denies this attempt; the missing wildcard may become visible later.
 #[tokio::test]
 async fn a_revoked_delegation_rejects_its_entry() {
     let mut revoked = live_delegation();
@@ -252,14 +230,13 @@ async fn a_revoked_delegation_rejects_its_entry() {
         .await
         .expect_err("a revoked delegation authorizes nothing");
 
-    assert!(matches!(
-        failure,
-        AuthorizationFailure::Delegation {
-            index: 0,
-            source: DelegationFailure::Revoked
-        }
-    ));
-    assert_eq!(failure.class(), FailureClass::Terminal);
+    assert!(failure.is_recoverable());
+    assert!(
+        matches!(&failure, AuthorizationFailure::Delegation { index: 0,
+        source: DelegationFailure::NoLiveGrant { exact, wildcard } }
+        if matches!(**exact, DelegationFailure::Revoked) && matches!(**wildcard, DelegationFailure::Absent { .. })),
+        "{failure}"
+    );
 }
 
 /// Expiry is measured against the observed slot, not against a local clock.
@@ -272,16 +249,13 @@ async fn a_delegation_expired_at_the_observation_rejects_its_entry() {
         .await
         .expect_err("an expired delegation authorizes nothing");
 
-    assert!(matches!(
-        failure,
-        AuthorizationFailure::Delegation {
-            index: 0,
-            source: DelegationFailure::Expired {
-                expiration_slot,
-                observed_slot
-            }
-        } if expiration_slot == OBSERVED_SLOT - 1 && observed_slot == OBSERVED_SLOT
-    ));
+    assert!(failure.is_recoverable());
+    assert!(
+        matches!(&failure, AuthorizationFailure::Delegation { index: 0,
+        source: DelegationFailure::NoLiveGrant { exact, wildcard } }
+        if matches!(**exact, DelegationFailure::Expired { expiration_slot, observed_slot } if expiration_slot == OBSERVED_SLOT-1 && observed_slot == OBSERVED_SLOT) && matches!(**wildcard, DelegationFailure::Absent { .. })),
+        "{failure}"
+    );
 }
 
 /// The expiration slot is inclusive: a delegation valid through slot N is valid at slot N.
@@ -320,7 +294,7 @@ async fn a_delegation_written_after_the_observation_rejects_its_entry() {
     // Transient, and pinned as such: a coherent node cannot return a record written after its own
     // context slot, so this names a bad observation rather than a dead grant. Terminal would let
     // one bad RPC response kill a valid request.
-    assert_eq!(failure.class(), FailureClass::Transient);
+    assert!(failure.is_recoverable());
 }
 
 /// A record written exactly at the observation is part of it.
@@ -341,7 +315,7 @@ async fn a_delegation_written_at_the_observation_is_live() {
 /// The same delegated scenario, parameterised by which rows the world holds.
 async fn authorize_delegated_with_rows(
     rows: &[DelegationFixture],
-) -> Result<AuthorizedRequest, AuthorizationFailure> {
+) -> Result<(), AuthorizationFailure> {
     let signer = Wallet::new(1);
     let delegator = Wallet::new(2);
     let live = handle(0x31, FHE_TYPE_UINT64);
@@ -370,15 +344,9 @@ fn live_wildcard() -> DelegationFixture {
 /// would.
 #[tokio::test]
 async fn a_wildcard_row_authorizes_a_encrypted_store_with_no_app_specific_row() {
-    let authorized = authorize_delegated_with_rows(&[live_wildcard()])
+    authorize_delegated_with_rows(&[live_wildcard()])
         .await
         .expect("a wildcard row covers every app of its delegator");
-
-    assert_eq!(
-        authorized.entries()[0].allowed_key,
-        Wallet::new(2).pubkey(),
-        "the wildcard row changes which record authorizes, not whose leaf is proven"
-    );
 }
 
 /// The authority-specific row is tried first, so a dead wildcard row beside it changes nothing.
@@ -452,13 +420,12 @@ async fn two_dead_rows_report_both_reasons() {
         }
         other => panic!("expected both reasons, got {other}"),
     }
-    assert_eq!(failure.class(), FailureClass::Terminal);
+    assert!(!failure.is_recoverable());
 }
 
-/// Holding no wildcard row is the ordinary case, and in it the authority-specific reason is reported as
-/// itself: the rule gained a second row, not a second sentence in every diagnostic.
+/// A revoked exact row cannot settle a wildcard grant that may not be visible yet.
 #[tokio::test]
-async fn without_a_wildcard_row_the_app_specific_reason_is_reported_alone() {
+async fn a_missing_wildcard_preserves_the_exact_reason_and_retryability() {
     let mut revoked = live_delegation();
     revoked.revoked = true;
 
@@ -466,13 +433,13 @@ async fn without_a_wildcard_row_the_app_specific_reason_is_reported_alone() {
         .await
         .expect_err("a revoked row authorizes nothing");
 
-    assert!(matches!(
-        failure,
-        AuthorizationFailure::Delegation {
-            index: 0,
-            source: DelegationFailure::Revoked
-        }
-    ));
+    assert!(failure.is_recoverable());
+    assert!(
+        matches!(&failure, AuthorizationFailure::Delegation { index: 0,
+        source: DelegationFailure::NoLiveGrant { exact, wildcard } }
+        if matches!(**exact, DelegationFailure::Revoked) && matches!(**wildcard, DelegationFailure::Absent { .. })),
+        "{failure}"
+    );
 }
 
 /// A wildcard row is per delegator: somebody else's covers nothing here, because its address is
@@ -502,7 +469,7 @@ async fn a_wildcard_row_of_another_delegator_authorizes_nothing() {
 /// wildcard address and no authority-specific row beside it.
 async fn authorize_with_wildcard_account(
     account: SnapshotAccount,
-) -> Result<AuthorizedRequest, AuthorizationFailure> {
+) -> Result<(), AuthorizationFailure> {
     let signer = Wallet::new(1);
     let delegator = Wallet::new(2);
     let live = handle(0x39, FHE_TYPE_UINT64);
@@ -643,14 +610,14 @@ async fn a_missing_delegation_rejects_its_entry() {
     // Transient, and pinned as such: this reader and the relayer read through their own RPCs and
     // can sit at different confirmed slots, so "not here" can mean "not here yet". Terminal would
     // fail a valid delegated request permanently over ordinary replica lag.
-    assert_eq!(failure.class(), FailureClass::Transient);
+    assert!(failure.is_recoverable());
 }
 
 /// The other side of the same rule: a revoked, expired or mismatched record stays terminal,
 /// because each describes what a read record says and no later observation changes that. Pinned
 /// together so a future edit to the transient arms cannot quietly take the rest with them.
 #[tokio::test]
-async fn delegation_outcomes_about_a_record_that_exists_stay_terminal() {
+async fn a_dead_exact_row_with_missing_wildcard_stays_retryable() {
     let signer = Wallet::new(1);
     let delegator = Wallet::new(2);
     let stranger = Wallet::new(9);
@@ -685,10 +652,9 @@ async fn delegation_outcomes_about_a_record_that_exists_stay_terminal() {
         )
         .await;
         let failure = outcome.expect_err("none of these authorize");
-        assert_eq!(
-            failure.class(),
-            FailureClass::Terminal,
-            "a {what} delegation must stay terminal"
+        assert!(
+            failure.is_recoverable(),
+            "a {what} exact row does not settle the missing wildcard"
         );
     }
 }
@@ -751,13 +717,13 @@ async fn a_delegation_record_naming_another_tuple_is_rejected() {
     .await;
 
     let failure = outcome.expect_err("a record must name the tuple it was read for");
-    assert!(matches!(
-        failure,
-        AuthorizationFailure::Delegation {
-            index: 0,
-            source: DelegationFailure::TupleMismatch { .. }
-        }
-    ));
+    assert!(failure.is_recoverable());
+    assert!(
+        matches!(&failure, AuthorizationFailure::Delegation { index: 0,
+        source: DelegationFailure::NoLiveGrant { exact, wildcard } }
+        if matches!(**exact, DelegationFailure::TupleMismatch { .. }) && matches!(**wildcard, DelegationFailure::Absent { .. })),
+        "{failure}"
+    );
 }
 
 /// The delegate half of the same rule: a record at the canonical address naming a different
@@ -787,13 +753,13 @@ async fn a_delegation_record_naming_another_delegate_is_rejected() {
     .await;
 
     let failure = outcome.expect_err("a record delegating to somebody else authorizes nothing");
-    assert!(matches!(
-        failure,
-        AuthorizationFailure::Delegation {
-            index: 0,
-            source: DelegationFailure::TupleMismatch { account_key }
-        } if account_key == expected_key
-    ));
+    assert!(failure.is_recoverable());
+    assert!(
+        matches!(&failure, AuthorizationFailure::Delegation { index: 0,
+        source: DelegationFailure::NoLiveGrant { exact, wildcard } }
+        if matches!(**exact, DelegationFailure::TupleMismatch { account_key } if account_key == expected_key) && matches!(**wildcard, DelegationFailure::Absent { .. })),
+        "{failure}"
+    );
 }
 
 /// A record storing a bump other than the canonical one for its address is not the record this
@@ -826,13 +792,13 @@ async fn a_delegation_record_storing_a_non_canonical_bump_is_rejected() {
     .await;
 
     let failure = outcome.expect_err("a non-canonical bump is not this record");
-    assert!(matches!(
-        failure,
-        AuthorizationFailure::Delegation {
-            index: 0,
-            source: DelegationFailure::NotADelegationRecord { .. }
-        }
-    ));
+    assert!(failure.is_recoverable());
+    assert!(
+        matches!(&failure, AuthorizationFailure::Delegation { index: 0,
+        source: DelegationFailure::NoLiveGrant { exact, wildcard } }
+        if matches!(**exact, DelegationFailure::NotADelegationRecord { .. }) && matches!(**wildcard, DelegationFailure::Absent { .. })),
+        "{failure}"
+    );
 }
 
 /// An account under another program's ownership is not a delegation, whatever it contains.
@@ -857,18 +823,48 @@ async fn a_delegation_record_owned_by_another_program_is_rejected() {
     .await;
 
     let failure = outcome.expect_err("only the host program grants delegations");
-    assert!(matches!(
-        failure,
-        AuthorizationFailure::Delegation {
-            index: 0,
-            source: DelegationFailure::ForeignOwner { .. }
-        }
-    ));
+    assert!(failure.is_recoverable());
+    assert!(
+        matches!(&failure, AuthorizationFailure::Delegation { index: 0,
+        source: DelegationFailure::NoLiveGrant { exact, wildcard } }
+        if matches!(**exact, DelegationFailure::ForeignOwner { .. }) && matches!(**wildcard, DelegationFailure::Absent { .. })),
+        "{failure}"
+    );
 }
 
-/// The same permit, twice, across a revocation: the first request authorizes and the second does
-/// not. Reuse of a permit is not reuse of an authorization — there is no cached verdict, so the
-/// delegator's revocation takes effect on the next request rather than on the next permit.
+/// A host-owned account at the delegation address that does not decode as a delegation record
+/// grants nothing.
+#[tokio::test]
+async fn a_host_account_that_is_not_a_delegation_record_is_rejected() {
+    let signer = Wallet::new(1);
+    let delegator = Wallet::new(2);
+    let live = handle(0x35, FHE_TYPE_UINT64);
+    let encrypted_store = EncryptedStoreFixture::allowing(live, delegator.pubkey());
+    let delegation = DelegationFixture::live(delegator.pubkey(), signer.pubkey(), OBSERVED_SLOT);
+    let (key, _) = delegation.address();
+    let mut undecodable = delegation.account();
+    undecodable.data.truncate(8);
+    let request = RequestBuilder::new(&signer)
+        .delegated(&encrypted_store, live, delegator.pubkey())
+        .typed();
+
+    let (outcome, _) = authorize_in(
+        world_with(&encrypted_store, signer.pubkey()).with_account(key, undecodable),
+        &request,
+    )
+    .await;
+
+    let failure = outcome.expect_err("a record that does not decode delegates nothing");
+    assert!(
+        matches!(&failure, AuthorizationFailure::Delegation { index: 0,
+        source: DelegationFailure::NoLiveGrant { exact, .. } }
+        if matches!(**exact, DelegationFailure::NotADelegationRecord { .. })),
+        "{failure}"
+    );
+}
+
+/// The same request across a revocation: the first authorization succeeds and the next fails.
+/// Each attempt observes the delegation again, including polls of already-sent requests.
 #[tokio::test]
 async fn the_same_permit_stops_working_once_the_delegation_is_revoked() {
     let signer = Wallet::new(1);
@@ -895,15 +891,11 @@ async fn the_same_permit_stops_working_once_the_delegation_is_revoked() {
         &request,
     )
     .await;
+    let failure = second.expect_err("the second request is no longer authorized");
+    assert!(failure.is_recoverable());
     assert!(
-        matches!(
-            second.expect_err("the second request is not"),
-            AuthorizationFailure::Delegation {
-                source: DelegationFailure::Revoked,
-                ..
-            }
-        ),
-        "the identical request must be re-authorized from scratch"
+        matches!(failure, AuthorizationFailure::Delegation { source: DelegationFailure::NoLiveGrant { exact, wildcard }, .. }
+        if matches!(*exact, DelegationFailure::Revoked) && matches!(*wildcard, DelegationFailure::Absent { .. }))
     );
 }
 
@@ -921,11 +913,11 @@ fn a_live_authority_specific_row_is_named_as_the_exact_row() {
     let delegator = Wallet::new(2).pubkey();
     let exact = DelegationFixture::live(delegator, delegate, OBSERVED_SLOT);
     let (exact_key, _) = exact.address();
-    let (wildcard_key, _) = wildcard_delegation_address(PROGRAM_ID, delegator, delegate);
+    let (wildcard_key, _) =
+        DelegationFixture::live_wildcard(delegator, delegate, OBSERVED_SLOT).address();
     let snapshot = World::running_at_slot(OBSERVED_SLOT)
         .with_delegation(&exact)
-        .read(&SnapshotKeys::new([exact_key, wildcard_key]))
-        .expect("both row addresses are in the planned key set");
+        .read(&SnapshotKeys::new([exact_key, wildcard_key]));
 
     let row = check_delegation(&snapshot, PROGRAM_ID, delegator, delegate, exact.authority)
         .expect("a live authority-specific row authorizes");
@@ -945,8 +937,7 @@ fn a_live_wildcard_row_is_named_as_the_wildcard_row() {
     let (exact_key, _) = exact.address();
     let snapshot = World::running_at_slot(OBSERVED_SLOT)
         .with_delegation(&wildcard)
-        .read(&SnapshotKeys::new([exact_key, wildcard_key]))
-        .expect("both row addresses are in the planned key set");
+        .read(&SnapshotKeys::new([exact_key, wildcard_key]));
 
     let row = check_delegation(&snapshot, PROGRAM_ID, delegator, delegate, exact.authority)
         .expect("a live wildcard row authorizes an authority with no row of its own");
@@ -968,8 +959,7 @@ fn with_both_rows_live_the_authority_specific_row_is_the_one_named() {
     let snapshot = World::running_at_slot(OBSERVED_SLOT)
         .with_delegation(&exact)
         .with_delegation(&wildcard)
-        .read(&SnapshotKeys::new([exact_key, wildcard_key]))
-        .expect("both row addresses are in the planned key set");
+        .read(&SnapshotKeys::new([exact_key, wildcard_key]));
 
     let row = check_delegation(&snapshot, PROGRAM_ID, delegator, delegate, exact.authority)
         .expect("two live rows authorize");
@@ -1022,7 +1012,7 @@ async fn a_sentinel_authority_in_the_encrypted_store_rejects_a_delegated_entry()
         ),
         "the rejection belongs to the encrypted store resolution, got {failure}"
     );
-    assert_eq!(failure.class(), FailureClass::Terminal);
+    assert!(!failure.is_recoverable());
 }
 
 /// The guard lives in the resolution of the encrypted store, so a direct entry under a
@@ -1050,7 +1040,7 @@ async fn a_sentinel_authority_in_the_encrypted_store_rejects_a_direct_entry_too(
             source: EncryptedStoreFailure::SentinelAuthority { .. }
         }
     ));
-    assert_eq!(failure.class(), FailureClass::Terminal);
+    assert!(!failure.is_recoverable());
 }
 
 // ---------------------------------------------------------------------------
@@ -1071,8 +1061,7 @@ fn a_delegation_key_the_snapshot_never_read_is_an_error_not_a_verdict() {
     // was never planned.
     let snapshot = World::running_at_slot(OBSERVED_SLOT)
         .with_delegation(&revoked)
-        .read(&SnapshotKeys::new([exact_key]))
-        .expect("the planned key is readable");
+        .read(&SnapshotKeys::new([exact_key]));
 
     let failure = check_delegation(
         &snapshot,
@@ -1083,10 +1072,7 @@ fn a_delegation_key_the_snapshot_never_read_is_an_error_not_a_verdict() {
     )
     .expect_err("a missing key cannot authorize");
 
-    assert!(matches!(
-        failure,
-        DelegationFailure::Snapshot(SnapshotError::KeyNotInSnapshot { .. })
-    ));
+    assert!(matches!(failure, DelegationFailure::UnreadAccount(_)));
 }
 
 /// In a batch where delegated entries have different outcomes, the failure names the index of the
@@ -1133,15 +1119,12 @@ async fn a_mixed_batch_failure_names_the_entry_whose_delegation_is_dead() {
     let (outcome, _) = authorize_in(world, &request).await;
 
     let failure = outcome.expect_err("one dead delegation rejects the request");
+    assert!(failure.is_recoverable());
     assert!(
-        matches!(
-            failure,
-            AuthorizationFailure::Delegation {
-                index: 2,
-                source: DelegationFailure::Revoked
-            }
-        ),
-        "the failure must name the entry whose delegation is dead, got {failure}"
+        matches!(&failure, AuthorizationFailure::Delegation { index: 2,
+        source: DelegationFailure::NoLiveGrant { exact, wildcard } }
+        if matches!(**exact, DelegationFailure::Revoked) && matches!(**wildcard, DelegationFailure::Absent { .. })),
+        "{failure}"
     );
 }
 
@@ -1168,4 +1151,53 @@ async fn the_delegators_permit_watermark_is_not_read() {
 
     outcome.expect("the delegator's permit watermark plays no part in a delegated request");
     assert_eq!(reads, 2, "no extra read fetches the delegator's watermark");
+}
+
+#[tokio::test]
+async fn prefunded_delegations_remain_absent_until_initialized() {
+    let signer = Wallet::new(1);
+    let delegator = Wallet::new(2);
+    let live = handle(0x3f, FHE_TYPE_UINT64);
+    let store = EncryptedStoreFixture::allowing(live, delegator.pubkey());
+    let request = RequestBuilder::new(&signer)
+        .delegated(&store, live, delegator.pubkey())
+        .typed();
+    let mut exact = live_delegation();
+    exact.revoked = true;
+    let wildcard = live_wildcard();
+    let empty = SnapshotAccount {
+        owner: [0; 32],
+        data: vec![],
+    };
+    let base = world_with(&store, signer.pubkey());
+    for exact_account in [exact.account(), empty.clone()] {
+        let world = base
+            .clone()
+            .with_account(exact.address().0, exact_account)
+            .with_account(wildcard.address().0, empty.clone());
+        let failure = authorize_in(world, &request).await.0.unwrap_err();
+        assert!(
+            failure.is_recoverable(),
+            "prefunding must not make a missing grant terminal: {failure}"
+        );
+    }
+    let invalid = base.clone().with_delegation(&exact).with_account(
+        wildcard.address().0,
+        SnapshotAccount {
+            owner: [0; 32],
+            data: vec![1],
+        },
+    );
+    let failure = authorize_in(invalid, &request).await.0.unwrap_err();
+    assert!(
+        !failure.is_recoverable(),
+        "nonempty foreign accounts remain invalid"
+    );
+    authorize_in(
+        base.with_delegation(&exact).with_delegation(&wildcard),
+        &request,
+    )
+    .await
+    .0
+    .expect("a later initialized grant authorizes the same request");
 }

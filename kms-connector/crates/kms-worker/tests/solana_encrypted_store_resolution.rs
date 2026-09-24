@@ -23,14 +23,14 @@
 mod solana_support;
 
 use kms_worker::core::solana::{
+    SolanaPubkeyBytes,
     encrypted_store::{EncryptedStoreFailure, ResolvedEncryptedStore, resolve_encrypted_store},
-    failure::{AuthorizationFailure, FailureClass},
+    failure::AuthorizationFailure,
     handle_binding::HandleBindingFailure,
-    pipeline::{AuthorizationContext, authorize_request},
+    pipeline::authorize_request,
     scope::{ScopeFailure, check_scope},
     snapshot::{SnapshotAccount, SnapshotKeys},
 };
-use kms_worker::core::solana_acl::SolanaPubkeyBytes;
 use solana_support::*;
 use zama_solana_acl::encrypted_store_discriminator;
 
@@ -39,9 +39,7 @@ fn resolve_from(
     world: &World,
     account_key: SolanaPubkeyBytes,
 ) -> Result<ResolvedEncryptedStore, EncryptedStoreFailure> {
-    let snapshot = world
-        .read(&SnapshotKeys::new([account_key]))
-        .expect("the world reads");
+    let snapshot = world.read(&SnapshotKeys::new([account_key]));
     resolve_encrypted_store(&snapshot, PROGRAM_ID, account_key)
 }
 
@@ -52,15 +50,6 @@ fn resolved(encrypted_store: &EncryptedStoreFixture) -> ResolvedEncryptedStore {
         encrypted_store.account_key,
     )
     .expect("a well-formed encrypted store resolves")
-}
-
-fn context<'a>(
-    deployment: &'a kms_worker::core::solana::deployment::DeploymentIdentity,
-) -> AuthorizationContext<'a> {
-    AuthorizationContext {
-        deployment,
-        now_unix_seconds: NOW_INSIDE_WINDOW,
-    }
 }
 
 // ---------------------------------------------------------------------------
@@ -101,13 +90,12 @@ fn an_encrypted_store_absent_at_the_observation_is_transient() {
         failure,
         EncryptedStoreFailure::Absent { account_key } if account_key == encrypted_store.account_key
     ));
-    assert_eq!(
+    assert!(
         AuthorizationFailure::EncryptedStore {
             index: 0,
             source: failure
         }
-        .class(),
-        FailureClass::Transient
+        .is_recoverable()
     );
 }
 
@@ -131,13 +119,12 @@ fn an_encrypted_store_owned_by_another_program_is_terminal() {
         failure,
         EncryptedStoreFailure::ForeignOwner { owner, .. } if owner == [0xee; 32]
     ));
-    assert_eq!(
-        AuthorizationFailure::EncryptedStore {
+    assert!(
+        !AuthorizationFailure::EncryptedStore {
             index: 0,
             source: failure
         }
-        .class(),
-        FailureClass::Terminal
+        .is_recoverable()
     );
 }
 
@@ -195,13 +182,12 @@ fn an_encrypted_store_whose_fields_derive_another_address_is_rejected() {
         EncryptedStoreFailure::AddressMismatch { account_key, derived: Some(derived) }
             if account_key == claimed.account_key && derived == foreign.account_key
     ));
-    assert_eq!(
-        AuthorizationFailure::EncryptedStore {
+    assert!(
+        !AuthorizationFailure::EncryptedStore {
             index: 0,
             source: failure
         }
-        .class(),
-        FailureClass::Terminal
+        .is_recoverable()
     );
 }
 
@@ -296,6 +282,30 @@ fn an_encrypted_store_holding_only_its_discriminator_is_rejected() {
     .expect_err("a discriminator alone is not an encrypted store");
 
     assert!(matches!(failure, EncryptedStoreFailure::Malformed { .. }));
+}
+
+/// An account whose peak count does not match its leaf count is the host program's own
+/// inconsistency. No proof can match it, so none is asked for and no retry can fix it.
+#[test]
+fn an_encrypted_store_with_inconsistent_peaks_is_terminal() {
+    let mut encrypted_store =
+        EncryptedStoreFixture::allowing(handle(0x19, FHE_TYPE_UINT64), Wallet::new(1).pubkey());
+    encrypted_store.encrypted_store.peaks.push([0; 32]);
+
+    let failure = resolve_from(
+        &World::running_at_slot(1).with_encrypted_store(&encrypted_store),
+        encrypted_store.account_key,
+    )
+    .expect_err("two peaks for one leaf is not a valid state");
+
+    assert!(matches!(failure, EncryptedStoreFailure::Malformed { .. }));
+    assert!(
+        !AuthorizationFailure::EncryptedStore {
+            index: 0,
+            source: failure
+        }
+        .is_recoverable()
+    );
 }
 
 // ---------------------------------------------------------------------------
@@ -438,17 +448,10 @@ async fn a_foreign_application_handle_later_in_the_batch_rejects_the_whole_reque
         .with_watermark(wallet.pubkey(), 0);
     let reader = ScriptedReader::constant(world);
     let proofs = ScriptedProofReader::unreachable();
-    let deployment = deployment();
 
-    let failure = authorize_request(
-        &reader,
-        &ServableKmsPair,
-        &proofs,
-        context(&deployment),
-        &request,
-    )
-    .await
-    .expect_err("one out-of-scope entry rejects the request");
+    let failure = authorize_request(&reader, &proofs, CONTEXT, &request)
+        .await
+        .expect_err("one out-of-scope entry rejects the request");
 
     assert!(
         matches!(
@@ -460,7 +463,7 @@ async fn a_foreign_application_handle_later_in_the_batch_rejects_the_whole_reque
         ),
         "the rejection names the offending entry, got {failure}"
     );
-    assert_eq!(failure.class(), FailureClass::Terminal);
+    assert!(!failure.is_recoverable());
     assert_eq!(
         proofs.call_count(),
         0,
@@ -485,17 +488,10 @@ async fn a_permissive_permit_does_not_widen_the_allow_leaf() {
         .with_watermark(wallet.pubkey(), 0);
     let proofs = ScriptedProofReader::constant(world.record());
     let reader = ScriptedReader::constant(world);
-    let deployment = deployment();
 
-    let failure = authorize_request(
-        &reader,
-        &ServableKmsPair,
-        &proofs,
-        context(&deployment),
-        &request,
-    )
-    .await
-    .expect_err("permissive does not allow a key nobody allowed");
+    let failure = authorize_request(&reader, &proofs, CONTEXT, &request)
+        .await
+        .expect_err("permissive does not allow a key nobody allowed");
 
     assert!(
         matches!(
