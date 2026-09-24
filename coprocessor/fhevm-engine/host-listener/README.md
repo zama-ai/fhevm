@@ -139,13 +139,14 @@ Yellowstone replays only recent slots: **256** with the local configuration in
 When it refuses the checkpoint as too old, the listener catches up from
 `--archive-url` (default `--url`): it lists the produced slots with `getBlocks`
 and applies each `getBlock` at finalized commitment, through the same ancestry
-check and ingest path, until it reaches the archive's finalized slot. Then it
-subscribes again from the checkpoint (DD-059 in
+check and ingest path, up to the slot the archive had finalized when catch-up
+began. Then it subscribes again from the checkpoint (DD-059 in
 `solana/docs/DESIGN_DECISIONS.md`). The archive must hold the ledger back to the
 checkpoint. Catch-up reads every transaction of every block, so a day of mainnet
 takes hours. A block holding a v1 transaction is refused and retried until
-fhevm-internal#2080. A provider that cannot replay from any slot, or a block
-that does not extend the checkpoint, stops ingestion without advancing it.
+fhevm-internal#2080, and an archive missing slots after the checkpoint is
+retried too. A provider that cannot replay from any slot, or a block of another
+fork, stops ingestion without advancing the checkpoint.
 The HTTP health routes check database availability, not reconstruction catch-up.
 Catch-up is exported as Prometheus metrics on `--metrics-addr`; the lag,
 reconnect and handle-check alarms are in

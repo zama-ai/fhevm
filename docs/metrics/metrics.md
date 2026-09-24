@@ -127,7 +127,7 @@ Note that recommendations assume a smoke test that runs transactions/requests at
 
 ### solana-host-listener
 
-The listener resumes from its checkpoint through the stream while the Yellowstone provider can still replay it, about 24 hours for a hosted provider. Past that window it catches up from the archive RPC, one `getBlock` per slot, which takes hours for a day of mainnet, so the lag alarm fires within minutes. A fatal ingestion error exits the process, so it shows up as container restarts, not as a metric.
+The listener resumes from its checkpoint through the stream while the Yellowstone provider can still replay it, about 24 hours for a hosted provider. Past that window it catches up from the archive RPC, one `getBlock` per slot. A day of mainnet takes hours, so the lag alarm fires during a long catch-up too; `archive_catch_up_active` at 1 with the lag falling means it is progressing, and a flat lag with rising reconnects means it is stuck. A fatal ingestion error exits the process, so it shows up as container restarts, not as a metric.
 
 #### Metric Name: `coprocessor_solana_host_listener_applied_block_timestamp_seconds`
  - **Type**: Gauge (labeled by `host_chain_id`)
@@ -147,7 +147,7 @@ The listener resumes from its checkpoint through the stream while the Yellowston
 
 #### Metric Name: `coprocessor_solana_host_listener_archive_catch_up_active`
  - **Type**: Gauge (labeled by `host_chain_id`)
- - **Description**: 1 while the listener rebuilds, from the archive RPC, slots the stream can no longer replay, else 0. The lag gauges above show its progress. It tells a catch-up from a stall when the lag alarm fires.
+ - **Description**: 1 while the listener rebuilds, from the archive RPC, slots the stream can no longer replay, else 0. The lag gauges above show its progress. A catch-up that keeps failing, such as on an archive missing the slots or on a v1 transaction until fhevm-internal#2080, shows as the gauge returning to 1 while reconnects rise and the lag stays flat.
  - **Alarm**: None of its own; the time lag pages.
 
 #### Metric Name: `coprocessor_solana_host_listener_reconnects_total`

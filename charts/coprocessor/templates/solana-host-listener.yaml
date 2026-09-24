@@ -43,7 +43,8 @@ spec:
         - name: solana-host-listener
           image: {{ $listener.image.name }}:{{ $listener.image.tag }}
           command: ["solana_host_listener"]
-          # SOLANA_PROOF_API_KEY and SOLANA_GRPC_X_TOKEN are read from the environment by the binary.
+          # SOLANA_PROOF_API_KEY, SOLANA_GRPC_X_TOKEN and SOLANA_ARCHIVE_URL are read from the
+          # environment by the binary.
           args:
             - --database-url=$(DATABASE_URL)
             - --url=$(SOLANA_RPC_URL)

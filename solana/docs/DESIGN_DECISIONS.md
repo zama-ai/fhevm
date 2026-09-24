@@ -2151,17 +2151,21 @@ A listener that was down longer than the provider's replay window, about a day o
 provider, used to exit and need manual recovery. It now catches up from an archive RPC and then
 returns to the stream. When Yellowstone refuses the checkpoint as outside its window, the listener
 lists the produced slots after it with `getBlocks` and fetches each with `getBlock`, both at
-`finalized`, with full transaction details. Each block goes through `prepare_rpc_block` and must
-extend the checkpoint as the stream's validator requires: an unapplied checkpoint first and unchanged,
-then each block naming the last applied one as its parent. It is applied through the same path as a
-streamed block. At the archive's finalized slot, well inside the replay window, the listener
-subscribes again from its checkpoint, and the stream's own replay check takes over.
+`finalized`, with full transaction details. Each block goes through `prepare_rpc_block`, which
+keeps the transactions naming the host program as the stream's account filter does. It must extend
+the checkpoint as the stream's validator requires: an unapplied checkpoint first and unchanged, then
+each block naming the last applied one as its parent. It is applied through the same path as a
+streamed block. Catch-up stops at the slot the archive had finalized when it started, so it ends
+however fast the chain moves. There the listener subscribes again from its checkpoint, and the
+stream's own replay check takes over; if that catch-up outlasted the window, the next pass is
+shorter.
 
 The archive is `--archive-url`, which defaults to `--url` and may be another provider's. A provider
 that cannot replay from a slot at all (`from_slot is not supported`) still stops the listener: after
-catch-up, the stream could never take over. An archive behind the checkpoint, or a failed read, is
-retried like a dropped subscription. A block that does not extend the checkpoint stops the listener,
-as on the stream. `archive_catch_up_active` is 1 during catch-up, and the existing lag metrics show
+catch-up, the stream could never take over. An archive behind the checkpoint, an archive missing
+slots after it (a block whose parent is later than the checkpoint), or a failed read, is retried like
+a dropped subscription. Any other block that does not extend the checkpoint is a fork and stops the
+listener, as on the stream. `archive_catch_up_active` is 1 during catch-up, and the existing lag metrics show
 its progress.
 
 Rejected alternatives:

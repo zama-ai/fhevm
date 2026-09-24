@@ -6,7 +6,7 @@
 //! and `maxSupportedTransactionVersion: 0`.
 
 use anyhow::{anyhow, bail, Context, Result};
-use solana_sdk::message::VersionedMessage;
+use solana_sdk::{message::VersionedMessage, pubkey::Pubkey};
 use solana_transaction_status_client_types::{
     option_serializer::OptionSerializer, UiConfirmedBlock, UiInstruction,
     UiTransactionStatusMeta,
@@ -18,29 +18,45 @@ use zama_solana_transaction::{
 use super::{decoded_instructions, PreparedBlock, PreparedTransaction};
 use crate::solana_grpc_source::SealedBlock;
 
-/// Prepares the `getBlock` response for `slot`. Failed transactions are skipped, as on the
-/// stream; a transaction's index is its position in the response, which is block order.
+/// Prepares the `getBlock` response for `slot`. As on the stream, only transactions naming
+/// `program` count as matching, and failed ones are then skipped. A transaction's index is its
+/// position in the response, which is block order.
 pub(super) fn prepare_rpc_block(
     slot: u64,
     block: UiConfirmedBlock,
+    program: &Pubkey,
 ) -> Result<PreparedBlock> {
     let transactions = block.transactions.ok_or_else(|| {
         anyhow!("getBlock response for slot {slot} has no transactions")
     })?;
-    let matching_transaction_count = transactions.len();
+    let executed_transaction_count = transactions.len() as u64;
+    let program_address = program.to_string();
+    let mut matching_transaction_count = 0;
     let mut prepared = Vec::new();
     for (index, encoded) in transactions.into_iter().enumerate() {
         let meta = encoded.meta.ok_or_else(|| {
             anyhow!("transaction {index} in slot {slot} has no status meta")
         })?;
-        if meta.err.is_some() {
-            continue;
-        }
         let transaction = encoded.transaction.decode().ok_or_else(|| {
             anyhow!(
                 "transaction {index} in slot {slot} is not a sanitized base64 transaction"
             )
         })?;
+        // Yellowstone's `account_include` matches static and lookup-table-loaded keys alike.
+        let names_program = transaction
+            .message
+            .static_account_keys()
+            .contains(program)
+            || matches!(&meta.loaded_addresses, OptionSerializer::Some(loaded)
+                    if loaded.writable.contains(&program_address)
+                        || loaded.readonly.contains(&program_address));
+        if !names_program {
+            continue;
+        }
+        matching_transaction_count += 1;
+        if meta.err.is_some() {
+            continue;
+        }
         let signature = *transaction.signatures.first().ok_or_else(|| {
             anyhow!("transaction {index} in slot {slot} has no signature")
         })?;
@@ -62,7 +78,7 @@ pub(super) fn prepare_rpc_block(
                 .context("getBlock previousBlockhash")?,
             block_time: block.block_time,
             block_height: block.block_height,
-            executed_transaction_count: matching_transaction_count as u64,
+            executed_transaction_count,
             transactions: Vec::new(),
         },
         transactions: prepared,
@@ -175,10 +191,13 @@ mod tests {
         EncodedTransaction, TransactionBinaryEncoding, UiConfirmedBlock,
     };
 
-    use super::super::wire_fixtures::{app_transaction, Compiled, Transaction};
+    use super::super::wire_fixtures::{
+        app_transaction, block_json, foreign_transaction, Compiled,
+        Transaction, BLOCK_TIME,
+    };
     use super::{prepare_rpc_block, resolve_rpc_transaction};
     use crate::solana_grpc_listener::resolve_transaction_instructions;
-    use crate::solana_grpc_listener::test_support::reconstruct;
+    use crate::solana_grpc_listener::test_support::{reconstruct, ZAMA_HOST};
 
     mod shared_fixtures {
         include!(concat!(
@@ -191,16 +210,12 @@ mod tests {
         ExpectedOutcome,
     };
 
-    fn block_json(slot: u64, transactions: Vec<Value>) -> UiConfirmedBlock {
-        serde_json::from_value(json!({
-            "previousBlockhash": bs58::encode([4; 32]).into_string(),
-            "blockhash": bs58::encode([5; 32]).into_string(),
-            "parentSlot": slot - 1,
-            "transactions": transactions,
-            "blockTime": 1_700_000_000,
-            "blockHeight": slot - 2,
-        }))
-        .expect("getBlock JSON")
+    fn hash(slot: u64) -> [u8; 32] {
+        [slot as u8; 32]
+    }
+
+    fn block(slot: u64, transactions: Vec<Value>) -> UiConfirmedBlock {
+        block_json(slot, slot - 1, hash, transactions)
     }
 
     /// Resolves `transaction` from its `getBlock` JSON. The bytes are decoded without
@@ -209,7 +224,7 @@ mod tests {
     fn rpc_resolution(
         transaction: &Transaction,
     ) -> anyhow::Result<Vec<zama_solana_transaction::ResolvedInstruction>> {
-        let block = block_json(9, vec![transaction.rpc_json(Value::Null)]);
+        let block = block(9, vec![transaction.rpc_json(Value::Null)]);
         let encoded = block.transactions.unwrap().pop().unwrap();
         let EncodedTransaction::Binary(blob, TransactionBinaryEncoding::Base64) =
             &encoded.transaction
@@ -302,9 +317,10 @@ mod tests {
     fn rebuilds_a_slot_from_get_block_alone() {
         let failed = app_transaction(7, [1; 32]);
         let succeeded = app_transaction(8, [2; 32]);
-        let block = block_json(
+        let block = block(
             100,
             vec![
+                foreign_transaction(6).rpc_json(Value::Null),
                 failed.rpc_json(
                     json!({ "InstructionError": [0, { "Custom": 1 }] }),
                 ),
@@ -312,17 +328,22 @@ mod tests {
             ],
         );
 
-        let prepared = prepare_rpc_block(100, block).unwrap();
+        let prepared =
+            prepare_rpc_block(100, block, &ZAMA_HOST.parse().unwrap()).unwrap();
         assert_eq!(prepared.block.checkpoint().slot, 100);
-        assert_eq!(prepared.block.block_hash, [5; 32]);
-        assert_eq!(prepared.block.parent_block_hash, [4; 32]);
-        assert_eq!(prepared.block.block_time, Some(1_700_000_000));
-        assert_eq!(prepared.matching_transaction_count, 2);
+        assert_eq!(prepared.block.block_hash, hash(100));
+        assert_eq!(prepared.block.parent_block_hash, hash(99));
+        assert_eq!(prepared.block.block_time, Some(BLOCK_TIME));
+        assert_eq!(prepared.block.executed_transaction_count, 3);
+        assert_eq!(
+            prepared.matching_transaction_count, 2,
+            "the stream's account filter counts the failed transaction, not the foreign one"
+        );
         let [transaction] = &prepared.transactions[..] else {
             panic!("the failed transaction is skipped")
         };
         assert_eq!(transaction.signature, Signature::from([8; 64]));
-        assert_eq!(transaction.index, 1);
+        assert_eq!(transaction.index, 2);
 
         let (message, meta) = succeeded.grpc();
         assert_eq!(
@@ -346,8 +367,12 @@ mod tests {
             .as_object_mut()
             .unwrap()
             .remove("innerInstructions");
-        let error = prepare_rpc_block(100, block_json(100, vec![transaction]))
-            .unwrap_err();
+        let error = prepare_rpc_block(
+            100,
+            block(100, vec![transaction]),
+            &ZAMA_HOST.parse().unwrap(),
+        )
+        .unwrap_err();
         assert!(
             format!("{error:#}").contains("no inner instructions"),
             "{error:#}"

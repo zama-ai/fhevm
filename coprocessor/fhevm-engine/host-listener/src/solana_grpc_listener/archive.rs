@@ -4,16 +4,20 @@
 //! with `getBlock`, both at finalized commitment. A block is prepared like a streamed one
 //! (`prepare_rpc_block`), must extend the checkpoint as the stream's validator requires, and is
 //! applied through the same path, so the database ends as uninterrupted streaming leaves it.
-//! Catch-up stops at the archive's finalized slot, well inside the stream's replay window.
+//! Catch-up stops at the slot the archive had finalized when it started, well inside the
+//! stream's replay window, so the stream takes over however fast the chain moves.
 
 use std::future::Future;
 
-use anyhow::{bail, Context, Result};
+use anyhow::{anyhow, bail, Context, Result};
 use futures_util::stream::{self, StreamExt};
 use solana_client::{
-    nonblocking::rpc_client::RpcClient, rpc_config::RpcBlockConfig,
+    client_error::{ClientError, ClientErrorKind},
+    nonblocking::rpc_client::RpcClient,
+    rpc_config::RpcBlockConfig,
 };
 use solana_commitment_config::CommitmentConfig;
+use solana_sdk::pubkey::Pubkey;
 use solana_transaction_status_client_types::{
     TransactionDetails, UiConfirmedBlock, UiTransactionEncoding,
 };
@@ -22,8 +26,8 @@ use tracing::info;
 
 use super::rpc_block::prepare_rpc_block;
 use super::{
-    apply_prepared_block, metrics, FatalListenerError, IngestionProgress,
-    SolanaGrpcListenerConfig,
+    apply_prepared_block, FatalListenerError, IngestionProgress,
+    SolanaGrpcListenerConfig, StartPosition,
 };
 use crate::database::tfhe_event_propagate::Database;
 use crate::solana_grpc_source::SealedBlock;
@@ -52,6 +56,7 @@ impl Archive for RpcClient {
     async fn finalized_slot(&self) -> Result<u64> {
         self.get_slot_with_commitment(CommitmentConfig::finalized())
             .await
+            .map_err(without_url)
             .context("archive getSlot")
     }
 
@@ -62,6 +67,7 @@ impl Archive for RpcClient {
             CommitmentConfig::finalized(),
         )
         .await
+        .map_err(without_url)
         .with_context(|| format!("archive getBlocks {first}..={last}"))
     }
 
@@ -79,12 +85,28 @@ impl Archive for RpcClient {
             },
         )
         .await
+        .map_err(without_url)
         .with_context(|| format!("archive getBlock {slot}"))
     }
 }
 
-/// Applies every finalized block after the checkpoint, chasing the finalized slot until it is
-/// reached. Returns `false` when cancelled.
+/// A hosted archive URL usually carries its API key, and reqwest errors print the URL.
+fn without_url(error: ClientError) -> ClientError {
+    let ClientError { request, kind } = error;
+    let kind = match *kind {
+        ClientErrorKind::Reqwest(error) => {
+            ClientErrorKind::Reqwest(error.without_url())
+        }
+        kind => kind,
+    };
+    ClientError {
+        request,
+        kind: Box::new(kind),
+    }
+}
+
+/// Applies every block after the checkpoint up to the slot the archive has finalized now.
+/// Returns `false` when cancelled.
 pub(super) async fn catch_up(
     db: &Database,
     config: &SolanaGrpcListenerConfig,
@@ -92,22 +114,36 @@ pub(super) async fn catch_up(
     progress: &mut IngestionProgress,
     cancel: &CancellationToken,
 ) -> Result<bool> {
-    let _active = metrics::ArchiveCatchUp::start(config.chain_id);
-    let mut first = first_missing_slot(progress)?;
-    let mut finalized = archive.finalized_slot().await?;
-    if finalized < first {
+    let program: Pubkey = config.program_id.parse().map_err(|error| {
+        FatalListenerError::new(anyhow!(
+            "program_id {} is not a Solana pubkey: {error}",
+            config.program_id
+        ))
+    })?;
+    let mut first = first_missing_slot(&progress.subscription_start())?;
+    let Some(target) =
+        until_cancelled(cancel, archive.finalized_slot()).await?
+    else {
+        return Ok(false);
+    };
+    if target < first {
         bail!(
-            "archive finalized slot {finalized} is behind slot {first}, which the stream can no longer replay"
+            "archive finalized slot {target} is behind slot {first}, which the stream can no longer replay"
         );
     }
     info!(
         from_slot = first,
-        finalized_slot = finalized,
+        to_slot = target,
         "catching up from the archive RPC"
     );
-    while first <= finalized {
-        let last = finalized.min(first + SLOTS_PER_PAGE - 1);
-        let slots = archive.produced_slots(first, last).await?;
+    while first <= target {
+        let last = target.min(first + SLOTS_PER_PAGE - 1);
+        let Some(slots) =
+            until_cancelled(cancel, archive.produced_slots(first, last))
+                .await?
+        else {
+            return Ok(false);
+        };
         let mut blocks = stream::iter(slots)
             .map(|slot| async move { (slot, archive.block(slot).await) })
             .buffered(BLOCKS_IN_FLIGHT);
@@ -118,13 +154,15 @@ pub(super) async fn catch_up(
             };
             let Some((slot, block)) = next else { break };
             let prepared =
-                prepare_rpc_block(slot, block?).map_err(|error| {
+                prepare_rpc_block(slot, block?, &program).map_err(|error| {
                     FatalListenerError::new(
                         error.context("prepare archive Solana block"),
                     )
                 })?;
-            extends_checkpoint(progress, &prepared.block)
-                .map_err(FatalListenerError::new)?;
+            extends_checkpoint(
+                &progress.subscription_start(),
+                &prepared.block,
+            )?;
             if !apply_prepared_block(db, config, &prepared, progress, cancel)
                 .await?
             {
@@ -132,7 +170,6 @@ pub(super) async fn catch_up(
             }
         }
         first = last + 1;
-        finalized = archive.finalized_slot().await?;
     }
     info!(
         checkpoint = ?progress.applied,
@@ -141,54 +178,83 @@ pub(super) async fn catch_up(
     Ok(true)
 }
 
+/// `None` when `cancel` fires first.
+async fn until_cancelled<T>(
+    cancel: &CancellationToken,
+    future: impl Future<Output = Result<T>>,
+) -> Result<Option<T>> {
+    tokio::select! {
+        _ = cancel.cancelled() => Ok(None),
+        result = future => result.map(Some),
+    }
+}
+
 /// An unapplied checkpoint is itself the first slot to rebuild; otherwise the one after it.
-fn first_missing_slot(progress: &IngestionProgress) -> Result<u64> {
-    match (&progress.retry, &progress.applied) {
-        (Some(unapplied), _) => Ok(unapplied.slot),
-        (None, Some(applied)) => Ok(applied.slot + 1),
-        (None, None) => bail!("archive catch-up needs a checkpoint to extend"),
+fn first_missing_slot(start: &StartPosition) -> Result<u64> {
+    match start {
+        StartPosition::ReplayFrom(unapplied) => Ok(unapplied.slot),
+        StartPosition::Resume(applied) => Ok(applied.slot + 1),
+        StartPosition::Tip => Err(no_checkpoint()),
     }
 }
 
 /// The stream's ancestry rule: an unapplied checkpoint comes first and unchanged, and every
-/// other block names the last applied one as its parent.
+/// other block names the last applied one as its parent. A parent after the checkpoint means
+/// the archive skipped produced slots, which is retried; any other mismatch is a fork.
 fn extends_checkpoint(
-    progress: &IngestionProgress,
+    start: &StartPosition,
     block: &SealedBlock,
 ) -> Result<()> {
-    if let Some(unapplied) = &progress.retry {
-        if block.checkpoint() != *unapplied {
-            bail!(
-                "archive block at slot {} is not the unapplied checkpoint at slot {}",
-                block.slot,
-                unapplied.slot
-            );
+    let fork = match start {
+        StartPosition::ReplayFrom(unapplied) if block.checkpoint() == *unapplied => {
+            return Ok(())
         }
-        return Ok(());
-    }
-    let Some(applied) = &progress.applied else {
-        bail!("archive catch-up needs a checkpoint to extend");
-    };
-    if block.parent_slot != applied.slot
-        || block.parent_block_hash != applied.block_hash
-    {
-        bail!(
+        StartPosition::ReplayFrom(unapplied) => anyhow!(
+            "archive block at slot {} is not the unapplied checkpoint at slot {}",
+            block.slot,
+            unapplied.slot
+        ),
+        StartPosition::Resume(applied)
+            if block.parent_slot == applied.slot
+                && block.parent_block_hash == applied.block_hash =>
+        {
+            return Ok(())
+        }
+        StartPosition::Resume(applied) if block.parent_slot > applied.slot => bail!(
+            "the archive is missing slots {}..={} before slot {}",
+            applied.slot + 1,
+            block.parent_slot,
+            block.slot
+        ),
+        StartPosition::Resume(applied) => anyhow!(
             "archive block ancestry mismatch at slot {} (parent slot {}, checkpoint slot {})",
             block.slot,
             block.parent_slot,
             applied.slot
-        );
-    }
-    Ok(())
+        ),
+        StartPosition::Tip => return Err(no_checkpoint()),
+    };
+    Err(FatalListenerError::new(fork).into())
+}
+
+/// The stream only refuses a replay, so a tip start never reaches catch-up.
+fn no_checkpoint() -> anyhow::Error {
+    FatalListenerError::new(anyhow!(
+        "archive catch-up needs a checkpoint to extend"
+    ))
+    .into()
 }
 
 #[cfg(test)]
 mod tests {
     use std::collections::BTreeMap;
+    use std::sync::atomic::{AtomicU64, Ordering};
+    use std::time::Duration;
 
     use anyhow::{anyhow, Result};
-    use serde_json::{json, Value};
+    use serde_json::Value;
     use serial_test::serial;
+    use solana_sdk::pubkey::Pubkey;
     use solana_transaction_status_client_types::UiConfirmedBlock;
     use test_harness::instance::{setup_test_db, ImportMode};
     use tokio_util::sync::CancellationToken;
@@ -196,8 +262,11 @@ mod tests {
         BlockHeight, SubscribeUpdateBlock, UnixTimestamp,
     };
 
-    use super::super::test_support::config;
-    use super::super::wire_fixtures::{app_transaction, Transaction};
+    use super::super::test_support::{config, ZAMA_HOST};
+    use super::super::wire_fixtures::{
+        app_transaction, block_json, foreign_transaction,
+        storing_app_transaction, Transaction, BLOCK_TIME,
+    };
     use super::super::{
         apply_prepared_block, prepare_block, BlockCheckpoint,
         FatalListenerError, IngestionProgress, StartPosition,
@@ -208,8 +277,6 @@ mod tests {
         BlockValidator, SealDecision, SealedBlock,
     };
     use fhevm_engine_common::chain_id::ChainId;
-
-    const BLOCK_TIME: i64 = 1_700_000_000;
 
     /// Every table block ingestion writes.
     const INGESTED_TABLES: &[&str] = &[
@@ -223,6 +290,9 @@ mod tests {
         "solana_listener_checkpoint",
     ];
 
+    const STORE: [u8; 32] = [0x22; 32];
+    const ALLOWED: [u8; 32] = [0x33; 32];
+
     fn hash(slot: u64) -> [u8; 32] {
         [slot as u8; 32]
     }
@@ -234,6 +304,10 @@ mod tests {
         }
     }
 
+    fn is_fatal(error: &anyhow::Error) -> bool {
+        error.downcast_ref::<FatalListenerError>().is_some()
+    }
+
     /// One produced slot: its parent and its transactions, rendered for either transport.
     struct Slot {
         slot: u64,
@@ -243,22 +317,21 @@ mod tests {
 
     impl Slot {
         fn rpc(&self) -> UiConfirmedBlock {
-            serde_json::from_value(json!({
-                "previousBlockhash": bs58::encode(hash(self.parent)).into_string(),
-                "blockhash": bs58::encode(hash(self.slot)).into_string(),
-                "parentSlot": self.parent,
-                "transactions": self
-                    .transactions
+            block_json(
+                self.slot,
+                self.parent,
+                hash,
+                self.transactions
                     .iter()
                     .map(|transaction| transaction.rpc_json(Value::Null))
-                    .collect::<Vec<_>>(),
-                "blockTime": BLOCK_TIME,
-                "blockHeight": self.slot - 2,
-            }))
-            .expect("getBlock JSON")
+                    .collect(),
+            )
         }
 
+        /// The block as the stream delivers it: only the transactions naming the host, at
+        /// their index in the block.
         fn grpc(&self) -> SubscribeUpdateBlock {
+            let host = ZAMA_HOST.parse::<Pubkey>().unwrap().to_bytes();
             SubscribeUpdateBlock {
                 slot: self.slot,
                 blockhash: bs58::encode(hash(self.slot)).into_string(),
@@ -275,6 +348,9 @@ mod tests {
                     .transactions
                     .iter()
                     .enumerate()
+                    .filter(|(_, transaction)| {
+                        transaction.static_keys.contains(&host)
+                    })
                     .map(|(index, transaction)| {
                         transaction.grpc_info(index as u64)
                     })
@@ -284,7 +360,8 @@ mod tests {
         }
     }
 
-    /// The checkpoint at 40, then 41, a skipped 42, and 43 and 44 with one execution each.
+    /// The checkpoint at 40, then 41 (after another program's transaction), a skipped 42, and
+    /// 43 and 44, with one execution each. 41 and 43 each store a leaf.
     fn chain() -> Vec<Slot> {
         vec![
             Slot {
@@ -295,12 +372,17 @@ mod tests {
             Slot {
                 slot: 41,
                 parent: 40,
-                transactions: vec![app_transaction(1, [1; 32])],
+                transactions: vec![
+                    foreign_transaction(9),
+                    storing_app_transaction(1, [1; 32], STORE, ALLOWED, 0),
+                ],
             },
             Slot {
                 slot: 43,
                 parent: 41,
-                transactions: vec![app_transaction(2, [2; 32])],
+                transactions: vec![storing_app_transaction(
+                    2, [2; 32], STORE, ALLOWED, 1,
+                )],
             },
             Slot {
                 slot: 44,
@@ -310,14 +392,18 @@ mod tests {
         ]
     }
 
+    /// The chain keeps finalizing: each `finalized_slot` read is one slot later.
     struct FakeArchive {
-        finalized: u64,
+        finalized: AtomicU64,
         blocks: BTreeMap<u64, UiConfirmedBlock>,
     }
 
     impl Archive for FakeArchive {
         async fn finalized_slot(&self) -> Result<u64> {
-            Ok(self.finalized)
+            // Yield as a real RPC call does, so a catch-up that never ends still lets the
+            // test's timeout fire.
+            tokio::task::yield_now().await;
+            Ok(self.finalized.fetch_add(1, Ordering::Relaxed))
         }
 
         async fn produced_slots(
@@ -402,6 +488,28 @@ mod tests {
         .unwrap();
     }
 
+    async fn catch_up_from_40(
+        db: &Database,
+        archive: &FakeArchive,
+    ) -> (Result<bool>, IngestionProgress) {
+        let mut progress =
+            IngestionProgress::from(StartPosition::Resume(checkpoint(40)));
+        // A catch-up chasing the moving finalized slot would never end.
+        let result = tokio::time::timeout(
+            Duration::from_secs(30),
+            catch_up(
+                db,
+                &config(),
+                archive,
+                &mut progress,
+                &CancellationToken::new(),
+            ),
+        )
+        .await
+        .expect("catch-up ends");
+        (result, progress)
+    }
+
     /// The acceptance case of fhevm-internal#2085: from a checkpoint the stream can no longer
     /// replay, catch up from `getBlock` output across a skipped slot, stop at the archive's
     /// finalized slot, then hand back to the stream. The database ends as uninterrupted
@@ -421,6 +529,10 @@ mod tests {
         let pool = db.pool().await;
         let chain = chain();
         let at = |slot: u64| chain.iter().find(|s| s.slot == slot).unwrap();
+        let archive_of = |finalized: u64, slots: &[u64]| FakeArchive {
+            finalized: AtomicU64::new(finalized),
+            blocks: slots.iter().map(|slot| (*slot, at(*slot).rpc())).collect(),
+        };
 
         clear(&pool).await;
         let mut progress =
@@ -429,30 +541,20 @@ mod tests {
         assert_eq!(progress.applied, Some(checkpoint(44)));
         let streamed = ingested_state(&pool).await;
         assert_eq!(streamed["computations"].len(), 3, "{streamed:#?}");
+        assert_eq!(
+            streamed["solana_encrypted_state_leaves"].len(),
+            2,
+            "{streamed:#?}"
+        );
 
         clear(&pool).await;
-        let archive = FakeArchive {
-            finalized: 43,
-            blocks: [41, 43, 44]
-                .into_iter()
-                .map(|slot| (slot, at(slot).rpc()))
-                .collect(),
-        };
-        let mut progress =
-            IngestionProgress::from(StartPosition::Resume(checkpoint(40)));
-        assert!(catch_up(
-            &db,
-            &config(),
-            &archive,
-            &mut progress,
-            &CancellationToken::new()
-        )
-        .await
-        .unwrap());
+        let archive = archive_of(43, &[41, 43, 44]);
+        let (caught_up, mut progress) = catch_up_from_40(&db, &archive).await;
+        assert!(caught_up.unwrap());
         assert_eq!(
             progress.applied,
             Some(checkpoint(43)),
-            "catch-up stops at the finalized slot"
+            "catch-up stops at the slot finalized when it started"
         );
         stream(&db, &[at(43), at(44)], &mut progress).await;
         assert_eq!(progress.applied, Some(checkpoint(44)));
@@ -468,35 +570,33 @@ mod tests {
         )
         .await
         .unwrap_err();
+        assert!(!is_fatal(&behind), "{behind:#}");
+
+        // An archive without the history after the checkpoint is retried too, and applies
+        // nothing past the gap.
+        clear(&pool).await;
+        let (gap, progress) =
+            catch_up_from_40(&db, &archive_of(43, &[43])).await;
+        let gap = gap.unwrap_err();
+        assert!(!is_fatal(&gap), "{gap:#}");
         assert!(
-            behind.downcast_ref::<FatalListenerError>().is_none(),
-            "{behind:#}"
+            format!("{gap:#}").contains("missing slots 41..=41"),
+            "{gap:#}"
         );
+        assert_eq!(progress.applied, Some(checkpoint(40)));
+        assert!(ingested_state(&pool).await["computations"].is_empty());
 
         // A block of another fork stops the listener before it applies anything, as on the
         // stream.
-        clear(&pool).await;
         let mut forked = at(41).rpc();
         forked.previous_blockhash = bs58::encode([0xEE; 32]).into_string();
         let fork = FakeArchive {
-            finalized: 41,
+            finalized: AtomicU64::new(41),
             blocks: BTreeMap::from([(41, forked)]),
         };
-        let mut progress =
-            IngestionProgress::from(StartPosition::Resume(checkpoint(40)));
-        let mismatch = catch_up(
-            &db,
-            &config(),
-            &fork,
-            &mut progress,
-            &CancellationToken::new(),
-        )
-        .await
-        .unwrap_err();
-        assert!(
-            mismatch.downcast_ref::<FatalListenerError>().is_some(),
-            "{mismatch:#}"
-        );
+        let (mismatch, progress) = catch_up_from_40(&db, &fork).await;
+        let mismatch = mismatch.unwrap_err();
+        assert!(is_fatal(&mismatch), "{mismatch:#}");
         assert_eq!(progress.applied, Some(checkpoint(40)));
         assert!(ingested_state(&pool).await["computations"].is_empty());
     }
@@ -520,44 +620,39 @@ mod tests {
 
     #[test]
     fn an_archive_block_must_name_the_checkpoint_as_its_parent() {
-        let progress =
-            IngestionProgress::from(StartPosition::Resume(checkpoint(40)));
-        assert_eq!(first_missing_slot(&progress).unwrap(), 41);
-        assert!(
-            extends_checkpoint(&progress, &sealed(41, 40, hash(40))).is_ok()
-        );
-        assert!(
-            extends_checkpoint(&progress, &sealed(42, 40, hash(40))).is_ok()
-        );
+        let start = StartPosition::Resume(checkpoint(40));
+        assert_eq!(first_missing_slot(&start).unwrap(), 41);
+        assert!(extends_checkpoint(&start, &sealed(41, 40, hash(40))).is_ok());
+        assert!(extends_checkpoint(&start, &sealed(42, 40, hash(40))).is_ok());
         for (slot, parent, parent_hash) in
-            [(41, 40, [0xEE; 32]), (42, 41, hash(41))]
+            [(41, 40, [0xEE; 32]), (41, 39, hash(39))]
         {
-            let error = extends_checkpoint(
-                &progress,
-                &sealed(slot, parent, parent_hash),
-            )
-            .unwrap_err();
-            assert!(
-                format!("{error}").contains("ancestry mismatch"),
-                "{error}"
-            );
+            let error =
+                extends_checkpoint(&start, &sealed(slot, parent, parent_hash))
+                    .unwrap_err();
+            assert!(is_fatal(&error), "{error:#}");
         }
+        let gap =
+            extends_checkpoint(&start, &sealed(43, 42, hash(42))).unwrap_err();
+        assert!(!is_fatal(&gap), "{gap:#}");
+        assert!(
+            format!("{gap:#}").contains("missing slots 41..=42"),
+            "{gap:#}"
+        );
     }
 
     #[test]
     fn an_unapplied_checkpoint_is_rebuilt_first_and_unchanged() {
-        let progress =
-            IngestionProgress::from(StartPosition::ReplayFrom(checkpoint(40)));
-        assert_eq!(first_missing_slot(&progress).unwrap(), 40);
-        assert!(
-            extends_checkpoint(&progress, &sealed(40, 39, hash(39))).is_ok()
-        );
+        let start = StartPosition::ReplayFrom(checkpoint(40));
+        assert_eq!(first_missing_slot(&start).unwrap(), 40);
+        assert!(extends_checkpoint(&start, &sealed(40, 39, hash(39))).is_ok());
         let changed = SealedBlock {
             block_hash: [0xEE; 32],
             ..sealed(40, 39, hash(39))
         };
         for block in [changed, sealed(41, 40, hash(40))] {
-            assert!(extends_checkpoint(&progress, &block).is_err());
+            let error = extends_checkpoint(&start, &block).unwrap_err();
+            assert!(is_fatal(&error), "{error:#}");
         }
     }
 }

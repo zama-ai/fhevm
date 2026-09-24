@@ -272,15 +272,17 @@ pub async fn run(
             Ok(StreamEnd::Cancelled) => return Ok(()),
             Ok(StreamEnd::ReplayWindowPassed(status)) => {
                 warn!(%status, checkpoint = ?progress.applied, retry_cursor = ?progress.retry, "Yellowstone can no longer replay from the checkpoint; catching up from the archive RPC");
-                match archive::catch_up(
+                metrics::set_archive_catch_up(config.chain_id, true);
+                let caught_up = archive::catch_up(
                     db,
                     config,
                     archive,
                     &mut progress,
                     &cancel,
                 )
-                .await
-                {
+                .await;
+                metrics::set_archive_catch_up(config.chain_id, false);
+                match caught_up {
                     Ok(true) => continue,
                     Ok(false) => return Ok(()),
                     Err(err) => err,

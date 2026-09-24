@@ -8,7 +8,7 @@
 use std::{sync::LazyLock, time::Duration};
 
 use prometheus::{
-    register_int_counter_vec, register_int_gauge_vec, IntCounterVec, IntGauge,
+    register_int_counter_vec, register_int_gauge_vec, IntCounterVec,
     IntGaugeVec,
 };
 use solana_client::nonblocking::rpc_client::RpcClient;
@@ -102,22 +102,10 @@ pub(super) fn record_start(host_chain_id: u64, start: &StartPosition) {
     }
 }
 
-/// Holds `archive_catch_up_active` at 1 until dropped, however catch-up ends.
-pub(super) struct ArchiveCatchUp(IntGauge);
-
-impl ArchiveCatchUp {
-    pub(super) fn start(host_chain_id: u64) -> Self {
-        let gauge = ARCHIVE_CATCH_UP_ACTIVE
-            .with_label_values(&[&host_chain_id.to_string()]);
-        gauge.set(1);
-        Self(gauge)
-    }
-}
-
-impl Drop for ArchiveCatchUp {
-    fn drop(&mut self) {
-        self.0.set(0);
-    }
+pub(super) fn set_archive_catch_up(host_chain_id: u64, active: bool) {
+    ARCHIVE_CATCH_UP_ACTIVE
+        .with_label_values(&[&host_chain_id.to_string()])
+        .set(i64::from(active));
 }
 
 pub(super) fn inc_reconnects(host_chain_id: u64) {
