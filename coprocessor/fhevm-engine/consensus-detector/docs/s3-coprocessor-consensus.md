@@ -413,7 +413,10 @@ there is no remediation reference.
 ### 6. Persist handle findings and remission
 
 For a different detailed range, the verifier compares blocks, then merges the two
-canonical handle lists. A `drifted_handle` row represents:
+canonical handle lists. A `drifted_handle` row is written only when the other
+group holds the quorum, so this operator is the one outside it. A peer that
+disagrees while this operator is in the quorum is recorded only as a range in
+`block_manifest_verification_attempt_drift`. A stored row represents:
 
 - `missing_handle` when the observed side contains a handle absent locally;
 - `unexpected_handle` when the local side contains a handle absent from the
