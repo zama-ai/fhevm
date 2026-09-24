@@ -5,7 +5,7 @@ struct Case {
     kind: &'static str,
     reason: &'static str,
     local_present: bool,
-    observed_present: bool,
+    quorum_present: bool,
     target: bool,
     healed: bool,
     status: &'static str,
@@ -24,7 +24,7 @@ struct Descendant {
     reason: String,
     local_present: bool,
     is_contained: bool,
-    target_ct64_digest: Option<Vec<u8>>,
+    quorum_ct64_digest: Option<Vec<u8>>,
 }
 
 fn cases() -> Vec<Case> {
@@ -50,7 +50,7 @@ fn cases() -> Vec<Case> {
                 if kind == "verified" && local_present != local_computed {
                     continue;
                 }
-                let observed_present = kind == "verified"
+                let quorum_present = kind == "verified"
                     && !matches!(
                         reason,
                         "unknown_on_peer" | "error_on_peer" | "uncomputed_on_peer"
@@ -58,7 +58,7 @@ fn cases() -> Vec<Case> {
                 for target in [false, true] {
                     // Peer-side absence/error has no ct64 target. Inferred rows
                     // may acquire one later through healing's metadata quorum.
-                    if target && !observed_present && kind != "inferred" {
+                    if target && !quorum_present && kind != "inferred" {
                         continue;
                     }
                     for healed in [false, true] {
@@ -80,7 +80,7 @@ fn cases() -> Vec<Case> {
                                     kind,
                                     reason,
                                     local_present,
-                                    observed_present,
+                                    quorum_present,
                                     target,
                                     healed,
                                     status,
@@ -99,7 +99,7 @@ fn cases() -> Vec<Case> {
 async fn seed_case(pool: &PgPool, handle: u8, case: &Case) -> i64 {
     let id = direct_root(pool, handle, case.reason).await;
     let task: i64 =
-        sqlx::query_scalar("SELECT last_observed_task_id FROM drifted_handle WHERE id = $1")
+        sqlx::query_scalar("SELECT last_quorum_task_id FROM drifted_handle WHERE id = $1")
             .bind(id)
             .fetch_one(pool)
             .await
@@ -112,27 +112,27 @@ async fn seed_case(pool: &PgPool, handle: u8, case: &Case) -> i64 {
     let target = case.target.then(|| peer_ct64.clone());
     sqlx::query(
         "UPDATE drifted_handle SET
-            detection_kind = $2, reason = $3, local_present = $4, observed_present = $5,
-            target_ct64_digest = $6, healed_at = CASE WHEN $7 THEN NOW() ELSE NULL END,
+            detection_kind = $2, reason = $3, local_present = $4, quorum_present = $5,
+            quorum_ct64_digest = COALESCE($6, CASE WHEN $5 THEN $12 ELSE NULL END),
+            healed_at = CASE WHEN $7 THEN NOW() ELSE NULL END,
             status = $8, is_contained = $9,
-            last_observed_task_id = CASE WHEN $2 = 'verified' THEN $10 ELSE NULL END,
+            last_quorum_task_id = CASE WHEN $2 = 'verified' THEN $10 ELSE NULL END,
             resolved_task_id = CASE WHEN $8 = 'resolved' THEN $10 ELSE NULL END,
             local_keyset_id = CASE WHEN $4 THEN $11 ELSE NULL END,
             local_ct64_digest = CASE WHEN $4 THEN $11 ELSE NULL END,
             local_ct128_digest = CASE WHEN $4 THEN $11 ELSE NULL END,
             local_ct128_format = CASE WHEN $4 THEN 0 ELSE NULL END,
-            observed_keyset_id = CASE WHEN $5 THEN
+            quorum_keyset_id = CASE WHEN $5 THEN
                 CASE WHEN $3 = 'metadata_mismatch' THEN $13 ELSE $11 END ELSE NULL END,
-            observed_ct64_digest = CASE WHEN $5 THEN $12 ELSE NULL END,
-            observed_ct128_digest = CASE WHEN $5 THEN $13 ELSE NULL END,
-            observed_ct128_format = CASE WHEN $5 THEN 0 ELSE NULL END
+            quorum_ct128_digest = CASE WHEN $5 THEN $13 ELSE NULL END,
+            quorum_ct128_format = CASE WHEN $5 THEN 0 ELSE NULL END
          WHERE id = $1",
     )
     .bind(id)
     .bind(case.kind)
     .bind(case.reason)
     .bind(case.local_present)
-    .bind(case.observed_present)
+    .bind(case.quorum_present)
     .bind(target)
     .bind(case.healed)
     .bind(case.status)
@@ -162,14 +162,14 @@ async fn assert_matrix(pool: &PgPool, cases: &[Case], guaranteed: bool) {
             "root {case:?}"
         );
         let child: Option<Descendant> = sqlx::query_as(
-            "SELECT detection_kind, reason, local_present, is_contained, target_ct64_digest FROM drifted_handle WHERE handle = $1"
+            "SELECT detection_kind, reason, local_present, is_contained, quorum_ct64_digest FROM drifted_handle WHERE handle = $1"
         ).bind(bytes(handle + 100)).fetch_optional(pool).await.unwrap();
         let expected = (case.propagates() && !case.contained).then(|| Descendant {
             detection_kind: "inferred".to_owned(),
             reason: "ct64_mismatch".to_owned(),
             local_present: true,
             is_contained: guaranteed,
-            target_ct64_digest: None,
+            quorum_ct64_digest: None,
         });
         assert_eq!(child, expected, "descendant of {case:?}");
     }
@@ -255,7 +255,7 @@ async fn failed_descendants_are_inferred_without_claiming_a_successful_peer_resu
         }
     );
     let failed: Vec<(Vec<u8>, String, String, bool, bool, bool)> = sqlx::query_as(
-        "SELECT handle, detection_kind, reason, local_present, observed_present, is_contained FROM drifted_handle WHERE handle <> $1 ORDER BY handle"
+        "SELECT handle, detection_kind, reason, local_present, quorum_present, is_contained FROM drifted_handle WHERE handle <> $1 ORDER BY handle"
     ).bind(bytes(1)).fetch_all(&pool).await.unwrap();
     assert_eq!(
         failed,
@@ -279,7 +279,7 @@ async fn failed_descendants_are_inferred_without_claiming_a_successful_peer_resu
         ]
     );
     let claimed_peer_evidence: i64 = sqlx::query_scalar(
-        "SELECT COUNT(*) FROM drifted_handle WHERE detection_kind = 'inferred' AND (target_ct64_digest IS NOT NULL OR last_observed_task_id IS NOT NULL)"
+        "SELECT COUNT(*) FROM drifted_handle WHERE detection_kind = 'inferred' AND (quorum_ct64_digest IS NOT NULL OR last_quorum_task_id IS NOT NULL)"
     ).fetch_one(&pool).await.unwrap();
     assert_eq!(claimed_peer_evidence, 0);
     assert_eq!(

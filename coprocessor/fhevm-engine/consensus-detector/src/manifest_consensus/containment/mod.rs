@@ -714,7 +714,7 @@ async fn persist_inferred(
         r#"INSERT INTO public.drifted_handle (
             consensus_epoch, coprocessor_context_id, host_chain_id,
             block_number, block_hash, handle, detection_kind, reason,
-            local_present, observed_present
+            local_present, quorum_present
         ) SELECT $1, $2, $3, $4, $5, $6, 'inferred', 'ct64_mismatch', $7, FALSE
         WHERE NOT EXISTS (
             SELECT 1 FROM public.drifted_handle

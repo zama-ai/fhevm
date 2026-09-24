@@ -18,7 +18,7 @@ pub(super) async fn drift(pool: &PgPool, n: u8) {
     sqlx::query(
         "INSERT INTO drifted_handle (consensus_epoch, coprocessor_context_id,
         host_chain_id, block_number, block_hash, handle, detection_kind, reason,
-        local_present, observed_present)
+        local_present, quorum_present)
         SELECT consensus_epoch, $1, 1, 1, $1, $1, 'inferred', 'ct64_mismatch', FALSE, FALSE
         FROM blue_green_consensus_epoch",
     )
