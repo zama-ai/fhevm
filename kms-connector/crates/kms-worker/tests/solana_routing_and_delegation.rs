@@ -486,7 +486,7 @@ async fn authorize_with_wildcard_account(
 #[tokio::test]
 async fn an_impostor_at_the_wildcard_address_fails_the_entry() {
     let mut impostor = live_wildcard().account();
-    impostor.owner = Pubkey::new_from_array([0xee; 32]);
+    impostor.owner = pubkey(0xee);
 
     let failure = authorize_with_wildcard_account(impostor)
         .await
@@ -511,7 +511,7 @@ async fn an_invalid_row_fails_the_entry_even_beside_a_live_row() {
     let wildcard = DelegationFixture::live_wildcard(delegator.pubkey(), signer.pubkey());
     let foreign = |row: &DelegationFixture| {
         let mut account = row.account();
-        account.owner = Pubkey::new_from_array([0xee; 32]);
+        account.owner = pubkey(0xee);
         (row.address().0, account)
     };
     let base = world_with(&encrypted_store, signer.pubkey());
@@ -669,7 +669,7 @@ async fn a_delegation_for_another_application_does_not_authorize() {
     let live = handle(0x32, FHE_TYPE_UINT64);
     let encrypted_store = EncryptedStoreFixture::allowing(live, delegator.pubkey());
     let mut elsewhere = DelegationFixture::live(delegator.pubkey(), signer.pubkey());
-    elsewhere.scope = Pubkey::new_from_array([0x77; 32]);
+    elsewhere.scope = pubkey(0x77);
     let request = RequestBuilder::new(&signer)
         .delegated(&encrypted_store, live, delegator.pubkey())
         .typed();
@@ -790,7 +790,7 @@ async fn a_delegation_record_owned_by_another_program_is_rejected() {
     let delegation = DelegationFixture::live(delegator.pubkey(), signer.pubkey());
     let (key, _) = delegation.address();
     let mut impostor = delegation.account();
-    impostor.owner = Pubkey::new_from_array([0xee; 32]);
+    impostor.owner = pubkey(0xee);
     let request = RequestBuilder::new(&signer)
         .delegated(&encrypted_store, live, delegator.pubkey())
         .typed();
@@ -1118,7 +1118,7 @@ async fn prefunded_delegations_remain_absent_until_initialized() {
     let exact = live_delegation().revoked();
     let wildcard = live_wildcard();
     let empty = SnapshotAccount {
-        owner: Pubkey::new_from_array([0; 32]),
+        owner: pubkey(0),
         data: vec![],
     };
     let base = world_with(&store, signer.pubkey());
@@ -1136,7 +1136,7 @@ async fn prefunded_delegations_remain_absent_until_initialized() {
     let invalid = base.clone().with_delegation(&exact).with_account(
         wildcard.address().0,
         SnapshotAccount {
-            owner: Pubkey::new_from_array([0; 32]),
+            owner: pubkey(0),
             data: vec![1],
         },
     );

@@ -68,7 +68,8 @@ fn extra_data_vectors_encode_and_round_trip() {
 
     for record in &file.records {
         let context_id = key32(&record.input.context_id_hex);
-        let encrypted_store = key32(&record.input.encrypted_store_hex);
+        let encrypted_store =
+            solana_pubkey::Pubkey::new_from_array(key32(&record.input.encrypted_store_hex));
         let expected_blob = bytes(&record.blob_hex);
 
         assert_eq!(

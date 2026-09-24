@@ -54,17 +54,22 @@ use zama_solana_permit::{
 };
 use zama_solana_request::SolanaHandleEntryWire;
 
+/// A key made of one repeated byte.
+pub const fn pubkey(byte: u8) -> Pubkey {
+    Pubkey::new_from_array([byte; 32])
+}
+
 /// The host deployment every fixture is built against.
-pub const PROGRAM_ID: Pubkey = Pubkey::new_from_array([7; 32]);
+pub const PROGRAM_ID: Pubkey = pubkey(7);
 /// Type byte `0x01` over a cluster tag, as every Solana host chain id.
 pub const CHAIN_ID: u64 = 0x0123_4567_89ab_cdef;
 
 /// The application program of the default encrypted store.
-pub const APP_PROGRAM: Pubkey = Pubkey::new_from_array([1; 32]);
+pub const APP_PROGRAM: Pubkey = pubkey(1);
 /// The encrypted store authority of the default encrypted store.
-pub const AUTHORITY: Pubkey = Pubkey::new_from_array([2; 32]);
+pub const AUTHORITY: Pubkey = pubkey(2);
 /// The program-declared scope of the default encrypted store.
-pub const SCOPE: Pubkey = Pubkey::new_from_array([3; 32]);
+pub const SCOPE: Pubkey = pubkey(3);
 /// The label of the default encrypted store.
 pub const LABEL: [u8; 32] = *b"balance_________________________";
 

@@ -230,7 +230,7 @@ mod tests {
         let context_id = U256::from(42u64);
         let data = super::super::solana_extra_data::encode_solana_public_decrypt_extra_data(
             context_id.to_be_bytes::<32>(),
-            [7u8; 32],
+            solana_pubkey::Pubkey::new_from_array([7u8; 32]),
         );
 
         assert_eq!(

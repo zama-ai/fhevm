@@ -13,6 +13,8 @@
 //! languages; the two layouts change together, pinned by the shared byte vectors in
 //! `solana/test-fixtures/user-decrypt/extra_data_v1.json`.
 
+use solana_pubkey::Pubkey;
+
 /// `extraData` version byte of the Solana public-decrypt form:
 /// `0x04 ‖ context_id(32) ‖ encrypted_store(32)`. Version `0x03` named a per-value account and
 /// is intentionally not decoded.
@@ -27,7 +29,7 @@ pub struct SolanaPublicDecryptExtraData {
     /// The 32-byte KMS context id.
     pub context_id: [u8; 32],
     /// The encrypted store whose history contains the requested handle.
-    pub encrypted_store: [u8; 32],
+    pub encrypted_store: Pubkey,
 }
 
 /// Parses the public-decrypt form strictly: the version byte and the exact length, nothing
@@ -43,8 +45,7 @@ pub fn parse_solana_public_decrypt_extra_data(
     }
     let mut context_id = [0; 32];
     context_id.copy_from_slice(&extra_data[1..33]);
-    let mut encrypted_store = [0; 32];
-    encrypted_store.copy_from_slice(&extra_data[33..65]);
+    let encrypted_store = Pubkey::try_from(&extra_data[33..65]).ok()?;
     Some(SolanaPublicDecryptExtraData {
         context_id,
         encrypted_store,
@@ -54,12 +55,12 @@ pub fn parse_solana_public_decrypt_extra_data(
 /// Encodes the public-decrypt form.
 pub fn encode_solana_public_decrypt_extra_data(
     context_id: [u8; 32],
-    encrypted_store: [u8; 32],
+    encrypted_store: Pubkey,
 ) -> Vec<u8> {
     let mut data = Vec::with_capacity(SOLANA_PUBLIC_DECRYPT_EXTRA_DATA_LEN);
     data.push(SOLANA_EXTRA_DATA_VERSION_PUBLIC_DECRYPT);
     data.extend_from_slice(&context_id);
-    data.extend_from_slice(&encrypted_store);
+    data.extend_from_slice(encrypted_store.as_ref());
     data
 }
 
@@ -69,20 +70,22 @@ mod tests {
 
     #[test]
     fn the_carrier_round_trips() {
-        let blob = encode_solana_public_decrypt_extra_data([7; 32], [9; 32]);
+        let blob =
+            encode_solana_public_decrypt_extra_data([7; 32], Pubkey::new_from_array([9; 32]));
         assert_eq!(blob.len(), SOLANA_PUBLIC_DECRYPT_EXTRA_DATA_LEN);
         assert_eq!(
             parse_solana_public_decrypt_extra_data(&blob),
             Some(SolanaPublicDecryptExtraData {
                 context_id: [7; 32],
-                encrypted_store: [9; 32],
+                encrypted_store: Pubkey::new_from_array([9; 32]),
             })
         );
     }
 
     #[test]
     fn the_parser_requires_the_version_and_the_exact_length() {
-        let blob = encode_solana_public_decrypt_extra_data([7; 32], [9; 32]);
+        let blob =
+            encode_solana_public_decrypt_extra_data([7; 32], Pubkey::new_from_array([9; 32]));
         assert!(parse_solana_public_decrypt_extra_data(&[]).is_none());
         assert!(parse_solana_public_decrypt_extra_data(&blob[..blob.len() - 1]).is_none());
         let mut trailing = blob.clone();

@@ -142,7 +142,7 @@ fn an_encrypted_store_owned_by_another_program_is_terminal() {
     let encrypted_store =
         EncryptedStoreFixture::allowing(handle(0x12, FHE_TYPE_UINT64), Wallet::new(1).pubkey());
     let mut impostor = encrypted_store.account();
-    impostor.owner = Pubkey::new_from_array([0xee; 32]);
+    impostor.owner = pubkey(0xee);
 
     let failure = resolve_from(
         &World::at_slot(1).with_account(encrypted_store.account_key, impostor),
@@ -152,7 +152,7 @@ fn an_encrypted_store_owned_by_another_program_is_terminal() {
 
     assert!(matches!(
         failure,
-        EncryptedStoreFailure::ForeignOwner { owner, .. } if owner == Pubkey::new_from_array([0xee; 32])
+        EncryptedStoreFailure::ForeignOwner { owner, .. } if owner == pubkey(0xee)
     ));
     assert!(
         !AuthorizationFailure::EncryptedStore {
@@ -198,7 +198,7 @@ fn an_encrypted_store_whose_fields_derive_another_address_is_rejected() {
     // An encrypted store of another authority, placed at the claimed account's address.
     let mut foreign = EncryptedStoreFixture::in_application(
         APP_PROGRAM,
-        Pubkey::new_from_array([0x33; 32]),
+        pubkey(0x33),
         SCOPE,
         LABEL,
         handle(0x14, FHE_TYPE_UINT64),
@@ -363,14 +363,14 @@ fn an_encrypted_store_with_inconsistent_peaks_is_terminal() {
 fn each_entry_takes_its_authority_from_its_own_encrypted_store() {
     let first = EncryptedStoreFixture::in_application(
         APP_PROGRAM,
-        Pubkey::new_from_array([0x51; 32]),
+        pubkey(0x51),
         SCOPE,
         LABEL,
         handle(0x19, FHE_TYPE_UINT64),
     );
     let second = EncryptedStoreFixture::in_application(
         APP_PROGRAM,
-        Pubkey::new_from_array([0x52; 32]),
+        pubkey(0x52),
         SCOPE,
         LABEL,
         handle(0x1a, FHE_TYPE_UINT64),
@@ -399,7 +399,7 @@ fn a_scoped_permit_admits_an_encrypted_store_of_a_signed_application() {
 /// value account's — the only place it exists.
 #[test]
 fn an_encrypted_store_outside_the_signed_scope_is_rejected() {
-    let foreign_scope: Pubkey = Pubkey::new_from_array([0x61; 32]);
+    let foreign_scope: Pubkey = pubkey(0x61);
     let encrypted_store = EncryptedStoreFixture::in_application(
         APP_PROGRAM,
         AUTHORITY,
@@ -419,7 +419,7 @@ fn an_encrypted_store_outside_the_signed_scope_is_rejected() {
 /// application: a program cannot borrow a scope somebody signed for a different program.
 #[test]
 fn the_same_scope_under_another_program_is_rejected() {
-    let other_program: Pubkey = Pubkey::new_from_array([0x62; 32]);
+    let other_program: Pubkey = pubkey(0x62);
     let encrypted_store = EncryptedStoreFixture::in_application(
         other_program,
         AUTHORITY,
@@ -440,9 +440,9 @@ fn the_same_scope_under_another_program_is_rejected() {
 #[test]
 fn a_permissive_permit_admits_an_encrypted_store_of_any_application() {
     let encrypted_store = EncryptedStoreFixture::in_application(
-        Pubkey::new_from_array([0x71; 32]),
+        pubkey(0x71),
         AUTHORITY,
-        Pubkey::new_from_array([0x72; 32]),
+        pubkey(0x72),
         LABEL,
         handle(0x1e, FHE_TYPE_UINT64),
     );
@@ -470,7 +470,7 @@ async fn a_foreign_application_handle_later_in_the_batch_rejects_the_whole_reque
     let out_of_scope_handle = handle(0x20, FHE_TYPE_UINT64);
     let in_scope = EncryptedStoreFixture::allowing(in_scope_handle, wallet.pubkey());
     let mut out_of_scope = EncryptedStoreFixture::in_application(
-        Pubkey::new_from_array([0x81; 32]),
+        pubkey(0x81),
         AUTHORITY,
         SCOPE,
         LABEL,
@@ -500,7 +500,7 @@ async fn a_foreign_application_handle_later_in_the_batch_rejects_the_whole_reque
                 index: 1,
                 program,
                 scope: SCOPE,
-            } if program == Pubkey::new_from_array([0x81; 32])
+            } if program == pubkey(0x81)
         ),
         "the rejection names the offending entry, got {failure}"
     );

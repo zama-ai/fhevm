@@ -164,7 +164,7 @@ async fn a_delegated_entry_plans_both_of_its_delegation_rows() {
     let delegator = Wallet::new(2);
     let first_handle = handle(0x27, FHE_TYPE_UINT64);
     let second_handle = handle(0x28, FHE_TYPE_UINT64);
-    let other_scope: Pubkey = Pubkey::new_from_array([0x5a; 32]);
+    let other_scope: Pubkey = pubkey(0x5a);
     let first_encrypted_store = EncryptedStoreFixture::allowing(first_handle, delegator.pubkey());
     let mut second_encrypted_store = EncryptedStoreFixture::in_application(
         APP_PROGRAM,
@@ -224,7 +224,7 @@ async fn the_largest_delegated_request_fits_one_account_read() {
         let mut store = EncryptedStoreFixture::in_application(
             APP_PROGRAM,
             AUTHORITY,
-            Pubkey::new_from_array([index; 32]),
+            pubkey(index),
             LABEL,
             live,
         );
@@ -577,10 +577,7 @@ fn rpc_account() -> serde_json::Value {
 #[tokio::test]
 async fn confirmed_rpc_preserves_order_null_accounts_and_context_slot() {
     let read = rpc_read(
-        &[
-            Pubkey::new_from_array([5; 32]),
-            Pubkey::new_from_array([6; 32]),
-        ],
+        &[pubkey(5), pubkey(6)],
         serde_json::json!([rpc_account(), null]),
     )
     .await
@@ -605,7 +602,7 @@ async fn confirmed_rpc_preserves_order_null_accounts_and_context_slot() {
 /// read.
 #[tokio::test]
 async fn a_node_below_the_minimum_context_slot_is_reported_as_behind() {
-    let keys = [Pubkey::new_from_array([5; 32])];
+    let keys = [pubkey(5)];
     let behind = serde_json::json!({"jsonrpc":"2.0","id":0,"error":{
         "code":-32016,"message":"Minimum context slot has not been reached","data":{"contextSlot":99}}});
     let (_server, client) = node_answering(&keys, Some(100), behind).await;
@@ -634,11 +631,7 @@ async fn malformed_rpc_accounts_are_errors_never_missing_accounts() {
     missing_owner.as_object_mut().unwrap().remove("owner");
     for account in [bad_base64, wrong_encoding, bad_owner, missing_owner] {
         assert!(matches!(
-            rpc_read(
-                &[Pubkey::new_from_array([5; 32])],
-                serde_json::json!([account])
-            )
-            .await,
+            rpc_read(&[pubkey(5)], serde_json::json!([account])).await,
             Err(SnapshotError::Unavailable { .. })
         ));
     }
@@ -655,7 +648,7 @@ async fn an_rpc_answer_of_the_wrong_length_is_an_error(
     #[case] returned: usize,
 ) {
     assert_eq!(
-        rpc_read(&[Pubkey::new_from_array([5; 32])], value).await,
+        rpc_read(&[pubkey(5)], value).await,
         Err(SnapshotError::ResponseLengthMismatch {
             requested: 1,
             returned,
@@ -665,7 +658,7 @@ async fn an_rpc_answer_of_the_wrong_length_is_an_error(
 
 #[tokio::test]
 async fn a_full_hundred_account_snapshot_is_one_rpc_call() {
-    let keys: Vec<_> = (0..100).map(|i| Pubkey::new_from_array([i; 32])).collect();
+    let keys: Vec<_> = (0..100).map(pubkey).collect();
     let read = rpc_read(&keys, serde_json::json!(vec![None::<()>; 100]))
         .await
         .unwrap();
@@ -687,7 +680,7 @@ async fn rpc_throttling_retries_fit_inside_the_configured_deadline() {
     );
     let result = tokio::time::timeout(
         std::time::Duration::from_millis(250),
-        client.read_accounts(&[Pubkey::new_from_array([1; 32])], None),
+        client.read_accounts(&[pubkey(1)], None),
     )
     .await;
     assert!(
@@ -715,20 +708,12 @@ async fn rpc_limit_is_shared_across_clones_and_cancellation_releases_it() {
         NonZeroUsize::new(1).unwrap(),
     );
     let first_client = client.clone();
-    let first = tokio::spawn(async move {
-        first_client
-            .read_accounts(&[Pubkey::new_from_array([1; 32])], None)
-            .await
-    });
+    let first = tokio::spawn(async move { first_client.read_accounts(&[pubkey(1)], None).await });
     let (_held, _) = timeout(Duration::from_secs(1), listener.accept())
         .await
         .unwrap()
         .unwrap();
-    let second = tokio::spawn(async move {
-        client
-            .read_accounts(&[Pubkey::new_from_array([2; 32])], None)
-            .await
-    });
+    let second = tokio::spawn(async move { client.read_accounts(&[pubkey(2)], None).await });
     assert!(
         timeout(Duration::from_millis(100), listener.accept())
             .await

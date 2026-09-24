@@ -877,7 +877,7 @@ mod tests {
         assert!(!debug.contains("first-key"), "{debug}");
     }
 
-    /// The sample's Solana entry, uncommented: routes are TOML inline tables.
+    /// The sample's commented Solana fields as a real entry: routes are TOML inline tables.
     #[test]
     #[serial(config_tests)]
     fn a_solana_entry_loads_from_toml() {

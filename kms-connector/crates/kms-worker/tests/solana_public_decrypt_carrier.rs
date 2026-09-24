@@ -26,10 +26,9 @@ use kms_worker::core::solana::{
     snapshot::SolanaRpcClient,
 };
 use mocktail::{StatusCode, server::MockServer};
-use solana_pubkey::Pubkey;
 use solana_support::{
     EncryptedStoreFixture, FHE_TYPE_UINT64, HttpHost, LEAF_PROOFS_ROUTE, PROGRAM_ID, handle,
-    proof_route, serve_proofs, solana_host,
+    proof_route, pubkey, serve_proofs, solana_host,
 };
 
 /// The `extraData` version byte of the public-decrypt carrier. A literal, deliberately not the
@@ -102,9 +101,9 @@ async fn a_public_leaf_the_record_serves_authorizes_the_handle() {
 #[tokio::test]
 async fn an_allow_leaf_does_not_prove_public_ness() {
     let allowed = handle(0x30, FHE_TYPE_UINT64);
-    let mut fixture = EncryptedStoreFixture::allowing(allowed, Pubkey::new_from_array([0x42; 32]));
+    let mut fixture = EncryptedStoreFixture::allowing(allowed, pubkey(0x42));
     fixture.update(handle(0x31, FHE_TYPE_UINT64));
-    let allow_query = fixture.allowed_query(allowed, Pubkey::new_from_array([0x42; 32]));
+    let allow_query = fixture.allowed_query(allowed, pubkey(0x42));
     // The record answers the public query with the allow leaf's proof.
     let host = host_answering(
         &fixture,
@@ -128,7 +127,7 @@ async fn an_allow_leaf_does_not_prove_public_ness() {
 #[tokio::test]
 async fn a_handle_not_made_public_is_retried() {
     let private = handle(0x40, FHE_TYPE_UINT64);
-    let fixture = EncryptedStoreFixture::allowing(private, Pubkey::new_from_array([0x42; 32]));
+    let fixture = EncryptedStoreFixture::allowing(private, pubkey(0x42));
     let query = fixture.public_query(private);
     let host = host_answering(&fixture, query, fixture.outcome(&query)).await;
 
@@ -231,7 +230,7 @@ async fn a_carrier_naming_a_foreign_account_is_refused() {
     let public = handle(0x80, FHE_TYPE_UINT64);
     let fixture = public_then_updated(public, handle(0x81, FHE_TYPE_UINT64));
     let mut impostor = fixture.account();
-    impostor.owner = Pubkey::new_from_array([0xee; 32]);
+    impostor.owner = pubkey(0xee);
     let mut host = HttpHost::start().await;
     host.serve_accounts(&[(fixture.account_key, Some(impostor))]);
 

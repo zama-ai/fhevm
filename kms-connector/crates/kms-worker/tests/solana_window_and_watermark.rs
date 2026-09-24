@@ -240,7 +240,7 @@ fn an_invalidation_record_owned_by_another_program_is_rejected() {
     let user = Wallet::new(1).pubkey();
     let (key, _) = invalidation_address(user);
     let mut impostor = invalidation_account(user, DEFAULT_START + 5);
-    impostor.owner = Pubkey::new_from_array([0xee; 32]);
+    impostor.owner = pubkey(0xee);
     let world = World::at_slot(1).with_account(key, impostor);
 
     let failure = watermark_in(&world, user).expect_err("a foreign program cannot set a watermark");
