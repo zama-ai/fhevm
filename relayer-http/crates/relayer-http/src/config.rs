@@ -12,7 +12,7 @@ use crate::kms_aggregator::{ConfigError, KmsAggregatorConfig};
 /// No `deny_unknown_fields` at this level: every `APP_*` variable of the pod lands here as a key, and a typo in
 /// `kms_aggregator` still fails as a missing field. The nested structs are strict.
 #[derive(Debug, Clone, Deserialize)]
-pub struct Settings {
+pub struct RelayerConfig {
     pub name: String,
     #[serde(default)]
     pub log: LogConfig,
@@ -87,22 +87,22 @@ impl Default for LogConfig {
     }
 }
 
-impl Settings {
+impl RelayerConfig {
     /// Reads `path`, applies `APP_*` environment overrides, validates. Durations need a unit (`5s`, `500ms`).
     pub fn load(path: &str) -> Result<Self, ConfigError> {
         Self::load_with(path, Environment::with_prefix("APP"))
     }
 
     fn load_with(path: &str, env: Environment) -> Result<Self, ConfigError> {
-        let settings: Settings = Config::builder()
+        let config: Self = Config::builder()
             .add_source(File::with_name(path))
             .add_source(env.prefix_separator("_").separator("__"))
             .build()
             .and_then(Config::try_deserialize)
             .map_err(|e| ConfigError(format!("{path}: {e}")))?;
-        settings.http.validate()?;
-        settings.kms_aggregator.validate()?;
-        Ok(settings)
+        config.http.validate()?;
+        config.kms_aggregator.validate()?;
+        Ok(config)
     }
 }
 
@@ -125,22 +125,22 @@ mod tests {
 
     #[test]
     fn example_config_loads_and_validates() {
-        let settings = Settings::load(EXAMPLE).unwrap();
-        assert_eq!(settings.name, "zama-relayer-http");
-        assert_eq!(settings.log.format, "pretty");
-        assert!(settings.log.show_timestamp && settings.log.show_target);
-        assert_eq!(settings.kms_aggregator.endpoints.len(), 13);
-        assert_eq!(settings.kms_aggregator.user_decrypt.threshold, 9);
-        assert_eq!(settings.kms_aggregator.public_decrypt.threshold, 5);
+        let config = RelayerConfig::load(EXAMPLE).unwrap();
+        assert_eq!(config.name, "zama-relayer-http");
+        assert_eq!(config.log.format, "pretty");
+        assert!(config.log.show_timestamp && config.log.show_target);
+        assert_eq!(config.kms_aggregator.endpoints.len(), 13);
+        assert_eq!(config.kms_aggregator.user_decrypt.threshold, 9);
+        assert_eq!(config.kms_aggregator.public_decrypt.threshold, 5);
         assert_eq!(
-            settings.kms_aggregator.call.timeout,
+            config.kms_aggregator.call.timeout,
             Duration::from_millis(5000)
         );
     }
 
     #[test]
     fn environment_overrides_nested_fields() {
-        let settings = Settings::load_with(
+        let config = RelayerConfig::load_with(
             EXAMPLE,
             env(&[
                 ("APP_KMS_AGGREGATOR__CALL__TIMEOUT", "7s"),
@@ -150,15 +150,15 @@ mod tests {
             ]),
         )
         .unwrap();
-        assert_eq!(settings.kms_aggregator.call.timeout, Duration::from_secs(7));
-        assert_eq!(settings.kms_aggregator.max_concurrent_calls, 128);
-        assert_eq!(settings.log.format, "compact");
-        assert!(settings.log.show_file_line);
+        assert_eq!(config.kms_aggregator.call.timeout, Duration::from_secs(7));
+        assert_eq!(config.kms_aggregator.max_concurrent_calls, 128);
+        assert_eq!(config.log.format, "compact");
+        assert!(config.log.show_file_line);
     }
 
     #[test]
     fn unitless_duration_is_rejected() {
-        let e = Settings::load_with(
+        let e = RelayerConfig::load_with(
             EXAMPLE,
             env(&[("APP_KMS_AGGREGATOR__CALL__TIMEOUT", "5000")]),
         )
@@ -169,7 +169,7 @@ mod tests {
 
     #[test]
     fn unknown_nested_field_is_rejected() {
-        let e = Settings::load_with(
+        let e = RelayerConfig::load_with(
             EXAMPLE,
             env(&[("APP_KMS_AGGREGATOR__CALL__TIMEOUTS", "5s")]),
         )
@@ -180,30 +180,33 @@ mod tests {
 
     #[test]
     fn invalid_value_fails_validation() {
-        let e = Settings::load_with(EXAMPLE, env(&[("APP_KMS_AGGREGATOR__CALL__TIMEOUT", "0s")]))
-            .err()
-            .unwrap();
+        let e =
+            RelayerConfig::load_with(EXAMPLE, env(&[("APP_KMS_AGGREGATOR__CALL__TIMEOUT", "0s")]))
+                .err()
+                .unwrap();
         assert!(e.0.contains("call.timeout"), "{e}");
     }
 
     #[test]
     fn missing_file_names_the_path() {
-        let e = Settings::load("config/does-not-exist.yaml").err().unwrap();
+        let e = RelayerConfig::load("config/does-not-exist.yaml")
+            .err()
+            .unwrap();
         assert!(e.0.starts_with("config/does-not-exist.yaml"), "{e}");
     }
 
     #[test]
     fn http_config_is_loaded_and_validated() {
-        let settings = Settings::load(EXAMPLE).unwrap();
-        assert_eq!(settings.http.endpoint.port(), 8080);
-        assert_eq!(settings.http.max_body_bytes, 2 << 20);
-        assert_eq!(settings.http.supported_chain_ids, vec![1, 137]);
+        let config = RelayerConfig::load(EXAMPLE).unwrap();
+        assert_eq!(config.http.endpoint.port(), 8080);
+        assert_eq!(config.http.max_body_bytes, 2 << 20);
+        assert_eq!(config.http.supported_chain_ids, vec![1, 137]);
 
-        let e = Settings::load_with(EXAMPLE, env(&[("APP_HTTP__MAX_BODY_BYTES", "10")]))
+        let e = RelayerConfig::load_with(EXAMPLE, env(&[("APP_HTTP__MAX_BODY_BYTES", "10")]))
             .err()
             .unwrap();
         assert!(e.0.contains("http.max_body_bytes"), "{e}");
-        let e = Settings::load_with(EXAMPLE, env(&[("APP_HTTP__ENDPOINT", "not-an-address")]))
+        let e = RelayerConfig::load_with(EXAMPLE, env(&[("APP_HTTP__ENDPOINT", "not-an-address")]))
             .err()
             .unwrap();
         assert!(e.0.contains("endpoint"), "{e}");
@@ -240,8 +243,7 @@ mod tests {
 
     #[test]
     fn config_without_log_block_loads_and_logs_json() {
-        let dir =
-            std::env::temp_dir().join(format!("relayer-http-settings-{}", std::process::id()));
+        let dir = std::env::temp_dir().join(format!("relayer-http-config-{}", std::process::id()));
         std::fs::create_dir_all(&dir).unwrap();
         let path = dir.join("no-log.yaml");
         let without_log: String = std::fs::read_to_string(EXAMPLE)
@@ -255,8 +257,8 @@ mod tests {
             .map(|line| format!("{line}\n"))
             .collect();
         std::fs::write(&path, without_log).unwrap();
-        let settings = Settings::load(path.to_str().unwrap()).unwrap();
-        assert_eq!(settings.log, LogConfig::default());
+        let config = RelayerConfig::load(path.to_str().unwrap()).unwrap();
+        assert_eq!(config.log, LogConfig::default());
         let _ = std::fs::remove_dir_all(dir);
     }
 }

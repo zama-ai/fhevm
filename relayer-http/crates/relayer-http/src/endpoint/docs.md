@@ -201,7 +201,7 @@ same `request_id`, `decryption_id` and `handles`. One successful user decrypt, J
 ```
 
 A validation failure is `request received`, `request validation failed` (`field`, `issue`), `request rejected`
-(`status` 400, `code` `malformed`); an unparseable body is `request body rejected` then `request rejected`, both with
+(`status` 400, `code` `malformed`); an unparsable body is `request body rejected` then `request rejected`, both with
 `handles` and `decryption_id` at `none`. Client-side outcomes are `info`, not `warn`: they are not relayer errors.
 
 Adding a line is one call: `log!(debug, log, attempts = 2, "retrying")` prints the four identifiers then the
@@ -215,7 +215,7 @@ the endpoint's share one shape. Bodies, keys, signatures and shares are never lo
 Unit tests next to every function (types, validation rules, conversions, error mapping) and integration tests in
 `mod.rs` that drive the router in memory with the mock connector: the success envelopes, every 400 case, 404, 405,
 the oversized body, the dominant-error mapping, shutdown, the probes, and the log lines of three requests (success,
-validation failure, unparseable body) captured through a thread-local JSON subscriber: every `request …` line has
+validation failure, unparsable body) captured through a thread-local JSON subscriber: every `request …` line has
 the four identifiers, with the expected values at each step. `cargo test -p relayer-http endpoint`.
 
 Manual smoke, with the API key env vars set:

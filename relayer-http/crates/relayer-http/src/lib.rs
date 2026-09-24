@@ -15,17 +15,17 @@
     )
 )]
 
+pub mod config;
 pub mod endpoint;
 pub mod kms_aggregator;
 pub mod logging;
-pub mod settings;
 
 use std::sync::Arc;
 
 use tokio_util::sync::CancellationToken;
 
+use crate::config::{HttpConfig, RelayerConfig};
 use kms_aggregator::{Aggregator, Caller, ConfigError, HttpClient, PublicDecrypt, UserDecrypt};
-use settings::{HttpConfig, Settings};
 
 /// Everything a request handler needs: the one shared state of the process. Built once in `main`, cloned per
 /// request (Arcs only). Both aggregators share one `Caller`: one HTTP client, one call semaphore.
@@ -41,24 +41,24 @@ pub struct App {
 
 impl App {
     /// Resolves the API keys from the environment, builds the shared HTTP client, semaphore and both aggregators.
-    pub fn new(settings: &Settings, shutdown: CancellationToken) -> Result<Self, ConfigError> {
-        let cfg = &settings.kms_aggregator;
-        let client = Arc::new(HttpClient::new(cfg)?);
-        let caller = Arc::new(Caller::new(cfg, client)?);
+    pub fn new(config: &RelayerConfig, shutdown: CancellationToken) -> Result<Self, ConfigError> {
+        let kms = &config.kms_aggregator;
+        let client = Arc::new(HttpClient::new(kms)?);
+        let caller = Arc::new(Caller::new(kms, client)?);
         Ok(Self {
             user_decrypt: Arc::new(Aggregator::new(
                 caller.clone(),
-                cfg.user_decrypt.threshold,
-                cfg.user_decrypt.checks,
+                kms.user_decrypt.threshold,
+                kms.user_decrypt.checks,
                 shutdown.clone(),
             )),
             public_decrypt: Arc::new(Aggregator::new(
                 caller,
-                cfg.public_decrypt.threshold,
+                kms.public_decrypt.threshold,
                 (),
                 shutdown.clone(),
             )),
-            http: Arc::new(settings.http.clone()),
+            http: Arc::new(config.http.clone()),
             shutdown,
         })
     }
@@ -73,19 +73,19 @@ mod tests {
 
     #[test]
     fn app_needs_every_api_key() {
-        let settings = Settings::load(EXAMPLE).unwrap();
-        let e = App::new(&settings, CancellationToken::new()).err().unwrap();
+        let config = RelayerConfig::load(EXAMPLE).unwrap();
+        let e = App::new(&config, CancellationToken::new()).err().unwrap();
         assert!(e.0.contains("KMS_00_API_KEY is not set"), "{e}");
     }
 
     #[test]
     fn app_builds_without_authentication() {
-        let mut settings = Settings::load(EXAMPLE).unwrap();
-        settings.kms_aggregator.allow_insecure_http = true;
-        for endpoint in &mut settings.kms_aggregator.endpoints {
+        let mut config = RelayerConfig::load(EXAMPLE).unwrap();
+        config.kms_aggregator.allow_insecure_http = true;
+        for endpoint in &mut config.kms_aggregator.endpoints {
             endpoint.auth = AuthConfig::None;
         }
-        let app = App::new(&settings, CancellationToken::new()).unwrap();
+        let app = App::new(&config, CancellationToken::new()).unwrap();
         let _shared = app.clone();
     }
 }
