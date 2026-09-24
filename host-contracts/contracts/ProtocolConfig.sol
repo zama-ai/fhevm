@@ -345,8 +345,12 @@ contract ProtocolConfig is IProtocolConfig, UUPSUpgradeableEmptyProxy, ACLOwnabl
 
         emit KmsContextCreationConfirmation(kmsContextId, msg.sender, isPreviousTxSender, isNewTxSender);
 
-        // All new nodes + (n - t) previous nodes confirm to tell Connectors the epoch transition may start.
-        if (_hasContextCreationQuorum(kmsContextId)) {
+        // Context creation quorum: all new nodes and (n - t) previous nodes confirmed.
+        if (
+            $.contextCreationNewTxSenderConfirmationCount[kmsContextId] == $.kmsNodesForContext[kmsContextId].length &&
+            $.contextCreationPreviousTxSenderConfirmationCount[kmsContextId] >=
+            $.contextCreationPreviousTxSenderThreshold[kmsContextId]
+        ) {
             $.contextState[kmsContextId] = ContextState.Created;
             // Create the confirmed context's first epoch here, pairing it with the context by construction.
             uint256 epochId = _createPendingEpoch(kmsContextId);
@@ -888,14 +892,6 @@ contract ProtocolConfig is IProtocolConfig, UUPSUpgradeableEmptyProxy, ACLOwnabl
         if (!_isValidKmsContext(kmsContextId)) {
             revert InvalidKmsContext(kmsContextId);
         }
-    }
-
-    function _hasContextCreationQuorum(uint256 contextId) internal view virtual returns (bool) {
-        ProtocolConfigStorage storage $ = _getProtocolConfigStorage();
-        return
-            $.contextCreationNewTxSenderConfirmationCount[contextId] == $.kmsNodesForContext[contextId].length &&
-            $.contextCreationPreviousTxSenderConfirmationCount[contextId] >=
-            $.contextCreationPreviousTxSenderThreshold[contextId];
     }
 
     function _requireExpectedSigner(
