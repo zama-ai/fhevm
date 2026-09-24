@@ -91,7 +91,10 @@ pub(super) fn check_length(requested: usize, returned: usize) -> Result<(), Proo
 /// and a later read may succeed.
 #[derive(Clone, PartialEq, Eq, Debug, thiserror::Error)]
 pub enum ProofReadError {
-    /// No coprocessor answered.
+    /// A coprocessor could not be read; from [`verify_proofs`], some query has no answer that
+    /// decides it.
+    ///
+    /// [`verify_proofs`]: super::handle_binding::verify_proofs
     #[error("leaf proof read failed: {reason}")]
     Unavailable { reason: String },
     #[error("leaf proof read returned {returned} outcomes for {requested} queries")]

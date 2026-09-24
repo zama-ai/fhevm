@@ -320,7 +320,10 @@ Delegation emits no event; readers read the record (DD-044). A wallet delegator 
 every CPI of the transaction it signed, so without that rule any program the user calls could delegate the user's
 decryption rights. A PDA delegator may delegate through CPI: only its own program can sign for it, and #68 covers
 where that program may pass it. Pinned by `a_wallet_grant_forwarded_through_another_program_is_rejected`
-and `a_vault_pda_grants_a_delegation_via_cpi` (fhevm-internal#2084).
+and `a_vault_pda_grants_a_delegation_via_cpi` (fhevm-internal#2084); the connector half by
+`a_second_read_from_a_node_behind_the_first_is_refused_transiently`,
+`a_node_below_the_minimum_context_slot_is_reported_as_behind` and
+`an_invalid_row_fails_the_entry_even_beside_a_live_row`.
 
 ## E. Reconstruction & off-chain services
 

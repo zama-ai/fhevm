@@ -193,8 +193,8 @@ acl_address = "0x0000000000000000000000000000000000000000"
 # solana_host_program_id = "11111111111111111111111111111111"
 # Solana chains only: the coprocessors' leaf-proof endpoints (`POST /v1/solana/leaf-proofs`). They
 # are asked in this order, each only for the leaves the ones before it could not prove, so one
-# lagging coprocessor does not fail a request; the first carries most of the load. At least one
-# is required.
+# lagging coprocessor does not fail a request; the first carries most of the load. A coprocessor
+# that does not answer delays the next by up to `host_rpc_call_timeout`. At least one is required.
 # solana_proof_endpoints = ["http://localhost:8080"]
-# Bearer key sent to the leaf-proof endpoints (optional).
+# Solana chains only, required: the bearer key sent to the leaf-proof endpoints.
 # solana_proof_api_key = "change-me"

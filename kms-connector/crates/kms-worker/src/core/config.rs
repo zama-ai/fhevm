@@ -220,7 +220,8 @@ pub struct HostChainConfig {
     )]
     pub solana_host_program_id: Option<SolanaPubkeyBytes>,
     /// Base URLs of the coprocessors' leaf-proof endpoint, one per coprocessor. They are asked in
-    /// this order, each only for the leaves the ones before it could not prove.
+    /// this order, each only for the leaves the ones before it could not prove. A coprocessor that
+    /// does not answer delays the next by up to `host_rpc_call_timeout`.
     ///
     /// Required, non-empty, for Solana chains; must be absent for EVM chains.
     #[serde(default, alias = "solanaProofEndpoints")]

@@ -397,7 +397,7 @@ async fn two_reads_at_the_same_slot_authorize() {
     .expect("ordering is not agreement: one slot twice is in order");
 }
 
-/// The state a delegated request is judged against is the deciding read's, not the discovery
+/// The state a delegated request is judged against is the second read's, not the first
 /// read's. Here the first read shows the delegator's allow leaf on the handle and the second read
 /// shows an account on which that leaf was never sealed: the entry is refused, because the
 /// earlier, more favorable peaks are gone and were never a candidate.
@@ -611,7 +611,7 @@ async fn a_node_below_the_minimum_context_slot_is_reported_as_behind() {
     let (_server, client) = node_answering(&keys, Some(100), other).await;
     assert!(matches!(
         client.read_accounts(&keys, Some(100)).await,
-        Err(SnapshotError::Unavailable { .. })
+        Err(SnapshotError::Unavailable { reason }) if reason.contains("Node is unhealthy")
     ));
 }
 

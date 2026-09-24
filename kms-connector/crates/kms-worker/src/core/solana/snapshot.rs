@@ -4,7 +4,12 @@
 //! The first read covers the signer's invalidation record and the named encrypted stores. A
 //! delegated request then reads them again with the Clock and the delegation rows the first read
 //! made derivable, at a slot no older than the first: the read passes `minContextSlot`, so a node
-//! behind the first read refuses it. Every rule uses the last read alone.
+//! behind the first read refuses it. The first read only locates the rows; every rule that
+//! authorizes uses the last read.
+//!
+//! A refusal from a node behind is recoverable. The worker loop retries a Gateway request; an HTTP
+//! request is not retried internally, so its caller receives `upstream_transient` and resubmits,
+//! as for any transient failure of an EVM request.
 //!
 //! Reads are at confirmed commitment, not finalized. A grant observed on a supermajority-confirmed
 //! fork is sufficient authorization; if that fork is rolled back, a share may already have been

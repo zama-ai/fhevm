@@ -1729,9 +1729,9 @@ Decision:
 2. **One decrypt path.** A user decrypt proves the allow leaf; the current handle and a replaced
    one authorize the same way, so `authorize_current` is gone. A public decrypt proves the public
    leaf. Both proofs are fetched by the KMS connector from the coprocessors' leaf record
-   (`POST /v1/solana/leaf-proofs`, API key; every configured coprocessor asked concurrently, the
-   answers merged — a proof beats no proof, more history beats less — one retry when the record is
-   behind the account's `leaf_count`) and verified against the peaks the connector read on chain.
+   (`POST /v1/solana/leaf-proofs`, API key; the configured coprocessors asked in order, each only
+   for the leaves the ones before it could not prove, with no retry inside an attempt) and verified
+   against the peaks the connector read on chain.
    A request names only the Store and, for a delegated entry, the delegator as owner address; a
    client-supplied proof is rejected. Public-decrypt `extraData` names the Store (DD-049).
 3. **The leaf record lives in the host listener.** Leaves are recomputed from the confirmed
@@ -2276,7 +2276,7 @@ Not settled by the decisions above. Forward requirements are detailed in
   commitment (DD-003).
 - Historical handle discovery conventions for apps.
 - Production role and governance names for public-decrypt and grant authority.
-- Leaf-record availability (DD-048): the connector fans out to every configured coprocessor and one
+- Leaf-record availability (DD-048): the connector asks the configured coprocessors in order and one
   behind or unreachable cannot sink a request another can serve, but a Store first seen by a
   coprocessor through an update has no served proofs until that listener is replayed from before the
   Store's creation (`history_complete`). The replay and bootstrap policy is operational and
