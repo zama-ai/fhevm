@@ -39,14 +39,14 @@ task('test', async (taskArgs, hre, runSuper) => {
     // await hre.run('task:faucetToPrivate', { privateKey: privKeyFhevmDeployer });
     // await hre.run('task:faucetToPrivate', { privateKey: privKeyFhevmRelayer });
 
-    await hre.run('compile:specific', { contract: 'contracts/emptyProxy' });
+    if (!taskArgs.noCompile) await hre.run('compile:specific', { contract: 'contracts/emptyProxy' });
     await hre.run('task:deployEmptyUUPSProxies', {
       privateKey: privKeyFhevmDeployer,
       useCoprocessorAddress: false,
     });
 
-    await hre.run('compile:specific', { contract: 'contracts' });
-    await hre.run('compile:specific', { contract: 'lib' });
+    if (!taskArgs.noCompile) await hre.run('compile:specific', { contract: 'contracts' });
+    if (!taskArgs.noCompile) await hre.run('compile:specific', { contract: 'lib' });
 
     await hre.run('task:deployACL', { privateKey: privKeyFhevmDeployer });
     await hre.run('task:deployTFHEExecutor', {
@@ -68,7 +68,7 @@ task('test', async (taskArgs, hre, runSuper) => {
       useAddress: false,
     });
   }
-  await hre.run('compile:specific', { contract: 'examples' });
+  if (!taskArgs.noCompile) await hre.run('compile:specific', { contract: 'examples' });
   await runSuper();
 });
 
