@@ -1,7 +1,7 @@
 import { expect } from 'chai';
 import { Interface } from 'ethers';
 
-import type { BlockWindowResult } from '../../tasks/utils/blockWindow';
+import { type BlockReader, type BlockWindowResult, readChainTip } from '../../tasks/utils/blockWindow';
 import {
   type CoprocessorUpgradeInputs,
   type GatewayReport,
@@ -41,8 +41,19 @@ function makeHostReport(chainId: number, startBlock: number, endBlock: number, b
   };
 }
 
-function makeGatewayReport(startBlock: number, bufferOk = true): GatewayReport {
-  return { rpcUrl: 'https://gw.invalid', result: makeResult(startBlock, startBlock + 150), bufferOk, driftWarn: false };
+function makeGatewayReport(tipBlock: number): GatewayReport {
+  return { rpcUrl: 'https://gw.invalid', tipBlock, tipTimestamp: 1_700_000_000, startBlock: tipBlock };
+}
+
+function stubBlockReader(tipBlock: number, tipTimestamp: number | null): BlockReader {
+  return {
+    async getBlockNumber() {
+      return tipBlock;
+    },
+    async getBlock(block: number | string) {
+      return block === tipBlock && tipTimestamp !== null ? { timestamp: tipTimestamp } : null;
+    },
+  } as unknown as BlockReader;
 }
 
 describe('prepareCoprocessorUpgrade task utils', function () {
@@ -88,24 +99,42 @@ describe('prepareCoprocessorUpgrade task utils', function () {
   });
 
   describe('bufferViolations', function () {
-    it('is empty when every chain and the gateway satisfy the buffer', function () {
+    it('is empty when every chain satisfies the buffer', function () {
       const proposal = {
         inputs: {} as CoprocessorUpgradeInputs,
         host: [makeHostReport(11155111, 1000, 1150, true)],
-        gateway: makeGatewayReport(9000, true),
+        gateway: makeGatewayReport(9000),
         calldata: '0x',
       };
       expect(bufferViolations(proposal)).to.deep.equal([]);
     });
 
-    it('names each violating chain and the gateway', function () {
+    it('names each violating chain and ignores the gateway', function () {
       const proposal = {
         inputs: {} as CoprocessorUpgradeInputs,
         host: [makeHostReport(11155111, 1000, 1150, false), makeHostReport(80002, 5000, 6200, true)],
-        gateway: makeGatewayReport(9000, false),
+        gateway: makeGatewayReport(9000),
         calldata: '0x',
       };
-      expect(bufferViolations(proposal)).to.deep.equal(['chain 11155111', 'gateway']);
+      expect(bufferViolations(proposal)).to.deep.equal(['chain 11155111']);
+    });
+  });
+
+  describe('readChainTip', function () {
+    it('returns the tip as-is even when its timestamp is hours stale (idle on-demand Gateway)', async function () {
+      const tenHoursAgo = Math.floor(Date.now() / 1000) - 10 * 3600;
+      const tip = await readChainTip(stubBlockReader(22889, tenHoursAgo));
+      expect(tip).to.deep.equal({ tipBlock: 22889, tipTimestamp: tenHoursAgo });
+    });
+
+    it('throws when the tip block cannot be fetched', async function () {
+      let error: unknown;
+      try {
+        await readChainTip(stubBlockReader(42, null));
+      } catch (e) {
+        error = e;
+      }
+      expect(String(error)).to.match(/Failed to fetch tip block #42/);
     });
   });
 

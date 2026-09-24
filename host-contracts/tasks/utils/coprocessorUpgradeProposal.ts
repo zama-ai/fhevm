@@ -4,12 +4,14 @@ import type { HardhatRuntimeEnvironment } from 'hardhat/types';
 import {
   type BlockWindowResult,
   type ChainConfig,
+  type ChainTip,
   blockTimeDriftedFromFallback,
   bufferLeadSeconds,
   bufferSatisfied,
   computeBlockWindow,
   parseDurationToSeconds,
   parseIsoTimestampToEpochSeconds,
+  readChainTip,
 } from './blockWindow';
 import { ENVIRONMENTS, SUPPORTED_ENVIRONMENTS } from './environments';
 import { getRequiredEnvVar } from './loadVariables';
@@ -21,7 +23,6 @@ export const PROPOSE_UPGRADE_ABI = [
 
 export interface GatewayConfig {
   rpcUrl: string;
-  fallbackBlockTimeSeconds: number;
 }
 
 export interface CoprocessorUpgradeInputs {
@@ -43,11 +44,10 @@ export interface HostReport {
   driftWarn: boolean;
 }
 
-export interface GatewayReport {
+// The Gateway mints blocks on demand, so gwStartBlock is pinned to the current tip instead of projected.
+export interface GatewayReport extends ChainTip {
   rpcUrl: string;
-  result: BlockWindowResult;
-  bufferOk: boolean;
-  driftWarn: boolean;
+  startBlock: number;
 }
 
 export interface CoprocessorUpgradeProposal {
@@ -88,10 +88,7 @@ export function resolveEnvironment(name: string): { chains: ChainConfig[]; gatew
           rpcUrl: resolveEnvRpc(c.rpcUrlEnv, c.label, c.defaultRpcUrl),
           fallbackBlockTimeSeconds: c.fallbackBlockTimeSeconds,
         }));
-  const gateway = {
-    rpcUrl: resolveEnvRpc(def.gateway.rpcUrlEnv, def.gateway.label, def.gateway.defaultRpcUrl),
-    fallbackBlockTimeSeconds: def.gateway.fallbackBlockTimeSeconds,
-  };
+  const gateway = { rpcUrl: resolveEnvRpc(def.gateway.rpcUrlEnv, def.gateway.label, def.gateway.defaultRpcUrl) };
   return { chains, gateway };
 }
 
@@ -158,19 +155,11 @@ async function gatherWindows(
   const gwProvider = new JsonRpcProvider(inputs.gateway.rpcUrl);
   let gateway: GatewayReport;
   try {
-    const result = await computeBlockWindow({
-      provider: gwProvider,
-      startEpochSeconds: inputs.startEpochSeconds,
-      durationSeconds: inputs.durationSeconds,
-      bufferSeconds: inputs.bufferSeconds,
-      fallbackBlockTimeSeconds: inputs.gateway.fallbackBlockTimeSeconds,
-    });
-    gateway = {
-      rpcUrl: inputs.gateway.rpcUrl,
-      result,
-      bufferOk: bufferSatisfied(result, inputs.bufferSeconds),
-      driftWarn: blockTimeDriftedFromFallback(result.observedBlockTimeSeconds, inputs.gateway.fallbackBlockTimeSeconds),
-    };
+    const tip = await readChainTip(gwProvider);
+    if (tip.tipBlock === 0) {
+      throw new Error(`Gateway tip is block 0 (contract rejects gwStartBlock=0); check ${inputs.gateway.rpcUrl}`);
+    }
+    gateway = { rpcUrl: inputs.gateway.rpcUrl, ...tip, startBlock: tip.tipBlock };
   } finally {
     gwProvider.destroy();
   }
@@ -193,7 +182,7 @@ export function encodeProposeCoprocessorUpgrade(
     inputs.proposalId,
     inputs.softwareVersion,
     windows,
-    BigInt(reports.gateway.result.startBlock),
+    BigInt(reports.gateway.startBlock),
   ]);
 }
 
@@ -206,14 +195,9 @@ export async function buildCoprocessorUpgradeProposal(
   return { inputs, host: reports.host, gateway: reports.gateway, calldata };
 }
 
-// Names the chains (and/or gateway) whose startBlock is closer to the tip than the requested DAO buffer.
+// Names the host chains whose startBlock is closer to the tip than the requested DAO buffer.
 export function bufferViolations(proposal: CoprocessorUpgradeProposal): string[] {
-  const failures: string[] = [];
-  for (const r of proposal.host) {
-    if (!r.bufferOk) failures.push(`chain ${r.chainId}`);
-  }
-  if (!proposal.gateway.bufferOk) failures.push('gateway');
-  return failures;
+  return proposal.host.filter((r) => !r.bufferOk).map((r) => `chain ${r.chainId}`);
 }
 
 // No-DAO path (devnet/test-suite where the deployer owns ProtocolConfig): broadcast the byte-identical
@@ -300,33 +284,19 @@ export function printCoprocessorUpgradeProposal(proposal: CoprocessorUpgradeProp
   console.log('');
   console.log('## Gateway');
   console.log(`  rpc              : ${proposal.gateway.rpcUrl}`);
+  console.log(`  tip              : block ${proposal.gateway.tipBlock} @ ${isoUtc(proposal.gateway.tipTimestamp)}`);
   console.log(
-    `  tip              : block ${proposal.gateway.result.currentTipBlock} @ ${isoUtc(proposal.gateway.result.currentTipTimestamp)}`,
+    `  gwStartBlock     : ${proposal.gateway.startBlock} (pinned to the tip: the Gateway mints blocks on demand, a projected block may never exist)`,
   );
-  console.log(`  block time       : ${formatBlockTime(proposal.gateway.result.effectiveBlockTimeSeconds)}`);
-  console.log(
-    `  gwStartBlock     : ${proposal.gateway.result.startBlock} (estimated ${isoUtc(proposal.gateway.result.startBlockEstimatedTimestamp)}, skew ${proposal.gateway.result.startSkewSeconds >= 0 ? '+' : ''}${proposal.gateway.result.startSkewSeconds}s)`,
-  );
-  if (!proposal.gateway.bufferOk) {
-    console.log(
-      `  buffer           : NO — ${bufferShortageHint(bufferLeadSeconds(proposal.gateway.result), inputs.bufferSeconds)}`,
-    );
-  }
-  if (proposal.gateway.result.usedFallback) {
-    console.log(`  WARN             : block-time sampling failed; used configured fallback`);
-  }
-  if (proposal.gateway.driftWarn) {
-    console.log(`  WARN             : observed block time drifted >20% from fallback`);
-  }
   console.log('');
   console.log('## Cross-chain alignment');
-  const allStarts = [
-    ...proposal.host.map((r) => ({ label: `chain ${r.chainId}`, ts: r.result.startBlockEstimatedTimestamp })),
-    { label: 'gateway', ts: proposal.gateway.result.startBlockEstimatedTimestamp },
-  ];
+  const allStarts = proposal.host.map((r) => ({
+    label: `chain ${r.chainId}`,
+    ts: r.result.startBlockEstimatedTimestamp,
+  }));
   const minStart = Math.min(...allStarts.map((s) => s.ts));
   const maxStart = Math.max(...allStarts.map((s) => s.ts));
-  console.log(`  start skew range : ${maxStart - minStart}s across all chains + gateway`);
+  console.log(`  start skew range : ${maxStart - minStart}s across host chains`);
   for (const s of allStarts) {
     const lag = s.ts - minStart;
     const tag = lag === 0 ? 'starts first' : `starts ${lag}s later`;
