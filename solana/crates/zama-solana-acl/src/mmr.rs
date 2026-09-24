@@ -32,9 +32,10 @@ pub struct MmrProof {
 
 impl MmrProof {
     /// The proof of `leaf_index` against the tree's first `leaf_count` leaves, from `siblings`
-    /// built against that tree or a later one. A leaf's mountain only grows on append, so a
-    /// later tree's path starts with the path to the peak the leaf had at `leaf_count`. `None`
-    /// when the leaf is not among the first `leaf_count`.
+    /// built against any tree holding the leaf. A leaf's mountain only grows on append, so a
+    /// later tree's path starts with the path to the peak the leaf had at `leaf_count`. An
+    /// earlier tree's path is kept whole: it verifies only if the leaf's mountain has not grown
+    /// since. `None` when the leaf is not among the first `leaf_count`.
     pub fn for_leaf_count(leaf_index: u64, siblings: &[[u8; 32]], leaf_count: u64) -> Option<Self> {
         if leaf_index >= leaf_count {
             return None;
