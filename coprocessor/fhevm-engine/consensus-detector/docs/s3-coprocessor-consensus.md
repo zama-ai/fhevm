@@ -425,7 +425,7 @@ disagrees while this operator is in the quorum is recorded only as a range in
   descriptor fields.
 
 Descriptor findings retain local and observed keyset IDs, ct64 digests, ct128
-digests, and formats. `target_ct64_digest` is populated only from a computed
+digests, and formats. `quorum_ct64_digest` is populated only from a computed
 descriptor in the unique threshold group; NULL means no ct64 target is established.
 
 Historical localization descends authenticated historical commitments only after
@@ -770,8 +770,8 @@ therefore advance without erasing a split-brain decision.
 This table is the operational inventory of drifted handles (past and present)
 for containment and healing. One row per
 `(consensus_epoch, coprocessor_context_id, host_chain_id, block_hash, handle)`.
-It stores the local descriptor, a nullable quorum descriptor (`target_ct64_digest`
-and, when the threshold group is computed, `target_keyset_id` / `target_ct128_*`),
+It stores the local descriptor, a nullable quorum descriptor (`quorum_ct64_digest`
+and, when the threshold group is computed, `quorum_keyset_id` / `quorum_ct128_*`),
 the latest task reference, and resolution state. It belongs to one local operator
 and uses one `consensus_epoch`; peer manifests remain in the archive. `detected_at`
 records the first detection; `healed_at` is reserved for successful local ct64

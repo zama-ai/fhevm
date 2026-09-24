@@ -171,9 +171,9 @@ CREATE INDEX block_manifest_localization_cache_lookup
 -- Operational inventory of local drifted handles (past and present) for
 -- containment and healing. A row exists only when this operator is outside
 -- the quorum. One row per handle identity; healed rows stay (`healed_at`).
--- Local descriptor is this operator; `target_*` is the quorum descriptor when
--- a computed threshold group exists (`target_ct64_digest` alone may be filled
--- from live attestation). Divergent ranges, including a peer that disagrees
+-- Local descriptor is this operator; `quorum_*` is the quorum descriptor
+-- (`quorum_ct64_digest` alone may be filled from live attestation). Divergent
+-- ranges, including a peer that disagrees
 -- while this operator is in the quorum, stay in
 -- `block_manifest_verification_attempt_drift`.
 CREATE TABLE IF NOT EXISTS drifted_handle
@@ -197,7 +197,7 @@ CREATE TABLE IF NOT EXISTS drifted_handle
             'uncomputed_on_peer', 'metadata_mismatch')),
     can_be_healed BOOLEAN GENERATED ALWAYS AS
         (reason IN ('ct64_mismatch', 'missing_here', 'error_here', 'uncomputed_here')
-            AND target_ct64_digest IS NOT NULL
+            AND quorum_ct64_digest IS NOT NULL
             AND healed_at IS NULL) STORED,
     demand_count BIGINT NOT NULL DEFAULT 0 CHECK (demand_count >= 0),
     -- Evidence contains the pinned registry/quorum and authenticated statements.
@@ -212,29 +212,22 @@ CREATE TABLE IF NOT EXISTS drifted_handle
     status TEXT NOT NULL DEFAULT 'unresolved'
         CHECK (status IN ('unresolved', 'resolved')),
     local_present BOOLEAN NOT NULL,
-    observed_present BOOLEAN NOT NULL,
+    quorum_present BOOLEAN NOT NULL,
     local_keyset_id BYTEA NULL
         CHECK (local_keyset_id IS NULL OR OCTET_LENGTH(local_keyset_id) = 32),
-    observed_keyset_id BYTEA NULL
-        CHECK (observed_keyset_id IS NULL OR OCTET_LENGTH(observed_keyset_id) = 32),
+    quorum_keyset_id BYTEA NULL
+        CHECK (quorum_keyset_id IS NULL OR OCTET_LENGTH(quorum_keyset_id) = 32),
     local_ct64_digest BYTEA NULL
         CHECK (local_ct64_digest IS NULL OR OCTET_LENGTH(local_ct64_digest) = 32),
-    target_ct64_digest BYTEA NULL
-        CHECK (target_ct64_digest IS NULL OR OCTET_LENGTH(target_ct64_digest) = 32),
-    target_keyset_id BYTEA NULL
-        CHECK (target_keyset_id IS NULL OR OCTET_LENGTH(target_keyset_id) = 32),
-    target_ct128_digest BYTEA NULL
-        CHECK (target_ct128_digest IS NULL OR OCTET_LENGTH(target_ct128_digest) = 32),
-    target_ct128_format SMALLINT NULL,
-    observed_ct64_digest BYTEA NULL
-        CHECK (observed_ct64_digest IS NULL OR OCTET_LENGTH(observed_ct64_digest) = 32),
+    quorum_ct64_digest BYTEA NULL
+        CHECK (quorum_ct64_digest IS NULL OR OCTET_LENGTH(quorum_ct64_digest) = 32),
     local_ct128_digest BYTEA NULL
         CHECK (local_ct128_digest IS NULL OR OCTET_LENGTH(local_ct128_digest) = 32),
-    observed_ct128_digest BYTEA NULL
-        CHECK (observed_ct128_digest IS NULL OR OCTET_LENGTH(observed_ct128_digest) = 32),
+    quorum_ct128_digest BYTEA NULL
+        CHECK (quorum_ct128_digest IS NULL OR OCTET_LENGTH(quorum_ct128_digest) = 32),
     local_ct128_format SMALLINT NULL,
-    observed_ct128_format SMALLINT NULL,
-    last_observed_task_id BIGINT NULL,
+    quorum_ct128_format SMALLINT NULL,
+    last_quorum_task_id BIGINT NULL,
     resolved_task_id BIGINT NULL,
 
     detected_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
@@ -247,7 +240,7 @@ CREATE TABLE IF NOT EXISTS drifted_handle
         block_hash,
         handle
     ),
-    FOREIGN KEY (last_observed_task_id, consensus_epoch)
+    FOREIGN KEY (last_quorum_task_id, consensus_epoch)
         REFERENCES block_manifest_verification_task(id, consensus_epoch),
     FOREIGN KEY (resolved_task_id, consensus_epoch)
         REFERENCES block_manifest_verification_task(id, consensus_epoch),
@@ -258,16 +251,10 @@ CREATE TABLE IF NOT EXISTS drifted_handle
         (reason IN ('ct64_mismatch', 'missing_here', 'error_here', 'uncomputed_here') AND healed_at IS NULL)),
     CHECK (healed_at IS NULL OR
         (reason IN ('ct64_mismatch', 'missing_here', 'error_here', 'uncomputed_here')
-            AND target_ct64_digest IS NOT NULL AND claimed_by IS NULL)),
-    CHECK (target_evidence IS NULL OR target_ct64_digest IS NOT NULL),
-    -- Full quorum descriptor, or ct64-only (attestation). Never extras without ct64.
-    CHECK (
-        (target_keyset_id IS NULL AND target_ct128_digest IS NULL AND target_ct128_format IS NULL)
-        OR (target_ct64_digest IS NOT NULL AND target_keyset_id IS NOT NULL
-            AND target_ct128_digest IS NOT NULL AND target_ct128_format IS NOT NULL)
-    ),
+            AND quorum_ct64_digest IS NOT NULL AND claimed_by IS NULL)),
+    CHECK (target_evidence IS NULL OR quorum_ct64_digest IS NOT NULL),
     CHECK (detection_kind <> 'inferred' OR (local_present AND reason = 'ct64_mismatch')),
-    CHECK (detection_kind = 'inferred' OR last_observed_task_id IS NOT NULL)
+    CHECK (detection_kind = 'inferred' OR last_quorum_task_id IS NOT NULL)
 );
 
 CREATE INDEX idx_drifted_handle_healing_priority
