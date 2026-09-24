@@ -39,7 +39,7 @@ export const SOLANA_SRFC38_ATTESTATION_TYPE = 'solana-srfc38-user-decrypt-v1';
  * Connector refuses the same count terminally, so a request past it can only ever be paid for and
  * lost — the parity test beside this module pins the two constants to each other.
  */
-export const MAX_SOLANA_USER_DECRYPT_HANDLES = 33;
+export const MAX_SOLANA_USER_DECRYPT_HANDLES = 32;
 
 /** One handle to decrypt: the handle, the key it was allowed to, and the account it lives in. */
 export interface SolanaUserDecryptHandleEntry {

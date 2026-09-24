@@ -159,13 +159,14 @@ contract Decryption is
      * @notice The maximum number of handle entries in a Solana user decryption request.
      * @dev The KMS Connector authorizes a Solana request against a single atomic
      * `getMultipleAccounts` snapshot, and a standard Solana RPC node serves at most 100 accounts
-     * per call (agave's `--rpc-max-multiple-accounts` default). The worst-case request needs
-     * 3 accounts per entry (its encrypted value account plus two delegation rows) plus the signer's
-     * permit-invalidation record: `3 * N + 1 <= 100` gives `N <= 33`. Enforced at admission,
-     * before the fee, so a request the Connector cannot read in one snapshot is never accepted
-     * or paid for. Counts list entries, not distinct handles, matching the Connector's own bound.
+     * per call (agave's `--rpc-max-multiple-accounts` default). The worst-case read carries
+     * 3 accounts per entry (its encrypted store plus the exact and wildcard delegation rows), the
+     * signer's permit-invalidation record and the Clock sysvar: `3 * N + 2 <= 100` gives
+     * `N <= 32`. Enforced at admission, before the fee, so a request the Connector cannot read in
+     * one snapshot is never accepted or paid for. Counts list entries, not distinct handles,
+     * matching the Connector's own bound (`MAX_REQUEST_HANDLES` in zama-solana-request).
      */
-    uint8 internal constant MAX_SOLANA_USER_DECRYPT_HANDLES = 33;
+    uint8 internal constant MAX_SOLANA_USER_DECRYPT_HANDLES = 32;
 
     /**
      * @notice The hash of the EIP712Domain structure typed data definition.

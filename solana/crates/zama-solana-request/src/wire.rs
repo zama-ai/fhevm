@@ -48,19 +48,15 @@ use zama_solana_permit::PermitWireFields;
 /// Upper bound on handle entries accepted from a request.
 ///
 /// Every rule is evaluated against one atomic `getMultipleAccounts` snapshot, and a standard
-/// Solana RPC node serves at most 100 accounts per call. The worst-case request needs three
-/// accounts per entry — the encrypted store plus the two delegation rows — and the
-/// signer's invalidation record on top: `3 * N + 1 <= 100` gives 33.
+/// Solana RPC node serves at most 100 accounts per call. The worst-case read carries three
+/// accounts per entry (the encrypted store plus the exact and wildcard delegation rows), the
+/// signer's invalidation record and the Clock sysvar: `1 + 1 + N + 2N <= 100` gives 32.
 ///
 /// It lives here, next to the wire form, because both ends need the same number: the relayer
 /// refuses an oversized request before it submits one, and the connector refuses one that
-/// reached it anyway. Two copies of this constant would be two different caps the day one of
-/// them moved.
-///
-/// The connector's first read carries the deployment's `HostConfig` singleton as well, so the
-/// pause switch costs no round trip of its own; it is dropped from the deciding read, which keeps
-/// that worst case at exactly the hundred above.
-pub const MAX_REQUEST_HANDLES: usize = 33;
+/// reached it anyway. The Gateway refuses it before the fee with its own copy,
+/// `MAX_SOLANA_USER_DECRYPT_HANDLES`, which a test below pins to this one.
+pub const MAX_REQUEST_HANDLES: usize = 32;
 
 /// The full request: permit fields, the signature over their envelope, and the handle entries.
 #[derive(Clone, PartialEq, Eq, Debug, Default)]
@@ -86,4 +82,24 @@ pub struct SolanaHandleEntryWire {
     pub owner_address: Vec<u8>,
     /// Claimed 32-byte address of the encrypted store whose history contains the handle.
     pub encrypted_store: Vec<u8>,
+}
+
+#[cfg(test)]
+mod tests {
+    use super::MAX_REQUEST_HANDLES;
+
+    #[test]
+    fn the_gateway_admits_the_same_handle_count() {
+        let path = concat!(
+            env!("CARGO_MANIFEST_DIR"),
+            "/../../../gateway-contracts/contracts/Decryption.sol"
+        );
+        let source = std::fs::read_to_string(path).expect("read Decryption.sol");
+        let declared = source
+            .split("uint8 internal constant MAX_SOLANA_USER_DECRYPT_HANDLES = ")
+            .nth(1)
+            .and_then(|rest| rest.split(';').next())
+            .expect("Decryption.sol declares MAX_SOLANA_USER_DECRYPT_HANDLES");
+        assert_eq!(declared.parse::<usize>(), Ok(MAX_REQUEST_HANDLES));
+    }
 }

@@ -51,7 +51,7 @@ import {
 const MAX_USER_DECRYPT_DURATION_DAYS = 365;
 const MAX_USER_DECRYPT_CONTRACT_ADDRESSES = 10;
 const MAX_DECRYPTION_REQUEST_BITS = 2048;
-const MAX_SOLANA_USER_DECRYPT_HANDLES = 33;
+const MAX_SOLANA_USER_DECRYPT_HANDLES = 32;
 
 // Get the current date in seconds. This is needed because Solidity works with seconds, not milliseconds
 // See https://docs.soliditylang.org/en/develop/units-and-global-variables.html#time-units
@@ -3635,8 +3635,8 @@ describe('Decryption', function () {
       // The Solana Connector authorizes against one atomic account snapshot, so a longer list
       // could never be authorized and is refused before the fee. Duplicates are legal (the
       // gateway performs no deduplication), so the boundary is exercised without registering
-      // 33 distinct ciphertexts; narrow handles keep the bit budget out of the way:
-      // 34 * 2 = 68 bits.
+      // 32 distinct ciphertexts; narrow handles keep the bit budget out of the way:
+      // 33 * 2 = 66 bits.
       const atCap = Array(MAX_SOLANA_USER_DECRYPT_HANDLES).fill(eboolCtHandle);
       await expect(requestHostGeneric(atCap)).to.emit(decryption, HOST_GENERIC_EVENT_SIG);
 
