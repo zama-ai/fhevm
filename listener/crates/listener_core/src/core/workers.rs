@@ -2,14 +2,18 @@ use std::sync::Arc;
 
 use async_trait::async_trait;
 use broker::{AckDecision, Handler, HandlerError, Message, Publisher};
-use tracing::{error, info, warn};
+use tracing::{debug, error, info, warn};
+use uuid::Uuid;
 
-use primitives::event::{CatchupPayload, FilterCommand, ReorgBacktrackEvent};
+use primitives::event::{CancelCatchupPayload, CatchupPayload, FilterCommand, ReorgBacktrackEvent};
 use primitives::routing;
 use primitives::utils::checksum_optional_address;
 
 use crate::store::FlowLock;
-use crate::store::models::FilterType as DbFilterType;
+use crate::store::models::{
+    CancelOutcome, CatchupFlow, CatchupStatus, CoverageMerge, FilterType as DbFilterType,
+    RequestAdmission,
+};
 
 use super::cleaner::{Cleaner, CleanerError};
 use super::evm_listener::{CursorResult, EvmListener, EvmListenerError};
@@ -51,6 +55,197 @@ fn classify(err: EvmListenerError, chain_id: u64) -> HandlerError {
             HandlerError::permanent(err)
         }
     }
+}
+
+/// What the guard learned about the request a sub-range belongs to.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum RequestLookup {
+    /// The payload carries no `catchup_id` — it was published by an
+    /// orchestrator predating the field. Normal during a rolling deploy.
+    Untracked,
+    /// The store returned a row.
+    Found(CatchupStatus),
+    /// No row: swept after retention, or never written.
+    Missing,
+}
+
+/// Whether a sub-range should still be fetched.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum SubrangeVerdict {
+    /// Fetch it.
+    Run,
+    /// Fetch it, but warn — we could not confirm the request still exists.
+    RunUnconfirmed,
+    /// Drop it: the request reached a terminal state.
+    Discard(CatchupStatus),
+}
+
+/// Map what the store said onto what the fetcher does.
+///
+/// Both "keep going" cases are deliberate, and the asymmetry is the point:
+/// running a sub-range nobody wants is wasted RPC, while skipping one that is
+/// wanted is a silent data gap. Every uncertain case therefore resolves to
+/// *run*. Only a row we positively read as terminal stops the fetch.
+fn subrange_verdict(lookup: RequestLookup) -> SubrangeVerdict {
+    match lookup {
+        RequestLookup::Untracked => SubrangeVerdict::Run,
+        RequestLookup::Found(CatchupStatus::Active) => SubrangeVerdict::Run,
+        RequestLookup::Found(status) => SubrangeVerdict::Discard(status),
+        RequestLookup::Missing => SubrangeVerdict::RunUnconfirmed,
+    }
+}
+
+/// Whether this delivery of a catchup request should publish sub-ranges.
+///
+/// Only a freshly admitted request fans out. [`RequestAdmission::AlreadyFannedOut`]
+/// is the duplicate-request no-op: the same `catchup_id` arriving twice must
+/// publish nothing the second time, because a re-fan-out of a large request is
+/// hundreds of thousands of messages that every fetcher then has to drain.
+/// [`RequestAdmission::AlreadyTerminal`] covers a request the consumer already
+/// cancelled, possibly before this delivery was even processed.
+fn should_fan_out(admission: &RequestAdmission) -> bool {
+    matches!(admission, RequestAdmission::FanOut)
+}
+
+/// Which counter a cancel outcome increments, if any.
+///
+/// [`CancelOutcome::AlreadyTerminal`] returns `None` on purpose — re-cancelling
+/// is legitimately idempotent and not worth a metric. [`CancelOutcome::NotOwned`]
+/// must never be silent: it is an operator reaching for the brake and missing,
+/// and without a signal the only symptom is that nothing happens.
+fn cancel_metric(outcome: &CancelOutcome) -> Option<&'static str> {
+    match outcome {
+        CancelOutcome::Cancelled => Some("listener_catchup_cancelled_total"),
+        CancelOutcome::AlreadyTerminal => None,
+        CancelOutcome::NotOwned { .. } => Some("listener_catchup_cancel_rejected_total"),
+    }
+}
+
+/// Decide whether a catchup sub-range should still be fetched.
+///
+/// Runs before any RPC call, so a cancelled request costs one indexed read per
+/// outstanding sub-range instead of a full parallel fetch.
+///
+/// The lookup takes the primary key only. Adding a `consumer_id` predicate
+/// here would turn an ownership mismatch into [`RequestLookup::Missing`],
+/// which resolves to *run* — inverting the guard instead of tightening it.
+/// Ownership is enforced on the cancel path, where the id comes from outside.
+async fn catchup_subrange_is_live(
+    listener: &EvmListener,
+    payload: &CatchupPayload,
+    flow: CatchupFlow,
+) -> Result<bool, HandlerError> {
+    let lookup = match payload.catchup_id {
+        None => RequestLookup::Untracked,
+        Some(catchup_id) => {
+            let status = listener
+                .catchup_request_status(catchup_id)
+                .await
+                .map_err(|e| classify(e, listener.chain_id()))?;
+            match status {
+                Some(status) => RequestLookup::Found(status),
+                None => RequestLookup::Missing,
+            }
+        }
+    };
+
+    match subrange_verdict(lookup) {
+        SubrangeVerdict::Run => Ok(true),
+        SubrangeVerdict::RunUnconfirmed => {
+            warn!(
+                catchup_id = ?payload.catchup_id,
+                consumer_id = %payload.consumer_id,
+                block_start = payload.block_start,
+                block_end = payload.block_end,
+                "Catchup sub-range references an unknown request — running it anyway",
+            );
+            Ok(true)
+        }
+        SubrangeVerdict::Discard(status) => {
+            metrics::counter!(
+                "listener_catchup_subrange_discarded_total",
+                "chain_id" => listener.chain_id().to_string(),
+                "flow" => flow.metric_label(),
+            )
+            .increment(1);
+            info!(
+                catchup_id = ?payload.catchup_id,
+                consumer_id = %payload.consumer_id,
+                block_start = payload.block_start,
+                block_end = payload.block_end,
+                ?status,
+                "Discarding catchup sub-range: request is no longer active",
+            );
+            Ok(false)
+        }
+    }
+}
+
+/// Credit a published sub-range to its request's coverage set (D16).
+///
+/// Runs **after** the publishes, never before. Merging first would mark a
+/// request complete for blocks that a crash then prevents from being emitted;
+/// merging after means a crash simply replays the sub-range, and the union
+/// absorbs the repeat.
+///
+/// A merge failure is transient on purpose. Acking here would lose the
+/// coverage permanently and strand the request `ACTIVE` forever, whereas a
+/// replay costs one redundant fetch of an already-idempotent sub-range.
+async fn record_subrange_coverage(
+    listener: &EvmListener,
+    catchup_id: Option<Uuid>,
+    block_start: u64,
+    block_end: u64,
+    flow: CatchupFlow,
+) -> Result<(), HandlerError> {
+    // Untracked sub-range from a consumer predating `catchup_id`: nothing to
+    // credit, and no row to complete.
+    let Some(catchup_id) = catchup_id else {
+        return Ok(());
+    };
+
+    let merge = listener
+        .record_catchup_coverage(catchup_id, block_start, block_end)
+        .await
+        .map_err(|e| classify(e, listener.chain_id()))?;
+
+    match merge {
+        CoverageMerge::Completed => {
+            metrics::counter!(
+                "listener_catchup_completed_total",
+                "chain_id" => listener.chain_id().to_string(),
+                "flow" => flow.metric_label(),
+            )
+            .increment(1);
+            info!(
+                %catchup_id,
+                block_start,
+                block_end,
+                ?flow,
+                "Catchup request complete: every fanned-out block has been published",
+            );
+        }
+        CoverageMerge::Progressed => {
+            debug!(
+                %catchup_id,
+                block_start,
+                block_end,
+                "Recorded catchup sub-range coverage",
+            );
+        }
+        // Cancelled mid-flight, already completed, or a replay after
+        // completion. The blocks went out either way, so this is not an error.
+        CoverageMerge::NotActive => {
+            debug!(
+                %catchup_id,
+                block_start,
+                block_end,
+                "Published catchup sub-range for a request that is no longer active",
+            );
+        }
+    }
+
+    Ok(())
 }
 
 /// Classify a [`FilterError`] as transient or permanent.
@@ -686,11 +881,30 @@ impl Handler for CatchupHandler {
 
         // Compute the sub-ranges (chain height fetch + skip + clamp + split
         // live in EvmListener::dispatch_catchup_range).
+        let request = payload.clone();
         let subranges = self
             .listener
             .dispatch_catchup_range(payload)
             .await
             .map_err(|e| classify(e, self.listener.chain_id()))?;
+
+        // Record the request before publishing anything, then let the stored
+        // row decide whether this delivery fans out at all.
+        let admission = self
+            .listener
+            .admit_catchup_request(&request, CatchupFlow::Catchup, &subranges)
+            .await
+            .map_err(|e| classify(e, self.listener.chain_id()))?;
+
+        if !should_fan_out(&admission) {
+            info!(
+                consumer_id = %request.consumer_id,
+                catchup_id = ?request.catchup_id,
+                ?admission,
+                "Catchup orchestrator: request already recorded, publishing nothing"
+            );
+            return Ok(AckDecision::Ack);
+        }
 
         // Publish each sub-range to range-catchup. Bubble any broker error
         // out as transient so the broker retries the orchestrator message.
@@ -724,6 +938,13 @@ impl Handler for CatchupHandler {
             )
             .increment(subranges.len() as u64);
         }
+
+        // The fanout is complete only now. A NULL fanned_out_at left by a crash
+        // makes a redelivery republish the range — waste, never loss.
+        self.listener
+            .mark_catchup_fanned_out(request.catchup_id)
+            .await
+            .map_err(|e| classify(e, self.listener.chain_id()))?;
 
         Ok(AckDecision::Ack)
     }
@@ -805,11 +1026,30 @@ impl Handler for FinalCatchupHandler {
 
         // Compute the sub-ranges (final height fetch + skip + clamp + split
         // live in EvmListener::dispatch_final_catchup_range).
+        let request = payload.clone();
         let subranges = self
             .listener
             .dispatch_final_catchup_range(payload)
             .await
             .map_err(|e| classify(e, self.listener.chain_id()))?;
+
+        // Record the request before publishing anything, then let the stored
+        // row decide whether this delivery fans out at all.
+        let admission = self
+            .listener
+            .admit_catchup_request(&request, CatchupFlow::FinalCatchup, &subranges)
+            .await
+            .map_err(|e| classify(e, self.listener.chain_id()))?;
+
+        if !should_fan_out(&admission) {
+            info!(
+                consumer_id = %request.consumer_id,
+                catchup_id = ?request.catchup_id,
+                ?admission,
+                "Final catchup orchestrator: request already recorded, publishing nothing"
+            );
+            return Ok(AckDecision::Ack);
+        }
 
         // Publish each sub-range to range-final-catchup. Bubble any broker
         // error out as transient so the broker retries the orchestrator message.
@@ -843,6 +1083,13 @@ impl Handler for FinalCatchupHandler {
             )
             .increment(subranges.len() as u64);
         }
+
+        // The fanout is complete only now. A NULL fanned_out_at left by a crash
+        // makes a redelivery republish the range — waste, never loss.
+        self.listener
+            .mark_catchup_fanned_out(request.catchup_id)
+            .await
+            .map_err(|e| classify(e, self.listener.chain_id()))?;
 
         Ok(AckDecision::Ack)
     }
@@ -912,11 +1159,29 @@ impl Handler for RangeFinalCatchupHandler {
             return Ok(AckDecision::Ack);
         }
 
+        if !catchup_subrange_is_live(&self.listener, &payload, CatchupFlow::FinalCatchup).await? {
+            return Ok(AckDecision::Ack);
+        }
+
+        // Captured before the run consumes the payload.
+        let (catchup_id, block_start, block_end) =
+            (payload.catchup_id, payload.block_start, payload.block_end);
+
         self.listener
             .run_final_range_catchup(payload)
             .await
-            .map(|_| AckDecision::Ack)
-            .map_err(|e| classify(e, self.listener.chain_id()))
+            .map_err(|e| classify(e, self.listener.chain_id()))?;
+
+        record_subrange_coverage(
+            &self.listener,
+            catchup_id,
+            block_start,
+            block_end,
+            CatchupFlow::FinalCatchup,
+        )
+        .await?;
+
+        Ok(AckDecision::Ack)
     }
 }
 
@@ -969,10 +1234,237 @@ impl Handler for RangeCatchupHandler {
             return Ok(AckDecision::Dead);
         }
 
+        if !catchup_subrange_is_live(&self.listener, &payload, CatchupFlow::Catchup).await? {
+            return Ok(AckDecision::Ack);
+        }
+
+        // Captured before the run consumes the payload.
+        let (catchup_id, block_start, block_end) =
+            (payload.catchup_id, payload.block_start, payload.block_end);
+
         self.listener
             .run_range_catchup(payload)
             .await
-            .map(|_| AckDecision::Ack)
-            .map_err(|e| classify(e, self.listener.chain_id()))
+            .map_err(|e| classify(e, self.listener.chain_id()))?;
+
+        record_subrange_coverage(
+            &self.listener,
+            catchup_id,
+            block_start,
+            block_end,
+            CatchupFlow::Catchup,
+        )
+        .await?;
+
+        Ok(AckDecision::Ack)
+    }
+}
+
+// ── CancelCatchupHandler ────────────────────────────────────────────────
+
+/// Handler for the `cancel-catchup` and `cancel-final-catchup` consumers.
+///
+/// One implementation parameterised by [`CatchupFlow`], unlike the
+/// orchestrator/fetcher pairs above: the two flows differ only in which value
+/// lands in a tombstone row, so a mirrored copy would be two chances to drift
+/// and no extra expressiveness.
+///
+/// Retiring a request is a single UPDATE. Nothing is fetched, nothing is
+/// published, and no sub-range is chased down — outstanding sub-ranges
+/// discover the flipped row themselves at [`catchup_subrange_is_live`].
+///
+/// **Every outcome Acks.** A cancel that is rejected or redundant is not a
+/// transient failure: classifying it as one would retry it forever and walk
+/// the circuit breaker toward tripping catchup for the whole pod.
+#[derive(Clone)]
+pub struct CancelCatchupHandler {
+    listener: Arc<EvmListener>,
+    flow: CatchupFlow,
+}
+
+impl CancelCatchupHandler {
+    pub fn new(listener: Arc<EvmListener>, flow: CatchupFlow) -> Self {
+        Self { listener, flow }
+    }
+}
+
+#[async_trait]
+impl Handler for CancelCatchupHandler {
+    async fn call(&self, msg: &Message) -> Result<AckDecision, HandlerError> {
+        let mut payload: CancelCatchupPayload = match serde_json::from_slice(&msg.payload) {
+            Ok(p) => p,
+            Err(err) => {
+                error!(
+                    %err,
+                    msg_id = %msg.metadata.id,
+                    topic = %msg.metadata.topic,
+                    payload_len = msg.payload.len(),
+                    "Dead-lettering CancelCatchupPayload: deserialization failed",
+                );
+                return Ok(AckDecision::Dead);
+            }
+        };
+
+        if let Err(err) = payload.validate() {
+            error!(
+                %err,
+                msg_id = %msg.metadata.id,
+                topic = %msg.metadata.topic,
+                "Dead-lettering CancelCatchupPayload: validation failed",
+            );
+            return Ok(AckDecision::Dead);
+        }
+
+        let outcome = self
+            .listener
+            .cancel_catchup_request(payload.catchup_id, &payload.consumer_id, self.flow)
+            .await
+            .map_err(|e| classify(e, self.listener.chain_id()))?;
+
+        if let Some(counter) = cancel_metric(&outcome) {
+            metrics::counter!(
+                counter,
+                "chain_id" => self.listener.chain_id().to_string(),
+                "flow" => self.flow.metric_label(),
+            )
+            .increment(1);
+        }
+
+        match outcome {
+            CancelOutcome::Cancelled => info!(
+                catchup_id = %payload.catchup_id,
+                consumer_id = %payload.consumer_id,
+                flow = self.flow.metric_label(),
+                "Catchup request cancelled",
+            ),
+            // Re-cancelling is legitimately idempotent — nothing to say.
+            CancelOutcome::AlreadyTerminal => {}
+            // Loud on purpose. This is an operator reaching for the brake and
+            // missing: the request is still running, and without this line the
+            // only symptom is that nothing happens.
+            CancelOutcome::NotOwned { stored } => error!(
+                catchup_id = %payload.catchup_id,
+                requested_by = %payload.consumer_id,
+                owned_by = %stored,
+                flow = self.flow.metric_label(),
+                "Rejected catchup cancel: request belongs to a different consumer",
+            ),
+        }
+
+        Ok(AckDecision::Ack)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    // ── Fetcher guard ───────────────────────────────────────────────────
+
+    #[test]
+    fn an_active_request_runs_its_sub_ranges() {
+        assert_eq!(
+            subrange_verdict(RequestLookup::Found(CatchupStatus::Active)),
+            SubrangeVerdict::Run,
+        );
+    }
+
+    #[test]
+    fn a_cancelled_request_discards_its_sub_ranges() {
+        assert_eq!(
+            subrange_verdict(RequestLookup::Found(CatchupStatus::Cancelled)),
+            SubrangeVerdict::Discard(CatchupStatus::Cancelled),
+        );
+    }
+
+    #[test]
+    fn a_skipped_request_discards_its_sub_ranges() {
+        assert_eq!(
+            subrange_verdict(RequestLookup::Found(CatchupStatus::Skipped)),
+            SubrangeVerdict::Discard(CatchupStatus::Skipped),
+        );
+    }
+
+    /// Rolling deploy: an orchestrator predating `catchup_id` published this
+    /// sub-range. Discarding it would drop blocks during every upgrade.
+    #[test]
+    fn a_payload_without_a_catchup_id_still_runs() {
+        assert_eq!(
+            subrange_verdict(RequestLookup::Untracked),
+            SubrangeVerdict::Run,
+        );
+    }
+
+    /// The inversion guard. A missing row means the request was swept or never
+    /// written — never that it was cancelled. Mapping this to `Discard` would
+    /// turn a retention sweep into a silent data gap, which is also what adding
+    /// a `consumer_id` predicate to the lookup would do.
+    #[test]
+    fn a_missing_request_row_still_runs() {
+        let verdict = subrange_verdict(RequestLookup::Missing);
+        assert_eq!(verdict, SubrangeVerdict::RunUnconfirmed);
+        assert!(
+            !matches!(verdict, SubrangeVerdict::Discard(_)),
+            "an unknown request must never stop a fetch",
+        );
+    }
+
+    // ── Orchestrator admission ──────────────────────────────────────────
+
+    #[test]
+    fn a_freshly_admitted_request_fans_out() {
+        assert!(should_fan_out(&RequestAdmission::FanOut));
+    }
+
+    /// D13. This is the whole point of `fanned_out_at`: the second delivery of
+    /// the same `catchup_id` publishes nothing.
+    #[test]
+    fn a_duplicate_request_does_not_fan_out_again() {
+        assert!(!should_fan_out(&RequestAdmission::AlreadyFannedOut));
+    }
+
+    #[test]
+    fn a_retired_request_does_not_fan_out() {
+        for status in [CatchupStatus::Cancelled, CatchupStatus::Skipped] {
+            assert!(
+                !should_fan_out(&RequestAdmission::AlreadyTerminal(status)),
+                "{status:?} must not fan out",
+            );
+        }
+    }
+
+    // ── Cancel reporting ────────────────────────────────────────────────
+
+    #[test]
+    fn a_successful_cancel_is_counted() {
+        assert_eq!(
+            cancel_metric(&CancelOutcome::Cancelled),
+            Some("listener_catchup_cancelled_total"),
+        );
+    }
+
+    /// Re-cancelling is idempotent by design, so it is not an event.
+    #[test]
+    fn re_cancelling_is_not_counted() {
+        assert_eq!(cancel_metric(&CancelOutcome::AlreadyTerminal), None);
+    }
+
+    /// The failure this mechanism exists to surface: an operator cancels an id
+    /// owned by someone else, and without a signal the only symptom is that the
+    /// runaway catchup keeps running.
+    #[test]
+    fn a_cancel_for_another_consumer_is_counted_separately() {
+        let outcome = CancelOutcome::NotOwned {
+            stored: "host-listener".to_string(),
+        };
+        assert_eq!(
+            cancel_metric(&outcome),
+            Some("listener_catchup_cancel_rejected_total"),
+        );
+        assert_ne!(
+            cancel_metric(&outcome),
+            cancel_metric(&CancelOutcome::Cancelled),
+            "a rejected cancel must not look like a successful one",
+        );
     }
 }

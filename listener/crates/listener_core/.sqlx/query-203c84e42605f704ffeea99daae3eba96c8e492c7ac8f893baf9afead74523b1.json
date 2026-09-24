@@ -1,0 +1,40 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n            SELECT status as \"status: CatchupStatus\", fanned_out_at\n            FROM catchup_requests\n            WHERE catchup_id = $1\n            ",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "status: CatchupStatus",
+        "type_info": {
+          "Custom": {
+            "name": "catchup_status",
+            "kind": {
+              "Enum": [
+                "ACTIVE",
+                "CANCELLED",
+                "SKIPPED",
+                "COMPLETED"
+              ]
+            }
+          }
+        }
+      },
+      {
+        "ordinal": 1,
+        "name": "fanned_out_at",
+        "type_info": "Timestamptz"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Uuid"
+      ]
+    },
+    "nullable": [
+      false,
+      true
+    ]
+  },
+  "hash": "203c84e42605f704ffeea99daae3eba96c8e492c7ac8f893baf9afead74523b1"
+}
