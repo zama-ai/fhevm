@@ -181,7 +181,7 @@ pub const fn solana_host_chain_id(cluster_tag: u64) -> u64 {
     ((SOLANA_CHAIN_TYPE as u64) << CHAIN_TYPE_SHIFT) | (cluster_tag & 0x00ff_ffff_ffff_ffff)
 }
 
-/// Supported host-chain ACL backends.
+/// The kinds of host chain the connector serves.
 #[derive(Clone, Copy, Debug, Deserialize, Serialize, PartialEq, Eq)]
 #[serde(rename_all = "snake_case")]
 pub enum HostChainKind {
@@ -200,7 +200,7 @@ pub struct HostChainConfig {
     /// The Chain ID of the Host Chain.
     #[serde(alias = "chainId")]
     pub chain_id: u64,
-    /// The ACL backend for this host chain.
+    /// The kind of this host chain.
     #[serde(default = "default_host_chain_kind", alias = "chainKind")]
     pub chain_kind: HostChainKind,
     /// The `ACL` contract address on the Host Chain.

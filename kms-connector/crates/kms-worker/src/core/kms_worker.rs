@@ -7,8 +7,9 @@ use crate::{
         event_picker::{DbEventPicker, EventPicker},
         event_processor::{
             CiphertextManager, DbContextManager, DbEventProcessor, DecryptionProcessor,
-            EventProcessor, HostChainAclBackend, HostRpcClient, KMSGenerationProcessor, KmsClient,
-            ProcessingError, ProcessingErrorKind, ProtocolConfigProcessor,
+            EventProcessor, HostChain, HostDecryptionVerifier, HostRpcClient,
+            KMSGenerationProcessor, KmsClient, ProcessingError, ProcessingErrorKind,
+            ProtocolConfigProcessor,
         },
         kms_response_publisher::DbKmsResponsePublisher,
         solana::{SolanaHost, proof::CoprocessorProofClient, snapshot::SolanaRpcClient},
@@ -280,7 +281,7 @@ impl
         config: Config,
         cancel_token: CancellationToken,
     ) -> anyhow::Result<(Self, State<DefaultProvider>)> {
-        let host_chain_backends = register_host_chain_backends(&config).await?;
+        let hosts = register_host_chains(&config).await?;
         let db_pool = connect_to_db(&config.database_url, config.database_pool_size).await?;
 
         let gateway_provider =
@@ -297,18 +298,16 @@ impl
             DbContextManager::new(db_pool.clone(), &config, ethereum_provider.clone());
         let ciphertext_manager =
             CiphertextManager::connect(gateway_provider.clone(), &config, cancel_token).await?;
-        let decryption_processor = DecryptionProcessor::new(
-            &config,
-            gateway_provider.clone(),
-            host_chain_backends,
-            ciphertext_manager,
-        );
+        let decryption_processor =
+            DecryptionProcessor::new(&config, gateway_provider.clone(), ciphertext_manager);
+        let host_verifier = HostDecryptionVerifier::new(&config, hosts);
         let kms_generation_processor = KMSGenerationProcessor::new(&config);
         let protocol_config_processor = ProtocolConfigProcessor::new(&config, ethereum_provider);
         let event_processor = DbEventProcessor::new(
             kms_client.clone(),
             context_manager,
             decryption_processor,
+            host_verifier,
             kms_generation_processor,
             protocol_config_processor,
             db_pool.clone(),
@@ -333,12 +332,12 @@ impl
     }
 }
 
-async fn register_host_chain_backends(
+async fn register_host_chains(
     config: &Config,
-) -> anyhow::Result<HashMap<u64, HostChainAclBackend<DefaultProvider>>> {
+) -> anyhow::Result<HashMap<u64, HostChain<DefaultProvider>>> {
     validate_host_chain_configs(&config.host_chains)?;
 
-    let mut backends = HashMap::with_capacity(config.host_chains.len());
+    let mut hosts = HashMap::with_capacity(config.host_chains.len());
     // The workspace `reqwest`, not alloy's re-export: alloy now vendors a different major, and
     // the Solana readers are typed against the workspace crate.
     let proof_client = ::reqwest::Client::builder()
@@ -347,7 +346,7 @@ async fn register_host_chain_backends(
         .build()?;
 
     for host_chain in &config.host_chains {
-        let backend = match host_chain.chain_kind {
+        let host = match host_chain.chain_kind {
             HostChainKind::Evm => {
                 let acl_address = host_chain.acl_address.ok_or_else(|| {
                     anyhow!(
@@ -362,7 +361,7 @@ async fn register_host_chain_backends(
                     config.host_rpc_call_timeout,
                 )
                 .await?;
-                HostChainAclBackend::Evm(HostRpcClient::new(
+                HostChain::Evm(HostRpcClient::new(
                     host_chain.chain_id,
                     ACL::new(acl_address, provider),
                 ))
@@ -380,7 +379,7 @@ async fn register_host_chain_backends(
                         host_chain.chain_id
                     )
                 })?;
-                HostChainAclBackend::Solana(Box::new(SolanaHost {
+                HostChain::Solana(Box::new(SolanaHost {
                     program_id,
                     reader: SolanaRpcClient::new(
                         host_chain.url.clone(),
@@ -396,10 +395,10 @@ async fn register_host_chain_backends(
             }
         };
 
-        backends.insert(host_chain.chain_id, backend);
+        hosts.insert(host_chain.chain_id, host);
     }
 
-    Ok(backends)
+    Ok(hosts)
 }
 
 fn validate_host_chain_configs(host_chains: &[HostChainConfig]) -> anyhow::Result<()> {
@@ -513,7 +512,7 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn registers_evm_and_solana_backends_once() {
+    async fn registers_evm_and_solana_hosts_once() {
         let config = Config {
             host_chains: vec![
                 host_chain(1, HostChainKind::Evm),
@@ -521,24 +520,21 @@ mod tests {
             ],
             ..Default::default()
         };
-        let backends = register_host_chain_backends(&config)
+        let hosts = register_host_chains(&config)
             .await
             .expect("valid host chains should register");
 
-        assert!(matches!(
-            backends.get(&1),
-            Some(HostChainAclBackend::Evm(_))
-        ));
-        match backends.get(&solana_host_chain_id(2)) {
-            Some(HostChainAclBackend::Solana(host)) => {
+        assert!(matches!(hosts.get(&1), Some(HostChain::Evm(_))));
+        match hosts.get(&solana_host_chain_id(2)) {
+            Some(HostChain::Solana(host)) => {
                 assert_eq!(host.program_id, [7; 32])
             }
-            _ => panic!("the Solana host chain should use the Solana backend"),
+            _ => panic!("the Solana host chain should use the Solana host"),
         }
     }
 
     #[tokio::test]
-    async fn registered_solana_backends_bound_rpc_and_proof_requests() {
+    async fn registered_solana_hosts_bound_rpc_and_proof_requests() {
         use crate::core::solana::{
             proof::{HostProofReader, LeafKind, LeafQuery},
             snapshot::HostStateReader,
@@ -557,9 +553,9 @@ mod tests {
             host_rpc_call_timeout: Duration::from_millis(250),
             ..Default::default()
         };
-        let backends = register_host_chain_backends(&config).await.unwrap();
-        let HostChainAclBackend::Solana(host) = &backends[&solana_host_chain_id(2)] else {
-            panic!("expected Solana backend")
+        let hosts = register_host_chains(&config).await.unwrap();
+        let HostChain::Solana(host) = &hosts[&solana_host_chain_id(2)] else {
+            panic!("expected Solana host")
         };
         let keys = [[1; 32]];
         let queries = [LeafQuery {

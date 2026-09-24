@@ -2,6 +2,7 @@ pub mod ciphertext;
 mod context;
 mod decryption;
 mod error;
+mod host_verifier;
 mod kms;
 mod kms_client;
 mod processor;
@@ -10,8 +11,9 @@ mod rpc;
 
 pub use ciphertext::CiphertextManager;
 pub use context::{ContextManager, DbContextManager};
-pub use decryption::{DecryptionProcessor, HostChainAclBackend};
+pub use decryption::DecryptionProcessor;
 pub use error::{ProcessingError, ProcessingErrorKind, RequestCheckError, RequestCheckKind};
+pub use host_verifier::{HostChain, HostDecryptionVerifier};
 pub use kms::KMSGenerationProcessor;
 pub use kms_client::{KmsClient, KmsPollTarget};
 pub use processor::{DbEventProcessor, EventProcessor};

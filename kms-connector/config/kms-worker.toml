@@ -179,7 +179,7 @@ address = "0x0000000000000000000000000000000000000000"
 url = "http://localhost:8545"
 # Chain ID of the host chain (required)
 chain_id = 12345
-# ACL backend for this host chain (optional, defaults to "evm").
+# Kind of this host chain (optional, defaults to "evm").
 # A Solana host chain is authorized by the connector itself: it reads the encrypted store at
 # confirmed commitment, fetches the allow leaf's proof from the coprocessors' leaf record and
 # verifies it against the peaks it read (RFC 035). A public decrypt names its store in the

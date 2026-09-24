@@ -2,6 +2,7 @@ use crate::core::event_processor::{
     KmsClient, KmsPollTarget, ProcessingError, RequestCheckError,
     context::ContextManager,
     decryption::{DecryptionProcessor, UserDecryptionExtraData},
+    host_verifier::HostDecryptionVerifier,
     kms::KMSGenerationProcessor,
     protocol_config::ProtocolConfigProcessor,
 };
@@ -36,7 +37,10 @@ pub struct DbEventProcessor<GP: Provider, HP: Provider, C> {
     context_manager: C,
 
     /// The entity used to process decryption requests.
-    decryption_processor: DecryptionProcessor<GP, HP>,
+    decryption_processor: DecryptionProcessor<GP>,
+
+    /// The entity that decides whether a decryption request is authorized on its host chain.
+    host_verifier: HostDecryptionVerifier<HP>,
 
     /// The entity used to process key management requests.
     kms_generation_processor: KMSGenerationProcessor,
@@ -116,7 +120,8 @@ impl<GP: Provider + Clone + 'static, HP: Provider, C: ContextManager> DbEventPro
     pub fn new(
         kms_client: KmsClient,
         context_manager: C,
-        decryption_processor: DecryptionProcessor<GP, HP>,
+        decryption_processor: DecryptionProcessor<GP>,
+        host_verifier: HostDecryptionVerifier<HP>,
         kms_generation_processor: KMSGenerationProcessor,
         protocol_config_processor: ProtocolConfigProcessor<HP>,
         db_pool: Pool<Postgres>,
@@ -125,6 +130,7 @@ impl<GP: Provider + Clone + 'static, HP: Provider, C: ContextManager> DbEventPro
             kms_client,
             context_manager,
             decryption_processor,
+            host_verifier,
             kms_generation_processor,
             protocol_config_processor,
             db_pool,
@@ -152,7 +158,7 @@ impl<GP: Provider + Clone + 'static, HP: Provider, C: ContextManager> DbEventPro
                 tokio::try_join!(
                     biased;
                     async {
-                        self.decryption_processor
+                        self.host_verifier
                             .check_ciphertexts_allowed_for_public_decryption(
                                 &req.ctHandles,
                                 &req.extraData,
@@ -177,7 +183,7 @@ impl<GP: Provider + Clone + 'static, HP: Provider, C: ContextManager> DbEventPro
                     biased;
                     async {
                         let calldata = self.decryption_processor.fetch_calldata(tx_hash).await?;
-                        self.decryption_processor
+                        self.host_verifier
                             .check_ciphertexts_allowed_for_user_decryption(
                                 calldata,
                                 &req.ctHandles,
@@ -194,7 +200,7 @@ impl<GP: Provider + Clone + 'static, HP: Provider, C: ContextManager> DbEventPro
                 tokio::try_join!(
                     biased;
                     async {
-                        self.decryption_processor
+                        self.host_verifier
                             .check_user_decryption_request_v2(req)
                             .await
                             .map_err(RequestCheckError::record)
@@ -208,7 +214,7 @@ impl<GP: Provider + Clone + 'static, HP: Provider, C: ContextManager> DbEventPro
                 tokio::try_join!(
                     biased;
                     async {
-                        self.decryption_processor
+                        self.host_verifier
                             .check_solana_user_decryption_request(req)
                             .await
                             .map_err(RequestCheckError::record)

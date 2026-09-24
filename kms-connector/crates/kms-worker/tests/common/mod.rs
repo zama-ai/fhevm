@@ -19,8 +19,8 @@ use fhevm_host_bindings::acl::ACL::ACLInstance;
 use kms_worker::core::{
     Config, DbEventPicker, DbKmsResponsePublisher, KmsWorker,
     event_processor::{
-        CiphertextManager, DbContextManager, DbEventProcessor, DecryptionProcessor,
-        HostChainAclBackend, HostRpcClient, KMSGenerationProcessor, KmsClient,
+        CiphertextManager, DbContextManager, DbEventProcessor, DecryptionProcessor, HostChain,
+        HostDecryptionVerifier, HostRpcClient, KMSGenerationProcessor, KmsClient,
         ProtocolConfigProcessor,
     },
 };
@@ -61,27 +61,20 @@ where
     let event_picker = DbEventPicker::connect(db.clone(), &config).await?;
 
     let context_manager = DbContextManager::new(db.clone(), &config, provider.clone());
-    let host_chain_backends = acl_contracts_mock
+    let hosts = acl_contracts_mock
         .into_iter()
-        .map(|(chain_id, acl)| {
-            (
-                chain_id,
-                HostChainAclBackend::Evm(HostRpcClient::new(chain_id, acl)),
-            )
-        })
+        .map(|(chain_id, acl)| (chain_id, HostChain::Evm(HostRpcClient::new(chain_id, acl))))
         .collect();
-    let decryption_processor = DecryptionProcessor::new(
-        &config,
-        provider.clone(),
-        host_chain_backends,
-        ciphertext_manager,
-    );
+    let decryption_processor =
+        DecryptionProcessor::new(&config, provider.clone(), ciphertext_manager);
+    let host_verifier = HostDecryptionVerifier::new(&config, hosts);
     let kms_generation_processor = KMSGenerationProcessor::new(&config);
     let protocol_config_processor = ProtocolConfigProcessor::new(&config, provider.clone());
     let event_processor = DbEventProcessor::new(
         kms_client.clone(),
         context_manager,
         decryption_processor,
+        host_verifier,
         kms_generation_processor,
         protocol_config_processor,
         db.clone(),
