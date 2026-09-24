@@ -83,6 +83,28 @@ export function assertDriftMatrix(f: Fixture, rows: Finding[], digests: string[]
 }
 
 /** Compare actual signed descriptors, not just the resulting findings. */
+export type DriftBlockNodeStatus = {
+  published: boolean;
+  /** Set only when a verification attempt finished for this manifest. */
+  quorumStatus: "matches_quorum" | "differs_from_quorum" | "inconclusive" | null;
+  localizationComplete: boolean | null;
+  driftFaults: number;
+};
+
+/** One line per coprocessor, printed before a healing-profile failure. */
+export function formatDriftBlockStatus(block: number, nodes: DriftBlockNodeStatus[]): string {
+  const lines = [`drift block ${block}`];
+  for (const [index, node] of nodes.entries()) {
+    const published = node.published ? "drift block published" : "drift block not published";
+    const verification = node.quorumStatus
+      ? `verification happened (${node.quorumStatus}${node.localizationComplete ? "" : ", localization incomplete"})`
+      : "verification did not happen";
+    const faults = `${node.driftFaults} drift fault${node.driftFaults === 1 ? "" : "s"}`;
+    lines.push(`node ${index}: ${published}; ${verification}; ${faults}`);
+  }
+  return lines.join("\n");
+}
+
 export function assertManifestFault(healthy: Descriptor | undefined, faulty: Descriptor | undefined, fault: string) {
   assert(healthy && healthy.status === "computed", "healthy root descriptor missing");
   if (fault === "missing_here") { assert.equal(faulty, undefined); return; }
@@ -139,6 +161,38 @@ export async function runManifestHealingProfile(
     await fs.writeFile(`${configPath(index)}.tmp`, JSON.stringify(configs[index]));
     await fs.rename(`${configPath(index)}.tmp`, configPath(index));
   };
+  let fixture: Fixture | undefined;
+  const driftBlockStatus = async (current: Fixture): Promise<string> => {
+    const nodes: DriftBlockNodeStatus[] = [];
+    for (const index of NODES) {
+      const row = await json<{
+        published: boolean; quorumStatus: DriftBlockNodeStatus["quorumStatus"];
+        localizationComplete: boolean | null; driftFaults: number;
+      }>(index, `WITH manifest AS (
+          SELECT id, consensus_epoch, revision FROM block_manifest
+           WHERE host_chain_id=${chainId} AND publication_block_number=${current.rootBlock}
+             AND publication_block_hash=${h(current.rootBlockHash)}
+             AND consensus_epoch='legacy' AND manifest_source='local'
+           ORDER BY revision DESC LIMIT 1
+        ), attempt AS (
+          SELECT a.local_quorum_status, a.localization_complete
+            FROM manifest m
+            JOIN block_manifest_verification_task t
+              ON t.local_manifest_id=m.id AND t.consensus_epoch=m.consensus_epoch
+            JOIN block_manifest_verification_attempt a
+              ON a.task_id=t.id AND a.consensus_epoch=t.consensus_epoch
+           ORDER BY a.attempt DESC LIMIT 1
+        )
+        SELECT json_build_object(
+          'published', EXISTS(SELECT 1 FROM manifest),
+          'quorumStatus', (SELECT local_quorum_status FROM attempt),
+          'localizationComplete', (SELECT localization_complete FROM attempt),
+          'driftFaults', (SELECT count(*) FROM drifted_handle
+            WHERE host_chain_id=${chainId} AND consensus_epoch='legacy'))::text`);
+      nodes.push({ ...row, driftFaults: Number(row.driftFaults) });
+    }
+    return formatDriftBlockStatus(current.rootBlock, nodes);
+  };
   try {
     for (const index of NODES) {
       await waitForManifestCondition(`node ${index} publication readiness`, () => json<PublicationReadiness>(index,
@@ -154,6 +208,7 @@ export async function runManifestHealingProfile(
     await run(["docker", "exec", TEST_SUITE_CONTAINER, "rm", "-f", FIXTURE_PATH]);
     await runFixture("seed matrix");
     let f = await readFixture();
+    fixture = f;
     assert.equal(f.chainId, chainId);
     report.fixture = f;
     const material = (index: number, handle: string) => json<Material | null>(index,
@@ -242,6 +297,7 @@ export async function runManifestHealingProfile(
     await checkpoint("contained", await snapshot(false));
     await runFixture("submit consumers");
     f = await readFixture();
+    fixture = f;
     assert(f.consumers && f.queuedJoin && f.recovered && f.independent, "missing consumer handles");
     report.fixture = f;
     const blocked = [f.consumers[0]!, f.consumers[1]!, f.queuedJoin, f.recovered];
@@ -277,6 +333,7 @@ export async function runManifestHealingProfile(
     await checkpoint("decrypted", { recovered: f.recovered, consumers: f.consumers });
     await runFixture("reuse healed chain");
     f = await readFixture();
+    fixture = f;
     assert(f.reused, "missing reused handle");
     for (const index of NODES) await waitForManifestCondition(`node ${index} reuses healed chain`, () => complete(index, [f.reused!]), n => n === "1");
     await runFixture("decrypt reused");
@@ -289,9 +346,16 @@ export async function runManifestHealingProfile(
     }
     report.result = "passed";
   } catch (error) {
+    let status = "drift block not created; publication, verification, and drift faults were not checked";
+    if (fixture) {
+      try { status = await driftBlockStatus(fixture); }
+      catch (statusError) { status = `drift block status unavailable: ${statusError}`; }
+    }
+    console.log(`[manifest-healing] ${status.replaceAll("\n", "\n[manifest-healing] ")}`);
+    report.driftBlockStatus = status;
     report.result = "failed";
     report.error = String(error);
-    throw error;
+    throw new Error(`${status}\n${error}`);
   } finally {
     report.finalDriftTables = await captureDriftTables(q);
     const cleanupErrors: string[] = [];

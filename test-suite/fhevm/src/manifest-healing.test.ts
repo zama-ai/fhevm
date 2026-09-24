@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test";
-import { assertDriftMatrix, assertManifestFault, DRIFT_CASES, validateHealingFixture, type Finding } from "./commands/manifest-healing";
+import { assertDriftMatrix, assertManifestFault, DRIFT_CASES, formatDriftBlockStatus, validateHealingFixture, type Finding } from "./commands/manifest-healing";
 
 const handle = (i: number) => `0x${i.toString(16).padStart(64, "0")}`;
 const rootCount = DRIFT_CASES.length;
@@ -53,6 +53,20 @@ describe("manifest healing matrix", () => {
       mutate(observed);
       expect(() => assertDriftMatrix(fixture, observed, digests, false)).toThrow();
     }
+  });
+
+  test("failure status names publication, verification, and drift faults per node", () => {
+    const text = formatDriftBlockStatus(2025, [
+      { published: true, quorumStatus: "matches_quorum", localizationComplete: true, driftFaults: 0 },
+      { published: false, quorumStatus: null, localizationComplete: null, driftFaults: 0 },
+      { published: true, quorumStatus: "differs_from_quorum", localizationComplete: false, driftFaults: 1 },
+    ]);
+    expect(text).toBe([
+      "drift block 2025",
+      "node 0: drift block published; verification happened (matches_quorum); 0 drift faults",
+      "node 1: drift block not published; verification did not happen; 0 drift faults",
+      "node 2: drift block published; verification happened (differs_from_quorum, localization incomplete); 1 drift fault",
+    ].join("\n"));
   });
 
   test("signed faults must change the intended descriptor field or omit it", () => {
