@@ -223,14 +223,6 @@
       "schema_hash": "6ac55ac9399ccf706259deb7528c6c8159f60277eee30ddd8ec998c8e7702f38"
     },
     {
-      "category": "account",
-      "fixture_hex": "4ba384817db597dd410000000000000002",
-      "fixture_len": 17,
-      "name": "RandNonce",
-      "program": "zama_host",
-      "schema_hash": "1960e6cc5cdebb89893dacef26b4587af058e170e661692cdeb4c8ba1aa9bbc9"
-    },
-    {
       "category": "event",
       "fixture_hex": "392c79162528c53601020202020202020202020202020202020202020202020202020202020202020203030303030303030303030303030303030303030303030303030303030303030405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f20212223014600000000000000",
       "fixture_len": 114,
@@ -322,7 +314,7 @@
       "fixture_len": 95,
       "name": "fhe_execute",
       "program": "zama_host",
-      "schema_hash": "310394812ff052070121be43bfc83ec48a7a6cea0c58dcf9d2868371652438d5"
+      "schema_hash": "342394f2c4eb143a1f7e0ef7f5c49be4ea682450243b957ea0dc249ac195ed3f"
     },
     {
       "category": "instruction_args",
@@ -330,7 +322,7 @@
       "fixture_len": 90,
       "name": "initialize_host_config",
       "program": "zama_host",
-      "schema_hash": "19188ae31cdaa8a1b904b04142ac8197ae8cc59c32bb92f61dce2195ff0f9d59"
+      "schema_hash": "45275bbe5b6962050e54ebfdb9d8cb9d6d927e6f2483749e1896582d99e0841c"
     },
     {
       "category": "instruction_args",

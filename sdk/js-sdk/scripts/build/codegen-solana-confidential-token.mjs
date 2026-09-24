@@ -123,8 +123,7 @@ const targets = [
       // test-suite/fhevm/src/solana/provision.ts). Keeping the account node gives that read a
       // generated decoder instead of a hand-written discriminator + field offset.
       accounts: new Set(['hostConfig', 'kmsContext']),
-      // randNonce: initialize_host_config defaults the host's rand-nonce PDA.
-      pdas: new Set(['hostConfig', 'kmsContext', 'randNonce']),
+      pdas: new Set(['hostConfig', 'kmsContext']),
     },
     programAddress(program) {
       return (

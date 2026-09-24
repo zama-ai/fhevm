@@ -171,11 +171,13 @@ metering cost row, so a step that passed validation can never abort because
 its cost is unknown. It does not work the other way round, deliberately:
 some combinations have a price but are still rejected by validation.
 
-**16. [HOLDS]** An execution containing a rand step must pass the host's
-`RandNonce` singleton (`["rand-nonce"]`; `FheExecuteRandNonceMissing`
-otherwise) and advances it; the nonce is bound into every rand seed, so two
-executions can never derive the same seed, whatever they persist (DD-043).
-The nonce is host state, never caller-supplied, so a caller cannot steer it.
+**16. [HOLDS]** An execution containing a rand step must pass its
+application's `RandNonce` (`["rand-nonce", program, scope]`;
+`FheExecuteRandNonceMissing` otherwise, `RandNonceMismatch` for any other
+account) and advances it; the nonce and the application are bound into every
+rand seed, so two executions can never derive the same seed, whatever they
+persist (DD-043, DD-057). The nonce is host state, never caller-supplied or
+closed, so a caller cannot steer or restart it.
 
 **17. [HOLDS]** `account_count` declared inside the instruction data must equal the number of remaining accounts
 actually delivered.

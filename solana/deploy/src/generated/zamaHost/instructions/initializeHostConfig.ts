@@ -59,7 +59,6 @@ export type InitializeHostConfigInstruction<
   TAccountAdmin extends string | AccountMeta<string> = string,
   TAccountProgramData extends string | AccountMeta<string> = string,
   TAccountHostConfig extends string | AccountMeta<string> = string,
-  TAccountRandNonce extends string | AccountMeta<string> = string,
   TAccountSystemProgram extends string | AccountMeta<string> = '11111111111111111111111111111111',
   TAccountEventAuthority extends string | AccountMeta<string> = string,
   TAccountProgram extends string | AccountMeta<string> = string,
@@ -76,7 +75,6 @@ export type InitializeHostConfigInstruction<
         : TAccountAdmin,
       TAccountProgramData extends string ? ReadonlyAccount<TAccountProgramData> : TAccountProgramData,
       TAccountHostConfig extends string ? WritableAccount<TAccountHostConfig> : TAccountHostConfig,
-      TAccountRandNonce extends string ? WritableAccount<TAccountRandNonce> : TAccountRandNonce,
       TAccountSystemProgram extends string ? ReadonlyAccount<TAccountSystemProgram> : TAccountSystemProgram,
       TAccountEventAuthority extends string ? ReadonlyAccount<TAccountEventAuthority> : TAccountEventAuthority,
       TAccountProgram extends string ? ReadonlyAccount<TAccountProgram> : TAccountProgram,
@@ -177,7 +175,6 @@ export type InitializeHostConfigAsyncInput<
   TAccountAdmin extends string = string,
   TAccountProgramData extends string = string,
   TAccountHostConfig extends string = string,
-  TAccountRandNonce extends string = string,
   TAccountSystemProgram extends string = string,
   TAccountEventAuthority extends string = string,
   TAccountProgram extends string = string,
@@ -193,11 +190,6 @@ export type InitializeHostConfigAsyncInput<
   programData: Address<TAccountProgramData>;
   /** Singleton config PDA. */
   hostConfig?: Address<TAccountHostConfig>;
-  /**
-   * The host's single rand nonce, created alongside the config so every rand execution can
-   * take it from the first slot on.
-   */
-  randNonce?: Address<TAccountRandNonce>;
   /** System program used for account creation. */
   systemProgram?: Address<TAccountSystemProgram>;
   eventAuthority: Address<TAccountEventAuthority>;
@@ -216,7 +208,6 @@ export async function getInitializeHostConfigInstructionAsync<
   TAccountAdmin extends string,
   TAccountProgramData extends string,
   TAccountHostConfig extends string,
-  TAccountRandNonce extends string,
   TAccountSystemProgram extends string,
   TAccountEventAuthority extends string,
   TAccountProgram extends string,
@@ -227,7 +218,6 @@ export async function getInitializeHostConfigInstructionAsync<
     TAccountAdmin,
     TAccountProgramData,
     TAccountHostConfig,
-    TAccountRandNonce,
     TAccountSystemProgram,
     TAccountEventAuthority,
     TAccountProgram
@@ -240,7 +230,6 @@ export async function getInitializeHostConfigInstructionAsync<
     TAccountAdmin,
     TAccountProgramData,
     TAccountHostConfig,
-    TAccountRandNonce,
     TAccountSystemProgram,
     TAccountEventAuthority,
     TAccountProgram
@@ -255,7 +244,6 @@ export async function getInitializeHostConfigInstructionAsync<
     admin: { value: input.admin ?? null, isWritable: false },
     programData: { value: input.programData ?? null, isWritable: false },
     hostConfig: { value: input.hostConfig ?? null, isWritable: true },
-    randNonce: { value: input.randNonce ?? null, isWritable: true },
     systemProgram: { value: input.systemProgram ?? null, isWritable: false },
     eventAuthority: { value: input.eventAuthority ?? null, isWritable: false },
     program: { value: input.program ?? null, isWritable: false },
@@ -272,12 +260,6 @@ export async function getInitializeHostConfigInstructionAsync<
       seeds: [getBytesEncoder().encode(new Uint8Array([104, 111, 115, 116, 45, 99, 111, 110, 102, 105, 103]))],
     });
   }
-  if (!accounts.randNonce.value) {
-    accounts.randNonce.value = await getProgramDerivedAddress({
-      programAddress,
-      seeds: [getBytesEncoder().encode(new Uint8Array([114, 97, 110, 100, 45, 110, 111, 110, 99, 101]))],
-    });
-  }
   if (!accounts.systemProgram.value) {
     accounts.systemProgram.value = '11111111111111111111111111111111' as Address<'11111111111111111111111111111111'>;
   }
@@ -289,7 +271,6 @@ export async function getInitializeHostConfigInstructionAsync<
       getAccountMeta('admin', accounts.admin),
       getAccountMeta('programData', accounts.programData),
       getAccountMeta('hostConfig', accounts.hostConfig),
-      getAccountMeta('randNonce', accounts.randNonce),
       getAccountMeta('systemProgram', accounts.systemProgram),
       getAccountMeta('eventAuthority', accounts.eventAuthority),
       getAccountMeta('program', accounts.program),
@@ -302,7 +283,6 @@ export async function getInitializeHostConfigInstructionAsync<
     TAccountAdmin,
     TAccountProgramData,
     TAccountHostConfig,
-    TAccountRandNonce,
     TAccountSystemProgram,
     TAccountEventAuthority,
     TAccountProgram
@@ -314,7 +294,6 @@ export type InitializeHostConfigInput<
   TAccountAdmin extends string = string,
   TAccountProgramData extends string = string,
   TAccountHostConfig extends string = string,
-  TAccountRandNonce extends string = string,
   TAccountSystemProgram extends string = string,
   TAccountEventAuthority extends string = string,
   TAccountProgram extends string = string,
@@ -330,11 +309,6 @@ export type InitializeHostConfigInput<
   programData: Address<TAccountProgramData>;
   /** Singleton config PDA. */
   hostConfig: Address<TAccountHostConfig>;
-  /**
-   * The host's single rand nonce, created alongside the config so every rand execution can
-   * take it from the first slot on.
-   */
-  randNonce: Address<TAccountRandNonce>;
   /** System program used for account creation. */
   systemProgram?: Address<TAccountSystemProgram>;
   eventAuthority: Address<TAccountEventAuthority>;
@@ -353,7 +327,6 @@ export function getInitializeHostConfigInstruction<
   TAccountAdmin extends string,
   TAccountProgramData extends string,
   TAccountHostConfig extends string,
-  TAccountRandNonce extends string,
   TAccountSystemProgram extends string,
   TAccountEventAuthority extends string,
   TAccountProgram extends string,
@@ -364,7 +337,6 @@ export function getInitializeHostConfigInstruction<
     TAccountAdmin,
     TAccountProgramData,
     TAccountHostConfig,
-    TAccountRandNonce,
     TAccountSystemProgram,
     TAccountEventAuthority,
     TAccountProgram
@@ -376,7 +348,6 @@ export function getInitializeHostConfigInstruction<
   TAccountAdmin,
   TAccountProgramData,
   TAccountHostConfig,
-  TAccountRandNonce,
   TAccountSystemProgram,
   TAccountEventAuthority,
   TAccountProgram
@@ -390,7 +361,6 @@ export function getInitializeHostConfigInstruction<
     admin: { value: input.admin ?? null, isWritable: false },
     programData: { value: input.programData ?? null, isWritable: false },
     hostConfig: { value: input.hostConfig ?? null, isWritable: true },
-    randNonce: { value: input.randNonce ?? null, isWritable: true },
     systemProgram: { value: input.systemProgram ?? null, isWritable: false },
     eventAuthority: { value: input.eventAuthority ?? null, isWritable: false },
     program: { value: input.program ?? null, isWritable: false },
@@ -412,7 +382,6 @@ export function getInitializeHostConfigInstruction<
       getAccountMeta('admin', accounts.admin),
       getAccountMeta('programData', accounts.programData),
       getAccountMeta('hostConfig', accounts.hostConfig),
-      getAccountMeta('randNonce', accounts.randNonce),
       getAccountMeta('systemProgram', accounts.systemProgram),
       getAccountMeta('eventAuthority', accounts.eventAuthority),
       getAccountMeta('program', accounts.program),
@@ -425,7 +394,6 @@ export function getInitializeHostConfigInstruction<
     TAccountAdmin,
     TAccountProgramData,
     TAccountHostConfig,
-    TAccountRandNonce,
     TAccountSystemProgram,
     TAccountEventAuthority,
     TAccountProgram
@@ -449,15 +417,10 @@ export type ParsedInitializeHostConfigInstruction<
     programData: TAccountMetas[2];
     /** Singleton config PDA. */
     hostConfig: TAccountMetas[3];
-    /**
-     * The host's single rand nonce, created alongside the config so every rand execution can
-     * take it from the first slot on.
-     */
-    randNonce: TAccountMetas[4];
     /** System program used for account creation. */
-    systemProgram: TAccountMetas[5];
-    eventAuthority: TAccountMetas[6];
-    program: TAccountMetas[7];
+    systemProgram: TAccountMetas[4];
+    eventAuthority: TAccountMetas[5];
+    program: TAccountMetas[6];
   };
   data: InitializeHostConfigInstructionData;
 };
@@ -468,10 +431,10 @@ export function parseInitializeHostConfigInstruction<
 >(
   instruction: Instruction<TProgram> & InstructionWithAccounts<TAccountMetas> & InstructionWithData<ReadonlyUint8Array>,
 ): ParsedInitializeHostConfigInstruction<TProgram, TAccountMetas> {
-  if (instruction.accounts.length < 8) {
+  if (instruction.accounts.length < 7) {
     throw new SolanaError(SOLANA_ERROR__PROGRAM_CLIENTS__INSUFFICIENT_ACCOUNT_METAS, {
       actualAccountMetas: instruction.accounts.length,
-      expectedAccountMetas: 8,
+      expectedAccountMetas: 7,
     });
   }
   let accountIndex = 0;
@@ -487,7 +450,6 @@ export function parseInitializeHostConfigInstruction<
       admin: getNextAccount(),
       programData: getNextAccount(),
       hostConfig: getNextAccount(),
-      randNonce: getNextAccount(),
       systemProgram: getNextAccount(),
       eventAuthority: getNextAccount(),
       program: getNextAccount(),

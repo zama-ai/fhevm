@@ -37,8 +37,9 @@ HcuBlockMeter / HcuTrustedAppRecord
   the per-slot HCU budget and admin trust record of one application
 
 RandNonce
-  PDA("rand-nonce")
-  the host's global rand counter; every execution with a rand step passes and advances it
+  PDA("rand-nonce", program, scope)
+  one application's rand counter; each of its executions with a rand step passes and advances it,
+  and the first one creates it
 
 UserDecryptionDelegation
   PDA("user-decryption-delegation", delegator, delegate, authority)

@@ -13,10 +13,10 @@ pub(super) fn emit_executed_event<'info>(
         .map(|index| {
             transient_store
                 .result(index)
-                .map(|result| result.handle)
-                .ok_or(ZamaHostError::InvalidReturnSelection)
+                .expect("executed step result")
+                .handle
         })
-        .collect::<std::result::Result<Vec<_>, _>>()?;
+        .collect();
     emit_event_cpi(
         &ctx.accounts.event_authority,
         &FheExecutedEvent {

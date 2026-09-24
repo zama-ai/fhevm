@@ -292,4 +292,8 @@ pub enum ZamaHostError {
     /// reaches every program of the transaction it signed, so it must delegate at the top level.
     #[msg("a wallet delegator must delegate in a top-level instruction")]
     WalletDelegationThroughCpi,
+    /// The rand nonce account is not the canonical, well-formed nonce of the execution's
+    /// application.
+    #[msg("rand nonce account mismatch")]
+    RandNonceMismatch,
 }

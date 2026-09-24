@@ -83,6 +83,7 @@ are written as one narrative instead.
 | [DD-054](#dd-054-the-programs-stay-on-anchor-v1)                                                                                          | adopted                                  | The programs stay on Anchor v1                                                                                                 |
 | [DD-055](#dd-055-the-ledger-is-the-work-log-not-a-pda-queue)                                                                              | adopted                                  | The ledger is the work log, not a PDA queue                                                                                    |
 | [DD-056](#dd-056-an-execution-describes-itself-the-listener-re-derives-handles-only-as-a-check)                                           | adopted                                  | An execution describes itself; the listener re-derives handles only as a check                                                 |
+| [DD-057](#dd-057-one-rand-nonce-per-application)                                                                                          | adopted                                  | One rand nonce per application                                                                                                 |
 
 ## DD-002: Keep App Store And Host ACL Store Separate
 
@@ -1352,9 +1353,9 @@ previous_bank_hash, unix_timestamp)`. No `context_id`, no `compute_subject`, no 
    independently authorized on, and the DAG is public in instruction data regardless).
 2. **Rand / rand-bounded seeds** are compulsorily fresh. As amended by RFC 035:
    `H("FHE_eval_seed", rand_nonce, op_index, program, scope, host program id, chain_id,
-previous_bank_hash, unix_timestamp)`. `rand_nonce` is the host's `RandNonce` singleton
-   (`["rand-nonce"]`), which every execution with a rand step must pass and which the host
-   advances (`FheExecuteRandNonceMissing` otherwise): a global counter, consumed once, never
+previous_bank_hash, unix_timestamp)`. `rand_nonce` is the application's `RandNonce`
+   (`["rand-nonce", program, scope]`, DD-057), which every execution with a rand step must pass and
+   which the host advances (`FheExecuteRandNonceMissing` otherwise): a counter consumed once, never
    caller-supplied, so two executions in one slot cannot share a seed whatever they persist.
    `(program, scope)` is the execution's verified application (DD-047), so a seed is bound to the
    values it will land in. The host emits the resolved seeds through the event CPI
@@ -1374,8 +1375,8 @@ Properties that must survive any refactor:
 
 - The rand nonce is consumed exactly once per execution and advances monotonically; a reverted
   execution does not advance it or emit a usable seed.
-- No seed-steering: the preimage is the host's own counter plus slot context plus the verified
-  application; nothing in it is chosen by the caller.
+- No seed-steering: the preimage is the application's host-owned counter plus slot context plus the
+  verified application; nothing in it is chosen by the caller.
 - Duplicate persistent-output accounts within an execution are still rejected
   (`ExecutionAccountTable::claim_persistent_output`), for the decode cache and the
   read-after-write rule, not for seed freshness any more.
@@ -1648,7 +1649,8 @@ a single namespace — and is trustworthy exactly as half of the pair. Both are 
 An execution runs as one application: every stored operand and output its default authority
 controls must carry the same pair (`FheExecuteMixedScopes`). That pair is what the block meter
 charges (`["hcu-block-meter", program, scope]`), the trust record names (`["hcu-trusted", program,
-scope]`), the permit scopes to (`allowedScopes`), the rand seed binds, and the input attestation's
+scope]`), the permit scopes to (`allowedScopes`), the rand seed binds along with the application's
+nonce (`["rand-nonce", program, scope]`, DD-057), and the input attestation's
 `contract_address` must equal (`program`). A value an additional signing authority admits (the
 token writing a receipt into a batcher-owned value) keeps its own application and does not fold,
 but the deny list is not scoped that way: a write is an allow in the value's own application, so
@@ -2139,6 +2141,45 @@ real on chain. The automated drift revert, which runs the same revert SQL, now f
 chain whose checkpoint is ahead, which is always the case when drift is detected; before, it deleted
 rows the listener would never re-ingest. A failed revert signal stops every coprocessor service on
 that database from starting, including those of EVM chains, until an operator repairs by hand.
+
+## DD-057: One rand nonce per application
+
+Status: adopted
+
+Recorded in fhevm-internal#2081. Revises DD-043's nonce.
+
+Context: DD-043 makes rand seeds fresh with one host counter, like EVM's `counterRand`. On EVM a
+global counter costs nothing, since transactions already run one after another. On Solana every
+rand execution write-locked the one `RandNonce` account, so rand executions of all applications ran
+one at a time.
+
+Decision: the nonce is keyed on the execution's application, `PDA("rand-nonce", program, scope)`
+(DD-047). The seed preimage does not change. It already binds `(program, scope)` and `op_index`, so
+a counter unique per application is enough: two executions of one application take different
+nonces, and executions of different applications differ in `(program, scope)`.
+
+The nonce follows the HCU meter's lifecycle. The application's first rand execution creates it,
+and that execution's payer pays the rent, (128 + 17) × 6,960 lamports, about 0.001 SOL. It is never
+closed: a recreated nonce would restart at zero and could repeat a seed within the slot.
+`fhe_execute` requires the canonical address for the application (`RandNonceMismatch`), and a
+host-owned account of the right size and bump there. A system account at that address is created,
+even if someone funded it first; one with data is refused. `initialize_host_config` no longer
+creates a nonce.
+
+Rejected alternatives:
+
+| Alternative | Why not |
+|---|---|
+| Keep the global nonce and accept the contention | No production program draws randomness today, so the cost is not felt yet. It is a fixed ceiling on every future rand workload, and removing it later changes the accounts every rand caller passes. |
+| A nonce per Store or per authority | The seed binds the application, not the Store, so a finer key would have to enter the seed too. Executions of an untrusted application already share its HCU meter, and no workload needs more parallelism within one application. |
+
+Cost: a rand execution derives one more PDA, as the meter does, and the first one per application
+also pays the account creation. No cost snapshot runs a rand step.
+
+Consequences: `initialize_host_config` takes one account fewer. `RandNonce` leaves the IDL, since
+the host reads it through `UncheckedAccount` and nothing off chain reads it: the listener takes the
+seeds from `FheExecutedEvent` (DD-056). A caller with a rand step passes
+`rand_nonce_address(app)`.
 
 ## Open product decisions
 

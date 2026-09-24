@@ -178,6 +178,8 @@ export const ZAMA_HOST_ERROR__INVALID_RETURN_SELECTION = 0x17bf; // 6079
 export const ZAMA_HOST_ERROR__TRANSIENT_STORE_NOT_OPENED = 0x17c0; // 6080
 /** WalletDelegationThroughCpi: a wallet delegator must delegate in a top-level instruction */
 export const ZAMA_HOST_ERROR__WALLET_DELEGATION_THROUGH_CPI = 0x17c1; // 6081
+/** RandNonceMismatch: rand nonce account mismatch */
+export const ZAMA_HOST_ERROR__RAND_NONCE_MISMATCH = 0x17c2; // 6082
 
 export type ZamaHostError =
   | typeof ZAMA_HOST_ERROR__ATTESTATION_CHAIN_ID_MISMATCH
@@ -250,6 +252,7 @@ export type ZamaHostError =
   | typeof ZAMA_HOST_ERROR__PREVIOUS_BANK_HASH_UNAVAILABLE
   | typeof ZAMA_HOST_ERROR__PREVIOUS_STORE_MISMATCH
   | typeof ZAMA_HOST_ERROR__PUBLIC_DECRYPT_PROOF_INVALID
+  | typeof ZAMA_HOST_ERROR__RAND_NONCE_MISMATCH
   | typeof ZAMA_HOST_ERROR__SCOPE_DENIED
   | typeof ZAMA_HOST_ERROR__TOO_MANY_COPROCESSOR_SIGNERS
   | typeof ZAMA_HOST_ERROR__TOO_MANY_KMS_SIGNERS
@@ -336,6 +339,7 @@ if (process.env['NODE_ENV'] !== 'production') {
     [ZAMA_HOST_ERROR__PREVIOUS_BANK_HASH_UNAVAILABLE]: `previous bank hash is not available`,
     [ZAMA_HOST_ERROR__PREVIOUS_STORE_MISMATCH]: `encrypted value previous handle does not match the account`,
     [ZAMA_HOST_ERROR__PUBLIC_DECRYPT_PROOF_INVALID]: `public-decrypt inclusion proof is invalid`,
+    [ZAMA_HOST_ERROR__RAND_NONCE_MISMATCH]: `rand nonce account mismatch`,
     [ZAMA_HOST_ERROR__SCOPE_DENIED]: `application scope is deny-listed`,
     [ZAMA_HOST_ERROR__TOO_MANY_COPROCESSOR_SIGNERS]: `coprocessor signer set exceeds the maximum size`,
     [ZAMA_HOST_ERROR__TOO_MANY_KMS_SIGNERS]: `KMS context exceeds the maximum signer count`,

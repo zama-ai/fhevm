@@ -10,7 +10,7 @@ import {
   getDefineKmsContextInstructionDataEncoder,
 } from '../../../../solana/deploy/src/generated/zamaHost/instructions/defineKmsContext';
 import { getInitializeHostConfigInstructionDataDecoder } from '../../../../solana/deploy/src/generated/zamaHost/instructions/initializeHostConfig';
-import { findHostConfigPda, findKmsContextPda, findRandNoncePda } from '../../../../solana/deploy/src/generated/zamaHost/pdas/index.js';
+import { findHostConfigPda, findKmsContextPda } from '../../../../solana/deploy/src/generated/zamaHost/pdas/index.js';
 import { ZAMA_HOST_PROGRAM_ADDRESS } from '../../../../solana/deploy/src/generated/zamaHost/programAddress.js';
 import { zamaHostProgramDataAddress } from './provision';
 import type { SolanaProvisioningContext } from './provision';
@@ -162,16 +162,16 @@ describe('bootstrapZamaHost', () => {
     expect(defineData.thresholds).toEqual({ publicDecryption: 3, userDecryption: 3, kmsGen: 3, mpc: 1 });
   });
 
-  test('bootstrap derives the randomness account under the given host, not the compiled default', async () => {
+  test('bootstrap derives the host config under the given host, not the compiled default', async () => {
     const payer = await generateKeyPairSigner();
     const { context, sent } = await fakeContext(false, payer.address);
     const programAddress = (await generateKeyPairSigner()).address;
     await bootstrapZamaHost(context, { payer, gateway, programAddress });
-    const [givenNonce] = await findRandNoncePda({ programAddress });
-    const [defaultNonce] = await findRandNoncePda();
+    const [givenConfig] = await findHostConfigPda({ programAddress });
+    const [defaultConfig] = await findHostConfigPda();
     const accounts = sent[0][0].accounts!.map((account) => account.address);
-    expect(accounts).toContain(givenNonce);
-    expect(accounts).not.toContain(defaultNonce);
+    expect(accounts).toContain(givenConfig);
+    expect(accounts).not.toContain(defaultConfig);
   });
 
   test('configured validator: skips initialize_host_config, still defines the context', async () => {

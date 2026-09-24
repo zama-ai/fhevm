@@ -8,4 +8,3 @@
 
 export * from './hostConfig.js';
 export * from './kmsContext.js';
-export * from './randNonce.js';

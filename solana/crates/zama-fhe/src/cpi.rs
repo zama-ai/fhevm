@@ -39,7 +39,8 @@ pub struct ExecutionCpiAccounts<'info> {
     /// HCU trust witness (read-only), keyed on the execution's `(program, scope)`. `Some` + valid
     /// ⇒ bypass; `None` ⇒ untrusted (metered).
     pub hcu_trusted_app_record: Option<AccountInfo<'info>>,
-    /// The host's rand nonce (mut), required exactly when the execution has a rand step.
+    /// Rand nonce (mut), keyed on the execution's `(program, scope)`: required exactly when the
+    /// execution has a rand step, and created by the host on the application's first one.
     pub rand_nonce: Option<AccountInfo<'info>>,
     pub transient_store: AccountInfo<'info>,
     pub instructions: AccountInfo<'info>,

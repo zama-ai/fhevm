@@ -426,7 +426,7 @@
         {
           "name": "payer",
           "docs": [
-            "Pays rent for Store growth and lazy meter creation."
+            "Pays rent for Store growth and lazy meter and rand nonce creation."
           ],
           "writable": true,
           "signer": true
@@ -502,30 +502,13 @@
         {
           "name": "rand_nonce",
           "docs": [
-            "The host's rand nonce, consumed and incremented by an execution that contains a rand step.",
-            "Required exactly then, and refused otherwise so no execution write-locks it for nothing."
+            "The application's rand nonce, consumed and incremented by an execution that contains a",
+            "rand step. Required exactly then, and refused otherwise so no execution write-locks it for",
+            "nothing.",
+            "application, created here on its first rand execution."
           ],
           "writable": true,
-          "optional": true,
-          "pda": {
-            "seeds": [
-              {
-                "kind": "const",
-                "value": [
-                  114,
-                  97,
-                  110,
-                  100,
-                  45,
-                  110,
-                  111,
-                  110,
-                  99,
-                  101
-                ]
-              }
-            ]
-          }
+          "optional": true
         },
         {
           "name": "transient_store",
@@ -615,33 +598,6 @@
                   102,
                   105,
                   103
-                ]
-              }
-            ]
-          }
-        },
-        {
-          "name": "rand_nonce",
-          "docs": [
-            "The host's single rand nonce, created alongside the config so every rand execution can",
-            "take it from the first slot on."
-          ],
-          "writable": true,
-          "pda": {
-            "seeds": [
-              {
-                "kind": "const",
-                "value": [
-                  114,
-                  97,
-                  110,
-                  100,
-                  45,
-                  110,
-                  111,
-                  110,
-                  99,
-                  101
                 ]
               }
             ]
@@ -1767,19 +1723,6 @@
       ]
     },
     {
-      "name": "RandNonce",
-      "discriminator": [
-        75,
-        163,
-        132,
-        129,
-        125,
-        181,
-        151,
-        221
-      ]
-    },
-    {
       "name": "TransientStore",
       "discriminator": [
         16,
@@ -2296,6 +2239,11 @@
       "code": 6081,
       "name": "WalletDelegationThroughCpi",
       "msg": "a wallet delegator must delegate in a top-level instruction"
+    },
+    {
+      "code": 6082,
+      "name": "RandNonceMismatch",
+      "msg": "rand nonce account mismatch"
     }
   ],
   "types": [
@@ -3922,38 +3870,6 @@
             "name": "user_decryption_threshold",
             "docs": [
               "User-decrypt signature threshold."
-            ],
-            "type": "u8"
-          }
-        ]
-      }
-    },
-    {
-      "name": "RandNonce",
-      "docs": [
-        "The host's single random-seed nonce, created next to `HostConfig` by `initialize_host_config`",
-        "and incremented by every `fhe_execute` that contains a rand step. A monotonic host-owned",
-        "counter is a consumed ticket by itself: two executions can never see the same value, so a",
-        "rand seed can never repeat within a slot whatever the rest of the execution looks like.",
-        "",
-        "Kept out of `HostConfig` on purpose: every execution reads the config, and write-locking it",
-        "would serialize them all. Only rand executions take this account, so ordinary writes stay",
-        "parallel and rand executions serialize on one account across applications."
-      ],
-      "type": {
-        "kind": "struct",
-        "fields": [
-          {
-            "name": "nonce",
-            "docs": [
-              "Value consumed by the next rand execution."
-            ],
-            "type": "u64"
-          },
-          {
-            "name": "bump",
-            "docs": [
-              "PDA bump for `PDA(\"rand-nonce\")`."
             ],
             "type": "u8"
           }

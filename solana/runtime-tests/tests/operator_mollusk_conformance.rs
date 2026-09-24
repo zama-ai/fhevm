@@ -417,7 +417,7 @@ impl ExecutionFlow {
             step,
             FheExecuteStep::Rand { .. } | FheExecuteStep::RandBounded { .. }
         ) {
-            let (address, account) = rand_nonce_account(0);
+            let (address, account) = rand_nonce_account(self.app(), 0);
             self.accounts.push((address, account));
             self.rand_nonce = Some(address);
         }
