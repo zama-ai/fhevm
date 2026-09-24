@@ -94,8 +94,8 @@ ct64-repair reason (ct64 mismatch, missing, error, or uncomputed here). It does 
 promise a downloadable source. Ct128-only, peer-side, and metadata-only reasons
 cannot enable ct64 replacement. Inferred outputs use `ct64_mismatch`; obtaining a
 target does not change their origin. A later verified observation of the same
-handle COALESCE-pins the quorum descriptor (`target_ct64_digest` and computed
-`target_keyset_id` / `target_ct128_*`), sources, and evidence onto that
+handle COALESCE-pins the quorum descriptor (`quorum_ct64_digest`,
+`quorum_keyset_id`, and `quorum_ct128_*`), sources, and evidence onto that
 inferred row (`ON CONFLICT` on handle identity) and does not insert a second
 finding. Repeated observations do not overwrite a pinned healing candidate's
 target, claim, priority, or origin.
