@@ -1012,22 +1012,31 @@ fn mollusk_non_owner_cannot_allow_balance_viewers() {
 
 #[test]
 fn mollusk_non_mint_authority_cannot_allow_total_supply_viewers() {
+    // The refused key is the host admin: host authority confers no mint authority.
     let fixture = BurnRedeemFixture::new();
-    let stranger = Pubkey::new_unique();
+    let host_admin = Pubkey::new_unique();
     let mut accounts = fixture.accounts(0);
-    accounts.insert(stranger, system_account(1_000_000_000));
+    accounts.insert(host_admin, system_account(1_000_000_000));
+    accounts.insert(
+        fixture.host_config,
+        host_config_account_with_kms_context(
+            host_admin,
+            secp_evm_address(&coprocessor_signing_key()),
+            fixture.kms_context_id,
+        ),
+    );
     let context = mollusk().with_context(accounts);
 
     check_token_instruction(
         &context,
-        &allow_total_supply_viewers_ix(&fixture, stranger, vec![Pubkey::new_unique()]),
+        &allow_total_supply_viewers_ix(&fixture, host_admin, vec![Pubkey::new_unique()]),
         &[token_error(
             token::ConfidentialTokenError::MintAuthorityMismatch,
         )],
     );
     check_token_instruction(
         &context,
-        &make_total_supply_handle_public_ix(&fixture, stranger, fixture.initial_total_supply),
+        &make_total_supply_handle_public_ix(&fixture, host_admin, fixture.initial_total_supply),
         &[token_error(
             token::ConfidentialTokenError::MintAuthorityMismatch,
         )],
@@ -1425,6 +1434,55 @@ fn mollusk_confidential_transfer_rejects_frozen_recipient_ata() {
             token::ConfidentialTokenError::UnderlyingTokenAccountFrozen,
         )],
     );
+}
+
+#[test]
+fn mollusk_confidential_transfer_leaves_the_same_chain_state_whatever_the_hidden_amounts() {
+    // The same transfer instruction runs twice from the same accounts. The amounts behind the
+    // handles differ, and only the cleartext ledger knows them: one transfer is funded, the other
+    // exceeds the balance. The chain sees byte-identical results, so it holds no amount and cannot
+    // tell the failed transfer from the funded one; the failed one moves an encrypted zero.
+    let fixture = TokenFixture::new();
+    let transfer = confidential_transfer_ix(
+        &fixture,
+        fixture.alice_token,
+        fixture.bob_token,
+        fixture.alice_balance_store,
+        fixture.bob_balance_store,
+        sender_attestation(&fixture, 21),
+    );
+    let amount_handle = handle_for_chain(21, BALANCE_FHE_TYPE);
+    let run = |amount: u64| {
+        // Each Mollusk draws a fresh previous bank hash, which every handle hashes; both runs
+        // share one so that only the hidden amounts differ.
+        let mut svm = mollusk();
+        svm.sysvars.slot_hashes = solana_sdk::slot_hashes::SlotHashes::new(&[(
+            99,
+            solana_sdk::hash::Hash::new_from_array([7; 32]),
+        )]);
+        let context = svm.with_context(fixture.base_accounts());
+        let mut cleartext = CleartextLedger::default();
+        cleartext.seed_amount(fixture.alice_initial, 1_000);
+        cleartext.seed_amount(fixture.bob_initial, 100);
+        cleartext.seed_amount(amount_handle, amount);
+        let result = check_token_instruction(&context, &transfer, &[Check::success()]);
+        cleartext.evaluate_fhe_cpi(&context, &result);
+        let balances = (
+            cleartext.balance(&context, fixture.alice_token),
+            cleartext.balance(&context, fixture.bob_token),
+        );
+        let accounts = context.account_store.borrow().clone();
+        (result, accounts, balances)
+    };
+
+    let (funded, funded_accounts, funded_balances) = run(400);
+    let (overdrawn, overdrawn_accounts, overdrawn_balances) = run(1_500);
+
+    assert_eq!(funded_balances, (600, 500));
+    assert_eq!(overdrawn_balances, (1_000, 100));
+    assert_eq!(funded_accounts, overdrawn_accounts);
+    assert_eq!(funded.inner_instructions, overdrawn.inner_instructions);
+    assert_eq!(funded.return_data, overdrawn.return_data);
 }
 
 #[test]
@@ -3156,6 +3214,7 @@ fn mollusk_redeem_current_pending_burn_then_rejects_double_settlement() {
     let cleartext_amount = 500;
     let (signatures, extra_data) = amount_public_decrypt_cert(burned_handle, cleartext_amount);
     let pending_burn = seed_pending_burn_in_context(&context, &fixture, burned_handle);
+    let supply_before = context.account_store.borrow()[&fixture.total_supply_store].clone();
     check_token_instruction(
         &context,
         &redeem_burned_amount_ix(
@@ -3168,6 +3227,11 @@ fn mollusk_redeem_current_pending_burn_then_rejects_double_settlement() {
             pending_burn,
         ),
         &[Check::success()],
+    );
+    // The burn already took the amount out of the encrypted supply; redeem only pays it out.
+    assert_eq!(
+        context.account_store.borrow()[&fixture.total_supply_store],
+        supply_before
     );
 
     assert_eq!(
@@ -3582,18 +3646,15 @@ fn mollusk_two_sequential_burns_each_redeemable_exactly_once() {
     assert_eq!(read_spl_amount(&context, fixture.destination_usdc), 500);
 }
 
-/// Builds the fixture's host config with `paused = true` so the redeem is rejected at the pause gate.
-fn paused_redeem_host_config(fixture: &BurnRedeemFixture) -> Account {
-    let mut account = host_config_account_with_kms_context(
-        fixture.owner,
-        secp_evm_address(&coprocessor_signing_key()),
-        fixture.kms_context_id,
-    );
+/// The same host config account with `paused = true`.
+fn paused_host_config(account: &Account) -> Account {
     let mut config = host::HostConfig::try_deserialize(&mut account.data.as_slice())
         .expect("host config deserializes");
     config.paused = true;
-    account.data = serialized_account(config);
-    account
+    Account {
+        data: serialized_account(config),
+        ..account.clone()
+    }
 }
 
 /// A paused host config rejects the redeem at the pause gate (`assert_host_config_allows_token_response`)
@@ -3606,7 +3667,8 @@ fn mollusk_redeem_rejected_when_host_paused() {
 
     let mut accounts = fixture.accounts(1_000);
     seed_single_burn_value_account(&fixture, &mut accounts, first_handle);
-    accounts.insert(fixture.host_config, paused_redeem_host_config(&fixture));
+    let paused = paused_host_config(&accounts[&fixture.host_config]);
+    accounts.insert(fixture.host_config, paused);
     let context = burn_redeem_mollusk().with_context(accounts);
 
     let (signatures, extra_data) = amount_public_decrypt_cert(first_handle, 500);
@@ -3628,6 +3690,42 @@ fn mollusk_redeem_rejected_when_host_paused() {
     );
     assert_eq!(read_spl_amount(&context, fixture.vault_usdc), 1_000);
     assert_eq!(read_spl_amount(&context, fixture.destination_usdc), 0);
+}
+
+/// The token program has no pause of its own: burn and cancellation stop at the host's pause
+/// gate on their FHE execution.
+#[test]
+fn mollusk_burn_and_cancel_are_refused_by_a_paused_host() {
+    let fixture = BurnRedeemFixture::new();
+    let context = burn_redeem_mollusk().with_context(fixture.accounts(1_000));
+    let live = context.account_store.borrow()[&fixture.host_config].clone();
+    let paused = paused_host_config(&live);
+
+    context
+        .account_store
+        .borrow_mut()
+        .insert(fixture.host_config, paused.clone());
+    let pending_burn = prepare_empty_pending_burn(&context, &fixture);
+    check_token_instruction(
+        &context,
+        &confidential_burn_ix(&fixture, fixture.owner_attestation(41), pending_burn),
+        &[host_error(host::errors::ZamaHostError::HostConfigPaused)],
+    );
+
+    context
+        .account_store
+        .borrow_mut()
+        .insert(fixture.host_config, live);
+    run_burn(&context, &fixture, 41);
+    context
+        .account_store
+        .borrow_mut()
+        .insert(fixture.host_config, paused);
+    check_token_instruction(
+        &context,
+        &cancel_pending_burn_ix(&fixture, pending_burn, None),
+        &[host_error(host::errors::ZamaHostError::HostConfigPaused)],
+    );
 }
 
 #[test]
@@ -4675,6 +4773,43 @@ fn mollusk_disclose_secp_amount_happy_path() {
             cleartext_amount,
             authority: fixture.token_account,
         },
+    );
+}
+
+#[test]
+fn mollusk_disclose_secp_rejected_when_host_paused() {
+    let fixture = DiscloseFixture::new();
+    let pinned = handle_for_chain(43, BALANCE_FHE_TYPE);
+    let (value, proof) = public_leaf_value_account(
+        fixture.amount_store,
+        fixture.token_account,
+        fixture.mint,
+        token::burned_amount_key(),
+        &[fixture.owner],
+        pinned,
+        None,
+    );
+    let mut accounts = fixture.base();
+    accounts.insert(fixture.amount_store, encrypted_store_account(&value));
+    let paused = paused_host_config(&accounts[&fixture.host_config]);
+    accounts.insert(fixture.host_config, paused);
+    let context = mollusk().with_context(accounts);
+
+    let (signatures, extra_data) = amount_public_decrypt_cert(pinned, 500);
+    check_token_instruction(
+        &context,
+        &disclose_secp_ix(
+            &fixture,
+            fixture.amount_store,
+            pinned,
+            u256_be(500),
+            signatures,
+            extra_data,
+            proof,
+        ),
+        &[token_error(
+            token::ConfidentialTokenError::RequestWitnessUnavailable,
+        )],
     );
 }
 

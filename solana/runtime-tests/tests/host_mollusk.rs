@@ -638,6 +638,62 @@ fn mollusk_fhe_execute_rejects_stale_previous_handle() {
 }
 
 #[test]
+fn mollusk_fhe_execute_rejects_stale_previous_leaf_count() {
+    // The write states the current handle but the leaf count from before the last append, so the
+    // builder's view is stale and the whole execution fails, as for a stale handle.
+    let payer = Pubkey::new_unique();
+    let app = App::new();
+    let (host_config, host_config_account) = host_config_account(payer);
+    let (address, value) = app.value("balance", handle_for_chain(3, 5));
+    let first = run_update(
+        payer,
+        &app,
+        host_config,
+        host_config_account.clone(),
+        address,
+        &value,
+        Some(value.slots[0].handle),
+        &[payer],
+        6,
+        Check::success(),
+    );
+    let updated = read_encrypted_store_from_result(&first, address);
+    assert_eq!(updated.leaf_count, value.leaf_count + 1);
+
+    let mut dictionary = ExecutionDictionary::default();
+    let mut effect = app.authority.store_output(
+        &mut dictionary,
+        0,
+        updated.slots[0].key,
+        &[],
+        Some(updated.slots[0].handle),
+        value.leaf_count,
+        false,
+    );
+    effect.result.step_index = 0;
+    let args = FheExecuteArgs {
+        execution_store_index: 0,
+        effects: vec![effect],
+        returned_results: Vec::new(),
+        account_count: 0,
+        dictionary: dictionary.into_entries(),
+        steps: vec![FheExecuteStep::TrivialEncrypt {
+            plaintext: [7; 32],
+            fhe_type: 5,
+        }],
+    };
+    let ix = fhe_execute_ix(payer, app.key(), host_config, args, vec![writable(address)]);
+    let mut accounts = execution_accounts(payer, &app, host_config, host_config_account);
+    accounts.push((address, encrypted_store_account(&updated)));
+    check_host_instruction(
+        &mollusk(),
+        &ix,
+        &accounts,
+        &[custom_error(host::errors::ZamaHostError::PreviousStoreMismatch)],
+    );
+}
+
+#[test]
 fn mollusk_create_encrypted_store_rejects_wallet_authority() {
     let wallet = Pubkey::new_unique();
     let app = App::new();
@@ -3313,6 +3369,35 @@ impl FheExecutionFixture {
         )
     }
 
+    /// A trivial encryption plus a scalar add whose scalar is dictionary entry `value_index`.
+    fn scalar_add_instruction(&self, dictionary: Vec<[u8; 32]>, value_index: u8) -> Instruction {
+        self.instruction(
+            FheExecuteArgs {
+                execution_store_index: 0,
+                effects: vec![],
+                returned_results: Vec::new(),
+                account_count: 0,
+                dictionary,
+                steps: vec![
+                    FheExecuteStep::TrivialEncrypt {
+                        plaintext: [7; 32],
+                        fhe_type: 5,
+                    },
+                    FheExecuteStep::Binary {
+                        op: FheBinaryOpCode::Add,
+                        lhs: FheExecuteOperand::EarlierStep { producer_index: 0 },
+                        rhs: FheExecuteOperand::Scalar { value_index },
+                        output_fhe_type: 5,
+                    },
+                ],
+            },
+            vec![readonly(self.balance_store)],
+            None,
+            None,
+            None,
+        )
+    }
+
     /// A single transient `Rand` step, with or without a rand nonce account.
     fn rand_instruction(&self, rand_nonce: Option<Pubkey>) -> Instruction {
         self.input_free_instruction(
@@ -4110,6 +4195,39 @@ fn mollusk_fhe_execute_meter_accumulation_overflow_fails_closed() {
     fixture.assert_no_output(&result);
 }
 
+// ---- fhe_execute dictionary bounds ----
+
+#[test]
+fn mollusk_fhe_execute_rejects_a_dictionary_index_past_the_dictionary() {
+    // The program bounds-checks dictionary references itself, whatever the SDK or the caller
+    // built: a scalar pointing past the dictionary fails the execution.
+    let fixture = FheExecutionFixture::with_block_cap(u64::MAX);
+    check_host_context(
+        &fixture.context,
+        &fixture.scalar_add_instruction(vec![[1; 32]], 1),
+        &[custom_error(
+            host::errors::ZamaHostError::FheExecuteDictionaryIndexOutOfBounds,
+        )],
+    );
+    check_host_context(
+        &fixture.context,
+        &fixture.scalar_add_instruction(vec![[1; 32]], 0),
+        &[Check::success()],
+    );
+}
+
+#[test]
+fn mollusk_fhe_execute_rejects_an_unreferenced_dictionary_entry() {
+    let fixture = FheExecutionFixture::with_block_cap(u64::MAX);
+    check_host_context(
+        &fixture.context,
+        &fixture.scalar_add_instruction(vec![[1; 32], [2; 32]], 0),
+        &[custom_error(
+            host::errors::ZamaHostError::FheExecuteDictionaryEntryUnreferenced,
+        )],
+    );
+}
+
 // ---- fhe_execute rand nonce ----
 
 #[test]
@@ -4425,6 +4543,45 @@ fn mollusk_verify_public_decrypt_returns_handle_and_cleartext() {
     assert_eq!(unchanged.slots[0].handle, sealed.slots[0].handle);
     assert_eq!(unchanged.leaf_count, sealed.leaf_count);
     assert_eq!(unchanged.peaks, sealed.peaks);
+}
+
+#[test]
+fn mollusk_verify_public_decrypt_accepts_v4_extra_data_routed_through_another_store() {
+    // Version 4 names the Store that routed the decrypt request. The verifier checks the public
+    // leaf against the Store it is given, which need not be that one.
+    let admin = Pubkey::new_unique();
+    let app = App::new();
+    let (host_config, host_config_account) = host_config_with_context(admin, KMS_CONTEXT_ID);
+    let (kms_context, kms_context_acct) = kms_context_account(KMS_CONTEXT_ID);
+    let handle = handle_for_chain(5, 5);
+    let (address, sealed, proof) =
+        seal_public_leaf(admin, &app, host_config, &host_config_account, handle);
+
+    let routing_store = Pubkey::new_unique();
+    let extra_data = [&[4][..], &KMS_CONTEXT_ID, &routing_store.to_bytes()].concat();
+    let (cleartext, signatures) = public_decrypt_cert(handle, &extra_data);
+    let ix = verify_public_decrypt_ix(
+        host_config,
+        kms_context,
+        address,
+        handle,
+        cleartext,
+        signatures,
+        extra_data,
+        proof,
+    );
+    let accounts = vec![
+        (host_config, host_config_account),
+        (kms_context, kms_context_acct),
+        (address, encrypted_store_account(&sealed)),
+    ];
+    let expected = expected_return_data(handle, cleartext, KMS_CONTEXT_ID);
+    check_host_instruction(
+        &mollusk(),
+        &ix,
+        &accounts,
+        &[Check::success(), Check::return_data(&expected)],
+    );
 }
 
 /// Rotates the current context `KMS_CONTEXT_ID` -> `KMS_CONTEXT_ID + 1` through the real

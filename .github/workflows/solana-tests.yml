@@ -379,6 +379,9 @@ jobs:
           path: solana/runtime-tests/cost-snapshots/*.json
           if-no-files-found: error
 
+      - name: Check the capability property test catches its planted bugs
+        run: bash scripts/check-planted-bugs.sh
+
       - name: Run zama-host decode-feature tests
         run: cargo test -p zama-host --features decode
 

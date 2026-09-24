@@ -132,9 +132,9 @@ pub(super) fn assert_not_paused(config: &Account<HostConfig>) -> Result<()> {
 }
 
 /// Emits the config snapshot after an admin change. Every instruction that touches `HostConfig`
-/// routes through here, which is why the emitter takes the event authority as an argument rather
-/// than using `emit_cpi!`: that macro reads a binding named `ctx`, which a shared helper does not
-/// have.
+/// routes through here, except `define_kms_context`, whose `NewKmsContextEvent` carries the new
+/// current context. The emitter takes the event authority as an argument rather than using
+/// `emit_cpi!` because that macro reads a binding named `ctx`, which a shared helper does not have.
 pub(super) fn emit_config_updated(
     config: &HostConfig,
     admin: Pubkey,
