@@ -1,7 +1,6 @@
 use crate::core::solana::{
-    delegation::DelegationFailure, encrypted_store::EncryptedStoreFailure,
-    failure::AuthorizationFailure, handle_binding::HandleBindingFailure,
-    public_decrypt::PublicDecryptFailure, watermark::WatermarkFailure,
+    failure::{AuthorizationFailure, FailureClass},
+    public_decrypt::PublicDecryptFailure,
 };
 use crate::monitoring::metrics::REQUEST_CHECK_ERRORS;
 use anyhow::anyhow;
@@ -120,7 +119,7 @@ impl From<Erc1271Error> for ProcessingError {
 }
 
 /// The family of request check that rejected a request.
-#[derive(Clone, Copy, Debug)]
+#[derive(Clone, Copy, PartialEq, Eq, Debug)]
 pub enum RequestCheckKind {
     /// ACL authorization checks and related errors (malformed handles, missing config...).
     Acl,
@@ -219,159 +218,338 @@ impl From<Erc1271Error> for RequestCheckError {
 }
 
 impl From<AuthorizationFailure> for RequestCheckError {
-    /// The codes EVM uses for the same outcomes: a bad, expired or revoked permit is a rejected
-    /// signature, a host that cannot be read now is transient, and host state that grants no
-    /// access is an ACL denial. A Connector bug or a broken proof record is not the user's
-    /// permission state, so it is unprocessable.
     fn from(failure: AuthorizationFailure) -> Self {
-        let (kind, code) = match &failure {
-            AuthorizationFailure::Signature(_)
-            | AuthorizationFailure::Window(_)
-            | AuthorizationFailure::ProgramIdMismatch { .. }
-            | AuthorizationFailure::Watermark(WatermarkFailure::Invalidated { .. }) => (
-                RequestCheckKind::Signature,
-                ErrorCode::UserSignatureRejected,
-            ),
-            AuthorizationFailure::Snapshot(_) | AuthorizationFailure::ProofRead(_) => {
-                (RequestCheckKind::Network, ErrorCode::UpstreamTransient)
-            }
-            AuthorizationFailure::HandleBinding {
-                source: HandleBindingFailure::HistoryIncomplete,
-                ..
-            }
-            | AuthorizationFailure::Watermark(WatermarkFailure::InvalidHostRecord(_))
-            | AuthorizationFailure::EncryptedStore {
-                source: EncryptedStoreFailure::InvalidHostRecord(_),
-                ..
-            }
-            | AuthorizationFailure::Delegation {
-                source: DelegationFailure::InvalidHostRecord(_),
-                ..
-            } => (RequestCheckKind::Acl, ErrorCode::Unprocessable),
-            AuthorizationFailure::EncryptedStore { .. }
-            | AuthorizationFailure::Scope { .. }
-            | AuthorizationFailure::HandleBinding { .. }
-            | AuthorizationFailure::Delegation { .. } => {
-                (RequestCheckKind::Acl, ErrorCode::AclDenied)
-            }
-        };
-        solana_check_error(kind, code, failure.is_recoverable(), failure)
+        solana_check_error(failure.class(), failure)
     }
 }
 
 impl From<PublicDecryptFailure> for RequestCheckError {
     fn from(failure: PublicDecryptFailure) -> Self {
-        let (kind, code) = match &failure {
-            PublicDecryptFailure::MalformedExtraData => {
-                (RequestCheckKind::Acl, ErrorCode::Unprocessable)
-            }
-            PublicDecryptFailure::Snapshot(_) | PublicDecryptFailure::ProofRead(_) => {
-                (RequestCheckKind::Network, ErrorCode::UpstreamTransient)
-            }
-            PublicDecryptFailure::HandleBinding(HandleBindingFailure::HistoryIncomplete)
-            | PublicDecryptFailure::EncryptedStore(EncryptedStoreFailure::InvalidHostRecord(_)) => {
-                (RequestCheckKind::Acl, ErrorCode::Unprocessable)
-            }
-            PublicDecryptFailure::EncryptedStore(_) | PublicDecryptFailure::HandleBinding(_) => {
-                (RequestCheckKind::Acl, ErrorCode::AclDenied)
-            }
-        };
-        solana_check_error(kind, code, failure.is_recoverable(), failure)
+        solana_check_error(failure.class(), failure)
     }
 }
 
 fn solana_check_error(
-    kind: RequestCheckKind,
-    code: ErrorCode,
-    recoverable: bool,
+    FailureClass {
+        check,
+        code,
+        recoverable,
+    }: FailureClass,
     failure: impl std::error::Error + Send + Sync + 'static,
 ) -> RequestCheckError {
     if recoverable {
-        RequestCheckError::recoverable(kind, code, failure)
+        RequestCheckError::recoverable(check, code, failure)
     } else {
-        RequestCheckError::irrecoverable(kind, code, failure)
+        RequestCheckError::irrecoverable(check, code, failure)
     }
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::core::solana::proof::ProofReadError;
-    use crate::core::solana::snapshot::SnapshotError;
-    use rstest::rstest;
+    use crate::core::solana::{
+        delegation::{DeadRow, DelegationFailure},
+        encrypted_store::EncryptedStoreFailure,
+        failure::InvalidHostRecord,
+        handle_binding::HandleBindingFailure,
+        proof::ProofReadError,
+        scope::ScopeFailure,
+        snapshot::SnapshotError,
+        watermark::{WatermarkFailure, WindowFailure},
+    };
+    use zama_solana_permit::PermitError;
 
-    fn coprocessors_down() -> ProofReadError {
+    const KEY: [u8; 32] = [7; 32];
+    const INVALID: InvalidHostRecord = InvalidHostRecord { account_key: KEY };
+
+    /// Signature family, `user_signature_rejected`.
+    const SIGNATURE: (RequestCheckKind, ErrorCode) = (
+        RequestCheckKind::Signature,
+        ErrorCode::UserSignatureRejected,
+    );
+    /// Network family, `upstream_transient`.
+    const NETWORK: (RequestCheckKind, ErrorCode) =
+        (RequestCheckKind::Network, ErrorCode::UpstreamTransient);
+    /// ACL family, `acl_denied`.
+    const DENIED: (RequestCheckKind, ErrorCode) = (RequestCheckKind::Acl, ErrorCode::AclDenied);
+    /// ACL family, `unprocessable`.
+    const UNPROCESSABLE: (RequestCheckKind, ErrorCode) =
+        (RequestCheckKind::Acl, ErrorCode::Unprocessable);
+
+    use ProcessingErrorKind::{Irrecoverable as TERMINAL, Recoverable as RETRY};
+
+    fn store(source: EncryptedStoreFailure) -> AuthorizationFailure {
+        AuthorizationFailure::EncryptedStore { index: 0, source }
+    }
+
+    fn binding(source: HandleBindingFailure) -> AuthorizationFailure {
+        AuthorizationFailure::HandleBinding { index: 0, source }
+    }
+
+    fn delegation(source: DelegationFailure) -> AuthorizationFailure {
+        AuthorizationFailure::Delegation { index: 0, source }
+    }
+
+    fn unavailable() -> ProofReadError {
         ProofReadError::Unavailable {
             reason: "down".into(),
         }
     }
 
-    /// Each Solana outcome takes the code EVM uses for it. A Connector bug or a broken proof
-    /// record is not the user's permission state: `acl_denied` would tell an HTTP caller to retry
-    /// a request that fails the same way every time.
-    #[rstest]
-    #[case::program_id_mismatch(
-        AuthorizationFailure::ProgramIdMismatch { signed: [1; 32], own: [2; 32] },
-        ErrorCode::UserSignatureRejected,
-        ProcessingErrorKind::Irrecoverable
-    )]
-    #[case::incomplete_history(
-        AuthorizationFailure::HandleBinding { index: 0, source: HandleBindingFailure::HistoryIncomplete },
-        ErrorCode::Unprocessable,
-        ProcessingErrorKind::Irrecoverable
-    )]
-    #[case::unreadable_host(
-        AuthorizationFailure::Snapshot(SnapshotError::Unavailable { reason: "down".into() }),
-        ErrorCode::UpstreamTransient,
-        ProcessingErrorKind::Recoverable
-    )]
-    #[case::unreachable_coprocessors(
-        AuthorizationFailure::ProofRead(coprocessors_down()),
-        ErrorCode::UpstreamTransient,
-        ProcessingErrorKind::Recoverable
-    )]
-    #[case::missing_leaf(
-        AuthorizationFailure::HandleBinding {
-            index: 0,
-            source: HandleBindingFailure::NoLeaf { record_leaf_count: 1, live_leaf_count: 1 },
-        },
-        ErrorCode::AclDenied,
-        ProcessingErrorKind::Recoverable
-    )]
-    fn solana_failures_take_the_evm_code_for_their_outcome(
-        #[case] failure: AuthorizationFailure,
-        #[case] code: ErrorCode,
-        #[case] kind: ProcessingErrorKind,
+    fn assert_recorded(
+        error: RequestCheckError,
+        (check, code): (RequestCheckKind, ErrorCode),
+        kind: ProcessingErrorKind,
+        case: &str,
     ) {
-        let error = RequestCheckError::from(failure).record();
-        assert_eq!((error.code, error.kind), (code, kind));
+        let recorded_check = error.kind;
+        let error = error.record();
+        assert_eq!(
+            (recorded_check, error.code, error.kind),
+            (check, code, kind),
+            "{case}"
+        );
     }
 
-    #[rstest]
-    #[case::incomplete_history(
-        PublicDecryptFailure::HandleBinding(HandleBindingFailure::HistoryIncomplete),
-        ErrorCode::Unprocessable,
-        ProcessingErrorKind::Irrecoverable
-    )]
-    #[case::unreachable_coprocessors(
-        PublicDecryptFailure::ProofRead(coprocessors_down()),
-        ErrorCode::UpstreamTransient,
-        ProcessingErrorKind::Recoverable
-    )]
-    #[case::missing_leaf(
-        PublicDecryptFailure::HandleBinding(HandleBindingFailure::NoLeaf {
-            record_leaf_count: 1,
-            live_leaf_count: 1,
-        }),
-        ErrorCode::AclDenied,
-        ProcessingErrorKind::Recoverable
-    )]
-    fn solana_public_decrypt_failures_take_the_evm_code_for_their_outcome(
-        #[case] failure: PublicDecryptFailure,
-        #[case] code: ErrorCode,
-        #[case] kind: ProcessingErrorKind,
-    ) {
-        let error = RequestCheckError::from(failure).record();
-        assert_eq!((error.code, error.kind), (code, kind));
+    /// Every Solana user-decryption failure, written out with the family, code and recoverability
+    /// it must be recorded with. The expectations are this table's, not the mapping's: a changed
+    /// class fails here.
+    #[test]
+    fn every_solana_authorization_failure_is_recorded_as_written() {
+        let cases = [
+            (
+                AuthorizationFailure::Signature(PermitError::SignatureMismatch),
+                SIGNATURE,
+                TERMINAL,
+            ),
+            (
+                AuthorizationFailure::Window(WindowFailure::NotYetValid {
+                    start_timestamp: 2,
+                    now: 1,
+                }),
+                SIGNATURE,
+                RETRY,
+            ),
+            (
+                AuthorizationFailure::Window(WindowFailure::Expired { end: 1, now: 2 }),
+                SIGNATURE,
+                TERMINAL,
+            ),
+            (
+                AuthorizationFailure::ProgramIdMismatch {
+                    signed: [1; 32],
+                    own: [2; 32],
+                },
+                SIGNATURE,
+                TERMINAL,
+            ),
+            (
+                AuthorizationFailure::Snapshot(SnapshotError::Unavailable {
+                    reason: "down".into(),
+                }),
+                NETWORK,
+                RETRY,
+            ),
+            (
+                AuthorizationFailure::Snapshot(SnapshotError::ResponseLengthMismatch {
+                    requested: 1,
+                    returned: 0,
+                }),
+                NETWORK,
+                RETRY,
+            ),
+            (
+                AuthorizationFailure::Snapshot(SnapshotError::MalformedClock),
+                NETWORK,
+                RETRY,
+            ),
+            (
+                AuthorizationFailure::Snapshot(SnapshotError::NodeBehind),
+                NETWORK,
+                RETRY,
+            ),
+            (
+                AuthorizationFailure::Watermark(WatermarkFailure::Invalidated {
+                    start_timestamp: 1,
+                    watermark: 2,
+                }),
+                SIGNATURE,
+                TERMINAL,
+            ),
+            (
+                AuthorizationFailure::Watermark(WatermarkFailure::InvalidHostRecord(INVALID)),
+                UNPROCESSABLE,
+                TERMINAL,
+            ),
+            (
+                store(EncryptedStoreFailure::Absent { account_key: KEY }),
+                DENIED,
+                RETRY,
+            ),
+            (
+                store(EncryptedStoreFailure::ForeignOwner {
+                    account_key: KEY,
+                    owner: [1; 32],
+                }),
+                DENIED,
+                TERMINAL,
+            ),
+            (
+                store(EncryptedStoreFailure::NotAnEncryptedStore { account_key: KEY }),
+                DENIED,
+                TERMINAL,
+            ),
+            (
+                store(EncryptedStoreFailure::AddressMismatch {
+                    account_key: KEY,
+                    derived: None,
+                }),
+                DENIED,
+                TERMINAL,
+            ),
+            (
+                store(EncryptedStoreFailure::InvalidHostRecord(INVALID)),
+                UNPROCESSABLE,
+                TERMINAL,
+            ),
+            (
+                AuthorizationFailure::Scope {
+                    index: 0,
+                    source: ScopeFailure::ScopeNotAllowed {
+                        program: [1; 32],
+                        scope: [2; 32],
+                    },
+                },
+                DENIED,
+                TERMINAL,
+            ),
+            (
+                AuthorizationFailure::ProofRead(unavailable()),
+                NETWORK,
+                RETRY,
+            ),
+            (
+                AuthorizationFailure::ProofRead(ProofReadError::ResponseLengthMismatch {
+                    requested: 1,
+                    returned: 0,
+                }),
+                NETWORK,
+                RETRY,
+            ),
+            (
+                binding(HandleBindingFailure::NoLeaf {
+                    record_leaf_count: 1,
+                    live_leaf_count: 1,
+                }),
+                DENIED,
+                RETRY,
+            ),
+            (
+                binding(HandleBindingFailure::ProofRecordBehind {
+                    record_leaf_count: 0,
+                    live_leaf_count: 1,
+                }),
+                DENIED,
+                RETRY,
+            ),
+            (
+                binding(HandleBindingFailure::AccountUnknownToProofRecord),
+                DENIED,
+                RETRY,
+            ),
+            (
+                binding(HandleBindingFailure::LeafIndexOutOfRange {
+                    leaf_index: 1,
+                    leaf_count: 1,
+                }),
+                DENIED,
+                RETRY,
+            ),
+            (
+                binding(HandleBindingFailure::ProofDoesNotVerify {
+                    record_leaf_count: 1,
+                    live_leaf_count: 2,
+                }),
+                DENIED,
+                RETRY,
+            ),
+            (
+                binding(HandleBindingFailure::HistoryIncomplete),
+                UNPROCESSABLE,
+                TERMINAL,
+            ),
+            (
+                delegation(DelegationFailure::NoLiveDelegation {
+                    exact: DeadRow::NotLive { expires_at: 0 },
+                    wildcard: DeadRow::Absent,
+                    now: 1,
+                }),
+                DENIED,
+                RETRY,
+            ),
+            (
+                delegation(DelegationFailure::InvalidHostRecord(INVALID)),
+                UNPROCESSABLE,
+                TERMINAL,
+            ),
+        ];
+        for (failure, family_and_code, kind) in cases {
+            let case = failure.to_string();
+            assert_eq!(failure.is_recoverable(), kind == RETRY, "{case}");
+            assert_recorded(failure.into(), family_and_code, kind, &case);
+        }
+    }
+
+    #[test]
+    fn every_solana_public_decrypt_failure_is_recorded_as_written() {
+        let cases = [
+            (
+                PublicDecryptFailure::MalformedExtraData,
+                UNPROCESSABLE,
+                TERMINAL,
+            ),
+            (
+                PublicDecryptFailure::Snapshot(SnapshotError::NodeBehind),
+                NETWORK,
+                RETRY,
+            ),
+            (
+                PublicDecryptFailure::EncryptedStore(EncryptedStoreFailure::Absent {
+                    account_key: KEY,
+                }),
+                DENIED,
+                RETRY,
+            ),
+            (
+                PublicDecryptFailure::EncryptedStore(EncryptedStoreFailure::InvalidHostRecord(
+                    INVALID,
+                )),
+                UNPROCESSABLE,
+                TERMINAL,
+            ),
+            (
+                PublicDecryptFailure::ProofRead(unavailable()),
+                NETWORK,
+                RETRY,
+            ),
+            (
+                PublicDecryptFailure::HandleBinding(HandleBindingFailure::NoLeaf {
+                    record_leaf_count: 1,
+                    live_leaf_count: 1,
+                }),
+                DENIED,
+                RETRY,
+            ),
+            (
+                PublicDecryptFailure::HandleBinding(HandleBindingFailure::HistoryIncomplete),
+                UNPROCESSABLE,
+                TERMINAL,
+            ),
+        ];
+        for (failure, family_and_code, kind) in cases {
+            let case = failure.to_string();
+            assert_eq!(failure.is_recoverable(), kind == RETRY, "{case}");
+            assert_recorded(failure.into(), family_and_code, kind, &case);
+        }
     }
 }

@@ -49,15 +49,3 @@ pub enum PublicDecryptFailure {
     #[error("handle binding: {0}")]
     HandleBinding(#[from] HandleBindingFailure),
 }
-
-impl PublicDecryptFailure {
-    pub fn is_recoverable(&self) -> bool {
-        match self {
-            Self::MalformedExtraData => false,
-            Self::Snapshot(_) => true,
-            Self::EncryptedStore(source) => source.is_recoverable(),
-            Self::ProofRead(_) => true,
-            Self::HandleBinding(source) => source.is_recoverable(),
-        }
-    }
-}
