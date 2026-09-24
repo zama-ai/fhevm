@@ -883,7 +883,6 @@ contract ProtocolConfig is IProtocolConfig, UUPSUpgradeableEmptyProxy, ACLOwnabl
      */
     function _checkThreshold(string memory name, uint256 value, uint256 nodeCount) internal pure {
         if (value == 0) revert InvalidNullThreshold(name);
-        if (value > MAX_KMS_SIGNERS) revert ThresholdExceedsProofFormatLimit(name, value, MAX_KMS_SIGNERS);
         if (value > nodeCount) revert InvalidHighThreshold(name, value, nodeCount);
     }
 

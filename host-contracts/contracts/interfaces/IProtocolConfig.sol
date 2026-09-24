@@ -219,13 +219,6 @@ interface IProtocolConfig {
     /// @param nodeCount The number of nodes.
     error InvalidHighThreshold(string thresholdName, uint256 threshold, uint256 nodeCount);
 
-    /// @notice A threshold exceeds the proof format limit (`uint8` signature count in the
-    ///         `decryptionProof` payload consumed by `KMSVerifier`).
-    /// @param thresholdName The name of the invalid threshold.
-    /// @param threshold The invalid threshold value.
-    /// @param maxAllowed The maximum value the proof format can carry.
-    error ThresholdExceedsProofFormatLimit(string thresholdName, uint256 threshold, uint256 maxAllowed);
-
     /// @notice The KMS signer set exceeds the proof format limit (`uint8` signature count in the
     ///         `decryptionProof` payload consumed by `KMSVerifier`).
     /// @param signerCount The number of signers in the rejected set.

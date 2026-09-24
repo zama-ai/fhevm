@@ -651,21 +651,6 @@ contract ProtocolConfigTest is HostContractsDeployerTestUtils {
         );
     }
 
-    function test_revertThresholdExceedsProofFormatLimit() public {
-        // A threshold above the proof-format limit is rejected before the per-node-count check.
-        IProtocolConfig.KmsThresholds memory t = _defaultThresholds();
-        t.publicDecryption = 256;
-        _revertThreshold(
-            t,
-            abi.encodeWithSelector(
-                IProtocolConfig.ThresholdExceedsProofFormatLimit.selector,
-                "publicDecryption",
-                256,
-                255
-            )
-        );
-    }
-
     // -----------------------------------------------------------------------
     // Context lifecycle tests
     // -----------------------------------------------------------------------
