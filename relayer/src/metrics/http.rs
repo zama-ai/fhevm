@@ -70,7 +70,7 @@ pub fn requests_total(
             method.as_str(),
             version.as_str(),
             sdk_name,
-            sdk_version,
+            &sdk_version,
         ])
         .inc();
 }
@@ -223,42 +223,83 @@ where
     response
 }
 
-fn extract_sdk_info(headers: &HeaderMap) -> (&'static str, &'static str) {
+fn extract_sdk_info(headers: &HeaderMap) -> (&'static str, String) {
     let sdk_name = headers
         .get("zama-sdk-name")
         .and_then(|v| v.to_str().ok())
-        .and_then(|name| {
-            if name == "@zama-fhe/relayer-sdk" {
-                Some("@zama-fhe/relayer-sdk")
-            } else {
-                None
-            }
+        .and_then(|name| match name {
+            "@zama-fhe/relayer-sdk" => Some("@zama-fhe/relayer-sdk"),
+            "@fhevm/sdk" => Some("@fhevm/sdk"),
+            _ => None,
         })
         .unwrap_or("unknown");
 
     let sdk_version = headers
         .get("zama-sdk-version")
         .and_then(|v| v.to_str().ok())
-        .and_then(|version| {
-            // Extract major.minor only (e.g., "0.4.0-alpha.4" -> "0.4")
-            let parts: Vec<&str> = version.split('.').collect();
-            if parts.len() >= 2 {
-                if parts[0].parse::<u32>().is_ok() && parts[1].parse::<u32>().is_ok() {
-                    // Map to known versions to avoid unbounded cardinality
-                    match (parts[0], parts[1]) {
-                        ("0", "4") => Some("0.4"),
-                        ("0", "5") => Some("0.5"),
-                        // Add more known versions as needed
-                        _ => None,
-                    }
-                } else {
-                    None
-                }
-            } else {
-                None
-            }
-        })
-        .unwrap_or("unknown");
+        .and_then(parse_major_minor)
+        .unwrap_or_else(|| "unknown".to_string());
 
     (sdk_name, sdk_version)
+}
+
+/// Extract major.minor only (e.g., "0.4.0-alpha.4" -> "0.4").
+/// Bounded to major in 0..=9 and minor in 0..=99 to avoid unbounded label cardinality.
+fn parse_major_minor(version: &str) -> Option<String> {
+    let mut parts = version.split('.');
+    let major = parts.next()?;
+    let minor = parts.next()?;
+    if !major.bytes().all(|b| b.is_ascii_digit()) || !minor.bytes().all(|b| b.is_ascii_digit()) {
+        return None;
+    }
+    let major: u8 = major.parse().ok()?;
+    let minor: u8 = minor.parse().ok()?;
+    if major > 9 || minor > 99 {
+        return None;
+    }
+    // Re-format from parsed numbers so e.g. "00.04" and "0.4" map to the same label
+    Some(format!("{major}.{minor}"))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn parse_major_minor_accepts_bounded_versions() {
+        assert_eq!(parse_major_minor("0.4.0-alpha.4").as_deref(), Some("0.4"));
+        assert_eq!(parse_major_minor("0.15.0-0").as_deref(), Some("0.15"));
+        assert_eq!(parse_major_minor("9.99").as_deref(), Some("9.99"));
+        assert_eq!(parse_major_minor("00.04.1").as_deref(), Some("0.4"));
+    }
+
+    #[test]
+    fn parse_major_minor_rejects_out_of_range_or_malformed() {
+        assert_eq!(parse_major_minor("10.0.0"), None);
+        assert_eq!(parse_major_minor("0.100.0"), None);
+        assert_eq!(parse_major_minor("+1.2"), None);
+        assert_eq!(parse_major_minor("1"), None);
+        assert_eq!(parse_major_minor("1.x"), None);
+        assert_eq!(parse_major_minor(".1"), None);
+        assert_eq!(parse_major_minor("99999999999.1"), None);
+    }
+
+    #[test]
+    fn extract_sdk_info_from_headers() {
+        let mut headers = HeaderMap::new();
+        headers.insert("ZAMA-SDK-NAME", "@fhevm/sdk".parse().unwrap());
+        headers.insert("zama-sdk-version", "0.15.0-0".parse().unwrap());
+        assert_eq!(
+            extract_sdk_info(&headers),
+            ("@fhevm/sdk", "0.15".to_string())
+        );
+
+        let mut headers = HeaderMap::new();
+        headers.insert("zama-sdk-name", "evil".parse().unwrap());
+        headers.insert("zama-sdk-version", "42.0".parse().unwrap());
+        assert_eq!(
+            extract_sdk_info(&headers),
+            ("unknown", "unknown".to_string())
+        );
+    }
 }
