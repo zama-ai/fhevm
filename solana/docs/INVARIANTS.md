@@ -346,8 +346,8 @@ coprocessor and merges (a proof beats no proof, more history beats less),
 and rejects a client-supplied proof outright. A compromised or lagging
 record fails or delays decrypts; it cannot authorize one (DD-048).
 Pinned by `matches_on_chain_append_and_authorizes`, `one_serving_coprocessor_carries_a_request_the_others_cannot`,
-`a_record_behind_the_chain_is_retried_not_refused`, and `the_v0_user_decrypt_surface_is_gone`, which checks that no
-client-supplied proof path remains.
+`a_record_behind_the_chain_is_retried_not_refused`. A client cannot supply a proof: the request wire
+(`SolanaUserDecryptRequestWire`) has no proof field, and `the_decoder_is_strict` rejects trailing bytes.
 
 **31. [HOLDS]** Coprocessor scheduling is decoupled from authorization: eager
 scheduling can waste compute on a minority fork; it can never release
@@ -462,8 +462,9 @@ and `mollusk_fhe_execute_malformed_trust_witness_is_rejected`.
 user's ed25519 signature over the full request — identity, handles,
 allowed scopes, validity window, and nonce. The
 relayer and gateway are transport; neither can alter who asks or for what.
-Pinned by `every_vector_behaves_as_declared`, `request_form_scenarios` and
-`every_permit_vector_behaves_as_declared_through_the_connector`.
+Pinned by `every_vector_behaves_as_declared`, `every_wire_field_reaches_the_canonical_bytes` (every request field
+changes the signed bytes) and `a_field_the_relayer_changed_fails_the_signature` (the connector refuses a permit whose
+key, window or routing the relayer changed).
 
 **43. [ANTI]** The user-decrypt nonce is not dedup-enforced on-chain or in the
 connector; replay is bounded only by the request validity window (EVM
