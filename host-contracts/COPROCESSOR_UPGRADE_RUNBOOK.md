@@ -15,6 +15,10 @@ A hex string (calldata) intended for submission as the action of an Aragon DAO p
   `versioning.consensus_version` until the migration has run.
 - The green release never creates a database: keep `dbMigration.allowBootstrap` off for it (the
   chart default). Only the first install of an operator sets it on.
+- Every operator indexes every chain in the proposal. Check before the vote: on each operator,
+  `SELECT chain_id FROM host_chains ORDER BY chain_id;` must return the same set the proposal
+  names. A chain nobody indexes can never become ready, so the attempt expires instead of
+  cutting over.
 
 `--software-version` takes the release tag, never the consensus version: `v0.15.0` for the
 v0.14 to v0.15 upgrade, `v0.15.1` for a v0.15 to v0.15.1 one. The consensus version is a

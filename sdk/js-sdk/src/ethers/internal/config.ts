@@ -1,10 +1,5 @@
 import type { FhevmRuntimeConfig } from '../../core/types/coreFhevmRuntime.js';
-import {
-  authsAreEqual,
-  cloneModuleVersions,
-  loggersAreEqual,
-  moduleVersionsAreEqual,
-} from '../../core/runtimeConfig-p.js';
+import { authsAreEqual, loggersAreEqual } from '../../core/runtimeConfig-p.js';
 
 let ethersFhevmRuntimeConfig: FhevmRuntimeConfig | undefined;
 
@@ -25,7 +20,6 @@ export function setFhevmRuntimeConfig(config: FhevmRuntimeConfig): void {
     ethersFhevmRuntimeConfig = Object.freeze<FhevmRuntimeConfig>({
       ...config,
       logger: config.logger ? Object.freeze({ ...config.logger }) : undefined,
-      moduleVersions: cloneModuleVersions(config.moduleVersions),
     });
     return;
   }
@@ -34,7 +28,6 @@ export function setFhevmRuntimeConfig(config: FhevmRuntimeConfig): void {
     !loggersAreEqual(ethersFhevmRuntimeConfig.logger, config.logger) ||
     ethersFhevmRuntimeConfig.locateFile !== config.locateFile ||
     ethersFhevmRuntimeConfig.wasmAssetLoadMode !== config.wasmAssetLoadMode ||
-    !moduleVersionsAreEqual(ethersFhevmRuntimeConfig.moduleVersions, config.moduleVersions) ||
     ethersFhevmRuntimeConfig.singleThread !== config.singleThread ||
     ethersFhevmRuntimeConfig.numberOfThreads !== config.numberOfThreads ||
     !authsAreEqual(ethersFhevmRuntimeConfig.auth, config.auth)

@@ -8,7 +8,7 @@ on:
   pull_request:
 
 env:
-  ABI_COMPAT_FROM_TAG: v0.11.1
+  ABI_COMPAT_FROM_TAG: v0.14.1
 
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}

@@ -1,0 +1,15 @@
+[profile.default]
+src = 'contracts'
+out = 'out'
+cache_path = 'cache_forge'
+libs = ['lib', 'node_modules']
+solc = '0.8.27'
+optimizer = true
+optimizer_runs = 800
+evm_version = 'cancun'
+
+remappings = [
+    '@openzeppelin/contracts/=node_modules/@openzeppelin/contracts/',
+    '@openzeppelin/contracts-upgradeable/=node_modules/@openzeppelin/contracts-upgradeable/',
+    'token/=../token/',
+]

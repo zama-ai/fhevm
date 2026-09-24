@@ -1,13 +1,31 @@
+# =============================================================================
+# KMS-CONNECTOR BUILD CACHING STRATEGY
+# =============================================================================
+# The 5 Rust services (gw-listener, kms-worker, tx-sender, endpoint, proxy) share a single
+# Dockerfile.workspace with multi-stage targets. When docker-compose builds
+# them in parallel, each service is a separate BuildKit invocation.
+#
+# To avoid cache write conflicts (multiple processes writing to same directory),
+# we use a SINGLE EXPORTER pattern:
+#   - ALL services: cache_from (read from shared cache) ✓
+#   - ONLY gw-listener: cache_to (write to shared cache) ✓
+#   - Other services: no cache_to (read-only)
+#
+# gw-listener is chosen as the exporter arbitrarily (first alphabetically).
+# =============================================================================
+
 services:
   kms-connector-db-migration:
     container_name: kms-connector-db-migration
     image: ghcr.io/zama-ai/fhevm/kms-connector/db-migration:${CONNECTOR_DB_MIGRATION_VERSION}
+    platform: linux/amd64
     env_file:
       - ${FHEVM_STATE_DIR:-../../../.fhevm}/runtime/env/kms-connector.env
 
   kms-connector-gw-listener:
     container_name: kms-connector-gw-listener
     image: ghcr.io/zama-ai/fhevm/kms-connector/gw-listener:${CONNECTOR_GW_LISTENER_VERSION}
+    platform: linux/amd64
     env_file:
       - ${FHEVM_STATE_DIR:-../../../.fhevm}/runtime/env/kms-connector.env
     depends_on:
@@ -17,6 +35,7 @@ services:
   kms-connector-kms-worker:
     container_name: kms-connector-kms-worker
     image: ghcr.io/zama-ai/fhevm/kms-connector/kms-worker:${CONNECTOR_KMS_WORKER_VERSION}
+    platform: linux/amd64
     env_file:
       - ${FHEVM_STATE_DIR:-../../../.fhevm}/runtime/env/kms-connector.env
     # The Solana public-decrypt ACL check queries the native host validator at
@@ -31,6 +50,7 @@ services:
   kms-connector-tx-sender:
     container_name: kms-connector-tx-sender
     image: ghcr.io/zama-ai/fhevm/kms-connector/tx-sender:${CONNECTOR_TX_SENDER_VERSION}
+    platform: linux/amd64
     env_file:
       - ${FHEVM_STATE_DIR:-../../../.fhevm}/runtime/env/kms-connector.env
     depends_on:
@@ -46,6 +66,18 @@ services:
     depends_on:
       kms-connector-db-migration:
         condition: service_completed_successfully
+
+  kms-connector-proxy:
+    container_name: kms-connector-proxy
+    image: ghcr.io/zama-ai/fhevm/kms-connector/proxy:${CONNECTOR_PROXY_VERSION}
+    platform: linux/amd64
+    env_file:
+      - ${FHEVM_STATE_DIR:-../../../.fhevm}/runtime/env/kms-connector.env
+    volumes:
+      - ../static/config/kms-connector-proxy:/etc/kms-connector/proxy:ro
+    depends_on:
+      kms-connector-endpoint:
+        condition: service_healthy
 
 volumes:
   kms-connector-db:

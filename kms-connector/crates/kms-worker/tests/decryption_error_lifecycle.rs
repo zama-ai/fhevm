@@ -12,7 +12,9 @@ use connector_utils::{
     },
 };
 use kms_connector_api::ErrorCode;
-use kms_grpc::kms::v1::{UserDecryptionResponse, UserDecryptionResponsePayload};
+use kms_grpc::kms::v1::{
+    SigningSchemeType, TypedSignature, UserDecryptionResponse, UserDecryptionResponsePayload,
+};
 use kms_worker::core::{
     Config, DbEventPicker, DbKmsResponsePublisher, KmsWorker,
     event_processor::{EventProcessor, ProcessingError, RequestCheckError},
@@ -100,6 +102,10 @@ impl EventProcessor for Processor {
                 decryption_id: id,
                 grpc_response: UserDecryptionResponse {
                     payload: Some(UserDecryptionResponsePayload::default()),
+                    signatures: vec![TypedSignature {
+                        scheme: SigningSchemeType::Ecdsa256k1 as i32,
+                        signature: vec![0; 65],
+                    }],
                     ..Default::default()
                 },
             })

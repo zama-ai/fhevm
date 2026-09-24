@@ -1,5 +1,8 @@
 use alloy::primitives::B256;
-use connector_utils::config::DeserializeConfig;
+use connector_utils::{
+    config::{DeserializeConfig, deserialize_non_zero_duration},
+    monitoring::{health::default_healthcheck_timeout, server::default_monitoring_endpoint},
+};
 use http::uri::Authority;
 use serde::{Deserialize, Deserializer};
 #[cfg(test)]
@@ -28,23 +31,43 @@ pub struct Config {
     #[cfg_attr(test, serde(serialize_with = "serialize_endpoint_addresses"))]
     pub endpoint_addresses: Vec<Authority>,
     /// The timeout to establish a TCP connection to an endpoint.
-    #[serde(with = "humantime_serde", default = "default_endpoint_connect_timeout")]
+    #[serde(
+        deserialize_with = "deserialize_non_zero_duration",
+        default = "default_endpoint_connect_timeout"
+    )]
+    #[cfg_attr(test, serde(serialize_with = "humantime_serde::serialize"))]
     pub endpoint_connect_timeout: Duration,
+    /// How often the endpoints are probed in the background to filter which ones receive requests.
+    #[serde(
+        deserialize_with = "deserialize_non_zero_duration",
+        default = "default_endpoint_healthcheck_frequency"
+    )]
+    #[cfg_attr(test, serde(serialize_with = "humantime_serde::serialize"))]
+    pub endpoint_healthcheck_frequency: Duration,
     /// How long the proxy waits for an endpoint response before answering `502`.
     #[serde(
-        with = "humantime_serde",
+        deserialize_with = "deserialize_non_zero_duration",
         default = "default_endpoint_response_timeout"
     )]
+    #[cfg_attr(test, serde(serialize_with = "humantime_serde::serialize"))]
     pub endpoint_response_timeout: Duration,
     /// How long an idle pooled endpoint connection is kept before being closed.
-    #[serde(with = "humantime_serde", default = "default_endpoint_idle_timeout")]
+    #[serde(
+        deserialize_with = "deserialize_non_zero_duration",
+        default = "default_endpoint_idle_timeout"
+    )]
+    #[cfg_attr(test, serde(serialize_with = "humantime_serde::serialize"))]
     pub endpoint_idle_timeout: Duration,
 
     /// The maximum accepted size of a request body.
     #[serde(default = "default_max_body_bytes")]
     pub max_body_bytes: usize,
     /// How long the proxy waits for the client to send request bytes before dropping it.
-    #[serde(with = "humantime_serde", default = "default_request_read_timeout")]
+    #[serde(
+        deserialize_with = "deserialize_non_zero_duration",
+        default = "default_request_read_timeout"
+    )]
+    #[cfg_attr(test, serde(serialize_with = "humantime_serde::serialize"))]
     pub request_read_timeout: Duration,
     /// How long in-flight requests are given to complete after `SIGTERM`.
     #[serde(with = "humantime_serde", default = "default_shutdown_grace_period")]
@@ -53,6 +76,16 @@ pub struct Config {
     /// The service name used for tracing.
     #[serde(default = "default_service_name")]
     pub service_name: String,
+    /// The monitoring server endpoint of the `Proxy` service.
+    #[serde(default = "default_monitoring_endpoint")]
+    pub monitoring_endpoint: SocketAddr,
+    /// The timeout to perform each external service connection healthcheck.
+    #[serde(
+        deserialize_with = "deserialize_non_zero_duration",
+        default = "default_healthcheck_timeout"
+    )]
+    #[cfg_attr(test, serde(serialize_with = "humantime_serde::serialize"))]
+    pub healthcheck_timeout: Duration,
 }
 
 /// The TLS material used by the proxy to terminate TLS.
@@ -99,6 +132,10 @@ fn default_endpoint_connect_timeout() -> Duration {
     Duration::from_secs(3)
 }
 
+fn default_endpoint_healthcheck_frequency() -> Duration {
+    Duration::from_secs(3)
+}
+
 fn default_endpoint_response_timeout() -> Duration {
     // Should exceed the endpoint's `decryption_timeout` (30s by default) so the endpoint's own
     // `504 timeout` reaches the relayer instead of a proxy `502`.
@@ -142,12 +179,15 @@ impl Default for Config {
                 "kms-connector-endpoint-2:9090".parse().unwrap(),
             ],
             endpoint_connect_timeout: default_endpoint_connect_timeout(),
+            endpoint_healthcheck_frequency: default_endpoint_healthcheck_frequency(),
             endpoint_response_timeout: default_endpoint_response_timeout(),
             endpoint_idle_timeout: default_endpoint_idle_timeout(),
             max_body_bytes: default_max_body_bytes(),
             request_read_timeout: default_request_read_timeout(),
             shutdown_grace_period: default_shutdown_grace_period(),
             service_name: default_service_name(),
+            monitoring_endpoint: default_monitoring_endpoint(),
+            healthcheck_timeout: default_healthcheck_timeout(),
         }
     }
 }
@@ -181,12 +221,15 @@ mod tests {
             env::remove_var("KMS_CONNECTOR_API_KEY_DIGEST");
             env::remove_var("KMS_CONNECTOR_ENDPOINT_ADDRESSES");
             env::remove_var("KMS_CONNECTOR_ENDPOINT_CONNECT_TIMEOUT");
+            env::remove_var("KMS_CONNECTOR_ENDPOINT_HEALTHCHECK_FREQUENCY");
             env::remove_var("KMS_CONNECTOR_ENDPOINT_RESPONSE_TIMEOUT");
             env::remove_var("KMS_CONNECTOR_ENDPOINT_IDLE_TIMEOUT");
             env::remove_var("KMS_CONNECTOR_MAX_BODY_BYTES");
             env::remove_var("KMS_CONNECTOR_REQUEST_READ_TIMEOUT");
             env::remove_var("KMS_CONNECTOR_SHUTDOWN_GRACE_PERIOD");
             env::remove_var("KMS_CONNECTOR_SERVICE_NAME");
+            env::remove_var("KMS_CONNECTOR_MONITORING_ENDPOINT");
+            env::remove_var("KMS_CONNECTOR_HEALTHCHECK_TIMEOUT");
         }
     }
 
@@ -216,12 +259,15 @@ mod tests {
                 "endpoint-1:8080,endpoint-2:8080",
             );
             env::set_var("KMS_CONNECTOR_ENDPOINT_CONNECT_TIMEOUT", "1s");
+            env::set_var("KMS_CONNECTOR_ENDPOINT_HEALTHCHECK_FREQUENCY", "500ms");
             env::set_var("KMS_CONNECTOR_ENDPOINT_RESPONSE_TIMEOUT", "45s");
             env::set_var("KMS_CONNECTOR_ENDPOINT_IDLE_TIMEOUT", "7s");
             env::set_var("KMS_CONNECTOR_MAX_BODY_BYTES", "2048");
             env::set_var("KMS_CONNECTOR_REQUEST_READ_TIMEOUT", "12s");
             env::set_var("KMS_CONNECTOR_SHUTDOWN_GRACE_PERIOD", "15s");
             env::set_var("KMS_CONNECTOR_SERVICE_NAME", "kms-connector-test");
+            env::set_var("KMS_CONNECTOR_MONITORING_ENDPOINT", "127.0.0.1:9101");
+            env::set_var("KMS_CONNECTOR_HEALTHCHECK_TIMEOUT", "7s");
         }
 
         let config = Config::from_env_and_file::<&str>(None).unwrap();
@@ -243,12 +289,21 @@ mod tests {
             ]
         );
         assert_eq!(config.endpoint_connect_timeout, Duration::from_secs(1));
+        assert_eq!(
+            config.endpoint_healthcheck_frequency,
+            Duration::from_millis(500)
+        );
         assert_eq!(config.endpoint_response_timeout, Duration::from_secs(45));
         assert_eq!(config.endpoint_idle_timeout, Duration::from_secs(7));
         assert_eq!(config.max_body_bytes, 2048);
         assert_eq!(config.request_read_timeout, Duration::from_secs(12));
         assert_eq!(config.shutdown_grace_period, Duration::from_secs(15));
         assert_eq!(config.service_name, "kms-connector-test");
+        assert_eq!(
+            config.monitoring_endpoint,
+            "127.0.0.1:9101".parse().unwrap()
+        );
+        assert_eq!(config.healthcheck_timeout, Duration::from_secs(7));
 
         cleanup_env_vars();
     }

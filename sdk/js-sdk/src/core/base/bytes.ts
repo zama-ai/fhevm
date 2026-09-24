@@ -1457,12 +1457,18 @@ export async function verifySha256(
  */
 export function hexToBytes(hexString: string): Uint8Array {
   const hex = hexString.replace(/^0x/i, '');
-  if (hex.length % 2 !== 0) throw new Error('Invalid hex string: odd length');
-  if (!/^[0-9a-f]*$/i.test(hex)) throw new Error('Invalid hex string: non-hexadecimal character');
+  if (hex.length % 2 !== 0) {
+    throw new Error('Invalid hex string: odd length');
+  }
+  if (!/^[0-9a-f]*$/i.test(hex)) {
+    throw new Error('Invalid hex string: non-hexadecimal character');
+  }
+
   const bytes = new Uint8Array(hex.length / 2);
   for (let index = 0; index < bytes.length; index++) {
     bytes[index] = parseInt(hex.slice(index * 2, index * 2 + 2), 16);
   }
+
   return bytes;
 }
 

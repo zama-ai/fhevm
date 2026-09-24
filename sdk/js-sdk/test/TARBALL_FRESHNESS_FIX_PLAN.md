@@ -149,8 +149,7 @@ skip the 24 MB repack when the SDK is unchanged:
   `scripts/wasm/` (or `git status --porcelain` over those paths). Store it in
   `test/manual-pack/.sdk-fingerprint` next to the tarball when packing.
 - `rebuild_sdk_and_pack.sh`: if the current fingerprint matches the stored one and
-  a tarball exists, **skip build+pack** (unless `--rebuild` / `--build-profile`
-  forces it).
+  a tarball exists, **skip build+pack** (unless `--rebuild` forces it).
 - `run.mjs`: repack only when the fingerprint differs (or `--rebuild`); always run
   the freshness guard (step 5) regardless — cheap.
 
@@ -179,7 +178,7 @@ skip the 24 MB repack when the SDK is unchanged:
 
 ## Verification
 
-1. `bash test/scripts/rebuild_sdk_and_pack.sh --build-profile=dev` → one
+1. `bash test/scripts/rebuild_sdk_and_pack.sh` → one
    `fhevm-sdk-<ver>-<sha8>.tgz`; both consumers' deps point at it; both
    `node_modules/@fhevm/sdk` re-extracted.
 2. `cd test/browser-next && FHEVM_TEST_THREADS=mt FHEVM_TEST_COOP=1 \

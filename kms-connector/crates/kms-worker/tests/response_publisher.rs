@@ -15,8 +15,8 @@ use connector_utils::{
 use kms_connector_api::ErrorCode;
 use kms_grpc::kms::v1::{
     CrsGenResult, EpochResultResponse as GrpcEpochResultResponse, KeyDigest, KeyGenPreprocResult,
-    KeyGenResult, PublicDecryptionResponse, PublicDecryptionResponsePayload,
-    UserDecryptionResponse, UserDecryptionResponsePayload,
+    KeyGenResult, PublicDecryptionResponse, PublicDecryptionResponsePayload, SigningSchemeType,
+    TypedSignature, UserDecryptionResponse, UserDecryptionResponsePayload,
 };
 use kms_worker::core::{DbKmsResponsePublisher, KmsResponsePublisher};
 use sqlx::Row;
@@ -38,7 +38,10 @@ async fn test_publish_public_decryption_response() -> anyhow::Result<()> {
             external_signature: rand_signature.clone(),
             payload: Some(PublicDecryptionResponsePayload::default()),
             extra_data: vec![],
-            signatures: vec![],
+            signatures: vec![TypedSignature {
+                scheme: SigningSchemeType::Ecdsa256k1 as i32,
+                signature: rand_signature.clone(),
+            }],
         },
     };
     let response = KmsResponse::new(
@@ -80,7 +83,10 @@ async fn test_publish_user_decryption_response() -> anyhow::Result<()> {
             external_signature: rand_signature.clone(),
             payload: Some(UserDecryptionResponsePayload::default()),
             extra_data: vec![],
-            signatures: vec![],
+            signatures: vec![TypedSignature {
+                scheme: SigningSchemeType::Ecdsa256k1 as i32,
+                signature: rand_signature.clone(),
+            }],
         },
     };
     let response = KmsResponse::new(
@@ -118,7 +124,10 @@ async fn test_publish_prep_keygen_response() -> anyhow::Result<()> {
     let grpc_response = KmsGrpcResponse::PrepKeygen(KeyGenPreprocResult {
         preprocessing_id: Some(u256_to_request_id(rand_prep_keygen_id)),
         external_signature: rand_signature.clone(),
-        signatures: vec![],
+        signatures: vec![TypedSignature {
+            scheme: SigningSchemeType::Ecdsa256k1 as i32,
+            signature: rand_signature.clone(),
+        }],
     });
     let response = KmsResponse::new(
         KmsResponseKind::process(grpc_response)?,
@@ -167,7 +176,10 @@ async fn test_publish_keygen_response() -> anyhow::Result<()> {
         external_signature: rand_signature.clone(),
         preprocessing_id: Some(u256_to_request_id(rand_prep_keygen_id)),
         key_digests: rand_key_digests.clone(),
-        signatures: vec![],
+        signatures: vec![TypedSignature {
+            scheme: SigningSchemeType::Ecdsa256k1 as i32,
+            signature: rand_signature.clone(),
+        }],
     });
     let response = KmsResponse::new(
         KmsResponseKind::process(grpc_response)?,
@@ -213,7 +225,10 @@ async fn test_publish_crsgen_response() -> anyhow::Result<()> {
         crs_digest: rand_crs_digest.clone(),
         external_signature: rand_signature.clone(),
         max_num_bits: 256,
-        signatures: vec![],
+        signatures: vec![TypedSignature {
+            scheme: SigningSchemeType::Ecdsa256k1 as i32,
+            signature: rand_signature.clone(),
+        }],
     });
     let response = KmsResponse::new(
         KmsResponseKind::process(grpc_response)?,
@@ -315,7 +330,10 @@ fn mock_public_decryption_response(decryption_id: U256, source: RequestSource) -
             external_signature: rand_signature(),
             payload: Some(PublicDecryptionResponsePayload::default()),
             extra_data: vec![],
-            signatures: vec![],
+            signatures: vec![TypedSignature {
+                scheme: SigningSchemeType::Ecdsa256k1 as i32,
+                signature: rand_signature(),
+            }],
         },
     };
     KmsResponse::new(
@@ -334,7 +352,10 @@ fn mock_user_decryption_response(decryption_id: U256, source: RequestSource) -> 
             external_signature: rand_signature(),
             payload: Some(UserDecryptionResponsePayload::default()),
             extra_data: vec![],
-            signatures: vec![],
+            signatures: vec![TypedSignature {
+                scheme: SigningSchemeType::Ecdsa256k1 as i32,
+                signature: rand_signature(),
+            }],
         },
     };
     KmsResponse::new(

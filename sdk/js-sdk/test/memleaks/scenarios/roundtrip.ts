@@ -29,13 +29,9 @@ export const roundtripScenario: Scenario = {
       });
     }
 
-    const tfheVersion =
-      config.moduleVersions !== undefined && config.moduleVersions !== 'auto' ? config.moduleVersions.tfhe : undefined;
-
     const client = createFhevmClient({
       chain: config.fhevmChain,
       provider: config.provider,
-      options: config.moduleVersions !== undefined ? { moduleVersions: config.moduleVersions } : undefined,
     });
     await client.ready;
 
@@ -52,10 +48,7 @@ export const roundtripScenario: Scenario = {
       signer: config.signer,
     });
 
-    const [readTfheMemory, readTkmsMemory] = await Promise.all([
-      createTfheMemoryReader(tfheVersion),
-      createTkmsMemoryReader(),
-    ]);
+    const [readTfheMemory, readTkmsMemory] = await Promise.all([createTfheMemoryReader(), createTkmsMemoryReader()]);
 
     let counter = 0;
 

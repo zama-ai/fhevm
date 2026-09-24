@@ -4,7 +4,12 @@ use std::time::{Duration, Instant};
 use alloy::eips::BlockId;
 use alloy::rpc::types::Filter;
 use alloy::sol_types::SolEventInterface;
-use alloy::{network::Ethereum, primitives::Address, providers::Provider, rpc::types::Log};
+use alloy::{
+    network::Ethereum,
+    primitives::{Address, U256},
+    providers::Provider,
+    rpc::types::Log,
+};
 use fhevm_engine_common::chain_id::ChainId;
 use fhevm_engine_common::database::connect_options_for_database_url;
 use fhevm_engine_common::gcs_activation::EVENT_GW_NEW_BLOCK;
@@ -528,6 +533,13 @@ impl<P: Provider<Ethereum> + Clone + 'static> GatewayListener<P> {
             .transpose()
             .map_err(|err| anyhow::anyhow!("block_number does not fit in i64: {err}"))?;
 
+        if self
+            .precedes_gcs_window(db_pool, block_number, request.zkProofId)
+            .await?
+        {
+            return Ok(());
+        }
+
         // Fence this write against cutover and schema reset. Retired BCS
         // listeners stop, while GCS raw ingestion continues after rollback.
         // `verify_proofs` is not merged, but follows the same write boundary as
@@ -566,6 +578,38 @@ impl<P: Provider<Ethereum> + Clone + 'static> GatewayListener<P> {
         Ok(())
     }
 
+    /// Pre-window ingestion gate (GCS/green only): a proof from a Gateway block below the
+    /// active dry-run window's `gw_start_block` is pre-snapshot. Those rows are pruned from
+    /// `gcs.verify_proofs` before the zkproof-worker is released, so writing them is pure
+    /// churn - skip it here, mirroring the host-listener's `pre_start_block` gate. The
+    /// one-shot prune stays the backstop for proofs ingested before the window row was
+    /// visible (we cannot gate on a `gw_start_block` we have not read yet).
+    async fn precedes_gcs_window(
+        &self,
+        db_pool: &Pool<Postgres>,
+        block_number: Option<i64>,
+        zk_proof_id: U256,
+    ) -> anyhow::Result<bool> {
+        if !self.stack_mode.gcs_mode() {
+            return Ok(false);
+        }
+        let (Some(bn), Some(gw_start_block)) =
+            (block_number, active_gcs_gw_start_block(db_pool).await?)
+        else {
+            return Ok(false);
+        };
+        if bn >= gw_start_block {
+            return Ok(false);
+        }
+        info!(
+            zk_proof_id = %zk_proof_id,
+            block_number = bn,
+            gw_start_block,
+            "GCS: proof precedes gw_start_block; skipping pre-window verify_proofs insert"
+        );
+        Ok(true)
+    }
+
     /// Solana (RFC-021) counterpart of [`Self::verify_proof_request`]: the gateway emits
     /// `VerifyProofRequestSolana` with bytes32 host identities and a chain id carrying
     /// type byte `0x01` (decoded via `from_canonical_u64`, stored as its i64 bit-pattern).
@@ -595,6 +639,13 @@ impl<P: Provider<Ethereum> + Clone + 'static> GatewayListener<P> {
             .map(|n| n.try_into())
             .transpose()
             .map_err(|err| anyhow::anyhow!("block_number does not fit in i64: {err}"))?;
+
+        if self
+            .precedes_gcs_window(db_pool, block_number, request.zkProofId)
+            .await?
+        {
+            return Ok(());
+        }
 
         // Same cutover/schema-reset write boundary as the EVM path above: a retired stack must
         // not take Solana verify_proofs rows either.
@@ -953,5 +1004,28 @@ impl<P: Provider<Ethereum> + Clone + 'static> GatewayListener<P> {
                 error_details.join("; "),
             )
         }
+    }
+}
+
+/// `gw_start_block` of the active in-progress GCS dry-run window, or `None` when no proposal is
+/// activated. Gates pre-window `verify_proofs` ingestion on green, matching the host-listener's
+/// pre-`start_block` gate. Runtime query, so it needs no compile-time sqlx cache entry (mirrors
+/// `read_synthetic_input_plan`).
+async fn active_gcs_gw_start_block(db_pool: &Pool<Postgres>) -> anyhow::Result<Option<i64>> {
+    let row = sqlx::query(
+        "SELECT gw_start_block
+           FROM upgrade_state
+          WHERE stack_role = 'GCS'
+            AND status = 'in_progress'
+            AND state IN ('UpgradeActivated', 'DryRunStarted')
+            AND gw_start_block IS NOT NULL
+          ORDER BY host_chain_id
+          LIMIT 1",
+    )
+    .fetch_optional(db_pool)
+    .await?;
+    match row {
+        Some(row) => Ok(Some(row.try_get::<i64, _>("gw_start_block")?)),
+        None => Ok(None),
     }
 }

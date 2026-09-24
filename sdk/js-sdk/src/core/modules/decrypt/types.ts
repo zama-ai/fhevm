@@ -31,12 +31,12 @@ type WithTkmsVersion = {
 // initTkmsModule
 ////////////////////////////////////////////////////////////////////////////////
 
-export type InitTkmsModuleParameters = {
-  readonly tkmsVersion: TkmsVersion;
-};
-
+/**
+ * No parameters: initialization always targets the running SDK's canonical
+ * TKMS module.
+ */
 export type InitTkmsModuleFunction = {
-  initTkmsModule(parameters: InitTkmsModuleParameters): Promise<void>;
+  initTkmsModule(): Promise<void>;
 };
 
 ////////////////////////////////////////////////////////////////////////////////
@@ -82,12 +82,6 @@ export type GetTkmsModuleInfoFunction = {
 };
 
 ////////////////////////////////////////////////////////////////////////////////
-
-type WithTkmsPrivateKey = WithTkmsVersion & {
-  readonly tkmsPrivateKey: TkmsPrivateKey;
-};
-
-////////////////////////////////////////////////////////////////////////////////
 // 1. decryptAndReconstruct
 ////////////////////////////////////////////////////////////////////////////////
 
@@ -95,7 +89,9 @@ type DecryptAndReconstructBaseParameters = {
   readonly shares: KmsSigncryptedShares;
 };
 
-export type DecryptAndReconstructParameters = WithTkmsPrivateKey & DecryptAndReconstructBaseParameters;
+export type DecryptAndReconstructParameters = {
+  readonly tkmsPrivateKey: TkmsPrivateKey;
+} & DecryptAndReconstructBaseParameters;
 export type DecryptAndReconstructReturnType = readonly ClearValue[];
 
 export type DecryptAndReconstructModuleFunction = {
@@ -106,18 +102,23 @@ export type DecryptAndReconstructModuleFunction = {
 // 2. generateTkmsPrivateKey
 ////////////////////////////////////////////////////////////////////////////////
 
-export type GenerateTkmsPrivateKeyParameters = WithTkmsVersion;
 export type GenerateTkmsPrivateKeyReturnType = TkmsPrivateKey;
 
+/**
+ * No parameters: generation always targets the running SDK's canonical TKMS
+ * module.
+ */
 export type GenerateTkmsPrivateKeyModuleFunction = {
-  generateTkmsPrivateKey(parameters: GenerateTkmsPrivateKeyParameters): Promise<GenerateTkmsPrivateKeyReturnType>;
+  generateTkmsPrivateKey(): Promise<GenerateTkmsPrivateKeyReturnType>;
 };
 
 ////////////////////////////////////////////////////////////////////////////////
 // 3 getTkmsPublicKeyHex
 ////////////////////////////////////////////////////////////////////////////////
 
-export type GetTkmsPublicKeyHexParameters = WithTkmsPrivateKey & WithTkmsVersion;
+export type GetTkmsPublicKeyHexParameters = {
+  readonly tkmsPrivateKey: TkmsPrivateKey;
+};
 export type GetTkmsPublicKeyHexReturnType = BytesHex;
 
 export type GetTkmsPublicKeyHexModuleFunction = {
@@ -128,7 +129,9 @@ export type GetTkmsPublicKeyHexModuleFunction = {
 // 4. serializeTkmsPrivateKey
 ////////////////////////////////////////////////////////////////////////////////
 
-export type SerializeTkmsPrivateKeyParameters = WithTkmsPrivateKey;
+export type SerializeTkmsPrivateKeyParameters = {
+  readonly tkmsPrivateKey: TkmsPrivateKey;
+};
 
 export type SerializeTkmsPrivateKeyReturnType = Bytes;
 
@@ -140,7 +143,7 @@ export type SerializeTkmsPrivateKeyModuleFunction = {
 // 5. deserializeTkmsPrivateKey
 ////////////////////////////////////////////////////////////////////////////////
 
-export type DeserializeTkmsPrivateKeyParameters = WithTkmsVersion & {
+export type DeserializeTkmsPrivateKeyParameters = {
   readonly tkmsPrivateKeyBytes: Bytes;
 };
 
@@ -156,7 +159,9 @@ export type DeserializeTkmsPrivateKeyModuleFunction = {
 // 6. verifyTkmsPrivateKey
 ////////////////////////////////////////////////////////////////////////////////
 
-export type VerifyTkmsPrivateKeyParameters = WithTkmsVersion & WithTkmsPrivateKey;
+export type VerifyTkmsPrivateKeyParameters = {
+  readonly tkmsPrivateKey: TkmsPrivateKey;
+};
 
 export type VerifyTkmsPrivateKeyModuleFunction = {
   verifyTkmsPrivateKey(parameters: VerifyTkmsPrivateKeyParameters): void;

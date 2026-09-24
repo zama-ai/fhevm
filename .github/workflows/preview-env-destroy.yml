@@ -142,8 +142,8 @@ jobs:
           # the PR merge ref may be gone after closing. Dispatch keeps the selected ref.
           ref: ${{ github.event_name == 'workflow_dispatch' && github.ref || github.event.pull_request.base.ref }}
           sparse-checkout: |
-            ci/preview-env/scripts/sweep-wallets.sh
-            ci/preview-env/scripts/sweep-wallets.cjs
+            ci/preview-env/scripts/wallets/sweep-wallets.sh
+            ci/preview-env/scripts/wallets/sweep-wallets.cjs
             ci/preview-env/solana-host/recover.sh
             ci/preview-env/solana-host/ownership.sh
             ci/preview-env/solana-host/reset-preview.sh
@@ -165,7 +165,7 @@ jobs:
         timeout-minutes: 10
         env:
           NODE_PATH: /tmp/wallet-tools/node_modules
-        run: bash ci/preview-env/scripts/sweep-wallets.sh
+        run: bash ci/preview-env/scripts/wallets/sweep-wallets.sh
 
       - name: Validate Solana-only reset target
         if: inputs.reset_solana_only

@@ -14,7 +14,6 @@ import type { ZkProof, SolanaZkProof } from './zkProof-p.js';
 import type { WithEncrypt } from './coreFhevmRuntime.js';
 import type { FhevmChain } from './fhevmChain.js';
 import type { FhevmClientFrozenContext } from './fhevmClientFrozenContext-p.js';
-import type { TfheVersion } from './moduleVersions.js';
 import type { FhevmSolanaChain } from './fhevmSolanaChain.js';
 import type { Bytes32Hex } from './primitives.js';
 
@@ -22,7 +21,6 @@ export type SolanaProofContext = {
   readonly chain: FhevmSolanaChain;
   readonly aclProgramAddress: Bytes32Hex;
   readonly runtime: WithEncrypt;
-  readonly tfheVersion: TfheVersion;
 };
 
 export interface ZkProofBuilder {

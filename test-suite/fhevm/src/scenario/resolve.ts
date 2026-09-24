@@ -18,6 +18,7 @@ import {
 } from "../layout";
 import { HOST_CHAIN_TYPES } from "../types";
 import type {
+  BlueGreenBootstrap,
   BlueGreenScenario,
   CoprocessorInstanceSource,
   CoprocessorScenario,
@@ -713,6 +714,8 @@ export const parseBlueGreenScenario = (text: string, sourceLabel = "scenario"): 
   }
   const bcsObj = (bcs ?? undefined) as Record<string, unknown> | undefined;
 
+  const bootstrap = parseBootstrap(parsed.bootstrap, `${sourceLabel}.bootstrap`);
+
   return {
     version: BLUE_GREEN_SCENARIO_VERSION,
     kind: BLUE_GREEN_SCENARIO_KIND,
@@ -740,7 +743,23 @@ export const parseBlueGreenScenario = (text: string, sourceLabel = "scenario"): 
       ),
     },
     kms: parsed.kms as KmsScenarioBlock | undefined,
+    ...(bootstrap ? { bootstrap } : {}),
   };
+};
+
+/** Parses the optional blue-green `bootstrap` block: the release the stack boots at. */
+const parseBootstrap = (block: unknown, sourceLabel: string): BlueGreenBootstrap | undefined => {
+  if (block === undefined) {
+    return undefined;
+  }
+  if (block === null || typeof block !== "object" || Array.isArray(block)) {
+    throw new Error(`${sourceLabel} must be a map with tag`);
+  }
+  const { tag } = block as Record<string, unknown>;
+  if (typeof tag !== "string" || !tag.trim()) {
+    throw new Error(`${sourceLabel}.tag must be a non-empty release tag`);
+  }
+  return { tag: tag.trim() };
 };
 
 /** Applies defaults and resolves derived fields. */
@@ -753,9 +772,15 @@ export const resolveBlueGreenScenario = (
     env: { ...(input.bcs?.env ?? {}) },
     args: input.bcs?.args ?? {},
   };
+  const kms = resolveKmsTopology(input.kms, "scenario.kms");
+  const bootstrap = input.bootstrap;
+  if (bootstrap && kms.mode !== "centralized") {
+    throw new Error("bootstrap is only supported with a centralized KMS; threshold clusters upgrade per operator");
+  }
   const gcs = {
     source: normalizeSource(input.gcs.source ?? { mode: "local" as const }),
-    deferredStart: input.gcs.deferredStart ?? false,
+    // Green starts once the bootstrapped stack has been upgraded, never against the old release.
+    deferredStart: (input.gcs.deferredStart ?? false) || bootstrap !== undefined,
     env: { ...(input.gcs.env ?? {}) },
     args: input.gcs.args ?? {},
   };
@@ -773,7 +798,8 @@ export const resolveBlueGreenScenario = (
     topology: input.topology ?? { count: 1, threshold: 1 },
     bcs,
     gcs,
-    kms: resolveKmsTopology(input.kms, "scenario.kms"),
+    kms,
+    ...(bootstrap ? { bootstrap } : {}),
   };
 };
 

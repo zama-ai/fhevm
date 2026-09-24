@@ -3,10 +3,12 @@
  */
 
 import { createHash } from "node:crypto";
+import { existsSync } from "node:fs";
 import path from "node:path";
 
 import { ensureLockSnapshot, previewBundle, resolveBundle } from "../resolve/bundle-store";
 import {
+  assertBlueGreenKmsCompatibility,
   assertSupportedBundleScenario,
   bootstrapUsesHostKmsGeneration,
   requiresGatewayKmsGenerationAddress,
@@ -49,6 +51,8 @@ import {
   COPROCESSOR_DB_CONTAINER,
   DEFAULT_CHAIN_ID,
   CRSGEN_ID_SELECTOR,
+  DEFAULT_FORK_RPC_PORT,
+  RUNTIME_DIR,
   DEFAULT_GATEWAY_RPC_PORT,
   DEFAULT_HOST_RPC_PORT,
   DEFAULT_POSTGRES_PASSWORD,
@@ -71,6 +75,7 @@ import {
   STATE_DIR,
   TEST_SUITE_CONTAINER,
   coprocessorDatabaseName,
+  composePath,
   coprocessorHostKey,
   envPath,
   gatewayAddressesPath,
@@ -119,6 +124,7 @@ import {
   listenerContainersForChain,
   postBootHealthGate,
   probeBootstrap,
+  waitForCoprocessorKeyMaterial,
   waitForBootstrap,
   waitForContainer,
   waitForCoprocessor,
@@ -157,7 +163,21 @@ import {
   stepComposeTask,
   stepComposeUp,
 } from "./runtime-compose";
-import { pause, runContractTask, unpause } from "./contracts";
+import {
+  BOOTSTRAP_SUSPENDED_GROUPS,
+  CANONICAL_HOST_CONTRACT_UPGRADES,
+  CONNECTOR_OPTIONAL_VERSION_KEYS,
+  CONNECTOR_VERSION_KEYS,
+  CONTRACT_VERSION_KEYS,
+  GATEWAY_CONTRACT_UPGRADES,
+  HOST_CONTRACT_UPGRADES,
+  LISTENER_CORE_VERSION_KEYS,
+  bootstrapBootOverrides,
+  bootstrapBootVersions,
+  bootstrapPhaseEnv,
+  contractUpgradeCommand,
+} from "./bootstrap";
+import { pause, runContractTask, snapshotContractSources, unpause } from "./contracts";
 
 export {
   castBool,
@@ -196,11 +216,114 @@ const SCHEMA_GUARDS = {
 } as const satisfies Partial<Record<OverrideGroup, { versionKey: string; repoPath: string }>>;
 
 const SCHEMA_GUARD_TARGETS = new Set<VersionBundle["target"]>(["latest-supported", "latest-main", "sha"]);
+/**
+ * A scenario needs the managed fork Anvil when it routes any instance's RPC at
+ * the `fork-anvil` host. Keying off the hostname rather than a dedicated flag
+ * keeps the scenario file the single source of truth: an instance pointed at
+ * the fork always gets a fork to point at.
+ */
+export const scenarioUsesForkAnvil = (scenario: State["scenario"]) =>
+  scenario.kind === "coprocessor-consensus" &&
+  scenario.instances.some((instance) =>
+    [instance.env.RPC_HTTP_URL, instance.env.RPC_WS_URL].some((value) => {
+      if (!value) return false;
+      try {
+        return new URL(value).hostname === "fork-anvil";
+      } catch {
+        return false;
+      }
+    }),
+  );
+
+/**
+ * Starts the fork Anvil and forks the canonical chain at its tip, leaving
+ * mining stopped.
+ *
+ * Seeding matters: the two chains must agree on every block up to the fork
+ * point, or the instance routed to the fork diverges from genesis and the
+ * suite tests two unrelated chains rather than a fork. Mining stays stopped so
+ * the fork only advances when a test deliberately makes it.
+ *
+ * This forks rather than copying state. `anvil_dumpState`/`anvil_loadState`
+ * can exceed Anvil's request-size limit, and loading headers does not preserve
+ * the canonical hashes returned by the fork's EVM. Forking resolves pre-fork
+ * state and block hashes from the canonical chain on demand, preserving the
+ * shared handle preimage without transferring a state dump.
+ */
+const initializeManagedForkAnvil = async (
+  state: State,
+  /** How this process reaches canonical, to read its tip. */
+  canonicalRpcUrl: string,
+  /** How the fork *container* reaches canonical, to fetch pre-fork state. */
+  canonicalRpcUrlInNetwork: string,
+) => {
+  await stepComposeUp("fork-anvil", state);
+  const forkRpcUrl = `http://localhost:${DEFAULT_FORK_RPC_PORT}`;
+  await waitForRpc(forkRpcUrl);
+
+  const anvilRpc = async <T>(url: string, method: string, params: unknown[] = []): Promise<T> => {
+    const response = await fetch(url, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ jsonrpc: "2.0", id: 1, method, params }),
+      signal: AbortSignal.timeout(30_000),
+    });
+    if (!response.ok) {
+      throw new PreflightError(`${method} failed: ${response.status} ${response.statusText}`);
+    }
+    const payload = (await response.json()) as { result?: T; error?: { message?: string } };
+    if (payload.error || payload.result === undefined) {
+      throw new PreflightError(`${method} failed: ${payload.error?.message ?? "missing result"}`);
+    }
+    return payload.result;
+  };
+
+  const canonicalTip = await anvilRpc<{ number: string; hash: string }>(
+    canonicalRpcUrl,
+    "eth_getBlockByNumber",
+    ["latest", false],
+  );
+  const forkHeight = Number.parseInt(canonicalTip.number, 16);
+  if (!Number.isInteger(forkHeight)) {
+    throw new PreflightError(`Canonical Anvil returned an unreadable tip (${canonicalTip.number})`);
+  }
+
+  await anvilRpc<null>(forkRpcUrl, "anvil_reset", [
+    { forking: { jsonRpcUrl: canonicalRpcUrlInNetwork, blockNumber: forkHeight } },
+  ]);
+  // A reset restores Anvil's default mining behaviour, and the fork must only
+  // advance when a test makes it.
+  await anvilRpc<boolean>(forkRpcUrl, "evm_setIntervalMining", [0]);
+  await anvilRpc<boolean>(forkRpcUrl, "evm_setAutomine", [false]);
+
+  // Verified, not assumed: a fork that came up on its own genesis instead of
+  // the canonical tip looks fine here and surfaces much later as a suite that
+  // reports "no collision" -- a consensus finding, seemingly, rather than a
+  // broken fixture.
+  const forkTip = await anvilRpc<{ number: string; hash: string }>(forkRpcUrl, "eth_getBlockByNumber", [
+    "latest",
+    false,
+  ]);
+  if (forkTip.hash !== canonicalTip.hash) {
+    throw new PreflightError(
+      `fork-anvil did not come up on the canonical tip: expected ${canonicalTip.number}/` +
+        `${canonicalTip.hash}, got ${forkTip.number}/${forkTip.hash}. It fetches pre-fork state ` +
+        `from ${canonicalRpcUrlInNetwork}, which must resolve from inside the fork container.`,
+    );
+  }
+};
+
 export const preflightPorts = (state: Pick<State, "scenario">) =>
   // Nodes outside compose (the Solana validator) bind their own port. fhevm-cli only starts that
   // one much later, in `host-process`, and a leftover validator still holding the port is a
   // condition that step resolves — so it is not a preflight conflict. Exclude it.
-  [...new Set([...PORTS, ...state.scenario.hostChains.filter((c) => isEvmHost(c)).map((c) => c.rpcPort)])];
+  [
+    ...new Set([
+      ...PORTS,
+      ...(scenarioUsesForkAnvil(state.scenario) ? [DEFAULT_FORK_RPC_PORT] : []),
+      ...state.scenario.hostChains.filter((c) => isEvmHost(c)).map((c) => c.rpcPort),
+    ]),
+  ];
 
 /** Throws if Docker memory is below the scenario minimum: 16 GB standard, 32 GB for multi-chain + multi-coprocessor.
  *  Uses a 1 GB slack to account for VM overhead. */
@@ -350,7 +473,43 @@ const partialSchemaOverrides = (overrides: LocalOverride[]) =>
 
 
 /** Verifies required local tooling and port availability before boot. */
+/**
+ * The record `gpu-consensus-workers.sh` writes while it holds the worker roles:
+ * the containers it stopped, so `stop` can put them back. Its presence means a
+ * GPU session is in effect and was never restored.
+ */
+
+
+/**
+ * Refuses to bring the stack up while host-run GPU workers still hold the
+ * worker roles.
+ *
+ * `gpu-consensus-workers.sh start` stops the containers it displaces and
+ * guards its own direction; the reverse is the gap this closes. Its units are
+ * transient with `Restart=on-failure`, so they outlive a teardown and restart
+ * themselves, and an `up` then recreates the containers underneath them. Both
+ * survive, both look healthy, and each work queue is split between two
+ * different builds, allowing inconsistent ciphertext encodings on one queue.
+ */
+export const assertNoUnrestoredGpuSession = (recordPath = path.join(RUNTIME_DIR, "gpu-consensus-workers", "docker-workers-to-restore")) => {
+  if (!existsSync(recordPath)) return;
+  throw new PreflightError(
+    [
+      "A GPU consensus worker session is still in effect:",
+      `  ${recordPath}`,
+      "",
+      "Host-run workers hold the tfhe/zkproof/sns roles for this stack. Bringing",
+      "the containers up now would put two different builds on every work queue,",
+      "which splits the queue between them and corrupts byte-consensus without",
+      "failing any health check. Run",
+      "  test-suite/fhevm/scripts/gpu-consensus-workers.sh stop",
+      "to restore the containers and clear this record.",
+    ].join("\n"),
+  );
+};
+
 export const preflight = async (state: State, strictPorts = true, needsGitHub = true) => {
+  assertNoUnrestoredGpuSession();
   const requiredCommands = ["bun", "docker", "cast", ...(needsGitHub ? ["gh"] : [])];
   const whichResults = await Promise.all(
     requiredCommands.map(async (command) => {
@@ -983,6 +1142,19 @@ export const runStep = async (state: State, step: StepName) => {
       await waitForContainer("listener-publisher-for-anvil", "running");
       break;
     case "coprocessor": {
+      // Before the coprocessors, so the instance routed to the fork finds a
+      // seeded chain rather than an empty one on its first poll.
+      if (scenarioUsesForkAnvil(state.scenario)) {
+        const forkDefaultChain = defaultHostChain(state);
+        if (!forkDefaultChain) {
+          throw new PreflightError("Missing default host chain");
+        }
+        await initializeManagedForkAnvil(
+          state,
+          `http://localhost:${forkDefaultChain.rpcPort}`,
+          `http://${forkDefaultChain.node}:${forkDefaultChain.rpcPort}`,
+        );
+      }
       const skipMigration = await coprocessorDbsSeeded(state);
       let runtimeServices: string[];
       if (skipMigration) {
@@ -1029,7 +1201,7 @@ export const runStep = async (state: State, step: StepName) => {
       if (bootstrapDone) {
         state.discovery!.actualFheKeyId = bootstrapDone.actualFheKeyId;
         state.discovery!.actualCrsKeyId = bootstrapDone.actualCrsKeyId;
-        await generateRuntime(state, stackSpecForState(state));
+        await completeBootstrap(state);
         break;
       }
       const [hostEnv, gatewayEnv] = await Promise.all([readEnvFile(envPath("host-sc")), readEnvFile(envPath("gateway-sc"))]);
@@ -1057,7 +1229,7 @@ export const runStep = async (state: State, step: StepName) => {
       if (bootstrapReady) {
         state.discovery!.actualFheKeyId = bootstrapReady.actualFheKeyId;
         state.discovery!.actualCrsKeyId = bootstrapReady.actualCrsKeyId;
-        await generateRuntime(state, stackSpecForState(state));
+        await completeBootstrap(state);
         break;
       }
       const bootstrapHost = defaultHostChain(state);
@@ -1119,7 +1291,11 @@ export const runStep = async (state: State, step: StepName) => {
       const bootstrapAttempts =
         state.scenario.kms.mode === "threshold" ? thresholdAttempts : CENTRALIZED_BOOTSTRAP_ATTEMPTS;
       await timed("[bootstrap] wait-for-materials", () => waitForBootstrap(state, bootstrapAttempts));
-      await generateRuntime(state, stackSpecForState(state));
+      // Bootstrap proves the KMS produced the material; this proves the operators
+      // ingested it. Without the second wait `up` reports ready while operators
+      // hold no key rows, and everything downstream races the ingest (F-1).
+      await timed("[bootstrap] wait-for-key-material", () => waitForCoprocessorKeyMaterial(state));
+      await completeBootstrap(state);
       break;
     }
     case "relayer":
@@ -1223,6 +1399,36 @@ const assertSupportedTargetScenario = (target: VersionTarget, scenario: State["s
   }
 };
 
+/**
+ * Boots the components that exist before the keys do at the scenario's `bootstrap` release, so
+ * the pinned Blue can read the generated key material; the bootstrap step upgrades them to the
+ * bundle afterwards. Local overrides for those components are suspended until then.
+ */
+export const applyBootstrap = (
+  bundle: VersionBundle,
+  scenario: State["scenario"],
+  overrides: LocalOverride[],
+): Pick<State, "versions" | "overrides" | "bootstrapPending"> => {
+  const bootstrap = scenario.kind === "blue-green" ? scenario.bootstrap : undefined;
+  if (!bootstrap) {
+    return { versions: bundle, overrides };
+  }
+  return {
+    versions: bootstrapBootVersions(bundle, bootstrap),
+    overrides: bootstrapBootOverrides(overrides),
+    bootstrapPending: { target: bundle, overrides },
+  };
+};
+
+const logBootstrap = (state: Pick<State, "bootstrapPending" | "versions">) => {
+  if (state.bootstrapPending) {
+    console.log(
+      `[bootstrap] contracts, KMS core/connector and listener-core boot at ${state.versions.env.HOST_VERSION} ` +
+        `(core ${state.versions.env.CORE_VERSION}); upgraded to the bundle once the operators ingest the keys, then Green starts`,
+    );
+  }
+};
+
 /** Builds a synthetic state object for dry-run previews. */
 export const previewStateFromBundle = (
   options: Pick<UpOptions, "overrides" | "lockFile" | "e2ePublicRuntime">,
@@ -1230,13 +1436,14 @@ export const previewStateFromBundle = (
   scenario: State["scenario"],
 ): State => {
   assertSupportedTargetScenario(bundle.target, scenario);
-  assertSupportedBundleScenario({ versions: bundle, overrides: options.overrides, scenario });
+  const boot = applyBootstrap(bundle, scenario, options.overrides);
+  assertBlueGreenKmsCompatibility(scenario, boot.versions);
+  assertSupportedBundleScenario({ versions: boot.versions, overrides: boot.overrides, scenario });
   return {
     target: bundle.target,
     lockPath: "",
     requiresGitHub: targetNeedsGitHub({ target: bundle.target, lockFile: options.lockFile }),
-    versions: bundle,
-    overrides: options.overrides,
+    ...boot,
     e2ePublicRuntime: options.e2ePublicRuntime,
     scenario,
     scenarioSourcePath: scenario.sourcePath,
@@ -1253,15 +1460,17 @@ const bootstrapState = async (options: UpOptions) => {
   const resolved = await resolveBundle(options, process.env);
   console.log(`[resolve] bundle ready (${Math.round((Date.now() - resolveStarted) / 1000)}s)`);
   assertSupportedTargetScenario(resolved.bundle.target, scenario);
-  assertSupportedBundleScenario({ versions: resolved.bundle, overrides: options.overrides, scenario });
+  const boot = applyBootstrap(resolved.bundle, scenario, options.overrides);
+  assertBlueGreenKmsCompatibility(scenario, boot.versions);
+  assertSupportedBundleScenario({ versions: boot.versions, overrides: boot.overrides, scenario });
   await assertSchemaCompatibility(resolved.bundle, options.overrides, scenario, options.allowSchemaMismatch);
   await ensureLockSnapshot(resolved.lockPath, resolved.bundle);
+  logBootstrap(boot);
   return {
     target: resolved.bundle.target,
     lockPath: resolved.lockPath,
     requiresGitHub: targetNeedsGitHub({ target: resolved.bundle.target, lockFile: options.lockFile }),
-    versions: resolved.bundle,
-    overrides: options.overrides,
+    ...boot,
     e2ePublicRuntime: options.e2ePublicRuntime,
     scenario,
     scenarioSourcePath: scenario.sourcePath,
@@ -1408,6 +1617,7 @@ export const upDryRun = async (options: Omit<UpOptions, "dryRun">) => {
   const bundle = await previewBundle(options, process.env);
   await assertSchemaCompatibility(bundle, options.overrides, scenario, options.allowSchemaMismatch);
   const state = previewStateFromBundle(options, bundle, scenario);
+  logBootstrap(state);
   await preflight(state, false, state.requiresGitHub);
   printBundle(state, { detailed: true });
   printPlan(state, options.fromStep);
@@ -2089,6 +2299,14 @@ export const upgradeRuntimeGroup = async (groupValue: string | undefined, option
   }
   await assertSchemaCompatibility(nextState.versions, nextState.overrides, nextState.scenario, false);
   console.log(`[upgrade] ${plan.group}`);
+  await executeUpgradePlan(nextState, plan);
+  for (const step of plan.steps) {
+    await markStep(nextState, step);
+  }
+};
+
+/** Persists `nextState`, regenerates the runtime and recreates the plan's components against it. */
+const executeUpgradePlan = async (nextState: State, plan: ReturnType<typeof resolveUpgradePlan>) => {
   await saveState(nextState);
   await generateRuntime(nextState, stackSpecForState(nextState));
   if (plan.group === "listener-core") {
@@ -2110,9 +2328,98 @@ export const upgradeRuntimeGroup = async (groupValue: string | undefined, option
     await composeUp(component.component, component.runtimeServices, { noDeps: true });
   }
   await waitForUpgrade(nextState, plan.group, plan.runtimeServices);
-  for (const step of plan.steps) {
-    await markStep(nextState, step);
+};
+
+/**
+ * Ends the bootstrap step: regenerates the runtime and, when the stack booted at the scenario's
+ * `bootstrap` release, upgrades it to the bundle now that the key material is ingested, in
+ * production order: contracts, KMS core, KMS connector, listener-core, then the deferred Green
+ * fleet. Mutates `state` so the remaining steps and the step marker see the upgraded stack.
+ */
+const completeBootstrap = async (state: State) => {
+  const pending = state.bootstrapPending;
+  if (!pending) {
+    await generateRuntime(state, stackSpecForState(state));
+    return;
   }
+  const completed = new Set(pending.completed ?? []);
+  // Every unit is recorded once it succeeds, so `up --resume` after a failure skips it instead
+  // of repeating an upgrade task that reverts on an already upgraded proxy.
+  const once = async (unit: string, action: () => Promise<void>) => {
+    if (completed.has(unit)) {
+      return;
+    }
+    await action();
+    completed.add(unit);
+    pending.completed = [...completed];
+    // Contract tasks build their images against the persisted state; keep those build records,
+    // or every later contract task rebuilds first and time-boxed tasks miss their window.
+    state.builtImages = (await loadState())?.builtImages ?? state.builtImages;
+    await saveState(state);
+  };
+  const advance = (label: string, keys: readonly string[], groups: readonly OverrideGroup[]) => {
+    console.log(`[bootstrap] key material ingested; upgrading ${label} to the bundle`);
+    state.versions = { ...state.versions, env: bootstrapPhaseEnv(state.versions.env, pending.target.env, keys) };
+    state.overrides = mergeLocalOverrides(
+      state.overrides,
+      pending.overrides.filter((override) => groups.includes(override.group)),
+    );
+  };
+
+  await once("contracts", async () => {
+    await snapshotContractSources("gateway");
+    await snapshotContractSources("host");
+    advance("the contracts", CONTRACT_VERSION_KEYS, ["gateway-contracts", "host-contracts"]);
+    await saveState(state);
+    await generateRuntime(state, stackSpecForState(state));
+    for (const [task, contract] of GATEWAY_CONTRACT_UPGRADES) {
+      await once(`gateway:${contract}`, () =>
+        runContractTask("gateway-sc", "gateway-sc-deploy", contractUpgradeCommand(task, contract)),
+      );
+    }
+    for (const [task, contract] of CANONICAL_HOST_CONTRACT_UPGRADES) {
+      await once(`host:${contract}`, () =>
+        runContractTask("host-sc", "host-sc-deploy", contractUpgradeCommand(task, contract)),
+      );
+    }
+    for (const [task, contract] of HOST_CONTRACT_UPGRADES) {
+      const command = contractUpgradeCommand(task, contract);
+      await once(`host:${contract}`, () => runContractTask("host-sc", "host-sc-deploy", command));
+      for (const chain of extraHostChains(state)) {
+        await once(`host:${contract}@${chain.key}`, () =>
+          runContractTask("host-sc", `${chain.sc}-deploy`, command, {
+            envComponent: chain.sc,
+            composeFile: composePath(chain.sc),
+          }),
+        );
+      }
+    }
+  });
+  await once("kms-core", async () => {
+    advance("the KMS core", ["CORE_VERSION"], []);
+    await executeUpgradePlan(state, resolveUpgradePlan(state, "kms-core", { lockFile: true }));
+    // The core has no healthcheck; let it serve before the connector reconnects to it.
+    await waitForLog(KMS_CORE_CONTAINER, /KMS Server service socket address/);
+  });
+  await once("kms-connector", async () => {
+    advance("the KMS connector", [...CONNECTOR_VERSION_KEYS, ...CONNECTOR_OPTIONAL_VERSION_KEYS], ["kms-connector"]);
+    await executeUpgradePlan(state, resolveUpgradePlan(state, "kms-connector", { lockFile: true }));
+  });
+  await once("listener-core", async () => {
+    advance("listener-core", LISTENER_CORE_VERSION_KEYS, ["listener-core"]);
+    await executeUpgradePlan(state, resolveUpgradePlan(state, "listener-core", { lockFile: true }));
+  });
+
+  state.versions = pending.target;
+  state.overrides = pending.overrides;
+  await saveState(state);
+  console.log("[bootstrap] stack upgraded to the bundle; starting the Green fleet");
+  // Green was built alongside Blue in the coprocessor step. The marker stays until Green runs,
+  // so a failed start is retried by `up --resume` rather than left deferred for good.
+  await startDeferredGreen(deferredGreenOperations, { rebuild: false });
+  Object.assign(state, await loadState());
+  delete state.bootstrapPending;
+  await saveState(state);
 };
 
 type DeferredGreenOperations = {
@@ -2149,7 +2456,10 @@ const deferredGreenOperations: DeferredGreenOperations = {
 };
 
 /** Builds and starts a Green fleet that was intentionally absent during prerequisite migration. */
-export const startDeferredGreen = async (operations: DeferredGreenOperations = deferredGreenOperations) => {
+export const startDeferredGreen = async (
+  operations: DeferredGreenOperations = deferredGreenOperations,
+  options: { rebuild?: boolean } = {},
+) => {
   const state = await operations.loadState();
   if (!state || state.scenario.kind !== "blue-green" || !state.scenario.gcs.deferredStart) {
     throw new PreflightError("startDeferredGreen requires a running Blue-Green scenario with gcs.deferredStart=true");
@@ -2180,7 +2490,7 @@ export const startDeferredGreen = async (operations: DeferredGreenOperations = d
 
   try {
     await operations.generateRuntime(nextState, stackSpecForState(nextState));
-    await operations.maybeBuild("coprocessor", nextState, { force: true, persistState: false });
+    await operations.maybeBuild("coprocessor", nextState, { force: options.rebuild ?? true, persistState: false });
     await operations.composeUp("coprocessor", migrationServices, { forceRecreate: true });
     for (const service of migrationServices) {
       await operations.waitForContainer(service, "complete");

@@ -30,7 +30,8 @@ new push re-deploys it fresh (an in-flight run is cancelled).
 | --- | --- |
 | `preview-env-e2e` | Deploy the stack, **building fresh images from the PR branch** first (only changed components; the rest resolve to the base commit's images). In-repo charts (`charts/*`) install straight from the checkout. |
 | `preview-env-e2e-tests` | Same, **and** auto-run the e2e test DAG, posting a pass/fail report back to the PR. Deploys the env on its own. |
-| `preview-env-blue-green` | Deploy [RFC-021](https://github.com/zama-ai/tech-spec/pull/443) BCS+GCS on each party (forces `nb_coprocessor=2`) **on shared `blockchain-dev`** (not Anvil). Enough on its own. Combined with `preview-env-e2e-tests`: propose after the relayer is up, hold `consensus-detector` so the first e2e stays on blue (`DryRunStarted`, assert GCS `computations > 0`), then enable the detector, wait for `versioning=v0.15`, and run e2e again on green. Incompatible with `deploy_polygon`. |
+| `preview-env-gpu` | With `preview-env-e2e-tests`, schedule FHE workers on the `coprocessor-gpu` nodepool and generate Default FHE parameters. Alone it does nothing. Combines with `preview-env-e2e` (HEAD workers) or `preview-env-blue-green` (Green/GCS GPU; Blue/BCS stays CPU). |
+| `preview-env-blue-green` | Deploy [RFC-021](https://github.com/zama-ai/tech-spec/pull/443) BCS+GCS on each party (forces `nb_coprocessor=2`) **on shared `blockchain-dev`** (not Anvil). Enough on its own. Combined with `preview-env-e2e-tests`: propose after the relayer is up, hold `consensus-detector` so the first e2e stays on blue (`DryRunStarted`, assert GCS `computations > 0`), then enable the detector, wait for `versioning=v0.15`, and run e2e again on green. With `deploy_polygon` the upgrade spans both host chains. |
 
 On PRs, images are **always** built fresh from the branch - there is no
 pinned-only PR path (use a `workflow_dispatch` run with `build_images=false`
@@ -64,6 +65,9 @@ Key inputs (all have sensible defaults — you rarely set more than a couple):
 - `observability` — also deploy an in-namespace Prometheus + Grafana + Jaeger
   stack and switch on OTLP tracing in components supporting it (off by
   default; see [Observe your environment](#observe-your-environment)).
+- `lifetime` — hours until a **dispatch** preview is destroyed (integer `4`–`96`,
+  default `8`). Ignored on PR-label deploys, which have no clock. A later
+  `preview-env extend` adds at most `48` hours from now and can be repeated.
 **Topology**
 - `nb_kms_core` — number of KMS parties (default `4`).
 - `nb_coprocessor` — number of independent coprocessor **identities** (default
@@ -71,8 +75,11 @@ Key inputs (all have sensible defaults — you rarely set more than a couple):
   `3`/`5` stay N-party only. See `README.md`.
 - `enable_blue_green` — RFC-021 BCS+GCS on each identity (default `false`).
   Forces `nb_coprocessor=2` when N=1. The `preview-env-blue-green` PR label
-  is the other gate. Incompatible with `deploy_polygon` (so also with
-  `chain_mode=testnets`).
+  is the other gate. With `deploy_polygon` (so also with `chain_mode=testnets`)
+  the upgrade spans both host chains.
+- `enable_gpu` — GPU workers + Default FHE params (default `false`). CLI
+  `--gpu`. The `preview-env-gpu` + `preview-env-e2e-tests` labels are the
+  other gate. With `enable_blue_green`, Green/GCS is GPU and Blue/BCS stays CPU.
 - `deploy_polygon` — also add a second Polygon Amoy (`80002`) host chain (default
   `false`). Fresh local anvil, reuses the ETH KMS key; roughly doubles the
   host-side stack. With `automated_tests` on it also runs a Polygon e2e suite.
@@ -96,7 +103,7 @@ Key inputs (all have sensible defaults — you rarely set more than a couple):
 
 **Versions** — one optional `overrides` JSON object (empty / `{}` = resolve as
 today). Allowed keys are listed in
-[`scripts/parse-overrides.cjs`](./scripts/parse-overrides.cjs). Unknown keys
+[`scripts/resolve/parse-overrides.cjs`](./scripts/resolve/parse-overrides.cjs). Unknown keys
 fail the run.
 
 | Kind | Override keys | Default on PR / empty dispatch |
@@ -168,6 +175,8 @@ helm-install; Actions stays the write path. `--ref` must already be on origin.
 
 ```bash
 ci/preview-env/preview-env launch --ref <your-branch> --tests
+ci/preview-env/preview-env launch --ref <your-branch> --gpu --tests
+ci/preview-env/preview-env launch --ref <your-branch> --gpu --testnets --tests
 ci/preview-env/preview-env launch --ref <your-branch> --blockchain-dev
 ci/preview-env/preview-env launch --ref <your-branch> --testnets --tests
 ci/preview-env/preview-env launch --ref <your-branch> --blue-green --blockchain-dev --tests
@@ -177,6 +186,8 @@ ci/preview-env/preview-env launch --ref <your-branch> --tests \
 ```
 
 `--blue-green` sends `enable_blue_green=true` and `nb_coprocessor=2`.
+`--gpu` sends `enable_gpu=true` (GPU workers and Default FHE params). Combine
+with `--testnets` for Sepolia/Amoy, or `--blue-green` for Green-only GPU.
 `--parties 2` without `--blue-green` is two-party consensus only.
 
 `launch` polls for the new Actions run and prints its id. Stream progress with
@@ -198,6 +209,24 @@ ci/preview-env/preview-env namespace --run-id <run-id>
 tailscale configure kubeconfig tailscale-operator-zws-dev.diplodocus-boa.ts.net
 kubectl get pods -n <namespace>          # e.g. fhevm-ci-alice-1234
 ```
+
+### Call the relayer (no port-forward)
+
+Every preview publishes the relayer HTTP API (`:3000` only — not metrics, not the
+admin endpoint) on the zws-dev tailnet via a Tailscale Ingress named
+`relayer-<namespace>`. The MagicDNS URL is written to the deploy run summary and
+the PR `:rocket:` comment as `RELAYER_TS_URL`.
+
+With Tailscale up:
+
+```bash
+curl -sS https://relayer-<namespace>.diplodocus-boa.ts.net/v2/keyurl
+# or point @fhevm/sdk / a toy dapp at that base URL
+```
+
+Deleting the namespace (PR close / `preview-env destroy`) removes the Ingress and
+the operator drops the MagicDNS name. Access is Tailscale-ACL only (tag
+`tag:k8s-zws-dev`), not the public internet.
 
 ## Observe your environment
 
@@ -226,6 +255,14 @@ kubectl port-forward -n <namespace> svc/jaeger 16686:16686    # http://localhost
 - **Without:** the stack is deployed with an idle test-suite Job — run tests
   yourself against the namespace, or re-label with `preview-env-e2e-tests`.
 
+To poke a party's connector proxy by hand (self-signed cert, so `-k`; the API
+key is the fixed test literal from `ci/preview-env/kms-connector/values-kms-connector-e2e.yaml`):
+
+```bash
+kubectl port-forward -n <namespace> svc/kms-connector-1-kms-connector-proxy 8443:8443
+curl -sk -H "Authorization: Bearer fhevm-e2e-kms-connector-api-key" https://localhost:8443/v1/version
+```
+
 ## Destroy an environment
 
 Teardown means: `helm uninstall` every release in the namespace (so Crossplane
@@ -239,11 +276,29 @@ namespace. All handled by
 - **remove** the `preview-env-e2e` label (removing only `-tests` while
   `preview-env-e2e` stays keeps the env alive).
 
-**Manual (dispatch) env.** A dispatch env has no PR to key off, so tear it down
-by hand: GitHub → **Actions** → **preview-env-destroy** → **Run workflow**, and
-set the `namespace` input to the **exact** namespace from your deploy run's
-summary (e.g. `fhevm-ci-alice-987654`). It must start with `fhevm-ci-` (a guard
-refuses anything else, so it can't nuke an unrelated namespace).
+**Manual (dispatch) env.** The deploy stamps `preview.zama.ai/expires-at` on the
+namespace (`lifetime` hours from create, default 8, min 4, max 96). An hourly job
+([`preview-env-cleanup.yml`](../../.github/workflows/preview-env-cleanup.yml)) posts
+once to `#ci-alerts` when that deadline is within 2 hours, then dispatches
+**preview-env-destroy** after `expires-at`. Each dispatch is a new namespace
+(`fhevm-ci-<actor>-<run id>`), so launching again leaves the previous one on
+its own clock. `extend` is what keeps that namespace. It refuses a namespace
+that is `Terminating`, or whose destroy was already dispatched for the current
+deadline: redeploy instead. If the namespace is still present about 2h after
+that dispatch, cleanup posts once more to `#ci-alerts`. Namespaces created
+before this clock existed are not annotated and are never reaped.
+
+Keep a run alive (repeat as needed; each call sets the deadline to now plus
+the hours, at most 48):
+
+```bash
+ci/preview-env/preview-env extend fhevm-ci-<exact-name> <hours>
+```
+
+Tear one down early: GitHub → **Actions** → **preview-env-destroy** → **Run
+workflow**, and set `namespace` to the **exact** name from the deploy summary
+(e.g. `fhevm-ci-alice-987654`). It must start with `fhevm-ci-` (a guard refuses
+anything else).
 
 Or:
 
@@ -289,8 +344,10 @@ kubectl delete namespace <namespace>
   and teardown always agree.
 - **`nb_coprocessor > 1` is expensive** (each party is a full stack with its own
   workers/Postgres/S3). Keep it `1` unless you're specifically testing multi-party.
-- **Manual (dispatch) envs never auto-destroy** — run **preview-env-destroy** with
-  the namespace to clean up (see [Destroy an environment](#destroy-an-environment)).
+- **Dispatch envs expire on a clock** (`lifetime`, default 8h, min 4h, max 96h). Within
+  2h of `expires-at`, `#ci-alerts` gets one message. `preview-env extend` adds
+  1–48h from now and can be repeated. PR-label envs are not on this clock.
+  Namespaces without `preview.zama.ai/source=dispatch` are never reaped.
 - **`chain_mode=blockchain-dev` on dispatch, or via `preview-env-blue-green`.** Plain
   `preview-env-e2e` / `-tests` labels stay on Anvil. Faucet-funded wallets are
   unique per run. Destroying the namespace does **not** remove contracts from

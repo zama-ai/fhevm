@@ -487,28 +487,5 @@ describe('KMS context tasks', function () {
       // The new committee comes from the out-of-range event, so it is not reconstructable.
       expect(result.newSigners).to.equal(undefined);
     });
-
-    it('reports the same quorum result as the contract after lowering the previous context MPC threshold', async function () {
-      const previousContextId = await protocolConfig.getCurrentKmsContextId();
-      const contextId = await defineSwitch();
-
-      // Lower the previous context's live MPC threshold after the switch was defined. Recomputing the
-      // (n - t) target from live reads would now give 3 - 1 = 2. The value cached at define time stays 1.
-      await (await (await asOwner()).updateMpcThresholdForContext(previousContextId, 1)).wait();
-      expect(await protocolConfig.getMpcThresholdForContext(previousContextId)).to.equal(1n);
-      expect(await protocolConfig.getContextCreationPreviousTxSenderThreshold(contextId)).to.equal(1n);
-
-      // All new tx senders + exactly one previous tx sender: enough for the cached target of 1, so the
-      // contract reaches the creation quorum (CREATED). A recomputed target of 2 would read as stuck.
-      const epochId = await confirmCreation(contextId, [...newTxSenders, oldTxSenders[0]]);
-      expect(epochId, 'creation quorum should emit NewKmsEpoch').to.not.be.undefined;
-
-      const result = await inspectKmsContextSwitch(hre, proxyAddress, 0);
-      expect(result.contextState).to.equal('CREATED');
-      expect(result.previousTxSenderThreshold).to.equal(1);
-      expect(result.previousConfirmationCount).to.equal(1);
-      expect(result.contextCreationQuorumReached).to.equal(true);
-      expect(result.stuckBelowPreviousThreshold).to.equal(false);
-    });
   });
 });

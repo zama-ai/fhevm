@@ -22,12 +22,10 @@ export async function serializeFheEncryptionKeyWasm(
 
   const publicKeyBytes: FheEncryptionPublicKeyBytes = await context.runtime.encrypt.serializeFheEncryptionPublicKey({
     publicKey: parameters.publicKey,
-    tfheVersion,
   });
 
   const crsBytes: FheEncryptionCrsBytes = await context.runtime.encrypt.serializeFheEncryptionCrs({
     crs: parameters.crs,
-    tfheVersion,
   });
 
   const metadata: FheEncryptionKeyMetadata = Object.freeze({

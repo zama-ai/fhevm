@@ -508,3 +508,17 @@ describe("cli", () => {
     expect(keyBootstrapLogArgs("coprocessor-sns-worker")).toEqual(["docker", "logs", "coprocessor-sns-worker"]);
   });
 });
+
+
+test("database revert quiesces consumers, recovery writers, and secondary-chain listeners", async () => {
+  const { coprocessorRuntimeContainers } = await import("./commands/test");
+  const containers = coprocessorRuntimeContainers(3, [
+    { key: "host", chainId: "12345", rpcPort: 8545 }, { key: "chain-b", chainId: "67890", rpcPort: 8547 },
+  ]);
+  expect(containers).toHaveLength(36);
+  for (const prefix of ["coprocessor", "coprocessor1", "coprocessor2"]) {
+    for (const role of ["host-listener-consumer", "consensus-detector", "upgrade-controller", "host-listener-chain-b", "host-listener-poller-chain-b"]) {
+      expect(containers).toContain(`${prefix}-${role}`);
+    }
+  }
+});

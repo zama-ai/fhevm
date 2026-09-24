@@ -17,11 +17,16 @@
  */
 import { readFileSync, writeFileSync } from 'node:fs';
 import { createHash } from 'node:crypto';
-import { dirname, basename, join, isAbsolute, resolve } from 'node:path';
+import { dirname, basename, join, isAbsolute, relative, resolve } from 'node:path';
+import { fileURLToPath } from 'node:url';
 
 ////////////////////////////////////////////////////////////////////////////////
 
 const DEFAULT_COMPRESSION_FORMAT = 'gzip';
+// sdk/js-sdk/scripts/wasm -> repo root, so the "Source:" comment stays
+// reproducible across machines/checkout locations instead of embedding
+// whichever absolute path the caller happened to pass in.
+const repoRoot = resolve(dirname(fileURLToPath(import.meta.url)), '../../../..');
 
 const args = process.argv.slice(2);
 
@@ -82,7 +87,7 @@ const compressionFormatLiteral = compressionFormat === undefined ? 'undefined' :
 writeFileSync(
   outAbs,
   `// Auto-generated — do not edit.
-// Source:   ${input}
+// Source:   ${relative(repoRoot, inputAbs)}
 // Encoding: ${encodingTag}
 // SHA-256:  ${sha256}
 export const ${exportName} = "${base64}";

@@ -23,7 +23,7 @@ extend-exclude = [
     "lib/openzeppelin-contracts-upgradeable/",
     # Specific docs with known legacy typos (tracked separately)
     "coprocessor/fhevm-engine/host-listener/README.md",
-    "sdk/js-sdk/src/wasm/tfhe/v1.6.1/tfhe-worker.mjs",
+    "sdk/js-sdk/src/wasm/tfhe/v1.8.1/tfhe-worker.mjs",
 
     # Vendored TKMS wasm blobs and their generated typings: copied verbatim from
     # the kms repo by scripts/regen-tkms-wasm.sh, so any wording fixed here comes
@@ -51,6 +51,11 @@ extend-exclude = [
 
     # cargo-chef recipe (generated; embeds crate names like `writeable`)
     "listener/recipe.json",
+
+    # hardhat-deploy records of live deployments (address, ABI, compiler metadata).
+    # The metadata embeds upstream LayerZero source verbatim; editing it would
+    # falsify the record of what is on chain.
+    "protocol-contracts/contracts/solanaOFT/deployments/",
 
     # Lock files and binaries
     "*.lock",
@@ -178,6 +183,7 @@ esource = "esource"       # pingora::Error::esource() API method
 
 # External project/service names
 Hashi = "Hashi"           # HashiCorp (Hashi bridge project)
+Initia = "Initia"         # Initia, a Move-VM chain LayerZero supports (ChainType.INITIA)
 
 # AWS AMI IDs contain random hex strings
 caf = "caf"               # appears in AWS AMI IDs
@@ -197,3 +203,5 @@ SysvarS1otHashes111111111111111111111111111 = "SysvarS1otHashes11111111111111111
 # relayer's PDA-derivation test — a derived PDA whose random "cUeQ" fragment splits into a
 # flagged "Ue". The literal is the cross-side pin and cannot be reworded.
 "5K29xw8jynL8Vw63cRm6cUeQK1dfs5M2Vx3r5inwos5p" = "5K29xw8jynL8Vw63cRm6cUeQK1dfs5M2Vx3r5inwos5p"
+# A Solana public key (base58) that typos splits into "9thq..." and reads as "the"
+"9thqPdbR27A1yLWw2spwJLySemiGMXxPnEvfmXVk4KuK" = "9thqPdbR27A1yLWw2spwJLySemiGMXxPnEvfmXVk4KuK"

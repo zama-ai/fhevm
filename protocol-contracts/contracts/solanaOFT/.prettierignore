@@ -1,0 +1,15 @@
+.anchor
+.turbo
+node_modules/
+target
+artifacts/
+cache/
+dist/
+out/
+*.log
+*ignore
+*.yaml
+*.lock
+package-lock.json
+package.json
+deployments/

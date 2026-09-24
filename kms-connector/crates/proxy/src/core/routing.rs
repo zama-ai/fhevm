@@ -57,7 +57,7 @@ mod tests {
     use super::*;
 
     #[test]
-    fn matches_the_three_v1_routes() {
+    fn matches_the_three_interface_routes() {
         assert_eq!(
             match_route(&Method::POST, PUBLIC_DECRYPTION_ROUTE),
             Ok(Route::PublicDecrypt)

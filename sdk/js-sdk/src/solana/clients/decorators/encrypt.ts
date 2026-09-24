@@ -12,11 +12,9 @@ import {
   getFrozenContext,
   initPublicAction,
   setFrozenContext,
-  setResolvedTfheVersion,
 } from '../../../core/runtime/CoreFhevm-p.js';
 import { createFhevmClientFrozenContext } from '../../../core/frozenContext/fhevmClientFrozenContext-p.js';
 import { encryptModule } from '../../../core/modules/encrypt/module/index.js';
-import { DEFAULT_TFHE_VERSION } from '../../../wasm/tfhe/loadTfheLib.js';
 import { encryptInput } from '../../actions/encryptInput.js';
 import { submitInputProof } from '../../actions/submitInputProof.js';
 
@@ -52,18 +50,11 @@ type SolanaClientBase = FhevmBase<undefined, FhevmRuntime, undefined>;
 async function _initEncrypt(fhevm: FhevmBase<undefined, FhevmRuntime, OptionalNativeClient>): Promise<void> {
   const f = asFhevmWith(fhevm, 'encrypt');
 
-  // The Solana input-proof prover MUST match the host coprocessor's pinned tfhe (=1.6.2): the
-  // zkproof-worker verifies the proof with that exact version. Use the manifest default
-  // (DEFAULT_TFHE_VERSION) rather than protocol-context auto-resolution — Solana has no on-chain
-  // protocol context, and the EVM-derived context maps to a different tfhe version.
-  const tfheVersion = DEFAULT_TFHE_VERSION;
+  await f.runtime.encrypt.initTfheModule();
 
-  await f.runtime.encrypt.initTfheModule({ tfheVersion });
-
+  // Solana has no on-chain protocol context to resolve; the SDK's single WASM version applies.
   if (getFrozenContext(fhevm) === undefined) {
-    setFrozenContext(fhevm, createFhevmClientFrozenContext({ tfheVersion }));
-  } else {
-    setResolvedTfheVersion(fhevm, tfheVersion);
+    setFrozenContext(fhevm, createFhevmClientFrozenContext({}));
   }
 }
 
@@ -81,16 +72,8 @@ export function solanaEncryptActions(
     const runtime = fhevm.runtime.extend(encryptModule);
 
     const generateZkProof: SolanaEncryptActions['generateZkProof'] = async (parameters) => {
-      const fhevmContext = await initPublicAction(fhevm);
-      return encryptInput(
-        {
-          chain: solanaChain,
-          aclProgramAddress,
-          runtime,
-          tfheVersion: fhevmContext.tfheVersion,
-        },
-        parameters,
-      );
+      await initPublicAction(fhevm);
+      return encryptInput({ chain: solanaChain, aclProgramAddress, runtime }, parameters);
     };
 
     return {

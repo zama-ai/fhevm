@@ -67,6 +67,7 @@ fn construct_config() -> Result<Config, fhevm_engine_common::database::DatabaseC
         s3_migration: args.s3_migration,
         s3_migration_sleep_duration: args.s3_migration_sleep_duration,
         s3_migration_max_retries: args.s3_migration_max_retries,
+        s3_migration_max_concurrent_handles: args.s3_migration_max_concurrent_handles,
     })
 }
 
@@ -84,6 +85,13 @@ async fn main() {
         &config.service_name,
         "otlp-layer",
     );
+
+    #[cfg(feature = "gpu")]
+    if let Err(err) = fhevm_engine_common::gpu_arch::ensure_matching_visible_devices() {
+        error!(error = %err, "GPU runtime architecture does not match image target");
+        telemetry::flush();
+        std::process::exit(1);
+    }
 
     // Resolved after tracing is initialized so the `resolve_gcs_mode` log is
     // captured by the subscriber.

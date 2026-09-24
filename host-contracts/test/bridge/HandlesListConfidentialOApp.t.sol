@@ -9,6 +9,7 @@ import {euint32} from "encrypted-types/EncryptedTypes.sol";
 
 import {DeployableERC1967Proxy, HostContractsDeployerTestUtils} from "../../fhevm-foundry/HostContractsDeployerTestUtils.sol";
 import {ACL} from "../../contracts/ACL.sol";
+import {FheType} from "../../contracts/shared/FheType.sol";
 import {EmptyUUPSProxy} from "../../contracts/emptyProxy/EmptyUUPSProxy.sol";
 import {ConfidentialBridge} from "../../contracts/bridge/ConfidentialBridge.sol";
 import {BridgeEvents} from "../../contracts/bridge/BridgeEvents.sol";
@@ -123,13 +124,13 @@ contract HandlesListConfidentialOAppTest is TestHelperOz5, HostContractsDeployer
         acl.cleanTransientStorage();
     }
 
-    /// @dev A valid-looking Uint64 handle, distinct per `seed`.
+    /// @dev A valid-looking Uint32 handle matching the app's euint32 values, distinct per `seed`.
     function _makeHandle(uint256 seed) internal view returns (bytes32 h) {
         h = keccak256(abi.encodePacked("shl-handle", seed));
         h = h & 0xffffffffffffffffffffffffffffffffffffffffff0000000000000000000000;
         h = h | (bytes32(uint256(0xff)) << 80);
         h = h | (bytes32(uint256(uint64(block.chainid))) << 16);
-        h = h | (bytes32(uint256(0x05)) << 8); // FheType.Uint64
+        h = h | (bytes32(uint256(uint8(FheType.Uint32))) << 8);
     }
 
     function _addressToBytes32(address a) internal pure returns (bytes32) {

@@ -8,9 +8,7 @@ import { asEncryptedValue, type EncryptedValue } from '@fhevm/sdk/types';
 
 ////////////////////////////////////////////////////////////////////////////////
 //
-// CHAIN=localstack_v11 npx vitest run --config test/fheTest/vitest.config.ts ethers/clientDecrypt.permitCache.test.ts
-// CHAIN=localstack_v12 npx vitest run --config test/fheTest/vitest.config.ts ethers/clientDecrypt.permitCache.test.ts
-// CHAIN=localstack     npx vitest run --config test/fheTest/vitest.config.ts ethers/clientDecrypt.permitCache.test.ts
+// CHAIN=localstack npx vitest run --config test/fheTest/vitest.config.ts ethers/clientDecrypt.permitCache.test.ts
 //
 ////////////////////////////////////////////////////////////////////////////////
 

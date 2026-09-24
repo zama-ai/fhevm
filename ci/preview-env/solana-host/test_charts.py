@@ -75,25 +75,29 @@ class SolanaCharts(unittest.TestCase):
         self.assertIn("DATABASE_SSL_ROOT_CERT_PATH", env)
 
     def test_connector_preserves_evm_and_exact_solana_chain_id(self):
-        # Same composition as deploy-preview.sh: the party's values plus the appended Solana entry.
-        base = yaml.safe_load((ROOT / "ci/preview-env/kms-connector/values-kms-connector-e2e.yaml").read_text())
-        chain = yaml.safe_load((VALUES / "connector-host-chain.yaml").read_text())
-        chain[0]["solanaProofEndpoints"] = ["http://coprocessor-1-solana-host-listener:8080"]
-        base["kmsConnectorKmsWorker"]["config"]["hostChains"] += chain
-        with tempfile.NamedTemporaryFile("w", suffix=".yaml") as merged:
-            yaml.safe_dump(base, merged)
-            merged.flush()
-            documents = render("kms-connector-1", "kms-connector",
-                               [pathlib.Path(merged.name), VALUES / "values-solana-connector-e2e.yaml"])
+        # Same composition as deploy-preview.sh: the party's values, the Solana overlay, and the
+        # proof endpoints the script sets. aclAddress is filled per party by deploy-kms-connector.sh.
+        documents = render("kms-connector-1", "kms-connector",
+                           [ROOT / "ci/preview-env/kms-connector/values-kms-connector-e2e.yaml",
+                            VALUES / "values-solana-connector-e2e.yaml"],
+                           "--set-string", "commonConfig.hostChains.ethereum.aclAddress=0x" + "11" * 20,
+                           "--set-json",
+                           'commonConfig.hostChains.solana.solanaProofEndpoints=["http://coprocessor-1-solana-host-listener:8080"]')
         deployment = next(d for d in documents if d and d["kind"] == "Deployment" and "kms-worker" in d["metadata"]["name"])
         env = deployment["spec"]["template"]["spec"]["containers"][0]["env"]
         names = [e["name"] for e in env]
         self.assertLess(names.index("SOLANA_PROOF_API_KEY"), names.index("KMS_CONNECTOR_HOST_CHAINS"))
-        value = next(e["value"] for e in env if e["name"] == "KMS_CONNECTOR_HOST_CHAINS")
-        self.assertIn('"chainId":130140237723663404', value)
-        self.assertIn('"aclAddress"', value)
-        self.assertIn('http://coprocessor-1-solana-host-listener:8080', value)
-        self.assertIn('"solanaProofApiKey":"$(SOLANA_PROOF_API_KEY)"', value)
+        chains = {c["chainId"]: c for c in json.loads(next(e["value"] for e in env if e["name"] == "KMS_CONNECTOR_HOST_CHAINS"))}
+        self.assertEqual(chains[12345]["aclAddress"], "0x" + "11" * 20)
+        solana = chains[130140237723663404]
+        self.assertNotIn("aclAddress", solana)
+        self.assertEqual(solana["chainKind"], "solana")
+        self.assertEqual(solana["solanaProofEndpoints"], ["http://coprocessor-1-solana-host-listener:8080"])
+        self.assertEqual(solana["solanaProofApiKey"], "$(SOLANA_PROOF_API_KEY)")
+        endpoint = next(d for d in documents if d and d["kind"] == "Deployment" and "endpoint" in d["metadata"]["name"])
+        ids = next(e["value"] for e in endpoint["spec"]["template"]["spec"]["containers"][0]["env"]
+                   if e["name"] == "KMS_CONNECTOR_SUPPORTED_CHAIN_IDS")
+        self.assertIn("130140237723663404", ids.split(","))
 
     def test_program_keys_are_optional_but_deployer_is_required(self):
         for filename in ["values-solana-programs-e2e.yaml", "values-solana-demos-e2e.yaml"]:
@@ -168,7 +172,7 @@ class SolanaCharts(unittest.TestCase):
             self.assertLessEqual(keys, synced[name], name)
 
     def test_dispatch_overrides_reject_unknown_keys_and_multiline_values(self):
-        script = ROOT / "ci/preview-env/scripts/parse-overrides.cjs"
+        script = ROOT / "ci/preview-env/scripts/resolve/parse-overrides.cjs"
         for value, valid in [({}, True), ({"solana_programs_version": "abcdef0"}, True),
                              ({"unknown": "x"}, False), ({"kms_repo_ref": "a\nb"}, False),
                              ({"coprocessor_version": 1}, False), ([], False)]:

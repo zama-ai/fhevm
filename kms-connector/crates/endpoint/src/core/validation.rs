@@ -414,6 +414,7 @@ pub(crate) mod tests {
         let error = attestation_type(&serde_json::json!({ "payload": {} })).unwrap_err();
         assert!(matches!(error, ValidationError::InvalidBody(_)));
         assert_eq!(error.code(), ErrorCode::Malformed);
+        assert_eq!(ValidationError::NoHandles.code(), ErrorCode::Malformed);
     }
 
     #[test]
