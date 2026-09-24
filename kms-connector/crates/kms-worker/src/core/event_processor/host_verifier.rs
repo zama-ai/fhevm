@@ -515,7 +515,6 @@ impl<HP: Provider> HostDecryptionVerifier<HP> {
             .await?;
         if start_timestamp < invalidation_ts {
             return Err(RequestCheckError::irrecoverable(
-                // TODO: reconsider Signature naming
                 RequestCheckKind::Signature,
                 ErrorCode::UserSignatureRejected,
                 anyhow!(
