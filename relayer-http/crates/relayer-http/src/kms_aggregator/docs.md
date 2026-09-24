@@ -183,7 +183,7 @@ Bytes are hex without `0x`; `extraData` keeps its `0x` prefix.
 ```yaml
 kms_aggregator:
   allow_insecure_http: false   # local only: plain http and `auth: none` to non-loopback hosts (an api_key over http is sent in clear)
-  max_concurrent_calls: 64     # semaphore size, >= number of endpoints; one aggregation takes up to n permits
+  max_concurrent_calls: 4096   # semaphore size, >= number of endpoints; one aggregation takes up to n permits
   call:
     timeout: 5000ms            # the deadline (<= 60s)
     retries: { max_retries: 0, delay: 500ms, backoff_max: 4s }   # 0 < delay <= backoff_max <= timeout
@@ -194,6 +194,21 @@ kms_aggregator:
   endpoints:
     - { name: kms_00, url: "https://kms-00.example.net:8443", auth: { type: api_key, value_env: KMS_00_API_KEY } }
 ```
+
+Sizing `max_concurrent_calls` (Little's law): permits in use on a pod = decryptions per second × the sum over the nodes
+of how long each call holds its permit. A node that answers holds it for its latency `L`; a hung node holds it until
+the deadline, because the aggregation waits for every node (extra shares protect against corrupted ones).
+
+```
+permits = λ × ((n − h) × L + h × timeout) × 1.5      n nodes, h of them hung, 1.5 = headroom
+```
+
+The default 4096 carries ~200 decryptions/s on one pod with 13 nodes answering within ~1 s (3 900), or with one hung
+node at ~0.5 s (3 300); beyond that, add replicas (the semaphore is per pod). Ceilings: each connector accepts 1000
+decryptions in flight (then `503 overloaded`, retried), and the fleet sends one node λ × its latency (200 at 1 s);
+real answers are a few KiB, so 4096 calls in flight hold tens of MiB (the 4 MiB cap per body guards against a
+misbehaving node); one pooled connection per call. A pod whose permits are exhausted still answers `ready` on
+`/healthz`: see `endpoint/docs.md` section 11.
 
 - Validation (`KmsAggregatorConfig::validate`, also run by `Caller::new`): endpoints non-empty with unique names and
   URLs; `http(s)` with a host, no credentials, query or fragment; plain `http` or `auth: none` only towards loopback

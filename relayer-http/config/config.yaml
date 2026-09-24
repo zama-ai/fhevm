@@ -11,7 +11,7 @@ http:
   supported_chain_ids: [1, 137]   # host chain ids a ciphertext handle may carry (bytes 22..30 of the handle)
 kms_aggregator:
   allow_insecure_http: false   # local/compose only: allows plain http and `auth: none` to non-loopback hosts (an api_key over http travels in clear)
-  max_concurrent_calls: 64     # HTTP calls in flight at once, all aggregations together (>= number of endpoints)
+  max_concurrent_calls: 4096   # HTTP calls in flight at once, all aggregations together (>= number of endpoints); ~200 decryptions/s with 13 nodes, see kms_aggregator/docs.md
   call:
     timeout: 5000ms            # the deadline: one aggregation, and every call in it, ends by then
     retries:                   # retryable connector errors only; a retry never starts past the deadline

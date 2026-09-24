@@ -232,7 +232,9 @@ curl -s localhost:8080/healthz                         # {"status":"ready"}
 - A `retryable` indication in the error body, once the retry policy is decided; the error-layer rework (section 5).
 - `GET /version`, `/metrics`.
 - A resource-pressure endpoint and HPA signals (in-flight requests, aggregator permits in use) rather than a
-  hardcoded in-flight cap; `503 overloaded` only if a cap is ever wanted.
+  hardcoded in-flight cap; `503 overloaded` only if a cap is ever wanted. `/healthz` (or that metric) should then
+  reflect call-permit saturation: today a pod whose permits are all taken stays `ready`. Checked against the
+  connector and KMS capacity before it may take a pod out of the Service.
 - Request caching keyed by the request hash (`decryption_id`), HPA-compatible through Redis: the same payload
   waits on the same aggregation, a completed request is answered from the store. It needs the accepted responses to
   be registered first (the aggregator cancels late shares today).
