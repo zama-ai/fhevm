@@ -1,0 +1,32 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "SELECT id, context_id, is_valid FROM kms_epoch",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "id",
+        "type_info": "Bytea"
+      },
+      {
+        "ordinal": 1,
+        "name": "context_id",
+        "type_info": "Bytea"
+      },
+      {
+        "ordinal": 2,
+        "name": "is_valid",
+        "type_info": "Bool"
+      }
+    ],
+    "parameters": {
+      "Left": []
+    },
+    "nullable": [
+      false,
+      true,
+      false
+    ]
+  },
+  "hash": "622316b1e9bcb42c7c4eb3d8181e537e7aa5063847ae5e8f5cb94e4e3eae12b2"
+}
