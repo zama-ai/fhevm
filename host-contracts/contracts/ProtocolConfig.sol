@@ -879,13 +879,11 @@ contract ProtocolConfig is IProtocolConfig, UUPSUpgradeableEmptyProxy, ACLOwnabl
     }
 
     /**
-     * @dev Returns true if the context exists and has not been destroyed. The stored-node
-     * check also keeps skipped canonical IDs invalid when `initializeFromCanonical` preserves
-     * a context ID above `BASE + 1`.
+     * @dev Returns true if the context exists and has not been destroyed. Every stored context is
+     * Pending, Created or Active, and only destruction resets it to None.
      */
     function _isLiveKmsContext(uint256 kmsContextId) internal view virtual returns (bool) {
-        ProtocolConfigStorage storage $ = _getProtocolConfigStorage();
-        return _kmsContextExists(kmsContextId) && !$.destroyedContexts[kmsContextId];
+        return _getProtocolConfigStorage().contextState[kmsContextId] != ContextState.None;
     }
 
     /**
