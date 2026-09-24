@@ -171,6 +171,9 @@ upgrade_release() {
     --set persistence.enabled=true
     --set persistence.volumeClaim.create=false
     --set-string "persistence.volumeClaim.name=${claim}")
+  # Space-separated extra `--set` pairs, e.g. to lower the deploy Job's CPU request when the only
+  # node its zone-pinned workdir PVC can attach to is short of the values' default.
+  for kv in ${EXTRA_SET:-}; do helm_args+=(--set "${kv}"); done
   if [[ "${DRY_RUN}" == "true" ]]; then
     echo "   DRY_RUN: rendering ${name}"
     helm template "${name}" "${CONTRACTS_CHART}" "${helm_args[@]}" > "${work}/${rel}-render.yaml"
