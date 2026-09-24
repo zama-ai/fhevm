@@ -385,6 +385,8 @@ async fn update_tx_unlock_potential(
 
 /// Replace last update `n1` with `n2` in the same EMA slot:
 /// `s += (n2 - n1) / 2` if `n1` was written; else first update `(s + n2) / 2`.
+/// Clamped at 0: a concurrent EMA step halves our `n1 / 2` before we remove
+/// it, so the exact delta can overshoot below 0 (e.g. when the handle heals).
 async fn replace_last_update_tx_unlock_potential(
     pool: &PgPool,
     n1: &HashMap<Handle, f64>,
@@ -409,7 +411,8 @@ async fn replace_last_update_tx_unlock_potential(
     if !delta_handles.is_empty() {
         sqlx::query!(
             r#"UPDATE drifted_handle_demand AS d
-                  SET tx_unlock_potential = d.tx_unlock_potential + src.delta / 2.0
+                  SET tx_unlock_potential =
+                      GREATEST(0.0, d.tx_unlock_potential + src.delta / 2.0)
                  FROM unnest($1::bytea[], $2::float8[]) AS src(handle, delta)
                 WHERE d.handle = src.handle"#,
             &delta_handles,
