@@ -269,7 +269,7 @@ contract ProtocolConfig is IProtocolConfig, UUPSUpgradeableEmptyProxy, ACLOwnabl
         // Store the new signer set as Pending. Its first epoch is created once the creation quorum
         // is reached, so the (context, epoch) pair announced to connectors is correct by construction.
         uint256 previousContextId = $.latestActiveKmsContextId;
-        uint256 contextId = _storeNextKmsContext(kmsNodeParams, thresholds);
+        uint256 contextId = _storeKmsContext($.currentKmsContextId + 1, kmsNodeParams, thresholds);
         $.contextState[contextId] = ContextState.Pending;
 
         // Cache the number of previous-committee confirmations confirmKmsContextCreation requires.
@@ -773,8 +773,7 @@ contract ProtocolConfig is IProtocolConfig, UUPSUpgradeableEmptyProxy, ACLOwnabl
     /**
      * @dev Stores a KMS context under the caller-provided `contextId`, validates nodes and
      *      thresholds, and activates it under `epochId`. Use this on the bootstrap/mirror paths
-     *      where the context ID is externally determined; for fresh canonical allocation use
-     *      `_storeNextKmsContext`. Returns the context ID. Callers are responsible for emitting
+     *      where the context ID is externally determined. Returns the context ID. Callers are responsible for emitting
      *      context lifecycle events and recording the matching `KmsContextAnchor` when appropriate.
      */
     function _storeAndActivateKmsContextAndEpoch(
@@ -791,15 +790,6 @@ contract ProtocolConfig is IProtocolConfig, UUPSUpgradeableEmptyProxy, ACLOwnabl
         $.latestActiveKmsContextId = newContextId;
         $.epochCounter = epochId;
         _activateEpoch(epochId, newContextId);
-    }
-
-    /// @dev Allocates the next sequential KMS context ID and stores the context under it.
-    function _storeNextKmsContext(
-        KmsNodeParams[] memory kmsNodeParams,
-        KmsThresholds calldata thresholds
-    ) internal virtual returns (uint256 newContextId) {
-        ProtocolConfigStorage storage $ = _getProtocolConfigStorage();
-        newContextId = _storeKmsContext($.currentKmsContextId + 1, kmsNodeParams, thresholds);
     }
 
     function _storeKmsContext(
