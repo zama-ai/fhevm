@@ -37,7 +37,7 @@
 //! linger), and rewrites the baselines. Prefer it over setting
 //! `ZAMA_UPDATE_COST_SNAPSHOT=1` by hand (the env gate remains for escape-hatch
 //! use but skips the toolchain/clean/orphan-clear guardrails). Costs are exact
-//! for the pinned toolchain.
+//! for the pinned toolchain on CI's x86_64 Linux; see `docs/TESTING.md`.
 //!
 //! Profiles use fixed fixture keys because on-chain PDA bump searches are part
 //! of the measured compute: absolute values therefore include an

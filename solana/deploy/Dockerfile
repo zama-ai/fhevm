@@ -8,7 +8,7 @@
 
 ARG PROGRAM_ENVIRONMENT=preview-env
 ARG SOLANA_VERSION=4.1.2
-ARG ANCHOR_VERSION=1.1.2
+ARG ANCHOR_VERSION=1.2.0
 ARG KUBECTL_VERSION=v1.32.3
 
 FROM --platform=linux/amd64 ubuntu:24.04 AS sbf
@@ -29,7 +29,7 @@ RUN curl -sSfL "https://release.anza.xyz/v${SOLANA_VERSION}/install" -o /tmp/anz
     && rm /tmp/anza-install.sh
 ENV PATH="/root/.local/share/solana/install/active_release/bin:${PATH}"
 
-RUN curl -sSfL "https://github.com/solana-foundation/anchor/releases/download/v${ANCHOR_VERSION}/anchor-${ANCHOR_VERSION}-x86_64-unknown-linux-gnu" \
+RUN curl -sSfL "https://github.com/otter-sec/anchor/releases/download/v${ANCHOR_VERSION}/anchor-${ANCHOR_VERSION}-x86_64-unknown-linux-gnu" \
       -o /usr/local/bin/anchor \
     && chmod +x /usr/local/bin/anchor \
     && solana --version && anchor --version

@@ -22,5 +22,5 @@ idl-build = ["anchor-lang/idl-build", "anchor-spl/idl-build"]
 program-environment = { path = "../../crates/program-environment" }
 
 [dependencies]
-anchor-lang = "1.1.2"
-anchor-spl = { version = "1.1.2", default-features = false, features = ["mint", "token", "token_2022", "token_2022_extensions"] }
+anchor-lang = "1.2.0"
+anchor-spl = { version = "1.2.0", default-features = false, features = ["mint", "token", "token_2022", "token_2022_extensions"] }

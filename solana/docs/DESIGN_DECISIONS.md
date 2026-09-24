@@ -80,6 +80,7 @@ are written as one narrative instead.
 | [DD-051](#dd-051-a-zama-is-one-host-program-id)                                                                                           | adopted                                  | A Zama Is One Host Program ID                                                                                                   |
 | [DD-052](#dd-052-a-solana-chain-id-is-type-byte-0x01-plus-a-published-cluster-tag)                                                        | adopted                                  | A Solana chain id is type byte `0x01` plus a published cluster tag                                                              |
 | [DD-053](#dd-053-a-program-id-is-environment-config-not-a-cargo-feature)                                                                  | adopted                                  | A program id is environment config, not a cargo feature                                                                        |
+| [DD-054](#dd-054-the-programs-stay-on-anchor-v1)                                                                                          | adopted                                  | The programs stay on Anchor v1                                                                                                 |
 
 ## DD-002: Keep App Store And Host ACL Store Separate
 
@@ -2017,6 +2018,30 @@ Zama is a new JSON file, its entry in `SOLANA_ENVIRONMENTS` (`deploy/src/environ
 import because the deployer ships as one bundle) and deployer keypairs. No Rust change. A wrong id
 in the file flows consistently into the `.so` and the deployer and stops at deploy time, where the
 deployer refuses a program keypair whose pubkey differs from `declare_id!`.
+
+## DD-054: The programs stay on Anchor v1
+
+Status: adopted
+
+Recorded in fhevm-internal#2094.
+
+Every program is written with Anchor v1, pinned to a stable release in `Anchor.toml`, and builds
+with the platform tools and SBPF target that release selects. New code uses Anchor's typed
+accounts and constraints where they express the check; a check written by hand is a local choice
+of that handler, not a step towards leaving the framework.
+
+| Option | Why not |
+|---|---|
+| Hand-written Pinocchio | The guild precedent of 2026-06-25 (DD-046): permanent complexity for programs that do little compute. |
+| Anchor v2 (`lang-v2` on `anchor-next`) | Alpha: not audited, not on crates.io, APIs break between commits. It is the planned successor. |
+| Quasar | Beta, unaudited, no release. Not a production candidate. |
+
+Pinocchio-level cost should come from the framework, and neither newer framework can be the code
+we audit and ship.
+
+Reopening condition: Anchor v2 published on crates.io with an audit. Measure a port against the
+runtime cost snapshots first: `Account<T>` becomes a Pod layout and `EncryptedStore`'s `Vec`
+fields become a `Slab`. A port after the external audit needs its own audit.
 
 ## Open product decisions
 

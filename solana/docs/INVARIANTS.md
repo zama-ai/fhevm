@@ -436,10 +436,9 @@ not when the threat model changes.
 ## I. Sizes, limits, and operations
 
 **14. [HOLDS]** Executions are capped at 32 steps. Packet size and CU cost depend on the shape; the cap does not imply a
-fit in a 1,232-byte transaction or 200k CU. The runtime snapshots pin, for example, a 32-step dependent chain at 461
-instruction-data bytes and 60,597 CU, and 32 private slot writes at 2,901 bytes and 123,784 CU. The 30-output
-wide-audience shape costs 281,645 CU. These are host-instruction measurements, before transaction overhead and
-application CPIs; see `runtime-tests/cost-snapshots/fhe_execute_boundary.json`.
+fit in a 1,232-byte transaction or 200k CU. `runtime-tests/cost-snapshots/fhe_execute_boundary.json` pins each shape's
+instruction-data bytes and CU at its largest passing size. These are host-instruction measurements, before transaction
+overhead and application CPIs.
 
 **34. [OPERATIONAL]** Reconstruction fixtures compile only under
 `--features solana-grpc,solana-reconstruct`; coverage exists only where CI

@@ -15,6 +15,11 @@
 # (.github/workflows/solana-tests.yml). Override EXPECTED_SOLANA only for
 # experiments; do not commit baselines minted under a divergent toolchain.
 #
+# The host is part of the toolchain. CI measures on x86_64 Linux, and the macOS
+# platform tools build slightly different code (tens of CU on some profiles).
+# Elsewhere, compare deltas between commits locally, but commit the
+# `solana-cost-snapshots` artifact that a failing solana-tests run uploads.
+#
 # Clears existing snapshot JSON before regenerating so orphaned profiles
 # (renamed/deleted tests) cannot linger.
 set -euo pipefail
@@ -71,3 +76,6 @@ echo "updated: runtime-tests/cost-snapshots/token_mollusk.json"
 echo "updated: runtime-tests/cost-snapshots/vault_mollusk.json"
 echo "updated: runtime-tests/cost-snapshots/batcher_mollusk.json"
 echo "review the JSON diff and commit it with the intentional CU change"
+if [[ "$(uname -sm)" != "Linux x86_64" ]]; then
+  echo "warning: minted on $(uname -sm), not CI's x86_64 Linux; commit the solana-cost-snapshots CI artifact instead" >&2
+fi

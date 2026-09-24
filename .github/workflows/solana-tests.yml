@@ -14,11 +14,11 @@ env:
   # This toolchain, the solana-test-validator in solana-e2e.yml, and the Yellowstone geyser plugin
   # all sit on the agave 4.1 line and must be bumped together — they are one running system.
   #
-  # The in-process SVMs are deliberately NOT on it: mollusk-svm is held at 0.12.1-agave-4.0 and
-  # litesvm at 0.11 (see the comment at solana/runtime-tests/Cargo.toml). Both need
-  # solana-account >= 4.3, which has moved to wincode 0.6 while anchor still pins the 3.x crates on
-  # wincode 0.5. They move when that upstream split resolves, not when this pin changes.
-  ANCHOR_VERSION: "1.1.2"
+  # The in-process SVM is deliberately NOT on it: mollusk-svm is held at 0.12.1-agave-4.0 (see the
+  # comment at solana/runtime-tests/Cargo.toml). Newer releases need solana-account >= 4.3, which has
+  # moved to wincode 0.6 while anchor still pins the 3.x crates on wincode 0.5. It moves when that
+  # upstream split resolves, not when this pin changes.
+  ANCHOR_VERSION: "1.2.0"
   SOLANA_VERSION: "4.1.2"
 
 jobs:
@@ -311,7 +311,7 @@ jobs:
 
       - name: Install Anchor CLI via AVM
         run: |
-          cargo install --git https://github.com/solana-foundation/anchor avm --locked --force
+          cargo install --git https://github.com/otter-sec/anchor avm --locked --force
           avm install "${ANCHOR_VERSION}"
           avm use "${ANCHOR_VERSION}"
           echo "$HOME/.avm/bin" >> "$GITHUB_PATH"
@@ -415,7 +415,7 @@ jobs:
           sh /tmp/solana-install.sh
           echo "$HOME/.local/share/solana/install/active_release/bin" >> "$GITHUB_PATH"
           mkdir -p "$HOME/.local/bin"
-          curl -sSfL "https://github.com/solana-foundation/anchor/releases/download/v${ANCHOR_VERSION}/anchor-${ANCHOR_VERSION}-x86_64-unknown-linux-gnu" -o "$HOME/.local/bin/anchor"
+          curl -sSfL "https://github.com/otter-sec/anchor/releases/download/v${ANCHOR_VERSION}/anchor-${ANCHOR_VERSION}-x86_64-unknown-linux-gnu" -o "$HOME/.local/bin/anchor"
           chmod +x "$HOME/.local/bin/anchor"
           echo "$HOME/.local/bin" >> "$GITHUB_PATH"
       - name: Exercise packaged CLI against a disposable validator

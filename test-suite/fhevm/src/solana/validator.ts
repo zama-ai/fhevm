@@ -76,13 +76,6 @@ export const renderGeyserConfig = (template: string, pluginLibPath: string): str
  * lost by pinning loopback: the RPC and pubsub listeners always bind 0.0.0.0 regardless of this
  * flag (test-validator/src/lib.rs:1110-1119), so the dockerized workers still reach
  * host.docker.internal:8899.
- *
- * --deactivate-feature B8JJ… (disable_sbpf_v0_v1_v2_deployment): solana-test-validator activates
- * every feature it knows about at genesis, which here makes it STRICTER than the network we
- * target. That feature has no account on mainnet-beta at all, so mainnet still accepts sbpf
- * v0/v1/v2 deployments, but a local validator with it on rejects ours with "Detected sbpf_version
- * required by the executable which are not enabled". Deactivating it matches mainnet. Drop this
- * flag once the programs are built as sbpf v3.
  */
 export const validatorStartArgs = (parameters: {
   readonly ledgerDir: string;
@@ -110,8 +103,6 @@ export const validatorStartArgs = (parameters: {
   // The 10,000-shred default prunes transaction evidence within a few minutes.
   "--limit-ledger-size",
   "1000000",
-  "--deactivate-feature",
-  "B8JJXCy5amZyWG9r7EnUYLwzXSXTxG7GZ1qZ1qggo83g",
   ...(parameters.geyserConfigPath ? ["--geyser-plugin-config", parameters.geyserConfigPath] : []),
   ...(parameters.genesisPrograms ?? []).flatMap((program) => ["--bpf-program", program.address, program.soPath]),
   ...(parameters.genesisUpgradeablePrograms ?? []).flatMap((program) => [
