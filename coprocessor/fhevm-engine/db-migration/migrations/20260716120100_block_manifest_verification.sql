@@ -173,7 +173,7 @@ CREATE INDEX block_manifest_localization_cache_lookup
 -- Local descriptor is this operator; `target_*` is the quorum descriptor when
 -- a computed threshold group exists (`target_ct64_digest` alone may be filled
 -- from live attestation). Immutable manifests and verification attempts remain
--- the evidence of dissenting groups. Gateway key is local provenance only.
+-- the evidence of dissenting groups.
 CREATE TABLE IF NOT EXISTS drifted_handle
 (
     id BIGSERIAL PRIMARY KEY,
@@ -215,8 +215,6 @@ CREATE TABLE IF NOT EXISTS drifted_handle
         CHECK (local_keyset_id IS NULL OR OCTET_LENGTH(local_keyset_id) = 32),
     observed_keyset_id BYTEA NULL
         CHECK (observed_keyset_id IS NULL OR OCTET_LENGTH(observed_keyset_id) = 32),
-    local_gateway_key_id BYTEA NULL
-        CHECK (local_gateway_key_id IS NULL OR OCTET_LENGTH(local_gateway_key_id) = 32),
     local_ct64_digest BYTEA NULL
         CHECK (local_ct64_digest IS NULL OR OCTET_LENGTH(local_ct64_digest) = 32),
     target_ct64_digest BYTEA NULL
@@ -253,23 +251,6 @@ CREATE TABLE IF NOT EXISTS drifted_handle
         REFERENCES block_manifest_verification_task(id, consensus_epoch),
     FOREIGN KEY (resolved_task_id, consensus_epoch)
         REFERENCES block_manifest_verification_task(id, consensus_epoch),
-    CHECK (local_present OR local_gateway_key_id IS NULL),
-    CHECK (
-        detection_kind = 'inferred' OR local_present = (
-            local_keyset_id IS NOT NULL
-            AND local_ct64_digest IS NOT NULL
-            AND local_ct128_digest IS NOT NULL
-            AND local_ct128_format IS NOT NULL
-        )
-    ),
-    CHECK (
-        observed_present = (
-            observed_keyset_id IS NOT NULL
-            AND observed_ct64_digest IS NOT NULL
-            AND observed_ct128_digest IS NOT NULL
-            AND observed_ct128_format IS NOT NULL
-        )
-    ),
     CHECK ((status = 'unresolved' AND resolved_task_id IS NULL)
         OR (status = 'resolved' AND resolved_task_id IS NOT NULL)),
     CHECK ((claimed_by IS NULL) = (claim_expires_at IS NULL)),
