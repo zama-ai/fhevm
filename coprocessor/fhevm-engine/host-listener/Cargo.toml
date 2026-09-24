@@ -5,6 +5,7 @@ edition = "2021"
 license.workspace = true
 
 [features]
+test-failpoints = ["consumer/test-failpoints"]
 default = []
 test_bypass_key_extraction = []
 
@@ -23,6 +24,13 @@ bench = false
 [[bin]]
 path = "src/bin/consumer.rs"
 name = "host_listener_consumer"
+test = false
+bench = false
+
+[[bin]]
+path = "src/bin/migration_test_key.rs"
+name = "migration_test_key"
+required-features = ["test-failpoints"]
 test = false
 bench = false
 

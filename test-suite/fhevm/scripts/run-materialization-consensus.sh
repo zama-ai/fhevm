@@ -27,6 +27,9 @@
 # operators really are scheduling differently.  See
 # scenarios/three-of-three-heterogeneous-scheduling.yaml.
 #
+# Fork and degraded coverage have their own runners (run-fork-consensus.sh,
+# run-degraded-consensus.sh) that record the fault and workload evidence the
+# inventory requires; this runner does not offer them as suites.
 set -uo pipefail
 
 readonly SCRIPT_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
@@ -65,22 +68,22 @@ while [[ $# -gt 0 ]]; do
       ;;
     --suite)
       [[ $# -ge 2 ]] || {
-        echo "--suite needs a value: materialization, reorg or comparator" >&2
+        echo "--suite needs a value: materialization, input, typed, bridge, reorg or comparator" >&2
         exit 2
       }
       SUITE="$2"
       shift 2
       ;;
     *)
-      echo "usage: run-materialization-consensus.sh [--heterogeneous] [--device-split] [--suite materialization|reorg|comparator]" >&2
+      echo "usage: run-materialization-consensus.sh [--heterogeneous] [--device-split] [--suite materialization|input|typed|bridge|reorg|comparator]" >&2
       exit 2
       ;;
   esac
 done
 case "$SUITE" in
-  materialization | reorg | comparator) ;;
+  materialization | input | typed | bridge | reorg | comparator) ;;
   *)
-    echo "unknown suite $SUITE (expected materialization, reorg or comparator)" >&2
+    echo "unknown suite $SUITE (expected materialization, input, typed, bridge, reorg or comparator)" >&2
     exit 2
     ;;
 esac
@@ -249,6 +252,7 @@ main() {
   done < <(operator_indexes)
 
   local suite_file suite_flag
+  local -a suite_args=()
   local -a watchdog_env=()
   if [[ "$SUITE" == reorg ]]; then
     suite_file=test/consensus/reorgConsensus.ts
@@ -259,6 +263,16 @@ main() {
     # down and leaves every one of them on the same chain, so a fleet-wide drift
     # check has nothing topological to trip over. If it fires now, that is a
     # finding rather than noise.
+  elif [[ "$SUITE" == bridge ]]; then
+    suite_file=test/bridge/confidentialBridge.ts
+    suite_flag=RUN_BRIDGE_BYTE_CONSENSUS
+    suite_args=(--grep "compares local and bridged dependencies")
+  elif [[ "$SUITE" == typed ]]; then
+    suite_file=test/consensus/typedBoundaryConsensus.ts
+    suite_flag=RUN_TYPED_BOUNDARY_CONSENSUS
+  elif [[ "$SUITE" == input ]]; then
+    suite_file=test/consensus/inputConsensus.ts
+    suite_flag=RUN_INPUT_CONSENSUS
   else
     suite_file=test/consensus/materializationConsensus.ts
     suite_flag=RUN_MATERIALIZATION_CONSENSUS
@@ -305,10 +319,15 @@ main() {
   # `cr` form: `cr_record` takes `artifact=NAME=value`, not raw flags.
   cr_read_run_identity identity_args || die "cannot establish complete run artifact identity"
 
+  local scheduling_case=SCH-01-HETEROGENEOUS
+  [[ "${CR_BACKEND_CLASS:-cpu}" != cpu* ]] || scheduling_case=SCH-06-CPU-DIVERSITY
   case "$SUITE" in
     materialization)
-      if [[ "$EXPECT_HETEROGENEOUS" == 1 ]]; then sp_case_start SCH-01-HETEROGENEOUS;
+      if [[ "$EXPECT_HETEROGENEOUS" == 1 ]]; then sp_case_start "$scheduling_case";
       else sp_case_start MAT-01-BOUNDARY-FANOUT MAT-02-ALIAS-SOURCING MAT-03-PLAINTEXT-ORACLE; fi ;;
+    bridge) sp_case_start MAT-08-BRIDGED-DEPENDENCY ;;
+    typed) sp_case_start MAT-06-TYPED-BOUNDARIES ;;
+    input) sp_case_start INPUT-01-COMPACT-LIST INPUT-02-REPLAY INPUT-03-INVALID-PROOF ;;
     reorg) sp_case_start REORG-01-REPLACEMENT-BLOCK ;;
   esac || die "cannot establish suite deadline"
   local suite_out status=0
@@ -326,7 +345,7 @@ main() {
     "${watchdog_env[@]}" \
     -e npm_config_update_notifier=false \
     "$TEST_CONTAINER" \
-    npx hardhat test "$suite_file" --network "$TEST_NETWORK" || status=$?
+    npx hardhat test "$suite_file" --network "$TEST_NETWORK" "${suite_args[@]}" || status=$?
   echo "$suite_out"
 
   # The thorough gate is the one whose numbers get quoted, so it is also the one
@@ -355,7 +374,7 @@ main() {
         # run -- but they are RECORDED from the session whose topology the
         # inventory names, rather than twice under two different topologies.
         case_ids=(); markers=()
-        [[ "$EXPECT_HETEROGENEOUS" == 1 ]] && { case_ids+=(SCH-01-HETEROGENEOUS); markers+=("executed scheduling"); }
+        [[ "$EXPECT_HETEROGENEOUS" == 1 ]] && { case_ids+=("$scheduling_case"); markers+=("executed scheduling"); }
         [[ "$EXPECT_DEVICE_SPLIT" == 1 ]] && { case_ids+=(SCH-02-DEVICE-SPLIT); markers+=("device split across CUDA devices"); }
         echo "  (heterogeneous session: the byte cases ran and are asserted, and are recorded from the homogeneous session)"
       else
@@ -367,6 +386,9 @@ main() {
         )
       fi
       ;;
+    bridge) case_ids=(MAT-08-BRIDGED-DEPENDENCY); markers=("[bridge-consensus] CASE COMPLETE") ;;
+    typed) case_ids=(MAT-06-TYPED-BOUNDARIES); markers=("[typed-boundary] CASE COMPLETE") ;;
+    input) case_ids=(INPUT-01-COMPACT-LIST INPUT-02-REPLAY INPUT-03-INVALID-PROOF); markers=("[input-consensus] CASE COMPLETE" "[input-consensus] CASE COMPLETE" "[input-consensus] CASE COMPLETE") ;;
     reorg)   case_ids=(REORG-01-REPLACEMENT-BLOCK); markers=("[reorg-consensus] CASE COMPLETE") ;;
   esac
 

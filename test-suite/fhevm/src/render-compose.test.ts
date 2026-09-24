@@ -138,6 +138,8 @@ instances:
         - --error-sleep-max-secs=30
       host-listener:
         - --initial-block-time=2
+      host-listener-consumer:
+        - --service-name=custom-consumer-one
 `),
   ),
 };
@@ -217,6 +219,19 @@ describe("render-compose", () => {
   test("exports the active state dir to compose env", async () => {
     await withTempStateDir(async (stateDir) => {
       expect((await composeEnv("coprocessor")).FHEVM_STATE_DIR).toBe(stateDir);
+    });
+  });
+
+  test("selects the published centralized core repository for an older release", async () => {
+    await withTempStateDir(async () => {
+      await mkdir(path.dirname(envPath("coprocessor")), { recursive: true });
+      await writeFile(envPath("coprocessor"), "\n");
+      await writeFile(envPath("coprocessor.1"), "\n");
+      const pinned = structuredClone(state);
+      pinned.versions.env.CORE_VERSION = "v0.14.0-1";
+      await generateComposeOverrides(pinned, stackSpecForState(pinned));
+      const doc = YAML.parse(await readFile(composePath("core"), "utf8"));
+      expect(doc.services["kms-core"].image).toBe("ghcr.io/zama-ai/kms/core-service:v0.14.0-1");
     });
   });
 
@@ -421,19 +436,21 @@ describe("render-compose", () => {
     expect(services).toContain("kms-connector-3-tx-sender");
   });
 
-  test("renders inherited two-of-two instances with local build tags when coprocessor build is active", async () => {
+  test("renders inherited two-of-two instances with local build tags and isolated broker identities", async () => {
     await withTempStateDir(async () => {
       await mkdir(path.dirname(envPath("coprocessor")), { recursive: true });
       await writeFile(envPath("coprocessor"), "\n");
       await writeFile(envPath("coprocessor.1"), "\n");
       await generateComposeOverrides(inheritedScenarioState, stackSpecForState(inheritedScenarioState));
       const doc = YAML.parse(await readFile(composePath("coprocessor"), "utf8")) as {
-        services: Record<string, { image?: string; build?: unknown }>;
+        services: Record<string, { image?: string; build?: unknown; command?: string[] }>;
       };
       expect(doc.services["coprocessor-host-listener"]?.image).toContain(":fhevm-local-i0");
       expect(doc.services["coprocessor1-host-listener"]?.image).toContain(":fhevm-local-i1");
       expect(doc.services["coprocessor-host-listener"]?.build).toBeTruthy();
       expect(doc.services["coprocessor1-host-listener"]?.build).toBeTruthy();
+      expect(doc.services["coprocessor-host-listener-consumer"]?.command).toContain("--service-name=host-listener-consumer");
+      expect(doc.services["coprocessor1-host-listener-consumer"]?.command).toContain("--service-name=coprocessor1-host-listener-consumer");
       const args = (doc.services["coprocessor-host-listener"]?.build as { args?: Record<string, string> })?.args;
       expect(args?.COPROCESSOR_RUNTIME_BASE_IMAGE).toBeUndefined();
       expect(args?.COPROCESSOR_DB_MIGRATION_RUNTIME_BASE_IMAGE).toBeUndefined();
@@ -675,6 +692,9 @@ describe("render-compose", () => {
       expect(doc.services["coprocessor1-host-listener"]?.command).toEqual(
         expect.arrayContaining(["--error-sleep-max-secs=30", "--initial-block-time=2"]),
       );
+      expect(doc.services["coprocessor1-host-listener-consumer"]?.command?.filter(
+        (argument) => argument.startsWith("--service-name="),
+      )).toEqual(["--service-name=custom-consumer-one"]);
     });
   });
 
@@ -933,8 +953,15 @@ gcs:
       await writeFile(envPath("coprocessor.1"), "\n");
       await generateComposeOverrides(bgState, stackSpecForState(bgState));
       const doc = YAML.parse(await readFile(composePath("coprocessor"), "utf8")) as {
-        services: Record<string, { container_name?: string }>;
+        services: Record<string, { container_name?: string; command?: string[] }>;
       };
+      const consumerNames = ["coprocessor", "coprocessor1", "coprocessor-gcs", "coprocessor1-gcs"].map(
+        (prefix) => doc.services[`${prefix}-host-listener-consumer`]?.command?.find(
+          (argument) => argument.startsWith("--service-name="),
+        ),
+      );
+      expect(consumerNames.every(Boolean)).toBe(true);
+      expect(new Set(consumerNames).size).toBe(4);
       // Operator 0: BCS as `coprocessor-*`, GCS as `coprocessor-gcs-*`.
       expect(doc.services["coprocessor-host-listener"]?.container_name).toBe("coprocessor-host-listener");
       expect(doc.services["coprocessor-gcs-host-listener"]?.container_name).toBe(

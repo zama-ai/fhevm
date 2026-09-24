@@ -1,3 +1,6 @@
+import { runRetainedMaterial } from "../consensus/retained-material-run";
+import { withRolloutSupervisor } from "../consensus/rollout-supervision";
+import { syntheticTrackReadinessSql, syntheticEvidenceAuditSql, SYNTHETIC_EVIDENCE_CLEANUP_SQL, DRY_RUN_EVIDENCE_INSTALL_SQL, DRY_RUN_EVIDENCE_CLEANUP_SQL, dryRunEvidenceReadinessSql } from "../../../e2e/test/consensus/upgradeEvidenceSql";
 /**
  * Runs named e2e test profiles, standard/heavy CI suites, and topology-specific test flows.
  */
@@ -18,6 +21,7 @@ import { loadState } from "../state/state";
 import { topologyForState } from "../stack-spec/stack-spec";
 import {
   COPROCESSOR_DB_CONTAINER,
+  STATE_DIR,
   PROJECT,
   composePath,
   DEFAULT_CHAIN_ID,
@@ -1060,6 +1064,18 @@ const runBlueGreenProfile = async (
     );
   }
 
+  // The E2E image already contains compiled contracts. Multiple traffic
+  // streams share its artifacts directory, so none may compile or prune it.
+  const precompiledOptions = { ...options, noHardhatCompile: true };
+  const quietSynthetic = process.env.BLUE_GREEN_QUIET_SYNTHETIC === "1";
+  const divergeHost = process.env.BLUE_GREEN_DIVERGE_HOST === "1";
+  const withholdHost = process.env.BLUE_GREEN_WITHHOLD_HOST === "1";
+  if (divergeHost && withholdHost) throw new PreflightError("select either divergent or withheld host reports");
+  const faultHost = withholdHost || divergeHost;
+  const interruptDetector = process.env.BLUE_GREEN_INTERRUPT_DETECTOR === "1";
+  if ((quietSynthetic || faultHost || interruptDetector) && (state.scenario.topology.count !== 3 || state.scenario.topology.threshold !== 2 || state.scenario.hostChains.length !== 2)) {
+    throw new PreflightError("quiet synthetic and host-report acceptance require three operators, threshold two and two host chains");
+  }
   // The proposal names the release the GCS image was built as.
   const gcsStackVersion = await gcsBinaryRelease();
   const gcsVersionLive = gcsStackVersion;
@@ -1076,7 +1092,27 @@ const runBlueGreenProfile = async (
   if (!Number.isSafeInteger(activeConsensusVersion) || activeConsensusVersion < 0) {
     throw new Error(`invalid active consensus version ${activeConsensusVersion}`);
   }
-  const gcsConsensusVersion = activeConsensusVersion + 1;
+  const gcsConsensusVersion = Number((await run(["docker", "exec", "coprocessor-gcs-upgrade-controller", "/usr/local/bin/upgrade-controller", "--consensus-version"])).stdout.trim());
+  if (!Number.isSafeInteger(gcsConsensusVersion) || gcsConsensusVersion <= activeConsensusVersion) {
+    throw new PreflightError("blue-green requires a real newer consensus protocol; software-only updates use the ordinary rolling path");
+  }
+  const interrupt = process.env.BLUE_GREEN_INTERRUPT ?? "none";
+  if (quietSynthetic && (faultHost || interruptDetector || interrupt !== "none")) {
+    throw new PreflightError("run quiet synthetic promotion separately from upgrade fault modes");
+  }
+  if (interruptDetector && (faultHost || interrupt !== "none")) throw new PreflightError("run detector interruption separately from other upgrade fault modes");
+  if (faultHost || interruptDetector) {
+    const hooks = await run(["docker", "exec", "coprocessor1-gcs-consensus-detector", "/usr/local/bin/consensus-detector", "--test-failpoints"]);
+    if (hooks.stdout.trim() !== "true") throw new PreflightError("host-report faults require consensus-detector/test-failpoints binaries");
+  }
+  if (!["none", "dry-run-started", "before-cutover-commit", "after-cutover-commit"].includes(interrupt)) throw new PreflightError("unknown BLUE_GREEN_INTERRUPT boundary");
+  if (interrupt !== "none") {
+    if (state.scenario.topology.count !== 3 || state.scenario.topology.threshold !== 2 || state.scenario.hostChains.length !== 2) {
+      throw new PreflightError("upgrade interruption requires the three-operator, two-chain topology");
+    }
+    const hooks = await run(["docker", "exec", "coprocessor1-gcs-upgrade-controller", "/usr/local/bin/upgrade-controller", "--test-failpoints"]);
+    if (hooks.stdout.trim() !== "true") throw new PreflightError("upgrade interruption requires upgrade-controller/test-failpoints binaries");
+  }
 
   const MIN_BLUE_GREEN_TRAFFIC_STREAMS = 2;
   const CROSS_CUTOVER_CHAIN_DEPTH = 5;
@@ -1136,12 +1172,20 @@ const runBlueGreenProfile = async (
   const trafficTargets: TrafficTarget[] = hostChains.map((chain, index) => ({
     label: chain.key,
     argv: buildTestContainerArgs(
-      runTestsArgs({ ...options, verbose: false, parallel: false, grep: erc20Grep }),
+      runTestsArgs({ ...precompiledOptions, verbose: false, parallel: false, grep: erc20Grep }),
       chainExtraExecArgs(index),
     ),
   }));
+  const cutoverFile = (index: number) => `/tmp/cross-cutover-${hostChains[index]!.chainId}.json`;
+  const cutoverArgs = (index: number, phase: "setup" | "transfer" | "verify", promoted = false) =>
+    buildTestContainerArgs(runTestsArgs({ ...precompiledOptions, verbose: false, parallel: false, grep: TEST_GREP[`cross-cutover-${phase}`] }), [
+      ...chainExtraExecArgs(index), "-e", `CROSS_CUTOVER_STATE_FILE=${cutoverFile(index)}`,
+      "-e", `CROSS_CUTOVER_POST_PROMOTION=${promoted ? "1" : "0"}`,
+      "-e", `CROSS_CUTOVER_REQUIRE_POST_PROMOTION=${promoted ? "1" : "0"}`,
+    ]);
+  const retainedValues: { chainId: string; mintHandle: string; mintTransaction: string }[] = [];
   const gatewayInputProbeArgv = buildTestContainerArgs(
-    runTestsArgs({ ...options, verbose: false, parallel: false, grep: gatewayInputGrep }),
+    runTestsArgs({ ...precompiledOptions, verbose: false, parallel: false, grep: gatewayInputGrep }),
     chainExtraExecArgs(0),
   );
   const blueGreenTrafficStreams = Math.max(MIN_BLUE_GREEN_TRAFFIC_STREAMS, trafficTargets.length);
@@ -1155,13 +1199,13 @@ const runBlueGreenProfile = async (
     })),
   );
 
-  // Host chains stay quiet (no non-trivial FHE op) while [3/11] anchors the Gateway
-  // track with one input. Recreate the GCS listeners with injection off first, so
-  // nothing manufactures work of its own and the window times out into the rollback
-  // this asserts. [4/11] turns it back on for the upgrade that succeeds.
-  console.log(`\n[2/11] failed upgrade: Gateway input, hosts quiet (no non-trivial host \u2192 no cutover)`);
-  const disabled = await setSyntheticOps(false);
-  console.log(`OK:   recreated ${disabled.length} GCS host-listener service(s) with synthetic ops disabled`);
+  // The default negative arm leaves hosts quiet. Host-report fault arms enable
+  // synthetic work and perturb one host publication instead. Both must time out
+  // into a reset, then allow a fresh proposal to succeed without the fault.
+  const failedUpgrade = async () => {
+  console.log(`\n[2/11] failed upgrade: ${faultHost ? `one eligible host report ${divergeHost ? "divergent" : "withheld"}` : "Gateway input with hosts quiet"}`);
+  const disabled = await setSyntheticOps(faultHost);
+  console.log(`OK:   recreated ${disabled.length} GCS host-listener service(s); synthetic ops ${faultHost ? "enabled" : "disabled"}`);
   const failStartTime = new Date(Date.now() + 30_000).toISOString();
   await runContractTask(
     "host-sc",
@@ -1208,10 +1252,14 @@ const runBlueGreenProfile = async (
     check: async () =>
       Number((await run(["cast", "block-number", "--rpc-url", gatewayRpcUrl])).stdout.trim()) >= failGwStartBlock,
   });
-  // Verify one Gateway input inside the window. The silenced operator never reports,
-  // so unanimity cannot form and the window must time out (asserted in [4/11]).
+  // Keep the Gateway track healthy in every arm. The deliberately quiet or
+  // perturbed host track must prevent upgrade unanimity (asserted in [4/11]).
   await run(gatewayInputProbeArgv);
-  console.log(`OK:   Gateway input submitted (host chains remain quiet)`);
+  if (faultHost) {
+    for (const target of trafficTargets) await run(target.argv);
+    console.log("[UPG-02] ordinary threshold-two computation/decryption succeeded on both host chains during the failed upgrade attempt");
+  }
+  console.log(`OK:   Gateway input submitted`);
 
   console.log(`\n[4/11] failed upgrade: wait for unanimity timeout rollback + verify reset`);
   for (const db of operatorDatabases) {
@@ -1264,6 +1312,15 @@ const runBlueGreenProfile = async (
     }
     console.log(`OK:   ${db}  PAUSED/failed, latches cleared, v0.14 kept, gcs schema recreated empty`);
   }
+  };
+  if (faultHost) {
+    await withRolloutSupervisor(STATE_DIR, "hold-host-report.sh", [], {
+      HOST_REPORT_MODE: divergeHost ? "diverge" : "withhold",
+      UPGRADE_FAULT_VERSION: gcsStackVersion,
+      UPGRADE_FAULT_CHAIN: hostChains[0]!.chainId,
+      UPGRADE_OTHER_CHAIN: hostChains[1]!.chainId,
+    }, failedUpgrade);
+  } else await failedUpgrade();
   const reenabled = await setSyntheticOps(true);
   console.log(`OK:   recreated ${reenabled.length} GCS host-listener service(s) with synthetic ops enabled`);
 
@@ -1271,34 +1328,36 @@ const runBlueGreenProfile = async (
   // public.ciphertexts with block_number < start_block. Transfers during the
   // dry-run window will force GCS's tfhe-worker to fall back to
   // public.ciphertexts for this handle.
+  await runRetainedMaterial(state, "seed", "blue-green");
   console.log(`\n[5/11] cross-cutover setup: deploy ERC20 + mint (pre-cutover)`);
-  const setupResult = await run(["./fhevm-cli", "test", "cross-cutover-setup"], { allowFailure: true });
-  if (setupResult.code !== 0) {
-    throw new Error("cross-cutover setup failed — see log above");
+  for (let index = 0; index < hostChains.length; index++) {
+    await run(cutoverArgs(index, "setup"));
+    const saved = JSON.parse((await run(buildTestContainerArgs(["cat", cutoverFile(index)]))).stdout);
+    if (saved.chainId !== hostChains[index]!.chainId || !/^0x[0-9a-f]{64}$/i.test(saved.mintHandle) ||
+        !/^0x[0-9a-f]{64}$/i.test(saved.mintTransaction)) throw new Error("missing receipt-identified pre-cutover value");
+    retainedValues.push(saved);
   }
   // Wait for the coprocessor stack to ingest the mint. hardhat returns as soon
   // as the tx is confirmed on-chain, but host-listener → tfhe-worker processes
   // the block asynchronously and the row in public.ciphertexts appears a
   // second or two later. Poll all operators before snapshotting.
   const preCutoverCounts = new Map<string, number>();
-  const preCutoverSampleHandle = new Map<string, string>();
   for (const db of operatorDatabases) {
-    await waitUntil({
-      label: `${db}  mint ciphertext ingested`,
-      timeoutSecs: 60,
-      check: async () =>
-        Number(await psqlQuery(db, "SELECT count(*) FROM public.ciphertexts;")) > 0,
-    });
+    for (const target of retainedValues) {
+      await waitUntil({ label: `${db} chain ${target.chainId} identified mint ingested`, timeoutSecs: 120,
+        check: async () => (await psqlQuery(db,
+          `SELECT count(*) FROM public.ciphertexts c JOIN public.computations p ON p.output_handle=c.handle
+           WHERE c.handle=decode('${target.mintHandle.slice(2)}','hex')
+             AND p.transaction_id=decode('${target.mintTransaction.slice(2)}','hex')
+             AND p.host_chain_id=${target.chainId} AND p.is_completed AND NOT p.is_error;`)) === "1",
+      });
+    }
     const count = Number(await psqlQuery(db, "SELECT count(*) FROM public.ciphertexts;"));
-    const sample = await psqlQuery(
-      db,
-      "SELECT encode(handle, 'hex') FROM public.ciphertexts ORDER BY handle LIMIT 1;",
-    );
     preCutoverCounts.set(db, count);
-    preCutoverSampleHandle.set(db, sample);
-    console.log(`OK:   ${db}  pre-cutover ciphertexts=${count} (sample handle recorded)`);
+    console.log(`OK:   ${db}  pre-cutover ciphertexts=${count} (all identified mint handles recorded)`);
   }
 
+  const completeUpgrade = async () => {
   console.log(`\n[6/11] propose upgrade via task:proposeCoprocessorUpgrade`);
   // Exercise the EOA task on the success path (a longer window with real traffic).
   const proposeStartTime = new Date(Date.now() + 30_000).toISOString();
@@ -1319,21 +1378,13 @@ const runBlueGreenProfile = async (
   );
   console.log(`OK:   activation emitted via task (proposalId=2, version=${gcsVersionLive}, start=${proposeStartTime})`);
 
-  console.log(`\n[7/11] wait for GCS DryRunStarted per operator`);
+  console.log(`\n[7/11] verify committed GCS DryRunStarted transitions per operator`);
   for (const db of operatorDatabases) {
     await waitUntil({
-      label: `${db}  GCS DryRunStarted`,
+      label: `${db}  proposal 2 entered GCS DryRunStarted`,
       timeoutSecs: 120,
-      check: async () =>
-        (await psqlQuery(
-          db,
-          `SELECT CASE WHEN COUNT(*)=${hostChains.length}
-                              AND BOOL_AND(state='DryRunStarted')
-                              AND COUNT(DISTINCT proposal_id)=1
-                              AND COUNT(DISTINCT proposal_block)=1
-                       THEN 'ready' ELSE 'waiting' END
-             FROM upgrade_state WHERE stack_role='GCS';`,
-        )) === "ready",
+      check: async () => (await psqlQuery(db,
+        dryRunEvidenceReadinessSql(gcsStackVersion, hostChains.map(chain => chain.chainId), 2))) === "ready",
     });
   }
 
@@ -1341,17 +1392,38 @@ const runBlueGreenProfile = async (
     `\n[8/11] start ${blueGreenTrafficStreams} background stream(s) across ` +
       `${trafficTargets.length} host chain(s) + cross-cutover chain (depth ${CROSS_CUTOVER_CHAIN_DEPTH})`,
   );
-  const traffic = startContinuousErc20Traffic(trafficTargets, blueGreenTrafficStreams);
+  if (quietSynthetic) {
+    // Only Gateway input traffic is admitted. Real host application traffic
+    // stays absent throughout the success window; host anchors need synthetic work.
+    const start = Number(await psqlQuery(operatorDatabases[0]!, "SELECT gw_start_block FROM upgrade_state WHERE stack_role='GCS' LIMIT 1;"));
+    await waitUntil({ label: "quiet success Gateway window", timeoutSecs: 120,
+      check: async () => Number((await run(["cast", "block-number", "--rpc-url", gatewayRpcUrl])).stdout.trim()) >= start });
+    await run(gatewayInputProbeArgv);
+    // Read durable observations of cutover's DELETE. Synthetic Gateway input
+    // can authorize promotion even before the explicit probe returns.
+    for (const db of operatorDatabases) {
+      await waitUntil({ label: `${db} synthetic work completed on every host track`, timeoutSecs: 180,
+        check: async () => (await psqlQuery(db,
+          syntheticTrackReadinessSql(gcsStackVersion, hostChains.map(chain => chain.chainId)))) === String(hostChains.length),
+      });
+      console.log(`[UPG-01] ${db} synthetic evidence: ` + await psqlQuery(db,
+        "SELECT jsonb_build_object('chain',host_chain_id,'markers',encode(markers,'hex'),'computations',computations) FROM public.consensus_test_synthetic_evidence ORDER BY host_chain_id;"));
+    }
+  }
+  const traffic = quietSynthetic
+    ? { errored: new Promise<never>(() => {}), stop: async () => ({ iterations: 0, retries: 0, failures: 0 }) }
+    : startContinuousErc20Traffic(trafficTargets, blueGreenTrafficStreams);
   let trafficStats: { iterations: number; retries: number; failures: number };
   try {
     // The chain is a stress signal — a fence hit mid-transfer is expected; [11/11] verifies actual transferCount.
     const chainPromise = (async () => {
+      if (quietSynthetic) return;
       for (let step = 1; step <= CROSS_CUTOVER_CHAIN_DEPTH; step += 1) {
         console.log(`  cross-cutover transfer ${step}/${CROSS_CUTOVER_CHAIN_DEPTH}`);
         let lastCode = 0;
         for (let attempt = 1; attempt <= TRAFFIC_MAX_RETRIES; attempt += 1) {
           const stepResult = await run(
-            ["./fhevm-cli", "test", "cross-cutover-transfer"],
+            cutoverArgs((step - 1) % hostChains.length, "transfer"),
             { allowFailure: true },
           );
           lastCode = stepResult.code;
@@ -1457,13 +1529,13 @@ const runBlueGreenProfile = async (
     });
   }
 
+  await runRetainedMaterial(state, "verify", "blue-green");
   console.log(`  cross-cutover verify: decrypt Alice's balance on promoted stack`);
-  const verifyResult = await run(["./fhevm-cli", "test", "cross-cutover-verify"], { allowFailure: true });
-  if (verifyResult.code !== 0) {
-    throw new Error(
-      "cross-cutover verify failed — decrypted balance ≠ expected math after cutover. " +
-        "Either the fallback query broke, or GCS lost/corrupted state across cutover.",
-    );
+  // The stress loop can finish before cutover or stop at a fence. Submit a
+  // required dependent transfer on EVERY chain after promotion was observed.
+  for (let index = 0; index < hostChains.length; index++) {
+    await run(cutoverArgs(index, "transfer", true));
+    await run(cutoverArgs(index, "verify", true));
   }
 
   for (const db of operatorDatabases) {
@@ -1479,21 +1551,61 @@ const runBlueGreenProfile = async (
         `${db} no new ciphertexts written after cutover (pre=${preCt}, final=${finalCt})`,
       );
     }
-    const sample = preCutoverSampleHandle.get(db)!;
-    const stillPresent = await psqlQuery(
-      db,
-      `SELECT encode(handle, 'hex') FROM public.ciphertexts WHERE handle = decode('${sample}', 'hex');`,
-    );
-    if (stillPresent !== sample) {
-      throw new Error(`${db} pre-cutover sample handle ${sample} not queryable post-cutover`);
+    for (const target of retainedValues) {
+      const present = await psqlQuery(db,
+        `SELECT count(*) FROM public.ciphertexts WHERE handle=decode('${target.mintHandle.slice(2)}','hex');`);
+      if (present !== "1") throw new Error(`${db} lost the identified pre-cutover value on chain ${target.chainId}`);
     }
-    console.log(
-      `OK:   ${db}  ciphertexts ${preCt} → ${finalCt} (sample handle survived, +${finalCt - preCt} new)`,
-    );
+    console.log(`OK: ${db} retained every identified pre-cutover value; ciphertexts ${preCt} -> ${finalCt}`);
   }
 
+  if (quietSynthetic) console.log("[UPG-01] quiet synthetic promotion and post-promotion application checks passed on both host chains");
   console.log(`\n==== ✓ Blue-Green E2E PASSED (${opCount} operator(s)) ====`);
   return true;
+  };
+  const dryRunInstalled: string[] = [];
+  const syntheticInstalled: string[] = [];
+  let profileFailure: unknown;
+  try {
+    // A fast successful upgrade can leave DryRunStarted between polls. Observe
+    // its committed transition before proposing, and retain it through promotion.
+    // Register each database before installing so a partially applied install
+    // is still cleaned up; the cleanup statements are all IF EXISTS.
+    for (const db of operatorDatabases) {
+      dryRunInstalled.push(db);
+      await psqlQuery(db, DRY_RUN_EVIDENCE_INSTALL_SQL);
+      if (quietSynthetic) {
+        syntheticInstalled.push(db);
+        await psqlQuery(db, syntheticEvidenceAuditSql(gcsStackVersion));
+      }
+    }
+    if (interruptDetector) return await withRolloutSupervisor(STATE_DIR, "hold-host-report.sh", [], {
+      HOST_REPORT_MODE: "interrupt", UPGRADE_FAULT_VERSION: gcsStackVersion,
+      UPGRADE_FAULT_CHAIN: hostChains[0]!.chainId, UPGRADE_OTHER_CHAIN: hostChains[1]!.chainId,
+    }, completeUpgrade);
+    if (interrupt === "none") return await completeUpgrade();
+    return await withRolloutSupervisor(STATE_DIR, "interrupt-upgrade-controller.sh", [], {
+      BLUE_GREEN_INTERRUPT: interrupt, UPGRADE_FAULT_DATABASE: operatorDatabases[1]!,
+      UPGRADE_FAULT_VERSION: gcsStackVersion, UPGRADE_FAULT_OLD_VERSION: "v0.14",
+    }, completeUpgrade);
+  } catch (error) {
+    profileFailure = error;
+    throw error;
+  } finally {
+    // Attempt every installed object's cleanup, including after partial setup.
+    const cleanup = await Promise.allSettled([
+      ...syntheticInstalled.map(db => psqlQuery(db, SYNTHETIC_EVIDENCE_CLEANUP_SQL)),
+      ...dryRunInstalled.map(db => psqlQuery(db, DRY_RUN_EVIDENCE_CLEANUP_SQL)),
+    ]);
+    const failures = cleanup.filter((result): result is PromiseRejectedResult => result.status === "rejected");
+    if (failures.length) {
+      // A cleanup failure must not hide why the profile itself failed.
+      const reasons = failures.map(result => result.reason);
+      const cause = profileFailure instanceof Error ? profileFailure.message : profileFailure === undefined ? undefined : String(profileFailure);
+      throw new AggregateError(profileFailure === undefined ? reasons : [profileFailure, ...reasons],
+        cause === undefined ? "upgrade evidence cleanup failed" : `blue-green failed (${cause}); upgrade evidence cleanup also failed`);
+    }
+  }
 };
 
 /** Runs the coprocessor DB state revert e2e flow against the active stack. */

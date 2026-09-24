@@ -87,6 +87,12 @@ export const resolveKmsTopology = (
   if (mode !== "centralized" && mode !== "threshold") {
     throw new Error(`${sourceLabel}.mode must be "centralized" or "threshold"`);
   }
+  if (block.insecureTestKeygen !== undefined && typeof block.insecureTestKeygen !== "boolean") {
+    throw new Error(`${sourceLabel}.insecureTestKeygen must be a boolean`);
+  }
+  if (block.insecureTestKeygen && mode !== "threshold") {
+    throw new Error(`${sourceLabel}.insecureTestKeygen requires threshold mode`);
+  }
   if (mode === "centralized") {
     // Single node: ignore parties/threshold. Only `KEYGEN_PARAMS_TYPE=1` (Test) is wired for the
     // threshold path; centralized never emits it, so accepting `fheParams: Test` here would be a
@@ -129,17 +135,20 @@ export const resolveKmsTopology = (
       `${sourceLabel}: KMS core requires committee === 3*threshold + 1; smallest committee is 4 (t=1), next valid sizes 7, 10. Got committeeSize=${committeeSize}, threshold=${threshold}`,
     );
   }
-  // Threshold uses SECURE keygen (real DKG preprocessing): it signs the on-chain prepKeygenId, so it
-  // passes the host KeygenVerification. With Test params it is ~360s for 4 parties (measured) — viable
-  // in CI. Default (prod-size) params need a multi-hour DKG (32-96 GiB/party), deferred to a follow-up
-  // PR, so threshold mode is Test-params-only for now.
+  // Secure Default preprocessing is too large for ordinary test stacks. The
+  // explicit insecure test mode preserves protocol request IDs and signatures,
+  // but intentionally makes no claim about distributed key-generation secrecy.
   const fheParams = block.fheParams ?? "Test";
-  if (fheParams !== "Test") {
-    throw new Error(
-      `${sourceLabel}.fheParams must be "Test" for threshold mode (Default params are deferred to a follow-up PR: secure DKG with Default params is hours + 32-96 GiB/party, not viable in CI)`,
-    );
+  if (fheParams !== "Test" && fheParams !== "Default") {
+    throw new Error(`${sourceLabel}.fheParams must be "Test" or "Default"`);
   }
-  return { mode, parties, threshold, committeeSize, fheParams };
+  if (fheParams === "Default" && !block.insecureTestKeygen) {
+    throw new Error(`${sourceLabel}.fheParams must be "Test" for secure threshold keygen; Default requires explicit insecureTestKeygen for isolated tests`);
+  }
+  return {
+    mode, parties, threshold, committeeSize, fheParams,
+    ...(block.insecureTestKeygen ? { insecureTestKeygen: true } : {}),
+  };
 };
 
 const COPROCESSOR_SCENARIO_KIND = "coprocessor-consensus";

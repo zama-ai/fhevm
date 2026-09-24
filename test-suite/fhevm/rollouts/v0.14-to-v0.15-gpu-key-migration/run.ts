@@ -1,8 +1,15 @@
+import { probeSoftwareCandidate, assertSoftwareCandidateRunning } from "./software-upgrade";
+import { runRetainedMaterial } from "../../src/consensus/retained-material-run";
+import { withRolloutSupervisor } from "../../src/consensus/rollout-supervision";
+import { withHeldRecipient } from "./held-recipient";
 import { createHash } from "node:crypto";
 import path from "node:path";
 
 import type { RolloutRunContext } from "../../src/commands/rollout-run";
-import { waitForContainer } from "../../src/flow/readiness";
+import { resolveRolloutSolidityRef } from "../../src/commands/rollout-solidity";
+import { parseContextAndEpoch } from "../../src/commands/kms-context-switch";
+import { uint256ToId } from "../../src/utils/fs";
+import { castCall, resolveKmsGenerationTarget, waitForContainer } from "../../src/flow/readiness";
 import {
   COPROCESSOR_DB_CONTAINER,
   DEFAULT_POSTGRES_PASSWORD,
@@ -10,6 +17,7 @@ import {
   coprocessorDatabaseName,
   defaultHostChainKey,
   MINIO_EXTERNAL_URL,
+  REPO_ROOT,
 } from "../../src/layout";
 import {
   kmsConnectorDbName,
@@ -27,6 +35,7 @@ import {
   assertOperatorMaterialAgreement,
 } from "./checks";
 import {
+  assertMigrationCandidateCheckout,
   migrationBaselineVersions,
   migrationPhaseVersions,
   migrationTargetSha,
@@ -78,9 +87,15 @@ const waitUntil = async (
   console.log(`[ready] ${label}`);
 };
 
-const activeKeyStateSql =
+// Hash large-object pages in order: Default SNS keys can exceed PostgreSQL's
+// single-bytea read limit. Include page numbers to detect sparse-page changes.
+// The zero-length read validates the OID, preserving errors for missing objects.
+export const activeKeyStateSql =
   "SELECT encode(key_id, 'hex') || '|' || encode(key_id_gw, 'hex') || '|' || md5(sks_key) || '|' || " +
-  "md5(pks_key) || '|' || COALESCE(md5(cks_key), 'NULL') || '|' || COALESCE(md5(lo_get(sns_pk)), 'NULL') || '|' || " +
+  "md5(pks_key) || '|' || COALESCE(md5(cks_key), 'NULL') || '|' || " +
+  "COALESCE(md5(encode(lo_get(sns_pk, 0, 0), 'hex') || COALESCE((SELECT " +
+  "string_agg(pageno::text || ':' || md5(data), ',' ORDER BY pageno) " +
+  "FROM pg_largeobject WHERE loid = sns_pk), '')), 'NULL') || '|' || " +
   "sequence_number || '|' || COALESCE(chain_id::text, 'NULL') || '|' || " +
   "COALESCE(encode(block_hash, 'hex'), 'NULL') || '|' || count(*) OVER () " +
   "FROM keys ORDER BY sequence_number DESC LIMIT 1;";
@@ -93,13 +108,13 @@ const hostChains = `hostChains:
     chainId: "67890"
     rpcPort: 8547`;
 
-const kmsTopology = `kms:
+const kmsTopology = (gpuContinuation: boolean) => `kms:
   mode: threshold
   parties: ${CONNECTOR_PARTIES}
   threshold: 1
-  fheParams: Test`;
+  fheParams: ${gpuContinuation ? "Default" : "Test"}${gpuContinuation ? "\n  insecureTestKeygen: true" : ""}`;
 
-export const migrationScenario = (baselineTag: string) => `version: 1
+export const migrationScenario = (baselineTag: string, gpuContinuation = false) => `version: 1
 kind: blue-green
 name: RFC 029 0.14 to 0.15 key migration
 ${hostChains}
@@ -116,7 +131,7 @@ gcs:
   deferredStart: true
   env:
     FORCE_LEGACY_SERVER_KEY: "true"
-${kmsTopology}
+${kmsTopology(gpuContinuation)}
 `;
 
 const connectorObservation = async (party: number): Promise<ConnectorObservation> => {
@@ -395,8 +410,29 @@ const upgradeContracts = async (ctx: RolloutRunContext, targetLock: string) => {
 };
 
 export default async function runMigration(ctx: RolloutRunContext) {
+  const migrationFault = process.env.RFC029_MIGRATION_FAULT ?? "none";
+  // Threshold Test keys use drift noise reduction, which CUDA does not support.
+  // Select the production parameter family before seeding any retained ciphertexts.
+  const gpuContinuation = process.env.RFC029_GPU_CONTINUATION === "1";
+  if (!["none", "lagging-recipient", "application-interruption", "download-interrupt", "download-wrong-digest", "download-malformed", "download-wrong-key"].includes(migrationFault)) throw new Error(`unsupported migration fault ${migrationFault}`);
   const versions = migrationVersions();
+  // Run the same baseline-compatible dApps throughout the migration. Current
+  // Solidity can call executor methods that did not exist before the upgrade.
+  const solidityLibraryRevision = await resolveRolloutSolidityRef(versions.baselineTag);
+  const migrationTest: RolloutRunContext["test"] = (profile, options = {}) =>
+    ctx.test(profile, { ...options, solidityLibraryRevision });
+  const softwareBaseline = process.env.RFC029_SOFTWARE_BASELINE_TAG;
+  if (softwareBaseline === versions.baselineTag) throw new Error("software-only baseline and target tags must differ");
   const targetSha = migrationTargetSha();
+  const checkout = (await run(["bash", "-c", 'source "$1"; sr_revision "$2"', "migration-source",
+    path.join(REPO_ROOT, "test-suite/fhevm/scripts/lib/source-revision.sh"), REPO_ROOT])).stdout.trim();
+  if (process.env.RFC029_ACCEPTANCE_MODE === "candidate") assertMigrationCandidateCheckout(targetSha, checkout);
+  console.log(`[migration source] target=${targetSha} checkout=${checkout} baseline=${versions.baselineTag}`);
+  await Bun.write(path.join(ctx.stateDir(), "rollout", "migration-source.json"), JSON.stringify({
+    mode: process.env.RFC029_ACCEPTANCE_MODE ?? "historical", targetSha, checkout, baselineTag: versions.baselineTag,
+    baselineSourceSha: process.env.RFC029_BASELINE_SOURCE_SHA ?? null,
+    note: "Actual runtime image identities and resolved locks are recorded in the rollout receipt; a baseline tag is not a release-tip attestation.",
+  }, null, 2));
   const targetSnapshotLock = await ctx.resolveVersionLock("rfc029-target-snapshot", {
     target: "sha",
     sha: targetSha,
@@ -435,16 +471,16 @@ export default async function runMigration(ctx: RolloutRunContext) {
     sources: targetSnapshot.sources,
   });
   const scenario = path.join(ctx.stateDir(), "rollout", "rfc029-v014-to-v015.yaml");
-  await Bun.write(scenario, migrationScenario(versions.baselineTag));
+  await Bun.write(scenario, migrationScenario(softwareBaseline ?? versions.baselineTag, gpuContinuation));
 
-  logPhase("00 boot 0.14 and generate the legacy Test key");
+  logPhase(`00 boot 0.14 and generate the legacy ${gpuContinuation ? "Default" : "Test"} key`);
   await ctx.up({
     lockFile: baselineLock,
     scenario,
     overrides: [{ group: "test-suite" }],
   });
   await assertGreenAbsent();
-  await assertActiveImageTag(versions.baselineTag);
+  await assertActiveImageTag(softwareBaseline ?? versions.baselineTag);
   for (let operator = 0; operator < OPERATOR_COUNT; operator += 1) {
     const state = await sqlScalar(
       coprocessorDatabaseName(operator),
@@ -455,7 +491,9 @@ export default async function runMigration(ctx: RolloutRunContext) {
       throw new Error(`operator ${operator} did not start with legacy-only key material: ${state}`);
     }
   }
-  await ctx.test("input-proof-compute-decrypt", { parallel: false });
+  await migrationTest("input-proof-compute-decrypt", { parallel: false });
+
+  await runRetainedMaterial(await ctx.readState(), "seed", "release-migration");
 
   const originalKeyStates = await Promise.all(
     Array.from({ length: OPERATOR_COUNT }, (_, operator) =>
@@ -463,15 +501,34 @@ export default async function runMigration(ctx: RolloutRunContext) {
     ),
   );
 
+  if (softwareBaseline) {
+    logPhase("00b replace distinct compatible release binaries without a protocol cutover");
+    const evidence = await probeSoftwareCandidate(ctx.stateDir(), versions.baselineTag, OPERATOR_COUNT);
+    const versionRows = await Promise.all(Array.from({ length: OPERATOR_COUNT }, (_, operator) =>
+      sqlScalar(coprocessorDatabaseName(operator), "SELECT row_to_json(v)::text FROM versioning v")));
+    await ctx.upgradeRuntimeGroup("coprocessor", { lockFile: baselineLock, bcsTag: versions.baselineTag });
+    await assertGreenAbsent();
+    await assertActiveImageTag(versions.baselineTag);
+    await assertSoftwareCandidateRunning(evidence);
+    for (let operator = 0; operator < OPERATOR_COUNT; operator++) {
+      if (await sqlScalar(coprocessorDatabaseName(operator), "SELECT row_to_json(v)::text FROM versioning v") !== versionRows[operator]) {
+        throw new Error("software-only replacement changed protocol versioning state");
+      }
+    }
+    await runRetainedMaterial(await ctx.readState(), "verify", "release-migration");
+  }
+
+
+
   logPhase("01 upgrade every changed Gateway and Host contract without invoking migration");
   await upgradeContracts(ctx, contractLock);
-  await ctx.test("input-proof-compute-decrypt", { parallel: false });
-  await ctx.test("public-decryption", { parallel: false });
-  await ctx.test("user-decryption", { parallel: false });
+  await migrationTest("input-proof-compute-decrypt", { parallel: false });
+  await migrationTest("public-decryption", { parallel: false });
+  await migrationTest("user-decryption", { parallel: false });
 
   logPhase("02 upgrade Relayer after contracts and before runtime consumers");
   await ctx.upgradeRuntimeGroup("relayer", { lockFile: relayerLock });
-  await ctx.test("input-proof-compute-decrypt", { parallel: false });
+  await migrationTest("input-proof-compute-decrypt", { parallel: false });
   const state = await ctx.readState();
   const hostKey = defaultHostChainKey(state.scenario.hostChains);
   const hostChain = state.scenario.hostChains.find((chain) => chain.key === hostKey);
@@ -489,9 +546,23 @@ export default async function runMigration(ctx: RolloutRunContext) {
   const deploymentBoundary = await currentHostBlock();
 
   logPhase("03 upgrade one KMS Core and Connector pair and prove a mixed fleet blocks migration");
+  // This scenario creates one context/epoch and performs no rotation before the upgrade.
+  // Read its association from ProtocolConfig; storage IDs cannot establish ownership.
+  const target = resolveKmsGenerationTarget(state);
+  if (!target.configAddress) throw new Error("KMS migration requires ProtocolConfig discovery");
+  const active = parseContextAndEpoch(await castCall(target.rpcUrl, target.configAddress, "getCurrentKmsContextAndEpoch()(uint256,uint256)"));
+  const migration = [{ contextId: uint256ToId(active.contextId), epochIds: [uint256ToId(active.epochId)] }];
+  for (const party of kmsPartyIds(CONNECTOR_PARTIES)) {
+    for (const [type, id] of [["Context", migration[0]!.contextId], ["PrssSetupCombined", migration[0]!.epochIds[0]!]]) {
+      const response = await fetch(`${MINIO_EXTERNAL_URL}/kms-public/PRIV-p${party}/${type}/${id}`, { method: "HEAD", signal: AbortSignal.timeout(30_000) });
+      if (!response.ok) throw new Error(`KMS party ${party} lacks the on-chain ${type} ${id}: HTTP ${response.status}`);
+    }
+  }
+  await Bun.write(path.join(ctx.stateDir(), "rollout", "kms-epoch-migration.json"), JSON.stringify(migration, null, 2));
   const baselineConnectorImages = (await connectorObservation(1)).images;
   await ctx.upgradeKmsOperators([1], {
     lockFile: connectorLock,
+    migration,
     overrides: [{ group: "kms-connector" }],
   });
   await assertKmsCoreVersions([1], phaseVersions.connector.CORE_VERSION!);
@@ -517,6 +588,7 @@ export default async function runMigration(ctx: RolloutRunContext) {
   for (const operator of [2, 3, 4]) {
     await ctx.upgradeKmsOperators([operator], {
       lockFile: connectorLock,
+      migration,
       overrides: [{ group: "kms-connector" }],
     });
     const operatorBoundary = await mineHostBlock();
@@ -537,9 +609,9 @@ export default async function runMigration(ctx: RolloutRunContext) {
       throw error;
     }
   }, 300);
-  await ctx.test("input-proof-compute-decrypt", { parallel: false });
-  await ctx.test("public-decryption", { parallel: false });
-  await ctx.test("user-decryption", { parallel: false });
+  await migrationTest("input-proof-compute-decrypt", { parallel: false });
+  await migrationTest("public-decryption", { parallel: false });
+  await migrationTest("user-decryption", { parallel: false });
 
   logPhase("05 upgrade listener-core before the 0.15 coprocessor fleet");
   await ctx.upgradeRuntimeGroup("listener-core", { lockFile: listenerCoreLock });
@@ -550,9 +622,25 @@ export default async function runMigration(ctx: RolloutRunContext) {
   await assertGreenWorkersParked();
 
   logPhase("07 cut over from 0.14 Blue to 0.15 Green through the existing Blue/Green flow");
-  await ctx.test("blue-green", { parallel: false });
+  await migrationTest("blue-green", { parallel: false });
 
-  logPhase("08 request compressed material for the existing active Test key");
+  if (process.env.RFC029_RETIRED_WRITERS === "1") {
+    logPhase("07b reject retired compute and publication with original prepared work");
+    const env = { RETIRED_OPERATOR_COUNT: String(OPERATOR_COUNT) };
+    await withRolloutSupervisor(ctx.stateDir(), "hold-retired-writers.sh", ["sns-worker"], env, async () => {
+      await runRetainedMaterial(await ctx.readState(), "retired-sns", "release-migration");
+      await withRolloutSupervisor(ctx.stateDir(), "hold-retired-writers.sh", ["tfhe-worker"], env, async () => {
+        await runRetainedMaterial(await ctx.readState(), "retired-tfhe", "release-migration");
+        for (let checkpoint = 0; checkpoint < 3; checkpoint++) {
+          await runRetainedMaterial(await ctx.readState(), "retired-check", "release-migration");
+          if (checkpoint < 2) await Bun.sleep(15_000);
+        }
+      });
+    });
+    await runRetainedMaterial(await ctx.readState(), "retired-recover", "release-migration");
+  }
+
+  logPhase("08 request compressed material for the existing active key");
   const keyIdHex = await sqlScalar(
     coprocessorDatabaseName(0),
     "SELECT encode(key_id, 'hex') FROM keys ORDER BY sequence_number DESC LIMIT 1;",
@@ -564,29 +652,57 @@ export default async function runMigration(ctx: RolloutRunContext) {
   }
   const migrationRequestBoundary = await currentHostBlock();
   const paramsType = state.scenario.kms.fheParams === "Test" ? 1 : 0;
-  await ctx.runHostContractTask(
-    `npx hardhat task:triggerKeygen --params-type ${paramsType} --existing-key-id ${keyId} --use-internal-proxy-address true`,
-  );
+  const generateMaterial = async () => {
+    await ctx.runHostContractTask(
+      `npx hardhat task:triggerKeygen --params-type ${paramsType} --existing-key-id ${keyId} --use-internal-proxy-address true`,
+    );
 
-  logPhase("09 wait until KMS and every 0.15 operator expose identical material");
-  await waitUntil(
-    "every KMS operator serves both representations under the original key ID",
-    async () => {
-      const legacy = await kmsPublicMaterialDigests("ServerKey", keyIdHex);
-      if (new Set(legacy).size !== 1) {
-        throw new Error("KMS operators serve different ServerKey material");
+    logPhase("09 wait until KMS and every 0.15 operator expose identical material");
+    await waitUntil(
+      "every KMS operator serves both representations under the original key ID",
+      async () => {
+        const legacy = await kmsPublicMaterialDigests("ServerKey", keyIdHex);
+        if (new Set(legacy).size !== 1) {
+          throw new Error("KMS operators serve different ServerKey material");
+        }
+        if (!legacy.every((digest, index) => digest === legacyKmsDigests[index])) {
+          throw new Error("KMS migration changed the existing ServerKey material");
+        }
+        const compressed = await kmsPublicMaterialDigests("CompressedXofKeySet", keyIdHex, true);
+        if (!compressed) return false;
+        if (new Set(compressed).size !== 1) {
+          throw new Error("KMS operators serve different CompressedXofKeySet material");
+        }
+        return true;
+      },
+    );
+    if (migrationFault === "lagging-recipient") {
+      await waitUntil("uninterrupted operator applied the selected migration", async () =>
+        Boolean(await operatorMaterial(0, keyIdHex, hostChainId, migrationRequestBoundary)));
+      if (await operatorMaterial(1, keyIdHex, hostChainId, migrationRequestBoundary)) {
+        throw new Error("held recipient claimed activation before its listener resumed");
       }
-      if (!legacy.every((digest, index) => digest === legacyKmsDigests[index])) {
-        throw new Error("KMS migration changed the existing ServerKey material");
-      }
-      const compressed = await kmsPublicMaterialDigests("CompressedXofKeySet", keyIdHex, true);
-      if (!compressed) return false;
-      if (new Set(compressed).size !== 1) {
-        throw new Error("KMS operators serve different CompressedXofKeySet material");
-      }
-      return true;
-    },
-  );
+      const lagging = await sqlScalar(coprocessorDatabaseName(1),
+        "SELECT (compressed_xof_keyset IS NOT NULL)::int FROM keys ORDER BY sequence_number DESC LIMIT 1;");
+      if (lagging !== "0") throw new Error("lagging recipient acquired compressed material during the observed outage");
+      console.log("[KEY-02 lagging arm] generation and operator 0 activation completed while operator 1 retained legacy-only material");
+    }
+  };
+  if (migrationFault !== "none") {
+    const names = (await run(["docker", "ps", "-a", "--format", "{{.Names}}"])).stdout.trim().split(/\r?\n/)
+      .filter(name => /^coprocessor1-gcs-host-listener(?:-[a-zA-Z0-9-]+)?$/.test(name));
+    if (names.length < 3) throw new Error("cannot identify every live listener role for the held recipient");
+    if (migrationFault === "lagging-recipient") await withHeldRecipient(ctx.stateDir(), names, generateMaterial);
+    else if (migrationFault.startsWith("download-")) await withRolloutSupervisor(ctx.stateDir(), "hold-key-download.sh", names, {
+      MIGRATION_KEY_HEX: keyIdHex, MIGRATION_DATABASE: coprocessorDatabaseName(1),
+      MIGRATION_DOWNLOAD_MODE: migrationFault.slice("download-".length),
+      POSTGRES_PASSWORD: DEFAULT_POSTGRES_PASSWORD,
+    }, generateMaterial);
+    else await withRolloutSupervisor(ctx.stateDir(), "interrupt-key-application.sh", names, {
+      MIGRATION_KEY_HEX: keyIdHex, MIGRATION_DATABASE: coprocessorDatabaseName(1),
+      POSTGRES_PASSWORD: DEFAULT_POSTGRES_PASSWORD,
+    }, generateMaterial);
+  } else await generateMaterial();
   let materialRows: OperatorMaterial[] = [];
   await waitUntil("all operators applied identical compressed material", async () => {
     const rows = await Promise.all(
@@ -620,10 +736,33 @@ export default async function runMigration(ctx: RolloutRunContext) {
   await restartActiveKeyWorkers("Green");
   await assertGreenForcedLegacy();
   await assertWorkerRepresentation("Green", EAGER_KEY_WORKERS, "legacy", activeRestartedAt);
-  await ctx.test("input-proof-compute-decrypt", { parallel: false });
+  await migrationTest("input-proof-compute-decrypt", { parallel: false });
   await assertWorkerRepresentation("Green", ["tfhe-worker"], "legacy", activeRestartedAt);
 
   logPhase("10 verify normal 0.15 encryption and decryption remain functional");
-  await ctx.test("public-decryption", { parallel: false });
-  await ctx.test("user-decryption", { parallel: false });
+  await migrationTest("public-decryption", { parallel: false });
+  await migrationTest("user-decryption", { parallel: false });
+  await runRetainedMaterial(await ctx.readState(), "verify", "release-migration");
+  if (gpuContinuation) {
+    if (!process.env.RFC029_GPU_IMAGES) throw new Error("GPU continuation requires the package-migration image receipt");
+    logPhase("11 consume migrated compressed keys on GPU, then repeat after a worker restart");
+    const since = new Date().toISOString();
+    await withRolloutSupervisor(ctx.stateDir(), "hold-migration-gpu.sh", [], {
+      RFC029_GPU_IMAGES: process.env.RFC029_GPU_IMAGES,
+    }, async () => {
+      for (const checkpoint of ["initial load", "restart"]) {
+        const boundary = checkpoint === "initial load" ? since : new Date().toISOString();
+        if (checkpoint === "restart") await restartActiveKeyWorkers("Green");
+        await runRetainedMaterial(await ctx.readState(), "verify", "release-migration", true);
+        await assertWorkerRepresentation("Green", KEY_WORKERS, "compressed-xof", boundary);
+        for (let operator = 0; operator < OPERATOR_COUNT; operator++) {
+          if (await sqlScalar(coprocessorDatabaseName(operator), activeKeyStateSql) !== originalKeyStates[operator]) {
+            throw new Error("GPU serving changed original key identity or legacy material");
+          }
+        }
+      }
+    });
+    await assertGreenForcedLegacy();
+  }
+
 }

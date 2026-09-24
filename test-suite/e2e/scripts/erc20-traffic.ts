@@ -151,11 +151,13 @@ const decryptBalance = async (ctx: Ctx, holder: Holder): Promise<bigint> => {
   const handle = await ctx.token.balanceOf(ctx.signers[holder].address);
   // A holder who has never been credited has an uninitialized handle, which is a balance of 0.
   if (handle === ZERO_HANDLE) return 0n;
-  return ctx.instances[holder].userDecryptSingleHandle({
+  const value = await ctx.instances[holder].userDecryptSingleHandle({
     handle,
     contractAddress: ctx.state.contractAddress,
     signer: ctx.signers[holder],
   });
+  if (typeof value !== 'bigint') throw new Error('ERC20 balance decryption returned a non-integer value');
+  return value;
 };
 
 const transfer = async (ctx: Ctx, from: Holder, to: Holder, amount: bigint) => {
@@ -361,11 +363,13 @@ const verify = async () => {
     const mark = atRisk(entry) ? ' [in upgrade window, before the flip]' : '';
     let value: bigint;
     try {
-      value = await ctx.instances[entry.holder].userDecryptSingleHandle({
+      const decrypted = await ctx.instances[entry.holder].userDecryptSingleHandle({
         handle: entry.handle,
         contractAddress: state.contractAddress,
         signer: ctx.signers[entry.holder],
       });
+      if (typeof decrypted !== 'bigint') throw new Error('ERC20 history decryption returned a non-integer value');
+      value = decrypted;
     } catch (err) {
       ok = false;
       log(`verify #${entry.iteration} ${entry.holder} block ${entry.block}${mark}: FAILED ${err instanceof Error ? err.message : String(err)}`);

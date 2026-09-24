@@ -1,27 +1,110 @@
-# Consensus agreement inventory. Full means all required cases in this layer.
-# Service fault, interrupted-work, degraded availability, and replay/repair campaigns
-# are introduced by the following failure-mode PR, not silently skipped here.
+# The consensus coverage inventory.
+#
+# One row per case, and the row is the contract: what property a green
+# establishes, which topology it needs, which fault is applied at which stage,
+# how that fault is independently observed, what the quorum outcome must be,
+# and which runner executes it.
+#
+# It exists because a reader could not previously tell what a green consensus
+# run established. The suites carried the answer in prose comments, the runners
+# carried it in shell control flow, and the workflow carried a third version in
+# `if:` conditions -- so "the failure matrix passed" said nothing about whether
+# any fault had actually landed. Everything that selects, runs, or reports on a
+# case now derives from this file, and `consensus-inventory.ts aggregate`
+# refuses a run whose results do not match the plan it claims to implement.
+#
+# Field contract (validated by src/consensus/inventory.ts):
+#
+#   id           stable, unique, upper-kebab. Referenced by runners, results
+#                and CI selections; never renamed silently.
+#   property     what a PASS establishes, in one sentence. Not a restatement of
+#                the mechanism.
+#   family       selection unit. A CI leg selects families, not individual ids.
+#   topology     scenario/operators/threshold and locally compatible backends.
+#                This list does not claim CI executes every backend.
+#   services     container roles that must be present; a case whose service is
+#                absent is NOT_APPLICABLE for that topology, never PASS.
+#   capabilities host facilities the case needs (docker-socket, systemd-user,
+#                gpu, two-gpus, dual-anvil, isolated-stack).
+#   workload     the work whose fate is asserted. "fresh work after recovery"
+#                is a smoke test and must say so.
+#   fault        mechanism/stage/observation. `observation` is the independent
+#                postcondition proving the fault landed -- a successful signal
+#                command is not one.
+#   participants compute/submit sets and the quorum mode:
+#                  required     quorum must form for the case's workload
+#                  forbidden    quorum must NOT form during the window
+#                  not_checked  allowed only for a named lower-layer case
+#   assertions   the case contract, stated separately for safety, liveness,
+#                quorum, bytes/digests and cleanup.
+#   timeout_s    the case's own deadline. A timeout is INVALID, not PASS.
+#   cleanup      what must be restored, and verified restored, afterwards.
+#   runner       the command that executes it.
+#   ci           workflow leg and the one backend whose coverage CI requires.
+#   artifacts    evidence a run must retain.
+#   acceptance   required | deferred | smoke
+#                  required   must PASS in its environment for delivery
+#                  smoke      supplementary liveness/regression signal; a green
+#                             does NOT establish a failure-recovery property
+#                  deferred   named, out of scope, with a boundary and reason
 schema_version: 2
+
+# Named selections, so the workflow does not carry a second copy of them in a
+# shell `case`. `full` is checked by a unit test against the required set: a
+# selection named full that omits a required case is a defect, and that is
+# exactly what `--column all` silently was.
 selections:
   harness: [harness]
   rust-regression: [rust-regression]
   smoke: [byte-agreement]
-  standard: [harness, rust-regression, byte-agreement, fork]
-  full: [harness, rust-regression, byte-agreement, fork, gpu]
+  standard: [harness, rust-regression, byte-agreement, degraded, fork, failure-matrix, failure-matrix-db, crash-retry, bridge, cpu-scheduling, backlog, object-integrity, host-rpc, broker-redelivery, storage-pressure, submission-partition]
+  full:
+    - harness
+    - rust-regression
+    - byte-agreement
+    - degraded
+    - fork
+    - failure-matrix
+    - failure-matrix-db
+    - crash-retry
+    - gpu
+    - bridge
+    - cpu-scheduling
+    - backlog
+    - object-integrity
+    - host-rpc
+    - broker-redelivery
+    - storage-pressure
+    - submission-partition
+
 families:
+  input:
+    description: Verified compact input bytes, identity, replay and explicit rejection.
   materialization:
-    description: Canonical bytes, digests, provenance, completion, quorum and plaintext.
+    description: "The byte oracle: raw bytes, digest bindings, provenance, transaction completion, gateway quorum, plaintext."
   reorg:
-    description: Distinct replacement blocks with identical handle sourcing.
+    description: Replacement-block identity on one chain.
   fork:
-    description: Competing-branch agreement and orphan authorization safety.
+    description: Competing branches, orphaned content, stale dependencies, replay.
+  degraded:
+    description: Quorum safety and liveness with an operator removed.
+  crash-retry:
+    description: Interruption of identified in-flight work, and its recovery.
+  failure-matrix:
+    description: Per-service fault injection with service-appropriate workloads.
+  failure-matrix-db:
+    description: Shared-database faults, isolated because they hit the whole fleet.
+  gpu-lifecycle:
+    description: GPU worker ownership, restoration, exclusivity and safe database revert.
   scheduling:
-    description: Observed execution diversity within one backend and hardware class.
+    description: Execution diversity - scheduling and device placement independence.
   regression:
-    description: Focused regressions for the prerequisite production fixes.
+    description: Targeted regression tests for the production changes in this PR.
   harness:
-    description: Comparator, inventory and readiness contracts.
+    description: Contract tests for the harness itself; no stack required.
+
 cases:
+  # ---------------------------------------------------------------- materialization
   - id: MAT-01-BOUNDARY-FANOUT
     family: materialization
     property: >-
@@ -90,6 +173,28 @@ cases:
     runner: scripts/run-materialization-consensus.sh --suite materialization
     ci: { leg: byte-agreement, backend: cpu }
     artifacts: [case-results, suite-log]
+    acceptance: required
+
+  - id: MAT-04-CANARY-COMPUTE-DIGEST
+    family: materialization
+    property: >-
+      The comparator the suite actually calls rejects a fleet in which one operator's
+      stored compute digest has been poisoned, with a digest-mismatch classification
+      rather than a timeout or a read failure.
+    topology: { scenario: three-of-three, operators: 3, threshold: 3, backends: [cpu, gpu] }
+    services: [tfhe-worker, sns-worker]
+    capabilities: []
+    workload: A published handle whose digest is flipped on one compared operator and then restored.
+    fault: { mechanism: digest-tamper, stage: after-publication, observation: comparator rejection classified as digest mismatch }
+    participants: { compute: all, submit: all, quorum: not_checked }
+    assertions:
+      - safety: clean comparison passes, poisoned comparison fails with a digest mismatch, restored comparison passes
+      - safety: a database outage or timeout does NOT satisfy the poisoned arm
+    timeout_s: 900
+    cleanup: [restore the original digest bytes]
+    runner: scripts/run-degraded-consensus.sh --case canary
+    ci: { leg: degraded, backend: cpu }
+    artifacts: [case-results, canary-classification]
     acceptance: required
 
   - id: MAT-05-CANARY-CLASSES
@@ -216,12 +321,823 @@ cases:
     artifacts: [case-results, decryption-rejection]
     acceptance: required
 
+  - id: FORK-04-STRANDED-CHILD
+    family: fork
+    property: >-
+      After branch replacement, a lost producer-release decrement must not strand
+      its identified cross-block child. A disabled-repair mutation leaves the
+      actual child stuck; enabling repair acquires and completes that same work.
+    topology: { scenario: three-of-three-fork, operators: 3, threshold: 3, backends: [cpu, gpu] }
+    services: [tfhe-worker, host-listener, host-listener-poller]
+    capabilities: [dual-anvil]
+    workload: A real producer and dependent child; the producer completes but a scoped SQL fault loses its gate decrement after branch replacement.
+    fault:
+      mechanism: branch-replacement-with-lost-gate-decrement
+      stage: child gated, producer not yet released
+      observation: the child remains gated and unowned with no unprocessed producer while its actual stale-gate repair attempts are suppressed
+    participants: { compute: all, submit: all, quorum: not_checked }
+    assertions:
+      - precondition: the selected child is observed gated, by chain id, before the disruptive event
+      - liveness: enabling repair records a committed repair acquisition and completes the selected child without a computation error
+      - bytes: the repaired orphan child materializes ciphertext bound to its own durable compute and SNS digests
+      - safety: no chain matching the stranded predicate survives on any operator
+      - sensitivity: with repair disabled the case FAILS (verified by the mutation control)
+    timeout_s: 1800
+    cleanup: [remove per-child SQL controls and audit, resume the worker]
+    runner: scripts/run-fork-consensus.sh --case f4
+    ci: { leg: fork, backend: cpu }
+    artifacts: [case-results, dependence-chain-snapshots]
+    acceptance: required
+
+  - id: FORK-05-REPLAY
+    family: fork
+    property: >-
+      Replaying an identified, already-ingested block range through the ordinary
+      poller path re-ingests exactly those events and changes no committed state.
+    topology: { scenario: three-of-three-fork, operators: 3, threshold: 3, backends: [cpu, gpu] }
+    services: [host-listener-poller]
+    capabilities: [dual-anvil, service-control]
+    workload: A newly minted, identified producer and cross-block child with observed computations, allows and dependence chains in their receipt block range.
+    fault:
+      mechanism: cursor-rewind-with-poller-restart
+      stage: poller stopped, watermark recorded, cursor rewound, poller restarted
+      observation: the selected graph has nonempty persisted effects; committed insert-conflict attempts from the restarted poller's DB-client IP prove delivery before its cursor passes the watermark
+    participants: { compute: all, submit: all, quorum: not_checked }
+    assertions:
+      - precondition: the rewound range contains the selected computations and dependents
+      - liveness: each exact producer and child event reaches a committed insert attempt from the restarted poller, and its cursor advances
+      - safety: selected computation rows, allow observations and dependence chains are unchanged
+      - safety: no dependents array gains a duplicate entry
+      - safety: a successful cursor UPDATE alone does NOT satisfy the replay evidence
+    timeout_s: 1800
+    cleanup: [restart the poller with its original configuration and verify it advances]
+    runner: scripts/run-fork-consensus.sh --case f5
+    ci: { leg: fork, backend: cpu }
+    artifacts: [case-results, poller-watermarks, poller-journal]
+    acceptance: required
+
+  # ---------------------------------------------------------------- degraded
+  - id: DEG-01-AGREEMENT-QUORUM
+    family: degraded
+    property: >-
+      The fleet agrees and reaches its configured quorum on an ordinary encrypted
+      operation. Established under unanimity, which is the strongest form of the
+      claim: every operator must compute the same bytes AND submit. DEG-03 carries
+      the majority-threshold form.
+    topology: { scenario: three-of-three, operators: 3, threshold: 3, backends: [cpu, gpu] }
+    services: [tfhe-worker, sns-worker, transaction-sender, gw-listener]
+    capabilities: []
+    workload: One AliasFixture add over persisted boundary operands.
+    fault: { mechanism: none, stage: none, observation: none }
+    participants: { compute: all, submit: all, quorum: required }
+    assertions:
+      - bytes: identical bytes, compute digests and SNS digests across all operators
+      - quorum: quorum forms from distinct authorized gateway members at the configured threshold
+    timeout_s: 1800
+    cleanup: [none]
+    runner: scripts/run-degraded-consensus.sh --case agreement
+    ci: { leg: degraded, backend: cpu }
+    artifacts: [case-results, gateway-threshold]
+    acceptance: required
+
+  - id: DEG-02-SAME-BLOCK-PAIR
+    family: degraded
+    property: >-
+      A prior-block boundary consumed by two independent same-block transactions
+      converges to one value, attributed to both producing transactions. The
+      threshold is not load-bearing here -- the claim is about aliasing within one
+      block -- so it is established on the same stack as the rest of the byte
+      cases.
+    topology: { scenario: three-of-three, operators: 3, threshold: 3, backends: [cpu, gpu] }
+    services: [tfhe-worker, sns-worker, host-listener]
+    capabilities: [anvil-control]
+    workload: Two transactions consuming the same persisted boundaries, mined into one block under controlled mining.
+    fault: { mechanism: none, stage: none, observation: none }
+    participants: { compute: all, submit: all, quorum: required }
+    assertions:
+      - precondition: both receipts report the SAME block number, and both producing transactions are identified
+      - bytes: one value per aliased handle on every operator
+      - provenance: the normalized producing-transaction set is identical across operators
+    timeout_s: 1800
+    cleanup: [restore the recorded mining configuration]
+    runner: scripts/run-degraded-consensus.sh --case same-block
+    ci: { leg: degraded, backend: cpu }
+    artifacts: [case-results, receipts]
+    acceptance: required
+
+  - id: DEG-03-MAJORITY-AVAILABLE
+    family: degraded
+    property: >-
+      With one operator fully offline, a 2-of-3 topology still reaches its configured
+      quorum on work submitted DURING the outage, and the survivors agree on it.
+    topology: { scenario: two-of-three, operators: 3, threshold: 2, backends: [cpu, gpu] }
+    services: [tfhe-worker, sns-worker, transaction-sender, host-listener, gw-listener, host-listener-poller, host-listener-consumer]
+    capabilities: [service-control]
+    workload: A handle minted while the victim operator's every ingestion and submission path is down.
+    fault:
+      mechanism: operator-offline
+      stage: before the workload is submitted
+      observation: every configured service of the victim is confirmed not running, and the victim's database records no ingestion of the workload's block
+    participants: { compute: survivors, submit: survivors, quorum: required }
+    assertions:
+      - precondition: the victim is verified offline across ALL its configured services, not a hardcoded subset
+      - bytes: survivors agree on bytes, compute digests and SNS digests
+      - quorum: quorum forms at the configured threshold from surviving members only
+      - safety: the returning operator is not needed for this case's quorum
+    timeout_s: 2400
+    cleanup: [restore the victim with its recorded configuration and verify one worker implementation per queue]
+    runner: scripts/run-degraded-consensus.sh --case outage
+    ci: { leg: degraded, backend: cpu }
+    artifacts: [case-results, fault-evidence, gateway-threshold]
+    acceptance: required
+
+  - id: DEG-04-UNANIMOUS-NO-QUORUM
+    family: degraded
+    property: >-
+      With one operator offline in a 3-of-3 topology, the survivors still compute
+      consistently but NO consensus event forms for that work during the observation
+      window.
+    topology: { scenario: three-of-three, operators: 3, threshold: 3, backends: [cpu, gpu] }
+    services: [tfhe-worker, sns-worker, transaction-sender, host-listener, gw-listener, host-listener-poller, host-listener-consumer]
+    capabilities: [service-control]
+    workload: A handle minted while the victim operator is fully offline.
+    fault:
+      mechanism: operator-offline
+      stage: before the workload is submitted
+      observation: every configured service of the victim is confirmed not running
+    participants: { compute: survivors, submit: survivors, quorum: forbidden }
+    assertions:
+      - precondition: gateway reads succeed and the gateway chain advances throughout the window
+      - bytes: survivors agree on bytes and digests
+      - quorum: no consensus event exists for the workload's handle within a window tied to the observed submission timing
+      - safety: an RPC error is NOT accepted as proof of absent quorum
+    timeout_s: 2400
+    cleanup: [restore the victim with its recorded configuration]
+    runner: scripts/run-degraded-consensus.sh --case outage
+    ci: { leg: degraded, backend: cpu }
+    artifacts: [case-results, fault-evidence, gateway-head-progress]
+    acceptance: required
+
+  - id: DEG-05-BACKLOG-CONVERGENCE
+    family: degraded
+    property: >-
+      A returning operator consumes the backlog created while it was offline and
+      agrees on those SAME handles; a unanimous topology then reaches quorum for them.
+    topology: { scenario: three-of-three, operators: 3, threshold: 3, backends: [cpu, gpu] }
+    services: [tfhe-worker, sns-worker, transaction-sender, host-listener, gw-listener]
+    capabilities: [service-control]
+    workload: The handles minted during DEG-04's outage - the same fixture and the same handles, NOT a redeployment.
+    fault: { mechanism: operator-restored, stage: after the outage workload exists, observation: the victim's services are running again with recorded configuration }
+    participants: { compute: all, submit: all, quorum: required }
+    assertions:
+      - liveness: the returned operator produces rows for the original handles
+      - bytes: its bytes and digests equal the survivors' for those handles
+      - quorum: those same handles reach quorum once the operator has returned
+      - safety: a fresh handle minted after recovery does NOT satisfy this case
+    timeout_s: 2400
+    cleanup: [verify one worker implementation per queue and no orphaned units]
+    runner: scripts/run-degraded-consensus.sh --case outage
+    ci: { leg: degraded, backend: cpu }
+    artifacts: [case-results, backlog-handles]
+    acceptance: required
+
+  - id: DEG-06-GW-LISTENER-INFLIGHT
+    family: degraded
+    property: >-
+      A gateway event pending when every gw-listener restarts is compared by each
+      replacement, proved by one event-specific drift warning against a safely poisoned
+      published local digest; the originals are restored and the commitment remains valid.
+    topology: { scenario: three-of-three, operators: 3, threshold: 3, backends: [cpu, gpu] }
+    services: [gw-listener]
+    capabilities: [service-control]
+    workload: An identified gateway event created BEFORE the restart and still unacknowledged at restart time.
+    fault:
+      mechanism: service-restart-in-flight
+      stage: event observed pending, before acknowledgement
+      observation: the event is pending pre-restart; the old process is killed while frozen; each replacement warns with the exact handle, block hash, transaction hash and log index
+    participants: { compute: all, submit: all, quorum: required }
+    assertions:
+      - precondition: the selected event is observed at the pending stage before any restart
+      - liveness: the exact event is ingested after the restart
+      - safety: exactly one matching drift warning per replacement in the observation window
+      - safety: every poisoned digest is restored, including when arming or recovery fails
+      - quorum: the workload's commitment forms
+      - safety: restarting, sleeping and minting a NEW handle does not satisfy this case
+    timeout_s: 2400
+    cleanup: [restore-published-digests, resume-listeners]
+    runner: scripts/run-degraded-consensus.sh --case gw
+    ci: { leg: degraded, backend: cpu }
+    artifacts: [case-results, event-stage-evidence, gw-listener-journal]
+    acceptance: required
+
+  # ---------------------------------------------------------------- crash-retry
+  - id: CR-01-INTERRUPT-BEFORE-COMMIT
+    family: crash-retry
+    property: >-
+      A worker interrupted after it began executing an IDENTIFIED transaction and
+      before durable commit re-executes that same work after supervisor restart, and
+      the result is byte-identical to operators that executed it once.
+    topology: { scenario: three-of-three, operators: 3, threshold: 3, backends: [cpu, gpu] }
+    services: [tfhe-worker]
+    capabilities: [service-control, failpoints]
+    workload: A published set of target transaction and handle ids, handed to the orchestrator through a structured handshake.
+    fault:
+      mechanism: sigkill-to-worker-main-process
+      stage: the victim has acquired and begun executing the target transaction, before its durable completion
+      observation: >-
+        the target's computations are recorded as claimed by the victim's worker before the
+        signal; the old process/invocation exits; a new invocation appears; and the target
+        work is claimed again afterwards
+    participants: { compute: all, submit: all, quorum: required }
+    assertions:
+      - quorum: every recovered target handle reaches the required commitment from distinct authorized members
+      - precondition: the target transaction is observed ACQUIRED by the victim, not merely pending
+      - fault: process death and supervisor restart are both observed
+      - liveness: the same target work is retried and completes
+      - bytes: the victim's bytes and digests equal the uninterrupted operators' for the target handles
+      - safety: every target transaction completes atomically with zero errored computations
+      - safety: exactly one canonical storage row per target handle
+      - safety: no orphaned locks or gates remain after the recovery deadline
+      - safety: a run that required manual recovery is reported as a DIFFERENT outcome, not PASS
+    timeout_s: 2400
+    cleanup: [verify the victim is served by exactly one worker implementation]
+    runner: scripts/run-crash-retry-consensus.sh --victim 1 --boundary before-commit
+    ci: { leg: crash-retry, backend: cpu }
+    artifacts: [case-results, claim-evidence, process-identities, worker-journal]
+    acceptance: required
+
+  - id: CR-02-INTERRUPT-AFTER-COMMIT
+    family: crash-retry
+    property: >-
+      A worker interrupted after durable commit but before downstream release does
+      not lose or duplicate the committed work: the gate is released after recovery
+      and the bytes are unchanged.
+    topology: { scenario: three-of-three, operators: 3, threshold: 3, backends: [cpu, gpu] }
+    services: [tfhe-worker]
+    capabilities: [service-control, failpoints]
+    workload: A dependent pair whose producer commits and is interrupted before releasing its dependents.
+    fault:
+      mechanism: test-feature-post-commit-hook-and-sigkill
+      stage: after the producer's durable commit, before dependent release
+      observation: the producer's rows are committed while its dependents' gate is still closed at the moment of the abort
+    participants: { compute: all, submit: all, quorum: required }
+    assertions:
+      - quorum: every recovered target handle reaches the required commitment from distinct authorized members
+      - precondition: the post-commit, pre-release boundary is observed
+      - liveness: the dependent's gate is released after recovery and the dependent completes
+      - safety: the producer's committed bytes are unchanged and not duplicated
+    timeout_s: 1800
+    cleanup: [failpoint disabled and verified inactive]
+    runner: scripts/run-crash-retry-consensus.sh --victim 1 --boundary after-commit
+    ci: { leg: crash-retry, backend: cpu }
+    artifacts: [case-results, boundary-evidence]
+    acceptance: required
+
+  - id: CR-03-EXPIRED-LEASE-RECLAIM
+    family: crash-retry
+    property: >-
+      Work whose lease expires while held is reclaimed by another legitimate claimant
+      and re-executed to byte-identical output, with attribution recorded rather than
+      suppressed.
+    topology: { scenario: three-of-three, operators: 3, threshold: 3, backends: [cpu, gpu] }
+    services: [tfhe-worker]
+    capabilities: [service-control, failpoints]
+    workload: An identified dependence chain held by a stalled worker until its lease lapses.
+    fault:
+      mechanism: sigstop-until-lease-expiry
+      stage: chain acquired by the victim, lease not yet extended
+      observation: >-
+        the victim is frozen FIRST and the chain is then chosen from what it still holds under the
+        freeze -- a frozen process cannot release, so what it holds then it keeps. Choosing first and
+        freezing second raced the worker and lost: the chain had already been released, its
+        `lock_expires_at` was NULL, and `NULL < NOW()` is never true, so the run waited out its
+        timeout on a condition that could not become true. The lease then ages past expiry (~30s,
+        measured) and a different owner is recorded.
+    participants: { compute: all, submit: all, quorum: required }
+    assertions:
+      - quorum: every recovered target handle reaches the required commitment from distinct authorized members
+      - precondition: the chain is observed owned by the stalled worker
+      - fault: the process is verified stopped until its lease lapses, then killed so a different process must reclaim the chain
+      - liveness: the chain is reclaimed and completes
+      - bytes: the reclaimed output is byte-identical across operators
+      - safety: the lock-loss event is recorded and attributed rather than disabling validity checks
+    timeout_s: 1800
+    cleanup: [resume the stopped process and verify it is running]
+    runner: scripts/run-crash-retry-consensus.sh --victim 1 --boundary expired-lease
+    ci: { leg: crash-retry, backend: cpu }
+    artifacts: [case-results, lease-snapshots, lock-loss-attribution]
+    acceptance: required
+
+  # ---------------------------------------------------------------- failure matrix
+  - id: FM-TFHE-CRASH
+    family: failure-matrix
+    property: >-
+      A tfhe-worker killed while executing an identified computation with a
+      cross-transaction dependency recovers and completes that same work with
+      canonical byte agreement and no abandoned gates.
+    topology: { scenario: three-of-three, operators: 3, threshold: 3, backends: [cpu, gpu] }
+    services: [tfhe-worker]
+    capabilities: [service-control, failpoints]
+    workload: An identified acquired computation plus a cross-transaction dependent.
+    fault: { mechanism: kill, stage: computation acquired and executing, observation: process death and a new process or invocation }
+    participants: { compute: all, submit: all, quorum: required }
+    assertions:
+      - fault: the target was executing when killed; the injection status and postcondition are both checked
+      - liveness: the same work completes
+      - bytes: canonical byte and digest agreement across operators
+      - safety: no abandoned dependence-chain gates
+    timeout_s: 1800
+    cleanup: [heal verified; fleet verified intact]
+    runner: scripts/run-crash-retry-consensus.sh --victim 1 --boundary before-commit
+    ci: { leg: crash-retry, backend: cpu }
+    artifacts: [case-results, fault-evidence]
+    acceptance: required
+
+  - id: FM-TFHE-STALL
+    family: failure-matrix
+    property: >-
+      A tfhe-worker stopped with SIGSTOP cannot advance the identified work waiting
+      for it, and that same work completes with canonical agreement after resume.
+    topology: { scenario: three-of-three, operators: 3, threshold: 3, backends: [cpu, gpu] }
+    services: [tfhe-worker]
+    capabilities: [service-control]
+    workload: An identified producer plus a cross-block dependent, created while the worker is stopped.
+    fault:
+      mechanism: sigstop
+      stage: worker stopped, then identified work created and left pending
+      observation: >-
+        the target process state is read from the kernel as stopped (T) rather than from the
+        signal command's exit status, the identified work is observed incomplete during the
+        stall, and the process is verified running again after resume
+    participants: { compute: all, submit: all, quorum: required }
+    assertions:
+      - fault: injection AND heal return statuses are checked, and both process states are independently verified
+      - safety: the identified work does not complete while the worker is stopped
+      - liveness: it completes after resume
+      - bytes: canonical byte and digest agreement
+      - scope: >-
+          a stall applied to work the worker had ALREADY acquired is CR-03's expired-lease case
+    timeout_s: 1800
+    cleanup: [resume verified; a stall left in place blocks subsequent cases]
+    runner: scripts/run-failure-matrix.sh --case FM-TFHE-STALL
+    ci: { leg: failure-matrix, backend: cpu }
+    artifacts: [case-results, fault-evidence, process-states]
+    acceptance: required
+
+  - id: FM-SNS-CRASH
+    family: failure-matrix
+    property: >-
+      An sns-worker killed while an identified output is queued or acquired for squash
+      or upload recovers, and the expected SNS evidence and stored material agree
+      across operators.
+    topology: { scenario: three-of-three, operators: 3, threshold: 3, backends: [cpu, gpu] }
+    services: [sns-worker]
+    capabilities: [service-control]
+    workload: A selected output with a genuinely encrypted (noisy) input, queued for squash.
+    fault: { mechanism: kill, stage: output queued or acquired for squash/upload, observation: process death, restart, and the selected task still pending at kill time }
+    participants: { compute: all, submit: all, quorum: required }
+    assertions:
+      - fault: the selected squash task was pending or acquired at kill time
+      - liveness: the selected output's SNS material is produced after recovery
+      - bytes: SNS digests agree across every expected participant
+      - safety: no work lost across the retry
+    timeout_s: 1800
+    cleanup: [heal verified]
+    runner: scripts/run-failure-matrix.sh --case FM-SNS-CRASH
+    ci: { leg: failure-matrix, backend: cpu }
+    artifacts: [case-results, fault-evidence, sns-evidence]
+    acceptance: required
+
+  - id: FM-SNS-STALL
+    family: failure-matrix
+    property: An sns-worker paused before an identified squash task is queued cannot complete it during the stall, and completes it after resume.
+    topology: { scenario: three-of-three, operators: 3, threshold: 3, backends: [cpu, gpu] }
+    services: [sns-worker]
+    capabilities: [service-control]
+    workload: A selected squash task with a noisy encrypted input.
+    fault: { mechanism: sigstop, stage: squash task pending or acquired, observation: process verified stopped; selected task does not advance; process verified running after resume }
+    participants: { compute: all, submit: all, quorum: required }
+    assertions:
+      - fault: stop and resume are both verified
+      - safety: the selected task does not complete during the stall
+      - liveness: it completes after resume with agreeing digests
+    timeout_s: 1800
+    cleanup: [resume verified]
+    runner: scripts/run-failure-matrix.sh --case FM-SNS-STALL
+    ci: { leg: failure-matrix, backend: cpu }
+    artifacts: [case-results, fault-evidence]
+    acceptance: required
+
+  - id: FM-ZKPROOF-CRASH
+    family: failure-matrix
+    property: >-
+      A zkproof-worker killed with a real externally encrypted input pending
+      verification accepts that input after recovery and computes on it consistently,
+      while an invalid-proof control is rejected.
+    # Verifier attribution uses the Docker worker client IP; host GPU workers
+    # need independent client attribution before this runner can support them.
+    topology: { scenario: three-of-three, operators: 3, threshold: 3, backends: [cpu] }
+    services: [zkproof-worker]
+    capabilities: [service-control]
+    workload: A real client-encrypted input with a ZK proof, pending verification, plus an invalid-proof control.
+    fault: { mechanism: kill, stage: proof pending verification, observation: the selected proof row is unverified at kill time; process death and restart }
+    participants: { compute: all, submit: all, quorum: not_checked }
+    assertions:
+      - precondition: the selected proof is observed pending verification
+      - liveness: the same original SDK request completes; committed verifier success binds its exact handles, whose materialization and downstream plaintext are checked
+      - bytes: the resulting handle agrees across operators
+      - safety: a durable explicit verifier rejection is required; missing rows and any accepted outcome fail the control
+    timeout_s: 1800
+    cleanup: [heal verified]
+    runner: scripts/run-failure-matrix.sh --case FM-ZKPROOF-CRASH
+    ci: { leg: failure-matrix, backend: cpu }
+    artifacts: [case-results, fault-evidence, proof-verification-state]
+    acceptance: required
+
+  - id: FM-HOST-LISTENER-CRASH
+    family: failure-matrix
+    property: >-
+      Killing the selected host-ingestion path with identified blocks pending delivery
+      loses no work, duplicates no effect, and converges to canonical outputs.
+    topology: { scenario: three-of-three, operators: 3, threshold: 3, backends: [cpu, gpu] }
+    services: [host-listener, host-listener-poller, host-listener-consumer]
+    capabilities: [service-control]
+    workload: Identified blocks and events pending ingestion on the isolated path under test.
+    fault:
+      mechanism: kill
+      stage: blocks pending ingestion, redundant paths isolated or attributed
+      observation: >-
+        the target path's own watermark is behind the selected blocks at kill time;
+        process death and restart observed; the same path records ingesting those blocks
+    participants: { compute: all, submit: all, quorum: required }
+    assertions:
+      - precondition: the fault reached the intended ingestion path, with redundancy isolated or processing attributed
+      - liveness: the selected events are ingested
+      - safety: no duplicate computations, allows or dependents
+      - bytes: canonical outputs agree
+    timeout_s: 1800
+    cleanup: [heal verified; redundant paths restored]
+    runner: scripts/run-failure-matrix.sh --case FM-HOST-LISTENER-CRASH
+    ci: { leg: failure-matrix, backend: cpu }
+    artifacts: [case-results, fault-evidence, watermarks]
+    acceptance: required
+
+  - id: FM-TX-SENDER-CRASH
+    family: failure-matrix
+    property: >-
+      A transaction-sender killed with identified computed and SNS material awaiting
+      submission eventually forms the correct authorized commitment, idempotently,
+      with no lost submission.
+    topology: { scenario: three-of-three, operators: 3, threshold: 3, backends: [cpu, gpu] }
+    services: [transaction-sender]
+    capabilities: [service-control]
+    workload: An identified handle whose material is complete and unsubmitted.
+    fault: { mechanism: kill, stage: material complete, submission pending or unacknowledged, observation: the selected row is unsent at kill time; process death and restart }
+    participants: { compute: all, submit: all, quorum: required }
+    assertions:
+      - precondition: the selected submission is observed pending
+      - liveness: the commitment forms for that handle
+      - safety: the commitment is submitted by an authorized member and is not duplicated
+    timeout_s: 1800
+    cleanup: [heal verified]
+    runner: scripts/run-failure-matrix.sh --case FM-TX-SENDER-CRASH
+    ci: { leg: failure-matrix, backend: cpu }
+    artifacts: [case-results, fault-evidence, submission-state]
+    acceptance: required
+
+  - id: FM-OBJECT-STORAGE-OUTAGE
+    family: failure-matrix
+    property: >-
+      An object-storage outage that blocks a selected upload or read is retried to
+      completion; the material is retrievable, digest-bound, and decryptable.
+    topology: { scenario: three-of-three, operators: 3, threshold: 3, backends: [cpu, gpu] }
+    services: [minio]
+    capabilities: [service-control]
+    workload: A selected SNS upload or read blocked while storage is down.
+    fault: { mechanism: stop, stage: an upload or read in flight, observation: a failed or blocked request is observed in the worker's own log or metrics }
+    participants: { compute: all, submit: all, quorum: required }
+    assertions:
+      - fault: an actual failed/blocked request is observed, not merely a stopped container
+      - liveness: the retry completes and the material is retrievable
+      - bytes: the retrieved material matches its digest
+      - correctness: a representative decryption succeeds
+    timeout_s: 1800
+    cleanup: [heal verified]
+    runner: scripts/run-failure-matrix.sh --case FM-OBJECT-STORAGE-OUTAGE
+    ci: { leg: failure-matrix, backend: cpu }
+    artifacts: [case-results, fault-evidence, retry-evidence]
+    acceptance: required
+
+  - id: FM-BROKER-OUTAGE
+    family: failure-matrix
+    property: >-
+      An event-broker outage does not lose or duplicate identified work: the
+      broker-backed consumer records the failure, and the redundant ingestion
+      path delivers the work anyway.
+    topology: { scenario: three-of-three, operators: 3, threshold: 3, backends: [cpu, gpu] }
+    services: [listener-redis, host-listener-consumer]
+    capabilities: [service-control]
+    workload: Identified blocks minted while the broker is down.
+    fault:
+      mechanism: stop
+      stage: work minted while the broker is unavailable
+      observation: the broker-backed consumer's own log records a delivery failure during the outage
+    participants: { compute: all, submit: all, quorum: required }
+    assertions:
+      - fault: the consumer records a broker failure, so the outage reached the path that uses it
+      - liveness: the identified work is ingested and completes
+      - safety: no duplicate computations, allows or dependents
+      - scope: >-
+          this is the REDUNDANCY claim, not an attribution claim: the poller path can ingest the
+          same blocks, so the case establishes that a broker outage does not lose the work rather
+          than that the broker delivered it. Attributing delivery to one ingestion path needs
+          per-path processing instrumentation the services do not currently expose, and is
+          explicitly not claimed here.
+    timeout_s: 1800
+    cleanup: [heal verified]
+    runner: scripts/run-failure-matrix.sh --case FM-BROKER-OUTAGE
+    ci: { leg: failure-matrix, backend: cpu }
+    artifacts: [case-results, fault-evidence]
+    acceptance: required
+
+  - id: FM-RELAYER-CRASH
+    family: failure-matrix
+    property: >-
+      A real client request pending relayer processing succeeds after the relayer
+      recovers and produces the expected result; direct contract submission is not
+      accepted as a substitute.
+    topology: { scenario: three-of-three, operators: 3, threshold: 3, backends: [cpu, gpu] }
+    services: [relayer]
+    capabilities: [service-control]
+    workload: A real relayer client request (input proof or decryption) issued before the crash.
+    fault: { mechanism: kill, stage: request accepted and pending, observation: the request is recorded pending at kill time; process death and restart }
+    participants: { compute: all, submit: all, quorum: not_checked }
+    assertions:
+      - precondition: the original request is observed pending
+      - liveness: the ORIGINAL request completes after recovery
+      - correctness: it produces the expected result
+    timeout_s: 1800
+    cleanup: [heal verified]
+    runner: scripts/run-failure-matrix.sh --case FM-RELAYER-CRASH
+    ci: { leg: failure-matrix, backend: cpu }
+    artifacts: [case-results, fault-evidence, request-id]
+    acceptance: required
+
+  - id: FM-KMS-CONNECTOR-CRASH
+    family: failure-matrix
+    property: >-
+      A real pending decryption request with an identified request id completes with
+      the correct plaintext after the KMS connector recovers, and is not silently
+      replaced.
+    topology: { scenario: three-of-three, operators: 3, threshold: 3, backends: [cpu, gpu] }
+    services: [kms-connector]
+    capabilities: [service-control]
+    workload: A real decryption request whose id is recorded before the crash.
+    fault: { mechanism: kill, stage: request accepted, response not yet produced, observation: the request id is recorded unanswered at kill time; process death and restart }
+    participants: { compute: all, submit: all, quorum: not_checked }
+    assertions:
+      - precondition: the request id is observed pending
+      - liveness: that same request id is answered after recovery
+      - correctness: the plaintext is correct
+    timeout_s: 1800
+    cleanup: [heal verified]
+    runner: scripts/run-failure-matrix.sh --case FM-KMS-CONNECTOR-CRASH
+    ci: { leg: failure-matrix, backend: cpu }
+    artifacts: [case-results, fault-evidence, request-id]
+    acceptance: required
+
+  - id: FM-CONSENSUS-DETECTOR
+    family: failure-matrix
+    property: >-
+      A genuinely disagreeing pre-consensus submission produces the expected drift or
+      revert signal at the stage the detector consumes, and a healthy agreeing control
+      produces none.
+    topology: { scenario: two-of-three, operators: 3, threshold: 2, backends: [cpu, gpu] }
+    services: [consensus-detector, gw-listener]
+    capabilities: []
+    workload: A disagreeing submission plus an agreeing control, both at the detector's input stage.
+    fault: { mechanism: divergent-submission, stage: pre-consensus submission, observation: the detector's own signal rows }
+    participants: { compute: all, submit: all, quorum: not_checked }
+    assertions:
+      - safety: the disagreeing case produces exactly one drift/revert signal
+      - safety: the agreeing control produces none
+      - liveness: recovery follows the signal
+      - scope: covered by gw-listener integration tests consensus_mismatch_creates_revert_signal, consensus_match_does_not_create_revert_signal, differing_submissions_trigger_drift_once, plus this stack case
+    timeout_s: 1800
+    cleanup: [restore any tampered row and verify agreement]
+    runner: scripts/run-failure-matrix.sh --case FM-CONSENSUS-DETECTOR
+    ci: { leg: failure-matrix, backend: cpu }
+    artifacts: [case-results, detector-signals]
+    acceptance: required
+
+  - id: FM-UPGRADE-CONTROLLER
+    family: failure-matrix
+    property: >-
+      A controller process killed while holding the cutover write fence leaves
+      no partial version transition; a replacement reconciles the durable state
+      and completes the cutover exactly once.
+    topology: { scenario: none, operators: 0, threshold: 0, backends: [cpu] }
+    services: [upgrade-controller]
+    capabilities: [docker]
+    workload: The real controller reconciliation path in child processes against an isolated PostgreSQL database.
+    fault: { mechanism: kill, stage: exclusive cutover fence held before version promotion, observation: PostgreSQL lock ownership and a distinct replacement process }
+    participants: { compute: none, submit: none, quorum: not_checked }
+    assertions:
+      - safety: the killed process holds the exclusive write fence and blocks guarded writers
+      - safety: the interrupted transaction preserves the old version and green schema
+      - liveness: a new process reaches LIVE/completed with both versions promoted
+      - safety: another reconciliation is idempotent
+    timeout_s: 900
+    cleanup: [child processes killed on drop; isolated database removed]
+    runner: scripts/run-stackless-cases.sh --leg rust-regression
+    ci: { leg: rust-regression, backend: cpu }
+    artifacts: [case-results, controller-state]
+    acceptance: required
+
+  - id: FM-SMOKE-CELLS
+    family: failure-matrix
+    property: >-
+      For every advertised matrix cell without a stronger contract above: the service
+      recovers and the fleet still agrees on FRESH work afterwards. This is a smoke
+      test and establishes nothing about work in flight during the fault.
+    topology: { scenario: three-of-three, operators: 3, threshold: 3, backends: [cpu, gpu] }
+    services: []
+    capabilities: [service-control]
+    workload: Fresh work minted after the fault is healed.
+    fault: { mechanism: kill, stage: no work selected, observation: supervisor replacement and target state verified }
+    participants: { compute: all, submit: all, quorum: required }
+    assertions:
+      - fault: the injection landed on a live target and the heal succeeded
+      - liveness: the fleet computes fresh work afterwards
+      - bytes: fresh work agrees across operators
+      - scope: labelled smoke; does NOT satisfy any in-flight recovery claim
+    timeout_s: 3600
+    cleanup: [every cell's heal verified; a contaminated stack stops the run]
+    runner: scripts/run-failure-matrix.sh --column smoke
+    ci: { leg: failure-matrix, backend: cpu }
+    artifacts: [case-results, fault-evidence]
+    acceptance: smoke
+
+  # ---------------------------------------------------------------- shared database
+  - id: FMDB-OUTAGE
+    family: failure-matrix-db
+    property: >-
+      A shared-database outage with identified pending work is survived by the fleet:
+      the same work completes after automatic recovery, with no double ownership and
+      no permanently stranded work.
+    topology: { scenario: three-of-three, operators: 3, threshold: 3, backends: [cpu, gpu] }
+    services: [coprocessor-db]
+    capabilities: [service-control, isolated-stack]
+    workload: Identified pending computations at the moment the database goes away.
+    fault:
+      mechanism: stop
+      stage: work pending
+      observation: services record database errors, and the selected work is observed still pending
+    participants: { compute: all, submit: all, quorum: required }
+    assertions:
+      - fault: an actual database failure reaction is observed in the services
+      - liveness: the fleet recovers automatically within the bound, without manual intervention
+      - liveness: the SAME selected work completes
+      - safety: no work is owned twice and none is permanently stranded
+      - isolation: runs in its own job so a wedged stack cannot contaminate other cases
+    timeout_s: 3600
+    cleanup: [heal verified; fleet verified intact or the stack marked contaminated]
+    runner: scripts/run-failure-matrix.sh --column db --case FMDB-OUTAGE
+    ci: { leg: failure-matrix-db, backend: cpu }
+    artifacts: [case-results, fault-evidence, fleet-recovery-report]
+    acceptance: required
+
+  - id: FMDB-STALL
+    family: failure-matrix-db
+    property: A shared-database stall is survived the same way, with the selected pending work completing after resume.
+    topology: { scenario: three-of-three, operators: 3, threshold: 3, backends: [cpu, gpu] }
+    services: [coprocessor-db]
+    capabilities: [service-control, isolated-stack]
+    workload: Identified pending computations at the moment the database stalls.
+    fault: { mechanism: sigstop, stage: work pending, observation: services block on the database; the container is verified paused and resumed }
+    participants: { compute: all, submit: all, quorum: required }
+    assertions:
+      - fault: pause and resume verified
+      - liveness: the same selected work completes after resume
+      - safety: no double ownership
+    timeout_s: 3600
+    cleanup: [resume verified]
+    runner: scripts/run-failure-matrix.sh --column db --case FMDB-STALL
+    ci: { leg: failure-matrix-db, backend: cpu }
+    artifacts: [case-results, fault-evidence]
+    acceptance: required
+
+  # ---------------------------------------------------------------- gpu lifecycle
+  - id: GPU-01-MIXED-BACKEND-GUARD
+    family: gpu-lifecycle
+    property: >-
+      The mixed-backend guard detects a deliberately created doubly-served queue,
+      names it, and clears once the queue has one worker again - leaving no mixed
+      output for subsequent cases.
+    # Every GPU case is established on the heterogeneous-scheduling stack, which
+    # is one stack for the whole leg: under a GPU session the container worker
+    # arguments a scenario sets are inert -- the units serve the queues -- so the
+    # scenario is neutral for the lifecycle cases and keeps SCH-01/SCH-02's
+    # precondition available in the same session. The heterogeneity SCH-01
+    # asserts is read from the resolved unit configuration at runtime, never from
+    # this name.
+    topology: { scenario: three-of-three-heterogeneous-scheduling, operators: 3, threshold: 3, backends: [gpu] }
+    services: [tfhe-worker]
+    capabilities: [gpu, systemd-user, service-control]
+    workload: A deliberate CPU container started beside an active GPU unit, then removed.
+    fault: { mechanism: mixed-backend-split, stage: both implementations serving one queue, observation: the launcher's conflicts command exits non-zero and names the queue }
+    participants: { compute: all, submit: all, quorum: not_checked }
+    assertions:
+      - precondition: the guard is quiet before the split
+      - fault: the guard fires and names the operator, kind, unit and container
+      - liveness: the guard clears after repair rather than latching
+      - safety: readiness/preflight rejects the split too, not only the launcher command
+      - cleanup: the diagnostic workload is cleaned up or the stack is declared contaminated
+    timeout_s: 900
+    cleanup: [stop the CPU container; verify one worker per queue; clean or quarantine diagnostic rows]
+    runner: scripts/run-gpu-lifecycle-cases.sh --case gpu-01 --operator 1
+    ci: { leg: gpu, backend: gpu }
+    artifacts: [case-results, guard-output]
+    acceptance: required
+
+  - id: GPU-02-DB-REVERT-QUIESCENCE
+    family: gpu-lifecycle
+    property: >-
+      The coprocessor database revert cannot start while any GPU writer is live: all
+      writers are stopped and verified stopped first, and are restored afterwards with
+      their recorded configuration.
+    topology: { scenario: three-of-three-heterogeneous-scheduling, operators: 3, threshold: 3, backends: [gpu] }
+    services: [tfhe-worker, zkproof-worker, sns-worker]
+    capabilities: [gpu, systemd-user, service-control]
+    workload: The db-state-revert profile against a stack whose worker queues are served by GPU units.
+    fault: { mechanism: none, stage: none, observation: every writer verified not running before any SQL executes }
+    participants: { compute: none, submit: none, quorum: not_checked }
+    assertions:
+      - safety: no SQL runs while any relevant writer is live
+      - safety: a writer that cannot be quiesced aborts the profile rather than proceeding
+      - cleanup: only roles active before the operation are restarted
+      - cleanup: exactly one worker implementation per queue afterwards
+      - cleanup: a failed revert restores the original ownership without reviving CPU competitors
+    timeout_s: 1800
+    cleanup: [ownership record retained until verified restoration]
+    runner: scripts/run-gpu-lifecycle-cases.sh --case gpu-02
+    ci: { leg: gpu, backend: gpu }
+    artifacts: [case-results, quiescence-evidence, ownership-record]
+    acceptance: required
+
+  - id: GPU-03-CONFIG-PRESERVING-RESTART
+    family: gpu-lifecycle
+    property: >-
+      A stopped heterogeneous GPU operator returns with the identical recorded tuning
+      and device placement, rather than silently taking fleet defaults from the
+      caller's environment.
+    topology: { scenario: three-of-three-heterogeneous-scheduling, operators: 3, threshold: 3, backends: [gpu] }
+    services: [tfhe-worker]
+    capabilities: [gpu, systemd-user]
+    workload: Stop and restart one operator's units from a shell without the override variables set.
+    fault: { mechanism: unit-stop-and-restore, stage: none, observation: the restored unit's recorded invocation configuration equals the original }
+    participants: { compute: all, submit: all, quorum: not_checked }
+    assertions:
+      - safety: the restored unit's resolved configuration is byte-identical to the recorded one
+      - safety: restoration from an environment without overrides does NOT revert to fleet defaults
+      - cleanup: invocation metadata is refreshed for the new invocation
+    timeout_s: 900
+    cleanup: [session record retained until restoration is verified]
+    runner: scripts/run-gpu-lifecycle-cases.sh --case gpu-03 --operator 1
+    ci: { leg: gpu, backend: gpu }
+    artifacts: [case-results, invocation-config]
+    acceptance: required
+
+  - id: GPU-04-LOCK-LOG-VALIDITY
+    family: gpu-lifecycle
+    property: >-
+      The lock-loss validity gate reads the ACTIVE execution backend's logs -
+      systemd journals under a GPU session, including restarted invocations - and
+      rejects a run whose evidence cannot be collected.
+    topology: { scenario: three-of-three-heterogeneous-scheduling, operators: 3, threshold: 3, backends: [cpu, gpu] }
+    services: [tfhe-worker]
+    capabilities: [service-control]
+    workload: A completed consensus run, scoped to its own time window.
+    fault: { mechanism: none, stage: none, observation: the gate names which log sources it read }
+    participants: { compute: all, submit: all, quorum: not_checked }
+    assertions:
+      - safety: under a GPU session the gate reads unit journals, not stopped containers' logs
+      - safety: an unreadable log source or a missing expected worker is INVALID, not clean
+      - safety: only occurrences inside the run window are counted
+    timeout_s: 300
+    cleanup: [none]
+    runner: scripts/run-gpu-lifecycle-cases.sh --case gpu-04
+    ci: { leg: gpu, backend: gpu }
+    artifacts: [case-results, log-source-list]
+    acceptance: required
+
+  # ---------------------------------------------------------------- scheduling
   - id: SCH-01-HETEROGENEOUS
     family: scheduling
     property: >-
       Three operators with deliberately different scheduling configuration agree byte
       for byte, and the run proves the workload actually exercised the different
-      batch/window behaviour rather than only that the flags were set.
+      batch/window behaviour and one-versus-multiple GPU execution permits rather than only that the flags were set.
     topology: { scenario: three-of-three-heterogeneous-scheduling, operators: 3, threshold: 3, backends: [gpu] }
     services: [tfhe-worker]
     capabilities: [gpu, systemd-user]
@@ -231,7 +1147,7 @@ cases:
     assertions:
       - precondition: running flags and environment are verified, plus persisted restart configuration
       - precondition: the operators' resolved scheduling classes are genuinely distinct
-      - evidence: executed batch/window distributions differ across operators, not only the configured values
+      - evidence: executed batch/window distributions differ across operators, and workload-window metrics prove serial and repeated overlapping GPU execution permits
       - bytes: byte and digest agreement across operators
     timeout_s: 3600
     cleanup: [GPU session stopped and queues handed back]
@@ -269,33 +1185,23 @@ cases:
 
   - id: SCH-03-SQUASH-DETERMINISM
     family: scheduling
-    property: >-
-      Repeated squash_noise over extracted fixtures is deterministic for a fixed key
-      and input.
-    topology: { scenario: none, operators: 0, threshold: 0, backends: [cpu, gpu] }
-    services: []
+    property: Repeated CPU squash over the same canonical input and freshly generated keys is byte-identical across reconstruction and one/two-thread policies.
+    topology: { scenario: none, operators: 0, threshold: 0, backends: [cpu] }
+    services: [sns-worker]
     capabilities: []
-    workload: Extracted ciphertext fixtures squashed repeatedly.
+    workload: Generated keyset and noisy u8 7+5 ciphertext, compressed once then independently reconstructed and squashed four times.
     fault: { mechanism: none, stage: none, observation: none }
     participants: { compute: none, submit: none, quorum: not_checked }
     assertions:
-      - scope: diagnostic. Prints distinct digest counts; not a regression gate.
-    timeout_s: 1800
-    cleanup: [none]
-    runner: cargo test -p sns-worker --features gpu squash_determinism -- --ignored
-    ci: { leg: none, backend: cpu }
-    artifacts: [suite-log]
-    acceptance: deferred
-    deferral:
-      boundary: >-
-        The squash determinism experiments remain labelled diagnostics: they are
-        `#[ignore]`d, acquire fixtures from a developer path, and print rather than
-        assert.
-      reason: >-
-        Turning them into a gate needs versioned or generative fixture acquisition and a
-        CI target, which is out of scope here.
+      - safety: all fixed-input/key CPU squash bytes agree and the source plaintext is 12
+      - sensitivity: mutating one result makes the same agreement gate reject it
+    timeout_s: 2400
+    cleanup: [in-process keys released; no key fixture written to disk]
+    runner: scripts/run-stackless-cases.sh --leg rust-regression
+    ci: { leg: rust-regression, backend: cpu }
+    artifacts: [case-results, rust-test-log]
+    acceptance: required
 
-  # ---------------------------------------------------------------- regressions
   - id: REG-01-LISTENER-POOL-REBIND
     family: regression
     property: >-
@@ -345,6 +1251,47 @@ cases:
     artifacts: [suite-log]
     acceptance: required
 
+  - id: REG-03-SUPERVISED-DAEMON-RECOVERY
+    family: regression
+    property: In stack execution, the supervisor restarts a daemon that exited non-zero and the selected pending work recovers.
+    topology: { scenario: three-of-three, operators: 3, threshold: 3, backends: [cpu, gpu] }
+    services: [tfhe-worker]
+    capabilities: [service-control, failpoints]
+    workload: The CR-01 target work.
+    fault: { mechanism: kill, stage: work acquired, observation: supervisor restart evidence (restart counter or new invocation) }
+    participants: { compute: all, submit: all, quorum: not_checked }
+    assertions:
+      - fault: supervisor restart observed, not a manual start
+      - liveness: the selected pending work recovers
+    timeout_s: 2400
+    cleanup: [none]
+    runner: scripts/run-crash-retry-consensus.sh --victim 1 --boundary before-commit
+    ci: { leg: crash-retry, backend: cpu }
+    artifacts: [case-results, restart-evidence]
+    acceptance: required
+
+  # ---------------------------------------------------------------- harness contracts
+  - id: HAR-01-FAULT-CONTRACTS
+    family: harness
+    property: >-
+      The fault-control layer fails closed: failed injection, failed heal, a missing
+      GPU unit or PID, a target that was not actually interrupted, an after-hook
+      failure despite "1 passing", and a failed cleanup all produce non-PASS results.
+    topology: { scenario: none, operators: 0, threshold: 0, backends: [none] }
+    services: []
+    capabilities: []
+    workload: Narrow fake command adapters driving the real control functions.
+    fault: { mechanism: adapter-injected-failure, stage: various, observation: the resulting case result state }
+    participants: { compute: none, submit: none, quorum: not_checked }
+    assertions:
+      - safety: each listed condition yields FAIL or INVALID, never PASS
+    timeout_s: 300
+    cleanup: [none]
+    runner: scripts/run-stackless-cases.sh --leg harness (scripts/test-fault-contracts.sh)
+    ci: { leg: harness, backend: none }
+    artifacts: [suite-log]
+    acceptance: required
+
   - id: HAR-02-INVENTORY-AGGREGATE
     family: harness
     property: >-
@@ -387,4 +1334,500 @@ cases:
     runner: scripts/run-stackless-cases.sh --leg harness (bun test src/readiness.test.ts)
     ci: { leg: harness, backend: none }
     artifacts: [suite-log]
+    acceptance: required
+
+  - id: INPUT-01-COMPACT-LIST
+    family: input
+    property: Verified inputs of every supported boolean/integer width agree on canonical bytes and exact blob/index/type/chain identity across the homogeneous fleet and decrypt to zero/max/repeated-max models.
+    topology: { scenario: three-of-three, operators: 3, threshold: 3, backends: [cpu, gpu] }
+    services: [zkproof-worker, gw-listener, transaction-sender]
+    capabilities: [docker-socket]
+    workload: Real compact lists, partitioned by type; three inputs per list (zero, max, repeated max), followed by exact blob replay and two public Gateway rejection controls.
+    fault: { mechanism: none, stage: none, observation: none }
+    participants: { compute: all, submit: all, quorum: required }
+    assertions:
+      - bytes: exact input set agrees on every operator without assuming computation or SNS output rows
+      - quorum: authorized distinct senders accepted each original request
+      - correctness: every original input decrypts to its independent value
+      - safety: installed key identities agree and remain unchanged
+    timeout_s: 2400
+    cleanup: [RPC clients closed; normal stack processing retained]
+    runner: scripts/run-materialization-consensus.sh --suite input
+    ci: { leg: byte-agreement, backend: cpu }
+    artifacts: [case-results, suite-log, run-identity]
+    acceptance: required
+
+  - id: INPUT-02-REPLAY
+    family: input
+    property: Exact Gateway proof replay preserves the original handles and unique canonical bytes; independently encrypted equal values decrypt correctly.
+    topology: { scenario: three-of-three, operators: 3, threshold: 3, backends: [cpu, gpu] }
+    services: [zkproof-worker, gw-listener, transaction-sender]
+    capabilities: [docker-socket]
+    workload: Real compact lists, partitioned by type; three inputs per list (zero, max, repeated max), followed by exact blob replay and two public Gateway rejection controls.
+    fault: { mechanism: none, stage: none, observation: none }
+    participants: { compute: all, submit: all, quorum: required }
+    assertions:
+      - bytes: all original canonical rows remain byte-identical after replay
+      - quorum: the replay request reaches authorized acceptance for the exact original handles
+      - safety: replay creates no extra or duplicate canonical inputs
+    timeout_s: 2400
+    cleanup: [RPC clients closed; normal stack processing retained]
+    runner: scripts/run-materialization-consensus.sh --suite input
+    ci: { leg: byte-agreement, backend: cpu }
+    artifacts: [case-results, suite-log, run-identity]
+    acceptance: required
+
+  - id: INPUT-03-INVALID-PROOF
+    family: input
+    property: Truncated proofs and proofs bound to another user reach explicit authorized rejection without acceptance or changing canonical input material.
+    topology: { scenario: three-of-three, operators: 3, threshold: 3, backends: [cpu, gpu] }
+    services: [zkproof-worker, gw-listener, transaction-sender]
+    capabilities: [docker-socket]
+    workload: Real compact lists, partitioned by type; three inputs per list (zero, max, repeated max), followed by exact blob replay and two public Gateway rejection controls.
+    fault: { mechanism: none, stage: none, observation: none }
+    participants: { compute: all, submit: all, quorum: required }
+    assertions:
+      - safety: neither rejected request becomes accepted or changes canonical input material
+      - quorum: rejection has the configured number of authorized distinct responders
+    timeout_s: 2400
+    cleanup: [RPC clients closed; normal stack processing retained]
+    runner: scripts/run-materialization-consensus.sh --suite input
+    ci: { leg: byte-agreement, backend: cpu }
+    artifacts: [case-results, suite-log, run-identity]
+    acceptance: required
+
+  - id: MAT-06-TYPED-BOUNDARIES
+    family: materialization
+    property: Every named local and persisted-boundary typed graph output agrees on fleet bytes, receipt provenance and authorized quorum and decrypts to its independent modular model.
+    topology: { scenario: three-of-three, operators: 3, threshold: 3, backends: [cpu, gpu] }
+    services: [tfhe-worker, sns-worker]
+    capabilities: [docker-socket]
+    workload: ebool and euint8/16/32/64/128/256 across real transactions; arithmetic through u128, bitwise, shift/rotate, boolean comparison/select and cast, with every intermediate exported.
+    fault: { mechanism: none, stage: none, observation: none }
+    participants: { compute: all, submit: all, quorum: required }
+    assertions:
+      - bytes: canonical bytes and compute/SNS digest bindings agree for every produced intermediate
+      - provenance: exact receipt-identified transaction, chain and block membership on every operator
+      - quorum: every exported result reaches authorized distinct-sender quorum
+      - correctness: every result decrypts to the independent boolean/modular arithmetic model
+      - liveness: exact transaction computation counts complete successfully without partial publication
+    timeout_s: 3600
+    cleanup: [RPC and database clients closed]
+    runner: scripts/run-materialization-consensus.sh --suite typed
+    ci: { leg: byte-agreement, backend: cpu }
+    artifacts: [case-results, suite-log, run-identity]
+    acceptance: required
+
+  - id: MAT-08-BRIDGED-DEPENDENCY
+    family: materialization
+    property: A computed source reused locally and bridged to a second host chain retains canonical bytes and identity, then feeds a later transaction with the expected value.
+    topology: { scenario: two-of-two-multi-chain, operators: 2, threshold: 2, backends: [cpu, gpu] }
+    services: [tfhe-worker, sns-worker, host-listener]
+    capabilities: [docker-socket]
+    workload: Computed u64 source, local consumer, receipt-identified bridge association and a later destination consumer on two host chains.
+    fault: { mechanism: none, stage: none, observation: none }
+    participants: { compute: all, submit: all, quorum: required }
+    assertions:
+      - bytes: destination association preserves the canonical source representation on every operator
+      - provenance: exact canonical source/destination bridge receipts and independently derived destination handle
+      - quorum: source and both computed consumers reach authorized distinct-sender quorum
+      - correctness: source, local consumer, destination and later destination consumer decrypt to independent values
+      - liveness: all identified transactions complete without partial publication
+    timeout_s: 2400
+    cleanup: [normal processing retained]
+    runner: scripts/run-materialization-consensus.sh --suite bridge
+    ci: { leg: bridge, backend: cpu }
+    artifacts: [case-results, suite-log, run-identity]
+    acceptance: required
+
+  - id: REG-04-RERANDOMIZATION-TRANSCRIPT
+    family: regression
+    property: The production rerandomizer preserves fixed-transcript replay bytes and plaintext while changed output handle, opcode or ordered ciphertext bytes alter the output representation.
+    topology: { scenario: none, operators: 0, threshold: 0, backends: [cpu] }
+    services: [scheduler]
+    capabilities: []
+    workload: Fresh local keys and fixed encrypted operands passed through the production operation rerandomizer, with one-coordinate negative controls.
+    fault: { mechanism: none, stage: none, observation: none }
+    participants: { compute: none, submit: none, quorum: not_checked }
+    assertions:
+      - safety: identical transcripts repeat exactly and plaintext is preserved; scalars remain unchanged
+      - sensitivity: changing the handle, opcode, operand order or ciphertext representation changes bytes
+    timeout_s: 1800
+    cleanup: [in-process keys released]
+    runner: scripts/run-stackless-cases.sh --leg rust-regression
+    ci: { leg: rust-regression, backend: cpu }
+    artifacts: [case-results, rust-test-log]
+    acceptance: required
+
+  - id: SCH-06-CPU-DIVERSITY
+    family: scheduling
+    property: Identified materialization work agrees on CPU under observed differing batch and adaptive-window execution policies, with every fixture output decrypting to the independent model.
+    topology: { scenario: three-of-three-heterogeneous-scheduling, operators: 3, threshold: 3, backends: [cpu] }
+    services: [tfhe-worker, sns-worker]
+    capabilities: [docker-socket, service-control]
+    workload: The SCH-01 bounded materialization backlog and alias graphs, executed by homogeneous CPU workers with distinct batch/window policies.
+    fault: { mechanism: none, stage: none, observation: none }
+    participants: { compute: all, submit: all, quorum: required }
+    assertions:
+      - precondition: observed running scheduling settings are heterogeneous
+      - evidence: persisted-batch metrics demonstrate materially different executed schedules for the identified backlog
+      - bytes: canonical byte/digest/format checks and the fixture plaintext model pass under those schedules
+    timeout_s: 2400
+    cleanup: [restore workers held to create the scheduling backlog]
+    runner: scripts/run-materialization-consensus.sh --heterogeneous
+    ci: { leg: cpu-scheduling, backend: cpu }
+    artifacts: [case-results, scheduling-counters, run-identity]
+    acceptance: required
+
+  - id: FM-HOST-LONG-OFFLINE
+    family: failure-matrix
+    property: One isolated host poller recovers twelve named transactions spanning more than two observed four-block pages, preserving every canonical value and accepting fresh work.
+    topology: { scenario: three-of-three-backlog, operators: 3, threshold: 3, backends: [cpu, gpu] }
+    services: [host-listener-poller]
+    capabilities: [docker-socket, service-control, anvil-control]
+    workload: Twelve receipt-identified persisted-operand computations, followed by fresh work; observed poller and worker bounds are four.
+    fault: { mechanism: listener-offline-multiple-pages, stage: identified work queued while the service is held, observation: service-control acknowledgment plus all named targets pending before recovery }
+    participants: { compute: all, submit: all, quorum: required }
+    assertions:
+      - precondition: the held service and every original target are observed before recovery
+      - liveness: every original target completes after recovery and fresh work also progresses
+      - bytes: every retained output has canonical byte and digest agreement with exactly one stored row per operator
+      - quorum: every original output reaches authorized distinct-sender quorum
+      - safety: no target is lost or duplicated; live configuration matches the bounded batch/page profile
+      - correctness: every retained and fresh value decrypts to the independent fixture model
+    timeout_s: 2400
+    cleanup: [restore all held ingestion paths and original worker ownership]
+    runner: scripts/run-failure-matrix.sh --case FM-HOST-LONG-OFFLINE
+    ci: { leg: backlog, backend: cpu }
+    artifacts: [case-results, workload-handshake, service-identities, run-identity]
+    acceptance: required
+
+  - id: FM-DURABLE-BACKLOG
+    family: failure-matrix
+    property: A supervisor-replaced worker drains twelve durable pending transactions exceeding its observed four-item acquisition bound, preserving original and fresh plaintexts.
+    topology: { scenario: three-of-three-backlog, operators: 3, threshold: 3, backends: [cpu, gpu] }
+    services: [tfhe-worker]
+    capabilities: [docker-socket, service-control, anvil-control]
+    workload: Twelve receipt-identified persisted-operand computations, followed by fresh work; observed poller and worker bounds are four.
+    fault: { mechanism: worker-restart-with-durable-backlog, stage: identified work queued while the service is held, observation: service-control acknowledgment plus all named targets pending before recovery }
+    participants: { compute: all, submit: all, quorum: required }
+    assertions:
+      - precondition: the held service and every original target are observed before recovery
+      - liveness: every original target completes after recovery and fresh work also progresses
+      - bytes: every retained output has canonical byte and digest agreement with exactly one stored row per operator
+      - quorum: every original output reaches authorized distinct-sender quorum
+      - safety: no target is lost or duplicated; live configuration matches the bounded batch/page profile
+      - correctness: every retained and fresh value decrypts to the independent fixture model
+    timeout_s: 2400
+    cleanup: [restore all held ingestion paths and original worker ownership]
+    runner: scripts/run-failure-matrix.sh --case FM-DURABLE-BACKLOG
+    ci: { leg: backlog, backend: cpu }
+    artifacts: [case-results, workload-handshake, service-identities, run-identity]
+    acceptance: required
+
+  - id: FM-STORAGE-WORKER-RESTART
+    family: failure-matrix
+    property: An identified noisy squash survives an observed object-storage failure and automatic SNS process replacement while storage remains unavailable, then becomes retrievable and decryptable after dependency recovery.
+    topology: { scenario: three-of-three, operators: 3, threshold: 3, backends: [cpu, gpu] }
+    services: [minio]
+    capabilities: [service-control]
+    workload: A selected SNS upload or read blocked while storage is down.
+    fault: { mechanism: stop, stage: an upload or read in flight, observation: a failed or blocked request is observed in the worker's own log or metrics }
+    participants: { compute: all, submit: all, quorum: required }
+    assertions:
+      - combined-fault: the upload failure is observed, the SNS process is replaced automatically, and storage remains stopped throughout replacement
+      - fault: an actual failed/blocked request is observed, not merely a stopped container
+      - liveness: the retry completes and the material is retrievable
+      - bytes: the retrieved material matches its digest
+      - correctness: a representative decryption succeeds
+    timeout_s: 1800
+    cleanup: [heal verified]
+    runner: scripts/run-failure-matrix.sh --case FM-STORAGE-WORKER-RESTART
+    ci: { leg: failure-matrix, backend: cpu }
+    artifacts: [case-results, fault-evidence, retry-evidence]
+    acceptance: required
+
+  - id: STORAGE-01-INTEGRITY
+    family: failure-matrix
+    property: Five independently corrupted fresh object sets are rejected by the actual retrieval/verifier path; restoring original bytes and attestations completes each original accepted decryption request.
+    topology: { scenario: three-of-three, operators: 3, threshold: 3, backends: [cpu] }
+    services: [minio, relayer, kms-worker]
+    capabilities: [docker-socket, service-control]
+    workload: Five fresh computed handles, one original decryption request each, with missing, truncated, wrong-handle, wrong-key and wrong-format material in all serving buckets.
+    fault: { mechanism: journaled-object-corruption, stage: after publication before the first decryption, observation: public GET confirms each mutation and handle-attributed relayer or KMS logs identify the retrieval or verification rejection }
+    participants: { compute: all, submit: all, quorum: required }
+    assertions:
+      - precondition: every fault is observed at all three public object paths before the original request is accepted
+      - safety: the intended retrieval or attestation verifier rejects the named handle while its original request remains pending
+      - liveness: every original accepted request completes after exact object restoration without another POST
+      - correctness: each decrypted value equals the independent fixture model
+    timeout_s: 3000
+    cleanup: [restore and read back every original object and metadata from the durable journal]
+    runner: scripts/run-object-integrity.sh
+    ci: { leg: object-integrity, backend: cpu }
+    artifacts: [case-results, recovery-journals, selected-rejection-logs, run-identity]
+    acceptance: required
+
+  - id: SCH-04-GPU-RESERVATION
+    family: scheduling
+    property: A named 16-operation GPU transaction and its child remain pending under scoped reservation pressure while three fresh short transactions complete on the same worker; every retained output completes after release.
+    topology: { scenario: three-of-three-heterogeneous-scheduling, operators: 3, threshold: 3, backends: [gpu] }
+    services: [tfhe-worker]
+    capabilities: [gpu, failpoints, service-control]
+    workload: Sixteen named dependent additions over a noisy verified input, a real pending child, three fresh independent short transactions during pressure and fresh work after recovery.
+    fault: { mechanism: expiring-reservation-admission-budget, stage: real nonzero GPU allocation reservation, observation: per-process admission acknowledgment and named output timeout/retry log }
+    participants: { compute: all, submit: all, quorum: required }
+    assertions:
+      - precondition: the homogeneous GPU fleet and real input are ready before the isolated admission limit
+      - fault: the selected output reaches the actual GPU reservation deadline and retry branch
+      - safety: every selected transaction output and its child remain pending without error or canonical output while pressure is active
+      - liveness: three independent short transactions complete on the same worker before pressure release; every original output and the child complete after release
+      - bytes: original and fresh outputs agree across all operators
+      - correctness: every exported intermediate, child and short result equals the independent model
+    timeout_s: 1800
+    cleanup: [remove expiring per-process control and cancel owned clients]
+    runner: scripts/run-gpu-pressure.sh
+    ci: { leg: gpu, backend: gpu }
+    artifacts: [case-results, admission-receipt, named-retry-log, run-identity]
+    acceptance: required
+
+  - id: FM-HOST-RPC-429
+    family: failure-matrix
+    property: Twelve named transactions spanning multiple polling pages recover after observed 429 host log-poll failures without skipped or duplicate canonical outputs.
+    topology: { scenario: three-of-three-backlog, operators: 3, threshold: 3, backends: [cpu] }
+    services: [host-listener-poller]
+    capabilities: [docker-socket, service-control, anvil-control]
+    workload: Twelve receipt-identified computations behind one isolated HTTP polling route, followed by fresh work.
+    fault: { mechanism: scoped-http-proxy-429, stage: log polling with named receipts outstanding, observation: proxy records actual failed eth_getLogs requests before and after workload submission }
+    participants: { compute: all, submit: all, quorum: required }
+    assertions:
+      - transport: the actual failed polling requests are followed by successful forwarding through the same route
+      - liveness: every original target completes after recovery and fresh work also progresses
+      - bytes: every retained output has canonical byte and digest agreement with one stored row per operator
+      - quorum: every original output reaches authorized distinct-sender quorum
+      - safety: no target is lost or duplicated and redundant ingestion remains isolated during recovery
+      - correctness: every retained and fresh value decrypts to the independent fixture model
+    timeout_s: 1800
+    cleanup: [restore original poller command and image, stop owned proxy, restore alternate listeners]
+    runner: scripts/run-host-rpc-recovery.sh 429
+    ci: { leg: host-rpc, backend: cpu }
+    artifacts: [case-results, rpc-request-evidence, workload-handshake, run-identity]
+    acceptance: required
+
+  - id: FM-HOST-RPC-503
+    family: failure-matrix
+    property: Twelve named transactions spanning multiple polling pages recover after observed 503 host log-poll failures without skipped or duplicate canonical outputs.
+    topology: { scenario: three-of-three-backlog, operators: 3, threshold: 3, backends: [cpu] }
+    services: [host-listener-poller]
+    capabilities: [docker-socket, service-control, anvil-control]
+    workload: Twelve receipt-identified computations behind one isolated HTTP polling route, followed by fresh work.
+    fault: { mechanism: scoped-http-proxy-503, stage: log polling with named receipts outstanding, observation: proxy records actual failed eth_getLogs requests before and after workload submission }
+    participants: { compute: all, submit: all, quorum: required }
+    assertions:
+      - transport: the actual failed polling requests are followed by successful forwarding through the same route
+      - liveness: every original target completes after recovery and fresh work also progresses
+      - bytes: every retained output has canonical byte and digest agreement with one stored row per operator
+      - quorum: every original output reaches authorized distinct-sender quorum
+      - safety: no target is lost or duplicated and redundant ingestion remains isolated during recovery
+      - correctness: every retained and fresh value decrypts to the independent fixture model
+    timeout_s: 1800
+    cleanup: [restore original poller command and image, stop owned proxy, restore alternate listeners]
+    runner: scripts/run-host-rpc-recovery.sh 503
+    ci: { leg: host-rpc, backend: cpu }
+    artifacts: [case-results, rpc-request-evidence, workload-handshake, run-identity]
+    acceptance: required
+
+  - id: FM-HOST-RPC-408
+    family: failure-matrix
+    property: Twelve named transactions spanning multiple polling pages recover after observed 408 host log-poll failures without skipped or duplicate canonical outputs.
+    topology: { scenario: three-of-three-backlog, operators: 3, threshold: 3, backends: [cpu] }
+    services: [host-listener-poller]
+    capabilities: [docker-socket, service-control, anvil-control]
+    workload: Twelve receipt-identified computations behind one isolated HTTP polling route, followed by fresh work.
+    fault: { mechanism: scoped-http-proxy-408, stage: log polling with named receipts outstanding, observation: proxy records actual failed eth_getLogs requests before and after workload submission }
+    participants: { compute: all, submit: all, quorum: required }
+    assertions:
+      - transport: the actual failed polling requests are followed by successful forwarding through the same route
+      - liveness: every original target completes after recovery and fresh work also progresses
+      - bytes: every retained output has canonical byte and digest agreement with one stored row per operator
+      - quorum: every original output reaches authorized distinct-sender quorum
+      - safety: no target is lost or duplicated and redundant ingestion remains isolated during recovery
+      - correctness: every retained and fresh value decrypts to the independent fixture model
+    timeout_s: 1800
+    cleanup: [restore original poller command and image, stop owned proxy, restore alternate listeners]
+    runner: scripts/run-host-rpc-recovery.sh 408
+    ci: { leg: host-rpc, backend: cpu }
+    artifacts: [case-results, rpc-request-evidence, workload-handshake, run-identity]
+    acceptance: required
+
+  - id: FM-HOST-RPC-RESET
+    family: failure-matrix
+    property: Twelve named transactions spanning multiple polling pages recover after observed reset host log-poll failures without skipped or duplicate canonical outputs.
+    topology: { scenario: three-of-three-backlog, operators: 3, threshold: 3, backends: [cpu] }
+    services: [host-listener-poller]
+    capabilities: [docker-socket, service-control, anvil-control]
+    workload: Twelve receipt-identified computations behind one isolated HTTP polling route, followed by fresh work.
+    fault: { mechanism: scoped-http-proxy-reset, stage: log polling with named receipts outstanding, observation: proxy records actual failed eth_getLogs requests before and after workload submission }
+    participants: { compute: all, submit: all, quorum: required }
+    assertions:
+      - transport: the actual failed polling requests are followed by successful forwarding through the same route
+      - liveness: every original target completes after recovery and fresh work also progresses
+      - bytes: every retained output has canonical byte and digest agreement with one stored row per operator
+      - quorum: every original output reaches authorized distinct-sender quorum
+      - safety: no target is lost or duplicated and redundant ingestion remains isolated during recovery
+      - correctness: every retained and fresh value decrypts to the independent fixture model
+    timeout_s: 1800
+    cleanup: [restore original poller command and image, stop owned proxy, restore alternate listeners]
+    runner: scripts/run-host-rpc-recovery.sh reset
+    ci: { leg: host-rpc, backend: cpu }
+    artifacts: [case-results, rpc-request-evidence, workload-handshake, run-identity]
+    acceptance: required
+
+  - id: FM-BROKER-REDELIVERY
+    family: failure-matrix
+    property: A committed host-block ingestion survives process death before XACK and actual Redis redelivery of the same entry without duplicate logical outputs.
+    topology: { scenario: three-of-three, operators: 3, threshold: 3, backends: [cpu] }
+    services: [host-listener-consumer, listener-redis]
+    capabilities: [docker-socket, service-control, broker-failpoints]
+    workload: One receipt-identified transaction delivered only by the selected broker consumer, followed by fresh work.
+    fault: { mechanism: successful-handler-before-xack-kill, stage: ingestion committed with its Redis entry still pending, observation: the private pre-XACK hook plus independently queried XPENDING count before and after supervisor replacement }
+    participants: { compute: all, submit: all, quorum: required }
+    assertions:
+      - redelivery: identical stream entry and payload are handled again and XPENDING delivery count increases before acknowledgment
+      - liveness: original and fresh work complete after observed redelivery and acknowledgment
+      - bytes: canonical output bytes agree across the fleet
+      - quorum: every original output reaches authorized distinct-sender quorum
+      - safety: the original logical output remains unique after duplicate ingestion
+      - correctness: recovered output decrypts to the independent model
+    timeout_s: 1800
+    cleanup: [remove owned expiring acknowledgment gate and restore all listener routes]
+    runner: scripts/run-broker-redelivery.sh
+    ci: { leg: broker-redelivery, backend: cpu }
+    artifacts: [case-results, first-delivery, repeated-delivery, pending-entry-counts, run-identity]
+    acceptance: required
+
+  - id: FM-HOST-RPC-STALL
+    family: failure-matrix
+    property: Twelve named transactions spanning multiple polling pages recover after observed client cancellation and retry against silent host log responses without skipped or duplicate canonical outputs.
+    topology: { scenario: three-of-three-backlog, operators: 3, threshold: 3, backends: [cpu] }
+    services: [host-listener-poller]
+    capabilities: [docker-socket, service-control, anvil-control]
+    workload: Twelve receipt-identified computations behind one isolated HTTP polling route, followed by fresh work.
+    fault: { mechanism: scoped-http-proxy-stall, stage: log polling with named receipts outstanding, observation: proxy sends no response bytes and observes client cancellation followed by another eth_getLogs request while the named backlog and fault remain active }
+    participants: { compute: all, submit: all, quorum: required }
+    assertions:
+      - transport: a client cancellation and later retry precede fault release; successful forwarding through the same route follows release
+      - liveness: every original target completes after recovery and fresh work also progresses
+      - bytes: every retained output has canonical byte and digest agreement with one stored row per operator
+      - quorum: every original output reaches authorized distinct-sender quorum
+      - safety: no target is lost or duplicated and redundant ingestion remains isolated during recovery
+      - correctness: every retained and fresh value decrypts to the independent fixture model
+    timeout_s: 1800
+    cleanup: [restore original poller command and image, stop owned proxy, restore alternate listeners]
+    runner: scripts/run-host-rpc-recovery.sh stall
+    ci: { leg: host-rpc, backend: cpu }
+    artifacts: [case-results, rpc-request-evidence, workload-handshake, run-identity]
+    acceptance: required
+  - id: FM-HOST-RPC-TLS-TRUST
+    family: failure-matrix
+    property: Twelve named transactions spanning multiple polling pages recover after observed rejection of an untrusted HTTPS host certificate without skipped or duplicate canonical outputs.
+    topology: { scenario: three-of-three-backlog, operators: 3, threshold: 3, backends: [cpu] }
+    services: [host-listener-poller]
+    capabilities: [docker-socket, service-control, anvil-control]
+    workload: Twelve receipt-identified computations behind one isolated HTTPS polling route, followed by fresh work.
+    fault: { mechanism: scoped-https-untrusted-certificate, stage: log polling with named receipts outstanding, observation: the actual poller first accepts a valid certificate; TLS alerts and no accepted requests follow an untrusted certificate swap while the named backlog is outstanding }
+    participants: { compute: all, submit: all, quorum: required }
+    assertions:
+      - transport: valid HTTPS succeeds before the fault; untrusted certificate rejection precedes restored trusted HTTPS and backlog recovery
+      - liveness: every original target completes after recovery and fresh work also progresses
+      - bytes: every retained output has canonical byte and digest agreement with one stored row per operator
+      - quorum: every original output reaches authorized distinct-sender quorum
+      - safety: no target is lost or duplicated and redundant ingestion remains isolated during recovery
+      - correctness: every retained and fresh value decrypts to the independent fixture model
+    timeout_s: 1800
+    cleanup: [restore original poller command, environment, mounts and image, stop owned proxy, restore alternate listeners]
+    runner: scripts/run-host-rpc-recovery.sh tls-trust
+    ci: { leg: host-rpc, backend: cpu }
+    artifacts: [case-results, rpc-request-evidence, workload-handshake, run-identity]
+    acceptance: required
+  - id: REG-05-HOST-RPC-DEADLINE
+    family: regression
+    property: A silent HTTP peer reaches the poller's production request deadline and the same client subsequently succeeds.
+    topology: { scenario: none, operators: 0, threshold: 0, backends: [cpu] }
+    services: [host-listener-poller]
+    capabilities: []
+    workload: A private loopback server accepts a request without replying, then serves the next request from the same client.
+    fault: { mechanism: none, stage: none, observation: none }
+    participants: { compute: none, submit: none, quorum: not_checked }
+    assertions:
+      - liveness: the exact silent-peer regression runs, returns the first error within its guard and gets the next chain ID successfully
+    timeout_s: 120
+    cleanup: [close private test sockets]
+    runner: scripts/run-stackless-cases.sh --leg rust-regression
+    ci: { leg: rust-regression, backend: cpu }
+    artifacts: [case-results, rust-test-log]
+    acceptance: required
+
+  - id: FM-STORAGE-WRITE-BACKPRESSURE
+    family: failure-matrix
+    property: Repeated capacity rejection of one named ciphertext upload preserves pending material without premature publication and recovers that same object and plaintext after writes resume.
+    topology: { scenario: three-of-three, operators: 3, threshold: 3, backends: [cpu] }
+    services: [sns-worker, object-storage]
+    capabilities: [docker-socket, service-control]
+    workload: A real encrypted input nine plus stored seven produces one receipt-identified noisy output, followed by fresh work.
+    fault: { mechanism: scoped-storage-write-capacity-response, stage: after durable squash and before successful PUT, observation: repeated HTTP 507 responses for the exact operator bucket and handle while its durable squash stays pending and its publishable SNS digest is absent }
+    participants: { compute: all, submit: all, quorum: required }
+    assertions:
+      - backpressure: repeated named PUT rejection preserves pending material without publication before successful forwarding resumes
+      - liveness: original and fresh work complete after capacity release
+      - bytes: the original canonical value agrees across every operator
+      - quorum: the original value reaches authorized distinct-sender quorum
+      - safety: original work remains unique through upload retry
+      - correctness: the original recovered noisy output decrypts to sixteen
+    timeout_s: 1800
+    cleanup: [restore original SNS image command and environment, stop owned proxy]
+    runner: scripts/run-storage-backpressure.sh
+    ci: { leg: storage-pressure, backend: cpu }
+    artifacts: [case-results, storage-write-evidence, workload-handshake, run-identity]
+    acceptance: required
+
+  - id: DEG-07-SUBMISSION-PARTITION
+    family: degraded
+    property: Three computing operators with one visible sender cannot meet threshold two; the original work reaches quorum after one sender returns and remains correct after full rejoin.
+    topology: { scenario: two-of-three, operators: 3, threshold: 2, backends: [cpu] }
+    services: [transaction-sender]
+    capabilities: [docker-socket, service-control]
+    workload: One receipt-identified output computed by every operator while two senders are offline, followed by a dependent output after asymmetric rejoin.
+    fault: { mechanism: two-sender-outage-with-asymmetric-rejoin, stage: compute continues while submission visibility is below threshold, observation: both senders remain stopped throughout a valid one-submitter no-quorum window and the third remains stopped through the majority checkpoint }
+    participants: { compute: all, submit: staged one then two then all, quorum: required }
+    assertions:
+      - precondition: all operators compute while only one authorized sender is visible
+      - bytes: every operator agrees on the original canonical output during the partition
+      - safety: a valid advancing observation window with exactly one distinct submitter has no quorum
+      - quorum: the original handle reaches threshold two while the third sender is still stopped
+      - liveness: original work remains unique and completed across the fully recovered fleet and fresh work progresses
+      - correctness: original and fresh values decrypt to twelve and nineteen
+    timeout_s: 2400
+    cleanup: [restore both owned transaction senders]
+    runner: scripts/run-submission-partition.sh
+    ci: { leg: submission-partition, backend: cpu }
+    artifacts: [case-results, per-phase-participation, original-workload, run-identity]
+    acceptance: required
+
+  - id: REG-06-MIGRATION-VALIDATION
+    family: regression
+    property: Invalid downloaded key material cannot be staged and redelivered activation cannot change or duplicate the migrated logical key.
+    topology: { scenario: none, operators: 0, threshold: 0, backends: [cpu] }
+    services: [host-listener]
+    capabilities: [docker-socket]
+    workload: Real download validation and staging against an isolated database, followed by identical decoded activation replay and scoped transport-control checks.
+    fault: { mechanism: none, stage: none, observation: none }
+    participants: { compute: none, submit: none, quorum: not_checked }
+    assertions:
+      - safety: both exact regressions pass; wrong digest and matching-digest malformed bytes never stage, replay preserves exactly one activated key, and routing cannot capture other keys or outlive its budget
+    timeout_s: 600
+    cleanup: [drop isolated test database]
+    runner: scripts/run-stackless-cases.sh --leg rust-regression
+    ci: { leg: rust-regression, backend: cpu }
+    artifacts: [case-results, tests-run, run-identity]
     acceptance: required

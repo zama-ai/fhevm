@@ -30,6 +30,7 @@ import {
   kmsPartyIds,
   kmsPublicPrefix,
   kmsServicePort,
+  kmsTestKeygenProxyName,
   reconstructionThreshold,
 } from "../kms-party";
 import type { State } from "../types";
@@ -359,7 +360,9 @@ const applyKmsThresholdGatewayEnv = async (
     hostSc[`KMS_NODE_IP_${idx}`] = gw[`KMS_NODE_IP_ADDRESS_${idx}`];
     hostSc[`KMS_NODE_STORAGE_URL_${idx}`] = gw[`KMS_NODE_STORAGE_URL_${idx}`];
     // KMS_SIGNER_ADDRESS_{idx} comes from per-party signing-key discovery.
-    const endpoint = `http://${kmsCoreName(party)}:${kmsServicePort(party)}`;
+    const endpoint = plan.kms.insecureTestKeygen
+      ? `http://${kmsTestKeygenProxyName(party)}:3000`
+      : `http://${kmsCoreName(party)}:${kmsServicePort(party)}`;
     const dbName = kmsConnectorDbName(party);
     if (party === 1) {
       envs["kms-connector"].KMS_CONNECTOR_KMS_CORE_ENDPOINTS = endpoint;
@@ -690,10 +693,10 @@ export const renderEnvMaps = async (
   const compat = compatPolicyForState(plan);
 
   const versionsEnv: Record<string, string> = { ...plan.versions.env, ...compat.composeEnv };
-  // Threshold + Test params: keygen/crsgen triggers read ${KEYGEN_PARAMS_TYPE}
-  // from the compose env (versions.env) → ParamsType.Test (=1).
-  if (plan.kms.mode === "threshold" && plan.kms.fheParams === "Test") {
-    versionsEnv.KEYGEN_PARAMS_TYPE = "1";
+  // Bind keygen/crsgen triggers explicitly to the selected parameter family.
+  // Do not inherit a stale Test value when opting into Default test keygen.
+  if (plan.kms.mode === "threshold") {
+    versionsEnv.KEYGEN_PARAMS_TYPE = plan.kms.fheParams === "Test" ? "1" : "0";
   }
   return { componentEnvs: envs, instanceEnvs, versionsEnv };
 };

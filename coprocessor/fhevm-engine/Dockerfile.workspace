@@ -83,6 +83,7 @@ RUN npm ci && \
 # =============================================================================
 FROM ghcr.io/zama-ai/fhevm/gci/rust-glibc:${RUST_IMAGE_VERSION} AS builder
 
+ARG CARGO_FEATURES=""
 ARG CARGO_PROFILE=release
 ARG BUILD_ID=unknown
 ARG SCCACHE_BUCKET
@@ -126,7 +127,7 @@ RUN --mount=type=cache,target=/usr/local/cargo/registry,sharing=locked \
       export AWS_SECRET_ACCESS_KEY="$(cat /run/secrets/sccache_aws_secret_access_key)"; \
     fi && \
     cargo fetch && \
-    SQLX_OFFLINE=true BUILD_ID=${BUILD_ID} cargo build --profile=${CARGO_PROFILE} --workspace && \
+    SQLX_OFFLINE=true BUILD_ID=${BUILD_ID} cargo build --profile=${CARGO_PROFILE} --workspace --features "${CARGO_FEATURES}" && \
     if [ -n "${SCCACHE_BUCKET}" ] && command -v sccache >/dev/null 2>&1; then sccache --show-stats; fi && \
     mkdir -p /out && \
     cp target/${CARGO_PROFILE}/tfhe_worker /out/ && \
