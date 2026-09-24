@@ -29,7 +29,7 @@ use kms_worker::core::solana::{
     handle_binding::HandleBindingFailure,
     pipeline::authorize_request,
     scope::{ScopeFailure, check_scope},
-    snapshot::SnapshotAccount,
+    snapshot::{SYSTEM_PROGRAM_ID, SnapshotAccount},
 };
 use solana_support::*;
 use zama_solana_acl::encrypted_store_discriminator;
@@ -100,6 +100,39 @@ fn an_encrypted_store_absent_at_the_observation_is_transient() {
         }
         .is_recoverable()
     );
+}
+
+/// Anyone can fund a store's derivable address before the store is created there, and the host
+/// still creates it later. The funded, empty System account is absent, as on the watermark and
+/// delegation rows; System-owned data is not.
+#[test]
+fn an_empty_system_account_at_the_store_address_is_absent() {
+    let encrypted_store =
+        EncryptedStoreFixture::allowing(handle(0x16, FHE_TYPE_UINT64), Wallet::new(1).pubkey());
+    let funded = SnapshotAccount {
+        owner: SYSTEM_PROGRAM_ID,
+        data: vec![],
+    };
+    let failure = resolve_from(
+        &World::at_slot(1).with_account(encrypted_store.account_key, funded),
+        encrypted_store.account_key,
+    )
+    .expect_err("an empty account authorizes nothing");
+    assert!(matches!(failure, EncryptedStoreFailure::Absent { .. }));
+
+    let written = SnapshotAccount {
+        owner: SYSTEM_PROGRAM_ID,
+        data: vec![1],
+    };
+    let failure = resolve_from(
+        &World::at_slot(1).with_account(encrypted_store.account_key, written),
+        encrypted_store.account_key,
+    )
+    .expect_err("a System account with data is not an encrypted store");
+    assert!(matches!(
+        failure,
+        EncryptedStoreFailure::ForeignOwner { .. }
+    ));
 }
 
 /// Program ownership is the sole trust anchor of the whole chain: nobody but the host program

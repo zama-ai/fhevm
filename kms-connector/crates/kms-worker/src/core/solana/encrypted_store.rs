@@ -49,13 +49,16 @@ fn encrypted_store_address(
 
 /// The account must exist, be owned by the host program, decode as an encrypted store, live at
 /// the address its own fields derive, and name a real authority. Trailing bytes are legal: a
-/// store grows by realloc and never shrinks.
+/// store grows by realloc and never shrinks. An empty System-owned account is absent: anyone can
+/// fund the derivable address before the store is created there.
 pub fn resolve_encrypted_store(
     account: Option<&SnapshotAccount>,
     program_id: SolanaPubkeyBytes,
     account_key: SolanaPubkeyBytes,
 ) -> Result<ResolvedEncryptedStore, EncryptedStoreFailure> {
-    let account = account.ok_or(EncryptedStoreFailure::Absent { account_key })?;
+    let account = account
+        .filter(|account| !account.is_uninitialized_pda())
+        .ok_or(EncryptedStoreFailure::Absent { account_key })?;
     if account.owner != program_id {
         return Err(EncryptedStoreFailure::ForeignOwner {
             account_key,
