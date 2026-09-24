@@ -1,3 +1,4 @@
+import { assertMigrationCandidateCheckout } from "../rollouts/v0.14-to-v0.15-gpu-key-migration/versions";
 import { describe, expect, test } from "bun:test";
 
 import {
@@ -22,7 +23,7 @@ import {
   optionalCoprocessorVersionKeys,
   relayerVersionKeys,
 } from "../rollouts/v0.14-to-v0.15-gpu-key-migration/versions";
-import { parseBlueGreenScenario } from "./scenario/resolve";
+import { parseBlueGreenScenario, resolveBlueGreenScenario } from "./scenario/resolve";
 
 const material = (overrides: Partial<OperatorMaterial> = {}): OperatorMaterial => ({
   blockNumber: 10,
@@ -69,6 +70,14 @@ describe("RFC 029 rollout gates", () => {
     expect(scenario.gcs.deferredStart).toBe(true);
     expect(scenario.hostChains).toHaveLength(2);
     expect(scenario.kms).toEqual({ mode: "threshold", parties: 4, threshold: 1, fheParams: "Test" });
+  });
+
+  test("selects Default parameters at baseline creation for GPU continuation", () => {
+    const scenario = parseBlueGreenScenario(migrationScenario("v0.14.1", true), "GPU migration");
+    expect(resolveBlueGreenScenario("gpu-migration.yaml", scenario).kms).toEqual({ mode: "threshold", parties: 4, threshold: 1, committeeSize: 4, fheParams: "Default", insecureTestKeygen: true });
+    expect(scenario.bcs?.source).toEqual({ mode: "registry", tag: "v0.14.1" });
+    expect(scenario.gcs.env?.FORCE_LEGACY_SERVER_KEY).toBe("true");
+    expect(scenario.gcs.deferredStart).toBe(true);
   });
 
   test("changes only the intended deployment unit in each version lock", () => {
@@ -175,4 +184,17 @@ describe("RFC 029 rollout gates", () => {
       ]),
     ).toThrow("stored bytes differ from the verified download");
   });
+});
+
+test("candidate migration cannot inherit the historical target or an implicit baseline", () => {
+  expect(() => migrationTargetSha({ RFC029_ACCEPTANCE_MODE: "candidate" })).toThrow("explicit full");
+  expect(() => migrationTargetSha({ RFC029_ACCEPTANCE_MODE: "candidate", RFC029_TARGET_FHEVM_SHA: "main" })).toThrow("explicit full");
+  expect(() => migrationTargetSha({ RFC029_ACCEPTANCE_MODE: "candidate", RFC029_TARGET_FHEVM_SHA: "a".repeat(40) })).toThrow("explicit RFC029_BASELINE");
+  expect(migrationTargetSha({ RFC029_ACCEPTANCE_MODE: "candidate", RFC029_TARGET_FHEVM_SHA: "a".repeat(40), RFC029_BASELINE_FHEVM_TAG: "release-build" })).toBe("a".repeat(40));
+});
+
+test("candidate migration binds locally built Green to the exact clean target", () => {
+  expect(() => assertMigrationCandidateCheckout("a".repeat(40), "a".repeat(40))).not.toThrow();
+  expect(() => assertMigrationCandidateCheckout("a".repeat(40), "b".repeat(40))).toThrow("clean checkout");
+  expect(() => assertMigrationCandidateCheckout("a".repeat(40), "a".repeat(40) + "-dirty")).toThrow("clean checkout");
 });
