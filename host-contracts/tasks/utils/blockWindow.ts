@@ -42,35 +42,41 @@ export interface BlockWindowResult {
   usedFallback: boolean;
 }
 
-// Read tip + sample back BLOCK_TIME_SAMPLE_SIZE blocks to estimate average block time. Null if chain too young.
-async function sampleBlockTime(provider: JsonRpcProvider): Promise<{
+export type BlockReader = Pick<JsonRpcProvider, 'getBlockNumber' | 'getBlock'>;
+
+export interface ChainTip {
   tipBlock: number;
   tipTimestamp: number;
-  averageBlockTimeSeconds: number | null;
-}> {
+}
+
+export async function readChainTip(provider: BlockReader): Promise<ChainTip> {
   const tipBlock = await provider.getBlockNumber();
   const tip = await provider.getBlock(tipBlock);
   if (!tip) {
     throw new Error(`Failed to fetch tip block #${tipBlock}`);
   }
+  return { tipBlock, tipTimestamp: Number(tip.timestamp) };
+}
+
+// Read tip + sample back BLOCK_TIME_SAMPLE_SIZE blocks to estimate average block time. Null if chain too young.
+async function sampleBlockTime(
+  provider: JsonRpcProvider,
+): Promise<ChainTip & { averageBlockTimeSeconds: number | null }> {
+  const { tipBlock, tipTimestamp } = await readChainTip(provider);
   const sampleStart = Math.max(1, tipBlock - BLOCK_TIME_SAMPLE_SIZE);
   if (sampleStart >= tipBlock) {
-    return { tipBlock, tipTimestamp: Number(tip.timestamp), averageBlockTimeSeconds: null };
+    return { tipBlock, tipTimestamp, averageBlockTimeSeconds: null };
   }
   const sampleStartBlock = await provider.getBlock(sampleStart);
   if (!sampleStartBlock) {
-    return { tipBlock, tipTimestamp: Number(tip.timestamp), averageBlockTimeSeconds: null };
+    return { tipBlock, tipTimestamp, averageBlockTimeSeconds: null };
   }
   const elapsedBlocks = tipBlock - sampleStart;
-  const elapsedSeconds = Number(tip.timestamp) - Number(sampleStartBlock.timestamp);
+  const elapsedSeconds = tipTimestamp - Number(sampleStartBlock.timestamp);
   if (elapsedSeconds <= 0 || elapsedBlocks <= 0) {
-    return { tipBlock, tipTimestamp: Number(tip.timestamp), averageBlockTimeSeconds: null };
+    return { tipBlock, tipTimestamp, averageBlockTimeSeconds: null };
   }
-  return {
-    tipBlock,
-    tipTimestamp: Number(tip.timestamp),
-    averageBlockTimeSeconds: elapsedSeconds / elapsedBlocks,
-  };
+  return { tipBlock, tipTimestamp, averageBlockTimeSeconds: elapsedSeconds / elapsedBlocks };
 }
 
 // Project a wall-clock instant to a block number on the same chain (rounds to nearest block).

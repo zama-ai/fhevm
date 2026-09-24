@@ -27,6 +27,12 @@ counter compiled into the binary and is never named in a proposal.
 - The wall-clock start time for the dry-run evaluation window has been finalized.
 - The start time is far enough in the future for the DAO to vote first (the `--buffer` value, typically `2h` on mainnet).
 
+`--start-time` and `--buffer` apply to the host chains only. The Gateway mints blocks on demand, so a
+block projected from wall-clock time may never exist; `gwStartBlock` is therefore pinned to the Gateway
+tip at the moment the task runs. Gateway proofs minted between the task run and the DAO execution are
+replayed by the green zkproof-worker once the dry run activates. Run the task close to the vote, and
+coordinate the green zkproof-worker replica count with infra when the lead is long.
+
 ## Step 1 — Run the prepare task
 
 Run `task:buildProposeCoprocessorUpgradeCalldata` (DAO path — computes block windows and prints the Aragon
@@ -83,7 +89,7 @@ Once the DAO vote passes and the proposal executes, the on-chain `proposeCoproce
 | `--environment must be one of: devnet, testnet, mainnet, local` | Pass a valid `--environment`; `local` is only for the test-suite stack.         |
 | `duration too short for chain block time`                       | Use at least `1m` for `--duration`.                                             |
 
-The task exits non-zero (and prints the calldata for inspection) if any chain's `startBlock` is
+The task exits non-zero (and prints the calldata for inspection) if any host chain's `startBlock` is
 closer to its tip than `--buffer`. `npx hardhat help task:buildProposeCoprocessorUpgradeCalldata` prints the full
 flag reference.
 
