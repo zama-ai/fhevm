@@ -467,8 +467,9 @@ and `mollusk_fhe_execute_malformed_trust_witness_is_rejected`.
 user's ed25519 signature over the full request — identity, handles,
 allowed scopes, validity window, and nonce. The
 relayer and gateway are transport; neither can alter who asks or for what.
-Pinned by `every_vector_behaves_as_declared`, `every_wire_field_reaches_the_canonical_bytes` (every request field
-changes the signed bytes) and `a_field_the_relayer_changed_fails_the_signature` (the connector refuses a permit whose
+Pinned by `every_vector_behaves_as_declared`, `every_blob_field_reaches_the_canonical_bytes` (every blob field
+changes the request bytes), `every_field_lands_in_its_place_and_the_chain_comes_from_the_handles` (assembly puts each
+Gateway and blob field in its permit role) and `a_field_the_relayer_changed_fails_the_signature` (the connector refuses a permit whose
 key, window or routing the relayer changed).
 
 **43. [ANTI]** The user-decrypt nonce is not dedup-enforced on-chain or in the
