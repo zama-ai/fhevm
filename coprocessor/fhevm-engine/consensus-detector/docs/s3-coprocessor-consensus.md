@@ -60,8 +60,10 @@ If some coprocessors are still finishing the block, retries keep looking for
 quorum every `--manifest-verification-retry-delay` (default **10s**), up to
 `--manifest-verification-retry-count` extra attempts (default **59**). That is
 a nominal **ten-minute** window after the first attempt
-(`10 s + 59 × 10 s`), not counting attempt runtime. Consensus stops retries
-immediately. If a coprocessor still has not finished after that window, this
+(`10 s + 59 × 10 s`), not counting attempt runtime. Retries only wait for
+missing peer manifests: consensus, or any outcome once every registered peer
+manifest at that height has been compared, stops them immediately (`verified`).
+If a coprocessor still has not finished after that window, this
 task is exhausted; the next published manifest starts the same delay and
 retry schedule, and its first attempt fetches covering history for scopes
 still missing. Drift is recorded when a completed attempt sees a difference;
@@ -357,7 +359,11 @@ expired claim cannot finalize the task. Retry count and delay are bounded by:
 The defaults make the first attempt eligible 10 seconds after publication, then
 allow 59 retries spaced 10 seconds apart (60 attempts total). This preserves a
 nominal ten-minute window: `10 s + 59 × 10 s`, excluding attempt execution time
-and polling latency. Consensus stops retries immediately.
+and polling latency. Consensus stops retries immediately. So does any other
+outcome once every registered peer has an authenticated manifest at the task's
+height: the task becomes `verified`, because later attempts would compare the
+same immutable evidence. A historical difference stays in every later signed
+history, so retrying it would only repeat the same drift.
 
 ### 5. Compare commitments
 
@@ -401,8 +407,10 @@ reusable as completed work.
 Historical reconstruction must reproduce each publisher's advertised digest.
 Contradictory signed history remains unresolved even when the downloaded handles
 agree. Handle comparison still records any concrete differences, but the attempt
-is not localization-complete or cacheable. The normal retry budget applies; its
-exhaustion retains the evidence without requiring a peer to publish a revision.
+is not localization-complete or cacheable. Retries apply only while a peer
+manifest at the task's height is missing; later tasks whose history covers the
+same range localize it again. The evidence is retained without requiring a peer
+to publish a revision.
 
 A cache hit requires the same consensus epoch, chain, context, local publisher, format,
 exact historical bounds and scale, ending block hash, local commitment, publisher
@@ -780,7 +788,9 @@ A task points to one exact archived local manifest revision. It stores:
 - claim ownership and expiry;
 - the latest outcome.
 
-Its states are `pending`, `claimed`, `consensus`, and `retry_exhausted`.
+Its states are `pending`, `claimed`, `consensus`, `verified`, and
+`retry_exhausted`. `verified` is terminal: every registered peer manifest was
+compared and `latest_outcome` holds the non-consensus result.
 `pending` is also used while registry data has not yet been pinned.
 
 Per-peer rows store the bound signer and bucket, attempt progress, errors, and the

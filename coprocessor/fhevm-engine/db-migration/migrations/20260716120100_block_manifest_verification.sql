@@ -13,7 +13,7 @@ CREATE TABLE IF NOT EXISTS block_manifest_verification_task
     attempt_count INTEGER NOT NULL DEFAULT 0
         CHECK (attempt_count >= 0 AND attempt_count <= max_attempts),
     state TEXT NOT NULL DEFAULT 'pending'
-        CHECK (state IN ('pending', 'claimed', 'consensus', 'retry_exhausted')),
+        CHECK (state IN ('pending', 'claimed', 'consensus', 'verified', 'retry_exhausted')),
     latest_outcome TEXT NOT NULL DEFAULT 'unknown'
         CHECK (latest_outcome IN (
             'unknown',

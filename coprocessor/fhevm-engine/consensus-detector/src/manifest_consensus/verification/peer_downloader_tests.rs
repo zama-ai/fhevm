@@ -674,7 +674,7 @@ async fn rejected_predecessor_does_not_hide_current_revision_on_retry() {
 
 #[tokio::test(flavor = "multi_thread")]
 #[serial]
-async fn concurrent_retry_downloads_new_peer_revision_and_reaches_consensus() {
+async fn drift_with_every_peer_manifest_is_verified_without_retry() {
     let (_instance, pool) = setup_download_db().await;
     let signers = test_signers();
     seed_registry(&pool, &signers[..2], 2).await;
@@ -688,57 +688,42 @@ async fn concurrent_retry_downloads_new_peer_revision_and_reaches_consensus() {
     let first_wave = concurrent_wave(&pool, &source).await;
     assert_eq!(completed_runs(&first_wave), 1, "{first_wave:?}");
     assert!(first_wave.iter().all(Result::is_ok), "{first_wave:?}");
-    assert_target(&pool, "pending", "drift", 1).await;
+    // Every registered peer manifest was compared: the retry budget is unused.
+    assert_target(&pool, "verified", "drift", 1).await;
     assert_eq!(source.body_downloads(signers[1].address()), 1);
     assert_eq!(archive_count(&pool).await, 2);
-    let unresolved = sqlx::query_scalar::<_, i64>(
-        "SELECT COUNT(*) FROM drifted_handle WHERE status = 'unresolved'",
-    )
-    .fetch_one(&pool)
-    .await
-    .expect("count unresolved peer-revision drift findings");
-    assert!(unresolved > 0);
 
     let repaired_one =
         sign_payload(&signers[1], revision_payload(signers[1].address(), 1, 1)).await;
     source.set_manifests(signers[1].address(), &[drifting_zero, repaired_one]);
     sqlx::query(
         "UPDATE block_manifest_verification_task
-            SET next_attempt_at = NOW() - INTERVAL '1 second'
-          WHERE state = 'pending'",
+            SET next_attempt_at = NOW() - INTERVAL '1 second'",
     )
     .execute(&pool)
     .await
-    .expect("make peer-revision retry immediately due");
+    .expect("try to make the verified task due");
 
     let second_wave = concurrent_wave(&pool, &source).await;
-    assert_eq!(completed_runs(&second_wave), 1, "{second_wave:?}");
-    assert!(second_wave.iter().all(Result::is_ok), "{second_wave:?}");
-    assert_target(&pool, "consensus", "consensus", 2).await;
-    assert_eq!(source.body_downloads(signers[1].address()), 2);
-    assert_eq!(archive_count(&pool).await, 3);
-    let states = sqlx::query(
-        "SELECT COUNT(*) FILTER (WHERE status = 'resolved') AS resolved,
-                COUNT(*) FILTER (WHERE status = 'unresolved') AS unresolved
-           FROM drifted_handle",
-    )
-    .fetch_one(&pool)
-    .await
-    .expect("load peer-revision finding state");
-    assert_eq!(states.try_get::<i64, _>("resolved").unwrap(), 0);
-    assert_eq!(states.try_get::<i64, _>("unresolved").unwrap(), unresolved);
+    assert!(
+        second_wave
+            .iter()
+            .all(|outcome| matches!(outcome, Ok(None))),
+        "{second_wave:?}"
+    );
+    assert_target(&pool, "verified", "drift", 1).await;
+    assert_eq!(source.body_downloads(signers[1].address()), 1);
+    assert_eq!(archive_count(&pool).await, 2);
     let evidence = sqlx::query(
         "SELECT
              (SELECT COUNT(*) FROM block_manifest_verification_attempt) AS attempts,
-             (SELECT COUNT(*) FROM block_manifest_verification_attempt_drift) AS drifts,
              (SELECT COUNT(*) FROM block_manifest_verification_attempt
                WHERE outcome = 'drift' AND localization_complete) AS localized_drift",
     )
     .fetch_one(&pool)
     .await
     .expect("load durable verification evidence");
-    assert_eq!(evidence.try_get::<i64, _>("attempts").unwrap(), 2);
-    assert!(evidence.try_get::<i64, _>("drifts").unwrap() > 0);
+    assert_eq!(evidence.try_get::<i64, _>("attempts").unwrap(), 1);
     assert_eq!(evidence.try_get::<i64, _>("localized_drift").unwrap(), 1);
 }
 
@@ -876,10 +861,11 @@ async fn concurrent_workers_cover_five_copro_drift_populations_from_every_origin
                 .fetch_one(&pool)
                 .await
                 .expect("load five-copro verification result");
+                // Every peer manifest is archived, so no outcome waits for a retry.
                 let terminal_state = if expected_outcome == VerificationOutcome::Consensus {
                     "consensus"
                 } else {
-                    "retry_exhausted"
+                    "verified"
                 };
                 assert_eq!(
                     row.try_get::<String, _>("state").unwrap(),
@@ -1100,10 +1086,7 @@ async fn detailed_consensus_does_not_hide_localized_historical_drift() {
     .fetch_one(&pool)
     .await
     .expect("load historical drift target");
-    assert_eq!(
-        target.try_get::<String, _>("state").unwrap(),
-        "retry_exhausted"
-    );
+    assert_eq!(target.try_get::<String, _>("state").unwrap(), "verified");
     assert_eq!(
         target.try_get::<String, _>("latest_outcome").unwrap(),
         "drift"
@@ -1150,9 +1133,7 @@ async fn detailed_consensus_does_not_hide_localized_historical_drift() {
         B256::repeat_byte(0x31).to_vec()
     );
     assert_eq!(
-        finding
-            .try_get::<Vec<u8>, _>("quorum_ct64_digest")
-            .unwrap(),
+        finding.try_get::<Vec<u8>, _>("quorum_ct64_digest").unwrap(),
         B256::repeat_byte(0x32).to_vec()
     );
     for signer in &signers[1..] {
@@ -1325,8 +1306,11 @@ async fn persistent_historical_drift_reuses_exact_localization_with_quorum() {
     .expect("count localized historical drift handles");
     assert!(localized_handles > 0);
 
+    // Every peer manifest was compared, so the task needs no retry.
+    assert_target(&pool, "verified", "drift", 1).await;
+
     // The first attempt has fully localized this historical drift. Losing the
-    // old local bodies must not make its retry re-localize the same comparison.
+    // old local bodies must not make a repeated comparison re-localize it.
     sqlx::query(
         "DELETE FROM block_manifest
           WHERE publisher = $1
@@ -1339,17 +1323,18 @@ async fn persistent_historical_drift_reuses_exact_localization_with_quorum() {
     .expect("remove old local manifests after localization");
     sqlx::query(
         "UPDATE block_manifest_verification_task
-            SET next_attempt_at = NOW() - INTERVAL '1 second'
-          WHERE state = 'pending'",
+            SET state = 'pending',
+                next_attempt_at = NOW() - INTERVAL '1 second'
+          WHERE state = 'verified'",
     )
     .execute(&pool)
     .await
-    .expect("make persistent drift retry due");
+    .expect("reopen the verified task to repeat the comparison");
 
     let second_wave = concurrent_wave(&pool, &source).await;
     assert!(second_wave.iter().all(Result::is_ok), "{second_wave:?}");
     assert_eq!(completed_runs(&second_wave), 1, "{second_wave:?}");
-    assert_target(&pool, "retry_exhausted", "drift", 2).await;
+    assert_target(&pool, "verified", "drift", 2).await;
     assert_eq!(
         source.body_downloads(signers[1].address()),
         first_scan_downloads,
@@ -1453,7 +1438,8 @@ async fn concurrent_workers_do_not_invent_findings_when_historical_bodies_are_mi
         .find_map(|outcome| outcome.as_ref().ok().copied().flatten())
         .expect("one worker completed incomplete historical verification");
     assert_eq!(result.outcome, VerificationOutcome::Drift);
-    assert_target(&pool, "retry_exhausted", "drift", 1).await;
+    // Current peer manifests are complete; later tasks localize the history again.
+    assert_target(&pool, "verified", "drift", 1).await;
     assert_peer_failure(&pool, "incomplete:").await;
     assert_eq!(
         sqlx::query_scalar::<_, i64>("SELECT COUNT(*) FROM drifted_handle")
@@ -1531,19 +1517,21 @@ async fn covering_s3_is_not_retried_on_the_same_task() {
         "first attempt lists the current prefix and the missing covering prefix: {lists_after_first}"
     );
 
+    assert_target(&pool, "verified", "drift", 1).await;
+
     sqlx::query(
         "UPDATE block_manifest_verification_task SET next_attempt_at = NOW() - INTERVAL '1 second'",
     )
     .execute(&pool)
     .await
-    .expect("make same-task retry immediately due");
+    .expect("try to make the verified task due");
 
     let second_wave = concurrent_wave(&pool, &source).await;
-    assert_eq!(completed_runs(&second_wave), 1, "{second_wave:?}");
+    assert_eq!(completed_runs(&second_wave), 0, "{second_wave:?}");
     assert_eq!(
         source.list_calls(signers[1].address()),
-        lists_after_first + 1,
-        "same-task retry lists the current prefix only; covering S3 is not fetched again",
+        lists_after_first,
+        "a verified task is not retried; covering S3 is not fetched again",
     );
 }
 
@@ -2567,7 +2555,7 @@ async fn assert_attempt_completed(pool: &PgPool) {
     assert!(
         matches!(
             row.try_get::<String, _>("state").unwrap().as_str(),
-            "consensus" | "retry_exhausted"
+            "consensus" | "verified" | "retry_exhausted"
         ),
         "peer failures must complete rather than leave the task claimed"
     );

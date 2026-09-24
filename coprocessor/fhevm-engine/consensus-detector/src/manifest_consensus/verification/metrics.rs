@@ -80,7 +80,13 @@ static VERIFICATION_TARGETS: LazyLock<IntGaugeVec> = LazyLock::new(|| {
     .unwrap()
 });
 
-const TARGET_STATES: [&str; 4] = ["pending", "claimed", "consensus", "retry_exhausted"];
+const TARGET_STATES: [&str; 5] = [
+    "pending",
+    "claimed",
+    "consensus",
+    "verified",
+    "retry_exhausted",
+];
 
 static SEEN_CONSENSUS_EPOCHS: LazyLock<Mutex<HashSet<String>>> =
     LazyLock::new(|| Mutex::new(HashSet::new()));
