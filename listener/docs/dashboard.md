@@ -71,9 +71,8 @@ Grafana UI → **Dashboards** → **New** → **Import** → upload the JSON fil
 5. **Block Compute Verification**: two sub-sections per failure type (transaction root, receipt root, block hash):
    - **24h counters** (stat panels, top row): total number of compute failures over the last 24 hours — quick "has anything gone wrong today?" glance.
    - **Rate timeseries** (bottom row): failure rate split by `stalling` label — `stalling=false` are skipped permissively (data quality issues), `stalling=true` are hard halts (invariant concerns).
-6. **Catchup**: orchestrator rate, skipped-above-head and fanned-out sub-range 24h counters, sub-range duration p95 + quantiles, counter-rate timeseries — the live catchup pipeline.
+6. **Catchup**: orchestrator rate, skipped-above-head and fanned-out sub-range 24h counters, sub-range duration p95 + quantiles, counter-rate timeseries, plus the request lifecycle (completed, cancelled, cancel-rejected, discarded sub-ranges, active-requests gauge). Both flows share these metrics — split any panel with `sum by (flow) (...)`, or pin a row to one flow with `{flow="catchup"}` / `{flow="final_catchup"}`.
 7. **Finality**: iteration rate (stall detection), finality lag in blocks (final height − final tip), finality-active on/off stat, range duration p95, final tip vs final height timeseries, range duration quantiles.
-8. **Final Catchup**: same panel set as the Catchup row, on the `listener_final_catchup_*` metrics (clamped to the final height instead of the chain head).
 
 ### Healthy vs degraded readings
 

@@ -195,6 +195,10 @@ config):
 curl -s http://127.0.0.1:9091/metrics | grep listener_catchup
 ```
 
+Every metric below carries a `flow` label, either `catchup` or `final_catchup`.
+The two flows share one set of names, so `{flow="catchup"}` narrows to the live
+flow and omitting the selector totals both.
+
 | Metric                                     | Meaning                                                        |
 | ------------------------------------------ | -------------------------------------------------------------- |
 | `listener_catchup_active_requests`         | Gauge of ACTIVE requests, refreshed every 15s.                 |
@@ -203,6 +207,9 @@ curl -s http://127.0.0.1:9091/metrics | grep listener_catchup
 | `listener_catchup_cancel_rejected_total`   | Cancels refused because the id belongs to another consumer.    |
 | `listener_catchup_skipped_above_head_total`| Requests whose `block_start` was above the head.               |
 | `listener_catchup_subrange_discarded_total`| Sub-ranges dropped unread because their request went terminal. |
+| `listener_catchup_iterations_total`        | Requests received by an orchestrator, redeliveries included.   |
+| `listener_catchup_subranges_total`         | Sub-range messages fanned out onto the range queues.           |
+| `listener_catchup_range_duration_seconds`  | Histogram of per-sub-range fetch-and-publish time.             |
 
 The consumer's own `/stats` reports `delivered` and `dropped_stale` per flow.
 `dropped_stale` counts blocks that arrived stamped with a catchup id this

@@ -998,7 +998,8 @@ impl EvmListener {
     ) -> Result<Vec<CatchupPayload>, EvmListenerError> {
         metrics::counter!(
             "listener_catchup_iterations_total",
-            "chain_id" => self.chain_id.to_string()
+            "chain_id" => self.chain_id.to_string(),
+            "flow" => CatchupFlow::Catchup.metric_label()
         )
         .increment(1);
 
@@ -1011,7 +1012,8 @@ impl EvmListener {
         if payload.block_start > chain_height {
             metrics::counter!(
                 "listener_catchup_skipped_above_head_total",
-                "chain_id" => self.chain_id.to_string()
+                "chain_id" => self.chain_id.to_string(),
+                "flow" => CatchupFlow::Catchup.metric_label()
             )
             .increment(1);
             info!(
@@ -1114,7 +1116,8 @@ impl EvmListener {
 
         metrics::histogram!(
             "listener_catchup_range_duration_seconds",
-            "chain_id" => self.chain_id.to_string()
+            "chain_id" => self.chain_id.to_string(),
+            "flow" => CatchupFlow::Catchup.metric_label()
         )
         .record(range_start_time.elapsed().as_secs_f64());
 
@@ -1194,8 +1197,9 @@ impl EvmListener {
         payload: CatchupPayload,
     ) -> Result<Vec<CatchupPayload>, EvmListenerError> {
         metrics::counter!(
-            "listener_final_catchup_iterations_total",
-            "chain_id" => self.chain_id.to_string()
+            "listener_catchup_iterations_total",
+            "chain_id" => self.chain_id.to_string(),
+            "flow" => CatchupFlow::FinalCatchup.metric_label()
         )
         .increment(1);
 
@@ -1207,8 +1211,9 @@ impl EvmListener {
 
         if payload.block_start > final_height {
             metrics::counter!(
-                "listener_final_catchup_skipped_above_head_total",
-                "chain_id" => self.chain_id.to_string()
+                "listener_catchup_skipped_above_head_total",
+                "chain_id" => self.chain_id.to_string(),
+                "flow" => CatchupFlow::FinalCatchup.metric_label()
             )
             .increment(1);
             info!(
@@ -1440,8 +1445,9 @@ impl EvmListener {
         let (catchup_join, fetcher_join) = tokio::join!(catchup_handle, fetcher_handle);
 
         metrics::histogram!(
-            "listener_final_catchup_range_duration_seconds",
-            "chain_id" => self.chain_id.to_string()
+            "listener_catchup_range_duration_seconds",
+            "chain_id" => self.chain_id.to_string(),
+            "flow" => CatchupFlow::FinalCatchup.metric_label()
         )
         .record(range_start_time.elapsed().as_secs_f64());
 
