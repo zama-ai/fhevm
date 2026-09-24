@@ -718,8 +718,6 @@ async fn upsert_finding(
     let observed = finding.observed.as_ref();
     let local_keyset_id = u256_bytes(local.and_then(BlockCiphertextDescriptor::keyset_id));
     let observed_keyset_id = u256_bytes(observed.and_then(BlockCiphertextDescriptor::keyset_id));
-    let local_gateway_key_id =
-        u256_bytes(local.and_then(BlockCiphertextDescriptor::gateway_key_id));
     let local_ct64_digest = digest_bytes(local.and_then(BlockCiphertextDescriptor::ct64_digest));
     let observed_ct64_digest =
         digest_bytes(observed.and_then(BlockCiphertextDescriptor::ct64_digest));
@@ -774,15 +772,15 @@ async fn upsert_finding(
             consensus_epoch, coprocessor_context_id, host_chain_id,
             block_number, block_hash, handle, status,
             local_present, observed_present, local_keyset_id, observed_keyset_id,
-            local_gateway_key_id, local_ct64_digest, observed_ct64_digest,
+            local_ct64_digest, observed_ct64_digest,
             local_ct128_digest, observed_ct128_digest, local_ct128_format,
             observed_ct128_format, observed_commitment_digest, target_ct64_digest,
             target_keyset_id, target_ct128_digest, target_ct128_format,
             last_observed_task_id, reason
         ) VALUES (
             $1, $2, $3, $4, $5, $6, 'unresolved',
-            $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19,
-            $20, $21, $22, $23, $24
+            $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18,
+            $19, $20, $21, $22, $23
         )
         ON CONFLICT (consensus_epoch, coprocessor_context_id, host_chain_id,
                      block_hash, handle)
@@ -793,7 +791,6 @@ async fn upsert_finding(
             observed_present = EXCLUDED.observed_present,
             local_keyset_id = EXCLUDED.local_keyset_id,
             observed_keyset_id = EXCLUDED.observed_keyset_id,
-            local_gateway_key_id = EXCLUDED.local_gateway_key_id,
             local_ct64_digest = EXCLUDED.local_ct64_digest,
             observed_ct64_digest = EXCLUDED.observed_ct64_digest,
             local_ct128_digest = EXCLUDED.local_ct128_digest,
@@ -815,7 +812,7 @@ async fn upsert_finding(
         context.as_slice(), host_chain_id, finding.block_number,
         finding.block_hash.as_slice(), finding.handle.as_slice(),
         local.is_some(), observed.is_some(), local_keyset_id, observed_keyset_id,
-        local_gateway_key_id, local_ct64_digest, observed_ct64_digest,
+        local_ct64_digest, observed_ct64_digest,
         local_ct128_digest, observed_ct128_digest, local_ct128_format,
         observed_ct128_format, finding.observed_commitment_digest.as_slice(),
         target_ct64_digest, target_keyset_id, target_ct128_digest, target_ct128_format,

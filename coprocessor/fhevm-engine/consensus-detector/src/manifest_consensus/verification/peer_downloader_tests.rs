@@ -1859,7 +1859,6 @@ async fn concurrent_one_drifter_replay_resolves_exact_handle_findings() {
                finding.observed_present,
                finding.local_keyset_id,
                finding.observed_keyset_id,
-               finding.local_gateway_key_id,
                finding.local_ct64_digest,
                finding.observed_ct64_digest,
                finding.local_ct128_digest,
@@ -1919,10 +1918,6 @@ async fn concurrent_one_drifter_replay_resolves_exact_handle_findings() {
         assert_eq!(
             row.try_get::<Vec<u8>, _>("observed_keyset_id").unwrap(),
             quorum_keyset_id.to_be_bytes::<32>()
-        );
-        assert_eq!(
-            row.try_get::<Vec<u8>, _>("local_gateway_key_id").unwrap(),
-            local_gateway_key_id.to_be_bytes::<32>()
         );
         assert_eq!(
             row.try_get::<Vec<u8>, _>("local_ct64_digest").unwrap(),
