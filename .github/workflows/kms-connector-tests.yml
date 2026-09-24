@@ -49,7 +49,7 @@ jobs:
             # only caught it because the same PR happened to touch kms-connector/crates.
             - solana/crates/zama-solana-acl/**
             # The cross-implementation fixture sets kms-worker and connector-utils tests consume
-            # (permit, connector-auth, user-decrypt byte vectors): an edit to a committed vector
+            # (permit, leaf-proof, user-decrypt byte vectors): an edit to a committed vector
             # alone must run the Rust consumers that assert against it.
             - solana/test-fixtures/**
 

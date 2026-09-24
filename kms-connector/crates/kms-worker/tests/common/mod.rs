@@ -72,7 +72,6 @@ where
         .collect();
     let decryption_processor = DecryptionProcessor::new(
         &config,
-        context_manager.clone(),
         provider.clone(),
         host_chain_backends,
         ciphertext_manager,

@@ -44,11 +44,11 @@ pub const HCU_TRUSTED_APP_SEED: &[u8] = b"hcu-trusted";
 pub const HCU_BLOCK_METER_SEED: &[u8] = b"hcu-block-meter";
 /// Seed prefix of an application's random-seed nonce PDA.
 pub const RAND_NONCE_SEED: &[u8] = b"rand-nonce";
-/// Seed prefix for per-user permit-invalidation watermark records.
-pub const PERMIT_INVALIDATION_SEED: &[u8] = b"permit-invalidation";
 /// Seed prefix for user-decryption delegation records — the shared crate's constant, so the
 /// program and the off-chain readers of the record cannot drift on the seed.
 pub use zama_solana_acl::DELEGATION_SEED;
+/// Seed prefix for per-user permit-invalidation watermark records.
+pub use zama_solana_acl::PERMIT_INVALIDATION_SEED;
 /// Reserved sentinel standing in for any encrypted store authority, carried by a
 /// wildcard user-decryption delegation row — the shared crate's constant, under the host's
 /// raw-bytes name.

@@ -8,8 +8,7 @@
 //! * authorization cannot be assembled from states that never coexisted — every rule is
 //!   evaluated against one read, and when a delegated entry forces a second one, the earlier
 //!   read produces addresses rather than decisions;
-//! * a request accepted at its observation point is not re-evaluated, because after the reads
-//!   nothing in the path can read anything;
+//! * each invocation uses one deciding snapshot; worker retries authorize again;
 //! * a permit is reusable, but no authorization result is cached — every request pays for its
 //!   own observation.
 //!
@@ -22,21 +21,15 @@
 mod solana_support;
 
 use kms_worker::core::solana::{
-    delegation::{AuthorizedRow, DelegationFailure, check_delegation},
-    deployment::DeploymentIdentity,
-    encrypted_store::{EncryptedStoreFailure, ResolvedEncryptedStore, resolve_encrypted_store},
-    failure::{AuthorizationFailure, FailureClass},
-    handle_binding::{HandleBindingFailure, check_handle_binding},
-    pipeline::{AuthorizationContext, authorize_request},
-    proof::LeafProofOutcome,
-    scope::{ScopeFailure, check_scope},
+    SolanaPubkeyBytes,
+    failure::AuthorizationFailure,
+    handle_binding::HandleBindingFailure,
+    pipeline::authorize_request,
     snapshot::{
-        HostSnapshot, SnapshotAccount, SnapshotError, SnapshotKeys, multiple_accounts_request_body,
-        parse_multiple_accounts_response,
+        HostSnapshot, HostStateReader, SnapshotAccount, SnapshotError, SnapshotKeys,
+        SolanaRpcClient,
     },
-    watermark::{WatermarkFailure, read_watermark},
 };
-use kms_worker::core::solana_acl::SolanaPubkeyBytes;
 use solana_pubkey::Pubkey;
 use solana_support::*;
 
@@ -46,13 +39,6 @@ fn direct_scenario() -> (Wallet, EncryptedStoreFixture, [u8; 32]) {
     let handle = handle(0x10, FHE_TYPE_UINT64);
     let encrypted_store = EncryptedStoreFixture::allowing(handle, wallet.pubkey());
     (wallet, encrypted_store, handle)
-}
-
-fn context<'a>(deployment: &'a DeploymentIdentity) -> AuthorizationContext<'a> {
-    AuthorizationContext {
-        deployment,
-        now_unix_seconds: NOW_INSIDE_WINDOW,
-    }
 }
 
 /// Every key the direct branch will ever look at is derivable from the request and the
@@ -68,17 +54,10 @@ async fn authorizing_a_direct_request_reads_host_state_once() {
         .with_watermark(wallet.pubkey(), 0);
     let proofs = ScriptedProofReader::constant(world.record());
     let reader = ScriptedReader::constant(world);
-    let deployment = deployment();
 
-    authorize_request(
-        &reader,
-        &ServableKmsPair,
-        &proofs,
-        context(&deployment),
-        &request,
-    )
-    .await
-    .expect("a live handle owned by the signer authorizes");
+    authorize_request(&reader, &proofs, CONTEXT, &request)
+        .await
+        .expect("a live handle owned by the signer authorizes");
 
     assert_eq!(
         reader.call_count(),
@@ -110,17 +89,10 @@ async fn authorizing_a_delegated_request_reads_host_state_twice_and_never_more()
     // less specific message.
     let proofs = ScriptedProofReader::constant(world.record());
     let reader = ScriptedReader::scripted(vec![world.clone(), world.clone(), world]);
-    let deployment = deployment();
 
-    authorize_request(
-        &reader,
-        &ServableKmsPair,
-        &proofs,
-        context(&deployment),
-        &request,
-    )
-    .await
-    .expect("a live delegation authorizes a delegated entry");
+    authorize_request(&reader, &proofs, CONTEXT, &request)
+        .await
+        .expect("a live delegation authorizes a delegated entry");
 
     assert_eq!(
         reader.call_count(),
@@ -152,17 +124,10 @@ async fn the_second_read_carries_over_every_key_of_the_first() {
         .with_delegation(&delegation);
     let proofs = ScriptedProofReader::constant(world.record());
     let reader = ScriptedReader::constant(world);
-    let deployment = deployment();
 
-    authorize_request(
-        &reader,
-        &ServableKmsPair,
-        &proofs,
-        context(&deployment),
-        &request,
-    )
-    .await
-    .expect("a live delegation authorizes a delegated entry");
+    authorize_request(&reader, &proofs, CONTEXT, &request)
+        .await
+        .expect("a live delegation authorizes a delegated entry");
 
     let first = reader.call(0);
     let second = reader.call(1);
@@ -225,17 +190,10 @@ async fn a_delegated_entry_plans_both_of_its_delegation_rows() {
         .with_delegation(&wildcard_row);
     let proofs = ScriptedProofReader::constant(world.record());
     let reader = ScriptedReader::constant(world);
-    let deployment = deployment();
 
-    authorize_request(
-        &reader,
-        &ServableKmsPair,
-        &proofs,
-        context(&deployment),
-        &request,
-    )
-    .await
-    .expect("one entry stands on its app row, the other on the wildcard row");
+    authorize_request(&reader, &proofs, CONTEXT, &request)
+        .await
+        .expect("one entry stands on its app row, the other on the wildcard row");
 
     let second = reader.call(1);
     let (app_key, _) = app_row.address();
@@ -269,19 +227,12 @@ async fn every_account_key_is_planned_before_the_first_read() {
         .with_watermark(wallet.pubkey(), 0);
     let proofs = ScriptedProofReader::constant(world.record());
     let reader = ScriptedReader::constant(world);
-    let deployment = deployment();
 
-    let planned = kms_worker::core::solana::snapshot::plan_first_read(&request, &deployment);
+    let planned = kms_worker::core::solana::snapshot::plan_first_read(&request, PROGRAM_ID);
 
-    authorize_request(
-        &reader,
-        &ServableKmsPair,
-        &proofs,
-        context(&deployment),
-        &request,
-    )
-    .await
-    .expect("a live handle owned by the signer authorizes");
+    authorize_request(&reader, &proofs, CONTEXT, &request)
+        .await
+        .expect("a live handle owned by the signer authorizes");
 
     assert_eq!(
         reader.call(0),
@@ -324,17 +275,10 @@ async fn the_deciding_read_drops_the_config_singleton() {
         .with_delegation(&delegation);
     let proofs = ScriptedProofReader::constant(world.record());
     let reader = ScriptedReader::constant(world);
-    let deployment = deployment();
 
-    authorize_request(
-        &reader,
-        &ServableKmsPair,
-        &proofs,
-        context(&deployment),
-        &request,
-    )
-    .await
-    .expect("a live delegation authorizes a delegated entry");
+    authorize_request(&reader, &proofs, CONTEXT, &request)
+        .await
+        .expect("a live delegation authorizes a delegated entry");
 
     let (host_config_key, _) = host_config_address();
     assert!(
@@ -357,9 +301,8 @@ async fn repeated_encrypted_stores_are_read_once() {
         .direct(&encrypted_store, handle)
         .direct(&encrypted_store, handle)
         .typed();
-    let deployment = deployment();
 
-    let planned = kms_worker::core::solana::snapshot::plan_first_read(&request, &deployment);
+    let planned = kms_worker::core::solana::snapshot::plan_first_read(&request, PROGRAM_ID);
 
     assert_eq!(
         planned.len(),
@@ -389,29 +332,18 @@ async fn a_slot_change_between_the_two_reads_does_not_fail_the_request() {
         .with_delegation(&delegation);
     let proofs = ScriptedProofReader::constant(world.record());
     let reader = ScriptedReader::scripted(vec![world.clone(), world.at(101)]);
-    let deployment = deployment();
 
-    let authorized = authorize_request(
-        &reader,
-        &ServableKmsPair,
-        &proofs,
-        context(&deployment),
-        &request,
-    )
-    .await
-    .expect("the deciding observation is the second read, not an agreement of the two");
+    authorize_request(&reader, &proofs, CONTEXT, &request)
+        .await
+        .expect("the deciding observation is the second read, not an agreement of the two");
 
-    assert_eq!(
-        authorized.observed_slot(),
-        101,
-        "the recorded observation point is the read the rules were evaluated against"
-    );
+    assert_eq!(reader.call_count(), 2);
 }
 
 /// The chain going *backwards* between the two reads is a failure, and a transient one. Behind a
 /// load balancer this is a second node that has fallen behind, not a later state: judging the
-/// request on it would report the delegation the discovery read just saw as absent, which is
-/// terminal. A retry that lands on a node which has caught up authorizes the same request.
+/// request on it would report the delegation the discovery read just saw as absent. A retry that
+/// lands on a node which has caught up authorizes the same request.
 #[tokio::test]
 async fn a_deciding_read_older_than_the_discovery_read_is_refused_transiently() {
     let signer = Wallet::new(1);
@@ -429,17 +361,10 @@ async fn a_deciding_read_older_than_the_discovery_read_is_refused_transiently() 
         .with_delegation(&delegation);
     let reader = ScriptedReader::scripted(vec![world.clone(), world.at(99)]);
     let proofs = ScriptedProofReader::unreachable();
-    let deployment = deployment();
 
-    let failure = authorize_request(
-        &reader,
-        &ServableKmsPair,
-        &proofs,
-        context(&deployment),
-        &request,
-    )
-    .await
-    .expect_err("a deciding read behind the discovery read decides nothing");
+    let failure = authorize_request(&reader, &proofs, CONTEXT, &request)
+        .await
+        .expect_err("a deciding read behind the discovery read decides nothing");
 
     assert!(
         matches!(
@@ -451,7 +376,7 @@ async fn a_deciding_read_older_than_the_discovery_read_is_refused_transiently() 
         ),
         "expected the ordering failure, got {failure}"
     );
-    assert_eq!(failure.class(), FailureClass::Transient);
+    assert!(failure.is_recoverable());
 }
 
 /// Equal slots are not a regression: two reads of one slot are the ordinary case when the chain
@@ -470,60 +395,15 @@ async fn two_reads_at_the_same_slot_authorize() {
         .with_encrypted_store(&encrypted_store)
         .with_watermark(signer.pubkey(), 0)
         .with_delegation(&delegation);
-    let deployment = deployment();
 
-    let authorized = authorize_request(
+    authorize_request(
         &ScriptedReader::constant(world.clone()),
-        &ServableKmsPair,
         &ScriptedProofReader::constant(world.record()),
-        context(&deployment),
+        CONTEXT,
         &request,
     )
     .await
     .expect("ordering is not agreement: one slot twice is in order");
-
-    assert_eq!(authorized.observed_slot(), 100);
-}
-
-/// The gate is on the pair of reads, not on any absolute slot: a direct request reads once, so
-/// there is no earlier read for its observation to be older than.
-#[test]
-fn the_ordering_gate_compares_the_two_reads_and_nothing_else() {
-    let keys = SnapshotKeys::new([[7; 32]]);
-    let discovery = World::running_at_slot(100)
-        .read(&keys)
-        .expect("the world reads");
-    let ahead = World::running_at_slot(101)
-        .read(&keys)
-        .expect("the world reads");
-    let level = World::running_at_slot(100)
-        .read(&keys)
-        .expect("the world reads");
-    let behind = World::running_at_slot(99)
-        .read(&keys)
-        .expect("the world reads");
-
-    assert_eq!(
-        ahead
-            .deciding_after(&discovery)
-            .expect("advancing is the expected case")
-            .observed_slot(),
-        101
-    );
-    assert_eq!(
-        level
-            .deciding_after(&discovery)
-            .expect("the same slot is in order")
-            .observed_slot(),
-        100
-    );
-    assert!(matches!(
-        behind.deciding_after(&discovery),
-        Err(SnapshotError::DecidingReadOlderThanDiscovery {
-            discovery_slot: 100,
-            deciding_slot: 99,
-        })
-    ));
 }
 
 /// The state a delegated request is judged against is the deciding read's, not the discovery
@@ -554,17 +434,10 @@ async fn the_deciding_state_of_a_delegated_request_is_the_second_reads() {
     // The record agrees with the deciding read.
     let proofs = ScriptedProofReader::constant(second.record());
     let reader = ScriptedReader::scripted(vec![first, second]);
-    let deployment = deployment();
 
-    let failure = authorize_request(
-        &reader,
-        &ServableKmsPair,
-        &proofs,
-        context(&deployment),
-        &request,
-    )
-    .await
-    .expect_err("the delegator holds no allow leaf at the deciding observation");
+    let failure = authorize_request(&reader, &proofs, CONTEXT, &request)
+        .await
+        .expect_err("the delegator holds no allow leaf at the deciding observation");
 
     assert!(
         matches!(
@@ -576,7 +449,35 @@ async fn the_deciding_state_of_a_delegated_request_is_the_second_reads() {
         ),
         "expected the deciding read's peaks to decide, got {failure}"
     );
-    assert_eq!(failure.class(), FailureClass::Terminal);
+}
+
+/// A record that has sealed the observed history and holds no leaf agrees with the observation, so
+/// it is read once. Whether a later grant lands is left to the attempt budget.
+#[tokio::test]
+async fn a_leaf_the_record_does_not_hold_is_read_once() {
+    let (wallet, _, handle) = direct_scenario();
+    let encrypted_store = EncryptedStoreFixture::allowing(handle, Wallet::new(9).pubkey());
+    let request = RequestBuilder::new(&wallet)
+        .direct(&encrypted_store, handle)
+        .typed();
+    let world = World::running_at_slot(100)
+        .with_encrypted_store(&encrypted_store)
+        .with_watermark(wallet.pubkey(), 0);
+    let proofs = ScriptedProofReader::constant(world.record());
+
+    let failure = authorize_request(&ScriptedReader::constant(world), &proofs, CONTEXT, &request)
+        .await
+        .expect_err("nobody allowed the signer");
+
+    assert!(matches!(
+        failure,
+        AuthorizationFailure::HandleBinding {
+            index: 0,
+            source: HandleBindingFailure::NoLeaf { .. }
+        }
+    ));
+    assert!(failure.is_recoverable());
+    assert_eq!(proofs.call_count(), 1);
 }
 
 /// Missing leaves from a lagging record are fetched once more. If still missing, the request
@@ -590,14 +491,12 @@ async fn the_leaf_record_is_retried_only_when_a_required_leaf_is_unavailable() {
     let world = World::running_at_slot(100)
         .with_encrypted_store(&encrypted_store)
         .with_watermark(wallet.pubkey(), 0);
-    let deployment = deployment();
 
     let in_step = ScriptedProofReader::constant(world.record());
     authorize_request(
         &ScriptedReader::constant(world.clone()),
-        &ServableKmsPair,
         &in_step,
-        context(&deployment),
+        CONTEXT,
         &request,
     )
     .await
@@ -609,9 +508,8 @@ async fn the_leaf_record_is_retried_only_when_a_required_leaf_is_unavailable() {
     let catches_up = ScriptedProofReader::scripted(vec![behind.clone(), world.record()]);
     authorize_request(
         &ScriptedReader::constant(world.clone()),
-        &ServableKmsPair,
         &catches_up,
-        context(&deployment),
+        CONTEXT,
         &request,
     )
     .await
@@ -626,9 +524,8 @@ async fn the_leaf_record_is_retried_only_when_a_required_leaf_is_unavailable() {
     let stays_behind = ScriptedProofReader::scripted(vec![behind.clone(), behind]);
     let failure = authorize_request(
         &ScriptedReader::constant(world),
-        &ServableKmsPair,
         &stays_behind,
-        context(&deployment),
+        CONTEXT,
         &request,
     )
     .await
@@ -645,90 +542,101 @@ async fn the_leaf_record_is_retried_only_when_a_required_leaf_is_unavailable() {
             source: HandleBindingFailure::ProofRecordBehind { .. }
         }
     ));
-    assert_eq!(failure.class(), FailureClass::Retryable);
+    assert!(failure.is_recoverable());
 }
 
-/// Every authorization read asks for `confirmed`. A grant observed on a supermajority-confirmed
-/// fork is sufficient authorization here, and the level is pinned in the request body rather
-/// than left to whatever the endpoint defaults to.
-#[test]
-fn the_account_read_pins_confirmed_commitment() {
-    let keys = SnapshotKeys::new([[3; 32], [4; 32]]);
-
-    let body = multiple_accounts_request_body(&keys);
-
-    assert_eq!(body["method"], "getMultipleAccounts");
-    let params = &body["params"];
-    assert_eq!(
-        params[0][0].as_str().unwrap(),
-        Pubkey::new_from_array([3; 32]).to_string(),
-        "keys are sent in the planned order, so the response can be zipped back onto it"
-    );
-    assert_eq!(
-        params[0][1].as_str().unwrap(),
-        Pubkey::new_from_array([4; 32]).to_string()
-    );
-    assert_eq!(params[1]["commitment"], "confirmed");
-    assert_eq!(params[1]["encoding"], "base64");
+/// Exercise the actual SDK transport; the mock matches commitment, encoding and ordered keys.
+async fn rpc_read(
+    keys: &SnapshotKeys,
+    value: serde_json::Value,
+) -> Result<HostSnapshot, SnapshotError> {
+    let expected = multiple_accounts_request(keys.as_slice());
+    let response = serde_json::json!({"jsonrpc":"2.0","id":0,"result":{"context":{"slot":4242},"value":value}});
+    let mut server = mocktail::server::MockServer::new_http("solana-accounts");
+    server.mock(move |when, then| {
+        when.post().json(expected.clone());
+        then.json(response.clone());
+    });
+    server.start().await.unwrap();
+    SolanaRpcClient::new(
+        server.base_url().unwrap().clone(),
+        std::time::Duration::from_secs(1),
+        std::num::NonZeroUsize::new(1).unwrap(),
+    )
+    .read_accounts(keys)
+    .await
 }
 
-/// The observation point is the state's own account of when it was observed — the response's
-/// context slot — never a locally chosen number. Every slot comparison in the delegation rules
-/// is against this value, so sourcing it locally would silently decide those rules.
-#[test]
-fn the_observed_slot_is_the_context_slot_of_the_response() {
-    let key = [5; 32];
-    let keys = SnapshotKeys::new([key]);
-    let body = serde_json::json!({
-        "jsonrpc": "2.0",
-        "id": 1,
-        "result": {
-            "context": { "slot": 4_242 },
-            "value": [{
-                "owner": Pubkey::new_from_array(PROGRAM_ID).to_string(),
-                "data": ["AQID", "base64"],
-                "lamports": 1,
-                "executable": false,
-                "rentEpoch": 0,
-            }]
-        }
-    })
-    .to_string();
+fn rpc_account() -> serde_json::Value {
+    serde_json::json!({"owner":Pubkey::new_from_array(PROGRAM_ID).to_string(),
+        "data":["AQID","base64"],"lamports":1,"executable":false,"rentEpoch":0})
+}
 
-    let snapshot = parse_multiple_accounts_response(&body, &keys).expect("the response parses");
-
-    assert_eq!(snapshot.observed_slot(), 4_242);
+#[tokio::test]
+async fn confirmed_rpc_preserves_order_null_accounts_and_context_slot() {
+    let keys = SnapshotKeys::new([[5; 32], [6; 32]]);
+    let snapshot = rpc_read(&keys, serde_json::json!([rpc_account(), null]))
+        .await
+        .unwrap();
+    assert_eq!(snapshot.observed_slot(), 4242);
     assert_eq!(
-        snapshot.account(&key).unwrap(),
+        snapshot.account(&[5; 32]).unwrap(),
         Some(&SnapshotAccount {
             owner: PROGRAM_ID,
-            data: vec![1, 2, 3],
+            data: vec![1, 2, 3]
+        })
+    );
+    assert_eq!(snapshot.account(&[6; 32]).unwrap(), None);
+}
+
+#[tokio::test]
+async fn malformed_rpc_accounts_are_errors_never_missing_accounts() {
+    let mut bad_base64 = rpc_account();
+    bad_base64["data"][0] = "not base64!".into();
+    let mut wrong_encoding = rpc_account();
+    wrong_encoding["data"][1] = "base64+zstd".into();
+    let mut bad_owner = rpc_account();
+    bad_owner["owner"] = "not a pubkey".into();
+    let mut missing_owner = rpc_account();
+    missing_owner.as_object_mut().unwrap().remove("owner");
+    let keys = SnapshotKeys::new([[5; 32]]);
+    for account in [bad_base64, wrong_encoding, bad_owner, missing_owner] {
+        assert!(matches!(
+            rpc_read(&keys, serde_json::json!([account])).await,
+            Err(SnapshotError::Unavailable { .. })
+        ));
+    }
+}
+
+/// A node that answers with fewer or more accounts than it was asked for has lost the pairing of
+/// accounts to keys.
+#[rstest::rstest]
+#[case::short(serde_json::json!([]), 0)]
+#[case::oversized(serde_json::json!([null, null]), 2)]
+#[tokio::test]
+async fn an_rpc_answer_of_the_wrong_length_is_an_error(
+    #[case] value: serde_json::Value,
+    #[case] returned: usize,
+) {
+    let keys = SnapshotKeys::new([[5; 32]]);
+    assert_eq!(
+        rpc_read(&keys, value).await,
+        Err(SnapshotError::ResponseLengthMismatch {
+            requested: 1,
+            returned,
         })
     );
 }
 
-/// A key that has no account is an absence *inside* the snapshot, not a failure of the read. The
-/// distinction decides the outcome: an absent encrypted store is a rule outcome that may
-/// resolve itself at a later observation, while a failed read tells us nothing about any account.
-#[test]
-fn a_missing_account_is_an_absence_in_the_snapshot_not_a_read_failure() {
-    let key = [6; 32];
-    let keys = SnapshotKeys::new([key]);
-    let body = serde_json::json!({
-        "jsonrpc": "2.0",
-        "id": 1,
-        "result": { "context": { "slot": 7 }, "value": [null] }
-    })
-    .to_string();
-
-    let snapshot = parse_multiple_accounts_response(&body, &keys).expect("the response parses");
-
-    assert_eq!(snapshot.observed_slot(), 7);
-    assert_eq!(
-        snapshot.account(&key).expect("the key was read"),
-        None,
-        "an account that does not exist is a known absence"
-    );
+#[tokio::test]
+async fn a_full_hundred_account_snapshot_is_one_rpc_call() {
+    let keys = SnapshotKeys::new((0..100).map(|i| [i; 32]));
+    let snapshot = rpc_read(&keys, serde_json::json!(vec![None::<()>; 100]))
+        .await
+        .unwrap();
+    for key in keys.as_slice() {
+        assert_eq!(snapshot.account(key).unwrap(), None);
+    }
 }
 
 /// Asking the snapshot for an account nobody planned is a defect in key planning, and it is
@@ -746,92 +654,82 @@ fn an_account_that_was_never_planned_cannot_be_read_from_the_snapshot() {
                 data: vec![],
             },
         )
-        .read(&SnapshotKeys::new([planned]))
-        .expect("the world reads");
+        .read(&SnapshotKeys::new([planned]));
 
     let error = snapshot
         .account(&never_planned)
         .expect_err("an unplanned key is not a legitimate question");
 
-    assert!(matches!(
-        error,
-        SnapshotError::KeyNotInSnapshot { key } if key == never_planned
-    ));
+    assert_eq!(error.key, never_planned);
 }
 
-/// Every state-dependent check takes the observation and no way to reach the network. This is
-/// the type-level half of "a request accepted at its observation point is not re-evaluated":
-/// there is no check that *could* re-read, whatever a future caller wanted. The binding rule
-/// takes the record's answer as a value for the same reason: it verifies, it does not fetch.
-///
-/// The delegation signature is also where the delegation counter used to be. It takes a
-/// snapshot, a program id and three identities — the counter is not a parameter, because
-/// pinning it would invalidate in-flight requests on every unrelated delegation update.
-#[test]
-fn authorization_checks_take_the_observation_and_never_a_reader() {
-    let _resolve_encrypted_store: fn(
-        &HostSnapshot,
-        SolanaPubkeyBytes,
-        [u8; 32],
-    ) -> Result<ResolvedEncryptedStore, EncryptedStoreFailure> = resolve_encrypted_store;
-
-    let _read_watermark: fn(
-        &HostSnapshot,
-        SolanaPubkeyBytes,
-        SolanaPubkeyBytes,
-    ) -> Result<u64, WatermarkFailure> = read_watermark;
-
-    let _check_delegation: fn(
-        &HostSnapshot,
-        SolanaPubkeyBytes,
-        SolanaPubkeyBytes,
-        SolanaPubkeyBytes,
-        SolanaPubkeyBytes,
-    ) -> Result<AuthorizedRow, DelegationFailure> = check_delegation;
-
-    let _check_handle_binding: fn(
-        &ResolvedEncryptedStore,
-        [u8; 32],
-        SolanaPubkeyBytes,
-        &LeafProofOutcome,
-    ) -> Result<(), HandleBindingFailure> = check_handle_binding;
-
-    let _check_scope: fn(
-        &zama_solana_permit::AllowedScopes,
-        &ResolvedEncryptedStore,
-    ) -> Result<(), ScopeFailure> = check_scope;
-}
-
-/// An accepted request carries the point it was accepted at. Recording it is what lets the
-/// rest of the system state which observation the handle set belongs to, instead of inferring
-/// it from a later read — which is the failure mode this whole file exists to prevent.
 #[tokio::test]
-async fn an_accepted_request_records_its_observation_point() {
-    let (wallet, encrypted_store, handle) = direct_scenario();
-    let request = RequestBuilder::new(&wallet)
-        .direct(&encrypted_store, handle)
-        .typed();
-    let world = World::running_at_slot(9_000)
-        .with_encrypted_store(&encrypted_store)
-        .with_watermark(wallet.pubkey(), 0);
-    let proofs = ScriptedProofReader::constant(world.record());
-    let reader = ScriptedReader::constant(world);
-    let deployment = deployment();
-
-    let authorized = authorize_request(
-        &reader,
-        &ServableKmsPair,
-        &proofs,
-        context(&deployment),
-        &request,
-    )
-    .await
-    .expect("a live handle owned by the signer authorizes");
-
-    assert_eq!(authorized.observed_slot(), 9_000);
-    assert_eq!(
-        authorized.entries().len(),
-        1,
-        "the accepted entry set is what the response will bind"
+async fn rpc_throttling_retries_fit_inside_the_configured_deadline() {
+    let mut server = mocktail::server::MockServer::new_http("throttled-rpc");
+    server.mock(|when, then| {
+        when.post();
+        then.status(mocktail::StatusCode::TOO_MANY_REQUESTS);
+    });
+    server.start().await.unwrap();
+    let client = SolanaRpcClient::new(
+        server.base_url().unwrap().clone(),
+        std::time::Duration::from_millis(50),
+        std::num::NonZeroUsize::new(1).unwrap(),
     );
+    let result = tokio::time::timeout(
+        std::time::Duration::from_millis(250),
+        client.read_accounts(&SnapshotKeys::new([[1; 32]])),
+    )
+    .await;
+    assert!(
+        result
+            .expect("SDK retries must fit inside the request deadline")
+            .is_err()
+    );
+}
+
+#[tokio::test]
+async fn rpc_limit_is_shared_across_clones_and_cancellation_releases_it() {
+    use std::{num::NonZeroUsize, time::Duration};
+    use tokio::{
+        io::{AsyncReadExt, AsyncWriteExt},
+        net::TcpListener,
+        time::timeout,
+    };
+
+    let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let client = SolanaRpcClient::new(
+        format!("http://{}", listener.local_addr().unwrap())
+            .parse()
+            .unwrap(),
+        Duration::from_secs(5),
+        NonZeroUsize::new(1).unwrap(),
+    );
+    let first_client = client.clone();
+    let first = tokio::spawn(async move {
+        first_client
+            .read_accounts(&SnapshotKeys::new([[1; 32]]))
+            .await
+    });
+    let (_held, _) = timeout(Duration::from_secs(1), listener.accept())
+        .await
+        .unwrap()
+        .unwrap();
+    let second =
+        tokio::spawn(async move { client.read_accounts(&SnapshotKeys::new([[2; 32]])).await });
+    assert!(
+        timeout(Duration::from_millis(100), listener.accept())
+            .await
+            .is_err()
+    );
+    first.abort();
+    assert!(first.await.unwrap_err().is_cancelled());
+    let (mut stream, _) = timeout(Duration::from_secs(1), listener.accept())
+        .await
+        .unwrap()
+        .unwrap();
+    stream.read_exact(&mut [0]).await.unwrap();
+    let body = r#"{"jsonrpc":"2.0","id":1,"result":{"context":{"slot":42},"value":[null]}}"#;
+    stream.write_all(format!("HTTP/1.1 200 OK\r\nContent-Type: application/json\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{}", body.len(), body).as_bytes()).await.unwrap();
+    assert_eq!(second.await.unwrap().unwrap().observed_slot(), 42);
 }

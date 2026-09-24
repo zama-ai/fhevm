@@ -1,7 +1,7 @@
 //! Schema of the normative permit vectors, shared by every implementation.
 //!
-//! The vectors are consumed byte-identically by the SDK, the relayer, the Connector,
-//! KMS Core and the KMS client. This file is the Rust half of that contract: include
+//! The vectors are consumed byte-identically by the SDK, the relayer, the Connector (through
+//! `zama-solana-permit`), KMS Core and the KMS client. This file is the Rust half of that contract: include
 //! it with `#[path]` from a test target, deserialize `permit_v1.json`, and run each
 //! record through your own verifier. Non-Rust consumers mirror the same field names.
 //!

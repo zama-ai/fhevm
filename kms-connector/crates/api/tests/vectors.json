@@ -24,42 +24,75 @@
     {
       "name": "single handle, RFC-033-style request",
       "request": {
-        "handles": [
-          {
-            "handle": "0xaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
-            "contractAddress": "0x3333333333333333333333333333333333333333",
-            "ownerAddress": "0x4444444444444444444444444444444444444444"
-          }
-        ],
-        "userAddress": "0x5555555555555555555555555555555555555555",
-        "publicKey": "0x20002000",
-        "allowedContracts": [
-          "0x3333333333333333333333333333333333333333"
-        ],
-        "requestValidity": {
-          "startTimestamp": 1770000000,
-          "durationSeconds": 300
+        "attestationType": "eip712-unified-user-decrypt-v1",
+        "payload": {
+          "handles": [
+            {
+              "handle": "0xaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+              "contractAddress": "0x3333333333333333333333333333333333333333",
+              "ownerAddress": "0x4444444444444444444444444444444444444444"
+            }
+          ],
+          "userAddress": "0x5555555555555555555555555555555555555555",
+          "publicKey": "0x20002000",
+          "allowedContracts": [
+            "0x3333333333333333333333333333333333333333"
+          ],
+          "requestValidity": {
+            "startTimestamp": 1770000000,
+            "durationSeconds": 300
+          },
+          "extraData": "0x00"
         },
-        "signature": "0x6666666666666666666666666666666666666666666666666666666666666666666666666666666666666666666666666666666666666666666666666666666666",
-        "extraData": "0x00"
+        "signature": "0x6666666666666666666666666666666666666666666666666666666666666666666666666666666666666666666666666666666666666666666666666666666666"
       },
-      "decryptionId": "0x0fc9151ca446462aeadbf740c1021d1c089413cb54940664dcb996a031268453"
+      "decryptionId": "0x87d71ab4145107e91e1ac6f1e1766739e2b231cd5d04323f40f1803417a95243"
     },
     {
       "name": "empty request",
       "request": {
-        "handles": [],
-        "userAddress": "0x0000000000000000000000000000000000000000",
-        "publicKey": "0x",
-        "allowedContracts": [],
-        "requestValidity": {
-          "startTimestamp": 0,
-          "durationSeconds": 0
+        "attestationType": "eip712-unified-user-decrypt-v1",
+        "payload": {
+          "handles": [],
+          "userAddress": "0x0000000000000000000000000000000000000000",
+          "publicKey": "0x",
+          "allowedContracts": [],
+          "requestValidity": {
+            "startTimestamp": 0,
+            "durationSeconds": 0
+          },
+          "extraData": "0x"
         },
-        "signature": "0x",
-        "extraData": "0x"
+        "signature": "0x"
       },
-      "decryptionId": "0xfd738414a250778c1e825c76d2bff7e1f75cd8d491eb57c1dd6df538af608e9d"
+      "decryptionId": "0x4c4ccb99046c790998684ba1afc840ab7c1e4240c6f65523669e68559f97b857"
+    },
+    {
+      "name": "single handle, other attestation type",
+      "request": {
+        "attestationType": "random_attestation_type",
+        "payload": {
+          "handles": [
+            {
+              "handle": "0xaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+              "contractAddress": "0x3333333333333333333333333333333333333333",
+              "ownerAddress": "0x4444444444444444444444444444444444444444"
+            }
+          ],
+          "userAddress": "0x5555555555555555555555555555555555555555",
+          "publicKey": "0x20002000",
+          "allowedContracts": [
+            "0x3333333333333333333333333333333333333333"
+          ],
+          "requestValidity": {
+            "startTimestamp": 1770000000,
+            "durationSeconds": 300
+          },
+          "extraData": "0x00"
+        },
+        "signature": "0x6666666666666666666666666666666666666666666666666666666666666666666666666666666666666666666666666666666666666666666666666666666666"
+      },
+      "decryptionId": "0x5d9fa43e1576121f83353800be7ee2c620b32de374336cab4fd92147d714e0c6"
     }
   ]
 }
