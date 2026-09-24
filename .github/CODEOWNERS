@@ -36,6 +36,9 @@
 /solana/docs/AUTHORITY.md @zama-ai/security-team
 /solana/scripts/authority_table.py @zama-ai/security-team
 /solana/docs/INVARIANTS.md @zama-ai/security-team
+/solana/runtime-tests/tests/capability_invariants.rs @zama-ai/security-team
+/solana/runtime-tests/planted-bugs/ @zama-ai/security-team
+/solana/scripts/check-planted-bugs.sh @zama-ai/security-team
 
 # Production Dockerfiles should be reviewed by members of fhevm-devops
 **/Dockerfile @zama-ai/fhevm-devops

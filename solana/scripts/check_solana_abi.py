@@ -122,22 +122,23 @@ PINNED_SCHEMAS = [
     ("zama_host", "instruction_args", "make_store_handle_public", True),
     ("zama_host", "account", "HostConfig", True),
     ("zama_host", "account", "KmsContext", True),
+    ("zama_host", "account", "PauserRecord", True),
     ("zama_host", "type", "InitializeHostConfigArgs", True),
     ("zama_host", "type", "FheExecuteArgs", True),
     ("zama_host", "type", "ExecutionResultRef", True),
-    ("zama_host", "event", "PublicOutputsProducedEvent", True),
     ("zama_host", "instruction_args", "initialize_host_config", True),
     ("zama_host", "instruction_args", "fhe_execute", True),
     # `EncryptedValue` and `DenyScopeRecord` are absent here on purpose: Anchor emits only the
     # accounts an instruction types, and the host reads both through `UncheckedAccount`. Their
     # layouts are pinned where they are produced instead: `zama-solana-acl`'s codec tests and
     # `shared_crate_decoder_reads_what_the_program_serializes` for the value, the host's own
-    # `state` tests for the deny record.
-    ("zama_host", "account", "RandNonce", True),
+    # `state` tests for the deny record. `RandNonce` is absent for the same reason, and nothing
+    # off chain reads it: the listener takes the seeds from `FheExecutedEvent`.
     ("zama_host", "instruction_args", "define_kms_context", True),
     ("zama_host", "instruction_args", "delegate_for_user_decryption", True),
     ("zama_host", "instruction_args", "destroy_kms_context", True),
     ("zama_host", "instruction_args", "revoke_delegation_for_user_decryption", True),
+    ("zama_host", "instruction_args", "pause", True),
     ("zama_host", "instruction_args", "revoke_permits", True),
     ("zama_host", "instruction_args", "set_admin", True),
     ("zama_host", "instruction_args", "set_coprocessor_signers", True),
@@ -146,9 +147,10 @@ PINNED_SCHEMAS = [
     ("zama_host", "instruction_args", "set_grant_deny_list_enabled", True),
     ("zama_host", "instruction_args", "set_hcu_app_trusted", True),
     ("zama_host", "instruction_args", "set_hcu_block_cap_per_app", True),
-    ("zama_host", "instruction_args", "set_host_pause", True),
+    ("zama_host", "instruction_args", "set_pauser", True),
     ("zama_host", "instruction_args", "set_max_hcu_depth_per_tx", True),
     ("zama_host", "instruction_args", "set_max_hcu_per_tx", True),
+    ("zama_host", "instruction_args", "unpause", True),
     ("zama_host", "instruction_args", "verify_public_decrypt", True),
     ("confidential_token", "account", "ConfidentialMint", True),
     ("confidential_token", "account", "ConfidentialTokenAccount", True),

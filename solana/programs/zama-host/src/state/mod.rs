@@ -23,6 +23,7 @@ pub mod hcu_block_meter;
 pub mod hcu_trusted_app_record;
 pub mod host_config;
 pub mod kms_context;
+pub mod pauser_record;
 pub mod permit_invalidation;
 pub mod rand_nonce;
 mod type_gate;
@@ -34,6 +35,7 @@ pub use hcu_block_meter::*;
 pub use hcu_trusted_app_record::*;
 pub use host_config::*;
 pub use kms_context::*;
+pub use pauser_record::*;
 pub use permit_invalidation::*;
 pub use rand_nonce::*;
 pub(crate) use type_gate::assert_reduction_count;
@@ -516,9 +518,14 @@ pub fn hcu_block_meter_address(app: AppScope) -> (Pubkey, u8) {
     app.address(HCU_BLOCK_METER_SEED)
 }
 
-/// Returns the canonical singleton random-seed nonce address.
-pub fn rand_nonce_address() -> (Pubkey, u8) {
-    Pubkey::find_program_address(&[RAND_NONCE_SEED], &crate::ID)
+/// Returns the canonical random-seed nonce address for an application.
+pub fn rand_nonce_address(app: AppScope) -> (Pubkey, u8) {
+    app.address(RAND_NONCE_SEED)
+}
+
+/// Returns the canonical pauser record address for a key.
+pub fn pauser_address(pauser: Pubkey) -> (Pubkey, u8) {
+    Pubkey::find_program_address(&[PAUSER_SEED, pauser.as_ref()], &crate::ID)
 }
 
 /// Returns the canonical permit-invalidation watermark address for a user.
@@ -689,10 +696,10 @@ pub fn computed_eval_trivial_handle(
 
 /// Derives the compulsorily fresh seed for an instruction-local execution random handle.
 ///
-/// Freshness is anchored, never caller-advised: `rand_nonce` is the host's global counter,
-/// consumed by this execution and never seen again, so two executions in one slot cannot share
-/// a seed. `op_index` separates rand steps within one execution; slot entropy separates slots;
-/// the application identity binds the seed to the values it will land in.
+/// Freshness is anchored, never caller-advised: `rand_nonce` is the application's counter,
+/// consumed by this execution and never seen again, and `app` is bound too, so two executions in
+/// one slot cannot share a seed. `op_index` separates rand steps within one execution; slot
+/// entropy separates slots.
 pub fn computed_eval_rand_seed(
     rand_nonce: u64,
     app: AppScope,

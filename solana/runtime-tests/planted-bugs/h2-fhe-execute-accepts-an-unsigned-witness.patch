@@ -1,0 +1,15 @@
+Expect: H2: FheExecute
+
+diff --git a/solana/programs/zama-host/src/instructions/fhe_execute/account_table.rs b/solana/programs/zama-host/src/instructions/fhe_execute/account_table.rs
+index 69ea89926..4ed69e152 100644
+--- a/solana/programs/zama-host/src/instructions/fhe_execute/account_table.rs
++++ b/solana/programs/zama-host/src/instructions/fhe_execute/account_table.rs
+@@ -115,7 +115,7 @@ impl<'a, 'info> ExecutionAccountTable<'a, 'info> {
+         let index = self
+             .accounts
+             .iter()
+-            .position(|account| account.key() == authority && account.is_signer)
++            .position(|account| account.key() == authority)
+             .ok_or_else(|| error!(ZamaHostError::EncryptedStoreAccountAuthorityMismatch))?;
+         self.used[index] = true;
+         Ok(())

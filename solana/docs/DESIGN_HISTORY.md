@@ -19,6 +19,7 @@ vocabulary here predates [`GLOSSARY.md`](GLOSSARY.md) and is intentionally left 
 | DD-035 Standalone Untrusted Solana MMR Proof Service                                        | DD-048                       |
 | DD-036 Burn-Redemption Consume Authorizes By MMR Public-Decrypt Proof, Not Live Handle      | DD-045                       |
 | DD-037 `fhe_execute` Events — `emit_cpi!`-Only, No `emit!` Log Fallback (DD-033 addendum)   | DD-038                       |
+| DD-038 One Host-Owned Born-Public Lifecycle Batch Replaces Per-Operation Events             | removed; fhevm-internal#2079 |
 | DD-039 HCU Block Cap Meters The Signed `compute_subject`, Not A Separate Authority          | DD-047                       |
 
 ## DD-001: Store Handles In ACL Records, Not PDA Seeds
@@ -522,6 +523,32 @@ Note (RFC 035): the proof service that was the event's last consumer is gone (DD
 host listener's leaf record recomputes created-public handles from instruction data plus streamed
 block entropy without reading it. `PublicOutputsProducedEvent` is still emitted (DD-044) and now
 has no consumer in this repository; retiring it is #1665's call.
+
+## DD-038: One Host-Owned Born-Public Lifecycle Batch Replaces Per-Operation Events
+
+Status: removed; fhevm-internal#2079
+
+Ordinary `fhe_execute` computation facts remain reconstructed from instruction data plus Yellowstone
+sysvars. The host no longer produces the general per-operation event stream or its eight-event
+transport guard. Instead, a batch with one or more `make_public` persistent outputs emits exactly one
+versioned Anchor self-CPI event after successful execution. Its ordered records contain only the
+zero-based step index, the host-owned Store, and the host-derived output handle;
+a batch with no produced public output emits no lifecycle event.
+
+This narrow batch exists because block-entropy output handles are absent from instruction arguments.
+At the maximum `MAX_FHE_EXECUTION_STEPS` batch (32), the records serialize to one 2,133-byte CPI
+instruction — far below the 10,240-byte CPI instruction-data cap — avoiding the old
+one-CPI-per-step heap growth. (Execution, not the batch, bounds the all-created-public batch shape:
+the host's fixed 32 KB `solana-program-entrypoint` bump heap fits 20 persistent creates per batch,
+measured and pinned by the `fhe_execute_boundary/all_created_public` snapshot entry.) The event is unconditional, as every event this program
+emits now is (DD-044). Consumers must still validate the host program, its canonical
+event-authority PDA, transaction success, record ordering, and one-to-one agreement with persistent
+`make_public` outputs; the event grants no authority by itself.
+
+Removed (fhevm-internal#2079): the event had no reader. The host listener reads `make_public` from the
+`fhe_execute` arguments and seals the public-decrypt leaf from instruction data, and a public
+decryption is proven against the Store's on-chain peaks. The event cost a self-CPI and an
+instruction-trace entry on every execution that made a value public.
 
 ## DD-039: HCU Block Cap Meters The Signed `compute_subject`, Not A Separate Authority
 

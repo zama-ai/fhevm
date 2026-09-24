@@ -14,10 +14,7 @@ pub enum ConfidentialTokenError {
     /// Confidential mint account shape is invalid.
     #[msg("Confidential mint account is invalid")]
     MintAccountMismatch,
-    /// Retired (zero references). Kept so Anchor error ordinals stay stable.
-    #[msg("Confidential mint config is invalid")]
-    InvalidMintConfig,
-    /// Retired (zero references). Kept so Anchor error ordinals stay stable.
+    /// Confidential mint authority did not match the required signer.
     #[msg("Confidential mint authority does not match signer")]
     MintAuthorityMismatch,
     /// The instruction included undeclared trailing account metas.
@@ -26,14 +23,6 @@ pub enum ConfidentialTokenError {
     /// Token account was not the canonical owner/mint PDA.
     #[msg("Confidential token account is not canonical")]
     TokenAccountMismatch,
-    /// Retired (zero references). Kept so Anchor error ordinals stay stable.
-    #[msg("ACL nonce overflow")]
-    AclNonceOverflow,
-    /// Retired (zero references): token accounts now always initialize with a hardcoded
-    /// zero balance, so the nonzero-rejection check no longer exists to trip. Kept so Anchor
-    /// error ordinals stay stable.
-    #[msg("nonzero initial confidential balances are unsupported")]
-    NonZeroInitialBalanceUnsupported,
     /// Underlying SPL mint did not match the confidential mint metadata.
     #[msg("Underlying mint does not match confidential mint")]
     UnderlyingMintMismatch,
@@ -79,20 +68,6 @@ pub enum ConfidentialTokenError {
     /// The provided KMS context is not the request-pinned context or has been destroyed.
     #[msg("KMS context is not valid for this request")]
     InvalidKmsContext,
-    /// Account-backed request witness does not match the disclosure or redemption.
-    #[msg("request witness does not match")]
-    RequestWitnessMismatch,
-    /// Account-backed request witness is expired or already consumed.
-    #[msg("request witness is expired or already consumed")]
-    RequestWitnessUnavailable,
-    /// Tombstoned: disclosure material-commitment witness was removed with the
-    /// `DisclosureRequest` lifecycle (fhevm#3231). Kept so Anchor error ordinals stay stable.
-    #[msg("material commitment witness does not match (retired)")]
-    MaterialCommitmentMismatch,
-    /// Tombstoned: public-decrypt release gate lived on the deleted disclosure request path.
-    /// Kept so Anchor error ordinals stay stable.
-    #[msg("handle is not released for public decrypt (retired)")]
-    PublicDecryptNotReleased,
     /// Internal FHE execution construction failed before the host CPI.
     #[msg("FHE execution is invalid")]
     InvalidFheExecution,

@@ -17,7 +17,7 @@ check requires its `assert_no_remaining_accounts` call. `?` marks an optional ac
 
 | Capability | Owns | Who may change it | Other consumers |
 |---|---|---|---|
-| Governance | `HostConfig`, pause, deny list, HCU limits and trust records | admin | none |
+| Governance | `HostConfig`, pause flags and pauser records, deny list, HCU limits and trust records | admin; an enabled pauser can also set pause flags | none |
 | Trust roots | KMS contexts, coprocessor signers, EIP-712 domain, `verify_public_decrypt` | admin | confidential-token redemption, KMS connector |
 | Execution | `fhe_execute`, HCU metering, type gate, handle derivation, transient store | no role | host listener, `zama-fhe` |
 | Stores and ACL | `EncryptedStore`, MMR, public release | the store's authority, a PDA of its program | host listener, KMS connector (`zama-solana-acl`) |
@@ -27,9 +27,11 @@ check requires its `assert_no_remaining_accounts` call. `?` marks an optional ac
 
 | Instruction | Signers | Writes | Reads | Calls | Remaining accounts |
 |---|---|---|---|---|---|
-| `initialize_host_config` | `payer`: pays rent; no authority<br>`admin`: the program's upgrade authority (`ProgramData`); becomes `HostConfig.admin` | `payer`, `host_config`, `rand_nonce` | `program_data` | System, self (event CPI) | — |
+| `initialize_host_config` | `payer`: pays rent; no authority<br>`admin`: the program's upgrade authority (`ProgramData`); becomes `HostConfig.admin` | `payer`, `host_config` | `program_data` | System, self (event CPI) | — |
 | `set_admin` | `admin`: `HostConfig.admin`; `new_admin` co-signs unless it is a program-owned PDA | `host_config` | `new_admin` | self (event CPI) | — |
-| `set_host_pause` | `admin`: `HostConfig.admin` | `host_config` | — | self (event CPI) | — |
+| `pause` | `pauser`: a key with an enabled `PauserRecord`; it can set pause flags, not clear them | `host_config` | `pauser_record` | self (event CPI) | — |
+| `unpause` | `admin`: `HostConfig.admin` | `host_config` | — | self (event CPI) | — |
+| `set_pauser` | `payer`: pays rent; no authority<br>`admin`: `HostConfig.admin` | `payer`, `pauser_record` | `host_config` | System, self (event CPI) | — |
 | `set_grant_deny_list_enabled` | `admin`: `HostConfig.admin` | `host_config` | — | self (event CPI) | — |
 | `set_deny_scope` | `payer`: pays rent; no authority<br>`admin`: `HostConfig.admin` | `payer`, `deny_scope_record` | `host_config` | System, self (event CPI) | — |
 | `set_max_hcu_per_tx` | `admin`: `HostConfig.admin` | `host_config` | — | self (event CPI) | — |

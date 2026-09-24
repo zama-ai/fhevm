@@ -4,9 +4,9 @@
 //! `solana_reconstruct`).
 //!
 //! Nothing here is emitted on-chain — these are plain value types, not Anchor
-//! events. The only evented compute data is what an indexer cannot recompute
-//! from instruction data alone (`FheExecuteRandomSeedsEvent`,
-//! `PublicOutputsProducedEvent` in `events.rs`).
+//! events. The only evented compute data is what the host decided rather than
+//! what the caller asked for: each execution's block context, random seeds and
+//! result handles (`FheExecutedEvent` in `events.rs`).
 
 use crate::state::{FheBinaryOpCode, FheTernaryOpCode, FheUnaryOpCode};
 

@@ -12,9 +12,9 @@ pub enum ZamaHostError {
     /// The signer is not the configured host admin.
     #[msg("host config admin does not match signer")]
     HostConfigAdminMismatch,
-    /// A production-shaped instruction was attempted while the host is paused.
-    #[msg("host config account is paused")]
-    HostConfigPaused,
+    /// `fhe_execute` was attempted while execution is paused.
+    #[msg("host execution is paused")]
+    ExecutionPaused,
     /// The host config account is not the canonical singleton or has invalid shape.
     #[msg("host config account is invalid")]
     HostConfigMismatch,
@@ -116,7 +116,7 @@ pub enum ZamaHostError {
     /// An fhe_execute persistent output account already exists.
     #[msg("fhe_execute persistent output ACL record already exists")]
     FheExecuteOutputAlreadyInitialized,
-    /// An execution containing a rand step did not pass the host's rand nonce account.
+    /// An execution containing a rand step did not pass its application's rand nonce account.
     #[msg("fhe_execute rand step requires the rand nonce account")]
     FheExecuteRandNonceMissing,
     /// A KMS context was defined with a duplicate signer address.
@@ -292,4 +292,22 @@ pub enum ZamaHostError {
     /// reaches every program of the transaction it signed, so it must delegate at the top level.
     #[msg("a wallet delegator must delegate in a top-level instruction")]
     WalletDelegationThroughCpi,
+    /// The rand nonce account is not the execution's application's nonce, or is malformed.
+    #[msg("rand nonce account mismatch")]
+    RandNonceMismatch,
+    /// An execution consumed a verified input while verified inputs are paused.
+    #[msg("verified inputs are paused")]
+    VerifiedInputsPaused,
+    /// An ACL write outside an execution was attempted while ACL writes are paused.
+    #[msg("ACL writes are paused")]
+    AclWritesPaused,
+    /// `verify_public_decrypt` was attempted while public-decrypt verification is paused.
+    #[msg("public-decrypt verification is paused")]
+    PublicDecryptPaused,
+    /// The signer's pauser record is disabled.
+    #[msg("signer is not an enabled pauser")]
+    NotPauser,
+    /// The pauser record is not the canonical PDA of the pauser, or is malformed.
+    #[msg("pauser record mismatch")]
+    PauserRecordMismatch,
 }

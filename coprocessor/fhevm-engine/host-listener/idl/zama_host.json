@@ -426,7 +426,7 @@
         {
           "name": "payer",
           "docs": [
-            "Pays rent for Store growth and lazy meter creation."
+            "Pays rent for Store growth and lazy meter and rand nonce creation."
           ],
           "writable": true,
           "signer": true
@@ -470,7 +470,7 @@
         {
           "name": "system_program",
           "docs": [
-            "System program used for rent top-ups and lazy meter creation."
+            "System program used for rent top-ups and lazy meter and rand nonce creation."
           ],
           "address": "11111111111111111111111111111111"
         },
@@ -502,30 +502,12 @@
         {
           "name": "rand_nonce",
           "docs": [
-            "The host's rand nonce, consumed and incremented by an execution that contains a rand step.",
-            "Required exactly then, and refused otherwise so no execution write-locks it for nothing."
+            "The application's rand nonce, consumed and incremented by an execution that contains a",
+            "rand step. Required exactly then, and refused otherwise so no execution write-locks it for",
+            "nothing. Created by the application's first rand execution."
           ],
           "writable": true,
-          "optional": true,
-          "pda": {
-            "seeds": [
-              {
-                "kind": "const",
-                "value": [
-                  114,
-                  97,
-                  110,
-                  100,
-                  45,
-                  110,
-                  111,
-                  110,
-                  99,
-                  101
-                ]
-              }
-            ]
-          }
+          "optional": true
         },
         {
           "name": "transient_store",
@@ -615,33 +597,6 @@
                   102,
                   105,
                   103
-                ]
-              }
-            ]
-          }
-        },
-        {
-          "name": "rand_nonce",
-          "docs": [
-            "The host's single rand nonce, created alongside the config so every rand execution can",
-            "take it from the first slot on."
-          ],
-          "writable": true,
-          "pda": {
-            "seeds": [
-              {
-                "kind": "const",
-                "value": [
-                  114,
-                  97,
-                  110,
-                  100,
-                  45,
-                  110,
-                  111,
-                  110,
-                  99,
-                  101
                 ]
               }
             ]
@@ -791,6 +746,99 @@
         }
       ],
       "args": []
+    },
+    {
+      "name": "pause",
+      "docs": [
+        "Stops the host areas `areas` names (any enabled pauser)."
+      ],
+      "discriminator": [
+        211,
+        22,
+        221,
+        251,
+        74,
+        121,
+        193,
+        47
+      ],
+      "accounts": [
+        {
+          "name": "pauser",
+          "docs": [
+            "A key with an enabled pauser record."
+          ],
+          "signer": true
+        },
+        {
+          "name": "pauser_record",
+          "docs": [
+            "The signer's pauser record."
+          ],
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  112,
+                  97,
+                  117,
+                  115,
+                  101,
+                  114
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "pauser"
+              }
+            ]
+          }
+        },
+        {
+          "name": "host_config",
+          "docs": [
+            "Singleton config PDA."
+          ],
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  104,
+                  111,
+                  115,
+                  116,
+                  45,
+                  99,
+                  111,
+                  110,
+                  102,
+                  105,
+                  103
+                ]
+              }
+            ]
+          }
+        },
+        {
+          "name": "event_authority"
+        },
+        {
+          "name": "program"
+        }
+      ],
+      "args": [
+        {
+          "name": "areas",
+          "type": {
+            "defined": {
+              "name": "PauseFlags"
+            }
+          }
+        }
+      ]
     },
     {
       "name": "revoke_delegation_for_user_decryption",
@@ -1439,67 +1487,6 @@
       ]
     },
     {
-      "name": "set_host_pause",
-      "discriminator": [
-        119,
-        59,
-        41,
-        131,
-        74,
-        58,
-        89,
-        97
-      ],
-      "accounts": [
-        {
-          "name": "admin",
-          "docs": [
-            "Configured host admin."
-          ],
-          "signer": true
-        },
-        {
-          "name": "host_config",
-          "docs": [
-            "Singleton config PDA."
-          ],
-          "writable": true,
-          "pda": {
-            "seeds": [
-              {
-                "kind": "const",
-                "value": [
-                  104,
-                  111,
-                  115,
-                  116,
-                  45,
-                  99,
-                  111,
-                  110,
-                  102,
-                  105,
-                  103
-                ]
-              }
-            ]
-          }
-        },
-        {
-          "name": "event_authority"
-        },
-        {
-          "name": "program"
-        }
-      ],
-      "args": [
-        {
-          "name": "paused",
-          "type": "bool"
-        }
-      ]
-    },
-    {
       "name": "set_max_hcu_depth_per_tx",
       "discriminator": [
         91,
@@ -1618,6 +1605,160 @@
         {
           "name": "value",
           "type": "u64"
+        }
+      ]
+    },
+    {
+      "name": "set_pauser",
+      "docs": [
+        "Grants or withdraws a key's right to pause (admin-only)."
+      ],
+      "discriminator": [
+        22,
+        198,
+        152,
+        61,
+        2,
+        13,
+        145,
+        238
+      ],
+      "accounts": [
+        {
+          "name": "payer",
+          "docs": [
+            "Pays rent if the pauser PDA must be created."
+          ],
+          "writable": true,
+          "signer": true
+        },
+        {
+          "name": "admin",
+          "docs": [
+            "Configured host admin."
+          ],
+          "signer": true
+        },
+        {
+          "name": "host_config",
+          "docs": [
+            "Singleton config PDA."
+          ],
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  104,
+                  111,
+                  115,
+                  116,
+                  45,
+                  99,
+                  111,
+                  110,
+                  102,
+                  105,
+                  103
+                ]
+              }
+            ]
+          }
+        },
+        {
+          "name": "pauser_record",
+          "writable": true
+        },
+        {
+          "name": "system_program",
+          "docs": [
+            "System program used for account creation."
+          ],
+          "address": "11111111111111111111111111111111"
+        },
+        {
+          "name": "event_authority"
+        },
+        {
+          "name": "program"
+        }
+      ],
+      "args": [
+        {
+          "name": "pauser",
+          "type": "pubkey"
+        },
+        {
+          "name": "enabled",
+          "type": "bool"
+        }
+      ]
+    },
+    {
+      "name": "unpause",
+      "docs": [
+        "Resumes the host areas `areas` names (admin-only)."
+      ],
+      "discriminator": [
+        169,
+        144,
+        4,
+        38,
+        10,
+        141,
+        188,
+        255
+      ],
+      "accounts": [
+        {
+          "name": "admin",
+          "docs": [
+            "Configured host admin."
+          ],
+          "signer": true
+        },
+        {
+          "name": "host_config",
+          "docs": [
+            "Singleton config PDA."
+          ],
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  104,
+                  111,
+                  115,
+                  116,
+                  45,
+                  99,
+                  111,
+                  110,
+                  102,
+                  105,
+                  103
+                ]
+              }
+            ]
+          }
+        },
+        {
+          "name": "event_authority"
+        },
+        {
+          "name": "program"
+        }
+      ],
+      "args": [
+        {
+          "name": "areas",
+          "type": {
+            "defined": {
+              "name": "PauseFlags"
+            }
+          }
         }
       ]
     },
@@ -1767,16 +1908,16 @@
       ]
     },
     {
-      "name": "RandNonce",
+      "name": "PauserRecord",
       "discriminator": [
-        75,
-        163,
+        191,
+        96,
+        30,
+        174,
+        41,
+        74,
         132,
-        129,
-        125,
-        181,
-        151,
-        221
+        71
       ]
     },
     {
@@ -1821,16 +1962,16 @@
       ]
     },
     {
-      "name": "FheExecuteRandomSeedsEvent",
+      "name": "FheExecutedEvent",
       "discriminator": [
-        0,
-        146,
-        84,
-        152,
+        234,
+        26,
+        200,
+        201,
         187,
-        240,
-        0,
-        20
+        114,
+        93,
+        208
       ]
     },
     {
@@ -1886,16 +2027,16 @@
       ]
     },
     {
-      "name": "PublicOutputsProducedEvent",
+      "name": "PauserUpdatedEvent",
       "discriminator": [
-        42,
-        82,
-        34,
-        199,
-        238,
-        54,
-        106,
-        181
+        17,
+        8,
+        177,
+        148,
+        52,
+        170,
+        85,
+        237
       ]
     }
   ],
@@ -1907,8 +2048,8 @@
     },
     {
       "code": 6001,
-      "name": "HostConfigPaused",
-      "msg": "host config account is paused"
+      "name": "ExecutionPaused",
+      "msg": "host execution is paused"
     },
     {
       "code": 6002,
@@ -2309,6 +2450,36 @@
       "code": 6081,
       "name": "WalletDelegationThroughCpi",
       "msg": "a wallet delegator must delegate in a top-level instruction"
+    },
+    {
+      "code": 6082,
+      "name": "RandNonceMismatch",
+      "msg": "rand nonce account mismatch"
+    },
+    {
+      "code": 6083,
+      "name": "VerifiedInputsPaused",
+      "msg": "verified inputs are paused"
+    },
+    {
+      "code": 6084,
+      "name": "AclWritesPaused",
+      "msg": "ACL writes are paused"
+    },
+    {
+      "code": 6085,
+      "name": "PublicDecryptPaused",
+      "msg": "public-decrypt verification is paused"
+    },
+    {
+      "code": 6086,
+      "name": "NotPauser",
+      "msg": "signer is not an enabled pauser"
+    },
+    {
+      "code": 6087,
+      "name": "PauserRecordMismatch",
+      "msg": "pauser record mismatch"
     }
   ],
   "types": [
@@ -2919,44 +3090,13 @@
           {
             "name": "seed",
             "docs": [
-              "Seed derived from the consumed host rand nonce and slot entropy."
+              "Seed derived from the application's consumed rand nonce and slot entropy."
             ],
             "type": {
               "array": [
                 "u8",
                 16
               ]
-            }
-          }
-        ]
-      }
-    },
-    {
-      "name": "FheExecuteRandomSeedsEvent",
-      "docs": [
-        "Emitted once for the random steps in an `fhe_execute` execution."
-      ],
-      "type": {
-        "kind": "struct",
-        "fields": [
-          {
-            "name": "version",
-            "docs": [
-              "Event schema version."
-            ],
-            "type": "u8"
-          },
-          {
-            "name": "seeds",
-            "docs": [
-              "Random seeds in execution step order."
-            ],
-            "type": {
-              "vec": {
-                "defined": {
-                  "name": "FheExecuteRandomSeed"
-                }
-              }
             }
           }
         ]
@@ -3276,6 +3416,70 @@
       }
     },
     {
+      "name": "FheExecutedEvent",
+      "docs": [
+        "Emitted once by every `fhe_execute`, after its account writes."
+      ],
+      "type": {
+        "kind": "struct",
+        "fields": [
+          {
+            "name": "version",
+            "docs": [
+              "Event schema version."
+            ],
+            "type": "u8"
+          },
+          {
+            "name": "previous_bank_hash",
+            "docs": [
+              "Bank hash of the parent slot, folded into every deterministic result handle."
+            ],
+            "type": {
+              "array": [
+                "u8",
+                32
+              ]
+            }
+          },
+          {
+            "name": "unix_timestamp",
+            "docs": [
+              "The slot's `Clock::unix_timestamp`, folded into every deterministic result handle."
+            ],
+            "type": "i64"
+          },
+          {
+            "name": "results",
+            "docs": [
+              "Result handle of each step, in step order."
+            ],
+            "type": {
+              "vec": {
+                "array": [
+                  "u8",
+                  32
+                ]
+              }
+            }
+          },
+          {
+            "name": "seeds",
+            "docs": [
+              "Seeds of the random steps, in step order."
+            ],
+            "type": {
+              "vec": {
+                "defined": {
+                  "name": "FheExecuteRandomSeed"
+                }
+              }
+            }
+          }
+        ]
+      }
+    },
+    {
       "name": "FheTernaryOpCode",
       "docs": [
         "Ternary FHE operators currently modeled by the PoC."
@@ -3372,8 +3576,8 @@
       "docs": [
         "Singleton host configuration and authority surface.",
         "",
-        "`HostConfig` is the runtime switchboard for this PoC. Production-shaped",
-        "instructions reject while paused."
+        "`HostConfig` is the runtime switchboard for this PoC. Each paused area rejects the",
+        "instructions it covers (`PauseFlags`)."
       ],
       "type": {
         "kind": "struct",
@@ -3476,9 +3680,13 @@
           {
             "name": "paused",
             "docs": [
-              "Pauses production-shaped host instructions when true."
+              "Host areas currently stopped. A pauser sets them; only the admin clears them (DD-058)."
             ],
-            "type": "bool"
+            "type": {
+              "defined": {
+                "name": "PauseFlags"
+              }
+            }
           },
           {
             "name": "grant_deny_list_enabled",
@@ -3553,18 +3761,22 @@
             "type": "pubkey"
           },
           {
-            "name": "admin",
+            "name": "signer",
             "docs": [
-              "Admin signer that performed the update."
+              "Signer that performed the update: the admin, or a pauser for `pause`."
             ],
             "type": "pubkey"
           },
           {
             "name": "paused",
             "docs": [
-              "Current pause state."
+              "Host areas currently paused."
             ],
-            "type": "bool"
+            "type": {
+              "defined": {
+                "name": "PauseFlags"
+              }
+            }
           },
           {
             "name": "grant_deny_list_enabled",
@@ -3909,46 +4121,86 @@
       }
     },
     {
-      "name": "ProducedPublicOutput",
+      "name": "PauseFlags",
       "docs": [
-        "One public persistent output produced by an `fhe_execute` execution."
+        "The host areas a pauser can stop, each matching an area EVM pauses on its own (DD-058). As",
+        "the argument of `pause` and `unpause`, a set field names an area to change."
       ],
       "type": {
         "kind": "struct",
         "fields": [
           {
-            "name": "step_index",
+            "name": "execution",
             "docs": [
-              "Zero-based step index within the execution."
+              "`fhe_execute`, with the allows, transient grants and public releases it writes (EVM ACL",
+              "pause, which stops execution through `allowTransient`)."
             ],
-            "type": "u16"
+            "type": "bool"
           },
           {
-            "name": "encrypted_store",
+            "name": "verified_inputs",
             "docs": [
-              "Host-owned persistent `EncryptedStore` account bound by the step."
+              "`fhe_execute` steps that consume a coprocessor-attested input (Gateway",
+              "`InputVerification` pause)."
             ],
-            "type": "pubkey"
+            "type": "bool"
           },
           {
-            "name": "output_handle",
+            "name": "acl_writes",
             "docs": [
-              "Block-entropy-derived output handle written to the account."
+              "ACL writes outside an execution: Store creation, `make_store_handle_public` and",
+              "user-decryption delegation (EVM ACL pause)."
             ],
-            "type": {
-              "array": [
-                "u8",
-                32
-              ]
-            }
+            "type": "bool"
+          },
+          {
+            "name": "public_decrypt",
+            "docs": [
+              "`verify_public_decrypt` and the token instructions that accept a KMS certificate (Gateway",
+              "`Decryption` pause)."
+            ],
+            "type": "bool"
           }
         ]
       }
     },
     {
-      "name": "PublicOutputsProducedEvent",
+      "name": "PauserRecord",
       "docs": [
-        "Emitted once for the public outputs produced by an `fhe_execute` execution."
+        "Grants one key the right to set pause flags (EVM `PauserSet` membership). The admin creates",
+        "and toggles it with `set_pauser`; only the admin clears a flag (DD-058)."
+      ],
+      "type": {
+        "kind": "struct",
+        "fields": [
+          {
+            "name": "pauser",
+            "docs": [
+              "The key this record grants."
+            ],
+            "type": "pubkey"
+          },
+          {
+            "name": "enabled",
+            "docs": [
+              "Whether `pauser` may currently set pause flags."
+            ],
+            "type": "bool"
+          },
+          {
+            "name": "bump",
+            "docs": [
+              "PDA bump for `PDA(\"pauser\", pauser)`."
+            ],
+            "type": "u8"
+          }
+        ]
+      }
+    },
+    {
+      "name": "PauserUpdatedEvent",
+      "docs": [
+        "Emitted when a pauser record is created or toggled."
       ],
       "type": {
         "kind": "struct",
@@ -3961,49 +4213,32 @@
             "type": "u8"
           },
           {
-            "name": "outputs",
+            "name": "pauser_record",
             "docs": [
-              "Produced public outputs in execution step order."
+              "Canonical pauser record PDA."
             ],
-            "type": {
-              "vec": {
-                "defined": {
-                  "name": "ProducedPublicOutput"
-                }
-              }
-            }
-          }
-        ]
-      }
-    },
-    {
-      "name": "RandNonce",
-      "docs": [
-        "The host's single random-seed nonce, created next to `HostConfig` by `initialize_host_config`",
-        "and incremented by every `fhe_execute` that contains a rand step. A monotonic host-owned",
-        "counter is a consumed ticket by itself: two executions can never see the same value, so a",
-        "rand seed can never repeat within a slot whatever the rest of the execution looks like.",
-        "",
-        "Kept out of `HostConfig` on purpose: every execution reads the config, and write-locking it",
-        "would serialize them all. Only rand executions take this account, so ordinary writes stay",
-        "parallel and rand executions serialize on one account across applications."
-      ],
-      "type": {
-        "kind": "struct",
-        "fields": [
-          {
-            "name": "nonce",
-            "docs": [
-              "Value consumed by the next rand execution."
-            ],
-            "type": "u64"
+            "type": "pubkey"
           },
           {
-            "name": "bump",
+            "name": "pauser",
             "docs": [
-              "PDA bump for `PDA(\"rand-nonce\")`."
+              "The key the record grants."
             ],
-            "type": "u8"
+            "type": "pubkey"
+          },
+          {
+            "name": "enabled",
+            "docs": [
+              "Whether the key may set pause flags."
+            ],
+            "type": "bool"
+          },
+          {
+            "name": "updated_slot",
+            "docs": [
+              "Slot in which this update was applied."
+            ],
+            "type": "u64"
           }
         ]
       }

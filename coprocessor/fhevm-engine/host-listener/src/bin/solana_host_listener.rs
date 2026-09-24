@@ -14,7 +14,9 @@ use solana_sdk::pubkey::Pubkey;
 use tokio_util::sync::CancellationToken;
 use tracing::{info, Level};
 
-use fhevm_engine_common::{chain_id::ChainId, telemetry, utils::DatabaseURL};
+use fhevm_engine_common::{
+    chain_id::ChainId, metrics_server, telemetry, utils::DatabaseURL,
+};
 use host_listener::{
     cmd::DEFAULT_DEPENDENCE_CACHE_SIZE,
     database::{
@@ -22,7 +24,8 @@ use host_listener::{
     },
     http_server::HttpServer,
     solana_grpc_listener::{
-        run, BlockCheckpoint, SolanaGrpcListenerConfig, StartPosition,
+        run, track_confirmed_slot, BlockCheckpoint, SolanaGrpcListenerConfig,
+        StartPosition,
     },
     solana_reconstruct::{parse_host_config, HOST_CONFIG_SEED},
 };
@@ -75,6 +78,10 @@ struct Args {
     /// Bearer API key the leaf-proof route requires.
     #[arg(long, env = "SOLANA_PROOF_API_KEY")]
     proof_api_key: String,
+
+    /// Address of the Prometheus metrics server (e.g. 0.0.0.0:9100); unset disables it.
+    #[arg(long)]
+    metrics_addr: Option<String>,
 
     #[arg(long, default_value_t = Level::INFO)]
     log_level: Level,
@@ -183,6 +190,15 @@ async fn main() -> Result<()> {
             signal_cancel.cancel();
         }
     });
+
+    if args.metrics_addr.is_some() {
+        metrics_server::spawn(args.metrics_addr, cancel.child_token());
+        tokio::spawn(track_confirmed_slot(
+            rpc,
+            host_config_chain_id,
+            cancel.child_token(),
+        ));
+    }
 
     let http_server = HttpServer::new(
         pool,

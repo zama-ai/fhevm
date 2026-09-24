@@ -240,7 +240,7 @@ struct ExecutionFlow {
     remaining: Vec<AccountMeta>,
     cleartext: ClearInputs,
     next_seed: u8,
-    /// The host's rand nonce account, present iff the execution draws randomness.
+    /// The application's rand nonce account, present iff the execution draws randomness.
     rand_nonce: Option<Pubkey>,
     effects: Vec<FheExecuteEffect>,
 }
@@ -417,7 +417,7 @@ impl ExecutionFlow {
             step,
             FheExecuteStep::Rand { .. } | FheExecuteStep::RandBounded { .. }
         ) {
-            let (address, account) = rand_nonce_account(0);
+            let (address, account) = rand_nonce_account(self.app(), 0);
             self.accounts.push((address, account));
             self.rand_nonce = Some(address);
         }

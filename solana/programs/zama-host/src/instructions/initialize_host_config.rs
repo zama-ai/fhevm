@@ -31,21 +31,11 @@ pub struct InitializeHostConfig<'info> {
         bump
     )]
     pub host_config: Account<'info, HostConfig>,
-    /// The host's single rand nonce, created alongside the config so every rand execution can
-    /// take it from the first slot on.
-    #[account(
-        init,
-        payer = payer,
-        space = 8 + RandNonce::SPACE,
-        seeds = [RAND_NONCE_SEED],
-        bump
-    )]
-    pub rand_nonce: Account<'info, RandNonce>,
     /// System program used for account creation.
     pub system_program: Program<'info, System>,
 }
 
-/// Initializes the singleton host config and the rand nonce.
+/// Initializes the singleton host config.
 pub fn initialize_host_config(
     ctx: Context<InitializeHostConfig>,
     args: InitializeHostConfigArgs,
@@ -67,7 +57,7 @@ pub fn initialize_host_config(
     config.coprocessor_threshold = args.coprocessor_threshold;
     config.decryption_contract = args.decryption_contract;
     config.current_kms_context_id = [0u8; 32];
-    config.paused = false;
+    config.paused = PauseFlags::default();
     config.grant_deny_list_enabled = args.grant_deny_list_enabled;
     // Ship HCU enforcement disabled (u64::MAX = unlimited); an admin enables it post-calibration.
     config.max_hcu_per_tx = u64::MAX;
@@ -77,8 +67,6 @@ pub fn initialize_host_config(
     config.hcu_block_cap_per_app = u64::MAX;
     config.updated_slot = updated_slot;
     config.bump = ctx.bumps.host_config;
-    ctx.accounts.rand_nonce.nonce = 0;
-    ctx.accounts.rand_nonce.bump = ctx.bumps.rand_nonce;
     let config = &ctx.accounts.host_config;
     let admin = config.admin;
     emit_config_updated(config, admin, &ctx.accounts.event_authority)?;

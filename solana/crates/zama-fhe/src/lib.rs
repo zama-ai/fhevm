@@ -51,9 +51,9 @@ pub use accounts::{ExecutionAccountResolutionError, ResolvedExecutionAccounts};
 pub use acl::{AppScope, BoundedU64UpperBound};
 pub use builder::FheExecutionBuilder;
 pub use cost::{
-    instruction_trace_floor, FheExecutionCost, APP_HEAP_RESERVE_BYTES, BUILD_HEAP_BUDGET_BYTES,
-    CPIS_PER_SQUAT_CREATE, CPI_INSTRUCTION_DATA_LIMIT, PROGRAM_HEAP_BYTES,
-    TRANSACTION_INSTRUCTION_TRACE_LIMIT,
+    FheExecutionCost, APP_HEAP_RESERVE_BYTES, BUILD_HEAP_BUDGET_BYTES, CPIS_PER_SQUAT_CREATE,
+    CPI_INSTRUCTION_DATA_LIMIT, INSTRUCTION_TRACE_FLOOR, LAZY_CREATES_PER_EXECUTION,
+    PROGRAM_HEAP_BYTES, TRANSACTION_INSTRUCTION_TRACE_LIMIT,
 };
 #[cfg(feature = "cpi")]
 pub use cpi::ExecutionCpiAccounts;

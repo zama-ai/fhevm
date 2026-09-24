@@ -59,7 +59,7 @@ stack where one exists.
 | **persistent** | Store or decrypt history that outlives the execution. A historical result can remain decryptable without a current slot. | durable | persistent ACL permission |
 | **create / created-public** | Create allocates empty encrypted store separately from computation. A fresh execution result can be made public with `make_public`, with or without a slot write. | birth, born-public | — |
 | **update** | Replace a Store slot using an expected previous handle and previous shared leaf count. Failure reverts the transaction. Previously sealed permissions remain valid. | supersede, rotation | storage update |
-| **rand nonce** | The host's `RandNonce` singleton (`["rand-nonce"]`), a counter every execution with a rand step must pass and advance; its value is bound into every rand seed, so two executions can never derive the same seed. | persistent-write anchor | `counterRand` |
+| **rand nonce** | An application's `RandNonce` (`["rand-nonce", program, scope]`), a counter every execution of that application with a rand step must pass and advance, created by the application's first rand execution; its value and the application are bound into every rand seed, so two executions can never derive the same seed. | persistent-write anchor | `counterRand` |
 | **HCU** | Homomorphic compute unit: the metering unit of FHE work. | — | HCU |
 
 | **result grant** | Transaction-local compute permission for an exact produced handle and consumer Store. Held in shared host-owned transient store; the consumer authority must sign consumption, not grant creation. Never a decrypt leaf. | — | `allowTransient` composition |

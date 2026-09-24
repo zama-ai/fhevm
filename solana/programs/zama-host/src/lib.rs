@@ -109,8 +109,19 @@ pub mod zama_host {
         instructions::close_owned_accounts(ctx)
     }
 
-    pub fn set_host_pause(ctx: Context<HostAdmin>, paused: bool) -> Result<()> {
-        instructions::set_host_pause(ctx, paused)
+    /// Stops the host areas `areas` names (any enabled pauser).
+    pub fn pause(ctx: Context<Pause>, areas: PauseFlags) -> Result<()> {
+        instructions::pause(ctx, areas)
+    }
+
+    /// Resumes the host areas `areas` names (admin-only).
+    pub fn unpause(ctx: Context<HostAdmin>, areas: PauseFlags) -> Result<()> {
+        instructions::unpause(ctx, areas)
+    }
+
+    /// Grants or withdraws a key's right to pause (admin-only).
+    pub fn set_pauser(ctx: Context<SetPauser>, pauser: Pubkey, enabled: bool) -> Result<()> {
+        instructions::set_pauser(ctx, pauser, enabled)
     }
 
     pub fn set_grant_deny_list_enabled(ctx: Context<HostAdmin>, enabled: bool) -> Result<()> {

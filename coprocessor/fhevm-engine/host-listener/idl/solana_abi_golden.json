@@ -208,11 +208,11 @@
     },
     {
       "category": "account",
-      "fixture_hex": "439eb0f8ab93a1dc0101010101010101010101010101010101010101010101010101010101010101420000000000000043000000000000000405060708090a0b0c0d0e0f101112131415161705060708090a0b0c0d0e0f101112131415161718060708090a0b0c0d0e0f101112131415161718190708090a0b0c0d0e0f101112131415161718191a08090a0b0c0d0e0f101112131415161718191a1b090a0b0c0d0e0f101112131415161718191a1b1c0a0b0c0d0e0f101112131415161718191a1b1c1d0b0c0d0e0f101112131415161718191a1b1c1d1e0c0d0e0f101112131415161718191a1b1c1d1e1f060708090a0b0c0d0e0f101112131415161718191a1b090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f20212223242526272801014c000000000000004d000000000000004e000000000000004f0000000000000010",
-      "fixture_len": 325,
+      "fixture_hex": "439eb0f8ab93a1dc0101010101010101010101010101010101010101010101010101010101010101420000000000000043000000000000000405060708090a0b0c0d0e0f101112131415161705060708090a0b0c0d0e0f101112131415161718060708090a0b0c0d0e0f101112131415161718190708090a0b0c0d0e0f101112131415161718191a08090a0b0c0d0e0f101112131415161718191a1b090a0b0c0d0e0f101112131415161718191a1b1c0a0b0c0d0e0f101112131415161718191a1b1c1d0b0c0d0e0f101112131415161718191a1b1c1d1e0c0d0e0f101112131415161718191a1b1c1d1e1f060708090a0b0c0d0e0f101112131415161718191a1b090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f20212223242526272801010101014c000000000000004d000000000000004e000000000000004f0000000000000010",
+      "fixture_len": 328,
       "name": "HostConfig",
       "program": "zama_host",
-      "schema_hash": "0e523818e410c4c459bdf6bc09975ee23546c16ff5460c18bad8fee155afc8fa"
+      "schema_hash": "ac654a861403dbdb3913282279e96c6a6a82a18e56711820f33a64254c789c30"
     },
     {
       "category": "account",
@@ -224,11 +224,11 @@
     },
     {
       "category": "account",
-      "fixture_hex": "4ba384817db597dd410000000000000002",
-      "fixture_len": 17,
-      "name": "RandNonce",
+      "fixture_hex": "bf601eae294a844701010101010101010101010101010101010101010101010101010101010101010103",
+      "fixture_len": 42,
+      "name": "PauserRecord",
       "program": "zama_host",
-      "schema_hash": "1960e6cc5cdebb89893dacef26b4587af058e170e661692cdeb4c8ba1aa9bbc9"
+      "schema_hash": "4b4df85294c6125d634de2d7f20383a68a32851a446c8484fc5c243830539118"
     },
     {
       "category": "event",
@@ -240,11 +240,9 @@
     },
     {
       "category": "event",
-      "fixture_hex": "00925498bbf0001401010000001200030405060708090a0b0c0d0e0f101112",
-      "fixture_len": 31,
-      "name": "FheExecuteRandomSeedsEvent",
+      "name": "FheExecutedEvent",
       "program": "zama_host",
-      "schema_hash": "605997fd6e7388b326b0596ac0b58fc911a8e64c5ddefbb850b0c3a4963a2856"
+      "schema_hash": "a3f673bfe71b45204845cf1ace0c37edda664b074c76be4978f6a1f103309469"
     },
     {
       "category": "event",
@@ -256,11 +254,11 @@
     },
     {
       "category": "event",
-      "fixture_hex": "5bf67764f8ea388a010202020202020202020202020202020202020202020202020202020202020202030303030303030303030303030303030303030303030303030303030303030301014600000000000000470000000000000048000000000000004900000000000000",
-      "fixture_len": 107,
+      "fixture_hex": "5bf67764f8ea388a010202020202020202020202020202020202020202020202020202020202020202030303030303030303030303030303030303030303030303030303030303030301010101014600000000000000470000000000000048000000000000004900000000000000",
+      "fixture_len": 110,
       "name": "HostConfigUpdatedEvent",
       "program": "zama_host",
-      "schema_hash": "9478689331db58fc319e6af7a8aaac8ec6c2e785dc22d8fb8b8dcd19f99006a9"
+      "schema_hash": "bcd11a08b780753eeb496b2d81150ed645f10463d5299deb04548dc5ba52609a"
     },
     {
       "category": "event",
@@ -280,11 +278,11 @@
     },
     {
       "category": "event",
-      "fixture_hex": "2a5222c7ee366ab50101000000120003030303030303030303030303030303030303030303030303030303030303030405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f20212223",
-      "fixture_len": 79,
-      "name": "PublicOutputsProducedEvent",
+      "fixture_hex": "1108b19434aa55ed0102020202020202020202020202020202020202020202020202020202020202020303030303030303030303030303030303030303030303030303030303030303014500000000000000",
+      "fixture_len": 82,
+      "name": "PauserUpdatedEvent",
       "program": "zama_host",
-      "schema_hash": "6bbe522d3ea9d324d0eef718b45f1c14be10fe66683650f504914ebde96509d4"
+      "schema_hash": "7d7e9f22b6d02097b07dfaaac413b5b63e468fc43169d634fcee73450b5656ab"
     },
     {
       "category": "instruction_args",
@@ -332,7 +330,7 @@
       "fixture_len": 95,
       "name": "fhe_execute",
       "program": "zama_host",
-      "schema_hash": "310394812ff052070121be43bfc83ec48a7a6cea0c58dcf9d2868371652438d5"
+      "schema_hash": "342394f2c4eb143a1f7e0ef7f5c49be4ea682450243b957ea0dc249ac195ed3f"
     },
     {
       "category": "instruction_args",
@@ -340,7 +338,7 @@
       "fixture_len": 90,
       "name": "initialize_host_config",
       "program": "zama_host",
-      "schema_hash": "19188ae31cdaa8a1b904b04142ac8197ae8cc59c32bb92f61dce2195ff0f9d59"
+      "schema_hash": "45275bbe5b6962050e54ebfdb9d8cb9d6d927e6f2483749e1896582d99e0841c"
     },
     {
       "category": "instruction_args",
@@ -357,6 +355,14 @@
       "name": "open_transient_store",
       "program": "zama_host",
       "schema_hash": "c59f685946c6fc593ffd7317442c0add72b2f8b94c2fcb4e6a4bbaa8bac6d6c1"
+    },
+    {
+      "category": "instruction_args",
+      "fixture_hex": "d316ddfb4a79c12f01010101",
+      "fixture_len": 12,
+      "name": "pause",
+      "program": "zama_host",
+      "schema_hash": "9580be5a24cbe3153043bdccaadd9737638342f78fc616669fcd7ba670979193"
     },
     {
       "category": "instruction_args",
@@ -432,14 +438,6 @@
     },
     {
       "category": "instruction_args",
-      "fixture_hex": "773b29834a3a596101",
-      "fixture_len": 9,
-      "name": "set_host_pause",
-      "program": "zama_host",
-      "schema_hash": "100e731b8b1941af234900380421081f7496095278a5b71a32c3c018fb38f6df"
-    },
-    {
-      "category": "instruction_args",
       "fixture_hex": "5b2c1564b83ee9eb4100000000000000",
       "fixture_len": 16,
       "name": "set_max_hcu_depth_per_tx",
@@ -453,6 +451,22 @@
       "name": "set_max_hcu_per_tx",
       "program": "zama_host",
       "schema_hash": "9d28530ac9b1e2e3db8be2e4e0f435061e96939cddcb3cd8be8c3b95c0e24fd0"
+    },
+    {
+      "category": "instruction_args",
+      "fixture_hex": "16c6983d020d91ee010101010101010101010101010101010101010101010101010101010101010101",
+      "fixture_len": 41,
+      "name": "set_pauser",
+      "program": "zama_host",
+      "schema_hash": "8be2fb09fa6bc7d1aedd8cd0cf64b4f0374164270fa78e8092ca0d02a36f6792"
+    },
+    {
+      "category": "instruction_args",
+      "fixture_hex": "a99004260a8dbcff01010101",
+      "fixture_len": 12,
+      "name": "unpause",
+      "program": "zama_host",
+      "schema_hash": "95239a48e74d642fee52d3fa3e76aabc6b78ae7f0f0469ef77183aaaf390e4d1"
     },
     {
       "category": "instruction_args",

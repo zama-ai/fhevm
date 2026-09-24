@@ -11,7 +11,7 @@ HostConfig
   PDA("host-config")
   stores chain id, gateway chain id, protocol authorities (admin, coprocessor signer set +
   threshold, decryption contract, input verification contract), current KMS context pointer,
-  pause state, HCU limits (per-tx, per-depth, per-app-per-slot block cap), and the
+  pause flags, HCU limits (per-tx, per-depth, per-app-per-slot block cap), and the
   persistent-grant deny-list policy
 
 EncryptedStore
@@ -32,13 +32,18 @@ DenyScopeRecord
   optional deny-list witness for one application when HostConfig enables deny-list checks;
   gates every allow the host would seal for it
 
+PauserRecord
+  PDA("pauser", pauser)
+  admin-managed record letting one key set pause flags; only the admin clears them (DD-058)
+
 HcuBlockMeter / HcuTrustedAppRecord
   PDA("hcu-block-meter", program, scope) / PDA("hcu-trusted", program, scope)
   the per-slot HCU budget and admin trust record of one application
 
 RandNonce
-  PDA("rand-nonce")
-  the host's global rand counter; every execution with a rand step passes and advances it
+  PDA("rand-nonce", program, scope)
+  one application's rand counter; each of its executions with a rand step passes and advances it,
+  and the first one creates it
 
 UserDecryptionDelegation
   PDA("user-decryption-delegation", delegator, delegate, authority)
@@ -92,7 +97,8 @@ after CPI; a subsequent CPI or the final close can overwrite the return channel.
 
 Every operand-bearing handle preimage includes a mask derived from earlier production in the transaction. Slot,
 grant and earlier-step witnesses all use the same origin rule. The listener reconstructs operations and effects in
-order from instruction data; random operations also use their execution's `FheExecuteRandomSeedsEvent`.
+order from instruction data; each execution's `FheExecutedEvent` supplies the block context, the random seeds and
+the result handles, which the listener re-derives only as a check.
 
 The host checks pause, canonical accounts, signers, all touched application deny records, operand types and current
 slot handles. Transaction HCU total and depth span calls and applications; block meters charge each execution to

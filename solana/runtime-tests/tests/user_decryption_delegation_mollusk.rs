@@ -73,9 +73,13 @@ fn custom_error(error: host::errors::ZamaHostError) -> Check<'static> {
     zama_solana_test_kit::anchor_error_check(error as u32)
 }
 
-fn host_config_account(paused: bool) -> (Pubkey, Account) {
+/// A host config whose ACL-writes area, the one delegation belongs to, is paused or not.
+fn host_config_account(acl_writes_paused: bool) -> (Pubkey, Account) {
     host_config_account_from(&HostConfigParams {
-        paused,
+        paused: host::PauseFlags {
+            acl_writes: acl_writes_paused,
+            ..host::PauseFlags::default()
+        },
         ..HostConfigParams::new(Pubkey::new_unique())
     })
 }
@@ -538,7 +542,7 @@ fn a_grant_while_paused_is_rejected() {
             EXPIRATION,
         ),
         &accounts,
-        &[custom_error(host::errors::ZamaHostError::HostConfigPaused)],
+        &[custom_error(host::errors::ZamaHostError::AclWritesPaused)],
     );
 }
 

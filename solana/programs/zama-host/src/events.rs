@@ -2,18 +2,18 @@
 //! and which one it gets depends on whether an off-chain component has to be able to query it (DD-044).
 //!
 //! - **Emitted, always, through the event CPI** (`crate::event_cpi`). Two groups qualify. The admin and
-//!   config lifecycle — `HostConfig*`, `*KmsContext*`, `DenyScopeUpdated`, `HcuAppTrustUpdated` —
+//!   config lifecycle — `HostConfig*`, `*KmsContext*`, `DenyScopeUpdated`, `HcuAppTrustUpdated`, `PauserUpdated` —
 //!   because an admin change is a protocol-level fact a component must be able to read without
-//!   replaying instruction data to find it. And `FheExecuteRandomSeedsEvent`, which carries the one
-//!   datum an indexer cannot recompute from instruction data (seeds derived from block entropy).
-//!   `PublicOutputsProducedEvent` is emitted the same way but has had no consumer in this repository
-//!   since RFC 035 retired the standalone proof store; retiring it is fhevm-internal#1665's call
-//!   (DD-037). Nothing here uses
-//!   `emit!`: a log can be truncated by the RPC provider a reader goes through, so it delivers a hint
-//!   rather than the event. Authorization still comes from host-owned account state and never from
+//!   replaying instruction data to find it. And `FheExecutedEvent`, emitted by every `fhe_execute`:
+//!   the instruction carries what the caller asked for, and the event carries what the host decided
+//!   — the block context, the random seeds and the result handle of each step. An indexer cannot
+//!   recompute the seeds, and it should not depend on its own copy of the handle derivation or on
+//!   live sysvar state to learn the rest, so a block from any archive is enough to ingest it.
+//!   Nothing here uses `emit!`: a log can be truncated by the RPC provider a reader goes
+//!   through, so it delivers a hint rather than the event. Authorization still comes from host-owned account state and never from
 //!   event bytes; what the event CPI buys is that a reader sees the change, not that it may trust it.
-//! - **Not emitted at all.** Everything else, which is most of it: per-step compute shapes (they live
-//!   in `records.rs` as decoded op records), `EncryptedStore` ACL mutations (indexers rebuild MMR
+//! - **Not emitted at all.** Everything else, which is most of it: per-step compute shapes and
+//!   operands (they live in `records.rs` as decoded op records), `EncryptedStore` ACL mutations (indexers rebuild MMR
 //!   leaves through the shared `zama_solana_acl` crate), and user-decryption delegation. The listener
 //!   reconstructs these from instruction data over Yellowstone, which is the normal path for anything
 //!   reconstructible. Delegating is a user ability rather than administration, which is why its event
@@ -21,41 +21,29 @@
 
 use anchor_lang::prelude::*;
 
-/// One public persistent output produced by an `fhe_execute` execution.
-#[derive(AnchorSerialize, AnchorDeserialize, Clone, Debug, PartialEq, Eq)]
-pub struct ProducedPublicOutput {
-    /// Zero-based step index within the execution.
-    pub step_index: u16,
-    /// Host-owned persistent `EncryptedStore` account bound by the step.
-    pub encrypted_store: Pubkey,
-    /// Block-entropy-derived output handle written to the account.
-    pub output_handle: [u8; 32],
-}
-
-/// Emitted once for the public outputs produced by an `fhe_execute` execution.
-#[event]
-pub struct PublicOutputsProducedEvent {
-    /// Event schema version.
-    pub version: u8,
-    /// Produced public outputs in execution step order.
-    pub outputs: Vec<ProducedPublicOutput>,
-}
+use crate::state::PauseFlags;
 
 /// One host-derived random seed used by an `fhe_execute` step.
 #[derive(AnchorSerialize, AnchorDeserialize, Clone, Debug, PartialEq, Eq)]
 pub struct FheExecuteRandomSeed {
     /// Zero-based step index within the execution.
     pub step_index: u16,
-    /// Seed derived from the consumed host rand nonce and slot entropy.
+    /// Seed derived from the application's consumed rand nonce and slot entropy.
     pub seed: [u8; 16],
 }
 
-/// Emitted once for the random steps in an `fhe_execute` execution.
+/// Emitted once by every `fhe_execute`, after its account writes.
 #[event]
-pub struct FheExecuteRandomSeedsEvent {
+pub struct FheExecutedEvent {
     /// Event schema version.
     pub version: u8,
-    /// Random seeds in execution step order.
+    /// Bank hash of the parent slot, folded into every deterministic result handle.
+    pub previous_bank_hash: [u8; 32],
+    /// The slot's `Clock::unix_timestamp`, folded into every deterministic result handle.
+    pub unix_timestamp: i64,
+    /// Result handle of each step, in step order.
+    pub results: Vec<[u8; 32]>,
+    /// Seeds of the random steps, in step order.
     pub seeds: Vec<FheExecuteRandomSeed>,
 }
 
@@ -66,10 +54,10 @@ pub struct HostConfigUpdatedEvent {
     pub version: u8,
     /// Host config PDA.
     pub config: Pubkey,
-    /// Admin signer that performed the update.
-    pub admin: Pubkey,
-    /// Current pause state.
-    pub paused: bool,
+    /// Signer that performed the update: the admin, or a pauser for `pause`.
+    pub signer: Pubkey,
+    /// Host areas currently paused.
+    pub paused: PauseFlags,
     /// Current deny-list gate.
     pub grant_deny_list_enabled: bool,
     /// Current max total HCU per `fhe_execute` execution (`u64::MAX` = unlimited).
@@ -119,6 +107,21 @@ pub struct DenyScopeUpdatedEvent {
     pub scope: [u8; 32],
     /// Whether the application is denied.
     pub denied: bool,
+    /// Slot in which this update was applied.
+    pub updated_slot: u64,
+}
+
+/// Emitted when a pauser record is created or toggled.
+#[event]
+pub struct PauserUpdatedEvent {
+    /// Event schema version.
+    pub version: u8,
+    /// Canonical pauser record PDA.
+    pub pauser_record: Pubkey,
+    /// The key the record grants.
+    pub pauser: Pubkey,
+    /// Whether the key may set pause flags.
+    pub enabled: bool,
     /// Slot in which this update was applied.
     pub updated_slot: u64,
 }

@@ -25,7 +25,11 @@ pub fn make_store_handle_public(
     handle: [u8; 32],
     previous_leaf_count: u64,
 ) -> Result<()> {
-    assert_not_paused(&ctx.accounts.host_config)?;
+    assert_not_paused(
+        &ctx.accounts.host_config,
+        |paused| paused.acl_writes,
+        ZamaHostError::AclWritesPaused,
+    )?;
     assert_no_remaining_accounts(ctx.remaining_accounts)?;
     let state = &mut ctx.accounts.encrypted_store;
     state.validate(state.key())?;

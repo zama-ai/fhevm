@@ -147,8 +147,8 @@ with the local harness; it is not a new top-level fhevm-cli command.
 An existing HostConfig/KMS context cannot be silently rebound to a new Gateway or
 committee. A breaking experiment that changes those bindings needs explicit on-chain
 reconfiguration or fresh identities. Discarded values are not expected to remain usable.
-Listener downtime requires provider replay, including transactions and Clock/SlotHashes
-updates; verify the provider's retention rather than assuming archive recovery.
+Listener downtime requires provider replay of the missed blocks; verify the provider's
+retention rather than assuming archive recovery.
 
 ## Validation
 
@@ -165,7 +165,10 @@ registration against PostgreSQL. CI also runs it through the packaged image. The
 upgrade scenario also checks old-value decryption after host upgrade and listener restart.
 The preview launch checks listener checkpoint progress; a live computation/decryption
 smoke test is still required to validate provider delivery and internal routing together.
-Every FHE handle hashes the host program id. The listener derives with the id it is
-configured to follow (`--program-id`), not the id its `zama-host` build was compiled with, so
-the listener image needs no environment. If handles still mismatch, compare the
-listener's `--program-id` with the deployed program before suspecting the sysvars.
+Every FHE handle hashes the host program id. The listener stores the handles the host
+emits and re-derives each as a check with the id it is configured to follow (`--program-id`),
+not the id its `zama-host` build was compiled with, so the listener image needs no
+environment. A wrong `--program-id` does not fail the check: the listener then sees no host
+instructions at all. If the handle-check alarm fires after a deploy, the listener's decoder
+or derivation disagrees with the deployed program; check that the listener build matches the
+program build (INVARIANTS #33).

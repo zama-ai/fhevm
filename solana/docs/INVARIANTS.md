@@ -1,11 +1,11 @@
 # Protocol invariants — Solana fhevm
 
-Last synced: 2026-09-17.
+Last synced: 2026-09-24.
 
 Every entry carries a stable number and a tag. Numbers are never reused: an
 entry that dies is retired in place. The tags:
 
-- **[HOLDS]** — designed guarantee.
+- **[HOLDS]** — designed guarantee. Each entry names the tests that pin it, or says why it holds by construction.
 - **[OPERATIONAL]** — maintained by ops/monitoring, not enforced on-chain.
 - **[ASSUMPTION]** — an external trust assumption the system depends on.
 - **[ANTI]** — an explicit _non_-guarantee (commonly assumed; not promised).
@@ -40,10 +40,16 @@ grant, transient store, application.
 
 **1. [HOLDS]** Plaintext values never appear on-chain: the chain stores handles
 and access state; ciphertexts live only in the coprocessor.
+Holds by construction: a confidential value reaches the host and token programs only as a handle, and the one
+instruction that accepts a cleartext is `verify_public_decrypt`, for a handle already sealed public (#21). Values public
+by design, such as trivially encrypted constants and the SPL amounts of wrap and redeem, are outside this entry.
 
 **2. [HOLDS]** A failed confidential transfer is indistinguishable on-chain from
 a successful one (the execution moves an encrypted zero; there is no failure
 branch to observe).
+Holds by construction for the chain state: no instruction receives the amount, so nothing on chain can depend on it.
+Pinned for the encrypted zero by `mollusk_overdrawn_confidential_transfer_succeeds_and_moves_an_encrypted_zero`: a
+transfer that overdraws the sender succeeds and, once evaluated, leaves both balances unchanged.
 
 **3. [ANTI]** Participation, timing, touched accounts, instruction shapes, and
 execution structure are all public.
@@ -55,16 +61,26 @@ sealed from instruction data, and the leaf record republishes it.
 
 **5. [HOLDS]** A Store slot changes only through an `fhe_execute` output. No instruction accepts a caller-chosen handle
 into a slot; `make_store_handle_public` seals a leaf for the handle a slot already holds.
+Holds by construction: a Store output names an execution result (`ExecutionResultRef`), never a handle, and the
+handles an instruction does carry are only compared with the slot (#6, #11b). No test writes a chosen handle, because
+no argument could carry one.
 
 **6. [HOLDS]** A slot write states what the slot holds now: the exact current handle, or nothing for a first write. A
 Store output also states the Store's leaf count as the builder saw it. If either is stale the whole execution fails
 (`PreviousStoreMismatch`), so two writers cannot lose an update. The new handle's allows are declared on the write; the
 old handle's leaves stay sealed.
+Pinned by `mollusk_fhe_execute_rejects_stale_previous_handle`, `mollusk_fhe_execute_rejects_stale_previous_leaf_count`
+and `mollusk_make_store_handle_public_rejects_stale_leaf_count`.
 
 **7. [HOLDS]** Every encrypted store lives at `["encrypted-state", program, authority, scope]` and stores those identity fields plus its canonical bump. Creation proves that authority is a PDA of program. Readers rederive the address and validate the stored shape. Slot keys are not address seeds.
+Pinned by `mollusk_create_encrypted_store_rejects_wallet_authority`,
+`mollusk_create_encrypted_store_rejects_seeds_from_another_program`, `mollusk_make_store_handle_public_rejects_wrong_stored_bump`
+and the state test `canonical_validation_rejects_wrong_bump_address_and_duplicate_slots`.
 
 **8. [HOLDS]** Sealed history (the MMR) is append-only: a handle sealed public
 stays provable after any number of later updates.
+Pinned by `mollusk_historical_proof_round_trip_after_two_updates`, `mollusk_verify_public_decrypt_survives_update_after_seal`
+and the MMR test `every_leaf_verifies_and_tampering_fails`.
 
 **9. [RETIRED]** The instruction that removed a viewer went with the stored list
 (RFC 035, DD-048): allows are sealed on the write and never removed. A handle with no allows and
@@ -79,6 +95,11 @@ application is checked by the execution that consumes the grant. A denied applic
 nor receive a Store write from another program's execution. The list names applications, not keys (DD-048): a denied key
 can still be allowed by a clean application, and user-decryption delegation is a separate access path with no deny
 check.
+Pinned by `mollusk_denied_application_cannot_write_or_seal_but_its_sibling_scope_can`,
+`mollusk_deny_list_requires_exactly_the_applications_record`,
+`mollusk_fhe_execute_denies_a_write_under_an_additional_authority_into_a_denied_application`, and the token tests
+`mollusk_transfer_from_value_checks_every_application_deny_record` and
+`mollusk_burn_from_value_checks_every_application_deny_record`.
 
 **11. [HOLDS]** Only the Store authority writes its slots or appends permissions: it signs Store creation, Store outputs
 and `make_store_handle_public`, and it is a PDA of the Store's `program` (#7). A viewer is not a co-admin — an allow
@@ -87,26 +108,41 @@ Confidential-token ships owner-gated wrappers that `invoke_signed` as the **toke
 (`allow_balance_viewers`, which re-writes the balance onto a handle allowed to the viewers, and
 `make_token_account_handle_public`); the mint authority has the same pair for the total supply, signed as the
 total-supply authority PDA (`allow_total_supply_viewers`, `make_total_supply_handle_public`). (fhevm-internal#1862 #13;
-RFC 035.) Related token/Host lifecycle guardrails are:
+RFC 035.) Pinned by `only_the_admin_changes_trust_roots_and_only_an_authority_changes_its_store`, which checks over
+random instruction sequences that no Store's bytes change unless the authority it records signed; the planted bug
+`runtime-tests/planted-bugs/h2-fhe-execute-accepts-an-unsigned-witness.patch` must make it fail. This covers the default
+build; the preview-only `admin-sweep` build adds `close_owned_accounts`, which lets the upgrade authority close any
+Store (`AUTHORITY.md`). The token wrappers are
+pinned by `mollusk_owner_allows_balance_viewers`, `mollusk_non_owner_cannot_allow_balance_viewers`,
+`mollusk_mint_authority_allows_total_supply_viewers` and `mollusk_non_mint_authority_cannot_allow_total_supply_viewers`.
+Related token/Host lifecycle guardrails are:
 
 - **11b [HOLDS].** `make_store_handle_public` requires the signer to equal `EncryptedStore.authority` and the handle to
   be the current handle in the named slot. A viewer cannot directly publish through this authority-only instruction;
   history-only publication and EVM-style re-sharing are deferred to #2007. The deny list is consulted for the value's
   application, because sealing a public leaf is an allow (#10). Confidential-token owner/mint-authority wrappers
-  validate the exact state field and sign as the token-account/total-supply PDA. (fhevm-internal#1862.)
+  validate the exact state field and sign as the token-account/total-supply PDA. (fhevm-internal#1862.) Pinned by
+  `mollusk_make_handle_public_rejects_wrong_expected_handle` and
+  `mollusk_make_handle_public_rejects_signer_that_is_not_the_store_authority`.
 - **11c [HOLDS].** Each confidential token account may have exactly one pending burn, stored at
   `["pending-burn", mint, token_account]`. A second burn is rejected before FHE execution until `redeem_burned_amount`
   or `cancel_pending_burn` closes the account and returns its rent to the owner. Parallel burns for one token account
-  are deliberately deferred; applications can aggregate an amount or use separate app-owned token accounts.
+  are deliberately deferred; applications can aggregate an amount or use separate app-owned token accounts. Pinned by
+  `mollusk_confidential_burn_is_sequential_until_cancelled`.
 - **11d [HOLDS].** `cancel_pending_burn` requires the pending burned handle to equal the Store’s current burned-amount
-  slot handle. A stale or mismatched pending burn cannot restore value.
+  slot handle. A stale or mismatched pending burn cannot restore value. Pinned by
+  `mollusk_cancel_pending_burn_rejects_stale_current_handle_atomically`.
 - **11e [HOLDS].** `cancel_pending_burn` restores both confidential balance and encrypted `total_supply` (mirrors wrap's
   dual add; undoes burn's dual sub). Redeem does not restore encrypted supply — it exits via underlying payout.
-  (fhevm-internal#1862 review P1.)
-- **11f [HOLDS].** Host pause (`HostConfig.paused`) gates token cash-out / disclose paths that call
-  `assert_host_config_allows_token_response` (redeem, disclose). Opening a burn / cancelling a pending burn still
-  requires a live FHE path through the host; there is no separate token-level pause. No registry / observer / on-chain
-  gov surface yet (zama-ai/fhevm-internal#1634).
+  (fhevm-internal#1862 review P1.) Pinned by `mollusk_cancel_pending_burn_restores_balance_and_supply` and
+  `mollusk_redeem_current_pending_burn_then_rejects_double_settlement`, which checks that redeem leaves the supply Store
+  untouched.
+- **11f [HOLDS].** The host's pause flags (#36) stop the token; there is no separate token-level pause. Redeem and
+  disclose stop with `public_decrypt`, through the host's `verify_public_decrypt`. Opening a burn and cancelling one
+  stop with `execution`, through `fhe_execute`, and opening a burn also with `verified_inputs`, since its amount is a
+  verified input. No registry / observer / on-chain gov surface yet (zama-ai/fhevm-internal#1634). Pinned by
+  `mollusk_redeem_rejected_when_host_paused`, `mollusk_disclose_secp_rejected_when_host_paused`,
+  `mollusk_burn_and_cancel_are_refused_by_a_paused_host` and `mollusk_burn_is_refused_while_verified_inputs_are_paused`.
 
 **68. [ASSUMPTION]** A program never passes a PDA it signs with, a Store authority or a delegator, as a signer to a
 program it does not trust. zama-host accepts whatever that PDA signs. A program given the PDA as a signer, and any
@@ -124,8 +160,12 @@ the exact final top-level close refunds its recorded payer. Open and every FHE c
 a second context, reopening or early/nested closure fails. The payer is a rent role, independent of Store authority.
 A failed transaction rolls back all writes. Decrypt permission remains a separate exact-handle MMR leaf.
 In the batcher, each JoinRecord controls its participant's contribution Store, scoped to the batch.
-Pinned by `transient_mollusk.rs`, including producer reuse across calls, foreign grant/signature negatives,
-second-context rejection, capacity rollback and final-close tests.
+Pinned by `mollusk_fhe_execute_rejects_read_of_a_value_whose_authority_did_not_sign`,
+`producer_reuses_its_result_across_calls_with_transaction_origin_and_depth`,
+`transient_result_rejects_missing_grants_and_wrong_handle_or_consumer`, `active_workspace_cannot_be_reopened`,
+`result_journal_capacity_is_shared_across_calls_and_fails_atomically`,
+`transient_store_cannot_close_before_the_final_instruction` and
+`transient_store_is_created_and_closed_atomically_including_prefunded_addresses`.
 
 **64. [ANTI]** A grant limits who may compute with a handle inside one transaction. It does not limit what that
 computation may reveal: the consumer's output can be written to a slot, allowed to any key or made public, and those
@@ -145,6 +185,9 @@ call would be accepted or rejected by parity. Pinned by
 **12. [HOLDS]** An execution is atomic. Step count, account count, return selection, account table, preflight and deny
 checks run before the walk; step semantics are validated during the walk. A failure at any point rolls back the entire
 transaction, including earlier slot writes, sealed leaves and the rand nonce.
+Pinned by `mollusk_transaction_later_failure_rolls_back_created_public_output`,
+`nested_transient_store_close_rolls_back_the_whole_transaction` and `two_slots_share_history_and_stale_slot_writes_roll_back`.
+The rollback is the runtime's, so the rand nonce needs no test of its own.
 
 **65. [HOLDS]** Return data carries handles, never permission. An execution names the results to return as an ordered
 list of `(step_index, output_index)` pairs, at most 32 (the 1,024-byte return-data limit), and the host copies exactly
@@ -161,24 +204,42 @@ is derived, each encrypted operand gets boundary bit 1 only if its handle was no
 Scalars get bit 0. The big-endian 256-bit mask enters the handle preimage; input position 0 uses the least-significant
 bit. The listener reconstructs the same ordered transaction membership. An earlier transaction in the same block is
 still a boundary; `EarlierStep`, slot reload and transient store grant witnesses cannot choose a different origin.
+Pinned by `producer_reuses_its_result_across_calls_with_transaction_origin_and_depth`. The mask enters the handle
+preimage, so the listener's side is pinned by its re-derivation check (#28) passing in
+`fhe_execute_walk_chains_transient_handles`.
 
 **13. [HOLDS]** Every dictionary index is bounds-checked by all three consumers
 (program, SDK, listener); an unreferenced dictionary entry rejects the
 execution.
+Pinned by `mollusk_fhe_execute_rejects_a_dictionary_index_past_the_dictionary`,
+`mollusk_fhe_execute_rejects_an_unreferenced_dictionary_entry`, the SDK tests
+`finish_rejects_dictionary_index_past_dictionary_end` and `finish_rejects_dictionary_entry_no_step_references`, and
+the listener test `rejects_store_output_dictionary_overflow`.
 
 **15. [HOLDS]** Every op/type combination that validation accepts also has a
 metering cost row, so a step that passed validation can never abort because
 its cost is unknown. It does not work the other way round, deliberately:
 some combinations have a price but are still rejected by validation.
+Pinned by the eight `*_hcu_covers_every_validated_*` tests in
+`programs/zama-host/src/instructions/fhe_execute/hcu/tests.rs`, one per operator family.
 
-**16. [HOLDS]** An execution containing a rand step must pass the host's
-`RandNonce` singleton (`["rand-nonce"]`; `FheExecuteRandNonceMissing`
-otherwise) and advances it; the nonce is bound into every rand seed, so two
-executions can never derive the same seed, whatever they persist (DD-043).
-The nonce is host state, never caller-supplied, so a caller cannot steer it.
+**16. [HOLDS]** An execution containing a rand step must pass its
+application's `RandNonce` (`["rand-nonce", program, scope]`;
+`FheExecuteRandNonceMissing` without it, `RandNonceMismatch` for an account
+at another address or a malformed one) and advances it; the nonce and the
+application are bound into every rand seed, so two executions can never
+derive the same seed, whatever they persist (DD-043, DD-057). The nonce is
+host state, never caller-supplied, and closed only by the preview-only
+`admin-sweep` wipe, so a caller cannot steer or restart it.
+Pinned by `mollusk_fhe_execute_rand_without_nonce_account_is_rejected`,
+`mollusk_fhe_execute_nonce_account_without_rand_is_rejected`,
+`mollusk_fhe_execute_rand_creates_then_consumes_the_nonce_and_never_repeats_a_seed`,
+`mollusk_fhe_execute_rand_rejects_another_applications_nonce` and `rand_seed_is_distinct_across_every_uniqueness_axis`.
 
 **17. [HOLDS]** `account_count` declared inside the instruction data must equal the number of remaining accounts
 actually delivered.
+Pinned by `mollusk_fhe_execute_extra_remaining_account_still_rejected_with_block_cap` and
+`mollusk_fhe_execute_missing_remaining_account_rejected`.
 
 **18. [HOLDS]** A transient result from one SDK builder cannot be used in another. `FheExecution::build` gives each
 builder a distinct `'id` lifetime, which its transient results carry; mixing them is a compile error. Stored slot
@@ -189,9 +250,10 @@ instruction arguments without the SDK. Pinned by the `compile_fail` doctest on `
 **61. [ANTI]** `FheExecution::build` does not guarantee that the host's CPI fits the host's heap or compute budget. The
 builder's typed limits (#54) cover the app's own heap. The host has a separate 32 KiB heap, and what it allocates
 depends on the live Store size, the number of MMR peaks and the permissions sealed per output, none of which the builder
-can see. The gap is measurable: `shared_audience_store_outputs_fit_the_builder_at_full_depth` admits 32 slot outputs
-with the same eight viewers and a public leaf, while the runtime sweep `fhe_execute_boundary/allow_heavy_public_creates`
-succeeds at 24 such outputs and exhausts the host heap at 25. These are shape measurements, not an output cap. No
+can see. The gap is measurable: `the_builder_admits_mature_updates_the_host_heap_cannot_run` builds 16 updates, each
+to its own Store with 8 MMR peaks and the same eight viewers, while the runtime sweep
+`fhe_execute_boundary/mature_updates_peaks_8` runs 15 and exhausts the host heap at 16. The builder admits 22 such
+updates at any peak count; the host runs 7 at 32 peaks. These are shape measurements, not an output cap. No
 host-side admission model exists; an app validates its shapes against the sweeps and budgets the whole transaction. Why
 no allocator was shipped is DD-046 (fhevm-internal#1872).
 
@@ -199,14 +261,21 @@ no allocator was shipped is DD-046 (fhevm-internal#1872).
 
 **19. [HOLDS]** A verified input is consumed only with a threshold-valid
 coprocessor attestation that names the calling program and the host chain id.
+Pinned by `verifies_full_coprocessor_input_flow`, `mollusk_confidential_transfer_rejects_attestation_user_mismatch` and
+`mollusk_confidential_transfer_rejects_attestation_contract_mismatch`.
 
 **20. [HOLDS]** Verified inputs grant nothing persistent: they are usable only
 inside the carrying execution; persistence requires an explicit output with its
 own allows.
+Holds by construction: a verified input is an operand of one execution, and an execution persists only its declared
+Store outputs (#5). No test tries to persist one otherwise, because no instruction could.
 
 **21. [HOLDS]** Public cleartext is accepted on-chain only through
 `verify_public_decrypt`: a KMS threshold certificate **and** an MMR
 inclusion proof that the exact handle was sealed public.
+Pinned by `mollusk_verify_public_decrypt_returns_handle_and_cleartext`,
+`mollusk_verify_public_decrypt_rejects_handle_proof_mismatch`, `mollusk_verify_public_decrypt_rejects_historical_only_leaf`
+and `mollusk_verify_public_decrypt_rejects_sub_threshold_signatures`.
 
 **22. [HOLDS]** Certificate binding chain: signed `extra_data` → context id → canonical KmsContext PDA → signer set.
 Empty or version-0 `extra_data` selects the current context; version 1 is exactly 33 bytes and carries the 32-byte id.
@@ -215,6 +284,10 @@ Version 3 is rejected. The verifier authenticates the context, handle and cleart
 independently verifies the exact handle's public leaf against the supplied Store's current peaks. It does not require
 that Store to equal the routing address in `extra_data`. Destroying a context invalidates its certificates; rotation
 alone invalidates none.
+Pinned by `extract_kms_context_id_mirrors_evm_extractcontextid`,
+`mollusk_verify_public_decrypt_accepts_v4_extra_data_routed_through_another_store`,
+`mollusk_verify_public_decrypt_rejects_non_canonical_kms_context`, `mollusk_verify_public_decrypt_rejects_context_account_mismatch`,
+`mollusk_redeem_rejects_destroyed_kms_context` and `mollusk_redeem_accepts_live_rotated_out_kms_context`.
 
 **23. [ASSUMPTION]** The coprocessor and KMS committees are honest at their
 thresholds, and their EVM signing keys are not compromised.
@@ -234,7 +307,7 @@ through the returned context id; it is not enforced by the verifier.
 type outgrowing it changes the certificate format, the entrypoint
 signature, and the return layout together.
 
-**27. [HOLDS]** A delegated user-decryption entry names the delegator as its owner address. The KMS connector reads the
+**27. [HOLDS]** A delegated user-decryption entry names the delegator as its allowed key. The KMS connector reads the
 delegation record for the encrypted store's authority and the delegator's wildcard row in the deciding snapshot. Either
 row authorizes the delegate if it is live at that slot: not revoked, not expired, and not written after the observation.
 A dead row cannot veto a live one. The connector then requires the delegator's allow leaf
@@ -248,16 +321,24 @@ and `a_vault_pda_grants_a_delegation_via_cpi` (fhevm-internal#2084).
 
 ## E. Reconstruction & off-chain services
 
-**28. [HOLDS]** Handles the listener re-derives are byte-identical to the
-on-chain ones, because the listener imports the program's own derivation
-functions and argument types rather than reimplementing them, and supplies
-the followed program id (`--program-id`) as `HandleDerivationContext.program_id`
-instead of hashing the crate's compiled `declare_id!` (fixtures and the e2e
-derivation check this too).
+**28. [HOLDS]** The handles the listener stores are the ones the host
+emitted in each execution's `FheExecutedEvent`, so its computation rows, leaves
+and allowed handles match the chain even if its own derivation drifts. It
+re-derives every handle as a check, with the program's own derivation functions
+and argument types and the followed program id (`--program-id`) rather than the
+crate's compiled `declare_id!`. A step that does not re-derive is held back as a
+terminal error, which ends its dependents too, and raises an alarm; the rest of
+the block is ingested (DD-056). The check detects a listener bug, not a lying
+provider, which can forge the event and the transaction consistently.
+Pinned by `reports_a_wrong_emitted_handle_without_substituting_it` and `rejects_an_event_that_describes_other_steps`.
 
-**29. [HOLDS]** Every transaction is independently interpretable: replay from
-instruction bytes alone reconstructs full history with zero account reads
-(updates echo the previous handle and declare the new handle's allows).
+**29. [HOLDS]** Every transaction is independently interpretable: its
+instructions and inner instructions, including each execution's event,
+reconstruct its history with zero account reads and no sysvar state (updates
+echo the previous handle and declare the new handle's allows). A block from
+`getBlock` prepares into the same input as one from the stream.
+Pinned by the reconstruction walks such as `fhe_execute_walk_chains_transient_handles`, which take only transaction
+data, and by `rebuilds_a_slot_from_get_block_alone` and `shared_transaction_decoding_contract`.
 
 **30. [HOLDS]** The leaf record can stop a decrypt from happening but can
 never be what allows one: the KMS connector verifies every proof against
@@ -265,35 +346,61 @@ the peaks it read on chain itself, fans out to every configured
 coprocessor and merges (a proof beats no proof, more history beats less),
 and rejects a client-supplied proof outright. A compromised or lagging
 record fails or delays decrypts; it cannot authorize one (DD-048).
+Pinned by `matches_on_chain_append_and_authorizes`, `one_serving_coprocessor_carries_a_request_the_others_cannot`,
+`a_record_behind_the_chain_is_retried_not_refused`. A client cannot supply a proof: the request wire
+(`SolanaUserDecryptRequestWire`) has no proof field, and `the_decoder_is_strict` rejects trailing bytes.
 
 **31. [HOLDS]** Coprocessor scheduling is decoupled from authorization: eager
 scheduling can waste compute on a minority fork; it can never release
 plaintext.
+Pinned by `compute_is_eager_regardless_of_same_tx_allow_signal` and
+`unrelated_allow_handle_does_not_affect_eager_compute_result`.
 
 **32. [GAP]** No reorg unwind on the listener path; minority-fork work is never
-rolled back (safe only because of #31).
+rolled back (safe only because of #31). The operator repair of DD-056 does not
+unwind a fork either: it replays the same slots, and a replayed write must
+reproduce the leaves recorded for it or the listener stops.
 
 **33. [RISK]** Nothing pins a deployed program build to the listener build.
 #28 now takes the followed program id as an input, so a listener compiled
 for one `declare_id!` can still derive another deployment's handles.
-Instruction layout and decoder types still silently assume matching crate
-revisions.
+Instruction layout and decoder types still assume matching crate revisions.
+#28's check catches a decoder drift in the steps, since every decoded step
+field feeds its handle. Two drifts stay silent: one in the effects (allows,
+Store slots, make public), which shape leaves rather than handles, and one in
+the adapter that maps a checked step to the tfhe-worker's operation, which runs
+after the check (its own unit tests pin that mapping).
 
 ## F. Admin, config & custody
 
-**35. [HOLDS]** Only the configured admin can change HostConfig; every change stamps `updated_slot` and emits a config
-event. The event always goes out through the event CPI, so it lands in the transaction's inner instructions, which an
+**35. [HOLDS]** Only the configured admin can change HostConfig, except that an enabled pauser can set pause flags
+(#36); every change stamps `updated_slot` and emits a host
+event (`HostConfigUpdatedEvent`, or `NewKmsContextEvent` when `define_kms_context` moves the current context). The event always goes out through the event CPI, so it lands in the transaction's inner instructions, which an
 RPC provider cannot truncate the way it can truncate logs. A reader therefore sees an admin change without replaying
 instruction data to find one (DD-044). The event only makes the change visible: authorization still comes from account
 state, never from event bytes.
+Pinned by `only_the_admin_changes_trust_roots_and_only_an_authority_changes_its_store`, which checks over random
+instruction sequences that `HostConfig`, the KMS contexts and the deny, HCU trust and pauser records change only in a
+transaction the admin signed, apart from a signer holding an enabled pauser record adding pause flags,
+and that every `HostConfig` change stamps the current slot and emits an event CPI. Every host instruction is drawn,
+with its admin or Store-authority role also filled by keys that lack it, signing or not, and a host account type the
+property does not classify fails it. The planted bugs `runtime-tests/planted-bugs/h1-unpause-skips-assert-admin.patch`
+and `h1-pause-accepts-a-withdrawn-pauser.patch` must make it fail (`scripts/check-planted-bugs.sh`). This covers the default build; the preview-only `admin-sweep`
+build lets the upgrade authority close `HostConfig` and the KMS contexts (`AUTHORITY.md`).
 
-**36. [HOLDS]** `HostConfig.paused` freezes the production-shaped host instructions (`fhe_execute`,
-`make_store_handle_public`, `delegate_for_user_decryption`, and the token cash-out paths of 11f). It does not reach
-decryption, and the KMS connector does not read `HostConfig`. Gateway ingress has its own pause: `Decryption.sol`
-`whenNotPaused` covers every request entry point, the Solana `userDecryptionRequest` included. HTTP decryption has no
-pause on either chain, as on EVM; that gap belongs to the connector owners. User abort levers stay open while paused:
-`revoke_permits` takes no config account at all, and `revoke_delegation_for_user_decryption` is not pause-gated. Not
-gated: `verify_public_decrypt` (DD-040, already-sealed leaves reveal nothing new) and the admin setters, pause included.
+**36. [HOLDS]** `HostConfig.paused` holds one flag per host area (DD-058). `execution` stops `fhe_execute`;
+`verified_inputs` stops `fhe_execute` steps that consume a `VerifiedInput`; `acl_writes` stops `create_encrypted_store`,
+`make_store_handle_public` and `delegate_for_user_decryption`; `public_decrypt` stops `verify_public_decrypt`. A flag
+stops only its own area. Any signer with an enabled `PauserRecord` sets flags; only the admin clears them, and only the
+admin creates, enables or disables pauser records. Admin setters are never paused, and `revoke_permits` takes no config
+account, so it runs under every flag. `revoke_delegation_for_user_decryption` is not paused yet; the delegation-record
+change gives it the `acl_writes` gate, as EVM's `revokeDelegationForUserDecryption` is `whenNotPaused`.
+Pinned by `mollusk_each_pause_flag_stops_only_its_area`, `mollusk_only_the_public_decrypt_flag_stops_verify_public_decrypt`,
+the token tests of 11f, `mollusk_a_pauser_pauses_and_only_the_admin_unpauses`, `mollusk_only_an_enabled_pauser_pauses`,
+`mollusk_only_the_admin_sets_pausers`, `a_revocation_while_paused_succeeds` and, over random sequences, the H1 property
+of #35. The flags do not reach decryption, and the KMS connector does not read `HostConfig`. Gateway ingress has
+its own pause: `Decryption.sol` `whenNotPaused` covers every request entry point, the Solana `userDecryptionRequest`
+included. HTTP decryption has no pause on either chain, as on EVM.
 
 **37. [HOLDS]** HCU enforcement ships disabled (unrestricted defaults) and is opt-in per knob. `u64::MAX` means
 unlimited; `0` is rejected for per-tx limits and means ban untrusted applications only for the block cap. When both
@@ -301,6 +408,10 @@ compared limits are finite and the block cap is nonzero, setters enforce `block 
 Total and critical-path depth accumulate across all calls in the transaction’s shared transient store, including calls from
 different applications. Each application block meter is charged only the cost of its own execution. Repeated handle
 occurrences retain the maximum depth for that handle; changing its operand witness cannot reset its depth.
+Pinned by `mollusk_initialize_host_config_defaults_block_cap_to_unrestricted`, `mollusk_set_max_hcu_setters_reject_zero`,
+`mollusk_set_max_hcu_per_tx_rejects_above_block_cap_band`, `mollusk_set_hcu_block_cap_at_max_per_tx_boundary_is_accepted`,
+`mollusk_set_hcu_block_cap_below_max_per_tx_is_rejected` and
+`mollusk_fhe_execute_same_application_accumulates_across_payers_and_authorities_and_trips_cap`.
 
 **38. [ASSUMPTION]** The host admin key is a single trusted key. There is no
 multisig and no timelock yet (fhevm-internal#1634). The initial admin must be the BPF
@@ -320,6 +431,8 @@ application is `(program, scope)` with `program` verified from the output
 authority (#7, DD-039/DD-047), so a caller cannot claim a trusted program
 it does not control. `fhe_execute` validates the trust witness and charges the application meter after its execution walk; exceeding
 the cap rolls back the transaction. The meter account is only a counter.
+Pinned by `mollusk_set_hcu_app_trusted_rejects_wrong_admin`, `mollusk_set_hcu_app_trusted_rejects_wrong_record_pda`
+and `mollusk_fhe_execute_wrong_pda_trust_witness_is_rejected`, and over random sequences by the admin property of #35.
 
 **41. [ANTI]** HCU block budgets do not impose a program-wide limit. Each `(program, scope)` has its own per-slot
 budget, and a program chooses its scopes freely. The host proves the Store authority belongs to `program` (#40), but
@@ -340,12 +453,20 @@ out more budget fails closed:
   untrusted or unused. A squatted meter that does hold data is rejected when `charge` lazily creates it.
 - **Present at the wrong PDA, or program-owned but malformed** — the execution is rejected outright.
 
+Pinned by `mollusk_fhe_execute_trusted_witness_bypasses_and_creates_no_meter`,
+`mollusk_fhe_execute_untrusted_missing_meter_fails_closed`, `mollusk_fhe_execute_prefunded_empty_meter_is_created_not_griefed`,
+`mollusk_fhe_execute_squatted_meter_with_data_is_rejected`, `mollusk_fhe_execute_wrong_pda_trust_witness_is_rejected`
+and `mollusk_fhe_execute_malformed_trust_witness_is_rejected`.
+
 ## G. Decrypt authorization (gateway, relayer, KMS)
 
 **42. [HOLDS]** Every KMS party's connector independently re-verifies the
 user's ed25519 signature over the full request — identity, handles,
 allowed scopes, validity window, and nonce. The
 relayer and gateway are transport; neither can alter who asks or for what.
+Pinned by `every_vector_behaves_as_declared`, `every_wire_field_reaches_the_canonical_bytes` (every request field
+changes the signed bytes) and `a_field_the_relayer_changed_fails_the_signature` (the connector refuses a permit whose
+key, window or routing the relayer changed).
 
 **43. [ANTI]** The user-decrypt nonce is not dedup-enforced on-chain or in the
 connector; replay is bounded only by the request validity window (EVM
@@ -372,6 +493,8 @@ using the same compiled `zama_solana_acl` code the on-chain program runs
 comes from the coprocessors' leaf record (`POST /v1/solana/leaf-proofs`,
 API key), never from the client, and is verified against the peaks of the
 account the connector read itself (`kms-worker/src/core/solana/`).
+Pinned by `an_encrypted_store_whose_fields_derive_another_address_is_rejected`,
+`an_encrypted_store_with_an_altered_bump_is_rejected` and `on_chain_account_decoder_reads_layout`.
 
 **46. [RISK]** The connector's ACL reads use confirmed (not finalized)
 commitment, and this component is the authorization gate. The choice is
@@ -401,6 +524,8 @@ redeem require that program to own the underlying mint and both token
 accounts. Classic Token and extension-free Token-2022 are supported.
 Token-2022 mint extensions are rejected unless explicitly allowlisted;
 today none are allowlisted. Token accounts allow only `ImmutableOwner`.
+Pinned by `mollusk_wrap_rejects_classic_program_for_token_2022_accounts`, `mollusk_wrap_rejects_token_2022_mint_extensions`,
+`mollusk_wrap_rejects_token_2022_account_extensions` and `mollusk_wrap_usdc_rejects_wrong_underlying_mint`.
 
 **57. [HOLDS]** Each token operation rejects a frozen underlying account that it checks: transfer checks
 both owners' canonical ATAs (`from_ata`/`to_ata`), burn checks the owner's ATA (`owner_ata`), and wrap
@@ -411,17 +536,24 @@ persistent holder denylist; see DD-045 and fhevm-internal#1981 for the unresolve
 Cancel-pending-burn has no issuer-freeze check. Token-2022 transfer-fee, transfer-hook,
 non-transferable, and confidential-transfer behavior cannot be inherited
 accidentally because those mint extensions fail closed under #56.
+Pinned by `mollusk_confidential_transfer_rejects_frozen_sender_ata`, `mollusk_confidential_transfer_rejects_frozen_recipient_ata`,
+`mollusk_confidential_burn_rejects_frozen_owner_ata`, `mollusk_redeem_rejects_frozen_token_2022_destination` and
+`mollusk_wrap_rejects_frozen_token_2022_source`.
 
 **58. [HOLDS]** Only `ConfidentialMint.authority` can re-write the encrypted
 total supply onto a handle with new viewers (`allow_total_supply_viewers`)
 or seal its handle public (`make_total_supply_handle_public`). The wrapper
 signs the Host CPI as the canonical total-supply authority PDA; callers
 cannot substitute another Store, Store authority, slot key, or scope.
+Pinned by `mollusk_mint_authority_allows_total_supply_viewers`, `mollusk_mint_authority_seals_total_supply` and
+`mollusk_non_mint_authority_cannot_allow_total_supply_viewers`.
 
 **59. [HOLDS]** `ConfidentialMint.authority` is the wrapper's policy authority.
 It is distinct from the authority that can upgrade the Zama Host program.
 Future governance may own the mint authority without acquiring Host upgrade
 power; no governance or authority-rotation mechanism is implied here.
+Holds by construction: the token program checks only `ConfidentialMint.authority` for mint-authority actions and reads
+neither the Host upgrade authority nor `HostConfig.admin`.
 
 **60. [HOLDS]** A dispatched confidential batch can be cancelled by its join
 mint's `ConfidentialMint.authority` while the burn is pending. This is the wrapper policy
@@ -429,6 +561,8 @@ authority from #59, not the Zama Host upgrade authority. Cancellation restores t
 encrypted total supply, closes the pending burn, and moves the batch to the
 refund-only `Refunding` state. That state accepts user quits but rejects new
 joins, dispatch, settlement, and repeated cancellation, so recovery from failed KMS or vault settlement requires that authority’s cooperation. Redeem and cancellation cannot consume the same pending burn twice.
+Pinned by `mollusk_cancel_dispatch_restores_burn_and_allows_refunds` and
+`mollusk_redeem_current_pending_burn_then_rejects_double_settlement`.
 
 ---
 
@@ -444,6 +578,7 @@ not when the threat model changes.
 fit in a 1,232-byte transaction or 200k CU. `runtime-tests/cost-snapshots/fhe_execute_boundary.json` pins each shape's
 instruction-data bytes and CU at its largest passing size. These are host-instruction measurements, before transaction
 overhead and application CPIs.
+Pinned by `rejects_more_than_max_ops`, `cost_snapshot_fhe_execute_max_steps` and `cost_snapshot_boundary_sweeps`.
 
 **34. [OPERATIONAL]** Reconstruction fixtures compile only under
 `--features solana-grpc,solana-reconstruct`; coverage exists only where CI
@@ -456,8 +591,8 @@ or unreachable cannot sink a request another can serve. Authorization was
 never its to give (#30).
 
 **48. [HOLDS]** Settle transactions at production KMS thresholds fit one packet
-only as v0 + one address lookup table; a legacy settle never fits. Both
-directions are pinned by tests.
+only as v0 + one address lookup table; a legacy settle never fits. Pinned by
+`settle_transaction_size_needs_v0_lookup_table_and_fits` and `redeem_settle_transaction_size_needs_v0_lookup_table_and_fits`.
 
 **50. [OPERATIONAL]** The relayer's ACL preflight covers EVM host chains and,
 advisorily, Solana delegated entries: a delegation row that is dead at the
@@ -502,14 +637,16 @@ checks rejection paths. `print_build_frontier_grid` prints the current measureme
 for the admission frontier.
 
 The host heap remains a separate limit (#61). Runtime sweeps cover wide audiences, reductions and mature history. In the
-committed snapshots, updates across Stores with 8, 32 and 64 MMR peaks reach 15, 7 and 4 steps, respectively; 60-operand
-reductions reach 4. These shape measurements do not guarantee that an arbitrary composition fits.
+committed snapshots, updates across Stores with 8, 32 and 55 MMR peaks reach 16, 7 and 4 steps, respectively;
+maximum-width sums reach 6. These shape measurements do not guarantee that an arbitrary composition fits.
 
 **66. [HOLDS]** TransientStore has fixed storage for 112 result occurrences and 32 explicit grants (10,168 bytes including
 discriminator). Repeated handles count as occurrences to preserve step/output references. Each execution admits at most
 32 steps and 32 effects; return selection admits 32 handles, including repeated selections. Capacity overflow fails
 atomically. SBF capacity is not packet capacity: application CPIs can construct payloads larger than the outer 1,232-byte
 transaction. The SDK heap model, runtime shape sweeps and packet-fit tests measure these separate limits.
+Pinned by `result_journal_capacity_is_shared_across_calls_and_fails_atomically` and
+`maximum_result_grants_fit_one_execution_and_leave_no_account`.
 
 **39. [RETIRED]** App-layer invariants were folded into this register rather
 than split into a second source of truth (#55–#60).

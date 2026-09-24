@@ -1,0 +1,12 @@
+Expect: H1: Unpause
+
+--- a/solana/programs/zama-host/src/instructions/unpause.rs
++++ b/solana/programs/zama-host/src/instructions/unpause.rs
+@@ -9,7 +9,6 @@
+ /// Clears the pause flag of every area `areas` names.
+ pub fn unpause(ctx: Context<HostAdmin>, areas: PauseFlags) -> Result<()> {
+     assert_no_remaining_accounts(ctx.remaining_accounts)?;
+-    assert_admin(&ctx.accounts.host_config, &ctx.accounts.admin)?;
+     let config = &mut ctx.accounts.host_config;
+     let paused = config.paused.without(areas);
+     if paused == config.paused {

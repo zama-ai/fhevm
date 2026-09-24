@@ -87,6 +87,7 @@ pub fn define_kms_context(
     kms_context.destroyed = false;
     kms_context.bump = ctx.bumps.kms_context;
     ctx.accounts.host_config.current_kms_context_id = context_id;
+    ctx.accounts.host_config.updated_slot = Clock::get()?.slot;
 
     emit_event_cpi(
         &ctx.accounts.event_authority,

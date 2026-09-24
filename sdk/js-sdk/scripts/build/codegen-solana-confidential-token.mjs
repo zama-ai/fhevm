@@ -96,7 +96,7 @@ const targets = [
         'revokePermits',
       ]),
       accounts: new Set(['hostConfig', 'kmsContext']),
-      definedTypes: new Set(['kmsThresholds']),
+      definedTypes: new Set(['kmsThresholds', 'pauseFlags']),
       // verifyPublicDecrypt and the delegation pair default their host_config account to the
       // same-program host-config PDA, so the generated builders import findHostConfigPda; keep
       // that PDA node so the import resolves.
@@ -118,13 +118,12 @@ const targets = [
       instructions: new Set(['initializeHostConfig', 'defineKmsContext']),
       // InitializeHostConfigArgs is inlined into its instruction by Codama; KmsThresholds survives
       // as a named type because define_kms_context takes it alongside other args.
-      definedTypes: new Set(['kmsThresholds']),
+      definedTypes: new Set(['kmsThresholds', 'pauseFlags']),
       // The HostConfig singleton is read back live (chain-id cross-check in
       // test-suite/fhevm/src/solana/provision.ts). Keeping the account node gives that read a
       // generated decoder instead of a hand-written discriminator + field offset.
       accounts: new Set(['hostConfig', 'kmsContext']),
-      // randNonce: initialize_host_config defaults the host's rand-nonce PDA.
-      pdas: new Set(['hostConfig', 'kmsContext', 'randNonce']),
+      pdas: new Set(['hostConfig', 'kmsContext']),
     },
     programAddress(program) {
       return (

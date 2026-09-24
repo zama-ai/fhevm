@@ -78,10 +78,8 @@ pub struct FheExecutionBuilder<'id> {
     pub(crate) app: AppScope,
     /// Committed Store outputs; bounds possible rent top-ups in the instruction-trace estimate.
     pub(crate) store_outputs: usize,
-    /// Whether any committed step is a rand step (the host emits one random-seeds event CPI).
+    /// Whether any committed step is a rand step, so the invoke must carry the rand nonce.
     pub(crate) has_rand_step: bool,
-    /// Whether any committed output is `make_public` (the host emits one public-outputs event CPI).
-    pub(crate) has_public_output: bool,
     /// The one running total of every byte this build has admitted. Intern tables grow through
     /// it; exact-size sites charge it; `finish` tests packet and invoke against it.
     pub(crate) budget: HeapBudget,
@@ -194,7 +192,6 @@ impl<'id> FheExecutionBuilder<'id> {
             app,
             store_outputs: _,
             has_rand_step,
-            has_public_output: _,
             budget,
             identity: _,
         } = self;
@@ -270,12 +267,10 @@ impl<'id> FheExecutionBuilder<'id> {
             }
         }
         advance_store_history(&mut effect, &self.effects)?;
-        let makes_public = effect.make_public;
         self.effects.try_push(lowering.budget(), effect)?;
         lowering.tables.commit();
         self.app = lowering.app;
         self.store_outputs += 1;
-        self.has_public_output |= makes_public;
         Ok(())
     }
 
@@ -303,7 +298,6 @@ impl<'id> FheExecutionBuilder<'id> {
             app: store.app(),
             store_outputs: 0,
             has_rand_step: false,
-            has_public_output: false,
             budget,
         };
         builder
@@ -404,8 +398,6 @@ impl<'id> FheExecutionBuilder<'id> {
         let cost = crate::cost::FheExecutionCost {
             steps: args.steps.len(),
             store_outputs: self.store_outputs,
-            emits_random_seeds_event: self.has_rand_step,
-            emits_public_outputs_event: self.has_public_output,
             packet_bytes,
             build_heap_bytes,
             invoke_heap_bytes,

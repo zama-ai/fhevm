@@ -17,6 +17,7 @@ use zama_solana_test_kit::{
 struct Fixture {
     payer: Pubkey,
     authority: Pubkey,
+    app: host::AppScope,
     state: Pubkey,
     transient_store: Pubkey,
     accounts: Vec<(Pubkey, Account)>,
@@ -35,6 +36,7 @@ impl Fixture {
         Self {
             payer,
             authority,
+            app: host::AppScope { program, scope },
             state,
             transient_store,
             accounts: vec![
@@ -734,26 +736,12 @@ fn grant_then_consume(case: GrantConsumptionCase) -> TransactionResult {
         },
         returned_results: vec![],
     };
-    let app = |fixture: &Fixture| {
-        let state_account = &fixture
-            .accounts
-            .iter()
-            .find(|(key, _)| *key == fixture.state)
-            .unwrap()
-            .1;
-        let state =
-            host::EncryptedStore::try_deserialize(&mut state_account.data.as_slice()).unwrap();
-        host::AppScope {
-            program: state.program,
-            scope: state.scope,
-        }
-    };
     let deny_enabled = matches!(
         case,
         GrantConsumptionCase::DenyEnabled | GrantConsumptionCase::MissingConsumerDeny
     );
-    let producer_deny = zama_solana_test_kit::deny_scope_record_account(app(&producer), false);
-    let consumer_deny = zama_solana_test_kit::deny_scope_record_account(app(&consumer), false);
+    let producer_deny = zama_solana_test_kit::deny_scope_record_account(producer.app, false);
+    let consumer_deny = zama_solana_test_kit::deny_scope_record_account(consumer.app, false);
     if deny_enabled {
         produce_args.account_count += 1;
     }
@@ -809,10 +797,7 @@ fn grant_then_consume(case: GrantConsumptionCase) -> TransactionResult {
         consumer_accounts,
     );
     if matches!(case, GrantConsumptionCase::BlockMeter) {
-        for (ix, app) in [
-            (&mut produce, app(&producer)),
-            (&mut consume, app(&consumer)),
-        ] {
+        for (ix, app) in [(&mut produce, producer.app), (&mut consume, consumer.app)] {
             let meter = host::hcu_block_meter_address(app).0;
             ix.accounts[4] = AccountMeta::new(meter, false);
             accounts.push((meter, empty_system_account()));
@@ -1167,7 +1152,7 @@ fn oracle_recovers_unstored_random_results_from_their_own_cpi_seed_event() {
     let (config, config_account) = zama_solana_test_kit::host_config_account(
         &zama_solana_test_kit::HostConfigParams::new(fixture.payer),
     );
-    let (nonce, nonce_account) = zama_solana_test_kit::rand_nonce_account(7);
+    let (nonce, nonce_account) = zama_solana_test_kit::rand_nonce_account(fixture.app, 7);
     let args = host::FheExecuteArgs {
         execution_store_index: 0,
         account_count: 1,
@@ -1217,7 +1202,7 @@ fn oracle_recovers_unstored_random_results_from_their_own_cpi_seed_event() {
         &probe,
         &[mollusk_svm::result::Check::success()],
     );
-    let event: host::FheExecuteRandomSeedsEvent = result
+    let event: host::FheExecutedEvent = result
         .inner_instructions
         .iter()
         .find_map(|inner| zama_solana_test_kit::decode_anchor_event(&inner.instruction.data))

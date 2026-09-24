@@ -1586,7 +1586,17 @@ fn mollusk_cancel_dispatch_restores_burn_and_allows_refunds() {
     );
 
     let pending_burn = keys.pending_burn(fixture.join_mint().mint);
-    let _burned_handle = run_dispatch(&context, &fixture, &keys, &mut ledger);
+    let burned_handle = run_dispatch(&context, &fixture, &keys, &mut ledger);
+    let (signatures, extra_data) = amount_public_decrypt_cert(burned_handle, 300);
+    let settle = settle_ix(
+        &fixture,
+        &keys,
+        300,
+        signatures,
+        extra_data,
+        ledger.public_decrypt_proof(keys.burned_amount_store, burned_handle),
+        pending_burn,
+    );
     assert_eq!(
         ledger.u64_in_state(&context, keys.join_balance_store, token::balance_key()),
         0
@@ -1690,6 +1700,25 @@ fn mollusk_cancel_dispatch_restores_burn_and_allows_refunds() {
         &context,
         &cancel,
         &[batcher_error(batcher::BatcherError::BatchNotDispatched)],
+    );
+    check_batcher_instruction(
+        &context,
+        &settle,
+        &[batcher_error(batcher::BatcherError::BatchNotDispatched)],
+    );
+    check_batcher_instruction(
+        &context,
+        &join_ix(
+            &fixture,
+            &keys,
+            &fixture.bob,
+            amount_attestation_for(
+                handle_for_chain(42, BALANCE_FHE_TYPE),
+                fixture.bob.user,
+                token::id(),
+            ),
+        ),
+        &[batcher_error(batcher::BatcherError::BatchNotPending)],
     );
 
     // The assertion above covers cancellation under deny policy. Restore the fixture policy before
