@@ -168,12 +168,14 @@ CREATE INDEX block_manifest_localization_cache_lookup
         (consensus_epoch, end_block_hash, first_block_number, last_block_number, local_digest)
     WHERE range_kind = 'historical';
 
--- Operational inventory of drifted handles (past and present) for containment
--- and healing. One row per handle identity; healed rows stay (`healed_at`).
+-- Operational inventory of local drifted handles (past and present) for
+-- containment and healing. A row exists only when this operator is outside
+-- the quorum. One row per handle identity; healed rows stay (`healed_at`).
 -- Local descriptor is this operator; `target_*` is the quorum descriptor when
 -- a computed threshold group exists (`target_ct64_digest` alone may be filled
--- from live attestation). Immutable manifests and verification attempts remain
--- the evidence of dissenting groups.
+-- from live attestation). Divergent ranges, including a peer that disagrees
+-- while this operator is in the quorum, stay in
+-- `block_manifest_verification_attempt_drift`.
 CREATE TABLE IF NOT EXISTS drifted_handle
 (
     id BIGSERIAL PRIMARY KEY,
@@ -232,8 +234,6 @@ CREATE TABLE IF NOT EXISTS drifted_handle
         CHECK (observed_ct128_digest IS NULL OR OCTET_LENGTH(observed_ct128_digest) = 32),
     local_ct128_format SMALLINT NULL,
     observed_ct128_format SMALLINT NULL,
-    observed_commitment_digest BYTEA NULL
-        CHECK (OCTET_LENGTH(observed_commitment_digest) = 32),
     last_observed_task_id BIGINT NULL,
     resolved_task_id BIGINT NULL,
 
@@ -267,8 +267,7 @@ CREATE TABLE IF NOT EXISTS drifted_handle
             AND target_ct128_digest IS NOT NULL AND target_ct128_format IS NOT NULL)
     ),
     CHECK (detection_kind <> 'inferred' OR (local_present AND reason = 'ct64_mismatch')),
-    CHECK (detection_kind = 'inferred' OR
-        (observed_commitment_digest IS NOT NULL AND last_observed_task_id IS NOT NULL))
+    CHECK (detection_kind = 'inferred' OR last_observed_task_id IS NOT NULL)
 );
 
 CREATE INDEX idx_drifted_handle_healing_priority
@@ -276,7 +275,8 @@ ON drifted_handle (demand_count DESC, detected_at, block_number)
 WHERE reason IN ('ct64_mismatch', 'missing_here', 'error_here', 'uncomputed_here')
     AND healed_at IS NULL;
 
--- Shared predicate for scheduling and result acceptance, independent of quorum.
+-- Shared predicate for scheduling and result acceptance. Rows are already
+-- local: the observed group held the quorum when the finding was written.
 -- Keep handle before block hash so dependency lookups need no height scan.
 CREATE INDEX idx_drifted_handle_forbidden_dependency
 ON drifted_handle (consensus_epoch, coprocessor_context_id, host_chain_id, handle, block_hash)

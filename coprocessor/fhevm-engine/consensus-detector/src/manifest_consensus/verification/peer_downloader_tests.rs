@@ -920,22 +920,31 @@ async fn concurrent_workers_cover_five_copro_drift_populations_from_every_origin
                     .fetch_one(&pool)
                     .await
                     .expect("load persisted drift explanations");
-                    assert!(
-                        persisted.try_get::<i64, _>("finding_count").unwrap() > 0,
-                        "{} from local origin {} must persist handle differences",
-                        scenario.name,
-                        signer.address(),
-                    );
-                    assert_eq!(
-                        persisted
-                            .try_get::<Option<bool>, _>("has_quorum_backed_difference")
-                            .unwrap()
-                            .unwrap_or(false),
-                        expected_quorum_backed_difference,
-                        "{} from local origin {} has an unexpected actionable difference",
-                        scenario.name,
-                        signer.address(),
-                    );
+                    let finding_count = persisted.try_get::<i64, _>("finding_count").unwrap();
+                    if expected_quorum_backed_difference {
+                        assert!(
+                            finding_count > 0,
+                            "{} from local origin {} must persist its local handle differences",
+                            scenario.name,
+                            signer.address(),
+                        );
+                        assert_eq!(
+                            persisted
+                                .try_get::<Option<bool>, _>("has_quorum_backed_difference")
+                                .unwrap(),
+                            Some(true),
+                            "{} from local origin {} must record a quorum target",
+                            scenario.name,
+                            signer.address(),
+                        );
+                    } else {
+                        assert_eq!(
+                            finding_count, 0,
+                            "{} from local origin {} is in the quorum and must not persist a drifted handle",
+                            scenario.name,
+                            signer.address(),
+                        );
+                    }
                 }
             }
         }
@@ -1789,12 +1798,6 @@ async fn concurrent_one_drifter_replay_resolves_exact_handle_findings() {
     let (_instance, pool) = setup_download_db().await;
     let signers = five_test_signers();
     seed_registry(&pool, &signers, 3).await;
-    let representative = signers[1..]
-        .iter()
-        .min_by_key(|signer| signer.address())
-        .expect("four quorum publishers")
-        .address();
-    let mut quorum_commitment_digests = HashMap::new();
     let mut drifted_manifests = Vec::new();
 
     for block in &blocks {
@@ -1813,10 +1816,6 @@ async fn concurrent_one_drifter_replay_resolves_exact_handle_findings() {
                 ),
             )
             .await;
-            if signer.address() == representative {
-                quorum_commitment_digests
-                    .insert(block.number, manifest.payload.detailed_range.digest);
-            }
             archive_only(&pool, &manifest).await;
         }
         let local = sign_payload(
@@ -1865,7 +1864,6 @@ async fn concurrent_one_drifter_replay_resolves_exact_handle_findings() {
                finding.observed_ct128_digest,
                finding.local_ct128_format,
                finding.observed_ct128_format,
-               finding.observed_commitment_digest,
                finding.target_ct64_digest,
                finding.last_observed_task_id,
                finding.resolved_task_id,
@@ -1946,11 +1944,6 @@ async fn concurrent_one_drifter_replay_resolves_exact_handle_findings() {
         assert_ne!(
             row.try_get::<Vec<u8>, _>("local_keyset_id").unwrap(),
             row.try_get::<Vec<u8>, _>("observed_keyset_id").unwrap()
-        );
-        assert_eq!(
-            row.try_get::<Vec<u8>, _>("observed_commitment_digest")
-                .unwrap(),
-            quorum_commitment_digests[&block.number].to_vec()
         );
         assert_eq!(row.try_get::<i64, _>("detected_revision").unwrap(), 0);
         assert_eq!(
