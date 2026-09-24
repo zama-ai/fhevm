@@ -6,14 +6,14 @@
 //! `can_be_healed` rows with `FOR UPDATE OF` `drifted_handle` only for that
 //! pick, ordered by `drifted_handle_demand`. One row per handle: a reorg may
 //! leave several findings, and they are healed together only when every
-//! unhealed sibling has the same `target_ct64_digest`. Disagreeing targets
+//! unhealed sibling has the same `quorum_ct64_digest`. Disagreeing targets
 //! stay in the inventory and are not installed.
 //! Demand lives on a separate table so TFHE EMA writes never lock these rows.
 //! The pick lock is not held across S3. A matching GET installs the ct64 and
 //! sets `healed_at` in one transaction. After a pass that installs at least
 //! one handle, the worker NOTIFYs `work_available` once so idle TFHE does
 //! not wait for its poll. Rows without a pin, and digest mismatches, HEAD
-//! registry attestations: a live quorum pins target, evidence, and sources,
+//! registry attestations: a live quorum pins the digest, evidence, and sources,
 //! then GETs. A pinned digest that no longer matches the live quorum is
 //! counted, never rewritten.
 
@@ -54,7 +54,7 @@ struct DueHandle {
     host_chain_id: i64,
     handle: Vec<u8>,
     coprocessor_context_id: Vec<u8>,
-    target_ct64_digest: Option<Vec<u8>>,
+    quorum_ct64_digest: Option<Vec<u8>>,
     peer_sources: serde_json::Value,
     target_evidence: serde_json::Value,
 }
@@ -174,7 +174,7 @@ async fn lock_due(
                dh.handle,
                dh.host_chain_id,
                dh.coprocessor_context_id,
-               dh.target_ct64_digest,
+               dh.quorum_ct64_digest,
                dh.peer_sources::text AS "peer_sources!",
                dh.target_evidence::text AS "target_evidence?"
           FROM drifted_handle dh
@@ -199,7 +199,7 @@ async fn lock_due(
                            AND other.host_chain_id = cand.host_chain_id
                            AND other.handle = cand.handle
                            AND other.healed_at IS NULL
-                           AND other.target_ct64_digest IS DISTINCT FROM cand.target_ct64_digest
+                           AND other.quorum_ct64_digest IS DISTINCT FROM cand.quorum_ct64_digest
                    )
                  ORDER BY cand.host_chain_id,
                           cand.coprocessor_context_id,
@@ -225,7 +225,7 @@ async fn lock_due(
             host_chain_id: row.host_chain_id,
             handle: row.handle,
             coprocessor_context_id: row.coprocessor_context_id,
-            target_ct64_digest: row.target_ct64_digest,
+            quorum_ct64_digest: row.quorum_ct64_digest,
             peer_sources: serde_json::from_str(&row.peer_sources)
                 .unwrap_or(serde_json::Value::Array(vec![])),
             target_evidence: row
@@ -246,7 +246,7 @@ async fn heal_one<S: Ct64Source>(
         return schedule_retry(pool, job.id).await;
     };
     let mut skip_buckets = Vec::new();
-    if let Some(target) = job.target_ct64_digest.as_deref() {
+    if let Some(target) = job.quorum_ct64_digest.as_deref() {
         for bucket_url in peer_bucket_urls(&job.peer_sources) {
             match source.get_ct64(&bucket_url, &job.handle, context_id).await {
                 Ok(bytes) if keccak256(&bytes).as_slice() == target => {
@@ -338,7 +338,7 @@ async fn recover_from_attestations<S: Ct64Source>(
         );
         return schedule_retry(pool, job.id).await;
     };
-    if let Some(pinned) = job.target_ct64_digest.as_deref() {
+    if let Some(pinned) = job.quorum_ct64_digest.as_deref() {
         if digest != pinned {
             error!(
                 finding_id = job.id,
@@ -430,7 +430,7 @@ async fn persist_live_quorum(
     sqlx::query!(
         r#"
         UPDATE drifted_handle
-           SET target_ct64_digest = COALESCE(target_ct64_digest, $2),
+           SET quorum_ct64_digest = COALESCE(quorum_ct64_digest, $2),
                target_evidence = COALESCE(target_evidence, $3::jsonb),
                peer_sources = CASE
                  WHEN peer_sources = '[]'::jsonb THEN $4::jsonb
@@ -438,7 +438,7 @@ async fn persist_live_quorum(
                END
          WHERE id = $1
            AND healed_at IS NULL
-           AND (target_ct64_digest IS NULL OR target_ct64_digest = $2)
+           AND (quorum_ct64_digest IS NULL OR quorum_ct64_digest = $2)
         "#,
         job.id,
         digest,
@@ -554,7 +554,7 @@ async fn install_matching_ct64(
            AND handle = $4
            AND healed_at IS NULL
            AND can_be_healed
-           AND target_ct64_digest = $5
+           AND quorum_ct64_digest = $5
         "#,
         job.consensus_epoch,
         &job.coprocessor_context_id,
