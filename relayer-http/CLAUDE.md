@@ -22,6 +22,7 @@ relayer-http/
 ├── Dockerfile                                     # container image, built from the repository root (see Container image)
 ├── .gitignore                                     # target/, config/*.local.yaml (local variants of the configuration)
 ├── config/config.yaml                             # example configuration: name, log, http, kms_aggregator
+├── dev/                                           # local development tooling: Makefile, per-topology configs, proxy port-forwards, flow scripts; start with its README.md
 └── crates/relayer-http/src/
     ├── main.rs                # load config → init logging → App → serve until SIGINT/SIGTERM → drain → exit
     ├── lib.rs                 # App: the one shared state (both aggregators, http config, shutdown token)
@@ -65,6 +66,10 @@ cargo run -p relayer-http -- config/config.yaml    # needs the KMS_<i>_API_KEY e
 ```
 
 Every change must pass the first three. Check exit codes strictly (a grep on the output hides a failing build).
+
+Against the local fhevm stack: `make -C dev up` (connector proxies and their host port-forwards), `make -C dev run`
+(the relayer with the config matching the running topology), `make -C dev public-decrypt` / `user-decrypt` (one flow
+each, from the e2e container), `make -C dev check` (the three commands above). See `dev/README.md`.
 
 ## Container image
 
