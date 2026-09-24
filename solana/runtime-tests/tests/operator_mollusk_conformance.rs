@@ -240,7 +240,7 @@ struct ExecutionFlow {
     remaining: Vec<AccountMeta>,
     cleartext: ClearInputs,
     next_seed: u8,
-    /// The host's rand nonce account, present iff the execution draws randomness.
+    /// The application's rand nonce account, present iff the execution draws randomness.
     rand_nonce: Option<Pubkey>,
     effects: Vec<FheExecuteEffect>,
 }

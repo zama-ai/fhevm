@@ -116,7 +116,7 @@ pub enum ZamaHostError {
     /// An fhe_execute persistent output account already exists.
     #[msg("fhe_execute persistent output ACL record already exists")]
     FheExecuteOutputAlreadyInitialized,
-    /// An execution containing a rand step did not pass the host's rand nonce account.
+    /// An execution containing a rand step did not pass its application's rand nonce account.
     #[msg("fhe_execute rand step requires the rand nonce account")]
     FheExecuteRandNonceMissing,
     /// A KMS context was defined with a duplicate signer address.
@@ -292,8 +292,7 @@ pub enum ZamaHostError {
     /// reaches every program of the transaction it signed, so it must delegate at the top level.
     #[msg("a wallet delegator must delegate in a top-level instruction")]
     WalletDelegationThroughCpi,
-    /// The rand nonce account is not the canonical, well-formed nonce of the execution's
-    /// application.
+    /// The rand nonce account is not the execution's application's nonce, or is malformed.
     #[msg("rand nonce account mismatch")]
     RandNonceMismatch,
 }

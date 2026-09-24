@@ -1,7 +1,7 @@
 //! Evaluates ordered instruction-local FHE executions.
 //!
 //! Two signers cover two roles, and they are only sometimes the same key: `payer` funds rent for
-//! Store growth and lazy meter creation; `authority` is the default signer for the Stores the
+//! Store growth and lazy meter and rand nonce creation; `authority` is the default signer for the Stores the
 //! execution reads and writes. Every Store an execution touches is admitted by its own authority's
 //! signature, found among the default signer and the signing remaining accounts, and by nothing
 //! else. An application program signs for its PDAs by CPI and forwards a user wallet as `payer`.
@@ -48,7 +48,7 @@ pub struct FheExecute<'info> {
     /// write lock on the config.
     #[account(seeds = [HOST_CONFIG_SEED], bump = host_config.bump)]
     pub host_config: Account<'info, HostConfig>,
-    /// System program used for rent top-ups and lazy meter creation.
+    /// System program used for rent top-ups and lazy meter and rand nonce creation.
     pub system_program: Program<'info, System>,
     /// Per-application HCU block meter (written once in the execution `charge`). The HCU PDAs
     /// (`hcu_block_meter`, `hcu_trusted_app_record`) key on the `(program, scope)` of the
@@ -67,9 +67,8 @@ pub struct FheExecute<'info> {
     pub hcu_trusted_app_record: Option<UncheckedAccount<'info>>,
     /// The application's rand nonce, consumed and incremented by an execution that contains a
     /// rand step. Required exactly then, and refused otherwise so no execution write-locks it for
-    /// nothing.
-    /// CHECK: `consume_rand_nonce` requires the canonical nonce PDA of the execution's
-    /// application, created here on its first rand execution.
+    /// nothing. Created by the application's first rand execution.
+    /// CHECK: validated manually in consume_rand_nonce (canonical PDA of the application, owner, length).
     #[account(mut)]
     pub rand_nonce: Option<UncheckedAccount<'info>>,
     /// Shared by every execution until the transaction's final CloseTransientStore.
@@ -117,17 +116,17 @@ pub fn fhe_execute<'info>(
     // preflight), canonical Store validation, and cached Store/transient store writes.
     let mut account_table = ExecutionAccountTable::new(ctx.remaining_accounts)?;
     // Preflight also settles the execution's application identity: the one `(program, scope)`
-    // every Store the default authority controls belongs to. Metering and rand seeds key on it;
-    // the deny list gates every application the execution touches.
+    // every Store the default authority controls belongs to. Metering, the rand nonce and rand
+    // seeds key on it; the deny list gates every application the execution touches.
     let preflight = preflight_execution(&mut account_table, &ctx, &args)?;
     let app = preflight.app;
-    let rand_nonce = consume_rand_nonce(&ctx, &args, app)?;
     let host_config = &ctx.accounts.host_config;
     for touched in preflight.touched_apps {
         let deny_record =
             account_table.deny_record(host_config.grant_deny_list_enabled, touched)?;
         check_scope_not_denied_info(host_config, touched, deny_record)?;
     }
+    let rand_nonce = consume_rand_nonce(&ctx, &args, app)?;
 
     let starting_hcu = transient_store.total_hcu;
 
@@ -242,9 +241,7 @@ fn consume_rand_nonce<'info>(
             account.data_len() == 8 + RandNonce::SPACE,
             ZamaHostError::RandNonceMismatch
         );
-        let stored = RandNonce::try_deserialize(&mut &account.try_borrow_data()?[..])?;
-        require!(stored.bump == bump, ZamaHostError::RandNonceMismatch);
-        stored.nonce
+        RandNonce::try_deserialize(&mut &account.try_borrow_data()?[..])?.nonce
     } else {
         // A pre-squatted, non-empty account at the nonce PDA fails here rather than being adopted.
         create_pda_if_needed(
@@ -262,7 +259,6 @@ fn consume_rand_nonce<'info>(
             nonce: nonce
                 .checked_add(1)
                 .ok_or(ZamaHostError::InvalidFheExecuteAccount)?,
-            bump,
         },
     )?;
     Ok(Some(nonce))

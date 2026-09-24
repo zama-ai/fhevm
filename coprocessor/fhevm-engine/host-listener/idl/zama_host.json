@@ -470,7 +470,7 @@
         {
           "name": "system_program",
           "docs": [
-            "System program used for rent top-ups and lazy meter creation."
+            "System program used for rent top-ups and lazy meter and rand nonce creation."
           ],
           "address": "11111111111111111111111111111111"
         },
@@ -504,8 +504,7 @@
           "docs": [
             "The application's rand nonce, consumed and incremented by an execution that contains a",
             "rand step. Required exactly then, and refused otherwise so no execution write-locks it for",
-            "nothing.",
-            "application, created here on its first rand execution."
+            "nothing. Created by the application's first rand execution."
           ],
           "writable": true,
           "optional": true
@@ -2854,7 +2853,7 @@
           {
             "name": "seed",
             "docs": [
-              "Seed derived from the consumed host rand nonce and slot entropy."
+              "Seed derived from the application's consumed rand nonce and slot entropy."
             ],
             "type": {
               "array": [

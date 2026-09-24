@@ -173,11 +173,12 @@ some combinations have a price but are still rejected by validation.
 
 **16. [HOLDS]** An execution containing a rand step must pass its
 application's `RandNonce` (`["rand-nonce", program, scope]`;
-`FheExecuteRandNonceMissing` otherwise, `RandNonceMismatch` for any other
-account) and advances it; the nonce and the application are bound into every
-rand seed, so two executions can never derive the same seed, whatever they
-persist (DD-043, DD-057). The nonce is host state, never caller-supplied or
-closed, so a caller cannot steer or restart it.
+`FheExecuteRandNonceMissing` without it, `RandNonceMismatch` for an account
+at another address or a malformed one) and advances it; the nonce and the
+application are bound into every rand seed, so two executions can never
+derive the same seed, whatever they persist (DD-043, DD-057). The nonce is
+host state, never caller-supplied, and closed only by the preview-only
+`admin-sweep` wipe, so a caller cannot steer or restart it.
 
 **17. [HOLDS]** `account_count` declared inside the instruction data must equal the number of remaining accounts
 actually delivered.

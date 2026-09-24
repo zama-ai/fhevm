@@ -1879,10 +1879,10 @@ or EncryptedStores. `close_owned_accounts`, compiled only behind the `admin-swee
 this program does not own, and returns the rent to the signer, who must be the program's upgrade
 authority. The accounts are untyped because an old byte layout would fail to deserialize, and that
 leftover is what the wipe must delete. Solana has no parent account: closing HostConfig leaves
-EncryptedStores, KMS contexts and the rand nonce in place until the same instruction closes each
-of them, so the deployer's `host wipe` closes everything `getProgramAccounts` lists and fails if
-anything remains. `initialize_host_config` also creates the rand nonce, so both addresses must be
-empty or the next init fails. Accounts owned by the shared demo programs are not covered.
+EncryptedStores, KMS contexts and the applications' rand nonces in place until the same
+instruction closes each of them, so the deployer's `host wipe` closes everything
+`getProgramAccounts` lists and fails if anything remains. Accounts owned by the shared demo
+programs are not covered.
 
 `preview-env-deploy.yml` runs `host wipe`, then `host deploy --allow-upgrade`, which uploads this
 `.so` when the bytecode differs and runs `initialize_host_config` and `define_kms_context` for this
@@ -2159,22 +2159,31 @@ a counter unique per application is enough: two executions of one application ta
 nonces, and executions of different applications differ in `(program, scope)`.
 
 The nonce follows the HCU meter's lifecycle. The application's first rand execution creates it,
-and that execution's payer pays the rent, (128 + 17) × 6,960 lamports, about 0.001 SOL. It is never
-closed: a recreated nonce would restart at zero and could repeat a seed within the slot.
-`fhe_execute` requires the canonical address for the application (`RandNonceMismatch`), and a
-host-owned account of the right size and bump there. A system account at that address is created,
-even if someone funded it first; one with data is refused. `initialize_host_config` no longer
-creates a nonce.
+and that execution's payer pays the rent: about 0.001 SOL ((128 + 16) bytes × 6,960 lamports). Only
+the `admin-sweep` wipe of preview environments closes it. A recreated nonce would restart at zero
+and could repeat a seed within the slot. `fhe_execute` requires the canonical address for the
+application (`RandNonceMismatch`) and a host-owned account of the right size there. A system
+account at that address is created, even if someone funded it first; one with data is refused
+(`PdaCreationMismatch`). `initialize_host_config` no longer creates a nonce.
+
+The cost accepted: rand executions of one application run one at a time, since each writes its
+nonce. Under the default unrestricted HCU cap nothing else forces that, because no meter is written
+and different users of one application write different Stores. Solana caps the compute that
+transactions writing one account can use at 12M CU per block, so an application whose rand
+transactions cost 200k CU lands about 60 of them per block. An application that needs more can
+split its values over several scopes (DD-047), which also splits its meter, deny record and permit
+scope.
 
 Rejected alternatives:
 
 | Alternative | Why not |
 |---|---|
-| Keep the global nonce and accept the contention | No production program draws randomness today, so the cost is not felt yet. It is a fixed ceiling on every future rand workload, and removing it later changes the accounts every rand caller passes. |
-| A nonce per Store or per authority | The seed binds the application, not the Store, so a finer key would have to enter the seed too. Executions of an untrusted application already share its HCU meter, and no workload needs more parallelism within one application. |
+| Keep the global nonce and accept the contention | The same ceiling of about 60 rand executions per block, shared by every application. No production program draws randomness today, so it is not felt yet. |
+| A nonce per user (the value authority) | Every user would pay about 0.001 SOL once per application, a cost EVM users never see. The seed would also have to bind the authority. It stays open if one application needs more than a block's worth of rand executions. |
 
 Cost: a rand execution derives one more PDA, as the meter does, and the first one per application
-also pays the account creation. No cost snapshot runs a rand step.
+also runs the account creation CPI on the host heap. No cost snapshot or heap proof runs a rand
+step, so neither is measured.
 
 Consequences: `initialize_host_config` takes one account fewer. `RandNonce` leaves the IDL, since
 the host reads it through `UncheckedAccount` and nothing off chain reads it: the listener takes the

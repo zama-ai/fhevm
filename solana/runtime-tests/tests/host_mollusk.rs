@@ -3037,7 +3037,8 @@ impl FheExecutionFixture {
         }
     }
 
-    /// The identity both HCU PDAs are keyed on: the application `(program, scope)`.
+    /// The identity both HCU PDAs and the rand nonce are keyed on: the application
+    /// `(program, scope)`.
     fn block_cap_app(&self) -> AppScope {
         self.app.app()
     }
@@ -4113,8 +4114,8 @@ fn mollusk_fhe_execute_meter_accumulation_overflow_fails_closed() {
 
 #[test]
 fn mollusk_fhe_execute_rand_without_nonce_account_is_rejected() {
-    // Rand seeds derive from the application's nonce; an execution with a Rand step that does not carry
-    // the nonce account has no seed source and is rejected before compute.
+    // Rand seeds derive from the application's nonce; an execution with a Rand step that does
+    // not carry the nonce account has no seed source and is rejected before compute.
     let fixture = FheExecutionFixture::with_block_cap(u64::MAX);
     check_host_context(
         &fixture.context,
@@ -4157,7 +4158,7 @@ fn mollusk_fhe_execute_rand_creates_then_consumes_the_nonce_and_never_repeats_a_
     // takes the stored one. The two byte-identical executions in one slot draw different seeds
     // because each consumes the nonce, and the nonce is what the seed commits to.
     let fixture = FheExecutionFixture::with_block_cap(u64::MAX);
-    let (nonce, bump) = host::rand_nonce_address(fixture.block_cap_app());
+    let nonce = host::rand_nonce_address(fixture.block_cap_app()).0;
     let ix = fixture.rand_instruction(Some(nonce));
 
     let first = check_host_context(&fixture.context, &ix, &[Check::success()]);
@@ -4172,7 +4173,13 @@ fn mollusk_fhe_execute_rand_creates_then_consumes_the_nonce_and_never_repeats_a_
     assert_ne!(first_seeds.seeds[0].seed, second_seeds.seeds[0].seed);
     let stored: host::RandNonce =
         read_program_account(&fixture.context, nonce).expect("rand nonce");
-    assert_eq!((stored.nonce, stored.bump), (2, bump));
+    assert_eq!(stored.nonce, 2);
+    let account = fixture.context.account_store.borrow()[&nonce].clone();
+    assert_eq!(account.owner, host::id());
+    assert!(
+        account.lamports
+            >= anchor_lang::prelude::Rent::default().minimum_balance(8 + host::RandNonce::SPACE)
+    );
 }
 
 #[test]

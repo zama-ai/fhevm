@@ -26,7 +26,7 @@ use anchor_lang::prelude::*;
 pub struct FheExecuteRandomSeed {
     /// Zero-based step index within the execution.
     pub step_index: u16,
-    /// Seed derived from the consumed host rand nonce and slot entropy.
+    /// Seed derived from the application's consumed rand nonce and slot entropy.
     pub seed: [u8; 16],
 }
 

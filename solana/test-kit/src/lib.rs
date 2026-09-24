@@ -491,12 +491,12 @@ pub fn kms_context_account(
 
 /// Builds `app`'s `RandNonce` account at its canonical PDA, at `nonce`.
 pub fn rand_nonce_account(app: host::AppScope, nonce: u64) -> (Pubkey, Account) {
-    let (address, bump) = host::rand_nonce_address(app);
+    let (address, _) = host::rand_nonce_address(app);
     (
         address,
         Account {
             lamports: 1_000_000_000,
-            data: serialized_account(host::RandNonce { nonce, bump }),
+            data: serialized_account(host::RandNonce { nonce }),
             owner: host::id(),
             executable: false,
             rent_epoch: 0,

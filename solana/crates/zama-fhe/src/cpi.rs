@@ -19,9 +19,9 @@ use crate::accounts::ResolvedExecutionAccounts;
 use crate::execution::FheExecution;
 
 /// The fixed accounts of one `fhe_execute` CPI. The per-execution ones — the application's deny
-/// record and the host's rand nonce — are derived from the built execution: `FheExecution::app`
-/// names the `(program, scope)` the deny record is keyed on, `FheExecution::has_rand_step` says
-/// whether the nonce is needed.
+/// record and rand nonce — are derived from the built execution: `FheExecution::app` names the
+/// `(program, scope)` both are keyed on (the nonce is at `zama_host::rand_nonce_address(app)`), and
+/// `FheExecution::has_rand_step` says whether the nonce is needed.
 #[cfg(feature = "cpi")]
 pub struct ExecutionCpiAccounts<'info> {
     pub payer: AccountInfo<'info>,
