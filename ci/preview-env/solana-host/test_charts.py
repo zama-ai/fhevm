@@ -112,6 +112,27 @@ class SolanaCharts(unittest.TestCase):
         chains = {c["chainId"]: c for c in json.loads(next(e["value"] for e in env if e["name"] == "KMS_CONNECTOR_HOST_CHAINS"))}
         self.assertEqual(chains[72057594037940281]["solanaProofRoutes"], ROUTES)
 
+    def test_connector_refuses_an_entry_whose_settings_are_not_its_kind(self):
+        cases = [
+            (["--set-string", "commonConfig.hostChains.solana.aclAddress=0x" + "11" * 20],
+             "solana.aclAddress does not apply to a Solana chain"),
+            (["--set-string", "commonConfig.hostChains.solana.chainId=31888",
+              "--set-string", "commonConfig.hostChains.solana.aclAddress=0x" + "11" * 20],
+             "solana.solanaHostProgramId does not apply to an EVM chain"),
+            (["--set-string", "commonConfig.hostChains.solana.chainId=144115188075855881"],
+             "solana.chainId has type byte 2, which names no host kind"),
+        ]
+        for options, expected in cases:
+            command = ["helm", "template", "kms-connector-1", str(ROOT / "charts/kms-connector"),
+                       "-f", str(ROOT / "ci/preview-env/kms-connector/values-kms-connector-e2e.yaml"),
+                       "-f", str(VALUES / "values-solana-connector-e2e.yaml"),
+                       "--set-string", "commonConfig.hostChains.ethereum.aclAddress=0x" + "11" * 20,
+                       "--set-json", "commonConfig.hostChains.solana.solanaProofRoutes=" + json.dumps(ROUTES),
+                       *options]
+            result = subprocess.run(command, capture_output=True, text=True)
+            self.assertNotEqual(result.returncode, 0, expected)
+            self.assertIn(expected, result.stderr)
+
     def test_program_keys_are_optional_but_deployer_is_required(self):
         for filename in ["values-solana-programs-e2e.yaml", "values-solana-demos-e2e.yaml"]:
             docs = render("solana", "contracts", [VALUES / filename])

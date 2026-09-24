@@ -188,8 +188,8 @@ pub struct HostChainConfig {
 
 #[derive(Clone, Debug, PartialEq)]
 pub enum HostSettings {
-    /// The `ACL` contract that gates decryptions.
     Evm {
+        /// The `ACL` contract that gates decryptions.
         acl_address: Address,
     },
     Solana(SolanaHostSettings),
@@ -205,7 +205,7 @@ pub struct SolanaHostSettings {
     pub proof_routes: Vec<ProofRoute>,
 }
 
-/// One coprocessor's leaf-proof endpoint and the bearer key it issued to this connector.
+/// One coprocessor's leaf-proof endpoint and the bearer key that endpoint expects.
 #[derive(Clone, Debug, Deserialize, PartialEq)]
 pub struct ProofRoute {
     pub url: Url,
@@ -286,6 +286,16 @@ impl TryFrom<HostChainEntry> for HostChainConfig {
                 if entry.solana_proof_routes.is_empty() {
                     return Err(format!(
                         "Solana host chain {chain_id} requires at least one solana_proof_routes entry"
+                    ));
+                }
+                if let Some(route) = entry
+                    .solana_proof_routes
+                    .iter()
+                    .find(|route| route.api_key.expose().is_empty())
+                {
+                    return Err(format!(
+                        "Solana host chain {chain_id} proof route {} has an empty api_key",
+                        route.url
                     ));
                 }
                 HostSettings::Solana(SolanaHostSettings {
@@ -822,6 +832,14 @@ mod tests {
                 "requires at least one solana_proof_routes entry",
             ),
             (
+                with(
+                    solana_entry(1),
+                    "solana_proof_routes",
+                    serde_json::json!([{"url": "http://coprocessor-1:8080", "api_key": ""}]),
+                ),
+                "proof route http://coprocessor-1:8080/ has an empty api_key",
+            ),
+            (
                 with(evm.clone(), "chain_id", 0x0200_0000_0000_0009_u64.into()),
                 "has type byte 0x02, which names no host kind",
             ),
@@ -851,10 +869,56 @@ mod tests {
     }
 
     #[test]
+    #[serial(config_tests)]
     fn a_proof_key_is_redacted_from_debug_output() {
+        cleanup_env_vars();
         let chains = parse_host_chains(serde_json::json!([solana_entry(1)])).unwrap();
         let debug = format!("{chains:?}");
         assert!(!debug.contains("first-key"), "{debug}");
+    }
+
+    /// The sample's Solana entry, uncommented: routes are TOML inline tables.
+    #[test]
+    #[serial(config_tests)]
+    fn a_solana_entry_loads_from_toml() {
+        cleanup_env_vars();
+        let sample = std::fs::read_to_string(example_config_path()).unwrap();
+        let path = env::temp_dir().join(format!("kms-worker-solana-{}.toml", std::process::id()));
+        let solana_chain_id = solana_host_chain_id(1);
+        std::fs::write(
+            &path,
+            format!(
+                r#"{sample}
+[[host_chains]]
+url = "http://localhost:8899"
+chain_id = {solana_chain_id}
+solana_host_program_id = "11111111111111111111111111111111"
+solana_proof_routes = [
+    {{ url = "http://coprocessor-1:8080", api_key = "first-key" }},
+    {{ url = "http://coprocessor-2:8080", api_key = "second-key" }},
+]
+"#
+            ),
+        )
+        .unwrap();
+        let config = Config::from_env_and_file(Some(&path));
+        std::fs::remove_file(&path).unwrap();
+
+        let HostSettings::Solana(solana) = &config.unwrap().host_chains[1].host else {
+            panic!("the second entry is a Solana chain");
+        };
+        let routes: Vec<_> = solana
+            .proof_routes
+            .iter()
+            .map(|route| (route.url.as_str(), route.api_key.expose()))
+            .collect();
+        assert_eq!(
+            routes,
+            [
+                ("http://coprocessor-1:8080/", "first-key"),
+                ("http://coprocessor-2:8080/", "second-key"),
+            ]
+        );
     }
 
     fn example_config_path() -> String {

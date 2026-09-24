@@ -90,8 +90,17 @@ hostChains:
 {{- range $name, $chain := $chains }}
 {{- $chain = $chain | default dict }}
 {{- /* The chain id's type byte (bits 56..64) names the kind, as in the connector. */}}
-{{- $solana := eq (div (int64 ($chain.chainId | default 0)) 0x0100000000000000) 1 }}
+{{- $type := div (int64 ($chain.chainId | default 0)) 0x0100000000000000 }}
+{{- if not (or (eq $type 0) (eq $type 1)) }}
+{{- fail (printf "commonConfig.hostChains.%s.chainId has type byte %d, which names no host kind" $name $type) }}
+{{- end }}
+{{- $solana := eq $type 1 }}
 {{- $required := ternary (list "url" "chainId" "solanaHostProgramId" "solanaProofRoutes") (list "url" "chainId" "aclAddress") $solana }}
+{{- range $field := ternary (list "aclAddress") (list "solanaHostProgramId" "solanaProofRoutes") $solana }}
+{{- if index $chain $field }}
+{{- fail (printf "commonConfig.hostChains.%s.%s does not apply to %s chain" $name $field (ternary "a Solana" "an EVM" $solana)) }}
+{{- end }}
+{{- end }}
 {{- range $field := $required }}
 {{- if not (index $chain $field) }}
 {{- fail (printf "commonConfig.hostChains.%s.%s must be set when commonConfig.network is empty (no preset to default from)" $name $field) }}

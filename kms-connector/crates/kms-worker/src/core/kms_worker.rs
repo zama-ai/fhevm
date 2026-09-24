@@ -375,7 +375,9 @@ async fn register_host_chains(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::core::config::{HostChainConfig, SolanaHostSettings, solana_host_chain_id};
+    use crate::core::config::{
+        ApiKey, HostChainConfig, ProofRoute, SolanaHostSettings, solana_host_chain_id,
+    };
     use alloy::primitives::B256;
     use solana_pubkey::Pubkey;
 
@@ -392,12 +394,10 @@ mod tests {
             chain_id: solana_host_chain_id(cluster_tag),
             host: HostSettings::Solana(SolanaHostSettings {
                 host_program_id: Pubkey::new_from_array([7; 32]),
-                proof_routes: vec![
-                    serde_json::from_value(serde_json::json!({
-                        "url": endpoint, "api_key": "test-key"
-                    }))
-                    .unwrap(),
-                ],
+                proof_routes: vec![ProofRoute {
+                    url: endpoint.parse().unwrap(),
+                    api_key: ApiKey::from("test-key".to_owned()),
+                }],
             }),
         }
     }
