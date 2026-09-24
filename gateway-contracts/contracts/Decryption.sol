@@ -1470,9 +1470,10 @@ contract Decryption is
      * registered host chain across the batch (derived from the first handle), a priced FHE type
      * for every handle, and the request bit budget. Shape-specific extractors reduce their
      * entries to `bytes32[]` and delegate here, so the checks cannot drift between paths.
-     * @dev For Solana requests this is the bit budget's one enforcer: the KMS Connector holds no
-     * copy of the width table, and the handles it authorizes are these typed `ctHandles`, so they
-     * must keep flowing through this check.
+     * @dev For a Solana request submitted here this is the bit budget's one enforcer: the KMS
+     * Connector authorizes these typed `ctHandles` without re-checking their widths, so they must
+     * keep flowing through this check. A Solana request submitted to the Connector over HTTP is
+     * budgeted by the Connector's endpoint instead, against the same limit.
      */
     function _checkCtHandlesConformanceHostChain(bytes32[] memory ctHandles) internal view virtual {
         uint256 chainId = HandleOps.extractChainId(ctHandles[0]);
