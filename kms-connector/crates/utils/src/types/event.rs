@@ -294,7 +294,7 @@ pub fn from_user_decryption_row(row: &PgRow) -> anyhow::Result<ProtocolEvent> {
     let extra_data: Vec<u8> = row.try_get("extra_data")?;
     let kind = match row.try_get::<AttestationType, _>("attestation_type")? {
         AttestationType::Solana => {
-            let handle_owner_addresses: Vec<Vec<u8>> = row.try_get("handle_allowed_keys")?;
+            let handle_owner_addresses: Vec<Vec<u8>> = row.try_get("handle_owner_addresses")?;
             let handle_encrypted_stores: Vec<Vec<u8>> = row.try_get("handle_encrypted_stores")?;
             let gateway = SolanaGatewayFields {
                 handles: ct_handles.iter().map(|h| h.to_vec()).collect(),
@@ -304,7 +304,7 @@ pub fn from_user_decryption_row(row: &PgRow) -> anyhow::Result<ProtocolEvent> {
                 extra_data,
             };
             let blob = SolanaRequestBlob {
-                user_address: row.try_get("user_pubkey")?,
+                user_address: row.try_get("user_address")?,
                 allowed_scopes: row.try_get("allowed_scopes")?,
                 verifying_program_id: row.try_get("verifying_program_id")?,
                 signature: row.try_get("signature")?,
