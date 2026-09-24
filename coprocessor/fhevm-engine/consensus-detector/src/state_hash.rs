@@ -366,12 +366,35 @@ async fn upload_pending_state_hashes(
     for row in pending {
         let chain_id = row.0;
         let block_number = row.1;
+        #[cfg(feature = "test-failpoints")]
+        let report_fault = crate::test_host_report::fault(pool, chain_id, block_number).await?;
+        #[cfg(feature = "test-failpoints")]
+        if matches!(report_fault, Some(crate::test_host_report::Fault::Withhold)) {
+            continue;
+        }
         let bytes = match hex::decode(&row.2) {
             Ok(b) => b,
             Err(e) => {
                 warn!(chain_id, block_number, error = %e, "malformed state_hash hex in DB; skipping row");
                 continue;
             }
+        };
+        #[cfg(feature = "test-failpoints")]
+        let bytes = {
+            let mut bytes = bytes;
+            if matches!(report_fault, Some(crate::test_host_report::Fault::Diverge)) {
+                crate::test_host_report::journal(
+                    pool,
+                    chain_id,
+                    block_number,
+                    &row.2,
+                    &format!("0x{}", hex::encode(&row.3)),
+                    my_bucket,
+                )
+                .await?;
+                crate::test_host_report::divergent_hash(&mut bytes);
+            }
+            bytes
         };
         let block_hash_hex = format!("0x{}", hex::encode(&row.3));
         let key = state_hash_key(chain_id, block_number);

@@ -200,7 +200,9 @@ const runPlan = (flags: Flags) => {
   >();
   for (const entry of selection.cases) {
     assertCiLeg(entry.ci.leg);
-    const shard = "all";
+    const shard = entry.id === "DEG-06-GW-LISTENER-INFLIGHT" ? "gateway" : entry.ci.leg !== "failure-matrix" ? "all" :
+      entry.acceptance === "smoke" ? "smoke" :
+      /FM-(RELAYER|KMS|OBJECT|BROKER)/.test(entry.id) ? "dependencies" : "workers";
     const key = `${entry.ci.leg}|${entry.topology.scenario}|${entry.ci.backend}|${shard}`;
     const job = jobs.get(key) ?? {
       leg: entry.ci.leg,
@@ -249,6 +251,10 @@ const runPlan = (flags: Flags) => {
     console.log(`cpu-matrix=${JSON.stringify({ include: cpuJobs })}`);
     console.log(`legs=${plan.legs.join(",")}`);
     console.log(`needs-gpu=${plan.needsGpu}`);
+    for (const leg of ["rust-regression", "gpu"]) {
+      console.log(`${leg}-timeout=${Math.max(60, ...plan.jobs.filter((job) => job.leg === leg).map((job) => job.timeoutMinutes))}`);
+    }
+    console.log(`gpu-pressure=${selection.cases.some((entry) => entry.id === "SCH-04-GPU-RESERVATION")}`);
     console.log(`needs-two-gpus=${plan.needsTwoGpus}`);
     console.log(`partial=${plan.partial}`);
     console.log(`matrix=${JSON.stringify({ include: plan.jobs })}`);

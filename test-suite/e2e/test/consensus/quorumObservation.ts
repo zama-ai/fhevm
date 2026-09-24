@@ -58,6 +58,7 @@ export async function observeForbiddenQuorum(options: QuorumWindowOptions): Prom
       }
       senders.add(sender);
     }
+    if (senders.size > options.survivorCount) throw new Error('additional senders escaped the declared submission partition');
     if (senders.size < options.survivorCount) {
       if (windowStarted !== undefined) throw new Error('healthy submissions disappeared during observation');
       if (observedAt - started >= submissionTimeoutMs) throw new Error('healthy survivors did not submit the identified workload');

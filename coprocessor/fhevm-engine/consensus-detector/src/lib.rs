@@ -148,6 +148,9 @@ struct UnanimityPayload<'a> {
     block_hash: &'a str,
 }
 
+#[cfg(feature = "test-failpoints")]
+mod test_host_report;
+
 #[derive(Debug, Error)]
 pub enum Error {
     #[error("database error: {0}")]

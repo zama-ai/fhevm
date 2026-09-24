@@ -50,6 +50,8 @@ opentelemetry_sdk = { workspace = true }
 opentelemetry-semantic-conventions = { workspace = true }
 
 [features]
+# Isolated reservation-pressure campaign only; absent from production builds.
+test-failpoints = []
 nightly-avx512 = ["tfhe/nightly-avx512"]
 gpu = ["tfhe/gpu"]
 latency = []

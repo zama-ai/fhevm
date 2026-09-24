@@ -23,7 +23,7 @@ export const finalizeCaseResults = (
       throw new Error(`conflicting child verdicts for ${record.caseId}`);
     }
     // A parent cleanup/deadline failure invalidates every sibling claim from
-    // this execution, including cases emitted by a delegated runner.
+    // this execution, including CR01/REG03 emitted by the delegated TFHE case.
     final.set(key, outcome ? parseCaseResult({
       ...record,
       state: record.state === "FAIL" || record.state === "INVALID" ? record.state : outcome.state,
