@@ -10,11 +10,12 @@ use listener_core::blockchain::evm::sem_evm_rpc_provider::SemEvmRpcProvider;
 use listener_core::config::BrokerType;
 use listener_core::config::config::Settings;
 use listener_core::core::{
-    CatchupHandler, Cleaner, CleanerHandler, EvmListener, FetchHandler, Filters,
-    FinalCatchupHandler, FinalCleanerHandler, FinalityHandler, RangeCatchupHandler,
+    CancelCatchupHandler, CatchupHandler, Cleaner, CleanerHandler, EvmListener, FetchHandler,
+    Filters, FinalCatchupHandler, FinalCleanerHandler, FinalityHandler, RangeCatchupHandler,
     RangeFinalCatchupHandler, ReorgHandler, UnwatchHandler, WatchHandler,
 };
 use listener_core::logging;
+use listener_core::store::models::CatchupFlow;
 use listener_core::store::repositories::Repositories;
 use listener_core::store::{FlowLock, PgClient, run_migrations};
 use primitives::routing;
@@ -487,6 +488,50 @@ async fn main() {
         }
     };
 
+    // Cancels are single-row updates with no fetch behind them, so they use the
+    // orchestrator prefetch rather than the (deliberately serialised) range one.
+    let cancel_catchup_consumer = match broker
+        .consumer(&Topic::new(routing::CANCEL_CATCHUP).with_namespace(chain_id))
+        .group(routing::CANCEL_CATCHUP)
+        .prefetch(settings.blockchain.catchup.prefetch)
+        .max_retries(5)
+        .redis_claim_min_idle(settings.blockchain.catchup.claim_min_idle_secs)
+        .redis_claim_interval(1)
+        .redis_block_ms(200)
+        .circuit_breaker(
+            settings.broker.circuit_breaker_threshold,
+            Duration::from_secs(settings.broker.circuit_breaker_cooldown_secs),
+        )
+        .build()
+    {
+        Ok(c) => c,
+        Err(e) => {
+            error!("Failed to build cancel-catchup consumer: {}", e);
+            process::exit(1);
+        }
+    };
+
+    let cancel_final_catchup_consumer = match broker
+        .consumer(&Topic::new(routing::CANCEL_FINAL_CATCHUP).with_namespace(chain_id))
+        .group(routing::CANCEL_FINAL_CATCHUP)
+        .prefetch(settings.blockchain.catchup.prefetch)
+        .max_retries(5)
+        .redis_claim_min_idle(settings.blockchain.catchup.claim_min_idle_secs)
+        .redis_claim_interval(1)
+        .redis_block_ms(200)
+        .circuit_breaker(
+            settings.broker.circuit_breaker_threshold,
+            Duration::from_secs(settings.broker.circuit_breaker_cooldown_secs),
+        )
+        .build()
+    {
+        Ok(c) => c,
+        Err(e) => {
+            error!("Failed to build cancel-final-catchup consumer: {}", e);
+            process::exit(1);
+        }
+    };
+
     // ── Define handlers ─────────────────────────────────────────────────
     let flow_lock = FlowLock::new(Arc::clone(&arc_pg_client), configured_chain_id);
     let fetch_handler = FetchHandler::new(
@@ -541,6 +586,11 @@ async fn main() {
     let final_catchup_handler =
         FinalCatchupHandler::new(Arc::clone(&evm_listener), handler_publisher.clone());
     let range_final_catchup_handler = RangeFinalCatchupHandler::new(Arc::clone(&evm_listener));
+
+    let cancel_catchup_handler =
+        CancelCatchupHandler::new(Arc::clone(&evm_listener), CatchupFlow::Catchup);
+    let cancel_final_catchup_handler =
+        CancelCatchupHandler::new(Arc::clone(&evm_listener), CatchupFlow::FinalCatchup);
 
     // ── Ensure AMQP queues/bindings exist before checking depth ────────
     // Without this, AMQP silently drops the seed message because no queue
@@ -630,6 +680,17 @@ async fn main() {
     // ── Ensure range-final-catchup topology (no seed — sub-ranges come from the final catchup orchestrator) ──
     if let Err(e) = range_final_catchup_consumer.ensure_topology().await {
         error!(error = %e, "Failed to set up range-final-catchup consumer topology");
+        process::exit(1);
+    }
+
+    // ── Ensure cancel topology (no seed — cancels come from external producers) ──
+    if let Err(e) = cancel_catchup_consumer.ensure_topology().await {
+        error!(error = %e, "Failed to set up cancel-catchup consumer topology");
+        process::exit(1);
+    }
+
+    if let Err(e) = cancel_final_catchup_consumer.ensure_topology().await {
+        error!(error = %e, "Failed to set up cancel-final-catchup consumer topology");
         process::exit(1);
     }
 
@@ -772,9 +833,28 @@ async fn main() {
                 Topic::new(routing::RANGE_FINAL_CATCHUP).with_namespace(chain_id),
                 routing::RANGE_FINAL_CATCHUP,
             ),
+            broker::metrics::QueueDepthPollTarget::new(
+                Topic::new(routing::CANCEL_CATCHUP).with_namespace(chain_id),
+                routing::CANCEL_CATCHUP,
+            ),
+            broker::metrics::QueueDepthPollTarget::new(
+                Topic::new(routing::CANCEL_FINAL_CATCHUP).with_namespace(chain_id),
+                routing::CANCEL_FINAL_CATCHUP,
+            ),
         ],
         Duration::from_secs(15),
         queue_depth_cancel,
+    );
+
+    // ── Active catchup requests gauge ────────────────────────────────────
+    // Same cadence as the queue depths: both answer "what is in flight right
+    // now", and an hourly refresh cannot answer that.
+    let catchup_gauge_cancel = tokio_util::sync::CancellationToken::new();
+    let _catchup_gauge_task = listener_core::metrics::spawn_active_catchup_poller(
+        repositories_for_cleaner.catchups,
+        settings.blockchain.chain_id,
+        Duration::from_secs(15),
+        catchup_gauge_cancel,
     );
 
     // ── Start the shared HTTP server (hosts /livez + /readyz today) ─────
@@ -809,6 +889,8 @@ async fn main() {
         r = range_catchup_consumer.run(range_catchup_handler) => ("RangeCatchup", r),
         r = final_catchup_consumer.run(final_catchup_handler) => ("FinalCatchup", r),
         r = range_final_catchup_consumer.run(range_final_catchup_handler) => ("RangeFinalCatchup", r),
+        r = cancel_catchup_consumer.run(cancel_catchup_handler) => ("CancelCatchup", r),
+        r = cancel_final_catchup_consumer.run(cancel_final_catchup_handler) => ("CancelFinalCatchup", r),
     };
 
     error!("{consumer_name} consumer exited: {result:?}");

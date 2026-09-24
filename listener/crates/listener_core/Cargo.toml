@@ -21,7 +21,7 @@ tokio-util.workspace = true
 tracing.workspace = true
 tracing-subscriber = { version = "0.3.22", features = ["json", "env-filter"] }
 url                = "2.5.8"
-uuid               = { version = "1", features = ["v4", "serde"] }
+uuid.workspace = true
 chrono             = { version = "0.4", features = ["serde"] }
 config             = { version = "0.14", features = ["yaml"] }
 derivative         = "2.2"

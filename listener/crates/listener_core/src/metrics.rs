@@ -5,8 +5,69 @@
 //! - [`init_gauges()`]: initializes gauge values to zero for Grafana discoverability
 //! - [`init_counters()`]: initializes gauge counters to zero for Grafana discoverability
 //! - [`error_kind_label()`]: maps [`EvmListenerError`] variants to static label strings
+//! - [`spawn_active_catchup_poller()`]: keeps the active-requests gauge fresh
+
+use std::time::Duration;
+
+use tokio::task::JoinHandle;
+use tokio_util::sync::CancellationToken;
+use tracing::error;
 
 use crate::core::evm_listener::EvmListenerError;
+use crate::store::models::CatchupFlow;
+use crate::store::repositories::CatchupRepository;
+
+/// Poll the active catchup request count and publish it as a gauge.
+///
+/// This is a gauge, so its value is only as true as its refresh rate. It used
+/// to ride the hourly block cleaner, which meant it reported whatever was
+/// active at the top of the hour and read zero for the fifty-nine minutes
+/// during which a catchup actually ran. It polls on the same cadence as the
+/// queue depths instead, and no longer stops when `cleaner.active` is false —
+/// how many catchups are running is not a question about block retention.
+pub fn spawn_active_catchup_poller(
+    catchups: CatchupRepository,
+    chain_id: u64,
+    interval: Duration,
+    cancel: CancellationToken,
+) -> JoinHandle<()> {
+    tokio::spawn(async move {
+        loop {
+            tokio::select! {
+                _ = cancel.cancelled() => return,
+                _ = tokio::time::sleep(interval) => {}
+            }
+
+            // Both flows are always emitted, including as zero. `GROUP BY`
+            // returns no row for a flow with nothing active, and leaving the
+            // gauge unset there would pin it at the last non-zero value it
+            // ever had.
+            match catchups.count_active_by_flow().await {
+                Ok(counts) => {
+                    for flow in [CatchupFlow::Catchup, CatchupFlow::FinalCatchup] {
+                        let active = counts
+                            .iter()
+                            .find(|(f, _)| *f == flow)
+                            .map_or(0, |(_, count)| *count);
+
+                        metrics::gauge!(
+                            "listener_catchup_active_requests",
+                            "chain_id" => chain_id.to_string(),
+                            "flow" => flow.metric_label()
+                        )
+                        .set(active as f64);
+                    }
+                }
+                Err(e) => {
+                    error!(
+                        error = %e,
+                        "Failed to count active catchup requests, leaving gauge unchanged"
+                    );
+                }
+            }
+        }
+    })
+}
 
 /// Register metric descriptions with the global recorder.
 ///
@@ -80,6 +141,31 @@ pub fn describe_metrics() {
         "listener_catchup_range_duration_seconds",
         Unit::Seconds,
         "Wall-clock time to fetch and publish a single catchup sub-range (one `range-catchup` message)"
+    );
+    describe_counter!(
+        "listener_catchup_subrange_discarded_total",
+        Unit::Count,
+        "Sub-ranges dropped without fetching because their request was already cancelled or skipped"
+    );
+    describe_counter!(
+        "listener_catchup_completed_total",
+        Unit::Count,
+        "Catchup requests moved to COMPLETED: every block the request fanned out has been fetched and published. Counts requests, not sub-ranges, and fires once per request"
+    );
+    describe_counter!(
+        "listener_catchup_cancelled_total",
+        Unit::Count,
+        "Catchup requests moved to CANCELLED by their owner"
+    );
+    describe_counter!(
+        "listener_catchup_cancel_rejected_total",
+        Unit::Count,
+        "Cancels refused because the catchup_id belongs to a different consumer — the request is still running and the caller was not told"
+    );
+    describe_gauge!(
+        "listener_catchup_active_requests",
+        Unit::Count,
+        "Catchup requests currently ACTIVE. Should track the number of consumers; a climbing value means a consumer is minting ids without cancelling the ones they replace"
     );
 
     // ── Finality ────────────────────────────────────────────────────────
@@ -265,6 +351,37 @@ pub fn init_counters(chain_id: u64) {
         "chain_id" => chain_id_str.clone()
     )
     .increment(0);
+
+    // Catchup lifecycle counters — `chain_id` + `flow`, so both flows are
+    // seeded. `cancel_rejected` especially: it exists to be alerted on, and an
+    // alert cannot fire on a series that first appears at the moment of the
+    // event it is supposed to catch.
+    for flow in [CatchupFlow::Catchup, CatchupFlow::FinalCatchup] {
+        metrics::counter!(
+            "listener_catchup_subrange_discarded_total",
+            "chain_id" => chain_id_str.clone(),
+            "flow" => flow.metric_label()
+        )
+        .increment(0);
+        metrics::counter!(
+            "listener_catchup_completed_total",
+            "chain_id" => chain_id_str.clone(),
+            "flow" => flow.metric_label()
+        )
+        .increment(0);
+        metrics::counter!(
+            "listener_catchup_cancelled_total",
+            "chain_id" => chain_id_str.clone(),
+            "flow" => flow.metric_label()
+        )
+        .increment(0);
+        metrics::counter!(
+            "listener_catchup_cancel_rejected_total",
+            "chain_id" => chain_id_str.clone(),
+            "flow" => flow.metric_label()
+        )
+        .increment(0);
+    }
 
     // Finality counters — single `chain_id` label.
     metrics::counter!(

@@ -2874,6 +2874,7 @@ dependencies = [
  "serde_json",
  "thiserror 2.0.16",
  "tracing",
+ "uuid",
 ]
 
 [[package]]
@@ -6068,6 +6069,7 @@ dependencies = [
  "alloy-primitives",
  "serde",
  "thiserror 2.0.16",
+ "uuid",
 ]
 
 [[package]]
@@ -9252,6 +9254,7 @@ checksum = "2f87b8aa10b915a06587d0dec516c282ff295b475d94abf425d62b57710070a2"
 dependencies = [
  "getrandom 0.3.3",
  "js-sys",
+ "serde",
  "wasm-bindgen",
 ]
 

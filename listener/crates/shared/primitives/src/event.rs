@@ -2,6 +2,7 @@ use alloy_primitives::{Address, B256, Bytes, U256};
 use serde::{Deserialize, Serialize};
 use std::fmt;
 use thiserror::Error;
+use uuid::Uuid;
 
 /// Event payload for the backtrack-reorg consumer.
 /// Carries the block number where the reorg was detected.
@@ -85,6 +86,14 @@ pub struct CatchupPayload {
     pub consumer_id: String,
     pub block_start: u64,
     pub block_end: u64,
+    /// Idempotency key minted by the consumer, naming this catchup request.
+    /// `None` only for payloads published by a listener predating this field.
+    #[serde(default)]
+    pub catchup_id: Option<Uuid>,
+    /// Position of this sub-range within its parent request, starting at 0.
+    /// Set by the orchestrator during fan-out; `None` on the original request.
+    #[serde(default)]
+    pub sub_range_seq: Option<i32>,
 }
 
 impl CatchupPayload {
@@ -98,6 +107,35 @@ impl CatchupPayload {
         }
         if self.block_start > self.block_end {
             return Err(CatchupPayloadValidationError::InvalidBlockRange);
+        }
+        Ok(())
+    }
+}
+
+/// Validation errors for [`CancelCatchupPayload`].
+#[derive(Debug, Clone, PartialEq, Eq, Error)]
+pub enum CancelCatchupPayloadValidationError {
+    #[error("consumer_id must not be empty")]
+    EmptyConsumerId,
+}
+
+/// Event payload for the `cancel-catchup` consumer.
+///
+/// Retires the catchup request named by `catchup_id`. Chain ID is omitted because
+/// the listener injects chain scope through namespaced routing.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct CancelCatchupPayload {
+    pub consumer_id: String,
+    pub catchup_id: Uuid,
+}
+
+impl CancelCatchupPayload {
+    /// Validate the payload. Trims `consumer_id` so the stored value is canonical.
+    #[must_use = "validation result must be checked"]
+    pub fn validate(&mut self) -> Result<(), CancelCatchupPayloadValidationError> {
+        self.consumer_id = self.consumer_id.trim().to_owned();
+        if self.consumer_id.is_empty() {
+            return Err(CancelCatchupPayloadValidationError::EmptyConsumerId);
         }
         Ok(())
     }
@@ -180,6 +218,11 @@ pub struct BlockPayload {
     pub timestamp: u64,
     /// Transactions with their logs, ordered by transaction index.
     pub transactions: Vec<TransactionPayload>,
+    /// The catchup request this block was replayed for, on `Catchup` and
+    /// `FinalCatchup` flows only. `None` on every other flow, and on payloads
+    /// published by a listener predating this field.
+    #[serde(default)]
+    pub catchup_id: Option<Uuid>,
 }
 
 // --- Debug-only Display impls (remove when no longer needed) ---
@@ -291,6 +334,7 @@ mod tests {
                     data: Bytes::from_static(&[0x00, 0x01, 0x02]),
                 }],
             }],
+            catchup_id: None,
         }
     }
 
@@ -320,12 +364,37 @@ mod tests {
                     ],
                     "data": "0x000102"
                 }]
-            }]
+            }],
+            "catchup_id": null
         });
 
         assert_eq!(json, expected);
 
         // Round-trip
+        let deserialized: BlockPayload = serde_json::from_value(json).unwrap();
+        assert_eq!(payload, deserialized);
+    }
+
+    /// A block payload published by a listener predating the identity field must
+    /// still deserialize, for the same rolling-deploy reason as `CatchupPayload`.
+    #[test]
+    fn block_payload_accepts_payload_without_catchup_id() {
+        let mut json = serde_json::to_value(sample_payload()).unwrap();
+        json.as_object_mut().unwrap().remove("catchup_id");
+
+        let payload: BlockPayload = serde_json::from_value(json).unwrap();
+        assert_eq!(payload.catchup_id, None);
+    }
+
+    #[test]
+    fn block_payload_carries_catchup_id_on_catchup_flow() {
+        let mut payload = sample_payload();
+        payload.flow = BlockFlow::Catchup;
+        payload.catchup_id = Some(uuid::uuid!("0198c2f0-0000-7000-8000-000000000001"));
+
+        let json = serde_json::to_value(&payload).unwrap();
+        assert_eq!(json["catchup_id"], "0198c2f0-0000-7000-8000-000000000001");
+
         let deserialized: BlockPayload = serde_json::from_value(json).unwrap();
         assert_eq!(payload, deserialized);
     }
@@ -362,6 +431,7 @@ mod tests {
             parent_hash: B256::ZERO,
             timestamp: 0,
             transactions: vec![],
+            catchup_id: None,
         };
 
         let json = serde_json::to_value(&payload).unwrap();
@@ -637,6 +707,8 @@ mod tests {
             consumer_id: "".into(),
             block_start: 1,
             block_end: 10,
+            catchup_id: None,
+            sub_range_seq: None,
         };
         assert_eq!(
             p.validate().unwrap_err(),
@@ -650,6 +722,8 @@ mod tests {
             consumer_id: "   ".into(),
             block_start: 1,
             block_end: 10,
+            catchup_id: None,
+            sub_range_seq: None,
         };
         assert_eq!(
             p.validate().unwrap_err(),
@@ -663,6 +737,8 @@ mod tests {
             consumer_id: "  gw  ".into(),
             block_start: 1,
             block_end: 10,
+            catchup_id: None,
+            sub_range_seq: None,
         };
         p.validate().unwrap();
         assert_eq!(p.consumer_id, "gw");
@@ -674,6 +750,8 @@ mod tests {
             consumer_id: "gateway".into(),
             block_start: 10,
             block_end: 5,
+            catchup_id: None,
+            sub_range_seq: None,
         };
         assert_eq!(
             p.validate().unwrap_err(),
@@ -687,6 +765,8 @@ mod tests {
             consumer_id: "gateway".into(),
             block_start: 42,
             block_end: 42,
+            catchup_id: None,
+            sub_range_seq: None,
         };
         p.validate().unwrap();
     }
@@ -697,6 +777,8 @@ mod tests {
             consumer_id: "gateway".into(),
             block_start: 100,
             block_end: 200,
+            catchup_id: None,
+            sub_range_seq: None,
         };
 
         let json = serde_json::to_value(&payload).unwrap();
@@ -704,11 +786,66 @@ mod tests {
             "consumer_id": "gateway",
             "block_start": 100,
             "block_end": 200,
+            "catchup_id": null,
+            "sub_range_seq": null,
         });
         assert_eq!(json, expected);
 
         let deserialized: CatchupPayload = serde_json::from_value(json).unwrap();
         assert_eq!(payload, deserialized);
+    }
+
+    #[test]
+    fn catchup_payload_round_trips_with_identity() {
+        let payload = CatchupPayload {
+            consumer_id: "gateway".into(),
+            block_start: 100,
+            block_end: 200,
+            catchup_id: Some(uuid::uuid!("0198c2f0-0000-7000-8000-000000000001")),
+            sub_range_seq: Some(7),
+        };
+
+        let json = serde_json::to_value(&payload).unwrap();
+        assert_eq!(json["catchup_id"], "0198c2f0-0000-7000-8000-000000000001");
+        assert_eq!(json["sub_range_seq"], 7);
+
+        let deserialized: CatchupPayload = serde_json::from_value(json).unwrap();
+        assert_eq!(payload, deserialized);
+    }
+
+    /// A payload published by a listener predating the identity fields must still
+    /// deserialize. Deserialization errors are classified permanent and go straight
+    /// to the DLQ, so a rolling deploy would silently drop real catchup work.
+    #[test]
+    fn catchup_payload_accepts_payload_without_identity_fields() {
+        let json = json!({
+            "consumer_id": "gateway",
+            "block_start": 100,
+            "block_end": 200,
+        });
+
+        let payload: CatchupPayload = serde_json::from_value(json).unwrap();
+        assert_eq!(payload.catchup_id, None);
+        assert_eq!(payload.sub_range_seq, None);
+    }
+
+    #[test]
+    fn cancel_catchup_payload_trims_and_rejects_empty_consumer_id() {
+        let mut p = CancelCatchupPayload {
+            consumer_id: "  gw  ".into(),
+            catchup_id: uuid::uuid!("0198c2f0-0000-7000-8000-000000000001"),
+        };
+        p.validate().unwrap();
+        assert_eq!(p.consumer_id, "gw");
+
+        let mut empty = CancelCatchupPayload {
+            consumer_id: "   ".into(),
+            catchup_id: p.catchup_id,
+        };
+        assert_eq!(
+            empty.validate().unwrap_err(),
+            CancelCatchupPayloadValidationError::EmptyConsumerId,
+        );
     }
 
     #[test]
