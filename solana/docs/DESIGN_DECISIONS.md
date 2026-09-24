@@ -85,6 +85,7 @@ are written as one narrative instead.
 | [DD-056](#dd-056-an-execution-describes-itself-the-listener-re-derives-handles-only-as-a-check)                                           | adopted                                  | An execution describes itself; the listener re-derives handles only as a check                                                 |
 | [DD-057](#dd-057-one-rand-nonce-per-application)                                                                                          | adopted                                  | One rand nonce per application                                                                                                 |
 | [DD-058](#dd-058-pausers-stop-one-area-at-a-time-only-the-admin-resumes)                                                                  | adopted                                  | Pausers stop one area at a time; only the admin resumes                                                                        |
+| [DD-059](#dd-059-the-listener-catches-up-from-an-archive-when-the-stream-cannot-replay)                                                   | adopted                                  | The listener catches up from an archive when the stream cannot replay                                                          |
 
 ## DD-002: Keep App Store And Host ACL Store Separate
 
@@ -2051,7 +2052,7 @@ on-chain until handled, so a listener that missed it could find it again. It is 
 The ledger is already the durable log. The risk is a listener that falls behind until the
 provider's replay window closes, and the answer is to see it early: the listener exports its lag and
 reconnects (fhevm-internal#2079), and a self-describing execution makes archive replay possible
-(fhevm-internal#2081).
+(fhevm-internal#2081), which the listener now uses to catch up past the window (DD-059).
 
 ## DD-056: An execution describes itself; the listener re-derives handles only as a check
 
@@ -2110,12 +2111,12 @@ rows and their errored dependents. The revert refuses a Solana chain whose check
 both when given `SOLANA_BLOCK_HASH`. On restart the listener replays from `S` and inserts the rows
 again as new work. Leaves are not reverted: a replayed write must reproduce the leaves recorded for
 it, or the listener stops. So a replay repairs computation rows, not a bug that recorded wrong
-leaves. Until archive catch-up (fhevm-internal#2085), `S` must be inside the provider's replay
-window, about a day on a hosted provider, and nothing checks that before the rows are deleted. The
+leaves. A replay older than the provider's replay window comes from the archive RPC (DD-059), so
+`S` must be in the archive's history, and nothing checks that before the rows are deleted. The
 runbook is in the host-listener README.
 
 A `getBlock` response prepares into the same block the stream produces (`prepare_rpc_block`), so
-archive catch-up reuses one decoder. It requires inner instructions and loaded addresses, which a
+archive catch-up (DD-059) reuses one decoder. It requires inner instructions and loaded addresses, which a
 full-detail `getBlock` returns. A test rebuilds a slot from `getBlock` output alone.
 
 Rationale:
@@ -2255,6 +2256,51 @@ host-pause check and the `zama-solana-acl` decoder it used are deleted, so user 
 the gateway alone, as on EVM. New errors: `VerifiedInputsPaused`, `AclWritesPaused`, `PublicDecryptPaused`,
 `NotPauser`, `PauserRecordMismatch`; `HostConfigPaused` is now `ExecutionPaused`.
 
+## DD-059: The listener catches up from an archive when the stream cannot replay
+
+Status: adopted
+
+Recorded in fhevm-internal#2085.
+
+A listener that was down longer than the provider's replay window, about a day on a hosted
+provider, used to exit and need manual recovery. It now catches up from an archive RPC and then
+returns to the stream. When Yellowstone refuses the checkpoint as outside its window, the listener
+lists the produced slots after it with `getBlocks` and fetches each with `getBlock`, both at
+`finalized`, with full transaction details. Each block goes through `prepare_rpc_block`, which
+keeps the transactions naming the host program as the stream's account filter does. It must extend
+the checkpoint as the stream's validator requires: an unapplied checkpoint first and unchanged, then
+each block naming the last applied one as its parent. It is applied through the same path as a
+streamed block. Catch-up stops at the slot the archive had finalized when it started, so it ends
+however fast the chain moves. There the listener subscribes again from its checkpoint, and the
+stream's own replay check takes over; if that catch-up outlasted the window, the next pass is
+shorter.
+
+The archive is `--archive-url`, which defaults to `--url` and may be another provider's. A provider
+that cannot replay from a slot at all (`from_slot is not supported`) still stops the listener: after
+catch-up, the stream could never take over. An archive behind the checkpoint, an archive missing
+slots after it (a block whose parent is later than the checkpoint), or a failed read, is retried like
+a dropped subscription. Any other block that does not extend the checkpoint is a fork and stops the
+listener, as on the stream. `archive_catch_up_active` is 1 during catch-up, and the existing lag
+metrics show its progress.
+
+Rejected alternatives:
+
+| Alternative | Why not |
+|---|---|
+| Subscribe first and backfill alongside, as the EVM listener does | `eth_subscribe` cannot resume from a block, so EVM must backfill beside a live stream. Yellowstone resumes from a slot inside its window, so one ordered source at a time keeps a single checkpoint and a single ancestry rule. |
+| Fetch only the slots holding host transactions, found with `getSignaturesForAddress` | The checkpoint needs every block's hash to check ancestry, and the address index adds a second completeness assumption. It is an optimization for later if catch-up volume matters. |
+| Several gRPC endpoints with failover | EVM has none. With catch-up, a provider outage only delays processing, and switching provider is a configuration change and a restart (fhevm-internal#2085). |
+
+Consequences:
+
+Catch-up reads every transaction of every block after the checkpoint. On mainnet a day is about
+216,000 blocks with full details, so it takes hours and needs an archive provider whose rate limits
+allow it; it runs eight `getBlock` calls at a time. The listener's Solana crates decode legacy and v0
+transactions only, so `getBlock` asks for version 0, and the RPC refuses a block holding a v1
+transaction. Catch-up then retries that block until fhevm-internal#2080 moves the listener to crates
+that decode v1. A slot rewound for repair (DD-056) no longer has to be inside the replay window, only
+in the archive's history.
+
 ## Open product decisions
 
 Not settled by the decisions above. Forward requirements are detailed in
@@ -2272,8 +2318,8 @@ Not settled by the decisions above. Forward requirements are detailed in
 - General `HostConfig` config-version rotation semantics beyond the KMS-context pointer.
 - Full production KMS-connector wiring and real ZKPoK and transciphering behind the input attestation
   (both are shortcuts today, DD-028).
-- Production Yellowstone/Geyser provider replay, reconnect and backfill policy at confirmed
-  commitment (DD-003).
+- Production Yellowstone/Geyser and archive providers, and their replay windows and rate limits
+  (DD-003, DD-059, fhevm-internal#2087).
 - Historical handle discovery conventions for apps.
 - Production role and governance names for public-decrypt and grant authority.
 - Leaf-record availability (DD-048): the connector fans out to every configured coprocessor and one
