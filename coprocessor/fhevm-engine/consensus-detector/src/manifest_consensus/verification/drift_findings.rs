@@ -29,7 +29,6 @@ struct DriftHandleFinding {
     handle: B256,
     local: Option<BlockCiphertextDescriptor>,
     observed: Option<BlockCiphertextDescriptor>,
-    observed_commitment_digest: B256,
     observed_has_quorum: bool,
 }
 
@@ -220,13 +219,18 @@ impl HistoricalScanner<'_, '_, '_> {
                     {
                         let observed_has_quorum =
                             scope_evaluation.quorum_digest == Some(observed_group.digest);
+                        // A dissenter, while this operator is in the quorum, is not a
+                        // local drift. The range stays in the attempt-drift audit.
+                        if !observed_has_quorum {
+                            continue;
+                        }
                         result.findings.extend(detailed_findings(
                             manifests,
                             self.local_publisher,
                             &scope_evaluation.scope,
                             local_digest,
                             observed_group,
-                            observed_has_quorum,
+                            true,
                             scope_window,
                         )?);
                     }
@@ -552,7 +556,6 @@ fn detailed_findings(
         &local_manifest.signed.payload.detailed_range,
         &observed_manifest.signed.payload.detailed_range,
         &local_manifest.signed.payload.consensus_epoch,
-        observed_group.digest,
         observed_has_quorum,
         window,
     )
@@ -576,7 +579,6 @@ fn compare_detailed_ranges(
     local: &DetailedRange,
     observed: &DetailedRange,
     local_manifest_epoch: &str,
-    observed_commitment_digest: B256,
     observed_has_quorum: bool,
     window: HistoricalWindow,
 ) -> Result<Vec<DriftHandleFinding>, ExecutionError> {
@@ -588,7 +590,6 @@ fn compare_detailed_ranges(
             block.block_number >= window.first && block.block_number <= window.last
         }),
         local_manifest_epoch,
-        observed_commitment_digest,
         observed_has_quorum,
     )
 }
@@ -597,7 +598,6 @@ fn compare_blocks<'a>(
     local: impl IntoIterator<Item = &'a ManifestBlockEntry>,
     observed: impl IntoIterator<Item = &'a ManifestBlockEntry>,
     local_manifest_epoch: &str,
-    observed_commitment_digest: B256,
     observed_has_quorum: bool,
 ) -> Result<Vec<DriftHandleFinding>, ExecutionError> {
     let observed_blocks = observed
@@ -640,7 +640,6 @@ fn compare_blocks<'a>(
                 handle,
                 local: local_descriptor.cloned(),
                 observed: observed_descriptor.cloned(),
-                observed_commitment_digest,
                 observed_has_quorum,
             });
         }
@@ -749,13 +748,13 @@ async fn upsert_finding(
             local_present, observed_present, local_keyset_id, observed_keyset_id,
             local_ct64_digest, observed_ct64_digest,
             local_ct128_digest, observed_ct128_digest, local_ct128_format,
-            observed_ct128_format, observed_commitment_digest, target_ct64_digest,
+            observed_ct128_format, target_ct64_digest,
             target_keyset_id, target_ct128_digest, target_ct128_format,
             last_observed_task_id, reason
         ) VALUES (
             $1, $2, $3, $4, $5, $6, 'unresolved',
-            $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18,
-            $19, $20, $21, $22, $23
+            $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17,
+            $18, $19, $20, $21, $22
         )
         ON CONFLICT (consensus_epoch, coprocessor_context_id, host_chain_id,
                      block_hash, handle)
@@ -809,10 +808,6 @@ async fn upsert_finding(
                 WHEN drifted_handle.can_be_healed THEN drifted_handle.observed_ct128_format
                 ELSE EXCLUDED.observed_ct128_format
             END,
-            observed_commitment_digest = CASE
-                WHEN drifted_handle.can_be_healed THEN drifted_handle.observed_commitment_digest
-                ELSE EXCLUDED.observed_commitment_digest
-            END,
             target_ct64_digest = COALESCE(drifted_handle.target_ct64_digest, EXCLUDED.target_ct64_digest),
             target_keyset_id = COALESCE(drifted_handle.target_keyset_id, EXCLUDED.target_keyset_id),
             target_ct128_digest = COALESCE(drifted_handle.target_ct128_digest, EXCLUDED.target_ct128_digest),
@@ -832,7 +827,7 @@ async fn upsert_finding(
         local.is_some(), observed.is_some(), local_keyset_id, observed_keyset_id,
         local_ct64_digest, observed_ct64_digest,
         local_ct128_digest, observed_ct128_digest, local_ct128_format,
-        observed_ct128_format, finding.observed_commitment_digest.as_slice(),
+        observed_ct128_format,
         target_ct64_digest, target_keyset_id, target_ct128_digest, target_ct128_format,
         task_id, reason,
     )
@@ -907,7 +902,6 @@ mod reason_tests {
             handle: B256::repeat_byte(handle),
             local: None,
             observed: None,
-            observed_commitment_digest: B256::repeat_byte(if quorum { 1 } else { 2 }),
             observed_has_quorum: quorum,
         }
     }
@@ -930,7 +924,6 @@ mod reason_tests {
             .find(|finding| finding.handle == B256::repeat_byte(1))
             .unwrap();
         assert!(one.observed_has_quorum);
-        assert_eq!(one.observed_commitment_digest, B256::repeat_byte(1));
     }
 
     #[test]
@@ -1051,7 +1044,6 @@ mod reason_tests {
             [&local_block],
             [&observed_block],
             "legacy",
-            B256::repeat_byte(0x11),
             true,
         )
         .expect("compare provenance-mixed blocks");
