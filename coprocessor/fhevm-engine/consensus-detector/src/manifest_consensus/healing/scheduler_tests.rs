@@ -36,7 +36,7 @@ async fn insert_sibling(
         "INSERT INTO drifted_handle (
             consensus_epoch, coprocessor_context_id, host_chain_id,
             block_number, block_hash, handle, detection_kind, reason,
-            local_present, observed_present, target_ct64_digest, peer_sources
+            local_present, quorum_present, quorum_ct64_digest, peer_sources
          ) SELECT consensus_epoch, $1, 1, $2, $3, $4, 'inferred', 'ct64_mismatch',
                   TRUE, FALSE, $5, $6::jsonb
              FROM blue_green_consensus_epoch
@@ -67,7 +67,7 @@ async fn insert_healable_from(
         "INSERT INTO drifted_handle (
             consensus_epoch, coprocessor_context_id, host_chain_id,
             block_number, block_hash, handle, detection_kind, reason,
-            local_present, observed_present, target_ct64_digest, peer_sources
+            local_present, quorum_present, quorum_ct64_digest, peer_sources
          ) SELECT consensus_epoch, $1, 1, $2, $3, $3, 'inferred', 'ct64_mismatch',
                   TRUE, FALSE, $4, $5::jsonb
              FROM blue_green_consensus_epoch
@@ -339,7 +339,7 @@ async fn inferred_without_sources_uses_attestation_quorum() {
     assert_eq!(stored_ct64(&pool, 6).await, body);
     assert_eq!(healed(&pool, id).await, (false, true));
     let pinned: Vec<u8> =
-        sqlx::query_scalar("SELECT target_ct64_digest FROM drifted_handle WHERE id = $1")
+        sqlx::query_scalar("SELECT quorum_ct64_digest FROM drifted_handle WHERE id = $1")
             .bind(id)
             .fetch_one(&pool)
             .await
