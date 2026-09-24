@@ -154,24 +154,13 @@ fn check_leaf(
         LeafProofOutcome::HistoryIncomplete => return Err(HandleBindingFailure::HistoryIncomplete),
     };
 
-    // The record is ahead of this observation.
-    if leaf_index >= live_leaf_count {
-        return Err(HandleBindingFailure::LeafIndexOutOfRange {
+    // A leaf past the observed count means the record is ahead of this observation.
+    let proof = MmrProof::for_leaf_count(leaf_index, siblings, live_leaf_count).ok_or(
+        HandleBindingFailure::LeafIndexOutOfRange {
             leaf_index,
             leaf_count: live_leaf_count,
-        });
-    }
-
-    let proof = MmrProof {
-        leaf_index,
-        // The mountain containing this leaf only grows on append. A proof for a later
-        // tree therefore starts with the path to the observed mountain's peak.
-        siblings: siblings
-            .iter()
-            .take((live_leaf_count ^ leaf_index).ilog2() as usize)
-            .copied()
-            .collect(),
-    };
+        },
+    )?;
     // The only way verification fails is an invalid proof.
     verify(state, &proof).map_err(|_| HandleBindingFailure::ProofDoesNotVerify {
         record_leaf_count,
