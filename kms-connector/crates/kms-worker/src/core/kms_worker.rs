@@ -9,13 +9,9 @@ use crate::{
             CiphertextManager, DbContextManager, DbEventProcessor, DecryptionProcessor,
             EventProcessor, HostChainAclBackend, HostRpcClient, KMSGenerationProcessor, KmsClient,
             ProcessingError, ProcessingErrorKind, ProtocolConfigProcessor,
-            solana_public_decrypt::SolanaHost,
         },
         kms_response_publisher::DbKmsResponsePublisher,
-        solana::{
-            deployment::DeploymentIdentity, proof::HttpHostProofReader,
-            snapshot::RpcHostStateReader,
-        },
+        solana::{SolanaHost, proof::CoprocessorProofClient, snapshot::SolanaRpcClient},
     },
     monitoring::{
         health::{KmsHealthClient, State},
@@ -187,7 +183,7 @@ where
                 ProtocolEventKind::PublicDecryption(_)
                 | ProtocolEventKind::UserDecryption(_)
                 | ProtocolEventKind::UserDecryptionV2(_)
-                | ProtocolEventKind::UserDecryptionV3(_),
+                | ProtocolEventKind::SolanaUserDecryptionV1(_),
             ) if event.error_counter as u16 >= max_decryption_attempts => {
                 error!(
                     "Processing failed with irrecoverable error: {:#}. Maximum number of \
@@ -242,13 +238,13 @@ where
                     )
                     .await
             }
-            ProtocolEventKind::UserDecryptionV3(req) => {
+            ProtocolEventKind::SolanaUserDecryptionV1(req) => {
                 response_publisher
                     .publish_user_decryption_error(
-                        req.decryptionId,
+                        req.decryption_id,
                         error.code,
                         &details,
-                        &req.extraData,
+                        &req.extra_data(),
                         &event.otlp_context,
                     )
                     .await
@@ -303,7 +299,6 @@ impl
             CiphertextManager::connect(gateway_provider.clone(), &config, cancel_token).await?;
         let decryption_processor = DecryptionProcessor::new(
             &config,
-            context_manager.clone(),
             gateway_provider.clone(),
             host_chain_backends,
             ciphertext_manager,
@@ -346,7 +341,7 @@ async fn register_host_chain_backends(
     let mut backends = HashMap::with_capacity(config.host_chains.len());
     // The workspace `reqwest`, not alloy's re-export: alloy now vendors a different major, and
     // the Solana readers are typed against the workspace crate.
-    let solana_client = ::reqwest::Client::builder()
+    let proof_client = ::reqwest::Client::builder()
         .connect_timeout(config.host_rpc_call_timeout)
         .timeout(config.host_rpc_call_timeout)
         .build()?;
@@ -379,13 +374,6 @@ async fn register_host_chain_backends(
                         host_chain.chain_id
                     )
                 })?;
-                let deployment = DeploymentIdentity::resolve(program_id, host_chain.chain_id)
-                    .map_err(|e| {
-                        anyhow!(
-                            "Solana host chain {} has an invalid deployment identity: {e}",
-                            host_chain.chain_id
-                        )
-                    })?;
                 let api_key = host_chain.solana_proof_api_key.clone().ok_or_else(|| {
                     anyhow!(
                         "Solana host chain {} requires solana_proof_api_key",
@@ -393,12 +381,16 @@ async fn register_host_chain_backends(
                     )
                 })?;
                 HostChainAclBackend::Solana(Box::new(SolanaHost {
-                    deployment,
-                    reader: RpcHostStateReader::new(host_chain.url.clone(), solana_client.clone()),
-                    proofs: HttpHostProofReader::new(
+                    program_id,
+                    reader: SolanaRpcClient::new(
+                        host_chain.url.clone(),
+                        config.host_rpc_call_timeout,
+                        config.host_rpc_max_concurrent_calls,
+                    ),
+                    proofs: CoprocessorProofClient::new(
                         &host_chain.solana_proof_endpoints,
                         api_key,
-                        solana_client.clone(),
+                        proof_client.clone(),
                     ),
                 }))
             }
@@ -539,7 +531,7 @@ mod tests {
         ));
         match backends.get(&solana_host_chain_id(2)) {
             Some(HostChainAclBackend::Solana(host)) => {
-                assert_eq!(host.deployment.program_id(), [7; 32])
+                assert_eq!(host.program_id, [7; 32])
             }
             _ => panic!("the Solana host chain should use the Solana backend"),
         }

@@ -2,8 +2,8 @@
 //!
 //! The account is written by the host program's `revoke_permits` instruction, which takes
 //! it as an unchecked account — so its layout reaches no generated interface description,
-//! and the KMS Connector that consumes it reads the raw bytes out of a Solana account
-//! snapshot and decodes fixed offsets by hand. This file and
+//! and the KMS Connector reads the raw bytes out of a Solana account snapshot through
+//! `zama_solana_acl::decode_permit_invalidation`. This file and
 //! `permit_invalidation_account_v1.json` are that contract: the JSON carries the bytes of
 //! one account the program really wrote, together with a table saying where each value
 //! sits inside them, and this file is the Rust half a consumer includes with `#[path]` to

@@ -1,10 +1,11 @@
 // The normative permit vectors, run against this implementation.
 //
 // `solana/test-fixtures/permit/permit_v1.json` is consumed byte-identically by the SDK, the relayer,
-// the Connector, KMS Core and the KMS client. `permit_vectors.rs` beside it is the Rust half of the
-// schema; this file is the TypeScript half. Nothing here generates a vector — regeneration belongs
-// to the crate that owns the canon (`bash solana/scripts/update-permit-vectors.sh`), and a consumer
-// able to regenerate what it checks against would be checking nothing.
+// the Connector (through `zama-solana-permit`), KMS Core and the KMS client. `permit_vectors.rs`
+// beside it is the Rust half of the schema; this file is the TypeScript half. Nothing here
+// generates a vector — regeneration belongs to the crate that owns the canon
+// (`bash solana/scripts/update-permit-vectors.sh`), and a consumer able to regenerate what it
+// checks against would be checking nothing.
 //
 // Rejecting records name the coarse rule that must reject them, which is what `RULE_REJECTION` below
 // exists for: it maps the shared rule names onto this implementation's rejection codes, so "every

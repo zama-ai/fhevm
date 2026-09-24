@@ -1,53 +1,50 @@
-//! Handle binding: a sealed leaf, proven against the account's own peaks.
+//! Handle binding: the leaf that grants a key access to a handle, proven against the peaks of the
+//! observed encrypted store. The coprocessors' leaf record supplies the path; the chain decides.
 //!
-//! Every decrypt permission in an encrypted store is a leaf of the account's MMR — an
-//! `Allowed(key, handle)` leaf for a key, a `Public(handle)` leaf for everyone — and the account
-//! itself holds only the peaks. Binding a handle to a key therefore means: the coprocessors' leaf
-//! record says where the leaf is, and its sibling path hashes up to a peak the connector observed
-//! on chain. The record supplies the path; the chain decides.
-//!
-//! ## Verify first, classify second
-//!
-//! A proof is verified against the observed peaks before its age is looked at. An append merges
-//! only some peaks, so a proof built against an older leaf count very often still verifies — and
-//! when it does it MUST be accepted. Rejecting on age would fail valid proofs after every append.
-//!
-//! Only once the record has *no* proof does its leaf count say anything, and all it says is which
-//! of two things happened: the record has sealed at least as much history as the chain shows and
-//! the leaf is not in it — there is no such permission — or the record is behind and may yet seal
-//! it. The first is terminal, the second is retried.
+//! A proof is verified before its age is considered: an append merges only some peaks, so a proof
+//! built against an older leaf count often still verifies and must be accepted. Only when the
+//! record has no proof does its leaf count matter: a record at least as long as the observed store
+//! holds no grant, a shorter one may still catch up.
 
 use super::encrypted_store::ResolvedEncryptedStore;
-use super::failure::FailureClass;
-use super::proof::{HostProofReader, LeafProofOutcome, ProofBatch, ProofReadError, check_length};
-use crate::core::solana_acl::{HandleBytes, SolanaPubkeyBytes};
+use super::proof::{HostProofReader, LeafProofOutcome, LeafQuery, ProofReadError, check_length};
+use super::{HandleBytes, SolanaPubkeyBytes};
 use zama_solana_acl::{
     AclError, EncryptedStore, MmrProof, authorize_state_historical, authorize_state_public,
 };
 
-/// Verify every peer against the same observation, then retry only unresolved, retryable queries.
-/// A failed refresh cannot erase an earlier result. Counts classify failures, never successes.
+/// Verifies every query's candidates from every peer against the same observation, then asks once
+/// more for the queries that may still succeed. A failed second read never erases a first result.
+/// Results are in batch order.
 pub async fn verify_proofs_with_one_retry<P: HostProofReader, T: Sync>(
     reader: &P,
-    batch: &ProofBatch<T>,
+    batch: &[(LeafQuery, T)],
     verify: impl Fn(&T, &LeafProofOutcome) -> Result<(), HandleBindingFailure>,
 ) -> Result<Vec<Result<(), HandleBindingFailure>>, ProofReadError> {
-    let queries = batch.queries();
-    let candidates = reader.read_proofs(&queries).await?;
+    let queries: Vec<LeafQuery> = batch.iter().map(|(query, _)| *query).collect();
+    let contexts = || batch.iter().map(|(_, context)| context);
+    let response = reader.read_proofs(&queries).await?;
+    let candidates = response.candidates;
+    let mut unavailable = response.unavailable;
     check_length(queries.len(), candidates.len())?;
     let mut results: Vec<_> = candidates
         .iter()
-        .zip(batch.contexts())
+        .zip(contexts())
         .map(|(candidates, context)| {
             verify_candidates(candidates, |candidate| verify(context, candidate))
         })
         .collect();
     let unresolved: Vec<_> = results
         .iter()
-        .zip(batch.contexts())
+        .zip(contexts())
         .enumerate()
         .filter_map(|(position, (result, context))| match result {
-            Err(error) if error.class() == FailureClass::Retryable => Some((position, context)),
+            // A missing leaf is every peer's record agreeing with the observation, so asking the
+            // same records again in this attempt cannot change it.
+            Err(HandleBindingFailure::NoLeaf { .. }) if unavailable.is_none() => None,
+            Err(error) if error.is_recoverable() || unavailable.is_some() => {
+                Some((position, context))
+            }
             _ => None,
         })
         .collect();
@@ -57,13 +54,19 @@ pub async fn verify_proofs_with_one_retry<P: HostProofReader, T: Sync>(
             .map(|&(position, _)| queries[position])
             .collect();
         if let Ok(again) = reader.read_proofs(&queries).await
-            && check_length(queries.len(), again.len()).is_ok()
+            && check_length(queries.len(), again.candidates.len()).is_ok()
         {
-            for ((position, context), candidates) in unresolved.into_iter().zip(again) {
+            unavailable = again.unavailable;
+            for ((position, context), candidates) in unresolved.into_iter().zip(again.candidates) {
                 results[position] =
                     verify_candidates(&candidates, |candidate| verify(context, candidate));
             }
         }
+    }
+    if results.iter().any(Result::is_err)
+        && let Some(error) = unavailable
+    {
+        return Err(error);
     }
     Ok(results)
 }
@@ -72,13 +75,15 @@ fn verify_candidates(
     candidates: &[LeafProofOutcome],
     verify: impl Fn(&LeafProofOutcome) -> Result<(), HandleBindingFailure>,
 ) -> Result<(), HandleBindingFailure> {
-    let mut failure = None;
+    let mut failure: Option<HandleBindingFailure> = None;
     for candidate in candidates {
         match verify(candidate) {
             Ok(()) => return Ok(()),
             Err(error) => {
-                // One peer's absence cannot make another peer's temporary failure terminal.
-                if failure.is_none() || error.class() == FailureClass::Retryable {
+                if failure
+                    .as_ref()
+                    .is_none_or(|kept| precedence(&error) > precedence(kept))
+                {
                     failure = Some(error);
                 }
             }
@@ -87,10 +92,19 @@ fn verify_candidates(
     Err(failure.unwrap_or(HandleBindingFailure::AccountUnknownToProofRecord))
 }
 
-/// Establishes that `allowed_key` may decrypt `handle` under this encrypted store.
-///
-/// Takes the resolved account — never raw account bytes — so the peaks it verifies against are
-/// the validated ones, and the record's answer for exactly this `(account, handle, key)` leaf.
+/// Which peer's failure a query reports. One peer cannot make another's temporary failure
+/// permanent, and a missing leaf yields to any other temporary failure: peers that disagree are
+/// worth a second read, and a missing leaf alone is not.
+fn precedence(failure: &HandleBindingFailure) -> u8 {
+    match failure {
+        _ if !failure.is_recoverable() => 0,
+        HandleBindingFailure::NoLeaf { .. } => 1,
+        _ => 2,
+    }
+}
+
+/// Establishes that `allowed_key` may decrypt `handle` under this encrypted store. Taking the
+/// resolved store means the proof is checked against validated peaks.
 pub fn check_handle_binding(
     encrypted_store: &ResolvedEncryptedStore,
     handle: HandleBytes,
@@ -151,8 +165,7 @@ fn check_leaf(
         LeafProofOutcome::HistoryIncomplete => return Err(HandleBindingFailure::HistoryIncomplete),
     };
 
-    // A position the account does not have is refused before any hashing: there is nothing for
-    // the proof to be a proof of, and the record is ahead of this observation.
+    // The record is ahead of this observation.
     if leaf_index >= live_leaf_count {
         return Err(HandleBindingFailure::LeafIndexOutOfRange {
             leaf_index,
@@ -160,15 +173,6 @@ fn check_leaf(
         });
     }
 
-    if siblings.len() > zama_solana_acl::MAX_MMR_PEAKS {
-        return Err(HandleBindingFailure::ProofDoesNotVerify {
-            record_leaf_count,
-            live_leaf_count,
-        });
-    }
-
-    // Verify first. Age is not a failure — an older proof whose peak survived still verifies,
-    // and it must be accepted. Only a proof that genuinely does not verify is reported.
     let proof = MmrProof {
         leaf_index,
         // The mountain containing this leaf only grows on append. A proof for a later
@@ -179,76 +183,40 @@ fn check_leaf(
             .copied()
             .collect(),
     };
-    verify(state, &proof).map_err(|error| match error {
-        AclError::HistoricalProofInvalid | AclError::PublicDecryptProofInvalid => {
-            HandleBindingFailure::ProofDoesNotVerify {
-                record_leaf_count,
-                live_leaf_count,
-            }
-        }
-        AclError::MmrInconsistent | AclError::MmrPeakCapacityExceeded => {
-            HandleBindingFailure::MmrStateInconsistent
-        }
-        // Decoding outcomes cannot arise from proof verification. Enumerated rather than caught,
-        // so a new outcome breaks the build.
-        AclError::BadDiscriminator | AclError::BadAccountData => {
-            HandleBindingFailure::MmrStateInconsistent
-        }
+    // The only way verification fails is an invalid proof.
+    verify(state, &proof).map_err(|_| HandleBindingFailure::ProofDoesNotVerify {
+        record_leaf_count,
+        live_leaf_count,
     })
 }
 
-/// Why a handle was not bound.
+/// `record_leaf_count` is what the coprocessors' leaf record had sealed; `live_leaf_count` is what
+/// the observed account shows.
 #[derive(Clone, PartialEq, Eq, Debug, thiserror::Error)]
 pub enum HandleBindingFailure {
-    /// The record has sealed at least as much history as the chain shows, and no such leaf is in
-    /// it: the permission was never granted.
-    #[error(
-        "no leaf for this key and handle in a record of {record_leaf_count} leaves against \
-         {live_leaf_count} on chain"
-    )]
+    /// The record has sealed at least the observed history, and no grant is in it.
+    #[error("no leaf for this key and handle in {record_leaf_count} of {live_leaf_count} leaves")]
     NoLeaf {
-        /// How many leaves the record had sealed.
         record_leaf_count: u64,
-        /// How many the account shows.
         live_leaf_count: u64,
     },
-    /// The record has sealed less history than the chain shows and has no such leaf yet.
-    #[error(
-        "the leaf record is behind the chain ({record_leaf_count} leaves against \
-         {live_leaf_count}) and has no such leaf yet"
-    )]
+    #[error("leaf record is behind the chain ({record_leaf_count} of {live_leaf_count} leaves)")]
     ProofRecordBehind {
-        /// How many leaves the record had sealed.
         record_leaf_count: u64,
-        /// How many the account shows.
         live_leaf_count: u64,
     },
-    /// The record has never seen this account, which exists on chain.
     #[error("the leaf record does not know this encrypted store")]
     AccountUnknownToProofRecord,
-    /// The record's history for this account has a gap it cannot close.
     #[error("the leaf record's history for this encrypted store is incomplete")]
     HistoryIncomplete,
-    /// The proof did not verify against the observed peaks.
     #[error(
         "leaf proof does not verify against the observed peaks (record {record_leaf_count} \
          leaves, chain {live_leaf_count})"
     )]
     ProofDoesNotVerify {
-        /// How many leaves the record had sealed when it built the proof.
         record_leaf_count: u64,
-        /// How many the account shows.
         live_leaf_count: u64,
     },
-    /// The proof names a leaf position the account does not have.
     #[error("leaf index {leaf_index} is not below the observed leaf count {leaf_count}")]
-    LeafIndexOutOfRange {
-        /// The position the proof claims.
-        leaf_index: u64,
-        /// The observed count.
-        leaf_count: u64,
-    },
-    /// The account's own MMR state is internally inconsistent, which no retry can repair.
-    #[error("encrypted store MMR history is internally inconsistent")]
-    MmrStateInconsistent,
+    LeafIndexOutOfRange { leaf_index: u64, leaf_count: u64 },
 }

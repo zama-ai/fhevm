@@ -1,10 +1,12 @@
 mod common;
 
 use crate::common::{mock_event_on_gw, poll_db_for_event, start_test_listener};
-use alloy::primitives::U256;
+use alloy::primitives::{B256, U256};
 use connector_utils::{
-    tests::{db::requests::TestEventType, setup::TestInstanceBuilder},
-    types::KMS_CONTEXT_COUNTER_BASE,
+    tests::{
+        db::requests::TestEventType, rand::solana_user_decryption_event, setup::TestInstanceBuilder,
+    },
+    types::{KMS_CONTEXT_COUNTER_BASE, ProtocolEventKind},
 };
 use gw_listener::core::publish_context_and_epoch;
 use rstest::rstest;
@@ -37,6 +39,38 @@ async fn test_publish_event(#[case] event_type: TestEventType) -> anyhow::Result
     let (expected_event, _) = mock_event_on_gw(&test_instance, event_type).await?;
     poll_db_for_event(test_instance.db(), event_type, &expected_event).await?;
     info!("Event successfully stored! Stopping GatewayListener...");
+
+    cancel_token.cancel();
+    Ok(gw_listener_task?.await?)
+}
+
+/// The listener stores the request a Solana event carries, with the Gateway's cleartext fields,
+/// and the worker's reader rebuilds the same typed request from the row.
+#[rstest]
+#[timeout(Duration::from_secs(60))]
+#[tokio::test]
+async fn a_solana_user_decryption_event_is_stored_as_its_request() -> anyhow::Result<()> {
+    let mut test_instance = TestInstanceBuilder::db_bc_setup().await?;
+    let cancel_token = CancellationToken::new();
+    let gw_listener_task =
+        start_test_listener(&mut test_instance, cancel_token.clone(), None).await;
+
+    let event = solana_user_decryption_event(U256::ZERO, B256::ZERO);
+    test_instance
+        .decryption_contract()
+        .userDecryptionRequest_0(
+            event.ctHandles.clone(),
+            event.requestValidity.clone(),
+            event.publicKey.clone(),
+            event.extraData.clone(),
+            event.solanaRequest.clone(),
+        )
+        .send()
+        .await?
+        .get_receipt()
+        .await?;
+    let expected = ProtocolEventKind::SolanaUserDecryptionV1(event.try_into()?);
+    poll_db_for_event(test_instance.db(), TestEventType::UserDecryption, &expected).await?;
 
     cancel_token.cancel();
     Ok(gw_listener_task?.await?)

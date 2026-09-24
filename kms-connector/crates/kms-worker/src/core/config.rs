@@ -1,4 +1,4 @@
-use crate::core::solana_acl::SolanaPubkeyBytes;
+use crate::core::solana::SolanaPubkeyBytes;
 use alloy::{primitives::Address, transports::http::reqwest::Url};
 use ciphertext_attestation::MAX_SNS_CIPHERTEXT_SERIALIZED_SIZE;
 use connector_utils::{
@@ -131,7 +131,6 @@ pub struct Config {
 pub const EVM_CHAIN_TYPE: u8 = 0x00;
 pub const SOLANA_CHAIN_TYPE: u8 = 0x01;
 const CHAIN_TYPE_SHIFT: u32 = 56;
-pub const CLUSTER_TAG_MASK: u64 = 0x00ff_ffff_ffff_ffff;
 
 pub const fn chain_type_byte(chain_id: u64) -> u8 {
     (chain_id >> CHAIN_TYPE_SHIFT) as u8
@@ -145,8 +144,9 @@ pub const fn is_solana_host_chain_id(chain_id: u64) -> bool {
     chain_type_byte(chain_id) == SOLANA_CHAIN_TYPE
 }
 
+#[cfg(test)]
 pub const fn solana_host_chain_id(cluster_tag: u64) -> u64 {
-    ((SOLANA_CHAIN_TYPE as u64) << CHAIN_TYPE_SHIFT) | (cluster_tag & CLUSTER_TAG_MASK)
+    ((SOLANA_CHAIN_TYPE as u64) << CHAIN_TYPE_SHIFT) | (cluster_tag & 0x00ff_ffff_ffff_ffff)
 }
 
 /// Supported host-chain ACL backends.
