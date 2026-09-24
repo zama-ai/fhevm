@@ -22,6 +22,8 @@ echo "HOSTALIASES=$HOSTALIASES ($(cat "${HOSTALIASES_FILE}"))"
 
 # --my-bucket / --s3-endpoint mirror the docker-compose consensus-detector so the
 # state_hash worker can upload to minio from the host (path-style, host endpoint).
+# Naming a bucket turns publication on, and the default signer is private-key,
+# which refuses to start without --private-key. Same key as the compose service.
 # AWS_* creds + region come from ../.env-test.
 # Version overrides for a fleet that joins a running stack: consensus decides the
 # role, and the release has to move too or the cutover is refused. Each is off
@@ -40,6 +42,8 @@ cargo run --release $VERSION_OVERRIDE -- \
 --gateway-config-address=${GATEWAY_CONFIG_ADDRESS} \
 --my-bucket=${BUCKET_NAME:-coproc-0} \
 --s3-endpoint=http://localhost:9000 \
+--signer-type=private-key \
+--private-key="${TX_SENDER_PRIVATE_KEY}" \
 --manifest-publication-cadence=31337:1 \
 --manifest-publication-cadence=${CHAIN_ID:-12345}:1 \
 --commitment-poll-interval=5s \
