@@ -129,17 +129,31 @@ mod helpers {
         envelope
     }
 
-    /// Build a valid `solana-srfc38-user-decrypt-v1` envelope, signed for real.
+    /// Build a valid `solana-srfc38-user-decrypt-v1` envelope, signed for real by the wallet the
+    /// permit names.
+    pub fn create_srfc38_envelope() -> serde_json::Value {
+        create_srfc38_envelope_signed_by(&srfc38_wallet())
+    }
+
+    /// The wallet whose pubkey the sRFC-38 fixture permit names.
+    pub fn srfc38_wallet() -> ed25519_dalek::SigningKey {
+        ed25519_dalek::SigningKey::from_bytes(&[0x42; 32])
+    }
+
+    /// Build a `solana-srfc38-user-decrypt-v1` envelope for the fixture permit, signed by
+    /// `signer`: the permit's own wallet for a valid request, any other wallet for a forged one.
     ///
     /// The relayer verifies the ed25519 signature before it submits anything, so a random blob
-    /// is not an envelope this endpoint accepts: the wallet key and the signature over the
-    /// reconstructed permit envelope are both genuine. The handle uses `random_handle()` so its
-    /// embedded chain id is a configured host chain and the request survives the early chain-id
-    /// gate; the permit fields are shaped to pass the strict typed pre-check
-    /// (`PermitFields::decode`): a 32-byte identity, an 869-byte transport key, a validity
-    /// window covering now, and a 65-byte `0x02` KMS-routing `extraData`.
-    pub fn create_srfc38_envelope() -> serde_json::Value {
-        use ed25519_dalek::{Signer, SigningKey};
+    /// is not an envelope this endpoint accepts: the signature over the reconstructed permit
+    /// envelope is genuine. The handle uses `random_handle()` so its embedded chain id is a
+    /// configured host chain and the request survives the early chain-id gate; the permit fields
+    /// are shaped to pass the strict typed pre-check (`PermitFields::decode`): a 32-byte
+    /// identity, an 869-byte transport key, a validity window covering now, and a 65-byte `0x02`
+    /// KMS-routing `extraData`.
+    pub fn create_srfc38_envelope_signed_by(
+        signer: &ed25519_dalek::SigningKey,
+    ) -> serde_json::Value {
+        use ed25519_dalek::Signer;
         use zama_solana_permit::{build_envelope, PermitFields, PermitWireFields};
 
         let now = SystemTime::now()
@@ -147,8 +161,7 @@ mod helpers {
             .unwrap()
             .as_secs();
 
-        let wallet = SigningKey::from_bytes(&[0x42; 32]);
-        let user_pubkey = wallet.verifying_key().to_bytes();
+        let user_pubkey = srfc38_wallet().verifying_key().to_bytes();
         let transport_key = vec![0u8; 869];
         let allowed_scope = [[0x05u8; 32], [0x06u8; 32]].concat();
         let verifying_program_id = [0x02u8; 32];
@@ -169,7 +182,7 @@ mod helpers {
             extra_data: extra_data.clone(),
         })
         .expect("the fixture permit passes the typed pre-check");
-        let signature = wallet.sign(&build_envelope(&permit)).to_bytes();
+        let signature = signer.sign(&build_envelope(&permit)).to_bytes();
 
         json!({
             "attestationType": "solana-srfc38-user-decrypt-v1",
@@ -228,8 +241,9 @@ async fn v3_accepts_direct_handle() {
 }
 
 /// v3 accepts a host-generic Solana sRFC-38 request end to end: parsed, dispatched to the Solana
-/// envelope by attestation type, permit pre-checked, canonical host payload built, and enqueued
-/// (202). The ed25519 signature is not verified here — that is the connector's job.
+/// envelope by attestation type, permit form checked at conversion, canonical host payload built,
+/// ed25519 signature verified by the pre-check stage, and enqueued (202). Each KMS connector
+/// verifies the signature again, authoritatively.
 #[tokio::test]
 async fn v3_accepts_solana_srfc38_request() {
     let setup = TestSetup::new().await.expect("Failed to create test setup");
@@ -378,6 +392,48 @@ async fn v3_rejects_invalid_signature() {
         .expect("POST failed");
 
     assert_eq!(response.status(), reqwest::StatusCode::BAD_REQUEST);
+    setup.shutdown().await;
+}
+
+/// v3 rejects a Solana permit whose signature is another wallet's. The envelope is well formed in
+/// every typed respect and the signature is a genuine ed25519 signature over the very same
+/// envelope — just not the named user's — so nothing before the signature pre-check can refuse
+/// it. Answered as the EVM arm answers a bad signature: 400 on the `signature` field, never
+/// forwarded.
+#[tokio::test]
+async fn v3_rejects_solana_signature_from_another_wallet() {
+    let setup = TestSetup::new().await.expect("Failed to create test setup");
+    let stranger = ed25519_dalek::SigningKey::from_bytes(&[0x99; 32]);
+
+    test_endpoint(
+        &helpers::v3_user_decrypt_post_url(&setup),
+        helpers::create_srfc38_envelope_signed_by(&stranger),
+        |_: &mut serde_json::Value| {},
+        expect_v2_validation_error("signature", "Signature is invalid"),
+    )
+    .await;
+
+    setup.shutdown().await;
+}
+
+/// v3 answers a malformed Solana permit as the caller's mistake, not its own. A 31-byte
+/// `encryptedStore` is a hex string to the validator and is refused only by the typed decode at
+/// conversion; the answer is the same field-keyed 400 a validator refusal gets, not a 500.
+#[tokio::test]
+async fn v3_rejects_solana_entry_of_the_wrong_width_as_a_client_error() {
+    let setup = TestSetup::new().await.expect("Failed to create test setup");
+
+    test_endpoint(
+        &helpers::v3_user_decrypt_post_url(&setup),
+        helpers::create_srfc38_envelope(),
+        |p: &mut serde_json::Value| {
+            p["attestedPayload"]["handles"][0]["encryptedStore"] =
+                json!(helpers::random_0x_hex(31));
+        },
+        expect_v2_validation_error("handles[0].encryptedStore", "expected 32"),
+    )
+    .await;
+
     setup.shutdown().await;
 }
 
