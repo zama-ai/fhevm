@@ -32,7 +32,11 @@ pub fn delegate_for_user_decryption(
     expiration_slot: u64,
 ) -> Result<()> {
     assert_no_remaining_accounts(ctx.remaining_accounts)?;
-    assert_not_paused(&ctx.accounts.host_config)?;
+    assert_not_paused(
+        &ctx.accounts.host_config,
+        |paused| paused.acl_writes,
+        ZamaHostError::AclWritesPaused,
+    )?;
     let clock = Clock::get()?;
     let delegator = ctx.accounts.delegator.key();
     // A wallet's signature reaches every CPI of the transaction it signed, so any program the

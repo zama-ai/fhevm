@@ -29,7 +29,11 @@ pub fn create_encrypted_store(
     ctx: Context<CreateEncryptedStore>,
     args: CreateEncryptedStoreArgs,
 ) -> Result<()> {
-    assert_not_paused(&ctx.accounts.host_config)?;
+    assert_not_paused(
+        &ctx.accounts.host_config,
+        |paused| paused.acl_writes,
+        ZamaHostError::AclWritesPaused,
+    )?;
     assert_no_remaining_accounts(ctx.remaining_accounts)?;
     let authority = ctx.accounts.authority.key();
     let seeds: Vec<&[u8]> = args.authority_seeds.iter().map(Vec::as_slice).collect();

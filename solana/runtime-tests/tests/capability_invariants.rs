@@ -1,16 +1,19 @@
 //! Capability invariants of `zama-host`, checked over random instruction sequences against the
 //! shipped artifact.
 //!
-//! - **H1** (INVARIANTS #35): a trust root changes only in a transaction the admin signed. The
-//!   trust roots are `HostConfig` (admin, coprocessor signers, EIP-712 domain, pause, deny-list
-//!   switch, HCU limits), every KMS context, and the deny and HCU trust records. A `HostConfig`
-//!   change also stamps the current slot and emits an event CPI.
+//! - **H1** (INVARIANTS #35, #36): a trust root changes only in a transaction the admin signed.
+//!   The trust roots are `HostConfig` (admin, coprocessor signers, EIP-712 domain, pause flags,
+//!   deny-list switch, HCU limits), every KMS context, the deny and HCU trust records, and the
+//!   pauser records. The one exception is a pause: a key whose pauser record was enabled may set
+//!   pause flags and nothing else. A `HostConfig` change also stamps the current slot and emits an
+//!   event CPI.
 //! - **H2** (INVARIANTS #11): a Store changes only in a transaction its authority signed.
 //!
 //! The oracles compare raw account bytes before and after each transaction against the
 //! transaction's signer flags. They find the guarded accounts by discriminator among every
 //! host-owned account, and fail on a host account type nobody classified. They read program
-//! layouts only for a Store's authority and `HostConfig.updated_slot`. The only state they carry
+//! layouts only for a Store's authority, a pauser record's grant, and `HostConfig`'s pause flags
+//! and `updated_slot`. The only state they carry
 //! is who the admin is, which moves when a `set_admin` succeeds. Every instruction of the host
 //! IDL has a generator, and every admin and Store-authority role is also filled by keys that lack
 //! it, signing or not.
@@ -21,7 +24,7 @@ use std::collections::{BTreeMap, BTreeSet, HashMap};
 use std::sync::OnceLock;
 
 use anchor_lang::prelude::system_program;
-use anchor_lang::{AccountDeserialize, Discriminator, InstructionData};
+use anchor_lang::{AccountDeserialize, AccountSerialize, Discriminator, InstructionData};
 use proptest::prelude::*;
 use proptest::strategy::ValueTree;
 use proptest::test_runner::{Config, TestRunner};
@@ -31,8 +34,9 @@ use zama_host::{self as host, AppScope, FheExecuteArgs, FheExecuteStep};
 use zama_solana_test_kit::{
     anchor_ix, canonical_test_context_id, empty_system_account, encrypted_store_account,
     event_authority, funded_system_account, host_config_account, host_svm, kms_context_account,
-    label, new_encrypted_store, program_data_account, readonly, readonly_signer,
-    system_program_account, transaction::fhe_transaction, writable, Ctx, HostConfigParams,
+    label, new_encrypted_store, pauser_record_account, program_data_account, readonly,
+    readonly_signer, system_program_account, transaction::fhe_transaction, writable, Ctx,
+    HostConfigParams,
 };
 
 mod host_fixtures;
@@ -45,6 +49,8 @@ const STORES: usize = AUTHORITIES * SCOPES;
 const PROGRAMS: usize = 2;
 const APPS: usize = PROGRAMS * SCOPES;
 const KMS_CONTEXTS: usize = 3;
+/// The wallet whose pauser record exists at genesis; `Key::Holder` for `pause`.
+const GENESIS_PAUSER: usize = 1;
 
 /// Which key fills a role account. `Holder` is the key that holds the role: the admin for admin
 /// instructions, the Store's authority for Store instructions.
@@ -81,9 +87,19 @@ enum Action {
         new_admin: Key,
         cosign: bool,
     },
-    SetHostPause {
+    Pause {
+        pauser: Role,
+        areas: host::PauseFlags,
+    },
+    Unpause {
         admin: Role,
-        paused: bool,
+        areas: host::PauseFlags,
+    },
+    SetPauser {
+        payer: usize,
+        admin: Role,
+        pauser: usize,
+        enabled: bool,
     },
     SetGrantDenyListEnabled {
         admin: Role,
@@ -174,7 +190,9 @@ impl Action {
         match self {
             Action::InitializeHostConfig { .. } => "initialize_host_config",
             Action::SetAdmin { .. } => "set_admin",
-            Action::SetHostPause { .. } => "set_host_pause",
+            Action::Pause { .. } => "pause",
+            Action::Unpause { .. } => "unpause",
+            Action::SetPauser { .. } => "set_pauser",
             Action::SetGrantDenyListEnabled { .. } => "set_grant_deny_list_enabled",
             Action::SetEip712Domain { .. } => "set_eip712_domain",
             Action::SetCoprocessorSigners { .. } => "set_coprocessor_signers",
@@ -216,6 +234,17 @@ fn hcu_limit() -> impl Strategy<Value = u64> {
     prop_oneof![3 => Just(u64::MAX), 1 => Just(5_000_000u64), 1 => Just(0u64)]
 }
 
+fn areas() -> impl Strategy<Value = host::PauseFlags> {
+    any::<[bool; 4]>().prop_map(|[execution, verified_inputs, acl_writes, public_decrypt]| {
+        host::PauseFlags {
+            execution,
+            verified_inputs,
+            acl_writes,
+            public_decrypt,
+        }
+    })
+}
+
 fn wallet() -> impl Strategy<Value = usize> {
     0..WALLETS
 }
@@ -233,7 +262,10 @@ fn action() -> impl Strategy<Value = Action> {
         1 => (wallet(), role()).prop_map(|(payer, admin)| Action::InitializeHostConfig { payer, admin }),
         2 => (role(), key(), any::<bool>())
             .prop_map(|(admin, new_admin, cosign)| Action::SetAdmin { admin, new_admin, cosign }),
-        2 => (role(), any::<bool>()).prop_map(|(admin, paused)| Action::SetHostPause { admin, paused }),
+        2 => (role(), areas()).prop_map(|(pauser, areas)| Action::Pause { pauser, areas }),
+        2 => (role(), areas()).prop_map(|(admin, areas)| Action::Unpause { admin, areas }),
+        1 => (wallet(), role(), wallet(), any::<bool>())
+            .prop_map(|(payer, admin, pauser, enabled)| Action::SetPauser { payer, admin, pauser, enabled }),
         2 => (role(), any::<bool>())
             .prop_map(|(admin, enabled)| Action::SetGrantDenyListEnabled { admin, enabled }),
         1 => (role(), 1..4u64)
@@ -298,12 +330,13 @@ fn idl_discriminators() -> &'static HashMap<String, Vec<u8>> {
     })
 }
 
-/// Host account types only the admin may change (H1).
-const TRUST_ROOTS: [&[u8]; 4] = [
+/// Host account types only the admin may change (H1), except that a pauser sets pause flags.
+const TRUST_ROOTS: [&[u8]; 5] = [
     host::HostConfig::DISCRIMINATOR,
     host::KmsContext::DISCRIMINATOR,
     host::DenyScopeRecord::DISCRIMINATOR,
     host::HcuTrustedAppRecord::DISCRIMINATOR,
+    host::PauserRecord::DISCRIMINATOR,
 ];
 
 /// Host account types outside H1 and H2: transaction scratch, per-app counters that any
@@ -354,7 +387,7 @@ fn changed<'a>(before: &'a Snapshot, after: &'a Snapshot) -> Vec<(Pubkey, Vec<&'
 
 /// The deployment the sequences run against: one host config, a current and a rotated-out KMS
 /// context, Stores of three authorities across two programs, and four wallets. Wallet 0 is the
-/// first admin and the upgrade authority.
+/// first admin and the upgrade authority; wallet 1 is the first pauser.
 struct World {
     context: Ctx,
     admin: Pubkey,
@@ -405,6 +438,7 @@ impl World {
             kms_context_account(kms_context_id(0), vec![[0x33; 20]], 1),
             kms_context_account(kms_context_id(1), vec![[0x34; 20]], 1),
             program_data_account(Some(admin)),
+            pauser_record_account(wallets[GENESIS_PAUSER], true),
             (system_program::ID, system_program_account()),
             (event_authority(host::id()), Account::default()),
         ]);
@@ -592,10 +626,53 @@ impl World {
                 }
                 unsign(ix, admin, signs)
             }
-            Action::SetHostPause { admin, paused } => host_admin(
+            Action::Pause {
+                pauser: role,
+                areas,
+            } => {
+                let pauser = self.key(role.key, self.wallets[GENESIS_PAUSER]);
+                let ix = anchor_ix(
+                    host::id(),
+                    host::accounts::Pause {
+                        pauser,
+                        pauser_record: host::pauser_address(pauser).0,
+                        host_config,
+                        event_authority: event_authority(host::id()),
+                        program: host::id(),
+                    },
+                    host::instruction::Pause { areas: *areas },
+                );
+                unsign(ix, pauser, role.signs)
+            }
+            Action::Unpause { admin, areas } => {
+                host_admin(admin, host::instruction::Unpause { areas: *areas }.data())
+            }
+            Action::SetPauser {
+                payer,
                 admin,
-                host::instruction::SetHostPause { paused: *paused }.data(),
-            ),
+                pauser,
+                enabled,
+            } => {
+                let (admin, signs) = admin_role(admin);
+                let pauser = self.wallets[*pauser];
+                let ix = anchor_ix(
+                    host::id(),
+                    host::accounts::SetPauser {
+                        payer: self.wallets[*payer],
+                        admin,
+                        host_config,
+                        pauser_record: host::pauser_address(pauser).0,
+                        system_program: system_program::ID,
+                        event_authority: event_authority(host::id()),
+                        program: host::id(),
+                    },
+                    host::instruction::SetPauser {
+                        pauser,
+                        enabled: *enabled,
+                    },
+                );
+                unsign(ix, admin, signs)
+            }
             Action::SetGrantDenyListEnabled { admin, enabled } => host_admin(
                 admin,
                 host::instruction::SetGrantDenyListEnabled { enabled: *enabled }.data(),
@@ -1003,7 +1080,8 @@ impl World {
         let mut config_changed = false;
         for (root, versions) in changed(&before.trust_roots, &after.trust_roots) {
             prop_assert!(
-                signers.contains(&self.admin),
+                signers.contains(&self.admin)
+                    || pauser_added_flags(&before, &after, &root, &signers),
                 "H1: {action:?} changed trust root {root} without the admin {} signing",
                 self.admin
             );
@@ -1051,6 +1129,41 @@ impl World {
         }
         Ok(result.raw_result.is_ok())
     }
+}
+
+/// Whether the only change to `root` is a signer with an enabled pauser record adding pause
+/// flags to the config, the one trust-root change the admin need not sign.
+fn pauser_added_flags(
+    before: &HostAccounts,
+    after: &HostAccounts,
+    root: &Pubkey,
+    signers: &BTreeSet<Pubkey>,
+) -> bool {
+    let decode = |accounts: &HostAccounts| {
+        let data = accounts.trust_roots.get(root)?;
+        host::HostConfig::try_deserialize(&mut data.as_slice()).ok()
+    };
+    let (Some(old), Some(mut new)) = (decode(before), decode(after)) else {
+        return false;
+    };
+    let only_adds = new.paused == old.paused.with(new.paused);
+    new.paused = old.paused;
+    new.updated_slot = old.updated_slot;
+    let serialize = |config: &host::HostConfig| {
+        let mut data = Vec::new();
+        config
+            .try_serialize(&mut data)
+            .expect("HostConfig serializes");
+        data
+    };
+    let enabled_pauser = signers.iter().any(|signer| {
+        before
+            .trust_roots
+            .get(&host::pauser_address(*signer).0)
+            .and_then(|data| host::PauserRecord::try_deserialize(&mut data.as_slice()).ok())
+            .is_some_and(|record| record.enabled)
+    });
+    only_adds && serialize(&new) == serialize(&old) && enabled_pauser
 }
 
 fn config() -> Config {

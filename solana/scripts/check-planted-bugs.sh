@@ -6,7 +6,7 @@
 #
 # Each patch in runtime-tests/planted-bugs/ removes one authorization check from zama-host and
 # starts with an `Expect:` line naming the invariant and action it must fail on, such as
-# `Expect: H1: SetHostPause`. For each, this applies the patch, rebuilds the default artifact and
+# `Expect: H1: Unpause`. For each, this applies the patch, rebuilds the default artifact and
 # requires `capability_invariants` to fail with that message. On exit it reverts the patch and
 # rebuilds the unpatched artifact.
 set -euo pipefail

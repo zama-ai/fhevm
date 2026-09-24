@@ -3612,19 +3612,40 @@ fn mollusk_two_sequential_burns_each_redeemable_exactly_once() {
     assert_eq!(read_spl_amount(&context, fixture.destination_usdc), 500);
 }
 
-/// The same host config account with `paused = true`.
-fn paused_host_config(account: &Account) -> Account {
+const EXECUTION: host::PauseFlags = host::PauseFlags {
+    execution: true,
+    verified_inputs: false,
+    acl_writes: false,
+    public_decrypt: false,
+};
+
+const VERIFIED_INPUTS: host::PauseFlags = host::PauseFlags {
+    execution: false,
+    verified_inputs: true,
+    acl_writes: false,
+    public_decrypt: false,
+};
+
+const PUBLIC_DECRYPT: host::PauseFlags = host::PauseFlags {
+    execution: false,
+    verified_inputs: false,
+    acl_writes: false,
+    public_decrypt: true,
+};
+
+/// The same host config account with the areas `areas` names paused.
+fn paused_host_config(account: &Account, areas: host::PauseFlags) -> Account {
     let mut config = host::HostConfig::try_deserialize(&mut account.data.as_slice())
         .expect("host config deserializes");
-    config.paused = true;
+    config.paused = areas;
     Account {
         data: serialized_account(config),
         ..account.clone()
     }
 }
 
-/// A paused host config rejects the redeem at the pause gate (`assert_host_config_allows_token_response`)
-/// before any vault movement, with `RequestWitnessUnavailable`.
+/// With public decryption paused, the host's certificate check refuses the redeem before any vault
+/// movement.
 #[test]
 fn mollusk_redeem_rejected_when_host_paused() {
     let fixture = BurnRedeemFixture::new();
@@ -3633,7 +3654,7 @@ fn mollusk_redeem_rejected_when_host_paused() {
 
     let mut accounts = fixture.accounts(1_000);
     seed_single_burn_value_account(&fixture, &mut accounts, first_handle);
-    let paused = paused_host_config(&accounts[&fixture.host_config]);
+    let paused = paused_host_config(&accounts[&fixture.host_config], PUBLIC_DECRYPT);
     accounts.insert(fixture.host_config, paused);
     let context = burn_redeem_mollusk().with_context(accounts);
 
@@ -3650,9 +3671,7 @@ fn mollusk_redeem_rejected_when_host_paused() {
             proof,
             pending_burn,
         ),
-        &[token_error(
-            token::ConfidentialTokenError::RequestWitnessUnavailable,
-        )],
+        &[host_error(host::errors::ZamaHostError::PublicDecryptPaused)],
     );
     assert_eq!(read_spl_amount(&context, fixture.vault_usdc), 1_000);
     assert_eq!(read_spl_amount(&context, fixture.destination_usdc), 0);
@@ -3665,7 +3684,7 @@ fn mollusk_burn_and_cancel_are_refused_by_a_paused_host() {
     let fixture = BurnRedeemFixture::new();
     let context = burn_redeem_mollusk().with_context(fixture.accounts(1_000));
     let live = context.account_store.borrow()[&fixture.host_config].clone();
-    let paused = paused_host_config(&live);
+    let paused = paused_host_config(&live, EXECUTION);
 
     context
         .account_store
@@ -3675,7 +3694,7 @@ fn mollusk_burn_and_cancel_are_refused_by_a_paused_host() {
     check_token_instruction(
         &context,
         &confidential_burn_ix(&fixture, fixture.owner_attestation(41), pending_burn),
-        &[host_error(host::errors::ZamaHostError::HostConfigPaused)],
+        &[host_error(host::errors::ZamaHostError::ExecutionPaused)],
     );
 
     context
@@ -3690,7 +3709,27 @@ fn mollusk_burn_and_cancel_are_refused_by_a_paused_host() {
     check_token_instruction(
         &context,
         &cancel_pending_burn_ix(&fixture, pending_burn, None),
-        &[host_error(host::errors::ZamaHostError::HostConfigPaused)],
+        &[host_error(host::errors::ZamaHostError::ExecutionPaused)],
+    );
+}
+
+/// A burn takes its amount as a verified input, so pausing verified inputs stops it.
+#[test]
+fn mollusk_burn_is_refused_while_verified_inputs_are_paused() {
+    let fixture = BurnRedeemFixture::new();
+    let context = burn_redeem_mollusk().with_context(fixture.accounts(1_000));
+    let live = context.account_store.borrow()[&fixture.host_config].clone();
+    context.account_store.borrow_mut().insert(
+        fixture.host_config,
+        paused_host_config(&live, VERIFIED_INPUTS),
+    );
+    let pending_burn = prepare_empty_pending_burn(&context, &fixture);
+    check_token_instruction(
+        &context,
+        &confidential_burn_ix(&fixture, fixture.owner_attestation(41), pending_burn),
+        &[host_error(
+            host::errors::ZamaHostError::VerifiedInputsPaused,
+        )],
     );
 }
 
@@ -4757,7 +4796,7 @@ fn mollusk_disclose_secp_rejected_when_host_paused() {
     );
     let mut accounts = fixture.base();
     accounts.insert(fixture.amount_store, encrypted_store_account(&value));
-    let paused = paused_host_config(&accounts[&fixture.host_config]);
+    let paused = paused_host_config(&accounts[&fixture.host_config], PUBLIC_DECRYPT);
     accounts.insert(fixture.host_config, paused);
     let context = mollusk().with_context(accounts);
 
@@ -4773,9 +4812,7 @@ fn mollusk_disclose_secp_rejected_when_host_paused() {
             extra_data,
             proof,
         ),
-        &[token_error(
-            token::ConfidentialTokenError::RequestWitnessUnavailable,
-        )],
+        &[host_error(host::errors::ZamaHostError::PublicDecryptPaused)],
     );
 }
 

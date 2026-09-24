@@ -57,7 +57,7 @@ pub fn initialize_host_config(
     config.coprocessor_threshold = args.coprocessor_threshold;
     config.decryption_contract = args.decryption_contract;
     config.current_kms_context_id = [0u8; 32];
-    config.paused = false;
+    config.paused = PauseFlags::default();
     config.grant_deny_list_enabled = args.grant_deny_list_enabled;
     // Ship HCU enforcement disabled (u64::MAX = unlimited); an admin enables it post-calibration.
     config.max_hcu_per_tx = u64::MAX;

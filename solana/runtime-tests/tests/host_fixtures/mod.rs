@@ -101,7 +101,7 @@ impl StoreAuthority {
 
 pub fn host_config_account_with_flags(
     admin: Pubkey,
-    paused: bool,
+    paused: host::PauseFlags,
     grant_deny_list_enabled: bool,
 ) -> (Pubkey, Account) {
     zama_solana_test_kit::host_config_account(&HostConfigParams {
@@ -112,7 +112,7 @@ pub fn host_config_account_with_flags(
 }
 
 pub fn host_config_account(admin: Pubkey) -> (Pubkey, Account) {
-    host_config_account_with_flags(admin, false, false)
+    host_config_account_with_flags(admin, host::PauseFlags::default(), false)
 }
 
 pub fn mollusk_execute_context(

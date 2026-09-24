@@ -122,7 +122,7 @@ async function accountFixture() {
     coprocessorThreshold: 1,
     decryptionContract: hexToBytes(signingDomain.verifyingContract),
     currentKmsContextId: contextId,
-    paused: false,
+    paused: { execution: false, verifiedInputs: false, aclWrites: false, publicDecrypt: false },
     grantDenyListEnabled: false,
     maxHcuPerTx: 1n,
     maxHcuDepthPerTx: 1n,

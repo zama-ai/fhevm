@@ -2,7 +2,7 @@
 //! and which one it gets depends on whether an off-chain component has to be able to query it (DD-044).
 //!
 //! - **Emitted, always, through the event CPI** (`crate::event_cpi`). Two groups qualify. The admin and
-//!   config lifecycle — `HostConfig*`, `*KmsContext*`, `DenyScopeUpdated`, `HcuAppTrustUpdated` —
+//!   config lifecycle — `HostConfig*`, `*KmsContext*`, `DenyScopeUpdated`, `HcuAppTrustUpdated`, `PauserUpdated` —
 //!   because an admin change is a protocol-level fact a component must be able to read without
 //!   replaying instruction data to find it. And `FheExecutedEvent`, emitted by every `fhe_execute`:
 //!   the instruction carries what the caller asked for, and the event carries what the host decided
@@ -20,6 +20,8 @@
 //!   is gone; INVARIANTS #27 records the separate fact that nothing off-chain consumes delegation yet.
 
 use anchor_lang::prelude::*;
+
+use crate::state::PauseFlags;
 
 /// One host-derived random seed used by an `fhe_execute` step.
 #[derive(AnchorSerialize, AnchorDeserialize, Clone, Debug, PartialEq, Eq)]
@@ -52,10 +54,10 @@ pub struct HostConfigUpdatedEvent {
     pub version: u8,
     /// Host config PDA.
     pub config: Pubkey,
-    /// Admin signer that performed the update.
-    pub admin: Pubkey,
-    /// Current pause state.
-    pub paused: bool,
+    /// Signer that performed the update: the admin, or a pauser for `pause`.
+    pub signer: Pubkey,
+    /// Host areas currently paused.
+    pub paused: PauseFlags,
     /// Current deny-list gate.
     pub grant_deny_list_enabled: bool,
     /// Current max total HCU per `fhe_execute` execution (`u64::MAX` = unlimited).
@@ -105,6 +107,21 @@ pub struct DenyScopeUpdatedEvent {
     pub scope: [u8; 32],
     /// Whether the application is denied.
     pub denied: bool,
+    /// Slot in which this update was applied.
+    pub updated_slot: u64,
+}
+
+/// Emitted when a pauser record is created or toggled.
+#[event]
+pub struct PauserUpdatedEvent {
+    /// Event schema version.
+    pub version: u8,
+    /// Canonical pauser record PDA.
+    pub pauser_record: Pubkey,
+    /// The key the record grants.
+    pub pauser: Pubkey,
+    /// Whether the key may set pause flags.
+    pub enabled: bool,
     /// Slot in which this update was applied.
     pub updated_slot: u64,
 }

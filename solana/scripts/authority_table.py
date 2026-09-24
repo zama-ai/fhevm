@@ -31,8 +31,8 @@ HOST_SRC = "programs/zama-host/src"
 # that owns them.
 CAPABILITIES = {
     "Governance": {
-        "owns": "`HostConfig`, pause, deny list, HCU limits and trust records",
-        "changed_by": "admin",
+        "owns": "`HostConfig`, pause flags and pauser records, deny list, HCU limits and trust records",
+        "changed_by": "admin; an enabled pauser can also set pause flags",
         "consumers": "none",
     },
     "Trust roots": {
@@ -75,7 +75,12 @@ DECLARATIONS: dict[str, dict[str, Any]] = {
         "capability": "Governance",
         "signers": {"admin": f"{ADMIN}; `new_admin` co-signs unless it is a program-owned PDA"},
     },
-    "set_host_pause": {"capability": "Governance", "signers": {"admin": ADMIN}},
+    "pause": {
+        "capability": "Governance",
+        "signers": {"pauser": "a key with an enabled `PauserRecord`; it can set pause flags, not clear them"},
+    },
+    "unpause": {"capability": "Governance", "signers": {"admin": ADMIN}},
+    "set_pauser": {"capability": "Governance", "signers": {"payer": PAYER, "admin": ADMIN}},
     "set_grant_deny_list_enabled": {"capability": "Governance", "signers": {"admin": ADMIN}},
     "set_deny_scope": {"capability": "Governance", "signers": {"payer": PAYER, "admin": ADMIN}},
     "set_max_hcu_per_tx": {"capability": "Governance", "signers": {"admin": ADMIN}},

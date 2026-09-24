@@ -11,7 +11,7 @@ HostConfig
   PDA("host-config")
   stores chain id, gateway chain id, protocol authorities (admin, coprocessor signer set +
   threshold, decryption contract, input verification contract), current KMS context pointer,
-  pause state, HCU limits (per-tx, per-depth, per-app-per-slot block cap), and the
+  pause flags, HCU limits (per-tx, per-depth, per-app-per-slot block cap), and the
   persistent-grant deny-list policy
 
 EncryptedStore
@@ -31,6 +31,10 @@ DenyScopeRecord
   PDA("deny-scope", program, scope)
   optional deny-list witness for one application when HostConfig enables deny-list checks;
   gates every allow the host would seal for it
+
+PauserRecord
+  PDA("pauser", pauser)
+  admin-managed record letting one key set pause flags; only the admin clears them (DD-058)
 
 HcuBlockMeter / HcuTrustedAppRecord
   PDA("hcu-block-meter", program, scope) / PDA("hcu-trusted", program, scope)

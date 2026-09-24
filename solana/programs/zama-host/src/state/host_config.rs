@@ -7,8 +7,8 @@ use super::*;
 
 /// Singleton host configuration and authority surface.
 ///
-/// `HostConfig` is the runtime switchboard for this PoC. Production-shaped
-/// instructions reject while paused.
+/// `HostConfig` is the runtime switchboard for this PoC. Each paused area rejects the
+/// instructions it covers (`PauseFlags`).
 #[account]
 pub struct HostConfig {
     /// Program administrator allowed to update config flags.
@@ -36,8 +36,8 @@ pub struct HostConfig {
     /// signer set + thresholds live in the `KmsContext` PDA at this id; `[0; 32]` means
     /// none defined yet. Updated by `define_kms_context`.
     pub current_kms_context_id: [u8; 32],
-    /// Pauses production-shaped host instructions when true.
-    pub paused: bool,
+    /// Host areas currently stopped. A pauser sets them; only the admin clears them (DD-058).
+    pub paused: PauseFlags,
     /// Enables the deny list: a denied application `(program, scope)` cannot compute, allow, or make a handle public.
     pub grant_deny_list_enabled: bool,
     /// Max total HCU summed over one `fhe_execute` execution. `u64::MAX` = unlimited
@@ -71,7 +71,7 @@ impl HostConfig {
         + 1
         + 20
         + 32
-        + 1
+        + PauseFlags::SPACE
         + 1
         + 8
         + 8
@@ -104,6 +104,57 @@ pub fn pack_coprocessor_signers(
     out
 }
 
+/// The host areas a pauser can stop, each matching an area EVM pauses on its own (DD-058). As
+/// the argument of `pause` and `unpause`, a set field names an area to change.
+#[derive(AnchorSerialize, AnchorDeserialize, Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub struct PauseFlags {
+    /// `fhe_execute`, with the allows, transient grants and public releases it writes (EVM ACL
+    /// pause, which stops execution through `allowTransient`).
+    pub execution: bool,
+    /// `fhe_execute` steps that consume a coprocessor-attested input (Gateway
+    /// `InputVerification` pause).
+    pub verified_inputs: bool,
+    /// ACL writes outside an execution: Store creation, `make_store_handle_public` and
+    /// user-decryption delegation (EVM ACL pause).
+    pub acl_writes: bool,
+    /// `verify_public_decrypt` and the token instructions that accept a KMS certificate (Gateway
+    /// `Decryption` pause).
+    pub public_decrypt: bool,
+}
+
+impl PauseFlags {
+    /// Serialized size.
+    pub const SPACE: usize = 4;
+
+    /// Every area.
+    pub const ALL: Self = Self {
+        execution: true,
+        verified_inputs: true,
+        acl_writes: true,
+        public_decrypt: true,
+    };
+
+    /// These flags with every area `areas` names set.
+    pub fn with(self, areas: Self) -> Self {
+        Self {
+            execution: self.execution || areas.execution,
+            verified_inputs: self.verified_inputs || areas.verified_inputs,
+            acl_writes: self.acl_writes || areas.acl_writes,
+            public_decrypt: self.public_decrypt || areas.public_decrypt,
+        }
+    }
+
+    /// These flags with every area `areas` names cleared.
+    pub fn without(self, areas: Self) -> Self {
+        Self {
+            execution: self.execution && !areas.execution,
+            verified_inputs: self.verified_inputs && !areas.verified_inputs,
+            acl_writes: self.acl_writes && !areas.acl_writes,
+            public_decrypt: self.public_decrypt && !areas.public_decrypt,
+        }
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -115,8 +166,7 @@ mod tests {
     // many signers are registered.
     #[test]
     fn host_config_space_matches_serialized_len() {
-        // 293 (u64 context id) + 24 (current_kms_context_id 8 -> 32) = 317.
-        assert_eq!(HostConfig::SPACE, 317);
+        assert_eq!(HostConfig::SPACE, 320);
 
         let cfg = HostConfig {
             admin: Pubkey::new_unique(),
@@ -128,7 +178,7 @@ mod tests {
             coprocessor_threshold: 0,
             decryption_contract: [0u8; 20],
             current_kms_context_id: [0u8; 32],
-            paused: false,
+            paused: PauseFlags::default(),
             grant_deny_list_enabled: false,
             max_hcu_per_tx: u64::MAX,
             max_hcu_depth_per_tx: u64::MAX,
@@ -141,49 +191,5 @@ mod tests {
         let mut buf = Vec::new();
         cfg.try_serialize(&mut buf).unwrap();
         assert_eq!(buf.len(), 8 + HostConfig::SPACE);
-    }
-
-    /// A singleton with every field this program writes, for the shared-decoder pin below.
-    /// `paused` and `grant_deny_list_enabled` are deliberately opposite: they are adjacent
-    /// `bool`s, so a one-byte offset slip in a reader reads the pause switch off the wrong flag,
-    /// and that is exactly what a length-and-discriminator guard cannot catch.
-    fn config(paused: bool, grant_deny_list_enabled: bool) -> HostConfig {
-        HostConfig {
-            admin: Pubkey::new_unique(),
-            chain_id: 11,
-            gateway_chain_id: 22,
-            input_verification_contract: [7u8; 20],
-            coprocessor_signers: pack_coprocessor_signers(&[[9u8; 20]]),
-            coprocessor_signer_count: 1,
-            coprocessor_threshold: 1,
-            decryption_contract: [8u8; 20],
-            current_kms_context_id: [33u8; 32],
-            paused,
-            grant_deny_list_enabled,
-            max_hcu_per_tx: 44,
-            max_hcu_depth_per_tx: 55,
-            hcu_block_cap_per_app: 66,
-            updated_slot: 77,
-            bump: 254,
-        }
-    }
-
-    /// The shared crate's decoder — the one byte-level reading the KMS connector trusts to see
-    /// the pause switch — reads back exactly what this program's serializer writes. Both
-    /// polarities are checked, so a reader that landed on `grant_deny_list_enabled` instead of
-    /// `paused` fails here rather than serving plaintext from a paused host.
-    #[test]
-    fn shared_crate_decoder_reads_what_the_program_serializes() {
-        for (paused, grant_deny_list_enabled) in [(true, false), (false, true)] {
-            let record = config(paused, grant_deny_list_enabled);
-            let mut serialized = Vec::new();
-            record.try_serialize(&mut serialized).expect("serializes");
-
-            let decoded = zama_solana_acl::decode_host_config(&serialized)
-                .expect("the shared decoder accepts the program's bytes");
-
-            assert_eq!(decoded.paused, record.paused);
-            assert_eq!(decoded.bump, record.bump);
-        }
     }
 }

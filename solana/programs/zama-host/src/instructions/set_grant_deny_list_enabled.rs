@@ -4,7 +4,7 @@
 use anchor_lang::prelude::*;
 
 use super::common::*;
-use super::set_host_pause::HostAdmin;
+use super::host_admin::HostAdmin;
 
 /// Enables or disables the deny list (`HostConfig::grant_deny_list_enabled`).
 pub fn set_grant_deny_list_enabled(ctx: Context<HostAdmin>, enabled: bool) -> Result<()> {

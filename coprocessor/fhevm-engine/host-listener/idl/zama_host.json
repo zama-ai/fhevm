@@ -748,6 +748,99 @@
       "args": []
     },
     {
+      "name": "pause",
+      "docs": [
+        "Stops the host areas `areas` names (any enabled pauser)."
+      ],
+      "discriminator": [
+        211,
+        22,
+        221,
+        251,
+        74,
+        121,
+        193,
+        47
+      ],
+      "accounts": [
+        {
+          "name": "pauser",
+          "docs": [
+            "A key with an enabled pauser record."
+          ],
+          "signer": true
+        },
+        {
+          "name": "pauser_record",
+          "docs": [
+            "The signer's pauser record."
+          ],
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  112,
+                  97,
+                  117,
+                  115,
+                  101,
+                  114
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "pauser"
+              }
+            ]
+          }
+        },
+        {
+          "name": "host_config",
+          "docs": [
+            "Singleton config PDA."
+          ],
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  104,
+                  111,
+                  115,
+                  116,
+                  45,
+                  99,
+                  111,
+                  110,
+                  102,
+                  105,
+                  103
+                ]
+              }
+            ]
+          }
+        },
+        {
+          "name": "event_authority"
+        },
+        {
+          "name": "program"
+        }
+      ],
+      "args": [
+        {
+          "name": "areas",
+          "type": {
+            "defined": {
+              "name": "PauseFlags"
+            }
+          }
+        }
+      ]
+    },
+    {
       "name": "revoke_delegation_for_user_decryption",
       "discriminator": [
         147,
@@ -1394,67 +1487,6 @@
       ]
     },
     {
-      "name": "set_host_pause",
-      "discriminator": [
-        119,
-        59,
-        41,
-        131,
-        74,
-        58,
-        89,
-        97
-      ],
-      "accounts": [
-        {
-          "name": "admin",
-          "docs": [
-            "Configured host admin."
-          ],
-          "signer": true
-        },
-        {
-          "name": "host_config",
-          "docs": [
-            "Singleton config PDA."
-          ],
-          "writable": true,
-          "pda": {
-            "seeds": [
-              {
-                "kind": "const",
-                "value": [
-                  104,
-                  111,
-                  115,
-                  116,
-                  45,
-                  99,
-                  111,
-                  110,
-                  102,
-                  105,
-                  103
-                ]
-              }
-            ]
-          }
-        },
-        {
-          "name": "event_authority"
-        },
-        {
-          "name": "program"
-        }
-      ],
-      "args": [
-        {
-          "name": "paused",
-          "type": "bool"
-        }
-      ]
-    },
-    {
       "name": "set_max_hcu_depth_per_tx",
       "discriminator": [
         91,
@@ -1573,6 +1605,160 @@
         {
           "name": "value",
           "type": "u64"
+        }
+      ]
+    },
+    {
+      "name": "set_pauser",
+      "docs": [
+        "Grants or withdraws a key's right to pause (admin-only)."
+      ],
+      "discriminator": [
+        22,
+        198,
+        152,
+        61,
+        2,
+        13,
+        145,
+        238
+      ],
+      "accounts": [
+        {
+          "name": "payer",
+          "docs": [
+            "Pays rent if the pauser PDA must be created."
+          ],
+          "writable": true,
+          "signer": true
+        },
+        {
+          "name": "admin",
+          "docs": [
+            "Configured host admin."
+          ],
+          "signer": true
+        },
+        {
+          "name": "host_config",
+          "docs": [
+            "Singleton config PDA."
+          ],
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  104,
+                  111,
+                  115,
+                  116,
+                  45,
+                  99,
+                  111,
+                  110,
+                  102,
+                  105,
+                  103
+                ]
+              }
+            ]
+          }
+        },
+        {
+          "name": "pauser_record",
+          "writable": true
+        },
+        {
+          "name": "system_program",
+          "docs": [
+            "System program used for account creation."
+          ],
+          "address": "11111111111111111111111111111111"
+        },
+        {
+          "name": "event_authority"
+        },
+        {
+          "name": "program"
+        }
+      ],
+      "args": [
+        {
+          "name": "pauser",
+          "type": "pubkey"
+        },
+        {
+          "name": "enabled",
+          "type": "bool"
+        }
+      ]
+    },
+    {
+      "name": "unpause",
+      "docs": [
+        "Resumes the host areas `areas` names (admin-only)."
+      ],
+      "discriminator": [
+        169,
+        144,
+        4,
+        38,
+        10,
+        141,
+        188,
+        255
+      ],
+      "accounts": [
+        {
+          "name": "admin",
+          "docs": [
+            "Configured host admin."
+          ],
+          "signer": true
+        },
+        {
+          "name": "host_config",
+          "docs": [
+            "Singleton config PDA."
+          ],
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  104,
+                  111,
+                  115,
+                  116,
+                  45,
+                  99,
+                  111,
+                  110,
+                  102,
+                  105,
+                  103
+                ]
+              }
+            ]
+          }
+        },
+        {
+          "name": "event_authority"
+        },
+        {
+          "name": "program"
+        }
+      ],
+      "args": [
+        {
+          "name": "areas",
+          "type": {
+            "defined": {
+              "name": "PauseFlags"
+            }
+          }
         }
       ]
     },
@@ -1722,6 +1908,19 @@
       ]
     },
     {
+      "name": "PauserRecord",
+      "discriminator": [
+        191,
+        96,
+        30,
+        174,
+        41,
+        74,
+        132,
+        71
+      ]
+    },
+    {
       "name": "TransientStore",
       "discriminator": [
         16,
@@ -1826,6 +2025,19 @@
         240,
         63
       ]
+    },
+    {
+      "name": "PauserUpdatedEvent",
+      "discriminator": [
+        17,
+        8,
+        177,
+        148,
+        52,
+        170,
+        85,
+        237
+      ]
     }
   ],
   "errors": [
@@ -1836,8 +2048,8 @@
     },
     {
       "code": 6001,
-      "name": "HostConfigPaused",
-      "msg": "host config account is paused"
+      "name": "ExecutionPaused",
+      "msg": "host execution is paused"
     },
     {
       "code": 6002,
@@ -2243,6 +2455,31 @@
       "code": 6082,
       "name": "RandNonceMismatch",
       "msg": "rand nonce account mismatch"
+    },
+    {
+      "code": 6083,
+      "name": "VerifiedInputsPaused",
+      "msg": "verified inputs are paused"
+    },
+    {
+      "code": 6084,
+      "name": "AclWritesPaused",
+      "msg": "ACL writes are paused"
+    },
+    {
+      "code": 6085,
+      "name": "PublicDecryptPaused",
+      "msg": "public-decrypt verification is paused"
+    },
+    {
+      "code": 6086,
+      "name": "NotPauser",
+      "msg": "signer is not an enabled pauser"
+    },
+    {
+      "code": 6087,
+      "name": "PauserRecordMismatch",
+      "msg": "pauser record mismatch"
     }
   ],
   "types": [
@@ -3339,8 +3576,8 @@
       "docs": [
         "Singleton host configuration and authority surface.",
         "",
-        "`HostConfig` is the runtime switchboard for this PoC. Production-shaped",
-        "instructions reject while paused."
+        "`HostConfig` is the runtime switchboard for this PoC. Each paused area rejects the",
+        "instructions it covers (`PauseFlags`)."
       ],
       "type": {
         "kind": "struct",
@@ -3443,9 +3680,13 @@
           {
             "name": "paused",
             "docs": [
-              "Pauses production-shaped host instructions when true."
+              "Host areas currently stopped. A pauser sets them; only the admin clears them (DD-058)."
             ],
-            "type": "bool"
+            "type": {
+              "defined": {
+                "name": "PauseFlags"
+              }
+            }
           },
           {
             "name": "grant_deny_list_enabled",
@@ -3520,18 +3761,22 @@
             "type": "pubkey"
           },
           {
-            "name": "admin",
+            "name": "signer",
             "docs": [
-              "Admin signer that performed the update."
+              "Signer that performed the update: the admin, or a pauser for `pause`."
             ],
             "type": "pubkey"
           },
           {
             "name": "paused",
             "docs": [
-              "Current pause state."
+              "Host areas currently paused."
             ],
-            "type": "bool"
+            "type": {
+              "defined": {
+                "name": "PauseFlags"
+              }
+            }
           },
           {
             "name": "grant_deny_list_enabled",
@@ -3871,6 +4116,129 @@
               "User-decrypt signature threshold."
             ],
             "type": "u8"
+          }
+        ]
+      }
+    },
+    {
+      "name": "PauseFlags",
+      "docs": [
+        "The host areas a pauser can stop, each matching an area EVM pauses on its own (DD-058). As",
+        "the argument of `pause` and `unpause`, a set field names an area to change."
+      ],
+      "type": {
+        "kind": "struct",
+        "fields": [
+          {
+            "name": "execution",
+            "docs": [
+              "`fhe_execute`, with the allows, transient grants and public releases it writes (EVM ACL",
+              "pause, which stops execution through `allowTransient`)."
+            ],
+            "type": "bool"
+          },
+          {
+            "name": "verified_inputs",
+            "docs": [
+              "`fhe_execute` steps that consume a coprocessor-attested input (Gateway",
+              "`InputVerification` pause)."
+            ],
+            "type": "bool"
+          },
+          {
+            "name": "acl_writes",
+            "docs": [
+              "ACL writes outside an execution: Store creation, `make_store_handle_public` and",
+              "user-decryption delegation (EVM ACL pause)."
+            ],
+            "type": "bool"
+          },
+          {
+            "name": "public_decrypt",
+            "docs": [
+              "`verify_public_decrypt` and the token instructions that accept a KMS certificate (Gateway",
+              "`Decryption` pause)."
+            ],
+            "type": "bool"
+          }
+        ]
+      }
+    },
+    {
+      "name": "PauserRecord",
+      "docs": [
+        "Grants one key the right to set pause flags (EVM `PauserSet` membership). The admin creates",
+        "and toggles it with `set_pauser`; only the admin clears a flag (DD-058)."
+      ],
+      "type": {
+        "kind": "struct",
+        "fields": [
+          {
+            "name": "pauser",
+            "docs": [
+              "The key this record grants."
+            ],
+            "type": "pubkey"
+          },
+          {
+            "name": "enabled",
+            "docs": [
+              "Whether `pauser` may currently set pause flags."
+            ],
+            "type": "bool"
+          },
+          {
+            "name": "bump",
+            "docs": [
+              "PDA bump for `PDA(\"pauser\", pauser)`."
+            ],
+            "type": "u8"
+          }
+        ]
+      }
+    },
+    {
+      "name": "PauserUpdatedEvent",
+      "docs": [
+        "Emitted when a pauser record is created or toggled."
+      ],
+      "type": {
+        "kind": "struct",
+        "fields": [
+          {
+            "name": "version",
+            "docs": [
+              "Event schema version."
+            ],
+            "type": "u8"
+          },
+          {
+            "name": "pauser_record",
+            "docs": [
+              "Canonical pauser record PDA."
+            ],
+            "type": "pubkey"
+          },
+          {
+            "name": "pauser",
+            "docs": [
+              "The key the record grants."
+            ],
+            "type": "pubkey"
+          },
+          {
+            "name": "enabled",
+            "docs": [
+              "Whether the key may set pause flags."
+            ],
+            "type": "bool"
+          },
+          {
+            "name": "updated_slot",
+            "docs": [
+              "Slot in which this update was applied."
+            ],
+            "type": "u64"
           }
         ]
       }

@@ -133,12 +133,8 @@ impl App {
     }
 }
 
-fn paused_host_config_account(admin: Pubkey) -> (Pubkey, Account) {
-    host_config_account_with_flags(admin, true, false)
-}
-
 fn deny_enabled_host_config_account(admin: Pubkey) -> (Pubkey, Account) {
-    host_config_account_with_flags(admin, false, true)
+    host_config_account_with_flags(admin, host::PauseFlags::default(), true)
 }
 
 /// The accounts every single-signer execution of `app` runs against.
@@ -1512,52 +1508,59 @@ fn mollusk_fhe_execute_denies_a_write_under_an_additional_authority_into_a_denie
 }
 
 #[test]
-fn mollusk_paused_state_blocks_execution_output_and_public_sealing() {
-    let payer = Pubkey::new_unique();
-    let app = App::new();
-    let (host_config, host_config_account) = paused_host_config_account(payer);
+fn mollusk_each_pause_flag_stops_only_its_area() {
+    use host::errors::ZamaHostError::{AclWritesPaused, ExecutionPaused};
+    let flag = |set: fn(&mut host::PauseFlags)| {
+        let mut flags = host::PauseFlags::default();
+        set(&mut flags);
+        flags
+    };
+    let cases = [
+        (flag(|f| f.execution = true), None, Some(ExecutionPaused)),
+        (flag(|f| f.acl_writes = true), Some(AclWritesPaused), None),
+        (flag(|f| f.verified_inputs = true), None, None),
+        (flag(|f| f.public_decrypt = true), None, None),
+    ];
+    for (paused, seal_error, execute_error) in cases {
+        let payer = Pubkey::new_unique();
+        let app = App::new();
+        let (host_config, host_config_account) =
+            host_config_account_with_flags(payer, paused, false);
 
-    let (address, value) = app.value("pause-seal", handle_for_chain(55, 5));
-    let seal_ix = make_handle_public_ix(
-        payer,
-        app.key(),
-        address,
-        host_config,
-        value.slots[0].key,
-        value.slots[0].handle,
-        value.leaf_count,
-        None,
-    );
-    let accounts = make_public_accounts(
-        payer,
-        &app,
-        address,
-        &value,
-        host_config,
-        host_config_account.clone(),
-    );
-    check_host_instruction(
-        &mollusk(),
-        &seal_ix,
-        &accounts,
-        &[custom_error(host::errors::ZamaHostError::HostConfigPaused)],
-    );
+        let (address, value) = app.value("pause-seal", handle_for_chain(55, 5));
+        let seal_ix = make_handle_public_ix(
+            payer,
+            app.key(),
+            address,
+            host_config,
+            value.slots[0].key,
+            value.slots[0].handle,
+            value.leaf_count,
+            None,
+        );
+        let accounts = make_public_accounts(
+            payer,
+            &app,
+            address,
+            &value,
+            host_config,
+            host_config_account.clone(),
+        );
+        let seal_check = seal_error.map_or_else(Check::success, custom_error);
+        check_host_instruction(&mollusk(), &seal_ix, &accounts, &[seal_check]);
 
-    let (_, execute_ix, accounts) = create_case(
-        payer,
-        &app,
-        host_config,
-        host_config_account,
-        "pause-execution",
-        &[payer],
-        FheExecuteExtras::default(),
-    );
-    check_host_instruction(
-        &mollusk(),
-        &execute_ix,
-        &accounts,
-        &[custom_error(host::errors::ZamaHostError::HostConfigPaused)],
-    );
+        let (_, execute_ix, accounts) = create_case(
+            payer,
+            &app,
+            host_config,
+            host_config_account,
+            "pause-execution",
+            &[payer],
+            FheExecuteExtras::default(),
+        );
+        let execute_check = execute_error.map_or_else(Check::success, custom_error);
+        check_host_instruction(&mollusk(), &execute_ix, &accounts, &[execute_check]);
+    }
 }
 
 // ---------------------------------------------------------------------------
@@ -2880,7 +2883,8 @@ fn mollusk_set_hcu_app_trusted_rejects_remaining_accounts() {
 fn mollusk_set_coprocessor_signers_rotates_the_set_and_threshold() {
     // The admin setter replaces the registered set + threshold in place.
     let admin = Pubkey::new_unique();
-    let (host_config, account) = host_config_account_with_flags(admin, false, false);
+    let (host_config, account) =
+        host_config_account_with_flags(admin, host::PauseFlags::default(), false);
     let context = mollusk_execute_context(admin, vec![(host_config, account)]);
 
     let signers = vec![[0xAAu8; 20], [0xBBu8; 20], [0xCCu8; 20]];
@@ -2899,7 +2903,8 @@ fn mollusk_set_coprocessor_signers_rotates_the_set_and_threshold() {
 fn mollusk_set_coprocessor_signers_rejects_non_admin() {
     let admin = Pubkey::new_unique();
     let intruder = Pubkey::new_unique();
-    let (host_config, account) = host_config_account_with_flags(admin, false, false);
+    let (host_config, account) =
+        host_config_account_with_flags(admin, host::PauseFlags::default(), false);
     let context = mollusk_execute_context(intruder, vec![(host_config, account)]);
 
     check_host_context(
@@ -2915,7 +2920,8 @@ fn mollusk_set_coprocessor_signers_rejects_non_admin() {
 fn mollusk_set_coprocessor_signers_rejects_invalid_set() {
     // The setter enforces the same invariants as init (duplicate signer here).
     let admin = Pubkey::new_unique();
-    let (host_config, account) = host_config_account_with_flags(admin, false, false);
+    let (host_config, account) =
+        host_config_account_with_flags(admin, host::PauseFlags::default(), false);
     let context = mollusk_execute_context(admin, vec![(host_config, account)]);
 
     check_host_context(
@@ -2932,7 +2938,8 @@ fn mollusk_define_kms_context_at_realistic_signer_count() {
     // Exercises the KMS-context definition path at a realistic mainnet-ish size (n=13 signers,
     // public-decrypt threshold 7). `KmsContext::MAX_SIGNERS` (16) bounds the account, so 13 fits.
     let admin = Pubkey::new_unique();
-    let (host_config, account) = host_config_account_with_flags(admin, false, false);
+    let (host_config, account) =
+        host_config_account_with_flags(admin, host::PauseFlags::default(), false);
     let context_id = canonical_test_context_id(1);
     let kms_context = host::kms_context_address(context_id).0;
     let context = mollusk_execute_context(
@@ -2979,7 +2986,8 @@ fn default_kms_thresholds() -> host::KmsThresholds {
 
 fn run_define_kms_context_expecting(signers: Vec<[u8; 20]>, expected: Check<'static>) {
     let admin = Pubkey::new_unique();
-    let (host_config, account) = host_config_account_with_flags(admin, false, false);
+    let (host_config, account) =
+        host_config_account_with_flags(admin, host::PauseFlags::default(), false);
     let context_id = canonical_test_context_id(1);
     let kms_context = host::kms_context_address(context_id).0;
     let context = mollusk_execute_context(
@@ -4360,7 +4368,7 @@ fn host_config_with_context(admin: Pubkey, context_id: [u8; 32]) -> (Pubkey, Acc
                 coprocessor_threshold: 1,
                 decryption_contract: DECRYPTION_CONTRACT,
                 current_kms_context_id: context_id,
-                paused: false,
+                paused: host::PauseFlags::default(),
                 grant_deny_list_enabled: false,
                 max_hcu_per_tx: u64::MAX,
                 max_hcu_depth_per_tx: u64::MAX,
@@ -4558,6 +4566,77 @@ fn mollusk_verify_public_decrypt_returns_handle_and_cleartext() {
     assert_eq!(unchanged.slots[0].handle, sealed.slots[0].handle);
     assert_eq!(unchanged.leaf_count, sealed.leaf_count);
     assert_eq!(unchanged.peaks, sealed.peaks);
+}
+
+#[test]
+fn mollusk_only_the_public_decrypt_flag_stops_verify_public_decrypt() {
+    let admin = Pubkey::new_unique();
+    let app = App::new();
+    let (host_config, live_config) = host_config_with_context(admin, KMS_CONTEXT_ID);
+    let (kms_context, kms_context_acct) = kms_context_account(KMS_CONTEXT_ID);
+    let handle = handle_for_chain(5, 5);
+    let (address, sealed, proof) = seal_public_leaf(admin, &app, host_config, &live_config, handle);
+    let extra_data = vec![0x00u8];
+    let (cleartext, signatures) = public_decrypt_cert(handle, &extra_data);
+    let ix = verify_public_decrypt_ix(
+        host_config,
+        kms_context,
+        address,
+        handle,
+        cleartext,
+        signatures,
+        extra_data,
+        proof,
+    );
+
+    let none = host::PauseFlags::default();
+    let cases = [
+        (
+            host::PauseFlags {
+                execution: true,
+                ..none
+            },
+            None,
+        ),
+        (
+            host::PauseFlags {
+                verified_inputs: true,
+                ..none
+            },
+            None,
+        ),
+        (
+            host::PauseFlags {
+                acl_writes: true,
+                ..none
+            },
+            None,
+        ),
+        (
+            host::PauseFlags {
+                public_decrypt: true,
+                ..none
+            },
+            Some(host::errors::ZamaHostError::PublicDecryptPaused),
+        ),
+    ];
+    for (paused, error) in cases {
+        let mut config = HostConfig::try_deserialize(&mut live_config.data.as_slice()).unwrap();
+        config.paused = paused;
+        let accounts = vec![
+            (
+                host_config,
+                Account {
+                    data: serialized_account(config),
+                    ..live_config.clone()
+                },
+            ),
+            (kms_context, kms_context_acct.clone()),
+            (address, encrypted_store_account(&sealed)),
+        ];
+        let check = error.map_or_else(Check::success, custom_error);
+        check_host_instruction(&mollusk(), &ix, &accounts, &[check]);
+    }
 }
 
 #[test]

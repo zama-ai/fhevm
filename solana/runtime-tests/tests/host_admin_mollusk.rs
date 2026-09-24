@@ -1,4 +1,4 @@
-//! Host admin surface: `initialize_host_config`, the `HostAdmin` setters (pause,
+//! Host admin surface: `initialize_host_config`, pausers and pause flags, the `HostAdmin` setters (unpause,
 //! grant-deny, admin transfer, EIP-712 domain) and the preview-only `close_owned_accounts`.
 //!
 //! Split out of `host_mollusk.rs` so that file does not keep growing. These tests only
@@ -277,25 +277,167 @@ fn set_admin_ix(admin: Pubkey, host_config: Pubkey, new_admin: Pubkey) -> Instru
     )
 }
 
+// ---- pausers ----
+
+fn set_pauser_ix(admin: Pubkey, host_config: Pubkey, pauser: Pubkey, enabled: bool) -> Instruction {
+    anchor_ix(
+        host::id(),
+        host::accounts::SetPauser {
+            payer: admin,
+            admin,
+            host_config,
+            pauser_record: host::pauser_address(pauser).0,
+            system_program: system_program::ID,
+            event_authority: event_authority(host::id()),
+            program: host::id(),
+        },
+        host::instruction::SetPauser { pauser, enabled },
+    )
+}
+
+fn pause_ix(pauser: Pubkey, host_config: Pubkey, areas: host::PauseFlags) -> Instruction {
+    anchor_ix(
+        host::id(),
+        host::accounts::Pause {
+            pauser,
+            pauser_record: host::pauser_address(pauser).0,
+            host_config,
+            event_authority: event_authority(host::id()),
+            program: host::id(),
+        },
+        host::instruction::Pause { areas },
+    )
+}
+
+fn paused(context: &Ctx, host_config: Pubkey) -> host::PauseFlags {
+    read_host_config(context, host_config)
+        .expect("config")
+        .paused
+}
+
+const EXECUTION: host::PauseFlags = host::PauseFlags {
+    execution: true,
+    verified_inputs: false,
+    acl_writes: false,
+    public_decrypt: false,
+};
+
 #[test]
-fn mollusk_set_host_pause_persists() {
+fn mollusk_admin_grants_and_withdraws_a_pauser() {
     let admin = Pubkey::new_unique();
+    let pauser = Pubkey::new_unique();
     let (host_config, account) = host_config_account(admin);
     let context = mollusk_execute_context(admin, vec![(host_config, account)]);
+    let record = |context: &Ctx| {
+        let store = context.account_store.borrow();
+        let account = &store[&host::pauser_address(pauser).0];
+        <host::PauserRecord as anchor_lang::AccountDeserialize>::try_deserialize(
+            &mut account.data.as_slice(),
+        )
+        .expect("pauser record")
+    };
 
+    context.process_and_validate_instruction(
+        &set_pauser_ix(admin, host_config, pauser, true),
+        &[Check::success()],
+    );
+    assert!(record(&context).enabled);
+    assert_eq!(record(&context).pauser, pauser);
+
+    context.process_and_validate_instruction(
+        &set_pauser_ix(admin, host_config, pauser, false),
+        &[Check::success()],
+    );
+    assert!(!record(&context).enabled);
+}
+
+#[test]
+fn mollusk_only_the_admin_sets_pausers() {
+    let admin = Pubkey::new_unique();
+    let stranger = Pubkey::new_unique();
+    let (host_config, account) = host_config_account(admin);
+    let context = mollusk_execute_context(stranger, vec![(host_config, account)]);
+
+    context.process_and_validate_instruction(
+        &set_pauser_ix(stranger, host_config, stranger, true),
+        &[custom_error(ZamaHostError::HostConfigAdminMismatch)],
+    );
+}
+
+#[test]
+fn mollusk_a_pauser_pauses_and_only_the_admin_unpauses() {
+    let admin = Pubkey::new_unique();
+    let pauser = Pubkey::new_unique();
+    let (host_config, account) = host_config_account(admin);
+    let context = mollusk_execute_context(
+        admin,
+        vec![
+            (host_config, account),
+            (pauser, funded_system_account()),
+            zama_solana_test_kit::pauser_record_account(pauser, true),
+        ],
+    );
+
+    context.process_and_validate_instruction(
+        &pause_ix(pauser, host_config, host::PauseFlags::ALL),
+        &[Check::success()],
+    );
+    assert_eq!(paused(&context, host_config), host::PauseFlags::ALL);
+
+    // The pauser cannot clear a flag.
+    context.process_and_validate_instruction(
+        &host_admin_ix(
+            pauser,
+            host_config,
+            host::instruction::Unpause { areas: EXECUTION },
+        ),
+        &[custom_error(ZamaHostError::HostConfigAdminMismatch)],
+    );
+
+    // The admin clears only the areas it names.
     context.process_and_validate_instruction(
         &host_admin_ix(
             admin,
             host_config,
-            host::instruction::SetHostPause { paused: true },
+            host::instruction::Unpause { areas: EXECUTION },
         ),
         &[Check::success()],
     );
-    assert!(
-        read_host_config(&context, host_config)
-            .expect("config")
-            .paused
+    assert_eq!(
+        paused(&context, host_config),
+        host::PauseFlags {
+            execution: false,
+            ..host::PauseFlags::ALL
+        }
     );
+}
+
+#[test]
+fn mollusk_only_an_enabled_pauser_pauses() {
+    let admin = Pubkey::new_unique();
+    let withdrawn = Pubkey::new_unique();
+    let (host_config, account) = host_config_account(admin);
+    let context = mollusk_execute_context(
+        admin,
+        vec![
+            (host_config, account),
+            (withdrawn, funded_system_account()),
+            zama_solana_test_kit::pauser_record_account(withdrawn, false),
+        ],
+    );
+
+    context.process_and_validate_instruction(
+        &pause_ix(withdrawn, host_config, EXECUTION),
+        &[custom_error(ZamaHostError::NotPauser)],
+    );
+    // The admin holds no pauser record, so it cannot pause either (EVM `ACL.pause`).
+    context.process_and_validate_instruction(
+        &pause_ix(admin, host_config, EXECUTION),
+        &[anchor_framework_error_check(
+            anchor_lang::error::ErrorCode::AccountNotInitialized,
+        )],
+    );
+    assert_eq!(paused(&context, host_config), host::PauseFlags::default());
 }
 
 #[test]

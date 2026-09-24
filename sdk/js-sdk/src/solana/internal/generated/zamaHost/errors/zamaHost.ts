@@ -16,8 +16,8 @@ import { ZAMA_HOST_PROGRAM_ADDRESS } from '../programAddress.js';
 
 /** HostConfigAdminMismatch: host config admin does not match signer */
 export const ZAMA_HOST_ERROR__HOST_CONFIG_ADMIN_MISMATCH = 0x1770; // 6000
-/** HostConfigPaused: host config account is paused */
-export const ZAMA_HOST_ERROR__HOST_CONFIG_PAUSED = 0x1771; // 6001
+/** ExecutionPaused: host execution is paused */
+export const ZAMA_HOST_ERROR__EXECUTION_PAUSED = 0x1771; // 6001
 /** HostConfigMismatch: host config account is invalid */
 export const ZAMA_HOST_ERROR__HOST_CONFIG_MISMATCH = 0x1772; // 6002
 /** UnexpectedRemainingAccounts: instruction has unexpected remaining accounts */
@@ -180,8 +180,19 @@ export const ZAMA_HOST_ERROR__TRANSIENT_STORE_NOT_OPENED = 0x17c0; // 6080
 export const ZAMA_HOST_ERROR__WALLET_DELEGATION_THROUGH_CPI = 0x17c1; // 6081
 /** RandNonceMismatch: rand nonce account mismatch */
 export const ZAMA_HOST_ERROR__RAND_NONCE_MISMATCH = 0x17c2; // 6082
+/** VerifiedInputsPaused: verified inputs are paused */
+export const ZAMA_HOST_ERROR__VERIFIED_INPUTS_PAUSED = 0x17c3; // 6083
+/** AclWritesPaused: ACL writes are paused */
+export const ZAMA_HOST_ERROR__ACL_WRITES_PAUSED = 0x17c4; // 6084
+/** PublicDecryptPaused: public-decrypt verification is paused */
+export const ZAMA_HOST_ERROR__PUBLIC_DECRYPT_PAUSED = 0x17c5; // 6085
+/** NotPauser: signer is not an enabled pauser */
+export const ZAMA_HOST_ERROR__NOT_PAUSER = 0x17c6; // 6086
+/** PauserRecordMismatch: pauser record mismatch */
+export const ZAMA_HOST_ERROR__PAUSER_RECORD_MISMATCH = 0x17c7; // 6087
 
 export type ZamaHostError =
+  | typeof ZAMA_HOST_ERROR__ACL_WRITES_PAUSED
   | typeof ZAMA_HOST_ERROR__ATTESTATION_CHAIN_ID_MISMATCH
   | typeof ZAMA_HOST_ERROR__BINARY_OPERAND_TYPE_MISMATCH
   | typeof ZAMA_HOST_ERROR__CLOCK_BEFORE_EPOCH
@@ -204,6 +215,7 @@ export type ZamaHostError =
   | typeof ZAMA_HOST_ERROR__ENCRYPTED_STORE_MMR_PEAK_CAPACITY_EXCEEDED
   | typeof ZAMA_HOST_ERROR__ENCRYPTED_STORE_PDA_MISMATCH
   | typeof ZAMA_HOST_ERROR__ENCRYPTED_STORE_PUBLIC_HANDLE_MISMATCH
+  | typeof ZAMA_HOST_ERROR__EXECUTION_PAUSED
   | typeof ZAMA_HOST_ERROR__FHE_EXECUTE_ACCOUNT_COUNT_MISMATCH
   | typeof ZAMA_HOST_ERROR__FHE_EXECUTE_DICTIONARY_ENTRY_UNREFERENCED
   | typeof ZAMA_HOST_ERROR__FHE_EXECUTE_DICTIONARY_INDEX_OUT_OF_BOUNDS
@@ -224,7 +236,6 @@ export type ZamaHostError =
   | typeof ZAMA_HOST_ERROR__HCU_UNKNOWN_COST
   | typeof ZAMA_HOST_ERROR__HOST_CONFIG_ADMIN_MISMATCH
   | typeof ZAMA_HOST_ERROR__HOST_CONFIG_MISMATCH
-  | typeof ZAMA_HOST_ERROR__HOST_CONFIG_PAUSED
   | typeof ZAMA_HOST_ERROR__INPUT_BIND_CONTRACT_MISMATCH
   | typeof ZAMA_HOST_ERROR__INVALID_ALLOW_KEY
   | typeof ZAMA_HOST_ERROR__INVALID_CHAIN_TYPE_BYTE
@@ -246,11 +257,14 @@ export type ZamaHostError =
   | typeof ZAMA_HOST_ERROR__INVALID_RETURN_SELECTION
   | typeof ZAMA_HOST_ERROR__MALFORMED_INPUT_ATTESTATION
   | typeof ZAMA_HOST_ERROR__MUL_DIV_DIVISOR_ZERO
+  | typeof ZAMA_HOST_ERROR__NOT_PAUSER
+  | typeof ZAMA_HOST_ERROR__PAUSER_RECORD_MISMATCH
   | typeof ZAMA_HOST_ERROR__PDA_CREATION_MISMATCH
   | typeof ZAMA_HOST_ERROR__PERMIT_INVALIDATION_ACCOUNT_INVALID
   | typeof ZAMA_HOST_ERROR__PERMIT_INVALIDATION_PDA_MISMATCH
   | typeof ZAMA_HOST_ERROR__PREVIOUS_BANK_HASH_UNAVAILABLE
   | typeof ZAMA_HOST_ERROR__PREVIOUS_STORE_MISMATCH
+  | typeof ZAMA_HOST_ERROR__PUBLIC_DECRYPT_PAUSED
   | typeof ZAMA_HOST_ERROR__PUBLIC_DECRYPT_PROOF_INVALID
   | typeof ZAMA_HOST_ERROR__RAND_NONCE_MISMATCH
   | typeof ZAMA_HOST_ERROR__SCOPE_DENIED
@@ -262,6 +276,7 @@ export type ZamaHostError =
   | typeof ZAMA_HOST_ERROR__TRANSIENT_STORE_NOT_OPENED
   | typeof ZAMA_HOST_ERROR__UNEXPECTED_REMAINING_ACCOUNTS
   | typeof ZAMA_HOST_ERROR__UNSUPPORTED_FHE_TYPE
+  | typeof ZAMA_HOST_ERROR__VERIFIED_INPUTS_PAUSED
   | typeof ZAMA_HOST_ERROR__WALLET_DELEGATION_THROUGH_CPI
   | typeof ZAMA_HOST_ERROR__ZERO_COPROCESSOR_SIGNER
   | typeof ZAMA_HOST_ERROR__ZERO_KMS_SIGNER;
@@ -269,6 +284,7 @@ export type ZamaHostError =
 let zamaHostErrorMessages: Record<ZamaHostError, string> | undefined;
 if (process.env['NODE_ENV'] !== 'production') {
   zamaHostErrorMessages = {
+    [ZAMA_HOST_ERROR__ACL_WRITES_PAUSED]: `ACL writes are paused`,
     [ZAMA_HOST_ERROR__ATTESTATION_CHAIN_ID_MISMATCH]: `attested contract chain id does not match the host chain id`,
     [ZAMA_HOST_ERROR__BINARY_OPERAND_TYPE_MISMATCH]: `binary FHE operand type is incompatible`,
     [ZAMA_HOST_ERROR__CLOCK_BEFORE_EPOCH]: `clock is before the unix epoch`,
@@ -291,6 +307,7 @@ if (process.env['NODE_ENV'] !== 'production') {
     [ZAMA_HOST_ERROR__ENCRYPTED_STORE_MMR_PEAK_CAPACITY_EXCEEDED]: `encrypted value MMR peak capacity exceeded`,
     [ZAMA_HOST_ERROR__ENCRYPTED_STORE_PDA_MISMATCH]: `encrypted store does not match the canonical PDA`,
     [ZAMA_HOST_ERROR__ENCRYPTED_STORE_PUBLIC_HANDLE_MISMATCH]: `encrypted value public handle does not match the account`,
+    [ZAMA_HOST_ERROR__EXECUTION_PAUSED]: `host execution is paused`,
     [ZAMA_HOST_ERROR__FHE_EXECUTE_ACCOUNT_COUNT_MISMATCH]: `fhe_execute declared account count mismatch`,
     [ZAMA_HOST_ERROR__FHE_EXECUTE_DICTIONARY_ENTRY_UNREFERENCED]: `fhe_execute dictionary entry is not referenced by any step`,
     [ZAMA_HOST_ERROR__FHE_EXECUTE_DICTIONARY_INDEX_OUT_OF_BOUNDS]: `fhe_execute dictionary index out of bounds`,
@@ -311,7 +328,6 @@ if (process.env['NODE_ENV'] !== 'production') {
     [ZAMA_HOST_ERROR__HCU_UNKNOWN_COST]: `no HCU cost is defined for this op / type / scalar combination`,
     [ZAMA_HOST_ERROR__HOST_CONFIG_ADMIN_MISMATCH]: `host config admin does not match signer`,
     [ZAMA_HOST_ERROR__HOST_CONFIG_MISMATCH]: `host config account is invalid`,
-    [ZAMA_HOST_ERROR__HOST_CONFIG_PAUSED]: `host config account is paused`,
     [ZAMA_HOST_ERROR__INPUT_BIND_CONTRACT_MISMATCH]: `attested contract address does not match the execution's program`,
     [ZAMA_HOST_ERROR__INVALID_ALLOW_KEY]: `encrypted value allowed key is invalid`,
     [ZAMA_HOST_ERROR__INVALID_CHAIN_TYPE_BYTE]: `host chain id must have type byte 0x01 and the gateway chain id must have type byte 0x00`,
@@ -333,11 +349,14 @@ if (process.env['NODE_ENV'] !== 'production') {
     [ZAMA_HOST_ERROR__INVALID_RETURN_SELECTION]: `invalid execution return selection`,
     [ZAMA_HOST_ERROR__MALFORMED_INPUT_ATTESTATION]: `input attestation payload is malformed`,
     [ZAMA_HOST_ERROR__MUL_DIV_DIVISOR_ZERO]: `fheMulDiv divisor must be non-zero`,
+    [ZAMA_HOST_ERROR__NOT_PAUSER]: `signer is not an enabled pauser`,
+    [ZAMA_HOST_ERROR__PAUSER_RECORD_MISMATCH]: `pauser record mismatch`,
     [ZAMA_HOST_ERROR__PDA_CREATION_MISMATCH]: `PDA creation target is invalid`,
     [ZAMA_HOST_ERROR__PERMIT_INVALIDATION_ACCOUNT_INVALID]: `permit invalidation account is not a valid watermark record`,
     [ZAMA_HOST_ERROR__PERMIT_INVALIDATION_PDA_MISMATCH]: `permit invalidation account is not the canonical account for the signer`,
     [ZAMA_HOST_ERROR__PREVIOUS_BANK_HASH_UNAVAILABLE]: `previous bank hash is not available`,
     [ZAMA_HOST_ERROR__PREVIOUS_STORE_MISMATCH]: `encrypted value previous handle does not match the account`,
+    [ZAMA_HOST_ERROR__PUBLIC_DECRYPT_PAUSED]: `public-decrypt verification is paused`,
     [ZAMA_HOST_ERROR__PUBLIC_DECRYPT_PROOF_INVALID]: `public-decrypt inclusion proof is invalid`,
     [ZAMA_HOST_ERROR__RAND_NONCE_MISMATCH]: `rand nonce account mismatch`,
     [ZAMA_HOST_ERROR__SCOPE_DENIED]: `application scope is deny-listed`,
@@ -349,6 +368,7 @@ if (process.env['NODE_ENV'] !== 'production') {
     [ZAMA_HOST_ERROR__TRANSIENT_STORE_NOT_OPENED]: `transient store must be opened for this transaction and closed last`,
     [ZAMA_HOST_ERROR__UNEXPECTED_REMAINING_ACCOUNTS]: `instruction has unexpected remaining accounts`,
     [ZAMA_HOST_ERROR__UNSUPPORTED_FHE_TYPE]: `FHE type is unsupported`,
+    [ZAMA_HOST_ERROR__VERIFIED_INPUTS_PAUSED]: `verified inputs are paused`,
     [ZAMA_HOST_ERROR__WALLET_DELEGATION_THROUGH_CPI]: `a wallet delegator must delegate in a top-level instruction`,
     [ZAMA_HOST_ERROR__ZERO_COPROCESSOR_SIGNER]: `coprocessor signer set contains the zero address`,
     [ZAMA_HOST_ERROR__ZERO_KMS_SIGNER]: `KMS signer set contains the zero address`,

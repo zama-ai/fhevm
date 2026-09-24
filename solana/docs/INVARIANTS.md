@@ -137,11 +137,12 @@ Related token/Host lifecycle guardrails are:
   (fhevm-internal#1862 review P1.) Pinned by `mollusk_cancel_pending_burn_restores_balance_and_supply` and
   `mollusk_redeem_current_pending_burn_then_rejects_double_settlement`, which checks that redeem leaves the supply Store
   untouched.
-- **11f [HOLDS].** Host pause (`HostConfig.paused`) gates token cash-out / disclose paths that call
-  `assert_host_config_allows_token_response` (redeem, disclose). Opening a burn / cancelling a pending burn still
-  requires a live FHE path through the host; there is no separate token-level pause. No registry / observer / on-chain
-  gov surface yet (zama-ai/fhevm-internal#1634). Pinned by `mollusk_redeem_rejected_when_host_paused`,
-  `mollusk_disclose_secp_rejected_when_host_paused` and `mollusk_burn_and_cancel_are_refused_by_a_paused_host`.
+- **11f [HOLDS].** The host's pause flags (#36) stop the token; there is no separate token-level pause. Redeem and
+  disclose stop with `public_decrypt`, through the host's `verify_public_decrypt`. Opening a burn and cancelling one
+  stop with `execution`, through `fhe_execute`, and opening a burn also with `verified_inputs`, since its amount is a
+  verified input. No registry / observer / on-chain gov surface yet (zama-ai/fhevm-internal#1634). Pinned by
+  `mollusk_redeem_rejected_when_host_paused`, `mollusk_disclose_secp_rejected_when_host_paused`,
+  `mollusk_burn_and_cancel_are_refused_by_a_paused_host` and `mollusk_burn_is_refused_while_verified_inputs_are_paused`.
 
 **68. [ASSUMPTION]** A program never passes a PDA it signs with, a Store authority or a delegator, as a signer to a
 program it does not trust. zama-host accepts whatever that PDA signs. A program given the PDA as a signer, and any
@@ -372,33 +373,32 @@ after the check (its own unit tests pin that mapping).
 
 ## F. Admin, config & custody
 
-**35. [HOLDS]** Only the configured admin can change HostConfig; every change stamps `updated_slot` and emits a host
+**35. [HOLDS]** Only the configured admin can change HostConfig, except that an enabled pauser can set pause flags
+(#36); every change stamps `updated_slot` and emits a host
 event (`HostConfigUpdatedEvent`, or `NewKmsContextEvent` when `define_kms_context` moves the current context). The event always goes out through the event CPI, so it lands in the transaction's inner instructions, which an
 RPC provider cannot truncate the way it can truncate logs. A reader therefore sees an admin change without replaying
 instruction data to find one (DD-044). The event only makes the change visible: authorization still comes from account
 state, never from event bytes.
 Pinned by `only_the_admin_changes_trust_roots_and_only_an_authority_changes_its_store`, which checks over random
-instruction sequences that `HostConfig`, the KMS contexts and the deny and HCU trust records change only in a transaction the admin signed,
+instruction sequences that `HostConfig`, the KMS contexts and the deny, HCU trust and pauser records change only in a
+transaction the admin signed, apart from a signer holding an enabled pauser record adding pause flags,
 and that every `HostConfig` change stamps the current slot and emits an event CPI. Every host instruction is drawn,
 with its admin or Store-authority role also filled by keys that lack it, signing or not, and a host account type the
-property does not classify fails it. The planted bug `runtime-tests/planted-bugs/h1-set-host-pause-skips-assert-admin.patch`
+property does not classify fails it. The planted bug `runtime-tests/planted-bugs/h1-unpause-skips-assert-admin.patch`
 must make it fail (`scripts/check-planted-bugs.sh`). This covers the default build; the preview-only `admin-sweep`
 build lets the upgrade authority close `HostConfig` and the KMS contexts (`AUTHORITY.md`).
 
-**36. [HOLDS]** `HostConfig.paused` freezes both halves of the plaintext path: the production-shaped host instructions
-(`fhe_execute`, `make_store_handle_public`, `delegate_for_user_decryption`, and the token cash-out paths of 11f), and
-connector user decryption — the KMS connector's authorization reads the `HostConfig` PDA in the account read it already
-makes and refuses while paused (transiently: the same request authorizes once the pause is lifted). One switch, on the
-host, and no gateway-side pause is involved. The connector decodes the singleton through `zama-solana-acl`'s shared
-decoder, the same crate the program's own `shared_crate_decoder_reads_what_the_program_serializes` test pins against its
-serializer, so the switch cannot be disarmed by layout drift. User abort levers stay open while paused, deliberately:
-`revoke_permits` takes no config account at all, and `revoke_delegation_for_user_decryption` is not pause-gated. This
-asymmetry is deliberate. A pause stops the connector from serving delegated decryptions, so a delegator who could not
-revoke would be left with grants they can neither use nor withdraw, and a lever the operator can switch off is not the
-user's lever. Not gated: `verify_public_decrypt` (DD-040, already-sealed leaves reveal nothing new) and the admin
-setters, pause included.
-Pinned by `mollusk_paused_state_blocks_execution_output_and_public_sealing`, `a_paused_host_refuses_until_the_switch_is_lifted`,
-`the_switch_is_read_on_the_first_read_of_a_delegated_request` and `a_revocation_while_paused_succeeds`.
+**36. [HOLDS]** `HostConfig.paused` holds one flag per host area (DD-058). `execution` stops `fhe_execute`;
+`verified_inputs` stops `fhe_execute` steps that consume a `VerifiedInput`; `acl_writes` stops `create_encrypted_store`,
+`make_store_handle_public` and `delegate_for_user_decryption`; `public_decrypt` stops `verify_public_decrypt`. A flag
+stops only its own area. Any signer with an enabled `PauserRecord` sets flags; only the admin clears them, and only the
+admin creates, enables or disables pauser records. Admin setters are never paused, and `revoke_permits` takes no config
+account, so it runs under every flag. `revoke_delegation_for_user_decryption` is not paused yet; the delegation-record
+change gives it the `acl_writes` gate, as EVM's `revokeDelegationForUserDecryption` is `whenNotPaused`.
+Pinned by `mollusk_each_pause_flag_stops_only_its_area`, `mollusk_only_the_public_decrypt_flag_stops_verify_public_decrypt`,
+the token tests of 11f, `mollusk_a_pauser_pauses_and_only_the_admin_unpauses`, `mollusk_only_an_enabled_pauser_pauses`,
+`mollusk_only_the_admin_sets_pausers`, `a_revocation_while_paused_succeeds` and, over random sequences, the H1 property
+of #35.
 
 **37. [HOLDS]** HCU enforcement ships disabled (unrestricted defaults) and is opt-in per knob. `u64::MAX` means
 unlimited; `0` is rejected for per-tx limits and means ban untrusted applications only for the block cap. When both

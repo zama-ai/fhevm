@@ -84,6 +84,7 @@ are written as one narrative instead.
 | [DD-055](#dd-055-the-ledger-is-the-work-log-not-a-pda-queue)                                                                              | adopted                                  | The ledger is the work log, not a PDA queue                                                                                    |
 | [DD-056](#dd-056-an-execution-describes-itself-the-listener-re-derives-handles-only-as-a-check)                                           | adopted                                  | An execution describes itself; the listener re-derives handles only as a check                                                 |
 | [DD-057](#dd-057-one-rand-nonce-per-application)                                                                                          | adopted                                  | One rand nonce per application                                                                                                 |
+| [DD-058](#dd-058-pausers-stop-one-area-at-a-time-only-the-admin-resumes)                                                                  | adopted                                  | Pausers stop one area at a time; only the admin resumes                                                                        |
 
 ## DD-002: Keep App Store And Host ACL Store Separate
 
@@ -1080,9 +1081,9 @@ returned id against `host_config.current_kms_context_id` and demand current-only
 `disclose_secp` and `redeem_burned_amount` both take the default (accept any live context), matching
 EVM.
 
-The verifier is deliberately NOT pause-gated: `make_handle_public` is the pause-gated boundary that
-seals a leaf, and an already-sealed leaf is already-public information, so re-proving it later reveals
-nothing new. If a decrypt-path kill-switch is ever wanted, gate `host_config.paused` here.
+The verifier stops only under the `public_decrypt` pause flag (DD-058). An already-sealed leaf is
+already-public information, so re-proving it reveals nothing new; the flag exists to stop programs
+acting on forged certificates while a compromised KMS context is destroyed.
 
 Return-data-only to start: today's KMS cleartexts are ≤32 bytes; if larger types are ever revealed the
 fallback is a caller-provided scratch account. The proof-freshness (stale-proof) retry race is the
@@ -1566,8 +1567,8 @@ transfer semantics.
 
 Token-facing instructions pass a typed Host config account but do not redundantly derive its PDA at
 the wrapper boundary. Every path immediately invokes a Host instruction that enforces the canonical
-config; redeem/disclose additionally rederive it before their local pause check. This keeps the
-boundary aligned without paying for a second PDA derivation or adding redundant IDL metadata.
+config and its pause flags (DD-058). This keeps the boundary aligned without paying for a second PDA
+derivation or adding redundant IDL metadata.
 
 Confidential accounts expose ATA-like demo UX: canonical derivation, permissionless create-for, and
 `getOrCreateConfidentialTokenAccountInstruction`, which reads the derived PDA and returns either the
@@ -2189,6 +2190,65 @@ Consequences: `initialize_host_config` takes one account fewer. `RandNonce` leav
 the host reads it through `UncheckedAccount` and nothing off chain reads it: the listener takes the
 seeds from `FheExecutedEvent` (DD-056). A caller with a rand step passes
 `rand_nonce_address(app)`.
+
+## DD-058: Pausers stop one area at a time; only the admin resumes
+
+Status: adopted
+
+Recorded in fhevm-internal#2088. Replaces the single admin-set `HostConfig.paused`.
+
+Context: the host had one pause flag that only the admin could set or clear. Governance is moving
+the admin behind a Squads vault with a time lock (fhevm-internal#1634), so an admin-only pause
+would wait out that time lock too. On EVM, `ACL.pause()` accepts any member of `PauserSet`, while
+`unpause()` is `onlyOwner`. The host ACL pause stops `allow`, `allowForDecryption`,
+`allowTransient` and both delegation calls, and so execution, which needs `allowTransient`. The
+gateway's `InputVerification` and `Decryption` contracts each pause on their own.
+
+Decision: `HostConfig.paused` is `PauseFlags`, one flag per area.
+
+| Flag | Stops | EVM counterpart |
+|---|---|---|
+| `execution` | `fhe_execute`, with the allows, transient grants and public releases it writes; the token's burn and cancel through it | ACL pause |
+| `verified_inputs` | `fhe_execute` steps that consume a `VerifiedInput` | Gateway `InputVerification` pause |
+| `acl_writes` | `create_encrypted_store`, `make_store_handle_public`, `delegate_for_user_decryption` | ACL pause |
+| `public_decrypt` | `verify_public_decrypt`, and so the token's redeem and disclose | Gateway `Decryption` pause |
+
+A pauser is a `PauserRecord` PDA `("pauser", key)`, which the admin creates, enables or disables
+with `set_pauser`, as it does deny and HCU-trusted records. `pause` takes the pauser's signature and
+its enabled record, and sets the flags it names. `unpause` takes the admin and clears them. As on
+EVM, the admin pauses only if it also holds a pauser record. Pausing an area already paused
+changes nothing and emits nothing. A change stamps `updated_slot` and emits `HostConfigUpdatedEvent`,
+whose `signer` names the pauser or the admin. `set_pauser` emits `PauserUpdatedEvent`.
+
+`public_decrypt` has no host counterpart on EVM, where `KMSVerifier` checks KMS signatures without a
+pause. On Solana, programs act on KMS results only through `verify_public_decrypt`, so this flag is
+the host's lever when a KMS context is compromised: it stops forged redemptions while the context
+is destroyed (fhevm-internal#2082). It replaces the token's own pause check, which read the single
+flag; the token no longer reads the host config at all.
+
+Admin setters are never paused. `revoke_permits` takes no config account, so it runs under every
+flag, as EVM's `invalidateDecryptionSignaturesBefore` runs under the ACL pause. On EVM,
+`revokeDelegationForUserDecryption` is `whenNotPaused`; its Solana gate on `acl_writes` comes with
+the delegation-record change built on fhevm#4096, and until then revocation is not paused.
+
+Accepted gap: user decryption goes over HTTP through the relayer and the KMS connector, which read
+no host flag. During a host pause, user decryption of values already allowed continues, as it does
+on EVM while only the host ACL is paused. With the `acl_writes` gate in place, a delegator cannot
+revoke a delegation until the admin resumes ACL writes.
+
+Rejected alternatives:
+
+| Alternative | Why not |
+|---|---|
+| Pausers as a list in `HostConfig` | A fixed maximum and a realloc for every change. One record per pauser matches the deny and HCU-trusted records and keeps `HostConfig` fixed-size. |
+| Keep one flag and add pausers | An operator could not stop forged redemptions without also stopping every application's execution. |
+| Let the admin pause without a record | EVM requires `PauserSet` membership for `pause()` even from the owner. Keeping that rule makes the pauser set the one list of who can pause. |
+
+Consequences: `set_host_pause` is gone. `HostConfig` grows by three bytes, so every reader of its
+layout changes with it: the host listener decodes it with the program's type; the KMS connector's
+host-pause check and the `zama-solana-acl` decoder it used are removed with the connector's move to
+the gateway pause. New errors: `VerifiedInputsPaused`, `AclWritesPaused`, `PublicDecryptPaused`,
+`NotPauser`, `PauserRecordMismatch`; `HostConfigPaused` is now `ExecutionPaused`.
 
 ## Open product decisions
 

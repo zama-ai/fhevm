@@ -8,7 +8,9 @@ use anchor_lang::solana_program::{
 
 use crate::{
     errors::ZamaHostError,
-    state::{deny_scope_address, host_config_address, AppScope, DenyScopeRecord, HostConfig},
+    state::{
+        deny_scope_address, host_config_address, AppScope, DenyScopeRecord, HostConfig, PauseFlags,
+    },
 };
 use crate::{events::HostConfigUpdatedEvent, state::EVENT_VERSION};
 
@@ -125,19 +127,26 @@ pub(super) fn assert_admin(config: &Account<HostConfig>, admin: &Signer) -> Resu
     Ok(())
 }
 
-pub(super) fn assert_not_paused(config: &Account<HostConfig>) -> Result<()> {
+/// Fails with `error` while the area `area` picks out of the pause flags is paused.
+pub(super) fn assert_not_paused(
+    config: &Account<HostConfig>,
+    area: fn(PauseFlags) -> bool,
+    error: ZamaHostError,
+) -> Result<()> {
     assert_host_config_shape(config)?;
-    require!(!config.paused, ZamaHostError::HostConfigPaused);
+    if area(config.paused) {
+        return Err(error.into());
+    }
     Ok(())
 }
 
-/// Emits the config snapshot after an admin change. Every instruction that touches `HostConfig`
+/// Emits the config snapshot after a config change. Every instruction that touches `HostConfig`
 /// routes through here, except `define_kms_context`, whose `NewKmsContextEvent` carries the new
 /// current context. The emitter takes the event authority as an argument rather than using
 /// `emit_cpi!` because that macro reads a binding named `ctx`, which a shared helper does not have.
 pub(super) fn emit_config_updated(
     config: &HostConfig,
-    admin: Pubkey,
+    signer: Pubkey,
     event_authority: &AccountInfo<'_>,
 ) -> Result<()> {
     crate::event_cpi::emit_event_cpi(
@@ -145,7 +154,7 @@ pub(super) fn emit_config_updated(
         &HostConfigUpdatedEvent {
             version: EVENT_VERSION,
             config: crate::state::host_config_address().0,
-            admin,
+            signer,
             paused: config.paused,
             grant_deny_list_enabled: config.grant_deny_list_enabled,
             max_hcu_per_tx: config.max_hcu_per_tx,
@@ -533,8 +542,8 @@ mod tests {
         let _event = HostConfigUpdatedEvent {
             version: EVENT_VERSION,
             config: Pubkey::new_unique(),
-            admin: Pubkey::new_unique(),
-            paused: false,
+            signer: Pubkey::new_unique(),
+            paused: PauseFlags::default(),
             grant_deny_list_enabled: false,
             max_hcu_per_tx: 20_000_000,
             max_hcu_depth_per_tx: 5_000_000,

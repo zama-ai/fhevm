@@ -79,12 +79,6 @@ pub enum ConfidentialTokenError {
     /// The provided KMS context is not the request-pinned context or has been destroyed.
     #[msg("KMS context is not valid for this request")]
     InvalidKmsContext,
-    /// Account-backed request witness does not match the disclosure or redemption.
-    #[msg("request witness does not match")]
-    RequestWitnessMismatch,
-    /// Account-backed request witness is expired or already consumed.
-    #[msg("request witness is expired or already consumed")]
-    RequestWitnessUnavailable,
     /// Tombstoned: disclosure material-commitment witness was removed with the
     /// `DisclosureRequest` lifecycle (fhevm#3231). Kept so Anchor error ordinals stay stable.
     #[msg("material commitment witness does not match (retired)")]

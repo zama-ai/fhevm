@@ -7,7 +7,7 @@
 use anchor_lang::prelude::*;
 
 use super::common::*;
-use super::set_host_pause::HostAdmin;
+use super::host_admin::HostAdmin;
 
 /// Sets `max_hcu_per_tx`. Admin-gated. `u64::MAX` = unlimited (enforcement off); `0` is
 /// rejected so "off" has exactly one spelling across every HCU knob.
