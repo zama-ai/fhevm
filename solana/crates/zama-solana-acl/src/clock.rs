@@ -20,14 +20,19 @@ pub const SYSVAR_OWNER_ID: [u8; 32] = [
 const CLOCK_LEN: usize = 40;
 const UNIX_TIMESTAMP_OFFSET: usize = 32;
 
-/// The Clock's `unix_timestamp`. A time before the epoch is refused rather than cast, as the host
-/// refuses it when it writes an expiry.
-pub fn decode_clock_unix_timestamp(data: &[u8]) -> Result<u64, AclError> {
-    if data.len() != CLOCK_LEN {
-        return Err(AclError::BadAccountData);
+/// The `unix_timestamp` of an account read at [`CLOCK_SYSVAR_ID`], given its owner and data. Only
+/// the sysvar owner's account is the Clock. A time before the epoch is refused rather than cast, as
+/// the host refuses it when it writes an expiry.
+pub fn decode_clock_unix_timestamp(owner: &[u8; 32], data: &[u8]) -> Result<u64, AclError> {
+    if *owner != SYSVAR_OWNER_ID {
+        return Err(AclError::BadOwner);
     }
-    let unix_timestamp = crate::delegation::u64_le(data, UNIX_TIMESTAMP_OFFSET) as i64;
-    u64::try_from(unix_timestamp).map_err(|_| AclError::BadAccountData)
+    let field: [u8; 8] = data
+        .get(UNIX_TIMESTAMP_OFFSET..CLOCK_LEN)
+        .filter(|_| data.len() == CLOCK_LEN)
+        .and_then(|field| field.try_into().ok())
+        .ok_or(AclError::BadAccountData)?;
+    u64::try_from(i64::from_le_bytes(field)).map_err(|_| AclError::BadAccountData)
 }
 
 #[cfg(test)]
@@ -43,11 +48,20 @@ mod tests {
         data
     }
 
+    fn decode(data: &[u8]) -> Result<u64, AclError> {
+        decode_clock_unix_timestamp(&SYSVAR_OWNER_ID, data)
+    }
+
     #[test]
     fn reads_the_last_field() {
+        assert_eq!(decode(&clock(1_700_000_000)), Ok(1_700_000_000));
+    }
+
+    #[test]
+    fn refuses_an_account_the_sysvar_owner_does_not_own() {
         assert_eq!(
-            decode_clock_unix_timestamp(&clock(1_700_000_000)),
-            Ok(1_700_000_000)
+            decode_clock_unix_timestamp(&[7; 32], &clock(1_700_000_000)),
+            Err(AclError::BadOwner)
         );
     }
 
@@ -55,19 +69,10 @@ mod tests {
     fn refuses_a_clock_of_the_wrong_size_or_before_the_epoch() {
         let mut short = clock(1);
         short.pop();
-        assert_eq!(
-            decode_clock_unix_timestamp(&short),
-            Err(AclError::BadAccountData)
-        );
+        assert_eq!(decode(&short), Err(AclError::BadAccountData));
         let mut long = clock(1);
         long.push(0);
-        assert_eq!(
-            decode_clock_unix_timestamp(&long),
-            Err(AclError::BadAccountData)
-        );
-        assert_eq!(
-            decode_clock_unix_timestamp(&clock(-1)),
-            Err(AclError::BadAccountData)
-        );
+        assert_eq!(decode(&long), Err(AclError::BadAccountData));
+        assert_eq!(decode(&clock(-1)), Err(AclError::BadAccountData));
     }
 }

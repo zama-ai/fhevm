@@ -545,14 +545,13 @@ pub fn user_decryption_delegation_address(
     delegate: Pubkey,
     app: AppScope,
 ) -> (Pubkey, u8) {
+    let (delegator, delegate, program) = (
+        delegator.to_bytes(),
+        delegate.to_bytes(),
+        app.program.to_bytes(),
+    );
     Pubkey::find_program_address(
-        &[
-            DELEGATION_SEED,
-            delegator.as_ref(),
-            delegate.as_ref(),
-            app.program.as_ref(),
-            &app.scope,
-        ],
+        &zama_solana_acl::delegation_seeds(&delegator, &delegate, &program, &app.scope),
         &crate::ID,
     )
 }

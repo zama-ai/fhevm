@@ -12,7 +12,7 @@ import { INSTRUCTIONS_SYSVAR_ADDRESS, appendTransientStoreInstructions, prepareT
 
 import { getAddressEncoder, type Address, type Instruction, type TransactionSigner } from "@solana/kit";
 
-import { solanaEncryptedStoreAddress } from "@fhevm/sdk/solana";
+import { solanaEncryptedStoreAddress, type SolanaDelegationApplication } from "@fhevm/sdk/solana";
 
 import { getExtendInstructionAsync, getInitializeInstructionAsync as getInitializeChainInstructionAsync } from "./internal/generated/depChain/instructions/index.js";
 import { findChainAuthorityPda, findChainPda } from "./internal/generated/depChain/pdas/index.js";
@@ -41,10 +41,8 @@ export type SpecimenValue = {
   /** The wallet the program allows on every handle it writes — the user-decrypt identity. */
   readonly owner: Address;
   readonly key: Uint8Array;
-  /** The program's authority PDA: the value's `encrypted_value_account_authority`. */
-  readonly authority: Address;
   /** The value's application, `(program, scope)`: what a delegation of it is keyed by. */
-  readonly application: { readonly program: Address; readonly scope: Uint8Array };
+  readonly application: SolanaDelegationApplication;
   /** The value's `EncryptedValue` account. */
   readonly encryptedStore: Address;
 };
@@ -64,7 +62,6 @@ const specimenValue = async (
 ): Promise<SpecimenValue> => ({
   owner,
   key: label,
-  authority,
   // The specimen's application is `(program, scope = its state PDA)`; the value hangs off the
   // authority PDA under that scope.
   application: { program, scope: addressBytes(state) },

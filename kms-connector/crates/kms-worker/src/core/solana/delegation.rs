@@ -88,11 +88,12 @@ impl Row<'_> {
         let Ok(record) = zama_solana_acl::decode_user_decryption_delegation(&account.data) else {
             return Ok(Err(DelegationFailure::NotADelegationRecord { account_key }));
         };
-        if record.delegator != self.delegator
-            || record.delegate != self.delegate
-            || record.program != self.app_program
-            || record.scope != self.app_scope
-        {
+        if !record.names(
+            &self.delegator,
+            &self.delegate,
+            &self.app_program,
+            &self.app_scope,
+        ) {
             return Ok(Err(DelegationFailure::TupleMismatch { account_key }));
         }
         if record.bump != canonical_bump {

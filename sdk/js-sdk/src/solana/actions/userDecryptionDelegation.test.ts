@@ -83,6 +83,15 @@ describe('solanaUserDecryptionDelegationAddress', () => {
     expect(derived).not.toBe(RECORD_ADDRESS);
   });
 
+  it('refuses a scope that is not 32 bytes', async () => {
+    await expect(
+      solanaUserDecryptionDelegationAddress(
+        { delegator, delegate, ...application, scope: new Uint8Array(31).fill(0x44) },
+        { programAddress: ZAMA_HOST_PROGRAM_ADDRESS },
+      ),
+    ).rejects.toThrow('delegation scope must be 32 bytes, got 31');
+  });
+
   it('derives under the configured program id', async () => {
     const derived = await solanaUserDecryptionDelegationAddress(
       { delegator, delegate, ...application },
@@ -107,6 +116,21 @@ describe('buildDelegateForUserDecryptionInstruction', () => {
     const instruction = await build();
     expect(instruction.programAddress).toBe(ZAMA_HOST_PROGRAM_ADDRESS);
     expect(hex(instruction.data!)).toBe(GRANT_DATA);
+  });
+
+  it('refuses a short scope even when the record address is given', async () => {
+    await expect(
+      buildDelegateForUserDecryptionInstruction({
+        programAddress: ZAMA_HOST_PROGRAM_ADDRESS,
+        payer,
+        delegator,
+        delegate,
+        ...application,
+        scope: new Uint8Array(31),
+        delegationRecord: RECORD_ADDRESS,
+        expiresAt: 500n,
+      }),
+    ).rejects.toThrow('delegation scope must be 32 bytes, got 31');
   });
 
   it('names the five accounts in program order with their roles', async () => {
@@ -250,6 +274,12 @@ describe('solanaDelegationWarnings', () => {
 
   it('is silent for a grant over one application', () => {
     expect(solanaDelegationWarnings(application)).toEqual([]);
+  });
+
+  it('is silent for a scope that only starts with the wildcard bytes', () => {
+    expect(
+      solanaDelegationWarnings({ program: SOLANA_WILDCARD_APP.program, scope: new Uint8Array(33).fill(0xff) }),
+    ).toEqual([]);
   });
 
   it('is silent for a half-wildcard, which the host refuses rather than widens', () => {

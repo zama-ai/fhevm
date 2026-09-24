@@ -14,7 +14,7 @@ pub mod watermark;
 use proof::CoprocessorProofClient;
 use snapshot::SolanaRpcClient;
 use solana_pubkey::Pubkey;
-use zama_solana_acl::{DELEGATION_SEED, PERMIT_INVALIDATION_SEED, WILDCARD_APP};
+use zama_solana_acl::{PERMIT_INVALIDATION_SEED, WILDCARD_APP, delegation_seeds};
 
 pub type SolanaPubkeyBytes = [u8; 32];
 pub type HandleBytes = [u8; 32];
@@ -44,13 +44,7 @@ pub fn delegation_address(
 ) -> (SolanaPubkeyBytes, u8) {
     find_address(
         program_id,
-        &[
-            DELEGATION_SEED,
-            &delegator,
-            &delegate,
-            &app_program,
-            &app_scope,
-        ],
+        &delegation_seeds(&delegator, &delegate, &app_program, &app_scope),
     )
 }
 
@@ -66,4 +60,35 @@ pub fn wildcard_delegation_address(
 fn find_address(program_id: SolanaPubkeyBytes, seeds: &[&[u8]]) -> (SolanaPubkeyBytes, u8) {
     let (address, bump) = Pubkey::find_program_address(seeds, &Pubkey::new_from_array(program_id));
     (address.to_bytes(), bump)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// The seed order, pinned to the address the host program derives for the same inputs
+    /// (`sdk_fixture_delegation_address_and_instruction_bytes` in the Mollusk suite).
+    #[test]
+    fn delegation_rows_derive_the_host_programs_addresses() {
+        let program_id = Pubkey::from_str_const("DPq5y89RDZPq9NcMh9X1NgjBWgYmSXg3QoipSBV3ZMzQ");
+        let address = |(key, _)| Pubkey::new_from_array(key).to_string();
+        assert_eq!(
+            address(delegation_address(
+                program_id.to_bytes(),
+                [0x11; 32],
+                [0x22; 32],
+                [0x33; 32],
+                [0x44; 32],
+            )),
+            "GkmqVNMzqxopBjPkSkZvuLuDE6Jze3iA3Mq5ZHr6SrtJ"
+        );
+        assert_eq!(
+            address(wildcard_delegation_address(
+                program_id.to_bytes(),
+                [0x11; 32],
+                [0x22; 32],
+            )),
+            "J4BMamYLJvJroFATJp48L6AeQJDQqv86YAQyPqvBcKq1"
+        );
+    }
 }

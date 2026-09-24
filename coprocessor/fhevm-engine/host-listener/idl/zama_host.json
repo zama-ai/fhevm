@@ -4413,8 +4413,8 @@
         "is allowed on, in one application `(program, scope)` or, as the wildcard row, in every",
         "application. EVM keys the same grant by `(delegator, delegate, contractAddress)`.",
         "",
-        "The KMS Connector and the relayer read the record through `zama_solana_acl`'s decoder, so the layout is",
-        "pinned by `shared_crate_decoder_reads_what_the_program_serializes` below."
+        "The KMS Connector and the relayer read the record through `zama_solana_acl`'s decoder, so the",
+        "layout is pinned by `shared_crate_decoder_reads_what_the_program_serializes` below."
       ],
       "type": {
         "kind": "struct",

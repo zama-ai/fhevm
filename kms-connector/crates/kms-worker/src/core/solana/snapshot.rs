@@ -20,7 +20,7 @@ use std::{
 };
 use tokio::sync::Semaphore;
 use url::Url;
-use zama_solana_acl::{CLOCK_SYSVAR_ID, SYSVAR_OWNER_ID, decode_clock_unix_timestamp};
+use zama_solana_acl::{CLOCK_SYSVAR_ID, decode_clock_unix_timestamp};
 
 /// The System program's id: the owner of an account no program has taken over.
 pub const SYSTEM_PROGRAM_ID: SolanaPubkeyBytes = [0; 32];
@@ -108,14 +108,13 @@ impl HostSnapshot {
 
     /// The Clock's Unix time at this read's slot, which delegation expiry is checked against.
     pub fn unix_timestamp(&self) -> Result<u64, SnapshotError> {
-        let malformed = || SnapshotError::MalformedClock;
         let clock = self
             .accounts
             .get(&CLOCK_SYSVAR_ID)
             .and_then(Option::as_ref)
-            .filter(|clock| clock.owner == SYSVAR_OWNER_ID)
-            .ok_or_else(malformed)?;
-        decode_clock_unix_timestamp(&clock.data).map_err(|_| malformed())
+            .ok_or(SnapshotError::MalformedClock)?;
+        decode_clock_unix_timestamp(&clock.owner, &clock.data)
+            .map_err(|_| SnapshotError::MalformedClock)
     }
 
     /// Takes this read as the deciding one. A read older than the discovery read comes from a

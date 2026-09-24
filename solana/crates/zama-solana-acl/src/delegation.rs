@@ -6,8 +6,7 @@
 //! NOT live here is PDA derivation: it needs `find_program_address` (an off-curve check), and
 //! this crate stays free of solana-version-specific dependencies so the on-chain programs and
 //! the off-chain readers can share it whatever Solana version each builds. Each consumer derives
-//! addresses with its own solana-pubkey, all from the one `DELEGATION_SEED` below: the host
-//! program imports the seed and the wildcard sentinel from this crate rather than restating them.
+//! addresses with its own solana-pubkey from the one seed list, [`delegation_seeds`].
 //!
 //! The layout mirrors `zama-host`'s `UserDecryptionDelegation` (a fixed 161-byte account:
 //! 8-byte Anchor discriminator + 153-byte body) and is pinned against the program's own
@@ -22,11 +21,22 @@ use crate::AclError;
 pub const DELEGATION_SEED: &[u8] = b"user-decryption-delegation";
 
 /// The application a wildcard row carries in both its `program` and its `scope` position, as
-/// EVM's wildcard fills `contractAddress`. No encrypted store has this program: a store's
-/// authority must sign as a PDA of the store's program, and `0xff×32` is not a valid Ed25519
-/// point, so no program can be deployed at it. A real application therefore never equals the
-/// wildcard, even one that picked `scope = 0xff×32`.
+/// EVM's wildcard fills `contractAddress`. No encrypted store has this program: `0xff×32` decodes
+/// to a curve point whose key no one holds, so no program can be deployed at it, and being on the
+/// curve it is no PDA either. A store may still pick `scope = 0xff×32`; the host refuses a grant
+/// that sets the sentinel in one position only, so such a store is reached by the wildcard row
+/// alone.
 pub const WILDCARD_APP: [u8; 32] = [0xff; 32];
+
+/// The PDA seeds of a delegation row, bump excluded: the one spelling every side derives from.
+pub fn delegation_seeds<'a>(
+    delegator: &'a [u8; 32],
+    delegate: &'a [u8; 32],
+    program: &'a [u8; 32],
+    scope: &'a [u8; 32],
+) -> [&'a [u8]; 5] {
+    [DELEGATION_SEED, delegator, delegate, program, scope]
+}
 
 const ANCHOR_DISCRIMINATOR_LEN: usize = 8;
 const BODY_LEN: usize = 32 + 32 + 32 + 32 + 8 + 8 + 8 + 1;
@@ -56,6 +66,21 @@ impl UserDecryptionDelegationRecord {
     /// one never granted.
     pub fn is_live_at(&self, unix_timestamp: u64) -> bool {
         self.expires_at > unix_timestamp
+    }
+
+    /// Whether the record holds this tuple. Its address derives from the same fields, but a reader
+    /// does not take the address as proof of what the record says.
+    pub fn names(
+        &self,
+        delegator: &[u8; 32],
+        delegate: &[u8; 32],
+        program: &[u8; 32],
+        scope: &[u8; 32],
+    ) -> bool {
+        self.delegator == *delegator
+            && self.delegate == *delegate
+            && self.program == *program
+            && self.scope == *scope
     }
 }
 

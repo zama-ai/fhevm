@@ -9,8 +9,8 @@
 //!
 //! * it refuses ONLY what the authoritative check could not possibly authorize — the
 //!   delegation rows of the entry's tuple are dead (absent, revoked, or expired at the host's
-//!   Clock) in this read. "In this read" is a real caveat for the absent case: a node
-//!   lagging at `confirmed` shows a freshly granted delegation as absent, and the refusal is
+//!   Clock) in this read. "In this read" is a real caveat: a node lagging at `confirmed` shows a
+//!   freshly granted delegation as absent, or a refreshed one as expired, and the refusal is
 //!   then one the connector, reading later, would not repeat. That window is accepted policy
 //!   rather than an oversight — the EVM pre-check reading `latest` has carried the same
 //!   exposure since it was introduced, passing absent rows through would send the common case (no
@@ -41,11 +41,9 @@
 //! of fetched rows back to their entries ([`judge_planned_entries`]). The transport in
 //! `acl_checker` only carries bytes between these functions.
 
-use zama_solana_acl::delegation::{
-    decode_user_decryption_delegation, UserDecryptionDelegationRecord, WILDCARD_APP,
-};
+use zama_solana_acl::delegation::{decode_user_decryption_delegation, WILDCARD_APP};
 use zama_solana_acl::{
-    decode_clock_unix_timestamp, decode_encrypted_store, CLOCK_SYSVAR_ID, SYSVAR_OWNER_ID,
+    decode_clock_unix_timestamp, decode_encrypted_store, delegation_seeds, CLOCK_SYSVAR_ID,
 };
 
 /// One fetched account, exactly as the RPC returned it.
@@ -91,12 +89,12 @@ pub(crate) struct EntryVerdictInputs<'a> {
 /// The application a delegation row is keyed by: the store's program and scope, or
 /// [`WILDCARD_APP`] in both positions.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub(crate) struct Application {
+pub(crate) struct AppScope {
     pub program: [u8; 32],
     pub scope: [u8; 32],
 }
 
-impl Application {
+impl AppScope {
     const WILDCARD: Self = Self {
         program: WILDCARD_APP,
         scope: WILDCARD_APP,
@@ -105,7 +103,7 @@ impl Application {
 
 /// Decides one delegated entry. Pure: every ambiguity is [`EntryVerdict::Indeterminate`].
 pub(crate) fn entry_verdict(inputs: &EntryVerdictInputs) -> EntryVerdict {
-    let Some(application) = resolve_encrypted_store_application(
+    let Some(app) = resolve_encrypted_store_application(
         inputs.program_id,
         inputs.encrypted_store_key,
         inputs.encrypted_store,
@@ -113,8 +111,8 @@ pub(crate) fn entry_verdict(inputs: &EntryVerdictInputs) -> EntryVerdict {
         return EntryVerdict::Indeterminate;
     };
 
-    let exact = row_state(inputs.exact_row, inputs, application);
-    let wildcard = row_state(inputs.wildcard_row, inputs, Application::WILDCARD);
+    let exact = row_state(inputs.exact_row, inputs, app);
+    let wildcard = row_state(inputs.wildcard_row, inputs, AppScope::WILDCARD);
 
     match (exact, wildcard) {
         (RowState::Live, _) | (_, RowState::Live) => EntryVerdict::Allowed,
@@ -140,7 +138,7 @@ pub(crate) fn resolve_encrypted_store_application(
     program_id: [u8; 32],
     encrypted_store_key: [u8; 32],
     encrypted_store: Option<&RawAccount>,
-) -> Option<Application> {
+) -> Option<AppScope> {
     let account = encrypted_store?;
     if account.owner != program_id {
         return None;
@@ -153,7 +151,7 @@ pub(crate) fn resolve_encrypted_store_application(
     if state.program == WILDCARD_APP {
         return None;
     }
-    Some(Application {
+    Some(AppScope {
         program: state.program,
         scope: state.scope,
     })
@@ -169,11 +167,7 @@ enum RowState {
     Unreadable,
 }
 
-fn row_state(
-    row: Option<&RawAccount>,
-    inputs: &EntryVerdictInputs,
-    application: Application,
-) -> RowState {
+fn row_state(row: Option<&RawAccount>, inputs: &EntryVerdictInputs, app: AppScope) -> RowState {
     let Some(account) = row else {
         return RowState::Dead("is absent");
     };
@@ -183,7 +177,12 @@ fn row_state(
     let Ok(record) = decode_user_decryption_delegation(&account.data) else {
         return RowState::Unreadable;
     };
-    if !names_tuple(&record, inputs.delegator, inputs.delegate, application) {
+    if !record.names(
+        &inputs.delegator,
+        &inputs.delegate,
+        &app.program,
+        &app.scope,
+    ) {
         return RowState::Unreadable;
     }
     // The liveness boundary is the shared crate's, not a re-spelling; only the reason of a
@@ -196,18 +195,6 @@ fn row_state(
         return RowState::Dead("is revoked");
     }
     RowState::Dead("is expired")
-}
-
-fn names_tuple(
-    record: &UserDecryptionDelegationRecord,
-    delegator: [u8; 32],
-    delegate: [u8; 32],
-    application: Application,
-) -> bool {
-    record.delegator == delegator
-        && record.delegate == delegate
-        && record.program == application.program
-        && record.scope == application.scope
 }
 
 /// One delegated entry as admission handed it over: the claimed identities, plus the handle
@@ -285,7 +272,7 @@ pub(crate) fn plan_row_reads(
         let Some(encrypted_store) = encrypted_store else {
             continue;
         };
-        let Some(application) = resolve_encrypted_store_application(
+        let Some(app) = resolve_encrypted_store_application(
             program_id,
             entry.encrypted_store,
             Some(&encrypted_store),
@@ -293,7 +280,7 @@ pub(crate) fn plan_row_reads(
             continue;
         };
         let (exact_address, wildcard_address) =
-            solana_delegation_row_addresses(&entry.delegator, &delegate, application, program_id);
+            solana_delegation_row_addresses(&entry.delegator, &delegate, app, program_id);
         plan.addresses.push(exact_address);
         plan.addresses.push(wildcard_address);
         plan.entries.push(PlannedEntry {
@@ -328,8 +315,7 @@ pub(crate) fn judge_planned_entries(
     };
     let now = clock
         .as_ref()
-        .filter(|clock| clock.owner == SYSVAR_OWNER_ID)
-        .and_then(|clock| decode_clock_unix_timestamp(&clock.data).ok())
+        .and_then(|clock| decode_clock_unix_timestamp(&clock.owner, &clock.data).ok())
         .ok_or(ReadDefect::Clock)?;
     Ok(entries
         .iter()
@@ -384,27 +370,20 @@ fn encrypted_store_address(
 }
 
 /// Both delegation row addresses of one `(delegator, delegate)` couple: the application's row
-/// and the wildcard row it falls back to. One function so the seed order — delegator,
-/// delegate, program, scope — has exactly one spelling in this crate.
+/// and the wildcard row it falls back to.
 fn solana_delegation_row_addresses(
     delegator: &[u8; 32],
     delegate: &[u8; 32],
-    application: Application,
+    app: AppScope,
     program_id: [u8; 32],
 ) -> ([u8; 32], [u8; 32]) {
-    let row = |application: Application| {
+    let row = |app: AppScope| {
         solana_pda(
-            &[
-                zama_solana_acl::delegation::DELEGATION_SEED,
-                delegator,
-                delegate,
-                &application.program,
-                &application.scope,
-            ],
+            &delegation_seeds(delegator, delegate, &app.program, &app.scope),
             program_id,
         )
     };
-    (row(application), row(Application::WILDCARD))
+    (row(app), row(AppScope::WILDCARD))
 }
 
 #[cfg(test)]
@@ -413,7 +392,7 @@ mod tests {
     use zama_solana_acl::delegation::{
         UserDecryptionDelegationRecord, USER_DECRYPTION_DELEGATION_DISCRIMINATOR,
     };
-    use zama_solana_acl::{encrypted_store_discriminator, EncryptedStore};
+    use zama_solana_acl::{encrypted_store_discriminator, EncryptedStore, SYSVAR_OWNER_ID};
 
     const PROGRAM_ID: [u8; 32] = [7; 32];
     const APP_PROGRAM: [u8; 32] = [1; 32];
@@ -755,7 +734,7 @@ mod tests {
             solana_delegation_row_addresses(
                 &DELEGATOR,
                 &DELEGATE,
-                Application {
+                AppScope {
                     program: APP_PROGRAM,
                     scope,
                 },
@@ -917,7 +896,7 @@ mod tests {
         let (exact_row, wildcard_row) = solana_delegation_row_addresses(
             &[0x11; 32],
             &[0x22; 32],
-            Application {
+            AppScope {
                 program: [0x33; 32],
                 scope: [0x44; 32],
             },

@@ -34,8 +34,8 @@ pub use clock::{decode_clock_unix_timestamp, CLOCK_SYSVAR_ID, SYSVAR_OWNER_ID};
 
 pub mod delegation;
 pub use delegation::{
-    decode_user_decryption_delegation, UserDecryptionDelegationRecord, DELEGATION_SEED,
-    USER_DECRYPTION_DELEGATION_DISCRIMINATOR, WILDCARD_APP,
+    decode_user_decryption_delegation, delegation_seeds, UserDecryptionDelegationRecord,
+    DELEGATION_SEED, USER_DECRYPTION_DELEGATION_DISCRIMINATOR, WILDCARD_APP,
 };
 pub mod permit_invalidation;
 pub use permit_invalidation::{
@@ -61,6 +61,8 @@ const PUBLIC_DECRYPT_LEAF_PREFIX: &[u8] = b"ZAMA_PUBLIC_DECRYPT_LEAF_V1";
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum AclError {
     BadDiscriminator,
+    /// The account is not owned by the owner its type requires.
+    BadOwner,
     BadAccountData,
     MmrInconsistent,
     MmrPeakCapacityExceeded,

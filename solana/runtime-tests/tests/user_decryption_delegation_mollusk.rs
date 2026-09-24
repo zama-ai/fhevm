@@ -12,10 +12,11 @@
 //! * a grant whose application is the wildcard `[0xff; 32]` in both its program and its scope
 //!   position is legal and writes an ordinary record — that row is the delegator's grant across
 //!   every application, the same rule the EVM ACL applies to its wildcard delegation address;
-//! * both grant and revoke are gated by the `acl_writes` pause flag. During an incident pause the delegator's only
-//!   lever over existing delegations is blocked while those delegations keep authorizing
-//!   (the Connector's reads are pause-blind) — an asymmetry shared with the EVM side and
-//!   raised there as an open question; these tests pin the current parity, not endorse it.
+//! * both grant and revoke are gated by the `acl_writes` pause flag. During an incident pause
+//!   the delegator's only lever over existing delegations is blocked while those delegations
+//!   keep authorizing (the Connector's reads are pause-blind) — an asymmetry shared with the EVM
+//!   side and raised there as an open question; these tests pin the current parity, not endorse
+//!   it.
 //!
 //! Build the program artifact before running these (`bash scripts/check-zama-host-idl.sh`); a
 //! stale `.so` makes the whole harness fail on an unrelated missing sysvar rather than on
@@ -1427,6 +1428,29 @@ fn sdk_fixture_delegation_address_and_instruction_bytes() {
          3333333333333333333333333333333333333333333333333333333333333333\
          4444444444444444444444444444444444444444444444444444444444444444\
          f40100000000000007000000000000009001000000000000ff"
+    );
+}
+
+/// The off-chain readers decode the Clock through the shared crate's own ids and layout; this pins
+/// both against the runtime's, so a wrong offset cannot hide behind fixtures built the same way.
+#[test]
+fn the_shared_clock_decoder_reads_the_runtimes_clock() {
+    assert_eq!(
+        zama_solana_acl::CLOCK_SYSVAR_ID,
+        solana_sdk::sysvar::clock::ID.to_bytes()
+    );
+    assert_eq!(zama_solana_acl::SYSVAR_OWNER_ID, solana_sdk::sysvar::ID.to_bytes());
+    let clock = solana_sdk::clock::Clock {
+        slot: 1,
+        epoch_start_timestamp: 2,
+        epoch: 3,
+        leader_schedule_epoch: 4,
+        unix_timestamp: 1_700_000_005,
+    };
+    let data = bincode::serialize(&clock).expect("the Clock serializes");
+    assert_eq!(
+        zama_solana_acl::decode_clock_unix_timestamp(&zama_solana_acl::SYSVAR_OWNER_ID, &data),
+        Ok(1_700_000_005)
     );
 }
 

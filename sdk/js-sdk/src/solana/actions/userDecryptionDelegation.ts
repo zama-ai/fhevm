@@ -45,8 +45,9 @@ export type SolanaDelegationApplication = {
 
 /**
  * The application a wildcard delegation row carries: `0xff` × 32 in both the program and the scope
- * position, as EVM's wildcard fills the contract address. No program can be deployed at it, so no
- * encrypted store belongs to it, and the host refuses a grant that sets only one of the two.
+ * position, as EVM's wildcard fills the contract address. No one holds the key of that address, so
+ * no program is deployed at it and no encrypted store belongs to it. The host refuses a grant that
+ * sets only one of the two.
  */
 export const SOLANA_WILDCARD_APP: SolanaDelegationApplication = {
   program: 'JEKNVnkbo3jma5nREBBJCDoXFVeKkD56V3xKrvRmWxFG' as Address<'JEKNVnkbo3jma5nREBBJCDoXFVeKkD56V3xKrvRmWxFG'>,
@@ -54,10 +55,16 @@ export const SOLANA_WILDCARD_APP: SolanaDelegationApplication = {
 };
 
 function isWildcardApp(application: SolanaDelegationApplication): boolean {
-  return (
-    application.program === SOLANA_WILDCARD_APP.program &&
-    containsBytes(application.scope, SOLANA_WILDCARD_APP.scope, 0)
-  );
+  return application.program === SOLANA_WILDCARD_APP.program && sameScope(application.scope, SOLANA_WILDCARD_APP.scope);
+}
+
+function sameScope(a: ReadonlyUint8Array, b: ReadonlyUint8Array): boolean {
+  return a.length === b.length && containsBytes(a, b, 0);
+}
+
+/** The host encodes the scope as exactly 32 bytes; a shorter one would be padded into another tuple. */
+function assertScope(scope: ReadonlyUint8Array): void {
+  if (scope.length !== 32) throw new Error(`delegation scope must be 32 bytes, got ${scope.length}`);
 }
 
 /**
@@ -81,6 +88,7 @@ async function solanaUserDecryptionDelegationPda(
   tuple: SolanaUserDecryptionDelegationTuple,
   programAddress: Address,
 ): Promise<ProgramDerivedAddress> {
+  assertScope(tuple.scope);
   const encoder = getAddressEncoder();
   return await getProgramDerivedAddress({
     programAddress,
@@ -182,6 +190,7 @@ export async function buildDelegateForUserDecryptionInstruction(
     program: params.program,
     scope: params.scope,
   };
+  assertScope(tuple.scope);
   const delegationRecord =
     params.delegationRecord ?? (await solanaUserDecryptionDelegationAddress(tuple, { programAddress }));
   // The host config is resolved here, not left to the generated builder: its default resolver
@@ -233,6 +242,7 @@ export async function buildRevokeDelegationForUserDecryptionInstruction(
     program: params.program,
     scope: params.scope,
   };
+  assertScope(tuple.scope);
   const delegationRecord =
     params.delegationRecord ?? (await solanaUserDecryptionDelegationAddress(tuple, { programAddress }));
   // Resolved here for the same reason as in the delegate builder: the generated default is
@@ -399,7 +409,7 @@ export async function fetchSolanaUserDecryptionDelegation(
       record.delegator !== queried.delegator ||
       record.delegate !== queried.delegate ||
       record.program !== queried.program ||
-      !containsBytes(record.scope, queried.scope, 0)
+      !sameScope(record.scope, queried.scope)
     ) {
       throw new Error(
         `delegation record ${address} names a (delegator, delegate, program, scope) tuple other than ` +

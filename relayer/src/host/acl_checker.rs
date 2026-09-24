@@ -616,11 +616,10 @@ impl HostAclChecker {
             return Ok(());
         }
 
-        // Round 1: the encrypted stores the entries name, to learn each entry's
-        // application. Its slot is
-        // the floor the row read must be served at or after — otherwise a load-balanced RPC can
-        // answer round 2 from a replica behind round 1, and a grant confirmed between the two
-        // reads as absent.
+        // Round 1: the encrypted stores the entries name, to learn each entry's application. Its
+        // slot is the floor the row read must be served at or after — otherwise a load-balanced
+        // RPC can answer round 2 from a replica behind round 1, and a grant confirmed between the
+        // two reads as absent.
         let encrypted_store_addresses = encrypted_store_read_addresses(&delegated);
         let (discovery_slot, encrypted_stores) = match self
             .solana_accounts_with_retry(job_id, chain, chain_id, &encrypted_store_addresses, None)

@@ -209,7 +209,7 @@ async fn authorize_delegated(delegation: DelegationFixture) -> Result<(), Author
     authorize_in(world, &request).await.0
 }
 
-/// The delegation of the scenario above, live at the observed slot.
+/// The delegation of the scenario above, live at the host's Clock (`HOST_NOW`).
 fn live_delegation() -> DelegationFixture {
     DelegationFixture::live(Wallet::new(2).pubkey(), Wallet::new(1).pubkey())
 }
@@ -332,7 +332,7 @@ async fn authorize_delegated_with_rows(
     authorize_in(world, &request).await.0
 }
 
-/// The wildcard row of the same pair, live at the observed slot.
+/// The wildcard row of the same pair, live at the host's Clock (`HOST_NOW`).
 fn live_wildcard() -> DelegationFixture {
     DelegationFixture::live_wildcard(Wallet::new(2).pubkey(), Wallet::new(1).pubkey())
 }

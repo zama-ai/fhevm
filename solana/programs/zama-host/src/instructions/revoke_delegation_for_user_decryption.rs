@@ -51,29 +51,27 @@ pub fn revoke_delegation_for_user_decryption(
     );
     require_keys_eq!(
         expected,
-        ctx.accounts.delegation_record.key(),
+        record.key(),
         ZamaHostError::DelegationPdaMismatch
     );
     require!(
-        ctx.accounts.delegation_record.to_account_info().data_len()
+        record.to_account_info().data_len()
             == 8 + UserDecryptionDelegation::SPACE,
         ZamaHostError::InvalidDelegation
     );
     require!(
-        ctx.accounts.delegation_record.bump == bump,
+        record.bump == bump,
         ZamaHostError::DelegationPdaMismatch
     );
     require!(
-        ctx.accounts.delegation_record.last_update_slot < clock.slot,
+        record.last_update_slot < clock.slot,
         ZamaHostError::DelegationUpdatedInCurrentSlot
     );
     require!(
-        ctx.accounts.delegation_record.expires_at != 0,
+        record.expires_at != 0,
         ZamaHostError::NotDelegatedYet
     );
-    let delegation_counter = ctx
-        .accounts
-        .delegation_record
+    let delegation_counter = record
         .delegation_counter
         .checked_add(1)
         .ok_or(ZamaHostError::InvalidDelegation)?;
