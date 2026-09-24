@@ -85,6 +85,12 @@ Key inputs (all have sensible defaults — you rarely set more than a couple):
   `enable_gpu=true` on a dispatch (CLI `--workers-tag`). Must be empty when
   GPU is off. The `preview-env-gpu` label cannot carry a tag, so a GPU
   preview is dispatch-only.
+- `listener_v2_only` — run the host side on the **listener v2 stack only**
+  (`listener-<i>` → Redis → host-listener-consumer): the host-listener pollers
+  (`coprocessor-poller-<i>`, `coprocessor-poller-polygon-<i>`) are not
+  deployed (default `false`, a checkbox in the Actions UI). CLI
+  `--listener-v2-only`. Pair with `automated_tests` to run e2e against it.
+  Dispatch-only.
 - `deploy_polygon` — also add a second Polygon Amoy (`80002`) host chain (default
   `false`). Fresh local anvil, reuses the ETH KMS key; roughly doubles the
   host-side stack. With `automated_tests` on it also runs a Polygon e2e suite.
@@ -185,6 +191,7 @@ ci/preview-env/preview-env launch --ref <your-branch> --gpu --workers-tag fd282b
 ci/preview-env/preview-env launch --ref <your-branch> --blockchain-dev
 ci/preview-env/preview-env launch --ref <your-branch> --testnets --tests
 ci/preview-env/preview-env launch --ref <your-branch> --blue-green --blockchain-dev --tests
+ci/preview-env/preview-env launch --ref <your-branch> --listener-v2-only --tests
 ci/preview-env/preview-env launch --ref <your-branch> --set coprocessor_version=abc1234
 ci/preview-env/preview-env launch --ref <your-branch> --tests \
   --set kms_core_version=v0.14.1 --set kms_repo_ref=v0.14.1
