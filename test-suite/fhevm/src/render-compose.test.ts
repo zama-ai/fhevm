@@ -222,6 +222,19 @@ describe("render-compose", () => {
     });
   });
 
+  test("selects the published centralized core repository for an older release", async () => {
+    await withTempStateDir(async () => {
+      await mkdir(path.dirname(envPath("coprocessor")), { recursive: true });
+      await writeFile(envPath("coprocessor"), "\n");
+      await writeFile(envPath("coprocessor.1"), "\n");
+      const pinned = structuredClone(state);
+      pinned.versions.env.CORE_VERSION = "v0.14.0-1";
+      await generateComposeOverrides(pinned, stackSpecForState(pinned));
+      const doc = YAML.parse(await readFile(composePath("core"), "utf8"));
+      expect(doc.services["kms-core"].image).toBe("ghcr.io/zama-ai/kms/core-service:v0.14.0-1");
+    });
+  });
+
   test("persists kms-core private vault across container recreates", async () => {
     const doc = await loadMergedComposeDoc("core");
     const volumes = doc.services["kms-core"]?.volumes as string[] | undefined;

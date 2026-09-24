@@ -23,6 +23,8 @@ import {
   renderThresholdPeers,
   renderThresholdSpareConfig,
   thresholdCoreEnv,
+  renderKmsMigration,
+  kmsMigrationConfigName,
 } from "./generate/kms-core";
 import {
   kmsConnectorDbName,
@@ -103,10 +105,24 @@ describe("resolveKmsTopology", () => {
     ).toThrow(/committeeSize/);
   });
 
-  test("rejects Default params for threshold (deferred to a follow-up PR)", () => {
+  test("rejects Default params without explicit insecure test keygen", () => {
     expect(() => resolveKmsTopology({ mode: "threshold", parties: 4, threshold: 1, fheParams: "Default" })).toThrow(
       /Test/,
     );
+  });
+
+  test("insecure test keygen is explicit, threshold-only, and routes every party", () => {
+    expect(() => resolveKmsTopology({ mode: "centralized", insecureTestKeygen: true })).toThrow(/threshold/);
+    expect(() => resolveKmsTopology({ mode: "threshold", insecureTestKeygen: "true" as unknown as boolean })).toThrow(/boolean/);
+    const topology = resolveKmsTopology({ mode: "threshold", fheParams: "Default", insecureTestKeygen: true });
+    const services = buildKmsThresholdOverride(topology, RENDER_OPTS).services;
+    for (let party = 1; party <= 4; party++) {
+      const name = `kms-test-keygen-proxy-${party}`;
+      expect(services[name].command).toEqual(["node", "/proxy.cjs", `http://${kmsCoreName(party)}:${50000 + 100 * party}`]);
+      expect(services[name].ports).toBeUndefined();
+      expect(services["kms-core-init"].depends_on).toHaveProperty(name);
+    }
+    expect(Object.keys(buildKmsThresholdOverride(fourParty, RENDER_OPTS).services).some(name => name.startsWith("kms-test-keygen-proxy"))).toBe(false);
   });
 
   test("rejects Test params for centralized (it would be a silent no-op)", () => {
@@ -446,6 +462,16 @@ describe("renderEnvMaps (threshold)", () => {
     expect(gw.KMS_TX_SENDER_ADDRESS_0).not.toBe(gw.KMS_TX_SENDER_ADDRESS_3);
     // Test params drive the on-chain keygen/crsgen triggers
     expect(rendered.versionsEnv.KEYGEN_PARAMS_TYPE).toBe("1");
+    state.scenario.kms = resolveKmsTopology({ mode: "threshold", fheParams: "Default", insecureTestKeygen: true });
+    const gpu = await renderEnvMaps({ discovery: undefined }, stackSpecForState(state), templateEnvs, deriveWallet);
+    expect(gpu.versionsEnv.KEYGEN_PARAMS_TYPE).toBe("0");
+    expect(gpu.componentEnvs["kms-connector"].KMS_CONNECTOR_KMS_CORE_ENDPOINTS).toBe("http://kms-test-keygen-proxy-1:3000");
+    for (let party = 2; party <= 4; party++) {
+      expect(gpu.instanceEnvs[kmsConnectorEnvName(party)].KMS_CONNECTOR_KMS_CORE_ENDPOINTS).toBe(`http://kms-test-keygen-proxy-${party}:3000`);
+    }
+    // MPC identities and context initialization continue to use the real cores.
+    expect(gpu.componentEnvs["host-sc"].KMS_NODE_MPC_IDENTITY_0).toBe("kms-core");
+
   });
 });
 
@@ -748,7 +774,8 @@ describe("upgradeThresholdKmsOperator", () => {
       const calls: string[] = [];
       let persisted = state;
 
-      await upgradeThresholdKmsOperator(2, { lockFile, overrides: [{ group: "kms-connector" }] }, {
+      const migration = [{ contextId: "07".padEnd(64, "0"), epochIds: ["08".padEnd(64, "0")] }];
+      await upgradeThresholdKmsOperator(2, { lockFile, migration, overrides: [{ group: "kms-connector" }] }, {
         async loadState() {
           return persisted;
         },
@@ -806,6 +833,8 @@ describe("upgradeThresholdKmsOperator", () => {
       expect(persisted.versions.env.CORE_VERSION).toBe(versions.env.CORE_VERSION);
       expect(persisted.versions.env.CONNECTOR_KMS_WORKER_VERSION).toBe(versions.env.CONNECTOR_KMS_WORKER_VERSION);
       expect(persisted.kmsCoreVersionByNodeId).toEqual({ 2: "target-core" });
+      expect(persisted.kmsMigrationByNodeId).toEqual({ 2: migration });
+      expect(stackSpecForState(persisted).kmsMigrationByNodeId).toEqual({ 2: migration });
       expect(persisted.kmsConnectorDeploymentByNodeId?.[2]).toEqual({
         locallyBuilt: true,
         versions: {
@@ -997,5 +1026,36 @@ describe("upgradeThresholdKmsOperator", () => {
       async postBootHealthGate() {},
     })).rejects.toThrow("does not support spare KMS parties");
     expect(touched).toBe(false);
+  });
+});
+
+
+describe("KMS image repository compatibility", () => {
+  test("uses the published pre-0.15 insecure repository for release pins", () => {
+    expect(kmsRenderOptionsFor("v0.14.0-1").coreImage).toBe("ghcr.io/zama-ai/kms/core-service:v0.14.0-1");
+  });
+  test("uses the renamed repository for current releases and source tags", () => {
+    for (const tag of ["v0.15.0-0", "v0.15.1", "candidate-sha"]) {
+      expect(kmsRenderOptionsFor(tag).coreImage).toBe(`ghcr.io/zama-ai/kms/core-service-insecure:${tag}`);
+    }
+  });
+});
+
+
+describe("KMS epoch migration configuration", () => {
+  const mapping = [{ contextId: "07".padEnd(64, "0"), epochIds: ["08".padEnd(64, "0")] }];
+  test("mounts migration config only into explicitly upgraded nodes", () => {
+    const services = buildKmsThresholdOverride(fourParty, RENDER_OPTS, { 2: "v0.15.0-0" }, { 2: mapping }).services;
+    expect(JSON.stringify(services["kms-core-2"].volumes)).toContain(kmsMigrationConfigName(2));
+    expect(JSON.stringify(services["kms-core"].volumes)).not.toContain("migration");
+    expect(JSON.stringify(services["kms-core-3"].volumes)).not.toContain("migration");
+    expect(Bun.TOML.parse(renderKmsMigration(mapping))).toEqual({ migration: { context_associations: [{ context_id: mapping[0]!.contextId, epoch_ids: mapping[0]!.epochIds }] } });
+  });
+  test("rejects ambiguous ownership and invalid IDs before rendering", () => {
+    expect(() => renderKmsMigration([])).toThrow();
+    expect(() => renderKmsMigration([...mapping, ...mapping])).toThrow();
+    expect(() => renderKmsMigration([...mapping, { contextId: "09".padEnd(64, "0"), epochIds: mapping[0]!.epochIds }])).toThrow();
+    expect(() => renderKmsMigration([{ contextId: '"injected"', epochIds: [] }])).toThrow();
+    expect(() => renderKmsMigration([{ contextId: mapping[0]!.contextId, epochIds: [] }])).toThrow();
   });
 });

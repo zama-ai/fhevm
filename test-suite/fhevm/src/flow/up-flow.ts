@@ -2669,7 +2669,7 @@ const thresholdKmsOperatorUpgradeOperations: ThresholdKmsOperatorUpgradeOperatio
 /** Upgrades one serving operator's KMS Core and matching Connector without yielding between them. */
 export const upgradeThresholdKmsOperator = async (
   operatorId: number,
-  options: { lockFile: string; overrides?: LocalOverride[] },
+  options: { lockFile: string; overrides?: LocalOverride[]; migration?: NonNullable<State["kmsMigrationByNodeId"]>[string] },
   operations: ThresholdKmsOperatorUpgradeOperations = thresholdKmsOperatorUpgradeOperations,
 ) => {
   const state = await operations.loadState();
@@ -2772,6 +2772,9 @@ export const upgradeThresholdKmsOperator = async (
     },
     kmsCoreVersionByNodeId: Object.keys(perNodeVersions).length ? perNodeVersions : undefined,
     kmsConnectorDeploymentByNodeId: Object.keys(perNodeConnectors).length ? perNodeConnectors : undefined,
+    kmsMigrationByNodeId: options.migration
+      ? { ...state.kmsMigrationByNodeId, [operatorId]: options.migration }
+      : state.kmsMigrationByNodeId,
   };
   await assertSchemaCompatibility(nextState.versions, nextState.overrides, nextState.scenario, false);
   await operations.assertQuorum(state, operatorId);

@@ -171,6 +171,7 @@ const coprocessorBuildSpec = (target: string, e2ePublicRuntime = false) =>
   buildSpec("../../..", "coprocessor/fhevm-engine/Dockerfile.workspace", {
     target,
     args: {
+      CARGO_FEATURES: "${FHEVM_CONSENSUS_TEST_FEATURES:-}",
       RUST_IMAGE_VERSION: COPROCESSOR_RUST_IMAGE_VERSION,
       ...(e2ePublicRuntime
         ? {
@@ -958,6 +959,9 @@ const buildComposeOverride = async (component: string, plan: StackSpec) => {
   if (component === "coprocessor") {
     return buildCoprocessorOverride(plan);
   }
+  if (component === "core") {
+    return { services: { "kms-core": { image: kmsRenderOptionsFor(plan.versions.env.CORE_VERSION).coreImage } } };
+  }
   if (component === "core-threshold") {
     // Dedicated threshold-cluster component (gen-keys + N cores + kms-init).
     // Separate from `core` so it never merges with the centralized template.
@@ -965,6 +969,7 @@ const buildComposeOverride = async (component: string, plan: StackSpec) => {
       plan.kms,
       kmsRenderOptionsFor(plan.versions.env.CORE_VERSION),
       plan.kmsCoreVersionByNodeId,
+      plan.kmsMigrationByNodeId,
     );
   }
   if (component === "kms-connector" && plan.kms.mode === "threshold") {
@@ -1163,7 +1168,7 @@ export const generatedComposeComponents = (plan: Pick<StackSpec, "overrides" | "
     // Always generated: it carries the host Docker socket wiring for the e2e runner,
     // which depends on host facts rather than on any local build override.
     "test-suite",
-    ...(plan.kms.mode === "threshold" ? ["core-threshold", "kms-connector"] : []),
+    ...(plan.kms.mode === "threshold" ? ["core-threshold", "kms-connector"] : ["core"]),
     ...plan.overrides.flatMap((override) => GROUP_BUILD_COMPONENTS[override.group]),
   ]);
 
