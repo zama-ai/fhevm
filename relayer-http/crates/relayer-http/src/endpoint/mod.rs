@@ -42,8 +42,7 @@ pub async fn serve(app: App) -> std::io::Result<()> {
 
 #[cfg(test)]
 mod tests {
-    use std::io::Write;
-    use std::sync::{Arc, Mutex};
+    use std::sync::Arc;
     use std::time::Duration;
 
     use axum::body::Body;
@@ -52,14 +51,13 @@ mod tests {
     use serde_json::Value;
     use tokio_util::sync::CancellationToken;
     use tower::ServiceExt;
-    use tracing_subscriber::fmt::MakeWriter;
-    use tracing_subscriber::layer::SubscriberExt;
 
     use super::*;
     use crate::config::HttpConfig;
     use crate::kms_aggregator::mock::{Fixed, MockClient, Reply};
     use crate::kms_aggregator::{Aggregator, UserChecks};
     use crate::logging::Log;
+    use crate::logging::capture::{Sink, capture};
 
     /// 13 mock nodes answering `reply`, thresholds 9 (user) and 5 (public), a 2 s deadline.
     fn app(reply: Reply, shutdown: CancellationToken) -> App {
@@ -256,64 +254,9 @@ mod tests {
         );
     }
 
-    /// Collects the JSON log lines of this thread while it lives.
-    #[derive(Clone, Default)]
-    struct Sink(Arc<Mutex<Vec<u8>>>);
-
-    impl Write for Sink {
-        fn write(&mut self, buf: &[u8]) -> std::io::Result<usize> {
-            self.0.lock().unwrap().extend_from_slice(buf);
-            Ok(buf.len())
-        }
-        fn flush(&mut self) -> std::io::Result<()> {
-            Ok(())
-        }
-    }
-
-    impl<'a> MakeWriter<'a> for Sink {
-        type Writer = Sink;
-        fn make_writer(&'a self) -> Sink {
-            self.clone()
-        }
-    }
-
-    impl Sink {
-        fn clear(&self) {
-            self.0.lock().unwrap().clear();
-        }
-
-        /// The `request …` lines, parsed, in order.
-        fn request_lines(&self) -> Vec<Value> {
-            let bytes = self.0.lock().unwrap().clone();
-            String::from_utf8(bytes)
-                .unwrap()
-                .lines()
-                .map(|line| serde_json::from_str::<Value>(line).unwrap())
-                .filter(|line| {
-                    line["fields"]["message"]
-                        .as_str()
-                        .is_some_and(|m| m.starts_with("request "))
-                })
-                .collect()
-        }
-    }
-
-    /// Installs a JSON subscriber for this thread and returns its sink.
-    ///
-    /// `tracing` caches per call site whether any subscriber wants it. A call site first hit by a concurrent
-    /// test while it had no subscriber is cached as disabled, and the rebuild triggered by installing this one
-    /// can miss a call site still being registered. The probe emits every `Log` event and rebuilds the cache
-    /// until all of them reach the sink, so the assertions never depend on test scheduling.
+    /// Installs the JSON capture; the probe emits every `Log` event once.
     async fn capture_logs() -> (tracing::subscriber::DefaultGuard, Sink) {
-        let sink = Sink::default();
-        let subscriber = tracing_subscriber::registry().with(
-            tracing_subscriber::fmt::layer()
-                .json()
-                .with_writer(sink.clone()),
-        );
-        // Thread-local: wins over the global subscriber the logging tests may have installed.
-        let guard = tracing::subscriber::set_default(subscriber);
-        for _ in 0..1000 {
+        capture("request ", 7, || {
             let mut probe = Log::new("probe");
             probe.received(vec![]);
             probe.body_rejected("probe");
@@ -322,15 +265,8 @@ mod tests {
             probe.succeeded(200);
             probe.rejected(400, "probe", "probe");
             probe.failed(500, "probe");
-            let seen = sink.request_lines().len();
-            sink.clear();
-            if seen == 7 {
-                return (guard, sink);
-            }
-            tracing::callsite::rebuild_interest_cache();
-            tokio::task::yield_now().await;
-        }
-        panic!("the Log call sites never became enabled");
+        })
+        .await
     }
 
     #[tokio::test]
@@ -342,7 +278,7 @@ mod tests {
         call(healthy(), "POST", "/v4/exp/user-decrypt", &no_key).await;
         call(healthy(), "POST", "/v4/exp/public-decrypt", r#"{"x":1}"#).await;
 
-        let lines = sink.request_lines();
+        let lines = sink.lines("request ");
         let messages: Vec<&str> = lines
             .iter()
             .map(|l| l["fields"]["message"].as_str().unwrap())

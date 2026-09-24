@@ -137,6 +137,89 @@ macro_rules! log {
 }
 pub(crate) use log;
 
+/// Test only: collects the JSON log lines emitted on the current thread.
+#[cfg(test)]
+pub(crate) mod capture {
+    use std::io::Write;
+    use std::sync::{Arc, Mutex};
+
+    use serde_json::Value;
+    use tracing::subscriber::DefaultGuard;
+    use tracing_subscriber::fmt::MakeWriter;
+    use tracing_subscriber::layer::SubscriberExt;
+
+    /// The captured bytes, shared with the subscriber.
+    #[derive(Clone, Default)]
+    pub struct Sink(Arc<Mutex<Vec<u8>>>);
+
+    impl Write for Sink {
+        fn write(&mut self, buf: &[u8]) -> std::io::Result<usize> {
+            self.0.lock().unwrap().extend_from_slice(buf);
+            Ok(buf.len())
+        }
+        fn flush(&mut self) -> std::io::Result<()> {
+            Ok(())
+        }
+    }
+
+    impl<'a> MakeWriter<'a> for Sink {
+        type Writer = Sink;
+        fn make_writer(&'a self) -> Sink {
+            self.clone()
+        }
+    }
+
+    impl Sink {
+        pub fn clear(&self) {
+            self.0.lock().unwrap().clear();
+        }
+
+        /// The lines whose message starts with `prefix`, parsed, in order.
+        pub fn lines(&self, prefix: &str) -> Vec<Value> {
+            let bytes = self.0.lock().unwrap().clone();
+            String::from_utf8(bytes)
+                .unwrap()
+                .lines()
+                .map(|line| serde_json::from_str::<Value>(line).unwrap())
+                .filter(|line| {
+                    line["fields"]["message"]
+                        .as_str()
+                        .is_some_and(|m| m.starts_with(prefix))
+                })
+                .collect()
+        }
+    }
+
+    /// Installs a JSON subscriber for this thread and returns its sink.
+    ///
+    /// `tracing` caches per call site whether any subscriber wants it. A call site first hit by a concurrent
+    /// test while it had no subscriber is cached as disabled, and the rebuild triggered by installing this one
+    /// can miss a call site still being registered. `probe` emits the call sites under test (`expected` lines
+    /// starting with `prefix`); the cache is rebuilt until all of them reach the sink, so the assertions never
+    /// depend on test scheduling.
+    pub async fn capture(prefix: &str, expected: usize, probe: impl Fn()) -> (DefaultGuard, Sink) {
+        let sink = Sink::default();
+        let subscriber = tracing_subscriber::registry().with(
+            tracing_subscriber::fmt::layer()
+                .json()
+                .with_writer(sink.clone()),
+        );
+        // Thread-local: wins over the global subscriber the logging tests may have installed.
+        let guard = tracing::subscriber::set_default(subscriber);
+        for _ in 0..1000 {
+            probe();
+            let seen = sink.lines(prefix).len();
+            sink.clear();
+            if seen == expected {
+                return (guard, sink);
+            }
+            tracing::callsite::rebuild_interest_cache();
+            tokio::task::yield_now().await;
+        }
+        panic!("the probed call sites never became enabled");
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
