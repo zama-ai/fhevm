@@ -16,16 +16,18 @@ use zama_solana_acl::{
 /// Asks the coprocessors in configured order until every query is resolved, and returns one result
 /// per query in batch order. Each coprocessor is asked only for the queries still unresolved, and
 /// only a found proof that verifies against the observed peaks resolves one: any other answer, a
-/// failed read, or an answer of the wrong length moves on to the next coprocessor. A query no
-/// coprocessor answered is a [`ProofReadError`]; otherwise it keeps its last failure, except that
-/// one coprocessor's terminal failure does not replace another's recoverable one. The worker loop
-/// is the only retry layer.
+/// failed read, or an answer of the wrong length moves on to the next coprocessor. A query keeps
+/// its last failure, except that one coprocessor's terminal failure does not replace another's
+/// recoverable one. A terminal failure stands only if every coprocessor asked answered: a query
+/// that one of them could not answer, and no other answered with a recoverable failure, is a
+/// [`ProofReadError`]. The worker loop is the only retry layer.
 pub async fn verify_proofs<P: HostProofReader, T: Sync>(
     reader: &P,
     batch: &[(LeafQuery, T)],
     verify: impl Fn(&T, &LeafProofOutcome) -> Result<(), HandleBindingFailure>,
 ) -> Result<Vec<Result<(), HandleBindingFailure>>, ProofReadError> {
     let mut results: Vec<Option<Result<(), HandleBindingFailure>>> = vec![None; batch.len()];
+    let mut unanswered = vec![false; batch.len()];
     let mut read_failures = Vec::new();
     for source in 0..reader.source_count() {
         let unresolved: Vec<usize> = (0..batch.len())
@@ -48,6 +50,9 @@ pub async fn verify_proofs<P: HostProofReader, T: Sync>(
             Ok(outcomes) => outcomes,
             Err(error) => {
                 read_failures.push(format!("coprocessor {source}: {error}"));
+                for position in unresolved {
+                    unanswered[position] = true;
+                }
                 continue;
             }
         };
@@ -63,10 +68,20 @@ pub async fn verify_proofs<P: HostProofReader, T: Sync>(
     }
     results
         .into_iter()
-        .map(|result| {
-            result.ok_or_else(|| ProofReadError::Unavailable {
+        .zip(unanswered)
+        .map(|(result, unanswered)| match result {
+            Some(Err(failure)) if unanswered && !failure.is_recoverable() => {
+                Err(ProofReadError::Unavailable {
+                    reason: format!(
+                        "{failure}, and not every coprocessor answered: {}",
+                        read_failures.join("; ")
+                    ),
+                })
+            }
+            Some(result) => Ok(result),
+            None => Err(ProofReadError::Unavailable {
                 reason: format!("no coprocessor answered: {}", read_failures.join("; ")),
-            })
+            }),
         })
         .collect()
 }

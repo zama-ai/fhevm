@@ -806,6 +806,54 @@ async fn a_terminal_answer_does_not_replace_a_recoverable_one(#[case] incomplete
     ));
 }
 
+/// When every coprocessor answers that its history for the store is incomplete, the entry fails
+/// terminally.
+#[tokio::test]
+async fn a_terminal_answer_from_every_coprocessor_stands() {
+    let (_, account, [entry, _]) = two_allowed_queries();
+    let incomplete = || ProofRecord::answering([(entry.0, LeafProofOutcome::HistoryIncomplete)]);
+    let reader = ScriptedProofReader::in_order(vec![incomplete(), incomplete()]);
+
+    let results = verify_with(&reader, &account, &[entry]).await.unwrap();
+
+    assert!(matches!(
+        &results[..],
+        [Err(HandleBindingFailure::HistoryIncomplete)]
+    ));
+}
+
+/// A terminal answer stands only when every coprocessor answered: one that could not be read may
+/// still hold the history the other lacks, whichever is asked first.
+#[rstest]
+#[case::incomplete_first(false)]
+#[case::incomplete_last(true)]
+#[tokio::test]
+async fn a_terminal_answer_beside_an_unread_coprocessor_is_a_proof_read_error(
+    #[case] incomplete_last: bool,
+) {
+    let (_, account, [entry, _]) = two_allowed_queries();
+    let mut sources = vec![
+        ProofSource::Serving(ProofRecord::answering([(
+            entry.0,
+            LeafProofOutcome::HistoryIncomplete,
+        )])),
+        ProofSource::Down,
+    ];
+    if incomplete_last {
+        sources.reverse();
+    }
+
+    let error = verify_with(
+        &ScriptedProofReader::coprocessors(sources),
+        &account,
+        &[entry],
+    )
+    .await
+    .unwrap_err();
+
+    assert!(matches!(error, ProofReadError::Unavailable { .. }));
+}
+
 /// Through the production client: an unavailable coprocessor hands the batch to the next one.
 #[tokio::test]
 async fn an_unavailable_coprocessor_hands_the_batch_to_the_next() {
