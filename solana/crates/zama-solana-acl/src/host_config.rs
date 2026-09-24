@@ -59,11 +59,11 @@ pub struct HostConfigRecord {
 /// own fields at their offsets, and zeroes for every field this crate does not read.
 ///
 /// Public API surface: test doubles of the host program. The KMS connector's authorization
-/// fixtures stand an account up at the singleton's address without linking the Anchor program
-/// (which is on a different Solana major version), and a foreign implementation checking its own
-/// decoder needs bytes to check it against. It is the inverse of [`decode_host_config`] over the
-/// fields that function reads, and deliberately not a `HostConfig` serializer: the program owns
-/// that, and the host-side pin test is what holds the two in step.
+/// fixtures stand an account up at the singleton's address without linking the Anchor program,
+/// and a foreign implementation checking its own decoder needs bytes to check it against. It is
+/// the inverse of [`decode_host_config`] over the fields that function reads, and deliberately
+/// not a `HostConfig` serializer: the program owns that, and the host-side pin test is what holds
+/// the two in step.
 pub fn encode_host_config(record: &HostConfigRecord) -> Vec<u8> {
     let mut data = HOST_CONFIG_DISCRIMINATOR.to_vec();
     data.resize(ANCHOR_DISCRIMINATOR_LEN + BODY_LEN, 0);

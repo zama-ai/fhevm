@@ -9,7 +9,8 @@ export const FHE_BATCH_P95_QUERY =
 
 export const jaegerDecryptUrl = (handle?: string): string => {
   const tags = {
-    operation: 'solana-user-decryption-v2',
+    event_type: 'user_decryption_request',
+    source: 'onchain',
     ...(handle === undefined ? {} : { ciphertext_handle: handle }),
   };
   const query = new URLSearchParams({

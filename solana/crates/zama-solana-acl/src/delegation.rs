@@ -4,10 +4,10 @@
 //! authoritative check and the relayer's advisory pre-check decode the same bytes through this
 //! module, so the two cannot drift on the layout or on what "live" means. What deliberately does
 //! NOT live here is PDA derivation: it needs `find_program_address` (an off-curve check), and
-//! this crate stays free of solana-version-specific dependencies so the on-chain programs
-//! (solana 3.x) and the connector (solana 2.x) can share it. Each consumer derives addresses
-//! with its own solana-pubkey, all from the one `DELEGATION_SEED` below: the host program
-//! imports the seed and the wildcard sentinel from this crate rather than restating them.
+//! this crate stays free of solana-version-specific dependencies so the on-chain programs and
+//! the off-chain readers can share it whatever Solana version each builds. Each consumer derives
+//! addresses with its own solana-pubkey, all from the one `DELEGATION_SEED` below: the host
+//! program imports the seed and the wildcard sentinel from this crate rather than restating them.
 //!
 //! The layout mirrors `zama-host`'s `UserDecryptionDelegation` (a fixed 130-byte account:
 //! 8-byte Anchor discriminator + 122-byte body) and is pinned against the program's own
@@ -97,13 +97,13 @@ pub fn decode_user_decryption_delegation(
     })
 }
 
-fn bytes32(body: &[u8], offset: usize) -> [u8; 32] {
+pub(crate) fn bytes32(body: &[u8], offset: usize) -> [u8; 32] {
     let mut out = [0; 32];
     out.copy_from_slice(&body[offset..offset + 32]);
     out
 }
 
-fn u64_le(body: &[u8], offset: usize) -> u64 {
+pub(crate) fn u64_le(body: &[u8], offset: usize) -> u64 {
     let mut out = [0; 8];
     out.copy_from_slice(&body[offset..offset + 8]);
     u64::from_le_bytes(out)

@@ -1,12 +1,21 @@
-//! Cheap, stateless request checks (no RPC, no DB). Any failure maps to `400 malformed`.
+//! Cheap, stateless request checks (no RPC, no DB). Any failure maps to `400 Bad Request`.
 
 use crate::core::Config;
-use alloy::primitives::B256;
+use alloy::primitives::{B256, U256};
 use connector_utils::types::{
     extra_data::parse_extra_data,
     handle::{extract_chain_id_from_handle, extract_fhe_type_from_handle},
+    solana_request::{
+        PermitWireFields, SolanaHandleEntryWire, SolanaUserDecryptRequestWire,
+        SolanaUserDecryptionRequestV1,
+    },
 };
-use kms_connector_api::{PublicDecryptionRequest, RequestValidity, UserDecryptionRequest};
+use kms_connector_api::{
+    AttestationType, ErrorCode, PublicDecryptionRequest, RequestValidity,
+    SolanaUserDecryptionRequest, UserDecryptionRequest,
+};
+use serde::de::DeserializeOwned;
+use serde_json::Value;
 use tfhe::FheTypes;
 use thiserror::Error;
 
@@ -32,6 +41,38 @@ pub enum ValidationError {
     InvalidExtraData(String),
     #[error("requestValidity.{field} is too high: {value}, max is {}", i64::MAX)]
     RequestValidityOutOfRange { field: &'static str, value: u64 },
+    #[error(
+        "unsupported attestationType, supported: [{supported}]",
+        supported = supported_attestation_types()
+    )]
+    UnsupportedAttestationType,
+    #[error("invalid body: {0}")]
+    InvalidBody(String),
+    #[error("invalid Solana request: {0}")]
+    InvalidSolanaRequest(String),
+}
+
+fn supported_attestation_types() -> String {
+    AttestationType::supported().collect::<Vec<_>>().join(", ")
+}
+
+impl ValidationError {
+    /// The error code this failure is answered with.
+    pub fn code(&self) -> ErrorCode {
+        match self {
+            Self::UnsupportedAttestationType => ErrorCode::UnsupportedAttestationType,
+            Self::InvalidBody(_)
+            | Self::InvalidSolanaRequest(_)
+            | Self::NoHandles
+            | Self::BitSizeExceeded(..)
+            | Self::TooManyAllowedContracts(..)
+            | Self::InvalidHandle { .. }
+            | Self::MixedChainIds(..)
+            | Self::UnsupportedChainId(_)
+            | Self::InvalidExtraData(_)
+            | Self::RequestValidityOutOfRange { .. } => ErrorCode::Malformed,
+        }
+    }
 }
 
 pub fn validate_public_decryption(
@@ -46,15 +87,67 @@ pub fn validate_user_decryption(
     request: &UserDecryptionRequest,
     config: &Config,
 ) -> Result<(), ValidationError> {
-    validate_handles(request.handles.iter().map(|h| &h.handle), config)?;
-    if request.allowedContracts.len() > config.max_allowed_contracts {
+    let payload = &request.payload;
+    validate_handles(payload.handles.iter().map(|h| &h.handle), config)?;
+    if payload.allowedContracts.len() > config.max_allowed_contracts {
         return Err(ValidationError::TooManyAllowedContracts(
-            request.allowedContracts.len(),
+            payload.allowedContracts.len(),
             config.max_allowed_contracts,
         ));
     }
-    validate_request_validity(&request.requestValidity)?;
-    validate_extra_data(&request.extraData)
+    validate_request_validity(&payload.requestValidity)?;
+    validate_extra_data(&payload.extraData)
+}
+
+/// Checks the Solana payload as [`validate_user_decryption`] checks the EIP-712 one, and gives its
+/// permit the handles' chain id. The signature is verified by the worker.
+pub fn validate_solana_user_decryption(
+    id: B256,
+    request: &SolanaUserDecryptionRequest,
+    config: &Config,
+) -> Result<SolanaUserDecryptionRequestV1, ValidationError> {
+    let payload = &request.payload;
+    let chain_id = validate_handles(payload.handles.iter().map(|h| &h.handle), config)?;
+    validate_request_validity(&payload.requestValidity)?;
+    validate_extra_data(&payload.extraData)?;
+    let wire = SolanaUserDecryptRequestWire {
+        permit: PermitWireFields {
+            user_pubkey: payload.userPubkey.to_vec(),
+            transport_key: payload.publicKey.to_vec(),
+            allowed_scopes: payload.allowedScopes.iter().map(|s| s.to_vec()).collect(),
+            start_timestamp: payload.requestValidity.startTimestamp,
+            duration_seconds: payload.requestValidity.durationSeconds,
+            verifying_program_id: payload.verifyingProgramId.to_vec(),
+            chain_id,
+            extra_data: payload.extraData.to_vec(),
+        },
+        signature: request.signature.to_vec(),
+        handles: payload
+            .handles
+            .iter()
+            .map(|e| SolanaHandleEntryWire {
+                handle: e.handle.to_vec(),
+                allowed_key: e.allowedKey.to_vec(),
+                encrypted_store: e.encryptedStore.to_vec(),
+            })
+            .collect(),
+    };
+    SolanaUserDecryptionRequestV1::new(U256::from_be_bytes(id.0), &wire)
+        .map_err(|e| ValidationError::InvalidSolanaRequest(e.to_string()))
+}
+
+/// Read before the payload, so an unsupported scheme is reported as such whatever shape its
+/// payload has.
+pub fn attestation_type(body: &Value) -> Result<AttestationType, ValidationError> {
+    body.get("attestationType")
+        .and_then(Value::as_str)
+        .ok_or_else(|| ValidationError::InvalidBody("attestationType must be a string".into()))?
+        .parse()
+        .map_err(|_| ValidationError::UnsupportedAttestationType)
+}
+
+pub fn parse_body<T: DeserializeOwned>(body: Value) -> Result<T, ValidationError> {
+    serde_json::from_value(body).map_err(|e| ValidationError::InvalidBody(e.to_string()))
 }
 
 fn validate_request_validity(validity: &RequestValidity) -> Result<(), ValidationError> {
@@ -144,7 +237,10 @@ fn validate_extra_data(extra_data: &[u8]) -> Result<(), ValidationError> {
 pub(crate) mod tests {
     use super::*;
     use alloy::primitives::{Address, Bytes};
-    use kms_connector_api::HandleEntry;
+    use kms_connector_api::{
+        AttestationType, HandleEntry, SolanaHandleEntry, SolanaUserDecryptionPayload,
+        UserDecryptionPayload,
+    };
 
     const EBOOL: u8 = FheTypes::Bool as u8;
     const EUINT4: u8 = FheTypes::Uint4 as u8;
@@ -184,23 +280,26 @@ pub(crate) mod tests {
 
     pub fn user_request(handles: Vec<B256>, extra_data: Vec<u8>) -> UserDecryptionRequest {
         UserDecryptionRequest {
-            handles: handles
-                .into_iter()
-                .map(|handle| HandleEntry {
-                    handle,
-                    contractAddress: Address::repeat_byte(0x33),
-                    ownerAddress: Address::repeat_byte(0x44),
-                })
-                .collect(),
-            userAddress: Address::repeat_byte(0x55),
-            publicKey: Bytes::from(vec![0x20; 32]),
-            allowedContracts: vec![Address::repeat_byte(0x33)],
-            requestValidity: RequestValidity {
-                startTimestamp: 1_770_000_000,
-                durationSeconds: 300,
+            attestationType: AttestationType::Eip712UnifiedUserDecryptV1.to_string(),
+            payload: UserDecryptionPayload {
+                handles: handles
+                    .into_iter()
+                    .map(|handle| HandleEntry {
+                        handle,
+                        contractAddress: Address::repeat_byte(0x33),
+                        ownerAddress: Address::repeat_byte(0x44),
+                    })
+                    .collect(),
+                userAddress: Address::repeat_byte(0x55),
+                publicKey: Bytes::from(vec![0x20; 32]),
+                allowedContracts: vec![Address::repeat_byte(0x33)],
+                requestValidity: RequestValidity {
+                    startTimestamp: 1_770_000_000,
+                    durationSeconds: 300,
+                },
+                extraData: Bytes::from(extra_data),
             },
             signature: Bytes::from(vec![0x66; 65]),
-            extraData: Bytes::from(extra_data),
         }
     }
 
@@ -265,7 +364,10 @@ pub(crate) mod tests {
     fn too_many_allowed_contracts() {
         let cfg = config();
         let mut request = user_request(vec![handle(1, EUINT64)], vec![]);
-        request.allowedContracts.push(Address::repeat_byte(0x77));
+        request
+            .payload
+            .allowedContracts
+            .push(Address::repeat_byte(0x77));
         assert_eq!(
             validate_user_decryption(&request, &cfg),
             Err(ValidationError::TooManyAllowedContracts(2, 1))
@@ -276,10 +378,10 @@ pub(crate) mod tests {
     fn request_validity_out_of_range() {
         let cfg = config();
         let mut request = user_request(vec![handle(1, EUINT64)], vec![]);
-        request.requestValidity.startTimestamp = i64::MAX as u64;
+        request.payload.requestValidity.startTimestamp = i64::MAX as u64;
         assert_eq!(validate_user_decryption(&request, &cfg), Ok(()));
 
-        request.requestValidity.startTimestamp = i64::MAX as u64 + 1;
+        request.payload.requestValidity.startTimestamp = i64::MAX as u64 + 1;
         assert_eq!(
             validate_user_decryption(&request, &cfg),
             Err(ValidationError::RequestValidityOutOfRange {
@@ -288,8 +390,8 @@ pub(crate) mod tests {
             })
         );
 
-        request.requestValidity.startTimestamp = 1_770_000_000;
-        request.requestValidity.durationSeconds = u64::MAX;
+        request.payload.requestValidity.startTimestamp = 1_770_000_000;
+        request.payload.requestValidity.durationSeconds = u64::MAX;
         assert_eq!(
             validate_user_decryption(&request, &cfg),
             Err(ValidationError::RequestValidityOutOfRange {
@@ -297,6 +399,57 @@ pub(crate) mod tests {
                 value: u64::MAX,
             })
         );
+    }
+
+    #[test]
+    fn unsupported_attestation_type_whatever_the_payload() {
+        let body = serde_json::json!({
+            "attestationType": "random_attestation_type",
+            "payload": { "shape": "unknown" },
+        });
+        let error = attestation_type(&body).unwrap_err();
+        assert_eq!(error, ValidationError::UnsupportedAttestationType);
+        assert_eq!(error.code(), ErrorCode::UnsupportedAttestationType);
+
+        let error = attestation_type(&serde_json::json!({ "payload": {} })).unwrap_err();
+        assert!(matches!(error, ValidationError::InvalidBody(_)));
+        assert_eq!(error.code(), ErrorCode::Malformed);
+    }
+
+    #[test]
+    fn solana_payload_gets_the_eip712_payload_checks() {
+        let cfg = config();
+        let solana_request = |start_timestamp, extra_data: Vec<u8>| SolanaUserDecryptionRequest {
+            attestationType: AttestationType::SolanaSrfc38UserDecryptV1.to_string(),
+            payload: SolanaUserDecryptionPayload {
+                handles: vec![SolanaHandleEntry {
+                    handle: handle(1, EUINT64),
+                    allowedKey: B256::repeat_byte(0x01),
+                    encryptedStore: B256::repeat_byte(0x03),
+                }],
+                userPubkey: B256::repeat_byte(0x01),
+                publicKey: Bytes::from(vec![0x20; 32]),
+                allowedScopes: vec![],
+                requestValidity: RequestValidity {
+                    startTimestamp: start_timestamp,
+                    durationSeconds: 300,
+                },
+                verifyingProgramId: B256::repeat_byte(0x07),
+                extraData: Bytes::from(extra_data),
+            },
+            signature: Bytes::from(vec![0x66; 64]),
+        };
+        let validate = |request: SolanaUserDecryptionRequest| {
+            validate_solana_user_decryption(request.id(), &request, &cfg)
+        };
+        assert!(matches!(
+            validate(solana_request(1_770_000_000, vec![0x03])),
+            Err(ValidationError::InvalidExtraData(_))
+        ));
+        assert!(matches!(
+            validate(solana_request(i64::MAX as u64 + 1, vec![])),
+            Err(ValidationError::RequestValidityOutOfRange { .. })
+        ));
     }
 
     #[test]

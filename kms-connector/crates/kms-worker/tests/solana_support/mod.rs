@@ -12,46 +12,49 @@
 //! account, delegation record, invalidation record), seals the leaves the record serves, and
 //! signs real permits with a real wallet key, so no test depends on a signature the code under
 //! test produced.
-
-// Groups land one at a time; a builder written for a later group is early, not dead.
 #![allow(dead_code)]
 
+use alloy::primitives::U256;
+use base64::{Engine, engine::general_purpose::STANDARD as BASE64_STANDARD};
+use connector_utils::types::solana_request::{
+    PermitWireFields, SolanaHandleEntryWire, SolanaUserDecryptRequestWire,
+    SolanaUserDecryptionRequestV1,
+};
 use kms_worker::core::solana::{
-    delegation::WILDCARD_AUTHORITY,
-    deployment::{DeploymentIdentity, solana_host_chain_id},
-    kms_pair::{KmsPairFailure, KmsPairValidator},
-    proof::{HostProofReader, LeafKind, LeafProofOutcome, LeafQuery, ProofReadError},
-    request::{SolanaHandleEntryWire, SolanaUserDecryptRequest, SolanaUserDecryptRequestWire},
+    SolanaHost, SolanaPubkeyBytes,
+    pipeline::AuthorizationContext,
+    proof::{
+        CoprocessorProofClient, HostProofReader, LeafKind, LeafProofOutcome, LeafQuery,
+        ProofReadError, ProofResponses, leaf_proof_request_body,
+    },
     snapshot::{
         HostSnapshot, HostStateReader, SYSTEM_PROGRAM_ID, SnapshotAccount, SnapshotError,
-        SnapshotKeys,
+        SnapshotKeys, SolanaRpcClient,
     },
 };
-use kms_worker::core::solana_acl::SolanaPubkeyBytes;
+use mocktail::server::MockServer;
+use reqwest::Client;
 use ring::signature::{Ed25519KeyPair, KeyPair};
-use sha2::{Digest, Sha256};
 use solana_pubkey::Pubkey;
 use std::collections::BTreeMap;
+use std::num::NonZeroUsize;
 use std::sync::Mutex;
+use std::time::Duration;
 use zama_solana_acl::{
-    EncryptedSlot, EncryptedStore, HOST_CONFIG_SEED, HostConfigRecord, MmrProof,
-    encode_host_config, encrypted_store_discriminator, historical_access_leaf_commitment,
-    mmr_append, mmr_build_proof, public_decrypt_leaf_commitment,
+    DELEGATION_SEED, EncryptedSlot, EncryptedStore, HOST_CONFIG_SEED, HostConfigRecord, MmrProof,
+    PERMIT_INVALIDATION_SEED, PermitInvalidationRecord, USER_DECRYPTION_DELEGATION_DISCRIMINATOR,
+    WILDCARD_AUTHORITY, encode_host_config, encode_permit_invalidation,
+    encrypted_store_discriminator, historical_access_leaf_commitment, mmr_append, mmr_build_proof,
+    public_decrypt_leaf_commitment,
 };
 use zama_solana_permit::{
-    Identity, KmsRouting, PermitFields, PermitWireFields, Signature, TRANSPORT_KEY_LEN,
-    build_envelope,
+    Identity, KmsRouting, PermitFields, Signature, TRANSPORT_KEY_LEN, build_envelope,
 };
 
 /// The host deployment every fixture is built against.
 pub const PROGRAM_ID: SolanaPubkeyBytes = [7; 32];
-/// The genesis hash of the cluster these fixtures stand for. Provenance only: it names which
-/// cluster [`CHAIN_ID`] belongs to, and no check in the authorization path reads it — the rule that
-/// ties a cluster to its chain id is applied once per cluster at deployment, not per request.
-pub const GENESIS_HASH: [u8; 32] = [9; 32];
-/// The chain id of the fixture cluster, carrying type byte `0x01` as every Solana host
-/// chain id must.
-pub const CHAIN_ID: u64 = solana_host_chain_id(0x0123_4567_89ab_cdef);
+/// Type byte `0x01` over a cluster tag, as every Solana host chain id.
+pub const CHAIN_ID: u64 = 0x0123_4567_89ab_cdef;
 
 /// The application program of the default encrypted store.
 pub const APP_PROGRAM: SolanaPubkeyBytes = [1; 32];
@@ -69,41 +72,6 @@ pub const FHE_TYPE_UINT64: u8 = 5;
 /// Handle format version byte.
 pub const HANDLE_VERSION: u8 = 0;
 
-/// Discriminator of the invalidation record, as a literal.
-///
-/// Deliberately a literal and not a call into the host program's framework: this is the
-/// account the Connector decodes by hand, and the point of the pin is that a foreign
-/// implementation's bytes are compared against a constant. It is checked against its own
-/// preimage in [`permit_invalidation_discriminator`].
-pub const PERMIT_INVALIDATION_DISCRIMINATOR: [u8; 8] =
-    [0xec, 0x8b, 0xdb, 0xa9, 0xb9, 0x22, 0xe9, 0x88];
-
-/// The invalidation record's discriminator, recomputed from the account name.
-///
-/// The suite asserts this equals the literal above. Both sides are computed here rather than
-/// taken from the program, so a rename or a derivation change on the host side surfaces as a
-/// mismatch against the constant a reader was told to look for.
-pub fn permit_invalidation_discriminator() -> [u8; 8] {
-    let digest = Sha256::digest(b"account:PermitInvalidation");
-    let mut out = [0; 8];
-    out.copy_from_slice(&digest[..8]);
-    out
-}
-
-/// Discriminator of the delegation record.
-pub fn user_decryption_delegation_discriminator() -> [u8; 8] {
-    kms_worker::core::solana_acl::anchor_account_discriminator("UserDecryptionDelegation")
-}
-
-// ---------------------------------------------------------------------------
-// Deployment identity
-// ---------------------------------------------------------------------------
-
-/// The deployment identity of the fixture cluster.
-pub fn deployment() -> DeploymentIdentity {
-    DeploymentIdentity::resolve(PROGRAM_ID, CHAIN_ID).expect("fixture deployment resolves")
-}
-
 // ---------------------------------------------------------------------------
 // Handles
 // ---------------------------------------------------------------------------
@@ -111,13 +79,8 @@ pub fn deployment() -> DeploymentIdentity {
 /// A handle of the fixture cluster: distinguishing byte, chain id big-endian at `[22..30]`,
 /// FHE type at `[30]`, version at `[31]`.
 pub fn handle(tag: u8, fhe_type: u8) -> [u8; 32] {
-    handle_on_chain(tag, fhe_type, CHAIN_ID)
-}
-
-/// A handle carrying an arbitrary embedded chain id, for the deployment-mismatch cases.
-pub fn handle_on_chain(tag: u8, fhe_type: u8, chain_id: u64) -> [u8; 32] {
     let mut bytes = [tag; 32];
-    bytes[22..30].copy_from_slice(&chain_id.to_be_bytes());
+    bytes[22..30].copy_from_slice(&CHAIN_ID.to_be_bytes());
     bytes[30] = fhe_type;
     bytes[31] = HANDLE_VERSION;
     bytes
@@ -192,6 +155,15 @@ pub const DEFAULT_START: u64 = 1_700_000_000;
 pub const DEFAULT_DURATION: u64 = 3_600;
 /// A time inside the default window.
 pub const NOW_INSIDE_WINDOW: u64 = DEFAULT_START + 60;
+/// The fixture deployment inside the default window.
+pub const CONTEXT: AuthorizationContext = context_at(NOW_INSIDE_WINDOW);
+
+pub const fn context_at(now_unix_seconds: u64) -> AuthorizationContext {
+    AuthorizationContext {
+        program_id: PROGRAM_ID,
+        now_unix_seconds,
+    }
+}
 /// The KMS context of the default permit.
 pub const KMS_CONTEXT: SolanaPubkeyBytes = [0x11; 32];
 /// The KMS epoch of the default permit.
@@ -243,9 +215,8 @@ impl PermitBuilder {
         self
     }
 
-    /// Replaces the signed deployment pair.
-    pub fn deployment_pair(mut self, program_id: SolanaPubkeyBytes, chain_id: u64) -> Self {
-        self.wire.verifying_program_id = program_id.to_vec();
+    /// Replaces the signed chain, which every handle of the request must name.
+    pub fn chain_id(mut self, chain_id: u64) -> Self {
         self.wire.chain_id = chain_id;
         self
     }
@@ -338,8 +309,9 @@ impl<'a> RequestBuilder<'a> {
     }
 
     /// The request in validated form.
-    pub fn typed(&self) -> SolanaUserDecryptRequest {
-        SolanaUserDecryptRequest::decode(&self.wire()).expect("fixture request is well formed")
+    pub fn typed(&self) -> SolanaUserDecryptionRequestV1 {
+        SolanaUserDecryptionRequestV1::new(U256::from(1), &self.wire())
+            .expect("fixture request is well formed")
     }
 }
 
@@ -438,13 +410,6 @@ impl EncryptedStoreFixture {
             },
             commitment,
         );
-    }
-
-    /// Adds another current slot to this state.
-    pub fn insert_slot(&mut self, key: [u8; 32], handle: [u8; 32]) {
-        self.encrypted_store
-            .slots
-            .push(EncryptedSlot { key, handle });
     }
 
     /// Seals a public-decrypt leaf for the current handle.
@@ -587,20 +552,24 @@ impl DelegationFixture {
         }
     }
 
-    /// Its canonical address and bump.
+    /// Its canonical address and bump, derived here rather than taken from the code under test.
     pub fn address(&self) -> (SolanaPubkeyBytes, u8) {
-        kms_worker::core::solana::delegation::delegation_address(
-            PROGRAM_ID,
-            self.delegator,
-            self.delegate,
-            self.authority,
-        )
+        let (address, bump) = Pubkey::find_program_address(
+            &[
+                DELEGATION_SEED,
+                &self.delegator,
+                &self.delegate,
+                &self.authority,
+            ],
+            &Pubkey::new_from_array(PROGRAM_ID),
+        );
+        (address.to_bytes(), bump)
     }
 
     /// The account as the host program would write it.
     pub fn account(&self) -> SnapshotAccount {
         let (_, bump) = self.address();
-        let mut data = user_decryption_delegation_discriminator().to_vec();
+        let mut data = USER_DECRYPTION_DELEGATION_DISCRIMINATOR.to_vec();
         data.extend_from_slice(&self.delegator);
         data.extend_from_slice(&self.delegate);
         data.extend_from_slice(&self.authority);
@@ -638,7 +607,7 @@ pub fn host_config_account(paused: bool) -> SnapshotAccount {
 /// the code under test.
 pub fn invalidation_address(user: SolanaPubkeyBytes) -> (SolanaPubkeyBytes, u8) {
     let (address, bump) = Pubkey::find_program_address(
-        &[b"permit-invalidation", user.as_ref()],
+        &[PERMIT_INVALIDATION_SEED, user.as_ref()],
         &Pubkey::new_from_array(PROGRAM_ID),
     );
     (address.to_bytes(), bump)
@@ -647,13 +616,13 @@ pub fn invalidation_address(user: SolanaPubkeyBytes) -> (SolanaPubkeyBytes, u8) 
 /// An invalidation record holding `watermark` for `user`.
 pub fn invalidation_account(user: SolanaPubkeyBytes, watermark: u64) -> SnapshotAccount {
     let (_, bump) = invalidation_address(user);
-    let mut data = PERMIT_INVALIDATION_DISCRIMINATOR.to_vec();
-    data.extend_from_slice(&user);
-    data.extend_from_slice(&watermark.to_le_bytes());
-    data.push(bump);
     SnapshotAccount {
         owner: PROGRAM_ID,
-        data,
+        data: encode_permit_invalidation(&PermitInvalidationRecord {
+            user,
+            invalidation_watermark: watermark,
+            bump,
+        }),
     }
 }
 
@@ -756,31 +725,13 @@ impl World {
         self
     }
 
-    /// A world assembled from a recorded account set, for the vector runner.
-    pub fn from_accounts(
-        slot: u64,
-        accounts: impl IntoIterator<Item = (SolanaPubkeyBytes, SnapshotAccount)>,
-    ) -> Self {
-        Self {
-            slot,
-            accounts: accounts.into_iter().collect(),
-            sealed: BTreeMap::new(),
-        }
-    }
-
-    /// The accounts this world holds, in key order, for recording a vector.
-    pub fn accounts(&self) -> impl Iterator<Item = (&SolanaPubkeyBytes, &SnapshotAccount)> {
-        self.accounts.iter()
-    }
-
     /// Projects the world onto the requested keys, exactly as an account read would.
-    pub fn read(&self, keys: &SnapshotKeys) -> Result<HostSnapshot, SnapshotError> {
+    pub fn read(&self, keys: &SnapshotKeys) -> HostSnapshot {
         let accounts = keys
             .as_slice()
             .iter()
-            .map(|key| self.accounts.get(key).cloned())
-            .collect();
-        HostSnapshot::new(self.slot, keys, accounts)
+            .map(|key| (*key, self.accounts.get(key).cloned()));
+        HostSnapshot::new(self.slot, accounts)
     }
 }
 
@@ -842,7 +793,7 @@ impl HostStateReader for ScriptedReader {
                 self.worlds.len()
             )
         });
-        world.read(keys)
+        Ok(world.read(keys))
     }
 }
 
@@ -850,24 +801,12 @@ impl HostStateReader for ScriptedReader {
 // The leaf record and its reader
 // ---------------------------------------------------------------------------
 
-/// What the coprocessors' record holds for one account.
-#[derive(Clone, Debug)]
-enum RecordedAccount {
-    /// The record has sealed exactly this account's leaves — possibly an older state of the
-    /// account than the chain shows, which is how a record behind the chain is expressed.
-    Sealed(Box<EncryptedStoreFixture>),
-    /// The record's history for the account has a gap.
-    Incomplete,
-}
-
 /// The coprocessors' leaf record as one read of it would answer: a set of accounts whose leaves
-/// it has sealed. An account not in the record is unknown to it.
-///
-/// A record can also be given its answers outright, query by query, which is how a recorded
-/// observation is replayed without the fixtures that produced it.
+/// it has sealed, possibly an older state than the chain shows. An account not in the record is
+/// unknown to it. A record can also be given its answers outright, query by query.
 #[derive(Clone, Debug, Default)]
 pub struct ProofRecord {
-    accounts: BTreeMap<SolanaPubkeyBytes, RecordedAccount>,
+    accounts: BTreeMap<SolanaPubkeyBytes, EncryptedStoreFixture>,
     answers: BTreeMap<LeafQuery, LeafProofOutcome>,
 }
 
@@ -881,17 +820,8 @@ impl ProofRecord {
 
     /// Adds an account's leaves to the record.
     pub fn with(mut self, encrypted_store: &EncryptedStoreFixture) -> Self {
-        self.accounts.insert(
-            encrypted_store.account_key,
-            RecordedAccount::Sealed(Box::new(encrypted_store.clone())),
-        );
-        self
-    }
-
-    /// Marks an account's history as having a gap the record cannot close.
-    pub fn incomplete(mut self, account_key: SolanaPubkeyBytes) -> Self {
         self.accounts
-            .insert(account_key, RecordedAccount::Incomplete);
+            .insert(encrypted_store.account_key, encrypted_store.clone());
         self
     }
 
@@ -915,11 +845,11 @@ impl ProofRecord {
         if let Some(outcome) = self.answers.get(query) {
             return outcome.clone();
         }
-        match self.accounts.get(&query.encrypted_store) {
-            Some(RecordedAccount::Sealed(account)) => account.outcome(query),
-            Some(RecordedAccount::Incomplete) => LeafProofOutcome::HistoryIncomplete,
-            None => LeafProofOutcome::UnknownAccount,
-        }
+        self.accounts
+            .get(&query.encrypted_store)
+            .map_or(LeafProofOutcome::UnknownAccount, |account| {
+                account.outcome(query)
+            })
     }
 }
 
@@ -971,10 +901,7 @@ impl ScriptedProofReader {
 }
 
 impl HostProofReader for ScriptedProofReader {
-    async fn read_proofs(
-        &self,
-        queries: &[LeafQuery],
-    ) -> Result<Vec<Vec<LeafProofOutcome>>, ProofReadError> {
+    async fn read_proofs(&self, queries: &[LeafQuery]) -> Result<ProofResponses, ProofReadError> {
         let index = {
             let mut calls = self.calls.lock().expect("proof reader lock");
             calls.push(queries.to_vec());
@@ -987,10 +914,13 @@ impl HostProofReader for ScriptedProofReader {
                 self.records.len()
             )
         });
-        Ok(queries
-            .iter()
-            .map(|query| vec![record.answer(query)])
-            .collect())
+        Ok(ProofResponses {
+            candidates: queries
+                .iter()
+                .map(|query| vec![record.answer(query)])
+                .collect(),
+            unavailable: None,
+        })
     }
 }
 
@@ -998,10 +928,7 @@ impl HostProofReader for ScriptedProofReader {
 pub struct UnavailableProofReader;
 
 impl HostProofReader for UnavailableProofReader {
-    async fn read_proofs(
-        &self,
-        _queries: &[LeafQuery],
-    ) -> Result<Vec<Vec<LeafProofOutcome>>, ProofReadError> {
+    async fn read_proofs(&self, _queries: &[LeafQuery]) -> Result<ProofResponses, ProofReadError> {
         Err(ProofReadError::Unavailable {
             reason: "no coprocessor answered".to_owned(),
         })
@@ -1009,35 +936,138 @@ impl HostProofReader for UnavailableProofReader {
 }
 
 // ---------------------------------------------------------------------------
-// KMS pair validators
+// A host behind real HTTP
 // ---------------------------------------------------------------------------
 
-/// A KMS pair validator that serves the fixture pair and nothing else.
-pub struct ServableKmsPair;
+/// The route the connector reads leaf proofs from. A literal, so a moved route fails the tests.
+pub const LEAF_PROOFS_ROUTE: &str = "/v1/solana/leaf-proofs";
 
-impl KmsPairValidator for ServableKmsPair {
-    async fn validate_pair(
-        &self,
-        kms_context_id: &SolanaPubkeyBytes,
-        kms_epoch_id: &SolanaPubkeyBytes,
-    ) -> Result<(), KmsPairFailure> {
-        if kms_context_id == &KMS_CONTEXT && kms_epoch_id == &KMS_EPOCH {
-            Ok(())
-        } else {
-            Err(KmsPairFailure::ContextUnknown)
-        }
+/// A Solana node and a coprocessor behind real HTTP, for tests that go through the production
+/// readers. Each answers only the exact request body it is scripted for, which pins the keys,
+/// encoding and commitment of a read, and the queries of a proof batch.
+pub struct HttpHost {
+    pub rpc: MockServer,
+    pub coprocessor: MockServer,
+}
+
+impl HttpHost {
+    pub async fn start() -> Self {
+        let rpc = MockServer::new_http("solana-rpc");
+        rpc.start().await.expect("the mock RPC starts");
+        let coprocessor = MockServer::new_http("coprocessor");
+        coprocessor
+            .start()
+            .await
+            .expect("the mock coprocessor starts");
+        Self { rpc, coprocessor }
+    }
+
+    /// Replaces the node's state: one `getMultipleAccounts` read of these keys, in this order.
+    pub fn serve_accounts(&mut self, accounts: &[(SolanaPubkeyBytes, Option<SnapshotAccount>)]) {
+        let keys: Vec<_> = accounts.iter().map(|(key, _)| *key).collect();
+        let request = multiple_accounts_request(&keys);
+        let value: Vec<_> = accounts
+            .iter()
+            .map(|(_, account)| {
+                account.as_ref().map(|account| {
+                    serde_json::json!({
+                        "owner": Pubkey::new_from_array(account.owner).to_string(),
+                        "data": [BASE64_STANDARD.encode(&account.data), "base64"],
+                        "lamports": 1,
+                        "executable": false,
+                        "rentEpoch": 0,
+                    })
+                })
+            })
+            .collect();
+        let response = serde_json::json!({
+            "jsonrpc": "2.0",
+            "id": 1,
+            "result": { "context": { "slot": 1 }, "value": value },
+        });
+        self.rpc.mocks().clear();
+        self.rpc.mock(move |when, then| {
+            when.post().json(request.clone());
+            then.json(response.clone());
+        });
+    }
+
+    /// Replaces the coprocessor's record: one leaf-proof batch of these queries.
+    pub fn serve_proofs(&mut self, answers: &[(LeafQuery, LeafProofOutcome)]) {
+        serve_proofs(&mut self.coprocessor, answers);
+    }
+
+    pub fn host(&self) -> SolanaHost {
+        solana_host(&self.rpc, &[&self.coprocessor])
     }
 }
 
-/// A KMS pair validator that always fails with a given reason.
-pub struct UnservableKmsPair(pub KmsPairFailure);
+/// The `getMultipleAccounts` body the connector sends for `keys`, at confirmed commitment.
+pub fn multiple_accounts_request(keys: &[SolanaPubkeyBytes]) -> serde_json::Value {
+    serde_json::json!({
+        "jsonrpc": "2.0",
+        "id": 0,
+        "method": "getMultipleAccounts",
+        "params": [
+            keys.iter()
+                .map(|key| Pubkey::new_from_array(*key).to_string())
+                .collect::<Vec<_>>(),
+            {"encoding": "base64", "commitment": "confirmed", "dataSlice": null, "minContextSlot": null},
+        ],
+    })
+}
 
-impl KmsPairValidator for UnservableKmsPair {
-    async fn validate_pair(
-        &self,
-        _kms_context_id: &SolanaPubkeyBytes,
-        _kms_epoch_id: &SolanaPubkeyBytes,
-    ) -> Result<(), KmsPairFailure> {
-        Err(self.0.clone())
+/// Scripts `coprocessor` to answer one leaf-proof batch.
+pub fn serve_proofs(coprocessor: &mut MockServer, answers: &[(LeafQuery, LeafProofOutcome)]) {
+    let queries: Vec<_> = answers.iter().map(|(query, _)| *query).collect();
+    // Mocktail compares bytes; going through a `Value` would reorder the typed fields.
+    let request = serde_json::to_string(&leaf_proof_request_body(&queries)).unwrap();
+    let response = serde_json::json!({
+        "proofs": answers.iter().map(|(_, outcome)| wire_outcome(outcome)).collect::<Vec<_>>(),
+    });
+    coprocessor.mocks().clear();
+    coprocessor.mock(move |when, then| {
+        when.post().path(LEAF_PROOFS_ROUTE).text(request.clone());
+        then.json(response.clone());
+    });
+}
+
+/// A host of the fixture deployment reading from `rpc` and asking every one of `coprocessors`.
+pub fn solana_host(rpc: &MockServer, coprocessors: &[&MockServer]) -> SolanaHost {
+    let endpoints: Vec<_> = coprocessors
+        .iter()
+        .map(|coprocessor| coprocessor.base_url().unwrap().clone())
+        .collect();
+    SolanaHost {
+        program_id: PROGRAM_ID,
+        reader: SolanaRpcClient::new(
+            rpc.base_url().unwrap().clone(),
+            Duration::from_secs(10),
+            NonZeroUsize::MIN,
+        ),
+        proofs: CoprocessorProofClient::new(&endpoints, "test-key".to_owned(), Client::new()),
+    }
+}
+
+/// A leaf-proof answer as the coprocessor route serializes it.
+fn wire_outcome(outcome: &LeafProofOutcome) -> serde_json::Value {
+    match outcome {
+        LeafProofOutcome::Found {
+            leaf_index,
+            leaf_count,
+            siblings,
+        } => serde_json::json!({
+            "status": "found",
+            "leafIndex": leaf_index,
+            "leafCount": leaf_count,
+            "siblings": siblings.iter().map(alloy::hex::encode).collect::<Vec<_>>(),
+        }),
+        LeafProofOutcome::NotFound { leaf_count } => {
+            serde_json::json!({ "status": "notFound", "leafCount": leaf_count })
+        }
+        LeafProofOutcome::UnknownAccount => serde_json::json!({ "status": "unknownAccount" }),
+        LeafProofOutcome::HistoryIncomplete => {
+            serde_json::json!({ "status": "historyIncomplete" })
+        }
     }
 }
