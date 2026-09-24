@@ -55,13 +55,23 @@ root="$(cd "$(dirname "${BASH_SOURCE[0]}")/../../../.." && pwd)"
 values_dir="${root}/ci/preview-env/coprocessor"
 COPROCESSOR_CHART="${COPROCESSOR_CHART:-${root}/charts/coprocessor}"
 GCS_STACK_VERSION="${GCS_STACK_VERSION:-$(yq -r '.commonConfig.stackVersion' "${values_dir}/values-coprocessor-gcs-e2e.yaml")}"
-# Green image tag = the tag the branch's coprocessor images were published under. Blue is pinned to
-# the previous release and, on the production path, so are the contracts/relayer/test-suite, so the
-# listener (never pinned) is the one deployed component that carries it; the checkout's HEAD is the
-# fallback. Override with GCS_IMAGE_TAG whenever the deploy resolved a different tag - notably on a
-# CI-only branch, where the coprocessor images are not rebuilt and the base commit carries them.
-GCS_IMAGE_TAG="${GCS_IMAGE_TAG:-$(kubectl get deploy -n "${NAMESPACE}" listener-1-host \
-  -o jsonpath='{.spec.template.spec.containers[0].image}' 2>/dev/null | sed 's/.*://')}"
+fail() { echo "::error::$*" >&2; exit 1; }
+# Green is not up yet: derive the tag the deploy resolved for the coprocessor. Rebuilt on this
+# branch means HEAD's short SHA, otherwise the merge-base's. The listener is a separate component
+# with its own change detection, so its tag matches the coprocessor's only by coincidence.
+coprocessor_tag() {
+  local base
+  base=$(git -C "${root}" merge-base HEAD origin/main 2>/dev/null || true)
+  [[ -n "${base}" ]] || return 1
+  if git -C "${root}" diff --quiet "${base}" HEAD -- coprocessor/ 2>/dev/null; then
+    git -C "${root}" rev-parse --short=7 "${base}"
+  else
+    git -C "${root}" rev-parse --short=7 HEAD
+  fi
+}
+# Green image tag = the tag the deploy resolved for the coprocessor images. Override with
+# GCS_IMAGE_TAG when the deploy resolved something else.
+GCS_IMAGE_TAG="${GCS_IMAGE_TAG:-$(coprocessor_tag || true)}"
 GCS_IMAGE_TAG="${GCS_IMAGE_TAG:-$(git -C "${root}" rev-parse --short=7 HEAD)}"
 # Newest migration the Green migrator applies: from the commit the image tag names
 # when this checkout has it (tags are short SHAs), else from the checkout itself.
@@ -74,7 +84,6 @@ fi
 work=$(mktemp -d)
 trap 'rm -rf "${work}"' EXIT
 
-fail() { echo "::error::$*" >&2; exit 1; }
 version_mm() { sed -E 's/^v//; s/^([0-9]+\.[0-9]+).*/\1/' <<<"$1"; }
 
 psql_party() {
