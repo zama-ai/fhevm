@@ -192,9 +192,10 @@ contract TestHostContractsDeployerTestUtils is HostContractsDeployerTestUtils {
         assertNotEq(pcImplementation, address(0), "Implementation not deployed");
         assertEq(pcProxy.getVersion(), "ProtocolConfig v0.3.0", "Version mismatch");
         assertEq(pcProxy.getPublicDecryptionThreshold(), 1, "Public decryption threshold mismatch");
-        assertEq(pcProxy.getUserDecryptionThreshold(), 1, "User decryption threshold mismatch");
-        assertEq(pcProxy.getKmsGenThreshold(), 1, "KmsGen threshold mismatch");
-        assertEq(pcProxy.getMpcThreshold(), 1, "Mpc threshold mismatch");
+        uint256 contextId = pcProxy.getCurrentKmsContextId();
+        assertEq(pcProxy.getUserDecryptionThresholdForContext(contextId), 1, "User decryption threshold mismatch");
+        assertEq(pcProxy.getKmsGenThresholdForContext(contextId), 1, "KmsGen threshold mismatch");
+        assertEq(pcProxy.getMpcThresholdForContext(contextId), 1, "Mpc threshold mismatch");
         assertEq(_readImplementationSlot(protocolConfigAdd), pcImplementation, "Implementation slot mismatch");
     }
 
@@ -223,7 +224,11 @@ contract TestHostContractsDeployerTestUtils is HostContractsDeployerTestUtils {
         assertNotEq(pcImplementation, address(0), "Implementation not deployed");
         assertEq(pcProxy.getVersion(), "ProtocolConfig v0.3.0", "Version mismatch");
         assertEq(pcProxy.getCurrentKmsContextId(), canonicalContextId, "Context ID mismatch");
-        assertEq(pcProxy.getUserDecryptionThreshold(), 2, "User decryption threshold mismatch");
+        assertEq(
+            pcProxy.getUserDecryptionThresholdForContext(canonicalContextId),
+            2,
+            "User decryption threshold mismatch"
+        );
         (uint256 activeContextId, uint256 activeEpochId) = pcProxy.getCurrentKmsContextAndEpoch();
         assertEq(activeContextId, canonicalContextId, "Active context mismatch");
         assertEq(activeEpochId, canonicalEpochId, "Active epoch mismatch");

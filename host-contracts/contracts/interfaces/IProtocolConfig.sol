@@ -471,7 +471,7 @@ interface IProtocolConfig {
      * @param epochId The epoch ID to check.
      * @return True if the epoch is active and owned by the context.
      */
-    function isValidEpochForContext(uint256 kmsContextId, uint256 epochId) external view returns (bool);
+    function isActiveEpochForContext(uint256 kmsContextId, uint256 epochId) external view returns (bool);
 
     /**
      * @notice Returns the active KMS context ID.
@@ -488,15 +488,15 @@ interface IProtocolConfig {
     function getCurrentKmsContextIdCounter() external view returns (uint256);
 
     /**
-     * @notice Checks whether a KMS context ID is valid (exists, is not destroyed, and is active).
+     * @notice Checks whether a KMS context is in the `Active` state.
      * @param kmsContextId The context ID to check.
-     * @return True if the context is valid.
+     * @return True if the context is active.
      */
-    function isValidKmsContext(uint256 kmsContextId) external view returns (bool);
+    function isActiveKmsContext(uint256 kmsContextId) external view returns (bool);
 
     /**
      * @notice Checks whether a KMS context exists and has not been destroyed.
-     * @dev Unlike `isValidKmsContext`, this returns true for a Pending or Created context, so it
+     * @dev Unlike `isActiveKmsContext`, this returns true for a Pending or Created context, so it
      *      distinguishes an in-flight context switch from a destroyed or never-issued context.
      * @param kmsContextId The context ID to check.
      * @return True if the context exists and is not destroyed.
@@ -578,23 +578,11 @@ interface IProtocolConfig {
     function getPublicDecryptionThresholdForContext(uint256 kmsContextId) external view returns (uint256);
 
     /**
-     * @notice Returns the current user decryption threshold (for the active context).
-     * @return The user decryption threshold.
-     */
-    function getUserDecryptionThreshold() external view returns (uint256);
-
-    /**
      * @notice Returns the user decryption threshold for a given context.
      * @param kmsContextId The context ID.
      * @return The user decryption threshold for the context.
      */
     function getUserDecryptionThresholdForContext(uint256 kmsContextId) external view returns (uint256);
-
-    /**
-     * @notice Returns the current kmsGen threshold (for the active context).
-     * @return The kmsGen threshold.
-     */
-    function getKmsGenThreshold() external view returns (uint256);
 
     /**
      * @notice Returns the kmsGen threshold for a given context.
@@ -605,12 +593,6 @@ interface IProtocolConfig {
      * @return The kmsGen threshold for the context.
      */
     function getKmsGenThresholdForContext(uint256 kmsContextId) external view returns (uint256);
-
-    /**
-     * @notice Returns the current MPC threshold (for the active context).
-     * @return The MPC threshold.
-     */
-    function getMpcThreshold() external view returns (uint256);
 
     /**
      * @notice Returns the MPC threshold for a given context.

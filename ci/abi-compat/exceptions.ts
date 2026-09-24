@@ -40,6 +40,14 @@ export const ABI_COMPAT_EXCEPTIONS: Partial<Record<PackageName, Partial<Record<s
       "event UserDecryptionThresholdUpdated(uint256 indexed,uint256)",
       "event KmsGenThresholdUpdated(uint256 indexed,uint256)",
       "event MpcThresholdUpdated(uint256 indexed,uint256)",
+      // Active-context threshold getters with no reader were removed. The per-context getters stay.
+      "function getUserDecryptionThreshold() returns (uint256)",
+      "function getKmsGenThreshold() returns (uint256)",
+      "function getMpcThreshold() returns (uint256)",
+      // Renamed to isActiveKmsContext / isActiveEpochForContext: both return true only for the
+      // Active state. No alias is kept, so relayer and kms-connector ship with the upgrade.
+      "function isValidKmsContext(uint256) returns (bool)",
+      "function isValidEpochForContext(uint256,uint256) returns (bool)",
     ],
   },
   "gateway-contracts": {

@@ -368,7 +368,7 @@ export async function inspectKmsContextSwitch(
     // Nothing in flight: the latest-issued context and epoch are already the active ones.
     status.flow = 'idle';
     status.fullyLive =
-      activeContextId > 0n && activeEpochId > 0n && (await pc.isValidEpochForContext(activeContextId, activeEpochId));
+      activeContextId > 0n && activeEpochId > 0n && (await pc.isActiveEpochForContext(activeContextId, activeEpochId));
   }
 
   return status;
@@ -514,7 +514,7 @@ async function fillEpochActivation(
   status.epochState = status.activeEpochId === pendingEpochId ? 'ACTIVE' : 'PENDING';
   if (status.epochState === 'ACTIVE') {
     status.contextState = 'ACTIVE';
-    status.fullyLive = await pc.isValidEpochForContext(status.activeContextId, status.activeEpochId);
+    status.fullyLive = await pc.isActiveEpochForContext(status.activeContextId, status.activeEpochId);
   }
 }
 

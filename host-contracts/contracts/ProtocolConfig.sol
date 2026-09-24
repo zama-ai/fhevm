@@ -632,8 +632,8 @@ contract ProtocolConfig is IProtocolConfig, UUPSUpgradeableEmptyProxy, ACLOwnabl
     }
 
     /// @inheritdoc IProtocolConfig
-    function isValidKmsContext(uint256 kmsContextId) external view virtual returns (bool) {
-        return _isValidKmsContext(kmsContextId);
+    function isActiveKmsContext(uint256 kmsContextId) external view virtual returns (bool) {
+        return _isActiveKmsContext(kmsContextId);
     }
 
     /// @inheritdoc IProtocolConfig
@@ -647,12 +647,12 @@ contract ProtocolConfig is IProtocolConfig, UUPSUpgradeableEmptyProxy, ACLOwnabl
     }
 
     /// @inheritdoc IProtocolConfig
-    function isValidEpochForContext(uint256 kmsContextId, uint256 epochId) external view virtual returns (bool) {
+    function isActiveEpochForContext(uint256 kmsContextId, uint256 epochId) external view virtual returns (bool) {
         ProtocolConfigStorage storage $ = _getProtocolConfigStorage();
         return
             $.epochState[epochId] == EpochState.Active &&
             $.contextForEpoch[epochId] == kmsContextId &&
-            _isValidKmsContext(kmsContextId);
+            _isActiveKmsContext(kmsContextId);
     }
 
     /// @inheritdoc IProtocolConfig
@@ -721,21 +721,9 @@ contract ProtocolConfig is IProtocolConfig, UUPSUpgradeableEmptyProxy, ACLOwnabl
     }
 
     /// @inheritdoc IProtocolConfig
-    function getUserDecryptionThreshold() external view virtual returns (uint256) {
-        ProtocolConfigStorage storage $ = _getProtocolConfigStorage();
-        return $.userDecryptionThresholdForContext[$.latestActiveKmsContextId];
-    }
-
-    /// @inheritdoc IProtocolConfig
     function getUserDecryptionThresholdForContext(uint256 kmsContextId) external view virtual returns (uint256) {
         _requireValidContext(kmsContextId);
         return _getProtocolConfigStorage().userDecryptionThresholdForContext[kmsContextId];
-    }
-
-    /// @inheritdoc IProtocolConfig
-    function getKmsGenThreshold() external view virtual returns (uint256) {
-        ProtocolConfigStorage storage $ = _getProtocolConfigStorage();
-        return $.kmsGenThresholdForContext[$.latestActiveKmsContextId];
     }
 
     /// @inheritdoc IProtocolConfig
@@ -744,12 +732,6 @@ contract ProtocolConfig is IProtocolConfig, UUPSUpgradeableEmptyProxy, ACLOwnabl
             revert InvalidKmsContext(kmsContextId);
         }
         return _getProtocolConfigStorage().kmsGenThresholdForContext[kmsContextId];
-    }
-
-    /// @inheritdoc IProtocolConfig
-    function getMpcThreshold() external view virtual returns (uint256) {
-        ProtocolConfigStorage storage $ = _getProtocolConfigStorage();
-        return $.mpcThresholdForContext[$.latestActiveKmsContextId];
     }
 
     /// @inheritdoc IProtocolConfig
@@ -912,13 +894,13 @@ contract ProtocolConfig is IProtocolConfig, UUPSUpgradeableEmptyProxy, ACLOwnabl
     /**
      * @dev Returns true if the context exists and is currently in the `Active` lifecycle state.
      */
-    function _isValidKmsContext(uint256 kmsContextId) internal view virtual returns (bool) {
+    function _isActiveKmsContext(uint256 kmsContextId) internal view virtual returns (bool) {
         ProtocolConfigStorage storage $ = _getProtocolConfigStorage();
         return _isLiveKmsContext(kmsContextId) && $.contextState[kmsContextId] == ContextState.Active;
     }
 
     function _requireValidContext(uint256 kmsContextId) internal view virtual {
-        if (!_isValidKmsContext(kmsContextId)) {
+        if (!_isActiveKmsContext(kmsContextId)) {
             revert InvalidKmsContext(kmsContextId);
         }
     }

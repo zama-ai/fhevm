@@ -85,7 +85,7 @@ export async function readCanonicalSnapshot(
       `Canonical ProtocolConfig at ${canonicalProtocolConfigAddress} has no active KMS epoch (currentEpochId=0); cannot mirror.`,
     );
   }
-  const isCurrentContextValid: boolean = await canonicalProtocolConfig.isValidKmsContext(currentKmsContextId, at);
+  const isCurrentContextValid: boolean = await canonicalProtocolConfig.isActiveKmsContext(currentKmsContextId, at);
   if (!isCurrentContextValid) {
     throw new Error(
       `Canonical ProtocolConfig's current context ${currentKmsContextId} is destroyed; cannot mirror a destroyed context.`,

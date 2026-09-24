@@ -54,9 +54,10 @@ describe('Upgrades', function () {
     expect(await pc.getVersion()).to.equal('ProtocolConfig v0.3.0');
     const expectThresholds = async (c: any) => {
       expect(await c.getPublicDecryptionThreshold()).to.equal(1n);
-      expect(await c.getUserDecryptionThreshold()).to.equal(2n);
-      expect(await c.getKmsGenThreshold()).to.equal(3n);
-      expect(await c.getMpcThreshold()).to.equal(4n);
+      const contextId = await c.getCurrentKmsContextId();
+      expect(await c.getUserDecryptionThresholdForContext(contextId)).to.equal(2n);
+      expect(await c.getKmsGenThresholdForContext(contextId)).to.equal(3n);
+      expect(await c.getMpcThresholdForContext(contextId)).to.equal(4n);
     };
     await expectThresholds(pc);
     const pc2 = await upgrades.upgradeProxy(pc, factoryUpgraded);
