@@ -27,6 +27,10 @@
 # operators really are scheduling differently.  See
 # scenarios/three-of-three-heterogeneous-scheduling.yaml.
 #
+# --suite fork runs the fork byte-consensus gate instead, which needs the
+# `three-of-three-fork` topology (two operators on the canonical Anvil, one on
+# the fork).  Discovery is identical for both gates, which is why they share a
+# runner rather than duplicating it.
 set -uo pipefail
 
 readonly SCRIPT_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
@@ -65,22 +69,22 @@ while [[ $# -gt 0 ]]; do
       ;;
     --suite)
       [[ $# -ge 2 ]] || {
-        echo "--suite needs a value: materialization, reorg or comparator" >&2
+        echo "--suite needs a value: materialization, input, typed, bridge, fork, reorg, degraded or comparator" >&2
         exit 2
       }
       SUITE="$2"
       shift 2
       ;;
     *)
-      echo "usage: run-materialization-consensus.sh [--heterogeneous] [--device-split] [--suite materialization|reorg|comparator]" >&2
+      echo "usage: run-materialization-consensus.sh [--heterogeneous] [--device-split] [--suite materialization|input|typed|bridge|fork|reorg|degraded]" >&2
       exit 2
       ;;
   esac
 done
 case "$SUITE" in
-  materialization | reorg | comparator) ;;
+  materialization | input | typed | bridge | fork | reorg | degraded | comparator) ;;
   *)
-    echo "unknown suite $SUITE (expected materialization, reorg or comparator)" >&2
+    echo "unknown suite $SUITE (expected materialization, input, typed, bridge, fork, reorg, degraded or comparator)" >&2
     exit 2
     ;;
 esac
@@ -249,8 +253,16 @@ main() {
   done < <(operator_indexes)
 
   local suite_file suite_flag
+  local -a suite_args=()
   local -a watchdog_env=()
-  if [[ "$SUITE" == reorg ]]; then
+  if [[ "$SUITE" == fork ]]; then
+    suite_file=test/consensus/forkConsensus.ts
+    suite_flag=RUN_FORK_CONSENSUS
+    # A fork topology has operators on competing branches, so per-branch
+    # handles never reach a fleet-wide quorum and the global watchdog reports
+    # the topology itself as a failure. The suite asserts per branch instead.
+    watchdog_env=(-e CONSENSUS_WATCHDOG_DISABLED=1)
+  elif [[ "$SUITE" == reorg ]]; then
     suite_file=test/consensus/reorgConsensus.ts
     suite_flag=RUN_REORG_CONSENSUS
     # The watchdog runs here. It used to be disabled because B-1 made it fire on
@@ -259,6 +271,21 @@ main() {
     # down and leaves every one of them on the same chain, so a fleet-wide drift
     # check has nothing topological to trip over. If it fires now, that is a
     # finding rather than noise.
+  elif [[ "$SUITE" == bridge ]]; then
+    suite_file=test/bridge/confidentialBridge.ts
+    suite_flag=RUN_BRIDGE_BYTE_CONSENSUS
+    suite_args=(--grep "compares local and bridged dependencies")
+  elif [[ "$SUITE" == typed ]]; then
+    suite_file=test/consensus/typedBoundaryConsensus.ts
+    suite_flag=RUN_TYPED_BOUNDARY_CONSENSUS
+  elif [[ "$SUITE" == input ]]; then
+    suite_file=test/consensus/inputConsensus.ts
+    suite_flag=RUN_INPUT_CONSENSUS
+  elif [[ "$SUITE" == degraded ]]; then
+    suite_file=test/consensus/degradedConsensus.ts
+    suite_flag=RUN_DEGRADED_CONSENSUS
+    # Degraded availability needs a longer stall budget, while divergence remains fatal.
+    watchdog_env=(-e CONSENSUS_WATCHDOG_DISABLED=0 -e CONSENSUS_WATCHDOG_STALL_MS=2400000)
   else
     suite_file=test/consensus/materializationConsensus.ts
     suite_flag=RUN_MATERIALIZATION_CONSENSUS
@@ -305,11 +332,18 @@ main() {
   # `cr` form: `cr_record` takes `artifact=NAME=value`, not raw flags.
   cr_read_run_identity identity_args || die "cannot establish complete run artifact identity"
 
+  local scheduling_case=SCH-01-HETEROGENEOUS
+  [[ "${CR_BACKEND_CLASS:-cpu}" != cpu* ]] || scheduling_case=SCH-06-CPU-DIVERSITY
   case "$SUITE" in
     materialization)
-      if [[ "$EXPECT_HETEROGENEOUS" == 1 ]]; then sp_case_start SCH-01-HETEROGENEOUS;
+      if [[ "$EXPECT_HETEROGENEOUS" == 1 ]]; then sp_case_start "$scheduling_case";
       else sp_case_start MAT-01-BOUNDARY-FANOUT MAT-02-ALIAS-SOURCING MAT-03-PLAINTEXT-ORACLE; fi ;;
+    bridge) sp_case_start MAT-08-BRIDGED-DEPENDENCY ;;
+    typed) sp_case_start MAT-06-TYPED-BOUNDARIES ;;
+    input) sp_case_start INPUT-01-COMPACT-LIST INPUT-02-REPLAY INPUT-03-INVALID-PROOF ;;
     reorg) sp_case_start REORG-01-REPLACEMENT-BLOCK ;;
+    degraded) sp_case_start DEG-01-AGREEMENT-QUORUM ;;
+    fork) sp_case_start FORK-01-COLLIDING-HANDLE ;;
   esac || die "cannot establish suite deadline"
   local suite_out status=0
   cr_run_suite suite_out "" sp_exec \
@@ -326,7 +360,7 @@ main() {
     "${watchdog_env[@]}" \
     -e npm_config_update_notifier=false \
     "$TEST_CONTAINER" \
-    npx hardhat test "$suite_file" --network "$TEST_NETWORK" || status=$?
+    npx hardhat test "$suite_file" --network "$TEST_NETWORK" "${suite_args[@]}" || status=$?
   echo "$suite_out"
 
   # The thorough gate is the one whose numbers get quoted, so it is also the one
@@ -355,7 +389,7 @@ main() {
         # run -- but they are RECORDED from the session whose topology the
         # inventory names, rather than twice under two different topologies.
         case_ids=(); markers=()
-        [[ "$EXPECT_HETEROGENEOUS" == 1 ]] && { case_ids+=(SCH-01-HETEROGENEOUS); markers+=("executed scheduling"); }
+        [[ "$EXPECT_HETEROGENEOUS" == 1 ]] && { case_ids+=("$scheduling_case"); markers+=("executed scheduling"); }
         [[ "$EXPECT_DEVICE_SPLIT" == 1 ]] && { case_ids+=(SCH-02-DEVICE-SPLIT); markers+=("device split across CUDA devices"); }
         echo "  (heterogeneous session: the byte cases ran and are asserted, and are recorded from the homogeneous session)"
       else
@@ -367,7 +401,12 @@ main() {
         )
       fi
       ;;
+    bridge) case_ids=(MAT-08-BRIDGED-DEPENDENCY); markers=("[bridge-consensus] CASE COMPLETE") ;;
+    typed) case_ids=(MAT-06-TYPED-BOUNDARIES); markers=("[typed-boundary] CASE COMPLETE") ;;
+    input) case_ids=(INPUT-01-COMPACT-LIST INPUT-02-REPLAY INPUT-03-INVALID-PROOF); markers=("[input-consensus] CASE COMPLETE" "[input-consensus] CASE COMPLETE" "[input-consensus] CASE COMPLETE") ;;
     reorg)   case_ids=(REORG-01-REPLACEMENT-BLOCK); markers=("[reorg-consensus] CASE COMPLETE") ;;
+    degraded) case_ids=(DEG-01-AGREEMENT-QUORUM); markers=("[degraded/agreement] CASE COMPLETE") ;;
+    fork)    case_ids=(FORK-01-COLLIDING-HANDLE); markers=("[fork-consensus/F1] CASE COMPLETE") ;;
   esac
 
   local -a base_record=(
