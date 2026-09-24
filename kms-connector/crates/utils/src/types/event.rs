@@ -1,9 +1,5 @@
-use super::{
-    handle::extract_chain_id_from_handle,
-    solana_request::{
-        PermitWireFields, SolanaHandleEntryWire, SolanaUserDecryptRequestWire,
-        SolanaUserDecryptionRequestV1,
-    },
+use super::solana_request::{
+    SolanaEntryClaims, SolanaGatewayFields, SolanaRequestBlob, SolanaUserDecryptionRequestV1,
 };
 use crate::{
     monitoring::otlp::PropagationContext,
@@ -298,38 +294,30 @@ pub fn from_user_decryption_row(row: &PgRow) -> anyhow::Result<ProtocolEvent> {
     let extra_data: Vec<u8> = row.try_get("extra_data")?;
     let kind = match row.try_get::<AttestationType, _>("attestation_type")? {
         AttestationType::Solana => {
-            let first = ct_handles
-                .first()
-                .ok_or_else(|| anyhow!("row names no handles"))?;
             let handle_owner_addresses: Vec<Vec<u8>> = row.try_get("handle_allowed_keys")?;
             let handle_encrypted_stores: Vec<Vec<u8>> = row.try_get("handle_encrypted_stores")?;
-            let wire = SolanaUserDecryptRequestWire {
-                permit: PermitWireFields {
-                    user_address: row.try_get("user_pubkey")?,
-                    transport_key: public_key,
-                    allowed_scopes: row.try_get("allowed_scopes")?,
-                    start_timestamp: u64::try_from(row.try_get::<i64, _>("start_timestamp")?)?,
-                    duration_seconds: u64::try_from(row.try_get::<i64, _>("duration_seconds")?)?,
-                    verifying_program_id: row.try_get("verifying_program_id")?,
-                    chain_id: extract_chain_id_from_handle(first)?,
-                    extra_data,
-                },
+            let gateway = SolanaGatewayFields {
+                handles: ct_handles.iter().map(|h| h.to_vec()).collect(),
+                transport_key: public_key,
+                start_timestamp: u64::try_from(row.try_get::<i64, _>("start_timestamp")?)?,
+                duration_seconds: u64::try_from(row.try_get::<i64, _>("duration_seconds")?)?,
+                extra_data,
+            };
+            let blob = SolanaRequestBlob {
+                user_address: row.try_get("user_pubkey")?,
+                allowed_scopes: row.try_get("allowed_scopes")?,
+                verifying_program_id: row.try_get("verifying_program_id")?,
                 signature: row.try_get("signature")?,
-                // The table CHECK keeps these three arrays the same length.
-                handles: ct_handles
-                    .iter()
-                    .zip(handle_owner_addresses)
+                entries: handle_owner_addresses
+                    .into_iter()
                     .zip(handle_encrypted_stores)
-                    .map(
-                        |((handle, owner_address), encrypted_store)| SolanaHandleEntryWire {
-                            handle: handle.to_vec(),
-                            owner_address,
-                            encrypted_store,
-                        },
-                    )
+                    .map(|(owner_address, encrypted_store)| SolanaEntryClaims {
+                        owner_address,
+                        encrypted_store,
+                    })
                     .collect(),
             };
-            SolanaUserDecryptionRequestV1::new(decryption_id, &wire)?.into()
+            SolanaUserDecryptionRequestV1::new(decryption_id, gateway, blob)?.into()
         }
         AttestationType::Legacy => ProtocolEventKind::UserDecryption(UserDecryptionRequest {
             decryptionId: decryption_id,

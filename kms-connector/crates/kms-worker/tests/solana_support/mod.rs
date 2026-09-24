@@ -17,8 +17,7 @@
 use alloy::primitives::U256;
 use base64::{Engine, engine::general_purpose::STANDARD as BASE64_STANDARD};
 use connector_utils::types::solana_request::{
-    PermitWireFields, SolanaHandleEntryWire, SolanaUserDecryptRequestWire,
-    SolanaUserDecryptionRequestV1,
+    SolanaEntryClaims, SolanaGatewayFields, SolanaRequestBlob, SolanaUserDecryptionRequestV1,
 };
 use kms_worker::core::solana::{
     SolanaHost, SolanaPubkeyBytes,
@@ -48,8 +47,10 @@ use zama_solana_acl::{
     public_decrypt_leaf_commitment,
 };
 use zama_solana_permit::{
-    Identity, KmsRouting, PermitFields, Signature, TRANSPORT_KEY_LEN, build_envelope,
+    Identity, KmsRouting, PermitFields, PermitWireFields, Signature, TRANSPORT_KEY_LEN,
+    build_envelope,
 };
+use zama_solana_request::SolanaHandleEntryWire;
 
 /// The host deployment every fixture is built against.
 pub const PROGRAM_ID: SolanaPubkeyBytes = [7; 32];
@@ -298,19 +299,38 @@ impl<'a> RequestBuilder<'a> {
         self
     }
 
-    /// The request in transport form, signed.
-    pub fn wire(&self) -> SolanaUserDecryptRequestWire {
+    /// The request in its two carriers, signed: the fields the Gateway types, and the blob.
+    pub fn parts(&self) -> (SolanaGatewayFields, SolanaRequestBlob) {
         let signature = self.wallet.sign(&self.permit.typed());
-        SolanaUserDecryptRequestWire {
-            permit: self.permit.wire(),
+        let permit = self.permit.wire();
+        let gateway = SolanaGatewayFields {
+            handles: self.entries.iter().map(|e| e.handle.clone()).collect(),
+            transport_key: permit.transport_key,
+            start_timestamp: permit.start_timestamp,
+            duration_seconds: permit.duration_seconds,
+            extra_data: permit.extra_data,
+        };
+        let blob = SolanaRequestBlob {
+            user_address: permit.user_address,
+            allowed_scopes: permit.allowed_scopes,
+            verifying_program_id: permit.verifying_program_id,
             signature: signature.as_bytes().to_vec(),
-            handles: self.entries.clone(),
-        }
+            entries: self
+                .entries
+                .iter()
+                .map(|e| SolanaEntryClaims {
+                    owner_address: e.owner_address.clone(),
+                    encrypted_store: e.encrypted_store.clone(),
+                })
+                .collect(),
+        };
+        (gateway, blob)
     }
 
     /// The request in validated form.
     pub fn typed(&self) -> SolanaUserDecryptionRequestV1 {
-        SolanaUserDecryptionRequestV1::new(U256::from(1), &self.wire())
+        let (gateway, blob) = self.parts();
+        SolanaUserDecryptionRequestV1::new(U256::from(1), gateway, blob)
             .expect("fixture request is well formed")
     }
 }

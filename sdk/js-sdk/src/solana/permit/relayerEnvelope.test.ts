@@ -86,7 +86,6 @@ const permitPayload: Readonly<Record<string, unknown>> = {
     durationSeconds: canonRecord.permit.duration_seconds,
   },
   verifyingProgramId: `0x${canonRecord.permit.verifying_program_id}`,
-  chainId: canonRecord.permit.chain_id,
   extraData: `0x${canonRecord.permit.extra_data}`,
 };
 
@@ -104,7 +103,6 @@ const PAYLOAD_KEYS = [
   'allowedScopes',
   'requestValidity',
   'verifyingProgramId',
-  'chainId',
   'extraData',
   'handles',
 ] as const;
@@ -150,7 +148,6 @@ describe('an accepted record composed into a request', () => {
     for (const key of ['userAddress', 'transportKey', 'verifyingProgramId', 'extraData']) {
       expect(payload[key], key).toMatch(/^0x[0-9a-f]*$/);
     }
-    expect(payload.chainId).toMatch(/^(0|[1-9][0-9]*)$/);
     const validity = payload.requestValidity as Record<string, unknown>;
     expect(validity.startTimestamp).toMatch(/^(0|[1-9][0-9]*)$/);
     expect(validity.durationSeconds).toMatch(/^(0|[1-9][0-9]*)$/);

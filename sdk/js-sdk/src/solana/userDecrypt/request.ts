@@ -61,14 +61,16 @@ export interface SolanaUserDecryptHandleJson {
   readonly encryptedStore: string;
 }
 
-/** The attested payload: the eight signed permit fields, plus the unsigned handle entries. */
+/**
+ * The attested payload: the signed permit fields, plus the unsigned handle entries. The permit's
+ * chain id does not travel: it is the one every handle embeds.
+ */
 export interface SolanaUserDecryptPayloadJson {
   readonly userAddress: string;
   readonly transportKey: string;
   readonly allowedScopes: readonly string[];
   readonly requestValidity: { readonly startTimestamp: string; readonly durationSeconds: string };
   readonly verifyingProgramId: string;
-  readonly chainId: string;
   readonly extraData: string;
   readonly handles: readonly SolanaUserDecryptHandleJson[];
 }
@@ -212,7 +214,6 @@ export function buildSolanaUserDecryptRequest(request: {
         durationSeconds: fields.durationSeconds.toString(),
       },
       verifyingProgramId: bytesToHex(fields.verifyingProgramId),
-      chainId: fields.chainId.toString(),
       extraData: bytesToHex(encodeSolanaKmsRouting(fields.kmsRouting)),
       handles: entries.map((entry) => ({
         handle: bytesToHex(entry.handle),

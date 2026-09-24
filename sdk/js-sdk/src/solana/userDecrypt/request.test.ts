@@ -103,7 +103,6 @@ const expectedBody = (record: (typeof fixture.accepted)[number]): unknown => ({
       durationSeconds: canonRecord.permit.duration_seconds,
     },
     verifyingProgramId: `0x${canonRecord.permit.verifying_program_id}`,
-    chainId: canonRecord.permit.chain_id,
     extraData: `0x${canonRecord.permit.extra_data}`,
     handles: record.handles,
   },

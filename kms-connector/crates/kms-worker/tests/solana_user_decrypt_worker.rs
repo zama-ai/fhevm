@@ -85,11 +85,11 @@ impl Scenario {
                     .window(now - 60, 3_600),
             )
             .direct(&encrypted_store, live)
-            .wire();
+            .parts();
         let query = encrypted_store.allowed_query(live, victim.pubkey());
 
         let mut scenario = Self {
-            event: solana_user_decryption_event_for(U256::ONE, &request),
+            event: solana_user_decryption_event_for(U256::ONE, &request.0, &request.1),
             host: HttpHost::start().await,
             victim,
             encrypted_store,

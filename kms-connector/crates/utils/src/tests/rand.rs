@@ -1,9 +1,5 @@
-use crate::types::{
-    handle::extract_chain_id_from_handle,
-    solana_request::{
-        PermitWireFields, SolanaHandleEntryWire, SolanaUserDecryptRequestWire,
-        SolanaUserDecryptionRequestV1,
-    },
+use crate::types::solana_request::{
+    SolanaEntryClaims, SolanaGatewayFields, SolanaRequestBlob, SolanaUserDecryptionRequestV1,
 };
 use alloy::primitives::{Address, FixedBytes, U256};
 use fhevm_gateway_bindings::decryption::{
@@ -71,50 +67,55 @@ pub fn solana_user_decryption_event(
     decryption_id: U256,
     handle: FixedBytes<32>,
 ) -> UserDecryptionRequest_4 {
-    solana_user_decryption_event_for(decryption_id, &solana_user_decryption_wire(handle))
+    let (gateway, blob) = solana_user_decryption_parts(handle);
+    solana_user_decryption_event_for(decryption_id, &gateway, &blob)
 }
 
-/// A well-formed Solana request naming `handle`, with a placeholder signature.
-pub fn solana_user_decryption_wire(handle: FixedBytes<32>) -> SolanaUserDecryptRequestWire {
-    SolanaUserDecryptRequestWire {
-        permit: PermitWireFields {
-            user_address: vec![1; 32],
-            transport_key: vec![2; zama_solana_permit::TRANSPORT_KEY_LEN],
-            allowed_scopes: vec![],
-            start_timestamp: sqlx::types::chrono::Utc::now().timestamp() as u64 - 60,
-            duration_seconds: 3600,
-            verifying_program_id: vec![7; 32],
-            chain_id: extract_chain_id_from_handle(&handle).unwrap(),
-            extra_data: [vec![2], vec![1; 64]].concat(),
-        },
+/// The two carriers of a well-formed Solana request naming `handle`, with a placeholder
+/// signature.
+pub fn solana_user_decryption_parts(
+    handle: FixedBytes<32>,
+) -> (SolanaGatewayFields, SolanaRequestBlob) {
+    let gateway = SolanaGatewayFields {
+        handles: vec![handle.to_vec()],
+        transport_key: vec![2; zama_solana_permit::TRANSPORT_KEY_LEN],
+        start_timestamp: sqlx::types::chrono::Utc::now().timestamp() as u64 - 60,
+        duration_seconds: 3600,
+        extra_data: [vec![2], vec![1; 64]].concat(),
+    };
+    let blob = SolanaRequestBlob {
+        user_address: vec![1; 32],
+        allowed_scopes: vec![],
+        verifying_program_id: vec![7; 32],
         signature: vec![0; 64],
-        handles: vec![SolanaHandleEntryWire {
-            handle: handle.to_vec(),
+        entries: vec![SolanaEntryClaims {
             owner_address: vec![1; 32],
             encrypted_store: vec![3; 32],
         }],
-    }
+    };
+    (gateway, blob)
 }
 
-/// The Gateway event carrying `request`, with the cleartext copies the Gateway emits beside it.
+/// The Gateway event carrying `gateway` as its typed fields and `blob` as its opaque request.
 pub fn solana_user_decryption_event_for(
     decryption_id: U256,
-    request: &SolanaUserDecryptRequestWire,
+    gateway: &SolanaGatewayFields,
+    blob: &SolanaRequestBlob,
 ) -> UserDecryptionRequest_4 {
     UserDecryptionRequest_4 {
         decryptionId: decryption_id,
-        ctHandles: request
+        ctHandles: gateway
             .handles
             .iter()
-            .map(|entry| FixedBytes::from_slice(&entry.handle))
+            .map(|handle| FixedBytes::from_slice(handle))
             .collect(),
         requestValidity: RequestValiditySeconds {
-            startTimestamp: U256::from(request.permit.start_timestamp),
-            durationSeconds: U256::from(request.permit.duration_seconds),
+            startTimestamp: U256::from(gateway.start_timestamp),
+            durationSeconds: U256::from(gateway.duration_seconds),
         },
-        publicKey: request.permit.transport_key.clone().into(),
-        extraData: request.permit.extra_data.clone().into(),
-        solanaRequest: zama_solana_request::encode_solana_request(request)
+        publicKey: gateway.transport_key.clone().into(),
+        extraData: gateway.extra_data.clone().into(),
+        solanaRequest: zama_solana_request::encode_solana_request(blob)
             .unwrap()
             .into(),
     }

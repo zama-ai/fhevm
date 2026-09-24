@@ -22,7 +22,6 @@
 #[path = "../../solana/test-fixtures/permit/permit_vectors.rs"]
 mod permit_vectors;
 
-use alloy::primitives::U256;
 use fhevm_relayer::core::event::UserDecryptRequest;
 use fhevm_relayer::host::handle_chain_id::extract_chain_id_from_u256;
 use fhevm_relayer::http::endpoints::v3::types::UserDecryptV3RequestJson;
@@ -57,8 +56,6 @@ enum RejectedBy {
     PayloadRules,
     /// It validates, and the conversion into the internal request refuses it.
     RequestDecode,
-    /// It converts, and a handle's embedded chain id is not one this relayer serves.
-    HostChainSupport,
 }
 
 impl RejectedBy {
@@ -67,7 +64,6 @@ impl RejectedBy {
             "json-shape" => Self::JsonShape,
             "payload-rules" => Self::PayloadRules,
             "request-decode" => Self::RequestDecode,
-            "host-chain-support" => Self::HostChainSupport,
             other => panic!("the fixture names an unknown rejection layer: {other}"),
         }
     }
@@ -127,7 +123,6 @@ fn permit_half() -> PermitHalf {
         "verifyingProgramId".to_string(),
         json!(format!("0x{}", record.permit.verifying_program_id)),
     );
-    payload.insert("chainId".to_string(), json!(record.permit.chain_id));
     payload.insert(
         "extraData".to_string(),
         json!(format!("0x{}", record.permit.extra_data)),
@@ -244,9 +239,9 @@ fn every_accepted_record_becomes_a_solana_request() {
                     "{name}: the encoded request carries the permit and the entries"
                 );
                 assert_eq!(solana_request[0], SOLANA_REQUEST_VERSION, "{name}: version");
-                let wire = decode_solana_request(solana_request).expect("relayer output decodes");
+                let blob = decode_solana_request(solana_request).expect("relayer output decodes");
                 assert_eq!(
-                    wire.handles
+                    blob.entries
                         .iter()
                         .map(|entry| entry.encrypted_store.clone())
                         .collect::<Vec<_>>(),
@@ -337,41 +332,14 @@ fn every_rejecting_record_is_refused_by_the_layer_it_names() {
             "{name}: names the validator, and the validator accepted it"
         );
 
-        let request = match UserDecryptRequest::try_from(parsed) {
-            Err(_) => {
-                assert_eq!(
-                    declared,
-                    RejectedBy::RequestDecode,
-                    "{name}: refused while converting, but names another layer"
-                );
-                continue;
-            }
-            Ok(request) => {
-                assert_ne!(
-                    declared,
-                    RejectedBy::RequestDecode,
-                    "{name}: names the conversion, and the conversion accepted it"
-                );
-                request
-            }
-        };
-
-        // What is left is refused above the conversion, on the handle's host chain. The rejection
-        // itself belongs to the configured chain-id check in the handler; what this asserts is the
-        // condition that check fires on, and that nothing below it quietly accepted the mismatch.
-        assert_eq!(
-            declared,
-            RejectedBy::HostChainSupport,
+        assert!(
+            UserDecryptRequest::try_from(parsed).is_err(),
             "{name}: was accepted"
         );
-        let foreign: Vec<&U256> = request
-            .ct_handles()
-            .into_iter()
-            .filter(|handle| extract_chain_id_from_u256(handle) != fixture.permit.chain_id)
-            .collect();
-        assert!(
-            !foreign.is_empty(),
-            "{name}: names the host-chain layer, and every handle belongs to the signed chain"
+        assert_eq!(
+            declared,
+            RejectedBy::RequestDecode,
+            "{name}: refused while converting, but names another layer"
         );
     }
 }

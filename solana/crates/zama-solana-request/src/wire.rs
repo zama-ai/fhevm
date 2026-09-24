@@ -1,8 +1,9 @@
-//! The request as it arrives, before anything about it has been established.
+//! The full request, as [`crate::assemble_solana_request`] builds it and before anything about it
+//! has been established.
 //!
 //! Widths are `Vec<u8>` because a wrong width has to be representable somewhere: this is the
 //! form a sender controls, and the consumer that authorizes turns it into its own validated
-//! type. Nothing here is trusted and nothing here is checked.
+//! type. Nothing here is trusted, and only the chain id is derived rather than claimed.
 //!
 //! Three absences are deliberate: no `authority` field, no
 //! `(program, scope)` field, and no proof. The first two are properties of the handle's
@@ -61,11 +62,10 @@ use zama_solana_permit::PermitWireFields;
 /// that worst case at exactly the hundred above.
 pub const MAX_REQUEST_HANDLES: usize = 33;
 
-/// The request as it arrives: permit fields, the signature over their envelope, and the
-/// handle entries.
+/// The full request: permit fields, the signature over their envelope, and the handle entries.
 #[derive(Clone, PartialEq, Eq, Debug, Default)]
 pub struct SolanaUserDecryptRequestWire {
-    /// The eight signed permit fields, in transport form.
+    /// The eight signed permit fields, in transport form. `chain_id` is the one the handles embed.
     pub permit: PermitWireFields,
     /// Claimed Ed25519 signature over the reconstructed envelope.
     pub signature: Vec<u8>,
@@ -80,8 +80,9 @@ pub struct SolanaUserDecryptRequestWire {
 pub struct SolanaHandleEntryWire {
     /// Claimed 32-byte ciphertext handle.
     pub handle: Vec<u8>,
-    /// Claimed 32-byte key whose allow leaf on the handle authorizes this entry: the
-    /// requester itself for a direct entry, the delegator for a delegated one.
+    /// Claimed 32-byte account whose permission authorizes this entry, i.e. whose allow leaf on
+    /// the handle is checked: the requester itself for a direct entry, the delegator for a
+    /// delegated one. It is neither the Solana account-owner program nor the store authority.
     pub owner_address: Vec<u8>,
     /// Claimed 32-byte address of the encrypted store whose history contains the handle.
     pub encrypted_store: Vec<u8>,

@@ -6,8 +6,7 @@ use connector_utils::types::{
     extra_data::parse_extra_data,
     handle::{extract_chain_id_from_handle, extract_fhe_type_from_handle},
     solana_request::{
-        PermitWireFields, SolanaHandleEntryWire, SolanaUserDecryptRequestWire,
-        SolanaUserDecryptionRequestV1,
+        SolanaEntryClaims, SolanaGatewayFields, SolanaRequestBlob, SolanaUserDecryptionRequestV1,
     },
 };
 use kms_connector_api::{
@@ -99,40 +98,39 @@ pub fn validate_user_decryption(
     validate_extra_data(&payload.extraData)
 }
 
-/// Checks the Solana payload as [`validate_user_decryption`] checks the EIP-712 one, and gives its
-/// permit the handles' chain id. The signature is verified by the worker.
+/// Checks the Solana payload as [`validate_user_decryption`] checks the EIP-712 one. The permit's
+/// chain id is the one the handles embed. The signature is verified by the worker.
 pub fn validate_solana_user_decryption(
     id: B256,
     request: &SolanaUserDecryptionRequest,
     config: &Config,
 ) -> Result<SolanaUserDecryptionRequestV1, ValidationError> {
     let payload = &request.payload;
-    let chain_id = validate_handles(payload.handles.iter().map(|h| &h.handle), config)?;
+    validate_handles(payload.handles.iter().map(|h| &h.handle), config)?;
     validate_request_validity(&payload.requestValidity)?;
     validate_extra_data(&payload.extraData)?;
-    let wire = SolanaUserDecryptRequestWire {
-        permit: PermitWireFields {
-            user_address: payload.userAddress.to_vec(),
-            transport_key: payload.publicKey.to_vec(),
-            allowed_scopes: payload.allowedScopes.iter().map(|s| s.to_vec()).collect(),
-            start_timestamp: payload.requestValidity.startTimestamp,
-            duration_seconds: payload.requestValidity.durationSeconds,
-            verifying_program_id: payload.verifyingProgramId.to_vec(),
-            chain_id,
-            extra_data: payload.extraData.to_vec(),
-        },
+    let gateway = SolanaGatewayFields {
+        handles: payload.handles.iter().map(|e| e.handle.to_vec()).collect(),
+        transport_key: payload.publicKey.to_vec(),
+        start_timestamp: payload.requestValidity.startTimestamp,
+        duration_seconds: payload.requestValidity.durationSeconds,
+        extra_data: payload.extraData.to_vec(),
+    };
+    let blob = SolanaRequestBlob {
+        user_address: payload.userAddress.to_vec(),
+        allowed_scopes: payload.allowedScopes.iter().map(|s| s.to_vec()).collect(),
+        verifying_program_id: payload.verifyingProgramId.to_vec(),
         signature: request.signature.to_vec(),
-        handles: payload
+        entries: payload
             .handles
             .iter()
-            .map(|e| SolanaHandleEntryWire {
-                handle: e.handle.to_vec(),
+            .map(|e| SolanaEntryClaims {
                 owner_address: e.ownerAddress.to_vec(),
                 encrypted_store: e.encryptedStore.to_vec(),
             })
             .collect(),
     };
-    SolanaUserDecryptionRequestV1::new(U256::from_be_bytes(id.0), &wire)
+    SolanaUserDecryptionRequestV1::new(U256::from_be_bytes(id.0), gateway, blob)
         .map_err(|e| ValidationError::InvalidSolanaRequest(e.to_string()))
 }
 

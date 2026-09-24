@@ -1,8 +1,8 @@
 //! Canonical transport form of the Zama fhevm Solana user-decryption request.
 //!
 //! One implementation of the request canon for every Rust consumer: the wire types the
-//! sender fills in, and the single encoder/decoder pair for the opaque blob the gateway
-//! carries between them.
+//! authorizer reads, the single encoder/decoder pair for the opaque blob the gateway carries,
+//! and the one function that joins that blob with the fields the gateway types.
 //!
 //! The relayer builds the bytes because it submits the gateway transaction; each KMS party's
 //! connector reads them because it authorizes. Both call this crate, so the layout has one
@@ -12,11 +12,17 @@
 //! an account. The wire form is untrusted by construction, and the consumer that authorizes
 //! owns its own validated type and every rule about live state.
 
-/// The canonical byte layout: version byte and borsh body.
+/// Joining the gateway-typed fields and the blob into the full request.
+pub mod assemble;
+/// The canonical byte layout of the blob: version byte and borsh body.
 pub mod codec;
 /// The untyped request form as it arrives from a sender.
 pub mod wire;
 
+pub use assemble::{
+    assemble_solana_request, SolanaEntryClaims, SolanaGatewayFields, SolanaRequestAssemblyError,
+    SolanaRequestBlob,
+};
 pub use codec::{
     decode_solana_request, encode_solana_request, SolanaRequestDecodeError,
     SolanaRequestEncodeError, SOLANA_REQUEST_VERSION,

@@ -135,7 +135,8 @@ mod helpers {
     /// is not an envelope this endpoint accepts: the wallet key and the signature over the
     /// reconstructed permit envelope are both genuine. The handle uses `random_handle()` so its
     /// embedded chain id is a configured host chain and the request survives the early chain-id
-    /// gate; the permit fields are shaped to pass the strict typed pre-check
+    /// gate, and the permit is signed for that chain, which is the one the relayer derives from
+    /// the handles; the permit fields are shaped to pass the strict typed pre-check
     /// (`PermitFields::decode`): a 32-byte identity, an 869-byte transport key, a validity
     /// window covering now, and a 65-byte `0x02` KMS-routing `extraData`.
     pub fn create_srfc38_envelope() -> serde_json::Value {
@@ -152,7 +153,9 @@ mod helpers {
         let transport_key = vec![0u8; 869];
         let allowed_scope = [[0x05u8; 32], [0x06u8; 32]].concat();
         let verifying_program_id = [0x02u8; 32];
-        let chain_id = fhevm_relayer::core::event::solana_host_chain_id(1);
+        let handle = random_handle();
+        let handle_bytes = hex::decode(handle.trim_start_matches("0x")).expect("hex handle");
+        let chain_id = u64::from_be_bytes(handle_bytes[22..30].try_into().unwrap());
         let mut extra_data = vec![0x02u8];
         extra_data.extend_from_slice(&[0u8; 64]);
         let start_timestamp = now - 1;
@@ -182,11 +185,10 @@ mod helpers {
                     "durationSeconds": duration_seconds.to_string(),
                 },
                 "verifyingProgramId": format!("0x{}", hex::encode(verifying_program_id)),
-                "chainId": chain_id.to_string(),
                 // 65-byte KMS routing: version 0x02 ‖ contextId(32) ‖ epochId(32).
                 "extraData": format!("0x{}", hex::encode(&extra_data)),
                 "handles": [{
-                    "handle": random_handle(),
+                    "handle": handle,
                     // The owner address of a direct entry is the requester itself.
                     "ownerAddress": format!("0x{}", hex::encode(user_address)),
                     "encryptedStore": random_0x_hex(32),
@@ -256,7 +258,7 @@ async fn v3_accepts_solana_srfc38_request() {
 }
 
 /// v3 refuses a Solana sRFC-38 payload carrying a stray field: the strict `deny_unknown_fields`
-/// envelope rejects the retired EVM `userAddress` / ed25519 `nonce` shapes at the HTTP boundary.
+/// envelope rejects the retired `chainId` / ed25519 `nonce` shapes at the HTTP boundary.
 #[tokio::test]
 async fn v3_rejects_solana_srfc38_with_stray_field() {
     let setup = TestSetup::new().await.expect("Failed to create test setup");

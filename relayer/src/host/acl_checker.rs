@@ -26,6 +26,7 @@ use std::str::FromStr;
 use std::sync::Arc;
 use std::time::Duration;
 use tracing::{error, warn};
+use zama_solana_request::SolanaUserDecryptRequestWire;
 
 type Provider = FillProvider<
     alloy::providers::fillers::JoinFill<
@@ -577,25 +578,13 @@ impl HostAclChecker {
     /// [`HostAclError::CallFailed`] rather than failed-open. Ambiguity of *data* (an account
     /// this reader cannot judge) passes — the authoritative check is the KMS connectors'.
     ///
-    /// The chain whose state is read is named by the permit's SIGNED `chain_id` — the same
-    /// field the connector authorizes against — never by the unsigned chain-id bytes embedded
-    /// in a handle: an advisory check that read a different chain's rows than its authority
-    /// could refuse what the authority would allow.
+    /// The chain whose state is read is the permit's `chain_id`: the one every handle embeds,
+    /// which the signature covers and the connector authorizes against.
     pub async fn check_solana_delegated_user_decrypt(
         &self,
         job_id: &JobId,
-        solana_request: &[u8],
+        wire: &SolanaUserDecryptRequestWire,
     ) -> Result<(), HostAclError> {
-        // Admission already verified the blob's shape and the permit signature over it; a
-        // re-decode failure here is this relayer's own defect, and an advisory check does not
-        // refuse users on its own defects.
-        let Ok(wire) = zama_solana_request::decode_solana_request(solana_request) else {
-            warn!(
-                int_job_id = %job_id,
-                "Solana delegation pre-check could not re-decode the request blob; passing"
-            );
-            return Ok(());
-        };
         let chain_id = wire.permit.chain_id;
         let Some(chain) = self.solana_chains.get(&chain_id) else {
             return Err(HostAclError::UnsupportedChain { chain_id });

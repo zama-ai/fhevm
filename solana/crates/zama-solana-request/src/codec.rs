@@ -1,157 +1,113 @@
-//! The canonical carriage of a Solana user-decryption request: the one byte layout between
+//! The canonical carriage of a Solana user-decryption request blob: the one byte layout between
 //! the party that submits the gateway transaction and the party that authorizes it.
 //!
-//! The gateway's host-generic entry carries the whole request as one opaque field; the
-//! gateway never reads a byte of it. This module is the single home of that layout on the
-//! Rust side:
+//! The gateway's host-generic entry types the handles, transport key, validity window and extra
+//! data, and carries the rest of the request as one opaque field it never reads. This module is
+//! the single home of that field's layout on the Rust side:
 //!
 //! ```text
 //! bytes = SOLANA_REQUEST_VERSION (1 byte) ‖ borsh(body)
 //! ```
 //!
-//! where the body mirrors [`SolanaUserDecryptRequestWire`] field for field over borsh
-//! primitives. The mirror exists only as the codec definition — its field order IS the
-//! layout — and the conversion in both directions destructures both structs exhaustively,
-//! so adding a field to the wire form without deciding its place in the canon is a compile
-//! error here, never a silent omission.
+//! where the body mirrors [`SolanaRequestBlob`] field for field over borsh primitives. The mirror
+//! exists only as the codec definition — its field order IS the layout — and the conversion in
+//! both directions destructures both structs exhaustively, so adding a field to the blob without
+//! deciding its place in the canon is a compile error here, never a silent omission.
 //!
-//! There is one encoder and one decoder, and both consumers call them: a field added on
-//! either side is a compile error on the other, rather than a byte diff discovered by a
-//! fixture test.
-//!
-//! The gateway event also carries the handles, transport key, window and KMS routing in
-//! cleartext. A consumer that authorizes an event uses those cleartext values in place of the
-//! request's copies, so the handles that are budgeted, decrypted and authorized are the same list.
+//! The blob carries no field the gateway types, so the two can never disagree:
+//! [`crate::assemble_solana_request`] joins them into the full request.
 
-use crate::wire::{SolanaHandleEntryWire, SolanaUserDecryptRequestWire};
+use crate::assemble::{SolanaEntryClaims, SolanaRequestBlob};
 use borsh::{BorshDeserialize, BorshSerialize};
-use zama_solana_permit::PermitWireFields;
 
-/// The one known layout version byte. `0x01` carried client-built proofs and `0x02` named
-/// per-value accounts; neither obsolete layout is decoded.
-pub const SOLANA_REQUEST_VERSION: u8 = 0x03;
+/// The one known layout version byte. `0x01` carried client-built proofs, `0x02` named
+/// per-value accounts, and `0x03` repeated the fields the gateway types; no obsolete layout is
+/// decoded.
+pub const SOLANA_REQUEST_VERSION: u8 = 0x04;
 
-/// The borsh body, mirroring [`SolanaUserDecryptRequestWire`] field for field over
-/// primitives. The field order below IS the canonical layout.
+/// The borsh body, mirroring [`SolanaRequestBlob`] field for field over primitives. The field
+/// order below IS the canonical layout.
 #[derive(BorshSerialize, BorshDeserialize)]
 struct RequestBody {
     user_address: Vec<u8>,
-    transport_key: Vec<u8>,
     allowed_scopes: Vec<Vec<u8>>,
-    start_timestamp: u64,
-    duration_seconds: u64,
     verifying_program_id: Vec<u8>,
-    chain_id: u64,
-    extra_data: Vec<u8>,
     signature: Vec<u8>,
-    handles: Vec<RequestBodyEntry>,
+    entries: Vec<RequestBodyEntry>,
 }
 
-/// One handle entry of the body, mirroring [`SolanaHandleEntryWire`].
+/// One entry of the body, mirroring [`SolanaEntryClaims`].
 #[derive(BorshSerialize, BorshDeserialize)]
 struct RequestBodyEntry {
-    handle: Vec<u8>,
     owner_address: Vec<u8>,
     encrypted_store: Vec<u8>,
 }
 
-impl From<&SolanaUserDecryptRequestWire> for RequestBody {
-    fn from(wire: &SolanaUserDecryptRequestWire) -> Self {
-        // Exhaustive destructuring on purpose: a field added to the wire form (or to the
-        // permit's transport form) fails to compile HERE, forcing a decision about its
-        // place in the canonical layout instead of a silent omission from it.
-        let SolanaUserDecryptRequestWire {
-            permit,
-            signature,
-            handles,
-        } = wire;
-        let PermitWireFields {
+impl From<&SolanaRequestBlob> for RequestBody {
+    fn from(blob: &SolanaRequestBlob) -> Self {
+        // Exhaustive destructuring on purpose: a field added to the blob fails to compile HERE,
+        // forcing a decision about its place in the canonical layout instead of a silent
+        // omission from it.
+        let SolanaRequestBlob {
             user_address,
-            transport_key,
             allowed_scopes,
-            start_timestamp,
-            duration_seconds,
             verifying_program_id,
-            chain_id,
-            extra_data,
-        } = permit;
+            signature,
+            entries,
+        } = blob;
 
         Self {
             user_address: user_address.clone(),
-            transport_key: transport_key.clone(),
             allowed_scopes: allowed_scopes.clone(),
-            start_timestamp: *start_timestamp,
-            duration_seconds: *duration_seconds,
             verifying_program_id: verifying_program_id.clone(),
-            chain_id: *chain_id,
-            extra_data: extra_data.clone(),
             signature: signature.clone(),
-            handles: handles.iter().map(RequestBodyEntry::from).collect(),
+            entries: entries.iter().map(RequestBodyEntry::from).collect(),
         }
     }
 }
 
-impl From<&SolanaHandleEntryWire> for RequestBodyEntry {
-    fn from(entry: &SolanaHandleEntryWire) -> Self {
-        let SolanaHandleEntryWire {
-            handle,
+impl From<&SolanaEntryClaims> for RequestBodyEntry {
+    fn from(entry: &SolanaEntryClaims) -> Self {
+        let SolanaEntryClaims {
             owner_address,
             encrypted_store,
         } = entry;
 
         Self {
-            handle: handle.clone(),
             owner_address: owner_address.clone(),
             encrypted_store: encrypted_store.clone(),
         }
     }
 }
 
-impl From<RequestBody> for SolanaUserDecryptRequestWire {
+impl From<RequestBody> for SolanaRequestBlob {
     fn from(body: RequestBody) -> Self {
         let RequestBody {
             user_address,
-            transport_key,
             allowed_scopes,
-            start_timestamp,
-            duration_seconds,
             verifying_program_id,
-            chain_id,
-            extra_data,
             signature,
-            handles,
+            entries,
         } = body;
 
         Self {
-            permit: PermitWireFields {
-                user_address,
-                transport_key,
-                allowed_scopes,
-                start_timestamp,
-                duration_seconds,
-                verifying_program_id,
-                chain_id,
-                extra_data,
-            },
+            user_address,
+            allowed_scopes,
+            verifying_program_id,
             signature,
-            handles: handles
-                .into_iter()
-                .map(SolanaHandleEntryWire::from)
-                .collect(),
+            entries: entries.into_iter().map(SolanaEntryClaims::from).collect(),
         }
     }
 }
 
-impl From<RequestBodyEntry> for SolanaHandleEntryWire {
+impl From<RequestBodyEntry> for SolanaEntryClaims {
     fn from(entry: RequestBodyEntry) -> Self {
         let RequestBodyEntry {
-            handle,
             owner_address,
             encrypted_store,
         } = entry;
 
         Self {
-            handle,
             owner_address,
             encrypted_store,
         }
@@ -193,15 +149,15 @@ pub enum SolanaRequestEncodeError {
     },
 }
 
-/// Encodes a wire request into the canonical bytes.
+/// Encodes a request blob into the canonical bytes.
 ///
 /// The only failure borsh can produce for this body is a collection longer than its
 /// `u32` length prefix. Every list is bounded far below that upstream, but the bound
 /// lives in other modules, so the failure is propagated rather than assumed away.
 pub fn encode_solana_request(
-    wire: &SolanaUserDecryptRequestWire,
+    blob: &SolanaRequestBlob,
 ) -> Result<Vec<u8>, SolanaRequestEncodeError> {
-    let body = RequestBody::from(wire);
+    let body = RequestBody::from(blob);
     let mut bytes = vec![SOLANA_REQUEST_VERSION];
     borsh::to_writer(&mut bytes, &body).map_err(|source| {
         SolanaRequestEncodeError::BodySerialization {
@@ -211,11 +167,9 @@ pub fn encode_solana_request(
     Ok(bytes)
 }
 
-/// Decodes canonical bytes into the wire request, strictly: one known version, a body that
+/// Decodes canonical bytes into the request blob, strictly: one known version, a body that
 /// consumes every remaining byte, nothing tolerated after it.
-pub fn decode_solana_request(
-    bytes: &[u8],
-) -> Result<SolanaUserDecryptRequestWire, SolanaRequestDecodeError> {
+pub fn decode_solana_request(bytes: &[u8]) -> Result<SolanaRequestBlob, SolanaRequestDecodeError> {
     let (version, mut body_bytes) = match bytes.split_first() {
         Some((version, body)) => (*version, body),
         None => return Err(SolanaRequestDecodeError::UnknownVersion { version: None }),
@@ -237,57 +191,42 @@ pub fn decode_solana_request(
         });
     }
 
-    Ok(SolanaUserDecryptRequestWire::from(body))
+    Ok(SolanaRequestBlob::from(body))
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::SolanaHandleEntryWire;
 
     /// Every field distinct and non-empty, so a field the encoder dropped changes nothing.
-    fn wire() -> SolanaUserDecryptRequestWire {
-        let entry = |seed: u8| SolanaHandleEntryWire {
-            handle: vec![seed; 32],
-            owner_address: vec![seed + 1; 32],
-            encrypted_store: vec![seed + 2; 32],
+    fn blob() -> SolanaRequestBlob {
+        let entry = |seed: u8| SolanaEntryClaims {
+            owner_address: vec![seed; 32],
+            encrypted_store: vec![seed + 1; 32],
         };
-        SolanaUserDecryptRequestWire {
-            permit: PermitWireFields {
-                user_address: vec![1; 32],
-                transport_key: vec![2; 32],
-                allowed_scopes: vec![vec![3; 64]],
-                start_timestamp: 4,
-                duration_seconds: 5,
-                verifying_program_id: vec![6; 32],
-                chain_id: 7,
-                extra_data: vec![8; 65],
-            },
+        SolanaRequestBlob {
+            user_address: vec![1; 32],
+            allowed_scopes: vec![vec![3; 64]],
+            verifying_program_id: vec![6; 32],
             signature: vec![9; 64],
-            handles: vec![entry(10), entry(20)],
+            entries: vec![entry(10), entry(20)],
         }
     }
 
     #[test]
-    fn every_wire_field_reaches_the_canonical_bytes() {
-        let base = wire();
+    fn every_blob_field_reaches_the_canonical_bytes() {
+        let base = blob();
         let baseline = encode_solana_request(&base).unwrap();
         assert_eq!(baseline[0], SOLANA_REQUEST_VERSION);
         assert_eq!(decode_solana_request(&baseline), Ok(base.clone()));
 
-        let mutations: [fn(&mut SolanaUserDecryptRequestWire); 12] = [
-            |w| w.permit.user_address[0] ^= 1,
-            |w| w.permit.transport_key[0] ^= 1,
-            |w| w.permit.allowed_scopes[0][0] ^= 1,
-            |w| w.permit.start_timestamp += 1,
-            |w| w.permit.duration_seconds += 1,
-            |w| w.permit.verifying_program_id[0] ^= 1,
-            |w| w.permit.chain_id += 1,
-            |w| w.permit.extra_data[0] ^= 1,
-            |w| w.signature[0] ^= 1,
-            |w| w.handles[0].handle[0] ^= 1,
-            |w| w.handles[0].owner_address[0] ^= 1,
-            |w| w.handles[1].encrypted_store[0] ^= 1,
+        let mutations: [fn(&mut SolanaRequestBlob); 6] = [
+            |b| b.user_address[0] ^= 1,
+            |b| b.allowed_scopes[0][0] ^= 1,
+            |b| b.verifying_program_id[0] ^= 1,
+            |b| b.signature[0] ^= 1,
+            |b| b.entries[0].owner_address[0] ^= 1,
+            |b| b.entries[1].encrypted_store[0] ^= 1,
         ];
         for (index, mutate) in mutations.iter().enumerate() {
             let mut variant = base.clone();
@@ -300,16 +239,16 @@ mod tests {
 
     #[test]
     fn the_decoder_is_strict() {
-        let bytes = encode_solana_request(&wire()).unwrap();
+        let bytes = encode_solana_request(&blob()).unwrap();
         assert_eq!(
             decode_solana_request(&[]),
             Err(SolanaRequestDecodeError::UnknownVersion { version: None })
         );
         let mut obsolete = bytes.clone();
-        obsolete[0] = 0x02;
+        obsolete[0] = 0x03;
         assert_eq!(
             decode_solana_request(&obsolete),
-            Err(SolanaRequestDecodeError::UnknownVersion { version: Some(2) })
+            Err(SolanaRequestDecodeError::UnknownVersion { version: Some(3) })
         );
         let mut trailing = bytes.clone();
         trailing.push(0);
