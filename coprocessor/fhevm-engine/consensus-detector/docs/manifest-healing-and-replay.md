@@ -223,7 +223,9 @@ is insufficient.
 
 Scheduling and result acceptance share the predicate
 `reason = 'ct64_mismatch' AND healed_at IS NULL`, for both verified and inferred
-findings, without requiring a quorum target. No separate forbidden-dependency
+findings. Verified rows are stored only when the other group holds the quorum,
+so a healthy publisher does not freeze the handle. An inferred row can still
+lack a target until healing pins one. No separate forbidden-dependency
 field is needed. The partial index `idx_drifted_handle_forbidden_dependency`
 supports lookups by consensus epoch (`consensus_epoch`), context, chain, handle, and producer block hash.
 Ct128-only findings do not forbid computation; ordinary readiness checks still
