@@ -2484,11 +2484,8 @@ contract ProtocolConfigTest is HostContractsDeployerTestUtils {
     // confirmEpochActivation negative branches
     // -----------------------------------------------------------------------
 
-    /// @dev Reaching the `!_isLiveKmsContext` guard requires the epoch's context to be destroyed
-    ///      mid-rotation while its pending epoch survives. Destroying a Created context clears its
-    ///      pending epoch, so we keep the epoch alive by destroying the context only after defining
-    ///      a fresh pending epoch under it via mirrorKmsEpoch is not possible; instead we drive the
-    ///      InvalidKmsContext branch through a destroyed-then-confirmed path.
+    /// @dev Destroying a Created context clears its pending epoch, so a later confirmation for that
+    ///      epoch reverts on the epoch state guard.
     function test_revertConfirmEpochActivationForDestroyedContext() public {
         _setupEpochLifecycle();
         _seedActiveEpochWithMaterialForTwoNodeContext();

@@ -375,10 +375,6 @@ contract ProtocolConfig is IProtocolConfig, UUPSUpgradeableEmptyProxy, ACLOwnabl
             revert EpochActivationUnauthorized(msg.sender, epochId);
         }
 
-        if (!_isLiveKmsContext(contextId)) {
-            revert InvalidKmsContext(contextId);
-        }
-
         // Activation requires one key and one CRS attestation from the signer. An empty array skips its loop
         // below, so the vote would be recorded without checking that attestation.
         if (keys.length == 0 || crsList.length == 0) {
