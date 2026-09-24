@@ -2,12 +2,12 @@
 mod utils;
 
 use crate::utils::{
-    allow_handle, as_handle, as_scalar_uint, listener_event_db, next_handle,
+    allow_handle, as_handle, as_scalar_uint, listener_event_db, next_handle, next_typed_handle,
     persist_main_block_one_shot_artifact, persist_main_block_provenance,
     persist_main_block_smoke_artifact, random_handle, scalar_flag, setup_test_app, tfhe_event,
     to_ty, upsert_legacy_dependence_chain, validate_main_block_run_policy,
     wait_until_all_allowed_handles_computed, wait_until_legacy_terminals_computed,
-    write_atomic_u64_bench_params, zero_address, EnvConfig, LegacyTerminal,
+    write_atomic_u64_bench_params, zero_address, EnvConfig, LegacyTerminal, FHE_BOOL, FHE_UINT64,
 };
 use criterion::{
     async_executor::FuturesExecutor, measurement::WallTime, Bencher, Criterion, Throughput,
@@ -121,20 +121,24 @@ fn main() {
         let num_elems = 1;
         let bench_id = format!("{bench_name}::latency::whitepaper::FHEUint64::{num_elems}_elems::{bench_optimization_target}");
         group.bench_with_input(bench_id.clone(), &num_elems, move |b, &num_elems| {
-            let _ = Runtime::new().unwrap().block_on(schedule_erc20_whitepaper(
+            if let Err(error) = Runtime::new().unwrap().block_on(schedule_erc20_whitepaper(
                 b,
                 num_elems as usize,
                 bench_id.clone(),
-            ));
+            )) {
+                panic!("{bench_id} failed: {error}");
+            }
         });
 
         let bench_id = format!("{bench_name}::latency::no_cmux::FHEUint64::{num_elems}_elems::{bench_optimization_target}");
         group.bench_with_input(bench_id.clone(), &num_elems, move |b, &num_elems| {
-            let _ = Runtime::new().unwrap().block_on(schedule_erc20_no_cmux(
+            if let Err(error) = Runtime::new().unwrap().block_on(schedule_erc20_no_cmux(
                 b,
                 num_elems as usize,
                 bench_id.clone(),
-            ));
+            )) {
+                panic!("{bench_id} failed: {error}");
+            }
         });
     }
 
@@ -144,22 +148,26 @@ fn main() {
             let bench_id =
                 format!("{bench_name}::throughput::whitepaper::FHEUint64::{num_elems}_elems::{bench_optimization_target}");
             group.bench_with_input(bench_id.clone(), &num_elems, move |b, &num_elems| {
-                let _ = Runtime::new().unwrap().block_on(schedule_erc20_whitepaper(
+                if let Err(error) = Runtime::new().unwrap().block_on(schedule_erc20_whitepaper(
                     b,
                     num_elems as usize,
                     bench_id.clone(),
-                ));
+                )) {
+                    panic!("{bench_id} failed: {error}");
+                }
             });
 
             group.throughput(Throughput::Elements(num_elems));
             let bench_id =
                 format!("{bench_name}::throughput::no_cmux::FHEUint64::{num_elems}_elems::{bench_optimization_target}");
             group.bench_with_input(bench_id.clone(), &num_elems, move |b, &num_elems| {
-                let _ = Runtime::new().unwrap().block_on(schedule_erc20_no_cmux(
+                if let Err(error) = Runtime::new().unwrap().block_on(schedule_erc20_no_cmux(
                     b,
                     num_elems as usize,
                     bench_id.clone(),
-                ));
+                )) {
+                    panic!("{bench_id} failed: {error}");
+                }
             });
 
             group.throughput(Throughput::Elements(num_elems));
@@ -167,13 +175,17 @@ fn main() {
                 "{bench_name}::throughput::dependent_whitepaper::FHEUint64::{num_elems}_elems::{bench_optimization_target}"
             );
             group.bench_with_input(bench_id.clone(), &num_elems, move |b, &num_elems| {
-                let _ = Runtime::new()
-                    .unwrap()
-                    .block_on(schedule_dependent_erc20_whitepaper(
-                        b,
-                        num_elems as usize,
-                        bench_id.clone(),
-                    ));
+                if let Err(error) =
+                    Runtime::new()
+                        .unwrap()
+                        .block_on(schedule_dependent_erc20_whitepaper(
+                            b,
+                            num_elems as usize,
+                            bench_id.clone(),
+                        ))
+                {
+                    panic!("{bench_id} failed: {error}");
+                }
             });
 
             group.throughput(Throughput::Elements(num_elems));
@@ -181,13 +193,17 @@ fn main() {
                 "{bench_name}::throughput::dependent_no_cmux::FHEUint64::{num_elems}_elems::{bench_optimization_target}"
             );
             group.bench_with_input(bench_id.clone(), &num_elems, move |b, &num_elems| {
-                let _ = Runtime::new()
-                    .unwrap()
-                    .block_on(schedule_dependent_erc20_no_cmux(
-                        b,
-                        num_elems as usize,
-                        bench_id.clone(),
-                    ));
+                if let Err(error) =
+                    Runtime::new()
+                        .unwrap()
+                        .block_on(schedule_dependent_erc20_no_cmux(
+                            b,
+                            num_elems as usize,
+                            bench_id.clone(),
+                        ))
+                {
+                    panic!("{bench_id} failed: {error}");
+                }
             });
         }
     }
@@ -399,11 +415,11 @@ async fn run_main_block_direct_smoke() -> Result<(), Box<dyn std::error::Error>>
         let mut counter = random_handle();
         let first_dcid = next_handle(&mut counter);
         let second_dcid = next_handle(&mut counter);
-        let first_lhs = next_handle(&mut counter);
-        let first_rhs = next_handle(&mut counter);
-        let first_result = next_handle(&mut counter);
-        let second_rhs = next_handle(&mut counter);
-        let second_result = next_handle(&mut counter);
+        let first_lhs = next_typed_handle(&mut counter, FHE_UINT64);
+        let first_rhs = next_typed_handle(&mut counter, FHE_UINT64);
+        let first_result = next_typed_handle(&mut counter, FHE_UINT64);
+        let second_rhs = next_typed_handle(&mut counter, FHE_UINT64);
+        let second_result = next_typed_handle(&mut counter, FHE_UINT64);
         let caller = zero_address();
         let started = Instant::now();
         let mut tx = listener_db
@@ -1047,8 +1063,8 @@ async fn run_main_block_one_shot() -> Result<(), Box<dyn std::error::Error>> {
             let chain_transaction_id = (scenario.erc20_transaction_identity
                 == Erc20TransactionIdentity::PerChain)
                 .then_some(dependence_chain_id);
-            let mut from = next_handle(&mut counter);
-            let mut to = next_handle(&mut counter);
+            let mut from = next_typed_handle(&mut counter, FHE_UINT64);
+            let mut to = next_typed_handle(&mut counter, FHE_UINT64);
             seed_legacy_input_ciphertext(&mut tx, &from, &inputs[0]).await?;
             seed_legacy_input_ciphertext(&mut tx, &to, &inputs[1]).await?;
             let mut terminal_transaction_id = None;
@@ -1058,15 +1074,15 @@ async fn run_main_block_one_shot() -> Result<(), Box<dyn std::error::Error>> {
                 if scenario.uses_distinct_transfer_transaction_ids() {
                     transaction_ids.push(transaction_id);
                 }
-                let amount = next_handle(&mut counter);
+                let amount = next_typed_handle(&mut counter, FHE_UINT64);
                 seed_legacy_input_ciphertext(&mut tx, &amount, &inputs[2]).await?;
-                let has_funds = next_handle(&mut counter);
+                let has_funds = next_typed_handle(&mut counter, FHE_BOOL);
                 insert_legacy_one_shot_event_in_dependence_chain(&listener_db, &mut tx, transaction_id, dependence_chain_id, TfheContractEvents::FheGe(TfheContract::FheGe { caller, lhs: from, rhs: amount, scalarByte: scalar_flag(false), result: has_funds }), false).await?;
-                let zero = next_handle(&mut counter);
+                let zero = next_typed_handle(&mut counter, FHE_UINT64);
                 insert_legacy_one_shot_event_in_dependence_chain(&listener_db, &mut tx, transaction_id, dependence_chain_id, TfheContractEvents::TrivialEncrypt(TfheContract::TrivialEncrypt { caller, pt: as_scalar_uint(&bigdecimal::num_bigint::BigInt::from(0_u64)), toType: to_ty(5), result: zero }), false).await?;
-                let selected = next_handle(&mut counter);
+                let selected = next_typed_handle(&mut counter, FHE_UINT64);
                 insert_legacy_one_shot_event_in_dependence_chain(&listener_db, &mut tx, transaction_id, dependence_chain_id, TfheContractEvents::FheIfThenElse(TfheContract::FheIfThenElse { caller, control: has_funds, ifTrue: amount, ifFalse: zero, result: selected }), false).await?;
-                let new_to = next_handle(&mut counter);
+                let new_to = next_typed_handle(&mut counter, FHE_UINT64);
                 let terminal = position + 1 == chain_len;
                 // A carried balance consumed by the NEXT transaction must be
                 // allowed: production ACL semantics guarantee a persistent
@@ -1077,7 +1093,7 @@ async fn run_main_block_one_shot() -> Result<(), Box<dyn std::error::Error>> {
                 let materialized_boundary =
                     terminal || scenario.uses_distinct_transfer_transaction_ids();
                 insert_legacy_one_shot_event_in_dependence_chain(&listener_db, &mut tx, transaction_id, dependence_chain_id, TfheContractEvents::FheAdd(TfheContract::FheAdd { caller, lhs: to, rhs: selected, scalarByte: scalar_flag(false), result: new_to }), materialized_boundary).await?;
-                let new_from = next_handle(&mut counter);
+                let new_from = next_typed_handle(&mut counter, FHE_UINT64);
                 insert_legacy_one_shot_event_in_dependence_chain(&listener_db, &mut tx, transaction_id, dependence_chain_id, TfheContractEvents::FheSub(TfheContract::FheSub { caller, lhs: from, rhs: selected, scalarByte: scalar_flag(false), result: new_from }), materialized_boundary).await?;
                 from = new_from;
                 to = new_to;
@@ -1266,7 +1282,7 @@ fn auction_300_events(counter: &mut u64) -> AuctionFixture {
     let mut events = Vec::with_capacity(AUCTION_300_BIDS * 15 + AUCTION_300_BIDDERS * 2);
     let mut quota = vec![None; AUCTION_300_BIDDERS];
     let mut payment = vec![None; AUCTION_300_BIDDERS];
-    let zero_root = next_handle(counter);
+    let zero_root = next_typed_handle(counter, FHE_UINT64);
     // These are fixture ciphertexts, not computations: this exactly mirrors
     // the e2e encrypted quantity and empty-map zero boundary values.
     let mut encrypted_inputs = vec![(zero_root, 3)];
@@ -1279,10 +1295,10 @@ fn auction_300_events(counter: &mut u64) -> AuctionFixture {
         let bidder = bid_index / 2;
         let price_level = bid_index % AUCTION_300_PRICE_LEVELS;
         let wallet = bidder & (AUCTION_300_WALLETS - 1);
-        let quantity = next_handle(counter);
+        let quantity = next_typed_handle(counter, FHE_UINT64);
         encrypted_inputs.push((quantity, 2));
         let bidder_quota = quota[bidder].unwrap_or_else(|| {
-            let handle = next_handle(counter);
+            let handle = next_typed_handle(counter, FHE_UINT64);
             events.push((
                 TfheContractEvents::TrivialEncrypt(TfheContract::TrivialEncrypt {
                     caller,
@@ -1295,7 +1311,7 @@ fn auction_300_events(counter: &mut u64) -> AuctionFixture {
             handle
         });
         let bidder_payment = payment[bidder].unwrap_or_else(|| {
-            let handle = next_handle(counter);
+            let handle = next_typed_handle(counter, FHE_UINT64);
             events.push((
                 TfheContractEvents::TrivialEncrypt(TfheContract::TrivialEncrypt {
                     caller,
@@ -1312,7 +1328,7 @@ fn auction_300_events(counter: &mut u64) -> AuctionFixture {
                 events.push(($event, $allowed));
             }};
         }
-        let capped = next_handle(counter);
+        let capped = next_typed_handle(counter, FHE_UINT64);
         op!(
             TfheContractEvents::FheMin(TfheContract::FheMin {
                 caller,
@@ -1323,7 +1339,7 @@ fn auction_300_events(counter: &mut u64) -> AuctionFixture {
             }),
             false
         );
-        let paid = next_handle(counter);
+        let paid = next_typed_handle(counter, FHE_UINT64);
         op!(
             TfheContractEvents::FheMul(TfheContract::FheMul {
                 caller,
@@ -1334,7 +1350,7 @@ fn auction_300_events(counter: &mut u64) -> AuctionFixture {
             }),
             false
         );
-        let can_pay = next_handle(counter);
+        let can_pay = next_typed_handle(counter, FHE_BOOL);
         op!(
             TfheContractEvents::FheLe(TfheContract::FheLe {
                 caller,
@@ -1345,7 +1361,7 @@ fn auction_300_events(counter: &mut u64) -> AuctionFixture {
             }),
             false
         );
-        let zero_payment = next_handle(counter);
+        let zero_payment = next_typed_handle(counter, FHE_UINT64);
         op!(
             TfheContractEvents::TrivialEncrypt(TfheContract::TrivialEncrypt {
                 caller,
@@ -1355,7 +1371,7 @@ fn auction_300_events(counter: &mut u64) -> AuctionFixture {
             }),
             false
         );
-        let transferred = next_handle(counter);
+        let transferred = next_typed_handle(counter, FHE_UINT64);
         op!(
             TfheContractEvents::FheIfThenElse(TfheContract::FheIfThenElse {
                 caller,
@@ -1366,7 +1382,7 @@ fn auction_300_events(counter: &mut u64) -> AuctionFixture {
             }),
             false
         );
-        let next_payment = next_handle(counter);
+        let next_payment = next_typed_handle(counter, FHE_UINT64);
         op!(
             TfheContractEvents::FheSub(TfheContract::FheSub {
                 caller,
@@ -1378,7 +1394,7 @@ fn auction_300_events(counter: &mut u64) -> AuctionFixture {
             true
         );
         payment[bidder] = Some(next_payment);
-        let next_wallet = next_handle(counter);
+        let next_wallet = next_typed_handle(counter, FHE_UINT64);
         op!(
             TfheContractEvents::FheAdd(TfheContract::FheAdd {
                 caller,
@@ -1390,7 +1406,7 @@ fn auction_300_events(counter: &mut u64) -> AuctionFixture {
             true
         );
         wallet_total[wallet] = next_wallet;
-        let confirmed = next_handle(counter);
+        let confirmed = next_typed_handle(counter, FHE_BOOL);
         op!(
             TfheContractEvents::FheEq(TfheContract::FheEq {
                 caller,
@@ -1401,7 +1417,7 @@ fn auction_300_events(counter: &mut u64) -> AuctionFixture {
             }),
             false
         );
-        let next_paid = next_handle(counter);
+        let next_paid = next_typed_handle(counter, FHE_UINT64);
         op!(
             TfheContractEvents::FheAdd(TfheContract::FheAdd {
                 caller,
@@ -1413,7 +1429,7 @@ fn auction_300_events(counter: &mut u64) -> AuctionFixture {
             true
         );
         total_paid[bidder] = next_paid;
-        let zero_quantity = next_handle(counter);
+        let zero_quantity = next_typed_handle(counter, FHE_UINT64);
         op!(
             TfheContractEvents::TrivialEncrypt(TfheContract::TrivialEncrypt {
                 caller,
@@ -1423,7 +1439,7 @@ fn auction_300_events(counter: &mut u64) -> AuctionFixture {
             }),
             false
         );
-        let confirmed_quantity = next_handle(counter);
+        let confirmed_quantity = next_typed_handle(counter, FHE_UINT64);
         op!(
             TfheContractEvents::FheIfThenElse(TfheContract::FheIfThenElse {
                 caller,
@@ -1434,7 +1450,7 @@ fn auction_300_events(counter: &mut u64) -> AuctionFixture {
             }),
             false
         );
-        let zero_paid = next_handle(counter);
+        let zero_paid = next_typed_handle(counter, FHE_UINT64);
         op!(
             TfheContractEvents::TrivialEncrypt(TfheContract::TrivialEncrypt {
                 caller,
@@ -1444,7 +1460,7 @@ fn auction_300_events(counter: &mut u64) -> AuctionFixture {
             }),
             false
         );
-        let confirmed_paid_handle = next_handle(counter);
+        let confirmed_paid_handle = next_typed_handle(counter, FHE_UINT64);
         op!(
             TfheContractEvents::FheIfThenElse(TfheContract::FheIfThenElse {
                 caller,
@@ -1456,7 +1472,7 @@ fn auction_300_events(counter: &mut u64) -> AuctionFixture {
             false
         );
         confirmed_paid.push(confirmed_paid_handle);
-        let next_quota = next_handle(counter);
+        let next_quota = next_typed_handle(counter, FHE_UINT64);
         op!(
             TfheContractEvents::FheSub(TfheContract::FheSub {
                 caller,
@@ -1468,7 +1484,7 @@ fn auction_300_events(counter: &mut u64) -> AuctionFixture {
             true
         );
         quota[bidder] = Some(next_quota);
-        let next_price = next_handle(counter);
+        let next_price = next_typed_handle(counter, FHE_UINT64);
         op!(
             TfheContractEvents::FheAdd(TfheContract::FheAdd {
                 caller,
@@ -1857,8 +1873,8 @@ async fn run_main_block_unpaced_traffic(
                     from = f;
                     to = t;
                 } else {
-                    from = next_handle(&mut counter);
-                    to = next_handle(&mut counter);
+                    from = next_typed_handle(&mut counter, FHE_UINT64);
+                    to = next_typed_handle(&mut counter, FHE_UINT64);
                     seed_legacy_input_ciphertext(&mut seed_tx, &from, &inputs[0]).await?;
                     seed_legacy_input_ciphertext(&mut seed_tx, &to, &inputs[1]).await?;
                     // The chain head transaction hash becomes the DCID under
@@ -1866,10 +1882,10 @@ async fn run_main_block_unpaced_traffic(
                     expected_linear_chain_heads.push(transfer_txh.to_vec());
                 }
             }
-            let amount = next_handle(&mut counter);
+            let amount = next_typed_handle(&mut counter, FHE_UINT64);
             seed_legacy_input_ciphertext(&mut seed_tx, &amount, &inputs[2]).await?;
 
-            let has_funds = next_handle(&mut counter);
+            let has_funds = next_typed_handle(&mut counter, FHE_BOOL);
             logs.push(raw_event_log(
                 tfhe_address,
                 transfer_txh,
@@ -1883,7 +1899,7 @@ async fn run_main_block_unpaced_traffic(
                 }
                 .encode_log_data(),
             ));
-            let zero = next_handle(&mut counter);
+            let zero = next_typed_handle(&mut counter, FHE_UINT64);
             logs.push(raw_event_log(
                 tfhe_address,
                 transfer_txh,
@@ -1896,7 +1912,7 @@ async fn run_main_block_unpaced_traffic(
                 }
                 .encode_log_data(),
             ));
-            let selected = next_handle(&mut counter);
+            let selected = next_typed_handle(&mut counter, FHE_UINT64);
             logs.push(raw_event_log(
                 tfhe_address,
                 transfer_txh,
@@ -1910,7 +1926,7 @@ async fn run_main_block_unpaced_traffic(
                 }
                 .encode_log_data(),
             ));
-            let new_to = next_handle(&mut counter);
+            let new_to = next_typed_handle(&mut counter, FHE_UINT64);
             logs.push(raw_event_log(
                 tfhe_address,
                 transfer_txh,
@@ -1924,7 +1940,7 @@ async fn run_main_block_unpaced_traffic(
                 }
                 .encode_log_data(),
             ));
-            let new_from = next_handle(&mut counter);
+            let new_from = next_typed_handle(&mut counter, FHE_UINT64);
             logs.push(raw_event_log(
                 tfhe_address,
                 transfer_txh,
@@ -2224,14 +2240,15 @@ async fn schedule_erc20(
         .iter_custom(|iters| async move {
             let db_url = app_ref.db_url().to_string();
             let now = SystemTime::now();
-            let _ = tokio::task::spawn_blocking(move || {
+            tokio::task::spawn_blocking(move || {
                 Runtime::new().unwrap().block_on(async {
                     wait_until_all_allowed_handles_computed(db_url)
                         .await
                         .unwrap()
                 });
             })
-            .await;
+            .await
+            .expect("waiting for the benchmark computations failed");
             println!(
                 "Execution time: {} -- {}",
                 now.elapsed().unwrap().as_millis(),
@@ -2282,7 +2299,7 @@ async fn submit_erc20_workload(
         let from_balance = if let Some(h) = prev_from {
             h
         } else {
-            let h = next_handle(handle_counter);
+            let h = next_typed_handle(handle_counter, FHE_UINT64);
             utils::insert_tfhe_event(
                 listener_db,
                 &mut tx,
@@ -2306,7 +2323,7 @@ async fn submit_erc20_workload(
         let to_balance = if let Some(h) = prev_to {
             h
         } else {
-            let h = next_handle(handle_counter);
+            let h = next_typed_handle(handle_counter, FHE_UINT64);
             utils::insert_tfhe_event(
                 listener_db,
                 &mut tx,
@@ -2327,7 +2344,7 @@ async fn submit_erc20_workload(
             .await?;
             h
         };
-        let transfer_amount = next_handle(handle_counter);
+        let transfer_amount = next_typed_handle(handle_counter, FHE_UINT64);
         utils::insert_tfhe_event(
             listener_db,
             &mut tx,
@@ -2347,7 +2364,7 @@ async fn submit_erc20_workload(
         )
         .await?;
 
-        let has_funds = next_handle(handle_counter);
+        let has_funds = next_typed_handle(handle_counter, FHE_BOOL);
         utils::insert_tfhe_event(
             listener_db,
             &mut tx,
@@ -2369,7 +2386,7 @@ async fn submit_erc20_workload(
         let new_to;
         let new_from;
         if use_cmux {
-            let to_target = next_handle(handle_counter);
+            let to_target = next_typed_handle(handle_counter, FHE_UINT64);
             utils::insert_tfhe_event(
                 listener_db,
                 &mut tx,
@@ -2387,7 +2404,7 @@ async fn submit_erc20_workload(
                 false,
             )
             .await?;
-            new_to = next_handle(handle_counter);
+            new_to = next_typed_handle(handle_counter, FHE_UINT64);
             utils::insert_tfhe_event(
                 listener_db,
                 &mut tx,
@@ -2408,7 +2425,7 @@ async fn submit_erc20_workload(
             )
             .await?;
 
-            let from_target = next_handle(handle_counter);
+            let from_target = next_typed_handle(handle_counter, FHE_UINT64);
             utils::insert_tfhe_event(
                 listener_db,
                 &mut tx,
@@ -2426,7 +2443,7 @@ async fn submit_erc20_workload(
                 false,
             )
             .await?;
-            new_from = next_handle(handle_counter);
+            new_from = next_typed_handle(handle_counter, FHE_UINT64);
             utils::insert_tfhe_event(
                 listener_db,
                 &mut tx,
@@ -2447,7 +2464,7 @@ async fn submit_erc20_workload(
             )
             .await?;
         } else {
-            let funds_u64 = next_handle(handle_counter);
+            let funds_u64 = next_typed_handle(handle_counter, FHE_UINT64);
             utils::insert_tfhe_event(
                 listener_db,
                 &mut tx,
@@ -2464,7 +2481,7 @@ async fn submit_erc20_workload(
                 false,
             )
             .await?;
-            let selected_amount = next_handle(handle_counter);
+            let selected_amount = next_typed_handle(handle_counter, FHE_UINT64);
             utils::insert_tfhe_event(
                 listener_db,
                 &mut tx,
@@ -2482,7 +2499,7 @@ async fn submit_erc20_workload(
                 false,
             )
             .await?;
-            new_to = next_handle(handle_counter);
+            new_to = next_typed_handle(handle_counter, FHE_UINT64);
             utils::insert_tfhe_event(
                 listener_db,
                 &mut tx,
@@ -2500,7 +2517,7 @@ async fn submit_erc20_workload(
                 true,
             )
             .await?;
-            new_from = next_handle(handle_counter);
+            new_from = next_typed_handle(handle_counter, FHE_UINT64);
             utils::insert_tfhe_event(
                 listener_db,
                 &mut tx,

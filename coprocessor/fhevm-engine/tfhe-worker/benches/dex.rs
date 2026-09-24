@@ -2,9 +2,9 @@
 mod utils;
 
 use crate::utils::{
-    as_scalar_uint, listener_event_db, next_handle, random_handle, scalar_flag, setup_test_app,
-    tfhe_event, to_ty, wait_until_all_allowed_handles_computed, write_atomic_u64_bench_params,
-    zero_address, EnvConfig,
+    as_scalar_uint, listener_event_db, next_handle, next_typed_handle, random_handle, scalar_flag,
+    setup_test_app, tfhe_event, to_ty, wait_until_all_allowed_handles_computed,
+    write_atomic_u64_bench_params, zero_address, EnvConfig, FHE_BOOL, FHE_UINT128, FHE_UINT64,
 };
 use bigdecimal::num_bigint::BigInt;
 use criterion::{
@@ -37,20 +37,24 @@ fn main() {
         let num_elems = 1;
         let bench_id = format!("{bench_name}::latency::whitepaper::FHEUint64::{num_elems}_elems::{bench_optimization_target}");
         group.bench_with_input(bench_id.clone(), &num_elems, move |b, &num_elems| {
-            let _ = Runtime::new().unwrap().block_on(swap_request_whitepaper(
+            if let Err(error) = Runtime::new().unwrap().block_on(swap_request_whitepaper(
                 b,
                 num_elems as usize,
                 bench_id.clone(),
-            ));
+            )) {
+                panic!("{bench_id} failed: {error}");
+            }
         });
 
         let bench_id = format!("{bench_name}::latency::no_cmux::FHEUint64::{num_elems}_elems::{bench_optimization_target}");
         group.bench_with_input(bench_id.clone(), &num_elems, move |b, &num_elems| {
-            let _ = Runtime::new().unwrap().block_on(swap_request_no_cmux(
+            if let Err(error) = Runtime::new().unwrap().block_on(swap_request_no_cmux(
                 b,
                 num_elems as usize,
                 bench_id.clone(),
-            ));
+            )) {
+                panic!("{bench_id} failed: {error}");
+            }
         });
     }
     if ecfg.benchmark_type == "THROUGHPUT" || ecfg.benchmark_type == "ALL" {
@@ -59,22 +63,26 @@ fn main() {
             let bench_id =
                 format!("{bench_name}::throughput::whitepaper::FHEUint64::{num_elems}_elems::{bench_optimization_target}");
             group.bench_with_input(bench_id.clone(), &num_elems, move |b, &num_elems| {
-                let _ = Runtime::new().unwrap().block_on(swap_request_whitepaper(
+                if let Err(error) = Runtime::new().unwrap().block_on(swap_request_whitepaper(
                     b,
                     num_elems as usize,
                     bench_id.clone(),
-                ));
+                )) {
+                    panic!("{bench_id} failed: {error}");
+                }
             });
 
             group.throughput(Throughput::Elements(num_elems));
             let bench_id =
                 format!("{bench_name}::throughput::no_cmux::FHEUint64::{num_elems}_elems::{bench_optimization_target}");
             group.bench_with_input(bench_id.clone(), &num_elems, move |b, &num_elems| {
-                let _ = Runtime::new().unwrap().block_on(swap_request_no_cmux(
+                if let Err(error) = Runtime::new().unwrap().block_on(swap_request_no_cmux(
                     b,
                     num_elems as usize,
                     bench_id.clone(),
-                ));
+                )) {
+                    panic!("{bench_id} failed: {error}");
+                }
             });
         }
     }
@@ -86,20 +94,24 @@ fn main() {
         let num_elems = 1;
         let bench_id = format!("{bench_name}::latency::whitepaper::FHEUint64::{num_elems}_elems::{bench_optimization_target}");
         group.bench_with_input(bench_id.clone(), &num_elems, move |b, &num_elems| {
-            let _ = Runtime::new().unwrap().block_on(swap_claim_whitepaper(
+            if let Err(error) = Runtime::new().unwrap().block_on(swap_claim_whitepaper(
                 b,
                 num_elems as usize,
                 bench_id.clone(),
-            ));
+            )) {
+                panic!("{bench_id} failed: {error}");
+            }
         });
 
         let bench_id = format!("{bench_name}::latency::no_cmux::FHEUint64::{num_elems}_elems::{bench_optimization_target}");
         group.bench_with_input(bench_id.clone(), &num_elems, move |b, &num_elems| {
-            let _ = Runtime::new().unwrap().block_on(swap_claim_no_cmux(
+            if let Err(error) = Runtime::new().unwrap().block_on(swap_claim_no_cmux(
                 b,
                 num_elems as usize,
                 bench_id.clone(),
-            ));
+            )) {
+                panic!("{bench_id} failed: {error}");
+            }
         });
     }
     if ecfg.benchmark_type == "THROUGHPUT" || ecfg.benchmark_type == "ALL" {
@@ -108,22 +120,26 @@ fn main() {
             let bench_id =
                 format!("{bench_name}::throughput::whitepaper::FHEUint64::{num_elems}_elems::{bench_optimization_target}");
             group.bench_with_input(bench_id.clone(), &num_elems, move |b, &num_elems| {
-                let _ = Runtime::new().unwrap().block_on(swap_claim_whitepaper(
+                if let Err(error) = Runtime::new().unwrap().block_on(swap_claim_whitepaper(
                     b,
                     num_elems as usize,
                     bench_id.clone(),
-                ));
+                )) {
+                    panic!("{bench_id} failed: {error}");
+                }
             });
 
             group.throughput(Throughput::Elements(num_elems));
             let bench_id =
                 format!("{bench_name}::throughput::no_cmux::FHEUint64::{num_elems}_elems::{bench_optimization_target}");
             group.bench_with_input(bench_id.clone(), &num_elems, move |b, &num_elems| {
-                let _ = Runtime::new().unwrap().block_on(swap_claim_no_cmux(
+                if let Err(error) = Runtime::new().unwrap().block_on(swap_claim_no_cmux(
                     b,
                     num_elems as usize,
                     bench_id.clone(),
-                ));
+                )) {
+                    panic!("{bench_id} failed: {error}");
+                }
             });
         }
     }
@@ -137,24 +153,29 @@ fn main() {
             let bench_id =
                 format!("{bench_name}::throughput::whitepaper::FHEUint64::{num_elems}_elems::{bench_optimization_target}");
             group.bench_with_input(bench_id.clone(), &num_elems, move |b, &num_elems| {
-                let _ = Runtime::new()
+                if let Err(error) = Runtime::new()
                     .unwrap()
                     .block_on(swap_request_whitepaper_dep(
                         b,
                         num_elems as usize,
                         bench_id.clone(),
-                    ));
+                    ))
+                {
+                    panic!("{bench_id} failed: {error}");
+                }
             });
 
             group.throughput(Throughput::Elements(num_elems));
             let bench_id =
                 format!("{bench_name}::throughput::no_cmux::FHEUint64::{num_elems}_elems::{bench_optimization_target}");
             group.bench_with_input(bench_id.clone(), &num_elems, move |b, &num_elems| {
-                let _ = Runtime::new().unwrap().block_on(swap_request_no_cmux_dep(
+                if let Err(error) = Runtime::new().unwrap().block_on(swap_request_no_cmux_dep(
                     b,
                     num_elems as usize,
                     bench_id.clone(),
-                ));
+                )) {
+                    panic!("{bench_id} failed: {error}");
+                }
             });
         }
         group.finish();
@@ -166,22 +187,26 @@ fn main() {
             let bench_id =
                 format!("{bench_name}::throughput::whitepaper::FHEUint64::{num_elems}_elems::{bench_optimization_target}");
             group.bench_with_input(bench_id.clone(), &num_elems, move |b, &num_elems| {
-                let _ = Runtime::new().unwrap().block_on(swap_claim_whitepaper_dep(
+                if let Err(error) = Runtime::new().unwrap().block_on(swap_claim_whitepaper_dep(
                     b,
                     num_elems as usize,
                     bench_id.clone(),
-                ));
+                )) {
+                    panic!("{bench_id} failed: {error}");
+                }
             });
 
             group.throughput(Throughput::Elements(num_elems));
             let bench_id =
                 format!("{bench_name}::throughput::no_cmux::FHEUint64::{num_elems}_elems::{bench_optimization_target}");
             group.bench_with_input(bench_id.clone(), &num_elems, move |b, &num_elems| {
-                let _ = Runtime::new().unwrap().block_on(swap_claim_no_cmux_dep(
+                if let Err(error) = Runtime::new().unwrap().block_on(swap_claim_no_cmux_dep(
                     b,
                     num_elems as usize,
                     bench_id.clone(),
-                ));
+                )) {
+                    panic!("{bench_id} failed: {error}");
+                }
             });
         }
         group.finish();
@@ -295,7 +320,7 @@ async fn schedule_dex(
     };
 
     if is_claim {
-        let pending_0_in = next_handle(&mut handle_counter);
+        let pending_0_in = next_typed_handle(&mut handle_counter, FHE_UINT64);
         insert_trivial_encrypt(
             &listener_db,
             &mut tx,
@@ -306,7 +331,7 @@ async fn schedule_dex(
             pending_0_in,
         )
         .await?;
-        let pending_1_in = next_handle(&mut handle_counter);
+        let pending_1_in = next_typed_handle(&mut handle_counter, FHE_UINT64);
         insert_trivial_encrypt(
             &listener_db,
             &mut tx,
@@ -317,7 +342,7 @@ async fn schedule_dex(
             pending_1_in,
         )
         .await?;
-        let old_balance_0 = next_handle(&mut handle_counter);
+        let old_balance_0 = next_typed_handle(&mut handle_counter, FHE_UINT64);
         insert_trivial_encrypt(
             &listener_db,
             &mut tx,
@@ -328,7 +353,7 @@ async fn schedule_dex(
             old_balance_0,
         )
         .await?;
-        let old_balance_1 = next_handle(&mut handle_counter);
+        let old_balance_1 = next_typed_handle(&mut handle_counter, FHE_UINT64);
         insert_trivial_encrypt(
             &listener_db,
             &mut tx,
@@ -339,7 +364,7 @@ async fn schedule_dex(
             old_balance_1,
         )
         .await?;
-        let mut current_dex_balance_0 = next_handle(&mut handle_counter);
+        let mut current_dex_balance_0 = next_typed_handle(&mut handle_counter, FHE_UINT64);
         insert_trivial_encrypt(
             &listener_db,
             &mut tx,
@@ -350,7 +375,7 @@ async fn schedule_dex(
             current_dex_balance_0,
         )
         .await?;
-        let mut current_dex_balance_1 = next_handle(&mut handle_counter);
+        let mut current_dex_balance_1 = next_typed_handle(&mut handle_counter, FHE_UINT64);
         insert_trivial_encrypt(
             &listener_db,
             &mut tx,
@@ -375,7 +400,7 @@ async fn schedule_dex(
             };
 
             if total_dex_token_1_in != 0 {
-                let big_pending_1_in = next_handle(&mut handle_counter);
+                let big_pending_1_in = next_typed_handle(&mut handle_counter, FHE_UINT128);
                 insert_event(
                     &listener_db,
                     &mut tx,
@@ -389,7 +414,7 @@ async fn schedule_dex(
                     false,
                 )
                 .await?;
-                let mul_temp = next_handle(&mut handle_counter);
+                let mul_temp = next_typed_handle(&mut handle_counter, FHE_UINT128);
                 insert_event(
                     &listener_db,
                     &mut tx,
@@ -404,7 +429,7 @@ async fn schedule_dex(
                     false,
                 )
                 .await?;
-                let big_amount_0_out = next_handle(&mut handle_counter);
+                let big_amount_0_out = next_typed_handle(&mut handle_counter, FHE_UINT128);
                 insert_event(
                     &listener_db,
                     &mut tx,
@@ -419,7 +444,7 @@ async fn schedule_dex(
                     false,
                 )
                 .await?;
-                let amount_0_out = next_handle(&mut handle_counter);
+                let amount_0_out = next_typed_handle(&mut handle_counter, FHE_UINT64);
                 insert_event(
                     &listener_db,
                     &mut tx,
@@ -434,7 +459,7 @@ async fn schedule_dex(
                 )
                 .await?;
 
-                let has_enough_funds_handle_0 = next_handle(&mut handle_counter);
+                let has_enough_funds_handle_0 = next_typed_handle(&mut handle_counter, FHE_BOOL);
                 insert_event(
                     &listener_db,
                     &mut tx,
@@ -451,7 +476,8 @@ async fn schedule_dex(
                 .await?;
 
                 if use_cmux {
-                    let new_to_amount_target_handle_0 = next_handle(&mut handle_counter);
+                    let new_to_amount_target_handle_0 =
+                        next_typed_handle(&mut handle_counter, FHE_UINT64);
                     insert_event(
                         &listener_db,
                         &mut tx,
@@ -466,7 +492,7 @@ async fn schedule_dex(
                         false,
                     )
                     .await?;
-                    let new_to_amount_handle_0 = next_handle(&mut handle_counter);
+                    let new_to_amount_handle_0 = next_typed_handle(&mut handle_counter, FHE_UINT64);
                     insert_event(
                         &listener_db,
                         &mut tx,
@@ -481,7 +507,8 @@ async fn schedule_dex(
                         true,
                     )
                     .await?;
-                    let new_from_amount_target_handle_0 = next_handle(&mut handle_counter);
+                    let new_from_amount_target_handle_0 =
+                        next_typed_handle(&mut handle_counter, FHE_UINT64);
                     insert_event(
                         &listener_db,
                         &mut tx,
@@ -496,7 +523,8 @@ async fn schedule_dex(
                         false,
                     )
                     .await?;
-                    let new_from_amount_handle_0 = next_handle(&mut handle_counter);
+                    let new_from_amount_handle_0 =
+                        next_typed_handle(&mut handle_counter, FHE_UINT64);
                     insert_event(
                         &listener_db,
                         &mut tx,
@@ -515,7 +543,8 @@ async fn schedule_dex(
                         current_dex_balance_0 = new_from_amount_handle_0;
                     }
                 } else {
-                    let cast_has_enough_funds_handle_0 = next_handle(&mut handle_counter);
+                    let cast_has_enough_funds_handle_0 =
+                        next_typed_handle(&mut handle_counter, FHE_UINT64);
                     insert_event(
                         &listener_db,
                         &mut tx,
@@ -529,7 +558,7 @@ async fn schedule_dex(
                         false,
                     )
                     .await?;
-                    let select_amount_handle_0 = next_handle(&mut handle_counter);
+                    let select_amount_handle_0 = next_typed_handle(&mut handle_counter, FHE_UINT64);
                     insert_event(
                         &listener_db,
                         &mut tx,
@@ -544,7 +573,7 @@ async fn schedule_dex(
                         false,
                     )
                     .await?;
-                    let new_to_amount_handle_0 = next_handle(&mut handle_counter);
+                    let new_to_amount_handle_0 = next_typed_handle(&mut handle_counter, FHE_UINT64);
                     insert_event(
                         &listener_db,
                         &mut tx,
@@ -559,7 +588,8 @@ async fn schedule_dex(
                         true,
                     )
                     .await?;
-                    let new_from_amount_handle_0 = next_handle(&mut handle_counter);
+                    let new_from_amount_handle_0 =
+                        next_typed_handle(&mut handle_counter, FHE_UINT64);
                     insert_event(
                         &listener_db,
                         &mut tx,
@@ -581,7 +611,7 @@ async fn schedule_dex(
             }
 
             if total_dex_token_0_in != 0 {
-                let big_pending_0_in = next_handle(&mut handle_counter);
+                let big_pending_0_in = next_typed_handle(&mut handle_counter, FHE_UINT128);
                 insert_event(
                     &listener_db,
                     &mut tx,
@@ -595,7 +625,7 @@ async fn schedule_dex(
                     false,
                 )
                 .await?;
-                let mul_temp = next_handle(&mut handle_counter);
+                let mul_temp = next_typed_handle(&mut handle_counter, FHE_UINT128);
                 insert_event(
                     &listener_db,
                     &mut tx,
@@ -610,7 +640,7 @@ async fn schedule_dex(
                     false,
                 )
                 .await?;
-                let big_amount_1_out = next_handle(&mut handle_counter);
+                let big_amount_1_out = next_typed_handle(&mut handle_counter, FHE_UINT128);
                 insert_event(
                     &listener_db,
                     &mut tx,
@@ -625,7 +655,7 @@ async fn schedule_dex(
                     false,
                 )
                 .await?;
-                let amount_1_out = next_handle(&mut handle_counter);
+                let amount_1_out = next_typed_handle(&mut handle_counter, FHE_UINT64);
                 insert_event(
                     &listener_db,
                     &mut tx,
@@ -640,7 +670,7 @@ async fn schedule_dex(
                 )
                 .await?;
 
-                let has_enough_funds_handle_1 = next_handle(&mut handle_counter);
+                let has_enough_funds_handle_1 = next_typed_handle(&mut handle_counter, FHE_BOOL);
                 insert_event(
                     &listener_db,
                     &mut tx,
@@ -657,7 +687,8 @@ async fn schedule_dex(
                 .await?;
 
                 if use_cmux {
-                    let new_to_amount_target_handle_1 = next_handle(&mut handle_counter);
+                    let new_to_amount_target_handle_1 =
+                        next_typed_handle(&mut handle_counter, FHE_UINT64);
                     insert_event(
                         &listener_db,
                         &mut tx,
@@ -672,7 +703,7 @@ async fn schedule_dex(
                         false,
                     )
                     .await?;
-                    let new_to_amount_handle_1 = next_handle(&mut handle_counter);
+                    let new_to_amount_handle_1 = next_typed_handle(&mut handle_counter, FHE_UINT64);
                     insert_event(
                         &listener_db,
                         &mut tx,
@@ -687,7 +718,8 @@ async fn schedule_dex(
                         true,
                     )
                     .await?;
-                    let new_from_amount_target_handle_1 = next_handle(&mut handle_counter);
+                    let new_from_amount_target_handle_1 =
+                        next_typed_handle(&mut handle_counter, FHE_UINT64);
                     insert_event(
                         &listener_db,
                         &mut tx,
@@ -702,7 +734,8 @@ async fn schedule_dex(
                         false,
                     )
                     .await?;
-                    let new_from_amount_handle_1 = next_handle(&mut handle_counter);
+                    let new_from_amount_handle_1 =
+                        next_typed_handle(&mut handle_counter, FHE_UINT64);
                     insert_event(
                         &listener_db,
                         &mut tx,
@@ -721,7 +754,8 @@ async fn schedule_dex(
                         current_dex_balance_1 = new_from_amount_handle_1;
                     }
                 } else {
-                    let cast_has_enough_funds_handle_1 = next_handle(&mut handle_counter);
+                    let cast_has_enough_funds_handle_1 =
+                        next_typed_handle(&mut handle_counter, FHE_UINT64);
                     insert_event(
                         &listener_db,
                         &mut tx,
@@ -735,7 +769,7 @@ async fn schedule_dex(
                         false,
                     )
                     .await?;
-                    let select_amount_handle_1 = next_handle(&mut handle_counter);
+                    let select_amount_handle_1 = next_typed_handle(&mut handle_counter, FHE_UINT64);
                     insert_event(
                         &listener_db,
                         &mut tx,
@@ -750,7 +784,7 @@ async fn schedule_dex(
                         false,
                     )
                     .await?;
-                    let new_to_amount_handle_1 = next_handle(&mut handle_counter);
+                    let new_to_amount_handle_1 = next_typed_handle(&mut handle_counter, FHE_UINT64);
                     insert_event(
                         &listener_db,
                         &mut tx,
@@ -765,7 +799,8 @@ async fn schedule_dex(
                         true,
                     )
                     .await?;
-                    let new_from_amount_handle_1 = next_handle(&mut handle_counter);
+                    let new_from_amount_handle_1 =
+                        next_typed_handle(&mut handle_counter, FHE_UINT64);
                     insert_event(
                         &listener_db,
                         &mut tx,
@@ -787,7 +822,7 @@ async fn schedule_dex(
             }
         }
     } else {
-        let from_balance_0 = next_handle(&mut handle_counter);
+        let from_balance_0 = next_typed_handle(&mut handle_counter, FHE_UINT64);
         insert_trivial_encrypt(
             &listener_db,
             &mut tx,
@@ -798,7 +833,7 @@ async fn schedule_dex(
             from_balance_0,
         )
         .await?;
-        let from_balance_1 = next_handle(&mut handle_counter);
+        let from_balance_1 = next_typed_handle(&mut handle_counter, FHE_UINT64);
         insert_trivial_encrypt(
             &listener_db,
             &mut tx,
@@ -809,7 +844,7 @@ async fn schedule_dex(
             from_balance_1,
         )
         .await?;
-        let mut current_dex_balance_0 = next_handle(&mut handle_counter);
+        let mut current_dex_balance_0 = next_typed_handle(&mut handle_counter, FHE_UINT64);
         insert_trivial_encrypt(
             &listener_db,
             &mut tx,
@@ -820,7 +855,7 @@ async fn schedule_dex(
             current_dex_balance_0,
         )
         .await?;
-        let mut current_dex_balance_1 = next_handle(&mut handle_counter);
+        let mut current_dex_balance_1 = next_typed_handle(&mut handle_counter, FHE_UINT64);
         insert_trivial_encrypt(
             &listener_db,
             &mut tx,
@@ -831,7 +866,7 @@ async fn schedule_dex(
             current_dex_balance_1,
         )
         .await?;
-        let to_balance_0 = next_handle(&mut handle_counter);
+        let to_balance_0 = next_typed_handle(&mut handle_counter, FHE_UINT64);
         insert_trivial_encrypt(
             &listener_db,
             &mut tx,
@@ -842,7 +877,7 @@ async fn schedule_dex(
             to_balance_0,
         )
         .await?;
-        let to_balance_1 = next_handle(&mut handle_counter);
+        let to_balance_1 = next_typed_handle(&mut handle_counter, FHE_UINT64);
         insert_trivial_encrypt(
             &listener_db,
             &mut tx,
@@ -853,7 +888,7 @@ async fn schedule_dex(
             to_balance_1,
         )
         .await?;
-        let total_dex_token_0_in = next_handle(&mut handle_counter);
+        let total_dex_token_0_in = next_typed_handle(&mut handle_counter, FHE_UINT64);
         insert_trivial_encrypt(
             &listener_db,
             &mut tx,
@@ -864,7 +899,7 @@ async fn schedule_dex(
             total_dex_token_0_in,
         )
         .await?;
-        let total_dex_token_1_in = next_handle(&mut handle_counter);
+        let total_dex_token_1_in = next_typed_handle(&mut handle_counter, FHE_UINT64);
         insert_trivial_encrypt(
             &listener_db,
             &mut tx,
@@ -875,9 +910,9 @@ async fn schedule_dex(
             total_dex_token_1_in,
         )
         .await?;
-        let amount_0 = next_handle(&mut handle_counter);
+        let amount_0 = next_typed_handle(&mut handle_counter, FHE_UINT64);
         insert_trivial_encrypt(&listener_db, &mut tx, setup_tx_id, caller, 10, 5, amount_0).await?;
-        let amount_1 = next_handle(&mut handle_counter);
+        let amount_1 = next_typed_handle(&mut handle_counter, FHE_UINT64);
         insert_trivial_encrypt(&listener_db, &mut tx, setup_tx_id, caller, 20, 5, amount_1).await?;
 
         for _ in 0..num_samples {
@@ -888,7 +923,7 @@ async fn schedule_dex(
             };
 
             let (new_current_balance_0, new_current_balance_1) = if use_cmux {
-                let has_enough_funds_handle_0 = next_handle(&mut handle_counter);
+                let has_enough_funds_handle_0 = next_typed_handle(&mut handle_counter, FHE_BOOL);
                 insert_event(
                     &listener_db,
                     &mut tx,
@@ -903,7 +938,8 @@ async fn schedule_dex(
                     false,
                 )
                 .await?;
-                let new_to_amount_target_handle_0 = next_handle(&mut handle_counter);
+                let new_to_amount_target_handle_0 =
+                    next_typed_handle(&mut handle_counter, FHE_UINT64);
                 insert_event(
                     &listener_db,
                     &mut tx,
@@ -918,7 +954,7 @@ async fn schedule_dex(
                     false,
                 )
                 .await?;
-                let new_to_amount_handle_0 = next_handle(&mut handle_counter);
+                let new_to_amount_handle_0 = next_typed_handle(&mut handle_counter, FHE_UINT64);
                 insert_event(
                     &listener_db,
                     &mut tx,
@@ -934,7 +970,7 @@ async fn schedule_dex(
                 )
                 .await?;
 
-                let has_enough_funds_handle_1 = next_handle(&mut handle_counter);
+                let has_enough_funds_handle_1 = next_typed_handle(&mut handle_counter, FHE_BOOL);
                 insert_event(
                     &listener_db,
                     &mut tx,
@@ -949,7 +985,8 @@ async fn schedule_dex(
                     false,
                 )
                 .await?;
-                let new_to_amount_target_handle_1 = next_handle(&mut handle_counter);
+                let new_to_amount_target_handle_1 =
+                    next_typed_handle(&mut handle_counter, FHE_UINT64);
                 insert_event(
                     &listener_db,
                     &mut tx,
@@ -964,7 +1001,7 @@ async fn schedule_dex(
                     false,
                 )
                 .await?;
-                let new_to_amount_handle_1 = next_handle(&mut handle_counter);
+                let new_to_amount_handle_1 = next_typed_handle(&mut handle_counter, FHE_UINT64);
                 insert_event(
                     &listener_db,
                     &mut tx,
@@ -981,7 +1018,7 @@ async fn schedule_dex(
                 .await?;
                 (new_to_amount_handle_0, new_to_amount_handle_1)
             } else {
-                let has_enough_funds_handle_0 = next_handle(&mut handle_counter);
+                let has_enough_funds_handle_0 = next_typed_handle(&mut handle_counter, FHE_BOOL);
                 insert_event(
                     &listener_db,
                     &mut tx,
@@ -996,7 +1033,8 @@ async fn schedule_dex(
                     false,
                 )
                 .await?;
-                let cast_has_enough_funds_handle_0 = next_handle(&mut handle_counter);
+                let cast_has_enough_funds_handle_0 =
+                    next_typed_handle(&mut handle_counter, FHE_UINT64);
                 insert_event(
                     &listener_db,
                     &mut tx,
@@ -1010,7 +1048,7 @@ async fn schedule_dex(
                     false,
                 )
                 .await?;
-                let select_amount_handle_0 = next_handle(&mut handle_counter);
+                let select_amount_handle_0 = next_typed_handle(&mut handle_counter, FHE_UINT64);
                 insert_event(
                     &listener_db,
                     &mut tx,
@@ -1025,7 +1063,7 @@ async fn schedule_dex(
                     false,
                 )
                 .await?;
-                let new_to_amount_handle_0 = next_handle(&mut handle_counter);
+                let new_to_amount_handle_0 = next_typed_handle(&mut handle_counter, FHE_UINT64);
                 insert_event(
                     &listener_db,
                     &mut tx,
@@ -1041,7 +1079,7 @@ async fn schedule_dex(
                 )
                 .await?;
 
-                let has_enough_funds_handle_1 = next_handle(&mut handle_counter);
+                let has_enough_funds_handle_1 = next_typed_handle(&mut handle_counter, FHE_BOOL);
                 insert_event(
                     &listener_db,
                     &mut tx,
@@ -1056,7 +1094,8 @@ async fn schedule_dex(
                     false,
                 )
                 .await?;
-                let cast_has_enough_funds_handle_1 = next_handle(&mut handle_counter);
+                let cast_has_enough_funds_handle_1 =
+                    next_typed_handle(&mut handle_counter, FHE_UINT64);
                 insert_event(
                     &listener_db,
                     &mut tx,
@@ -1070,7 +1109,7 @@ async fn schedule_dex(
                     false,
                 )
                 .await?;
-                let select_amount_handle_1 = next_handle(&mut handle_counter);
+                let select_amount_handle_1 = next_typed_handle(&mut handle_counter, FHE_UINT64);
                 insert_event(
                     &listener_db,
                     &mut tx,
@@ -1085,7 +1124,7 @@ async fn schedule_dex(
                     false,
                 )
                 .await?;
-                let new_to_amount_handle_1 = next_handle(&mut handle_counter);
+                let new_to_amount_handle_1 = next_typed_handle(&mut handle_counter, FHE_UINT64);
                 insert_event(
                     &listener_db,
                     &mut tx,
@@ -1103,7 +1142,7 @@ async fn schedule_dex(
                 (new_to_amount_handle_0, new_to_amount_handle_1)
             };
 
-            let sent_0_handle = next_handle(&mut handle_counter);
+            let sent_0_handle = next_typed_handle(&mut handle_counter, FHE_UINT64);
             insert_event(
                 &listener_db,
                 &mut tx,
@@ -1118,7 +1157,7 @@ async fn schedule_dex(
                 false,
             )
             .await?;
-            let sent_1_handle = next_handle(&mut handle_counter);
+            let sent_1_handle = next_typed_handle(&mut handle_counter, FHE_UINT64);
             insert_event(
                 &listener_db,
                 &mut tx,
@@ -1133,7 +1172,7 @@ async fn schedule_dex(
                 false,
             )
             .await?;
-            let pending_0_in_handle = next_handle(&mut handle_counter);
+            let pending_0_in_handle = next_typed_handle(&mut handle_counter, FHE_UINT64);
             insert_event(
                 &listener_db,
                 &mut tx,
@@ -1148,7 +1187,7 @@ async fn schedule_dex(
                 true,
             )
             .await?;
-            let pending_1_in_handle = next_handle(&mut handle_counter);
+            let pending_1_in_handle = next_typed_handle(&mut handle_counter, FHE_UINT64);
             insert_event(
                 &listener_db,
                 &mut tx,
@@ -1163,7 +1202,7 @@ async fn schedule_dex(
                 true,
             )
             .await?;
-            let pending_total_token_0_in = next_handle(&mut handle_counter);
+            let pending_total_token_0_in = next_typed_handle(&mut handle_counter, FHE_UINT64);
             insert_event(
                 &listener_db,
                 &mut tx,
@@ -1178,7 +1217,7 @@ async fn schedule_dex(
                 true,
             )
             .await?;
-            let pending_total_token_1_in = next_handle(&mut handle_counter);
+            let pending_total_token_1_in = next_typed_handle(&mut handle_counter, FHE_UINT64);
             insert_event(
                 &listener_db,
                 &mut tx,
@@ -1208,7 +1247,7 @@ async fn schedule_dex(
         .iter_custom(|iters| async move {
             let db_url = app_ref.db_url().to_string();
             let now = SystemTime::now();
-            let _ = tokio::task::spawn_blocking(move || {
+            tokio::task::spawn_blocking(move || {
                 Runtime::new().unwrap().block_on(async {
                     wait_until_all_allowed_handles_computed(db_url)
                         .await
@@ -1220,7 +1259,8 @@ async fn schedule_dex(
                     TIMING.load(std::sync::atomic::Ordering::SeqCst) / 1000
                 );
             })
-            .await;
+            .await
+            .expect("waiting for the benchmark computations failed");
             std::time::Duration::from_micros(
                 TIMING.swap(0, std::sync::atomic::Ordering::SeqCst) * iters.max(1),
             )
