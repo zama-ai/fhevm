@@ -156,6 +156,9 @@ async function gatherWindows(
   let gateway: GatewayReport;
   try {
     const tip = await readChainTip(gwProvider);
+    if (tip.tipBlock === 0) {
+      throw new Error(`Gateway tip is block 0 (contract rejects gwStartBlock=0); check ${inputs.gateway.rpcUrl}`);
+    }
     gateway = { rpcUrl: inputs.gateway.rpcUrl, ...tip, startBlock: tip.tipBlock };
   } finally {
     gwProvider.destroy();

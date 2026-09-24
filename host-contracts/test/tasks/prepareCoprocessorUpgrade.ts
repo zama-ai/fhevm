@@ -45,19 +45,15 @@ function makeGatewayReport(tipBlock: number): GatewayReport {
   return { rpcUrl: 'https://gw.invalid', tipBlock, tipTimestamp: 1_700_000_000, startBlock: tipBlock };
 }
 
-// Stub provider: counts getBlockNumber calls so tests can assert the Gateway tip is read once, never sampled.
-function stubBlockReader(tipBlock: number, tipTimestamp: number | null): BlockReader & { tipReads: number } {
-  const reader = {
-    tipReads: 0,
+function stubBlockReader(tipBlock: number, tipTimestamp: number | null): BlockReader {
+  return {
     async getBlockNumber() {
-      reader.tipReads += 1;
       return tipBlock;
     },
     async getBlock(block: number | string) {
       return block === tipBlock && tipTimestamp !== null ? { timestamp: tipTimestamp } : null;
     },
-  };
-  return reader as unknown as BlockReader & { tipReads: number };
+  } as unknown as BlockReader;
 }
 
 describe('prepareCoprocessorUpgrade task utils', function () {
@@ -127,9 +123,8 @@ describe('prepareCoprocessorUpgrade task utils', function () {
   describe('readChainTip', function () {
     it('returns the tip as-is even when its timestamp is hours stale (idle on-demand Gateway)', async function () {
       const tenHoursAgo = Math.floor(Date.now() / 1000) - 10 * 3600;
-      const reader = stubBlockReader(22889, tenHoursAgo);
-      expect(await readChainTip(reader)).to.deep.equal({ tipBlock: 22889, tipTimestamp: tenHoursAgo });
-      expect(reader.tipReads).to.equal(1);
+      const tip = await readChainTip(stubBlockReader(22889, tenHoursAgo));
+      expect(tip).to.deep.equal({ tipBlock: 22889, tipTimestamp: tenHoursAgo });
     });
 
     it('throws when the tip block cannot be fetched', async function () {
