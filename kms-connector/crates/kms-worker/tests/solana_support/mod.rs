@@ -2,9 +2,9 @@
 //!
 //! The centre of this module is two scripted readers over two kinds of state. [`World`] plus
 //! [`ScriptedReader`] is a set of accounts at a slot and a reader that answers from it while
-//! recording what it was asked for; [`ProofRecord`] plus [`ScriptedProofReader`] is the
-//! coprocessors' leaf record and a reader that answers leaf-proof queries from it, likewise
-//! counting. Together they turn a race into a value — a scenario is two worlds, or a world and a
+//! recording what it was asked for; [`ProofRecord`] plus [`ScriptedProofReader`] is a
+//! coprocessor's leaf record and a reader that answers leaf-proof queries from a list of them, in
+//! configured order, likewise recording. Together they turn a race into a value — a scenario is two worlds, or a world and a
 //! record that disagree, not two moments — and they let the suite assert how many times
 //! authorization reads either source, which is otherwise an invisible property.
 //!
@@ -24,7 +24,7 @@ use kms_worker::core::solana::{
     pipeline::AuthorizationContext,
     proof::{
         CoprocessorProofClient, HostProofReader, LeafKind, LeafProofOutcome, LeafQuery,
-        ProofReadError, ProofResponses, leaf_proof_request_body,
+        ProofReadError, leaf_proof_request_body,
     },
     snapshot::{
         AccountsRead, DerivedAddress, HostStateReader, ObservedRow, ObservedRows,
@@ -921,85 +921,99 @@ impl ProofRecord {
     }
 }
 
-/// A proof reader that answers from a script of records and counts every read.
-///
-/// Like [`ScriptedReader`], it answers in order and panics past the end of its script: the
-/// pipeline reads proofs once, or twice when the record is behind, and a third read is a
-/// defect to surface rather than a case to absorb.
+/// One coprocessor as the scripted proof reader sees it.
+#[derive(Clone, Debug)]
+pub enum ProofSource {
+    /// Answers every query from this record.
+    Serving(ProofRecord),
+    /// Fails every read, as an unreachable coprocessor's transport would.
+    Down,
+    /// Answers one outcome fewer than it was asked for.
+    Truncated(ProofRecord),
+    /// Panics if asked: for scenarios rejected before the proof read, where reaching it would
+    /// mean a rule ran out of order.
+    MustNotBeAsked,
+}
+
+/// A proof reader over coprocessors in configured order, recording every read as
+/// `(coprocessor, queries)`.
 pub struct ScriptedProofReader {
-    records: Vec<ProofRecord>,
-    calls: Mutex<Vec<Vec<LeafQuery>>>,
+    sources: Vec<ProofSource>,
+    calls: Mutex<Vec<(usize, Vec<LeafQuery>)>>,
 }
 
 impl ScriptedProofReader {
-    /// A reader whose every read sees the same record. Two copies, because the pipeline may
-    /// legitimately read twice.
+    /// One coprocessor serving `record`.
     pub fn constant(record: ProofRecord) -> Self {
-        Self::scripted(vec![record.clone(), record])
+        Self::coprocessors(vec![ProofSource::Serving(record)])
     }
 
-    /// A reader whose reads see the given records in order.
-    pub fn scripted(records: Vec<ProofRecord>) -> Self {
+    /// Coprocessors serving these records, in this order.
+    pub fn in_order(records: Vec<ProofRecord>) -> Self {
+        Self::coprocessors(records.into_iter().map(ProofSource::Serving).collect())
+    }
+
+    /// These coprocessors, in this order.
+    pub fn coprocessors(sources: Vec<ProofSource>) -> Self {
         Self {
-            records,
+            sources,
             calls: Mutex::new(Vec::new()),
         }
     }
 
-    /// A reader over a record that has sealed exactly these accounts' leaves.
+    /// One coprocessor over a record that has sealed exactly these accounts' leaves.
     pub fn serving(accounts: &[&EncryptedStoreFixture]) -> Self {
         Self::constant(ProofRecord::of(accounts))
     }
 
-    /// A reader that must never be asked: for the scenarios that are rejected before the proof
-    /// read, where reaching it would mean a rule ran out of order.
+    /// One coprocessor that must never be asked.
     pub fn unreachable() -> Self {
-        Self::scripted(Vec::new())
+        Self::coprocessors(vec![ProofSource::MustNotBeAsked])
     }
 
-    /// How many times the record was read.
+    /// One coprocessor that is down.
+    pub fn down() -> Self {
+        Self::coprocessors(vec![ProofSource::Down])
+    }
+
+    /// How many reads were made, across all coprocessors.
     pub fn call_count(&self) -> usize {
         self.calls.lock().expect("proof reader lock").len()
     }
 
-    /// The query batches that were read, in order.
-    pub fn calls(&self) -> Vec<Vec<LeafQuery>> {
+    /// The reads that were made, in order, as `(coprocessor, queries)`.
+    pub fn calls(&self) -> Vec<(usize, Vec<LeafQuery>)> {
         self.calls.lock().expect("proof reader lock").clone()
     }
 }
 
 impl HostProofReader for ScriptedProofReader {
-    async fn read_proofs(&self, queries: &[LeafQuery]) -> Result<ProofResponses, ProofReadError> {
-        let index = {
-            let mut calls = self.calls.lock().expect("proof reader lock");
-            calls.push(queries.to_vec());
-            calls.len() - 1
-        };
-        let record = self.records.get(index).unwrap_or_else(|| {
-            panic!(
-                "authorization read leaf proofs {} time(s); the script provides {}",
-                index + 1,
-                self.records.len()
-            )
-        });
-        Ok(ProofResponses {
-            candidates: queries
-                .iter()
-                .map(|query| vec![record.answer(query)])
-                .collect(),
-            unavailable: None,
-        })
+    fn source_count(&self) -> usize {
+        self.sources.len()
     }
-}
 
-/// A proof reader whose record is unreachable: every read fails as the transport would.
-pub struct UnavailableProofReader;
-
-impl HostProofReader for UnavailableProofReader {
-    async fn read_proofs(&self, _queries: &[LeafQuery]) -> Result<ProofResponses, ProofReadError> {
-        Err(ProofReadError::Unavailable {
-            reason: "no coprocessor answered".to_owned(),
-        })
+    async fn read_proofs(
+        &self,
+        source: usize,
+        queries: &[LeafQuery],
+    ) -> Result<Vec<LeafProofOutcome>, ProofReadError> {
+        self.calls
+            .lock()
+            .expect("proof reader lock")
+            .push((source, queries.to_vec()));
+        let answer = |record: &ProofRecord| -> Vec<_> {
+            queries.iter().map(|query| record.answer(query)).collect()
+        };
+        match &self.sources[source] {
+            ProofSource::Serving(record) => Ok(answer(record)),
+            ProofSource::Truncated(record) => Ok(answer(record)[1..].to_vec()),
+            ProofSource::Down => Err(ProofReadError::Unavailable {
+                reason: format!("coprocessor {source} is down"),
+            }),
+            ProofSource::MustNotBeAsked => {
+                panic!("authorization read leaf proofs where no read was expected")
+            }
+        }
     }
 }
 

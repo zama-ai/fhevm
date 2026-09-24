@@ -1,9 +1,8 @@
 //! The leaf-proof reader. A store's MMR leaves live in the coprocessors' record of host program
-//! events; the account holds only the peaks. The record is a source of proofs, never of
-//! decisions: every candidate is verified against the observed peaks.
+//! events; the account holds only the peaks. Each coprocessor is a source of proofs, never of
+//! decisions: every answer is verified against the observed peaks.
 
 use super::{HandleBytes, SolanaPubkeyBytes};
-use futures::future::join_all;
 use serde::{Deserialize, Serialize};
 use std::future::Future;
 use url::Url;
@@ -63,20 +62,18 @@ pub enum LeafProofOutcome {
     HistoryIncomplete,
 }
 
-/// Per-query candidates plus any peers that could not answer the batch.
-#[derive(Debug)]
-pub struct ProofResponses {
-    pub candidates: Vec<Vec<LeafProofOutcome>>,
-    pub unavailable: Option<ProofReadError>,
-}
-
 /// Implemented by [`CoprocessorProofClient`]; tests drive authorization with canned proofs.
 pub trait HostProofReader: Send + Sync {
-    /// One list of peer candidates per query, in query order. No candidate is trusted here.
+    /// How many coprocessors can be asked, in configured order.
+    fn source_count(&self) -> usize;
+
+    /// What coprocessor `source` answers, one outcome per query in query order. No outcome is
+    /// trusted here.
     fn read_proofs(
         &self,
+        source: usize,
         queries: &[LeafQuery],
-    ) -> impl Future<Output = Result<ProofResponses, ProofReadError>> + Send;
+    ) -> impl Future<Output = Result<Vec<LeafProofOutcome>, ProofReadError>> + Send;
 }
 
 pub(super) fn check_length(requested: usize, returned: usize) -> Result<(), ProofReadError> {
@@ -90,8 +87,8 @@ pub(super) fn check_length(requested: usize, returned: usize) -> Result<(), Proo
     }
 }
 
-/// Why a batch could not be read at all. Every variant says nothing about any leaf, and a later
-/// read may succeed.
+/// Why a batch could not be read from a coprocessor. Every variant says nothing about any leaf,
+/// and a later read may succeed.
 #[derive(Clone, PartialEq, Eq, Debug, thiserror::Error)]
 pub enum ProofReadError {
     /// No coprocessor answered.
@@ -131,13 +128,9 @@ fn decode_siblings<'de, D: serde::Deserializer<'de>>(
         .collect()
 }
 
-pub fn parse_leaf_proof_response(
-    body: &str,
-    requested: usize,
-) -> Result<Vec<LeafProofOutcome>, ProofReadError> {
+pub fn parse_leaf_proof_response(body: &str) -> Result<Vec<LeafProofOutcome>, ProofReadError> {
     let response: LeafProofResponse = serde_json::from_str(body)
         .map_err(|error| unavailable(format!("response does not decode: {error}")))?;
-    check_length(requested, response.proofs.len())?;
     Ok(response.proofs)
 }
 
@@ -145,7 +138,7 @@ fn unavailable(reason: String) -> ProofReadError {
     ProofReadError::Unavailable { reason }
 }
 
-/// The production reader: one authenticated `POST` per coprocessor per read, grouped per query.
+/// The production reader: one authenticated `POST` to one coprocessor per read.
 #[derive(Clone, Debug)]
 pub struct CoprocessorProofClient {
     routes: Vec<Url>,
@@ -174,7 +167,6 @@ impl CoprocessorProofClient {
         &self,
         route: &Url,
         body: &[u8],
-        requested: usize,
     ) -> Result<Vec<LeafProofOutcome>, ProofReadError> {
         let response = self
             .client
@@ -207,43 +199,23 @@ impl CoprocessorProofClient {
             body.extend_from_slice(&chunk);
         }
         let text = std::str::from_utf8(&body).map_err(|e| unavailable(format!("{route}: {e}")))?;
-        parse_leaf_proof_response(text, requested)
+        parse_leaf_proof_response(text)
     }
 }
 
 impl HostProofReader for CoprocessorProofClient {
-    async fn read_proofs(&self, queries: &[LeafQuery]) -> Result<ProofResponses, ProofReadError> {
+    fn source_count(&self) -> usize {
+        self.routes.len()
+    }
+
+    async fn read_proofs(
+        &self,
+        source: usize,
+        queries: &[LeafQuery],
+    ) -> Result<Vec<LeafProofOutcome>, ProofReadError> {
         let body = serde_json::to_vec(&leaf_proof_request_body(queries))
             .expect("a leaf proof request has no map keys or fallible fields");
-        let answers = join_all(
-            self.routes
-                .iter()
-                .map(|route| self.read_from(route, &body, queries.len())),
-        )
-        .await;
-
-        let mut candidates = vec![Vec::new(); queries.len()];
-        let mut answered = false;
-        let mut failures = Vec::new();
-        for answer in answers {
-            match answer {
-                Ok(outcomes) => {
-                    answered = true;
-                    for (query_candidates, outcome) in candidates.iter_mut().zip(outcomes) {
-                        query_candidates.push(outcome);
-                    }
-                }
-                Err(error) => failures.push(error.to_string()),
-            }
-        }
-        if answered {
-            Ok(ProofResponses {
-                candidates,
-                unavailable: (!failures.is_empty()).then(|| unavailable(failures.join("; "))),
-            })
-        } else {
-            Err(unavailable(failures.join("; ")))
-        }
+        self.read_from(&self.routes[source], &body).await
     }
 }
 
@@ -292,7 +264,7 @@ mod tests {
         let fixture = fixture();
         let body = serde_json::json!({ "proofs": fixture["proofs"] }).to_string();
         assert_eq!(
-            parse_leaf_proof_response(&body, 4).expect("the fixture answers decode"),
+            parse_leaf_proof_response(&body).expect("the fixture answers decode"),
             vec![
                 LeafProofOutcome::Found {
                     leaf_index: 1,
@@ -313,7 +285,6 @@ mod tests {
         let too_many_siblings = serde_json::json!({"proofs":[{"status":"found","leafIndex":0,"leafCount":1,"siblings":vec!["00".repeat(32);65]}]}).to_string();
         for body in [
             "not JSON".to_owned(),
-            "{\"proofs\":[]}".to_owned(),
             invalid_sibling,
             too_many_siblings,
             " ".repeat(300_000),
@@ -332,11 +303,14 @@ mod tests {
                 reqwest::Client::new(),
             );
             client
-                .read_proofs(&[LeafQuery {
-                    encrypted_store: [1; 32],
-                    handle: [2; 32],
-                    kind: LeafKind::Public,
-                }])
+                .read_proofs(
+                    0,
+                    &[LeafQuery {
+                        encrypted_store: [1; 32],
+                        handle: [2; 32],
+                        kind: LeafKind::Public,
+                    }],
+                )
                 .await
                 .expect_err("a malformed response is a failed read");
         }

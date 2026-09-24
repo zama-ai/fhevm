@@ -572,7 +572,7 @@ mod tests {
                 Duration::from_secs(3),
                 host.reader.read_accounts(&keys, None)
             ),
-            timeout(Duration::from_secs(3), host.proofs.read_proofs(&queries)),
+            timeout(Duration::from_secs(3), host.proofs.read_proofs(0, &queries)),
         );
         assert!(rpc.expect("registered RPC client must time out").is_err());
         assert!(

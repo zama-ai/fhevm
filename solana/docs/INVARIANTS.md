@@ -345,9 +345,9 @@ data, and by `rebuilds_a_slot_from_get_block_alone` and `shared_transaction_deco
 
 **30. [HOLDS]** The leaf record can stop a decrypt from happening but can
 never be what allows one: the KMS connector verifies every proof against
-the peaks it read on chain itself, fans out to every configured
-coprocessor and merges (a proof beats no proof, more history beats less),
-and rejects a client-supplied proof outright. A compromised or lagging
+the peaks it read on chain itself, asks the configured coprocessors in
+order until one serves a proof that verifies (each only for the queries
+still unresolved), and rejects a client-supplied proof outright. A compromised or lagging
 record fails or delays decrypts; it cannot authorize one (DD-048).
 Pinned by `matches_on_chain_append_and_authorizes`, `one_serving_coprocessor_carries_a_request_the_others_cannot`,
 `a_record_behind_the_chain_is_retried_not_refused`. A client cannot supply a proof: the request wire
@@ -591,8 +591,9 @@ passes those flags.
 
 **47. [RETIRED]** The standalone proof service is gone (RFC 035, DD-048). The
 leaf record lives in each coprocessor's host listener, served behind an API
-key; the connector fans out to every configured coprocessor, so one behind
-or unreachable cannot sink a request another can serve. Authorization was
+key; the connector asks the configured coprocessors in order, so one behind
+or unreachable cannot sink a request another can serve. The first coprocessor
+in the list serves most reads. Authorization was
 never its to give (#30).
 
 **48. [HOLDS]** Settle transactions at production KMS thresholds fit one packet

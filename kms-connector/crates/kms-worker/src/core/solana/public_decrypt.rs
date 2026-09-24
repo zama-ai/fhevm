@@ -2,9 +2,7 @@
 //! is proven against its encrypted store, named by the version-4 `extraData`.
 
 use super::encrypted_store::{EncryptedStoreFailure, resolve_encrypted_store};
-use super::handle_binding::{
-    HandleBindingFailure, check_public_binding, verify_proofs_with_one_retry,
-};
+use super::handle_binding::{HandleBindingFailure, check_public_binding, verify_proofs};
 use super::proof::{LeafKind, LeafQuery, ProofReadError};
 use super::snapshot::{SnapshotError, read_positional};
 use super::{HandleBytes, SolanaHost};
@@ -28,7 +26,7 @@ pub async fn check_public_decrypt(
         handle,
         kind: LeafKind::Public,
     };
-    let [binding] = verify_proofs_with_one_retry(&host.proofs, &[(query, ())], |_, outcome| {
+    let [binding] = verify_proofs(&host.proofs, &[(query, ())], |_, outcome| {
         check_public_binding(&store, handle, outcome)
     })
     .await?

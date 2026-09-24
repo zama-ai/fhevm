@@ -3,7 +3,7 @@
 use super::delegation::check_delegation;
 use super::encrypted_store::resolve_encrypted_store;
 use super::failure::AuthorizationFailure;
-use super::handle_binding::{check_handle_binding, verify_proofs_with_one_retry};
+use super::handle_binding::{check_handle_binding, verify_proofs};
 use super::proof::{HostProofReader, LeafKind, LeafQuery};
 use super::scope::check_scope;
 use super::snapshot::{DelegationRowKeys, HostObservation, HostStateReader, observe};
@@ -110,7 +110,7 @@ pub async fn authorize_request(
             (query, (store, entry))
         })
         .collect();
-    let bindings = verify_proofs_with_one_retry(proofs, &batch, |(store, entry), outcome| {
+    let bindings = verify_proofs(proofs, &batch, |(store, entry), outcome| {
         check_handle_binding(store, entry.handle, entry.owner_address, outcome)
     })
     .await?;

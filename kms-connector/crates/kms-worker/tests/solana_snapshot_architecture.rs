@@ -15,8 +15,8 @@
 //! The instrument is a reader that answers from a scripted world and counts calls. Without it,
 //! "reads state once" is a claim about code that no test can hold to account: the difference
 //! between one read and two is invisible in the outcome and very visible in a race. The leaf
-//! record has its own counted reader, for the same reason: the proof read is one batch per
-//! request, repeated once for unresolved retryable proofs, and never a third time.
+//! record has its own recording reader, for the same reason: the proof read asks each coprocessor
+//! at most once, in configured order, and only for the queries still unresolved.
 
 mod solana_support;
 
@@ -442,8 +442,9 @@ async fn the_deciding_state_of_a_delegated_request_is_the_second_reads() {
     );
 }
 
-/// A record that has sealed the observed history and holds no leaf agrees with the observation, so
-/// it is read once. Whether a later grant lands is left to the attempt budget.
+/// A coprocessor that has sealed the observed history and holds no leaf is asked once; with no
+/// other coprocessor configured, the entry is refused recoverably. Whether a later grant lands is
+/// left to the attempt budget.
 #[tokio::test]
 async fn a_leaf_the_record_does_not_hold_is_read_once() {
     let (wallet, _, handle) = direct_scenario();
@@ -471,10 +472,10 @@ async fn a_leaf_the_record_does_not_hold_is_read_once() {
     assert_eq!(proofs.call_count(), 1);
 }
 
-/// Missing leaves from a lagging record are fetched once more. If still missing, the request
-/// is rejected retryably and the ordinary attempt budget decides.
+/// A coprocessor behind the chain hands the query to the next one. When every coprocessor is
+/// behind, the request is rejected retryably and the ordinary attempt budget decides.
 #[tokio::test]
-async fn the_leaf_record_is_retried_only_when_a_required_leaf_is_unavailable() {
+async fn a_coprocessor_behind_the_chain_hands_the_query_to_the_next() {
     let (wallet, encrypted_store, handle) = direct_scenario();
     let request = RequestBuilder::new(&wallet)
         .direct(&encrypted_store, handle)
@@ -494,9 +495,9 @@ async fn the_leaf_record_is_retried_only_when_a_required_leaf_is_unavailable() {
     .expect("a record in step authorizes");
     assert_eq!(in_step.call_count(), 1, "a record in step is read once");
 
-    // A record that has not yet sealed the allow leaf, then catches up.
+    // The first coprocessor has not yet sealed the allow leaf; the second has.
     let behind = ProofRecord::of(&[&EncryptedStoreFixture::new(handle)]);
-    let catches_up = ScriptedProofReader::scripted(vec![behind.clone(), world.record()]);
+    let catches_up = ScriptedProofReader::in_order(vec![behind.clone(), world.record()]);
     authorize_request(
         &ScriptedReader::constant(world.clone()),
         &catches_up,
@@ -504,15 +505,11 @@ async fn the_leaf_record_is_retried_only_when_a_required_leaf_is_unavailable() {
         &request,
     )
     .await
-    .expect("the second read finds the leaf");
-    assert_eq!(
-        catches_up.call_count(),
-        2,
-        "a record behind is read once more"
-    );
+    .expect("the second coprocessor finds the leaf");
+    assert_eq!(catches_up.call_count(), 2, "each coprocessor is asked once");
 
-    // A record that stays behind: two reads, then a retryable rejection, never a third read.
-    let stays_behind = ScriptedProofReader::scripted(vec![behind.clone(), behind]);
+    // Every coprocessor behind: each asked once, then a retryable rejection.
+    let stays_behind = ScriptedProofReader::in_order(vec![behind.clone(), behind]);
     let failure = authorize_request(
         &ScriptedReader::constant(world),
         &stays_behind,
@@ -520,11 +517,11 @@ async fn the_leaf_record_is_retried_only_when_a_required_leaf_is_unavailable() {
         &request,
     )
     .await
-    .expect_err("a record still behind after the retry decides nothing");
+    .expect_err("no coprocessor has sealed the leaf");
     assert_eq!(
         stays_behind.call_count(),
         2,
-        "the retry policy is one repeat, not a loop"
+        "no coprocessor is asked twice"
     );
     assert!(matches!(
         failure,

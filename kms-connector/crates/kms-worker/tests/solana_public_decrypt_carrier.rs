@@ -137,8 +137,8 @@ async fn a_handle_not_made_public_is_retried() {
     assert_eq!(err.code, kms_connector_api::ErrorCode::AclDenied);
 }
 
-/// Every configured coprocessor is asked and the answers are merged: one that fails the read
-/// and one that has not sealed the leaf yet cannot sink a request a third can serve.
+/// Coprocessors are asked in configured order until one serves a proof that verifies: one that
+/// fails the read and one that has not sealed the leaf yet cannot sink a request a third can serve.
 #[tokio::test]
 async fn one_serving_coprocessor_carries_a_request_the_others_cannot() {
     let public = handle(0x55, FHE_TYPE_UINT64);
@@ -165,8 +165,8 @@ async fn one_serving_coprocessor_carries_a_request_the_others_cannot() {
         .expect("the one coprocessor that serves the proof authorizes the handle");
 }
 
-/// A record behind the chain says nothing yet: the read is retried once against the same mock,
-/// and then the request is left to the ordinary attempt budget.
+/// A record behind the chain says nothing yet: the request is refused recoverably and left to the
+/// ordinary attempt budget.
 #[tokio::test]
 async fn a_record_behind_the_chain_is_retried_not_refused() {
     let public = handle(0x50, FHE_TYPE_UINT64);
@@ -239,8 +239,8 @@ async fn a_carrier_naming_a_foreign_account_is_refused() {
     irrecoverable_containing(err, "is owned by");
 }
 
-/// A peer can stall before headers or halfway through its body. Neither may trap a healthy
-/// proof behind join_all; the same bounded client also protects the deciding RPC read.
+/// A coprocessor can stall before headers or halfway through its body. The call deadline moves
+/// the batch on to the next coprocessor; the same bounded client also protects the RPC read.
 #[tokio::test]
 async fn stalled_http_does_not_block_healthy_proofs_or_rpc_failure() {
     use std::time::Duration;
@@ -295,8 +295,8 @@ async fn stalled_http_does_not_block_healthy_proofs_or_rpc_failure() {
             check(&host, public, &carrier(&fixture)),
         )
         .await
-        .expect("fanout must finish")
-        .expect("healthy peer still authorizes");
+        .expect("the stalled coprocessor times out")
+        .expect("the next coprocessor authorizes");
         host.reader = SolanaRpcClient::new(
             stalled,
             Duration::from_millis(100),

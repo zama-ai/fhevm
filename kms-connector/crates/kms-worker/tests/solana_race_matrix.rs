@@ -319,8 +319,8 @@ async fn a_record_behind_by_a_non_merging_append_still_authorizes() {
 // ---------------------------------------------------------------------------
 
 /// The record is behind the chain by the one append that merged the proof's peak. The sibling
-/// path it serves no longer reaches any peak the chain holds: the request is refused retryably
-/// after the repeat, and authorized once the record has caught up.
+/// path it serves no longer reaches any peak the chain holds: the request is refused retryably,
+/// and authorized once the record has caught up.
 #[tokio::test]
 async fn a_record_behind_by_a_merging_append_is_retryable_and_then_authorized() {
     let signer = Wallet::new(1);
@@ -356,8 +356,8 @@ async fn a_record_behind_by_a_merging_append_is_retryable_and_then_authorized() 
     );
     assert!(failure.is_recoverable());
     assert_eq!(
-        reads.proofs, 2,
-        "a proof that does not verify gets one refresh against the same observation"
+        reads.proofs, 1,
+        "the one coprocessor is asked once; the worker loop is the only retry layer"
     );
 
     let (outcome, _) = observe(world, &request).await;
@@ -413,8 +413,8 @@ async fn a_record_ahead_of_the_observation_is_retryable_and_then_authorized() {
     );
     assert!(failure.is_recoverable());
     assert_eq!(
-        reads.proofs, 2,
-        "an out-of-range leaf is retryable and gets one refresh against the same observation"
+        reads.proofs, 1,
+        "the one coprocessor is asked once; the worker loop is the only retry layer"
     );
 
     let (outcome, _) = observe(

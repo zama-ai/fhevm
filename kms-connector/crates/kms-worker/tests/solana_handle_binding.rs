@@ -27,15 +27,12 @@ use kms_worker::core::solana::{
     SolanaPubkeyBytes,
     encrypted_store::{ResolvedEncryptedStore, resolve_encrypted_store},
     failure::AuthorizationFailure,
-    handle_binding::{HandleBindingFailure, check_handle_binding, verify_proofs_with_one_retry},
+    handle_binding::{HandleBindingFailure, check_handle_binding, verify_proofs},
     pipeline::authorize_request,
-    proof::{
-        HostProofReader, LeafKind, LeafProofOutcome, LeafQuery, ProofReadError, ProofResponses,
-    },
+    proof::{LeafKind, LeafProofOutcome, LeafQuery, ProofReadError},
 };
 use rstest::rstest;
 use solana_support::*;
-use std::{collections::VecDeque, sync::Mutex};
 use zama_solana_acl::{historical_access_leaf_commitment, public_decrypt_leaf_commitment};
 
 /// Resolves an encrypted store the way the pipeline does, so the binding rules are
@@ -521,13 +518,16 @@ async fn the_pipeline_asks_the_record_for_the_leaf_the_entry_claims() {
 
     assert_eq!(
         proofs.calls(),
-        vec![vec![LeafQuery {
-            encrypted_store: encrypted_store.account_key,
-            handle: live,
-            kind: LeafKind::Allowed {
-                key: wallet.pubkey()
-            },
-        }]]
+        vec![(
+            0,
+            vec![LeafQuery {
+                encrypted_store: encrypted_store.account_key,
+                handle: live,
+                kind: LeafKind::Allowed {
+                    key: wallet.pubkey()
+                },
+            }]
+        )]
     );
 }
 
@@ -562,7 +562,7 @@ async fn the_pipeline_reads_one_batch_with_one_query_per_entry() {
     let calls = proofs.calls();
     assert_eq!(calls.len(), 1, "one batch");
     assert_eq!(
-        calls[0],
+        calls[0].1,
         vec![
             first_account.allowed_query(first, wallet.pubkey()),
             second_account.allowed_query(second, wallet.pubkey()),
@@ -586,7 +586,7 @@ async fn an_unreachable_record_rejects_transiently() {
         .with_watermark(wallet.pubkey(), 0);
     let reader = ScriptedReader::constant(world);
 
-    let failure = authorize_request(&reader, &UnavailableProofReader, CONTEXT, &request)
+    let failure = authorize_request(&reader, &ScriptedProofReader::down(), CONTEXT, &request)
         .await
         .expect_err("no record, no verdict");
 
@@ -650,8 +650,10 @@ fn ahead_paths_verify_against_every_earlier_mountain() {
     }
 }
 
+/// A proof built against an older leaf count still verifies, so it resolves the query at the first
+/// coprocessor and the next one is not asked.
 #[tokio::test]
-async fn valid_older_proof_does_not_trigger_a_refresh() {
+async fn a_valid_older_proof_resolves_without_asking_the_next_coprocessor() {
     let wallet = Wallet::new(1);
     let sealed = handle(0x62, FHE_TYPE_UINT64);
     let mut before = EncryptedStoreFixture::allowing(sealed, wallet.pubkey());
@@ -662,178 +664,179 @@ async fn valid_older_proof_does_not_trigger_a_refresh() {
     let world = World::at_slot(100)
         .with_encrypted_store(&after)
         .with_watermark(wallet.pubkey(), 0);
-    let proofs = ScriptedProofReader::scripted(vec![ProofRecord::of(&[&before])]);
+    let proofs = ScriptedProofReader::in_order(vec![ProofRecord::of(&[&before]), world.record()]);
     authorize_request(&ScriptedReader::constant(world), &proofs, CONTEXT, &request)
         .await
-        .expect("surviving peak needs no refresh");
+        .expect("a proof against a surviving peak verifies");
     assert_eq!(proofs.call_count(), 1);
 }
 
-/// Scripted answers from every peer at once: one reply per read, each holding every peer's
-/// candidates per query.
-struct ScriptedPeers {
-    replies: Mutex<VecDeque<Result<Vec<Vec<LeafProofOutcome>>, ProofReadError>>>,
-    calls: Mutex<Vec<Vec<LeafQuery>>>,
-}
-
-impl ScriptedPeers {
-    fn new(
-        replies: impl IntoIterator<Item = Result<Vec<Vec<LeafProofOutcome>>, ProofReadError>>,
-    ) -> Self {
-        Self {
-            replies: Mutex::new(replies.into_iter().collect()),
-            calls: Mutex::new(Vec::new()),
-        }
-    }
-}
-
-impl HostProofReader for ScriptedPeers {
-    async fn read_proofs(&self, queries: &[LeafQuery]) -> Result<ProofResponses, ProofReadError> {
-        self.calls.lock().unwrap().push(queries.to_vec());
-        self.replies
-            .lock()
-            .unwrap()
-            .pop_front()
-            .expect("no extra reads")
-            .map(|candidates| ProofResponses {
-                candidates,
-                unavailable: None,
-            })
-    }
-}
-
-#[tokio::test]
-async fn peer_candidates_and_failed_refreshes_preserve_valid_bindings() {
+/// A store holding allow leaves for `key` on two handles, resolved, and the two queries.
+fn two_allowed_queries() -> (
+    EncryptedStoreFixture,
+    ResolvedEncryptedStore,
+    [(LeafQuery, [u8; 32]); 2],
+) {
     let key = Wallet::new(1).pubkey();
-    let sealed = handle(0x63, FHE_TYPE_UINT64);
-    let mut fixture = EncryptedStoreFixture::allowing(sealed, key);
-    fixture.allow(Wallet::new(2).pubkey());
+    let first = handle(0x63, FHE_TYPE_UINT64);
+    let second = handle(0x64, FHE_TYPE_UINT64);
+    let mut fixture = EncryptedStoreFixture::allowing(first, key);
+    fixture.allow_handle(second, key);
     let account = resolved(&fixture);
-    let query = fixture.allowed_query(sealed, key);
-    let missing = LeafQuery {
-        handle: handle(0x64, FHE_TYPE_UINT64),
-        ..query
-    };
-    let batch = [(query, query.handle), (missing, missing.handle)];
-    let valid = answer(&fixture, sealed, key);
-    let invalid = LeafProofOutcome::Found {
-        leaf_index: 0,
-        leaf_count: u64::MAX,
-        siblings: vec![[0; 32]],
-    };
-    for refresh in [
-        Err(ProofReadError::Unavailable {
-            reason: "timeout".into(),
-        }),
-        Ok(Vec::new()), // malformed refresh, not a reason to discard the first success
-        Ok(vec![vec![LeafProofOutcome::UnknownAccount]]),
-    ] {
-        for candidates in [
-            vec![invalid.clone(), valid.clone()],
-            vec![valid.clone(), invalid.clone()],
-        ] {
-            let reader = ScriptedPeers::new([
-                Ok(vec![candidates, vec![LeafProofOutcome::UnknownAccount]]),
-                refresh.clone(),
-            ]);
-            let results = verify_proofs_with_one_retry(&reader, &batch, |handle, outcome| {
-                check_handle_binding(&account, *handle, key, outcome)
-            })
-            .await
-            .unwrap();
-            assert_eq!(results[0], Ok(()));
-            assert!(results[1].is_err());
-            assert_eq!(
-                *reader.calls.lock().unwrap(),
-                vec![vec![query, missing], vec![missing]]
-            );
-        }
+    let batch = [first, second].map(|handle| (fixture.allowed_query(handle, key), handle));
+    (fixture, account, batch)
+}
+
+/// What the store's record answers for a query it does not hold.
+fn not_found(fixture: &EncryptedStoreFixture) -> LeafProofOutcome {
+    LeafProofOutcome::NotFound {
+        leaf_count: fixture.encrypted_store.leaf_count,
     }
 }
 
-/// Peers that disagree are read again whichever answers first: one holds no leaf, the other a
-/// proof that does not verify.
-#[rstest]
-#[case::missing_leaf_first(false)]
-#[case::missing_leaf_last(true)]
-#[tokio::test]
-async fn peers_that_disagree_on_a_missing_leaf_are_read_again(#[case] missing_leaf_last: bool) {
+async fn verify_with(
+    reader: &ScriptedProofReader,
+    account: &ResolvedEncryptedStore,
+    batch: &[(LeafQuery, [u8; 32])],
+) -> Result<Vec<Result<(), HandleBindingFailure>>, ProofReadError> {
     let key = Wallet::new(1).pubkey();
-    let sealed = handle(0x65, FHE_TYPE_UINT64);
-    let fixture = EncryptedStoreFixture::allowing(sealed, key);
-    let account = resolved(&fixture);
-    let query = LeafQuery {
-        handle: handle(0x66, FHE_TYPE_UINT64),
-        ..fixture.allowed_query(sealed, key)
-    };
-    let mut candidates = vec![
-        fixture.outcome(&query),
-        LeafProofOutcome::Found {
-            leaf_index: 0,
-            leaf_count: 1,
-            siblings: vec![],
-        },
-    ];
-    if missing_leaf_last {
-        candidates.reverse();
-    }
-    let reader = ScriptedPeers::new([Ok(vec![candidates.clone()]), Ok(vec![candidates])]);
-
-    verify_proofs_with_one_retry(&reader, &[(query, ())], |(), outcome| {
-        check_handle_binding(&account, query.handle, key, outcome)
+    verify_proofs(reader, batch, |handle, outcome| {
+        check_handle_binding(account, *handle, key, outcome)
     })
     .await
-    .unwrap();
-
-    assert_eq!(reader.calls.lock().unwrap().len(), 2);
 }
 
-/// While a peer is down, a missing leaf at the others is reported as the outage: the peer that did
-/// not answer may hold the leaf.
+/// Coprocessor A holds only the first leaf and B holds both: both queries resolve, and B is asked
+/// only for the query A left unresolved.
 #[tokio::test]
-async fn an_unavailable_peer_reports_the_outage_not_a_missing_leaf() {
+async fn the_next_coprocessor_is_asked_only_for_the_unresolved_queries() {
+    let (fixture, account, batch) = two_allowed_queries();
+    let [(first, _), (second, _)] = batch;
+    let only_first = ProofRecord::answering([
+        (first, fixture.outcome(&first)),
+        (second, not_found(&fixture)),
+    ]);
+    let reader = ScriptedProofReader::in_order(vec![only_first, ProofRecord::of(&[&fixture])]);
+
+    let results = verify_with(&reader, &account, &batch).await.unwrap();
+
+    assert_eq!(results, vec![Ok(()), Ok(())]);
+    assert_eq!(
+        reader.calls(),
+        vec![(0, vec![first, second]), (1, vec![second])]
+    );
+}
+
+/// When every coprocessor has sealed the history without the leaf, the entry is a recoverable
+/// denial, and no coprocessor is asked twice.
+#[tokio::test]
+async fn every_coprocessor_missing_the_leaf_is_a_recoverable_denial() {
+    let (fixture, account, [entry, _]) = two_allowed_queries();
+    let missing = ProofRecord::answering([(entry.0, not_found(&fixture))]);
+    let reader = ScriptedProofReader::in_order(vec![missing.clone(), missing]);
+
+    let results = verify_with(&reader, &account, &[entry]).await.unwrap();
+
+    assert!(matches!(
+        &results[..],
+        [Err(failure @ HandleBindingFailure::NoLeaf { .. })] if failure.is_recoverable()
+    ));
+    assert_eq!(reader.call_count(), 2);
+}
+
+/// A coprocessor that fails the read, or answers the wrong number of outcomes, says nothing about
+/// any leaf: the batch moves on to the next.
+#[tokio::test]
+async fn a_failed_or_short_read_moves_on_to_the_next_coprocessor() {
+    let (fixture, account, batch) = two_allowed_queries();
+    let record = ProofRecord::of(&[&fixture]);
+    let reader = ScriptedProofReader::coprocessors(vec![
+        ProofSource::Down,
+        ProofSource::Truncated(record.clone()),
+        ProofSource::Serving(record),
+    ]);
+
+    let results = verify_with(&reader, &account, &batch).await.unwrap();
+
+    assert_eq!(results, vec![Ok(()), Ok(())]);
+    let queries: Vec<_> = batch.iter().map(|(query, _)| *query).collect();
+    assert_eq!(
+        reader.calls(),
+        vec![(0, queries.clone()), (1, queries.clone()), (2, queries)]
+    );
+}
+
+/// A query no coprocessor answered is a failed proof read, naming every coprocessor's failure.
+#[tokio::test]
+async fn no_answer_from_any_coprocessor_is_a_proof_read_error() {
+    let (_, account, batch) = two_allowed_queries();
+    let reader = ScriptedProofReader::coprocessors(vec![ProofSource::Down, ProofSource::Down]);
+
+    let error = verify_with(&reader, &account, &batch).await.unwrap_err();
+
+    let ProofReadError::Unavailable { reason } = error else {
+        panic!("expected an unavailable read, got {error}");
+    };
+    assert!(reason.contains("coprocessor 0") && reason.contains("coprocessor 1"));
+}
+
+/// One coprocessor whose history for the store is incomplete cannot make the entry terminal while
+/// another reports a recoverable miss, whichever answers first.
+#[rstest]
+#[case::incomplete_first(false)]
+#[case::incomplete_last(true)]
+#[tokio::test]
+async fn a_terminal_answer_does_not_replace_a_recoverable_one(#[case] incomplete_last: bool) {
+    let (fixture, account, [entry, _]) = two_allowed_queries();
+    let mut records = vec![
+        ProofRecord::answering([(entry.0, LeafProofOutcome::HistoryIncomplete)]),
+        ProofRecord::answering([(entry.0, not_found(&fixture))]),
+    ];
+    if incomplete_last {
+        records.reverse();
+    }
+
+    let results = verify_with(&ScriptedProofReader::in_order(records), &account, &[entry])
+        .await
+        .unwrap();
+
+    assert!(matches!(
+        &results[..],
+        [Err(HandleBindingFailure::NoLeaf { .. })]
+    ));
+}
+
+/// Through the production client: an unavailable coprocessor hands the batch to the next one.
+#[tokio::test]
+async fn an_unavailable_coprocessor_hands_the_batch_to_the_next() {
     use kms_worker::core::solana::proof::CoprocessorProofClient;
     use mocktail::{StatusCode, server::MockServer};
-    let key = Wallet::new(1).pubkey();
-    let sealed = handle(0x71, FHE_TYPE_UINT64);
-    let fixture = EncryptedStoreFixture::allowing(sealed, key);
-    let account = resolved(&fixture);
-    let query = fixture.allowed_query(sealed, key);
-    let batch = [(query, ())];
-    let mut absent = MockServer::new_http("no-leaf");
-    serve_proofs(
-        &mut absent,
-        &[(query, LeafProofOutcome::NotFound { leaf_count: 1 })],
-    );
-    absent.start().await.unwrap();
-    let mut unavailable = MockServer::new_http("unavailable-peer");
+    let (fixture, account, [entry, _]) = two_allowed_queries();
+    let mut unavailable = MockServer::new_http("unavailable-coprocessor");
     unavailable.mock(|when, then| {
         when.post();
         then.status(StatusCode::BAD_GATEWAY);
     });
     unavailable.start().await.unwrap();
+    let mut serving = MockServer::new_http("serving-coprocessor");
+    serve_proofs(&mut serving, &[(entry.0, fixture.outcome(&entry.0))]);
+    serving.start().await.unwrap();
     let client = CoprocessorProofClient::new(
         &[
-            absent.base_url().unwrap().clone(),
             unavailable.base_url().unwrap().clone(),
+            serving.base_url().unwrap().clone(),
         ],
         "secret".into(),
         reqwest::Client::new(),
     );
-    let error = verify_proofs_with_one_retry(&client, &batch, |(), proof| {
-        check_handle_binding(&account, sealed, key, proof)
-    })
-    .await
-    .unwrap_err();
-    assert!(matches!(error, ProofReadError::Unavailable { .. }));
-    assert!(error.to_string().contains("502"));
+    let key = Wallet::new(1).pubkey();
 
-    serve_proofs(&mut absent, &[(query, fixture.outcome(&query))]);
-    let results = verify_proofs_with_one_retry(&client, &batch, |(), proof| {
-        check_handle_binding(&account, sealed, key, proof)
+    let results = verify_proofs(&client, &[entry], |handle, outcome| {
+        check_handle_binding(&account, *handle, key, outcome)
     })
     .await
     .unwrap();
+
     assert_eq!(results, vec![Ok(())]);
 }
 

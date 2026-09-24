@@ -13,94 +13,62 @@ use zama_solana_acl::{
     AclError, EncryptedStore, MmrProof, authorize_state_historical, authorize_state_public,
 };
 
-/// Verifies every query's candidates from every peer against the same observation, then asks once
-/// more for the queries that may still succeed. A failed second read never erases a first result.
-/// Results are in batch order.
-pub async fn verify_proofs_with_one_retry<P: HostProofReader, T: Sync>(
+/// Asks the coprocessors in configured order until every query is resolved, and returns one result
+/// per query in batch order. Each coprocessor is asked only for the queries still unresolved, and
+/// only a found proof that verifies against the observed peaks resolves one: any other answer, a
+/// failed read, or an answer of the wrong length moves on to the next coprocessor. A query no
+/// coprocessor answered is a [`ProofReadError`]; otherwise it keeps its last failure, except that
+/// one coprocessor's terminal failure does not replace another's recoverable one. The worker loop
+/// is the only retry layer.
+pub async fn verify_proofs<P: HostProofReader, T: Sync>(
     reader: &P,
     batch: &[(LeafQuery, T)],
     verify: impl Fn(&T, &LeafProofOutcome) -> Result<(), HandleBindingFailure>,
 ) -> Result<Vec<Result<(), HandleBindingFailure>>, ProofReadError> {
-    let queries: Vec<LeafQuery> = batch.iter().map(|(query, _)| *query).collect();
-    let contexts = || batch.iter().map(|(_, context)| context);
-    let response = reader.read_proofs(&queries).await?;
-    let candidates = response.candidates;
-    let mut unavailable = response.unavailable;
-    check_length(queries.len(), candidates.len())?;
-    let mut results: Vec<_> = candidates
-        .iter()
-        .zip(contexts())
-        .map(|(candidates, context)| {
-            verify_candidates(candidates, |candidate| verify(context, candidate))
-        })
-        .collect();
-    let unresolved: Vec<_> = results
-        .iter()
-        .zip(contexts())
-        .enumerate()
-        .filter_map(|(position, (result, context))| match result {
-            // A missing leaf is every peer's record agreeing with the observation, so asking the
-            // same records again in this attempt cannot change it.
-            Err(HandleBindingFailure::NoLeaf { .. }) if unavailable.is_none() => None,
-            Err(error) if error.is_recoverable() || unavailable.is_some() => {
-                Some((position, context))
-            }
-            _ => None,
-        })
-        .collect();
-    if !unresolved.is_empty() {
-        let queries: Vec<_> = unresolved
-            .iter()
-            .map(|&(position, _)| queries[position])
+    let mut results: Vec<Option<Result<(), HandleBindingFailure>>> = vec![None; batch.len()];
+    let mut read_failures = Vec::new();
+    for source in 0..reader.source_count() {
+        let unresolved: Vec<usize> = (0..batch.len())
+            .filter(|&position| results[position] != Some(Ok(())))
             .collect();
-        if let Ok(again) = reader.read_proofs(&queries).await
-            && check_length(queries.len(), again.candidates.len()).is_ok()
-        {
-            unavailable = again.unavailable;
-            for ((position, context), candidates) in unresolved.into_iter().zip(again.candidates) {
-                results[position] =
-                    verify_candidates(&candidates, |candidate| verify(context, candidate));
-            }
+        if unresolved.is_empty() {
+            break;
         }
-    }
-    if results.iter().any(Result::is_err)
-        && let Some(error) = unavailable
-    {
-        return Err(error);
-    }
-    Ok(results)
-}
-
-fn verify_candidates(
-    candidates: &[LeafProofOutcome],
-    verify: impl Fn(&LeafProofOutcome) -> Result<(), HandleBindingFailure>,
-) -> Result<(), HandleBindingFailure> {
-    let mut failure: Option<HandleBindingFailure> = None;
-    for candidate in candidates {
-        match verify(candidate) {
-            Ok(()) => return Ok(()),
+        let queries: Vec<LeafQuery> = unresolved
+            .iter()
+            .map(|&position| batch[position].0)
+            .collect();
+        let outcomes = match reader
+            .read_proofs(source, &queries)
+            .await
+            .and_then(|outcomes| {
+                check_length(queries.len(), outcomes.len())?;
+                Ok(outcomes)
+            }) {
+            Ok(outcomes) => outcomes,
             Err(error) => {
-                if failure
-                    .as_ref()
-                    .is_none_or(|kept| precedence(&error) > precedence(kept))
-                {
-                    failure = Some(error);
-                }
+                read_failures.push(format!("coprocessor {source}: {error}"));
+                continue;
+            }
+        };
+        for (position, outcome) in unresolved.into_iter().zip(&outcomes) {
+            let result = verify(&batch[position].1, outcome);
+            let kept = &mut results[position];
+            let keeps_recoverable = matches!(kept, Some(Err(earlier)) if earlier.is_recoverable())
+                && matches!(&result, Err(later) if !later.is_recoverable());
+            if !keeps_recoverable {
+                *kept = Some(result);
             }
         }
     }
-    Err(failure.unwrap_or(HandleBindingFailure::AccountUnknownToProofRecord))
-}
-
-/// Which peer's failure a query reports. One peer cannot make another's temporary failure
-/// permanent, and a missing leaf yields to any other temporary failure: peers that disagree are
-/// worth a second read, and a missing leaf alone is not.
-fn precedence(failure: &HandleBindingFailure) -> u8 {
-    match failure {
-        _ if !failure.is_recoverable() => 0,
-        HandleBindingFailure::NoLeaf { .. } => 1,
-        _ => 2,
-    }
+    results
+        .into_iter()
+        .map(|result| {
+            result.ok_or_else(|| ProofReadError::Unavailable {
+                reason: format!("no coprocessor answered: {}", read_failures.join("; ")),
+            })
+        })
+        .collect()
 }
 
 /// Establishes that `owner_address` may decrypt `handle` under this encrypted store. Taking the
