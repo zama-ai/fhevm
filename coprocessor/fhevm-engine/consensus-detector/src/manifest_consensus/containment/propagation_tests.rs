@@ -112,7 +112,7 @@ async fn direct_root(pool: &PgPool, handle: u8, reason: &str) -> i64 {
     .unwrap();
     let task: i64 = sqlx::query_scalar("INSERT INTO block_manifest_verification_task (consensus_epoch, local_manifest_id, eligible_at, retry_delay_secs, max_attempts) VALUES ($1, $2, NOW(), 0, 5) RETURNING id")
         .bind(consensus_epoch).bind(archive.id).fetch_one(trx.as_mut()).await.unwrap();
-    sqlx::query("UPDATE drifted_handle SET detection_kind = 'verified', reason = $2, local_keyset_id = $3, local_ct64_digest = $3, local_ct128_digest = $3, local_ct128_format = 0, observed_present = TRUE, observed_keyset_id = $3, observed_ct64_digest = $4, observed_ct128_digest = $4, observed_ct128_format = 0, observed_commitment_digest = $4, last_observed_task_id = $5 WHERE id = $1")
+    sqlx::query("UPDATE drifted_handle SET detection_kind = 'verified', reason = $2, local_keyset_id = $3, local_ct64_digest = $3, local_ct128_digest = $3, local_ct128_format = 0, observed_present = TRUE, observed_keyset_id = $3, observed_ct64_digest = $4, observed_ct128_digest = $4, observed_ct128_format = 0, last_observed_task_id = $5 WHERE id = $1")
         .bind(id).bind(reason).bind(bytes(1)).bind(bytes(2)).bind(task).execute(trx.as_mut()).await.unwrap();
     if reason == "ct128_mismatch" {
         sqlx::query(

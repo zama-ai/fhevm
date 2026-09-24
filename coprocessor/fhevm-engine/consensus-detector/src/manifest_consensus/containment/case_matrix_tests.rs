@@ -117,7 +117,6 @@ async fn seed_case(pool: &PgPool, handle: u8, case: &Case) -> i64 {
             status = $8, is_contained = $9,
             last_observed_task_id = CASE WHEN $2 = 'verified' THEN $10 ELSE NULL END,
             resolved_task_id = CASE WHEN $8 = 'resolved' THEN $10 ELSE NULL END,
-            observed_commitment_digest = CASE WHEN $2 = 'verified' THEN $13 ELSE NULL END,
             local_keyset_id = CASE WHEN $4 THEN $11 ELSE NULL END,
             local_ct64_digest = CASE WHEN $4 THEN $11 ELSE NULL END,
             local_ct128_digest = CASE WHEN $4 THEN $11 ELSE NULL END,
@@ -280,7 +279,7 @@ async fn failed_descendants_are_inferred_without_claiming_a_successful_peer_resu
         ]
     );
     let claimed_peer_evidence: i64 = sqlx::query_scalar(
-        "SELECT COUNT(*) FROM drifted_handle WHERE detection_kind = 'inferred' AND (target_ct64_digest IS NOT NULL OR observed_commitment_digest IS NOT NULL OR last_observed_task_id IS NOT NULL)"
+        "SELECT COUNT(*) FROM drifted_handle WHERE detection_kind = 'inferred' AND (target_ct64_digest IS NOT NULL OR last_observed_task_id IS NOT NULL)"
     ).fetch_one(&pool).await.unwrap();
     assert_eq!(claimed_peer_evidence, 0);
     assert_eq!(
