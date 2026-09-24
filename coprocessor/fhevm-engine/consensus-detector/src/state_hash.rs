@@ -184,8 +184,20 @@ async fn compute_gcs_hash(
 /// A Gateway block is a candidate when:
 ///   * it has ≥1 `input_handles` row (blocks with no inputs are skipped entirely
 ///     — proofs are sparse, so unlike the L1 path we emit no sentinel);
-///   * `block_number < gw_tip` — the Gateway tip has advanced past it, so no new
-///     `VerifyProofRequest` can still land in it (**sealed**);
+///   * it is **sealed**, established one of two ways:
+///       - a non-anchor block by `block_number < gw_tip` — the Gateway tip has
+///         advanced past it, so no new `VerifyProofRequest` can still land in it;
+///       - the **synthetic anchor** block (`= gw_start_block`) by the presence of its
+///         synthetic `verify_proofs` row (`zk_proof_id >= SYNTHETIC_ZK_PROOF_ID_BASE`).
+///         `< gw_tip` can never seal it: on an idle Gateway `gw_start_block == gw_tip`,
+///         and the synthetic is back-dated into it after the tip already passed, so the
+///         tip never advances beyond it. The seal is completeness instead: the synthetic
+///         is the only input that can arrive after the watermark (real requests are
+///         frozen once the listener reached the block), so once its row exists the
+///         `verified IS NULL` gate below waits for it to verify, and the zkproof-worker
+///         commits `verified=true` atomically with the ciphertext. This guarantees the
+///         anchor's hash always includes the synthetic and never a real-only subset
+///         (which the one-shot `state_hash` insert would otherwise make permanent).
 ///   * every `verify_proofs` row for it is resolved (`verified IS NOT NULL`) — the
 ///     zkproof-worker has caught up, mirroring the L1 `bool_and(is_completed)`
 ///     gate. Otherwise the block is left for a later pass.
@@ -204,7 +216,20 @@ async fn compute_and_insert_gw_input_hashes(
         SELECT DISTINCT ih.block_number
           FROM {GCS_SCHEMA_QUOTED}.input_handles ih
          WHERE ih.block_number >= $1
-           AND ih.block_number < $2
+           AND (
+                 -- Non-anchor blocks: sealed once the tip has advanced strictly past them.
+                 (ih.block_number > $1 AND ih.block_number < $2)
+                 -- Synthetic anchor block (gw_start_block, = $1): admitted only once its
+                 -- synthetic verify_proofs row exists. This is the one block whose seal
+                 -- cannot come from `< gw_tip` (on an idle Gateway it equals the tip), so
+                 -- it comes from completeness instead — see the doc comment. EXISTS of the
+                 -- synthetic row also implies the listener has reached $1, so every real
+                 -- request in the block is already frozen.
+              OR (ih.block_number = $1
+                    AND EXISTS (
+                        SELECT 1 FROM {GCS_SCHEMA_QUOTED}.verify_proofs vp
+                         WHERE vp.block_number = $1 AND vp.zk_proof_id >= $5))
+               )
            AND NOT EXISTS (
                SELECT 1 FROM {GCS_SCHEMA_QUOTED}.state_hash sh
                 WHERE sh.chain_id = $3 AND sh.block_number = ih.block_number)
@@ -220,6 +245,7 @@ async fn compute_and_insert_gw_input_hashes(
         .bind(gw_tip)
         .bind(gw_chain_id)
         .bind(batch_limit)
+        .bind(fhevm_engine_common::synthetic_input::SYNTHETIC_ZK_PROOF_ID_BASE)
         .fetch_all(&mut **tx)
         .await?;
 
