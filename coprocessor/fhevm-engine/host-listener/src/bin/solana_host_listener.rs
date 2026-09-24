@@ -47,6 +47,11 @@ struct Args {
     #[arg(long, default_value = "http://127.0.0.1:10000")]
     grpc_url: String,
 
+    /// Solana JSON-RPC endpoint whose ledger history rebuilds, with `getBlock`, the slots
+    /// Yellowstone can no longer replay. It may be another provider's. Defaults to `--url`.
+    #[arg(long)]
+    archive_url: Option<String>,
+
     /// Existing confirmed block to replay inclusively on an empty database. Must be within
     /// Yellowstone retention and precede the host activity to reconstruct. A saved checkpoint wins.
     #[arg(long)]
@@ -214,8 +219,14 @@ async fn main() -> Result<()> {
         result
     });
 
+    let archive = RpcClient::new_with_timeout_and_commitment(
+        args.archive_url.unwrap_or(args.url),
+        SOLANA_RPC_REQUEST_TIMEOUT,
+        CommitmentConfig::finalized(),
+    );
     let listener_result = run(
         &db,
+        &archive,
         &SolanaGrpcListenerConfig {
             grpc_url: args.grpc_url,
             x_token: args.grpc_x_token,

@@ -122,10 +122,10 @@ cargo test -p host-listener --test host_listener_integration_tests \
 Yellowstone blocks. Each `fhe_execute` is paired with the `FheExecutedEvent` it
 emits: the listener stores the result handles in the event and re-derives each
 one as a check. On an empty database, `--start-slot <slot>` selects an existing
-confirmed block to replay **inclusively**. Choose a block before the host
-activity that must be reconstructed, within the provider's replay window. RPC
-supplies that block's hash; its transactions come from Yellowstone. The first
-block must match the requested slot and hash.
+confirmed block to replay **inclusively**. Choose a finalized block before the
+host activity that must be reconstructed. RPC supplies that block's hash; its
+transactions come from Yellowstone, or from the archive below if it is older
+than the replay window. The first block must match the requested slot and hash.
 
 Once a block's compute rows, leaves, and checkpoint commit together, restarts
 resume from that checkpoint and ignore `--start-slot`. Inclusive replay verifies
@@ -134,10 +134,18 @@ the first commit retains the unapplied bootstrap anchor for reconnection.
 Without a checkpoint or `--start-slot`, the listener starts at the stream tip;
 this cannot recover earlier leaves.
 
-This is bounded gRPC replay, not archival RPC recovery. The local configuration
-in `solana/geyser/yellowstone-config.json` retains **256 slots**. An unavailable
-anchor, gap or conflicting block stops ingestion without advancing the
-checkpoint. Increasing retention is a provider concern.
+Yellowstone replays only recent slots: **256** with the local configuration in
+`solana/geyser/yellowstone-config.json`, about 24 hours on a hosted provider.
+When it refuses the checkpoint as too old, the listener catches up from
+`--archive-url` (default `--url`): it lists the produced slots with `getBlocks`
+and applies each `getBlock` at finalized commitment, through the same ancestry
+check and ingest path, until it reaches the archive's finalized slot. Then it
+subscribes again from the checkpoint (DD-059 in
+`solana/docs/DESIGN_DECISIONS.md`). The archive must hold the ledger back to the
+checkpoint. Catch-up reads every transaction of every block, so a day of mainnet
+takes hours. A block holding a v1 transaction is refused and retried until
+fhevm-internal#2080. A provider that cannot replay from any slot, or a block
+that does not extend the checkpoint, stops ingestion without advancing it.
 The HTTP health routes check database availability, not reconstruction catch-up.
 Catch-up is exported as Prometheus metrics on `--metrics-addr`; the lag,
 reconnect and handle-check alarms are in
@@ -154,12 +162,10 @@ slot, signature, execution, step and both handles, and increments
 a listener bug: either the derivation or the step decoding is wrong (DD-056 in
 `solana/docs/DESIGN_DECISIONS.md`).
 
-Repair by replaying the affected slots with the fixed listener. The replay reads
-the provider's replay window, so it only works if `S` below is still inside it:
-about 24 hours on a hosted provider, and 256 slots (under two minutes) with the
-local Yellowstone configuration. Check that first: once the rows are deleted, a
-slot the provider no longer serves cannot be re-ingested until archive catch-up
-(fhevm-internal#2085) exists. Take a database backup before step 2.
+Repair by replaying the affected slots with the fixed listener. Slots older
+than the provider's replay window come from the archive RPC, so `S` below must
+be in `--archive-url`'s history. Check that first: once the rows are deleted, a
+slot neither serves cannot be re-ingested. Take a database backup before step 2.
 
 1. Stop all coprocessor services, as for any revert. Pick `S`, a slot that
    produced a block before the first failing slot, and take its `blockhash` from

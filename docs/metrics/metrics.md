@@ -127,7 +127,7 @@ Note that recommendations assume a smoke test that runs transactions/requests at
 
 ### solana-host-listener
 
-The listener resumes from its checkpoint only while the Yellowstone provider can still replay it, about 24 hours for a hosted provider. Past that window it stops and needs manual recovery, so the lag alarm fires within minutes. A fatal ingestion error exits the process, so it shows up as container restarts, not as a metric.
+The listener resumes from its checkpoint through the stream while the Yellowstone provider can still replay it, about 24 hours for a hosted provider. Past that window it catches up from the archive RPC, one `getBlock` per slot, which takes hours for a day of mainnet, so the lag alarm fires within minutes. A fatal ingestion error exits the process, so it shows up as container restarts, not as a metric.
 
 #### Metric Name: `coprocessor_solana_host_listener_applied_block_timestamp_seconds`
  - **Type**: Gauge (labeled by `host_chain_id`)
@@ -145,9 +145,14 @@ The listener resumes from its checkpoint only while the Yellowstone provider can
  - **Alarm**: If the RPC poll stops updating the gauge. Chart the slot lag against the provider's window rather than paging on it; the time lag above pages first.
     - **Recommendation**: `changes(confirmed_slot[5m]) == 0`.
 
+#### Metric Name: `coprocessor_solana_host_listener_archive_catch_up_active`
+ - **Type**: Gauge (labeled by `host_chain_id`)
+ - **Description**: 1 while the listener rebuilds, from the archive RPC, slots the stream can no longer replay, else 0. The lag gauges above show its progress. It tells a catch-up from a stall when the lag alarm fires.
+ - **Alarm**: None of its own; the time lag pages.
+
 #### Metric Name: `coprocessor_solana_host_listener_reconnects_total`
  - **Type**: Counter (labeled by `host_chain_id`)
- - **Description**: gRPC subscriptions the listener dropped and reopened from its checkpoint: a stream idle for 30 seconds, closed by the server, a transport error, or a retryable ingest failure.
+ - **Description**: Interruptions the listener resumed from its checkpoint: a stream idle for 30 seconds, closed by the server, a transport error, a retryable ingest failure, or a failed archive read during catch-up.
  - **Alarm**: If the counter increases repeatedly.
     - **Recommendation**: more than 3 reconnects in 10 minutes, i.e. `increase(counter[10m]) > 3`.
 
@@ -158,7 +163,7 @@ The listener resumes from its checkpoint only while the Yellowstone provider can
     - **Recommendation**: `increase(counter[5m]) > 0`.
 
 #### Container restarts
- - **Description**: A fatal ingestion error, such as a block whose ancestry does not match the checkpoint or a replay the provider can no longer serve, exits the listener, which then resumes from its checkpoint. A restart that catches up quickly never trips the lag alarm, so restarts need their own alarm.
+ - **Description**: A fatal ingestion error, such as a block whose ancestry does not match the checkpoint or a provider that cannot replay from any slot, exits the listener, which then resumes from its checkpoint. A restart that catches up quickly never trips the lag alarm, so restarts need their own alarm.
  - **Alarm**: Any restart.
     - **Recommendation**: `increase(kube_pod_container_status_restarts_total{container="solana-host-listener"}[15m]) > 0`.
 

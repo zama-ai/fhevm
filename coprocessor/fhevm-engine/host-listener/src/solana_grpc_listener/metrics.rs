@@ -1,13 +1,14 @@
-//! Ingestion progress of the Solana host listener. Once its checkpoint leaves the provider's
-//! replay window the listener cannot resume, so these exist to alert well before that:
-//! `time() - applied_block_timestamp_seconds` is the lag in seconds, and
-//! `confirmed_slot - applied_slot` the lag in slots. `handle_check_failures_total` counts steps
-//! whose emitted handle this listener could not re-derive, which means its software is wrong.
+//! Ingestion progress of the Solana host listener. `time() - applied_block_timestamp_seconds` is
+//! the lag in seconds, and `confirmed_slot - applied_slot` the lag in slots. Once the checkpoint
+//! leaves the provider's replay window the listener catches up from the archive RPC, one
+//! `getBlock` per slot, with `archive_catch_up_active` at 1; the lag then shows its progress.
+//! `handle_check_failures_total` counts steps whose emitted handle this listener could not
+//! re-derive, which means its software is wrong.
 
 use std::{sync::LazyLock, time::Duration};
 
 use prometheus::{
-    register_int_counter_vec, register_int_gauge_vec, IntCounterVec,
+    register_int_counter_vec, register_int_gauge_vec, IntCounterVec, IntGauge,
     IntGaugeVec,
 };
 use solana_client::nonblocking::rpc_client::RpcClient;
@@ -50,7 +51,16 @@ static CONFIRMED_SLOT: LazyLock<IntGaugeVec> = LazyLock::new(|| {
 static RECONNECTS: LazyLock<IntCounterVec> = LazyLock::new(|| {
     register_int_counter_vec!(
         "coprocessor_solana_host_listener_reconnects_total",
-        "gRPC subscriptions the listener dropped and reopened from its checkpoint",
+        "Interrupted gRPC subscriptions and archive catch-ups the listener resumed from its checkpoint",
+        &["host_chain_id"]
+    )
+    .unwrap()
+});
+
+static ARCHIVE_CATCH_UP_ACTIVE: LazyLock<IntGaugeVec> = LazyLock::new(|| {
+    register_int_gauge_vec!(
+        "coprocessor_solana_host_listener_archive_catch_up_active",
+        "1 while the listener rebuilds slots the stream can no longer replay from the archive RPC, else 0",
         &["host_chain_id"]
     )
     .unwrap()
@@ -83,11 +93,30 @@ pub(super) fn record_applied(host_chain_id: u64, block: &SealedBlock) {
 pub(super) fn record_start(host_chain_id: u64, start: &StartPosition) {
     let label = host_chain_id.to_string();
     RECONNECTS.with_label_values(&[&label]);
+    ARCHIVE_CATCH_UP_ACTIVE.with_label_values(&[&label]).set(0);
     HANDLE_CHECK_FAILURES.with_label_values(&[&label]);
     if let StartPosition::Resume(checkpoint) = start {
         APPLIED_SLOT
             .with_label_values(&[&label])
             .set(checkpoint.slot as i64);
+    }
+}
+
+/// Holds `archive_catch_up_active` at 1 until dropped, however catch-up ends.
+pub(super) struct ArchiveCatchUp(IntGauge);
+
+impl ArchiveCatchUp {
+    pub(super) fn start(host_chain_id: u64) -> Self {
+        let gauge = ARCHIVE_CATCH_UP_ACTIVE
+            .with_label_values(&[&host_chain_id.to_string()]);
+        gauge.set(1);
+        Self(gauge)
+    }
+}
+
+impl Drop for ArchiveCatchUp {
+    fn drop(&mut self) {
+        self.0.set(0);
     }
 }
 
