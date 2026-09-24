@@ -3,7 +3,7 @@ use std::{collections::HashSet, sync::Arc};
 use alloy_primitives::{Address, B256, U256};
 use aws_sdk_s3::Client;
 use block_manifest::{ManifestVersion, MAX_MANIFEST_BYTES};
-use tracing::debug;
+use tracing::{debug, info};
 use url::Url;
 
 use crate::manifest_consensus::ExecutionError;
@@ -213,6 +213,7 @@ impl S3PeerManifestSource {
             }
             body.extend_from_slice(&chunk);
         }
+        info!(bucket, key, bytes = body.len(), "Downloaded peer manifest");
         Ok(body)
     }
 }
