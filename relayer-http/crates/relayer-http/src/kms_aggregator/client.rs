@@ -111,23 +111,26 @@ impl AttemptError {
         }
     }
 
-    /// The connector's own table (`ErrorCode::retryable`); unknown codes follow the body's flag.
+    /// The connector's own table (`ErrorCode::retryable`); unknown codes follow the body's flag; a bare status is
+    /// retried for 408, 429 and 5xx.
     pub fn is_retryable(&self) -> bool {
         match self {
             Self::Api { error, .. } if error.code == ErrorCode::Unknown => error.retryable,
             Self::Api { error, .. } => error.code.retryable(),
-            Self::Status(status) => *status == 408 || (500..600).contains(status),
+            Self::Status(status) => matches!(status, 408 | 429) || (500..600).contains(status),
             Self::Transport(_) => true,
             Self::Body(_) | Self::TooLarge(_) => false,
         }
     }
 
     /// The connector code reported upward as the dominant error: transport and bare 5xx count as
-    /// `upstream_transient`, a bare 401 as `sender_authentication_failed`.
+    /// `upstream_transient`, a bare 401 as `sender_authentication_failed`, a bare 429 as `rate_limited` (an ingress
+    /// or a future proxy rate limit answers without the connector body).
     pub fn code(&self) -> ErrorCode {
         match self {
             Self::Api { error, .. } => error.code,
             Self::Status(401) => ErrorCode::SenderAuthenticationFailed,
+            Self::Status(429) => ErrorCode::RateLimited,
             Self::Status(_) | Self::Transport(_) => ErrorCode::UpstreamTransient,
             Self::Body(_) | Self::TooLarge(_) => ErrorCode::Unknown,
         }
@@ -414,6 +417,7 @@ mod tests {
             assert_eq!(api(code, flipped).is_retryable(), expected, "{code:?}");
         }
         assert!(AttemptError::Status(408).is_retryable());
+        assert!(AttemptError::Status(429).is_retryable());
         assert!(AttemptError::Status(503).is_retryable());
         assert!(!AttemptError::Status(404).is_retryable());
         assert!(!AttemptError::Status(307).is_retryable());
@@ -429,6 +433,7 @@ mod tests {
             AttemptError::Status(401).code(),
             ErrorCode::SenderAuthenticationFailed
         );
+        assert_eq!(AttemptError::Status(429).code(), ErrorCode::RateLimited);
         assert_eq!(
             AttemptError::Status(502).code(),
             ErrorCode::UpstreamTransient

@@ -54,6 +54,8 @@ pub enum Fixed {
     Hang,
     /// Connection refused.
     Refused,
+    /// `429` with a plain-text body: a rate limit answered in front of the connector (ingress, a future proxy limit).
+    BareRateLimited,
 }
 
 pub struct MockClient {
@@ -143,6 +145,10 @@ impl ConnectorClient for MockClient {
             Reply::Fixed(Fixed::Refused) => Err(AttemptError::Transport(
                 "mock: connection refused".to_owned(),
             )),
+            Reply::Fixed(Fixed::BareRateLimited) => Ok(HttpReply {
+                status: 429,
+                body: Bytes::from_static(b"Too Many Requests"),
+            }),
             Reply::Error(code) => Ok(error_reply(route, &body, code)),
             Reply::Fixed(fixed) => Ok(ok_reply(route, &body, node, fixed)),
         }

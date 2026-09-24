@@ -134,11 +134,12 @@ not stored.
 | 2xx with an unreadable body | `Body` | no |
 | any body above 4 MiB (declared `content-length`, or bytes received when the stream is cut) | `TooLarge(bytes)` | no |
 | non-2xx with the connector error body | `Api { status, error }` | by `error.code`: `malformed`, `unsupported_attestation_type` (400), `sender_authentication_failed` (401), `kms_context_destroyed` (410), `unprocessable` (422) are final; `acl_denied`, `user_signature_rejected` (403), `ciphertext_not_found` (404), `kms_context_invalid` (412), `rate_limited` (429), `copro_consensus_failed`, `upstream_transient` (502), `overloaded` (503), `timeout` (504) retry with backoff; `unknown` follows the body's `retryable` flag |
-| non-2xx without a JSON body (empty 404, HTML 502, a 3xx: never followed) | `Status` | 408 and 5xx only |
+| non-2xx without a JSON body (empty 404, HTML 502, a 3xx: never followed) | `Status` | 408, 429 and 5xx only |
 | connection refused or reset, TLS failure, client-side timeout | `Transport` | yes |
 
-For the dominant error, a bare 401 counts as `sender_authentication_failed`, a transport failure or a bare 5xx as
-`upstream_transient`, a bad 2xx body as `unknown`.
+For the dominant error, a bare 401 counts as `sender_authentication_failed`, a bare 429 as `rate_limited`, a transport
+failure or a bare 5xx as `upstream_transient`, a bad 2xx body as `unknown`. No rate limiter sits in front of the
+connector today (the proxy never answers 429); the bare 429 covers a future proxy (pingora) limit or an ingress.
 
 ## 6. Response checks (`flows/`)
 
