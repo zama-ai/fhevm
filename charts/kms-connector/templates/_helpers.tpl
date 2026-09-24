@@ -38,9 +38,9 @@ hostChains is rendered as a map keyed by chain name (ethereum, polygon, ...):
   default from the preset. A commonConfig.hostChains key missing from the
   preset fails the render.
 - without a preset (network: ""), every commonConfig.hostChains entry must set
-  url, chainId and aclAddress. A Solana entry (chainKind: solana) sets
-  solanaHostProgramId, solanaProofEndpoints and solanaProofApiKey instead of
-  aclAddress.
+  url, chainId and aclAddress. A Solana entry (chain id type byte 0x01) sets
+  solanaHostProgramId and solanaProofRoutes (a list of {url, apiKey}, one per
+  coprocessor) instead of aclAddress.
 URLs are passed through untouched so they may reference an environment variable
 declared in commonConfig.env (e.g. "$(ETHEREUM_RPC_URL)").
 */}}
@@ -89,8 +89,9 @@ hostChains:
 {{- else }}
 {{- range $name, $chain := $chains }}
 {{- $chain = $chain | default dict }}
-{{- $solana := eq ($chain.chainKind | default "") "solana" }}
-{{- $required := ternary (list "url" "chainId" "solanaHostProgramId" "solanaProofEndpoints" "solanaProofApiKey") (list "url" "chainId" "aclAddress") $solana }}
+{{- /* The chain id's type byte (bits 56..64) names the kind, as in the connector. */}}
+{{- $solana := eq (div (int64 ($chain.chainId | default 0)) 72057594037959936) 1 }}
+{{- $required := ternary (list "url" "chainId" "solanaHostProgramId" "solanaProofRoutes") (list "url" "chainId" "aclAddress") $solana }}
 {{- range $field := $required }}
 {{- if not (index $chain $field) }}
 {{- fail (printf "commonConfig.hostChains.%s.%s must be set when commonConfig.network is empty (no preset to default from)" $name $field) }}
@@ -100,10 +101,13 @@ hostChains:
     url: {{ $chain.url | quote }}
     chainId: {{ $chain.chainId | toString | quote }}
 {{- if $solana }}
-    chainKind: solana
+{{- range $route := $chain.solanaProofRoutes }}
+{{- if not (and $route.url $route.apiKey) }}
+{{- fail (printf "commonConfig.hostChains.%s.solanaProofRoutes entries must each set url and apiKey" $name) }}
+{{- end }}
+{{- end }}
     solanaHostProgramId: {{ $chain.solanaHostProgramId | quote }}
-    solanaProofEndpoints: {{ $chain.solanaProofEndpoints | toJson }}
-    solanaProofApiKey: {{ $chain.solanaProofApiKey | quote }}
+    solanaProofRoutes: {{ $chain.solanaProofRoutes | toJson }}
 {{- else }}
     aclAddress: {{ $chain.aclAddress | quote }}
 {{- end }}

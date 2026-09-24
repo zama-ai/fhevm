@@ -31,6 +31,7 @@ use kms_worker::core::solana::{
         SYSTEM_PROGRAM_ID, SnapshotAccount, SnapshotError, SolanaRpcClient,
     },
 };
+use kms_worker::core::{ApiKey, ProofRoute};
 use mocktail::server::MockServer;
 use reqwest::Client;
 use ring::signature::{Ed25519KeyPair, KeyPair};
@@ -1119,9 +1120,9 @@ pub fn serve_proofs(coprocessor: &mut MockServer, answers: &[(LeafQuery, LeafPro
 
 /// A host of the fixture deployment reading from `rpc` and asking every one of `coprocessors`.
 pub fn solana_host(rpc: &MockServer, coprocessors: &[&MockServer]) -> SolanaHost {
-    let endpoints: Vec<_> = coprocessors
+    let routes: Vec<_> = coprocessors
         .iter()
-        .map(|coprocessor| coprocessor.base_url().unwrap().clone())
+        .map(|coprocessor| proof_route(coprocessor.base_url().unwrap()))
         .collect();
     SolanaHost {
         program_id: PROGRAM_ID,
@@ -1130,7 +1131,15 @@ pub fn solana_host(rpc: &MockServer, coprocessors: &[&MockServer]) -> SolanaHost
             Duration::from_secs(10),
             NonZeroUsize::MIN,
         ),
-        proofs: CoprocessorProofClient::new(&endpoints, "test-key".to_owned(), Client::new()),
+        proofs: CoprocessorProofClient::new(&routes, Client::new()),
+    }
+}
+
+/// A leaf-proof route to the coprocessor at `url`.
+pub fn proof_route(url: &url::Url) -> ProofRoute {
+    ProofRoute {
+        url: url.clone(),
+        api_key: ApiKey::from("test-key".to_owned()),
     }
 }
 

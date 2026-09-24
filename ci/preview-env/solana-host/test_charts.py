@@ -11,6 +11,7 @@ import yaml
 
 ROOT = pathlib.Path(__file__).resolve().parents[3]
 VALUES = ROOT / "ci/preview-env/solana-host"
+ROUTES = [{"url": "http://coprocessor-1-solana-host-listener:8080", "apiKey": "$(SOLANA_PROOF_API_KEY)"}]
 
 
 def render(release, chart, values, *options):
@@ -76,13 +77,13 @@ class SolanaCharts(unittest.TestCase):
 
     def test_connector_preserves_evm_and_exact_solana_chain_id(self):
         # Same composition as deploy-preview.sh: the party's values, the Solana overlay, and the
-        # proof endpoints the script sets. aclAddress is filled per party by deploy-kms-connector.sh.
+        # proof routes the script sets. aclAddress is filled per party by deploy-kms-connector.sh.
         documents = render("kms-connector-1", "kms-connector",
                            [ROOT / "ci/preview-env/kms-connector/values-kms-connector-e2e.yaml",
                             VALUES / "values-solana-connector-e2e.yaml"],
                            "--set-string", "commonConfig.hostChains.ethereum.aclAddress=0x" + "11" * 20,
                            "--set-json",
-                           'commonConfig.hostChains.solana.solanaProofEndpoints=["http://coprocessor-1-solana-host-listener:8080"]')
+                           'commonConfig.hostChains.solana.solanaProofRoutes=' + json.dumps(ROUTES))
         deployment = next(d for d in documents if d and d["kind"] == "Deployment" and "kms-worker" in d["metadata"]["name"])
         env = deployment["spec"]["template"]["spec"]["containers"][0]["env"]
         names = [e["name"] for e in env]
@@ -91,9 +92,7 @@ class SolanaCharts(unittest.TestCase):
         self.assertEqual(chains[12345]["aclAddress"], "0x" + "11" * 20)
         solana = chains[130140237723663404]
         self.assertNotIn("aclAddress", solana)
-        self.assertEqual(solana["chainKind"], "solana")
-        self.assertEqual(solana["solanaProofEndpoints"], ["http://coprocessor-1-solana-host-listener:8080"])
-        self.assertEqual(solana["solanaProofApiKey"], "$(SOLANA_PROOF_API_KEY)")
+        self.assertEqual(solana["solanaProofRoutes"], ROUTES)
         endpoint = next(d for d in documents if d and d["kind"] == "Deployment" and "endpoint" in d["metadata"]["name"])
         ids = next(e["value"] for e in endpoint["spec"]["template"]["spec"]["containers"][0]["env"]
                    if e["name"] == "KMS_CONNECTOR_SUPPORTED_CHAIN_IDS")

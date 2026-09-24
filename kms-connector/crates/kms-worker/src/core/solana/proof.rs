@@ -3,6 +3,7 @@
 //! decisions: every answer is verified against the observed peaks.
 
 use super::{HandleBytes, SolanaPubkeyBytes};
+use crate::core::config::{ApiKey, ProofRoute};
 use serde::{Deserialize, Serialize};
 use std::future::Future;
 use url::Url;
@@ -141,40 +142,36 @@ fn unavailable(reason: String) -> ProofReadError {
     ProofReadError::Unavailable { reason }
 }
 
-/// The production reader: one authenticated `POST` to one coprocessor per read.
+/// The production reader: one authenticated `POST` to one coprocessor per read. Each
+/// coprocessor receives only the key it issued.
 #[derive(Clone, Debug)]
 pub struct CoprocessorProofClient {
-    routes: Vec<Url>,
-    api_key: String,
+    routes: Vec<(Url, ApiKey)>,
     client: reqwest::Client,
 }
 
 impl CoprocessorProofClient {
-    pub fn new(endpoints: &[Url], api_key: String, client: reqwest::Client) -> Self {
-        let routes = endpoints
+    pub fn new(routes: &[ProofRoute], client: reqwest::Client) -> Self {
+        let routes = routes
             .iter()
-            .map(|endpoint| {
-                let mut route = endpoint.clone();
-                route.set_path(LEAF_PROOFS_PATH);
-                route
+            .map(|route| {
+                let mut url = route.url.clone();
+                url.set_path(LEAF_PROOFS_PATH);
+                (url, route.api_key.clone())
             })
             .collect();
-        Self {
-            routes,
-            api_key,
-            client,
-        }
+        Self { routes, client }
     }
 
     async fn read_from(
         &self,
-        route: &Url,
+        (route, api_key): &(Url, ApiKey),
         body: &[u8],
     ) -> Result<Vec<LeafProofOutcome>, ProofReadError> {
         let response = self
             .client
             .post(route.clone())
-            .bearer_auth(&self.api_key)
+            .bearer_auth(api_key.expose())
             .header("content-type", "application/json")
             .body(body.to_vec())
             .send()
@@ -301,8 +298,7 @@ mod tests {
             });
             server.start().await.unwrap();
             let client = CoprocessorProofClient::new(
-                &[server.base_url().unwrap().clone()],
-                "secret".into(),
+                &[route(server.base_url().unwrap(), "secret")],
                 reqwest::Client::new(),
             );
             client
@@ -317,5 +313,55 @@ mod tests {
                 .await
                 .expect_err("a malformed response is a failed read");
         }
+    }
+
+    fn route(url: &Url, api_key: &str) -> ProofRoute {
+        ProofRoute {
+            url: url.clone(),
+            api_key: ApiKey::from(api_key.to_owned()),
+        }
+    }
+
+    /// Each coprocessor issues its own key, so a route sends only the key configured with it, and
+    /// neither key reaches the client's debug output.
+    #[tokio::test]
+    async fn each_coprocessor_receives_only_its_own_key() {
+        use mocktail::server::MockServer;
+        let mut servers = Vec::new();
+        for key in ["first-key", "second-key"] {
+            let mut server = MockServer::new_http(key);
+            server.mock(move |when, then| {
+                when.post()
+                    .path(LEAF_PROOFS_PATH)
+                    .header("authorization", format!("Bearer {key}"));
+                then.text(r#"{"proofs":[{"status":"notFound","leafCount":0}]}"#);
+            });
+            server.start().await.unwrap();
+            servers.push(server);
+        }
+        let client = CoprocessorProofClient::new(
+            &[
+                route(servers[0].base_url().unwrap(), "first-key"),
+                route(servers[1].base_url().unwrap(), "second-key"),
+            ],
+            reqwest::Client::new(),
+        );
+        let query = [LeafQuery {
+            encrypted_store: [1; 32],
+            handle: [2; 32],
+            kind: LeafKind::Public,
+        }];
+
+        for source in 0..2 {
+            client
+                .read_proofs(source, &query)
+                .await
+                .expect("each coprocessor accepts its own key");
+        }
+        let debug = format!("{client:?}");
+        assert!(
+            !debug.contains("first-key") && !debug.contains("second-key"),
+            "{debug}"
+        );
     }
 }

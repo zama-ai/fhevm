@@ -655,14 +655,7 @@ mod tests {
                         config.host_rpc_call_timeout,
                         std::num::NonZeroUsize::new(1).unwrap(),
                     ),
-                    proofs: CoprocessorProofClient::new(
-                        &config.host_chains[0].solana_proof_endpoints,
-                        config.host_chains[0]
-                            .solana_proof_api_key
-                            .clone()
-                            .unwrap_or_default(),
-                        ::reqwest::Client::new(),
-                    ),
+                    proofs: CoprocessorProofClient::new(&[], ::reqwest::Client::new()),
                 })),
             )]),
             TestHost::Missing => HashMap::new(),

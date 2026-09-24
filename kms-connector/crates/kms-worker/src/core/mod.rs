@@ -5,7 +5,7 @@ mod kms_response_publisher;
 mod kms_worker;
 pub mod solana;
 
-pub use config::Config;
+pub use config::{ApiKey, Config, ProofRoute};
 pub use event_picker::{DbEventPicker, EventPicker};
 pub use kms_response_publisher::{DbKmsResponsePublisher, KmsResponsePublisher};
 pub use kms_worker::KmsWorker;

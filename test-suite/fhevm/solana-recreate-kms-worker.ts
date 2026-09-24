@@ -1,7 +1,7 @@
 // Recreate the kms-connector kms-worker via fhevm-cli's composeUp so it re-reads kms-connector.env
 // (the env_file is read at container create, not on restart). Used after registering the Solana
-// host chain in KMS_CONNECTOR_HOST_CHAINS (chain_kind=solana + zama-host program id) so the worker's
-// public-decrypt ACL check routes through the Solana branch (verify_solana_public_decrypt_allowed).
+// host chain in KMS_CONNECTOR_HOST_CHAINS (a Solana chain id + zama-host program id) so the worker's
+// public-decrypt ACL check routes through the Solana branch (check_public_decrypt).
 // The connector holds no FHE/signing keys, so recreate is safe. Uses the existing image (no rebuild).
 //
 //   cd test-suite/fhevm && bun run solana-recreate-kms-worker.ts

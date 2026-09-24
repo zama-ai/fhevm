@@ -69,8 +69,9 @@ export const SOLANA_LEAF_PROOF_API_KEY = "00000000-0000-0000-0000-000000000000";
  * as {@link solanaValidatorUrl}: the listener runs natively next to the validator, the connector
  * runs in a container.
  *
- * One entry, because the demo runs one `solana_host_listener`. The connector accepts a list and
- * merges every answer, so a topology with several coprocessors would list one URL per listener.
+ * One route, because the demo runs one `solana_host_listener`. The connector asks a list of routes
+ * in order, so a topology with several coprocessors would list one route per listener, each with
+ * the key that listener issued.
  */
 export const solanaLeafProofUrl = (): string => `http://host.docker.internal:${SOLANA_LEAF_PROOF_PORT}`;
 
@@ -86,19 +87,19 @@ export type KmsHostChainEntry = {
 /**
  * Serializes `KMS_CONNECTOR_HOST_CHAINS`. EVM entries carry a numeric `chain_id` + `acl_address`.
  * Solana entries emit `chain_id` as a raw integer literal (RFC-021 ids exceed
- * Number.MAX_SAFE_INTEGER, so `JSON.stringify(Number(id))` would corrupt it), `chain_kind`,
- * `solana_host_program_id`, and the leaf-proof endpoints + bearer key the connector requires for
- * a Solana chain — and OMIT `acl_address` (the connector's schema makes it optional and ignores
- * it for Solana, whose ACL is verified via the program id).
+ * Number.MAX_SAFE_INTEGER, so `JSON.stringify(Number(id))` would corrupt it),
+ * `solana_host_program_id` and the leaf-proof routes the connector requires for a Solana chain,
+ * and no `acl_address`. The connector takes the kind from the chain id's type byte and refuses an
+ * entry carrying the other kind's settings.
  */
 export const serializeKmsHostChains = (entries: readonly KmsHostChainEntry[]): string => {
+  const proofRoute = { url: solanaLeafProofUrl(), api_key: SOLANA_LEAF_PROOF_API_KEY };
   const parts = entries.map((e) => {
     if (e.kind === "solana") {
       return (
         `{"url":${JSON.stringify(e.url)},"chain_id":${BigInt(e.chainId).toString()},` +
-        `"chain_kind":"solana","solana_host_program_id":${JSON.stringify(e.solanaProgramId ?? "")},` +
-        `"solana_proof_endpoints":${JSON.stringify([solanaLeafProofUrl()])},` +
-        `"solana_proof_api_key":${JSON.stringify(SOLANA_LEAF_PROOF_API_KEY)}}`
+        `"solana_host_program_id":${JSON.stringify(e.solanaProgramId ?? "")},` +
+        `"solana_proof_routes":${JSON.stringify([proofRoute])}}`
       );
     }
     return JSON.stringify({ url: e.url, chain_id: Number(e.chainId), acl_address: e.aclAddress ?? "" });

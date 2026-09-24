@@ -7,7 +7,7 @@ import {
 } from "./generate/solana";
 
 describe("solana", () => {
-  test("gives a Solana host chain the leaf-proof endpoints and key the connector requires", () => {
+  test("gives a Solana host chain the leaf-proof route the connector requires", () => {
     const parsed = JSON.parse(
       serializeKmsHostChains([
         {
@@ -19,11 +19,12 @@ describe("solana", () => {
       ]),
     ) as Array<Record<string, unknown>>;
 
-    // `validate_host_chain_configs` in the kms-worker refuses a Solana chain whose
-    // `solana_proof_endpoints` is empty or whose `solana_proof_api_key` is absent, and the
-    // worker exits before serving anything.
-    expect(parsed[0]?.solana_proof_endpoints).toEqual([solanaLeafProofUrl()]);
-    expect(parsed[0]?.solana_proof_api_key).toBe(SOLANA_LEAF_PROOF_API_KEY);
+    // The kms-worker refuses to load a Solana chain without a proof route, and exits before
+    // serving anything.
+    expect(parsed[0]?.solana_proof_routes).toEqual([
+      { url: solanaLeafProofUrl(), api_key: SOLANA_LEAF_PROOF_API_KEY },
+    ]);
+    expect(parsed[0]?.chain_kind).toBeUndefined();
     expect(parsed[0]?.solana_host_program_id).toBe("SoLaNaProgram111");
     expect(parsed[0]?.acl_address).toBeUndefined();
   });
@@ -35,9 +36,8 @@ describe("solana", () => {
       ]),
     ) as Array<Record<string, unknown>>;
 
-    // The same validator rejects an EVM chain that sets either field.
-    expect(parsed[0]?.solana_proof_endpoints).toBeUndefined();
-    expect(parsed[0]?.solana_proof_api_key).toBeUndefined();
+    // The same check refuses an EVM chain that sets a Solana field.
+    expect(parsed[0]?.solana_proof_routes).toBeUndefined();
     expect(parsed[0]?.acl_address).toBe("0xalpha");
   });
 

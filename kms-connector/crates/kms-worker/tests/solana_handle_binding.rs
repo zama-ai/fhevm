@@ -871,10 +871,9 @@ async fn an_unavailable_coprocessor_hands_the_batch_to_the_next() {
     serving.start().await.unwrap();
     let client = CoprocessorProofClient::new(
         &[
-            unavailable.base_url().unwrap().clone(),
-            serving.base_url().unwrap().clone(),
+            proof_route(unavailable.base_url().unwrap()),
+            proof_route(serving.base_url().unwrap()),
         ],
-        "secret".into(),
         reqwest::Client::new(),
     );
     let key = Wallet::new(1).pubkey();

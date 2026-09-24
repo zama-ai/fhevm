@@ -27,7 +27,7 @@ use kms_worker::core::solana::{
 use mocktail::{StatusCode, server::MockServer};
 use solana_support::{
     EncryptedStoreFixture, FHE_TYPE_UINT64, HttpHost, LEAF_PROOFS_ROUTE, PROGRAM_ID, handle,
-    serve_proofs, solana_host,
+    proof_route, serve_proofs, solana_host,
 };
 
 /// The `extraData` version byte of the public-decrypt carrier. A literal, deliberately not the
@@ -283,10 +283,9 @@ async fn stalled_http_does_not_block_healthy_proofs_or_rpc_failure() {
             ),
             proofs: CoprocessorProofClient::new(
                 &[
-                    stalled.clone(),
-                    good.coprocessor.base_url().unwrap().clone(),
+                    proof_route(&stalled),
+                    proof_route(good.coprocessor.base_url().unwrap()),
                 ],
-                "test-key".into(),
                 client.clone(),
             ),
         };

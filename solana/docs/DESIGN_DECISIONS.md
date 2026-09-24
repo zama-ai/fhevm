@@ -345,8 +345,9 @@ Solana handle would create a false sense of authorization.
 
 Decision:
 
-Connector paths with `chain_kind = "solana"` fail closed unless Solana-native witnesses are present
-and accepted by the Solana verifier.
+A host chain's kind is its chain id's type byte, and each kind carries only its own settings. A
+request against a Solana chain is authorized only by the Solana verifier, and a request whose kind
+does not match its chain's is refused.
 
 Rationale:
 
