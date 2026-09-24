@@ -95,6 +95,13 @@ const LOCAL_DB_URL: &str = "postgresql://postgres:postgres@127.0.0.1:5432/coproc
 
 async fn setup_test_app_existing_db() -> Result<TestInstance, Box<dyn std::error::Error>> {
     let db_url = local_benchmark_db_url()?;
+    {
+        let pool = sqlx::postgres::PgPoolOptions::new()
+            .max_connections(1)
+            .connect(&db_url)
+            .await?;
+        align_versioning_with_build(&pool).await?;
+    }
     ensure_benchmark_keys(&db_url).await?;
     let (app_close_channel, rx) = tokio::sync::watch::channel(false);
     let worker_thread = start_coprocessor(rx, &db_url).await?;
@@ -104,6 +111,30 @@ async fn setup_test_app_existing_db() -> Result<TestInstance, Box<dyn std::error
         worker_thread: Some(worker_thread),
         db_url,
     })
+}
+
+/// Record this build's stack and consensus protocol versions in `versioning`.
+///
+/// Migrations seed the release the schema was introduced with. A worker whose
+/// compiled consensus protocol is newer than the recorded one treats itself as
+/// the green side of a blue/green upgrade and parks, waiting for an upgrade
+/// controller to create its GCS schema ("waiting for the upgrade-controller to
+/// create the GCS schema"), so it never reaches readiness. Both the docker and
+/// the existing-database paths must therefore align the row before starting it.
+async fn align_versioning_with_build(pool: &PgPool) -> Result<(), sqlx::Error> {
+    let updated = sqlx::query(
+        "UPDATE versioning SET stack_version = $1, consensus_version = $2 WHERE singleton = TRUE",
+    )
+    .bind(fhevm_engine_common::STACK_VERSION)
+    .bind(i64::from(fhevm_engine_common::CONSENSUS_PROTOCOL_VERSION))
+    .execute(pool)
+    .await?;
+    if updated.rows_affected() != 1 {
+        return Err(sqlx::Error::Protocol(
+            "benchmark database has no versioning row; run its migrations first".into(),
+        ));
+    }
+    Ok(())
 }
 
 /// Seed the FHE keys the worker needs when the target database has none.
@@ -366,14 +397,7 @@ async fn setup_test_app_custom_docker() -> Result<TestInstance, Box<dyn std::err
         .await?;
 
     sqlx::migrate!("./migrations").run(&pool).await?;
-    // Match the database to this build so the worker runs live, not green.
-    sqlx::query(
-        "UPDATE versioning SET stack_version = $1, consensus_version = $2 WHERE singleton = TRUE",
-    )
-    .bind(fhevm_engine_common::STACK_VERSION)
-    .bind(i64::from(fhevm_engine_common::CONSENSUS_PROTOCOL_VERSION))
-    .execute(&pool)
-    .await?;
+    align_versioning_with_build(&pool).await?;
     setup_test_key(&pool, false).await?;
 
     let (app_close_channel, rx) = tokio::sync::watch::channel(false);
