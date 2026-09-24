@@ -261,6 +261,16 @@ impl RedisConsumer {
                 );
 
                 let outcome = HandlerOutcome::from(handler.call(&msg).await);
+                #[cfg(feature = "test-failpoints")]
+                if matches!(&outcome, HandlerOutcome::Ack) {
+                    crate::test_ack_boundary::before_ack(
+                        &msg.payload,
+                        &msg.metadata.topic,
+                        &msg.metadata.id,
+                        msg.metadata.delivery_count,
+                    )
+                    .await;
+                }
                 match outcome {
                     HandlerOutcome::Ack => {
                         if let Err(e) = self
@@ -489,6 +499,10 @@ impl RedisConsumer {
                                 let delivery_count = msg.metadata.delivery_count;
                                 let handler_start = std::time::Instant::now();
                                 let call_result = handler.call(&msg).await;
+                                #[cfg(feature = "test-failpoints")]
+                                if matches!(&call_result, Ok(AckDecision::Ack)) {
+                                    crate::test_ack_boundary::before_ack(&msg.payload, &msg.metadata.topic, &msg.metadata.id, msg.metadata.delivery_count).await;
+                                }
                                 metrics::histogram!("broker_handler_duration_seconds",
                                     "backend" => "redis",
                                     "topic" => msg.metadata.topic.clone(),
@@ -605,6 +619,10 @@ impl RedisConsumer {
                                     let delivery_count = msg.metadata.delivery_count;
                                     let handler_start = std::time::Instant::now();
                                     let call_result = handler.call(&msg).await;
+                                    #[cfg(feature = "test-failpoints")]
+                                    if matches!(&call_result, Ok(AckDecision::Ack)) {
+                                        crate::test_ack_boundary::before_ack(&msg.payload, &msg.metadata.topic, &msg.metadata.id, msg.metadata.delivery_count).await;
+                                    }
                                     metrics::histogram!("broker_handler_duration_seconds",
                                         "backend" => "redis",
                                         "topic" => msg.metadata.topic.clone(),

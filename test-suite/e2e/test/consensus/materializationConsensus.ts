@@ -1,3 +1,4 @@
+import { assertGpuExecutionDiversity } from './gpuExecutionEvidence';
 import { emitAssertions } from './assertionEvidence';
 /**
  * CPU/GPU homogeneous byte-consensus gate for transaction-boundary
@@ -181,7 +182,7 @@ describe('Materialization byte consensus', function () {
       // workload never drove the difference and the run reports agreement
       // across strategies it did not exercise.
       schedulingBefore = await readAllSchedulingCounters([...classes.keys()].sort((a, b) => a - b));
-      emitAssertions('SCH-01-HETEROGENEOUS', ['precondition'], 'Resolved scheduling classes were distinct and every operator exposed readable starting counters.');
+      emitAssertions(execution.backendClass === 'cpu' ? 'SCH-06-CPU-DIVERSITY' : 'SCH-01-HETEROGENEOUS', ['precondition'], 'Resolved scheduling classes were distinct and every operator exposed readable starting counters.');
 
       // A backlog dense enough for the configured windows to MATTER.
       //
@@ -262,14 +263,17 @@ describe('Materialization byte consensus', function () {
       // the configured difference is expressed at all.
       const after = schedulingDrained ?? (await readAllSchedulingCounters([...schedulingBefore.keys()]));
       const executed = executedScheduling(schedulingBefore, after, SCHEDULING_CLASSES);
-      const summary = assertExecutedSchedulingDiffers(executed, schedulingBacklogTransactions);
+      let summary = assertExecutedSchedulingDiffers(executed, schedulingBacklogTransactions);
+      if (execution.backendClass !== 'cpu') {
+        summary += `; GPU permits: ${assertGpuExecutionDiversity(schedulingBefore, after, SCHEDULING_CLASSES)}`;
+      }
       console.info(`[materialization-consensus] executed scheduling: ${summary}`);
-      emitAssertions('SCH-01-HETEROGENEOUS', ['evidence'], summary);
+      emitAssertions(execution.backendClass === 'cpu' ? 'SCH-06-CPU-DIVERSITY' : 'SCH-01-HETEROGENEOUS', ['evidence'], summary);
     }
 
     const formats = await assertCiphertext128Format(databaseUrls, execution.backendClass, [...formatHandles]);
     const values = [...new Set([...formats.values()].flat())];
-    if (EXPECT_HETEROGENEOUS_SCHEDULING) emitAssertions('SCH-01-HETEROGENEOUS', ['bytes'], 'Materialized outputs passed fleet byte/digest comparison and backend format validation.');
+    if (EXPECT_HETEROGENEOUS_SCHEDULING) emitAssertions(execution.backendClass === 'cpu' ? 'SCH-06-CPU-DIVERSITY' : 'SCH-01-HETEROGENEOUS', ['bytes'], 'Materialized outputs passed fleet byte/digest comparison and backend format validation.');
     console.info(
         `[materialization-consensus] ciphertext128_format ${values.join(',')} identical on all ` +
           `${formats.size} operator(s), matching ${execution.backendClass}.`,

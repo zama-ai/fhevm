@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # The cases that need no stack, recorded as results.
 #
-#   harness          HAR-02, HAR-03, MAT-05-CANARY-CLASSES
+#   harness          HAR-01, HAR-02, HAR-03, MAT-05-CANARY-CLASSES
 #   comparator       MAT-05-CANARY-CLASSES
 #   rust-regression  REG-01, REG-02
 #
@@ -44,9 +44,59 @@ bun_test() { (cd "$CLI_DIR" && bun test "$@"); }
 mocha_test_count() { sed -n 's/^ *\([0-9]\+\) passing.*/\1/p' <<<"$1" | tail -1; }
 # Rustup resolves the pinned toolchain from cwd, not --manifest-path.
 cargo_test() { (cd "$ENGINE_DIR" && SQLX_OFFLINE=true cargo test "$@"); }
+# exact_feature_test <package> <test path>: run one feature-gated unit test and
+# require its own `... ok` line, so a filter matching nothing cannot pass.
+exact_feature_test() {
+  local package="$1" name="$2" out
+  if out="$(cargo_test -p "$package" --features test-failpoints --lib "$name" -- --exact 2>&1)" &&
+     grep -Fxq "test $name ... ok" <<<"$out"; then
+    echo "$out" | tail -3
+  else
+    echo "$out"
+    echo "feature-gated control $package::$name did not pass" >&2
+    FAILURES=$((FAILURES + 1))
+  fi
+}
+broker_control_test() {
+  (cd "$REPO_ROOT/listener" && SQLX_OFFLINE=true cargo test -p broker --features test-failpoints --lib test_ack_boundary::tests)
+}
 cargo_test_count() {
   # `test result: ok. 4 passed; 0 failed; ...`, summed over binaries.
   awk '/^test result:/ { for (i = 1; i <= NF; i++) if ($(i+1) == "passed;") total += $i } END { print total + 0 }' <<<"$1"
+}
+
+# The exact parent test must execute; unrelated passing tests cannot substitute
+# for the process-kill construction (nor can its ignored subprocess helper).
+controller_crash_test_count() {
+  if ! grep -Fxq 'test tests::cutover_recovers_after_process_kill ... ok' <<<"$1"; then
+    echo 0
+    return
+  fi
+  cargo_test_count "$1"
+}
+
+transcript_test_count() {
+  if ! grep -Fxq 'test dfg::scheduler::tests::rerandomization_binds_handle_opcode_and_ordered_ciphertexts ... ok' <<<"$1"; then
+    echo 0
+    return
+  fi
+  cargo_test_count "$1"
+}
+
+poller_timeout_test_count() {
+  if ! grep -Fxq 'test poller::http_client::tests::silent_peer_times_out_and_same_client_recovers ... ok' <<<"$1"; then
+    echo 0
+    return
+  fi
+  cargo_test_count "$1"
+}
+
+squash_test_count() {
+  if ! grep -Fxq 'test tests::squash_determinism::generated_key_squash_agrees_across_reconstruction_and_threads ... ok' <<<"$1"; then
+    echo 0
+    return
+  fi
+  cargo_test_count "$1"
 }
 
 # record_case <case-id> <min-tests> <counter> <description> -- <command...>
@@ -87,6 +137,26 @@ record_case() {
 }
 
 harness_leg() {
+  # The fault-control contracts print their own count.
+  local started status=0 out
+  cr_skip_wrong_scenario HAR-01-FAULT-CONTRACTS || {
+    started="$(cr_now)"
+    log "HAR-01-FAULT-CONTRACTS: the fault layer fails closed"
+    out="$("$SCRIPT_DIR/test-fault-contracts.sh" 2>&1)" || status=$?
+    echo "$out" | tail -20 | sed 's/^/    /'
+    local contracts; contracts="$(sed -n 's/^HAR-01-FAULT-CONTRACTS: PASS (\([0-9]\+\) contract(s))$/\1/p' <<<"$out")"
+    if [[ "$status" -ne 0 || -z "$contracts" ]]; then
+      cr_record HAR-01-FAULT-CONTRACTS FAIL started_at="$started" cleanup=not_required \
+        detail="$(cr_failure_reason "$out")"
+      echo "[HAR-01-FAULT-CONTRACTS] FAIL"
+      FAILURES=$((FAILURES + 1))
+    else
+      cr_record_checked_pass HAR-01-FAULT-CONTRACTS started_at="$started" cleanup=not_required \
+        assert="safety=pass:$contracts fault-control contracts held" artifact="contracts=$contracts"
+      echo "[HAR-01-FAULT-CONTRACTS] PASS ($contracts contract(s))"
+    fi
+  }
+
   record_case HAR-02-INVENTORY-AGGREGATE 30 bun_test_count \
     "the inventory and aggregate reject what they claim to reject" "safety" \
     -- bun_test src/consensus
@@ -101,11 +171,63 @@ harness_leg() {
 
 comparator_leg() {
   record_case MAT-05-CANARY-CLASSES 30 mocha_test_count \
-    "standalone consensus oracles reject invalid evidence" "safety" \
+    "standalone consensus oracles and fault controls reject invalid evidence" "safety" \
     -- bun "$SCRIPT_DIR/run-comparator-contracts.ts"
 }
 
+migration_validation_tests() {
+  cargo_test -p host-listener --features test-failpoints --lib compressed_material_updates_only_the_compressed_representation &&
+    cargo_test -p host-listener --features test-failpoints --lib transport_control_cannot_capture_other_keys_or_outlive_its_budget
+}
+migration_validation_count() {
+  if grep -Fxq 'test kms_generation::database::tests::compressed_material_updates_only_the_compressed_representation ... ok' <<<"$1" &&
+     grep -Fxq 'test kms_generation::download_test_control::tests::transport_control_cannot_capture_other_keys_or_outlive_its_budget ... ok' <<<"$1"; then
+    cargo_test_count "$1"
+  else echo 0; fi
+}
+
 rust_regression_leg() {
+  record_case REG-06-MIGRATION-VALIDATION 2 migration_validation_count \
+    "real parser staging and decoded activation replay are fail-closed; transport scope expires" "safety" \
+    -- migration_validation_tests
+  # Metric evidence is load-bearing for SCH-01. Pin this exact contract instead
+  # of accepting a successful Cargo filter that selected no tests.
+  local limiter_out
+  if limiter_out="$(cargo_test -p scheduler --lib shared_capacity_blocks_and_records_real_overlap 2>&1)" &&
+     grep -Fxq 'test gpu_execution::tests::shared_capacity_blocks_and_records_real_overlap ... ok' <<<"$limiter_out"; then
+    echo "$limiter_out"
+  else
+    echo "$limiter_out"
+    echo 'GPU execution permit contract did not pass' >&2
+    FAILURES=$((FAILURES + 1))
+  fi
+  record_case REG-05-HOST-RPC-DEADLINE 1 poller_timeout_test_count \
+    "silent HTTP peer reaches the production deadline and the same client recovers" "liveness" \
+    -- cargo_test -p host-listener --lib silent_peer_times_out_and_same_client_recovers
+  # These controls must pass before the live redelivery leg can be trusted.
+  # Broker belongs to the listener workspace, not the engine workspace.
+  if ! broker_control_test; then FAILURES=$((FAILURES + 1)); fi
+  if ! cargo_test -p host-listener --features test-failpoints --lib consensus_test_control::tests; then
+    FAILURES=$((FAILURES + 1))
+  fi
+  record_case SCH-03-SQUASH-DETERMINISM 1 squash_test_count \
+    "generated-key fixed-input CPU squash agrees across reconstruction and threads" "safety sensitivity" \
+    -- cargo_test -p sns-worker --lib generated_key_squash_agrees_across_reconstruction_and_threads
+  record_case REG-04-RERANDOMIZATION-TRANSCRIPT 1 transcript_test_count \
+    "actual rerandomization binds output handle, opcode and ordered ciphertexts" "safety sensitivity" \
+    -- cargo_test -p scheduler --lib rerandomization_binds_handle_opcode_and_ordered_ciphertexts
+  if ! cargo_test -p tfhe-worker --features test-failpoints --lib test_failpoints::tests; then
+    FAILURES=$((FAILURES + 1))
+  fi
+  # The remaining opt-in controls are compiled only with the feature, so no
+  # ordinary `cargo test` ever runs them. Pin each exact test: a filter that
+  # selects nothing also exits 0.
+  exact_feature_test fhevm-engine-common reservation_test_control::tests::pressure_is_expiring_and_observed_only_for_real_admission
+  exact_feature_test consensus-detector test_host_report::tests::divergent_report_preserves_length_and_changes_the_commitment
+  exact_feature_test upgrade-controller tests::upgrade_hook_requires_matching_proposal_and_releases_once
+  record_case FM-UPGRADE-CONTROLLER 42 controller_crash_test_count \
+    "controller cutover, write fences, and recovery after a real process kill" "safety liveness" \
+    -- cargo_test -p upgrade-controller --lib -- --test-threads=2
   # Both need a database through testcontainers, which needs docker.
   record_case REG-01-LISTENER-POOL-REBIND 4 cargo_test_count \
     "the stack-version listener rebinds and reconciles" "liveness safety" \

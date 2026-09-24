@@ -1,3 +1,5 @@
+#[cfg(feature = "test-failpoints")]
+mod test_failpoints;
 use ::tracing::{error, info};
 use fhevm_engine_common::database::{connect_pool_with_options, resolve_database_url_from_option};
 use fhevm_engine_common::keys::{FhevmKeys, SerializedFhevmKeys};

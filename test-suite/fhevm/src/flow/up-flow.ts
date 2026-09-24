@@ -109,7 +109,7 @@ import {
   writeEnvFile,
   writeJson,
 } from "../utils/fs";
-import { ensureDiscovery, createDiscovery, defaultEndpoints, discoverContracts, minioIp, validateDiscovery } from "./discovery";
+import { ensureDiscovery, createDiscovery, defaultEndpoints, discoverContracts, minioPublishedEndpoint, validateDiscovery } from "./discovery";
 import { kmsConnectorEnvName, kmsConnectorPrefix, kmsCoreName, reconstructionThreshold } from "../kms-party";
 import { defaultHostChain, extraHostChains, hostChainsForState } from "./topology";
 import {
@@ -187,7 +187,7 @@ export {
   dockerInspect,
   ensureDiscovery,
   ensureMaterial,
-  minioIp,
+  minioPublishedEndpoint,
   multiChainCoprocessorUpgradeTargets,
   pause,
   postBootHealthGate,
@@ -1580,7 +1580,9 @@ export const upDryRun = async (options: Omit<UpOptions, "dryRun">) => {
 
 /** Deletes generated runtime artifacts while keeping persisted stack state. */
 const pruneGeneratedRuntimeArtifacts = async () => {
-  const targets = [ENV_DIR, COMPOSE_OUT_DIR, GENERATED_CONFIG_DIR, ADDRESS_DIR];
+  // Retained-material baselines belong to the stack that seeded them; a new
+  // stack must reseed rather than verify against the previous stack's rows.
+  const targets = [ENV_DIR, COMPOSE_OUT_DIR, GENERATED_CONFIG_DIR, ADDRESS_DIR, path.join(STATE_DIR, "runtime", "retained-material")];
   await Promise.all(targets.map(async (target) => {
     if (await exists(target)) {
       await remove(target);
@@ -2669,7 +2671,7 @@ const thresholdKmsOperatorUpgradeOperations: ThresholdKmsOperatorUpgradeOperatio
 /** Upgrades one serving operator's KMS Core and matching Connector without yielding between them. */
 export const upgradeThresholdKmsOperator = async (
   operatorId: number,
-  options: { lockFile: string; overrides?: LocalOverride[] },
+  options: { lockFile: string; overrides?: LocalOverride[]; migration?: NonNullable<State["kmsMigrationByNodeId"]>[string] },
   operations: ThresholdKmsOperatorUpgradeOperations = thresholdKmsOperatorUpgradeOperations,
 ) => {
   const state = await operations.loadState();
@@ -2772,6 +2774,9 @@ export const upgradeThresholdKmsOperator = async (
     },
     kmsCoreVersionByNodeId: Object.keys(perNodeVersions).length ? perNodeVersions : undefined,
     kmsConnectorDeploymentByNodeId: Object.keys(perNodeConnectors).length ? perNodeConnectors : undefined,
+    kmsMigrationByNodeId: options.migration
+      ? { ...state.kmsMigrationByNodeId, [operatorId]: options.migration }
+      : state.kmsMigrationByNodeId,
   };
   await assertSchemaCompatibility(nextState.versions, nextState.overrides, nextState.scenario, false);
   await operations.assertQuorum(state, operatorId);

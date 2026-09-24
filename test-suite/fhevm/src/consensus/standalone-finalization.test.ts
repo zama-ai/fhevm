@@ -4,7 +4,9 @@ import { tmpdir } from "node:os";
 import path from "node:path";
 const scripts = path.resolve(import.meta.dir, "../../scripts");
 const fixtures = [
-  ["run-fork-consensus.sh", "cleanup_on_exit", "sp_recover_suite_state"],
+  ["run-request-recovery.sh", "cleanup", "sc_run_restores"],
+  ["run-fork-consensus.sh", "cleanup_on_exit", "sp_case_cleanup"],
+  ["run-degraded-consensus.sh", "cleanup_on_exit", "sp_case_cleanup"],
   ["run-materialization-consensus.sh", "cleanup_suite", "sp_recover_suite_state"],
 ] as const;
 for (const [file, cleanup, failure] of fixtures) {
@@ -24,7 +26,7 @@ CR_RUN_ID=final; CR_REVISION=abc123; CR_BACKEND_CLASS=cpu; CR_HARDWARE_CLASS=cpu
 CR_SCENARIO=none; CR_OPERATORS=0; CR_THRESHOLD=0
 CONSENSUS_RESULTS_DIR='${dir}/published'; export CONSENSUS_RESULTS_DIR
 rs_stage_results || exit 2
-cr_record_checked_pass HAR-03-READINESS-CONTRACTS assert=safety=pass:fixture cleanup=ok || exit 3
+cr_record_checked_pass HAR-01-FAULT-CONTRACTS assert=safety=pass:fixture cleanup=ok || exit 3
 [[ ! -f '${dir}/published/final.jsonl' ]] || exit 4
 SUITE_PID=''; SP_FORCED_STOP=0; BASELINE=''; BASELINE_OWNED=0; SUITE_LOG=''
 sp_cancel_all() { return 0; }; sp_recover_suite_state() { return 0; }
@@ -58,7 +60,7 @@ CR_RUN_ID=mixed; CR_REVISION=abc123; CR_BACKEND_CLASS=cpu; CR_HARDWARE_CLASS=cpu
 CR_SCENARIO=none; CR_OPERATORS=0; CR_THRESHOLD=0
 CONSENSUS_RESULTS_DIR='${dir}/published'; export CONSENSUS_RESULTS_DIR
 rs_stage_results
-cr_record HAR-03-READINESS-CONTRACTS ${failedState} cleanup=ok detail='first case failed or did not run'
+cr_record HAR-01-FAULT-CONTRACTS ${failedState} cleanup=ok detail='first case failed or did not run'
 cr_record_checked_pass HAR-02-INVENTORY-AGGREGATE assert=safety=pass:fixture cleanup=ok
 unset FAILURES; RS_FINAL_FAILURE=${finalGateFails ? 1 : 0}
 rs_finalize_results 1 ok; [[ "$?" == 1 ]]

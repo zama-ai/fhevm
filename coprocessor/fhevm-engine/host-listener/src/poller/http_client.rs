@@ -5,7 +5,7 @@ use alloy::primitives::Address;
 use alloy::providers::{Provider, ProviderBuilder};
 use alloy::rpc::client::RpcClient;
 use alloy::rpc::types::{Filter, Header, Log};
-use alloy::transports::http::reqwest::Url;
+use alloy::transports::http::reqwest::{Client, Url};
 use alloy::transports::layers::RetryBackoffLayer;
 use anyhow::{anyhow, Context, Result};
 
@@ -58,7 +58,17 @@ impl HttpChainClient {
             compute_units_per_second,
         );
 
-        let client = RpcClient::builder().layer(retry_layer).http(url);
+        // A connected peer can accept a request and never send a response.
+        // Reqwest defaults to no deadline; without one the retry layer never
+        // sees an error and the poller cannot advance its durable cursor.
+        let http = Client::builder()
+            .connect_timeout(Duration::from_secs(3))
+            .timeout(Duration::from_secs(30))
+            .build()
+            .context("Failed to build bounded host polling HTTP client")?;
+        let client = RpcClient::builder()
+            .layer(retry_layer)
+            .http_with_client(http, url);
         let provider = ProviderBuilder::new().connect_client(client);
 
         let addresses = Self::monitored_addresses(
@@ -151,6 +161,67 @@ impl HttpChainClient {
 mod tests {
     use super::*;
     use serde_json::Value;
+
+    #[tokio::test]
+    async fn silent_peer_times_out_and_same_client_recovers() {
+        use tokio::io::{AsyncReadExt, AsyncWriteExt};
+        let listener =
+            tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let url = format!("http://{}", listener.local_addr().unwrap());
+        let (received, observed) = tokio::sync::oneshot::channel();
+        let server = tokio::spawn(async move {
+            let (mut silent, _) = listener.accept().await.unwrap();
+            let mut bytes = [0; 4096];
+            assert!(silent.read(&mut bytes).await.unwrap() > 0);
+            received.send(()).unwrap();
+            // Keep this socket open without sending even response headers.
+            let (mut healthy, _) = listener.accept().await.unwrap();
+            let mut request = Vec::new();
+            loop {
+                let n = healthy.read(&mut bytes).await.unwrap();
+                assert!(n > 0);
+                request.extend_from_slice(&bytes[..n]);
+                if let Some(boundary) =
+                    request.windows(4).position(|s| s == b"\r\n\r\n")
+                {
+                    if let Ok(value) = serde_json::from_slice::<Value>(
+                        &request[boundary + 4..],
+                    ) {
+                        let body = serde_json::json!({"jsonrpc":"2.0", "id":value["id"], "result":"0x3039"}).to_string();
+                        let reply = format!("HTTP/1.1 200 OK\r\nContent-Type: application/json\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{}", body.len(), body);
+                        healthy.write_all(reply.as_bytes()).await.unwrap();
+                        break;
+                    }
+                }
+            }
+            drop(silent);
+        });
+        let client = HttpChainClient::new(
+            &url,
+            Address::ZERO,
+            Address::ZERO,
+            None,
+            None,
+            None,
+            Duration::from_millis(1),
+            0,
+            1_000_000,
+        )
+        .unwrap();
+        let outcome = tokio::time::timeout(Duration::from_secs(40), async {
+            let first = client.chain_id();
+            let (first, _) = tokio::join!(first, observed);
+            assert!(
+                first.is_err(),
+                "a silent peer must return a transport failure"
+            );
+            assert_eq!(client.chain_id().await.unwrap(), 12345);
+        })
+        .await;
+        server.abort();
+        let _ = server.await;
+        outcome.expect("the real production request deadline must release a silent connection");
+    }
 
     #[test]
     fn filter_builder_sets_addresses_and_block_bounds() {
