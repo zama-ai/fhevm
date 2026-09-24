@@ -1,4 +1,4 @@
-//! Config structs of the aggregator (deserialised by `settings.rs`) and their validation.
+//! Config structs of the aggregator (deserialised by `config.rs`) and their validation.
 
 use std::time::Duration;
 

@@ -56,10 +56,10 @@ mod tests {
     use tracing_subscriber::layer::SubscriberExt;
 
     use super::*;
+    use crate::config::HttpConfig;
     use crate::kms_aggregator::mock::{Fixed, MockClient, Reply};
     use crate::kms_aggregator::{Aggregator, UserChecks};
     use crate::logging::Log;
-    use crate::settings::HttpConfig;
 
     /// 13 mock nodes answering `reply`, thresholds 9 (user) and 5 (public), a 2 s deadline.
     fn app(reply: Reply, shutdown: CancellationToken) -> App {
@@ -393,7 +393,7 @@ mod tests {
         assert_eq!(lines[5]["fields"]["status"], 400);
         assert_eq!(lines[5]["fields"]["code"], "malformed");
 
-        // Unparseable body: nothing is known but the request id and the flow.
+        // unparsable body: nothing is known but the request id and the flow.
         let bad = &lines[6];
         assert_eq!(bad["fields"]["flow"], "public_decrypt");
         assert_eq!(bad["fields"]["handles"], "none");

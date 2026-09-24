@@ -7,7 +7,7 @@
 
 use std::process::ExitCode;
 
-use relayer_http::{App, endpoint, logging, settings::Settings};
+use relayer_http::{App, config::RelayerConfig, endpoint, logging};
 use tokio::signal::unix::{SignalKind, signal};
 use tokio_util::sync::CancellationToken;
 use tracing::{error, info};
@@ -17,16 +17,16 @@ async fn main() -> ExitCode {
     let path = std::env::args()
         .nth(1)
         .unwrap_or_else(|| "config/config.yaml".to_owned());
-    let settings = match Settings::load(&path) {
-        Ok(settings) => settings,
+    let config = match RelayerConfig::load(&path) {
+        Ok(config) => config,
         Err(e) => {
             eprintln!("invalid configuration: {e}");
             return ExitCode::FAILURE;
         }
     };
-    logging::init(&settings.log);
+    logging::init(&config.log);
     let shutdown = CancellationToken::new();
-    let app = match App::new(&settings, shutdown.clone()) {
+    let app = match App::new(&config, shutdown.clone()) {
         Ok(app) => app,
         Err(e) => {
             error!(error = %e, "startup failed");
@@ -34,9 +34,9 @@ async fn main() -> ExitCode {
         }
     };
     info!(
-        name = %settings.name,
-        endpoint = %settings.http.endpoint,
-        nodes = settings.kms_aggregator.endpoints.len(),
+        name = %config.name,
+        endpoint = %config.http.endpoint,
+        nodes = config.kms_aggregator.endpoints.len(),
         "relayer-http started"
     );
 

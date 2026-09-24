@@ -23,9 +23,9 @@ relayer-http/
 ├── .gitignore                                     # target/, config/*.local.yaml (local variants of the configuration)
 ├── config/config.yaml                             # example configuration: name, log, http, kms_aggregator
 └── crates/relayer-http/src/
-    ├── main.rs                # load settings → init logging → App → serve until SIGINT/SIGTERM → drain → exit
-    ├── lib.rs                 # App: the one shared state (both aggregators, http settings, shutdown token)
-    ├── settings.rs            # Settings, LogConfig, HttpConfig: YAML + APP_<SECTION>__<FIELD> overrides
+    ├── main.rs                # load config → init logging → App → serve until SIGINT/SIGTERM → drain → exit
+    ├── lib.rs                 # App: the one shared state (both aggregators, http config, shutdown token)
+    ├── config.rs              # RelayerConfig, LogConfig, HttpConfig: YAML + APP_<SECTION>__<FIELD> overrides
     ├── logging.rs             # tracing subscriber (json | pretty | compact, RUST_LOG) + Log: one request's identifiers on every line
     ├── endpoint/              # the HTTP layer; start with its docs.md
     │   ├── mod.rs             # router() and serve()

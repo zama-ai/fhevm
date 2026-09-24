@@ -5,7 +5,7 @@ use alloy::primitives::B256;
 use tracing::info;
 use tracing_subscriber::{EnvFilter, Layer, fmt, layer::SubscriberExt, util::SubscriberInitExt};
 
-use crate::settings::LogConfig;
+use crate::config::LogConfig;
 
 /// Level filter when `RUST_LOG` is not set: `warn` for dependencies, `info` for this crate.
 pub const DEFAULT_FILTER: &str = "warn,relayer_http=info";
