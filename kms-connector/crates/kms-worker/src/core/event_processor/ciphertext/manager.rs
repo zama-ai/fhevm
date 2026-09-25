@@ -200,7 +200,7 @@ mod tests {
         ResolvedHandle {
             key_id,
             ciphertext: TypedCiphertext {
-                ciphertext: vec![handle_byte],
+                ciphertext: vec![handle_byte].into(),
                 external_handle: vec![handle_byte; 32],
                 fhe_type: handle_byte as i32,
                 ciphertext_format: 0,
