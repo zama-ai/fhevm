@@ -77,7 +77,10 @@ DECLARATIONS: dict[str, dict[str, Any]] = {
     },
     "pause": {
         "capability": "Governance",
-        "signers": {"pauser": "a key with an enabled `PauserRecord`; it can set pause flags, not clear them"},
+        "signers": {
+            "pauser": "a key with an enabled `PauserRecord`; it can set pause flags, not clear them; "
+            "a wallet must call at the top level, a PDA may call through CPI",
+        },
     },
     "unpause": {"capability": "Governance", "signers": {"admin": ADMIN}},
     "set_pauser": {"capability": "Governance", "signers": {"payer": PAYER, "admin": ADMIN}},

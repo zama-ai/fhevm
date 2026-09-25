@@ -7,8 +7,14 @@
 
 use anchor_lang::solana_program::bpf_loader_upgradeable;
 use anchor_lang::{prelude::system_program, InstructionData};
+use delegator_vault as vault;
 use mollusk_svm::result::Check;
-use solana_sdk::{account::Account, instruction::Instruction, pubkey::Pubkey};
+use solana_sdk::{
+    account::Account,
+    instruction::Instruction,
+    pubkey::Pubkey,
+    signature::{Keypair, Signer},
+};
 use zama_host::{self as host, errors::ZamaHostError};
 use zama_solana_test_kit::{
     account_is_system_owned_and_empty, anchor_error_check, anchor_framework_error_check, anchor_ix,
@@ -364,10 +370,11 @@ fn mollusk_only_the_admin_sets_pausers() {
     );
 }
 
+/// A wallet pauser pauses at the top level.
 #[test]
 fn mollusk_a_pauser_pauses_and_only_the_admin_unpauses() {
     let admin = Pubkey::new_unique();
-    let pauser = Pubkey::new_unique();
+    let pauser = Keypair::new().pubkey();
     let (host_config, account) = host_config_account(admin);
     let context = mollusk_execute_context(
         admin,
@@ -410,6 +417,86 @@ fn mollusk_a_pauser_pauses_and_only_the_admin_unpauses() {
             ..host::PauseFlags::ALL
         }
     );
+}
+
+/// The host program's account, so that the vault can name it as a CPI callee.
+fn host_program_account() -> Account {
+    Account {
+        lamports: 1,
+        data: Vec::new(),
+        owner: solana_sdk::bpf_loader::ID,
+        executable: true,
+        rent_epoch: 0,
+    }
+}
+
+fn vault_context(accounts: Vec<(Pubkey, Account)>) -> Ctx {
+    let mut mollusk = zama_solana_test_kit::svm(&vault::id(), "delegator_vault");
+    mollusk.add_program(&host::id(), "zama_host");
+    let mut store: std::collections::HashMap<Pubkey, Account> = accounts.into_iter().collect();
+    store.insert(host::id(), host_program_account());
+    mollusk.with_context(store)
+}
+
+/// A program the pauser calls cannot pause the host in the pauser's name. `check_cpi_return`
+/// forwards every account with its signer flag, as a malicious program would, so the wallet's
+/// signature reaches the host and only the top-level rule stops the pause.
+#[test]
+fn mollusk_a_wallet_pause_forwarded_through_another_program_is_rejected() {
+    let admin = Pubkey::new_unique();
+    let pauser = Keypair::new().pubkey();
+    let (host_config, account) = host_config_account(admin);
+    let context = vault_context(vec![
+        (host_config, account),
+        (pauser, funded_system_account()),
+        zama_solana_test_kit::pauser_record_account(pauser, true),
+    ]);
+    let pause = pause_ix(pauser, host_config, EXECUTION);
+    let mut forwarded = anchor_ix(
+        vault::id(),
+        vault::accounts::CheckCpiReturn { callee: host::id() },
+        vault::instruction::CheckCpiReturn {
+            instruction_data: pause.data,
+            expected: Vec::new(),
+        },
+    );
+    forwarded.accounts.extend(pause.accounts);
+
+    context.process_and_validate_instruction(
+        &forwarded,
+        &[custom_error(ZamaHostError::WalletPauseThroughCpi)],
+    );
+    assert_eq!(paused(&context, host_config), host::PauseFlags::default());
+}
+
+/// A PDA pauser, such as a Squads vault, pauses through CPI: only its own program can sign for
+/// it, with `invoke_signed`.
+#[test]
+fn mollusk_a_vault_pda_pauses_through_cpi() {
+    let admin = Pubkey::new_unique();
+    let executor = Pubkey::new_unique();
+    let (vault_pda, _) = vault::vault_address(executor);
+    let (host_config, account) = host_config_account(admin);
+    let context = vault_context(vec![
+        (host_config, account),
+        (executor, funded_system_account()),
+        zama_solana_test_kit::pauser_record_account(vault_pda, true),
+    ]);
+    let pause = anchor_ix(
+        vault::id(),
+        vault::accounts::VaultPause {
+            executor,
+            vault: vault_pda,
+            pauser_record: host::pauser_address(vault_pda).0,
+            host_config,
+            event_authority: event_authority(host::id()),
+            zama_host: host::id(),
+        },
+        vault::instruction::PauseViaVault { areas: EXECUTION },
+    );
+
+    context.process_and_validate_instruction(&pause, &[Check::success()]);
+    assert_eq!(paused(&context, host_config), EXECUTION);
 }
 
 #[test]

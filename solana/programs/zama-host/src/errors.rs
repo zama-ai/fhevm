@@ -310,6 +310,10 @@ pub enum ZamaHostError {
     /// The pauser record is not the canonical PDA of the pauser, or is malformed.
     #[msg("pauser record mismatch")]
     PauserRecordMismatch,
+    /// A wallet pauser called `pause` through CPI. Its signature reaches every program of the
+    /// transaction it signed, so it must pause at the top level.
+    #[msg("a wallet pauser must pause in a top-level instruction")]
+    WalletPauseThroughCpi,
     /// A create named the wildcard application's sentinel as the store's scope. The sentinel is
     /// only ever a delegation row's whole application, never half of a store's.
     #[msg("encrypted store scope is the wildcard sentinel")]

@@ -1,11 +1,12 @@
 //! Test-only program-controlled delegator: a vault-like PDA that grants and revokes
-//! user-decryption delegations via CPI.
+//! user-decryption delegations via CPI, and pauses the host as a pauser.
 //!
 //! The smallest shape of the multisig model the delegation design targets: the delegator is not
 //! a wallet but a PDA of another program, and the host's `delegator: Signer` requirement is
 //! satisfied by `invoke_signed` — exactly what a Squads vault does when a proposal executes.
 //! This program exists for the Mollusk CPI cases in
-//! `runtime-tests/tests/user_decryption_delegation_mollusk.rs` and is deployed nowhere.
+//! `runtime-tests/tests/user_decryption_delegation_mollusk.rs` and
+//! `runtime-tests/tests/host_admin_mollusk.rs`, and is deployed nowhere.
 //!
 //! The CPI is assembled by hand — accounts struct, `Instruction`, `invoke_signed` — following
 //! `zama-fhe/src/cpi.rs`, the pattern the production consumers use.
@@ -148,6 +149,31 @@ pub mod delegator_vault {
         invoke_signed(&instruction, &infos, &[seeds])?;
         Ok(())
     }
+
+    /// Sets host pause flags with the executor's vault PDA as the pauser.
+    pub fn pause_via_vault(
+        ctx: Context<VaultPause>,
+        areas: zama_host::PauseFlags,
+    ) -> Result<()> {
+        let cpi_accounts = zama_host::cpi::accounts::Pause {
+            pauser: ctx.accounts.vault.to_account_info(),
+            pauser_record: ctx.accounts.pauser_record.to_account_info(),
+            host_config: ctx.accounts.host_config.to_account_info(),
+            event_authority: ctx.accounts.event_authority.to_account_info(),
+            program: ctx.accounts.zama_host.to_account_info(),
+        };
+        let instruction = Instruction {
+            program_id: ctx.accounts.zama_host.key(),
+            accounts: cpi_accounts.to_account_metas(None),
+            data: zama_host::instruction::Pause { areas }.data(),
+        };
+        let infos = cpi_accounts.to_account_infos();
+        let executor = ctx.accounts.executor.key();
+        let bump = [ctx.bumps.vault];
+        let seeds: &[&[u8]] = &[VAULT_SEED, executor.as_ref(), &bump];
+        invoke_signed(&instruction, &infos, &[seeds])?;
+        Ok(())
+    }
 }
 
 /// One account set serves both instructions; the revoke simply ignores the system program.
@@ -167,6 +193,23 @@ pub struct VaultDelegation<'info> {
     pub delegation_record: UncheckedAccount<'info>,
     pub zama_host: Program<'info, ZamaHost>,
     pub system_program: Program<'info, System>,
+}
+
+/// The vault pausing the host.
+#[derive(Accounts)]
+pub struct VaultPause<'info> {
+    pub executor: Signer<'info>,
+    /// CHECK: the executor's own vault PDA, held to its seeds here; it signs the CPI as the pauser.
+    #[account(seeds = [VAULT_SEED, executor.key().as_ref()], bump)]
+    pub vault: UncheckedAccount<'info>,
+    /// CHECK: validated by the host program against the vault's pauser PDA.
+    pub pauser_record: UncheckedAccount<'info>,
+    /// CHECK: validated by the host program against its own seeds.
+    #[account(mut)]
+    pub host_config: UncheckedAccount<'info>,
+    /// CHECK: validated by the host program's event CPI.
+    pub event_authority: UncheckedAccount<'info>,
+    pub zama_host: Program<'info, ZamaHost>,
 }
 
 /// Accounts forwarded to the host in the nested-close negative test.
