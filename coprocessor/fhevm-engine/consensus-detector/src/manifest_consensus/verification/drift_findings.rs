@@ -672,6 +672,9 @@ fn intersect_window(scope: &CommitmentScope, window: HistoricalWindow) -> Option
 // Preserve status distinctions: the digest-presence booleans cannot distinguish
 // an absent handle from an errored or uncomputed descriptor. For multiple
 // differences, absence/status comes first, then ct64, metadata, and ct128.
+// An invalid descriptor still carries its digests, so it is classified like a
+// computed one: a different ct64 is ct64 drift that can propagate, and an equal
+// ct64 leaves a metadata-only difference.
 fn drift_reason(
     local: Option<&BlockCiphertextDescriptor>,
     observed: Option<&BlockCiphertextDescriptor>,
@@ -684,20 +687,18 @@ fn drift_reason(
         (Some(CiphertextStatus::Uncomputed), _) => "uncomputed_here",
         (_, Some(CiphertextStatus::Uncomputed)) => "uncomputed_on_peer",
         (
-            Some(CiphertextStatus::Computed {
-                ct64_digest: local_ct64,
-                keyset_id: local_key,
-                ..
-            }),
-            Some(CiphertextStatus::Computed {
-                ct64_digest: peer_ct64,
-                keyset_id: peer_key,
-                ..
-            }),
+            Some(CiphertextStatus::Computed { .. } | CiphertextStatus::InvalidDescriptor { .. }),
+            Some(CiphertextStatus::Computed { .. } | CiphertextStatus::InvalidDescriptor { .. }),
         ) => {
-            if local_ct64 != peer_ct64 {
+            let (local, observed) = (
+                local.expect("matched Some"),
+                observed.expect("matched Some"),
+            );
+            if local.ct64_digest() != observed.ct64_digest() {
                 "ct64_mismatch"
-            } else if local_key != peer_key {
+            } else if local.keyset_id() != observed.keyset_id()
+                || local.is_invalid_descriptor() != observed.is_invalid_descriptor()
+            {
                 "metadata_mismatch"
             } else {
                 "ct128_mismatch"
@@ -909,6 +910,38 @@ mod reason_tests {
     }
 
     #[test]
+    fn invalid_descriptor_is_ct64_drift_only_when_its_ct64_differs() {
+        let h = B256::repeat_byte(1);
+        let computed = BlockCiphertextDescriptor::computed(
+            h,
+            U256::ONE,
+            None,
+            B256::repeat_byte(1),
+            B256::repeat_byte(1),
+            CiphertextFormat::CompressedOnCpu,
+        );
+        let invalid = |ct64: u8, ct128: u8| {
+            BlockCiphertextDescriptor::from_invalid_descriptor(
+                h,
+                B256::repeat_byte(ct64),
+                B256::repeat_byte(ct128),
+                Some("unknown ct128 format".to_owned()),
+            )
+        };
+        for (local, peer, expected) in [
+            // A wrong ct64 can have propagated: contain and heal it.
+            (invalid(2, 1), computed.clone(), "ct64_mismatch"),
+            (computed.clone(), invalid(2, 1), "ct64_mismatch"),
+            // Same ct64: only the descriptor differs.
+            (invalid(1, 1), computed.clone(), "metadata_mismatch"),
+            (computed, invalid(1, 1), "metadata_mismatch"),
+            (invalid(1, 1), invalid(1, 2), "ct128_mismatch"),
+        ] {
+            assert_eq!(drift_reason(Some(&local), Some(&peer)), expected);
+        }
+    }
+
+    #[test]
     fn reasons_distinguish_absence_status_and_material() {
         let h = B256::repeat_byte(1);
         let computed = BlockCiphertextDescriptor::computed(
@@ -1022,13 +1055,8 @@ mod reason_tests {
         ];
         let local_block = test_block(local);
         let observed_block = test_block(observed);
-        let findings = compare_blocks(
-            [&local_block],
-            [&observed_block],
-            "legacy",
-            true,
-        )
-        .expect("compare provenance-mixed blocks");
+        let findings = compare_blocks([&local_block], [&observed_block], "legacy", true)
+            .expect("compare provenance-mixed blocks");
         assert_eq!(findings.len(), 1);
         assert_eq!(findings[0].handle, drifted);
     }

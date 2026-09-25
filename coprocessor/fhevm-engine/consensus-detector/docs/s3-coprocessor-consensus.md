@@ -502,7 +502,7 @@ Each newly generated allowed handle has one descriptor:
 
 ```text
 handle:  bytes32
-status:  computed | error | uncomputed
+status:  computed | error | uncomputed | invalid_descriptor
 ```
 
 `computed` then carries:
@@ -516,6 +516,13 @@ ct128_format:     uint8
 ```
 
 `error` may carry `error_message?`. `uncomputed` has no further fields.
+`invalid_descriptor` carries:
+
+```text
+ct64_digest:   bytes32
+ct128_digest:  bytes32
+reason?:       string
+```
 
 Descriptors are strictly ordered by raw handle. Duplicates and unsorted lists are
 invalid.
@@ -526,6 +533,16 @@ material.
 
 `status: uncomputed` is set when sealing proceeds after the incomplete-block timeout
 and incomplete-manifest lag with no ciphertext for that handle.
+
+`status: invalid_descriptor` is set for a computed handle whose descriptor cannot
+be derived locally: no keyset maps its Gateway key id, or its ct128 format is
+unknown. Sealing it this way keeps the chain publishing instead of retrying the
+block forever. Both digests are still committed, so verification compares the
+ct64: a different ct64 is `ct64_mismatch`, which is contained and healed like any
+ct64 drift because consumers may have read it; an equal ct64 leaves a
+`metadata_mismatch` or `ct128_mismatch`, which does not freeze computation.
+`reason` is signed diagnostic text, excluded from the block content digest.
+Invalid digest or handle lengths are still publication errors.
 
 `error_message` is the exact `computations.error_message` for a failed handle.
 It is signed with the manifest body and omitted from JSON when absent. It is
@@ -557,11 +574,12 @@ A = keccak256(
     )
 ```
 
-The descriptor contribution contains `handle` and two exclusive flags derived
-from `status` (`error`, `uncomputed`). Successful descriptors then contribute
-`keyset_id`, both ciphertext digests, and `ct128_format`. Error and uncomputed
-descriptors contribute only the handle and those flags. The digest excludes
-`error_message`, `gateway_key_id`, publisher identity,
+The descriptor contribution contains `handle` and two flags derived from
+`status` (`error`, `uncomputed`; both set for `invalid_descriptor`). Successful
+descriptors then contribute `keyset_id`, both ciphertext digests, and
+`ct128_format`. Invalid descriptors contribute both ciphertext digests. Error and
+uncomputed descriptors contribute only the handle and those flags. The digest
+excludes `error_message`, `reason`, `gateway_key_id`, publisher identity,
 transactions, timestamps, object keys, and transport checksums.
 
 An empty block uses `block_handle_count = 0` and hashes the complete header. It never
