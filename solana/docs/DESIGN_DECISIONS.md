@@ -2429,7 +2429,9 @@ from then until ingestion catches up. The newest leaf sits in the smallest mount
 stale first, and anyone can append to a Store with a zero-value transfer. The connector takes the
 first proof that verifies from any coprocessor, so this costs nothing while one of them ingests;
 while every coprocessor's ingestion is stopped, a Store someone keeps appending to cannot be
-decrypted, and the connector's recoverable failure clears once one catches up. A grant made after
+decrypted until one catches up. The connector retries a Gateway request up to
+`max_decryption_attempts` (20 by default) before marking it failed, and an HTTP caller gets
+`acl_denied` and resubmits. A grant made after
 the stop has no proof until ingestion catches up. `ingestion_serves_no_proofs` pins that the health
 router, the only one the listener serves, has no proof route, and
 `ci/preview-env/solana-host/test_charts.py` pins the two Deployments.
