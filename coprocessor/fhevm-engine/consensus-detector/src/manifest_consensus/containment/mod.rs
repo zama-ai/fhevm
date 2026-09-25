@@ -12,6 +12,7 @@
 //! epoch's copy of the same handle.
 
 use std::collections::{BTreeMap, BTreeSet, HashMap};
+use std::time::Duration;
 
 use anyhow::{ensure, Context, Result};
 use fhevm_engine_common::database::GCS_SCHEMA_PREFIX;
@@ -20,6 +21,14 @@ use sqlx::{PgPool, Postgres, Transaction};
 use tracing::error;
 
 pub use fhevm_engine_common::drift_containment::DRIFT_CONTAINMENT_BARRIER;
+
+mod metrics;
+
+/// Longest wait for running TFHE batches before the exclusive pass gives up.
+/// New batches queue behind the request, so a normal wait is bounded by the
+/// longest batch already running. Only a stuck batch reaches this timeout; the
+/// findings then stay uncontained until the next verification retries.
+const BARRIER_LOCK_TIMEOUT: Duration = Duration::from_secs(60);
 
 type BlockHash = Vec<u8>;
 type ContextId = Vec<u8>;
@@ -174,6 +183,13 @@ struct InferredFinding {
 /// fails, the optimistic findings remain committed and uncontained.
 /// The reactive caller invokes this when an uncontained ct64 finding remains.
 pub async fn enforce_guaranteed_containment(pool: &PgPool) -> Result<PropagationResult> {
+    enforce_guaranteed_containment_with(pool, BARRIER_LOCK_TIMEOUT).await
+}
+
+async fn enforce_guaranteed_containment_with(
+    pool: &PgPool,
+    barrier_lock_timeout: Duration,
+) -> Result<PropagationResult> {
     // optimistic pass, take no lock so it can cancel the in-fligh computation at write.
     let mut optimistic_trx = pool.begin().await?;
     lock_cutover(&mut optimistic_trx).await?;
@@ -190,7 +206,21 @@ pub async fn enforce_guaranteed_containment(pool: &PgPool) -> Result<Propagation
     lock_cutover(&mut guaranteed_trx).await?;
     // this mutually exclude any in flight computation,
     // it can wait for ongoing computation to finish
-    fhevm_engine_common::drift_containment::block_ct_computations(&mut guaranteed_trx).await?;
+    set_local_lock_timeout(&mut guaranteed_trx, barrier_lock_timeout).await?;
+    if let Err(error) =
+        fhevm_engine_common::drift_containment::block_ct_computations(&mut guaranteed_trx).await
+    {
+        if is_lock_timeout(&error) {
+            metrics::BARRIER_LOCK_TIMEOUT.inc();
+            error!(
+                timeout = ?barrier_lock_timeout,
+                "Drift containment timed out waiting for running TFHE batches; a batch is stuck and ct64 drift stays uncontained"
+            );
+        }
+        return Err(error.into());
+    }
+    // The timeout bounds only the barrier wait, not the protected scan.
+    set_local_lock_timeout(&mut guaranteed_trx, Duration::ZERO).await?;
     let protected = propagate_drift(&mut guaranteed_trx, true).await?;
     guaranteed_trx.commit().await?;
     result.inferred_handles += protected.inferred_handles;
@@ -212,6 +242,25 @@ async fn log_unless_read_committed(trx: &mut Transaction<'_, Postgres>) -> Resul
         );
     }
     Ok(())
+}
+
+async fn set_local_lock_timeout(
+    trx: &mut Transaction<'_, Postgres>,
+    timeout: Duration,
+) -> Result<()> {
+    let timeout = format!("{}ms", timeout.as_millis());
+    sqlx::query!("SELECT set_config('lock_timeout', $1, TRUE)", timeout)
+        .fetch_one(trx.as_mut())
+        .await?;
+    Ok(())
+}
+
+fn is_lock_timeout(error: &sqlx::Error) -> bool {
+    error
+        .as_database_error()
+        .and_then(|error| error.code())
+        .as_deref()
+        == Some("55P03")
 }
 
 async fn lock_cutover(trx: &mut Transaction<'_, Postgres>) -> Result<()> {
