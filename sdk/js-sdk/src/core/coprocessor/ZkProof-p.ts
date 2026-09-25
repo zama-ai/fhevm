@@ -13,7 +13,6 @@ import type { ErrorMetadataParams } from '../base/errors/ErrorBase.js';
 import type { EncryptionBits, FheTypeId } from '../types/fheType.js';
 import type { ParseTFHEProvenCompactCiphertextListModuleFunction } from '../modules/encrypt/types.js';
 import type { InputHandle } from '../types/encryptedTypes-p.js';
-import type { TfheVersion } from '../../wasm/tfhe/TfheApi.js';
 import {
   addressToChecksummedAddress,
   assertIsAddress,
@@ -233,7 +232,6 @@ export async function toZkProof(
   options?: {
     readonly zkProofParser?: {
       readonly parserFn: ParseTFHEProvenCompactCiphertextListModuleFunction;
-      readonly tfheVersion: TfheVersion;
     };
     readonly copy?: boolean;
   },
@@ -296,7 +294,6 @@ export async function zkProofToExternalEncryptedValues(
     readonly version?: number;
     readonly zkProofParser?: {
       readonly parserFn: ParseTFHEProvenCompactCiphertextListModuleFunction;
-      readonly tfheVersion: TfheVersion;
     };
   },
 ): Promise<readonly InputHandle[]> {
@@ -406,7 +403,6 @@ async function _getOrParseEncryptionBits(
   ciphertextWithZkProof: Uint8Array | string,
   zkProofParser?: {
     readonly parserFn: ParseTFHEProvenCompactCiphertextListModuleFunction;
-    readonly tfheVersion: TfheVersion;
   },
 ): Promise<readonly EncryptionBits[]> {
   // Case 1: encryptionBits provided — validate, and verify against parsed if possible
@@ -418,7 +414,6 @@ async function _getOrParseEncryptionBits(
     if (zkProofParser != null) {
       const parsed = await zkProofParser.parserFn.parseTFHEProvenCompactCiphertextList({
         ciphertextWithZkProof: ciphertextWithZkProof,
-        tfheVersion: zkProofParser.tfheVersion,
       });
       _assertEncryptionBitsMatch(parsed.encryptionBits, encryptionBits);
     }
@@ -430,7 +425,6 @@ async function _getOrParseEncryptionBits(
   if (zkProofParser != null) {
     const parsed = await zkProofParser.parserFn.parseTFHEProvenCompactCiphertextList({
       ciphertextWithZkProof: ciphertextWithZkProof,
-      tfheVersion: zkProofParser.tfheVersion,
     });
     return parsed.encryptionBits;
   }

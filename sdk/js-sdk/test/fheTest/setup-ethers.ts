@@ -5,7 +5,6 @@ import type {
   createFhevmEncryptClient as createEthersFhevmEncryptClient,
 } from '@fhevm/sdk/ethers';
 import type { FhevmDecryptOptions, FhevmEncryptOptions, FhevmOptions } from '../../src/core/types/coreFhevmClient.js';
-import type { FhevmModuleVersions } from '../../src/core/types/moduleVersions.js';
 import type { FheTestBaseEnv, FheTestChainName } from './setupCommon.js';
 import { ethers } from 'ethers';
 import { FHETestABI } from './FheTest-abi-v2.js';
@@ -54,7 +53,6 @@ export type FheTestEthersConfig = {
   readonly fheTestAddress: string;
   readonly fheTestContract: ethers.Contract;
   readonly fheEncryptionKeyTfheVersion: string;
-  readonly moduleVersions?: FhevmModuleVersions | undefined;
 };
 
 type CreateEthersClientParameters = {
@@ -121,7 +119,6 @@ function _buildConfig(env: FheTestBaseEnv): FheTestEthersConfig {
     fheTestAddress: env.fheTestAddress,
     fheTestContract,
     fheEncryptionKeyTfheVersion: env.fheEncryptionKeyTfheVersion,
-    moduleVersions: env.moduleVersions,
   };
 }
 
@@ -148,52 +145,4 @@ export function areAllEthersTestConfigsCleartext(): boolean {
 
 export function isMultichain(): boolean {
   return getEthersTestConfigs().length > 1;
-}
-
-export function getEthersClientOptions(
-  config: FheTestEthersConfig,
-  moduleVersions: FhevmModuleVersions | undefined = config.moduleVersions,
-): FhevmOptions | undefined {
-  return moduleVersions === undefined ? undefined : { moduleVersions };
-}
-
-export function getEthersEncryptClientOptions(
-  config: FheTestEthersConfig,
-  moduleVersions: FhevmModuleVersions | undefined = config.moduleVersions,
-): FhevmEncryptOptions | undefined {
-  if (moduleVersions === undefined) {
-    return undefined;
-  }
-  if (moduleVersions === 'auto') {
-    return { moduleVersions };
-  }
-  if (moduleVersions.tfhe === undefined && moduleVersions.checkCompatibility === undefined) {
-    return undefined;
-  }
-  return {
-    moduleVersions: {
-      tfhe: moduleVersions.tfhe,
-      checkCompatibility: moduleVersions.checkCompatibility,
-    },
-  };
-}
-
-export function getEthersDecryptClientOptions(
-  moduleVersions: FhevmModuleVersions | undefined,
-): FhevmDecryptOptions | undefined {
-  if (moduleVersions === undefined) {
-    return undefined;
-  }
-  if (moduleVersions === 'auto') {
-    return { moduleVersions };
-  }
-  if (moduleVersions.kms === undefined && moduleVersions.checkCompatibility === undefined) {
-    return undefined;
-  }
-  return {
-    moduleVersions: {
-      kms: moduleVersions.kms,
-      checkCompatibility: moduleVersions.checkCompatibility,
-    },
-  };
 }

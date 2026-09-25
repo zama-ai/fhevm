@@ -46,7 +46,7 @@ async fn test_healthcheck_endpoints() -> anyhow::Result<()> {
     ))?);
     let cancel_token = CancellationToken::new();
     let monitoring_server_task =
-        start_monitoring_server(monitoring_endpoint, state, cancel_token.clone());
+        start_monitoring_server(monitoring_endpoint, state, cancel_token.clone())?;
 
     // Wait for the start of the monitoring server
     test_instance

@@ -47,6 +47,8 @@ jobs:
   is-latest-commit:
     uses: ./.github/workflows/is-latest-commit.yml
     if: github.event_name == 'push'
+    permissions:
+      contents: 'read' # Required so the reusable workflow can git ls-remote
 
   # On `release` events, resolve the npm-compatible SDK version from the
   # release tag (e.g. `v0.14.1-0` -> `0.14.1-0`) so the docker build can

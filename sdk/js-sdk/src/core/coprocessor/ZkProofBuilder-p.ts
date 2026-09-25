@@ -16,7 +16,6 @@ import type {
   AddressValueLike,
 } from '../types/primitives.js';
 import type { SolanaZkProof } from './SolanaZkProof-p.js';
-import type { TfheVersion } from '../../wasm/tfhe/TfheApi.js';
 import type { FhevmClientFrozenContext } from '../types/fhevmClientFrozenContext-p.js';
 import { assert } from '../base/errors/InternalError.js';
 import { isUint64 } from '../base/uint.js';
@@ -35,7 +34,6 @@ import { createFhevmClientFrozenContext } from '../frozenContext/fhevmClientFroz
 type Context = {
   readonly chain: FhevmChain;
   readonly runtime: WithEncrypt;
-  readonly tfheVersion?: TfheVersion;
 };
 
 ////////////////////////////////////////////////////////////////////////////////
@@ -220,7 +218,7 @@ class ZkProofBuilderImpl implements ZkProofBuilder {
       contractAddress,
       userAddress,
       asBytesHex('0x00'),
-      createFhevmClientFrozenContext({ tfheVersion: context.tfheVersion }),
+      createFhevmClientFrozenContext({}),
     );
 
     if (!isSolanaHostChainId(chainId)) {
@@ -301,7 +299,6 @@ class ZkProofBuilderImpl implements ZkProofBuilder {
         fheEncryptionKey: fheEncryptionKeyWasm,
         metaData,
         extraData: asBytesHex(extraData),
-        tfheVersion: fhevmContext.tfheVersion,
       });
 
     return {

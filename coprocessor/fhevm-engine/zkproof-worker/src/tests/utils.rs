@@ -21,8 +21,8 @@ use crate::verifier::MAX_CACHED_KEYS;
 
 #[derive(Clone)]
 pub(crate) struct ProofMaterial {
-    key: DbKey,
-    crs: Crs,
+    pub(crate) key: DbKey,
+    pub(crate) crs: Crs,
 }
 
 pub async fn setup() -> anyhow::Result<(PostgresPoolManager, DBInstance, ProofMaterial)> {
@@ -72,6 +72,7 @@ pub async fn setup() -> anyhow::Result<(PostgresPoolManager, DBInstance, ProofMa
         crate::verifier::execute_verify_proofs_loop(
             pmngr,
             conf.clone(),
+            fhevm_engine_common::versioning::StackMode::new(false),
             last_active_at.clone(),
             start_block_state,
         )
@@ -247,6 +248,9 @@ pub(crate) async fn compress_inputs_without_rerandomization(
     }
 
     tokio::task::spawn_blocking(move || {
+        #[cfg(feature = "gpu")]
+        tfhe::set_server_key(latest_key.gpu_sks[0].clone());
+        #[cfg(not(feature = "gpu"))]
         tfhe::set_server_key(latest_key.sks);
         let expanded = verified_list.expand_without_verification()?;
         let cts = extract_ct_list(&expanded)?;
@@ -261,6 +265,8 @@ pub(crate) async fn compress_inputs_without_rerandomization(
 /// the verified compact list seeded from the blob hash, expand, then compress.
 /// Must stay in lockstep with `crate::verifier::verify_proof` — the test
 /// compares its output bitwise against the stored ciphertexts.
+/// Use the build's backend: CPU and CUDA ciphertext bytes can differ even
+/// with the same plaintext, keys and re-randomization seed.
 pub(crate) async fn compress_inputs_with_compact_list_rerandomization(
     material: &ProofMaterial,
     raw_ct: &[u8],
@@ -283,6 +289,11 @@ pub(crate) async fn compress_inputs_with_compact_list_rerandomization(
     let blob_hash = hasher.finalize().to_vec();
 
     tokio::task::spawn_blocking(move || -> anyhow::Result<Vec<Vec<u8>>> {
+        // Use the last GPU so the standalone test also checks consistency
+        // across devices: the worker's first request selects GPU 0.
+        #[cfg(feature = "gpu")]
+        tfhe::set_server_key(latest_key.gpu_sks.last().unwrap().clone());
+        #[cfg(not(feature = "gpu"))]
         tfhe::set_server_key(latest_key.sks);
 
         let mut re_rand_context = tfhe::ReRandomizationContext::new(

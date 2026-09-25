@@ -227,13 +227,7 @@ spec:
               containerPort: {{ $portValue }}
               protocol: TCP
             {{- end }}
-          resources:
-            requests:
-              cpu: {{ .Values.snsWorker.resources.requests.cpu | default "100m" }}
-              memory: {{ .Values.snsWorker.resources.requests.memory | default "256Mi" }}
-            limits:
-              cpu: {{ .Values.snsWorker.resources.limits.cpu | default "500m" }}
-              memory: {{ .Values.snsWorker.resources.limits.memory | default "512Mi" }}
+          {{- include "coprocessor.containerResources" .Values.snsWorker.resources | nindent 10 }}
           {{- if and .Values.snsWorker.probes .Values.snsWorker.probes.liveness.enabled }}
           livenessProbe:
             {{- toYaml (omit .Values.snsWorker.probes.liveness "enabled") | nindent 12 }}

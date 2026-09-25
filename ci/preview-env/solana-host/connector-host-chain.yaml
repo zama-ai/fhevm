@@ -1,9 +1,0 @@
-# The Solana entry appended to kmsConnectorKmsWorker.config.hostChains of every KMS connector.
-# $(...) placeholders resolve against the env in values-solana-connector-e2e.yaml.
-# deploy-preview.sh fills solanaProofEndpoints with one listener Service per coprocessor.
-- url: "$(SOLANA_RPC_URL)"
-  chainId: "130140237723663404"
-  chainKind: solana
-  solanaHostProgramId: "$(SOLANA_HOST_PROGRAM_ID)"
-  solanaProofEndpoints: []
-  solanaProofApiKey: "$(SOLANA_PROOF_API_KEY)"

@@ -157,13 +157,7 @@ spec:
               containerPort: {{ $portValue }}
               protocol: TCP
             {{- end }}
-          resources:
-            requests:
-              cpu: {{ .Values.zkProofWorker.resources.requests.cpu | default "100m" }}
-              memory: {{ .Values.zkProofWorker.resources.requests.memory | default "256Mi" }}
-            limits:
-              cpu: {{ .Values.zkProofWorker.resources.limits.cpu | default "500m" }}
-              memory: {{ .Values.zkProofWorker.resources.limits.memory | default "512Mi" }}
+          {{- include "coprocessor.containerResources" .Values.zkProofWorker.resources | nindent 10 }}
           {{- if and .Values.zkProofWorker.probes .Values.zkProofWorker.probes.liveness.enabled }}
           livenessProbe:
             {{- toYaml (omit .Values.zkProofWorker.probes.liveness "enabled") | nindent 12 }}

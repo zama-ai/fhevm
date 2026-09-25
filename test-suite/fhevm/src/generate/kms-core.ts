@@ -37,6 +37,7 @@ import {
   kmsPublicPrefix,
   kmsServicePort,
 } from "../kms-party";
+import { kmsCoreImageRepository } from "../compat/compat";
 import type { ResolvedKmsTopology } from "../types";
 import { GENERATED_CONFIG_DIR } from "../layout";
 
@@ -52,11 +53,9 @@ export type KmsRenderOptions = {
 
 /** Render options from the resolved core image version + fhevm minio defaults
  * (the static test credentials from templates/env/.env.minio).
- *
- * The cores run the INSECURE image as only the insecure build allows no `[threshold.tls]` config.
  */
 export const kmsRenderOptionsFor = (coreVersion: string): KmsRenderOptions => ({
-  coreImage: `ghcr.io/zama-ai/kms/core-service-insecure:${coreVersion}`,
+  coreImage: `${kmsCoreImageRepository(coreVersion)}:${coreVersion}`,
   s3Endpoint: "http://minio:9000",
   s3Bucket: "kms-public",
   s3Region: "eu-west-1",

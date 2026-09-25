@@ -7,6 +7,8 @@
 # - Gateway listener (processes gateway events)
 # - KMS worker (communicates with KMS cores)
 # - Transaction sender (submits transactions to gateway)
+# - Endpoint (HTTP decryption interface)
+# - Proxy (TLS termination and API key authentication in front of the endpoints)
 # =============================================================================
 
 # -----------------------------------------------------------------------------
@@ -17,10 +19,11 @@ commonConfig:
   # Database connection string
   databaseUrl: "postgresql://$(DATABASE_ENDPOINT)/connector"
 
-  # Selects a bundled smart contract address preset from
-  # configs/contracts-<network>.yaml. Allowed values: "" (no preset), "devnet",
-  # "testnet", "mainnet". An unrecognized value fails the render. The per-chain
-  # *ContractAddresses below override individual preset entries when set.
+  # Selects a bundled preset from configs/contracts-<network>.yaml: chain ids,
+  # contract addresses and the set of host chains deployed on that network.
+  # Allowed values: "" (no preset), "devnet", "testnet", "mainnet". An
+  # unrecognized value fails the render. The per-chain values below override
+  # individual preset entries when set.
   network: ""
 
   # Gateway chain RPC node endpoint (HTTP)
@@ -32,32 +35,24 @@ commonConfig:
     decryption: ""
     gatewayConfig: ""
 
-  # Ethereum chain RPC node endpoint (HTTP)
-  ethereumUrl: "http://ethereum-node:8545"
-  # Ethereum chain identifier (override the network preset when set)
-  ethereumChainId: ""
-  # Ethereum smart contract addresses (override the network preset when set)
+  # Host chains, keyed by chain name and shared by every component . The preset
+  # selected by `network` decides which chains are deployed and defaults their
+  # chainId / aclAddress. Every deployed chain MUST have its `url` set by the
+  # operator or the render fails.
+  hostChains:
+    ethereum:
+      url: ""
+      chainId: ""
+      aclAddress: ""
+    polygon:
+      url: ""
+      chainId: ""
+      aclAddress: ""
+
   ethereumContractAddresses:
     # ProtocolConfig and KMSGeneration are only listened on Ethereum, not other host chains
     kmsGeneration: ""
     protocolConfig: ""
-    acl: ""
-
-  # Polygon chain RPC node endpoint (HTTP)
-  polygonUrl: "http://polygon-node:8545"
-  # Polygon chain identifier (override the network preset when set)
-  polygonChainId: ""
-  # Polygon smart contract addresses (override the network preset when set)
-  polygonContractAddresses:
-    acl: ""
-
-  # BNB Testnet chain RPC node endpoint (HTTP)
-  bnbTestnetUrl: ""
-  # BNB Testnet chain identifier (override the network preset when set)
-  bnbTestnetChainId: ""
-  # BNB Testnet smart contract addresses (override the network preset when set)
-  bnbTestnetContractAddresses:
-    acl: ""
 
   # Distributed tracing configuration
   tracing:
@@ -94,7 +89,7 @@ kmsConnectorDbMigration:
 
   image:
     name: ghcr.io/zama-ai/fhevm/kms-connector/db-migration
-    tag: v0.10.0
+    tag: v0.15.0
 
   # Command to run database migrations
   command:
@@ -135,7 +130,7 @@ kmsConnectorGwListener:
 
   image:
     name: ghcr.io/zama-ai/fhevm/kms-connector/gw-listener
-    tag: v0.10.0
+    tag: v0.15.0
 
   replicas: 1
 
@@ -174,10 +169,12 @@ kmsConnectorGwListener:
     liveness:
       enabled: true
       httpGet:
-        path: /healthz
+        path: /liveness
         port: monitoring
-      initialDelaySeconds: 10
-      periodSeconds: 10
+      initialDelaySeconds: 60
+      periodSeconds: 15
+      timeoutSeconds: 10
+      failureThreshold: 5
     readiness:
       enabled: true
       httpGet:
@@ -206,7 +203,7 @@ kmsConnectorKmsWorker:
 
   image:
     name: ghcr.io/zama-ai/fhevm/kms-connector/kms-worker
-    tag: v0.10.0
+    tag: v0.15.0
 
   replicas: 1
 
@@ -214,15 +211,6 @@ kmsConnectorKmsWorker:
   config:
     # KMS core endpoints for communication
     kmsCoreEndpoints: "http://kms-core:50051"
-
-    # List of host chain RPC node endpoints, chain ids, and ACL contract addresses
-    hostChains:
-      - url: "$(KMS_CONNECTOR_ETHEREUM_URL)"
-        chainId: "$(KMS_CONNECTOR_ETHEREUM_CHAIN_ID)"
-        aclAddress: "$(KMS_CONNECTOR_ETHEREUM_ACL_ADDRESS)"
-      - url: "$(KMS_CONNECTOR_POLYGON_URL)"
-        chainId: "$(KMS_CONNECTOR_POLYGON_CHAIN_ID)"
-        aclAddress: "$(KMS_CONNECTOR_POLYGON_ACL_ADDRESS)"
 
     # Override commonConfig.gatewayUrl if needed
     # gatewayUrl:
@@ -247,20 +235,22 @@ kmsConnectorKmsWorker:
   resources:
     requests:
       cpu: 100m
-      memory: 256Mi
+      memory: 4Gi
     limits:
       cpu: 500m
-      memory: 512Mi
+      memory: 8Gi
 
   # Health check probes
   probes:
     liveness:
       enabled: true
       httpGet:
-        path: /healthz
+        path: /liveness
         port: monitoring
-      initialDelaySeconds: 10
-      periodSeconds: 10
+      initialDelaySeconds: 60
+      periodSeconds: 15
+      timeoutSeconds: 10
+      failureThreshold: 5
     readiness:
       enabled: true
       httpGet:
@@ -289,7 +279,7 @@ kmsConnectorTxSender:
 
   image:
     name: ghcr.io/zama-ai/fhevm/kms-connector/tx-sender
-    tag: v0.10.0
+    tag: v0.15.0
 
   replicas: 1
 
@@ -340,10 +330,163 @@ kmsConnectorTxSender:
     liveness:
       enabled: true
       httpGet:
+        path: /liveness
+        port: monitoring
+      initialDelaySeconds: 60
+      periodSeconds: 15
+      timeoutSeconds: 10
+      failureThreshold: 5
+    readiness:
+      enabled: true
+      httpGet:
         path: /healthz
         port: monitoring
-      initialDelaySeconds: 10
+      initialDelaySeconds: 5
       periodSeconds: 10
+
+  nodeSelector:
+  affinity:
+  tolerations:
+
+  updateStrategy:
+    type: RollingUpdate
+    rollingUpdate:
+      maxSurge: 1
+      maxUnavailable: 0
+
+# -----------------------------------------------------------------------------
+# Endpoint
+# -----------------------------------------------------------------------------
+# Serves the HTTP decryption interface, reached through the proxy only
+kmsConnectorEndpoint:
+  enabled: true
+  nameOverride:
+
+  image:
+    name: ghcr.io/zama-ai/fhevm/kms-connector/endpoint
+    tag: v0.15.0
+
+  replicas: 1
+
+  # Additional environment variables (KMS_CONNECTOR_* settings of the service)
+  env:
+
+  # Distributed tracing (inherits from commonConfig but can be overridden)
+  tracing:
+    enabled: false
+
+  # Service ports
+  ports:
+    http: 8080
+    monitoring: 9100
+
+  # Prometheus ServiceMonitor for metrics collection
+  serviceMonitor:
+    enabled: false
+
+  serviceAccountName:
+
+  resources:
+    requests:
+      cpu: 250m
+      memory: 512Mi
+    limits:
+      cpu: 1000m
+      memory: 1Gi
+
+  # Health check probes
+  probes:
+    liveness:
+      enabled: true
+      httpGet:
+        path: /liveness
+        port: monitoring
+      initialDelaySeconds: 60
+      periodSeconds: 15
+      timeoutSeconds: 10
+      failureThreshold: 5
+    readiness:
+      enabled: true
+      httpGet:
+        path: /healthz
+        port: monitoring
+      initialDelaySeconds: 5
+      periodSeconds: 10
+
+  nodeSelector:
+  affinity:
+  tolerations:
+
+  updateStrategy:
+    type: RollingUpdate
+    rollingUpdate:
+      maxSurge: 1
+      maxUnavailable: 0
+
+# -----------------------------------------------------------------------------
+# Proxy
+# -----------------------------------------------------------------------------
+# Terminates TLS, authenticates the relayer with an API key and forwards
+# requests to the endpoint Service
+kmsConnectorProxy:
+  enabled: true
+  nameOverride:
+
+  image:
+    name: ghcr.io/zama-ai/fhevm/kms-connector/proxy
+    tag: v0.15.0
+
+  replicas: 1
+
+  # SHA-256 digest of the accepted API key (`printf '%s' "$API_KEY" | sha256sum`),
+  # read from a secret unless `value` is set
+  apiKeyDigest:
+    value: ""
+    secret:
+      name: kms-connector-proxy
+      key: api-key-digest
+
+  # `kubernetes.io/tls` secret (tls.crt, tls.key) served by the proxy, not created by this chart
+  tls:
+    secretName: kms-connector-proxy-tls
+
+  # Additional environment variables (KMS_CONNECTOR_* settings of the service)
+  env:
+
+  # Distributed tracing (inherits from commonConfig but can be overridden)
+  tracing:
+    enabled: false
+
+  # Service ports
+  ports:
+    https: 8443
+    monitoring: 9100
+
+  # Prometheus ServiceMonitor for metrics collection
+  serviceMonitor:
+    enabled: false
+
+  serviceAccountName:
+
+  resources:
+    requests:
+      cpu: 250m
+      memory: 256Mi
+    limits:
+      cpu: 1000m
+      memory: 512Mi
+
+  # Health check probes
+  probes:
+    liveness:
+      enabled: true
+      httpGet:
+        path: /liveness
+        port: monitoring
+      initialDelaySeconds: 60
+      periodSeconds: 15
+      timeoutSeconds: 10
+      failureThreshold: 5
     readiness:
       enabled: true
       httpGet:

@@ -62,28 +62,33 @@ The library ensures that all operations on encrypted data follow the constraints
 
 #### `asEuint`
 
-The `asEuint` functions serve three purposes:
+The `asEuint` functions serve two purposes:
 
-- verify ciphertext bytes and return a valid handle to the calling smart contract;
 - cast a `euintX` typed ciphertext to a `euintY` typed ciphertext, where `X != Y`;
 - trivially encrypt a plaintext value.
 
-The first case is used to process encrypted inputs, e.g. user-provided ciphertexts. Those are generally included in a transaction payload.
+In the first case, when `X > Y` the most significant bits are dropped (truncation); when `X < Y` the value is zero-extended.
 
-The second case is self-explanatory. When `X > Y`, the most significant bits are dropped. When `X < Y`, the ciphertext is padded to the left with trivial encryptions of `0`.
+The second case is used to "encrypt" a public value so that it can be used as a ciphertext. Note that what we call a trivial encryption is **not** secure in any sense. When trivially encrypting a plaintext value, this value is still visible on-chain. More information about trivial encryption can be found [here](https://www.zama.ai/post/tfhe-deep-dive-part-1).
 
-The third case is used to "encrypt" a public value so that it can be used as a ciphertext. Note that what we call a trivial encryption is **not** secure in any sense. When trivially encrypting a plaintext value, this value is still visible in the ciphertext bytes. More information about trivial encryption can be found [here](https://www.zama.ai/post/tfhe-deep-dive-part-1).
+Encrypted **inputs** provided by users (`externalEuintX` plus an input proof) are converted with `FHE.fromExternal`, see [Encrypted inputs](inputs.md).
 
 **Examples**
 
 ```solidity
-// first case
-function asEuint8(bytes memory ciphertext) internal view returns (euint8)
-// second case
-function asEuint16(euint8 ciphertext) internal view returns (euint16)
-// third case
-function asEuint16(uint16 value) internal view returns (euint16)
+// cast
+function asEuint16(euint8 value) internal returns (euint16)
+// trivial encryption
+function asEuint16(uint16 value) internal returns (euint16)
 ```
+
+#### `toExternal`
+
+```solidity
+function toExternal(T value) internal pure returns (externalT)
+```
+
+Re-wraps an on-chain encrypted value into its `external` counterpart (`euint64` to `externalEuint64`, and so on) so that it can be passed to a function typed for encrypted inputs, together with an empty input proof. It performs no verification and grants no access: the receiving contract must already be allowed on the handle. See [Re-exporting a handle](inputs.md#re-exporting-a-handle-with-fhetoexternal).
 
 #### &#x20;`asEbool`
 
@@ -141,6 +146,23 @@ function div(euint8 a, uint8 b) internal pure returns (euint8)
 function div(euint16 a, uint16 b) internal pure returns (euint16)
 function div(euint32 a, uint32 b) internal pure returns (euint32)
 ```
+
+#### Multiply then divide - `mulDiv`
+
+```solidity
+function mulDiv(T a, T b, uintN divisor) internal returns (T)
+function mulDiv(T a, uintN b, uintN divisor) internal returns (T)
+```
+
+Returns `(a * b) / divisor` for `euint8`, `euint16`, `euint32` and `euint64`. The product is computed on twice the operand width, so it cannot overflow before the division. The divisor is always a plaintext and must be non-zero (`DivisionByZero` otherwise). Typical use: `amount * numerator / denominator` without intermediate overflow.
+
+#### Sum of an array - `sum`
+
+```solidity
+function sum(T[] memory values) internal returns (T)
+```
+
+Returns the wrapped sum of all elements, for `euint8` to `euint128`. Elements must share one type. At most 100 elements for `euint8`, `euint16` and `euint32`, 60 for `euint64` and `euint128`. Cheaper than a chain of `add` calls.
 
 #### Min/Max Operations - `min`, `max`
 
@@ -258,6 +280,14 @@ function gt(uint32 a, euint16 b) internal view returns (ebool)
 function gt(euint16 a, uint32 b) internal view returns (ebool)
 ```
 
+#### Set membership - `isIn`
+
+```solidity
+function isIn(T value, T[] memory set) internal returns (ebool)
+```
+
+Returns an encrypted `true` if `value` equals one of the elements of `set`, without revealing which one. Available on all `euintX` types and on `eaddress`. At most 100 elements for `euint8`, `euint16` and `euint32`, 60 for wider types and `eaddress`. An empty set yields `false`.
+
 ### Multiplexer operator (`select`)
 
 ```solidity
@@ -283,11 +313,19 @@ Random encrypted integers can be generated fully on-chain.
 
 That can only be done during transactions and not on an `eth_call` RPC method, because PRNG state needs to be mutated on-chain during generation.
 
+```solidity
+function randEbool() internal returns (ebool)
+function randEuintX() internal returns (euintX)                 // uniform on X bits
+function randEuintX(uintX upperBound) internal returns (euintX) // uniform in [0, upperBound - 1]
+```
+
+`upperBound` must be a power of two (`NotPowerOfTwo` otherwise) and fit the type (`UpperBoundAboveMaxTypeValue`). There is no random `eaddress`. See [Generate random numbers](operations/random.md) for guarantees and the arbitrary-range patterns.
+
 #### Example
 
 ```solidity
-// Generate a random encrypted unsigned integer `r`.
-euint32 r = FHE.randEuint32();
+euint32 r = FHE.randEuint32();      // 0 .. 2^32 - 1
+euint8 dice = FHE.randEuint8(8);    // 0 .. 7
 ```
 
 ## Access control functions
@@ -449,6 +487,15 @@ Prefer `checkSignatures` over this function in most cases. `checkSignatures` is 
 Neither function provides replay protection on its own — emitting an event does not prevent the same `(handles, cleartexts, proof)` triple from being submitted twice. The callback that consumes the cleartexts must implement its own replay/state guard (see [Public Decryption](decryption/oracle.md)).
 {% endhint %}
 
+### Inspect the KMS context of a proof
+
+```solidity
+function getContextSignersAndThresholdFromExtraData(bytes memory extraData)
+    internal view returns (address[] memory signers, uint256 threshold)
+```
+
+Resolves the `extraData` tail of a decryption proof into the KMS signer set and threshold the proof will be checked against. Reverts if the referenced KMS context does not exist or has been destroyed. Mostly useful for monitoring and tests; see [Verifying public decryptions](decryption/verification.md) for the proof layout.
+
 ### Convert to bytes32
 
 ```solidity
@@ -545,6 +592,16 @@ function isAccountDenied(address account) internal view returns (bool)
 
 Returns whether the given account is on the deny list. Denied accounts cannot interact with encrypted values.
 
+## Confidential bridge
+
+```solidity
+function getLZConfidentialBridgeAddress() internal view returns (address)
+function quoteLZConfidentialBridge(uint32 dstEid, address srcApp, bytes32 dstApp, bytes memory payload, bytes32[] memory handleList, uint64 lzComposeGas) internal view returns (uint256 nativeFee)
+function sendLZConfidentialBridge(uint32 dstEid, bytes32 dstApp, bytes memory payload, bytes32[] memory handleList, uint64 lzComposeGas, uint256 nativeFee) internal returns (bytes32 guid, uint64 nonce)
+```
+
+Move up to 32 encrypted handles to a contract on another host chain through the Zama `ConfidentialBridge` (LayerZero). The fee must be quoted right before sending and matched exactly. Most applications should inherit `ConfidentialOApp` instead of calling these directly; see [Confidential bridge](bridge.md).
+
 ## Additional notes
 
 - **Underlying implementation**:\
@@ -553,3 +610,5 @@ Returns whether the given account is on the deny list. Denied accounts cannot in
   Uninitialized encrypted values are treated as `0` (for integers) or `false` (for booleans) in computations.
 - **Implicit casting**:\
   Type conversion between encrypted integers of different bit widths is supported through implicit casting, allowing seamless operations without additional developer intervention.
+- **Exact behaviour**:\
+  Overflow, division by zero, shift amounts, casts and size limits are specified in [Operator semantics](operations/semantics.md).

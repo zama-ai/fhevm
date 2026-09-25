@@ -50,7 +50,7 @@ describe('Solana encrypt client configuration', () => {
       ciphertextWithZkProof: new Uint8Array([1]),
       encryptionBits: [64],
     });
-    vi.spyOn(lifecycle, 'initPublicAction').mockResolvedValue({ tfheVersion: '1.6.2' } as never);
+    vi.spyOn(lifecycle, 'initPublicAction').mockResolvedValue({} as never);
     vi.spyOn(input, 'encryptInput').mockResolvedValue(proof);
     const attestation = { handles: proof.getInputHandles(), signatures: [], extraData: '0x00' as never };
     const submit = vi.spyOn(submission, 'submitInputProof').mockResolvedValue(attestation);

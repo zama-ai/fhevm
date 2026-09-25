@@ -66,8 +66,9 @@ gateway:
         url: "ws://gateway-node:8546"
       - type: subscription
         url: "ws://gateway-node:8546"
-      - type: subscription
-        url: "ws://gateway-node:8546"
+      # Replay responses emitted while the relayer is restarting.
+      - type: polling
+        url: "http://gateway-node:8546"
   tx_engine:
     signer:
       type: "private_key"

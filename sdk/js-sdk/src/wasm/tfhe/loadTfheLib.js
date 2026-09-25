@@ -1,6 +1,5 @@
 // AUTO-GENERATED FROM versionsManifest.js - DO NOT EDIT.
 // Generator: scripts/build/codegen-loaders.mjs
-// Profile:   prod
 //
 // Version-selective TFHE loader. Authored as plain ESM .js (not .ts) so the
 // published artifact is byte-identical to source. Types live in the sibling
@@ -8,46 +7,32 @@
 
 ////////////////////////////////////////////////////////////////////////////////
 
-export const TFHE_VERSIONS = Object.freeze(['1.5.3', '1.6.2']);
-export const DEFAULT_TFHE_VERSION = '1.6.2';
+export const TFHE_VERSIONS = Object.freeze(['1.8.1']);
+export const DEFAULT_TFHE_VERSION = '1.8.1';
 
 const _loaders = {
-  '1.5.3': () => import('./v1.5.3/tfhe.js'),
-  '1.6.2': () => import('./v1.6.2/tfhe.js'),
+  '1.8.1': () => import('./v1.8.1/tfhe.js'),
 };
 
 ////////////////////////////////////////////////////////////////////////////////
 
 const _wasmBase64Loaders = {
-  '1.5.3': () => import('./v1.5.3/tfhe_bg.wasm.base64.js'),
-  '1.6.2': () => import('./v1.6.2/tfhe_bg.wasm.base64.js'),
+  '1.8.1': () => import('./v1.8.1/tfhe_bg.wasm.base64.js'),
 };
 
 ////////////////////////////////////////////////////////////////////////////////
 
 const _assets = Object.freeze({
-  '1.5.3': Object.freeze({
+  '1.8.1': Object.freeze({
     wasm: Object.freeze({
-      filename: 'tfhe_bg.v1.5.3.wasm',
-      localRelativePath: './v1.5.3/tfhe_bg.wasm',
-      sha256: 'dd349c2e34834527890a80e1b70bf5ee57a02aabb7f65e32a1bca654db9201ec',
+      filename: 'tfhe_bg.v1.8.1.wasm',
+      localRelativePath: './v1.8.1/tfhe_bg.wasm',
+      sha256: 'e7811b7a5cd2d3b32dadd1e84addb55882bca0a13df1b7d5f8671bee1d9fc6b6',
     }),
     worker: Object.freeze({
-      filename: 'tfhe-worker.v1.5.3.mjs',
-      localRelativePath: './v1.5.3/tfhe-worker.mjs',
-      sha256: '3f93fe86a8dfa6e25ae5fcfe28d19833219cba8f45f81c6dd05c2f3cc5323c52',
-    }),
-  }),
-  '1.6.2': Object.freeze({
-    wasm: Object.freeze({
-      filename: 'tfhe_bg.v1.6.2.wasm',
-      localRelativePath: './v1.6.2/tfhe_bg.wasm',
-      sha256: 'ecd1841ad42226629c1a665ba784e073f2e780137f7986b00088c9227acb9760',
-    }),
-    worker: Object.freeze({
-      filename: 'tfhe-worker.v1.6.2.mjs',
-      localRelativePath: './v1.6.2/tfhe-worker.mjs',
-      sha256: '2c648dd89132bb63d37e8b47c6fe1f53b06abb1389faeb9b3f671eea9a0db5dd',
+      filename: 'tfhe-worker.v1.8.1.mjs',
+      localRelativePath: './v1.8.1/tfhe-worker.mjs',
+      sha256: 'd67a2b2c52175bce3d32f0033b3e2fbc8044717728089b90945688c4270aaa6f',
     }),
   }),
 });

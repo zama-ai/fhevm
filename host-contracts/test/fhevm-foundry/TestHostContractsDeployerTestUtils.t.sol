@@ -41,7 +41,7 @@ contract TestHostContractsDeployerTestUtils is HostContractsDeployerTestUtils {
 
         assertEq(address(fhevmExecutorProxy), fhevmExecutorAdd, "FHEVMExecutor proxy address mismatch");
         assertNotEq(fhevmExecutorImplementation, address(0), "Implementation not deployed");
-        assertEq(fhevmExecutorProxy.getVersion(), "FHEVMExecutor v0.6.0", "Version mismatch");
+        assertEq(fhevmExecutorProxy.getVersion(), "FHEVMExecutor v0.7.0", "Version mismatch");
         assertEq(
             _readImplementationSlot(fhevmExecutorAdd),
             fhevmExecutorImplementation,
@@ -63,7 +63,7 @@ contract TestHostContractsDeployerTestUtils is HostContractsDeployerTestUtils {
 
         assertEq(address(kmsVerifierProxy), kmsVerifierAdd, "KMSVerifier proxy address mismatch");
         assertNotEq(kmsVerifierImplementation, address(0), "Implementation not deployed");
-        assertEq(kmsVerifierProxy.getVersion(), "KMSVerifier v0.4.0", "Version mismatch");
+        assertEq(kmsVerifierProxy.getVersion(), "KMSVerifier v0.5.0", "Version mismatch");
         assertEq(kmsVerifierProxy.getThreshold(), _defaultThresholds().publicDecryption, "Threshold mismatch");
         address[] memory storedSigners = kmsVerifierProxy.getKmsSigners();
         assertEq(storedSigners.length, initialKmsNodeParams.length, "Signers length mismatch");
@@ -91,7 +91,7 @@ contract TestHostContractsDeployerTestUtils is HostContractsDeployerTestUtils {
 
         assertEq(address(inputVerifierProxy), inputVerifierAdd, "InputVerifier proxy address mismatch");
         assertNotEq(inputVerifierImplementation, address(0), "Implementation not deployed");
-        assertEq(inputVerifierProxy.getVersion(), "InputVerifier v0.2.0", "Version mismatch");
+        assertEq(inputVerifierProxy.getVersion(), "InputVerifier v0.3.0", "Version mismatch");
         assertEq(inputVerifierProxy.getThreshold(), initialThreshold, "Threshold mismatch");
         address[] memory storedSigners = inputVerifierProxy.getCoprocessorSigners();
         assertEq(storedSigners.length, initialSigners.length, "Signers length mismatch");
@@ -190,7 +190,7 @@ contract TestHostContractsDeployerTestUtils is HostContractsDeployerTestUtils {
 
         assertEq(address(pcProxy), protocolConfigAdd, "ProtocolConfig proxy address mismatch");
         assertNotEq(pcImplementation, address(0), "Implementation not deployed");
-        assertEq(pcProxy.getVersion(), "ProtocolConfig v0.2.0", "Version mismatch");
+        assertEq(pcProxy.getVersion(), "ProtocolConfig v0.3.0", "Version mismatch");
         assertEq(pcProxy.getPublicDecryptionThreshold(), 1, "Public decryption threshold mismatch");
         assertEq(pcProxy.getUserDecryptionThreshold(), 1, "User decryption threshold mismatch");
         assertEq(pcProxy.getKmsGenThreshold(), 1, "KmsGen threshold mismatch");
@@ -221,7 +221,7 @@ contract TestHostContractsDeployerTestUtils is HostContractsDeployerTestUtils {
 
         assertEq(address(pcProxy), protocolConfigAdd, "ProtocolConfig proxy address mismatch");
         assertNotEq(pcImplementation, address(0), "Implementation not deployed");
-        assertEq(pcProxy.getVersion(), "ProtocolConfig v0.2.0", "Version mismatch");
+        assertEq(pcProxy.getVersion(), "ProtocolConfig v0.3.0", "Version mismatch");
         assertEq(pcProxy.getCurrentKmsContextId(), canonicalContextId, "Context ID mismatch");
         assertEq(pcProxy.getUserDecryptionThreshold(), 2, "User decryption threshold mismatch");
         (uint256 activeContextId, uint256 activeEpochId) = pcProxy.getCurrentKmsContextAndEpoch();

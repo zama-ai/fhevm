@@ -33,10 +33,12 @@ fhevm-engine-common = { path = "../fhevm-engine-common" }
 # crates.io dependencies
 [features]
 nightly-avx512 = ["tfhe/nightly-avx512"]
-gpu = ["tfhe/gpu", "fhevm-engine-common/gpu", "test-harness/gpu"]
+# gpu-zk enables both GPU PKE-v2 proof verification and ciphertext operations.
+gpu = ["tfhe/gpu-zk", "fhevm-engine-common/gpu", "test-harness/gpu"]
 
 
 [dev-dependencies]
+bincode = "1.3"
 serial_test = { workspace = true }
 test-harness = { path = "../test-harness" }
 

@@ -1,5 +1,7 @@
 import { describe, expect, test } from "bun:test";
 import YAML from "yaml";
+import { readFileSync } from "node:fs";
+import path from "node:path";
 
 import { renderRelayerConfig } from "./generate/config";
 import { predictedCrsId, predictedKeyId } from "./utils/fs";
@@ -167,4 +169,15 @@ describe("config", () => {
     const parsed = YAML.parse(rendered) as { solana_proof?: unknown };
     expect(parsed.solana_proof).toBeUndefined();
   });
+});
+
+
+test("local relayer configurations retain a polling path for responses emitted during restart", () => {
+  for (const file of ["templates/config/relayer.yaml", "config/relayer/local.yaml"]) {
+    const template = readFileSync(path.resolve(import.meta.dir, "..", file), "utf8");
+    const config = YAML.parse(renderRelayerConfig({ versions: { env: {} } as never }, template));
+    expect(config.gateway.listener_pool.listeners).toContainEqual({
+      type: "polling", url: "http://gateway-node:8546",
+    });
+  }
 });

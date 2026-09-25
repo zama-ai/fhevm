@@ -6,6 +6,7 @@ import tomllib
 
 
 BACKEND_MAP = {
+    "aws": "aws",
     "hyperstack": "hyperstack",
     "scaleway": "terraform",
 }

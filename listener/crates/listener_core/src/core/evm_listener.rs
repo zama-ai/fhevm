@@ -279,15 +279,21 @@ impl EvmListener {
 
     /// Validates the block fetching strategy and initializes the database with a starting block.
     ///
-    /// This function is called during service initialization and will panic on any failure.
-    /// The rationale is that if initialization fails, the process cannot operate correctly
-    /// and should crash to trigger a restart (crash-loop-backoff pattern).
+    /// This function is called during service initialization and panics on failures that
+    /// leave the process unable to operate, so it crashes to trigger a restart
+    /// (crash-loop-backoff pattern).
     ///
     /// # Panics
     /// - If the RPC node is unreachable or returns an error
     /// - If the configured strategy is not compatible with the RPC node
     /// - If the database is unreachable or returns an error
     /// - If the starting block cannot be fetched or inserted
+    ///
+    /// # Does not panic
+    /// - If block verification fails. The node answered correctly, so the strategy is
+    ///   sound; only the recomputed roots/hash disagreed. That is classified transient in
+    ///   the steady-state pipeline, so it is logged at ERROR here and the listener starts
+    ///   and retries the block instead of crashing.
     pub async fn validate_strategy_and_init_block(&self, block_start_config: BlockStartConfig) {
         // Fetch latest block number from blockchain using SemEvmRpcProvider
         let latest_block_number = match self.provider.get_block_number().await {
@@ -334,6 +340,29 @@ impl EvmListener {
                     tx_count = fetched_block.transaction_count(),
                     strategy = ?self.fetcher_strategy,
                     "Strategy validation successful"
+                );
+            }
+            // A verification failure is not a strategy failure: the node served the
+            // block and its receipts, only the recomputed roots/hash disagreed. The
+            // steady-state pipeline classifies `CouldNotComputeBlock` as transient and
+            // retries it, so startup must behave the same way. Crashing here would
+            // make an identical failure fatal at startup but merely stalling one block
+            // later, and would kill the process before the compute failure counters
+            // could be scraped.
+            Err(e @ EvmListenerError::CouldNotComputeBlock { .. }) => {
+                tracing::error!(
+                    error = %e,
+                    strategy = ?self.fetcher_strategy,
+                    "Block verification failed during strategy validation - the listener will start and retry this block. \
+                     If this chain is not block-compute compatible, set compute_block=false or compute_block_allow_skipping=true."
+                );
+                panic!(
+                    "Block verification failed during strategy validation: {}. \
+                    This does not indicate a fundamental strategy incompatibility, \
+                    so the listener will start and retry this block on the next attempt. \
+                    If persistent, consider setting compute_block=false or compute_block_allow_skipping=true. \
+                    Strategy: {:?}",
+                    e, self.fetcher_strategy
                 );
             }
             Err(e) => {

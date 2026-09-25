@@ -65,7 +65,7 @@ async fn run() -> anyhow::Result<()> {
                 state.db_pool.clone(),
                 cancel_token.clone(),
             );
-            start_monitoring_server(monitoring_endpoint, state, cancel_token.clone());
+            start_monitoring_server(monitoring_endpoint, state, cancel_token.clone())?;
             tx_sender.start(cancel_token).await;
         }
     }

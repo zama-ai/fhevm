@@ -2,8 +2,9 @@ services:
 
   kms-core:
     container_name: kms-core
-    # The cores run the INSECURE image as only the insecure build allows no `[threshold.tls]` config.
-    image: ghcr.io/zama-ai/kms/core-service-insecure:${CORE_VERSION}
+    # Repository follows CORE_VERSION (see compat kmsCoreImageRepository): 0.15+ runs the
+    # insecure build, the only one that allows no `[threshold.tls]` config.
+    image: ${CORE_IMAGE_REPOSITORY}:${CORE_VERSION}
     # kms-core stopped publishing arm64 (zama-ai/kms#698 dropped the arm runner and bumped
     # ci-templates to a template with no linux/arm64 target), so on an Apple Silicon host the
     # pull fails outright with "no matching manifest for linux/arm64/v8" -- the tag is a manifest

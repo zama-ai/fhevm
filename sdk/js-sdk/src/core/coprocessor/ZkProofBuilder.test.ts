@@ -6,7 +6,6 @@ import { InvalidTypeError } from '../base/errors/InvalidTypeError.js';
 import { AddressError } from '../base/errors/AddressError.js';
 import { ChecksummedAddressError } from '../base/errors/ChecksummedAddressError.js';
 import { fetchFheEncryptionKeyWasm } from '../key/fetchFheEncryptionKey.js';
-import { DEFAULT_TFHE_VERSION } from '../../wasm/tfhe/loadTfheLib.js';
 import { asBytes32Hex, asBytesHex } from '../base/bytes.js';
 import { createZkProofBuilder } from './ZkProofBuilder-p.js';
 import {
@@ -45,7 +44,7 @@ function makeMockContext(overrides?: { aclAddress?: string; chainId?: number }) 
       },
     },
     runtime: {
-      config: { moduleVersions: { tfhe: '1.6.1' } },
+      config: {},
     },
   } as any;
 }
@@ -217,7 +216,6 @@ function makeMockParser(encryptionBits: number[]) {
     parserFn: {
       parseTFHEProvenCompactCiphertextList: vi.fn().mockResolvedValue({ encryptionBits }),
     },
-    tfheVersion: '1.6.1',
   } as any;
 }
 
@@ -578,7 +576,6 @@ it('builds a Solana proof without EVM contracts and preserves its exact chain id
     },
     aclProgramAddress: asBytes32Hex(`0x${'33'.repeat(32)}`),
     runtime: { encrypt: { buildWithProofPacked } } as unknown as SolanaProofContext['runtime'],
-    tfheVersion: DEFAULT_TFHE_VERSION,
   };
   const proof = await createZkProofBuilder()
     .addUint64(42n)

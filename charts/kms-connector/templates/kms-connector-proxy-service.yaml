@@ -1,0 +1,21 @@
+{{- if .Values.kmsConnectorProxy.enabled }}
+apiVersion: v1
+kind: Service
+metadata:
+  labels:
+    app: kms-connector-proxy
+    app.kubernetes.io/name: {{ include "kmsConnectorProxyName" . }}
+  name: {{ include "kmsConnectorProxyName" . }}
+spec:
+  ports:
+    - name: https
+      port: {{ .Values.kmsConnectorProxy.ports.https }}
+      targetPort: https
+    - name: monitoring
+      port: {{ .Values.kmsConnectorProxy.ports.monitoring }}
+      targetPort: monitoring
+  selector:
+    app: kms-connector-proxy
+    app.kubernetes.io/name: {{ include "kmsConnectorProxyName" . }}
+  type: ClusterIP
+{{- end }}
