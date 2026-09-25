@@ -464,12 +464,15 @@ if run_check 3; then
       "${EXCLUDES[@]}" "$@" "${roots[@]}" 2>/dev/null || true) )
     # Anchored to the record's path field, for the reason spelled out for the `exceptions` filter
     # below: matching the whole record let any *line* that merely names one of these files go unswept
-    # by every entry below. Seven lines in the swept trees mention one of them today.
+    # by every entry below. Seven lines in the swept trees mention one of them today. The last filter
+    # drops main's consensus harness, which shares test-suite/fhevm with the Solana seeder and
+    # scenarios but not our glossary.
     hits=$(echo "$hits" \
       | (grep -v '^solana/docs/GLOSSARY\.md:' || true) \
       | (grep -v '^solana/docs/DESIGN_DECISIONS\.md:' || true) \
       | (grep -v '^solana/docs/DESIGN_HISTORY\.md:' || true) \
-      | (grep -v '^solana/scripts/dead-surface-check\.sh:' || true) )
+      | (grep -v '^solana/scripts/dead-surface-check\.sh:' || true) \
+      | (grep -vE '^test-suite/fhevm/(consensus|src/consensus|scripts)/' || true) )
     if [ -n "$exceptions" ]; then
       # Applied to each hit's CONTENT, never to the `path:line:` prefix. Matching the whole record
       # let an exception that happened to look like a path blanket-exempt a whole file — the blanket
