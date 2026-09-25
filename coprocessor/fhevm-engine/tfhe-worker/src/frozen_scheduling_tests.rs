@@ -448,3 +448,40 @@ async fn healthy_sibling_in_a_partly_frozen_transaction_is_selected() {
     assert_eq!(nodes.len(), 1);
     assert_eq!(nodes[0].results, vec![handle(3)]);
 }
+
+async fn frozen_after_filter(pool: &sqlx::PgPool) -> bool {
+    computation(pool, 2, 1, 10, true, 90).await;
+    let filtered = frozen_computations::containment_filter(pool, vec![item(10, 2, 1, 1)])
+        .await
+        .unwrap();
+    !filtered.freeze.frozen.is_empty()
+}
+
+#[tokio::test]
+async fn own_epoch_finding_freezes_even_with_a_stored_copy() {
+    let (_db, pool) = setup().await;
+    drift(&pool, 1).await;
+    stored_ciphertext(&pool, 1).await;
+    assert!(frozen_after_filter(&pool).await);
+}
+
+#[tokio::test]
+async fn other_epoch_finding_freezes_without_a_stored_copy() {
+    let (_db, pool) = setup().await;
+    drift_in_other_epoch(&pool, 1).await;
+    assert!(
+        frozen_after_filter(&pool).await,
+        "without its own copy this stack reads the other stack's drifted bytes"
+    );
+}
+
+#[tokio::test]
+async fn other_epoch_finding_does_not_freeze_an_independent_copy() {
+    let (_db, pool) = setup().await;
+    drift_in_other_epoch(&pool, 1).await;
+    stored_ciphertext(&pool, 1).await;
+    assert!(
+        !frozen_after_filter(&pool).await,
+        "this stack's own stored copy is not the other stack's drifted ciphertext"
+    );
+}
