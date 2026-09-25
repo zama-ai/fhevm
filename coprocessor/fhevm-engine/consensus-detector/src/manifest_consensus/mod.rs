@@ -107,6 +107,8 @@ pub struct Config {
     pub healing_batch_size: i64,
     /// LISTEN fallback so a missed `event_healing_work` still runs a pass.
     pub healing_poll_interval: Duration,
+    /// Delay after which an uncontained ct64 finding is healed anyway.
+    pub healing_containment_timeout: Duration,
     /// Wall-clock stall with no newly computed handle before missing
     /// ciphertext may be sealed as `is_uncomputed`.
     pub incomplete_block_timeout: Duration,
@@ -130,6 +132,7 @@ impl Default for Config {
             verification_retry_count: 59,
             healing_batch_size: healing::DEFAULT_BATCH_SIZE,
             healing_poll_interval: healing::DEFAULT_POLL_INTERVAL,
+            healing_containment_timeout: healing::DEFAULT_CONTAINMENT_TIMEOUT,
             incomplete_block_timeout: Duration::from_secs(5 * 60),
             incomplete_manifest_max_lag: 3,
             publication_cadence_overrides: BTreeMap::new(),
@@ -311,6 +314,7 @@ pub(crate) async fn start(
         work_gate,
         config.manifest_consensus.healing_batch_size,
         config.manifest_consensus.healing_poll_interval,
+        config.manifest_consensus.healing_containment_timeout,
     );
     supervise("healing worker", handle, cancel);
 

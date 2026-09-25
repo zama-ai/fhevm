@@ -1,0 +1,19 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n        UPDATE drifted_handle\n           SET healed_at = NOW(),\n               claimed_by = NULL,\n               claim_expires_at = NULL,\n               next_retry_at = NULL\n         WHERE consensus_epoch = $1\n           AND coprocessor_context_id = $2\n           AND host_chain_id = $3\n           AND handle = $4\n           AND healed_at IS NULL\n           AND can_be_healed\n           AND (reason <> 'ct64_mismatch' OR is_contained\n                OR detected_at <= NOW() - $6::BIGINT * INTERVAL '1 second')\n           AND quorum_ct64_digest = $5\n        ",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Text",
+        "Bytea",
+        "Int8",
+        "Bytea",
+        "Bytea",
+        "Int8"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "28e542e2cd9655d095ab2f1fa690cf6f4c87f53145785707601998bf1bfd4aba"
+}

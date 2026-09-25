@@ -123,6 +123,9 @@ spec:
             {{- if not (has "manifest-healing-poll-interval" $disabled) }}
             - --manifest-healing-poll-interval={{ $component.config.manifestHealingPollInterval }}
             {{- end }}
+            {{- if not (has "manifest-healing-containment-timeout" $disabled) }}
+            - --manifest-healing-containment-timeout={{ $component.config.manifestHealingContainmentTimeout }}
+            {{- end }}
             {{- if not (has "incomplete-block-timeout" $disabled) }}
             - --incomplete-block-timeout={{ $component.config.incompleteBlockTimeout }}
             {{- end }}

@@ -1616,6 +1616,9 @@ consensusDetector:
     # Fallback poll while waiting for event_healing_work.
     # Clap: --manifest-healing-poll-interval
     manifestHealingPollInterval: 30s
+    # Delay after detection before an uncontained ct64 drift is healed anyway.
+    # Clap: --manifest-healing-containment-timeout
+    manifestHealingContainmentTimeout: 5m
     # Wall-clock stall with no newly computed handle before missing
     # ciphertext may be sealed as uncomputed. A computed handle resets it.
     # Clap: --incomplete-block-timeout

@@ -136,6 +136,11 @@ struct Args {
     #[arg(long, default_value = "30s", value_parser = parse_duration)]
     manifest_healing_poll_interval: Duration,
 
+    /// Delay after detection before an uncontained ct64 drift is healed anyway.
+    /// Containment reduces propagation; verification detects what it misses.
+    #[arg(long, default_value = "5m", value_parser = parse_duration)]
+    manifest_healing_containment_timeout: Duration,
+
     /// Wall-clock stall with no newly computed handle before missing
     /// ciphertext may be sealed as uncomputed. A computed handle resets it.
     #[arg(long, default_value = "5m", value_parser = parse_duration)]
@@ -260,6 +265,7 @@ async fn main() -> anyhow::Result<()> {
             verification_retry_count: args.manifest_verification_retry_count,
             healing_batch_size: args.manifest_healing_batch_size,
             healing_poll_interval: args.manifest_healing_poll_interval,
+            healing_containment_timeout: args.manifest_healing_containment_timeout,
             incomplete_block_timeout: args.incomplete_block_timeout,
             incomplete_manifest_max_lag: args.incomplete_manifest_max_lag,
             publication_cadence_overrides:
