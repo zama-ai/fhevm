@@ -271,23 +271,19 @@ pub(crate) async fn load_manifest_descriptors(
                 block.block_number,
             )));
         };
-        for (name, value) in [
-            ("handle", row.handle.as_slice()),
-            ("ct64 digest", ct64_digest.as_slice()),
-            ("ct128 digest", ct128_digest.as_slice()),
-        ] {
-            if value.len() != 32 {
-                return Err(internal(format!(
-                    "invalid {name} length {} in chain {} block {}",
-                    value.len(),
-                    block.host_chain_id,
-                    block.block_number,
-                )));
-            }
+        // Without a well-formed handle there is no descriptor to publish.
+        if row.handle.len() != 32 {
+            return Err(internal(format!(
+                "invalid handle length {} in chain {} block {}",
+                row.handle.len(),
+                block.host_chain_id,
+                block.block_number,
+            )));
         }
         let handle = B256::from_slice(&row.handle);
-        let ct64_digest = B256::from_slice(&ct64_digest);
-        let ct128_digest = B256::from_slice(&ct128_digest);
+        let well_formed = |value: &[u8]| (value.len() == 32).then(|| B256::from_slice(value));
+        let ct64 = well_formed(&ct64_digest);
+        let ct128 = well_formed(&ct128_digest);
 
         let gateway_key_id = row.key_id_gw;
         let keyset_id = gateway_key_id
@@ -300,20 +296,34 @@ pub(crate) async fn load_manifest_descriptors(
             21 => Some(CiphertextFormat::CompressedOnGpu),
             _ => None,
         };
+        let invalid_reason = if ct64.is_none() {
+            Some(format!("invalid ct64 digest length {}", ct64_digest.len()))
+        } else if ct128.is_none() {
+            Some(format!(
+                "invalid ct128 digest length {}",
+                ct128_digest.len()
+            ))
+        } else if keyset_id.is_none() {
+            Some(match gateway_key_id.as_deref() {
+                Some(gateway_key_id) => format!(
+                    "no keyset ID maps Gateway key ID {}",
+                    hex::encode(gateway_key_id)
+                ),
+                None => "no Gateway key ID".to_owned(),
+            })
+        } else if let Some(keyset_id) = keyset_id.filter(|keyset_id| keyset_id.len() != 32) {
+            Some(format!("invalid keyset id length {}", keyset_id.len()))
+        } else if known_format.is_none() {
+            Some(format!("unknown ct128 format {ct128_format}"))
+        } else {
+            None
+        };
         // A computed handle whose descriptor cannot be derived must not stall
-        // the chain: publish its digests so peers can compare the ct64.
-        let (Some(keyset_id), Some(ct128_format)) = (keyset_id, known_format) else {
-            let reason = if keyset_id.is_none() {
-                match gateway_key_id.as_deref() {
-                    Some(gateway_key_id) => format!(
-                        "no keyset ID maps Gateway key ID {}",
-                        hex::encode(gateway_key_id)
-                    ),
-                    None => "no Gateway key ID".to_owned(),
-                }
-            } else {
-                format!("unknown ct128 format {ct128_format}")
-            };
+        // the chain: publish its well-formed digests so peers can compare the ct64.
+        let (None, Some(ct64_digest), Some(ct128_digest), Some(keyset_id), Some(ct128_format)) =
+            (&invalid_reason, ct64, ct128, keyset_id, known_format)
+        else {
+            let reason = invalid_reason.expect("some descriptor field is invalid");
             warn!(
                 handle = %handle,
                 host_chain_id = block.host_chain_id,
@@ -323,20 +333,12 @@ pub(crate) async fn load_manifest_descriptors(
             );
             descriptors.push(CiphertextDescriptor::from_invalid_descriptor(
                 handle,
-                ct64_digest,
-                ct128_digest,
+                ct64,
+                ct128,
                 Some(reason),
             ));
             continue;
         };
-        if keyset_id.len() != 32 {
-            return Err(internal(format!(
-                "invalid keyset id length {} in chain {} block {}",
-                keyset_id.len(),
-                block.host_chain_id,
-                block.block_number,
-            )));
-        }
 
         descriptors.push(CiphertextDescriptor::computed(
             handle,

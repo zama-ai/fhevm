@@ -923,8 +923,8 @@ mod reason_tests {
         let invalid = |ct64: u8, ct128: u8| {
             BlockCiphertextDescriptor::from_invalid_descriptor(
                 h,
-                B256::repeat_byte(ct64),
-                B256::repeat_byte(ct128),
+                Some(B256::repeat_byte(ct64)),
+                Some(B256::repeat_byte(ct128)),
                 Some("unknown ct128 format".to_owned()),
             )
         };
@@ -936,6 +936,17 @@ mod reason_tests {
             (invalid(1, 1), computed.clone(), "metadata_mismatch"),
             (computed, invalid(1, 1), "metadata_mismatch"),
             (invalid(1, 1), invalid(1, 2), "ct128_mismatch"),
+            // A malformed ct64 cannot be shown correct.
+            (
+                BlockCiphertextDescriptor::from_invalid_descriptor(
+                    h,
+                    None,
+                    Some(B256::repeat_byte(1)),
+                    Some("invalid ct64 digest length 31".to_owned()),
+                ),
+                invalid(1, 1),
+                "ct64_mismatch",
+            ),
         ] {
             assert_eq!(drift_reason(Some(&local), Some(&peer)), expected);
         }
