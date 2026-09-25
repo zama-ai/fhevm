@@ -334,6 +334,12 @@ publication:
 - **Integrity** (unique / check / FK / not-null): charge the attempt budget.
 - **Definitive** (schema, decode, data exception): `retry_exhausted` immediately.
 
+Any other error that aborts the attempt charges the attempt budget too, except a
+transient S3 error, which releases the claim uncharged. A persistent failure,
+such as an archived manifest that no longer validates, therefore ends in
+`retry_exhausted` instead of being reclaimed with the same attempt after every
+lease expiry.
+
 A dead pool still fails the verifier task. Pre-claim query errors are retried
 on the next poll without cancelling the process.
 
