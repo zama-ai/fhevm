@@ -48,9 +48,101 @@ impl PeerManifestSource for ConcurrentSource {
     }
 }
 
+impl<T: PeerManifestSource> PeerManifestSource for &T {
+    async fn list_manifests(
+        &self,
+        request: &PeerDownloadRequest,
+    ) -> Result<Vec<String>, ExecutionError> {
+        (**self).list_manifests(request).await
+    }
+
+    async fn fetch_manifest(
+        &self,
+        request: &PeerDownloadRequest,
+        object_key: &str,
+    ) -> Result<PeerManifestObject, ExecutionError> {
+        (**self).fetch_manifest(request, object_key).await
+    }
+}
+
+/// Never answers listings for `stalled_chain`, as a peer whose requests hang.
+struct StalledChainSource {
+    inner: FakePeerSource,
+    stalled_chain: i64,
+}
+
+impl PeerManifestSource for StalledChainSource {
+    async fn list_manifests(
+        &self,
+        request: &PeerDownloadRequest,
+    ) -> Result<Vec<String>, ExecutionError> {
+        if request.host_chain_id == self.stalled_chain {
+            std::future::pending::<()>().await;
+        }
+        self.inner.list_manifests(request).await
+    }
+
+    async fn fetch_manifest(
+        &self,
+        request: &PeerDownloadRequest,
+        object_key: &str,
+    ) -> Result<PeerManifestObject, ExecutionError> {
+        self.inner.fetch_manifest(request, object_key).await
+    }
+}
+
+async fn task_states(pool: &PgPool) -> Vec<(i64, String)> {
+    sqlx::query_as("SELECT id, state FROM block_manifest_verification_task ORDER BY id")
+        .fetch_all(pool)
+        .await
+        .unwrap()
+}
+
+/// Runs the downloader until every task in `ids` reaches `consensus`.
+async fn run_downloader_until_consensus<S: PeerManifestSource>(
+    pool: &PgPool,
+    source: S,
+    ids: &[i64],
+) {
+    let token = CancellationToken::new();
+    let downloader = run_peer_manifest_downloader(
+        pool.clone(),
+        token.clone(),
+        source,
+        ManifestWorkGate::always_enabled(),
+        Duration::from_millis(200),
+    );
+    let watcher = async {
+        let reached = tokio::time::timeout(Duration::from_secs(15), async {
+            loop {
+                let states = task_states(pool).await;
+                if ids.iter().all(|id| {
+                    states
+                        .iter()
+                        .any(|(task, state)| task == id && state == "consensus")
+                }) {
+                    break;
+                }
+                tokio::time::sleep(Duration::from_millis(50)).await;
+            }
+        })
+        .await;
+        token.cancel();
+        reached
+    };
+    let (downloaded, reached) = tokio::join!(downloader, watcher);
+    downloaded.unwrap();
+    if reached.is_err() {
+        panic!(
+            "tasks {ids:?} must reach consensus: {:?}",
+            task_states(pool).await
+        );
+    }
+}
+
 #[tokio::test]
 #[serial(db)]
-async fn batch_verifies_chains_concurrently_and_leaves_same_chain_successor_pending() {
+async fn downloader_verifies_chains_concurrently() {
     let (_instance, pool) = setup_download_db().await;
     let signers = test_signers();
     // Schedule before registry arrival to exercise binding in each separate claim.
@@ -77,29 +169,78 @@ async fn batch_verifies_chains_concurrently_and_leaves_same_chain_successor_pend
             chain_manifest(&signers[1], 8, 42).await,
         ],
     );
-    tokio::time::timeout(
-        Duration::from_secs(15),
-        run_verification_batch(&pool, &source, "batch", &ManifestWorkGate::always_enabled()),
+    // Each chain's task blocks until the other chain's task also lists.
+    run_downloader_until_consensus(&pool, &source, &candidates).await;
+    let attempts: Vec<i32> = sqlx::query_scalar(
+        "SELECT attempt_count FROM block_manifest_verification_task WHERE id = ANY($1)",
     )
+    .bind(&candidates)
+    .fetch_all(&pool)
     .await
-    .expect("both chains must reach the barrier concurrently")
     .unwrap();
-    let rows: Vec<(i64, String, i32)> = sqlx::query_as(
-        "SELECT id, state, attempt_count FROM block_manifest_verification_task ORDER BY id",
+    assert_eq!(attempts, vec![1, 1]);
+}
+
+#[tokio::test]
+#[serial(db)]
+async fn stalled_chain_does_not_delay_other_chains() {
+    let (_instance, pool) = setup_download_db().await;
+    let signers = test_signers();
+    seed_registry(&pool, &signers[..2], 2).await;
+    for (chain, height) in [(7, 42), (8, 42), (8, 43)] {
+        schedule_local(&pool, &chain_manifest(&signers[0], chain, height).await, 1).await;
+    }
+    sqlx::query("UPDATE block_manifest_verification_task SET next_attempt_at = NOW()")
+        .execute(&pool)
+        .await
+        .unwrap();
+    let source = StalledChainSource {
+        inner: FakePeerSource::default(),
+        stalled_chain: 7,
+    };
+    source.inner.set_manifests(
+        signers[1].address(),
+        &[
+            chain_manifest(&signers[1], 8, 42).await,
+            chain_manifest(&signers[1], 8, 43).await,
+        ],
+    );
+    let chain_8: Vec<i64> = sqlx::query_scalar(
+        "SELECT task.id FROM block_manifest_verification_task task
+           JOIN block_manifest manifest ON manifest.id = task.local_manifest_id
+          WHERE manifest.host_chain_id = 8
+          ORDER BY task.id",
     )
     .fetch_all(&pool)
     .await
     .unwrap();
-    for (id, state, attempts) in rows {
-        if candidates.contains(&id) {
-            assert_eq!(state, "consensus");
-            assert_eq!(attempts, 1);
-        } else {
-            assert_eq!(state, "pending");
-            assert_eq!(attempts, 0);
-        }
+    assert_eq!(chain_8.len(), 2);
+    // Chain 7 hangs far past the test timeout; both chain 8 heights still finish.
+    run_downloader_until_consensus(&pool, &source, &chain_8).await;
+}
+
+#[tokio::test]
+#[serial(db)]
+async fn attempt_downloads_peers_concurrently() {
+    let (_instance, pool) = setup_download_db().await;
+    let signers = test_signers();
+    seed_registry(&pool, &signers, 3).await;
+    schedule_local(&pool, &chain_manifest(&signers[0], 7, 42).await, 1).await;
+    let ids = ready_verification_tasks(&pool, CONSENSUS_EPOCH)
+        .await
+        .unwrap();
+    assert_eq!(ids.len(), 1);
+    let source = ConcurrentSource {
+        inner: FakePeerSource::default(),
+        started: Barrier::new(2),
+    };
+    for signer in &signers[1..] {
+        source
+            .inner
+            .set_manifest(signer.address(), &chain_manifest(signer, 7, 42).await);
     }
-    assert_eq!(source.inner.body_downloads(signers[1].address()), 2);
+    // Neither peer's listing returns until the other peer's listing started.
+    run_downloader_until_consensus(&pool, &source, &ids).await;
 }
 
 #[tokio::test]
