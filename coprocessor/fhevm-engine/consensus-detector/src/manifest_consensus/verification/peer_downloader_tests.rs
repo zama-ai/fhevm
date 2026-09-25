@@ -674,7 +674,7 @@ async fn rejected_predecessor_does_not_hide_current_revision_on_retry() {
 
 #[tokio::test(flavor = "multi_thread")]
 #[serial]
-async fn concurrent_retry_downloads_new_peer_revision_and_resolves_drift() {
+async fn concurrent_retry_downloads_new_peer_revision_and_reaches_consensus() {
     let (_instance, pool) = setup_download_db().await;
     let signers = test_signers();
     seed_registry(&pool, &signers[..2], 2).await;
@@ -724,9 +724,9 @@ async fn concurrent_retry_downloads_new_peer_revision_and_resolves_drift() {
     )
     .fetch_one(&pool)
     .await
-    .expect("load peer-revision remission state");
-    assert_eq!(states.try_get::<i64, _>("resolved").unwrap(), unresolved);
-    assert_eq!(states.try_get::<i64, _>("unresolved").unwrap(), 0);
+    .expect("load peer-revision finding state");
+    assert_eq!(states.try_get::<i64, _>("resolved").unwrap(), 0);
+    assert_eq!(states.try_get::<i64, _>("unresolved").unwrap(), unresolved);
     let evidence = sqlx::query(
         "SELECT
              (SELECT COUNT(*) FROM block_manifest_verification_attempt) AS attempts,
@@ -1764,7 +1764,7 @@ async fn missing_current_manifest_reconstructs_its_history_from_predecessor_rang
 
 #[tokio::test(flavor = "multi_thread")]
 #[serial]
-async fn concurrent_one_drifter_replay_resolves_exact_handle_findings() {
+async fn concurrent_one_drifter_replay_keeps_exact_handle_findings() {
     struct DriftedBlock {
         number: i64,
         hash: B256,
@@ -1982,38 +1982,31 @@ async fn concurrent_one_drifter_replay_resolves_exact_handle_findings() {
         .filter_map(|result| result.as_ref().ok().copied().flatten())
         .all(|result| result.outcome == VerificationOutcome::Consensus));
 
-    let resolved_rows = sqlx::query(
+    let kept_rows = sqlx::query(
         r#"
-        SELECT finding.block_number,
-               finding.status,
-               finding.last_quorum_task_id,
+        SELECT finding.status,
                finding.resolved_task_id,
                finding.healed_at IS NULL AS healing_not_performed,
-               resolved_manifest.revision AS resolved_revision,
-               resolved.latest_outcome AS resolved_outcome
+               detected.latest_outcome AS detected_outcome
           FROM drifted_handle finding
-          JOIN block_manifest_verification_task resolved
-            ON resolved.id = finding.resolved_task_id
-          JOIN block_manifest resolved_manifest
-            ON resolved_manifest.id = resolved.local_manifest_id
+          JOIN block_manifest_verification_task detected
+            ON detected.id = finding.last_quorum_task_id
          ORDER BY finding.block_number
         "#,
     )
     .fetch_all(&pool)
     .await
-    .expect("load resolved drift handle rows");
-    assert_eq!(resolved_rows.len(), blocks.len());
-    for row in &resolved_rows {
-        assert_eq!(row.try_get::<String, _>("status").unwrap(), "resolved");
-        let last_task_id = row.try_get::<i64, _>("last_quorum_task_id").unwrap();
+    .expect("load drift handle rows after concordant replay");
+    assert_eq!(kept_rows.len(), blocks.len());
+    for row in &kept_rows {
+        assert_eq!(row.try_get::<String, _>("status").unwrap(), "unresolved");
+        assert!(row
+            .try_get::<Option<i64>, _>("resolved_task_id")
+            .unwrap()
+            .is_none());
         assert_eq!(
-            row.try_get::<i64, _>("resolved_task_id").unwrap(),
-            last_task_id
-        );
-        assert_eq!(row.try_get::<i64, _>("resolved_revision").unwrap(), 1);
-        assert_eq!(
-            row.try_get::<String, _>("resolved_outcome").unwrap(),
-            "consensus"
+            row.try_get::<String, _>("detected_outcome").unwrap(),
+            "drift"
         );
         assert!(row.try_get::<bool, _>("healing_not_performed").unwrap());
     }
@@ -2023,7 +2016,7 @@ async fn concurrent_one_drifter_replay_resolves_exact_handle_findings() {
             .await
             .expect("count drift findings after replay"),
         blocks.len() as i64,
-        "rechecking must resolve the existing findings rather than insert replacements",
+        "rechecking must keep the existing findings rather than insert replacements",
     );
     for signer in &signers {
         assert_eq!(source.body_downloads(signer.address()), 0);
@@ -2782,6 +2775,9 @@ mod lease_renewal_tests;
 #[path = "chain_batch_tests.rs"]
 mod chain_batch_tests;
 
+#[path = "reactive_containment_tests.rs"]
+mod reactive_containment_tests;
+
 #[tokio::test]
 #[serial]
 async fn oversized_s3_head_is_rejected_and_falls_back_to_valid_older_revision() {
@@ -2882,9 +2878,8 @@ async fn healing_state_is_independent_of_later_manifest_agreement() {
     let inferred: i64 = sqlx::query_scalar("INSERT INTO drifted_handle (consensus_epoch, coprocessor_context_id, host_chain_id, block_number, block_hash, handle, detection_kind, reason, local_present, quorum_present)
         SELECT consensus_epoch, coprocessor_context_id, host_chain_id, block_number, block_hash, $2, 'inferred', 'ct64_mismatch', TRUE, FALSE FROM drifted_handle WHERE id = $1 RETURNING id")
         .bind(id).bind(B256::repeat_byte(0xee).as_slice()).fetch_one(&pool).await.unwrap();
-    let defaults = sqlx::query("SELECT demand_count, can_be_healed, healed_at IS NULL AS pending, next_retry_at IS NULL AS no_retry, claimed_by IS NULL AS unclaimed, target_evidence IS NULL AS no_evidence, peer_sources FROM drifted_handle WHERE id = $1")
+    let defaults = sqlx::query("SELECT can_be_healed, healed_at IS NULL AS pending, next_retry_at IS NULL AS no_retry, claimed_by IS NULL AS unclaimed, target_evidence IS NULL AS no_evidence, peer_sources FROM drifted_handle WHERE id = $1")
         .bind(inferred).fetch_one(&pool).await.unwrap();
-    assert_eq!(defaults.get::<i64, _>("demand_count"), 0);
     assert!(!defaults.get::<bool, _>("can_be_healed"));
     for name in ["pending", "no_retry", "unclaimed", "no_evidence"] {
         assert!(defaults.get::<bool, _>(name));
@@ -2894,7 +2889,7 @@ async fn healing_state_is_independent_of_later_manifest_agreement() {
         serde_json::json!([])
     );
     for sql in [
-        "UPDATE drifted_handle SET demand_count = -1 WHERE id = $1",
+        "INSERT INTO drifted_handle_demand (handle, tx_unlock_potential) SELECT handle, -1 FROM drifted_handle WHERE id = $1",
         "UPDATE drifted_handle SET claimed_by = 'worker' WHERE id = $1",
         "UPDATE drifted_handle SET healed_at = NOW() WHERE id = $1",
         "UPDATE drifted_handle SET target_evidence = '[]'::jsonb WHERE id = $1",
@@ -2909,7 +2904,9 @@ async fn healing_state_is_independent_of_later_manifest_agreement() {
             Some("23514")
         );
     }
-    sqlx::query("UPDATE drifted_handle SET demand_count = 3, claimed_by = 'worker', claim_expires_at = NOW() + INTERVAL '1 minute' WHERE id = $1")
+    sqlx::query("UPDATE drifted_handle SET claimed_by = 'worker', claim_expires_at = NOW() + INTERVAL '1 minute' WHERE id = $1")
+        .bind(id).execute(&pool).await.unwrap();
+    sqlx::query("INSERT INTO drifted_handle_demand (handle, tx_unlock_potential) SELECT handle, 3 FROM drifted_handle WHERE id = $1")
         .bind(id).execute(&pool).await.unwrap();
     let matching = sign_payload(&signers[0], revision_payload(signers[0].address(), 9, 1)).await;
     schedule_local(&pool, &matching, 0).await;
@@ -2924,12 +2921,14 @@ async fn healing_state_is_independent_of_later_manifest_agreement() {
     .unwrap()
     .unwrap();
     assert_eq!(result.outcome, VerificationOutcome::Consensus);
-    let row = sqlx::query("SELECT detection_kind, can_be_healed, healed_at IS NULL AS pending, demand_count, claimed_by, quorum_ct64_digest FROM drifted_handle WHERE id = $1")
+    let row = sqlx::query("SELECT detection_kind, can_be_healed, healed_at IS NULL AS pending, claimed_by, quorum_ct64_digest FROM drifted_handle WHERE id = $1")
         .bind(id).fetch_one(&pool).await.unwrap();
     assert_eq!(row.get::<String, _>("detection_kind"), "verified");
     assert!(row.get::<bool, _>("can_be_healed"));
     assert!(row.get::<bool, _>("pending"));
-    assert_eq!(row.get::<i64, _>("demand_count"), 3);
+    let demand: f64 = sqlx::query_scalar("SELECT d.tx_unlock_potential FROM drifted_handle_demand d JOIN drifted_handle h ON h.handle = d.handle WHERE h.id = $1")
+        .bind(id).fetch_one(&pool).await.unwrap();
+    assert_eq!(demand, 3.0);
     assert_eq!(row.get::<String, _>("claimed_by"), "worker");
     assert_eq!(
         row.get::<Vec<u8>, _>("quorum_ct64_digest"),

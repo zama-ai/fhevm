@@ -1,4 +1,4 @@
-//! Generation-scoped manifest publication and peer verification.
+//! Consensus epoch-scoped manifest publication and peer verification.
 //!
 //! This module is deliberately isolated from the upgrade state-hash detector.
 //! Database access that crosses the active GCS schema boundary belongs under
@@ -22,6 +22,7 @@ use fhevm_engine_common::versioning::{
     reconcile_stack_mode, run_stack_version_listener, StackMode,
 };
 
+pub mod containment;
 pub(crate) mod db_error;
 pub(crate) mod lineage;
 pub(crate) mod manifest_archive;

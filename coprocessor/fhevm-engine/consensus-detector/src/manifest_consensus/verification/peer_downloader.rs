@@ -13,7 +13,9 @@ use tracing::{debug, error, info, warn};
 use fhevm_engine_common::pg_pool::is_fatal_connection_error;
 
 use crate::manifest_consensus::{
+    containment::{count_uncontained_ct64_drifted_handles, enforce_guaranteed_containment},
     db_error::{classify_db_error, DbErrorClass},
+    verification::consensus_analysis::LocalQuorumStatus,
     ExecutionError, ManifestWorkGate,
 };
 
@@ -744,6 +746,39 @@ async fn finish_claim(
     .await?;
     persist_claim_outcome(&mut trx, claim, &evaluation).await?;
     trx.commit().await?;
+    {
+        let task_id = claim.task_id;
+        let count_uncontained = match count_uncontained_ct64_drifted_handles(pool).await {
+            Ok(n) => n,
+            Err(error) => {
+                error!(
+                    task_id,
+                    %error,
+                    "could not count uncontained ct64; running containment"
+                );
+                1
+            }
+        };
+        if count_uncontained > 0 {
+            let pool = pool.clone();
+            tokio::spawn(async move {
+                match enforce_guaranteed_containment(&pool).await {
+                    Ok(result) => info!(
+                        task_id,
+                        inferred_handles = result.inferred_handles,
+                        contained_findings = result.contained_findings,
+                        "Completed drift containment"
+                    ),
+                    Err(error) => error!(
+                        task_id,
+                        %error,
+                        "Reactive containment failed; pending findings will be included when verification next runs in this epoch"
+                    ),
+                }
+            });
+        }
+    }
+
     info!(
         task_id = claim.task_id,
         attempt = claim.attempt,
@@ -760,7 +795,6 @@ async fn finish_claim(
         unverified_prefix_from_block = ?evaluation.coverage.unverified_prefix_from_block,
         unverified_prefix_through_block = ?evaluation.coverage.unverified_prefix_through_block,
         required_quorum = claim.required_quorum,
-        archived_publishers = ?manifests.iter().map(|manifest| manifest.signed.payload.publisher).collect::<Vec<_>>(),
         localization_complete = localization.complete,
         drifted_block_count = ?localization.drifted_block_count,
         drifted_handle_count = ?localization.drifted_handle_count,
@@ -773,6 +807,20 @@ async fn finish_claim(
         DRIFT_LOCALIZATION_INCOMPLETE
             .with_label_values(&[&claim.scope.consensus_epoch])
             .inc();
+    }
+    let total_findings = localization.findings.len();
+    if matches!(
+        evaluation.local_quorum_status,
+        LocalQuorumStatus::MatchesQuorum
+    ) {
+        info!(?claim, total_findings, "Quorum is met for all new handles");
+    } else {
+        for mismatch in localization.findings.iter().take(1000) {
+            warn!(?mismatch, "Observed difference");
+        }
+        if total_findings > 1000 {
+            warn!(total_findings, "Truncating observed difference")
+        }
     }
     Ok(VerificationRunResult {
         task_id: claim.task_id,
@@ -1092,7 +1140,7 @@ async fn persist_claim_outcome(
         "retry_exhausted"
     } else {
         // Drift is reportable immediately, but retries remain available so a
-        // newer peer revision can demonstrate remission.
+        // newer peer revision can still reach consensus.
         "pending"
     };
     sqlx::query!(

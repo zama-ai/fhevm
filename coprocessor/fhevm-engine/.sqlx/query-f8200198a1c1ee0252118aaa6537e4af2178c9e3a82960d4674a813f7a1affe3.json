@@ -1,0 +1,15 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "INSERT INTO drifted_handle_demand AS d (handle, tx_unlock_potential)\n           SELECT src.handle, src.n / 2.0\n             FROM unnest($1::bytea[], $2::float8[]) AS src(handle, n)\n           ON CONFLICT (handle) DO UPDATE\n           SET tx_unlock_potential = d.tx_unlock_potential / 2.0\n               + EXCLUDED.tx_unlock_potential",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "ByteaArray",
+        "Float8Array"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "f8200198a1c1ee0252118aaa6537e4af2178c9e3a82960d4674a813f7a1affe3"
+}
