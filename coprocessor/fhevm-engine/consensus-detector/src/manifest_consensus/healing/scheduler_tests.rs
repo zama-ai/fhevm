@@ -112,6 +112,7 @@ async fn pass(pool: &PgPool, source: &FakeCt64) {
         source,
         &ManifestWorkGate::always_enabled(),
         DEFAULT_BATCH_SIZE,
+        DEFAULT_CONTAINMENT_TIMEOUT,
     )
     .await
     .unwrap();
@@ -279,6 +280,7 @@ async fn notify_wakes_the_worker_before_the_poll() {
         ManifestWorkGate::always_enabled(),
         DEFAULT_BATCH_SIZE,
         DEFAULT_POLL_INTERVAL,
+        DEFAULT_CONTAINMENT_TIMEOUT,
     ));
     tokio::time::sleep(Duration::from_millis(200)).await;
     let id = insert_healable(&pool, 3, "s3://peer-a", &body).await;
@@ -422,9 +424,15 @@ async fn pass_heals_at_most_batch_size_handles() {
         source.put("s3://peer-a", handle, body.clone());
         ids.push(insert_healable(&pool, handle, "s3://peer-a", &body).await);
     }
-    run_healing_pass(&pool, &source, &ManifestWorkGate::always_enabled(), 2)
-        .await
-        .unwrap();
+    run_healing_pass(
+        &pool,
+        &source,
+        &ManifestWorkGate::always_enabled(),
+        2,
+        DEFAULT_CONTAINMENT_TIMEOUT,
+    )
+    .await
+    .unwrap();
     let mut healed_count = 0;
     for id in ids {
         if healed(&pool, id).await.1 {
@@ -649,4 +657,36 @@ async fn containment_wakes_healing() {
         .await
         .expect("marking a finding contained must wake healing")
         .unwrap();
+}
+
+#[tokio::test]
+#[serial(db)]
+async fn uncontained_ct64_mismatch_heals_after_the_containment_timeout() {
+    let (_db, pool) = setup().await;
+    let body = vec![8u8; 8];
+    let id = insert_healable(&pool, 23, "s3://peer-a", &body).await;
+    set_contained(&pool, id, false).await;
+    sqlx::query(
+        "UPDATE drifted_handle SET detected_at = NOW() - $2 * INTERVAL '1 second' WHERE id = $1",
+    )
+    .bind(id)
+    .bind(i64::try_from(DEFAULT_CONTAINMENT_TIMEOUT.as_secs()).unwrap() + 1)
+    .execute(&pool)
+    .await
+    .unwrap();
+    let source = FakeCt64::default();
+    source.put("s3://peer-a", 23, body.clone());
+    let before = metrics::HEALED_UNCONTAINED
+        .with_label_values(&[LEGACY_CONSENSUS_EPOCH])
+        .get();
+
+    pass(&pool, &source).await;
+    assert_eq!(healed(&pool, id).await, (false, true));
+    assert_eq!(stored_ct64(&pool, 23).await, body);
+    assert_eq!(
+        metrics::HEALED_UNCONTAINED
+            .with_label_values(&[LEGACY_CONSENSUS_EPOCH])
+            .get(),
+        before + 1
+    );
 }
