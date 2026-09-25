@@ -909,7 +909,15 @@ async fn local_statement_timeout_bounds_manifest_work_selection() {
         .execute(trx.as_mut())
         .await
         .expect_err("statement exceeding the local timeout is cancelled");
-    assert!(error.to_string().contains("statement timeout"));
+    // SQLSTATE, not the message: server messages follow lc_messages.
+    assert_eq!(
+        error
+            .as_database_error()
+            .and_then(|error| error.code())
+            .as_deref(),
+        Some("57014"),
+        "{error}"
+    );
     trx.rollback()
         .await
         .expect("roll back cancelled transaction");
