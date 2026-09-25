@@ -2588,9 +2588,47 @@ type ReconcileRow = (
     Option<i64>,
 );
 
+/// Fail a proposal no GCS fleet ever picked up: still `UpgradeActivated`, no
+/// `gcs-*` schema exists (a Green creates its own at startup and tails into
+/// it, so none means nothing was written), and every chain's window is behind
+/// this stack's watermark. Without this it would block every later proposal.
+/// Anything with a schema is left to that Green's rollback or manual reset.
+async fn fail_expired_without_gcs(pool: &Pool<Postgres>) -> Result<(), Error> {
+    let failed = sqlx::query(
+        r#"
+        UPDATE upgrade_state
+           SET state = 'PAUSED', status = 'failed',
+               last_error = 'window_expired_no_gcs', updated_at = NOW()
+         WHERE stack_role = 'GCS'
+           AND state = 'UpgradeActivated'
+           AND status = 'in_progress'
+           AND gw_dry_run_started = FALSE
+           AND NOT EXISTS (SELECT 1 FROM pg_namespace WHERE nspname LIKE 'gcs-%')
+           AND NOT EXISTS (
+               SELECT 1 FROM upgrade_state w
+                WHERE w.stack_role = 'GCS'
+                  AND w.state = 'UpgradeActivated'
+                  AND (w.end_block IS NULL OR w.end_block >= COALESCE(
+                      (SELECT MAX(block_number) FROM public.host_chain_blocks_valid
+                        WHERE chain_id = w.host_chain_id),
+                      -1)))
+        "#,
+    )
+    .execute(pool)
+    .await?;
+    if failed.rows_affected() > 0 {
+        warn!(
+            rows = failed.rows_affected(),
+            "reconcile: proposal window passed with no GCS dry-run started — failed it (window_expired_no_gcs)"
+        );
+    }
+    Ok(())
+}
+
 /// Advance the upgrade from durable state: re-arm readiness, resume a cutover, or
 /// cut over once both consensus signals are in. A stopped readiness task is
 /// recovered on the next tick (`readiness` keeps it to one attempt at a time).
+/// In BCS mode only [`fail_expired_without_gcs`] runs.
 async fn reconcile(
     pool: &Pool<Postgres>,
     cancel: &CancellationToken,
@@ -2598,7 +2636,7 @@ async fn reconcile(
     gcs_mode: bool,
 ) -> Result<(), Error> {
     if !gcs_mode {
-        return Ok(());
+        return fail_expired_without_gcs(pool).await;
     }
     let rows: Vec<ReconcileRow> = sqlx::query_as(
         "SELECT state, proposal_id, COALESCE(proposal_block, -1),
@@ -4285,7 +4323,175 @@ mod tests {
         cancel.cancel();
     }
 
-    /// A BCS-mode controller never reconciles GCS state.
+    /// With no Green deployed, a BCS controller fails an `UpgradeActivated`
+    /// proposal only once every chain's window has passed its own watermark.
+    #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+    async fn reconcile_bcs_mode_fails_expired_proposal_without_gcs() {
+        let (_instance, pool) = test_pool().await;
+        let cancel = CancellationToken::new();
+        let readiness = Arc::new(AtomicI64::new(NO_READINESS_ATTEMPT));
+        // Two chains, both windows 100..200.
+        seed_gcs_chain(&pool, 1, false, false).await;
+        seed_gcs_chain(&pool, 2, false, false).await;
+        sqlx::query(
+            "UPDATE upgrade_state SET state = 'UpgradeActivated', gw_dry_run_started = FALSE",
+        )
+        .execute(&pool)
+        .await
+        .expect("set UpgradeActivated");
+        async fn seed_tip(pool: &Pool<Postgres>, chain_id: i64, block: i64) {
+            sqlx::query(
+                "INSERT INTO host_chain_blocks_valid (chain_id, block_hash, block_number, block_status)
+                 VALUES ($1, $2, $3, 'finalized')",
+            )
+            .bind(chain_id)
+            .bind(&[chain_id as u8, block as u8][..])
+            .bind(block)
+            .execute(pool)
+            .await
+            .expect("seed tip");
+        }
+
+        // Chain 1 past its window, chain 2 still inside it: the proposal stays.
+        seed_tip(&pool, 1, 201).await;
+        seed_tip(&pool, 2, 200).await;
+        reconcile(&pool, &cancel, &readiness, false)
+            .await
+            .expect("reconcile");
+        assert_eq!(
+            gcs_state(&pool).await,
+            ("UpgradeActivated".into(), "in_progress".into())
+        );
+
+        // Every window passed: the whole proposal is failed.
+        seed_tip(&pool, 2, 201).await;
+        reconcile(&pool, &cancel, &readiness, false)
+            .await
+            .expect("reconcile");
+        let rows: Vec<(String, String, Option<String>)> = sqlx::query_as(
+            "SELECT state, status, last_error FROM upgrade_state
+              WHERE stack_role = 'GCS' ORDER BY host_chain_id",
+        )
+        .fetch_all(&pool)
+        .await
+        .expect("rows");
+        assert_eq!(rows.len(), 2);
+        for row in rows {
+            assert_eq!(
+                row,
+                (
+                    "PAUSED".into(),
+                    "failed".into(),
+                    Some("window_expired_no_gcs".into())
+                )
+            );
+        }
+    }
+
+    /// A chain with no watermark yet blocks expiry: unknown is not "passed".
+    #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+    async fn reconcile_bcs_mode_keeps_proposal_with_unknown_watermark() {
+        let (_instance, pool) = test_pool().await;
+        seed_gcs_chain(&pool, 1, false, false).await;
+        seed_gcs_chain(&pool, 2, false, false).await;
+        sqlx::query(
+            "UPDATE upgrade_state SET state = 'UpgradeActivated', gw_dry_run_started = FALSE",
+        )
+        .execute(&pool)
+        .await
+        .expect("set UpgradeActivated");
+        // Chain 1 past its window; chain 2 has no host_chain_blocks_valid row at all.
+        sqlx::query(
+            "INSERT INTO host_chain_blocks_valid (chain_id, block_hash, block_number, block_status)
+             VALUES (1, $1, 201, 'finalized')",
+        )
+        .bind(&[0xD1u8; 32][..])
+        .execute(&pool)
+        .await
+        .expect("seed tip");
+
+        reconcile(
+            &pool,
+            &CancellationToken::new(),
+            &Arc::new(AtomicI64::new(NO_READINESS_ATTEMPT)),
+            false,
+        )
+        .await
+        .expect("reconcile");
+
+        assert_eq!(
+            gcs_state(&pool).await,
+            ("UpgradeActivated".into(), "in_progress".into())
+        );
+    }
+
+    /// A `gcs-*` schema means a Green exists and has been tailing into it, even
+    /// with both gates still closed: the attempt is not this controller's to fail.
+    #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+    async fn reconcile_bcs_mode_leaves_attempt_with_gcs_schema_to_green() {
+        let (_instance, pool) = test_pool().await;
+        seed_gcs_row(&pool, "UpgradeActivated", "in_progress").await; // end_block = 200
+        sqlx::query("UPDATE upgrade_state SET gw_dry_run_started = FALSE")
+            .execute(&pool)
+            .await
+            .expect("close gw gate");
+        create_gcs_schema(&pool).await.expect("create gcs schema");
+        sqlx::query(
+            "INSERT INTO host_chain_blocks_valid (chain_id, block_hash, block_number, block_status)
+             VALUES (1, $1, 201, 'finalized')",
+        )
+        .bind(&[0xD2u8; 32][..])
+        .execute(&pool)
+        .await
+        .expect("seed tip");
+
+        reconcile(
+            &pool,
+            &CancellationToken::new(),
+            &Arc::new(AtomicI64::new(NO_READINESS_ATTEMPT)),
+            false,
+        )
+        .await
+        .expect("reconcile");
+
+        assert_eq!(
+            gcs_state(&pool).await,
+            ("UpgradeActivated".into(), "in_progress".into())
+        );
+    }
+
+    /// Once Green's Gateway gate has released its zkproof-worker, the attempt has
+    /// dry-run data and latches only `rollback_dry_run` cleans up, so a BCS
+    /// controller must leave it alone even after every window has passed.
+    #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+    async fn reconcile_bcs_mode_leaves_gw_started_attempt_to_green() {
+        let (_instance, pool) = test_pool().await;
+        seed_gcs_row(&pool, "UpgradeActivated", "in_progress").await; // gw_dry_run_started = TRUE, end_block = 200
+        sqlx::query(
+            "INSERT INTO host_chain_blocks_valid (chain_id, block_hash, block_number, block_status)
+             VALUES (1, $1, 201, 'finalized')",
+        )
+        .bind(&[0xC1u8; 32][..])
+        .execute(&pool)
+        .await
+        .expect("seed tip");
+
+        reconcile(
+            &pool,
+            &CancellationToken::new(),
+            &Arc::new(AtomicI64::new(NO_READINESS_ATTEMPT)),
+            false,
+        )
+        .await
+        .expect("reconcile");
+
+        assert_eq!(
+            gcs_state(&pool).await,
+            ("UpgradeActivated".into(), "in_progress".into())
+        );
+    }
+
+    /// A BCS-mode controller never reconciles GCS state past `UpgradeActivated`.
     #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
     async fn reconcile_bcs_mode_is_noop() {
         let (_instance, pool) = test_pool().await;
