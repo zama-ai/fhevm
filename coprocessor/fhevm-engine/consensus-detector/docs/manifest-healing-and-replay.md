@@ -52,7 +52,12 @@ first runs and commits the optimistic scan, then acquires the exclusive
 `DRIFT_CONTAINMENT_BARRIER` in a fresh transaction, repeats the scan, and commits.
 It returns inferred inserts and contained findings. If the
 protected pass fails, optimistic findings remain committed with containment
-still pending.
+still pending. Waiting for the barrier is bounded by a 60 s `lock_timeout`; the
+protected scan itself is not. New batches queue behind the exclusive request, so
+only a batch stuck past that bound times it out. The request then leaves the
+queue so other batches resume, findings stay uncontained until the next
+verification retries, and `coprocessor_containment_barrier_lock_timeout_total`
+counts the event: a stuck TFHE batch while ct64 drift is uncontained.
 After each committed verification attempt, the verifier spawns containment
 when uncontained ct64 findings remain, without awaiting it. No startup scan or periodic containment worker runs.
 The detached task logs errors; they do not change the committed verification
