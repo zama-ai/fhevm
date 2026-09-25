@@ -150,6 +150,7 @@ export const generateRuntime = async (state: State, plan: StackSpec) => {
         ? renderThresholdSpareConfig(thresholdTemplate) : renderThresholdCoreConfig(thresholdTemplate, plan.kms);
       await writeWritableFile(path.join(GENERATED_CONFIG_DIR, kmsMigrationConfigName(party)), config + renderKmsMigration(associations));
     }
+    // One gen-keys config per party, for core images whose CLI takes only --config-file.
     const renderOptions = kmsRenderOptionsFor(plan.versions.env.CORE_VERSION);
     for (let partyId = 1; partyId <= plan.kms.parties; partyId += 1) {
       await writeWritableFile(
