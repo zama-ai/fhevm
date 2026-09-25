@@ -3,16 +3,19 @@ use crate::manifest_consensus::containment::{
     enforce_guaranteed_containment, DRIFT_CONTAINMENT_BARRIER,
 };
 
+/// The local operator is outside a two-peer quorum, so its ct64 is a local drift.
 async fn schedule_drift(pool: &PgPool) -> FakePeerSource {
     let signers = test_signers();
-    seed_registry(pool, &signers[..2], 2).await;
+    seed_registry(pool, &signers, 2).await;
     let local = sign_payload(&signers[0], payload(signers[0].address(), 1)).await;
     schedule_local(pool, &local, 0).await;
     let source = FakePeerSource::default();
-    source.set_manifest(
-        signers[1].address(),
-        &sign_payload(&signers[1], payload(signers[1].address(), 9)).await,
-    );
+    for peer in &signers[1..] {
+        source.set_manifest(
+            peer.address(),
+            &sign_payload(peer, payload(peer.address(), 9)).await,
+        );
+    }
     source
 }
 
