@@ -122,7 +122,7 @@ One body for every error:
 | 405 | `method_not_allowed` | the route exists, the method does not |
 | 500 | `internal` | a bug (`AggregationError::Internal`) |
 | 503 | `shutting_down` | the process received SIGTERM/SIGINT while this request was running (`AggregationError::Cancelled`) |
-| 504 | `timeout` | the deadline (`call.timeout`) passed with fewer than `threshold` responses (`AggregationError::Timeout`) |
+| 504 | `timeout` | the deadline (`call.timeout`) passed with fewer than `threshold` responses (`AggregationError::Timeout`); the message carries the counts, the rejected count and the most frequent connector error |
 | connector's | connector's | `AggregationError::ThresholdNotReached`: the most frequent connector error among the failed calls is answered with the connector's own status and code |
 | 502 | `upstream_transient` | `ThresholdNotReached` with no connector error (only rejected or unreachable nodes) |
 
@@ -133,7 +133,9 @@ the relayer rejects other schemes before the fan-out with `400 malformed "attest
 `user_signature_rejected` 403, `ciphertext_not_found` 404 (the ciphertext is not committed yet),
 `kms_context_destroyed` 410, `kms_context_invalid` 412, `unprocessable` 422, `rate_limited` 429,
 `copro_consensus_failed` 502, `upstream_transient` 502, `overloaded` 503, `timeout` 504, `unknown` 500.
-The message always carries the counts: `KMS threshold not reached (<counted> of <threshold> responses, <rejected> rejected)`.
+The message always carries the counts: `KMS threshold not reached (<counted> of <threshold> responses, <rejected> rejected)`,
+or for a timeout `KMS nodes did not answer in time (<counted> of <threshold> responses, <rejected> rejected, most
+frequent error: <code or none>)`.
 
 **First version, to be reworked.** There is no `retryable` indication in the body yet; forwarding the connector's
 status for the dominant error is a shortcut that an explicit mapper (one table, one place) should replace; and the
