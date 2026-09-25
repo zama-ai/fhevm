@@ -28,3 +28,16 @@ pub(super) static HEALED_UNCONTAINED: LazyLock<IntCounterVec> = LazyLock::new(||
     )
     .unwrap()
 });
+
+pub(super) const SUCCESS: &str = "success";
+pub(super) const TRANSIENT_FAILURE: &str = "transient_failure";
+pub(super) const TERMINAL_FAILURE: &str = "terminal_failure";
+
+pub(super) static ATTEMPTS: LazyLock<IntCounterVec> = LazyLock::new(|| {
+    register_int_counter_vec!(
+        "coprocessor_ct64_healing_attempts_total",
+        "ct64 healing attempts by outcome: success installs the ct64, transient_failure is retried, terminal_failure cannot succeed without operator action",
+        &["consensus_epoch", "outcome"]
+    )
+    .unwrap()
+});

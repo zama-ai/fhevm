@@ -167,7 +167,14 @@ async fn run_healing_pass<S: Ct64Source>(
     let jobs = due.into_iter().map(|job| {
         let source = source.clone();
         let pool = pool.clone();
-        async move { heal_one(&pool, &source, job).await }
+        let consensus_epoch = job.consensus_epoch.clone();
+        async move {
+            heal_one(&pool, &source, job).await.inspect_err(|_| {
+                metrics::ATTEMPTS
+                    .with_label_values(&[&consensus_epoch, metrics::TRANSIENT_FAILURE])
+                    .inc();
+            })
+        }
     });
     let mut installed = false;
     for result in join_all(jobs).await {
@@ -307,7 +314,11 @@ async fn heal_one<S: Ct64Source>(
     job: DueHandle,
 ) -> Result<bool, ExecutionError> {
     let Ok(context_id) = u256_from_bytes(&job.coprocessor_context_id) else {
-        return schedule_retry(pool, job.id).await;
+        error!(
+            finding_id = job.id,
+            "Finding has an invalid coprocessor context id"
+        );
+        return schedule_retry(pool, &job, Failure::Terminal).await;
     };
     let mut skip_buckets = Vec::new();
     if let Some(target) = job.quorum_ct64_digest.as_deref() {
@@ -363,11 +374,19 @@ async fn recover_from_attestations<S: Ct64Source>(
 ) -> Result<bool, ExecutionError> {
     let peers = load_registry_peers(pool).await?;
     if peers.is_empty() {
-        return schedule_retry(pool, job.id).await;
+        warn!(
+            finding_id = job.id,
+            "Coprocessor registry is empty; healing waits for gw-listener"
+        );
+        return schedule_retry(pool, job, Failure::Transient).await;
     }
     let threshold = pinned_threshold(&job.target_evidence).unwrap_or(peers[0].threshold);
     if threshold == 0 {
-        return schedule_retry(pool, job.id).await;
+        warn!(
+            finding_id = job.id,
+            "Coprocessor threshold is 0; no attestation quorum is possible"
+        );
+        return schedule_retry(pool, job, Failure::Transient).await;
     }
     let heads = peers.iter().map(|peer| {
         let source = source.clone();
@@ -405,7 +424,7 @@ async fn recover_from_attestations<S: Ct64Source>(
             threshold,
             "No attestation quorum for this handle yet"
         );
-        return schedule_retry(pool, job.id).await;
+        return schedule_retry(pool, job, Failure::Transient).await;
     };
     if let Some(pinned) = job.quorum_ct64_digest.as_deref() {
         if digest != pinned {
@@ -417,7 +436,7 @@ async fn recover_from_attestations<S: Ct64Source>(
             metrics::QUORUM_CHANGED
                 .with_label_values(&[&job.consensus_epoch])
                 .inc();
-            return schedule_retry(pool, job.id).await;
+            return schedule_retry(pool, job, Failure::Transient).await;
         }
     } else {
         persist_live_quorum(pool, job, &digest, &buckets, &peers, threshold).await?;
@@ -461,7 +480,7 @@ async fn recover_from_attestations<S: Ct64Source>(
     metrics::BAD_TARGET_DIGEST
         .with_label_values(&[&job.consensus_epoch])
         .inc();
-    schedule_retry(pool, job.id).await
+    schedule_retry(pool, job, Failure::Transient).await
 }
 
 async fn load_registry_peers(pool: &PgPool) -> Result<Vec<RegistryPeer>, ExecutionError> {
@@ -613,7 +632,12 @@ async fn install_matching_ct64(
     digest: &[u8],
 ) -> Result<bool, ExecutionError> {
     let Ok(ciphertext_type) = get_ct_type(&job.handle) else {
-        return schedule_retry(pool, job.id).await;
+        error!(
+            finding_id = job.id,
+            handle = hex::encode(&job.handle),
+            "Finding handle has no ciphertext type"
+        );
+        return schedule_retry(pool, job, Failure::Terminal).await;
     };
     let mut trx = pool.begin().await?;
     // `ciphertexts` and `computations` below resolve to the finding's stack;
@@ -685,6 +709,9 @@ async fn install_matching_ct64(
     .execute(trx.as_mut())
     .await?;
     trx.commit().await?;
+    metrics::ATTEMPTS
+        .with_label_values(&[&job.consensus_epoch, metrics::SUCCESS])
+        .inc();
     if job.uncontained {
         metrics::HEALED_UNCONTAINED
             .with_label_values(&[&job.consensus_epoch])
@@ -698,7 +725,26 @@ async fn install_matching_ct64(
     Ok(true)
 }
 
-async fn schedule_retry(pool: &PgPool, id: i64) -> Result<bool, ExecutionError> {
+/// Terminal failures are still retried so a repaired row heals without a
+/// restart; the outcome only separates them in `ATTEMPTS`.
+#[derive(Clone, Copy)]
+enum Failure {
+    Transient,
+    Terminal,
+}
+
+async fn schedule_retry(
+    pool: &PgPool,
+    job: &DueHandle,
+    failure: Failure,
+) -> Result<bool, ExecutionError> {
+    let outcome = match failure {
+        Failure::Transient => metrics::TRANSIENT_FAILURE,
+        Failure::Terminal => metrics::TERMINAL_FAILURE,
+    };
+    metrics::ATTEMPTS
+        .with_label_values(&[&job.consensus_epoch, outcome])
+        .inc();
     let retry_secs = i64::try_from(RETRY_DELAY.as_secs()).unwrap_or(30);
     sqlx::query!(
         r#"
@@ -706,7 +752,7 @@ async fn schedule_retry(pool: &PgPool, id: i64) -> Result<bool, ExecutionError> 
            SET next_retry_at = NOW() + ($2::BIGINT * INTERVAL '1 second')
          WHERE id = $1
         "#,
-        id,
+        job.id,
         retry_secs,
     )
     .execute(pool)
