@@ -19,3 +19,12 @@ pub(super) static QUORUM_CHANGED: LazyLock<IntCounterVec> = LazyLock::new(|| {
     )
     .unwrap()
 });
+
+pub(super) static HEALED_UNCONTAINED: LazyLock<IntCounterVec> = LazyLock::new(|| {
+    register_int_counter_vec!(
+        "coprocessor_ct64_healing_uncontained_total",
+        "ct64 drift healed after the containment timeout without being contained; descendants rely on verification",
+        &["consensus_epoch"]
+    )
+    .unwrap()
+});
