@@ -29,7 +29,7 @@ check requires its `assert_no_remaining_accounts` call. `?` marks an optional ac
 |---|---|---|---|---|---|
 | `initialize_host_config` | `payer`: pays rent; no authority<br>`admin`: the program's upgrade authority (`ProgramData`); becomes `HostConfig.admin` | `payer`, `host_config` | `program_data` | System, self (event CPI) | — |
 | `set_admin` | `admin`: `HostConfig.admin`; `new_admin` co-signs unless it is a program-owned PDA | `host_config` | `new_admin` | self (event CPI) | — |
-| `pause` | `pauser`: a key with an enabled `PauserRecord`; it can set pause flags, not clear them | `host_config` | `pauser_record` | self (event CPI) | — |
+| `pause` | `pauser`: a key with an enabled `PauserRecord`; it can set pause flags, not clear them; a wallet must call at the top level, a PDA may call through CPI | `host_config` | `pauser_record` | self (event CPI) | — |
 | `unpause` | `admin`: `HostConfig.admin` | `host_config` | — | self (event CPI) | — |
 | `set_pauser` | `payer`: pays rent; no authority<br>`admin`: `HostConfig.admin` | `payer`, `pauser_record` | `host_config` | System, self (event CPI) | — |
 | `set_grant_deny_list_enabled` | `admin`: `HostConfig.admin` | `host_config` | — | self (event CPI) | — |

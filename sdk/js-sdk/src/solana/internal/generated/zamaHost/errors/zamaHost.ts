@@ -190,6 +190,8 @@ export const ZAMA_HOST_ERROR__PUBLIC_DECRYPT_PAUSED = 0x17c5; // 6085
 export const ZAMA_HOST_ERROR__NOT_PAUSER = 0x17c6; // 6086
 /** PauserRecordMismatch: pauser record mismatch */
 export const ZAMA_HOST_ERROR__PAUSER_RECORD_MISMATCH = 0x17c7; // 6087
+/** WalletPauseThroughCpi: a wallet pauser must pause in a top-level instruction */
+export const ZAMA_HOST_ERROR__WALLET_PAUSE_THROUGH_CPI = 0x17c8; // 6088
 
 export type ZamaHostError =
   | typeof ZAMA_HOST_ERROR__ACL_WRITES_PAUSED
@@ -278,6 +280,7 @@ export type ZamaHostError =
   | typeof ZAMA_HOST_ERROR__UNSUPPORTED_FHE_TYPE
   | typeof ZAMA_HOST_ERROR__VERIFIED_INPUTS_PAUSED
   | typeof ZAMA_HOST_ERROR__WALLET_DELEGATION_THROUGH_CPI
+  | typeof ZAMA_HOST_ERROR__WALLET_PAUSE_THROUGH_CPI
   | typeof ZAMA_HOST_ERROR__ZERO_COPROCESSOR_SIGNER
   | typeof ZAMA_HOST_ERROR__ZERO_KMS_SIGNER;
 
@@ -370,6 +373,7 @@ if (process.env['NODE_ENV'] !== 'production') {
     [ZAMA_HOST_ERROR__UNSUPPORTED_FHE_TYPE]: `FHE type is unsupported`,
     [ZAMA_HOST_ERROR__VERIFIED_INPUTS_PAUSED]: `verified inputs are paused`,
     [ZAMA_HOST_ERROR__WALLET_DELEGATION_THROUGH_CPI]: `a wallet delegator must delegate in a top-level instruction`,
+    [ZAMA_HOST_ERROR__WALLET_PAUSE_THROUGH_CPI]: `a wallet pauser must pause in a top-level instruction`,
     [ZAMA_HOST_ERROR__ZERO_COPROCESSOR_SIGNER]: `coprocessor signer set contains the zero address`,
     [ZAMA_HOST_ERROR__ZERO_KMS_SIGNER]: `KMS signer set contains the zero address`,
   };

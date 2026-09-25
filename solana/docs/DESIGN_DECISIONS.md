@@ -2222,7 +2222,11 @@ cannot recall.
 
 A pauser is a `PauserRecord` PDA `("pauser", key)`, which the admin creates, enables or disables
 with `set_pauser`, as it does deny and HCU-trusted records. `pause` takes the pauser's signature and
-its enabled record, and sets the flags it names. `unpause` takes the admin and clears them. As on
+its enabled record, and sets the flags it names. A wallet pauser must call `pause` at the top level,
+by the rule `delegate_for_user_decryption` applies to a wallet delegator: a wallet's signature reaches
+every program of the transaction it signed, while EVM's `msg.sender` check keeps a called contract
+from pausing with a pauser's right. A PDA pauser, such as a Squads vault, pauses through CPI, as only
+its own program can sign for it. `unpause` takes the admin and clears them. As on
 EVM, the admin pauses only if it also holds a pauser record. Pausing an area already paused
 changes nothing and emits nothing. A change stamps `updated_slot` and emits `HostConfigUpdatedEvent`,
 whose `signer` names the pauser or the admin. `set_pauser` emits `PauserUpdatedEvent`.

@@ -2480,6 +2480,11 @@
       "code": 6087,
       "name": "PauserRecordMismatch",
       "msg": "pauser record mismatch"
+    },
+    {
+      "code": 6088,
+      "name": "WalletPauseThroughCpi",
+      "msg": "a wallet pauser must pause in a top-level instruction"
     }
   ],
   "types": [
