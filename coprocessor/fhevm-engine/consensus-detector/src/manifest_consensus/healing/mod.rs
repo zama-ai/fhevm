@@ -53,7 +53,30 @@ pub(crate) const DEFAULT_POLL_INTERVAL: Duration = Duration::from_secs(30);
 /// Containment reduces propagation; verification still detects what it misses.
 /// After this delay an uncontained ct64 finding is healed anyway.
 pub(crate) const DEFAULT_CONTAINMENT_TIMEOUT: Duration = Duration::from_secs(5 * 60);
+/// Failed attempts before a finding is abandoned: about one hour at
+/// `RETRY_DELAY`.
+pub(crate) const DEFAULT_MAX_ATTEMPTS: i32 = 120;
 const RETRY_DELAY: Duration = Duration::from_secs(30);
+
+/// Healing worker tuning, from the `--manifest-healing-*` arguments.
+#[derive(Clone, Copy, Debug)]
+pub(crate) struct HealingSettings {
+    pub batch_size: i64,
+    pub poll_interval: Duration,
+    pub containment_timeout: Duration,
+    pub max_attempts: i32,
+}
+
+impl Default for HealingSettings {
+    fn default() -> Self {
+        Self {
+            batch_size: DEFAULT_BATCH_SIZE,
+            poll_interval: DEFAULT_POLL_INTERVAL,
+            containment_timeout: DEFAULT_CONTAINMENT_TIMEOUT,
+            max_attempts: DEFAULT_MAX_ATTEMPTS,
+        }
+    }
+}
 
 struct DueHandle {
     id: i64,
@@ -70,6 +93,7 @@ struct DueHandle {
     /// healer's own stack.
     schema: String,
     containment_timeout_secs: i64,
+    max_attempts: i32,
 }
 
 struct RegistryPeer {
@@ -83,18 +107,14 @@ pub(crate) fn spawn_healing_worker(
     token: CancellationToken,
     client: Arc<Client>,
     work_gate: Arc<ManifestWorkGate>,
-    batch_size: i64,
-    poll_interval: Duration,
-    containment_timeout: Duration,
+    settings: HealingSettings,
 ) -> JoinHandle<Result<(), ExecutionError>> {
     tokio::spawn(run_healing_worker(
         pool,
         token,
         S3Ct64Source::new(client),
         work_gate,
-        batch_size,
-        poll_interval,
-        containment_timeout,
+        settings,
     ))
 }
 
@@ -103,15 +123,26 @@ async fn run_healing_worker<S: Ct64Source>(
     token: CancellationToken,
     source: S,
     work_gate: Arc<ManifestWorkGate>,
-    batch_size: i64,
-    poll_interval: Duration,
-    containment_timeout: Duration,
+    settings: HealingSettings,
 ) -> Result<(), ExecutionError> {
+    let HealingSettings {
+        batch_size,
+        poll_interval,
+        containment_timeout,
+        max_attempts,
+    } = settings;
     info!("Healing worker enabled for this stack consensus_epoch");
     let mut listener = PgListener::connect_with(&pool).await?;
     listener.listen(EVENT_HEALING_WORK).await?;
-    if let Err(err) =
-        run_healing_pass(&pool, &source, &work_gate, batch_size, containment_timeout).await
+    if let Err(err) = run_healing_pass(
+        &pool,
+        &source,
+        &work_gate,
+        batch_size,
+        containment_timeout,
+        max_attempts,
+    )
+    .await
     {
         if let ExecutionError::DbError(db) = &err {
             if is_fatal_connection_error(db) {
@@ -131,7 +162,16 @@ async fn run_healing_worker<S: Ct64Source>(
             }
             _ = tokio::time::sleep(poll_interval) => {}
         }
-        match run_healing_pass(&pool, &source, &work_gate, batch_size, containment_timeout).await {
+        match run_healing_pass(
+            &pool,
+            &source,
+            &work_gate,
+            batch_size,
+            containment_timeout,
+            max_attempts,
+        )
+        .await
+        {
             Ok(()) => {}
             Err(ExecutionError::DbError(err)) if is_fatal_connection_error(&err) => {
                 return Err(ExecutionError::DbError(err));
@@ -149,6 +189,7 @@ async fn run_healing_pass<S: Ct64Source>(
     work_gate: &ManifestWorkGate,
     batch_size: i64,
     containment_timeout: Duration,
+    max_attempts: i32,
 ) -> Result<(), ExecutionError> {
     if work_gate.pinned_consensus_epoch().is_none() {
         return Ok(());
@@ -160,7 +201,14 @@ async fn run_healing_pass<S: Ct64Source>(
     if schemas.is_empty() {
         return Ok(());
     }
-    let due = lock_due(pool, &schemas, batch_size, containment_timeout).await?;
+    let due = lock_due(
+        pool,
+        &schemas,
+        batch_size,
+        containment_timeout,
+        max_attempts,
+    )
+    .await?;
     if due.is_empty() {
         return Ok(());
     }
@@ -215,6 +263,7 @@ async fn lock_due(
     schemas: &HashMap<String, String>,
     batch_size: i64,
     containment_timeout: Duration,
+    max_attempts: i32,
 ) -> Result<Vec<DueHandle>, ExecutionError> {
     let epochs: Vec<String> = schemas.keys().cloned().collect();
     let containment_timeout_secs = i64::try_from(containment_timeout.as_secs())
@@ -240,6 +289,7 @@ async fn lock_due(
                   LEFT JOIN drifted_handle_demand demand
                     ON demand.handle = cand.handle
                  WHERE cand.healed_at IS NULL
+                   AND cand.heal_abandoned_at IS NULL
                    AND cand.reason IN (
                         'ct64_mismatch', 'missing_here', 'error_here', 'uncomputed_here'
                    )
@@ -302,6 +352,7 @@ async fn lock_due(
                     .unwrap_or(serde_json::Value::Null),
                 uncontained: row.uncontained,
                 containment_timeout_secs,
+                max_attempts,
                 schema,
             })
         })
@@ -725,38 +776,75 @@ async fn install_matching_ct64(
     Ok(true)
 }
 
-/// Terminal failures are still retried so a repaired row heals without a
-/// restart; the outcome only separates them in `ATTEMPTS`.
+/// A transient failure is retried until `max_attempts`; a terminal one can
+/// never succeed and abandons the finding at once.
 #[derive(Clone, Copy)]
 enum Failure {
     Transient,
     Terminal,
 }
 
+/// Delays and counts the attempt on the finding and on its unhealed siblings
+/// with the same target, so a sibling does not restart the count. The finding
+/// is abandoned (`heal_abandoned_at`) when the attempt is terminal or the last
+/// allowed one.
 async fn schedule_retry(
     pool: &PgPool,
     job: &DueHandle,
     failure: Failure,
 ) -> Result<bool, ExecutionError> {
-    let outcome = match failure {
-        Failure::Transient => metrics::TRANSIENT_FAILURE,
-        Failure::Terminal => metrics::TERMINAL_FAILURE,
+    let retry_secs = i64::try_from(RETRY_DELAY.as_secs()).unwrap_or(30);
+    let rows = sqlx::query!(
+        r#"
+        WITH target AS (
+            SELECT consensus_epoch, coprocessor_context_id, host_chain_id,
+                   handle, quorum_ct64_digest
+              FROM drifted_handle
+             WHERE id = $1
+        )
+        UPDATE drifted_handle dh
+           SET heal_attempts = dh.heal_attempts + 1,
+               next_retry_at = NOW() + ($2::BIGINT * INTERVAL '1 second'),
+               heal_abandoned_at = CASE
+                   WHEN $3 OR dh.heal_attempts + 1 >= $4 THEN NOW()
+               END
+          FROM target t
+         WHERE dh.consensus_epoch = t.consensus_epoch
+           AND dh.coprocessor_context_id = t.coprocessor_context_id
+           AND dh.host_chain_id = t.host_chain_id
+           AND dh.handle = t.handle
+           AND dh.quorum_ct64_digest IS NOT DISTINCT FROM t.quorum_ct64_digest
+           AND dh.healed_at IS NULL
+           AND dh.heal_abandoned_at IS NULL
+        RETURNING dh.id, dh.heal_attempts, dh.heal_abandoned_at IS NOT NULL AS "abandoned!"
+        "#,
+        job.id,
+        retry_secs,
+        matches!(failure, Failure::Terminal),
+        job.max_attempts,
+    )
+    .fetch_all(pool)
+    .await?;
+    let abandoned = rows.iter().find(|row| row.id == job.id).is_some_and(|row| {
+        if row.abandoned {
+            error!(
+                finding_id = job.id,
+                handle = hex::encode(&job.handle),
+                attempts = row.heal_attempts,
+                max_attempts = job.max_attempts,
+                "Abandoning ct64 healing; reset heal_attempts and heal_abandoned_at to retry"
+            );
+        }
+        row.abandoned
+    });
+    let outcome = if abandoned {
+        metrics::TERMINAL_FAILURE
+    } else {
+        metrics::TRANSIENT_FAILURE
     };
     metrics::ATTEMPTS
         .with_label_values(&[&job.consensus_epoch, outcome])
         .inc();
-    let retry_secs = i64::try_from(RETRY_DELAY.as_secs()).unwrap_or(30);
-    sqlx::query!(
-        r#"
-        UPDATE drifted_handle
-           SET next_retry_at = NOW() + ($2::BIGINT * INTERVAL '1 second')
-         WHERE id = $1
-        "#,
-        job.id,
-        retry_secs,
-    )
-    .execute(pool)
-    .await?;
     Ok(false)
 }
 
