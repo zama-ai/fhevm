@@ -565,7 +565,6 @@ interface IProtocolConfig {
     error InvalidProposalId();
     error KmsContextCreationAlreadyConfirmed(address txSender, uint256 kmsContextId);
     error KmsContextCreationUnauthorized(address caller, uint256 kmsContextId);
-    error KmsContextNotCreated(uint256 kmsContextId);
     error KmsContextNotPending(uint256 kmsContextId);
     error KmsLifecycleOperationInFlight(uint256 kmsContextId, uint256 epochId);
     error KmsNodeNullSigner();
@@ -577,7 +576,6 @@ interface IProtocolConfig {
     error LatestActiveKmsEpochCannotBeDestroyed(uint256 epochId);
     error NonIncreasingEpochId(uint256 epochId, uint256 currentEpochId);
     error NonIncreasingKmsContextId(uint256 contextId, uint256 latestActiveKmsContextId);
-    error ThresholdExceedsProofFormatLimit(string thresholdName, uint256 threshold, uint256 maxAllowed);
     error ZeroChainId();
     error ZeroGwStartBlock();
 
@@ -2249,17 +2247,6 @@ interface IProtocolConfig {
   },
   {
     "type": "error",
-    "name": "KmsContextNotCreated",
-    "inputs": [
-      {
-        "name": "kmsContextId",
-        "type": "uint256",
-        "internalType": "uint256"
-      }
-    ]
-  },
-  {
-    "type": "error",
     "name": "KmsContextNotPending",
     "inputs": [
       {
@@ -2382,27 +2369,6 @@ interface IProtocolConfig {
       },
       {
         "name": "latestActiveKmsContextId",
-        "type": "uint256",
-        "internalType": "uint256"
-      }
-    ]
-  },
-  {
-    "type": "error",
-    "name": "ThresholdExceedsProofFormatLimit",
-    "inputs": [
-      {
-        "name": "thresholdName",
-        "type": "string",
-        "internalType": "string"
-      },
-      {
-        "name": "threshold",
-        "type": "uint256",
-        "internalType": "uint256"
-      },
-      {
-        "name": "maxAllowed",
         "type": "uint256",
         "internalType": "uint256"
       }
@@ -5767,89 +5733,6 @@ error KmsContextCreationUnauthorized(address caller, uint256 kmsContextId);
     };
     #[derive(serde::Serialize, serde::Deserialize)]
     #[derive(Default, Debug, PartialEq, Eq, Hash)]
-    /**Custom error with signature `KmsContextNotCreated(uint256)` and selector `0x32c5b9f6`.
-```solidity
-error KmsContextNotCreated(uint256 kmsContextId);
-```*/
-    #[allow(non_camel_case_types, non_snake_case, clippy::pub_underscore_fields)]
-    #[derive(Clone)]
-    pub struct KmsContextNotCreated {
-        #[allow(missing_docs)]
-        pub kmsContextId: alloy::sol_types::private::primitives::aliases::U256,
-    }
-    #[allow(
-        non_camel_case_types,
-        non_snake_case,
-        clippy::pub_underscore_fields,
-        clippy::style
-    )]
-    const _: () = {
-        use alloy::sol_types as alloy_sol_types;
-        #[doc(hidden)]
-        #[allow(dead_code)]
-        type UnderlyingSolTuple<'a> = (alloy::sol_types::sol_data::Uint<256>,);
-        #[doc(hidden)]
-        type UnderlyingRustTuple<'a> = (
-            alloy::sol_types::private::primitives::aliases::U256,
-        );
-        #[cfg(test)]
-        #[allow(dead_code, unreachable_patterns)]
-        fn _type_assertion(
-            _t: alloy_sol_types::private::AssertTypeEq<UnderlyingRustTuple>,
-        ) {
-            match _t {
-                alloy_sol_types::private::AssertTypeEq::<
-                    <UnderlyingSolTuple as alloy_sol_types::SolType>::RustType,
-                >(_) => {}
-            }
-        }
-        #[automatically_derived]
-        #[doc(hidden)]
-        impl ::core::convert::From<KmsContextNotCreated> for UnderlyingRustTuple<'_> {
-            fn from(value: KmsContextNotCreated) -> Self {
-                (value.kmsContextId,)
-            }
-        }
-        #[automatically_derived]
-        #[doc(hidden)]
-        impl ::core::convert::From<UnderlyingRustTuple<'_>> for KmsContextNotCreated {
-            fn from(tuple: UnderlyingRustTuple<'_>) -> Self {
-                Self { kmsContextId: tuple.0 }
-            }
-        }
-        #[automatically_derived]
-        impl alloy_sol_types::SolError for KmsContextNotCreated {
-            type Parameters<'a> = UnderlyingSolTuple<'a>;
-            type Token<'a> = <Self::Parameters<
-                'a,
-            > as alloy_sol_types::SolType>::Token<'a>;
-            const SIGNATURE: &'static str = "KmsContextNotCreated(uint256)";
-            const SELECTOR: [u8; 4] = [50u8, 197u8, 185u8, 246u8];
-            #[inline]
-            fn new<'a>(
-                tuple: <Self::Parameters<'a> as alloy_sol_types::SolType>::RustType,
-            ) -> Self {
-                tuple.into()
-            }
-            #[inline]
-            fn tokenize(&self) -> Self::Token<'_> {
-                (
-                    <alloy::sol_types::sol_data::Uint<
-                        256,
-                    > as alloy_sol_types::SolType>::tokenize(&self.kmsContextId),
-                )
-            }
-            #[inline]
-            fn abi_decode_raw_validate(data: &[u8]) -> alloy_sol_types::Result<Self> {
-                <Self::Parameters<
-                    '_,
-                > as alloy_sol_types::SolType>::abi_decode_sequence_validate(data)
-                    .map(Self::new)
-            }
-        }
-    };
-    #[derive(serde::Serialize, serde::Deserialize)]
-    #[derive(Default, Debug, PartialEq, Eq, Hash)]
     /**Custom error with signature `KmsContextNotPending(uint256)` and selector `0x3586efa1`.
 ```solidity
 error KmsContextNotPending(uint256 kmsContextId);
@@ -6792,111 +6675,6 @@ error NonIncreasingKmsContextId(uint256 contextId, uint256 latestActiveKmsContex
                     > as alloy_sol_types::SolType>::tokenize(
                         &self.latestActiveKmsContextId,
                     ),
-                )
-            }
-            #[inline]
-            fn abi_decode_raw_validate(data: &[u8]) -> alloy_sol_types::Result<Self> {
-                <Self::Parameters<
-                    '_,
-                > as alloy_sol_types::SolType>::abi_decode_sequence_validate(data)
-                    .map(Self::new)
-            }
-        }
-    };
-    #[derive(serde::Serialize, serde::Deserialize)]
-    #[derive(Default, Debug, PartialEq, Eq, Hash)]
-    /**Custom error with signature `ThresholdExceedsProofFormatLimit(string,uint256,uint256)` and selector `0x22ba52db`.
-```solidity
-error ThresholdExceedsProofFormatLimit(string thresholdName, uint256 threshold, uint256 maxAllowed);
-```*/
-    #[allow(non_camel_case_types, non_snake_case, clippy::pub_underscore_fields)]
-    #[derive(Clone)]
-    pub struct ThresholdExceedsProofFormatLimit {
-        #[allow(missing_docs)]
-        pub thresholdName: alloy::sol_types::private::String,
-        #[allow(missing_docs)]
-        pub threshold: alloy::sol_types::private::primitives::aliases::U256,
-        #[allow(missing_docs)]
-        pub maxAllowed: alloy::sol_types::private::primitives::aliases::U256,
-    }
-    #[allow(
-        non_camel_case_types,
-        non_snake_case,
-        clippy::pub_underscore_fields,
-        clippy::style
-    )]
-    const _: () = {
-        use alloy::sol_types as alloy_sol_types;
-        #[doc(hidden)]
-        #[allow(dead_code)]
-        type UnderlyingSolTuple<'a> = (
-            alloy::sol_types::sol_data::String,
-            alloy::sol_types::sol_data::Uint<256>,
-            alloy::sol_types::sol_data::Uint<256>,
-        );
-        #[doc(hidden)]
-        type UnderlyingRustTuple<'a> = (
-            alloy::sol_types::private::String,
-            alloy::sol_types::private::primitives::aliases::U256,
-            alloy::sol_types::private::primitives::aliases::U256,
-        );
-        #[cfg(test)]
-        #[allow(dead_code, unreachable_patterns)]
-        fn _type_assertion(
-            _t: alloy_sol_types::private::AssertTypeEq<UnderlyingRustTuple>,
-        ) {
-            match _t {
-                alloy_sol_types::private::AssertTypeEq::<
-                    <UnderlyingSolTuple as alloy_sol_types::SolType>::RustType,
-                >(_) => {}
-            }
-        }
-        #[automatically_derived]
-        #[doc(hidden)]
-        impl ::core::convert::From<ThresholdExceedsProofFormatLimit>
-        for UnderlyingRustTuple<'_> {
-            fn from(value: ThresholdExceedsProofFormatLimit) -> Self {
-                (value.thresholdName, value.threshold, value.maxAllowed)
-            }
-        }
-        #[automatically_derived]
-        #[doc(hidden)]
-        impl ::core::convert::From<UnderlyingRustTuple<'_>>
-        for ThresholdExceedsProofFormatLimit {
-            fn from(tuple: UnderlyingRustTuple<'_>) -> Self {
-                Self {
-                    thresholdName: tuple.0,
-                    threshold: tuple.1,
-                    maxAllowed: tuple.2,
-                }
-            }
-        }
-        #[automatically_derived]
-        impl alloy_sol_types::SolError for ThresholdExceedsProofFormatLimit {
-            type Parameters<'a> = UnderlyingSolTuple<'a>;
-            type Token<'a> = <Self::Parameters<
-                'a,
-            > as alloy_sol_types::SolType>::Token<'a>;
-            const SIGNATURE: &'static str = "ThresholdExceedsProofFormatLimit(string,uint256,uint256)";
-            const SELECTOR: [u8; 4] = [34u8, 186u8, 82u8, 219u8];
-            #[inline]
-            fn new<'a>(
-                tuple: <Self::Parameters<'a> as alloy_sol_types::SolType>::RustType,
-            ) -> Self {
-                tuple.into()
-            }
-            #[inline]
-            fn tokenize(&self) -> Self::Token<'_> {
-                (
-                    <alloy::sol_types::sol_data::String as alloy_sol_types::SolType>::tokenize(
-                        &self.thresholdName,
-                    ),
-                    <alloy::sol_types::sol_data::Uint<
-                        256,
-                    > as alloy_sol_types::SolType>::tokenize(&self.threshold),
-                    <alloy::sol_types::sol_data::Uint<
-                        256,
-                    > as alloy_sol_types::SolType>::tokenize(&self.maxAllowed),
                 )
             }
             #[inline]
@@ -15306,8 +15084,6 @@ function proposeCoprocessorUpgrade(uint256 proposalId, string memory softwareVer
         #[allow(missing_docs)]
         KmsContextCreationUnauthorized(KmsContextCreationUnauthorized),
         #[allow(missing_docs)]
-        KmsContextNotCreated(KmsContextNotCreated),
-        #[allow(missing_docs)]
         KmsContextNotPending(KmsContextNotPending),
         #[allow(missing_docs)]
         KmsLifecycleOperationInFlight(KmsLifecycleOperationInFlight),
@@ -15330,8 +15106,6 @@ function proposeCoprocessorUpgrade(uint256 proposalId, string memory softwareVer
         #[allow(missing_docs)]
         NonIncreasingKmsContextId(NonIncreasingKmsContextId),
         #[allow(missing_docs)]
-        ThresholdExceedsProofFormatLimit(ThresholdExceedsProofFormatLimit),
-        #[allow(missing_docs)]
         ZeroChainId(ZeroChainId),
         #[allow(missing_docs)]
         ZeroGwStartBlock(ZeroGwStartBlock),
@@ -15350,9 +15124,7 @@ function proposeCoprocessorUpgrade(uint256 proposalId, string memory softwareVer
             [22u8, 167u8, 39u8, 120u8],
             [23u8, 211u8, 233u8, 72u8],
             [24u8, 122u8, 234u8, 168u8],
-            [34u8, 186u8, 82u8, 219u8],
             [45u8, 236u8, 207u8, 77u8],
-            [50u8, 197u8, 185u8, 246u8],
             [53u8, 134u8, 239u8, 161u8],
             [54u8, 191u8, 182u8, 14u8],
             [73u8, 65u8, 118u8, 54u8],
@@ -15384,9 +15156,7 @@ function proposeCoprocessorUpgrade(uint256 proposalId, string memory softwareVer
             ::core::stringify!(KmsSignerSetExceedsProofFormatLimit),
             ::core::stringify!(ZeroGwStartBlock),
             ::core::stringify!(LatestActiveKmsContextCannotBeDestroyed),
-            ::core::stringify!(ThresholdExceedsProofFormatLimit),
             ::core::stringify!(KmsNodeNullSigner),
-            ::core::stringify!(KmsContextNotCreated),
             ::core::stringify!(KmsContextNotPending),
             ::core::stringify!(InvalidNullThreshold),
             ::core::stringify!(EpochActivationAlreadyConfirmed),
@@ -15418,9 +15188,7 @@ function proposeCoprocessorUpgrade(uint256 proposalId, string memory softwareVer
             <KmsSignerSetExceedsProofFormatLimit as alloy_sol_types::SolError>::SIGNATURE,
             <ZeroGwStartBlock as alloy_sol_types::SolError>::SIGNATURE,
             <LatestActiveKmsContextCannotBeDestroyed as alloy_sol_types::SolError>::SIGNATURE,
-            <ThresholdExceedsProofFormatLimit as alloy_sol_types::SolError>::SIGNATURE,
             <KmsNodeNullSigner as alloy_sol_types::SolError>::SIGNATURE,
-            <KmsContextNotCreated as alloy_sol_types::SolError>::SIGNATURE,
             <KmsContextNotPending as alloy_sol_types::SolError>::SIGNATURE,
             <InvalidNullThreshold as alloy_sol_types::SolError>::SIGNATURE,
             <EpochActivationAlreadyConfirmed as alloy_sol_types::SolError>::SIGNATURE,
@@ -15469,7 +15237,7 @@ function proposeCoprocessorUpgrade(uint256 proposalId, string memory softwareVer
     impl alloy_sol_types::SolInterface for IProtocolConfigErrors {
         const NAME: &'static str = "IProtocolConfigErrors";
         const MIN_DATA_LENGTH: usize = 0usize;
-        const COUNT: usize = 31usize;
+        const COUNT: usize = 29usize;
         #[inline]
         fn selector(&self) -> [u8; 4] {
             match self {
@@ -15521,9 +15289,6 @@ function proposeCoprocessorUpgrade(uint256 proposalId, string memory softwareVer
                 Self::KmsContextCreationUnauthorized(_) => {
                     <KmsContextCreationUnauthorized as alloy_sol_types::SolError>::SELECTOR
                 }
-                Self::KmsContextNotCreated(_) => {
-                    <KmsContextNotCreated as alloy_sol_types::SolError>::SELECTOR
-                }
                 Self::KmsContextNotPending(_) => {
                     <KmsContextNotPending as alloy_sol_types::SolError>::SELECTOR
                 }
@@ -15556,9 +15321,6 @@ function proposeCoprocessorUpgrade(uint256 proposalId, string memory softwareVer
                 }
                 Self::NonIncreasingKmsContextId(_) => {
                     <NonIncreasingKmsContextId as alloy_sol_types::SolError>::SELECTOR
-                }
-                Self::ThresholdExceedsProofFormatLimit(_) => {
-                    <ThresholdExceedsProofFormatLimit as alloy_sol_types::SolError>::SELECTOR
                 }
                 Self::ZeroChainId(_) => {
                     <ZeroChainId as alloy_sol_types::SolError>::SELECTOR
@@ -15656,17 +15418,6 @@ function proposeCoprocessorUpgrade(uint256 proposalId, string memory softwareVer
                     LatestActiveKmsContextCannotBeDestroyed
                 },
                 {
-                    fn ThresholdExceedsProofFormatLimit(
-                        data: &[u8],
-                    ) -> alloy_sol_types::Result<IProtocolConfigErrors> {
-                        <ThresholdExceedsProofFormatLimit as alloy_sol_types::SolError>::abi_decode_raw(
-                                data,
-                            )
-                            .map(IProtocolConfigErrors::ThresholdExceedsProofFormatLimit)
-                    }
-                    ThresholdExceedsProofFormatLimit
-                },
-                {
                     fn KmsNodeNullSigner(
                         data: &[u8],
                     ) -> alloy_sol_types::Result<IProtocolConfigErrors> {
@@ -15676,17 +15427,6 @@ function proposeCoprocessorUpgrade(uint256 proposalId, string memory softwareVer
                             .map(IProtocolConfigErrors::KmsNodeNullSigner)
                     }
                     KmsNodeNullSigner
-                },
-                {
-                    fn KmsContextNotCreated(
-                        data: &[u8],
-                    ) -> alloy_sol_types::Result<IProtocolConfigErrors> {
-                        <KmsContextNotCreated as alloy_sol_types::SolError>::abi_decode_raw(
-                                data,
-                            )
-                            .map(IProtocolConfigErrors::KmsContextNotCreated)
-                    }
-                    KmsContextNotCreated
                 },
                 {
                     fn KmsContextNotPending(
@@ -16025,17 +15765,6 @@ function proposeCoprocessorUpgrade(uint256 proposalId, string memory softwareVer
                     LatestActiveKmsContextCannotBeDestroyed
                 },
                 {
-                    fn ThresholdExceedsProofFormatLimit(
-                        data: &[u8],
-                    ) -> alloy_sol_types::Result<IProtocolConfigErrors> {
-                        <ThresholdExceedsProofFormatLimit as alloy_sol_types::SolError>::abi_decode_raw_validate(
-                                data,
-                            )
-                            .map(IProtocolConfigErrors::ThresholdExceedsProofFormatLimit)
-                    }
-                    ThresholdExceedsProofFormatLimit
-                },
-                {
                     fn KmsNodeNullSigner(
                         data: &[u8],
                     ) -> alloy_sol_types::Result<IProtocolConfigErrors> {
@@ -16045,17 +15774,6 @@ function proposeCoprocessorUpgrade(uint256 proposalId, string memory softwareVer
                             .map(IProtocolConfigErrors::KmsNodeNullSigner)
                     }
                     KmsNodeNullSigner
-                },
-                {
-                    fn KmsContextNotCreated(
-                        data: &[u8],
-                    ) -> alloy_sol_types::Result<IProtocolConfigErrors> {
-                        <KmsContextNotCreated as alloy_sol_types::SolError>::abi_decode_raw_validate(
-                                data,
-                            )
-                            .map(IProtocolConfigErrors::KmsContextNotCreated)
-                    }
-                    KmsContextNotCreated
                 },
                 {
                     fn KmsContextNotPending(
@@ -16397,11 +16115,6 @@ function proposeCoprocessorUpgrade(uint256 proposalId, string memory softwareVer
                         inner,
                     )
                 }
-                Self::KmsContextNotCreated(inner) => {
-                    <KmsContextNotCreated as alloy_sol_types::SolError>::abi_encoded_size(
-                        inner,
-                    )
-                }
                 Self::KmsContextNotPending(inner) => {
                     <KmsContextNotPending as alloy_sol_types::SolError>::abi_encoded_size(
                         inner,
@@ -16454,11 +16167,6 @@ function proposeCoprocessorUpgrade(uint256 proposalId, string memory softwareVer
                 }
                 Self::NonIncreasingKmsContextId(inner) => {
                     <NonIncreasingKmsContextId as alloy_sol_types::SolError>::abi_encoded_size(
-                        inner,
-                    )
-                }
-                Self::ThresholdExceedsProofFormatLimit(inner) => {
-                    <ThresholdExceedsProofFormatLimit as alloy_sol_types::SolError>::abi_encoded_size(
                         inner,
                     )
                 }
@@ -16571,12 +16279,6 @@ function proposeCoprocessorUpgrade(uint256 proposalId, string memory softwareVer
                         out,
                     )
                 }
-                Self::KmsContextNotCreated(inner) => {
-                    <KmsContextNotCreated as alloy_sol_types::SolError>::abi_encode_raw(
-                        inner,
-                        out,
-                    )
-                }
                 Self::KmsContextNotPending(inner) => {
                     <KmsContextNotPending as alloy_sol_types::SolError>::abi_encode_raw(
                         inner,
@@ -16639,12 +16341,6 @@ function proposeCoprocessorUpgrade(uint256 proposalId, string memory softwareVer
                 }
                 Self::NonIncreasingKmsContextId(inner) => {
                     <NonIncreasingKmsContextId as alloy_sol_types::SolError>::abi_encode_raw(
-                        inner,
-                        out,
-                    )
-                }
-                Self::ThresholdExceedsProofFormatLimit(inner) => {
-                    <ThresholdExceedsProofFormatLimit as alloy_sol_types::SolError>::abi_encode_raw(
                         inner,
                         out,
                     )
