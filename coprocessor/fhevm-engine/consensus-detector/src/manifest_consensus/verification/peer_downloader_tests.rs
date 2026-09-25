@@ -1832,7 +1832,8 @@ async fn concurrent_one_drifter_replay_resolves_exact_handle_findings() {
     }
 
     let source = Arc::new(FakePeerSource::default());
-    let drift_wave = concurrent_wave(&pool, &source).await;
+    // Both tasks share one host chain, so only its earliest task is claimable per wave.
+    let drift_wave = drain_waves(&pool, &source).await;
     assert!(drift_wave.iter().all(Result::is_ok), "{drift_wave:?}");
     assert_eq!(completed_runs(&drift_wave), blocks.len(), "{drift_wave:?}");
     assert!(drift_wave
@@ -1970,7 +1971,7 @@ async fn concurrent_one_drifter_replay_resolves_exact_handle_findings() {
         schedule_local(&pool, &replayed, 0).await;
     }
 
-    let replay_wave = concurrent_wave(&pool, &source).await;
+    let replay_wave = drain_waves(&pool, &source).await;
     assert!(replay_wave.iter().all(Result::is_ok), "{replay_wave:?}");
     assert_eq!(
         completed_runs(&replay_wave),
@@ -2333,6 +2334,25 @@ async fn concurrent_wave(
         outcomes.push(worker.await.expect("download worker panicked"));
     }
     outcomes
+}
+
+/// Runs waves until one completes nothing; keeps every non-empty outcome.
+async fn drain_waves(
+    pool: &PgPool,
+    source: &Arc<FakePeerSource>,
+) -> Vec<Result<Option<VerificationRunResult>, String>> {
+    let mut outcomes = Vec::new();
+    loop {
+        let wave = concurrent_wave(pool, source).await;
+        let completed = completed_runs(&wave);
+        outcomes.extend(
+            wave.into_iter()
+                .filter(|outcome| !matches!(outcome, Ok(None))),
+        );
+        if completed == 0 {
+            return outcomes;
+        }
+    }
 }
 
 fn completed_runs(outcomes: &[Result<Option<VerificationRunResult>, String>]) -> usize {
