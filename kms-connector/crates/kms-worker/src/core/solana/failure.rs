@@ -8,7 +8,7 @@ use super::proof::ProofReadError;
 use super::public_decrypt::PublicDecryptFailure;
 use super::snapshot::SnapshotError;
 use super::watermark::{WatermarkFailure, WindowFailure};
-use crate::core::event_processor::RequestCheckKind;
+use crate::core::event_processor::{RequestCheckError, RequestCheckKind};
 use kms_connector_api::ErrorCode;
 use solana_pubkey::Pubkey;
 use zama_solana_permit::PermitError;
@@ -221,6 +221,348 @@ impl DelegationFailure {
         match self {
             Self::NoLiveDelegation { .. } => ACL_DENIED,
             Self::InvalidHostRecord(source) => source.class(),
+        }
+    }
+}
+
+impl From<AuthorizationFailure> for RequestCheckError {
+    fn from(failure: AuthorizationFailure) -> Self {
+        solana_check_error(failure.class(), failure)
+    }
+}
+
+impl From<PublicDecryptFailure> for RequestCheckError {
+    fn from(failure: PublicDecryptFailure) -> Self {
+        solana_check_error(failure.class(), failure)
+    }
+}
+
+fn solana_check_error(
+    FailureClass {
+        check,
+        code,
+        recoverable,
+    }: FailureClass,
+    failure: impl std::error::Error + Send + Sync + 'static,
+) -> RequestCheckError {
+    if recoverable {
+        RequestCheckError::recoverable(check, code, failure)
+    } else {
+        RequestCheckError::irrecoverable(check, code, failure)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::core::event_processor::ProcessingErrorKind;
+    use crate::core::solana::delegation::DeadRow;
+
+    const KEY: [u8; 32] = [7; 32];
+    const INVALID: InvalidHostRecord = InvalidHostRecord {
+        account_key: Pubkey::new_from_array(KEY),
+    };
+
+    /// Signature family, `user_signature_rejected`.
+    const SIGNATURE: (RequestCheckKind, ErrorCode) = (
+        RequestCheckKind::Signature,
+        ErrorCode::UserSignatureRejected,
+    );
+    /// Network family, `upstream_transient`.
+    const NETWORK: (RequestCheckKind, ErrorCode) =
+        (RequestCheckKind::Network, ErrorCode::UpstreamTransient);
+    /// ACL family, `acl_denied`.
+    const DENIED: (RequestCheckKind, ErrorCode) = (RequestCheckKind::Acl, ErrorCode::AclDenied);
+    /// ACL family, `unprocessable`.
+    const UNPROCESSABLE: (RequestCheckKind, ErrorCode) =
+        (RequestCheckKind::Acl, ErrorCode::Unprocessable);
+
+    use ProcessingErrorKind::{Irrecoverable as TERMINAL, Recoverable as RETRY};
+
+    fn store(source: EncryptedStoreFailure) -> AuthorizationFailure {
+        AuthorizationFailure::EncryptedStore { index: 0, source }
+    }
+
+    fn binding(source: HandleBindingFailure) -> AuthorizationFailure {
+        AuthorizationFailure::HandleBinding { index: 0, source }
+    }
+
+    fn delegation(source: DelegationFailure) -> AuthorizationFailure {
+        AuthorizationFailure::Delegation { index: 0, source }
+    }
+
+    fn unavailable() -> ProofReadError {
+        ProofReadError::Unavailable {
+            reason: "down".into(),
+        }
+    }
+
+    /// Every Solana user-decryption failure, written out with the family, code and recoverability
+    /// it must be recorded with. The expectations are this table's, not the mapping's: a changed
+    /// class fails here.
+    #[test]
+    fn every_solana_authorization_failure_is_recorded_as_written() {
+        let cases = [
+            (
+                AuthorizationFailure::Signature(PermitError::SignatureMismatch),
+                SIGNATURE,
+                TERMINAL,
+            ),
+            (
+                AuthorizationFailure::Window(WindowFailure::NotYetValid {
+                    start_timestamp: 2,
+                    now: 1,
+                }),
+                SIGNATURE,
+                RETRY,
+            ),
+            (
+                AuthorizationFailure::Window(WindowFailure::Expired { end: 1, now: 2 }),
+                SIGNATURE,
+                TERMINAL,
+            ),
+            (
+                AuthorizationFailure::ProgramIdMismatch {
+                    signed: Pubkey::new_from_array([1; 32]),
+                    own: Pubkey::new_from_array([2; 32]),
+                },
+                SIGNATURE,
+                TERMINAL,
+            ),
+            (
+                AuthorizationFailure::Snapshot(SnapshotError::Unavailable {
+                    reason: "down".into(),
+                }),
+                NETWORK,
+                RETRY,
+            ),
+            (
+                AuthorizationFailure::Snapshot(SnapshotError::ResponseLengthMismatch {
+                    requested: 1,
+                    returned: 0,
+                }),
+                NETWORK,
+                RETRY,
+            ),
+            (
+                AuthorizationFailure::Snapshot(SnapshotError::MalformedClock),
+                NETWORK,
+                RETRY,
+            ),
+            (
+                AuthorizationFailure::Snapshot(SnapshotError::NodeBehind),
+                NETWORK,
+                RETRY,
+            ),
+            (
+                AuthorizationFailure::Watermark(WatermarkFailure::Invalidated {
+                    start_timestamp: 1,
+                    watermark: 2,
+                }),
+                SIGNATURE,
+                TERMINAL,
+            ),
+            (
+                AuthorizationFailure::Watermark(WatermarkFailure::InvalidHostRecord(INVALID)),
+                UNPROCESSABLE,
+                TERMINAL,
+            ),
+            (
+                store(EncryptedStoreFailure::Absent {
+                    account_key: Pubkey::new_from_array(KEY),
+                }),
+                DENIED,
+                RETRY,
+            ),
+            (
+                store(EncryptedStoreFailure::ForeignOwner {
+                    account_key: Pubkey::new_from_array(KEY),
+                    owner: Pubkey::new_from_array([1; 32]),
+                }),
+                DENIED,
+                TERMINAL,
+            ),
+            (
+                store(EncryptedStoreFailure::NotAnEncryptedStore {
+                    account_key: Pubkey::new_from_array(KEY),
+                }),
+                DENIED,
+                TERMINAL,
+            ),
+            (
+                store(EncryptedStoreFailure::AddressMismatch {
+                    account_key: Pubkey::new_from_array(KEY),
+                    derived: None,
+                }),
+                DENIED,
+                TERMINAL,
+            ),
+            (
+                store(EncryptedStoreFailure::InvalidHostRecord(INVALID)),
+                UNPROCESSABLE,
+                TERMINAL,
+            ),
+            (
+                AuthorizationFailure::ScopeNotAllowed {
+                    index: 0,
+                    program: Pubkey::new_from_array([1; 32]),
+                    scope: Pubkey::new_from_array([2; 32]),
+                },
+                DENIED,
+                TERMINAL,
+            ),
+            (
+                AuthorizationFailure::ProofRead(unavailable()),
+                NETWORK,
+                RETRY,
+            ),
+            (
+                AuthorizationFailure::ProofRead(ProofReadError::ResponseLengthMismatch {
+                    requested: 1,
+                    returned: 0,
+                }),
+                NETWORK,
+                RETRY,
+            ),
+            (
+                binding(HandleBindingFailure::NoLeaf {
+                    record_leaf_count: 1,
+                    live_leaf_count: 1,
+                }),
+                DENIED,
+                RETRY,
+            ),
+            (
+                binding(HandleBindingFailure::ProofRecordBehind {
+                    record_leaf_count: 0,
+                    live_leaf_count: 1,
+                }),
+                DENIED,
+                RETRY,
+            ),
+            (
+                binding(HandleBindingFailure::AccountUnknownToProofRecord),
+                DENIED,
+                RETRY,
+            ),
+            (
+                binding(HandleBindingFailure::LeafIndexOutOfRange {
+                    leaf_index: 1,
+                    leaf_count: 1,
+                }),
+                DENIED,
+                RETRY,
+            ),
+            (
+                binding(HandleBindingFailure::ProofDoesNotVerify {
+                    record_leaf_count: 1,
+                    live_leaf_count: 2,
+                }),
+                DENIED,
+                RETRY,
+            ),
+            (
+                binding(HandleBindingFailure::HistoryIncomplete),
+                UNPROCESSABLE,
+                TERMINAL,
+            ),
+            (
+                delegation(DelegationFailure::NoLiveDelegation {
+                    exact: DeadRow::NotLive { expires_at: 0 },
+                    wildcard: DeadRow::Absent,
+                    now: 1,
+                }),
+                DENIED,
+                RETRY,
+            ),
+            (
+                delegation(DelegationFailure::InvalidHostRecord(INVALID)),
+                UNPROCESSABLE,
+                TERMINAL,
+            ),
+        ];
+        for (failure, (check, code), kind) in cases {
+            let case = failure.to_string();
+            let recoverable = kind == RETRY;
+            assert_eq!(
+                failure.class(),
+                FailureClass {
+                    check,
+                    code,
+                    recoverable
+                },
+                "{case}"
+            );
+            let recorded = RequestCheckError::from(failure).record();
+            assert_eq!((recorded.code, recorded.kind), (code, kind), "{case}");
+        }
+    }
+
+    #[test]
+    fn every_solana_public_decrypt_failure_is_recorded_as_written() {
+        let cases = [
+            (
+                PublicDecryptFailure::Snapshot(SnapshotError::NodeBehind),
+                NETWORK,
+                RETRY,
+            ),
+            (
+                PublicDecryptFailure::EncryptedStore {
+                    index: 0,
+                    source: EncryptedStoreFailure::Absent {
+                        account_key: Pubkey::new_from_array(KEY),
+                    },
+                },
+                DENIED,
+                RETRY,
+            ),
+            (
+                PublicDecryptFailure::EncryptedStore {
+                    index: 0,
+                    source: EncryptedStoreFailure::InvalidHostRecord(INVALID),
+                },
+                UNPROCESSABLE,
+                TERMINAL,
+            ),
+            (
+                PublicDecryptFailure::ProofRead(unavailable()),
+                NETWORK,
+                RETRY,
+            ),
+            (
+                PublicDecryptFailure::HandleBinding {
+                    index: 0,
+                    source: HandleBindingFailure::NoLeaf {
+                        record_leaf_count: 1,
+                        live_leaf_count: 1,
+                    },
+                },
+                DENIED,
+                RETRY,
+            ),
+            (
+                PublicDecryptFailure::HandleBinding {
+                    index: 0,
+                    source: HandleBindingFailure::HistoryIncomplete,
+                },
+                UNPROCESSABLE,
+                TERMINAL,
+            ),
+        ];
+        for (failure, (check, code), kind) in cases {
+            let case = failure.to_string();
+            let recoverable = kind == RETRY;
+            assert_eq!(
+                failure.class(),
+                FailureClass {
+                    check,
+                    code,
+                    recoverable
+                },
+                "{case}"
+            );
+            let recorded = RequestCheckError::from(failure).record();
+            assert_eq!((recorded.code, recorded.kind), (code, kind), "{case}");
         }
     }
 }

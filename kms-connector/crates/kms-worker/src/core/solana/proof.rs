@@ -284,8 +284,14 @@ mod tests {
     #[tokio::test]
     async fn malformed_and_oversized_proof_responses_are_recoverable_read_errors() {
         use mocktail::server::MockServer;
-        let invalid_sibling = serde_json::json!({"proofs":[{"status":"found","leafIndex":0,"leafCount":1,"siblings":["00"]}]}).to_string();
-        let too_many_siblings = serde_json::json!({"proofs":[{"status":"found","leafIndex":0,"leafCount":1,"siblings":vec!["00".repeat(32);65]}]}).to_string();
+        let found = |siblings: serde_json::Value| {
+            serde_json::json!({
+                "proofs": [{"status": "found", "leafIndex": 0, "leafCount": 1, "siblings": siblings}]
+            })
+            .to_string()
+        };
+        let invalid_sibling = found(serde_json::json!(["00"]));
+        let too_many_siblings = found(serde_json::json!(vec!["00".repeat(32); 65]));
         for body in [
             "not JSON".to_owned(),
             invalid_sibling,

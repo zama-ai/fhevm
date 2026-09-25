@@ -23,9 +23,9 @@ pub const DELEGATION_SEED: &[u8] = b"user-decryption-delegation";
 /// The application a wildcard row carries in both its `program` and its `scope` position, as
 /// EVM's wildcard fills `contractAddress`. No encrypted store has this program: `0xff×32` decodes
 /// to a curve point whose key no one holds, so no program can be deployed at it, and being on the
-/// curve it is no PDA either. A store may still pick `scope = 0xff×32`; the host refuses a grant
-/// that sets the sentinel in one position only, so such a store is reached by the wildcard row
-/// alone.
+/// curve it is no PDA either. No store has it as scope: a store's scope must be an account its
+/// program owns, and nothing lives at the sentinel. The host refuses a grant that sets the
+/// sentinel in one position only.
 pub const WILDCARD_APP: [u8; 32] = [0xff; 32];
 
 /// The PDA seeds of a delegation row, bump excluded: the one spelling every side derives from.

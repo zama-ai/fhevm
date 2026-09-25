@@ -1473,25 +1473,25 @@ mod tests {
     #[test]
     fn evm_user_decryption_keeps_the_checksummed_address() {
         let address = Address::repeat_byte(0x11);
-        let data = UserDecryptionRecipient::new(address, Bytes::from_static(&[0x22]));
+        let recipient = UserDecryptionRecipient::new(address, Bytes::from_static(&[0x22]));
 
         assert_eq!(
-            data.identity.into_kms_request_fields(),
+            recipient.identity.into_kms_request_fields(),
             (address.to_checksum(None), vec![])
         );
     }
 
     #[test]
-    fn solana_extra_data_identifies_the_user_by_pubkey() {
+    fn a_solana_recipient_travels_in_signing_metadata() {
         // The fixture permit is signed by `[1; 32]` for program `[7; 32]`.
         let request = connector_utils::tests::rand::solana_user_decryption_request(
             U256::from(1),
             rand_handle(),
         );
-        let data = UserDecryptionRecipient::new_solana(request.permit());
+        let recipient = UserDecryptionRecipient::new_solana(request.permit());
 
         assert_eq!(
-            data.identity.into_kms_request_fields(),
+            recipient.identity.into_kms_request_fields(),
             (
                 String::new(),
                 vec![SigningMetadata::solana(vec![1; 32], vec![7; 32])]

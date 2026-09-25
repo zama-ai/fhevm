@@ -312,11 +312,7 @@ impl
             let acl_contract = ACL::new(acl_address, provider);
             let host_chain_id = host_chain.chain_id;
             let host_client = HostRpcClient::new(host_chain_id, acl_contract);
-            if host_clients.insert(host_chain_id, host_client).is_some() {
-                return Err(anyhow!(
-                    "Duplicate host chain in config for chain ID {host_chain_id}"
-                ));
-            };
+            host_clients.insert(host_chain_id, host_client);
         }
         let solana_verifier = SolanaDecryptionVerifier::connect(&config)?;
 

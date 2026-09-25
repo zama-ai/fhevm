@@ -132,8 +132,8 @@ pub(crate) fn entry_verdict(inputs: &EntryVerdictInputs) -> EntryVerdict {
 }
 
 /// The application the entry's encrypted store belongs to, when the account resolves cleanly:
-/// present, host-owned, decodable, deriving the address it was read from, and not the wildcard
-/// sentinel. `None` is "this advisory check cannot judge the encrypted store" — never a
+/// present, host-owned, decodable, deriving the address it was read from, and naming the wildcard
+/// sentinel in neither position. `None` is "this advisory check cannot judge the encrypted store" — never a
 /// refusal.
 pub(crate) fn resolve_encrypted_store_application(
     program_id: [u8; 32],
@@ -148,8 +148,9 @@ pub(crate) fn resolve_encrypted_store_application(
     if encrypted_store_address(&state, program_id) != Some(encrypted_store_key) {
         return None;
     }
-    // The sentinel-program case is the connector's own guard; this check stands aside.
-    if state.program == WILDCARD_APP {
+    // No legal store names the sentinel, and the connector refuses one that does in either
+    // position; this check stands aside.
+    if state.program == WILDCARD_APP || state.scope == WILDCARD_APP {
         return None;
     }
     Some(AppScope {
@@ -633,22 +634,25 @@ mod tests {
         assert_eq!(verdict, EntryVerdict::Indeterminate);
     }
 
-    /// A store whose program is the wildcard sentinel is the connector's guard to reject; the
-    /// advisory check stands aside rather than refusing on the wildcard's own row.
+    /// A store naming the wildcard sentinel is the connector's to reject; the advisory check
+    /// stands aside rather than refusing on the wildcard's own row.
     #[test]
-    fn a_store_of_the_sentinel_program_is_indeterminate() {
-        let (value, key) = encrypted_store_for(WILDCARD_APP, WILDCARD_APP);
-        let verdict = entry_verdict(&EntryVerdictInputs {
-            program_id: PROGRAM_ID,
-            encrypted_store_key: key,
-            delegator: DELEGATOR,
-            delegate: DELEGATE,
-            encrypted_store: Some(&value),
-            exact_row: None,
-            wildcard_row: None,
-            now: NOW,
-        });
-        assert_eq!(verdict, EntryVerdict::Indeterminate);
+    fn a_store_naming_the_sentinel_is_indeterminate() {
+        let other = [0x44; 32];
+        for (program, scope) in [(WILDCARD_APP, other), (other, WILDCARD_APP)] {
+            let (value, key) = encrypted_store_for(program, scope);
+            let verdict = entry_verdict(&EntryVerdictInputs {
+                program_id: PROGRAM_ID,
+                encrypted_store_key: key,
+                delegator: DELEGATOR,
+                delegate: DELEGATE,
+                encrypted_store: Some(&value),
+                exact_row: None,
+                wildcard_row: None,
+                now: NOW,
+            });
+            assert_eq!(verdict, EntryVerdict::Indeterminate);
+        }
     }
 
     #[test]

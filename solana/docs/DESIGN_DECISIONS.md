@@ -295,15 +295,13 @@ Decision:
 Treat Solana as a **gateway-compatible host chain** and route its decrypt flows through the unified
 Gateway V2 path (RFC-016) rather than a parallel native stack:
 
-- **User-decrypt** flows through the unified Gateway V2 path, but the gateway is now **EXTENDED with a
-  dedicated TYPED Solana entrypoint** — `userDecryptionRequestSolana(HandleEntry[],
-UserDecryptionRequestSolanaPayload)` + a `UserDecryptionRequestSolana` event — rather than smuggling
-  Solana auth through `extraData`. The payload carries `bytes32 userIdentity`, `bytes32[]
-allowedAclDomainKeys`, `bytes32 nonce` as typed fields (plus shared publicKey, requestValidity,
-  signature). `extraData` carries either the context-only `0x01 ‖ contextId` form or the versioned
-  `0x03` MMR-proof tail for a named Store. A chain-aware validator branches on
-  `contracts_chain_id` (see DD-027) so EVM stays strict and Solana is relaxed. The bytes32 handle
-  surface still admits both EVM and Solana. (See DD-026 for the typed-vs-extraData boundary.)
+- **User-decrypt** flows through the unified Gateway V2 path, through a host-generic
+  `userDecryptionRequest` overload that types the handles, validity, transport key and `extraData`
+  and carries the Solana permit fields in a versioned blob, rather than smuggling Solana auth through
+  `extraData`. `extraData` is only the KMS routing (v0, v1 or v2, DD-060). A chain-aware validator
+  branches on `contracts_chain_id` (see DD-027) so EVM stays strict and Solana is relaxed. The
+  bytes32 handle surface still admits both EVM and Solana. (See DD-026 for the typed-vs-extraData
+  boundary.)
 - **Public-decrypt** certificates are verified **on-chain** via secp256k1: `zama_host` recovers EVM
   KMS signers from the cert and threshold-checks them, mirroring the EVM `KMSVerifier`
   (`verifyDecryptionEIP712KMSSignatures`). See DD-021.
@@ -754,8 +752,6 @@ Reorg unwind may still be added for resource recovery, but is not an authorizati
 
 Status: adopted
 
-Status: adopted
-
 The user-decrypt `extraData` debate is resolved by typed gateway fields. The chain-type marker is superseded by DD-052.
 
 Context:
@@ -782,15 +778,15 @@ Decision:
 - PREVIOUSLY a Solana user-decrypt packed its ed25519 auth into an `extraData` blob with version byte
   `0x03` (`0x03 ‖ context_id(32) ‖ ed25519(32) ‖ nonce(32) ‖ key_count(4) ‖ keys`), forwarded opaquely
   through relayer/gateway and decoded by the KMS connector.
-- Now the gateway has a dedicated typed entrypoint `userDecryptionRequestSolana(HandleEntry[],
-UserDecryptionRequestSolanaPayload)` with a `UserDecryptionRequestSolana` event. The payload carries
-  the user identity, allowed scopes and nonce as typed fields, plus the shared publicKey,
-  requestValidity and signature. One claim per handle names its owner and Store (DD-048, DD-049),
-  and `extraData` is only the KMS routing (DD-060). The connector fetches leaf proofs itself, so
-  neither client nor relayer can substitute proof data.
-- The relayer builds the typed call and the js-sdk emits the typed identity and auth fields. The KMS
-  connector routes Solana requests by their typed event and verifies the signed tail before using it.
-- `Decryption.sol` version bumped MINOR 6→7 (reinitializer 7→8, reinitializeV6→V7).
+- Now the gateway's host-generic `userDecryptionRequest(ctHandles, requestValidity, publicKey,
+  extraData, solanaRequest)` types the fields it budgets and charges, and carries the rest in the
+  `solanaRequest` blob: `0x04 ‖ borsh{user_address, allowed_scopes, verifying_program_id, signature,
+  entries}`. It emits the Solana `UserDecryptionRequest` event. `assemble_solana_request`
+  (`zama-solana-request`) joins the two parts, so no fact travels twice. One claim per handle names
+  its owner and Store (DD-048, DD-049), and `extraData` is only the KMS routing (DD-060). The
+  connector fetches leaf proofs itself, so neither client nor relayer can substitute proof data.
+- The js-sdk builds the blob and the relayer submits the call. The KMS connector routes Solana
+  requests by their event, joins the two parts and verifies the permit signature before using them.
 - KMS-cert context: `extract_kms_context_id` (DD-021) handles `extra_data` versions 0, 1 and 2 (the
   public-decrypt cert) — a _different_ extraData from either path above.
 
@@ -801,10 +797,9 @@ the KMS routing field it is on EVM.
 Decision history:
 
 The 2026/06/12 Solana guild weekly (Manoranjith + Jad) objected that identity and authorization scope
-were being smuggled through `extraData` and should be a proper request type. That is resolved by the
-typed `userDecryptionRequestSolana` / `UserDecryptionRequestSolanaPayload` entrypoint. `0x03` remains
-on the wire only as a versioned, signed transport for Store and MMR evidence; it is not used for
-identity, nonce, or allowed-scope authorization.
+were being smuggled through `extraData` and should be a proper request type. A dedicated typed
+entrypoint (`userDecryptionRequestSolana`) resolved that first. The host-generic entry and its
+versioned blob replaced it, and `extraData` carries no Solana identity, scope or proof data.
 
 ## DD-027: Chain-Aware V2 User-Decrypt Validation
 

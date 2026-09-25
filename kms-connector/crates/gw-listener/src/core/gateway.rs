@@ -7,7 +7,7 @@ use crate::{
 };
 use alloy::{
     network::Ethereum,
-    primitives::B256,
+    primitives::{B256, U256},
     providers::Provider,
     rpc::types::{Filter, Log},
     sol_types::SolEventInterface,
@@ -42,6 +42,34 @@ fn ct_handles(event: &ProtocolEventKind) -> Vec<B256> {
         ProtocolEventKind::UserDecryptionV2(e) => e.handles.iter().map(|h| h.handle).collect(),
         ProtocolEventKind::SolanaUserDecryptionV1(e) => e.ct_handles(),
         _ => Vec::new(),
+    }
+}
+
+/// Decodes a Solana request, or skips it with a warning and a rejection count when it does not
+/// decode.
+fn decode_or_skip<R, E>(
+    decryption_id: U256,
+    event: E,
+    event_type: EventType,
+    log: &Log,
+) -> Option<ProtocolEventKind>
+where
+    R: TryFrom<E> + Into<ProtocolEventKind>,
+    R::Error: std::fmt::Display,
+{
+    match R::try_from(event) {
+        Ok(request) => Some(request.into()),
+        Err(e) => {
+            warn!(
+                %decryption_id,
+                tx_hash = ?log.transaction_hash,
+                "Skipping Solana {event_type} that does not decode: {e:#}"
+            );
+            EVENT_REJECTED_COUNTER
+                .with_label_values(&[event_type.as_str()])
+                .inc();
+            None
+        }
     }
 }
 
@@ -191,40 +219,25 @@ where
                 .map_err(|e| anyhow!("Failed to decode Decryption event: {e}"))?;
             let event_kind = match event.data {
                 DecryptionEvents::PublicDecryptionRequest_2(event) => {
-                    let decryption_id = event.decryptionId;
-                    match SolanaPublicDecryptionRequest::try_from(event) {
-                        Ok(request) => request.into(),
-                        Err(e) => {
-                            warn!(
-                                %decryption_id,
-                                tx_hash = ?log.transaction_hash,
-                                "Skipping Solana public decryption that does not decode: {e:#}"
-                            );
-                            EVENT_REJECTED_COUNTER
-                                .with_label_values(&[EventType::PublicDecryptionRequest.as_str()])
-                                .inc();
-                            continue;
-                        }
-                    }
+                    decode_or_skip::<SolanaPublicDecryptionRequest, _>(
+                        event.decryptionId,
+                        event,
+                        EventType::PublicDecryptionRequest,
+                        &log,
+                    )
                 }
                 DecryptionEvents::UserDecryptionRequest_4(event) => {
-                    let decryption_id = event.decryptionId;
-                    match SolanaUserDecryptionRequestV1::try_from(event) {
-                        Ok(request) => request.into(),
-                        Err(e) => {
-                            warn!(
-                                %decryption_id,
-                                tx_hash = ?log.transaction_hash,
-                                "Skipping Solana user decryption that does not decode: {e:#}"
-                            );
-                            EVENT_REJECTED_COUNTER
-                                .with_label_values(&[EventType::UserDecryptionRequest.as_str()])
-                                .inc();
-                            continue;
-                        }
-                    }
+                    decode_or_skip::<SolanaUserDecryptionRequestV1, _>(
+                        event.decryptionId,
+                        event,
+                        EventType::UserDecryptionRequest,
+                        &log,
+                    )
                 }
-                event => event.try_into()?,
+                event => Some(event.try_into()?),
+            };
+            let Some(event_kind) = event_kind else {
+                continue;
             };
             let event_type = EventType::from(&event_kind).as_str();
             EVENT_RECEIVED_COUNTER

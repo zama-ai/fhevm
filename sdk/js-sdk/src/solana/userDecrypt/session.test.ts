@@ -15,7 +15,7 @@ import type {
 import type { SolanaPermitFields, SolanaSignedPermit } from '../permit/index.js';
 import { describe, expect, it, vi } from 'vitest';
 import {
-  MAX_SOLANA_USER_DECRYPT_HANDLES,
+  MAX_SOLANA_DECRYPT_HANDLES,
   SOLANA_USER_DECRYPT_DEFAULT_ATTEMPTS,
   SOLANA_USER_DECRYPT_DEFAULT_RETRY_SECONDS,
   SolanaUserDecryptRequestError,
@@ -264,7 +264,7 @@ describe('a request refused before the network', () => {
   it('is refused on the handle cap without submitting', async () => {
     const { submit, transport } = scriptedTransport([answered]);
     const { clock, delay } = recordingClock();
-    const overCap = Array.from({ length: MAX_SOLANA_USER_DECRYPT_HANDLES + 1 }, () => ({
+    const overCap = Array.from({ length: MAX_SOLANA_DECRYPT_HANDLES + 1 }, () => ({
       handle: handle(),
       ownerAddress: identity(0x11),
       encryptedStore: identity(0xea),

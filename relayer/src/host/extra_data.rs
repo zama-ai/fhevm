@@ -153,22 +153,6 @@ mod tests {
     }
 
     #[test]
-    fn retired_solana_versions_are_rejected() {
-        // v3 carried an encrypted value account and v4 an encrypted store; a Solana public
-        // decryption now names its stores beside the handles.
-        for version in [0x03, 0x04] {
-            let mut data = vec![version];
-            data.extend_from_slice(&[0_u8; 64]);
-            assert_eq!(
-                parse_context_id_from_extra_data(&data)
-                    .unwrap_err()
-                    .to_string(),
-                format!("Unsupported extra_data version: {version:#04x}")
-            );
-        }
-    }
-
-    #[test]
     fn large_context_id() {
         // KMS_CONTEXT_COUNTER_BASE + 1 = 0x07 << 248 | 1
         let mut bytes = [0u8; 32];

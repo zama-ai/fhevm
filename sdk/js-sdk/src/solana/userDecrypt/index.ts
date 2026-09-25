@@ -1,7 +1,7 @@
 // Assembling a Solana user-decryption request from a signed permit.
 
 export {
-  MAX_SOLANA_USER_DECRYPT_HANDLES,
+  MAX_SOLANA_DECRYPT_HANDLES,
   SOLANA_SRFC38_ATTESTATION_TYPE,
   SolanaUserDecryptRequestError,
   admitSolanaUserDecryptRequest,

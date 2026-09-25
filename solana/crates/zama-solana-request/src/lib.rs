@@ -21,8 +21,8 @@ pub mod codec;
 pub mod wire;
 
 pub use assemble::{
-    assemble_solana_request, SolanaEntryClaims, SolanaRequestAssemblyError, SolanaRequestBlob,
-    SolanaUserDecryptFields,
+    assemble_solana_request, public_request_chain_id, SolanaEntryClaims,
+    SolanaRequestAssemblyError, SolanaRequestBlob, SolanaUserDecryptFields,
 };
 pub use codec::{
     decode_solana_request, encode_solana_request, SolanaRequestDecodeError,

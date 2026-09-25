@@ -18,7 +18,7 @@ import {
   decryptionRequestBitsOfHandle,
 } from '../../core/handle/decryptionRequestBudget.js';
 import {
-  MAX_SOLANA_USER_DECRYPT_HANDLES,
+  MAX_SOLANA_DECRYPT_HANDLES,
   SOLANA_SRFC38_ATTESTATION_TYPE,
   SolanaUserDecryptRequestError,
   buildSolanaUserDecryptRequest,
@@ -272,19 +272,19 @@ describe('the handle count', () => {
   it('admits a request of exactly the cap', () => {
     const body = buildSolanaUserDecryptRequest({
       signedPermit: signedPermit(),
-      entries: entriesOfType(EBOOL_TYPE_ID, MAX_SOLANA_USER_DECRYPT_HANDLES),
+      entries: entriesOfType(EBOOL_TYPE_ID, MAX_SOLANA_DECRYPT_HANDLES),
     });
-    expect(body.attestedPayload.handles).toHaveLength(MAX_SOLANA_USER_DECRYPT_HANDLES);
+    expect(body.attestedPayload.handles).toHaveLength(MAX_SOLANA_DECRYPT_HANDLES);
   });
 
   it('refuses one handle past the cap, well under the bit budget', () => {
-    const count = MAX_SOLANA_USER_DECRYPT_HANDLES + 1;
+    const count = MAX_SOLANA_DECRYPT_HANDLES + 1;
     expect((count + 1) * EBOOL_BITS).toBeLessThan(MAX_DECRYPTION_REQUEST_BITS);
     expect(
       failureOf(() =>
         buildSolanaUserDecryptRequest({ signedPermit: signedPermit(), entries: entriesOfType(EBOOL_TYPE_ID, count) }),
       ),
-    ).toEqual({ reason: 'too-many-handles', count, max: MAX_SOLANA_USER_DECRYPT_HANDLES });
+    ).toEqual({ reason: 'too-many-handles', count, max: MAX_SOLANA_DECRYPT_HANDLES });
   });
 
   // The cap is the Gateway's number, mirrored by hand; a mirror nobody checks is worth less than no
@@ -296,7 +296,7 @@ describe('the handle count', () => {
     );
     const declared = /MAX_SOLANA_DECRYPT_HANDLES = (\d+);/.exec(source)?.[1];
     expect(declared, 'Decryption.sol declares MAX_SOLANA_DECRYPT_HANDLES').toBeDefined();
-    expect(MAX_SOLANA_USER_DECRYPT_HANDLES).toBe(Number(declared));
+    expect(MAX_SOLANA_DECRYPT_HANDLES).toBe(Number(declared));
   });
 });
 
@@ -305,7 +305,7 @@ describe('the bit budget', () => {
   // inside the handle-count cap: exactly full, then one handle more.
   it('admits a request of exactly the budget', () => {
     const full = MAX_DECRYPTION_REQUEST_BITS / EUINT256_BITS;
-    expect(full).toBeLessThanOrEqual(MAX_SOLANA_USER_DECRYPT_HANDLES);
+    expect(full).toBeLessThanOrEqual(MAX_SOLANA_DECRYPT_HANDLES);
     const body = buildSolanaUserDecryptRequest({
       signedPermit: signedPermit(),
       entries: entriesOfType(EUINT256_TYPE_ID, full),

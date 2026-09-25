@@ -62,6 +62,14 @@ pub enum SolanaRequestAssemblyError {
     /// More handles than one account snapshot can authorize.
     #[error("solana request names {0} handles, expected at most {MAX_REQUEST_HANDLES}")]
     TooManyHandles(usize),
+    /// A public decryption names one encrypted store per handle.
+    #[error("solana request names {handles} handles but {stores} encrypted stores")]
+    StoreCount {
+        /// Handles in the request.
+        handles: usize,
+        /// Encrypted stores in the request.
+        stores: usize,
+    },
     /// Each handle needs exactly one entry.
     #[error("solana request names {handles} handles but carries {entries} entries")]
     EntryCount {
@@ -114,9 +122,7 @@ pub fn assemble_solana_request(
         entries,
     } = blob;
 
-    if handles.len() > MAX_REQUEST_HANDLES {
-        return Err(SolanaRequestAssemblyError::TooManyHandles(handles.len()));
-    }
+    check_handle_count(handles.len())?;
     if handles.len() != entries.len() {
         return Err(SolanaRequestAssemblyError::EntryCount {
             handles: handles.len(),
@@ -149,18 +155,42 @@ pub fn assemble_solana_request(
     })
 }
 
+/// Checks a Solana public decryption: one encrypted store per handle, within the cap, every
+/// handle on one chain. Returns that chain.
+pub fn public_request_chain_id<H: AsRef<[u8]>>(
+    handles: &[H],
+    encrypted_stores: usize,
+) -> Result<u64, SolanaRequestAssemblyError> {
+    check_handle_count(handles.len())?;
+    if handles.len() != encrypted_stores {
+        return Err(SolanaRequestAssemblyError::StoreCount {
+            handles: handles.len(),
+            stores: encrypted_stores,
+        });
+    }
+    common_chain_id(handles)
+}
+
+fn check_handle_count(handles: usize) -> Result<(), SolanaRequestAssemblyError> {
+    if handles > MAX_REQUEST_HANDLES {
+        return Err(SolanaRequestAssemblyError::TooManyHandles(handles));
+    }
+    Ok(())
+}
+
 /// The chain every handle names.
-fn common_chain_id(handles: &[Vec<u8>]) -> Result<u64, SolanaRequestAssemblyError> {
-    let mut chains =
-        handles.iter().enumerate().map(|(index, handle)| {
-            let handle: &[u8; 32] = handle.as_slice().try_into().map_err(|_| {
-                SolanaRequestAssemblyError::HandleWidth {
+fn common_chain_id<H: AsRef<[u8]>>(handles: &[H]) -> Result<u64, SolanaRequestAssemblyError> {
+    let mut chains = handles.iter().enumerate().map(|(index, handle)| {
+        let handle = handle.as_ref();
+        let handle: &[u8; 32] =
+            handle
+                .try_into()
+                .map_err(|_| SolanaRequestAssemblyError::HandleWidth {
                     index,
                     len: handle.len(),
-                }
-            })?;
-            Ok((index, handle_chain_id(handle)))
-        });
+                })?;
+        Ok((index, handle_chain_id(handle)))
+    });
     let (_, first) = chains
         .next()
         .ok_or(SolanaRequestAssemblyError::NoHandles)??;
@@ -277,6 +307,42 @@ mod tests {
         ];
         for ((gateway, blob), expected) in cases {
             assert_eq!(assemble_solana_request(gateway, blob), Err(expected));
+        }
+    }
+
+    #[test]
+    fn a_public_request_names_one_store_per_handle_on_one_chain() {
+        assert_eq!(
+            public_request_chain_id(&[handle(7, 1), handle(7, 2)], 2),
+            Ok(7)
+        );
+        let cases = [
+            (vec![], 0, SolanaRequestAssemblyError::NoHandles),
+            (
+                vec![handle(7, 1); MAX_REQUEST_HANDLES + 1],
+                MAX_REQUEST_HANDLES + 1,
+                SolanaRequestAssemblyError::TooManyHandles(MAX_REQUEST_HANDLES + 1),
+            ),
+            (
+                vec![handle(7, 1), handle(7, 2)],
+                1,
+                SolanaRequestAssemblyError::StoreCount {
+                    handles: 2,
+                    stores: 1,
+                },
+            ),
+            (
+                vec![handle(7, 1), handle(8, 2)],
+                2,
+                SolanaRequestAssemblyError::MixedChains {
+                    first: 7,
+                    index: 1,
+                    other: 8,
+                },
+            ),
+        ];
+        for (handles, stores, expected) in cases {
+            assert_eq!(public_request_chain_id(&handles, stores), Err(expected));
         }
     }
 }

@@ -39,7 +39,7 @@ export const SOLANA_SRFC38_ATTESTATION_TYPE = 'solana-srfc38-user-decrypt-v1';
  * Connector refuses the same count terminally, so a request past it can only ever be paid for and
  * lost — the parity test beside this module pins the two constants to each other.
  */
-export const MAX_SOLANA_USER_DECRYPT_HANDLES = 32;
+export const MAX_SOLANA_DECRYPT_HANDLES = 32;
 
 /** One handle to decrypt: the handle, the owner address whose allow authorizes it, and its store. */
 export interface SolanaUserDecryptHandleEntry {
@@ -235,11 +235,11 @@ export function buildSolanaUserDecryptRequest(request: {
  */
 export function solanaUserDecryptRequestBits(handles: readonly Uint8Array[]): number {
   // The count first: it is a property of the list, so it is settled before any one handle is named.
-  if (handles.length > MAX_SOLANA_USER_DECRYPT_HANDLES) {
+  if (handles.length > MAX_SOLANA_DECRYPT_HANDLES) {
     throw new SolanaUserDecryptRequestError({
       reason: 'too-many-handles',
       count: handles.length,
-      max: MAX_SOLANA_USER_DECRYPT_HANDLES,
+      max: MAX_SOLANA_DECRYPT_HANDLES,
     });
   }
 

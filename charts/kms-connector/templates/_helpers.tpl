@@ -94,7 +94,7 @@ hostChains:
 {{- else }}
 {{- range $name, $chain := $chains }}
 {{- $chain = $chain | default dict }}
-{{- /* The chain id's type byte (bits 56..64) names the kind, as in the connector. */}}
+{{- /* These checks mirror the connector's `HostChainEntry` rules so a bad entry fails at render time. The chain id's type byte (bits 56..64) names the kind. */}}
 {{- if not $chain.chainId }}
 {{- fail (printf "commonConfig.hostChains.%s.chainId must be set when commonConfig.network is empty (no preset to default from)" $name) }}
 {{- end }}
