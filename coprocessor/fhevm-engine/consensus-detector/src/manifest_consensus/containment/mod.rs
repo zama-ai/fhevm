@@ -790,4 +790,4 @@ async fn producer_identities(
 }
 
 #[cfg(test)]
-mod propagation_tests;
+pub(crate) mod propagation_tests;

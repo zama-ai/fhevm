@@ -1,0 +1,14 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n        UPDATE computations\n           SET is_completed = true,\n               completed_at = CURRENT_TIMESTAMP,\n               is_error = false,\n               error_message = NULL,\n               error_retry_count = 0\n         WHERE output_handle = $1\n           AND is_completed = false\n        ",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Bytea"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "ce934876bebbf7a9bbf161db92b251a1ea19dc20c70f1f12ee9b868358436aea"
+}

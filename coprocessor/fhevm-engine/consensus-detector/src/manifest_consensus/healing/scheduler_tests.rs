@@ -36,9 +36,10 @@ async fn insert_sibling(
         "INSERT INTO drifted_handle (
             consensus_epoch, coprocessor_context_id, host_chain_id,
             block_number, block_hash, handle, detection_kind, reason,
-            local_present, quorum_present, quorum_ct64_digest, peer_sources
+            local_present, quorum_present, quorum_ct64_digest, peer_sources,
+            is_contained
          ) SELECT consensus_epoch, $1, 1, $2, $3, $4, 'inferred', 'ct64_mismatch',
-                  TRUE, FALSE, $5, $6::jsonb
+                  TRUE, FALSE, $5, $6::jsonb, TRUE
              FROM blue_green_consensus_epoch
          RETURNING id",
     )
@@ -67,9 +68,10 @@ async fn insert_healable_from(
         "INSERT INTO drifted_handle (
             consensus_epoch, coprocessor_context_id, host_chain_id,
             block_number, block_hash, handle, detection_kind, reason,
-            local_present, quorum_present, quorum_ct64_digest, peer_sources
+            local_present, quorum_present, quorum_ct64_digest, peer_sources,
+            is_contained
          ) SELECT consensus_epoch, $1, 1, $2, $3, $3, 'inferred', 'ct64_mismatch',
-                  TRUE, FALSE, $4, $5::jsonb
+                  TRUE, FALSE, $4, $5::jsonb, TRUE
              FROM blue_green_consensus_epoch
          RETURNING id",
     )
@@ -517,4 +519,134 @@ async fn pass_does_not_notify_tfhe_when_nothing_installed() {
             .is_err(),
         "a batch that only retries must not wake TFHE"
     );
+}
+
+async fn set_contained(pool: &PgPool, id: i64, contained: bool) {
+    sqlx::query("UPDATE drifted_handle SET is_contained = $2 WHERE id = $1")
+        .bind(id)
+        .bind(contained)
+        .execute(pool)
+        .await
+        .unwrap();
+}
+
+async fn insert_computation(pool: &PgPool, handle: u8, is_error: bool) {
+    sqlx::query(
+        "INSERT INTO computations (
+            output_handle, dependencies, fhe_operation, is_scalar, transaction_id,
+            is_completed, is_error, error_message, error_retry_count
+         ) VALUES ($1, '{}', 0, FALSE, $2, FALSE, $3, $4, $5)",
+    )
+    .bind(bytes(handle))
+    .bind(bytes(0xee))
+    .bind(is_error)
+    .bind(is_error.then_some("local computation failed"))
+    .bind(if is_error { 3i16 } else { 0 })
+    .execute(pool)
+    .await
+    .unwrap();
+}
+
+async fn computation_state(pool: &PgPool, handle: u8) -> (bool, bool, Option<String>, i16) {
+    sqlx::query_as(
+        "SELECT is_completed, is_error, error_message, error_retry_count
+           FROM computations WHERE output_handle = $1",
+    )
+    .bind(bytes(handle))
+    .fetch_one(pool)
+    .await
+    .unwrap()
+}
+
+#[tokio::test]
+#[serial(db)]
+async fn uncontained_ct64_mismatch_waits_for_containment() {
+    let (_db, pool) = setup().await;
+    let body = vec![5u8; 8];
+    let id = insert_healable(&pool, 20, "s3://peer-a", &body).await;
+    set_contained(&pool, id, false).await;
+    let source = FakeCt64::default();
+    source.put("s3://peer-a", 20, body.clone());
+
+    pass(&pool, &source).await;
+    assert_eq!(source.gets.load(Ordering::SeqCst), 0);
+    assert_eq!(healed(&pool, id).await, (true, false));
+    assert_eq!(stored_ct64(&pool, 20).await, vec![0xffu8; 4]);
+
+    set_contained(&pool, id, true).await;
+    pass(&pool, &source).await;
+    assert_eq!(healed(&pool, id).await, (false, true));
+    assert_eq!(stored_ct64(&pool, 20).await, body);
+}
+
+#[tokio::test]
+#[serial(db)]
+async fn uncontained_sibling_is_not_marked_healed() {
+    let (_db, pool) = setup().await;
+    let body = vec![6u8; 8];
+    let first = insert_sibling(&pool, 21, 1, "s3://peer-a", &body).await;
+    let second = insert_sibling(&pool, 21, 2, "s3://peer-a", &body).await;
+    set_contained(&pool, second, false).await;
+    let source = FakeCt64::default();
+    source.put("s3://peer-a", 21, body.clone());
+
+    pass(&pool, &source).await;
+    assert_eq!(healed(&pool, first).await, (false, true));
+    assert_eq!(healed(&pool, second).await, (true, false));
+}
+
+#[tokio::test]
+#[serial(db)]
+async fn other_reasons_heal_without_containment_and_complete_the_computation() {
+    for (handle, reason, errored) in [
+        (30u8, "missing_here", false),
+        (31, "error_here", true),
+        (32, "uncomputed_here", false),
+    ] {
+        let (_db, pool) = setup().await;
+        let body = vec![handle; 8];
+        let id = crate::manifest_consensus::containment::propagation_tests::direct_root(
+            &pool, handle, reason,
+        )
+        .await;
+        sqlx::query(
+            "UPDATE drifted_handle
+                SET quorum_ct64_digest = $2,
+                    peer_sources = '[{\"s3_bucket_url\":\"s3://peer-a\"}]'::jsonb,
+                    is_contained = FALSE
+              WHERE id = $1",
+        )
+        .bind(id)
+        .bind(keccak256(&body).as_slice())
+        .execute(&pool)
+        .await
+        .unwrap();
+        insert_computation(&pool, handle, errored).await;
+        let source = FakeCt64::default();
+        source.put("s3://peer-a", handle, body.clone());
+
+        pass(&pool, &source).await;
+        assert_eq!(healed(&pool, id).await, (false, true), "{reason}");
+        assert_eq!(stored_ct64(&pool, handle).await, body, "{reason}");
+        assert_eq!(
+            computation_state(&pool, handle).await,
+            (true, false, None, 0),
+            "{reason}: installed bytes complete the computation"
+        );
+    }
+}
+
+#[tokio::test]
+#[serial(db)]
+async fn containment_wakes_healing() {
+    let (_db, pool) = setup().await;
+    let body = vec![7u8; 8];
+    let id = insert_healable(&pool, 22, "s3://peer-a", &body).await;
+    set_contained(&pool, id, false).await;
+    let mut listener = listen(&pool, "event_healing_work").await;
+    set_contained(&pool, id, true).await;
+    tokio::time::timeout(Duration::from_secs(2), listener.recv())
+        .await
+        .expect("marking a finding contained must wake healing")
+        .unwrap();
 }
