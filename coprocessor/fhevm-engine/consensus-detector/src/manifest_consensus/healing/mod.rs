@@ -338,11 +338,16 @@ async fn heal_one<S: Ct64Source>(
                     )
                     .await;
                 }
-                Err(ExecutionError::S3ObjectNotFound(_))
-                | Err(ExecutionError::S3TransientError(_)) => {
+                Err(err @ ExecutionError::DbError(_)) => return Err(err),
+                Err(err) => {
+                    warn!(
+                        finding_id = job.id,
+                        bucket_url,
+                        error = %err,
+                        "Skipping peer bucket that did not serve the ct64"
+                    );
                     skip_buckets.push(bucket_url);
                 }
-                Err(err) => return Err(err),
             }
         }
     }
@@ -437,9 +442,15 @@ async fn recover_from_attestations<S: Ct64Source>(
                     bucket_url, "Quorum peer ct64 body does not match its attested digest"
                 );
             }
-            Err(ExecutionError::S3ObjectNotFound(_)) | Err(ExecutionError::S3TransientError(_)) => {
+            Err(err @ ExecutionError::DbError(_)) => return Err(err),
+            Err(err) => {
+                warn!(
+                    finding_id = job.id,
+                    bucket_url,
+                    error = %err,
+                    "Skipping quorum peer that did not serve the ct64"
+                );
             }
-            Err(err) => return Err(err),
         }
     }
     error!(

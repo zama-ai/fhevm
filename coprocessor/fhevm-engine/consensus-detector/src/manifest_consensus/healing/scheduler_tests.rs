@@ -5,7 +5,7 @@ use block_manifest::LEGACY_CONSENSUS_EPOCH;
 use fhevm_engine_common::gcs_activation::WORK_AVAILABLE_CHANNEL;
 use serial_test::serial;
 use sqlx::postgres::PgListener;
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::{Arc, Mutex};
 use test_harness::instance::{setup_test_db, DBInstance, ImportMode};
@@ -134,7 +134,8 @@ struct FakeObject {
     body: Option<Vec<u8>>,
 }
 
-type FakeStore = HashMap<(String, Vec<u8>), FakeObject>;
+type FakeKey = (String, Vec<u8>);
+type FakeStore = HashMap<FakeKey, FakeObject>;
 
 #[derive(Clone, Default)]
 struct FakeCt64 {
@@ -143,6 +144,8 @@ struct FakeCt64 {
     heads: Arc<AtomicUsize>,
     inflight: Arc<AtomicUsize>,
     max_inflight: Arc<AtomicUsize>,
+    /// GETs that fail with a non-S3 error, e.g. an oversize body.
+    broken: Arc<Mutex<HashSet<FakeKey>>>,
 }
 
 impl FakeCt64 {
@@ -163,6 +166,13 @@ impl FakeCt64 {
             FakeObject { digest, body: None },
         );
     }
+
+    fn break_get(&self, bucket_url: &str, handle: u8) {
+        self.broken
+            .lock()
+            .unwrap()
+            .insert((bucket_url.to_owned(), bytes(handle)));
+    }
 }
 
 impl Ct64Source for FakeCt64 {
@@ -177,6 +187,12 @@ impl Ct64Source for FakeCt64 {
         self.max_inflight.fetch_max(n, Ordering::SeqCst);
         tokio::time::sleep(Duration::from_millis(50)).await;
         self.inflight.fetch_sub(1, Ordering::SeqCst);
+        let key = (bucket_url.to_owned(), handle.to_vec());
+        if self.broken.lock().unwrap().contains(&key) {
+            return Err(ExecutionError::InternalError(format!(
+                "ct64 from {bucket_url} exceeds the size limit"
+            )));
+        }
         self.objects
             .lock()
             .unwrap()
@@ -327,6 +343,78 @@ async fn mismatch_falls_back_to_attestation_quorum_peer() {
     assert_eq!(stored_ct64(&pool, 5).await, body);
     assert_eq!(healed(&pool, id).await, (false, true));
     assert!(source.heads.load(Ordering::SeqCst) >= 2);
+}
+
+async fn set_peer_sources(pool: &PgPool, id: i64, buckets: &[&str]) {
+    let sources = serde_json::Value::Array(
+        buckets
+            .iter()
+            .map(|url| serde_json::json!({ "s3_bucket_url": url }))
+            .collect(),
+    );
+    sqlx::query("UPDATE drifted_handle SET peer_sources = $2 WHERE id = $1")
+        .bind(id)
+        .bind(sources)
+        .execute(pool)
+        .await
+        .unwrap();
+}
+
+async fn retry_is_scheduled(pool: &PgPool, id: i64) -> bool {
+    sqlx::query_scalar("SELECT next_retry_at > NOW() FROM drifted_handle WHERE id = $1")
+        .bind(id)
+        .fetch_one(pool)
+        .await
+        .unwrap()
+}
+
+#[tokio::test]
+#[serial(db)]
+async fn failing_pinned_source_falls_through_to_the_next_bucket() {
+    let (_db, pool) = setup().await;
+    let body = vec![7u8; 8];
+    let id = insert_healable(&pool, 30, "s3://peer-a", &body).await;
+    set_peer_sources(&pool, id, &["s3://peer-a", "s3://peer-b"]).await;
+    let source = FakeCt64::default();
+    source.break_get("s3://peer-a", 30);
+    source.put("s3://peer-b", 30, body.clone());
+    pass(&pool, &source).await;
+    assert_eq!(stored_ct64(&pool, 30).await, body);
+    assert_eq!(healed(&pool, id).await, (false, true));
+}
+
+#[tokio::test]
+#[serial(db)]
+async fn failing_quorum_peer_falls_through_to_the_next_quorum_peer() {
+    let (_db, pool) = setup().await;
+    seed_registry(&pool, &["s3://peer-a", "s3://peer-b"], 2).await;
+    let body = vec![3u8; 8];
+    let id = insert_healable_from(&pool, 31, None, &body, false).await;
+    let source = FakeCt64::default();
+    source.put("s3://peer-a", 31, body.clone());
+    source.put("s3://peer-b", 31, body.clone());
+    source.break_get("s3://peer-a", 31);
+    pass(&pool, &source).await;
+    assert_eq!(stored_ct64(&pool, 31).await, body);
+    assert_eq!(healed(&pool, id).await, (false, true));
+}
+
+#[tokio::test]
+#[serial(db)]
+async fn only_failing_sources_schedule_a_retry() {
+    let (_db, pool) = setup().await;
+    seed_registry(&pool, &["s3://peer-a", "s3://peer-b"], 2).await;
+    let body = vec![5u8; 8];
+    let id = insert_healable(&pool, 32, "s3://peer-a", &body).await;
+    let source = FakeCt64::default();
+    source.put("s3://peer-a", 32, body.clone());
+    source.put("s3://peer-b", 32, body.clone());
+    source.break_get("s3://peer-a", 32);
+    source.break_get("s3://peer-b", 32);
+    pass(&pool, &source).await;
+    assert_eq!(stored_ct64(&pool, 32).await, vec![0xffu8; 4]);
+    assert!(!healed(&pool, id).await.1);
+    assert!(retry_is_scheduled(&pool, id).await);
 }
 
 #[tokio::test]
