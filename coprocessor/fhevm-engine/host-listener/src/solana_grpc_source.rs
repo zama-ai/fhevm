@@ -10,10 +10,10 @@
 //! transactions carry. Each `fhe_execute` carries its own derivation context in its
 //! `FheExecutedEvent`, so those instructions are all the listener needs.
 
-use std::collections::{BTreeSet, HashMap};
+use std::collections::{BTreeSet, HashMap, VecDeque};
 
 use anchor_lang::prelude::Pubkey;
-use anyhow::{bail, ensure, Context, Result};
+use anyhow::{anyhow, bail, ensure, Context, Result};
 use solana_sdk::signature::Signature;
 use yellowstone_grpc_proto::prelude::{
     SubscribeRequest, SubscribeRequestFilterBlocksMeta,
@@ -21,7 +21,7 @@ use yellowstone_grpc_proto::prelude::{
 };
 
 use crate::solana_grpc_listener::{
-    BlockCheckpoint, PreparedTransaction, StartPosition,
+    BlockCheckpoint, PreparedBlock, PreparedTransaction, StartPosition,
 };
 
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -46,15 +46,20 @@ impl SealedBlock {
 
 #[derive(Debug)]
 pub(super) enum SealDecision {
-    /// Nothing to apply: a re-delivery of the last sealed slot, or the first slot of a tip start.
+    /// Nothing to apply: a re-delivery of a recently sealed slot, or the first slot of a tip start.
     Skip,
-    /// The block, and its host transactions sorted by index.
-    Process(SealedBlock, Vec<PreparedTransaction>),
+    /// The block, with its host transactions sorted by index.
+    Process(PreparedBlock),
 }
 
-/// The last sealed slot, which a re-delivery must match.
+/// Recently sealed slots a re-delivery is matched against. Yellowstone sends again every slot it
+/// broadcast between the subscription and its `from_slot` replay, at most a burst of
+/// confirmations; 32 slots are about 13 seconds of them.
+const REDELIVERY_WINDOW: usize = 32;
+
+/// A sealed slot, which a re-delivery must match.
 #[derive(Debug)]
-struct LastSealed {
+struct Sealed {
     block: SealedBlock,
     /// The index and signature of each transaction the slot holds. `None` for the first slot of a
     /// tip start, which is never applied.
@@ -65,17 +70,18 @@ struct LastSealed {
 /// one slot open at a time: a slot's transactions arrive before its block meta and before any later
 /// slot's message, and anything else stops the listener.
 ///
-/// After a `from_slot` replay, Yellowstone sends the live messages it buffered meanwhile, so the
-/// last sealed slot can arrive again, whole or as its block meta alone. A transaction the slot
+/// After a `from_slot` replay, Yellowstone sends the live messages it buffered meanwhile, so recent
+/// sealed slots can arrive again, whole or as their block meta alone. A transaction the slot
 /// already holds is ignored, and a block meta must equal the slot's. A transaction the slot does
 /// not hold arrived after its block meta, when the slot was already applied without it: that stops
-/// the listener, and the slot needs the repair in the listener's README.
+/// the listener, and the slot needs the repair DD-060 describes.
 #[derive(Debug)]
 pub(super) struct BlockValidator {
     start: StartPosition,
     checkpoint_observed: bool,
     open: Option<(u64, Vec<PreparedTransaction>)>,
-    last: Option<LastSealed>,
+    /// The last [`REDELIVERY_WINDOW`] sealed slots, oldest first.
+    sealed: VecDeque<Sealed>,
 }
 
 impl BlockValidator {
@@ -84,8 +90,26 @@ impl BlockValidator {
             checkpoint_observed: matches!(start, StartPosition::Tip),
             start,
             open: None,
-            last: None,
+            sealed: VecDeque::new(),
         }
+    }
+
+    fn sealed(&self, slot: u64) -> Option<&Sealed> {
+        self.sealed.iter().find(|sealed| sealed.block.slot == slot)
+    }
+
+    fn seal(
+        &mut self,
+        block: SealedBlock,
+        transactions: Option<BTreeSet<(u64, Signature)>>,
+    ) {
+        if self.sealed.len() == REDELIVERY_WINDOW {
+            self.sealed.pop_front();
+        }
+        self.sealed.push_back(Sealed {
+            block,
+            transactions,
+        });
     }
 
     pub fn transaction(
@@ -93,20 +117,19 @@ impl BlockValidator {
         slot: u64,
         transaction: PreparedTransaction,
     ) -> Result<()> {
-        if let Some(last) = &self.last {
-            let sealed = last.block.slot;
-            ensure!(
-                slot >= sealed,
-                "transaction for slot {slot} arrived after slot {sealed} was sealed"
-            );
-            if slot == sealed {
-                let held = last.transactions.as_ref().is_none_or(|held| {
+        if let Some(newest) = self.sealed.back().map(|sealed| sealed.block.slot)
+        {
+            if slot <= newest {
+                let sealed = self.sealed(slot).ok_or_else(|| {
+                    anyhow!("transaction for slot {slot} arrived after slot {newest} was sealed")
+                })?;
+                let held = sealed.transactions.as_ref().is_none_or(|held| {
                     held.contains(&(transaction.index, transaction.signature))
                 });
                 ensure!(
                     held,
                     "transaction {} (index {}) of slot {slot} arrived after the slot was applied \
-                     without it; repair the record from a slot before {slot}",
+                     without it; its record needs the repair in DD-060",
                     transaction.signature,
                     transaction.index
                 );
@@ -167,23 +190,21 @@ impl BlockValidator {
             );
         }
 
-        if let Some(last) = &self.last {
-            if block.slot == last.block.slot {
+        if let Some(newest) = self.sealed.back().map(|sealed| &sealed.block) {
+            if block.slot <= newest.slot {
+                let sealed = self.sealed(block.slot).ok_or_else(|| {
+                    anyhow!("out-of-order sealed block at slot {}", block.slot)
+                })?;
                 ensure!(
-                    block == last.block,
+                    block == sealed.block,
                     "conflicting sealed block replay at slot {}",
                     block.slot
                 );
                 return Ok(SealDecision::Skip);
             }
             ensure!(
-                block.slot > last.block.slot,
-                "out-of-order sealed block at slot {}",
-                block.slot
-            );
-            ensure!(
-                block.parent_slot == last.block.slot
-                    && block.parent_block_hash == last.block.block_hash,
+                block.parent_slot == newest.slot
+                    && block.parent_block_hash == newest.block_hash,
                 "sealed block ancestry mismatch at slot {} (parent slot {})",
                 block.slot,
                 block.parent_slot
@@ -215,27 +236,21 @@ impl BlockValidator {
             );
             self.checkpoint_observed = true;
             if matches!(self.start, StartPosition::Resume(_)) {
-                self.last = Some(LastSealed {
-                    block,
-                    transactions: held,
-                });
+                self.seal(block, held);
                 return Ok(SealDecision::Skip);
             }
-        } else if self.last.is_none() {
+        } else if self.sealed.is_empty() {
             // Yellowstone applies the subscription's filter from the first broadcast it handles
             // after the request, and a slot's transactions and its block meta are two broadcasts:
             // a tip start's first slot can arrive without its transactions.
-            self.last = Some(LastSealed {
-                block,
-                transactions: None,
-            });
+            self.seal(block, None);
             return Ok(SealDecision::Skip);
         }
-        self.last = Some(LastSealed {
-            block: block.clone(),
-            transactions: held,
-        });
-        Ok(SealDecision::Process(block, transactions))
+        self.seal(block.clone(), held);
+        Ok(SealDecision::Process(PreparedBlock {
+            block,
+            transactions,
+        }))
     }
 }
 
@@ -290,26 +305,19 @@ fn decode_hash(name: &str, value: &str) -> Result<[u8; 32]> {
         .with_context(|| format!("{name} is not 32 bytes"))
 }
 
+/// Block metas and validators the listener's tests share.
 #[cfg(test)]
-mod tests {
-    use super::*;
-    use yellowstone_grpc_proto::prelude::UnixTimestamp;
+pub(crate) mod testing {
+    use super::{BlockValidator, SealDecision, SubscribeUpdateBlockMeta};
+    use crate::solana_grpc_listener::StartPosition;
 
-    fn hash(tag: u8) -> [u8; 32] {
+    pub(crate) fn hash(tag: u8) -> [u8; 32] {
         [tag; 32]
-    }
-
-    fn transaction(index: u64) -> PreparedTransaction {
-        PreparedTransaction {
-            signature: Signature::from([index as u8; 64]),
-            index,
-            instructions: vec![],
-        }
     }
 
     /// The block meta of `slot`, child of `slot - 1`, with `executed_transaction_count`
     /// transactions.
-    fn meta(
+    pub(crate) fn meta(
         slot: u64,
         executed_transaction_count: u64,
     ) -> SubscribeUpdateBlockMeta {
@@ -324,7 +332,7 @@ mod tests {
     }
 
     /// A tip start that has skipped slot `slot - 1`, so `slot` is the first it applies.
-    fn following(slot: u64) -> BlockValidator {
+    pub(crate) fn following(slot: u64) -> BlockValidator {
         let mut validator = BlockValidator::new(StartPosition::Tip);
         assert!(matches!(
             validator.block_meta(meta(slot - 1, 0)).unwrap(),
@@ -332,9 +340,26 @@ mod tests {
         ));
         validator
     }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::testing::{following, hash, meta};
+    use super::*;
+    use yellowstone_grpc_proto::prelude::UnixTimestamp;
+
+    fn transaction(index: u64) -> PreparedTransaction {
+        PreparedTransaction {
+            signature: Signature::from([index as u8; 64]),
+            index,
+            instructions: vec![],
+        }
+    }
 
     fn indexes(decision: SealDecision) -> Vec<u64> {
-        let SealDecision::Process(_, transactions) = decision else {
+        let SealDecision::Process(PreparedBlock { transactions, .. }) =
+            decision
+        else {
             panic!("expected a processed slot, got {decision:?}")
         };
         transactions.iter().map(|tx| tx.index).collect()
@@ -361,8 +386,10 @@ mod tests {
         let mut validator = following(2);
         validator.transaction(2, transaction(3)).unwrap();
         validator.transaction(2, transaction(1)).unwrap();
-        let SealDecision::Process(block, transactions) =
-            validator.block_meta(meta(2, 4)).unwrap()
+        let SealDecision::Process(PreparedBlock {
+            block,
+            transactions,
+        }) = validator.block_meta(meta(2, 4)).unwrap()
         else {
             panic!()
         };
@@ -433,6 +460,40 @@ mod tests {
         );
     }
 
+    /// After a replay, several recent slots can arrive again; each is skipped, and a transaction
+    /// one of them did not hold halts. A slot past the window halts too.
+    #[test]
+    fn a_redelivery_of_several_slots_is_skipped() {
+        let mut validator = following(2);
+        for slot in 2..5 {
+            validator.transaction(slot, transaction(0)).unwrap();
+            assert_eq!(
+                indexes(validator.block_meta(meta(slot, 1)).unwrap()),
+                vec![0]
+            );
+        }
+        for slot in 2..5 {
+            validator.transaction(slot, transaction(0)).unwrap();
+            assert!(matches!(
+                validator.block_meta(meta(slot, 1)).unwrap(),
+                SealDecision::Skip
+            ));
+        }
+        let late = validator.transaction(3, transaction(1)).unwrap_err();
+        assert!(
+            format!("{late:#}").contains("applied without it"),
+            "{late:#}"
+        );
+
+        let mut validator = following(2);
+        let last = 2 + REDELIVERY_WINDOW as u64;
+        for slot in 2..=last {
+            validator.block_meta(meta(slot, 0)).unwrap();
+        }
+        assert!(validator.block_meta(meta(3, 0)).is_ok());
+        assert!(validator.block_meta(meta(2, 0)).is_err());
+    }
+
     /// Every other break of the transactions-before-meta order halts.
     #[test]
     fn a_slot_out_of_order_halts() {
@@ -446,7 +507,7 @@ mod tests {
         validator.transaction(2, transaction(0)).unwrap();
         assert!(validator.block_meta(meta(3, 1)).is_err());
 
-        // A transaction or a block meta for a slot before the last sealed one.
+        // A transaction or a block meta for an earlier slot the validator never sealed.
         let mut validator = following(3);
         assert!(validator.transaction(1, transaction(0)).is_err());
         assert!(validator.block_meta(meta(1, 0)).is_err());

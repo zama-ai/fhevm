@@ -154,8 +154,8 @@ replay window, and the listener catches up from `--archive-url` beyond it (DD-05
 
 The gRPC provider must send every transaction of a slot before that slot's block meta, live
 and on `from_slot` replay, as Yellowstone does. The listener seals a slot on its block meta
-and stops if the order is broken; a transaction for a slot already applied without it stops the
-listener with the slot to repair from (DD-060).
+and stops if the order is broken. A transaction for a slot already applied without it stops the
+listener once; after the restart it continues past that slot, which needs the repair in DD-060.
 
 ## Validation
 

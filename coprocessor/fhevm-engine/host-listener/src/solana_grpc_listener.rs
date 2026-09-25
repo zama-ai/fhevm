@@ -41,7 +41,8 @@ use tonic::transport::{Channel, ClientTlsConfig};
 use yellowstone_grpc_proto::geyser::geyser_client::GeyserClient;
 use yellowstone_grpc_proto::prelude::{
     subscribe_update::UpdateOneof, Message as TransactionMessage,
-    SubscribeRequest, SubscribeUpdateTransactionInfo, TransactionStatusMeta,
+    SubscribeRequest, SubscribeUpdateTransaction,
+    SubscribeUpdateTransactionInfo, TransactionStatusMeta,
 };
 use zama_solana_transaction::{
     CompiledInstruction as CanonicalCompiledInstruction,
@@ -506,15 +507,7 @@ async fn subscribe_loop(
                 };
                 match update.update_oneof {
                     Some(UpdateOneof::Transaction(update)) => {
-                        let slot = update.slot;
-                        update
-                            .transaction
-                            .ok_or_else(|| anyhow!("transaction update in slot {slot} has no transaction"))
-                            .and_then(|info| prepare_transaction(info, &config.program_id))
-                            .and_then(|prepared| match prepared {
-                                Some(transaction) => validator.transaction(slot, transaction),
-                                None => Ok(()),
-                            })
+                        accept_transaction(&mut validator, update, &config.program_id)
                             .map_err(|error| {
                                 FatalListenerError::new(error.context(
                                     "validate Solana transaction",
@@ -527,11 +520,7 @@ async fn subscribe_loop(
                                 "validate sealed Solana block",
                             ))
                         })?;
-                        if let SealDecision::Process(block, transactions) = decision {
-                            let prepared = PreparedBlock {
-                                block,
-                                transactions,
-                            };
+                        if let SealDecision::Process(prepared) = decision {
                             if !apply_prepared_block(
                                 db,
                                 config,
@@ -555,9 +544,9 @@ async fn subscribe_loop(
 
 /// A sealed block with its host transactions, in the transport-neutral form reconstruction reads.
 #[derive(Debug)]
-struct PreparedBlock {
-    block: SealedBlock,
-    transactions: Vec<PreparedTransaction>,
+pub(crate) struct PreparedBlock {
+    pub(crate) block: SealedBlock,
+    pub(crate) transactions: Vec<PreparedTransaction>,
 }
 
 /// A successful transaction reduced to its host program's instructions.
@@ -566,6 +555,23 @@ pub(crate) struct PreparedTransaction {
     pub(crate) signature: Signature,
     pub(crate) index: u64,
     pub(crate) instructions: Vec<crate::solana_reconstruct::DecodedInstruction>,
+}
+
+/// Prepares a streamed transaction and holds it for its slot; a failed or vote transaction is
+/// dropped.
+fn accept_transaction(
+    validator: &mut BlockValidator,
+    update: SubscribeUpdateTransaction,
+    program: &Pubkey,
+) -> Result<()> {
+    let slot = update.slot;
+    let info = update.transaction.ok_or_else(|| {
+        anyhow!("transaction update in slot {slot} has no transaction")
+    })?;
+    match prepare_transaction(info, program)? {
+        Some(transaction) => validator.transaction(slot, transaction),
+        None => Ok(()),
+    }
 }
 
 /// Prepares a streamed transaction when it arrives. A failed or vote transaction changes no
@@ -643,9 +649,10 @@ fn is_replay_window_passed(status: &tonic::Status) -> bool {
 mod replay_status_tests {
     use super::{
         is_replay_unsupported, is_replay_window_passed, BlockCheckpoint,
-        IngestionProgress,
+        IngestionProgress, PreparedBlock,
     };
     use crate::solana_grpc_listener::StartPosition;
+    use crate::solana_grpc_source::testing::{following, meta};
     use crate::solana_grpc_source::{BlockValidator, SealDecision};
     use yellowstone_grpc_proto::prelude::SubscribeUpdateBlockMeta;
 
@@ -670,29 +677,9 @@ mod replay_status_tests {
 
     #[test]
     fn retryable_first_block_replays_as_unapplied_then_commits() {
-        let update = SubscribeUpdateBlockMeta {
-            slot: 5,
-            blockhash: bs58::encode([5; 32]).into_string(),
-            parent_slot: 4,
-            parent_blockhash: bs58::encode([4; 32]).into_string(),
-            ..Default::default()
-        };
-        // A tip start skips its first slot, so slot 5 is the first it applies.
-        let mut first_validator = BlockValidator::new(StartPosition::Tip);
-        assert!(matches!(
-            first_validator
-                .block_meta(SubscribeUpdateBlockMeta {
-                    slot: 4,
-                    blockhash: bs58::encode([4; 32]).into_string(),
-                    parent_slot: 3,
-                    parent_blockhash: bs58::encode([3; 32]).into_string(),
-                    ..Default::default()
-                })
-                .unwrap(),
-            SealDecision::Skip
-        ));
-        let SealDecision::Process(first, _) =
-            first_validator.block_meta(update.clone()).unwrap()
+        let update = meta(5, 0);
+        let SealDecision::Process(PreparedBlock { block: first, .. }) =
+            following(5).block_meta(update.clone()).unwrap()
         else {
             panic!()
         };
@@ -706,7 +693,7 @@ mod replay_status_tests {
         assert!(progress.applied.is_none());
 
         let mut retry_validator = BlockValidator::new(start);
-        let SealDecision::Process(retried, _) =
+        let SealDecision::Process(PreparedBlock { block: retried, .. }) =
             retry_validator.block_meta(update).unwrap()
         else {
             panic!()
@@ -743,7 +730,7 @@ mod replay_status_tests {
             ..Default::default()
         };
         let mut validator = BlockValidator::new(progress.subscription_start());
-        let SealDecision::Process(block, _) =
+        let SealDecision::Process(PreparedBlock { block, .. }) =
             validator.block_meta(update.clone()).unwrap()
         else {
             panic!("bootstrap block must be applied")
@@ -1255,13 +1242,14 @@ mod account_resolution_tests {
 mod slot_size_tests {
     use super::test_support::ZAMA_HOST;
     use super::wire_fixtures::{app_transaction, Compiled, Transaction};
+    use super::PreparedBlock;
     use super::{prepare_transaction, MAX_DECODING_MESSAGE_SIZE};
-    use crate::solana_grpc_listener::StartPosition;
-    use crate::solana_grpc_source::{BlockValidator, SealDecision};
+    use crate::solana_grpc_source::testing::{following, meta};
+    use crate::solana_grpc_source::SealDecision;
     use solana_sdk::pubkey::Pubkey;
     use yellowstone_grpc_proto::prelude::{
         subscribe_update::UpdateOneof, SubscribeUpdate,
-        SubscribeUpdateBlockMeta, SubscribeUpdateTransaction,
+        SubscribeUpdateTransaction,
     };
     use yellowstone_grpc_proto::prost::Message;
 
@@ -1300,20 +1288,6 @@ mod slot_size_tests {
         }
     }
 
-    fn meta(
-        slot: u64,
-        executed_transaction_count: u64,
-    ) -> SubscribeUpdateBlockMeta {
-        SubscribeUpdateBlockMeta {
-            slot,
-            blockhash: bs58::encode([slot as u8; 32]).into_string(),
-            parent_slot: slot - 1,
-            parent_blockhash: bs58::encode([slot as u8 - 1; 32]).into_string(),
-            executed_transaction_count,
-            ..Default::default()
-        }
-    }
-
     #[test]
     fn a_slot_past_the_decoding_limit_streams_in_bounded_messages() {
         let host = ZAMA_HOST.parse::<Pubkey>().unwrap();
@@ -1340,13 +1314,8 @@ mod slot_size_tests {
         // Enough junk that one message holding the slot would pass the decoding limit.
         let junk_count = MAX_DECODING_MESSAGE_SIZE / message_size + 1;
 
-        // Slot 4 is the tip start's skipped first slot; slot 5 carries the junk, then one
-        // host transaction.
-        let mut validator = BlockValidator::new(StartPosition::Tip);
-        assert!(matches!(
-            validator.block_meta(meta(4, 0)).unwrap(),
-            SealDecision::Skip
-        ));
+        // Slot 5 carries the junk, then one host transaction.
+        let mut validator = following(5);
         for index in 0..junk_count as u64 {
             let prepared = prepare_transaction(junk_info(index), &host)
                 .unwrap()
@@ -1366,8 +1335,10 @@ mod slot_size_tests {
         .unwrap();
         validator.transaction(5, prepared).unwrap();
 
-        let SealDecision::Process(block, transactions) =
-            validator.block_meta(meta(5, host_index + 1)).unwrap()
+        let SealDecision::Process(PreparedBlock {
+            block,
+            transactions,
+        }) = validator.block_meta(meta(5, host_index + 1)).unwrap()
         else {
             panic!("slot 5 is applied")
         };

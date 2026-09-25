@@ -7,7 +7,7 @@ use std::time::Duration;
 
 use anyhow::{Context, Result};
 use clap::Parser;
-use sqlx::postgres::PgPoolOptions;
+use sqlx::postgres::{PgConnectOptions, PgPoolOptions};
 use tokio_util::sync::CancellationToken;
 use tracing::{info, Level};
 
@@ -43,6 +43,12 @@ struct Args {
     service_name: String,
 }
 
+/// The KMS connector gives up on a proof request after its `host_rpc_call_timeout`, 10 seconds
+/// by default, so a longer statement only holds a connection.
+fn bound_statements(options: PgConnectOptions) -> PgConnectOptions {
+    options.options([("statement_timeout", "10s")])
+}
+
 #[tokio::main]
 async fn main() -> Result<()> {
     let args = Args::parse();
@@ -65,7 +71,7 @@ async fn main() -> Result<()> {
             .max_connections(args.database_pool_size)
             .acquire_timeout(Duration::from_secs(5)),
         Some(&cancel),
-        std::convert::identity,
+        bound_statements,
     )
     .await
     .context("connect coprocessor database")?;

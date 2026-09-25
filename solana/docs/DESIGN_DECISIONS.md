@@ -2123,9 +2123,10 @@ leaves. A replay older than the provider's replay window comes from the archive 
 `S` must be in the archive's history, and nothing checks that before the rows are deleted. The
 runbook is in the host-listener README.
 
-An archive block prepares into the same block the stream produces (`prepare_rpc_block`), so
-archive catch-up (DD-059) reuses one decoder. It requires inner instructions and loaded addresses, which
-`getTransaction` returns (DD-060). A test rebuilds a slot from `getBlock` and `getTransaction` output alone.
+An archive transaction prepares into the same host instructions as a streamed one
+(`prepare_rpc_transaction`), so archive catch-up (DD-059) reuses one decoder. It requires inner
+instructions and loaded addresses, which `getTransaction` returns (DD-060). A test rebuilds a slot
+from `getBlock` and `getTransaction` output alone.
 
 Rationale:
 
@@ -2270,7 +2271,7 @@ in the archive's history.
 
 Status: adopted
 
-Recorded in fhevm-internal#2104 (RFC 035 review, finding 1).
+Recorded in fhevm-internal#2104 (RFC 035 review, finding 1, fixes A and B).
 
 The listener used to subscribe to whole blocks with `account_include: [host]`. Yellowstone keeps every
 transaction that lists the host program, including one that never calls it, and sends the block as
@@ -2297,18 +2298,21 @@ lines 1333-1404 at `243d008`, the pinned `v14.2.2`). A slot's transactions and i
 two separate broadcasts, and a client receives live broadcasts from before its filter and replay
 are set. Two cases follow:
 
-- The live messages buffered during a replay follow it, so the last replayed slot can arrive again,
-  whole or as its block meta alone. The validator skips it when the block meta equals the applied
-  one and every transaction is one the slot already held.
+- The live messages buffered during a replay follow it, so recent slots can arrive again, whole or
+  as their block meta alone: every slot broadcast between the subscription and the replay. The
+  validator keeps the last `REDELIVERY_WINDOW` (32) sealed slots and skips a slot that arrives
+  again when its block meta equals the applied one and every transaction is one it already held.
 - A start at the tip can receive its first slot's block meta without the transactions before it.
   The listener skips the first slot and applies from the next.
 
-A transaction of another slot while one is open, a block meta for another slot, or a slot that does
-not extend the last applied one stops the listener without applying the slot. A transaction for the
-last applied slot that the slot did not hold stops it too, but that slot is already recorded
-without it: after the restart the listener resumes past it, so the error names the slot to repair
-from (DD-056). A transaction for an earlier slot also stops the listener, which then resumes from
-its checkpoint: a re-delivery reaching back two slots or more is not skipped. Whether other providers keep this order is
+A transaction of another slot while one is open, a block meta for another slot, a slot older than
+the window, or a slot that does not extend the last applied one stops the listener without applying
+the slot. A transaction that a recent slot did not hold stops it too, but that slot is already
+recorded without it. The restart resumes from the checkpoint, past that slot, so ingestion
+continues: the error, which names the slot and the transaction, and the restart alarm are the only
+trace. If the transaction wrote no Store, the replay repair in the host-listener README restores
+its computation rows. If it wrote one, a replay computes leaves the record does not hold and stops,
+so the leaf record has to be rewritten by hand. Whether other providers keep this order is
 fhevm-internal#2087.
 
 Archive catch-up applies the same bound to each transaction. `getBlock` with `transactionDetails:
@@ -2337,7 +2341,7 @@ every slot.
 
 Status: adopted
 
-Recorded in fhevm-internal#2104 (RFC 035 review, finding 3).
+Recorded in fhevm-internal#2104 (RFC 035 review, findings 2 and 4, fix C).
 
 The proof route loaded every leaf of the Store, recomputed its peaks and rebuilt the path from all
 of them, for each requested entry. The review measured 30 to 40 seconds for 8 entries of a
@@ -2383,7 +2387,7 @@ verification: nothing is deployed, so no backfill exists.
 
 Status: adopted
 
-Recorded in fhevm-internal#2104 (fix D).
+Recorded in fhevm-internal#2104 (RFC 035 review, findings 2 and 3, fix D).
 
 The proof route ran inside `solana_host_listener`, on the 8-connection pool ingestion writes
 through, and stopped whenever ingestion stopped: a fatal ingestion error or a restart took the route
@@ -2397,8 +2401,8 @@ Decision:
 Deployment and ClusterIP Service, `<release>-solana-leaf-proof-server`, from the listener's image
 and with its own pool (`--database-pool-size`, 8 by default). It only reads the leaf record, so it
 can run several replicas and roll without downtime; the listener stays one replica with `Recreate`.
-The listener serves only `/healthz` and `/liveness`. The connector's `solanaProofEndpoints` name the
-proof server's Service.
+The listener serves only `/healthz` and `/liveness`. The connector's proof endpoints name the proof
+server's Service.
 
 On EVM the connector reads the ACL from the host chain, and no coprocessor serves proofs. The split
 follows the coprocessor's one Deployment per role: `host_listener`, `host_listener_poller` and

@@ -127,7 +127,7 @@ Note that recommendations assume a smoke test that runs transactions/requests at
 
 ### solana-host-listener
 
-The listener resumes from its checkpoint through the stream while the Yellowstone provider can still replay it, about 24 hours for a hosted provider. Past that window it catches up from the archive RPC, with one `getBlock` per slot and one `getTransaction` per host transaction. A day of mainnet takes hours, so the lag alarm fires during a long catch-up too; `archive_catch_up_active` at 1 with the lag falling means it is progressing. A listener that fails the same slot, on the stream or during catch-up, retries it every 2 seconds: the lag stays flat, reconnects rise, and both the time-lag and the reconnect alarms fire. `applied_slot` names the last committed slot and the listener's `ingestion interrupted` log line the error. The `/healthz` route checks only the database. A fatal ingestion error exits the process, so it shows up as container restarts, not as a metric.
+The listener resumes from its checkpoint through the stream while the Yellowstone provider can still replay it, about 24 hours for a hosted provider. Past that window it catches up from the archive RPC, with one `getBlock` per slot and one `getTransaction` per host transaction. A day of mainnet takes hours, so the lag alarm fires during a long catch-up too; `archive_catch_up_active` at 1 with the lag falling means it is progressing. A listener that fails the same slot, on the stream or during catch-up, retries it every 2 seconds: `failures_since_commit` keeps rising, and the lag and reconnect alarms fire too. `applied_slot` names the last committed slot and the listener's `ingestion interrupted` log line the error. The `/healthz` route checks only the database. A fatal ingestion error exits the process, so it shows up as container restarts, not as a metric.
 
 #### Metric Name: `coprocessor_solana_host_listener_applied_block_timestamp_seconds`
  - **Type**: Gauge (labeled by `host_chain_id`)
@@ -155,6 +155,12 @@ The listener resumes from its checkpoint through the stream while the Yellowston
  - **Description**: Interruptions the listener resumed from its checkpoint: a stream idle for 30 seconds, closed by the server, a transport error, a retryable ingest failure, or a failed archive read during catch-up.
  - **Alarm**: If the counter increases repeatedly.
     - **Recommendation**: more than 3 reconnects in 10 minutes, i.e. `increase(counter[10m]) > 3`.
+
+#### Metric Name: `coprocessor_solana_host_listener_failures_since_commit`
+ - **Type**: Gauge (labeled by `host_chain_id`)
+ - **Description**: Interruptions the listener resumed from its checkpoint since it last committed a block, on the stream or during catch-up. A commit, or a restart, resets it to 0. An unstable provider moves it up and back to 0; a slot that fails again and again keeps it rising, so this alarm tells a stuck slot from a flaky stream.
+ - **Alarm**: If it reaches 5, a slot has failed five times in a row. The `ingestion interrupted` log line names the error, and `applied_slot` the last committed slot.
+    - **Recommendation**: `gauge >= 5`.
 
 #### Metric Name: `coprocessor_solana_host_listener_handle_check_failures_total`
  - **Type**: Counter (labeled by `host_chain_id`)

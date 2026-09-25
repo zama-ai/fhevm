@@ -471,8 +471,9 @@ pub async fn store_block_leaves(
         .await?;
     }
     let leaves = &reduction.leaves;
-    sqlx::query!(
-        r#"
+    if !leaves.is_empty() {
+        sqlx::query!(
+            r#"
         INSERT INTO solana_encrypted_state_leaves
             (encrypted_state, leaf_index, commitment, leaf_kind, handle,
              allowed_key, block_slot, transaction_index)
@@ -483,40 +484,45 @@ pub async fn store_block_leaves(
             AS leaf(encrypted_state, leaf_index, commitment, leaf_kind, handle,
                     allowed_key, transaction_index)
         "#,
-        &leaves
-            .iter()
-            .map(|leaf| leaf.encrypted_store.to_vec())
-            .collect::<Vec<_>>(),
-        &leaves
-            .iter()
-            .map(|leaf| sql_i64(leaf.leaf_index, "leaf_index"))
-            .collect::<Result<Vec<_>, _>>()?,
-        &leaves
-            .iter()
-            .map(|leaf| leaf.commitment.to_vec())
-            .collect::<Vec<_>>(),
-        &leaves
-            .iter()
-            .map(|leaf| leaf.kind as i16)
-            .collect::<Vec<_>>(),
-        &leaves
-            .iter()
-            .map(|leaf| leaf.handle.to_vec())
-            .collect::<Vec<_>>(),
-        &leaves
-            .iter()
-            .map(|leaf| leaf.key.map(|key| key.to_vec()))
-            .collect::<Vec<_>>() as &[Option<Vec<u8>>],
-        sql_i64(slot, "block_slot")?,
-        &leaves
-            .iter()
-            .map(|leaf| sql_i64(leaf.transaction_index, "transaction_index"))
-            .collect::<Result<Vec<_>, _>>()?,
-    )
-    .execute(tx.as_mut())
-    .await?;
+            &leaves
+                .iter()
+                .map(|leaf| leaf.encrypted_store.to_vec())
+                .collect::<Vec<_>>(),
+            &leaves
+                .iter()
+                .map(|leaf| sql_i64(leaf.leaf_index, "leaf_index"))
+                .collect::<Result<Vec<_>, _>>()?,
+            &leaves
+                .iter()
+                .map(|leaf| leaf.commitment.to_vec())
+                .collect::<Vec<_>>(),
+            &leaves
+                .iter()
+                .map(|leaf| leaf.kind as i16)
+                .collect::<Vec<_>>(),
+            &leaves
+                .iter()
+                .map(|leaf| leaf.handle.to_vec())
+                .collect::<Vec<_>>(),
+            &leaves
+                .iter()
+                .map(|leaf| leaf.key.map(|key| key.to_vec()))
+                .collect::<Vec<_>>() as &[Option<Vec<u8>>],
+            sql_i64(slot, "block_slot")?,
+            &leaves
+                .iter()
+                .map(|leaf| sql_i64(
+                    leaf.transaction_index,
+                    "transaction_index"
+                ))
+                .collect::<Result<Vec<_>, _>>()?,
+        )
+        .execute(tx.as_mut())
+        .await?;
+    }
     let nodes = &reduction.nodes;
-    sqlx::query!(
+    if !nodes.is_empty() {
+        sqlx::query!(
         r#"
         INSERT INTO solana_encrypted_state_nodes
             (encrypted_state, height, node_index, node)
@@ -538,6 +544,7 @@ pub async fn store_block_leaves(
     )
     .execute(tx.as_mut())
     .await?;
+    }
     Ok(())
 }
 
@@ -615,6 +622,16 @@ pub async fn load_encrypted_store_history(
     .transpose()
 }
 
+/// A leaf row as `find_leaf` reads it.
+struct LeafRow {
+    leaf_index: i64,
+    commitment: Vec<u8>,
+    leaf_kind: i16,
+    handle: Vec<u8>,
+    allowed_key: Option<Vec<u8>>,
+    transaction_index: i64,
+}
+
 /// The first leaf of `account` below `leaf_count` that records `kind` for `handle` and
 /// `key`. The oldest match sits in the oldest mountain, whose path changes least.
 pub async fn find_leaf(
@@ -625,23 +642,52 @@ pub async fn find_leaf(
     key: Option<[u8; 32]>,
     leaf_count: u64,
 ) -> Result<Option<StagedLeaf>, SqlxError> {
-    let row = sqlx::query!(
-        r#"
-        SELECT leaf_index, commitment, leaf_kind, handle, allowed_key, transaction_index
-        FROM solana_encrypted_state_leaves
-        WHERE encrypted_state = $1 AND leaf_kind = $2 AND handle = $3
-          AND allowed_key IS NOT DISTINCT FROM $4 AND leaf_index < $5
-        ORDER BY leaf_index
-        LIMIT 1
-        "#,
-        &account[..],
-        kind as i16,
-        &handle[..],
-        key.as_ref().map(|key| &key[..]),
-        sql_i64(leaf_count, "leaf_count")?,
-    )
-    .fetch_optional(pool)
-    .await?;
+    let leaf_count = sql_i64(leaf_count, "leaf_count")?;
+    // Two statements, because `allowed_key IS NOT DISTINCT FROM $4` cannot use the
+    // semantic index.
+    let row = match key {
+        Some(key) => {
+            sqlx::query_as!(
+                LeafRow,
+                r#"
+                SELECT leaf_index, commitment, leaf_kind, handle, allowed_key,
+                       transaction_index
+                FROM solana_encrypted_state_leaves
+                WHERE encrypted_state = $1 AND leaf_kind = $2 AND handle = $3
+                  AND allowed_key = $4 AND leaf_index < $5
+                ORDER BY leaf_index
+                LIMIT 1
+                "#,
+                &account[..],
+                kind as i16,
+                &handle[..],
+                &key[..],
+                leaf_count,
+            )
+            .fetch_optional(pool)
+            .await?
+        }
+        None => {
+            sqlx::query_as!(
+                LeafRow,
+                r#"
+                SELECT leaf_index, commitment, leaf_kind, handle, allowed_key,
+                       transaction_index
+                FROM solana_encrypted_state_leaves
+                WHERE encrypted_state = $1 AND leaf_kind = $2 AND handle = $3
+                  AND allowed_key IS NULL AND leaf_index < $4
+                ORDER BY leaf_index
+                LIMIT 1
+                "#,
+                &account[..],
+                kind as i16,
+                &handle[..],
+                leaf_count,
+            )
+            .fetch_optional(pool)
+            .await?
+        }
+    };
     row.map(|row| {
         leaf_row(
             &account,

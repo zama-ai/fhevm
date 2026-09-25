@@ -11,7 +11,9 @@ import {
   FHEVM_COMPOSE_PROJECT_ENV,
   PORTS,
   REPO_ROOT,
+  SOLANA_LEAF_PROOF_PORT,
   SOLANA_LISTENER_GRPC_PORT,
+  SOLANA_LISTENER_HEALTH_PORT,
   SOLANA_VALIDATOR_RPC_PORT,
 } from "../src/layout";
 import { solanaImages } from "../src/solana/images";
@@ -114,6 +116,8 @@ export const demoReservedPorts = (observability = false): readonly number[] => [
     DEMO_OPERATOR_PORT,
     SOLANA_VALIDATOR_RPC_PORT,
     SOLANA_LISTENER_GRPC_PORT,
+    SOLANA_LISTENER_HEALTH_PORT,
+    SOLANA_LEAF_PROOF_PORT,
     ...(observability ? OBSERVABILITY_PORTS : []),
   ]),
 ];
@@ -1673,7 +1677,7 @@ export const upDemo = async ({
       const proofServer = await processFromPidFile(
         "proofServer",
         ["solana_leaf_proof_server"],
-        path.join(runtimeDir, "proof-server.pid"),
+        path.join(runtimeDir, "leaf-proof-server.pid"),
         path.join(logsDir, "leaf-proof-server.log"),
       );
       if (observability) await startObservability(composeProject);
@@ -1748,7 +1752,7 @@ export const upDemo = async ({
         [
           "proofServer",
           ["solana_leaf_proof_server"],
-          path.join(runtimeDir, "proof-server.pid"),
+          path.join(runtimeDir, "leaf-proof-server.pid"),
           path.join(logsDir, "leaf-proof-server.log"),
         ],
       ] as const) {

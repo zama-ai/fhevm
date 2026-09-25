@@ -17,8 +17,7 @@ import { deployHostProgram } from '../../../../solana/deploy/src/deploy-host';
 import { deployProgramArtifacts } from '../../../../solana/deploy/src/deploy-programs';
 import { integerEnv } from '../../../../solana/deploy/src/gateway';
 import { SOLANA_LEAF_PROOF_API_KEY } from '../generate/solana';
-import { SOLANA_LEAF_PROOF_PORT, SOLANA_LISTENER_HEALTH_PORT } from '../layout';
-import { REPO_ROOT, STATE_DIR, envPath } from '../layout';
+import { REPO_ROOT, SOLANA_LEAF_PROOF_PORT, SOLANA_LISTENER_HEALTH_PORT, STATE_DIR, envPath } from '../layout';
 import { LOCAL_SOLANA_ENDPOINTS } from './endpoints';
 import { readEnvFile } from '../utils/fs';
 import { run, runStreaming } from '../utils/process';
@@ -229,7 +228,7 @@ export const startLeafProofServer = async (parameters: {
   readonly lifecycleDir?: string;
 }): Promise<void> => {
   await replaceSolanaProcess('solana_leaf_proof_server', parameters.lifecycleDir);
-  await buildSolanaBinary('solana_leaf_proof_server', 'solana-reconstruct');
+  await buildSolanaBinary('solana_leaf_proof_server', 'solana-grpc,solana-reconstruct');
   await spawnSolanaProcess(
     'solana_leaf_proof_server',
     [
@@ -241,7 +240,7 @@ export const startLeafProofServer = async (parameters: {
       SOLANA_LEAF_PROOF_API_KEY,
     ],
     path.join(parameters.logDir, 'leaf-proof-server.log'),
-    parameters.lifecycleDir && path.join(parameters.lifecycleDir, 'proof-server.pid'),
+    parameters.lifecycleDir && path.join(parameters.lifecycleDir, 'leaf-proof-server.pid'),
   );
 };
 

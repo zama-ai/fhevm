@@ -4,8 +4,8 @@
 //! transactions with `getBlock`, and serves each successful transaction naming the host with
 //! `getTransaction`, all at finalized commitment. Each transaction is prepared like a streamed one
 //! as it arrives (`prepare_rpc_transaction`); the block must extend the checkpoint as the stream's
-//! validator requires, and is
-//! applied through the same path, so the database ends as uninterrupted streaming leaves it.
+//! validator requires, and is applied through the same path, so the database ends as
+//! uninterrupted streaming leaves it.
 //! Catch-up stops at the slot the archive had finalized when it started, well inside the
 //! stream's replay window, so the stream takes over however fast the chain moves.
 
@@ -331,8 +331,8 @@ mod tests {
         storing_app_transaction, Transaction, BLOCK_TIME,
     };
     use super::super::{
-        apply_prepared_block, prepare_transaction, BlockCheckpoint,
-        FatalListenerError, IngestionProgress, PreparedBlock, StartPosition,
+        accept_transaction, apply_prepared_block, BlockCheckpoint,
+        FatalListenerError, IngestionProgress, StartPosition,
     };
     use super::{catch_up, extends_checkpoint, first_missing_slot, Archive};
     use crate::database::tfhe_event_propagate::Database;
@@ -533,19 +533,11 @@ mod tests {
         for slot in slots {
             let (transactions, meta) = slot.grpc();
             for update in transactions {
-                let prepared =
-                    prepare_transaction(update.transaction.unwrap(), &host)
-                        .unwrap()
-                        .unwrap();
-                validator.transaction(update.slot, prepared).unwrap();
+                accept_transaction(&mut validator, update, &host).unwrap();
             }
-            if let SealDecision::Process(block, transactions) =
+            if let SealDecision::Process(prepared) =
                 validator.block_meta(meta).unwrap()
             {
-                let prepared = PreparedBlock {
-                    block,
-                    transactions,
-                };
                 assert!(apply_prepared_block(
                     db,
                     &config(),
@@ -619,9 +611,9 @@ mod tests {
     }
 
     /// The acceptance case of fhevm-internal#2085: from a checkpoint the stream can no longer
-    /// replay, catch up from `getBlock` output across a skipped slot, stop at the archive's
-    /// finalized slot, then hand back to the stream. The database ends as uninterrupted
-    /// streaming leaves it.
+    /// replay, catch up from `getBlock` and `getTransaction` output across a skipped slot, stop
+    /// at the archive's finalized slot, then hand back to the stream. The database ends as
+    /// uninterrupted streaming leaves it.
     #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
     #[serial(db)]
     async fn catching_up_from_the_archive_then_streaming_matches_uninterrupted_streaming(

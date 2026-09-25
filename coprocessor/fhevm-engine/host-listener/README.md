@@ -124,10 +124,11 @@ program, one per message, and to every slot's block meta, and seals a slot when
 its block meta arrives. The provider must send every transaction of a slot
 before that slot's block meta, live and on `from_slot` replay; Yellowstone does.
 A start at the tip skips its first slot, which can arrive without its
-transactions, and a replayed slot that arrives again unchanged is skipped. Any
-other break in the order stops the listener before it applies the slot, except a
-transaction for a slot already applied without it: the listener stops and names
-the slot to repair from. Each `fhe_execute` is paired with the `FheExecutedEvent` it
+transactions, and one of the last 32 applied slots that arrives again unchanged
+is skipped. Any other break in the order stops the listener before it applies
+the slot, except a transaction for a slot already applied without it: the
+listener stops once, names the slot and the transaction, and continues past the
+slot after the restart. DD-060 describes the repair. Each `fhe_execute` is paired with the `FheExecutedEvent` it
 emits: the listener stores the result handles in the event and re-derives each
 one as a check. On an empty database, `--start-slot <slot>` selects an existing
 confirmed block to replay **inclusively**. Choose a finalized block before the
@@ -200,7 +201,8 @@ slot neither serves cannot be re-ingested. Take a database backup before step 2.
 
 This repairs computation rows only. A bug that recorded wrong leaves cannot be
 repaired by a replay, since the fixed listener stops at the first recorded leaf
-it does not reproduce.
+it does not reproduce. The same holds for a slot applied without a transaction
+that wrote a Store (DD-060).
 
 ## Events in FHEVM
 

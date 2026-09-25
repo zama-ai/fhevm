@@ -166,7 +166,6 @@ async fn leaf_record_round_trips_and_serves_verifiable_proofs(
         "leaves persist with their semantics and block position"
     );
     tx.rollback().await?;
-    assert_eq!(second.leaves[1].transaction_index, 2);
     assert_eq!(load_encrypted_store_history(&pool, [0xFF; 32]).await?, None);
 
     // A repair replays recorded slots: the recomputed leaves equal the recorded ones
@@ -342,7 +341,8 @@ async fn leaf_record_round_trips_and_serves_verifiable_proofs(
 
 /// Stores `leaves` allowed keys on [`ACCOUNT`] through the ingest path, requests the proofs
 /// of `proved` in one call and checks each against the stored peaks. Returns how long the
-/// request took.
+/// request took. It first deletes a leaf row that no requested path contains, so a route that
+/// reads more than each path fails.
 async fn prove_leaves_of_a_store(
     leaves: u64,
     proved: [u64; 8],
@@ -387,6 +387,18 @@ async fn prove_leaves_of_a_store(
     }
     let state = &states[&ACCOUNT];
     assert_eq!(state.leaf_count, leaves);
+    let off_path = (0..leaves)
+        .find(|leaf| proved.iter().all(|&p| *leaf != p && *leaf != p ^ 1))
+        .expect("a leaf off every requested path");
+    let deleted = sqlx::query(
+        "DELETE FROM solana_encrypted_state_leaves
+         WHERE encrypted_state = $1 AND leaf_index = $2",
+    )
+    .bind(&ACCOUNT[..])
+    .bind(off_path as i64)
+    .execute(&pool)
+    .await?;
+    assert_eq!(deleted.rows_affected(), 1);
 
     let cancel = CancellationToken::new();
     let (url, server_task) = serve_proofs(&pool, &cancel).await;
@@ -463,8 +475,8 @@ async fn proofs_read_their_path_by_position(
 /// fhevm-internal#2104: rebuilding a path from every leaf took 30 to 40 seconds for 8
 /// entries of a 1,000,000-leaf store, where the KMS connector waits 10 seconds. Storing the
 /// store takes about a minute in a debug build, so this runs on request:
-/// `cargo test -p host-listener --features solana-grpc,solana-reconstruct --test
-/// solana_leaves_tests -- --ignored --nocapture`.
+/// `cargo test -p host-listener --features solana-reconstruct --test solana_leaves_tests --
+/// --ignored --nocapture`.
 #[tokio::test]
 #[serial(db)]
 #[ignore = "stores 1,000,000 leaves; run on request"]

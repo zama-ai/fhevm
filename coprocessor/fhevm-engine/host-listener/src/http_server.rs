@@ -463,7 +463,7 @@ impl Modify for BearerApiKey {
 #[derive(OpenApi)]
 #[openapi(
     info(
-        title = "Solana host listener leaf proofs",
+        title = "Solana leaf proofs",
         description = "Inclusion proofs from the RFC 035 leaf record of Solana encrypted stores, for the KMS connector.",
         version = "1.0.0",
     ),
