@@ -128,13 +128,25 @@ pub(super) async fn containment_filter(
     Ok(filtered)
 }
 
+/// Unhealed ct64 drift that this stack can read. A finding of this stack's
+/// epoch always counts. Another epoch's finding counts only when this stack has
+/// no stored copy of the handle, so it would read the other stack's bytes; this
+/// matches containment's local-copy rule. `blue_green_consensus_epoch` and
+/// `ciphertexts` are left unqualified: the search_path resolves them to this
+/// stack's schema.
 pub(super) async fn drifted_ct64_handles(
     pool: &PgPool,
 ) -> Result<HashSet<Handle>, CoprocessorError> {
     Ok(sqlx::query_scalar!(
-        r#"SELECT DISTINCT handle
-           FROM public.drifted_handle
-           WHERE reason = 'ct64_mismatch' AND healed_at IS NULL"#
+        r#"SELECT DISTINCT dh.handle
+           FROM public.drifted_handle dh
+           WHERE dh.reason = 'ct64_mismatch'
+             AND dh.healed_at IS NULL
+             AND (dh.consensus_epoch = (SELECT consensus_epoch
+                                          FROM blue_green_consensus_epoch
+                                         WHERE singleton)
+                  OR NOT EXISTS (SELECT 1 FROM ciphertexts ct
+                                  WHERE ct.handle = dh.handle))"#
     )
     .fetch_all(pool)
     .await?

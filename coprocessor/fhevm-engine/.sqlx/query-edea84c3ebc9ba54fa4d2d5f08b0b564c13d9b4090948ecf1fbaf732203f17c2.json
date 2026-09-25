@@ -1,0 +1,20 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "SELECT DISTINCT dh.handle\n           FROM public.drifted_handle dh\n           WHERE dh.reason = 'ct64_mismatch'\n             AND dh.healed_at IS NULL\n             AND (dh.consensus_epoch = (SELECT consensus_epoch\n                                          FROM blue_green_consensus_epoch\n                                         WHERE singleton)\n                  OR NOT EXISTS (SELECT 1 FROM ciphertexts ct\n                                  WHERE ct.handle = dh.handle))",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "handle",
+        "type_info": "Bytea"
+      }
+    ],
+    "parameters": {
+      "Left": []
+    },
+    "nullable": [
+      false
+    ]
+  },
+  "hash": "edea84c3ebc9ba54fa4d2d5f08b0b564c13d9b4090948ecf1fbaf732203f17c2"
+}
