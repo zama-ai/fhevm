@@ -63,7 +63,7 @@ where
         decryption_id: U256,
         handles: &[B256],
         extra_data: &Bytes,
-        user_decrypt_data: Option<UserDecryptionExtraData>,
+        recipient: Option<UserDecryptionRecipient>,
     ) -> Result<KmsGrpcRequest, ProcessingError> {
         if handles.is_empty() {
             return Err(ProcessingError::irrecoverable(
@@ -83,10 +83,9 @@ where
         let request_id = Some(u256_to_request_id(decryption_id));
         let kms_extra_data = kms_decryption_extra_data(extra_data);
 
-        if let Some(user_decrypt_data) = user_decrypt_data {
-            let (client_address, signing_metadata) =
-                user_decrypt_data.identity.into_kms_request_fields();
-            let enc_key = user_decrypt_data.public_key.to_vec();
+        if let Some(recipient) = recipient {
+            let (client_address, signing_metadata) = recipient.identity.into_kms_request_fields();
+            let enc_key = recipient.transport_key.to_vec();
             let user_decryption_request = UserDecryptionRequest {
                 request_id,
                 client_address,
@@ -164,9 +163,10 @@ fn kms_decryption_extra_data(extra_data: &Bytes) -> Vec<u8> {
     }
 }
 
-pub struct UserDecryptionExtraData {
+/// Who a user decryption answers and the key its shares are encrypted to.
+pub struct UserDecryptionRecipient {
     pub identity: UserIdentity,
-    pub public_key: Bytes,
+    pub transport_key: Bytes,
 }
 
 /// The user a KMS user decryption answers, as the host chain names it.
@@ -199,11 +199,11 @@ impl UserIdentity {
     }
 }
 
-impl UserDecryptionExtraData {
-    pub fn new(user_address: Address, public_key: Bytes) -> Self {
+impl UserDecryptionRecipient {
+    pub fn new(user_address: Address, transport_key: Bytes) -> Self {
         Self {
             identity: UserIdentity::Evm(user_address),
-            public_key,
+            transport_key,
         }
     }
 
@@ -215,7 +215,7 @@ impl UserDecryptionExtraData {
                     *permit.verifying_program_id().as_bytes(),
                 ),
             },
-            public_key: Bytes::copy_from_slice(permit.transport_key().as_bytes()),
+            transport_key: Bytes::copy_from_slice(permit.transport_key().as_bytes()),
         }
     }
 }
@@ -338,7 +338,7 @@ mod tests {
     #[test]
     fn evm_user_decryption_keeps_the_checksummed_address() {
         let address = Address::repeat_byte(0x11);
-        let data = UserDecryptionExtraData::new(address, Bytes::from_static(&[0x22]));
+        let data = UserDecryptionRecipient::new(address, Bytes::from_static(&[0x22]));
 
         assert_eq!(
             data.identity.into_kms_request_fields(),
@@ -353,7 +353,7 @@ mod tests {
             U256::from(1),
             rand_handle(),
         );
-        let data = UserDecryptionExtraData::new_solana(request.permit());
+        let data = UserDecryptionRecipient::new_solana(request.permit());
 
         assert_eq!(
             data.identity.into_kms_request_fields(),

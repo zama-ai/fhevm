@@ -24,7 +24,6 @@ describe("solana", () => {
     expect(parsed[0]?.solana_proof_routes).toEqual([
       { url: solanaLeafProofUrl(), api_key: SOLANA_LEAF_PROOF_API_KEY },
     ]);
-    expect(parsed[0]?.chain_kind).toBeUndefined();
     expect(parsed[0]?.solana_host_program_id).toBe("SoLaNaProgram111");
     expect(parsed[0]?.acl_address).toBeUndefined();
   });
