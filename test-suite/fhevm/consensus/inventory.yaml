@@ -811,7 +811,7 @@ cases:
       An object-storage outage that blocks a selected upload or read is retried to
       completion; the material is retrievable, digest-bound, and decryptable.
     topology: { scenario: three-of-three, operators: 3, threshold: 3, backends: [cpu, gpu] }
-    services: [minio]
+    services: [object-store]
     capabilities: [service-control]
     workload: A selected SNS upload or read blocked while storage is down.
     fault: { mechanism: stop, stage: an upload or read in flight, observation: a failed or blocked request is observed in the worker's own log or metrics }
@@ -1529,7 +1529,7 @@ cases:
     family: failure-matrix
     property: An identified noisy squash survives an observed object-storage failure and automatic SNS process replacement while storage remains unavailable, then becomes retrievable and decryptable after dependency recovery.
     topology: { scenario: three-of-three, operators: 3, threshold: 3, backends: [cpu, gpu] }
-    services: [minio]
+    services: [object-store]
     capabilities: [service-control]
     workload: A selected SNS upload or read blocked while storage is down.
     fault: { mechanism: stop, stage: an upload or read in flight, observation: a failed or blocked request is observed in the worker's own log or metrics }
@@ -1551,7 +1551,7 @@ cases:
     family: failure-matrix
     property: Five independently corrupted fresh object sets are rejected by the actual retrieval/verifier path; restoring original bytes and attestations completes each original accepted decryption request.
     topology: { scenario: three-of-three, operators: 3, threshold: 3, backends: [cpu] }
-    services: [minio, relayer, kms-worker]
+    services: [object-store, relayer, kms-worker]
     capabilities: [docker-socket, service-control]
     workload: Five fresh computed handles, one original decryption request each, with missing, truncated, wrong-handle, wrong-key and wrong-format material in all serving buckets.
     fault: { mechanism: journaled-object-corruption, stage: after publication before the first decryption, observation: public GET confirms each mutation and handle-attributed relayer or KMS logs identify the retrieval or verification rejection }

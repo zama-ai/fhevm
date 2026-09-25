@@ -447,7 +447,7 @@ coprocessor and test-suite overrides. It persists a runtime-only
 builds and force-recreates only `gw-listener`, `kms-worker`, and `tx-sender`
 (for every threshold party when applicable), and waits for connector readiness.
 It never starts the connector DB migration and uses Compose `--no-deps`, so it
-does not reset or recreate Postgres, MinIO, KMS core, generated keys, contract
+does not reset or recreate Postgres, the object store, KMS core, generated keys, contract
 discovery, or cached proofs. It is local E2E recovery only, not a production or
 certification operation. The persisted `--e2e-public-runtime` policy also
 applies to a later explicit local coprocessor rebuild, but this command does

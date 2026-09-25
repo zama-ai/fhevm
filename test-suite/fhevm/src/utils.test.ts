@@ -10,8 +10,8 @@ describe("utils/fs", () => {
     expect(hostReachableRpcUrl("https://example.com:8545")).toBe("https://example.com:8545");
   });
 
-  test("rewrites minio urls to the external host endpoint", () => {
-    expect(hostReachableMaterialUrl("http://minio:9000/kms-public/foo")).toBe("http://localhost:9000/kms-public/foo");
+  test("rewrites object-store urls to the external host endpoint", () => {
+    expect(hostReachableMaterialUrl("http://object-store:9000/kms-public/foo")).toBe("http://localhost:9000/kms-public/foo");
     expect(hostReachableMaterialUrl("http://10.0.0.5:9000/kms-public/foo")).toBe("http://localhost:9000/kms-public/foo");
     expect(hostReachableMaterialUrl("https://example.com:9001/kms-public/foo")).toBe("https://example.com:9001/kms-public/foo");
   });

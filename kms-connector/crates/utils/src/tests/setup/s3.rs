@@ -19,15 +19,15 @@ pub struct S3Instance {
     pub container: ContainerAsync<GenericImage>,
 }
 
-const RUSTFS_IMAGE: &str = "rustfs/rustfs";
-const RUSTFS_TAG: &str = "1.0.0";
+const RUSTFS_IMAGE: &str = "cgr.dev/zama.ai/rustfs";
+const RUSTFS_TAG: &str = "1.0.0-dev";
 const S3_PORT: u16 = 9000;
 const S3_ROOT_ACCESS_KEY: &str = "rustfs-root";
 const S3_ROOT_SECRET_KEY: &str = "rustfs-root-secret";
 const S3_CT_PATH: &str = "/tmp/ct";
 
-pub const MINIO_ACCESS_KEY: &str = "fhevm-access-key";
-pub const MINIO_SECRET_KEY: &str = "fhevm-access-secret-key";
+pub const OBJECT_STORE_ACCESS_KEY: &str = "fhevm-access-key";
+pub const OBJECT_STORE_SECRET_KEY: &str = "fhevm-access-secret-key";
 pub const S3_CT_HANDLE: &str = "5a88e7aa46f312ff70df6e84c85eb40cdfd42b18a9ff00000000000030390500";
 pub const S3_CT_DIGEST: &str = "3a002df21130bda55f78d4403a73007a797f4a888174a620bbffc9052a045239";
 
@@ -99,16 +99,16 @@ impl S3Instance {
     }
 
     async fn configure(&self) -> anyhow::Result<()> {
-        let user = serde_json::json!({ "secretKey": MINIO_SECRET_KEY, "status": "enabled" });
+        let user = serde_json::json!({ "secretKey": OBJECT_STORE_SECRET_KEY, "status": "enabled" });
         self.curl(
             &["-X", "PUT", "-d", &user.to_string()],
-            &format!("rustfs/admin/v3/add-user?accessKey={MINIO_ACCESS_KEY}"),
+            &format!("rustfs/admin/v3/add-user?accessKey={OBJECT_STORE_ACCESS_KEY}"),
         )
         .await?;
         self.curl(
             &["-X", "PUT"],
             &format!(
-                "rustfs/admin/v3/set-user-or-group-policy?policyName=readwrite&userOrGroup={MINIO_ACCESS_KEY}&isGroup=false"
+                "rustfs/admin/v3/set-user-or-group-policy?policyName=readwrite&userOrGroup={OBJECT_STORE_ACCESS_KEY}&isGroup=false"
             ),
         )
         .await?;

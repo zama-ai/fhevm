@@ -229,7 +229,7 @@ describe("buildKmsThresholdOverride", () => {
     expect(JSON.stringify(core.volumes)).toContain(KMS_THRESHOLD_CONFIG_NAME);
     expect(JSON.stringify(core.entrypoint)).toContain(KMS_THRESHOLD_CONFIG_NAME);
     expect(JSON.stringify(core.entrypoint)).not.toContain("/bin/sh");
-    expect(JSON.stringify(core.volumes)).not.toContain("minio_secrets");
+    expect(JSON.stringify(core.volumes)).not.toContain("object_store_secrets");
   });
 
   test("renders an explicitly selected core version without changing the other nodes", () => {
@@ -489,8 +489,8 @@ describe("buildHostScSwapEnv / buildGatewayScSwapEnv (node swap)", () => {
     KMS_SIGNER_ADDRESS_4: "0xsigner5",
     KMS_NODE_IP_3: "http://kms-core-4:50004",
     KMS_NODE_IP_4: "http://kms-core-5:50005",
-    KMS_NODE_STORAGE_URL_3: "http://minio/kms-public",
-    KMS_NODE_STORAGE_URL_4: "http://minio/kms-public",
+    KMS_NODE_STORAGE_URL_3: "http://object-store/kms-public",
+    KMS_NODE_STORAGE_URL_4: "http://object-store/kms-public",
     KMS_NODE_PARTY_ID_3: "4",
     KMS_NODE_PARTY_ID_4: "5",
     KMS_NODE_MPC_IDENTITY_3: "kms-core-4",
@@ -508,8 +508,8 @@ describe("buildHostScSwapEnv / buildGatewayScSwapEnv (node swap)", () => {
     KMS_SIGNER_ADDRESS_4: "0xsigner5",
     KMS_NODE_IP_ADDRESS_3: "http://kms-core-4:50004",
     KMS_NODE_IP_ADDRESS_4: "http://kms-core-5:50005",
-    KMS_NODE_STORAGE_URL_3: "http://minio/kms-public",
-    KMS_NODE_STORAGE_URL_4: "http://minio/kms-public",
+    KMS_NODE_STORAGE_URL_3: "http://object-store/kms-public",
+    KMS_NODE_STORAGE_URL_4: "http://object-store/kms-public",
   });
 
   test("host swap env promotes the spare (node 5) into the dropped committee slot, keeping NUM_KMS_NODES", () => {
