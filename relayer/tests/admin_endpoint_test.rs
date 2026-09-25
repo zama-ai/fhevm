@@ -214,18 +214,16 @@ async fn test_admin_endpoint_unknown_parameter() {
     setup.shutdown().await;
 }
 
-/// Test admin endpoint accepts valid TPS range boundaries
+/// Test admin endpoint accepts the minimum valid TPS (1)
 #[rstest]
 #[tokio::test]
-async fn test_admin_endpoint_valid_tps_boundaries() {
+async fn test_admin_endpoint_valid_tps_min() {
     let setup = TestSetup::new_with_admin_endpoint()
         .await
         .expect("Failed to create test setup with admin endpoint");
     let url = helpers::admin_config_url(&setup);
 
     let client = reqwest::Client::new();
-
-    // Test minimum valid value (1)
     let response = client
         .post(&url)
         .json(&json!({
@@ -237,7 +235,19 @@ async fn test_admin_endpoint_valid_tps_boundaries() {
         .unwrap();
     assert_eq!(response.status(), 200);
 
-    // Test maximum valid value (1000)
+    setup.shutdown().await;
+}
+
+/// Test admin endpoint accepts the maximum valid TPS (1000)
+#[rstest]
+#[tokio::test]
+async fn test_admin_endpoint_valid_tps_max() {
+    let setup = TestSetup::new_with_admin_endpoint()
+        .await
+        .expect("Failed to create test setup with admin endpoint");
+    let url = helpers::admin_config_url(&setup);
+
+    let client = reqwest::Client::new();
     let response = client
         .post(&url)
         .json(&json!({
