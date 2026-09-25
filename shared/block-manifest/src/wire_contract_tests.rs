@@ -257,15 +257,15 @@ fn error_uncomputed_and_invalid_descriptor_digest_vectors_are_pinned() {
         (
             BlockCiphertextDescriptor::from_invalid_descriptor(
                 B256::repeat_byte(1),
-                B256::repeat_byte(2),
-                B256::repeat_byte(3),
+                Some(B256::repeat_byte(2)),
+                Some(B256::repeat_byte(3)),
                 Some("unknown ct128 format".into()),
             ),
             alloy_primitives::b256!(
-                "8401245d6c55998c182c26ef6a81d811c2ec2877bf0c25e5d70e3280cbfa5c64"
+                "32135a81462b7b0d565eb56d5f20eea0f8b8d59130e3696d30ba0b58cfcf42e6"
             ),
             alloy_primitives::b256!(
-                "5a2c0cf81015e6ac90fecfd6f0e6cbdd31cd60af6eaa2296b4f1c96992d6dd7f"
+                "da9a783b52980a96ff1e95a76031272b3825d2875211e88fc8e5a4766e7ac2f6"
             ),
         ),
         (

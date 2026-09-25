@@ -709,6 +709,31 @@ async fn readiness_and_preparation_reject_incomplete_or_corrupted_block_content(
         unreachable!("checked invalid descriptor");
     };
     assert_eq!(reason.as_deref(), Some("unknown ct128 format 0"));
+    // A malformed digest is left out of the invalid descriptor.
+    sqlx::query(
+        "UPDATE ciphertext_digest SET ciphertext = $3 WHERE host_chain_id = $1 AND handle = $2",
+    )
+    .bind(CHAIN_ID)
+    .bind(B256::repeat_byte(0x51).as_slice())
+    .bind(vec![0x56u8; 31])
+    .execute(trx.as_mut())
+    .await
+    .expect("corrupt manifest ct64 digest length");
+    let descriptors = load_manifest_descriptors(&mut trx, &block, false)
+        .await
+        .expect("a malformed digest does not block the manifest");
+    let malformed = descriptors
+        .iter()
+        .find(|descriptor| descriptor.handle == B256::repeat_byte(0x51))
+        .expect("the handle stays in the manifest");
+    assert!(malformed.is_invalid_descriptor());
+    assert_eq!(malformed.ct64_digest(), None);
+    assert_eq!(malformed.ct128_digest(), Some(B256::repeat_byte(0x57)));
+    let block_manifest::CiphertextStatus::InvalidDescriptor { reason, .. } = &malformed.status
+    else {
+        unreachable!("checked invalid descriptor");
+    };
+    assert_eq!(reason.as_deref(), Some("invalid ct64 digest length 31"));
     trx.rollback()
         .await
         .expect("rollback invalid descriptor check");
