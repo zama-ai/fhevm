@@ -2364,7 +2364,7 @@ leaf count. At 6 leaves, leaf 4's path is `[leaf 5]`; at 8 leaves it is `[leaf 5
 node (2, 0)]`, and those nodes never change.
 
 A proof takes three indexed reads: the Store's row, the first leaf below its `leaf_count` that
-matches the query, and the path. The path's height-0 sibling is the neighbouring leaf row, so the
+matches the query, and the path. The path's height-0 sibling is the neighboring leaf row, so the
 node table does not store leaf nodes again. The route checks the path with `mmr_verify` against
 the Store's recorded peaks before serving it; a missing or wrong row answers a retryable
 `upstream_transient`. Leaves and nodes are never rewritten and the Store's row only grows, so the
