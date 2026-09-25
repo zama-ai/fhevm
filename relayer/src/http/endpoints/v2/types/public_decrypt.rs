@@ -6,6 +6,7 @@ use derivative::Derivative;
 use serde::{Deserialize, Serialize};
 use utoipa::ToSchema;
 use validator::{Validate, ValidationError, ValidationErrors};
+use zama_solana_request::MAX_REQUEST_HANDLES;
 
 #[derive(Debug, Deserialize, Validate, Clone, ToSchema)]
 #[serde(rename_all = "camelCase")]
@@ -21,7 +22,7 @@ pub struct PublicDecryptRequestJson {
     #[validate(custom(function = "crate::http::validate_extra_data_field_decryption"))]
     pub extra_data: String,
     /// Solana handles only: the encrypted store that holds each handle, in handle order.
-    /// Each is `0x` + 64 hex chars. Omit for EVM handles.
+    /// Each is `0x` + 64 hex chars. Omit for EVM handles. A Solana request carries at most 32 handles.
     #[serde(default)]
     #[validate(custom(function = "crate::http::validate_0x_hexs"))]
     #[schema(example = json!(["0x5f2a1c3b4d6e7f8091a2b3c4d5e6f708192a3b4c5d6e7f8091a2b3c4d5e6f708"]))]
@@ -47,6 +48,10 @@ impl PublicDecryptRequestJson {
             Some(stores) if stores.len() != handles.len() => format!(
                 "Must name one store per handle: {} stores for {} handles",
                 stores.len(),
+                handles.len()
+            ),
+            Some(_) if handles.len() > MAX_REQUEST_HANDLES => format!(
+                "At most {MAX_REQUEST_HANDLES} Solana handles: got {}",
                 handles.len()
             ),
             Some(stores) if stores.iter().any(|store| store.len() != 66) => {
@@ -230,6 +235,19 @@ mod tests {
             let error = store_error(&request).expect("refused");
             assert!(error.contains("every handle"), "got: {error}");
         }
+    }
+
+    #[test]
+    fn more_solana_handles_than_the_gateway_accepts_are_refused() {
+        let solana = solana_host_chain_id(1);
+        let handles: Vec<_> = (0..=MAX_REQUEST_HANDLES as u8)
+            .map(|tag| handle_on(solana, tag))
+            .collect();
+        let stores = handles.iter().map(|_| store(0xaa)).collect();
+
+        let error = store_error(&request(&handles, Some(stores))).expect("refused");
+
+        assert!(error.contains("At most 32 Solana handles"), "got: {error}");
     }
 
     #[test]

@@ -1694,7 +1694,7 @@ components:
             type: string
           description: |-
             Solana handles only: the encrypted store that holds each handle, in handle order.
-            Each is `0x` + 64 hex chars. Omit for EVM handles.
+            Each is `0x` + 64 hex chars. Omit for EVM handles. A Solana request carries at most 32 handles.
           example:
           - "0x5f2a1c3b4d6e7f8091a2b3c4d5e6f708192a3b4c5d6e7f8091a2b3c4d5e6f708"
         extraData:
