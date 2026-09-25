@@ -2204,6 +2204,48 @@ async fn definitive_verification_db_error_exhausts_the_task() {
     assert_verification_task(&claim.pool, "retry_exhausted", 1).await;
 }
 
+#[tokio::test(flavor = "multi_thread")]
+#[serial]
+async fn internal_verification_error_charges_the_attempt_budget() {
+    let claim = claimed_local_task(2).await;
+    apply_claimed_error(
+        &claim.pool,
+        &claim.claim,
+        &ExecutionError::InternalError("local manifest is absent from archive".into()),
+    )
+    .await
+    .expect("charge the attempt after a non-transient error");
+    assert_verification_task(&claim.pool, "pending", 1).await;
+}
+
+#[tokio::test(flavor = "multi_thread")]
+#[serial]
+async fn persistent_internal_verification_error_exhausts_the_task() {
+    let claim = claimed_local_task(0).await;
+    apply_claimed_error(
+        &claim.pool,
+        &claim.claim,
+        &ExecutionError::InternalError("archived peer manifest no longer validates".into()),
+    )
+    .await
+    .expect("charge the last attempt");
+    assert_verification_task(&claim.pool, "retry_exhausted", 1).await;
+}
+
+#[tokio::test(flavor = "multi_thread")]
+#[serial]
+async fn transient_s3_verification_error_does_not_charge_the_attempt_budget() {
+    let claim = claimed_local_task(2).await;
+    apply_claimed_error(
+        &claim.pool,
+        &claim.claim,
+        &ExecutionError::S3TransientError("connection reset".into()),
+    )
+    .await
+    .expect("release uncharged after a transient S3 error");
+    assert_verification_task(&claim.pool, "pending", 0).await;
+}
+
 struct ClaimedLocalTask {
     _instance: DBInstance,
     pool: PgPool,
