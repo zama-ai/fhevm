@@ -693,10 +693,22 @@ async fn readiness_and_preparation_reject_incomplete_or_corrupted_block_content(
     .await
     .expect("corrupt manifest ciphertext format");
     let mut trx = pool.begin().await.expect("begin invalid descriptor check");
-    let err = load_manifest_descriptors(&mut trx, &block, false)
+    // A computed handle with an unknown format is published as an invalid
+    // descriptor carrying its digests, instead of stalling the chain.
+    let descriptors = load_manifest_descriptors(&mut trx, &block, false)
         .await
-        .expect_err("invalid ciphertext format must not enter a manifest");
-    assert!(err.to_string().contains("invalid ct128 format"));
+        .expect("an unknown ciphertext format does not block the manifest");
+    let invalid = descriptors
+        .iter()
+        .find(|descriptor| descriptor.handle == B256::repeat_byte(0x51))
+        .expect("the handle stays in the manifest");
+    assert!(invalid.is_invalid_descriptor());
+    assert_eq!(invalid.ct128_digest(), Some(B256::repeat_byte(0x57)));
+    assert!(invalid.ct64_digest().is_some());
+    let block_manifest::CiphertextStatus::InvalidDescriptor { reason, .. } = &invalid.status else {
+        unreachable!("checked invalid descriptor");
+    };
+    assert_eq!(reason.as_deref(), Some("unknown ct128 format 0"));
     trx.rollback()
         .await
         .expect("rollback invalid descriptor check");
