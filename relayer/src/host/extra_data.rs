@@ -6,15 +6,10 @@ const EXTRA_DATA_V1_LENGTH: usize = 33; // 1 (version) + 32 (context_id)
 const EXTRA_DATA_V2_VERSION: u8 = 0x02; // RFC 005: context_id + epoch_id
 const EXTRA_DATA_V2_LENGTH: usize = 65; // 1 (version) + 32 (context_id) + 32 (epoch_id)
 
-const EXTRA_DATA_SOLANA_VERSION: u8 = 0x04; // Solana public decrypt: context_id + encrypted store
-const EXTRA_DATA_SOLANA_LENGTH: usize = 65; // 1 (version) + 32 (context_id) + 32 (account)
-
 /// Parse context ID from extra_data bytes.
 ///
 /// - v1: `[0x01 | context_id(32)]` — exactly 33 bytes (host parity)
 /// - v2: `[0x02 | context_id(32) | epoch_id(32)]`
-/// - v4 (Solana public decrypt): `[0x04 | context_id(32) | encrypted_store(32)]` —
-///   only the shared `version ‖ context_id` prefix is read; the state is the connector's.
 /// - empty or `0x00`: returns `U256::ZERO` (use static default)
 /// - unknown version or truncated: returns `Err`
 pub fn parse_context_id_from_extra_data(extra_data: &[u8]) -> Result<U256, ExtraDataError> {
@@ -28,7 +23,6 @@ pub fn parse_context_id_from_extra_data(extra_data: &[u8]) -> Result<U256, Extra
         // Host `extract_kms_context_id` requires v1 to be exactly 33 bytes.
         EXTRA_DATA_V1_VERSION => ExpectedLength::Exactly(EXTRA_DATA_V1_LENGTH),
         EXTRA_DATA_V2_VERSION => ExpectedLength::AtLeast(EXTRA_DATA_V2_LENGTH),
-        EXTRA_DATA_SOLANA_VERSION => ExpectedLength::Exactly(EXTRA_DATA_SOLANA_LENGTH),
         _ => return Err(ExtraDataError::UnsupportedVersion(version)),
     };
     let len = extra_data.len();
@@ -159,42 +153,19 @@ mod tests {
     }
 
     #[test]
-    fn retired_solana_v3_is_rejected() {
-        let mut data = vec![0x03];
-        data.extend_from_slice(&[0_u8; 64]);
-        assert_eq!(
-            parse_context_id_from_extra_data(&data)
-                .unwrap_err()
-                .to_string(),
-            "Unsupported extra_data version: 0x03"
-        );
-    }
-
-    #[test]
-    fn valid_solana_v4_returns_context_id() {
-        // Solana 0x04 carrier: [0x04 | context_id(32) | encrypted_store(32)].
-        // Only the shared version+context_id prefix is read; the state is opaque here.
-        let context_id = U256::from(0x1234u64);
-        let mut data = vec![EXTRA_DATA_SOLANA_VERSION];
-        data.extend_from_slice(&context_id.to_be_bytes::<32>());
-        data.extend_from_slice(&[7u8; 32]); // encrypted store
-
-        assert_eq!(parse_context_id_from_extra_data(&data).unwrap(), context_id);
-    }
-
-    #[test]
-    fn solana_v4_with_trailing_bytes_returns_error() {
-        let mut data = vec![EXTRA_DATA_SOLANA_VERSION];
-        data.extend_from_slice(&[0u8; 64]);
-        data.push(0xff);
-        assert!(parse_context_id_from_extra_data(&data).is_err());
-    }
-
-    #[test]
-    fn solana_v4_too_short_returns_error() {
-        let mut data = vec![EXTRA_DATA_SOLANA_VERSION];
-        data.extend_from_slice(&[0u8; 10]); // truncated before full context_id
-        assert!(parse_context_id_from_extra_data(&data).is_err());
+    fn retired_solana_versions_are_rejected() {
+        // v3 carried an encrypted value account and v4 an encrypted store; a Solana public
+        // decryption now names its stores beside the handles.
+        for version in [0x03, 0x04] {
+            let mut data = vec![version];
+            data.extend_from_slice(&[0_u8; 64]);
+            assert_eq!(
+                parse_context_id_from_extra_data(&data)
+                    .unwrap_err()
+                    .to_string(),
+                format!("Unsupported extra_data version: {version:#04x}")
+            );
+        }
     }
 
     #[test]

@@ -18,7 +18,7 @@ use crate::http::retry_after::{
     DecryptQueueInfo, ReadinessQueueInfo, RequestStateInfo, RetryAfterState, TxQueueInfo,
 };
 use crate::http::utils::BounceChecker;
-use crate::http::{parse_and_validate, AppResponse};
+use crate::http::{parse_and_validate_cross, AppResponse};
 use crate::logging::PublicDecryptStep;
 use crate::metrics::http::{self as http_metrics, HttpEndpoint, HttpMethod};
 use crate::metrics::{
@@ -161,7 +161,10 @@ impl PublicDecryptHandler {
         };
 
         let request: PublicDecryptRequest =
-            match parse_and_validate::<PublicDecryptRequestJson, PublicDecryptRequest>(&body) {
+            match parse_and_validate_cross::<PublicDecryptRequestJson, PublicDecryptRequest>(
+                &body,
+                PublicDecryptRequestJson::validate_encrypted_stores,
+            ) {
                 Ok(request) => request,
                 Err(parse_error) => {
                     return RelayerV2ResponseFailed::from_parse_error(

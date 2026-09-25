@@ -13,15 +13,19 @@ use tracing::info;
 pub struct ComputeCalldata;
 
 impl ComputeCalldata {
-    /// Computes calldata for public decryption request
-    ///
-    /// This initiates a public decryption request on the gateway network
+    /// Computes calldata for a public decryption request. Solana requests name the store of
+    /// each handle and use the `(bytes32[],bytes,bytes32[])` overload; EVM requests name none.
     pub fn public_decryption_req(
         handles: Vec<FixedBytes<32>>,
         extra_data: Bytes,
+        encrypted_stores: Vec<FixedBytes<32>>,
     ) -> Result<Bytes, EventProcessingError> {
-        let calldata =
-            Decryption::publicDecryptionRequest_1Call::new((handles, extra_data)).abi_encode();
+        let calldata = if encrypted_stores.is_empty() {
+            Decryption::publicDecryptionRequest_1Call::new((handles, extra_data)).abi_encode()
+        } else {
+            Decryption::publicDecryptionRequest_0Call::new((handles, extra_data, encrypted_stores))
+                .abi_encode()
+        };
 
         info!(
             "publicDecryptionRequest calldata: 0x{}",
@@ -308,5 +312,41 @@ mod solana_calldata_tests {
             decoded.requestValidity.durationSeconds,
             U256::from(604_800u64)
         );
+    }
+
+    #[test]
+    fn a_public_decrypt_with_stores_encodes_the_solana_overload() {
+        let handles = vec![FixedBytes::<32>::from([0x11; 32])];
+        let stores = vec![FixedBytes::<32>::from([0xaa; 32])];
+        let extra_data = Bytes::from(vec![0x00]);
+
+        let calldata = ComputeCalldata::public_decryption_req(
+            handles.clone(),
+            extra_data.clone(),
+            stores.clone(),
+        )
+        .expect("encode Solana public decrypt calldata");
+
+        let decoded = Decryption::publicDecryptionRequest_0Call::abi_decode(&calldata)
+            .expect("decode Solana public decrypt calldata");
+        assert_eq!(decoded.ctHandles, handles);
+        assert_eq!(decoded.extraData, extra_data);
+        assert_eq!(decoded.encryptedStores, stores);
+    }
+
+    #[test]
+    fn a_public_decrypt_without_stores_encodes_the_evm_overload() {
+        let handles = vec![FixedBytes::<32>::from([0x11; 32])];
+
+        let calldata = ComputeCalldata::public_decryption_req(
+            handles.clone(),
+            Bytes::from(vec![0x00]),
+            Vec::new(),
+        )
+        .expect("encode EVM public decrypt calldata");
+
+        let decoded = Decryption::publicDecryptionRequest_1Call::abi_decode(&calldata)
+            .expect("decode EVM public decrypt calldata");
+        assert_eq!(decoded.ctHandles, handles);
     }
 }

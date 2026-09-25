@@ -1380,7 +1380,7 @@ components:
           example: '1'
         extraData:
           type: string
-          description: 'Extra data forwarded verbatim to the gateway contract. Accepts `"0x00"`, version `0x01` (`0x01` + 32-byte contextId), version `0x02` (`0x02` + 32-byte contextId + 32-byte epochId), or version `0x04` (Solana public decrypt: `0x04` + 32-byte contextId + 32-byte encrypted store). contextId must be 0x07-tagged and epochId must be 0x08-tagged (first byte of each).'
+          description: Extra data forwarded verbatim to the gateway contract. Accepts `"0x00"`, version `0x01` (`0x01` + 32-byte contextId), or version `0x02` (`0x02` + 32-byte contextId + 32-byte epochId). contextId must be 0x07-tagged and epochId must be 0x08-tagged (first byte of each).
           example: '0x00'
         handleContractPairs:
           type: array
@@ -1424,7 +1424,7 @@ components:
           - "0x1234567890123456789012345678901234567890"
         extraData:
           type: string
-          description: 'Extra data forwarded verbatim to the gateway contract. Accepts `"0x00"`, version `0x01` (`0x01` + 32-byte contextId), version `0x02` (`0x02` + 32-byte contextId + 32-byte epochId), or version `0x04` (Solana public decrypt: `0x04` + 32-byte contextId + 32-byte encrypted store). contextId must be 0x07-tagged and epochId must be 0x08-tagged (first byte of each).'
+          description: Extra data forwarded verbatim to the gateway contract. Accepts `"0x00"`, version `0x01` (`0x01` + 32-byte contextId), or version `0x02` (`0x02` + 32-byte contextId + 32-byte epochId). contextId must be 0x07-tagged and epochId must be 0x08-tagged (first byte of each).
           example: '0x00'
         handles:
           type: array
@@ -1686,9 +1686,20 @@ components:
           example:
           - "0xabcdef1234567890abcdef1234567890abcdef1234567890abcdef1234567890"
           minItems: 1
+        encryptedStores:
+          type:
+          - array
+          - 'null'
+          items:
+            type: string
+          description: |-
+            Solana handles only: the encrypted store that holds each handle, in handle order.
+            Each is `0x` + 64 hex chars. Omit for EVM handles.
+          example:
+          - "0x5f2a1c3b4d6e7f8091a2b3c4d5e6f708192a3b4c5d6e7f8091a2b3c4d5e6f708"
         extraData:
           type: string
-          description: 'Extra data forwarded verbatim to the gateway contract. Accepts `"0x00"`, version `0x01` (`0x01` + 32-byte contextId), version `0x02` (`0x02` + 32-byte contextId + 32-byte epochId), or version `0x04` (Solana public decrypt: `0x04` + 32-byte contextId + 32-byte encrypted store). contextId must be 0x07-tagged and epochId must be 0x08-tagged (first byte of each).'
+          description: Extra data forwarded verbatim to the gateway contract. Accepts `"0x00"`, version `0x01` (`0x01` + 32-byte contextId), or version `0x02` (`0x02` + 32-byte contextId + 32-byte epochId). contextId must be 0x07-tagged and epochId must be 0x08-tagged (first byte of each).
           example: '0x00'
     PublicDecryptResponseJson:
       type: object
@@ -1951,7 +1962,7 @@ components:
           $ref: '#/components/schemas/ChainId'
         extraData:
           type: string
-          description: 'Extra data forwarded verbatim to the gateway contract. Accepts `"0x00"`, version `0x01` (`0x01` + 32-byte contextId), version `0x02` (`0x02` + 32-byte contextId + 32-byte epochId), or version `0x04` (Solana public decrypt: `0x04` + 32-byte contextId + 32-byte encrypted store). contextId must be 0x07-tagged and epochId must be 0x08-tagged (first byte of each).'
+          description: Extra data forwarded verbatim to the gateway contract. Accepts `"0x00"`, version `0x01` (`0x01` + 32-byte contextId), or version `0x02` (`0x02` + 32-byte contextId + 32-byte epochId). contextId must be 0x07-tagged and epochId must be 0x08-tagged (first byte of each).
           example: '0x00'
         handleContractPairs:
           type: array
