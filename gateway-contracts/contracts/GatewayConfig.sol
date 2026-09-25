@@ -1,16 +1,16 @@
 // SPDX-License-Identifier: BSD-3-Clause-Clear
 pragma solidity ^0.8.24;
 
-import { Ownable2StepUpgradeable } from '@openzeppelin/contracts-upgradeable/access/Ownable2StepUpgradeable.sol';
-import { Strings } from '@openzeppelin/contracts/utils/Strings.sol';
-import { IGatewayConfig } from './interfaces/IGatewayConfig.sol';
-import { IPauserSet } from './interfaces/IPauserSet.sol';
-import { decryptionAddress, inputVerificationAddress, pauserSetAddress } from '../addresses/GatewayAddresses.sol';
-import { Decryption } from './Decryption.sol';
-import { InputVerification } from './InputVerification.sol';
-import { UUPSUpgradeableEmptyProxy } from './shared/UUPSUpgradeableEmptyProxy.sol';
-import { Pausable } from './shared/Pausable.sol';
-import { ProtocolMetadata, HostChain, Coprocessor, Custodian, KmsNode } from './shared/Structs.sol';
+import { Ownable2StepUpgradeable } from "@openzeppelin/contracts-upgradeable/access/Ownable2StepUpgradeable.sol";
+import { Strings } from "@openzeppelin/contracts/utils/Strings.sol";
+import { IGatewayConfig } from "./interfaces/IGatewayConfig.sol";
+import { IPauserSet } from "./interfaces/IPauserSet.sol";
+import { decryptionAddress, inputVerificationAddress, pauserSetAddress } from "../addresses/GatewayAddresses.sol";
+import { Decryption } from "./Decryption.sol";
+import { InputVerification } from "./InputVerification.sol";
+import { UUPSUpgradeableEmptyProxy } from "./shared/UUPSUpgradeableEmptyProxy.sol";
+import { Pausable } from "./shared/Pausable.sol";
+import { ProtocolMetadata, HostChain, Coprocessor, Custodian, KmsNode } from "./shared/Structs.sol";
 
 /**
  * @title GatewayConfig contract
@@ -41,7 +41,7 @@ contract GatewayConfig is IGatewayConfig, Ownable2StepUpgradeable, UUPSUpgradeab
      * in order to force derived contracts to consider a different version. Note that
      * they can still define their own private constants with the same name.
      */
-    string private constant CONTRACT_NAME = 'GatewayConfig';
+    string private constant CONTRACT_NAME = "GatewayConfig";
     uint256 private constant MAJOR_VERSION = 0;
     uint256 private constant MINOR_VERSION = 8;
     uint256 private constant PATCH_VERSION = 0;
@@ -854,11 +854,11 @@ contract GatewayConfig is IGatewayConfig, Ownable2StepUpgradeable, UUPSUpgradeab
             string(
                 abi.encodePacked(
                     CONTRACT_NAME,
-                    ' v',
+                    " v",
                     Strings.toString(MAJOR_VERSION),
-                    '.',
+                    ".",
                     Strings.toString(MINOR_VERSION),
-                    '.',
+                    ".",
                     Strings.toString(PATCH_VERSION)
                 )
             );
@@ -1039,7 +1039,7 @@ contract GatewayConfig is IGatewayConfig, Ownable2StepUpgradeable, UUPSUpgradeab
         // - `t >= 0` : it is already a uint256 so this is always true
         // - `t < n` : it should be strictly less than the number of registered KMS nodes
         if (newMpcThreshold > MAX_KMS_SIGNERS) {
-            revert ThresholdExceedsProofFormatLimit('mpc', newMpcThreshold, MAX_KMS_SIGNERS);
+            revert ThresholdExceedsProofFormatLimit("mpc", newMpcThreshold, MAX_KMS_SIGNERS);
         }
         if (newMpcThreshold >= nKmsNodes) {
             revert InvalidHighMpcThreshold(newMpcThreshold, nKmsNodes);
@@ -1064,7 +1064,7 @@ contract GatewayConfig is IGatewayConfig, Ownable2StepUpgradeable, UUPSUpgradeab
             revert InvalidNullPublicDecryptionThreshold();
         }
         if (newPublicDecryptionThreshold > MAX_KMS_SIGNERS) {
-            revert ThresholdExceedsProofFormatLimit('publicDecryption', newPublicDecryptionThreshold, MAX_KMS_SIGNERS);
+            revert ThresholdExceedsProofFormatLimit("publicDecryption", newPublicDecryptionThreshold, MAX_KMS_SIGNERS);
         }
         if (newPublicDecryptionThreshold > nKmsNodes) {
             revert InvalidHighPublicDecryptionThreshold(newPublicDecryptionThreshold, nKmsNodes);
@@ -1089,7 +1089,7 @@ contract GatewayConfig is IGatewayConfig, Ownable2StepUpgradeable, UUPSUpgradeab
             revert InvalidNullUserDecryptionThreshold();
         }
         if (newUserDecryptionThreshold > MAX_KMS_SIGNERS) {
-            revert ThresholdExceedsProofFormatLimit('userDecryption', newUserDecryptionThreshold, MAX_KMS_SIGNERS);
+            revert ThresholdExceedsProofFormatLimit("userDecryption", newUserDecryptionThreshold, MAX_KMS_SIGNERS);
         }
         if (newUserDecryptionThreshold > nKmsNodes) {
             revert InvalidHighUserDecryptionThreshold(newUserDecryptionThreshold, nKmsNodes);
@@ -1135,7 +1135,7 @@ contract GatewayConfig is IGatewayConfig, Ownable2StepUpgradeable, UUPSUpgradeab
             revert InvalidNullKmsGenThreshold();
         }
         if (newKmsGenThreshold > MAX_KMS_SIGNERS) {
-            revert ThresholdExceedsProofFormatLimit('kmsGen', newKmsGenThreshold, MAX_KMS_SIGNERS);
+            revert ThresholdExceedsProofFormatLimit("kmsGen", newKmsGenThreshold, MAX_KMS_SIGNERS);
         }
         if (newKmsGenThreshold > nKmsNodes) {
             revert InvalidHighKmsGenThreshold(newKmsGenThreshold, nKmsNodes);
