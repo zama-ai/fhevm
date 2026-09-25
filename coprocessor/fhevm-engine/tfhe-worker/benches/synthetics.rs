@@ -2,9 +2,9 @@
 mod utils;
 
 use crate::utils::{
-    allow_handle, as_scalar_uint, listener_event_db, next_handle, random_handle, scalar_flag,
-    setup_test_app, tfhe_event, to_ty, wait_until_all_allowed_handles_computed,
-    write_atomic_u64_bench_params, zero_address, EnvConfig,
+    allow_handle, as_scalar_uint, listener_event_db, next_handle, next_typed_handle, random_handle,
+    scalar_flag, setup_test_app, tfhe_event, to_ty, wait_until_all_allowed_handles_computed,
+    write_atomic_u64_bench_params, zero_address, EnvConfig, FHE_UINT64,
 };
 use criterion::{
     async_executor::FuturesExecutor, measurement::WallTime, Bencher, Criterion, Throughput,
@@ -33,21 +33,25 @@ fn main() {
         let num_elems = 1;
         let bench_id = format!("{bench_name}::latency::counter::FHEUint64::{num_elems}_elems::{bench_optimization_target}");
         group.bench_with_input(bench_id.clone(), &num_elems, move |b, &num_elems| {
-            let _ = Runtime::new().unwrap().block_on(counter_increment(
+            if let Err(error) = Runtime::new().unwrap().block_on(counter_increment(
                 b,
                 num_elems as usize,
                 bench_id.clone(),
-            ));
+            )) {
+                panic!("{bench_id} failed: {error}");
+            }
         });
 
         let bench_id =
             format!("{bench_name}::latency::tree_reduction::FHEUint64::{num_elems}_elems::{bench_optimization_target}");
         group.bench_with_input(bench_id.clone(), &num_elems, move |b, &num_elems| {
-            let _ = Runtime::new().unwrap().block_on(tree_reduction(
+            if let Err(error) = Runtime::new().unwrap().block_on(tree_reduction(
                 b,
                 num_elems as usize,
                 bench_id.clone(),
-            ));
+            )) {
+                panic!("{bench_id} failed: {error}");
+            }
         });
     }
 
@@ -57,22 +61,26 @@ fn main() {
             let bench_id =
                 format!("{bench_name}::throughput::counter::FHEUint64::{num_elems}_elems::{bench_optimization_target}");
             group.bench_with_input(bench_id.clone(), &num_elems, move |b, &num_elems| {
-                let _ = Runtime::new().unwrap().block_on(counter_increment(
+                if let Err(error) = Runtime::new().unwrap().block_on(counter_increment(
                     b,
                     num_elems as usize,
                     bench_id.clone(),
-                ));
+                )) {
+                    panic!("{bench_id} failed: {error}");
+                }
             });
 
             group.throughput(Throughput::Elements(num_elems));
             let bench_id =
                 format!("{bench_name}::throughput::tree_reduction::FHEUint64::{num_elems}_elems::{bench_optimization_target}");
             group.bench_with_input(bench_id.clone(), &num_elems, move |b, &num_elems| {
-                let _ = Runtime::new().unwrap().block_on(tree_reduction(
+                if let Err(error) = Runtime::new().unwrap().block_on(tree_reduction(
                     b,
                     num_elems as usize,
                     bench_id.clone(),
-                ));
+                )) {
+                    panic!("{bench_id} failed: {error}");
+                }
             });
         }
     }
@@ -124,8 +132,8 @@ async fn counter_increment(
     let num_samples = sample_count(num_tx);
 
     let tx_id = next_handle(&mut handle_counter);
-    let initial_counter = next_handle(&mut handle_counter);
-    let increment_by = next_handle(&mut handle_counter);
+    let initial_counter = next_typed_handle(&mut handle_counter, FHE_UINT64);
+    let increment_by = next_typed_handle(&mut handle_counter, FHE_UINT64);
     let mut tx = listener_db
         .new_transaction()
         .await?
@@ -170,7 +178,7 @@ async fn counter_increment(
 
     let mut counter = initial_counter;
     for i in 0..num_samples {
-        let output = next_handle(&mut handle_counter);
+        let output = next_typed_handle(&mut handle_counter, FHE_UINT64);
         let is_last = i == num_samples.saturating_sub(1);
         utils::insert_tfhe_event(
             &listener_db,
@@ -202,7 +210,7 @@ async fn counter_increment(
         .iter_custom(|iters| async move {
             let db_url = app_ref.db_url().to_string();
             let now = SystemTime::now();
-            let _ = tokio::task::spawn_blocking(move || {
+            tokio::task::spawn_blocking(move || {
                 Runtime::new().unwrap().block_on(async {
                     wait_until_all_allowed_handles_computed(db_url)
                         .await
@@ -214,7 +222,8 @@ async fn counter_increment(
                     TIMING.load(std::sync::atomic::Ordering::SeqCst) / 1000
                 );
             })
-            .await;
+            .await
+            .expect("waiting for the benchmark computations failed");
             std::time::Duration::from_micros(
                 TIMING.swap(0, std::sync::atomic::Ordering::SeqCst) * iters.max(1),
             )
@@ -246,7 +255,7 @@ async fn tree_reduction(
 
     let mut current_level = Vec::with_capacity(num_samples);
     for _ in 0..num_samples {
-        let h = next_handle(&mut handle_counter);
+        let h = next_typed_handle(&mut handle_counter, FHE_UINT64);
         utils::insert_tfhe_event(
             &listener_db,
             &mut tx,
@@ -276,7 +285,7 @@ async fn tree_reduction(
                 next_level.push(pair[0]);
                 continue;
             }
-            let out = next_handle(&mut handle_counter);
+            let out = next_typed_handle(&mut handle_counter, FHE_UINT64);
             let is_last = input_len == 2 && idx == 0;
             utils::insert_tfhe_event(
                 &listener_db,
@@ -311,7 +320,7 @@ async fn tree_reduction(
         .iter_custom(|iters| async move {
             let db_url = app_ref.db_url().to_string();
             let now = SystemTime::now();
-            let _ = tokio::task::spawn_blocking(move || {
+            tokio::task::spawn_blocking(move || {
                 Runtime::new().unwrap().block_on(async {
                     wait_until_all_allowed_handles_computed(db_url)
                         .await
@@ -323,7 +332,8 @@ async fn tree_reduction(
                     TIMING.load(std::sync::atomic::Ordering::SeqCst) / 1000
                 );
             })
-            .await;
+            .await
+            .expect("waiting for the benchmark computations failed");
             std::time::Duration::from_micros(
                 TIMING.swap(0, std::sync::atomic::Ordering::SeqCst) * iters.max(1),
             )
