@@ -31,7 +31,7 @@ mod constants {
     pub const INITIAL_POLL_DELAY_MS: u64 = 500;
 
     pub const PUBLIC_DECRYPT_SELECTOR: [u8; 4] =
-        fhevm_relayer::gateway::arbitrum::bindings::Decryption::publicDecryptionRequestCall::SELECTOR;
+        fhevm_relayer::gateway::arbitrum::bindings::Decryption::publicDecryptionRequest_1Call::SELECTOR;
 
     // Contract error selectors for testing error classification
     // These match the selectors in src/gateway/arbitrum/transaction/contract_error_parser.rs

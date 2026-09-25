@@ -18,7 +18,7 @@ use connector_utils::{
     types::{
         ProtocolEvent, ProtocolEventKind,
         db::{EventType, RequestSource},
-        solana_request::SolanaUserDecryptionRequestV1,
+        solana_request::{SolanaPublicDecryptionRequest, SolanaUserDecryptionRequestV1},
     },
 };
 use fhevm_gateway_bindings::decryption::Decryption::DecryptionEvents;
@@ -37,6 +37,7 @@ const DECRYPTION_EVENT_TYPES: [EventType; 2] = [
 fn ct_handles(event: &ProtocolEventKind) -> Vec<B256> {
     match event {
         ProtocolEventKind::PublicDecryption(e) => e.ctHandles.clone(),
+        ProtocolEventKind::SolanaPublicDecryption(e) => e.ct_handles(),
         ProtocolEventKind::UserDecryption(e) => e.ctHandles.clone(),
         ProtocolEventKind::UserDecryptionV2(e) => e.handles.iter().map(|h| h.handle).collect(),
         ProtocolEventKind::SolanaUserDecryptionV1(e) => e.ct_handles(),
@@ -189,6 +190,23 @@ where
             let event = DecryptionEvents::decode_log(&log.inner)
                 .map_err(|e| anyhow!("Failed to decode Decryption event: {e}"))?;
             let event_kind = match event.data {
+                DecryptionEvents::PublicDecryptionRequest_2(event) => {
+                    let decryption_id = event.decryptionId;
+                    match SolanaPublicDecryptionRequest::try_from(event) {
+                        Ok(request) => request.into(),
+                        Err(e) => {
+                            warn!(
+                                %decryption_id,
+                                tx_hash = ?log.transaction_hash,
+                                "Skipping Solana public decryption that does not decode: {e:#}"
+                            );
+                            EVENT_REJECTED_COUNTER
+                                .with_label_values(&[EventType::PublicDecryptionRequest.as_str()])
+                                .inc();
+                            continue;
+                        }
+                    }
+                }
                 DecryptionEvents::UserDecryptionRequest_4(event) => {
                     let decryption_id = event.decryptionId;
                     match SolanaUserDecryptionRequestV1::try_from(event) {
@@ -322,9 +340,9 @@ mod tests {
     async fn malformed_solana_event_does_not_discard_valid_peers() {
         use alloy::sol_types::SolEvent;
         use fhevm_gateway_bindings::decryption::Decryption::{
-            PublicDecryptionRequest_1, UserDecryptionRequest_4,
+            PublicDecryptionRequest_1, PublicDecryptionRequest_2, UserDecryptionRequest_4,
         };
-        let invalid = UserDecryptionRequest_4 {
+        let invalid_user = UserDecryptionRequest_4 {
             decryptionId: U256::from(42),
             ctHandles: vec![],
             requestValidity: RequestValiditySeconds::default(),
@@ -332,26 +350,29 @@ mod tests {
             extraData: Bytes::new(),
             solanaRequest: Bytes::new(),
         };
+        // A Solana public decryption naming fewer stores than handles.
+        let invalid_public = PublicDecryptionRequest_2 {
+            decryptionId: U256::from(44),
+            ctHandles: vec![FixedBytes::ZERO; 2],
+            extraData: Bytes::new(),
+            encryptedStores: vec![FixedBytes::ZERO],
+        };
         let valid = PublicDecryptionRequest_1 {
             decryptionId: U256::from(43),
             ctHandles: vec![FixedBytes::ZERO],
             extraData: Bytes::new(),
         };
+        let log = |data| Log {
+            inner: alloy::primitives::Log {
+                address: Default::default(),
+                data,
+            },
+            ..Default::default()
+        };
         let logs = vec![
-            Log {
-                inner: alloy::primitives::Log {
-                    address: Default::default(),
-                    data: invalid.encode_log_data(),
-                },
-                ..Default::default()
-            },
-            Log {
-                inner: alloy::primitives::Log {
-                    address: Default::default(),
-                    data: valid.encode_log_data(),
-                },
-                ..Default::default()
-            },
+            log(invalid_user.encode_log_data()),
+            log(invalid_public.encode_log_data()),
+            log(valid.encode_log_data()),
         ];
         let events = GatewayListener::<RootProvider>::prepare_events(logs).unwrap();
         assert_eq!(events.len(), 1);

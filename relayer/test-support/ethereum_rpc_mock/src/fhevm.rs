@@ -817,7 +817,7 @@ impl FhevmMockWrapper {
         self.register_decrypt_pattern(
             "public decryption success",
             self.decryption_contract,
-            Decryption::publicDecryptionRequestCall::SELECTOR,
+            Decryption::publicDecryptionRequest_1Call::SELECTOR,
             target,
             UsageLimit::Once,
             |id, contract| {
@@ -833,7 +833,7 @@ impl FhevmMockWrapper {
         self.json_rpc_server.on_transaction(
             matches_contract_and_selector_for_txn(
                 self.decryption_contract,
-                Decryption::publicDecryptionRequestCall::SELECTOR,
+                Decryption::publicDecryptionRequest_1Call::SELECTOR,
             ),
             Response::Revert {
                 hash: Some(random_hash()),
@@ -954,7 +954,7 @@ impl FhevmMockWrapper {
         let request_log = build_public_decrypt_request(self.decryption_contract, id, handles);
         self.register_request_only(
             self.decryption_contract,
-            Decryption::publicDecryptionRequestCall::SELECTOR,
+            Decryption::publicDecryptionRequest_1Call::SELECTOR,
             request_log,
         );
     }
@@ -1004,7 +1004,7 @@ impl FhevmMockWrapper {
         self.register_decrypt_pattern(
             "public decryption error",
             self.decryption_contract,
-            Decryption::publicDecryptionRequestCall::SELECTOR,
+            Decryption::publicDecryptionRequest_1Call::SELECTOR,
             mock_server::SubscriptionTarget::All,
             UsageLimit::Once,
             |id, contract| {

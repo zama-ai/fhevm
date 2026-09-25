@@ -137,6 +137,7 @@ async fn test_request_processing(#[case] event_type: TestEventType) -> anyhow::R
     match &request {
         // Wait for kms_worker to remove the request from DB, then stop it
         ProtocolEventKind::PublicDecryption(_)
+        | ProtocolEventKind::SolanaPublicDecryption(_)
         | ProtocolEventKind::UserDecryption(_)
         | ProtocolEventKind::UserDecryptionV2(_)
         | ProtocolEventKind::SolanaUserDecryptionV1(_) => {
@@ -172,7 +173,9 @@ fn prepare_mocks(req: &ProtocolEventKind) -> MockSet {
 
     // Gets the endpoints for the given request type
     let (req_endpoint, resp_endpoint) = match req {
-        ProtocolEventKind::PublicDecryption(_) => ("PublicDecrypt", "GetPublicDecryptionResult"),
+        ProtocolEventKind::PublicDecryption(_) | ProtocolEventKind::SolanaPublicDecryption(_) => {
+            ("PublicDecrypt", "GetPublicDecryptionResult")
+        }
         ProtocolEventKind::UserDecryption(_)
         | ProtocolEventKind::UserDecryptionV2(_)
         | ProtocolEventKind::SolanaUserDecryptionV1(_) => {

@@ -1,12 +1,13 @@
 use super::solana_request::{
-    SolanaEntryClaims, SolanaGatewayFields, SolanaRequestBlob, SolanaUserDecryptionRequestV1,
+    SolanaEntryClaims, SolanaGatewayFields, SolanaPublicDecryptionRequest, SolanaRequestBlob,
+    SolanaUserDecryptionRequestV1,
 };
 use crate::{
     monitoring::otlp::PropagationContext,
     types::db::{AttestationType, OperationStatus, ParamsTypeDb, RequestSource},
 };
 use alloy::{
-    primitives::{Address, FixedBytes, U256},
+    primitives::{Address, B256, FixedBytes, U256},
     sol_types::SolValue,
 };
 use anyhow::anyhow;
@@ -109,6 +110,16 @@ impl ProtocolEvent {
                 update_public_decryption_status(db, e.decryptionId, status, already_sent, err_count)
                     .await
             }
+            ProtocolEventKind::SolanaPublicDecryption(e) => {
+                update_public_decryption_status(
+                    db,
+                    e.decryption_id,
+                    status,
+                    already_sent,
+                    err_count,
+                )
+                .await
+            }
             ProtocolEventKind::UserDecryption(e) => {
                 update_user_decryption_status(db, e.decryptionId, status, already_sent, err_count)
                     .await
@@ -162,6 +173,7 @@ impl ProtocolEvent {
 #[derive(Clone)]
 pub enum ProtocolEventKind {
     PublicDecryption(PublicDecryptionRequest),
+    SolanaPublicDecryption(SolanaPublicDecryptionRequest),
     /// Legacy `UserDecryptionRequest` event (split direct / delegated at the calldata level).
     UserDecryption(UserDecryptionRequest),
     /// RFC016 EVM `UserDecryptionRequest` event — carries the full unified payload (handles,
@@ -184,6 +196,9 @@ impl std::fmt::Debug for ProtocolEventKind {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
             Self::PublicDecryption(e) => f.debug_tuple("PublicDecryption").field(e).finish(),
+            Self::SolanaPublicDecryption(e) => {
+                f.debug_tuple("SolanaPublicDecryption").field(e).finish()
+            }
             Self::UserDecryption(e) => f.debug_tuple("UserDecryption").field(e).finish(),
             Self::UserDecryptionV2(e) => f
                 .debug_struct("UserDecryptionV2")
@@ -218,6 +233,7 @@ impl PartialEq for ProtocolEventKind {
     fn eq(&self, other: &Self) -> bool {
         match (self, other) {
             (Self::PublicDecryption(a), Self::PublicDecryption(b)) => a == b,
+            (Self::SolanaPublicDecryption(a), Self::SolanaPublicDecryption(b)) => a == b,
             (Self::UserDecryption(a), Self::UserDecryption(b)) => a == b,
             (Self::UserDecryptionV2(a), Self::UserDecryptionV2(b)) => {
                 a.decryptionId == b.decryptionId && a.handles == b.handles && a.payload == b.payload
@@ -271,11 +287,26 @@ fn ct_handles_from_row(row: &PgRow) -> anyhow::Result<Vec<FixedBytes<32>>> {
 }
 
 pub fn from_public_decryption_row(row: &PgRow) -> anyhow::Result<ProtocolEvent> {
-    let kind = ProtocolEventKind::PublicDecryption(PublicDecryptionRequest {
-        decryptionId: U256::from_le_bytes(row.try_get::<[u8; 32], _>("decryption_id")?),
-        ctHandles: ct_handles_from_row(row)?,
-        extraData: row.try_get::<Vec<u8>, _>("extra_data")?.into(),
-    });
+    let decryption_id = U256::from_le_bytes(row.try_get::<[u8; 32], _>("decryption_id")?);
+    let ct_handles = ct_handles_from_row(row)?;
+    let extra_data: Vec<u8> = row.try_get("extra_data")?;
+    // Only a Solana row names the encrypted store of each handle.
+    let kind = match row.try_get::<Option<Vec<Vec<u8>>>, _>("handle_encrypted_stores")? {
+        Some(stores) => {
+            let stores = stores
+                .iter()
+                .map(|s| B256::try_from(s.as_slice()))
+                .collect::<Result<Vec<_>, _>>()
+                .map_err(|_| anyhow!("encrypted store is not 32 bytes"))?;
+            SolanaPublicDecryptionRequest::new(decryption_id, &ct_handles, &stores, extra_data)?
+                .into()
+        }
+        None => ProtocolEventKind::PublicDecryption(PublicDecryptionRequest {
+            decryptionId: decryption_id,
+            ctHandles: ct_handles,
+            extraData: extra_data.into(),
+        }),
+    };
     Ok(ProtocolEvent {
         kind,
         tx_hash: tx_hash_from_row(row),
@@ -747,6 +778,9 @@ impl Display for ProtocolEventKind {
             ProtocolEventKind::PublicDecryption(e) => {
                 write!(f, "PublicDecryptionRequest #{:#066x}", e.decryptionId)
             }
+            ProtocolEventKind::SolanaPublicDecryption(e) => {
+                write!(f, "PublicDecryptionRequest #{:#066x}", e.decryption_id)
+            }
             ProtocolEventKind::UserDecryption(e) => {
                 write!(f, "UserDecryptionRequest #{:#066x}", e.decryptionId)
             }
@@ -790,6 +824,12 @@ impl Display for ProtocolEventKind {
 impl From<PublicDecryptionRequest> for ProtocolEventKind {
     fn from(value: PublicDecryptionRequest) -> Self {
         Self::PublicDecryption(value)
+    }
+}
+
+impl From<SolanaPublicDecryptionRequest> for ProtocolEventKind {
+    fn from(value: SolanaPublicDecryptionRequest) -> Self {
+        Self::SolanaPublicDecryption(value)
     }
 }
 
@@ -873,8 +913,8 @@ impl TryFrom<DecryptionEvents> for ProtocolEventKind {
             // Handle-only overloads (v0.15): `_1` for public, `_2` for the legacy-style user
             // event and `_3` for the RFC016 unified user event
             // The `SnsCiphertextMaterial`-carrying variants (public `_0` and user `_0`, `_1`) are
-            // intentionally ignored. The Solana `_4` is converted by the Gateway listener, which
-            // skips an event whose Solana request does not decode.
+            // intentionally ignored. The Solana public `_2` and user `_4` are converted by the
+            // Gateway listener, which skips an event whose Solana request does not decode.
             DecryptionEvents::PublicDecryptionRequest_1(e) => Ok(e.into()),
             DecryptionEvents::UserDecryptionRequest_2(e) => Ok(e.into()),
             DecryptionEvents::UserDecryptionRequest_3(e) => Ok(e.into()),

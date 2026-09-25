@@ -94,6 +94,16 @@ sol! {
         bytes extraData;
     }
 
+    /// The Solana body of `POST v1/public-decrypt`: each handle names the encrypted store its
+    /// public-decrypt leaf is proven against, as a store is not derivable from a handle.
+    #[derive(Debug, PartialEq, Serialize, Deserialize)]
+    #[serde(deny_unknown_fields)]
+    struct SolanaPublicDecryptionRequest {
+        bytes32[] ctHandles;
+        bytes extraData;
+        bytes32[] encryptedStores;
+    }
+
     /// The Solana body of `POST v1/user-decrypt`. The signature covers the canonical permit;
     /// the HTTP request ID additionally binds every ordered handle entry.
     #[derive(Debug, PartialEq, Serialize, Deserialize)]
@@ -106,6 +116,14 @@ sol! {
 }
 
 impl SolanaUserDecryptionRequest {
+    pub fn id(&self) -> B256 {
+        self.eip712_signing_hash(&DECRYPTION_EIP712_DOMAIN)
+    }
+}
+
+impl SolanaPublicDecryptionRequest {
+    /// Derives the content-derived `decryption_id`: the EIP-712 signing hash of the body, whose
+    /// type hash differs from the EVM body's.
     pub fn id(&self) -> B256 {
         self.eip712_signing_hash(&DECRYPTION_EIP712_DOMAIN)
     }

@@ -180,6 +180,7 @@ where
             (
                 ProcessingErrorKind::Recoverable,
                 ProtocolEventKind::PublicDecryption(_)
+                | ProtocolEventKind::SolanaPublicDecryption(_)
                 | ProtocolEventKind::UserDecryption(_)
                 | ProtocolEventKind::UserDecryptionV2(_)
                 | ProtocolEventKind::SolanaUserDecryptionV1(_),
@@ -222,6 +223,17 @@ where
                         error.code,
                         &details,
                         &req.extraData,
+                        &event.otlp_context,
+                    )
+                    .await
+            }
+            ProtocolEventKind::SolanaPublicDecryption(req) => {
+                response_publisher
+                    .publish_public_decryption_error(
+                        req.decryption_id,
+                        error.code,
+                        &details,
+                        req.extra_data(),
                         &event.otlp_context,
                     )
                     .await

@@ -6,12 +6,14 @@ use connector_utils::types::{
     extra_data::parse_extra_data,
     handle::{extract_chain_id_from_handle, extract_fhe_type_from_handle},
     solana_request::{
-        SolanaEntryClaims, SolanaGatewayFields, SolanaRequestBlob, SolanaUserDecryptionRequestV1,
+        SolanaEntryClaims, SolanaGatewayFields, SolanaPublicDecryptionRequest, SolanaRequestBlob,
+        SolanaUserDecryptionRequestV1,
     },
 };
 use kms_connector_api::{
     AttestationType, ErrorCode, PublicDecryptionRequest, RequestValidity,
-    SolanaUserDecryptionRequest, UserDecryptionRequest,
+    SolanaPublicDecryptionRequest as SolanaPublicDecryptionBody, SolanaUserDecryptionRequest,
+    UserDecryptionRequest,
 };
 use serde::de::DeserializeOwned;
 use serde_json::Value;
@@ -80,6 +82,24 @@ pub fn validate_public_decryption(
 ) -> Result<(), ValidationError> {
     validate_handles(&request.ctHandles, config)?;
     validate_extra_data(&request.extraData)
+}
+
+/// Checks the Solana body as [`validate_public_decryption`] checks the EVM one, and pairs each
+/// handle with its store.
+pub fn validate_solana_public_decryption(
+    id: B256,
+    request: &SolanaPublicDecryptionBody,
+    config: &Config,
+) -> Result<SolanaPublicDecryptionRequest, ValidationError> {
+    validate_handles(&request.ctHandles, config)?;
+    validate_extra_data(&request.extraData)?;
+    SolanaPublicDecryptionRequest::new(
+        U256::from_be_bytes(id.0),
+        &request.ctHandles,
+        &request.encryptedStores,
+        request.extraData.to_vec(),
+    )
+    .map_err(|e| ValidationError::InvalidSolanaRequest(e.to_string()))
 }
 
 pub fn validate_user_decryption(

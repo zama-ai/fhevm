@@ -159,14 +159,24 @@ impl<GP: Provider + Clone + 'static, HP: Provider, C: ContextManager> DbEventPro
                     biased;
                     async {
                         self.host_verifier
-                            .check_ciphertexts_allowed_for_public_decryption(
-                                &req.ctHandles,
-                                &req.extraData,
-                            )
+                            .check_ciphertexts_allowed_for_public_decryption(&req.ctHandles)
                             .await
                             .map_err(RequestCheckError::record)
                     },
                     self.check_context(&req.extraData),
+                )?;
+                Ok(())
+            }
+            ProtocolEventKind::SolanaPublicDecryption(req) => {
+                tokio::try_join!(
+                    biased;
+                    async {
+                        self.host_verifier
+                            .check_solana_public_decryption(req)
+                            .await
+                            .map_err(RequestCheckError::record)
+                    },
+                    self.check_context(req.extra_data()),
                 )?;
                 Ok(())
             }
@@ -256,6 +266,16 @@ impl<GP: Provider + Clone + 'static, HP: Provider, C: ContextManager> DbEventPro
                         req.decryptionId,
                         &req.ctHandles,
                         &req.extraData,
+                        None,
+                    )
+                    .await
+            }
+            ProtocolEventKind::SolanaPublicDecryption(req) => {
+                self.decryption_processor
+                    .prepare_decryption_request(
+                        req.decryption_id,
+                        &req.ct_handles(),
+                        &req.extra_data().to_vec().into(),
                         None,
                     )
                     .await

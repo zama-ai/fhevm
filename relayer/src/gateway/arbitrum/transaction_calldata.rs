@@ -21,7 +21,7 @@ impl ComputeCalldata {
         extra_data: Bytes,
     ) -> Result<Bytes, EventProcessingError> {
         let calldata =
-            Decryption::publicDecryptionRequestCall::new((handles, extra_data)).abi_encode();
+            Decryption::publicDecryptionRequest_1Call::new((handles, extra_data)).abi_encode();
 
         info!(
             "publicDecryptionRequest calldata: 0x{}",

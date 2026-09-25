@@ -14,9 +14,6 @@ use kms_connector_api::{
 };
 use sqlx::postgres::PgRow;
 
-/// The Solana chain type byte over cluster tag 12345.
-const SOLANA_CHAIN_ID: u64 = 0x0100_0000_0000_3039;
-
 #[tokio::test]
 async fn solana_http_and_gateway_requests_store_the_same_request() -> anyhow::Result<()> {
     let endpoint = setup_with(|config| Config {

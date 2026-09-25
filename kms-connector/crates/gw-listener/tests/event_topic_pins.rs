@@ -52,15 +52,26 @@ fn the_user_decryption_subscription_pins_its_topics() {
     );
 }
 
+/// Every event signature the public-decryption filter must subscribe by: the EVM handles-only
+/// shape, and the Solana one naming each handle's encrypted store.
+const PUBLIC_DECRYPTION_SUBSCRIBED_SIGS: &[&str] = &[
+    "PublicDecryptionRequest(uint256,bytes32[],bytes)",
+    "PublicDecryptionRequest(uint256,bytes32[],bytes,bytes32[])",
+];
+
 #[test]
-fn the_public_decryption_subscription_pins_its_topic() {
-    // The public-decryption filter subscribes by exactly one topic; the literal pins which
-    // of the overloaded shapes that is.
-    let hash = EventType::PublicDecryptionRequest.signature_hash();
+fn the_public_decryption_subscription_pins_its_topics() {
+    let mut subscribed = EventType::PublicDecryptionRequest.signature_hashes();
+    subscribed.sort();
 
     assert_eq!(
-        hash,
-        keccak256("PublicDecryptionRequest(uint256,bytes32[],bytes)".as_bytes()),
-        "the public-decryption subscription topic moved"
+        subscribed,
+        sorted_hashes(PUBLIC_DECRYPTION_SUBSCRIBED_SIGS),
+        "the public-decryption subscription topics are not the pinned set"
+    );
+    // The EVM shape stays the event type's primary topic.
+    assert_eq!(
+        EventType::PublicDecryptionRequest.signature_hash(),
+        keccak256(PUBLIC_DECRYPTION_SUBSCRIBED_SIGS[0].as_bytes()),
     );
 }

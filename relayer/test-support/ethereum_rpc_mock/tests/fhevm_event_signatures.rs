@@ -8,7 +8,7 @@ fn print_all_fhevm_event_signatures() {
     println!("1. publicDecryptionRequestCall");
     println!(
         "   Selector: 0x{}",
-        hex::encode(Decryption::publicDecryptionRequestCall::SELECTOR)
+        hex::encode(Decryption::publicDecryptionRequest_1Call::SELECTOR)
     );
 
     println!("2a. userDecryptionRequest_0Call (unified HandleEntry[] overload)");

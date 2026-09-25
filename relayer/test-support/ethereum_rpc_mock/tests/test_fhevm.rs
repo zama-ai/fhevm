@@ -110,7 +110,7 @@ async fn create_public_decrypt_transaction(
     handles: Vec<B256>,
     nonce: u64,
 ) -> Result<Bytes, Box<dyn std::error::Error>> {
-    let call_data = Decryption::publicDecryptionRequestCall {
+    let call_data = Decryption::publicDecryptionRequest_1Call {
         ctHandles: handles,
         extraData: Bytes::new(),
     };

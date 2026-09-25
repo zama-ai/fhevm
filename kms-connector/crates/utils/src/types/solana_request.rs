@@ -1,9 +1,13 @@
-//! Solana user decryption: an sRFC-38 permit, its ed25519 signature, and the handles it is used
-//! for. Built by the Gateway listener, the HTTP endpoint and the row reader, authorized by the
-//! worker.
+//! Solana decryption requests in their typed form. A user decryption is an sRFC-38 permit, its
+//! ed25519 signature, and the handles it is used for; a public decryption is handles, each with
+//! the encrypted store its public-decrypt leaf is proven against. Built by the Gateway listener,
+//! the HTTP endpoint and the row reader, authorized by the worker.
 
+use crate::types::handle::extract_chain_id_from_handle;
 use alloy::primitives::{B256, U256};
-use fhevm_gateway_bindings::decryption::Decryption::UserDecryptionRequest_4;
+use fhevm_gateway_bindings::decryption::Decryption::{
+    PublicDecryptionRequest_2, UserDecryptionRequest_4,
+};
 use solana_pubkey::Pubkey;
 use zama_solana_permit::{PermitFields, SIGNATURE_LEN, Signature};
 use zama_solana_request::assemble_solana_request;
@@ -111,6 +115,120 @@ impl TryFrom<UserDecryptionRequest_4> for SolanaUserDecryptionRequestV1 {
     }
 }
 
+/// One handle of a Solana public decryption and the encrypted store that holds its history. A
+/// store is not derivable from a handle, so the request names it; a wrong one fails the proof and
+/// never widens access.
+#[derive(Clone, Copy, PartialEq, Eq, Debug)]
+pub struct SolanaPublicHandle {
+    pub handle: B256,
+    pub encrypted_store: Pubkey,
+}
+
+/// A Solana public decryption: 1 to [`MAX_REQUEST_HANDLES`] handles of one chain, each with its
+/// encrypted store, and the KMS routing `extra_data` the Gateway pinned the context from.
+#[derive(Clone, PartialEq, Eq, Debug)]
+pub struct SolanaPublicDecryptionRequest {
+    pub decryption_id: U256,
+    chain_id: u64,
+    handles: Vec<SolanaPublicHandle>,
+    extra_data: Vec<u8>,
+}
+
+impl SolanaPublicDecryptionRequest {
+    /// Pairs each handle with the store at the same position.
+    pub fn new(
+        decryption_id: U256,
+        ct_handles: &[B256],
+        encrypted_stores: &[B256],
+        extra_data: Vec<u8>,
+    ) -> Result<Self, PublicRequestFormError> {
+        if ct_handles.len() != encrypted_stores.len() {
+            return Err(PublicRequestFormError::StoreCount {
+                handles: ct_handles.len(),
+                stores: encrypted_stores.len(),
+            });
+        }
+        if ct_handles.is_empty() || ct_handles.len() > MAX_REQUEST_HANDLES {
+            return Err(PublicRequestFormError::HandleCount(ct_handles.len()));
+        }
+        let chain_of = |handle: &B256| {
+            extract_chain_id_from_handle(handle).expect("a 32-byte handle embeds a chain id")
+        };
+        let chain_id = chain_of(&ct_handles[0]);
+        for handle in ct_handles {
+            let other = chain_of(handle);
+            if other != chain_id {
+                return Err(PublicRequestFormError::MixedChains {
+                    first: chain_id,
+                    other,
+                });
+            }
+        }
+        let handles = ct_handles
+            .iter()
+            .zip(encrypted_stores)
+            .map(|(handle, store)| SolanaPublicHandle {
+                handle: *handle,
+                encrypted_store: Pubkey::new_from_array(store.0),
+            })
+            .collect();
+        Ok(Self {
+            decryption_id,
+            chain_id,
+            handles,
+            extra_data,
+        })
+    }
+
+    /// The chain every handle embeds.
+    pub fn chain_id(&self) -> u64 {
+        self.chain_id
+    }
+
+    /// In request order; duplicates are kept and each one is proven.
+    pub fn handles(&self) -> &[SolanaPublicHandle] {
+        &self.handles
+    }
+
+    pub fn ct_handles(&self) -> Vec<B256> {
+        self.handles.iter().map(|e| e.handle).collect()
+    }
+
+    pub fn encrypted_stores(&self) -> Vec<B256> {
+        self.handles
+            .iter()
+            .map(|e| B256::from(e.encrypted_store.to_bytes()))
+            .collect()
+    }
+
+    pub fn extra_data(&self) -> &[u8] {
+        &self.extra_data
+    }
+}
+
+impl TryFrom<PublicDecryptionRequest_2> for SolanaPublicDecryptionRequest {
+    type Error = PublicRequestFormError;
+
+    fn try_from(event: PublicDecryptionRequest_2) -> Result<Self, Self::Error> {
+        Self::new(
+            event.decryptionId,
+            &event.ctHandles,
+            &event.encryptedStores,
+            event.extraData.to_vec(),
+        )
+    }
+}
+
+#[derive(Clone, PartialEq, Eq, Debug, thiserror::Error)]
+pub enum PublicRequestFormError {
+    #[error("{handles} handles name {stores} encrypted stores")]
+    StoreCount { handles: usize, stores: usize },
+    #[error("{0} handles, expected 1 to {MAX_REQUEST_HANDLES}")]
+    HandleCount(usize),
+    #[error("handles of chains {first} and {other} in one request")]
+    MixedChains { first: u64, other: u64 },
+}
+
 #[derive(Clone, PartialEq, Eq, Debug, thiserror::Error)]
 pub enum RequestFormError {
     #[error(transparent)]
@@ -143,6 +261,61 @@ mod tests {
             event.publicKey.as_ref()
         );
         assert_eq!(stored.extra_data(), event.extraData.to_vec());
+    }
+
+    #[test]
+    fn a_public_event_pairs_each_handle_with_its_store() {
+        let event = PublicDecryptionRequest_2 {
+            decryptionId: U256::from(1),
+            ctHandles: vec![B256::with_last_byte(1), B256::with_last_byte(2)],
+            extraData: vec![0x00].into(),
+            encryptedStores: vec![B256::repeat_byte(3), B256::repeat_byte(4)],
+        };
+        let request = SolanaPublicDecryptionRequest::try_from(event.clone()).unwrap();
+        assert_eq!(request.ct_handles(), event.ctHandles);
+        assert_eq!(request.encrypted_stores(), event.encryptedStores);
+        assert_eq!(
+            request.handles()[1].encrypted_store,
+            Pubkey::new_from_array([4; 32])
+        );
+    }
+
+    #[test]
+    fn a_public_request_names_one_store_per_handle() {
+        let handles = [B256::with_last_byte(1), B256::with_last_byte(2)];
+        for stores in [&[B256::ZERO][..], &[B256::ZERO; 3][..]] {
+            assert_eq!(
+                SolanaPublicDecryptionRequest::new(U256::ONE, &handles, stores, vec![]),
+                Err(PublicRequestFormError::StoreCount {
+                    handles: 2,
+                    stores: stores.len()
+                })
+            );
+        }
+    }
+
+    #[test]
+    fn a_public_request_names_handles_of_one_chain() {
+        let mut other_chain = B256::ZERO;
+        other_chain[29] = 1;
+        let handles = [B256::ZERO, other_chain];
+        assert_eq!(
+            SolanaPublicDecryptionRequest::new(U256::ONE, &handles, &handles, vec![]),
+            Err(PublicRequestFormError::MixedChains { first: 0, other: 1 })
+        );
+    }
+
+    #[test]
+    fn a_public_request_carries_one_to_the_handle_cap() {
+        for count in [0, MAX_REQUEST_HANDLES + 1] {
+            let handles = vec![B256::ZERO; count];
+            assert_eq!(
+                SolanaPublicDecryptionRequest::new(U256::ONE, &handles, &handles, vec![]),
+                Err(PublicRequestFormError::HandleCount(count))
+            );
+        }
+        let at_cap = vec![B256::ZERO; MAX_REQUEST_HANDLES];
+        assert!(SolanaPublicDecryptionRequest::new(U256::ONE, &at_cap, &at_cap, vec![]).is_ok());
     }
 
     #[test]

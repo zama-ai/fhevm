@@ -105,6 +105,7 @@ pub fn register_event_latency(event: &ProtocolEvent) {
     if matches!(
         event.kind,
         ProtocolEventKind::PublicDecryption(_)
+            | ProtocolEventKind::SolanaPublicDecryption(_)
             | ProtocolEventKind::UserDecryption(_)
             | ProtocolEventKind::UserDecryptionV2(_)
             | ProtocolEventKind::SolanaUserDecryptionV1(_)

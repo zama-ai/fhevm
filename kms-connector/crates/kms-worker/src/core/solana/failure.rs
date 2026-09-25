@@ -120,11 +120,10 @@ impl AuthorizationFailure {
 impl PublicDecryptFailure {
     pub fn class(&self) -> FailureClass {
         match self {
-            Self::MalformedExtraData => UNPROCESSABLE,
             Self::Snapshot(source) => source.class(),
-            Self::EncryptedStore(source) => source.class(),
+            Self::EncryptedStore { source, .. } => source.class(),
             Self::ProofRead(source) => source.class(),
-            Self::HandleBinding(source) => source.class(),
+            Self::HandleBinding { source, .. } => source.class(),
         }
     }
 

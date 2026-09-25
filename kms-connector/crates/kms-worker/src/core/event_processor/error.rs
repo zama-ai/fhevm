@@ -508,26 +508,25 @@ mod tests {
     fn every_solana_public_decrypt_failure_is_recorded_as_written() {
         let cases = [
             (
-                PublicDecryptFailure::MalformedExtraData,
-                UNPROCESSABLE,
-                TERMINAL,
-            ),
-            (
                 PublicDecryptFailure::Snapshot(SnapshotError::NodeBehind),
                 NETWORK,
                 RETRY,
             ),
             (
-                PublicDecryptFailure::EncryptedStore(EncryptedStoreFailure::Absent {
-                    account_key: Pubkey::new_from_array(KEY),
-                }),
+                PublicDecryptFailure::EncryptedStore {
+                    index: 0,
+                    source: EncryptedStoreFailure::Absent {
+                        account_key: Pubkey::new_from_array(KEY),
+                    },
+                },
                 DENIED,
                 RETRY,
             ),
             (
-                PublicDecryptFailure::EncryptedStore(EncryptedStoreFailure::InvalidHostRecord(
-                    INVALID,
-                )),
+                PublicDecryptFailure::EncryptedStore {
+                    index: 0,
+                    source: EncryptedStoreFailure::InvalidHostRecord(INVALID),
+                },
                 UNPROCESSABLE,
                 TERMINAL,
             ),
@@ -537,15 +536,21 @@ mod tests {
                 RETRY,
             ),
             (
-                PublicDecryptFailure::HandleBinding(HandleBindingFailure::NoLeaf {
-                    record_leaf_count: 1,
-                    live_leaf_count: 1,
-                }),
+                PublicDecryptFailure::HandleBinding {
+                    index: 0,
+                    source: HandleBindingFailure::NoLeaf {
+                        record_leaf_count: 1,
+                        live_leaf_count: 1,
+                    },
+                },
                 DENIED,
                 RETRY,
             ),
             (
-                PublicDecryptFailure::HandleBinding(HandleBindingFailure::HistoryIncomplete),
+                PublicDecryptFailure::HandleBinding {
+                    index: 0,
+                    source: HandleBindingFailure::HistoryIncomplete,
+                },
                 UNPROCESSABLE,
                 TERMINAL,
             ),

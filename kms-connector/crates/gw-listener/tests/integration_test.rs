@@ -6,7 +6,9 @@ use connector_utils::{
     tests::{
         db::requests::TestEventType, rand::solana_user_decryption_event, setup::TestInstanceBuilder,
     },
-    types::{KMS_CONTEXT_COUNTER_BASE, ProtocolEventKind},
+    types::{
+        KMS_CONTEXT_COUNTER_BASE, ProtocolEventKind, solana_request::SolanaPublicDecryptionRequest,
+    },
 };
 use gw_listener::core::publish_context_and_epoch;
 use rstest::rstest;
@@ -71,6 +73,44 @@ async fn a_solana_user_decryption_event_is_stored_as_its_request() -> anyhow::Re
         .await?;
     let expected = ProtocolEventKind::SolanaUserDecryptionV1(event.try_into()?);
     poll_db_for_event(test_instance.db(), TestEventType::UserDecryption, &expected).await?;
+
+    cancel_token.cancel();
+    Ok(gw_listener_task?.await?)
+}
+
+/// The listener stores each handle's encrypted store beside it, and the worker's reader rebuilds
+/// the same typed request from the row.
+#[rstest]
+#[timeout(Duration::from_secs(60))]
+#[tokio::test]
+async fn a_solana_public_decryption_event_is_stored_as_its_request() -> anyhow::Result<()> {
+    let mut test_instance = TestInstanceBuilder::db_bc_setup().await?;
+    let cancel_token = CancellationToken::new();
+    let gw_listener_task =
+        start_test_listener(&mut test_instance, cancel_token.clone(), None).await;
+
+    let handles = vec![B256::with_last_byte(0x11), B256::with_last_byte(0x22)];
+    let stores = vec![B256::repeat_byte(0x33), B256::repeat_byte(0x44)];
+    let extra_data = vec![0x00];
+    test_instance
+        .decryption_contract()
+        .publicDecryptionRequest_0(handles.clone(), extra_data.clone().into(), stores.clone())
+        .send()
+        .await?
+        .get_receipt()
+        .await?;
+    let expected = ProtocolEventKind::SolanaPublicDecryption(SolanaPublicDecryptionRequest::new(
+        U256::ZERO,
+        &handles,
+        &stores,
+        extra_data,
+    )?);
+    poll_db_for_event(
+        test_instance.db(),
+        TestEventType::PublicDecryption,
+        &expected,
+    )
+    .await?;
 
     cancel_token.cancel();
     Ok(gw_listener_task?.await?)

@@ -19,7 +19,8 @@ use alloy::{
 };
 use anyhow::anyhow;
 use connector_utils::types::{
-    handle::extract_chain_id_from_handle, solana_request::SolanaUserDecryptionRequestV1,
+    handle::extract_chain_id_from_handle,
+    solana_request::{SolanaPublicDecryptionRequest, SolanaUserDecryptionRequestV1},
 };
 use fhevm_gateway_bindings::decryption::Decryption::{
     HandleEntry, UserDecryptionRequest_3 as UserDecryptionRequestV2,
@@ -88,7 +89,6 @@ impl<HP: Provider> HostDecryptionVerifier<HP> {
     pub async fn check_ciphertexts_allowed_for_public_decryption(
         &self,
         handles: &[B256],
-        extra_data: &[u8],
     ) -> Result<(), RequestCheckError> {
         info!("Starting ACL check for {} handles...", handles.len());
 
@@ -96,28 +96,43 @@ impl<HP: Provider> HostDecryptionVerifier<HP> {
             let ct_chain_id = extract_chain_id_from_handle(handle).map_err(|e| {
                 RequestCheckError::irrecoverable(RequestCheckKind::Acl, ErrorCode::Unprocessable, e)
             })?;
+            // A Solana handle is public only against the store its request names, which this
+            // request shape does not carry.
+            let HostChain::Evm(host_client) = self.host(ct_chain_id)? else {
+                return Err(wrong_host_kind(ct_chain_id, "EVM", "Solana"));
+            };
 
-            match self.host(ct_chain_id)? {
-                HostChain::Solana(host) => {
-                    // Public access is proven by a PublicDecryptLeaf MMR proof and verified
-                    // against the encrypted store observed at confirmed commitment.
-                    Ok(check_public_decrypt(host, *handle, extra_data).await?)
-                }
-                HostChain::Evm(host_client) => {
-                    if !host_client.is_allowed_for_decryption(*handle).await? {
-                        return Err(RequestCheckError::recoverable(
-                            RequestCheckKind::Acl,
-                            ErrorCode::AclDenied,
-                            anyhow!("Decryption is not allowed for {handle}"),
-                        ));
-                    }
-                    Ok(())
-                }
+            if !host_client.is_allowed_for_decryption(*handle).await? {
+                return Err(RequestCheckError::recoverable(
+                    RequestCheckKind::Acl,
+                    ErrorCode::AclDenied,
+                    anyhow!("Decryption is not allowed for {handle}"),
+                ));
             }
+            Ok(())
         }))
         .await?;
 
         info!("ACL check passed for {} handles!", handles.len());
+        Ok(())
+    }
+
+    /// Proves each handle's public-decrypt leaf against the encrypted store the request names for
+    /// it.
+    #[tracing::instrument(skip_all)]
+    pub async fn check_solana_public_decryption(
+        &self,
+        request: &SolanaPublicDecryptionRequest,
+    ) -> Result<(), RequestCheckError> {
+        let chain_id = request.chain_id();
+        let HostChain::Solana(host) = self.host(chain_id)? else {
+            return Err(wrong_host_kind(chain_id, "Solana", "EVM"));
+        };
+        check_public_decrypt(host, request).await?;
+        info!(
+            "Solana public decryption check passed for {} handles!",
+            request.handles().len()
+        );
         Ok(())
     }
 
@@ -691,7 +706,7 @@ mod tests {
         }
 
         let result = verifier
-            .check_ciphertexts_allowed_for_public_decryption(&handles, &[0])
+            .check_ciphertexts_allowed_for_public_decryption(&handles)
             .await
             .map_err(RequestCheckError::record);
 
@@ -711,7 +726,7 @@ mod tests {
         asserter.push_failure_msg("connection refused");
 
         let err = verifier
-            .check_ciphertexts_allowed_for_public_decryption(&[handle], &[0])
+            .check_ciphertexts_allowed_for_public_decryption(&[handle])
             .await
             .map_err(RequestCheckError::record)
             .unwrap_err();
@@ -1286,27 +1301,46 @@ mod tests {
         bytes.into()
     }
 
+    fn make_solana_public_request(handle: B256) -> SolanaPublicDecryptionRequest {
+        SolanaPublicDecryptionRequest::new(U256::from(1), &[handle], &[B256::ZERO], vec![]).unwrap()
+    }
+
+    fn assert_wrong_host_kind(result: Result<(), ProcessingError>, found: &str) {
+        match result {
+            Err(error) if error.kind == ProcessingErrorKind::Irrecoverable => {
+                let message = error.source.to_string();
+                assert!(message.contains(&format!("is a {found} host")), "{message}");
+            }
+            other => panic!("expected a wrong-host-kind rejection, got {other:?}"),
+        }
+    }
+
     #[tokio::test]
-    async fn public_decryption_dispatches_to_solana_host() {
+    async fn an_evm_public_decryption_of_a_solana_handle_is_refused() {
+        // The EVM request shape names no encrypted store, and a Solana handle is public only
+        // against one.
         let handle = rand_solana_handle();
         let verifier = setup_test_verifier_with_host(Asserter::new(), handle, TestHost::Solana);
 
         let result = verifier
-            .check_ciphertexts_allowed_for_public_decryption(&[handle], &[0])
+            .check_ciphertexts_allowed_for_public_decryption(&[handle])
             .await
             .map_err(RequestCheckError::record);
 
-        match result {
-            Err(error) if error.kind == ProcessingErrorKind::Irrecoverable => {
-                assert!(
-                    error
-                        .source
-                        .to_string()
-                        .contains("requires the version-4 extraData")
-                );
-            }
-            other => panic!("expected Solana public-decrypt rejection, got {other:?}"),
-        }
+        assert_wrong_host_kind(result, "Solana");
+    }
+
+    #[tokio::test]
+    async fn a_solana_public_decryption_of_an_evm_handle_is_refused() {
+        let handle = rand_handle();
+        let verifier = setup_test_verifier_with_host(Asserter::new(), handle, TestHost::Evm);
+
+        let result = verifier
+            .check_solana_public_decryption(&make_solana_public_request(handle))
+            .await
+            .map_err(RequestCheckError::record);
+
+        assert_wrong_host_kind(result, "EVM");
     }
 
     #[tokio::test]
@@ -1380,7 +1414,7 @@ mod tests {
         let solana_request = make_solana_request(handle);
 
         let public = verifier
-            .check_ciphertexts_allowed_for_public_decryption(&[handle], &[0])
+            .check_ciphertexts_allowed_for_public_decryption(&[handle])
             .await
             .map_err(RequestCheckError::record);
         let legacy = verifier
@@ -1399,8 +1433,12 @@ mod tests {
             .check_solana_user_decryption_request(&solana_request)
             .await
             .map_err(RequestCheckError::record);
+        let solana_public = verifier
+            .check_solana_public_decryption(&make_solana_public_request(handle))
+            .await
+            .map_err(RequestCheckError::record);
 
-        for result in [public, legacy, evm_unified, solana] {
+        for result in [public, legacy, evm_unified, solana, solana_public] {
             match result {
                 Err(error) if error.kind == ProcessingErrorKind::Recoverable => assert!(
                     error

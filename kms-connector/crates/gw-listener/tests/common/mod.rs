@@ -94,7 +94,7 @@ pub async fn mock_event_on_gw(
             };
             let tx = test_instance
                 .decryption_contract()
-                .publicDecryptionRequest(vec![], rand_extra_data.into())
+                .publicDecryptionRequest_1(vec![], rand_extra_data.into())
                 .send()
                 .await?;
             (tx, event.into())
@@ -345,6 +345,19 @@ pub fn check_event_in_db(rows: &[PgRow], event: ProtocolEventKind) -> anyhow::Re
             for r in rows {
                 if e.extraData.to_vec() == r.try_get::<Vec<u8>, _>("extra_data")? {
                     return Ok(());
+                }
+            }
+        }
+        ProtocolEventKind::SolanaPublicDecryption(e) => {
+            // The reader must reconstruct the same typed request. The Gateway assigns the id.
+            for r in rows {
+                if let ProtocolEventKind::SolanaPublicDecryption(mut stored) =
+                    connector_utils::types::event::from_public_decryption_row(r)?.kind
+                {
+                    stored.decryption_id = e.decryption_id;
+                    if stored == e {
+                        return Ok(());
+                    }
                 }
             }
         }

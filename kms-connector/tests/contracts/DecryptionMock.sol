@@ -92,6 +92,13 @@ contract DecryptionMock {
 
     event PublicDecryptionRequest(uint256 indexed decryptionId, bytes32[] ctHandles, bytes extraData);
 
+    event PublicDecryptionRequest(
+        uint256 indexed decryptionId,
+        bytes32[] ctHandles,
+        bytes extraData,
+        bytes32[] encryptedStores
+    );
+
     event PublicDecryptionResponseCall(
         uint256 indexed decryptionId,
         bytes decryptedResult,
@@ -148,6 +155,17 @@ contract DecryptionMock {
         uint256 decryptionId = publicDecryptionCounter;
 
         emit PublicDecryptionRequest(decryptionId, ctHandles, extraData);
+    }
+
+    function publicDecryptionRequest(
+        bytes32[] calldata ctHandles,
+        bytes calldata extraData,
+        bytes32[] calldata encryptedStores
+    ) external {
+        publicDecryptionCounter++;
+        uint256 decryptionId = publicDecryptionCounter;
+
+        emit PublicDecryptionRequest(decryptionId, ctHandles, extraData, encryptedStores);
     }
 
     function publicDecryptionResponse(

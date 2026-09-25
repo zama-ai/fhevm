@@ -4,14 +4,15 @@ use crate::Result;
 use crate::decryption::user::UserDecryptRequest;
 use alloy::primitives::{Address, Bytes, FixedBytes, U256};
 use alloy::sol_types::SolCall;
-// The legacy overload — `(CtHandleContractPair[], RequestValidity, ContractsInfo, address,
-// bytes, bytes, bytes)` — is the one this SDK builds. The alias is pinned by the selector test
-// below rather than by the `_N` suffix alone: alloy numbers overloads by their position in the
-// generated bindings, so adding or removing any `userDecryptionRequest` overload renumbers the
-// rest. A silently renumbered alias still compiles whenever two overloads happen to accept the
+// The legacy user overload — `(CtHandleContractPair[], RequestValidity, ContractsInfo, address,
+// bytes, bytes, bytes)` — and the EVM public overload `(bytes32[], bytes)` are the ones this SDK
+// builds. The aliases are pinned by the selector tests below rather than by the `_N` suffix
+// alone: alloy numbers overloads by their position in the generated bindings, so adding or
+// removing any overload renumbers the rest. A silently renumbered alias still compiles whenever two overloads happen to accept the
 // same argument shape, and would then encode calldata for the wrong function.
 use fhevm_gateway_bindings::decryption::Decryption::{
-    publicDecryptionRequestCall, userDecryptionRequest_2Call as userDecryptionRequestCall,
+    publicDecryptionRequest_1Call as publicDecryptionRequestCall,
+    userDecryptionRequest_2Call as userDecryptionRequestCall,
 };
 use fhevm_gateway_bindings::decryption::IDecryption::ContractsInfo;
 use fhevm_gateway_bindings::input_verification::InputVerification;
@@ -98,14 +99,13 @@ mod tests {
         );
     }
 
-    /// The same pin for the public-decryption call, which is not overloaded today but shares the
-    /// generated-bindings surface and would be renamed by the same class of upstream change.
+    /// The same pin for the public-decryption call, whose Solana overload renumbers it.
     #[test]
     fn public_decryption_call_selector_is_pinned() {
         assert_eq!(
             publicDecryptionRequestCall::SELECTOR,
             [0xd8, 0x99, 0x8f, 0x45],
-            "the publicDecryptionRequest selector changed"
+            "the publicDecryptionRequest alias no longer selects the EVM overload"
         );
     }
 }

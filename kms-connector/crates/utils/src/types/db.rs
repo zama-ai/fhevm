@@ -2,7 +2,9 @@ use crate::{
     monitoring::otlp::PropagationContext,
     types::{
         ProtocolEventKind,
-        solana_request::{SolanaHandleEntry, SolanaUserDecryptionRequestV1},
+        solana_request::{
+            SolanaHandleEntry, SolanaPublicDecryptionRequest, SolanaUserDecryptionRequestV1,
+        },
     },
 };
 use alloy::{
@@ -12,7 +14,7 @@ use alloy::{
 use anyhow::anyhow;
 // Handle-only overloaded decryption events
 use fhevm_gateway_bindings::decryption::Decryption::{
-    PublicDecryptionRequest_1 as PublicDecryptionRequest,
+    PublicDecryptionRequest_1 as PublicDecryptionRequest, PublicDecryptionRequest_2,
     UserDecryptionRequest_2 as UserDecryptionRequest,
     UserDecryptionRequest_3 as UserDecryptionRequestV2, UserDecryptionRequest_4,
 };
@@ -177,7 +179,9 @@ impl Display for EventType {
 impl From<&ProtocolEventKind> for EventType {
     fn from(value: &ProtocolEventKind) -> Self {
         match value {
-            ProtocolEventKind::PublicDecryption(_) => Self::PublicDecryptionRequest,
+            // Both public-decrypt shapes share one table and polling cursor.
+            ProtocolEventKind::PublicDecryption(_)
+            | ProtocolEventKind::SolanaPublicDecryption(_) => Self::PublicDecryptionRequest,
             // All user-decrypt attestations share one table and polling cursor.
             ProtocolEventKind::UserDecryption(_)
             | ProtocolEventKind::UserDecryptionV2(_)
@@ -269,12 +273,17 @@ impl EventType {
     ///
     /// `UserDecryptionRequest` covers three subscribed shapes — the bytes32[] handles-only
     /// shape, the RFC016 EVM unified shape, and the host-generic V2 shape (which carries Solana
-    /// requests) — so all three topic0 hashes must be listed in the `eth_getLogs` filter;
-    /// otherwise the gw-listener never ingests one of them and those requests silently never
-    /// complete. All other event types map one-to-one to a single topic0. The subscribed set is
-    /// pinned by `gw-listener/tests/event_topic_pins.rs`.
+    /// requests) — and `PublicDecryptionRequest` two, the handles-only shape and the Solana one
+    /// naming each handle's encrypted store. Every one of those topic0 hashes must be listed in
+    /// the `eth_getLogs` filter; otherwise the gw-listener never ingests that shape and its
+    /// requests silently never complete. All other event types map one-to-one to a single
+    /// topic0. The subscribed set is pinned by `gw-listener/tests/event_topic_pins.rs`.
     pub fn signature_hashes(&self) -> Vec<B256> {
         match self {
+            EventType::PublicDecryptionRequest => vec![
+                PublicDecryptionRequest::SIGNATURE_HASH,
+                PublicDecryptionRequest_2::SIGNATURE_HASH,
+            ],
             EventType::UserDecryptionRequest => vec![
                 UserDecryptionRequest::SIGNATURE_HASH,
                 UserDecryptionRequestV2::SIGNATURE_HASH,
@@ -364,6 +373,42 @@ pub async fn invalidate_kms_epoch<'e>(
 
     info!("KMS epoch #{epoch_id} marked as destroyed in DB");
     Ok(())
+}
+
+/// Stores a Solana public decryption from either ingress path. Only an HTTP retry resets a failed
+/// HTTP request, as `endpoint` does for EVM requests.
+pub async fn insert_solana_public_decryption<'e>(
+    executor: impl PgExecutor<'e>,
+    request: &SolanaPublicDecryptionRequest,
+    tx_hash: Option<B256>,
+    created_at: DateTime<Utc>,
+    otlp_context: &PropagationContext,
+    source: RequestSource,
+) -> anyhow::Result<PgQueryResult> {
+    let column =
+        |values: Vec<B256>| -> Vec<Vec<u8>> { values.iter().map(|v| v.to_vec()).collect() };
+    Ok(sqlx::query!(
+        "INSERT INTO public_decryption_requests AS existing (
+            decryption_id, ct_handles, handle_encrypted_stores, extra_data, tx_hash, created_at,
+            otlp_context, source
+        )
+        VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
+        ON CONFLICT (decryption_id) DO UPDATE SET
+            status = 'pending',
+            created_at = EXCLUDED.created_at,
+            otlp_context = EXCLUDED.otlp_context
+        WHERE existing.status = 'failed' AND existing.source = 'http' AND EXCLUDED.source = 'http'",
+        request.decryption_id.as_le_slice(),
+        &column(request.ct_handles()),
+        &column(request.encrypted_stores()),
+        request.extra_data(),
+        tx_hash.map(|h| h.to_vec()),
+        created_at,
+        bc2wrap::serialize(otlp_context)?,
+        source as RequestSource,
+    )
+    .execute(executor)
+    .await?)
 }
 
 /// Stores a Solana user decryption from either ingress path. Only an HTTP retry resets a failed
