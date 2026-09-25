@@ -2291,6 +2291,18 @@ async fn run_tfhe_worker_inner(
     }
 }
 
+/// After a pick with no schedulable row, re-poll immediately only for the first
+/// fully frozen pick in a row: the freeze penalty may have moved healthy work
+/// to the head of the window. A repeated fully frozen pick, or a pick emptied
+/// by deferral or drain, waits for work_available or the poll timer.
+fn repoll_after_empty_pick(consecutive_fully_frozen_picks: &mut u32, froze_rows: bool) -> bool {
+    if !froze_rows {
+        return false;
+    }
+    *consecutive_fully_frozen_picks = consecutive_fully_frozen_picks.saturating_add(1);
+    *consecutive_fully_frozen_picks == 1
+}
+
 async fn tfhe_worker_cycle(
     args: &crate::daemon_cli::Args,
     worker_id: Uuid,
@@ -2435,6 +2447,11 @@ async fn tfhe_worker_cycle(
     let mut no_progress_cycles = 0;
     let mut deferred_cooldown = DeferredTransactionCooldown::new();
     let mut consecutive_batch_failures: u32 = 0;
+    // Picks in a row whose every row was frozen. Only the first re-polls
+    // immediately, in case healthy work sits behind the pushed-back
+    // transactions; later ones wait for work_available or the poll timer, so
+    // a worker with only frozen work does not spin.
+    let mut consecutive_fully_frozen_picks: u32 = 0;
     loop {
         // GCS gating: skip the iteration entirely until the activation
         // watcher has populated `start_block` in `upgrade_state` for
@@ -2451,6 +2468,7 @@ async fn tfhe_worker_cycle(
 
         // only if previous iteration had no work done do the wait
         if !immediately_poll_more_work {
+            consecutive_fully_frozen_picks = 0;
             tokio::select! {
                 notification = listener.try_recv() => {
                     match notification? {
@@ -2557,12 +2575,17 @@ async fn tfhe_worker_cycle(
                 // be reachable through wedged chains alone.
                 trx.commit().await?;
                 // Freeze penalty already moved those txs in schedule_order:
-                // pick again now. Defer/drain (frozen empty) must not hot-loop.
-                immediately_poll_more_work = !freeze.frozen.is_empty();
+                // pick again now, once. Defer/drain (frozen empty) and a
+                // repeated fully frozen pick must not hot-loop.
+                immediately_poll_more_work = repoll_after_empty_pick(
+                    &mut consecutive_fully_frozen_picks,
+                    !freeze.frozen.is_empty(),
+                );
                 continue;
             }
             // We've fetched work, so we'll poll again without waiting
             // for a notification after this cycle.
+            consecutive_fully_frozen_picks = 0;
             immediately_poll_more_work = true;
         } else {
             // There is no selected work for this batch. Commit the read
