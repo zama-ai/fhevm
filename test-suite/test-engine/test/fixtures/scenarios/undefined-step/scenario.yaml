@@ -1,0 +1,13 @@
+apiVersion: fhevm.zama.ai/scenario/v1
+kind: Scenario
+metadata:
+  id: fixture.undefined-step
+  name: Fixture undefined-step
+  owner: qa
+  description: Engine test fixture (undefined-step).
+  tags: [fixture, fast]
+spec:
+  runtime: cucumber
+  entrypoint: ./fixture.feature
+  supportCode: [./steps.ts]
+  timeoutSeconds: 30

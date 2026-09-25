@@ -1,0 +1,14 @@
+apiVersion: fhevm.zama.ai/scenario/v1
+kind: Scenario
+metadata:
+  id: fixture.disabled
+  name: Fixture disabled
+  owner: qa
+  description: Engine test fixture (disabled).
+  tags: [fixture, fast]
+spec:
+  runtime: cucumber
+  entrypoint: ./fixture.feature
+  supportCode: [./steps.ts]
+  timeoutSeconds: 30
+  enabled: false
