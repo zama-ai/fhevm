@@ -24,7 +24,7 @@
 #   - the devnet RPC URL (secret `solana-rpc`; the websocket URL is the same endpoint over wss);
 #   - the deployer keypair (secret `solana-deployer`) unless SOLANA_DEPLOYER_KEYPAIR already
 #     names a funded devnet wallet; it funds every scenario actor by transfer;
-#   - the listener proof endpoint bearer token (secret `solana-proof-api`) for the demo operator.
+#   - the leaf-proof server's bearer token (secret `solana-proof-api`) for the demo operator.
 # The relayer, both anvil chains and the first coprocessor's proof endpoint are port-forwarded to
 # the loopback ports the local stack uses, so no default URL changes.
 set +x
@@ -96,7 +96,7 @@ up)
   forward "${relayer:-svc/relayer}" "$relayer_port:3000"
   forward svc/anvil-gateway-anvil-node "$gateway_port:8546"
   forward svc/anvil-host-anvil-node "$host_port:8545"
-  forward svc/coprocessor-1-solana-host-listener "$leaf_proof_port:8080"
+  forward svc/coprocessor-1-solana-leaf-proof-server "$leaf_proof_port:8080"
   sleep 2
   while read -r forward_pid; do
     if ! kill -0 "$forward_pid" 2>/dev/null; then

@@ -1,0 +1,31 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n        SELECT 0::SMALLINT AS \"height!\", commitment AS \"node!\"\n        FROM solana_encrypted_state_leaves\n        WHERE encrypted_state = $1 AND leaf_index = $2\n        UNION ALL\n        SELECT node.height, node.node\n        FROM solana_encrypted_state_nodes AS node\n        JOIN UNNEST($3::SMALLINT[], $4::BIGINT[]) AS path(height, node_index)\n            USING (height, node_index)\n        WHERE node.encrypted_state = $1\n        ",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "height!",
+        "type_info": "Int2"
+      },
+      {
+        "ordinal": 1,
+        "name": "node!",
+        "type_info": "Bytea"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Bytea",
+        "Int8",
+        "Int2Array",
+        "Int8Array"
+      ]
+    },
+    "nullable": [
+      null,
+      null
+    ]
+  },
+  "hash": "db8410b6551c6a7dafef2c57219cdf56cf882c0871101b8d620d9e48b99ce705"
+}

@@ -585,8 +585,8 @@ Pinned by `rejects_more_than_max_ops`, `cost_snapshot_fhe_execute_max_steps` and
 passes those flags.
 
 **47. [RETIRED]** The standalone proof service is gone (RFC 035, DD-048). The
-leaf record lives in each coprocessor's host listener, served behind an API
-key; the connector fans out to every configured coprocessor, so one behind
+leaf record lives in each coprocessor's database, written by its host
+listener and served by its leaf-proof server behind an API key; the connector fans out to every configured coprocessor, so one behind
 or unreachable cannot sink a request another can serve. Authorization was
 never its to give (#30).
 

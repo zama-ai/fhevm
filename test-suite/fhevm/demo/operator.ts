@@ -1,4 +1,4 @@
-// operator — the demo's one privileged HTTP service: the keeper's keys, the host listener's leaf-proof token and
+// operator — the demo's one privileged HTTP service: the keeper's keys, the leaf-proof server's token and
 // the mock-USDC faucet live here and nowhere in the browser or the dev server.
 //
 // Routes (JSON in, JSON out; every route but /health carries the boot authorization):

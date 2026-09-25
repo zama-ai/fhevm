@@ -127,7 +127,7 @@ Note that recommendations assume a smoke test that runs transactions/requests at
 
 ### solana-host-listener
 
-The listener resumes from its checkpoint through the stream while the Yellowstone provider can still replay it, about 24 hours for a hosted provider. Past that window it catches up from the archive RPC, one `getBlock` per slot. A day of mainnet takes hours, so the lag alarm fires during a long catch-up too; `archive_catch_up_active` at 1 with the lag falling means it is progressing, and a flat lag with rising reconnects means it is stuck. A fatal ingestion error exits the process, so it shows up as container restarts, not as a metric.
+The listener resumes from its checkpoint through the stream while the Yellowstone provider can still replay it, about 24 hours for a hosted provider. Past that window it catches up from the archive RPC, with one `getBlock` per slot and one `getTransaction` per host transaction. A day of mainnet takes hours, so the lag alarm fires during a long catch-up too; `archive_catch_up_active` at 1 with the lag falling means it is progressing. A listener that fails the same slot, on the stream or during catch-up, retries it every 2 seconds: `failures_since_commit` keeps rising, and the lag and reconnect alarms fire too. `applied_slot` names the last committed slot and the listener's `ingestion interrupted` log line the error. The `/healthz` route checks only the database. A fatal ingestion error exits the process, so it shows up as container restarts, not as a metric.
 
 #### Metric Name: `coprocessor_solana_host_listener_applied_block_timestamp_seconds`
  - **Type**: Gauge (labeled by `host_chain_id`)
@@ -156,6 +156,12 @@ The listener resumes from its checkpoint through the stream while the Yellowston
  - **Alarm**: If the counter increases repeatedly.
     - **Recommendation**: more than 3 reconnects in 10 minutes, i.e. `increase(counter[10m]) > 3`.
 
+#### Metric Name: `coprocessor_solana_host_listener_failures_since_commit`
+ - **Type**: Gauge (labeled by `host_chain_id`)
+ - **Description**: Interruptions the listener resumed from its checkpoint since it last committed a block, on the stream or during catch-up. A commit, or a restart, resets it to 0. A stream that drops now and then moves it up and back to 0; a slot that fails again and again, or a provider that stays unreachable, keeps it rising.
+ - **Alarm**: If it reaches 5, the listener has resumed five times without committing a block: a stuck slot or a provider outage. The `ingestion interrupted` log line names the error, and `applied_slot` the last committed slot.
+    - **Recommendation**: `gauge >= 5`.
+
 #### Metric Name: `coprocessor_solana_host_listener_handle_check_failures_total`
  - **Type**: Counter (labeled by `host_chain_id`)
  - **Description**: Steps whose emitted result handle did not match the handle the listener re-derived. Each one is held back: its computation and every computation that depends on it end as errors, while the rest of the block is ingested. It means the listener's derivation or step decoding is wrong. The log line `solana handle check failed` names the slot, signature, step and both handles; the repair is in the host-listener README.
@@ -163,9 +169,9 @@ The listener resumes from its checkpoint through the stream while the Yellowston
     - **Recommendation**: `increase(counter[5m]) > 0`.
 
 #### Container restarts
- - **Description**: A fatal ingestion error, such as a block whose ancestry does not match the checkpoint or a provider that cannot replay from any slot, exits the listener, which then resumes from its checkpoint. A restart that catches up quickly never trips the lag alarm, so restarts need their own alarm.
- - **Alarm**: Any restart.
-    - **Recommendation**: `increase(kube_pod_container_status_restarts_total{container="solana-host-listener"}[15m]) > 0`.
+ - **Description**: A fatal ingestion error, such as a block whose ancestry does not match the checkpoint or a provider that cannot replay from any slot, exits the listener, which then resumes from its checkpoint. A restart that catches up quickly never trips the lag alarm, so restarts need their own alarm. The leaf proofs come from the separate `solana-leaf-proof-server` container, which keeps serving through a listener restart; it restarts only when it crashes or its database is unreachable.
+ - **Alarm**: Any restart of either container.
+    - **Recommendation**: `increase(kube_pod_container_status_restarts_total{container=~"solana-host-listener|solana-leaf-proof-server"}[15m]) > 0`.
 
 ### zkproof-worker
 

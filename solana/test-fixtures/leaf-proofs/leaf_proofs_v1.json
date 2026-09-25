@@ -1,5 +1,5 @@
 {
-  "_comment": "The leaf-proof wire between the host listener (`POST /v1/solana/leaf-proofs`, coprocessor/fhevm-engine/host-listener/src/http_server.rs) and the KMS connector (kms-connector/crates/kms-worker/src/core/solana/proof.rs). Both sides pin their spelling against this file: the listener deserializes `request` and serializes every `proofs` variant; the connector serializes `request` and deserializes `proofs`. Byte fields are 32 bytes as lowercase hex without a prefix.",
+  "_comment": "The leaf-proof wire between the leaf-proof server (`POST /v1/solana/leaf-proofs`, coprocessor/fhevm-engine/host-listener/src/http_server.rs) and the KMS connector (kms-connector/crates/kms-worker/src/core/solana/proof.rs). Both sides pin their spelling against this file: the server deserializes `request` and serializes every `proofs` variant; the connector serializes `request` and deserializes `proofs`. Byte fields are 32 bytes as lowercase hex without a prefix.",
   "maxLeavesPerRequest": 64,
   "request": {
     "leaves": [

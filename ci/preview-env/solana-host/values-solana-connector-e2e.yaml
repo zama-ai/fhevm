@@ -1,7 +1,7 @@
 # Merge after values-kms-connector-e2e.yaml for every KMS party.
 # commonConfig.hostChains is a map, so this adds the Solana chain next to the party's EVM chains.
 # $(...) placeholders resolve against the kms-worker env below. deploy-preview.sh sets
-# solanaProofEndpoints to one listener Service per coprocessor.
+# solanaProofEndpoints to one leaf-proof server Service per coprocessor.
 commonConfig:
   hostChains:
     solana:

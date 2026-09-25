@@ -15,9 +15,11 @@ solanaHostListener:
     - name: SOLANA_GRPC_X_TOKEN
       valueFrom:
         secretKeyRef: {name: solana-rpc, key: grpc-x-token, optional: true}
-    - name: SOLANA_PROOF_API_KEY
-      valueFrom:
-        secretKeyRef: {name: solana-proof-api, key: api-key}
     - name: SOLANA_HOST_PROGRAM_ID
       valueFrom:
         configMapKeyRef: {name: solana-host-addresses, key: zama_host.address}
+  proofServer:
+    env:
+      - name: SOLANA_PROOF_API_KEY
+        valueFrom:
+          secretKeyRef: {name: solana-proof-api, key: api-key}

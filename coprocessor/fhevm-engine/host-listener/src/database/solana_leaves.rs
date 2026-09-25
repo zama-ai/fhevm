@@ -14,13 +14,19 @@
 //! Repair replays slots the record already holds: the operator reverts the compute rows
 //! and the checkpoint, and leaves stay. A replayed block's leaves are recomputed and
 //! must equal the recorded ones exactly ([`load_block_leaves`]).
+//!
+//! Each append also records the MMR nodes it completes, so a proof reads its path by
+//! position ([`load_proof`]) instead of rebuilding the mountain from every leaf. Node
+//! `(height, index)` covers leaves `[index << height, (index + 1) << height)`: mountains
+//! are aligned to their size, so a node's position never depends on the leaf count.
+//! Height-0 path entries are leaf rows; only nodes of height 1 and above are stored.
 
 use std::collections::{BTreeMap, BTreeSet};
 
 use sqlx::Error as SqlxError;
 use zama_solana_acl::{
-    historical_access_leaf_commitment, mmr_append,
-    public_decrypt_leaf_commitment, AclError,
+    historical_access_leaf_commitment, mmr_append, mmr_leaf_node, mmr_node,
+    public_decrypt_leaf_commitment, AclError, MmrProof,
 };
 
 use crate::database::tfhe_event_propagate::Transaction;
@@ -83,11 +89,22 @@ pub struct StagedLeaf {
     pub transaction_index: u64,
 }
 
+/// An MMR node of height 1 or more, over leaves `[index << height, (index + 1) << height)`.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct StagedNode {
+    pub encrypted_store: [u8; 32],
+    pub height: u8,
+    pub index: u64,
+    pub node: [u8; 32],
+}
+
 #[derive(Clone, Debug, Default, PartialEq, Eq)]
 pub struct BlockLeafReduction {
     /// Every account the block advanced, with its state after the block.
     pub states: BTreeMap<[u8; 32], EncryptedStoreHistory>,
     pub leaves: Vec<StagedLeaf>,
+    /// The nodes the block's appends completed.
+    pub nodes: Vec<StagedNode>,
     /// Accounts whose record already holds this block, with the leaves the block
     /// recomputes for them. They must equal the recorded leaves of the same slot.
     pub replayed: BTreeMap<[u8; 32], Vec<StagedLeaf>>,
@@ -156,7 +173,7 @@ pub fn reduce_block_leaves(
                     state.last_slot = slot;
                     apply_write(
                         state,
-                        &mut reduction.leaves,
+                        &mut reduction,
                         write,
                         transaction.transaction_index,
                     )?;
@@ -242,7 +259,7 @@ fn leaf_count_after(
 
 fn apply_write(
     state: &mut EncryptedStoreHistory,
-    leaves: &mut Vec<StagedLeaf>,
+    reduction: &mut BlockLeafReduction,
     write: &EncryptedStoreWrite,
     transaction_index: u64,
 ) -> Result<(), LeafReduceError> {
@@ -274,14 +291,62 @@ fn apply_write(
             key,
             transaction_index,
         );
+        reduction.nodes.extend(completed_nodes(
+            account,
+            &state.peaks,
+            state.leaf_count,
+            &leaf.commitment,
+        ));
         mmr_append(&mut state.peaks, &mut state.leaf_count, leaf.commitment)
             .map_err(|error| LeafReduceError::Mmr {
                 encrypted_store: account,
                 error,
             })?;
-        leaves.push(leaf);
+        reduction.leaves.push(leaf);
     }
     Ok(())
+}
+
+/// The nodes that appending `commitment` as leaf `leaf_index` completes, lowest first. They
+/// are the merges `mmr_append` performs: the new leaf node absorbs one peak, newest first,
+/// per trailing one bit of `leaf_index`.
+fn completed_nodes(
+    encrypted_store: [u8; 32],
+    peaks: &[[u8; 32]],
+    leaf_index: u64,
+    commitment: &[u8; 32],
+) -> Vec<StagedNode> {
+    let mut node = mmr_leaf_node(commitment);
+    let merges = leaf_index.trailing_ones() as usize;
+    peaks
+        .iter()
+        .rev()
+        .take(merges)
+        .zip(1u8..)
+        .map(|(left, height)| {
+            node = mmr_node(left, &node);
+            StagedNode {
+                encrypted_store,
+                height,
+                index: leaf_index >> height,
+                node,
+            }
+        })
+        .collect()
+}
+
+/// The positions of leaf `leaf_index`'s path siblings among `leaf_count` leaves, from
+/// height 0 up to below its mountain's peak. `(0, i)` is leaf `i`; above it, `(k, j)` is
+/// node `j` of height `k`. `None` when the leaf is not below `leaf_count`.
+fn proof_path(leaf_index: u64, leaf_count: u64) -> Option<Vec<(u8, u64)>> {
+    if leaf_index >= leaf_count {
+        return None;
+    }
+    // The leaf's mountain is the one of the highest bit where its index and the count
+    // differ: every larger mountain ends at or before the leaf, since each is aligned.
+    let height =
+        (u64::BITS - 1 - (leaf_index ^ leaf_count).leading_zeros()) as u8;
+    Some((0..height).map(|k| (k, (leaf_index >> k) ^ 1)).collect())
 }
 
 /// A historical-access leaf for `key`, or the public-decrypt leaf when `key` is `None`.
@@ -375,7 +440,7 @@ pub async fn load_encrypted_store_histories(
         .collect()
 }
 
-/// Persists a block's reduction: advanced state cursors upserted, leaves appended.
+/// Persists a block's reduction: advanced state cursors upserted, leaves and nodes appended.
 pub async fn store_block_leaves(
     tx: &mut Transaction<'_>,
     slot: u64,
@@ -405,26 +470,77 @@ pub async fn store_block_leaves(
         .execute(tx.as_mut())
         .await?;
     }
-    for leaf in &reduction.leaves {
-        let leaf_index = sql_i64(leaf.leaf_index, "leaf_index")?;
-        let block_slot = sql_i64(slot, "block_slot")?;
-        let transaction_index =
-            sql_i64(leaf.transaction_index, "transaction_index")?;
+    let leaves = &reduction.leaves;
+    if !leaves.is_empty() {
         sqlx::query!(
             r#"
             INSERT INTO solana_encrypted_state_leaves
                 (encrypted_state, leaf_index, commitment, leaf_kind, handle,
                  allowed_key, block_slot, transaction_index)
-            VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
+            SELECT encrypted_state, leaf_index, commitment, leaf_kind, handle,
+                   allowed_key, $7, transaction_index
+            FROM UNNEST($1::BYTEA[], $2::BIGINT[], $3::BYTEA[], $4::SMALLINT[],
+                        $5::BYTEA[], $6::BYTEA[], $8::BIGINT[])
+                AS leaf(encrypted_state, leaf_index, commitment, leaf_kind, handle,
+                        allowed_key, transaction_index)
             "#,
-            &leaf.encrypted_store[..],
-            leaf_index,
-            &leaf.commitment[..],
-            leaf.kind as i16,
-            &leaf.handle[..],
-            leaf.key.as_ref().map(|key| key.to_vec()),
-            block_slot,
-            transaction_index,
+            &leaves
+                .iter()
+                .map(|leaf| leaf.encrypted_store.to_vec())
+                .collect::<Vec<_>>(),
+            &leaves
+                .iter()
+                .map(|leaf| sql_i64(leaf.leaf_index, "leaf_index"))
+                .collect::<Result<Vec<_>, _>>()?,
+            &leaves
+                .iter()
+                .map(|leaf| leaf.commitment.to_vec())
+                .collect::<Vec<_>>(),
+            &leaves
+                .iter()
+                .map(|leaf| leaf.kind as i16)
+                .collect::<Vec<_>>(),
+            &leaves
+                .iter()
+                .map(|leaf| leaf.handle.to_vec())
+                .collect::<Vec<_>>(),
+            &leaves
+                .iter()
+                .map(|leaf| leaf.key.map(|key| key.to_vec()))
+                .collect::<Vec<_>>() as &[Option<Vec<u8>>],
+            sql_i64(slot, "block_slot")?,
+            &leaves
+                .iter()
+                .map(|leaf| sql_i64(
+                    leaf.transaction_index,
+                    "transaction_index"
+                ))
+                .collect::<Result<Vec<_>, _>>()?,
+        )
+        .execute(tx.as_mut())
+        .await?;
+    }
+    let nodes = &reduction.nodes;
+    if !nodes.is_empty() {
+        sqlx::query!(
+            r#"
+            INSERT INTO solana_encrypted_state_nodes
+                (encrypted_state, height, node_index, node)
+            SELECT * FROM UNNEST($1::BYTEA[], $2::SMALLINT[], $3::BIGINT[], $4::BYTEA[])
+            "#,
+            &nodes
+                .iter()
+                .map(|node| node.encrypted_store.to_vec())
+                .collect::<Vec<_>>(),
+            &nodes
+                .iter()
+                .map(|node| i16::from(node.height))
+                .collect::<Vec<_>>(),
+            &nodes
+                .iter()
+                .map(|node| sql_i64(node.index, "node_index"))
+                .collect::<Result<Vec<_>, _>>()?,
+            &nodes.iter().map(|node| node.node.to_vec()).collect::<Vec<_>>(),
         )
         .execute(tx.as_mut())
         .await?;
@@ -478,20 +594,14 @@ pub async fn load_checkpoint(
     .transpose()
 }
 
-/// One state's recorded leaves as a proof reader needs them: the cursor row and
-/// the ordered leaves below its `leaf_count`. Leaves committed after the state
-/// row was read are cut off by that bound, so the two always agree.
-#[derive(Clone, Debug, PartialEq, Eq)]
-pub struct RecordedLeaves {
-    pub state: EncryptedStoreHistory,
-    pub leaves: Vec<StagedLeaf>,
-}
-
-pub async fn load_recorded_leaves(
+/// The recorded cursor of `account`, read outside ingestion. Leaves and nodes are
+/// immutable once written and the cursor only grows, so reads bounded by this
+/// `leaf_count` agree with it while later blocks commit.
+pub async fn load_encrypted_store_history(
     pool: &sqlx::PgPool,
     account: [u8; 32],
-) -> Result<Option<RecordedLeaves>, SqlxError> {
-    let Some(row) = sqlx::query!(
+) -> Result<Option<EncryptedStoreHistory>, SqlxError> {
+    let row = sqlx::query!(
         r#"
         SELECT leaf_count, peaks, history_complete, last_slot
         FROM solana_encrypted_states
@@ -500,44 +610,163 @@ pub async fn load_recorded_leaves(
         &account[..],
     )
     .fetch_optional(pool)
-    .await?
-    else {
+    .await?;
+    row.map(|row| {
+        Ok(EncryptedStoreHistory {
+            leaf_count: sql_u64(row.leaf_count, "leaf_count")?,
+            peaks: bytes32_vec(&row.peaks)?,
+            history_complete: row.history_complete,
+            last_slot: sql_u64(row.last_slot, "last_slot")?,
+        })
+    })
+    .transpose()
+}
+
+/// A leaf row as `find_leaf` reads it.
+struct LeafRow {
+    leaf_index: i64,
+    commitment: Vec<u8>,
+    leaf_kind: i16,
+    handle: Vec<u8>,
+    allowed_key: Option<Vec<u8>>,
+    transaction_index: i64,
+}
+
+/// The first leaf of `account` below `leaf_count` that records `kind` for `handle` and
+/// `key`. The oldest match sits in the oldest mountain, whose path changes least.
+pub async fn find_leaf(
+    pool: &sqlx::PgPool,
+    account: [u8; 32],
+    kind: LeafKind,
+    handle: [u8; 32],
+    key: Option<[u8; 32]>,
+    leaf_count: u64,
+) -> Result<Option<StagedLeaf>, SqlxError> {
+    let leaf_count = sql_i64(leaf_count, "leaf_count")?;
+    // Two statements, because `allowed_key IS NOT DISTINCT FROM $4` cannot use the
+    // semantic index.
+    let row = match key {
+        Some(key) => {
+            sqlx::query_as!(
+                LeafRow,
+                r#"
+                SELECT leaf_index, commitment, leaf_kind, handle, allowed_key,
+                       transaction_index
+                FROM solana_encrypted_state_leaves
+                WHERE encrypted_state = $1 AND leaf_kind = $2 AND handle = $3
+                  AND allowed_key = $4 AND leaf_index < $5
+                ORDER BY leaf_index
+                LIMIT 1
+                "#,
+                &account[..],
+                kind as i16,
+                &handle[..],
+                &key[..],
+                leaf_count,
+            )
+            .fetch_optional(pool)
+            .await?
+        }
+        None => {
+            sqlx::query_as!(
+                LeafRow,
+                r#"
+                SELECT leaf_index, commitment, leaf_kind, handle, allowed_key,
+                       transaction_index
+                FROM solana_encrypted_state_leaves
+                WHERE encrypted_state = $1 AND leaf_kind = $2 AND handle = $3
+                  AND allowed_key IS NULL AND leaf_index < $4
+                ORDER BY leaf_index
+                LIMIT 1
+                "#,
+                &account[..],
+                kind as i16,
+                &handle[..],
+                leaf_count,
+            )
+            .fetch_optional(pool)
+            .await?
+        }
+    };
+    row.map(|row| {
+        leaf_row(
+            &account,
+            row.leaf_index,
+            &row.commitment,
+            row.leaf_kind,
+            &row.handle,
+            row.allowed_key.as_deref(),
+            row.transaction_index,
+        )
+    })
+    .transpose()
+}
+
+/// The authentication path of leaf `leaf_index` among `account`'s first `leaf_count`
+/// leaves, read by position in one statement. `None` when the leaf is not below
+/// `leaf_count` or a path row is missing; the caller still verifies the path.
+pub async fn load_proof(
+    pool: &sqlx::PgPool,
+    account: [u8; 32],
+    leaf_index: u64,
+    leaf_count: u64,
+) -> Result<Option<MmrProof>, SqlxError> {
+    let Some(path) = proof_path(leaf_index, leaf_count) else {
         return Ok(None);
     };
-    let state = EncryptedStoreHistory {
-        leaf_count: sql_u64(row.leaf_count, "leaf_count")?,
-        peaks: bytes32_vec(&row.peaks)?,
-        history_complete: row.history_complete,
-        last_slot: sql_u64(row.last_slot, "last_slot")?,
+    let Some(&(_, sibling_leaf)) = path.first() else {
+        return Ok(Some(MmrProof {
+            leaf_index,
+            siblings: Vec::new(),
+        }));
     };
-    let leaf_count = sql_i64(state.leaf_count, "leaf_count")?;
+    let mut heights = Vec::new();
+    let mut indexes = Vec::new();
+    for &(height, index) in &path[1..] {
+        heights.push(i16::from(height));
+        indexes.push(sql_i64(index, "node_index")?);
+    }
     let rows = sqlx::query!(
         r#"
-        SELECT leaf_index, commitment, leaf_kind, handle, allowed_key, transaction_index
+        SELECT 0::SMALLINT AS "height!", commitment AS "node!"
         FROM solana_encrypted_state_leaves
-        WHERE encrypted_state = $1 AND leaf_index < $2
-        ORDER BY leaf_index
+        WHERE encrypted_state = $1 AND leaf_index = $2
+        UNION ALL
+        SELECT node.height, node.node
+        FROM solana_encrypted_state_nodes AS node
+        JOIN UNNEST($3::SMALLINT[], $4::BIGINT[]) AS path(height, node_index)
+            USING (height, node_index)
+        WHERE node.encrypted_state = $1
         "#,
         &account[..],
-        leaf_count,
+        sql_i64(sibling_leaf, "leaf_index")?,
+        &heights,
+        &indexes,
     )
     .fetch_all(pool)
     .await?;
-    let leaves = rows
+    let mut siblings = vec![None; path.len()];
+    for row in rows {
+        let node = bytes32(&row.node)?;
+        let Some(sibling) = usize::try_from(row.height)
+            .ok()
+            .and_then(|height| siblings.get_mut(height))
+        else {
+            return Ok(None);
+        };
+        *sibling = Some(if row.height == 0 {
+            mmr_leaf_node(&node)
+        } else {
+            node
+        });
+    }
+    Ok(siblings
         .into_iter()
-        .map(|row| {
-            leaf_row(
-                &account,
-                row.leaf_index,
-                &row.commitment,
-                row.leaf_kind,
-                &row.handle,
-                row.allowed_key.as_deref(),
-                row.transaction_index,
-            )
-        })
-        .collect::<Result<Vec<_>, SqlxError>>()?;
-    Ok(Some(RecordedLeaves { state, leaves }))
+        .collect::<Option<Vec<_>>>()
+        .map(|siblings| MmrProof {
+            leaf_index,
+            siblings,
+        }))
 }
 
 /// The leaves `slot` recorded for `accounts`, grouped by account in leaf order. A
@@ -609,6 +838,7 @@ fn leaf_row(
 #[cfg(test)]
 mod tests {
     use super::*;
+    use zama_solana_acl::mmr_build_proof;
 
     const STATE: [u8; 32] = [0xAC; 32];
     const OWNER: [u8; 32] = [0xA1; 32];
@@ -776,6 +1006,59 @@ mod tests {
         assert!(replay.states.is_empty());
         assert!(replay.leaves.is_empty());
         assert_eq!(replay.replayed, BTreeMap::from([(STATE, first.leaves)]));
+    }
+
+    /// Growing a store one block at a time, the recorded nodes and leaves hold every
+    /// path at every size: the path read by position equals the one rebuilt from all leaves.
+    #[test]
+    fn recorded_nodes_hold_every_proof_path() {
+        let mut states = BTreeMap::new();
+        let mut commitments = Vec::new();
+        let mut nodes = BTreeMap::new();
+        for leaf_count in 1u64..=33 {
+            let reduction = reduce_block_leaves(
+                leaf_count,
+                &[transaction(vec![write(
+                    leaf_count - 1,
+                    [leaf_count as u8; 32],
+                    vec![OWNER],
+                    false,
+                )])],
+                states,
+            )
+            .unwrap();
+            commitments
+                .extend(reduction.leaves.iter().map(|leaf| leaf.commitment));
+            nodes.extend(
+                reduction
+                    .nodes
+                    .iter()
+                    .map(|node| ((node.height, node.index), node.node)),
+            );
+            assert_eq!(
+                nodes.len() as u64,
+                leaf_count - u64::from(leaf_count.count_ones())
+            );
+            for leaf_index in 0..leaf_count {
+                let siblings = proof_path(leaf_index, leaf_count)
+                    .unwrap()
+                    .into_iter()
+                    .map(|(height, index)| match height {
+                        0 => mmr_leaf_node(&commitments[index as usize]),
+                        _ => nodes[&(height, index)],
+                    })
+                    .collect();
+                assert_eq!(
+                    Some(MmrProof {
+                        leaf_index,
+                        siblings
+                    }),
+                    mmr_build_proof(&commitments, leaf_index)
+                );
+            }
+            assert_eq!(proof_path(leaf_count, leaf_count), None);
+            states = reduction.states;
+        }
     }
 
     #[test]
