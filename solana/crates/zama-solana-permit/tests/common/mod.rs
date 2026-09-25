@@ -326,7 +326,7 @@ pub fn extra_data(kms_context_id: [u8; 32], kms_epoch_id: [u8; 32]) -> Vec<u8> {
 /// The reference permit in transport form: two scopes of one program, in byte order.
 pub fn reference_wire() -> PermitWireFields {
     PermitWireFields {
-        user_pubkey: bytes32(USER_PUBKEY_HEX).to_vec(),
+        user_address: bytes32(USER_PUBKEY_HEX).to_vec(),
         transport_key: reference_transport_key(),
         allowed_scopes: reference_scopes(),
         start_timestamp: START_TIMESTAMP,
@@ -382,7 +382,7 @@ pub fn worst_case_wire(scope_count: usize) -> PermitWireFields {
         // normative `valid` record, so it has to be a permit that can exist and be signed.
         // Its base58 form is 44 characters like every other identity here, so the size
         // claims made against this fixture are unaffected.
-        user_pubkey: pubkey_of_seed(USER_SEED).as_bytes().to_vec(),
+        user_address: pubkey_of_seed(USER_SEED).as_bytes().to_vec(),
         transport_key: reference_transport_key(),
         allowed_scopes: scopes.iter().map(|scope| scope.to_vec()).collect(),
         start_timestamp: zama_solana_permit::MAX_START_TIMESTAMP,
@@ -471,7 +471,7 @@ pub fn pseudo_valid_wire(seed: u64) -> PermitWireFields {
     };
 
     PermitWireFields {
-        user_pubkey: pseudo_identity(&mut state).to_vec(),
+        user_address: pseudo_identity(&mut state).to_vec(),
         transport_key: transport_key_bytes(&seed.to_le_bytes()),
         allowed_scopes: scopes.iter().map(|scope| scope.to_vec()).collect(),
         start_timestamp,
@@ -512,12 +512,12 @@ pub fn sign_with_seed(seed: &[u8; 32], message: &[u8]) -> Signature {
 /// The layout bytes are literals here, not the crate's constants: this helper plays
 /// the wallet, and a test that borrowed the crate's idea of the envelope could not
 /// catch the crate getting the envelope wrong.
-pub fn envelope_over_text(user_pubkey: &Identity, text: &str) -> Vec<u8> {
+pub fn envelope_over_text(user_address: &Identity, text: &str) -> Vec<u8> {
     let mut out = Vec::with_capacity(18 + 32 + text.len());
     out.extend_from_slice(b"\xffsolana offchain");
     out.push(1); // envelope version
     out.push(1); // signer count
-    out.extend_from_slice(user_pubkey.as_bytes());
+    out.extend_from_slice(user_address.as_bytes());
     out.extend_from_slice(text.as_bytes());
     out
 }

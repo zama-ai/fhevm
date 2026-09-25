@@ -92,9 +92,9 @@ pub enum ZamaHostError {
     /// A delegation tuple is self-referential, expired, or otherwise invalid.
     #[msg("delegation tuple is invalid")]
     InvalidDelegation,
-    /// The delegation has already been revoked.
-    #[msg("delegation has already been revoked")]
-    DelegationRevoked,
+    /// A revocation found no grant: the record was revoked already, as EVM's `NotDelegatedYet`.
+    #[msg("delegation is not granted")]
+    NotDelegatedYet,
     /// Delegation state was already updated in the current slot.
     #[msg("delegation was already updated in the current slot")]
     DelegationUpdatedInCurrentSlot,
@@ -311,4 +311,12 @@ pub enum ZamaHostError {
     /// transaction it signed, so it must pause at the top level.
     #[msg("a wallet pauser must pause in a top-level instruction")]
     WalletPauseThroughCpi,
+    /// A create named a scope account the store's program does not own. This also refuses a
+    /// program id (the loader owns it) and the wildcard sentinel (an absent address is System-owned).
+    #[msg("encrypted store scope is not an account of the store's program")]
+    EncryptedStoreScopeNotProgramAccount,
+    /// A delegation's scope is not an account `program` owns, so no store of `program` can carry
+    /// it. The wildcard row is exempt.
+    #[msg("delegation scope is not an account of the delegated program")]
+    DelegationScopeNotProgramAccount,
 }

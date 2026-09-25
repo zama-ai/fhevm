@@ -80,7 +80,7 @@ describe('decoding an EncryptedStore account', () => {
 
     expect(state.program).toBe(base58.encode(bytes32(0x11)));
     expect(state.authority).toBe(base58.encode(bytes32(0x22)));
-    expect(state.scope).toEqual(bytes32(0x33));
+    expect(state.scope).toBe(base58.encode(bytes32(0x33)));
     expect(state.slots).toEqual([{ key: bytes32(0x44), handle: bytes32(0x55) }]);
     expect(state.leafCount).toBe(3n);
     expect(state.peaks).toEqual([bytes32(0x71), bytes32(0x72)]);
@@ -116,17 +116,14 @@ describe('decoding an EncryptedStore account', () => {
 });
 
 describe('the account address', () => {
-  const HOST_PROGRAM = bytes32(0x99);
+  const address = (fill: number) => base58.encode(bytes32(fill)) as Address;
+  const HOST_PROGRAM = address(0x99);
 
   it('is the PDA of the tag and the four identity fields, in that order', async () => {
-    const seeds = {
-      program: bytes32(0x11),
-      authority: bytes32(0x22),
-      scope: bytes32(0x33),
-    };
+    const seeds = { program: address(0x11), authority: address(0x22), scope: address(0x33) };
     const [expected] = await getProgramDerivedAddress({
-      programAddress: base58.encode(HOST_PROGRAM) as Address,
-      seeds: [SOLANA_ENCRYPTED_STORE_SEED, seeds.program, seeds.authority, seeds.scope],
+      programAddress: HOST_PROGRAM,
+      seeds: [SOLANA_ENCRYPTED_STORE_SEED, bytes32(0x11), bytes32(0x22), bytes32(0x33)],
     });
     expect(await solanaEncryptedStoreAddress(HOST_PROGRAM, seeds)).toBe(expected);
     expect(new TextDecoder().decode(SOLANA_ENCRYPTED_STORE_SEED)).toBe('encrypted-state');

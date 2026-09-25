@@ -212,7 +212,7 @@ mod tests {
         let mut state = EncryptedStore {
             program: Pubkey::new_unique(),
             authority: Pubkey::new_unique(),
-            scope: [tag; 32],
+            scope: Pubkey::new_from_array([tag; 32]),
             slots: vec![EncryptedSlot {
                 key: [tag; 32],
                 handle: [tag; 32],

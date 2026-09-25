@@ -63,6 +63,9 @@ impl From<&ProtocolEventKind> for KmsPollTarget {
             ProtocolEventKind::PublicDecryption(e) => {
                 Self::PublicDecryption(u256_to_request_id(e.decryptionId))
             }
+            ProtocolEventKind::SolanaPublicDecryption(e) => {
+                Self::PublicDecryption(u256_to_request_id(e.decryption_id))
+            }
             ProtocolEventKind::UserDecryption(e) => {
                 Self::UserDecryption(u256_to_request_id(e.decryptionId))
             }

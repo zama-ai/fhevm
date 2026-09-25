@@ -1,12 +1,10 @@
-import { readFileSync } from 'node:fs';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import type { FhevmRuntime } from '../../core/types/coreFhevmRuntime.js';
 import { RelayerAsyncRequest } from '../../core/modules/relayer/module/RelayerAsyncRequest.js';
 import { bytesToHex } from '../../core/base/bytes.js';
-import { hexToBytes } from '../proof.js';
 import {
-  buildSolanaPublicDecryptExtraData,
   publicDecryptCertificate,
+  solanaPublicDecryptExtraData,
   type SolanaPublicDecryptCertificateParameters,
 } from './publicDecryptCertificate.js';
 import { asBytes32Hex } from '../../core/base/bytes.js';
@@ -34,61 +32,18 @@ const context = {
   runtime: { config: { auth: { type: 'ApiKeyHeader', value: 'test' } } } as FhevmRuntime,
 };
 
-const requestExtraData = () => bytesToHex(buildSolanaPublicDecryptExtraData(contextId, account));
+const requestExtraData = () => solanaPublicDecryptExtraData(contextId);
 
-////////////////////////////////////////////////////////////////////////////////
-// The committed carrier byte vectors, run against this encoder.
-//
-// The fixture is shared with the connector (`solana_extra_data_byte_vectors.rs` runs the same
-// records against the Rust codec), and this runner is what keeps the two hand-mirrored layouts
-// pinned to each other. The `malformed` section exercises parsing, which only Rust does.
-////////////////////////////////////////////////////////////////////////////////
-
-/* eslint-disable @typescript-eslint/naming-convention -- the fixture's own field names are snake_case */
-
-interface ExtraDataVectors {
-  readonly schema: string;
-  readonly records: ReadonlyArray<{
-    readonly name: string;
-    readonly input: {
-      readonly context_id_hex: string;
-      readonly encrypted_store_hex: string;
-    };
-    readonly blob_hex: string;
-  }>;
-  readonly malformed: ReadonlyArray<{ readonly name: string }>;
-}
-
-/* eslint-enable @typescript-eslint/naming-convention */
-
-describe('committed extraData byte vectors (solana/test-fixtures/user-decrypt)', () => {
-  const extraData = JSON.parse(
-    readFileSync(
-      new URL('../../../../../solana/test-fixtures/user-decrypt/extra_data_v1.json', import.meta.url),
-      'utf8',
-    ),
-  ) as ExtraDataVectors;
-
-  it('recognizes the fixture schema and finds records to run', () => {
-    expect(extraData.schema).toBe('zama-solana-public-decrypt-extra-data/v1');
-    expect(extraData.records.length).toBeGreaterThan(0);
-    expect(extraData.malformed.length).toBeGreaterThan(0);
+describe('solanaPublicDecryptExtraData', () => {
+  it('is the v1 KMS routing of the context, with no store in it', () => {
+    expect(solanaPublicDecryptExtraData(contextId)).toBe(`0x01${'05'.repeat(32)}`);
   });
 
-  it.each(extraData.records.map((record) => [record.name, record] as const))('extraData blob: %s', (_name, record) => {
-    const blob = buildSolanaPublicDecryptExtraData(
-      hexToBytes(`0x${record.input.context_id_hex}`),
-      hexToBytes(`0x${record.input.encrypted_store_hex}`),
-    );
-    expect(blob).toHaveLength(65);
-    expect(bytesToHex(blob)).toBe(`0x${record.blob_hex}`);
-  });
-
-  it('refuses a field of the wrong width before anything is sent', () => {
-    expect(() => buildSolanaPublicDecryptExtraData(new Uint8Array(31), account)).toThrow('contextId must be 32 bytes');
-    expect(() => buildSolanaPublicDecryptExtraData(contextId, new Uint8Array(33))).toThrow(
-      'encryptedStore must be 32 bytes',
-    );
+  it('refuses a field of the wrong width before anything is sent', async () => {
+    expect(() => solanaPublicDecryptExtraData(new Uint8Array(31))).toThrow('contextId must be 32 bytes');
+    await expect(
+      publicDecryptCertificate(context, { ...parameters(), encryptedStore: new Uint8Array(33) }),
+    ).rejects.toThrow('encryptedStore must be 32 bytes');
   });
 });
 
@@ -129,6 +84,7 @@ describe('publicDecryptCertificate', () => {
     expect(JSON.parse(String((fetchMock.mock.calls[0]?.[1] as RequestInit).body))).toEqual({
       ciphertextHandles: [bytesToHex(handle)],
       extraData: requestExtraData(),
+      encryptedStores: [bytesToHex(account)],
     });
     expect(claim).toEqual({
       handle: bytesToHex(handle),

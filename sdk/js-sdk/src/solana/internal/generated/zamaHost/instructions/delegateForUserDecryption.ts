@@ -54,6 +54,7 @@ export type DelegateForUserDecryptionInstruction<
   TAccountPayer extends string | AccountMeta<string> = string,
   TAccountDelegator extends string | AccountMeta<string> = string,
   TAccountHostConfig extends string | AccountMeta<string> = string,
+  TAccountScope extends string | AccountMeta<string> = string,
   TAccountDelegationRecord extends string | AccountMeta<string> = string,
   TAccountSystemProgram extends string | AccountMeta<string> = '11111111111111111111111111111111',
   TRemainingAccounts extends readonly AccountMeta<string>[] = [],
@@ -68,6 +69,7 @@ export type DelegateForUserDecryptionInstruction<
         ? ReadonlySignerAccount<TAccountDelegator> & AccountSignerMeta<TAccountDelegator>
         : TAccountDelegator,
       TAccountHostConfig extends string ? ReadonlyAccount<TAccountHostConfig> : TAccountHostConfig,
+      TAccountScope extends string ? ReadonlyAccount<TAccountScope> : TAccountScope,
       TAccountDelegationRecord extends string ? WritableAccount<TAccountDelegationRecord> : TAccountDelegationRecord,
       TAccountSystemProgram extends string ? ReadonlyAccount<TAccountSystemProgram> : TAccountSystemProgram,
       ...TRemainingAccounts,
@@ -77,14 +79,14 @@ export type DelegateForUserDecryptionInstruction<
 export type DelegateForUserDecryptionInstructionData = {
   discriminator: ReadonlyUint8Array;
   delegate: Address;
-  authority: Address;
-  expirationSlot: bigint;
+  program: Address;
+  expiresAt: bigint;
 };
 
 export type DelegateForUserDecryptionInstructionDataArgs = {
   delegate: Address;
-  authority: Address;
-  expirationSlot: number | bigint;
+  program: Address;
+  expiresAt: number | bigint;
 };
 
 export function getDelegateForUserDecryptionInstructionDataEncoder(): FixedSizeEncoder<DelegateForUserDecryptionInstructionDataArgs> {
@@ -92,8 +94,8 @@ export function getDelegateForUserDecryptionInstructionDataEncoder(): FixedSizeE
     getStructEncoder([
       ['discriminator', fixEncoderSize(getBytesEncoder(), 8)],
       ['delegate', getAddressEncoder()],
-      ['authority', getAddressEncoder()],
-      ['expirationSlot', getU64Encoder()],
+      ['program', getAddressEncoder()],
+      ['expiresAt', getU64Encoder()],
     ]),
     (value) => ({
       ...value,
@@ -106,8 +108,8 @@ export function getDelegateForUserDecryptionInstructionDataDecoder(): FixedSizeD
   return getStructDecoder([
     ['discriminator', fixDecoderSize(getBytesDecoder(), 8)],
     ['delegate', getAddressDecoder()],
-    ['authority', getAddressDecoder()],
-    ['expirationSlot', getU64Decoder()],
+    ['program', getAddressDecoder()],
+    ['expiresAt', getU64Decoder()],
   ]);
 }
 
@@ -125,6 +127,7 @@ export type DelegateForUserDecryptionAsyncInput<
   TAccountPayer extends string = string,
   TAccountDelegator extends string = string,
   TAccountHostConfig extends string = string,
+  TAccountScope extends string = string,
   TAccountDelegationRecord extends string = string,
   TAccountSystemProgram extends string = string,
 > = {
@@ -134,18 +137,21 @@ export type DelegateForUserDecryptionAsyncInput<
   delegator: TransactionSigner<TAccountDelegator>;
   /** Singleton config PDA. */
   hostConfig?: Address<TAccountHostConfig>;
+  /** The application's scope: an account `program` owns, or the wildcard sentinel. */
+  scope: Address<TAccountScope>;
   delegationRecord: Address<TAccountDelegationRecord>;
   /** System program used for account creation. */
   systemProgram?: Address<TAccountSystemProgram>;
   delegate: DelegateForUserDecryptionInstructionDataArgs['delegate'];
-  authority: DelegateForUserDecryptionInstructionDataArgs['authority'];
-  expirationSlot: DelegateForUserDecryptionInstructionDataArgs['expirationSlot'];
+  program: DelegateForUserDecryptionInstructionDataArgs['program'];
+  expiresAt: DelegateForUserDecryptionInstructionDataArgs['expiresAt'];
 };
 
 export async function getDelegateForUserDecryptionInstructionAsync<
   TAccountPayer extends string,
   TAccountDelegator extends string,
   TAccountHostConfig extends string,
+  TAccountScope extends string,
   TAccountDelegationRecord extends string,
   TAccountSystemProgram extends string,
   TProgramAddress extends Address = typeof ZAMA_HOST_PROGRAM_ADDRESS,
@@ -154,6 +160,7 @@ export async function getDelegateForUserDecryptionInstructionAsync<
     TAccountPayer,
     TAccountDelegator,
     TAccountHostConfig,
+    TAccountScope,
     TAccountDelegationRecord,
     TAccountSystemProgram
   >,
@@ -164,6 +171,7 @@ export async function getDelegateForUserDecryptionInstructionAsync<
     TAccountPayer,
     TAccountDelegator,
     TAccountHostConfig,
+    TAccountScope,
     TAccountDelegationRecord,
     TAccountSystemProgram
   >
@@ -176,6 +184,7 @@ export async function getDelegateForUserDecryptionInstructionAsync<
     payer: { value: input.payer ?? null, isWritable: true },
     delegator: { value: input.delegator ?? null, isWritable: false },
     hostConfig: { value: input.hostConfig ?? null, isWritable: false },
+    scope: { value: input.scope ?? null, isWritable: false },
     delegationRecord: {
       value: input.delegationRecord ?? null,
       isWritable: true,
@@ -204,6 +213,7 @@ export async function getDelegateForUserDecryptionInstructionAsync<
       getAccountMeta('payer', accounts.payer),
       getAccountMeta('delegator', accounts.delegator),
       getAccountMeta('hostConfig', accounts.hostConfig),
+      getAccountMeta('scope', accounts.scope),
       getAccountMeta('delegationRecord', accounts.delegationRecord),
       getAccountMeta('systemProgram', accounts.systemProgram),
     ],
@@ -216,6 +226,7 @@ export async function getDelegateForUserDecryptionInstructionAsync<
     TAccountPayer,
     TAccountDelegator,
     TAccountHostConfig,
+    TAccountScope,
     TAccountDelegationRecord,
     TAccountSystemProgram
   >);
@@ -225,6 +236,7 @@ export type DelegateForUserDecryptionInput<
   TAccountPayer extends string = string,
   TAccountDelegator extends string = string,
   TAccountHostConfig extends string = string,
+  TAccountScope extends string = string,
   TAccountDelegationRecord extends string = string,
   TAccountSystemProgram extends string = string,
 > = {
@@ -234,18 +246,21 @@ export type DelegateForUserDecryptionInput<
   delegator: TransactionSigner<TAccountDelegator>;
   /** Singleton config PDA. */
   hostConfig: Address<TAccountHostConfig>;
+  /** The application's scope: an account `program` owns, or the wildcard sentinel. */
+  scope: Address<TAccountScope>;
   delegationRecord: Address<TAccountDelegationRecord>;
   /** System program used for account creation. */
   systemProgram?: Address<TAccountSystemProgram>;
   delegate: DelegateForUserDecryptionInstructionDataArgs['delegate'];
-  authority: DelegateForUserDecryptionInstructionDataArgs['authority'];
-  expirationSlot: DelegateForUserDecryptionInstructionDataArgs['expirationSlot'];
+  program: DelegateForUserDecryptionInstructionDataArgs['program'];
+  expiresAt: DelegateForUserDecryptionInstructionDataArgs['expiresAt'];
 };
 
 export function getDelegateForUserDecryptionInstruction<
   TAccountPayer extends string,
   TAccountDelegator extends string,
   TAccountHostConfig extends string,
+  TAccountScope extends string,
   TAccountDelegationRecord extends string,
   TAccountSystemProgram extends string,
   TProgramAddress extends Address = typeof ZAMA_HOST_PROGRAM_ADDRESS,
@@ -254,6 +269,7 @@ export function getDelegateForUserDecryptionInstruction<
     TAccountPayer,
     TAccountDelegator,
     TAccountHostConfig,
+    TAccountScope,
     TAccountDelegationRecord,
     TAccountSystemProgram
   >,
@@ -263,6 +279,7 @@ export function getDelegateForUserDecryptionInstruction<
   TAccountPayer,
   TAccountDelegator,
   TAccountHostConfig,
+  TAccountScope,
   TAccountDelegationRecord,
   TAccountSystemProgram
 > {
@@ -274,6 +291,7 @@ export function getDelegateForUserDecryptionInstruction<
     payer: { value: input.payer ?? null, isWritable: true },
     delegator: { value: input.delegator ?? null, isWritable: false },
     hostConfig: { value: input.hostConfig ?? null, isWritable: false },
+    scope: { value: input.scope ?? null, isWritable: false },
     delegationRecord: {
       value: input.delegationRecord ?? null,
       isWritable: true,
@@ -296,6 +314,7 @@ export function getDelegateForUserDecryptionInstruction<
       getAccountMeta('payer', accounts.payer),
       getAccountMeta('delegator', accounts.delegator),
       getAccountMeta('hostConfig', accounts.hostConfig),
+      getAccountMeta('scope', accounts.scope),
       getAccountMeta('delegationRecord', accounts.delegationRecord),
       getAccountMeta('systemProgram', accounts.systemProgram),
     ],
@@ -308,6 +327,7 @@ export function getDelegateForUserDecryptionInstruction<
     TAccountPayer,
     TAccountDelegator,
     TAccountHostConfig,
+    TAccountScope,
     TAccountDelegationRecord,
     TAccountSystemProgram
   >);
@@ -325,9 +345,11 @@ export type ParsedDelegateForUserDecryptionInstruction<
     delegator: TAccountMetas[1];
     /** Singleton config PDA. */
     hostConfig: TAccountMetas[2];
-    delegationRecord: TAccountMetas[3];
+    /** The application's scope: an account `program` owns, or the wildcard sentinel. */
+    scope: TAccountMetas[3];
+    delegationRecord: TAccountMetas[4];
     /** System program used for account creation. */
-    systemProgram: TAccountMetas[4];
+    systemProgram: TAccountMetas[5];
   };
   data: DelegateForUserDecryptionInstructionData;
 };
@@ -338,10 +360,10 @@ export function parseDelegateForUserDecryptionInstruction<
 >(
   instruction: Instruction<TProgram> & InstructionWithAccounts<TAccountMetas> & InstructionWithData<ReadonlyUint8Array>,
 ): ParsedDelegateForUserDecryptionInstruction<TProgram, TAccountMetas> {
-  if (instruction.accounts.length < 5) {
+  if (instruction.accounts.length < 6) {
     throw new SolanaError(SOLANA_ERROR__PROGRAM_CLIENTS__INSUFFICIENT_ACCOUNT_METAS, {
       actualAccountMetas: instruction.accounts.length,
-      expectedAccountMetas: 5,
+      expectedAccountMetas: 6,
     });
   }
   let accountIndex = 0;
@@ -356,6 +378,7 @@ export function parseDelegateForUserDecryptionInstruction<
       payer: getNextAccount(),
       delegator: getNextAccount(),
       hostConfig: getNextAccount(),
+      scope: getNextAccount(),
       delegationRecord: getNextAccount(),
       systemProgram: getNextAccount(),
     },

@@ -21,7 +21,7 @@ export function createBytes32s(length: number): string[] {
 // Create a ctHandle (bytes32) with a given chain ID (uint64) and FHE type (uint8)
 // A ctHandle has the following format:
 // [21 first random bytes from hashing] | index_21 | chainID_22...29 | fheType_30 | version_31
-export function createCtHandle(chainId: number = 0, fheType: number = 0): string {
+export function createCtHandle(chainId: number | bigint = 0, fheType: number = 0): string {
   if (chainId < 0 || chainId > UINT64_MAX) {
     throw new Error('chainId must be a valid uint64');
   }
@@ -46,7 +46,7 @@ export function createCtHandle(chainId: number = 0, fheType: number = 0): string
 }
 
 // Create a list of ctHandles (bytes32[])
-export function createCtHandles(length: number, chainId: number = 0, fheType: number = 0): string[] {
+export function createCtHandles(length: number, chainId: number | bigint = 0, fheType: number = 0): string[] {
   return Array.from({ length }, () => createCtHandle(chainId, fheType));
 }
 

@@ -49,6 +49,8 @@ jobs:
               - solana/**
               - coprocessor/fhevm-engine/host-listener/build.rs
               - coprocessor/fhevm-engine/host-listener/idl/zama_host.json
+              # zama-solana-request pins its handle cap to the Gateway's.
+              - gateway-contracts/contracts/Decryption.sol
             deployer:
               - .github/workflows/solana-tests.yml
               - .dockerignore

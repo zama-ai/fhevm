@@ -32,9 +32,10 @@ use zama_solana_test_kit::{
     cost_snapshot, deny_scope_record_account, empty_system_account, encrypted_store_account,
     event_authority, funded_system_account, handle_for_chain, host_svm as mollusk,
     host_svm_without_previous_bank_hash as mollusk_without_previous_bank_hash, label,
-    new_encrypted_store, new_encrypted_store_with_slot, rand_nonce_account, read_encrypted_store,
-    readonly, readonly_signer, serialized_account, signing, system_account, system_program_account,
-    writable, DECRYPTION_CONTRACT, GATEWAY_CHAIN_ID, INPUT_VERIFICATION_CONTRACT,
+    new_encrypted_store, new_encrypted_store_with_slot, program_owned_account, rand_nonce_account,
+    read_encrypted_store, readonly, readonly_signer, serialized_account, signing, system_account,
+    system_program_account, writable, DECRYPTION_CONTRACT, GATEWAY_CHAIN_ID,
+    INPUT_VERIFICATION_CONTRACT,
 };
 
 mod host_fixtures;
@@ -55,7 +56,7 @@ use host_fixtures::{
 #[derive(Clone, Copy)]
 struct App {
     authority: StoreAuthority,
-    scope: [u8; 32],
+    scope: Pubkey,
 }
 
 impl App {
@@ -72,8 +73,13 @@ impl App {
         }
     }
 
+    /// The account the scope names, owned by the application's program as creation requires.
+    fn scope_account(&self) -> (Pubkey, Account) {
+        (self.scope, program_owned_account(self.program()))
+    }
+
     /// Another application of the same program: a second scope.
-    fn sibling_scope(&self, scope: [u8; 32]) -> Self {
+    fn sibling_scope(&self, scope: Pubkey) -> Self {
         Self {
             authority: self.authority,
             scope,
@@ -250,7 +256,7 @@ fn shared_state(state: &EncryptedStore) -> zama_solana_acl::EncryptedStore {
     zama_solana_acl::EncryptedStore {
         program: state.program.to_bytes(),
         authority: state.authority.to_bytes(),
-        scope: state.scope,
+        scope: state.scope.to_bytes(),
         slots: state
             .slots
             .iter()
@@ -701,6 +707,7 @@ fn mollusk_create_encrypted_store_rejects_wallet_authority() {
         host::accounts::CreateEncryptedStore {
             payer: wallet,
             authority: wallet,
+            scope: app.scope_account().0,
             encrypted_store: output,
             host_config,
             system_program: system_program::ID,
@@ -708,7 +715,6 @@ fn mollusk_create_encrypted_store_rejects_wallet_authority() {
         host::instruction::CreateEncryptedStore {
             args: host::instructions::CreateEncryptedStoreArgs {
                 program: app.program(),
-                scope: app.scope,
                 authority_seeds: vec![],
             },
         },
@@ -717,6 +723,7 @@ fn mollusk_create_encrypted_store_rejects_wallet_authority() {
         (system_program::ID, system_program_account()),
         (wallet, funded_system_account()),
         (host_config, host_config_account),
+        app.scope_account(),
         (output, empty_system_account()),
     ];
     check_host_instruction(
@@ -743,6 +750,7 @@ fn mollusk_create_encrypted_store_rejects_seeds_from_another_program() {
         host::accounts::CreateEncryptedStore {
             payer,
             authority: app.key(),
+            scope: app.scope_account().0,
             encrypted_store: output,
             host_config,
             system_program: system_program::ID,
@@ -750,7 +758,6 @@ fn mollusk_create_encrypted_store_rejects_seeds_from_another_program() {
         host::instruction::CreateEncryptedStore {
             args: host::instructions::CreateEncryptedStoreArgs {
                 program: claimed_program,
-                scope: app.scope,
                 authority_seeds: vec![
                     host_fixtures::VALUE_AUTHORITY_SEED.to_vec(),
                     app.authority.seed_key.to_bytes().to_vec(),
@@ -761,6 +768,7 @@ fn mollusk_create_encrypted_store_rejects_seeds_from_another_program() {
     );
     let mut accounts = execution_accounts(payer, &app, host_config, host_config_account);
     accounts.retain(|(key, _)| *key != event_authority(host::id()));
+    accounts.push(app.scope_account());
     accounts.push((output, empty_system_account()));
     check_host_instruction(
         &mollusk(),
@@ -865,7 +873,7 @@ fn mollusk_fhe_execute_rejects_values_of_two_scopes_under_one_authority() {
     // default authority is refused, so metering and the deny list see a single `(program, scope)`.
     let payer = Pubkey::new_unique();
     let app = App::new();
-    let other_scope = app.sibling_scope(label("other-scope"));
+    let other_scope = app.sibling_scope(Pubkey::new_from_array(label("other-scope")));
     let (host_config, host_config_account) = host_config_account(payer);
     let handle = handle_for_chain(61, 5);
     let (input_address, input_value) = app.value("in", handle);
@@ -1195,7 +1203,7 @@ fn mollusk_denied_application_cannot_write_or_seal_but_its_sibling_scope_can() {
     // untouched — its record is simply never initialized.
     let payer = Pubkey::new_unique();
     let denied = App::new();
-    let sibling = denied.sibling_scope(label("clean-scope"));
+    let sibling = denied.sibling_scope(Pubkey::new_from_array(label("clean-scope")));
     let (host_config, host_config_account) = deny_enabled_host_config_account(payer);
     let (denied_record, denied_record_account) = deny_scope_record_account(denied.app(), true);
     let sibling_record = host::deny_scope_address(sibling.app()).0;
@@ -1534,6 +1542,7 @@ fn mollusk_each_pause_flag_stops_only_its_area() {
             vec![
                 (host_config, host_config_account.clone()),
                 (app.key(), empty_system_account()),
+                app.scope_account(),
                 (address, empty_system_account()),
             ],
         );
@@ -2090,7 +2099,7 @@ fn anchor_error(error: anchor_lang::error::ErrorCode) -> Check<'static> {
 fn unique_app() -> AppScope {
     AppScope {
         program: Pubkey::new_unique(),
-        scope: label("app"),
+        scope: Pubkey::new_from_array(label("app")),
     }
 }
 
@@ -3842,6 +3851,7 @@ fn mollusk_create_encrypted_store_accepts_prefunded_empty_pda() {
         vec![
             (host_config, host_config_account),
             (app.key(), empty_system_account()),
+            app.scope_account(),
             (address, system_account(1)),
         ],
     );
@@ -3849,6 +3859,52 @@ fn mollusk_create_encrypted_store_accepts_prefunded_empty_pda() {
     check_host_context(&context, &ix, &[Check::success()]);
     let state = read_encrypted_store(&context, address);
     assert!(state.slots.is_empty());
+}
+
+#[test]
+fn mollusk_create_encrypted_store_rejects_a_scope_its_program_does_not_own() {
+    // The scope must be an account of the store's program. Refused, in order: another program's
+    // account, the program's own id (owned by the loader), an absent address (System-owned), and
+    // the wildcard sentinel, which is always absent.
+    let payer = Pubkey::new_unique();
+    let app = App::new();
+    let cases = [
+        (
+            Pubkey::new_unique(),
+            program_owned_account(Pubkey::new_unique()),
+        ),
+        (
+            app.program(),
+            program_owned_account(anchor_lang::solana_program::bpf_loader_upgradeable::ID),
+        ),
+        (Pubkey::new_unique(), empty_system_account()),
+        (
+            Pubkey::new_from_array(host::WILDCARD_APP),
+            empty_system_account(),
+        ),
+    ];
+    for (scope, scope_account) in cases {
+        let app = app.sibling_scope(scope);
+        let (host_config, host_config_account) = host_config_account(payer);
+        let address = app.address("state");
+        let context = mollusk_execute_context(
+            payer,
+            vec![
+                (host_config, host_config_account),
+                (app.key(), empty_system_account()),
+                (scope, scope_account),
+                (address, empty_system_account()),
+            ],
+        );
+        let ix = create_encrypted_store_ix(payer, &app, address, host_config);
+        check_host_context(
+            &context,
+            &ix,
+            &[custom_error(
+                host::errors::ZamaHostError::EncryptedStoreScopeNotProgramAccount,
+            )],
+        );
+    }
 }
 
 /// `create_encrypted_store` for `app`'s own value authority.
@@ -3863,6 +3919,7 @@ fn create_encrypted_store_ix(
         host::accounts::CreateEncryptedStore {
             payer,
             authority: app.key(),
+            scope: app.scope_account().0,
             encrypted_store: address,
             host_config,
             system_program: system_program::ID,
@@ -3870,7 +3927,6 @@ fn create_encrypted_store_ix(
         host::instruction::CreateEncryptedStore {
             args: host::instructions::CreateEncryptedStoreArgs {
                 program: app.program(),
-                scope: app.scope,
                 authority_seeds: vec![
                     host_fixtures::VALUE_AUTHORITY_SEED.to_vec(),
                     app.authority.seed_key.to_bytes().to_vec(),
@@ -4657,9 +4713,8 @@ fn mollusk_only_the_public_decrypt_flag_stops_verify_public_decrypt() {
 }
 
 #[test]
-fn mollusk_verify_public_decrypt_accepts_v4_extra_data_routed_through_another_store() {
-    // Version 4 names the Store that routed the decrypt request. The verifier checks the public
-    // leaf against the Store it is given, which need not be that one.
+fn mollusk_verify_public_decrypt_accepts_v2_kms_routing() {
+    // Version 2 routes by context and epoch, as on EVM. Only the context selects the signers.
     let admin = Pubkey::new_unique();
     let app = App::new();
     let (host_config, host_config_account) = host_config_with_context(admin, KMS_CONTEXT_ID);
@@ -4668,8 +4723,8 @@ fn mollusk_verify_public_decrypt_accepts_v4_extra_data_routed_through_another_st
     let (address, sealed, proof) =
         seal_public_leaf(admin, &app, host_config, &host_config_account, handle);
 
-    let routing_store = Pubkey::new_unique();
-    let extra_data = [&[4][..], &KMS_CONTEXT_ID, &routing_store.to_bytes()].concat();
+    let epoch_id = [0x08; 32];
+    let extra_data = [&[2][..], &KMS_CONTEXT_ID, &epoch_id].concat();
     let (cleartext, signatures) = public_decrypt_cert(handle, &extra_data);
     let ix = verify_public_decrypt_ix(
         host_config,

@@ -27,7 +27,7 @@ use zama_fhe::{AppScope, StoreId};
 pub fn token_app(mint: Pubkey) -> AppScope {
     AppScope {
         program: crate::ID,
-        scope: mint.to_bytes(),
+        scope: mint,
     }
 }
 
@@ -72,7 +72,7 @@ pub fn pending_burn_address(mint: Pubkey, token_account: Pubkey) -> (Pubkey, u8)
 
 /// The id of a token value: the mint's application, the controlling PDA, and the field label.
 pub fn token_slot(mint: Pubkey, authority: Pubkey, key: [u8; 32]) -> (StoreId, [u8; 32]) {
-    (StoreId::new(crate::ID, authority, mint.to_bytes()), key)
+    (StoreId::new(crate::ID, authority, mint), key)
 }
 
 pub fn balance_slot(mint: Pubkey, token_account: Pubkey) -> (StoreId, [u8; 32]) {
@@ -88,7 +88,7 @@ pub fn total_supply_slot(mint: Pubkey) -> (StoreId, [u8; 32]) {
 }
 
 pub fn encrypted_store_address(mint: Pubkey, authority: Pubkey) -> (Pubkey, u8) {
-    zama_host::encrypted_store_address(crate::ID, authority, mint.to_bytes())
+    zama_host::encrypted_store_address(crate::ID, authority, mint)
 }
 
 /// Fixed encrypted value label for confidential balances.

@@ -35,7 +35,7 @@ pub struct SetHcuAppTrusted<'info> {
 pub fn set_hcu_app_trusted(
     ctx: Context<SetHcuAppTrusted>,
     program: Pubkey,
-    scope: [u8; 32],
+    scope: Pubkey,
     trusted: bool,
 ) -> Result<()> {
     assert_no_remaining_accounts(ctx.remaining_accounts)?;
@@ -59,7 +59,12 @@ pub fn set_hcu_app_trusted(
         &info,
         &ctx.accounts.system_program.to_account_info(),
         8 + HcuTrustedAppRecord::SPACE,
-        &[HCU_TRUSTED_APP_SEED, program.as_ref(), &scope, &[bump]],
+        &[
+            HCU_TRUSTED_APP_SEED,
+            program.as_ref(),
+            scope.as_ref(),
+            &[bump],
+        ],
     )?;
 
     write_account(

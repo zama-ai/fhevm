@@ -10,9 +10,9 @@ import { INSTRUCTIONS_SYSVAR_ADDRESS, appendTransientStoreInstructions, prepareT
 // rendered into `./internal/generated/{encryptedCounter,depChain}` by the SDK's `codegen:solana`
 // script from the committed IDLs.
 
-import { getAddressEncoder, type Address, type Instruction, type TransactionSigner } from "@solana/kit";
+import { type Address, type Instruction, type TransactionSigner } from "@solana/kit";
 
-import { solanaEncryptedStoreAddress } from "@fhevm/sdk/solana";
+import { solanaEncryptedStoreAddress, type SolanaDelegationApplication } from "@fhevm/sdk/solana";
 
 import { getExtendInstructionAsync, getInitializeInstructionAsync as getInitializeChainInstructionAsync } from "./internal/generated/depChain/instructions/index.js";
 import { findChainAuthorityPda, findChainPda } from "./internal/generated/depChain/pdas/index.js";
@@ -27,8 +27,6 @@ import { ZAMA_HOST_PROGRAM_ADDRESS } from "../../../../solana/deploy/src/generat
 import { currentHandle } from "./fhe-vertical";
 import { hostConfigAddress, zamaEventAuthorityAddress, type SolanaProvisioningContext } from "./provision";
 
-const addressBytes = (value: Address): Uint8Array => new Uint8Array(getAddressEncoder().encode(value));
-
 // Byte-identical to the specimens' `encrypted_*_label` functions.
 const COUNT_LABEL = new TextEncoder().encode("count___________________________");
 const TAIL_LABEL = new TextEncoder().encode("tail____________________________");
@@ -41,8 +39,8 @@ export type SpecimenValue = {
   /** The wallet the program allows on every handle it writes — the user-decrypt identity. */
   readonly owner: Address;
   readonly key: Uint8Array;
-  /** The program's authority PDA: the value's `encrypted_value_account_authority`. */
-  readonly authority: Address;
+  /** The value's application, `(program, scope)`: what a delegation of it is keyed by. */
+  readonly application: SolanaDelegationApplication;
   /** The value's `EncryptedValue` account. */
   readonly encryptedStore: Address;
 };
@@ -62,14 +60,10 @@ const specimenValue = async (
 ): Promise<SpecimenValue> => ({
   owner,
   key: label,
-  authority,
   // The specimen's application is `(program, scope = its state PDA)`; the value hangs off the
   // authority PDA under that scope.
-  encryptedStore: await solanaEncryptedStoreAddress(addressBytes(ZAMA_HOST_PROGRAM_ADDRESS), {
-    program: addressBytes(program),
-    authority: addressBytes(authority),
-    scope: addressBytes(state),
-  }),
+  application: { program, scope: state },
+  encryptedStore: await solanaEncryptedStoreAddress(ZAMA_HOST_PROGRAM_ADDRESS, { program, authority, scope: state }),
 });
 
 /** `owner`'s count under the encrypted-counter specimen. */

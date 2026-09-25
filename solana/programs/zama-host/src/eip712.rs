@@ -115,9 +115,9 @@ const SECP256K1_HALF_ORDER: [u8; 32] = [
 ];
 
 /// Resolve the KMS context id a public-decrypt certificate is bound to, mirroring the EVM
-/// gateway `_extractContextId`: empty or version-0 `extra_data` selects the current context;
-/// version 1 is exactly 33 bytes and carries the 32-byte context id in `extra_data[1..33]`;
-/// version 4 is exactly 65 bytes: the same id, then the Store address used to route the request.
+/// `KMSVerifier._extractKmsContextId`: empty or version-0 `extra_data` selects the current
+/// context; version 1 is exactly 33 bytes and carries the 32-byte context id in
+/// `extra_data[1..33]`; version 2 is exactly 65 bytes: the same id, then the epoch id.
 /// This function extracts only the context id; the verifier checks the public leaf separately.
 /// Because the KMS signs over `extra_data`, the returned id is authenticated by the
 /// certificate. Returns `None` for an unsupported version or a short payload.
@@ -126,18 +126,8 @@ const SECP256K1_HALF_ORDER: [u8; 32] = [
 pub fn extract_kms_context_id(extra_data: &[u8], current_context_id: [u8; 32]) -> Option<[u8; 32]> {
     match extra_data.first() {
         None | Some(0) => Some(current_context_id),
-        Some(1) => {
-            if extra_data.len() != 33 {
-                return None;
-            }
-            extra_data[1..33].try_into().ok()
-        }
-        Some(4) => {
-            if extra_data.len() != 65 {
-                return None;
-            }
-            extra_data[1..33].try_into().ok()
-        }
+        Some(1) if extra_data.len() == 33 => extra_data[1..33].try_into().ok(),
+        Some(2) if extra_data.len() == 65 => extra_data[1..33].try_into().ok(),
         Some(_) => None,
     }
 }
@@ -372,26 +362,23 @@ mod tests {
         v1_long.extend_from_slice(&id(42));
         v1_long.push(0);
         assert_eq!(extract_kms_context_id(&v1_long, current), None);
-        // Solana v4 is exactly version + context + Store address (65 bytes).
-        let mut v4 = vec![4u8];
-        v4.extend_from_slice(&id(42));
-        v4.extend_from_slice(&[0xABu8; 32]);
-        assert_eq!(extract_kms_context_id(&v4, current), Some(id(42)));
-        let mut v4_long = v4.clone();
-        v4_long.push(0);
-        assert_eq!(extract_kms_context_id(&v4_long, current), None);
-        assert_eq!(extract_kms_context_id(&v4[..64], current), None);
-        let mut retired_v3 = v4;
-        retired_v3[0] = 3;
-        assert_eq!(extract_kms_context_id(&retired_v3, current), None);
-        // Version 2 is RFC-005 context+epoch on the EVM side, not a Solana certificate shape.
+        // Version 2 is exactly version + context + epoch (65 bytes).
         let mut v2 = vec![2u8];
         v2.extend_from_slice(&id(42));
         v2.extend_from_slice(&[0xCDu8; 32]);
-        assert_eq!(extract_kms_context_id(&v2, current), None);
+        assert_eq!(extract_kms_context_id(&v2, current), Some(id(42)));
+        let mut v2_long = v2.clone();
+        v2_long.push(0);
+        assert_eq!(extract_kms_context_id(&v2_long, current), None);
+        assert_eq!(extract_kms_context_id(&v2[..64], current), None);
         assert_eq!(extract_kms_context_id(&[2u8], current), None);
-        assert_eq!(extract_kms_context_id(&[3u8], current), None);
-        assert_eq!(extract_kms_context_id(&[4u8], current), None);
+        // Retired Solana carriers and unknown versions are rejected at any length.
+        for version in [3u8, 4, 0xff] {
+            let mut other = v2.clone();
+            other[0] = version;
+            assert_eq!(extract_kms_context_id(&other, current), None);
+            assert_eq!(extract_kms_context_id(&[version], current), None);
+        }
     }
 
     #[test]

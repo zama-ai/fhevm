@@ -436,7 +436,7 @@ pub(crate) fn assert_token_value(
 ) -> Result<()> {
     require!(
         value.program == crate::ID
-            && value.scope == mint.to_bytes()
+            && value.scope == mint
             && value.authority == authority
             && value.get(&label).is_some(),
         ConfidentialTokenError::TokenEncryptedStoreMismatch

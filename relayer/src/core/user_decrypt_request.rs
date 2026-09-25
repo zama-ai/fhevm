@@ -133,13 +133,33 @@ impl ContentHasher for UserDecryptRequest {
                 hasher.update(b"user_address:");
                 hasher.update(user_address.as_slice());
             }
-            UserDecryptRequest::SolanaSrfc38V1 { solana_request, .. } => {
+            UserDecryptRequest::SolanaSrfc38V1 {
+                ct_handles,
+                request_validity,
+                public_key,
+                extra_data,
+                solana_request,
+            } => {
                 // Distinct variant tag so Solana hashes never collide with EVM unified hashes.
-                // `solana_request` is the canonical serialization of the whole normalized request
-                // (permit fields, signature, handle evidence), order-independent by construction:
-                // hashing it dedups byte-different transports of one request and separates any
-                // request differing in a typed field.
+                // The blob carries only what the gateway fields do not, so both are hashed: the
+                // handles in particular are unsigned, and one signed permit serves many handles.
                 hasher.update(b"variant:solana_srfc38_v1:");
+
+                hasher.update(b"handles:");
+                for h in ct_handles {
+                    hasher.update(h.to_be_bytes::<32>());
+                }
+
+                hasher.update(b"request_validity:");
+                hasher.update(request_validity.start_timestamp.to_be_bytes::<32>());
+                hasher.update(request_validity.duration_seconds.to_be_bytes::<32>());
+
+                hasher.update(b"public_key:");
+                hasher.update(public_key);
+
+                hasher.update(b"extra_data:");
+                hasher.update(extra_data);
+
                 hasher.update(b"solana_request:");
                 hasher.update(solana_request);
             }
@@ -325,8 +345,7 @@ mod tests {
     #[test]
     fn solana_request_content_hash_separates_distinct_payloads() {
         // Two different canonical host payloads must not collide, and the Solana variant tag
-        // keeps them distinct from any EVM hash. A golden digest is re-pinned by the block-6
-        // dedup tests once the canonical encoder feeds this path end to end.
+        // keeps them distinct from any EVM hash.
         let first = sample_solana_unified(Bytes::from(vec![0xaa, 0x01]));
         let second = sample_solana_unified(Bytes::from(vec![0xbb, 0x02]));
         let first_hash = first.content_hash();
@@ -334,5 +353,20 @@ mod tests {
 
         assert_ne!(first_hash, second_hash);
         assert_ne!(JobId::from(first_hash), JobId::from(second_hash));
+    }
+
+    #[test]
+    fn solana_request_content_hash_separates_handles_under_one_permit() {
+        // A session reuses one signed permit, so a later request for a new handle of the same
+        // store carries the same blob. It must still be a different job.
+        let blob = Bytes::from(vec![0xaa, 0x01]);
+        let first = sample_solana_unified(blob.clone());
+        let mut second = sample_solana_unified(blob);
+        let UserDecryptRequest::SolanaSrfc38V1 { ct_handles, .. } = &mut second else {
+            unreachable!()
+        };
+        ct_handles[0] = U256::from(124);
+
+        assert_ne!(first.content_hash(), second.content_hash());
     }
 }

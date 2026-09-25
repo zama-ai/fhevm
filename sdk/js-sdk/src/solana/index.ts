@@ -54,7 +54,6 @@ export {
 } from './proof.js';
 export type { MmrProof, SolanaStoreHistoryEvent, SolanaReconstructedStoreHistory } from './proof.js';
 
-export { buildSolanaPublicDecryptExtraData } from './actions/publicDecryptCertificate.js';
 export type {
   SolanaPublicDecryptCertificateClaim,
   SolanaPublicDecryptCertificateParameters,
@@ -69,8 +68,8 @@ export type {
 } from './actions/verifyPublicDecrypt.js';
 export {
   SOLANA_USER_DECRYPTION_DELEGATION_SEED,
-  SOLANA_WILDCARD_AUTHORITY_WARNING,
-  SOLANA_WILDCARD_AUTHORITY,
+  SOLANA_WILDCARD_APP_WARNING,
+  SOLANA_WILDCARD_APP,
   buildDelegateForUserDecryptionInstruction,
   buildRevokeDelegationForUserDecryptionInstruction,
   decodeSolanaUserDecryptionDelegation,
@@ -81,6 +80,7 @@ export {
 } from './actions/userDecryptionDelegation.js';
 export type {
   SolanaDelegateForUserDecryptionParameters,
+  SolanaDelegationApplication,
   SolanaDelegationWarning,
   SolanaRevokeDelegationForUserDecryptionParameters,
   SolanaUserDecryptionDelegationRecord,

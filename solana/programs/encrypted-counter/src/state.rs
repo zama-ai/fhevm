@@ -26,11 +26,7 @@ pub fn counter_authority_address(counter: Pubkey) -> (Pubkey, u8) {
 
 /// The host dictionary controlled by the counter's authority PDA.
 pub fn counter_state_id(counter: Pubkey) -> StoreId {
-    StoreId::new(
-        crate::id(),
-        counter_authority_address(counter).0,
-        counter.to_bytes(),
-    )
+    StoreId::new(crate::id(), counter_authority_address(counter).0, counter)
 }
 
 /// One owner's counter. The owner is bound by the PDA seeds; the stored bumps let instructions

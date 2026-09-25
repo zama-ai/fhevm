@@ -45,15 +45,11 @@ pub const HCU_BLOCK_METER_SEED: &[u8] = b"hcu-block-meter";
 pub const RAND_NONCE_SEED: &[u8] = b"rand-nonce";
 /// Seed prefix for pauser records.
 pub const PAUSER_SEED: &[u8] = b"pauser";
-/// Seed prefix for user-decryption delegation records — the shared crate's constant, so the
-/// program and the off-chain readers of the record cannot drift on the seed.
-pub use zama_solana_acl::DELEGATION_SEED;
 /// Seed prefix for per-user permit-invalidation watermark records.
 pub use zama_solana_acl::PERMIT_INVALIDATION_SEED;
-/// Reserved sentinel standing in for any encrypted store authority, carried by a
-/// wildcard user-decryption delegation row — the shared crate's constant, under the host's
-/// raw-bytes name.
-pub use zama_solana_acl::WILDCARD_AUTHORITY as WILDCARD_AUTHORITY_BYTES;
+/// The application a wildcard user-decryption delegation row carries in both its program and its
+/// scope position — the shared crate's constant.
+pub use zama_solana_acl::WILDCARD_APP;
 
 /// Maximum number of FHE operations accepted by one composed execution.
 ///

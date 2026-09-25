@@ -31,7 +31,7 @@ const PERMISSIVE_SCOPES_LINE: &str = "Scopes: ALL (permissive)";
 pub fn render_canonical_text(fields: &PermitFields) -> String {
     let mut lines = vec![
         HEADER.to_string(),
-        format!("User: {}", base58(fields.user_pubkey().as_bytes())),
+        format!("User: {}", base58(fields.user_address().as_bytes())),
         format!(
             "Verifying program: {}",
             base58(fields.verifying_program_id().as_bytes())

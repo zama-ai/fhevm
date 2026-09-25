@@ -38,9 +38,9 @@ pub enum UserDecryptKind {
 impl UserDecryptKind {
     fn selector(&self) -> [u8; 4] {
         match self {
-            Self::Direct => Decryption::userDecryptionRequest_2Call::SELECTOR,
+            Self::Direct => Decryption::userDecryptionRequest_1Call::SELECTOR,
             Self::Delegated => Decryption::delegatedUserDecryptionRequestCall::SELECTOR,
-            Self::Unified => Decryption::userDecryptionRequest_1Call::SELECTOR,
+            Self::Unified => Decryption::userDecryptionRequest_0Call::SELECTOR,
         }
     }
 }
@@ -189,8 +189,8 @@ fn assert_user_decrypt_calldata(
     let payload = &data[4..];
     match kind {
         UserDecryptKind::Direct => {
-            let decoded = Decryption::userDecryptionRequest_2Call::abi_decode_raw(payload)
-                .expect("calldata: failed to decode userDecryptionRequest_2Call");
+            let decoded = Decryption::userDecryptionRequest_1Call::abi_decode_raw(payload)
+                .expect("calldata: failed to decode userDecryptionRequest_1Call");
             assert_eq!(
                 decoded.userAddress, expected_user,
                 "calldata.userAddress mismatch (direct)"
@@ -223,8 +223,8 @@ fn assert_user_decrypt_calldata(
             );
         }
         UserDecryptKind::Unified => {
-            let decoded = Decryption::userDecryptionRequest_1Call::abi_decode_raw(payload)
-                .expect("calldata: failed to decode userDecryptionRequest_1Call");
+            let decoded = Decryption::userDecryptionRequest_0Call::abi_decode_raw(payload)
+                .expect("calldata: failed to decode userDecryptionRequest_0Call");
             assert_eq!(
                 decoded.userAddress, expected_user,
                 "calldata.userAddress mismatch (unified)"
@@ -828,6 +828,31 @@ impl FhevmMockWrapper {
         );
     }
 
+    /// Register a Solana public decryption that succeeds. It matches only the Solana
+    /// `solanaPublicDecryptionRequest` entry and emits only the Solana
+    /// request event, as the Gateway does.
+    pub fn on_solana_public_decrypt_success(
+        &self,
+        handles: Vec<B256>,
+        encrypted_stores: Vec<B256>,
+        values: Vec<u64>,
+        target: mock_server::SubscriptionTarget,
+    ) {
+        self.register_decrypt_pattern(
+            "Solana public decryption success",
+            self.decryption_contract,
+            Decryption::solanaPublicDecryptionRequestCall::SELECTOR,
+            target,
+            UsageLimit::Once,
+            |id, contract| {
+                let request_log =
+                    build_solana_public_decrypt_request(contract, id, handles, encrypted_stores);
+                let response_log = build_public_decrypt_response(contract, id, values, true);
+                (request_log, response_log)
+            },
+        );
+    }
+
     /// Register public decryption that reverts
     pub fn on_public_decrypt_revert(&self, reason: &str) {
         self.json_rpc_server.on_transaction(
@@ -1249,6 +1274,29 @@ fn build_public_decrypt_request(contract: Address, decryption_id: U256, handles:
         &request,
         vec![
             Decryption::PublicDecryptionRequest_0::SIGNATURE_HASH,
+            B256::from(decryption_id),
+        ],
+    )
+}
+
+fn build_solana_public_decrypt_request(
+    contract: Address,
+    decryption_id: U256,
+    handles: Vec<B256>,
+    encrypted_stores: Vec<B256>,
+) -> Log {
+    let request = Decryption::SolanaPublicDecryptionRequest {
+        decryptionId: decryption_id,
+        ctHandles: handles,
+        extraData: Bytes::from(vec![0x00]),
+        encryptedStores: encrypted_stores,
+    };
+
+    build_event_log(
+        contract,
+        &request,
+        vec![
+            Decryption::SolanaPublicDecryptionRequest::SIGNATURE_HASH,
             B256::from(decryption_id),
         ],
     )

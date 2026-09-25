@@ -26,11 +26,7 @@ pub fn chain_authority_address(chain: Pubkey) -> (Pubkey, u8) {
 
 /// The chain's encrypted tail value: the chain's application, authority its PDA.
 pub fn chain_state_id(chain: Pubkey) -> StoreId {
-    StoreId::new(
-        crate::id(),
-        chain_authority_address(chain).0,
-        chain.to_bytes(),
-    )
+    StoreId::new(crate::id(), chain_authority_address(chain).0, chain)
 }
 
 /// One owner's chain. The owner is bound by the PDA seeds; the stored bumps let instructions

@@ -22,6 +22,7 @@
 //! 5. an append the record has not seen, which merges the proof's peak;
 //! 6. the record is ahead of this connector.
 use connector_utils::types::solana_request::SolanaUserDecryptionRequestV1;
+use zama_solana_acl::DeadRow;
 
 mod solana_support;
 
@@ -205,10 +206,8 @@ async fn delegation_revocation_rejects_its_entry_at_the_later_observation() {
     let delegator = Wallet::new(2);
     let live = handle(0x30, FHE_TYPE_UINT64);
     let encrypted_store = EncryptedStoreFixture::allowing(live, delegator.pubkey());
-    let granted = DelegationFixture::live(delegator.pubkey(), signer.pubkey(), BEFORE);
-    let mut revoked = granted;
-    revoked.revoked = true;
-    revoked.last_update_slot = AFTER;
+    let granted = DelegationFixture::live(delegator.pubkey(), signer.pubkey());
+    let revoked = granted.revoked();
     let request = RequestBuilder::new(&signer)
         .delegated(&encrypted_store, live, delegator.pubkey())
         .typed();
@@ -235,10 +234,17 @@ async fn delegation_revocation_rejects_its_entry_at_the_later_observation() {
 
     let failure = outcome.expect_err("after revocation the exact delegation is dead");
     assert!(failure.is_recoverable());
-    assert!(
-        matches!(failure, AuthorizationFailure::Delegation { index:0, source: DelegationFailure::NoLiveGrant { exact, wildcard } }
-        if matches!(*exact, DelegationFailure::Revoked) && matches!(*wildcard, DelegationFailure::Absent { .. }))
-    );
+    assert!(matches!(
+        failure,
+        AuthorizationFailure::Delegation {
+            index: 0,
+            source: DelegationFailure::NoLiveDelegation {
+                exact: DeadRow::NotLive { expires_at: 0 },
+                wildcard: DeadRow::Absent,
+                ..
+            }
+        }
+    ));
 }
 
 /// The direct branch is untouched by a delegation revocation: the signer's own leaves are not
@@ -249,8 +255,7 @@ async fn delegation_revocation_does_not_touch_the_direct_branch() {
     let delegator = Wallet::new(2);
     let own = handle(0x31, FHE_TYPE_UINT64);
     let own_encrypted_store = EncryptedStoreFixture::allowing(own, signer.pubkey());
-    let mut revoked = DelegationFixture::live(delegator.pubkey(), signer.pubkey(), BEFORE);
-    revoked.revoked = true;
+    let revoked = DelegationFixture::live(delegator.pubkey(), signer.pubkey()).revoked();
     let request = RequestBuilder::new(&signer)
         .direct(&own_encrypted_store, own)
         .typed();
@@ -313,8 +318,8 @@ async fn a_record_behind_by_a_non_merging_append_still_authorizes() {
 // ---------------------------------------------------------------------------
 
 /// The record is behind the chain by the one append that merged the proof's peak. The sibling
-/// path it serves no longer reaches any peak the chain holds: the request is refused retryably
-/// after the repeat, and authorized once the record has caught up.
+/// path it serves no longer reaches any peak the chain holds: the request is refused retryably,
+/// and authorized once the record has caught up.
 #[tokio::test]
 async fn a_record_behind_by_a_merging_append_is_retryable_and_then_authorized() {
     let signer = Wallet::new(1);
@@ -350,8 +355,8 @@ async fn a_record_behind_by_a_merging_append_is_retryable_and_then_authorized() 
     );
     assert!(failure.is_recoverable());
     assert_eq!(
-        reads.proofs, 2,
-        "a proof that does not verify gets one refresh against the same observation"
+        reads.proofs, 1,
+        "the one coprocessor is asked once; the worker loop is the only retry layer"
     );
 
     let (outcome, _) = observe(world, &request).await;
@@ -407,8 +412,8 @@ async fn a_record_ahead_of_the_observation_is_retryable_and_then_authorized() {
     );
     assert!(failure.is_recoverable());
     assert_eq!(
-        reads.proofs, 2,
-        "an out-of-range leaf is retryable and gets one refresh against the same observation"
+        reads.proofs, 1,
+        "the one coprocessor is asked once; the worker loop is the only retry layer"
     );
 
     let (outcome, _) = observe(

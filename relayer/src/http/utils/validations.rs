@@ -28,7 +28,7 @@ pub mod validation_messages {
     pub const MUST_NOT_BE_EMPTY: &str = "Must not be empty";
 
     pub const INVALID_EXTRA_DATA_FORMAT: &str =
-        "Must be 0x00, or a versioned format: 0x01 + 32-byte contextId (0x07-tagged first byte), 0x02 + 32-byte contextId (0x07-tagged) + 32-byte epochId (0x08-tagged), or Solana 0x04 + 32-byte contextId + 32-byte encrypted store";
+        "Must be 0x00, or a versioned format: 0x01 + 32-byte contextId (0x07-tagged first byte), or 0x02 + 32-byte contextId (0x07-tagged) + 32-byte epochId (0x08-tagged)";
     pub const TIMESTAMP_MUST_NOT_BE_IN_FUTURE: &str = "Timestamp must not be in the future";
 }
 
@@ -134,12 +134,6 @@ pub fn validate_0x_hex_allow_empty(hex_str: &str) -> Result<(), ValidationError>
     validate_0x_hex(hex_str)
 }
 
-/// Solana public-decrypt `extraData` (`0x04`): `[version(1B) | contextId(32B) |
-/// encryptedStore(32B)]`, 65 bytes. The canonical layout lives in the kms-connector
-/// `solana_extra_data` module; the connector reads the state and fetches the public leaf
-/// itself, so the carrier holds no proof.
-const EXTRA_DATA_SOLANA_HEX_LEN: usize = 2 + 65 * 2;
-
 /// OpenAPI schema for the decryption `extraData` request field.
 ///
 /// Single source of truth for the user-facing description: every request type
@@ -153,8 +147,7 @@ pub fn extra_data_decryption_schema() -> utoipa::openapi::schema::Object {
         ))
         .description(Some(
             "Extra data forwarded verbatim to the gateway contract. Accepts `\"0x00\"`, version `0x01` \
-             (`0x01` + 32-byte contextId), version `0x02` (`0x02` + 32-byte contextId + 32-byte epochId), \
-             or version `0x04` (Solana public decrypt: `0x04` + 32-byte contextId + 32-byte encrypted store). \
+             (`0x01` + 32-byte contextId), or version `0x02` (`0x02` + 32-byte contextId + 32-byte epochId). \
              contextId must be 0x07-tagged and epochId must be 0x08-tagged (first byte of each).",
         ))
         // Deprecated `example` (singular) matches what `#[schema(example = ...)]`
@@ -174,8 +167,6 @@ pub fn extra_data_decryption_schema() -> utoipa::openapi::schema::Object {
 /// - `"0x02" + 128 hex chars`: Version 2 — `[version(1B) | contextId(32B) | epochId(32B)]`
 ///   = 65 bytes (130 hex chars + `"0x"` prefix = 132 chars). The contextId must be
 ///   0x07-tagged and the epochId must be 0x08-tagged (first byte of each, respectively).
-/// - `"0x04" + 128 hex chars`: Version 4 (Solana public decrypt) —
-///   `[version(1B) | contextId(32B) | encryptedStore(32B)]` = 65 bytes.
 ///
 /// The contextId and epochId are opaque to the Relayer: they are not interpreted beyond
 /// their type tag, and the bytes are propagated verbatim to the Gateway.
@@ -196,12 +187,6 @@ pub fn validate_extra_data_field_decryption(extra_data: &str) -> Result<(), Vali
             let bytes = decode_versioned_extra_data(s)?;
             validate_id_tag(bytes[1], CONTEXT_ID_TAG)?;
             validate_id_tag(bytes[33], EPOCH_ID_TAG)
-        }
-        // Version 4 (Solana public decrypt): the 32-byte context id is opaque (the same bytes the
-        // gateway minted, including any 0x07 type tag) and the state is whatever the connector
-        // will read; this path only checks the shape.
-        s if s.len() == EXTRA_DATA_SOLANA_HEX_LEN && s.starts_with("0x04") => {
-            decode_versioned_extra_data(s).map(|_| ())
         }
         _ => Err(ValidationError::new("validation_error")
             .with_message(validation_messages::INVALID_EXTRA_DATA_FORMAT.into())),
@@ -419,8 +404,8 @@ pub fn validate_request_validity_seconds(
 }
 
 #[cfg(test)]
-mod tests {
-    use super::*;
+mod extra_data_tests {
+    use super::{validate_extra_data_field_decryption, validate_extra_data_field_input_proof};
 
     // 32-byte contextId / epochId payloads (64 hex chars each), tagged with their
     // required first byte: 0x07 for contextId, 0x08 for epochId.
@@ -431,68 +416,6 @@ mod tests {
         "00000000000000000000000000000000000000000000000000000000000000a1";
     const UNTAGGED_EPOCH_ID_HEX: &str =
         "00000000000000000000000000000000000000000000000000000000000000b2";
-
-    fn solana_public_decrypt_extra_data_hex() -> String {
-        let mut bytes = vec![0x04u8];
-        bytes.extend_from_slice(&[0u8; 32]); // context_id
-        bytes.extend_from_slice(&[7u8; 32]); // encrypted store
-        format!("0x{}", hex::encode(bytes))
-    }
-
-    #[test]
-    fn extra_data_accepts_the_solana_v4_carrier() {
-        assert!(
-            validate_extra_data_field_decryption(&solana_public_decrypt_extra_data_hex()).is_ok()
-        );
-    }
-
-    #[test]
-    fn extra_data_rejects_a_truncated_solana_v4_carrier() {
-        let short = format!("0x04{}", "00".repeat(10));
-        assert!(validate_extra_data_field_decryption(&short).is_err());
-    }
-
-    #[test]
-    fn extra_data_rejects_a_non_hex_solana_v4_carrier() {
-        let bad = format!("0x04{}", "zz".repeat(64));
-        assert!(validate_extra_data_field_decryption(&bad).is_err());
-    }
-
-    #[test]
-    fn extra_data_rejects_a_solana_v4_carrier_with_a_trailing_byte() {
-        // Two byte strings for one carrier would leave the relayer and the connector disagreeing
-        // about which one the request carried.
-        let long = format!("{}00", solana_public_decrypt_extra_data_hex());
-        assert!(validate_extra_data_field_decryption(&long).is_err());
-    }
-
-    #[test]
-    fn extra_data_rejects_the_retired_solana_v3_carrier() {
-        let old = format!("0x03{}", "00".repeat(64));
-        assert!(validate_extra_data_field_decryption(&old).is_err());
-    }
-
-    #[test]
-    fn extra_data_rejects_a_0x02_blob_of_the_solana_v4_shape_with_untagged_ids() {
-        let mut bytes = hex::decode(&solana_public_decrypt_extra_data_hex()[2..]).unwrap();
-        bytes[0] = 0x02;
-        assert!(
-            validate_extra_data_field_decryption(&format!("0x{}", hex::encode(bytes))).is_err()
-        );
-    }
-
-    #[test]
-    fn extra_data_evm_paths_unchanged() {
-        assert!(validate_extra_data_field_decryption("0x00").is_ok());
-        let v1 = format!("0x01{CONTEXT_ID_HEX}");
-        assert!(validate_extra_data_field_decryption(&v1).is_ok());
-        // A correctly-sized 0x02 (132 chars) is valid.
-        let v2_ok = format!("0x02{CONTEXT_ID_HEX}{EPOCH_ID_HEX}");
-        assert!(validate_extra_data_field_decryption(&v2_ok).is_ok());
-        // A wrong-size 0x02 (missing epochId) is invalid.
-        let v2_short = format!("0x02{CONTEXT_ID_HEX}");
-        assert!(validate_extra_data_field_decryption(&v2_short).is_err());
-    }
 
     #[test]
     fn accepts_legacy_version_0x00() {
@@ -557,18 +480,8 @@ mod tests {
 
     #[test]
     fn rejects_unsupported_version_byte() {
-        for version in ["03", "05", "ff"] {
-            let extra_data = format!("0x{version}{CONTEXT_ID_HEX}{EPOCH_ID_HEX}");
-            assert!(validate_extra_data_field_decryption(&extra_data).is_err());
-        }
-    }
-
-    #[test]
-    fn accepts_a_solana_v4_carrier_of_the_v2_length() {
-        // Same 65-byte length as v2, but the second identity is a state address rather than
-        // a tagged epoch id, so no tag is checked.
-        let extra_data = format!("0x04{CONTEXT_ID_HEX}{EPOCH_ID_HEX}");
-        assert!(validate_extra_data_field_decryption(&extra_data).is_ok());
+        let extra_data = format!("0x03{CONTEXT_ID_HEX}{EPOCH_ID_HEX}");
+        assert!(validate_extra_data_field_decryption(&extra_data).is_err());
     }
 
     #[test]

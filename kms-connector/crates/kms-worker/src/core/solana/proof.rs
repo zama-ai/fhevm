@@ -1,10 +1,11 @@
 //! The leaf-proof reader. A store's MMR leaves live in the coprocessors' record of host program
-//! events; the account holds only the peaks. The record is a source of proofs, never of
-//! decisions: every candidate is verified against the observed peaks.
+//! events; the account holds only the peaks. Each coprocessor is a source of proofs, never of
+//! decisions: every answer is verified against the observed peaks.
 
-use super::{HandleBytes, SolanaPubkeyBytes};
-use futures::future::join_all;
+use crate::core::config::{ApiKey, ProofRoute};
+use alloy::primitives::B256;
 use serde::{Deserialize, Serialize};
+use solana_pubkey::Pubkey;
 use std::future::Future;
 use url::Url;
 
@@ -22,7 +23,7 @@ pub enum LeafKind {
     /// `key` was allowed on the handle.
     Allowed {
         #[serde(with = "alloy::hex::serde::no_prefix")]
-        key: SolanaPubkeyBytes,
+        key: Pubkey,
     },
     /// The handle was made public.
     Public,
@@ -32,9 +33,9 @@ pub enum LeafKind {
 #[serde(rename_all = "camelCase")]
 pub struct LeafQuery {
     #[serde(with = "alloy::hex::serde::no_prefix")]
-    pub encrypted_store: SolanaPubkeyBytes,
+    pub encrypted_store: Pubkey,
     #[serde(with = "alloy::hex::serde::no_prefix")]
-    pub handle: HandleBytes,
+    pub handle: B256,
     #[serde(flatten)]
     pub kind: LeafKind,
 }
@@ -63,20 +64,18 @@ pub enum LeafProofOutcome {
     HistoryIncomplete,
 }
 
-/// Per-query candidates plus any peers that could not answer the batch.
-#[derive(Debug)]
-pub struct ProofResponses {
-    pub candidates: Vec<Vec<LeafProofOutcome>>,
-    pub unavailable: Option<ProofReadError>,
-}
-
 /// Implemented by [`CoprocessorProofClient`]; tests drive authorization with canned proofs.
 pub trait HostProofReader: Send + Sync {
-    /// One list of peer candidates per query, in query order. No candidate is trusted here.
+    /// How many coprocessors can be asked.
+    fn source_count(&self) -> usize;
+
+    /// What coprocessor `source` answers, one outcome per query in query order. No outcome is
+    /// trusted here.
     fn read_proofs(
         &self,
+        source: usize,
         queries: &[LeafQuery],
-    ) -> impl Future<Output = Result<ProofResponses, ProofReadError>> + Send;
+    ) -> impl Future<Output = Result<Vec<LeafProofOutcome>, ProofReadError>> + Send;
 }
 
 pub(super) fn check_length(requested: usize, returned: usize) -> Result<(), ProofReadError> {
@@ -90,11 +89,14 @@ pub(super) fn check_length(requested: usize, returned: usize) -> Result<(), Proo
     }
 }
 
-/// Why a batch could not be read at all. Every variant says nothing about any leaf, and a later
-/// read may succeed.
+/// Why a batch could not be read from a coprocessor. Every variant says nothing about any leaf,
+/// and a later read may succeed.
 #[derive(Clone, PartialEq, Eq, Debug, thiserror::Error)]
 pub enum ProofReadError {
-    /// No coprocessor answered.
+    /// A coprocessor could not be read; from [`verify_proofs`], some query has no answer that
+    /// decides it.
+    ///
+    /// [`verify_proofs`]: super::handle_binding::verify_proofs
     #[error("leaf proof read failed: {reason}")]
     Unavailable { reason: String },
     #[error("leaf proof read returned {returned} outcomes for {requested} queries")]
@@ -131,13 +133,9 @@ fn decode_siblings<'de, D: serde::Deserializer<'de>>(
         .collect()
 }
 
-pub fn parse_leaf_proof_response(
-    body: &str,
-    requested: usize,
-) -> Result<Vec<LeafProofOutcome>, ProofReadError> {
+pub fn parse_leaf_proof_response(body: &str) -> Result<Vec<LeafProofOutcome>, ProofReadError> {
     let response: LeafProofResponse = serde_json::from_str(body)
         .map_err(|error| unavailable(format!("response does not decode: {error}")))?;
-    check_length(requested, response.proofs.len())?;
     Ok(response.proofs)
 }
 
@@ -145,41 +143,36 @@ fn unavailable(reason: String) -> ProofReadError {
     ProofReadError::Unavailable { reason }
 }
 
-/// The production reader: one authenticated `POST` per coprocessor per read, grouped per query.
+/// The production reader: one authenticated `POST` to one coprocessor per read. Each
+/// coprocessor receives only the key it issued.
 #[derive(Clone, Debug)]
 pub struct CoprocessorProofClient {
-    routes: Vec<Url>,
-    api_key: String,
+    routes: Vec<(Url, ApiKey)>,
     client: reqwest::Client,
 }
 
 impl CoprocessorProofClient {
-    pub fn new(endpoints: &[Url], api_key: String, client: reqwest::Client) -> Self {
-        let routes = endpoints
+    pub fn new(routes: &[ProofRoute], client: reqwest::Client) -> Self {
+        let routes = routes
             .iter()
-            .map(|endpoint| {
-                let mut route = endpoint.clone();
-                route.set_path(LEAF_PROOFS_PATH);
-                route
+            .map(|route| {
+                let mut url = route.url.clone();
+                url.set_path(LEAF_PROOFS_PATH);
+                (url, route.api_key.clone())
             })
             .collect();
-        Self {
-            routes,
-            api_key,
-            client,
-        }
+        Self { routes, client }
     }
 
     async fn read_from(
         &self,
-        route: &Url,
+        (route, api_key): &(Url, ApiKey),
         body: &[u8],
-        requested: usize,
     ) -> Result<Vec<LeafProofOutcome>, ProofReadError> {
         let response = self
             .client
             .post(route.clone())
-            .bearer_auth(&self.api_key)
+            .bearer_auth(api_key.expose())
             .header("content-type", "application/json")
             .body(body.to_vec())
             .send()
@@ -207,43 +200,23 @@ impl CoprocessorProofClient {
             body.extend_from_slice(&chunk);
         }
         let text = std::str::from_utf8(&body).map_err(|e| unavailable(format!("{route}: {e}")))?;
-        parse_leaf_proof_response(text, requested)
+        parse_leaf_proof_response(text)
     }
 }
 
 impl HostProofReader for CoprocessorProofClient {
-    async fn read_proofs(&self, queries: &[LeafQuery]) -> Result<ProofResponses, ProofReadError> {
+    fn source_count(&self) -> usize {
+        self.routes.len()
+    }
+
+    async fn read_proofs(
+        &self,
+        source: usize,
+        queries: &[LeafQuery],
+    ) -> Result<Vec<LeafProofOutcome>, ProofReadError> {
         let body = serde_json::to_vec(&leaf_proof_request_body(queries))
             .expect("a leaf proof request has no map keys or fallible fields");
-        let answers = join_all(
-            self.routes
-                .iter()
-                .map(|route| self.read_from(route, &body, queries.len())),
-        )
-        .await;
-
-        let mut candidates = vec![Vec::new(); queries.len()];
-        let mut answered = false;
-        let mut failures = Vec::new();
-        for answer in answers {
-            match answer {
-                Ok(outcomes) => {
-                    answered = true;
-                    for (query_candidates, outcome) in candidates.iter_mut().zip(outcomes) {
-                        query_candidates.push(outcome);
-                    }
-                }
-                Err(error) => failures.push(error.to_string()),
-            }
-        }
-        if answered {
-            Ok(ProofResponses {
-                candidates,
-                unavailable: (!failures.is_empty()).then(|| unavailable(failures.join("; "))),
-            })
-        } else {
-            Err(unavailable(failures.join("; ")))
-        }
+        self.read_from(&self.routes[source], &body).await
     }
 }
 
@@ -271,13 +244,15 @@ mod tests {
         );
         let queries = [
             LeafQuery {
-                encrypted_store: [0xAC; 32],
-                handle: [0x10; 32],
-                kind: LeafKind::Allowed { key: [0xA1; 32] },
+                encrypted_store: Pubkey::new_from_array([0xAC; 32]),
+                handle: B256::new([0x10; 32]),
+                kind: LeafKind::Allowed {
+                    key: Pubkey::new_from_array([0xA1; 32]),
+                },
             },
             LeafQuery {
-                encrypted_store: [0xAC; 32],
-                handle: [0x11; 32],
+                encrypted_store: Pubkey::new_from_array([0xAC; 32]),
+                handle: B256::new([0x11; 32]),
                 kind: LeafKind::Public,
             },
         ];
@@ -292,7 +267,7 @@ mod tests {
         let fixture = fixture();
         let body = serde_json::json!({ "proofs": fixture["proofs"] }).to_string();
         assert_eq!(
-            parse_leaf_proof_response(&body, 4).expect("the fixture answers decode"),
+            parse_leaf_proof_response(&body).expect("the fixture answers decode"),
             vec![
                 LeafProofOutcome::Found {
                     leaf_index: 1,
@@ -309,11 +284,16 @@ mod tests {
     #[tokio::test]
     async fn malformed_and_oversized_proof_responses_are_recoverable_read_errors() {
         use mocktail::server::MockServer;
-        let invalid_sibling = serde_json::json!({"proofs":[{"status":"found","leafIndex":0,"leafCount":1,"siblings":["00"]}]}).to_string();
-        let too_many_siblings = serde_json::json!({"proofs":[{"status":"found","leafIndex":0,"leafCount":1,"siblings":vec!["00".repeat(32);65]}]}).to_string();
+        let found = |siblings: serde_json::Value| {
+            serde_json::json!({
+                "proofs": [{"status": "found", "leafIndex": 0, "leafCount": 1, "siblings": siblings}]
+            })
+            .to_string()
+        };
+        let invalid_sibling = found(serde_json::json!(["00"]));
+        let too_many_siblings = found(serde_json::json!(vec!["00".repeat(32); 65]));
         for body in [
             "not JSON".to_owned(),
-            "{\"proofs\":[]}".to_owned(),
             invalid_sibling,
             too_many_siblings,
             " ".repeat(300_000),
@@ -327,18 +307,70 @@ mod tests {
             });
             server.start().await.unwrap();
             let client = CoprocessorProofClient::new(
-                &[server.base_url().unwrap().clone()],
-                "secret".into(),
+                &[route(server.base_url().unwrap(), "secret")],
                 reqwest::Client::new(),
             );
             client
-                .read_proofs(&[LeafQuery {
-                    encrypted_store: [1; 32],
-                    handle: [2; 32],
-                    kind: LeafKind::Public,
-                }])
+                .read_proofs(
+                    0,
+                    &[LeafQuery {
+                        encrypted_store: Pubkey::new_from_array([1; 32]),
+                        handle: B256::new([2; 32]),
+                        kind: LeafKind::Public,
+                    }],
+                )
                 .await
                 .expect_err("a malformed response is a failed read");
         }
+    }
+
+    fn route(url: &Url, api_key: &str) -> ProofRoute {
+        ProofRoute {
+            url: url.clone(),
+            api_key: ApiKey::from(api_key.to_owned()),
+        }
+    }
+
+    /// Each coprocessor issues its own key, so a route sends only the key configured with it, and
+    /// neither key reaches the client's debug output.
+    #[tokio::test]
+    async fn each_coprocessor_receives_only_its_own_key() {
+        use mocktail::server::MockServer;
+        let mut servers = Vec::new();
+        for key in ["first-key", "second-key"] {
+            let mut server = MockServer::new_http(key);
+            server.mock(move |when, then| {
+                when.post()
+                    .path(LEAF_PROOFS_PATH)
+                    .header("authorization", format!("Bearer {key}"));
+                then.text(r#"{"proofs":[{"status":"notFound","leafCount":0}]}"#);
+            });
+            server.start().await.unwrap();
+            servers.push(server);
+        }
+        let client = CoprocessorProofClient::new(
+            &[
+                route(servers[0].base_url().unwrap(), "first-key"),
+                route(servers[1].base_url().unwrap(), "second-key"),
+            ],
+            reqwest::Client::new(),
+        );
+        let query = [LeafQuery {
+            encrypted_store: Pubkey::new_from_array([1; 32]),
+            handle: B256::new([2; 32]),
+            kind: LeafKind::Public,
+        }];
+
+        for source in 0..2 {
+            client
+                .read_proofs(source, &query)
+                .await
+                .expect("each coprocessor accepts its own key");
+        }
+        let debug = format!("{client:?}");
+        assert!(
+            !debug.contains("first-key") && !debug.contains("second-key"),
+            "{debug}"
+        );
     }
 }

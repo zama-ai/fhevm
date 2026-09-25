@@ -1513,3 +1513,76 @@ async fn test_cross_chain_acl_partial_deny() {
 
     setup.shutdown().await;
 }
+
+mod solana {
+    use super::*;
+    use fhevm_relayer::config::settings::HostChainConfig;
+    use zama_solana_request::host_chain::solana_host_chain_id;
+
+    fn solana_handle(tag: u8) -> B256 {
+        let mut handle = [tag; 32];
+        handle[22..30].copy_from_slice(&solana_host_chain_id(1).to_be_bytes());
+        B256::from(handle)
+    }
+
+    async fn setup_with_a_solana_host() -> TestSetup {
+        TestSetup::new_with_settings(|settings| {
+            let url = settings.host_chains[0].url.clone();
+            settings.host_chains.push(HostChainConfig {
+                chain_id: solana_host_chain_id(1),
+                url,
+                acl_address: "11111111111111111111111111111111".to_string(),
+            });
+        })
+        .await
+        .expect("Failed to create test setup")
+    }
+
+    /// The mock Gateway answers only `solanaPublicDecryptionRequest` and emits only the Solana request
+    /// event, so success proves the calldata and the receipt decoding both take the Solana shape.
+    #[tokio::test]
+    async fn a_solana_public_decrypt_names_its_stores_to_the_gateway() {
+        let setup = setup_with_a_solana_host().await;
+        let handles = vec![solana_handle(0x11), solana_handle(0x22)];
+        let stores = vec![B256::repeat_byte(0xaa), B256::repeat_byte(0xbb)];
+        setup.fhevm_mock.on_solana_public_decrypt_success(
+            handles.clone(),
+            stores.clone(),
+            helpers::random_plaintext_values(1),
+            ethereum_rpc_mock::SubscriptionTarget::All,
+        );
+        let payload = json!({
+            "ciphertextHandles": handles,
+            "extraData": constants::EXTRA_DATA,
+            "encryptedStores": stores,
+        });
+
+        let job_id = helpers::submit_request(&setup, &payload).await;
+        let (status, body) = helpers::poll_until_terminal(&setup, &job_id).await;
+
+        assert_eq!(status, reqwest::StatusCode::OK);
+        assert_eq!(body.status, ApiResponseStatus::Succeeded);
+
+        setup.shutdown().await;
+    }
+
+    #[tokio::test]
+    async fn a_solana_public_decrypt_without_stores_is_refused() {
+        let setup = setup_with_a_solana_host().await;
+        let payload = json!({
+            "ciphertextHandles": [solana_handle(0x11)],
+            "extraData": constants::EXTRA_DATA,
+        });
+
+        let response = reqwest::Client::new()
+            .post(helpers::v2_public_decrypt_post_url(&setup))
+            .json(&payload)
+            .send()
+            .await
+            .expect("POST failed");
+
+        assert_eq!(response.status(), reqwest::StatusCode::BAD_REQUEST);
+
+        setup.shutdown().await;
+    }
+}

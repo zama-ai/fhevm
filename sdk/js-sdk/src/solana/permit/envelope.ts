@@ -10,7 +10,7 @@
 // neither function here has a variant taking a text or an envelope.
 //
 // What "verifies" means: the signature scalar must be reduced and neither R nor A may be of small
-// order (`verify_strict`, not the permissive entry point), the user pubkey must be an on-curve point
+// order (`verify_strict`, not the permissive entry point), the user address must be an on-curve point
 // and canonically encoded. Five implementations verify these permits on five libraries, and
 // libraries disagree about exactly these cases; the strict reading is spelled out rather than
 // inherited from whichever library each side links.
@@ -50,16 +50,16 @@ const SIGNATURE_POINT_LEN = PERMIT_SIGNATURE_LEN / 2;
 export function buildSolanaPermitEnvelope(fields: SolanaPermitFields): Uint8Array {
   const text = new TextEncoder().encode(renderSolanaPermitText(fields));
 
-  const envelope = new Uint8Array(PERMIT_ENVELOPE_PREAMBLE.length + 2 + fields.userPubkey.length + text.length);
+  const envelope = new Uint8Array(PERMIT_ENVELOPE_PREAMBLE.length + 2 + fields.userAddress.length + text.length);
   envelope.set(PERMIT_ENVELOPE_PREAMBLE, 0);
   envelope[PERMIT_ENVELOPE_PREAMBLE.length] = PERMIT_ENVELOPE_VERSION;
   envelope[PERMIT_ENVELOPE_PREAMBLE.length + 1] = PERMIT_ENVELOPE_SIGNER_COUNT;
   // The sole signer is the permit's own user, which is also what the text's `User:` line names —
   // so the screen a human read and the bytes their wallet signed cannot disagree about who is
   // consenting.
-  envelope.set(fields.userPubkey, PERMIT_ENVELOPE_PREAMBLE.length + 2);
+  envelope.set(fields.userAddress, PERMIT_ENVELOPE_PREAMBLE.length + 2);
   // No length prefix and no application domain: the text runs to the end of the message.
-  envelope.set(text, PERMIT_ENVELOPE_PREAMBLE.length + 2 + fields.userPubkey.length);
+  envelope.set(text, PERMIT_ENVELOPE_PREAMBLE.length + 2 + fields.userAddress.length);
   return envelope;
 }
 
@@ -76,7 +76,7 @@ export function buildSolanaPermitEnvelope(fields: SolanaPermitFields): Uint8Arra
  * @param signature - The claimed 64-byte Ed25519 signature.
  */
 export function verifySolanaPermitSignature(fields: SolanaPermitFields, signature: Uint8Array): void {
-  const userPoint = usableUserPubkeyPoint(fields.userPubkey);
+  const userPoint = usableUserAddressPoint(fields.userAddress);
 
   if (signature.length !== PERMIT_SIGNATURE_LEN) {
     throw new SolanaPermitError({ code: 'SignatureMismatch' });
@@ -107,10 +107,10 @@ export function verifySolanaPermitSignature(fields: SolanaPermitFields, signatur
   // from the permit. Both are canonical here — the strict decodes above made sure — so re-encoding
   // would produce the same bytes; hashing the originals keeps that a fact rather than a hope.
   const envelope = buildSolanaPermitEnvelope(fields);
-  const challenge = new Uint8Array(encodedR.length + fields.userPubkey.length + envelope.length);
+  const challenge = new Uint8Array(encodedR.length + fields.userAddress.length + envelope.length);
   challenge.set(encodedR, 0);
-  challenge.set(fields.userPubkey, encodedR.length);
-  challenge.set(envelope, encodedR.length + fields.userPubkey.length);
+  challenge.set(fields.userAddress, encodedR.length);
+  challenge.set(envelope, encodedR.length + fields.userAddress.length);
   const scalarK = littleEndianToBigint(sha512(challenge)) % ed25519.Point.Fn.ORDER;
 
   // The cofactorless group equation, checked exactly: no `clearCofactor`, so a signature that only
@@ -123,7 +123,7 @@ export function verifySolanaPermitSignature(fields: SolanaPermitFields, signatur
 }
 
 /**
- * Decodes a permit's user pubkey into a point that can verify, or says it cannot.
+ * Decodes a permit's user address into a point that can verify, or says it cannot.
  *
  * Three ways a key is unusable — a non-canonical encoding, a point off the curve, a point of small
  * order — all reported alike, because they are all "this permit names something that is not a
@@ -132,19 +132,19 @@ export function verifySolanaPermitSignature(fields: SolanaPermitFields, signatur
  * all-zero signature pass against such a key: a permit carrying the consent of a wallet nobody owns
  * is a fact about the permit, and every verifier has to report it the same way.
  *
- * @param userPubkey - The permit's 32-byte user pubkey, exactly as signed.
+ * @param userAddress - The permit's 32-byte user address, exactly as signed.
  */
-function usableUserPubkeyPoint(userPubkey: Uint8Array): InstanceType<typeof ed25519.Point> {
+function usableUserAddressPoint(userAddress: Uint8Array): InstanceType<typeof ed25519.Point> {
   let point;
   try {
     // Strict decoding: the y-coordinate must sit below the field modulus and the point must be on
     // the curve — the same boundary the Rust canon draws, RFC 8032's rather than ZIP-215's.
-    point = ed25519.Point.fromBytes(userPubkey, false);
+    point = ed25519.Point.fromBytes(userAddress, false);
   } catch {
-    throw new SolanaPermitError({ code: 'UnusableUserPubkey' });
+    throw new SolanaPermitError({ code: 'UnusableUserAddress' });
   }
   if (point.isSmallOrder()) {
-    throw new SolanaPermitError({ code: 'UnusableUserPubkey' });
+    throw new SolanaPermitError({ code: 'UnusableUserAddress' });
   }
   return point;
 }

@@ -1,4 +1,4 @@
-//! Encrypted store resolution and where each entry's authority comes from: what a request
+//! Encrypted store resolution and where each entry's application comes from: what a request
 //! may name, and what it may never name.
 //!
 //! A handle entry names the encrypted store that authorizes it, by address. That name is
@@ -10,10 +10,9 @@
 //! The tests here come in two shapes. The first shape substitutes something for the encrypted value
 //! account and demands a rejection: a foreign program's account, another account type of the same
 //! program, an account whose own fields describe a different encrypted store. The second
-//! shape asserts the opposite direction — that the authority and the application of every entry
-//! come from *its* encrypted store, so a batch cannot smuggle a foreign-application handle
-//! past a narrowly scoped permit, and a request has no field with which to name an authority at
-//! all.
+//! shape asserts the opposite direction — that the application of every entry comes from *its*
+//! encrypted store, so a batch cannot smuggle a foreign-application handle past a narrowly
+//! scoped permit, and a request has no field with which to name an application at all.
 //!
 //! One accept among the rejections deserves its own note: trailing bytes after the encrypted value
 //! account body are legal. The account is grown to its high-water mark and never shrunk, so an
@@ -23,24 +22,26 @@
 mod solana_support;
 
 use kms_worker::core::solana::{
-    SolanaPubkeyBytes,
     encrypted_store::{EncryptedStoreFailure, ResolvedEncryptedStore, resolve_encrypted_store},
     failure::AuthorizationFailure,
     handle_binding::HandleBindingFailure,
     pipeline::authorize_request,
-    scope::{ScopeFailure, check_scope},
-    snapshot::{SnapshotAccount, SnapshotKeys},
+    snapshot::SnapshotAccount,
 };
+use solana_pubkey::Pubkey;
 use solana_support::*;
 use zama_solana_acl::encrypted_store_discriminator;
 
 /// Resolves the account at `account_key` from a world.
 fn resolve_from(
     world: &World,
-    account_key: SolanaPubkeyBytes,
+    account_key: Pubkey,
 ) -> Result<ResolvedEncryptedStore, EncryptedStoreFailure> {
-    let snapshot = world.read(&SnapshotKeys::new([account_key]));
-    resolve_encrypted_store(&snapshot, PROGRAM_ID, account_key)
+    resolve_encrypted_store(
+        world.account(&account_key).as_ref(),
+        PROGRAM_ID,
+        account_key,
+    )
 }
 
 /// An encrypted store placed in a world, resolved.
@@ -70,7 +71,7 @@ fn an_encrypted_store_named_by_its_address_resolves() {
     .expect("a well-formed encrypted store resolves");
 
     assert_eq!(resolved.account_key(), encrypted_store.account_key);
-    assert_eq!(resolved.authority(), AUTHORITY);
+    assert_eq!(resolved.encrypted_store().authority, AUTHORITY.to_bytes());
     assert_eq!(resolved.program(), APP_PROGRAM);
     assert_eq!(resolved.scope(), SCOPE);
 }
@@ -99,6 +100,39 @@ fn an_encrypted_store_absent_at_the_observation_is_transient() {
     );
 }
 
+/// Anyone can fund a store's derivable address before the store is created there, and the host
+/// still creates it later. The funded, empty System account is absent, as on the watermark and
+/// delegation rows; System-owned data is not.
+#[test]
+fn an_empty_system_account_at_the_store_address_is_absent() {
+    let encrypted_store =
+        EncryptedStoreFixture::allowing(handle(0x16, FHE_TYPE_UINT64), Wallet::new(1).pubkey());
+    let funded = SnapshotAccount {
+        owner: SYSTEM_PROGRAM_ID,
+        data: vec![],
+    };
+    let failure = resolve_from(
+        &World::at_slot(1).with_account(encrypted_store.account_key, funded),
+        encrypted_store.account_key,
+    )
+    .expect_err("an empty account authorizes nothing");
+    assert!(matches!(failure, EncryptedStoreFailure::Absent { .. }));
+
+    let written = SnapshotAccount {
+        owner: SYSTEM_PROGRAM_ID,
+        data: vec![1],
+    };
+    let failure = resolve_from(
+        &World::at_slot(1).with_account(encrypted_store.account_key, written),
+        encrypted_store.account_key,
+    )
+    .expect_err("a System account with data is not an encrypted store");
+    assert!(matches!(
+        failure,
+        EncryptedStoreFailure::ForeignOwner { .. }
+    ));
+}
+
 /// Program ownership is the sole trust anchor of the whole chain: nobody but the host program
 /// can produce data in an account it owns. An account with impeccable contents under another
 /// program's ownership proves nothing at all.
@@ -107,7 +141,7 @@ fn an_encrypted_store_owned_by_another_program_is_terminal() {
     let encrypted_store =
         EncryptedStoreFixture::allowing(handle(0x12, FHE_TYPE_UINT64), Wallet::new(1).pubkey());
     let mut impostor = encrypted_store.account();
-    impostor.owner = [0xee; 32];
+    impostor.owner = pubkey(0xee);
 
     let failure = resolve_from(
         &World::at_slot(1).with_account(encrypted_store.account_key, impostor),
@@ -117,7 +151,7 @@ fn an_encrypted_store_owned_by_another_program_is_terminal() {
 
     assert!(matches!(
         failure,
-        EncryptedStoreFailure::ForeignOwner { owner, .. } if owner == [0xee; 32]
+        EncryptedStoreFailure::ForeignOwner { owner, .. } if owner == pubkey(0xee)
     ));
     assert!(
         !AuthorizationFailure::EncryptedStore {
@@ -138,7 +172,7 @@ fn a_host_owned_account_of_another_type_is_rejected() {
     let delegator = Wallet::new(2);
     let encrypted_store =
         EncryptedStoreFixture::allowing(handle(0x13, FHE_TYPE_UINT64), signer.pubkey());
-    let delegation = DelegationFixture::live(delegator.pubkey(), signer.pubkey(), 100);
+    let delegation = DelegationFixture::live(delegator.pubkey(), signer.pubkey());
 
     let failure = resolve_from(
         &World::at_slot(1).with_account(encrypted_store.account_key, delegation.account()),
@@ -148,7 +182,7 @@ fn a_host_owned_account_of_another_type_is_rejected() {
 
     assert!(matches!(
         failure,
-        EncryptedStoreFailure::WrongAccountType { account_key } if account_key == encrypted_store.account_key
+        EncryptedStoreFailure::NotAnEncryptedStore { account_key } if account_key == encrypted_store.account_key
     ));
 }
 
@@ -163,7 +197,7 @@ fn an_encrypted_store_whose_fields_derive_another_address_is_rejected() {
     // An encrypted store of another authority, placed at the claimed account's address.
     let mut foreign = EncryptedStoreFixture::in_application(
         APP_PROGRAM,
-        [0x33; 32],
+        pubkey(0x33),
         SCOPE,
         LABEL,
         handle(0x14, FHE_TYPE_UINT64),
@@ -230,7 +264,7 @@ fn trailing_bytes_after_the_encrypted_store_body_are_accepted() {
     )
     .expect("a realloc-grown account resolves");
 
-    assert_eq!(resolved.authority(), AUTHORITY);
+    assert_eq!(resolved.encrypted_store().authority, AUTHORITY.to_bytes());
     assert_eq!(
         8 + borsh::to_vec(resolved.encrypted_store())
             .expect("the encrypted store serializes")
@@ -260,7 +294,10 @@ fn an_encrypted_store_with_a_truncated_body_is_rejected() {
     )
     .expect_err("a body that does not decode is not an encrypted store");
 
-    assert!(matches!(failure, EncryptedStoreFailure::Malformed { .. }));
+    assert!(matches!(
+        failure,
+        EncryptedStoreFailure::InvalidHostRecord(_)
+    ));
 }
 
 /// An account holding only a discriminator is host-owned and of the right type, and still has no
@@ -281,7 +318,10 @@ fn an_encrypted_store_holding_only_its_discriminator_is_rejected() {
     )
     .expect_err("a discriminator alone is not an encrypted store");
 
-    assert!(matches!(failure, EncryptedStoreFailure::Malformed { .. }));
+    assert!(matches!(
+        failure,
+        EncryptedStoreFailure::InvalidHostRecord(_)
+    ));
 }
 
 /// An account whose peak count does not match its leaf count is the host program's own
@@ -298,7 +338,10 @@ fn an_encrypted_store_with_inconsistent_peaks_is_terminal() {
     )
     .expect_err("two peaks for one leaf is not a valid state");
 
-    assert!(matches!(failure, EncryptedStoreFailure::Malformed { .. }));
+    assert!(matches!(
+        failure,
+        EncryptedStoreFailure::InvalidHostRecord(_)
+    ));
     assert!(
         !AuthorizationFailure::EncryptedStore {
             index: 0,
@@ -309,34 +352,8 @@ fn an_encrypted_store_with_inconsistent_peaks_is_terminal() {
 }
 
 // ---------------------------------------------------------------------------
-// Authority and scope
+// Scope
 // ---------------------------------------------------------------------------
-
-/// Each entry's authority comes from its own encrypted store. Two entries of the same
-/// application and different authorities resolve to their own — there is no request-level
-/// authority to share, and no first-entry value to inherit.
-#[test]
-fn each_entry_takes_its_authority_from_its_own_encrypted_store() {
-    let first = EncryptedStoreFixture::in_application(
-        APP_PROGRAM,
-        [0x51; 32],
-        SCOPE,
-        LABEL,
-        handle(0x19, FHE_TYPE_UINT64),
-    );
-    let second = EncryptedStoreFixture::in_application(
-        APP_PROGRAM,
-        [0x52; 32],
-        SCOPE,
-        LABEL,
-        handle(0x1a, FHE_TYPE_UINT64),
-    );
-
-    assert_eq!(resolved(&first).authority(), [0x51; 32]);
-    assert_eq!(resolved(&second).authority(), [0x52; 32]);
-    assert_eq!(resolved(&first).program(), APP_PROGRAM);
-    assert_eq!(resolved(&first).scope(), SCOPE);
-}
 
 /// A scoped permit admits the `(program, scope)` pairs it signed.
 #[test]
@@ -345,15 +362,17 @@ fn a_scoped_permit_admits_an_encrypted_store_of_a_signed_application() {
         EncryptedStoreFixture::allowing(handle(0x1b, FHE_TYPE_UINT64), Wallet::new(1).pubkey());
     let permit = PermitBuilder::new(Wallet::new(1).pubkey()).scope(&[(APP_PROGRAM, SCOPE)]);
 
-    check_scope(permit.typed().allowed_scopes(), &resolved(&encrypted_store))
-        .expect("a signed application is in scope");
+    assert!(
+        resolved(&encrypted_store).is_in(permit.typed().allowed_scopes()),
+        "a signed application is in scope"
+    );
 }
 
 /// A scope outside the signed set is rejected, and the pair that gets tested is the encrypted
 /// value account's — the only place it exists.
 #[test]
 fn an_encrypted_store_outside_the_signed_scope_is_rejected() {
-    let foreign_scope: SolanaPubkeyBytes = [0x61; 32];
+    let foreign_scope: Pubkey = pubkey(0x61);
     let encrypted_store = EncryptedStoreFixture::in_application(
         APP_PROGRAM,
         AUTHORITY,
@@ -363,21 +382,17 @@ fn an_encrypted_store_outside_the_signed_scope_is_rejected() {
     );
     let permit = PermitBuilder::new(Wallet::new(1).pubkey()).scope(&[(APP_PROGRAM, SCOPE)]);
 
-    let failure = check_scope(permit.typed().allowed_scopes(), &resolved(&encrypted_store))
-        .expect_err("an unsigned scope is out of scope");
-
-    assert!(matches!(
-        failure,
-        ScopeFailure::ScopeNotAllowed { program, scope }
-            if program == APP_PROGRAM && scope == foreign_scope
-    ));
+    assert!(
+        !resolved(&encrypted_store).is_in(permit.typed().allowed_scopes()),
+        "an unsigned scope is out of scope"
+    );
 }
 
 /// The scope is only meaningful as a pair. The same scope bytes under another program are another
 /// application: a program cannot borrow a scope somebody signed for a different program.
 #[test]
 fn the_same_scope_under_another_program_is_rejected() {
-    let other_program: SolanaPubkeyBytes = [0x62; 32];
+    let other_program: Pubkey = pubkey(0x62);
     let encrypted_store = EncryptedStoreFixture::in_application(
         other_program,
         AUTHORITY,
@@ -387,14 +402,10 @@ fn the_same_scope_under_another_program_is_rejected() {
     );
     let permit = PermitBuilder::new(Wallet::new(1).pubkey()).scope(&[(APP_PROGRAM, SCOPE)]);
 
-    let failure = check_scope(permit.typed().allowed_scopes(), &resolved(&encrypted_store))
-        .expect_err("the pair is the identity, not the scope alone");
-
-    assert!(matches!(
-        failure,
-        ScopeFailure::ScopeNotAllowed { program, scope }
-            if program == other_program && scope == SCOPE
-    ));
+    assert!(
+        !resolved(&encrypted_store).is_in(permit.typed().allowed_scopes()),
+        "the pair is the identity, not the scope alone"
+    );
 }
 
 /// An empty signed list is permissive and the rule is skipped, which is parity with the EVM
@@ -402,9 +413,9 @@ fn the_same_scope_under_another_program_is_rejected() {
 #[test]
 fn a_permissive_permit_admits_an_encrypted_store_of_any_application() {
     let encrypted_store = EncryptedStoreFixture::in_application(
-        [0x71; 32],
+        pubkey(0x71),
         AUTHORITY,
-        [0x72; 32],
+        pubkey(0x72),
         LABEL,
         handle(0x1e, FHE_TYPE_UINT64),
     );
@@ -414,8 +425,10 @@ fn a_permissive_permit_admits_an_encrypted_store_of_any_application() {
         permit.typed().allowed_scopes().is_permissive(),
         "the fixture really is permissive"
     );
-    check_scope(permit.typed().allowed_scopes(), &resolved(&encrypted_store))
-        .expect("permissive skips the scope rule");
+    assert!(
+        resolved(&encrypted_store).is_in(permit.typed().allowed_scopes()),
+        "permissive skips the scope rule"
+    );
 }
 
 /// Scope is tested per handle, so a foreign-application handle mixed into a batch fails the whole
@@ -430,7 +443,7 @@ async fn a_foreign_application_handle_later_in_the_batch_rejects_the_whole_reque
     let out_of_scope_handle = handle(0x20, FHE_TYPE_UINT64);
     let in_scope = EncryptedStoreFixture::allowing(in_scope_handle, wallet.pubkey());
     let mut out_of_scope = EncryptedStoreFixture::in_application(
-        [0x81; 32],
+        pubkey(0x81),
         AUTHORITY,
         SCOPE,
         LABEL,
@@ -456,10 +469,11 @@ async fn a_foreign_application_handle_later_in_the_batch_rejects_the_whole_reque
     assert!(
         matches!(
             failure,
-            AuthorizationFailure::Scope {
+            AuthorizationFailure::ScopeNotAllowed {
                 index: 1,
-                source: ScopeFailure::ScopeNotAllowed { .. }
-            }
+                program,
+                scope: SCOPE,
+            } if program == pubkey(0x81)
         ),
         "the rejection names the offending entry, got {failure}"
     );

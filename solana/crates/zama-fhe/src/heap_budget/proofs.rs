@@ -24,7 +24,7 @@ fn the_builder_admits_mature_updates_the_host_heap_cannot_run() {
         crate::StoreId::new(
             anchor_lang::prelude::Pubkey::new_from_array([0xA9; 32]),
             Pubkey::new_unique(),
-            [0xA5; 32],
+            Pubkey::new_from_array([0xA5; 32]),
         ),
         shared_audience_mature_updates_shape(16, 8),
     )
@@ -64,7 +64,7 @@ fn the_tally_never_crosses_the_budget_even_transiently() {
         crate::StoreId::new(
             anchor_lang::prelude::Pubkey::new_from_array([0xA9; 32]),
             Pubkey::new_unique(),
-            [0xA5; 32],
+            Pubkey::new_from_array([0xA5; 32]),
         ),
         |builder| {
             let value = Encrypted::from(input);
@@ -95,7 +95,7 @@ fn the_tally_never_crosses_the_budget_even_transiently() {
         crate::StoreId::new(
             anchor_lang::prelude::Pubkey::new_from_array([0xA9; 32]),
             Pubkey::new_unique(),
-            [0xA5; 32],
+            Pubkey::new_from_array([0xA5; 32]),
         ),
         |builder| {
             let mut value = Encrypted::from(input);
@@ -129,7 +129,7 @@ fn the_tally_never_crosses_the_budget_even_transiently() {
         crate::StoreId::new(
             anchor_lang::prelude::Pubkey::new_from_array([0xA9; 32]),
             Pubkey::new_unique(),
-            [0xA5; 32],
+            Pubkey::new_from_array([0xA5; 32]),
         ),
         |builder| {
             for tag in 0..MAX_FHE_EXECUTION_STEPS {
@@ -206,7 +206,7 @@ fn the_shapes_past_each_ceiling_are_rejected_with_their_own_error() {
             crate::StoreId::new(
                 anchor_lang::prelude::Pubkey::new_from_array([0xA9; 32]),
                 Pubkey::new_unique(),
-                [0xA5; 32],
+                Pubkey::new_from_array([0xA5; 32]),
             ),
             shape,
         )
@@ -290,7 +290,7 @@ fn the_invoke_model_matches_a_counting_allocator_for_every_admitted_shape() {
             crate::StoreId::new(
                 anchor_lang::prelude::Pubkey::new_from_array([0xA9; 32]),
                 Pubkey::new_unique(),
-                [0xA5; 32],
+                Pubkey::new_from_array([0xA5; 32]),
             ),
             build,
         ) else {

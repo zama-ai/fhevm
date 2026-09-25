@@ -3,22 +3,23 @@
 use super::delegation::check_delegation;
 use super::encrypted_store::resolve_encrypted_store;
 use super::failure::AuthorizationFailure;
-use super::handle_binding::{check_handle_binding, verify_proofs_with_one_retry};
+use super::handle_binding::{check_handle_binding, verify_proofs};
 use super::proof::{HostProofReader, LeafKind, LeafQuery};
-use super::scope::check_scope;
-use super::snapshot::{HostSnapshot, HostStateReader, plan_first_read, plan_second_read};
+use super::snapshot::{DelegationRowKeys, HostObservation, HostStateReader, observe};
 use super::watermark::{check_not_invalidated, check_window, read_watermark};
-use super::{SolanaPubkeyBytes, delegation_address, wildcard_delegation_address};
+use super::{delegation_address, permit_invalidation_address, wildcard_delegation_address};
+use alloy::primitives::B256;
 use connector_utils::types::solana_request::SolanaUserDecryptionRequestV1;
 use solana_pubkey::Pubkey;
 use tracing::info;
 use zama_solana_permit::verify_signature;
+use zama_solana_request::HandleEntry;
 
 /// Everything authorization needs besides the request and chain state.
 #[derive(Clone, Copy, Debug)]
 pub struct AuthorizationContext {
     /// The host program this Connector serves on the request's chain.
-    pub program_id: SolanaPubkeyBytes,
+    pub program_id: Pubkey,
     /// The second the validity window is evaluated at.
     pub now_unix_seconds: u64,
 }
@@ -31,16 +32,17 @@ pub async fn authorize_request(
     context: AuthorizationContext,
     request: &SolanaUserDecryptionRequestV1,
 ) -> Result<(), AuthorizationFailure> {
-    let permit = request.permit();
+    let (permit, entries) = (request.request.permit(), request.request.entries());
     let program_id = context.program_id;
-    let signer = *permit.user_pubkey().as_bytes();
-    verify_signature(permit, request.signature()).map_err(AuthorizationFailure::Signature)?;
+    let signer = Pubkey::new_from_array(*permit.user_address().as_bytes());
+    verify_signature(permit, request.request.signature())
+        .map_err(AuthorizationFailure::Signature)?;
     check_window(
         permit.start_timestamp(),
         permit.duration_seconds(),
         context.now_unix_seconds,
     )?;
-    let signed_program = *permit.verifying_program_id().as_bytes();
+    let signed_program = Pubkey::new_from_array(*permit.verifying_program_id().as_bytes());
     if signed_program != program_id {
         return Err(AuthorizationFailure::ProgramIdMismatch {
             signed: signed_program,
@@ -48,118 +50,143 @@ pub async fn authorize_request(
         });
     }
 
-    // A delegation record's address depends on the authority of the entry's encrypted store, so a
-    // delegated request needs a second read. Every rule is evaluated against the last read alone.
-    let first_keys = plan_first_read(request, program_id);
-    let first = reader.read_accounts(&first_keys).await?;
-    let delegation_keys = discover_delegation_keys(&first, program_id, signer, request)?;
-    let observation = if delegation_keys.is_empty() {
+    // A delegation record's address depends on the application of the entry's encrypted store, so
+    // a delegated request needs a second read, no older than the first. The first read only locates
+    // the rows (a store it cannot resolve fails the request there, as the request named it); every
+    // rule that authorizes is judged against the last read.
+    let watermark_address = permit_invalidation_address(program_id, signer);
+    let store_keys: Vec<_> = entries
+        .iter()
+        .map(|entry| Pubkey::new_from_array(entry.encrypted_store))
+        .collect();
+    let first = observe(reader, watermark_address, &store_keys, &[], None).await?;
+    let delegated = delegation_row_keys(&first, program_id, signer, entries, &store_keys)?;
+    let observation = if delegated.is_empty() {
         first
     } else {
-        let second_keys = plan_second_read(&first_keys, delegation_keys);
-        reader
-            .read_accounts(&second_keys)
-            .await?
-            .deciding_after(&first)?
+        observe(
+            reader,
+            watermark_address,
+            &store_keys,
+            &delegated,
+            Some(first.slot),
+        )
+        .await?
     };
 
-    let watermark = read_watermark(&observation, program_id, signer)?;
+    let watermark = read_watermark(&observation.watermark, program_id, signer)?;
     check_not_invalidated(permit.start_timestamp(), watermark)?;
 
-    let stores = request
-        .handles()
+    // Every host rule is judged before a coprocessor is asked, so a host record the host program
+    // could not have written fails the request whatever the proof read returns.
+    let mut stores = Vec::with_capacity(observation.entries.len());
+    let mut audit = Vec::new();
+    for (index, ((entry, observed), store_key)) in entries
         .iter()
+        .zip(&observation.entries)
+        .zip(&store_keys)
         .enumerate()
-        .map(|(index, entry)| {
-            let store = resolve_encrypted_store(&observation, program_id, entry.encrypted_store)
-                .map_err(|source| AuthorizationFailure::EncryptedStore { index, source })?;
-            check_scope(permit.allowed_scopes(), &store)
-                .map_err(|source| AuthorizationFailure::Scope { index, source })?;
-            Ok(store)
-        })
-        .collect::<Result<Vec<_>, AuthorizationFailure>>()?;
+    {
+        let store = resolve_encrypted_store(observed.store.as_ref(), program_id, *store_key)
+            .map_err(|source| AuthorizationFailure::EncryptedStore { index, source })?;
+        let owner = Pubkey::new_from_array(entry.owner_address);
+        if !store.is_in(permit.allowed_scopes()) {
+            return Err(AuthorizationFailure::ScopeNotAllowed {
+                index,
+                program: store.program(),
+                scope: store.scope(),
+            });
+        }
+        if owner != signer {
+            let rows = observed
+                .delegation
+                .as_ref()
+                .expect("the deciding read carries the rows of every delegated entry");
+            let row = check_delegation(rows, program_id, owner, signer, store.encrypted_store())
+                .map_err(|source| AuthorizationFailure::Delegation { index, source })?;
+            audit.push(format!(
+                "entry {index}: delegator {owner}, application ({}, {}), {row:?} row",
+                store.program(),
+                store.scope(),
+            ));
+        }
+        stores.push(store);
+    }
 
-    // The leaf must name the entry's allowed key: the signer for a direct entry, the delegator for
+    // The leaf must name the entry's owner address: the signer for a direct entry, the delegator for
     // a delegated one. Proving the signer's leaf instead would let a delegate decrypt handles the
     // delegator was never allowed on.
-    let batch: Vec<_> = request
-        .handles()
+    let batch: Vec<_> = entries
         .iter()
         .zip(&stores)
         .map(|(entry, store)| {
+            let (handle, owner) = (
+                B256::from(entry.handle),
+                Pubkey::new_from_array(entry.owner_address),
+            );
             let query = LeafQuery {
                 encrypted_store: store.account_key(),
-                handle: entry.handle,
-                kind: LeafKind::Allowed {
-                    key: entry.allowed_key,
-                },
+                handle,
+                kind: LeafKind::Allowed { key: owner },
             };
-            (query, (store, entry))
+            (query, (store, handle, owner))
         })
         .collect();
-    let bindings = verify_proofs_with_one_retry(proofs, &batch, |(store, entry), outcome| {
-        check_handle_binding(store, entry.handle, entry.allowed_key, outcome)
+    let bindings = verify_proofs(proofs, &batch, |(store, handle, owner), outcome| {
+        check_handle_binding(store, *handle, *owner, outcome)
     })
     .await?;
 
-    let mut delegated = Vec::new();
-    for (index, ((entry, store), binding)) in request
-        .handles()
-        .iter()
-        .zip(&stores)
-        .zip(bindings)
-        .enumerate()
-    {
+    for (index, binding) in bindings.into_iter().enumerate() {
         binding.map_err(|source| AuthorizationFailure::HandleBinding { index, source })?;
-        if entry.allowed_key == signer {
-            continue;
-        }
-        let row = check_delegation(
-            &observation,
-            program_id,
-            entry.allowed_key,
-            signer,
-            store.authority(),
-        )
-        .map_err(|source| AuthorizationFailure::Delegation { index, source })?;
-        delegated.push(format!(
-            "entry {index}: delegator {}, authority {}, {row:?} row",
-            Pubkey::new_from_array(entry.allowed_key),
-            Pubkey::new_from_array(store.authority()),
-        ));
     }
 
-    // An auditor has to tell an authority-scoped grant from a wildcard one, although both
+    // An auditor has to tell an application-scoped grant from a wildcard one, although both
     // authorize identically.
-    if !delegated.is_empty() {
+    if !audit.is_empty() {
         info!(
-            delegate = %Pubkey::new_from_array(signer),
-            observed_slot = observation.observed_slot(),
-            entries = ?delegated,
+            delegate = %signer,
+            observed_slot = observation.slot,
+            entries = ?audit,
             "Solana delegated user decryption entries authorized"
         );
     }
     Ok(())
 }
 
-/// The exact and wildcard delegation-record addresses of every delegated entry, derived from the
-/// store authorities of the first read.
-fn discover_delegation_keys(
-    first: &HostSnapshot,
-    program_id: SolanaPubkeyBytes,
-    signer: SolanaPubkeyBytes,
-    request: &SolanaUserDecryptionRequestV1,
-) -> Result<Vec<SolanaPubkeyBytes>, AuthorizationFailure> {
-    let mut keys = Vec::new();
-    for (index, entry) in request.handles().iter().enumerate() {
-        let delegator = entry.allowed_key;
+/// The exact and wildcard delegation rows of every delegated entry, derived from the store
+/// applications of the first read.
+fn delegation_row_keys(
+    first: &HostObservation,
+    program_id: Pubkey,
+    signer: Pubkey,
+    entries: &[HandleEntry],
+    store_keys: &[Pubkey],
+) -> Result<Vec<DelegationRowKeys>, AuthorizationFailure> {
+    let mut rows = Vec::new();
+    for (index, ((entry, observed), store_key)) in entries
+        .iter()
+        .zip(&first.entries)
+        .zip(store_keys)
+        .enumerate()
+    {
+        let delegator = Pubkey::new_from_array(entry.owner_address);
         if delegator == signer {
             continue;
         }
-        let store = resolve_encrypted_store(first, program_id, entry.encrypted_store)
+        let store = resolve_encrypted_store(observed.store.as_ref(), program_id, *store_key)
             .map_err(|source| AuthorizationFailure::EncryptedStore { index, source })?;
-        keys.push(delegation_address(program_id, delegator, signer, store.authority()).0);
-        keys.push(wildcard_delegation_address(program_id, delegator, signer).0);
+        rows.push(DelegationRowKeys {
+            entry: index,
+            exact: delegation_address(
+                program_id,
+                delegator,
+                signer,
+                store.program(),
+                store.scope(),
+            ),
+            wildcard: wildcard_delegation_address(program_id, delegator, signer),
+        });
     }
-    Ok(keys)
+    Ok(rows)
 }

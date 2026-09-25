@@ -86,7 +86,7 @@ export type SolanaKmsRouting = {
  * It is parsed by the decoder, never by the renderer.
  */
 export type SolanaPermitWireFields = Prettify<{
-  readonly userPubkey: Uint8Array;
+  readonly userAddress: Uint8Array;
   readonly transportKey: Uint8Array;
   readonly allowedScopes: readonly Uint8Array[];
   readonly startTimestamp: SolanaPermitU64;
@@ -105,7 +105,7 @@ export type SolanaPermitWireFields = Prettify<{
  */
 export type SolanaPermitFields = {
   readonly [__solanaPermitFields]: never;
-  readonly userPubkey: Uint8Array;
+  readonly userAddress: Uint8Array;
   readonly transportKey: Uint8Array;
   /**
    * `program ‖ scope` entries in signed order: strictly ascending in byte order, no duplicates;

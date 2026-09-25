@@ -2,42 +2,36 @@
 
 use super::*;
 
-/// PoC user-decryption delegation witness.
+/// A delegator's grant letting a delegate request user decryption of the handles the delegator
+/// is allowed on, in one application `(program, scope)` or, as the wildcard row, in every
+/// application. EVM keys the same grant by `(delegator, delegate, contractAddress)`.
 ///
-/// Gateway/KMS payloads do not yet carry these records, but the account shape is
-/// present so the final witness format has a concrete Solana state target.
-///
-/// Freshness contract for the future KMS consumer (stated here so the integration
-/// doesn't have to reverse-engineer it): `delegation_counter` is a strictly monotonic
-/// version — of two snapshots of the same record, the higher counter is authoritative —
-/// and `last_update_slot` lets a reader require the witness be at least as fresh as a
-/// slot it has observed. Writes require `last_update_slot < current slot`, so a record
-/// mutates at most once per slot and every `(delegation_counter, last_update_slot)`
-/// pair is unambiguous.
+/// The KMS Connector and the relayer read the record through `zama_solana_acl`'s decoder, so the
+/// layout is pinned by `shared_crate_decoder_reads_what_the_program_serializes` below.
 #[account]
 pub struct UserDecryptionDelegation {
     /// User granting delegated decrypt rights.
     pub delegator: Pubkey,
     /// Delegate allowed to request user decryption.
     pub delegate: Pubkey,
-    /// The encrypted store authority the delegation is scoped over. A delegation covers
-    /// every value of that authority in every scope: the scope is not one of the PDA's seeds.
-    pub authority: Pubkey,
-    /// Slot after which the delegation is invalid.
-    pub expiration_slot: u64,
-    /// Monotonic counter incremented on every grant, regrant, and revoke.
+    /// The application's program, or `WILDCARD_APP` for the wildcard row.
+    pub program: Pubkey,
+    /// The application's scope, or `WILDCARD_APP` for the wildcard row.
+    pub scope: Pubkey,
+    /// Unix second the delegation ends at, exclusive; 0 once revoked. EVM's `expirationDate`.
+    pub expires_at: u64,
+    /// Incremented on every grant, renewal and revocation. EVM's `delegationCounter`.
     pub delegation_counter: u64,
-    /// Slot in which this row was last updated.
+    /// Slot of the last grant or revocation, so a record changes at most once per slot. EVM's
+    /// `lastBlockDelegateOrRevoke`.
     pub last_update_slot: u64,
-    /// Whether the delegation has been revoked by the delegator.
-    pub revoked: bool,
     /// PDA bump for this delegation account.
     pub bump: u8,
 }
 
 impl UserDecryptionDelegation {
     /// Serialized size of the account body, excluding Anchor discriminator.
-    pub const SPACE: usize = 32 + 32 + 32 + 8 + 8 + 8 + 1 + 1;
+    pub const SPACE: usize = 32 + 32 + 32 + 32 + 8 + 8 + 8 + 1;
 }
 
 #[cfg(test)]
@@ -78,11 +72,11 @@ mod tests {
         let record = UserDecryptionDelegation {
             delegator: Pubkey::new_unique(),
             delegate: Pubkey::new_unique(),
-            authority: Pubkey::new_unique(),
-            expiration_slot: u64::MAX,
+            program: Pubkey::new_unique(),
+            scope: Pubkey::new_unique(),
+            expires_at: u64::MAX,
             delegation_counter: u64::MAX,
             last_update_slot: u64::MAX,
-            revoked: true,
             bump: 255,
         };
 
@@ -94,18 +88,18 @@ mod tests {
 
     /// The shared crate's decoder — the one byte-level reading the KMS connector and the
     /// relayer trust — reads back exactly what this program's serializer writes. Every field
-    /// carries a distinct value, so a swap of the two neighboring pubkeys or of the three
+    /// carries a distinct value, so a swap of two neighboring 32-byte fields or of the three
     /// same-width `u64`s fails here instead of surviving as a silent cross-side misread.
     #[test]
     fn shared_crate_decoder_reads_what_the_program_serializes() {
         let record = UserDecryptionDelegation {
             delegator: Pubkey::new_unique(),
             delegate: Pubkey::new_unique(),
-            authority: Pubkey::new_unique(),
-            expiration_slot: 11,
+            program: Pubkey::new_unique(),
+            scope: Pubkey::new_unique(),
+            expires_at: 11,
             delegation_counter: 22,
             last_update_slot: 33,
-            revoked: false,
             bump: 254,
         };
 
@@ -117,11 +111,11 @@ mod tests {
 
         assert_eq!(decoded.delegator, record.delegator.to_bytes());
         assert_eq!(decoded.delegate, record.delegate.to_bytes());
-        assert_eq!(decoded.authority, record.authority.to_bytes());
-        assert_eq!(decoded.expiration_slot, record.expiration_slot);
+        assert_eq!(decoded.program, record.program.to_bytes());
+        assert_eq!(decoded.scope, record.scope.to_bytes());
+        assert_eq!(decoded.expires_at, record.expires_at);
         assert_eq!(decoded.delegation_counter, record.delegation_counter);
         assert_eq!(decoded.last_update_slot, record.last_update_slot);
-        assert_eq!(decoded.revoked, record.revoked);
         assert_eq!(decoded.bump, record.bump);
     }
 }

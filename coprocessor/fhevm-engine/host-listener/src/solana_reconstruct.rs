@@ -659,8 +659,7 @@ mod tests {
         let create = zama_host::instruction::CreateEncryptedStore {
             args: zama_host::instructions::CreateEncryptedStoreArgs {
                 program: Pubkey::new_unique(),
-                scope: [4; 32],
-                authority_seeds: vec![vec![12; 4]],
+                authority_seeds: vec![vec![12; 40]],
             },
         };
         let mut create_data =

@@ -1,10 +1,11 @@
 use crate::core::event_processor::{
     KmsClient, KmsPollTarget, ProcessingError, RequestCheckError,
     context::ContextManager,
-    decryption::{DecryptionProcessor, UserDecryptionExtraData},
+    decryption::{DecryptionProcessor, UserDecryptionRecipient},
     kms::KMSGenerationProcessor,
     protocol_config::ProtocolConfigProcessor,
 };
+use crate::core::solana::SolanaDecryptionVerifier;
 use alloy::{primitives::B256, providers::Provider};
 use anyhow::anyhow;
 use connector_utils::types::{
@@ -37,6 +38,9 @@ pub struct DbEventProcessor<GP: Provider, HP: Provider, C> {
 
     /// The entity used to process decryption requests.
     decryption_processor: DecryptionProcessor<GP, HP>,
+
+    /// The entity that decides whether a Solana decryption request is authorized.
+    solana_verifier: SolanaDecryptionVerifier,
 
     /// The entity used to process key management requests.
     kms_generation_processor: KMSGenerationProcessor,
@@ -117,6 +121,7 @@ impl<GP: Provider + Clone + 'static, HP: Provider, C: ContextManager> DbEventPro
         kms_client: KmsClient,
         context_manager: C,
         decryption_processor: DecryptionProcessor<GP, HP>,
+        solana_verifier: SolanaDecryptionVerifier,
         kms_generation_processor: KMSGenerationProcessor,
         protocol_config_processor: ProtocolConfigProcessor<HP>,
         db_pool: Pool<Postgres>,
@@ -125,6 +130,7 @@ impl<GP: Provider + Clone + 'static, HP: Provider, C: ContextManager> DbEventPro
             kms_client,
             context_manager,
             decryption_processor,
+            solana_verifier,
             kms_generation_processor,
             protocol_config_processor,
             db_pool,
@@ -153,14 +159,24 @@ impl<GP: Provider + Clone + 'static, HP: Provider, C: ContextManager> DbEventPro
                     biased;
                     async {
                         self.decryption_processor
-                            .check_ciphertexts_allowed_for_public_decryption(
-                                &req.ctHandles,
-                                &req.extraData,
-                            )
+                            .check_ciphertexts_allowed_for_public_decryption(&req.ctHandles)
                             .await
                             .map_err(RequestCheckError::record)
                     },
                     self.check_context(&req.extraData),
+                )?;
+                Ok(())
+            }
+            ProtocolEventKind::SolanaPublicDecryption(req) => {
+                tokio::try_join!(
+                    biased;
+                    async {
+                        self.solana_verifier
+                            .check_public_decryption(req)
+                            .await
+                            .map_err(RequestCheckError::record)
+                    },
+                    self.check_context(req.extra_data()),
                 )?;
                 Ok(())
             }
@@ -208,8 +224,8 @@ impl<GP: Provider + Clone + 'static, HP: Provider, C: ContextManager> DbEventPro
                 tokio::try_join!(
                     biased;
                     async {
-                        self.decryption_processor
-                            .check_solana_user_decryption_request(req)
+                        self.solana_verifier
+                            .check_user_decryption(req)
                             .await
                             .map_err(RequestCheckError::record)
                     },
@@ -254,13 +270,23 @@ impl<GP: Provider + Clone + 'static, HP: Provider, C: ContextManager> DbEventPro
                     )
                     .await
             }
+            ProtocolEventKind::SolanaPublicDecryption(req) => {
+                self.decryption_processor
+                    .prepare_decryption_request(
+                        req.decryption_id,
+                        &req.ct_handles(),
+                        &req.extra_data().to_vec().into(),
+                        None,
+                    )
+                    .await
+            }
             ProtocolEventKind::UserDecryption(req) => {
                 self.decryption_processor
                     .prepare_decryption_request(
                         req.decryptionId,
                         &req.ctHandles,
                         &req.extraData,
-                        Some(UserDecryptionExtraData::new(
+                        Some(UserDecryptionRecipient::new(
                             req.userAddress,
                             req.publicKey.clone(),
                         )),
@@ -275,7 +301,7 @@ impl<GP: Provider + Clone + 'static, HP: Provider, C: ContextManager> DbEventPro
                         req.decryptionId,
                         &handles,
                         &payload.extraData,
-                        Some(UserDecryptionExtraData::new(
+                        Some(UserDecryptionRecipient::new(
                             payload.userAddress,
                             payload.publicKey.clone(),
                         )),
@@ -288,7 +314,7 @@ impl<GP: Provider + Clone + 'static, HP: Provider, C: ContextManager> DbEventPro
                         req.decryption_id,
                         &req.ct_handles(),
                         &req.extra_data().into(),
-                        Some(UserDecryptionExtraData::new_solana(req.permit())),
+                        Some(UserDecryptionRecipient::new_solana(req.request.permit())),
                     )
                     .await
             }

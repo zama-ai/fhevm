@@ -76,7 +76,7 @@ fn rule_name(error: &PermitError) -> &'static str {
         PermitError::UnknownKmsRoutingVersion { .. } => rule::UNKNOWN_KMS_ROUTING_VERSION,
         PermitError::KmsRoutingLength { .. } => rule::KMS_ROUTING_LENGTH,
         PermitError::SignatureMismatch => rule::SIGNATURE_MISMATCH,
-        PermitError::UnusableUserPubkey => rule::UNUSABLE_USER_PUBKEY,
+        PermitError::UnusableUserAddress => rule::UNUSABLE_USER_PUBKEY,
     }
 }
 
@@ -113,7 +113,7 @@ impl Builder {
     fn wire_record(&mut self, key_name: &str, wire: &PermitWireFields) -> WirePermit {
         let key_name = self.transport_key(key_name, &wire.transport_key);
         WirePermit {
-            user_pubkey: to_hex(&wire.user_pubkey),
+            user_address: to_hex(&wire.user_address),
             transport_key: key_name,
             allowed_scopes: wire
                 .allowed_scopes
@@ -428,10 +428,10 @@ fn build_vector_file() -> PermitVectorFile {
          can carry the consent of a wallet nobody owns. Nothing may verify here.",
         rule::UNUSABLE_USER_PUBKEY,
         REFERENCE,
-        "user pubkey replaced with a small-order point",
+        "user address replaced with a small-order point",
         REFERENCE_KEY,
         PermitWireFields {
-            user_pubkey: bytes32(SMALL_ORDER_PUBKEY_HEX).to_vec(),
+            user_address: bytes32(SMALL_ORDER_PUBKEY_HEX).to_vec(),
             ..reference_wire()
         },
         Signature::new([0u8; 64]),
@@ -440,15 +440,15 @@ fn build_vector_file() -> PermitVectorFile {
 
     builder.reject(
         "user-pubkey-not-on-the-curve",
-        "The user pubkey is a coordinate for which no curve point exists. Note that \
+        "The user address is a coordinate for which no curve point exists. Note that \
          most byte patterns one would reach for are valid points, so this encoding is \
          chosen rather than guessed.",
         rule::UNUSABLE_USER_PUBKEY,
         REFERENCE,
-        "user pubkey replaced with a non-curve coordinate",
+        "user address replaced with a non-curve coordinate",
         REFERENCE_KEY,
         PermitWireFields {
-            user_pubkey: bytes32(NOT_A_CURVE_POINT_HEX).to_vec(),
+            user_address: bytes32(NOT_A_CURVE_POINT_HEX).to_vec(),
             ..reference_wire()
         },
         signature_from_hex(REFERENCE_SIGNATURE_HEX),
@@ -464,10 +464,10 @@ fn build_vector_file() -> PermitVectorFile {
          than left open.",
         rule::UNUSABLE_USER_PUBKEY,
         REFERENCE,
-        "user pubkey re-encoded above the field modulus",
+        "user address re-encoded above the field modulus",
         REFERENCE_KEY,
         PermitWireFields {
-            user_pubkey: bytes32(NON_CANONICAL_PUBKEY_HEX).to_vec(),
+            user_address: bytes32(NON_CANONICAL_PUBKEY_HEX).to_vec(),
             ..reference_wire()
         },
         signature_from_hex(REFERENCE_SIGNATURE_HEX),
@@ -483,14 +483,14 @@ fn build_vector_file() -> PermitVectorFile {
 
     builder.reject(
         "user-pubkey-of-wrong-width",
-        "A 31-byte user pubkey. Widths are checked where transport values are decoded, \
+        "A 31-byte user address. Widths are checked where transport values are decoded, \
          because they are unrepresentable once the typed form is reached.",
         rule::IDENTITY_WIDTH,
         REFERENCE,
-        "user pubkey truncated to 31 bytes",
+        "user address truncated to 31 bytes",
         REFERENCE_KEY,
         PermitWireFields {
-            user_pubkey: bytes32(USER_PUBKEY_HEX)[..31].to_vec(),
+            user_address: bytes32(USER_PUBKEY_HEX)[..31].to_vec(),
             ..reference_wire()
         },
         base_signature,
@@ -811,7 +811,7 @@ fn load_vectors() -> PermitVectorFile {
 /// Reconstructs the wire form of a record.
 fn wire_of(file: &PermitVectorFile, vector: &PermitVector) -> PermitWireFields {
     PermitWireFields {
-        user_pubkey: from_hex(&vector.permit.user_pubkey).expect("hex"),
+        user_address: from_hex(&vector.permit.user_address).expect("hex"),
         transport_key: vector
             .transport_key_bytes(file)
             .expect("the record's transport key is in the table"),
@@ -1206,7 +1206,7 @@ fn records_with_a_non_canonical_signed_text_are_reproducible() {
 fn the_error_taxonomy_is_the_one_the_rule_names_map_from() {
     assert_eq!(
         rule_name(&PermitError::IdentityWidth {
-            field: IdentityField::UserPubkey,
+            field: IdentityField::UserAddress,
             len: 31
         }),
         rule::IDENTITY_WIDTH

@@ -66,10 +66,7 @@ const revealConfidentialBalance = async (
   const rpc = createSolanaRpc(session.config.rpcUrl);
   const encodeAddress = (value: Address): Uint8Array => new Uint8Array(getAddressEncoder().encode(value));
   // The permit covers this token program's values under this mint, and nothing else.
-  const permitScope = {
-    program: handleHex(encodeAddress(session.config.programs.token)) as Bytes32Hex,
-    scope: handleHex(encodeAddress(mint)) as Bytes32Hex,
-  };
+  const permitScope = { program: session.config.programs.token, scope: mint };
   const chain = defineFhevmSolanaChain({
     id: BigInt(session.config.chainId),
     fhevm: {

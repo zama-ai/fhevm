@@ -2,7 +2,9 @@ import type { EncryptedValueLike } from '../../core/types/encryptedTypes.js';
 import type { RelayerPublicDecryptOptions } from '../../core/types/relayer.js';
 import type { FhevmSolanaChain } from '../../core/types/fhevmSolanaChain.js';
 import type { FhevmRuntime } from '../../core/types/coreFhevmRuntime.js';
-import { bytesToHex, concatBytes, unsafeBytesEquals } from '../../core/base/bytes.js';
+import { bytesToBigInt, bytesToHex, unsafeBytesEquals } from '../../core/base/bytes.js';
+import { createKmsExtraDataV1 } from '../../core/kms/kmsExtraData-p.js';
+import type { BytesHex, Uint256BigInt } from '../../core/types/primitives.js';
 import { toFhevmHandle } from '../../core/handle/FhevmHandle.js';
 import { RelayerAsyncRequest } from '../../core/modules/relayer/module/RelayerAsyncRequest.js';
 import { buildRelayerUrlString, validateRelayerBaseUrl } from '../../core/modules/relayer/module/relayerUrl.js';
@@ -39,31 +41,18 @@ export type SolanaPublicDecryptCertificateClaim = {
 };
 
 /**
- * `extraData` version byte of a Solana public decrypt: `0x04 ‖ contextId(32) ‖ encryptedStore(32)`,
- * exactly 65 bytes. Mirrors `SOLANA_EXTRA_DATA_VERSION_PUBLIC_DECRYPT` in the connector's
- * `solana_extra_data.rs`.
- */
-export const SOLANA_PUBLIC_DECRYPT_EXTRA_DATA_VERSION = 0x04;
-
-/**
- * Builds the `extraData` a public-decrypt request carries on the wire.
- *
- * Nothing but the account travels: the Connector reads it and asks the coprocessors for the
- * `PublicDecryptLeaf` proof itself (RFC 035). The Rust half of this hand-mirrored codec is
- * `encode_solana_public_decrypt_extra_data` in the connector's `solana_extra_data.rs`; the two
- * layouts must change together, and `solana/test-fixtures/user-decrypt/extra_data_v1.json` is what
- * pins them to each other.
+ * The KMS routing a Solana public decrypt carries in `extraData`: version 1, `0x01 ‖ contextId`.
+ * The host `KmsContext` holds no epoch, so this is what the EVM flow sends when no epoch is set.
+ * The encrypted store travels beside it, in `encryptedStores`.
  *
  * @param contextId - The 32-byte KMS context id.
- * @param encryptedStore - The 32-byte address of the account the handle lives in.
  */
-export function buildSolanaPublicDecryptExtraData(contextId: Uint8Array, encryptedStore: Uint8Array): Uint8Array {
-  assertExtraDataFieldLen('contextId', contextId, 32);
-  assertExtraDataFieldLen('encryptedStore', encryptedStore, 32);
-  return concatBytes(new Uint8Array([SOLANA_PUBLIC_DECRYPT_EXTRA_DATA_VERSION]), contextId, encryptedStore);
+export function solanaPublicDecryptExtraData(contextId: Uint8Array): BytesHex {
+  assertFieldLen('contextId', contextId, 32);
+  return createKmsExtraDataV1({ kmsContextId: bytesToBigInt(contextId) as Uint256BigInt }).bytesHex;
 }
 
-function assertExtraDataFieldLen(name: string, bytes: Uint8Array, len: number): void {
+function assertFieldLen(name: string, bytes: Uint8Array, len: number): void {
   if (bytes.length !== len) {
     throw new Error(`${name} must be ${len} bytes, got ${bytes.length}`);
   }
@@ -76,8 +65,8 @@ export async function publicDecryptCertificate(
 ): Promise<SolanaPublicDecryptCertificateClaim> {
   const handle = toFhevmHandle(parameters.handle);
 
-  const requestExtraData = buildSolanaPublicDecryptExtraData(parameters.contextId, parameters.encryptedStore);
-  const requestExtraDataHex = bytesToHex(requestExtraData);
+  const requestExtraDataHex = solanaPublicDecryptExtraData(parameters.contextId);
+  assertFieldLen('encryptedStore', parameters.encryptedStore, 32);
   const options = { auth: context.runtime.config.auth, ...parameters.options };
   const baseUrl = validateRelayerBaseUrl(context.chain.fhevm.relayerUrl, options.auth !== undefined);
   const request = new RelayerAsyncRequest({
@@ -87,6 +76,7 @@ export async function publicDecryptCertificate(
     payload: {
       ciphertextHandles: [handle.bytes32Hex],
       extraData: requestExtraDataHex,
+      encryptedStores: [bytesToHex(parameters.encryptedStore)],
     },
     options,
     logger: context.runtime.config.logger,
@@ -97,7 +87,10 @@ export async function publicDecryptCertificate(
     readonly extraData?: string | undefined;
   };
 
-  if (result.extraData !== undefined && !unsafeBytesEquals(hexToBytes(result.extraData), requestExtraData)) {
+  if (
+    result.extraData !== undefined &&
+    !unsafeBytesEquals(hexToBytes(result.extraData), hexToBytes(requestExtraDataHex))
+  ) {
     throw new Error('public-decrypt response extraData does not match the request');
   }
   if (

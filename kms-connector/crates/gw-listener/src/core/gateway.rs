@@ -7,7 +7,7 @@ use crate::{
 };
 use alloy::{
     network::Ethereum,
-    primitives::B256,
+    primitives::{B256, U256},
     providers::Provider,
     rpc::types::{Filter, Log},
     sol_types::SolEventInterface,
@@ -18,7 +18,7 @@ use connector_utils::{
     types::{
         ProtocolEvent, ProtocolEventKind,
         db::{EventType, RequestSource},
-        solana_request::SolanaUserDecryptionRequestV1,
+        solana_request::{SolanaPublicDecryptionRequest, SolanaUserDecryptionRequestV1},
     },
 };
 use fhevm_gateway_bindings::decryption::Decryption::DecryptionEvents;
@@ -37,10 +37,39 @@ const DECRYPTION_EVENT_TYPES: [EventType; 2] = [
 fn ct_handles(event: &ProtocolEventKind) -> Vec<B256> {
     match event {
         ProtocolEventKind::PublicDecryption(e) => e.ctHandles.clone(),
+        ProtocolEventKind::SolanaPublicDecryption(e) => e.ct_handles(),
         ProtocolEventKind::UserDecryption(e) => e.ctHandles.clone(),
         ProtocolEventKind::UserDecryptionV2(e) => e.handles.iter().map(|h| h.handle).collect(),
         ProtocolEventKind::SolanaUserDecryptionV1(e) => e.ct_handles(),
         _ => Vec::new(),
+    }
+}
+
+/// Decodes a Solana request, or skips it with a warning and a rejection count when it does not
+/// decode.
+fn decode_or_skip<R, E>(
+    decryption_id: U256,
+    event: E,
+    event_type: EventType,
+    log: &Log,
+) -> Option<ProtocolEventKind>
+where
+    R: TryFrom<E> + Into<ProtocolEventKind>,
+    R::Error: std::fmt::Display,
+{
+    match R::try_from(event) {
+        Ok(request) => Some(request.into()),
+        Err(e) => {
+            warn!(
+                %decryption_id,
+                tx_hash = ?log.transaction_hash,
+                "Skipping Solana {event_type} that does not decode: {e:#}"
+            );
+            EVENT_REJECTED_COUNTER
+                .with_label_values(&[event_type.as_str()])
+                .inc();
+            None
+        }
     }
 }
 
@@ -189,24 +218,26 @@ where
             let event = DecryptionEvents::decode_log(&log.inner)
                 .map_err(|e| anyhow!("Failed to decode Decryption event: {e}"))?;
             let event_kind = match event.data {
-                DecryptionEvents::UserDecryptionRequest_4(event) => {
-                    let decryption_id = event.decryptionId;
-                    match SolanaUserDecryptionRequestV1::try_from(event) {
-                        Ok(request) => request.into(),
-                        Err(e) => {
-                            warn!(
-                                %decryption_id,
-                                tx_hash = ?log.transaction_hash,
-                                "Skipping Solana user decryption that does not decode: {e:#}"
-                            );
-                            EVENT_REJECTED_COUNTER
-                                .with_label_values(&[EventType::UserDecryptionRequest.as_str()])
-                                .inc();
-                            continue;
-                        }
-                    }
+                DecryptionEvents::SolanaPublicDecryptionRequest(event) => {
+                    decode_or_skip::<SolanaPublicDecryptionRequest, _>(
+                        event.decryptionId,
+                        event,
+                        EventType::PublicDecryptionRequest,
+                        &log,
+                    )
                 }
-                event => event.try_into()?,
+                DecryptionEvents::SolanaUserDecryptionRequest(event) => {
+                    decode_or_skip::<SolanaUserDecryptionRequestV1, _>(
+                        event.decryptionId,
+                        event,
+                        EventType::UserDecryptionRequest,
+                        &log,
+                    )
+                }
+                event => Some(event.try_into()?),
+            };
+            let Some(event_kind) = event_kind else {
+                continue;
             };
             let event_type = EventType::from(&event_kind).as_str();
             EVENT_RECEIVED_COUNTER
@@ -275,7 +306,7 @@ mod tests {
     #[rstest::rstest]
     fn user_decryption_span_carries_the_handle(#[values(false, true)] solana: bool) {
         use alloy::sol_types::SolEvent;
-        use connector_utils::tests::rand::solana_user_decryption_event;
+        use connector_utils::tests::rand::{rand_solana_handle, solana_user_decryption_event};
         use fhevm_gateway_bindings::decryption::Decryption::UserDecryptionRequest_2;
         use tracing_subscriber::fmt::format::FmtSpan;
         let (sender, mut receiver) = tokio::sync::mpsc::unbounded_channel();
@@ -284,7 +315,7 @@ mod tests {
             .with_span_events(FmtSpan::CLOSE)
             .with_writer(connector_utils::tests::setup::CustomTestWriter::new(sender))
             .finish();
-        let handle = FixedBytes::repeat_byte(0xab);
+        let handle = rand_solana_handle();
         let data = if solana {
             solana_user_decryption_event(U256::from(42), handle).encode_log_data()
         } else {
@@ -322,9 +353,9 @@ mod tests {
     async fn malformed_solana_event_does_not_discard_valid_peers() {
         use alloy::sol_types::SolEvent;
         use fhevm_gateway_bindings::decryption::Decryption::{
-            PublicDecryptionRequest_1, UserDecryptionRequest_4,
+            PublicDecryptionRequest_1, SolanaPublicDecryptionRequest, SolanaUserDecryptionRequest,
         };
-        let invalid = UserDecryptionRequest_4 {
+        let invalid_user = SolanaUserDecryptionRequest {
             decryptionId: U256::from(42),
             ctHandles: vec![],
             requestValidity: RequestValiditySeconds::default(),
@@ -332,26 +363,29 @@ mod tests {
             extraData: Bytes::new(),
             solanaRequest: Bytes::new(),
         };
+        // A Solana public decryption naming fewer stores than handles.
+        let invalid_public = SolanaPublicDecryptionRequest {
+            decryptionId: U256::from(44),
+            ctHandles: vec![FixedBytes::ZERO; 2],
+            extraData: Bytes::new(),
+            encryptedStores: vec![FixedBytes::ZERO],
+        };
         let valid = PublicDecryptionRequest_1 {
             decryptionId: U256::from(43),
             ctHandles: vec![FixedBytes::ZERO],
             extraData: Bytes::new(),
         };
+        let log = |data| Log {
+            inner: alloy::primitives::Log {
+                address: Default::default(),
+                data,
+            },
+            ..Default::default()
+        };
         let logs = vec![
-            Log {
-                inner: alloy::primitives::Log {
-                    address: Default::default(),
-                    data: invalid.encode_log_data(),
-                },
-                ..Default::default()
-            },
-            Log {
-                inner: alloy::primitives::Log {
-                    address: Default::default(),
-                    data: valid.encode_log_data(),
-                },
-                ..Default::default()
-            },
+            log(invalid_user.encode_log_data()),
+            log(invalid_public.encode_log_data()),
+            log(valid.encode_log_data()),
         ];
         let events = GatewayListener::<RootProvider>::prepare_events(logs).unwrap();
         assert_eq!(events.len(), 1);

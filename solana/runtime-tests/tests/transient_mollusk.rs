@@ -27,7 +27,7 @@ impl Fixture {
         let payer = Pubkey::new_unique();
         let program = Pubkey::new_unique();
         let (authority, _) = Pubkey::find_program_address(&[b"authority"], &program);
-        let scope = [3; 32];
+        let scope = Pubkey::new_from_array([3; 32]);
         let (state, bump) = host::encrypted_store_address(program, authority, scope);
         let (transient_store, _) = host::transient_store_address(payer);
         let mut transient_store_account = empty_system_account();

@@ -1,9 +1,12 @@
 use super::error::{ApiResponseStatus, V2ErrorResponseBody};
+use crate::host::handle_chain_id::extract_chain_id_from_handle;
 use crate::http::utils::redact::{redact_count, redact_len};
 use derivative::Derivative;
 use serde::{Deserialize, Serialize};
 use utoipa::ToSchema;
-use validator::Validate;
+use validator::{Validate, ValidationError, ValidationErrors};
+use zama_solana_request::host_chain::is_solana_host_chain_id;
+use zama_solana_request::public_request_chain_id;
 
 #[derive(Debug, Deserialize, Validate, Clone, ToSchema)]
 #[serde(rename_all = "camelCase")]
@@ -18,6 +21,54 @@ pub struct PublicDecryptRequestJson {
     #[schema(schema_with = crate::http::extra_data_decryption_schema)]
     #[validate(custom(function = "crate::http::validate_extra_data_field_decryption"))]
     pub extra_data: String,
+    /// Solana handles only: the encrypted store that holds each handle, in handle order.
+    /// Each is `0x` + 64 hex chars. Omit for EVM handles. A Solana request carries at most 32
+    /// handles, all of one chain.
+    #[serde(default)]
+    #[validate(custom(function = "crate::http::validate_0x_hexs"))]
+    #[schema(example = json!(["0x5f2a1c3b4d6e7f8091a2b3c4d5e6f708192a3b4c5d6e7f8091a2b3c4d5e6f708"]))]
+    pub encrypted_stores: Option<Vec<String>>,
+}
+
+impl PublicDecryptRequestJson {
+    /// Solana handles name one 32-byte store each, and EVM handles name none. A request that
+    /// mixes the two has no Gateway entry to go to.
+    pub fn validate_encrypted_stores(&self, errors: &mut ValidationErrors) {
+        let handles: Vec<[u8; 32]> = self
+            .ciphertext_handles
+            .iter()
+            .filter_map(|handle| parse_handle(handle))
+            .collect();
+        let solana_handles = handles
+            .iter()
+            .filter(|handle| is_solana_host_chain_id(extract_chain_id_from_handle(handle)))
+            .count();
+        let message = match &self.encrypted_stores {
+            None if solana_handles == 0 => return,
+            None => "Required for Solana handles".to_string(),
+            Some(_) if solana_handles < self.ciphertext_handles.len() => {
+                "Only accepted when every handle is a Solana handle".to_string()
+            }
+            Some(stores) if stores.iter().any(|store| store.len() != 66) => {
+                "Each store must be 0x + 64 hex chars".to_string()
+            }
+            Some(stores) => match public_request_chain_id(&handles, stores.len()) {
+                Ok(_) => return,
+                Err(error) => error.to_string(),
+            },
+        };
+        errors.add(
+            "encrypted_stores",
+            ValidationError::new("validation_error").with_message(message.into()),
+        );
+    }
+}
+
+fn parse_handle(handle: &str) -> Option<[u8; 32]> {
+    hex::decode(handle.strip_prefix("0x")?)
+        .ok()?
+        .try_into()
+        .ok()
 }
 
 // POST response with job ID and request tracking
@@ -91,5 +142,140 @@ impl From<crate::core::event::PublicDecryptResponse> for PublicDecryptResponseJs
             signatures,
             extra_data: response.extra_data, // Already a string
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use zama_solana_request::host_chain::solana_host_chain_id;
+    use zama_solana_request::MAX_REQUEST_HANDLES;
+
+    fn request(
+        handles: &[[u8; 32]],
+        encrypted_stores: Option<Vec<String>>,
+    ) -> PublicDecryptRequestJson {
+        PublicDecryptRequestJson {
+            ciphertext_handles: handles
+                .iter()
+                .map(|handle| format!("0x{}", hex::encode(handle)))
+                .collect(),
+            extra_data: "0x00".to_string(),
+            encrypted_stores,
+        }
+    }
+
+    fn handle_on(chain_id: u64, tag: u8) -> [u8; 32] {
+        let mut handle = [tag; 32];
+        handle[22..30].copy_from_slice(&chain_id.to_be_bytes());
+        handle
+    }
+
+    fn store(byte: u8) -> String {
+        format!("0x{}", hex::encode([byte; 32]))
+    }
+
+    fn store_error(request: &PublicDecryptRequestJson) -> Option<String> {
+        let mut errors = ValidationErrors::new();
+        request.validate_encrypted_stores(&mut errors);
+        let errors = errors.field_errors();
+        let error = errors.get("encrypted_stores")?.first()?;
+        Some(error.message.as_ref()?.to_string())
+    }
+
+    #[test]
+    fn solana_handles_with_one_store_each_and_evm_handles_without_stores_pass() {
+        let solana = solana_host_chain_id(1);
+        let solana_request = request(
+            &[handle_on(solana, 0x11), handle_on(solana, 0x22)],
+            Some(vec![store(0xaa), store(0xbb)]),
+        );
+        let evm_request = request(&[handle_on(8009, 0x11)], None);
+
+        assert_eq!(store_error(&solana_request), None);
+        assert_eq!(store_error(&evm_request), None);
+    }
+
+    #[test]
+    fn a_solana_handle_without_stores_is_refused() {
+        let request = request(&[handle_on(solana_host_chain_id(1), 0x11)], None);
+
+        assert_eq!(
+            store_error(&request).as_deref(),
+            Some("Required for Solana handles")
+        );
+    }
+
+    #[test]
+    fn a_store_count_that_differs_from_the_handle_count_is_refused() {
+        let solana = solana_host_chain_id(1);
+        let request = request(
+            &[handle_on(solana, 0x11), handle_on(solana, 0x22)],
+            Some(vec![store(0xaa)]),
+        );
+
+        let error = store_error(&request).expect("refused");
+
+        assert!(
+            error.contains("2 handles but 1 encrypted stores"),
+            "got: {error}"
+        );
+    }
+
+    #[test]
+    fn stores_are_refused_unless_every_handle_is_on_solana() {
+        let evm_only = request(&[handle_on(8009, 0x11)], Some(vec![store(0xaa)]));
+        let mixed = request(
+            &[
+                handle_on(solana_host_chain_id(1), 0x11),
+                handle_on(8009, 0x22),
+            ],
+            Some(vec![store(0xaa), store(0xbb)]),
+        );
+
+        for request in [evm_only, mixed] {
+            let error = store_error(&request).expect("refused");
+            assert!(error.contains("every handle"), "got: {error}");
+        }
+    }
+
+    #[test]
+    fn more_solana_handles_than_the_gateway_accepts_are_refused() {
+        let solana = solana_host_chain_id(1);
+        let handles: Vec<_> = (0..=MAX_REQUEST_HANDLES as u8)
+            .map(|tag| handle_on(solana, tag))
+            .collect();
+        let stores = handles.iter().map(|_| store(0xaa)).collect();
+
+        let error = store_error(&request(&handles, Some(stores))).expect("refused");
+
+        assert!(error.contains("expected at most 32"), "got: {error}");
+    }
+
+    #[test]
+    fn solana_handles_of_two_clusters_are_refused() {
+        let request = request(
+            &[
+                handle_on(solana_host_chain_id(1), 0x11),
+                handle_on(solana_host_chain_id(2), 0x22),
+            ],
+            Some(vec![store(0xaa), store(0xbb)]),
+        );
+
+        let error = store_error(&request).expect("refused");
+
+        assert!(error.contains("on chain"), "got: {error}");
+    }
+
+    #[test]
+    fn a_store_that_is_not_32_bytes_is_refused() {
+        let request = request(
+            &[handle_on(solana_host_chain_id(1), 0x11)],
+            Some(vec![format!("0x{}", "aa".repeat(31))]),
+        );
+
+        let error = store_error(&request).expect("refused");
+
+        assert!(error.contains("64 hex chars"), "got: {error}");
     }
 }

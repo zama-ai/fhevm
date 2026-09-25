@@ -41,7 +41,7 @@ const trust = {
 
 /** Just enough session for `userDecrypt` to reach the transport; nothing here is ever signed. */
 const session = {
-  signedPermit: { fields: { userPubkey: new Uint8Array(32).fill(0x07) } },
+  signedPermit: { fields: { userAddress: new Uint8Array(32).fill(0x07) } },
 } as unknown as SolanaPermitSession;
 
 beforeAll(() => {

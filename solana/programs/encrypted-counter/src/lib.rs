@@ -41,6 +41,7 @@ pub mod encrypted_counter {
                 zama_host::cpi::accounts::CreateEncryptedStore {
                     payer: ctx.accounts.owner.to_account_info(),
                     authority: ctx.accounts.counter_authority.to_account_info(),
+                    scope: ctx.accounts.counter.to_account_info(),
                     encrypted_store: ctx.accounts.encrypted_store.to_account_info(),
                     host_config: ctx.accounts.host_config.to_account_info(),
                     system_program: ctx.accounts.system_program.to_account_info(),
@@ -49,7 +50,6 @@ pub mod encrypted_counter {
             ),
             zama_host::instructions::CreateEncryptedStoreArgs {
                 program: crate::ID,
-                scope: counter.to_bytes(),
                 authority_seeds: authority_seeds.iter().map(|seed| seed.to_vec()).collect(),
             },
         )?;

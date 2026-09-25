@@ -68,7 +68,6 @@ const EUINT64_FHE_TYPE_ID = 5;
 const BALANCE_LABEL = new TextEncoder().encode('balance_________________________');
 
 const addressEncoder = getAddressEncoder();
-const encodeAddress = (value: Address): Uint8Array => new Uint8Array(addressEncoder.encode(value));
 
 const bytesEqual = (a: Uint8Array, b: Uint8Array): boolean =>
   a.length === b.length && a.every((byte, index) => byte === b[index]);
@@ -433,7 +432,7 @@ export const readTokenBalanceStore = async (
   if (
     state.program !== vault.CONFIDENTIAL_TOKEN_PROGRAM_ADDRESS ||
     state.authority !== tokenAccount ||
-    !bytesEqual(state.scope, encodeAddress(mint))
+    state.scope !== mint
   ) {
     throw new Error('balance encrypted value body does not match its canonical derivation');
   }

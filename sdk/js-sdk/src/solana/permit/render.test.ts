@@ -50,7 +50,7 @@ const routingOf = (contextFill: number, epochFill: number): Uint8Array => {
 };
 
 const BASE_WIRE: SolanaPermitWireFields = {
-  userPubkey: identity(0x11),
+  userAddress: identity(0x11),
   transportKey: transportKeyOf(0),
   allowedScopes: [],
   startTimestamp: 1_767_229_380n,

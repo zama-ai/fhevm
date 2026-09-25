@@ -275,14 +275,13 @@ Pinned by `mollusk_verify_public_decrypt_returns_handle_and_cleartext`,
 and `mollusk_verify_public_decrypt_rejects_sub_threshold_signatures`.
 
 **22. [HOLDS]** Certificate binding chain: signed `extra_data` → context id → canonical KmsContext PDA → signer set.
-Empty or version-0 `extra_data` selects the current context; version 1 is exactly 33 bytes and carries the 32-byte id.
-Solana version 4 is exactly 65 bytes: version, context id, then the Store address used to route the decrypt request.
-Version 3 is rejected. The verifier authenticates the context, handle and cleartext through the certificate and
-independently verifies the exact handle's public leaf against the supplied Store's current peaks. It does not require
-that Store to equal the routing address in `extra_data`. Destroying a context invalidates its certificates; rotation
-alone invalidates none.
+Empty or version-0 `extra_data` selects the current context; version 1 is exactly 33 bytes and carries the 32-byte id;
+version 2 is exactly 65 bytes, the id then an epoch id, as EVM `KMSVerifier` reads it. Every other version is rejected.
+`extra_data` names no Store (DD-060). The verifier authenticates the context, handle and cleartext through the
+certificate and independently verifies the exact handle's public leaf against the supplied Store's current peaks.
+Destroying a context invalidates its certificates; rotation alone invalidates none.
 Pinned by `extract_kms_context_id_mirrors_evm_extractcontextid`,
-`mollusk_verify_public_decrypt_accepts_v4_extra_data_routed_through_another_store`,
+`mollusk_verify_public_decrypt_accepts_v2_kms_routing`,
 `mollusk_verify_public_decrypt_rejects_non_canonical_kms_context`, `mollusk_verify_public_decrypt_rejects_context_account_mismatch`,
 `mollusk_redeem_rejects_destroyed_kms_context` and `mollusk_redeem_accepts_live_rotated_out_kms_context`.
 
@@ -304,17 +303,28 @@ through the returned context id; it is not enforced by the verifier.
 type outgrowing it changes the certificate format, the entrypoint
 signature, and the return layout together.
 
-**27. [HOLDS]** A delegated user-decryption entry names the delegator as its allowed key. The KMS connector reads the
-delegation record for the encrypted store's authority and the delegator's wildcard row in the deciding snapshot. Either
-row authorizes the delegate if it is live at that slot: not revoked, not expired, and not written after the observation.
-A dead row cannot veto a live one. The connector then requires the delegator's allow leaf
+**27. [HOLDS]** A delegated user-decryption entry names the delegator as its owner address. The KMS connector reads the
+delegation record for the encrypted store's application `(program, scope)`, the delegator's wildcard row
+(`0xff×32` in both positions) and the Clock in the deciding read, which a node behind the first read refuses
+(`minContextSlot`). No store carries the sentinel in either position: `create_encrypted_store` requires the scope to be an account the
+store's program owns (`EncryptedStoreScopeNotProgramAccount`), and nothing lives at the sentinel; no program can be
+deployed at it; and the connector refuses a store that names it either way. `delegate_for_user_decryption` applies
+the same owner rule to a grant's scope (`DelegationScopeNotProgramAccount`, DD-061), so an application row names an
+application a store can have. Either row authorizes the delegate if its
+`expires_at` is after that Clock's `unix_timestamp`, as EVM's `expirationDate > block.timestamp`; a revocation writes 0.
+A dead row cannot veto a live one; a row the host program could not have written fails the entry closed, whatever
+the other row says. The connector then requires the delegator's allow leaf
 (`kms-worker/src/core/solana/delegation.rs`). The relayer refuses dead rows advisorily before the gateway fee (#50).
 Delegation emits no event; readers read the record (DD-044). A wallet delegator must call
 `delegate_for_user_decryption` as a top-level instruction (`WalletDelegationThroughCpi`). A wallet's signature reaches
 every CPI of the transaction it signed, so without that rule any program the user calls could delegate the user's
 decryption rights. A PDA delegator may delegate through CPI: only its own program can sign for it, and #68 covers
 where that program may pass it. Pinned by `a_wallet_grant_forwarded_through_another_program_is_rejected`
-and `a_vault_pda_grants_a_delegation_via_cpi` (fhevm-internal#2084).
+and `a_vault_pda_grants_a_delegation_via_cpi` (fhevm-internal#2084); the connector half by
+`a_second_read_from_a_node_behind_the_first_is_refused_transiently`,
+`a_node_below_the_minimum_context_slot_is_reported_as_behind` and
+`an_invalid_row_fails_the_entry_even_beside_a_live_row`; the scope rule by
+`mollusk_create_encrypted_store_rejects_a_scope_its_program_does_not_own`.
 
 ## E. Reconstruction & off-chain services
 
@@ -339,13 +349,12 @@ data, and by `rebuilds_a_slot_from_get_block_alone` and `shared_transaction_deco
 
 **30. [HOLDS]** The leaf record can stop a decrypt from happening but can
 never be what allows one: the KMS connector verifies every proof against
-the peaks it read on chain itself, fans out to every configured
-coprocessor and merges (a proof beats no proof, more history beats less),
-and rejects a client-supplied proof outright. A compromised or lagging
+the peaks it read on chain itself, asks every configured coprocessor at
+once and takes the first proof that verifies for each query, and rejects a client-supplied proof outright. A compromised or lagging
 record fails or delays decrypts; it cannot authorize one (DD-048).
 Pinned by `matches_on_chain_append_and_authorizes`, `one_serving_coprocessor_carries_a_request_the_others_cannot`,
-`a_record_behind_the_chain_is_retried_not_refused`. A client cannot supply a proof: the request wire
-(`SolanaUserDecryptRequestWire`) has no proof field, and `the_decoder_is_strict` rejects trailing bytes.
+`a_record_behind_the_chain_is_retried_not_refused`. A client cannot supply a proof: the request
+(`SolanaUserDecryptRequest`) has no proof field, and `the_decoder_is_strict` rejects trailing bytes.
 
 **31. [HOLDS]** Coprocessor scheduling is decoupled from authorization: eager
 scheduling can waste compute on a minority fork; it can never release
@@ -387,19 +396,19 @@ build lets the upgrade authority close `HostConfig` and the KMS contexts (`AUTHO
 
 **36. [HOLDS]** `HostConfig.paused` holds one flag per host area (DD-058). `execution` stops `fhe_execute`;
 `verified_inputs` stops `fhe_execute` steps that consume a `VerifiedInput`; `acl_writes` stops `create_encrypted_store`,
-`make_store_handle_public` and `delegate_for_user_decryption`; `public_decrypt` stops `verify_public_decrypt`. A flag
+`make_store_handle_public`, `delegate_for_user_decryption` and `revoke_delegation_for_user_decryption`, as EVM's
+ACL pause stops `revokeDelegationForUserDecryption`; `public_decrypt` stops `verify_public_decrypt`. A flag
 stops only its own area. Any signer with an enabled `PauserRecord` sets flags; only the admin clears them, and only the
 admin creates, enables or disables pauser records. A wallet pauser must call `pause` as a top-level instruction
 (`WalletPauseThroughCpi`), as a wallet delegator must delegate (#27): otherwise any program the pauser calls could pause
 the host. A PDA pauser, such as a Squads vault, may pause through CPI. Admin setters are never paused, and `revoke_permits` takes no config
-account, so it runs under every flag. `revoke_delegation_for_user_decryption` is not paused yet; the delegation-record
-change gives it the `acl_writes` gate, as EVM's `revokeDelegationForUserDecryption` is `whenNotPaused`.
+account, so it runs under every flag.
 Pinned by `mollusk_each_pause_flag_stops_only_its_area`, `mollusk_only_the_public_decrypt_flag_stops_verify_public_decrypt`,
 the token tests of 11f, `mollusk_a_pauser_pauses_and_only_the_admin_unpauses`, `mollusk_only_an_enabled_pauser_pauses`,
 `mollusk_a_wallet_pause_forwarded_through_another_program_is_rejected`, `mollusk_a_vault_pda_pauses_through_cpi`,
-`mollusk_only_the_admin_sets_pausers`, `a_revocation_while_paused_succeeds` and, over random sequences, the H1 property
+`mollusk_only_the_admin_sets_pausers`, `a_revocation_while_paused_is_rejected` and, over random sequences, the H1 property
 of #35. The flags do not reach decryption, and the KMS connector does not read `HostConfig`. Gateway ingress has
-its own pause: `Decryption.sol` `whenNotPaused` covers every request entry point, the Solana `userDecryptionRequest`
+its own pause: `Decryption.sol` `whenNotPaused` covers every request entry point, the Solana entries
 included. HTTP decryption has no pause on either chain, as on EVM.
 
 **37. [HOLDS]** HCU enforcement ships disabled (unrestricted defaults) and is opt-in per knob. `u64::MAX` means
@@ -461,16 +470,19 @@ and `mollusk_fhe_execute_malformed_trust_witness_is_rejected`.
 ## G. Decrypt authorization (gateway, relayer, KMS)
 
 **42. [HOLDS]** Every KMS party's connector independently re-verifies the
-user's ed25519 signature over the full request — identity, handles,
-allowed scopes, validity window, and nonce. The
-relayer and gateway are transport; neither can alter who asks or for what.
-Pinned by `every_vector_behaves_as_declared`, `every_wire_field_reaches_the_canonical_bytes` (every request field
-changes the signed bytes) and `a_field_the_relayer_changed_fails_the_signature` (the connector refuses a permit whose
+user's ed25519 signature over the permit's eight fields: user address, transport key, allowed scopes, start
+timestamp, duration, verifying program, chain id and KMS routing (`extra_data`). The handles are not signed, as in
+EVM's EIP-712 permit: the permit grants the scopes and window, and each handle is authorized separately against the
+signer's or delegator's allow leaf. The relayer and gateway are transport; neither can change who asks, the key the
+shares are encrypted to, or which applications the permit opens.
+Pinned by `every_vector_behaves_as_declared`, `every_blob_field_reaches_the_canonical_bytes` (every blob field
+changes the request bytes), `every_field_lands_in_its_place_and_the_chain_comes_from_the_handles` (assembly puts each
+Gateway and blob field in its permit role) and `a_field_the_relayer_changed_fails_the_signature` (the connector refuses a permit whose
 key, window or routing the relayer changed).
 
-**43. [ANTI]** The user-decrypt nonce is not dedup-enforced on-chain or in the
-connector; replay is bounded only by the request validity window (EVM
-parity).
+**43. [ANTI]** A user-decrypt permit has no nonce and is not deduplicated on-chain or in the connector. A signed
+permit can be replayed until its validity window closes or the user revokes it (`revoke_permits`, #63). A replay
+returns shares only for the transport key the user signed, so it discloses nothing to the replayer (EVM parity).
 
 **44. [ANTI]** An empty `allowedScopes` list means permissive mode: the permit
 is not scoped to an application, and opens the signer's own handles and
@@ -483,8 +495,8 @@ stores the later of the user's previous `PermitInvalidation` watermark and the c
 check rejects permits whose signed `start_timestamp` is below that watermark; an absent watermark reads as zero. A future-start permit remains
 unusable until its window opens, but can then authorize decryption despite the earlier revocation. Permits have no
 individual on-chain record to revoke. EVM's `ACL.invalidateDecryptionSignaturesBefore` also rejects future watermarks
-with `InvalidationTimestampInTheFuture`. Pinned by the connector authorization vector
-`future-start-permit-outliving-a-revocation` and the host test
+with `InvalidationTimestampInTheFuture`. Pinned by the permit vector
+`future-start-permit`, the connector test `a_permit_whose_window_has_not_opened_is_transient` and the host test
 `first_revocation_creates_the_account_and_records_the_clock`.
 
 **45. [HOLDS]** The connector authorizes against the canonical EncryptedStore PDA, program-owned, rederived from the seeds the account carries,
@@ -497,11 +509,13 @@ Pinned by `an_encrypted_store_whose_fields_derive_another_address_is_rejected`,
 `an_encrypted_store_with_an_altered_bump_is_rejected` and `on_chain_account_decoder_reads_layout`.
 
 **46. [RISK]** The connector's ACL reads use confirmed (not finalized)
-commitment, and this component is the authorization gate. The choice is
-deliberate and documented at the site (`kms-worker/src/core/solana/snapshot.rs`
-module doc: a grant observed on a supermajority-confirmed fork is
-sufficient authorization even if that fork is exceptionally rolled back).
-This entry records that choice as accepted at the protocol level.
+commitment, and this component is the authorization gate. A grant observed on a
+supermajority-confirmed fork is sufficient authorization. If that fork is rolled back,
+the KMS may already have released a share against a delegation, allow leaf or
+permit state that no longer exists on the canonical chain. This risk is accepted at
+the protocol level; it is documented at the site (`kms-worker/src/core/solana/snapshot.rs`
+module doc). EVM host ACL reads take the same risk: they read at the node's latest block
+(`kms-worker/src/core/event_processor/rpc.rs`).
 
 **49. [ASSUMPTION]** The coprocessor's EVM-shaped event rows carry a zeroed
 `caller` for every Solana transaction (the 32-byte program does not fit
@@ -586,8 +600,8 @@ passes those flags.
 
 **47. [RETIRED]** The standalone proof service is gone (RFC 035, DD-048). The
 leaf record lives in each coprocessor's host listener, served behind an API
-key; the connector fans out to every configured coprocessor, so one behind
-or unreachable cannot sink a request another can serve. Authorization was
+key; the connector asks every configured coprocessor at once, so one behind,
+stalled or unreachable cannot sink or hold a request another can serve. Authorization was
 never its to give (#30).
 
 **48. [HOLDS]** Settle transactions at production KMS thresholds fit one packet
@@ -596,7 +610,7 @@ only as v0 + one address lookup table; a legacy settle never fits. Pinned by
 
 **50. [OPERATIONAL]** The relayer's ACL preflight covers EVM host chains and,
 advisorily, Solana delegated entries: a delegation row that is dead at the
-slot of the read (absent, revoked, expired) is refused before the gateway
+host Clock of the read (absent, revoked, expired) is refused before the gateway
 fee (`relayer/src/host/solana_delegation_precheck.rs`); every ambiguity of
 data passes. A direct Solana entry is not pre-checked — its authorization
 is an allow leaf the connector fetches, and there is no cheaper reading of

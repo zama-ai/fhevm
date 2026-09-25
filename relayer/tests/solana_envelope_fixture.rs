@@ -22,9 +22,7 @@
 #[path = "../../solana/test-fixtures/permit/permit_vectors.rs"]
 mod permit_vectors;
 
-use alloy::primitives::U256;
 use fhevm_relayer::core::event::UserDecryptRequest;
-use fhevm_relayer::host::handle_chain_id::extract_chain_id_from_u256;
 use fhevm_relayer::http::endpoints::v3::types::UserDecryptV3RequestJson;
 use permit_vectors::{PermitVectorFile, PERMIT_VECTOR_SCHEMA};
 use serde_json::{json, Map, Value};
@@ -57,8 +55,6 @@ enum RejectedBy {
     PayloadRules,
     /// It validates, and the conversion into the internal request refuses it.
     RequestDecode,
-    /// It converts, and a handle's embedded chain id is not one this relayer serves.
-    HostChainSupport,
 }
 
 impl RejectedBy {
@@ -67,7 +63,6 @@ impl RejectedBy {
             "json-shape" => Self::JsonShape,
             "payload-rules" => Self::PayloadRules,
             "request-decode" => Self::RequestDecode,
-            "host-chain-support" => Self::HostChainSupport,
             other => panic!("the fixture names an unknown rejection layer: {other}"),
         }
     }
@@ -77,7 +72,6 @@ impl RejectedBy {
 struct PermitHalf {
     payload: Map<String, Value>,
     signature: String,
-    chain_id: u64,
     transport_key_hex: String,
     extra_data_hex: String,
 }
@@ -100,8 +94,8 @@ fn permit_half() -> PermitHalf {
 
     let mut payload = Map::new();
     payload.insert(
-        "userPubkey".to_string(),
-        json!(format!("0x{}", record.permit.user_pubkey)),
+        "userAddress".to_string(),
+        json!(format!("0x{}", record.permit.user_address)),
     );
     payload.insert(
         "transportKey".to_string(),
@@ -127,7 +121,6 @@ fn permit_half() -> PermitHalf {
         "verifyingProgramId".to_string(),
         json!(format!("0x{}", record.permit.verifying_program_id)),
     );
-    payload.insert("chainId".to_string(), json!(record.permit.chain_id));
     payload.insert(
         "extraData".to_string(),
         json!(format!("0x{}", record.permit.extra_data)),
@@ -136,7 +129,6 @@ fn permit_half() -> PermitHalf {
     PermitHalf {
         payload,
         signature: format!("0x{}", record.signature),
-        chain_id: record.permit.chain_id.parse().expect("decimal u64"),
         transport_key_hex,
         extra_data_hex: record.permit.extra_data.clone(),
     }
@@ -215,7 +207,12 @@ fn every_accepted_record_becomes_a_solana_request() {
             .attested_payload
             .handles
             .iter()
-            .map(|entry| hex::decode(entry.encrypted_store.trim_start_matches("0x")).unwrap())
+            .map(|entry| {
+                <[u8; 32]>::try_from(
+                    hex::decode(entry.encrypted_store.trim_start_matches("0x")).unwrap(),
+                )
+                .unwrap()
+            })
             .collect::<Vec<_>>();
         let request = UserDecryptRequest::try_from(parsed)
             .unwrap_or_else(|err| panic!("{name}: should convert: {err}"));
@@ -244,43 +241,17 @@ fn every_accepted_record_becomes_a_solana_request() {
                     "{name}: the encoded request carries the permit and the entries"
                 );
                 assert_eq!(solana_request[0], SOLANA_REQUEST_VERSION, "{name}: version");
-                let wire = decode_solana_request(solana_request).expect("relayer output decodes");
+                let blob = decode_solana_request(solana_request).expect("relayer output decodes");
                 assert_eq!(
-                    wire.handles
+                    blob.entries
                         .iter()
-                        .map(|entry| entry.encrypted_store.clone())
+                        .map(|entry| entry.encrypted_store)
                         .collect::<Vec<_>>(),
                     encrypted_stores,
                     "{name}: encryptedStore travels into the canonical request"
                 );
             }
             other => panic!("{name}: converted into the wrong variant: {other:?}"),
-        }
-    }
-}
-
-/// Every accepted record's handles belong to the host chain the permit is signed for. The fixture's
-/// handles are hand-written, so this also keeps a typo in one of them from being read as a chain-id
-/// bug in the code under test.
-#[test]
-fn accepted_handles_belong_to_the_signed_host_chain() {
-    let fixture = Fixture::load();
-
-    for record in fixture.records("accepted") {
-        let name = name_of(record);
-        let parsed: UserDecryptV3RequestJson =
-            serde_json::from_value(fixture.compose(record)).expect("accepted record parses");
-        let UserDecryptV3RequestJson::SolanaSrfc38(parsed) = parsed else {
-            panic!("{name}: fixture records are Solana envelopes");
-        };
-        let request = UserDecryptRequest::try_from(parsed).expect("accepted record converts");
-
-        for handle in request.ct_handles() {
-            assert_eq!(
-                extract_chain_id_from_u256(handle),
-                fixture.permit.chain_id,
-                "{name}: a handle names another host chain"
-            );
         }
     }
 }
@@ -337,41 +308,14 @@ fn every_rejecting_record_is_refused_by_the_layer_it_names() {
             "{name}: names the validator, and the validator accepted it"
         );
 
-        let request = match UserDecryptRequest::try_from(parsed) {
-            Err(_) => {
-                assert_eq!(
-                    declared,
-                    RejectedBy::RequestDecode,
-                    "{name}: refused while converting, but names another layer"
-                );
-                continue;
-            }
-            Ok(request) => {
-                assert_ne!(
-                    declared,
-                    RejectedBy::RequestDecode,
-                    "{name}: names the conversion, and the conversion accepted it"
-                );
-                request
-            }
-        };
-
-        // What is left is refused above the conversion, on the handle's host chain. The rejection
-        // itself belongs to the configured chain-id check in the handler; what this asserts is the
-        // condition that check fires on, and that nothing below it quietly accepted the mismatch.
-        assert_eq!(
-            declared,
-            RejectedBy::HostChainSupport,
+        assert!(
+            UserDecryptRequest::try_from(parsed).is_err(),
             "{name}: was accepted"
         );
-        let foreign: Vec<&U256> = request
-            .ct_handles()
-            .into_iter()
-            .filter(|handle| extract_chain_id_from_u256(handle) != fixture.permit.chain_id)
-            .collect();
-        assert!(
-            !foreign.is_empty(),
-            "{name}: names the host-chain layer, and every handle belongs to the signed chain"
+        assert_eq!(
+            declared,
+            RejectedBy::RequestDecode,
+            "{name}: refused while converting, but names another layer"
         );
     }
 }
@@ -400,23 +344,23 @@ fn the_fixture_exercises_every_layer_it_documents() {
     );
 }
 
-/// Both entry kinds are represented among the accepted records: a direct entry, whose allowed key
-/// is the permit signer, and a delegated one, whose allowed key is another pubkey. A fixture that
+/// Both entry kinds are represented among the accepted records: a direct entry, whose owner address
+/// is the permit signer, and a delegated one, whose owner address is another pubkey. A fixture that
 /// lost one of them would still pass every assertion above while covering half the seam.
 #[test]
 fn the_accepted_records_cover_direct_and_delegated_entries() {
     let fixture = Fixture::load();
-    let signer = fixture.permit.payload["userPubkey"]
+    let signer = fixture.permit.payload["userAddress"]
         .as_str()
         .expect("the permit names its signer");
 
     let mut kinds = BTreeSet::new();
     for record in fixture.records("accepted") {
         for entry in record["handles"].as_array().expect("handles is a list") {
-            let allowed_key = entry["allowedKey"]
+            let owner_address = entry["ownerAddress"]
                 .as_str()
-                .expect("allowedKey is a string");
-            kinds.insert(allowed_key == signer);
+                .expect("ownerAddress is a string");
+            kinds.insert(owner_address == signer);
         }
     }
 

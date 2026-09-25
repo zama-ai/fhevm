@@ -9,6 +9,9 @@ use std::env;
 use std::fmt;
 use std::num::NonZeroUsize;
 use std::time::Duration;
+use zama_solana_request::host_chain::{
+    chain_type_byte, is_evm_host_chain_id, is_solana_host_chain_id,
+};
 
 // Listener pool configuration limits
 const MIN_LISTENERS: usize = 2;
@@ -1031,16 +1034,16 @@ impl Settings {
             }
             // The chain-id discriminator and ACL address encoding must agree so
             // downstream components cannot classify the same host differently.
-            let valid_acl_address = if crate::core::event::is_solana_host_chain_id(hc.chain_id) {
+            let valid_acl_address = if is_solana_host_chain_id(hc.chain_id) {
                 crate::http::utils::solana_address::is_solana_address(&hc.acl_address)
-            } else if crate::core::event::is_evm_host_chain_id(hc.chain_id) {
+            } else if is_evm_host_chain_id(hc.chain_id) {
                 Address::from_str(&hc.acl_address).is_ok()
             } else {
                 return Err(AppConfigError::Config(format!(
                     "host_chains[{}].chain_id {} has unsupported type byte 0x{:02x} (expected 0x00 EVM or 0x01 Solana)",
                     i,
                     hc.chain_id,
-                    crate::core::event::chain_type_byte(hc.chain_id)
+                    chain_type_byte(hc.chain_id)
                 )));
             };
             if !valid_acl_address {
@@ -2229,7 +2232,8 @@ mod tests {
 
         let mut settings: Settings = config.try_deserialize().expect("Failed to deserialize");
         // SPL Token program id — a canonical 32-byte Solana base58 pubkey.
-        settings.host_chains[0].chain_id = crate::core::event::solana_host_chain_id(8009);
+        settings.host_chains[0].chain_id =
+            zama_solana_request::host_chain::solana_host_chain_id(8009);
         settings.host_chains[0].acl_address =
             "TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA".to_string();
         settings
@@ -2315,7 +2319,7 @@ mod tests {
     #[test]
     #[serial] // avoid env var leakage from parallel tests
     fn test_settings_loads_quoted_solana_host_chain_id() {
-        const SOLANA_CHAIN_ID: u64 = crate::core::event::solana_host_chain_id(12345);
+        const SOLANA_CHAIN_ID: u64 = zama_solana_request::host_chain::solana_host_chain_id(12345);
         // Mirror the live config (the e2e setup deploy.ts writes the Solana host_chains entry with a
         // QUOTED chain_id, because a bare YAML number above the IEEE-754 mantissa coerces to a
         // lossy f64). Loading must succeed through the real

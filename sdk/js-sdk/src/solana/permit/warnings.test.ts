@@ -29,7 +29,7 @@ const routing = (): Uint8Array => {
 };
 
 const BASE_WIRE: SolanaPermitWireFields = {
-  userPubkey: identity(0x11),
+  userAddress: identity(0x11),
   transportKey: new Uint8Array(PERMIT_TRANSPORT_KEY_LEN),
   allowedScopes: [],
   startTimestamp: 1_767_229_380n,

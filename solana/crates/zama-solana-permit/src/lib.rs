@@ -48,7 +48,7 @@
 //! // `PermitFields` has no public constructor and no public fields: skipping strict
 //! // decoding is not expressible.
 //! let fields = PermitFields {
-//!     user_pubkey: Identity::new([0u8; 32]),
+//!     user_address: Identity::new([7; 32]),
 //! };
 //! ```
 //!

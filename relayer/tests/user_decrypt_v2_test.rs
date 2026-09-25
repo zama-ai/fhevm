@@ -42,13 +42,12 @@ mod constants {
     /// which `ComputeCalldata` encodes for `LegacyDirect`.
     ///
     /// Naming it by the `_N` alias alone is not enough. alloy numbers overloads by position, so
-    /// adding one — as the Solana entry did — renumbers the rest, and nothing here stops
-    /// compiling: `SELECTOR` is a constant on every call type. The mock would then queue its
+    /// adding one renumbers the rest, and nothing here stops compiling: `SELECTOR` is a constant on every call type. The mock would then queue its
     /// responses against a function the relayer never calls, the request would never reach a
     /// terminal state, and the failure would surface as a poll timeout naming nothing.
     /// `assert_user_decrypt_selector_is_the_legacy_overload` below is what makes it say so.
     pub const USER_DECRYPT_SELECTOR: [u8; 4] =
-        fhevm_relayer::gateway::arbitrum::bindings::Decryption::userDecryptionRequest_2Call::SELECTOR;
+        fhevm_relayer::gateway::arbitrum::bindings::Decryption::userDecryptionRequest_1Call::SELECTOR;
 
     // Wait window. The mock lands the quorum by 1.5s and one straggler per block from 2s;
     // with `additional_shares = A` the relayer's target is `SHARES_THRESHOLD + A`.

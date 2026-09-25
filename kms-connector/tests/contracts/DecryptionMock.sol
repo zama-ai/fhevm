@@ -92,6 +92,13 @@ contract DecryptionMock {
 
     event PublicDecryptionRequest(uint256 indexed decryptionId, bytes32[] ctHandles, bytes extraData);
 
+    event SolanaPublicDecryptionRequest(
+        uint256 indexed decryptionId,
+        bytes32[] ctHandles,
+        bytes extraData,
+        bytes32[] encryptedStores
+    );
+
     event PublicDecryptionResponseCall(
         uint256 indexed decryptionId,
         bytes decryptedResult,
@@ -121,7 +128,7 @@ contract DecryptionMock {
         UserDecryptionRequestPayload payload
     );
 
-    event UserDecryptionRequest(
+    event SolanaUserDecryptionRequest(
         uint256 indexed decryptionId,
         bytes32[] ctHandles,
         RequestValiditySeconds requestValidity,
@@ -148,6 +155,17 @@ contract DecryptionMock {
         uint256 decryptionId = publicDecryptionCounter;
 
         emit PublicDecryptionRequest(decryptionId, ctHandles, extraData);
+    }
+
+    function solanaPublicDecryptionRequest(
+        bytes32[] calldata ctHandles,
+        bytes calldata extraData,
+        bytes32[] calldata encryptedStores
+    ) external {
+        publicDecryptionCounter++;
+        uint256 decryptionId = publicDecryptionCounter;
+
+        emit SolanaPublicDecryptionRequest(decryptionId, ctHandles, extraData, encryptedStores);
     }
 
     function publicDecryptionResponse(
@@ -210,8 +228,8 @@ contract DecryptionMock {
         emit UserDecryptionRequest(decryptionId, handles, payload);
     }
 
-    // Solana overload: the Gateway forwards `solanaRequest` verbatim.
-    function userDecryptionRequest(
+    // The Gateway forwards `solanaRequest` verbatim.
+    function solanaUserDecryptionRequest(
         bytes32[] calldata ctHandles,
         RequestValiditySeconds calldata requestValidity,
         bytes calldata publicKey,
@@ -221,7 +239,7 @@ contract DecryptionMock {
         userDecryptionCounter++;
         uint256 decryptionId = userDecryptionCounter;
 
-        emit UserDecryptionRequest(decryptionId, ctHandles, requestValidity, publicKey, extraData, solanaRequest);
+        emit SolanaUserDecryptionRequest(decryptionId, ctHandles, requestValidity, publicKey, extraData, solanaRequest);
     }
 
     function delegatedUserDecryptionRequest(

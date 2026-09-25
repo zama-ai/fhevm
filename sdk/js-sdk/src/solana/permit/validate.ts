@@ -56,7 +56,7 @@ const STRICT_DECIMAL_U64 = /^(0|[1-9][0-9]*)$/;
  * @throws SolanaPermitError - With the first rule the permit breaks, in signed-field order.
  */
 export function decodeSolanaPermitFields(wire: SolanaPermitWireFields): SolanaPermitFields {
-  const userPubkey = decodeIdentity(wire.userPubkey, { field: 'userPubkey' });
+  const userAddress = decodeIdentity(wire.userAddress, { field: 'userAddress' });
 
   // The length is the whole rule: a transport key of any other length has no typed form to land in.
   if (wire.transportKey.length !== PERMIT_TRANSPORT_KEY_LEN) {
@@ -86,7 +86,7 @@ export function decodeSolanaPermitFields(wire: SolanaPermitWireFields): SolanaPe
   // does so only on the far side of every rule above. Byte fields are copied so the branded value
   // cannot be edited afterwards through the arrays the caller still holds.
   return {
-    userPubkey,
+    userAddress,
     transportKey,
     allowedScopes,
     startTimestamp,
