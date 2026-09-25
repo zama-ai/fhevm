@@ -6,8 +6,9 @@
 --
 -- `slot` must be a slot that produced a block, and `block_hash` that block's hash in hex
 -- (the base58 `blockhash` of `getBlock <slot>`, decoded). The listener checks the first
--- replayed block against it, as on any resume. The replay reads the provider's replay
--- window, so `slot` must still be inside it.
+-- replayed block against it, as on any resume. The stream replays `slot` while it is inside
+-- the provider's replay window; past it, the listener catches up from `--archive-url`, so
+-- `slot` must be in that archive's history.
 --
 -- Recorded Solana leaves are kept: the replay recomputes them and requires them to match.
 --

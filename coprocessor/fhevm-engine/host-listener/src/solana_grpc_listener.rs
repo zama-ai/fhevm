@@ -41,7 +41,7 @@ use tonic::transport::{Channel, ClientTlsConfig};
 use yellowstone_grpc_proto::geyser::geyser_client::GeyserClient;
 use yellowstone_grpc_proto::prelude::{
     subscribe_update::UpdateOneof, Message as TransactionMessage,
-    SubscribeRequest, TransactionStatusMeta,
+    SubscribeRequest, SubscribeUpdateTransactionInfo, TransactionStatusMeta,
 };
 use zama_solana_transaction::{
     CompiledInstruction as CanonicalCompiledInstruction,
@@ -152,7 +152,7 @@ pub struct SolanaGrpcListenerConfig {
     pub x_token: Option<String>,
     /// Base58 zama-host program id to follow: instruction filter and the id hashed into
     /// reconstructed handles (not the id this crate was compiled with).
-    pub program_id: String,
+    pub program_id: Pubkey,
     /// On-chain HostConfig chain_id used in handle derivation (distinct from the
     /// coprocessor host-chain id). Used by the reconstruction path.
     pub chain_id: u64,
@@ -507,8 +507,8 @@ async fn subscribe_loop(
                                 "validate sealed Solana block",
                             ))
                         })?;
-                        if let SealDecision::Process(block) = decision {
-                            let prepared = prepare_block(block).map_err(|error| {
+                        if let SealDecision::Process(block, transactions) = decision {
+                            let prepared = prepare_block(block, transactions).map_err(|error| {
                                 FatalListenerError::new(error.context(
                                     "prepare sealed Solana block",
                                 ))
@@ -550,10 +550,13 @@ struct PreparedTransaction {
     instructions: Vec<crate::solana_reconstruct::DecodedInstruction>,
 }
 
-fn prepare_block(mut block: SealedBlock) -> Result<PreparedBlock> {
-    let matching_transaction_count = block.transactions.len();
+fn prepare_block(
+    block: SealedBlock,
+    matching: Vec<SubscribeUpdateTransactionInfo>,
+) -> Result<PreparedBlock> {
+    let matching_transaction_count = matching.len();
     let mut transactions = Vec::new();
-    for info in std::mem::take(&mut block.transactions) {
+    for info in matching {
         let meta = info
             .meta
             .as_ref()
@@ -662,7 +665,7 @@ mod replay_status_tests {
             ..Default::default()
         };
         let mut first_validator = BlockValidator::new(StartPosition::Tip);
-        let SealDecision::Process(first) =
+        let SealDecision::Process(first, _) =
             first_validator.seal(update.clone()).unwrap()
         else {
             panic!()
@@ -677,7 +680,7 @@ mod replay_status_tests {
         assert!(progress.applied.is_none());
 
         let mut retry_validator = BlockValidator::new(start);
-        let SealDecision::Process(retried) =
+        let SealDecision::Process(retried, _) =
             retry_validator.seal(update).unwrap()
         else {
             panic!()
@@ -714,7 +717,7 @@ mod replay_status_tests {
             ..Default::default()
         };
         let mut validator = BlockValidator::new(progress.subscription_start());
-        let SealDecision::Process(block) =
+        let SealDecision::Process(block, _) =
             validator.seal(update.clone()).unwrap()
         else {
             panic!("bootstrap block must be applied")
@@ -798,20 +801,10 @@ async fn apply_block(
     prepared: &PreparedBlock,
 ) -> std::result::Result<(), IngestFailure> {
     let sealed_block = &prepared.block;
-    // The deployment this listener follows, not the id the crate was compiled with: handles
-    // hash the program id, so a listener built for one profile can still derive another's.
-    let program_id: Pubkey = config.program_id.parse().map_err(|err| {
-        IngestFailure::fatal(anyhow!(
-            "program_id {} is not a Solana pubkey: {err}",
-            config.program_id
-        ))
-    })?;
-
     let mut reconstructed = Vec::new();
     for transaction in &prepared.transactions {
         let outcome = reconstruct_records_for_insert(
             config,
-            program_id,
             &transaction.instructions,
             sealed_block.slot,
         )
@@ -1041,7 +1034,6 @@ enum ReconstructionOutcome {
 /// instruction list together with each execution's `FheExecutedEvent`.
 fn reconstruct_records_for_insert(
     config: &SolanaGrpcListenerConfig,
-    program_id: Pubkey,
     instructions: &[crate::solana_reconstruct::DecodedInstruction],
     slot: u64,
 ) -> Result<ReconstructionOutcome> {
@@ -1053,9 +1045,13 @@ fn reconstruct_records_for_insert(
         MAKE_STATE_ENCRYPTED_STORE_INDEX,
     };
 
+    // The deployment this listener follows, not the id the crate was compiled with: handles
+    // hash the program id, so a listener built for one profile can still derive another's.
+    let program_id = config.program_id;
+    let host_program = program_id.to_string();
     let host_instructions = instructions
         .iter()
-        .filter(|ix| ix.program == config.program_id)
+        .filter(|ix| ix.program == host_program)
         .collect::<Vec<_>>();
     for ix in &host_instructions {
         if is_fhe_execute_instruction(&ix.data)
@@ -1088,7 +1084,7 @@ fn reconstruct_records_for_insert(
     let mut execution_index = 0;
 
     for (instruction_index, ix) in instructions.iter().enumerate() {
-        if ix.program != config.program_id {
+        if ix.program != host_program {
             continue;
         }
         if let Some(execution) = decode_fhe_execute_args(&ix.data) {
@@ -1098,10 +1094,10 @@ fn reconstruct_records_for_insert(
             let mut events = instructions[instruction_index + 1..]
                 .iter()
                 .take_while(|later| {
-                    later.program != config.program_id
+                    later.program != host_program
                         || !is_fhe_execute_instruction(&later.data)
                 })
-                .filter(|later| later.program == config.program_id)
+                .filter(|later| later.program == host_program)
                 .filter_map(|later| decode_fhe_executed_event(&later.data));
             let (Some(event), None) = (events.next(), events.next()) else {
                 anyhow::bail!(
@@ -1236,7 +1232,6 @@ mod test_support {
         reconstruct_records_for_insert, ReconstructedTransaction,
         ReconstructionOutcome, SolanaGrpcListenerConfig,
     };
-    use anchor_lang::prelude::Pubkey;
     use anchor_lang::{AnchorSerialize, Discriminator};
     use std::collections::HashSet;
     use zama_host::state::{FheExecuteArgs, FheExecuteStep};
@@ -1259,7 +1254,7 @@ mod test_support {
         SolanaGrpcListenerConfig {
             grpc_url: "http://127.0.0.1:1".to_owned(),
             x_token: None,
-            program_id: ZAMA_HOST.to_owned(),
+            program_id: ZAMA_HOST.parse().unwrap(),
             chain_id: zama_host::SOLANA_POC_CHAIN_ID,
             dependent_ops_max_per_chain: 0,
         }
@@ -1335,12 +1330,7 @@ mod test_support {
     pub(super) fn reconstruct(
         instructions: &[DecodedInstruction],
     ) -> anyhow::Result<ReconstructedTransaction> {
-        match reconstruct_records_for_insert(
-            &config(),
-            ZAMA_HOST.parse::<Pubkey>().unwrap(),
-            instructions,
-            42,
-        )? {
+        match reconstruct_records_for_insert(&config(), instructions, 42)? {
             ReconstructionOutcome::Complete(reconstructed) => Ok(reconstructed),
             other => panic!("expected a covered transaction, got {other:?}"),
         }
@@ -1891,7 +1881,6 @@ mod apply_block_tests {
             block_time: Some(1_700_000_000),
             block_height: Some(slot - 2),
             executed_transaction_count: 1,
-            transactions: vec![],
         }
     }
 

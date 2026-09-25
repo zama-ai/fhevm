@@ -1,7 +1,6 @@
 //! Stops host areas at once: any enabled pauser, like EVM `ACL.pause` for a `PauserSet` member.
 
 use anchor_lang::prelude::*;
-use anchor_lang::solana_program::instruction::{get_stack_height, TRANSACTION_LEVEL_STACK_HEIGHT};
 
 use super::common::*;
 use crate::errors::ZamaHostError;
@@ -29,14 +28,10 @@ pub struct Pause<'info> {
 /// pausers acting at the same time all succeed.
 pub fn pause(ctx: Context<Pause>, areas: PauseFlags) -> Result<()> {
     assert_no_remaining_accounts(ctx.remaining_accounts)?;
-    // A wallet's signature reaches every CPI of the transaction it signed, so any program the
-    // pauser calls could pause the host. A PDA signs only through its own program's
-    // `invoke_signed`, so a PDA pauser, such as a Squads vault, may still pause through CPI.
-    require!(
-        get_stack_height() == TRANSACTION_LEVEL_STACK_HEIGHT
-            || !ctx.accounts.pauser.key().is_on_curve(),
-        ZamaHostError::WalletPauseThroughCpi
-    );
+    require_top_level_unless_pda(
+        &ctx.accounts.pauser.key(),
+        ZamaHostError::WalletPauseThroughCpi,
+    )?;
     let config = &mut ctx.accounts.host_config;
     let paused = config.paused.with(areas);
     if paused == config.paused {

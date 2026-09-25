@@ -186,8 +186,8 @@ const registerSolanaHostChain = async (parameters: {
  * has moved (it drops every event whose generated struct no longer matches), leaving the
  * coprocessor with no work and the vertical hanging at SNS commit.
  *
- * gRPC transport + off-chain reconstruction: the listener rebuilds every output, public ones
- * included, from transaction instructions and the streamed sysvars.
+ * gRPC transport: the listener takes every output, public ones included, from each execution's
+ * `FheExecutedEvent`, and re-derives the handles only as a check.
  * Handle-derivation params are auto-detected from the on-chain HostConfig PDA at startup.
  */
 export const startHostListener = async (parameters: {

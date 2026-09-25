@@ -147,8 +147,9 @@ with the local harness; it is not a new top-level fhevm-cli command.
 An existing HostConfig/KMS context cannot be silently rebound to a new Gateway or
 committee. A breaking experiment that changes those bindings needs explicit on-chain
 reconfiguration or fresh identities. Discarded values are not expected to remain usable.
-Listener downtime requires provider replay of the missed blocks; verify the provider's
-retention rather than assuming archive recovery.
+After listener downtime, Yellowstone replays the missed blocks while they are inside its
+replay window, and the listener catches up from `--archive-url` beyond it (DD-059). Point
+`--archive-url` at an RPC whose history covers the downtime you plan for.
 
 ## Validation
 

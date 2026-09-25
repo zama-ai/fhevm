@@ -33,7 +33,7 @@ CAPABILITIES = {
     "Governance": {
         "owns": "`HostConfig`, pause flags and pauser records, deny list, HCU limits and trust records",
         "changed_by": "admin; an enabled pauser can also set pause flags",
-        "consumers": "none",
+        "consumers": "host listener (`HostConfig.chain_id`, read at startup)",
     },
     "Trust roots": {
         "owns": "KMS contexts, coprocessor signers, EIP-712 domain, `verify_public_decrypt`",

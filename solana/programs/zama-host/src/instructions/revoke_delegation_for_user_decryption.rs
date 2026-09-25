@@ -29,11 +29,7 @@ pub fn revoke_delegation_for_user_decryption(
     ctx: Context<RevokeDelegationForUserDecryption>,
 ) -> Result<()> {
     assert_no_remaining_accounts(ctx.remaining_accounts)?;
-    assert_not_paused(
-        &ctx.accounts.host_config,
-        |paused| paused.acl_writes,
-        ZamaHostError::AclWritesPaused,
-    )?;
+    assert_not_paused(&ctx.accounts.host_config, PauseArea::AclWrites)?;
     let clock = Clock::get()?;
     require_keys_eq!(
         ctx.accounts.delegator.key(),

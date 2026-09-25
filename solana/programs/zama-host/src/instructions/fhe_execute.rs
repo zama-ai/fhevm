@@ -85,11 +85,7 @@ pub fn fhe_execute<'info>(
     mut ctx: Context<'info, FheExecute<'info>>,
     args: FheExecuteArgs,
 ) -> Result<()> {
-    assert_not_paused(
-        &ctx.accounts.host_config,
-        |paused| paused.execution,
-        ZamaHostError::ExecutionPaused,
-    )?;
+    assert_not_paused(&ctx.accounts.host_config, PauseArea::Execution)?;
     require!(
         !args.steps.is_empty() && args.steps.len() <= MAX_FHE_EXECUTION_STEPS,
         ZamaHostError::InvalidFheExecuteOperationCount

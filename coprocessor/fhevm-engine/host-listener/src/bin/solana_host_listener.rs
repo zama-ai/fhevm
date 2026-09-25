@@ -230,7 +230,7 @@ async fn main() -> Result<()> {
         &SolanaGrpcListenerConfig {
             grpc_url: args.grpc_url,
             x_token: args.grpc_x_token,
-            program_id: program_id.to_string(),
+            program_id,
             chain_id: host_config_chain_id,
             dependent_ops_max_per_chain: args.dependent_ops_max_per_chain,
         },

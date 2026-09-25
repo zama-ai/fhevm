@@ -2,6 +2,7 @@
 
 use anchor_lang::prelude::*;
 use anchor_lang::solana_program::{
+    instruction::{get_stack_height, TRANSACTION_LEVEL_STACK_HEIGHT},
     program::{invoke, invoke_signed},
     system_instruction,
 };
@@ -9,7 +10,7 @@ use anchor_lang::solana_program::{
 use crate::{
     errors::ZamaHostError,
     state::{
-        deny_scope_address, host_config_address, AppScope, DenyScopeRecord, HostConfig, PauseFlags,
+        deny_scope_address, host_config_address, AppScope, DenyScopeRecord, HostConfig, PauseArea,
     },
 };
 use crate::{events::HostConfigUpdatedEvent, state::EVENT_VERSION};
@@ -127,17 +128,20 @@ pub(super) fn assert_admin(config: &Account<HostConfig>, admin: &Signer) -> Resu
     Ok(())
 }
 
-/// Fails with `error` while the area `area` picks out of the pause flags is paused.
-pub(super) fn assert_not_paused(
-    config: &Account<HostConfig>,
-    area: fn(PauseFlags) -> bool,
-    error: ZamaHostError,
-) -> Result<()> {
+/// Checks the canonical `HostConfig`, then fails while `area` is paused.
+pub(super) fn assert_not_paused(config: &Account<HostConfig>, area: PauseArea) -> Result<()> {
     assert_host_config_shape(config)?;
-    if area(config.paused) {
-        return Err(error.into());
+    config.paused.require_running(area)
+}
+
+/// A wallet's signature reaches every CPI of the transaction it signed, so any program the wallet
+/// calls could act with it. A PDA signs only through its own program's `invoke_signed`, so a PDA,
+/// such as a Squads vault, may still sign through CPI.
+pub(super) fn require_top_level_unless_pda(signer: &Pubkey, error: ZamaHostError) -> Result<()> {
+    if get_stack_height() == TRANSACTION_LEVEL_STACK_HEIGHT || !signer.is_on_curve() {
+        return Ok(());
     }
-    Ok(())
+    Err(error.into())
 }
 
 /// Emits the config snapshot after a config change. Every instruction that touches `HostConfig`
@@ -411,6 +415,7 @@ pub(super) fn write_account<T: AccountSerialize>(info: &AccountInfo, account: &T
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::state::PauseFlags;
 
     #[test]
     fn absent_deny_record_accepts_non_executable_system_empty_account() {

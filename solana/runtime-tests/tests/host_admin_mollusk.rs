@@ -22,7 +22,10 @@ use zama_solana_test_kit::{
 };
 
 mod host_fixtures;
-use host_fixtures::{host_config_account, mollusk_execute_context, read_host_config};
+use host_fixtures::{
+    host_config_account, host_program_account, mollusk_execute_context, read_host_config,
+    vault_and_host_svm,
+};
 
 fn custom_error(error: ZamaHostError) -> Check<'static> {
     anchor_error_check(error as u32)
@@ -425,20 +428,8 @@ fn mollusk_a_pauser_pauses_and_only_the_admin_unpauses() {
     );
 }
 
-/// The host program's account, so that the vault can name it as a CPI callee.
-fn host_program_account() -> Account {
-    Account {
-        lamports: 1,
-        data: Vec::new(),
-        owner: solana_sdk::bpf_loader::ID,
-        executable: true,
-        rent_epoch: 0,
-    }
-}
-
 fn vault_context(accounts: Vec<(Pubkey, Account)>) -> Ctx {
-    let mut mollusk = zama_solana_test_kit::svm(&vault::id(), "delegator_vault");
-    mollusk.add_program(&host::id(), "zama_host");
+    let mollusk = vault_and_host_svm();
     let mut store: std::collections::HashMap<Pubkey, Account> = accounts.into_iter().collect();
     store.insert(host::id(), host_program_account());
     mollusk.with_context(store)

@@ -27,10 +27,7 @@ pub(crate) fn verify_input_attestation(
     config: &HostConfig,
     attestation: &CoprocessorInputAttestation,
 ) -> Result<()> {
-    require!(
-        !config.paused.verified_inputs,
-        ZamaHostError::VerifiedInputsPaused
-    );
+    config.paused.require_running(PauseArea::VerifiedInputs)?;
     require!(
         !config.active_coprocessor_signers().is_empty()
             && config.input_verification_contract != [0u8; 20],

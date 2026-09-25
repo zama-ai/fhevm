@@ -17,7 +17,7 @@ check requires its `assert_no_remaining_accounts` call. `?` marks an optional ac
 
 | Capability | Owns | Who may change it | Other consumers |
 |---|---|---|---|
-| Governance | `HostConfig`, pause flags and pauser records, deny list, HCU limits and trust records | admin; an enabled pauser can also set pause flags | none |
+| Governance | `HostConfig`, pause flags and pauser records, deny list, HCU limits and trust records | admin; an enabled pauser can also set pause flags | host listener (`HostConfig.chain_id`, read at startup) |
 | Trust roots | KMS contexts, coprocessor signers, EIP-712 domain, `verify_public_decrypt` | admin | confidential-token redemption, KMS connector |
 | Execution | `fhe_execute`, HCU metering, type gate, handle derivation, transient store | no role | host listener, `zama-fhe` |
 | Stores and ACL | `EncryptedStore`, MMR, public release | the store's authority, a PDA of its program | host listener, KMS connector (`zama-solana-acl`) |

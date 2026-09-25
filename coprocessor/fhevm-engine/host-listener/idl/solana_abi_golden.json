@@ -248,6 +248,8 @@
     },
     {
       "category": "event",
+      "fixture_hex": "ea1ac8c9bb725dd00102030405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f2021bdffffffffffffff010000000405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f20212223010000001500060708090a0b0c0d0e0f101112131415",
+      "fixture_len": 107,
       "name": "FheExecutedEvent",
       "program": "zama_host",
       "schema_hash": "a3f673bfe71b45204845cf1ace0c37edda664b074c76be4978f6a1f103309469"
