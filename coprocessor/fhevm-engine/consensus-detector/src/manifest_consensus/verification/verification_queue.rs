@@ -226,15 +226,29 @@ pub(super) async fn next_verification_delay(
     Ok(millis.map(|millis| Duration::from_millis(millis.max(0) as u64)))
 }
 
-/// Read candidates without locking: one earliest due task per host chain.
-/// Each candidate must still be claimed and rechecked in its own transaction.
+/// Task ids of `ready_verification_chain_tasks`.
+#[cfg(test)]
 pub(super) async fn ready_verification_tasks(
     pool: &PgPool,
     consensus_epoch: &str,
 ) -> Result<Vec<i64>, ExecutionError> {
-    Ok(sqlx::query_scalar!(
+    Ok(ready_verification_chain_tasks(pool, consensus_epoch)
+        .await?
+        .into_iter()
+        .map(|(_, task_id)| task_id)
+        .collect())
+}
+
+/// Read candidates without locking: one earliest due task per host chain, as
+/// `(host_chain_id, task_id)`. Each candidate must still be claimed and
+/// rechecked in its own transaction.
+pub(super) async fn ready_verification_chain_tasks(
+    pool: &PgPool,
+    consensus_epoch: &str,
+) -> Result<Vec<(i64, i64)>, ExecutionError> {
+    Ok(sqlx::query!(
         r#"
-        SELECT DISTINCT ON (manifest.host_chain_id) task.id
+        SELECT DISTINCT ON (manifest.host_chain_id) manifest.host_chain_id, task.id
           FROM block_manifest_verification_task task
           JOIN block_manifest manifest
             ON manifest.id = task.local_manifest_id
@@ -248,7 +262,10 @@ pub(super) async fn ready_verification_tasks(
         consensus_epoch,
     )
     .fetch_all(pool)
-    .await?)
+    .await?
+    .into_iter()
+    .map(|row| (row.host_chain_id, row.id))
+    .collect())
 }
 
 pub(super) async fn claim_verification_task(
