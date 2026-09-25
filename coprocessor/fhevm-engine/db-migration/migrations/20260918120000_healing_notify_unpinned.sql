@@ -1,5 +1,6 @@
 -- Wake healing for unhealed ct64-repair rows even before a target is pinned
--- (inferred findings start with NULL quorum_ct64_digest).
+-- (inferred findings start with NULL quorum_ct64_digest), and when containment
+-- marks a ct64 finding contained, since healing waits for it.
 DROP TRIGGER IF EXISTS drifted_handle_healing_work_insert ON drifted_handle;
 DROP TRIGGER IF EXISTS drifted_handle_healing_work_update ON drifted_handle;
 
@@ -30,6 +31,7 @@ CREATE TRIGGER drifted_handle_healing_work_update
             OR NEW.quorum_ct64_digest IS DISTINCT FROM OLD.quorum_ct64_digest
             OR NEW.peer_sources IS DISTINCT FROM OLD.peer_sources
             OR NEW.reason IS DISTINCT FROM OLD.reason
+            OR NEW.is_contained IS DISTINCT FROM OLD.is_contained
         )
     )
     EXECUTE FUNCTION notify_healing_work();

@@ -51,7 +51,7 @@ async fn insert_root<'a>(executor: impl sqlx::PgExecutor<'a>, handle: u8) -> i64
         .bind(bytes(1)).bind(i64::from(handle)).bind(bytes(handle)).fetch_one(executor).await.unwrap()
 }
 
-async fn direct_root(pool: &PgPool, handle: u8, reason: &str) -> i64 {
+pub(crate) async fn direct_root(pool: &PgPool, handle: u8, reason: &str) -> i64 {
     let id = root(pool, handle).await;
     // Store a real signed local manifest to back the finding's required task FK.
     // This test exercises containment of recorded findings, not peer comparison.

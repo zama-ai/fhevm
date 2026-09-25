@@ -127,8 +127,16 @@ directory holds the propagation functions. The healing worker starts with public
 verification: it LISTENs on `event_healing_work` and polls on
 `--manifest-healing-poll-interval` (default **30s**), then picks up to
 `--manifest-healing-batch-size` (default **8**) due `can_be_healed` rows and
-downloads matching ct64 from peer buckets concurrently. A matching GET
-writes `ciphertexts` and `healed_at` in the same transaction. A pass that
+downloads matching ct64 from peer buckets concurrently. A `ct64_mismatch` row is
+due only once `is_contained` is set: installing it removes the root from the
+containment scan, so its already-computed descendants must be marked first.
+`missing_here`, `error_here`, and `uncomputed_here` rows have no wrong local ct64
+for consumers to have read and are due without containment. Marking a row
+contained wakes the worker. A matching GET writes `ciphertexts` and `healed_at`
+in the same transaction, and completes the handle's pending or errored
+`computations` row with its error cleared, as the TFHE upload path does when it
+stores bytes. Consumers that failed on that input report their own `error_here`
+difference and are healed the same way. A pass that
 installs at least one handle NOTIFYs `work_available` once so idle TFHE
 picks unfrozen dependents without waiting for its poll.
 
