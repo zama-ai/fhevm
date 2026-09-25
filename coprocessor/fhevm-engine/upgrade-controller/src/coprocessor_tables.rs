@@ -282,6 +282,11 @@ pub const COPROCESSOR_TABLES: &[CoprocessorTable] = &[
         duplicated: false,
         conflict_cols: &[],
     },
+    CoprocessorTable {
+        name: "drifted_handle_demand",
+        duplicated: false,
+        conflict_cols: &[],
+    },
     // ---------------------------------------------------------------------
     // Deprecated wave1 branch-context state. Nothing in the upgrade-controller
     // reads, writes or deletes these any more: they get no gcs.* duplicate, the
@@ -466,6 +471,7 @@ mod tests {
             "block_manifest_verification_attempt",
             "block_manifest_verification_attempt_drift",
             "drifted_handle",
+            "drifted_handle_demand",
         ];
         for name in MANIFEST_TABLES {
             let table = COPROCESSOR_TABLES

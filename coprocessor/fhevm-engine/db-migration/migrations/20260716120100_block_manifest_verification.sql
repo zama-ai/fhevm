@@ -201,10 +201,6 @@ CREATE TABLE IF NOT EXISTS drifted_handle
         (reason IN ('ct64_mismatch', 'missing_here', 'error_here', 'uncomputed_here')
             AND quorum_ct64_digest IS NOT NULL
             AND healed_at IS NULL) STORED,
-    -- EMA of per-batch unlock share: stalled txs contribute 1/k to each
-    -- drifted handle that transitively blocks them in that batch.
-    tx_unlock_potential DOUBLE PRECISION NOT NULL DEFAULT 0
-        CHECK (tx_unlock_potential >= 0),
     -- Evidence contains the pinned registry/quorum and authenticated statements.
     -- Sources contain publisher identities and their download locations.
     target_evidence JSONB NULL CHECK (jsonb_typeof(target_evidence) = 'object'),
@@ -264,10 +260,19 @@ CREATE TABLE IF NOT EXISTS drifted_handle
     CHECK (detection_kind = 'inferred' OR last_quorum_task_id IS NOT NULL)
 );
 
-CREATE INDEX idx_drifted_handle_healing_priority
-ON drifted_handle (tx_unlock_potential DESC, detected_at, block_number)
-WHERE reason IN ('ct64_mismatch', 'missing_here', 'error_here', 'uncomputed_here')
-    AND healed_at IS NULL;
+-- Healing demand per ciphertext handle, shared by every finding for that
+-- handle: EMA of per-batch unlock share, where stalled txs contribute 1/k to
+-- each drifted handle that transitively blocks them in that batch. Kept off
+-- drifted_handle so TFHE EMA writes do not lock rows healing is picking, and
+-- do not fire event_healing_work.
+CREATE TABLE drifted_handle_demand (
+    handle BYTEA PRIMARY KEY CHECK (OCTET_LENGTH(handle) = 32),
+    tx_unlock_potential DOUBLE PRECISION NOT NULL DEFAULT 0
+        CHECK (tx_unlock_potential >= 0)
+);
+
+CREATE INDEX idx_drifted_handle_demand_priority
+    ON drifted_handle_demand (tx_unlock_potential DESC);
 
 -- Shared predicate for scheduling and result acceptance. Rows are already
 -- local: the observed group held the quorum when the finding was written.
