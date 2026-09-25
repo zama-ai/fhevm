@@ -38,11 +38,11 @@
       "max_cpi_instruction_data_bytes": 376
     },
     "initialize_token_account": {
-      "compute_units": 105575,
+      "compute_units": 106095,
       "unique_accounts": 12,
       "instruction_data_bytes": 8,
       "cpi_instructions": 7,
-      "total_cpi_instruction_data_bytes": 773,
+      "total_cpi_instruction_data_bytes": 741,
       "max_cpi_instruction_data_bytes": 242
     }
   }
