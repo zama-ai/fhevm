@@ -3,6 +3,7 @@ use serde::{Deserialize, Serialize};
 use tracing::info;
 use utoipa::ToSchema;
 
+use crate::core::request_conversion::RequestConversionError;
 use crate::http::utils::responses::{to_camel_case, FieldJsonErrorType, ParseError};
 use crate::http::utils::validation_messages;
 
@@ -581,7 +582,36 @@ impl RelayerV2ResponseFailed {
                     }),
                 )
             }
-            ParseError::ConversionFailed(message) => {
+            // A wire form the validator cannot see (widths, ranges, ordering) refused at
+            // conversion: the caller's mistake, answered like a validator refusal.
+            ParseError::ConversionFailed(RequestConversionError::Malformed { field, issue }) => {
+                let label = "validation_failed";
+                let message = format!("Validation failed for 1 field in the request: {field}");
+
+                info!(
+                    request_id,
+                    http_status = status_code.as_u16(),
+                    label,
+                    message = message.as_str(),
+                    "HTTP response"
+                );
+
+                (
+                    status_code,
+                    Json(Self {
+                        status: ApiResponseStatus::Failed,
+                        request_id: Some(request_id.to_string()),
+                        error: V2ErrorResponseBody::validation_failed(
+                            message,
+                            vec![RelayerV2ErrorDetail {
+                                field: field.clone(),
+                                issue: issue.clone(),
+                            }],
+                        ),
+                    }),
+                )
+            }
+            ParseError::ConversionFailed(RequestConversionError::Internal(message)) => {
                 tracing::error!(
                     "Internal error: Conversion failed after validation passed: {}",
                     message

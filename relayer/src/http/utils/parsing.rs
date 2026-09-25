@@ -1,3 +1,4 @@
+use crate::core::request_conversion::RequestConversionError;
 use crate::http::utils::responses::{AppResponse, FieldJsonErrorType, ParseError};
 use axum::{
     body::Bytes,
@@ -51,7 +52,7 @@ pub fn parse_and_validate<JsonType, RequestType>(body: &[u8]) -> Result<RequestT
 where
     JsonType: DeserializeOwned + validator::Validate,
     RequestType: TryFrom<JsonType>,
-    <RequestType as TryFrom<JsonType>>::Error: std::fmt::Display,
+    <RequestType as TryFrom<JsonType>>::Error: Into<RequestConversionError>,
 {
     parse_and_validate_cross::<JsonType, RequestType>(body, |_, _| {})
 }
@@ -67,7 +68,7 @@ pub fn parse_and_validate_cross<JsonType, RequestType>(
 where
     JsonType: DeserializeOwned + validator::Validate,
     RequestType: TryFrom<JsonType>,
-    <RequestType as TryFrom<JsonType>>::Error: std::fmt::Display,
+    <RequestType as TryFrom<JsonType>>::Error: Into<RequestConversionError>,
 {
     // 1. Parse JSON with custom error handling
     let payload: JsonType = deserialize_json(body)?;
@@ -83,14 +84,9 @@ where
         return Err(ParseError::ValidationFailed(errors));
     }
 
-    // 3. Convert to final request type
-    match RequestType::try_from(payload) {
-        Ok(request) => Ok(request),
-        Err(error) => {
-            // If validation passed but conversion failed, this is an internal error
-            Err(ParseError::ConversionFailed(error.to_string()))
-        }
-    }
+    // 3. Convert to final request type. The conversion says whether its refusal is the
+    //    caller's (a wire form the validator cannot see) or the relayer's own.
+    RequestType::try_from(payload).map_err(|error| ParseError::ConversionFailed(error.into()))
 }
 
 /// Custom JSON extractor that handles both parsing and validation errors consistently.
