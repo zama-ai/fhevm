@@ -1,0 +1,39 @@
+[workspace]
+resolver = "2"
+members = ["crates/*"]
+
+[workspace.package]
+authors = ["Zama"]
+edition = "2024"
+license = "BSD-3-Clause-Clear"
+version = "0.1.0"
+publish = false
+
+[workspace.dependencies]
+# Relayer <-> KMS connector v1 interface (DTOs, ErrorCode, routes). Never enable its `endpoint` feature (actix).
+kms-connector-api = { path = "../kms-connector/crates/api", default-features = false }
+alloy = { version = "=2.2.0", default-features = false, features = ["std", "serde", "sol-types"] }
+async-trait = "=0.1.89"
+bytes = "=1.10.1"
+config = { version = "=0.15.19", default-features = false, features = ["yaml"] }
+humantime-serde = "=1.1.1"
+reqwest = { version = "=0.13.4", default-features = false, features = ["json", "rustls"] }
+serde = { version = "=1.0.228", default-features = false, features = ["derive", "std"] }
+serde_json = { version = "=1.0.145", default-features = false, features = ["std"] }
+thiserror = { version = "=2.0.18", default-features = false }
+tokio = { version = "=1.47.1", default-features = false, features = ["macros", "rt-multi-thread", "signal", "sync", "time"] }
+tokio-util = { version = "=0.7.18", default-features = false }
+tracing = "=0.1.44"
+tracing-subscriber = { version = "=0.3.20", default-features = false, features = ["env-filter", "fmt", "json", "std", "ansi"] }
+url = { version = "=2.5.8", default-features = false, features = ["serde", "std"] }
+axum = { version = "=0.8.9", default-features = false, features = ["http1", "json", "tokio"] }
+uuid = { version = "=1.26.0", default-features = false, features = ["std", "v7"] }
+# tests
+futures-util = { version = "=0.3.34", default-features = false }
+tower = { version = "=0.5.3", default-features = false, features = ["util"] }
+wiremock = "=0.6.5"
+
+[profile.release]
+opt-level = 3
+lto = true
+codegen-units = 1
