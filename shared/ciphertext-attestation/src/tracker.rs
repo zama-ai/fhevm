@@ -85,7 +85,9 @@ impl Round {
     }
 
     /// The largest group of Coprocessors that attested the same material, with that material.
-    /// Ties are broken by material — the same tie-break `consensus::evaluate` uses.
+    ///
+    /// Ties are broken deterministically by material, smallest wins, so the outcome never depends
+    /// on reply order.
     fn winner(&self) -> Option<(ConsensusMaterial, Vec<CoprocessorEntry>)> {
         let mut grouped: HashMap<&ConsensusMaterial, Vec<CoprocessorEntry>> = HashMap::new();
         for (entry, reply) in &self.replies {
@@ -695,9 +697,6 @@ mod tests {
 
     #[tokio::test]
     async fn majority_group_wins_over_minority() {
-        // Length dominance on this crate's path. `consensus.rs`'s test of the same name pins it
-        // for the frozen `evaluate`, so inverting `winner`'s length comparison leaves every other
-        // test here passing: the multi-group tests all hold groups of equal size.
         let s1 = PrivateKeySigner::random();
         let s2 = PrivateKeySigner::random();
         let s3 = PrivateKeySigner::random();
@@ -733,9 +732,8 @@ mod tests {
 
     #[tokio::test]
     async fn equal_size_groups_use_deterministic_material_tie_break() {
-        // `consensus.rs`'s test of the same name pins this for the frozen `evaluate`; nothing
-        // pinned it for `winner()`, so a flipped tie-break would leave every other test here
-        // passing.
+        // Equal-size groups must still resolve deterministically, or the verdict would depend on
+        // reply arrival order.
         let s1 = PrivateKeySigner::random();
         let s2 = PrivateKeySigner::random();
         // Threshold 3 with only 2 Coprocessors keeps this off the `Reached` path: the test is
@@ -778,7 +776,7 @@ mod tests {
         assert_eq!(
             winning_material,
             material1.min(material2),
-            "the winning group must hold the smaller material on a tie, matching consensus::evaluate"
+            "the winning group must hold the smaller material on a tie"
         );
     }
 }

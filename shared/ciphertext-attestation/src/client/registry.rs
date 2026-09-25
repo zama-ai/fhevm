@@ -43,6 +43,15 @@ pub struct CoprocessorRegistrySnapshot {
     pub threshold: NonZeroUsize,
 }
 
+/// What a [`RegistryError::Critical`] means for the embedding service.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum CriticalFailurePolicy {
+    /// Keep serving the last good snapshot.
+    ServeStale,
+    /// Cancel the registry's `cancel_token`; the embedding service is expected to shut down.
+    Shutdown,
+}
+
 /// Why loading or refreshing the Coprocessor registry failed.
 ///
 /// Reporting only — the registry acts on neither variant. What a failure means is the embedding
@@ -155,13 +164,13 @@ where
     P: Provider<N> + Clone + 'static,
     N: Network,
 {
-    /// Loads the initial snapshot and spawns the background refresh task, which runs until
-    /// `cancel_token` is cancelled.
+    /// Loads the initial snapshot and spawns the background refresh task.
     pub async fn connect(
         provider: P,
         gateway_config_address: Address,
         refresh_interval: Duration,
         cancel_token: CancellationToken,
+        policy: CriticalFailurePolicy,
     ) -> anyhow::Result<Self> {
         // Check for code first — `load` would see an address with no code as a decode failure
         // and classify it `Transient`.
@@ -180,19 +189,23 @@ where
             CoprocessorRegistrySnapshot::load(&gateway_config_contract).await
         };
 
-        // `Critical` here is chain-side config, so the consumer starts and refuses per request
-        // instead of failing to boot. The placeholder is never read: only a successful refresh
-        // clears the reason.
         let (snapshot, critical_failure) = match loaded {
             Ok(snapshot) => (snapshot, None),
-            Err(RegistryError::Critical(reason)) => {
-                // TODO: alert on this, once a metric exists to carry it.
-                error!("Coprocessor registry unusable at startup: {reason}");
-                (
-                    CoprocessorRegistrySnapshot::new(Vec::new(), NonZeroUsize::MIN),
-                    Some(reason),
-                )
-            }
+            Err(RegistryError::Critical(reason)) => match policy {
+                CriticalFailurePolicy::ServeStale => {
+                    // TODO: alert on this, once a metric exists to carry it.
+                    error!("Coprocessor registry unusable at startup: {reason}");
+                    (
+                        CoprocessorRegistrySnapshot::new(Vec::new(), NonZeroUsize::MIN),
+                        Some(reason),
+                    )
+                }
+                CriticalFailurePolicy::Shutdown => {
+                    return Err(anyhow::anyhow!(
+                        "Coprocessor registry unusable at startup: {reason}"
+                    ));
+                }
+            },
             Err(transient) => return Err(transient.into()),
         };
 
@@ -201,7 +214,7 @@ where
             snapshot: Arc::new(RwLock::new(Arc::new(snapshot))),
             critical_failure: Arc::new(RwLock::new(critical_failure)),
         };
-        registry.spawn_refresh_task(refresh_interval, cancel_token);
+        registry.spawn_refresh_task(refresh_interval, cancel_token, policy);
 
         Ok(registry)
     }
@@ -230,7 +243,12 @@ where
     }
 
     /// Spawns the background task that reloads the registry on the configured TTL.
-    fn spawn_refresh_task(&self, refresh_interval: Duration, cancel_token: CancellationToken) {
+    fn spawn_refresh_task(
+        &self,
+        refresh_interval: Duration,
+        cancel_token: CancellationToken,
+        policy: CriticalFailurePolicy,
+    ) {
         let this = self.clone();
         tokio::spawn(async move {
             let mut interval = tokio::time::interval(refresh_interval);
@@ -252,13 +270,21 @@ where
                     Err(RegistryError::Transient(e)) => warn!(
                         "Failed to refresh Coprocessor registry, keeping previous snapshot: {e}"
                     ),
-                    Err(RegistryError::Critical(critical)) => {
-                        // TODO: alert on this, once a metric exists to carry it.
-                        error!(
-                            "Coprocessor registry unusable, keeping previous snapshot: {critical}"
-                        );
-                        this.set_critical_failure(Some(critical));
-                    }
+                    Err(RegistryError::Critical(critical)) => match policy {
+                        CriticalFailurePolicy::ServeStale => {
+                            // TODO: alert on this, once a metric exists to carry it.
+                            error!(
+                                "Coprocessor registry unusable, keeping previous snapshot: \
+                                 {critical}"
+                            );
+                            this.set_critical_failure(Some(critical));
+                        }
+                        CriticalFailurePolicy::Shutdown => {
+                            error!("Shutting down on critical registry failure: {critical}");
+                            cancel_token.cancel();
+                            break;
+                        }
+                    },
                 };
             }
         });
@@ -270,6 +296,34 @@ where
         })?;
         *guard = Arc::new(snapshot);
         Ok(())
+    }
+}
+
+#[cfg(feature = "test-utils")]
+impl<P, N> CoprocessorRegistry<P, N>
+where
+    P: Provider<N> + Clone + 'static,
+    N: Network,
+{
+    /// A registry with an empty snapshot, never reading the chain. For consumers exercising their
+    /// own code against this crate's client without hitting the chain.
+    pub fn for_test(provider: P) -> Self {
+        Self {
+            gateway_config_contract: GatewayConfig::new(Address::ZERO, provider),
+            snapshot: Arc::new(RwLock::new(Arc::new(CoprocessorRegistrySnapshot::new(
+                Vec::new(),
+                NonZeroUsize::MIN,
+            )))),
+            critical_failure: Arc::new(RwLock::new(None)),
+        }
+    }
+
+    /// Replaces the served snapshot without touching the chain.
+    pub fn with_snapshot(self, snapshot: CoprocessorRegistrySnapshot) -> Self {
+        Self {
+            snapshot: Arc::new(RwLock::new(Arc::new(snapshot))),
+            ..self
+        }
     }
 }
 
@@ -432,6 +486,7 @@ mod tests {
             Address::ZERO,
             Duration::from_millis(100),
             CancellationToken::new(),
+            CriticalFailurePolicy::ServeStale,
         )
         .await
         .unwrap();
@@ -460,12 +515,66 @@ mod tests {
             Address::ZERO,
             Duration::from_secs(60),
             CancellationToken::new(),
+            CriticalFailurePolicy::ServeStale,
         )
         .await
         .expect("connect refused to start over chain-side config");
 
         let reason = registry.critical_failure().expect("no critical reason set");
         assert!(reason.contains("no contract deployed"), "{reason}");
+    }
+
+    /// `Shutdown` refuses to boot on a critical startup error instead of serving a placeholder.
+    #[tokio::test]
+    async fn shutdown_policy_refuses_to_start_on_critical_startup_error() {
+        let asserter = Asserter::new();
+        asserter.push_success(&Bytes::new());
+
+        let result = CoprocessorRegistry::connect(
+            ProviderBuilder::new()
+                .disable_recommended_fillers()
+                .connect_mocked_client(asserter.clone()),
+            Address::ZERO,
+            Duration::from_secs(60),
+            CancellationToken::new(),
+            CriticalFailurePolicy::Shutdown,
+        )
+        .await;
+        let err = match result {
+            Ok(_) => panic!("connect should have refused to start"),
+            Err(e) => e,
+        };
+        assert!(err.to_string().contains("no contract deployed"), "{err}");
+    }
+
+    /// `Shutdown` cancels `cancel_token` on a critical refresh, instead of serving the previous
+    /// snapshot.
+    #[tokio::test]
+    async fn shutdown_policy_cancels_the_token_on_critical_refresh() {
+        let asserter = Asserter::new();
+        mock_deployed_code(&asserter);
+        mock_registry_load(&asserter, &[addr(0x07)], &["http://bucket"]);
+        mock_critical_load(&asserter);
+
+        let provider = ProviderBuilder::new()
+            .disable_recommended_fillers()
+            .connect_mocked_client(asserter.clone());
+        let cancel_token = CancellationToken::new();
+        let registry = CoprocessorRegistry::connect(
+            provider,
+            Address::ZERO,
+            Duration::from_millis(100),
+            cancel_token.clone(),
+            CriticalFailurePolicy::Shutdown,
+        )
+        .await
+        .unwrap();
+
+        assert!(!cancel_token.is_cancelled());
+        eventually("the token to be cancelled", || cancel_token.is_cancelled()).await;
+        // Shutdown does not report through `critical_failure`: the embedding service is expected
+        // to stop, not keep serving.
+        assert!(registry.critical_failure().is_none());
     }
 
     #[tokio::test]

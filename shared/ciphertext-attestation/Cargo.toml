@@ -8,6 +8,10 @@ license = "BSD-3-Clause-Clear"
 [features]
 # Networked half (on-chain registry mirroring, S3 HEAD attestation fetch, consensus fan-out).
 client = ["dep:alloy", "dep:anyhow", "dep:futures", "dep:tokio", "dep:tokio-util", "dep:fhevm_gateway_bindings"]
+# Test-only constructors for `client` types (e.g. a `CoprocessorRegistry` with an injected
+# snapshot), for consumers exercising their own code against this crate's client without hitting
+# the chain. Enable it only from `[dev-dependencies]`.
+test-utils = ["client"]
 
 [dependencies]
 alloy-primitives = { version = "1", default-features = false, features = ["std", "serde"] }

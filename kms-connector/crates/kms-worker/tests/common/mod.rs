@@ -31,10 +31,14 @@ use tokio_util::sync::CancellationToken;
 /// `CiphertextManager`.
 pub fn mock_copro_registry_load(asserter: &Asserter, s3_url: &str) -> Address {
     let copro_tx_sender = rand_address();
-    asserter.push_success(&vec![s3_ct_attestation_signer().address()].abi_encode());
+
+    // `CoprocessorRegistry::connect` first checks the contract has code deployed; any non-empty
+    // response satisfies that check.
+    asserter.push_success(&vec![0xffu8]);
     asserter.push_success(&vec![copro_tx_sender].abi_encode());
     asserter.push_success(&U256::ONE.abi_encode());
     let coprocessor = Coprocessor {
+        signerAddress: s3_ct_attestation_signer().address(),
         s3BucketUrl: format!("{s3_url}/{S3_CT_BUCKET}"),
         ..Default::default()
     };

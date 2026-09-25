@@ -22,7 +22,7 @@ use alloy::{
 };
 use ciphertext_attestation::{
     fetch_attestations_and_check_consensus, BoundedClient, ConsensusCheckError,
-    CoprocessorRegistry, COPROCESSOR_CONTEXT_ID_V1,
+    CoprocessorRegistry, CriticalFailurePolicy, COPROCESSOR_CONTEXT_ID_V1,
 };
 use fhevm_gateway_bindings::decryption::Decryption::DecryptionInstance;
 use futures::stream::{self, StreamExt};
@@ -356,6 +356,7 @@ impl CoprocessorAttestationCheck {
             gateway_config_address,
             Duration::from_millis(registry_refresh_ms),
             cancel_token,
+            CriticalFailurePolicy::ServeStale,
         )
         .await
         .map_err(|e| EventProcessingError::ContractCallFailed(e.to_string()))?;
