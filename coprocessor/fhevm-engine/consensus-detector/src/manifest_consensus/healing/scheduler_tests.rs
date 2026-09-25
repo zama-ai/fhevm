@@ -107,12 +107,17 @@ async fn stored_ct64(pool: &PgPool, handle: u8) -> Vec<u8> {
 }
 
 async fn pass(pool: &PgPool, source: &FakeCt64) {
+    pass_with_max_attempts(pool, source, DEFAULT_MAX_ATTEMPTS).await;
+}
+
+async fn pass_with_max_attempts(pool: &PgPool, source: &FakeCt64, max_attempts: i32) {
     run_healing_pass(
         pool,
         source,
         &ManifestWorkGate::always_enabled(),
         DEFAULT_BATCH_SIZE,
         DEFAULT_CONTAINMENT_TIMEOUT,
+        max_attempts,
     )
     .await
     .unwrap();
@@ -286,13 +291,57 @@ async fn attempts_are_counted_by_outcome() {
     let terminal = attempts(&pool, metrics::TERMINAL_FAILURE).await;
     pass(&pool, &source).await;
     assert_eq!(healed(&pool, healable).await, (false, true));
-    assert_eq!(healed(&pool, unquorate).await, (true, false));
+    assert!(!healed(&pool, unquorate).await.1);
     assert_eq!(attempts(&pool, metrics::SUCCESS).await, success + 1);
     assert_eq!(
         attempts(&pool, metrics::TRANSIENT_FAILURE).await,
         transient + 1
     );
     assert_eq!(attempts(&pool, metrics::TERMINAL_FAILURE).await, terminal);
+}
+
+async fn heal_attempts(pool: &PgPool, id: i64) -> (i32, bool) {
+    let row: (i32, bool) = sqlx::query_as(
+        "SELECT heal_attempts, heal_abandoned_at IS NOT NULL FROM drifted_handle WHERE id = $1",
+    )
+    .bind(id)
+    .fetch_one(pool)
+    .await
+    .unwrap();
+    row
+}
+
+async fn make_due(pool: &PgPool, id: i64) {
+    sqlx::query("UPDATE drifted_handle SET next_retry_at = NOW() WHERE id = $1")
+        .bind(id)
+        .execute(pool)
+        .await
+        .unwrap();
+}
+
+#[tokio::test]
+#[serial(db)]
+async fn finding_is_abandoned_after_max_attempts() {
+    let (_db, pool) = setup().await;
+    let body = vec![6u8; 8];
+    let id = insert_healable_from(&pool, 42, None, &body, false).await;
+    let source = FakeCt64::default();
+    let terminal = attempts(&pool, metrics::TERMINAL_FAILURE).await;
+    pass_with_max_attempts(&pool, &source, 2).await;
+    assert_eq!(heal_attempts(&pool, id).await, (1, false));
+    make_due(&pool, id).await;
+    pass_with_max_attempts(&pool, &source, 2).await;
+    assert_eq!(heal_attempts(&pool, id).await, (2, true));
+    assert_eq!(
+        attempts(&pool, metrics::TERMINAL_FAILURE).await,
+        terminal + 1
+    );
+    make_due(&pool, id).await;
+    seed_registry(&pool, &["s3://peer-a"], 1).await;
+    source.put("s3://peer-a", 42, body.clone());
+    pass_with_max_attempts(&pool, &source, 2).await;
+    assert_eq!(heal_attempts(&pool, id).await, (2, true));
+    assert!(!healed(&pool, id).await.1);
 }
 
 #[tokio::test]
@@ -328,9 +377,7 @@ async fn notify_wakes_the_worker_before_the_poll() {
         token.clone(),
         source.clone(),
         ManifestWorkGate::always_enabled(),
-        DEFAULT_BATCH_SIZE,
-        DEFAULT_POLL_INTERVAL,
-        DEFAULT_CONTAINMENT_TIMEOUT,
+        HealingSettings::default(),
     ));
     tokio::time::sleep(Duration::from_millis(200)).await;
     let id = insert_healable(&pool, 3, "s3://peer-a", &body).await;
@@ -552,6 +599,7 @@ async fn pass_heals_at_most_batch_size_handles() {
         &ManifestWorkGate::always_enabled(),
         2,
         DEFAULT_CONTAINMENT_TIMEOUT,
+        DEFAULT_MAX_ATTEMPTS,
     )
     .await
     .unwrap();

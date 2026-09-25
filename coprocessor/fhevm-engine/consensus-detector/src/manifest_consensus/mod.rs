@@ -109,6 +109,8 @@ pub struct Config {
     pub healing_poll_interval: Duration,
     /// Delay after which an uncontained ct64 finding is healed anyway.
     pub healing_containment_timeout: Duration,
+    /// Failed attempts before a healing finding is abandoned. At least 1.
+    pub healing_max_attempts: i32,
     /// Wall-clock stall with no newly computed handle before missing
     /// ciphertext may be sealed as `is_uncomputed`.
     pub incomplete_block_timeout: Duration,
@@ -133,6 +135,7 @@ impl Default for Config {
             healing_batch_size: healing::DEFAULT_BATCH_SIZE,
             healing_poll_interval: healing::DEFAULT_POLL_INTERVAL,
             healing_containment_timeout: healing::DEFAULT_CONTAINMENT_TIMEOUT,
+            healing_max_attempts: healing::DEFAULT_MAX_ATTEMPTS,
             incomplete_block_timeout: Duration::from_secs(5 * 60),
             incomplete_manifest_max_lag: 3,
             publication_cadence_overrides: BTreeMap::new(),
@@ -312,9 +315,12 @@ pub(crate) async fn start(
         cancel.child_token(),
         client,
         work_gate,
-        config.manifest_consensus.healing_batch_size,
-        config.manifest_consensus.healing_poll_interval,
-        config.manifest_consensus.healing_containment_timeout,
+        healing::HealingSettings {
+            batch_size: config.manifest_consensus.healing_batch_size,
+            poll_interval: config.manifest_consensus.healing_poll_interval,
+            containment_timeout: config.manifest_consensus.healing_containment_timeout,
+            max_attempts: config.manifest_consensus.healing_max_attempts,
+        },
     );
     supervise("healing worker", handle, cancel);
 

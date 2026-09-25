@@ -1619,6 +1619,9 @@ consensusDetector:
     # Delay after detection before an uncontained ct64 drift is healed anyway.
     # Clap: --manifest-healing-containment-timeout
     manifestHealingContainmentTimeout: 5m
+    # Failed ct64 healing attempts (one every 30s) before a finding is abandoned.
+    # Clap: --manifest-healing-max-attempts
+    manifestHealingMaxAttempts: 120
     # Wall-clock stall with no newly computed handle before missing
     # ciphertext may be sealed as uncomputed. A computed handle resets it.
     # Clap: --incomplete-block-timeout

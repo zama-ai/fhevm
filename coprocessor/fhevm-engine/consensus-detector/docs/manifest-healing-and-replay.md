@@ -156,6 +156,14 @@ stores bytes. Consumers that failed on that input report their own `error_here`
 difference and are healed the same way. A pass that
 installs at least one handle NOTIFYs `work_available` once so idle TFHE
 picks unfrozen dependents without waiting for its poll.
+A failed attempt is retried 30s later and counted in `heal_attempts` on the
+row and its unhealed same-target siblings. After
+`--manifest-healing-max-attempts` (default **120**, about one hour), or at once
+for a finding that can never heal (invalid context id or handle type), the row
+gets `heal_abandoned_at` and is no longer picked; its dependents stay frozen.
+Resetting `heal_attempts` and `heal_abandoned_at` heals it again.
+`coprocessor_ct64_healing_attempts_total` counts attempts by `outcome`:
+`success`, `transient_failure` (retried) and `terminal_failure` (abandoned).
 
 ## Containment
 

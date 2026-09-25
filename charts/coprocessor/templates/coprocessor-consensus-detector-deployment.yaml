@@ -126,6 +126,9 @@ spec:
             {{- if not (has "manifest-healing-containment-timeout" $disabled) }}
             - --manifest-healing-containment-timeout={{ $component.config.manifestHealingContainmentTimeout }}
             {{- end }}
+            {{- if not (has "manifest-healing-max-attempts" $disabled) }}
+            - --manifest-healing-max-attempts={{ $component.config.manifestHealingMaxAttempts }}
+            {{- end }}
             {{- if not (has "incomplete-block-timeout" $disabled) }}
             - --incomplete-block-timeout={{ $component.config.incompleteBlockTimeout }}
             {{- end }}

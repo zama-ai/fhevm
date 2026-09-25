@@ -141,6 +141,11 @@ struct Args {
     #[arg(long, default_value = "5m", value_parser = parse_duration)]
     manifest_healing_containment_timeout: Duration,
 
+    /// Failed ct64 healing attempts before a finding is abandoned, one every
+    /// 30s. A finding that can never heal is abandoned at once.
+    #[arg(long, default_value_t = 120, value_parser = clap::value_parser!(i32).range(1..))]
+    manifest_healing_max_attempts: i32,
+
     /// Wall-clock stall with no newly computed handle before missing
     /// ciphertext may be sealed as uncomputed. A computed handle resets it.
     #[arg(long, default_value = "5m", value_parser = parse_duration)]
@@ -266,6 +271,7 @@ async fn main() -> anyhow::Result<()> {
             healing_batch_size: args.manifest_healing_batch_size,
             healing_poll_interval: args.manifest_healing_poll_interval,
             healing_containment_timeout: args.manifest_healing_containment_timeout,
+            healing_max_attempts: args.manifest_healing_max_attempts,
             incomplete_block_timeout: args.incomplete_block_timeout,
             incomplete_manifest_max_lag: args.incomplete_manifest_max_lag,
             publication_cadence_overrides:
