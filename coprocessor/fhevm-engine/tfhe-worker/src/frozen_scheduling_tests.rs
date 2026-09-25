@@ -485,3 +485,17 @@ async fn other_epoch_finding_does_not_freeze_an_independent_copy() {
         "this stack's own stored copy is not the other stack's drifted ciphertext"
     );
 }
+
+#[test]
+fn only_the_first_fully_frozen_pick_repolls_immediately() {
+    let mut picks = 0;
+    assert!(repoll_after_empty_pick(&mut picks, true));
+    assert!(!repoll_after_empty_pick(&mut picks, true));
+    assert!(!repoll_after_empty_pick(&mut picks, true));
+    // A pick emptied by deferral or drain never re-polls immediately.
+    let mut picks = 0;
+    assert!(!repoll_after_empty_pick(&mut picks, false));
+    // After a wait or a pick with work the loop resets the count.
+    picks = 0;
+    assert!(repoll_after_empty_pick(&mut picks, true));
+}
