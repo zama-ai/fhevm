@@ -2,9 +2,7 @@
 //! with the relayer's own field names inside, validated, converted to the connector DTO and aggregated.
 
 use alloy::primitives::{Address, B256, Bytes};
-use axum::Json;
-use axum::extract::State;
-use axum::extract::rejection::JsonRejection;
+use axum::extract::{Request, State};
 use axum::response::{IntoResponse, Response};
 use kms_connector_api::{
     HandleEntry as ConnectorHandle, RequestValidity as ConnectorValidity, UserDecryptionPayload,
@@ -12,7 +10,7 @@ use kms_connector_api::{
 };
 use serde::{Deserialize, Deserializer};
 
-use super::Reply;
+use super::{Reply, read_json};
 use crate::App;
 use crate::endpoint::ApiError;
 use crate::endpoint::validate::{self, Invalid};
@@ -123,27 +121,17 @@ pub fn validate(request: &UserDecryptRequest, chain_ids: &[u64], now: u64) -> Re
 }
 
 /// One request, logged step by step under its own `Log`.
-pub async fn handle(
-    app: State<App>,
-    body: Result<Json<UserDecryptRequest>, JsonRejection>,
-) -> Response {
+pub async fn handle(app: State<App>, request: Request) -> Response {
     let mut log = Log::new("user_decrypt");
-    process(&app, body, &mut log)
+    process(&app, request, &mut log)
         .await
         .unwrap_or_else(IntoResponse::into_response)
 }
 
-/// Parse (axum did it: `body` is `Err` for invalid JSON, an unknown field, a wrong content type or an oversized
-/// body), validate, convert to the connector DTO, aggregate, answer.
-async fn process(
-    app: &App,
-    body: Result<Json<UserDecryptRequest>, JsonRejection>,
-    log: &mut Log,
-) -> Result<Response, ApiError> {
-    let Json(request) = body.map_err(|e| {
-        log.body_rejected(&e.body_text());
-        ApiError::malformed(log, e.body_text())
-    })?;
+/// Read and parse the body (bounded by `http.body_read_timeout`), validate, convert to the connector DTO,
+/// aggregate, answer.
+async fn process(app: &App, request: Request, log: &mut Log) -> Result<Response, ApiError> {
+    let request: UserDecryptRequest = read_json(app, request, log).await?;
     log.received(
         request
             .payload

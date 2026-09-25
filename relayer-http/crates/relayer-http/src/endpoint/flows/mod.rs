@@ -1,5 +1,6 @@
 //! One file per route. Each owns its wire types, their conversion to the connector DTO, its validation and its
-//! handler, which logs every step through the request's `Log`. Shared here: the success envelope and the clock.
+//! handler, which logs every step through the request's `Log`. Shared here: the body reader, the success envelope and
+//! the clock.
 
 pub mod public_decrypt;
 pub mod user_decrypt;
@@ -7,11 +8,35 @@ pub mod user_decrypt;
 use std::time::{SystemTime, UNIX_EPOCH};
 
 use axum::Json;
+use axum::extract::{FromRequest, Request};
 use axum::response::{IntoResponse, Response};
 use serde::Serialize;
+use serde::de::DeserializeOwned;
+use tokio::time::timeout;
 
+use super::ApiError;
 use super::error::tag;
+use crate::App;
 use crate::logging::Log;
+
+/// Reads and parses the JSON body within `http.body_read_timeout`: a total bound (not per chunk) started when the
+/// handler is entered, so a client trickling its body holds the request at most that long. Any failure (timeout,
+/// invalid JSON, unknown field, wrong content type, body above `max_body_bytes`) is `request body rejected` then
+/// `400 malformed`.
+pub async fn read_json<T: DeserializeOwned>(
+    app: &App,
+    request: Request,
+    log: &Log,
+) -> Result<T, ApiError> {
+    let limit = app.http.body_read_timeout;
+    let reason = match timeout(limit, Json::<T>::from_request(request, &())).await {
+        Ok(Ok(Json(body))) => return Ok(body),
+        Ok(Err(rejection)) => rejection.body_text(),
+        Err(_) => format!("request body not received within {limit:?}"),
+    };
+    log.body_rejected(&reason);
+    Err(ApiError::malformed(log, reason))
+}
 
 /// `{ "status": "succeeded", "requestId": "…", "result": … }`: the current relayer's success envelope.
 #[derive(Debug, Serialize)]

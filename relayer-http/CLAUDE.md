@@ -47,8 +47,8 @@ configuration → behaviour). The implementation plans live outside the reposito
 ## Configuration
 
 One YAML file (`config/config.yaml` is the example), four sections: `name`, `log` (optional, defaults to JSON
-lines), `http` (bind address, body limit, supported chain ids) and `kms_aggregator` (deadline, retries, thresholds,
-optional checks, the KMS endpoints). Any field can be overridden with `APP_<SECTION>__<FIELD>` (durations carry a
+lines), `http` (bind address, body limit, body read timeout, supported chain ids) and `kms_aggregator` (deadline,
+retries, thresholds, optional checks, the KMS endpoints). Any field can be overridden with `APP_<SECTION>__<FIELD>` (durations carry a
 unit, e.g. `APP_KMS_AGGREGATOR__CALL__TIMEOUT=7s`). API keys are never in the file: each endpoint names the env var
 holding its key. Local variants go to `config/*.local.yaml`, ignored by git.
 

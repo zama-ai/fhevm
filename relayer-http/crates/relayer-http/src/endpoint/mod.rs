@@ -74,6 +74,7 @@ mod tests {
             http: Arc::new(HttpConfig {
                 endpoint: "127.0.0.1:0".parse().unwrap(),
                 max_body_bytes: 4096,
+                body_read_timeout: Duration::from_secs(2),
                 supported_chain_ids: vec![1, 137],
             }),
             shutdown,
@@ -82,6 +83,26 @@ mod tests {
 
     fn healthy() -> App {
         app(Reply::Fixed(Fixed::Ok), CancellationToken::new())
+    }
+
+    #[tokio::test(start_paused = true)]
+    async fn body_not_received_in_time_is_malformed() {
+        // A body that never completes: the handler gives up after `body_read_timeout` (2 s here, instant when paused).
+        let never = futures_util::stream::pending::<Result<bytes::Bytes, std::io::Error>>();
+        let request = Request::builder()
+            .method("POST")
+            .uri("/v4/exp/public-decrypt")
+            .header(header::CONTENT_TYPE, "application/json")
+            .body(Body::from_stream(never))
+            .unwrap();
+        let response = router(healthy()).oneshot(request).await.unwrap();
+        assert_eq!(response.status(), StatusCode::BAD_REQUEST);
+        let bytes = axum::body::to_bytes(response.into_body(), usize::MAX)
+            .await
+            .unwrap();
+        let body: Value = serde_json::from_slice(&bytes).unwrap();
+        assert_eq!(body["code"], "malformed");
+        assert_eq!(body["message"], "request body not received within 2s");
     }
 
     async fn call(app: App, method: &str, uri: &str, body: &str) -> (StatusCode, String, Value) {

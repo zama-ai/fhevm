@@ -1,10 +1,12 @@
 //! Process configuration: one YAML file, `APP_<SECTION>__<FIELD>` environment overrides.
 
 use std::net::SocketAddr;
+use std::time::Duration;
 
 use config::{Config, Environment, File};
 use serde::Deserialize;
 
+use crate::kms_aggregator::config::MAX_TIMEOUT;
 use crate::kms_aggregator::{ConfigError, KmsAggregatorConfig};
 
 /// The whole process configuration.
@@ -29,6 +31,11 @@ pub struct HttpConfig {
     /// Largest accepted request body; bigger ones are answered `400 malformed`.
     #[serde(default = "default_max_body_bytes")]
     pub max_body_bytes: usize,
+    /// Total time to receive and parse a request body, from the handler's start (headers already read). Bounds a
+    /// client trickling its body: after headers, a request lasts at most `body_read_timeout + call.timeout`
+    /// (10 s + 5 s by default). Unit required (`10s`, `500ms`); within `1ms..=60s`.
+    #[serde(with = "humantime_serde", default = "default_body_read_timeout")]
+    pub body_read_timeout: Duration,
     /// Host chain ids a ciphertext handle may carry (bytes 22..30 of the handle).
     pub supported_chain_ids: Vec<u64>,
 }
@@ -39,12 +46,22 @@ fn default_max_body_bytes() -> usize {
     1024 * 1024
 }
 
+/// 10 s: a 1 MiB body still fits at ~100 KiB/s.
+fn default_body_read_timeout() -> Duration {
+    Duration::from_secs(10)
+}
+
 impl HttpConfig {
     pub fn validate(&self) -> Result<(), ConfigError> {
         if self.max_body_bytes < 1024 {
             return Err(ConfigError(
                 "http.max_body_bytes must be >= 1024".to_owned(),
             ));
+        }
+        if self.body_read_timeout.is_zero() || self.body_read_timeout > MAX_TIMEOUT {
+            return Err(ConfigError(format!(
+                "http.body_read_timeout must be within 1ms..={MAX_TIMEOUT:?}"
+            )));
         }
         if self.supported_chain_ids.is_empty() {
             return Err(ConfigError(
@@ -202,6 +219,7 @@ mod tests {
         let config = RelayerConfig::load(EXAMPLE).unwrap();
         assert_eq!(config.http.endpoint.port(), 8080);
         assert_eq!(config.http.max_body_bytes, 1024 * 1024);
+        assert_eq!(config.http.body_read_timeout, Duration::from_secs(10));
         assert_eq!(config.http.supported_chain_ids, vec![1, 137]);
 
         let e = RelayerConfig::load_with(EXAMPLE, env(&[("APP_HTTP__MAX_BODY_BYTES", "10")]))
@@ -215,10 +233,37 @@ mod tests {
     }
 
     #[test]
+    fn body_read_timeout_defaults_overrides_and_bounds() {
+        let without: HttpConfig =
+            serde_json::from_str(r#"{"endpoint": "127.0.0.1:1", "supported_chain_ids": [1]}"#)
+                .unwrap();
+        assert_eq!(without.body_read_timeout, Duration::from_secs(10));
+
+        let config =
+            RelayerConfig::load_with(EXAMPLE, env(&[("APP_HTTP__BODY_READ_TIMEOUT", "3s")]))
+                .unwrap();
+        assert_eq!(config.http.body_read_timeout, Duration::from_secs(3));
+
+        for (value, expected) in [
+            ("0s", "http.body_read_timeout must be within"),
+            ("61s", "http.body_read_timeout must be within"),
+            ("-1s", "body_read_timeout"),
+            ("10", "body_read_timeout"),
+        ] {
+            let e =
+                RelayerConfig::load_with(EXAMPLE, env(&[("APP_HTTP__BODY_READ_TIMEOUT", value)]))
+                    .err()
+                    .unwrap();
+            assert!(e.0.contains(expected), "{value}: {e}");
+        }
+    }
+
+    #[test]
     fn http_config_rules() {
         let mut http = HttpConfig {
             endpoint: "127.0.0.1:8080".parse().unwrap(),
             max_body_bytes: 4096,
+            body_read_timeout: Duration::from_secs(10),
             supported_chain_ids: vec![1, 137],
         };
         http.validate().unwrap();

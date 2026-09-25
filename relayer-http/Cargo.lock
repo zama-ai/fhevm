@@ -3001,6 +3001,7 @@ dependencies = [
  "axum",
  "bytes",
  "config",
+ "futures-util",
  "humantime-serde",
  "kms-connector-api",
  "reqwest",
