@@ -330,7 +330,9 @@ A database error on a claimed verification task uses the same classes as
 publication:
 
 - **Transient** (deadlock, serialization, lock/statement timeout): release the
-  claim without incrementing `attempt_count`.
+  claim without incrementing `attempt_count`; the next attempt waits the task's
+  retry delay, at least one second, so a persistent transient error cannot
+  re-run the task continuously.
 - **Integrity** (unique / check / FK / not-null): charge the attempt budget.
 - **Definitive** (schema, decode, data exception): `retry_exhausted` immediately.
 

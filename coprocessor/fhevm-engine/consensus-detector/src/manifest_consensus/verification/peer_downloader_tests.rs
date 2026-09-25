@@ -2177,6 +2177,20 @@ async fn transient_verification_db_error_does_not_charge_the_attempt_budget() {
         .await
         .expect("release uncharged after a transient database error");
     assert_verification_task(&claim.pool, "pending", 0).await;
+    assert_uncharged_retry_is_delayed(&claim.pool).await;
+}
+
+/// The uncharged retry waits the task's retry delay, and at least one second.
+async fn assert_uncharged_retry_is_delayed(pool: &PgPool) {
+    let delayed: bool = sqlx::query_scalar(
+        "SELECT next_attempt_at >= NOW()
+                    + (GREATEST(retry_delay_secs, 1) - 0.1) * INTERVAL '1 second'
+           FROM block_manifest_verification_task",
+    )
+    .fetch_one(pool)
+    .await
+    .expect("load uncharged retry time");
+    assert!(delayed, "an uncharged retry must wait the retry delay");
 }
 
 #[tokio::test(flavor = "multi_thread")]
@@ -2236,6 +2250,11 @@ async fn persistent_internal_verification_error_exhausts_the_task() {
 #[serial]
 async fn transient_s3_verification_error_does_not_charge_the_attempt_budget() {
     let claim = claimed_local_task(2).await;
+    // A zero configured retry delay still gets the one-second floor.
+    sqlx::query("UPDATE block_manifest_verification_task SET retry_delay_secs = 0")
+        .execute(&claim.pool)
+        .await
+        .unwrap();
     apply_claimed_error(
         &claim.pool,
         &claim.claim,
@@ -2244,6 +2263,7 @@ async fn transient_s3_verification_error_does_not_charge_the_attempt_budget() {
     .await
     .expect("release uncharged after a transient S3 error");
     assert_verification_task(&claim.pool, "pending", 0).await;
+    assert_uncharged_retry_is_delayed(&claim.pool).await;
 }
 
 struct ClaimedLocalTask {
