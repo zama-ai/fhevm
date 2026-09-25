@@ -12,7 +12,7 @@ import {
 import type { SolanaClientParameters } from '../clients/createFhevmBaseClient.js';
 import { solanaHostProgram } from '../clients/createFhevmBaseClient.js';
 import type { SolanaPublicDecryptCertificateParameters } from './publicDecryptCertificate.js';
-import { publicDecryptCertificate, buildSolanaPublicDecryptExtraData } from './publicDecryptCertificate.js';
+import { publicDecryptCertificate, solanaPublicDecryptExtraData } from './publicDecryptCertificate.js';
 import { getSolanaRuntime } from '../internal/runtime.js';
 import { findHostConfigPda } from '../internal/generated/zamaHost/pdas/hostConfig.js';
 import { findKmsContextPda } from '../internal/generated/zamaHost/pdas/kmsContext.js';
@@ -144,7 +144,7 @@ export async function decryptPublicValue(
     chainId: config.gatewayChainId,
     handles: [handle],
     decryptedResult: bytesToHex(cleartext),
-    extraData: bytesToHex(buildSolanaPublicDecryptExtraData(contextId, parameters.encryptedStore)),
+    extraData: bytesToHex(solanaPublicDecryptExtraData(contextId)),
   });
   verifyPublicDecryptSignatures(
     publicDecryptDigest(eip712),

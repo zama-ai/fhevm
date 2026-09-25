@@ -130,7 +130,7 @@ pub fn verify_public_decrypt(
     );
 
     // Resolve the context id the certificate commits to via its signed `extra_data` (EVM
-    // `_extractContextId` parity): empty / v0 selects the current context, v1 / v4 carry an explicit
+    // `KMSVerifier` parity): empty / v0 selects the current context, v1 / v2 carry an explicit
     // id. Because the KMS signs over `extra_data`, this id is authenticated by the certificate.
     let cert_context_id = eip712::extract_kms_context_id(&extra_data, current_context_id)
         .ok_or(ZamaHostError::InvalidKmsContext)?;

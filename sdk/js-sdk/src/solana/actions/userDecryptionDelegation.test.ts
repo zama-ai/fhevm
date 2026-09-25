@@ -43,7 +43,7 @@ const delegator = addr(0x11);
 const delegate = addr(0x22);
 const application = { program: addr(0x33), scope: new Uint8Array(32).fill(0x44) };
 const payer = addr(0x55);
-const RECORD_ADDRESS = 'GkmqVNMzqxopBjPkSkZvuLuDE6Jze3iA3Mq5ZHr6SrtJ';
+const RECORD_ADDRESS = address('GkmqVNMzqxopBjPkSkZvuLuDE6Jze3iA3Mq5ZHr6SrtJ');
 // The delegator's wildcard row, pinned by the relayer's cross-pin in the same Rust suite.
 const WILDCARD_RECORD_ADDRESS = 'J4BMamYLJvJroFATJp48L6AeQJDQqv86YAQyPqvBcKq1';
 const GRANT_DATA =

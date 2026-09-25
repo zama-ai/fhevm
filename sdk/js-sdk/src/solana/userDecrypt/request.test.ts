@@ -294,8 +294,8 @@ describe('the handle count', () => {
       new URL('../../../../../gateway-contracts/contracts/Decryption.sol', import.meta.url),
       'utf8',
     );
-    const declared = /MAX_SOLANA_USER_DECRYPT_HANDLES = (\d+);/.exec(source)?.[1];
-    expect(declared, 'Decryption.sol declares MAX_SOLANA_USER_DECRYPT_HANDLES').toBeDefined();
+    const declared = /MAX_SOLANA_DECRYPT_HANDLES = (\d+);/.exec(source)?.[1];
+    expect(declared, 'Decryption.sol declares MAX_SOLANA_DECRYPT_HANDLES').toBeDefined();
     expect(MAX_SOLANA_USER_DECRYPT_HANDLES).toBe(Number(declared));
   });
 });

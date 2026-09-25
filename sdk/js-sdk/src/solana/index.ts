@@ -54,7 +54,6 @@ export {
 } from './proof.js';
 export type { MmrProof, SolanaStoreHistoryEvent, SolanaReconstructedStoreHistory } from './proof.js';
 
-export { buildSolanaPublicDecryptExtraData } from './actions/publicDecryptCertificate.js';
 export type {
   SolanaPublicDecryptCertificateClaim,
   SolanaPublicDecryptCertificateParameters,

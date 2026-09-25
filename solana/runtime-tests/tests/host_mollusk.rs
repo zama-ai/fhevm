@@ -4730,9 +4730,8 @@ fn mollusk_only_the_public_decrypt_flag_stops_verify_public_decrypt() {
 }
 
 #[test]
-fn mollusk_verify_public_decrypt_accepts_v4_extra_data_routed_through_another_store() {
-    // Version 4 names the Store that routed the decrypt request. The verifier checks the public
-    // leaf against the Store it is given, which need not be that one.
+fn mollusk_verify_public_decrypt_accepts_v2_kms_routing() {
+    // Version 2 routes by context and epoch, as on EVM. Only the context selects the signers.
     let admin = Pubkey::new_unique();
     let app = App::new();
     let (host_config, host_config_account) = host_config_with_context(admin, KMS_CONTEXT_ID);
@@ -4741,8 +4740,8 @@ fn mollusk_verify_public_decrypt_accepts_v4_extra_data_routed_through_another_st
     let (address, sealed, proof) =
         seal_public_leaf(admin, &app, host_config, &host_config_account, handle);
 
-    let routing_store = Pubkey::new_unique();
-    let extra_data = [&[4][..], &KMS_CONTEXT_ID, &routing_store.to_bytes()].concat();
+    let epoch_id = [0x08; 32];
+    let extra_data = [&[2][..], &KMS_CONTEXT_ID, &epoch_id].concat();
     let (cleartext, signatures) = public_decrypt_cert(handle, &extra_data);
     let ix = verify_public_decrypt_ix(
         host_config,
