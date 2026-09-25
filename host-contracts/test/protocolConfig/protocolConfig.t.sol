@@ -450,32 +450,28 @@ contract ProtocolConfigTest is HostContractsDeployerTestUtils {
         );
     }
 
-    /// @dev Asserts the liveness-guarded context view functions revert for the given context ID.
-    ///      getKmsNodeForContext is existence-guarded (readable after destroy), so callers assert it separately.
-    function _expectContextGuardedViewsRevert(uint256 contextId) internal {
-        vm.expectRevert(abi.encodeWithSelector(IProtocolConfig.InvalidKmsContext.selector, contextId));
-        protocolConfig.getKmsSignersForContext(contextId);
-
-        vm.expectRevert(abi.encodeWithSelector(IProtocolConfig.InvalidKmsContext.selector, contextId));
-        protocolConfig.isKmsSignerForContext(contextId, address(0xDEAD));
-
-        vm.expectRevert(abi.encodeWithSelector(IProtocolConfig.InvalidKmsContext.selector, contextId));
-        protocolConfig.getKmsNodesForContext(contextId);
-
-        vm.expectRevert(abi.encodeWithSelector(IProtocolConfig.InvalidKmsContext.selector, contextId));
-        protocolConfig.isKmsTxSenderForContext(contextId, address(0xDEAD));
-
-        vm.expectRevert(abi.encodeWithSelector(IProtocolConfig.InvalidKmsContext.selector, contextId));
-        protocolConfig.getUserDecryptionThresholdForContext(contextId);
-
-        vm.expectRevert(abi.encodeWithSelector(IProtocolConfig.InvalidKmsContext.selector, contextId));
-        protocolConfig.getPublicDecryptionThresholdForContext(contextId);
-
-        vm.expectRevert(abi.encodeWithSelector(IProtocolConfig.InvalidKmsContext.selector, contextId));
-        protocolConfig.getKmsGenThresholdForContext(contextId);
-
-        vm.expectRevert(abi.encodeWithSelector(IProtocolConfig.InvalidKmsContext.selector, contextId));
-        protocolConfig.getMpcThresholdForContext(contextId);
+    function _assertStoredContextViews(
+        uint256 contextId,
+        KmsNodeParams[] memory nodes,
+        IProtocolConfig.KmsThresholds memory thresholds
+    ) internal view {
+        assertEq(protocolConfig.getKmsSignersForContext(contextId).length, nodes.length);
+        assertEq(protocolConfig.getKmsNodesForContext(contextId).length, nodes.length);
+        if (nodes.length != 0) {
+            assertTrue(protocolConfig.isKmsSignerForContext(contextId, nodes[0].signerAddress));
+            assertTrue(protocolConfig.isKmsTxSenderForContext(contextId, nodes[0].txSenderAddress));
+            assertEq(
+                protocolConfig.getKmsNodeForContext(contextId, nodes[0].txSenderAddress).signerAddress,
+                nodes[0].signerAddress
+            );
+        }
+        assertEq(protocolConfig.getKmsNodeForContext(contextId, address(0xDEAD)).txSenderAddress, address(0));
+        assertFalse(protocolConfig.isKmsSignerForContext(contextId, address(0xDEAD)));
+        assertFalse(protocolConfig.isKmsTxSenderForContext(contextId, address(0xDEAD)));
+        assertEq(protocolConfig.getKmsGenThresholdForContext(contextId), thresholds.kmsGen);
+        assertEq(protocolConfig.getPublicDecryptionThresholdForContext(contextId), thresholds.publicDecryption);
+        assertEq(protocolConfig.getUserDecryptionThresholdForContext(contextId), thresholds.userDecryption);
+        assertEq(protocolConfig.getMpcThresholdForContext(contextId), thresholds.mpc);
     }
 
     // -----------------------------------------------------------------------
@@ -1198,6 +1194,7 @@ contract ProtocolConfigTest is HostContractsDeployerTestUtils {
         assertFalse(protocolConfig.isValidKmsContext(KMS_CONTEXT_COUNTER_BASE + 2));
         assertTrue(protocolConfig.isKmsTxSenderForContext(KMS_CONTEXT_COUNTER_BASE + 2, kmsTxSender0));
         assertEq(protocolConfig.getKmsGenThresholdForContext(KMS_CONTEXT_COUNTER_BASE + 2), 1);
+        _assertStoredContextViews(KMS_CONTEXT_COUNTER_BASE + 2, nodes, _defaultThresholds());
     }
 
     /// @dev Previous-side quorum boundary, both sides: with n = 4 previous nodes and t = 2, the
@@ -1307,6 +1304,7 @@ contract ProtocolConfigTest is HostContractsDeployerTestUtils {
 
         vm.prank(owner);
         protocolConfig.destroyKmsContext(createdContextId);
+        _assertStoredContextViews(createdContextId, _makeKmsNodeParams(2), _defaultThresholds());
         assertFalse(protocolConfig.isValidKmsContext(createdContextId));
     }
 
@@ -2071,19 +2069,16 @@ contract ProtocolConfigTest is HostContractsDeployerTestUtils {
     }
 
     // -----------------------------------------------------------------------
-    // View-function guards (invalid & destroyed contexts)
+    // View functions for invalid & destroyed contexts
     // -----------------------------------------------------------------------
 
-    function testFuzz_revertViewFunctionsForInvalidContext(uint256 invalidContextId) public {
+    function testFuzz_viewFunctionsForInvalidContext(uint256 invalidContextId) public {
         _setupDefault();
         vm.assume(invalidContextId != protocolConfig.getCurrentKmsContextId());
-        _expectContextGuardedViewsRevert(invalidContextId);
-        // A never-created context does not exist, so the node lookup reverts too.
-        vm.expectRevert(abi.encodeWithSelector(IProtocolConfig.InvalidKmsContext.selector, invalidContextId));
-        protocolConfig.getKmsNodeForContext(invalidContextId, address(0xDEAD));
+        _assertStoredContextViews(invalidContextId, new KmsNodeParams[](0), IProtocolConfig.KmsThresholds(0, 0, 0, 0));
     }
 
-    function test_revertViewFunctionsForDestroyedContext() public {
+    function test_viewFunctionsReadableForDestroyedContext() public {
         _setupDefault();
         uint256 firstContextId = protocolConfig.getCurrentKmsContextId();
         _seedActiveEpochWithMaterialForFourNodeContext();
@@ -2095,7 +2090,7 @@ contract ProtocolConfigTest is HostContractsDeployerTestUtils {
         vm.prank(owner);
         protocolConfig.destroyKmsContext(firstContextId);
 
-        _expectContextGuardedViewsRevert(firstContextId);
+        _assertStoredContextViews(firstContextId, _makeKmsNodeParams(4), IProtocolConfig.KmsThresholds(1, 2, 3, 4));
     }
 
     /// @dev Key/CRS material keeps pointing at the context it was generated under, so its nodes must
@@ -2167,10 +2162,6 @@ contract ProtocolConfigTest is HostContractsDeployerTestUtils {
 
         assertEq(protocolConfig.getKmsGenThresholdForContext(secondContextId), 2);
         assertEq(protocolConfig.getKmsGenThresholdForContext(firstContextId), 3);
-
-        uint256 invalidId = KMS_CONTEXT_COUNTER_BASE + 999;
-        vm.expectRevert(abi.encodeWithSelector(IProtocolConfig.InvalidKmsContext.selector, invalidId));
-        protocolConfig.getKmsGenThresholdForContext(invalidId);
     }
 
     function test_getMpcThresholdForContext() public {
@@ -2192,10 +2183,6 @@ contract ProtocolConfigTest is HostContractsDeployerTestUtils {
 
         assertEq(protocolConfig.getMpcThresholdForContext(secondContextId), 2);
         assertEq(protocolConfig.getMpcThresholdForContext(firstContextId), 4);
-
-        uint256 invalidId = KMS_CONTEXT_COUNTER_BASE + 999;
-        vm.expectRevert(abi.encodeWithSelector(IProtocolConfig.InvalidKmsContext.selector, invalidId));
-        protocolConfig.getMpcThresholdForContext(invalidId);
     }
 
     function test_getPublicDecryptionThresholdForContext() public {
@@ -2217,10 +2204,6 @@ contract ProtocolConfigTest is HostContractsDeployerTestUtils {
 
         assertEq(protocolConfig.getPublicDecryptionThresholdForContext(secondContextId), 2);
         assertEq(protocolConfig.getPublicDecryptionThresholdForContext(firstContextId), 1);
-
-        uint256 invalidId = KMS_CONTEXT_COUNTER_BASE + 999;
-        vm.expectRevert(abi.encodeWithSelector(IProtocolConfig.InvalidKmsContext.selector, invalidId));
-        protocolConfig.getPublicDecryptionThresholdForContext(invalidId);
     }
 
     function test_thresholdsAfterContextRotation() public {

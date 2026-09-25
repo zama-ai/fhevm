@@ -19,15 +19,32 @@ fn abi_encode_u256(value: u64) -> Bytes {
     Bytes::from(U256::from(value).abi_encode())
 }
 
+const MAX_ATTEMPTS: u32 = 3;
+
 fn make_config(port: u16) -> ProtocolConfigSettings {
     ProtocolConfigSettings {
         ethereum_http_rpc_url: format!("http://localhost:{}", port),
         address: PROTOCOL_CONFIG_ADDR.to_string(),
         retry: RetrySettings {
-            max_attempts: 3,
+            max_attempts: MAX_ATTEMPTS,
             retry_interval_ms: 50,
         },
     }
+}
+
+fn register_validity_response(server: &MockServer, valid: bool, usage: UsageLimit) {
+    let address = Address::from_str(PROTOCOL_CONFIG_ADDR).unwrap();
+    let selector = IProtocolConfig::isValidKmsContextCall::SELECTOR;
+    server.on_call(
+        move |params| params.to == address && params.input.starts_with(&selector),
+        Response::call_success(Bytes::from(valid.abi_encode())),
+        usage,
+    );
+}
+
+fn register_active_context_with_threshold(server: &MockServer, threshold: u64, usage: UsageLimit) {
+    register_validity_response(server, true, UsageLimit::Unlimited);
+    register_threshold_response(server, threshold, usage);
 }
 
 fn register_threshold_response(server: &MockServer, threshold: u64, usage: UsageLimit) {
@@ -72,7 +89,7 @@ async fn fetches_threshold_from_contract() {
         ..MockConfig::new()
     });
 
-    register_threshold_response(&mock, 5, UsageLimit::Unlimited);
+    register_active_context_with_threshold(&mock, 5, UsageLimit::Unlimited);
 
     let handle = mock.start().await.unwrap();
     let port = handle.port();
@@ -92,7 +109,7 @@ async fn caches_threshold_permanently() {
     });
 
     // Only allow one successful call — second call would fail if not cached
-    register_threshold_response(&mock, 7, UsageLimit::Once);
+    register_active_context_with_threshold(&mock, 7, UsageLimit::Once);
 
     let handle = mock.start().await.unwrap();
     let port = handle.port();
@@ -126,7 +143,7 @@ async fn retry_succeeds_after_initial_failure() {
         Response::Error("node unavailable".to_string()),
         UsageLimit::Once,
     );
-    register_threshold_response(&mock, 3, UsageLimit::Unlimited);
+    register_active_context_with_threshold(&mock, 3, UsageLimit::Unlimited);
 
     let handle = mock.start().await.unwrap();
     let port = handle.port();
@@ -158,6 +175,7 @@ async fn all_retries_exhausted_returns_error() {
         Response::Error("permanent failure".to_string()),
         UsageLimit::Unlimited,
     );
+    register_validity_response(&mock, true, UsageLimit::Unlimited);
 
     let handle = mock.start().await.unwrap();
     let port = handle.port();
@@ -196,7 +214,7 @@ async fn failed_fetch_is_not_cached() {
     }
 
     // Then: success for subsequent calls
-    register_threshold_response(&mock, 11, UsageLimit::Unlimited);
+    register_active_context_with_threshold(&mock, 11, UsageLimit::Unlimited);
 
     let handle = mock.start().await.unwrap();
     let port = handle.port();
@@ -212,4 +230,61 @@ async fn failed_fetch_is_not_cached() {
     // Second resolve: retries again (not cached) → succeeds
     let threshold = resolver.resolve(context_id).await.unwrap();
     assert_eq!(threshold, 11u32);
+}
+
+#[tokio::test]
+async fn inactive_context_is_rejected_without_reading_or_caching_its_threshold() {
+    let mock = MockServer::new(MockConfig {
+        port: 0,
+        ..MockConfig::new()
+    });
+    for _ in 0..MAX_ATTEMPTS {
+        register_validity_response(&mock, false, UsageLimit::Once);
+    }
+    // The only threshold response must remain available until the context becomes active.
+    register_active_context_with_threshold(&mock, 7, UsageLimit::Once);
+    let handle = mock.start().await.unwrap();
+    let resolver = ThresholdResolver::new(&make_config(handle.port()), 9, 100)
+        .await
+        .unwrap();
+    let context_id = U256::from(42);
+    let error = resolver.resolve(context_id).await.unwrap_err();
+    assert!(error.to_string().contains("is not active"));
+    assert_eq!(resolver.resolve(context_id).await.unwrap(), 7);
+}
+
+#[tokio::test]
+async fn validity_rpc_failure_is_retried() {
+    let mock = MockServer::new(MockConfig {
+        port: 0,
+        ..MockConfig::new()
+    });
+    let address = Address::from_str(PROTOCOL_CONFIG_ADDR).unwrap();
+    let selector = IProtocolConfig::isValidKmsContextCall::SELECTOR;
+    mock.on_call(
+        move |params| params.to == address && params.input.starts_with(&selector),
+        Response::Error("node unavailable".to_string()),
+        UsageLimit::Once,
+    );
+    register_active_context_with_threshold(&mock, 5, UsageLimit::Once);
+    let handle = mock.start().await.unwrap();
+    let resolver = ThresholdResolver::new(&make_config(handle.port()), 9, 100)
+        .await
+        .unwrap();
+    assert_eq!(resolver.resolve(U256::from(42)).await.unwrap(), 5);
+}
+
+#[tokio::test]
+async fn context_activating_during_retries_resolves_in_one_call() {
+    let mock = MockServer::new(MockConfig {
+        port: 0,
+        ..MockConfig::new()
+    });
+    register_validity_response(&mock, false, UsageLimit::Once);
+    register_active_context_with_threshold(&mock, 7, UsageLimit::Once);
+    let handle = mock.start().await.unwrap();
+    let resolver = ThresholdResolver::new(&make_config(handle.port()), 9, 100)
+        .await
+        .unwrap();
+    assert_eq!(resolver.resolve(U256::from(42)).await.unwrap(), 7);
 }
