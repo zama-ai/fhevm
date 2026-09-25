@@ -39,6 +39,9 @@ use zama_solana_test_kit::{
     serialized_account as serialized, system_program_account, HostConfigParams,
 };
 
+mod host_fixtures;
+use host_fixtures::host_program_account;
+
 // ---------------------------------------------------------------------------
 // Harness
 // ---------------------------------------------------------------------------
@@ -1084,8 +1087,7 @@ fn substituted_program_accounts_are_refused_by_their_discriminators() {
 
 /// A runtime holding both the wrapper and the host, at [`CURRENT_SLOT`].
 fn mollusk_with_vault() -> Mollusk {
-    let mut mollusk = zama_solana_test_kit::svm(&vault::id(), "delegator_vault");
-    mollusk.add_program(&host::id(), "zama_host");
+    let mut mollusk = host_fixtures::vault_and_host_svm();
     mollusk.sysvars.clock.slot = CURRENT_SLOT;
     mollusk
 }
@@ -1112,20 +1114,6 @@ fn vault_actors() -> VaultActors {
         delegate,
         authority,
         record_key,
-    }
-}
-
-/// The host program's account entry, as the wrapper's `Program<ZamaHost>` sees it. The code
-/// itself comes from the Mollusk program cache; this is only the executable-flagged shell.
-/// Owned by the non-upgradeable loader deliberately: an upgradeable-loader shell would have to
-/// carry a decodable programdata pointer in its data.
-fn host_program_account() -> Account {
-    Account {
-        lamports: 1,
-        data: Vec::new(),
-        owner: solana_sdk::bpf_loader::ID,
-        executable: true,
-        rent_epoch: 0,
     }
 }
 

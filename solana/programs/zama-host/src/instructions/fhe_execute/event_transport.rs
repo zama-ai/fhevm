@@ -14,7 +14,7 @@ pub(super) fn emit_executed_event<'info>(
             transient_store
                 .result(index)
                 .map(|result| result.handle)
-                .ok_or(ZamaHostError::InvalidReturnSelection)
+                .ok_or(ZamaHostError::FheExecuteEarlierStepMissing)
         })
         .collect::<std::result::Result<Vec<_>, _>>()?;
     emit_event_cpi(

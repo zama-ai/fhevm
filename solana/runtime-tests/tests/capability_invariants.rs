@@ -344,8 +344,8 @@ const TRUST_ROOTS: [&[u8]; 5] = [
     host::PauserRecord::DISCRIMINATOR,
 ];
 
-/// Host account types outside H1 and H2: transaction scratch, per-app counters that any
-/// execution of the app advances, and records owned by the user who signs for them.
+/// Host account types outside H1 and H2: transaction scratch, the global rand nonce and the
+/// per-app HCU meters that executions advance, and records owned by the user who signs for them.
 const UNGUARDED: [&[u8]; 5] = [
     host::TransientStore::DISCRIMINATOR,
     host::RandNonce::DISCRIMINATOR,

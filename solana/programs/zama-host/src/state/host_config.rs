@@ -153,6 +153,31 @@ impl PauseFlags {
             public_decrypt: self.public_decrypt && !areas.public_decrypt,
         }
     }
+
+    /// Fails with the area's own pause error while `area` is paused.
+    pub fn require_running(self, area: PauseArea) -> Result<()> {
+        let (paused, error) = match area {
+            PauseArea::Execution => (self.execution, ZamaHostError::ExecutionPaused),
+            PauseArea::VerifiedInputs => {
+                (self.verified_inputs, ZamaHostError::VerifiedInputsPaused)
+            }
+            PauseArea::AclWrites => (self.acl_writes, ZamaHostError::AclWritesPaused),
+            PauseArea::PublicDecrypt => (self.public_decrypt, ZamaHostError::PublicDecryptPaused),
+        };
+        if paused {
+            return Err(error.into());
+        }
+        Ok(())
+    }
+}
+
+/// One area of `PauseFlags`, named by the instructions that refuse to run while it is paused.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum PauseArea {
+    Execution,
+    VerifiedInputs,
+    AclWrites,
+    PublicDecrypt,
 }
 
 #[cfg(test)]

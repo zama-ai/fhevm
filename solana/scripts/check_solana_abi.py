@@ -436,6 +436,8 @@ def encode_type(idl_type: Any, types: dict[str, Any], seed: int) -> bytes:
             return (seed + 32).to_bytes(4, "little")
         if idl_type == "u64":
             return (seed + 64).to_bytes(8, "little")
+        if idl_type == "i64":
+            return (-(seed + 64)).to_bytes(8, "little", signed=True)
         if idl_type == "bool":
             return b"\x01"
         if idl_type == "pubkey":

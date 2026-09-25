@@ -79,7 +79,6 @@ pub(super) fn prepare_rpc_block(
             block_time: block.block_time,
             block_height: block.block_height,
             executed_transaction_count,
-            transactions: Vec::new(),
         },
         transactions: prepared,
         matching_transaction_count,

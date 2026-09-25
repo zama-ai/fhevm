@@ -1,6 +1,6 @@
 //! Fixtures shared by the host test binaries: `host_mollusk.rs` (behavior),
-//! `host_admin_mollusk.rs` (admin setters), and `fhe_execute_boundary.rs` (the capacity
-//! instrument). Each binary compiles this module into itself, so a helper used by only one of
+//! `host_admin_mollusk.rs` (admin setters), `user_decryption_delegation_mollusk.rs`
+//! (delegation), and `fhe_execute_boundary.rs` (the capacity instrument). Each binary compiles this module into itself, so a helper used by only one of
 //! them is expected.
 #![allow(dead_code)]
 
@@ -25,6 +25,27 @@ use zama_solana_test_kit::{
 
 /// Seed tag of the fixture value authorities: `PDA("value-authority", seed_key)` of the program.
 pub const VALUE_AUTHORITY_SEED: &[u8] = b"value-authority";
+
+/// A runtime holding the delegator vault and the host, so the vault can call the host.
+pub fn vault_and_host_svm() -> mollusk_svm::Mollusk {
+    let mut mollusk = zama_solana_test_kit::svm(&delegator_vault::id(), "delegator_vault");
+    mollusk.add_program(&host::id(), "zama_host");
+    mollusk
+}
+
+/// The host program's account entry, as a caller's `Program<ZamaHost>` sees it. The code itself
+/// comes from the Mollusk program cache; this is only the executable-flagged shell. Owned by the
+/// non-upgradeable loader deliberately: an upgradeable-loader shell would have to carry a
+/// decodable programdata pointer in its data.
+pub fn host_program_account() -> Account {
+    Account {
+        lamports: 1,
+        data: Vec::new(),
+        owner: solana_sdk::bpf_loader::ID,
+        executable: true,
+        rent_epoch: 0,
+    }
+}
 
 /// The scope every fixture application lives in unless a test picks its own.
 pub fn fixture_scope() -> [u8; 32] {

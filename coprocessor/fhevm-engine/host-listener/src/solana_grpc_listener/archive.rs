@@ -17,7 +17,6 @@ use solana_client::{
     rpc_config::RpcBlockConfig,
 };
 use solana_commitment_config::CommitmentConfig;
-use solana_sdk::pubkey::Pubkey;
 use solana_transaction_status_client_types::{
     TransactionDetails, UiConfirmedBlock, UiTransactionEncoding,
 };
@@ -114,12 +113,7 @@ pub(super) async fn catch_up(
     progress: &mut IngestionProgress,
     cancel: &CancellationToken,
 ) -> Result<bool> {
-    let program: Pubkey = config.program_id.parse().map_err(|error| {
-        FatalListenerError::new(anyhow!(
-            "program_id {} is not a Solana pubkey: {error}",
-            config.program_id
-        ))
-    })?;
+    let program = config.program_id;
     let mut first = first_missing_slot(&progress.subscription_start())?;
     let Some(target) =
         until_cancelled(cancel, archive.finalized_slot()).await?
@@ -199,8 +193,9 @@ fn first_missing_slot(start: &StartPosition) -> Result<u64> {
 }
 
 /// The stream's ancestry rule: an unapplied checkpoint comes first and unchanged, and every
-/// other block names the last applied one as its parent. A parent after the checkpoint means
-/// the archive skipped produced slots, which is retried; any other mismatch is a fork.
+/// other block names the last applied one as its parent. A block that descends from a slot the
+/// archive did not list, the unapplied checkpoint included, means the archive skipped produced
+/// slots, which is retried; any other mismatch is a fork.
 fn extends_checkpoint(
     start: &StartPosition,
     block: &SealedBlock,
@@ -208,6 +203,19 @@ fn extends_checkpoint(
     let fork = match start {
         StartPosition::ReplayFrom(unapplied) if block.checkpoint() == *unapplied => {
             return Ok(())
+        }
+        StartPosition::ReplayFrom(unapplied)
+            if block.slot > unapplied.slot
+                && (block.parent_slot > unapplied.slot
+                    || (block.parent_slot == unapplied.slot
+                        && block.parent_block_hash == unapplied.block_hash)) =>
+        {
+            bail!(
+                "the archive is missing slots {}..={} before slot {}",
+                unapplied.slot,
+                block.parent_slot,
+                block.slot
+            )
         }
         StartPosition::ReplayFrom(unapplied) => anyhow!(
             "archive block at slot {} is not the unapplied checkpoint at slot {}",
@@ -434,10 +442,10 @@ mod tests {
     ) {
         let mut validator = BlockValidator::new(progress.subscription_start());
         for slot in slots {
-            if let SealDecision::Process(block) =
+            if let SealDecision::Process(block, transactions) =
                 validator.seal(slot.grpc()).unwrap()
             {
-                let prepared = prepare_block(block).unwrap();
+                let prepared = prepare_block(block, transactions).unwrap();
                 assert!(apply_prepared_block(
                     db,
                     &config(),
@@ -614,7 +622,6 @@ mod tests {
             block_time: Some(BLOCK_TIME),
             block_height: Some(slot - 2),
             executed_transaction_count: 0,
-            transactions: vec![],
         }
     }
 
@@ -650,9 +657,24 @@ mod tests {
             block_hash: [0xEE; 32],
             ..sealed(40, 39, hash(39))
         };
-        for block in [changed, sealed(41, 40, hash(40))] {
+        // Another block at the checkpoint slot, or a later block whose chain skips it.
+        for block in [
+            changed,
+            sealed(41, 39, hash(39)),
+            sealed(41, 40, [0xEE; 32]),
+        ] {
             let error = extends_checkpoint(&start, &block).unwrap_err();
             assert!(is_fatal(&error), "{error:#}");
+        }
+        // A later block descending from the checkpoint, or from a later slot, means the archive
+        // left out the checkpoint block itself: retried, like any archive gap.
+        for (block, missing) in [
+            (sealed(41, 40, hash(40)), "missing slots 40..=40"),
+            (sealed(43, 42, hash(42)), "missing slots 40..=42"),
+        ] {
+            let gap = extends_checkpoint(&start, &block).unwrap_err();
+            assert!(!is_fatal(&gap), "{gap:#}");
+            assert!(format!("{gap:#}").contains(missing), "{gap:#}");
         }
     }
 }

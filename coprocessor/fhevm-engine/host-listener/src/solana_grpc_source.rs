@@ -6,6 +6,7 @@
 
 use std::collections::HashMap;
 
+use anchor_lang::prelude::Pubkey;
 use anyhow::{anyhow, bail, Context, Result};
 use yellowstone_grpc_proto::prelude::{
     SubscribeRequest, SubscribeRequestFilterBlocks, SubscribeUpdateBlock,
@@ -23,7 +24,6 @@ pub(super) struct SealedBlock {
     pub block_time: Option<i64>,
     pub block_height: Option<u64>,
     pub executed_transaction_count: u64,
-    pub transactions: Vec<SubscribeUpdateTransactionInfo>,
 }
 
 impl SealedBlock {
@@ -41,7 +41,8 @@ struct BlockIdentity(SubscribeUpdateBlock);
 #[derive(Debug)]
 pub(super) enum SealDecision {
     Replay,
-    Process(SealedBlock),
+    /// The block, and its matching transactions sorted by index.
+    Process(SealedBlock, Vec<SubscribeUpdateTransactionInfo>),
 }
 
 #[derive(Debug)]
@@ -128,22 +129,21 @@ impl BlockValidator {
             block_time: block.block_time.map(|time| time.timestamp),
             block_height: block.block_height.map(|height| height.block_height),
             executed_transaction_count: block.executed_transaction_count,
-            transactions: block.transactions,
         };
         self.last_observed = Some((sealed.checkpoint(), identity));
-        Ok(SealDecision::Process(sealed))
+        Ok(SealDecision::Process(sealed, block.transactions))
     }
 }
 
 pub(super) fn build_subscribe_request(
-    program_id: &str,
+    program_id: &Pubkey,
     start: &StartPosition,
 ) -> SubscribeRequest {
     let mut blocks = HashMap::new();
     blocks.insert(
         "zama_host".to_owned(),
         SubscribeRequestFilterBlocks {
-            account_include: vec![program_id.to_owned()],
+            account_include: vec![program_id.to_string()],
             include_transactions: Some(true),
             include_accounts: Some(false),
             include_entries: Some(false),
@@ -297,7 +297,7 @@ mod tests {
         let decision = validator
             .seal(block(2, hash(2), 1, hash(1), vec![]))
             .unwrap();
-        let SealDecision::Process(block) = decision else {
+        let SealDecision::Process(block, _) = decision else {
             panic!()
         };
         assert_eq!(block.checkpoint().slot, 2);
@@ -310,15 +310,11 @@ mod tests {
         let decision = validator
             .seal(block(2, hash(2), 1, hash(1), vec![failed(3), failed(1)]))
             .unwrap();
-        let SealDecision::Process(block) = decision else {
+        let SealDecision::Process(_, transactions) = decision else {
             panic!()
         };
         assert_eq!(
-            block
-                .transactions
-                .iter()
-                .map(|tx| tx.index)
-                .collect::<Vec<_>>(),
+            transactions.iter().map(|tx| tx.index).collect::<Vec<_>>(),
             vec![1, 3]
         );
     }
@@ -339,7 +335,7 @@ mod tests {
         let mut original = block(2, hash(2), 1, hash(1), vec![failed(1)]);
         original.block_time = Some(Default::default());
         original.block_time.as_mut().unwrap().timestamp = 100;
-        let SealDecision::Process(_) =
+        let SealDecision::Process(..) =
             validator.seal(original.clone()).unwrap()
         else {
             panic!()
@@ -431,7 +427,7 @@ mod tests {
             .seal(block(5, hash(5), 4, hash(4), vec![]))
             .unwrap();
 
-        assert!(matches!(decision, SealDecision::Process(_)));
+        assert!(matches!(decision, SealDecision::Process(..)));
     }
 
     #[test]
@@ -441,7 +437,7 @@ mod tests {
             block_hash: hash(9),
         };
         let request = build_subscribe_request(
-            "ZamaHost11111111111111111111111111111111",
+            &Pubkey::new_unique(),
             &StartPosition::Resume(checkpoint),
         );
         assert!(request.transactions.is_empty());

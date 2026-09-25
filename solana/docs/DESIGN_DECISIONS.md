@@ -83,6 +83,7 @@ are written as one narrative instead.
 | [DD-054](#dd-054-the-programs-stay-on-anchor-v1)                                                                                          | adopted                                  | The programs stay on Anchor v1                                                                                                 |
 | [DD-055](#dd-055-the-ledger-is-the-work-log-not-a-pda-queue)                                                                              | adopted                                  | The ledger is the work log, not a PDA queue                                                                                    |
 | [DD-056](#dd-056-an-execution-describes-itself-the-listener-re-derives-handles-only-as-a-check)                                           | adopted                                  | An execution describes itself; the listener re-derives handles only as a check                                                 |
+| DD-057                                                                                                                                    | withdrawn before merge                   | Rand nonce keyed on the application; the nonce stays global (DD-043)                                                            |
 | [DD-058](#dd-058-pausers-stop-one-area-at-a-time-only-the-admin-resumes)                                                                  | adopted                                  | Pausers stop one area at a time; only the admin resumes                                                                        |
 | [DD-059](#dd-059-the-listener-catches-up-from-an-archive-when-the-stream-cannot-replay)                                                   | adopted                                  | The listener catches up from an archive when the stream cannot replay                                                          |
 
@@ -2238,8 +2239,8 @@ shorter.
 The archive is `--archive-url`, which defaults to `--url` and may be another provider's. A provider
 that cannot replay from a slot at all (`from_slot is not supported`) still stops the listener: after
 catch-up, the stream could never take over. An archive behind the checkpoint, an archive missing
-slots after it (a block whose parent is later than the checkpoint), or a failed read, is retried like
-a dropped subscription. Any other block that does not extend the checkpoint is a fork and stops the
+slots after it (a block whose parent is later than the checkpoint, or, for an unapplied checkpoint,
+a later block descending from it), or a failed read, is retried like a dropped subscription. Any other block that does not extend the checkpoint is a fork and stops the
 listener, as on the stream. `archive_catch_up_active` is 1 during catch-up, and the existing lag
 metrics show its progress.
 

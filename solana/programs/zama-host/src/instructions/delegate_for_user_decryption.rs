@@ -1,7 +1,6 @@
 //! Creates and refreshes user-decryption delegations.
 
 use anchor_lang::prelude::*;
-use anchor_lang::solana_program::instruction::{get_stack_height, TRANSACTION_LEVEL_STACK_HEIGHT};
 
 use super::common::*;
 use crate::{errors::ZamaHostError, state::*};
@@ -32,20 +31,10 @@ pub fn delegate_for_user_decryption(
     expiration_slot: u64,
 ) -> Result<()> {
     assert_no_remaining_accounts(ctx.remaining_accounts)?;
-    assert_not_paused(
-        &ctx.accounts.host_config,
-        |paused| paused.acl_writes,
-        ZamaHostError::AclWritesPaused,
-    )?;
+    assert_not_paused(&ctx.accounts.host_config, PauseArea::AclWrites)?;
     let clock = Clock::get()?;
     let delegator = ctx.accounts.delegator.key();
-    // A wallet's signature reaches every CPI of the transaction it signed, so any program the
-    // user calls could delegate the user's decryption rights. A PDA signs only through its own
-    // program's `invoke_signed`, so a PDA delegator may still delegate through CPI.
-    require!(
-        get_stack_height() == TRANSACTION_LEVEL_STACK_HEIGHT || !delegator.is_on_curve(),
-        ZamaHostError::WalletDelegationThroughCpi
-    );
+    require_top_level_unless_pda(&delegator, ZamaHostError::WalletDelegationThroughCpi)?;
     require!(
         delegate != Pubkey::default() && authority != Pubkey::default(),
         ZamaHostError::InvalidDelegation
