@@ -1,0 +1,13 @@
+apiVersion: fhevm.zama.ai/scenario/v1
+kind: Scenario
+metadata:
+  id: fixture.cumulative-timeout
+  name: Fixture cumulative-timeout
+  owner: qa
+  description: Engine test fixture (cumulative-timeout).
+  tags: [fixture, slow]
+spec:
+  runtime: cucumber
+  entrypoint: ./fixture.feature
+  supportCode: [./steps.ts]
+  timeoutSeconds: 1

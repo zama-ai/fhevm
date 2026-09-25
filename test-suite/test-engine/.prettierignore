@@ -1,0 +1,6 @@
+node_modules/
+dist/
+reports/
+package-lock.json
+# Deliberately malformed fixture.
+test/fixtures/invalid-scenarios/bad-yaml/

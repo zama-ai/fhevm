@@ -1,0 +1,13 @@
+apiVersion: fhevm.zama.ai/scenario/v1
+kind: Scenario
+metadata:
+  id: fixture.step-timeout
+  name: Fixture step-timeout
+  owner: qa
+  description: Engine test fixture (step-timeout).
+  tags: [fixture, slow]
+spec:
+  runtime: cucumber
+  entrypoint: ./fixture.feature
+  supportCode: [./steps.ts]
+  timeoutSeconds: 1
