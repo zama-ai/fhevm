@@ -1,18 +1,22 @@
 //! Solana leaf-proof server: answers the KMS connector's leaf inclusion proofs from the leaf
 //! record that `solana_host_listener` ingests. It runs as its own deployment with its own
-//! database pool, so decryption of existing grants keeps working while ingestion is stopped or
-//! behind: the connector verifies each proof against the peaks it reads on chain.
+//! database pool, so it keeps serving while ingestion is stopped or behind. A proof from a record
+//! that is behind still verifies against the chain's peaks until a later append to the Store
+//! merges that leaf's mountain.
 
 use std::time::Duration;
 
 use anyhow::{Context, Result};
 use clap::Parser;
-use sqlx::postgres::{PgConnectOptions, PgPoolOptions};
+use sqlx::postgres::PgPoolOptions;
 use tokio_util::sync::CancellationToken;
 use tracing::{info, Level};
 
 use fhevm_engine_common::{
-    database::connect_pool_with_options_and_connect_options, telemetry,
+    database::{
+        connect_pool_with_options_and_connect_options, with_statement_timeout,
+    },
+    telemetry,
     utils::DatabaseURL,
 };
 use host_listener::http_server::HttpServer;
@@ -43,12 +47,6 @@ struct Args {
     service_name: String,
 }
 
-/// The KMS connector gives up on a proof request after its `host_rpc_call_timeout`, 10 seconds
-/// by default, so a longer statement only holds a connection.
-fn bound_statements(options: PgConnectOptions) -> PgConnectOptions {
-    options.options([("statement_timeout", "10s")])
-}
-
 #[tokio::main]
 async fn main() -> Result<()> {
     let args = Args::parse();
@@ -71,7 +69,9 @@ async fn main() -> Result<()> {
             .max_connections(args.database_pool_size)
             .acquire_timeout(Duration::from_secs(5)),
         Some(&cancel),
-        bound_statements,
+        // The KMS connector gives up on a proof request after its `host_rpc_call_timeout`,
+        // 10 seconds by default, so a longer statement only holds a connection.
+        |options| with_statement_timeout(options, Duration::from_secs(10)),
     )
     .await
     .context("connect coprocessor database")?;

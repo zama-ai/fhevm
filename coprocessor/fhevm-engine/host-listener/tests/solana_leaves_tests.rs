@@ -339,21 +339,21 @@ async fn leaf_record_round_trips_and_serves_verifiable_proofs(
     Ok(())
 }
 
-/// Stores `leaves` allowed keys on [`ACCOUNT`] through the ingest path, requests the proofs
-/// of `proved` in one call and checks each against the stored peaks. Returns how long the
+/// Stores `leaves` allowed keys on [`ACCOUNT`] through the ingest path, `leaves_per_block` per
+/// block, requests the proofs of `proved` in one call and checks each against the stored peaks. Returns how long the
 /// request took. It first deletes a leaf row that no requested path contains, so a route that
 /// reads more than each path fails.
 async fn prove_leaves_of_a_store(
     leaves: u64,
+    leaves_per_block: u64,
     proved: [u64; 8],
 ) -> Result<std::time::Duration, Box<dyn std::error::Error>> {
-    const LEAVES_PER_BLOCK: u64 = 50_000;
     let key = |leaf_index: u64| {
         let mut key = [0u8; 32];
         key[..8].copy_from_slice(&leaf_index.to_be_bytes());
         key
     };
-    let handle = |leaf_index: u64| [(leaf_index / LEAVES_PER_BLOCK) as u8; 32];
+    let handle = |leaf_index: u64| [(leaf_index / leaves_per_block) as u8; 32];
 
     let db_instance =
         test_harness::instance::setup_test_db(ImportMode::None).await?;
@@ -363,8 +363,8 @@ async fn prove_leaves_of_a_store(
         .await?;
     clear_leaf_record(&pool).await?;
     let mut states = BTreeMap::new();
-    for first in (0..leaves).step_by(LEAVES_PER_BLOCK as usize) {
-        let slot = first / LEAVES_PER_BLOCK;
+    for first in (0..leaves).step_by(leaves_per_block as usize) {
+        let slot = first / leaves_per_block;
         let block = reduce_block_leaves(
             slot,
             &[TransactionStoreWrites {
@@ -372,7 +372,7 @@ async fn prove_leaves_of_a_store(
                 sources: vec![write(
                     first,
                     handle(first),
-                    (first..leaves.min(first + LEAVES_PER_BLOCK))
+                    (first..leaves.min(first + leaves_per_block))
                         .map(key)
                         .collect(),
                     false,
@@ -461,13 +461,13 @@ async fn prove_leaves_of_a_store(
     Ok(elapsed)
 }
 
-/// Paths through every mountain of 1,000 = 2^9 + 2^8 + 2^7 + 2^6 + 2^5 + 2^3 leaves, across
-/// two ingested blocks.
+/// Paths through every mountain of 1,000 = 2^9 + 2^8 + 2^7 + 2^6 + 2^5 + 2^3 leaves, ingested
+/// 300 per block so nodes span blocks.
 #[tokio::test]
 #[serial(db)]
 async fn proofs_read_their_path_by_position(
 ) -> Result<(), Box<dyn std::error::Error>> {
-    prove_leaves_of_a_store(1_000, [0, 1, 511, 512, 767, 800, 991, 999])
+    prove_leaves_of_a_store(1_000, 300, [0, 511, 512, 767, 800, 900, 991, 999])
         .await?;
     Ok(())
 }
@@ -485,6 +485,7 @@ async fn eight_proofs_of_a_million_leaf_store_answer_well_within_the_connector_t
     // 1,000,000 = 2^19 + 2^18 + 2^17 + 2^16 + 2^14 + 2^9 + 2^6.
     let elapsed = prove_leaves_of_a_store(
         1_000_000,
+        50_000,
         [0, 1, 524_287, 524_288, 786_431, 917_600, 999_990, 999_999],
     )
     .await?;

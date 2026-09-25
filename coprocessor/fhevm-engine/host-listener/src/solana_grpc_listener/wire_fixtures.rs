@@ -252,7 +252,7 @@ impl Transaction {
         }
     }
 
-    /// The transaction as a successful entry of a Yellowstone block, at `index`.
+    /// The transaction as a Yellowstone transaction update carries it, at `index`.
     pub(super) fn grpc_info(
         &self,
         index: u64,

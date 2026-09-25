@@ -127,10 +127,10 @@ A start at the tip skips its first slot, which can arrive without its
 transactions, and one of the last 32 applied slots that arrives again unchanged
 is skipped. Any other break in the order stops the listener before it applies
 the slot, except a transaction for a slot already applied without it: the
-listener stops once, names the slot and the transaction, and continues past the
-slot after the restart. DD-060 describes the repair. Each `fhe_execute` is paired with the `FheExecutedEvent` it
-emits: the listener stores the result handles in the event and re-derives each
-one as a check. On an empty database, `--start-slot <slot>` selects an existing
+listener stops once, names the slot and the transaction, and resumes past the
+slot after the restart. DD-060 describes what follows and the repair. Each
+`fhe_execute` is paired with the `FheExecutedEvent` it emits: the listener
+stores the result handles in the event and re-derives each one as a check. On an empty database, `--start-slot <slot>` selects an existing
 confirmed block to replay **inclusively**. Choose a finalized block before the
 host activity that must be reconstructed. RPC supplies that block's hash; its
 transactions come from Yellowstone, or from the archive below if it is older

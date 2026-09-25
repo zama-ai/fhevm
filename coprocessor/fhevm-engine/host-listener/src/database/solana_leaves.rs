@@ -474,16 +474,16 @@ pub async fn store_block_leaves(
     if !leaves.is_empty() {
         sqlx::query!(
             r#"
-        INSERT INTO solana_encrypted_state_leaves
-            (encrypted_state, leaf_index, commitment, leaf_kind, handle,
-             allowed_key, block_slot, transaction_index)
-        SELECT encrypted_state, leaf_index, commitment, leaf_kind, handle,
-               allowed_key, $7, transaction_index
-        FROM UNNEST($1::BYTEA[], $2::BIGINT[], $3::BYTEA[], $4::SMALLINT[],
-                    $5::BYTEA[], $6::BYTEA[], $8::BIGINT[])
-            AS leaf(encrypted_state, leaf_index, commitment, leaf_kind, handle,
-                    allowed_key, transaction_index)
-        "#,
+            INSERT INTO solana_encrypted_state_leaves
+                (encrypted_state, leaf_index, commitment, leaf_kind, handle,
+                 allowed_key, block_slot, transaction_index)
+            SELECT encrypted_state, leaf_index, commitment, leaf_kind, handle,
+                   allowed_key, $7, transaction_index
+            FROM UNNEST($1::BYTEA[], $2::BIGINT[], $3::BYTEA[], $4::SMALLINT[],
+                        $5::BYTEA[], $6::BYTEA[], $8::BIGINT[])
+                AS leaf(encrypted_state, leaf_index, commitment, leaf_kind, handle,
+                        allowed_key, transaction_index)
+            "#,
             &leaves
                 .iter()
                 .map(|leaf| leaf.encrypted_store.to_vec())
@@ -523,27 +523,27 @@ pub async fn store_block_leaves(
     let nodes = &reduction.nodes;
     if !nodes.is_empty() {
         sqlx::query!(
-        r#"
-        INSERT INTO solana_encrypted_state_nodes
-            (encrypted_state, height, node_index, node)
-        SELECT * FROM UNNEST($1::BYTEA[], $2::SMALLINT[], $3::BIGINT[], $4::BYTEA[])
-        "#,
-        &nodes
-            .iter()
-            .map(|node| node.encrypted_store.to_vec())
-            .collect::<Vec<_>>(),
-        &nodes
-            .iter()
-            .map(|node| i16::from(node.height))
-            .collect::<Vec<_>>(),
-        &nodes
-            .iter()
-            .map(|node| sql_i64(node.index, "node_index"))
-            .collect::<Result<Vec<_>, _>>()?,
-        &nodes.iter().map(|node| node.node.to_vec()).collect::<Vec<_>>(),
-    )
-    .execute(tx.as_mut())
-    .await?;
+            r#"
+            INSERT INTO solana_encrypted_state_nodes
+                (encrypted_state, height, node_index, node)
+            SELECT * FROM UNNEST($1::BYTEA[], $2::SMALLINT[], $3::BIGINT[], $4::BYTEA[])
+            "#,
+            &nodes
+                .iter()
+                .map(|node| node.encrypted_store.to_vec())
+                .collect::<Vec<_>>(),
+            &nodes
+                .iter()
+                .map(|node| i16::from(node.height))
+                .collect::<Vec<_>>(),
+            &nodes
+                .iter()
+                .map(|node| sql_i64(node.index, "node_index"))
+                .collect::<Result<Vec<_>, _>>()?,
+            &nodes.iter().map(|node| node.node.to_vec()).collect::<Vec<_>>(),
+        )
+        .execute(tx.as_mut())
+        .await?;
     }
     Ok(())
 }

@@ -158,8 +158,8 @@ The listener resumes from its checkpoint through the stream while the Yellowston
 
 #### Metric Name: `coprocessor_solana_host_listener_failures_since_commit`
  - **Type**: Gauge (labeled by `host_chain_id`)
- - **Description**: Interruptions the listener resumed from its checkpoint since it last committed a block, on the stream or during catch-up. A commit, or a restart, resets it to 0. An unstable provider moves it up and back to 0; a slot that fails again and again keeps it rising, so this alarm tells a stuck slot from a flaky stream.
- - **Alarm**: If it reaches 5, a slot has failed five times in a row. The `ingestion interrupted` log line names the error, and `applied_slot` the last committed slot.
+ - **Description**: Interruptions the listener resumed from its checkpoint since it last committed a block, on the stream or during catch-up. A commit, or a restart, resets it to 0. A stream that drops now and then moves it up and back to 0; a slot that fails again and again, or a provider that stays unreachable, keeps it rising.
+ - **Alarm**: If it reaches 5, the listener has resumed five times without committing a block: a stuck slot or a provider outage. The `ingestion interrupted` log line names the error, and `applied_slot` the last committed slot.
     - **Recommendation**: `gauge >= 5`.
 
 #### Metric Name: `coprocessor_solana_host_listener_handle_check_failures_total`

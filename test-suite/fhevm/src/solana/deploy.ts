@@ -197,7 +197,7 @@ export const startHostListener = async (parameters: {
   readonly lifecycleDir?: string;
 }): Promise<void> => {
   await replaceSolanaProcess('solana_host_listener', parameters.lifecycleDir);
-  await buildSolanaBinary('solana_host_listener', 'solana-grpc,solana-reconstruct');
+  await buildSolanaBinary('solana_host_listener');
   await spawnSolanaProcess(
     'solana_host_listener',
     [
@@ -228,7 +228,7 @@ export const startLeafProofServer = async (parameters: {
   readonly lifecycleDir?: string;
 }): Promise<void> => {
   await replaceSolanaProcess('solana_leaf_proof_server', parameters.lifecycleDir);
-  await buildSolanaBinary('solana_leaf_proof_server', 'solana-grpc,solana-reconstruct');
+  await buildSolanaBinary('solana_leaf_proof_server');
   await spawnSolanaProcess(
     'solana_leaf_proof_server',
     [
@@ -261,9 +261,13 @@ const replaceSolanaProcess = async (binary: string, lifecycleDir: string | undef
   });
 };
 
-const buildSolanaBinary = async (binary: string, features: string): Promise<void> => {
+// Both binaries build with the listener's features, like the Dockerfile, so cargo reuses one
+// build of host-listener.
+const HOST_LISTENER_FEATURES = 'solana-grpc,solana-reconstruct';
+
+const buildSolanaBinary = async (binary: string): Promise<void> => {
   const buildLog = `/tmp/${binary}-build.log`;
-  const build = await run(['cargo', 'build', '-p', 'host-listener', '--features', features, '--bin', binary], {
+  const build = await run(['cargo', 'build', '-p', 'host-listener', '--features', HOST_LISTENER_FEATURES, '--bin', binary], {
     cwd: ENGINE_DIR,
     allowFailure: true,
   });

@@ -132,8 +132,8 @@ async fn fetch_block(
     let listing = list_rpc_block(slot, archive.block(slot).await?, program)
         .map_err(fatal)?;
     let transactions = stream::iter(listing.matching)
-        .map(|listed| async move {
-            let fetched = archive.transaction(listed.1).await?;
+        .map(|listed @ (_, signature)| async move {
+            let fetched = archive.transaction(signature).await?;
             prepare_rpc_transaction(slot, listed, fetched, program)
                 .map_err(fatal)
         })

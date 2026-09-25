@@ -1,5 +1,6 @@
 //! Solana host listener: reconstructs coprocessor work and the RFC 035 leaf record
-//! from confirmed Yellowstone sealed blocks and ingests both into the shared database.
+//! from confirmed Yellowstone transactions and block metas and ingests both into the shared
+//! database.
 //! `solana_leaf_proof_server` serves the leaf inclusion proofs apart from it.
 
 use std::{str::FromStr, time::Duration};

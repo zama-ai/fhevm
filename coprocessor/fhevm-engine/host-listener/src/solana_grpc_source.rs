@@ -46,7 +46,8 @@ impl SealedBlock {
 
 #[derive(Debug)]
 pub(super) enum SealDecision {
-    /// Nothing to apply: a re-delivery of a recently sealed slot, or the first slot of a tip start.
+    /// Nothing to apply: a re-delivery of a recently sealed slot, the checkpoint slot a resume
+    /// replays, or the first slot of a tip start.
     Skip,
     /// The block, with its host transactions sorted by index.
     Process(PreparedBlock),

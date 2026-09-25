@@ -3,8 +3,8 @@
 //! leaves the provider's replay window the listener catches up from the archive RPC, one
 //! `getBlock` per slot and one `getTransaction` per host transaction, with
 //! `archive_catch_up_active` at 1; the lag then shows its progress.
-//! `failures_since_commit` keeps rising while one slot fails again and again, and a commit resets
-//! it. `handle_check_failures_total` counts steps whose emitted handle this listener could not
+//! `failures_since_commit` keeps rising while one slot fails again and again or the provider stays
+//! unreachable, and a commit resets it. `handle_check_failures_total` counts steps whose emitted handle this listener could not
 //! re-derive, which means its software is wrong.
 
 use std::{sync::LazyLock, time::Duration};

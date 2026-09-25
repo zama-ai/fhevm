@@ -2308,19 +2308,24 @@ are set. Two cases follow:
 A transaction of another slot while one is open, a block meta for another slot, a slot older than
 the window, or a slot that does not extend the last applied one stops the listener without applying
 the slot. A transaction that a recent slot did not hold stops it too, but that slot is already
-recorded without it. The restart resumes from the checkpoint, past that slot, so ingestion
-continues: the error, which names the slot and the transaction, and the restart alarm are the only
-trace. If the transaction wrote no Store, the replay repair in the host-listener README restores
-its computation rows. If it wrote one, a replay computes leaves the record does not hold and stops,
-so the leaf record has to be rewritten by hand. Whether other providers keep this order is
+recorded without it, and the restart resumes from the checkpoint, past that slot. If the
+transaction wrote a Store, the next write to that Store does not continue its recorded leaf count,
+and the listener stops there until the leaf record, `solana_encrypted_state_nodes` included, is
+rewritten by hand: a replay computes leaves the record does not hold and stops too. If it wrote no
+Store, ingestion continues without its computation rows. The error, which names the slot and the
+transaction, and the restart alarm are then the only trace, and the replay repair in the
+host-listener README restores the rows. Whether other providers keep this order is
 fhevm-internal#2087.
 
 Archive catch-up applies the same bound to each transaction. `getBlock` with `transactionDetails:
 "accounts"` lists each transaction's signatures, account keys and error without instruction data or
 logs, and `getTransaction` fetches each successful transaction that names the host. The listing
-still grows with the block's transaction count and account keys. Fetching only the host's
-transactions with `getSignaturesForAddress` would avoid it, but the checkpoint needs every block's
-hash (DD-059).
+still grows with the block's transaction count and account keys. A block filled with transactions
+that load many lookup-table keys could list hundreds of megabytes (estimate, not measured), which a
+provider can refuse or not return within the archive client's 30-second timeout; catch-up then
+retries that block. Listing blocks with `transactionDetails: "signatures"` and selecting the host's
+transactions with `getSignaturesForAddress` would cost about 90 bytes per transaction, but it
+relies on the archive's address index being complete, which nothing checks (DD-059).
 
 Rejected alternatives:
 
@@ -2377,7 +2382,7 @@ Rejected alternatives:
 
 Consequences:
 
-8 proofs of a 1,000,000-leaf Store answer in 120 to 150 ms in a debug build, request included
+8 proofs of a 1,000,000-leaf Store answer in about 11 ms in a debug build, request included
 (`eight_proofs_of_a_million_leaf_store_answer_well_within_the_connector_timeout`, run on request). A
 path has at most 64 entries. The leaf record grows by about one node row per leaf. A database
 written before `solana_encrypted_state_nodes` existed has leaves without nodes, and its proofs fail
@@ -2391,9 +2396,9 @@ Recorded in fhevm-internal#2104 (RFC 035 review, findings 2 and 3, fix D).
 
 The proof route ran inside `solana_host_listener`, on the 8-connection pool ingestion writes
 through, and stopped whenever ingestion stopped: a fatal ingestion error or a restart took the route
-down with it. A proof for an existing grant stays valid while ingestion is behind, because the KMS
-connector checks it against the peaks it reads on chain. An ingestion stop therefore stopped
-decryption of values already allowed for no reason.
+down with it. A proof from a record that is behind still verifies against the peaks the KMS
+connector reads on chain, as long as no later append to the Store has merged that leaf's mountain.
+An ingestion stop therefore also stopped decryptions the record could still serve.
 
 Decision:
 
@@ -2418,9 +2423,13 @@ Rejected alternatives:
 Consequences:
 
 Each coprocessor database has one more client, with 8 connections by default. Proofs keep being
-served while the listener is down, for the leaves it recorded before it stopped; a grant made after
-that has no proof until ingestion catches up. `ingestion_serves_no_proofs` pins that the listener
-has no proof route, and `ci/preview-env/solana-host/test_charts.py` pins the two Deployments.
+served while the listener is down, for the leaves it recorded before it stopped. Such a proof
+verifies until a later append to its Store merges its mountain, and the connector's check fails
+from then until ingestion catches up. The newest leaf sits in the smallest mountain, so it goes
+stale first, and anyone can append to a Store with a zero-value transfer. A grant made after the
+stop has no proof until ingestion catches up. `ingestion_serves_no_proofs` pins that the health
+router, the only one the listener serves, has no proof route, and
+`ci/preview-env/solana-host/test_charts.py` pins the two Deployments.
 
 ## Open product decisions
 

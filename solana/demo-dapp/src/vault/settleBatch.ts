@@ -61,7 +61,7 @@ export type SolanaVaultSettleOptions = {
 /**
  * Settles the batch's pinned burn handle with a KMS certificate and public-access proof.
  * The Connector fetches its own proof for the certificate request. After that request finishes,
- * this caller fetches a fresh listener proof and verifies it against the on-chain state peaks.
+ * this caller fetches a fresh proof from the leaf-proof server and verifies it against the on-chain state peaks.
  * The resulting settle instruction uses the batch's lookup table to fit the transaction packet.
  */
 export async function settleBatch(

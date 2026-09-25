@@ -557,8 +557,7 @@ pub(crate) struct PreparedTransaction {
     pub(crate) instructions: Vec<crate::solana_reconstruct::DecodedInstruction>,
 }
 
-/// Prepares a streamed transaction and holds it for its slot; a failed or vote transaction is
-/// dropped.
+/// Prepares a streamed transaction and holds it for its slot.
 fn accept_transaction(
     validator: &mut BlockValidator,
     update: SubscribeUpdateTransaction,
@@ -722,13 +721,7 @@ mod replay_status_tests {
             );
             assert!(progress.applied.is_none());
         }
-        let update = SubscribeUpdateBlockMeta {
-            slot: 5,
-            blockhash: bs58::encode([5; 32]).into_string(),
-            parent_slot: 4,
-            parent_blockhash: bs58::encode([4; 32]).into_string(),
-            ..Default::default()
-        };
+        let update = meta(5, 0);
         let mut validator = BlockValidator::new(progress.subscription_start());
         let SealDecision::Process(PreparedBlock { block, .. }) =
             validator.block_meta(update.clone()).unwrap()

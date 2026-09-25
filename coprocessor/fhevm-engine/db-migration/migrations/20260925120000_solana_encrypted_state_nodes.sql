@@ -10,3 +10,9 @@ CREATE TABLE solana_encrypted_state_nodes (
     node BYTEA NOT NULL CHECK (octet_length(node) = 32),
     PRIMARY KEY (encrypted_state, height, node_index)
 );
+
+-- A proof serves the first leaf matching (state, kind, handle, allowed_key), so the lookup
+-- index ends with the leaf's position: repeated allows of one handle cost one index probe.
+DROP INDEX solana_encrypted_state_leaves_semantic_idx;
+CREATE INDEX solana_encrypted_state_leaves_semantic_idx
+    ON solana_encrypted_state_leaves (encrypted_state, leaf_kind, handle, allowed_key, leaf_index);

@@ -104,8 +104,8 @@ stack where one exists.
 - **"domain"** in the ACL sense (`acl_domain_key`, "mint domain"): say
   *application* or *scope*. EIP-712 signing domains and hash-domain separation
   keep the word.
-- **"standalone proof service"** for a separate trusted component: the listener serves proofs
-  from its leaf record, and consumers verify them against their own chain snapshot.
+- **"standalone proof service"** for a separate trusted component: the leaf-proof server serves
+  proofs from the listener's leaf record, and consumers verify them against their own chain snapshot.
 - **`value_key`**, or the retired `EncryptedValue` account: Store identity is `(program, authority, scope)`;
   a slot key selects a handle within that Store.
 - Any synonym in a "Replaces" cell above.
