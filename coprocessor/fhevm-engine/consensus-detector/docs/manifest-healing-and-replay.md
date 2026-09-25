@@ -141,6 +141,12 @@ Containment only reduces propagation, so this wait is bounded: after
 uncontained row is healed anyway. Descendants the containment missed are then
 detected by the verification of their own blocks, and
 `coprocessor_ct64_healing_uncontained_total` counts these heals.
+Any stack's healer takes findings of every epoch that has a schema: a live
+stack's epoch installs into that stack's schema, and `initial` or `succeeded`
+epochs in `consensus_epoch_history` install into `public`, where cutover merged
+their ciphertexts. A cutover therefore does not strand the previous epoch's
+findings. Failed epochs have no schema and are not healed. Row locks and the
+`healed_at IS NULL` install guard coordinate the healers of both stacks.
 `missing_here`, `error_here`, and `uncomputed_here` rows have no wrong local ct64
 for consumers to have read and are due without containment. Marking a row
 contained wakes the worker. A matching GET writes `ciphertexts` and `healed_at`
