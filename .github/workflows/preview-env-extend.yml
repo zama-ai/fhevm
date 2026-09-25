@@ -1,0 +1,89 @@
+name: preview-env-extend
+
+##############################################################################
+# Push a dispatch preview's expires-at forward by 1-48 hours from now.
+# Refuses namespaces that are not fhevm-ci-* or that were not stamped
+# source=dispatch (PR-label previews have no clock).
+##############################################################################
+
+on:
+  workflow_dispatch:
+    inputs:
+      namespace:
+        description: "Dispatch preview namespace (fhevm-ci-*)."
+        required: true
+        type: string
+      hours:
+        description: "Hours to add from now (integer 1-48)."
+        required: true
+        type: string
+
+permissions: {}
+
+jobs:
+  extend:
+    name: extend
+    concurrency:
+      group: preview-env-extend-${{ inputs.namespace }}
+      cancel-in-progress: false
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    env:
+      TAILSCALE_HOSTNAME: tailscale-operator-zws-dev.diplodocus-boa.ts.net
+      NAMESPACE: ${{ inputs.namespace }}
+      HOURS: ${{ inputs.hours }}
+    steps:
+      - name: Validate inputs
+        run: |
+          set -euo pipefail
+          if [[ "${NAMESPACE}" != fhevm-ci-* ]]; then
+            echo "::error::Refusing to extend '${NAMESPACE}': not a fhevm-ci-* preview namespace."
+            exit 1
+          fi
+          if [[ ! "${HOURS}" =~ ^[0-9]+$ ]] || (( 10#$HOURS < 1 || 10#$HOURS > 48 )); then
+            echo "::error::hours must be an integer from 1 to 48 (got '${HOURS}')"
+            exit 1
+          fi
+
+      - name: Setup tailscale
+        uses: tailscale/github-action@84a3f23bb4d843bcf4da6cf824ec1be473daf4de # v3.2.3
+        with:
+          oauth-client-id: ${{ secrets.TS_OAUTH_CLIENT_ID }}
+          oauth-secret: ${{ secrets.TS_OAUTH_SECRET }}
+          tags: tag:fhevm-ci
+
+      - name: Setup kubectl
+        uses: azure/setup-kubectl@776406bce94f63e41d621b960d78ee25c8b76ede # v4.0.1
+
+      - name: Configure kubeconfig for the Tailscale cluster
+        run: tailscale configure kubeconfig "${TAILSCALE_HOSTNAME}"
+
+      - name: Extend expires-at
+        run: |
+          set -euo pipefail
+          if ! kubectl get namespace "${NAMESPACE}" > /dev/null 2>&1; then
+            echo "::error::Namespace ${NAMESPACE} does not exist."
+            exit 1
+          fi
+          ns_json=$(kubectl get namespace "${NAMESPACE}" -o json)
+          ns_source=$(jq -r '.metadata.annotations["preview.zama.ai/source"] // ""' <<<"${ns_json}")
+          if [[ "${ns_source}" != "dispatch" ]]; then
+            echo "::error::${NAMESPACE} is not a dispatch preview (source='${ns_source}'). PR envs are not extended."
+            exit 1
+          fi
+          phase=$(jq -r '.status.phase // ""' <<<"${ns_json}")
+          current_expires=$(jq -r '.metadata.annotations["preview.zama.ai/expires-at"] // ""' <<<"${ns_json}")
+          destroy_at=$(jq -r '.metadata.annotations["preview.zama.ai/destroy-dispatched-at"] // ""' <<<"${ns_json}")
+          if [[ "${phase}" == "Terminating" ]]; then
+            echo "::error::${NAMESPACE} is Terminating. Redeploy instead of extending."
+            exit 1
+          fi
+          if [[ -n "${destroy_at}" && "${destroy_at}" == "${current_expires}" ]]; then
+            echo "::error::${NAMESPACE} is already queued for destroy (${destroy_at}). Redeploy instead of extending."
+            exit 1
+          fi
+          expires=$(date -u -d "+${HOURS} hours" +%Y-%m-%dT%H:%M:%SZ)
+          kubectl annotate namespace "${NAMESPACE}" \
+            "preview.zama.ai/expires-at=${expires}" --overwrite
+          echo "Extended ${NAMESPACE} to ${expires} (+${HOURS}h from now)"
+          echo "### ${NAMESPACE} now expires at ${expires}" >> "${GITHUB_STEP_SUMMARY}"

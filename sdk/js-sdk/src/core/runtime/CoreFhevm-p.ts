@@ -22,12 +22,7 @@ import { uid } from '../base/uid.js';
 import { createTrustedClient } from '../modules/ethereum/createTrustedClient.js';
 import { asFhevmRuntimeWith, assertIsFhevmRuntime, assertIsFhevmRuntimeWith } from './CoreFhevmRuntime-p.js';
 import { globalFheEncryptionKeyCache } from '../key/FheEncryptionKeyCache-p.js';
-import { cloneModuleVersions } from '../runtimeConfig-p.js';
-import {
-  cloneFhevmClientFrozenContext,
-  createFhevmClientFrozenContext,
-  type CreateFhevmClientFrozenContextParameters,
-} from '../frozenContext/fhevmClientFrozenContext-p.js';
+import { cloneFhevmClientFrozenContext } from '../frozenContext/fhevmClientFrozenContext-p.js';
 
 ////////////////////////////////////////////////////////////////////////////////
 
@@ -665,7 +660,6 @@ function extendCoreFhevm<T extends Fhevm<FhevmChain | undefined, FhevmRuntime, O
 function resolveOptions(options: FhevmOptions | undefined): ResolvedFhevmOptions {
   return Object.freeze<ResolvedFhevmOptions>({
     batchRpcCalls: options?.batchRpcCalls ?? false,
-    moduleVersions: cloneModuleVersions(options?.moduleVersions),
   });
 }
 
@@ -733,55 +727,8 @@ export function getFrozenContext(fhevm: unknown): FhevmClientFrozenContext | und
   return f[GET_FROZEN_CONTEXT]();
 }
 
-/** Solana encrypt pins TFHE onto the frozen context (no on-chain protocol context). */
-export function setResolvedTfheVersion(
-  fhevm: FhevmBase<FhevmChain | undefined, FhevmRuntime, OptionalNativeClient>,
-  tfheVersion: TfheVersion,
-): void {
-  const current = getFrozenContext(fhevm);
-  if (current === undefined) {
-    throw new Error(UNRESOLVED_FHEVM_CONTEXT_MESSAGE);
-  }
-  if (current.tryTfheVersion === tfheVersion) {
-    return;
-  }
-  setFrozenContext(fhevm, withFrozenModuleVersions(current, { tfheVersion }));
-}
-
-export function setResolvedTkmsVersion(
-  fhevm: FhevmBase<FhevmChain | undefined, FhevmRuntime, OptionalNativeClient>,
-  tkmsVersion: TkmsVersion,
-): void {
-  const current = getFrozenContext(fhevm);
-  if (current === undefined) {
-    throw new Error(UNRESOLVED_FHEVM_CONTEXT_MESSAGE);
-  }
-  if (current.tryTkmsVersion === tkmsVersion) {
-    return;
-  }
-  setFrozenContext(fhevm, withFrozenModuleVersions(current, { tkmsVersion }));
-}
-
-function withFrozenModuleVersions(
-  current: FhevmClientFrozenContext,
-  patch: { readonly tfheVersion?: TfheVersion; readonly tkmsVersion?: TkmsVersion },
-): FhevmClientFrozenContext {
-  return createFhevmClientFrozenContext({
-    ...(cloneFhevmClientFrozenContext(current).toJSON() as CreateFhevmClientFrozenContextParameters),
-    ...patch,
-  });
-}
-
 export function getResolvedProtocolVersion(fhevm: unknown): ProtocolVersionResolution | undefined {
   return getFrozenContext(fhevm)?.tryProtocolVersion;
-}
-
-export function getResolvedTfheVersion(fhevm: unknown): TfheVersion | undefined {
-  return getFrozenContext(fhevm)?.tryTfheVersion;
-}
-
-export function getResolvedTkmsVersion(fhevm: unknown): TkmsVersion | undefined {
-  return getFrozenContext(fhevm)?.tryTkmsVersion;
 }
 
 export function setFrozenContextPromise(

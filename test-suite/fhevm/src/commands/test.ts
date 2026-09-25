@@ -1,7 +1,7 @@
 /**
  * Runs named e2e test profiles, standard/heavy CI suites, and topology-specific test flows.
  */
-import { compatPolicyForState, supportsConnectorEndpoint, supportsCoprocessorDbStateRevert } from "../compat/compat";
+import { compatPolicyForState, supportsConnectorHttp, supportsCoprocessorDbStateRevert } from "../compat/compat";
 import { type DecryptionRunner, runKmsGenerationProfile } from "./kms-generation";
 import { runKmsGenerationAbortProfile } from "./kms-generation-abort";
 import { runKmsContextSwitchProfile } from "./kms-context-switch";
@@ -10,6 +10,7 @@ import { DRIFT_CLEANUP_SQL, DRIFT_INSTALL_SQL, parseDriftInstanceIndex, parsePos
 import { PreflightError, formatCliError } from "../errors";
 import { runContractTask } from "../flow/contracts";
 import { dockerInspect } from "../flow/readiness";
+import { assertManagedWriterOwnership, withQuiescedWriters } from "../flow/writer-ownership";
 import { pause, shellEscape, unpause } from "../flow/up-flow";
 import { hostReachableRpcUrl, readEnvFile } from "../utils/fs";
 import { composeEnv, run, runWithHeartbeat } from "../utils/process";
@@ -51,6 +52,8 @@ import {
   TEST_PARALLEL,
   TEST_SUITE_CONTAINER,
   coprocessorDatabaseName,
+  defaultHostChainKey,
+  hostChainSuffix,
 } from "../layout";
 import type { State, TestOptions } from "../types";
 
@@ -64,6 +67,9 @@ const DRIFT_HANDLE = /"handle":"0x([0-9a-f]+)"/i;
 const DB_REVERT_CONTAINERS = [
   "host-listener",
   "host-listener-poller",
+  "host-listener-consumer",
+  "consensus-detector",
+  "upgrade-controller",
   "gw-listener",
   "tfhe-worker",
   "sns-worker",
@@ -686,10 +692,14 @@ const runNamedE2e = async (
 };
 
 /** Builds the coprocessor runtime container names for every configured instance. */
-const coprocessorRuntimeContainers = (instanceCount: number) =>
+export const coprocessorRuntimeContainers = (instanceCount: number, chains: State["scenario"]["hostChains"], blueGreen = false) =>
   Array.from({ length: instanceCount }, (_, index) => {
     const prefix = index === 0 ? "coprocessor-" : `coprocessor${index}-`;
-    return DB_REVERT_CONTAINERS.map((suffix) => `${prefix}${suffix}`);
+    const extraListeners = chains.slice(1).flatMap((chain) =>
+      ["host-listener", "host-listener-poller"].map((role) =>
+        `${prefix}${role}${hostChainSuffix(chain.key, defaultHostChainKey(chains))}`));
+    const canonical = [...DB_REVERT_CONTAINERS.map((suffix) => `${prefix}${suffix}`), ...extraListeners];
+    return blueGreen ? [...canonical, ...canonical.map((name) => name.replace(prefix, `${prefix}gcs-`))] : canonical;
   }).flat();
 
 /** Builds the sns-worker container names for every configured coprocessor instance. */
@@ -745,13 +755,6 @@ export const waitForKeyBootstrap = async (
   }
 };
 
-/** Stops or starts each named container and ignores already-stopped/missing cases. */
-const setContainersRunning = async (containers: string[], action: "start" | "stop") => {
-  for (const container of containers) {
-    await run(["docker", action, container], { allowFailure: true });
-  }
-};
-
 /** Reads a one-line postgres query result as trimmed text. */
 const scalarQuery = async (
   dbName: string,
@@ -771,6 +774,19 @@ const postgresRuntime = () => ({
   postgresHost: process.env.POSTGRES_HOST,
 });
 
+/** Destructive SQL must address a database whose writers this stack can fence. */
+export const assertDbRevertTarget = (
+  state: Pick<State, "scenario">,
+  postgres: Pick<ReturnType<typeof postgresRuntime>, "postgresContainer" | "postgresDb" | "postgresHost">,
+) => {
+  const databases = new Set(Array.from({length: topologyForState(state).count}, (_, index) => coprocessorDatabaseName(index)));
+  const hosts = new Set(["db", POSTGRES_HOST, COPROCESSOR_DB_CONTAINER, `${COPROCESSOR_DB_CONTAINER}:5432`]);
+  if (postgres.postgresContainer !== COPROCESSOR_DB_CONTAINER || !databases.has(postgres.postgresDb) ||
+    (postgres.postgresHost !== undefined && !hosts.has(postgres.postgresHost))) {
+    throw new PreflightError("db-state-revert only supports databases in the active managed coprocessor fleet; external POSTGRES_CONTAINER, POSTGRES_HOST or POSTGRES_DB overrides cannot establish writer quiescence");
+  }
+};
+
 /** Chooses the revert anchor just before the seed-generated block range. */
 export const dbRevertTargetBlock = (seedStartBlock: number) => {
   const revertTo = seedStartBlock - 1;
@@ -778,6 +794,42 @@ export const dbRevertTargetBlock = (seedStartBlock: number) => {
     throw new PreflightError(`db-state-revert requires a positive seed boundary; got first seed block ${seedStartBlock}`);
   }
   return revertTo;
+};
+
+/** Read the seed's actual Hardhat network, not noncanonical transaction telemetry. */
+export const dbRevertAnchorProgram = (timeoutMs = 60_000) => `
+const timer = setTimeout(() => process.exit(124), ${timeoutMs});
+(async () => {
+  const { network } = require("hardhat");
+  const chainId = await network.provider.send("eth_chainId");
+  const block = await network.provider.send("eth_getBlockByNumber", ["latest", false]);
+  console.log("DB_REVERT_ANCHOR=" + JSON.stringify({ chainId, blockNumber: block.number }));
+})().catch(() => { console.error("db-state-revert canonical RPC probe failed"); process.exitCode = 1; })
+  .finally(() => { clearTimeout(timer); process.exit(process.exitCode ?? 0); });
+`;
+
+export const dbRevertCanonicalAnchor = async (
+  network: string,
+  chainId: string,
+  execute: typeof run = run,
+) => {
+  const timeoutMs = parsePositiveInteger(process.env.DB_REVERT_ANCHOR_TIMEOUT_SECONDS ?? "60", "DB_REVERT_ANCHOR_TIMEOUT_SECONDS") * 1000;
+  const result = await execute(buildTestContainerArgs(
+    ["node", "-r", "ts-node/register/transpile-only", "-e", dbRevertAnchorProgram(timeoutMs)],
+    ["-e", `HARDHAT_NETWORK=${network}`],
+  ), { timeoutMs: timeoutMs + 15_000 });
+  const line = result.stdout.split(/\r?\n/).find((value) => value.startsWith("DB_REVERT_ANCHOR="));
+  if (!line) throw new PreflightError("db-state-revert canonical RPC probe returned no anchor");
+  const anchor = JSON.parse(line.slice("DB_REVERT_ANCHOR=".length)) as { chainId: string; blockNumber: string };
+  if (!/^0x[0-9a-f]+$/i.test(anchor.chainId) || BigInt(anchor.chainId) !== BigInt(chainId)) {
+    throw new PreflightError(`db-state-revert seed network ${network} does not match CHAIN_ID ${chainId}`);
+  }
+  if (!/^0x[0-9a-f]+$/i.test(anchor.blockNumber)) {
+    throw new PreflightError("db-state-revert canonical RPC probe returned an invalid block");
+  }
+  const block = Number(BigInt(anchor.blockNumber));
+  if (!Number.isSafeInteger(block)) throw new PreflightError("db-state-revert canonical block exceeds safe integer range");
+  return dbRevertTargetBlock(block + 1);
 };
 
 type DbRevertSnapshot = {
@@ -1416,29 +1468,22 @@ const runBlueGreenProfile = async (
     );
   }
 
-  // TODO(fhevm-internal#1567): re-enable once RFC-023 lands — wait for the post-cutover
-  // backfill to converge before verifying (the convergence signal will replace txn_is_sent).
-  // for (const db of operatorDatabases) {
-  //   await waitUntil({
-  //     label: `${db}  digest re-commit drained`,
-  //     timeoutSecs: 300,
-  //     check: async () =>
-  //       (await psqlQuery(db, "SELECT count(*) FROM public.ciphertext_digest WHERE txn_is_sent = false;")) === "0",
-  //   });
-  // }
+  // Traffic is stopped, so the merged digest backlog must drain before the verify decrypts.
+  for (const db of operatorDatabases) {
+    await waitUntil({
+      label: `${db}  digest re-commit drained`,
+      timeoutSecs: 300,
+      check: async () =>
+        (await psqlQuery(db, "SELECT count(*) FROM public.ciphertext_digest WHERE txn_is_sent = false;")) === "0",
+    });
+  }
 
   console.log(`  cross-cutover verify: decrypt Alice's balance on promoted stack`);
   const verifyResult = await run(["./fhevm-cli", "test", "cross-cutover-verify"], { allowFailure: true });
   if (verifyResult.code !== 0) {
-    // TODO(fhevm-internal#1567): re-enable once RFC-023 lands — dry-run-era handles are
-    // undecryptable until then (S3 backfill vs immutable on-chain digests).
-    // throw new Error(
-    //   "cross-cutover verify failed — decrypted balance ≠ expected math after cutover. " +
-    //     "Either the fallback query broke, or GCS lost/corrupted state across cutover.",
-    // );
-    console.warn(
-      "  KNOWN ISSUE (soft-fail): cross-cutover verify failed — dry-run-era handles are " +
-        "undecryptable until RFC-023 lands.",
+    throw new Error(
+      "cross-cutover verify failed — decrypted balance ≠ expected math after cutover. " +
+        "Either the fallback query broke, or GCS lost/corrupted state across cutover.",
     );
   }
 
@@ -1488,13 +1533,14 @@ const runDbStateRevert = async (
   const postgres = {
     ...postgresRuntime(),
   };
+  assertDbRevertTarget(state, postgres);
   const testsToRun = process.env.TESTS_TO_RUN ?? TEST_GREP[DB_REVERT_RECOVERY_PROFILE];
   if (!testsToRun) {
     throw new PreflightError(`Missing grep pattern for ${DB_REVERT_RECOVERY_PROFILE}`);
   }
   const timeoutSeconds = parsePositiveInteger(process.env.REVERT_POLL_TIMEOUT_SECONDS ?? "300", "REVERT_POLL_TIMEOUT_SECONDS");
   const pollIntervalSeconds = parsePositiveInteger(process.env.REVERT_POLL_INTERVAL_SECONDS ?? "2", "REVERT_POLL_INTERVAL_SECONDS");
-  const containers = coprocessorRuntimeContainers(topologyForState(state).count);
+  const containers = coprocessorRuntimeContainers(topologyForState(state).count, state.scenario.hostChains, state.scenario.kind === "blue-green");
   const migrationVersion = state.versions.env.COPROCESSOR_DB_MIGRATION_VERSION;
   const revertImage =
     localDbMigrationImageRef(state) ??
@@ -1505,33 +1551,30 @@ const runDbStateRevert = async (
   console.log("[test] coprocessor-db-state-revert");
 
   return runLogged("coprocessor-db-state-revert", started, async () => {
-    const maxBlockBeforeSeed = Number(
-      await scalarQuery(postgres.postgresDb, `SELECT COALESCE(MAX(block_number), 0) FROM transactions WHERE chain_id = ${chainId}`, postgres),
-    );
     const baseline = await dbRevertSnapshot(chainId, postgres);
     console.log(`[revert] baseline ${formatDbRevertSnapshot(baseline)}`);
+    const revertTo = await dbRevertCanonicalAnchor(options.network, chainId);
+    console.log(`[revert] canonical seed anchor chain=${chainId} block=${revertTo}`);
     await runNamedE2e(options, testsToRun, "test coprocessor-db-state-revert seed");
 
-    let before;
-    let stopped = false;
-    try {
-      await setContainersRunning(containers, "stop");
-      stopped = true;
-
+    let before!: DbRevertSnapshot;
+    await withQuiescedWriters(state, containers, async () => {
       before = await dbRevertSnapshot(chainId, postgres);
       console.log(`[revert] before ${formatDbRevertSnapshot(before)}`);
       if (before.computationsDone === 0) {
         throw new PreflightError("db-state-revert found no completed computations; nothing to revert");
       }
 
-      const seedStartBlock = Number(
+      const seededComputations = Number(
         await scalarQuery(
           postgres.postgresDb,
-          `SELECT COALESCE(MIN(block_number), 0) FROM transactions WHERE chain_id = ${chainId} AND block_number > ${maxBlockBeforeSeed}`,
+          `SELECT COUNT(*) FROM computations WHERE host_chain_id = ${chainId} AND block_number > ${revertTo} AND is_completed = true`,
           postgres,
         ),
       );
-      const revertTo = dbRevertTargetBlock(seedStartBlock);
+      if (seededComputations === 0) {
+        throw new PreflightError("db-state-revert seed produced no completed computations after the canonical anchor; refusing an unproven revert");
+      }
 
       const network = (
         await run([
@@ -1546,6 +1589,9 @@ const runDbStateRevert = async (
         throw new PreflightError(`db-state-revert could not resolve the docker network for ${postgres.postgresContainer}`);
       }
 
+      // Re-discover immediately before destructive SQL, after snapshot/network
+      // queries: a writer appearing during that interval invalidates the fence.
+      await assertManagedWriterOwnership(state, containers, true);
       await runWithHeartbeat(
         [
           "docker",
@@ -1554,7 +1600,7 @@ const runDbStateRevert = async (
           "--network",
           network,
           "-e",
-          `DATABASE_URL=postgres://${postgres.postgresUser}:${postgres.postgresPassword}@${postgres.postgresHost ?? POSTGRES_HOST.replace(/^db:/, `${postgres.postgresContainer}:`)}/${postgres.postgresDb}`,
+          `DATABASE_URL=postgres://${encodeURIComponent(postgres.postgresUser)}:${encodeURIComponent(postgres.postgresPassword)}@${postgres.postgresHost ?? POSTGRES_HOST.replace(/^db:/, `${postgres.postgresContainer}:`)}/${postgres.postgresDb}`,
           "-e",
           `CHAIN_ID=${chainId}`,
           "-e",
@@ -1568,11 +1614,7 @@ const runDbStateRevert = async (
       const after = await dbRevertSnapshot(chainId, postgres);
       console.log(`[revert] after ${formatDbRevertSnapshot(after)}`);
       assertRevertDeletedData(baseline, before, after);
-    } finally {
-      if (stopped) {
-        await setContainersRunning(containers, "start");
-      }
-    }
+    });
 
     await waitForDbRevertRecovery(before, chainId, {
       ...postgres,
@@ -1667,9 +1709,9 @@ export const test = async (testName: string | undefined, options: TestOptions) =
     state.scenario.hostChains.length > 1 ? undefined : "topology has fewer than 2 host chains";
 
   const connectorEndpointSkipReason = () =>
-    supportsConnectorEndpoint(state)
+    supportsConnectorHttp(state)
       ? undefined
-      : "CONNECTOR_ENDPOINT_VERSION is not part of the resolved bundle (no kms-connector-endpoint container)";
+      : "CONNECTOR_ENDPOINT_VERSION / CONNECTOR_PROXY_VERSION are not part of the resolved bundle (no kms-connector-endpoint / -proxy containers)";
 
   const dbStateRevertSkipReason = () =>
     supportsCoprocessorDbStateRevert(state)

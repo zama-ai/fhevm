@@ -7,6 +7,7 @@ import {
   parseBlueGreenScenario,
   parseCoprocessorScenario,
   resolveBlueGreenScenario,
+  resolveKmsTopology,
   resolveScenarioReference,
   synthesizeOverrideScenario,
   effectiveOverrides,
@@ -225,7 +226,7 @@ topology:
       const scenario = await loadBlueGreenScenario("blue-green");
       expect(scenario.kind).toBe("blue-green");
       expect(scenario.name).toBe("Blue-Green Upgrade");
-      expect(scenario.bcs.source).toEqual({ mode: "registry", tag: "v0.14.0-7" });
+      expect(scenario.bcs.source).toEqual({ mode: "registry", tag: "v0.14.2-0" });
       expect(scenario.gcs.source).toEqual({ mode: "local" });
       expect(scenario.hostChains).toHaveLength(1);
       // Default topology = single-operator dev flow.
@@ -267,6 +268,53 @@ gcs: {}
 `);
       expect(parsed.bcs).toBeUndefined();
       expect(parsed.gcs.source).toBeUndefined();
+    });
+
+    test("resolves the bootstrap release and defers Green", () => {
+      const parsed = parseBlueGreenScenario(`
+version: 1
+kind: blue-green
+gcs:
+  source: { mode: local }
+bootstrap:
+  tag: v0.14.2-0
+`);
+      expect(parsed.bootstrap).toEqual({ tag: "v0.14.2-0" });
+      const resolved = resolveBlueGreenScenario("/tmp/bootstrap.yaml", parsed);
+      expect(resolved.bootstrap).toEqual({ tag: "v0.14.2-0" });
+      expect(resolved.gcs.deferredStart).toBe(true);
+      expect(resolveBlueGreenScenario("/tmp/bootstrap.yaml", { ...parsed, bootstrap: undefined }).gcs.deferredStart).toBe(false);
+    });
+
+    test("rejects a bootstrap block without a tag", () => {
+      expect(() =>
+        parseBlueGreenScenario(`
+version: 1
+kind: blue-green
+gcs:
+  source: { mode: local }
+bootstrap: {}
+`),
+      ).toThrow("bootstrap.tag must be a non-empty release tag");
+    });
+
+    test("rejects bootstrap for a threshold KMS cluster", () => {
+      const parsed = parseBlueGreenScenario(`
+version: 1
+kind: blue-green
+gcs:
+  source: { mode: local }
+kms:
+  mode: threshold
+  parties: 4
+  threshold: 1
+  fheParams: Test
+bootstrap:
+  tag: v0.14.2-0
+`);
+      expect(() => resolveBlueGreenScenario("/tmp/bootstrap.yaml", parsed)).toThrow(
+        "bootstrap is only supported with a centralized KMS",
+      );
     });
 
     test("rejects missing gcs block", () => {
@@ -422,7 +470,7 @@ gcs:
         bcsTag: "1a3646e",
       });
       if (resolved.kind === "blue-green") {
-        expect(resolved.bcs.source).toEqual({ mode: "registry", tag: "1a3646e", compatTag: "v0.14.0-7" });
+        expect(resolved.bcs.source).toEqual({ mode: "registry", tag: "1a3646e", compatTag: "v0.14.2-0" });
       }
     });
 
@@ -433,7 +481,7 @@ gcs:
         bcsTag: "1a3646e87b1234567890abcdef1234567890abcd",
       });
       if (resolved.kind === "blue-green") {
-        expect(resolved.bcs.source).toEqual({ mode: "registry", tag: "1a3646e", compatTag: "v0.14.0-7" });
+        expect(resolved.bcs.source).toEqual({ mode: "registry", tag: "1a3646e", compatTag: "v0.14.2-0" });
       }
     });
 
@@ -444,7 +492,7 @@ gcs:
         bcsTag: "1A3646E87b1234567890AbCdEf1234567890abcd",
       });
       if (resolved.kind === "blue-green") {
-        expect(resolved.bcs.source).toEqual({ mode: "registry", tag: "1a3646e", compatTag: "v0.14.0-7" });
+        expect(resolved.bcs.source).toEqual({ mode: "registry", tag: "1a3646e", compatTag: "v0.14.2-0" });
       }
     });
 

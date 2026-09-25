@@ -5,9 +5,7 @@ import { defineClientDecryptStalePermitMigrationTests } from '../viem-common/cli
 
 ////////////////////////////////////////////////////////////////////////////////
 //
-// CHAIN=localstack_v12 npx vitest run --config test/fheTest/vitest.config.ts viem/clientDecrypt.stalePermitMigration.test.ts
-// CHAIN=localstack_v13 npx vitest run --config test/fheTest/vitest.config.ts viem/clientDecrypt.stalePermitMigration.test.ts
-// CHAIN=localstack     npx vitest run --config test/fheTest/vitest.config.ts viem/clientDecrypt.stalePermitMigration.test.ts
+// CHAIN=localstack npx vitest run --config test/fheTest/vitest.config.ts viem/clientDecrypt.stalePermitMigration.test.ts
 //
 ////////////////////////////////////////////////////////////////////////////////
 

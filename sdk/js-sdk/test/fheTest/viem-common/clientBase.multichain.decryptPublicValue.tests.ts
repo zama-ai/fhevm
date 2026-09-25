@@ -3,7 +3,7 @@ import type { CreateViemBaseClientFn, FheTestViemConfig } from '../setup-viem.js
 import type { EncryptedValue } from '@fhevm/sdk/types';
 import { describe, it, expect, beforeAll } from 'vitest';
 import { setFhevmRuntimeConfig } from '@fhevm/sdk/viem';
-import { getViemClientOptions, getViemTestConfigs } from '../setup-viem.js';
+import { getViemTestConfigs } from '../setup-viem.js';
 import { FHETestABI } from '../FheTest-abi-v2.js';
 import {
   createLogger,
@@ -102,12 +102,10 @@ export function defineClientBaseMultichainDecryptPublicValueTests(parameters: {
         const client0 = parameters.createFhevmBaseClient({
           chain: config0.fhevmChain,
           publicClient: config0.publicClient,
-          options: getViemClientOptions(config0),
         });
         const client1 = parameters.createFhevmBaseClient({
           chain: config1.fhevmChain,
           publicClient: config1.publicClient,
-          options: getViemClientOptions(config1),
         });
 
         const typedValue0 = await client0.decryptPublicValue({

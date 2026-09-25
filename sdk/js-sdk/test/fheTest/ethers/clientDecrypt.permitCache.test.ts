@@ -5,9 +5,7 @@ import { defineClientDecryptPermitCacheTests } from '../ethers-common/clientDecr
 
 ////////////////////////////////////////////////////////////////////////////////
 //
-// CHAIN=localstack_v11 npx vitest run --config test/fheTest/vitest.config.ts ethers/clientDecrypt.permitCache.test.ts
-// CHAIN=localstack_v12 npx vitest run --config test/fheTest/vitest.config.ts ethers/clientDecrypt.permitCache.test.ts
-// CHAIN=localstack     npx vitest run --config test/fheTest/vitest.config.ts ethers/clientDecrypt.permitCache.test.ts
+// CHAIN=localstack npx vitest run --config test/fheTest/vitest.config.ts ethers/clientDecrypt.permitCache.test.ts
 //
 ////////////////////////////////////////////////////////////////////////////////
 

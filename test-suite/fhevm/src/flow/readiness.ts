@@ -1,8 +1,11 @@
+import { assertOneWorkerPerQueue } from "./queue-ownership";
+export { assertOneWorkerPerQueue, classifyStray, parseWorkerDatabase, strayWorkerPids } from "./queue-ownership";
 import {
   bootstrapUsesHostKmsGeneration,
   kmsConnectorUsesHostKmsGeneration,
-  supportsConnectorEndpoint,
+  supportsConnectorHttp,
   supportsConsensusDetector,
+  supportsCoprocessorDbStateRevert,
   supportsHostListenerConsumer,
   supportsUpgradeController,
 } from "../compat/compat";
@@ -16,6 +19,7 @@ import {
   KMS_CORE_CONTAINER,
   MINIO_EXTERNAL_URL,
   TEST_SUITE_CONTAINER,
+  coprocessorDatabaseName,
   defaultHostChainKey,
   hostChainSuffix,
 } from "../layout";
@@ -36,15 +40,15 @@ const KMS_CONNECTOR_KMS_GENERATION_READY =
 // `kms.parties` is the canonical connector/party count: 1 for centralized, N for threshold.
 const kmsConnectorPartyCount = (state: State) => state.scenario.kms.parties;
 
-/** gw-listener / kms-worker / tx-sender (+ endpoint when the bundle ships it) health containers across every KMS party. */
+/** gw-listener / kms-worker / tx-sender (+ endpoint and proxy when the bundle ships them) health containers across every KMS party. */
 export const kmsConnectorHealthContainers = (state: State): string[] => {
   const containers: string[] = [];
-  const includeEndpoint = supportsConnectorEndpoint(state);
+  const includeHttp = supportsConnectorHttp(state);
   for (let party = 1; party <= kmsConnectorPartyCount(state); party += 1) {
     const prefix = kmsConnectorPrefix(party);
     containers.push(`${prefix}-gw-listener`, `${prefix}-kms-worker`, `${prefix}-tx-sender`);
-    if (includeEndpoint) {
-      containers.push(`${prefix}-endpoint`);
+    if (includeHttp) {
+      containers.push(`${prefix}-endpoint`, `${prefix}-proxy`);
     }
   }
   return containers;
@@ -58,6 +62,7 @@ export const dockerInspect = async (name: string) => {
     if (/no such object|no such container/i.test(message)) {
       return [] as Array<{
         Name: string;
+        RestartCount?: number;
         State: { Status: string; ExitCode: number; StartedAt?: string; Health?: { Status: string } };
         NetworkSettings: { Networks: Record<string, { IPAddress: string }> };
       }>;
@@ -67,6 +72,7 @@ export const dockerInspect = async (name: string) => {
   try {
     return JSON.parse(result.stdout) as Array<{
       Name: string;
+        RestartCount?: number;
       State: { Status: string; ExitCode: number; StartedAt?: string; Health?: { Status: string } };
       NetworkSettings: { Networks: Record<string, { IPAddress: string }> };
     }>;
@@ -77,17 +83,33 @@ export const dockerInspect = async (name: string) => {
   }
 };
 
+/** Fresh readiness requires zero automatic restarts, including before the first poll. */
+export const containerFailure = (
+  inspect: { RestartCount?: number; State: { Status: string; ExitCode: number } },
+  initialRestarts = 0,
+): boolean => inspect.State.Status === "restarting" ||
+  (inspect.RestartCount ?? 0) > initialRestarts ||
+  (inspect.State.Status === "exited" && inspect.State.ExitCode !== 0);
+
 /** Polls one container until it reaches the requested lifecycle state. */
 export const waitForContainer = async (container: string, want: "running" | "healthy" | "complete") => {
   const attempts = 90;
+  let stable = false;
   for (let attempt = 0; attempt <= attempts; attempt += 1) {
     const [inspect] = await dockerInspect(container);
     if (inspect) {
+      if (containerFailure(inspect)) {
+        const logs = await run(["docker", "logs", "--tail", "30", container], { allowFailure: true });
+        throw new ContainerCrashed(container, inspect.State.ExitCode || -1, (logs.stdout + logs.stderr).trim());
+      }
       if (want === "healthy" && inspect.State.Health?.Status === "healthy") {
         return;
       }
       if (want === "running" && inspect.State.Status === "running") {
-        return;
+        if (stable) return;
+        stable = true;
+      } else {
+        stable = false;
       }
       if (want === "complete" && inspect.State.Status === "exited" && inspect.State.ExitCode === 0) {
         return;
@@ -113,6 +135,11 @@ export const waitForLog = async (container: string, pattern: RegExp) => {
       { allowFailure: true },
     );
     const combined = logs.stdout + logs.stderr;
+    if (inspect) {
+      if (containerFailure(inspect)) {
+        throw new ContainerCrashed(container, inspect.State.ExitCode || -1, combined.trim());
+      }
+    }
     const match = combined.match(pattern);
     if (match) {
       return match[0];
@@ -177,7 +204,7 @@ export const postBootHealthGate = async (containers: string[], delayMs = POST_BO
       crashed.push({ name, exitCode: -1, logs: "(container not found)" });
       continue;
     }
-    if (inspect.State.Status === "exited" && inspect.State.ExitCode !== 0) {
+    if (containerFailure(inspect)) {
       const result = await run(["docker", "logs", "--tail", "30", name], { allowFailure: true });
       crashed.push({ name, exitCode: inspect.State.ExitCode, logs: (result.stdout + result.stderr).trim() });
     }
@@ -213,6 +240,65 @@ export const coprocessorHealthContainers = (state: Pick<State, "scenario" | "ver
   return names;
 };
 
+/**
+ * Reads `gpu_enabled` out of an sns-worker's startup output.
+ *
+ * The worker logs JSON (`"gpu_enabled":true`), but accept a bare `=` form too
+ * rather than have the guard go quiet on a formatting change -- a check that
+ * silently stops checking is worse than no check.
+ */
+export const parseSquashBackend = (logs: string) => {
+  const match = /gpu_enabled"?\s*[:=]\s*"?(true|false)/i.exec(logs);
+  return match ? (match[1].toLowerCase() as "true" | "false") : undefined;
+};
+
+/**
+ * Groups operators by squash backend. Operators whose backend could not be
+ * read are left out: an older image without the startup line is not evidence
+ * of a split.
+ */
+export const backendSplit = (backends: readonly (string | undefined)[]) => {
+  const grouped = new Map<string, number[]>();
+  backends.forEach((backend, index) => {
+    if (!backend) return;
+    grouped.set(backend, [...(grouped.get(backend) ?? []), index]);
+  });
+  return grouped;
+};
+
+/**
+ * Refuses to call a multi-operator stack ready unless every operator squashes
+ * on the same backend.
+ *
+ * Consensus is a byte comparison and the CPU and CUDA squash paths produce
+ * different (both correct) ct128 for the same ct64, so a fleet split across
+ * backends cannot reach quorum on the SNS digest while agreeing on everything
+ * else. Reading it from the worker's own startup line is cheap; discovering it
+ * from divergent bytes is not.
+ */
+export const assertUniformSquashBackend = async (state: Pick<State, "scenario">) => {
+  const count = topologyForState(state).count;
+  if (count < 2) return;
+  const observed: (string | undefined)[] = [];
+  for (let index = 0; index < count; index += 1) {
+    const logs = await run(["docker", "logs", toServiceName("sns-worker", index)], {
+      allowFailure: true,
+    });
+    observed.push(parseSquashBackend(`${logs.stdout}${logs.stderr}`));
+  }
+  const backends = backendSplit(observed);
+  if (backends.size > 1) {
+    const split = [...backends.entries()]
+      .map(([backend, operators]) => `gpu_enabled=${backend}: operator ${operators.join(", ")}`)
+      .join("; ");
+    throw new PreflightError(
+      `Operators are split across squash backends (${split}). CPU and GPU squashing ` +
+        "produce different ct128 bytes for the same input, so this fleet cannot reach " +
+        "byte-consensus on the SNS digest. Make every operator use the same backend.",
+    );
+  }
+};
+
 /** Waits for all coprocessor runtime services to reach their expected states. */
 export const waitForCoprocessorServices = async (state: State, skipMigration: boolean) => {
   const waitCoreFleet = async (prefix: string, withMigration: boolean) => {
@@ -240,6 +326,10 @@ export const waitForCoprocessorServices = async (state: State, skipMigration: bo
       await waitForContainer(`${prefix}gcs-consensus-detector`, "running");
     }
   }
+  // Both of these are about who is allowed to serve the queues, so they belong
+  // after the containers are up and before anything calls the stack ready.
+  await assertOneWorkerPerQueue(state);
+  await assertUniformSquashBackend(state);
 };
 
 /** Waits for the full coprocessor stack, including migrations, to become ready. */
@@ -573,13 +663,199 @@ export const waitForKmsConnectorParty = async (
   await waitForContainer(`${prefix}-gw-listener`, readiness);
   await waitForContainer(`${prefix}-kms-worker`, readiness);
   await waitForContainer(`${prefix}-tx-sender`, readiness);
-  if (supportsConnectorEndpoint(state)) {
+  if (supportsConnectorHttp(state)) {
     await waitForContainer(`${prefix}-endpoint`, readiness);
+    await waitForContainer(`${prefix}-proxy`, readiness);
   }
   if (usesHostKmsGeneration) {
     await waitForLog(`${prefix}-gw-listener`, KMS_CONNECTOR_DECRYPTION_READY);
     await waitForLog(`${prefix}-gw-listener`, KMS_CONNECTOR_KMS_GENERATION_READY);
   }
+};
+
+/**
+ * The three counts that decide whether an operator holds usable key material.
+ *
+ * `-tA` makes psql emit them pipe-separated on one line, and `ON_ERROR_STOP=1`
+ * makes a failed query a non-zero exit rather than a message on stdout.
+ */
+export const KEY_MATERIAL_QUERY =
+  "SELECT COUNT(*), COUNT(compressed_xof_keyset), COUNT(sns_pk) FROM (SELECT compressed_xof_keyset, sns_pk FROM keys ORDER BY sequence_number DESC LIMIT 1) active_key";
+
+// Pre-compressed-keyset releases keep usable CPU material in sns_pk only.
+export const LEGACY_KEY_MATERIAL_QUERY =
+  "SELECT COUNT(*), 0, COUNT(sns_pk) FROM (SELECT sns_pk FROM keys ORDER BY sequence_number DESC LIMIT 1) active_key";
+
+export interface KeyMaterialReadiness {
+  ready: boolean;
+  reason: string;
+  rows?: number;
+  compressed?: number;
+  legacy?: number;
+}
+
+/**
+ * Decides readiness from the query's exit status and output, and never from the
+ * output alone.
+ *
+ * This used to be `Number.parseInt(stdout) < 1`, with `allowFailure: true`. An
+ * inaccessible database, a missing `keys` table or an empty result all produce
+ * `NaN`, and `NaN < 1` is false — so the gate reported ready for a stack it had
+ * not been able to look at. That is not a hypothetical: the whole point of this
+ * wait is that a *different* readiness probe already overstated readiness once
+ * (F-1), and this one then did the same thing in the opposite direction.
+ *
+ * The usable-material definition is capability-specific rather than one column
+ * for every topology. `sns-worker`'s `keyset.rs` reads
+ * `compressed_xof_keyset` when it is present and falls back to a plain
+ * ServerKey in the `sns_pk` large object when it is not — except on GPU, where
+ * the compressed column is mandatory and the legacy encoding is refused
+ * outright. So a legacy-ingested key row is genuinely usable on a CPU
+ * topology and genuinely is not on a GPU one, and the gate says which
+ * definition it applied.
+ */
+export const keyMaterialReadiness = (
+  code: number,
+  stdout: string,
+  stderr = "",
+  options: { requireCompressed?: boolean } = {},
+): KeyMaterialReadiness => {
+  if (code !== 0) {
+    const message = (stderr.trim() || stdout.trim() || "no output").split("\n")[0];
+    return { ready: false, reason: `key-material query failed (exit ${code}: ${message})` };
+  }
+  const match = /^\s*(\d+)\|(\d+)\|(\d+)\s*$/.exec(stdout);
+  if (!match) {
+    return {
+      ready: false,
+      reason: `key-material query returned unreadable output ${JSON.stringify(stdout.trim().slice(0, 120))}`,
+    };
+  }
+  const [rows, compressed, legacy] = match.slice(1, 4).map((value) => Number.parseInt(value, 10));
+  if (!Number.isFinite(rows) || rows < 1) return { ready: false, reason: "no key rows", rows, compressed, legacy };
+  if (compressed >= 1) {
+    return { ready: true, reason: `${compressed} compressed keyset row(s)`, rows, compressed, legacy };
+  }
+  if (options.requireCompressed) {
+    return {
+      ready: false,
+      reason: `${rows} key row(s) but no compressed_xof_keyset, which a GPU worker cannot read`,
+      rows,
+      compressed,
+      legacy,
+    };
+  }
+  if (legacy >= 1) {
+    return {
+      ready: true,
+      reason: `${legacy} legacy ServerKey row(s) (no compressed keyset; usable on CPU only)`,
+      rows,
+      compressed,
+      legacy,
+    };
+  }
+  return {
+    ready: false,
+    reason: `${rows} key row(s) but neither compressed_xof_keyset nor sns_pk is populated`,
+    rows,
+    compressed,
+    legacy,
+  };
+};
+
+/**
+ * Waits until every coprocessor database holds the ingested keyset.
+ *
+ * `waitForBootstrap` proves the KMS produced key material and the gateway
+ * recorded it; it says nothing about whether each coprocessor has ingested it.
+ * Key ingestion can lag gateway registration, so readiness also waits for each
+ * participating operator's local key rows before workloads may start.
+ *
+ * The fork topology is the deliberate exception: the operator following
+ * `fork-anvil` cannot ingest keys until a suite seeds that chain from a
+ * post-keygen canonical tip, so only the operators on the canonical chain are
+ * required.
+ */
+export const waitForCoprocessorKeyMaterial = async (state: State, attempts = 150, options: { requireCompressed?: boolean } = {}) => {
+  // v0.11 still stores material in tenants; the keys table arrives in v0.12.
+  if (!supportsCoprocessorDbStateRevert(state)) {
+    if (options.requireCompressed) throw new PreflightError("GPU workers require a release with compressed key material in the keys table");
+    return;
+  }
+  const count = topologyForState(state).count;
+  // Narrowed the same way `scenarioUsesForkAnvil` does: only a consensus
+  // scenario has instances, and the fork is identified by the hostname an
+  // instance is pointed at rather than by a flag.
+  const forkOperators = new Set<number>();
+  if (state.scenario.kind === "coprocessor-consensus") {
+    state.scenario.instances.forEach((instance, position) => {
+      const onFork = [instance.env.RPC_HTTP_URL, instance.env.RPC_WS_URL].some((value) => {
+        if (!value) return false;
+        try {
+          return new URL(String(value)).hostname === "fork-anvil";
+        } catch {
+          return false;
+        }
+      });
+      if (onFork) forkOperators.add(instance.index ?? position);
+    });
+  }
+  const required = Array.from({ length: count }, (_, index) => index).filter(
+    (index) => !forkOperators.has(index),
+  );
+  if (forkOperators.size > 0) {
+    console.log(
+      `[wait] key material: operator(s) ${[...forkOperators].join(", ")} follow fork-anvil and ` +
+        "cannot ingest until a suite seeds that chain, so they are not required here",
+    );
+  }
+  for (let attempt = 0; attempt < attempts; attempt += 1) {
+    const pending: string[] = [];
+    for (const index of required) {
+      let result = await run(
+        [
+          "docker",
+          "exec",
+          COPROCESSOR_DB_CONTAINER,
+          "psql",
+          "-U",
+          "postgres",
+          "-v",
+          "ON_ERROR_STOP=1",
+          "-v",
+          "VERBOSITY=sqlstate",
+          "-d",
+          coprocessorDatabaseName(index),
+          "-tAc",
+          KEY_MATERIAL_QUERY,
+        ],
+        { allowFailure: true, timeoutMs: 30_000 },
+      );
+      // SQLSTATE 42703 is undefined_column. Older supported releases have keys
+      // and sns_pk but no compressed_xof_keyset; other database errors still fail.
+      if (result.code !== 0 && /\b42703\b/.test(result.stderr ?? "")) {
+        result = await run([
+          "docker", "exec", COPROCESSOR_DB_CONTAINER, "psql", "-U", "postgres",
+          "-v", "ON_ERROR_STOP=1", "-d", coprocessorDatabaseName(index),
+          "-tAc", LEGACY_KEY_MATERIAL_QUERY,
+        ], { allowFailure: true, timeoutMs: 30_000 });
+      }
+      const state = keyMaterialReadiness(result.code, result.stdout ?? "", result.stderr ?? "", options);
+      if (!state.ready) pending.push(`${index}: ${state.reason}`);
+    }
+    if (pending.length === 0) {
+      console.log(`[wait] key material ingested on operator(s) ${required.join(", ")}`);
+      return;
+    }
+    if (attempt === 0 || (attempt + 1) % 10 === 0) {
+      console.log(`[wait] key material — ${pending.join("; ")} (${(attempt + 1) * 2}s elapsed)`);
+    }
+    await Bun.sleep(2_000);
+  }
+  throw new Error(
+    `coprocessor key material never landed on operator(s) ${required.join(", ")} within ${attempts * 2}s; ` +
+      "the stack is not usable and a suite started now would fail its own key-material gate",
+  );
 };
 
 /** Waits for the kms-connector runtime services to become ready. */

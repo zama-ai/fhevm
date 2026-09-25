@@ -2,6 +2,9 @@ import { setFhevmRuntimeConfig, createFhevmClient } from '../../../src/ethers/in
 import { sepolia } from '../../../src/core/chains/index.js';
 import { ethers } from 'ethers';
 import { createLogger } from './common.js';
+import { CANONICAL_WASM_VERSIONS } from '../../../src/core/runtime/WasmVersions-p.js';
+
+const { tfhe: tfheVersion, kms: tkmsVersion } = CANONICAL_WASM_VERSIONS;
 
 const logEl = document.getElementById('log')!;
 const t0 = performance.now();
@@ -26,13 +29,15 @@ document.addEventListener('securitypolicyviolation', (e) => {
 });
 
 const WASM_URLS: Record<string, URL> = {
-  'tfhe_bg.v1.5.3.wasm': new URL('/__raw_wasm/src/wasm/tfhe/v1.5.3/tfhe_bg.wasm', location.origin),
-  'tfhe-worker.v1.5.3.mjs': new URL('/__raw_wasm/src/wasm/tfhe/v1.5.3/tfhe-worker.mjs', location.origin),
-  'tfhe_bg.v1.6.2.wasm': new URL('/__raw_wasm/src/wasm/tfhe/v1.6.2/tfhe_bg.wasm', location.origin),
-  'tfhe-worker.v1.6.2.mjs': new URL('/__raw_wasm/src/wasm/tfhe/v1.6.2/tfhe-worker.mjs', location.origin),
-  'kms_lib_bg.v0.13.10.wasm': new URL('/__raw_wasm/src/wasm/tkms/v0.13.10/kms_lib_bg.wasm', location.origin),
-  'kms_lib_bg.v0.13.20-0.wasm': new URL('/__raw_wasm/src/wasm/tkms/v0.13.20-0/kms_lib_bg.wasm', location.origin),
-  'kms_lib_bg.v0.14.0-1.wasm': new URL('/__raw_wasm/src/wasm/tkms/v0.14.0-1/kms_lib_bg.wasm', location.origin),
+  [`tfhe_bg.v${tfheVersion}.wasm`]: new URL(`/__raw_wasm/src/wasm/tfhe/v${tfheVersion}/tfhe_bg.wasm`, location.origin),
+  [`tfhe-worker.v${tfheVersion}.mjs`]: new URL(
+    `/__raw_wasm/src/wasm/tfhe/v${tfheVersion}/tfhe-worker.mjs`,
+    location.origin,
+  ),
+  [`kms_lib_bg.v${tkmsVersion}.wasm`]: new URL(
+    `/__raw_wasm/src/wasm/tkms/v${tkmsVersion}/kms_lib_bg.wasm`,
+    location.origin,
+  ),
 };
 
 // Heuristic match for "WASM compile blocked by CSP" across Chromium / Firefox / WebKit.

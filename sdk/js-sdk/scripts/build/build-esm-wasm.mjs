@@ -1,12 +1,11 @@
-// Copies src/wasm → src/_esm/wasm, with four profile-aware adjustments:
-//  1. Copy only shared runtime files and manifest-listed version directories
-//     whose `tags` include the active profile.
+// Copies src/wasm → src/_esm/wasm, with four adjustments:
+//  1. Copy only shared runtime files and manifest-listed version directories.
 //  2. Compile non-test TypeScript sources in src/wasm using the WASM-local
 //     tsconfig.
 //  3. Overwrite the loaders in the output with a freshly-generated copy that
-//     references only profile-included versions (source loaders are untouched).
+//     references only manifest-listed versions (source loaders are untouched).
 //  4. Overwrite the shared API declarations in the output with freshly-generated
-//     copies whose version unions match the active profile.
+//     copies whose version unions match the manifest.
 //
 // Replaces the original one-liner:
 //   node -e "require('fs').cpSync('src/wasm','src/_esm/wasm',{recursive:true})"
@@ -36,7 +35,7 @@ compileWasmTypescriptToDest(context);
 removeUnexpectedTscJsOutputs(context);
 assertTscJsOutputs(context);
 
-// 3. Write profile-filtered generated files directly (ESM target, no transpile).
+// 3. Write manifest-filtered generated files directly (ESM target, no transpile).
 writeGeneratedWasmArtifacts(context.dest, context.versions);
 
 logWasmBuildSummary(context);

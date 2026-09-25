@@ -72,9 +72,4 @@ describe('Solana runtime config', () => {
       'FhevmRuntime config has already been set and cannot be changed.',
     );
   });
-  it('rejects version overrides rather than ignoring them', async () => {
-    const { setFhevmRuntimeConfig } = await loadConfigModule();
-    // @ts-expect-error Verify untyped callers are rejected too.
-    expect(() => setFhevmRuntimeConfig({ moduleVersions: 'auto' })).toThrow('deployment-pinned');
-  });
 });

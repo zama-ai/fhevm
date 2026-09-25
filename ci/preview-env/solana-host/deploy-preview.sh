@@ -84,16 +84,12 @@ for i in $(seq 1 "$NB_COPROCESSOR"); do
   kubectl rollout status "deployment/coprocessor-$i-zkproof-worker" -n "$NAMESPACE" --timeout=10m
 done
 
-# hostChains is a list, so append the Solana entry to each connector's existing entries.
 endpoints=$(seq 1 "$NB_COPROCESSOR" | jq -Rsc 'split("\n")[:-1] | map("http://coprocessor-" + . + "-solana-host-listener:8080")')
-ENDPOINTS="$endpoints" yq '.[0].solanaProofEndpoints = (strenv(ENDPOINTS) | from_json)' \
-  "$values/connector-host-chain.yaml" > "$work/connector-host-chain.yaml"
 for i in $(seq 1 "$NB_KMS_CORE"); do
   helm get values "kms-connector-$i" -n "$NAMESPACE" -o yaml > "$work/connector.yaml"
-  SOLANA_CHAIN="$work/connector-host-chain.yaml" yq -i '.kmsConnectorKmsWorker.config.hostChains = ((.kmsConnectorKmsWorker.config.hostChains // [])
-    | map(select(.chainKind != "solana"))) + load(strenv(SOLANA_CHAIN))' "$work/connector.yaml"
   helm upgrade "kms-connector-$i" "$KMS_CONNECTOR_CHART" -n "$NAMESPACE" \
     -f "$work/connector.yaml" -f "$values/values-solana-connector-e2e.yaml" \
+    --set-json "commonConfig.hostChains.solana.solanaProofEndpoints=$endpoints" \
     --wait --wait-for-jobs --timeout=10m
 done
 # Relayer host dispatch also needs the Solana RPC/program identity; preserve its EVM entry.

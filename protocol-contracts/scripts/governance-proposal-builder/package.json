@@ -1,0 +1,23 @@
+{
+  "name": "governance-proposal-builder",
+  "version": "1.0.0",
+  "description": "Helpers to build, validate and fill the LayerZero options of cross-chain governance proposals submitted to a GovernanceOAppSender (one per EVM destination chain; see destinations.js).",
+  "private": true,
+  "engines": {
+    "node": ">=18"
+  },
+  "scripts": {
+    "fill-options-remote-proposal": "node fillOptionsRemoteProposal.js",
+    "decode-options-remote-proposal": "node decodeOptionsRemoteProposal.js",
+    "list-destinations": "node destinations.js",
+    "aragon-proposal-inspector": "node aragonProposalInspector.js"
+  },
+  "dependencies": {
+    "@layerzerolabs/lz-v2-utilities": "^3.0.75",
+    "dotenv": "^17.4.2",
+    "ethers": "^6.17.0"
+  },
+  "overrides": {
+    "ws": "^8.21.0"
+  }
+}

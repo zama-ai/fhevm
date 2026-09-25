@@ -279,6 +279,9 @@ interface IFHEVMExecutor {
      */
     function cast(bytes32 ct, FheType toType) external returns (bytes32 result);
 
+    /// @notice Reverts if the initialized handle does not have the expected FHE type.
+    function checkHandleType(bytes32 handle, FheType expectedType) external view;
+
     /**
      * @notice          Does trivial encryption.
      * @param ct        Value to encrypt.
@@ -746,7 +749,7 @@ library Impl {
     }
 
     /**
-     * @notice              Verifies the ciphertext (FHEVMExecutor) and allows transient (ACL).
+     * @notice              Verifies the ciphertext through FHEVMExecutor.
      * @param inputHandle   Input handle.
      * @param inputProof    Input proof.
      * @param toType        Input type.
@@ -755,7 +758,6 @@ library Impl {
     function verify(bytes32 inputHandle, bytes memory inputProof, FheType toType) internal returns (bytes32 result) {
         CoprocessorConfig storage $ = getCoprocessorConfig();
         result = IFHEVMExecutor($.CoprocessorAddress).verifyInput(inputHandle, msg.sender, inputProof, toType);
-        IACL($.ACLAddress).allowTransient(result, msg.sender);
     }
 
     /**
@@ -767,6 +769,12 @@ library Impl {
     function cast(bytes32 ciphertext, FheType toType) internal returns (bytes32 result) {
         CoprocessorConfig storage $ = getCoprocessorConfig();
         result = IFHEVMExecutor($.CoprocessorAddress).cast(ciphertext, toType);
+    }
+
+    /// @dev Keep handle-format decoding in the upgradeable executor.
+    function checkHandleType(bytes32 handle, FheType expectedType) internal view {
+        CoprocessorConfig storage $ = getCoprocessorConfig();
+        IFHEVMExecutor($.CoprocessorAddress).checkHandleType(handle, expectedType);
     }
 
     /**

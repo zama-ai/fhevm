@@ -36,10 +36,10 @@ const kmsVerifierVersion = (major: number, minor: number, patch: number): HostCo
 // The version basis each test resolves against. The KMSVerifier version is read
 // from the frozen context (NOT the on-chain `getVersion`), which is why none of the
 // tests below need a `getVersion` handler — reaching one would throw "No mocked
-// handler". Only the actual context reads (getContextSignersAndThresholdFromExtraData,
-// or getThreshold+getKmsSigners on the v11 path) are mocked per-test.
+// handler". Only the actual context reads (getContextSignersAndThresholdFromExtraData)
+// are mocked per-test.
 //
-//   v11 → KMSVerifier < 0.2.0 (no context concept, extraData v0 only)
+//   v11 → KMSVerifier < 0.2.0 (no context concept; too old, no longer supported)
 //   v13 → KMSVerifier 0.2.0–0.3.x (extraData up to v1)
 //   v14 → KMSVerifier >= 0.4.0 (extraData up to v2, contextId + epochId)
 const fhevmContextV11 = createFhevmClientFrozenContext({
@@ -206,29 +206,20 @@ describe('readKmsSignersContextFromPermitExtraData', () => {
     expect(calledFunctionNames(readContract)).toEqual(['getContextSignersAndThresholdFromExtraData']);
   });
 
-  // --- v11 chain: no context concept, the single global signer set ---
-  it('uses the v11 reader (getThreshold + getKmsSigners) on a KMSVerifier < 0.2.0', async () => {
-    const { client, readContract } = makeClient({
-      getThreshold: () => 1n,
-      getKmsSigners: () => [SIGNER_A],
-    });
+  // --- v11 chain: too old, no longer supported ---
+  it('rejects a v0 extraData on a KMSVerifier < 0.2.0: protocol version no longer supported', async () => {
+    const { client, readContract } = makeClient({});
 
-    const context = await readKmsSignersContextFromPermitExtraData(client, {
-      kmsVerifierAddress: KMS_VERIFIER_ADDRESS,
-      protocolConfigAddress: undefined,
-      extraData: createKmsExtraDataV0(),
-      fhevmContext: fhevmContextV11,
-    });
-
-    expect(context.id).toBe(0n);
-    expect(context.epochId).toBe(0n);
-    expect(context.threshold).toBe(1);
-    expect(context.has(SIGNER_A)).toBe(true);
-    // The context-aware reader must NOT be used on a context-less KMSVerifier.
-    const called = calledFunctionNames(readContract);
-    expect(called).toContain('getThreshold');
-    expect(called).toContain('getKmsSigners');
-    expect(called).not.toContain('getContextSignersAndThresholdFromExtraData');
+    await expect(
+      readKmsSignersContextFromPermitExtraData(client, {
+        kmsVerifierAddress: KMS_VERIFIER_ADDRESS,
+        protocolConfigAddress: undefined,
+        extraData: createKmsExtraDataV0(),
+        fhevmContext: fhevmContextV11,
+      }),
+    ).rejects.toThrow('Protocol version is no longer supported by this SDK release.');
+    // Rejected before any on-chain read.
+    expect(readContract).not.toHaveBeenCalled();
   });
 
   // --- compat rejections: incompatible extraData never reaches the chain ---

@@ -47,7 +47,6 @@ export const permitChurnScenario: Scenario = {
     const client = createFhevmDecryptClient({
       chain: config.fhevmChain,
       provider: config.provider,
-      options: config.moduleVersions !== undefined ? { moduleVersions: config.moduleVersions } : undefined,
     });
     await client.ready;
 

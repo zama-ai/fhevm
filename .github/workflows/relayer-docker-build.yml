@@ -62,6 +62,8 @@ jobs:
   is-latest-commit:
     uses: ./.github/workflows/is-latest-commit.yml
     if: github.event_name == 'push'
+    permissions:
+      contents: 'read' # Required so the reusable workflow can git ls-remote
 
   check-changes-relayer-migrate:
     uses: ./.github/workflows/check-changes-for-docker-build.yml
@@ -186,7 +188,7 @@ jobs:
       app-cache-dir: "fhevm-relayer-relayer-migrate"
       # 16 vCPUs to match runs-on-arm; the ubuntu-latest default (2 vCPUs) makes
       # cache-miss Rust builds the longest job on the merge-queue critical path.
-      runs-on-amd: runs-on=${{ github.run_id }}/runner=16cpu-linux-x64
+      runs-on-amd: runs-on=${{ github.run_id }}/runner=16cpu-linux-x64/spot=false
       rust-toolchain-file-path: relayer/rust-toolchain.toml
 
   re-tag-relayer-migrate-image:
@@ -220,7 +222,7 @@ jobs:
       app-cache-dir: "fhevm-relayer"
       # 16 vCPUs to match runs-on-arm; the ubuntu-latest default (2 vCPUs) makes
       # cache-miss Rust builds the longest job on the merge-queue critical path.
-      runs-on-amd: runs-on=${{ github.run_id }}/runner=16cpu-linux-x64
+      runs-on-amd: runs-on=${{ github.run_id }}/runner=16cpu-linux-x64/spot=false
       rust-toolchain-file-path: relayer/rust-toolchain.toml
 
   re-tag-relayer-image:

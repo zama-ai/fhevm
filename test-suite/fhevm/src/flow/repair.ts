@@ -1,5 +1,5 @@
 import {
-  supportsConnectorEndpoint,
+  supportsConnectorHttp,
   supportsConsensusDetector,
   supportsHostListenerConsumer,
   supportsUpgradeController,
@@ -11,6 +11,7 @@ import {
   GROUP_BUILD_COMPONENTS,
   GROUP_BUILD_SERVICES,
   GROUP_SERVICE_SUFFIXES,
+  KMS_CONNECTOR_HTTP_SERVICES,
   KMS_CORE_CONTAINER,
   TEST_SUITE_CONTAINER,
   coprocessorHostKey,
@@ -40,6 +41,7 @@ const UPGRADE_VERSION_KEYS: Record<UpgradeGroup, string[]> = {
     "CONNECTOR_KMS_WORKER_VERSION",
     "CONNECTOR_TX_SENDER_VERSION",
     "CONNECTOR_ENDPOINT_VERSION",
+    "CONNECTOR_PROXY_VERSION",
   ],
   "kms-core": ["CORE_VERSION"],
   "kms": [
@@ -49,6 +51,7 @@ const UPGRADE_VERSION_KEYS: Record<UpgradeGroup, string[]> = {
     "CONNECTOR_KMS_WORKER_VERSION",
     "CONNECTOR_TX_SENDER_VERSION",
     "CONNECTOR_ENDPOINT_VERSION",
+    "CONNECTOR_PROXY_VERSION",
   ],
   "listener-core": ["LISTENER_CORE_VERSION"],
   "relayer": ["RELAYER_VERSION", "RELAYER_MIGRATE_VERSION"],
@@ -67,11 +70,11 @@ const supportsConsensusDetectorForState = (state: { versions?: State["versions"]
   !state.versions || supportsConsensusDetector({ versions: state.versions });
 const supportsUpgradeControllerForState = (state: { versions?: State["versions"] }) =>
   !state.versions || supportsUpgradeController({ versions: state.versions });
-const supportsConnectorEndpointForState = (state: { versions?: State["versions"]; overrides: LocalOverride[] }) =>
-  !state.versions || supportsConnectorEndpoint({ versions: state.versions, overrides: state.overrides });
+const supportsConnectorHttpForState = (state: { versions?: State["versions"]; overrides: LocalOverride[] }) =>
+  !state.versions || supportsConnectorHttp({ versions: state.versions, overrides: state.overrides });
 const kmsConnectorServices = (state: { versions?: State["versions"]; overrides: LocalOverride[] }) =>
   GROUP_BUILD_SERVICES["kms-connector"].filter(
-    (service) => service !== "kms-connector-endpoint" || supportsConnectorEndpointForState(state),
+    (service) => !KMS_CONNECTOR_HTTP_SERVICES.includes(service) || supportsConnectorHttpForState(state),
   );
 const coprocessorRuntimeSuffixes = (state: { versions?: State["versions"] }) =>
   GROUP_SERVICE_SUFFIXES.coprocessor.filter(

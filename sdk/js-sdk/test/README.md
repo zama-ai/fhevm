@@ -105,28 +105,10 @@ npm run test:full:testnet
 npm run test
 ```
 
-## Localstack (per protocol version)
-
-Each command runs the suite against a localstack started with a specific
-protocol version (a `--chain` + `--fhevm-cli-profile` pair). The runner
-restarts localstack via `fhevm-cli` before the tests and stops it afterwards,
-so these share a single stack and must be run **one at a time** (sequentially),
-not in parallel.
+## Localstack
 
 ```sh
-# Latest / default
 npm run test:localstack
-
-# A specific protocol version
-npm run test:localstack:v11   # localstack_v11 + v0.11.0-mainnet.json
-npm run test:localstack:v12   # localstack_v12 + v0.12.0-testnet.json
-npm run test:localstack:v13   # localstack_v13 + v0.13.0.json
-
-# All versions, sequentially (stops at the first failure)
-npm run test:localstack:v11 && \
-  npm run test:localstack:v12 && \
-  npm run test:localstack:v13 && \
-  npm run test:localstack
 ```
 
 Prerequisites: the Solidity dependencies must be installed once

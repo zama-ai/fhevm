@@ -17,9 +17,8 @@ MODE="${1:-local}"
 
 case "$MODE" in
   local)
-    BUILD_PROFILE="${SDK_BUILD_PROFILE:-prod}"
-    echo -e "${GREEN}install-sdk: building and packing sdk/js-sdk (profile: $BUILD_PROFILE)...${NC}"
-    "$SDK_DIR/test/scripts/rebuild_sdk_and_pack.sh" "--build-profile=$BUILD_PROFILE"
+    echo -e "${GREEN}install-sdk: building and packing sdk/js-sdk...${NC}"
+    "$SDK_DIR/test/scripts/rebuild_sdk_and_pack.sh"
 
     TARBALL=$(echo "$SDK_DIR"/test/manual-pack/fhevm-sdk-*.tgz)
     [[ -f "$TARBALL" ]] || {

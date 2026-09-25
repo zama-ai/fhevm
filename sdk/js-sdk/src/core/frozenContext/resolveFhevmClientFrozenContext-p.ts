@@ -6,8 +6,7 @@ import type { FhevmClientFrozenContext } from '../types/fhevmClientFrozenContext
 import { addressToChecksummedAddress, asAddress } from '../base/address.js';
 import { executeWithBatching } from '../base/promise.js';
 import { assertIsHostContractVersionOf, getHostContractVersion } from '../host-contracts/HostContractVersion-p.js';
-import { hyperWasmResolveTfheModuleVersion, hyperWasmResolveTkmsModuleVersion } from '../runtime/HyperWasmSolver-p.js';
-import { protocolContextFromAclVersion } from '../runtime/ProtocolVersionResolver-p.js';
+import { protocolContextForChain } from '../runtime/ProtocolVersionResolver-p.js';
 import { createFhevmClientFrozenContext } from './fhevmClientFrozenContext-p.js';
 
 ////////////////////////////////////////////////////////////////////////////////
@@ -17,8 +16,12 @@ import { createFhevmClientFrozenContext } from './fhevmClientFrozenContext-p.js'
  * {@link FhevmClientFrozenContext}, captured in a single pass:
  *
  * - the host-contract versions — ACL, InputVerifier, KMSVerifier,
- * - the derived protocol + PubKey/CRS versions, and
- * - both the TFHE and TKMS module versions.
+ * - the derived protocol + PubKey/CRS versions.
+ *
+ * TFHE / TKMS are not part of this basis: this SDK release ships a single
+ * module for each, so {@link FhevmClientFrozenContext.tfheVersion} /
+ * `.tkmsVersion` always report that canonical version directly, with nothing
+ * to resolve or store here.
  *
  * ### One capture, every tier
  *
@@ -33,16 +36,14 @@ import { createFhevmClientFrozenContext } from './fhevmClientFrozenContext-p.js'
  *
  * Resolving the full basis is cheap: over a base-only resolution it adds just the
  * InputVerifier / KMSVerifier `getVersion()` reads (TTL-cached, and batched into
- * the same call here); protocol / PubKey-CRS / TFHE / TKMS are pure table
- * lookups. It does **not** load any WASM — module *loading* stays per-tier, so a
- * base client resolves the TFHE/TKMS *versions* without ever pulling in their
- * WASM binaries.
+ * the same call here); protocol / PubKey-CRS are pure table lookups. It does
+ * **not** load any WASM — module *loading* stays per-tier.
  *
  * ### Independent of client init state
  *
  * Every value is read fresh from chain (`getHostContractVersion`) or derived
- * purely (`protocolContextFromAclVersion`, `hyperWasmResolve*ModuleVersion`); the
- * resolver never consults the client's init-time memoized `getResolved*` values.
+ * purely (`protocolContextForChain`); the resolver never consults the
+ * client's init-time memoized `getResolved*` values.
  *
  * @internal
  */
@@ -88,10 +89,7 @@ export async function resolveFhevmClientFrozenContext(fhevm: FhevmBase<FhevmChai
     assertIsHostContractVersionOf(protocolConfigVersion, 'ProtocolConfig');
   }
 
-  const protocolContext = protocolContextFromAclVersion(fhevm.chain, aclVersion);
-
-  const tfheVersion = hyperWasmResolveTfheModuleVersion(fhevm, protocolContext);
-  const tkmsVersion = hyperWasmResolveTkmsModuleVersion(fhevm, protocolContext);
+  const protocolContext = protocolContextForChain(fhevm.chain);
 
   return createFhevmClientFrozenContext({
     hostContractVersions: {
@@ -102,7 +100,5 @@ export async function resolveFhevmClientFrozenContext(fhevm: FhevmBase<FhevmChai
     },
     protocolVersion: protocolContext.protocolVersion,
     pubKeyCrsVersion: protocolContext.pubKeyCrsVersion,
-    tfheVersion,
-    tkmsVersion,
   });
 }

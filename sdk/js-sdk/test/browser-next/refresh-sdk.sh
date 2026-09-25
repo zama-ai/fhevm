@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # Guarantees browser-next runs against the freshly-packed SDK from a clean
-# dev-server state. Run AFTER `npm run pack:prod`, which repacks the tarball but
+# dev-server state. Run AFTER `npm run pack`, which repacks the tarball but
 # only reinstalls it into manual-pack/ — it never touches browser-next, so
 # browser-next keeps whatever @fhevm/sdk was last extracted (the stale-tarball trap).
 #
@@ -15,7 +15,7 @@ PACK_DIR="$(cd "$BN_DIR/../manual-pack" && pwd)"
 
 TARBALL=$(echo "$PACK_DIR"/fhevm-sdk-*.tgz)
 [[ -f "$TARBALL" ]] || {
-  echo "refresh-sdk: no tarball in $PACK_DIR — run 'npm run pack:prod' first." >&2
+  echo "refresh-sdk: no tarball in $PACK_DIR — run 'npm run pack' first." >&2
   exit 1
 }
 

@@ -10,7 +10,9 @@ use fhevm_engine_common::host_chains::HostChainsCache;
 use fhevm_engine_common::pg_pool::{PostgresPoolManager, ServiceError};
 use fhevm_engine_common::tfhe_ops::{current_ciphertext_version, extract_ct_list};
 use fhevm_engine_common::types::{FhevmError, SupportedFheCiphertexts};
-use fhevm_engine_common::versioning::{GcsRollbackPolicy, WriteGuard};
+use fhevm_engine_common::versioning::{
+    run_stack_version_listener, GcsRollbackPolicy, StackMode, WriteGuard,
+};
 use fhevm_engine_common::{telemetry, HANDLE_VERSION};
 
 use fhevm_engine_common::utils::safe_deserialize_conformant;
@@ -58,6 +60,7 @@ pub(crate) struct Ciphertext {
 pub struct ZkProofService {
     pool_mngr: PostgresPoolManager,
     conf: Config,
+    stack_mode: Arc<StackMode>,
 
     // Timestamp of the last moment the service was active
     last_active_at: Arc<RwLock<SystemTime>>,
@@ -130,6 +133,20 @@ impl ZkProofService {
 
         let gw_start_block_state = Arc::new(AtomicI64::new(GCS_NOT_ACTIVATED));
 
+        let stack_mode = StackMode::new(conf.gcs_mode);
+        {
+            let listener_pool = pool_mngr.pool();
+            let listener_mode = stack_mode.clone();
+            let listener_token = token.child_token();
+            tokio::spawn(async move {
+                if let Err(err) =
+                    run_stack_version_listener(listener_pool, listener_mode, listener_token).await
+                {
+                    error!(error = %err, "stack-version listener exited with error");
+                }
+            });
+        }
+
         if conf.gcs_mode {
             // Long-lived task that mirrors `upgrade_state.gw_start_block`
             // (stack_role='GCS') into the atomic once `gw_dry_run_started` is
@@ -156,6 +173,7 @@ impl ZkProofService {
         Some(ZkProofService {
             pool_mngr,
             conf,
+            stack_mode,
             last_active_at: Arc::new(RwLock::new(SystemTime::UNIX_EPOCH)),
             gw_start_block_state,
         })
@@ -169,6 +187,7 @@ impl ZkProofService {
         execute_verify_proofs_loop(
             self.pool_mngr.clone(),
             self.conf.clone(),
+            self.stack_mode.clone(),
             self.last_active_at.clone(),
             self.gw_start_block_state.clone(),
         )
@@ -181,6 +200,7 @@ impl ZkProofService {
 pub async fn execute_verify_proofs_loop(
     pool_mngr: PostgresPoolManager,
     conf: Config,
+    stack_mode: Arc<StackMode>,
     last_active_at: Arc<RwLock<SystemTime>>,
     gw_start_block_state: Arc<AtomicI64>,
 ) -> Result<(), ExecutionError> {
@@ -205,6 +225,7 @@ pub async fn execute_verify_proofs_loop(
         let last_active_at = last_active_at.clone();
         let host_chain_cache = host_chain_cache.clone();
         let gw_start_block_state = gw_start_block_state.clone();
+        let stack_mode = stack_mode.clone();
         // Spawn a ZK-proof worker
         // All workers compete for zk-proof tasks queued in the 'verify_proof' table.
         let op = move |pool: PgPool, ct: CancellationToken| {
@@ -213,6 +234,7 @@ pub async fn execute_verify_proofs_loop(
             let last_active_at = last_active_at.clone();
             let conf = conf.clone();
             let gw_start_block_state = gw_start_block_state.clone();
+            let stack_mode = stack_mode.clone();
             async move {
                 execute_worker(
                     conf,
@@ -222,6 +244,7 @@ pub async fn execute_verify_proofs_loop(
                     host_chain_cache,
                     last_active_at,
                     gw_start_block_state,
+                    stack_mode,
                 )
                 .await
                 .map_err(ServiceError::from)
@@ -253,6 +276,7 @@ pub async fn execute_verify_proofs_loop(
     Ok(())
 }
 
+#[allow(clippy::too_many_arguments)]
 async fn execute_worker(
     conf: Config,
     pool: sqlx::Pool<sqlx::Postgres>,
@@ -261,6 +285,7 @@ async fn execute_worker(
     host_chain_cache: Arc<HostChainsCache>,
     last_active_at: Arc<RwLock<SystemTime>>,
     gw_start_block_state: Arc<AtomicI64>,
+    stack_mode: Arc<StackMode>,
 ) -> Result<(), ExecutionError> {
     update_last_active(last_active_at.clone()).await;
 
@@ -304,7 +329,8 @@ async fn execute_worker(
         // proofs would either re-randomize pre-switchover Gateway blocks or
         // diverge across operators — exactly what the gw_start_block alignment
         // prevents.
-        if conf.gcs_mode && gw_start_block_state.load(Ordering::SeqCst) == GCS_NOT_ACTIVATED {
+        if stack_mode.gcs_mode() && gw_start_block_state.load(Ordering::SeqCst) == GCS_NOT_ACTIVATED
+        {
             info!("GCS not yet activated; sleeping before re-check");
             tokio::select! {
                 _ = token.cancelled() => return Ok(()),
@@ -320,6 +346,7 @@ async fn execute_worker(
             host_chain_cache.as_ref(),
             &known_chain_ids,
             &conf,
+            stack_mode.gcs_mode(),
         )
         .await?;
         let count = get_remaining_tasks(&pool, &known_chain_ids).await?;
@@ -359,6 +386,7 @@ async fn execute_verify_proof_routine(
     host_chain_cache: &HostChainsCache,
     known_chain_ids: &[i64],
     conf: &Config,
+    gcs_mode: bool,
 ) -> Result<(), ExecutionError> {
     // Pre-filter to known chains: workers only fetch rows whose chain_id is
     // registered in HostChainsCache. If a proof arrives before its chain row
@@ -380,7 +408,7 @@ async fn execute_verify_proof_routine(
     // See versioning::begin_write_guarded.
     let mut txn = match fhevm_engine_common::versioning::begin_write_guarded(
         pool,
-        conf.gcs_mode,
+        gcs_mode,
         GcsRollbackPolicy::Skip,
     )
     .await?
@@ -658,8 +686,6 @@ pub(crate) fn verify_proof(
     aux_data: &auxiliary::ZkData,
     raw_ct: &[u8],
 ) -> Result<(Vec<Ciphertext>, Vec<u8>), ExecutionError> {
-    set_server_key(key.sks.clone());
-
     // Step 1: Deserialize and verify the proof
     let verified_list = verify_proof_only(request_id, raw_ct, key, crs, aux_data)
         .inspect_err(telemetry::set_current_span_error)?;
@@ -671,7 +697,7 @@ pub(crate) fn verify_proof(
     let blob_hash = h.finalize().to_vec();
 
     // Step 3: Re-randomize the verified compact list, then expand
-    let cts = rerand_and_expand_verified_list(request_id, &verified_list, &blob_hash, &key.pks)
+    let cts = rerand_and_expand_verified_list(request_id, &verified_list, &blob_hash, key)
         .inspect_err(telemetry::set_current_span_error)?;
 
     // Step 4: Compute handle hashes
@@ -723,13 +749,20 @@ pub(crate) fn proven_list_conformance_params(
 }
 
 #[tracing::instrument(name = "verify_proof", skip_all, fields(list_len = tracing::field::Empty))]
-fn verify_proof_only(
+pub(crate) fn verify_proof_only(
     request_id: i64,
     raw_ct: &[u8],
     key: &DbKey,
     crs: &Crs,
     aux_data: &auxiliary::ZkData,
 ) -> Result<tfhe::ProvenCompactCiphertextList, ExecutionError> {
+    // Deserialize untrusted lists on CPU, including on reused blocking threads
+    // that last expanded a proof on GPU. tfhe-rs 1.8.1 can move an unversioned
+    // list to the current device during deserialization, before conformance or
+    // our element-type checks have run. This does not select the ZK verifier:
+    // tfhe's gpu-zk feature independently dispatches PKE-v2 verification to GPU.
+    set_server_key(key.sks.clone());
+
     let aux_data_bytes = aux_data
         .assemble()
         .map_err(|e| ExecutionError::InvalidAuxData(e.to_string()))
@@ -758,6 +791,34 @@ fn verify_proof_only(
         return Err(err);
     }
 
+    // Conformance constrains ciphertext/proof parameters, not the application
+    // types. Reject unsupported types on both backends BEFORE expansion: in
+    // particular, conformant strings panic in the GPU compact-list constructor
+    // in tfhe-rs 1.8.1 (tfhe-rs#3961). Keep this allowlist aligned with
+    // extract_ct_list; unknown integer widths return None and are rejected too.
+    for index in 0..the_list.len() {
+        let kind = the_list
+            .get_kind_of(index)
+            .ok_or(FhevmError::MissingTfheRsData)?;
+        if !matches!(
+            kind,
+            tfhe::FheTypes::Bool
+                | tfhe::FheTypes::Uint4
+                | tfhe::FheTypes::Uint8
+                | tfhe::FheTypes::Uint16
+                | tfhe::FheTypes::Uint32
+                | tfhe::FheTypes::Uint64
+                | tfhe::FheTypes::Uint128
+                | tfhe::FheTypes::Uint160
+                | tfhe::FheTypes::Uint256
+                | tfhe::FheTypes::Uint512
+                | tfhe::FheTypes::Uint1024
+                | tfhe::FheTypes::Uint2048
+        ) {
+            return Err(FhevmError::CiphertextExpansionUnsupportedCiphertextKind(kind).into());
+        }
+    }
+
     // Verify the ZK proof
     let verification_result = the_list.verify(&crs.crs, &key.pks, &aux_data_bytes);
 
@@ -773,16 +834,35 @@ fn verify_proof_only(
 }
 
 #[tracing::instrument(name = "rerandomize_and_expand_ciphertext_list", skip_all, fields(request_id = request_id, input_count = tracing::field::Empty, count = tracing::field::Empty))]
-fn rerand_and_expand_verified_list(
+pub(crate) fn rerand_and_expand_verified_list(
     request_id: i64,
     the_list: &tfhe::ProvenCompactCiphertextList,
     blob_hash: &[u8],
-    cpk: &tfhe::CompactPublicKey,
+    key: &DbKey,
 ) -> Result<Vec<SupportedFheCiphertexts>, ExecutionError> {
     if the_list.is_empty() {
         return Ok(vec![]);
     }
     tracing::Span::current().record("input_count", the_list.len());
+
+    #[cfg(feature = "gpu")]
+    {
+        use std::sync::atomic::AtomicUsize;
+        // Spread requests across the visible devices. Each cached key is pinned
+        // to one device; installing it selects that device's CUDA streams.
+        static NEXT_GPU: AtomicUsize = AtomicUsize::new(0);
+        if key.gpu_sks.is_empty() {
+            return Err(ExecutionError::Other("No GPU server keys available".into()));
+        }
+        let gpu_index = NEXT_GPU.fetch_add(1, Ordering::Relaxed) % key.gpu_sks.len();
+        set_server_key(key.gpu_sks[gpu_index].clone());
+        debug!(
+            request_id,
+            gpu_index, "Expanding verified input list on GPU"
+        );
+    }
+    #[cfg(not(feature = "gpu"))]
+    set_server_key(key.sks.clone());
 
     let mut re_rand_context = ReRandomizationContext::new(
         RERANDOMISATION_DOMAIN_SEPARATOR,
@@ -800,7 +880,7 @@ fn rerand_and_expand_verified_list(
     // here is an operator-side re-randomisation problem (e.g. server key
     // without re-randomisation material), not an invalid user proof.
     let expanded: tfhe::CompactCiphertextListExpander = the_list
-        .re_randomize_and_expand_without_verification(cpk, seed)
+        .re_randomize_and_expand_without_verification(&key.pks, seed)
         .map_err(FhevmError::ReRandomisationError)
         .inspect_err(telemetry::set_current_span_error)?;
 

@@ -4,9 +4,10 @@ import type { FhevmChain } from '../types/fhevmChain.js';
 import { describe, expect, it, vi } from 'vitest';
 import { generateTransportKeyPair } from './TransportKeyPair-p.js';
 import { createFhevmClientFrozenContext } from '../frozenContext/fhevmClientFrozenContext-p.js';
+import { CANONICAL_WASM_VERSIONS } from '../runtime/WasmVersions-p.js';
 
 describe('generateTransportKeyPair', () => {
-  it('generates a key pair from the decrypt runtime and a frozen TKMS version', async () => {
+  it('generates a key pair from the decrypt runtime and the shipped TKMS version', async () => {
     const free = vi.fn();
     const tkmsPrivateKey = { free } as unknown as TkmsPrivateKey;
     const generateTkmsPrivateKey = vi.fn().mockResolvedValue(tkmsPrivateKey);
@@ -22,14 +23,14 @@ describe('generateTransportKeyPair', () => {
 
     const keyPair = await generateTransportKeyPair(
       { runtime, chain: {} as FhevmChain, client: {} },
-      { fhevmContext: createFhevmClientFrozenContext({ tkmsVersion: '0.13.20-0' }) },
+      { fhevmContext: createFhevmClientFrozenContext({}) },
     );
 
     expect(keyPair.publicKey).toBe('0x010203');
-    expect(keyPair.tkmsVersion).toBe('0.13.20-0');
-    expect(generateTkmsPrivateKey).toHaveBeenCalledWith({ tkmsVersion: '0.13.20-0' });
-    expect(serializeTkmsPrivateKey).toHaveBeenCalledWith({ tkmsPrivateKey, tkmsVersion: '0.13.20-0' });
-    expect(getTkmsPublicKeyHex).toHaveBeenCalledWith({ tkmsPrivateKey, tkmsVersion: '0.13.20-0' });
+    expect(keyPair.tkmsVersion).toBe(CANONICAL_WASM_VERSIONS.kms);
+    expect(generateTkmsPrivateKey).toHaveBeenCalledWith();
+    expect(serializeTkmsPrivateKey).toHaveBeenCalledWith({ tkmsPrivateKey });
+    expect(getTkmsPublicKeyHex).toHaveBeenCalledWith({ tkmsPrivateKey });
     expect(free).toHaveBeenCalledOnce();
   });
 });

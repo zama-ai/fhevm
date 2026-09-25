@@ -29,8 +29,8 @@ use connector_utils::{
 use fhevm_gateway_bindings::decryption::Decryption::UserDecryptionRequest_4;
 use kms_connector_api::ErrorCode;
 use kms_grpc::kms::v1::{
-    Empty, SigningMetadata, UserDecryptionRequest, UserDecryptionResponse,
-    UserDecryptionResponsePayload,
+    Empty, SigningMetadata, SigningSchemeType, TypedSignature, UserDecryptionRequest,
+    UserDecryptionResponse, UserDecryptionResponsePayload,
 };
 use kms_worker::core::{
     Config,
@@ -373,6 +373,10 @@ async fn an_authorized_request_reaches_the_kms_as_its_signer(#[case] already_sen
         when.path("/kms_service.v1.CoreServiceEndpoint/GetUserDecryptionResult");
         then.pb(UserDecryptionResponse {
             payload: Some(UserDecryptionResponsePayload::default()),
+            signatures: vec![TypedSignature {
+                scheme: SigningSchemeType::Ecdsa256k1 as i32,
+                signature: vec![0; 65],
+            }],
             ..Default::default()
         });
     });

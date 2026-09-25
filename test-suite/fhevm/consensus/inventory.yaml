@@ -1,0 +1,390 @@
+# Consensus agreement inventory. Full means all required cases in this layer.
+# Service fault, interrupted-work, degraded availability, and replay/repair campaigns
+# are introduced by the following failure-mode PR, not silently skipped here.
+schema_version: 2
+selections:
+  harness: [harness]
+  rust-regression: [rust-regression]
+  smoke: [byte-agreement]
+  standard: [harness, rust-regression, byte-agreement, fork]
+  full: [harness, rust-regression, byte-agreement, fork, gpu]
+families:
+  materialization:
+    description: Canonical bytes, digests, provenance, completion, quorum and plaintext.
+  reorg:
+    description: Distinct replacement blocks with identical handle sourcing.
+  fork:
+    description: Competing-branch agreement and orphan authorization safety.
+  scheduling:
+    description: Observed execution diversity within one backend and hardware class.
+  regression:
+    description: Focused regressions for the prerequisite production fixes.
+  harness:
+    description: Comparator, inventory and readiness contracts.
+cases:
+  - id: MAT-01-BOUNDARY-FANOUT
+    family: materialization
+    property: >-
+      Operators running one software/backend/hardware class persist byte-identical
+      ciphertexts for same-block cross-transaction boundaries and for
+      intra-transaction fan-out, with identical digests, provenance and atomic
+      transaction completion.
+    topology: { scenario: three-of-three, operators: 3, threshold: 3, backends: [cpu, gpu] }
+    services: [tfhe-worker, sns-worker, zkproof-worker, transaction-sender, host-listener, gw-listener]
+    capabilities: []
+    workload: MaterializationFixture staged/derived/independent/terminal transaction graph, genuinely encrypted inputs.
+    fault: { mechanism: none, stage: none, observation: none }
+    participants: { compute: all, submit: all, quorum: required }
+    assertions:
+      - bytes: raw ciphertext, type and version identical across operators
+      - digest: keccak binding of raw bytes, and SNS digest present for every expected participant
+      - provenance: producing operation, transaction, host chain and block identical
+      - liveness: every fixture transaction completes with exact computation counts and zero errors
+      - quorum: exactly one AddCiphertextMaterialConsensus event per canonical handle
+    timeout_s: 900
+    cleanup: [none]
+    runner: scripts/run-materialization-consensus.sh --suite materialization
+    ci: { leg: byte-agreement, backend: cpu }
+    artifacts: [case-results, execution-class, suite-log]
+    acceptance: required
+
+  - id: MAT-02-ALIAS-SOURCING
+    family: materialization
+    property: >-
+      Two transactions with identical operand sourcing alias to one handle and one
+      value on every operator, while a transaction that recomputes the same operands
+      locally mints a distinct handle.
+    topology: { scenario: three-of-three, operators: 3, threshold: 3, backends: [cpu, gpu] }
+    services: [tfhe-worker, sns-worker, transaction-sender, host-listener]
+    capabilities: []
+    workload: AliasFixture same-sourcing pair plus a locally-recomputed variant.
+    fault: { mechanism: none, stage: none, observation: none }
+    participants: { compute: all, submit: all, quorum: required }
+    assertions:
+      - bytes: one canonical value per aliased handle on every operator
+      - safety: storage row uniqueness asserted separately from the number of joined computation rows
+      - safety: mixed sourcing mints a different handle, so representation mixing cannot collide
+    timeout_s: 900
+    cleanup: [none]
+    runner: scripts/run-materialization-consensus.sh --suite materialization
+    ci: { leg: byte-agreement, backend: cpu }
+    artifacts: [case-results, suite-log]
+    acceptance: required
+
+  - id: MAT-03-PLAINTEXT-ORACLE
+    family: materialization
+    property: >-
+      The fixture's terminal outputs decrypt to the arithmetically expected
+      plaintexts, so byte agreement is agreement on the right value rather than on
+      a shared mistake.
+    topology: { scenario: three-of-three, operators: 3, threshold: 3, backends: [cpu, gpu] }
+    services: [tfhe-worker, sns-worker, transaction-sender, gw-listener, kms-connector, relayer]
+    capabilities: []
+    workload: User-decryption of the materialization fixture's terminal handles.
+    fault: { mechanism: none, stage: none, observation: none }
+    participants: { compute: all, submit: all, quorum: required }
+    assertions:
+      - correctness: decrypted plaintexts equal the expected arithmetic results
+    timeout_s: 900
+    cleanup: [none]
+    runner: scripts/run-materialization-consensus.sh --suite materialization
+    ci: { leg: byte-agreement, backend: cpu }
+    artifacts: [case-results, suite-log]
+    acceptance: required
+
+  - id: MAT-05-CANARY-CLASSES
+    family: harness
+    property: >-
+      Each falsification class the comparator claims to detect is detected with its
+      own classification: raw byte mismatch, compute digest mismatch, SNS digest
+      mismatch, missing participant SNS evidence, wrong key/context, and provenance
+      mismatch.
+    topology: { scenario: none, operators: 0, threshold: 0, backends: [none] }
+    services: []
+    capabilities: []
+    workload: Synthetic operator rows fed to the real comparator.
+    fault: { mechanism: synthetic-row-mutation, stage: comparator-input, observation: thrown classification }
+    participants: { compute: none, submit: none, quorum: not_checked }
+    assertions:
+      - safety: every mutation class produces its own failure classification
+      - safety: alias ordering differences do NOT produce a failure
+    timeout_s: 120
+    cleanup: [none]
+    runner: scripts/run-stackless-cases.sh --leg comparator
+    ci: { leg: harness, backend: none }
+    artifacts: [suite-log]
+    acceptance: required
+
+  # ---------------------------------------------------------------- reorg
+  - id: REORG-01-REPLACEMENT-BLOCK
+    family: reorg
+    property: >-
+      A block replaced by a distinct sibling with the same parent and timestamp
+      re-mints the same handle, every listener observes the replacement, and the
+      fleet holds one set of bytes for it across the reorg.
+    topology: { scenario: three-of-three, operators: 3, threshold: 3, backends: [cpu, gpu] }
+    services: [tfhe-worker, sns-worker, host-listener, host-listener-poller]
+    capabilities: [anvil-control]
+    workload: One AliasFixture add included in B1, then re-included in sibling B2 after evm_revert.
+    fault:
+      mechanism: chain-reorg-one-chain
+      stage: after the fleet has computed and stored B1's output
+      observation: B1 and B2 hashes differ, and every operator's listener records ingestion of B2's height after the revert
+    participants: { compute: all, submit: all, quorum: required }
+    assertions:
+      - quorum: every recovered target handle reaches the required commitment from distinct authorized members
+      - precondition: B1 and B2 share parent, timestamp and height, and their block hashes DIFFER
+      - precondition: the chain's EVM BLOCKHASH agrees with its own headers before the sibling is built
+      - liveness: replacement ingestion is observed on every operator before any comparison
+      - bytes: the handle's bytes are unchanged from the pre-reorg value on every operator
+      - safety: exactly one canonical storage row per operator for the re-minted handle
+      - provenance: first-write-wins attribution is asserted as the documented contract
+    timeout_s: 1800
+    cleanup: [restore interval mining and automine to their recorded pre-case values]
+    runner: scripts/run-materialization-consensus.sh --suite reorg
+    ci: { leg: byte-agreement, backend: cpu }
+    artifacts: [case-results, block-headers, ingestion-watermarks]
+    acceptance: required
+
+  # ---------------------------------------------------------------- fork
+  - id: FORK-01-COLLIDING-HANDLE
+    family: fork
+    property: >-
+      A handle minted on two competing branches that share a parent and timestamp
+      carries one set of bytes fleet-wide, and reaches quorum rather than splitting.
+    topology: { scenario: three-of-three-fork, operators: 3, threshold: 3, backends: [cpu, gpu] }
+    services: [tfhe-worker, sns-worker, host-listener, transaction-sender]
+    capabilities: [dual-anvil]
+    workload: The same AliasFixture add included on both branches under a pinned shared timestamp.
+    fault: { mechanism: competing-branches, stage: inclusion, observation: both inclusion receipts, matching parent/timestamp/height, differing branch tips }
+    participants: { compute: all, submit: all, quorum: required }
+    assertions:
+      - precondition: both branches share an EVM-visible parent hash at height-1 and the pinned timestamp
+      - precondition: a failed precondition INVALIDATES the case rather than skipping it green
+      - bytes: identical ciphertext and compute digest on every operator
+      - quorum: the colliding handle reaches quorum from distinct authorized members
+    timeout_s: 1800
+    cleanup: [restore canonical interval mining, reseed the fork, verify both chains advance]
+    runner: scripts/run-fork-consensus.sh --case main
+    ci: { leg: fork, backend: cpu }
+    artifacts: [case-results, branch-headers]
+    acceptance: required
+
+  - id: FORK-02-DISTINCT-HANDLES
+    family: fork
+    property: >-
+      Branch content that differs in the handle preimage mints distinct handles, and
+      each branch's handle is observed only where that branch was observed.
+    topology: { scenario: three-of-three-fork, operators: 3, threshold: 3, backends: [cpu, gpu] }
+    services: [tfhe-worker, host-listener]
+    capabilities: [dual-anvil]
+    workload: The same call on both branches under deliberately different timestamps.
+    fault: { mechanism: competing-branches, stage: inclusion, observation: differing minted handles and per-branch ingestion watermarks }
+    participants: { compute: all, submit: all, quorum: not_checked }
+    assertions:
+      - safety: the two branches mint different handles
+      - safety: the branch-only handle is absent from operators past their ingestion watermark for that height
+    timeout_s: 1800
+    cleanup: [none beyond FORK-01's]
+    runner: scripts/run-fork-consensus.sh --case main
+    ci: { leg: fork, backend: cpu }
+    artifacts: [case-results, ingestion-watermarks]
+    acceptance: required
+
+  - id: FORK-03-ORPHAN-ALLOW-INERT
+    family: fork
+    property: >-
+      An ACL allow observed only on an orphaned branch never authorizes canonical
+      decryption of its handle, while the same interface authorizes a canonical
+      control.
+    topology: { scenario: three-of-three-fork, operators: 3, threshold: 3, backends: [cpu, gpu] }
+    services: [tfhe-worker, host-listener, gw-listener, relayer, kms-connector]
+    capabilities: [dual-anvil]
+    workload: The orphan-only handle from FORK-02 plus a canonical positive control.
+    fault: { mechanism: branch-replacement, stage: after the orphan allow was ingested, observation: the forked operator follows canonical history and processes a canonical sentinel }
+    participants: { compute: all, submit: all, quorum: forbidden }
+    assertions:
+      - fault: the forked operator ingests the receipt-identified canonical sentinel block and completes that fresh sentinel
+      - safety: the orphan handle does not reach quorum
+      - safety: a real decryption request for the orphan handle is REJECTED through the authorization interface
+      - liveness: the canonical control decrypts successfully through the same interface
+      - safety: absence of quorum alone is NOT reported as an exercised authorization test
+    timeout_s: 1800
+    cleanup: [none beyond FORK-01's]
+    runner: scripts/run-fork-consensus.sh --case main
+    ci: { leg: fork, backend: cpu }
+    artifacts: [case-results, decryption-rejection]
+    acceptance: required
+
+  - id: SCH-01-HETEROGENEOUS
+    family: scheduling
+    property: >-
+      Three operators with deliberately different scheduling configuration agree byte
+      for byte, and the run proves the workload actually exercised the different
+      batch/window behaviour rather than only that the flags were set.
+    topology: { scenario: three-of-three-heterogeneous-scheduling, operators: 3, threshold: 3, backends: [gpu] }
+    services: [tfhe-worker]
+    capabilities: [gpu, systemd-user]
+    workload: Enough independent chains and transactions to exercise serial, batched, adaptive and non-adaptive paths.
+    fault: { mechanism: none, stage: none, observation: per-operator executed batch/window evidence from worker metrics }
+    participants: { compute: all, submit: all, quorum: required }
+    assertions:
+      - precondition: running flags and environment are verified, plus persisted restart configuration
+      - precondition: the operators' resolved scheduling classes are genuinely distinct
+      - evidence: executed batch/window distributions differ across operators, not only the configured values
+      - bytes: byte and digest agreement across operators
+    timeout_s: 3600
+    cleanup: [GPU session stopped and queues handed back]
+    runner: scripts/run-materialization-consensus.sh --heterogeneous --suite materialization
+    ci: { leg: gpu, backend: gpu }
+    artifacts: [case-results, node-config, executed-scheduling-evidence]
+    acceptance: required
+
+  - id: SCH-02-DEVICE-SPLIT
+    family: scheduling
+    property: >-
+      Operators placed on distinct physical GPUs agree byte for byte, with evidence
+      that distinct devices performed the selected work. Pinning each operator to a
+      different card is a per-worker configuration difference, so this is established
+      on the heterogeneous-scheduling stack, alongside SCH-01.
+    topology: { scenario: three-of-three-heterogeneous-scheduling, operators: 3, threshold: 3, backends: [gpu] }
+    services: [tfhe-worker]
+    capabilities: [gpu, two-gpus, systemd-user]
+    workload: The materialization fixture with operators pinned to different CUDA devices.
+    fault: { mechanism: none, stage: none, observation: per-device compute-process mapping for the selected work }
+    participants: { compute: all, submit: all, quorum: required }
+    assertions:
+      - precondition: at least two compatible GPUs, and the split is asserted rather than assumed
+      - evidence: distinct physical devices are observed executing the selected work
+      - bytes: byte agreement across devices
+    timeout_s: 3600
+    cleanup: [GPU session stopped]
+    runner: scripts/run-materialization-consensus.sh --device-split --suite materialization
+    ci: { leg: none, backend: gpu }
+    artifacts: [case-results, nvidia-smi-capture]
+    acceptance: deferred
+    deferral:
+      boundary: Optional local device-placement experiment; excluded from CI acceptance.
+      reason: CI provides a single GPU. Local two-H100 agreement was checked separately; scheduling diversity is covered by SCH-01 on one GPU.
+
+  - id: SCH-03-SQUASH-DETERMINISM
+    family: scheduling
+    property: >-
+      Repeated squash_noise over extracted fixtures is deterministic for a fixed key
+      and input.
+    topology: { scenario: none, operators: 0, threshold: 0, backends: [cpu, gpu] }
+    services: []
+    capabilities: []
+    workload: Extracted ciphertext fixtures squashed repeatedly.
+    fault: { mechanism: none, stage: none, observation: none }
+    participants: { compute: none, submit: none, quorum: not_checked }
+    assertions:
+      - scope: diagnostic. Prints distinct digest counts; not a regression gate.
+    timeout_s: 1800
+    cleanup: [none]
+    runner: cargo test -p sns-worker --features gpu squash_determinism -- --ignored
+    ci: { leg: none, backend: cpu }
+    artifacts: [suite-log]
+    acceptance: deferred
+    deferral:
+      boundary: >-
+        The squash determinism experiments remain labelled diagnostics: they are
+        `#[ignore]`d, acquire fixtures from a developer path, and print rather than
+        assert.
+      reason: >-
+        Turning them into a gate needs versioned or generative fixture acquisition and a
+        CI target, which is out of scope here.
+
+  # ---------------------------------------------------------------- regressions
+  - id: REG-01-LISTENER-POOL-REBIND
+    family: regression
+    property: >-
+      The stack-version listener rebinds to the pool that replaced its own, responds
+      to a subsequent version transition, and survives repeated replacement and
+      cancellation without leaking listeners or deadlocking.
+    topology: { scenario: none, operators: 0, threshold: 0, backends: [cpu] }
+    services: []
+    capabilities: [postgres]
+    workload: >-
+      A real database lifecycle: start the wrapper, replace/close its pool through the
+      production reconnect path, then drive a version transition.
+    fault: { mechanism: pool-replacement, stage: listener subscribed, observation: the listener's own rebind and the transition it observes afterwards }
+    participants: { compute: none, submit: none, quorum: not_checked }
+    assertions:
+      - liveness: a version transition after rebind is observed
+      - liveness: a transition occurring DURING the disconnect window is reconciled after re-subscription
+      - safety: repeated replacement and cancellation leak no listeners and do not deadlock
+      - safety: the transaction-level cutover write fences and required final mode still hold
+    timeout_s: 600
+    cleanup: [test database dropped]
+    runner: scripts/run-stackless-cases.sh --leg rust-regression (cargo test -p host-listener --test stack_version_listener_tests)
+    ci: { leg: rust-regression, backend: cpu }
+    artifacts: [suite-log]
+    acceptance: required
+
+  - id: REG-02-TFHE-DAEMON-EXIT
+    family: regression
+    property: >-
+      A fatal runtime failure on the tfhe-worker daemon path terminates the process
+      with a non-zero status within a bound, while voluntary shutdown stays successful
+      and the in-process close path does not kill an embedding test process.
+    topology: { scenario: none, operators: 0, threshold: 0, backends: [cpu] }
+    services: []
+    capabilities: []
+    workload: A subprocess-level controlled fatal failure, plus a voluntary-shutdown control.
+    fault: { mechanism: induced-runtime-failure, stage: daemon running, observation: subprocess exit status and duration }
+    participants: { compute: none, submit: none, quorum: not_checked }
+    assertions:
+      - safety: non-zero exit within the bound on fatal failure
+      - liveness: voluntary shutdown exits zero
+      - safety: the in-process close_recv path does not terminate the embedding process
+    timeout_s: 600
+    cleanup: [none]
+    runner: scripts/run-stackless-cases.sh --leg rust-regression (cargo test -p tfhe-worker --test daemon_exit)
+    ci: { leg: rust-regression, backend: cpu }
+    artifacts: [suite-log]
+    acceptance: required
+
+  - id: HAR-02-INVENTORY-AGGREGATE
+    family: harness
+    property: >-
+      The aggregate command rejects missing required cases, duplicate conflicting
+      results, unknown selections, and results produced against a mismatched revision
+      or topology; a partial run is labelled partial and cannot satisfy the full gate.
+    topology: { scenario: none, operators: 0, threshold: 0, backends: [none] }
+    services: []
+    capabilities: []
+    workload: Synthetic result sets against the checked-in inventory.
+    fault: { mechanism: synthetic-result-corruption, stage: aggregation, observation: aggregate exit status and report }
+    participants: { compute: none, submit: none, quorum: not_checked }
+    assertions:
+      - safety: every listed corruption is rejected
+      - safety: an empty selection is not a green aggregate
+    timeout_s: 300
+    cleanup: [none]
+    runner: scripts/run-stackless-cases.sh --leg harness (bun test src/consensus)
+    ci: { leg: harness, backend: none }
+    artifacts: [suite-log]
+    acceptance: required
+
+  - id: HAR-03-READINESS-CONTRACTS
+    family: harness
+    property: >-
+      Readiness and validity gates reject unevaluable evidence: a failed or malformed
+      key-material query is never "ready", and an unreadable metrics or log source is
+      INVALID rather than clean.
+    topology: { scenario: none, operators: 0, threshold: 0, backends: [none] }
+    services: []
+    capabilities: []
+    workload: Fake command and fetch adapters.
+    fault: { mechanism: adapter-injected-failure, stage: readiness evaluation, observation: the gate's own outcome }
+    participants: { compute: none, submit: none, quorum: not_checked }
+    assertions:
+      - safety: empty, non-numeric and error output never counts as ready
+      - safety: an unreadable source is INVALID
+    timeout_s: 300
+    cleanup: [none]
+    runner: scripts/run-stackless-cases.sh --leg harness (bun test src/readiness.test.ts)
+    ci: { leg: harness, backend: none }
+    artifacts: [suite-log]
+    acceptance: required

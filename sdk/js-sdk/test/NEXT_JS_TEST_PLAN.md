@@ -66,7 +66,7 @@ smoke today.
 | --------------------------------------------------------------------------------- | ------ | ----------------------------------------------------------------- |
 | wasm-load: url / base64 / cdn / verified-blob                                     | ✅     | `smoke-wasm`, `smoke-base64`, `smoke-cdn`, harness                |
 | CSP blocks WASM compile (negative)                                                | ✅     | `smoke-csp-block` (per-page `<meta>` CSP)                         |
-| coexistence: multi-version + multi-chain (module×key matrix, incl. expected fail) | ✅     | `smoke-coexistence`                                               |
+| coexistence: multi-chain + forward-compat key deserialize                        | ✅     | `smoke-coexistence`                                               |
 | module: tfhe (encrypt w/ keys) + kms (keygen)                                     | ✅     | harness assertions                                                |
 | 3 desktop browsers                                                                | ✅     | `playwright.config.ts`                                            |
 | **ST mode**                                                                       | ❌     | all cells run `singleThread:false`                                |
@@ -76,7 +76,7 @@ smoke today.
 | **mobile browsers**                                                               | ❌     | —                                                                 |
 
 **Reference model (frozen — do not edit):**
-`test/browser-smoke/scripts/multiWasmHarness.ts` + `smoke-coexistence.ts` (runtime setup,
+`test/browser-smoke/scripts/smokeHarness.ts` + `smoke-coexistence.ts` (runtime setup,
 concurrent multi-version init, threads/readiness assertions, `test/keys` loading,
 ZK-proof build + assertions, module×key compatibility matrix). Chunk 0 writes a
 _new_ core modeled on these — it does not refactor them. Note they are DOM-coupled
@@ -161,7 +161,7 @@ Chunk 3  Add other platforms on top of the core                       ← cheap 
 
 ### Chunk 0 — New DOM-agnostic core (modeled on the coexistence test)
 
-`test/browser-smoke/.../multiWasmHarness.ts` + `smoke-coexistence.ts` are the **model**,
+`test/browser-smoke/.../smokeHarness.ts` + `smoke-coexistence.ts` are the **model**,
 but they are **frozen** (constraint #1) — do **not** refactor them. Write a _new_
 deps-free core (`test/shared/`) that reproduces the coexistence shape:
 
@@ -244,7 +244,7 @@ migrate it onto the core, but that is out of scope here.
 --wasm-load=embedded-base64|...|auto    loading strategy
 --coexist=single|multi|multi+cleartext  coexistence scenario
 --all                                   run the pruned matrix
---rebuild --build-profile=dev|prod      forwarded to scripts/run.mjs (rebuild+pack SDK)
+--rebuild                               forwarded to scripts/run.mjs (rebuild+pack SDK)
 ```
 
 Env is set by the script and inherited by `next dev`, so both the client page
@@ -297,11 +297,14 @@ test/
   `crossOriginIsolated`), `mt+no-coop` (degrades to ST, no crash). ✅ — this is also
   where the **TFHE MT worker bug** under Turbopack was found & fixed (the worker
   bootstrap's `process`-shim detection; injected `isBrowserLike`).
-- **2c — coexistence** (`/coexist`, **per-platform definition of done**): **v12
-  (TFHE 1.5.3) + v13 (TFHE 1.6.1) + a cleartext runtime** init concurrently in one
-  realm, each builds a proof (cleartext: a mock encrypt), plus the module×key
-  **forward-compat expected-fail** (older 1.5.x module + newer 1.6.1 key →
-  deserialize error). Green in **st and mt+coop**, both libs. ✅
+- **2c — coexistence** (`/coexist`, **per-platform definition of done**): **v12 +
+  v13 (different ACL/protocol versions, addresses, relayer URLs) + a cleartext
+  runtime** init concurrently in one realm, each builds a proof (cleartext: a mock
+  encrypt). Since this SDK release loads a single canonical TFHE module regardless
+  of protocol version, the coexistence proof is that **both real legs resolve the
+  SAME TFHE version** despite the different chains — not, as in an earlier
+  multi-wasm-version SDK, that they load *different* modules. Green in **st and
+  mt+coop**, both libs. ✅
 - **2b — render: ssr-node, ssr-edge, mixed** (`/encrypt-ssr`, `/encrypt-edge`,
   `/encrypt-mixed`). Async server-component pages run the SDK server-side (origin
   from the request `Host` header, not `window.location`); a
@@ -339,16 +342,16 @@ test/
 gateway — **no SDK internals needed**.
 
 **Coexistence findings (real SDK constraints surfaced by 2c):**
-1. **Two chains must not share contract addresses.** The SDK resolves/caches the
-   protocol→TFHE version per ACL address; identical addresses on two chains collide
-   (both resolved one version). Fixed by deploying each anvil from a **distinct
-   deployer mnemonic** (`FIRST_ANVIL_MNEMONIC` for v12; default for v13, so its
-   committed `FHEVMHostAddresses.sol` stays clean — v12's is restored post-deploy).
-   Per-slot addresses are served at `/gw/<slot>/config` so pages never hardcode them.
+1. **Two chains must not share contract addresses.** The SDK resolves/caches host
+   contract versions (ACL, InputVerifier, KMSVerifier, …) per address; identical
+   addresses on two chains collide. Fixed by deploying each anvil from a
+   **distinct deployer mnemonic** (`FIRST_ANVIL_MNEMONIC` for v12; default for
+   v13, so its committed `FHEVMHostAddresses.sol` stays clean — v12's is restored
+   post-deploy). Per-slot addresses are served at `/gw/<slot>/config` so pages
+   never hardcode them.
 2. **The global FheEncryptionKey cache is keyed by relayer URL** (first-write-wins).
    Two legs sharing a relayer URL clash — incl. the **cleartext mock**, which writes
-   deadbeef bytes that poison a real key. Each leg uses a **unique** relayer URL
-   (the expected-fail and cleartext legs get dedicated slots).
+   deadbeef bytes that poison a real key. Each leg uses a **unique** relayer URL.
 
 **Test purpose (scope):** these tests verify each **WASM loads and runs** by
 executing one of its functions — for TFHE, `generateZkProof` (runs the module in

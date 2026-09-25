@@ -40,12 +40,12 @@ Worker creation (how to spawn thread pool workers):
 // initTfheModuleFunction
 ////////////////////////////////////////////////////////////////////////////////
 
-export type InitTfheModuleParameters = {
-  readonly tfheVersion: TfheVersion;
-};
-
+/**
+ * No parameters: initialization always targets the running SDK's canonical
+ * TFHE module.
+ */
 export type InitTfheModuleFunction = {
-  initTfheModule(parameters: InitTfheModuleParameters): Promise<void>;
+  initTfheModule(): Promise<void>;
 };
 
 ////////////////////////////////////////////////////////////////////////////////
@@ -115,7 +115,6 @@ export type GetTfheModuleInfoFunction = {
 
 export type ParseTFHEProvenCompactCiphertextListParameters = {
   readonly ciphertextWithZkProof: Uint8Array | string;
-  readonly tfheVersion: TfheVersion;
 };
 
 export type ParseTFHEProvenCompactCiphertextListReturnType = {
@@ -138,7 +137,6 @@ export type BuildWithProofPackedParameters = {
   readonly typedValues: TypedValue[];
   readonly metaData: Uint8Array;
   readonly extraData: BytesHex;
-  readonly tfheVersion: TfheVersion;
 };
 
 export type BuildWithProofPackedReturnType = {
@@ -157,7 +155,6 @@ export type BuildWithProofPackedModuleFunction = {
 
 export type SerializeFheEncryptionKeyParameters = {
   readonly fheEncryptionKey: FheEncryptionKeyWasm;
-  readonly tfheVersion: TfheVersion;
 };
 
 export type SerializeFheEncryptionKeyReturnType = FheEncryptionKeyBytes;
@@ -174,7 +171,6 @@ export type SerializeFheEncryptionKeyModuleFunction = {
 
 export type SerializeFheEncryptionPublicKeyParameters = {
   readonly publicKey: FheEncryptionPublicKey;
-  readonly tfheVersion: TfheVersion;
 };
 
 export type SerializeFheEncryptionPublicKeyReturnType = FheEncryptionPublicKeyBytes;
@@ -191,7 +187,6 @@ export type SerializeFheEncryptionPublicKeyModuleFunction = {
 
 export type SerializeFheEncryptionCrsParameters = {
   readonly crs: FheEncryptionCrs;
-  readonly tfheVersion: TfheVersion;
 };
 
 export type SerializeFheEncryptionCrsReturnType = FheEncryptionCrsBytes;
@@ -208,7 +203,6 @@ export type SerializeFheEncryptionCrsModuleFunction = {
 
 export type DeserializeFheEncryptionPublicKeyParameters = {
   readonly publicKeyBytes: FheEncryptionPublicKeyBytes;
-  readonly tfheVersion: TfheVersion;
 };
 
 export type DeserializeFheEncryptionPublicKeyReturnType = FheEncryptionPublicKey;
@@ -225,7 +219,6 @@ export type DeserializeFheEncryptionPublicKeyModuleFunction = {
 
 export type DeserializeFheEncryptionCrsParameters = {
   readonly crsBytes: FheEncryptionCrsBytes;
-  readonly tfheVersion: TfheVersion;
 };
 
 export type DeserializeFheEncryptionCrsReturnType = FheEncryptionCrs;

@@ -2,13 +2,15 @@
 
 // Coexistence cell (Chunk 2c — the per-platform definition of done).
 // Proves multiple FHEVM runtimes coexist in ONE realm/process:
-//   - v12 slot → TFHE 1.5.x (key.1.5.4), real proof via generateZkProof
-//   - v13 slot → TFHE 1.6.1   (key.1.6.1), real proof via generateZkProof
+//   - v12 slot (older ACL/protocol, key.1.5.4) — real proof via generateZkProof
+//   - v13 slot (current ACL/protocol, key.1.6.1) — real proof via generateZkProof
 //   - a cleartext runtime in parallel (mock encrypt) — the universal scenario
-//   - the module×key forward-compat EXPECTED-FAIL: older module 1.5.x + newer
-//     key 1.6.1 (v12 RPC/ACL but v13 relayer) must fail to deserialize.
-// All legs run concurrently to battle-test concurrent multi-version init + shared
-// per-version worker pools (in ST or MT, per NEXT_PUBLIC_FHEVM_TEST_THREADS).
+// This SDK release loads a single canonical TFHE module regardless of the
+// on-chain protocol version, so both real legs are expected to resolve the
+// SAME TFHE version despite running against different ACL/protocol versions —
+// that equality, under concurrent init, is the coexistence proof here (distinct
+// contract addresses + relayer URLs + init/proof-building all interleaving
+// safely in one realm, in ST or MT per NEXT_PUBLIC_FHEVM_TEST_THREADS).
 //
 // Selectors (inlined at `next dev` start):
 //   NEXT_PUBLIC_FHEVM_TEST_LIB     viem | ethers   (default viem)
@@ -18,7 +20,7 @@ import { useEffect, useState } from 'react';
 import { generateZkProof } from '@fhevm/sdk/actions/encrypt';
 import { defineFhevmChain } from '@fhevm/sdk/chains';
 import { createTestLogger, logError, DiagnosticsView } from '../_diag/diagnostics.jsx';
-import { CURRENT_SLOT, LEGACY_SLOT, OLD_MODULE_NEW_KEY_SLOT } from '../_diag/slots.js';
+import { CURRENT_SLOT, LEGACY_SLOT } from '../_diag/slots.js';
 
 const LIB = process.env.NEXT_PUBLIC_FHEVM_TEST_LIB ?? 'viem';
 const THREADS = process.env.NEXT_PUBLIC_FHEVM_TEST_THREADS ?? 'st';
@@ -111,9 +113,9 @@ async function libAdapter(logger) {
   throw new Error(`Unknown NEXT_PUBLIC_FHEVM_TEST_LIB: ${LIB}`);
 }
 
-// A real TFHE leg: init (resolves the on-chain version), assert the resolved TFHE
-// version, the thread mode, and a well-formed proof built locally (generateZkProof).
-async function realProofLeg(client, label, expectVersionPrefix, log) {
+// A real TFHE leg: init (resolves the on-chain version), assert the thread mode,
+// and a well-formed proof built locally (generateZkProof).
+async function realProofLeg(client, label, log) {
   await client.init();
   const info = await client.runtime.encrypt.getTfheModuleInfo({ tfheVersion: client.tfheVersion });
   const crossOriginIsolated = globalThis.crossOriginIsolated ?? false;
@@ -122,9 +124,6 @@ async function realProofLeg(client, label, expectVersionPrefix, log) {
     `[${label}] tfheVersion=${String(client.tfheVersion)} numberOfThreads=${numberOfThreads} coi=${crossOriginIsolated}`,
   );
 
-  if (!String(client.tfheVersion).startsWith(expectVersionPrefix)) {
-    throw new Error(`${label}: expected TFHE ${expectVersionPrefix}x, got ${String(client.tfheVersion)}`);
-  }
   const expectMultiThread = USE_MT && crossOriginIsolated;
   if (numberOfThreads > 0 !== expectMultiThread) {
     throw new Error(
@@ -164,24 +163,6 @@ async function cleartextLeg(client, log) {
   return `cleartext: ${result.encryptedValues.length} value(s)`;
 }
 
-// Forward-compat EXPECTED-FAIL: an older module (1.5.x, from the v12 ACL) cannot
-// deserialize a newer key (1.6.1, served by the v13 relayer). The whole leg MUST
-// fail; a success is the real error.
-async function expectedFailLeg(client, log) {
-  try {
-    await client.init();
-    await generateZkProof(client, {
-      contractAddress: CONTRACT_ADDRESS,
-      userAddress: USER_ADDRESS,
-      values: [{ type: 'uint64', value: 1n }],
-    });
-  } catch (err) {
-    log(`[expected-fail] failed as expected: ${err instanceof Error ? err.message : String(err)}`);
-    return 'expected-fail: failed as expected';
-  }
-  throw new Error('expected-fail: module 1.5.x + key 1.6.1 unexpectedly SUCCEEDED');
-}
-
 export default function Page() {
   const [diagnostics, setDiagnostics] = useState({ status: 'pending', logs: [] });
 
@@ -195,10 +176,9 @@ export default function Page() {
         log(`lib=${LIB} threads=${THREADS}`);
         const adapter = await libAdapter(logger);
 
-        const [v12Cfg, v13Cfg, mismatchCfg] = await Promise.all([
+        const [v12Cfg, v13Cfg] = await Promise.all([
           fetchSlotConfig(origin, LEGACY_SLOT),
           fetchSlotConfig(origin, CURRENT_SLOT),
-          fetchSlotConfig(origin, OLD_MODULE_NEW_KEY_SLOT),
         ]);
         const v12 = adapter.mkReal(buildChain(origin, v12Cfg, LEGACY_SLOT), `${origin}/gw/${LEGACY_SLOT}/rpc`);
         const v13 = adapter.mkReal(buildChain(origin, v13Cfg, CURRENT_SLOT), `${origin}/gw/${CURRENT_SLOT}/rpc`);
@@ -206,32 +186,27 @@ export default function Page() {
         // (its mock returns deadbeef bytes — under the real relayer it would poison
         // the real key).
         const clear = adapter.mkCleartext(buildChain(origin, v13Cfg, 'cleartext'), `${origin}/gw/${CURRENT_SLOT}/rpc`);
-        // Dedicated alias slot: current key over the legacy anvil (older ACL → older
-        // module), at its OWN relayer URL so the global key cache does not collide
-        // with the real current leg → older module + newer key fails for real. Its
-        // /config returns the legacy addresses (it proxies the legacy anvil).
-        const mismatch = adapter.mkReal(
-          buildChain(origin, mismatchCfg, OLD_MODULE_NEW_KEY_SLOT),
-          `${origin}/gw/${OLD_MODULE_NEW_KEY_SLOT}/rpc`,
-        );
 
-        log('initializing legacy + current + cleartext + expected-fail concurrently...');
+        log('initializing legacy + current + cleartext concurrently...');
         const summaries = await Promise.all([
-          realProofLeg(v12, LEGACY_SLOT, '1.5.', log),
-          realProofLeg(v13, CURRENT_SLOT, '1.6.', log),
+          realProofLeg(v12, LEGACY_SLOT, log),
+          realProofLeg(v13, CURRENT_SLOT, log),
           cleartextLeg(clear, log),
-          expectedFailLeg(mismatch, log),
         ]);
 
-        // Coexistence proof: the two real legs loaded DIFFERENT TFHE versions.
-        if (String(v12.tfheVersion) === String(v13.tfheVersion)) {
-          throw new Error(`coexistence: both real legs resolved the same TFHE version ${String(v12.tfheVersion)}`);
+        // Coexistence proof: both real legs — despite running against different
+        // ACL/protocol versions, addresses, and relayer URLs — resolve the SAME
+        // canonical TFHE version, and did so safely under concurrent init.
+        if (String(v12.tfheVersion) !== String(v13.tfheVersion)) {
+          throw new Error(
+            `coexistence: legs resolved different TFHE versions (legacy=${String(v12.tfheVersion)}, current=${String(v13.tfheVersion)})`,
+          );
         }
 
         for (const s of summaries) {
           log(`[PASS] ${s}`);
         }
-        log('[PASS] multi-version + cleartext coexistence verified');
+        log('[PASS] multi-chain + cleartext coexistence verified');
 
         if (!cancelled) {
           setDiagnostics({ status: 'pass', logs });

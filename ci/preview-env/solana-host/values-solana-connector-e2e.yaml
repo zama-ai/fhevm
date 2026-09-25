@@ -1,6 +1,16 @@
 # Merge after values-kms-connector-e2e.yaml for every KMS party.
-# hostChains is a list, which Helm replaces instead of merging, so deploy-preview.sh appends
-# connector-host-chain.yaml to each release's existing entries rather than restating them here.
+# commonConfig.hostChains is a map, so this adds the Solana chain next to the party's EVM chains.
+# $(...) placeholders resolve against the kms-worker env below. deploy-preview.sh sets
+# solanaProofEndpoints to one listener Service per coprocessor.
+commonConfig:
+  hostChains:
+    solana:
+      url: "$(SOLANA_RPC_URL)"
+      chainId: "130140237723663404"
+      chainKind: solana
+      solanaHostProgramId: "$(SOLANA_HOST_PROGRAM_ID)"
+      solanaProofApiKey: "$(SOLANA_PROOF_API_KEY)"
+
 kmsConnectorKmsWorker:
   env:
     - name: SOLANA_RPC_URL

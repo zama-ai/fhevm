@@ -5,9 +5,7 @@ import { defineClientDecryptStalePermitMigrationTests } from '../ethers-common/c
 
 ////////////////////////////////////////////////////////////////////////////////
 //
-// CHAIN=localstack_v12 npx vitest run --config test/fheTest/vitest.config.ts ethers/clientDecrypt.stalePermitMigration.test.ts
-// CHAIN=localstack_v13 npx vitest run --config test/fheTest/vitest.config.ts ethers/clientDecrypt.stalePermitMigration.test.ts
-// CHAIN=localstack     npx vitest run --config test/fheTest/vitest.config.ts ethers/clientDecrypt.stalePermitMigration.test.ts
+// CHAIN=localstack npx vitest run --config test/fheTest/vitest.config.ts ethers/clientDecrypt.stalePermitMigration.test.ts
 //
 ////////////////////////////////////////////////////////////////////////////////
 

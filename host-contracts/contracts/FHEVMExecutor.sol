@@ -64,6 +64,9 @@ contract FHEVMExecutor is UUPSUpgradeableEmptyProxy, FHEEvents, ACLOwnable {
     /// @notice Returned if `scalarByte` is not a legal `fheMulDiv` bitmask (`0x01` enc×enc or `0x03` enc×scalar).
     error InvalidMulDivScalarByte();
 
+    /// @notice Returned if a plaintext operand does not fit in its FHE type.
+    error ScalarOutOfRange();
+
     /// @notice Returned if the type is not supported for this operation.
     error UnsupportedType();
 
@@ -74,10 +77,6 @@ contract FHEVMExecutor is UUPSUpgradeableEmptyProxy, FHEEvents, ACLOwnable {
     /// @param size     The actual collection size.
     /// @param limit    The violated bound: the maximum allowed.
     error FHECollectionSizeInvalid(uint256 size, uint256 limit);
-
-    /// @notice Returned when an operand's boundary-bit position would fall
-    ///         outside the result-handle preimage word (position >= 256).
-    error BoundaryBitPositionOverflow(uint256 position);
 
     /**
      * @param userAddress       Address of the user.
@@ -136,7 +135,7 @@ contract FHEVMExecutor is UUPSUpgradeableEmptyProxy, FHEEvents, ACLOwnable {
     uint256 private constant MAJOR_VERSION = 0;
 
     /// @notice Minor version of the contract.
-    uint256 private constant MINOR_VERSION = 6;
+    uint256 private constant MINOR_VERSION = 7;
 
     /// @notice Patch version of the contract.
     uint256 private constant PATCH_VERSION = 0;
@@ -152,7 +151,7 @@ contract FHEVMExecutor is UUPSUpgradeableEmptyProxy, FHEEvents, ACLOwnable {
 
     /// Constant used for making sure the version number used in the `reinitializer` modifier is
     /// identical between `initializeFromEmptyProxy` and the `reinitializeVX` method
-    uint64 private constant REINITIALIZER_VERSION = 7;
+    uint64 private constant REINITIALIZER_VERSION = 8;
 
     /// Domain separator for hashing when building an output handle for a FHE computation
     bytes8 private constant COMPUTATION_DOMAIN_SEPARATOR = "FHE_comp";
@@ -166,10 +165,9 @@ contract FHEVMExecutor is UUPSUpgradeableEmptyProxy, FHEEvents, ACLOwnable {
     /// Wide types (Uint64 and above) use a smaller limit because each element costs more HCU.
     /// Both caps must stay <= 255 so that every operand's boundary bit fits the
     /// result-handle preimage word even in the value+set _naryOp overload, where
-    /// positions run 1..length; _boundaryBitCapGuard fails the build past that
-    /// width, and _consumeOperand reverts at runtime as a backstop.
-    uint256 private constant FHE_COLLECTION_NARROW_MAX_SIZE = 100;
-    uint256 private constant FHE_COLLECTION_WIDE_MAX_SIZE = 60;
+    /// positions run 1..length. The uint8 types enforce this cap at compile time.
+    uint8 private constant FHE_COLLECTION_NARROW_MAX_SIZE = 100;
+    uint8 private constant FHE_COLLECTION_WIDE_MAX_SIZE = 60;
 
     /// keccak256(abi.encode(uint256(keccak256("fhevm.storage.FHEVMExecutor")) - 1)) & ~bytes32(uint256(0xff))
     bytes32 private constant FHEVM_EXECUTOR_STORAGE_LOCATION =
@@ -187,12 +185,12 @@ contract FHEVMExecutor is UUPSUpgradeableEmptyProxy, FHEEvents, ACLOwnable {
     function initializeFromEmptyProxy() public virtual onlyFromEmptyProxy reinitializer(REINITIALIZER_VERSION) {}
 
     /**
-     * @notice Re-initializes the contract from V5.
+     * @notice Re-initializes the contract from V6.
      * @dev Define a `reinitializeVX` function once the contract needs to be upgraded.
      */
     /// @custom:oz-upgrades-unsafe-allow missing-initializer-call
     /// @custom:oz-upgrades-validate-as-initializer
-    function reinitializeV6() public virtual reinitializer(REINITIALIZER_VERSION) {}
+    function reinitializeV7() public virtual reinitializer(REINITIALIZER_VERSION) {}
 
     /**
      * @notice              Computes FHEAdd operation.
@@ -259,14 +257,17 @@ contract FHEVMExecutor is UUPSUpgradeableEmptyProxy, FHEEvents, ACLOwnable {
      * @return result       Result.
      */
     function fheDiv(bytes32 lhs, bytes32 rhs, bytes1 scalarByte) public virtual returns (bytes32 result) {
-        if (scalarByte != 0x01) revert IsNotScalar(); /// @dev we know scalarByte is either 0x01 or 0x00 because we check it is boolean inside _binaryOp
+        if (scalarByte != 0x01) {
+            // Distinguish malformed flags from valid non-scalar mode.
+            _checkBoolean(scalarByte);
+            revert IsNotScalar();
+        }
         uint256 supportedTypes = (1 << uint8(FheType.Uint8)) +
             (1 << uint8(FheType.Uint16)) +
             (1 << uint8(FheType.Uint32)) +
             (1 << uint8(FheType.Uint64)) +
             (1 << uint8(FheType.Uint128));
         FheType lhsType = _verifyAndReturnType(lhs, supportedTypes);
-        if (_isScalarZeroForType(rhs, lhsType)) revert DivisionByZero();
         result = _binaryOp(Operators.fheDiv, lhs, rhs, scalarByte, lhsType);
         HCU_LIMIT.checkHCUForFheDiv(lhsType, scalarByte, lhs, rhs, result, msg.sender);
         emit FheDiv(msg.sender, lhs, rhs, scalarByte, result);
@@ -280,14 +281,17 @@ contract FHEVMExecutor is UUPSUpgradeableEmptyProxy, FHEEvents, ACLOwnable {
      * @return result       Result.
      */
     function fheRem(bytes32 lhs, bytes32 rhs, bytes1 scalarByte) public virtual returns (bytes32 result) {
-        if (scalarByte != 0x01) revert IsNotScalar(); /// @dev we know scalarByte is either 0x01 or 0x00 because we check it is boolean inside _binaryOp
+        if (scalarByte != 0x01) {
+            // Distinguish malformed flags from valid non-scalar mode.
+            _checkBoolean(scalarByte);
+            revert IsNotScalar();
+        }
         uint256 supportedTypes = (1 << uint8(FheType.Uint8)) +
             (1 << uint8(FheType.Uint16)) +
             (1 << uint8(FheType.Uint32)) +
             (1 << uint8(FheType.Uint64)) +
             (1 << uint8(FheType.Uint128));
         FheType lhsType = _verifyAndReturnType(lhs, supportedTypes);
-        if (_isScalarZeroForType(rhs, lhsType)) revert DivisionByZero();
         result = _binaryOp(Operators.fheRem, lhs, rhs, scalarByte, lhsType);
         HCU_LIMIT.checkHCUForFheRem(lhsType, scalarByte, lhs, rhs, result, msg.sender);
         emit FheRem(msg.sender, lhs, rhs, scalarByte, result);
@@ -691,8 +695,8 @@ contract FHEVMExecutor is UUPSUpgradeableEmptyProxy, FHEEvents, ACLOwnable {
         if ((1 << uint8(resultType)) & supportedTypes == 0) revert UnsupportedType();
 
         uint256 maxSize = (resultType == FheType.Uint64 || resultType == FheType.Uint128)
-            ? FHE_COLLECTION_WIDE_MAX_SIZE
-            : FHE_COLLECTION_NARROW_MAX_SIZE;
+            ? uint256(FHE_COLLECTION_WIDE_MAX_SIZE)
+            : uint256(FHE_COLLECTION_NARROW_MAX_SIZE);
         if (values.length > maxSize) revert FHECollectionSizeInvalid(values.length, maxSize);
 
         result = _naryOp(Operators.fheSum, values, resultType);
@@ -725,8 +729,8 @@ contract FHEVMExecutor is UUPSUpgradeableEmptyProxy, FHEEvents, ACLOwnable {
             valueType == FheType.Uint128 ||
             valueType == FheType.Uint160 ||
             valueType == FheType.Uint256)
-            ? FHE_COLLECTION_WIDE_MAX_SIZE
-            : FHE_COLLECTION_NARROW_MAX_SIZE;
+            ? uint256(FHE_COLLECTION_WIDE_MAX_SIZE)
+            : uint256(FHE_COLLECTION_NARROW_MAX_SIZE);
         if (values.length > maxSize) revert FHECollectionSizeInvalid(values.length, maxSize);
         if (_typeOf(value) != valueType) revert IncompatibleTypes();
 
@@ -754,7 +758,6 @@ contract FHEVMExecutor is UUPSUpgradeableEmptyProxy, FHEEvents, ACLOwnable {
             (1 << uint8(FheType.Uint32)) +
             (1 << uint8(FheType.Uint64));
         FheType factor1Type = _verifyAndReturnType(factor1, supportedTypes);
-        if (_isScalarZeroForType(divisor, factor1Type)) revert DivisionByZero();
         result = _mulDivOp(Operators.fheMulDiv, factor1, factor2, divisor, scalarByte, factor1Type);
         HCU_LIMIT.checkHCUForFheMulDiv(factor1Type, scalarByte, factor1, factor2, result, msg.sender);
         emit FheMulDiv(msg.sender, factor1, factor2, divisor, scalarByte, result);
@@ -811,16 +814,8 @@ contract FHEVMExecutor is UUPSUpgradeableEmptyProxy, FHEEvents, ACLOwnable {
      * @return result   Result value of the target type.
      */
     function trivialEncrypt(uint256 pt, FheType toType) public virtual returns (bytes32 result) {
-        uint256 supportedTypes = (1 << uint8(FheType.Bool)) +
-            (1 << uint8(FheType.Uint8)) +
-            (1 << uint8(FheType.Uint16)) +
-            (1 << uint8(FheType.Uint32)) +
-            (1 << uint8(FheType.Uint64)) +
-            (1 << uint8(FheType.Uint128)) +
-            (1 << uint8(FheType.Uint160)) +
-            (1 << uint8(FheType.Uint256));
-
-        if ((1 << uint8(toType)) & supportedTypes == 0) revert UnsupportedType();
+        /// @dev trivialEncrypt supports all currently supported FHE types, i.e those accepted by _checkScalarRange, so no separate type check is needed.
+        _checkScalarRange(pt, toType);
         result = keccak256(
             abi.encodePacked(
                 COMPUTATION_DOMAIN_SEPARATOR,
@@ -864,6 +859,17 @@ contract FHEVMExecutor is UUPSUpgradeableEmptyProxy, FHEEvents, ACLOwnable {
         // input ciphertext, so consumers fold a boundary bit for it.
         ACL.allowTransient(result, msg.sender);
         emit VerifyInput(msg.sender, inputHandle, userAddress, inputProof, inputType, result);
+    }
+
+    /**
+     * @notice Asserts the type of an initialized ciphertext handle.
+     * @dev This checks metadata only; it does not verify a proof or grant ACL permissions.
+     * @param handle Ciphertext handle. Zero is an uninitialized sentinel, not a ciphertext.
+     * @param expectedType Expected FHE type.
+     */
+    function checkHandleType(bytes32 handle, FheType expectedType) external view virtual {
+        // Compare against the ABI-validated enum without converting the untrusted handle byte to an enum.
+        if (handle == bytes32(0) || uint8(handle[30]) != uint8(expectedType)) revert InvalidType();
     }
 
     /**
@@ -949,16 +955,23 @@ contract FHEVMExecutor is UUPSUpgradeableEmptyProxy, FHEEvents, ACLOwnable {
         if ((1 << uint8(typeCt)) & supportedTypes == 0) revert UnsupportedType();
     }
 
-    function _isScalarZeroForType(bytes32 scalar, FheType scalarType) internal pure virtual returns (bool) {
-        uint256 scalarUint = uint256(scalar);
+    /**
+     * @dev Checks that the scalar fits a supported type. Overrides must preserve rejection of
+     *      unsupported types with UnsupportedType and out-of-range scalars with ScalarOutOfRange.
+     */
+    function _checkScalarRange(uint256 scalar, FheType scalarType) internal pure virtual {
+        uint256 maxValue;
+        if (scalarType == FheType.Bool) maxValue = 1;
+        else if (scalarType == FheType.Uint8) maxValue = type(uint8).max;
+        else if (scalarType == FheType.Uint16) maxValue = type(uint16).max;
+        else if (scalarType == FheType.Uint32) maxValue = type(uint32).max;
+        else if (scalarType == FheType.Uint64) maxValue = type(uint64).max;
+        else if (scalarType == FheType.Uint128) maxValue = type(uint128).max;
+        else if (scalarType == FheType.Uint160) maxValue = type(uint160).max;
+        else if (scalarType == FheType.Uint256) return;
+        else revert UnsupportedType();
 
-        if (scalarType == FheType.Uint8) return uint8(scalarUint) == 0;
-        if (scalarType == FheType.Uint16) return uint16(scalarUint) == 0;
-        if (scalarType == FheType.Uint32) return uint32(scalarUint) == 0;
-        if (scalarType == FheType.Uint64) return uint64(scalarUint) == 0;
-        if (scalarType == FheType.Uint128) return uint128(scalarUint) == 0;
-
-        revert UnsupportedType();
+        if (scalar > maxValue) revert ScalarOutOfRange();
     }
 
     /// @dev Records a handle this executor derived in the current transaction
@@ -1030,32 +1043,14 @@ contract FHEVMExecutor is UUPSUpgradeableEmptyProxy, FHEEvents, ACLOwnable {
     ///      tests catch. Scalar operands must not go through here: they are
     ///      not ACL-checked and contribute a zero bit.
     ///
-    ///      A bit past the preimage word would be dropped silently (EVM SHL
-    ///      with a shift >= 256 yields 0), so positions past 255 revert. This
-    ///      is unreachable today — operand counts are capped far below by
-    ///      FHE_COLLECTION_*_MAX_SIZE — but keeps a future cap raise or new
-    ///      collection op from reopening the representation-mixing alias.
-    ///
     ///      Positions are caller-supplied and MUST be distinct per derivation
     ///      (a duplicated position merges two operands' bits and reopens the
     ///      alias for that op); any new op must join the boundary-bit rotation
     ///      tests in fhevmExecutor.t.sol, which pin each operand's position by
     ///      rotating a single minted operand through every slot.
-    function _consumeOperand(bytes32 ct, uint256 position) internal view virtual returns (uint256 shiftedBit) {
+    function _consumeOperand(bytes32 ct, uint8 position) internal view virtual returns (uint256 shiftedBit) {
         if (!ACL.isAllowed(ct, msg.sender)) revert ACLNotAllowed(ct, msg.sender);
-        if (position >= 256) revert BoundaryBitPositionOverflow(position);
         shiftedBit = _oneOperandBoundaryBit(ct) << position;
-    }
-
-    /// @dev Compile-time cap guard: fixed array lengths must be constant-
-    ///      evaluable, so these declarations fail the build ("arithmetic error
-    ///      when computing constant value") if a collection cap is ever raised
-    ///      past 255 — the largest boundary-bit position the preimage word can
-    ///      hold in the value+set _naryOp overload. Never called.
-    function _boundaryBitCapGuard() private pure {
-        uint256[255 - FHE_COLLECTION_NARROW_MAX_SIZE] memory narrowHeadroom;
-        uint256[255 - FHE_COLLECTION_WIDE_MAX_SIZE] memory wideHeadroom;
-        (narrowHeadroom, wideHeadroom);
     }
 
     function _unaryOp(Operators op, bytes32 ct) internal virtual returns (bytes32 result) {
@@ -1086,9 +1081,15 @@ contract FHEVMExecutor is UUPSUpgradeableEmptyProxy, FHEEvents, ACLOwnable {
         _checkBoolean(scalar);
 
         uint256 boundaryBits = _consumeOperand(lhs, 0);
+        FheType lhsType = _typeOf(lhs);
         if (scalar == 0x00) {
             boundaryBits |= _consumeOperand(rhs, 1);
-            if (_typeOf(lhs) != _typeOf(rhs)) revert IncompatibleTypes();
+            if (lhsType != _typeOf(rhs)) revert IncompatibleTypes();
+        } else {
+            _checkScalarRange(uint256(rhs), lhsType);
+            if ((op == Operators.fheDiv || op == Operators.fheRem) && rhs == bytes32(0)) {
+                revert DivisionByZero();
+            }
         }
         result = keccak256(
             abi.encodePacked(
@@ -1124,7 +1125,12 @@ contract FHEVMExecutor is UUPSUpgradeableEmptyProxy, FHEEvents, ACLOwnable {
             boundaryBits |= _consumeOperand(factor2, 1);
             // resultType == _typeOf(factor1) (set by the caller's _verifyAndReturnType).
             if (resultType != _typeOf(factor2)) revert IncompatibleTypes();
+        } else {
+            _checkScalarRange(uint256(factor2), resultType);
         }
+        _checkScalarRange(uint256(divisor), resultType);
+        if (divisor == bytes32(0)) revert DivisionByZero();
+
         result = keccak256(
             abi.encodePacked(
                 COMPUTATION_DOMAIN_SEPARATOR,
@@ -1184,7 +1190,7 @@ contract FHEVMExecutor is UUPSUpgradeableEmptyProxy, FHEEvents, ACLOwnable {
         FheType resultType
     ) internal virtual returns (bytes32 result) {
         uint256 boundaryBits;
-        for (uint256 i = 0; i < values.length; i++) {
+        for (uint8 i = 0; i < values.length; i++) {
             boundaryBits |= _consumeOperand(values[i], i);
             if (_typeOf(values[i]) != resultType) revert IncompatibleTypes();
         }
@@ -1212,7 +1218,7 @@ contract FHEVMExecutor is UUPSUpgradeableEmptyProxy, FHEEvents, ACLOwnable {
     ) internal virtual returns (bytes32 result) {
         uint256 boundaryBits = _consumeOperand(value, 0);
         FheType valueType = _typeOf(value);
-        for (uint256 i = 0; i < values.length; i++) {
+        for (uint8 i = 0; i < values.length; i++) {
             boundaryBits |= _consumeOperand(values[i], i + 1);
             if (_typeOf(values[i]) != valueType) revert IncompatibleTypes();
         }

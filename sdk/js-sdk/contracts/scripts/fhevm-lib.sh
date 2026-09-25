@@ -48,7 +48,7 @@ EOF
 # Behavior per chain:
 #   localcleartext | localstack  → checks BOTH `localcleartext` AND `localstack`
 #                                  keys in the JSON.
-#   localstack_v11..v14 (etc.)   → checks the matching `localstack_<vNN>` key.
+#   localstack_v14 (etc.)        → checks the matching `localstack_<vNN>` key.
 #   devnet                       → checks the `devnet` key.
 #   anything else                → no-op (returns 0).
 #

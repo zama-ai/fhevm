@@ -154,4 +154,18 @@ runs:
       shell: bash
       run: |
         command -v nvcc
+
+    # A GPU-ready AMI can still boot with a driver module that does not match
+    # its running kernel. Reinstalling the supported driver refreshes that
+    # module; retry nvidia-smi so an unrecoverable driver issue still fails
+    # before a CUDA build starts.
+    - name: Check GPU driver
+      shell: bash
+      run: |
+        if nvidia-smi; then
+          exit 0
+        fi
+
+        sudo apt-get -o DPkg::Lock::Timeout=600 update
+        sudo apt-get -o DPkg::Lock::Timeout=600 install --reinstall -y nvidia-driver-580
         nvidia-smi

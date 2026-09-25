@@ -6,6 +6,7 @@ pub mod database;
 pub mod db_keys;
 pub mod drift_revert;
 pub mod gcs_activation;
+pub mod gpu_arch;
 #[cfg(feature = "gpu")]
 pub mod gpu_memory;
 pub mod healthz_server;

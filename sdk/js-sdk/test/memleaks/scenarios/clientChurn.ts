@@ -59,12 +59,9 @@ export const clientChurnScenario: Scenario = {
       });
     }
 
-    const tfheVersion =
-      config.moduleVersions !== undefined && config.moduleVersions !== 'auto' ? config.moduleVersions.tfhe : undefined;
     const relayerUrl = config.fhevmChain.fhevm.relayerUrl;
-    const options = config.moduleVersions !== undefined ? { moduleVersions: config.moduleVersions } : undefined;
 
-    const readTfheMemory = await createTfheMemoryReader(tfheVersion);
+    const readTfheMemory = await createTfheMemoryReader();
 
     const uint8Case = encryptTestCases.find((tc) => tc.type === 'uint8');
     if (uint8Case === undefined) {
@@ -77,7 +74,6 @@ export const clientChurnScenario: Scenario = {
       const client = createFhevmEncryptClient({
         chain: config.fhevmChain,
         provider: config.provider,
-        options,
       });
       await client.ready;
 
