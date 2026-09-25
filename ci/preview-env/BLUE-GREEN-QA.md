@@ -235,9 +235,28 @@ TARGET_TAG=<your Green tag> bash ci/preview-env/scripts/bg/bg-stack.sh upgrade
 
 **Expect:** all the KMS connector lines show the new tag.
 
-Relayer and test-suite usually stay on the old version and the command ends with a `401
-unauthorized` on their chart. **That is fine.** The connector is the one that matters, and it is
-already upgraded by then.
+If the command ends with a `401 unauthorized`, the relayer and test-suite charts were not upgraded.
+Test-suite can stay behind. The 401 is on the chart's dependency, not on the images, so move the
+relayer yourself:
+
+```bash
+TAG=<your Green tag>
+kubectl set image deploy/relayer -n $NAMESPACE \
+  common=hub.zama.org/ghcr/zama-ai/fhevm/relayer:$TAG
+
+kubectl get job -n $NAMESPACE relayer-migrate -o json \
+  | jq --arg t "$TAG" '.metadata={"name":"relayer-migrate-\($t)"}
+      | del(.status, .spec.selector, .spec.completions, .spec.parallelism,
+            .spec.template.metadata.labels)
+      | .spec.template.spec.containers[0].image
+          = "hub.zama.org/ghcr/zama-ai/fhevm/relayer-migrate:\($t)"' \
+  | kubectl apply -n $NAMESPACE -f -
+
+kubectl rollout restart deploy/relayer -n $NAMESPACE
+```
+
+The migration is not optional. Without it the relayer starts and serves HTTP, but logs `epoch mint
+query failed` and dispatches nothing.
 
 **Why this matters:** the old (v0.14) KMS connector checks decryption against a value recorded on
 the blockchain. The cutover changes the encrypted data behind that value. With the old connector,
@@ -293,6 +312,10 @@ bash ci/preview-env/scripts/bg/bg-traffic.sh verify
 ```
 
 **Expect:** every line `OK`. This proves the contract upgrade did not break the running coprocessor.
+
+**Stop the traffic first.** `verify` compares each decrypted balance against the value the loop
+recorded, so a loop that is still transferring gives you a `MISMATCH` and `::error::verify failed on
+at least one chain` on a healthy environment. Only a mismatch seen with the loops stopped is real.
 
 Start traffic again and **leave it running** for the rest of the test:
 
@@ -831,8 +854,28 @@ WINDOW_DURATION=20m PROPOSAL_ID=$PROPOSAL_ID bash ci/preview-env/scripts/bg/bg-p
 or newer`, and `upgrade_state` still holds exactly one proposal id, not two. You see this within a
 minute or two.
 
-The first proposal is a normal one, so the round then runs to a **cutover**, whether or not traffic
-is on, the dry run supplies its own work. Plan for that: case 6 costs a round and a `bg-reset.sh`,
+**The second `bg-propose.sh send` will not tell you.** It counts the previous round's `LIVE` rows
+as `DryRunStarted`, so it exits 0 and reports success on a proposal that was refused. Check these
+two instead:
+
+```bash
+# exactly one id, on both operators
+kubectl exec -n $NAMESPACE postgres-coprocessor-1-0 -- \
+  env PGPASSWORD=zama psql -U zama -d fhevm_e2e -tAqc \
+  "SELECT count(DISTINCT proposal_id), string_agg(DISTINCT encode(proposal_id,'hex'),',') FROM upgrade_state;"
+
+# the refusal itself
+kubectl logs -n $NAMESPACE deploy/coprocessor-1-gcs-host-listener-consumer --since=15m \
+  | grep "another proposal"
+```
+
+`WINDOW_DURATION` sets the window's length, not when it starts. The cutover lands seconds after the
+window opens, roughly four minutes after you send, so the first round often finishes before you send
+the second and the refusal reads `completed` rather than `active`. Same guard either way. Send the
+duplicate as soon as the first `send` returns to catch it while `active`.
+
+The first proposal is a normal one, so the round then runs to a **cutover**. Keep traffic running
+for it, the gateway needs the work to make blocks. Case 6 costs a round and a `bg-reset.sh`,
 so run it with the other cutover cases rather than among the ones that leave Blue live.
 
 ### Edge case 7. Operators disagree
@@ -885,8 +928,9 @@ resolve later.
 behind the tip (`DAO buffer violated`), whatever `BUFFER` is set to. The raw one takes literal block
 numbers and lets the contract and the listener be the only validators.
 
-Green must be up, as for any case. Traffic is optional, the dry run injects its own work. Run one
-proposal at a time.
+Green must be up, as for any case, and **keep traffic running for all of them**: on testnets the
+gateway only makes blocks when something gives it work, and without them the round stalls for
+reasons that have nothing to do with the case. Run one proposal at a time.
 
 **First, read the tips.** Every window below is built from them:
 
@@ -915,7 +959,13 @@ bash ci/preview-env/scripts/bg/bg-propose-raw.sh \
 ```
 
 Watch them with the usual query, and afterwards: a failed round leaves the environment usable, so
-just send the next one; a round that cuts over needs `bg-reset.sh` first.
+send the next one; a round that cuts over needs `bg-reset.sh` first, **then a new test token**
+(`bg-traffic.sh setup`). The reset empties the ciphertext table, so the old token's handles point at
+data that is gone, and transfers on it schedule work that never finishes and blocks later rounds.
+
+**The previous case's rows stay in `upgrade_state` until the next proposal is ingested**, which
+takes a minute or two on testnets. Until then the table still shows the last result, so do not judge
+a new case by `status` alone. Wait for `start_block` to match the window you just sent.
 
 ### Edge case 8. Window entirely in the past
 
@@ -943,15 +993,16 @@ enforces `start <= end`, so a single-block window is accepted.
 window of one block, so nothing non-trivial is ever in range and no chain can anchor. Ends the same
 way as case 8.
 
-Cases 8 and 9 give the *same* `last_error`, for different reasons. Tell them apart in the detector:
+Cases 8 and 9 give the *same* `last_error` for different reasons, so read the window instead of the
+error:
 
 ```bash
-kubectl logs -n $NAMESPACE deploy/coprocessor-1-gcs-consensus-detector --since=20m \
-  | grep "timeout elapsed"
+kubectl exec -n $NAMESPACE postgres-coprocessor-1-0 -- \
+  env PGPASSWORD=zama psql -U zama -d fhevm_e2e -tAqc \
+  "SELECT host_chain_id, start_block, end_block, state, status FROM upgrade_state;"
 ```
 
-`nontrivial_anchored=true` means there was work but no agreement (case 8); `false` means the window
-was empty (case 9).
+`start_block = end_block` is case 9. Anything else with a past window is case 8.
 
 ### Edge case 10. Window starts in the past, ends in the future
 
@@ -1124,12 +1175,15 @@ a second proposal before the first has returned makes the first's cleanup delete
 resources. It shows up as `CreateContainerConfigError`, which looks like a broken environment and
 is not.
 
-**Traffic is only needed for the cases that cut over**, 1, 2 and 5, because those check that real
-balances still decrypt across the switch, and that needs real balances.
+**Every case that cuts over needs traffic running**: 1, 2, 5, 10, 11 and 12.
 
-The failing cases do not need it: the dry run injects its own work at `start_block + 1`, and a round
-with no traffic at all still reached `all_host_anchored=true nontrivial_anchored=true` on both host
-chains. Traffic makes those rounds more realistic, not more valid.
+Cases 1, 2 and 5 need it to have real balances to decrypt across the switch. Cases 10, 11 and 12
+need it because on `--testnets` the shared gateway only makes a block when something asks it to:
+with nothing happening `gw_dry_run_started` never turns true and the round sits in `DryRunStarted`
+with no error.
+
+The cases that end in failure, 3, 4, 8 and 9, do not need it. The dry run injects its own work at
+`start_block + 1`, and they finish before the gateway matters.
 
 When you do want it:
 

@@ -184,7 +184,8 @@ ensure_pod() {
   done
   kubectl logs -n "${NAMESPACE}" "${pod}" --tail=5 2>/dev/null | grep "traffic pod ready" >/dev/null || fail "${chain}: pod did not finish compiling in time"
   kubectl cp "${script_src}" "${NAMESPACE}/${pod}:/app/test-suite/e2e/scripts/erc20-traffic.ts"
-  [[ "$(state_json "${chain}")" == "{}" ]] && restore_state "${chain}"
+  # || true: existing state makes this false, which as the last command would exit the script (set -e).
+  [[ "$(state_json "${chain}")" == "{}" ]] && restore_state "${chain}" || true
 }
 
 state_json() {

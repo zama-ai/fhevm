@@ -273,4 +273,21 @@ for i in $(seq 1 "${NB_COPROCESSOR}"); do
   fi
 done
 [[ "${failed}" == "0" ]] || fail "reset finished but verification failed, see errors above"
+# The reset truncated `ciphertexts`, so a token deployed before it keeps handles whose data is gone:
+# transfers against it schedule work that can never settle and blocks check_dry_run_ready from then
+# on. Drop the saved token, both the ConfigMap and the live copy each pod holds, so setup redeploys.
+dropped=false
+stale=$(kubectl get configmap -n "${NAMESPACE}" -o name 2>/dev/null | grep '^configmap/bg-traffic-state-' || true)
+if [[ -n "${stale}" ]]; then
+  # shellcheck disable=SC2086
+  kubectl delete -n "${NAMESPACE}" ${stale} >/dev/null 2>&1 || true
+  dropped=true
+fi
+for pod in $(kubectl get pods -n "${NAMESPACE}" -o name 2>/dev/null | grep '^pod/bg-traffic-' || true); do
+  kubectl exec -n "${NAMESPACE}" "${pod#pod/}" -- sh -c 'rm -f /data/erc20-traffic/*.json' >/dev/null 2>&1 || true
+  dropped=true
+done
+if [[ "${dropped}" == "true" ]]; then
+  echo "dropped the saved traffic token: its balances did not survive the reset, so setup must deploy a new one"
+fi
 echo "== bg-reset done: Blue ${BCS_STACK_VERSION} live on ${NB_COPROCESSOR} parties. Next: traffic setup, then bg-green.sh for the next round."

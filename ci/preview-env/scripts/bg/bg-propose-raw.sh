@@ -83,14 +83,20 @@ fi
 
 chain_id=$(rpc_result '{"jsonrpc":"2.0","id":1,"method":"eth_chainId","params":[]}')
 nonce=$(rpc_result "{\"jsonrpc\":\"2.0\",\"id\":1,\"method\":\"eth_getTransactionCount\",\"params\":[\"${owner_addr}\",\"pending\"]}")
+# NONCE=<n> re-sends at a stuck nonce to replace that transaction instead of queueing behind it.
+[[ -z "${NONCE:-}" ]] || nonce=$(printf '0x%x' "${NONCE}")
 gas_price=$(rpc_result '{"jsonrpc":"2.0","id":1,"method":"eth_gasPrice","params":[]}')
+# cast mktx builds EIP-1559: --gas-price is the max fee and the tip defaults to 1 wei, too low to
+# mine once the base fee rises. Triple it and set a real tip; PRIORITY_FEE_WEI outbids a stuck tx.
+gas_price=$(printf '0x%x' $(( $((gas_price)) * 3 )))
+priority_fee="${PRIORITY_FEE_WEI:-1500000000}"
 [[ -n "${chain_id}" && -n "${nonce}" && -n "${gas_price}" ]] || fail "could not read chainId/nonce/gasPrice"
 
 # Supplying chain, nonce and gas makes mktx sign without reaching an RPC, which matters because
 # the host RPC is only reachable from inside the namespace.
 raw=$(cast mktx --private-key "${owner_key}" \
   --chain "$((chain_id))" --nonce "$((nonce))" \
-  --gas-price "$((gas_price))" --gas-limit 1000000 \
+  --gas-price "$((gas_price))" --priority-gas-price "${priority_fee}" --gas-limit 1000000 \
   "${protocol_config}" "${calldata}") \
   || fail "cast mktx failed; check the key and parameters"
 
