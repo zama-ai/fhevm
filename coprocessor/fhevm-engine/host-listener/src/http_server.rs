@@ -27,9 +27,11 @@ use utoipa::{
     openapi::security::{Http, HttpAuthScheme, SecurityScheme},
     Modify, OpenApi, ToSchema,
 };
-use zama_solana_acl::{mmr_build_proof, mmr_peaks_from_leaves};
+use zama_solana_acl::mmr_verify;
 
-use crate::database::solana_leaves::{load_recorded_leaves, LeafKind};
+use crate::database::solana_leaves::{
+    find_leaf, load_encrypted_store_history, load_proof, LeafKind,
+};
 
 /// Most leaves one request may ask for.
 const MAX_LEAVES_PER_REQUEST: usize = 64;
@@ -358,53 +360,59 @@ fn parse_hex32(field: &str, value: &str) -> Result<[u8; 32], HttpError> {
         })
 }
 
+/// Three indexed reads: the state row, the first matching leaf below its `leaf_count`,
+/// and that leaf's path.
 async fn prove(
     pool: &PgPool,
     query: &ParsedQuery,
 ) -> Result<LeafProof, HttpError> {
-    let recorded = load_recorded_leaves(pool, query.encrypted_store)
+    let read_failed = |err: sqlx::Error| {
+        error!(error = %err, "leaf record read failed");
+        HttpError::new(ErrorCode::UpstreamTransient, "leaf record read failed")
+    };
+    let account = query.encrypted_store;
+    let Some(state) = load_encrypted_store_history(pool, account)
         .await
-        .map_err(|err| {
-            error!(error = %err, "leaf record read failed");
-            HttpError::new(
-                ErrorCode::UpstreamTransient,
-                "leaf record read failed",
-            )
-        })?;
-    let Some(recorded) = recorded else {
+        .map_err(read_failed)?
+    else {
         return Ok(LeafProof::UnknownAccount);
     };
-    if !recorded.state.history_complete {
+    if !state.history_complete {
         return Ok(LeafProof::HistoryIncomplete);
     }
-    let leaf_count = recorded.state.leaf_count;
-    let Some(leaf) = recorded.leaves.iter().find(|leaf| {
-        leaf.kind == query.kind
-            && leaf.handle == query.handle
-            && leaf.key == query.key
-    }) else {
+    let leaf_count = state.leaf_count;
+    let Some(leaf) = find_leaf(
+        pool,
+        account,
+        query.kind,
+        query.handle,
+        query.key,
+        leaf_count,
+    )
+    .await
+    .map_err(read_failed)?
+    else {
         return Ok(LeafProof::NotFound { leaf_count });
     };
-    let commitments: Vec<[u8; 32]> =
-        recorded.leaves.iter().map(|leaf| leaf.commitment).collect();
-    // The record stores every leaf below `leaf_count` and the peaks those leaves
-    // imply; a proof from a record that fails this check would be wrong, not stale.
-    let inconsistent = || {
+    let proof = load_proof(pool, account, leaf.leaf_index, leaf_count)
+        .await
+        .map_err(read_failed)?;
+    // A path that is missing or does not reach the recorded peaks comes from a record
+    // that is wrong, not stale.
+    let Some(proof) = proof.filter(|proof| {
+        mmr_verify(&state.peaks, leaf_count, leaf.commitment, proof)
+    }) else {
         error!(
-            encrypted_store = %bs58::encode(query.encrypted_store).into_string(),
+            encrypted_store = %bs58::encode(account).into_string(),
+            leaf_index = leaf.leaf_index,
             leaf_count,
-            recorded_leaves = commitments.len(),
             "leaf record inconsistent"
         );
-        HttpError::new(ErrorCode::UpstreamTransient, "leaf record inconsistent")
+        return Err(HttpError::new(
+            ErrorCode::UpstreamTransient,
+            "leaf record inconsistent",
+        ));
     };
-    if commitments.len() as u64 != leaf_count
-        || mmr_peaks_from_leaves(&commitments) != recorded.state.peaks
-    {
-        return Err(inconsistent());
-    }
-    let proof = mmr_build_proof(&commitments, leaf.leaf_index)
-        .ok_or_else(inconsistent)?;
     Ok(LeafProof::Found {
         leaf_index: proof.leaf_index,
         leaf_count,

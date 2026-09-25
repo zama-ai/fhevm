@@ -87,6 +87,7 @@ are written as one narrative instead.
 | [DD-058](#dd-058-pausers-stop-one-area-at-a-time-only-the-admin-resumes)                                                                  | adopted                                  | Pausers stop one area at a time; only the admin resumes                                                                        |
 | [DD-059](#dd-059-the-listener-catches-up-from-an-archive-when-the-stream-cannot-replay)                                                   | adopted                                  | The listener catches up from an archive when the stream cannot replay                                                          |
 | [DD-060](#dd-060-the-listener-reads-one-transaction-per-message)                                                                          | adopted                                  | The listener reads one transaction per message                                                                                 |
+| [DD-061](#dd-061-a-leaf-proof-reads-its-path-by-position)                                                                                 | adopted                                  | A leaf proof reads its path by position                                                                                        |
 
 ## DD-002: Keep App Store And Host ACL Store Separate
 
@@ -2311,6 +2312,52 @@ The decoding limit stays at 64 MiB, which no valid transaction reaches. Transact
 the host still arrive, one small message each, and are ignored. The stream's idle timeout now counts block meta,
 which is sent for every slot. Catch-up makes one `getTransaction` call per host transaction.
 
+## DD-061: A leaf proof reads its path by position
+
+Status: adopted
+
+Recorded in fhevm-internal#2104 (RFC 035 review, finding 3).
+
+The proof route loaded every leaf of the Store, recomputed its peaks and rebuilt the path from all
+of them, for each requested entry. The review measured 30 to 40 seconds for 8 entries of a
+1,000,000-leaf Store, where the KMS connector waits 10 seconds, so a large Store could not be
+decrypted.
+
+Decision:
+
+Ingestion records every MMR node of height 1 and above in `solana_encrypted_state_nodes`, in the
+transaction that appends the leaves completing it. `mmr_append` merges the new leaf node with one
+peak per trailing one bit of the leaf index, and each merge is a node; the listener records those
+merges as it appends. zama-host's `mmr_append` is unchanged. Mountains are aligned to their size,
+so node `(height, index)` covers leaves `[index << height, (index + 1) << height)` whatever the
+leaf count. At 6 leaves, leaf 4's path is `[leaf 5]`; at 8 leaves it is `[leaf 5, node (1, 3),
+node (2, 0)]`, and those nodes never change.
+
+A proof takes three indexed reads: the Store's row, the first leaf below its `leaf_count` that
+matches the query, and the path. The path's height-0 sibling is the neighbouring leaf row, so the
+node table does not store leaf nodes again. The route checks the path with `mmr_verify` against
+the Store's recorded peaks before serving it; a missing or wrong row answers a retryable
+`upstream_transient`. Leaves and nodes are never rewritten and the Store's row only grows, so the
+three reads agree without a transaction.
+
+The first matching leaf is served, as before. It sits in the oldest mountain, whose path changes
+least as the Store grows.
+
+Rejected alternatives:
+
+| Alternative | Why not |
+|---|---|
+| Store leaf nodes in the node table too | One uniform path query, for a second copy of the hash of a row already stored: about 2N node rows instead of N. |
+| Cache proofs or peaks in memory | A cache has to be invalidated on every append, and a restarted server rebuilds it from every leaf. |
+
+Consequences:
+
+8 proofs of a 1,000,000-leaf Store answer in 120 to 150 ms in a debug build, request included
+(`eight_proofs_of_a_million_leaf_store_answer_well_within_the_connector_timeout`, run on request). A
+path has at most 64 entries. The leaf record grows by about one node row per leaf. A database
+written before `solana_encrypted_state_nodes` existed has leaves without nodes, and its proofs fail
+verification: nothing is deployed, so no backfill exists.
+
 ## Open product decisions
 
 Not settled by the decisions above. Forward requirements are detailed in
@@ -2323,7 +2370,7 @@ Not settled by the decisions above. Forward requirements are detailed in
 - Rent and archival policy for the Store MMR (DD-049): one stable PDA serves a Store for its whole
   life and its size is bounded at `121 + 64·slots + 32·peaks` bytes, so compaction is a rent question,
   not a liveness one. The off-chain leaf history the listener keeps for proofs is not bounded
-  (about 370 bytes per leaf per coprocessor, never pruned); fhevm-internal#2060 tracks row
+  (about 540 bytes per leaf per coprocessor with its MMR node, estimate, never pruned); fhevm-internal#2060 tracks row
   shrinking and per-Store cold archival.
 - General `HostConfig` config-version rotation semantics beyond the KMS-context pointer.
 - Full production KMS-connector wiring and real ZKPoK and transciphering behind the input attestation
