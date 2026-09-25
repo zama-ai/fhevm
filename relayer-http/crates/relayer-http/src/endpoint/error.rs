@@ -55,12 +55,18 @@ impl ApiError {
     pub fn aggregation(log: &Log, error: AggregationError) -> Self {
         match error {
             AggregationError::Timeout {
-                counted, threshold, ..
+                counted,
+                threshold,
+                rejected,
+                dominant,
             } => Self::new(
                 StatusCode::GATEWAY_TIMEOUT,
                 "timeout",
                 log,
-                format!("KMS nodes did not answer in time ({counted} of {threshold} responses)"),
+                format!(
+                    "KMS nodes did not answer in time ({counted} of {threshold} responses, {rejected} rejected, most frequent error: {})",
+                    dominant.map_or("none", ErrorCode::as_str)
+                ),
             ),
             AggregationError::ThresholdNotReached {
                 counted,
@@ -275,5 +281,30 @@ mod tests {
             assert_eq!(error.body.code, code.as_str());
             assert!(error.body.message.contains("0 of 1"));
         }
+    }
+
+    #[test]
+    fn timeout_message_keeps_the_context() {
+        let timeout = |dominant| {
+            ApiError::aggregation(
+                &log("r"),
+                AggregationError::Timeout {
+                    counted: 6,
+                    threshold: 9,
+                    rejected: 2,
+                    dominant,
+                },
+            )
+            .body
+            .message
+        };
+        assert_eq!(
+            timeout(Some(ErrorCode::AclDenied)),
+            "KMS nodes did not answer in time (6 of 9 responses, 2 rejected, most frequent error: acl_denied)"
+        );
+        assert_eq!(
+            timeout(None),
+            "KMS nodes did not answer in time (6 of 9 responses, 2 rejected, most frequent error: none)"
+        );
     }
 }
