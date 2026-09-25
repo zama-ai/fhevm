@@ -149,10 +149,7 @@ pub mod delegator_vault {
     }
 
     /// Sets host pause flags with the executor's vault PDA as the pauser.
-    pub fn pause_via_vault(
-        ctx: Context<VaultPause>,
-        areas: zama_host::PauseFlags,
-    ) -> Result<()> {
+    pub fn pause_via_vault(ctx: Context<VaultPause>, areas: zama_host::PauseFlags) -> Result<()> {
         let cpi_accounts = zama_host::cpi::accounts::Pause {
             pauser: ctx.accounts.vault.to_account_info(),
             pauser_record: ctx.accounts.pauser_record.to_account_info(),
