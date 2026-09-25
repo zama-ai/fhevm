@@ -5,12 +5,14 @@ mod config;
 mod db;
 mod decryption;
 mod eip712;
+mod http;
 
 use crate::{
     blockchain::GatewayTestManager,
     cli::{Cli, Subcommands},
     config::Config,
     db::manager::{DatabaseTestManager, ensure_db_supported},
+    http::manager::{HttpTestManager, ensure_http_supported},
 };
 use clap::Parser;
 use std::process::ExitCode;
@@ -49,6 +51,15 @@ async fn run() -> anyhow::Result<()> {
         }
         Subcommands::BenchDb(args) => {
             let test_manager = DatabaseTestManager::connect(config).await?;
+            test_manager.decryption_benchmark(args).await?
+        }
+        Subcommands::Http(args) => {
+            ensure_http_supported(args.decryption_type)?;
+            let test_manager = HttpTestManager::connect(config).await?;
+            test_manager.stress_test(args).await?
+        }
+        Subcommands::BenchHttp(args) => {
+            let test_manager = HttpTestManager::connect(config).await?;
             test_manager.decryption_benchmark(args).await?
         }
     }
