@@ -1,0 +1,19 @@
+apiVersion: fhevm.zama.ai/scenario/v1
+kind: Scenario
+
+metadata:
+  id: smoke.arithmetic
+  name: Engine smoke test (arithmetic)
+  owner: qa
+  description: >-
+    Trivial arithmetic scenario with no dependency on the fhEVM stack. It exercises the engine plumbing end to end
+    (discovery, isolated worker, Data Tables, Doc Strings, Scenario Outlines, reporting) and guards the engine against
+    regressions.
+  tags: [smoke, engine]
+
+spec:
+  runtime: cucumber
+  entrypoint: ./smoke.feature
+  supportCode:
+    - ./steps.ts
+  timeoutSeconds: 30

@@ -1,0 +1,12 @@
+apiVersion: fhevm.zama.ai/scenario/v1
+kind: Scenario
+metadata:
+  id: invalid.missing-file
+  name: Invalid fixture
+  owner: qa
+  description: Engine test fixture.
+  tags: []
+spec:
+  runtime: cucumber
+  entrypoint: ./does-not-exist.feature
+  timeoutSeconds: 30

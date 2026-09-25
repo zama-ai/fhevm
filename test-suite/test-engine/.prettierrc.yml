@@ -1,0 +1,24 @@
+# Mirrors the repository root configuration, without the Solidity plugin (no .sol files here).
+bracketSpacing: true
+plugins:
+  - "@trivago/prettier-plugin-sort-imports"
+printWidth: 120
+proseWrap: "always"
+singleQuote: true
+tabWidth: 2
+trailingComma: "all"
+
+overrides:
+  - files: "*.md"
+    options:
+      proseWrap: preserve
+  - files: "*.{yml,yaml}"
+    options:
+      singleQuote: false
+  - files: "*.ts"
+    options:
+      importOrder: ["<THIRD_PARTY_MODULES>", "^[./]"]
+      importOrderParserPlugins: ["typescript"]
+      importOrderSeparation: true
+      importOrderSortSpecifiers: true
+      parser: "typescript"

@@ -1,0 +1,13 @@
+apiVersion: fhevm.zama.ai/scenario/v1
+kind: Scenario
+metadata:
+  id: fixture.isolation-a
+  name: Fixture isolation-a
+  owner: qa
+  description: Engine test fixture (isolation-a).
+  tags: [fixture, isolation]
+spec:
+  runtime: cucumber
+  entrypoint: ./fixture.feature
+  supportCode: [./steps.ts]
+  timeoutSeconds: 30
