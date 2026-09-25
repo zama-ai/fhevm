@@ -190,6 +190,10 @@ async fn lock_due(
                         'ct64_mismatch', 'missing_here', 'error_here', 'uncomputed_here'
                    )
                    AND cand.consensus_epoch = $1
+                   -- A healed ct64 root leaves containment's scan: wait until its
+                   -- already-computed descendants are marked. Other reasons have
+                   -- no wrong local ct64 for consumers to have read.
+                   AND (cand.reason <> 'ct64_mismatch' OR cand.is_contained)
                    AND (cand.next_retry_at IS NULL OR cand.next_retry_at <= NOW())
                    AND NOT EXISTS (
                         SELECT 1
@@ -554,6 +558,7 @@ async fn install_matching_ct64(
            AND handle = $4
            AND healed_at IS NULL
            AND can_be_healed
+           AND (reason <> 'ct64_mismatch' OR is_contained)
            AND quorum_ct64_digest = $5
         "#,
         job.consensus_epoch,
@@ -581,6 +586,23 @@ async fn install_matching_ct64(
         bytes,
         CIPHERTEXT_VERSION,
         ciphertext_type,
+    )
+    .execute(trx.as_mut())
+    .await?;
+    // Same rule as the TFHE upload path: stored bytes are the ground truth of
+    // success, so a pending or errored row for this handle is now completed.
+    sqlx::query!(
+        r#"
+        UPDATE computations
+           SET is_completed = true,
+               completed_at = CURRENT_TIMESTAMP,
+               is_error = false,
+               error_message = NULL,
+               error_retry_count = 0
+         WHERE output_handle = $1
+           AND is_completed = false
+        "#,
+        &job.handle,
     )
     .execute(trx.as_mut())
     .await?;
