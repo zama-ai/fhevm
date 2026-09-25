@@ -54,7 +54,7 @@ writes such a config from the same template (`scripts/gen-config.sh`, which prod
 | relayer exits at start | `KMS_API_KEY` unset, or config validation (the message names the field) |
 | `make run` exits with `Address already in use` | another relayer-http still listens on 8080 (`lsof -nP -iTCP:8080`) |
 | `400 malformed` on user decrypt from every node | endpoint image predates #3990 |
-| `copro_consensus_failed`, `ciphertext_not_found`, `upstream_transient`, `timeout` | transient right after a fixture deployment or on a cold KMS: the flow scripts re-submit up to 6 times, 5 s apart (`ATTEMPTS`, `RETRY_DELAY_MS`); `call failed` lines in the relayer log name the node |
+| `copro_consensus_failed`, `ciphertext_not_found`, `upstream_transient`, `timeout` | transient right after a fixture deployment or on a cold KMS: the flow scripts re-submit up to 6 times, 5 s apart (`ATTEMPTS`, `RETRY_DELAY_MS`); `attempt failed` (one per failed attempt, with its code) and `call failed` lines in the relayer log name the node |
 | `403 acl_denied`, `404 ciphertext_not_found` | the fixture is not committed yet on the host chain; retry |
 
 Recreating endpoints (for example to move them to a tag with #3990) changes their addresses; the proxies resolve
