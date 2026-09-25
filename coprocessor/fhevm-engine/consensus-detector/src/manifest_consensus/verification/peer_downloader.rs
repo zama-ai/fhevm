@@ -991,6 +991,9 @@ async fn apply_claimed_error(
     fail_claimed_task(pool, claim, &error.to_string(), false).await
 }
 
+/// Keeps the attempt budget but still waits the task's retry delay, at least
+/// one second, so an error that repeats forever cannot re-run the task at the
+/// poll's 100 ms slack.
 async fn release_claimed_task_uncharged(
     pool: &PgPool,
     claim: &VerificationClaim,
@@ -1003,7 +1006,7 @@ async fn release_claimed_task_uncharged(
         UPDATE block_manifest_verification_task
            SET state = 'pending',
                last_error = $3,
-               next_attempt_at = NOW(),
+               next_attempt_at = NOW() + GREATEST(retry_delay_secs, 1) * INTERVAL '1 second',
                claim_owner = NULL,
                claim_expires_at = NULL,
                updated_at = NOW()
