@@ -36,11 +36,12 @@ use kms_worker::core::{
     Config,
     event_processor::{
         CiphertextManager, ContextManager, DbEventProcessor, DecryptionProcessor, EventProcessor,
-        HostChain, HostDecryptionVerifier, KMSGenerationProcessor, KmsClient, ProcessingErrorKind,
-        ProtocolConfigProcessor, RequestCheckError, RequestCheckKind,
+        KMSGenerationProcessor, KmsClient, ProcessingErrorKind, ProtocolConfigProcessor,
+        RequestCheckError, RequestCheckKind,
     },
     solana::{
-        failure::AuthorizationFailure, pipeline::authorize_request, watermark::WatermarkFailure,
+        SolanaDecryptionVerifier, failure::AuthorizationFailure, pipeline::authorize_request,
+        watermark::WatermarkFailure,
     },
 };
 use mocktail::{Request, matchers::Matcher, server::MockServer};
@@ -120,11 +121,8 @@ impl Scenario {
         ]);
     }
 
-    fn verifier(&self, config: &Config) -> HostDecryptionVerifier<RootProvider> {
-        HostDecryptionVerifier::new(
-            config,
-            HashMap::from([(self.chain_id, HostChain::Solana(Box::new(self.host.host())))]),
-        )
+    fn verifier(&self) -> SolanaDecryptionVerifier {
+        SolanaDecryptionVerifier::new(HashMap::from([(self.chain_id, self.host.host())]))
     }
 
     /// A processor whose Gateway registry points at the ciphertext bucket `bucket_url`.
@@ -132,7 +130,7 @@ impl Scenario {
         &self,
         config: &Config,
         bucket_url: &str,
-    ) -> DecryptionProcessor<RootProvider> {
+    ) -> DecryptionProcessor<RootProvider, RootProvider> {
         let asserter = Asserter::new();
         mock_copro_registry_load(&asserter, bucket_url);
         let provider = ProviderBuilder::new()
@@ -142,7 +140,7 @@ impl Scenario {
             CiphertextManager::connect(provider.clone(), config, CancellationToken::new())
                 .await
                 .unwrap();
-        DecryptionProcessor::new(config, provider, ciphertext_manager)
+        DecryptionProcessor::new(config, provider, HashMap::new(), ciphertext_manager)
     }
 
     /// A worker whose KMS client has no channel, so a request that got past its checks would fail
@@ -176,7 +174,7 @@ impl Scenario {
             kms,
             context_manager,
             self.processor_reading(config, bucket_url).await,
-            self.verifier(config),
+            self.verifier(),
             KMSGenerationProcessor::new(config),
             ProtocolConfigProcessor::new(config, provider),
             PgPoolOptions::new()
@@ -251,8 +249,8 @@ async fn a_field_the_relayer_changed_fails_the_signature(
     let request = SolanaUserDecryptionRequestV1::try_from(event).unwrap();
 
     let error = scenario
-        .verifier(&config())
-        .check_solana_user_decryption_request(&request)
+        .verifier()
+        .check_user_decryption(&request)
         .await
         .unwrap_err()
         .record();
@@ -302,8 +300,8 @@ async fn a_poll_rechecks_the_host() {
     let mut scenario = Scenario::new().await;
     let request = SolanaUserDecryptionRequestV1::try_from(scenario.event.clone()).unwrap();
     scenario
-        .verifier(&config())
-        .check_solana_user_decryption_request(&request)
+        .verifier()
+        .check_user_decryption(&request)
         .await
         .expect("the victim's permit authorizes the request");
 

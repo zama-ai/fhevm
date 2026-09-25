@@ -2,10 +2,10 @@ use crate::core::event_processor::{
     KmsClient, KmsPollTarget, ProcessingError, RequestCheckError,
     context::ContextManager,
     decryption::{DecryptionProcessor, UserDecryptionRecipient},
-    host_verifier::HostDecryptionVerifier,
     kms::KMSGenerationProcessor,
     protocol_config::ProtocolConfigProcessor,
 };
+use crate::core::solana::SolanaDecryptionVerifier;
 use alloy::{primitives::B256, providers::Provider};
 use anyhow::anyhow;
 use connector_utils::types::{
@@ -36,11 +36,11 @@ pub struct DbEventProcessor<GP: Provider, HP: Provider, C> {
     /// The entity used to validate the KMS context referenced by a request.
     context_manager: C,
 
-    /// The entity that fetches decryption calldata and builds the KMS request.
-    decryption_processor: DecryptionProcessor<GP>,
+    /// The entity used to process decryption requests.
+    decryption_processor: DecryptionProcessor<GP, HP>,
 
-    /// The entity that decides whether a decryption request is authorized on its host chain.
-    host_verifier: HostDecryptionVerifier<HP>,
+    /// The entity that decides whether a Solana decryption request is authorized.
+    solana_verifier: SolanaDecryptionVerifier,
 
     /// The entity used to process key management requests.
     kms_generation_processor: KMSGenerationProcessor,
@@ -120,8 +120,8 @@ impl<GP: Provider + Clone + 'static, HP: Provider, C: ContextManager> DbEventPro
     pub fn new(
         kms_client: KmsClient,
         context_manager: C,
-        decryption_processor: DecryptionProcessor<GP>,
-        host_verifier: HostDecryptionVerifier<HP>,
+        decryption_processor: DecryptionProcessor<GP, HP>,
+        solana_verifier: SolanaDecryptionVerifier,
         kms_generation_processor: KMSGenerationProcessor,
         protocol_config_processor: ProtocolConfigProcessor<HP>,
         db_pool: Pool<Postgres>,
@@ -130,7 +130,7 @@ impl<GP: Provider + Clone + 'static, HP: Provider, C: ContextManager> DbEventPro
             kms_client,
             context_manager,
             decryption_processor,
-            host_verifier,
+            solana_verifier,
             kms_generation_processor,
             protocol_config_processor,
             db_pool,
@@ -158,7 +158,7 @@ impl<GP: Provider + Clone + 'static, HP: Provider, C: ContextManager> DbEventPro
                 tokio::try_join!(
                     biased;
                     async {
-                        self.host_verifier
+                        self.decryption_processor
                             .check_ciphertexts_allowed_for_public_decryption(&req.ctHandles)
                             .await
                             .map_err(RequestCheckError::record)
@@ -171,8 +171,8 @@ impl<GP: Provider + Clone + 'static, HP: Provider, C: ContextManager> DbEventPro
                 tokio::try_join!(
                     biased;
                     async {
-                        self.host_verifier
-                            .check_solana_public_decryption(req)
+                        self.solana_verifier
+                            .check_public_decryption(req)
                             .await
                             .map_err(RequestCheckError::record)
                     },
@@ -193,7 +193,7 @@ impl<GP: Provider + Clone + 'static, HP: Provider, C: ContextManager> DbEventPro
                     biased;
                     async {
                         let calldata = self.decryption_processor.fetch_calldata(tx_hash).await?;
-                        self.host_verifier
+                        self.decryption_processor
                             .check_ciphertexts_allowed_for_user_decryption(
                                 calldata,
                                 &req.ctHandles,
@@ -210,7 +210,7 @@ impl<GP: Provider + Clone + 'static, HP: Provider, C: ContextManager> DbEventPro
                 tokio::try_join!(
                     biased;
                     async {
-                        self.host_verifier
+                        self.decryption_processor
                             .check_user_decryption_request_v2(req)
                             .await
                             .map_err(RequestCheckError::record)
@@ -224,8 +224,8 @@ impl<GP: Provider + Clone + 'static, HP: Provider, C: ContextManager> DbEventPro
                 tokio::try_join!(
                     biased;
                     async {
-                        self.host_verifier
-                            .check_solana_user_decryption_request(req)
+                        self.solana_verifier
+                            .check_user_decryption(req)
                             .await
                             .map_err(RequestCheckError::record)
                     },

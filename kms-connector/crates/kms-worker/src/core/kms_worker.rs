@@ -5,12 +5,11 @@ use crate::{
         event_picker::{DbEventPicker, EventPicker},
         event_processor::{
             CiphertextManager, DbContextManager, DbEventProcessor, DecryptionProcessor,
-            EventProcessor, HostChain, HostDecryptionVerifier, HostRpcClient,
-            KMSGenerationProcessor, KmsClient, ProcessingError, ProcessingErrorKind,
-            ProtocolConfigProcessor,
+            EventProcessor, HostRpcClient, KMSGenerationProcessor, KmsClient, ProcessingError,
+            ProcessingErrorKind, ProtocolConfigProcessor,
         },
         kms_response_publisher::DbKmsResponsePublisher,
-        solana::{SolanaHost, proof::CoprocessorProofClient, snapshot::SolanaRpcClient},
+        solana::SolanaDecryptionVerifier,
     },
     monitoring::{
         health::{KmsHealthClient, State},
@@ -291,13 +290,35 @@ impl
         config: Config,
         cancel_token: CancellationToken,
     ) -> anyhow::Result<(Self, State<DefaultProvider>)> {
-        let hosts = register_host_chains(&config).await?;
         let db_pool = connect_to_db(&config.database_url, config.database_pool_size).await?;
 
         let gateway_provider =
             connect_to_rpc_node(config.gateway_url.clone(), config.gateway_chain_id).await?;
         let ethereum_provider =
             connect_to_rpc_node(config.ethereum_url.clone(), config.ethereum_chain_id).await?;
+
+        let mut host_clients = HashMap::new();
+        for host_chain in &config.host_chains {
+            let HostSettings::Evm { acl_address } = host_chain.host else {
+                continue;
+            };
+            let provider = connect_to_rpc_node_with_bounds(
+                host_chain.url.clone(),
+                host_chain.chain_id,
+                config.host_rpc_max_concurrent_calls,
+                config.host_rpc_call_timeout,
+            )
+            .await?;
+            let acl_contract = ACL::new(acl_address, provider);
+            let host_chain_id = host_chain.chain_id;
+            let host_client = HostRpcClient::new(host_chain_id, acl_contract);
+            if host_clients.insert(host_chain_id, host_client).is_some() {
+                return Err(anyhow!(
+                    "Duplicate host chain in config for chain ID {host_chain_id}"
+                ));
+            };
+        }
+        let solana_verifier = SolanaDecryptionVerifier::connect(&config)?;
 
         let kms_client = KmsClient::connect(&config).await?;
         let kms_health_client = KmsHealthClient::connect(&config.kms_core_endpoints).await?;
@@ -308,16 +329,19 @@ impl
             DbContextManager::new(db_pool.clone(), &config, ethereum_provider.clone());
         let ciphertext_manager =
             CiphertextManager::connect(gateway_provider.clone(), &config, cancel_token).await?;
-        let decryption_processor =
-            DecryptionProcessor::new(&config, gateway_provider.clone(), ciphertext_manager);
-        let host_verifier = HostDecryptionVerifier::new(&config, hosts);
+        let decryption_processor = DecryptionProcessor::new(
+            &config,
+            gateway_provider.clone(),
+            host_clients,
+            ciphertext_manager,
+        );
         let kms_generation_processor = KMSGenerationProcessor::new(&config);
         let protocol_config_processor = ProtocolConfigProcessor::new(&config, ethereum_provider);
         let event_processor = DbEventProcessor::new(
             kms_client.clone(),
             context_manager,
             decryption_processor,
-            host_verifier,
+            solana_verifier,
             kms_generation_processor,
             protocol_config_processor,
             db_pool.clone(),
@@ -339,143 +363,5 @@ impl
             config.max_decryption_attempts,
         );
         Ok((kms_worker, state))
-    }
-}
-
-async fn register_host_chains(
-    config: &Config,
-) -> anyhow::Result<HashMap<u64, HostChain<DefaultProvider>>> {
-    let mut hosts = HashMap::with_capacity(config.host_chains.len());
-    // The workspace `reqwest`, not alloy's re-export: alloy now vendors a different major, and
-    // the Solana readers are typed against the workspace crate.
-    let proof_client = ::reqwest::Client::builder()
-        .connect_timeout(config.host_rpc_call_timeout)
-        .timeout(config.host_rpc_call_timeout)
-        .build()?;
-
-    for host_chain in &config.host_chains {
-        let host = match &host_chain.host {
-            HostSettings::Evm { acl_address } => {
-                let provider = connect_to_rpc_node_with_bounds(
-                    host_chain.url.clone(),
-                    host_chain.chain_id,
-                    config.host_rpc_max_concurrent_calls,
-                    config.host_rpc_call_timeout,
-                )
-                .await?;
-                HostChain::Evm(HostRpcClient::new(
-                    host_chain.chain_id,
-                    ACL::new(*acl_address, provider),
-                ))
-            }
-            HostSettings::Solana(solana) => HostChain::Solana(Box::new(SolanaHost {
-                program_id: solana.host_program_id,
-                reader: SolanaRpcClient::new(
-                    host_chain.url.clone(),
-                    config.host_rpc_call_timeout,
-                    config.host_rpc_max_concurrent_calls,
-                ),
-                proofs: CoprocessorProofClient::new(&solana.proof_routes, proof_client.clone()),
-            })),
-        };
-        hosts.insert(host_chain.chain_id, host);
-    }
-
-    Ok(hosts)
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-    use crate::core::config::{
-        ApiKey, HostChainConfig, ProofRoute, SolanaHostSettings, solana_host_chain_id,
-    };
-    use alloy::primitives::B256;
-    use solana_pubkey::Pubkey;
-
-    fn evm_chain(chain_id: u64) -> HostChainConfig {
-        HostChainConfig {
-            chain_id,
-            ..Config::default().host_chains.remove(0)
-        }
-    }
-
-    fn solana_chain(cluster_tag: u64, endpoint: &str) -> HostChainConfig {
-        HostChainConfig {
-            url: endpoint.parse().unwrap(),
-            chain_id: solana_host_chain_id(cluster_tag),
-            host: HostSettings::Solana(SolanaHostSettings {
-                host_program_id: Pubkey::new_from_array([7; 32]),
-                proof_routes: vec![ProofRoute {
-                    url: endpoint.parse().unwrap(),
-                    api_key: ApiKey::from("test-key".to_owned()),
-                }],
-            }),
-        }
-    }
-
-    #[tokio::test]
-    async fn registers_evm_and_solana_hosts_once() {
-        let config = Config {
-            host_chains: vec![
-                evm_chain(1),
-                solana_chain(2, "http://coprocessor.test:8080"),
-            ],
-            ..Default::default()
-        };
-        let hosts = register_host_chains(&config)
-            .await
-            .expect("valid host chains should register");
-
-        assert!(matches!(hosts.get(&1), Some(HostChain::Evm(_))));
-        match hosts.get(&solana_host_chain_id(2)) {
-            Some(HostChain::Solana(host)) => {
-                assert_eq!(host.program_id, Pubkey::new_from_array([7; 32]))
-            }
-            _ => panic!("the Solana host chain should use the Solana host"),
-        }
-    }
-
-    #[tokio::test]
-    async fn registered_solana_hosts_bound_rpc_and_proof_requests() {
-        use crate::core::solana::{
-            proof::{HostProofReader, LeafKind, LeafQuery},
-            snapshot::HostStateReader,
-        };
-        use std::time::Duration;
-        use tokio::{net::TcpListener, time::timeout};
-
-        // The listening socket permits TCP connections but never answers HTTP requests.
-        let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
-        let endpoint = format!("http://{}", listener.local_addr().unwrap());
-        let config = Config {
-            host_chains: vec![solana_chain(2, &endpoint)],
-            host_rpc_call_timeout: Duration::from_millis(250),
-            ..Default::default()
-        };
-        let hosts = register_host_chains(&config).await.unwrap();
-        let HostChain::Solana(host) = &hosts[&solana_host_chain_id(2)] else {
-            panic!("expected Solana host")
-        };
-        let keys = [Pubkey::new_from_array([1; 32])];
-        let queries = [LeafQuery {
-            encrypted_store: Pubkey::new_from_array([1; 32]),
-            handle: B256::new([2; 32]),
-            kind: LeafKind::Public,
-        }];
-        let (rpc, proofs) = tokio::join!(
-            timeout(
-                Duration::from_secs(3),
-                host.reader.read_accounts(&keys, None)
-            ),
-            timeout(Duration::from_secs(3), host.proofs.read_proofs(0, &queries)),
-        );
-        assert!(rpc.expect("registered RPC client must time out").is_err());
-        assert!(
-            proofs
-                .expect("registered proof client must time out")
-                .is_err()
-        );
-        drop(listener);
     }
 }

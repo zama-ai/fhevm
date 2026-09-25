@@ -8,7 +8,10 @@ pub mod pipeline;
 pub mod proof;
 pub mod public_decrypt;
 pub mod snapshot;
+pub mod verifier;
 pub mod watermark;
+
+pub use verifier::SolanaDecryptionVerifier;
 
 use proof::CoprocessorProofClient;
 use snapshot::SolanaRpcClient;

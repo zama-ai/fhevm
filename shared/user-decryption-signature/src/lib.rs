@@ -40,8 +40,10 @@ sol! {
 /// Default EIP-712 domain `name` for the Gateway `Decryption` contract — used by
 /// [`default_user_decrypt_domain`] when the caller has only the contract address.
 //
-// The KMS connector's `HostDecryptionVerifier` builds its domain from the configured name and
-// version instead; these defaults serve callers that know only the contract address.
+// `dead_code` allow: in-tree `DecryptionProcessor` builds its `Eip712Domain` directly from
+// `self.domain` (which carries deployment-specific name/version), so it doesn't go through
+// the default constructor. Kept exposed for downstream consumers that lack an
+// `Eip712DomainMsg` and want the canonical defaults.
 pub const DEFAULT_DOMAIN_NAME: &str = "Decryption";
 /// Default EIP-712 domain `version` for the Gateway `Decryption` contract.
 pub const DEFAULT_DOMAIN_VERSION: &str = "1";
