@@ -1,4 +1,4 @@
-/** Sustained mixing traffic, 25% insertion faults, then recovery under continued reuse. */
+/** Reused computations across host blocks, with handle-selected ct64 corruption on one node. */
 import assert from "node:assert/strict";
 import fs from "node:fs/promises";
 import path from "node:path";
@@ -11,7 +11,7 @@ import { readEnvFile } from "../utils/fs";
 import { run } from "../utils/process";
 import { captureDriftTables } from "./manifest-drift-report";
 import { waitForManifestCondition } from "./manifest-lifecycle";
-import { DISABLE_STRESS_INJECTION, INSTALL_STRESS_INJECTION } from "./manifest-stress-injection";
+import { DISABLE_STRESS_INJECTION, INSTALL_STRESS_INJECTION, stressHandleIsCorrupted } from "./manifest-stress-injection";
 
 export type StressPhase = "seed" | "advance" | "pin roots" | "decrypt";
 type Fixture = { chainId: number; handles: string[]; heads: string[]; roots: string[]; rounds: number };
@@ -19,6 +19,7 @@ type Material = { handle: string; bytes: string; length: number };
 type Inventory = { total: number; healed: number; unresolved: number; verified: number; inferred: number; lastHealed: string | null };
 const NODES = [0, 1, 2];
 const TARGET = 2;
+const CHAIN_BLOCKS = 3;
 const PATH = "/tmp/manifest-healing-stress-fixture.json";
 const detector = (node: number) => `coprocessor${node || ""}-consensus-detector`;
 const HEX32 = /^0x[0-9a-f]{64}$/;
@@ -32,6 +33,52 @@ export function validateStressFixture(f: Fixture, chainId: number) {
   for (const h of [...f.handles, ...f.heads, ...f.roots]) assert(HEX32.test(h), "invalid stress fixture handle");
   for (const h of [...f.heads, ...f.roots]) assert(f.handles.includes(h));
   return f;
+}
+
+export type StressStep = {
+  inputs: string[];
+  roots: string[];
+  mixed: string[];
+  heads: string[];
+  independent: string;
+};
+
+/** Handles the trigger flipped, plus every later result that read one of them. */
+export function classifyStressDrift(steps: StressStep[], injected: Iterable<string>): {
+  verifiedRoots: string[];
+  descendants: string[];
+  clean: string[];
+  byStep: string[][];
+} {
+  const handle = (value: string) => value.replace(/^0x/, "").toLowerCase();
+  const flipped = new Set([...injected].map(handle));
+  const tainted = new Set<string>();
+  const verifiedRoots: string[] = [];
+  const descendants: string[] = [];
+  const produced: string[] = [];
+  const byStep: string[][] = [];
+  for (const step of steps) {
+    const inputs = step.inputs.map(handle);
+    const roots = step.roots.map(handle);
+    const producedHere = [
+      ...step.mixed.map((value, i) => ({ handle: handle(value), from: [inputs[i]!, inputs[(i + 1) % inputs.length]!] })),
+      ...step.heads.map((value, i) => ({ handle: handle(value), from: [handle(step.mixed[i]!), roots[i]!] })),
+      { handle: handle(step.independent), from: [] as string[] },
+    ];
+    const taintedHere: string[] = [];
+    for (const item of producedHere) {
+      produced.push(item.handle);
+      const fromTainted = item.from.some(input => tainted.has(input));
+      if (flipped.has(item.handle) && !fromTainted) verifiedRoots.push(item.handle);
+      else if (fromTainted) descendants.push(item.handle);
+      if (flipped.has(item.handle) || fromTainted) {
+        tainted.add(item.handle);
+        taintedHere.push(item.handle);
+      }
+    }
+    byStep.push(taintedHere);
+  }
+  return { verifiedRoots, descendants, clean: produced.filter(value => !tainted.has(value)), byStep };
 }
 
 export function stressConverged(handles: string[], materials: Material[][], inventories: Inventory[]) {
@@ -65,7 +112,8 @@ export async function runManifestHealingStressProfile(
   const q = (node: number, sql: string) => query(coprocessorDatabaseName(node), sql);
   const json = async <T>(node: number, sql: string): Promise<T> => JSON.parse(await q(node, sql));
   const fixture = async () => validateStressFixture(JSON.parse((await run(["docker", "exec", TEST_SUITE_CONTAINER, "cat", PATH])).stdout), chainId);
-  const report: Record<string, unknown> = { chainId, target: TARGET, injectionProbability: 0.25, threads: 4, checkpoints: [] };
+  const report: Record<string, unknown> = { chainId, target: TARGET, chainBlocks: CHAIN_BLOCKS, checkpoints: [] };
+  const bytes = (handles: string[]) => handles.map(h => `decode('${h.slice(2)}','hex')`).join(",");
   const reportPath = path.join(manifestInjectionDir(TARGET), "stress-report.json");
   const checkpoint = async (phase: string, value: unknown) => {
     (report.checkpoints as unknown[]).push({ phase, at: new Date().toISOString(), value });
@@ -87,33 +135,35 @@ export async function runManifestHealingStressProfile(
     const copies = await Promise.all(NODES.map(node => materials(node, f)));
     return { inventories, copies };
   };
+  let detectorStopped = false;
   let injectionOwned = false;
   try {
     for (const node of NODES) assert.equal((await inventory(node)).total, 0, `node ${node}: fresh drift inventory required`);
-    assert.equal(await q(TARGET, `SELECT to_regclass('e2e_manifest_noise') IS NULL
-      AND to_regprocedure('e2e_inject_ct64_noise()') IS NULL
-      AND NOT EXISTS(SELECT 1 FROM pg_trigger WHERE tgname='e2e_ciphertexts_noise' AND tgrelid='ciphertexts'::regclass)`), "t", "stress injection objects already exist");
     await run(["docker", "exec", TEST_SUITE_CONTAINER, "rm", "-f", PATH]);
     await runFixture("seed");
     let f = await fixture();
     await waitForManifestCondition("healthy stress baseline", () => observe(f), v => stressConverged(f.handles, v.copies, v.inventories));
-    injectionOwned = true;
+    // Publication stays off until the reused chain exists, so containment cannot
+    // freeze the later blocks before they are computed.
+    await run(["docker", "stop", detector(TARGET)]);
+    detectorStopped = true;
     await q(TARGET, INSTALL_STRESS_INJECTION);
-    for (let round = 0; round < 8; round++) {
-      await runFixture("advance");
-      if (round === 0) await runFixture("pin roots");
-      f = await fixture();
-      await checkpoint("injecting", { round: f.rounds, inventories: await Promise.all(NODES.map(inventory)) });
-    }
-    // Require real corruption and detection before switching to recovery.
-    await waitForManifestCondition("multiple injected ciphertext faults detected", async () => ({
-      injected: Number(await q(TARGET, "SELECT count(*) FROM e2e_manifest_noise WHERE injected")),
-      inventory: await inventory(TARGET),
-    }), v => v.injected >= 2 && v.inventory.verified > 0);
-    // DDL waits for active inserts: after it returns there are no late trigger invocations.
+    injectionOwned = true;
+    for (let block = 0; block < CHAIN_BLOCKS; block++) await runFixture("advance");
+    f = await fixture();
+    const ready = async () => Number(await q(TARGET, `SELECT count(*) FROM ciphertext_digest
+      WHERE host_chain_id=${chainId} AND ciphertext IS NOT NULL AND handle IN (${bytes(f.handles)})`));
+    await waitForManifestCondition("serial chain stored on node 2", ready, n => n === f.handles.length);
+    const noise = await json<{ handle: string; injected: boolean }[]>(TARGET, `SELECT COALESCE(json_agg(r),'[]'::json)::text FROM
+      (SELECT encode(handle,'hex') handle, injected FROM e2e_manifest_noise) r`);
+    for (const row of noise) assert.equal(row.injected, stressHandleIsCorrupted(row.handle), row.handle);
+    const corrupted = noise.filter(row => row.injected).map(row => row.handle);
+    const chainSteps = [...((f as Fixture & { steps?: StressStep[] }).steps ?? [])];
+    assert(corrupted.length > 0, "handle selector corrupted no eligible ciphertext");
+    await checkpoint("serial chain", { rounds: f.rounds, corrupted, sampled: noise.length });
     await q(TARGET, DISABLE_STRESS_INJECTION);
-    const injected = Number(await q(TARGET, "SELECT count(*) FROM e2e_manifest_noise WHERE injected"));
-    await checkpoint("injection disabled", { injected, rounds: f.rounds });
+    await run(["docker", "start", detector(TARGET)]);
+    detectorStopped = false;
     const deadline = Date.now() + 15 * 60_000;
     let stableRounds = 0;
     let stableSince = 0;
@@ -145,7 +195,40 @@ export async function runManifestHealingStressProfile(
       await Bun.sleep(10_000);
     }
     assert(stableRounds >= 3 && Date.now() - stableSince >= 30_000, "healing did not converge under continued mixing traffic within 15 minutes");
-    assert.equal(Number(await q(TARGET, "SELECT count(*) FROM e2e_manifest_noise WHERE injected")), injected, "injection continued after disabling the trigger");
+    const rows = await json<{ handle: string; kind: string; reason: string; healed: boolean; block: number }[]>(TARGET,
+      `SELECT COALESCE(json_agg(r),'[]'::json)::text FROM (
+        SELECT encode(handle,'hex') handle, detection_kind kind, reason, healed_at IS NOT NULL healed, block_number block
+        FROM drifted_handle) r`);
+    const expected = classifyStressDrift(chainSteps, corrupted);
+    const byHandle = new Map(rows.map(row => [row.handle, row]));
+    for (const handle of expected.verifiedRoots) {
+      const row = byHandle.get(handle);
+      assert(row, `corrupted handle ${handle} has no drift row`);
+      assert.equal(row.kind, "verified", handle);
+      assert.equal(row.reason, "ct64_mismatch", handle);
+      assert.equal(row.healed, true, handle);
+    }
+    for (const handle of expected.descendants) {
+      const row = byHandle.get(handle);
+      assert(row, `reused handle ${handle} has no drift row`);
+      assert.ok(row.kind === "verified" || row.kind === "inferred", handle);
+      assert.equal(row.reason, "ct64_mismatch", handle);
+      assert.equal(row.healed, true, handle);
+    }
+    for (const handle of expected.clean) assert.equal(byHandle.has(handle), false, `clean handle ${handle} was stored`);
+    const named = new Set([...expected.verifiedRoots, ...expected.descendants, ...expected.clean]);
+    for (const row of rows) {
+      assert.equal(row.healed, true, row.handle);
+      if (named.has(row.handle) && row.kind === "inferred") {
+        assert.ok(expected.descendants.includes(row.handle), `inferred handle ${row.handle} did not reuse a corrupted ciphertext`);
+      }
+    }
+    const generations = expected.byStep.filter(group => group.length > 0);
+    if (generations.length >= 2) {
+      const generationBlocks = generations.map(group => byHandle.get(group[0]!)!.block);
+      assert.equal(new Set(generationBlocks).size, generationBlocks.length, `reused drifts share a host block: ${generationBlocks.join(",")}`);
+    }
+    for (const node of [0, 1]) assert.equal((await inventory(node)).total, 0, `node ${node} stored a drift`);
     const final = await observe(f);
     assert(stressConverged(f.handles, final.copies, final.inventories));
     assert(final.inventories[TARGET]!.healed > 0, "target never healed a finding");
@@ -161,12 +244,15 @@ export async function runManifestHealingStressProfile(
     throw error;
   } finally {
     const cleanupErrors: string[] = [];
+    if (detectorStopped) {
+      try { await run(["docker", "start", detector(TARGET)]); }
+      catch (error) { cleanupErrors.push(String(error)); }
+    }
     if (injectionOwned) {
       try {
         await q(TARGET, DISABLE_STRESS_INJECTION);
         report.injections = await json(TARGET, `SELECT COALESCE(json_agg(r ORDER BY recorded_at,handle),'[]'::json)::text FROM
-          (SELECT encode(handle,'hex') handle,ciphertext_version,injected,byte_offset,original_byte,recorded_at FROM e2e_manifest_noise) r`);
-        // Save injection evidence before removing test-owned database objects.
+          (SELECT encode(handle,'hex') handle,injected,byte_offset,original_byte,recorded_at FROM e2e_manifest_noise) r`);
         await fs.writeFile(reportPath, JSON.stringify(report, null, 2));
         await q(TARGET, "DROP TABLE e2e_manifest_noise");
       } catch (error) { cleanupErrors.push(String(error)); }
@@ -175,6 +261,6 @@ export async function runManifestHealingStressProfile(
     if (cleanupErrors.length) { report.cleanupErrors = cleanupErrors; report.result = "failed"; }
     await fs.writeFile(reportPath, JSON.stringify(report, null, 2));
     console.log(`[manifest-healing-stress] report: ${reportPath}`);
-    if (cleanupErrors.length) throw new Error(`stress injection cleanup failed: ${cleanupErrors.join('; ')}`);
+    if (cleanupErrors.length) throw new Error(`stress cleanup failed: ${cleanupErrors.join('; ')}`);
   }
 }

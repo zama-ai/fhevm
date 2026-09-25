@@ -1,3 +1,14 @@
+/**
+ * First handle byte mod 4 is 0. The SQL trigger uses the same predicate.
+ * Bytes 21..31 are not free: computed marker, chain id, FheType, then
+ * handle version 0. Only the leading keccak bytes vary.
+ */
+export function stressHandleIsCorrupted(handle: string): boolean {
+  const hex = handle.replace(/^0x/, "");
+  if (!/^[0-9a-fA-F]{64}$/.test(hex)) return false;
+  return Number.parseInt(hex.slice(0, 2), 16) % 4 === 0;
+}
+
 /** Test-only database objects installed on one isolated coprocessor. */
 export const INSTALL_STRESS_INJECTION = `
 BEGIN;
@@ -14,7 +25,7 @@ DECLARE
 BEGIN
   IF NEW.is_input OR NEW.ciphertext_version <> 0 OR NEW.ciphertext_type <> 5
      OR octet_length(NEW.ciphertext) <= 64 THEN RETURN NULL; END IF;
-  flip := random() < 0.25;
+  flip := get_byte(NEW.handle, 0) % 4 = 0;
   mid := octet_length(NEW.ciphertext) / 2;
   INSERT INTO e2e_manifest_noise(handle,ciphertext_version,injected,byte_offset,original_byte)
     VALUES(NEW.handle,NEW.ciphertext_version,flip,mid,get_byte(NEW.ciphertext,mid));

@@ -888,29 +888,32 @@ On a fresh `manifest-lifecycle` deployment, run:
 ```
 
 CI: scenario `manifest-lifecycle`, test-profile `manifest-healing-stress`, build enabled.
-Four interleaved uint64 chains mix adjacent heads and repeatedly reuse pinned earlier
-outputs. Each round also produces independent work. This is four dependency chains
-within each transaction, not four concurrent Hardhat processes.
+Four uint64 chains mix adjacent heads. Each `advance` is its own transaction, so
+it reuses the previous heads in a new host block and also produces independent work.
 
-After a healthy baseline, a test-owned `AFTER INSERT` trigger on **node 2 only**
-flips bit 7 of the middle byte of each eligible ciphertext with probability **1/4**.
-Input ciphertexts, non-uint64 ciphertexts, nonzero versions, and blobs of at most
-64 bytes are excluded. The realized ratio is random, not exactly one quarter of a
-finite batch. Every eligible insertion and selected fault is recorded.
+After a healthy baseline, node 2's consensus detector is stopped and an
+`AFTER INSERT` trigger is installed on that database only. Three `advance`
+transactions are then mined. Each one reuses the previous heads, so the chain
+spans three host blocks, and the worker finishes them before publication
+restarts. The trigger flips bit 7 of the middle byte when the first handle byte
+is divisible by 4. The trailing bytes are the computed-handle marker, the
+chain id, the FHE type, and handle version 0, so they are not a coin flip. Input ciphertexts, non-uint64 ciphertexts, nonzero versions,
+and blobs of at most 64 bytes are excluded. The test applies the same rule to
+the handle, so it knows the corrupted set without reading a random draw. Every
+eligible insertion is recorded, and each row's `injected` flag must match the
+selector.
 
-Eight rounds run with injection enabled. After multiple faults and verified drift
-are observed, the trigger is removed while mixing traffic continues. Recovery has
-a 15-minute deadline and requires at least three stable rounds spanning 30 seconds:
-all submitted handles must complete on all peers and their stored ct64 SHA-256
-fingerprints must match, no recoverable/contained finding may
-remain unhealed (including unpinned findings), and finding/healing inventories must
-stop changing. Historical digest metadata is not required to change: the healer
-repairs local bytes separately from publication-history reconciliation. Current heads and independent work must decrypt to expected uint64
-values. This checks convergence after faults stop, not bounded latency under an
-unlimited permanent fault stream.
+The detector then restarts. Recovery has a 15-minute deadline and requires at
+least three stable rounds spanning 30 seconds. Each selected handle with honest
+inputs must be a healed verified `ct64_mismatch`. Each later result that read a
+corrupted ciphertext must have its own healed row, verified or inferred. A
+handle that was neither selected nor computed from one must be absent. Rows
+from different rounds must not share a host block. Nodes 0 and 1 must store
+none. All submitted handles must complete on every
+peer and their stored ct64 SHA-256 fingerprints must match. Current heads and
+independent work must decrypt to the expected uint64 values.
 
-`manifest-drift/2/stress-report.json` contains per-round inventories, final drift
-rows, and every sampled/injected handle. Cleanup removes the trigger and function
-on success or failure and saves the audit before dropping its table. No detector
-restart or manifest-only injection is used. Run this profile only on the isolated
-scenario; it intentionally corrupts stored ciphertexts.
+`manifest-drift/2/stress-report.json` contains the checkpoints, the selected
+handles, and the final drift rows. Cleanup removes the trigger and starts the
+detector again if it was still stopped. Run this profile only on the isolated
+scenario; it intentionally corrupts node 2's stored ciphertexts.
