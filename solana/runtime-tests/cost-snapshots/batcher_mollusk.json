@@ -6,7 +6,7 @@
   },
   "measurements": {
     "claim": {
-      "compute_units": 247305,
+      "compute_units": 247651,
       "unique_accounts": 24,
       "instruction_data_bytes": 8,
       "cpi_instructions": 9,
@@ -22,7 +22,7 @@
       "max_cpi_instruction_data_bytes": 0
     },
     "dispatch": {
-      "compute_units": 263755,
+      "compute_units": 264059,
       "unique_accounts": 21,
       "instruction_data_bytes": 8,
       "cpi_instructions": 10,
@@ -30,7 +30,7 @@
       "max_cpi_instruction_data_bytes": 342
     },
     "join": {
-      "compute_units": 352284,
+      "compute_units": 352628,
       "unique_accounts": 23,
       "instruction_data_bytes": 223,
       "cpi_instructions": 12,
@@ -38,7 +38,7 @@
       "max_cpi_instruction_data_bytes": 737
     },
     "open_batch": {
-      "compute_units": 261669,
+      "compute_units": 261749,
       "unique_accounts": 24,
       "instruction_data_bytes": 16,
       "cpi_instructions": 22,
@@ -54,7 +54,7 @@
       "max_cpi_instruction_data_bytes": 12
     },
     "redeem_claim": {
-      "compute_units": 283306,
+      "compute_units": 283652,
       "unique_accounts": 24,
       "instruction_data_bytes": 8,
       "cpi_instructions": 9,
@@ -70,7 +70,7 @@
       "max_cpi_instruction_data_bytes": 0
     },
     "redeem_dispatch": {
-      "compute_units": 196256,
+      "compute_units": 196560,
       "unique_accounts": 21,
       "instruction_data_bytes": 8,
       "cpi_instructions": 10,
@@ -78,7 +78,7 @@
       "max_cpi_instruction_data_bytes": 342
     },
     "redeem_join": {
-      "compute_units": 304285,
+      "compute_units": 304629,
       "unique_accounts": 23,
       "instruction_data_bytes": 223,
       "cpi_instructions": 12,
@@ -86,7 +86,7 @@
       "max_cpi_instruction_data_bytes": 737
     },
     "redeem_open_batch": {
-      "compute_units": 255670,
+      "compute_units": 255750,
       "unique_accounts": 24,
       "instruction_data_bytes": 16,
       "cpi_instructions": 22,
@@ -102,7 +102,7 @@
       "max_cpi_instruction_data_bytes": 12
     },
     "redeem_settle": {
-      "compute_units": 336079,
+      "compute_units": 336663,
       "unique_accounts": 36,
       "instruction_data_bytes": 174,
       "cpi_instructions": 14,
@@ -110,7 +110,7 @@
       "max_cpi_instruction_data_bytes": 396
     },
     "settle": {
-      "compute_units": 319561,
+      "compute_units": 320145,
       "unique_accounts": 36,
       "instruction_data_bytes": 174,
       "cpi_instructions": 14,
