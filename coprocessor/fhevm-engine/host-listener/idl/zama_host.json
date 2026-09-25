@@ -61,6 +61,9 @@
           "signer": true
         },
         {
+          "name": "scope"
+        },
+        {
           "name": "encrypted_store",
           "writable": true
         },
@@ -2549,8 +2552,8 @@
     },
     {
       "code": 6088,
-      "name": "EncryptedStoreWildcardScope",
-      "msg": "encrypted store scope is the wildcard sentinel"
+      "name": "EncryptedStoreScopeNotProgramAccount",
+      "msg": "encrypted store scope is not an account of the store's program"
     }
   ],
   "types": [
@@ -2659,15 +2662,6 @@
           {
             "name": "program",
             "type": "pubkey"
-          },
-          {
-            "name": "scope",
-            "type": {
-              "array": [
-                "u8",
-                32
-              ]
-            }
           },
           {
             "name": "authority_seeds",

@@ -1650,11 +1650,12 @@ The application identity is the pair `(program, scope)` carried by every encrypt
 `program` is never taken on the caller's word: a Store's authority must be a PDA of `program`,
 proven once when `create_encrypted_store` derives it from `authority_seeds`
 (`EncryptedStoreAuthorityNotProgramPda`), and every later write needs that authority's signature.
-Only `program` can sign for such an authority, so only `program` can write a value that claims it. `scope` is whatever
-`program` declares within itself — the mint for the token program, one constant for a program with
-a single namespace — and is trustworthy exactly as half of the pair. The one value it may not declare is the
-wildcard delegation sentinel `0xff×32` (`EncryptedStoreWildcardScope`): that is a delegation row's whole
-application, never half of a store's. Both are seeds of the Store
+Only `program` can sign for such an authority, so only `program` can write a value that claims it. `scope` is an
+account of `program` that `program` names: the mint for the token program, the batch for the batcher, one of its
+PDAs for a program with a single namespace. `create_encrypted_store` takes it as an account and requires `program`
+to own it (`EncryptedStoreScopeNotProgramAccount`, added in zama-ai/fhevm#4120). A scope is therefore a real
+address with one owner: two programs never share one, a program id is never one (the loader owns it), and the
+wildcard delegation sentinel `0xff×32`, a delegation row's whole application, is never one. Both are seeds of the Store
 (`["encrypted-state", program, authority, scope]`), so the identity is the address.
 
 An execution runs as one application: every stored operand and output its default authority
@@ -1677,7 +1678,9 @@ A PDA is the one thing on Solana that a program, and only that program, can sign
 `create_program_address` per output and buys an unforgeable identity with no registry: the program
 is its own registry entry (the "Option B" DD-039 deferred). Declaring the scope rather than deriving
 it keeps the host ignorant of app seed layouts while still letting the token program meter per
-mint.
+mint. Requiring an owned account instead of free bytes costs one owner comparison and gives the scope a
+meaning a reader can check: a permit or a delegation names an account, not a number the program chose.
+Every specimen program already had such an account at the call.
 
 Consequences:
 

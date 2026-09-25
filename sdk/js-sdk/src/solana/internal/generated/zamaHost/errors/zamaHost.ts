@@ -190,8 +190,8 @@ export const ZAMA_HOST_ERROR__NOT_PAUSER = 0x17c5; // 6085
 export const ZAMA_HOST_ERROR__PAUSER_RECORD_MISMATCH = 0x17c6; // 6086
 /** WalletPauseThroughCpi: a wallet pauser must pause in a top-level instruction */
 export const ZAMA_HOST_ERROR__WALLET_PAUSE_THROUGH_CPI = 0x17c7; // 6087
-/** EncryptedStoreWildcardScope: encrypted store scope is the wildcard sentinel */
-export const ZAMA_HOST_ERROR__ENCRYPTED_STORE_WILDCARD_SCOPE = 0x17c8; // 6088
+/** EncryptedStoreScopeNotProgramAccount: encrypted store scope is not an account of the store's program */
+export const ZAMA_HOST_ERROR__ENCRYPTED_STORE_SCOPE_NOT_PROGRAM_ACCOUNT = 0x17c8; // 6088
 
 export type ZamaHostError =
   | typeof ZAMA_HOST_ERROR__ACL_WRITES_PAUSED
@@ -216,7 +216,7 @@ export type ZamaHostError =
   | typeof ZAMA_HOST_ERROR__ENCRYPTED_STORE_MMR_PEAK_CAPACITY_EXCEEDED
   | typeof ZAMA_HOST_ERROR__ENCRYPTED_STORE_PDA_MISMATCH
   | typeof ZAMA_HOST_ERROR__ENCRYPTED_STORE_PUBLIC_HANDLE_MISMATCH
-  | typeof ZAMA_HOST_ERROR__ENCRYPTED_STORE_WILDCARD_SCOPE
+  | typeof ZAMA_HOST_ERROR__ENCRYPTED_STORE_SCOPE_NOT_PROGRAM_ACCOUNT
   | typeof ZAMA_HOST_ERROR__EXECUTION_PAUSED
   | typeof ZAMA_HOST_ERROR__FHE_EXECUTE_ACCOUNT_COUNT_MISMATCH
   | typeof ZAMA_HOST_ERROR__FHE_EXECUTE_DICTIONARY_ENTRY_UNREFERENCED
@@ -309,7 +309,7 @@ if (process.env['NODE_ENV'] !== 'production') {
     [ZAMA_HOST_ERROR__ENCRYPTED_STORE_MMR_PEAK_CAPACITY_EXCEEDED]: `encrypted value MMR peak capacity exceeded`,
     [ZAMA_HOST_ERROR__ENCRYPTED_STORE_PDA_MISMATCH]: `encrypted store does not match the canonical PDA`,
     [ZAMA_HOST_ERROR__ENCRYPTED_STORE_PUBLIC_HANDLE_MISMATCH]: `encrypted value public handle does not match the account`,
-    [ZAMA_HOST_ERROR__ENCRYPTED_STORE_WILDCARD_SCOPE]: `encrypted store scope is the wildcard sentinel`,
+    [ZAMA_HOST_ERROR__ENCRYPTED_STORE_SCOPE_NOT_PROGRAM_ACCOUNT]: `encrypted store scope is not an account of the store's program`,
     [ZAMA_HOST_ERROR__EXECUTION_PAUSED]: `host execution is paused`,
     [ZAMA_HOST_ERROR__FHE_EXECUTE_ACCOUNT_COUNT_MISMATCH]: `fhe_execute declared account count mismatch`,
     [ZAMA_HOST_ERROR__FHE_EXECUTE_DICTIONARY_ENTRY_UNREFERENCED]: `fhe_execute dictionary entry is not referenced by any step`,

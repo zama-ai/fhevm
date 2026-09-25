@@ -313,6 +313,6 @@ pub enum ZamaHostError {
     WalletPauseThroughCpi,
     /// A create named the wildcard application's sentinel as the store's scope. The sentinel is
     /// only ever a delegation row's whole application, never half of a store's.
-    #[msg("encrypted store scope is the wildcard sentinel")]
-    EncryptedStoreWildcardScope,
+    #[msg("encrypted store scope is not an account of the store's program")]
+    EncryptedStoreScopeNotProgramAccount,
 }

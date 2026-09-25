@@ -34,8 +34,8 @@ use zama_host::{self as host, AppScope, FheExecuteArgs, FheExecuteStep};
 use zama_solana_test_kit::{
     anchor_ix, canonical_test_context_id, empty_system_account, encrypted_store_account,
     event_authority, funded_system_account, host_config_account, host_svm, kms_context_account,
-    label, new_encrypted_store, pauser_record_account, program_data_account, readonly,
-    readonly_signer, system_program_account, transaction::fhe_transaction, writable, Ctx,
+    label, new_encrypted_store, pauser_record_account, program_data_account, program_owned_account,
+    readonly, readonly_signer, system_program_account, transaction::fhe_transaction, writable, Ctx,
     HostConfigParams,
 };
 
@@ -404,14 +404,18 @@ fn program(index: usize) -> Pubkey {
     Pubkey::new_from_array([0xA0 + index as u8; 32])
 }
 
-fn scope(index: usize) -> [u8; 32] {
-    label(&format!("scope-{index}"))
+/// A scope is an account of its program, so each program has its own.
+fn scope(program: Pubkey, index: usize) -> [u8; 32] {
+    let mut scope = label(&format!("scope-{index}"));
+    scope[31] = program.to_bytes()[0];
+    scope
 }
 
 fn app(index: usize) -> AppScope {
+    let program = program(index / SCOPES);
     AppScope {
-        program: program(index / SCOPES),
-        scope: scope(index % SCOPES),
+        program,
+        scope: scope(program, index % SCOPES),
     }
 }
 
@@ -450,6 +454,13 @@ impl World {
         for wallet in wallets {
             accounts.insert(wallet, funded_system_account());
         }
+        for index in 0..APPS {
+            let app = app(index);
+            accounts.insert(
+                Pubkey::new_from_array(app.scope),
+                program_owned_account(app.program),
+            );
+        }
         let world = Self {
             context: host_svm().with_context(HashMap::new()),
             admin,
@@ -478,7 +489,7 @@ impl World {
     }
 
     fn store_scope(&self, store: usize) -> [u8; 32] {
-        scope(store % SCOPES)
+        scope(self.store_authority(store).program, store % SCOPES)
     }
 
     fn store_address(&self, store: usize) -> Pubkey {
@@ -825,6 +836,7 @@ impl World {
                     host::accounts::CreateEncryptedStore {
                         payer: self.wallets[*payer],
                         authority,
+                        scope: Pubkey::new_from_array(self.store_scope(*store)),
                         encrypted_store: self.store_address(*store),
                         host_config,
                         system_program: system_program::ID,
@@ -832,7 +844,6 @@ impl World {
                     host::instruction::CreateEncryptedStore {
                         args: host::instructions::CreateEncryptedStoreArgs {
                             program: owner.program,
-                            scope: self.store_scope(*store),
                             authority_seeds: vec![
                                 host_fixtures::VALUE_AUTHORITY_SEED.to_vec(),
                                 owner.seed_key.to_bytes().to_vec(),

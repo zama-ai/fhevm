@@ -188,8 +188,8 @@ acl_address = "0x0000000000000000000000000000000000000000"
 #
 # A Solana host chain is authorized by the connector itself: it reads the encrypted store at
 # confirmed commitment, fetches the allow leaf's proof from the coprocessors' leaf record and
-# verifies it against the peaks it read (RFC 035). A public decrypt names its store in the
-# version-4 extraData; a user decrypt names the owner address and the store per entry.
+# verifies it against the peaks it read (RFC 035). A public decrypt names one store per handle
+# beside its extraData; a user decrypt names the owner address and the store per entry.
 # Solana chains only, required: the base58 zama-host program id.
 # solana_host_program_id = "11111111111111111111111111111111"
 # Solana chains only, at least one: each coprocessor's leaf-proof endpoint

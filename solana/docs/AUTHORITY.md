@@ -61,7 +61,7 @@ check requires its `assert_no_remaining_accounts` call. `?` marks an optional ac
 
 | Instruction | Signers | Writes | Reads | Calls | Remaining accounts |
 |---|---|---|---|---|---|
-| `create_encrypted_store` | `payer`: pays rent; no authority<br>`authority`: a PDA of the calling program, proven from `authority_seeds`; becomes the store's authority | `payer`, `encrypted_store` | `host_config` | System | — |
+| `create_encrypted_store` | `payer`: pays rent; no authority<br>`authority`: a PDA of the calling program, proven from `authority_seeds`; becomes the store's authority | `payer`, `encrypted_store` | `scope`, `host_config` | System | — |
 | `make_store_handle_public` | `payer`: pays rent; no authority<br>`authority`: `EncryptedStore.authority` | `payer`, `encrypted_store` | `host_config`, `deny_scope_record`? | System | — |
 
 ## User rights

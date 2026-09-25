@@ -57,7 +57,7 @@ pub fn initialize_mint<'info>(ctx: Context<'info, InitializeMint<'info>>) -> Res
         ctx.bumps.total_supply_authority,
     )?;
     authority.create_state(
-        mint_key,
+        ctx.accounts.mint.to_account_info(),
         ctx.accounts.total_supply_encrypted_store.to_account_info(),
         ctx.accounts.authority.to_account_info(),
         ctx.accounts.host_config.to_account_info(),

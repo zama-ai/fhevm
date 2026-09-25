@@ -67,7 +67,7 @@ pub fn initialize_token_account<'info>(
     let balance_encrypted_store = ctx.accounts.balance_encrypted_store.key();
     let authority = fhe::StoreAuthority::token_account(&ctx.accounts.token_account)?;
     authority.create_state(
-        mint_key,
+        ctx.accounts.mint.to_account_info(),
         ctx.accounts.balance_encrypted_store.to_account_info(),
         ctx.accounts.payer.to_account_info(),
         ctx.accounts.host_config.to_account_info(),
