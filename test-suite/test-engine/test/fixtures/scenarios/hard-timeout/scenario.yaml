@@ -1,0 +1,13 @@
+apiVersion: fhevm.zama.ai/scenario/v1
+kind: Scenario
+metadata:
+  id: fixture.hard-timeout
+  name: Fixture hard-timeout
+  owner: qa
+  description: Engine test fixture (hard-timeout).
+  tags: [fixture, slow]
+spec:
+  runtime: cucumber
+  entrypoint: ./fixture.feature
+  supportCode: [./steps.ts]
+  timeoutSeconds: 1

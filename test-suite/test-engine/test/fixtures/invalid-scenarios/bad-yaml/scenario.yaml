@@ -1,0 +1,3 @@
+apiVersion: fhevm.zama.ai/scenario/v1
+kind: Scenario
+metadata: [unclosed
