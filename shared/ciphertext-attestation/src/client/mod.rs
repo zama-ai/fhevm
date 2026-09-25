@@ -12,6 +12,7 @@ pub mod s3;
 
 pub use fetch::{ConsensusCheckError, ResolvedConsensus, fetch_attestations_and_check_consensus};
 pub use registry::{
-    CoprocessorEntry, CoprocessorRegistry, CoprocessorRegistrySnapshot, RegistryError,
+    CoprocessorEntry, CoprocessorRegistry, CoprocessorRegistrySnapshot, CriticalFailurePolicy,
+    RegistryError,
 };
 pub use s3::{BoundedClient, FetchAttestationError, FetchCiphertextError};

@@ -18,8 +18,8 @@ pub mod client;
 #[cfg(feature = "client")]
 pub use client::{
     BoundedClient, ConsensusCheckError, CoprocessorEntry, CoprocessorRegistry,
-    CoprocessorRegistrySnapshot, FetchAttestationError, FetchCiphertextError, RegistryError,
-    ResolvedConsensus, fetch_attestations_and_check_consensus,
+    CoprocessorRegistrySnapshot, CriticalFailurePolicy, FetchAttestationError,
+    FetchCiphertextError, RegistryError, ResolvedConsensus, fetch_attestations_and_check_consensus,
 };
 
 /// Domain separator for the canonical signed payload.
