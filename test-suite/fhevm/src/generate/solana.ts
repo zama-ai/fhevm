@@ -69,9 +69,9 @@ export const SOLANA_LEAF_PROOF_API_KEY = "00000000-0000-0000-0000-000000000000";
  * as {@link solanaValidatorUrl}: the listener runs natively next to the validator, the connector
  * runs in a container.
  *
- * One route, because the demo runs one `solana_host_listener`. The connector asks a list of routes
- * in order, so a topology with several coprocessors would list one route per listener, each with
- * the key that listener issued.
+ * One route, because the demo runs one `solana_host_listener`. The connector asks every route at
+ * once, so a topology with several coprocessors would list one route per listener, each with the
+ * key that listener issued.
  */
 export const solanaLeafProofUrl = (): string => `http://host.docker.internal:${SOLANA_LEAF_PROOF_PORT}`;
 
