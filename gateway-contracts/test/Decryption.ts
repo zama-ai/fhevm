@@ -51,7 +51,7 @@ import {
 const MAX_USER_DECRYPT_DURATION_DAYS = 365;
 const MAX_USER_DECRYPT_CONTRACT_ADDRESSES = 10;
 const MAX_DECRYPTION_REQUEST_BITS = 2048;
-const MAX_SOLANA_USER_DECRYPT_HANDLES = 32;
+const MAX_SOLANA_DECRYPT_HANDLES = 32;
 
 // Get the current date in seconds. This is needed because Solidity works with seconds, not milliseconds
 // See https://docs.soliditylang.org/en/develop/units-and-global-variables.html#time-units
@@ -118,11 +118,6 @@ describe('Decryption', function () {
   // Layout: 1 byte version (= 2) || 32 bytes uint256 contextId || 32 bytes uint256 epochId.
   function extraDataV2(contextId: bigint, epochId: bigint): string {
     return hre.ethers.solidityPacked(['uint8', 'uint256', 'uint256'], [2, contextId, epochId]);
-  }
-
-  // Build the Solana public-decrypt payload: version 4, contextId, EncryptedStore address.
-  function extraDataV4(contextId: bigint, encryptedStore: string): string {
-    return hre.ethers.solidityPacked(['uint8', 'uint256', 'bytes32'], [4, contextId, encryptedStore]);
   }
 
   // Full event signatures. Solidity event overloading makes bare-name lookups ambiguous in
@@ -702,50 +697,21 @@ describe('Decryption', function () {
       expect(await decryption.isDecryptionDone(decryptionId)).to.be.true;
     });
 
-    it('Should admit Solana public decrypt extraData v4 carrying an EncryptedStore address', async function () {
+    it('Should reject the retired Solana public decrypt extraData versions', async function () {
+      // v3 carried an encrypted value account and v4 an encrypted store after the context ID.
+      // Solana public decryption now names its stores as a separate argument of its own entry.
       const currentContextId = await gatewayConfig.getCurrentKmsContextId();
-      const encryptedStore = createBytes32s(1)[0];
-      const v4ExtraData = extraDataV4(currentContextId, encryptedStore);
+      const account = createBytes32s(1)[0];
+      for (const version of [3, 4]) {
+        const retiredExtraData = hre.ethers.solidityPacked(
+          ['uint8', 'uint256', 'bytes32'],
+          [version, currentContextId, account],
+        );
 
-      const requestTx = await decryption.connect(tokenFundedTxSender).publicDecryptionRequest(ctHandles, v4ExtraData);
-      await expect(requestTx)
-        .to.emit(decryption, PUBLIC_DECRYPTION_REQUEST_LEGACY_SIG)
-        .withArgs(decryptionId, toValues(snsCiphertextMaterials), v4ExtraData);
-      await expect(requestTx)
-        .to.emit(decryption, PUBLIC_DECRYPTION_REQUEST_HANDLES_SIG)
-        .withArgs(decryptionId, ctHandles, v4ExtraData);
-    });
-
-    it('Should reject short Solana public decrypt extraData v4', async function () {
-      const currentContextId = await gatewayConfig.getCurrentKmsContextId();
-      const shortV4ExtraData = hre.ethers.solidityPacked(['uint8', 'uint256'], [4, currentContextId]);
-
-      await expect(decryption.connect(tokenFundedTxSender).publicDecryptionRequest(ctHandles, shortV4ExtraData))
-        .to.be.revertedWithCustomError(decryption, 'InvalidExtraDataLength')
-        .withArgs(33, 65);
-    });
-
-    it('Should reject trailing bytes in Solana public decrypt extraData v4', async function () {
-      const currentContextId = await gatewayConfig.getCurrentKmsContextId();
-      const v4ExtraData = extraDataV4(currentContextId, createBytes32s(1)[0]);
-      const longV4ExtraData = hre.ethers.concat([v4ExtraData, '0x00']);
-
-      await expect(decryption.connect(tokenFundedTxSender).publicDecryptionRequest(ctHandles, longV4ExtraData))
-        .to.be.revertedWithCustomError(decryption, 'InvalidExtraDataLength')
-        .withArgs(66, 65);
-    });
-
-    it('Should reject the removed Solana public decrypt extraData v3', async function () {
-      const currentContextId = await gatewayConfig.getCurrentKmsContextId();
-      const encryptedValueAccount = createBytes32s(1)[0];
-      const v3ExtraData = hre.ethers.solidityPacked(
-        ['uint8', 'uint256', 'bytes32'],
-        [3, currentContextId, encryptedValueAccount],
-      );
-
-      await expect(decryption.connect(tokenFundedTxSender).publicDecryptionRequest(ctHandles, v3ExtraData))
-        .to.be.revertedWithCustomError(decryption, 'UnsupportedExtraDataVersion')
-        .withArgs(3);
+        await expect(decryption.connect(tokenFundedTxSender).publicDecryptionRequest(ctHandles, retiredExtraData))
+          .to.be.revertedWithCustomError(decryption, 'UnsupportedExtraDataVersion')
+          .withArgs(version);
+      }
     });
 
     it('Should get all valid KMS transaction senders from public decryption consensus', async function () {
@@ -3429,10 +3395,10 @@ describe('Decryption', function () {
 
     const publicKey = createByteInput();
     // The signed KMS routing bytes: version 0x02 ‖ contextId ‖ epochId, 65 bytes — the one
-    // extraData form the host-generic path admits.
-    const kmsContextId = 7n;
+    // extraData form the host-generic path admits. The context is the current one, set per test.
     const kmsEpochId = 9n;
-    const solanaRoutingExtraData = extraDataV2(kmsContextId, kmsEpochId);
+    let kmsContextId: bigint;
+    let solanaRoutingExtraData: string;
 
     const startTimestamp = getDateInSeconds();
     const durationSeconds = 120 * 24 * 60 * 60; // 120 days
@@ -3468,6 +3434,8 @@ describe('Decryption', function () {
       userDecryptionPrice = fixtureData.userDecryptionPrice;
       protocolPaymentAddress = await fixtureData.protocolPayment.getAddress();
       pauser = fixtureData.pauser;
+      kmsContextId = await gatewayConfig.getCurrentKmsContextId();
+      solanaRoutingExtraData = extraDataV2(kmsContextId, kmsEpochId);
     });
 
     // One call site for the whole suite: every argument defaults to the reference Solana
@@ -3637,13 +3605,13 @@ describe('Decryption', function () {
       // gateway performs no deduplication), so the boundary is exercised without registering
       // 32 distinct ciphertexts; narrow handles keep the bit budget out of the way:
       // 33 * 2 = 66 bits.
-      const atCap = Array(MAX_SOLANA_USER_DECRYPT_HANDLES).fill(eboolCtHandle);
+      const atCap = Array(MAX_SOLANA_DECRYPT_HANDLES).fill(eboolCtHandle);
       await expect(requestHostGeneric(atCap)).to.emit(decryption, HOST_GENERIC_EVENT_SIG);
 
-      const pastCap = Array(MAX_SOLANA_USER_DECRYPT_HANDLES + 1).fill(eboolCtHandle);
+      const pastCap = Array(MAX_SOLANA_DECRYPT_HANDLES + 1).fill(eboolCtHandle);
       await expect(requestHostGeneric(pastCap))
         .to.be.revertedWithCustomError(decryption, 'SolanaHandlesMaxLengthExceeded')
-        .withArgs(MAX_SOLANA_USER_DECRYPT_HANDLES, MAX_SOLANA_USER_DECRYPT_HANDLES + 1);
+        .withArgs(MAX_SOLANA_DECRYPT_HANDLES, MAX_SOLANA_DECRYPT_HANDLES + 1);
     });
 
     it('Should admit only the 0x02 KMS routing form of extraData', async function () {
@@ -3662,6 +3630,17 @@ describe('Decryption', function () {
           .to.be.revertedWithCustomError(decryption, 'KmsRoutingMalformed')
           .withArgs(extraData);
       }
+    });
+
+    it('Should reject an unknown KMS context before the fee', async function () {
+      const unknownContextId = 999_999n;
+      const senderBalance = await mockedZamaOFT.balanceOf(tokenFundedTxSender.address);
+
+      await expect(requestHostGeneric([eboolCtHandle], { extraData: extraDataV2(unknownContextId, kmsEpochId) }))
+        .to.be.revertedWithCustomError(gatewayConfig, 'InvalidKmsContext')
+        .withArgs(unknownContextId);
+
+      expect(await mockedZamaOFT.balanceOf(tokenFundedTxSender.address)).to.equal(senderBalance);
     });
 
     it('Should collect the user decryption fee on the Solana path', async function () {
@@ -3711,6 +3690,201 @@ describe('Decryption', function () {
       const deployedSize = (artifact.deployedBytecode.length - 2) / 2;
 
       expect(deployedSize, `Decryption.sol deployed size ${deployedSize} exceeds EIP-170`).to.be.at.most(EIP170_LIMIT);
+    });
+  });
+
+  describe('Public Decryption (Solana overload)', function () {
+    // The Solana public decryption names one encrypted store per handle, outside extraData. The
+    // KMS Connector proves each handle's public-decrypt leaf against its store, so this event
+    // shape is a cross-repository contract.
+    const SOLANA_PUBLIC_EVENT_SIG = 'PublicDecryptionRequest(uint256,bytes32[],bytes,bytes32[])';
+    const SOLANA_PUBLIC_REQUEST_SIG = 'publicDecryptionRequest(bytes32[],bytes,bytes32[])';
+
+    const decryptionId = getPublicDecryptId(1);
+    const decryptedResult = createByteInput();
+    const eboolCtHandle = ctHandles[0];
+    const encryptedStores = createBytes32s(ctHandles.length);
+
+    let decryption: Decryption;
+    let ciphertextCommits: CiphertextCommits;
+    let gatewayConfig: GatewayConfig;
+    let mockedZamaOFT: ZamaOFT;
+    let tokenFundedTxSender: Wallet;
+    let mockedFeesSenderToBurnerAddress: string;
+    let publicDecryptionPrice: bigint;
+    let kmsSigners: HardhatEthersSigner[];
+    let kmsTxSenders: HardhatEthersSigner[];
+    let pauser: Wallet;
+    let routingExtraData: string;
+
+    beforeEach(async function () {
+      const fixtureData = await loadFixture(prepareAddCiphertextFixture);
+      decryption = fixtureData.decryption;
+      ciphertextCommits = fixtureData.ciphertextCommits;
+      gatewayConfig = fixtureData.gatewayConfig;
+      mockedZamaOFT = fixtureData.mockedZamaOFT;
+      tokenFundedTxSender = fixtureData.tokenFundedTxSender;
+      mockedFeesSenderToBurnerAddress = fixtureData.mockedFeesSenderToBurnerAddress;
+      publicDecryptionPrice = fixtureData.publicDecryptionPrice;
+      kmsSigners = fixtureData.kmsSigners;
+      kmsTxSenders = fixtureData.kmsTxSenders;
+      pauser = fixtureData.pauser;
+      routingExtraData = extraDataV1(await gatewayConfig.getCurrentKmsContextId());
+    });
+
+    function requestSolanaPublic(
+      handles: string[],
+      overrides: { encryptedStores?: string[]; extraData?: string; sender?: Signer } = {},
+    ) {
+      return decryption
+        .connect(overrides.sender ?? tokenFundedTxSender)
+        [
+          SOLANA_PUBLIC_REQUEST_SIG
+        ](handles, overrides.extraData ?? routingExtraData, overrides.encryptedStores ?? encryptedStores.slice(0, handles.length));
+    }
+
+    // Asserts that a rejected request left the sender's balance and the burner's untouched.
+    async function expectNoFee(request: () => Promise<unknown>) {
+      const senderBalance = await mockedZamaOFT.balanceOf(tokenFundedTxSender.address);
+      const burnerBalance = await mockedZamaOFT.balanceOf(mockedFeesSenderToBurnerAddress);
+      await request();
+      expect(await mockedZamaOFT.balanceOf(tokenFundedTxSender.address)).to.equal(senderBalance);
+      expect(await mockedZamaOFT.balanceOf(mockedFeesSenderToBurnerAddress)).to.equal(burnerBalance);
+    }
+
+    it('Should emit the Solana event only, carrying one store per handle', async function () {
+      const requestTx = await requestSolanaPublic(ctHandles);
+
+      await expect(requestTx)
+        .to.emit(decryption, SOLANA_PUBLIC_EVENT_SIG)
+        .withArgs(decryptionId, ctHandles, routingExtraData, encryptedStores);
+      await expect(requestTx).to.not.emit(decryption, PUBLIC_DECRYPTION_REQUEST_LEGACY_SIG);
+      await expect(requestTx).to.not.emit(decryption, PUBLIC_DECRYPTION_REQUEST_HANDLES_SIG);
+    });
+
+    it('Should pin the Solana public event form as the cross-repository contract', async function () {
+      expect(decryption.interface.getEvent(SOLANA_PUBLIC_EVENT_SIG).format('sighash')).to.equal(
+        SOLANA_PUBLIC_EVENT_SIG,
+      );
+    });
+
+    it('Should share the public decryption counter and response with the EVM entry', async function () {
+      await decryption.connect(tokenFundedTxSender).publicDecryptionRequest(ctHandles, extraDataV0);
+      await expect(requestSolanaPublic(ctHandles))
+        .to.emit(decryption, SOLANA_PUBLIC_EVENT_SIG)
+        .withArgs(getPublicDecryptId(2), ctHandles, routingExtraData, encryptedStores);
+
+      // The KMS signs the handles, result and extraData; the stores are not part of the response.
+      const responseEip712 = createEIP712ResponsePublicDecrypt(
+        gatewayChainId,
+        await decryption.getAddress(),
+        ctHandles,
+        decryptedResult,
+        routingExtraData,
+      );
+      const signatures = await getSignaturesPublicDecrypt(responseEip712, kmsSigners);
+      for (let i = 0; i < 3; i++) {
+        await decryption
+          .connect(kmsTxSenders[i])
+          .publicDecryptionResponse(getPublicDecryptId(2), decryptedResult, signatures[i], routingExtraData);
+      }
+      expect(await decryption.isDecryptionDone(getPublicDecryptId(2))).to.be.true;
+    });
+
+    it('Should reject a store count that differs from the handle count before the fee', async function () {
+      for (const stores of [encryptedStores.slice(0, 2), [...encryptedStores, createBytes32s(1)[0]]]) {
+        await expectNoFee(() =>
+          expect(requestSolanaPublic(ctHandles, { encryptedStores: stores }))
+            .to.be.revertedWithCustomError(decryption, 'EncryptedStoresLengthMismatch')
+            .withArgs(ctHandles.length, stores.length),
+        );
+      }
+    });
+
+    it('Should revert on an empty handle list', async function () {
+      await expect(requestSolanaPublic([], { encryptedStores: [] })).to.be.revertedWithCustomError(
+        decryption,
+        'EmptyCtHandles',
+      );
+    });
+
+    it('Should apply the Solana handle cap before the fee', async function () {
+      const atCap = Array(MAX_SOLANA_DECRYPT_HANDLES).fill(eboolCtHandle);
+      await expect(
+        requestSolanaPublic(atCap, { encryptedStores: Array(MAX_SOLANA_DECRYPT_HANDLES).fill(encryptedStores[0]) }),
+      ).to.emit(decryption, SOLANA_PUBLIC_EVENT_SIG);
+
+      const pastCap = Array(MAX_SOLANA_DECRYPT_HANDLES + 1).fill(eboolCtHandle);
+      await expectNoFee(() =>
+        expect(
+          requestSolanaPublic(pastCap, {
+            encryptedStores: Array(MAX_SOLANA_DECRYPT_HANDLES + 1).fill(encryptedStores[0]),
+          }),
+        )
+          .to.be.revertedWithCustomError(decryption, 'SolanaHandlesMaxLengthExceeded')
+          .withArgs(MAX_SOLANA_DECRYPT_HANDLES, MAX_SOLANA_DECRYPT_HANDLES + 1),
+      );
+    });
+
+    it('Should run the host-chain conformance checks', async function () {
+      await expect(requestSolanaPublic([fakeChainIdCtHandle])).to.be.revertedWithCustomError(
+        gatewayConfig,
+        'HostChainNotRegistered',
+      );
+      await expect(requestSolanaPublic([eboolCtHandle, fakeChainIdCtHandle])).to.be.revertedWithCustomError(
+        decryption,
+        'CtHandleChainIdDiffersFromContractChainId',
+      );
+
+      const pastBudget = [...Array(8).fill(euint256CtHandle), eboolCtHandle]; // 2050 bits
+      await expect(
+        requestSolanaPublic(pastBudget, { encryptedStores: Array(pastBudget.length).fill(encryptedStores[0]) }),
+      )
+        .to.be.revertedWithCustomError(decryption, 'MaxDecryptionRequestBitSizeExceeded')
+        .withArgs(MAX_DECRYPTION_REQUEST_BITS, 2050);
+    });
+
+    it('Should revert because ciphertext material has not been added', async function () {
+      await expect(requestSolanaPublic([newCtHandles[0]]))
+        .to.be.revertedWithCustomError(ciphertextCommits, 'CiphertextMaterialNotFound')
+        .withArgs(newCtHandles[0]);
+    });
+
+    it('Should route extraData to the KMS context as the EVM entry does', async function () {
+      const unknownContextId = 999_999n;
+      await expectNoFee(() =>
+        expect(requestSolanaPublic(ctHandles, { extraData: extraDataV1(unknownContextId) }))
+          .to.be.revertedWithCustomError(gatewayConfig, 'InvalidKmsContext')
+          .withArgs(unknownContextId),
+      );
+
+      const v4ExtraData = hre.ethers.solidityPacked(
+        ['uint8', 'uint256', 'bytes32'],
+        [4, await gatewayConfig.getCurrentKmsContextId(), encryptedStores[0]],
+      );
+      await expect(requestSolanaPublic(ctHandles, { extraData: v4ExtraData }))
+        .to.be.revertedWithCustomError(decryption, 'UnsupportedExtraDataVersion')
+        .withArgs(4);
+    });
+
+    it('Should collect the public decryption fee', async function () {
+      const senderBalance = await mockedZamaOFT.balanceOf(tokenFundedTxSender.address);
+      const burnerBalance = await mockedZamaOFT.balanceOf(mockedFeesSenderToBurnerAddress);
+
+      await requestSolanaPublic(ctHandles);
+
+      expect(await mockedZamaOFT.balanceOf(tokenFundedTxSender.address)).to.equal(
+        senderBalance - publicDecryptionPrice,
+      );
+      expect(await mockedZamaOFT.balanceOf(mockedFeesSenderToBurnerAddress)).to.equal(
+        burnerBalance + publicDecryptionPrice,
+      );
+    });
+
+    it('Should revert when the contract is paused', async function () {
+      await decryption.connect(pauser).pause();
+
+      await expect(requestSolanaPublic(ctHandles)).to.be.revertedWithCustomError(decryption, 'EnforcedPause');
     });
   });
 

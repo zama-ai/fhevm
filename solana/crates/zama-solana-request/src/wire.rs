@@ -56,7 +56,8 @@ use zama_solana_permit::PermitWireFields;
 /// It lives here, next to the wire form, because both ends need the same number: the relayer
 /// refuses an oversized request before it submits one, and the connector refuses one that
 /// reached it anyway. The Gateway refuses it before the fee with its own copy,
-/// `MAX_SOLANA_USER_DECRYPT_HANDLES`, which a test below pins to this one.
+/// `MAX_SOLANA_DECRYPT_HANDLES`, which a test below pins to this one. That copy also caps a
+/// Solana public decryption, whose read (one store per handle) is smaller.
 pub const MAX_REQUEST_HANDLES: usize = 32;
 
 /// The full request: permit fields, the signature over their envelope, and the handle entries.
@@ -97,10 +98,10 @@ mod tests {
         );
         let source = std::fs::read_to_string(path).expect("read Decryption.sol");
         let declared = source
-            .split("uint8 internal constant MAX_SOLANA_USER_DECRYPT_HANDLES = ")
+            .split("uint8 internal constant MAX_SOLANA_DECRYPT_HANDLES = ")
             .nth(1)
             .and_then(|rest| rest.split(';').next())
-            .expect("Decryption.sol declares MAX_SOLANA_USER_DECRYPT_HANDLES");
+            .expect("Decryption.sol declares MAX_SOLANA_DECRYPT_HANDLES");
         assert_eq!(declared.parse::<usize>(), Ok(MAX_REQUEST_HANDLES));
     }
 }

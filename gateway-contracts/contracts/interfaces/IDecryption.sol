@@ -116,6 +116,24 @@ interface IDecryption {
     event PublicDecryptionRequest(uint256 indexed decryptionId, bytes32[] ctHandles, bytes extraData);
 
     /**
+     * @notice Emitted for a Solana public decryption request.
+     * @param decryptionId The decryption request ID (shared counter with the EVM entry).
+     * @param ctHandles The handles of the ciphertexts to decrypt, in request order.
+     * @param extraData The KMS routing bytes, as on the EVM entry.
+     * @param encryptedStores For each handle, in handle order, the Solana encrypted store whose
+     * public-decrypt leaf the KMS Connector proves the handle against. The gateway never
+     * interprets it.
+     * @dev Shares its name with the other public-decryption request events via Solidity event
+     * overloading — the distinct parameter list produces a distinct `topic0`.
+     */
+    event PublicDecryptionRequest(
+        uint256 indexed decryptionId,
+        bytes32[] ctHandles,
+        bytes extraData,
+        bytes32[] encryptedStores
+    );
+
+    /**
      * @notice Emitted when a KMS connector responds to a public decryption request.
      * @param decryptionId The decryption request ID associated with the response.
      * @param decryptedResult The decrypted result.
@@ -373,7 +391,15 @@ interface IDecryption {
     error EmptyHandles();
 
     /**
-     * @notice Error indicating that a Solana user decryption request names more handle entries
+     * @notice Error indicating that a Solana public decryption request does not name one
+     * encrypted store per handle.
+     * @param handlesLength The number of handles requested.
+     * @param storesLength The number of encrypted stores given.
+     */
+    error EncryptedStoresLengthMismatch(uint256 handlesLength, uint256 storesLength);
+
+    /**
+     * @notice Error indicating that a Solana decryption request names more handle entries
      * than the KMS Connector can authorize against a single atomic account snapshot.
      * @param maxLength The maximum number of handle entries allowed.
      * @param actualLength The actual number of handle entries requested.
@@ -490,6 +516,24 @@ interface IDecryption {
      * @param extraData Generic bytes metadata for versioned payloads. First byte is for the version.
      */
     function publicDecryptionRequest(bytes32[] calldata ctHandles, bytes calldata extraData) external;
+
+    /**
+     * @notice Requests a public decryption of Solana handles.
+     * @dev A Solana handle's public-decrypt permission is a leaf in the encrypted store that holds
+     * it, and a store is not derivable from a handle, so the request names one store per handle.
+     * The gateway checks the handles as the Solana user decryption does (one registered host
+     * chain, the bit budget, the handle-count cap) and the store count, before the fee; the KMS
+     * Connector proves each handle's leaf against its store. `extraData` routes to the KMS
+     * context only, as on the EVM entry.
+     * @param ctHandles The handles of the ciphertexts to decrypt.
+     * @param extraData Generic bytes metadata for versioned payloads. First byte is for the version.
+     * @param encryptedStores One Solana encrypted store address per handle, in handle order.
+     */
+    function publicDecryptionRequest(
+        bytes32[] calldata ctHandles,
+        bytes calldata extraData,
+        bytes32[] calldata encryptedStores
+    ) external;
 
     /**
      * @notice Responds to a public decryption request.

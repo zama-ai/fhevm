@@ -35,7 +35,7 @@ import { bytesToHex } from '../proof.js';
 export const SOLANA_SRFC38_ATTESTATION_TYPE = 'solana-srfc38-user-decrypt-v1';
 
 /**
- * The handle-count cap: `MAX_SOLANA_USER_DECRYPT_HANDLES` in the Gateway's `Decryption.sol`. The
+ * The handle-count cap: `MAX_SOLANA_DECRYPT_HANDLES` in the Gateway's `Decryption.sol`. The
  * Connector refuses the same count terminally, so a request past it can only ever be paid for and
  * lost — the parity test beside this module pins the two constants to each other.
  */
