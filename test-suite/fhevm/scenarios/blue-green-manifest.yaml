@@ -1,0 +1,34 @@
+version: 1
+kind: blue-green
+name: Blue-Green Upgrade with manifests (2-of-3)
+description: >
+  blue-green-two-of-three with Green consensus detectors tuned for manifest
+  checks. The pinned v0.14 Blue has no detector, so only Green publishes and
+  verifies block manifests: parked before DryRunStarted, then in the proposal's
+  consensus epoch through and after cutover.
+
+    ./fhevm-cli up --scenario blue-green-manifest --build
+    BLUE_GREEN_MANIFESTS=1 ./fhevm-cli test blue-green
+
+topology:
+  count: 3
+  threshold: 2
+
+bcs:
+  source:
+    mode: registry
+    tag: v0.14.2-0
+
+gcs:
+  source:
+    mode: local
+  args:
+    consensus-detector:
+      - --manifest-discovery-interval=1s
+      # Operators reach dry-run blocks at different times; keep looking for quorum.
+      - --manifest-verification-retry-count=300
+
+# Same bootstrap as blue-green-two-of-three: the pinned Blue (tfhe-rs 1.6)
+# cannot read key material from a 0.15+ KMS core.
+bootstrap:
+  tag: v0.14.2-0

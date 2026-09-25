@@ -1,4 +1,6 @@
 import { runManifestHealingStressProfile } from "./manifest-healing-stress";
+import path from "node:path";
+import { createBlueGreenManifestChecks } from "./blue-green-manifests";
 import { runManifestLifecycleNoDriftProfile } from "./manifest-lifecycle-no-drift";
 import { runManifestLifecycleProfile } from "./manifest-lifecycle";
 import { runManifestHealingProfile } from "./manifest-healing";
@@ -1128,6 +1130,16 @@ const runBlueGreenProfile = async (
 
   const MIN_BLUE_GREEN_TRAFFIC_STREAMS = 2;
   const CROSS_CUTOVER_CHAIN_DEPTH = 5;
+  // Opt-in manifest publication/verification checks on the Green detectors.
+  const manifests = process.env.BLUE_GREEN_MANIFESTS === "1"
+    ? createBlueGreenManifestChecks({
+        databases: operatorDatabases,
+        hostChainIds: state.scenario.hostChains.map(chain => Number(chain.chainId)),
+        query: psqlQuery,
+        reportPath: path.join(STATE_DIR, "blue-green-manifests-report.json"),
+      })
+    : undefined;
+  await manifests?.preflight();
 
   console.log(`\n==== blue-green E2E: ${opCount} operator(s) ====`);
 
@@ -1150,6 +1162,7 @@ const runBlueGreenProfile = async (
     }
   }
   console.log(`OK:   ${opCount} DB(s) at v0.14, empty upgrade_state, gcs-${gcsStackVersion} schema present`);
+  await manifests?.beforeProposals();
 
   const gatewayRpcUrl = hostReachableRpcUrl(state.discovery!.endpoints.gateway.http);
 
@@ -1324,6 +1337,7 @@ const runBlueGreenProfile = async (
     }
     console.log(`OK:   ${db}  PAUSED/failed, latches cleared, v0.14 kept, gcs schema recreated empty`);
   }
+  await manifests?.afterRollback();
   };
   if (faultHost) {
     await withRolloutSupervisor(STATE_DIR, "hold-host-report.sh", [], {
@@ -1458,6 +1472,7 @@ const runBlueGreenProfile = async (
       }
     })();
     await Promise.race([chainPromise, traffic.errored]);
+    if (manifests) await Promise.race([manifests.duringDryRun(), traffic.errored]);
 
     console.log(`\n[9/11] wait for cutover (versioning=${gcsVersionLive} per operator)`);
     for (const db of operatorDatabases) {
@@ -1483,6 +1498,7 @@ const runBlueGreenProfile = async (
       }
     }
     console.log(`OK:   consensus ${gcsConsensusVersion} active on every operator`);
+    await manifests?.markCutover();
 
     // BCS has no upgrade_state row — retires implicitly via `resolve_gcs_mode`.
     console.log(`\n[10/11] verify FSM final state`);
@@ -1571,6 +1587,10 @@ const runBlueGreenProfile = async (
     console.log(`OK: ${db} retained every identified pre-cutover value; ciphertexts ${preCt} -> ${finalCt}`);
   }
 
+  if (manifests) {
+    await manifests.afterCutover();
+    console.log("OK:   Green published and verified the upgrade epoch across cutover without drift");
+  }
   if (quietSynthetic) console.log("[UPG-01] quiet synthetic promotion and post-promotion application checks passed on both host chains");
   console.log(`\n==== ✓ Blue-Green E2E PASSED (${opCount} operator(s)) ====`);
   return true;
@@ -1604,6 +1624,7 @@ const runBlueGreenProfile = async (
     profileFailure = error;
     throw error;
   } finally {
+    await manifests?.writeReport(profileFailure === undefined ? "passed" : "failed", profileFailure);
     // Attempt every installed object's cleanup, including after partial setup.
     const cleanup = await Promise.allSettled([
       ...syntheticInstalled.map(db => psqlQuery(db, SYNTHETIC_EVIDENCE_CLEANUP_SQL)),

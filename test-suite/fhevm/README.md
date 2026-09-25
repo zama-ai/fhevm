@@ -917,3 +917,29 @@ independent work must decrypt to the expected uint64 values.
 handles, and the final drift rows. Cleanup removes the trigger and starts the
 detector again if it was still stopped. Run this profile only on the isolated
 scenario; it intentionally corrupts node 2's stored ciphertexts.
+
+### Manifests across a v0.14 Blue-Green upgrade
+
+The next real upgrade goes from v0.14, which has no consensus-detector, to a
+Green stack that has one. Scenario `blue-green-manifest` is
+`blue-green-two-of-three` with Green detectors tuned for manifest checks:
+
+```sh
+./fhevm-cli up --scenario blue-green-manifest --build
+BLUE_GREEN_MANIFESTS=1 ./fhevm-cli test blue-green
+```
+
+`BLUE_GREEN_MANIFESTS=1` adds these checks to the ordinary `blue-green` flow on
+every operator, with no drift allowed at any point:
+
+- before any proposal, no manifest exists: Blue has no detector and Green is
+  parked until `DryRunStarted`;
+- after the failed upgrade rolls back, its epoch stops publishing;
+- during the dry run, Green publishes the proposal's consensus epoch, and a
+  manifest with computed handles reaches `matches_quorum`; its S3 bytes match
+  the archive and its key carries the epoch;
+- after cutover, the epoch is the active one and `succeeded`, a manifest past
+  the cutover block reaches quorum, the detailed ranges leave no gap, no task is
+  `retry_exhausted`, and no `legacy` manifest exists.
+
+The report is written to `$FHEVM_STATE_DIR/blue-green-manifests-report.json`.
