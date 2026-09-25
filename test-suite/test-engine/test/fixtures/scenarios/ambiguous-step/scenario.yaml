@@ -1,0 +1,13 @@
+apiVersion: fhevm.zama.ai/scenario/v1
+kind: Scenario
+metadata:
+  id: fixture.ambiguous-step
+  name: Fixture ambiguous-step
+  owner: qa
+  description: Engine test fixture (ambiguous-step).
+  tags: [fixture, fast]
+spec:
+  runtime: cucumber
+  entrypoint: ./fixture.feature
+  supportCode: [./steps.ts]
+  timeoutSeconds: 30

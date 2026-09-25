@@ -1,0 +1,14 @@
+apiVersion: fhevm.zama.ai/scenario/v1
+kind: Scenario
+metadata:
+  id: invalid.unknown-field
+  name: Invalid fixture
+  owner: qa
+  description: Engine test fixture.
+  tags: []
+spec:
+  runtime: cucumber
+  entrypoint: ./fixture.feature
+  timeoutSeconds: 30
+  requires:
+    capabilities: [relayer]

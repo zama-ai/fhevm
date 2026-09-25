@@ -1,0 +1,71 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "https://zama.ai/schemas/fhevm/test-engine/scenario.v1.schema.json",
+  "title": "fhEVM test engine scenario manifest (v1)",
+  "description": "Entry point of a test engine scenario. Every field is enforced at runtime; unknown fields are rejected so that no field is ever decorative.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["apiVersion", "kind", "metadata", "spec"],
+  "properties": {
+    "apiVersion": { "const": "fhevm.zama.ai/scenario/v1" },
+    "kind": { "const": "Scenario" },
+    "metadata": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["id", "name", "owner", "description", "tags"],
+      "properties": {
+        "id": {
+          "description": "Unique, stable scenario identifier. Lowercase words separated by '.' or '-'.",
+          "type": "string",
+          "pattern": "^[a-z0-9]+(?:[.-][a-z0-9]+)*$",
+          "maxLength": 100
+        },
+        "name": { "description": "Human readable name.", "type": "string", "minLength": 1 },
+        "owner": { "description": "Team that owns the scenario.", "type": "string", "minLength": 1 },
+        "description": { "description": "What the scenario verifies.", "type": "string", "minLength": 1 },
+        "tags": {
+          "description": "Selection tags, written without '@'. Matched with Cucumber tag expressions (e.g. '@smoke and not @slow').",
+          "type": "array",
+          "uniqueItems": true,
+          "items": { "type": "string", "pattern": "^[A-Za-z0-9][A-Za-z0-9_.:-]*$" }
+        },
+        "origin": {
+          "description": "Reference to the original test this scenario was ported from (traceability of behavioural equivalence).",
+          "type": "string",
+          "minLength": 1
+        }
+      }
+    },
+    "spec": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["runtime", "entrypoint", "timeoutSeconds"],
+      "properties": {
+        "runtime": { "const": "cucumber" },
+        "entrypoint": {
+          "description": "Feature file, relative to the scenario directory.",
+          "type": "string",
+          "pattern": "\\.feature$"
+        },
+        "supportCode": {
+          "description": "TypeScript support code (step definitions, World) relative to the scenario directory. The engine loads the compiled JavaScript.",
+          "type": "array",
+          "uniqueItems": true,
+          "items": { "type": "string", "pattern": "\\.ts$" },
+          "default": []
+        },
+        "timeoutSeconds": {
+          "description": "Wall-clock budget of the scenario process. Also the default Cucumber step timeout.",
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 86400
+        },
+        "enabled": {
+          "description": "Set to false to keep the scenario on disk but always skip it.",
+          "type": "boolean",
+          "default": true
+        }
+      }
+    }
+  }
+}
