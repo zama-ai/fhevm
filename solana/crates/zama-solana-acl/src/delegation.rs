@@ -65,7 +65,7 @@ impl UserDecryptionDelegationRecord {
     /// Whether the record authorizes at `unix_timestamp`: live while `expires_at` is still ahead,
     /// as EVM's `expirationDate > block.timestamp`. A revoked record holds 0, so it reads like
     /// one never granted.
-    pub fn is_live_at(&self, unix_timestamp: u64) -> bool {
+    fn is_live_at(&self, unix_timestamp: u64) -> bool {
         self.expires_at > unix_timestamp
     }
 
