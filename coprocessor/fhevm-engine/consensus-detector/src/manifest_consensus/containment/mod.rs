@@ -351,6 +351,28 @@ async fn propagate_drift(
 
 /// Blue is always `public`. Green is discovered from the catalog: a Blue binary
 /// does not know Green's versioned `gcs-*` name. Epoch is the schema singleton.
+/// Schema holding each consensus epoch's ciphertexts. A live stack's epoch maps
+/// to that stack's schema; earlier completed epochs were merged into `public` at
+/// cutover. Failed epochs, and pending ones without a live schema, have none.
+/// Leaves the transaction's search_path on the last scanned schema.
+pub(crate) async fn epoch_schemas(
+    trx: &mut Transaction<'_, Postgres>,
+) -> Result<HashMap<String, String>> {
+    let mut schemas: HashMap<String, String> = sqlx::query_scalar!(
+        r#"SELECT consensus_epoch FROM public.consensus_epoch_history
+            WHERE outcome IN ('initial', 'succeeded')"#
+    )
+    .fetch_all(trx.as_mut())
+    .await?
+    .into_iter()
+    .map(|epoch| (epoch, "public".to_owned()))
+    .collect();
+    for stack in execution_stacks(trx).await? {
+        schemas.insert(stack.consensus_epoch, stack.schema);
+    }
+    Ok(schemas)
+}
+
 async fn execution_stacks(trx: &mut Transaction<'_, Postgres>) -> Result<Vec<ExecutionStack>> {
     let mut schemas = vec!["public".to_owned()];
     let gcs_schemas = sqlx::query_scalar!(
@@ -802,7 +824,10 @@ async fn persist_inferred(
         .unwrap_or(PersistOutcome::Absent))
 }
 
-async fn set_execution_schema(trx: &mut Transaction<'_, Postgres>, schema: &str) -> Result<()> {
+pub(crate) async fn set_execution_schema(
+    trx: &mut Transaction<'_, Postgres>,
+    schema: &str,
+) -> Result<()> {
     // quote_ident handles the identifier; no interpolated SQL or session-level change.
     sqlx::query!(
         "SELECT set_config('search_path', quote_ident($1) || ', public', true)",

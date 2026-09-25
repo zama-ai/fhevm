@@ -10,14 +10,17 @@
 //! stay in the inventory and are not installed.
 //! Demand lives on a separate table so TFHE EMA writes never lock these rows.
 //! The pick lock is not held across S3. A matching GET installs the ct64 and
-//! sets `healed_at` in one transaction. After a pass that installs at least
+//! sets `healed_at` in one transaction. Every epoch with a schema is healed,
+//! whichever stack runs the pass, and the ct64 is installed in the schema of
+//! the finding's epoch: a live stack's own schema, or `public` for earlier
+//! epochs merged at cutover. Failed epochs have no schema and are skipped. After a pass that installs at least
 //! one handle, the worker NOTIFYs `work_available` once so idle TFHE does
 //! not wait for its poll. Rows without a pin, and digest mismatches, HEAD
 //! registry attestations: a live quorum pins the digest, evidence, and sources,
 //! then GETs. A pinned digest that no longer matches the live quorum is
 //! counted, never rewritten.
 
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, HashMap};
 use std::sync::Arc;
 use std::time::Duration;
 
@@ -34,6 +37,7 @@ use fhevm_engine_common::pg_pool::is_fatal_connection_error;
 use fhevm_engine_common::types::get_ct_type;
 use fhevm_engine_common::CIPHERTEXT_VERSION;
 
+use super::containment::{epoch_schemas, set_execution_schema};
 use super::{ExecutionError, ManifestWorkGate};
 
 mod download;
@@ -62,6 +66,9 @@ struct DueHandle {
     target_evidence: serde_json::Value,
     /// A ct64 finding past the containment timeout without being contained.
     uncontained: bool,
+    /// Schema of the finding's epoch: the ct64 is installed there, not in the
+    /// healer's own stack.
+    schema: String,
     containment_timeout_secs: i64,
 }
 
@@ -143,10 +150,17 @@ async fn run_healing_pass<S: Ct64Source>(
     batch_size: i64,
     containment_timeout: Duration,
 ) -> Result<(), ExecutionError> {
-    let Some(epoch) = work_gate.pinned_consensus_epoch() else {
+    if work_gate.pinned_consensus_epoch().is_none() {
         return Ok(());
-    };
-    let due = lock_due(pool, &epoch, batch_size, containment_timeout).await?;
+    }
+    // Every epoch with a schema is healed, whichever stack runs this pass, so a
+    // cutover does not strand the previous epoch's findings. Row locks and the
+    // `healed_at IS NULL` guard coordinate healers of both stacks.
+    let schemas = load_epoch_schemas(pool).await?;
+    if schemas.is_empty() {
+        return Ok(());
+    }
+    let due = lock_due(pool, &schemas, batch_size, containment_timeout).await?;
     if due.is_empty() {
         return Ok(());
     }
@@ -174,18 +188,35 @@ async fn notify_work_available(pool: &PgPool) -> Result<(), ExecutionError> {
     Ok(())
 }
 
+async fn load_epoch_schemas(pool: &PgPool) -> Result<HashMap<String, String>, ExecutionError> {
+    let mut trx = pool.begin().await?;
+    let schemas = epoch_schemas(&mut trx).await.map_err(from_containment)?;
+    trx.rollback().await?;
+    Ok(schemas)
+}
+
+/// Keeps database errors typed so fatal connection loss still stops the worker.
+fn from_containment(error: anyhow::Error) -> ExecutionError {
+    match error.downcast::<sqlx::Error>() {
+        Ok(error) => ExecutionError::DbError(error),
+        Err(error) => ExecutionError::InternalError(error.to_string()),
+    }
+}
+
 async fn lock_due(
     pool: &PgPool,
-    consensus_epoch: &str,
+    schemas: &HashMap<String, String>,
     batch_size: i64,
     containment_timeout: Duration,
 ) -> Result<Vec<DueHandle>, ExecutionError> {
+    let epochs: Vec<String> = schemas.keys().cloned().collect();
     let containment_timeout_secs = i64::try_from(containment_timeout.as_secs())
         .map_err(|_| ExecutionError::InternalError("containment timeout exceeds BIGINT".into()))?;
     let mut trx = pool.begin().await?;
     let rows = sqlx::query!(
         r#"
         SELECT dh.id,
+               dh.consensus_epoch,
                dh.handle,
                dh.host_chain_id,
                dh.coprocessor_context_id,
@@ -205,7 +236,7 @@ async fn lock_due(
                    AND cand.reason IN (
                         'ct64_mismatch', 'missing_here', 'error_here', 'uncomputed_here'
                    )
-                   AND cand.consensus_epoch = $1
+                   AND cand.consensus_epoch = ANY($1)
                    -- A healed ct64 root leaves containment's scan: wait until its
                    -- already-computed descendants are marked. Other reasons have
                    -- no wrong local ct64 for consumers to have read. Past the
@@ -233,33 +264,41 @@ async fn lock_due(
          LIMIT $2
          FOR UPDATE OF dh
         "#,
-        consensus_epoch,
+        &epochs,
         batch_size,
         containment_timeout_secs,
     )
     .fetch_all(trx.as_mut())
     .await?;
     trx.commit().await?;
-    Ok(rows
-        .into_iter()
-        .map(|row| DueHandle {
-            id: row.id,
-            consensus_epoch: consensus_epoch.to_owned(),
-            host_chain_id: row.host_chain_id,
-            handle: row.handle,
-            coprocessor_context_id: row.coprocessor_context_id,
-            quorum_ct64_digest: row.quorum_ct64_digest,
-            peer_sources: serde_json::from_str(&row.peer_sources)
-                .unwrap_or(serde_json::Value::Array(vec![])),
-            target_evidence: row
-                .target_evidence
-                .as_deref()
-                .and_then(|json| serde_json::from_str(json).ok())
-                .unwrap_or(serde_json::Value::Null),
-            uncontained: row.uncontained,
-            containment_timeout_secs,
+    rows.into_iter()
+        .map(|row| {
+            let schema = schemas.get(&row.consensus_epoch).cloned().ok_or_else(|| {
+                ExecutionError::InternalError(format!(
+                    "no schema for healing epoch {}",
+                    row.consensus_epoch
+                ))
+            })?;
+            Ok(DueHandle {
+                id: row.id,
+                consensus_epoch: row.consensus_epoch,
+                host_chain_id: row.host_chain_id,
+                handle: row.handle,
+                coprocessor_context_id: row.coprocessor_context_id,
+                quorum_ct64_digest: row.quorum_ct64_digest,
+                peer_sources: serde_json::from_str(&row.peer_sources)
+                    .unwrap_or(serde_json::Value::Array(vec![])),
+                target_evidence: row
+                    .target_evidence
+                    .as_deref()
+                    .and_then(|json| serde_json::from_str(json).ok())
+                    .unwrap_or(serde_json::Value::Null),
+                uncontained: row.uncontained,
+                containment_timeout_secs,
+                schema,
+            })
         })
-        .collect())
+        .collect()
 }
 
 async fn heal_one<S: Ct64Source>(
@@ -566,6 +605,11 @@ async fn install_matching_ct64(
         return schedule_retry(pool, job.id).await;
     };
     let mut trx = pool.begin().await?;
+    // `ciphertexts` and `computations` below resolve to the finding's stack;
+    // `drifted_handle` exists only in public.
+    set_execution_schema(&mut trx, &job.schema)
+        .await
+        .map_err(from_containment)?;
     let marked = sqlx::query!(
         r#"
         UPDATE drifted_handle
