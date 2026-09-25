@@ -145,6 +145,12 @@ pub(crate) enum DriftExplanation {
         local_is_uncomputed: bool,
         observed_is_uncomputed: bool,
     },
+    InvalidDescriptorMismatch {
+        block_number: U256,
+        handle: B256,
+        local_is_invalid: bool,
+        observed_is_invalid: bool,
+    },
 }
 
 type PublishersByDigest = HashMap<B256, HashSet<Address>>;
@@ -521,6 +527,43 @@ fn record_descriptor_differences(
         return;
     }
     if local.is_uncomputed() {
+        return;
+    }
+    if local.is_invalid_descriptor() || observed.is_invalid_descriptor() {
+        // Both still carry digests: report a ct64 difference beside the
+        // status, since only that one can have propagated.
+        if local.is_invalid_descriptor() != observed.is_invalid_descriptor() {
+            explanations.push(DriftExplanation::InvalidDescriptorMismatch {
+                block_number,
+                handle,
+                local_is_invalid: local.is_invalid_descriptor(),
+                observed_is_invalid: observed.is_invalid_descriptor(),
+            });
+        }
+        if let (Some(local_ct64), Some(observed_ct64)) =
+            (local.ct64_digest(), observed.ct64_digest())
+        {
+            if local_ct64 != observed_ct64 {
+                explanations.push(DriftExplanation::Ct64DigestMismatch {
+                    block_number,
+                    handle,
+                    local: local_ct64,
+                    observed: observed_ct64,
+                });
+            }
+        }
+        if let (Some(local_ct128), Some(observed_ct128)) =
+            (local.ct128_digest(), observed.ct128_digest())
+        {
+            if local_ct128 != observed_ct128 {
+                explanations.push(DriftExplanation::Ct128DigestMismatch {
+                    block_number,
+                    handle,
+                    local: local_ct128,
+                    observed: observed_ct128,
+                });
+            }
+        }
         return;
     }
     let (

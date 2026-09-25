@@ -106,8 +106,10 @@ impl From<ManifestVersion> for u8 {
 
 /// Consensus outcome for one allowed handle.
 ///
-/// JSON is internally tagged as `"status": "computed" | "error" | "uncomputed"`.
-/// Error uses the field name `error_message` (omitted when absent).
+/// JSON is internally tagged as
+/// `"status": "computed" | "error" | "uncomputed" | "invalid_descriptor"`.
+/// Error uses the field name `error_message` and InvalidDescriptor the field name
+/// `reason` (both omitted when absent).
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(tag = "status", rename_all = "snake_case")]
 pub enum CiphertextStatus {
@@ -133,6 +135,18 @@ pub enum CiphertextStatus {
     /// This is distinct from a terminal error and does not predict later
     /// observations. The decision to publish this status is outside the wire contract.
     Uncomputed,
+    /// Ciphertext material was computed, but a consensus field of its
+    /// descriptor could not be derived locally, such as a keyset for its
+    /// Gateway key id or a known ct128 format. The digests are still committed
+    /// so peers can tell a wrong ct64 from a metadata-only fault.
+    InvalidDescriptor {
+        ct64_digest: B256,
+        ct128_digest: B256,
+        /// Publisher-provided diagnostic text, signed with the manifest but
+        /// excluded from the block content digest.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        reason: Option<String>,
+    },
 }
 
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
@@ -181,6 +195,28 @@ impl BlockCiphertextDescriptor {
         }
     }
 
+    /// Descriptor for a computed handle whose descriptor could not be derived
+    /// locally; see [`CiphertextStatus::InvalidDescriptor`].
+    pub fn from_invalid_descriptor(
+        handle: B256,
+        ct64_digest: B256,
+        ct128_digest: B256,
+        reason: Option<String>,
+    ) -> Self {
+        Self {
+            handle,
+            status: CiphertextStatus::InvalidDescriptor {
+                ct64_digest,
+                ct128_digest,
+                reason,
+            },
+        }
+    }
+
+    pub fn is_invalid_descriptor(&self) -> bool {
+        matches!(self.status, CiphertextStatus::InvalidDescriptor { .. })
+    }
+
     pub fn is_error(&self) -> bool {
         matches!(self.status, CiphertextStatus::Error { .. })
     }
@@ -212,14 +248,16 @@ impl BlockCiphertextDescriptor {
 
     pub fn ct64_digest(&self) -> Option<B256> {
         match &self.status {
-            CiphertextStatus::Computed { ct64_digest, .. } => Some(*ct64_digest),
+            CiphertextStatus::Computed { ct64_digest, .. }
+            | CiphertextStatus::InvalidDescriptor { ct64_digest, .. } => Some(*ct64_digest),
             _ => None,
         }
     }
 
     pub fn ct128_digest(&self) -> Option<B256> {
         match &self.status {
-            CiphertextStatus::Computed { ct128_digest, .. } => Some(*ct128_digest),
+            CiphertextStatus::Computed { ct128_digest, .. }
+            | CiphertextStatus::InvalidDescriptor { ct128_digest, .. } => Some(*ct128_digest),
             _ => None,
         }
     }
@@ -233,8 +271,8 @@ impl BlockCiphertextDescriptor {
 
     /// Keccak of this descriptor's contribution to [`block_content_digest`].
     ///
-    /// Excludes `error_message` and `gateway_key_id`. Structural [`Eq`] still
-    /// includes those provenance fields.
+    /// Excludes `error_message`, `reason`, and `gateway_key_id`. Structural
+    /// [`Eq`] still includes those provenance fields.
     pub fn consensus_digest(&self) -> B256 {
         let mut hasher = Keccak256::new();
         update_descriptor(&mut hasher, self);
@@ -768,6 +806,15 @@ fn update_descriptor(hasher: &mut Keccak256, descriptor: &BlockCiphertextDescrip
         CiphertextStatus::Uncomputed => {
             hasher.update([0, 1]);
         }
+        CiphertextStatus::InvalidDescriptor {
+            ct64_digest,
+            ct128_digest,
+            ..
+        } => {
+            hasher.update([1, 1]);
+            hasher.update(ct64_digest.as_slice());
+            hasher.update(ct128_digest.as_slice());
+        }
     }
 }
 
@@ -798,6 +845,17 @@ fn push_descriptors(out: &mut Vec<u8>, descriptors: &[BlockCiphertextDescriptor]
             CiphertextStatus::Uncomputed => {
                 out.push(0);
                 out.push(1);
+            }
+            CiphertextStatus::InvalidDescriptor {
+                ct64_digest,
+                ct128_digest,
+                reason,
+            } => {
+                out.push(1);
+                out.push(1);
+                out.extend_from_slice(ct64_digest.as_slice());
+                out.extend_from_slice(ct128_digest.as_slice());
+                push_optional_str(out, reason.as_deref());
             }
         }
     }
@@ -1055,6 +1113,66 @@ mod tests {
             digest(std::slice::from_ref(&success)),
             digest(std::slice::from_ref(&uncomputed))
         );
+    }
+
+    #[test]
+    fn invalid_descriptor_is_distinct_consensus_material_and_reason_is_provenance() {
+        let header = (
+            ManifestVersion::V1,
+            U256::ONE,
+            U256::from(7),
+            U256::from(42),
+            B256::repeat_byte(0xAA),
+        );
+        let digest = |descriptors: &[BlockCiphertextDescriptor]| {
+            block_content_digest(
+                header.0,
+                header.1,
+                header.2,
+                header.3,
+                header.4,
+                descriptors,
+            )
+            .unwrap()
+        };
+        let computed = descriptor(1);
+        let handle = computed.handle;
+        let (ct64, ct128) = (
+            computed.ct64_digest().unwrap(),
+            computed.ct128_digest().unwrap(),
+        );
+        let invalid = BlockCiphertextDescriptor::from_invalid_descriptor(
+            handle,
+            ct64,
+            ct128,
+            Some("unknown ct128 format 12".to_owned()),
+        );
+        let other_reason =
+            BlockCiphertextDescriptor::from_invalid_descriptor(handle, ct64, ct128, None);
+        let other_ct64 = BlockCiphertextDescriptor::from_invalid_descriptor(
+            handle,
+            B256::repeat_byte(0xEE),
+            ct128,
+            None,
+        );
+        for other in [
+            computed.clone(),
+            BlockCiphertextDescriptor::from_uncomputed(handle),
+            BlockCiphertextDescriptor::from_computation_error(handle, None),
+            other_ct64,
+        ] {
+            assert_ne!(digest(std::slice::from_ref(&invalid)), digest(&[other]));
+        }
+        assert_eq!(
+            digest(std::slice::from_ref(&invalid)),
+            digest(std::slice::from_ref(&other_reason)),
+            "the reason is signed provenance, not consensus material"
+        );
+        assert_ne!(invalid, other_reason);
+        assert_eq!(invalid.ct64_digest(), Some(ct64));
+        assert_eq!(invalid.ct128_digest(), Some(ct128));
+        assert_eq!(invalid.keyset_id(), None);
+        assert!(invalid.is_invalid_descriptor());
     }
 
     #[test]
@@ -1322,6 +1440,20 @@ mod tests {
         assert_eq!(
             serde_json::from_value::<BlockCiphertextDescriptor>(uncomputed_json).unwrap(),
             uncomputed
+        );
+        let invalid = BlockCiphertextDescriptor::from_invalid_descriptor(
+            B256::repeat_byte(3),
+            B256::repeat_byte(4),
+            B256::repeat_byte(5),
+            Some("no keyset for Gateway key id".to_owned()),
+        );
+        let invalid_json = serde_json::to_value(&invalid).unwrap();
+        assert_eq!(invalid_json["status"], "invalid_descriptor");
+        assert_eq!(invalid_json["reason"], "no keyset for Gateway key id");
+        assert!(invalid_json.get("keyset_id").is_none());
+        assert_eq!(
+            serde_json::from_value::<BlockCiphertextDescriptor>(invalid_json).unwrap(),
+            invalid
         );
     }
 }
