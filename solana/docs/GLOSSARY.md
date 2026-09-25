@@ -76,7 +76,7 @@ stack where one exists.
 | **KmsContext** | The on-chain account naming one KMS committee's signer set and threshold; certificates bind to the context that issued them. | — | gateway KMS context |
 | **MMR** | Append-only Merkle mountain range shared by all decrypt permissions under a Store. Only peaks and leaf count are stored on-chain; proofs establish exact historical leaves. | — | — |
 | **leaf** | Historical-access commitment `(store, leaf_index, handle, allowed_key)` or public commitment `(store, leaf_index, handle)`, each domain-separated. Fresh Store outputs append allows in declaration order, then a public leaf if requested. | — | — |
-| **leaf record** | The coprocessors' record of every leaf the host sealed, kept by the host listener next to the compute rows it was derived with and served over `POST /v1/solana/leaf-proofs` behind an API key. A source of proofs, never of decisions: the connector verifies each proof against the peaks it read on chain. | proof service, `solana-proof-service` | — |
+| **leaf record** | The coprocessors' record of every leaf the host sealed, kept by the host listener next to the compute rows it was derived with and served by `solana_leaf_proof_server` over `POST /v1/solana/leaf-proofs` behind an API key. A source of proofs, never of decisions: the connector verifies each proof against the peaks it read on chain. | proof service, `solana-proof-service` | — |
 | **disclosed value kind** | `DisclosedValueKind` selects the current token slot when requesting publication. The generic `HandleDisclosedEvent` certifies Store, handle and cleartext, not the slot kind; original operation events identify the result. | — | generic amount disclosure |
 
 ## Off-chain

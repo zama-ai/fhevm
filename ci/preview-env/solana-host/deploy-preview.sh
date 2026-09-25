@@ -23,8 +23,8 @@ for name in solana-rpc solana-deployer; do
     -n "$NAMESPACE" -f "$values/values-$name.yaml"
   wait_external_secret "$name"
 done
-# The leaf-proof bearer token is only ever read inside this namespace, by the listeners and
-# the connectors, so each preview mints its own.
+# The leaf-proof bearer token is only ever read inside this namespace, by the leaf-proof
+# servers and the connectors, so each preview mints its own.
 openssl rand -base64 32 | tr -d '\n' > "$work/proof-api-key"
 kubectl create secret generic solana-proof-api -n "$NAMESPACE" \
   --from-file=api-key="$work/proof-api-key" --dry-run=client -o yaml | kubectl apply -f - >/dev/null
@@ -84,7 +84,7 @@ for i in $(seq 1 "$NB_COPROCESSOR"); do
   kubectl rollout status "deployment/coprocessor-$i-zkproof-worker" -n "$NAMESPACE" --timeout=10m
 done
 
-endpoints=$(seq 1 "$NB_COPROCESSOR" | jq -Rsc 'split("\n")[:-1] | map("http://coprocessor-" + . + "-solana-host-listener:8080")')
+endpoints=$(seq 1 "$NB_COPROCESSOR" | jq -Rsc 'split("\n")[:-1] | map("http://coprocessor-" + . + "-solana-leaf-proof-server:8080")')
 for i in $(seq 1 "$NB_KMS_CORE"); do
   helm get values "kms-connector-$i" -n "$NAMESPACE" -o yaml > "$work/connector.yaml"
   helm upgrade "kms-connector-$i" "$KMS_CONNECTOR_CHART" -n "$NAMESPACE" \

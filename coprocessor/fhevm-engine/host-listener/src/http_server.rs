@@ -1,4 +1,6 @@
-//! The leaf-proof HTTP interface of the Solana host listener.
+//! The HTTP routes of the Solana host listener: the health routes every Solana process serves, and
+//! the leaf-proof route that only `solana_leaf_proof_server` adds, so proofs keep being served
+//! while ingestion is stopped or behind.
 //!
 //! The KMS connector asks for the inclusion proof of the leaf that authorizes a
 //! decrypt (an allow of a key on a handle, or a handle made public) and verifies
@@ -45,52 +47,73 @@ struct AppState {
 }
 
 pub struct HttpServer {
-    state: AppState,
+    router: Router,
     port: u16,
     cancel_token: CancellationToken,
 }
 
 impl HttpServer {
-    pub fn new(
+    /// The health routes alone, for the ingestion process.
+    pub fn health(
+        pool: PgPool,
+        port: u16,
+        cancel_token: CancellationToken,
+    ) -> Self {
+        Self {
+            router: health_router(pool),
+            port,
+            cancel_token,
+        }
+    }
+
+    /// The health routes and the leaf-proof route, for the proof server.
+    pub fn leaf_proofs(
         pool: PgPool,
         api_key: String,
         port: u16,
         cancel_token: CancellationToken,
     ) -> Self {
         Self {
-            state: AppState {
-                pool,
-                api_key: api_key.into(),
-            },
+            router: leaf_proofs_router(pool, api_key),
             port,
             cancel_token,
         }
     }
 
     /// Serves until the cancellation token fires.
-    pub async fn start(&self) -> anyhow::Result<()> {
+    pub async fn start(self) -> anyhow::Result<()> {
         let addr = SocketAddr::from(([0, 0, 0, 0], self.port));
         let listener = TcpListener::bind(addr).await?;
         info!("Starting HTTP server on {}", addr);
-        serve(listener, self.state.clone(), self.cancel_token.clone()).await
+        serve(listener, self.router, self.cancel_token).await
     }
 }
 
-fn router(state: AppState) -> Router {
+fn health_router(pool: PgPool) -> Router {
     Router::new()
         .route("/healthz", get(healthz))
         .route("/liveness", get(liveness))
-        .route(LEAF_PROOFS_PATH, post(leaf_proofs))
-        .with_state(state)
+        .with_state(pool)
+}
+
+fn leaf_proofs_router(pool: PgPool, api_key: String) -> Router {
+    health_router(pool.clone()).merge(
+        Router::new()
+            .route(LEAF_PROOFS_PATH, post(leaf_proofs))
+            .with_state(AppState {
+                pool,
+                api_key: api_key.into(),
+            }),
+    )
 }
 
 async fn serve(
     listener: TcpListener,
-    state: AppState,
+    router: Router,
     cancel_token: CancellationToken,
 ) -> anyhow::Result<()> {
     let shutdown = async move { cancel_token.cancelled().await };
-    axum::serve(listener, router(state).into_make_service())
+    axum::serve(listener, router.into_make_service())
         .with_graceful_shutdown(shutdown)
         .await
         .map_err(|err| {
@@ -105,8 +128,8 @@ async fn liveness() -> StatusCode {
     StatusCode::OK
 }
 
-async fn healthz(State(state): State<AppState>) -> StatusCode {
-    match sqlx::query("SELECT 1").execute(&state.pool).await {
+async fn healthz(State(pool): State<PgPool>) -> StatusCode {
+    match sqlx::query("SELECT 1").execute(&pool).await {
         Ok(_) => StatusCode::OK,
         Err(err) => {
             error!(error = %err, "database health check failed");
@@ -556,14 +579,14 @@ mod tests {
         let pool = PgPoolOptions::new()
             .connect_lazy("postgres://nobody@127.0.0.1:1/none")
             .expect("lazy pool");
-        let state = AppState {
-            pool,
-            api_key: "secret".into(),
-        };
         let listener = TcpListener::bind("127.0.0.1:0").await.expect("bind");
         let addr = listener.local_addr().expect("addr");
         let cancel = CancellationToken::new();
-        let server = tokio::spawn(serve(listener, state, cancel.clone()));
+        let server = tokio::spawn(serve(
+            listener,
+            leaf_proofs_router(pool, "secret".into()),
+            cancel.clone(),
+        ));
         let url = format!("http://{addr}{LEAF_PROOFS_PATH}");
         let client = reqwest::Client::new();
         let body = LeafProofRequest {
@@ -621,6 +644,37 @@ mod tests {
             .await
             .expect("send");
         assert_eq!(liveness.status(), 200);
+
+        cancel.cancel();
+        server.await.expect("join").expect("serve");
+    }
+
+    /// Ingestion serves the health routes only; proofs come from `solana_leaf_proof_server`.
+    #[tokio::test]
+    async fn ingestion_serves_no_proofs() {
+        let pool = PgPoolOptions::new()
+            .connect_lazy("postgres://nobody@127.0.0.1:1/none")
+            .expect("lazy pool");
+        let listener = TcpListener::bind("127.0.0.1:0").await.expect("bind");
+        let addr = listener.local_addr().expect("addr");
+        let cancel = CancellationToken::new();
+        let server =
+            tokio::spawn(serve(listener, health_router(pool), cancel.clone()));
+        let client = reqwest::Client::new();
+
+        let liveness = client
+            .get(format!("http://{addr}/liveness"))
+            .send()
+            .await
+            .expect("send");
+        assert_eq!(liveness.status(), 200);
+        let proofs = client
+            .post(format!("http://{addr}{LEAF_PROOFS_PATH}"))
+            .bearer_auth("secret")
+            .send()
+            .await
+            .expect("send");
+        assert_eq!(proofs.status(), 404);
 
         cancel.cancel();
         server.await.expect("join").expect("serve");

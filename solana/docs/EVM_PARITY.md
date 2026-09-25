@@ -62,8 +62,8 @@ authority scopes delegation; its app `(program, scope)` scopes the permit.
 
 The listener reconstructs all executed operations and permission leaves from transaction bytes,
 independently of return selection. Compute records, leaves and checkpoint commit atomically.
-It serves inclusion proofs via `/v1/solana/leaf-proofs`; consumers verify them against their own
-chain snapshot. Missing retained history fails closed and needs recovery beyond an ordinary
+`solana_leaf_proof_server` serves inclusion proofs of those leaves via `/v1/solana/leaf-proofs`;
+consumers verify them against their own chain snapshot. Missing retained history fails closed and needs recovery beyond an ordinary
 retry. The listener's confirmed-chain scheduling does not itself authorize plaintext release.
 
 Public consumers verify the KMS certificate and MMR proof on-chain. History growth can make

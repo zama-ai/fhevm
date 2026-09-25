@@ -1,6 +1,6 @@
 //! Solana host listener: reconstructs coprocessor work and the RFC 035 leaf record
-//! from confirmed Yellowstone sealed blocks, ingests both into the shared database,
-//! and serves leaf inclusion proofs over HTTP.
+//! from confirmed Yellowstone sealed blocks and ingests both into the shared database.
+//! `solana_leaf_proof_server` serves the leaf inclusion proofs apart from it.
 
 use std::{str::FromStr, time::Duration};
 
@@ -48,7 +48,8 @@ struct Args {
     grpc_url: String,
 
     /// Solana JSON-RPC endpoint whose ledger history rebuilds, with `getBlock` and
-    /// `getTransaction`, the slots Yellowstone can no longer replay. It may be another provider's. Defaults to `--url`.
+    /// `getTransaction`, the slots Yellowstone can no longer replay. It may be another
+    /// provider's. Defaults to `--url`.
     #[arg(long, env = "SOLANA_ARCHIVE_URL")]
     archive_url: Option<String>,
 
@@ -77,13 +78,9 @@ struct Args {
     )]
     dependent_ops_max_per_chain: u32,
 
-    /// Port of the HTTP server: health routes and the leaf-proof route.
+    /// Port of the HTTP health routes.
     #[arg(long, default_value_t = 8080)]
     http_port: u16,
-
-    /// Bearer API key the leaf-proof route requires.
-    #[arg(long, env = "SOLANA_PROOF_API_KEY")]
-    proof_api_key: String,
 
     /// Address of the Prometheus metrics server (e.g. 0.0.0.0:9100); unset disables it.
     #[arg(long)]
@@ -206,16 +203,11 @@ async fn main() -> Result<()> {
         ));
     }
 
-    let http_server = HttpServer::new(
-        pool,
-        args.proof_api_key,
-        args.http_port,
-        cancel.clone(),
-    );
+    let http_server = HttpServer::health(pool, args.http_port, cancel.clone());
     let http_cancel = cancel.clone();
     let http_task = tokio::spawn(async move {
         let result = http_server.start().await;
-        // A dead proof route must not leave the listener running silently.
+        // A dead health route must not leave the listener running unobserved.
         http_cancel.cancel();
         result
     });

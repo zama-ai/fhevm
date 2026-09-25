@@ -163,9 +163,9 @@ The listener resumes from its checkpoint through the stream while the Yellowston
     - **Recommendation**: `increase(counter[5m]) > 0`.
 
 #### Container restarts
- - **Description**: A fatal ingestion error, such as a block whose ancestry does not match the checkpoint or a provider that cannot replay from any slot, exits the listener, which then resumes from its checkpoint. A restart that catches up quickly never trips the lag alarm, so restarts need their own alarm.
- - **Alarm**: Any restart.
-    - **Recommendation**: `increase(kube_pod_container_status_restarts_total{container="solana-host-listener"}[15m]) > 0`.
+ - **Description**: A fatal ingestion error, such as a block whose ancestry does not match the checkpoint or a provider that cannot replay from any slot, exits the listener, which then resumes from its checkpoint. A restart that catches up quickly never trips the lag alarm, so restarts need their own alarm. The leaf proofs come from the separate `solana-leaf-proof-server` container, which keeps serving through a listener restart; it restarts only when it crashes or its database is unreachable.
+ - **Alarm**: Any restart of either container.
+    - **Recommendation**: `increase(kube_pod_container_status_restarts_total{container=~"solana-host-listener|solana-leaf-proof-server"}[15m]) > 0`.
 
 ### zkproof-worker
 

@@ -157,7 +157,10 @@ takes hours. A block holding a v1 transaction is refused and retried until
 fhevm-internal#2080, and an archive missing slots after the checkpoint is
 retried too. A provider that cannot replay from any slot, or a block of another
 fork, stops ingestion without advancing the checkpoint.
-The HTTP health routes check database availability, not reconstruction catch-up.
+The listener's HTTP routes on `--http-port` are health checks of database
+availability, not of reconstruction catch-up. `solana_leaf_proof_server` serves
+the leaf proofs from the same database in its own deployment, so proofs keep
+being served while the listener is stopped (DD-062).
 Catch-up is exported as Prometheus metrics on `--metrics-addr`; the lag,
 reconnect and handle-check alarms are in
 [`docs/metrics/metrics.md`](../../../docs/metrics/metrics.md).

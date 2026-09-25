@@ -167,6 +167,7 @@ describe("demo lifecycle collision policy", () => {
     const health = {
       validator: true,
       listener: true,
+      proofServer: true,
       operator: false,
       dapp: false,
       kmsCore: true,
@@ -587,6 +588,7 @@ describe("demo lifecycle collision policy", () => {
         new Map([
           ["validator", true],
           ["listener", true],
+          ["proofServer", true],
           ["operator", true],
           ["dapp", true],
         ]),
@@ -764,7 +766,7 @@ describe("demo lifecycle ownership primitives", () => {
       supervisedBootAction({
         expectedBootId: running.bootId,
         manifest: { ...running, state: "stopped" },
-        stoppedProcesses: ["validator", "listener", "operator", "dapp"],
+        stoppedProcesses: ["validator", "listener", "proofServer", "operator", "dapp"],
         lockState: "absent",
         stoppedMarker: false,
       }),

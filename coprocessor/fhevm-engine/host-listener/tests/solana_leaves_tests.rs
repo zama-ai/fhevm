@@ -67,7 +67,7 @@ async fn serve_proofs(
         .and_then(|probe| probe.local_addr())
         .expect("free port")
         .port();
-    let server = HttpServer::new(
+    let server = HttpServer::leaf_proofs(
         pool.clone(),
         "secret".to_owned(),
         port,

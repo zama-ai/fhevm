@@ -34,6 +34,13 @@ test = false
 bench = false
 required-features = ["solana-grpc", "solana-reconstruct"]
 
+[[bin]]
+path = "src/bin/solana_leaf_proof_server.rs"
+name = "solana_leaf_proof_server"
+test = false
+bench = false
+required-features = ["solana-reconstruct"]
+
 [dependencies]
 # workspace dependencies
 anyhow = { workspace = true }

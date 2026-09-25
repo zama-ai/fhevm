@@ -88,6 +88,7 @@ are written as one narrative instead.
 | [DD-059](#dd-059-the-listener-catches-up-from-an-archive-when-the-stream-cannot-replay)                                                   | adopted                                  | The listener catches up from an archive when the stream cannot replay                                                          |
 | [DD-060](#dd-060-the-listener-reads-one-transaction-per-message)                                                                          | adopted                                  | The listener reads one transaction per message                                                                                 |
 | [DD-061](#dd-061-a-leaf-proof-reads-its-path-by-position)                                                                                 | adopted                                  | A leaf proof reads its path by position                                                                                        |
+| [DD-062](#dd-062-leaf-proofs-are-served-apart-from-ingestion)                                                                             | adopted                                  | Leaf proofs are served apart from ingestion                                                                                    |
 
 ## DD-002: Keep App Store And Host ACL Store Separate
 
@@ -1746,7 +1747,7 @@ Decision:
    instruction stream and stored in the same database transaction as the compute rows, so the two
    cannot disagree about which blocks were applied. The standalone `solana-proof-service`, the
    relayer's proof passthrough, and the SDK's RPC evidence and proof-service clients are deleted
-   (DD-035 superseded).
+   (DD-035 superseded). `solana_leaf_proof_server` serves the record apart from ingestion (DD-062).
 4. **The deny list names applications.** `set_deny_scope` writes `DenyScopeRecord` at
    `["deny-scope", program, scope]`; it gates every allow the host would seal — each persistent
    write and `make_handle_public`, because sealing a public leaf is an allow. A denied key is not a
@@ -2377,6 +2378,45 @@ Consequences:
 path has at most 64 entries. The leaf record grows by about one node row per leaf. A database
 written before `solana_encrypted_state_nodes` existed has leaves without nodes, and its proofs fail
 verification: nothing is deployed, so no backfill exists.
+
+## DD-062: Leaf proofs are served apart from ingestion
+
+Status: adopted
+
+Recorded in fhevm-internal#2104 (fix D).
+
+The proof route ran inside `solana_host_listener`, on the 8-connection pool ingestion writes
+through, and stopped whenever ingestion stopped: a fatal ingestion error or a restart took the route
+down with it. A proof for an existing grant stays valid while ingestion is behind, because the KMS
+connector checks it against the peaks it reads on chain. An ingestion stop therefore stopped
+decryption of values already allowed for no reason.
+
+Decision:
+
+`solana_leaf_proof_server` serves `POST /v1/solana/leaf-proofs` and the health routes as its own
+Deployment and ClusterIP Service, `<release>-solana-leaf-proof-server`, from the listener's image
+and with its own pool (`--database-pool-size`, 8 by default). It only reads the leaf record, so it
+can run several replicas and roll without downtime; the listener stays one replica with `Recreate`.
+The listener serves only `/healthz` and `/liveness`. The connector's `solanaProofEndpoints` name the
+proof server's Service.
+
+On EVM the connector reads the ACL from the host chain, and no coprocessor serves proofs. The split
+follows the coprocessor's one Deployment per role: `host_listener`, `host_listener_poller` and
+`host_listener_consumer` already run from one image.
+
+Rejected alternatives:
+
+| Alternative | Why not |
+|---|---|
+| Keep the route in the listener with a second pool | Slow proof reads could no longer starve ingestion, but the route would still stop with every ingestion stop and restart. |
+| A separate image | The server is one small binary of the listener's crate; a second image adds a CI build and a tag to keep in step. |
+
+Consequences:
+
+Each coprocessor database has one more client, with 8 connections by default. Proofs keep being
+served while the listener is down, for the leaves it recorded before it stopped; a grant made after
+that has no proof until ingestion catches up. `ingestion_serves_no_proofs` pins that the listener
+has no proof route, and `ci/preview-env/solana-host/test_charts.py` pins the two Deployments.
 
 ## Open product decisions
 
