@@ -1,0 +1,18 @@
+# Everything at once: retries that succeed, retries exhausted, a bad signature, a refused connection, a hung node.
+flow: user_decrypt
+threshold: 8
+timeout: 5s
+max_retries: 1
+nodes:
+  - { count: 6, replies: [ok] }
+  - { count: 2, replies: [rate_limited, ok] }
+  - { count: 2, replies: [acl_denied] }
+  - { count: 1, replies: [bad_signature] }
+  - { count: 1, replies: [refused] }
+  - { count: 1, replies: [hang] }
+expect:
+  outcome: ok
+  counted: 8
+  responses: 8
+  elapsed: 5s
+  attempts: 18

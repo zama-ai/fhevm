@@ -1,0 +1,14 @@
+# 4 vs 4 with the rest failing: no group can reach 5.
+flow: public_decrypt
+threshold: 5
+timeout: 5s
+nodes:
+  - { count: 4, replies: [ok] }
+  - { count: 4, replies: [divergent] }
+  - { count: 5, replies: [acl_denied] }
+expect:
+  outcome: threshold_not_reached
+  counted: 4
+  dominant: acl_denied
+  elapsed: 10ms
+  attempts: 13
