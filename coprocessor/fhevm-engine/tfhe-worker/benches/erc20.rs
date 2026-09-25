@@ -2286,6 +2286,25 @@ async fn submit_erc20_workload(
     let mut prev_to: Option<host_listener::database::tfhe_event_propagate::Handle> = None;
     let mut terminal_legacy_rows = Vec::new();
     let mut dependence_chain_ids = Vec::new();
+    // Only the dependent variant and the main-block chain carry each
+    // transfer's output balances into the next transfer. Independent
+    // transfers keep their pre-#1982 semantics: every transfer reads one
+    // shared, read-only set of encrypted inputs (source balance, destination
+    // balance, amount), so no transfer waits on another and the variant
+    // measures parallel throughput rather than a 1-deep-per-transfer chain.
+    let carry_balances = dependent || main_block_exact;
+    let shared_inputs = if carry_balances {
+        None
+    } else {
+        let [from_input, to_input, amount_input] = encrypted_u64_inputs_from_xof()?;
+        let from = next_typed_handle(handle_counter, FHE_UINT64);
+        let to = next_typed_handle(handle_counter, FHE_UINT64);
+        let amount = next_typed_handle(handle_counter, FHE_UINT64);
+        seed_legacy_input_ciphertext(&mut tx, &from, &from_input).await?;
+        seed_legacy_input_ciphertext(&mut tx, &to, &to_input).await?;
+        seed_legacy_input_ciphertext(&mut tx, &amount, &amount_input).await?;
+        Some((from, to, amount))
+    };
 
     for i in 0..num_samples {
         let tx_id = if dependent {
@@ -2296,7 +2315,9 @@ async fn submit_erc20_workload(
         if main_block_exact && (!dependent || i == 0) {
             dependence_chain_ids.push(tx_id);
         }
-        let from_balance = if let Some(h) = prev_from {
+        let from_balance = if let Some((from, _, _)) = shared_inputs {
+            from
+        } else if let Some(h) = prev_from {
             h
         } else {
             let h = next_typed_handle(handle_counter, FHE_UINT64);
@@ -2320,7 +2341,9 @@ async fn submit_erc20_workload(
             .await?;
             h
         };
-        let to_balance = if let Some(h) = prev_to {
+        let to_balance = if let Some((_, to, _)) = shared_inputs {
+            to
+        } else if let Some(h) = prev_to {
             h
         } else {
             let h = next_typed_handle(handle_counter, FHE_UINT64);
@@ -2344,25 +2367,30 @@ async fn submit_erc20_workload(
             .await?;
             h
         };
-        let transfer_amount = next_typed_handle(handle_counter, FHE_UINT64);
-        utils::insert_tfhe_event(
-            listener_db,
-            &mut tx,
-            log_with_tx(
+        let transfer_amount = if let Some((_, _, amount)) = shared_inputs {
+            amount
+        } else {
+            let transfer_amount = next_typed_handle(handle_counter, FHE_UINT64);
+            utils::insert_tfhe_event(
+                listener_db,
+                &mut tx,
+                log_with_tx(
+                    tx_id,
+                    tfhe_event(TfheContractEvents::TrivialEncrypt(
+                        TfheContract::TrivialEncrypt {
+                            caller,
+                            pt: as_scalar_uint(&bigdecimal::num_bigint::BigInt::from(10_u64)),
+                            toType: to_ty(5),
+                            result: transfer_amount,
+                        },
+                    )),
+                ),
                 tx_id,
-                tfhe_event(TfheContractEvents::TrivialEncrypt(
-                    TfheContract::TrivialEncrypt {
-                        caller,
-                        pt: as_scalar_uint(&bigdecimal::num_bigint::BigInt::from(10_u64)),
-                        toType: to_ty(5),
-                        result: transfer_amount,
-                    },
-                )),
-            ),
-            tx_id,
-            false,
-        )
-        .await?;
+                false,
+            )
+            .await?;
+            transfer_amount
+        };
 
         let has_funds = next_typed_handle(handle_counter, FHE_BOOL);
         utils::insert_tfhe_event(
@@ -2541,8 +2569,10 @@ async fn submit_erc20_workload(
             allow_handle(listener_db, &mut tx, &new_to).await?;
             allow_handle(listener_db, &mut tx, &new_from).await?;
         }
-        prev_from = Some(new_from);
-        prev_to = Some(new_to);
+        if carry_balances {
+            prev_from = Some(new_from);
+            prev_to = Some(new_to);
+        }
         if main_block_exact {
             terminal_legacy_rows.push(LegacyTerminal {
                 handle: new_to,
