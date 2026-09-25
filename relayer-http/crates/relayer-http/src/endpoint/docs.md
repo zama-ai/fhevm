@@ -17,11 +17,15 @@ iterations, and the error mapping is a first version (section 5).
 | `GET` | `/healthz` | the pod is ready to serve (503 while shutting down) |
 
 Configuration (`http:` in `config/config.yaml`): `endpoint` (bind address), `max_body_bytes` (default 1 MiB, the connector's limit),
-`supported_chain_ids` (host chain ids a handle may carry). One port for everything; no version endpoint yet.
+`body_read_timeout` (default 10 s, total time to receive a request body), `supported_chain_ids` (host chain ids a
+handle may carry). One port for everything; no version endpoint yet.
 
 ## 2. Request payloads
 
-The shapes are the current relayer's, so the SDK keeps working. Hex fields are typed: a handle is 32 bytes, an
+The user-decrypt body is the connector's `v1` envelope (`attestationType`, `payload`, `signature`); the current
+relayer's field names are kept (`ctHandle`, `ciphertextHandles`, `extraData`). The current SDK body (`attestedPayload`
+with `version` and `type`) is not accepted: an unknown field is a `400 malformed`, so the SDK has to send this shape.
+Hex fields are typed: a handle is 32 bytes, an
 address 20 bytes, `Bytes` any `0x`-prefixed hex; a wrong length or an unknown field is a `400 malformed` naming the
 field. The body must be `application/json`.
 
@@ -117,7 +121,7 @@ One body for every error:
 
 | status | code | when |
 |---|---|---|
-| 400 | `malformed` | unreadable or oversized body, invalid JSON, unknown field, wrong content type, or a validation rule; the message names the field |
+| 400 | `malformed` | unreadable or oversized body, a body not received within `http.body_read_timeout`, invalid JSON, unknown field, wrong content type, or a validation rule; the message names the field |
 | 404 | `not_found` | no such route |
 | 405 | `method_not_allowed` | the route exists, the method does not |
 | 500 | `internal` | a bug (`AggregationError::Internal`) |
@@ -159,6 +163,12 @@ pod, axum stops accepting connections and drains the in-flight requests, and eve
 `Cancelled` (503 `shutting_down`). The drain is bounded by `call.timeout`. A client that disconnects drops its
 handler, which drops its aggregation and aborts the node calls. The process exits 0 only after a clean drain; a
 server or task error, before or after the signal, is logged and exits 1.
+
+**Connections.** The body read and its JSON parse are bounded in total by `http.body_read_timeout`, counted from the
+handler's start: after its headers, a request lasts at most `body_read_timeout + call.timeout` (10 s + 5 s by
+default). Header reading and idle keep-alive connections are not bounded by the relayer: axum's `serve` sets no hyper
+timer and does not expose its connection builder. In production the pods sit behind a Kubernetes ingress or load
+balancer, which enforces header, body and idle timeouts: deployments rely on it.
 
 ## 8. Probes
 
