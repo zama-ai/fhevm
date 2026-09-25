@@ -57,7 +57,8 @@ protected scan itself is not. New batches queue behind the exclusive request, so
 only a batch stuck past that bound times it out. The request then leaves the
 queue so other batches resume, findings stay uncontained until the next
 verification retries, and `coprocessor_containment_barrier_lock_timeout_total`
-counts the event: a stuck TFHE batch while ct64 drift is uncontained.
+counts the event: a stuck TFHE batch while ct64 drift is uncontained. Healing
+still proceeds after the containment timeout.
 After each committed verification attempt, the verifier spawns containment
 when uncontained ct64 findings remain, without awaiting it. No startup scan or periodic containment worker runs.
 The detached task logs errors; they do not change the committed verification
@@ -133,8 +134,13 @@ verification: it LISTENs on `event_healing_work` and polls on
 `--manifest-healing-poll-interval` (default **30s**), then picks up to
 `--manifest-healing-batch-size` (default **8**) due `can_be_healed` rows and
 downloads matching ct64 from peer buckets concurrently. A `ct64_mismatch` row is
-due only once `is_contained` is set: installing it removes the root from the
-containment scan, so its already-computed descendants must be marked first.
+due once `is_contained` is set: installing it removes the root from the
+containment scan, so its already-computed descendants should be marked first.
+Containment only reduces propagation, so this wait is bounded: after
+`--manifest-healing-containment-timeout` (default **5m**) since `detected_at`, an
+uncontained row is healed anyway. Descendants the containment missed are then
+detected by the verification of their own blocks, and
+`coprocessor_ct64_healing_uncontained_total` counts these heals.
 `missing_here`, `error_here`, and `uncomputed_here` rows have no wrong local ct64
 for consumers to have read and are due without containment. Marking a row
 contained wakes the worker. A matching GET writes `ciphertexts` and `healed_at`

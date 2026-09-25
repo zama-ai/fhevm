@@ -46,6 +46,9 @@ pub(crate) const EVENT_HEALING_WORK: &str = "event_healing_work";
 
 pub(crate) const DEFAULT_BATCH_SIZE: i64 = 8;
 pub(crate) const DEFAULT_POLL_INTERVAL: Duration = Duration::from_secs(30);
+/// Containment reduces propagation; verification still detects what it misses.
+/// After this delay an uncontained ct64 finding is healed anyway.
+pub(crate) const DEFAULT_CONTAINMENT_TIMEOUT: Duration = Duration::from_secs(5 * 60);
 const RETRY_DELAY: Duration = Duration::from_secs(30);
 
 struct DueHandle {
@@ -57,6 +60,9 @@ struct DueHandle {
     quorum_ct64_digest: Option<Vec<u8>>,
     peer_sources: serde_json::Value,
     target_evidence: serde_json::Value,
+    /// A ct64 finding past the containment timeout without being contained.
+    uncontained: bool,
+    containment_timeout_secs: i64,
 }
 
 struct RegistryPeer {
@@ -72,6 +78,7 @@ pub(crate) fn spawn_healing_worker(
     work_gate: Arc<ManifestWorkGate>,
     batch_size: i64,
     poll_interval: Duration,
+    containment_timeout: Duration,
 ) -> JoinHandle<Result<(), ExecutionError>> {
     tokio::spawn(run_healing_worker(
         pool,
@@ -80,6 +87,7 @@ pub(crate) fn spawn_healing_worker(
         work_gate,
         batch_size,
         poll_interval,
+        containment_timeout,
     ))
 }
 
@@ -90,11 +98,14 @@ async fn run_healing_worker<S: Ct64Source>(
     work_gate: Arc<ManifestWorkGate>,
     batch_size: i64,
     poll_interval: Duration,
+    containment_timeout: Duration,
 ) -> Result<(), ExecutionError> {
     info!("Healing worker enabled for this stack consensus_epoch");
     let mut listener = PgListener::connect_with(&pool).await?;
     listener.listen(EVENT_HEALING_WORK).await?;
-    if let Err(err) = run_healing_pass(&pool, &source, &work_gate, batch_size).await {
+    if let Err(err) =
+        run_healing_pass(&pool, &source, &work_gate, batch_size, containment_timeout).await
+    {
         if let ExecutionError::DbError(db) = &err {
             if is_fatal_connection_error(db) {
                 return Err(err);
@@ -113,7 +124,7 @@ async fn run_healing_worker<S: Ct64Source>(
             }
             _ = tokio::time::sleep(poll_interval) => {}
         }
-        match run_healing_pass(&pool, &source, &work_gate, batch_size).await {
+        match run_healing_pass(&pool, &source, &work_gate, batch_size, containment_timeout).await {
             Ok(()) => {}
             Err(ExecutionError::DbError(err)) if is_fatal_connection_error(&err) => {
                 return Err(ExecutionError::DbError(err));
@@ -130,11 +141,12 @@ async fn run_healing_pass<S: Ct64Source>(
     source: &S,
     work_gate: &ManifestWorkGate,
     batch_size: i64,
+    containment_timeout: Duration,
 ) -> Result<(), ExecutionError> {
     let Some(epoch) = work_gate.pinned_consensus_epoch() else {
         return Ok(());
     };
-    let due = lock_due(pool, &epoch, batch_size).await?;
+    let due = lock_due(pool, &epoch, batch_size, containment_timeout).await?;
     if due.is_empty() {
         return Ok(());
     }
@@ -166,7 +178,10 @@ async fn lock_due(
     pool: &PgPool,
     consensus_epoch: &str,
     batch_size: i64,
+    containment_timeout: Duration,
 ) -> Result<Vec<DueHandle>, ExecutionError> {
+    let containment_timeout_secs = i64::try_from(containment_timeout.as_secs())
+        .map_err(|_| ExecutionError::InternalError("containment timeout exceeds BIGINT".into()))?;
     let mut trx = pool.begin().await?;
     let rows = sqlx::query!(
         r#"
@@ -176,7 +191,8 @@ async fn lock_due(
                dh.coprocessor_context_id,
                dh.quorum_ct64_digest,
                dh.peer_sources::text AS "peer_sources!",
-               dh.target_evidence::text AS "target_evidence?"
+               dh.target_evidence::text AS "target_evidence?",
+               (dh.reason = 'ct64_mismatch' AND NOT dh.is_contained) AS "uncontained!"
           FROM drifted_handle dh
           JOIN (
                 SELECT DISTINCT ON (cand.host_chain_id, cand.coprocessor_context_id, cand.handle)
@@ -192,8 +208,10 @@ async fn lock_due(
                    AND cand.consensus_epoch = $1
                    -- A healed ct64 root leaves containment's scan: wait until its
                    -- already-computed descendants are marked. Other reasons have
-                   -- no wrong local ct64 for consumers to have read.
-                   AND (cand.reason <> 'ct64_mismatch' OR cand.is_contained)
+                   -- no wrong local ct64 for consumers to have read. Past the
+                   -- timeout, heal anyway: verification detects what was missed.
+                   AND (cand.reason <> 'ct64_mismatch' OR cand.is_contained
+                        OR cand.detected_at <= NOW() - $3::BIGINT * INTERVAL '1 second')
                    AND (cand.next_retry_at IS NULL OR cand.next_retry_at <= NOW())
                    AND NOT EXISTS (
                         SELECT 1
@@ -217,6 +235,7 @@ async fn lock_due(
         "#,
         consensus_epoch,
         batch_size,
+        containment_timeout_secs,
     )
     .fetch_all(trx.as_mut())
     .await?;
@@ -237,6 +256,8 @@ async fn lock_due(
                 .as_deref()
                 .and_then(|json| serde_json::from_str(json).ok())
                 .unwrap_or(serde_json::Value::Null),
+            uncontained: row.uncontained,
+            containment_timeout_secs,
         })
         .collect())
 }
@@ -558,7 +579,8 @@ async fn install_matching_ct64(
            AND handle = $4
            AND healed_at IS NULL
            AND can_be_healed
-           AND (reason <> 'ct64_mismatch' OR is_contained)
+           AND (reason <> 'ct64_mismatch' OR is_contained
+                OR detected_at <= NOW() - $6::BIGINT * INTERVAL '1 second')
            AND quorum_ct64_digest = $5
         "#,
         job.consensus_epoch,
@@ -566,6 +588,7 @@ async fn install_matching_ct64(
         job.host_chain_id,
         &job.handle,
         digest,
+        job.containment_timeout_secs,
     )
     .execute(trx.as_mut())
     .await?;
@@ -607,6 +630,16 @@ async fn install_matching_ct64(
     .execute(trx.as_mut())
     .await?;
     trx.commit().await?;
+    if job.uncontained {
+        metrics::HEALED_UNCONTAINED
+            .with_label_values(&[&job.consensus_epoch])
+            .inc();
+        warn!(
+            finding_id = job.id,
+            handle = hex::encode(&job.handle),
+            "Healed uncontained ct64 drift after the containment timeout; verification must catch missed descendants"
+        );
+    }
     Ok(true)
 }
 
