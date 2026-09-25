@@ -28,6 +28,29 @@ pub(super) async fn drift(pool: &PgPool, n: u8) {
     .unwrap();
 }
 
+/// A ct64 finding recorded by another stack's epoch.
+pub(super) async fn drift_in_other_epoch(pool: &PgPool, n: u8) {
+    drift(pool, n).await;
+    sqlx::query("UPDATE drifted_handle SET consensus_epoch = 'other-epoch' WHERE handle = $1")
+        .bind(handle(n))
+        .execute(pool)
+        .await
+        .unwrap();
+}
+
+/// This stack's own stored copy of a handle.
+pub(super) async fn stored_ciphertext(pool: &PgPool, n: u8) {
+    sqlx::query(
+        "INSERT INTO ciphertexts (handle, ciphertext, ciphertext_version, ciphertext_type)
+         VALUES ($1, $2, 0, 0)",
+    )
+    .bind(handle(n))
+    .bind(vec![n; 4])
+    .execute(pool)
+    .await
+    .unwrap();
+}
+
 pub(super) async fn computation(
     pool: &PgPool,
     out: u8,
