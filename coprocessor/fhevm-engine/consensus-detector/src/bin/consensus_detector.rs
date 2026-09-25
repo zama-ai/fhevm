@@ -84,8 +84,9 @@ struct Args {
     /// and publishes already-tracked blocks. After bootstrap, new heights
     /// arrive via parent→child discovery, with a 5-block lookback for late
     /// producer rows. A longer interval delays those steps by up to one
-    /// period; host-row pruning (`host_chain_blocks_valid` retention) can
-    /// drop a parent before its child is seen.
+    /// period; host-row pruning (`host_chain_blocks_valid` retention: 10,000
+    /// finalized blocks and one week since ingestion) can drop a parent before
+    /// its child is seen.
     #[arg(long, default_value = "10s", value_parser = parse_duration)]
     manifest_discovery_interval: Duration,
 
