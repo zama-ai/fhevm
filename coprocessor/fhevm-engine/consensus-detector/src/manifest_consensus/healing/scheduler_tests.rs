@@ -261,6 +261,40 @@ async fn pass_downloads_matching_ct64_from_peer_bucket() {
     assert_eq!(healed(&pool, id).await, (false, true));
 }
 
+async fn attempts(pool: &PgPool, outcome: &str) -> u64 {
+    let epoch: String =
+        sqlx::query_scalar("SELECT consensus_epoch FROM blue_green_consensus_epoch")
+            .fetch_one(pool)
+            .await
+            .unwrap();
+    metrics::ATTEMPTS
+        .with_label_values(&[&epoch, outcome])
+        .get()
+}
+
+#[tokio::test]
+#[serial(db)]
+async fn attempts_are_counted_by_outcome() {
+    let (_db, pool) = setup().await;
+    let body = vec![7u8; 8];
+    let healable = insert_healable(&pool, 40, "s3://peer-a", &body).await;
+    let unquorate = insert_healable_from(&pool, 41, None, &body, false).await;
+    let source = FakeCt64::default();
+    source.put("s3://peer-a", 40, body.clone());
+    let success = attempts(&pool, metrics::SUCCESS).await;
+    let transient = attempts(&pool, metrics::TRANSIENT_FAILURE).await;
+    let terminal = attempts(&pool, metrics::TERMINAL_FAILURE).await;
+    pass(&pool, &source).await;
+    assert_eq!(healed(&pool, healable).await, (false, true));
+    assert_eq!(healed(&pool, unquorate).await, (true, false));
+    assert_eq!(attempts(&pool, metrics::SUCCESS).await, success + 1);
+    assert_eq!(
+        attempts(&pool, metrics::TRANSIENT_FAILURE).await,
+        transient + 1
+    );
+    assert_eq!(attempts(&pool, metrics::TERMINAL_FAILURE).await, terminal);
+}
+
 #[tokio::test]
 #[serial(db)]
 async fn pass_downloads_due_handles_concurrently() {
