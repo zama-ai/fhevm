@@ -24,6 +24,7 @@ jobs:
     outputs:
       # Each output indicates if a specific crate was modified
       changes-ciphertext-attestation: ${{ steps.filter.outputs.ciphertext-attestation }}
+      changes-block-manifest: ${{ steps.filter.outputs.block-manifest }}
       changes-user-decryption-signature: ${{ steps.filter.outputs.user-decryption-signature }}
       changes-gateway-contracts-bindings: ${{ steps.filter.outputs.gateway-contracts-bindings }}
       changes-host-contracts-bindings: ${{ steps.filter.outputs.host-contracts-bindings }}
@@ -41,6 +42,10 @@ jobs:
             # must re-run this crate's tests too.
             - shared/ciphertext-attestation/**
             - gateway-contracts/rust_bindings/**
+          block-manifest:
+            # Path dependency. A change there can break this crate's tests.
+            - shared/block-manifest/**
+            - shared/ciphertext-attestation/**
           user-decryption-signature:
             - shared/user-decryption-signature/**
           gateway-contracts-bindings:
@@ -81,6 +86,17 @@ jobs:
       - name: Run Tests
         run: |
           RUST_BACKTRACE=full cargo test --all-features
+
+  test-block-manifest:
+    name: test-block-manifest
+    needs: check-changes
+    if: ${{ needs.check-changes.outputs.changes-block-manifest == 'true' }}
+    permissions: *shared-crate-test-permissions
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: shared/block-manifest
+    steps: *shared-crate-test-steps
 
   test-ciphertext-attestation:
     name: test-ciphertext-attestation

@@ -157,21 +157,32 @@ async fn finalization_stops_batch_at_fetch_failure() {
 
 /// Pruning removes only old finalized rows that nothing references: rows
 /// referenced by bridge/fallback state, orphaned markers, and everything
-/// within the retention window stay.
+/// within the block or age retention window stay.
 #[tokio::test]
 #[serial(db)]
 async fn prune_keeps_referenced_orphaned_and_recent_rows() {
     let (db, _inst) = fresh_db(CHAIN_ID).await;
-    let (old_unref, old_ref, old_orphaned, recent) =
-        (b32(0x01), b32(0x02), b32(0x03), b32(0x04));
+    let (old_unref, old_ref, old_orphaned, recent, recently_ingested) =
+        (b32(0x01), b32(0x02), b32(0x03), b32(0x04), b32(0x05));
 
     seed_block(&db, 100, &old_unref, &b32(0), "finalized").await;
     seed_block(&db, 200, &old_ref, &b32(0), "finalized").await;
     seed_block(&db, 300, &old_orphaned, &b32(0), "orphaned").await;
     seed_block(&db, 19_000, &recent, &b32(0), "finalized").await;
+    seed_block(&db, 400, &recently_ingested, &b32(0), "finalized").await;
+
+    // Every row except `recently_ingested` was ingested beyond the age window.
+    let pool = db.pool().await;
+    sqlx::query(
+        "UPDATE host_chain_blocks_valid SET created_at = NOW() - INTERVAL '8 days'
+          WHERE block_hash <> $1",
+    )
+    .bind(&recently_ingested)
+    .execute(&pool)
+    .await
+    .expect("age seeded blocks");
 
     // Fallback-grant observation referencing block 200 by hash.
-    let pool = db.pool().await;
     sqlx::query(
         "INSERT INTO fallback_granted_events
              (dst_chain_id, dst_handle, plaintext, block_number, block_hash,
@@ -209,6 +220,11 @@ async fn prune_keeps_referenced_orphaned_and_recent_rows() {
         block_status(&db, &recent).await.as_deref(),
         Some("finalized"),
         "rows within the retention window must survive"
+    );
+    assert_eq!(
+        block_status(&db, &recently_ingested).await.as_deref(),
+        Some("finalized"),
+        "rows ingested within the age window must survive"
     );
 }
 

@@ -174,6 +174,12 @@ const SEALED_CHAIN_RETRY_BACKOFF_SECS: &[u64] = &[1, 5, 30, 120, 300];
 /// Finalized `host_chain_blocks_valid` rows older than this many blocks
 /// below the finalized head are eligible for pruning (when unreferenced).
 const BLOCKS_VALID_RETENTION: i64 = 10_000;
+/// Rows are also kept for this long after ingestion, whatever the block rate.
+/// This lets a stopped consensus-detector resume: it discovers new blocks
+/// parent→child from these rows, and once a row it has not reached yet is
+/// pruned, its manifest publication for that chain stops for good. Seven days
+/// covers a long outage; 10,000 blocks alone is only ~5.5 h on Polygon.
+const BLOCKS_VALID_MIN_AGE_SECS: i64 = 7 * 24 * 3600;
 /// Upper bound of rows removed per pruning pass; keeps each pass short.
 const BLOCKS_VALID_PRUNE_BATCH: i64 = 1_000;
 const SLOW_LANE_RESET_ADVISORY_LOCK_KEY_BASE: i64 = 1_907_000_000;
@@ -187,6 +193,34 @@ const RECONNECTION_DELAY: Duration = Duration::from_millis(100);
 /// Delay before rebinding the stack-version listener to a replaced pool, so a
 /// database that is down does not turn the respawn loop into a busy loop.
 const LISTENER_RESPAWN_DELAY: Duration = Duration::from_secs(1);
+
+async fn insert_handle_producer_block(
+    tx: &mut Transaction<'_>,
+    chain_id: i64,
+    handle: &[u8],
+    producer_block_number: i64,
+    producer_block_hash: &[u8],
+) -> Result<bool, SqlxError> {
+    let done = sqlx::query!(
+        r#"
+        INSERT INTO handle_producer_block (
+            host_chain_id,
+            handle,
+            producer_block_number,
+            producer_block_hash
+        )
+        VALUES ($1, $2, $3, $4)
+        ON CONFLICT (host_chain_id, handle, producer_block_hash) DO NOTHING
+        "#,
+        chain_id,
+        handle,
+        producer_block_number,
+        producer_block_hash,
+    )
+    .execute(tx.deref_mut())
+    .await?;
+    Ok(done.rows_affected() > 0)
+}
 
 struct AllowedHandleInsert {
     handle: Vec<u8>,
@@ -880,18 +914,38 @@ impl Database {
     ) -> Result<bool, SqlxError> {
         let is_scalar = !scalar_byte.is_zero();
         let output_handle = result.to_vec();
-        self.insert_computation_legacy_row(
-            tx,
-            &output_handle,
-            &dependencies,
-            fhe_operation,
-            is_scalar,
-            group_id,
-            output_index,
-            output_count,
-            log,
-        )
-        .await
+        // The output is allowed when this block also emitted persistent
+        // `Allowed` / `AllowedForDecryption` for the result. ACL.allow
+        // requires the caller to already be allowed, and transient allow dies
+        // at tx end, so a handle that must survive later blocks is persist-
+        // allowed in the producing transaction (same host block). Later
+        // Allowed events only add accounts; they do not write this table.
+        let producer_recorded = if log.is_output_allowed(&output_handle) {
+            insert_handle_producer_block(
+                tx,
+                self.chain_id.as_i64(),
+                &output_handle,
+                log.block_number as i64,
+                log.block_hash.as_slice(),
+            )
+            .await?
+        } else {
+            false
+        };
+        let inserted = self
+            .insert_computation_legacy_row(
+                tx,
+                &output_handle,
+                &dependencies,
+                fhe_operation,
+                is_scalar,
+                group_id,
+                output_index,
+                output_count,
+                log,
+            )
+            .await?;
+        Ok(producer_recorded || inserted)
     }
 
     #[allow(clippy::too_many_arguments)]
@@ -1603,8 +1657,8 @@ impl Database {
     /// The table records one row per observed block and nothing deleted it,
     /// so it grew without bound (and with it every ancestry probe). Rows are
     /// deleted only when they are (a) finalized, (b) older than
-    /// [`BLOCKS_VALID_RETENTION`] blocks below the finalized head, and
-    /// (c) referenced by NO bridge, fallback or KMS-activation state — so
+    /// [`BLOCKS_VALID_RETENTION`] blocks below the finalized head and
+    /// ingested more than [`BLOCKS_VALID_MIN_AGE_SECS`] ago, and (c) referenced by NO bridge, fallback or KMS-activation state — so
     /// orphan guards (orphaned rows are never pruned) and bridge/fallback
     /// readiness checks are unaffected by construction. Most blocks carry no
     /// FHE activity, so in steady state nearly everything old is prunable.
@@ -1628,6 +1682,7 @@ impl Database {
                 WHERE c.chain_id = $1
                   AND c.block_status = 'finalized'
                   AND c.block_number < $2
+                  AND c.created_at < NOW() - $4::BIGINT * INTERVAL '1 second'
                   AND NOT EXISTS (
                       SELECT 1 FROM bridge_handle_events r
                       WHERE r.block_hash = c.block_hash
@@ -1659,6 +1714,7 @@ impl Database {
             self.chain_id.as_i64(),
             prune_below,
             BLOCKS_VALID_PRUNE_BATCH,
+            BLOCKS_VALID_MIN_AGE_SECS,
         )
         .execute(&pool)
         .await?

@@ -1,0 +1,14 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "DELETE FROM ciphertexts128 c\n         WHERE c.handle = $1\n           AND EXISTS (\n               SELECT 1\n                 FROM ciphertext_digest d\n                WHERE d.handle = c.handle\n                  AND d.ciphertext IS NOT NULL\n                  AND d.ciphertext128 IS NOT NULL\n                  AND d.ciphertext128_format IS NOT NULL\n                  AND d.s3_publication_verified_at IS NOT NULL\n                  AND d.s3_publication_verified_digest IS NOT DISTINCT FROM d.ciphertext\n           )",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Bytea"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "12eea0b1d71b439a7e1daa3df9565b90c84b258c534b74889a4606a7b26c2bf1"
+}
