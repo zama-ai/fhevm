@@ -12,8 +12,10 @@ use connector_utils::types::{KmsGrpcRequest, extra_data::parse_extra_data, u256_
 use fhevm_gateway_bindings::decryption::Decryption::{self, DecryptionInstance};
 use kms_connector_api::ErrorCode;
 use kms_grpc::kms::v1::{
-    Eip712DomainMsg, PublicDecryptionRequest, SigningSchemeType, UserDecryptionRequest,
+    Eip712DomainMsg, PublicDecryptionRequest, SigningMetadata, SigningSchemeType,
+    UserDecryptionRequest,
 };
+use solana_pubkey::Pubkey;
 use zama_solana_permit::PermitFields;
 
 #[derive(Clone)]
@@ -82,7 +84,8 @@ where
         let kms_extra_data = kms_decryption_extra_data(extra_data);
 
         if let Some(user_decrypt_data) = user_decrypt_data {
-            let client_address = user_decrypt_data.client_address;
+            let (client_address, signing_metadata) =
+                user_decrypt_data.identity.into_kms_request_fields();
             let enc_key = user_decrypt_data.public_key.to_vec();
             let user_decryption_request = UserDecryptionRequest {
                 request_id,
@@ -94,7 +97,7 @@ where
                 extra_data: kms_extra_data,
                 epoch_id: parsed_extra_data.epoch_id.map(u256_to_request_id),
                 context_id: parsed_extra_data.context_id.map(u256_to_request_id),
-                signing_metadata: user_decrypt_data.signing_metadata,
+                signing_metadata,
                 // Currently hardcoded to Ecdsa256k1 as it is the only scheme used for Ethereum.
                 // Solana responses are EIP-712 signed under the Gateway domain too.
                 signing_schemes: vec![SigningSchemeType::Ecdsa256k1 as i32],
@@ -162,31 +165,57 @@ fn kms_decryption_extra_data(extra_data: &Bytes) -> Vec<u8> {
 }
 
 pub struct UserDecryptionExtraData {
-    /// The checksummed EVM user address. Empty for Solana requests.
-    pub client_address: String,
+    pub identity: UserIdentity,
     pub public_key: Bytes,
-    pub signing_metadata: Vec<kms_grpc::kms::v1::SigningMetadata>,
+}
+
+/// The user a KMS user decryption answers, as the host chain names it.
+pub enum UserIdentity {
+    Evm(Address),
+    Solana {
+        user: Pubkey,
+        verifying_program: Pubkey,
+    },
+}
+
+impl UserIdentity {
+    /// The KMS request's `client_address` and `signing_metadata`. RFC-021: the KMS identifies a
+    /// Solana user by its ed25519 pubkey, so `client_address` stays empty and the identity
+    /// travels in the signing metadata.
+    pub fn into_kms_request_fields(self) -> (String, Vec<SigningMetadata>) {
+        match self {
+            Self::Evm(address) => (address.to_checksum(None), vec![]),
+            Self::Solana {
+                user,
+                verifying_program,
+            } => (
+                String::new(),
+                vec![SigningMetadata::solana(
+                    user.to_bytes().to_vec(),
+                    verifying_program.to_bytes().to_vec(),
+                )],
+            ),
+        }
+    }
 }
 
 impl UserDecryptionExtraData {
     pub fn new(user_address: Address, public_key: Bytes) -> Self {
         Self {
-            client_address: user_address.to_checksum(None),
+            identity: UserIdentity::Evm(user_address),
             public_key,
-            signing_metadata: vec![],
         }
     }
 
-    /// RFC-021: the KMS identifies a Solana user by its ed25519 pubkey, so `client_address`
-    /// stays empty and the identity travels in the signing metadata.
     pub fn new_solana(permit: &PermitFields) -> Self {
         Self {
-            client_address: String::new(),
+            identity: UserIdentity::Solana {
+                user: Pubkey::new_from_array(*permit.user_address().as_bytes()),
+                verifying_program: Pubkey::new_from_array(
+                    *permit.verifying_program_id().as_bytes(),
+                ),
+            },
             public_key: Bytes::copy_from_slice(permit.transport_key().as_bytes()),
-            signing_metadata: vec![kms_grpc::kms::v1::SigningMetadata::solana(
-                permit.user_address().as_bytes().to_vec(),
-                permit.verifying_program_id().as_bytes().to_vec(),
-            )],
         }
     }
 }
@@ -311,8 +340,10 @@ mod tests {
         let address = Address::repeat_byte(0x11);
         let data = UserDecryptionExtraData::new(address, Bytes::from_static(&[0x22]));
 
-        assert_eq!(data.client_address, address.to_checksum(None));
-        assert!(data.signing_metadata.is_empty());
+        assert_eq!(
+            data.identity.into_kms_request_fields(),
+            (address.to_checksum(None), vec![])
+        );
     }
 
     #[test]
@@ -324,13 +355,12 @@ mod tests {
         );
         let data = UserDecryptionExtraData::new_solana(request.permit());
 
-        assert!(data.client_address.is_empty());
         assert_eq!(
-            data.signing_metadata,
-            vec![kms_grpc::kms::v1::SigningMetadata::solana(
-                vec![1; 32],
-                vec![7; 32]
-            )]
+            data.identity.into_kms_request_fields(),
+            (
+                String::new(),
+                vec![SigningMetadata::solana(vec![1; 32], vec![7; 32])]
+            )
         );
     }
 }
