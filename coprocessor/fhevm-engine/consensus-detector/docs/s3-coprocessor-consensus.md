@@ -519,8 +519,8 @@ ct128_format:     uint8
 `invalid_descriptor` carries:
 
 ```text
-ct64_digest:   bytes32
-ct128_digest:  bytes32
+ct64_digest?:  bytes32
+ct128_digest?: bytes32
 reason?:       string
 ```
 
@@ -535,14 +535,15 @@ material.
 and incomplete-manifest lag with no ciphertext for that handle.
 
 `status: invalid_descriptor` is set for a computed handle whose descriptor cannot
-be derived locally: no keyset maps its Gateway key id, or its ct128 format is
-unknown. Sealing it this way keeps the chain publishing instead of retrying the
-block forever. Both digests are still committed, so verification compares the
-ct64: a different ct64 is `ct64_mismatch`, which is contained and healed like any
-ct64 drift because consumers may have read it; an equal ct64 leaves a
-`metadata_mismatch` or `ct128_mismatch`, which does not freeze computation.
-`reason` is signed diagnostic text, excluded from the block content digest.
-Invalid digest or handle lengths are still publication errors.
+be derived locally: no keyset maps its Gateway key id, its ct128 format is
+unknown, or a stored digest or keyset id is not 32 bytes. Sealing it this way
+keeps the chain publishing instead of retrying the block forever. Well-formed
+digests are still committed, and a malformed one is absent, so verification
+compares the ct64: a different or absent ct64 is `ct64_mismatch`, which is
+contained and healed like any ct64 drift because consumers may have read it; an
+equal ct64 leaves a `metadata_mismatch` or `ct128_mismatch`, which does not freeze
+computation. `reason` is signed diagnostic text, excluded from the block content
+digest. Only a handle that is not 32 bytes is still a publication error.
 
 `error_message` is the exact `computations.error_message` for a failed handle.
 It is signed with the manifest body and omitted from JSON when absent. It is
@@ -577,7 +578,8 @@ A = keccak256(
 The descriptor contribution contains `handle` and two flags derived from
 `status` (`error`, `uncomputed`; both set for `invalid_descriptor`). Successful
 descriptors then contribute `keyset_id`, both ciphertext digests, and
-`ct128_format`. Invalid descriptors contribute both ciphertext digests. Error and
+`ct128_format`. Invalid descriptors contribute both ciphertext digests, each
+behind a presence byte. Error and
 uncomputed descriptors contribute only the handle and those flags. The digest
 excludes `error_message`, `reason`, `gateway_key_id`, publisher identity,
 transactions, timestamps, object keys, and transport checksums.
