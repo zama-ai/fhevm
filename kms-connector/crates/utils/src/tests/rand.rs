@@ -1,5 +1,5 @@
 use crate::types::solana_request::{
-    SolanaEntryClaims, SolanaGatewayFields, SolanaRequestBlob, SolanaUserDecryptionRequestV1,
+    SolanaEntryClaims, SolanaRequestBlob, SolanaUserDecryptFields, SolanaUserDecryptionRequestV1,
 };
 use alloy::primitives::{Address, FixedBytes, U256};
 use fhevm_gateway_bindings::decryption::{
@@ -75,8 +75,8 @@ pub fn solana_user_decryption_event(
 /// signature.
 pub fn solana_user_decryption_parts(
     handle: FixedBytes<32>,
-) -> (SolanaGatewayFields, SolanaRequestBlob) {
-    let gateway = SolanaGatewayFields {
+) -> (SolanaUserDecryptFields, SolanaRequestBlob) {
+    let gateway = SolanaUserDecryptFields {
         handles: vec![handle.to_vec()],
         transport_key: vec![2; zama_solana_permit::TRANSPORT_KEY_LEN],
         start_timestamp: sqlx::types::chrono::Utc::now().timestamp() as u64 - 60,
@@ -99,7 +99,7 @@ pub fn solana_user_decryption_parts(
 /// The Gateway event carrying `gateway` as its typed fields and `blob` as its opaque request.
 pub fn solana_user_decryption_event_for(
     decryption_id: U256,
-    gateway: &SolanaGatewayFields,
+    gateway: &SolanaUserDecryptFields,
     blob: &SolanaRequestBlob,
 ) -> UserDecryptionRequest_4 {
     UserDecryptionRequest_4 {

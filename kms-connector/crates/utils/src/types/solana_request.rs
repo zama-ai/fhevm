@@ -13,7 +13,7 @@ use zama_solana_permit::{PermitFields, SIGNATURE_LEN, Signature};
 use zama_solana_request::assemble_solana_request;
 
 pub use zama_solana_request::{
-    MAX_REQUEST_HANDLES, SolanaEntryClaims, SolanaGatewayFields, SolanaRequestBlob,
+    MAX_REQUEST_HANDLES, SolanaEntryClaims, SolanaRequestBlob, SolanaUserDecryptFields,
 };
 
 /// One handle and the unsigned claims that authorize it: the key whose allow leaf covers the
@@ -42,7 +42,7 @@ impl SolanaUserDecryptionRequestV1 {
     /// is the one all handles embed.
     pub fn new(
         decryption_id: U256,
-        gateway: SolanaGatewayFields,
+        gateway: SolanaUserDecryptFields,
         blob: SolanaRequestBlob,
     ) -> Result<Self, RequestFormError> {
         let wire = assemble_solana_request(gateway, blob)?;
@@ -104,7 +104,7 @@ impl TryFrom<UserDecryptionRequest_4> for SolanaUserDecryptionRequestV1 {
 
     fn try_from(event: UserDecryptionRequest_4) -> anyhow::Result<Self> {
         let blob = zama_solana_request::decode_solana_request(&event.solanaRequest)?;
-        let gateway = SolanaGatewayFields {
+        let gateway = SolanaUserDecryptFields {
             handles: event.ctHandles.iter().map(|h| h.to_vec()).collect(),
             transport_key: event.publicKey.to_vec(),
             start_timestamp: event.requestValidity.startTimestamp.try_into()?,

@@ -6,8 +6,8 @@ use connector_utils::types::{
     extra_data::parse_extra_data,
     handle::{extract_chain_id_from_handle, extract_fhe_type_from_handle},
     solana_request::{
-        SolanaEntryClaims, SolanaGatewayFields, SolanaPublicDecryptionRequest, SolanaRequestBlob,
-        SolanaUserDecryptionRequestV1,
+        SolanaEntryClaims, SolanaPublicDecryptionRequest, SolanaRequestBlob,
+        SolanaUserDecryptFields, SolanaUserDecryptionRequestV1,
     },
 };
 use kms_connector_api::{
@@ -129,7 +129,7 @@ pub fn validate_solana_user_decryption(
     validate_handles(payload.handles.iter().map(|h| &h.handle), config)?;
     validate_request_validity(&payload.requestValidity)?;
     validate_extra_data(&payload.extraData)?;
-    let gateway = SolanaGatewayFields {
+    let gateway = SolanaUserDecryptFields {
         handles: payload.handles.iter().map(|e| e.handle.to_vec()).collect(),
         transport_key: payload.publicKey.to_vec(),
         start_timestamp: payload.requestValidity.startTimestamp,

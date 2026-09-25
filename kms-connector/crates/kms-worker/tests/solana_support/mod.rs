@@ -18,7 +18,7 @@ use alloy::primitives::B256;
 use alloy::primitives::U256;
 use base64::{Engine, engine::general_purpose::STANDARD as BASE64_STANDARD};
 use connector_utils::types::solana_request::{
-    SolanaEntryClaims, SolanaGatewayFields, SolanaRequestBlob, SolanaUserDecryptionRequestV1,
+    SolanaEntryClaims, SolanaRequestBlob, SolanaUserDecryptFields, SolanaUserDecryptionRequestV1,
 };
 use kms_worker::core::solana::{
     SolanaHost,
@@ -306,10 +306,10 @@ impl<'a> RequestBuilder<'a> {
     }
 
     /// The request in its two carriers, signed: the fields the Gateway types, and the blob.
-    pub fn parts(&self) -> (SolanaGatewayFields, SolanaRequestBlob) {
+    pub fn parts(&self) -> (SolanaUserDecryptFields, SolanaRequestBlob) {
         let signature = self.wallet.sign(&self.permit.typed());
         let permit = self.permit.wire();
-        let gateway = SolanaGatewayFields {
+        let gateway = SolanaUserDecryptFields {
             handles: self.entries.iter().map(|e| e.handle.clone()).collect(),
             transport_key: permit.transport_key,
             start_timestamp: permit.start_timestamp,

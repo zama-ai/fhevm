@@ -1,7 +1,7 @@
 //! The one way to build a full request from its two carriers.
 //!
 //! A Solana user-decryption request travels in two parts. The Gateway's host-generic entry types
-//! the fields it budgets and charges ([`SolanaGatewayFields`]) and carries everything else as one
+//! the fields it budgets and charges ([`SolanaUserDecryptFields`]) and carries everything else as one
 //! opaque blob ([`SolanaRequestBlob`]). Every consumer that needs the full request — the
 //! connector's Gateway listener, HTTP endpoint and row reader, and the relayer — joins the two
 //! here, so no fact is carried twice and no copy can disagree with another.
@@ -14,7 +14,7 @@ use zama_solana_permit::PermitWireFields;
 /// and validity window it records, and the extra data it routes on. The HTTP path carries the
 /// same fields in the same roles.
 #[derive(Clone, PartialEq, Eq, Debug, Default)]
-pub struct SolanaGatewayFields {
+pub struct SolanaUserDecryptFields {
     /// Claimed 32-byte ciphertext handles, in request order.
     pub handles: Vec<Vec<u8>>,
     /// The transport key the shares are encrypted to.
@@ -96,10 +96,10 @@ pub enum SolanaRequestAssemblyError {
 /// 22..30, so it is derived here and the handles must agree. A signer who signed another chain
 /// id then fails signature verification, like any other field it did not sign.
 pub fn assemble_solana_request(
-    gateway: SolanaGatewayFields,
+    gateway: SolanaUserDecryptFields,
     blob: SolanaRequestBlob,
 ) -> Result<SolanaUserDecryptRequestWire, SolanaRequestAssemblyError> {
-    let SolanaGatewayFields {
+    let SolanaUserDecryptFields {
         handles,
         transport_key,
         start_timestamp,
@@ -194,8 +194,11 @@ mod tests {
         handle
     }
 
-    fn parts(handles: Vec<Vec<u8>>, entries: usize) -> (SolanaGatewayFields, SolanaRequestBlob) {
-        let gateway = SolanaGatewayFields {
+    fn parts(
+        handles: Vec<Vec<u8>>,
+        entries: usize,
+    ) -> (SolanaUserDecryptFields, SolanaRequestBlob) {
+        let gateway = SolanaUserDecryptFields {
             handles,
             transport_key: vec![2; 32],
             start_timestamp: 4,

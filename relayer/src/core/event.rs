@@ -10,7 +10,7 @@ use crate::http::endpoints::v3::types::{
 };
 use zama_solana_request::{
     assemble_solana_request, decode_solana_request, encode_solana_request, SolanaEntryClaims,
-    SolanaGatewayFields, SolanaRequestBlob, SolanaUserDecryptRequestWire,
+    SolanaRequestBlob, SolanaUserDecryptFields, SolanaUserDecryptRequestWire,
 };
 
 use crate::orchestrator::traits::Event;
@@ -912,7 +912,7 @@ impl TryFrom<SolanaUserDecryptRequestJson> for UserDecryptRequest {
         // The request's two carriers, exactly as the gateway transaction will hold them: the
         // fields its calldata types, and the blob. They are joined through the same crate the
         // connector uses, so the relayer checks the request each connector will read.
-        let gateway = SolanaGatewayFields {
+        let gateway = SolanaUserDecryptFields {
             handles,
             transport_key: parse_0x_hex(&payload.transport_key, "transportKey")?,
             start_timestamp: parse_decimal_u64(
@@ -998,7 +998,7 @@ pub fn assemble_submitted_solana_request(
     extra_data: &Bytes,
     solana_request: &Bytes,
 ) -> Result<SolanaUserDecryptRequestWire, anyhow::Error> {
-    let gateway = SolanaGatewayFields {
+    let gateway = SolanaUserDecryptFields {
         handles: ct_handles
             .iter()
             .map(|h| h.to_be_bytes::<32>().to_vec())

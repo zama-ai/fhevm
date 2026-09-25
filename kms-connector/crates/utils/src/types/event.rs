@@ -1,5 +1,5 @@
 use super::solana_request::{
-    SolanaEntryClaims, SolanaGatewayFields, SolanaPublicDecryptionRequest, SolanaRequestBlob,
+    SolanaEntryClaims, SolanaPublicDecryptionRequest, SolanaRequestBlob, SolanaUserDecryptFields,
     SolanaUserDecryptionRequestV1,
 };
 use crate::{
@@ -327,7 +327,7 @@ pub fn from_user_decryption_row(row: &PgRow) -> anyhow::Result<ProtocolEvent> {
         AttestationType::Solana => {
             let handle_owner_addresses: Vec<Vec<u8>> = row.try_get("handle_owner_addresses")?;
             let handle_encrypted_stores: Vec<Vec<u8>> = row.try_get("handle_encrypted_stores")?;
-            let gateway = SolanaGatewayFields {
+            let gateway = SolanaUserDecryptFields {
                 handles: ct_handles.iter().map(|h| h.to_vec()).collect(),
                 transport_key: public_key,
                 start_timestamp: u64::try_from(row.try_get::<i64, _>("start_timestamp")?)?,
