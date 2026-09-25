@@ -190,13 +190,8 @@ const config: HardhatUserConfig = {
       // https://hardhat.org/hardhat-network/#solidity-optimizer-support
       optimizer: {
         enabled: true,
-        // 800 -> 200: once the Solana user-decrypt entrypoint and main's contextId validation
-        // coexist (sync merge), Decryption.sol exceeds the 24576-byte EIP-170 limit at 800.
-        // 200 -> 150: the host-generic admission checks (served host-kind inventory, declared
-        // ACL-domain-key count) tipped it over again by 28 bytes at 200.
-        // 150 -> 200: those two admission checks were removed — neither could judge the opaque
-        // request blob they were about — which returned enough headroom to restore the setting.
-        // Mirror this in foundry.toml.
+        // 200, not 800: with the Solana entries, Decryption.sol exceeds the 24576-byte EIP-170
+        // limit at 800 (a test in Decryption.ts pins the size). Mirror this in foundry.toml.
         runs: 200,
       },
       evmVersion: 'cancun',

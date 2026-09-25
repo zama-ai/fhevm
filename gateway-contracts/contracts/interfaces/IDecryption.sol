@@ -403,6 +403,13 @@ interface IDecryption {
     error SolanaHandlesMaxLengthExceeded(uint256 maxLength, uint256 actualLength);
 
     /**
+     * @notice Error indicating that a Solana decryption request names handles of a host chain
+     * that is not a Solana chain: its chain id's type byte is not `0x01`.
+     * @param chainId The chain id the handles name.
+     */
+    error NotSolanaHostChain(uint256 chainId);
+
+    /**
      * @notice Error indicating that a Solana user decryption request carries
      * `extraData` that is not exactly the signed KMS routing form: version `0x02` followed by
      * the 32-byte context id and the 32-byte epoch id (65 bytes total). The Solana entry has no
@@ -517,8 +524,8 @@ interface IDecryption {
      * @notice Requests a public decryption of Solana handles.
      * @dev A Solana handle's public-decrypt permission is a leaf in the encrypted store that holds
      * it, and a store is not derivable from a handle, so the request names one store per handle.
-     * The gateway checks the handles as the Solana user decryption does (one registered host
-     * chain, the bit budget, the handle-count cap) and the store count, before the fee; the KMS
+     * The gateway checks the handles as the Solana user decryption does (one registered Solana
+     * host chain, the bit budget, the handle-count cap) and the store count, before the fee; the KMS
      * Connector proves each handle's leaf against its store. `extraData` routes to the KMS
      * context only, as on the EVM entry.
      * @param ctHandles The handles of the ciphertexts to decrypt.
@@ -625,7 +632,8 @@ interface IDecryption {
      * itself, and carries the rest as one opaque request blob.
      * @dev Everything the gateway validates it validates without reading the blob: the
      * authoritative `block.timestamp` validity-window check, the strict KMS routing form of
-     * `extraData`, the conformance/bit-budget check over `ctHandles`, the handle-count cap
+     * `extraData`, the conformance/bit-budget check over `ctHandles` (one registered Solana host
+     * chain: the Connector authorizes this entry on Solana hosts only), the handle-count cap
      * (Solana's Connector authorizes against one atomic account snapshot, so a longer list
      * could never be authorized and is refused before the fee), the `CiphertextCommits` lookup
      * by exact handle, and the fee — all before the event. Host authorization — permit

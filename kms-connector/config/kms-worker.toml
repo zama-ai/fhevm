@@ -193,8 +193,8 @@ acl_address = "0x0000000000000000000000000000000000000000"
 # Solana chains only, required: the base58 zama-host program id.
 # solana_host_program_id = "11111111111111111111111111111111"
 # Solana chains only, at least one: each coprocessor's leaf-proof endpoint
-# (`POST /v1/solana/leaf-proofs`) and the bearer key that coprocessor issued. They are asked in
-# this order, each only for the leaves the ones before it could not prove, so one lagging
-# coprocessor does not fail a request; the first carries most of the load. A coprocessor that does
-# not answer delays the next by up to `host_rpc_call_timeout`. A route's key is sent only to it.
+# (`POST /v1/solana/leaf-proofs`) and the bearer key that coprocessor issued. Every route is asked
+# at once and the first proof that verifies is taken, so a lagging or stalled coprocessor neither
+# fails nor delays a request another one serves; each route therefore sees every proof read. A
+# route's key is sent only to it.
 # solana_proof_routes = [{ url = "http://localhost:8080", api_key = "change-me" }]

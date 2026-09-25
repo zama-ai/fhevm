@@ -164,6 +164,11 @@ contract Decryption is
     uint8 internal constant MAX_SOLANA_DECRYPT_HANDLES = 32;
 
     /**
+     * @notice The type byte, the top byte of a chain id, that names a Solana host chain (DD-052).
+     */
+    uint256 internal constant SOLANA_CHAIN_TYPE = 0x01;
+
+    /**
      * @notice The hash of the EIP712Domain structure typed data definition.
      */
     bytes32 private constant DOMAIN_TYPE_HASH =
@@ -381,7 +386,7 @@ contract Decryption is
         if (encryptedStores.length != ctHandles.length) {
             revert EncryptedStoresLengthMismatch(ctHandles.length, encryptedStores.length);
         }
-        _checkCtHandlesConformanceHostChain(ctHandles);
+        _checkSolanaCtHandlesConformance(ctHandles);
 
         (uint256 publicDecryptionId, ) = _registerPublicDecryptionRequest(ctHandles, extraData);
 
@@ -781,7 +786,7 @@ contract Decryption is
         uint256 contextId
     ) internal virtual {
         bytes32[] memory ctHandlesMem = ctHandles;
-        _checkCtHandlesConformanceHostChain(ctHandlesMem);
+        _checkSolanaCtHandlesConformance(ctHandlesMem);
         (uint256 userDecryptionId, ) = _registerUserDecryptionRequest(ctHandlesMem, publicKey, contextId);
 
         // Single emission: there is no pre-0.15 consumer of this entry to keep on the deprecated
@@ -1476,6 +1481,19 @@ contract Decryption is
         }
 
         _checkCtHandlesBitBudget(ctHandles);
+    }
+
+    /**
+     * @notice The conformance check of both Solana entries: the handles name a Solana host chain,
+     * then pass the shared check. The KMS Connector authorizes these entries on Solana hosts only,
+     * so a handle of another chain kind is refused before the fee is kept.
+     */
+    function _checkSolanaCtHandlesConformance(bytes32[] memory ctHandles) internal view virtual {
+        uint256 chainId = HandleOps.extractChainId(ctHandles[0]);
+        if (chainId >> 56 != SOLANA_CHAIN_TYPE) {
+            revert NotSolanaHostChain(chainId);
+        }
+        _checkCtHandlesConformanceHostChain(ctHandles);
     }
 
     /**

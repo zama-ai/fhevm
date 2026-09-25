@@ -105,6 +105,21 @@ describe('Decryption', function () {
   const fakeHostChainId = 123;
   const fakeChainIdCtHandle = createCtHandle(fakeHostChainId);
 
+  // A Solana host chain id is type byte 0x01 and a cluster tag (DD-052). The Solana entries take
+  // only handles of a Solana chain, which `prepareSolanaCiphertextFixture` registers.
+  const solanaChainId = (tag: bigint) => (1n << 56n) | tag;
+  const solanaHostChainId = solanaChainId(12345n);
+  const solanaEuint256CtHandle = createCtHandle(solanaHostChainId, 8);
+  const solanaCtHandles = [
+    createCtHandle(solanaHostChainId, 0),
+    createCtHandle(solanaHostChainId, 2),
+    solanaEuint256CtHandle,
+  ];
+  const solanaNewCtHandle = createCtHandle(solanaHostChainId);
+  const solanaInvalidFHETypeCtHandle = createCtHandle(solanaHostChainId, invalidFHEType);
+  const solanaUnsupportedFHETypeCtHandle = createCtHandle(solanaHostChainId, unsupportedFHEType);
+  const fakeSolanaChainIdCtHandle = createCtHandle(solanaChainId(123n));
+
   // Define extra data for version 0
   const extraDataV0 = hre.ethers.solidityPacked(['uint8'], [0]);
 
@@ -160,6 +175,28 @@ describe('Decryption', function () {
     }
 
     return { ...fixtureData, snsCiphertextMaterials, keyId };
+  }
+
+  async function prepareSolanaCiphertextFixture() {
+    const fixtureData = await loadFixture(prepareAddCiphertextFixture);
+    const { gatewayConfig, ciphertextCommits, coprocessorTxSenders, owner } = fixtureData;
+
+    await gatewayConfig.connect(owner).addHostChain({
+      chainId: solanaHostChainId,
+      fhevmExecutorAddress: hre.ethers.ZeroAddress,
+      aclAddress: hre.ethers.ZeroAddress,
+      name: 'Solana host chain',
+      website: 'https://solana-host-chain-test.com',
+    });
+    for (const ctHandle of solanaCtHandles) {
+      for (const coprocessorTxSender of coprocessorTxSenders) {
+        await ciphertextCommits
+          .connect(coprocessorTxSender)
+          .addCiphertextMaterial(ctHandle, keyId, ciphertextDigest, snsCiphertextDigest);
+      }
+    }
+
+    return fixtureData;
   }
 
   describe('Deployment', function () {
@@ -3408,10 +3445,10 @@ describe('Decryption', function () {
     // request here, and the suite passing with them is itself the opacity property.
     const solanaRequest = hre.ethers.hexlify(hre.ethers.randomBytes(96));
 
-    // ctHandles = [Bool (2 bits), Uint8 (8 bits), Uint256 (256 bits)], all registered in
+    // solanaCtHandles = [Bool (2 bits), Uint8 (8 bits), Uint256 (256 bits)], all registered in
     // CiphertextCommits by the fixture. The Bool handle is the narrow type for count-cap
     // tests; the Uint256 handle is the wide type for bit-budget tests.
-    const eboolCtHandle = ctHandles[0];
+    const eboolCtHandle = solanaCtHandles[0];
 
     let decryption: Decryption;
     let ciphertextCommits: CiphertextCommits;
@@ -3424,7 +3461,7 @@ describe('Decryption', function () {
     let pauser: Wallet;
 
     beforeEach(async function () {
-      const fixtureData = await loadFixture(prepareAddCiphertextFixture);
+      const fixtureData = await loadFixture(prepareSolanaCiphertextFixture);
       decryption = fixtureData.decryption;
       ciphertextCommits = fixtureData.ciphertextCommits;
       gatewayConfig = fixtureData.gatewayConfig;
@@ -3461,9 +3498,16 @@ describe('Decryption', function () {
     }
 
     it('Should emit the Solana event carrying the request form', async function () {
-      await expect(requestSolanaUser(ctHandles))
+      await expect(requestSolanaUser(solanaCtHandles))
         .to.emit(decryption, SOLANA_USER_EVENT_SIG)
-        .withArgs(decryptionId, ctHandles, toValues(requestValidity), publicKey, solanaRoutingExtraData, solanaRequest);
+        .withArgs(
+          decryptionId,
+          solanaCtHandles,
+          toValues(requestValidity),
+          publicKey,
+          solanaRoutingExtraData,
+          solanaRequest,
+        );
     });
 
     it('Should pin the Solana event form as the cross-repository contract', async function () {
@@ -3519,9 +3563,9 @@ describe('Decryption', function () {
     it('Should revert because ciphertext material has not been added', async function () {
       // The CiphertextCommits lookup by exact handle survives the form change: an unknown
       // handle dies before the event.
-      await expect(requestSolanaUser([newCtHandles[0]]))
+      await expect(requestSolanaUser([solanaNewCtHandle]))
         .to.be.revertedWithCustomError(ciphertextCommits, 'CiphertextMaterialNotFound')
-        .withArgs(newCtHandles[0]);
+        .withArgs(solanaNewCtHandle);
     });
 
     it('Should revert because the start timestamp is in the future', async function () {
@@ -3567,36 +3611,47 @@ describe('Decryption', function () {
       // this boundary pair is what proves the bit budget kept its one enforcer after the form
       // change (the Connector deliberately holds no copy of the width table, and authorizes
       // the opaque payload's handle list only when it matches these typed handles).
-      const atBudget = Array(8).fill(euint256CtHandle); // 8 * 256 = 2048
+      const atBudget = Array(8).fill(solanaEuint256CtHandle); // 8 * 256 = 2048
       await expect(requestSolanaUser(atBudget)).to.emit(decryption, SOLANA_USER_EVENT_SIG);
 
-      const pastBudget = [...Array(8).fill(euint256CtHandle), eboolCtHandle]; // 2050 bits
+      const pastBudget = [...Array(8).fill(solanaEuint256CtHandle), eboolCtHandle]; // 2050 bits
       await expect(requestSolanaUser(pastBudget))
         .to.be.revertedWithCustomError(decryption, 'MaxDecryptionRequestBitSizeExceeded')
         .withArgs(MAX_DECRYPTION_REQUEST_BITS, 2050);
     });
 
     it('Should revert on a handle of an invalid or unsupported FHE type', async function () {
-      await expect(requestSolanaUser([invalidFHETypeCtHandle]))
+      await expect(requestSolanaUser([solanaInvalidFHETypeCtHandle]))
         .to.be.revertedWithCustomError(decryption, 'InvalidFHEType')
         .withArgs(invalidFHEType);
 
       // A type inside the enum but without a width row must revert, not price at zero.
-      await expect(requestSolanaUser([unsupportedFHETypeCtHandle]))
+      await expect(requestSolanaUser([solanaUnsupportedFHETypeCtHandle]))
         .to.be.revertedWithCustomError(decryption, 'UnsupportedFHEType')
         .withArgs(unsupportedFHEType);
     });
 
     it('Should revert on handles of an unregistered or inconsistent host chain', async function () {
-      await expect(requestSolanaUser([fakeChainIdCtHandle])).to.be.revertedWithCustomError(
+      await expect(requestSolanaUser([fakeSolanaChainIdCtHandle])).to.be.revertedWithCustomError(
         gatewayConfig,
         'HostChainNotRegistered',
       );
 
-      await expect(requestSolanaUser([eboolCtHandle, fakeChainIdCtHandle])).to.be.revertedWithCustomError(
+      await expect(requestSolanaUser([eboolCtHandle, fakeSolanaChainIdCtHandle])).to.be.revertedWithCustomError(
         decryption,
         'CtHandleChainIdDiffersFromContractChainId',
       );
+    });
+
+    it('Should refuse handles of an EVM host chain before the fee', async function () {
+      const senderBalance = await mockedZamaOFT.balanceOf(tokenFundedTxSender.address);
+
+      // The chain is registered, but the Connector authorizes this entry on Solana hosts only.
+      await expect(requestSolanaUser([ctHandles[0]]))
+        .to.be.revertedWithCustomError(decryption, 'NotSolanaHostChain')
+        .withArgs(hostChainId);
+
+      expect(await mockedZamaOFT.balanceOf(tokenFundedTxSender.address)).to.equal(senderBalance);
     });
 
     it('Should revert on an empty handle list', async function () {
@@ -3706,8 +3761,8 @@ describe('Decryption', function () {
 
     const decryptionId = getPublicDecryptId(1);
     const decryptedResult = createByteInput();
-    const eboolCtHandle = ctHandles[0];
-    const encryptedStores = createBytes32s(ctHandles.length);
+    const eboolCtHandle = solanaCtHandles[0];
+    const encryptedStores = createBytes32s(solanaCtHandles.length);
 
     let decryption: Decryption;
     let ciphertextCommits: CiphertextCommits;
@@ -3722,7 +3777,7 @@ describe('Decryption', function () {
     let routingExtraData: string;
 
     beforeEach(async function () {
-      const fixtureData = await loadFixture(prepareAddCiphertextFixture);
+      const fixtureData = await loadFixture(prepareSolanaCiphertextFixture);
       decryption = fixtureData.decryption;
       ciphertextCommits = fixtureData.ciphertextCommits;
       gatewayConfig = fixtureData.gatewayConfig;
@@ -3759,11 +3814,11 @@ describe('Decryption', function () {
     }
 
     it('Should emit the Solana event only, carrying one store per handle', async function () {
-      const requestTx = await requestSolanaPublic(ctHandles);
+      const requestTx = await requestSolanaPublic(solanaCtHandles);
 
       await expect(requestTx)
         .to.emit(decryption, SOLANA_PUBLIC_EVENT_SIG)
-        .withArgs(decryptionId, ctHandles, routingExtraData, encryptedStores);
+        .withArgs(decryptionId, solanaCtHandles, routingExtraData, encryptedStores);
       await expect(requestTx).to.not.emit(decryption, PUBLIC_DECRYPTION_REQUEST_LEGACY_SIG);
       await expect(requestTx).to.not.emit(decryption, PUBLIC_DECRYPTION_REQUEST_HANDLES_SIG);
     });
@@ -3776,15 +3831,15 @@ describe('Decryption', function () {
 
     it('Should share the public decryption counter and response with the EVM entry', async function () {
       await decryption.connect(tokenFundedTxSender).publicDecryptionRequest(ctHandles, extraDataV0);
-      await expect(requestSolanaPublic(ctHandles))
+      await expect(requestSolanaPublic(solanaCtHandles))
         .to.emit(decryption, SOLANA_PUBLIC_EVENT_SIG)
-        .withArgs(getPublicDecryptId(2), ctHandles, routingExtraData, encryptedStores);
+        .withArgs(getPublicDecryptId(2), solanaCtHandles, routingExtraData, encryptedStores);
 
       // The KMS signs the handles, result and extraData; the stores are not part of the response.
       const responseEip712 = createEIP712ResponsePublicDecrypt(
         gatewayChainId,
         await decryption.getAddress(),
-        ctHandles,
+        solanaCtHandles,
         decryptedResult,
         routingExtraData,
       );
@@ -3800,9 +3855,9 @@ describe('Decryption', function () {
     it('Should reject a store count that differs from the handle count before the fee', async function () {
       for (const stores of [encryptedStores.slice(0, 2), [...encryptedStores, createBytes32s(1)[0]]]) {
         await expectNoFee(() =>
-          expect(requestSolanaPublic(ctHandles, { encryptedStores: stores }))
+          expect(requestSolanaPublic(solanaCtHandles, { encryptedStores: stores }))
             .to.be.revertedWithCustomError(decryption, 'EncryptedStoresLengthMismatch')
-            .withArgs(ctHandles.length, stores.length),
+            .withArgs(solanaCtHandles.length, stores.length),
         );
       }
     });
@@ -3833,16 +3888,21 @@ describe('Decryption', function () {
     });
 
     it('Should run the host-chain conformance checks', async function () {
-      await expect(requestSolanaPublic([fakeChainIdCtHandle])).to.be.revertedWithCustomError(
+      await expect(requestSolanaPublic([fakeSolanaChainIdCtHandle])).to.be.revertedWithCustomError(
         gatewayConfig,
         'HostChainNotRegistered',
       );
-      await expect(requestSolanaPublic([eboolCtHandle, fakeChainIdCtHandle])).to.be.revertedWithCustomError(
+      await expect(requestSolanaPublic([eboolCtHandle, fakeSolanaChainIdCtHandle])).to.be.revertedWithCustomError(
         decryption,
         'CtHandleChainIdDiffersFromContractChainId',
       );
+      await expectNoFee(() =>
+        expect(requestSolanaPublic([ctHandles[0]]))
+          .to.be.revertedWithCustomError(decryption, 'NotSolanaHostChain')
+          .withArgs(hostChainId),
+      );
 
-      const pastBudget = [...Array(8).fill(euint256CtHandle), eboolCtHandle]; // 2050 bits
+      const pastBudget = [...Array(8).fill(solanaEuint256CtHandle), eboolCtHandle]; // 2050 bits
       await expect(
         requestSolanaPublic(pastBudget, { encryptedStores: Array(pastBudget.length).fill(encryptedStores[0]) }),
       )
@@ -3851,15 +3911,15 @@ describe('Decryption', function () {
     });
 
     it('Should revert because ciphertext material has not been added', async function () {
-      await expect(requestSolanaPublic([newCtHandles[0]]))
+      await expect(requestSolanaPublic([solanaNewCtHandle]))
         .to.be.revertedWithCustomError(ciphertextCommits, 'CiphertextMaterialNotFound')
-        .withArgs(newCtHandles[0]);
+        .withArgs(solanaNewCtHandle);
     });
 
     it('Should route extraData to the KMS context as the EVM entry does', async function () {
       const unknownContextId = 999_999n;
       await expectNoFee(() =>
-        expect(requestSolanaPublic(ctHandles, { extraData: extraDataV1(unknownContextId) }))
+        expect(requestSolanaPublic(solanaCtHandles, { extraData: extraDataV1(unknownContextId) }))
           .to.be.revertedWithCustomError(gatewayConfig, 'InvalidKmsContext')
           .withArgs(unknownContextId),
       );
@@ -3868,7 +3928,7 @@ describe('Decryption', function () {
         ['uint8', 'uint256', 'bytes32'],
         [4, await gatewayConfig.getCurrentKmsContextId(), encryptedStores[0]],
       );
-      await expect(requestSolanaPublic(ctHandles, { extraData: v4ExtraData }))
+      await expect(requestSolanaPublic(solanaCtHandles, { extraData: v4ExtraData }))
         .to.be.revertedWithCustomError(decryption, 'UnsupportedExtraDataVersion')
         .withArgs(4);
     });
@@ -3877,7 +3937,7 @@ describe('Decryption', function () {
       const senderBalance = await mockedZamaOFT.balanceOf(tokenFundedTxSender.address);
       const burnerBalance = await mockedZamaOFT.balanceOf(mockedFeesSenderToBurnerAddress);
 
-      await requestSolanaPublic(ctHandles);
+      await requestSolanaPublic(solanaCtHandles);
 
       expect(await mockedZamaOFT.balanceOf(tokenFundedTxSender.address)).to.equal(
         senderBalance - publicDecryptionPrice,
@@ -3890,7 +3950,7 @@ describe('Decryption', function () {
     it('Should revert when the contract is paused', async function () {
       await decryption.connect(pauser).pause();
 
-      await expect(requestSolanaPublic(ctHandles)).to.be.revertedWithCustomError(decryption, 'EnforcedPause');
+      await expect(requestSolanaPublic(solanaCtHandles)).to.be.revertedWithCustomError(decryption, 'EnforcedPause');
     });
   });
 

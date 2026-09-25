@@ -65,6 +65,7 @@ interface IDecryption {
     error MaxDecryptionRequestBitSizeExceeded(uint256 maxBitSize, uint256 totalBitSize);
     error MaxDurationDaysExceeded(uint256 maxValue, uint256 actualValue);
     error MaxDurationSecondsExceeded(uint256 maxValue, uint256 actualValue);
+    error NotSolanaHostChain(uint256 chainId);
     error SolanaHandlesMaxLengthExceeded(uint256 maxLength, uint256 actualLength);
     error StartTimestampInFuture(uint256 currentTimestamp, uint256 startTimestamp);
     error UnsupportedExtraDataVersion(uint8 version);
@@ -1601,6 +1602,17 @@ interface IDecryption {
       },
       {
         "name": "actualValue",
+        "type": "uint256",
+        "internalType": "uint256"
+      }
+    ]
+  },
+  {
+    "type": "error",
+    "name": "NotSolanaHostChain",
+    "inputs": [
+      {
+        "name": "chainId",
         "type": "uint256",
         "internalType": "uint256"
       }
@@ -5675,6 +5687,89 @@ error MaxDurationSecondsExceeded(uint256 maxValue, uint256 actualValue);
                     <alloy::sol_types::sol_data::Uint<
                         256,
                     > as alloy_sol_types::SolType>::tokenize(&self.actualValue),
+                )
+            }
+            #[inline]
+            fn abi_decode_raw_validate(data: &[u8]) -> alloy_sol_types::Result<Self> {
+                <Self::Parameters<
+                    '_,
+                > as alloy_sol_types::SolType>::abi_decode_sequence_validate(data)
+                    .map(Self::new)
+            }
+        }
+    };
+    #[derive(serde::Serialize, serde::Deserialize)]
+    #[derive(Default, Debug, PartialEq, Eq, Hash)]
+    /**Custom error with signature `NotSolanaHostChain(uint256)` and selector `0xda9adf5f`.
+```solidity
+error NotSolanaHostChain(uint256 chainId);
+```*/
+    #[allow(non_camel_case_types, non_snake_case, clippy::pub_underscore_fields)]
+    #[derive(Clone)]
+    pub struct NotSolanaHostChain {
+        #[allow(missing_docs)]
+        pub chainId: alloy::sol_types::private::primitives::aliases::U256,
+    }
+    #[allow(
+        non_camel_case_types,
+        non_snake_case,
+        clippy::pub_underscore_fields,
+        clippy::style
+    )]
+    const _: () = {
+        use alloy::sol_types as alloy_sol_types;
+        #[doc(hidden)]
+        #[allow(dead_code)]
+        type UnderlyingSolTuple<'a> = (alloy::sol_types::sol_data::Uint<256>,);
+        #[doc(hidden)]
+        type UnderlyingRustTuple<'a> = (
+            alloy::sol_types::private::primitives::aliases::U256,
+        );
+        #[cfg(test)]
+        #[allow(dead_code, unreachable_patterns)]
+        fn _type_assertion(
+            _t: alloy_sol_types::private::AssertTypeEq<UnderlyingRustTuple>,
+        ) {
+            match _t {
+                alloy_sol_types::private::AssertTypeEq::<
+                    <UnderlyingSolTuple as alloy_sol_types::SolType>::RustType,
+                >(_) => {}
+            }
+        }
+        #[automatically_derived]
+        #[doc(hidden)]
+        impl ::core::convert::From<NotSolanaHostChain> for UnderlyingRustTuple<'_> {
+            fn from(value: NotSolanaHostChain) -> Self {
+                (value.chainId,)
+            }
+        }
+        #[automatically_derived]
+        #[doc(hidden)]
+        impl ::core::convert::From<UnderlyingRustTuple<'_>> for NotSolanaHostChain {
+            fn from(tuple: UnderlyingRustTuple<'_>) -> Self {
+                Self { chainId: tuple.0 }
+            }
+        }
+        #[automatically_derived]
+        impl alloy_sol_types::SolError for NotSolanaHostChain {
+            type Parameters<'a> = UnderlyingSolTuple<'a>;
+            type Token<'a> = <Self::Parameters<
+                'a,
+            > as alloy_sol_types::SolType>::Token<'a>;
+            const SIGNATURE: &'static str = "NotSolanaHostChain(uint256)";
+            const SELECTOR: [u8; 4] = [218u8, 154u8, 223u8, 95u8];
+            #[inline]
+            fn new<'a>(
+                tuple: <Self::Parameters<'a> as alloy_sol_types::SolType>::RustType,
+            ) -> Self {
+                tuple.into()
+            }
+            #[inline]
+            fn tokenize(&self) -> Self::Token<'_> {
+                (
+                    <alloy::sol_types::sol_data::Uint<
+                        256,
+                    > as alloy_sol_types::SolType>::tokenize(&self.chainId),
                 )
             }
             #[inline]
@@ -11709,6 +11804,8 @@ function userDecryptionResponse(uint256 decryptionId, bytes memory userDecrypted
         #[allow(missing_docs)]
         MaxDurationSecondsExceeded(MaxDurationSecondsExceeded),
         #[allow(missing_docs)]
+        NotSolanaHostChain(NotSolanaHostChain),
+        #[allow(missing_docs)]
         SolanaHandlesMaxLengthExceeded(SolanaHandlesMaxLengthExceeded),
         #[allow(missing_docs)]
         StartTimestampInFuture(StartTimestampInFuture),
@@ -11752,6 +11849,7 @@ function userDecryptionResponse(uint256 decryptionId, bytes memory userDecrypted
             [203u8, 23u8, 183u8, 165u8],
             [207u8, 174u8, 146u8, 31u8],
             [212u8, 138u8, 249u8, 66u8],
+            [218u8, 154u8, 223u8, 95u8],
             [220u8, 77u8, 120u8, 177u8],
             [222u8, 40u8, 89u8, 193u8],
             [225u8, 50u8, 103u8, 12u8],
@@ -11783,6 +11881,7 @@ function userDecryptionResponse(uint256 decryptionId, bytes memory userDecrypted
             ::core::stringify!(InvalidNullContextId),
             ::core::stringify!(DifferentKeyIdsNotAllowed),
             ::core::stringify!(DecryptionNotRequested),
+            ::core::stringify!(NotSolanaHostChain),
             ::core::stringify!(UserAddressInContractAddresses),
             ::core::stringify!(InvalidNullDurationDays),
             ::core::stringify!(SolanaHandlesMaxLengthExceeded),
@@ -11814,6 +11913,7 @@ function userDecryptionResponse(uint256 decryptionId, bytes memory userDecrypted
             <InvalidNullContextId as alloy_sol_types::SolError>::SIGNATURE,
             <DifferentKeyIdsNotAllowed as alloy_sol_types::SolError>::SIGNATURE,
             <DecryptionNotRequested as alloy_sol_types::SolError>::SIGNATURE,
+            <NotSolanaHostChain as alloy_sol_types::SolError>::SIGNATURE,
             <UserAddressInContractAddresses as alloy_sol_types::SolError>::SIGNATURE,
             <InvalidNullDurationDays as alloy_sol_types::SolError>::SIGNATURE,
             <SolanaHandlesMaxLengthExceeded as alloy_sol_types::SolError>::SIGNATURE,
@@ -11845,7 +11945,7 @@ function userDecryptionResponse(uint256 decryptionId, bytes memory userDecrypted
     impl alloy_sol_types::SolInterface for IDecryptionErrors {
         const NAME: &'static str = "IDecryptionErrors";
         const MIN_DATA_LENGTH: usize = 0usize;
-        const COUNT: usize = 28usize;
+        const COUNT: usize = 29usize;
         #[inline]
         fn selector(&self) -> [u8; 4] {
             match self {
@@ -11914,6 +12014,9 @@ function userDecryptionResponse(uint256 decryptionId, bytes memory userDecrypted
                 }
                 Self::MaxDurationSecondsExceeded(_) => {
                     <MaxDurationSecondsExceeded as alloy_sol_types::SolError>::SELECTOR
+                }
+                Self::NotSolanaHostChain(_) => {
+                    <NotSolanaHostChain as alloy_sol_types::SolError>::SELECTOR
                 }
                 Self::SolanaHandlesMaxLengthExceeded(_) => {
                     <SolanaHandlesMaxLengthExceeded as alloy_sol_types::SolError>::SELECTOR
@@ -12204,6 +12307,17 @@ function userDecryptionResponse(uint256 decryptionId, bytes memory userDecrypted
                             .map(IDecryptionErrors::DecryptionNotRequested)
                     }
                     DecryptionNotRequested
+                },
+                {
+                    fn NotSolanaHostChain(
+                        data: &[u8],
+                    ) -> alloy_sol_types::Result<IDecryptionErrors> {
+                        <NotSolanaHostChain as alloy_sol_types::SolError>::abi_decode_raw(
+                                data,
+                            )
+                            .map(IDecryptionErrors::NotSolanaHostChain)
+                    }
+                    NotSolanaHostChain
                 },
                 {
                     fn UserAddressInContractAddresses(
@@ -12536,6 +12650,17 @@ function userDecryptionResponse(uint256 decryptionId, bytes memory userDecrypted
                     DecryptionNotRequested
                 },
                 {
+                    fn NotSolanaHostChain(
+                        data: &[u8],
+                    ) -> alloy_sol_types::Result<IDecryptionErrors> {
+                        <NotSolanaHostChain as alloy_sol_types::SolError>::abi_decode_raw_validate(
+                                data,
+                            )
+                            .map(IDecryptionErrors::NotSolanaHostChain)
+                    }
+                    NotSolanaHostChain
+                },
+                {
                     fn UserAddressInContractAddresses(
                         data: &[u8],
                     ) -> alloy_sol_types::Result<IDecryptionErrors> {
@@ -12712,6 +12837,11 @@ function userDecryptionResponse(uint256 decryptionId, bytes memory userDecrypted
                         inner,
                     )
                 }
+                Self::NotSolanaHostChain(inner) => {
+                    <NotSolanaHostChain as alloy_sol_types::SolError>::abi_encoded_size(
+                        inner,
+                    )
+                }
                 Self::SolanaHandlesMaxLengthExceeded(inner) => {
                     <SolanaHandlesMaxLengthExceeded as alloy_sol_types::SolError>::abi_encoded_size(
                         inner,
@@ -12875,6 +13005,12 @@ function userDecryptionResponse(uint256 decryptionId, bytes memory userDecrypted
                 }
                 Self::MaxDurationSecondsExceeded(inner) => {
                     <MaxDurationSecondsExceeded as alloy_sol_types::SolError>::abi_encode_raw(
+                        inner,
+                        out,
+                    )
+                }
+                Self::NotSolanaHostChain(inner) => {
+                    <NotSolanaHostChain as alloy_sol_types::SolError>::abi_encode_raw(
                         inner,
                         out,
                     )

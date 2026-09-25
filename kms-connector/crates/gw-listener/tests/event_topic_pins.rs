@@ -16,9 +16,8 @@ use connector_utils::types::db::EventType;
 
 /// Every event signature the user-decryption filter must subscribe by once this train
 /// block lands: the two EVM shapes it serves today, plus the Solana request event. The list is
-/// compared in full
-/// (order-insensitively), so a
-/// topic appearing or disappearing fails with both lists visible.
+/// compared in full (order-insensitively), so a topic appearing or disappearing fails with both
+/// lists visible.
 const USER_DECRYPTION_SUBSCRIBED_SIGS: &[&str] = &[
     // The bytes32[] handles-only user-decryption shape the base binding name resolves to.
     "UserDecryptionRequest(uint256,bytes32[],address,bytes,bytes)",

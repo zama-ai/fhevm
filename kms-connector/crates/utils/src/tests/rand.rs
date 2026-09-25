@@ -75,8 +75,8 @@ pub fn solana_user_decryption_event(
     decryption_id: U256,
     handle: FixedBytes<32>,
 ) -> SolanaUserDecryptionRequest {
-    let (gateway, blob) = solana_user_decryption_parts(handle);
-    solana_user_decryption_event_for(decryption_id, &gateway, &blob)
+    let (fields, blob) = solana_user_decryption_parts(handle);
+    solana_user_decryption_event_for(decryption_id, &fields, &blob)
 }
 
 /// The two carriers of a well-formed Solana request naming `handle`, with a placeholder
@@ -84,7 +84,7 @@ pub fn solana_user_decryption_event(
 pub fn solana_user_decryption_parts(
     handle: FixedBytes<32>,
 ) -> (SolanaUserDecryptFields, SolanaRequestBlob) {
-    let gateway = SolanaUserDecryptFields {
+    let fields = SolanaUserDecryptFields {
         handles: vec![handle.0],
         transport_key: vec![2; zama_solana_permit::TRANSPORT_KEY_LEN],
         start_timestamp: sqlx::types::chrono::Utc::now().timestamp() as u64 - 60,
@@ -101,28 +101,28 @@ pub fn solana_user_decryption_parts(
             encrypted_store: [3; 32],
         }],
     };
-    (gateway, blob)
+    (fields, blob)
 }
 
-/// The Gateway event carrying `gateway` as its typed fields and `blob` as its opaque request.
+/// The Gateway event carrying `fields` as its typed fields and `blob` as its opaque request.
 pub fn solana_user_decryption_event_for(
     decryption_id: U256,
-    gateway: &SolanaUserDecryptFields,
+    fields: &SolanaUserDecryptFields,
     blob: &SolanaRequestBlob,
 ) -> SolanaUserDecryptionRequest {
     SolanaUserDecryptionRequest {
         decryptionId: decryption_id,
-        ctHandles: gateway
+        ctHandles: fields
             .handles
             .iter()
             .map(|handle| FixedBytes::from(*handle))
             .collect(),
         requestValidity: RequestValiditySeconds {
-            startTimestamp: U256::from(gateway.start_timestamp),
-            durationSeconds: U256::from(gateway.duration_seconds),
+            startTimestamp: U256::from(fields.start_timestamp),
+            durationSeconds: U256::from(fields.duration_seconds),
         },
-        publicKey: gateway.transport_key.clone().into(),
-        extraData: gateway.extra_data.clone().into(),
+        publicKey: fields.transport_key.clone().into(),
+        extraData: fields.extra_data.clone().into(),
         solanaRequest: zama_solana_request::encode_solana_request(blob)
             .unwrap()
             .into(),

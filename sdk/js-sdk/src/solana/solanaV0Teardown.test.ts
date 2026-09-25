@@ -3,7 +3,7 @@
 //
 // The SDK used to build a bespoke binary preimage, sign it as a raw message, and post it under an
 // attestation type the relayer no longer accepts. All of that is replaced by the sRFC-38 permit: the
-// canonical text, the offchain-message envelope, and the host-generic v3 envelope.
+// canonical text, the offchain-message envelope, and the Solana v3 envelope.
 //
 // A surviving reference keeps the dead surface alive silently — worse here than in most places,
 // because a v0 code path that still compiles is a second way to sign, and the exclusivity of the
@@ -25,7 +25,7 @@ const FORBIDDEN: ReadonlyArray<readonly [string, string]> = [
   ['buildSolanaUserDecryptMmrProofExtraData', 'the v0 extraData carrier for user decrypt; routing is 0x02 now'],
   ['solana-ed25519-user-decrypt', 'the retired v0 attestation type, in any of its versions'],
   ['deSigncryptSolanaUserDecrypt', 'the v0 de-signcryption entry point; response verification replaced it'],
-  ['68ba21ba', 'the retired vendored TKMS blob; the host-generic path uses the newer one'],
+  ['68ba21ba', 'the retired vendored TKMS blob; the Solana path uses the newer one'],
   ['signing_message_v1.json', 'the v0 signing-message fixture; the permit and envelope sets replaced it'],
   // RFC 035: the client fetches no proof and names nothing beyond the store and the owner address;
   // the Connector reads the store and asks the coprocessors for the allow leaf.

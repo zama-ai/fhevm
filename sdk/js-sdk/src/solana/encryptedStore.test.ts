@@ -116,17 +116,14 @@ describe('decoding an EncryptedStore account', () => {
 });
 
 describe('the account address', () => {
-  const HOST_PROGRAM = bytes32(0x99);
+  const address = (fill: number) => base58.encode(bytes32(fill)) as Address;
+  const HOST_PROGRAM = address(0x99);
 
   it('is the PDA of the tag and the four identity fields, in that order', async () => {
-    const seeds = {
-      program: bytes32(0x11),
-      authority: bytes32(0x22),
-      scope: bytes32(0x33),
-    };
+    const seeds = { program: address(0x11), authority: address(0x22), scope: address(0x33) };
     const [expected] = await getProgramDerivedAddress({
-      programAddress: base58.encode(HOST_PROGRAM) as Address,
-      seeds: [SOLANA_ENCRYPTED_STORE_SEED, seeds.program, seeds.authority, seeds.scope],
+      programAddress: HOST_PROGRAM,
+      seeds: [SOLANA_ENCRYPTED_STORE_SEED, bytes32(0x11), bytes32(0x22), bytes32(0x33)],
     });
     expect(await solanaEncryptedStoreAddress(HOST_PROGRAM, seeds)).toBe(expected);
     expect(new TextDecoder().decode(SOLANA_ENCRYPTED_STORE_SEED)).toBe('encrypted-state');

@@ -1426,7 +1426,7 @@ mod tests {
     /// the transport key as `publicKey`, the signed KMS routing as `extraData`, the handles as
     /// `ctHandles`.
     #[test]
-    fn solana_permit_user_decrypt_routes_to_host_generic() {
+    fn solana_permit_user_decrypt_routes_to_the_solana_entry() {
         let json = solana_envelope(valid_solana_payload());
 
         let request = UserDecryptRequest::try_from(json).expect("Solana envelope should convert");

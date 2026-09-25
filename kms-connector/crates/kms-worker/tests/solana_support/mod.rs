@@ -313,7 +313,7 @@ impl<'a> RequestBuilder<'a> {
         let signature = self.wallet.sign(&self.permit.typed());
         let permit = self.permit.wire();
         let fixed = |bytes: Vec<u8>| bytes.try_into().expect("fixture permit is well formed");
-        let gateway = SolanaUserDecryptFields {
+        let fields = SolanaUserDecryptFields {
             handles: self.entries.iter().map(|e| e.handle).collect(),
             transport_key: permit.transport_key,
             start_timestamp: permit.start_timestamp,
@@ -338,13 +338,13 @@ impl<'a> RequestBuilder<'a> {
                 })
                 .collect(),
         };
-        (gateway, blob)
+        (fields, blob)
     }
 
     /// The request in validated form.
     pub fn typed(&self) -> SolanaUserDecryptionRequestV1 {
-        let (gateway, blob) = self.parts();
-        SolanaUserDecryptionRequestV1::new(U256::from(1), gateway, blob)
+        let (fields, blob) = self.parts();
+        SolanaUserDecryptionRequestV1::new(U256::from(1), fields, blob)
             .expect("fixture request is well formed")
     }
 }

@@ -60,7 +60,7 @@ pub async fn authorize_request(
         .map(|entry| Pubkey::new_from_array(entry.encrypted_store))
         .collect();
     let first = observe(reader, watermark_address, &store_keys, &[], None).await?;
-    let delegated = delegation_row_keys(&first, program_id, signer, entries)?;
+    let delegated = delegation_row_keys(&first, program_id, signer, entries, &store_keys)?;
     let observation = if delegated.is_empty() {
         first
     } else {
@@ -161,15 +161,20 @@ fn delegation_row_keys(
     program_id: Pubkey,
     signer: Pubkey,
     entries: &[HandleEntry],
+    store_keys: &[Pubkey],
 ) -> Result<Vec<DelegationRowKeys>, AuthorizationFailure> {
     let mut rows = Vec::new();
-    for (index, (entry, observed)) in entries.iter().zip(&first.entries).enumerate() {
+    for (index, ((entry, observed), store_key)) in entries
+        .iter()
+        .zip(&first.entries)
+        .zip(store_keys)
+        .enumerate()
+    {
         let delegator = Pubkey::new_from_array(entry.owner_address);
         if delegator == signer {
             continue;
         }
-        let store_key = Pubkey::new_from_array(entry.encrypted_store);
-        let store = resolve_encrypted_store(observed.store.as_ref(), program_id, store_key)
+        let store = resolve_encrypted_store(observed.store.as_ref(), program_id, *store_key)
             .map_err(|source| AuthorizationFailure::EncryptedStore { index, source })?;
         rows.push(DelegationRowKeys {
             entry: index,

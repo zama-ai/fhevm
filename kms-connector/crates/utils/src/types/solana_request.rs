@@ -53,14 +53,14 @@ impl TryFrom<Decryption::SolanaUserDecryptionRequest> for SolanaUserDecryptionRe
 
     fn try_from(event: Decryption::SolanaUserDecryptionRequest) -> anyhow::Result<Self> {
         let blob = zama_solana_request::decode_solana_request(&event.solanaRequest)?;
-        let gateway = SolanaUserDecryptFields {
+        let fields = SolanaUserDecryptFields {
             handles: event.ctHandles.iter().map(|h| h.0).collect(),
             transport_key: event.publicKey.to_vec(),
             start_timestamp: event.requestValidity.startTimestamp.try_into()?,
             duration_seconds: event.requestValidity.durationSeconds.try_into()?,
             extra_data: event.extraData.to_vec(),
         };
-        Ok(Self::new(event.decryptionId, gateway, blob)?)
+        Ok(Self::new(event.decryptionId, fields, blob)?)
     }
 }
 

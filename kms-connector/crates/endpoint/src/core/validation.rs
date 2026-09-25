@@ -201,8 +201,6 @@ fn validate_request_validity(validity: &RequestValidity) -> Result<(), Validatio
     Ok(())
 }
 
-/// Checks the handle list: non-empty, well-formed handles of a decryptable FHE type, on a single
-/// supported chain, within the total bit size budget.
 /// Checks EVM request handles. A Solana chain id names a host this body cannot authorize on.
 fn validate_evm_handles<'a>(
     handles: impl IntoIterator<Item = &'a B256>,
@@ -215,6 +213,8 @@ fn validate_evm_handles<'a>(
     Ok(())
 }
 
+/// Checks the handle list: non-empty, well-formed handles of a decryptable FHE type, on a single
+/// supported chain, within the total bit size budget.
 fn validate_handles<'a>(
     handles: impl IntoIterator<Item = &'a B256>,
     config: &Config,

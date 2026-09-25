@@ -1030,9 +1030,9 @@ impl TxLifecycleHooks for GatewayHandler {
         // depending on the entry point, each with a distinct signature hash: legacy
         // `UserDecryptionRequest_0` (v2 direct and v2 delegated), RFC016 unified
         // `UserDecryptionRequest_1` (v3 EVM), and `SolanaUserDecryptionRequest`. Try each in turn
-        // to recover the decryptionId; without the Solana
-        // fallback the gw_reference_id is never stored and the UserDecryptionResponse can never
-        // be matched back, so the request hangs until timeout.
+        // to recover the decryptionId; without the Solana fallback the gw_reference_id is never
+        // stored and the UserDecryptionResponse can never be matched back, so the request hangs
+        // until timeout.
         let gw_reference_id = match TransactionHelper::extract_gateway_id_from_receipt::<
             Decryption::UserDecryptionRequest_0,
         >(

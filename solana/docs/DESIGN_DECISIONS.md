@@ -298,8 +298,8 @@ Gateway V2 path (RFC-016) rather than a parallel native stack:
 
 - **User-decrypt** flows through the unified Gateway V2 path, through the Gateway's
   `solanaUserDecryptionRequest` entry, which types the handles, validity, transport key and
-  `extraData` and carries the Solana permit fields in a versioned blob, rather than smuggling Solana auth through
-  `extraData`. `extraData` is only the KMS routing (v0, v1 or v2, DD-060). A chain-aware validator
+  `extraData` and carries the Solana permit fields in a versioned blob, rather than smuggling
+  Solana auth through `extraData`. `extraData` is only the KMS routing (v0, v1 or v2, DD-060). A chain-aware validator
   branches on `contracts_chain_id` (see DD-027) so EVM stays strict and Solana is relaxed. The
   bytes32 handle surface still admits both EVM and Solana. (See DD-026 for the typed-vs-extraData
   boundary.)
@@ -781,11 +781,11 @@ Decision:
   through relayer/gateway and decoded by the KMS connector.
 - Now the gateway's `solanaUserDecryptionRequest(ctHandles, requestValidity, publicKey, extraData,
   solanaRequest)` types the fields it budgets and charges, and carries the rest in the
-  `solanaRequest` blob: `0x05 ‖ borsh{user_address, allowed_scopes, verifying_program_id, signature,
-  entries}`. It emits `SolanaUserDecryptionRequest`. `SolanaUserDecryptRequest::assemble`
+  `solanaRequest` blob: `0x05 ‖ borsh{user_address, allowed_scopes, verifying_program_id,
+  signature, entries}`. It emits `SolanaUserDecryptionRequest`. `SolanaUserDecryptRequest::assemble`
   (`zama-solana-request`) joins the two parts into the typed request every authorizer reads, so no
-  fact travels twice. One claim per handle names
-  its owner and Store (DD-048, DD-049), and `extraData` is only the KMS routing (DD-060). The
+  fact travels twice. One claim per handle names its owner and Store (DD-048, DD-049), and
+  `extraData` is only the KMS routing (DD-060). The
   connector fetches leaf proofs itself, so neither client nor relayer can substitute proof data.
 - The js-sdk builds the blob and the relayer submits the call. The KMS connector routes Solana
   requests by their event, joins the two parts and verifies the permit signature before using them.
@@ -1741,9 +1741,11 @@ Decision:
 2. **One decrypt path.** A user decrypt proves the allow leaf; the current handle and a replaced
    one authorize the same way, so `authorize_current` is gone. A public decrypt proves the public
    leaf. Both proofs are fetched by the KMS connector from the coprocessors' leaf record
-   (`POST /v1/solana/leaf-proofs`, API key; the configured coprocessors asked in order, each only
-   for the leaves the ones before it could not prove, with no retry inside an attempt) and verified
-   against the peaks the connector read on chain.
+   (`POST /v1/solana/leaf-proofs`, API key; every configured coprocessor asked at once, the first
+   proof that verifies taken, with no retry inside an attempt) and verified against the peaks the
+   connector read on chain. Each coprocessor therefore serves every proof read: the load grows with
+   their number, and in exchange one stalled or unreachable coprocessor cannot delay a batch
+   another one serves (fhevm-internal#2104).
    A request names only the Store and, for a delegated entry, the delegator as owner address; a
    client-supplied proof is rejected. A public decrypt names each handle's Store beside `extraData` (DD-060).
 3. **The leaf record lives in the host listener.** Leaves are recomputed from the confirmed
@@ -2284,9 +2286,10 @@ The Gateway now has a Solana entry, `solanaPublicDecryptionRequest(bytes32[] ctH
 bytes extraData, bytes32[] encryptedStores)`. It takes one Store per handle, in handle order, and
 emits `SolanaPublicDecryptionRequest(decryptionId, ctHandles, extraData, encryptedStores)`. It is
 named rather than overloaded, so the EVM `publicDecryptionRequest` keeps its generated binding
-names. `extraData` holds only KMS routing (v0, v1 or v2) on both chains. The Gateway refuses a store
-count that differs from the handle count before it takes the fee. The relayer requires `encryptedStores` for Solana
-handles and refuses it for EVM handles; the stores are part of the request's content hash. The
+names. `extraData` holds only KMS routing (v0, v1 or v2) on both chains. Before it takes the fee,
+the Gateway refuses handles that are not of one registered Solana host chain and a store count that
+differs from the handle count. The relayer requires `encryptedStores` for Solana handles and
+refuses it for EVM handles; the stores are part of the request's content hash. The
 connector keeps them in `handle_encrypted_stores` and proves each handle against its own Store in
 one snapshot. The host verifier reads the context from v1 or v2 exactly as EVM `KMSVerifier`
 does. The SDK sends v1, `0x01 ‖ contextId`, because the host `KmsContext` has no epoch.
@@ -2309,7 +2312,7 @@ looks for the Solana request event when the EVM one is absent from the receipt.
 
 Status: adopted
 
-Recorded in zama-ai/fhevm#4120. The key must be confirmed by the product owner before #4120 merges.
+Recorded in zama-ai/fhevm#4120.
 
 A user-decryption delegation lets a delegate request user decryption of the handles its delegator
 is allowed on. EVM keys the grant by `(delegator, delegate, contractAddress)` and ends it at
@@ -2368,10 +2371,10 @@ Not settled by the decisions above. Forward requirements are detailed in
   (DD-003, DD-059, fhevm-internal#2087).
 - Historical handle discovery conventions for apps.
 - Production role and governance names for public-decrypt and grant authority.
-- Leaf-record availability (DD-048): the connector asks every configured coprocessor at once, and
-  one behind, stalled or unreachable cannot sink or hold a request another can serve, but a Store first seen by a
-  coprocessor through an update has no served proofs until that listener is replayed from before the
-  Store's creation (`history_complete`). The replay and bootstrap policy is operational and
+- Leaf-record availability (DD-048): the connector asks every configured coprocessor at once, so
+  one behind, stalled or unreachable cannot sink or hold a request another can serve. A Store first
+  seen by a coprocessor through an update still has no served proofs until that listener is
+  replayed from before the Store's creation (`history_complete`). The replay and bootstrap policy is operational and
   undocumented beyond the listener's own flags.
 - A Solana-native composition pattern for contract-to-contract confidential calls has not been
   designed since the receiver-callback flow was deleted (DD-011, in DESIGN_HISTORY.md).

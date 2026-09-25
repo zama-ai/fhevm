@@ -191,7 +191,7 @@ impl UserDecryptHandler {
                 }
             }
             // Admission is where a Solana request is checked in full, so its refusals are the
-            // requester's.
+            // requester's; only an encoding failure is this relayer's own.
             UserDecryptV3RequestJson::SolanaSrfc38(json) => {
                 match UserDecryptRequest::try_from(json) {
                     Ok(request) => request,
@@ -203,8 +203,8 @@ impl UserDecryptHandler {
                         .into_response();
                     }
                     Err(SolanaAdmissionError::Encode(error)) => {
-                        return RelayerV2ResponseFailed::from_parse_error(
-                            &ParseError::ConversionFailed(error.to_string()),
+                        error!(%error, "Failed to encode an admitted Solana request");
+                        return RelayerV2ResponseFailed::internal_server_error(
                             &request_id.to_string(),
                         )
                         .into_response();

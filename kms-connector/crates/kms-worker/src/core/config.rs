@@ -186,9 +186,8 @@ pub enum HostSettings {
 pub struct SolanaHostSettings {
     /// The zama-host program id.
     pub host_program_id: Pubkey,
-    /// The coprocessors' leaf-proof routes, one per coprocessor, at least one. They are asked in
-    /// this order, each only for the leaves the ones before it could not prove. A coprocessor
-    /// that does not answer delays the next by up to `host_rpc_call_timeout`.
+    /// The coprocessors' leaf-proof routes, one per coprocessor, at least one. Every route is
+    /// asked at once, and the first proof that verifies is taken.
     pub proof_routes: Vec<ProofRoute>,
 }
 

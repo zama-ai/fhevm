@@ -31,10 +31,10 @@ function addressBytes(value: Address): Uint8Array {
  * authority), under one of the program's fixed labels (`token_slot` in the token program).
  */
 export function tokenStateAddress(mint: Address, authority: Address): Promise<Address> {
-  return solanaEncryptedStoreAddress(addressBytes(ZAMA_HOST_PROGRAM_ADDRESS), {
-    program: addressBytes(CONFIDENTIAL_TOKEN_PROGRAM_ADDRESS),
-    authority: addressBytes(authority),
-    scope: addressBytes(mint),
+  return solanaEncryptedStoreAddress(ZAMA_HOST_PROGRAM_ADDRESS, {
+    program: CONFIDENTIAL_TOKEN_PROGRAM_ADDRESS,
+    authority,
+    scope: mint,
   });
 }
 
@@ -59,10 +59,10 @@ export async function pendingBurnAddress(mint: Address, tokenAccount: Address): 
 
 export async function joinStoreAddress(batch: Address, user: Address): Promise<Address> {
   const [record] = await findJoinRecordPda({ batch, user });
-  return solanaEncryptedStoreAddress(addressBytes(ZAMA_HOST_PROGRAM_ADDRESS), {
-    program: addressBytes(CONFIDENTIAL_BATCHER_PROGRAM_ADDRESS),
-    authority: addressBytes(record),
-    scope: addressBytes(batch),
+  return solanaEncryptedStoreAddress(ZAMA_HOST_PROGRAM_ADDRESS, {
+    program: CONFIDENTIAL_BATCHER_PROGRAM_ADDRESS,
+    authority: record,
+    scope: batch,
   });
 }
 

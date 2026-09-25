@@ -2,6 +2,7 @@ import {
   fetchEncodedAccount,
   fixDecoderSize,
   getAddressDecoder,
+  getAddressEncoder,
   getArrayDecoder,
   getBytesDecoder,
   getProgramDerivedAddress,
@@ -23,12 +24,12 @@ export const SOLANA_ENCRYPTED_STORE_SEED = new TextEncoder().encode('encrypted-s
 
 /** The three fields that, with the host program, name one encrypted store. */
 export interface SolanaEncryptedStoreSeeds {
-  /** The 32-byte application program the value belongs to. */
-  readonly program: Uint8Array;
-  /** The 32-byte PDA of `program` that controls the value. */
-  readonly authority: Uint8Array;
+  /** The application program the value belongs to. */
+  readonly program: Address;
+  /** The PDA of `program` that controls the value. */
+  readonly authority: Address;
   /** The scope: the address of an account `program` owns. */
-  readonly scope: Uint8Array;
+  readonly scope: Address;
 }
 
 /**
@@ -36,16 +37,22 @@ export interface SolanaEncryptedStoreSeeds {
  * `find_program_address([seed, program, authority, scope], host_program)` the host program
  * and the Connector run. Matches `zama_solana_acl::encrypted_store_seeds`.
  *
- * @param hostProgramId - The 32-byte zama-host program id.
+ * @param hostProgramId - The zama-host program id.
  * @param seeds - The three identity fields of the state.
  */
 export async function solanaEncryptedStoreAddress(
-  hostProgramId: Uint8Array,
+  hostProgramId: Address,
   seeds: SolanaEncryptedStoreSeeds,
 ): Promise<Address> {
+  const addressEncoder = getAddressEncoder();
   const [address] = await getProgramDerivedAddress({
-    programAddress: getAddressDecoder().decode(hostProgramId),
-    seeds: [SOLANA_ENCRYPTED_STORE_SEED, seeds.program, seeds.authority, seeds.scope],
+    programAddress: hostProgramId,
+    seeds: [
+      SOLANA_ENCRYPTED_STORE_SEED,
+      addressEncoder.encode(seeds.program),
+      addressEncoder.encode(seeds.authority),
+      addressEncoder.encode(seeds.scope),
+    ],
   });
   return address;
 }

@@ -10,7 +10,7 @@ import { INSTRUCTIONS_SYSVAR_ADDRESS, appendTransientStoreInstructions, prepareT
 // rendered into `./internal/generated/{encryptedCounter,depChain}` by the SDK's `codegen:solana`
 // script from the committed IDLs.
 
-import { getAddressEncoder, type Address, type Instruction, type TransactionSigner } from "@solana/kit";
+import { type Address, type Instruction, type TransactionSigner } from "@solana/kit";
 
 import { solanaEncryptedStoreAddress, type SolanaDelegationApplication } from "@fhevm/sdk/solana";
 
@@ -26,8 +26,6 @@ import { ENCRYPTED_COUNTER_PROGRAM_ADDRESS } from "./internal/generated/encrypte
 import { ZAMA_HOST_PROGRAM_ADDRESS } from "../../../../solana/deploy/src/generated/zamaHost/programAddress.js";
 import { currentHandle } from "./fhe-vertical";
 import { hostConfigAddress, zamaEventAuthorityAddress, type SolanaProvisioningContext } from "./provision";
-
-const addressBytes = (value: Address): Uint8Array => new Uint8Array(getAddressEncoder().encode(value));
 
 // Byte-identical to the specimens' `encrypted_*_label` functions.
 const COUNT_LABEL = new TextEncoder().encode("count___________________________");
@@ -65,11 +63,7 @@ const specimenValue = async (
   // The specimen's application is `(program, scope = its state PDA)`; the value hangs off the
   // authority PDA under that scope.
   application: { program, scope: state },
-  encryptedStore: await solanaEncryptedStoreAddress(addressBytes(ZAMA_HOST_PROGRAM_ADDRESS), {
-    program: addressBytes(program),
-    authority: addressBytes(authority),
-    scope: addressBytes(state),
-  }),
+  encryptedStore: await solanaEncryptedStoreAddress(ZAMA_HOST_PROGRAM_ADDRESS, { program, authority, scope: state }),
 });
 
 /** `owner`'s count under the encrypted-counter specimen. */

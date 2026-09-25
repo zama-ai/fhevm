@@ -342,7 +342,7 @@ pub fn from_user_decryption_row(row: &PgRow) -> anyhow::Result<ProtocolEvent> {
                     .map(|scope| fixed_width(scope, "allowed_scopes"))
                     .collect::<anyhow::Result<_>>()?,
                 verifying_program_id: row.try_get("verifying_program_id")?,
-                signature: fixed_width(row.try_get("signature")?, "signature")?,
+                signature: row.try_get("signature")?,
                 entries: owner_addresses
                     .into_iter()
                     .zip(encrypted_stores)
