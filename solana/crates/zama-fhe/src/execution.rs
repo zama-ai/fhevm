@@ -33,7 +33,7 @@ use anchor_lang::prelude::AccountInfo;
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct FheExecution {
     pub(crate) store: crate::StoreId,
-    /// Whether the execution has a rand step, and so must carry its application's rand nonce.
+    /// Whether the execution has a rand step, and so must carry the host's rand nonce account.
     pub(crate) has_rand_step: bool,
     pub(crate) args: FheExecuteArgs,
     /// Exact dynamic `remaining_accounts` order referenced by the `u8` indices
@@ -134,7 +134,7 @@ impl FheExecution {
         self.store.app()
     }
 
-    /// Whether the invoke must carry the application's rand nonce account (any rand step).
+    /// Whether the invoke must carry the host's rand nonce account (any rand step).
     pub fn has_rand_step(&self) -> bool {
         self.has_rand_step
     }

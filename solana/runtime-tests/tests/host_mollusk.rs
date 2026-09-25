@@ -3114,8 +3114,7 @@ impl FheExecutionFixture {
         }
     }
 
-    /// The identity both HCU PDAs and the rand nonce are keyed on: the application
-    /// `(program, scope)`.
+    /// The identity both HCU PDAs are keyed on: the application `(program, scope)`.
     fn block_cap_app(&self) -> AppScope {
         self.app.app()
     }
@@ -3419,7 +3418,7 @@ impl FheExecutionFixture {
         )
     }
 
-    /// A single transient `Rand` step, with or without a rand nonce account.
+    /// A single transient `Rand` step, with or without the host rand nonce account.
     fn rand_instruction(&self, rand_nonce: Option<Pubkey>) -> Instruction {
         self.input_free_instruction(
             vec![FheExecuteStep::Rand { fhe_type: 5 }],
@@ -3803,48 +3802,6 @@ fn mollusk_fhe_execute_prefunded_empty_meter_is_created_not_griefed() {
                 .minimum_balance(8 + host::HcuBlockMeter::SPACE)
     );
     read_encrypted_store(&fixture.context, fixture.output_value);
-}
-
-#[test]
-fn mollusk_fhe_execute_creating_both_prefunded_pdas_stays_within_the_trace_bound() {
-    // Worst case of `FheExecutionCost::instruction_trace_worst_case`: a first metered rand
-    // execution whose meter and nonce were both prefunded, so each creation takes three CPIs.
-    let fixture = FheExecutionFixture::with_block_cap(500_000);
-    let meter = fixture.meter_pda();
-    let nonce = host::rand_nonce_address(fixture.block_cap_app()).0;
-    fixture.seed_account(meter, system_account(1));
-    fixture.seed_account(nonce, system_account(1));
-
-    let result = check_host_context(
-        &fixture.context,
-        &fixture.input_free_instruction(
-            vec![FheExecuteStep::Rand { fhe_type: 5 }],
-            Some(meter),
-            None,
-            Some(nonce),
-        ),
-        &[Check::success()],
-    );
-    for created in [meter, nonce] {
-        assert_eq!(
-            fixture.context.account_store.borrow()[&created].owner,
-            host::id()
-        );
-    }
-    // This test calls the host top level; an application adds its own instruction on top.
-    let application_trace = 1 + 1 + result.inner_instructions.len();
-    let bound = zama_fhe::FheExecutionCost {
-        steps: 1,
-        store_outputs: 0,
-        packet_bytes: 0,
-        build_heap_bytes: 0,
-        invoke_heap_bytes: 0,
-        remaining_accounts: 0,
-        dynamic_accounts: 0,
-        value_authorities: 0,
-    }
-    .instruction_trace_worst_case();
-    assert_eq!(application_trace, bound);
 }
 
 #[test]
@@ -4345,8 +4302,8 @@ fn mollusk_fhe_execute_rejects_an_unreferenced_dictionary_entry() {
 
 #[test]
 fn mollusk_fhe_execute_rand_without_nonce_account_is_rejected() {
-    // Rand seeds derive from the application's nonce; an execution with a Rand step that does
-    // not carry the nonce account has no seed source and is rejected before compute.
+    // Rand seeds derive from the host nonce; an execution with a Rand step that does not carry
+    // the nonce account has no seed source and is rejected before compute.
     let fixture = FheExecutionFixture::with_block_cap(u64::MAX);
     check_host_context(
         &fixture.context,
@@ -4359,10 +4316,10 @@ fn mollusk_fhe_execute_rand_without_nonce_account_is_rejected() {
 
 #[test]
 fn mollusk_fhe_execute_nonce_account_without_rand_is_rejected() {
-    // The nonce is a write lock shared by every rand execution of the application: an execution
-    // that draws no randomness may not take it, or it would serialize against them for nothing.
+    // The nonce is a write lock shared by every rand execution on the chain: an execution that
+    // draws no randomness may not take it, or it would serialize against them for nothing.
     let fixture = FheExecutionFixture::with_block_cap(u64::MAX);
-    let (nonce, nonce_account) = rand_nonce_account(fixture.block_cap_app(), 0);
+    let (nonce, nonce_account) = rand_nonce_account(0);
     fixture.seed_account(nonce, nonce_account);
     let mut ix = fixture.block_cap_instruction(None, None);
     ix.accounts = fixture
@@ -4384,12 +4341,12 @@ fn mollusk_fhe_execute_nonce_account_without_rand_is_rejected() {
 }
 
 #[test]
-fn mollusk_fhe_execute_rand_creates_then_consumes_the_nonce_and_never_repeats_a_seed() {
-    // The application's first rand execution creates its nonce, paid by the payer; the second
-    // takes the stored one. The two byte-identical executions in one slot draw different seeds
-    // because each consumes the nonce, and the nonce is what the seed commits to.
+fn mollusk_fhe_execute_rand_consumes_the_nonce_and_never_repeats_a_seed() {
+    // Two byte-identical rand executions in one slot draw different seeds because each consumes
+    // the nonce, and the nonce is what the seed commits to.
     let fixture = FheExecutionFixture::with_block_cap(u64::MAX);
-    let nonce = host::rand_nonce_address(fixture.block_cap_app()).0;
+    let (nonce, nonce_account) = rand_nonce_account(7);
+    fixture.seed_account(nonce, nonce_account);
     let ix = fixture.rand_instruction(Some(nonce));
 
     let first = check_host_context(&fixture.context, &ix, &[Check::success()]);
@@ -4404,27 +4361,23 @@ fn mollusk_fhe_execute_rand_creates_then_consumes_the_nonce_and_never_repeats_a_
     assert_ne!(first_seeds.seeds[0].seed, second_seeds.seeds[0].seed);
     let stored: host::RandNonce =
         read_program_account(&fixture.context, nonce).expect("rand nonce");
-    assert_eq!(stored.nonce, 2);
-    let account = fixture.context.account_store.borrow()[&nonce].clone();
-    assert_eq!(account.owner, host::id());
-    assert!(
-        account.lamports
-            >= anchor_lang::prelude::Rent::default().minimum_balance(8 + host::RandNonce::SPACE)
-    );
+    assert_eq!(stored.nonce, 9);
 }
 
 #[test]
-fn mollusk_fhe_execute_rand_rejects_another_applications_nonce() {
-    // Only the executing application's nonce PDA is accepted: a well-formed nonce of another
-    // application would let two applications draw from one counter.
+fn mollusk_fhe_execute_rand_rejects_non_canonical_nonce_account() {
+    // Only the host's own nonce PDA is accepted: a caller-supplied account with the right data
+    // at another address is not a nonce.
     let fixture = FheExecutionFixture::with_block_cap(u64::MAX);
-    let (other, other_account) = rand_nonce_account(unique_app(), 0);
-    fixture.seed_account(other, other_account);
-    check_host_context(
+    let (_, nonce_account) = rand_nonce_account(0);
+    let impostor = Pubkey::new_unique();
+    fixture.seed_account(impostor, nonce_account);
+    let result = check_host_context(
         &fixture.context,
-        &fixture.rand_instruction(Some(other)),
-        &[custom_error(host::errors::ZamaHostError::RandNonceMismatch)],
+        &fixture.rand_instruction(Some(impostor)),
+        &[],
     );
+    assert!(result.program_result.is_err());
 }
 
 // ---------------------------------------------------------------------------

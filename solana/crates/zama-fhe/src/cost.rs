@@ -37,11 +37,8 @@ pub const BUILD_HEAP_BUDGET_BYTES: usize = PROGRAM_HEAP_BYTES - APP_HEAP_RESERVE
 /// every invoke (`solana-program-runtime`'s `check_instruction_size`). Not extendable.
 pub const CPI_INSTRUCTION_DATA_LIMIT: usize = 10 * 1024;
 
-/// Lazy creation of a prefunded host PDA transfers, allocates and assigns.
+/// Lazy block-meter creation can transfer, allocate and assign.
 pub const CPIS_PER_SQUAT_CREATE: usize = 3;
-
-/// Host PDAs one execution may create lazily: its application's HCU block meter and rand nonce.
-pub const LAZY_CREATES_PER_EXECUTION: usize = 2;
 
 /// One app instruction, one host CPI, and the host's executed-event CPI.
 pub const INSTRUCTION_TRACE_FLOOR: usize = 3;
@@ -75,13 +72,10 @@ pub struct FheExecutionCost {
 }
 
 impl FheExecutionCost {
-    /// Includes a possible rent transfer per Store output and the lazy creation of the block
-    /// meter and rand nonce. App-level Store/transient store creation, final close and other
-    /// CPIs must be added by the caller.
+    /// Includes a possible rent transfer per Store output and lazy meter creation.
+    /// App-level Store/transient store creation, final close and other CPIs must be added by the caller.
     pub fn instruction_trace_worst_case(&self) -> usize {
-        INSTRUCTION_TRACE_FLOOR
-            + self.store_outputs
-            + LAZY_CREATES_PER_EXECUTION * CPIS_PER_SQUAT_CREATE
+        INSTRUCTION_TRACE_FLOOR + self.store_outputs + CPIS_PER_SQUAT_CREATE
     }
 }
 
@@ -103,10 +97,10 @@ mod tests {
     }
 
     #[test]
-    fn worst_case_charges_each_store_output_and_both_lazy_creations() {
+    fn worst_case_charges_each_store_output_and_one_lazy_meter_creation() {
         assert_eq!(
             cost(3).instruction_trace_worst_case(),
-            INSTRUCTION_TRACE_FLOOR + 3 + 2 * CPIS_PER_SQUAT_CREATE
+            INSTRUCTION_TRACE_FLOOR + 3 + CPIS_PER_SQUAT_CREATE
         );
     }
 }

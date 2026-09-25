@@ -19,7 +19,7 @@ import {
   getDefineKmsContextInstructionAsync,
   getInitializeHostConfigInstructionAsync,
 } from './generated/zamaHost/instructions/index.js';
-import { findHostConfigPda, findKmsContextPda } from './generated/zamaHost/pdas/index.js';
+import { findHostConfigPda, findKmsContextPda, findRandNoncePda } from './generated/zamaHost/pdas/index.js';
 import { ZAMA_HOST_PROGRAM_ADDRESS } from './generated/zamaHost/programAddress.js';
 import type { HostDeployContext } from './send';
 
@@ -117,6 +117,7 @@ export const bootstrapZamaHost = async (context: HostDeployContext, params: Boot
   const eventAuthority = await zamaEventAuthorityAddress(programAddress);
   const programData = await programDataAddressFor(programAddress);
   const [hostConfig] = await findHostConfigPda({ programAddress });
+  const [randNonce] = await findRandNoncePda({ programAddress });
   const shared = { eventAuthority, program: programAddress, hostConfig } as const;
   const ixConfig = { programAddress } as const;
 
@@ -155,6 +156,7 @@ export const bootstrapZamaHost = async (context: HostDeployContext, params: Boot
           payer: params.payer,
           admin: params.payer,
           programData,
+          randNonce,
           chainId: params.chainId ?? SOLANA_HOST_CHAIN_ID,
           gatewayChainId: params.gateway.gatewayChainId,
           inputVerificationContract: params.gateway.inputVerificationContract,

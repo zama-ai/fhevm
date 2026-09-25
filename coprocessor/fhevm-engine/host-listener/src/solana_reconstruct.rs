@@ -163,7 +163,7 @@ pub struct HandleMismatch {
 /// listener's derivation disagrees. Each result is also re-derived through the program's
 /// own `computed_*` functions from the decoded step and the emitted context; a result
 /// that differs is reported in `mismatches`, never substituted. Random steps use the
-/// emitted seeds, which bind the application's rand nonce and cannot be recomputed.
+/// emitted seeds, which bind the host's rand nonce and cannot be recomputed.
 ///
 /// Returns `None` when the instruction and the event do not describe the same walk: an
 /// operand or dictionary reference out of range, a `Scalar` where only an encrypted
