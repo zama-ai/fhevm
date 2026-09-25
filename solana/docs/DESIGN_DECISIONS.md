@@ -2426,8 +2426,11 @@ Each coprocessor database has one more client, with 8 connections by default. Pr
 served while the listener is down, for the leaves it recorded before it stopped. Such a proof
 verifies until a later append to its Store merges its mountain, and the connector's check fails
 from then until ingestion catches up. The newest leaf sits in the smallest mountain, so it goes
-stale first, and anyone can append to a Store with a zero-value transfer. A grant made after the
-stop has no proof until ingestion catches up. `ingestion_serves_no_proofs` pins that the health
+stale first, and anyone can append to a Store with a zero-value transfer. The connector takes the
+first proof that verifies from any coprocessor, so this costs nothing while one of them ingests;
+while every coprocessor's ingestion is stopped, a Store someone keeps appending to cannot be
+decrypted, and the connector's recoverable failure clears once one catches up. A grant made after
+the stop has no proof until ingestion catches up. `ingestion_serves_no_proofs` pins that the health
 router, the only one the listener serves, has no proof route, and
 `ci/preview-env/solana-host/test_charts.py` pins the two Deployments.
 
