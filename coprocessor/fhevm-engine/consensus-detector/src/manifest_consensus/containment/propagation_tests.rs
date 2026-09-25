@@ -522,7 +522,7 @@ async fn empty_inventory_and_consensus_epoch_selection() {
 
 #[tokio::test]
 #[serial(db)]
-async fn verified_ct64_without_quorum_is_contained_but_ct128_and_healed_roots_are_not_propagated() {
+async fn verified_ct64_is_contained_but_ct128_and_healed_roots_are_not_propagated() {
     let (_db, pool) = setup().await;
     direct_root(&pool, 1, "ct64_mismatch").await;
     direct_root(&pool, 4, "ct128_mismatch").await;
@@ -554,6 +554,8 @@ async fn verified_ct64_without_quorum_is_contained_but_ct128_and_healed_roots_ar
             (bytes(7), false)
         ]
     );
+    // Containment leaves the quorum descriptor untouched: the root stays
+    // healable toward the quorum ct64.
     let (target, healable): (Option<Vec<u8>>, bool) = sqlx::query_as(
         "SELECT quorum_ct64_digest, can_be_healed FROM drifted_handle WHERE handle = $1",
     )
@@ -561,8 +563,8 @@ async fn verified_ct64_without_quorum_is_contained_but_ct128_and_healed_roots_ar
     .fetch_one(&pool)
     .await
     .unwrap();
-    assert_eq!(target, None);
-    assert!(!healable);
+    assert_eq!(target, Some(bytes(2)));
+    assert!(healable);
 }
 
 #[tokio::test]
