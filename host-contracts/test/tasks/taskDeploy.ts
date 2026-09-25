@@ -261,7 +261,7 @@ describe('canonical snapshot apply (canonical → secondary deploy flow)', funct
       await canonical.getMpcThresholdForContext(canonicalContextId),
     );
 
-    expect(await secondary.isValidKmsContext(secondaryContextId)).to.equal(true);
+    expect(await secondary.isActiveKmsContext(secondaryContextId)).to.equal(true);
   });
 
   it('pins canonical reads to a historical block under a rotation', async function () {

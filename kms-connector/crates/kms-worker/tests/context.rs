@@ -71,7 +71,7 @@ async fn test_decryption_context_not_found(
             let mock_tx = create_mock_user_decryption_request_tx(tx_hash, handle)?;
             asserter.push_success(&mock_tx);
         }
-        // The unknown context falls back to on-chain validation: `isValidKmsContext` → false
+        // The unknown context falls back to on-chain validation: `isActiveKmsContext` → false
         asserter.push_success(&false.abi_encode());
     }
 
@@ -374,8 +374,8 @@ async fn setup_context_manager(
 #[tokio::test]
 async fn test_validate_context_fallback_caches_valid_pair() -> anyhow::Result<()> {
     let asserter = Asserter::new();
-    asserter.push_success(&true.abi_encode()); // isValidKmsContext
-    asserter.push_success(&true.abi_encode()); // isValidEpochForContext
+    asserter.push_success(&true.abi_encode()); // isActiveKmsContext
+    asserter.push_success(&true.abi_encode()); // isActiveEpochForContext
     let (test_instance, context_manager) = setup_context_manager(asserter).await?;
 
     let context_id = U256::from(33);
@@ -409,8 +409,8 @@ async fn test_validate_context_fallback_caches_valid_pair() -> anyhow::Result<()
 #[tokio::test]
 async fn test_validate_context_pending_epoch_is_recoverable() -> anyhow::Result<()> {
     let asserter = Asserter::new();
-    asserter.push_success(&true.abi_encode()); // isValidKmsContext
-    asserter.push_success(&false.abi_encode()); // isValidEpochForContext
+    asserter.push_success(&true.abi_encode()); // isActiveKmsContext
+    asserter.push_success(&false.abi_encode()); // isActiveEpochForContext
     let (test_instance, context_manager) = setup_context_manager(asserter).await?;
 
     let context_id = U256::from(33);
@@ -523,8 +523,8 @@ async fn test_validate_context_destroyed_epoch_leaves_siblings_valid() -> anyhow
 #[tokio::test]
 async fn test_validate_context_epoch_of_other_context_falls_back_on_chain() -> anyhow::Result<()> {
     let asserter = Asserter::new();
-    asserter.push_success(&true.abi_encode()); // isValidKmsContext
-    asserter.push_success(&false.abi_encode()); // isValidEpochForContext
+    asserter.push_success(&true.abi_encode()); // isActiveKmsContext
+    asserter.push_success(&false.abi_encode()); // isActiveEpochForContext
     let (test_instance, context_manager) = setup_context_manager(asserter).await?;
 
     // A second valid context, requested with the epoch seeded for `TESTING_KMS_CONTEXT`.
@@ -572,8 +572,8 @@ async fn test_validate_context_epoch_of_other_context_falls_back_on_chain() -> a
 #[tokio::test]
 async fn test_validate_context_stale_epoch_association_self_heals() -> anyhow::Result<()> {
     let asserter = Asserter::new();
-    asserter.push_success(&true.abi_encode()); // isValidKmsContext
-    asserter.push_success(&true.abi_encode()); // isValidEpochForContext
+    asserter.push_success(&true.abi_encode()); // isActiveKmsContext
+    asserter.push_success(&true.abi_encode()); // isActiveEpochForContext
     let (test_instance, context_manager) = setup_context_manager(asserter).await?;
 
     // A second valid context, requested with the epoch seeded for `TESTING_KMS_CONTEXT`.
@@ -624,7 +624,7 @@ async fn test_validate_context_v1_extra_data_validates_context_only() -> anyhow:
 }
 
 /// v1 extra_data (no epoch) referencing a context unknown locally → on-chain fallback checks
-/// `isValidKmsContext` only (a single RPC response is queued), and nothing is cached since
+/// `isActiveKmsContext` only (a single RPC response is queued), and nothing is cached since
 /// there is no epoch to cache the pair with.
 #[rstest]
 #[timeout(Duration::from_secs(60))]
@@ -632,7 +632,7 @@ async fn test_validate_context_v1_extra_data_validates_context_only() -> anyhow:
 async fn test_validate_context_v1_unknown_context_falls_back_without_caching() -> anyhow::Result<()>
 {
     let asserter = Asserter::new();
-    asserter.push_success(&true.abi_encode()); // isValidKmsContext
+    asserter.push_success(&true.abi_encode()); // isActiveKmsContext
     let (test_instance, context_manager) = setup_context_manager(asserter).await?;
 
     let context_id = U256::from(33);

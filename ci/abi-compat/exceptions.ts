@@ -22,6 +22,8 @@ export const ABI_COMPAT_EXCEPTIONS: Partial<Record<PackageName, Partial<Record<s
       "error ThresholdIsAboveNumberOfSigners()",
       "error InvalidKMSContext(uint256)",
       "error CurrentKMSContextCannotBeDestroyed(uint256)",
+      // Forwarder to ProtocolConfig.isKmsSigner with no reader. Removed with it.
+      "function isSigner(address) returns (bool)",
     ],
     // The 0.15 DAO-only key generation ABI is intentionally replaced before any 0.15 ceremony:
     // one request now covers both fresh generation and same-key compressed material production.
@@ -40,6 +42,15 @@ export const ABI_COMPAT_EXCEPTIONS: Partial<Record<PackageName, Partial<Record<s
       "event UserDecryptionThresholdUpdated(uint256 indexed,uint256)",
       "event KmsGenThresholdUpdated(uint256 indexed,uint256)",
       "event MpcThresholdUpdated(uint256 indexed,uint256)",
+      // Active-context getters with no reader were removed. The per-context getters stay.
+      "function getUserDecryptionThreshold() returns (uint256)",
+      "function getKmsGenThreshold() returns (uint256)",
+      "function getMpcThreshold() returns (uint256)",
+      "function isKmsSigner(address) returns (bool)",
+      // Renamed to isActiveKmsContext / isActiveEpochForContext: both return true only for the
+      // Active state. No alias is kept, so relayer and kms-connector ship with the upgrade.
+      "function isValidKmsContext(uint256) returns (bool)",
+      "function isValidEpochForContext(uint256,uint256) returns (bool)",
     ],
   },
   "gateway-contracts": {

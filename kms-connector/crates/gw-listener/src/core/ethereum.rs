@@ -138,7 +138,7 @@ where
             let context_id = U256::from_le_slice(&id);
             let is_valid_context = self
                 .protocol_config_contract
-                .isValidKmsContext(context_id)
+                .isActiveKmsContext(context_id)
                 .block(BlockId::finalized())
                 .call()
                 .await?;
@@ -170,7 +170,7 @@ where
             let epoch_valid = !destroyed_contexts.contains(&context_id)
                 && self
                     .protocol_config_contract
-                    .isValidEpochForContext(context_id, epoch_id)
+                    .isActiveEpochForContext(context_id, epoch_id)
                     .block(BlockId::finalized())
                     .call()
                     .await?;
@@ -431,9 +431,9 @@ mod tests {
         // The `Asserter` replies to each on-chain `.call()` with the next queued response, in
         // order. `revalidate_context_cache` audits contexts first (both are cached as valid, so
         // both are checked), then epochs, each `ORDER BY id`. So the calls happen in this order:
-        //   1. `isValidKmsContext(#1)`         -> false: context #1 is destroyed on-chain
-        //   2. `isValidKmsContext(#2)`         -> true:  context #2 is still valid on-chain
-        //   3. `isValidEpochForContext(#2,#20)`-> true:  epoch #20 (of valid ctx #2) still valid
+        //   1. `isActiveKmsContext(#1)`         -> false: context #1 is destroyed on-chain
+        //   2. `isActiveKmsContext(#2)`         -> true:  context #2 is still valid on-chain
+        //   3. `isActiveEpochForContext(#2,#20)`-> true:  epoch #20 (of valid ctx #2) still valid
         // Note there is no call for epoch #10: its context (#1) was just found destroyed, so the
         // audit invalidates the epoch without an on-chain check.
         let asserter = Asserter::new();
@@ -466,8 +466,8 @@ mod tests {
 
         // The `Asserter` replies to each on-chain `.call()` with the next queued response, in
         // order. In this scenario, the context is still valid but its epoch has been destroyed:
-        //   1. `isValidKmsContext(#1)`          -> true:  context #1 is still valid
-        //   2. `isValidEpochForContext(#1,#10)` -> false: epoch #10 is destroyed, so invalidated
+        //   1. `isActiveKmsContext(#1)`          -> true:  context #1 is still valid
+        //   2. `isActiveEpochForContext(#1,#10)` -> false: epoch #10 is destroyed, so invalidated
         let asserter = Asserter::new();
         asserter.push_success(&true.abi_encode());
         asserter.push_success(&false.abi_encode());

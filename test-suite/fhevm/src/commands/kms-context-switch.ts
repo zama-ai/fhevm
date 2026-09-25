@@ -19,7 +19,7 @@
  *          destroyed;
  *        - emit `KmsContextDestroyed` / `KmsEpochDestroyed`;
  *        - make the target invalid on chain without moving the active context/epoch (destroying a
- *          context also makes its epochs invalid, because `isValidEpochForContext` needs a valid
+ *          context also makes its epochs invalid, because `isActiveEpochForContext` needs a valid
  *          context, so the contract writes nothing per epoch);
  *        - reach every committee node: its connector forwards `DestroyMpcContext` /
  *          `DestroyMpcEpoch` to its core and drops the target from its validation cache;
@@ -383,7 +383,7 @@ const destroyContextAndEpoch = async (
   );
 
   // Destroy the retired context.
-  const isOldContextValid = await castBool(rpcUrl, protocolConfig, "isValidKmsContext(uint256)(bool)", oldContextId.toString());
+  const isOldContextValid = await castBool(rpcUrl, protocolConfig, "isActiveKmsContext(uint256)(bool)", oldContextId.toString());
   if (!isOldContextValid) {
     throw new PreflightError(
       `kms-context-switch: retired context ${oldContextId} is not valid before destroy — nothing to prove the destroy transition against`,
@@ -397,7 +397,7 @@ const destroyContextAndEpoch = async (
     throw new PreflightError(`kms-context-switch: KmsContextDestroyed event does not carry contextId=${oldContextId}`);
   }
 
-  const isOldContextStillValid = await castBool(rpcUrl, protocolConfig, "isValidKmsContext(uint256)(bool)", oldContextId.toString());
+  const isOldContextStillValid = await castBool(rpcUrl, protocolConfig, "isActiveKmsContext(uint256)(bool)", oldContextId.toString());
   if (isOldContextStillValid) {
     throw new PreflightError(`kms-context-switch: context ${oldContextId} still reads valid after destroy`);
   }
@@ -438,7 +438,7 @@ const destroyContextAndEpoch = async (
 
   // Destroy the retired epoch (still under the current context, superseded by the rotation).
   const isOldEpochValid = await castBool(
-    rpcUrl, protocolConfig, "isValidEpochForContext(uint256,uint256)(bool)",
+    rpcUrl, protocolConfig, "isActiveEpochForContext(uint256,uint256)(bool)",
     current.contextId.toString(), oldEpochId.toString(),
   );
   if (!isOldEpochValid) {
@@ -453,7 +453,7 @@ const destroyContextAndEpoch = async (
     throw new PreflightError(`kms-context-switch: KmsEpochDestroyed event does not carry epochId=${oldEpochId}`);
   }
   const isOldEpochStillValid = await castBool(
-    rpcUrl, protocolConfig, "isValidEpochForContext(uint256,uint256)(bool)",
+    rpcUrl, protocolConfig, "isActiveEpochForContext(uint256,uint256)(bool)",
     current.contextId.toString(), oldEpochId.toString(),
   );
   if (isOldEpochStillValid) {

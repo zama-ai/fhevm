@@ -493,14 +493,13 @@ contract ProtocolConfigTest is HostContractsDeployerTestUtils {
         (uint256 activeContextId, uint256 activeEpochId) = protocolConfig.getCurrentKmsContextAndEpoch();
         assertEq(activeContextId, contextId);
         assertEq(activeEpochId, EPOCH_COUNTER_BASE + 1);
-        assertTrue(protocolConfig.isValidKmsContext(contextId));
+        assertTrue(protocolConfig.isActiveKmsContext(contextId));
 
         // Thresholds.
         assertEq(protocolConfig.getPublicDecryptionThreshold(), 1);
-        assertEq(protocolConfig.getUserDecryptionThreshold(), 2);
-        assertEq(protocolConfig.getKmsGenThreshold(), 3);
+        assertEq(protocolConfig.getUserDecryptionThresholdForContext(contextId), 2);
         assertEq(protocolConfig.getKmsGenThresholdForContext(contextId), 3);
-        assertEq(protocolConfig.getMpcThreshold(), 4);
+        assertEq(protocolConfig.getMpcThresholdForContext(contextId), 4);
 
         // Context node arrays and registered signer/tx sender mappings.
         KmsNode[] memory expectedNodes = _makeKmsNodes(4);
@@ -690,7 +689,7 @@ contract ProtocolConfigTest is HostContractsDeployerTestUtils {
         _defineNewKmsContextAndEpoch(newNodeParams, thresholds);
 
         assertEq(protocolConfig.getCurrentKmsContextId(), KMS_CONTEXT_COUNTER_BASE + 1);
-        assertFalse(protocolConfig.isValidKmsContext(KMS_CONTEXT_COUNTER_BASE + 2));
+        assertFalse(protocolConfig.isActiveKmsContext(KMS_CONTEXT_COUNTER_BASE + 2));
     }
 
     function test_defineNewKmsContextAndEpochStoresContextAnchor() public {
@@ -731,7 +730,7 @@ contract ProtocolConfigTest is HostContractsDeployerTestUtils {
 
         uint256 currentId = protocolConfig.getCurrentKmsContextId();
         assertTrue(currentId != firstContextId);
-        assertTrue(protocolConfig.isValidKmsContext(firstContextId));
+        assertTrue(protocolConfig.isActiveKmsContext(firstContextId));
         address[] memory oldSigners = protocolConfig.getKmsSignersForContext(firstContextId);
         assertEq(oldSigners.length, 4);
     }
@@ -754,7 +753,7 @@ contract ProtocolConfigTest is HostContractsDeployerTestUtils {
         emit IProtocolConfig.KmsContextDestroyed(firstContextId);
         vm.prank(owner);
         protocolConfig.destroyKmsContext(firstContextId);
-        assertFalse(protocolConfig.isValidKmsContext(firstContextId));
+        assertFalse(protocolConfig.isActiveKmsContext(firstContextId));
         (uint256 destroyedEmissionBlockNumber, bytes32 destroyedContextInfoHash) = protocolConfig.getKmsContextAnchor(
             firstContextId
         );
@@ -851,21 +850,21 @@ contract ProtocolConfigTest is HostContractsDeployerTestUtils {
         assertEq(activeEpochId, epochId);
     }
 
-    function test_isValidEpochForContext_trueOnFreshDeploy() public {
+    function test_isActiveEpochForContext_trueOnFreshDeploy() public {
         _setupEpochLifecycle();
-        assertTrue(protocolConfig.isValidEpochForContext(KMS_CONTEXT_COUNTER_BASE + 1, EPOCH_COUNTER_BASE + 1));
+        assertTrue(protocolConfig.isActiveEpochForContext(KMS_CONTEXT_COUNTER_BASE + 1, EPOCH_COUNTER_BASE + 1));
     }
 
-    function test_isValidEpochForContext_falseForWrongContextId() public {
+    function test_isActiveEpochForContext_falseForWrongContextId() public {
         _setupEpochLifecycle();
         // Active epoch exists, but paired with the wrong context.
-        assertFalse(protocolConfig.isValidEpochForContext(KMS_CONTEXT_COUNTER_BASE + 2, EPOCH_COUNTER_BASE + 1));
+        assertFalse(protocolConfig.isActiveEpochForContext(KMS_CONTEXT_COUNTER_BASE + 2, EPOCH_COUNTER_BASE + 1));
     }
 
-    function test_isValidEpochForContext_falseForUnknownEpoch() public {
+    function test_isActiveEpochForContext_falseForUnknownEpoch() public {
         _setupEpochLifecycle();
-        assertFalse(protocolConfig.isValidEpochForContext(KMS_CONTEXT_COUNTER_BASE + 1, 0));
-        assertFalse(protocolConfig.isValidEpochForContext(KMS_CONTEXT_COUNTER_BASE + 1, EPOCH_COUNTER_BASE + 999));
+        assertFalse(protocolConfig.isActiveEpochForContext(KMS_CONTEXT_COUNTER_BASE + 1, 0));
+        assertFalse(protocolConfig.isActiveEpochForContext(KMS_CONTEXT_COUNTER_BASE + 1, EPOCH_COUNTER_BASE + 999));
     }
 
     function test_mirrorKmsEpochActivatesCanonicalEpoch() public {
@@ -881,7 +880,7 @@ contract ProtocolConfigTest is HostContractsDeployerTestUtils {
         (uint256 activeContextId, uint256 activeEpochId) = protocolConfig.getCurrentKmsContextAndEpoch();
         assertEq(activeContextId, contextId);
         assertEq(activeEpochId, epochId);
-        assertTrue(protocolConfig.isValidEpochForContext(contextId, epochId));
+        assertTrue(protocolConfig.isActiveEpochForContext(contextId, epochId));
     }
 
     function test_revertMirrorKmsEpochNotOwner() public {
@@ -932,7 +931,7 @@ contract ProtocolConfigTest is HostContractsDeployerTestUtils {
         protocolConfig.mirrorKmsEpoch(contextId, EPOCH_COUNTER_BASE + 2);
     }
 
-    function test_isValidEpochForContext_falseForPendingSameSetEpoch() public {
+    function test_isActiveEpochForContext_falseForPendingSameSetEpoch() public {
         _setupEpochLifecycle();
         uint256 contextId = KMS_CONTEXT_COUNTER_BASE + 1;
         uint256 pendingEpochId = EPOCH_COUNTER_BASE + 2;
@@ -940,20 +939,20 @@ contract ProtocolConfigTest is HostContractsDeployerTestUtils {
         vm.prank(owner);
         protocolConfig.defineNewEpochForCurrentKmsContext();
 
-        assertFalse(protocolConfig.isValidEpochForContext(contextId, pendingEpochId));
+        assertFalse(protocolConfig.isActiveEpochForContext(contextId, pendingEpochId));
         // Previous active epoch still passes, the new one is Pending until activated.
-        assertTrue(protocolConfig.isValidEpochForContext(contextId, EPOCH_COUNTER_BASE + 1));
+        assertTrue(protocolConfig.isActiveEpochForContext(contextId, EPOCH_COUNTER_BASE + 1));
     }
 
-    function test_isValidEpochForContext_trueAfterSameSetActivation() public {
+    function test_isActiveEpochForContext_trueAfterSameSetActivation() public {
         _setupEpochLifecycle();
         uint256 contextId = KMS_CONTEXT_COUNTER_BASE + 1;
         uint256 newEpochId = _seedActiveEpochWithMaterialForTwoNodeContext();
 
-        assertTrue(protocolConfig.isValidEpochForContext(contextId, newEpochId));
+        assertTrue(protocolConfig.isActiveEpochForContext(contextId, newEpochId));
     }
 
-    function test_isValidEpochForContext_falseForPendingEpochUnderPendingContext() public {
+    function test_isActiveEpochForContext_falseForPendingEpochUnderPendingContext() public {
         _setupEpochLifecycle();
         uint256 pendingContextId = KMS_CONTEXT_COUNTER_BASE + 2;
         uint256 pendingEpochId = EPOCH_COUNTER_BASE + 2;
@@ -961,10 +960,10 @@ contract ProtocolConfigTest is HostContractsDeployerTestUtils {
         vm.prank(owner);
         _defineNewKmsContextAndEpoch(_makeKmsNodeParams(2), _defaultThresholds());
 
-        assertFalse(protocolConfig.isValidEpochForContext(pendingContextId, pendingEpochId));
+        assertFalse(protocolConfig.isActiveEpochForContext(pendingContextId, pendingEpochId));
     }
 
-    function test_isValidEpochForContext_trueAfterContextSwitchActivation() public {
+    function test_isActiveEpochForContext_trueAfterContextSwitchActivation() public {
         _setupEpochLifecycle();
         uint256 newContextId = KMS_CONTEXT_COUNTER_BASE + 2;
         uint256 newEpochId = EPOCH_COUNTER_BASE + 2;
@@ -973,10 +972,10 @@ contract ProtocolConfigTest is HostContractsDeployerTestUtils {
         _defineNewKmsContextAndEpoch(_makeKmsNodeParams(2), _defaultThresholds());
         _activatePendingContextWithTwoKmsNodes(newContextId, newEpochId);
 
-        assertTrue(protocolConfig.isValidEpochForContext(newContextId, newEpochId));
+        assertTrue(protocolConfig.isActiveEpochForContext(newContextId, newEpochId));
     }
 
-    function test_isValidEpochForContext_oldPairStillTrueAfterContextSwitch() public {
+    function test_isActiveEpochForContext_oldPairStillTrueAfterContextSwitch() public {
         _setupEpochLifecycle();
         uint256 oldContextId = KMS_CONTEXT_COUNTER_BASE + 1;
         uint256 oldEpochId = EPOCH_COUNTER_BASE + 1;
@@ -987,10 +986,10 @@ contract ProtocolConfigTest is HostContractsDeployerTestUtils {
         _defineNewKmsContextAndEpoch(_makeKmsNodeParams(2), _defaultThresholds());
         _activatePendingContextWithTwoKmsNodes(newContextId, newEpochId);
 
-        assertTrue(protocolConfig.isValidEpochForContext(oldContextId, oldEpochId));
+        assertTrue(protocolConfig.isActiveEpochForContext(oldContextId, oldEpochId));
     }
 
-    function test_isValidEpochForContext_falseAfterContextDestroyed() public {
+    function test_isActiveEpochForContext_falseAfterContextDestroyed() public {
         _setupEpochLifecycle();
         uint256 oldContextId = KMS_CONTEXT_COUNTER_BASE + 1;
         uint256 oldEpochId = EPOCH_COUNTER_BASE + 1;
@@ -1002,13 +1001,13 @@ contract ProtocolConfigTest is HostContractsDeployerTestUtils {
         _activatePendingContextWithTwoKmsNodes(newContextId, newEpochId);
 
         // The old context's epoch stays Active after rotation, so the pair is still valid
-        assertTrue(protocolConfig.isValidEpochForContext(oldContextId, oldEpochId));
+        assertTrue(protocolConfig.isActiveEpochForContext(oldContextId, oldEpochId));
 
         // but destroying the old context must invalidate its epoch too.
         vm.prank(owner);
         protocolConfig.destroyKmsContext(oldContextId);
 
-        assertFalse(protocolConfig.isValidEpochForContext(oldContextId, oldEpochId));
+        assertFalse(protocolConfig.isActiveEpochForContext(oldContextId, oldEpochId));
     }
 
     function test_destroyEpoch() public {
@@ -1022,14 +1021,14 @@ contract ProtocolConfigTest is HostContractsDeployerTestUtils {
         vm.prank(owner);
         _defineNewKmsContextAndEpoch(_makeKmsNodeParams(2), _defaultThresholds());
         _activatePendingContextWithTwoKmsNodes(newContextId, newEpochId);
-        assertTrue(protocolConfig.isValidEpochForContext(oldContextId, oldEpochId));
+        assertTrue(protocolConfig.isActiveEpochForContext(oldContextId, oldEpochId));
 
         vm.expectEmit(true, false, false, true, address(protocolConfig));
         emit IProtocolConfig.KmsEpochDestroyed(oldEpochId);
         vm.prank(owner);
         protocolConfig.destroyKmsEpoch(oldEpochId);
 
-        assertFalse(protocolConfig.isValidEpochForContext(oldContextId, oldEpochId));
+        assertFalse(protocolConfig.isActiveEpochForContext(oldContextId, oldEpochId));
     }
 
     function test_revertDestroyCurrentEpoch() public {
@@ -1066,7 +1065,7 @@ contract ProtocolConfigTest is HostContractsDeployerTestUtils {
         vm.prank(owner);
         protocolConfig.destroyKmsEpoch(pendingEpochId);
 
-        assertFalse(protocolConfig.isValidEpochForContext(contextId, pendingEpochId));
+        assertFalse(protocolConfig.isActiveEpochForContext(contextId, pendingEpochId));
         (, uint256 epochAfter) = protocolConfig.getCurrentKmsContextAndEpoch();
         assertEq(epochAfter, activeEpochId);
 
@@ -1148,8 +1147,8 @@ contract ProtocolConfigTest is HostContractsDeployerTestUtils {
         vm.prank(owner);
         protocolConfig.destroyKmsContext(pendingContextId);
 
-        assertFalse(protocolConfig.isValidKmsContext(pendingContextId));
-        assertFalse(protocolConfig.isValidEpochForContext(pendingContextId, pendingEpochId));
+        assertFalse(protocolConfig.isActiveKmsContext(pendingContextId));
+        assertFalse(protocolConfig.isActiveEpochForContext(pendingContextId, pendingEpochId));
         (uint256 contextAfter, uint256 epochAfter) = protocolConfig.getCurrentKmsContextAndEpoch();
         assertEq(contextAfter, activeContextId);
         assertEq(epochAfter, activeEpochId);
@@ -1195,7 +1194,7 @@ contract ProtocolConfigTest is HostContractsDeployerTestUtils {
         (uint256 currentContextId, uint256 currentEpochId) = protocolConfig.getCurrentKmsContextAndEpoch();
         assertEq(currentContextId, oldContextId);
         assertEq(currentEpochId, oldEpochId);
-        assertFalse(protocolConfig.isValidKmsContext(KMS_CONTEXT_COUNTER_BASE + 2));
+        assertFalse(protocolConfig.isActiveKmsContext(KMS_CONTEXT_COUNTER_BASE + 2));
         assertTrue(protocolConfig.isKmsTxSenderForContext(KMS_CONTEXT_COUNTER_BASE + 2, kmsTxSender0));
         assertEq(protocolConfig.getKmsGenThresholdForContext(KMS_CONTEXT_COUNTER_BASE + 2), 1);
     }
@@ -1221,7 +1220,7 @@ contract ProtocolConfigTest is HostContractsDeployerTestUtils {
         protocolConfig.confirmKmsContextCreation(newContextId);
         vm.prank(kmsTxSender0);
         protocolConfig.confirmKmsContextCreation(newContextId);
-        assertFalse(protocolConfig.isValidKmsContext(newContextId));
+        assertFalse(protocolConfig.isActiveKmsContext(newContextId));
 
         // Full-args assertion (indexed kmsContextId/epochId + data) on the quorum-completing event.
         vm.expectEmit(true, true, false, true, address(protocolConfig));
@@ -1259,7 +1258,7 @@ contract ProtocolConfigTest is HostContractsDeployerTestUtils {
         protocolConfig.confirmKmsContextCreation(newContextId);
         vm.prank(kmsTxSender1);
         protocolConfig.confirmKmsContextCreation(newContextId);
-        assertFalse(protocolConfig.isValidKmsContext(newContextId));
+        assertFalse(protocolConfig.isActiveKmsContext(newContextId));
 
         // The quorum-completing confirmation (all new signers present) must emit NewKmsEpoch with the
         // pending epoch's full indexed args. Before this last confirmation no such event was emitted.
@@ -1307,7 +1306,7 @@ contract ProtocolConfigTest is HostContractsDeployerTestUtils {
 
         vm.prank(owner);
         protocolConfig.destroyKmsContext(createdContextId);
-        assertFalse(protocolConfig.isValidKmsContext(createdContextId));
+        assertFalse(protocolConfig.isActiveKmsContext(createdContextId));
     }
 
     function test_revertDefineSecondContextSwitchWhileSwitchPending() public {
@@ -1412,7 +1411,7 @@ contract ProtocolConfigTest is HostContractsDeployerTestUtils {
         (uint256 activeContextId, uint256 activeEpochId) = protocolConfig.getCurrentKmsContextAndEpoch();
         assertEq(activeContextId, KMS_CONTEXT_COUNTER_BASE + 1);
         assertEq(activeEpochId, EPOCH_COUNTER_BASE + 1);
-        assertTrue(protocolConfig.isValidEpochForContext(KMS_CONTEXT_COUNTER_BASE + 1, EPOCH_COUNTER_BASE + 1));
+        assertTrue(protocolConfig.isActiveEpochForContext(KMS_CONTEXT_COUNTER_BASE + 1, EPOCH_COUNTER_BASE + 1));
 
         vm.prank(owner);
         _defineNewKmsContextAndEpoch(_makeKmsNodeParams(2), _defaultThresholds());
@@ -1997,7 +1996,7 @@ contract ProtocolConfigTest is HostContractsDeployerTestUtils {
         (uint256 activeContextId, uint256 activeEpochId) = protocolConfig.getCurrentKmsContextAndEpoch();
         assertEq(activeContextId, canonicalContextId);
         assertEq(activeEpochId, canonicalEpochId);
-        assertTrue(protocolConfig.isValidEpochForContext(canonicalContextId, canonicalEpochId));
+        assertTrue(protocolConfig.isActiveEpochForContext(canonicalContextId, canonicalEpochId));
         assertEq(protocolConfig.getKmsSignersForContext(canonicalContextId).length, nodes.length);
         assertEq(
             protocolConfig.getPublicDecryptionThresholdForContext(canonicalContextId),
@@ -2240,9 +2239,9 @@ contract ProtocolConfigTest is HostContractsDeployerTestUtils {
         _activatePendingContextWithTwoKmsNodes(KMS_CONTEXT_COUNTER_BASE + 2, EPOCH_COUNTER_BASE + 3);
 
         assertEq(protocolConfig.getPublicDecryptionThreshold(), 2);
-        assertEq(protocolConfig.getUserDecryptionThreshold(), 1);
-        assertEq(protocolConfig.getKmsGenThreshold(), 2);
-        assertEq(protocolConfig.getMpcThreshold(), 1);
+        assertEq(protocolConfig.getUserDecryptionThresholdForContext(KMS_CONTEXT_COUNTER_BASE + 2), 1);
+        assertEq(protocolConfig.getKmsGenThresholdForContext(KMS_CONTEXT_COUNTER_BASE + 2), 2);
+        assertEq(protocolConfig.getMpcThresholdForContext(KMS_CONTEXT_COUNTER_BASE + 2), 1);
     }
 
     // -----------------------------------------------------------------------
@@ -2309,7 +2308,7 @@ contract ProtocolConfigTest is HostContractsDeployerTestUtils {
 
         assertEq(protocolConfig.getVersion(), "ProtocolConfig v0.4.0");
         // State preserved across upgrade.
-        assertTrue(protocolConfig.isValidKmsContext(protocolConfig.getCurrentKmsContextId()));
+        assertTrue(protocolConfig.isActiveKmsContext(protocolConfig.getCurrentKmsContextId()));
     }
 
     // -----------------------------------------------------------------------
@@ -2357,8 +2356,8 @@ contract ProtocolConfigTest is HostContractsDeployerTestUtils {
         (uint256 activeContextId, uint256 activeEpochId) = protocolConfig.getCurrentKmsContextAndEpoch();
         assertEq(activeContextId, contextId);
         assertEq(activeEpochId, epochId);
-        assertTrue(protocolConfig.isValidKmsContext(contextId));
-        assertTrue(protocolConfig.isValidEpochForContext(contextId, epochId));
+        assertTrue(protocolConfig.isActiveKmsContext(contextId));
+        assertTrue(protocolConfig.isActiveEpochForContext(contextId, epochId));
         assertEq(protocolConfig.getKmsSignersForContext(contextId).length, 2);
 
         // Unlike defineNewKmsContextAndEpoch, mirror does NOT record an anchor: it stays zeroed.
@@ -2382,7 +2381,7 @@ contract ProtocolConfigTest is HostContractsDeployerTestUtils {
         (uint256 activeContextId, uint256 activeEpochId) = protocolConfig.getCurrentKmsContextAndEpoch();
         assertEq(activeContextId, contextId);
         assertEq(activeEpochId, epochId);
-        assertTrue(protocolConfig.isValidEpochForContext(contextId, epochId));
+        assertTrue(protocolConfig.isActiveEpochForContext(contextId, epochId));
     }
 
     function test_mirrorKmsContextAndEpochBaseBoundary() public {
@@ -2416,7 +2415,7 @@ contract ProtocolConfigTest is HostContractsDeployerTestUtils {
             new PcrValues[](0)
         );
         assertEq(protocolConfig.getCurrentKmsContextId(), boundaryContextId);
-        assertTrue(protocolConfig.isValidKmsContext(boundaryContextId));
+        assertTrue(protocolConfig.isActiveKmsContext(boundaryContextId));
     }
 
     function test_mirrorKmsContextAndEpochAllowsGap() public {
@@ -2438,9 +2437,9 @@ contract ProtocolConfigTest is HostContractsDeployerTestUtils {
         );
 
         assertEq(protocolConfig.getCurrentKmsContextId(), gappedContextId);
-        assertTrue(protocolConfig.isValidKmsContext(gappedContextId));
+        assertTrue(protocolConfig.isActiveKmsContext(gappedContextId));
         // The skipped IDs in the gap remain invalid.
-        assertFalse(protocolConfig.isValidKmsContext(KMS_CONTEXT_COUNTER_BASE + 5));
+        assertFalse(protocolConfig.isActiveKmsContext(KMS_CONTEXT_COUNTER_BASE + 5));
     }
 
     function test_revertMirrorKmsContextAndEpochNonIncreasing() public {
@@ -2571,7 +2570,7 @@ contract ProtocolConfigTest is HostContractsDeployerTestUtils {
         protocolConfig.confirmKmsContextCreation(newContextId);
 
         assertEq(protocolConfig.getCurrentKmsContextId(), activeContextIdBefore);
-        assertFalse(protocolConfig.isValidKmsContext(newContextId));
+        assertFalse(protocolConfig.isActiveKmsContext(newContextId));
     }
 
     /// @dev n=3 epoch-activation split: two signers agree on one digest, a third diverges. Neither

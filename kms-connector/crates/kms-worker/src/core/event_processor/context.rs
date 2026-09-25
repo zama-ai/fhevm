@@ -133,13 +133,13 @@ impl<P: Provider> DbContextManager<P> {
 
         let context_valid = self
             .protocol_config_contract
-            .isValidKmsContext(context_id)
+            .isActiveKmsContext(context_id)
             .block(BlockId::finalized())
             .call()
             .await
             .map_err(|e| {
                 RequestCheckError::network(anyhow!(
-                    "isValidKmsContext(#{context_id}) call failed: {e}"
+                    "isActiveKmsContext(#{context_id}) call failed: {e}"
                 ))
             })?;
         if !context_valid {
@@ -157,13 +157,13 @@ impl<P: Provider> DbContextManager<P> {
 
         let epoch_valid = self
             .protocol_config_contract
-            .isValidEpochForContext(context_id, epoch_id)
+            .isActiveEpochForContext(context_id, epoch_id)
             .block(BlockId::finalized())
             .call()
             .await
             .map_err(|e| {
                 RequestCheckError::network(anyhow!(
-                    "isValidEpochForContext(#{context_id}, #{epoch_id}) call failed: {e}"
+                    "isActiveEpochForContext(#{context_id}, #{epoch_id}) call failed: {e}"
                 ))
             })?;
         if !epoch_valid {

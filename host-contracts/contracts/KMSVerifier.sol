@@ -203,15 +203,6 @@ contract KMSVerifier is UUPSUpgradeableEmptyProxy, EIP712UpgradeableCrossChain, 
     }
 
     /**
-     * @notice              Returns whether the account address is a valid KMS signer.
-     * @param account       Account address.
-     * @return isSigner     Whether the account is a valid KMS signer.
-     */
-    function isSigner(address account) public view virtual returns (bool) {
-        return PROTOCOL_CONFIG.isKmsSigner(account);
-    }
-
-    /**
      * @notice              Returns the current KMS context ID.
      * @return contextId    The current KMS context ID.
      */
