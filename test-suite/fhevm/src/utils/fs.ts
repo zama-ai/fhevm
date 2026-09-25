@@ -1,6 +1,6 @@
 import fs from "node:fs/promises";
 import path from "node:path";
-import { MINIO_EXTERNAL_URL, MINIO_INTERNAL_URL, MINIO_PORT } from "../layout";
+import { OBJECT_STORE_EXTERNAL_URL, OBJECT_STORE_INTERNAL_URL, OBJECT_STORE_PORT } from "../layout";
 
 export type RunOptions = {
   cwd?: string;
@@ -161,13 +161,13 @@ export const hostReachableRpcUrl = (url: string) => {
   }
 };
 
-/** Rewrites container material URLs into host-reachable MinIO URLs. */
+/** Rewrites container material URLs into host-reachable object store URLs. */
 export const hostReachableMaterialUrl = (url: string) => {
   try {
     const next = new URL(url);
-    const external = new URL(MINIO_EXTERNAL_URL);
+    const external = new URL(OBJECT_STORE_EXTERNAL_URL);
     const looksInternal =
-      next.port === String(MINIO_PORT) &&
+      next.port === String(OBJECT_STORE_PORT) &&
       (/^[a-z][a-z0-9-]*$/i.test(next.hostname) || /^\d+\.\d+\.\d+\.\d+$/.test(next.hostname));
     if (!looksInternal) {
       return next.toString().replace(/\/$/, "");
@@ -177,6 +177,6 @@ export const hostReachableMaterialUrl = (url: string) => {
     next.port = external.port;
     return next.toString().replace(/\/$/, "");
   } catch {
-    return url === MINIO_INTERNAL_URL ? MINIO_EXTERNAL_URL : url;
+    return url === OBJECT_STORE_INTERNAL_URL ? OBJECT_STORE_EXTERNAL_URL : url;
   }
 };

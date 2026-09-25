@@ -1457,7 +1457,7 @@ pub const TEST_KEYURL_EPOCH_ID: u64 = 1;
 /// KMS node public-storage config carried by the seeded `NewKmsContext` event: the poller
 /// reconstructs the served material URLs from these plus the hex-encoded key/CRS id.
 #[allow(dead_code)]
-pub const TEST_KEYURL_STORAGE_URL: &str = "http://minio:9000/kms-public";
+pub const TEST_KEYURL_STORAGE_URL: &str = "http://object-store:9000/kms-public";
 #[allow(dead_code)]
 pub const TEST_KEYURL_STORAGE_PREFIX: &str = "PUB-p1";
 

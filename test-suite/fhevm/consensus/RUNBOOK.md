@@ -42,9 +42,9 @@ waiver from a successful `full` inventory run.
 
 ## Local object-store routing
 
-The managed stack discovers MinIO through its published port on the Docker
+The managed stack discovers the object store through its published port on the Docker
 IPv4 bridge gateway. A stopped container releases its leased address, which a
-restarting worker can acquire before MinIO returns. The gateway endpoint stays
+restarting worker can acquire before the object store returns. The gateway endpoint stays
 stable across that sequence and is reachable from both the host and containers.
 Its numeric address preserves path-style S3 requests in released SNS workers.
 Discovery rejects an ambiguous gateway or a port published only on host loopback.
@@ -483,7 +483,7 @@ attestation check and fail digest verification in KMS after submission. Every
 mode must recover the same accepted request without another POST and decrypt
 to the independent model. Invalid signatures are discarded and may be replaced
 on a later round; the terminal disagreement path instead requires conflicting
-valid attestations and is not exercised here. The runner uses explicit MinIO
+valid attestations and is not exercised here. The runner uses explicit object-store
 metadata headers because `mc --attr` strips quotes from JSON attestations.
 
 Wrong-key and wrong-format arms intentionally invalidate the signature. They
@@ -678,7 +678,7 @@ work are required. Existing noisy-SNS recovery cases now also decrypt their
 original value rather than relying only on fresh traffic for plaintext checks.
 
 This models a bounded storage-capacity response through the real upload client.
-It does not fill the host disk or claim enforcement of a specific MinIO quota
+It does not fill the host disk or claim enforcement of a specific object-store quota
 configuration. The original worker image, command and environment must be
 restored; private recovery snapshots are excluded from public artifacts. The
 proxy/route contracts complement the completed live storage recovery in the [completion report](VALIDATION-2026-09-24.md).
@@ -881,7 +881,7 @@ The migration rollout accepts `RFC029_MIGRATION_FAULT=download-interrupt`,
 Green host listeners with
 `FHEVM_CONSENSUS_TEST_FEATURES=host-listener/test-failpoints`. A one-hour, exact-key
 control routes only that compressed-key GET through an owned proxy; other keys,
-legacy material and the original MinIO objects are untouched. The normal AWS
+legacy material and the original stored objects are untouched. The normal AWS
 client, digest validator, parser and activation transaction remain in use.
 
 The interruption arm observes a nonempty partial HTTP body before replacing all

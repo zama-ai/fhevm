@@ -23,7 +23,7 @@ use tokio::sync::watch;
 use tokio_util::sync::CancellationToken;
 
 const CONTRACT_ADDR: &str = "0x1234567890123456789012345678901234567890";
-const STORAGE_URL: &str = "http://minio:9000/kms-public";
+const STORAGE_URL: &str = "http://object-store:9000/kms-public";
 const STORAGE_PREFIX: &str = "PUB-p1";
 
 /// Full object URL the poller reconstructs: `{storage_url}/{prefix}/{segment}/{id_hex}`.

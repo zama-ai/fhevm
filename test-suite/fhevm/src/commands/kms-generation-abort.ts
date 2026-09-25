@@ -8,7 +8,7 @@
  *     is unchanged.
  *   - Abort crsgen mid-flight: the crsgen mirror of the above.
  *   - Recovery: a fresh keygen and crsgen must reach ActivateKey/ActivateCrs with materials
- *     published to MinIO — aborts must unblock the one-request-at-a-time pipeline.
+ *     published to the object store — aborts must unblock the one-request-at-a-time pipeline.
  *   - Reverts: invalid ids, double aborts, aborts of completed requests, and triggers while a
  *     request is in flight.
  *
@@ -218,14 +218,14 @@ const waitForActivation = async (target: Target, label: string, getter: string, 
  * materials, and — being completed — refuse any late abort.
  */
 const recoverAfterAborts = async (state: State, target: Target, owner: Owner, abi: AbiHashes, paramsType: string) => {
-  const minioBase = `${state.discovery!.endpoints.minioExternal}/kms-public/${state.discovery!.minioKeyPrefix ?? "PUB"}`;
+  const objectStoreBase = `${state.discovery!.endpoints.objectStoreExternal}/kms-public/${state.discovery!.objectStoreKeyPrefix ?? "PUB"}`;
 
   console.log("[kms-generation-abort] recovery: triggering a fresh keygen (must not revert KeygenOngoing)…");
   const keygenTrigger = await castSend(target.rpcUrl, target.kmsGenerationAddress, owner, "keygen(uint8,uint256)", paramsType, "0");
   const prepKeygenId = eventLogWord(keygenTrigger, abi.topics.prepKeygenRequest, "PrepKeygenRequest");
   const keyId = parseUintOutput(await castCall(target.rpcUrl, target.kmsGenerationAddress, "getKeyCounter()(uint256)"));
   await waitForActivation(target, "recovery keygen", "getActiveKeyId()(uint256)", keyId);
-  await ensureMaterial(`${minioBase}/PublicKey/${uint256ToId(keyId)}`);
+  await ensureMaterial(`${objectStoreBase}/PublicKey/${uint256ToId(keyId)}`);
   await callContractAndExpectRevert(target.rpcUrl, target.kmsGenerationAddress, owner,"abort of a completed keygen", "AbortKeygenAlreadyDone(uint256)", "abortKeygen(uint256)", prepKeygenId.toString());
   console.log(`[kms-generation-abort] recovery keygen activated: keyId=${keyId}, materials published`);
 
@@ -233,7 +233,7 @@ const recoverAfterAborts = async (state: State, target: Target, owner: Owner, ab
   const crsgenTrigger = await castSend(target.rpcUrl, target.kmsGenerationAddress, owner,"crsgenRequest(uint256,uint8)", "2048", paramsType);
   const crsId = eventLogWord(crsgenTrigger, abi.topics.crsgenRequest, "CrsgenRequest");
   await waitForActivation(target, "recovery crsgen", "getActiveCrsId()(uint256)", crsId);
-  await ensureMaterial(`${minioBase}/CRS/${uint256ToId(crsId)}`);
+  await ensureMaterial(`${objectStoreBase}/CRS/${uint256ToId(crsId)}`);
   await callContractAndExpectRevert(target.rpcUrl, target.kmsGenerationAddress, owner,"abort of a completed crsgen", "AbortCrsgenAlreadyDone(uint256)", "abortCrsgen(uint256)", crsId.toString());
   console.log(`[kms-generation-abort] recovery crsgen activated: crsId=${crsId}, materials published`);
 

@@ -51,8 +51,8 @@ describe("ensureOneMaterial", () => {
     }) as unknown as typeof fetch;
     try {
       await ensureOneMaterial([
-        "http://minio:9000/kms-public/PUB/CompressedXofKeySet/key-id",
-        "http://minio:9000/kms-public/PUB/ServerKey/key-id",
+        "http://object-store:9000/kms-public/PUB/CompressedXofKeySet/key-id",
+        "http://object-store:9000/kms-public/PUB/ServerKey/key-id",
       ]);
       expect(requested).toHaveLength(2);
       expect(requested[0]).toContain("CompressedXofKeySet");

@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # Hold the actual selected GET response or corrupt its delivered body. The
-# original MinIO object is never mutated. Parent stdin owns all temporary routes.
+# original stored object is never mutated. Parent stdin owns all temporary routes.
 set -euo pipefail
 SCRIPT_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
 REPO_ROOT="$(cd -- "$SCRIPT_DIR/../../.." && pwd)"
@@ -76,7 +76,7 @@ control "$MIGRATION_DOWNLOAD_MODE"
 # It runs as its own process group, bypassing the `docker` wrapper function:
 # `$!` of a wrapped call is only the subshell, and killing that orphans the
 # timeout/docker pair, which then lives on until the hour-long cap.
-setsid -w timeout --kill-after=2s 3600s docker exec "$TEST_CONTAINER" node "$remote/proxy.cjs" http://minio:9000 "$MIGRATION_KEY_HEX" "$remote/control" "$remote/ready" "$remote/evidence" "${wrong_args[@]}" >&2 &
+setsid -w timeout --kill-after=2s 3600s docker exec "$TEST_CONTAINER" node "$remote/proxy.cjs" http://object-store:9000 "$MIGRATION_KEY_HEX" "$remote/control" "$remote/ready" "$remote/evidence" "${wrong_args[@]}" >&2 &
 proxy_pid=$!
 # setsid does not fork for a non-leader child, so the job's pid becomes the
 # group id; wait for that to settle before trusting group cancellation.

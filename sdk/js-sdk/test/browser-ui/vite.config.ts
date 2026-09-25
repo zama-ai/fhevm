@@ -15,9 +15,9 @@ const rawWasmAssetPrefix = '/__raw_wasm';
 const browserUiConfigPath = '/__browser_ui/config';
 const browserUiEnsureFundsPath = '/__browser_ui/ensure-funded';
 const localstackRelayerProxyPrefix = '/__localstack_relayer';
-const localstackMinioProxyPrefix = '/__localstack_minio';
+const localstackObjectStoreProxyPrefix = '/__localstack_object_store';
 const localstackRelayerTarget = 'http://localhost:3000';
-const localstackMinioTarget = 'http://localhost:9000';
+const localstackObjectStoreTarget = 'http://localhost:9000';
 const localFundingBalanceWei = '0x56BC75E2D63100000';
 
 type BrowserUiChainTarget = 'testnet' | 'localstack' | 'localcleartext';
@@ -84,12 +84,12 @@ function browserUiPlugin() {
             return;
           }
 
-          if (url.pathname.startsWith(localstackMinioProxyPrefix)) {
+          if (url.pathname.startsWith(localstackObjectStoreProxyPrefix)) {
             await proxyRequest({
               req,
               res,
-              targetBaseUrl: localstackMinioTarget,
-              proxyPrefix: localstackMinioProxyPrefix,
+              targetBaseUrl: localstackObjectStoreTarget,
+              proxyPrefix: localstackObjectStoreProxyPrefix,
               rewriteRelayerKeyUrl: false,
             });
             return;
@@ -339,7 +339,7 @@ async function respondWithRewrittenRelayerKeyUrl(
 
   const json = (await upstream.json()) as unknown;
   const publicOrigin = `http://${req.headers.host ?? 'localhost:3335'}`;
-  const rewritten = rewriteMinioUrls(json, publicOrigin);
+  const rewritten = rewriteObjectStoreUrls(json, publicOrigin);
   const body = JSON.stringify(rewritten);
 
   copyResponseHeaders(res, upstream.headers, ['content-length', 'content-encoding', 'transfer-encoding']);
@@ -400,23 +400,25 @@ function readRequestBody(req: IncomingMessage): Promise<Buffer> {
   });
 }
 
-function rewriteMinioUrls(value: unknown, publicOrigin: string): unknown {
+function rewriteObjectStoreUrls(value: unknown, publicOrigin: string): unknown {
   if (typeof value === 'string') {
-    return rewriteMinioUrl(value, publicOrigin);
+    return rewriteObjectStoreUrl(value, publicOrigin);
   }
 
   if (Array.isArray(value)) {
-    return value.map((item) => rewriteMinioUrls(item, publicOrigin));
+    return value.map((item) => rewriteObjectStoreUrls(item, publicOrigin));
   }
 
   if (value !== null && typeof value === 'object') {
-    return Object.fromEntries(Object.entries(value).map(([key, item]) => [key, rewriteMinioUrls(item, publicOrigin)]));
+    return Object.fromEntries(
+      Object.entries(value).map(([key, item]) => [key, rewriteObjectStoreUrls(item, publicOrigin)]),
+    );
   }
 
   return value;
 }
 
-function rewriteMinioUrl(value: string, publicOrigin: string): string {
+function rewriteObjectStoreUrl(value: string, publicOrigin: string): string {
   let url: URL;
   try {
     url = new URL(value);
@@ -426,10 +428,10 @@ function rewriteMinioUrl(value: string, publicOrigin: string): string {
 
   if (
     (url.protocol === 'http:' || url.protocol === 'https:') &&
-    (url.hostname === 'minio' || url.hostname === 'localhost') &&
+    (url.hostname === 'object-store' || url.hostname === 'localhost') &&
     url.port === '9000'
   ) {
-    return `${publicOrigin}${localstackMinioProxyPrefix}${url.pathname}${url.search}`;
+    return `${publicOrigin}${localstackObjectStoreProxyPrefix}${url.pathname}${url.search}`;
   }
 
   return value;

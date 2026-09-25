@@ -18,7 +18,7 @@ grpc_max_message_size = 104857600 # 100 MiB
 
 [aws]
 region = "eu-west-1"          # KMS_CORE__AWS__REGION
-s3_endpoint = "http://minio:9000" # KMS_CORE__AWS__S3_ENDPOINT
+s3_endpoint = "http://object-store:9000" # KMS_CORE__AWS__S3_ENDPOINT
 
 [public_vault]
 [public_vault.storage.s3]

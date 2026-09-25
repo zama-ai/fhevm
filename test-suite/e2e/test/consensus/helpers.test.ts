@@ -214,8 +214,8 @@ describe('Materialization consensus harness helpers', () => {
   });
 
   it('probes the exact RFC-023 object in the KMS worker network namespace without a shell', () => {
-    const url = rfc023CiphertextUrl('http://minio:9000/coproc-0-ct128', expectedHandle);
-    expect(url).to.equal(`http://minio:9000/coproc-0-ct128/ct128/${handle.toString('hex')}/1`);
+    const url = rfc023CiphertextUrl('http://object-store:9000/coproc-0-ct128', expectedHandle);
+    expect(url).to.equal(`http://object-store:9000/coproc-0-ct128/ct128/${handle.toString('hex')}/1`);
     expect(kmsNamespaceAttestationHeadArgs('kms-connector-kms-worker', 'probe-image', url)).to.deep.equal([
       'run',
       '--rm',
@@ -232,17 +232,17 @@ describe('Materialization consensus harness helpers', () => {
   });
 
   it('rejects a non-RFC-023-safe Coprocessor bucket URL before opening a Docker probe', () => {
-    expect(() => rfc023CiphertextUrl('ftp://minio:9000/coproc-0-ct128', expectedHandle)).to.throw(
+    expect(() => rfc023CiphertextUrl('ftp://object-store:9000/coproc-0-ct128', expectedHandle)).to.throw(
       'unsupported Coprocessor bucket URL',
     );
-    expect(() => rfc023CiphertextUrl('http://minio:9000/coproc-0-ct128?wrong=1', expectedHandle)).to.throw(
+    expect(() => rfc023CiphertextUrl('http://object-store:9000/coproc-0-ct128?wrong=1', expectedHandle)).to.throw(
       'unsupported Coprocessor bucket URL',
     );
   });
 
   it('does not normalize the registered bucket string away from the connector request target', () => {
-    expect(rfc023CiphertextUrl('http://minio:9000/coproc-0-ct128/', expectedHandle)).to.equal(
-      `http://minio:9000/coproc-0-ct128//ct128/${handle.toString('hex')}/1`,
+    expect(rfc023CiphertextUrl('http://object-store:9000/coproc-0-ct128/', expectedHandle)).to.equal(
+      `http://object-store:9000/coproc-0-ct128//ct128/${handle.toString('hex')}/1`,
     );
   });
 
@@ -252,7 +252,7 @@ describe('Materialization consensus harness helpers', () => {
     const bucket = {
       txSender: '0x00000000000000000000000000000000000000a1',
       signer: attestationSigner.address,
-      bucketUrl: 'http://minio:9000/coproc-0-ct128',
+      bucketUrl: 'http://object-store:9000/coproc-0-ct128',
     };
     expect(() => assertAttestationMatchesOutputEvidence(metadata, evidence, bucket)).to.not.throw();
     expect(attestationMetadataFromWgetHeaders(attestationHeaders(metadata))).to.deep.equal(metadata);

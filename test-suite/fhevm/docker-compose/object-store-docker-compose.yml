@@ -1,13 +1,10 @@
 services:
-  # RustFS stands in for MinIO, whose public images are no longer published. The service,
-  # container and env names keep `minio` so the `http://minio:9000` URLs, the
-  # `docker inspect fhevm-minio` lookups and the secrets volume used across the stack hold.
-  # RustFS reads the `MINIO_ROOT_USER`/`MINIO_ROOT_PASSWORD` root credentials as aliases.
-  minio:
-    container_name: fhevm-minio
-    image: rustfs/rustfs:1.0.0
+  # S3-compatible object store, backed by RustFS.
+  object-store:
+    container_name: fhevm-object-store
+    image: cgr.dev/zama.ai/rustfs:1.0.0-dev
     env_file:
-      - ${FHEVM_STATE_DIR:-../../../.fhevm}/runtime/env/minio.env
+      - ${FHEVM_STATE_DIR:-../../../.fhevm}/runtime/env/object-store.env
     environment:
       # Log to stdout rather than to files under /logs.
       RUSTFS_OBS_LOG_DIRECTORY: ""
@@ -23,28 +20,28 @@ services:
       timeout: 10s
       retries: 30
 
-  minio-setup:
-    container_name: fhevm-minio-setup
-    image: rustfs/rustfs:1.0.0
+  object-store-setup:
+    container_name: fhevm-object-store-setup
+    image: cgr.dev/zama.ai/rustfs:1.0.0-dev
     # The image runs as an unprivileged user, which can't write to the root-owned secrets volume.
     user: root
     env_file:
-      - ${FHEVM_STATE_DIR:-../../../.fhevm}/runtime/env/minio.env
+      - ${FHEVM_STATE_DIR:-../../../.fhevm}/runtime/env/object-store.env
     entrypoint:
       - /bin/sh
       - -c
       - |
         set -e
-        # SigV4-signed requests with the root credentials, standing in for `mc`.
-        s3() { curl -fsS --aws-sigv4 aws:amz:us-east-1:s3 --user "$${MINIO_ROOT_USER}:$${MINIO_ROOT_PASSWORD}" "$$@"; }
-        # Object Lock can only be enabled at bucket creation, as `mc mb --with-lock` did.
+        # SigV4-signed requests with the root credentials.
+        s3() { curl -fsS --aws-sigv4 aws:amz:us-east-1:s3 --user "$${OBJECT_STORE_ROOT_USER}:$${OBJECT_STORE_ROOT_PASSWORD}" "$$@"; }
+        # Object Lock can only be enabled at bucket creation.
         mb() {
-          s3 -o /dev/null -I "$${MINIO_ENDPOINT}/$$1" 2>/dev/null ||
-            s3 -X PUT -H "x-amz-bucket-object-lock-enabled: true" "$${MINIO_ENDPOINT}/$$1"
+          s3 -o /dev/null -I "$${OBJECT_STORE_ENDPOINT}/$$1" 2>/dev/null ||
+            s3 -X PUT -H "x-amz-bucket-object-lock-enabled: true" "$${OBJECT_STORE_ENDPOINT}/$$1"
         }
-        # Same statements as `mc anonymous set public`.
+        # Public read and write access for anonymous requests.
         public() {
-          s3 -X PUT "$${MINIO_ENDPOINT}/$$1?policy" -d '{
+          s3 -X PUT "$${OBJECT_STORE_ENDPOINT}/$$1?policy" -d '{
             "Version": "2012-10-17",
             "Statement": [
               { "Effect": "Allow", "Principal": { "AWS": ["*"] }, "Resource": ["arn:aws:s3:::'"$$1"'"],
@@ -54,15 +51,15 @@ services:
             ]
           }'
         }
-        s3 -X PUT "$${MINIO_ENDPOINT}/rustfs/admin/v3/add-user?accessKey=$${ACCESS_KEY}" \
+        s3 -X PUT "$${OBJECT_STORE_ENDPOINT}/rustfs/admin/v3/add-user?accessKey=$${ACCESS_KEY}" \
           -d '{"secretKey":"'"$${SECRET_KEY}"'","status":"enabled"}'
-        s3 -X PUT "$${MINIO_ENDPOINT}/rustfs/admin/v3/set-user-or-group-policy?policyName=readwrite&userOrGroup=$${ACCESS_KEY}&isGroup=false"
+        s3 -X PUT "$${OBJECT_STORE_ENDPOINT}/rustfs/admin/v3/set-user-or-group-policy?policyName=readwrite&userOrGroup=$${ACCESS_KEY}&isGroup=false"
         echo $${ACCESS_KEY}
         echo $${SECRET_KEY}
-        echo $${ACCESS_KEY} > /minio_secrets/access_key
-        echo $${SECRET_KEY} > /minio_secrets/secret_key
-        cat /minio_secrets/access_key
-        cat /minio_secrets/secret_key
+        echo $${ACCESS_KEY} > /object_store_secrets/access_key
+        echo $${SECRET_KEY} > /object_store_secrets/secret_key
+        cat /object_store_secrets/access_key
+        cat /object_store_secrets/secret_key
         mb kms-public
         # Per-coprocessor buckets, holding both ct128 and ct64 under their key
         # prefixes, as deployed in production.
@@ -73,10 +70,10 @@ services:
         done
         public kms-public
     volumes:
-      - minio_secrets:/minio_secrets
+      - object_store_secrets:/object_store_secrets
     depends_on:
-      minio:
+      object-store:
         condition: service_healthy
 
 volumes:
-  minio_secrets:
+  object_store_secrets:

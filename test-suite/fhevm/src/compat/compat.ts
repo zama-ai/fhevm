@@ -203,7 +203,7 @@ const SHIM_PROFILES = {
   // v0.15.0 replaced the split --bucket-name-ct64/--bucket-name-ct128 pair with
   // a single required --bucket-name, since both artifact kinds now live in one
   // bucket under their own key prefixes (#3372). Legacy images still expect both
-  // flags, and the standalone `ct64`/`ct128` minio buckets are gone, so point
+  // flags, and the standalone `ct64`/`ct128` buckets are gone, so point
   // both at the per-coprocessor bucket.
   //
   // Collapsing two buckets into one is only safe for images that carry #3372,

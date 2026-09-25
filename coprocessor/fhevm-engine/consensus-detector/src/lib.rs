@@ -106,7 +106,7 @@ pub struct Config {
     pub commitment_timeout: Duration,
     /// This operator's S3 bucket. `None` disables GCS uploads (read-only).
     pub my_bucket: Option<String>,
-    /// S3 endpoint override (e.g. `http://minio:9000`).
+    /// S3 endpoint override (e.g. `http://object-store:9000`).
     pub s3_endpoint: Option<String>,
     /// Max pending blocks processed per state_hash pass.
     pub state_hash_batch_limit: i64,
@@ -786,7 +786,7 @@ async fn build_s3_client(config: &Config) -> aws_sdk_s3::Client {
     let sdk_config = loader.load().await;
     let mut builder = aws_sdk_s3::config::Builder::from(&sdk_config);
     if config.s3_endpoint.is_some() {
-        // path-style addressing is required by minio / localstack
+        // path-style addressing is required by self-hosted S3-compatible stores / localstack
         builder = builder.force_path_style(true);
     }
     aws_sdk_s3::Client::from_conf(builder.build())

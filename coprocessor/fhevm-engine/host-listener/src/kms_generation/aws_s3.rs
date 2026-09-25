@@ -158,10 +158,10 @@ fn bucket_from_domain(url: &Url) -> anyhow::Result<String> {
 
 fn split_url(s3_bucket_url: &String) -> anyhow::Result<(String, String)> {
     // e.g BBBBBB.s3.bla.bli.amazonaws.blu, the bucket is part of the domain
-    let s3_bucket_url = if s3_bucket_url.contains("minio:9000") {
+    let s3_bucket_url = if s3_bucket_url.contains("object-store:9000") {
         // TODO: replace by docker configuration
-        warn!(s3_bucket_url, "Using localhost for minio access");
-        s3_bucket_url.replace("minio:9000", "172.17.0.1:9000")
+        warn!(s3_bucket_url, "Using localhost for object-store access");
+        s3_bucket_url.replace("object-store:9000", "172.17.0.1:9000")
     } else {
         s3_bucket_url.to_owned()
     };

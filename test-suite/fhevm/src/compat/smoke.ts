@@ -11,7 +11,7 @@ import {
   DEFAULT_HOST_RPC_PORT,
   GROUP_BUILD_SERVICES,
   KMS_CONNECTOR_HTTP_SERVICES,
-  MINIO_PORT,
+  OBJECT_STORE_PORT,
   STATE_DIR,
   TEMPLATE_ENV_DIR,
   versionsEnvPath,
@@ -90,12 +90,12 @@ const fakeDiscovery: NonNullable<State["discovery"]> = {
   crsKeyId: "0000000000000000000000000000000000000000000000000000000000000002",
   actualFheKeyId: "0000000000000000000000000000000000000000000000000000000000000001",
   actualCrsKeyId: "0000000000000000000000000000000000000000000000000000000000000002",
-  minioKeyPrefix: "PUB",
+  objectStoreKeyPrefix: "PUB",
   endpoints: {
     gateway: { http: `http://localhost:${DEFAULT_GATEWAY_RPC_PORT}`, ws: "ws://127.0.0.1:1" },
     hosts: { [DEFAULT_HOST_CHAIN_KEY]: { http: `http://localhost:${DEFAULT_HOST_RPC_PORT}`, ws: "ws://127.0.0.1:1" } },
-    minioInternal: `http://127.0.0.1:${MINIO_PORT}`,
-    minioExternal: `http://127.0.0.1:${MINIO_PORT}`,
+    objectStoreInternal: `http://127.0.0.1:${OBJECT_STORE_PORT}`,
+    objectStoreExternal: `http://127.0.0.1:${OBJECT_STORE_PORT}`,
   },
 };
 

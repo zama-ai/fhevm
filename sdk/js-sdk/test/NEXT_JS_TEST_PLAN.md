@@ -444,7 +444,7 @@ needs no CORS from anvil/relayer.
   `GET /gw/<slot>/relayer/v2/keyurl` → JSON with `fheKeyInfo[0].fhePublicKey.urls`
   + `crs["2048"].urls` (**URLs**, not inline bytes); the SDK then fetches the bytes.
   Since the relayer is **ours**, `keyurl` emits **same-origin** byte URLs at the
-  page origin → no response-body rewriting (the multi-wasm MinIO step disappears).
+  page origin → no response-body rewriting (the multi-wasm object-store step disappears).
 - **Page origin via `x-forwarded-host`.** Behind the rewrite, the gateway's own
   `Host` is the proxy target (`:8590`), so byte URLs must be built from
   `x-forwarded-host` (the page origin Next forwards) — else the browser would

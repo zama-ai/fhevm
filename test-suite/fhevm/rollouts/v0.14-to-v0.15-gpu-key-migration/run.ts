@@ -16,7 +16,7 @@ import {
   DEFAULT_POSTGRES_USER,
   coprocessorDatabaseName,
   defaultHostChainKey,
-  MINIO_EXTERNAL_URL,
+  OBJECT_STORE_EXTERNAL_URL,
   REPO_ROOT,
 } from "../../src/layout";
 import {
@@ -208,7 +208,7 @@ async function kmsPublicMaterialDigests(
   const responses = await Promise.all(
     kmsPartyIds(CONNECTOR_PARTIES).map(async (party) => {
       const response = await fetch(
-        `${MINIO_EXTERNAL_URL}/kms-public/${kmsPublicPrefix(party)}/${type}/${keyId}`,
+        `${OBJECT_STORE_EXTERNAL_URL}/kms-public/${kmsPublicPrefix(party)}/${type}/${keyId}`,
       );
       return { party, response };
     }),
@@ -554,7 +554,7 @@ export default async function runMigration(ctx: RolloutRunContext) {
   const migration = [{ contextId: uint256ToId(active.contextId), epochIds: [uint256ToId(active.epochId)] }];
   for (const party of kmsPartyIds(CONNECTOR_PARTIES)) {
     for (const [type, id] of [["Context", migration[0]!.contextId], ["PrssSetupCombined", migration[0]!.epochIds[0]!]]) {
-      const response = await fetch(`${MINIO_EXTERNAL_URL}/kms-public/PRIV-p${party}/${type}/${id}`, { method: "HEAD", signal: AbortSignal.timeout(30_000) });
+      const response = await fetch(`${OBJECT_STORE_EXTERNAL_URL}/kms-public/PRIV-p${party}/${type}/${id}`, { method: "HEAD", signal: AbortSignal.timeout(30_000) });
       if (!response.ok) throw new Error(`KMS party ${party} lacks the on-chain ${type} ${id}: HTTP ${response.status}`);
     }
   }

@@ -1699,10 +1699,10 @@ mod tests {
             source: config
             fhe_public_key:
               data_id: "0x0400000000000000000000000000000000000000000000000000000000000003"
-              urls: ["http://minio:9000/kms-public/PUB/PublicKey/03"]
+              urls: ["http://object-store:9000/kms-public/PUB/PublicKey/03"]
             crs:
               data_id: "0x0400000000000000000000000000000000000000000000000000000000000004"
-              urls: ["http://minio:9000/kms-public/PUB/CRS/04"]
+              urls: ["http://object-store:9000/kms-public/PUB/CRS/04"]
             "#,
         )
         .expect("Failed to parse static keyurl block");
@@ -1827,13 +1827,16 @@ mod tests {
                 );
                 assert_eq!(
                     fhe_public_key.urls,
-                    vec!["http://minio:9000/kms-public/PUB/PublicKey/03"]
+                    vec!["http://object-store:9000/kms-public/PUB/PublicKey/03"]
                 );
                 assert_eq!(
                     crs.data_id,
                     "0x0400000000000000000000000000000000000000000000000000000000000004"
                 );
-                assert_eq!(crs.urls, vec!["http://minio:9000/kms-public/PUB/CRS/04"]);
+                assert_eq!(
+                    crs.urls,
+                    vec!["http://object-store:9000/kms-public/PUB/CRS/04"]
+                );
             }
             other => panic!("expected keyurl.source: config, got {other:?}"),
         }
@@ -2280,11 +2283,11 @@ mod tests {
     fn test_keyurl_source_config_from_env_only() {
         const KEY_DATA_ID: &str =
             "0x0400000000000000000000000000000000000000000000000000000000000003";
-        const KEY_URL_0: &str = "http://minio-a:9000/kms-public/PUB-p1/PublicKey/03";
-        const KEY_URL_1: &str = "http://minio-b:9000/kms-public/PUB-p2/PublicKey/03";
+        const KEY_URL_0: &str = "http://object-store-a:9000/kms-public/PUB-p1/PublicKey/03";
+        const KEY_URL_1: &str = "http://object-store-b:9000/kms-public/PUB-p2/PublicKey/03";
         const CRS_DATA_ID: &str =
             "0x0400000000000000000000000000000000000000000000000000000000000004";
-        const CRS_URL_0: &str = "http://minio-a:9000/kms-public/PUB-p1/CRS/04";
+        const CRS_URL_0: &str = "http://object-store-a:9000/kms-public/PUB-p1/CRS/04";
 
         // Base config with the whole `keyurl` block removed: every field comes from env.
         let builder = ConfigBuilder::from_example()

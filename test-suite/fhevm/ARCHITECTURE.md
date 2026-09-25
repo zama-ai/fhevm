@@ -56,7 +56,7 @@ flowchart TD
 The CLI now models the stack as one topology with explicit scopes instead of a privileged primary host chain plus ad hoc extras.
 
 - stack-scoped:
-  - minio
+  - object-store
   - shared db infra
   - kms-core
   - relayer
