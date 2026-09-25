@@ -33,8 +33,9 @@ jobs:
               - coprocessor/fhevm-engine/**
               - coprocessor/proto/**
               - host-contracts/rust_bindings/**
-              # consensus-detector depends on this crate by path.
+              # consensus-detector depends on these crates by path.
               - shared/block-manifest/**
+              - shared/ciphertext-attestation/**
   cargo-tests:
     name: coprocessor-cargo-test/${{ matrix.service }}
     needs: check-changes

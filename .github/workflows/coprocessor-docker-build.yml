@@ -289,6 +289,7 @@ jobs:
           - host-contracts/rust_bindings/**
           - gateway-contracts/rust_bindings/**
           - shared/block-manifest/**
+          - shared/ciphertext-attestation/**
 
   check-changes-upgrade-controller:
     uses: ./.github/workflows/check-changes-for-docker-build.yml
