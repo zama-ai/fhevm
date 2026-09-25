@@ -205,3 +205,54 @@ async fn epoch_change_between_passes_leaves_old_findings_uncontained() {
     .unwrap();
     assert_eq!(live, 2);
 }
+
+#[tokio::test]
+#[serial(db)]
+async fn barrier_lock_timeout_leaves_findings_uncontained_and_releases_batches() {
+    let (_instance, pool) = setup().await;
+    let id = root(&pool, 1).await;
+    // A stuck batch keeps its computation permit.
+    let mut stuck = pool.begin().await.unwrap();
+    sqlx::query("SELECT pg_advisory_xact_lock_shared($1)")
+        .bind(DRIFT_CONTAINMENT_BARRIER)
+        .execute(stuck.as_mut())
+        .await
+        .unwrap();
+    let before = metrics::BARRIER_LOCK_TIMEOUT.get();
+    assert!(
+        enforce_guaranteed_containment_with(&pool, Duration::from_millis(200))
+            .await
+            .is_err()
+    );
+    assert_eq!(metrics::BARRIER_LOCK_TIMEOUT.get(), before + 1);
+    let contained: bool =
+        sqlx::query_scalar("SELECT is_contained FROM drifted_handle WHERE id = $1")
+            .bind(id)
+            .fetch_one(&pool)
+            .await
+            .unwrap();
+    assert!(!contained);
+
+    // The abandoned request no longer queues new batches behind it.
+    let mut batch = pool.begin().await.unwrap();
+    tokio::time::timeout(
+        Duration::from_secs(1),
+        sqlx::query("SELECT pg_advisory_xact_lock_shared($1)")
+            .bind(DRIFT_CONTAINMENT_BARRIER)
+            .execute(batch.as_mut()),
+    )
+    .await
+    .expect("a new batch acquires its permit after the timeout")
+    .unwrap();
+    batch.rollback().await.unwrap();
+
+    // Once the stuck batch ends, the next call contains the finding.
+    stuck.rollback().await.unwrap();
+    assert_eq!(
+        enforce_guaranteed_containment(&pool)
+            .await
+            .unwrap()
+            .contained_findings,
+        1
+    );
+}

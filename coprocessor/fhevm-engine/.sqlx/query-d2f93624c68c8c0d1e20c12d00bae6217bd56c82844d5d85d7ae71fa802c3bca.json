@@ -1,0 +1,17 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n        INSERT INTO ciphertexts (\n            handle, ciphertext, ciphertext_version, ciphertext_type\n        ) VALUES ($1, $2, $3, $4)\n        ON CONFLICT (handle, ciphertext_version) DO UPDATE\n        SET ciphertext = EXCLUDED.ciphertext\n        WHERE ciphertexts.ciphertext IS DISTINCT FROM EXCLUDED.ciphertext\n        ",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Bytea",
+        "Bytea",
+        "Int2",
+        "Int2"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "d2f93624c68c8c0d1e20c12d00bae6217bd56c82844d5d85d7ae71fa802c3bca"
+}

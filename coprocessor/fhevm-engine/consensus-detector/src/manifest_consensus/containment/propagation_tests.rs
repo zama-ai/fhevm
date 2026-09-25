@@ -51,7 +51,7 @@ async fn insert_root<'a>(executor: impl sqlx::PgExecutor<'a>, handle: u8) -> i64
         .bind(bytes(1)).bind(i64::from(handle)).bind(bytes(handle)).fetch_one(executor).await.unwrap()
 }
 
-async fn direct_root(pool: &PgPool, handle: u8, reason: &str) -> i64 {
+pub(crate) async fn direct_root(pool: &PgPool, handle: u8, reason: &str) -> i64 {
     let id = root(pool, handle).await;
     // Store a real signed local manifest to back the finding's required task FK.
     // This test exercises containment of recorded findings, not peer comparison.
@@ -207,6 +207,32 @@ async fn optimistic_then_guaranteed_pass_catches_late_outputs_and_is_idempotent(
         enforce_guaranteed_containment(&pool).await.unwrap(),
         PropagationResult::default()
     );
+}
+
+#[tokio::test]
+#[serial(db)]
+async fn inferred_insert_notifies_healing() {
+    let (_db, pool) = setup().await;
+    root(&pool, 1).await;
+    computation(&pool, 2, 1, 2, true, true).await;
+    let mut listener = sqlx::postgres::PgListener::connect_with(&pool)
+        .await
+        .unwrap();
+    listener
+        .listen(crate::manifest_consensus::healing::EVENT_HEALING_WORK)
+        .await
+        .unwrap();
+    assert!(
+        enforce_guaranteed_containment(&pool)
+            .await
+            .unwrap()
+            .inferred_handles
+            > 0
+    );
+    tokio::time::timeout(Duration::from_secs(2), listener.recv())
+        .await
+        .expect("inferred drifted_handle insert should NOTIFY event_healing_work")
+        .unwrap();
 }
 
 #[tokio::test]
