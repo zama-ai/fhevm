@@ -2,8 +2,9 @@
 //!
 //! The archive lists the produced slots after the checkpoint with `getBlocks`, lists each block's
 //! transactions with `getBlock`, and serves each successful transaction naming the host with
-//! `getTransaction`, all at finalized commitment. A block is prepared like a streamed one
-//! (`prepare_rpc_block`), must extend the checkpoint as the stream's validator requires, and is
+//! `getTransaction`, all at finalized commitment. Each transaction is prepared like a streamed one
+//! as it arrives (`prepare_rpc_transaction`); the block must extend the checkpoint as the stream's
+//! validator requires, and is
 //! applied through the same path, so the database ends as uninterrupted streaming leaves it.
 //! Catch-up stops at the slot the archive had finalized when it started, well inside the
 //! stream's replay window, so the stream takes over however fast the chain moves.
@@ -26,7 +27,7 @@ use solana_transaction_status_client_types::{
 use tokio_util::sync::CancellationToken;
 use tracing::info;
 
-use super::rpc_block::{list_rpc_block, prepare_rpc_block};
+use super::rpc_block::{list_rpc_block, prepare_rpc_transaction};
 use super::{
     apply_prepared_block, FatalListenerError, IngestionProgress, PreparedBlock,
     SolanaGrpcListenerConfig, StartPosition,
@@ -84,7 +85,8 @@ impl Archive for RpcClient {
         self.get_block_with_config(
             slot,
             RpcBlockConfig {
-                encoding: Some(UiTransactionEncoding::Base64),
+                // An account list carries no transaction bytes, so no encoding applies.
+                encoding: None,
                 transaction_details: Some(TransactionDetails::Accounts),
                 rewards: Some(false),
                 commitment: Some(CommitmentConfig::finalized()),
@@ -129,12 +131,19 @@ async fn fetch_block(
     };
     let listing = list_rpc_block(slot, archive.block(slot).await?, program)
         .map_err(fatal)?;
-    let transactions = stream::iter(listing.matching.iter())
-        .map(|(_, signature)| archive.transaction(*signature))
+    let transactions = stream::iter(listing.matching)
+        .map(|listed| async move {
+            let fetched = archive.transaction(listed.1).await?;
+            prepare_rpc_transaction(slot, listed, fetched, program)
+                .map_err(fatal)
+        })
         .buffered(TRANSACTIONS_IN_FLIGHT)
         .try_collect()
         .await?;
-    prepare_rpc_block(listing, transactions).map_err(fatal)
+    Ok(PreparedBlock {
+        block: listing.block,
+        transactions,
+    })
 }
 
 /// A hosted archive URL usually carries its API key, and reqwest errors print the URL.
@@ -322,13 +331,13 @@ mod tests {
         storing_app_transaction, Transaction, BLOCK_TIME,
     };
     use super::super::{
-        apply_prepared_block, prepare_block, BlockCheckpoint,
-        FatalListenerError, IngestionProgress, StartPosition,
+        apply_prepared_block, prepare_transaction, BlockCheckpoint,
+        FatalListenerError, IngestionProgress, PreparedBlock, StartPosition,
     };
     use super::{catch_up, extends_checkpoint, first_missing_slot, Archive};
     use crate::database::tfhe_event_propagate::Database;
     use crate::solana_grpc_source::{
-        BlockValidator, SealDecision, SealedBlock, SlotAssembler,
+        BlockValidator, SealDecision, SealedBlock,
     };
     use fhevm_engine_common::chain_id::ChainId;
 
@@ -341,6 +350,7 @@ mod tests {
         "host_chain_blocks_valid",
         "solana_encrypted_states",
         "solana_encrypted_state_leaves",
+        "solana_encrypted_state_nodes",
         "solana_listener_checkpoint",
     ];
 
@@ -511,24 +521,31 @@ mod tests {
         }
     }
 
-    /// Streams `slots` from `progress`'s start through the stream's assembler, validator and
+    /// Streams `slots` from `progress`'s start through the stream's preparation, validator and
     /// ingest path.
     async fn stream(
         db: &Database,
         slots: &[&Slot],
         progress: &mut IngestionProgress,
     ) {
-        let mut assembler = SlotAssembler::default();
+        let host = ZAMA_HOST.parse::<Pubkey>().unwrap();
         let mut validator = BlockValidator::new(progress.subscription_start());
         for slot in slots {
             let (transactions, meta) = slot.grpc();
-            for transaction in transactions {
-                assembler.transaction(transaction).unwrap();
+            for update in transactions {
+                let prepared =
+                    prepare_transaction(update.transaction.unwrap(), &host)
+                        .unwrap()
+                        .unwrap();
+                validator.transaction(update.slot, prepared).unwrap();
             }
             if let SealDecision::Process(block, transactions) =
-                validator.seal(assembler.block_meta(meta).unwrap()).unwrap()
+                validator.block_meta(meta).unwrap()
             {
-                let prepared = prepare_block(block, transactions).unwrap();
+                let prepared = PreparedBlock {
+                    block,
+                    transactions,
+                };
                 assert!(apply_prepared_block(
                     db,
                     &config(),

@@ -13,7 +13,7 @@
 //!   the same rev as the program (INVARIANTS #33).
 //!
 //! A checkpoint older than the provider's replay window is caught up from an archive RPC with
-//! `getBlock` (`archive`), then the stream resumes from it.
+//! `getBlock` and `getTransaction` (`archive`), then the stream resumes from it.
 //!
 //! Each sealed block is applied in one database transaction: its compute rows, the
 //! leaves its writes sealed (`database::solana_leaves`) and the resume checkpoint.
@@ -60,7 +60,6 @@ use crate::solana_adapter::{
 };
 use crate::solana_grpc_source::{
     build_subscribe_request, BlockValidator, SealDecision, SealedBlock,
-    SlotAssembler,
 };
 use crate::solana_reconstruct::HandleMismatch;
 
@@ -337,12 +336,16 @@ fn validated_account_keys<'a>(
         .collect()
 }
 
-/// The instruction list reconstruction reads, from either wire format's resolution.
-fn decoded_instructions(
+/// The host program's instructions, from either wire format's resolution: reconstruction reads
+/// no other, so a transaction that merely lists the host keeps none of its other instructions'
+/// data.
+fn host_instructions(
     resolved: Vec<zama_solana_transaction::ResolvedInstruction>,
+    program: &Pubkey,
 ) -> Result<Vec<crate::solana_reconstruct::DecodedInstruction>> {
     resolved
         .into_iter()
+        .filter(|instruction| instruction.program_id == program.to_bytes())
         .map(|instruction| {
             Ok(crate::solana_reconstruct::DecodedInstruction {
                 program: bs58::encode(instruction.program_id).into_string(),
@@ -465,7 +468,6 @@ async fn subscribe_loop(
 
     let is_resume = !matches!(start, StartPosition::Tip);
     let request = build_subscribe_request(&config.program_id, &start);
-    let mut assembler = SlotAssembler::default();
     let mut validator = BlockValidator::new(start);
     let outbound = futures_util::stream::once(async move { request })
         .chain(futures_util::stream::pending::<SubscribeRequest>());
@@ -503,30 +505,33 @@ async fn subscribe_loop(
                     return Err(anyhow!("grpc stream closed by server"));
                 };
                 match update.update_oneof {
-                    Some(UpdateOneof::Transaction(transaction)) => {
-                        assembler.transaction(transaction).map_err(|error| {
-                            FatalListenerError::new(error.context(
-                                "assemble Solana slot",
-                            ))
-                        })?;
+                    Some(UpdateOneof::Transaction(update)) => {
+                        let slot = update.slot;
+                        update
+                            .transaction
+                            .ok_or_else(|| anyhow!("transaction update in slot {slot} has no transaction"))
+                            .and_then(|info| prepare_transaction(info, &config.program_id))
+                            .and_then(|prepared| match prepared {
+                                Some(transaction) => validator.transaction(slot, transaction),
+                                None => Ok(()),
+                            })
+                            .map_err(|error| {
+                                FatalListenerError::new(error.context(
+                                    "validate Solana transaction",
+                                ))
+                            })?;
                     }
                     Some(UpdateOneof::BlockMeta(meta)) => {
-                        let block = assembler.block_meta(meta).map_err(|error| {
-                            FatalListenerError::new(error.context(
-                                "assemble Solana slot",
-                            ))
-                        })?;
-                        let decision = validator.seal(block).map_err(|error| {
+                        let decision = validator.block_meta(meta).map_err(|error| {
                             FatalListenerError::new(error.context(
                                 "validate sealed Solana block",
                             ))
                         })?;
                         if let SealDecision::Process(block, transactions) = decision {
-                            let prepared = prepare_block(block, transactions).map_err(|error| {
-                                FatalListenerError::new(error.context(
-                                    "prepare sealed Solana block",
-                                ))
-                            })?;
+                            let prepared = PreparedBlock {
+                                block,
+                                transactions,
+                            };
                             if !apply_prepared_block(
                                 db,
                                 config,
@@ -548,54 +553,51 @@ async fn subscribe_loop(
     }
 }
 
-/// A sealed block whose successful transactions are decoded into the transport-neutral
-/// instruction list reconstruction reads.
+/// A sealed block with its host transactions, in the transport-neutral form reconstruction reads.
 #[derive(Debug)]
 struct PreparedBlock {
     block: SealedBlock,
     transactions: Vec<PreparedTransaction>,
 }
 
+/// A successful transaction reduced to its host program's instructions.
 #[derive(Debug)]
-struct PreparedTransaction {
-    signature: Signature,
-    index: u64,
-    instructions: Vec<crate::solana_reconstruct::DecodedInstruction>,
+pub(crate) struct PreparedTransaction {
+    pub(crate) signature: Signature,
+    pub(crate) index: u64,
+    pub(crate) instructions: Vec<crate::solana_reconstruct::DecodedInstruction>,
 }
 
-fn prepare_block(
-    block: SealedBlock,
-    matching: Vec<SubscribeUpdateTransactionInfo>,
-) -> Result<PreparedBlock> {
-    let mut transactions = Vec::new();
-    for info in matching {
-        let meta = info
-            .meta
-            .as_ref()
-            .ok_or_else(|| anyhow!("transaction has no status meta"))?;
-        if meta.err.is_some() || info.is_vote {
-            continue;
-        }
-        let tx = info.transaction.as_ref().ok_or_else(|| {
-            anyhow!("successful transaction has no transaction")
-        })?;
-        let message = tx
-            .message
-            .as_ref()
-            .ok_or_else(|| anyhow!("successful transaction has no message"))?;
-        transactions.push(PreparedTransaction {
-            signature: Signature::try_from(info.signature.as_slice())
-                .context("invalid Solana signature")?,
-            index: info.index,
-            instructions: decoded_instructions(
-                resolve_transaction_instructions(message, meta)?,
-            )?,
-        });
+/// Prepares a streamed transaction when it arrives. A failed or vote transaction changes no
+/// output and is dropped; the subscription leaves them out already.
+fn prepare_transaction(
+    info: SubscribeUpdateTransactionInfo,
+    program: &Pubkey,
+) -> Result<Option<PreparedTransaction>> {
+    let signature = Signature::try_from(info.signature.as_slice())
+        .context("invalid Solana signature")?;
+    let meta = info
+        .meta
+        .as_ref()
+        .ok_or_else(|| anyhow!("transaction {signature} has no status meta"))?;
+    if meta.err.is_some() || info.is_vote {
+        return Ok(None);
     }
-    Ok(PreparedBlock {
-        block,
-        transactions,
-    })
+    let message = info
+        .transaction
+        .as_ref()
+        .and_then(|transaction| transaction.message.as_ref())
+        .ok_or_else(|| {
+            anyhow!("successful transaction {signature} has no message")
+        })?;
+    Ok(Some(PreparedTransaction {
+        signature,
+        index: info.index,
+        instructions: host_instructions(
+            resolve_transaction_instructions(message, meta)?,
+            program,
+        )?,
+    }))
 }
 
 /// Applies one prepared block and advances the checkpoint. Returns `false` when cancelled.
@@ -645,7 +647,7 @@ mod replay_status_tests {
     };
     use crate::solana_grpc_listener::StartPosition;
     use crate::solana_grpc_source::{BlockValidator, SealDecision};
-    use yellowstone_grpc_proto::prelude::SubscribeUpdateBlock;
+    use yellowstone_grpc_proto::prelude::SubscribeUpdateBlockMeta;
 
     #[test]
     fn classifies_replay_refusals_without_treating_transport_as_one() {
@@ -668,16 +670,29 @@ mod replay_status_tests {
 
     #[test]
     fn retryable_first_block_replays_as_unapplied_then_commits() {
-        let update = SubscribeUpdateBlock {
+        let update = SubscribeUpdateBlockMeta {
             slot: 5,
             blockhash: bs58::encode([5; 32]).into_string(),
             parent_slot: 4,
             parent_blockhash: bs58::encode([4; 32]).into_string(),
             ..Default::default()
         };
+        // A tip start skips its first slot, so slot 5 is the first it applies.
         let mut first_validator = BlockValidator::new(StartPosition::Tip);
+        assert!(matches!(
+            first_validator
+                .block_meta(SubscribeUpdateBlockMeta {
+                    slot: 4,
+                    blockhash: bs58::encode([4; 32]).into_string(),
+                    parent_slot: 3,
+                    parent_blockhash: bs58::encode([3; 32]).into_string(),
+                    ..Default::default()
+                })
+                .unwrap(),
+            SealDecision::Skip
+        ));
         let SealDecision::Process(first, _) =
-            first_validator.seal(update.clone()).unwrap()
+            first_validator.block_meta(update.clone()).unwrap()
         else {
             panic!()
         };
@@ -692,7 +707,7 @@ mod replay_status_tests {
 
         let mut retry_validator = BlockValidator::new(start);
         let SealDecision::Process(retried, _) =
-            retry_validator.seal(update).unwrap()
+            retry_validator.block_meta(update).unwrap()
         else {
             panic!()
         };
@@ -720,7 +735,7 @@ mod replay_status_tests {
             );
             assert!(progress.applied.is_none());
         }
-        let update = SubscribeUpdateBlock {
+        let update = SubscribeUpdateBlockMeta {
             slot: 5,
             blockhash: bs58::encode([5; 32]).into_string(),
             parent_slot: 4,
@@ -729,7 +744,7 @@ mod replay_status_tests {
         };
         let mut validator = BlockValidator::new(progress.subscription_start());
         let SealDecision::Process(block, _) =
-            validator.seal(update.clone()).unwrap()
+            validator.block_meta(update.clone()).unwrap()
         else {
             panic!("bootstrap block must be applied")
         };
@@ -738,8 +753,8 @@ mod replay_status_tests {
         assert_eq!(start, StartPosition::Resume(checkpoint));
         let mut restarted = BlockValidator::new(start);
         assert!(matches!(
-            restarted.seal(update).unwrap(),
-            SealDecision::Replay
+            restarted.block_meta(update).unwrap(),
+            SealDecision::Skip
         ));
     }
 
@@ -753,7 +768,7 @@ mod replay_status_tests {
                 },
             ));
             assert!(validator
-                .seal(SubscribeUpdateBlock {
+                .block_meta(SubscribeUpdateBlockMeta {
                     slot,
                     blockhash: bs58::encode(hash).into_string(),
                     parent_slot: 4,
@@ -1233,6 +1248,137 @@ mod account_resolution_tests {
             .expect("failed transactions are valid chain history");
 
         assert!(instructions.is_empty());
+    }
+}
+
+#[cfg(test)]
+mod slot_size_tests {
+    use super::test_support::ZAMA_HOST;
+    use super::wire_fixtures::{app_transaction, Compiled, Transaction};
+    use super::{prepare_transaction, MAX_DECODING_MESSAGE_SIZE};
+    use crate::solana_grpc_listener::StartPosition;
+    use crate::solana_grpc_source::{BlockValidator, SealDecision};
+    use solana_sdk::pubkey::Pubkey;
+    use yellowstone_grpc_proto::prelude::{
+        subscribe_update::UpdateOneof, SubscribeUpdate,
+        SubscribeUpdateBlockMeta, SubscribeUpdateTransaction,
+    };
+    use yellowstone_grpc_proto::prost::Message;
+
+    /// Agave's bounds on one transaction's message: 64 instructions in its trace, 10 KiB of
+    /// data per CPI and 10,000 bytes of logs.
+    const INSTRUCTION_TRACE: usize = 64;
+    const CPI_DATA: usize = 10 * 1024;
+    const LOG_BYTES: usize = 10_000;
+
+    /// A transaction that lists the host and fills its message to Agave's bounds through
+    /// another program.
+    fn junk(signature: u8) -> Transaction {
+        let host = ZAMA_HOST.parse::<Pubkey>().unwrap().to_bytes();
+        Transaction {
+            signature: [signature; 64],
+            static_keys: vec![[1; 32], [8; 32], host],
+            loaded_writable: vec![],
+            loaded_readonly: vec![],
+            top_level: vec![Compiled {
+                program_id_index: 1,
+                accounts: vec![0, 2],
+                data: vec![1],
+                stack_height: None,
+            }],
+            inner_groups: vec![(
+                0,
+                (1..INSTRUCTION_TRACE)
+                    .map(|_| Compiled {
+                        program_id_index: 1,
+                        accounts: vec![2],
+                        data: vec![0xAB; CPI_DATA],
+                        stack_height: Some(2),
+                    })
+                    .collect(),
+            )],
+        }
+    }
+
+    fn meta(
+        slot: u64,
+        executed_transaction_count: u64,
+    ) -> SubscribeUpdateBlockMeta {
+        SubscribeUpdateBlockMeta {
+            slot,
+            blockhash: bs58::encode([slot as u8; 32]).into_string(),
+            parent_slot: slot - 1,
+            parent_blockhash: bs58::encode([slot as u8 - 1; 32]).into_string(),
+            executed_transaction_count,
+            ..Default::default()
+        }
+    }
+
+    #[test]
+    fn a_slot_past_the_decoding_limit_streams_in_bounded_messages() {
+        let host = ZAMA_HOST.parse::<Pubkey>().unwrap();
+        let junk_info = |index: u64| {
+            let mut info = junk(index as u8).grpc_info(index);
+            info.meta.as_mut().unwrap().log_messages =
+                vec!["x".repeat(LOG_BYTES)];
+            info
+        };
+        let message_size = SubscribeUpdate {
+            update_oneof: Some(UpdateOneof::Transaction(
+                SubscribeUpdateTransaction {
+                    transaction: Some(junk_info(0)),
+                    slot: 5,
+                },
+            )),
+            ..Default::default()
+        }
+        .encoded_len();
+        assert!(
+            message_size < MAX_DECODING_MESSAGE_SIZE / 64,
+            "one transaction message is {message_size} bytes"
+        );
+        // Enough junk that one message holding the slot would pass the decoding limit.
+        let junk_count = MAX_DECODING_MESSAGE_SIZE / message_size + 1;
+
+        // Slot 4 is the tip start's skipped first slot; slot 5 carries the junk, then one
+        // host transaction.
+        let mut validator = BlockValidator::new(StartPosition::Tip);
+        assert!(matches!(
+            validator.block_meta(meta(4, 0)).unwrap(),
+            SealDecision::Skip
+        ));
+        for index in 0..junk_count as u64 {
+            let prepared = prepare_transaction(junk_info(index), &host)
+                .unwrap()
+                .unwrap();
+            assert!(
+                prepared.instructions.is_empty(),
+                "the junk keeps no instruction"
+            );
+            validator.transaction(5, prepared).unwrap();
+        }
+        let host_index = junk_count as u64;
+        let prepared = prepare_transaction(
+            app_transaction(0xF0, [7; 32]).grpc_info(host_index),
+            &host,
+        )
+        .unwrap()
+        .unwrap();
+        validator.transaction(5, prepared).unwrap();
+
+        let SealDecision::Process(block, transactions) =
+            validator.block_meta(meta(5, host_index + 1)).unwrap()
+        else {
+            panic!("slot 5 is applied")
+        };
+        assert_eq!(block.slot, 5);
+        assert_eq!(transactions.len(), junk_count + 1);
+        let with_instructions: Vec<_> = transactions
+            .iter()
+            .filter(|transaction| !transaction.instructions.is_empty())
+            .map(|transaction| transaction.index)
+            .collect();
+        assert_eq!(with_instructions, [host_index]);
     }
 }
 

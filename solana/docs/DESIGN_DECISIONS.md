@@ -2229,10 +2229,9 @@ A listener that was down longer than the provider's replay window, about a day o
 provider, used to exit and need manual recovery. It now catches up from an archive RPC and then
 returns to the stream. When Yellowstone refuses the checkpoint as outside its window, the listener
 lists the produced slots after it with `getBlocks` and fetches each block's transactions with
-`getBlock` and `getTransaction` (DD-060), all at `finalized`. Each block goes through
-`prepare_rpc_block`, which keeps the transactions naming the host program as the stream's filter
-does. It must extend
-the checkpoint as the stream's validator requires: an unapplied checkpoint first and unchanged, then
+`getBlock` and `getTransaction` (DD-060), all at `finalized`. Each fetched transaction is
+reduced to its host instructions as a streamed one is (`prepare_rpc_transaction`). The block must
+extend the checkpoint as the stream's validator requires: an unapplied checkpoint first and unchanged, then
 each block naming the last applied one as its parent. It is applied through the same path as a
 streamed block. Catch-up stops at the slot the archive had finalized when it started, so it ends
 however fast the chain moves. There the listener subscribes again from its checkpoint, and the
@@ -2243,8 +2242,9 @@ The archive is `--archive-url`, which defaults to `--url` and may be another pro
 that cannot replay from a slot at all (`from_slot is not supported`) still stops the listener: after
 catch-up, the stream could never take over. An archive behind the checkpoint, an archive missing
 slots after it (a block whose parent is later than the checkpoint, or, for an unapplied checkpoint,
-a later block descending from it), or a failed read, is retried like a dropped subscription. Any other block that does not extend the checkpoint is a fork and stops the
-listener, as on the stream. `archive_catch_up_active` is 1 during catch-up, and the existing lag
+a later block descending from it), or a failed read, is retried like a dropped subscription.
+Any other block that does not extend the checkpoint is a fork and stops the listener, as on the
+stream. `archive_catch_up_active` is 1 during catch-up, and the existing lag
 metrics show its progress.
 
 Rejected alternatives:
@@ -2285,20 +2285,37 @@ The listener subscribes at `confirmed` to `transactions { account_include: [host
 failed: false }` and to `blocks_meta`. One message holds one transaction, which Solana bounds at
 under 1 MB: 64 instructions in the trace, 10 KiB of data per CPI and about 10 KB of logs. The
 listener already ignored failed transactions, so leaving them out changes no output.
-`SlotAssembler` turns the updates back into the block the validator checks: it buffers one slot's
+Reconstruction reads only the host program's instructions, so each transaction is reduced to them
+when it arrives (`prepare_transaction`). `BlockValidator` holds the open slot's prepared
 transactions and seals the slot on its block meta. The ancestry check, the ingest path and the
-checkpoint are unchanged, and a reconnect starts a new assembler that `from_slot` replay refills.
+checkpoint are unchanged, and a reconnect starts a new validator that `from_slot` replay refills.
 
 Sealing on block meta requires the provider to send every transaction of a slot before its block
 meta. Yellowstone does, live and on `from_slot` replay (`yellowstone-grpc-geyser/src/grpc.rs`,
-lines 1333-1404 at `243d008`, the pinned `v14.2.2`). A transaction for a slot before the last sealed
-one, a transaction of another slot while one is open, or a block meta for another slot stops the
-listener fail-closed instead of applying an incomplete slot. Whether other providers keep the order
-is fhevm-internal#2087.
+lines 1333-1404 at `243d008`, the pinned `v14.2.2`). A slot's transactions and its block meta are
+two separate broadcasts, and a client receives live broadcasts from before its filter and replay
+are set. Two cases follow:
 
-Archive catch-up applies the same bound. `getBlock` with `transactionDetails: "accounts"` lists each
-transaction's signatures, account keys and error without instruction data or logs, and
-`getTransaction` fetches each successful transaction that names the host.
+- The live messages buffered during a replay follow it, so the last replayed slot can arrive again,
+  whole or as its block meta alone. The validator skips it when the block meta equals the applied
+  one and every transaction is one the slot already held.
+- A start at the tip can receive its first slot's block meta without the transactions before it.
+  The listener skips the first slot and applies from the next.
+
+A transaction of another slot while one is open, a block meta for another slot, or a slot that does
+not extend the last applied one stops the listener without applying the slot. A transaction for the
+last applied slot that the slot did not hold stops it too, but that slot is already recorded
+without it: after the restart the listener resumes past it, so the error names the slot to repair
+from (DD-056). A transaction for an earlier slot also stops the listener, which then resumes from
+its checkpoint: a re-delivery reaching back two slots or more is not skipped. Whether other providers keep this order is
+fhevm-internal#2087.
+
+Archive catch-up applies the same bound to each transaction. `getBlock` with `transactionDetails:
+"accounts"` lists each transaction's signatures, account keys and error without instruction data or
+logs, and `getTransaction` fetches each successful transaction that names the host. The listing
+still grows with the block's transaction count and account keys. Fetching only the host's
+transactions with `getSignaturesForAddress` would avoid it, but the checkpoint needs every block's
+hash (DD-059).
 
 Rejected alternatives:
 
@@ -2308,9 +2325,12 @@ Rejected alternatives:
 
 Consequences:
 
-The decoding limit stays at 64 MiB, which no valid transaction reaches. Transactions that only list
-the host still arrive, one small message each, and are ignored. The stream's idle timeout now counts block meta,
-which is sent for every slot. Catch-up makes one `getTransaction` call per host transaction.
+The decoding limit stays at 64 MiB, which no valid transaction reaches
+(`a_slot_past_the_decoding_limit_streams_in_bounded_messages`). A transaction that only lists the
+host still arrives, one message of up to about 650 KB, and the listener keeps only its index and
+signature. On catch-up each one costs a `getTransaction` call, so junk that lists the host
+multiplies catch-up's RPC calls. The stream's idle timeout now counts block meta, which is sent for
+every slot.
 
 ## DD-061: A leaf proof reads its path by position
 

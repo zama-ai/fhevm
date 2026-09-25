@@ -2,11 +2,12 @@
 //! `FheExecutedEvent` carries its execution's derivation context, so a block's own transactions
 //! are all the listener needs: any archive can rebuild a slot the stream missed.
 //!
-//! As on the stream, a response is bounded per transaction, not per block. `getBlock` with
-//! `transactionDetails: "accounts"` lists each transaction's signature, account keys and error,
-//! without instruction data or logs ([`list_rpc_block`]). Each successful transaction naming the
-//! host is then fetched alone with `getTransaction`, `encoding: "base64"` and
-//! `maxSupportedTransactionVersion: 0` ([`prepare_rpc_block`]).
+//! No response carries a block's instruction data. `getBlock` with `transactionDetails:
+//! "accounts"` lists each transaction's signature, account keys and error, without instruction
+//! data or logs ([`list_rpc_block`]): its size grows with the block's transaction count and
+//! account keys. Each successful transaction naming the host is then fetched alone with
+//! `getTransaction`, `encoding: "base64"` and `maxSupportedTransactionVersion: 0`, and reduced to
+//! the host's instructions as it arrives ([`prepare_rpc_transaction`]).
 
 use anyhow::{anyhow, bail, ensure, Context, Result};
 use solana_sdk::{
@@ -21,7 +22,7 @@ use zama_solana_transaction::{
     CompiledInstruction, InnerInstructionGroup, ResolvedInstruction,
 };
 
-use super::{decoded_instructions, PreparedBlock, PreparedTransaction};
+use super::{host_instructions, PreparedTransaction};
 use crate::solana_grpc_source::SealedBlock;
 
 /// A block's header and the transactions of it the listener must fetch.
@@ -89,53 +90,40 @@ pub(super) fn list_rpc_block(
     })
 }
 
-/// Prepares a listed block from the `getTransaction` response of each matching transaction, in
-/// listing order.
-pub(super) fn prepare_rpc_block(
-    listing: RpcBlockListing,
-    transactions: Vec<EncodedConfirmedTransactionWithStatusMeta>,
-) -> Result<PreparedBlock> {
-    let slot = listing.block.slot;
+/// Prepares the `getTransaction` response for the transaction listed at `index` in `slot` with
+/// `signature`.
+pub(super) fn prepare_rpc_transaction(
+    slot: u64,
+    (index, signature): (u64, Signature),
+    fetched: EncodedConfirmedTransactionWithStatusMeta,
+    program: &Pubkey,
+) -> Result<PreparedTransaction> {
     ensure!(
-        transactions.len() == listing.matching.len(),
-        "slot {slot} lists {} matching transactions but {} were fetched",
-        listing.matching.len(),
-        transactions.len()
+        fetched.slot == slot,
+        "getTransaction places {signature} in slot {}, getBlock in slot {slot}",
+        fetched.slot
     );
-    let mut prepared = Vec::new();
-    for ((index, signature), fetched) in
-        listing.matching.into_iter().zip(transactions)
-    {
-        ensure!(
-            fetched.slot == slot,
-            "getTransaction places {signature} in slot {}, getBlock in slot {slot}",
-            fetched.slot
-        );
-        let meta = fetched.transaction.meta.ok_or_else(|| {
-            anyhow!("transaction {signature} has no status meta")
+    let meta = fetched
+        .transaction
+        .meta
+        .ok_or_else(|| anyhow!("transaction {signature} has no status meta"))?;
+    ensure!(meta.err.is_none(), "transaction {signature} failed");
+    let transaction =
+        fetched.transaction.transaction.decode().ok_or_else(|| {
+            anyhow!(
+                "transaction {signature} is not a sanitized base64 transaction"
+            )
         })?;
-        ensure!(meta.err.is_none(), "transaction {signature} failed");
-        let transaction =
-            fetched.transaction.transaction.decode().ok_or_else(|| {
-                anyhow!(
-                    "transaction {signature} is not a sanitized base64 transaction"
-                )
-            })?;
-        ensure!(
-            transaction.signatures.first() == Some(&signature),
-            "getTransaction for {signature} returned another transaction"
-        );
-        let instructions = resolve_rpc_transaction(&transaction.message, &meta)
-            .with_context(|| format!("transaction {index} in slot {slot}"))?;
-        prepared.push(PreparedTransaction {
-            signature,
-            index,
-            instructions: decoded_instructions(instructions)?,
-        });
-    }
-    Ok(PreparedBlock {
-        block: listing.block,
-        transactions: prepared,
+    ensure!(
+        transaction.signatures.first() == Some(&signature),
+        "getTransaction for {signature} returned another transaction"
+    );
+    let instructions = resolve_rpc_transaction(&transaction.message, &meta)
+        .with_context(|| format!("transaction {index} in slot {slot}"))?;
+    Ok(PreparedTransaction {
+        signature,
+        index,
+        instructions: host_instructions(instructions, program)?,
     })
 }
 
@@ -251,8 +239,7 @@ mod tests {
         Transaction, BLOCK_TIME,
     };
     use super::{
-        list_rpc_block, prepare_rpc_block, resolve_rpc_transaction,
-        RpcBlockListing,
+        list_rpc_block, prepare_rpc_transaction, resolve_rpc_transaction,
     };
     use crate::solana_grpc_listener::resolve_transaction_instructions;
     use crate::solana_grpc_listener::test_support::{reconstruct, ZAMA_HOST};
@@ -276,14 +263,13 @@ mod tests {
         block_json(slot, slot - 1, hash, transactions)
     }
 
-    /// Resolves `transaction` from its `getBlock` JSON. The bytes are decoded without
+    /// Resolves `transaction` from its `getTransaction` response. The bytes are decoded without
     /// sanitizing, as the fixtures include shapes no ledger holds; production decoding
-    /// sanitizes first (`rebuilds_a_slot_from_get_block_alone`).
+    /// sanitizes first (`rebuilds_a_slot_from_get_block_and_get_transaction`).
     fn rpc_resolution(
         transaction: &Transaction,
     ) -> anyhow::Result<Vec<zama_solana_transaction::ResolvedInstruction>> {
-        let block = block(9, vec![transaction.rpc_json(Value::Null)]);
-        let encoded = block.transactions.unwrap().pop().unwrap();
+        let encoded = transaction.rpc_transaction(9).transaction;
         let EncodedTransaction::Binary(blob, TransactionBinaryEncoding::Base64) =
             &encoded.transaction
         else {
@@ -333,7 +319,7 @@ mod tests {
             let (message, meta) = transaction.grpc();
             for (wire, decoded) in [
                 ("gRPC", resolve_transaction_instructions(&message, &meta)),
-                ("getBlock", rpc_resolution(&transaction)),
+                ("getTransaction", rpc_resolution(&transaction)),
             ] {
                 match &fixture.expected {
                     ExpectedOutcome::Accept { instructions } => {
@@ -410,22 +396,33 @@ mod tests {
             vec![(2, Signature::from([8; 64])), (3, Signature::from([9; 64]))]
         );
 
-        let prepared = prepare_rpc_block(
-            listing,
-            vec![succeeded.rpc_transaction(100), loaded.rpc_transaction(100)],
+        let host = ZAMA_HOST.parse().unwrap();
+        let transaction = prepare_rpc_transaction(
+            100,
+            listing.matching[0],
+            succeeded.rpc_transaction(100),
+            &host,
         )
         .unwrap();
-        let [transaction, _] = &prepared.transactions[..] else {
-            panic!("two host transactions")
-        };
         assert_eq!(transaction.signature, Signature::from([8; 64]));
         assert_eq!(transaction.index, 2);
+        let loaded = prepare_rpc_transaction(
+            100,
+            listing.matching[1],
+            loaded.rpc_transaction(100),
+            &host,
+        )
+        .unwrap();
+        assert!(
+            loaded.instructions.is_empty(),
+            "the foreign program's instructions are dropped"
+        );
 
         let (message, meta) = succeeded.grpc();
         assert_eq!(
             rpc_resolution(&succeeded).unwrap(),
             resolve_transaction_instructions(&message, &meta).unwrap(),
-            "getBlock and the stream resolve the same instructions"
+            "getTransaction and the stream resolve the same instructions"
         );
 
         let reconstructed = reconstruct(&transaction.instructions).unwrap();
@@ -436,13 +433,16 @@ mod tests {
         ));
     }
 
-    fn listed(transaction: &Transaction) -> RpcBlockListing {
-        list_rpc_block(
+    fn prepare(
+        listed: &Transaction,
+        fetched: solana_transaction_status_client_types::EncodedConfirmedTransactionWithStatusMeta,
+    ) -> anyhow::Result<crate::solana_grpc_listener::PreparedTransaction> {
+        prepare_rpc_transaction(
             100,
-            block(100, vec![transaction.rpc_accounts_json(Value::Null)]),
+            (2, Signature::from(listed.signature)),
+            fetched,
             &ZAMA_HOST.parse().unwrap(),
         )
-        .unwrap()
     }
 
     #[test]
@@ -454,11 +454,9 @@ mod tests {
             .as_object_mut()
             .unwrap()
             .remove("innerInstructions");
-        let error = prepare_rpc_block(
-            listed(&transaction),
-            vec![serde_json::from_value(fetched).unwrap()],
-        )
-        .unwrap_err();
+        let error =
+            prepare(&transaction, serde_json::from_value(fetched).unwrap())
+                .unwrap_err();
         assert!(
             format!("{error:#}").contains("no inner instructions"),
             "{error:#}"
@@ -476,13 +474,9 @@ mod tests {
             ),
             (transaction.rpc_transaction(101), "in slot 101"),
         ] {
-            let error = prepare_rpc_block(listed(&transaction), vec![fetched])
-                .unwrap_err();
+            let error = prepare(&transaction, fetched).unwrap_err();
             assert!(format!("{error:#}").contains(expected), "{error:#}");
         }
-        let error =
-            prepare_rpc_block(listed(&transaction), vec![]).unwrap_err();
-        assert!(format!("{error:#}").contains("were fetched"), "{error:#}");
     }
 
     #[test]

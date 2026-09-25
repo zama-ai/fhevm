@@ -1,7 +1,8 @@
 //! Ingestion progress of the Solana host listener. `time() - applied_block_timestamp_seconds` is
 //! the lag in seconds, and `confirmed_slot - applied_slot` the lag in slots. Once the checkpoint
 //! leaves the provider's replay window the listener catches up from the archive RPC, one
-//! `getBlock` per slot, with `archive_catch_up_active` at 1; the lag then shows its progress.
+//! `getBlock` per slot and one `getTransaction` per host transaction, with
+//! `archive_catch_up_active` at 1; the lag then shows its progress.
 //! `handle_check_failures_total` counts steps whose emitted handle this listener could not
 //! re-derive, which means its software is wrong.
 
