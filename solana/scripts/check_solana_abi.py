@@ -132,8 +132,8 @@ PINNED_SCHEMAS = [
     # accounts an instruction types, and the host reads both through `UncheckedAccount`. Their
     # layouts are pinned where they are produced instead: `zama-solana-acl`'s codec tests and
     # `shared_crate_decoder_reads_what_the_program_serializes` for the value, the host's own
-    # `state` tests for the deny record. `RandNonce` is absent for the same reason, and nothing
-    # off chain reads it: the listener takes the seeds from `FheExecutedEvent`.
+    # `state` tests for the deny record.
+    ("zama_host", "account", "RandNonce", True),
     ("zama_host", "instruction_args", "define_kms_context", True),
     ("zama_host", "instruction_args", "delegate_for_user_decryption", True),
     ("zama_host", "instruction_args", "destroy_kms_context", True),

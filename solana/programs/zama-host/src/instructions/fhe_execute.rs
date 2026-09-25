@@ -1,7 +1,7 @@
 //! Evaluates ordered instruction-local FHE executions.
 //!
 //! Two signers cover two roles, and they are only sometimes the same key: `payer` funds rent for
-//! Store growth and lazy meter and rand nonce creation; `authority` is the default signer for the Stores the
+//! Store growth and lazy meter creation; `authority` is the default signer for the Stores the
 //! execution reads and writes. Every Store an execution touches is admitted by its own authority's
 //! signature, found among the default signer and the signing remaining accounts, and by nothing
 //! else. An application program signs for its PDAs by CPI and forwards a user wallet as `payer`.
@@ -37,7 +37,7 @@ use walk::{walk_steps, ExecutionHandleContext, RandContext};
 #[derive(Accounts)]
 #[event_cpi]
 pub struct FheExecute<'info> {
-    /// Pays rent for Store growth and lazy meter and rand nonce creation.
+    /// Pays rent for Store growth and lazy meter creation.
     #[account(mut)]
     pub payer: Signer<'info>,
     /// Default authority signer. Each Store read or written requires its stored authority to
@@ -48,7 +48,7 @@ pub struct FheExecute<'info> {
     /// write lock on the config.
     #[account(seeds = [HOST_CONFIG_SEED], bump = host_config.bump)]
     pub host_config: Account<'info, HostConfig>,
-    /// System program used for rent top-ups and lazy meter and rand nonce creation.
+    /// System program used for rent top-ups and lazy meter creation.
     pub system_program: Program<'info, System>,
     /// Per-application HCU block meter (written once in the execution `charge`). The HCU PDAs
     /// (`hcu_block_meter`, `hcu_trusted_app_record`) key on the `(program, scope)` of the
@@ -65,12 +65,10 @@ pub struct FheExecute<'info> {
     /// `trusted == true` ⇒ bypass the cap; absent (`None`) ⇒ untrusted, fall through to the meter;
     /// present-but-malformed ⇒ reject.
     pub hcu_trusted_app_record: Option<UncheckedAccount<'info>>,
-    /// The application's rand nonce, consumed and incremented by an execution that contains a
-    /// rand step. Required exactly then, and refused otherwise so no execution write-locks it for
-    /// nothing. Created by the application's first rand execution.
-    /// CHECK: validated manually in consume_rand_nonce (canonical PDA of the application, owner, length).
-    #[account(mut)]
-    pub rand_nonce: Option<UncheckedAccount<'info>>,
+    /// The host's rand nonce, consumed and incremented by an execution that contains a rand step.
+    /// Required exactly then, and refused otherwise so no execution write-locks it for nothing.
+    #[account(mut, seeds = [RAND_NONCE_SEED], bump = rand_nonce.bump)]
+    pub rand_nonce: Option<Account<'info, RandNonce>>,
     /// Shared by every execution until the transaction's final CloseTransientStore.
     /// Unchecked so an unopened (system-owned) PDA fails as `TransientStoreNotOpened`
     /// instead of Anchor's generic owner error.
@@ -84,7 +82,7 @@ pub struct FheExecute<'info> {
 
 /// Runs one ordered FHE execution, recording results in transaction transient store.
 pub fn fhe_execute<'info>(
-    ctx: Context<'info, FheExecute<'info>>,
+    mut ctx: Context<'info, FheExecute<'info>>,
     args: FheExecuteArgs,
 ) -> Result<()> {
     assert_not_paused(
@@ -105,6 +103,7 @@ pub fn fhe_execute<'info>(
         args.effects.len() <= MAX_FHE_EXECUTION_EFFECTS,
         ZamaHostError::InvalidFheExecuteOperationCount
     );
+    let rand_nonce = consume_rand_nonce(&mut ctx, &args)?;
     let transient_store_account =
         super::transient::opened_transient_store(&ctx.accounts.transient_store)?;
     let mut transient_store = transient_store_account.load_mut()?;
@@ -120,8 +119,8 @@ pub fn fhe_execute<'info>(
     // preflight), canonical Store validation, and cached Store/transient store writes.
     let mut account_table = ExecutionAccountTable::new(ctx.remaining_accounts)?;
     // Preflight also settles the execution's application identity: the one `(program, scope)`
-    // every Store the default authority controls belongs to. Metering, the rand nonce and rand
-    // seeds key on it; the deny list gates every application the execution touches.
+    // every Store the default authority controls belongs to. Metering and rand seeds key on it;
+    // the deny list gates every application the execution touches.
     let preflight = preflight_execution(&mut account_table, &ctx, &args)?;
     let app = preflight.app;
     let host_config = &ctx.accounts.host_config;
@@ -130,7 +129,6 @@ pub fn fhe_execute<'info>(
             account_table.deny_record(host_config.grant_deny_list_enabled, touched)?;
         check_scope_not_denied_info(host_config, touched, deny_record)?;
     }
-    let rand_nonce = consume_rand_nonce(&ctx, &args, app)?;
 
     let starting_hcu = transient_store.total_hcu;
 
@@ -217,14 +215,12 @@ fn return_execution_handles(
     anchor_lang::solana_program::program::set_return_data(&bytes[..selected.len() * 32]);
 }
 
-/// Takes the application's rand nonce for this execution and advances it, when the execution has
-/// a rand step, creating the nonce on the application's first one. The account is required exactly
-/// then: a rand execution without it cannot derive a fresh seed, and a non-rand execution that
-/// passes it would serialize on it for nothing.
-fn consume_rand_nonce<'info>(
-    ctx: &Context<'info, FheExecute<'info>>,
+/// Takes the host's rand nonce for this execution and advances it, when the execution has a rand
+/// step. The account is required exactly then: a rand execution without it cannot derive a fresh
+/// seed, and a non-rand execution that passes it would serialize on it for nothing.
+fn consume_rand_nonce(
+    ctx: &mut Context<'_, FheExecute<'_>>,
     args: &FheExecuteArgs,
-    app: AppScope,
 ) -> Result<Option<u64>> {
     let has_rand = args.steps.iter().any(|step| {
         matches!(
@@ -232,40 +228,18 @@ fn consume_rand_nonce<'info>(
             FheExecuteStep::Rand { .. } | FheExecuteStep::RandBounded { .. }
         )
     });
-    let account = match (ctx.accounts.rand_nonce.as_ref(), has_rand) {
-        (Some(account), true) => account.to_account_info(),
-        (None, true) => return Err(error!(ZamaHostError::FheExecuteRandNonceMissing)),
-        (Some(_), false) => return Err(error!(ZamaHostError::InvalidFheExecuteAccount)),
-        (None, false) => return Ok(None),
-    };
-    let (expected, bump) = rand_nonce_address(app);
-    require_keys_eq!(account.key(), expected, ZamaHostError::RandNonceMismatch);
-    let nonce = if account.owner == &crate::ID {
-        require!(
-            account.data_len() == 8 + RandNonce::SPACE,
-            ZamaHostError::RandNonceMismatch
-        );
-        RandNonce::try_deserialize(&mut &account.try_borrow_data()?[..])?.nonce
-    } else {
-        // A pre-squatted, non-empty account at the nonce PDA fails here rather than being adopted.
-        create_pda_if_needed(
-            &ctx.accounts.payer.to_account_info(),
-            &account,
-            &ctx.accounts.system_program.to_account_info(),
-            8 + RandNonce::SPACE,
-            &[RAND_NONCE_SEED, app.program.as_ref(), &app.scope, &[bump]],
-        )?;
-        0
-    };
-    write_account(
-        &account,
-        &RandNonce {
-            nonce: nonce
+    match (ctx.accounts.rand_nonce.as_mut(), has_rand) {
+        (Some(rand_nonce), true) => {
+            let nonce = rand_nonce.nonce;
+            rand_nonce.nonce = nonce
                 .checked_add(1)
-                .ok_or(ZamaHostError::InvalidFheExecuteAccount)?,
-        },
-    )?;
-    Ok(Some(nonce))
+                .ok_or(ZamaHostError::InvalidFheExecuteAccount)?;
+            Ok(Some(nonce))
+        }
+        (None, true) => Err(error!(ZamaHostError::FheExecuteRandNonceMissing)),
+        (Some(_), false) => Err(error!(ZamaHostError::InvalidFheExecuteAccount)),
+        (None, false) => Ok(None),
+    }
 }
 
 fn collect_execution_random_seeds(

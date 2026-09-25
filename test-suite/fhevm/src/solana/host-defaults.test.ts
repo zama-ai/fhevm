@@ -7,7 +7,7 @@ const programAddress = address('11111111111111111111111111111111');
 const admin = createNoopSigner(programAddress);
 const seed = (value: string) => new TextEncoder().encode(value);
 
-test('generated initialization uses the selected program for hostConfig', async () => {
+test('generated initialization uses the selected program for hostConfig and randNonce', async () => {
   const instruction = await getInitializeHostConfigInstructionAsync(
     {
       payer: admin,
@@ -26,7 +26,9 @@ test('generated initialization uses the selected program for hostConfig', async 
     { programAddress },
   );
   const [config] = await getProgramDerivedAddress({ programAddress, seeds: [seed('host-config')] });
+  const [nonce] = await getProgramDerivedAddress({ programAddress, seeds: [seed('rand-nonce')] });
   expect(instruction.accounts[3].address).toBe(config);
+  expect(instruction.accounts[4].address).toBe(nonce);
 });
 
 test('generated KMS context preserves argument seeds and selected program', async () => {

@@ -426,7 +426,7 @@
         {
           "name": "payer",
           "docs": [
-            "Pays rent for Store growth and lazy meter and rand nonce creation."
+            "Pays rent for Store growth and lazy meter creation."
           ],
           "writable": true,
           "signer": true
@@ -470,7 +470,7 @@
         {
           "name": "system_program",
           "docs": [
-            "System program used for rent top-ups and lazy meter and rand nonce creation."
+            "System program used for rent top-ups and lazy meter creation."
           ],
           "address": "11111111111111111111111111111111"
         },
@@ -502,12 +502,30 @@
         {
           "name": "rand_nonce",
           "docs": [
-            "The application's rand nonce, consumed and incremented by an execution that contains a",
-            "rand step. Required exactly then, and refused otherwise so no execution write-locks it for",
-            "nothing. Created by the application's first rand execution."
+            "The host's rand nonce, consumed and incremented by an execution that contains a rand step.",
+            "Required exactly then, and refused otherwise so no execution write-locks it for nothing."
           ],
           "writable": true,
-          "optional": true
+          "optional": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  114,
+                  97,
+                  110,
+                  100,
+                  45,
+                  110,
+                  111,
+                  110,
+                  99,
+                  101
+                ]
+              }
+            ]
+          }
         },
         {
           "name": "transient_store",
@@ -597,6 +615,33 @@
                   102,
                   105,
                   103
+                ]
+              }
+            ]
+          }
+        },
+        {
+          "name": "rand_nonce",
+          "docs": [
+            "The host's single rand nonce, created alongside the config so every rand execution can",
+            "take it from the first slot on."
+          ],
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  114,
+                  97,
+                  110,
+                  100,
+                  45,
+                  110,
+                  111,
+                  110,
+                  99,
+                  101
                 ]
               }
             ]
@@ -1921,6 +1966,19 @@
       ]
     },
     {
+      "name": "RandNonce",
+      "discriminator": [
+        75,
+        163,
+        132,
+        129,
+        125,
+        181,
+        151,
+        221
+      ]
+    },
+    {
       "name": "TransientStore",
       "discriminator": [
         16,
@@ -2453,36 +2511,31 @@
     },
     {
       "code": 6082,
-      "name": "RandNonceMismatch",
-      "msg": "rand nonce account mismatch"
-    },
-    {
-      "code": 6083,
       "name": "VerifiedInputsPaused",
       "msg": "verified inputs are paused"
     },
     {
-      "code": 6084,
+      "code": 6083,
       "name": "AclWritesPaused",
       "msg": "ACL writes are paused"
     },
     {
-      "code": 6085,
+      "code": 6084,
       "name": "PublicDecryptPaused",
       "msg": "public-decrypt verification is paused"
     },
     {
-      "code": 6086,
+      "code": 6085,
       "name": "NotPauser",
       "msg": "signer is not an enabled pauser"
     },
     {
-      "code": 6087,
+      "code": 6086,
       "name": "PauserRecordMismatch",
       "msg": "pauser record mismatch"
     },
     {
-      "code": 6088,
+      "code": 6087,
       "name": "WalletPauseThroughCpi",
       "msg": "a wallet pauser must pause in a top-level instruction"
     }
@@ -3095,7 +3148,7 @@
           {
             "name": "seed",
             "docs": [
-              "Seed derived from the application's consumed rand nonce and slot entropy."
+              "Seed derived from the consumed host rand nonce and slot entropy."
             ],
             "type": {
               "array": [
@@ -4244,6 +4297,38 @@
               "Slot in which this update was applied."
             ],
             "type": "u64"
+          }
+        ]
+      }
+    },
+    {
+      "name": "RandNonce",
+      "docs": [
+        "The host's single random-seed nonce, created next to `HostConfig` by `initialize_host_config`",
+        "and incremented by every `fhe_execute` that contains a rand step. A monotonic host-owned",
+        "counter is a consumed ticket by itself: two executions can never see the same value, so a",
+        "rand seed can never repeat within a slot whatever the rest of the execution looks like.",
+        "",
+        "Kept out of `HostConfig` on purpose: every execution reads the config, and write-locking it",
+        "would serialize them all. Only rand executions take this account, so ordinary writes stay",
+        "parallel and rand executions serialize on one account across applications."
+      ],
+      "type": {
+        "kind": "struct",
+        "fields": [
+          {
+            "name": "nonce",
+            "docs": [
+              "Value consumed by the next rand execution."
+            ],
+            "type": "u64"
+          },
+          {
+            "name": "bump",
+            "docs": [
+              "PDA bump for `PDA(\"rand-nonce\")`."
+            ],
+            "type": "u8"
           }
         ]
       }

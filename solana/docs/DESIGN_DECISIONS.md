@@ -83,7 +83,6 @@ are written as one narrative instead.
 | [DD-054](#dd-054-the-programs-stay-on-anchor-v1)                                                                                          | adopted                                  | The programs stay on Anchor v1                                                                                                 |
 | [DD-055](#dd-055-the-ledger-is-the-work-log-not-a-pda-queue)                                                                              | adopted                                  | The ledger is the work log, not a PDA queue                                                                                    |
 | [DD-056](#dd-056-an-execution-describes-itself-the-listener-re-derives-handles-only-as-a-check)                                           | adopted                                  | An execution describes itself; the listener re-derives handles only as a check                                                 |
-| [DD-057](#dd-057-one-rand-nonce-per-application)                                                                                          | adopted                                  | One rand nonce per application                                                                                                 |
 | [DD-058](#dd-058-pausers-stop-one-area-at-a-time-only-the-admin-resumes)                                                                  | adopted                                  | Pausers stop one area at a time; only the admin resumes                                                                        |
 | [DD-059](#dd-059-the-listener-catches-up-from-an-archive-when-the-stream-cannot-replay)                                                   | adopted                                  | The listener catches up from an archive when the stream cannot replay                                                          |
 
@@ -1355,9 +1354,9 @@ previous_bank_hash, unix_timestamp)`. No `context_id`, no `compute_subject`, no 
    independently authorized on, and the DAG is public in instruction data regardless).
 2. **Rand / rand-bounded seeds** are compulsorily fresh. As amended by RFC 035:
    `H("FHE_eval_seed", rand_nonce, op_index, program, scope, host program id, chain_id,
-previous_bank_hash, unix_timestamp)`. `rand_nonce` is the application's `RandNonce`
-   (`["rand-nonce", program, scope]`, DD-057), which every execution with a rand step must pass and
-   which the host advances (`FheExecuteRandNonceMissing` otherwise): a counter consumed once, never
+previous_bank_hash, unix_timestamp)`. `rand_nonce` is the host's `RandNonce` singleton
+   (`["rand-nonce"]`), which every execution with a rand step must pass and which the host
+   advances (`FheExecuteRandNonceMissing` otherwise): a global counter, consumed once, never
    caller-supplied, so two executions in one slot cannot share a seed whatever they persist.
    `(program, scope)` is the execution's verified application (DD-047), so a seed is bound to the
    values it will land in. The host emits the resolved seeds through the event CPI
@@ -1377,11 +1376,17 @@ Properties that must survive any refactor:
 
 - The rand nonce is consumed exactly once per execution and advances monotonically; a reverted
   execution does not advance it or emit a usable seed.
-- No seed-steering: the preimage is the application's host-owned counter plus slot context plus the
-  verified application; nothing in it is chosen by the caller.
+- No seed-steering: the preimage is the host's own counter plus slot context plus the verified
+  application; nothing in it is chosen by the caller.
 - Duplicate persistent-output accounts within an execution are still rejected
   (`ExecutionAccountTable::claim_persistent_output`), for the decode cache and the
   read-after-write rule, not for seed freshness any more.
+
+The nonce stays global (fhevm-internal#2081). Every execution with a rand step write-locks it, so
+rand executions of all applications run one at a time; an execution without a rand step does not
+take it. A nonce per application would remove that contention, at the cost of rent and a lazy
+creation per application. Revisit it if rand executions become frequent enough to contend. The
+preimage already binds `(program, scope)`, so that change would touch only the account.
 
 ## DD-044: Every Event Goes Through The Event CPI, Or Is Not Emitted At All (`emit-events` deleted)
 
@@ -1651,8 +1656,7 @@ a single namespace — and is trustworthy exactly as half of the pair. Both are 
 An execution runs as one application: every stored operand and output its default authority
 controls must carry the same pair (`FheExecuteMixedScopes`). That pair is what the block meter
 charges (`["hcu-block-meter", program, scope]`), the trust record names (`["hcu-trusted", program,
-scope]`), the permit scopes to (`allowedScopes`), the rand seed binds along with the application's
-nonce (`["rand-nonce", program, scope]`, DD-057), and the input attestation's
+scope]`), the permit scopes to (`allowedScopes`), the rand seed binds, and the input attestation's
 `contract_address` must equal (`program`). A value an additional signing authority admits (the
 token writing a receipt into a batcher-owned value) keeps its own application and does not fold,
 but the deny list is not scoped that way: a write is an allow in the value's own application, so
@@ -1881,10 +1885,10 @@ or EncryptedStores. `close_owned_accounts`, compiled only behind the `admin-swee
 this program does not own, and returns the rent to the signer, who must be the program's upgrade
 authority. The accounts are untyped because an old byte layout would fail to deserialize, and that
 leftover is what the wipe must delete. Solana has no parent account: closing HostConfig leaves
-EncryptedStores, KMS contexts and the applications' rand nonces in place until the same
-instruction closes each of them, so the deployer's `host wipe` closes everything
-`getProgramAccounts` lists and fails if anything remains. Accounts owned by the shared demo
-programs are not covered.
+EncryptedStores, KMS contexts and the rand nonce in place until the same instruction closes each
+of them, so the deployer's `host wipe` closes everything `getProgramAccounts` lists and fails if
+anything remains. `initialize_host_config` also creates the rand nonce, so both addresses must be
+empty or the next init fails. Accounts owned by the shared demo programs are not covered.
 
 `preview-env-deploy.yml` runs `host wipe`, then `host deploy --allow-upgrade`, which uploads this
 `.so` when the bytecode differs and runs `initialize_host_config` and `define_kms_context` for this
@@ -2143,54 +2147,6 @@ real on chain. The automated drift revert, which runs the same revert SQL, now f
 chain whose checkpoint is ahead, which is always the case when drift is detected; before, it deleted
 rows the listener would never re-ingest. A failed revert signal stops every coprocessor service on
 that database from starting, including those of EVM chains, until an operator repairs by hand.
-
-## DD-057: One rand nonce per application
-
-Status: adopted
-
-Recorded in fhevm-internal#2081. Revises DD-043's nonce.
-
-Context: DD-043 makes rand seeds fresh with one host counter, like EVM's `counterRand`. On EVM a
-global counter costs nothing, since transactions already run one after another. On Solana every
-rand execution write-locked the one `RandNonce` account, so rand executions of all applications ran
-one at a time.
-
-Decision: the nonce is keyed on the execution's application, `PDA("rand-nonce", program, scope)`
-(DD-047). The seed preimage does not change. It already binds `(program, scope)` and `op_index`, so
-a counter unique per application is enough: two executions of one application take different
-nonces, and executions of different applications differ in `(program, scope)`.
-
-The nonce follows the HCU meter's lifecycle. The application's first rand execution creates it,
-and that execution's payer pays the rent: about 0.001 SOL ((128 + 16) bytes × 6,960 lamports). Only
-the `admin-sweep` wipe of preview environments closes it. A recreated nonce would restart at zero
-and could repeat a seed within the slot. `fhe_execute` requires the canonical address for the
-application (`RandNonceMismatch`) and a host-owned account of the right size there. A system
-account at that address is created, even if someone funded it first; one with data is refused
-(`PdaCreationMismatch`). `initialize_host_config` no longer creates a nonce.
-
-The cost accepted: rand executions of one application run one at a time, since each writes its
-nonce. Under the default unrestricted HCU cap nothing else forces that, because no meter is written
-and different users of one application write different Stores. Solana caps the compute that
-transactions writing one account can use at 12M CU per block, so an application whose rand
-transactions cost 200k CU lands about 60 of them per block. An application that needs more can
-split its values over several scopes (DD-047), which also splits its meter, deny record and permit
-scope.
-
-Rejected alternatives:
-
-| Alternative | Why not |
-|---|---|
-| Keep the global nonce and accept the contention | The same ceiling of about 60 rand executions per block, shared by every application. No production program draws randomness today, so it is not felt yet. |
-| A nonce per user (the value authority) | Every user would pay about 0.001 SOL once per application, a cost EVM users never see. The seed would also have to bind the authority. It stays open if one application needs more than a block's worth of rand executions. |
-
-Cost: a rand execution derives one more PDA, as the meter does, and the first one per application
-also runs the account creation CPI on the host heap. No cost snapshot or heap proof runs a rand
-step, so neither is measured.
-
-Consequences: `initialize_host_config` takes one account fewer. `RandNonce` leaves the IDL, since
-the host reads it through `UncheckedAccount` and nothing off chain reads it: the listener takes the
-seeds from `FheExecutedEvent` (DD-056). A caller with a rand step passes
-`rand_nonce_address(app)`.
 
 ## DD-058: Pausers stop one area at a time; only the admin resumes
 

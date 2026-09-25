@@ -584,6 +584,7 @@ impl World {
                         admin,
                         program_data: program_data_account(None).0,
                         host_config,
+                        rand_nonce: host::rand_nonce_address().0,
                         system_program: system_program::ID,
                         event_authority: event_authority(host::id()),
                         program: host::id(),

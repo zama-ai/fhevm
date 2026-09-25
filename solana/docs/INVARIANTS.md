@@ -223,18 +223,15 @@ some combinations have a price but are still rejected by validation.
 Pinned by the eight `*_hcu_covers_every_validated_*` tests in
 `programs/zama-host/src/instructions/fhe_execute/hcu/tests.rs`, one per operator family.
 
-**16. [HOLDS]** An execution containing a rand step must pass its
-application's `RandNonce` (`["rand-nonce", program, scope]`;
-`FheExecuteRandNonceMissing` without it, `RandNonceMismatch` for an account
-at another address or a malformed one) and advances it; the nonce and the
-application are bound into every rand seed, so two executions can never
-derive the same seed, whatever they persist (DD-043, DD-057). The nonce is
-host state, never caller-supplied, and closed only by the preview-only
-`admin-sweep` wipe, so a caller cannot steer or restart it.
+**16. [HOLDS]** An execution containing a rand step must pass the host's
+`RandNonce` singleton (`["rand-nonce"]`; `FheExecuteRandNonceMissing`
+otherwise) and advances it; the nonce is bound into every rand seed, so two
+executions can never derive the same seed, whatever they persist (DD-043).
+The nonce is host state, never caller-supplied, so a caller cannot steer it.
 Pinned by `mollusk_fhe_execute_rand_without_nonce_account_is_rejected`,
 `mollusk_fhe_execute_nonce_account_without_rand_is_rejected`,
-`mollusk_fhe_execute_rand_creates_then_consumes_the_nonce_and_never_repeats_a_seed`,
-`mollusk_fhe_execute_rand_rejects_another_applications_nonce` and `rand_seed_is_distinct_across_every_uniqueness_axis`.
+`mollusk_fhe_execute_rand_consumes_the_nonce_and_never_repeats_a_seed`,
+`mollusk_fhe_execute_rand_rejects_non_canonical_nonce_account` and `rand_seed_is_distinct_across_every_uniqueness_axis`.
 
 **17. [HOLDS]** `account_count` declared inside the instruction data must equal the number of remaining accounts
 actually delivered.

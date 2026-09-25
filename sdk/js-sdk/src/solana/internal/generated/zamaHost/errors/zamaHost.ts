@@ -178,20 +178,18 @@ export const ZAMA_HOST_ERROR__INVALID_RETURN_SELECTION = 0x17bf; // 6079
 export const ZAMA_HOST_ERROR__TRANSIENT_STORE_NOT_OPENED = 0x17c0; // 6080
 /** WalletDelegationThroughCpi: a wallet delegator must delegate in a top-level instruction */
 export const ZAMA_HOST_ERROR__WALLET_DELEGATION_THROUGH_CPI = 0x17c1; // 6081
-/** RandNonceMismatch: rand nonce account mismatch */
-export const ZAMA_HOST_ERROR__RAND_NONCE_MISMATCH = 0x17c2; // 6082
 /** VerifiedInputsPaused: verified inputs are paused */
-export const ZAMA_HOST_ERROR__VERIFIED_INPUTS_PAUSED = 0x17c3; // 6083
+export const ZAMA_HOST_ERROR__VERIFIED_INPUTS_PAUSED = 0x17c2; // 6082
 /** AclWritesPaused: ACL writes are paused */
-export const ZAMA_HOST_ERROR__ACL_WRITES_PAUSED = 0x17c4; // 6084
+export const ZAMA_HOST_ERROR__ACL_WRITES_PAUSED = 0x17c3; // 6083
 /** PublicDecryptPaused: public-decrypt verification is paused */
-export const ZAMA_HOST_ERROR__PUBLIC_DECRYPT_PAUSED = 0x17c5; // 6085
+export const ZAMA_HOST_ERROR__PUBLIC_DECRYPT_PAUSED = 0x17c4; // 6084
 /** NotPauser: signer is not an enabled pauser */
-export const ZAMA_HOST_ERROR__NOT_PAUSER = 0x17c6; // 6086
+export const ZAMA_HOST_ERROR__NOT_PAUSER = 0x17c5; // 6085
 /** PauserRecordMismatch: pauser record mismatch */
-export const ZAMA_HOST_ERROR__PAUSER_RECORD_MISMATCH = 0x17c7; // 6087
+export const ZAMA_HOST_ERROR__PAUSER_RECORD_MISMATCH = 0x17c6; // 6086
 /** WalletPauseThroughCpi: a wallet pauser must pause in a top-level instruction */
-export const ZAMA_HOST_ERROR__WALLET_PAUSE_THROUGH_CPI = 0x17c8; // 6088
+export const ZAMA_HOST_ERROR__WALLET_PAUSE_THROUGH_CPI = 0x17c7; // 6087
 
 export type ZamaHostError =
   | typeof ZAMA_HOST_ERROR__ACL_WRITES_PAUSED
@@ -268,7 +266,6 @@ export type ZamaHostError =
   | typeof ZAMA_HOST_ERROR__PREVIOUS_STORE_MISMATCH
   | typeof ZAMA_HOST_ERROR__PUBLIC_DECRYPT_PAUSED
   | typeof ZAMA_HOST_ERROR__PUBLIC_DECRYPT_PROOF_INVALID
-  | typeof ZAMA_HOST_ERROR__RAND_NONCE_MISMATCH
   | typeof ZAMA_HOST_ERROR__SCOPE_DENIED
   | typeof ZAMA_HOST_ERROR__TOO_MANY_COPROCESSOR_SIGNERS
   | typeof ZAMA_HOST_ERROR__TOO_MANY_KMS_SIGNERS
@@ -361,7 +358,6 @@ if (process.env['NODE_ENV'] !== 'production') {
     [ZAMA_HOST_ERROR__PREVIOUS_STORE_MISMATCH]: `encrypted value previous handle does not match the account`,
     [ZAMA_HOST_ERROR__PUBLIC_DECRYPT_PAUSED]: `public-decrypt verification is paused`,
     [ZAMA_HOST_ERROR__PUBLIC_DECRYPT_PROOF_INVALID]: `public-decrypt inclusion proof is invalid`,
-    [ZAMA_HOST_ERROR__RAND_NONCE_MISMATCH]: `rand nonce account mismatch`,
     [ZAMA_HOST_ERROR__SCOPE_DENIED]: `application scope is deny-listed`,
     [ZAMA_HOST_ERROR__TOO_MANY_COPROCESSOR_SIGNERS]: `coprocessor signer set exceeds the maximum size`,
     [ZAMA_HOST_ERROR__TOO_MANY_KMS_SIGNERS]: `KMS context exceeds the maximum signer count`,

@@ -518,9 +518,9 @@ pub fn hcu_block_meter_address(app: AppScope) -> (Pubkey, u8) {
     app.address(HCU_BLOCK_METER_SEED)
 }
 
-/// Returns the canonical random-seed nonce address for an application.
-pub fn rand_nonce_address(app: AppScope) -> (Pubkey, u8) {
-    app.address(RAND_NONCE_SEED)
+/// Returns the canonical singleton random-seed nonce address.
+pub fn rand_nonce_address() -> (Pubkey, u8) {
+    Pubkey::find_program_address(&[RAND_NONCE_SEED], &crate::ID)
 }
 
 /// Returns the canonical pauser record address for a key.
@@ -696,10 +696,10 @@ pub fn computed_eval_trivial_handle(
 
 /// Derives the compulsorily fresh seed for an instruction-local execution random handle.
 ///
-/// Freshness is anchored, never caller-advised: `rand_nonce` is the application's counter,
-/// consumed by this execution and never seen again, and `app` is bound too, so two executions in
-/// one slot cannot share a seed. `op_index` separates rand steps within one execution; slot
-/// entropy separates slots.
+/// Freshness is anchored, never caller-advised: `rand_nonce` is the host's global counter,
+/// consumed by this execution and never seen again, so two executions in one slot cannot share
+/// a seed. `op_index` separates rand steps within one execution; slot entropy separates slots;
+/// the application identity binds the seed to the values it will land in.
 pub fn computed_eval_rand_seed(
     rand_nonce: u64,
     app: AppScope,
