@@ -78,7 +78,19 @@ async fn complete_localization_without_quorum_is_not_cached() {
         .fetch_one(&pool)
         .await
         .unwrap();
-    assert!(findings > 0, "below-quorum drift remains reportable");
+    assert_eq!(
+        findings, 0,
+        "without a quorum there is no local drift to record"
+    );
+    let audited: i64 =
+        sqlx::query_scalar("SELECT COUNT(*) FROM block_manifest_verification_attempt_drift")
+            .fetch_one(&pool)
+            .await
+            .unwrap();
+    assert!(
+        audited > 0,
+        "below-quorum drift remains in the attempt audit"
+    );
 }
 
 #[tokio::test]
