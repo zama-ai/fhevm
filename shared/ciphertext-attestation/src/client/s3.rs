@@ -158,7 +158,7 @@ impl BoundedClient {
             )));
         }
 
-        let content_length = response.content_length().unwrap_or(0);
+        let content_length = response.content_length().unwrap_or(ceiling as u64);
         if content_length > ceiling as u64 {
             return Err(FetchCiphertextError::TooLarge { ceiling });
         }
