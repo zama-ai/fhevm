@@ -11,7 +11,8 @@ log:
   show_target: false
 http:
   endpoint: "0.0.0.0:8080"
-  max_body_bytes: 2097152
+  max_body_bytes: 1048576               # 1 MiB, the connector's limit
+  body_read_timeout: 10s                # total time to receive a request body
   supported_chain_ids: [12345, 67890]   # the two local host chains
 kms_aggregator:
   allow_insecure_http: false            # loopback http is allowed as is
