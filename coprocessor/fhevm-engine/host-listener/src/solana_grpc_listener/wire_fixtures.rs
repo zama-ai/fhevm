@@ -16,11 +16,14 @@ use solana_sdk::{
 };
 use yellowstone_grpc_proto::prelude::{
     CompiledInstruction as GrpcCompiledInstruction, InnerInstruction,
-    InnerInstructions, Message as GrpcMessage, SubscribeUpdateTransactionInfo,
-    Transaction as GrpcTransaction, TransactionStatusMeta,
+    InnerInstructions, Message as GrpcMessage, SubscribeUpdateTransaction,
+    SubscribeUpdateTransactionInfo, Transaction as GrpcTransaction,
+    TransactionStatusMeta,
 };
 
-use solana_transaction_status_client_types::UiConfirmedBlock;
+use solana_transaction_status_client_types::{
+    EncodedConfirmedTransactionWithStatusMeta, UiConfirmedBlock,
+};
 use zama_host::state::{
     ExecutionResultRef, FheExecuteArgs, FheExecuteEffect, FheExecuteStep,
 };
@@ -135,6 +138,55 @@ impl Transaction {
         })
     }
 
+    /// `getBlock`'s JSON for the transaction with `transactionDetails: "accounts"`: its
+    /// signatures, account keys and status, without instructions or logs.
+    pub(super) fn rpc_accounts_json(&self, err: Value) -> Value {
+        let full = self.rpc_json(err.clone());
+        let keys = |keys: &[[u8; 32]], source: &str| {
+            keys.iter()
+                .map(|key| {
+                    json!({
+                        "pubkey": bs58::encode(key).into_string(),
+                        "writable": false,
+                        "signer": false,
+                        "source": source,
+                    })
+                })
+                .collect::<Vec<_>>()
+        };
+        let account_keys = [
+            keys(&self.static_keys, "transaction"),
+            keys(&self.loaded_writable, "lookupTable"),
+            keys(&self.loaded_readonly, "lookupTable"),
+        ]
+        .concat();
+        json!({
+            "transaction": {
+                "signatures": [bs58::encode(self.signature).into_string()],
+                "accountKeys": account_keys,
+            },
+            "meta": {
+                "err": err,
+                "status": full["meta"]["status"],
+                "fee": 5000,
+                "preBalances": [],
+                "postBalances": [],
+            },
+            "version": 0,
+        })
+    }
+
+    /// `getTransaction`'s response for the successful transaction in `slot`.
+    pub(super) fn rpc_transaction(
+        &self,
+        slot: u64,
+    ) -> EncodedConfirmedTransactionWithStatusMeta {
+        let mut response = self.rpc_json(Value::Null);
+        response["slot"] = json!(slot);
+        response["blockTime"] = json!(BLOCK_TIME);
+        serde_json::from_value(response).expect("getTransaction JSON")
+    }
+
     pub(super) fn grpc(&self) -> (GrpcMessage, TransactionStatusMeta) {
         let message = GrpcMessage {
             account_keys: self
@@ -186,6 +238,18 @@ impl Transaction {
             ..Default::default()
         };
         (message, meta)
+    }
+
+    /// The transaction as Yellowstone streams it, successful, at `index` in `slot`.
+    pub(super) fn grpc_update(
+        &self,
+        slot: u64,
+        index: u64,
+    ) -> SubscribeUpdateTransaction {
+        SubscribeUpdateTransaction {
+            transaction: Some(self.grpc_info(index)),
+            slot,
+        }
     }
 
     /// The transaction as a successful entry of a Yellowstone block, at `index`.

@@ -86,6 +86,7 @@ are written as one narrative instead.
 | DD-057                                                                                                                                    | withdrawn before merge                   | Rand nonce keyed on the application; the nonce stays global (DD-043)                                                            |
 | [DD-058](#dd-058-pausers-stop-one-area-at-a-time-only-the-admin-resumes)                                                                  | adopted                                  | Pausers stop one area at a time; only the admin resumes                                                                        |
 | [DD-059](#dd-059-the-listener-catches-up-from-an-archive-when-the-stream-cannot-replay)                                                   | adopted                                  | The listener catches up from an archive when the stream cannot replay                                                          |
+| [DD-060](#dd-060-the-listener-reads-one-transaction-per-message)                                                                          | adopted                                  | The listener reads one transaction per message                                                                                 |
 
 ## DD-002: Keep App Store And Host ACL Store Separate
 
@@ -2120,9 +2121,9 @@ leaves. A replay older than the provider's replay window comes from the archive 
 `S` must be in the archive's history, and nothing checks that before the rows are deleted. The
 runbook is in the host-listener README.
 
-A `getBlock` response prepares into the same block the stream produces (`prepare_rpc_block`), so
-archive catch-up (DD-059) reuses one decoder. It requires inner instructions and loaded addresses, which a
-full-detail `getBlock` returns. A test rebuilds a slot from `getBlock` output alone.
+An archive block prepares into the same block the stream produces (`prepare_rpc_block`), so
+archive catch-up (DD-059) reuses one decoder. It requires inner instructions and loaded addresses, which
+`getTransaction` returns (DD-060). A test rebuilds a slot from `getBlock` and `getTransaction` output alone.
 
 Rationale:
 
@@ -2226,9 +2227,10 @@ Recorded in fhevm-internal#2085.
 A listener that was down longer than the provider's replay window, about a day on a hosted
 provider, used to exit and need manual recovery. It now catches up from an archive RPC and then
 returns to the stream. When Yellowstone refuses the checkpoint as outside its window, the listener
-lists the produced slots after it with `getBlocks` and fetches each with `getBlock`, both at
-`finalized`, with full transaction details. Each block goes through `prepare_rpc_block`, which
-keeps the transactions naming the host program as the stream's account filter does. It must extend
+lists the produced slots after it with `getBlocks` and fetches each block's transactions with
+`getBlock` and `getTransaction` (DD-060), all at `finalized`. Each block goes through
+`prepare_rpc_block`, which keeps the transactions naming the host program as the stream's filter
+does. It must extend
 the checkpoint as the stream's validator requires: an unapplied checkpoint first and unchanged, then
 each block naming the last applied one as its parent. It is applied through the same path as a
 streamed block. Catch-up stops at the slot the archive had finalized when it started, so it ends
@@ -2254,13 +2256,60 @@ Rejected alternatives:
 
 Consequences:
 
-Catch-up reads every transaction of every block after the checkpoint. On mainnet a day is about
-216,000 blocks with full details, so it takes hours and needs an archive provider whose rate limits
-allow it; it runs eight `getBlock` calls at a time. The listener's Solana crates decode legacy and v0
+Catch-up lists every block after the checkpoint. On mainnet a day is about 216,000 blocks, so it
+takes hours and needs an archive provider whose rate limits allow it; it fetches eight blocks at a
+time, each with up to eight `getTransaction` calls in flight. The listener's Solana crates decode legacy and v0
 transactions only, so `getBlock` asks for version 0, and the RPC refuses a block holding a v1
 transaction. Catch-up then retries that block until fhevm-internal#2080 moves the listener to crates
 that decode v1. A slot rewound for repair (DD-056) no longer has to be inside the replay window, only
 in the archive's history.
+
+## DD-060: The listener reads one transaction per message
+
+Status: adopted
+
+Recorded in fhevm-internal#2104 (RFC 035 review, finding 1).
+
+The listener used to subscribe to whole blocks with `account_include: [host]`. Yellowstone keeps every
+transaction that lists the host program, including one that never calls it, and sends the block as
+one message. Solana bounds a block by compute units, not by bytes: about 100 transactions of about
+640 KB of CPI data each (estimate) make a block message above the listener's 64 MiB decoding limit.
+Anyone can send them. Every coprocessor then refuses the same slot, retries it every 2 seconds, and
+stops ingesting. `getBlock` with full details returns the same block unfiltered, so archive catch-up
+(DD-059) had the same limit.
+
+Decision:
+
+The listener subscribes at `confirmed` to `transactions { account_include: [host], vote: false,
+failed: false }` and to `blocks_meta`. One message holds one transaction, which Solana bounds at
+under 1 MB: 64 instructions in the trace, 10 KiB of data per CPI and about 10 KB of logs. The
+listener already ignored failed transactions, so leaving them out changes no output.
+`SlotAssembler` turns the updates back into the block the validator checks: it buffers one slot's
+transactions and seals the slot on its block meta. The ancestry check, the ingest path and the
+checkpoint are unchanged, and a reconnect starts a new assembler that `from_slot` replay refills.
+
+Sealing on block meta requires the provider to send every transaction of a slot before its block
+meta. Yellowstone does, live and on `from_slot` replay (`yellowstone-grpc-geyser/src/grpc.rs`,
+lines 1333-1404 at `243d008`, the pinned `v14.2.2`). A transaction for a slot before the last sealed
+one, a transaction of another slot while one is open, or a block meta for another slot stops the
+listener fail-closed instead of applying an incomplete slot. Whether other providers keep the order
+is fhevm-internal#2087.
+
+Archive catch-up applies the same bound. `getBlock` with `transactionDetails: "accounts"` lists each
+transaction's signatures, account keys and error without instruction data or logs, and
+`getTransaction` fetches each successful transaction that names the host.
+
+Rejected alternatives:
+
+| Alternative | Why not |
+|---|---|
+| Raise the decoding limit | A block of junk carries about 550 MB at 60M compute units (estimate), so any lower limit stays attackable and the ceiling moves with Solana's block limits. Tonic reserves the whole message and decodes a copy, so a 512 MiB limit lets one block use more than 1 GB of the pod's 2 GiB. Tonic refuses an oversized message at its length prefix, so today a refusal downloads almost nothing, and a higher limit downloads the junk on every coprocessor. A hosted provider can cap message size in front of Yellowstone anyway. |
+
+Consequences:
+
+The decoding limit stays at 64 MiB, which no valid transaction reaches. Transactions that only list
+the host still arrive, one small message each, and are ignored. The stream's idle timeout now counts block meta,
+which is sent for every slot. Catch-up makes one `getTransaction` call per host transaction.
 
 ## Open product decisions
 

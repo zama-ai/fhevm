@@ -60,6 +60,7 @@ use crate::solana_adapter::{
 };
 use crate::solana_grpc_source::{
     build_subscribe_request, BlockValidator, SealDecision, SealedBlock,
+    SlotAssembler,
 };
 use crate::solana_reconstruct::HandleMismatch;
 
@@ -464,6 +465,7 @@ async fn subscribe_loop(
 
     let is_resume = !matches!(start, StartPosition::Tip);
     let request = build_subscribe_request(&config.program_id, &start);
+    let mut assembler = SlotAssembler::default();
     let mut validator = BlockValidator::new(start);
     let outbound = futures_util::stream::once(async move { request })
         .chain(futures_util::stream::pending::<SubscribeRequest>());
@@ -477,7 +479,7 @@ async fn subscribe_loop(
     loop {
         tokio::select! {
             _ = cancel.cancelled() => return Ok(StreamEnd::Cancelled),
-            // Sealed blocks are emitted for every produced slot, including slots with zero
+            // Block meta is emitted for every produced slot, including slots with zero
             // matching transactions. Prolonged silence therefore means the stream stalled.
             msg = tokio::time::timeout(Duration::from_secs(30), stream.message()) => {
                 let msg = msg.map_err(|_| anyhow!("grpc stream idle for 30s; reconnecting"))?;
@@ -501,7 +503,19 @@ async fn subscribe_loop(
                     return Err(anyhow!("grpc stream closed by server"));
                 };
                 match update.update_oneof {
-                    Some(UpdateOneof::Block(block)) => {
+                    Some(UpdateOneof::Transaction(transaction)) => {
+                        assembler.transaction(transaction).map_err(|error| {
+                            FatalListenerError::new(error.context(
+                                "assemble Solana slot",
+                            ))
+                        })?;
+                    }
+                    Some(UpdateOneof::BlockMeta(meta)) => {
+                        let block = assembler.block_meta(meta).map_err(|error| {
+                            FatalListenerError::new(error.context(
+                                "assemble Solana slot",
+                            ))
+                        })?;
                         let decision = validator.seal(block).map_err(|error| {
                             FatalListenerError::new(error.context(
                                 "validate sealed Solana block",
@@ -540,7 +554,6 @@ async fn subscribe_loop(
 struct PreparedBlock {
     block: SealedBlock,
     transactions: Vec<PreparedTransaction>,
-    matching_transaction_count: usize,
 }
 
 #[derive(Debug)]
@@ -554,7 +567,6 @@ fn prepare_block(
     block: SealedBlock,
     matching: Vec<SubscribeUpdateTransactionInfo>,
 ) -> Result<PreparedBlock> {
-    let matching_transaction_count = matching.len();
     let mut transactions = Vec::new();
     for info in matching {
         let meta = info
@@ -583,7 +595,6 @@ fn prepare_block(
     Ok(PreparedBlock {
         block,
         transactions,
-        matching_transaction_count,
     })
 }
 
@@ -787,7 +798,7 @@ async fn ingest_block(
         parent_slot = prepared.block.parent_slot,
         block_height = ?prepared.block.block_height,
         executed_transaction_count = prepared.block.executed_transaction_count,
-        matching_transaction_count = prepared.matching_transaction_count,
+        host_transaction_count = prepared.transactions.len(),
         "ingested sealed Solana block"
     );
     Ok(BlockIngestOutcome::Complete)
@@ -1909,7 +1920,6 @@ mod apply_block_tests {
                     0,
                 )]),
             }],
-            matching_transaction_count: 1,
         };
         let mut tampered = with_events([storing(
             two_steps([2; 32], vec![SCALAR, key]),
@@ -1925,7 +1935,6 @@ mod apply_block_tests {
                 index: 0,
                 instructions: tampered,
             }],
-            matching_transaction_count: 1,
         };
 
         let instance = setup_test_db(ImportMode::None).await.expect("test db");
@@ -2061,7 +2070,6 @@ mod apply_block_tests {
                     instructions: tampered,
                 },
             ],
-            matching_transaction_count: 2,
         };
         let instance = setup_test_db(ImportMode::None).await.expect("test db");
         let db = Database::new(

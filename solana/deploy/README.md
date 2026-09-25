@@ -151,6 +151,10 @@ After listener downtime, Yellowstone replays the missed blocks while they are in
 replay window, and the listener catches up from `--archive-url` beyond it (DD-059). Point
 `--archive-url` at an RPC whose history covers the downtime you plan for.
 
+The gRPC provider must send every transaction of a slot before that slot's block meta, live
+and on `from_slot` replay, as Yellowstone does. The listener seals a slot on its block meta
+and stops if the order is broken (DD-060).
+
 ## Validation
 
 ```sh

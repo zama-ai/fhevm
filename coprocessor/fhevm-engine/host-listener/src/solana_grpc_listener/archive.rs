@@ -1,7 +1,8 @@
 //! Catch-up from an archive RPC once the checkpoint has left Yellowstone's replay window.
 //!
-//! The archive lists the produced slots after the checkpoint with `getBlocks` and serves each
-//! with `getBlock`, both at finalized commitment. A block is prepared like a streamed one
+//! The archive lists the produced slots after the checkpoint with `getBlocks`, lists each block's
+//! transactions with `getBlock`, and serves each successful transaction naming the host with
+//! `getTransaction`, all at finalized commitment. A block is prepared like a streamed one
 //! (`prepare_rpc_block`), must extend the checkpoint as the stream's validator requires, and is
 //! applied through the same path, so the database ends as uninterrupted streaming leaves it.
 //! Catch-up stops at the slot the archive had finalized when it started, well inside the
@@ -10,22 +11,24 @@
 use std::future::Future;
 
 use anyhow::{anyhow, bail, Context, Result};
-use futures_util::stream::{self, StreamExt};
+use futures_util::stream::{self, StreamExt, TryStreamExt};
 use solana_client::{
     client_error::{ClientError, ClientErrorKind},
     nonblocking::rpc_client::RpcClient,
-    rpc_config::RpcBlockConfig,
+    rpc_config::{RpcBlockConfig, RpcTransactionConfig},
 };
 use solana_commitment_config::CommitmentConfig;
+use solana_sdk::{pubkey::Pubkey, signature::Signature};
 use solana_transaction_status_client_types::{
-    TransactionDetails, UiConfirmedBlock, UiTransactionEncoding,
+    EncodedConfirmedTransactionWithStatusMeta, TransactionDetails,
+    UiConfirmedBlock, UiTransactionEncoding,
 };
 use tokio_util::sync::CancellationToken;
 use tracing::info;
 
-use super::rpc_block::prepare_rpc_block;
+use super::rpc_block::{list_rpc_block, prepare_rpc_block};
 use super::{
-    apply_prepared_block, FatalListenerError, IngestionProgress,
+    apply_prepared_block, FatalListenerError, IngestionProgress, PreparedBlock,
     SolanaGrpcListenerConfig, StartPosition,
 };
 use crate::database::tfhe_event_propagate::Database;
@@ -33,8 +36,10 @@ use crate::solana_grpc_source::SealedBlock;
 
 /// Slots listed per `getBlocks` call, far below the RPC's 500,000-slot cap.
 const SLOTS_PER_PAGE: u64 = 1_000;
-/// `getBlock` calls in flight. Blocks are still applied one at a time, in slot order.
+/// Blocks fetched at a time. Blocks are still applied one at a time, in slot order.
 const BLOCKS_IN_FLIGHT: usize = 8;
+/// `getTransaction` calls in flight for one block.
+const TRANSACTIONS_IN_FLIGHT: usize = 8;
 
 /// The ledger reads catch-up needs, at finalized commitment.
 pub(super) trait Archive: Sync {
@@ -45,10 +50,15 @@ pub(super) trait Archive: Sync {
         first: u64,
         last: u64,
     ) -> impl Future<Output = Result<Vec<u64>>> + Send;
+    /// The block with its transactions as account lists.
     fn block(
         &self,
         slot: u64,
     ) -> impl Future<Output = Result<UiConfirmedBlock>> + Send;
+    fn transaction(
+        &self,
+        signature: Signature,
+    ) -> impl Future<Output = Result<EncodedConfirmedTransactionWithStatusMeta>> + Send;
 }
 
 impl Archive for RpcClient {
@@ -75,7 +85,7 @@ impl Archive for RpcClient {
             slot,
             RpcBlockConfig {
                 encoding: Some(UiTransactionEncoding::Base64),
-                transaction_details: Some(TransactionDetails::Full),
+                transaction_details: Some(TransactionDetails::Accounts),
                 rewards: Some(false),
                 commitment: Some(CommitmentConfig::finalized()),
                 // The listener's Solana crates decode legacy and v0 transactions only; a block
@@ -87,6 +97,44 @@ impl Archive for RpcClient {
         .map_err(without_url)
         .with_context(|| format!("archive getBlock {slot}"))
     }
+
+    async fn transaction(
+        &self,
+        signature: Signature,
+    ) -> Result<EncodedConfirmedTransactionWithStatusMeta> {
+        self.get_transaction_with_config(
+            &signature,
+            RpcTransactionConfig {
+                encoding: Some(UiTransactionEncoding::Base64),
+                commitment: Some(CommitmentConfig::finalized()),
+                max_supported_transaction_version: Some(0),
+            },
+        )
+        .await
+        .map_err(without_url)
+        .with_context(|| format!("archive getTransaction {signature}"))
+    }
+}
+
+/// Fetches and prepares the block at `slot`. A failed read is retried; a response that does not
+/// decode stops the listener.
+async fn fetch_block(
+    archive: &impl Archive,
+    slot: u64,
+    program: &Pubkey,
+) -> Result<PreparedBlock> {
+    let fatal = |error: anyhow::Error| -> anyhow::Error {
+        FatalListenerError::new(error.context("prepare archive Solana block"))
+            .into()
+    };
+    let listing = list_rpc_block(slot, archive.block(slot).await?, program)
+        .map_err(fatal)?;
+    let transactions = stream::iter(listing.matching.iter())
+        .map(|(_, signature)| archive.transaction(*signature))
+        .buffered(TRANSACTIONS_IN_FLIGHT)
+        .try_collect()
+        .await?;
+    prepare_rpc_block(listing, transactions).map_err(fatal)
 }
 
 /// A hosted archive URL usually carries its API key, and reqwest errors print the URL.
@@ -139,20 +187,15 @@ pub(super) async fn catch_up(
             return Ok(false);
         };
         let mut blocks = stream::iter(slots)
-            .map(|slot| async move { (slot, archive.block(slot).await) })
+            .map(|slot| fetch_block(archive, slot, &program))
             .buffered(BLOCKS_IN_FLIGHT);
         loop {
             let next = tokio::select! {
                 _ = cancel.cancelled() => return Ok(false),
                 next = blocks.next() => next,
             };
-            let Some((slot, block)) = next else { break };
-            let prepared =
-                prepare_rpc_block(slot, block?, &program).map_err(|error| {
-                    FatalListenerError::new(
-                        error.context("prepare archive Solana block"),
-                    )
-                })?;
+            let Some(prepared) = next else { break };
+            let prepared = prepared?;
             extends_checkpoint(
                 &progress.subscription_start(),
                 &prepared.block,
@@ -262,12 +305,15 @@ mod tests {
     use anyhow::{anyhow, Result};
     use serde_json::Value;
     use serial_test::serial;
-    use solana_sdk::pubkey::Pubkey;
-    use solana_transaction_status_client_types::UiConfirmedBlock;
+    use solana_sdk::{pubkey::Pubkey, signature::Signature};
+    use solana_transaction_status_client_types::{
+        EncodedConfirmedTransactionWithStatusMeta, UiConfirmedBlock,
+    };
     use test_harness::instance::{setup_test_db, ImportMode};
     use tokio_util::sync::CancellationToken;
     use yellowstone_grpc_proto::prelude::{
-        BlockHeight, SubscribeUpdateBlock, UnixTimestamp,
+        BlockHeight, SubscribeUpdateBlockMeta, SubscribeUpdateTransaction,
+        UnixTimestamp,
     };
 
     use super::super::test_support::{config, ZAMA_HOST};
@@ -282,7 +328,7 @@ mod tests {
     use super::{catch_up, extends_checkpoint, first_missing_slot, Archive};
     use crate::database::tfhe_event_propagate::Database;
     use crate::solana_grpc_source::{
-        BlockValidator, SealDecision, SealedBlock,
+        BlockValidator, SealDecision, SealedBlock, SlotAssembler,
     };
     use fhevm_engine_common::chain_id::ChainId;
 
@@ -324,6 +370,7 @@ mod tests {
     }
 
     impl Slot {
+        /// The block as `getBlock` lists it, with `transactionDetails: "accounts"`.
         fn rpc(&self) -> UiConfirmedBlock {
             block_json(
                 self.slot,
@@ -331,16 +378,44 @@ mod tests {
                 hash,
                 self.transactions
                     .iter()
-                    .map(|transaction| transaction.rpc_json(Value::Null))
+                    .map(|transaction| {
+                        transaction.rpc_accounts_json(Value::Null)
+                    })
                     .collect(),
             )
         }
 
-        /// The block as the stream delivers it: only the transactions naming the host, at
-        /// their index in the block.
-        fn grpc(&self) -> SubscribeUpdateBlock {
+        /// Each transaction's `getTransaction` JSON.
+        fn rpc_transactions(
+            &self,
+        ) -> impl Iterator<Item = (Signature, serde_json::Value)> + '_ {
+            self.transactions.iter().map(|transaction| {
+                let response = serde_json::to_value(
+                    transaction.rpc_transaction(self.slot),
+                );
+                (Signature::from(transaction.signature), response.unwrap())
+            })
+        }
+
+        /// The slot as the stream delivers it: the transactions naming the host, at their index
+        /// in the block, then the block meta.
+        fn grpc(
+            &self,
+        ) -> (Vec<SubscribeUpdateTransaction>, SubscribeUpdateBlockMeta)
+        {
             let host = ZAMA_HOST.parse::<Pubkey>().unwrap().to_bytes();
-            SubscribeUpdateBlock {
+            let transactions = self
+                .transactions
+                .iter()
+                .enumerate()
+                .filter(|(_, transaction)| {
+                    transaction.static_keys.contains(&host)
+                })
+                .map(|(index, transaction)| {
+                    transaction.grpc_update(self.slot, index as u64)
+                })
+                .collect();
+            let meta = SubscribeUpdateBlockMeta {
                 slot: self.slot,
                 blockhash: bs58::encode(hash(self.slot)).into_string(),
                 parent_slot: self.parent,
@@ -352,19 +427,9 @@ mod tests {
                     block_height: self.slot - 2,
                 }),
                 executed_transaction_count: self.transactions.len() as u64,
-                transactions: self
-                    .transactions
-                    .iter()
-                    .enumerate()
-                    .filter(|(_, transaction)| {
-                        transaction.static_keys.contains(&host)
-                    })
-                    .map(|(index, transaction)| {
-                        transaction.grpc_info(index as u64)
-                    })
-                    .collect(),
                 ..Default::default()
-            }
+            };
+            (transactions, meta)
         }
     }
 
@@ -404,6 +469,7 @@ mod tests {
     struct FakeArchive {
         finalized: AtomicU64,
         blocks: BTreeMap<u64, UiConfirmedBlock>,
+        transactions: BTreeMap<Signature, serde_json::Value>,
     }
 
     impl Archive for FakeArchive {
@@ -432,18 +498,35 @@ mod tests {
                 .cloned()
                 .ok_or_else(|| anyhow!("slot {slot} has no block"))
         }
+
+        async fn transaction(
+            &self,
+            signature: Signature,
+        ) -> Result<EncodedConfirmedTransactionWithStatusMeta> {
+            let response = self
+                .transactions
+                .get(&signature)
+                .ok_or_else(|| anyhow!("no transaction {signature}"))?;
+            Ok(serde_json::from_value(response.clone())?)
+        }
     }
 
-    /// Streams `slots` from `progress`'s start through the stream's validator and ingest path.
+    /// Streams `slots` from `progress`'s start through the stream's assembler, validator and
+    /// ingest path.
     async fn stream(
         db: &Database,
         slots: &[&Slot],
         progress: &mut IngestionProgress,
     ) {
+        let mut assembler = SlotAssembler::default();
         let mut validator = BlockValidator::new(progress.subscription_start());
         for slot in slots {
+            let (transactions, meta) = slot.grpc();
+            for transaction in transactions {
+                assembler.transaction(transaction).unwrap();
+            }
             if let SealDecision::Process(block, transactions) =
-                validator.seal(slot.grpc()).unwrap()
+                validator.seal(assembler.block_meta(meta).unwrap()).unwrap()
             {
                 let prepared = prepare_block(block, transactions).unwrap();
                 assert!(apply_prepared_block(
@@ -540,6 +623,10 @@ mod tests {
         let archive_of = |finalized: u64, slots: &[u64]| FakeArchive {
             finalized: AtomicU64::new(finalized),
             blocks: slots.iter().map(|slot| (*slot, at(*slot).rpc())).collect(),
+            transactions: slots
+                .iter()
+                .flat_map(|slot| at(*slot).rpc_transactions())
+                .collect(),
         };
 
         clear(&pool).await;
@@ -601,6 +688,7 @@ mod tests {
         let fork = FakeArchive {
             finalized: AtomicU64::new(41),
             blocks: BTreeMap::from([(41, forked)]),
+            transactions: at(41).rpc_transactions().collect(),
         };
         let (mismatch, progress) = catch_up_from_40(&db, &fork).await;
         let mismatch = mismatch.unwrap_err();

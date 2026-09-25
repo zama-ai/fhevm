@@ -119,7 +119,12 @@ cargo test -p host-listener --test host_listener_integration_tests \
 ### Solana bootstrap and restart
 
 `solana_host_listener` reconstructs compute rows and ACL leaves from confirmed
-Yellowstone blocks. Each `fhe_execute` is paired with the `FheExecutedEvent` it
+Yellowstone blocks. It subscribes to the successful transactions naming the host
+program, one per message, and to every slot's block meta, and seals a slot when
+its block meta arrives. The provider must send every transaction of a slot
+before that slot's block meta, live and on `from_slot` replay; Yellowstone does.
+A transaction that breaks the order stops the listener without applying the
+slot. Each `fhe_execute` is paired with the `FheExecutedEvent` it
 emits: the listener stores the result handles in the event and re-derives each
 one as a check. On an empty database, `--start-slot <slot>` selects an existing
 confirmed block to replay **inclusively**. Choose a finalized block before the
@@ -137,12 +142,14 @@ this cannot recover earlier leaves.
 Yellowstone replays only recent slots: **256** with the local configuration in
 `solana/geyser/yellowstone-config.json`, about 24 hours on a hosted provider.
 When it refuses the checkpoint as too old, the listener catches up from
-`--archive-url` (default `--url`): it lists the produced slots with `getBlocks`
-and applies each `getBlock` at finalized commitment, through the same ancestry
-check and ingest path, up to the slot the archive had finalized when catch-up
-began. Then it subscribes again from the checkpoint (DD-059 in
+`--archive-url` (default `--url`): it lists the produced slots with `getBlocks`,
+lists each block's transactions with `getBlock` and `transactionDetails:
+"accounts"`, fetches each successful transaction naming the host with
+`getTransaction`, and applies the block at finalized commitment, through the
+same ancestry check and ingest path, up to the slot the archive had finalized
+when catch-up began. Then it subscribes again from the checkpoint (DD-059 in
 `solana/docs/DESIGN_DECISIONS.md`). The archive must hold the ledger back to the
-checkpoint. Catch-up reads every transaction of every block, so a day of mainnet
+checkpoint. Catch-up lists every block after the checkpoint, so a day of mainnet
 takes hours. A block holding a v1 transaction is refused and retried until
 fhevm-internal#2080, and an archive missing slots after the checkpoint is
 retried too. A provider that cannot replay from any slot, or a block of another

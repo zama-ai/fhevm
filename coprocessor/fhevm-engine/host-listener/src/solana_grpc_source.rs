@@ -1,15 +1,21 @@
 //! Concrete Yellowstone source validation for sealed Solana blocks.
 //!
-//! `SubscribeUpdateBlock` is emitted only after the server has observed the
-//! block's declared transaction count. The block is the only stream: each
-//! `fhe_execute` carries its own derivation context in its `FheExecutedEvent`.
+//! The listener subscribes to the successful transactions naming the host program, one per
+//! message, and to every slot's block meta. At `confirmed`, Yellowstone sends a slot's
+//! transactions before its block meta, live and on `from_slot` replay, so [`SlotAssembler`] seals
+//! a slot when its block meta arrives. One transaction is bounded by Solana's limits, where a
+//! whole block is bounded by compute units only: a block of transactions that merely list the host
+//! program can exceed any message limit. Each `fhe_execute` carries its own derivation context in
+//! its `FheExecutedEvent`, so the transactions are all the listener needs.
 
 use std::collections::HashMap;
 
 use anchor_lang::prelude::Pubkey;
 use anyhow::{anyhow, bail, Context, Result};
 use yellowstone_grpc_proto::prelude::{
-    SubscribeRequest, SubscribeRequestFilterBlocks, SubscribeUpdateBlock,
+    SubscribeRequest, SubscribeRequestFilterBlocksMeta,
+    SubscribeRequestFilterTransactions, SubscribeUpdateBlock,
+    SubscribeUpdateBlockMeta, SubscribeUpdateTransaction,
     SubscribeUpdateTransactionInfo,
 };
 
@@ -135,32 +141,103 @@ impl BlockValidator {
     }
 }
 
+/// Rebuilds sealed blocks from the per-transaction stream. It holds one slot at a time: a slot's
+/// transactions must all arrive before its block meta and before any other slot's messages.
+/// Anything else stops the listener fail-closed rather than seal an incomplete slot. An identical
+/// re-delivery of the last sealed slot is left to [`BlockValidator`]'s replay check.
+#[derive(Debug, Default)]
+pub(super) struct SlotAssembler {
+    open: Option<(u64, Vec<SubscribeUpdateTransactionInfo>)>,
+    last_sealed: Option<u64>,
+}
+
+impl SlotAssembler {
+    pub fn transaction(
+        &mut self,
+        update: SubscribeUpdateTransaction,
+    ) -> Result<()> {
+        let slot = update.slot;
+        let info = update.transaction.ok_or_else(|| {
+            anyhow!("transaction update in slot {slot} has no transaction")
+        })?;
+        if let Some(sealed) = self.last_sealed.filter(|sealed| slot < *sealed) {
+            bail!(
+                "transaction for slot {slot} arrived after slot {sealed} was sealed"
+            );
+        }
+        match &mut self.open {
+            Some((open, transactions)) if *open == slot => {
+                transactions.push(info)
+            }
+            Some((open, _)) => bail!(
+                "transaction for slot {slot} arrived before the block meta of slot {open}"
+            ),
+            None => self.open = Some((slot, vec![info])),
+        }
+        Ok(())
+    }
+
+    /// The block `meta` seals, with the transactions buffered for its slot.
+    pub fn block_meta(
+        &mut self,
+        meta: SubscribeUpdateBlockMeta,
+    ) -> Result<SubscribeUpdateBlock> {
+        let transactions = match self.open.take() {
+            Some((open, transactions)) if open == meta.slot => transactions,
+            Some((open, _)) => bail!(
+                "block meta of slot {} arrived while slot {open} was open",
+                meta.slot
+            ),
+            None => Vec::new(),
+        };
+        self.last_sealed = Some(meta.slot);
+        Ok(SubscribeUpdateBlock {
+            slot: meta.slot,
+            blockhash: meta.blockhash,
+            rewards: meta.rewards,
+            block_time: meta.block_time,
+            block_height: meta.block_height,
+            parent_slot: meta.parent_slot,
+            parent_blockhash: meta.parent_blockhash,
+            executed_transaction_count: meta.executed_transaction_count,
+            transactions,
+            updated_account_count: 0,
+            accounts: Vec::new(),
+            entries_count: meta.entries_count,
+            entries: Vec::new(),
+        })
+    }
+}
+
 pub(super) fn build_subscribe_request(
     program_id: &Pubkey,
     start: &StartPosition,
 ) -> SubscribeRequest {
-    let mut blocks = HashMap::new();
-    blocks.insert(
+    let transactions = HashMap::from([(
         "zama_host".to_owned(),
-        SubscribeRequestFilterBlocks {
+        SubscribeRequestFilterTransactions {
+            vote: Some(false),
+            // The listener ignores failed transactions, so leaving them out changes no output.
+            failed: Some(false),
+            signature: None,
+            // Matches static and lookup-table-loaded keys alike.
             account_include: vec![program_id.to_string()],
-            include_transactions: Some(true),
-            include_accounts: Some(false),
-            include_entries: Some(false),
-            // A cuckoo filter is the plugin's compact stand-in for a very long account list: the
-            // client ships a probabilistic membership set instead of the addresses themselves and
-            // accepts false positives in exchange. We subscribe to exactly one program, so the
-            // explicit list above is both smaller and exact.
-            cuckoo_account_include: None,
+            account_exclude: vec![],
+            account_required: vec![],
+            token_accounts: None,
         },
-    );
+    )]);
+    let blocks_meta = HashMap::from([(
+        "zama_host".to_owned(),
+        SubscribeRequestFilterBlocksMeta {},
+    )]);
     SubscribeRequest {
         accounts: HashMap::new(),
         slots: HashMap::new(),
-        transactions: HashMap::new(),
+        transactions,
         transactions_status: HashMap::new(),
-        blocks,
-        blocks_meta: HashMap::new(),
+        blocks: HashMap::new(),
+        blocks_meta,
         entry: HashMap::new(),
         commitment: Some(
             yellowstone_grpc_proto::prelude::CommitmentLevel::Confirmed as i32,
@@ -431,19 +508,145 @@ mod tests {
     }
 
     #[test]
-    fn request_subscribes_to_sealed_blocks_only() {
+    fn request_subscribes_to_host_transactions_and_block_meta() {
         let checkpoint = BlockCheckpoint {
             slot: 9,
             block_hash: hash(9),
         };
+        let program = Pubkey::new_unique();
         let request = build_subscribe_request(
-            &Pubkey::new_unique(),
+            &program,
             &StartPosition::Resume(checkpoint),
         );
-        assert!(request.transactions.is_empty());
-        assert!(request.blocks_meta.is_empty());
-        assert_eq!(request.blocks.len(), 1);
+        let [filter] = &request.transactions.values().collect::<Vec<_>>()[..]
+        else {
+            panic!("one transaction filter")
+        };
+        assert_eq!(filter.account_include, vec![program.to_string()]);
+        assert_eq!((filter.vote, filter.failed), (Some(false), Some(false)));
+        assert_eq!(request.blocks_meta.len(), 1);
+        assert!(request.blocks.is_empty());
         assert!(request.accounts.is_empty());
         assert_eq!(request.from_slot, Some(9));
+    }
+
+    fn update(slot: u64, index: u64) -> SubscribeUpdateTransaction {
+        SubscribeUpdateTransaction {
+            transaction: Some(successful(index)),
+            slot,
+        }
+    }
+
+    /// The block meta of `block(slot, ...)` with `executed_transaction_count` transactions.
+    fn meta(
+        slot: u64,
+        executed_transaction_count: u64,
+    ) -> SubscribeUpdateBlockMeta {
+        SubscribeUpdateBlockMeta {
+            slot,
+            blockhash: bs58::encode(hash(slot as u8)).into_string(),
+            parent_slot: slot - 1,
+            parent_blockhash: bs58::encode(hash(slot as u8 - 1)).into_string(),
+            executed_transaction_count,
+            ..Default::default()
+        }
+    }
+
+    /// A slot's transactions followed by its block meta seal the block the block subscription
+    /// delivered, and a slot without host transactions seals empty.
+    #[test]
+    fn a_slot_seals_on_its_block_meta() {
+        let mut assembler = SlotAssembler::default();
+        assembler.transaction(update(2, 3)).unwrap();
+        assembler.transaction(update(2, 1)).unwrap();
+        let sealed = assembler.block_meta(meta(2, 4)).unwrap();
+        assert_eq!(
+            sealed,
+            SubscribeUpdateBlock {
+                executed_transaction_count: 4,
+                ..block(
+                    2,
+                    hash(2),
+                    1,
+                    hash(1),
+                    vec![successful(3), successful(1)]
+                )
+            }
+        );
+        let SealDecision::Process(_, transactions) =
+            BlockValidator::new(StartPosition::Tip)
+                .seal(sealed)
+                .unwrap()
+        else {
+            panic!()
+        };
+        assert_eq!(
+            transactions.iter().map(|tx| tx.index).collect::<Vec<_>>(),
+            vec![1, 3]
+        );
+        assert!(assembler
+            .block_meta(meta(3, 0))
+            .unwrap()
+            .transactions
+            .is_empty());
+    }
+
+    /// Every way a provider can break the transactions-before-meta order stops the listener.
+    #[test]
+    fn a_slot_out_of_order_halts() {
+        // A transaction of the next slot before this slot's block meta.
+        let mut assembler = SlotAssembler::default();
+        assembler.transaction(update(2, 0)).unwrap();
+        assert!(assembler.transaction(update(3, 0)).is_err());
+
+        // Another slot's block meta while this slot is open.
+        let mut assembler = SlotAssembler::default();
+        assembler.transaction(update(2, 0)).unwrap();
+        assert!(assembler.block_meta(meta(3, 1)).is_err());
+
+        // A transaction for a slot before the last sealed one.
+        let mut assembler = SlotAssembler::default();
+        assembler.block_meta(meta(3, 0)).unwrap();
+        assert!(assembler.transaction(update(2, 0)).is_err());
+
+        // A late transaction for the slot just sealed, then the next slot.
+        let mut assembler = SlotAssembler::default();
+        assembler.block_meta(meta(2, 2)).unwrap();
+        assembler.transaction(update(2, 1)).unwrap();
+        assert!(assembler.transaction(update(3, 0)).is_err());
+
+        // An update without its transaction.
+        assert!(SlotAssembler::default()
+            .transaction(SubscribeUpdateTransaction {
+                transaction: None,
+                slot: 2,
+            })
+            .is_err());
+    }
+
+    /// A transaction for the slot just sealed opens it again, so the validator compares the
+    /// whole slot: an identical re-delivery replays, a late transaction conflicts.
+    #[test]
+    fn a_late_transaction_for_the_sealed_slot_conflicts() {
+        let mut validator = BlockValidator::new(StartPosition::Tip);
+        let mut assembler = SlotAssembler::default();
+        assembler.transaction(update(2, 0)).unwrap();
+        let sealed = assembler.block_meta(meta(2, 2)).unwrap();
+        assert!(matches!(
+            validator.seal(sealed).unwrap(),
+            SealDecision::Process(..)
+        ));
+
+        assembler.transaction(update(2, 0)).unwrap();
+        let redelivered = assembler.block_meta(meta(2, 2)).unwrap();
+        assert!(matches!(
+            validator.seal(redelivered).unwrap(),
+            SealDecision::Replay
+        ));
+
+        assembler.transaction(update(2, 0)).unwrap();
+        assembler.transaction(update(2, 1)).unwrap();
+        let late = assembler.block_meta(meta(2, 2)).unwrap();
+        assert!(validator.seal(late).is_err());
     }
 }

@@ -1,15 +1,21 @@
-//! Blocks fetched with `getBlock`, prepared exactly like streamed ones. Each `FheExecutedEvent`
-//! carries its execution's derivation context, so a block's own transactions are all the
-//! listener needs: any archive can rebuild a slot the stream missed.
+//! Blocks fetched from an archive RPC, prepared exactly like streamed ones. Each
+//! `FheExecutedEvent` carries its execution's derivation context, so a block's own transactions
+//! are all the listener needs: any archive can rebuild a slot the stream missed.
 //!
-//! Expects the response of `getBlock` with `encoding: "base64"`, `transactionDetails: "full"`
-//! and `maxSupportedTransactionVersion: 0`.
+//! As on the stream, a response is bounded per transaction, not per block. `getBlock` with
+//! `transactionDetails: "accounts"` lists each transaction's signature, account keys and error,
+//! without instruction data or logs ([`list_rpc_block`]). Each successful transaction naming the
+//! host is then fetched alone with `getTransaction`, `encoding: "base64"` and
+//! `maxSupportedTransactionVersion: 0` ([`prepare_rpc_block`]).
 
-use anyhow::{anyhow, bail, Context, Result};
-use solana_sdk::{message::VersionedMessage, pubkey::Pubkey};
+use anyhow::{anyhow, bail, ensure, Context, Result};
+use solana_sdk::{
+    message::VersionedMessage, pubkey::Pubkey, signature::Signature,
+};
 use solana_transaction_status_client_types::{
-    option_serializer::OptionSerializer, UiConfirmedBlock, UiInstruction,
-    UiTransactionStatusMeta,
+    option_serializer::OptionSerializer,
+    EncodedConfirmedTransactionWithStatusMeta, EncodedTransaction,
+    UiConfirmedBlock, UiInstruction, UiTransactionStatusMeta,
 };
 use zama_solana_transaction::{
     CompiledInstruction, InnerInstructionGroup, ResolvedInstruction,
@@ -18,57 +24,56 @@ use zama_solana_transaction::{
 use super::{decoded_instructions, PreparedBlock, PreparedTransaction};
 use crate::solana_grpc_source::SealedBlock;
 
-/// Prepares the `getBlock` response for `slot`. As on the stream, only transactions naming
-/// `program` count as matching, and failed ones are then skipped. A transaction's index is its
-/// position in the response, which is block order.
-pub(super) fn prepare_rpc_block(
+/// A block's header and the transactions of it the listener must fetch.
+#[derive(Debug)]
+pub(super) struct RpcBlockListing {
+    pub block: SealedBlock,
+    /// Each successful transaction naming the host: its index in the block and its signature.
+    pub matching: Vec<(u64, Signature)>,
+}
+
+/// Lists the `getBlock` response for `slot`. As on the stream, a transaction matches when it
+/// names `program`, in its static or lookup-table-loaded keys, and succeeded. A transaction's
+/// index is its position in the response, which is block order.
+pub(super) fn list_rpc_block(
     slot: u64,
     block: UiConfirmedBlock,
     program: &Pubkey,
-) -> Result<PreparedBlock> {
+) -> Result<RpcBlockListing> {
     let transactions = block.transactions.ok_or_else(|| {
         anyhow!("getBlock response for slot {slot} has no transactions")
     })?;
     let executed_transaction_count = transactions.len() as u64;
     let program_address = program.to_string();
-    let mut matching_transaction_count = 0;
-    let mut prepared = Vec::new();
+    let mut matching = Vec::new();
     for (index, encoded) in transactions.into_iter().enumerate() {
         let meta = encoded.meta.ok_or_else(|| {
             anyhow!("transaction {index} in slot {slot} has no status meta")
         })?;
-        let transaction = encoded.transaction.decode().ok_or_else(|| {
-            anyhow!(
-                "transaction {index} in slot {slot} is not a sanitized base64 transaction"
+        let EncodedTransaction::Accounts(accounts) = encoded.transaction else {
+            bail!(
+                "transaction {index} in slot {slot} is not an account list; request transactionDetails \"accounts\""
             )
-        })?;
-        // Yellowstone's `account_include` matches static and lookup-table-loaded keys alike.
-        let names_program = transaction
-            .message
-            .static_account_keys()
-            .contains(program)
-            || matches!(&meta.loaded_addresses, OptionSerializer::Some(loaded)
-                    if loaded.writable.contains(&program_address)
-                        || loaded.readonly.contains(&program_address));
-        if !names_program {
+        };
+        if meta.err.is_some()
+            || !accounts
+                .account_keys
+                .iter()
+                .any(|account| account.pubkey == program_address)
+        {
             continue;
         }
-        matching_transaction_count += 1;
-        if meta.err.is_some() {
-            continue;
-        }
-        let signature = *transaction.signatures.first().ok_or_else(|| {
+        let signature = accounts.signatures.first().ok_or_else(|| {
             anyhow!("transaction {index} in slot {slot} has no signature")
         })?;
-        let instructions = resolve_rpc_transaction(&transaction.message, &meta)
-            .with_context(|| format!("transaction {index} in slot {slot}"))?;
-        prepared.push(PreparedTransaction {
-            signature,
-            index: index as u64,
-            instructions: decoded_instructions(instructions)?,
-        });
+        let signature = signature.parse::<Signature>().with_context(|| {
+            format!(
+                "transaction {index} in slot {slot} has an invalid signature"
+            )
+        })?;
+        matching.push((index as u64, signature));
     }
-    Ok(PreparedBlock {
+    Ok(RpcBlockListing {
         block: SealedBlock {
             slot,
             block_hash: decode_hash(&block.blockhash)
@@ -80,8 +85,57 @@ pub(super) fn prepare_rpc_block(
             block_height: block.block_height,
             executed_transaction_count,
         },
+        matching,
+    })
+}
+
+/// Prepares a listed block from the `getTransaction` response of each matching transaction, in
+/// listing order.
+pub(super) fn prepare_rpc_block(
+    listing: RpcBlockListing,
+    transactions: Vec<EncodedConfirmedTransactionWithStatusMeta>,
+) -> Result<PreparedBlock> {
+    let slot = listing.block.slot;
+    ensure!(
+        transactions.len() == listing.matching.len(),
+        "slot {slot} lists {} matching transactions but {} were fetched",
+        listing.matching.len(),
+        transactions.len()
+    );
+    let mut prepared = Vec::new();
+    for ((index, signature), fetched) in
+        listing.matching.into_iter().zip(transactions)
+    {
+        ensure!(
+            fetched.slot == slot,
+            "getTransaction places {signature} in slot {}, getBlock in slot {slot}",
+            fetched.slot
+        );
+        let meta = fetched.transaction.meta.ok_or_else(|| {
+            anyhow!("transaction {signature} has no status meta")
+        })?;
+        ensure!(meta.err.is_none(), "transaction {signature} failed");
+        let transaction =
+            fetched.transaction.transaction.decode().ok_or_else(|| {
+                anyhow!(
+                    "transaction {signature} is not a sanitized base64 transaction"
+                )
+            })?;
+        ensure!(
+            transaction.signatures.first() == Some(&signature),
+            "getTransaction for {signature} returned another transaction"
+        );
+        let instructions = resolve_rpc_transaction(&transaction.message, &meta)
+            .with_context(|| format!("transaction {index} in slot {slot}"))?;
+        prepared.push(PreparedTransaction {
+            signature,
+            index,
+            instructions: decoded_instructions(instructions)?,
+        });
+    }
+    Ok(PreparedBlock {
+        block: listing.block,
         transactions: prepared,
-        matching_transaction_count,
     })
 }
 
@@ -185,7 +239,9 @@ fn decode_hash(value: &str) -> Result<[u8; 32]> {
 mod tests {
     use base64::{prelude::BASE64_STANDARD, Engine};
     use serde_json::{json, Value};
-    use solana_sdk::{signature::Signature, transaction::VersionedTransaction};
+    use solana_sdk::{
+        pubkey::Pubkey, signature::Signature, transaction::VersionedTransaction,
+    };
     use solana_transaction_status_client_types::{
         EncodedTransaction, TransactionBinaryEncoding, UiConfirmedBlock,
     };
@@ -194,7 +250,10 @@ mod tests {
         app_transaction, block_json, foreign_transaction, Compiled,
         Transaction, BLOCK_TIME,
     };
-    use super::{prepare_rpc_block, resolve_rpc_transaction};
+    use super::{
+        list_rpc_block, prepare_rpc_block, resolve_rpc_transaction,
+        RpcBlockListing,
+    };
     use crate::solana_grpc_listener::resolve_transaction_instructions;
     use crate::solana_grpc_listener::test_support::{reconstruct, ZAMA_HOST};
 
@@ -312,34 +371,52 @@ mod tests {
         }
     }
 
+    /// A host program named only through a lookup table.
+    fn loading_the_host(signature: u8) -> Transaction {
+        let host = ZAMA_HOST.parse::<Pubkey>().unwrap().to_bytes();
+        let mut transaction = foreign_transaction(signature);
+        transaction.loaded_readonly = vec![host];
+        transaction
+    }
+
+    /// The listing keeps what the stream's filter delivers: successful transactions naming the
+    /// host, statically or through a lookup table. Each is then fetched alone.
     #[test]
-    fn rebuilds_a_slot_from_get_block_alone() {
+    fn rebuilds_a_slot_from_get_block_and_get_transaction() {
         let failed = app_transaction(7, [1; 32]);
         let succeeded = app_transaction(8, [2; 32]);
+        let loaded = loading_the_host(9);
         let block = block(
             100,
             vec![
-                foreign_transaction(6).rpc_json(Value::Null),
-                failed.rpc_json(
+                foreign_transaction(6).rpc_accounts_json(Value::Null),
+                failed.rpc_accounts_json(
                     json!({ "InstructionError": [0, { "Custom": 1 }] }),
                 ),
-                succeeded.rpc_json(Value::Null),
+                succeeded.rpc_accounts_json(Value::Null),
+                loaded.rpc_accounts_json(Value::Null),
             ],
         );
 
-        let prepared =
-            prepare_rpc_block(100, block, &ZAMA_HOST.parse().unwrap()).unwrap();
-        assert_eq!(prepared.block.checkpoint().slot, 100);
-        assert_eq!(prepared.block.block_hash, hash(100));
-        assert_eq!(prepared.block.parent_block_hash, hash(99));
-        assert_eq!(prepared.block.block_time, Some(BLOCK_TIME));
-        assert_eq!(prepared.block.executed_transaction_count, 3);
+        let listing =
+            list_rpc_block(100, block, &ZAMA_HOST.parse().unwrap()).unwrap();
+        assert_eq!(listing.block.checkpoint().slot, 100);
+        assert_eq!(listing.block.block_hash, hash(100));
+        assert_eq!(listing.block.parent_block_hash, hash(99));
+        assert_eq!(listing.block.block_time, Some(BLOCK_TIME));
+        assert_eq!(listing.block.executed_transaction_count, 4);
         assert_eq!(
-            prepared.matching_transaction_count, 2,
-            "the stream's account filter counts the failed transaction, not the foreign one"
+            listing.matching,
+            vec![(2, Signature::from([8; 64])), (3, Signature::from([9; 64]))]
         );
-        let [transaction] = &prepared.transactions[..] else {
-            panic!("the failed transaction is skipped")
+
+        let prepared = prepare_rpc_block(
+            listing,
+            vec![succeeded.rpc_transaction(100), loaded.rpc_transaction(100)],
+        )
+        .unwrap();
+        let [transaction, _] = &prepared.transactions[..] else {
+            panic!("two host transactions")
         };
         assert_eq!(transaction.signature, Signature::from([8; 64]));
         assert_eq!(transaction.index, 2);
@@ -359,21 +436,65 @@ mod tests {
         ));
     }
 
+    fn listed(transaction: &Transaction) -> RpcBlockListing {
+        list_rpc_block(
+            100,
+            block(100, vec![transaction.rpc_accounts_json(Value::Null)]),
+            &ZAMA_HOST.parse().unwrap(),
+        )
+        .unwrap()
+    }
+
     #[test]
     fn a_node_without_inner_instructions_is_refused() {
-        let mut transaction = app_transaction(8, [2; 32]).rpc_json(Value::Null);
-        transaction["meta"]
+        let transaction = app_transaction(8, [2; 32]);
+        let mut fetched =
+            serde_json::to_value(transaction.rpc_transaction(100)).unwrap();
+        fetched["meta"]
             .as_object_mut()
             .unwrap()
             .remove("innerInstructions");
         let error = prepare_rpc_block(
-            100,
-            block(100, vec![transaction]),
-            &ZAMA_HOST.parse().unwrap(),
+            listed(&transaction),
+            vec![serde_json::from_value(fetched).unwrap()],
         )
         .unwrap_err();
         assert!(
             format!("{error:#}").contains("no inner instructions"),
+            "{error:#}"
+        );
+    }
+
+    /// `getTransaction` must return the listed transaction, from the listed slot.
+    #[test]
+    fn a_fetched_transaction_must_match_its_listing() {
+        let transaction = app_transaction(8, [2; 32]);
+        for (fetched, expected) in [
+            (
+                app_transaction(9, [2; 32]).rpc_transaction(100),
+                "another transaction",
+            ),
+            (transaction.rpc_transaction(101), "in slot 101"),
+        ] {
+            let error = prepare_rpc_block(listed(&transaction), vec![fetched])
+                .unwrap_err();
+            assert!(format!("{error:#}").contains(expected), "{error:#}");
+        }
+        let error =
+            prepare_rpc_block(listed(&transaction), vec![]).unwrap_err();
+        assert!(format!("{error:#}").contains("were fetched"), "{error:#}");
+    }
+
+    #[test]
+    fn a_full_transaction_in_the_listing_is_refused() {
+        let error = list_rpc_block(
+            100,
+            block(100, vec![app_transaction(8, [2; 32]).rpc_json(Value::Null)]),
+            &ZAMA_HOST.parse().unwrap(),
+        )
+        .unwrap_err();
+        assert!(
+            format!("{error:#}").contains("not an account list"),
             "{error:#}"
         );
     }
