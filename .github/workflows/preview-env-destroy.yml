@@ -12,7 +12,8 @@ name: preview-env-destroy
 # namespace is - see coprocessor-infra/values-postgres-coprocessor-e2e.yaml.
 #
 # Triggers (the pull_request ones mirror preview-env-deploy.yml's labels:
-# preview-env-e2e / preview-env-e2e-tests / preview-env-blue-green):
+# preview-env-e2e / preview-env-e2e-tests / preview-env-e2e-tests-lv2 /
+# preview-env-blue-green):
 #   - closed:    PR merged/closed -> always attempt teardown (no-op if none).
 #   - unlabeled: a preview label was removed AND no preview label remains, i.e.
 #     the label that keeps the env alive is gone. Removing only -tests while
