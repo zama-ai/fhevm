@@ -3,15 +3,15 @@ set -euo pipefail
 source ./../.env-test
 
 # The detector resolves each operator's S3 bucket URL from the on-chain
-# GatewayConfig, which the e2e sets to `http://minio:9000/coproc-<N>`. That hostname
-# only resolves inside the Docker network — on the host `minio` is unresolvable,
-# so every state_hash GET fails with "error sending request for url
-# (http://minio:9000/...)". minio is published on the host at localhost:9000, so
-# we alias `minio` -> localhost via HOSTALIASES (honored by getaddrinfo, which
-# reqwest uses) instead of touching /etc/hosts. Single-label names only — `minio`
-# qualifies.
+# GatewayConfig, which the e2e sets to `http://object-store:9000/coproc-<N>`. That
+# hostname only resolves inside the Docker network — on the host `object-store` is
+# unresolvable, so every state_hash GET fails with "error sending request for url
+# (http://object-store:9000/...)". The object store is published on the host at
+# localhost:9000, so we alias `object-store` -> localhost via HOSTALIASES (honored by
+# getaddrinfo, which reqwest uses) instead of touching /etc/hosts. Single-label names
+# only — `object-store` qualifies.
 HOSTALIASES_FILE="$(mktemp)"
-printf 'minio localhost\n' > "${HOSTALIASES_FILE}"
+printf 'object-store localhost\n' > "${HOSTALIASES_FILE}"
 export HOSTALIASES="${HOSTALIASES_FILE}"
 trap 'rm -f "${HOSTALIASES_FILE}"' EXIT
 
@@ -21,7 +21,7 @@ echo "GATEWAY_CONFIG_ADDRESS=$GATEWAY_CONFIG_ADDRESS"
 echo "HOSTALIASES=$HOSTALIASES ($(cat "${HOSTALIASES_FILE}"))"
 
 # --my-bucket / --s3-endpoint mirror the docker-compose consensus-detector so the
-# state_hash worker can upload to minio from the host (path-style, host endpoint).
+# state_hash worker can upload to the object store from the host (path-style, host endpoint).
 # AWS_* creds + region come from ../.env-test.
 # Version overrides for a fleet that joins a running stack: consensus decides the
 # role, and the release has to move too or the cutover is refused. Each is off

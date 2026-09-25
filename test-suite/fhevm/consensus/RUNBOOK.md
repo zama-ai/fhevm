@@ -483,8 +483,8 @@ attestation check and fail digest verification in KMS after submission. Every
 mode must recover the same accepted request without another POST and decrypt
 to the independent model. Invalid signatures are discarded and may be replaced
 on a later round; the terminal disagreement path instead requires conflicting
-valid attestations and is not exercised here. The runner uses explicit object-store
-metadata headers because `mc --attr` strips quotes from JSON attestations.
+valid attestations and is not exercised here. The runner writes JSON attestations
+as explicit `x-amz-meta-*` headers on plain S3 requests, so quotes survive verbatim.
 
 Wrong-key and wrong-format arms intentionally invalidate the signature. They
 prove that unsigned metadata substitution is rejected, not that a malicious

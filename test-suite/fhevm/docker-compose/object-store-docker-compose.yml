@@ -10,6 +10,11 @@ services:
       RUSTFS_OBS_LOG_DIRECTORY: ""
       # Skip the startup update check, which calls out to version.rustfs.com.
       RUSTFS_CHECK_UPDATE: "false"
+    networks:
+      default:
+        aliases:
+          # KMS storage URLs are published on-chain as `http://minio:9000`, thus this alias.
+          - minio
     ports:
       - "9000:9000"
       - "9001:9001"

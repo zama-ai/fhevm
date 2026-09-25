@@ -44,6 +44,7 @@ Add to `/etc/hosts`:
 
 ```sh
 127.0.0.1	object-store
+127.0.0.1	minio
 ```
 
 # Build

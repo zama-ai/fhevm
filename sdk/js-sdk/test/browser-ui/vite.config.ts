@@ -428,7 +428,7 @@ function rewriteObjectStoreUrl(value: string, publicOrigin: string): string {
 
   if (
     (url.protocol === 'http:' || url.protocol === 'https:') &&
-    (url.hostname === 'object-store' || url.hostname === 'localhost') &&
+    (url.hostname === 'object-store' || url.hostname === 'minio' || url.hostname === 'localhost') &&
     url.port === '9000'
   ) {
     return `${publicOrigin}${localstackObjectStoreProxyPrefix}${url.pathname}${url.search}`;

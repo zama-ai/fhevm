@@ -15,6 +15,7 @@ import {
   COPROCESSOR_WALLET_INDICES,
   DEFAULT_TENANT_API_KEY,
   KMS_NODE_WALLET_INDICES,
+  KMS_STORAGE_PUBLISHED_URL,
   OBJECT_STORE_INTERNAL_URL,
   POSTGRES_HOST,
   coprocessorDatabaseName,
@@ -348,7 +349,7 @@ const applyKmsThresholdGatewayEnv = async (
     gw[`KMS_TX_SENDER_ADDRESS_${idx}`] = wallet.address;
     // external_url: the core does url::Url::parse() and requires host+port, so it needs a scheme.
     gw[`KMS_NODE_IP_ADDRESS_${idx}`] = `http://${kmsCoreName(party)}:${kmsMpcPort(party)}`;
-    gw[`KMS_NODE_STORAGE_URL_${idx}`] = `${OBJECT_STORE_INTERNAL_URL}/kms-public`;
+    gw[`KMS_NODE_STORAGE_URL_${idx}`] = `${KMS_STORAGE_PUBLISHED_URL}/kms-public`;
     // Per-node KmsNodeParams the host ProtocolConfig deploy reads. partyId is 1-based
     // (the env index is 0-based), mpcIdentity must match the node's TLS cert CN (gen-keys sets
     // --tls-subject to the core name), and storagePrefix is the node's public vault prefix. The

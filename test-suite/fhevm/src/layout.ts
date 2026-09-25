@@ -115,6 +115,7 @@ export const DEFAULT_POSTGRES_DB = "coprocessor";
 export const PORTS = [3000, 3001, POSTGRES_PORT, 5433, DEFAULT_HOST_RPC_PORT, DEFAULT_GATEWAY_RPC_PORT, DEFAULT_EXTRA_HOST_RPC_PORT, OBJECT_STORE_PORT, 9001];
 export const OBJECT_STORE_INTERNAL_URL = `http://object-store:${OBJECT_STORE_PORT}`;
 export const OBJECT_STORE_EXTERNAL_URL = `http://localhost:${OBJECT_STORE_PORT}`;
+export const KMS_STORAGE_PUBLISHED_URL = `http://minio:${OBJECT_STORE_PORT}`;
 export const POSTGRES_HOST = `db:${POSTGRES_PORT}`;
 export const COPROCESSOR_DB_CONTAINER = "coprocessor-and-kms-db";
 
