@@ -43,10 +43,10 @@ containment checkpoints, use:
 ```
 
 Do not mix `handle`/`fault` with `faults`. Duplicate handles are rejected.
-An empty list is allowed when `pause_healing` is true. This startup-only gate
-suppresses the healing worker while leaving publication, verification, and
-containment running. Change it to false and restart to release healing; keep the
-same faults so persisted publication seals remain reproducible.
+An empty fault list is allowed. `pause_healing: true` suppresses the healing
+worker while publication, verification, and containment keep running. Set it to
+false and restart to release healing. On the publisher that injected faults,
+keep those faults so persisted publication seals stay reproducible.
 
 | Fault | Manifest transformation |
 | --- | --- |

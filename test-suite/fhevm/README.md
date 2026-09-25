@@ -862,8 +862,9 @@ by normal verification and propagation, never by the test.
 The runner checks actual signed/S3 descriptors, authenticated quorum verification,
 and the exact direct/inferred inventory. It submits more work while healing is
 paused: consumers of the ct64 branches must remain pending, while independent
-work and the other branches complete. It then restarts the detectors with the
-same faults and `pause_healing: false`, preserving persisted seals.
+work and the other branches complete. It then restarts the detectors with
+`pause_healing: false`. Node 2 keeps the same faults, so its persisted seals
+stay reproducible. Nodes 0 and 1 keep an empty fault list.
 
 Recovery requires `healed_at` on every healable root and inferred descendant,
 the correct target digests, exact restored bytes, completed queued computations,

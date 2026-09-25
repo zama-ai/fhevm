@@ -90,9 +90,6 @@ impl DriftInjection {
             (None, None) => {}
             _ => bail!("use either handle/fault or faults, not both or an incomplete pair"),
         }
-        if faults.is_empty() && !config.pause_healing {
-            bail!("enabled injection requires faults or pause_healing");
-        }
         let mut handles = std::collections::BTreeSet::new();
         for fault in &faults {
             if !handles.insert(fault.handle) {
@@ -261,6 +258,13 @@ mod tests {
                 .unwrap();
         assert!(paused.pauses_healing());
         assert!(paused.faults.is_empty());
+        let idle = DriftInjection::parse(
+            br#"{"enabled":true,"chain_id":12345,"pause_healing":false,"faults":[]}"#,
+        )
+        .unwrap()
+        .unwrap();
+        assert!(!idle.pauses_healing());
+        assert!(idle.faults.is_empty());
         assert!(!DriftInjection::parse(&self::config())
             .unwrap()
             .unwrap()
