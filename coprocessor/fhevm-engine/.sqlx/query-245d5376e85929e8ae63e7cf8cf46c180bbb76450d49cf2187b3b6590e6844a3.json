@@ -1,0 +1,28 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n        SELECT DISTINCT ON (manifest.host_chain_id) manifest.host_chain_id, task.id\n          FROM block_manifest_verification_task task\n          JOIN block_manifest manifest\n            ON manifest.id = task.local_manifest_id\n           AND manifest.consensus_epoch = task.consensus_epoch\n         WHERE task.consensus_epoch = $1\n           AND task.next_attempt_at <= NOW()\n           AND (task.state = 'pending'\n                OR (task.state = 'claimed' AND task.claim_expires_at <= NOW()))\n         ORDER BY manifest.host_chain_id, task.next_attempt_at, task.id\n        ",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "host_chain_id",
+        "type_info": "Int8"
+      },
+      {
+        "ordinal": 1,
+        "name": "id",
+        "type_info": "Int8"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Text"
+      ]
+    },
+    "nullable": [
+      false,
+      false
+    ]
+  },
+  "hash": "245d5376e85929e8ae63e7cf8cf46c180bbb76450d49cf2187b3b6590e6844a3"
+}
