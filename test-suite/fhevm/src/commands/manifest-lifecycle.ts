@@ -185,7 +185,7 @@ export async function runManifestLifecycleProfile(
     }
     const findings = () => json<Finding[]>(TARGET, `SELECT COALESCE(json_agg(row_to_json(r)), '[]'::json)::text FROM
       (SELECT encode(handle,'hex') handle,detection_kind,reason,is_contained,healed_at,
-       '0x'||encode(target_ct64_digest,'hex') target FROM drifted_handle WHERE host_chain_id=${chainId}
+       '0x'||encode(quorum_ct64_digest,'hex') target FROM drifted_handle WHERE host_chain_id=${chainId}
        AND consensus_epoch='legacy' AND handle IN (${h(f!.root)},${h(f!.child!)})) r`);
     const contained = await waitForManifestCondition("root and descendant containment", findings, rows =>
       rows.some(r => r.handle === f!.root.slice(2) && r.detection_kind === "verified" && r.reason === "ct64_mismatch" && r.is_contained && r.target === original.digest)

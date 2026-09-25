@@ -290,7 +290,7 @@ export async function runManifestHealingProfile(
     const allHandles = [...f.roots, ...f.children, f.joined, f.tail];
     const findings = () => json<Finding[]>(TARGET, `SELECT COALESCE(json_agg(row_to_json(r)), '[]'::json)::text FROM
       (SELECT encode(handle,'hex') handle,detection_kind,reason,is_contained,can_be_healed,healed_at,
-        '0x'||encode(target_ct64_digest,'hex') target FROM drifted_handle
+        '0x'||encode(quorum_ct64_digest,'hex') target FROM drifted_handle
         WHERE host_chain_id=${chainId} AND consensus_epoch='legacy' AND handle IN (${allHandles.map(h).join(",")})) r`);
     const snapshot = async (healed: boolean) => waitForManifestCondition(healed ? "matrix healed" : "matrix contained", findings,
       rows => { try { assertDriftMatrix(f, rows, original.map(m => m.digest), healed); return true; } catch { return false; } });
