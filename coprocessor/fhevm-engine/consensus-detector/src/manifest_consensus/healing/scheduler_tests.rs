@@ -690,3 +690,114 @@ async fn uncontained_ct64_mismatch_heals_after_the_containment_timeout() {
         before + 1
     );
 }
+
+const GREEN_SCHEMA: &str = "gcs-healing-test";
+
+/// A live Green stack in its own schema, whose epoch is `green`.
+async fn green_stack(pool: &PgPool) {
+    sqlx::query(&format!("CREATE SCHEMA \"{GREEN_SCHEMA}\""))
+        .execute(pool)
+        .await
+        .unwrap();
+    for table in ["blue_green_consensus_epoch", "ciphertexts", "computations"] {
+        sqlx::query(&format!(
+            "CREATE TABLE \"{GREEN_SCHEMA}\".{table} (LIKE public.{table} INCLUDING ALL)"
+        ))
+        .execute(pool)
+        .await
+        .unwrap();
+    }
+    sqlx::query(&format!(
+        "INSERT INTO \"{GREEN_SCHEMA}\".blue_green_consensus_epoch (singleton, consensus_epoch)
+         VALUES (TRUE, 'green')"
+    ))
+    .execute(pool)
+    .await
+    .unwrap();
+}
+
+async fn set_epoch(pool: &PgPool, id: i64, epoch: &str) {
+    sqlx::query("UPDATE drifted_handle SET consensus_epoch = $2 WHERE id = $1")
+        .bind(id)
+        .bind(epoch)
+        .execute(pool)
+        .await
+        .unwrap();
+}
+
+async fn record_epoch(pool: &PgPool, epoch: &str, outcome: &str) {
+    sqlx::query(
+        "INSERT INTO consensus_epoch_history (consensus_epoch, outcome, completed_at)
+         VALUES ($1, $2, NOW())",
+    )
+    .bind(epoch)
+    .bind(outcome)
+    .execute(pool)
+    .await
+    .unwrap();
+}
+
+async fn green_ct64(pool: &PgPool, handle: u8) -> Option<Vec<u8>> {
+    sqlx::query_scalar(&format!(
+        "SELECT ciphertext FROM \"{GREEN_SCHEMA}\".ciphertexts
+          WHERE handle = $1 AND ciphertext_version = 0"
+    ))
+    .bind(bytes(handle))
+    .fetch_optional(pool)
+    .await
+    .unwrap()
+}
+
+#[tokio::test]
+#[serial(db)]
+async fn green_finding_is_installed_in_the_green_schema() {
+    let (_db, pool) = setup().await;
+    green_stack(&pool).await;
+    let body = vec![40u8; 8];
+    let id = insert_healable(&pool, 40, "s3://peer-a", &body).await;
+    set_epoch(&pool, id, "green").await;
+    let source = FakeCt64::default();
+    source.put("s3://peer-a", 40, body.clone());
+
+    pass(&pool, &source).await;
+    assert_eq!(healed(&pool, id).await, (false, true));
+    assert_eq!(green_ct64(&pool, 40).await, Some(body));
+    assert_eq!(
+        stored_ct64(&pool, 40).await,
+        vec![0xffu8; 4],
+        "Blue's own copy is not the Green finding's ciphertext"
+    );
+}
+
+#[tokio::test]
+#[serial(db)]
+async fn finding_of_a_completed_epoch_is_installed_in_public() {
+    let (_db, pool) = setup().await;
+    record_epoch(&pool, "old-blue", "succeeded").await;
+    let body = vec![41u8; 8];
+    let id = insert_healable(&pool, 41, "s3://peer-a", &body).await;
+    set_epoch(&pool, id, "old-blue").await;
+    let source = FakeCt64::default();
+    source.put("s3://peer-a", 41, body.clone());
+
+    pass(&pool, &source).await;
+    assert_eq!(healed(&pool, id).await, (false, true));
+    assert_eq!(stored_ct64(&pool, 41).await, body);
+}
+
+#[tokio::test]
+#[serial(db)]
+async fn finding_of_a_failed_epoch_is_not_healed() {
+    let (_db, pool) = setup().await;
+    record_epoch(&pool, "rolled-back", "failed").await;
+    let body = vec![42u8; 8];
+    let id = insert_healable(&pool, 42, "s3://peer-a", &body).await;
+    set_epoch(&pool, id, "rolled-back").await;
+    let source = FakeCt64::default();
+    source.put("s3://peer-a", 42, body.clone());
+
+    pass(&pool, &source).await;
+    assert_eq!(source.gets.load(Ordering::SeqCst), 0);
+    assert_eq!(healed(&pool, id).await, (true, false));
+    assert_eq!(stored_ct64(&pool, 42).await, vec![0xffu8; 4]);
+}
