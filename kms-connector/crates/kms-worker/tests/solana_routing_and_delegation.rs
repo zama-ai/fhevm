@@ -986,18 +986,20 @@ async fn a_sentinel_program_in_the_encrypted_store_rejects_a_delegated_entry() {
 /// The guard lives in the resolution of the encrypted store, so a direct entry under a sentinel
 /// program is rejected the same way. Deliberate: such an account is illegitimate whether or not a
 /// delegation is in play, and one rule at the chokepoint beats a rule that only the delegated
-/// branch remembers to apply.
+/// branch remembers to apply. The sentinel as scope alone is refused too, as
+/// `create_encrypted_store` refuses it: its application row is one the host never creates.
+#[rstest::rstest]
+#[case::program(Pubkey::new_from_array(WILDCARD_APP), SCOPE)]
+#[case::scope(APP_PROGRAM, Pubkey::new_from_array(WILDCARD_APP))]
 #[tokio::test]
-async fn a_sentinel_program_in_the_encrypted_store_rejects_a_direct_entry_too() {
+async fn a_sentinel_in_the_encrypted_store_rejects_a_direct_entry_too(
+    #[case] program: Pubkey,
+    #[case] scope: Pubkey,
+) {
     let signer = Wallet::new(1);
     let live = handle(0x37, FHE_TYPE_UINT64);
-    let mut encrypted_store = EncryptedStoreFixture::in_application(
-        Pubkey::new_from_array(WILDCARD_APP),
-        AUTHORITY,
-        SCOPE,
-        LABEL,
-        live,
-    );
+    let mut encrypted_store =
+        EncryptedStoreFixture::in_application(program, AUTHORITY, scope, LABEL, live);
     encrypted_store.allow(signer.pubkey());
     let request = RequestBuilder::new(&signer)
         .direct(&encrypted_store, live)

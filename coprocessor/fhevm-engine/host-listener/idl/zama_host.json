@@ -2488,6 +2488,11 @@
       "code": 6087,
       "name": "PauserRecordMismatch",
       "msg": "pauser record mismatch"
+    },
+    {
+      "code": 6088,
+      "name": "EncryptedStoreWildcardScope",
+      "msg": "encrypted store scope is the wildcard sentinel"
     }
   ],
   "types": [

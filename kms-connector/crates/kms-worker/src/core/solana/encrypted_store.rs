@@ -53,8 +53,8 @@ fn encrypted_store_address(program_id: Pubkey, state: &EncryptedStore) -> Option
 }
 
 /// The account must exist, be owned by the host program, decode as an encrypted store, live at
-/// the address its own fields derive, and not name the wildcard as its program. Trailing bytes are legal: a
-/// store grows by realloc and never shrinks. An empty System-owned account is absent: anyone can
+/// the address its own fields derive, and carry the wildcard sentinel in neither its program nor
+/// its scope. Trailing bytes are legal: a store grows by realloc and never shrinks. An empty System-owned account is absent: anyone can
 /// fund the derivable address before the store is created there.
 pub fn resolve_encrypted_store(
     account: Option<&SnapshotAccount>,
@@ -84,8 +84,8 @@ pub fn resolve_encrypted_store(
     }
     // With the sentinel as program, the store's delegation row would be the wildcard row itself.
     // No legal store names it: its authority must sign as a PDA of the program, and no one holds
-    // the key to deploy a program there.
-    if encrypted_store.program == WILDCARD_APP {
+    // the key to deploy a program there. `create_encrypted_store` refuses it as the scope.
+    if encrypted_store.program == WILDCARD_APP || encrypted_store.scope == WILDCARD_APP {
         return Err(invalid.into());
     }
     Ok(ResolvedEncryptedStore {

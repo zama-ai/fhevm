@@ -35,6 +35,12 @@ pub fn create_encrypted_store(
         ZamaHostError::AclWritesPaused,
     )?;
     assert_no_remaining_accounts(ctx.remaining_accounts)?;
+    // A scope of `WILDCARD_APP` would give the store an application row that
+    // `delegate_for_user_decryption` refuses to create; no program can be the sentinel either.
+    require!(
+        args.scope != WILDCARD_APP,
+        ZamaHostError::EncryptedStoreWildcardScope
+    );
     let authority = ctx.accounts.authority.key();
     let seeds: Vec<&[u8]> = args.authority_seeds.iter().map(Vec::as_slice).collect();
     let derived = Pubkey::create_program_address(&seeds, &args.program)

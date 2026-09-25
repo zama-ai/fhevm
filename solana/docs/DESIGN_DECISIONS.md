@@ -1646,7 +1646,9 @@ proven once when `create_encrypted_store` derives it from `authority_seeds`
 (`EncryptedStoreAuthorityNotProgramPda`), and every later write needs that authority's signature.
 Only `program` can sign for such an authority, so only `program` can write a value that claims it. `scope` is whatever
 `program` declares within itself — the mint for the token program, one constant for a program with
-a single namespace — and is trustworthy exactly as half of the pair. Both are seeds of the Store
+a single namespace — and is trustworthy exactly as half of the pair. The one value it may not declare is the
+wildcard delegation sentinel `0xff×32` (`EncryptedStoreWildcardScope`): that is a delegation row's whole
+application, never half of a store's. Both are seeds of the Store
 (`["encrypted-state", program, authority, scope]`), so the identity is the address.
 
 An execution runs as one application: every stored operand and output its default authority

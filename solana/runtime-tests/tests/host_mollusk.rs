@@ -3894,6 +3894,32 @@ fn mollusk_create_encrypted_store_accepts_prefunded_empty_pda() {
     assert!(state.slots.is_empty());
 }
 
+#[test]
+fn mollusk_create_encrypted_store_rejects_the_wildcard_scope() {
+    // The sentinel is a delegation row's whole application, never half of a store's: as a scope
+    // it would name an application row `delegate_for_user_decryption` refuses to create.
+    let payer = Pubkey::new_unique();
+    let app = App::new().sibling_scope(host::WILDCARD_APP);
+    let (host_config, host_config_account) = host_config_account(payer);
+    let address = app.address("state");
+    let context = mollusk_execute_context(
+        payer,
+        vec![
+            (host_config, host_config_account),
+            (app.key(), empty_system_account()),
+            (address, empty_system_account()),
+        ],
+    );
+    let ix = create_encrypted_store_ix(payer, &app, address, host_config);
+    check_host_context(
+        &context,
+        &ix,
+        &[custom_error(
+            host::errors::ZamaHostError::EncryptedStoreWildcardScope,
+        )],
+    );
+}
+
 /// `create_encrypted_store` for `app`'s own value authority.
 fn create_encrypted_store_ix(
     payer: Pubkey,

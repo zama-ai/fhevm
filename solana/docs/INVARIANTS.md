@@ -310,7 +310,9 @@ signature, and the return layout together.
 **27. [HOLDS]** A delegated user-decryption entry names the delegator as its allowed key. The KMS connector reads the
 delegation record for the encrypted store's application `(program, scope)`, the delegator's wildcard row
 (`0xff×32` in both positions) and the Clock in the deciding read, which a node behind the first read refuses
-(`minContextSlot`). Either row authorizes the delegate if its
+(`minContextSlot`). No store carries the sentinel in either position: `create_encrypted_store` refuses it as the
+scope (`EncryptedStoreWildcardScope`), no program can be deployed at it, and the connector refuses a store that
+names it either way. Either row authorizes the delegate if its
 `expires_at` is after that Clock's `unix_timestamp`, as EVM's `expirationDate > block.timestamp`; a revocation writes 0.
 A dead row cannot veto a live one; a row the host program could not have written fails the entry closed, whatever
 the other row says. The connector then requires the delegator's allow leaf
