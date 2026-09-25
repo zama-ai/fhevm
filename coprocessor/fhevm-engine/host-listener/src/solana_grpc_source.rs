@@ -1,26 +1,19 @@
 //! Concrete Yellowstone source validation for sealed Solana blocks.
 //!
 //! `SubscribeUpdateBlock` is emitted only after the server has observed the
-//! block's declared transaction count. Account filters remain a separate,
-//! bounded source of the two sysvars needed for handle reconstruction; they do
-//! not imply that arbitrary account state is complete.
+//! block's declared transaction count. The block is the only stream: each
+//! `fhe_execute` carries its own derivation context in its `FheExecutedEvent`.
 
-use std::collections::{BTreeMap, HashMap};
+use std::collections::HashMap;
 
+use anchor_lang::prelude::Pubkey;
 use anyhow::{anyhow, bail, Context, Result};
 use yellowstone_grpc_proto::prelude::{
-    SubscribeRequest, SubscribeRequestFilterAccounts,
-    SubscribeRequestFilterBlocks, SubscribeUpdateAccount, SubscribeUpdateBlock,
+    SubscribeRequest, SubscribeRequestFilterBlocks, SubscribeUpdateBlock,
     SubscribeUpdateTransactionInfo,
 };
 
 use crate::solana_grpc_listener::{BlockCheckpoint, StartPosition};
-use crate::solana_slot_hashes::{
-    clock_unix_timestamp, previous_bank_hash_from_slot_hashes, CLOCK_SYSVAR,
-    SLOT_HASHES_SYSVAR,
-};
-
-const MAX_CONTEXT_SLOTS: usize = 256;
 
 #[derive(Clone, Debug)]
 pub(super) struct SealedBlock {
@@ -31,9 +24,6 @@ pub(super) struct SealedBlock {
     pub block_time: Option<i64>,
     pub block_height: Option<u64>,
     pub executed_transaction_count: u64,
-    pub transactions: Vec<SubscribeUpdateTransactionInfo>,
-    pub previous_bank_hash: Option<[u8; 32]>,
-    pub clock_unix_timestamp: Option<i64>,
 }
 
 impl SealedBlock {
@@ -45,73 +35,14 @@ impl SealedBlock {
     }
 }
 
-#[derive(Clone, Debug, PartialEq, Eq)]
-struct AccountIdentity {
-    data: Vec<u8>,
-    write_version: u64,
-    transaction_signature: Option<Vec<u8>>,
-}
-
-#[derive(Clone, Debug, Default)]
-struct SlotContext {
-    slot_hashes: Option<AccountIdentity>,
-    clock: Option<AccountIdentity>,
-}
-
-impl SlotContext {
-    fn insert(
-        &mut self,
-        pubkey: &[u8],
-        identity: AccountIdentity,
-    ) -> Result<()> {
-        let target = if bs58::encode(pubkey).into_string() == SLOT_HASHES_SYSVAR
-        {
-            &mut self.slot_hashes
-        } else if bs58::encode(pubkey).into_string() == CLOCK_SYSVAR {
-            &mut self.clock
-        } else {
-            bail!("unexpected account in Solana sysvar stream")
-        };
-
-        match target {
-            Some(current) if current != &identity => {
-                bail!("conflicting Solana sysvar account identity")
-            }
-            Some(_) => Ok(()),
-            None => {
-                *target = Some(identity);
-                Ok(())
-            }
-        }
-    }
-
-    fn verify_replay(
-        &self,
-        pubkey: &[u8],
-        identity: &AccountIdentity,
-    ) -> Result<()> {
-        let retained =
-            if bs58::encode(pubkey).into_string() == SLOT_HASHES_SYSVAR {
-                &self.slot_hashes
-            } else if bs58::encode(pubkey).into_string() == CLOCK_SYSVAR {
-                &self.clock
-            } else {
-                bail!("unexpected account in Solana sysvar stream")
-            };
-        if retained.as_ref().is_some_and(|current| current != identity) {
-            bail!("conflicting committed Solana sysvar account replay")
-        }
-        Ok(())
-    }
-}
-
 #[derive(Clone, Debug, PartialEq)]
 struct BlockIdentity(SubscribeUpdateBlock);
 
 #[derive(Debug)]
 pub(super) enum SealDecision {
     Replay,
-    Process(SealedBlock),
+    /// The block, and its matching transactions sorted by index.
+    Process(SealedBlock, Vec<SubscribeUpdateTransactionInfo>),
 }
 
 #[derive(Debug)]
@@ -119,9 +50,6 @@ pub(super) struct BlockValidator {
     start: StartPosition,
     checkpoint_observed: bool,
     last_observed: Option<(BlockCheckpoint, BlockIdentity)>,
-    last_committed: Option<BlockCheckpoint>,
-    last_committed_context: Option<(u64, SlotContext)>,
-    contexts: BTreeMap<u64, SlotContext>,
 }
 
 impl BlockValidator {
@@ -130,47 +58,7 @@ impl BlockValidator {
             checkpoint_observed: matches!(start, StartPosition::Tip),
             start,
             last_observed: None,
-            last_committed: None,
-            last_committed_context: None,
-            contexts: BTreeMap::new(),
         }
-    }
-
-    pub fn observe_account(
-        &mut self,
-        update: SubscribeUpdateAccount,
-    ) -> Result<()> {
-        let info = update
-            .account
-            .ok_or_else(|| anyhow!("Solana account update has no account"))?;
-        let identity = AccountIdentity {
-            data: info.data,
-            write_version: info.write_version,
-            transaction_signature: info.txn_signature,
-        };
-        if self
-            .last_committed
-            .as_ref()
-            .is_some_and(|checkpoint| update.slot <= checkpoint.slot)
-        {
-            if let Some((slot, context)) = &self.last_committed_context {
-                if update.slot == *slot {
-                    context.verify_replay(&info.pubkey, &identity)?;
-                }
-            }
-            return Ok(());
-        }
-        if !self.contexts.contains_key(&update.slot)
-            && self.contexts.len() == MAX_CONTEXT_SLOTS
-        {
-            bail!(
-                "Solana sysvar context exceeded {MAX_CONTEXT_SLOTS} pending slots"
-            );
-        }
-        self.contexts
-            .entry(update.slot)
-            .or_default()
-            .insert(&info.pubkey, identity)
     }
 
     pub fn seal(
@@ -208,9 +96,6 @@ impl BlockValidator {
             self.checkpoint_observed = true;
             if matches!(self.start, StartPosition::Resume(_)) {
                 self.last_observed = Some((checkpoint.clone(), identity));
-                self.last_committed = Some(checkpoint.clone());
-                self.last_committed_context = None;
-                self.contexts.remove(&block.slot);
                 return Ok(SealDecision::Replay);
             }
         }
@@ -218,13 +103,6 @@ impl BlockValidator {
         if let Some((checkpoint, previous_identity)) = &self.last_observed {
             if block.slot == checkpoint.slot {
                 if &identity == previous_identity {
-                    if self
-                        .last_committed
-                        .as_ref()
-                        .is_some_and(|committed| committed.slot == block.slot)
-                    {
-                        self.contexts.remove(&block.slot);
-                    }
                     return Ok(SealDecision::Replay);
                 }
                 bail!("conflicting sealed block replay at slot {}", block.slot);
@@ -243,22 +121,6 @@ impl BlockValidator {
             }
         }
 
-        let context = self.contexts.get(&block.slot);
-        let (previous_bank_hash, clock_unix_timestamp) = match context {
-            Some(context) => (
-                context.slot_hashes.as_ref().and_then(|account| {
-                    previous_bank_hash_from_slot_hashes(
-                        &account.data,
-                        block.slot,
-                    )
-                }),
-                context
-                    .clock
-                    .as_ref()
-                    .and_then(|account| clock_unix_timestamp(&account.data)),
-            ),
-            None => (None, None),
-        };
         let sealed = SealedBlock {
             slot: block.slot,
             block_hash,
@@ -267,63 +129,21 @@ impl BlockValidator {
             block_time: block.block_time.map(|time| time.timestamp),
             block_height: block.block_height.map(|height| height.block_height),
             executed_transaction_count: block.executed_transaction_count,
-            transactions: block.transactions,
-            previous_bank_hash,
-            clock_unix_timestamp,
         };
         self.last_observed = Some((sealed.checkpoint(), identity));
-        Ok(SealDecision::Process(sealed))
-    }
-
-    pub fn refresh_context(&self, block: &mut SealedBlock) {
-        let Some(context) = self.contexts.get(&block.slot) else {
-            return;
-        };
-        block.previous_bank_hash =
-            context.slot_hashes.as_ref().and_then(|account| {
-                previous_bank_hash_from_slot_hashes(&account.data, block.slot)
-            });
-        block.clock_unix_timestamp = context
-            .clock
-            .as_ref()
-            .and_then(|account| clock_unix_timestamp(&account.data));
-    }
-
-    pub fn commit(
-        &mut self,
-        block: &SealedBlock,
-        retain_slot_hashes: bool,
-        retain_clock: bool,
-    ) {
-        self.last_committed = Some(block.checkpoint());
-        self.last_committed_context =
-            self.contexts.remove(&block.slot).and_then(|mut context| {
-                if !retain_slot_hashes {
-                    context.slot_hashes = None;
-                }
-                if !retain_clock {
-                    context.clock = None;
-                }
-                (context.slot_hashes.is_some() || context.clock.is_some())
-                    .then_some((block.slot, context))
-            });
-    }
-
-    #[cfg(test)]
-    fn current_checkpoint(&self) -> Option<&BlockCheckpoint> {
-        self.last_committed.as_ref()
+        Ok(SealDecision::Process(sealed, block.transactions))
     }
 }
 
 pub(super) fn build_subscribe_request(
-    program_id: &str,
+    program_id: &Pubkey,
     start: &StartPosition,
 ) -> SubscribeRequest {
     let mut blocks = HashMap::new();
     blocks.insert(
         "zama_host".to_owned(),
         SubscribeRequestFilterBlocks {
-            account_include: vec![program_id.to_owned()],
+            account_include: vec![program_id.to_string()],
             include_transactions: Some(true),
             include_accounts: Some(false),
             include_entries: Some(false),
@@ -334,22 +154,8 @@ pub(super) fn build_subscribe_request(
             cuckoo_account_include: None,
         },
     );
-    let accounts = HashMap::from([(
-        "sysvars".to_owned(),
-        SubscribeRequestFilterAccounts {
-            account: vec![
-                SLOT_HASHES_SYSVAR.to_owned(),
-                CLOCK_SYSVAR.to_owned(),
-            ],
-            owner: vec![],
-            filters: vec![],
-            nonempty_txn_signature: None,
-            // Two fixed sysvar addresses — same reasoning as cuckoo_account_include above.
-            cuckoo_accounts_filter: None,
-        },
-    )]);
     SubscribeRequest {
-        accounts,
+        accounts: HashMap::new(),
         slots: HashMap::new(),
         transactions: HashMap::new(),
         transactions_status: HashMap::new(),
@@ -430,8 +236,7 @@ fn block_identity(block: &SubscribeUpdateBlock) -> BlockIdentity {
 mod tests {
     use super::*;
     use yellowstone_grpc_proto::prelude::{
-        Message, SubscribeUpdateAccountInfo, Transaction, TransactionError,
-        TransactionStatusMeta,
+        Message, Transaction, TransactionError, TransactionStatusMeta,
     };
 
     fn hash(tag: u8) -> [u8; 32] {
@@ -487,16 +292,15 @@ mod tests {
     }
 
     #[test]
-    fn empty_block_advances_checkpoint() {
+    fn empty_block_is_processed() {
         let mut validator = BlockValidator::new(StartPosition::Tip);
         let decision = validator
             .seal(block(2, hash(2), 1, hash(1), vec![]))
             .unwrap();
-        let SealDecision::Process(block) = decision else {
+        let SealDecision::Process(block, _) = decision else {
             panic!()
         };
-        validator.commit(&block, false, false);
-        assert_eq!(validator.current_checkpoint().unwrap().slot, 2);
+        assert_eq!(block.checkpoint().slot, 2);
     }
 
     #[test]
@@ -506,15 +310,11 @@ mod tests {
         let decision = validator
             .seal(block(2, hash(2), 1, hash(1), vec![failed(3), failed(1)]))
             .unwrap();
-        let SealDecision::Process(block) = decision else {
+        let SealDecision::Process(_, transactions) = decision else {
             panic!()
         };
         assert_eq!(
-            block
-                .transactions
-                .iter()
-                .map(|tx| tx.index)
-                .collect::<Vec<_>>(),
+            transactions.iter().map(|tx| tx.index).collect::<Vec<_>>(),
             vec![1, 3]
         );
     }
@@ -535,12 +335,11 @@ mod tests {
         let mut original = block(2, hash(2), 1, hash(1), vec![failed(1)]);
         original.block_time = Some(Default::default());
         original.block_time.as_mut().unwrap().timestamp = 100;
-        let SealDecision::Process(processed) =
+        let SealDecision::Process(..) =
             validator.seal(original.clone()).unwrap()
         else {
             panic!()
         };
-        validator.commit(&processed, false, false);
         assert!(matches!(
             validator.seal(original.clone()).unwrap(),
             SealDecision::Replay
@@ -628,193 +427,23 @@ mod tests {
             .seal(block(5, hash(5), 4, hash(4), vec![]))
             .unwrap();
 
-        assert!(matches!(decision, SealDecision::Process(_)));
-        assert!(validator.current_checkpoint().is_none());
+        assert!(matches!(decision, SealDecision::Process(..)));
     }
 
     #[test]
-    fn missing_context_does_not_commit_the_sealed_block() {
-        let mut validator = BlockValidator::new(StartPosition::Tip);
-        let decision = validator
-            .seal(block(2, hash(2), 1, hash(1), vec![successful(0)]))
-            .unwrap();
-        let SealDecision::Process(block) = decision else {
-            panic!()
-        };
-        assert!(block.previous_bank_hash.is_none());
-        assert!(block.clock_unix_timestamp.is_none());
-        assert!(validator.current_checkpoint().is_none());
-    }
-
-    #[test]
-    fn sealed_block_can_wait_for_later_sysvar_context() {
-        let mut validator = BlockValidator::new(StartPosition::Tip);
-        let SealDecision::Process(mut sealed) = validator
-            .seal(block(2, hash(2), 1, hash(1), vec![successful(0)]))
-            .unwrap()
-        else {
-            panic!()
-        };
-
-        let mut slot_hashes = 1_u64.to_le_bytes().to_vec();
-        slot_hashes.extend_from_slice(&1_u64.to_le_bytes());
-        slot_hashes.extend_from_slice(&hash(1));
-        let mut clock = vec![0; 40];
-        clock[32..40].copy_from_slice(&1_700_000_000_i64.to_le_bytes());
-        for (address, data) in
-            [(SLOT_HASHES_SYSVAR, slot_hashes), (CLOCK_SYSVAR, clock)]
-        {
-            validator
-                .observe_account(SubscribeUpdateAccount {
-                    slot: 2,
-                    account: Some(SubscribeUpdateAccountInfo {
-                        pubkey: bs58::decode(address).into_vec().unwrap(),
-                        data,
-                        write_version: 1,
-                        ..Default::default()
-                    }),
-                    ..Default::default()
-                })
-                .unwrap();
-        }
-
-        validator.refresh_context(&mut sealed);
-        assert_eq!(sealed.previous_bank_hash, Some(hash(1)));
-        assert_eq!(sealed.clock_unix_timestamp, Some(1_700_000_000));
-        assert!(validator.current_checkpoint().is_none());
-        validator.commit(&sealed, true, true);
-        assert_eq!(validator.current_checkpoint().unwrap().slot, 2);
-    }
-
-    #[test]
-    fn context_can_lag_past_a_later_sealed_block() {
-        let mut validator = BlockValidator::new(StartPosition::Tip);
-        let SealDecision::Process(mut first) = validator
-            .seal(block(2, hash(2), 1, hash(1), vec![successful(0)]))
-            .unwrap()
-        else {
-            panic!()
-        };
-        assert!(matches!(
-            validator
-                .seal(block(3, hash(3), 2, hash(2), vec![successful(0)]))
-                .unwrap(),
-            SealDecision::Process(_)
-        ));
-
-        let mut slot_hashes = 1_u64.to_le_bytes().to_vec();
-        slot_hashes.extend_from_slice(&1_u64.to_le_bytes());
-        slot_hashes.extend_from_slice(&hash(1));
-        let mut clock = vec![0; 40];
-        clock[32..40].copy_from_slice(&1_700_000_000_i64.to_le_bytes());
-        for (address, data) in
-            [(SLOT_HASHES_SYSVAR, slot_hashes), (CLOCK_SYSVAR, clock)]
-        {
-            validator
-                .observe_account(SubscribeUpdateAccount {
-                    slot: 2,
-                    account: Some(SubscribeUpdateAccountInfo {
-                        pubkey: bs58::decode(address).into_vec().unwrap(),
-                        data,
-                        write_version: 1,
-                        ..Default::default()
-                    }),
-                    ..Default::default()
-                })
-                .unwrap();
-        }
-
-        validator.refresh_context(&mut first);
-        assert_eq!(first.previous_bank_hash, Some(hash(1)));
-        assert_eq!(first.clock_unix_timestamp, Some(1_700_000_000));
-        assert!(validator.current_checkpoint().is_none());
-    }
-
-    #[test]
-    fn account_identity_conflict_and_context_overflow_halt() {
-        let mut validator = BlockValidator::new(StartPosition::Tip);
-        let account = |slot, data: Vec<u8>| SubscribeUpdateAccount {
-            slot,
-            account: Some(SubscribeUpdateAccountInfo {
-                pubkey: bs58::decode(CLOCK_SYSVAR).into_vec().unwrap(),
-                data,
-                write_version: 1,
-                ..Default::default()
-            }),
-            ..Default::default()
-        };
-        validator.observe_account(account(1, vec![1])).unwrap();
-        assert!(validator.observe_account(account(1, vec![2])).is_err());
-
-        let mut validator = BlockValidator::new(StartPosition::Tip);
-        for slot in 0..MAX_CONTEXT_SLOTS as u64 {
-            validator.observe_account(account(slot, vec![1])).unwrap();
-        }
-        assert!(validator
-            .observe_account(account(MAX_CONTEXT_SLOTS as u64, vec![1]))
-            .is_err());
-    }
-
-    #[test]
-    fn request_uses_sealed_blocks_and_separate_sysvars() {
+    fn request_subscribes_to_sealed_blocks_only() {
         let checkpoint = BlockCheckpoint {
             slot: 9,
             block_hash: hash(9),
         };
         let request = build_subscribe_request(
-            "ZamaHost11111111111111111111111111111111",
+            &Pubkey::new_unique(),
             &StartPosition::Resume(checkpoint),
         );
         assert!(request.transactions.is_empty());
         assert!(request.blocks_meta.is_empty());
         assert_eq!(request.blocks.len(), 1);
-        assert_eq!(request.accounts.len(), 1);
-        let account_filter = request.accounts.get("sysvars").unwrap();
-        assert_eq!(
-            account_filter.account,
-            vec![SLOT_HASHES_SYSVAR.to_owned(), CLOCK_SYSVAR.to_owned()]
-        );
+        assert!(request.accounts.is_empty());
         assert_eq!(request.from_slot, Some(9));
-    }
-
-    #[test]
-    fn irrelevant_late_context_is_harmless_but_retained_conflicts_halt() {
-        let account = |data: Vec<u8>| SubscribeUpdateAccount {
-            slot: 9,
-            account: Some(SubscribeUpdateAccountInfo {
-                pubkey: bs58::decode(CLOCK_SYSVAR).into_vec().unwrap(),
-                data,
-                write_version: 1,
-                ..Default::default()
-            }),
-            ..Default::default()
-        };
-        let checkpoint = BlockCheckpoint {
-            slot: 9,
-            block_hash: hash(9),
-        };
-        let mut validator =
-            BlockValidator::new(StartPosition::Resume(checkpoint));
-
-        validator.observe_account(account(vec![1])).unwrap();
-        assert!(matches!(
-            validator
-                .seal(block(9, hash(9), 8, hash(8), vec![]))
-                .unwrap(),
-            SealDecision::Replay
-        ));
-        validator.observe_account(account(vec![2])).unwrap();
-
-        let mut validator = BlockValidator::new(StartPosition::Tip);
-        validator.observe_account(account(vec![1])).unwrap();
-        let SealDecision::Process(sealed) = validator
-            .seal(block(9, hash(9), 8, hash(8), vec![]))
-            .unwrap()
-        else {
-            panic!()
-        };
-        validator.commit(&sealed, false, true);
-        validator.observe_account(account(vec![1])).unwrap();
-        assert!(validator.observe_account(account(vec![2])).is_err());
     }
 }

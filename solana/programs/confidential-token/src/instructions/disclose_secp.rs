@@ -37,7 +37,6 @@ pub fn disclose_secp(
 ) -> Result<()> {
     assert_no_remaining_accounts(ctx.remaining_accounts)?;
     assert_confidential_mint_shape(&ctx.accounts.mint)?;
-    assert_host_config_allows_token_response(&ctx.accounts.host_config)?;
     let mint_key = ctx.accounts.mint.key();
 
     let value = fhe::read_state(&ctx.accounts.encrypted_store.to_account_info())?;

@@ -64,13 +64,13 @@ are written as one narrative instead.
 | DD-035                                                                                                                                    | replaced by DD-048                       | Standalone Untrusted Solana MMR Proof Service, in [DESIGN_HISTORY.md](DESIGN_HISTORY.md)                                        |
 | DD-036                                                                                                                                    | replaced by DD-045                       | Burn-Redemption Consume Authorizes By MMR Public-Decrypt Proof, Not Live Handle, in [DESIGN_HISTORY.md](DESIGN_HISTORY.md)      |
 | DD-037                                                                                                                                    | replaced by DD-038                       | `fhe_execute` Events — `emit_cpi!`-Only, No `emit!` Log Fallback (DD-033 addendum), in [DESIGN_HISTORY.md](DESIGN_HISTORY.md)   |
-| [DD-038](#dd-038-one-host-owned-born-public-lifecycle-batch-replaces-per-operation-events)                                                | adopted                                  | One Host-Owned Born-Public Lifecycle Batch Replaces Per-Operation Events                                                        |
+| DD-038                                                                                                                                    | replaced by removed; fhevm-internal#2079 | One Host-Owned Born-Public Lifecycle Batch Replaces Per-Operation Events, in [DESIGN_HISTORY.md](DESIGN_HISTORY.md)             |
 | DD-039                                                                                                                                    | replaced by DD-047                       | HCU Block Cap Meters The Signed `compute_subject`, Not A Separate Authority, in [DESIGN_HISTORY.md](DESIGN_HISTORY.md)          |
 | [DD-040](#dd-040-app-public-decrypt-is-a-stateless-pull-oracle-verifier-not-a-request-lifecycle)                                          | adopted                                  | App Public-Decrypt Is A Stateless Pull-Oracle Verifier, Not A Request Lifecycle                                                 |
 | [DD-041](#dd-041-coprocessor-input-trust-is-a-registered-n-of-m-signer-set-in-hostconfig)                                                 | adopted                                  | Coprocessor Input Trust Is A Registered n-of-m Signer Set In `HostConfig`                                                       |
 | [DD-042](#dd-042-confidential-vaults-are-a-batcher-gateway-in-front-of-a-public-share-mint-vault)                                         | adopted; see the note under its status   | Confidential Vaults Are A Batcher-Gateway In Front Of A Public Share-Mint Vault                                                 |
 | [DD-043](#dd-043-two-derivation-regimes--content-addressed-deterministic-handles-persistent-write-anchored-rand-seeds-context_id-deleted) | adopted                                  | Two Derivation Regimes — Content-Addressed Deterministic Handles, Persistent-Write-Anchored Rand Seeds (`context_id` deleted)   |
-| [DD-044](#dd-044-every-event-goes-through-the-event-cpi-or-is-not-emitted-at-all-emit-events-deleted)                                     | adopted                                  | Every Event Goes Through The Event CPI, Or Is Not Emitted At All (`emit-events` deleted)                                        |
+| [DD-044](#dd-044-every-event-goes-through-the-event-cpi-or-is-not-emitted-at-all-emit-events-deleted)                                     | adopted; see the note under its status   | Every Event Goes Through The Event CPI, Or Is Not Emitted At All (`emit-events` deleted)                                        |
 | [DD-045](#dd-045-keep-burn-settlement-sequential-and-keep-wrapper-policy-separate-from-host-governance)                                   | adopted; see the note under its status   | Keep Burn Settlement Sequential and Keep Wrapper Policy Separate From Host Governance                                           |
 | [DD-046](#dd-046-the-program-heap-is-fixed-at-32-kb--no-custom-allocator-raised-heap-deleted)                                             | adopted                                  | The Program Heap Is Fixed At 32 KB — No Custom Allocator (`raised-heap` deleted)                                                |
 | [DD-047](#dd-047-the-application-is-program-scope--program-verified-scope-declared-rfc-035)                                               | adopted; see the note under its status   | The Application Is `(program, scope)` — Program Verified, Scope Declared (RFC 035)                                              |
@@ -81,6 +81,11 @@ are written as one narrative instead.
 | [DD-052](#dd-052-a-solana-chain-id-is-type-byte-0x01-plus-a-published-cluster-tag)                                                        | adopted                                  | A Solana chain id is type byte `0x01` plus a published cluster tag                                                              |
 | [DD-053](#dd-053-a-program-id-is-environment-config-not-a-cargo-feature)                                                                  | adopted                                  | A program id is environment config, not a cargo feature                                                                        |
 | [DD-054](#dd-054-the-programs-stay-on-anchor-v1)                                                                                          | adopted                                  | The programs stay on Anchor v1                                                                                                 |
+| [DD-055](#dd-055-the-ledger-is-the-work-log-not-a-pda-queue)                                                                              | adopted                                  | The ledger is the work log, not a PDA queue                                                                                    |
+| [DD-056](#dd-056-an-execution-describes-itself-the-listener-re-derives-handles-only-as-a-check)                                           | adopted                                  | An execution describes itself; the listener re-derives handles only as a check                                                 |
+| DD-057                                                                                                                                    | withdrawn before merge                   | Rand nonce keyed on the application; the nonce stays global (DD-043)                                                            |
+| [DD-058](#dd-058-pausers-stop-one-area-at-a-time-only-the-admin-resumes)                                                                  | adopted                                  | Pausers stop one area at a time; only the admin resumes                                                                        |
+| [DD-059](#dd-059-the-listener-catches-up-from-an-archive-when-the-stream-cannot-replay)                                                   | adopted                                  | The listener catches up from an archive when the stream cannot replay                                                          |
 
 ## DD-002: Keep App Store And Host ACL Store Separate
 
@@ -666,10 +671,8 @@ Open for debate:
 
 The step cap `MAX_FHE_EXECUTION_STEPS` is derived from measured instruction-data and compute-unit budgets
 on the interned wire format (fhevm-internal#1853 W8; see the constant's doc in
-`programs/zama-host/src/constants.rs`). The old per-operation replay-event transport split is
-replaced by the single created-public lifecycle batch — see DD-038. (An earlier revision cited
-DD-024 here, which is the coprocessor-side ciphertext-material decision and was never about the
-event transport.)
+`programs/zama-host/src/constants.rs`). The per-operation replay-event transport and the
+created-public batch that replaced it are gone (DD-038, in DESIGN_HISTORY.md).
 
 ## DD-024: Eager Ciphertext-Material Preparation (coprocessor side)
 
@@ -939,7 +942,8 @@ authorization. `HandleMaterialCommitmentWitness` is deleted from the KMS connect
 
 Status: adopted
 
-Superseded in part by DD-049: Store identity, slot keys and sealed allows.
+Superseded in part by DD-049: Store identity, slot keys and sealed allows. Revised by DD-056: result
+handles and their block context now travel in the execution's event.
 
 Context:
 
@@ -950,13 +954,13 @@ Decision:
 
 Store-changing paths (`fhe_execute` Store outputs and `make_store_handle_public`) emit no ACL
 lifecycle Anchor events by design. The host listener reconstructs compute requests and MMR leaves
-from confirmed Yellowstone transaction instructions plus streamed Clock/SlotHashes state, including
+from confirmed Yellowstone transaction instructions, including
 inner CPI instructions, since confidential-token and other app programs invoke the host via CPI.
 Store outputs carry the expected previous handle and leaf count, so every transaction is
 independently interpretable off-chain and the listener reconstructs leaves from instruction data
-alone, in replay order, without reading account state first. Ordinary compute facts are
-reconstructed from the execution and Yellowstone sysvars; only produced-public output handles use
-the narrow lifecycle batch in DD-038.
+alone, in replay order, without reading account state first. Compute facts, including which
+outputs are made public, are reconstructed from the execution; what the host decided (the result
+handles, their block context and the random seeds) travels in its one `FheExecutedEvent` (DD-056).
 
 Rationale:
 
@@ -1001,27 +1005,6 @@ Consequences:
 
 Coprocessor scheduling and decrypt authorization are decoupled for Solana. Material can be prepared
 before a decrypt request; plaintext is released only after KMS authorization succeeds.
-
-## DD-038: One Host-Owned Born-Public Lifecycle Batch Replaces Per-Operation Events
-
-Status: adopted
-
-Ordinary `fhe_execute` computation facts remain reconstructed from instruction data plus Yellowstone
-sysvars. The host no longer produces the general per-operation event stream or its eight-event
-transport guard. Instead, a batch with one or more `make_public` persistent outputs emits exactly one
-versioned Anchor self-CPI event after successful execution. Its ordered records contain only the
-zero-based step index, the host-owned Store, and the host-derived output handle;
-a batch with no produced public output emits no lifecycle event.
-
-This narrow batch exists because block-entropy output handles are absent from instruction arguments.
-At the maximum `MAX_FHE_EXECUTION_STEPS` batch (32), the records serialize to one 2,133-byte CPI
-instruction — far below the 10,240-byte CPI instruction-data cap — avoiding the old
-one-CPI-per-step heap growth. (Execution, not the batch, bounds the all-created-public batch shape:
-the host's fixed 32 KB `solana-program-entrypoint` bump heap fits 20 persistent creates per batch,
-measured and pinned by the `fhe_execute_boundary/all_created_public` snapshot entry.) The event is unconditional, as every event this program
-emits now is (DD-044). Consumers must still validate the host program, its canonical
-event-authority PDA, transaction success, record ordering, and one-to-one agreement with persistent
-`make_public` outputs; the event grants no authority by itself.
 
 ## DD-040: App Public-Decrypt Is A Stateless Pull-Oracle Verifier, Not A Request Lifecycle
 
@@ -1099,9 +1082,9 @@ returned id against `host_config.current_kms_context_id` and demand current-only
 `disclose_secp` and `redeem_burned_amount` both take the default (accept any live context), matching
 EVM.
 
-The verifier is deliberately NOT pause-gated: `make_handle_public` is the pause-gated boundary that
-seals a leaf, and an already-sealed leaf is already-public information, so re-proving it later reveals
-nothing new. If a decrypt-path kill-switch is ever wanted, gate `host_config.paused` here.
+The verifier stops only under the `public_decrypt` pause flag (DD-058). An already-sealed leaf is
+already-public information, so re-proving it reveals nothing new; the flag exists to stop programs
+acting on forged certificates while a compromised KMS context is destroyed.
 
 Return-data-only to start: today's KMS cleartexts are ≤32 bytes; if larger types are ever revealed the
 fallback is a caller-provided scratch account. The proof-freshness (stale-proof) retry race is the
@@ -1378,7 +1361,7 @@ previous_bank_hash, unix_timestamp)`. `rand_nonce` is the host's `RandNonce` sin
    caller-supplied, so two executions in one slot cannot share a seed whatever they persist.
    `(program, scope)` is the execution's verified application (DD-047), so a seed is bound to the
    values it will land in. The host emits the resolved seeds through the event CPI
-   (`FheExecuteRandomSeedsEvent`) so the listener needs no historical account read. The original
+   (`FheExecutedEvent`, DD-056) so the listener needs no historical account read. The original
    design anchored freshness to the execution's persistent writes instead — every persistent
    output's live `(account, tag, handle, leaf_count)` in wire order — which forced a rand step to
    declare a persistent output; the nonce removes that requirement and the account-state
@@ -1400,9 +1383,18 @@ Properties that must survive any refactor:
   (`ExecutionAccountTable::claim_persistent_output`), for the decode cache and the
   read-after-write rule, not for seed freshness any more.
 
+The nonce stays global (fhevm-internal#2081). Every execution with a rand step write-locks it, so
+rand executions of all applications run one at a time; an execution without a rand step does not
+take it. A nonce per application would remove that contention, at the cost of rent and a lazy
+creation per application. Revisit it if rand executions become frequent enough to contend. The
+preimage already binds `(program, scope)`, so that change would touch only the account.
+
 ## DD-044: Every Event Goes Through The Event CPI, Or Is Not Emitted At All (`emit-events` deleted)
 
 Status: adopted
+
+Revised by DD-056: `fhe_execute` also emits, one event per execution carrying what the host decided.
+The rule below, that only administration emits, no longer covers that event.
 
 Context:
 
@@ -1459,22 +1451,22 @@ already-decoded record against its canonical PDA and fetches nothing, its only c
 tests, and the signed user-decrypt payload has no delegation field), and a reader, when it arrives,
 will have to fetch the record and hand it to that checker.
 
-`fhe_execute`'s two compute events are unchanged in behaviour and now share one emitter with the
-admin events (`event_cpi.rs`), instead of keeping their own copy of the expansion.
+`fhe_execute`'s event shares one emitter with the admin events (`event_cpi.rs`), instead of keeping
+its own copy of the expansion.
 
 Rationale:
 
 Reliable delivery costs an account pair on the instruction and a self-CPI per emission. That is nothing
 on an admin instruction, which runs when an operator changes configuration, and would be real weight on
-a per-step compute event — which is why the per-step shapes are still not emitted. DD-003 said the same
-thing in weaker terms ("events are indexing hints"); this entry replaces that framing for `zama-host`
-but not its other half, which is that authorization never rests on an event.
+one event per compute step — which is why the per-step shapes are still not emitted. DD-003 said the
+same thing in weaker terms ("events are indexing hints"); this entry replaces that framing for
+`zama-host` but not its other half, which is that authorization never rests on an event. An execution
+emits one event with what the host decided (DD-056); its steps stay in instruction data.
 
 Anchor's `emit_cpi!` macro is not used, though the bytes it produces are. It reads a binding named
 `ctx`, and six of the eleven instructions emit through a shared `emit_config_updated` helper that has
 no `ctx`; using the macro would mean copying a nine-field event literal into each of them. One
-hand-written emitter takes the event authority as an argument and serves all eight call sites, covering
-thirteen emissions.
+hand-written emitter takes the event authority as an argument and serves every call site.
 
 The tag and the payload encoding come from anchor-lang, so they track upstream; only the assembly is
 ours. What happens if the assembly itself drifts is worth stating precisely, because it is less than it
@@ -1484,9 +1476,10 @@ signer and is the canonical event authority — and nothing else. It never reads
 ignores any account after the first. So an extra account or a changed payload encoding would not be
 caught by the runtime at all. What catches those is two tests, and they are the reason the emitter
 returns an `Instruction` as a value: `event_transport.rs`'s unit test asserts the built instruction's
-program, account count, signer and writable flags, and data length, and `host_mollusk.rs`'s
+program, account count, signer and writable flags, data length, and that its data is the bytes
+`emit_cpi!` would send, and `host_mollusk.rs`'s
 `sole_emitted_event` reads an event back out of the inner instructions and asserts one account, the
-canonical authority, and every payload field. Those two cover `PublicOutputsProducedEvent` and
+canonical authority, and every payload field. Those two cover `FheExecutedEvent` and
 `NewKmsContextEvent`. Keep it that way: if they ever stop being covered, this becomes an unchecked copy
 of an upstream wire format.
 
@@ -1581,8 +1574,8 @@ transfer semantics.
 
 Token-facing instructions pass a typed Host config account but do not redundantly derive its PDA at
 the wrapper boundary. Every path immediately invokes a Host instruction that enforces the canonical
-config; redeem/disclose additionally rederive it before their local pause check. This keeps the
-boundary aligned without paying for a second PDA derivation or adding redundant IDL metadata.
+config and its pause flags (DD-058). This keeps the boundary aligned without paying for a second PDA
+derivation or adding redundant IDL metadata.
 
 Confidential accounts expose ATA-like demo UX: canonical derivation, permissionless create-for, and
 `getOrCreateConfidentialTokenAccountInstruction`, which reads the derived PDA and returns either the
@@ -1620,9 +1613,9 @@ Why not ship an allocator:
    heap; a runtime failure still rolls back the transaction. See INVARIANTS #54 and #61.
 3. Store outputs no longer create an account per result, so the old create cap and
    per-result system-CPI trace argument no longer apply. The runtime snapshots now show
-   32-step dependent chains reaching the step cap, shared-audience public outputs reaching
-   24 before the host heap fails at 25, and updates across Stores with 8, 32 and 64 MMR peaks
-   reaching 15, 7 and 4 steps. These are shape limits; the allocator decision does not make
+   32-step dependent chains and 32 public outputs with eight viewers each reaching the step
+   cap, and updates across Stores with 8, 32 and 55 MMR peaks reaching 16, 7 and 4 steps.
+   These are shape limits; the allocator decision does not make
    a host heap failure acceptable for an application we intend to support. A failing application
    benchmark is grounds to reopen fhevm-internal#1872.
 
@@ -1653,10 +1646,10 @@ signer to a program. The EVM has no such problem: `msg.sender` _is_ the contract
 Decision:
 
 The application identity is the pair `(program, scope)` carried by every encrypted store.
-`program` is never taken on the caller's word: on every persistent write the output's authority must
-be a PDA of `program`, proven by the seeds the execution declares (interned or literal, bump last —
-`assert_authority_is_program_pda`, `EncryptedStoreAuthorityNotProgramPda`). Only `program` can sign
-for such an authority, so only `program` can write a value that claims it. `scope` is whatever
+`program` is never taken on the caller's word: a Store's authority must be a PDA of `program`,
+proven once when `create_encrypted_store` derives it from `authority_seeds`
+(`EncryptedStoreAuthorityNotProgramPda`), and every later write needs that authority's signature.
+Only `program` can sign for such an authority, so only `program` can write a value that claims it. `scope` is whatever
 `program` declares within itself — the mint for the token program, one constant for a program with
 a single namespace — and is trustworthy exactly as half of the pair. Both are seeds of the Store
 (`["encrypted-state", program, authority, scope]`), so the identity is the address.
@@ -2043,6 +2036,232 @@ Reopening condition: Anchor v2 published on crates.io with an audit. Measure a p
 runtime cost snapshots first: `Account<T>` becomes a Pod layout and `EncryptedStore`'s `Vec`
 fields become a `Slab`. A port after the external audit needs its own audit.
 
+## DD-055: The ledger is the work log, not a PDA queue
+
+Status: adopted
+
+Recorded in fhevm-internal#2079.
+
+The host listener rebuilds all coprocessor work from sealed Yellowstone blocks at `confirmed`. The
+alternative is a work queue on-chain: each `fhe_execute` writes its payload into a temporary PDA, the
+coprocessor marks it computed, and the user closes it for a rent refund. Work would then stay
+on-chain until handled, so a listener that missed it could find it again. It is rejected:
+
+| Cost | Why it does not fit |
+|---|---|
+| Completion needs coprocessor transactions on Solana | They would need threshold signatures and fees. FHEVM has no such path: an EVM host never learns that a computation finished, and completion lives on the Gateway. Refunds would depend on coprocessor liveness. |
+| Order is lost | The coprocessor needs the order of dependent operations, which a block gives. A global sequence counter is one account every FHE transaction writes, so all apps would execute one at a time. A counter per Store does not order handles that move between programs. |
+| A stream is still needed | Low latency needs an account subscription, and `getProgramAccounts` scans are heavy and throttled. The listener would have two ways to discover work. |
+| Rent and a second transaction per execution | A 1 KB payload locks about (128 + 1,024) × 6,960 lamports, roughly 0.008 SOL, until someone closes it. |
+
+The ledger is already the durable log. The risk is a listener that falls behind until the
+provider's replay window closes, and the answer is to see it early: the listener exports its lag and
+reconnects (fhevm-internal#2079), and a self-describing execution makes archive replay possible
+(fhevm-internal#2081), which the listener now uses to catch up past the window (DD-059).
+
+## DD-056: An execution describes itself; the listener re-derives handles only as a check
+
+Status: adopted
+
+Recorded in fhevm-internal#2081. Revises DD-033 and DD-044.
+
+Context:
+
+`fhe_execute` used to emit only its random seeds, and only when a step was random. The listener
+rebuilt every other result handle from the decoded step and a block context that no transaction
+carries: the parent bank hash from the `SlotHashes` sysvar and the timestamp from `Clock`. It
+streamed both accounts from Yellowstone next to the blocks and joined them per slot. So it learned
+an execution's outputs in two ways, and one of them needed live state. A missed slot could be
+rebuilt from an archive only by reading the bank hash out of later vote transactions and trusting
+that `getBlock`'s `blockTime` equals `Clock`. Neither is a contract.
+
+Decision:
+
+Every `fhe_execute` emits one `FheExecutedEvent` through the event CPI, after its account writes:
+the event version, the parent bank hash, the Unix timestamp, the result handle of each step in step
+order, and the seeds of the random steps. The program id and the chain id are fixed per deployment
+and stay out. The instruction carries what the caller asked for; the event carries what the host
+decided.
+
+The listener pairs each host `fhe_execute` with the one `FheExecutedEvent` from the host program
+that follows it before the next host `fhe_execute`. Only the host can sign its event authority, so
+an app cannot forge the event inside the host's instruction trace. It stores the emitted handles:
+computation rows, operands that name an earlier step, ACL leaves and allowed handles all use them.
+It then re-derives each handle from the decoded step, the emitted context, the followed program id
+and the chain id, and compares. The sysvar subscription and the per-slot join are deleted, and the
+block time the listener records is the one Yellowstone sends with the block.
+
+What the listener does when something does not line up:
+
+| Case | Response |
+|---|---|
+| A host `fhe_execute` without exactly one event of the current version, or an event whose results do not match the execution's steps | Fatal: the block is not applied and the checkpoint does not move. The listener and the program disagree on the wire format. |
+| A step whose emitted handle does not re-derive | The block is applied. That step is held back: its computation row is inserted as a terminal error, so the tfhe-worker never computes it and ends its dependents as errors. Leaves and allowed handles keep the emitted handle. After the commit the listener logs the slot, signature, execution, step and both handles, and counts `coprocessor_solana_host_listener_handle_check_failures_total`. |
+
+A mismatch means our software is wrong, and the listener cannot tell which part. If the derivation
+drifted, the ciphertext it would compute is still right. If it misdecoded the step, the ciphertext
+is wrong, and stored under the chain's real handle it would decrypt to a wrong value and spread to
+everything computed from it, with no visible failure. Holding the step back keeps the damage to
+that handle and what is computed from it. Refusing the block instead would stall every app. The emitted handle wins
+for the leaves because proofs must keep matching the peaks on chain.
+
+The check finds our bugs, not a hostile provider: a provider that lies can forge the event and the
+transaction consistently.
+
+Repair is a replay of the affected slots with the fixed listener. The operator rewinds the listener
+checkpoint to a slot `S` before the failure (`rewind_solana_listener_checkpoint.sql`) and reverts the
+computation rows after `S` with the existing `revert_coprocessor_db_state.sql`, which deletes the held
+rows and their errored dependents. The revert refuses a Solana chain whose checkpoint is still after
+`S`, since the listener would never re-ingest what it deleted; `revert_coprocessor_db_state.sh` runs
+both when given `SOLANA_BLOCK_HASH`. On restart the listener replays from `S` and inserts the rows
+again as new work. Leaves are not reverted: a replayed write must reproduce the leaves recorded for
+it, or the listener stops. So a replay repairs computation rows, not a bug that recorded wrong
+leaves. A replay older than the provider's replay window comes from the archive RPC (DD-059), so
+`S` must be in the archive's history, and nothing checks that before the rows are deleted. The
+runbook is in the host-listener README.
+
+A `getBlock` response prepares into the same block the stream produces (`prepare_rpc_block`), so
+archive catch-up (DD-059) reuses one decoder. It requires inner instructions and loaded addresses, which a
+full-detail `getBlock` returns. A test rebuilds a slot from `getBlock` output alone.
+
+Rationale:
+
+The seeds already had to travel in an event because an indexer cannot recompute them (DD-043). The
+block context is the same kind of fact, and emitting it removes the live sysvar stream. The result
+handles go in too, so that what the listener stores does not depend on its own copy of the
+derivation; the derivation becomes a check that can fail without corrupting the leaf record.
+
+Cost, from the committed cost snapshots: the event CPI adds 1,859 CU and 161 bytes of CPI data to a
+three-step execution that used to emit nothing, and 3,981 CU and 1,089 bytes at the 32-step limit. A
+confidential transfer costs 2,129 CU more. The event is built on the host heap, so two heap-bound
+shapes run one step fewer: `attestation_per_step` 16 instead of 17 and `mature_updates_peaks_8` 15
+instead of 16 (INVARIANTS #61). The event CPI also runs one level below `fhe_execute`, which used to
+be true only of random executions. Under Solana's invoke stack limit of five (nine once SIMD-0268 is
+active), the host must now be invoked at height four or less: the top-level program and at most two
+programs between it and the host. The batcher's path (batcher, token, host, event) uses four.
+
+Consequences:
+
+`FheExecuteRandomSeedsEvent` is replaced. The listener no longer needs historical sysvar state from
+its provider, only blocks. A held step still gets its material request, since the Store write is
+real on chain. The automated drift revert, which runs the same revert SQL, now fails on a Solana
+chain whose checkpoint is ahead, which is always the case when drift is detected; before, it deleted
+rows the listener would never re-ingest. A failed revert signal stops every coprocessor service on
+that database from starting, including those of EVM chains, until an operator repairs by hand.
+
+## DD-058: Pausers stop one area at a time; only the admin resumes
+
+Status: adopted
+
+Recorded in fhevm-internal#2088. Replaces the single admin-set `HostConfig.paused`.
+
+Context: the host had one pause flag that only the admin could set or clear. Governance is moving
+the admin behind a Squads vault with a time lock (fhevm-internal#1634), so an admin-only pause
+would wait out that time lock too. On EVM, `ACL.pause()` accepts any member of `PauserSet`, while
+`unpause()` is `onlyOwner`. The host ACL pause stops `allow`, `allowForDecryption`,
+`allowTransient` and both delegation calls, and so execution, which needs `allowTransient`. The
+gateway's `InputVerification` and `Decryption` contracts each pause on their own, and Solana requests
+enter the gateway through the same paused calls (`verifyProofRequestSolana` and both decryption
+requests), so the gateway pause already stops new input proofs and decryptions for Solana.
+
+Decision: `HostConfig.paused` is `PauseFlags`, one flag per area.
+
+| Flag | Stops | EVM counterpart |
+|---|---|---|
+| `execution` | `fhe_execute`, with the allows, transient grants and public releases it writes; the token's burn and cancel through it | ACL pause |
+| `verified_inputs` | `fhe_execute` steps that consume a `VerifiedInput` | None: `InputVerifier` cannot be paused; the gateway pause stops only new proofs |
+| `acl_writes` | `create_encrypted_store`, `make_store_handle_public`, `delegate_for_user_decryption` | ACL pause |
+| `public_decrypt` | `verify_public_decrypt`, and so the token's redeem and disclose | None: `KMSVerifier` cannot be paused; the gateway pause stops only new certificates |
+
+`verified_inputs` and `public_decrypt` act when a signed result is used, not when it is requested.
+They are the levers against compromised coprocessor or KMS signers, whose results the gateway pause
+cannot recall.
+
+A pauser is a `PauserRecord` PDA `("pauser", key)`, which the admin creates, enables or disables
+with `set_pauser`, as it does deny and HCU-trusted records. `pause` takes the pauser's signature and
+its enabled record, and sets the flags it names. A wallet pauser must call `pause` at the top level,
+by the rule `delegate_for_user_decryption` applies to a wallet delegator: a wallet's signature reaches
+every program of the transaction it signed, while EVM's `msg.sender` check keeps a called contract
+from pausing with a pauser's right. A PDA pauser, such as a Squads vault, pauses through CPI, as only
+its own program can sign for it. `unpause` takes the admin and clears them. As on
+EVM, the admin pauses only if it also holds a pauser record. Pausing an area already paused
+changes nothing and emits nothing. A change stamps `updated_slot` and emits `HostConfigUpdatedEvent`,
+whose `signer` names the pauser or the admin. `set_pauser` emits `PauserUpdatedEvent`.
+
+Programs act on KMS results only through `verify_public_decrypt`, so `public_decrypt` stops forged
+redemptions while a compromised KMS context is destroyed (fhevm-internal#2082). It replaces the
+token's own pause check, which read the single flag; the token now reads no pause flag and passes
+the config through to the host.
+
+Admin setters are never paused. `revoke_permits` takes no config account, so it runs under every
+flag, as EVM's `invalidateDecryptionSignaturesBefore` runs under the ACL pause. On EVM,
+`revokeDelegationForUserDecryption` is `whenNotPaused`; its Solana gate on `acl_writes` comes with
+the delegation-record change built on fhevm#4096, and until then revocation is not paused.
+
+Accepted gap: no host flag stops user decryption. During a host pause, user decryption of values
+already allowed continues, as it does on EVM while only the host ACL is paused; the gateway pause is
+what stops it. With the `acl_writes` gate in place, a delegator cannot revoke a delegation until the
+admin resumes ACL writes.
+
+Rejected alternatives:
+
+| Alternative | Why not |
+|---|---|
+| Pausers as a list in `HostConfig` | A fixed maximum and a realloc for every change. One record per pauser matches the deny and HCU-trusted records and keeps `HostConfig` fixed-size. |
+| Keep one flag and add pausers | An operator could not stop forged redemptions without also stopping every application's execution. |
+| Let the admin pause without a record | EVM requires `PauserSet` membership for `pause()` even from the owner. Keeping that rule makes the pauser set the one list of who can pause. |
+
+Consequences: `set_host_pause` is gone. `HostConfig` grows by three bytes, so every reader of its
+layout changes with it: the host listener decodes it with the program's type; the KMS connector's
+host-pause check and the `zama-solana-acl` decoder it used are deleted, so user decryption pauses at
+the gateway alone, as on EVM. New errors: `VerifiedInputsPaused`, `AclWritesPaused`, `PublicDecryptPaused`,
+`NotPauser`, `PauserRecordMismatch`; `HostConfigPaused` is now `ExecutionPaused`.
+
+## DD-059: The listener catches up from an archive when the stream cannot replay
+
+Status: adopted
+
+Recorded in fhevm-internal#2085.
+
+A listener that was down longer than the provider's replay window, about a day on a hosted
+provider, used to exit and need manual recovery. It now catches up from an archive RPC and then
+returns to the stream. When Yellowstone refuses the checkpoint as outside its window, the listener
+lists the produced slots after it with `getBlocks` and fetches each with `getBlock`, both at
+`finalized`, with full transaction details. Each block goes through `prepare_rpc_block`, which
+keeps the transactions naming the host program as the stream's account filter does. It must extend
+the checkpoint as the stream's validator requires: an unapplied checkpoint first and unchanged, then
+each block naming the last applied one as its parent. It is applied through the same path as a
+streamed block. Catch-up stops at the slot the archive had finalized when it started, so it ends
+however fast the chain moves. There the listener subscribes again from its checkpoint, and the
+stream's own replay check takes over; if that catch-up outlasted the window, the next pass is
+shorter.
+
+The archive is `--archive-url`, which defaults to `--url` and may be another provider's. A provider
+that cannot replay from a slot at all (`from_slot is not supported`) still stops the listener: after
+catch-up, the stream could never take over. An archive behind the checkpoint, an archive missing
+slots after it (a block whose parent is later than the checkpoint, or, for an unapplied checkpoint,
+a later block descending from it), or a failed read, is retried like a dropped subscription. Any other block that does not extend the checkpoint is a fork and stops the
+listener, as on the stream. `archive_catch_up_active` is 1 during catch-up, and the existing lag
+metrics show its progress.
+
+Rejected alternatives:
+
+| Alternative | Why not |
+|---|---|
+| Subscribe first and backfill alongside, as the EVM listener does | `eth_subscribe` cannot resume from a block, so EVM must backfill beside a live stream. Yellowstone resumes from a slot inside its window, so one ordered source at a time keeps a single checkpoint and a single ancestry rule. |
+| Fetch only the slots holding host transactions, found with `getSignaturesForAddress` | The checkpoint needs every block's hash to check ancestry, and the address index adds a second completeness assumption. It is an optimization for later if catch-up volume matters. |
+| Several gRPC endpoints with failover | EVM has none. With catch-up, a provider outage only delays processing, and switching provider is a configuration change and a restart (fhevm-internal#2085). |
+
+Consequences:
+
+Catch-up reads every transaction of every block after the checkpoint. On mainnet a day is about
+216,000 blocks with full details, so it takes hours and needs an archive provider whose rate limits
+allow it; it runs eight `getBlock` calls at a time. The listener's Solana crates decode legacy and v0
+transactions only, so `getBlock` asks for version 0, and the RPC refuses a block holding a v1
+transaction. Catch-up then retries that block until fhevm-internal#2080 moves the listener to crates
+that decode v1. A slot rewound for repair (DD-056) no longer has to be inside the replay window, only
+in the archive's history.
+
 ## Open product decisions
 
 Not settled by the decisions above. Forward requirements are detailed in
@@ -2060,8 +2279,8 @@ Not settled by the decisions above. Forward requirements are detailed in
 - General `HostConfig` config-version rotation semantics beyond the KMS-context pointer.
 - Full production KMS-connector wiring and real ZKPoK and transciphering behind the input attestation
   (both are shortcuts today, DD-028).
-- Production Yellowstone/Geyser provider replay, reconnect and backfill policy at confirmed
-  commitment (DD-003).
+- Production Yellowstone/Geyser and archive providers, and their replay windows and rate limits
+  (DD-003, DD-059, fhevm-internal#2087).
 - Historical handle discovery conventions for apps.
 - Production role and governance names for public-decrypt and grant authority.
 - Leaf-record availability (DD-048): the connector fans out to every configured coprocessor and one

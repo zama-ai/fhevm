@@ -1812,8 +1812,13 @@ solanaHostListener:
     name: ghcr.io/zama-ai/fhevm/coprocessor/host-listener
     tag: latest
   httpPort: 8080
+  metricsPort: 9100
+  serviceMonitor:
+    enabled: false
   # Supply SOLANA_RPC_URL, SOLANA_GRPC_URL, SOLANA_HOST_PROGRAM_ID,
   # SOLANA_PROOF_API_KEY and optionally SOLANA_GRPC_X_TOKEN using secretKeyRef.
+  # SOLANA_ARCHIVE_URL optionally names the RPC that serves slots Yellowstone
+  # can no longer replay; it defaults to SOLANA_RPC_URL.
   env: []
   extraArgs: []
   podLabels: {}

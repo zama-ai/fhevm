@@ -368,7 +368,7 @@ pub struct HostConfigParams {
     pub coprocessor_signers: Vec<[u8; 20]>,
     pub coprocessor_threshold: u8,
     pub current_kms_context_id: [u8; 32],
-    pub paused: bool,
+    pub paused: host::PauseFlags,
     pub grant_deny_list_enabled: bool,
 }
 
@@ -394,7 +394,7 @@ impl HostConfigParams {
             coprocessor_signers: vec![UNTRUSTED_COPROCESSOR_SIGNER],
             coprocessor_threshold: 1,
             current_kms_context_id: [0u8; 32],
-            paused: false,
+            paused: host::PauseFlags::default(),
             grant_deny_list_enabled: false,
         }
     }
@@ -515,6 +515,25 @@ pub fn deny_scope_record_account(app: host::AppScope, denied: bool) -> (Pubkey, 
                 program: app.program,
                 scope: app.scope,
                 denied,
+                bump,
+            }),
+            owner: host::id(),
+            executable: false,
+            rent_epoch: 0,
+        },
+    )
+}
+
+/// Builds a `PauserRecord` account for one key at its canonical PDA.
+pub fn pauser_record_account(pauser: Pubkey, enabled: bool) -> (Pubkey, Account) {
+    let (record, bump) = host::pauser_address(pauser);
+    (
+        record,
+        Account {
+            lamports: 1_000_000_000,
+            data: serialized_account(host::PauserRecord {
+                pauser,
+                enabled,
                 bump,
             }),
             owner: host::id(),

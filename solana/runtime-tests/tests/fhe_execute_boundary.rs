@@ -485,9 +485,8 @@ fn allow_heavy_creates_case(steps: usize, program: Pubkey) -> ProbeCase {
 }
 
 /// [`allow_heavy_creates_case`] with every output also made public — the corner where the widest
-/// allow set meets the public-outputs event. The one-allow public sweep sits exactly on the
-/// trace-heap boundary with zero margin, so this axis pair is measured rather than interpolated
-/// from the two single-axis sweeps.
+/// allow set meets `make_public`, measured rather than interpolated from the two single-axis
+/// sweeps.
 fn allow_heavy_public_creates_case(steps: usize, program: Pubkey) -> ProbeCase {
     let all: Vec<usize> = (0..steps).collect();
     let allows = allow_keys(0x60, WIDE_ALLOW_COUNT);
@@ -565,9 +564,9 @@ enum WallPin {
     SnapshotOnly,
     /// The workload reaches the protocol step limit without a runtime resource failure.
     FullStepCapacity,
-    /// The builder admits more steps than the host heap can execute. Retain this explicit
-    /// measured gap: issue #1872 retained shape-specific runtime limits rather than adding
-    /// a host allocator admission model. Callers must fit the measured shape, not just the step cap.
+    /// The host heap stops the shape before the step cap, at a count the builder still admits
+    /// (invariant #61). Issue #1872 kept shape-specific runtime limits rather than a host
+    /// allocator admission model, so callers must fit the measured shape, not just the step cap.
     HostHeapGap,
 }
 
@@ -584,9 +583,9 @@ struct BoundaryShape {
 /// snapshot, and the printer all walk this one table, so a new axis is one new row.
 ///
 /// No row is now limited by `instruction_trace`: the common-path create is one CPI, so 20
-/// creates plus events sit well under 64. That floor is pinned by `zama-fhe`'s
-/// `instruction_trace_floor` unit test; squat creates that would exhaust the trace are a
-/// worst-case number on `FheExecutionCost`, not a swept shape.
+/// creates plus the executed event sit well under 64. That floor is `zama-fhe`'s
+/// `INSTRUCTION_TRACE_FLOOR`; squat creates that would exhaust the trace are a worst-case number
+/// on `FheExecutionCost`, not a swept shape.
 fn boundary_shapes() -> Vec<BoundaryShape> {
     let shape = |profile: &'static str,
                  min_steps: usize,
@@ -601,7 +600,7 @@ fn boundary_shapes() -> Vec<BoundaryShape> {
         shape(
             "fhe_execute_boundary/all_created_public",
             1,
-            WallPin::HostHeapGap,
+            WallPin::FullStepCapacity,
             Box::new(|steps| all_created_public_case(steps, Pubkey::new_from_array([0x31; 32]))),
         ),
         shape(
@@ -619,7 +618,7 @@ fn boundary_shapes() -> Vec<BoundaryShape> {
         shape(
             "fhe_execute_boundary/allow_heavy_public_creates",
             1,
-            WallPin::HostHeapGap,
+            WallPin::FullStepCapacity,
             Box::new(|steps| {
                 allow_heavy_public_creates_case(steps, Pubkey::new_from_array([0x3B; 32]))
             }),
@@ -645,7 +644,7 @@ fn boundary_shapes() -> Vec<BoundaryShape> {
         shape(
             "fhe_execute_boundary/mature_updates_peaks_8",
             1,
-            WallPin::SnapshotOnly,
+            WallPin::HostHeapGap,
             Box::new(|steps| mature_updates_case(steps, 8, Pubkey::new_from_array([0x39; 32]))),
         ),
         shape(
@@ -684,16 +683,11 @@ fn assert_wall_pin(profile: &str, pin: &WallPin, sweep: &SweptBoundary) {
         WallPin::HostHeapGap => {
             assert_eq!(
                 sweep.limited_by, "heap",
-                "{profile}: the wide-allow public wall moved off the host heap — re-read \
-                 the WallPin::HostHeapGap doc",
+                "{profile}: the wall moved off the host heap; invariant #61 cites it",
             );
-            // A closed gap should update the documented limitation and this assertion.
             assert!(
                 sweep.max_ok < host::MAX_FHE_EXECUTION_STEPS,
-                "{profile}: the host's CPI frame now holds every builder-admitted \
-                 public State output ({} measured vs {} admitted) — invariant #61's \
-                 gap has closed",
-                sweep.max_ok,
+                "{profile}: the host now runs all {} steps; invariant #61 cites this gap",
                 host::MAX_FHE_EXECUTION_STEPS,
             );
         }

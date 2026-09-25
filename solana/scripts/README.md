@@ -8,9 +8,9 @@ Run from `solana/` unless a path below says otherwise.
 
 | Command | When to use | Writes? |
 |---|---|---|
-| `bash scripts/check-zama-host-idl.sh` | Before Mollusk tests; CI IDL/ABI parity | `target/deploy` only |
+| `bash scripts/check-zama-host-idl.sh` | Before Mollusk tests; CI IDL/ABI parity and the authority table | `target/deploy` only |
 | `python3 scripts/check-pda-seeds.py` | Check confidential-token `PENDING_BURN_SEED` usage in Rust | no |
-| `bash scripts/sync-zama-host-idl.sh` | After an intentional IDL/ABI change | all six committed IDLs + ABI goldens |
+| `bash scripts/sync-zama-host-idl.sh` | After an intentional IDL/ABI change | all six committed IDLs + ABI goldens + `docs/AUTHORITY.md` |
 | `bash scripts/update-cost-snapshots.sh` | After an intentional CU / ix-shape change | `runtime-tests/cost-snapshots/*.json` |
 | `bash scripts/update-permit-vectors.sh` | After an intentional permit-canon change | `test-fixtures/permit/permit_v1.json` |
 | `bash scripts/update-permit-invalidation-fixture.sh` | After an intentional `PermitInvalidation` layout / seed change | `test-fixtures/permit/permit_invalidation_account_v1.json` |
@@ -25,4 +25,5 @@ against a running stack (CI: `solana-e2e`).
 | Path | Role |
 |---|---|
 | `check_solana_abi.py` | Called by `check-` / `sync-zama-host-idl.sh`; owns the one list of committed IDLs, copying them out of `target/idl` with `--write` and comparing them back without it |
+| `authority_table.py` | Called by `check-` / `sync-zama-host-idl.sh`; builds `docs/AUTHORITY.md` from the committed zama-host IDL and checks the zama-host source it relies on. Needs no SBF toolchain: after copying IDLs from the CI artifact, run `python3 scripts/authority_table.py --root . --write` |
 | `e2e/test-keypairs/` | Well-known keypairs of the two e2e specimen programs; the deployed programs load at genesis without one |

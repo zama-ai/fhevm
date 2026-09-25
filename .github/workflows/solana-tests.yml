@@ -332,7 +332,8 @@ jobs:
 
       # A committed IDL that disagrees with the build is fixed by copying the build's output over
       # it, never by editing the JSON — and whoever hits this may have no local SBF toolchain.
-      # These are the files sync-zama-host-idl.sh would have written.
+      # These are the IDLs sync-zama-host-idl.sh would have written; after copying them,
+      # `python3 scripts/authority_table.py --root . --write` regenerates the authority table.
       - name: Upload the freshly built IDLs when the sync check fails
         if: ${{ failure() && steps.idl-sync.conclusion == 'failure' }}
         uses: actions/upload-artifact@65c4c4a1ddee5b72f698fdd19549f0f0fb45cf08 # v4.6.0
@@ -377,6 +378,9 @@ jobs:
           name: solana-cost-snapshots
           path: solana/runtime-tests/cost-snapshots/*.json
           if-no-files-found: error
+
+      - name: Check the capability property test catches its planted bugs
+        run: bash scripts/check-planted-bugs.sh
 
       - name: Run zama-host decode-feature tests
         run: cargo test -p zama-host --features decode

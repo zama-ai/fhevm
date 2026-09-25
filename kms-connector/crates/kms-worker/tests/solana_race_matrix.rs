@@ -97,7 +97,7 @@ async fn a_handle_update_does_not_reach_a_request_for_the_replaced_handle() {
     let request = RequestBuilder::new(&signer).direct(&before, named).typed();
 
     let (accepted, reads) = observe(
-        World::running_at_slot(BEFORE)
+        World::at_slot(BEFORE)
             .with_encrypted_store(&before)
             .with_watermark(signer.pubkey(), 0),
         &request,
@@ -107,7 +107,7 @@ async fn a_handle_update_does_not_reach_a_request_for_the_replaced_handle() {
     assert_planned_reads(reads, 1);
 
     let (outcome, _) = observe(
-        World::running_at_slot(AFTER)
+        World::at_slot(AFTER)
             .with_encrypted_store(&after)
             .with_watermark(signer.pubkey(), 0),
         &request,
@@ -130,7 +130,7 @@ async fn a_handle_update_leaves_the_new_handle_unallowed_until_a_leaf_is_sealed(
         .typed();
 
     let (outcome, _) = observe(
-        World::running_at_slot(AFTER)
+        World::at_slot(AFTER)
             .with_encrypted_store(&after)
             .with_watermark(signer.pubkey(), 0),
         &request,
@@ -166,7 +166,7 @@ async fn an_allow_authorizes_a_request_only_from_the_observation_that_holds_it()
     let request = RequestBuilder::new(&signer).direct(&before, live).typed();
 
     let (outcome, _) = observe(
-        World::running_at_slot(BEFORE)
+        World::at_slot(BEFORE)
             .with_encrypted_store(&before)
             .with_watermark(signer.pubkey(), 0),
         &request,
@@ -183,7 +183,7 @@ async fn an_allow_authorizes_a_request_only_from_the_observation_that_holds_it()
     assert!(failure.is_recoverable());
 
     let (outcome, _) = observe(
-        World::running_at_slot(AFTER)
+        World::at_slot(AFTER)
             .with_encrypted_store(&after)
             .with_watermark(signer.pubkey(), 0),
         &request,
@@ -214,7 +214,7 @@ async fn delegation_revocation_rejects_its_entry_at_the_later_observation() {
         .typed();
 
     let (accepted, reads) = observe(
-        World::running_at_slot(BEFORE)
+        World::at_slot(BEFORE)
             .with_encrypted_store(&encrypted_store)
             .with_watermark(signer.pubkey(), 0)
             .with_delegation(&granted),
@@ -225,7 +225,7 @@ async fn delegation_revocation_rejects_its_entry_at_the_later_observation() {
     assert_planned_reads(reads, 2);
 
     let (outcome, _) = observe(
-        World::running_at_slot(AFTER)
+        World::at_slot(AFTER)
             .with_encrypted_store(&encrypted_store)
             .with_watermark(signer.pubkey(), 0)
             .with_delegation(&revoked),
@@ -256,7 +256,7 @@ async fn delegation_revocation_does_not_touch_the_direct_branch() {
         .typed();
 
     let (outcome, reads) = observe(
-        World::running_at_slot(AFTER)
+        World::at_slot(AFTER)
             .with_encrypted_store(&own_encrypted_store)
             .with_watermark(signer.pubkey(), 0)
             .with_delegation(&revoked),
@@ -293,7 +293,7 @@ async fn a_record_behind_by_a_non_merging_append_still_authorizes() {
         .typed();
 
     let (outcome, reads) = observe_with_record(
-        World::running_at_slot(AFTER)
+        World::at_slot(AFTER)
             .with_encrypted_store(&chain_state)
             .with_watermark(signer.pubkey(), 0),
         ProofRecord::of(&[&record_state]),
@@ -327,7 +327,7 @@ async fn a_record_behind_by_a_merging_append_is_retryable_and_then_authorized() 
     let request = RequestBuilder::new(&signer)
         .direct(&chain_state, sealed)
         .typed();
-    let world = World::running_at_slot(AFTER)
+    let world = World::at_slot(AFTER)
         .with_encrypted_store(&chain_state)
         .with_watermark(signer.pubkey(), 0);
 
@@ -382,7 +382,7 @@ async fn a_record_ahead_of_the_observation_is_retryable_and_then_authorized() {
         .typed();
 
     let (outcome, reads) = observe_with_record(
-        World::running_at_slot(BEFORE)
+        World::at_slot(BEFORE)
             .with_encrypted_store(&behind)
             .with_watermark(signer.pubkey(), 0),
         ProofRecord::of(&[&caught_up]),
@@ -412,7 +412,7 @@ async fn a_record_ahead_of_the_observation_is_retryable_and_then_authorized() {
     );
 
     let (outcome, _) = observe(
-        World::running_at_slot(AFTER)
+        World::at_slot(AFTER)
             .with_encrypted_store(&caught_up)
             .with_watermark(signer.pubkey(), 0),
         &request,

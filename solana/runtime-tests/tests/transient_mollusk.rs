@@ -1217,7 +1217,7 @@ fn oracle_recovers_unstored_random_results_from_their_own_cpi_seed_event() {
         &probe,
         &[mollusk_svm::result::Check::success()],
     );
-    let event: host::FheExecuteRandomSeedsEvent = result
+    let event: host::FheExecutedEvent = result
         .inner_instructions
         .iter()
         .find_map(|inner| zama_solana_test_kit::decode_anchor_event(&inner.instruction.data))

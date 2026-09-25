@@ -12,9 +12,9 @@ pub enum ZamaHostError {
     /// The signer is not the configured host admin.
     #[msg("host config admin does not match signer")]
     HostConfigAdminMismatch,
-    /// A production-shaped instruction was attempted while the host is paused.
-    #[msg("host config account is paused")]
-    HostConfigPaused,
+    /// `fhe_execute` was attempted while execution is paused.
+    #[msg("host execution is paused")]
+    ExecutionPaused,
     /// The host config account is not the canonical singleton or has invalid shape.
     #[msg("host config account is invalid")]
     HostConfigMismatch,
@@ -288,4 +288,27 @@ pub enum ZamaHostError {
     InvalidReturnSelection,
     #[msg("transient store must be opened for this transaction and closed last")]
     TransientStoreNotOpened,
+    /// A wallet delegator called `delegate_for_user_decryption` through CPI. Its signature
+    /// reaches every program of the transaction it signed, so it must delegate at the top level.
+    #[msg("a wallet delegator must delegate in a top-level instruction")]
+    WalletDelegationThroughCpi,
+    /// An execution consumed a verified input while verified inputs are paused.
+    #[msg("verified inputs are paused")]
+    VerifiedInputsPaused,
+    /// An ACL write outside an execution was attempted while ACL writes are paused.
+    #[msg("ACL writes are paused")]
+    AclWritesPaused,
+    /// `verify_public_decrypt` was attempted while public-decrypt verification is paused.
+    #[msg("public-decrypt verification is paused")]
+    PublicDecryptPaused,
+    /// The signer's pauser record is disabled.
+    #[msg("signer is not an enabled pauser")]
+    NotPauser,
+    /// The pauser record is not the canonical PDA of the pauser, or is malformed.
+    #[msg("pauser record mismatch")]
+    PauserRecordMismatch,
+    /// A wallet pauser called `pause` through CPI. Its signature reaches every program of the
+    /// transaction it signed, so it must pause at the top level.
+    #[msg("a wallet pauser must pause in a top-level instruction")]
+    WalletPauseThroughCpi,
 }

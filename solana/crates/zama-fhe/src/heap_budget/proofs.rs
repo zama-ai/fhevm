@@ -16,17 +16,19 @@ use super::harness::counted_bytes;
 use super::harness::{balance_handle, try_measure, ShapeBuilder, ADMITTED_FRONTIER_SHAPES};
 use super::shapes::*;
 
+/// Invariant #61: 16 updates to 8-peak Stores is one past the host's measured wall for that shape
+/// (`fhe_execute_boundary/mature_updates_peaks_8`), yet the builder admits it.
 #[test]
-fn shared_audience_store_outputs_fit_the_builder_at_full_depth() {
+fn the_builder_admits_mature_updates_the_host_heap_cannot_run() {
     FheExecution::build(
         crate::StoreId::new(
             anchor_lang::prelude::Pubkey::new_from_array([0xA9; 32]),
             Pubkey::new_unique(),
             [0xA5; 32],
         ),
-        shared_audience_public_creates_shape(MAX_FHE_EXECUTION_STEPS),
+        shared_audience_mature_updates_shape(16, 8),
     )
-    .expect("32 slots with one shared audience fit the builder");
+    .expect("16 shared-audience updates to 8-peak Stores fit the builder");
 }
 
 /// The pre-emptive heap protocol, proven adversarially: drive the heaviest per-step

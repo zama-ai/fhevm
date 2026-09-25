@@ -42,7 +42,7 @@ use zama_solana_acl::{historical_access_leaf_commitment, public_decrypt_leaf_com
 /// Resolves an encrypted store the way the pipeline does, so the binding rules are
 /// exercised against a validated account rather than a hand-made value.
 fn resolved(encrypted_store: &EncryptedStoreFixture) -> ResolvedEncryptedStore {
-    let world = World::running_at_slot(1).with_encrypted_store(encrypted_store);
+    let world = World::at_slot(1).with_encrypted_store(encrypted_store);
     let snapshot = world.read(&SnapshotKeys::new([encrypted_store.account_key]));
     resolve_encrypted_store(&snapshot, PROGRAM_ID, encrypted_store.account_key)
         .expect("the fixture encrypted store resolves")
@@ -507,7 +507,7 @@ async fn the_pipeline_asks_the_record_for_the_leaf_the_entry_claims() {
     let request = RequestBuilder::new(&wallet)
         .direct(&encrypted_store, live)
         .typed();
-    let world = World::running_at_slot(100)
+    let world = World::at_slot(100)
         .with_encrypted_store(&encrypted_store)
         .with_watermark(wallet.pubkey(), 0);
     let proofs = ScriptedProofReader::constant(world.record());
@@ -546,7 +546,7 @@ async fn the_pipeline_reads_one_batch_with_one_query_per_entry() {
         .direct(&second_account, second)
         .direct(&first_account, first)
         .typed();
-    let world = World::running_at_slot(100)
+    let world = World::at_slot(100)
         .with_encrypted_store(&first_account)
         .with_encrypted_store(&second_account)
         .with_watermark(wallet.pubkey(), 0);
@@ -579,7 +579,7 @@ async fn an_unreachable_record_rejects_transiently() {
     let request = RequestBuilder::new(&wallet)
         .direct(&encrypted_store, live)
         .typed();
-    let world = World::running_at_slot(100)
+    let world = World::at_slot(100)
         .with_encrypted_store(&encrypted_store)
         .with_watermark(wallet.pubkey(), 0);
     let reader = ScriptedReader::constant(world);
@@ -604,7 +604,7 @@ async fn a_batch_failure_names_the_entry_without_a_leaf() {
         .direct(&encrypted_store, allowed)
         .direct(&encrypted_store, never_allowed)
         .typed();
-    let world = World::running_at_slot(100)
+    let world = World::at_slot(100)
         .with_encrypted_store(&encrypted_store)
         .with_watermark(wallet.pubkey(), 0);
     let proofs = ScriptedProofReader::constant(world.record());
@@ -657,7 +657,7 @@ async fn valid_older_proof_does_not_trigger_a_refresh() {
     let mut after = before.clone();
     after.allow(Wallet::new(3).pubkey());
     let request = RequestBuilder::new(&wallet).direct(&after, sealed).typed();
-    let world = World::running_at_slot(100)
+    let world = World::at_slot(100)
         .with_encrypted_store(&after)
         .with_watermark(wallet.pubkey(), 0);
     let proofs = ScriptedProofReader::scripted(vec![ProofRecord::of(&[&before])]);
@@ -846,7 +846,7 @@ async fn both_occurrences_of_a_duplicate_handle_are_authorized() {
         .direct(&encrypted_store, repeated)
         .direct(&encrypted_store, repeated)
         .typed();
-    let world = World::running_at_slot(100)
+    let world = World::at_slot(100)
         .with_encrypted_store(&encrypted_store)
         .with_watermark(wallet.pubkey(), 0);
     let proofs = ScriptedProofReader::constant(world.record());

@@ -8,7 +8,7 @@
 //!
 //! Covered here: `fhe_execute` persistent outputs (create with the PDA proof, update against the
 //! stored handle, allows and leaves), the reads an execution admits, application folding, the
-//! deny and pause gates, off-chain reconstruction and proofs, the public-outputs event, the HCU
+//! deny and pause gates, off-chain reconstruction and proofs, public outputs, the HCU
 //! block cap, the rand nonce, `verify_public_decrypt`, and the cost snapshots.
 
 use anchor_lang::{
@@ -133,12 +133,8 @@ impl App {
     }
 }
 
-fn paused_host_config_account(admin: Pubkey) -> (Pubkey, Account) {
-    host_config_account_with_flags(admin, true, false)
-}
-
 fn deny_enabled_host_config_account(admin: Pubkey) -> (Pubkey, Account) {
-    host_config_account_with_flags(admin, false, true)
+    host_config_account_with_flags(admin, host::PauseFlags::default(), true)
 }
 
 /// The accounts every single-signer execution of `app` runs against.
@@ -634,6 +630,63 @@ fn mollusk_fhe_execute_rejects_stale_previous_handle() {
         &[payer],
         6,
         custom_error(host::errors::ZamaHostError::PreviousStoreMismatch),
+    );
+}
+
+#[test]
+fn mollusk_fhe_execute_rejects_stale_previous_leaf_count() {
+    // The write states the current handle but the leaf count from before the last append, so the
+    // builder's view is stale and the whole execution fails, as for a stale handle.
+    let payer = Pubkey::new_unique();
+    let app = App::new();
+    let (host_config, host_config_account) = host_config_account(payer);
+    let (address, value) = app.value("balance", handle_for_chain(3, 5));
+    let first = run_update(
+        payer,
+        &app,
+        host_config,
+        host_config_account.clone(),
+        address,
+        &value,
+        Some(value.slots[0].handle),
+        &[payer],
+        6,
+        Check::success(),
+    );
+    let updated = read_encrypted_store_from_result(&first, address);
+    assert_eq!(updated.leaf_count, value.leaf_count + 1);
+
+    let mut dictionary = ExecutionDictionary::default();
+    let effect = app.authority.store_output(
+        &mut dictionary,
+        0,
+        updated.slots[0].key,
+        &[],
+        Some(updated.slots[0].handle),
+        value.leaf_count,
+        false,
+    );
+    let args = FheExecuteArgs {
+        execution_store_index: 0,
+        effects: vec![effect],
+        returned_results: Vec::new(),
+        account_count: 0,
+        dictionary: dictionary.into_entries(),
+        steps: vec![FheExecuteStep::TrivialEncrypt {
+            plaintext: [7; 32],
+            fhe_type: 5,
+        }],
+    };
+    let ix = fhe_execute_ix(payer, app.key(), host_config, args, vec![writable(address)]);
+    let mut accounts = execution_accounts(payer, &app, host_config, host_config_account);
+    accounts.push((address, encrypted_store_account(&updated)));
+    check_host_instruction(
+        &mollusk(),
+        &ix,
+        &accounts,
+        &[custom_error(
+            host::errors::ZamaHostError::PreviousStoreMismatch,
+        )],
     );
 }
 
@@ -1455,52 +1508,71 @@ fn mollusk_fhe_execute_denies_a_write_under_an_additional_authority_into_a_denie
 }
 
 #[test]
-fn mollusk_paused_state_blocks_execution_output_and_public_sealing() {
-    let payer = Pubkey::new_unique();
-    let app = App::new();
-    let (host_config, host_config_account) = paused_host_config_account(payer);
+fn mollusk_each_pause_flag_stops_only_its_area() {
+    use host::errors::ZamaHostError::{AclWritesPaused, ExecutionPaused};
+    let flag = |set: fn(&mut host::PauseFlags)| {
+        let mut flags = host::PauseFlags::default();
+        set(&mut flags);
+        flags
+    };
+    let cases = [
+        (flag(|f| f.execution = true), None, Some(ExecutionPaused)),
+        (flag(|f| f.acl_writes = true), Some(AclWritesPaused), None),
+        (flag(|f| f.verified_inputs = true), None, None),
+        (flag(|f| f.public_decrypt = true), None, None),
+    ];
+    for (paused, acl_write_error, execute_error) in cases {
+        let payer = Pubkey::new_unique();
+        let app = App::new();
+        let (host_config, host_config_account) =
+            host_config_account_with_flags(payer, paused, false);
+        let acl_write_check = || acl_write_error.map_or_else(Check::success, custom_error);
 
-    let (address, value) = app.value("pause-seal", handle_for_chain(55, 5));
-    let seal_ix = make_handle_public_ix(
-        payer,
-        app.key(),
-        address,
-        host_config,
-        value.slots[0].key,
-        value.slots[0].handle,
-        value.leaf_count,
-        None,
-    );
-    let accounts = make_public_accounts(
-        payer,
-        &app,
-        address,
-        &value,
-        host_config,
-        host_config_account.clone(),
-    );
-    check_host_instruction(
-        &mollusk(),
-        &seal_ix,
-        &accounts,
-        &[custom_error(host::errors::ZamaHostError::HostConfigPaused)],
-    );
+        let address = app.address("pause-create");
+        let context = mollusk_execute_context(
+            payer,
+            vec![
+                (host_config, host_config_account.clone()),
+                (app.key(), empty_system_account()),
+                (address, empty_system_account()),
+            ],
+        );
+        let create_ix = create_encrypted_store_ix(payer, &app, address, host_config);
+        check_host_context(&context, &create_ix, &[acl_write_check()]);
 
-    let (_, execute_ix, accounts) = create_case(
-        payer,
-        &app,
-        host_config,
-        host_config_account,
-        "pause-execution",
-        &[payer],
-        FheExecuteExtras::default(),
-    );
-    check_host_instruction(
-        &mollusk(),
-        &execute_ix,
-        &accounts,
-        &[custom_error(host::errors::ZamaHostError::HostConfigPaused)],
-    );
+        let (address, value) = app.value("pause-seal", handle_for_chain(55, 5));
+        let seal_ix = make_handle_public_ix(
+            payer,
+            app.key(),
+            address,
+            host_config,
+            value.slots[0].key,
+            value.slots[0].handle,
+            value.leaf_count,
+            None,
+        );
+        let accounts = make_public_accounts(
+            payer,
+            &app,
+            address,
+            &value,
+            host_config,
+            host_config_account.clone(),
+        );
+        check_host_instruction(&mollusk(), &seal_ix, &accounts, &[acl_write_check()]);
+
+        let (_, execute_ix, accounts) = create_case(
+            payer,
+            &app,
+            host_config,
+            host_config_account,
+            "pause-execution",
+            &[payer],
+            FheExecuteExtras::default(),
+        );
+        let execute_check = execute_error.map_or_else(Check::success, custom_error);
+        check_host_instruction(&mollusk(), &execute_ix, &accounts, &[execute_check]);
+    }
 }
 
 // ---------------------------------------------------------------------------
@@ -1831,7 +1903,7 @@ fn mollusk_fhe_execute_updates_persistent_output_with_previous_handle() {
 }
 
 // ---------------------------------------------------------------------------
-// fhe_execute: narrow produced-public lifecycle execution
+// fhe_execute: public outputs and event readers
 // ---------------------------------------------------------------------------
 
 /// The bytes an event-CPI inner instruction starts with: Anchor's event-CPI instruction tag, then
@@ -1894,86 +1966,42 @@ fn sole_emitted_event<T: Discriminator + AnchorDeserialize>(
     events.remove(0)
 }
 
-fn created_public_events(
+/// The Store's peaks after `execution`: for each public output in step order, one allow leaf for
+/// `payer` and then its public-decrypt leaf. The MMR is the only record that a handle became
+/// public, and it is what a public decryption is proven against.
+fn expected_public_output_peaks(
     result: &mollusk_svm::result::InstructionResult,
-) -> Vec<host::PublicOutputsProducedEvent> {
-    emitted_events(result)
-}
-
-fn assert_created_public_batch(
-    result: &mollusk_svm::result::InstructionResult,
-    expected_outputs: &[(u16, Pubkey)],
-) {
-    let event = sole_emitted_event::<host::PublicOutputsProducedEvent>(result);
-    assert_eq!(event.version, host::EVENT_VERSION);
-    assert_eq!(event.outputs.len(), expected_outputs.len());
-    for (record, (step_index, encrypted_store)) in event.outputs.iter().zip(expected_outputs.iter())
-    {
-        assert_eq!(record.step_index, *step_index);
-        assert_eq!(record.encrypted_store, *encrypted_store);
-        assert!(read_encrypted_store_from_result(result, *encrypted_store)
-            .slots
-            .iter()
-            .any(|slot| slot.handle == record.output_handle));
+    outputs: &[(u16, Pubkey)],
+    payer: Pubkey,
+) -> (Vec<[u8; 32]>, u64) {
+    let mut peaks = Vec::new();
+    let mut count = 0u64;
+    for (step_index, address) in outputs {
+        let handle = read_encrypted_store_from_result(result, *address)
+            .get(&label(&format!("created-public-{step_index}")))
+            .expect("the public output's slot");
+        append_allow_leaves(*address, handle, &[payer], &mut peaks, &mut count);
+        let leaf =
+            zama_solana_acl::public_decrypt_leaf_commitment(address.to_bytes(), count, handle);
+        zama_solana_acl::mmr_append(&mut peaks, &mut count, leaf).unwrap();
     }
+    (peaks, count)
 }
 
 #[test]
-fn mollusk_fhe_execute_without_created_public_output_emits_no_lifecycle_batch() {
-    let execution = created_public_batch(1, &[]);
-    let result = check_host_instruction(
-        &mollusk(),
-        &execution.instruction,
-        &execution.accounts,
-        &[Check::success()],
-    );
-    assert!(created_public_events(&result).is_empty());
-}
-
-#[test]
-fn mollusk_fhe_execute_emits_one_created_public_lifecycle_batch() {
-    let execution = created_public_batch(1, &[0]);
-    let result = check_host_instruction(
-        &mollusk(),
-        &execution.instruction,
-        &execution.accounts,
-        &[Check::success()],
-    );
-    assert_created_public_batch(&result, &execution.outputs);
-}
-
-#[test]
-fn mollusk_fhe_execute_batches_multiple_created_public_outputs_in_step_order() {
+fn mollusk_fhe_execute_seals_each_public_output_leaves_in_step_order() {
     let execution = created_public_batch(3, &[0, 2]);
+    let payer = execution.instruction.accounts[0].pubkey;
     let result = check_host_instruction(
         &mollusk(),
         &execution.instruction,
         &execution.accounts,
         &[Check::success()],
     );
-    assert_created_public_batch(&result, &execution.outputs);
-}
-
-#[test]
-fn mollusk_fhe_execute_maximum_created_public_batch_fits_one_cpi() {
-    // The largest executable all-created-public execution still emits its DD-038 lifecycle records in
-    // exactly one execution CPI. (The full MAX_FHE_EXECUTION_STEPS execution serialization is covered by the
-    // event-transport unit test; the host wall itself lives in fhe_execute_boundary.rs.)
-    // Each step writes a distinct slot, allows the payer, and makes the result public. The
-    // current 32 KiB host heap admits 30 of these; the State capacity is 32, but this heavier
-    // lifecycle shape reaches the heap wall first (tracked by fhe_execute_boundary.rs).
-    let created_public_steps = 30;
-    let execution = created_public_batch(
-        created_public_steps,
-        &(0..created_public_steps).collect::<Vec<_>>(),
-    );
-    let result = check_host_instruction(
-        &mollusk(),
-        &execution.instruction,
-        &execution.accounts,
-        &[Check::success()],
-    );
-    assert_created_public_batch(&result, &execution.outputs);
+    let store = read_encrypted_store_from_result(&result, execution.outputs[0].1);
+    let (peaks, leaf_count) = expected_public_output_peaks(&result, &execution.outputs, payer);
+    assert_eq!(store.leaf_count, leaf_count);
+    assert_eq!(store.peaks, peaks);
 }
 
 #[test]
@@ -1994,7 +2022,6 @@ fn mollusk_fhe_execute_wrong_event_authority_fails_without_output() {
     let result =
         check_host_instruction(&mollusk(), &execution.instruction, &execution.accounts, &[]);
     assert!(result.program_result.is_err());
-    assert!(created_public_events(&result).is_empty());
     let output = result.get_account(&execution.outputs[0].1).unwrap();
     let before = &execution
         .accounts
@@ -2868,7 +2895,8 @@ fn mollusk_set_hcu_app_trusted_rejects_remaining_accounts() {
 fn mollusk_set_coprocessor_signers_rotates_the_set_and_threshold() {
     // The admin setter replaces the registered set + threshold in place.
     let admin = Pubkey::new_unique();
-    let (host_config, account) = host_config_account_with_flags(admin, false, false);
+    let (host_config, account) =
+        host_config_account_with_flags(admin, host::PauseFlags::default(), false);
     let context = mollusk_execute_context(admin, vec![(host_config, account)]);
 
     let signers = vec![[0xAAu8; 20], [0xBBu8; 20], [0xCCu8; 20]];
@@ -2887,7 +2915,8 @@ fn mollusk_set_coprocessor_signers_rotates_the_set_and_threshold() {
 fn mollusk_set_coprocessor_signers_rejects_non_admin() {
     let admin = Pubkey::new_unique();
     let intruder = Pubkey::new_unique();
-    let (host_config, account) = host_config_account_with_flags(admin, false, false);
+    let (host_config, account) =
+        host_config_account_with_flags(admin, host::PauseFlags::default(), false);
     let context = mollusk_execute_context(intruder, vec![(host_config, account)]);
 
     check_host_context(
@@ -2903,7 +2932,8 @@ fn mollusk_set_coprocessor_signers_rejects_non_admin() {
 fn mollusk_set_coprocessor_signers_rejects_invalid_set() {
     // The setter enforces the same invariants as init (duplicate signer here).
     let admin = Pubkey::new_unique();
-    let (host_config, account) = host_config_account_with_flags(admin, false, false);
+    let (host_config, account) =
+        host_config_account_with_flags(admin, host::PauseFlags::default(), false);
     let context = mollusk_execute_context(admin, vec![(host_config, account)]);
 
     check_host_context(
@@ -2920,7 +2950,8 @@ fn mollusk_define_kms_context_at_realistic_signer_count() {
     // Exercises the KMS-context definition path at a realistic mainnet-ish size (n=13 signers,
     // public-decrypt threshold 7). `KmsContext::MAX_SIGNERS` (16) bounds the account, so 13 fits.
     let admin = Pubkey::new_unique();
-    let (host_config, account) = host_config_account_with_flags(admin, false, false);
+    let (host_config, account) =
+        host_config_account_with_flags(admin, host::PauseFlags::default(), false);
     let context_id = canonical_test_context_id(1);
     let kms_context = host::kms_context_address(context_id).0;
     let context = mollusk_execute_context(
@@ -2967,7 +2998,8 @@ fn default_kms_thresholds() -> host::KmsThresholds {
 
 fn run_define_kms_context_expecting(signers: Vec<[u8; 20]>, expected: Check<'static>) {
     let admin = Pubkey::new_unique();
-    let (host_config, account) = host_config_account_with_flags(admin, false, false);
+    let (host_config, account) =
+        host_config_account_with_flags(admin, host::PauseFlags::default(), false);
     let context_id = canonical_test_context_id(1);
     let kms_context = host::kms_context_address(context_id).0;
     let context = mollusk_execute_context(
@@ -3353,6 +3385,35 @@ impl FheExecutionFixture {
             }],
             meter,
             trust,
+            None,
+        )
+    }
+
+    /// A trivial encryption plus a scalar add whose scalar is dictionary entry `value_index`.
+    fn scalar_add_instruction(&self, dictionary: Vec<[u8; 32]>, value_index: u8) -> Instruction {
+        self.instruction(
+            FheExecuteArgs {
+                execution_store_index: 0,
+                effects: vec![],
+                returned_results: Vec::new(),
+                account_count: 0,
+                dictionary,
+                steps: vec![
+                    FheExecuteStep::TrivialEncrypt {
+                        plaintext: [7; 32],
+                        fhe_type: 5,
+                    },
+                    FheExecuteStep::Binary {
+                        op: FheBinaryOpCode::Add,
+                        lhs: FheExecuteOperand::EarlierStep { producer_index: 0 },
+                        rhs: FheExecuteOperand::Scalar { value_index },
+                        output_fhe_type: 5,
+                    },
+                ],
+            },
+            vec![readonly(self.balance_store)],
+            None,
+            None,
             None,
         )
     }
@@ -3784,7 +3845,20 @@ fn mollusk_create_encrypted_store_accepts_prefunded_empty_pda() {
             (address, system_account(1)),
         ],
     );
-    let ix = anchor_ix(
+    let ix = create_encrypted_store_ix(payer, &app, address, host_config);
+    check_host_context(&context, &ix, &[Check::success()]);
+    let state = read_encrypted_store(&context, address);
+    assert!(state.slots.is_empty());
+}
+
+/// `create_encrypted_store` for `app`'s own value authority.
+fn create_encrypted_store_ix(
+    payer: Pubkey,
+    app: &App,
+    address: Pubkey,
+    host_config: Pubkey,
+) -> Instruction {
+    anchor_ix(
         host::id(),
         host::accounts::CreateEncryptedStore {
             payer,
@@ -3804,10 +3878,7 @@ fn mollusk_create_encrypted_store_accepts_prefunded_empty_pda() {
                 ],
             },
         },
-    );
-    check_host_context(&context, &ix, &[Check::success()]);
-    let state = read_encrypted_store(&context, address);
-    assert!(state.slots.is_empty());
+    )
 }
 
 #[test]
@@ -4057,6 +4128,20 @@ fn mollusk_fhe_execute_extra_remaining_account_still_rejected_with_block_cap() {
 }
 
 #[test]
+fn mollusk_fhe_execute_missing_remaining_account_rejected() {
+    let fixture = FheExecutionFixture::with_block_cap(u64::MAX);
+    let mut ix = fixture.block_cap_instruction(None, None);
+    ix.accounts.pop();
+    check_host_context(
+        &fixture.context,
+        &ix,
+        &[custom_error(
+            host::errors::ZamaHostError::FheExecuteAccountCountMismatch,
+        )],
+    );
+}
+
+#[test]
 fn mollusk_fhe_execute_transient_only_batch_is_metered_via_the_values_it_reads() {
     // A transient-only execution (all Transient outputs) creates no persistent record, but the
     // stored values it reads name the application, so the execution is still charged in full.
@@ -4154,6 +4239,39 @@ fn mollusk_fhe_execute_meter_accumulation_overflow_fails_closed() {
     fixture.assert_no_output(&result);
 }
 
+// ---- fhe_execute dictionary bounds ----
+
+#[test]
+fn mollusk_fhe_execute_rejects_a_dictionary_index_past_the_dictionary() {
+    // The program bounds-checks dictionary references itself, whatever the SDK or the caller
+    // built: a scalar pointing past the dictionary fails the execution.
+    let fixture = FheExecutionFixture::with_block_cap(u64::MAX);
+    check_host_context(
+        &fixture.context,
+        &fixture.scalar_add_instruction(vec![[1; 32]], 1),
+        &[custom_error(
+            host::errors::ZamaHostError::FheExecuteDictionaryIndexOutOfBounds,
+        )],
+    );
+    check_host_context(
+        &fixture.context,
+        &fixture.scalar_add_instruction(vec![[1; 32]], 0),
+        &[Check::success()],
+    );
+}
+
+#[test]
+fn mollusk_fhe_execute_rejects_an_unreferenced_dictionary_entry() {
+    let fixture = FheExecutionFixture::with_block_cap(u64::MAX);
+    check_host_context(
+        &fixture.context,
+        &fixture.scalar_add_instruction(vec![[1; 32], [2; 32]], 0),
+        &[custom_error(
+            host::errors::ZamaHostError::FheExecuteDictionaryEntryUnreferenced,
+        )],
+    );
+}
+
 // ---- fhe_execute rand nonce ----
 
 #[test]
@@ -4208,8 +4326,8 @@ fn mollusk_fhe_execute_rand_consumes_the_nonce_and_never_repeats_a_seed() {
     let first = check_host_context(&fixture.context, &ix, &[Check::success()]);
     let second = check_host_context(&fixture.context, &ix, &[Check::success()]);
 
-    let first_seeds = sole_emitted_event::<host::FheExecuteRandomSeedsEvent>(&first);
-    let second_seeds = sole_emitted_event::<host::FheExecuteRandomSeedsEvent>(&second);
+    let first_seeds = sole_emitted_event::<host::FheExecutedEvent>(&first);
+    let second_seeds = sole_emitted_event::<host::FheExecutedEvent>(&second);
     assert_eq!(first_seeds.version, host::EVENT_VERSION);
     assert_eq!(first_seeds.seeds.len(), 1);
     assert_eq!(first_seeds.seeds[0].step_index, 0);
@@ -4267,7 +4385,7 @@ fn host_config_with_context(admin: Pubkey, context_id: [u8; 32]) -> (Pubkey, Acc
                 coprocessor_threshold: 1,
                 decryption_contract: DECRYPTION_CONTRACT,
                 current_kms_context_id: context_id,
-                paused: false,
+                paused: host::PauseFlags::default(),
                 grant_deny_list_enabled: false,
                 max_hcu_per_tx: u64::MAX,
                 max_hcu_depth_per_tx: u64::MAX,
@@ -4465,6 +4583,116 @@ fn mollusk_verify_public_decrypt_returns_handle_and_cleartext() {
     assert_eq!(unchanged.slots[0].handle, sealed.slots[0].handle);
     assert_eq!(unchanged.leaf_count, sealed.leaf_count);
     assert_eq!(unchanged.peaks, sealed.peaks);
+}
+
+#[test]
+fn mollusk_only_the_public_decrypt_flag_stops_verify_public_decrypt() {
+    let admin = Pubkey::new_unique();
+    let app = App::new();
+    let (host_config, live_config) = host_config_with_context(admin, KMS_CONTEXT_ID);
+    let (kms_context, kms_context_acct) = kms_context_account(KMS_CONTEXT_ID);
+    let handle = handle_for_chain(5, 5);
+    let (address, sealed, proof) = seal_public_leaf(admin, &app, host_config, &live_config, handle);
+    let extra_data = vec![0x00u8];
+    let (cleartext, signatures) = public_decrypt_cert(handle, &extra_data);
+    let ix = verify_public_decrypt_ix(
+        host_config,
+        kms_context,
+        address,
+        handle,
+        cleartext,
+        signatures,
+        extra_data,
+        proof,
+    );
+
+    let none = host::PauseFlags::default();
+    let cases = [
+        (
+            host::PauseFlags {
+                execution: true,
+                ..none
+            },
+            None,
+        ),
+        (
+            host::PauseFlags {
+                verified_inputs: true,
+                ..none
+            },
+            None,
+        ),
+        (
+            host::PauseFlags {
+                acl_writes: true,
+                ..none
+            },
+            None,
+        ),
+        (
+            host::PauseFlags {
+                public_decrypt: true,
+                ..none
+            },
+            Some(host::errors::ZamaHostError::PublicDecryptPaused),
+        ),
+    ];
+    for (paused, error) in cases {
+        let mut config = HostConfig::try_deserialize(&mut live_config.data.as_slice()).unwrap();
+        config.paused = paused;
+        let accounts = vec![
+            (
+                host_config,
+                Account {
+                    data: serialized_account(config),
+                    ..live_config.clone()
+                },
+            ),
+            (kms_context, kms_context_acct.clone()),
+            (address, encrypted_store_account(&sealed)),
+        ];
+        let check = error.map_or_else(Check::success, custom_error);
+        check_host_instruction(&mollusk(), &ix, &accounts, &[check]);
+    }
+}
+
+#[test]
+fn mollusk_verify_public_decrypt_accepts_v4_extra_data_routed_through_another_store() {
+    // Version 4 names the Store that routed the decrypt request. The verifier checks the public
+    // leaf against the Store it is given, which need not be that one.
+    let admin = Pubkey::new_unique();
+    let app = App::new();
+    let (host_config, host_config_account) = host_config_with_context(admin, KMS_CONTEXT_ID);
+    let (kms_context, kms_context_acct) = kms_context_account(KMS_CONTEXT_ID);
+    let handle = handle_for_chain(5, 5);
+    let (address, sealed, proof) =
+        seal_public_leaf(admin, &app, host_config, &host_config_account, handle);
+
+    let routing_store = Pubkey::new_unique();
+    let extra_data = [&[4][..], &KMS_CONTEXT_ID, &routing_store.to_bytes()].concat();
+    let (cleartext, signatures) = public_decrypt_cert(handle, &extra_data);
+    let ix = verify_public_decrypt_ix(
+        host_config,
+        kms_context,
+        address,
+        handle,
+        cleartext,
+        signatures,
+        extra_data,
+        proof,
+    );
+    let accounts = vec![
+        (host_config, host_config_account),
+        (kms_context, kms_context_acct),
+        (address, encrypted_store_account(&sealed)),
+    ];
+    let expected = expected_return_data(handle, cleartext, KMS_CONTEXT_ID);
+    check_host_instruction(
+        &mollusk(),
+        &ix,
+        &accounts,
+        &[Check::success(), Check::return_data(&expected)],
+    );
 }
 
 /// Rotates the current context `KMS_CONTEXT_ID` -> `KMS_CONTEXT_ID + 1` through the real

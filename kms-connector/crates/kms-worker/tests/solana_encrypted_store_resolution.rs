@@ -46,7 +46,7 @@ fn resolve_from(
 /// An encrypted store placed in a world, resolved.
 fn resolved(encrypted_store: &EncryptedStoreFixture) -> ResolvedEncryptedStore {
     resolve_from(
-        &World::running_at_slot(1).with_encrypted_store(encrypted_store),
+        &World::at_slot(1).with_encrypted_store(encrypted_store),
         encrypted_store.account_key,
     )
     .expect("a well-formed encrypted store resolves")
@@ -64,7 +64,7 @@ fn an_encrypted_store_named_by_its_address_resolves() {
         EncryptedStoreFixture::allowing(handle(0x10, FHE_TYPE_UINT64), Wallet::new(1).pubkey());
 
     let resolved = resolve_from(
-        &World::running_at_slot(1).with_encrypted_store(&encrypted_store),
+        &World::at_slot(1).with_encrypted_store(&encrypted_store),
         encrypted_store.account_key,
     )
     .expect("a well-formed encrypted store resolves");
@@ -83,7 +83,7 @@ fn an_encrypted_store_absent_at_the_observation_is_transient() {
     let encrypted_store =
         EncryptedStoreFixture::allowing(handle(0x11, FHE_TYPE_UINT64), Wallet::new(1).pubkey());
 
-    let failure = resolve_from(&World::running_at_slot(1), encrypted_store.account_key)
+    let failure = resolve_from(&World::at_slot(1), encrypted_store.account_key)
         .expect_err("an account that does not exist authorizes nothing");
 
     assert!(matches!(
@@ -110,7 +110,7 @@ fn an_encrypted_store_owned_by_another_program_is_terminal() {
     impostor.owner = [0xee; 32];
 
     let failure = resolve_from(
-        &World::running_at_slot(1).with_account(encrypted_store.account_key, impostor),
+        &World::at_slot(1).with_account(encrypted_store.account_key, impostor),
         encrypted_store.account_key,
     )
     .expect_err("a foreign program's account is not an encrypted store");
@@ -141,7 +141,7 @@ fn a_host_owned_account_of_another_type_is_rejected() {
     let delegation = DelegationFixture::live(delegator.pubkey(), signer.pubkey(), 100);
 
     let failure = resolve_from(
-        &World::running_at_slot(1).with_account(encrypted_store.account_key, delegation.account()),
+        &World::at_slot(1).with_account(encrypted_store.account_key, delegation.account()),
         encrypted_store.account_key,
     )
     .expect_err("delegation-record bytes are not an encrypted store");
@@ -172,7 +172,7 @@ fn an_encrypted_store_whose_fields_derive_another_address_is_rejected() {
     assert_ne!(foreign.account_key, claimed.account_key);
 
     let failure = resolve_from(
-        &World::running_at_slot(1).with_account(claimed.account_key, foreign.account()),
+        &World::at_slot(1).with_account(claimed.account_key, foreign.account()),
         claimed.account_key,
     )
     .expect_err("an encrypted store must live where its fields say");
@@ -201,7 +201,7 @@ fn an_encrypted_store_with_an_altered_bump_is_rejected() {
     altered.encrypted_store.bump = altered.encrypted_store.bump.wrapping_sub(1);
 
     let failure = resolve_from(
-        &World::running_at_slot(1).with_account(account_key, altered.account()),
+        &World::at_slot(1).with_account(account_key, altered.account()),
         account_key,
     )
     .expect_err("the bump is part of the address");
@@ -225,7 +225,7 @@ fn trailing_bytes_after_the_encrypted_store_body_are_accepted() {
     grown.data.extend_from_slice(&[0; 96]);
 
     let resolved = resolve_from(
-        &World::running_at_slot(1).with_account(encrypted_store.account_key, grown),
+        &World::at_slot(1).with_account(encrypted_store.account_key, grown),
         encrypted_store.account_key,
     )
     .expect("a realloc-grown account resolves");
@@ -255,7 +255,7 @@ fn an_encrypted_store_with_a_truncated_body_is_rejected() {
     };
 
     let failure = resolve_from(
-        &World::running_at_slot(1).with_account(encrypted_store.account_key, truncated),
+        &World::at_slot(1).with_account(encrypted_store.account_key, truncated),
         encrypted_store.account_key,
     )
     .expect_err("a body that does not decode is not an encrypted store");
@@ -276,7 +276,7 @@ fn an_encrypted_store_holding_only_its_discriminator_is_rejected() {
     };
 
     let failure = resolve_from(
-        &World::running_at_slot(1).with_account(encrypted_store.account_key, empty),
+        &World::at_slot(1).with_account(encrypted_store.account_key, empty),
         encrypted_store.account_key,
     )
     .expect_err("a discriminator alone is not an encrypted store");
@@ -293,7 +293,7 @@ fn an_encrypted_store_with_inconsistent_peaks_is_terminal() {
     encrypted_store.encrypted_store.peaks.push([0; 32]);
 
     let failure = resolve_from(
-        &World::running_at_slot(1).with_encrypted_store(&encrypted_store),
+        &World::at_slot(1).with_encrypted_store(&encrypted_store),
         encrypted_store.account_key,
     )
     .expect_err("two peaks for one leaf is not a valid state");
@@ -442,7 +442,7 @@ async fn a_foreign_application_handle_later_in_the_batch_rejects_the_whole_reque
         .direct(&in_scope, in_scope_handle)
         .direct(&out_of_scope, out_of_scope_handle)
         .typed();
-    let world = World::running_at_slot(100)
+    let world = World::at_slot(100)
         .with_encrypted_store(&in_scope)
         .with_encrypted_store(&out_of_scope)
         .with_watermark(wallet.pubkey(), 0);
@@ -483,7 +483,7 @@ async fn a_permissive_permit_does_not_widen_the_allow_leaf() {
         .permit(PermitBuilder::new(wallet.pubkey()).permissive())
         .direct(&encrypted_store, live)
         .typed();
-    let world = World::running_at_slot(100)
+    let world = World::at_slot(100)
         .with_encrypted_store(&encrypted_store)
         .with_watermark(wallet.pubkey(), 0);
     let proofs = ScriptedProofReader::constant(world.record());

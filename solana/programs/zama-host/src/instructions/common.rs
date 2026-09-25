@@ -2,13 +2,16 @@
 
 use anchor_lang::prelude::*;
 use anchor_lang::solana_program::{
+    instruction::{get_stack_height, TRANSACTION_LEVEL_STACK_HEIGHT},
     program::{invoke, invoke_signed},
     system_instruction,
 };
 
 use crate::{
     errors::ZamaHostError,
-    state::{deny_scope_address, host_config_address, AppScope, DenyScopeRecord, HostConfig},
+    state::{
+        deny_scope_address, host_config_address, AppScope, DenyScopeRecord, HostConfig, PauseArea,
+    },
 };
 use crate::{events::HostConfigUpdatedEvent, state::EVENT_VERSION};
 
@@ -125,19 +128,29 @@ pub(super) fn assert_admin(config: &Account<HostConfig>, admin: &Signer) -> Resu
     Ok(())
 }
 
-pub(super) fn assert_not_paused(config: &Account<HostConfig>) -> Result<()> {
+/// Checks the canonical `HostConfig`, then fails while `area` is paused.
+pub(super) fn assert_not_paused(config: &Account<HostConfig>, area: PauseArea) -> Result<()> {
     assert_host_config_shape(config)?;
-    require!(!config.paused, ZamaHostError::HostConfigPaused);
-    Ok(())
+    config.paused.require_running(area)
 }
 
-/// Emits the config snapshot after an admin change. Every instruction that touches `HostConfig`
-/// routes through here, which is why the emitter takes the event authority as an argument rather
-/// than using `emit_cpi!`: that macro reads a binding named `ctx`, which a shared helper does not
-/// have.
+/// A wallet's signature reaches every CPI of the transaction it signed, so any program the wallet
+/// calls could act with it. A PDA signs only through its own program's `invoke_signed`, so a PDA,
+/// such as a Squads vault, may still sign through CPI.
+pub(super) fn require_top_level_unless_pda(signer: &Pubkey, error: ZamaHostError) -> Result<()> {
+    if get_stack_height() == TRANSACTION_LEVEL_STACK_HEIGHT || !signer.is_on_curve() {
+        return Ok(());
+    }
+    Err(error.into())
+}
+
+/// Emits the config snapshot after a config change. Every instruction that touches `HostConfig`
+/// routes through here, except `define_kms_context`, whose `NewKmsContextEvent` carries the new
+/// current context. The emitter takes the event authority as an argument rather than using
+/// `emit_cpi!` because that macro reads a binding named `ctx`, which a shared helper does not have.
 pub(super) fn emit_config_updated(
     config: &HostConfig,
-    admin: Pubkey,
+    signer: Pubkey,
     event_authority: &AccountInfo<'_>,
 ) -> Result<()> {
     crate::event_cpi::emit_event_cpi(
@@ -145,7 +158,7 @@ pub(super) fn emit_config_updated(
         &HostConfigUpdatedEvent {
             version: EVENT_VERSION,
             config: crate::state::host_config_address().0,
-            admin,
+            signer,
             paused: config.paused,
             grant_deny_list_enabled: config.grant_deny_list_enabled,
             max_hcu_per_tx: config.max_hcu_per_tx,
@@ -402,6 +415,7 @@ pub(super) fn write_account<T: AccountSerialize>(info: &AccountInfo, account: &T
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::state::PauseFlags;
 
     #[test]
     fn absent_deny_record_accepts_non_executable_system_empty_account() {
@@ -533,8 +547,8 @@ mod tests {
         let _event = HostConfigUpdatedEvent {
             version: EVENT_VERSION,
             config: Pubkey::new_unique(),
-            admin: Pubkey::new_unique(),
-            paused: false,
+            signer: Pubkey::new_unique(),
+            paused: PauseFlags::default(),
             grant_deny_list_enabled: false,
             max_hcu_per_tx: 20_000_000,
             max_hcu_depth_per_tx: 5_000_000,

@@ -7,3 +7,4 @@
  */
 
 export * from './kmsThresholds.js';
+export * from './pauseFlags.js';

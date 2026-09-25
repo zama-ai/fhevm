@@ -55,7 +55,7 @@ const fakeContext = async (hostConfigExists: boolean, payer: Address, kmsContext
                             coprocessorSignerCount: 1,
                             coprocessorThreshold: 1,
                             currentKmsContextId: BRINGUP_KMS_CONTEXT_ID,
-                            paused: false,
+                            paused: { execution: false, verifiedInputs: false, aclWrites: false, publicDecrypt: false },
                             grantDenyListEnabled: false,
                             maxHcuPerTx: 1n,
                             maxHcuDepthPerTx: 1n,

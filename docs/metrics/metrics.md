@@ -125,6 +125,48 @@ Note that recommendations assume a smoke test that runs transactions/requests at
  - **Alarm**: Any non-zero increase.
     - **Recommendation**: alarm on `increase(counter[1m]) > 0`.
 
+### solana-host-listener
+
+The listener resumes from its checkpoint through the stream while the Yellowstone provider can still replay it, about 24 hours for a hosted provider. Past that window it catches up from the archive RPC, one `getBlock` per slot. A day of mainnet takes hours, so the lag alarm fires during a long catch-up too; `archive_catch_up_active` at 1 with the lag falling means it is progressing, and a flat lag with rising reconnects means it is stuck. A fatal ingestion error exits the process, so it shows up as container restarts, not as a metric.
+
+#### Metric Name: `coprocessor_solana_host_listener_applied_block_timestamp_seconds`
+ - **Type**: Gauge (labeled by `host_chain_id`)
+ - **Description**: Unix time the cluster assigned to the last block the listener committed. `time()` minus this value is the ingestion lag in seconds. It grows both when the stream stalls and when the listener applies blocks slower than the cluster produces them. After a restart the series is missing until the listener commits a block.
+ - **Alarm**: If the lag stays high, or the series is missing (the listener is down or not applying blocks).
+    - **Recommendation**: more than 2 minutes behind for 2 minutes, i.e. `min_over_time((time() - gauge)[2m:]) > 120`, and `absent_over_time(gauge[5m])`.
+
+#### Metric Name: `coprocessor_solana_host_listener_applied_slot`
+ - **Type**: Gauge (labeled by `host_chain_id`)
+ - **Description**: Slot of the last block the listener committed with its compute rows, leaves and checkpoint. On a restart it starts at the resumed checkpoint.
+
+#### Metric Name: `coprocessor_solana_host_listener_confirmed_slot`
+ - **Type**: Gauge (labeled by `host_chain_id`)
+ - **Description**: The cluster's confirmed slot, polled over RPC every 10 seconds. Minus `applied_slot`, it is the lag in slots, which compares directly with the provider's replay window, including while a restarted listener has not yet applied a block. Between polls it reads up to about 25 slots low, so a healthy lag hovers around zero and can dip below it.
+ - **Alarm**: If the RPC poll stops updating the gauge. Chart the slot lag against the provider's window rather than paging on it; the time lag above pages first.
+    - **Recommendation**: `changes(confirmed_slot[5m]) == 0`.
+
+#### Metric Name: `coprocessor_solana_host_listener_archive_catch_up_active`
+ - **Type**: Gauge (labeled by `host_chain_id`)
+ - **Description**: 1 while the listener rebuilds, from the archive RPC, slots the stream can no longer replay, else 0. The lag gauges above show its progress. A catch-up that keeps failing, such as on an archive missing the slots or on a v1 transaction until fhevm-internal#2080, shows as the gauge returning to 1 while reconnects rise and the lag stays flat.
+ - **Alarm**: None of its own; the time lag pages.
+
+#### Metric Name: `coprocessor_solana_host_listener_reconnects_total`
+ - **Type**: Counter (labeled by `host_chain_id`)
+ - **Description**: Interruptions the listener resumed from its checkpoint: a stream idle for 30 seconds, closed by the server, a transport error, a retryable ingest failure, or a failed archive read during catch-up.
+ - **Alarm**: If the counter increases repeatedly.
+    - **Recommendation**: more than 3 reconnects in 10 minutes, i.e. `increase(counter[10m]) > 3`.
+
+#### Metric Name: `coprocessor_solana_host_listener_handle_check_failures_total`
+ - **Type**: Counter (labeled by `host_chain_id`)
+ - **Description**: Steps whose emitted result handle did not match the handle the listener re-derived. Each one is held back: its computation and every computation that depends on it end as errors, while the rest of the block is ingested. It means the listener's derivation or step decoding is wrong. The log line `solana handle check failed` names the slot, signature, step and both handles; the repair is in the host-listener README.
+ - **Alarm**: Any increase. Page on it.
+    - **Recommendation**: `increase(counter[5m]) > 0`.
+
+#### Container restarts
+ - **Description**: A fatal ingestion error, such as a block whose ancestry does not match the checkpoint or a provider that cannot replay from any slot, exits the listener, which then resumes from its checkpoint. A restart that catches up quickly never trips the lag alarm, so restarts need their own alarm.
+ - **Alarm**: Any restart.
+    - **Recommendation**: `increase(kube_pod_container_status_restarts_total{container="solana-host-listener"}[15m]) > 0`.
+
 ### zkproof-worker
 
 Metrics for zkproof-worker are to be added in future releases, if/when needed. Currently, the transaction-sender handles ZK proof related metrics, please see its section.

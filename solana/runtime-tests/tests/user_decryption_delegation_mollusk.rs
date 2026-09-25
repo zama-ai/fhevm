@@ -30,13 +30,17 @@ use solana_sdk::{
     account::Account,
     instruction::{AccountMeta, Instruction},
     pubkey::Pubkey,
+    signature::{Keypair, Signer},
 };
 use zama_host::{self as host, UserDecryptionDelegation};
 use zama_solana_test_kit::{
-    anchor_framework_error_check, empty_system_account, funded_system_account as funded_wallet,
-    host_config_account as host_config_account_from, serialized_account as serialized,
-    system_program_account, HostConfigParams,
+    anchor_framework_error_check, cost_snapshot, empty_system_account,
+    funded_system_account as funded_wallet, host_config_account as host_config_account_from,
+    serialized_account as serialized, system_program_account, HostConfigParams,
 };
+
+mod host_fixtures;
+use host_fixtures::host_program_account;
 
 // ---------------------------------------------------------------------------
 // Harness
@@ -72,9 +76,13 @@ fn custom_error(error: host::errors::ZamaHostError) -> Check<'static> {
     zama_solana_test_kit::anchor_error_check(error as u32)
 }
 
-fn host_config_account(paused: bool) -> (Pubkey, Account) {
+/// A host config whose ACL-writes area, the one delegation belongs to, is paused or not.
+fn host_config_account(acl_writes_paused: bool) -> (Pubkey, Account) {
     host_config_account_from(&HostConfigParams {
-        paused,
+        paused: host::PauseFlags {
+            acl_writes: acl_writes_paused,
+            ..host::PauseFlags::default()
+        },
         ..HostConfigParams::new(Pubkey::new_unique())
     })
 }
@@ -118,7 +126,8 @@ fn revoke_ix(delegator: Pubkey, delegation_record: Pubkey) -> Instruction {
 
 /// The tuple every test grants over, with a payer who is not the delegator: paying rent and
 /// granting are different roles, and keeping them different keys in every test means a handler
-/// that conflated them would fail here.
+/// that conflated them would fail here. The delegator is a wallet key, on the curve, because
+/// the host treats wallet and PDA delegators differently.
 struct Actors {
     payer: Pubkey,
     delegator: Pubkey,
@@ -129,7 +138,7 @@ struct Actors {
 }
 
 fn actors() -> Actors {
-    let delegator = Pubkey::new_unique();
+    let delegator = Keypair::new().pubkey();
     let delegate = Pubkey::new_unique();
     let authority = Pubkey::new_unique();
     let (record_key, record_bump) =
@@ -366,7 +375,7 @@ fn a_grant_refuses_a_record_address_owned_by_a_foreign_program() {
 /// the delegate position — a real party has to be named on the receiving end.
 #[test]
 fn a_wildcard_authority_grant_is_legal_and_writes_the_record() {
-    let delegator = Pubkey::new_unique();
+    let delegator = Keypair::new().pubkey();
     let delegate = Pubkey::new_unique();
     let wildcard = Pubkey::new_from_array(host::WILDCARD_AUTHORITY_BYTES);
     let (record_key, _) = host::user_decryption_delegation_address(delegator, delegate, wildcard);
@@ -536,7 +545,7 @@ fn a_grant_while_paused_is_rejected() {
             EXPIRATION,
         ),
         &accounts,
-        &[custom_error(host::errors::ZamaHostError::HostConfigPaused)],
+        &[custom_error(host::errors::ZamaHostError::AclWritesPaused)],
     );
 }
 
@@ -1078,8 +1087,7 @@ fn substituted_program_accounts_are_refused_by_their_discriminators() {
 
 /// A runtime holding both the wrapper and the host, at [`CURRENT_SLOT`].
 fn mollusk_with_vault() -> Mollusk {
-    let mut mollusk = zama_solana_test_kit::svm(&vault::id(), "delegator_vault");
-    mollusk.add_program(&host::id(), "zama_host");
+    let mut mollusk = host_fixtures::vault_and_host_svm();
     mollusk.sysvars.clock.slot = CURRENT_SLOT;
     mollusk
 }
@@ -1106,20 +1114,6 @@ fn vault_actors() -> VaultActors {
         delegate,
         authority,
         record_key,
-    }
-}
-
-/// The host program's account entry, as the wrapper's `Program<ZamaHost>` sees it. The code
-/// itself comes from the Mollusk program cache; this is only the executable-flagged shell.
-/// Owned by the non-upgradeable loader deliberately: an upgradeable-loader shell would have to
-/// carry a decodable programdata pointer in its data.
-fn host_program_account() -> Account {
-    Account {
-        lamports: 1,
-        data: Vec::new(),
-        owner: solana_sdk::bpf_loader::ID,
-        executable: true,
-        rent_epoch: 0,
     }
 }
 
@@ -1225,6 +1219,41 @@ fn a_vault_pda_revokes_its_delegation_via_cpi() {
     assert!(record.revoked);
     assert_eq!(record.expiration_slot, 0);
     assert_eq!(record.delegation_counter, 2);
+}
+
+/// A program the user calls cannot delegate in the user's name. `check_cpi_return` forwards
+/// every account with its signer flag, as a malicious program would, so the wallet's signature
+/// reaches the host and only the top-level rule stops the grant.
+#[test]
+fn a_wallet_grant_forwarded_through_another_program_is_rejected() {
+    let actors = actors();
+    let grant = grant_ix(
+        actors.payer,
+        actors.delegator,
+        actors.record_key,
+        actors.delegate,
+        actors.authority,
+        EXPIRATION,
+    );
+    let mut forwarded = zama_solana_test_kit::anchor_ix(
+        vault::id(),
+        vault::accounts::CheckCpiReturn { callee: host::id() },
+        vault::instruction::CheckCpiReturn {
+            instruction_data: grant.data,
+            expected: Vec::new(),
+        },
+    );
+    forwarded.accounts.extend(grant.accounts);
+    let mut accounts = grant_accounts(&actors, empty_system_account(), false);
+    accounts.push((host::id(), host_program_account()));
+
+    mollusk_with_vault().process_and_validate_instruction(
+        &forwarded,
+        &accounts,
+        &[custom_error(
+            host::errors::ZamaHostError::WalletDelegationThroughCpi,
+        )],
+    );
 }
 
 /// An executor cannot act through somebody else's vault: the wrapper holds the vault account
@@ -1349,4 +1378,47 @@ fn sdk_fixture_permit_invalidation_address_and_revoke_permits_bytes() {
 
     let revoke_permits = host::instruction::RevokePermits {}.data();
     assert_eq!(fixture_hex(&revoke_permits), "3319597d7d5ac882");
+}
+
+// ---------------------------------------------------------------------------
+// Cost snapshot
+// ---------------------------------------------------------------------------
+
+/// A first grant by a wallet delegator: the curve check, the record PDA derivation and its
+/// creation. Fixed keys, because the PDA bump search is part of the measured cost.
+#[test]
+fn cost_snapshot_delegate_for_user_decryption() {
+    let delegator = Keypair::new_from_array([0x41; 32]).pubkey();
+    let delegate = Pubkey::new_from_array([0x43; 32]);
+    let authority = Pubkey::new_from_array([0x44; 32]);
+    let (record_key, record_bump) =
+        host::user_decryption_delegation_address(delegator, delegate, authority);
+    let actors = Actors {
+        payer: Pubkey::new_from_array([0x42; 32]),
+        delegator,
+        delegate,
+        authority,
+        record_key,
+        record_bump,
+    };
+    let ix = grant_ix(
+        actors.payer,
+        actors.delegator,
+        actors.record_key,
+        actors.delegate,
+        actors.authority,
+        EXPIRATION,
+    );
+
+    let result = mollusk().process_and_validate_instruction(
+        &ix,
+        &grant_accounts(&actors, empty_system_account(), false),
+        &[Check::success()],
+    );
+    cost_snapshot::assert_cost_snapshot(
+        "user_decryption_delegation_mollusk",
+        "delegate_for_user_decryption/first_grant",
+        &ix,
+        &result,
+    );
 }

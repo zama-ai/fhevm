@@ -31,8 +31,10 @@
 -- Flow:
 --   1. Stop ALL coprocessor services.
 --   2. Optionally, take a database backup, in case something goes wrong.
---   3. Run this script.
---   4. Restart coprocessor services (host-listener must run in catchup/poller mode).
+--   3. Solana host chains only: rewind the listener checkpoint to to_block_number with
+--      rewind_solana_listener_checkpoint.sql.
+--   4. Run this script.
+--   5. Restart coprocessor services (host-listener must run in catchup/poller mode).
 
 \set ON_ERROR_STOP on
 
@@ -58,6 +60,15 @@ BEGIN
 
   IF NOT EXISTS (SELECT 1 FROM host_chains WHERE chain_id = _chain_id) THEN
     RAISE EXCEPTION 'chain_id % does not exist in host_chains', _chain_id;
+  END IF;
+
+  -- A Solana host chain id carries chain type 0x01 in its top byte (RFC-021). Its listener
+  -- resumes from solana_listener_checkpoint, not host_listener_poller_state: left ahead, it
+  -- would never re-ingest the rows deleted below.
+  IF (_chain_id >> 56) = 1 AND EXISTS (
+    SELECT 1 FROM solana_listener_checkpoint WHERE slot > _to_block_number
+  ) THEN
+    RAISE EXCEPTION 'the Solana listener checkpoint is past slot %; run rewind_solana_listener_checkpoint.sql first', _to_block_number;
   END IF;
 END $$;
 

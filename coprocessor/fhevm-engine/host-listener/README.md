@@ -119,11 +119,13 @@ cargo test -p host-listener --test host_listener_integration_tests \
 ### Solana bootstrap and restart
 
 `solana_host_listener` reconstructs compute rows and ACL leaves from confirmed
-Yellowstone blocks. On an empty database, `--start-slot <slot>` selects an
-existing confirmed block to replay **inclusively**. Choose a block before the
-host activity that must be reconstructed, within the provider's replay window.
-RPC supplies that block's hash; transactions and required sysvar context still
-come from Yellowstone. The first block must match the requested slot and hash.
+Yellowstone blocks. Each `fhe_execute` is paired with the `FheExecutedEvent` it
+emits: the listener stores the result handles in the event and re-derives each
+one as a check. On an empty database, `--start-slot <slot>` selects an existing
+confirmed block to replay **inclusively**. Choose a finalized block before the
+host activity that must be reconstructed. RPC supplies that block's hash; its
+transactions come from Yellowstone, or from the archive below if it is older
+than the replay window. The first block must match the requested slot and hash.
 
 Once a block's compute rows, leaves, and checkpoint commit together, restarts
 resume from that checkpoint and ignore `--start-slot`. Inclusive replay verifies
@@ -132,12 +134,60 @@ the first commit retains the unapplied bootstrap anchor for reconnection.
 Without a checkpoint or `--start-slot`, the listener starts at the stream tip;
 this cannot recover earlier leaves.
 
-This is bounded gRPC replay, not archival RPC recovery. The local configuration
-in `solana/geyser/yellowstone-config.json` retains **256 slots**. Replay must
-include the required historical sysvar context as well as sealed blocks; an
-unavailable anchor, gap, conflicting block, or missing context stops ingestion
-without advancing the checkpoint. Increasing retention is a provider concern.
+Yellowstone replays only recent slots: **256** with the local configuration in
+`solana/geyser/yellowstone-config.json`, about 24 hours on a hosted provider.
+When it refuses the checkpoint as too old, the listener catches up from
+`--archive-url` (default `--url`): it lists the produced slots with `getBlocks`
+and applies each `getBlock` at finalized commitment, through the same ancestry
+check and ingest path, up to the slot the archive had finalized when catch-up
+began. Then it subscribes again from the checkpoint (DD-059 in
+`solana/docs/DESIGN_DECISIONS.md`). The archive must hold the ledger back to the
+checkpoint. Catch-up reads every transaction of every block, so a day of mainnet
+takes hours. A block holding a v1 transaction is refused and retried until
+fhevm-internal#2080, and an archive missing slots after the checkpoint is
+retried too. A provider that cannot replay from any slot, or a block of another
+fork, stops ingestion without advancing the checkpoint.
 The HTTP health routes check database availability, not reconstruction catch-up.
+Catch-up is exported as Prometheus metrics on `--metrics-addr`; the lag,
+reconnect and handle-check alarms are in
+[`docs/metrics/metrics.md`](../../../docs/metrics/metrics.md).
+
+### Solana handle-check failures and repair
+
+A step whose emitted handle does not re-derive is held back. Its computation row
+is inserted as a terminal error, so the tfhe-worker never computes it and ends
+its dependents as errors. The rest of the block is ingested, and the ACL leaves
+keep the emitted handle. The listener logs `solana handle check failed` with the
+slot, signature, execution, step and both handles, and increments
+`coprocessor_solana_host_listener_handle_check_failures_total`. The mismatch is
+a listener bug: either the derivation or the step decoding is wrong (DD-056 in
+`solana/docs/DESIGN_DECISIONS.md`).
+
+Repair by replaying the affected slots with the fixed listener. Slots older
+than the provider's replay window come from the archive RPC, so `S` below must
+be in `--archive-url`'s history. Check that first: once the rows are deleted, a
+slot neither serves cannot be re-ingested. Take a database backup before step 2.
+
+1. Stop all coprocessor services, as for any revert. Pick `S`, a slot that
+   produced a block before the first failing slot, and take its `blockhash` from
+   `getBlock S`, decoded from base58 to hex.
+2. Run `db-migration/revert_coprocessor_db_state.sh` with `CHAIN_ID`,
+   `TO_BLOCK_NUMBER=S` and `SOLANA_BLOCK_HASH=<hex>`. It first moves the
+   listener checkpoint back to `S` (`rewind_solana_listener_checkpoint.sql`),
+   then deletes the computation rows after `S`, including the held steps and
+   their errored dependents. The two run in separate transactions: if the
+   revert fails after the rewind, fix the cause and run the script again before
+   restarting anything. The rewind is safe to repeat, and a listener started in
+   between only re-ingests rows it already has. The revert alone refuses a
+   Solana chain whose checkpoint is still after `S`, since the listener would
+   never re-ingest the deleted rows.
+3. Restart the services with the fixed listener. It replays every slot after `S`
+   and inserts the rows again as new work. ACL leaves are kept: a replayed write
+   must reproduce the leaves recorded for it, or the listener stops.
+
+This repairs computation rows only. A bug that recorded wrong leaves cannot be
+repaired by a replay, since the fixed listener stops at the first recorded leaf
+it does not reproduce.
 
 ## Events in FHEVM
 

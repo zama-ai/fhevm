@@ -475,24 +475,6 @@ pub(crate) fn kms_decrypted_result_bytes(cleartext_amount: u64) -> [u8; 32] {
     decrypted
 }
 
-pub(crate) fn assert_host_config_allows_token_response(
-    host_config: &Account<zama_host::HostConfig>,
-) -> Result<()> {
-    let (expected_key, expected_bump) = zama_host::host_config_address();
-    require_keys_eq!(
-        host_config.key(),
-        expected_key,
-        ConfidentialTokenError::RequestWitnessMismatch
-    );
-    require!(
-        host_config.to_account_info().data_len() == 8 + zama_host::HostConfig::SPACE
-            && host_config.bump == expected_bump
-            && !host_config.paused,
-        ConfidentialTokenError::RequestWitnessUnavailable
-    );
-    Ok(())
-}
-
 pub(crate) fn assert_canonical_vault_token_account(
     vault_usdc: Pubkey,
     vault_authority: Pubkey,

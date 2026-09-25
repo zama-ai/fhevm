@@ -8,6 +8,10 @@
 #   CHAIN_ID        - the host chain ID to revert
 #   TO_BLOCK_NUMBER - revert to this block (data for blocks > TO_BLOCK_NUMBER is deleted)
 #
+# Solana host chains also require:
+#   SOLANA_BLOCK_HASH - hex hash of the block at slot TO_BLOCK_NUMBER; the listener
+#                       checkpoint is rewound to it first (rewind_solana_listener_checkpoint.sql)
+#
 # Usage (Docker, via the db-migration image):
 #   1. Stop ALL coprocessor services.
 #   2. Run:
@@ -42,10 +46,19 @@ if [ -z "${TO_BLOCK_NUMBER:-}" ]; then
   exit 1
 fi
 
-if [[ -f /db-scripts/revert_coprocessor_db_state.sql ]]; then
-  SQL_SCRIPT_PATH="/db-scripts/revert_coprocessor_db_state.sql"
+if [[ -d /db-scripts ]]; then
+  SQL_SCRIPTS_DIR="/db-scripts"
 else
-  SQL_SCRIPT_PATH="${script_dir}/db-scripts/revert_coprocessor_db_state.sql"
+  SQL_SCRIPTS_DIR="${script_dir}/db-scripts"
+fi
+SQL_SCRIPT_PATH="${SQL_SCRIPTS_DIR}/revert_coprocessor_db_state.sql"
+
+if [ -n "${SOLANA_BLOCK_HASH:-}" ]; then
+  echo "Rewinding the Solana listener checkpoint to slot $TO_BLOCK_NUMBER"
+  psql "$DATABASE_URL" \
+    -v slot="$TO_BLOCK_NUMBER" \
+    -v block_hash="$SOLANA_BLOCK_HASH" \
+    -f "${SQL_SCRIPTS_DIR}/rewind_solana_listener_checkpoint.sql"
 fi
 
 echo "Reverting chain_id=$CHAIN_ID to block $TO_BLOCK_NUMBER"

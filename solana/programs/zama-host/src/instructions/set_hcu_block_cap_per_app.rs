@@ -9,7 +9,7 @@
 use anchor_lang::prelude::*;
 
 use super::common::*;
-use super::set_host_pause::HostAdmin;
+use super::host_admin::HostAdmin;
 
 /// Sets `hcu_block_cap_per_app`. Admin-gated.
 ///

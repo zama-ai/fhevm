@@ -31,9 +31,10 @@ pub fn delegate_for_user_decryption(
     expiration_slot: u64,
 ) -> Result<()> {
     assert_no_remaining_accounts(ctx.remaining_accounts)?;
-    assert_not_paused(&ctx.accounts.host_config)?;
+    assert_not_paused(&ctx.accounts.host_config, PauseArea::AclWrites)?;
     let clock = Clock::get()?;
     let delegator = ctx.accounts.delegator.key();
+    require_top_level_unless_pda(&delegator, ZamaHostError::WalletDelegationThroughCpi)?;
     require!(
         delegate != Pubkey::default() && authority != Pubkey::default(),
         ZamaHostError::InvalidDelegation

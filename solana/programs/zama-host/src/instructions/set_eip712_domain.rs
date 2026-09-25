@@ -3,7 +3,7 @@
 use anchor_lang::prelude::*;
 
 use super::common::*;
-use super::set_host_pause::HostAdmin;
+use super::host_admin::HostAdmin;
 use crate::errors::ZamaHostError;
 use crate::state::is_evm_host_chain_id;
 

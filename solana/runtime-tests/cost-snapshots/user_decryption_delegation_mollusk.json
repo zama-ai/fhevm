@@ -1,0 +1,17 @@
+{
+  "toolchain": {
+    "anchor": "anchor-cli 1.2.0",
+    "rustc": "rustc 1.91.1 (ed61e7d7e 2025-11-07)",
+    "solana": "solana-cli 4.1.2 (src:182084b8; feat:c763ae0a, client:Agave)"
+  },
+  "measurements": {
+    "delegate_for_user_decryption/first_grant": {
+      "compute_units": 15187,
+      "unique_accounts": 6,
+      "instruction_data_bytes": 80,
+      "cpi_instructions": 1,
+      "total_cpi_instruction_data_bytes": 52,
+      "max_cpi_instruction_data_bytes": 52
+    }
+  }
+}

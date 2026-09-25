@@ -100,7 +100,6 @@ pub fn redeem_burned_amount(
         &ctx.accounts.destination_usdc,
         &ctx.accounts.token_program,
     )?;
-    assert_host_config_allows_token_response(&ctx.accounts.host_config)?;
     let mint_key = ctx.accounts.mint.key();
     let token_account_key = ctx.accounts.token_account.key();
     require_keys_eq!(

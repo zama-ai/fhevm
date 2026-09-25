@@ -17,4 +17,3 @@ pub mod solana_grpc_listener;
 mod solana_grpc_source;
 #[cfg(feature = "solana-reconstruct")]
 pub mod solana_reconstruct;
-pub mod solana_slot_hashes;

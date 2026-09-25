@@ -14,7 +14,9 @@ use solana_sdk::pubkey::Pubkey;
 use tokio_util::sync::CancellationToken;
 use tracing::{info, Level};
 
-use fhevm_engine_common::{chain_id::ChainId, telemetry, utils::DatabaseURL};
+use fhevm_engine_common::{
+    chain_id::ChainId, metrics_server, telemetry, utils::DatabaseURL,
+};
 use host_listener::{
     cmd::DEFAULT_DEPENDENCE_CACHE_SIZE,
     database::{
@@ -22,7 +24,8 @@ use host_listener::{
     },
     http_server::HttpServer,
     solana_grpc_listener::{
-        run, BlockCheckpoint, SolanaGrpcListenerConfig, StartPosition,
+        run, track_confirmed_slot, BlockCheckpoint, SolanaGrpcListenerConfig,
+        StartPosition,
     },
     solana_reconstruct::{parse_host_config, HOST_CONFIG_SEED},
 };
@@ -44,8 +47,14 @@ struct Args {
     #[arg(long, default_value = "http://127.0.0.1:10000")]
     grpc_url: String,
 
-    /// Existing confirmed block to replay inclusively on an empty database. Must be within
-    /// Yellowstone retention and precede the host activity to reconstruct. A saved checkpoint wins.
+    /// Solana JSON-RPC endpoint whose ledger history rebuilds, with `getBlock`, the slots
+    /// Yellowstone can no longer replay. It may be another provider's. Defaults to `--url`.
+    #[arg(long, env = "SOLANA_ARCHIVE_URL")]
+    archive_url: Option<String>,
+
+    /// Existing confirmed block to replay inclusively on an empty database. Must precede the host
+    /// activity to reconstruct; if Yellowstone no longer retains it, the archive serves it.
+    /// A saved checkpoint wins.
     #[arg(long)]
     start_slot: Option<u64>,
 
@@ -75,6 +84,10 @@ struct Args {
     /// Bearer API key the leaf-proof route requires.
     #[arg(long, env = "SOLANA_PROOF_API_KEY")]
     proof_api_key: String,
+
+    /// Address of the Prometheus metrics server (e.g. 0.0.0.0:9100); unset disables it.
+    #[arg(long)]
+    metrics_addr: Option<String>,
 
     #[arg(long, default_value_t = Level::INFO)]
     log_level: Level,
@@ -157,7 +170,7 @@ async fn main() -> Result<()> {
         None => match args.start_slot {
             Some(slot) => {
                 // Anchor to an actual block, so a provider silently starting at the tip is rejected.
-                // RPC supplies only its identity; reconstruction still uses Yellowstone sysvars.
+                // RPC supplies only its identity; its transactions come from the stream or archive.
                 let block: serde_json::Value = rpc.send(RpcRequest::GetBlock, serde_json::json!([
                     slot, {"commitment": "confirmed", "transactionDetails": "none", "rewards": false}
                 ])).await.with_context(|| format!("fetch bootstrap block {slot}"))?;
@@ -184,6 +197,15 @@ async fn main() -> Result<()> {
         }
     });
 
+    if args.metrics_addr.is_some() {
+        metrics_server::spawn(args.metrics_addr, cancel.child_token());
+        tokio::spawn(track_confirmed_slot(
+            rpc,
+            host_config_chain_id,
+            cancel.child_token(),
+        ));
+    }
+
     let http_server = HttpServer::new(
         pool,
         args.proof_api_key,
@@ -198,12 +220,17 @@ async fn main() -> Result<()> {
         result
     });
 
+    let archive = RpcClient::new_with_timeout(
+        args.archive_url.unwrap_or(args.url),
+        SOLANA_RPC_REQUEST_TIMEOUT,
+    );
     let listener_result = run(
         &db,
+        &archive,
         &SolanaGrpcListenerConfig {
             grpc_url: args.grpc_url,
             x_token: args.grpc_x_token,
-            program_id: program_id.to_string(),
+            program_id,
             chain_id: host_config_chain_id,
             dependent_ops_max_per_chain: args.dependent_ops_max_per_chain,
         },

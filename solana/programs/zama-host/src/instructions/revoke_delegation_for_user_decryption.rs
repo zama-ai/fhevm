@@ -23,9 +23,9 @@ pub struct RevokeDelegationForUserDecryption<'info> {
 ///
 /// Deliberately not pause-gated, unlike granting. Revoking is the delegator's abort, and a lever
 /// the operator can switch off is not the delegator's lever — the same reasoning `revoke_permits`
-/// records. The asymmetry is what makes pause coherent: a paused host stops the Connector from
-/// serving user decryptions (its authorization reads `HostConfig.paused`), and existing grants
-/// would otherwise stay frozen in place with no way for their delegator to withdraw them.
+/// records. Pausing ACL writes does not pause user decryption, which pauses at the gateway only
+/// (DD-058), so existing grants stay usable while granting is paused; their delegator must still
+/// be able to withdraw them.
 pub fn revoke_delegation_for_user_decryption(
     ctx: Context<RevokeDelegationForUserDecryption>,
 ) -> Result<()> {

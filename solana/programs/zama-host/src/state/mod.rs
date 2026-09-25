@@ -23,6 +23,7 @@ pub mod hcu_block_meter;
 pub mod hcu_trusted_app_record;
 pub mod host_config;
 pub mod kms_context;
+pub mod pauser_record;
 pub mod permit_invalidation;
 pub mod rand_nonce;
 mod type_gate;
@@ -34,6 +35,7 @@ pub use hcu_block_meter::*;
 pub use hcu_trusted_app_record::*;
 pub use host_config::*;
 pub use kms_context::*;
+pub use pauser_record::*;
 pub use permit_invalidation::*;
 pub use rand_nonce::*;
 pub(crate) use type_gate::assert_reduction_count;
@@ -519,6 +521,11 @@ pub fn hcu_block_meter_address(app: AppScope) -> (Pubkey, u8) {
 /// Returns the canonical singleton random-seed nonce address.
 pub fn rand_nonce_address() -> (Pubkey, u8) {
     Pubkey::find_program_address(&[RAND_NONCE_SEED], &crate::ID)
+}
+
+/// Returns the canonical pauser record address for a key.
+pub fn pauser_address(pauser: Pubkey) -> (Pubkey, u8) {
+    Pubkey::find_program_address(&[PAUSER_SEED, pauser.as_ref()], &crate::ID)
 }
 
 /// Returns the canonical permit-invalidation watermark address for a user.

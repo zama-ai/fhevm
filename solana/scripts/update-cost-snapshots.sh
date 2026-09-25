@@ -8,7 +8,7 @@
 #
 # When: after an intentional compute-unit / account-shape / ix-data change that
 # should update the committed baselines in runtime-tests/cost-snapshots/.
-# Writes: runtime-tests/cost-snapshots/{host,token,vault,batcher}_mollusk.json
+# Writes: runtime-tests/cost-snapshots/{host,token,vault,batcher,user_decryption_delegation}_mollusk.json
 # and runtime-tests/cost-snapshots/fhe_execute_boundary.json
 #
 # Requires Solana CLI and Anchor versions matching CI
@@ -75,6 +75,7 @@ echo "updated: runtime-tests/cost-snapshots/fhe_execute_boundary.json"
 echo "updated: runtime-tests/cost-snapshots/token_mollusk.json"
 echo "updated: runtime-tests/cost-snapshots/vault_mollusk.json"
 echo "updated: runtime-tests/cost-snapshots/batcher_mollusk.json"
+echo "updated: runtime-tests/cost-snapshots/user_decryption_delegation_mollusk.json"
 echo "review the JSON diff and commit it with the intentional CU change"
 if [[ "$(uname -sm)" != "Linux x86_64" ]]; then
   echo "warning: minted on $(uname -sm), not CI's x86_64 Linux; commit the solana-cost-snapshots CI artifact instead" >&2

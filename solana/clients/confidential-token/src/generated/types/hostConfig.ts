@@ -30,12 +30,13 @@ import {
   type FixedSizeEncoder,
   type ReadonlyUint8Array,
 } from '@solana/kit';
+import { getPauseFlagsDecoder, getPauseFlagsEncoder, type PauseFlags, type PauseFlagsArgs } from '.';
 
 /**
  * Singleton host configuration and authority surface.
  *
- * `HostConfig` is the runtime switchboard for this PoC. Production-shaped
- * instructions reject while paused.
+ * `HostConfig` is the runtime switchboard for this PoC. Each paused area rejects the
+ * instructions it covers (`PauseFlags`).
  */
 export type HostConfig = {
   /** Program administrator allowed to update config flags. */
@@ -73,8 +74,8 @@ export type HostConfig = {
    * none defined yet. Updated by `define_kms_context`.
    */
   currentKmsContextId: ReadonlyUint8Array;
-  /** Pauses production-shaped host instructions when true. */
-  paused: boolean;
+  /** Host areas currently stopped. A pauser sets them; only the admin clears them (DD-058). */
+  paused: PauseFlags;
   /** Enables the deny list: a denied application `(program, scope)` cannot compute, allow, or make a handle public. */
   grantDenyListEnabled: boolean;
   /**
@@ -136,8 +137,8 @@ export type HostConfigArgs = {
    * none defined yet. Updated by `define_kms_context`.
    */
   currentKmsContextId: ReadonlyUint8Array;
-  /** Pauses production-shaped host instructions when true. */
-  paused: boolean;
+  /** Host areas currently stopped. A pauser sets them; only the admin clears them (DD-058). */
+  paused: PauseFlagsArgs;
   /** Enables the deny list: a denied application `(program, scope)` cannot compute, allow, or make a handle public. */
   grantDenyListEnabled: boolean;
   /**
@@ -174,7 +175,7 @@ export function getHostConfigEncoder(): FixedSizeEncoder<HostConfigArgs> {
     ['coprocessorThreshold', getU8Encoder()],
     ['decryptionContract', fixEncoderSize(getBytesEncoder(), 20)],
     ['currentKmsContextId', fixEncoderSize(getBytesEncoder(), 32)],
-    ['paused', getBooleanEncoder()],
+    ['paused', getPauseFlagsEncoder()],
     ['grantDenyListEnabled', getBooleanEncoder()],
     ['maxHcuPerTx', getU64Encoder()],
     ['maxHcuDepthPerTx', getU64Encoder()],
@@ -195,7 +196,7 @@ export function getHostConfigDecoder(): FixedSizeDecoder<HostConfig> {
     ['coprocessorThreshold', getU8Decoder()],
     ['decryptionContract', fixDecoderSize(getBytesDecoder(), 20)],
     ['currentKmsContextId', fixDecoderSize(getBytesDecoder(), 32)],
-    ['paused', getBooleanDecoder()],
+    ['paused', getPauseFlagsDecoder()],
     ['grantDenyListEnabled', getBooleanDecoder()],
     ['maxHcuPerTx', getU64Decoder()],
     ['maxHcuDepthPerTx', getU64Decoder()],

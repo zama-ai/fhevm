@@ -464,12 +464,16 @@ if run_check 3; then
       "${EXCLUDES[@]}" "$@" "${roots[@]}" 2>/dev/null || true) )
     # Anchored to the record's path field, for the reason spelled out for the `exceptions` filter
     # below: matching the whole record let any *line* that merely names one of these files go unswept
-    # by every entry below. Seven lines in the swept trees mention one of them today.
+    # by every entry below. The last two filters drop main's consensus harness, which shares
+    # test-suite/fhevm with the Solana seeder and scenarios but not our glossary; a script under
+    # test-suite/fhevm/scripts/ whose name says `solana` is ours and stays swept.
     hits=$(echo "$hits" \
       | (grep -v '^solana/docs/GLOSSARY\.md:' || true) \
       | (grep -v '^solana/docs/DESIGN_DECISIONS\.md:' || true) \
       | (grep -v '^solana/docs/DESIGN_HISTORY\.md:' || true) \
-      | (grep -v '^solana/scripts/dead-surface-check\.sh:' || true) )
+      | (grep -v '^solana/scripts/dead-surface-check\.sh:' || true) \
+      | (grep -vE '^test-suite/fhevm/(consensus|src/consensus)/' || true) \
+      | awk '!/^test-suite\/fhevm\/scripts\// || /^test-suite\/fhevm\/scripts\/[^\/:]*solana[^\/:]*:/' )
     if [ -n "$exceptions" ]; then
       # Applied to each hit's CONTENT, never to the `path:line:` prefix. Matching the whole record
       # let an exception that happened to look like a path blanket-exempt a whole file — the blanket
@@ -666,10 +670,10 @@ if run_check 3; then
   # the rule. The English word "allowed" is untouched — subject membership really is an allow-list.
   check_alias 'AllowedPersistent / AllowedLocal — renamed to StoredValue / EarlierStep / Transient' all \
     '' -E '\bAllowedPersistent\b|\bAllowedLocal\b'
-  # decoded op records <- `Fhe*Event` structs. The two compute events keep their names
-  # (they are emitted); the nine per-op value types must not come back as events.
+  # decoded op records <- `Fhe*Event` structs. The one event `fhe_execute` emits keeps the
+  # name; the nine per-op value types must not come back as events.
   check_alias 'Fhe*Event — the per-op value types are decoded op records' all \
-    'FheExecuteRandomSeedsEvent' -E '\bFhe[A-Za-z0-9]*Event\b'
+    'FheExecutedEvent' -E '\bFhe[A-Za-z0-9]*Event\b'
   # "lookup table" is banned for the interning dictionary. The Solana Address Lookup Table keeps its
   # name and is very often written as a bare "lookup table" ("the settle lookup table"), so a bare
   # match cannot be the rule. The old exception list went the other way and waved through any line

@@ -3,8 +3,8 @@
 //
 // Host = native solana-test-validator (agave 4.1.2, pinned in solana-e2e.yml) with the Yellowstone
 // geyser plugin (gRPC :10000) loaded via --geyser-plugin-config. The real validator runs on the
-// host arch directly (multi-arch incl. Apple Silicon) and — unlike surfpool's LiteSVM — streams
-// the SlotHashes/Clock sysvar accounts the off-chain reconstruction needs per slot. The RPC
+// host arch directly (multi-arch incl. Apple Silicon), fills the SlotHashes sysvar every result
+// handle is derived from, and streams its blocks over Yellowstone. The RPC
 // listener binds 0.0.0.0 on its own, so the dockerized KMS worker reaches it over
 // host.docker.internal:8899. Local only — no mainnet exposure: the RPC URL is pinned to
 // 127.0.0.1:8899 by the callers.

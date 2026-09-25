@@ -31,9 +31,8 @@ pub const fn solana_host_chain_id(cluster_tag: u64) -> u64 {
 
 /// Localnet sentinel used by tests and helpers that do not receive host config.
 pub const SOLANA_POC_CHAIN_ID: u64 = solana_host_chain_id(12345);
-/// Seed for the singleton host config PDA — the shared crate's constant, so the program and the
-/// off-chain readers of the pause switch cannot drift on the seed.
-pub use zama_solana_acl::HOST_CONFIG_SEED;
+/// Seed of the singleton host config PDA: `[seed]`.
+pub const HOST_CONFIG_SEED: &[u8] = b"host-config";
 /// Seed prefix for KMS context PDAs (one per `kmsContextId`, mirroring ProtocolConfig).
 pub const KMS_CONTEXT_SEED: &[u8] = b"kms-context";
 /// Seed prefix for application `(program, scope)` deny-list records.
@@ -44,6 +43,8 @@ pub const HCU_TRUSTED_APP_SEED: &[u8] = b"hcu-trusted";
 pub const HCU_BLOCK_METER_SEED: &[u8] = b"hcu-block-meter";
 /// Seed of the singleton random-seed nonce PDA.
 pub const RAND_NONCE_SEED: &[u8] = b"rand-nonce";
+/// Seed prefix for pauser records.
+pub const PAUSER_SEED: &[u8] = b"pauser";
 /// Seed prefix for user-decryption delegation records — the shared crate's constant, so the
 /// program and the off-chain readers of the record cannot drift on the seed.
 pub use zama_solana_acl::DELEGATION_SEED;

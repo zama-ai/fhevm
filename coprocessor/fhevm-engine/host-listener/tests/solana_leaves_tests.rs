@@ -6,9 +6,10 @@
 use std::collections::BTreeMap;
 
 use host_listener::database::solana_leaves::{
-    load_checkpoint, load_encrypted_store_histories, load_recorded_leaves,
-    reduce_block_leaves, store_block_leaves, store_checkpoint,
-    EncryptedStoreWrite, StoredCheckpoint, TransactionStoreWrites,
+    load_block_leaves, load_checkpoint, load_encrypted_store_histories,
+    load_recorded_leaves, reduce_block_leaves, store_block_leaves,
+    store_checkpoint, EncryptedStoreWrite, StoredCheckpoint,
+    TransactionStoreWrites,
 };
 use host_listener::http_server::{
     ErrorCode, ErrorResponse, HttpServer, LeafProof, LeafProofRequest,
@@ -71,6 +72,7 @@ async fn leaf_record_round_trips_and_serves_verifiable_proofs(
     let existing = load_encrypted_store_histories(&mut tx, &[ACCOUNT]).await?;
     assert!(existing.is_empty());
     let first = reduce_block_leaves(
+        10,
         &[TransactionStoreWrites {
             transaction_index: 0,
             sources: vec![write(0, [0x10; 32], vec![OWNER], false)],
@@ -93,6 +95,7 @@ async fn leaf_record_round_trips_and_serves_verifiable_proofs(
     assert_eq!(existing.len(), 1);
     assert_eq!(existing[&ACCOUNT].leaf_count, 1);
     let second = reduce_block_leaves(
+        11,
         &[TransactionStoreWrites {
             transaction_index: 2,
             sources: vec![write(1, [0x11; 32], vec![OWNER], true)],
@@ -129,6 +132,31 @@ async fn leaf_record_round_trips_and_serves_verifiable_proofs(
     );
     assert_eq!(recorded.leaves[2].transaction_index, 2);
     assert_eq!(load_recorded_leaves(&pool, [0xFF; 32]).await?, None);
+
+    // A repair replays recorded slots: the recomputed leaves equal the recorded ones
+    // and nothing is appended. A replay that computes other leaves does not match.
+    let replay_of_11 = |handle| {
+        [TransactionStoreWrites {
+            transaction_index: 2,
+            sources: vec![write(1, handle, vec![OWNER], true)],
+        }]
+    };
+    let mut tx = pool.begin().await?;
+    let existing = load_encrypted_store_histories(&mut tx, &[ACCOUNT]).await?;
+    let replay =
+        reduce_block_leaves(11, &replay_of_11([0x11; 32]), existing.clone())?;
+    assert!(replay.states.is_empty() && replay.leaves.is_empty());
+    assert_eq!(replay.replayed[&ACCOUNT].len(), 2);
+    assert_eq!(
+        load_block_leaves(&mut tx, 11, replay.replayed.keys().copied()).await?,
+        replay.replayed
+    );
+    let forged = reduce_block_leaves(11, &replay_of_11([0x12; 32]), existing)?;
+    assert_ne!(
+        load_block_leaves(&mut tx, 11, forged.replayed.keys().copied()).await?,
+        forged.replayed
+    );
+    tx.rollback().await?;
 
     // The HTTP route builds proofs from the same rows.
     let port = {
@@ -255,6 +283,7 @@ async fn leaf_record_round_trips_and_serves_verifiable_proofs(
     // An account first seen through an update serves no proof.
     let mut tx = pool.begin().await?;
     let incomplete = reduce_block_leaves(
+        12,
         &[TransactionStoreWrites {
             transaction_index: 0,
             sources: vec![EncryptedStoreWrite {
