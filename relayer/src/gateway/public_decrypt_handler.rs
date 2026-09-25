@@ -800,7 +800,8 @@ impl TxLifecycleHooks for GatewayHandler {
         job_id: &JobId,
         receipt: &TxResult,
     ) -> Result<ReceiptRecordOutcome, EventProcessingError> {
-        // The EVM entry emits `PublicDecryptionRequest_0`; the Solana entry emits only `_2`.
+        // The EVM entry emits `PublicDecryptionRequest_0`; the Solana entry emits only
+        // `SolanaPublicDecryptionRequest`.
         let gw_reference_id = match TransactionHelper::extract_gateway_id_from_receipt::<
             Decryption::PublicDecryptionRequest_0,
         >(
@@ -811,10 +812,10 @@ impl TxLifecycleHooks for GatewayHandler {
             Ok(id) => id,
             Err(EventProcessingError::ValidationFailed { .. }) => {
                 TransactionHelper::extract_gateway_id_from_receipt::<
-                    Decryption::PublicDecryptionRequest_2,
+                    Decryption::SolanaPublicDecryptionRequest,
                 >(
                     receipt,
-                    Decryption::PublicDecryptionRequest_2::SIGNATURE_HASH,
+                    Decryption::SolanaPublicDecryptionRequest::SIGNATURE_HASH,
                     |event| event.decryptionId,
                 )?
             }

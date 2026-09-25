@@ -1,50 +1,25 @@
-//! Advisory, negative-only pre-check of Solana delegated user-decrypt entries.
+//! Advisory, negative-only pre-check of Solana delegated user-decrypt entries, the Solana analogue
+//! of the EVM host-ACL pre-check: it saves a gateway transaction the KMS connectors would refuse.
+//! The connectors' check stays authoritative, so this one only refuses what they cannot authorize:
 //!
-//! The EVM host-ACL pre-check exists because a request the KMS connectors will reject still
-//! costs a gateway transaction and, with no rejection channel in the Decryption contract, the
-//! requester only ever learns of the refusal by timeout (recorded motives, in order: gas,
-//! faster feedback, defense in depth, UX). This module is the Solana delegated-flow analogue.
-//! The authoritative check remains with the KMS connectors — this one is advisory and biased
-//! the only safe way an advisory check can be:
+//! * it refuses an entry whose delegation rows are both dead (absent, revoked, or expired at the
+//!   host's Clock) in this read. A lagging node can show a fresh grant as absent; the caller then
+//!   resubmits, the same exposure the EVM pre-check accepts;
+//! * any account it cannot judge passes: an invalid row, a misshapen account, an unresolvable
+//!   encrypted store;
+//! * a transport failure refuses (`HostAclError::CallFailed`), as on EVM. A node behind the first
+//!   read's slot is not a failure: the row read requires that slot (`minContextSlot`) and passes if
+//!   the node never reaches it.
 //!
-//! * it refuses ONLY what the authoritative check could not possibly authorize — the
-//!   delegation rows of the entry's tuple are dead (absent, revoked, or expired at the host's
-//!   Clock) in this read. "In this read" is a real caveat: a node lagging at `confirmed` shows a
-//!   freshly granted delegation as absent, or a refreshed one as expired, and the refusal is
-//!   then one the connector, reading later, would not repeat. That window is accepted policy
-//!   rather than an oversight — the EVM pre-check reading `latest` has carried the same
-//!   exposure since it was introduced, passing absent rows through would send the common case (no
-//!   grant ever existed) to a doomed gateway transaction, and a caller inside the window
-//!   succeeds by resubmitting;
-//! * every ambiguity of *data* passes: a live row, an unreadable or misshapen account, an
-//!   unresolvable encrypted store. A false pass costs one doomed gateway transaction (what the
-//!   connector-side check is for); a false refusal would block an authorized user, so a
-//!   fetched world this check cannot judge always passes;
-//! * a *transport* failure is not ambiguity: an RPC that cannot be read at all, retries
-//!   exhausted, refuses the request (`HostAclError::CallFailed`) — the same policy as the EVM
-//!   pre-check, so the client-visible contract does not fork by host chain. A node that is
-//!   merely *behind* is not that failure: the row read requires the encrypted-state read's slot
-//!   (`minContextSlot`) and is re-checked against it on arrival, and a node that never catches
-//!   up passes rather than refusing. The two reads are therefore never two views of the chain
-//!   in the wrong order — the ordering the connector gets from `minContextSlot` on its own second
-//!   read.
+//! Direct entries are not pre-checked: their allow leaf comes from the coprocessors, and the
+//! connector reads it no more cheaply than this would.
 //!
-//! Direct entries (`owner_address == user_address`) are not pre-checked at all: their
-//! authorization is an allow leaf the connector fetches from the coprocessors and verifies
-//! against the account, and there is no cheaper reading of it here than the connector's own.
-//!
-//! One byte-level implementation, not a second one: the record decoder and the liveness rule
-//! come from `zama-solana-acl` — the same crate the connector's authoritative check reads the
-//! same bytes through.
-//!
-//! Everything except the two RPC reads lives here, pure and tested without a network: the
-//! address derivations, the plan built between the reads ([`plan_row_reads`]), and the pairing
-//! of fetched rows back to their entries ([`judge_planned_entries`]). The transport in
-//! `acl_checker` only carries bytes between these functions.
+//! The store validation and the row verdicts are `zama-solana-acl`'s, the functions the connector
+//! judges the same bytes with. Everything but the two RPC reads in `acl_checker` is pure here.
 
-use zama_solana_acl::delegation::{decode_user_decryption_delegation, WILDCARD_APP};
 use zama_solana_acl::{
-    decode_clock_unix_timestamp, decode_encrypted_store, delegation_seeds, CLOCK_SYSVAR_ID,
+    decode_clock_unix_timestamp, delegation_seeds, judge_delegation, judge_delegation_row,
+    validate_store, AccountView, DelegationVerdict, EncryptedStore, CLOCK_SYSVAR_ID, WILDCARD_APP,
 };
 
 /// One fetched account, exactly as the RPC returned it.
@@ -52,6 +27,15 @@ use zama_solana_acl::{
 pub(crate) struct RawAccount {
     pub owner: [u8; 32],
     pub data: Vec<u8>,
+}
+
+impl RawAccount {
+    fn view(&self) -> AccountView<'_> {
+        AccountView {
+            owner: &self.owner,
+            data: &self.data,
+        }
+    }
 }
 
 /// What this advisory check concluded about one delegated entry.
@@ -63,28 +47,6 @@ pub(crate) enum EntryVerdict {
     NotAllowed { reason: String },
     /// Anything this check cannot judge; the connector decides.
     Indeterminate,
-}
-
-/// The inputs of one entry's verdict: the claimed identities, the three fetched accounts and
-/// the host's Clock.
-pub(crate) struct EntryVerdictInputs<'a> {
-    /// The deployment's host program id.
-    pub program_id: [u8; 32],
-    /// The address of the encrypted store the entry names.
-    pub encrypted_store_key: [u8; 32],
-    /// The entry's owner address — the delegator whose access is asked for.
-    pub delegator: [u8; 32],
-    /// The permit's signer — the delegate.
-    pub delegate: [u8; 32],
-    /// The encrypted store at that address, if it exists.
-    pub encrypted_store: Option<&'a RawAccount>,
-    /// The row of the store's application, if it exists (fetched second, once the application
-    /// is known from the encrypted store).
-    pub exact_row: Option<&'a RawAccount>,
-    /// The delegator's wildcard row, if it exists.
-    pub wildcard_row: Option<&'a RawAccount>,
-    /// The host Clock's Unix time in the row read, which the liveness rule is evaluated at.
-    pub now: u64,
 }
 
 /// The application a delegation row is keyed by: the store's program and scope, or
@@ -102,101 +64,67 @@ impl AppScope {
     };
 }
 
-/// Decides one delegated entry. Pure: every ambiguity is [`EntryVerdict::Indeterminate`].
-pub(crate) fn entry_verdict(inputs: &EntryVerdictInputs) -> EntryVerdict {
-    let Some(app) = resolve_encrypted_store_application(
-        inputs.program_id,
-        inputs.encrypted_store_key,
-        inputs.encrypted_store,
-    ) else {
-        return EntryVerdict::Indeterminate;
-    };
-
-    let exact = row_state(inputs.exact_row, inputs, app);
-    let wildcard = row_state(inputs.wildcard_row, inputs, AppScope::WILDCARD);
-
-    match (exact, wildcard) {
-        (RowState::Live, _) | (_, RowState::Live) => EntryVerdict::Allowed,
-        // Only two definitively dead rows refuse: the authoritative check can only agree.
-        (RowState::Dead(exact_reason), RowState::Dead(wildcard_reason)) => {
-            EntryVerdict::NotAllowed {
-                reason: format!(
-                    "no live delegation of (delegator, delegate, application) at the host's \
-                     clock: application row {exact_reason}; wildcard row {wildcard_reason}"
-                ),
-            }
-        }
-        // A row this check cannot read is not a row it may refuse on.
-        (RowState::Unreadable, _) | (_, RowState::Unreadable) => EntryVerdict::Indeterminate,
-    }
+/// A delegation row's address, the canonical bump that derives it, and the application it is
+/// keyed by: what its record must name.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(crate) struct RowAddress {
+    pub address: [u8; 32],
+    pub bump: u8,
+    pub app: AppScope,
 }
 
-/// The application the entry's encrypted store belongs to, when the account resolves cleanly:
-/// present, host-owned, decodable, deriving the address it was read from, and naming the wildcard
-/// sentinel in neither position. `None` is "this advisory check cannot judge the encrypted store" — never a
-/// refusal.
-pub(crate) fn resolve_encrypted_store_application(
+/// The application of the encrypted store at `encrypted_store_key`, when the account is a store
+/// the host program wrote there (`zama_solana_acl::validate_store`, the connector's rule). `None`
+/// is "this advisory check cannot judge the encrypted store" — never a refusal.
+pub(crate) fn store_application(
     program_id: [u8; 32],
     encrypted_store_key: [u8; 32],
     encrypted_store: Option<&RawAccount>,
 ) -> Option<AppScope> {
-    let account = encrypted_store?;
-    if account.owner != program_id {
-        return None;
-    }
-    let state = decode_encrypted_store(&account.data).ok()?;
-    if encrypted_store_address(&state, program_id) != Some(encrypted_store_key) {
-        return None;
-    }
-    // No legal store names the sentinel, and the connector refuses one that does in either
-    // position; this check stands aside.
-    if state.program == WILDCARD_APP || state.scope == WILDCARD_APP {
-        return None;
-    }
-    Some(AppScope {
-        program: state.program,
-        scope: state.scope,
+    validate_store(
+        &program_id,
+        &encrypted_store_key,
+        encrypted_store.map(RawAccount::view),
+        |store| encrypted_store_address(store, program_id),
+    )
+    .ok()
+    .map(|store| AppScope {
+        program: store.program,
+        scope: store.scope,
     })
 }
 
-/// What one delegation row contributes to the verdict.
-enum RowState {
-    /// Exists, names the expected tuple, and is live at the host's Clock.
-    Live,
-    /// Definitively dead: absent, or naming the tuple while revoked or expired.
-    Dead(&'static str),
-    /// Anything else — a state this advisory reader must leave to the connector.
-    Unreadable,
-}
-
-fn row_state(row: Option<&RawAccount>, inputs: &EntryVerdictInputs, app: AppScope) -> RowState {
-    let Some(account) = row else {
-        return RowState::Dead("is absent");
-    };
-    if account.owner != inputs.program_id {
-        return RowState::Unreadable;
+/// Decides one delegated entry from its two rows, application row first, at the host's Clock
+/// `now`. The rows are judged by the connector's rules; only the policy on a row the host program
+/// could not have written differs: the connector refuses it, this advisory check stands aside.
+pub(crate) fn entry_verdict(
+    program_id: [u8; 32],
+    delegator: [u8; 32],
+    delegate: [u8; 32],
+    rows: &[RowAddress; 2],
+    accounts: [Option<&RawAccount>; 2],
+    now: u64,
+) -> EntryVerdict {
+    let [exact, wildcard] = [0, 1].map(|i| {
+        let row = rows[i];
+        judge_delegation_row(
+            &program_id,
+            accounts[i].map(RawAccount::view),
+            row.bump,
+            [&delegator, &delegate, &row.app.program, &row.app.scope],
+            now,
+        )
+    });
+    match judge_delegation(exact, wildcard) {
+        DelegationVerdict::Authorized(_) => EntryVerdict::Allowed,
+        DelegationVerdict::NoLiveDelegation { exact, wildcard } => EntryVerdict::NotAllowed {
+            reason: format!(
+                "no live delegation of (delegator, delegate, application) at the host's clock: \
+                 application row {exact}; wildcard row {wildcard}"
+            ),
+        },
+        DelegationVerdict::InvalidRow(_) => EntryVerdict::Indeterminate,
     }
-    let Ok(record) = decode_user_decryption_delegation(&account.data) else {
-        return RowState::Unreadable;
-    };
-    if !record.names(
-        &inputs.delegator,
-        &inputs.delegate,
-        &app.program,
-        &app.scope,
-    ) {
-        return RowState::Unreadable;
-    }
-    // The liveness boundary is the shared crate's, not a re-spelling; only the reason of a
-    // dead row is named locally. A grant always expires after the time it was made, so only a
-    // revocation leaves 0.
-    if record.is_live_at(inputs.now) {
-        return RowState::Live;
-    }
-    if record.expires_at == 0 {
-        return RowState::Dead("is revoked");
-    }
-    RowState::Dead("is expired")
 }
 
 /// One delegated entry as admission handed it over: the claimed identities, plus the handle
@@ -208,15 +136,12 @@ pub(crate) struct DelegatedEntry {
     pub encrypted_store: [u8; 32],
 }
 
-/// An entry whose encrypted-state read resolved to a judgeable account. It
-/// carries that account with it — no index into someone else's array — so a later
-/// filter cannot silently
-/// re-pair entries with accounts.
+/// An entry whose encrypted store resolved to an application, with the two rows that
+/// application gives it.
 pub(crate) struct PlannedEntry {
     pub handle_hex: String,
     pub delegator: [u8; 32],
-    pub encrypted_store_key: [u8; 32],
-    pub encrypted_store: RawAccount,
+    pub rows: [RowAddress; 2],
 }
 
 /// What the encrypted-state read planned for the row read: `entries[i]`'s rows sit at
@@ -271,25 +196,17 @@ pub(crate) fn plan_row_reads(
         addresses: Vec::new(),
     };
     for (entry, encrypted_store) in entries.into_iter().zip(encrypted_stores) {
-        let Some(encrypted_store) = encrypted_store else {
+        let Some(app) =
+            store_application(program_id, entry.encrypted_store, encrypted_store.as_ref())
+        else {
             continue;
         };
-        let Some(app) = resolve_encrypted_store_application(
-            program_id,
-            entry.encrypted_store,
-            Some(&encrypted_store),
-        ) else {
-            continue;
-        };
-        let (exact_address, wildcard_address) =
-            solana_delegation_row_addresses(&entry.delegator, &delegate, app, program_id);
-        plan.addresses.push(exact_address);
-        plan.addresses.push(wildcard_address);
+        let rows = delegation_rows(&entry.delegator, &delegate, app, program_id);
+        plan.addresses.extend(rows.map(|row| row.address));
         plan.entries.push(PlannedEntry {
             handle_hex: entry.handle_hex,
             delegator: entry.delegator,
-            encrypted_store_key: entry.encrypted_store,
-            encrypted_store,
+            rows,
         });
     }
     plan.addresses.push(CLOCK_SYSVAR_ID);
@@ -323,17 +240,14 @@ pub(crate) fn judge_planned_entries(
         .iter()
         .zip(row_accounts.chunks_exact(2))
         .filter_map(|(entry, rows)| {
-            let verdict = entry_verdict(&EntryVerdictInputs {
+            match entry_verdict(
                 program_id,
-                encrypted_store_key: entry.encrypted_store_key,
-                delegator: entry.delegator,
+                entry.delegator,
                 delegate,
-                encrypted_store: Some(&entry.encrypted_store),
-                exact_row: rows[0].as_ref(),
-                wildcard_row: rows[1].as_ref(),
+                &entry.rows,
+                [rows[0].as_ref(), rows[1].as_ref()],
                 now,
-            });
-            match verdict {
+            ) {
                 EntryVerdict::Allowed | EntryVerdict::Indeterminate => None,
                 EntryVerdict::NotAllowed { reason } => Some(EntryRefusal {
                     handle_hex: entry.handle_hex.clone(),
@@ -344,24 +258,12 @@ pub(crate) fn judge_planned_entries(
         .collect())
 }
 
-/// The canonical PDA for `seeds` under `program_id` — the same derivation every other side
-/// runs. The delegation seed tuple this crate spells (below) is pinned against the host
-/// program's own derivation by fixture literals shared with the runtime-test SDK cross-pins.
-fn solana_pda(seeds: &[&[u8]], program_id: [u8; 32]) -> [u8; 32] {
-    let program_id = solana_pubkey::Pubkey::new_from_array(program_id);
-    let (address, _) = solana_pubkey::Pubkey::find_program_address(seeds, &program_id);
-    address.to_bytes()
-}
-
 /// The address an encrypted store's own fields derive, with its stored bump: the
 /// connector's rule for "this account is the one the entry names", run here on the same fields.
 /// `None` when the stored bump does not give a valid PDA.
-fn encrypted_store_address(
-    state: &zama_solana_acl::EncryptedStore,
-    program_id: [u8; 32],
-) -> Option<[u8; 32]> {
-    let bump = [state.bump];
-    let mut seeds: Vec<&[u8]> = state.seeds().to_vec();
+fn encrypted_store_address(store: &EncryptedStore, program_id: [u8; 32]) -> Option<[u8; 32]> {
+    let bump = [store.bump];
+    let mut seeds: Vec<&[u8]> = store.seeds().to_vec();
     seeds.push(&bump);
     solana_pubkey::Pubkey::create_program_address(
         &seeds,
@@ -371,34 +273,44 @@ fn encrypted_store_address(
     .map(|address| address.to_bytes())
 }
 
-/// Both delegation row addresses of one `(delegator, delegate)` couple: the application's row
-/// and the wildcard row it falls back to.
-fn solana_delegation_row_addresses(
+/// Both delegation rows of one `(delegator, delegate)` couple: the application's row and the
+/// wildcard row it falls back to. The seed tuple is pinned against the host program's own
+/// derivation by fixture literals shared with the runtime-test SDK cross-pins.
+fn delegation_rows(
     delegator: &[u8; 32],
     delegate: &[u8; 32],
     app: AppScope,
     program_id: [u8; 32],
-) -> ([u8; 32], [u8; 32]) {
-    let row = |app: AppScope| {
-        solana_pda(
+) -> [RowAddress; 2] {
+    let program_id = solana_pubkey::Pubkey::new_from_array(program_id);
+    [app, AppScope::WILDCARD].map(|app| {
+        let (address, bump) = solana_pubkey::Pubkey::find_program_address(
             &delegation_seeds(delegator, delegate, &app.program, &app.scope),
-            program_id,
-        )
-    };
-    (row(app), row(AppScope::WILDCARD))
+            &program_id,
+        );
+        RowAddress {
+            address: address.to_bytes(),
+            bump,
+            app,
+        }
+    })
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
-    use zama_solana_acl::delegation::{
-        UserDecryptionDelegationRecord, USER_DECRYPTION_DELEGATION_DISCRIMINATOR,
+    use zama_solana_acl::{
+        encode_clock, encode_user_decryption_delegation, encrypted_store_discriminator,
+        UserDecryptionDelegationRecord, SYSTEM_PROGRAM_ID, SYSVAR_OWNER_ID,
     };
-    use zama_solana_acl::{encrypted_store_discriminator, EncryptedStore, SYSVAR_OWNER_ID};
 
     const PROGRAM_ID: [u8; 32] = [7; 32];
     const APP_PROGRAM: [u8; 32] = [1; 32];
     const SCOPE: [u8; 32] = [4; 32];
+    const APP: AppScope = AppScope {
+        program: APP_PROGRAM,
+        scope: SCOPE,
+    };
     const DELEGATOR: [u8; 32] = [0x11; 32];
     const DELEGATE: [u8; 32] = [0x22; 32];
     const AUTHORITY: [u8; 32] = [0x33; 32];
@@ -435,63 +347,44 @@ mod tests {
         )
     }
 
-    fn encrypted_store() -> RawAccount {
-        encrypted_store_for(APP_PROGRAM, SCOPE).0
+    fn rows() -> [RowAddress; 2] {
+        delegation_rows(&DELEGATOR, &DELEGATE, APP, PROGRAM_ID)
     }
 
-    fn fixture_encrypted_store_key() -> [u8; 32] {
-        encrypted_store_for(APP_PROGRAM, SCOPE).1
-    }
-
-    /// The record bytes, spelled field by field in the order the host's layout sets.
     fn row(record: &UserDecryptionDelegationRecord) -> RawAccount {
-        let mut data = USER_DECRYPTION_DELEGATION_DISCRIMINATOR.to_vec();
-        data.extend_from_slice(&record.delegator);
-        data.extend_from_slice(&record.delegate);
-        data.extend_from_slice(&record.program);
-        data.extend_from_slice(&record.scope);
-        data.extend_from_slice(&record.expires_at.to_le_bytes());
-        data.extend_from_slice(&record.delegation_counter.to_le_bytes());
-        data.extend_from_slice(&record.last_update_slot.to_le_bytes());
-        data.push(record.bump);
         RawAccount {
             owner: PROGRAM_ID,
-            data,
+            data: encode_user_decryption_delegation(record),
         }
     }
 
-    /// The Clock sysvar at `unix_timestamp`: four leading fields, then the time.
-    fn clock(unix_timestamp: i64) -> RawAccount {
-        let mut data = Vec::new();
-        for field in [500u64, 0, 1, 2] {
-            data.extend_from_slice(&field.to_le_bytes());
-        }
-        data.extend_from_slice(&unix_timestamp.to_le_bytes());
+    fn clock(unix_timestamp: u64) -> RawAccount {
         RawAccount {
             owner: SYSVAR_OWNER_ID,
-            data,
+            data: encode_clock(unix_timestamp),
+        }
+    }
+
+    /// The record the host writes at `row`, live until `NOW + 100`.
+    fn live(row: RowAddress) -> UserDecryptionDelegationRecord {
+        UserDecryptionDelegationRecord {
+            delegator: DELEGATOR,
+            delegate: DELEGATE,
+            program: row.app.program,
+            scope: row.app.scope,
+            expires_at: NOW + 100,
+            delegation_counter: 1,
+            last_update_slot: 490,
+            bump: row.bump,
         }
     }
 
     fn live_exact() -> UserDecryptionDelegationRecord {
-        UserDecryptionDelegationRecord {
-            delegator: DELEGATOR,
-            delegate: DELEGATE,
-            program: APP_PROGRAM,
-            scope: SCOPE,
-            expires_at: NOW + 100,
-            delegation_counter: 1,
-            last_update_slot: 490,
-            bump: 250,
-        }
+        live(rows()[0])
     }
 
     fn live_wildcard() -> UserDecryptionDelegationRecord {
-        UserDecryptionDelegationRecord {
-            program: WILDCARD_APP,
-            scope: WILDCARD_APP,
-            ..live_exact()
-        }
+        live(rows()[1])
     }
 
     fn revoked(record: UserDecryptionDelegationRecord) -> UserDecryptionDelegationRecord {
@@ -501,40 +394,40 @@ mod tests {
         }
     }
 
-    fn verdict(
-        encrypted_store: Option<&RawAccount>,
-        exact_row: Option<&RawAccount>,
-        wildcard_row: Option<&RawAccount>,
-    ) -> EntryVerdict {
-        entry_verdict(&EntryVerdictInputs {
-            program_id: PROGRAM_ID,
-            encrypted_store_key: fixture_encrypted_store_key(),
-            delegator: DELEGATOR,
-            delegate: DELEGATE,
-            encrypted_store,
-            exact_row,
-            wildcard_row,
-            now: NOW,
-        })
+    fn verdict(exact_row: Option<&RawAccount>, wildcard_row: Option<&RawAccount>) -> EntryVerdict {
+        entry_verdict(
+            PROGRAM_ID,
+            DELEGATOR,
+            DELEGATE,
+            &rows(),
+            [exact_row, wildcard_row],
+            NOW,
+        )
+    }
+
+    fn refusal(exact: &str, wildcard: &str) -> EntryVerdict {
+        EntryVerdict::NotAllowed {
+            reason: format!(
+                "no live delegation of (delegator, delegate, application) at the host's clock: \
+                 application row {exact}; wildcard row {wildcard}"
+            ),
+        }
     }
 
     #[test]
     fn a_live_row_of_the_stores_application_allows() {
-        let value = encrypted_store();
-        let exact = row(&live_exact());
         assert_eq!(
-            verdict(Some(&value), Some(&exact), None),
+            verdict(Some(&row(&live_exact())), None),
             EntryVerdict::Allowed
         );
     }
 
     #[test]
     fn a_live_wildcard_row_allows_when_the_exact_row_is_dead() {
-        let value = encrypted_store();
         let exact = row(&revoked(live_exact()));
         let wildcard = row(&live_wildcard());
         assert_eq!(
-            verdict(Some(&value), Some(&exact), Some(&wildcard)),
+            verdict(Some(&exact), Some(&wildcard)),
             EntryVerdict::Allowed
         );
     }
@@ -543,135 +436,65 @@ mod tests {
     /// second is the one before it.
     #[test]
     fn a_delegation_ends_at_its_expiry_second() {
-        let value = encrypted_store();
-        let last_second = row(&UserDecryptionDelegationRecord {
-            expires_at: NOW + 1,
-            ..live_exact()
-        });
+        let ending_at = |expires_at| {
+            row(&UserDecryptionDelegationRecord {
+                expires_at,
+                ..live_exact()
+            })
+        };
         assert_eq!(
-            verdict(Some(&value), Some(&last_second), None),
+            verdict(Some(&ending_at(NOW + 1)), None),
             EntryVerdict::Allowed
         );
-        let at_expiry = row(&UserDecryptionDelegationRecord {
-            expires_at: NOW,
-            ..live_exact()
-        });
         assert_eq!(
-            verdict(Some(&value), Some(&at_expiry), None),
-            EntryVerdict::NotAllowed {
-                reason: "no live delegation of (delegator, delegate, application) at the host's \
-                         clock: application row is expired; wildcard row is absent"
-                    .to_string()
-            }
+            verdict(Some(&ending_at(NOW)), None),
+            refusal(&format!("expired at {NOW}"), "absent")
         );
     }
 
     #[test]
-    fn a_revoked_exact_row_with_no_wildcard_refuses() {
-        let value = encrypted_store();
-        let exact = row(&revoked(live_exact()));
+    fn two_dead_rows_refuse() {
+        let revoked_exact = row(&revoked(live_exact()));
+        let revoked_wildcard = row(&revoked(live_wildcard()));
         assert_eq!(
-            verdict(Some(&value), Some(&exact), None),
-            EntryVerdict::NotAllowed {
-                reason: "no live delegation of (delegator, delegate, application) at the host's \
-                         clock: application row is revoked; wildcard row is absent"
-                    .to_string()
-            }
+            verdict(Some(&revoked_exact), None),
+            refusal("revoked", "absent")
         );
-    }
-
-    #[test]
-    fn an_expired_exact_row_beside_a_revoked_wildcard_refuses() {
-        let value = encrypted_store();
-        let exact = row(&UserDecryptionDelegationRecord {
-            expires_at: NOW - 1,
-            ..live_exact()
-        });
-        let wildcard = row(&revoked(live_wildcard()));
-        assert!(matches!(
-            verdict(Some(&value), Some(&exact), Some(&wildcard)),
-            EntryVerdict::NotAllowed { .. }
-        ));
-    }
-
-    #[test]
-    fn no_row_at_all_refuses() {
-        let value = encrypted_store();
-        assert!(matches!(
-            verdict(Some(&value), None, None),
-            EntryVerdict::NotAllowed { .. }
-        ));
-    }
-
-    #[test]
-    fn an_absent_encrypted_store_is_indeterminate() {
-        assert_eq!(verdict(None, None, None), EntryVerdict::Indeterminate);
-    }
-
-    #[test]
-    fn a_foreign_owned_encrypted_store_is_indeterminate() {
-        let mut value = encrypted_store();
-        value.owner = [9; 32];
         assert_eq!(
-            verdict(Some(&value), None, None),
-            EntryVerdict::Indeterminate
+            verdict(None, Some(&revoked_wildcard)),
+            refusal("absent", "revoked")
         );
+        assert_eq!(verdict(None, None), refusal("absent", "absent"));
     }
 
+    /// Anyone can fund a derivable address before the host creates the row there; the host reads
+    /// that account as no row, and so does this check, as the connector does.
     #[test]
-    fn an_encrypted_store_at_another_address_is_indeterminate() {
-        let value = encrypted_store();
-        let verdict = entry_verdict(&EntryVerdictInputs {
-            program_id: PROGRAM_ID,
-            encrypted_store_key: [0xaa; 32],
-            delegator: DELEGATOR,
-            delegate: DELEGATE,
-            encrypted_store: Some(&value),
-            exact_row: None,
-            wildcard_row: None,
-            now: NOW,
-        });
-        assert_eq!(verdict, EntryVerdict::Indeterminate);
+    fn a_funded_empty_row_address_is_an_absent_row() {
+        let funded = RawAccount {
+            owner: SYSTEM_PROGRAM_ID,
+            data: vec![],
+        };
+        assert_eq!(verdict(Some(&funded), None), refusal("absent", "absent"));
     }
 
-    /// A store naming the wildcard sentinel is the connector's to reject; the advisory check
-    /// stands aside rather than refusing on the wildcard's own row.
+    /// A row the host program could not have written is the connector's to refuse: this check
+    /// stands aside, even beside a live row.
     #[test]
-    fn a_store_naming_the_sentinel_is_indeterminate() {
-        let other = [0x44; 32];
-        for (program, scope) in [(WILDCARD_APP, other), (other, WILDCARD_APP)] {
-            let (value, key) = encrypted_store_for(program, scope);
-            let verdict = entry_verdict(&EntryVerdictInputs {
-                program_id: PROGRAM_ID,
-                encrypted_store_key: key,
-                delegator: DELEGATOR,
-                delegate: DELEGATE,
-                encrypted_store: Some(&value),
-                exact_row: None,
-                wildcard_row: None,
-                now: NOW,
-            });
-            assert_eq!(verdict, EntryVerdict::Indeterminate);
-        }
-    }
-
-    #[test]
-    fn an_unreadable_row_never_refuses() {
-        let value = encrypted_store();
+    fn a_row_the_host_could_not_have_written_never_refuses() {
         let garbage = RawAccount {
             owner: PROGRAM_ID,
             data: vec![0xde, 0xad],
         };
-        assert_eq!(
-            verdict(Some(&value), Some(&garbage), None),
-            EntryVerdict::Indeterminate
-        );
-    }
-
-    #[test]
-    fn a_row_naming_another_tuple_never_refuses() {
-        let value = encrypted_store();
-        for stranger in [
+        let foreign = RawAccount {
+            owner: [9; 32],
+            ..row(&revoked(live_exact()))
+        };
+        let wrong_bump = row(&UserDecryptionDelegationRecord {
+            bump: rows()[0].bump.wrapping_sub(1),
+            ..revoked(live_exact())
+        });
+        let other_tuple = [
             UserDecryptionDelegationRecord {
                 delegate: [0x99; 32],
                 ..revoked(live_exact())
@@ -680,12 +503,44 @@ mod tests {
                 scope: [0x99; 32],
                 ..revoked(live_exact())
             },
+        ]
+        .map(|record| row(&record));
+        for invalid in [
+            &garbage,
+            &foreign,
+            &wrong_bump,
+            &other_tuple[0],
+            &other_tuple[1],
         ] {
-            let exact = row(&stranger);
+            assert_eq!(verdict(Some(invalid), None), EntryVerdict::Indeterminate);
             assert_eq!(
-                verdict(Some(&value), Some(&exact), None),
+                verdict(Some(invalid), Some(&row(&live_wildcard()))),
                 EntryVerdict::Indeterminate
             );
+        }
+    }
+
+    #[test]
+    fn only_a_store_the_host_wrote_there_has_an_application() {
+        let (store, key) = encrypted_store_for(APP_PROGRAM, SCOPE);
+        assert_eq!(store_application(PROGRAM_ID, key, Some(&store)), Some(APP));
+
+        assert_eq!(store_application(PROGRAM_ID, key, None), None);
+        let foreign = RawAccount {
+            owner: [9; 32],
+            ..store.clone()
+        };
+        assert_eq!(store_application(PROGRAM_ID, key, Some(&foreign)), None);
+        assert_eq!(
+            store_application(PROGRAM_ID, [0xaa; 32], Some(&store)),
+            None
+        );
+
+        // A store naming the wildcard sentinel is the connector's to reject.
+        let other = [0x44; 32];
+        for (program, scope) in [(WILDCARD_APP, other), (other, WILDCARD_APP)] {
+            let (store, key) = encrypted_store_for(program, scope);
+            assert_eq!(store_application(PROGRAM_ID, key, Some(&store)), None);
         }
     }
 
@@ -703,8 +558,7 @@ mod tests {
         PlannedEntry {
             handle_hex: handle.to_string(),
             delegator: DELEGATOR,
-            encrypted_store_key: fixture_encrypted_store_key(),
-            encrypted_store: encrypted_store(),
+            rows: rows(),
         }
     }
 
@@ -736,7 +590,7 @@ mod tests {
         assert_eq!(handles, ["0xaa", "0xcc"]);
 
         let rows = |scope: [u8; 32]| {
-            solana_delegation_row_addresses(
+            delegation_rows(
                 &DELEGATOR,
                 &DELEGATE,
                 AppScope {
@@ -745,15 +599,16 @@ mod tests {
                 },
                 PROGRAM_ID,
             )
+            .map(|row| row.address)
         };
         let (rows_a, rows_c) = (rows([0x41; 32]), rows([0x43; 32]));
         assert_ne!(
-            rows_a.0, rows_c.0,
+            rows_a[0], rows_c[0],
             "the two applications have their own rows"
         );
         assert_eq!(
             plan.addresses,
-            vec![rows_a.0, rows_a.1, rows_c.0, rows_c.1, CLOCK_SYSVAR_ID],
+            vec![rows_a[0], rows_a[1], rows_c[0], rows_c[1], CLOCK_SYSVAR_ID],
             "each surviving entry keeps its own rows, application before wildcard"
         );
     }
@@ -762,7 +617,7 @@ mod tests {
     #[test]
     fn a_refusal_is_attributed_to_the_entry_the_rows_belong_to() {
         let live_row = Some(row(&live_exact()));
-        let now = Some(clock(NOW as i64));
+        let now = Some(clock(NOW));
 
         let refusals = judge_planned_entries(
             PROGRAM_ID,
@@ -792,7 +647,7 @@ mod tests {
     #[test]
     fn the_application_row_is_read_before_the_wildcard_row() {
         let revoked_row = Some(row(&revoked(live_exact())));
-        let now = Some(clock(NOW as i64));
+        let now = Some(clock(NOW));
 
         let refusals = judge_planned_entries(
             PROGRAM_ID,
@@ -829,7 +684,7 @@ mod tests {
                 PROGRAM_ID,
                 DELEGATE,
                 &[planned("0xdead")],
-                &[Some(row(&live_exact())), None, Some(clock(unix as i64))],
+                &[Some(row(&live_exact())), None, Some(clock(unix))],
             )
             .expect("a matching account count judges")
             .len()
@@ -841,11 +696,13 @@ mod tests {
     /// Without a Clock it can trust, the check does not guess the time: it judges nothing.
     #[test]
     fn a_row_read_without_a_readable_clock_is_a_defect() {
-        let mut foreign = clock(NOW as i64);
+        let mut foreign = clock(NOW);
         foreign.owner = PROGRAM_ID;
-        let mut short = clock(NOW as i64);
+        let mut short = clock(NOW);
         short.data.pop();
-        for bad_clock in [None, Some(foreign), Some(short), Some(clock(-1))] {
+        // The Clock's time is an `i64`: these bytes read as -1.
+        let negative = clock(u64::MAX);
+        for bad_clock in [None, Some(foreign), Some(short), Some(negative)] {
             assert_eq!(
                 judge_planned_entries(
                     PROGRAM_ID,
@@ -898,7 +755,7 @@ mod tests {
         let as_base58 =
             |address: [u8; 32]| solana_pubkey::Pubkey::new_from_array(address).to_string();
 
-        let (exact_row, wildcard_row) = solana_delegation_row_addresses(
+        let [exact_row, wildcard_row] = delegation_rows(
             &[0x11; 32],
             &[0x22; 32],
             AppScope {
@@ -908,11 +765,11 @@ mod tests {
             program_id,
         );
         assert_eq!(
-            as_base58(exact_row),
+            as_base58(exact_row.address),
             "GkmqVNMzqxopBjPkSkZvuLuDE6Jze3iA3Mq5ZHr6SrtJ"
         );
         assert_eq!(
-            as_base58(wildcard_row),
+            as_base58(wildcard_row.address),
             "J4BMamYLJvJroFATJp48L6AeQJDQqv86YAQyPqvBcKq1"
         );
     }

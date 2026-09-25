@@ -58,7 +58,7 @@ impl FheExecution {
     /// use anchor_lang::prelude::Pubkey;
     /// use zama_fhe::{FheExecution, Scalar, StoreId, Uint};
     ///
-    /// let store = StoreId::new(Pubkey::new_unique(), Pubkey::new_unique(), [0xA5; 32]);
+    /// let store = StoreId::new(Pubkey::new_unique(), Pubkey::new_unique(), Pubkey::new_from_array([0xA5; 32]));
     /// let execution = FheExecution::build(store, |builder| {
     ///     let value = builder.trivial_encrypt_u64(7)?;
     ///     builder.add(value, Scalar::<Uint<64>>::u64(1))?;
@@ -73,7 +73,7 @@ impl FheExecution {
     /// use anchor_lang::prelude::Pubkey;
     /// use zama_fhe::{FheExecution, Scalar, StoreId, Uint};
     ///
-    /// let store = StoreId::new(Pubkey::new_unique(), Pubkey::new_unique(), [0xA5; 32]);
+    /// let store = StoreId::new(Pubkey::new_unique(), Pubkey::new_unique(), Pubkey::new_from_array([0xA5; 32]));
     /// FheExecution::build(store, |outer| {
     ///     let borrowed = outer.trivial_encrypt_u64(7)?;
     ///     FheExecution::build(store, |inner| {
@@ -355,7 +355,7 @@ mod returning_tests {
             crate::StoreId::new(
                 anchor_lang::prelude::Pubkey::new_from_array([0xA9; 32]),
                 Pubkey::new_unique(),
-                [0xA5; 32],
+                Pubkey::new_from_array([0xA5; 32]),
             ),
             |fhe| {
                 fhe.trivial_encrypt_u64(1)?;

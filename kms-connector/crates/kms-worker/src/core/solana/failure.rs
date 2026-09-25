@@ -256,7 +256,7 @@ fn solana_check_error(
 mod tests {
     use super::*;
     use crate::core::event_processor::ProcessingErrorKind;
-    use crate::core::solana::delegation::DeadRow;
+    use zama_solana_acl::DeadRow;
 
     const KEY: [u8; 32] = [7; 32];
     const INVALID: InvalidHostRecord = InvalidHostRecord {

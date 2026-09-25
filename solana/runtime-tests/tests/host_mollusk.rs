@@ -56,7 +56,7 @@ use host_fixtures::{
 #[derive(Clone, Copy)]
 struct App {
     authority: StoreAuthority,
-    scope: [u8; 32],
+    scope: Pubkey,
 }
 
 impl App {
@@ -75,14 +75,11 @@ impl App {
 
     /// The account the scope names, owned by the application's program as creation requires.
     fn scope_account(&self) -> (Pubkey, Account) {
-        (
-            Pubkey::new_from_array(self.scope),
-            program_owned_account(self.program()),
-        )
+        (self.scope, program_owned_account(self.program()))
     }
 
     /// Another application of the same program: a second scope.
-    fn sibling_scope(&self, scope: [u8; 32]) -> Self {
+    fn sibling_scope(&self, scope: Pubkey) -> Self {
         Self {
             authority: self.authority,
             scope,
@@ -259,7 +256,7 @@ fn shared_state(state: &EncryptedStore) -> zama_solana_acl::EncryptedStore {
     zama_solana_acl::EncryptedStore {
         program: state.program.to_bytes(),
         authority: state.authority.to_bytes(),
-        scope: state.scope,
+        scope: state.scope.to_bytes(),
         slots: state
             .slots
             .iter()
@@ -876,7 +873,7 @@ fn mollusk_fhe_execute_rejects_values_of_two_scopes_under_one_authority() {
     // default authority is refused, so metering and the deny list see a single `(program, scope)`.
     let payer = Pubkey::new_unique();
     let app = App::new();
-    let other_scope = app.sibling_scope(label("other-scope"));
+    let other_scope = app.sibling_scope(Pubkey::new_from_array(label("other-scope")));
     let (host_config, host_config_account) = host_config_account(payer);
     let handle = handle_for_chain(61, 5);
     let (input_address, input_value) = app.value("in", handle);
@@ -1206,7 +1203,7 @@ fn mollusk_denied_application_cannot_write_or_seal_but_its_sibling_scope_can() {
     // untouched — its record is simply never initialized.
     let payer = Pubkey::new_unique();
     let denied = App::new();
-    let sibling = denied.sibling_scope(label("clean-scope"));
+    let sibling = denied.sibling_scope(Pubkey::new_from_array(label("clean-scope")));
     let (host_config, host_config_account) = deny_enabled_host_config_account(payer);
     let (denied_record, denied_record_account) = deny_scope_record_account(denied.app(), true);
     let sibling_record = host::deny_scope_address(sibling.app()).0;
@@ -2102,7 +2099,7 @@ fn anchor_error(error: anchor_lang::error::ErrorCode) -> Check<'static> {
 fn unique_app() -> AppScope {
     AppScope {
         program: Pubkey::new_unique(),
-        scope: label("app"),
+        scope: Pubkey::new_from_array(label("app")),
     }
 }
 
@@ -3873,15 +3870,18 @@ fn mollusk_create_encrypted_store_rejects_a_scope_its_program_does_not_own() {
     let app = App::new();
     let cases = [
         (
-            Pubkey::new_unique().to_bytes(),
+            Pubkey::new_unique(),
             program_owned_account(Pubkey::new_unique()),
         ),
         (
-            app.program().to_bytes(),
+            app.program(),
             program_owned_account(anchor_lang::solana_program::bpf_loader_upgradeable::ID),
         ),
-        (Pubkey::new_unique().to_bytes(), empty_system_account()),
-        (host::WILDCARD_APP, empty_system_account()),
+        (Pubkey::new_unique(), empty_system_account()),
+        (
+            Pubkey::new_from_array(host::WILDCARD_APP),
+            empty_system_account(),
+        ),
     ];
     for (scope, scope_account) in cases {
         let app = app.sibling_scope(scope);
@@ -3892,7 +3892,7 @@ fn mollusk_create_encrypted_store_rejects_a_scope_its_program_does_not_own() {
             vec![
                 (host_config, host_config_account),
                 (app.key(), empty_system_account()),
-                (Pubkey::new_from_array(scope), scope_account),
+                (scope, scope_account),
                 (address, empty_system_account()),
             ],
         );

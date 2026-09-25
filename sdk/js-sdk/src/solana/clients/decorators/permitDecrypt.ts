@@ -1,5 +1,5 @@
 import type { Address } from '@solana/kit';
-import { getAddressDecoder } from '@solana/kit';
+import { getAddressDecoder, getAddressEncoder } from '@solana/kit';
 // The permit-path decrypt actions: sign a permit once, run requests under it.
 //
 // This decorator is assembly and nothing else. Every rule it relies on lives in the modules it
@@ -69,10 +69,10 @@ export interface SolanaDecryptTrust {
 
 /** One `(program, scope)` pair a permit may be restricted to. */
 export interface SolanaPermitScope {
-  /** The 32-byte application program. */
-  readonly program: Bytes32Hex;
+  /** The application program. */
+  readonly program: Address;
   /** The scope: an account that program owns, e.g. the mint for the token program. */
-  readonly scope: Bytes32Hex;
+  readonly scope: Address;
 }
 
 export interface SolanaSignPermitParameters {
@@ -207,11 +207,12 @@ export function solanaPermitDecryptActions(
  * @param scopes - The pairs, in any order.
  */
 function sortedScopes(scopes: readonly SolanaPermitScope[]): readonly Uint8Array[] {
+  const encoder = getAddressEncoder();
   return scopes
     .map((pair) => {
       const bytes = new Uint8Array(64);
-      bytes.set(hexToBytes32(pair.program), 0);
-      bytes.set(hexToBytes32(pair.scope), 32);
+      bytes.set(encoder.encode(pair.program), 0);
+      bytes.set(encoder.encode(pair.scope), 32);
       return bytes;
     })
     .sort((a, b) => {

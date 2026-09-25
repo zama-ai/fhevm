@@ -87,6 +87,7 @@ are written as one narrative instead.
 | [DD-058](#dd-058-pausers-stop-one-area-at-a-time-only-the-admin-resumes)                                                                  | adopted                                  | Pausers stop one area at a time; only the admin resumes                                                                        |
 | [DD-059](#dd-059-the-listener-catches-up-from-an-archive-when-the-stream-cannot-replay)                                                   | adopted                                  | The listener catches up from an archive when the stream cannot replay                                                          |
 | [DD-060](#dd-060-a-public-decrypt-names-its-stores-beside-the-kms-routing)                                                                | adopted                                  | A public decrypt names its stores beside the KMS routing                                                                       |
+| [DD-061](#dd-061-a-delegation-is-keyed-by-application-and-expires-on-unix-time)                                                           | adopted                                  | A delegation is keyed by application and expires on Unix time                                                                  |
 
 ## DD-002: Keep App Store And Host ACL Store Separate
 
@@ -295,9 +296,9 @@ Decision:
 Treat Solana as a **gateway-compatible host chain** and route its decrypt flows through the unified
 Gateway V2 path (RFC-016) rather than a parallel native stack:
 
-- **User-decrypt** flows through the unified Gateway V2 path, through a host-generic
-  `userDecryptionRequest` overload that types the handles, validity, transport key and `extraData`
-  and carries the Solana permit fields in a versioned blob, rather than smuggling Solana auth through
+- **User-decrypt** flows through the unified Gateway V2 path, through the Gateway's
+  `solanaUserDecryptionRequest` entry, which types the handles, validity, transport key and
+  `extraData` and carries the Solana permit fields in a versioned blob, rather than smuggling Solana auth through
   `extraData`. `extraData` is only the KMS routing (v0, v1 or v2, DD-060). A chain-aware validator
   branches on `contracts_chain_id` (see DD-027) so EVM stays strict and Solana is relaxed. The
   bytes32 handle surface still admits both EVM and Solana. (See DD-026 for the typed-vs-extraData
@@ -778,11 +779,12 @@ Decision:
 - PREVIOUSLY a Solana user-decrypt packed its ed25519 auth into an `extraData` blob with version byte
   `0x03` (`0x03 ‖ context_id(32) ‖ ed25519(32) ‖ nonce(32) ‖ key_count(4) ‖ keys`), forwarded opaquely
   through relayer/gateway and decoded by the KMS connector.
-- Now the gateway's host-generic `userDecryptionRequest(ctHandles, requestValidity, publicKey,
-  extraData, solanaRequest)` types the fields it budgets and charges, and carries the rest in the
-  `solanaRequest` blob: `0x04 ‖ borsh{user_address, allowed_scopes, verifying_program_id, signature,
-  entries}`. It emits the Solana `UserDecryptionRequest` event. `assemble_solana_request`
-  (`zama-solana-request`) joins the two parts, so no fact travels twice. One claim per handle names
+- Now the gateway's `solanaUserDecryptionRequest(ctHandles, requestValidity, publicKey, extraData,
+  solanaRequest)` types the fields it budgets and charges, and carries the rest in the
+  `solanaRequest` blob: `0x05 ‖ borsh{user_address, allowed_scopes, verifying_program_id, signature,
+  entries}`. It emits `SolanaUserDecryptionRequest`. `SolanaUserDecryptRequest::assemble`
+  (`zama-solana-request`) joins the two parts into the typed request every authorizer reads, so no
+  fact travels twice. One claim per handle names
   its owner and Store (DD-048, DD-049), and `extraData` is only the KMS routing (DD-060). The
   connector fetches leaf proofs itself, so neither client nor relayer can substitute proof data.
 - The js-sdk builds the blob and the relayer submits the call. The KMS connector routes Solana
@@ -798,8 +800,10 @@ Decision history:
 
 The 2026/06/12 Solana guild weekly (Manoranjith + Jad) objected that identity and authorization scope
 were being smuggled through `extraData` and should be a proper request type. A dedicated typed
-entrypoint (`userDecryptionRequestSolana`) resolved that first. The host-generic entry and its
-versioned blob replaced it, and `extraData` carries no Solana identity, scope or proof data.
+entrypoint (`userDecryptionRequestSolana`) resolved that first. `solanaUserDecryptionRequest` and
+its versioned blob replaced it, and `extraData` carries no Solana identity, scope or proof data. It
+is a named entry rather than an overload of `userDecryptionRequest`, so the EVM entries keep their
+generated binding names.
 
 ## DD-027: Chain-Aware V2 User-Decrypt Validation
 
@@ -2276,11 +2280,12 @@ it, so the Store became part of a signed field whose version space EVM owns. A r
 only one Store, and every layer (relayer, Gateway, connector, host verifier, SDK) had to parse a
 Solana-only version.
 
-The Gateway now has a Solana overload, `publicDecryptionRequest(bytes32[] ctHandles,
+The Gateway now has a Solana entry, `solanaPublicDecryptionRequest(bytes32[] ctHandles,
 bytes extraData, bytes32[] encryptedStores)`. It takes one Store per handle, in handle order, and
-emits `PublicDecryptionRequest(decryptionId, ctHandles, extraData, encryptedStores)`. `extraData`
-holds only KMS routing (v0, v1 or v2) on both chains. The Gateway refuses a store count that differs
-from the handle count before it takes the fee. The relayer requires `encryptedStores` for Solana
+emits `SolanaPublicDecryptionRequest(decryptionId, ctHandles, extraData, encryptedStores)`. It is
+named rather than overloaded, so the EVM `publicDecryptionRequest` keeps its generated binding
+names. `extraData` holds only KMS routing (v0, v1 or v2) on both chains. The Gateway refuses a store
+count that differs from the handle count before it takes the fee. The relayer requires `encryptedStores` for Solana
 handles and refuses it for EVM handles; the stores are part of the request's content hash. The
 connector keeps them in `handle_encrypted_stores` and proves each handle against its own Store in
 one snapshot. The host verifier reads the context from v1 or v2 exactly as EVM `KMSVerifier`
@@ -2296,9 +2301,51 @@ Rejected alternatives:
 Consequences:
 
 The KMS certificate no longer commits to the Store. It never bound it: the host verifier checks
-the public leaf against the Store it is given (INVARIANTS #22). The Gateway's Solana overload
+the public leaf against the Store it is given (INVARIANTS #22). The Solana entry
 shares the decryption counter and the fee with the EVM entry. It emits one event, so the relayer
 looks for the Solana request event when the EVM one is absent from the receipt.
+
+## DD-061: A delegation is keyed by application and expires on Unix time
+
+Status: adopted
+
+Recorded in zama-ai/fhevm#4120. The key must be confirmed by the product owner before #4120 merges.
+
+A user-decryption delegation lets a delegate request user decryption of the handles its delegator
+is allowed on. EVM keys the grant by `(delegator, delegate, contractAddress)` and ends it at
+`expirationDate > block.timestamp`.
+
+Decision:
+
+The host keys the record by `(delegator, delegate, program, scope)`, the application of the
+encrypted stores it reaches (DD-047). The record lives at
+`PDA("user-decryption-delegation", delegator, delegate, program, scope)`. The wildcard row carries
+`0xff×32` as both `program` and `scope` and covers every application. A grant that sets the
+sentinel in only one position is refused.
+
+`delegate_for_user_decryption` takes the scope as an account and requires `program` to own it
+(`DelegationScopeNotProgramAccount`), the rule `create_encrypted_store` applies to a store's scope.
+A grant therefore names an application a store can have. The wildcard row skips the check, since no
+account lives at the sentinel.
+
+`expires_at` is a Unix second, exclusive, compared against the Clock sysvar. A revocation writes 0.
+`delegation_counter` and `last_update_slot` keep EVM's `delegationCounter` and
+`lastBlockDelegateOrRevoke`: a record changes at most once per slot. The KMS connector reads the
+application row, the wildcard row and the Clock in one snapshot (INVARIANTS #27).
+
+Rejected alternatives:
+
+| Alternative | Why not |
+|---|---|
+| Key by `(delegator, delegate, authority)` and expire at a slot, the earlier layout | The authority is one store's controlling PDA. For the confidential token that is one token account, so a delegate needed a grant per account and a new grant for every new account. EVM grants per contract. The application is also what HCU metering, the deny list and permit scopes key on, so a delegation keyed on it matches every other policy. A slot expiry drifts from wall-clock time by an amount the delegator cannot predict; EVM's expiry is a timestamp. |
+| Accept the scope as free bytes | A grant could name a scope no store of `program` can carry, which authorizes nothing and looks like a real grant. Checking the owner costs one account and one comparison. |
+
+Consequences:
+
+- One grant covers every value of the application that allows the delegator: for the confidential
+  token, one mint's balances, transfers and burns, historical handles included.
+- Renewing a grant needs the scope account to exist. If the program closes it, existing grants keep
+  authorizing until they expire or are revoked, and revocation does not read the scope.
 
 ## Open product decisions
 
@@ -2321,8 +2368,8 @@ Not settled by the decisions above. Forward requirements are detailed in
   (DD-003, DD-059, fhevm-internal#2087).
 - Historical handle discovery conventions for apps.
 - Production role and governance names for public-decrypt and grant authority.
-- Leaf-record availability (DD-048): the connector asks the configured coprocessors in order and one
-  behind or unreachable cannot sink a request another can serve, but a Store first seen by a
+- Leaf-record availability (DD-048): the connector asks every configured coprocessor at once, and
+  one behind, stalled or unreachable cannot sink or hold a request another can serve, but a Store first seen by a
   coprocessor through an update has no served proofs until that listener is replayed from before the
   Store's creation (`history_complete`). The replay and bootstrap policy is operational and
   undocumented beyond the listener's own flags.

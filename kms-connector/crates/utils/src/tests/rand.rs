@@ -3,13 +3,14 @@ use crate::types::solana_request::{
 };
 use alloy::primitives::{Address, FixedBytes, U256};
 use fhevm_gateway_bindings::decryption::{
-    Decryption::UserDecryptionRequest_4, IDecryption::RequestValiditySeconds,
+    Decryption::SolanaUserDecryptionRequest, IDecryption::RequestValiditySeconds,
 };
 use fhevm_host_bindings::protocol_config::{
     IProtocolConfig::KmsThresholds,
     ProtocolConfig::{KmsNodeParams, PcrValues},
 };
 use rand::Rng;
+use zama_solana_request::host_chain::solana_host_chain_id;
 
 pub fn rand_u256() -> U256 {
     U256::from_le_bytes(rand::rng().random::<[u8; 32]>())
@@ -33,6 +34,13 @@ pub fn rand_digest() -> FixedBytes<32> {
 
 pub fn rand_handle() -> FixedBytes<32> {
     rand::rng().random::<[u8; 32]>().into()
+}
+
+/// A random handle of the Solana localnet host chain.
+pub fn rand_solana_handle() -> FixedBytes<32> {
+    let mut handle = rand::rng().random::<[u8; 32]>();
+    handle[22..30].copy_from_slice(&solana_host_chain_id(12345).to_be_bytes());
+    handle.into()
 }
 
 pub fn rand_kms_thresholds() -> KmsThresholds {
@@ -66,7 +74,7 @@ pub fn rand_pcr_values() -> PcrValues {
 pub fn solana_user_decryption_event(
     decryption_id: U256,
     handle: FixedBytes<32>,
-) -> UserDecryptionRequest_4 {
+) -> SolanaUserDecryptionRequest {
     let (gateway, blob) = solana_user_decryption_parts(handle);
     solana_user_decryption_event_for(decryption_id, &gateway, &blob)
 }
@@ -77,20 +85,20 @@ pub fn solana_user_decryption_parts(
     handle: FixedBytes<32>,
 ) -> (SolanaUserDecryptFields, SolanaRequestBlob) {
     let gateway = SolanaUserDecryptFields {
-        handles: vec![handle.to_vec()],
+        handles: vec![handle.0],
         transport_key: vec![2; zama_solana_permit::TRANSPORT_KEY_LEN],
         start_timestamp: sqlx::types::chrono::Utc::now().timestamp() as u64 - 60,
         duration_seconds: 3600,
         extra_data: [vec![2], vec![1; 64]].concat(),
     };
     let blob = SolanaRequestBlob {
-        user_address: vec![1; 32],
+        user_address: [1; 32],
         allowed_scopes: vec![],
-        verifying_program_id: vec![7; 32],
-        signature: vec![0; 64],
+        verifying_program_id: [7; 32],
+        signature: [0; 64],
         entries: vec![SolanaEntryClaims {
-            owner_address: vec![1; 32],
-            encrypted_store: vec![3; 32],
+            owner_address: [1; 32],
+            encrypted_store: [3; 32],
         }],
     };
     (gateway, blob)
@@ -101,13 +109,13 @@ pub fn solana_user_decryption_event_for(
     decryption_id: U256,
     gateway: &SolanaUserDecryptFields,
     blob: &SolanaRequestBlob,
-) -> UserDecryptionRequest_4 {
-    UserDecryptionRequest_4 {
+) -> SolanaUserDecryptionRequest {
+    SolanaUserDecryptionRequest {
         decryptionId: decryption_id,
         ctHandles: gateway
             .handles
             .iter()
-            .map(|handle| FixedBytes::from_slice(handle))
+            .map(|handle| FixedBytes::from(*handle))
             .collect(),
         requestValidity: RequestValiditySeconds {
             startTimestamp: U256::from(gateway.start_timestamp),

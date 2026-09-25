@@ -118,7 +118,7 @@ async fn send_public_decryption_inner(
     id_sender: UnboundedSender<U256>,
 ) -> anyhow::Result<()> {
     let decryption_call = decryption_contract
-        .publicDecryptionRequest_1(handles, vec![].into())
+        .publicDecryptionRequest(handles, vec![].into())
         .into_transaction_request();
 
     send_tx_with_retries(

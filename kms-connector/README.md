@@ -73,7 +73,7 @@ At least one of these two options must be provided.
 See the [architecture documentation](./docs/architecture.md) for more detail.
 
 Solana user decrypt uses the existing `user_decryption_requests` queue and worker.
-The Gateway's `UserDecryptionRequest_4` overload is decoded and checked at ingress; its
+The Gateway's `SolanaUserDecryptionRequest` event is decoded and checked at ingress; its
 canonical request bytes are not persisted. `POST /v1/user-decrypt` accepts the same data
 under `{attestationType, payload, signature}` with `attestationType` set to
 `solana-srfc38-user-decrypt-v1`. The EVM value remains `eip712-unified-user-decrypt-v1`.

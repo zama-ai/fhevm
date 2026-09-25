@@ -177,7 +177,7 @@ pub fn verify_public_decrypt(
     let (expected, bump) = encrypted_store_address(
         Pubkey::new_from_array(state.program),
         Pubkey::new_from_array(state.authority),
-        state.scope,
+        Pubkey::new_from_array(state.scope),
     );
     require!(
         info.key() == expected && state.bump == bump,

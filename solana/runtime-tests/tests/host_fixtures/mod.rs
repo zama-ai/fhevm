@@ -48,8 +48,8 @@ pub fn host_program_account() -> Account {
 }
 
 /// The scope every fixture application lives in unless a test picks its own.
-pub fn fixture_scope() -> [u8; 32] {
-    label("fixture-scope")
+pub fn fixture_scope() -> Pubkey {
+    Pubkey::new_from_array(label("fixture-scope"))
 }
 
 /// The authority that signs for one application's encrypted values: a PDA of the application
@@ -80,14 +80,14 @@ pub fn sole_store_authority(program: Pubkey) -> StoreAuthority {
 }
 
 impl StoreAuthority {
-    pub fn app(&self, scope: [u8; 32]) -> AppScope {
+    pub fn app(&self, scope: Pubkey) -> AppScope {
         AppScope {
             program: self.program,
             scope,
         }
     }
 
-    pub fn state_address(&self, scope: [u8; 32]) -> Pubkey {
+    pub fn state_address(&self, scope: Pubkey) -> Pubkey {
         host::encrypted_store_address(self.program, self.key, scope).0
     }
 

@@ -41,7 +41,7 @@ function hex(bytes: Iterable<number>): string {
 // breaks both suites on the same bytes.
 const delegator = addr(0x11);
 const delegate = addr(0x22);
-const application = { program: addr(0x33), scope: new Uint8Array(32).fill(0x44) };
+const application = { program: addr(0x33), scope: addr(0x44) };
 const payer = addr(0x55);
 const RECORD_ADDRESS = address('GkmqVNMzqxopBjPkSkZvuLuDE6Jze3iA3Mq5ZHr6SrtJ');
 // The delegator's wildcard row, pinned by the relayer's cross-pin in the same Rust suite.
@@ -49,7 +49,6 @@ const WILDCARD_RECORD_ADDRESS = 'J4BMamYLJvJroFATJp48L6AeQJDQqv86YAQyPqvBcKq1';
 const GRANT_DATA =
   'f0f8d7586df401672222222222222222222222222222222222222222222222222222222222222222' +
   '33'.repeat(32) +
-  '44'.repeat(32) +
   'f401000000000000';
 const REVOKE_DATA = '931b7e35412576e1';
 const SYSTEM_PROGRAM = '11111111111111111111111111111111';
@@ -77,19 +76,10 @@ describe('solanaUserDecryptionDelegationAddress', () => {
 
   it('derives another row for another scope of the same program', async () => {
     const derived = await solanaUserDecryptionDelegationAddress(
-      { delegator, delegate, ...application, scope: new Uint8Array(32).fill(0x45) },
+      { delegator, delegate, ...application, scope: addr(0x45) },
       { programAddress: ZAMA_HOST_PROGRAM_ADDRESS },
     );
     expect(derived).not.toBe(RECORD_ADDRESS);
-  });
-
-  it('refuses a scope that is not 32 bytes', async () => {
-    await expect(
-      solanaUserDecryptionDelegationAddress(
-        { delegator, delegate, ...application, scope: new Uint8Array(31).fill(0x44) },
-        { programAddress: ZAMA_HOST_PROGRAM_ADDRESS },
-      ),
-    ).rejects.toThrow('delegation scope must be 32 bytes, got 31');
   });
 
   it('derives under the configured program id', async () => {
@@ -118,28 +108,14 @@ describe('buildDelegateForUserDecryptionInstruction', () => {
     expect(hex(instruction.data!)).toBe(GRANT_DATA);
   });
 
-  it('refuses a short scope even when the record address is given', async () => {
-    await expect(
-      buildDelegateForUserDecryptionInstruction({
-        programAddress: ZAMA_HOST_PROGRAM_ADDRESS,
-        payer,
-        delegator,
-        delegate,
-        ...application,
-        scope: new Uint8Array(31),
-        delegationRecord: RECORD_ADDRESS,
-        expiresAt: 500n,
-      }),
-    ).rejects.toThrow('delegation scope must be 32 bytes, got 31');
-  });
-
-  it('names the five accounts in program order with their roles', async () => {
+  it('names the six accounts in program order with their roles', async () => {
     const instruction = await build();
     const [hostConfig] = await findHostConfigPda();
     expect(instruction.accounts?.map((account) => [account.address, account.role])).toEqual([
       [payer, AccountRole.WRITABLE_SIGNER],
       [delegator, AccountRole.READONLY_SIGNER],
       [hostConfig, AccountRole.READONLY],
+      [application.scope, AccountRole.READONLY],
       [RECORD_ADDRESS, AccountRole.WRITABLE],
       [SYSTEM_PROGRAM, AccountRole.READONLY],
     ]);
@@ -181,7 +157,7 @@ describe('buildDelegateForUserDecryptionInstruction', () => {
     expect(delegatorMeta?.signer?.address).toBe(delegator);
     expect(delegatorMeta?.signer).not.toBe(payerSigner);
     // The record PDA derives from the delegator's address regardless of the form it came in.
-    expect(instruction.accounts?.[3]?.address).toBe(RECORD_ADDRESS);
+    expect(instruction.accounts?.[4]?.address).toBe(RECORD_ADDRESS);
   });
 
   it('targets an overridden program id with every derived account under it', async () => {
@@ -200,7 +176,7 @@ describe('buildDelegateForUserDecryptionInstruction', () => {
     );
     expect(instruction.programAddress).toBe(OTHER_PROGRAM);
     expect(instruction.accounts?.[2]?.address).toBe(hostConfig);
-    expect(instruction.accounts?.[3]?.address).toBe(record);
+    expect(instruction.accounts?.[4]?.address).toBe(record);
   });
 });
 
@@ -262,7 +238,7 @@ describe('buildRevokeDelegationForUserDecryptionInstruction', () => {
 describe('solanaDelegationWarnings', () => {
   it('exports 0xff×32 in both positions as the wildcard application', () => {
     expect(SOLANA_WILDCARD_APP.program).toBe(addr(0xff));
-    expect(hex(SOLANA_WILDCARD_APP.scope)).toBe('ff'.repeat(32));
+    expect(SOLANA_WILDCARD_APP.scope).toBe(addr(0xff));
   });
 
   it('flags a wildcard grant', () => {
@@ -274,12 +250,6 @@ describe('solanaDelegationWarnings', () => {
 
   it('is silent for a grant over one application', () => {
     expect(solanaDelegationWarnings(application)).toEqual([]);
-  });
-
-  it('is silent for a scope that only starts with the wildcard bytes', () => {
-    expect(
-      solanaDelegationWarnings({ program: SOLANA_WILDCARD_APP.program, scope: new Uint8Array(33).fill(0xff) }),
-    ).toEqual([]);
   });
 
   it('is silent for a half-wildcard, which the host refuses rather than widens', () => {
@@ -316,7 +286,7 @@ describe('decodeSolanaUserDecryptionDelegation', () => {
     expect(record.delegator).toBe(delegator);
     expect(record.delegate).toBe(delegate);
     expect(record.program).toBe(application.program);
-    expect(hex(record.scope)).toBe('44'.repeat(32));
+    expect(record.scope).toBe(application.scope);
     expect(record.expiresAt).toBe(500n);
     expect(record.delegationCounter).toBe(7n);
     expect(record.lastUpdateSlot).toBe(400n);
@@ -398,7 +368,7 @@ describe('fetchSolanaUserDecryptionDelegation', () => {
         encoder.encode(delegator),
         encoder.encode(delegate),
         encoder.encode(SOLANA_WILDCARD_APP.program),
-        SOLANA_WILDCARD_APP.scope,
+        encoder.encode(SOLANA_WILDCARD_APP.scope),
       ],
     });
     const bytesHex =
@@ -435,7 +405,6 @@ describe('fetchSolanaUserDecryptionDelegation', () => {
     ).rejects.toThrow('tuple other than');
   });
 
-  // The scope is the one field compared as bytes rather than as an address.
   it('throws on a record naming another scope of the same program', async () => {
     const otherScope = RECORD_BYTES_HEX.replace('44'.repeat(32), '45'.repeat(32));
     await expect(
@@ -479,7 +448,7 @@ describe('fetchSolanaUserDecryptionDelegation', () => {
         encoder.encode(delegator),
         encoder.encode(delegate),
         encoder.encode(application.program),
-        application.scope,
+        encoder.encode(application.scope),
       ],
     });
     const overriddenRecordBytes = RECORD_BYTES_HEX.slice(0, -2) + overriddenBump.toString(16).padStart(2, '0');

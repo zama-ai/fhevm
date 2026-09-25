@@ -13,7 +13,7 @@ pub struct HcuBlockMeter {
     /// The application program this meter counts.
     pub program: Pubkey,
     /// The scope this meter counts: an account of `program`.
-    pub scope: [u8; 32],
+    pub scope: Pubkey,
     /// Slot in which `used_hcu` was last written; a different current slot resets usage to 0.
     pub last_seen_slot: u64,
     /// HCU accumulated by this application so far in `last_seen_slot`.

@@ -5,8 +5,7 @@
 use super::failure::InvalidHostRecord;
 use super::snapshot::SnapshotAccount;
 use solana_pubkey::Pubkey;
-use zama_solana_acl::WILDCARD_APP;
-use zama_solana_acl::{AclError, EncryptedStore, decode_encrypted_store};
+use zama_solana_acl::{EncryptedStore, StoreRejection, validate_store};
 use zama_solana_permit::{AllowedScopes, Identity};
 
 /// An encrypted store that passed [`resolve_encrypted_store`], its only constructor.
@@ -44,51 +43,43 @@ impl ResolvedEncryptedStore {
     }
 }
 
-/// The address a store with these fields must live at: the PDA of its own seeds and stored bump.
-fn encrypted_store_address(program_id: Pubkey, state: &EncryptedStore) -> Option<Pubkey> {
-    let bump = [state.bump];
-    let mut seeds: Vec<&[u8]> = state.seeds().to_vec();
-    seeds.push(&bump);
-    Pubkey::create_program_address(&seeds, &program_id).ok()
-}
-
-/// The account must exist, be owned by the host program, decode as an encrypted store, live at
-/// the address its own fields derive, and carry the wildcard sentinel in neither its program nor
-/// its scope. Trailing bytes are legal: a store grows by realloc and never shrinks. An empty
-/// System-owned account is absent: anyone can fund the derivable address before the store is
-/// created there.
+/// Validates the account an entry names, by the rule the relayer's pre-check also applies
+/// ([`validate_store`]). An empty System-owned account is absent: anyone can fund the derivable
+/// address before the store is created there.
 pub fn resolve_encrypted_store(
     account: Option<&SnapshotAccount>,
     program_id: Pubkey,
     account_key: Pubkey,
 ) -> Result<ResolvedEncryptedStore, EncryptedStoreFailure> {
-    let account = account
-        .filter(|account| !account.is_uninitialized_pda())
-        .ok_or(EncryptedStoreFailure::Absent { account_key })?;
-    if account.owner != program_id {
-        return Err(EncryptedStoreFailure::ForeignOwner {
+    let store_address = |store: &EncryptedStore| {
+        let bump = [store.bump];
+        let mut seeds: Vec<&[u8]> = store.seeds().to_vec();
+        seeds.push(&bump);
+        Pubkey::create_program_address(&seeds, &program_id)
+            .ok()
+            .map(|address| address.to_bytes())
+    };
+    let encrypted_store = validate_store(
+        program_id.as_array(),
+        account_key.as_array(),
+        account.map(SnapshotAccount::view),
+        store_address,
+    )
+    .map_err(|rejection| match rejection {
+        StoreRejection::Absent => EncryptedStoreFailure::Absent { account_key },
+        StoreRejection::ForeignOwner(owner) => EncryptedStoreFailure::ForeignOwner {
             account_key,
-            owner: account.owner,
-        });
-    }
-    let invalid = InvalidHostRecord { account_key };
-    let encrypted_store = decode_encrypted_store(&account.data).map_err(|error| match error {
-        AclError::BadDiscriminator => EncryptedStoreFailure::NotAnEncryptedStore { account_key },
-        _ => invalid.into(),
+            owner: Pubkey::new_from_array(owner),
+        },
+        StoreRejection::NotAnEncryptedStore => {
+            EncryptedStoreFailure::NotAnEncryptedStore { account_key }
+        }
+        StoreRejection::AddressMismatch(derived) => EncryptedStoreFailure::AddressMismatch {
+            account_key,
+            derived: derived.map(Pubkey::new_from_array),
+        },
+        StoreRejection::InvalidHostRecord => InvalidHostRecord { account_key }.into(),
     })?;
-    let derived = encrypted_store_address(program_id, &encrypted_store);
-    if derived != Some(account_key) {
-        return Err(EncryptedStoreFailure::AddressMismatch {
-            account_key,
-            derived,
-        });
-    }
-    // With the sentinel as program, the store's delegation row would be the wildcard row itself.
-    // No legal store names it: its authority must sign as a PDA of the program, and no one holds
-    // the key to deploy a program there. `create_encrypted_store` refuses it as the scope.
-    if encrypted_store.program == WILDCARD_APP || encrypted_store.scope == WILDCARD_APP {
-        return Err(invalid.into());
-    }
     Ok(ResolvedEncryptedStore {
         account_key,
         encrypted_store,

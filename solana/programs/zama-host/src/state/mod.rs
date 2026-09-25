@@ -494,18 +494,21 @@ pub fn kms_context_address(context_id: [u8; 32]) -> (Pubkey, u8) {
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
 pub struct AppScope {
     pub program: Pubkey,
-    pub scope: [u8; 32],
+    pub scope: Pubkey,
 }
 
 impl AppScope {
     /// The application of a wildcard delegation row, which covers every application.
     pub const WILDCARD: Self = Self {
         program: Pubkey::new_from_array(WILDCARD_APP),
-        scope: WILDCARD_APP,
+        scope: Pubkey::new_from_array(WILDCARD_APP),
     };
 
     fn address(&self, prefix: &[u8]) -> (Pubkey, u8) {
-        Pubkey::find_program_address(&[prefix, self.program.as_ref(), &self.scope], &crate::ID)
+        Pubkey::find_program_address(
+            &[prefix, self.program.as_ref(), self.scope.as_ref()],
+            &crate::ID,
+        )
     }
 }
 
@@ -545,13 +548,14 @@ pub fn user_decryption_delegation_address(
     delegate: Pubkey,
     app: AppScope,
 ) -> (Pubkey, u8) {
-    let (delegator, delegate, program) = (
+    let (delegator, delegate, program, scope) = (
         delegator.to_bytes(),
         delegate.to_bytes(),
         app.program.to_bytes(),
+        app.scope.to_bytes(),
     );
     Pubkey::find_program_address(
-        &zama_solana_acl::delegation_seeds(&delegator, &delegate, &program, &app.scope),
+        &zama_solana_acl::delegation_seeds(&delegator, &delegate, &program, &scope),
         &crate::ID,
     )
 }
@@ -727,7 +731,7 @@ pub fn computed_eval_rand_seed(
         &nonce_bytes,
         &op_index_bytes,
         app.program.as_ref(),
-        &app.scope,
+        app.scope.as_ref(),
         program_id.as_ref(),
         &chain_id_bytes,
         &previous_bank_hash,

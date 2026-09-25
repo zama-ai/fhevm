@@ -87,7 +87,10 @@ export async function publicDecryptCertificate(
     readonly extraData?: string | undefined;
   };
 
-  if (result.extraData !== undefined && !unsafeBytesEquals(hexToBytes(result.extraData), hexToBytes(requestExtraDataHex))) {
+  if (
+    result.extraData !== undefined &&
+    !unsafeBytesEquals(hexToBytes(result.extraData), hexToBytes(requestExtraDataHex))
+  ) {
     throw new Error('public-decrypt response extraData does not match the request');
   }
   if (

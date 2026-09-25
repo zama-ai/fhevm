@@ -1190,7 +1190,7 @@ fn mollusk_initialize_mint_creates_total_supply_encrypted_store() {
     // PDA; nobody is allowed on it by default, so the create seals no leaf.
     let supply_value = read_encrypted_store(&context, total_supply_encrypted_store);
     assert_eq!(supply_value.program, token::id());
-    assert_eq!(supply_value.scope, mint.to_bytes());
+    assert_eq!(supply_value.scope, mint);
     assert_eq!(supply_value.authority, total_supply_authority);
     assert!(supply_value.get(&token::total_supply_key()).is_some());
     assert_eq!(supply_value.leaf_count, 0);
@@ -1220,7 +1220,7 @@ fn mollusk_initialize_token_account_creates_initial_balance_encrypted_store() {
     // owner on its first handle.
     let balance_store = read_encrypted_store(&context, balance_encrypted_store);
     assert_eq!(balance_store.program, token::id());
-    assert_eq!(balance_store.scope, fixture.mint.to_bytes());
+    assert_eq!(balance_store.scope, fixture.mint);
     assert_eq!(balance_store.authority, token_account);
     assert!(balance_store.get(&token::balance_key()).is_some());
     assert_eq!(balance_store.leaf_count, 1);
@@ -1347,7 +1347,7 @@ fn mollusk_confidential_transfer_self_transfer_is_no_op() {
 #[test]
 fn mollusk_confidential_transfer_self_transfer_rejects_result_grant() {
     let fixture = TokenFixture::new();
-    let consumer_scope = [0x55; 32];
+    let consumer_scope = Pubkey::new_from_array([0x55; 32]);
     let (result_store, state) = new_encrypted_store(
         host::AppScope {
             program: token::id(),
@@ -2191,7 +2191,7 @@ fn assert_transfer_rejects_misbound_balance(
 fn mollusk_confidential_transfer_rejects_balance_in_another_mints_scope() {
     let wrong_mint = Pubkey::new_unique();
     assert_transfer_rejects_misbound_balance(
-        |value| value.scope = wrong_mint.to_bytes(),
+        |value| value.scope = wrong_mint,
         34,
         token_error(token::ConfidentialTokenError::CurrentEncryptedStoreMismatch),
     );
@@ -5346,7 +5346,7 @@ fn mollusk_confidential_transfer_metering_band_charges_meter_through_cpi() {
     // exactly the transfer execution's HCU at the current slot.
     let meter = read_hcu_block_meter(&context, meter_pda).expect("meter created through CPI");
     assert_eq!(meter.program, token::id());
-    assert_eq!(meter.scope, fixture.mint.to_bytes());
+    assert_eq!(meter.scope, fixture.mint);
     assert_eq!(meter.used_hcu, TRANSFER_BATCH_HCU);
     assert_eq!(meter.last_seen_slot, context.mollusk.sysvars.clock.slot);
     // Regression guard on the metering granularity: nothing accrues under the sender token
@@ -5355,7 +5355,7 @@ fn mollusk_confidential_transfer_metering_band_charges_meter_through_cpi() {
         &context,
         host::hcu_block_meter_address(host::AppScope {
             program: token::id(),
-            scope: fixture.alice_token.to_bytes(),
+            scope: fixture.alice_token,
         })
         .0
     )
@@ -5440,7 +5440,7 @@ fn mollusk_transfer_from_value_checks_every_application_deny_record() {
         let app = if foreign {
             host::AppScope {
                 program,
-                scope: [0x77; 32],
+                scope: Pubkey::new_from_array([0x77; 32]),
             }
         } else {
             fixture.app()
@@ -6230,7 +6230,7 @@ fn mollusk_burn_from_value_checks_every_application_deny_record() {
         let app = if foreign {
             host::AppScope {
                 program,
-                scope: [0x77; 32],
+                scope: Pubkey::new_from_array([0x77; 32]),
             }
         } else {
             fixture.app()

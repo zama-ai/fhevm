@@ -1,11 +1,8 @@
 import {
-  containsBytes,
   createNoopSigner,
   fetchEncodedAccount,
-  fixDecoderSize,
   getAddressDecoder,
   getAddressEncoder,
-  getBytesDecoder,
   getProgramDerivedAddress,
   getStructDecoder,
   getU64Decoder,
@@ -15,7 +12,6 @@ import {
   type Instruction,
   type MaybeEncodedAccount,
   type ProgramDerivedAddress,
-  type ReadonlyUint8Array,
   type TransactionSigner,
 } from '@solana/kit';
 
@@ -40,8 +36,12 @@ export type SolanaDelegationApplication = {
   /** The application program the encrypted stores belong to. */
   readonly program: Address;
   /** The scope: an account that program owns, e.g. the mint for the token program. */
-  readonly scope: ReadonlyUint8Array;
+  readonly scope: Address;
 };
+
+/** `0xff` × 32, the sentinel address of the wildcard row. */
+const WILDCARD_ADDRESS =
+  'JEKNVnkbo3jma5nREBBJCDoXFVeKkD56V3xKrvRmWxFG' as Address<'JEKNVnkbo3jma5nREBBJCDoXFVeKkD56V3xKrvRmWxFG'>;
 
 /**
  * The application a wildcard delegation row carries: `0xff` × 32 in both the program and the scope
@@ -50,21 +50,12 @@ export type SolanaDelegationApplication = {
  * sets only one of the two.
  */
 export const SOLANA_WILDCARD_APP: SolanaDelegationApplication = {
-  program: 'JEKNVnkbo3jma5nREBBJCDoXFVeKkD56V3xKrvRmWxFG' as Address<'JEKNVnkbo3jma5nREBBJCDoXFVeKkD56V3xKrvRmWxFG'>,
-  scope: new Uint8Array(32).fill(0xff),
+  program: WILDCARD_ADDRESS,
+  scope: WILDCARD_ADDRESS,
 };
 
 function isWildcardApp(application: SolanaDelegationApplication): boolean {
-  return application.program === SOLANA_WILDCARD_APP.program && sameScope(application.scope, SOLANA_WILDCARD_APP.scope);
-}
-
-function sameScope(a: ReadonlyUint8Array, b: ReadonlyUint8Array): boolean {
-  return a.length === b.length && containsBytes(a, b, 0);
-}
-
-/** The host encodes the scope as exactly 32 bytes; a shorter one would be padded into another tuple. */
-function assertScope(scope: ReadonlyUint8Array): void {
-  if (scope.length !== 32) throw new Error(`delegation scope must be 32 bytes, got ${scope.length}`);
+  return application.program === WILDCARD_ADDRESS && application.scope === WILDCARD_ADDRESS;
 }
 
 /**
@@ -88,7 +79,6 @@ async function solanaUserDecryptionDelegationPda(
   tuple: SolanaUserDecryptionDelegationTuple,
   programAddress: Address,
 ): Promise<ProgramDerivedAddress> {
-  assertScope(tuple.scope);
   const encoder = getAddressEncoder();
   return await getProgramDerivedAddress({
     programAddress,
@@ -97,7 +87,7 @@ async function solanaUserDecryptionDelegationPda(
       encoder.encode(tuple.delegator),
       encoder.encode(tuple.delegate),
       encoder.encode(tuple.program),
-      tuple.scope,
+      encoder.encode(tuple.scope),
     ],
   });
 }
@@ -190,7 +180,6 @@ export async function buildDelegateForUserDecryptionInstruction(
     program: params.program,
     scope: params.scope,
   };
-  assertScope(tuple.scope);
   const delegationRecord =
     params.delegationRecord ?? (await solanaUserDecryptionDelegationAddress(tuple, { programAddress }));
   // The host config is resolved here, not left to the generated builder: its default resolver
@@ -201,10 +190,10 @@ export async function buildDelegateForUserDecryptionInstruction(
       payer: resolvedSigner(params.payer),
       delegator: resolvedSigner(params.delegator),
       hostConfig,
+      scope: params.scope,
       delegationRecord,
       delegate: params.delegate,
       program: params.program,
-      scope: params.scope,
       expiresAt: params.expiresAt,
     },
     { programAddress },
@@ -242,7 +231,6 @@ export async function buildRevokeDelegationForUserDecryptionInstruction(
     program: params.program,
     scope: params.scope,
   };
-  assertScope(tuple.scope);
   const delegationRecord =
     params.delegationRecord ?? (await solanaUserDecryptionDelegationAddress(tuple, { programAddress }));
   // Resolved here for the same reason as in the delegate builder: the generated default is
@@ -290,10 +278,10 @@ export interface SolanaUserDecryptionDelegationRecord extends SolanaUserDecrypti
 }
 
 const delegationRecordBodyDecoder = getStructDecoder([
-  ['delegator', fixDecoderSize(getBytesDecoder(), 32)],
-  ['delegate', fixDecoderSize(getBytesDecoder(), 32)],
-  ['program', fixDecoderSize(getBytesDecoder(), 32)],
-  ['scope', fixDecoderSize(getBytesDecoder(), 32)],
+  ['delegator', getAddressDecoder()],
+  ['delegate', getAddressDecoder()],
+  ['program', getAddressDecoder()],
+  ['scope', getAddressDecoder()],
   ['expiresAt', getU64Decoder()],
   ['delegationCounter', getU64Decoder()],
   ['lastUpdateSlot', getU64Decoder()],
@@ -323,18 +311,7 @@ export function decodeSolanaUserDecryptionDelegation(
       throw new Error(`account ${accountName} does not carry the delegation record discriminator`);
     }
   }
-  const decoded = delegationRecordBodyDecoder.decode(data.slice(8));
-  const addressDecoder = getAddressDecoder();
-  return {
-    delegator: addressDecoder.decode(decoded.delegator),
-    delegate: addressDecoder.decode(decoded.delegate),
-    program: addressDecoder.decode(decoded.program),
-    scope: decoded.scope,
-    expiresAt: decoded.expiresAt,
-    delegationCounter: decoded.delegationCounter,
-    lastUpdateSlot: decoded.lastUpdateSlot,
-    bump: decoded.bump,
-  };
+  return delegationRecordBodyDecoder.decode(data.slice(8));
 }
 
 /**
@@ -409,7 +386,7 @@ export async function fetchSolanaUserDecryptionDelegation(
       record.delegator !== queried.delegator ||
       record.delegate !== queried.delegate ||
       record.program !== queried.program ||
-      !sameScope(record.scope, queried.scope)
+      record.scope !== queried.scope
     ) {
       throw new Error(
         `delegation record ${address} names a (delegator, delegate, program, scope) tuple other than ` +

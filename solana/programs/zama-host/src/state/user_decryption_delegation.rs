@@ -17,7 +17,7 @@ pub struct UserDecryptionDelegation {
     /// The application's program, or `WILDCARD_APP` for the wildcard row.
     pub program: Pubkey,
     /// The application's scope, or `WILDCARD_APP` for the wildcard row.
-    pub scope: [u8; 32],
+    pub scope: Pubkey,
     /// Unix second the delegation ends at, exclusive; 0 once revoked. EVM's `expirationDate`.
     pub expires_at: u64,
     /// Incremented on every grant, renewal and revocation. EVM's `delegationCounter`.
@@ -73,7 +73,7 @@ mod tests {
             delegator: Pubkey::new_unique(),
             delegate: Pubkey::new_unique(),
             program: Pubkey::new_unique(),
-            scope: [0xab; 32],
+            scope: Pubkey::new_unique(),
             expires_at: u64::MAX,
             delegation_counter: u64::MAX,
             last_update_slot: u64::MAX,
@@ -96,7 +96,7 @@ mod tests {
             delegator: Pubkey::new_unique(),
             delegate: Pubkey::new_unique(),
             program: Pubkey::new_unique(),
-            scope: [0xcd; 32],
+            scope: Pubkey::new_unique(),
             expires_at: 11,
             delegation_counter: 22,
             last_update_slot: 33,
@@ -112,7 +112,7 @@ mod tests {
         assert_eq!(decoded.delegator, record.delegator.to_bytes());
         assert_eq!(decoded.delegate, record.delegate.to_bytes());
         assert_eq!(decoded.program, record.program.to_bytes());
-        assert_eq!(decoded.scope, record.scope);
+        assert_eq!(decoded.scope, record.scope.to_bytes());
         assert_eq!(decoded.expires_at, record.expires_at);
         assert_eq!(decoded.delegation_counter, record.delegation_counter);
         assert_eq!(decoded.last_update_slot, record.last_update_slot);

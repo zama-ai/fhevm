@@ -18,6 +18,7 @@ use connector_utils::{
 use serde::{Deserialize, Deserializer};
 use solana_pubkey::Pubkey;
 use std::{net::SocketAddr, num::NonZeroUsize, str::FromStr, time::Duration};
+use zama_solana_request::host_chain::{EVM_CHAIN_TYPE, SOLANA_CHAIN_TYPE, chain_type_byte};
 
 /// Configuration of the `KmsWorker`.
 #[derive(Clone, Debug, Deserialize, PartialEq)]
@@ -157,20 +158,6 @@ pub struct Config {
     )]
     #[cfg_attr(test, serde(serialize_with = "humantime_serde::serialize"))]
     pub healthcheck_timeout: Duration,
-}
-
-/// High byte of the eight-byte chain-id field. Matches the coprocessor and host.
-const EVM_CHAIN_TYPE: u8 = 0x00;
-const SOLANA_CHAIN_TYPE: u8 = 0x01;
-const CHAIN_TYPE_SHIFT: u32 = 56;
-
-const fn chain_type_byte(chain_id: u64) -> u8 {
-    (chain_id >> CHAIN_TYPE_SHIFT) as u8
-}
-
-#[cfg(test)]
-pub const fn solana_host_chain_id(cluster_tag: u64) -> u64 {
-    ((SOLANA_CHAIN_TYPE as u64) << CHAIN_TYPE_SHIFT) | (cluster_tag & 0x00ff_ffff_ffff_ffff)
 }
 
 /// Configuration of a single host chain. Its kind is its chain id's type byte, and it carries
@@ -493,6 +480,7 @@ mod tests {
     use alloy::primitives::Address;
     use serial_test::serial;
     use std::{env, str::FromStr};
+    use zama_solana_request::host_chain::solana_host_chain_id;
 
     fn cleanup_env_vars() {
         unsafe {
@@ -722,11 +710,8 @@ mod tests {
                     [
                         {
                             "url": "http://localhost:9545",
-                            "chainId": 72057594037959824,
-                            "solanaHostProgramId": "11111111111111111111111111111111",
-                            "solanaProofRoutes": [
-                                {"url": "http://coprocessor-1:8080", "apiKey": "first-key"}
-                            ]
+                            "chainId": 31888,
+                            "aclAddress": "0x5fbdb2315678afecb367f032d93f642f64180aa3"
                         }
                     ]
                 "#,
@@ -741,7 +726,45 @@ mod tests {
             config.host_chains,
             vec![HostChainConfig {
                 url: Url::from_str("http://localhost:9545").unwrap(),
-                // RFC-021 Solana host id: type byte 0x01 | 31888.
+                chain_id: 31888,
+                host: HostSettings::Evm {
+                    acl_address: Address::from_str("0x5fbdb2315678afecb367f032d93f642f64180aa3")
+                        .unwrap()
+                },
+            }]
+        );
+        cleanup_env_vars();
+    }
+
+    #[test]
+    #[serial(config_tests)]
+    fn a_solana_host_chain_from_env_camel_case() {
+        cleanup_env_vars();
+        unsafe {
+            env::set_var(
+                "KMS_CONNECTOR_HOST_CHAINS",
+                r#"
+                    [
+                        {
+                            "url": "http://localhost:8899",
+                            "chainId": 72057594037959824,
+                            "solanaHostProgramId": "11111111111111111111111111111111",
+                            "solanaProofRoutes": [
+                                {"url": "http://coprocessor-1:8080", "apiKey": "first-key"}
+                            ]
+                        }
+                    ]
+                "#,
+            );
+        }
+
+        let config = Config::from_env_and_file(Some(example_config_path())).unwrap();
+
+        assert_eq!(
+            config.host_chains,
+            vec![HostChainConfig {
+                url: Url::from_str("http://localhost:8899").unwrap(),
+                // Type byte 0x01, cluster tag 31888.
                 chain_id: solana_host_chain_id(31888),
                 host: HostSettings::Solana(SolanaHostSettings {
                     host_program_id: Pubkey::new_from_array([0; 32]),

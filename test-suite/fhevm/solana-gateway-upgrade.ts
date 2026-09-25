@@ -1,6 +1,6 @@
 // One-off: true Decryption proxy upgrade for the Solana user-decrypt path, using fhevm-cli's own
 // mechanism (NOT a docker service-version `upgrade`). Rebuilds the gateway-sc image from local
-// source (so it has `userDecryptionRequestSolana` + `task:upgradeDecryptionSolana`), then runs the
+// source (so it has `solanaUserDecryptionRequest` + `task:upgradeDecryptionSolana`), then runs the
 // proxy upgrade INSIDE the gateway-sc-deploy container via `runContractTask` — which injects the
 // fhevm-cli-configured deployer (the GatewayConfig owner) env. The proxy address is preserved.
 //

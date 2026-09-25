@@ -3385,17 +3385,17 @@ describe('Decryption', function () {
     });
   });
 
-  describe('User Decryption (host-generic overload)', function () {
-    // The host-generic event is the complete input of the host Connector's authorization: for
+  describe('Solana User Decryption', function () {
+    // The Solana event is the complete input of the host Connector's authorization: for
     // Solana the permit and the per-handle evidence are reconstructed from it alone, so the shape
     // below is a cross-repository contract. Changing the form breaks this suite deliberately.
-    const HOST_GENERIC_EVENT_SIG = 'UserDecryptionRequest(uint256,bytes32[],(uint256,uint256),bytes,bytes,bytes)';
+    const SOLANA_USER_EVENT_SIG = 'SolanaUserDecryptionRequest(uint256,bytes32[],(uint256,uint256),bytes,bytes,bytes)';
 
     const decryptionId = getUserDecryptId(1);
 
     const publicKey = createByteInput();
     // The signed KMS routing bytes: version 0x02 ‖ contextId ‖ epochId, 65 bytes — the one
-    // extraData form the host-generic path admits. The context is the current one, set per test.
+    // extraData form the Solana path admits. The context is the current one, set per test.
     const kmsEpochId = 9n;
     let kmsContextId: bigint;
     let solanaRoutingExtraData: string;
@@ -3440,7 +3440,7 @@ describe('Decryption', function () {
 
     // One call site for the whole suite: every argument defaults to the reference Solana
     // request and is overridable per test.
-    function requestHostGeneric(
+    function requestSolanaUser(
       handles: string[],
       overrides: {
         requestValidity?: { startTimestamp: number; durationSeconds: number };
@@ -3451,27 +3451,31 @@ describe('Decryption', function () {
     ) {
       return decryption
         .connect(overrides.sender ?? tokenFundedTxSender)
-        [
-          'userDecryptionRequest(bytes32[],(uint256,uint256),bytes,bytes,bytes)'
-        ](handles, overrides.requestValidity ?? requestValidity, publicKey, overrides.extraData ?? solanaRoutingExtraData, overrides.solanaRequest ?? solanaRequest);
+        .solanaUserDecryptionRequest(
+          handles,
+          overrides.requestValidity ?? requestValidity,
+          publicKey,
+          overrides.extraData ?? solanaRoutingExtraData,
+          overrides.solanaRequest ?? solanaRequest,
+        );
     }
 
-    it('Should emit the host-generic event carrying the request form', async function () {
-      await expect(requestHostGeneric(ctHandles))
-        .to.emit(decryption, HOST_GENERIC_EVENT_SIG)
+    it('Should emit the Solana event carrying the request form', async function () {
+      await expect(requestSolanaUser(ctHandles))
+        .to.emit(decryption, SOLANA_USER_EVENT_SIG)
         .withArgs(decryptionId, ctHandles, toValues(requestValidity), publicKey, solanaRoutingExtraData, solanaRequest);
     });
 
-    it('Should pin the host-generic event form as the cross-repository contract', async function () {
+    it('Should pin the Solana event form as the cross-repository contract', async function () {
       // The host Connectors decode this exact shape from transaction logs. A field added,
       // removed, retyped or reordered changes the signature below — this failure is the
       // intended alarm.
-      const fragment = decryption.interface.getEvent(HOST_GENERIC_EVENT_SIG);
-      expect(fragment.format('sighash')).to.equal(HOST_GENERIC_EVENT_SIG);
+      const fragment = decryption.interface.getEvent(SOLANA_USER_EVENT_SIG);
+      expect(fragment.format('sighash')).to.equal(SOLANA_USER_EVENT_SIG);
     });
 
-    it('Should pin the EVM route untouched by the host-generic entry', async function () {
-      // The host-generic entry is additive: the unified EVM request and its events keep their exact ABI.
+    it('Should pin the EVM route untouched by the Solana entry', async function () {
+      // The Solana entry is additive: the unified EVM request and its events keep their exact ABI.
       // These lookups throw if any of the forms changed, which is the intended alarm — the EVM
       // behavioral pin is the untouched EVM test suites themselves.
       expect(
@@ -3495,13 +3499,13 @@ describe('Decryption', function () {
       // Opacity is load-bearing: the gateway accepts an empty blob and a large garbage one
       // alike, and emits the exact bytes it received. What the blob means is decided by the
       // KMS Connector against the protocol's normative fixtures, never here.
-      await expect(requestHostGeneric([eboolCtHandle], { solanaRequest: '0x' }))
-        .to.emit(decryption, HOST_GENERIC_EVENT_SIG)
+      await expect(requestSolanaUser([eboolCtHandle], { solanaRequest: '0x' }))
+        .to.emit(decryption, SOLANA_USER_EVENT_SIG)
         .withArgs(decryptionId, [eboolCtHandle], toValues(requestValidity), publicKey, solanaRoutingExtraData, '0x');
 
       const garbage = hre.ethers.hexlify(hre.ethers.randomBytes(4096));
-      await expect(requestHostGeneric([eboolCtHandle], { solanaRequest: garbage }))
-        .to.emit(decryption, HOST_GENERIC_EVENT_SIG)
+      await expect(requestSolanaUser([eboolCtHandle], { solanaRequest: garbage }))
+        .to.emit(decryption, SOLANA_USER_EVENT_SIG)
         .withArgs(
           getUserDecryptId(2),
           [eboolCtHandle],
@@ -3515,7 +3519,7 @@ describe('Decryption', function () {
     it('Should revert because ciphertext material has not been added', async function () {
       // The CiphertextCommits lookup by exact handle survives the form change: an unknown
       // handle dies before the event.
-      await expect(requestHostGeneric([newCtHandles[0]]))
+      await expect(requestSolanaUser([newCtHandles[0]]))
         .to.be.revertedWithCustomError(ciphertextCommits, 'CiphertextMaterialNotFound')
         .withArgs(newCtHandles[0]);
     });
@@ -3524,7 +3528,7 @@ describe('Decryption', function () {
       const futureStart = (await time.latest()) + 3600;
 
       await expect(
-        requestHostGeneric([eboolCtHandle], { requestValidity: { startTimestamp: futureStart, durationSeconds } }),
+        requestSolanaUser([eboolCtHandle], { requestValidity: { startTimestamp: futureStart, durationSeconds } }),
       ).to.be.revertedWithCustomError(decryption, 'StartTimestampInFuture');
     });
 
@@ -3536,10 +3540,10 @@ describe('Decryption', function () {
       const window = { requestValidity: { startTimestamp: start, durationSeconds: duration } };
 
       await time.setNextBlockTimestamp(start + duration);
-      await expect(requestHostGeneric([eboolCtHandle], window)).to.emit(decryption, HOST_GENERIC_EVENT_SIG);
+      await expect(requestSolanaUser([eboolCtHandle], window)).to.emit(decryption, SOLANA_USER_EVENT_SIG);
 
       await time.setNextBlockTimestamp(start + duration + 1);
-      await expect(requestHostGeneric([eboolCtHandle], window)).to.be.revertedWithCustomError(
+      await expect(requestSolanaUser([eboolCtHandle], window)).to.be.revertedWithCustomError(
         decryption,
         'UserDecryptionRequestExpiredSeconds',
       );
@@ -3547,12 +3551,12 @@ describe('Decryption', function () {
 
     it('Should revert on a null or oversized duration', async function () {
       await expect(
-        requestHostGeneric([eboolCtHandle], { requestValidity: { startTimestamp, durationSeconds: 0 } }),
+        requestSolanaUser([eboolCtHandle], { requestValidity: { startTimestamp, durationSeconds: 0 } }),
       ).to.be.revertedWithCustomError(decryption, 'InvalidNullDurationSeconds');
 
       const oversizedDuration = MAX_USER_DECRYPT_DURATION_DAYS * 24 * 60 * 60 + 1;
       await expect(
-        requestHostGeneric([eboolCtHandle], {
+        requestSolanaUser([eboolCtHandle], {
           requestValidity: { startTimestamp, durationSeconds: oversizedDuration },
         }),
       ).to.be.revertedWithCustomError(decryption, 'MaxDurationSecondsExceeded');
@@ -3564,39 +3568,39 @@ describe('Decryption', function () {
       // change (the Connector deliberately holds no copy of the width table, and authorizes
       // the opaque payload's handle list only when it matches these typed handles).
       const atBudget = Array(8).fill(euint256CtHandle); // 8 * 256 = 2048
-      await expect(requestHostGeneric(atBudget)).to.emit(decryption, HOST_GENERIC_EVENT_SIG);
+      await expect(requestSolanaUser(atBudget)).to.emit(decryption, SOLANA_USER_EVENT_SIG);
 
       const pastBudget = [...Array(8).fill(euint256CtHandle), eboolCtHandle]; // 2050 bits
-      await expect(requestHostGeneric(pastBudget))
+      await expect(requestSolanaUser(pastBudget))
         .to.be.revertedWithCustomError(decryption, 'MaxDecryptionRequestBitSizeExceeded')
         .withArgs(MAX_DECRYPTION_REQUEST_BITS, 2050);
     });
 
     it('Should revert on a handle of an invalid or unsupported FHE type', async function () {
-      await expect(requestHostGeneric([invalidFHETypeCtHandle]))
+      await expect(requestSolanaUser([invalidFHETypeCtHandle]))
         .to.be.revertedWithCustomError(decryption, 'InvalidFHEType')
         .withArgs(invalidFHEType);
 
       // A type inside the enum but without a width row must revert, not price at zero.
-      await expect(requestHostGeneric([unsupportedFHETypeCtHandle]))
+      await expect(requestSolanaUser([unsupportedFHETypeCtHandle]))
         .to.be.revertedWithCustomError(decryption, 'UnsupportedFHEType')
         .withArgs(unsupportedFHEType);
     });
 
     it('Should revert on handles of an unregistered or inconsistent host chain', async function () {
-      await expect(requestHostGeneric([fakeChainIdCtHandle])).to.be.revertedWithCustomError(
+      await expect(requestSolanaUser([fakeChainIdCtHandle])).to.be.revertedWithCustomError(
         gatewayConfig,
         'HostChainNotRegistered',
       );
 
-      await expect(requestHostGeneric([eboolCtHandle, fakeChainIdCtHandle])).to.be.revertedWithCustomError(
+      await expect(requestSolanaUser([eboolCtHandle, fakeChainIdCtHandle])).to.be.revertedWithCustomError(
         decryption,
         'CtHandleChainIdDiffersFromContractChainId',
       );
     });
 
     it('Should revert on an empty handle list', async function () {
-      await expect(requestHostGeneric([])).to.be.revertedWithCustomError(decryption, 'EmptyHandles');
+      await expect(requestSolanaUser([])).to.be.revertedWithCustomError(decryption, 'EmptyHandles');
     });
 
     it('Should apply the handle cap before the fee', async function () {
@@ -3606,10 +3610,10 @@ describe('Decryption', function () {
       // 32 distinct ciphertexts; narrow handles keep the bit budget out of the way:
       // 33 * 2 = 66 bits.
       const atCap = Array(MAX_SOLANA_DECRYPT_HANDLES).fill(eboolCtHandle);
-      await expect(requestHostGeneric(atCap)).to.emit(decryption, HOST_GENERIC_EVENT_SIG);
+      await expect(requestSolanaUser(atCap)).to.emit(decryption, SOLANA_USER_EVENT_SIG);
 
       const pastCap = Array(MAX_SOLANA_DECRYPT_HANDLES + 1).fill(eboolCtHandle);
-      await expect(requestHostGeneric(pastCap))
+      await expect(requestSolanaUser(pastCap))
         .to.be.revertedWithCustomError(decryption, 'SolanaHandlesMaxLengthExceeded')
         .withArgs(MAX_SOLANA_DECRYPT_HANDLES, MAX_SOLANA_DECRYPT_HANDLES + 1);
     });
@@ -3626,7 +3630,7 @@ describe('Decryption', function () {
       ];
 
       for (const extraData of malformed) {
-        await expect(requestHostGeneric([eboolCtHandle], { extraData }))
+        await expect(requestSolanaUser([eboolCtHandle], { extraData }))
           .to.be.revertedWithCustomError(decryption, 'KmsRoutingMalformed')
           .withArgs(extraData);
       }
@@ -3636,7 +3640,7 @@ describe('Decryption', function () {
       const unknownContextId = 999_999n;
       const senderBalance = await mockedZamaOFT.balanceOf(tokenFundedTxSender.address);
 
-      await expect(requestHostGeneric([eboolCtHandle], { extraData: extraDataV2(unknownContextId, kmsEpochId) }))
+      await expect(requestSolanaUser([eboolCtHandle], { extraData: extraDataV2(unknownContextId, kmsEpochId) }))
         .to.be.revertedWithCustomError(gatewayConfig, 'InvalidKmsContext')
         .withArgs(unknownContextId);
 
@@ -3647,7 +3651,7 @@ describe('Decryption', function () {
       const senderBalance = await mockedZamaOFT.balanceOf(tokenFundedTxSender.address);
       const burnerBalance = await mockedZamaOFT.balanceOf(mockedFeesSenderToBurnerAddress);
 
-      await requestHostGeneric([eboolCtHandle]);
+      await requestSolanaUser([eboolCtHandle]);
 
       expect(await mockedZamaOFT.balanceOf(tokenFundedTxSender.address)).to.equal(senderBalance - userDecryptionPrice);
       expect(await mockedZamaOFT.balanceOf(mockedFeesSenderToBurnerAddress)).to.equal(
@@ -3659,15 +3663,16 @@ describe('Decryption', function () {
       const tokenUnfundedTxSender = await createAndFundRandomWallet();
       await approveContractWithMaxAllowance(tokenUnfundedTxSender, protocolPaymentAddress, hre.ethers);
 
-      await expect(
-        requestHostGeneric([eboolCtHandle], { sender: tokenUnfundedTxSender }),
-      ).to.be.revertedWithCustomError(mockedZamaOFT, 'ERC20InsufficientBalance');
+      await expect(requestSolanaUser([eboolCtHandle], { sender: tokenUnfundedTxSender })).to.be.revertedWithCustomError(
+        mockedZamaOFT,
+        'ERC20InsufficientBalance',
+      );
     });
 
     it('Should revert when the contract is paused', async function () {
       await decryption.connect(pauser).pause();
 
-      await expect(requestHostGeneric([eboolCtHandle])).to.be.revertedWithCustomError(decryption, 'EnforcedPause');
+      await expect(requestSolanaUser([eboolCtHandle])).to.be.revertedWithCustomError(decryption, 'EnforcedPause');
     });
 
     it('Should keep Decryption.sol within the EIP-170 code-size limit', async function () {
@@ -3693,12 +3698,11 @@ describe('Decryption', function () {
     });
   });
 
-  describe('Public Decryption (Solana overload)', function () {
+  describe('Solana Public Decryption', function () {
     // The Solana public decryption names one encrypted store per handle, outside extraData. The
     // KMS Connector proves each handle's public-decrypt leaf against its store, so this event
     // shape is a cross-repository contract.
-    const SOLANA_PUBLIC_EVENT_SIG = 'PublicDecryptionRequest(uint256,bytes32[],bytes,bytes32[])';
-    const SOLANA_PUBLIC_REQUEST_SIG = 'publicDecryptionRequest(bytes32[],bytes,bytes32[])';
+    const SOLANA_PUBLIC_EVENT_SIG = 'SolanaPublicDecryptionRequest(uint256,bytes32[],bytes,bytes32[])';
 
     const decryptionId = getPublicDecryptId(1);
     const decryptedResult = createByteInput();
@@ -3738,9 +3742,11 @@ describe('Decryption', function () {
     ) {
       return decryption
         .connect(overrides.sender ?? tokenFundedTxSender)
-        [
-          SOLANA_PUBLIC_REQUEST_SIG
-        ](handles, overrides.extraData ?? routingExtraData, overrides.encryptedStores ?? encryptedStores.slice(0, handles.length));
+        .solanaPublicDecryptionRequest(
+          handles,
+          overrides.extraData ?? routingExtraData,
+          overrides.encryptedStores ?? encryptedStores.slice(0, handles.length),
+        );
     }
 
     // Asserts that a rejected request left the sender's balance and the burner's untouched.

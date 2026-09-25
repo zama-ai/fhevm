@@ -3384,6 +3384,7 @@ dependencies = [
  "tokio-util",
  "tracing",
  "tracing-opentelemetry",
+ "zama-solana-request",
 ]
 
 [[package]]

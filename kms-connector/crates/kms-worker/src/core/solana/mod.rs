@@ -13,10 +13,13 @@ pub mod watermark;
 
 pub use verifier::SolanaDecryptionVerifier;
 
+use crate::core::event_processor::{UserDecryptionRecipient, UserIdentity};
+use alloy::primitives::Bytes;
 use proof::CoprocessorProofClient;
 use snapshot::SolanaRpcClient;
 use solana_pubkey::Pubkey;
 use zama_solana_acl::{PERMIT_INVALIDATION_SEED, WILDCARD_APP, delegation_seeds};
+use zama_solana_permit::PermitFields;
 
 /// The readers both Solana decryption paths authorize through, for one host chain.
 #[derive(Clone, Debug)]
@@ -59,9 +62,44 @@ pub fn wildcard_delegation_address(
     delegation_address(program_id, delegator, delegate, wildcard, wildcard)
 }
 
+impl UserDecryptionRecipient {
+    /// The permit's signer, answered for the program it signed for, and the key it signed.
+    pub fn new_solana(permit: &PermitFields) -> Self {
+        Self {
+            identity: UserIdentity::Solana {
+                user: Pubkey::new_from_array(*permit.user_address().as_bytes()),
+                verifying_program: Pubkey::new_from_array(
+                    *permit.verifying_program_id().as_bytes(),
+                ),
+            },
+            transport_key: Bytes::copy_from_slice(permit.transport_key().as_bytes()),
+        }
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+    use alloy::primitives::U256;
+    use kms_grpc::kms::v1::SigningMetadata;
+
+    #[test]
+    fn a_solana_recipient_travels_in_signing_metadata() {
+        // The fixture permit is signed by `[1; 32]` for program `[7; 32]`.
+        let request = connector_utils::tests::rand::solana_user_decryption_request(
+            U256::from(1),
+            connector_utils::tests::rand::rand_solana_handle(),
+        );
+        let recipient = UserDecryptionRecipient::new_solana(request.request.permit());
+
+        assert_eq!(
+            recipient.identity.into_kms_request_fields(),
+            (
+                String::new(),
+                vec![SigningMetadata::solana(vec![1; 32], vec![7; 32])]
+            )
+        );
+    }
 
     /// The seed order, pinned to the address the host program derives for the same inputs
     /// (`sdk_fixture_delegation_address_and_instruction_bytes` in the Mollusk suite).

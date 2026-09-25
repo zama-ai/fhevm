@@ -187,9 +187,9 @@ impl ReadinessChecker {
                     extra_data,
                     solana_request,
                 ) {
-                    Ok(wire) => {
+                    Ok(request) => {
                         self.host_acl
-                            .check_solana_delegated_user_decrypt(job_id, &wire)
+                            .check_solana_delegated_user_decrypt(job_id, &request)
                             .await
                     }
                     // Admission built these parts and verified the permit over them; failing to

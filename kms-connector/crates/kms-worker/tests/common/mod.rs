@@ -11,7 +11,7 @@ use connector_utils::tests::{
 };
 use fhevm_gateway_bindings::{
     decryption::Decryption::{
-        CtHandleContractPair, userDecryptionRequest_2Call as userDecryptionRequestCall,
+        CtHandleContractPair, userDecryptionRequest_1Call as userDecryptionRequestCall,
     },
     gateway_config::GatewayConfig::Coprocessor,
 };

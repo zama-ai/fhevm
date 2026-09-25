@@ -166,7 +166,7 @@ pub fn payout_rate(payout_received: u64, total_joined: u64) -> Result<u64> {
 }
 
 pub fn join_store_id(batch: Pubkey, record: Pubkey) -> zama_fhe::StoreId {
-    zama_fhe::StoreId::new(crate::ID, record, batch.to_bytes())
+    zama_fhe::StoreId::new(crate::ID, record, batch)
 }
 
 pub fn joined_amount_key() -> [u8; 32] {

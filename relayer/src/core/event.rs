@@ -6,11 +6,16 @@ use crate::http::endpoints::v2::types::{
 };
 use crate::http::endpoints::v3::types::{
     AttestedUserDecryptRequestJson, Eip712UnifiedUserDecryptPayloadJson,
-    SolanaUserDecryptRequestJson, UserDecryptV3RequestJson,
+    SolanaUserDecryptRequestJson,
+};
+use zama_solana_permit::{verify_signature, PermitError};
+use zama_solana_request::host_chain::{
+    chain_type_byte, is_evm_host_chain_id, is_solana_host_chain_id,
 };
 use zama_solana_request::{
-    assemble_solana_request, decode_solana_request, encode_solana_request, SolanaEntryClaims,
-    SolanaRequestBlob, SolanaUserDecryptFields, SolanaUserDecryptRequestWire,
+    decode_solana_request, encode_solana_request, SolanaEntryClaims, SolanaRequestBlob,
+    SolanaRequestEncodeError, SolanaRequestError, SolanaUserDecryptFields,
+    SolanaUserDecryptRequest,
 };
 
 use crate::orchestrator::traits::Event;
@@ -546,15 +551,14 @@ pub enum UserDecryptRequest {
         public_key: Bytes,
         extra_data: Bytes,
     },
-    /// Host-generic Solana user-decryption (attestation_type
-    /// `"solana-srfc38-user-decrypt-v1"`): maps to the gateway
-    /// `userDecryptionRequest(bytes32[] ctHandles, RequestValiditySeconds, bytes publicKey,
-    /// bytes extraData, bytes solanaRequest)` overload.
+    /// Solana user-decryption (attestation_type `"solana-srfc38-user-decrypt-v1"`): maps to the
+    /// gateway `solanaUserDecryptionRequest(bytes32[] ctHandles, RequestValiditySeconds,
+    /// bytes publicKey, bytes extraData, bytes solanaRequest)`.
     /// The request fields the gateway does not type — the user address, allowed scopes,
     /// verifying program id, the ed25519 signature, and one owner address and encrypted store
     /// per handle — are serialized into the opaque `solana_request` (canonical
     /// `version ‖ borsh(body)`). The gateway never reads it; each KMS party's connector joins it
-    /// with the typed fields through `assemble_solana_request`, verifies the signature off-chain
+    /// with the typed fields through `SolanaUserDecryptRequest::assemble`, verifies the signature off-chain
     /// and fetches the allow leaves itself.
     SolanaSrfc38V1 {
         /// The ciphertext handles, in request order (the gateway's typed `bytes32[]`).
@@ -581,7 +585,7 @@ impl UserDecryptRequest {
         }
     }
 
-    /// Whether this request uses one of the unified gateway overloads (EVM or Solana).
+    /// Whether this request uses a unified gateway entry (EVM or Solana).
     pub fn is_unified(&self) -> bool {
         matches!(
             self,
@@ -826,17 +830,6 @@ impl TryFrom<DelegatedUserDecryptRequestJson> for UserDecryptRequest {
     }
 }
 
-impl TryFrom<UserDecryptV3RequestJson> for UserDecryptRequest {
-    type Error = anyhow::Error;
-
-    fn try_from(value: UserDecryptV3RequestJson) -> Result<Self, Self::Error> {
-        match value {
-            UserDecryptV3RequestJson::Eip712Unified(inner) => Self::try_from(inner),
-            UserDecryptV3RequestJson::SolanaSrfc38(inner) => Self::try_from(inner),
-        }
-    }
-}
-
 impl TryFrom<AttestedUserDecryptRequestJson> for UserDecryptRequest {
     type Error = anyhow::Error;
 
@@ -889,30 +882,44 @@ impl TryFrom<AttestedUserDecryptRequestJson> for UserDecryptRequest {
     }
 }
 
+/// Why a Solana user-decryption request is not admitted.
+#[derive(Debug, thiserror::Error)]
+pub enum SolanaAdmissionError {
+    /// A field does not parse, or has the wrong width.
+    #[error(transparent)]
+    Field(#[from] anyhow::Error),
+    #[error(transparent)]
+    Form(#[from] SolanaRequestError),
+    #[error("Solana permit signature is not valid: {0}")]
+    Signature(PermitError),
+    /// This relayer could not encode a request it had parsed: its own defect.
+    #[error(transparent)]
+    Encode(#[from] SolanaRequestEncodeError),
+}
+
 impl TryFrom<SolanaUserDecryptRequestJson> for UserDecryptRequest {
-    type Error = anyhow::Error;
+    type Error = SolanaAdmissionError;
 
     fn try_from(value: SolanaUserDecryptRequestJson) -> Result<Self, Self::Error> {
-        use zama_solana_permit::{verify_signature, PermitFields, Signature, SIGNATURE_LEN};
-
         let payload = value.attested_payload;
 
         let mut handles = Vec::with_capacity(payload.handles.len());
         let mut entries = Vec::with_capacity(payload.handles.len());
         for (index, entry) in payload.handles.iter().enumerate() {
-            handles.push(parse_0x_hex_32(&entry.handle, "handle", index)?.to_vec());
+            let field = |name: &str| format!("handles[{index}].{name}");
+            handles.push(parse_0x_hex_array(&entry.handle, &field("handle"))?);
             entries.push(SolanaEntryClaims {
-                owner_address: parse_0x_hex_32(&entry.owner_address, "ownerAddress", index)?
-                    .to_vec(),
-                encrypted_store: parse_0x_hex_32(&entry.encrypted_store, "encryptedStore", index)?
-                    .to_vec(),
+                owner_address: parse_0x_hex_array(&entry.owner_address, &field("ownerAddress"))?,
+                encrypted_store: parse_0x_hex_array(
+                    &entry.encrypted_store,
+                    &field("encryptedStore"),
+                )?,
             });
         }
 
         // The request's two carriers, exactly as the gateway transaction will hold them: the
-        // fields its calldata types, and the blob. They are joined through the same crate the
-        // connector uses, so the relayer checks the request each connector will read.
-        let gateway = SolanaUserDecryptFields {
+        // fields its calldata types, and the blob.
+        let fields = SolanaUserDecryptFields {
             handles,
             transport_key: parse_0x_hex(&payload.transport_key, "transportKey")?,
             start_timestamp: parse_decimal_u64(
@@ -926,40 +933,29 @@ impl TryFrom<SolanaUserDecryptRequestJson> for UserDecryptRequest {
             extra_data: parse_0x_hex(&payload.extra_data, "extraData")?,
         };
         let blob = SolanaRequestBlob {
-            user_address: parse_0x_hex(&payload.user_address, "userAddress")?,
+            user_address: parse_0x_hex_array(&payload.user_address, "userAddress")?,
             allowed_scopes: payload
                 .allowed_scopes
                 .iter()
-                .map(|scope| parse_0x_hex(scope, "allowedScopes"))
+                .map(|scope| parse_0x_hex_array(scope, "allowedScopes"))
                 .collect::<Result<Vec<_>, _>>()?,
-            verifying_program_id: parse_0x_hex(
+            verifying_program_id: parse_0x_hex_array(
                 &payload.verifying_program_id,
                 "verifyingProgramId",
             )?,
-            signature: parse_0x_hex(&value.signature, "signature")?,
+            signature: parse_0x_hex_array(&value.signature, "signature")?,
             entries,
         };
         let solana_request = Bytes::from(encode_solana_request(&blob)?);
-        let wire = assemble_solana_request(gateway, blob)?;
-
-        // Running the connector's own strict decode here IS the r1–r2 pre-check: a request the
-        // relayer accepts is one the connector will not reject on form (same crate, so never
-        // softer or harder).
-        let permit_fields = PermitFields::decode(&wire.permit)
-            .map_err(|e| anyhow::anyhow!("Solana permit failed the typed pre-check: {e}"))?;
-        let signature_bytes: [u8; SIGNATURE_LEN] =
-            wire.signature.as_slice().try_into().map_err(|_| {
-                anyhow::anyhow!(
-                    "Solana ed25519 signature is {} bytes, expected {SIGNATURE_LEN}",
-                    wire.signature.len()
-                )
-            })?;
+        // The connector types the request through the same function, so a request accepted here is
+        // one no connector refuses on form.
+        let request = SolanaUserDecryptRequest::assemble(fields, blob)?;
 
         // The signature, verified here rather than only in the connector.
         //
         // On the EVM paths this parity comes from the gateway contract itself: it checks the
         // EIP-712 signature inside the transaction, so a bad signature reverts and the fee is
-        // never collected. The host-generic entry cannot do that — the permit rides inside a
+        // never collected. The Solana entry cannot do that — the permit rides inside a
         // field the contract never reads — so an unverified request would be paid for, submitted,
         // and then die terminally in the connector with the fee already spent.
         //
@@ -970,46 +966,44 @@ impl TryFrom<SolanaUserDecryptRequestJson> for UserDecryptRequest {
         // structurally unusable pubkey (non-canonical or small-order) as its own failure rather
         // than as an ordinary mismatch. The chain id it covers is the one the handles embed, so a
         // permit signed for another chain fails here.
-        verify_signature(&permit_fields, &Signature::new(signature_bytes))
-            .map_err(|e| anyhow::anyhow!("Solana permit signature is not valid: {e}"))?;
+        verify_signature(request.permit(), request.signature())
+            .map_err(SolanaAdmissionError::Signature)?;
 
+        let permit = request.permit();
         Ok(UserDecryptRequest::SolanaSrfc38V1 {
-            ct_handles: wire
-                .handles
+            ct_handles: request
+                .entries()
                 .iter()
-                .map(|entry| U256::from_be_slice(&entry.handle))
+                .map(|entry| U256::from_be_bytes(entry.handle))
                 .collect(),
             request_validity: RequestValiditySeconds {
-                start_timestamp: U256::from(wire.permit.start_timestamp),
-                duration_seconds: U256::from(wire.permit.duration_seconds),
+                start_timestamp: U256::from(permit.start_timestamp()),
+                duration_seconds: U256::from(permit.duration_seconds()),
             },
-            public_key: Bytes::from(wire.permit.transport_key),
-            extra_data: Bytes::from(wire.permit.extra_data),
+            public_key: Bytes::from(permit.transport_key().as_bytes().to_vec()),
+            extra_data: Bytes::from(permit.extra_data().to_extra_data()),
             solana_request,
         })
     }
 }
 
-/// The full Solana request a submitted variant carries: its gateway fields joined with its blob.
+/// The typed Solana request a submitted variant carries: its gateway fields joined with its blob.
 pub fn assemble_submitted_solana_request(
     ct_handles: &[U256],
     request_validity: &RequestValiditySeconds,
     public_key: &Bytes,
     extra_data: &Bytes,
     solana_request: &Bytes,
-) -> Result<SolanaUserDecryptRequestWire, anyhow::Error> {
-    let gateway = SolanaUserDecryptFields {
-        handles: ct_handles
-            .iter()
-            .map(|h| h.to_be_bytes::<32>().to_vec())
-            .collect(),
+) -> Result<SolanaUserDecryptRequest, anyhow::Error> {
+    let fields = SolanaUserDecryptFields {
+        handles: ct_handles.iter().map(U256::to_be_bytes::<32>).collect(),
         transport_key: public_key.to_vec(),
         start_timestamp: request_validity.start_timestamp.try_into()?,
         duration_seconds: request_validity.duration_seconds.try_into()?,
         extra_data: extra_data.to_vec(),
     };
-    Ok(assemble_solana_request(
-        gateway,
+    Ok(SolanaUserDecryptRequest::assemble(
+        fields,
         decode_solana_request(solana_request)?,
     )?)
 }
@@ -1020,12 +1014,13 @@ fn parse_0x_hex(value: &str, field: &str) -> Result<Vec<u8>, anyhow::Error> {
     hex::decode(stripped).map_err(|e| anyhow::anyhow!("Failed to parse {field} as 0x-hex: {e}"))
 }
 
-/// Parses a `0x`-hex string that must decode to exactly 32 bytes.
-fn parse_0x_hex_32(value: &str, field: &str, index: usize) -> Result<[u8; 32], anyhow::Error> {
+/// Parses a `0x`-hex string that must decode to exactly `N` bytes.
+fn parse_0x_hex_array<const N: usize>(value: &str, field: &str) -> Result<[u8; N], anyhow::Error> {
     let bytes = parse_0x_hex(value, field)?;
     let len = bytes.len();
-    <[u8; 32]>::try_from(bytes.as_slice())
-        .map_err(|_| anyhow::anyhow!("entry {index} field {field} is {len} bytes, expected 32"))
+    bytes
+        .try_into()
+        .map_err(|_| anyhow::anyhow!("{field} is {len} bytes, expected {N}"))
 }
 
 /// Parses a decimal string into a `u64`, naming the field on failure.
@@ -1094,7 +1089,7 @@ impl TryFrom<PublicDecryptRequestJson> for PublicDecryptRequest {
             .unwrap_or_default()
             .iter()
             .enumerate()
-            .map(|(index, store)| parse_0x_hex_32(store, "encryptedStores", index))
+            .map(|(index, store)| parse_0x_hex_array(store, &format!("encryptedStores[{index}]")))
             .collect::<Result<_, _>>()?;
 
         Ok(PublicDecryptRequest {
@@ -1158,28 +1153,6 @@ impl InputProofEventData {
             }
         }
     }
-}
-
-/// High byte of the eight-byte chain-id field. Matches the coprocessor and host.
-pub const EVM_CHAIN_TYPE: u8 = 0x00;
-pub const SOLANA_CHAIN_TYPE: u8 = 0x01;
-const CHAIN_TYPE_SHIFT: u32 = 56;
-pub const CLUSTER_TAG_MASK: u64 = 0x00ff_ffff_ffff_ffff;
-
-pub const fn chain_type_byte(chain_id: u64) -> u8 {
-    (chain_id >> CHAIN_TYPE_SHIFT) as u8
-}
-
-pub const fn is_evm_host_chain_id(chain_id: u64) -> bool {
-    chain_type_byte(chain_id) == EVM_CHAIN_TYPE
-}
-
-pub const fn is_solana_host_chain_id(contract_chain_id: u64) -> bool {
-    chain_type_byte(contract_chain_id) == SOLANA_CHAIN_TYPE
-}
-
-pub const fn solana_host_chain_id(cluster_tag: u64) -> u64 {
-    ((SOLANA_CHAIN_TYPE as u64) << CHAIN_TYPE_SHIFT) | (cluster_tag & CLUSTER_TAG_MASK)
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
@@ -1336,6 +1309,7 @@ fn parse_chain_id(chain_id: &str) -> Result<u64, ParseIntError> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use zama_solana_request::host_chain::solana_host_chain_id;
 
     // Constants for the test strings.
     const CHAIN_ID: &str = "123456";
@@ -1446,7 +1420,7 @@ mod tests {
         assert!(err.to_string().contains("unsupported chain type byte 0x02"));
     }
 
-    /// A `solana-srfc38-user-decrypt-v1` envelope routes to the host-generic `SolanaSrfc38V1`
+    /// A `solana-srfc38-user-decrypt-v1` envelope routes to the `SolanaSrfc38V1`
     /// variant: the permit passes the typed pre-check, the fields the gateway does not type are
     /// serialized into the opaque `solana_request`, and the typed fields come from the permit —
     /// the transport key as `publicKey`, the signed KMS routing as `extraData`, the handles as
@@ -1508,7 +1482,7 @@ mod tests {
     fn payload_chain_id(
         payload: &crate::http::endpoints::v3::types::SolanaSrfc38UserDecryptPayloadJson,
     ) -> u64 {
-        let handle = parse_0x_hex_32(&payload.handles[0].handle, "handle", 0).unwrap();
+        let handle: [u8; 32] = parse_0x_hex_array(&payload.handles[0].handle, "handle").unwrap();
         crate::host::handle_chain_id::extract_chain_id_from_handle(&handle)
     }
 
@@ -1604,7 +1578,7 @@ mod tests {
     /// wallet is refused by the relayer, before any gateway transaction exists.
     ///
     /// This is the check the EVM paths get from the gateway contract, which verifies EIP-712
-    /// inside the transaction and reverts — refunding the fee — when it fails. The host-generic
+    /// inside the transaction and reverts — refunding the fee — when it fails. The Solana
     /// entry cannot: the permit rides in a field the contract never reads. Without this, a
     /// forged request would be paid for, submitted, and then die terminally in the connector
     /// with the fee already spent.
@@ -1675,16 +1649,13 @@ mod tests {
 
     #[test]
     fn solana_builder_rejects_a_wrong_length_transport_key() {
-        // r1 (permit typed pre-check): the transport key length is fixed at 869; a shorter key has
-        // no typed form and is rejected by the same permit decode the connector runs.
+        // The transport key length is fixed; a shorter key has no typed form and is refused by the
+        // same assembly the connector runs.
         let mut payload = valid_solana_payload();
         payload.transport_key = format!("0x{}", "00".repeat(800));
         let error = UserDecryptRequest::try_from(solana_envelope(payload))
-            .expect_err("a wrong-length transport key must fail the pre-check");
-        assert!(
-            error.to_string().contains("typed pre-check"),
-            "got: {error}"
-        );
+            .expect_err("a wrong-length transport key must be refused");
+        assert!(error.to_string().contains("transport key"), "got: {error}");
     }
 
     #[test]
@@ -1759,8 +1730,10 @@ mod tests {
                 "attestedPayload": {},
                 "signature": "0x00",
             });
-            let err = serde_json::from_value::<UserDecryptV3RequestJson>(envelope)
-                .expect_err("an unknown tag must not select an attestation arm");
+            let err = serde_json::from_value::<
+                crate::http::endpoints::v3::types::UserDecryptV3RequestJson,
+            >(envelope)
+            .expect_err("an unknown tag must not select an attestation arm");
             let message = err.to_string();
             assert!(
                 message.contains("unknown variant"),

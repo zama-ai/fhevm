@@ -143,8 +143,8 @@ async fn a_handle_not_made_public_is_retried() {
     assert_eq!(err.code, kms_connector_api::ErrorCode::AclDenied);
 }
 
-/// Coprocessors are asked in configured order until one serves a proof that verifies: one that
-/// fails the read and one that has not sealed the leaf yet cannot sink a request a third can serve.
+/// A proof that verifies from any coprocessor carries the request: one that fails the read and one
+/// that has not sealed the leaf yet cannot sink a request a third can serve.
 #[tokio::test]
 async fn one_serving_coprocessor_carries_a_request_the_others_cannot() {
     let public = handle(0x55, FHE_TYPE_UINT64);
@@ -264,8 +264,8 @@ async fn a_request_naming_a_foreign_account_is_refused() {
     irrecoverable_containing(err, "is owned by");
 }
 
-/// A coprocessor can stall before headers or halfway through its body. The call deadline moves
-/// the batch on to the next coprocessor; the same bounded client also protects the RPC read.
+/// A coprocessor can stall before headers or halfway through its body. The healthy coprocessor's
+/// proof decides without waiting on it; the same bounded client also protects the RPC read.
 #[tokio::test]
 async fn stalled_http_does_not_block_healthy_proofs_or_rpc_failure() {
     use std::time::Duration;
@@ -316,8 +316,8 @@ async fn stalled_http_does_not_block_healthy_proofs_or_rpc_failure() {
         };
         timeout(Duration::from_secs(3), check(&host, public, &fixture))
             .await
-            .expect("the stalled coprocessor times out")
-            .expect("the next coprocessor authorizes");
+            .expect("the stalled coprocessor does not hold the request")
+            .expect("the healthy coprocessor authorizes");
         host.reader = SolanaRpcClient::new(
             stalled,
             Duration::from_millis(100),

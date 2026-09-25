@@ -325,30 +325,39 @@ pub fn from_user_decryption_row(row: &PgRow) -> anyhow::Result<ProtocolEvent> {
     let extra_data: Vec<u8> = row.try_get("extra_data")?;
     let kind = match row.try_get::<AttestationType, _>("attestation_type")? {
         AttestationType::Solana => {
-            let handle_owner_addresses: Vec<Vec<u8>> = row.try_get("handle_owner_addresses")?;
-            let handle_encrypted_stores: Vec<Vec<u8>> = row.try_get("handle_encrypted_stores")?;
-            let gateway = SolanaUserDecryptFields {
-                handles: ct_handles.iter().map(|h| h.to_vec()).collect(),
+            let fields = SolanaUserDecryptFields {
+                handles: ct_handles.iter().map(|h| h.0).collect(),
                 transport_key: public_key,
                 start_timestamp: u64::try_from(row.try_get::<i64, _>("start_timestamp")?)?,
                 duration_seconds: u64::try_from(row.try_get::<i64, _>("duration_seconds")?)?,
                 extra_data,
             };
+            let owner_addresses: Vec<Vec<u8>> = row.try_get("handle_owner_addresses")?;
+            let encrypted_stores: Vec<Vec<u8>> = row.try_get("handle_encrypted_stores")?;
+            let allowed_scopes: Vec<Vec<u8>> = row.try_get("allowed_scopes")?;
             let blob = SolanaRequestBlob {
                 user_address: row.try_get("user_address")?,
-                allowed_scopes: row.try_get("allowed_scopes")?,
-                verifying_program_id: row.try_get("verifying_program_id")?,
-                signature: row.try_get("signature")?,
-                entries: handle_owner_addresses
+                allowed_scopes: allowed_scopes
                     .into_iter()
-                    .zip(handle_encrypted_stores)
-                    .map(|(owner_address, encrypted_store)| SolanaEntryClaims {
-                        owner_address,
-                        encrypted_store,
+                    .map(|scope| fixed_width(scope, "allowed_scopes"))
+                    .collect::<anyhow::Result<_>>()?,
+                verifying_program_id: row.try_get("verifying_program_id")?,
+                signature: fixed_width(row.try_get("signature")?, "signature")?,
+                entries: owner_addresses
+                    .into_iter()
+                    .zip(encrypted_stores)
+                    .map(|(owner_address, encrypted_store)| {
+                        Ok(SolanaEntryClaims {
+                            owner_address: fixed_width(owner_address, "handle_owner_addresses")?,
+                            encrypted_store: fixed_width(
+                                encrypted_store,
+                                "handle_encrypted_stores",
+                            )?,
+                        })
                     })
-                    .collect(),
+                    .collect::<anyhow::Result<_>>()?,
             };
-            SolanaUserDecryptionRequestV1::new(decryption_id, gateway, blob)?.into()
+            SolanaUserDecryptionRequestV1::new(decryption_id, fields, blob)?.into()
         }
         AttestationType::Legacy => ProtocolEventKind::UserDecryption(UserDecryptionRequest {
             decryptionId: decryption_id,
@@ -422,6 +431,14 @@ pub fn from_user_decryption_row(row: &PgRow) -> anyhow::Result<ProtocolEvent> {
         otlp_context: otlp_context_from_row(row)?,
         source: row.try_get::<RequestSource, _>("source")?,
     })
+}
+
+/// A stored column of a fixed protocol width.
+fn fixed_width<const N: usize>(bytes: Vec<u8>, column: &str) -> anyhow::Result<[u8; N]> {
+    let len = bytes.len();
+    bytes
+        .try_into()
+        .map_err(|_| anyhow::anyhow!("{column} holds {len} bytes, expected {N}"))
 }
 
 pub fn from_prep_keygen_row(row: &PgRow) -> anyhow::Result<ProtocolEvent> {

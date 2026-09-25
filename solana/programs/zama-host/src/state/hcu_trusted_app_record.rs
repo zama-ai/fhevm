@@ -13,7 +13,7 @@ pub struct HcuTrustedAppRecord {
     /// The application program this record governs.
     pub program: Pubkey,
     /// The scope this record governs: an account of `program`.
-    pub scope: [u8; 32],
+    pub scope: Pubkey,
     /// When true, the application bypasses the per-app block cap entirely (no meter, no charge).
     pub trusted: bool,
     /// PDA bump for `PDA("hcu-trusted", program, scope)`.

@@ -22,14 +22,13 @@
 //! 5. an append the record has not seen, which merges the proof's peak;
 //! 6. the record is ahead of this connector.
 use connector_utils::types::solana_request::SolanaUserDecryptionRequestV1;
+use zama_solana_acl::DeadRow;
 
 mod solana_support;
 
 use kms_worker::core::solana::{
-    delegation::{DeadRow, DelegationFailure},
-    failure::AuthorizationFailure,
-    handle_binding::HandleBindingFailure,
-    pipeline::authorize_request,
+    delegation::DelegationFailure, failure::AuthorizationFailure,
+    handle_binding::HandleBindingFailure, pipeline::authorize_request,
 };
 use solana_support::*;
 

@@ -22,7 +22,7 @@ mod solana_support;
 use kms_worker::core::solana::{
     failure::{AuthorizationFailure, InvalidHostRecord},
     pipeline::{AuthorizationContext, authorize_request},
-    snapshot::{SYSTEM_PROGRAM_ID, SnapshotAccount},
+    snapshot::SnapshotAccount,
     watermark::{
         WatermarkFailure, WindowFailure, check_not_invalidated, check_window, read_watermark,
     },

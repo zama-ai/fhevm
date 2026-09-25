@@ -3,8 +3,8 @@
 //! The centre of this module is two scripted readers over two kinds of state. [`World`] plus
 //! [`ScriptedReader`] is a set of accounts at a slot and a reader that answers from it while
 //! recording what it was asked for; [`ProofRecord`] plus [`ScriptedProofReader`] is a
-//! coprocessor's leaf record and a reader that answers leaf-proof queries from a list of them, in
-//! configured order, likewise recording. Together they turn a race into a value — a scenario is two worlds, or a world and a
+//! coprocessor's leaf record and a reader that answers leaf-proof queries from a list of them,
+//! likewise recording. Together they turn a race into a value — a scenario is two worlds, or a world and a
 //! record that disagree, not two moments — and they let the suite assert how many times
 //! authorization reads either source, which is otherwise an invisible property.
 //!
@@ -28,8 +28,8 @@ use kms_worker::core::solana::{
         ProofReadError, leaf_proof_request_body,
     },
     snapshot::{
-        AccountsRead, DerivedAddress, HostStateReader, ObservedRow, ObservedRows,
-        SYSTEM_PROGRAM_ID, SnapshotAccount, SnapshotError, SolanaRpcClient,
+        AccountsRead, DerivedAddress, HostStateReader, ObservedRow, ObservedRows, SnapshotAccount,
+        SnapshotError, SolanaRpcClient,
     },
 };
 use kms_worker::core::{ApiKey, ProofRoute};
@@ -44,15 +44,18 @@ use std::time::Duration;
 use zama_solana_acl::{
     CLOCK_SYSVAR_ID, DELEGATION_SEED, EncryptedSlot, EncryptedStore, MmrProof,
     PERMIT_INVALIDATION_SEED, PermitInvalidationRecord, SYSVAR_OWNER_ID,
-    USER_DECRYPTION_DELEGATION_DISCRIMINATOR, WILDCARD_APP, encode_permit_invalidation,
-    encrypted_store_discriminator, historical_access_leaf_commitment, mmr_append, mmr_build_proof,
-    public_decrypt_leaf_commitment,
+    UserDecryptionDelegationRecord, WILDCARD_APP, encode_clock, encode_permit_invalidation,
+    encode_user_decryption_delegation, encrypted_store_discriminator,
+    historical_access_leaf_commitment, mmr_append, mmr_build_proof, public_decrypt_leaf_commitment,
 };
 use zama_solana_permit::{
     Identity, KmsRouting, PermitFields, PermitWireFields, Signature, TRANSPORT_KEY_LEN,
     build_envelope,
 };
-use zama_solana_request::SolanaHandleEntryWire;
+use zama_solana_request::HandleEntry;
+
+/// The System program: the owner of an account no program has taken over.
+pub const SYSTEM_PROGRAM_ID: Pubkey = Pubkey::new_from_array(zama_solana_acl::SYSTEM_PROGRAM_ID);
 
 /// A key made of one repeated byte.
 pub const fn pubkey(byte: u8) -> Pubkey {
@@ -254,7 +257,7 @@ impl PermitBuilder {
 pub struct RequestBuilder<'a> {
     wallet: &'a Wallet,
     permit: PermitBuilder,
-    entries: Vec<SolanaHandleEntryWire>,
+    entries: Vec<HandleEntry>,
 }
 
 impl<'a> RequestBuilder<'a> {
@@ -297,10 +300,10 @@ impl<'a> RequestBuilder<'a> {
         owner_address: Pubkey,
         encrypted_store: Pubkey,
     ) -> Self {
-        self.entries.push(SolanaHandleEntryWire {
-            handle: handle.to_vec(),
-            owner_address: owner_address.to_bytes().to_vec(),
-            encrypted_store: encrypted_store.to_bytes().to_vec(),
+        self.entries.push(HandleEntry {
+            handle,
+            owner_address: owner_address.to_bytes(),
+            encrypted_store: encrypted_store.to_bytes(),
         });
         self
     }
@@ -309,24 +312,29 @@ impl<'a> RequestBuilder<'a> {
     pub fn parts(&self) -> (SolanaUserDecryptFields, SolanaRequestBlob) {
         let signature = self.wallet.sign(&self.permit.typed());
         let permit = self.permit.wire();
+        let fixed = |bytes: Vec<u8>| bytes.try_into().expect("fixture permit is well formed");
         let gateway = SolanaUserDecryptFields {
-            handles: self.entries.iter().map(|e| e.handle.clone()).collect(),
+            handles: self.entries.iter().map(|e| e.handle).collect(),
             transport_key: permit.transport_key,
             start_timestamp: permit.start_timestamp,
             duration_seconds: permit.duration_seconds,
             extra_data: permit.extra_data,
         };
         let blob = SolanaRequestBlob {
-            user_address: permit.user_address,
-            allowed_scopes: permit.allowed_scopes,
-            verifying_program_id: permit.verifying_program_id,
-            signature: signature.as_bytes().to_vec(),
+            user_address: fixed(permit.user_address),
+            allowed_scopes: permit
+                .allowed_scopes
+                .into_iter()
+                .map(|scope| scope.try_into().expect("fixture scope is well formed"))
+                .collect(),
+            verifying_program_id: fixed(permit.verifying_program_id),
+            signature: *signature.as_bytes(),
             entries: self
                 .entries
                 .iter()
                 .map(|e| SolanaEntryClaims {
-                    owner_address: e.owner_address.clone(),
-                    encrypted_store: e.encrypted_store.clone(),
+                    owner_address: e.owner_address,
+                    encrypted_store: e.encrypted_store,
                 })
                 .collect(),
         };
@@ -615,33 +623,27 @@ impl DelegationFixture {
     /// The account as the host program would write it.
     pub fn account(&self) -> SnapshotAccount {
         let (_, bump) = self.address();
-        let mut data = USER_DECRYPTION_DELEGATION_DISCRIMINATOR.to_vec();
-        data.extend_from_slice(self.delegator.as_ref());
-        data.extend_from_slice(self.delegate.as_ref());
-        data.extend_from_slice(self.program.as_ref());
-        data.extend_from_slice(self.scope.as_ref());
-        data.extend_from_slice(&self.expires_at.to_le_bytes());
-        data.extend_from_slice(&self.delegation_counter.to_le_bytes());
-        data.extend_from_slice(&self.last_update_slot.to_le_bytes());
-        data.push(bump);
         SnapshotAccount {
             owner: PROGRAM_ID,
-            data,
+            data: encode_user_decryption_delegation(&UserDecryptionDelegationRecord {
+                delegator: self.delegator.to_bytes(),
+                delegate: self.delegate.to_bytes(),
+                program: self.program.to_bytes(),
+                scope: self.scope.to_bytes(),
+                expires_at: self.expires_at,
+                delegation_counter: self.delegation_counter,
+                last_update_slot: self.last_update_slot,
+                bump,
+            }),
         }
     }
 }
 
 /// The Clock sysvar reading `unix_timestamp`, as a node returns it.
 pub fn clock_account(unix_timestamp: u64) -> SnapshotAccount {
-    let mut data = Vec::new();
-    // slot, epoch_start_timestamp, epoch, leader_schedule_epoch
-    for field in [0u64; 4] {
-        data.extend_from_slice(&field.to_le_bytes());
-    }
-    data.extend_from_slice(&unix_timestamp.to_le_bytes());
     SnapshotAccount {
         owner: Pubkey::new_from_array(SYSVAR_OWNER_ID),
-        data,
+        data: encode_clock(unix_timestamp),
     }
 }
 
@@ -941,13 +943,15 @@ pub enum ProofSource {
     Down,
     /// Answers one outcome fewer than it was asked for.
     Truncated(ProofRecord),
+    /// Never answers, as a coprocessor that accepted the connection and stalled.
+    Stalled,
     /// Panics if asked: for scenarios rejected before the proof read, where reaching it would
     /// mean a rule ran out of order.
     MustNotBeAsked,
 }
 
-/// A proof reader over coprocessors in configured order, recording every read as
-/// `(coprocessor, queries)`.
+/// A proof reader over coprocessors, recording every read as `(coprocessor, queries)` in the
+/// order the reads started.
 pub struct ScriptedProofReader {
     sources: Vec<ProofSource>,
     calls: Mutex<Vec<(usize, Vec<LeafQuery>)>>,
@@ -1021,6 +1025,7 @@ impl HostProofReader for ScriptedProofReader {
             ProofSource::Down => Err(ProofReadError::Unavailable {
                 reason: format!("coprocessor {source} is down"),
             }),
+            ProofSource::Stalled => std::future::pending().await,
             ProofSource::MustNotBeAsked => {
                 panic!("authorization read leaf proofs where no read was expected")
             }

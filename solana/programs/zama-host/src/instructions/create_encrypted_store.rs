@@ -45,7 +45,7 @@ pub fn create_encrypted_store(
     // application and a program id is never a scope (its owner is the loader). This also keeps the
     // wildcard sentinel out: nothing can live there, and an absent account is System-owned, while
     // `program` signed through the authority PDA above, which the System program never does.
-    let scope = ctx.accounts.scope.key().to_bytes();
+    let scope = ctx.accounts.scope.key();
     require_keys_eq!(
         *ctx.accounts.scope.owner,
         args.program,
@@ -67,7 +67,7 @@ pub fn create_encrypted_store(
             ENCRYPTED_STORE_SEED,
             args.program.as_ref(),
             authority.as_ref(),
-            &scope,
+            scope.as_ref(),
             &[bump],
         ],
     )?;

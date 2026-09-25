@@ -34,6 +34,7 @@ use kms_worker::core::solana::{
 use rstest::rstest;
 use solana_pubkey::Pubkey;
 use solana_support::*;
+use std::time::Duration;
 use zama_solana_acl::{historical_access_leaf_commitment, public_decrypt_leaf_commitment};
 
 /// Resolves an encrypted store the way the pipeline does, so the binding rules are
@@ -724,10 +725,10 @@ async fn verify_with(
     .await
 }
 
-/// Coprocessor A holds only the first leaf and B holds both: both queries resolve, and B is asked
-/// only for the query A left unresolved.
+/// Coprocessor A holds only the first leaf and B holds both: both queries resolve. Every
+/// coprocessor is asked for the whole batch.
 #[tokio::test]
-async fn the_next_coprocessor_is_asked_only_for_the_unresolved_queries() {
+async fn a_query_any_coprocessor_proves_is_resolved() {
     let (fixture, account, batch) = two_allowed_queries();
     let [(first, _), (second, _)] = batch;
     let only_first = ProofRecord::answering([
@@ -741,8 +742,36 @@ async fn the_next_coprocessor_is_asked_only_for_the_unresolved_queries() {
     assert_eq!(results, vec![Ok(()), Ok(())]);
     assert_eq!(
         reader.calls(),
-        vec![(0, vec![first, second]), (1, vec![second])]
+        vec![(0, vec![first, second]), (1, vec![first, second])]
     );
+}
+
+/// A coprocessor that never answers does not hold the request: the batch resolves on the one that
+/// serves, without waiting for the stalled read.
+#[rstest]
+#[case::stalled_first(false)]
+#[case::stalled_last(true)]
+#[tokio::test]
+async fn a_stalled_coprocessor_does_not_hold_a_served_batch(#[case] stalled_last: bool) {
+    let (fixture, account, batch) = two_allowed_queries();
+    let mut sources = vec![
+        ProofSource::Stalled,
+        ProofSource::Serving(ProofRecord::of(&[&fixture])),
+    ];
+    if stalled_last {
+        sources.reverse();
+    }
+    let reader = ScriptedProofReader::coprocessors(sources);
+
+    let results = tokio::time::timeout(
+        Duration::from_secs(5),
+        verify_with(&reader, &account, &batch),
+    )
+    .await
+    .expect("the served batch resolves without the stalled coprocessor")
+    .unwrap();
+
+    assert_eq!(results, vec![Ok(()), Ok(())]);
 }
 
 /// When every coprocessor has sealed the history without the leaf, the entry is a recoverable
@@ -763,9 +792,9 @@ async fn every_coprocessor_missing_the_leaf_is_a_recoverable_denial() {
 }
 
 /// A coprocessor that fails the read, or answers the wrong number of outcomes, says nothing about
-/// any leaf: the batch moves on to the next.
+/// any leaf: another coprocessor's answer decides.
 #[tokio::test]
-async fn a_failed_or_short_read_moves_on_to_the_next_coprocessor() {
+async fn a_failed_or_short_read_leaves_the_batch_to_another_coprocessor() {
     let (fixture, account, batch) = two_allowed_queries();
     let record = ProofRecord::of(&[&fixture]);
     let reader = ScriptedProofReader::coprocessors(vec![
@@ -872,9 +901,9 @@ async fn a_terminal_answer_beside_an_unread_coprocessor_is_a_proof_read_error(
     assert!(matches!(error, ProofReadError::Unavailable { .. }));
 }
 
-/// Through the production client: an unavailable coprocessor hands the batch to the next one.
+/// Through the production client: an unavailable coprocessor leaves the batch to one that serves.
 #[tokio::test]
-async fn an_unavailable_coprocessor_hands_the_batch_to_the_next() {
+async fn an_unavailable_coprocessor_leaves_the_batch_to_one_that_serves() {
     use kms_worker::core::solana::proof::CoprocessorProofClient;
     use mocktail::{StatusCode, server::MockServer};
     let (fixture, account, [entry, _]) = two_allowed_queries();

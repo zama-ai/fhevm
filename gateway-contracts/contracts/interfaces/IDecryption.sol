@@ -123,10 +123,8 @@ interface IDecryption {
      * @param encryptedStores For each handle, in handle order, the Solana encrypted store whose
      * public-decrypt leaf the KMS Connector proves the handle against. The gateway never
      * interprets it.
-     * @dev Shares its name with the other public-decryption request events via Solidity event
-     * overloading — the distinct parameter list produces a distinct `topic0`.
      */
-    event PublicDecryptionRequest(
+    event SolanaPublicDecryptionRequest(
         uint256 indexed decryptionId,
         bytes32[] ctHandles,
         bytes extraData,
@@ -270,10 +268,8 @@ interface IDecryption {
      * allowed scopes, verifying program id, the user's signature, and one owner address and
      * encrypted store per handle. Its canonical serialization is owned by the protocol's
      * normative fixtures. The gateway never interprets it.
-     * @dev Shares its name with the other user-decryption request events via Solidity event
-     * overloading — the distinct parameter list produces a distinct `topic0`.
      */
-    event UserDecryptionRequest(
+    event SolanaUserDecryptionRequest(
         uint256 indexed decryptionId,
         bytes32[] ctHandles,
         RequestValiditySeconds requestValidity,
@@ -407,9 +403,9 @@ interface IDecryption {
     error SolanaHandlesMaxLengthExceeded(uint256 maxLength, uint256 actualLength);
 
     /**
-     * @notice Error indicating that a host-generic user decryption request carries
+     * @notice Error indicating that a Solana user decryption request carries
      * `extraData` that is not exactly the signed KMS routing form: version `0x02` followed by
-     * the 32-byte context id and the 32-byte epoch id (65 bytes total). The host-generic entry has no
+     * the 32-byte context id and the 32-byte epoch id (65 bytes total). The Solana entry has no
      * other legal use of `extraData`, so any other version or length is refused at admission,
      * before the fee.
      * @param extraData The malformed routing bytes as received.
@@ -529,7 +525,7 @@ interface IDecryption {
      * @param extraData Generic bytes metadata for versioned payloads. First byte is for the version.
      * @param encryptedStores One Solana encrypted store address per handle, in handle order.
      */
-    function publicDecryptionRequest(
+    function solanaPublicDecryptionRequest(
         bytes32[] calldata ctHandles,
         bytes calldata extraData,
         bytes32[] calldata encryptedStores
@@ -651,7 +647,7 @@ interface IDecryption {
      * canonical serialization is owned by the protocol's normative fixtures; the Connector
      * rejects a request whose entry count does not match `ctHandles`.
      */
-    function userDecryptionRequest(
+    function solanaUserDecryptionRequest(
         bytes32[] calldata ctHandles,
         RequestValiditySeconds calldata requestValidity,
         bytes calldata publicKey,

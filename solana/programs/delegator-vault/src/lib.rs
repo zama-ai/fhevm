@@ -96,13 +96,13 @@ pub mod delegator_vault {
         ctx: Context<VaultDelegation>,
         delegate: Pubkey,
         program: Pubkey,
-        scope: [u8; 32],
         expires_at: u64,
     ) -> Result<()> {
         let cpi_accounts = zama_host::cpi::accounts::DelegateForUserDecryption {
             payer: ctx.accounts.executor.to_account_info(),
             delegator: ctx.accounts.vault.to_account_info(),
             host_config: ctx.accounts.host_config.to_account_info(),
+            scope: ctx.accounts.scope.to_account_info(),
             delegation_record: ctx.accounts.delegation_record.to_account_info(),
             system_program: ctx.accounts.system_program.to_account_info(),
         };
@@ -112,7 +112,6 @@ pub mod delegator_vault {
             data: zama_host::instruction::DelegateForUserDecryption {
                 delegate,
                 program,
-                scope,
                 expires_at,
             }
             .data(),
@@ -173,7 +172,8 @@ pub mod delegator_vault {
     }
 }
 
-/// One account set serves both instructions; the revoke simply ignores the system program.
+/// One account set serves both instructions; the revoke simply ignores the scope and the system
+/// program.
 #[derive(Accounts)]
 pub struct VaultDelegation<'info> {
     /// Executes the "proposal" and pays rent on a grant.
@@ -185,6 +185,8 @@ pub struct VaultDelegation<'info> {
     pub vault: UncheckedAccount<'info>,
     /// CHECK: validated by the host program against its own seeds.
     pub host_config: UncheckedAccount<'info>,
+    /// CHECK: validated by the host program against the delegated program.
+    pub scope: UncheckedAccount<'info>,
     /// CHECK: validated by the host program against the canonical delegation PDA.
     #[account(mut)]
     pub delegation_record: UncheckedAccount<'info>,

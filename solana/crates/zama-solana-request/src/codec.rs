@@ -1,26 +1,18 @@
-//! The canonical carriage of a Solana user-decryption request blob: the one byte layout between
-//! the party that submits the gateway transaction and the party that authorizes it.
-//!
-//! The gateway's host-generic entry types the handles, transport key, validity window and extra
-//! data, and carries the rest of the request as one opaque field it never reads. This module is
-//! the single home of that field's layout on the Rust side:
+//! The byte layout of the Solana user-decryption request blob, the one field of the Gateway's
+//! `solanaUserDecryptionRequest` the Gateway does not type:
 //!
 //! ```text
-//! bytes = SOLANA_REQUEST_VERSION (1 byte) ‖ borsh(body)
+//! bytes = SOLANA_REQUEST_VERSION (1 byte) ‖ borsh(SolanaRequestBlob)
 //! ```
 //!
-//! where the body is [`SolanaRequestBlob`] itself: its field order is the layout.
-//!
-//! The blob carries no field the gateway types, so the two can never disagree:
-//! [`crate::assemble_solana_request`] joins them into the full request.
+//! The blob holds no field the Gateway types, so the two cannot disagree;
+//! [`crate::SolanaUserDecryptRequest::assemble`] joins them.
 
 use crate::assemble::SolanaRequestBlob;
 use borsh::BorshDeserialize;
 
-/// The one known layout version byte. `0x01` carried client-built proofs, `0x02` named
-/// per-value accounts, and `0x03` repeated the fields the gateway types; no obsolete layout is
-/// decoded.
-pub const SOLANA_REQUEST_VERSION: u8 = 0x04;
+/// The one known layout version byte. No other layout is decoded.
+pub const SOLANA_REQUEST_VERSION: u8 = 0x05;
 
 /// Why a request blob was refused.
 #[derive(Debug, PartialEq, Eq, thiserror::Error)]
@@ -109,14 +101,14 @@ mod tests {
     /// Every field distinct and non-empty, so a field the encoder dropped changes nothing.
     fn blob() -> SolanaRequestBlob {
         let entry = |seed: u8| SolanaEntryClaims {
-            owner_address: vec![seed; 32],
-            encrypted_store: vec![seed + 1; 32],
+            owner_address: [seed; 32],
+            encrypted_store: [seed + 1; 32],
         };
         SolanaRequestBlob {
-            user_address: vec![1; 32],
-            allowed_scopes: vec![vec![3; 64]],
-            verifying_program_id: vec![6; 32],
-            signature: vec![9; 64],
+            user_address: [1; 32],
+            allowed_scopes: vec![[3; 64]],
+            verifying_program_id: [6; 32],
+            signature: [9; 64],
             entries: vec![entry(10), entry(20)],
         }
     }
@@ -153,10 +145,10 @@ mod tests {
             Err(SolanaRequestDecodeError::UnknownVersion { version: None })
         );
         let mut obsolete = bytes.clone();
-        obsolete[0] = 0x03;
+        obsolete[0] = 0x04;
         assert_eq!(
             decode_solana_request(&obsolete),
-            Err(SolanaRequestDecodeError::UnknownVersion { version: Some(3) })
+            Err(SolanaRequestDecodeError::UnknownVersion { version: Some(4) })
         );
         let mut trailing = bytes.clone();
         trailing.push(0);
@@ -164,9 +156,9 @@ mod tests {
             decode_solana_request(&trailing),
             Err(SolanaRequestDecodeError::TrailingBytes { trailing: 1 })
         );
-        // The user address's length prefix follows the version byte.
+        // The scope list's length prefix follows the version byte and the user address.
         let mut length_lie = bytes.clone();
-        length_lie[1..5].copy_from_slice(&u32::MAX.to_le_bytes());
+        length_lie[33..37].copy_from_slice(&u32::MAX.to_le_bytes());
         for malformed in [
             &bytes[..bytes.len() / 2],
             &bytes[..bytes.len() - 1],

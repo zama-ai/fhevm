@@ -31,7 +31,7 @@ mod constants {
     pub const INITIAL_POLL_DELAY_MS: u64 = 500;
 
     pub const PUBLIC_DECRYPT_SELECTOR: [u8; 4] =
-        fhevm_relayer::gateway::arbitrum::bindings::Decryption::publicDecryptionRequest_1Call::SELECTOR;
+        fhevm_relayer::gateway::arbitrum::bindings::Decryption::publicDecryptionRequestCall::SELECTOR;
 
     // Contract error selectors for testing error classification
     // These match the selectors in src/gateway/arbitrum/transaction/contract_error_parser.rs
@@ -1517,7 +1517,7 @@ async fn test_cross_chain_acl_partial_deny() {
 mod solana {
     use super::*;
     use fhevm_relayer::config::settings::HostChainConfig;
-    use fhevm_relayer::core::event::solana_host_chain_id;
+    use zama_solana_request::host_chain::solana_host_chain_id;
 
     fn solana_handle(tag: u8) -> B256 {
         let mut handle = [tag; 32];
@@ -1538,7 +1538,7 @@ mod solana {
         .expect("Failed to create test setup")
     }
 
-    /// The mock Gateway answers only the Solana overload and emits only the Solana request
+    /// The mock Gateway answers only `solanaPublicDecryptionRequest` and emits only the Solana request
     /// event, so success proves the calldata and the receipt decoding both take the Solana shape.
     #[tokio::test]
     async fn a_solana_public_decrypt_names_its_stores_to_the_gateway() {

@@ -94,7 +94,7 @@ pub async fn mock_event_on_gw(
             };
             let tx = test_instance
                 .decryption_contract()
-                .publicDecryptionRequest_1(vec![], rand_extra_data.into())
+                .publicDecryptionRequest(vec![], rand_extra_data.into())
                 .send()
                 .await?;
             (tx, event.into())
@@ -109,7 +109,7 @@ pub async fn mock_event_on_gw(
             };
             let tx = test_instance
                 .decryption_contract()
-                .userDecryptionRequest_2(
+                .userDecryptionRequest_1(
                     vec![],
                     RequestValidity::default(),
                     ContractsInfo::default(),
@@ -143,7 +143,7 @@ pub async fn mock_event_on_gw(
             };
             let tx = test_instance
                 .decryption_contract()
-                .userDecryptionRequest_1(
+                .userDecryptionRequest_0(
                     handles,
                     payload.userAddress,
                     payload.publicKey,

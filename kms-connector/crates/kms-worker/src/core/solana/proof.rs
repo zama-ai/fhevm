@@ -66,7 +66,7 @@ pub enum LeafProofOutcome {
 
 /// Implemented by [`CoprocessorProofClient`]; tests drive authorization with canned proofs.
 pub trait HostProofReader: Send + Sync {
-    /// How many coprocessors can be asked, in configured order.
+    /// How many coprocessors can be asked.
     fn source_count(&self) -> usize;
 
     /// What coprocessor `source` answers, one outcome per query in query order. No outcome is

@@ -66,7 +66,7 @@ pub(super) fn charge<'info>(
         &[
             HCU_BLOCK_METER_SEED,
             app.program.as_ref(),
-            &app.scope,
+            app.scope.as_ref(),
             &[bump],
         ],
     )?;

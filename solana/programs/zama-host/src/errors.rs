@@ -315,4 +315,8 @@ pub enum ZamaHostError {
     /// program id (the loader owns it) and the wildcard sentinel (an absent address is System-owned).
     #[msg("encrypted store scope is not an account of the store's program")]
     EncryptedStoreScopeNotProgramAccount,
+    /// A delegation's scope is not an account `program` owns, so no store of `program` can carry
+    /// it. The wildcard row is exempt.
+    #[msg("delegation scope is not an account of the delegated program")]
+    DelegationScopeNotProgramAccount,
 }

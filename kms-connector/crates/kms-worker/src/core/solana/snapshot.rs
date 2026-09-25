@@ -28,10 +28,7 @@ use std::num::NonZeroUsize;
 use std::{future::Future, sync::Arc, time::Duration};
 use tokio::sync::Semaphore;
 use url::Url;
-use zama_solana_acl::{CLOCK_SYSVAR_ID, decode_clock_unix_timestamp};
-
-/// The System program's id: the owner of an account no program has taken over.
-pub const SYSTEM_PROGRAM_ID: Pubkey = Pubkey::new_from_array([0; 32]);
+use zama_solana_acl::{AccountView, CLOCK_SYSVAR_ID, decode_clock_unix_timestamp};
 
 #[derive(Clone, PartialEq, Eq, Debug)]
 pub struct SnapshotAccount {
@@ -40,10 +37,12 @@ pub struct SnapshotAccount {
 }
 
 impl SnapshotAccount {
-    /// System-owned and empty: what a bare transfer to a derivable address leaves. Such an account
-    /// says nothing about host state.
-    pub fn is_uninitialized_pda(&self) -> bool {
-        self.owner == SYSTEM_PROGRAM_ID && self.data.is_empty()
+    /// The account as the shared verdicts read it.
+    pub fn view(&self) -> AccountView<'_> {
+        AccountView {
+            owner: self.owner.as_array(),
+            data: &self.data,
+        }
     }
 }
 

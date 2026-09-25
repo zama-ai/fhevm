@@ -1,4 +1,4 @@
-import { getProgramDerivedAddress } from '@solana/kit';
+import { address, getAddressEncoder, getProgramDerivedAddress, type Address } from '@solana/kit';
 import type { SolanaRpc } from '../../encryptedStore.js';
 import { RelayerAbortError } from '../../../core/errors/RelayerAbortError.js';
 // The permit-path actions, assembled onto the client.
@@ -32,9 +32,9 @@ import { setFhevmRuntimeConfig } from '../../internal/config.js';
 const PROGRAM_ID = asBytes32Hex(`0x${'22'.repeat(32)}`);
 const CONTEXT_ID = asBytes32Hex(`0x${'33'.repeat(32)}`);
 const EPOCH_ID = asBytes32Hex(`0x${'44'.repeat(32)}`);
-const APP_PROGRAM = asBytes32Hex(`0x${'01'.repeat(32)}`);
-const MINT_A = asBytes32Hex(`0x${'0a'.repeat(32)}`);
-const MINT_B = asBytes32Hex(`0x${'0b'.repeat(32)}`);
+const APP_PROGRAM = address(base58.encode(new Uint8Array(32).fill(0x01)));
+const MINT_A = address(base58.encode(new Uint8Array(32).fill(0x0a)));
+const MINT_B = address(base58.encode(new Uint8Array(32).fill(0x0b)));
 
 const chain = {
   id: 72057594037940281n,
@@ -104,10 +104,10 @@ function client() {
   return createFhevmDecryptClient({ rpc, chain, trust });
 }
 
-const scopeBytes = (program: string, scope: string): Uint8Array => {
+const scopeBytes = (program: Address, scope: Address): Uint8Array => {
   const bytes = new Uint8Array(64);
-  bytes.set(hexToBytes32(asBytes32Hex(program)), 0);
-  bytes.set(hexToBytes32(asBytes32Hex(scope)), 32);
+  bytes.set(getAddressEncoder().encode(program), 0);
+  bytes.set(getAddressEncoder().encode(scope), 32);
   return bytes;
 };
 

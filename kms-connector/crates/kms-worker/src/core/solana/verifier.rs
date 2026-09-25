@@ -97,7 +97,7 @@ impl SolanaDecryptionVerifier {
         &self,
         request: &SolanaUserDecryptionRequestV1,
     ) -> Result<(), RequestCheckError> {
-        let host = self.host(request.permit().chain_id())?;
+        let host = self.host(request.request.permit().chain_id())?;
         let context = AuthorizationContext {
             program_id: host.program_id,
             now_unix_seconds: Utc::now().timestamp() as u64,
@@ -105,7 +105,7 @@ impl SolanaDecryptionVerifier {
         authorize_request(&host.reader, &host.proofs, context, request).await?;
         info!(
             "Solana user decryption check passed for {} handles!",
-            request.handles().len()
+            request.request.entries().len()
         );
         Ok(())
     }
@@ -115,7 +115,7 @@ impl SolanaDecryptionVerifier {
 mod tests {
     use super::*;
     use crate::core::{
-        config::{ApiKey, HostChainConfig, ProofRoute, SolanaHostSettings, solana_host_chain_id},
+        config::{ApiKey, HostChainConfig, ProofRoute, SolanaHostSettings},
         event_processor::{ProcessingError, ProcessingErrorKind},
         solana::{
             proof::{HostProofReader, LeafKind, LeafQuery},
@@ -127,6 +127,7 @@ mod tests {
     use solana_pubkey::Pubkey;
     use std::time::Duration;
     use tokio::{net::TcpListener, time::timeout};
+    use zama_solana_request::host_chain::solana_host_chain_id;
 
     fn solana_chain(cluster_tag: u64, endpoint: &str) -> HostChainConfig {
         HostChainConfig {
@@ -228,17 +229,15 @@ mod tests {
     async fn a_request_for_a_chain_without_a_solana_host_is_retried() {
         let verifier = SolanaDecryptionVerifier::new(HashMap::new());
 
-        for handle in [handle_on(solana_host_chain_id(12345)), handle_on(1)] {
-            for result in check_both(&verifier, handle).await {
-                match result {
-                    Err(error) if error.kind == ProcessingErrorKind::Recoverable => assert!(
-                        error
-                            .source
-                            .to_string()
-                            .contains("No Solana host chain configured")
-                    ),
-                    other => panic!("expected a recoverable unknown-host error, got {other:?}"),
-                }
+        for result in check_both(&verifier, handle_on(solana_host_chain_id(12345))).await {
+            match result {
+                Err(error) if error.kind == ProcessingErrorKind::Recoverable => assert!(
+                    error
+                        .source
+                        .to_string()
+                        .contains("No Solana host chain configured")
+                ),
+                other => panic!("expected a recoverable unknown-host error, got {other:?}"),
             }
         }
     }

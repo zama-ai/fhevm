@@ -26,11 +26,12 @@
 //! price of wildcard scope and is asserted deliberately, not tolerated.
 use connector_utils::types::solana_request::SolanaUserDecryptionRequestV1;
 use solana_pubkey::Pubkey;
+use zama_solana_acl::{DeadRow, DelegationRow};
 
 mod solana_support;
 
 use kms_worker::core::solana::{
-    delegation::{AuthorizedRow, DeadRow, DelegationFailure, check_delegation},
+    delegation::{DelegationFailure, check_delegation},
     encrypted_store::EncryptedStoreFailure,
     failure::{AuthorizationFailure, InvalidHostRecord},
     handle_binding::HandleBindingFailure,
@@ -891,7 +892,7 @@ fn a_live_application_row_is_named_as_the_exact_row() {
     let row = check_delegation(&rows, PROGRAM_ID, delegator, delegate, &store())
         .expect("a live application row authorizes");
 
-    assert_eq!(row, AuthorizedRow::Exact);
+    assert_eq!(row, DelegationRow::Exact);
 }
 
 /// The same grant carried by the wildcard row alone is named as such: the row that authorized is
@@ -909,7 +910,7 @@ fn a_live_wildcard_row_is_named_as_the_wildcard_row() {
     let row = check_delegation(&rows, PROGRAM_ID, delegator, delegate, &store())
         .expect("a live wildcard row authorizes an application with no row of its own");
 
-    assert_eq!(row, AuthorizedRow::Wildcard);
+    assert_eq!(row, DelegationRow::Wildcard);
 }
 
 /// With BOTH rows live, the application row is the one named. The request outcome is
@@ -929,7 +930,7 @@ fn with_both_rows_live_the_application_row_is_the_one_named() {
     let row = check_delegation(&rows, PROGRAM_ID, delegator, delegate, &store())
         .expect("two live rows authorize");
 
-    assert_eq!(row, AuthorizedRow::Exact);
+    assert_eq!(row, DelegationRow::Exact);
 }
 
 // ---------------------------------------------------------------------------

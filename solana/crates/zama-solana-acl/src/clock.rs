@@ -20,6 +20,14 @@ pub const SYSVAR_OWNER_ID: [u8; 32] = [
 const CLOCK_LEN: usize = 40;
 const UNIX_TIMESTAMP_OFFSET: usize = 32;
 
+/// The Clock account data reading `unix_timestamp`, every other field zero, for test doubles of
+/// an RPC node.
+pub fn encode_clock(unix_timestamp: u64) -> Vec<u8> {
+    let mut data = vec![0; CLOCK_LEN];
+    data[UNIX_TIMESTAMP_OFFSET..].copy_from_slice(&unix_timestamp.to_le_bytes());
+    data
+}
+
 /// The `unix_timestamp` of an account read at [`CLOCK_SYSVAR_ID`], given its owner and data. Only
 /// the sysvar owner's account is the Clock. A time before the epoch is refused rather than cast, as
 /// the host refuses it when it writes an expiry.

@@ -10,7 +10,7 @@ pub struct DenyScopeRecord {
     /// The application program this record governs.
     pub program: Pubkey,
     /// The scope this record governs: an account of `program`.
-    pub scope: [u8; 32],
+    pub scope: Pubkey,
     /// Whether `(program, scope)` is currently denied.
     pub denied: bool,
     /// PDA bump for `PDA("deny-scope", program, scope)`.

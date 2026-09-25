@@ -15,6 +15,7 @@
 //! field by field; the runtime-test SDK fixtures additionally pin the seed order and the
 //! record bytes as literals.
 
+use crate::account::{initialized, AccountView};
 use crate::AclError;
 
 /// Seed of the delegation record PDA: `[seed, delegator, delegate, program, scope]`.
@@ -90,6 +91,20 @@ impl UserDecryptionDelegationRecord {
 pub const USER_DECRYPTION_DELEGATION_DISCRIMINATOR: [u8; ANCHOR_DISCRIMINATOR_LEN] =
     [0x25, 0x05, 0x8b, 0x21, 0x49, 0x35, 0x01, 0xf8];
 
+/// The account bytes of a record in this state, for test doubles of the host program.
+pub fn encode_user_decryption_delegation(record: &UserDecryptionDelegationRecord) -> Vec<u8> {
+    let mut data = USER_DECRYPTION_DELEGATION_DISCRIMINATOR.to_vec();
+    data.extend_from_slice(&record.delegator);
+    data.extend_from_slice(&record.delegate);
+    data.extend_from_slice(&record.program);
+    data.extend_from_slice(&record.scope);
+    data.extend_from_slice(&record.expires_at.to_le_bytes());
+    data.extend_from_slice(&record.delegation_counter.to_le_bytes());
+    data.extend_from_slice(&record.last_update_slot.to_le_bytes());
+    data.push(record.bump);
+    data
+}
+
 /// Decodes an account's raw data, discriminator included, into a delegation record.
 ///
 /// Strict: the account is exactly discriminator + body (the record is never realloc-grown,
@@ -114,6 +129,104 @@ pub fn decode_user_decryption_delegation(
         last_update_slot: u64_le(body, 144),
         bump: body[152],
     })
+}
+
+/// Why a delegation row does not authorize.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum DeadRow {
+    Absent,
+    /// Expired at `expires_at`, or revoked when it is 0: a grant always ends after the time it
+    /// was made.
+    NotLive {
+        expires_at: u64,
+    },
+}
+
+impl core::fmt::Display for DeadRow {
+    fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
+        match self {
+            Self::Absent => f.write_str("absent"),
+            Self::NotLive { expires_at: 0 } => f.write_str("revoked"),
+            Self::NotLive { expires_at } => write!(f, "expired at {expires_at}"),
+        }
+    }
+}
+
+/// What one delegation row says at a given time.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum RowVerdict {
+    Live,
+    Dead(DeadRow),
+    /// A host-owned row the host program could not have written at this address.
+    Invalid,
+}
+
+/// Judges the row read at the address `[delegator, delegate, program, scope]` and `bump` derive
+/// under `host_program`, at Unix time `now`. The record must hold that tuple and bump: a reader
+/// does not take the address as proof of what the record says.
+pub fn judge_delegation_row(
+    host_program: &[u8; 32],
+    account: Option<AccountView<'_>>,
+    bump: u8,
+    [delegator, delegate, program, scope]: [&[u8; 32]; 4],
+    now: u64,
+) -> RowVerdict {
+    let Some(account) = initialized(account) else {
+        return RowVerdict::Dead(DeadRow::Absent);
+    };
+    if account.owner != host_program {
+        return RowVerdict::Invalid;
+    }
+    let Ok(record) = decode_user_decryption_delegation(account.data) else {
+        return RowVerdict::Invalid;
+    };
+    if !record.names(delegator, delegate, program, scope) || record.bump != bump {
+        return RowVerdict::Invalid;
+    }
+    if record.is_live_at(now) {
+        RowVerdict::Live
+    } else {
+        RowVerdict::Dead(DeadRow::NotLive {
+            expires_at: record.expires_at,
+        })
+    }
+}
+
+/// One of the two rows that can authorize a delegated entry.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum DelegationRow {
+    /// The row of the encrypted store's application.
+    Exact,
+    /// The delegator's row for every application.
+    Wildcard,
+}
+
+/// Whether a delegated entry is authorized.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum DelegationVerdict {
+    Authorized(DelegationRow),
+    NoLiveDelegation {
+        exact: DeadRow,
+        wildcard: DeadRow,
+    },
+    /// The row fails the entry whatever the other row says.
+    InvalidRow(DelegationRow),
+}
+
+/// Combines the application's row and the wildcard row, as EVM's wildcard delegation falls back.
+/// Either live row authorizes, and a dead row cannot veto a live one, so narrowing a delegation
+/// to fewer applications means revoking the wildcard row too. An invalid row fails the entry even
+/// when the other is live.
+pub fn judge_delegation(exact: RowVerdict, wildcard: RowVerdict) -> DelegationVerdict {
+    match (exact, wildcard) {
+        (RowVerdict::Invalid, _) => DelegationVerdict::InvalidRow(DelegationRow::Exact),
+        (_, RowVerdict::Invalid) => DelegationVerdict::InvalidRow(DelegationRow::Wildcard),
+        (RowVerdict::Live, _) => DelegationVerdict::Authorized(DelegationRow::Exact),
+        (_, RowVerdict::Live) => DelegationVerdict::Authorized(DelegationRow::Wildcard),
+        (RowVerdict::Dead(exact), RowVerdict::Dead(wildcard)) => {
+            DelegationVerdict::NoLiveDelegation { exact, wildcard }
+        }
+    }
 }
 
 pub(crate) fn bytes32(body: &[u8], offset: usize) -> [u8; 32] {
@@ -145,19 +258,6 @@ mod tests {
         }
     }
 
-    fn encode(record: &UserDecryptionDelegationRecord) -> Vec<u8> {
-        let mut data = USER_DECRYPTION_DELEGATION_DISCRIMINATOR.to_vec();
-        data.extend_from_slice(&record.delegator);
-        data.extend_from_slice(&record.delegate);
-        data.extend_from_slice(&record.program);
-        data.extend_from_slice(&record.scope);
-        data.extend_from_slice(&record.expires_at.to_le_bytes());
-        data.extend_from_slice(&record.delegation_counter.to_le_bytes());
-        data.extend_from_slice(&record.last_update_slot.to_le_bytes());
-        data.push(record.bump);
-        data
-    }
-
     /// The discriminator literal is the hash it claims to be. Both sides pinned: the literal is
     /// what foreign implementations compare against, the preimage says where it comes from.
     #[test]
@@ -173,14 +273,14 @@ mod tests {
     fn decodes_the_exact_layout_the_program_writes() {
         let record = record();
         assert_eq!(
-            decode_user_decryption_delegation(&encode(&record)),
+            decode_user_decryption_delegation(&encode_user_decryption_delegation(&record)),
             Ok(record)
         );
     }
 
     #[test]
     fn rejects_a_foreign_discriminator() {
-        let mut data = encode(&record());
+        let mut data = encode_user_decryption_delegation(&record());
         data[0] ^= 0xff;
         assert_eq!(
             decode_user_decryption_delegation(&data),
@@ -190,14 +290,14 @@ mod tests {
 
     #[test]
     fn rejects_a_record_of_the_wrong_size() {
-        let mut data = encode(&record());
+        let mut data = encode_user_decryption_delegation(&record());
         data.pop();
         assert_eq!(
             decode_user_decryption_delegation(&data),
             Err(AclError::BadAccountData)
         );
 
-        let mut grown = encode(&record());
+        let mut grown = encode_user_decryption_delegation(&record());
         grown.push(0);
         assert_eq!(
             decode_user_decryption_delegation(&grown),
@@ -215,5 +315,97 @@ mod tests {
         let mut revoked = record();
         revoked.expires_at = 0;
         assert!(!revoked.is_live_at(0));
+    }
+
+    const HOST: [u8; 32] = [0x77; 32];
+
+    fn judge(owner: &[u8; 32], data: &[u8], bump: u8, now: u64) -> RowVerdict {
+        let r = record();
+        judge_delegation_row(
+            &HOST,
+            Some(AccountView { owner, data }),
+            bump,
+            [&r.delegator, &r.delegate, &r.program, &r.scope],
+            now,
+        )
+    }
+
+    #[test]
+    fn a_row_is_live_dead_or_invalid() {
+        let data = encode_user_decryption_delegation(&record());
+        assert_eq!(judge(&HOST, &data, 254, 499), RowVerdict::Live);
+        assert_eq!(
+            judge(&HOST, &data, 254, 500),
+            RowVerdict::Dead(DeadRow::NotLive { expires_at: 500 })
+        );
+        let r = record();
+        let tuple = [&r.delegator, &r.delegate, &r.program, &r.scope];
+        for absent in [
+            None,
+            Some(AccountView {
+                owner: &[0; 32],
+                data: &[],
+            }),
+        ] {
+            assert_eq!(
+                judge_delegation_row(&HOST, absent, 254, tuple, 0),
+                RowVerdict::Dead(DeadRow::Absent)
+            );
+        }
+
+        let mut other_tuple = record();
+        other_tuple.scope = [0x45; 32];
+        let invalid = [
+            judge(&[0x78; 32], &data, 254, 0),
+            judge(&HOST, &data[1..], 254, 0),
+            judge(&HOST, &data, 253, 0),
+            judge(
+                &HOST,
+                &encode_user_decryption_delegation(&other_tuple),
+                254,
+                0,
+            ),
+        ];
+        assert_eq!(invalid, [RowVerdict::Invalid; 4]);
+    }
+
+    #[test]
+    fn either_live_row_authorizes_and_an_invalid_row_vetoes() {
+        use DelegationRow::{Exact, Wildcard};
+        let absent = RowVerdict::Dead(DeadRow::Absent);
+        let revoked = RowVerdict::Dead(DeadRow::NotLive { expires_at: 0 });
+        let cases = [
+            (
+                (RowVerdict::Live, absent),
+                DelegationVerdict::Authorized(Exact),
+            ),
+            (
+                (revoked, RowVerdict::Live),
+                DelegationVerdict::Authorized(Wildcard),
+            ),
+            (
+                (RowVerdict::Live, RowVerdict::Invalid),
+                DelegationVerdict::InvalidRow(Wildcard),
+            ),
+            (
+                (RowVerdict::Invalid, RowVerdict::Live),
+                DelegationVerdict::InvalidRow(Exact),
+            ),
+            (
+                (absent, revoked),
+                DelegationVerdict::NoLiveDelegation {
+                    exact: DeadRow::Absent,
+                    wildcard: DeadRow::NotLive { expires_at: 0 },
+                },
+            ),
+        ];
+        for ((exact, wildcard), expected) in cases {
+            assert_eq!(judge_delegation(exact, wildcard), expected);
+        }
+        assert_eq!(DeadRow::NotLive { expires_at: 0 }.to_string(), "revoked");
+        assert_eq!(
+            DeadRow::NotLive { expires_at: 9 }.to_string(),
+            "expired at 9"
+        );
     }
 }

@@ -16,7 +16,7 @@
 //! "reads state once" is a claim about code that no test can hold to account: the difference
 //! between one read and two is invisible in the outcome and very visible in a race. The leaf
 //! record has its own recording reader, for the same reason: the proof read asks each coprocessor
-//! at most once, in configured order, and only for the queries still unresolved.
+//! at most once, for the whole batch.
 
 mod solana_support;
 

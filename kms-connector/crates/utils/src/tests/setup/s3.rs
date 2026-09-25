@@ -29,6 +29,9 @@ const S3_CT_PATH: &str = "/tmp/ct";
 pub const MINIO_ACCESS_KEY: &str = "fhevm-access-key";
 pub const MINIO_SECRET_KEY: &str = "fhevm-access-secret-key";
 pub const S3_CT_HANDLE: &str = "5a88e7aa46f312ff70df6e84c85eb40cdfd42b18a9ff00000000000030390500";
+/// The same ciphertext under a handle of the Solana host chain with cluster tag 12345.
+pub const S3_SOLANA_CT_HANDLE: &str =
+    "5a88e7aa46f312ff70df6e84c85eb40cdfd42b18a9ff01000000000030390500";
 pub const S3_CT_DIGEST: &str = "3a002df21130bda55f78d4403a73007a797f4a888174a620bbffc9052a045239";
 
 pub const S3_CT_BUCKET: &str = "copro";
@@ -127,17 +130,18 @@ impl S3Instance {
             .await?;
         }
 
-        let attestation = format!(
-            "x-amz-meta-ct-attestation: {}",
-            rfc023_attestation_json().await?
-        );
-        self.curl(
-            &["-H", &attestation, "--upload-file", S3_CT_PATH],
-            &format!(
-                "{S3_CT_BUCKET}/{S3_CT128_KEY_PREFIX}/{S3_CT_HANDLE}/{COPROCESSOR_CONTEXT_ID}"
-            ),
-        )
-        .await
+        for handle in [S3_CT_HANDLE, S3_SOLANA_CT_HANDLE] {
+            let attestation = format!(
+                "x-amz-meta-ct-attestation: {}",
+                rfc023_attestation_json(handle).await?
+            );
+            self.curl(
+                &["-H", &attestation, "--upload-file", S3_CT_PATH],
+                &format!("{S3_CT_BUCKET}/{S3_CT128_KEY_PREFIX}/{handle}/{COPROCESSOR_CONTEXT_ID}"),
+            )
+            .await?;
+        }
+        Ok(())
     }
 
     /// Runs a SigV4-signed `curl` request, with the root credentials, against the S3 API from
@@ -198,10 +202,10 @@ fn public_bucket_policy(bucket: &str) -> String {
     .to_string()
 }
 
-async fn rfc023_attestation_json() -> anyhow::Result<String> {
+async fn rfc023_attestation_json(handle: &str) -> anyhow::Result<String> {
     let attestation = CiphertextAttestationPayload::new(
         Version::V1,
-        B256::from_slice(&hex::decode(S3_CT_HANDLE)?),
+        B256::from_slice(&hex::decode(handle)?),
         S3_CT_KEY_ID,
         COPROCESSOR_CONTEXT_ID,
         B256::ZERO, // regular ciphertext digest, unused by retrieval tests

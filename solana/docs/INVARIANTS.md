@@ -303,12 +303,14 @@ through the returned context id; it is not enforced by the verifier.
 type outgrowing it changes the certificate format, the entrypoint
 signature, and the return layout together.
 
-**27. [HOLDS]** A delegated user-decryption entry names the delegator as its allowed key. The KMS connector reads the
+**27. [HOLDS]** A delegated user-decryption entry names the delegator as its owner address. The KMS connector reads the
 delegation record for the encrypted store's application `(program, scope)`, the delegator's wildcard row
 (`0xff×32` in both positions) and the Clock in the deciding read, which a node behind the first read refuses
 (`minContextSlot`). No store carries the sentinel in either position: `create_encrypted_store` requires the scope to be an account the
 store's program owns (`EncryptedStoreScopeNotProgramAccount`), and nothing lives at the sentinel; no program can be
-deployed at it; and the connector refuses a store that names it either way. Either row authorizes the delegate if its
+deployed at it; and the connector refuses a store that names it either way. `delegate_for_user_decryption` applies
+the same owner rule to a grant's scope (`DelegationScopeNotProgramAccount`, DD-061), so an application row names an
+application a store can have. Either row authorizes the delegate if its
 `expires_at` is after that Clock's `unix_timestamp`, as EVM's `expirationDate > block.timestamp`; a revocation writes 0.
 A dead row cannot veto a live one; a row the host program could not have written fails the entry closed, whatever
 the other row says. The connector then requires the delegator's allow leaf
@@ -347,13 +349,12 @@ data, and by `rebuilds_a_slot_from_get_block_alone` and `shared_transaction_deco
 
 **30. [HOLDS]** The leaf record can stop a decrypt from happening but can
 never be what allows one: the KMS connector verifies every proof against
-the peaks it read on chain itself, asks the configured coprocessors in
-order until one serves a proof that verifies (each only for the queries
-still unresolved), and rejects a client-supplied proof outright. A compromised or lagging
+the peaks it read on chain itself, asks every configured coprocessor at
+once and takes the first proof that verifies for each query, and rejects a client-supplied proof outright. A compromised or lagging
 record fails or delays decrypts; it cannot authorize one (DD-048).
 Pinned by `matches_on_chain_append_and_authorizes`, `one_serving_coprocessor_carries_a_request_the_others_cannot`,
-`a_record_behind_the_chain_is_retried_not_refused`. A client cannot supply a proof: the request wire
-(`SolanaUserDecryptRequestWire`) has no proof field, and `the_decoder_is_strict` rejects trailing bytes.
+`a_record_behind_the_chain_is_retried_not_refused`. A client cannot supply a proof: the request
+(`SolanaUserDecryptRequest`) has no proof field, and `the_decoder_is_strict` rejects trailing bytes.
 
 **31. [HOLDS]** Coprocessor scheduling is decoupled from authorization: eager
 scheduling can waste compute on a minority fork; it can never release
@@ -407,7 +408,7 @@ the token tests of 11f, `mollusk_a_pauser_pauses_and_only_the_admin_unpauses`, `
 `mollusk_a_wallet_pause_forwarded_through_another_program_is_rejected`, `mollusk_a_vault_pda_pauses_through_cpi`,
 `mollusk_only_the_admin_sets_pausers`, `a_revocation_while_paused_is_rejected` and, over random sequences, the H1 property
 of #35. The flags do not reach decryption, and the KMS connector does not read `HostConfig`. Gateway ingress has
-its own pause: `Decryption.sol` `whenNotPaused` covers every request entry point, the Solana `userDecryptionRequest`
+its own pause: `Decryption.sol` `whenNotPaused` covers every request entry point, the Solana entries
 included. HTTP decryption has no pause on either chain, as on EVM.
 
 **37. [HOLDS]** HCU enforcement ships disabled (unrestricted defaults) and is opt-in per knob. `u64::MAX` means
@@ -469,17 +470,19 @@ and `mollusk_fhe_execute_malformed_trust_witness_is_rejected`.
 ## G. Decrypt authorization (gateway, relayer, KMS)
 
 **42. [HOLDS]** Every KMS party's connector independently re-verifies the
-user's ed25519 signature over the full request — identity, handles,
-allowed scopes, validity window, and nonce. The
-relayer and gateway are transport; neither can alter who asks or for what.
+user's ed25519 signature over the permit's eight fields: user address, transport key, allowed scopes, start
+timestamp, duration, verifying program, chain id and KMS routing (`extra_data`). The handles are not signed, as in
+EVM's EIP-712 permit: the permit grants the scopes and window, and each handle is authorized separately against the
+signer's or delegator's allow leaf. The relayer and gateway are transport; neither can change who asks, the key the
+shares are encrypted to, or which applications the permit opens.
 Pinned by `every_vector_behaves_as_declared`, `every_blob_field_reaches_the_canonical_bytes` (every blob field
 changes the request bytes), `every_field_lands_in_its_place_and_the_chain_comes_from_the_handles` (assembly puts each
 Gateway and blob field in its permit role) and `a_field_the_relayer_changed_fails_the_signature` (the connector refuses a permit whose
 key, window or routing the relayer changed).
 
-**43. [ANTI]** The user-decrypt nonce is not dedup-enforced on-chain or in the
-connector; replay is bounded only by the request validity window (EVM
-parity).
+**43. [ANTI]** A user-decrypt permit has no nonce and is not deduplicated on-chain or in the connector. A signed
+permit can be replayed until its validity window closes or the user revokes it (`revoke_permits`, #63). A replay
+returns shares only for the transport key the user signed, so it discloses nothing to the replayer (EVM parity).
 
 **44. [ANTI]** An empty `allowedScopes` list means permissive mode: the permit
 is not scoped to an application, and opens the signer's own handles and
@@ -492,8 +495,8 @@ stores the later of the user's previous `PermitInvalidation` watermark and the c
 check rejects permits whose signed `start_timestamp` is below that watermark; an absent watermark reads as zero. A future-start permit remains
 unusable until its window opens, but can then authorize decryption despite the earlier revocation. Permits have no
 individual on-chain record to revoke. EVM's `ACL.invalidateDecryptionSignaturesBefore` also rejects future watermarks
-with `InvalidationTimestampInTheFuture`. Pinned by the connector authorization vector
-`future-start-permit-outliving-a-revocation` and the host test
+with `InvalidationTimestampInTheFuture`. Pinned by the permit vector
+`future-start-permit`, the connector test `a_permit_whose_window_has_not_opened_is_transient` and the host test
 `first_revocation_creates_the_account_and_records_the_clock`.
 
 **45. [HOLDS]** The connector authorizes against the canonical EncryptedStore PDA, program-owned, rederived from the seeds the account carries,
@@ -597,9 +600,8 @@ passes those flags.
 
 **47. [RETIRED]** The standalone proof service is gone (RFC 035, DD-048). The
 leaf record lives in each coprocessor's host listener, served behind an API
-key; the connector asks the configured coprocessors in order, so one behind
-or unreachable cannot sink a request another can serve. The first coprocessor
-in the list serves most reads. Authorization was
+key; the connector asks every configured coprocessor at once, so one behind,
+stalled or unreachable cannot sink or hold a request another can serve. Authorization was
 never its to give (#30).
 
 **48. [HOLDS]** Settle transactions at production KMS thresholds fit one packet

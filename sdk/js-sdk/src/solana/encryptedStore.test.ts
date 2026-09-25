@@ -80,7 +80,7 @@ describe('decoding an EncryptedStore account', () => {
 
     expect(state.program).toBe(base58.encode(bytes32(0x11)));
     expect(state.authority).toBe(base58.encode(bytes32(0x22)));
-    expect(state.scope).toEqual(bytes32(0x33));
+    expect(state.scope).toBe(base58.encode(bytes32(0x33)));
     expect(state.slots).toEqual([{ key: bytes32(0x44), handle: bytes32(0x55) }]);
     expect(state.leafCount).toBe(3n);
     expect(state.peaks).toEqual([bytes32(0x71), bytes32(0x72)]);

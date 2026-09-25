@@ -38,9 +38,9 @@ pub enum UserDecryptKind {
 impl UserDecryptKind {
     fn selector(&self) -> [u8; 4] {
         match self {
-            Self::Direct => Decryption::userDecryptionRequest_2Call::SELECTOR,
+            Self::Direct => Decryption::userDecryptionRequest_1Call::SELECTOR,
             Self::Delegated => Decryption::delegatedUserDecryptionRequestCall::SELECTOR,
-            Self::Unified => Decryption::userDecryptionRequest_1Call::SELECTOR,
+            Self::Unified => Decryption::userDecryptionRequest_0Call::SELECTOR,
         }
     }
 }
@@ -189,8 +189,8 @@ fn assert_user_decrypt_calldata(
     let payload = &data[4..];
     match kind {
         UserDecryptKind::Direct => {
-            let decoded = Decryption::userDecryptionRequest_2Call::abi_decode_raw(payload)
-                .expect("calldata: failed to decode userDecryptionRequest_2Call");
+            let decoded = Decryption::userDecryptionRequest_1Call::abi_decode_raw(payload)
+                .expect("calldata: failed to decode userDecryptionRequest_1Call");
             assert_eq!(
                 decoded.userAddress, expected_user,
                 "calldata.userAddress mismatch (direct)"
@@ -223,8 +223,8 @@ fn assert_user_decrypt_calldata(
             );
         }
         UserDecryptKind::Unified => {
-            let decoded = Decryption::userDecryptionRequest_1Call::abi_decode_raw(payload)
-                .expect("calldata: failed to decode userDecryptionRequest_1Call");
+            let decoded = Decryption::userDecryptionRequest_0Call::abi_decode_raw(payload)
+                .expect("calldata: failed to decode userDecryptionRequest_0Call");
             assert_eq!(
                 decoded.userAddress, expected_user,
                 "calldata.userAddress mismatch (unified)"
@@ -817,7 +817,7 @@ impl FhevmMockWrapper {
         self.register_decrypt_pattern(
             "public decryption success",
             self.decryption_contract,
-            Decryption::publicDecryptionRequest_1Call::SELECTOR,
+            Decryption::publicDecryptionRequestCall::SELECTOR,
             target,
             UsageLimit::Once,
             |id, contract| {
@@ -829,7 +829,7 @@ impl FhevmMockWrapper {
     }
 
     /// Register a Solana public decryption that succeeds. It matches only the Solana
-    /// `publicDecryptionRequest(bytes32[],bytes,bytes32[])` overload and emits only the Solana
+    /// `solanaPublicDecryptionRequest` entry and emits only the Solana
     /// request event, as the Gateway does.
     pub fn on_solana_public_decrypt_success(
         &self,
@@ -841,7 +841,7 @@ impl FhevmMockWrapper {
         self.register_decrypt_pattern(
             "Solana public decryption success",
             self.decryption_contract,
-            Decryption::publicDecryptionRequest_0Call::SELECTOR,
+            Decryption::solanaPublicDecryptionRequestCall::SELECTOR,
             target,
             UsageLimit::Once,
             |id, contract| {
@@ -858,7 +858,7 @@ impl FhevmMockWrapper {
         self.json_rpc_server.on_transaction(
             matches_contract_and_selector_for_txn(
                 self.decryption_contract,
-                Decryption::publicDecryptionRequest_1Call::SELECTOR,
+                Decryption::publicDecryptionRequestCall::SELECTOR,
             ),
             Response::Revert {
                 hash: Some(random_hash()),
@@ -979,7 +979,7 @@ impl FhevmMockWrapper {
         let request_log = build_public_decrypt_request(self.decryption_contract, id, handles);
         self.register_request_only(
             self.decryption_contract,
-            Decryption::publicDecryptionRequest_1Call::SELECTOR,
+            Decryption::publicDecryptionRequestCall::SELECTOR,
             request_log,
         );
     }
@@ -1029,7 +1029,7 @@ impl FhevmMockWrapper {
         self.register_decrypt_pattern(
             "public decryption error",
             self.decryption_contract,
-            Decryption::publicDecryptionRequest_1Call::SELECTOR,
+            Decryption::publicDecryptionRequestCall::SELECTOR,
             mock_server::SubscriptionTarget::All,
             UsageLimit::Once,
             |id, contract| {
@@ -1285,7 +1285,7 @@ fn build_solana_public_decrypt_request(
     handles: Vec<B256>,
     encrypted_stores: Vec<B256>,
 ) -> Log {
-    let request = Decryption::PublicDecryptionRequest_2 {
+    let request = Decryption::SolanaPublicDecryptionRequest {
         decryptionId: decryption_id,
         ctHandles: handles,
         extraData: Bytes::from(vec![0x00]),
@@ -1296,7 +1296,7 @@ fn build_solana_public_decrypt_request(
         contract,
         &request,
         vec![
-            Decryption::PublicDecryptionRequest_2::SIGNATURE_HASH,
+            Decryption::SolanaPublicDecryptionRequest::SIGNATURE_HASH,
             B256::from(decryption_id),
         ],
     )

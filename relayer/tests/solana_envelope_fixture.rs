@@ -207,7 +207,12 @@ fn every_accepted_record_becomes_a_solana_request() {
             .attested_payload
             .handles
             .iter()
-            .map(|entry| hex::decode(entry.encrypted_store.trim_start_matches("0x")).unwrap())
+            .map(|entry| {
+                <[u8; 32]>::try_from(
+                    hex::decode(entry.encrypted_store.trim_start_matches("0x")).unwrap(),
+                )
+                .unwrap()
+            })
             .collect::<Vec<_>>();
         let request = UserDecryptRequest::try_from(parsed)
             .unwrap_or_else(|err| panic!("{name}: should convert: {err}"));
@@ -240,7 +245,7 @@ fn every_accepted_record_becomes_a_solana_request() {
                 assert_eq!(
                     blob.entries
                         .iter()
-                        .map(|entry| entry.encrypted_store.clone())
+                        .map(|entry| entry.encrypted_store)
                         .collect::<Vec<_>>(),
                     encrypted_stores,
                     "{name}: encryptedStore travels into the canonical request"

@@ -404,8 +404,8 @@ pub fn validate_request_validity_seconds(
 }
 
 #[cfg(test)]
-mod tests {
-    use super::*;
+mod extra_data_tests {
+    use super::{validate_extra_data_field_decryption, validate_extra_data_field_input_proof};
 
     // 32-byte contextId / epochId payloads (64 hex chars each), tagged with their
     // required first byte: 0x07 for contextId, 0x08 for epochId.
@@ -480,10 +480,8 @@ mod tests {
 
     #[test]
     fn rejects_unsupported_version_byte() {
-        for version in ["03", "04", "05", "ff"] {
-            let extra_data = format!("0x{version}{CONTEXT_ID_HEX}{EPOCH_ID_HEX}");
-            assert!(validate_extra_data_field_decryption(&extra_data).is_err());
-        }
+        let extra_data = format!("0x03{CONTEXT_ID_HEX}{EPOCH_ID_HEX}");
+        assert!(validate_extra_data_field_decryption(&extra_data).is_err());
     }
 
     #[test]

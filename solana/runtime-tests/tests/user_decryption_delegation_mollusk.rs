@@ -37,7 +37,8 @@ use zama_host::{self as host, AppScope, UserDecryptionDelegation};
 use zama_solana_test_kit::{
     anchor_framework_error_check, cost_snapshot, empty_system_account,
     funded_system_account as funded_wallet, host_config_account as host_config_account_from,
-    serialized_account as serialized, system_program_account, HostConfigParams,
+    program_owned_account, serialized_account as serialized, system_program_account,
+    HostConfigParams,
 };
 
 mod host_fixtures;
@@ -100,13 +101,13 @@ fn grant_ix(
             payer,
             delegator,
             host_config,
+            scope: app.scope,
             delegation_record,
             system_program: system_program::ID,
         },
         host::instruction::DelegateForUserDecryption {
             delegate,
             program: app.program,
-            scope: app.scope,
             expires_at,
         },
     )
@@ -140,8 +141,19 @@ struct Actors {
 fn app() -> AppScope {
     AppScope {
         program: Pubkey::new_unique(),
-        scope: [0x5c; 32],
+        scope: Pubkey::new_from_array([0x5c; 32]),
     }
+}
+
+/// The account a grant's scope names: owned by the application's program, as the grant requires,
+/// or absent for the wildcard row.
+fn scope_account(app: AppScope) -> (Pubkey, Account) {
+    let account = if app == AppScope::WILDCARD {
+        empty_system_account()
+    } else {
+        program_owned_account(app.program)
+    };
+    (app.scope, account)
 }
 
 fn actors() -> Actors {
@@ -185,7 +197,7 @@ fn record_account(record: &UserDecryptionDelegation) -> Account {
     }
 }
 
-/// The five accounts a grant takes, with the record slot holding `record_account`.
+/// The six accounts a grant takes, with the record slot holding `record_account`.
 fn grant_accounts(actors: &Actors, record: Account, paused: bool) -> Vec<(Pubkey, Account)> {
     let (host_config, host_config_account) = host_config_account(paused);
     vec![
@@ -194,6 +206,7 @@ fn grant_accounts(actors: &Actors, record: Account, paused: bool) -> Vec<(Pubkey
         (host_config, host_config_account),
         (actors.record_key, record),
         (system_program::ID, system_program_account()),
+        scope_account(actors.app),
     ]
 }
 
@@ -286,6 +299,7 @@ fn a_grant_whose_payer_is_the_delegator_creates_the_record() {
             (host_config, host_config_acc),
             (actors.record_key, empty_system_account()),
             (system_program::ID, system_program_account()),
+            scope_account(actors.app),
         ],
         &[Check::success()],
     );
@@ -404,13 +418,14 @@ fn a_wildcard_grant_is_legal_and_writes_the_record() {
             (host_config, host_config_acc),
             (record_key, empty_system_account()),
             (system_program::ID, system_program_account()),
+            scope_account(AppScope::WILDCARD),
         ],
         &[Check::success()],
     );
 
     let record = decode_record(&result.get_account(&record_key).expect("record").data);
     assert_eq!(record.program.to_bytes(), host::WILDCARD_APP);
-    assert_eq!(record.scope, host::WILDCARD_APP);
+    assert_eq!(record.scope.to_bytes(), host::WILDCARD_APP);
     assert_eq!(record.delegation_counter, 1);
 }
 
@@ -427,7 +442,7 @@ fn a_half_wildcard_grant_is_rejected() {
         },
         AppScope {
             program: actors.app.program,
-            scope: host::WILDCARD_APP,
+            scope: wildcard_program,
         },
     ];
 
@@ -436,6 +451,7 @@ fn a_half_wildcard_grant_is_rejected() {
             host::user_decryption_delegation_address(actors.delegator, actors.delegate, app);
         let mut accounts = grant_accounts(&actors, empty_system_account(), false);
         accounts[3].0 = record_key;
+        accounts[5] = scope_account(app);
 
         mollusk().process_and_validate_instruction(
             &grant_ix(
@@ -448,6 +464,39 @@ fn a_half_wildcard_grant_is_rejected() {
             ),
             &accounts,
             &[custom_error(host::errors::ZamaHostError::InvalidDelegation)],
+        );
+    }
+}
+
+/// A grant's scope must be an account of its program, the rule `create_encrypted_store` applies,
+/// so a grant never names an application no store can have. Refused: another program's account,
+/// the program's own id (owned by the loader), and an absent address (System-owned).
+#[test]
+fn a_grant_whose_scope_its_program_does_not_own_is_rejected() {
+    let actors = actors();
+    let not_the_programs = [
+        program_owned_account(Pubkey::new_unique()),
+        program_owned_account(anchor_lang::solana_program::bpf_loader_upgradeable::ID),
+        empty_system_account(),
+    ];
+
+    for scope_account in not_the_programs {
+        let mut accounts = grant_accounts(&actors, empty_system_account(), false);
+        accounts[5].1 = scope_account;
+
+        mollusk().process_and_validate_instruction(
+            &grant_ix(
+                actors.payer,
+                actors.delegator,
+                actors.record_key,
+                actors.delegate,
+                actors.app,
+                EXPIRES_AT,
+            ),
+            &accounts,
+            &[custom_error(
+                host::errors::ZamaHostError::DelegationScopeNotProgramAccount,
+            )],
         );
     }
 }
@@ -710,6 +759,7 @@ fn a_grant_with_a_substituted_host_config_is_rejected() {
         (host_config, record_account(&record)),
         (actors.record_key, empty_system_account()),
         (system_program::ID, system_program_account()),
+        scope_account(actors.app),
     ];
 
     mollusk().process_and_validate_instruction(
@@ -1198,6 +1248,7 @@ fn vault_accounts(actors: &VaultActors, record: Account) -> Vec<(Pubkey, Account
         (actors.record_key, record),
         (host::id(), host_program_account()),
         (system_program::ID, system_program_account()),
+        scope_account(actors.app),
     ]
 }
 
@@ -1209,6 +1260,7 @@ fn grant_via_vault_ix(actors: &VaultActors, expires_at: u64) -> Instruction {
             executor: actors.executor,
             vault: actors.vault,
             host_config,
+            scope: actors.app.scope,
             delegation_record: actors.record_key,
             zama_host: host::id(),
             system_program: system_program::ID,
@@ -1216,7 +1268,6 @@ fn grant_via_vault_ix(actors: &VaultActors, expires_at: u64) -> Instruction {
         vault::instruction::GrantViaVault {
             delegate: actors.delegate,
             program: actors.app.program,
-            scope: actors.app.scope,
             expires_at,
         },
     )
@@ -1230,6 +1281,7 @@ fn revoke_via_vault_ix(actors: &VaultActors) -> Instruction {
             executor: actors.executor,
             vault: actors.vault,
             host_config,
+            scope: actors.app.scope,
             delegation_record: actors.record_key,
             zama_host: host::id(),
             system_program: system_program::ID,
@@ -1368,7 +1420,7 @@ fn sdk_fixture_delegation_address_and_instruction_bytes() {
     let delegate = Pubkey::new_from_array([0x22; 32]);
     let app = AppScope {
         program: Pubkey::new_from_array([0x33; 32]),
-        scope: [0x44; 32],
+        scope: Pubkey::new_from_array([0x44; 32]),
     };
 
     let (address, _) = host::user_decryption_delegation_address(delegator, delegate, app);
@@ -1380,15 +1432,13 @@ fn sdk_fixture_delegation_address_and_instruction_bytes() {
     let grant = host::instruction::DelegateForUserDecryption {
         delegate,
         program: app.program,
-        scope: app.scope,
         expires_at: 500,
     }
     .data();
     assert_eq!(
         fixture_hex(&grant),
         "f0f8d7586df401672222222222222222222222222222222222222222222222222222222222222222\
-         3333333333333333333333333333333333333333333333333333333333333333\
-         4444444444444444444444444444444444444444444444444444444444444444f401000000000000"
+         3333333333333333333333333333333333333333333333333333333333333333f401000000000000"
     );
 
     let revoke = host::instruction::RevokeDelegationForUserDecryption {}.data();
@@ -1459,8 +1509,11 @@ fn relayer_fixture_wildcard_row_and_encrypted_store_addresses() {
         "J4BMamYLJvJroFATJp48L6AeQJDQqv86YAQyPqvBcKq1"
     );
 
-    let (value_address, _) =
-        host::encrypted_store_address(Pubkey::new_from_array([0x33; 32]), delegator, [0x55; 32]);
+    let (value_address, _) = host::encrypted_store_address(
+        Pubkey::new_from_array([0x33; 32]),
+        delegator,
+        Pubkey::new_from_array([0x55; 32]),
+    );
     assert_eq!(
         value_address.to_string(),
         "5Z8RtcTxGQdTxEZVbyF9T8CF7mMbCFTn8xwhdJ4knso8"
@@ -1493,7 +1546,7 @@ fn cost_snapshot_delegate_for_user_decryption() {
     let delegate = Pubkey::new_from_array([0x43; 32]);
     let app = AppScope {
         program: Pubkey::new_from_array([0x44; 32]),
-        scope: [0x45; 32],
+        scope: Pubkey::new_from_array([0x45; 32]),
     };
     let (record_key, record_bump) =
         host::user_decryption_delegation_address(delegator, delegate, app);

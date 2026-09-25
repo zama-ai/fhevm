@@ -54,7 +54,7 @@ export async function solanaEncryptedStoreAddress(
 export interface SolanaEncryptedStore {
   readonly program: Address;
   readonly authority: Address;
-  readonly scope: Uint8Array;
+  readonly scope: Address;
   readonly slots: ReadonlyArray<{ readonly key: Uint8Array; readonly handle: Uint8Array }>;
   readonly leafCount: bigint;
   readonly peaks: readonly Uint8Array[];
@@ -119,7 +119,7 @@ export function decodeSolanaEncryptedStore(data: Uint8Array, accountName: string
   return {
     program: addressDecoder.decode(decoded.program),
     authority: addressDecoder.decode(decoded.authority),
-    scope: new Uint8Array(decoded.scope),
+    scope: addressDecoder.decode(decoded.scope),
     slots: decoded.slots.map((slot) => ({ key: new Uint8Array(slot.key), handle: new Uint8Array(slot.handle) })),
     leafCount: decoded.leafCount,
     peaks: decoded.peaks.map((peak) => new Uint8Array(peak)),

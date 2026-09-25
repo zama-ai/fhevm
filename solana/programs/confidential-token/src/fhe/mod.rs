@@ -537,7 +537,7 @@ mod tests {
         let input_account = zama_host::EncryptedStore {
             program: crate::ID,
             authority,
-            scope: [1; 32],
+            scope: Pubkey::new_from_array([1; 32]),
             slots: vec![zama_host::EncryptedSlot {
                 key: [1; 32],
                 handle: balance_handle(1),

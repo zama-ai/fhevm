@@ -26,7 +26,7 @@ use kms_worker::core::solana::{
     failure::AuthorizationFailure,
     handle_binding::HandleBindingFailure,
     pipeline::authorize_request,
-    snapshot::{SYSTEM_PROGRAM_ID, SnapshotAccount},
+    snapshot::SnapshotAccount,
 };
 use solana_pubkey::Pubkey;
 use solana_support::*;

@@ -16,7 +16,7 @@ use connector_utils::{
     monitoring::otlp::PropagationContext,
     tests::{
         rand::solana_user_decryption_event_for,
-        setup::{S3_CT_HANDLE, S3Instance},
+        setup::{S3_SOLANA_CT_HANDLE, S3Instance},
     },
     types::{
         KmsResponseKind, ProtocolEvent, ProtocolEventKind,
@@ -26,7 +26,7 @@ use connector_utils::{
         solana_request::SolanaUserDecryptionRequestV1,
     },
 };
-use fhevm_gateway_bindings::decryption::Decryption::UserDecryptionRequest_4;
+use fhevm_gateway_bindings::decryption::Decryption::SolanaUserDecryptionRequest;
 use kms_connector_api::ErrorCode;
 use kms_grpc::kms::v1::{
     Empty, SigningMetadata, SigningSchemeType, TypedSignature, UserDecryptionRequest,
@@ -65,7 +65,7 @@ const NO_BUCKET: &str = "http://unused-bucket-url";
 struct Scenario {
     victim: Wallet,
     encrypted_store: EncryptedStoreFixture,
-    event: UserDecryptionRequest_4,
+    event: SolanaUserDecryptionRequest,
     host: HttpHost,
     chain_id: u64,
 }
@@ -225,13 +225,13 @@ impl ContextManager for DestroyedContext {
 /// The relayer sets the event's key, window and routing, and those are the values stored, so
 /// changing one yields a permit the user never signed.
 #[rstest]
-#[case::transport_key(|event: &mut UserDecryptionRequest_4| {
+#[case::transport_key(|event: &mut SolanaUserDecryptionRequest| {
     event.publicKey = vec![0x5a; TRANSPORT_KEY_LEN].into();
 })]
-#[case::window(|event: &mut UserDecryptionRequest_4| {
+#[case::window(|event: &mut SolanaUserDecryptionRequest| {
     event.requestValidity.startTimestamp -= U256::from(60);
 })]
-#[case::kms_routing(|event: &mut UserDecryptionRequest_4| {
+#[case::kms_routing(|event: &mut SolanaUserDecryptionRequest| {
     event.extraData = KmsRouting::ContextAndEpoch {
         kms_context_id: Identity::new([0x13; 32]),
         kms_epoch_id: Identity::new([0x14; 32]),
@@ -241,7 +241,7 @@ impl ContextManager for DestroyedContext {
 })]
 #[tokio::test]
 async fn a_field_the_relayer_changed_fails_the_signature(
-    #[case] relayer: fn(&mut UserDecryptionRequest_4),
+    #[case] relayer: fn(&mut SolanaUserDecryptionRequest),
 ) {
     let scenario = Scenario::new().await;
     let mut event = scenario.event.clone();
@@ -385,7 +385,7 @@ impl Matcher for SolanaIdentity {
 #[tokio::test]
 async fn an_authorized_request_reaches_the_kms_as_its_signer(#[case] already_sent: bool) {
     let bucket = S3Instance::setup().await.unwrap();
-    let scenario = Scenario::naming(B256::from_hex(S3_CT_HANDLE).unwrap().0).await;
+    let scenario = Scenario::naming(B256::from_hex(S3_SOLANA_CT_HANDLE).unwrap().0).await;
     let identity = SolanaIdentity {
         user_address: scenario.victim.pubkey().to_bytes().to_vec(),
         verifying_program_id: PROGRAM_ID.to_bytes().to_vec(),

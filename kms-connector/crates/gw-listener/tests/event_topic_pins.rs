@@ -8,15 +8,15 @@
 //! decryption filter subscribes by is asserted against the keccak of a spelled-out event
 //! signature, so a drifted suffix or a reshaped event fails here with both forms visible.
 //!
-//! The EVM signatures below are also this layer's EVM gate: the host-generic gateway overload
-//! must not move them.
+//! The EVM signatures below are also this layer's EVM gate: the Solana gateway entries must not
+//! move them.
 
 use alloy::primitives::{B256, keccak256};
 use connector_utils::types::db::EventType;
 
 /// Every event signature the user-decryption filter must subscribe by once this train
-/// block lands: the two EVM shapes it serves today, plus the host-generic request event (a
-/// `userDecryptionRequest` overload) that carries Solana requests. The list is compared in full
+/// block lands: the two EVM shapes it serves today, plus the Solana request event. The list is
+/// compared in full
 /// (order-insensitively), so a
 /// topic appearing or disappearing fails with both lists visible.
 const USER_DECRYPTION_SUBSCRIBED_SIGS: &[&str] = &[
@@ -25,12 +25,7 @@ const USER_DECRYPTION_SUBSCRIBED_SIGS: &[&str] = &[
     // The unified handles-only shape (RFC-023 Part 2); currently rides the positional
     // alias `UserDecryptionRequest_3`.
     "UserDecryptionRequest(uint256,(bytes32,address,address)[],(address,bytes,address[],(uint256,uint256),bytes,bytes))",
-    // The Solana request event (a `UserDecryptionRequest` overload). The two `uint8` this
-    // signature used to carry — a host-kind discriminator and a declared ACL-scope length —
-    // were removed from the gateway entry, because neither could say anything about the
-    // opaque blob they traveled with; the reshape moved this topic, which is what this pin
-    // exists to make visible rather than silent.
-    "UserDecryptionRequest(uint256,bytes32[],(uint256,uint256),bytes,bytes,bytes)",
+    "SolanaUserDecryptionRequest(uint256,bytes32[],(uint256,uint256),bytes,bytes,bytes)",
 ];
 
 fn sorted_hashes(sigs: &[&str]) -> Vec<B256> {
@@ -56,7 +51,7 @@ fn the_user_decryption_subscription_pins_its_topics() {
 /// shape, and the Solana one naming each handle's encrypted store.
 const PUBLIC_DECRYPTION_SUBSCRIBED_SIGS: &[&str] = &[
     "PublicDecryptionRequest(uint256,bytes32[],bytes)",
-    "PublicDecryptionRequest(uint256,bytes32[],bytes,bytes32[])",
+    "SolanaPublicDecryptionRequest(uint256,bytes32[],bytes,bytes32[])",
 ];
 
 #[test]

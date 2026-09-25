@@ -3,7 +3,7 @@ use connector_utils::{
     monitoring::otlp::PropagationContext,
     tests::{
         db::requests::{InsertRequestOptions, TestEventType, insert_rand_request},
-        rand::{rand_digest, rand_handle},
+        rand::{rand_digest, rand_solana_handle},
         setup::TestInstanceBuilder,
     },
     types::{
@@ -61,7 +61,7 @@ async fn test_pick_solana_public_decryption_with_its_stores() -> anyhow::Result<
     let mut event_picker =
         DbEventPicker::connect(test_instance.db().clone(), &Config::default()).await?;
     // Two handles of one chain: they differ only outside the chain id bytes.
-    let first = rand_handle();
+    let first = rand_solana_handle();
     let mut second = first;
     second[0] ^= 1;
     let request = SolanaPublicDecryptionRequest::new(

@@ -21,7 +21,7 @@ pub fn read_watermark(
     let Some(account) = row
         .account
         .as_ref()
-        .filter(|account| !account.is_uninitialized_pda())
+        .filter(|account| !account.view().is_uninitialized())
     else {
         return Ok(0);
     };

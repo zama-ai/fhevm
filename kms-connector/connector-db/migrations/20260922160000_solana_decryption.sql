@@ -1,4 +1,6 @@
--- Solana user decryption shares `user_decryption_requests` with EVM. A Solana row names its
+-- Solana decryption requests share the EVM tables.
+--
+-- User decryption: Solana shares `user_decryption_requests` with EVM. A Solana row names its
 -- requester in `user_address` and each handle's owner in `handle_owner_addresses`, as an EVM row
 -- does, with 32-byte Ed25519 keys instead of 20-byte addresses. It adds the three fields EVM has
 -- no counterpart for: the handles' encrypted stores, the permit's allowed scopes and the host
@@ -46,4 +48,18 @@ ALTER TABLE user_decryption_requests ADD CONSTRAINT user_decryption_requests_att
             ELSE
                 handle_encrypted_stores IS NULL AND allowed_scopes IS NULL
         END
+    );
+
+-- Public decryption: a Solana row names the encrypted store of each handle. A store is not
+-- derivable from a handle, and the worker proves each handle's public-decrypt leaf against it. EVM
+-- rows leave the column NULL, which is what tells the row reader which shape a row has.
+ALTER TABLE public_decryption_requests ADD COLUMN handle_encrypted_stores BYTEA[];
+
+ALTER TABLE public_decryption_requests ADD CONSTRAINT public_decryption_requests_encrypted_stores
+    CHECK (
+        handle_encrypted_stores IS NULL
+        OR (
+            ct_handles IS NOT NULL
+            AND cardinality(handle_encrypted_stores) = cardinality(ct_handles)
+        )
     );

@@ -23,19 +23,24 @@ use sha2::{Digest as _, Sha256};
 #[cfg(not(target_os = "solana"))]
 use sha3::Keccak256;
 
+pub mod account;
+pub use account::{AccountView, SYSTEM_PROGRAM_ID};
+
 pub mod encrypted_store;
 pub use encrypted_store::{
-    decode_encrypted_store, encrypted_store_discriminator, EncryptedSlot, EncryptedStore,
-    ENCRYPTED_STORE_SEED, MAX_STORE_SLOTS,
+    decode_encrypted_store, encrypted_store_discriminator, validate_store, EncryptedSlot,
+    EncryptedStore, StoreRejection, ENCRYPTED_STORE_SEED, MAX_STORE_SLOTS,
 };
 
 pub mod clock;
-pub use clock::{decode_clock_unix_timestamp, CLOCK_SYSVAR_ID, SYSVAR_OWNER_ID};
+pub use clock::{decode_clock_unix_timestamp, encode_clock, CLOCK_SYSVAR_ID, SYSVAR_OWNER_ID};
 
 pub mod delegation;
 pub use delegation::{
-    decode_user_decryption_delegation, delegation_seeds, UserDecryptionDelegationRecord,
-    DELEGATION_SEED, USER_DECRYPTION_DELEGATION_DISCRIMINATOR, WILDCARD_APP,
+    decode_user_decryption_delegation, delegation_seeds, encode_user_decryption_delegation,
+    judge_delegation, judge_delegation_row, DeadRow, DelegationRow, DelegationVerdict, RowVerdict,
+    UserDecryptionDelegationRecord, DELEGATION_SEED, USER_DECRYPTION_DELEGATION_DISCRIMINATOR,
+    WILDCARD_APP,
 };
 pub mod permit_invalidation;
 pub use permit_invalidation::{

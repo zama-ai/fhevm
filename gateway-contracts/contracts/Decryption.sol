@@ -365,9 +365,9 @@ contract Decryption is
     }
 
     /**
-     * @notice See {IDecryption-publicDecryptionRequest} (Solana overload).
+     * @notice See {IDecryption-solanaPublicDecryptionRequest}.
      */
-    function publicDecryptionRequest(
+    function solanaPublicDecryptionRequest(
         bytes32[] calldata ctHandles,
         bytes calldata extraData,
         bytes32[] calldata encryptedStores
@@ -386,7 +386,7 @@ contract Decryption is
         (uint256 publicDecryptionId, ) = _registerPublicDecryptionRequest(ctHandles, extraData);
 
         // Single emission: this entry has no pre-0.15 consumer, as the Solana user decryption.
-        emit PublicDecryptionRequest(publicDecryptionId, ctHandles, extraData, encryptedStores);
+        emit SolanaPublicDecryptionRequest(publicDecryptionId, ctHandles, extraData, encryptedStores);
     }
 
     /**
@@ -564,12 +564,13 @@ contract Decryption is
         );
 
         uint256 contextId = _extractContextId(extraData);
-        _validateContextId(contextId);
         (uint256 userDecryptionId, SnsCiphertextMaterial[] memory snsCtMaterials) = _registerUserDecryptionRequest(
             ctHandles,
             publicKey,
             contextId
         );
+        // After the ciphertext lookup: an unknown handle is reported before an unknown context.
+        _validateContextId(contextId);
 
         // Collect the fee from the transaction sender for this user decryption request.
         _collectUserDecryptionFee(msg.sender);
@@ -638,12 +639,13 @@ contract Decryption is
         }
 
         uint256 contextId = _extractContextId(extraData);
-        _validateContextId(contextId);
         (uint256 userDecryptionId, SnsCiphertextMaterial[] memory snsCtMaterials) = _registerUserDecryptionRequest(
             ctHandles,
             publicKey,
             contextId
         );
+        // After the ciphertext lookup: an unknown handle is reported before an unknown context.
+        _validateContextId(contextId);
 
         // Collect the fee from the transaction sender for this delegated user decryption request.
         _collectUserDecryptionFee(msg.sender);
@@ -733,9 +735,9 @@ contract Decryption is
     }
 
     /**
-     * @notice See {IDecryption-userDecryptionRequest} (host-generic overload).
+     * @notice See {IDecryption-solanaUserDecryptionRequest}.
      */
-    function userDecryptionRequest(
+    function solanaUserDecryptionRequest(
         bytes32[] calldata ctHandles,
         RequestValiditySeconds calldata requestValidity,
         bytes calldata publicKey,
@@ -761,9 +763,9 @@ contract Decryption is
     }
 
     /**
-     * @notice Executes the post-validation body of the Solana `userDecryptionRequest`:
+     * @notice Executes the post-validation body of `solanaUserDecryptionRequest`:
      * conformance-checks the handles, fetches the SNS ciphertexts, updates storage, and emits
-     * the Solana `UserDecryptionRequest` event.
+     * `SolanaUserDecryptionRequest`.
      * @dev Mirrors `_executeUnifiedUserDecryptionRequest` and reuses the shared `userDecryptionCounter`
      * and `userDecryptionPayloads`/`decryptionContextId` storage, so the response handler
      * (`userDecryptionResponse`) is oblivious to the request's host chain — the host-side
@@ -785,7 +787,14 @@ contract Decryption is
         // Single emission: there is no pre-0.15 consumer of this entry to keep on the deprecated
         // `SnsCiphertextMaterial[]` shape, so this event is handles-only from the start
         // (consumers resolve materials off-chain from the signed S3 attestations, RFC-023 Part 2).
-        emit UserDecryptionRequest(userDecryptionId, ctHandles, requestValidity, publicKey, extraData, solanaRequest);
+        emit SolanaUserDecryptionRequest(
+            userDecryptionId,
+            ctHandles,
+            requestValidity,
+            publicKey,
+            extraData,
+            solanaRequest
+        );
     }
 
     /**

@@ -37,7 +37,7 @@ async fn solana_http_and_gateway_requests_store_the_same_request() -> anyhow::Re
     );
     assert_eq!(
         http_row.get::<Vec<u8>, _>("user_address"),
-        gateway.permit().user_address().as_bytes()
+        gateway.request.permit().user_address().as_bytes()
     );
 
     insert_solana_user_decryption(
@@ -134,17 +134,18 @@ async fn solana_attestation_type_with_an_eip712_payload_is_malformed() -> anyhow
 }
 
 fn http_body(request: &SolanaUserDecryptionRequestV1) -> SolanaUserDecryptionRequest {
-    let permit = request.permit();
+    let permit = request.request.permit();
     SolanaUserDecryptionRequest {
         attestationType: AttestationType::SolanaSrfc38UserDecryptV1.to_string(),
         payload: SolanaUserDecryptionPayload {
             handles: request
-                .handles()
+                .request
+                .entries()
                 .iter()
                 .map(|entry| SolanaHandleEntry {
-                    handle: entry.handle,
-                    ownerAddress: entry.owner_address.to_bytes().into(),
-                    encryptedStore: entry.encrypted_store.to_bytes().into(),
+                    handle: entry.handle.into(),
+                    ownerAddress: entry.owner_address.into(),
+                    encryptedStore: entry.encrypted_store.into(),
                 })
                 .collect(),
             userAddress: (*permit.user_address().as_bytes()).into(),
@@ -157,7 +158,7 @@ fn http_body(request: &SolanaUserDecryptionRequestV1) -> SolanaUserDecryptionReq
             verifyingProgramId: (*permit.verifying_program_id().as_bytes()).into(),
             extraData: request.extra_data().into(),
         },
-        signature: request.signature().as_bytes().to_vec().into(),
+        signature: request.request.signature().as_bytes().to_vec().into(),
     }
 }
 

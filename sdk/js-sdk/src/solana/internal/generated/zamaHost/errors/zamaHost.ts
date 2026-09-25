@@ -192,6 +192,8 @@ export const ZAMA_HOST_ERROR__PAUSER_RECORD_MISMATCH = 0x17c6; // 6086
 export const ZAMA_HOST_ERROR__WALLET_PAUSE_THROUGH_CPI = 0x17c7; // 6087
 /** EncryptedStoreScopeNotProgramAccount: encrypted store scope is not an account of the store's program */
 export const ZAMA_HOST_ERROR__ENCRYPTED_STORE_SCOPE_NOT_PROGRAM_ACCOUNT = 0x17c8; // 6088
+/** DelegationScopeNotProgramAccount: delegation scope is not an account of the delegated program */
+export const ZAMA_HOST_ERROR__DELEGATION_SCOPE_NOT_PROGRAM_ACCOUNT = 0x17c9; // 6089
 
 export type ZamaHostError =
   | typeof ZAMA_HOST_ERROR__ACL_WRITES_PAUSED
@@ -200,6 +202,7 @@ export type ZamaHostError =
   | typeof ZAMA_HOST_ERROR__CLOCK_BEFORE_EPOCH
   | typeof ZAMA_HOST_ERROR__CURRENT_KMS_CONTEXT_CANNOT_BE_DESTROYED
   | typeof ZAMA_HOST_ERROR__DELEGATION_PDA_MISMATCH
+  | typeof ZAMA_HOST_ERROR__DELEGATION_SCOPE_NOT_PROGRAM_ACCOUNT
   | typeof ZAMA_HOST_ERROR__DELEGATION_UPDATED_IN_CURRENT_SLOT
   | typeof ZAMA_HOST_ERROR__DENY_RECORD_MISMATCH
   | typeof ZAMA_HOST_ERROR__DENY_RECORD_MISSING
@@ -293,6 +296,7 @@ if (process.env['NODE_ENV'] !== 'production') {
     [ZAMA_HOST_ERROR__CLOCK_BEFORE_EPOCH]: `clock is before the unix epoch`,
     [ZAMA_HOST_ERROR__CURRENT_KMS_CONTEXT_CANNOT_BE_DESTROYED]: `current KMS context cannot be destroyed`,
     [ZAMA_HOST_ERROR__DELEGATION_PDA_MISMATCH]: `delegation record does not match the canonical PDA`,
+    [ZAMA_HOST_ERROR__DELEGATION_SCOPE_NOT_PROGRAM_ACCOUNT]: `delegation scope is not an account of the delegated program`,
     [ZAMA_HOST_ERROR__DELEGATION_UPDATED_IN_CURRENT_SLOT]: `delegation was already updated in the current slot`,
     [ZAMA_HOST_ERROR__DENY_RECORD_MISMATCH]: `deny-list account does not match the canonical PDA`,
     [ZAMA_HOST_ERROR__DENY_RECORD_MISSING]: `deny-list witness account is required`,

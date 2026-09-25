@@ -218,7 +218,7 @@ where
             let event = DecryptionEvents::decode_log(&log.inner)
                 .map_err(|e| anyhow!("Failed to decode Decryption event: {e}"))?;
             let event_kind = match event.data {
-                DecryptionEvents::PublicDecryptionRequest_2(event) => {
+                DecryptionEvents::SolanaPublicDecryptionRequest(event) => {
                     decode_or_skip::<SolanaPublicDecryptionRequest, _>(
                         event.decryptionId,
                         event,
@@ -226,7 +226,7 @@ where
                         &log,
                     )
                 }
-                DecryptionEvents::UserDecryptionRequest_4(event) => {
+                DecryptionEvents::SolanaUserDecryptionRequest(event) => {
                     decode_or_skip::<SolanaUserDecryptionRequestV1, _>(
                         event.decryptionId,
                         event,
@@ -306,7 +306,7 @@ mod tests {
     #[rstest::rstest]
     fn user_decryption_span_carries_the_handle(#[values(false, true)] solana: bool) {
         use alloy::sol_types::SolEvent;
-        use connector_utils::tests::rand::solana_user_decryption_event;
+        use connector_utils::tests::rand::{rand_solana_handle, solana_user_decryption_event};
         use fhevm_gateway_bindings::decryption::Decryption::UserDecryptionRequest_2;
         use tracing_subscriber::fmt::format::FmtSpan;
         let (sender, mut receiver) = tokio::sync::mpsc::unbounded_channel();
@@ -315,7 +315,7 @@ mod tests {
             .with_span_events(FmtSpan::CLOSE)
             .with_writer(connector_utils::tests::setup::CustomTestWriter::new(sender))
             .finish();
-        let handle = FixedBytes::repeat_byte(0xab);
+        let handle = rand_solana_handle();
         let data = if solana {
             solana_user_decryption_event(U256::from(42), handle).encode_log_data()
         } else {
@@ -353,9 +353,9 @@ mod tests {
     async fn malformed_solana_event_does_not_discard_valid_peers() {
         use alloy::sol_types::SolEvent;
         use fhevm_gateway_bindings::decryption::Decryption::{
-            PublicDecryptionRequest_1, PublicDecryptionRequest_2, UserDecryptionRequest_4,
+            PublicDecryptionRequest_1, SolanaPublicDecryptionRequest, SolanaUserDecryptionRequest,
         };
-        let invalid_user = UserDecryptionRequest_4 {
+        let invalid_user = SolanaUserDecryptionRequest {
             decryptionId: U256::from(42),
             ctHandles: vec![],
             requestValidity: RequestValiditySeconds::default(),
@@ -364,7 +364,7 @@ mod tests {
             solanaRequest: Bytes::new(),
         };
         // A Solana public decryption naming fewer stores than handles.
-        let invalid_public = PublicDecryptionRequest_2 {
+        let invalid_public = SolanaPublicDecryptionRequest {
             decryptionId: U256::from(44),
             ctHandles: vec![FixedBytes::ZERO; 2],
             extraData: Bytes::new(),

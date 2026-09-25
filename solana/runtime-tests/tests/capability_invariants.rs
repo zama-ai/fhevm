@@ -405,10 +405,10 @@ fn program(index: usize) -> Pubkey {
 }
 
 /// A scope is an account of its program, so each program has its own.
-fn scope(program: Pubkey, index: usize) -> [u8; 32] {
+fn scope(program: Pubkey, index: usize) -> Pubkey {
     let mut scope = label(&format!("scope-{index}"));
     scope[31] = program.to_bytes()[0];
-    scope
+    Pubkey::new_from_array(scope)
 }
 
 fn app(index: usize) -> AppScope {
@@ -456,10 +456,7 @@ impl World {
         }
         for index in 0..APPS {
             let app = app(index);
-            accounts.insert(
-                Pubkey::new_from_array(app.scope),
-                program_owned_account(app.program),
-            );
+            accounts.insert(app.scope, program_owned_account(app.program));
         }
         let world = Self {
             context: host_svm().with_context(HashMap::new()),
@@ -488,7 +485,7 @@ impl World {
         self.authorities[store / SCOPES]
     }
 
-    fn store_scope(&self, store: usize) -> [u8; 32] {
+    fn store_scope(&self, store: usize) -> Pubkey {
         scope(self.store_authority(store).program, store % SCOPES)
     }
 
@@ -836,7 +833,7 @@ impl World {
                     host::accounts::CreateEncryptedStore {
                         payer: self.wallets[*payer],
                         authority,
-                        scope: Pubkey::new_from_array(self.store_scope(*store)),
+                        scope: self.store_scope(*store),
                         encrypted_store: self.store_address(*store),
                         host_config,
                         system_program: system_program::ID,
@@ -918,6 +915,7 @@ impl World {
                         payer: delegator,
                         delegator,
                         host_config,
+                        scope: app.scope,
                         delegation_record: host::user_decryption_delegation_address(
                             delegator, delegate, app,
                         )
@@ -927,7 +925,6 @@ impl World {
                     host::instruction::DelegateForUserDecryption {
                         delegate,
                         program: app.program,
-                        scope: app.scope,
                         expires_at: u64::MAX,
                     },
                 )

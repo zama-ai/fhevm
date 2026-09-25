@@ -4,7 +4,9 @@ use crate::common::{mock_event_on_gw, poll_db_for_event, start_test_listener};
 use alloy::primitives::{B256, U256};
 use connector_utils::{
     tests::{
-        db::requests::TestEventType, rand::solana_user_decryption_event, setup::TestInstanceBuilder,
+        db::requests::TestEventType,
+        rand::{rand_solana_handle, solana_user_decryption_event},
+        setup::TestInstanceBuilder,
     },
     types::{
         KMS_CONTEXT_COUNTER_BASE, ProtocolEventKind, solana_request::SolanaPublicDecryptionRequest,
@@ -57,10 +59,10 @@ async fn a_solana_user_decryption_event_is_stored_as_its_request() -> anyhow::Re
     let gw_listener_task =
         start_test_listener(&mut test_instance, cancel_token.clone(), None).await;
 
-    let event = solana_user_decryption_event(U256::ZERO, B256::ZERO);
+    let event = solana_user_decryption_event(U256::ZERO, rand_solana_handle());
     test_instance
         .decryption_contract()
-        .userDecryptionRequest_0(
+        .solanaUserDecryptionRequest(
             event.ctHandles.clone(),
             event.requestValidity.clone(),
             event.publicKey.clone(),
@@ -89,12 +91,12 @@ async fn a_solana_public_decryption_event_is_stored_as_its_request() -> anyhow::
     let gw_listener_task =
         start_test_listener(&mut test_instance, cancel_token.clone(), None).await;
 
-    let handles = vec![B256::with_last_byte(0x11), B256::with_last_byte(0x22)];
+    let handles = vec![rand_solana_handle(), rand_solana_handle()];
     let stores = vec![B256::repeat_byte(0x33), B256::repeat_byte(0x44)];
     let extra_data = vec![0x00];
     test_instance
         .decryption_contract()
-        .publicDecryptionRequest_0(handles.clone(), extra_data.clone().into(), stores.clone())
+        .solanaPublicDecryptionRequest(handles.clone(), extra_data.clone().into(), stores.clone())
         .send()
         .await?
         .get_receipt()

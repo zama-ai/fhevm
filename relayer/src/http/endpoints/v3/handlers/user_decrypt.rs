@@ -4,12 +4,13 @@
 //! to `UserDecryptRequest` (`Eip712UnifiedV1` or `SolanaSrfc38V1`), runs the
 //! same dedup/queue pipeline as v2, and dispatches a
 //! `RelayerEventData::UserDecrypt(UserDecryptEventData::ReqRcvdFromUser)`
-//! event. The orchestrator then builds the matching gateway
-//! `userDecryptionRequest` overload. GET is delegated verbatim to the v2
-//! handler since the response schema is unchanged.
+//! event. The orchestrator then builds the matching gateway entry
+//! (`userDecryptionRequest` or `solanaUserDecryptionRequest`). GET is
+//! delegated verbatim to the v2 handler since the response schema is unchanged.
 
 use crate::core::event::{
-    ApiVersion, RelayerEvent, RelayerEventData, UserDecryptEventData, UserDecryptRequest,
+    ApiVersion, RelayerEvent, RelayerEventData, SolanaAdmissionError, UserDecryptEventData,
+    UserDecryptRequest,
 };
 use crate::core::job_id::JobId;
 use crate::host::{HostChainIdChecker, SigPreCheckError, UserDecryptSignaturePreChecker};
@@ -23,7 +24,7 @@ use crate::http::retry_after::{
     DecryptQueueInfo, ReadinessQueueInfo, RetryAfterState, TxQueueInfo,
 };
 use crate::http::utils::BounceChecker;
-use crate::http::{parse_and_validate, AppResponse};
+use crate::http::{parse_and_validate, AppResponse, ParseError};
 use crate::logging::UserDecryptStep;
 use crate::metrics::http::{self as http_metrics, HttpEndpoint, HttpMethod};
 use crate::metrics::{
@@ -165,9 +166,9 @@ impl UserDecryptHandler {
             }
         };
 
-        let user_decrypt_request: UserDecryptRequest =
-            match parse_and_validate::<UserDecryptV3RequestJson, UserDecryptRequest>(&body) {
-                Ok(request) => request,
+        let envelope =
+            match parse_and_validate::<UserDecryptV3RequestJson, UserDecryptV3RequestJson>(&body) {
+                Ok(envelope) => envelope,
                 Err(parse_error) => {
                     return RelayerV2ResponseFailed::from_parse_error(
                         &parse_error,
@@ -176,6 +177,48 @@ impl UserDecryptHandler {
                     .into_response();
                 }
             };
+        let user_decrypt_request = match envelope {
+            UserDecryptV3RequestJson::Eip712Unified(json) => {
+                match UserDecryptRequest::try_from(json) {
+                    Ok(request) => request,
+                    Err(error) => {
+                        return RelayerV2ResponseFailed::from_parse_error(
+                            &ParseError::ConversionFailed(error.to_string()),
+                            &request_id.to_string(),
+                        )
+                        .into_response();
+                    }
+                }
+            }
+            // Admission is where a Solana request is checked in full, so its refusals are the
+            // requester's.
+            UserDecryptV3RequestJson::SolanaSrfc38(json) => {
+                match UserDecryptRequest::try_from(json) {
+                    Ok(request) => request,
+                    Err(SolanaAdmissionError::Signature(error)) => {
+                        return RelayerV2ResponseFailed::invalid_signature(
+                            &error.to_string(),
+                            &request_id.to_string(),
+                        )
+                        .into_response();
+                    }
+                    Err(SolanaAdmissionError::Encode(error)) => {
+                        return RelayerV2ResponseFailed::from_parse_error(
+                            &ParseError::ConversionFailed(error.to_string()),
+                            &request_id.to_string(),
+                        )
+                        .into_response();
+                    }
+                    Err(error) => {
+                        return RelayerV2ResponseFailed::request_error(
+                            &error.to_string(),
+                            &request_id.to_string(),
+                        )
+                        .into_response();
+                    }
+                }
+            }
+        };
 
         info!("Successfully parsed and validated v3 request");
 

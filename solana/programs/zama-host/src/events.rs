@@ -104,7 +104,7 @@ pub struct DenyScopeUpdatedEvent {
     /// The application program governed by the record.
     pub program: Pubkey,
     /// The scope governed by the record: an account of `program`.
-    pub scope: [u8; 32],
+    pub scope: Pubkey,
     /// Whether the application is denied.
     pub denied: bool,
     /// Slot in which this update was applied.
@@ -136,7 +136,7 @@ pub struct HcuAppTrustUpdatedEvent {
     /// The application program governed by the record.
     pub program: Pubkey,
     /// The scope governed by the record: an account of `program`.
-    pub scope: [u8; 32],
+    pub scope: Pubkey,
     /// Whether the application bypasses the per-app block cap.
     pub trusted: bool,
     /// Slot in which this update was applied.

@@ -288,6 +288,12 @@
           }
         },
         {
+          "name": "scope",
+          "docs": [
+            "The application's scope: an account `program` owns, or the wildcard sentinel."
+          ]
+        },
+        {
           "name": "delegation_record",
           "writable": true
         },
@@ -307,15 +313,6 @@
         {
           "name": "program",
           "type": "pubkey"
-        },
-        {
-          "name": "scope",
-          "type": {
-            "array": [
-              "u8",
-              32
-            ]
-          }
         },
         {
           "name": "expires_at",
@@ -1226,12 +1223,7 @@
         },
         {
           "name": "scope",
-          "type": {
-            "array": [
-              "u8",
-              32
-            ]
-          }
+          "type": "pubkey"
         },
         {
           "name": "denied",
@@ -1465,12 +1457,7 @@
         },
         {
           "name": "scope",
-          "type": {
-            "array": [
-              "u8",
-              32
-            ]
-          }
+          "type": "pubkey"
         },
         {
           "name": "trusted",
@@ -2554,6 +2541,11 @@
       "code": 6088,
       "name": "EncryptedStoreScopeNotProgramAccount",
       "msg": "encrypted store scope is not an account of the store's program"
+    },
+    {
+      "code": 6089,
+      "name": "DelegationScopeNotProgramAccount",
+      "msg": "delegation scope is not an account of the delegated program"
     }
   ],
   "types": [
@@ -2706,12 +2698,7 @@
             "docs": [
               "The scope governed by the record: an account of `program`."
             ],
-            "type": {
-              "array": [
-                "u8",
-                32
-              ]
-            }
+            "type": "pubkey"
           },
           {
             "name": "denied",
@@ -2771,12 +2758,7 @@
           },
           {
             "name": "scope",
-            "type": {
-              "array": [
-                "u8",
-                32
-              ]
-            }
+            "type": "pubkey"
           },
           {
             "name": "slots",
@@ -3612,12 +3594,7 @@
             "docs": [
               "The scope governed by the record: an account of `program`."
             ],
-            "type": {
-              "array": [
-                "u8",
-                32
-              ]
-            }
+            "type": "pubkey"
           },
           {
             "name": "trusted",
@@ -4534,12 +4511,7 @@
             "docs": [
               "The application's scope, or `WILDCARD_APP` for the wildcard row."
             ],
-            "type": {
-              "array": [
-                "u8",
-                32
-              ]
-            }
+            "type": "pubkey"
           },
           {
             "name": "expires_at",

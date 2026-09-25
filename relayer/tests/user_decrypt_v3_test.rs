@@ -18,6 +18,7 @@ use crate::common::validation_helper::{
 use alloy::primitives::{Address, B256};
 use ethereum_rpc_mock::fhevm::UserDecryptKind;
 use ethereum_rpc_mock::Response;
+use fhevm_relayer::config::settings::HostChainConfig;
 use fhevm_relayer::host::handle_chain_id::extract_chain_id_from_handle;
 use fhevm_relayer::http::endpoints::v2::types::error::ApiResponseStatus;
 use fhevm_relayer::http::endpoints::v2::types::user_decrypt::{
@@ -28,6 +29,7 @@ use rand::{rng, RngExt};
 use serde_json::json;
 use std::str::FromStr;
 use std::time::{SystemTime, UNIX_EPOCH};
+use zama_solana_request::host_chain::solana_host_chain_id;
 
 mod helpers {
     use super::*;
@@ -134,14 +136,31 @@ mod helpers {
     ///
     /// The relayer verifies the ed25519 signature before it submits anything, so a random blob
     /// is not an envelope this endpoint accepts: the wallet key and the signature over the
-    /// reconstructed permit envelope are both genuine. The handle uses `random_handle()` so its
-    /// embedded chain id is a configured host chain and the request survives the early chain-id
-    /// gate, and the permit is signed for that chain, which is the one the relayer derives from
-    /// the handles; the permit fields are shaped to pass the strict typed pre-check
+    /// reconstructed permit envelope are both genuine. The handle is on [`SOLANA_CHAIN_ID`], and
+    /// the permit is signed for that chain, which is the one the relayer derives from the
+    /// handles; the permit fields are shaped to pass the strict typed pre-check
     /// (`PermitFields::decode`): a 32-byte identity, an 869-byte transport key, a validity
     /// window covering now, and a 65-byte `0x02` KMS-routing `extraData`.
     pub fn create_srfc38_envelope() -> serde_json::Value {
-        create_srfc38_envelope_for(random_handle())
+        let mut handle: [u8; 32] = rand::random();
+        handle[22..30].copy_from_slice(&SOLANA_CHAIN_ID.to_be_bytes());
+        create_srfc38_envelope_for(format!("0x{}", hex::encode(handle)))
+    }
+
+    pub const SOLANA_CHAIN_ID: u64 = solana_host_chain_id(1);
+
+    /// A relayer serving [`SOLANA_CHAIN_ID`] beside its EVM host.
+    pub async fn setup_with_a_solana_host() -> TestSetup {
+        TestSetup::new_with_settings(|settings| {
+            let url = settings.host_chains[0].url.clone();
+            settings.host_chains.push(HostChainConfig {
+                chain_id: SOLANA_CHAIN_ID,
+                url,
+                acl_address: "11111111111111111111111111111111".to_string(),
+            });
+        })
+        .await
+        .expect("Failed to create test setup")
     }
 
     /// [`create_srfc38_envelope`] for one given handle, signed for the chain it embeds.
@@ -237,12 +256,11 @@ async fn v3_accepts_direct_handle() {
     setup.shutdown().await;
 }
 
-/// v3 accepts a host-generic Solana sRFC-38 request end to end: parsed, dispatched to the Solana
-/// envelope by attestation type, permit pre-checked, canonical host payload built, and enqueued
-/// (202). The ed25519 signature is not verified here — that is the connector's job.
+/// v3 accepts a Solana sRFC-38 request end to end: parsed, dispatched to the Solana envelope by
+/// attestation type, assembled, its signature verified, and enqueued (202).
 #[tokio::test]
 async fn v3_accepts_solana_srfc38_request() {
-    let setup = TestSetup::new().await.expect("Failed to create test setup");
+    let setup = helpers::setup_with_a_solana_host().await;
     let payload = helpers::create_srfc38_envelope();
 
     let response = reqwest::Client::new()
@@ -265,13 +283,59 @@ async fn v3_accepts_solana_srfc38_request() {
     setup.shutdown().await;
 }
 
+/// A Solana request whose signature does not verify is the requester's error, refused before
+/// anything is submitted.
+#[tokio::test]
+async fn v3_rejects_solana_srfc38_request_with_a_bad_signature() {
+    let setup = helpers::setup_with_a_solana_host().await;
+    let mut payload = helpers::create_srfc38_envelope();
+    payload["attestedPayload"]["requestValidity"]["durationSeconds"] = json!("604801");
+
+    let response = reqwest::Client::new()
+        .post(helpers::v3_user_decrypt_post_url(&setup))
+        .json(&payload)
+        .send()
+        .await
+        .expect("POST failed");
+
+    assert_eq!(response.status(), reqwest::StatusCode::BAD_REQUEST);
+    let body: serde_json::Value = response.json().await.expect("JSON body");
+    assert_eq!(body["error"]["label"].as_str(), Some("validation_failed"));
+    assert_eq!(
+        body["error"]["details"][0]["field"].as_str(),
+        Some("signature")
+    );
+
+    setup.shutdown().await;
+}
+
+/// A Solana request naming a handle of an EVM host is malformed, however it is signed.
+#[tokio::test]
+async fn v3_rejects_solana_srfc38_request_on_an_evm_host() {
+    let setup = TestSetup::new().await.expect("Failed to create test setup");
+    let payload = helpers::create_srfc38_envelope_for(helpers::random_handle());
+
+    let response = reqwest::Client::new()
+        .post(helpers::v3_user_decrypt_post_url(&setup))
+        .json(&payload)
+        .send()
+        .await
+        .expect("POST failed");
+
+    assert_eq!(response.status(), reqwest::StatusCode::BAD_REQUEST);
+    let body: serde_json::Value = response.json().await.expect("JSON body");
+    assert_eq!(body["error"]["label"].as_str(), Some("request_error"));
+
+    setup.shutdown().await;
+}
+
 /// v3 refuses a Solana request for a chain this relayer does not serve before anything else,
 /// although the request is consistently signed for that chain.
 #[tokio::test]
 async fn v3_rejects_solana_srfc38_request_for_an_unserved_chain() {
     let setup = TestSetup::new().await.expect("Failed to create test setup");
     let mut handle = [0x11u8; 32];
-    handle[22..30].copy_from_slice(&999_999u64.to_be_bytes());
+    handle[22..30].copy_from_slice(&solana_host_chain_id(999_999).to_be_bytes());
     let payload = helpers::create_srfc38_envelope_for(format!("0x{}", hex::encode(handle)));
 
     let response = reqwest::Client::new()

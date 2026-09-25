@@ -16,6 +16,9 @@ pub struct DelegateForUserDecryption<'info> {
     /// Singleton config PDA.
     #[account(seeds = [HOST_CONFIG_SEED], bump = host_config.bump)]
     pub host_config: Account<'info, HostConfig>,
+    /// The application's scope: an account `program` owns, or the wildcard sentinel.
+    /// CHECK: only its key and owner are read; the owner is checked against `program`.
+    pub scope: UncheckedAccount<'info>,
     /// CHECK: created or overwritten after canonical delegation PDA validation.
     #[account(mut)]
     pub delegation_record: UncheckedAccount<'info>,
@@ -31,7 +34,6 @@ pub fn delegate_for_user_decryption(
     ctx: Context<DelegateForUserDecryption>,
     delegate: Pubkey,
     program: Pubkey,
-    scope: [u8; 32],
     expires_at: u64,
 ) -> Result<()> {
     assert_no_remaining_accounts(ctx.remaining_accounts)?;
@@ -40,6 +42,7 @@ pub fn delegate_for_user_decryption(
     let now =
         u64::try_from(clock.unix_timestamp).map_err(|_| error!(ZamaHostError::ClockBeforeEpoch))?;
     let delegator = ctx.accounts.delegator.key();
+    let scope = ctx.accounts.scope.key();
     let app = AppScope { program, scope };
     require_top_level_unless_pda(&delegator, ZamaHostError::WalletDelegationThroughCpi)?;
     require!(
@@ -52,13 +55,21 @@ pub fn delegate_for_user_decryption(
     );
     // The sentinel fills the whole application or none of it.
     require!(
-        (program.to_bytes() == WILDCARD_APP) == (scope == WILDCARD_APP),
+        (program.to_bytes() == WILDCARD_APP) == (scope.to_bytes() == WILDCARD_APP),
         ZamaHostError::InvalidDelegation
     );
     require_keys_neq!(delegator, delegate, ZamaHostError::InvalidDelegation);
     require_keys_neq!(delegator, program, ZamaHostError::InvalidDelegation);
     require_keys_neq!(delegate, program, ZamaHostError::InvalidDelegation);
     require!(expires_at > now, ZamaHostError::InvalidDelegation);
+    // A grant names an application a store can have: `create_encrypted_store` requires the same.
+    if app != AppScope::WILDCARD {
+        require_keys_eq!(
+            *ctx.accounts.scope.owner,
+            program,
+            ZamaHostError::DelegationScopeNotProgramAccount
+        );
+    }
 
     let (expected, bump) = user_decryption_delegation_address(delegator, delegate, app);
     require_keys_eq!(
@@ -68,17 +79,18 @@ pub fn delegate_for_user_decryption(
     );
     let info = ctx.accounts.delegation_record.to_account_info();
     let current = read_existing_delegation(&info, bump)?;
-    let (delegator_bytes, delegate_bytes, program_bytes) = (
+    let (delegator_bytes, delegate_bytes, program_bytes, scope_bytes) = (
         delegator.to_bytes(),
         delegate.to_bytes(),
         program.to_bytes(),
+        scope.to_bytes(),
     );
     let [seed, delegator_seed, delegate_seed, program_seed, scope_seed] =
         zama_solana_acl::delegation_seeds(
             &delegator_bytes,
             &delegate_bytes,
             &program_bytes,
-            &scope,
+            &scope_bytes,
         );
     create_pda_if_needed(
         &ctx.accounts.payer.to_account_info(),

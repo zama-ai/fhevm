@@ -329,12 +329,7 @@
           },
           {
             "name": "scope",
-            "type": {
-              "array": [
-                "u8",
-                32
-              ]
-            }
+            "type": "pubkey"
           },
           {
             "name": "slots",

@@ -16,7 +16,7 @@ pub(crate) const WIDE_ALLOW_LIST: usize = 8;
 fn fresh_app() -> AppScope {
     AppScope {
         program: Pubkey::new_unique(),
-        scope: Pubkey::new_unique().to_bytes(),
+        scope: Pubkey::new_unique(),
     }
 }
 
@@ -162,7 +162,7 @@ pub(crate) fn max_buildable_attestation_count() -> usize {
                 crate::StoreId::new(
                     anchor_lang::prelude::Pubkey::new_from_array([0xA9; 32]),
                     Pubkey::new_unique(),
-                    [0xA5; 32],
+                    Pubkey::new_from_array([0xA5; 32]),
                 ),
                 attestation_shape(*count),
             )

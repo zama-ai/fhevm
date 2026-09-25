@@ -1,11 +1,11 @@
 use super::error::{ApiResponseStatus, V2ErrorResponseBody};
-use crate::core::event::is_solana_host_chain_id;
 use crate::host::handle_chain_id::extract_chain_id_from_handle;
 use crate::http::utils::redact::{redact_count, redact_len};
 use derivative::Derivative;
 use serde::{Deserialize, Serialize};
 use utoipa::ToSchema;
 use validator::{Validate, ValidationError, ValidationErrors};
+use zama_solana_request::host_chain::is_solana_host_chain_id;
 use zama_solana_request::public_request_chain_id;
 
 #[derive(Debug, Deserialize, Validate, Clone, ToSchema)]
@@ -148,7 +148,7 @@ impl From<crate::core::event::PublicDecryptResponse> for PublicDecryptResponseJs
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::core::event::solana_host_chain_id;
+    use zama_solana_request::host_chain::solana_host_chain_id;
     use zama_solana_request::MAX_REQUEST_HANDLES;
 
     fn request(

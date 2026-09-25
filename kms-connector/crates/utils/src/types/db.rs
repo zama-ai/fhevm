@@ -2,9 +2,7 @@ use crate::{
     monitoring::otlp::PropagationContext,
     types::{
         ProtocolEventKind,
-        solana_request::{
-            SolanaHandleEntry, SolanaPublicDecryptionRequest, SolanaUserDecryptionRequestV1,
-        },
+        solana_request::{SolanaPublicDecryptionRequest, SolanaUserDecryptionRequestV1},
     },
 };
 use alloy::{
@@ -12,11 +10,12 @@ use alloy::{
     sol_types::SolEvent,
 };
 use anyhow::anyhow;
+use zama_solana_request::HandleEntry;
 // Handle-only overloaded decryption events
 use fhevm_gateway_bindings::decryption::Decryption::{
-    PublicDecryptionRequest_1 as PublicDecryptionRequest, PublicDecryptionRequest_2,
+    self, PublicDecryptionRequest_1 as PublicDecryptionRequest,
     UserDecryptionRequest_2 as UserDecryptionRequest,
-    UserDecryptionRequest_3 as UserDecryptionRequestV2, UserDecryptionRequest_4,
+    UserDecryptionRequest_3 as UserDecryptionRequestV2,
 };
 use fhevm_host_bindings::{
     kms_generation::{
@@ -272,9 +271,9 @@ impl EventType {
     /// Returns every topic0 hash that maps to this `EventType` in the Gateway ABI.
     ///
     /// `UserDecryptionRequest` covers three subscribed shapes — the bytes32[] handles-only
-    /// shape, the RFC016 EVM unified shape, and the host-generic V2 shape (which carries Solana
-    /// requests) — and `PublicDecryptionRequest` two, the handles-only shape and the Solana one
-    /// naming each handle's encrypted store. Every one of those topic0 hashes must be listed in
+    /// shape, the RFC016 EVM unified shape, and `SolanaUserDecryptionRequest` — and
+    /// `PublicDecryptionRequest` two, the handles-only shape and `SolanaPublicDecryptionRequest`,
+    /// which names each handle's encrypted store. Every one of those topic0 hashes must be listed in
     /// the `eth_getLogs` filter; otherwise the gw-listener never ingests that shape and its
     /// requests silently never complete. All other event types map one-to-one to a single
     /// topic0. The subscribed set is pinned by `gw-listener/tests/event_topic_pins.rs`.
@@ -282,12 +281,12 @@ impl EventType {
         match self {
             EventType::PublicDecryptionRequest => vec![
                 PublicDecryptionRequest::SIGNATURE_HASH,
-                PublicDecryptionRequest_2::SIGNATURE_HASH,
+                Decryption::SolanaPublicDecryptionRequest::SIGNATURE_HASH,
             ],
             EventType::UserDecryptionRequest => vec![
                 UserDecryptionRequest::SIGNATURE_HASH,
                 UserDecryptionRequestV2::SIGNATURE_HASH,
-                UserDecryptionRequest_4::SIGNATURE_HASH,
+                Decryption::SolanaUserDecryptionRequest::SIGNATURE_HASH,
             ],
             _ => vec![self.signature_hash()],
         }
@@ -421,10 +420,11 @@ pub async fn insert_solana_user_decryption<'e>(
     otlp_context: &PropagationContext,
     source: RequestSource,
 ) -> anyhow::Result<PgQueryResult> {
-    let permit = request.permit();
-    let column = |field: fn(&SolanaHandleEntry) -> &[u8]| -> Vec<Vec<u8>> {
+    let permit = request.request.permit();
+    let column = |field: fn(&HandleEntry) -> [u8; 32]| -> Vec<Vec<u8>> {
         request
-            .handles()
+            .request
+            .entries()
             .iter()
             .map(|e| field(e).to_vec())
             .collect()
@@ -448,15 +448,15 @@ pub async fn insert_solana_user_decryption<'e>(
             otlp_context = EXCLUDED.otlp_context
         WHERE existing.status = 'failed' AND existing.source = 'http' AND EXCLUDED.source = 'http'",
         request.decryption_id.as_le_slice(),
-        &column(|e| e.handle.as_slice()),
+        &column(|e| e.handle),
         permit.transport_key().as_bytes().as_slice(),
         request.extra_data(),
-        request.signature().as_bytes().as_slice(),
+        request.request.signature().as_bytes().as_slice(),
         i64::try_from(permit.start_timestamp())?,
         i64::try_from(permit.duration_seconds())?,
         permit.user_address().as_bytes().as_slice(),
-        &column(|e| e.owner_address.as_ref()),
-        &column(|e| e.encrypted_store.as_ref()),
+        &column(|e| e.owner_address),
+        &column(|e| e.encrypted_store),
         &scopes,
         permit.verifying_program_id().as_bytes().as_slice(),
         tx_hash.map(|h| h.to_vec()),

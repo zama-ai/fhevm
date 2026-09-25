@@ -19,7 +19,7 @@ use connector_utils::types::{
 };
 use fhevm_gateway_bindings::decryption::Decryption::{
     self, DecryptionInstance, HandleEntry, UserDecryptionRequest_3 as UserDecryptionRequestV2,
-    delegatedUserDecryptionRequestCall, userDecryptionRequest_2Call as userDecryptionRequestCall,
+    delegatedUserDecryptionRequestCall, userDecryptionRequest_1Call as userDecryptionRequestCall,
 };
 use futures::{
     future::try_join_all,
@@ -35,7 +35,6 @@ use sqlx::types::chrono::Utc;
 use std::collections::HashMap;
 use tracing::info;
 use user_decryption_signature::compute_user_decrypt_digest;
-use zama_solana_permit::PermitFields;
 
 #[derive(Clone)]
 /// The struct responsible of processing incoming decryption requests.
@@ -690,18 +689,6 @@ impl UserDecryptionRecipient {
         Self {
             identity: UserIdentity::Evm(user_address),
             transport_key,
-        }
-    }
-
-    pub fn new_solana(permit: &PermitFields) -> Self {
-        Self {
-            identity: UserIdentity::Solana {
-                user: Pubkey::new_from_array(*permit.user_address().as_bytes()),
-                verifying_program: Pubkey::new_from_array(
-                    *permit.verifying_program_id().as_bytes(),
-                ),
-            },
-            transport_key: Bytes::copy_from_slice(permit.transport_key().as_bytes()),
         }
     }
 }
@@ -1478,24 +1465,6 @@ mod tests {
         assert_eq!(
             recipient.identity.into_kms_request_fields(),
             (address.to_checksum(None), vec![])
-        );
-    }
-
-    #[test]
-    fn a_solana_recipient_travels_in_signing_metadata() {
-        // The fixture permit is signed by `[1; 32]` for program `[7; 32]`.
-        let request = connector_utils::tests::rand::solana_user_decryption_request(
-            U256::from(1),
-            rand_handle(),
-        );
-        let recipient = UserDecryptionRecipient::new_solana(request.permit());
-
-        assert_eq!(
-            recipient.identity.into_kms_request_fields(),
-            (
-                String::new(),
-                vec![SigningMetadata::solana(vec![1; 32], vec![7; 32])]
-            )
         );
     }
 }

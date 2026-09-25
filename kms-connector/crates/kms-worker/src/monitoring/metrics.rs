@@ -128,7 +128,7 @@ mod tests {
             ProtocolEventKind::SolanaUserDecryptionV1(
                 connector_utils::tests::rand::solana_user_decryption_request(
                     U256::ZERO,
-                    [0; 32].into(),
+                    connector_utils::tests::rand::rand_solana_handle(),
                 ),
             ),
             None,

@@ -64,7 +64,7 @@ const specimenValue = async (
   key: label,
   // The specimen's application is `(program, scope = its state PDA)`; the value hangs off the
   // authority PDA under that scope.
-  application: { program, scope: addressBytes(state) },
+  application: { program, scope: state },
   encryptedStore: await solanaEncryptedStoreAddress(addressBytes(ZAMA_HOST_PROGRAM_ADDRESS), {
     program: addressBytes(program),
     authority: addressBytes(authority),

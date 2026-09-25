@@ -314,7 +314,7 @@ impl<GP: Provider + Clone + 'static, HP: Provider, C: ContextManager> DbEventPro
                         req.decryption_id,
                         &req.ct_handles(),
                         &req.extra_data().into(),
-                        Some(UserDecryptionRecipient::new_solana(req.permit())),
+                        Some(UserDecryptionRecipient::new_solana(req.request.permit())),
                     )
                     .await
             }
