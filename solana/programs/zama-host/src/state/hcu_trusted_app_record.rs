@@ -12,7 +12,7 @@ use super::*;
 pub struct HcuTrustedAppRecord {
     /// The application program this record governs.
     pub program: Pubkey,
-    /// The program-declared scope this record governs.
+    /// The scope this record governs: an account of `program`.
     pub scope: [u8; 32],
     /// When true, the application bypasses the per-app block cap entirely (no meter, no charge).
     pub trusted: bool,

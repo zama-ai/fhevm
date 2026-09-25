@@ -103,7 +103,7 @@ pub struct DenyScopeUpdatedEvent {
     pub deny_scope_record: Pubkey,
     /// The application program governed by the record.
     pub program: Pubkey,
-    /// The program-declared scope governed by the record.
+    /// The scope governed by the record: an account of `program`.
     pub scope: [u8; 32],
     /// Whether the application is denied.
     pub denied: bool,
@@ -135,7 +135,7 @@ pub struct HcuAppTrustUpdatedEvent {
     pub hcu_trusted_app_record: Pubkey,
     /// The application program governed by the record.
     pub program: Pubkey,
-    /// The program-declared scope governed by the record.
+    /// The scope governed by the record: an account of `program`.
     pub scope: [u8; 32],
     /// Whether the application bypasses the per-app block cap.
     pub trusted: bool,

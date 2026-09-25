@@ -4,7 +4,7 @@ import type { FhevmSolanaChain } from '../../core/types/fhevmSolanaChain.js';
 import type { FhevmRuntime } from '../../core/types/coreFhevmRuntime.js';
 import { bytesToBigInt, bytesToHex, unsafeBytesEquals } from '../../core/base/bytes.js';
 import { createKmsExtraDataV1 } from '../../core/kms/kmsExtraData-p.js';
-import type { Uint256BigInt } from '../../core/types/primitives.js';
+import type { BytesHex, Uint256BigInt } from '../../core/types/primitives.js';
 import { toFhevmHandle } from '../../core/handle/FhevmHandle.js';
 import { RelayerAsyncRequest } from '../../core/modules/relayer/module/RelayerAsyncRequest.js';
 import { buildRelayerUrlString, validateRelayerBaseUrl } from '../../core/modules/relayer/module/relayerUrl.js';
@@ -47,9 +47,9 @@ export type SolanaPublicDecryptCertificateClaim = {
  *
  * @param contextId - The 32-byte KMS context id.
  */
-export function solanaPublicDecryptExtraData(contextId: Uint8Array): Uint8Array {
+export function solanaPublicDecryptExtraData(contextId: Uint8Array): BytesHex {
   assertFieldLen('contextId', contextId, 32);
-  return hexToBytes(createKmsExtraDataV1({ kmsContextId: bytesToBigInt(contextId) as Uint256BigInt }).bytesHex);
+  return createKmsExtraDataV1({ kmsContextId: bytesToBigInt(contextId) as Uint256BigInt }).bytesHex;
 }
 
 function assertFieldLen(name: string, bytes: Uint8Array, len: number): void {
@@ -65,9 +65,8 @@ export async function publicDecryptCertificate(
 ): Promise<SolanaPublicDecryptCertificateClaim> {
   const handle = toFhevmHandle(parameters.handle);
 
-  const requestExtraData = solanaPublicDecryptExtraData(parameters.contextId);
+  const requestExtraDataHex = solanaPublicDecryptExtraData(parameters.contextId);
   assertFieldLen('encryptedStore', parameters.encryptedStore, 32);
-  const requestExtraDataHex = bytesToHex(requestExtraData);
   const options = { auth: context.runtime.config.auth, ...parameters.options };
   const baseUrl = validateRelayerBaseUrl(context.chain.fhevm.relayerUrl, options.auth !== undefined);
   const request = new RelayerAsyncRequest({
@@ -88,7 +87,7 @@ export async function publicDecryptCertificate(
     readonly extraData?: string | undefined;
   };
 
-  if (result.extraData !== undefined && !unsafeBytesEquals(hexToBytes(result.extraData), requestExtraData)) {
+  if (result.extraData !== undefined && !unsafeBytesEquals(hexToBytes(result.extraData), hexToBytes(requestExtraDataHex))) {
     throw new Error('public-decrypt response extraData does not match the request');
   }
   if (

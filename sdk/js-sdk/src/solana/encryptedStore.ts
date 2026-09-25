@@ -27,7 +27,7 @@ export interface SolanaEncryptedStoreSeeds {
   readonly program: Uint8Array;
   /** The 32-byte PDA of `program` that controls the value. */
   readonly authority: Uint8Array;
-  /** The 32-byte program-declared scope within `program`. */
+  /** The scope: the address of an account `program` owns. */
   readonly scope: Uint8Array;
 }
 

@@ -776,7 +776,7 @@ Decision:
   is NOT, and never was, the `0x03` Solana user-decrypt blob. The input identity itself is a plain
   bytes32 host address (no version-byte blob).
 
-**User-decrypt path (typed identity/auth fields with a versioned MMR-proof tail):**
+**User-decrypt path (typed identity and auth fields):**
 
 - PREVIOUSLY a Solana user-decrypt packed its ed25519 auth into an `extraData` blob with version byte
   `0x03` (`0x03 ‖ context_id(32) ‖ ed25519(32) ‖ nonce(32) ‖ key_count(4) ‖ keys`), forwarded opaquely
@@ -784,9 +784,9 @@ Decision:
 - Now the gateway has a dedicated typed entrypoint `userDecryptionRequestSolana(HandleEntry[],
 UserDecryptionRequestSolanaPayload)` with a `UserDecryptionRequestSolana` event. The payload carries
   the user identity, allowed scopes and nonce as typed fields, plus the shared publicKey,
-  requestValidity and signature. The signed `extraData` names the KMS context and the Store
-  (DD-048, DD-049); the connector fetches leaf proofs itself, so neither client nor relayer can
-  substitute Store or proof data.
+  requestValidity and signature. One claim per handle names its owner and Store (DD-048, DD-049),
+  and `extraData` is only the KMS routing (DD-060). The connector fetches leaf proofs itself, so
+  neither client nor relayer can substitute proof data.
 - The relayer builds the typed call and the js-sdk emits the typed identity and auth fields. The KMS
   connector routes Solana requests by their typed event and verifies the signed tail before using it.
 - `Decryption.sol` version bumped MINOR 6→7 (reinitializer 7→8, reinitializeV6→V7).
@@ -794,8 +794,8 @@ UserDecryptionRequestSolanaPayload)` with a `UserDecryptionRequestSolana` event.
   public-decrypt cert) — a _different_ extraData from either path above.
 
 A bytes32 identity plus a Solana chain id (DD-052) keeps one input ABI for EVM and non-EVM hosts. For user-decrypt,
-typed gateway fields make the Solana identity and auth request self-describing. The signed, versioned
-`extraData` tail names the context and the Store.
+typed gateway fields make the Solana identity and auth request self-describing, and `extraData` stays
+the KMS routing field it is on EVM.
 
 Decision history:
 

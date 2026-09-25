@@ -311,8 +311,8 @@ pub enum ZamaHostError {
     /// transaction it signed, so it must pause at the top level.
     #[msg("a wallet pauser must pause in a top-level instruction")]
     WalletPauseThroughCpi,
-    /// A create named the wildcard application's sentinel as the store's scope. The sentinel is
-    /// only ever a delegation row's whole application, never half of a store's.
+    /// A create named a scope account the store's program does not own. This also refuses a
+    /// program id (the loader owns it) and the wildcard sentinel (an absent address is System-owned).
     #[msg("encrypted store scope is not an account of the store's program")]
     EncryptedStoreScopeNotProgramAccount,
 }

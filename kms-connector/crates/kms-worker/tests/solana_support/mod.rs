@@ -68,7 +68,7 @@ pub const CHAIN_ID: u64 = 0x0123_4567_89ab_cdef;
 pub const APP_PROGRAM: Pubkey = pubkey(1);
 /// The encrypted store authority of the default encrypted store.
 pub const AUTHORITY: Pubkey = pubkey(2);
-/// The program-declared scope of the default encrypted store.
+/// The scope of the default encrypted store: an account its program owns.
 pub const SCOPE: Pubkey = pubkey(3);
 /// The label of the default encrypted store.
 pub const LABEL: [u8; 32] = *b"balance_________________________";

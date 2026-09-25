@@ -71,7 +71,7 @@ export interface SolanaDecryptTrust {
 export interface SolanaPermitScope {
   /** The 32-byte application program. */
   readonly program: Bytes32Hex;
-  /** The 32-byte scope that program declared, e.g. the mint for the token program. */
+  /** The scope: an account that program owns, e.g. the mint for the token program. */
   readonly scope: Bytes32Hex;
 }
 

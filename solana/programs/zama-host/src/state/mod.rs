@@ -490,7 +490,7 @@ pub fn kms_context_address(context_id: [u8; 32]) -> (Pubkey, u8) {
 }
 
 /// The application identity every host policy keys on: the program that proved it controls a
-/// value's authority, and the scope that program declared for it.
+/// value's authority, and the scope, an account of that program.
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
 pub struct AppScope {
     pub program: Pubkey,

@@ -95,7 +95,7 @@ impl core::fmt::Debug for TransportKey {
 }
 
 /// One application a permit is scoped to: the program that owns an encrypted value
-/// and the scope that program declared for it (the mint, for the token program). The
+/// and the scope, an account of that program (the mint, for the token program). The
 /// pair is the application identity everywhere in the host: only the real program can
 /// produce the `program` half, and `scope` restores the per-application granularity a
 /// program id alone loses.

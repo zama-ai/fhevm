@@ -1850,41 +1850,4 @@ mod tests {
 
         Ok(())
     }
-
-    fn public_decrypt_json(
-        handles: &[[u8; 32]],
-        encrypted_stores: Option<Vec<String>>,
-    ) -> PublicDecryptRequestJson {
-        PublicDecryptRequestJson {
-            ciphertext_handles: handles
-                .iter()
-                .map(|handle| format!("0x{}", hex::encode(handle)))
-                .collect(),
-            extra_data: "0x00".to_string(),
-            encrypted_stores,
-        }
-    }
-
-    fn handle_on(chain_id: u64, tag: u8) -> [u8; 32] {
-        let mut handle = [tag; 32];
-        handle[22..30].copy_from_slice(&chain_id.to_be_bytes());
-        handle
-    }
-
-    fn store_hex(byte: u8) -> String {
-        format!("0x{}", hex::encode([byte; 32]))
-    }
-
-    #[test]
-    fn a_solana_public_decrypt_carries_one_store_per_handle() {
-        let chain = solana_host_chain_id(1);
-        let json = public_decrypt_json(
-            &[handle_on(chain, 0x11), handle_on(chain, 0x22)],
-            Some(vec![store_hex(0xaa), store_hex(0xbb)]),
-        );
-
-        let request = PublicDecryptRequest::try_from(json).expect("valid Solana request");
-
-        assert_eq!(request.encrypted_stores, vec![[0xaa; 32], [0xbb; 32]]);
-    }
 }

@@ -2704,7 +2704,7 @@
           {
             "name": "scope",
             "docs": [
-              "The program-declared scope governed by the record."
+              "The scope governed by the record: an account of `program`."
             ],
             "type": {
               "array": [
@@ -3610,7 +3610,7 @@
           {
             "name": "scope",
             "docs": [
-              "The program-declared scope governed by the record."
+              "The scope governed by the record: an account of `program`."
             ],
             "type": {
               "array": [

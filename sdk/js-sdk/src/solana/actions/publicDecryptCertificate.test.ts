@@ -32,11 +32,11 @@ const context = {
   runtime: { config: { auth: { type: 'ApiKeyHeader', value: 'test' } } } as FhevmRuntime,
 };
 
-const requestExtraData = () => bytesToHex(solanaPublicDecryptExtraData(contextId));
+const requestExtraData = () => solanaPublicDecryptExtraData(contextId);
 
 describe('solanaPublicDecryptExtraData', () => {
   it('is the v1 KMS routing of the context, with no store in it', () => {
-    expect(bytesToHex(solanaPublicDecryptExtraData(contextId))).toBe(`0x01${'05'.repeat(32)}`);
+    expect(solanaPublicDecryptExtraData(contextId)).toBe(`0x01${'05'.repeat(32)}`);
   });
 
   it('refuses a field of the wrong width before anything is sent', async () => {

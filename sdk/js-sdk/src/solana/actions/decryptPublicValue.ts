@@ -144,7 +144,7 @@ export async function decryptPublicValue(
     chainId: config.gatewayChainId,
     handles: [handle],
     decryptedResult: bytesToHex(cleartext),
-    extraData: bytesToHex(solanaPublicDecryptExtraData(contextId)),
+    extraData: solanaPublicDecryptExtraData(contextId),
   });
   verifyPublicDecryptSignatures(
     publicDecryptDigest(eip712),

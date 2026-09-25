@@ -39,7 +39,7 @@ export const SOLANA_USER_DECRYPTION_DELEGATION_SEED = new TextEncoder().encode('
 export type SolanaDelegationApplication = {
   /** The application program the encrypted stores belong to. */
   readonly program: Address;
-  /** The 32-byte scope that program declared, e.g. the mint for the token program. */
+  /** The scope: an account that program owns, e.g. the mint for the token program. */
   readonly scope: ReadonlyUint8Array;
 };
 

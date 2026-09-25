@@ -13,8 +13,10 @@ use tracing::info;
 pub struct ComputeCalldata;
 
 impl ComputeCalldata {
-    /// Computes calldata for a public decryption request. Solana requests name the store of
-    /// each handle and use the `(bytes32[],bytes,bytes32[])` overload; EVM requests name none.
+    /// Computes calldata for a public decryption request. Picks the gateway overload by
+    /// whether the request names stores:
+    ///   - EVM, no stores → `publicDecryptionRequest(bytes32[], bytes)` (`_1Call`)
+    ///   - Solana, one store per handle → `publicDecryptionRequest(bytes32[], bytes, bytes32[])` (`_0Call`)
     pub fn public_decryption_req(
         handles: Vec<FixedBytes<32>>,
         extra_data: Bytes,
