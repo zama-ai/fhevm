@@ -275,8 +275,12 @@ async fn verify_claim<S: PeerManifestSource>(
         Err(ExecutionError::DbError(err)) if is_fatal_connection_error(&err) => {
             Err(ExecutionError::DbError(err))
         }
-        Err(ExecutionError::DbError(err)) => {
-            if let Err(apply_error) = apply_claimed_db_error(pool, claim, &err).await {
+        Err(err) => {
+            let applied = match &err {
+                ExecutionError::DbError(db) => apply_claimed_db_error(pool, claim, db).await,
+                error => apply_claimed_error(pool, claim, error).await,
+            };
+            if let Err(apply_error) = applied {
                 if let ExecutionError::DbError(apply_db) = &apply_error {
                     if is_fatal_connection_error(apply_db) {
                         return Err(apply_error);
@@ -285,12 +289,11 @@ async fn verify_claim<S: PeerManifestSource>(
                 error!(
                     task_id = claim.task_id,
                     error = %apply_error,
-                    "Failed to record verification database error on the claimed task"
+                    "Failed to record verification error on the claimed task"
                 );
             }
             Ok(None)
         }
-        Err(err) => Err(err),
     }
 }
 
@@ -953,6 +956,39 @@ async fn apply_claimed_db_error(
             fail_claimed_task(pool, claim, &error.to_string(), true).await
         }
     }
+}
+
+/// Only a clearly transient failure keeps the budget. Any other error charges
+/// an attempt, so a persistent one ends in `retry_exhausted` instead of being
+/// reclaimed with the same attempt after every lease expiry.
+async fn apply_claimed_error(
+    pool: &PgPool,
+    claim: &VerificationClaim,
+    error: &ExecutionError,
+) -> Result<(), ExecutionError> {
+    if let ExecutionError::S3TransientError(_) = error {
+        warn!(
+            task_id = claim.task_id,
+            attempt = claim.attempt,
+            host_chain_id = claim.scope.host_chain_id,
+            block_number = claim.scope.publication_block_number,
+            error = %error,
+            "Transient verification error; retrying later without charging the budget"
+        );
+        return release_claimed_task_uncharged(pool, claim, &error.to_string()).await;
+    }
+    error!(
+        task_id = claim.task_id,
+        attempt = claim.attempt,
+        host_chain_id = claim.scope.host_chain_id,
+        block_number = claim.scope.publication_block_number,
+        error = %error,
+        "Verification attempt failed"
+    );
+    VERIFICATION_FAILURE
+        .with_label_values(&[&claim.scope.consensus_epoch])
+        .inc();
+    fail_claimed_task(pool, claim, &error.to_string(), false).await
 }
 
 async fn release_claimed_task_uncharged(
