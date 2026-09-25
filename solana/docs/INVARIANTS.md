@@ -275,14 +275,13 @@ Pinned by `mollusk_verify_public_decrypt_returns_handle_and_cleartext`,
 and `mollusk_verify_public_decrypt_rejects_sub_threshold_signatures`.
 
 **22. [HOLDS]** Certificate binding chain: signed `extra_data` → context id → canonical KmsContext PDA → signer set.
-Empty or version-0 `extra_data` selects the current context; version 1 is exactly 33 bytes and carries the 32-byte id.
-Solana version 4 is exactly 65 bytes: version, context id, then the Store address used to route the decrypt request.
-Version 3 is rejected. The verifier authenticates the context, handle and cleartext through the certificate and
-independently verifies the exact handle's public leaf against the supplied Store's current peaks. It does not require
-that Store to equal the routing address in `extra_data`. Destroying a context invalidates its certificates; rotation
-alone invalidates none.
+Empty or version-0 `extra_data` selects the current context; version 1 is exactly 33 bytes and carries the 32-byte id;
+version 2 is exactly 65 bytes, the id then an epoch id, as EVM `KMSVerifier` reads it. Every other version is rejected.
+`extra_data` names no Store (DD-060). The verifier authenticates the context, handle and cleartext through the
+certificate and independently verifies the exact handle's public leaf against the supplied Store's current peaks.
+Destroying a context invalidates its certificates; rotation alone invalidates none.
 Pinned by `extract_kms_context_id_mirrors_evm_extractcontextid`,
-`mollusk_verify_public_decrypt_accepts_v4_extra_data_routed_through_another_store`,
+`mollusk_verify_public_decrypt_accepts_v2_kms_routing`,
 `mollusk_verify_public_decrypt_rejects_non_canonical_kms_context`, `mollusk_verify_public_decrypt_rejects_context_account_mismatch`,
 `mollusk_redeem_rejects_destroyed_kms_context` and `mollusk_redeem_accepts_live_rotated_out_kms_context`.
 

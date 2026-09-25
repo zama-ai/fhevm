@@ -85,6 +85,7 @@ are written as one narrative instead.
 | [DD-056](#dd-056-an-execution-describes-itself-the-listener-re-derives-handles-only-as-a-check)                                           | adopted                                  | An execution describes itself; the listener re-derives handles only as a check                                                 |
 | [DD-058](#dd-058-pausers-stop-one-area-at-a-time-only-the-admin-resumes)                                                                  | adopted                                  | Pausers stop one area at a time; only the admin resumes                                                                        |
 | [DD-059](#dd-059-the-listener-catches-up-from-an-archive-when-the-stream-cannot-replay)                                                   | adopted                                  | The listener catches up from an archive when the stream cannot replay                                                          |
+| [DD-060](#dd-060-a-public-decrypt-names-its-stores-beside-the-kms-routing)                                                                | adopted                                  | A public decrypt names its stores beside the KMS routing                                                                       |
 
 ## DD-002: Keep App Store And Host ACL Store Separate
 
@@ -591,8 +592,8 @@ Decision:
 **witness-pinned `kms_context`'s** signer set / threshold (not the current context), **rejects high-s
 (malleable) signatures** (`signature[32..64] > SECP256K1_HALF_ORDER`), and requires
 `extract_kms_context_id(extra_data, current) == request kms_context_id`. `extract_kms_context_id`
-mirrors the EVM gateway `_extractContextId`: empty / version-0 `extra_data` selects the current context,
-version 1 carries a big-endian context id in `extra_data[1..33]`.
+mirrors the EVM `KMSVerifier`: empty / version-0 `extra_data` selects the current context,
+versions 1 and 2 carry a big-endian context id in `extra_data[1..33]`.
 
 Why / what worked:
 
@@ -789,7 +790,7 @@ UserDecryptionRequestSolanaPayload)` with a `UserDecryptionRequestSolana` event.
 - The relayer builds the typed call and the js-sdk emits the typed identity and auth fields. The KMS
   connector routes Solana requests by their typed event and verifies the signed tail before using it.
 - `Decryption.sol` version bumped MINOR 6→7 (reinitializer 7→8, reinitializeV6→V7).
-- KMS-cert context: `extract_kms_context_id` (DD-021) handles `extra_data` versions 0 and 1 (the
+- KMS-cert context: `extract_kms_context_id` (DD-021) handles `extra_data` versions 0, 1 and 2 (the
   public-decrypt cert) — a _different_ extraData from either path above.
 
 A bytes32 identity plus a Solana chain id (DD-052) keeps one input ABI for EVM and non-EVM hosts. For user-decrypt,
@@ -1045,7 +1046,7 @@ The cert is verified against the `KmsContext` the certificate itself names in it
 that id → that context's signer set. The verifier reads the committed id, derives its canonical PDA,
 requires the supplied account to be exactly that PDA (with a matching stored id) and not destroyed,
 then checks the threshold signature against that context's signers. A v0 / empty `extra_data` cert
-commits no explicit id and so selects the current context; v1 / v3 `extra_data` carries the id.
+commits no explicit id and so selects the current context; v1 / v2 `extra_data` carries the id.
 
 This adopts EVM's rotation semantics. On EVM a request pinned to context N stays answerable by N's
 signers after a rotation to N+1, until an operator explicitly calls `destroyKmsContext(N)` — a
@@ -1713,7 +1714,7 @@ Consequences:
 
 Status: adopted
 
-Superseded in part by DD-049: Store-based `extraData` and the `EncryptedStore` layout.
+Superseded in part by DD-049: the `EncryptedStore` layout. DD-060 moves the public-decrypt Store out of `extraData`.
 
 Recorded as fhevm-internal RFC 035.
 
@@ -1741,7 +1742,7 @@ Decision:
    for the leaves the ones before it could not prove, with no retry inside an attempt) and verified
    against the peaks the connector read on chain.
    A request names only the Store and, for a delegated entry, the delegator as owner address; a
-   client-supplied proof is rejected. Public-decrypt `extraData` names the Store (DD-049).
+   client-supplied proof is rejected. A public decrypt names each handle's Store beside `extraData` (DD-060).
 3. **The leaf record lives in the host listener.** Leaves are recomputed from the confirmed
    instruction stream and stored in the same database transaction as the compute rows, so the two
    cannot disagree about which blocks were applied. The standalone `solana-proof-service`, the
@@ -1800,7 +1801,7 @@ empty selection returns none. Return bytes do not authorize use. Token transfer 
 result and the batcher performs its own contribution update; there is no transferred-amount
 register or token-owned accumulator API. Burn retains its result slot and PendingBurn lifecycle.
 
-Decryption uses Store-based v4 extraData and exact-handle MMR proofs. Current-slot publication
+Decryption names each handle's Store beside the KMS routing (DD-060) and uses exact-handle MMR proofs. Current-slot publication
 and fresh slotless permissions are supported. Adding new private/public permissions to a
 history-only handle is deferred to fhevm-internal#2007. Generic disclosure authenticates
 Store/handle/cleartext, not a token-kind label. Original token events establish provenance.
@@ -2263,6 +2264,42 @@ transactions only, so `getBlock` asks for version 0, and the RPC refuses a block
 transaction. Catch-up then retries that block until fhevm-internal#2080 moves the listener to crates
 that decode v1. A slot rewound for repair (DD-056) no longer has to be inside the replay window, only
 in the archive's history.
+
+## DD-060: A public decrypt names its stores beside the KMS routing
+
+Status: adopted
+
+Recorded in zama-ai/fhevm#4120. Supersedes the v4 `extraData` carrier of DD-049.
+
+A Solana public decrypt used to carry its Store inside `extraData` as version 4:
+`0x04 ‖ contextId ‖ encryptedStore`. `extraData` is the KMS routing field on EVM, and the KMS signs
+it, so the Store became part of a signed field whose version space EVM owns. A request could name
+only one Store, and every layer (relayer, Gateway, connector, host verifier, SDK) had to parse a
+Solana-only version.
+
+The Gateway now has a Solana overload, `publicDecryptionRequest(bytes32[] ctHandles,
+bytes extraData, bytes32[] encryptedStores)`. It takes one Store per handle, in handle order, and
+emits `PublicDecryptionRequest(decryptionId, ctHandles, extraData, encryptedStores)`. `extraData`
+holds only KMS routing (v0, v1 or v2) on both chains. The Gateway refuses a store count that differs
+from the handle count before it takes the fee. The relayer requires `encryptedStores` for Solana
+handles and refuses it for EVM handles; the stores are part of the request's content hash. The
+connector keeps them in `handle_encrypted_stores` and proves each handle against its own Store in
+one snapshot. The host verifier reads the context from v1 or v2 exactly as EVM `KMSVerifier`
+does. The SDK sends v1, `0x01 ‖ contextId`, because the host `KmsContext` has no epoch.
+
+Rejected alternatives:
+
+| Alternative | Why not |
+|---|---|
+| Keep v4 and allow several stores in it | The KMS would still sign Solana account addresses inside a field whose versions EVM defines. The Store is not a KMS routing input. |
+| Put the stores in an opaque blob, as `solanaRequest` does for user decryption | The user request needs one signed blob for its permit. Public decryption has no signature to bind, so named typed fields are easier to check at every layer. |
+
+Consequences:
+
+The KMS certificate no longer commits to the Store. It never bound it: the host verifier checks
+the public leaf against the Store it is given (INVARIANTS #22). The Gateway's Solana overload
+shares the decryption counter and the fee with the EVM entry. It emits one event, so the relayer
+looks for the Solana request event when the EVM one is absent from the receipt.
 
 ## Open product decisions
 
