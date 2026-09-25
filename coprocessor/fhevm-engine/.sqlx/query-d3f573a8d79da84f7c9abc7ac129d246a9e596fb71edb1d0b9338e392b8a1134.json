@@ -1,0 +1,26 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n        SELECT last_block_num, earliest_open_ct_commits_block\n            FROM gw_listener_last_block\n            WHERE dummy_id = true\n        ",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "last_block_num",
+        "type_info": "Int8"
+      },
+      {
+        "ordinal": 1,
+        "name": "earliest_open_ct_commits_block",
+        "type_info": "Int8"
+      }
+    ],
+    "parameters": {
+      "Left": []
+    },
+    "nullable": [
+      true,
+      true
+    ]
+  },
+  "hash": "d3f573a8d79da84f7c9abc7ac129d246a9e596fb71edb1d0b9338e392b8a1134"
+}

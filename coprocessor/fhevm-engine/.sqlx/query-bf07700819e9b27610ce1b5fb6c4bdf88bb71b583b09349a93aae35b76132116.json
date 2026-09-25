@@ -1,0 +1,18 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n            UPDATE drifted_handle\n                   SET status = 'resolved',\n                   last_quorum_task_id = $5,\n                   resolved_task_id = $5\n             WHERE consensus_epoch = $1\n               AND coprocessor_context_id = $2\n               AND host_chain_id = $3\n               AND block_hash = $4\n               AND status = 'unresolved'\n               AND detection_kind <> 'inferred'\n               AND NOT can_be_healed\n               AND healed_at IS NULL\n               AND last_quorum_task_id <= $5\n            ",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Text",
+        "Bytea",
+        "Int8",
+        "Bytea",
+        "Int8"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "bf07700819e9b27610ce1b5fb6c4bdf88bb71b583b09349a93aae35b76132116"
+}
