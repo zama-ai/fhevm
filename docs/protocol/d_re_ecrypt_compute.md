@@ -85,7 +85,7 @@ This guarantees:
 
 #### Client-side implementation
 
-User decryption is initiated on the client side using the [`@zama-ai/relayer-sdk`](https://github.com/zama-ai/relayer-sdk/) library. Here’s the general workflow:
+User decryption is initiated on the client side using the [`@fhevm/sdk`](https://github.com/zama-ai/fhevm/blob/main/sdk/js-sdk/docs/decryption.md) library. Here’s the general workflow:
 
 1. **Retrieve the ciphertext**:
    - The dApp calls a view function (e.g., `balanceOf`) on the smart contract to get the handle of the ciphertext to be decrypted.

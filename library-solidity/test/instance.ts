@@ -1,47 +1,23 @@
-import {
-  FhevmInstance,
-  clientKeyDecryptor,
-  createEIP712,
-  createInstance as createFhevmInstance,
-  generateKeypair,
-  getCiphertextCallParams,
-} from '@zama-fhe/relayer-sdk/node';
 import dotenv from 'dotenv';
-import type { ethers as EthersT } from 'ethers';
-import { readFileSync } from 'fs';
+import { type ethers as EthersT, hexlify, randomBytes } from 'ethers';
 import * as fs from 'fs';
-import { ethers, ethers as hethers, network } from 'hardhat';
-import { homedir } from 'os';
-import path from 'path';
+import { ethers, network } from 'hardhat';
 
 import { awaitCoprocessor, getClearText } from './coprocessorUtils';
-import { createEncryptedInputMocked, userDecryptRequestMocked } from './fhevmjsMocked';
+import { type MockedDecryptionPermit, createEncryptedInputMocked, userDecryptRequestMocked } from './fhevmjsMocked';
 import type { Signers } from './signers';
-import { FhevmInstances } from './types';
+import { EncryptedInput, FhevmInstance, FhevmInstances, Keypair } from './types';
 
-const FHE_CLIENT_KEY_PATH = process.env.FHE_CLIENT_KEY_PATH;
-
-let clientKey: Uint8Array | undefined;
-
-const abiKmsVerifier = ['function getKmsSigners() view returns (address[])'];
 const abiAcl = [
   'function delegateForUserDecryption(address,address,uint64)',
   'function revokeDelegationForUserDecryption(address,address)',
 ];
 
 const parsedEnv = dotenv.parse(fs.readFileSync('./fhevmTemp/addresses/.env.host'));
-const kmsAdd = parsedEnv.KMS_VERIFIER_CONTRACT_ADDRESS;
 const aclAdd = parsedEnv.ACL_CONTRACT_ADDRESS;
-const inputVerificationAdd = parsedEnv.INPUT_VERIFIER_CONTRACT_ADDRESS;
-const gatewayChainID = +process.env.CHAIN_ID_GATEWAY!;
-const hostChainId = Number(network.config.chainId);
 const verifyingContractAddressDecryption = process.env.DECRYPTION_ADDRESS!;
-
-const getKMSSigners = async (): Promise<string[]> => {
-  const kmsContract = new ethers.Contract(kmsAdd, abiKmsVerifier, ethers.provider);
-  const signers: string[] = await kmsContract.getKmsSigners();
-  return signers;
-};
+// Validity of the decryption permits signed by the tests.
+const permitDurationDays = 10;
 
 export const delegateUserDecryption = async (
   delegator: EthersT.Signer,
@@ -62,212 +38,185 @@ export const revokeUserDecryptionDelegation = async (
   return aclContract.revokeDelegationForUserDecryption(delegate, contractAddress);
 };
 
-const createInstanceMocked = async (): FhevmInstance => {
-  const kmsSigners = await getKMSSigners();
+// EIP-712 types of the (non-delegated) user decryption request signed for the KMS.
+const userDecryptRequestTypes = {
+  UserDecryptRequestVerification: [
+    { name: 'publicKey', type: 'bytes' },
+    { name: 'contractAddresses', type: 'address[]' },
+    { name: 'startTimestamp', type: 'uint256' },
+    { name: 'durationDays', type: 'uint256' },
+    { name: 'extraData', type: 'bytes' },
+  ],
+};
 
-  const instance: FhevmInstance = {
-    userDecrypt: userDecryptRequestMocked(
-      kmsSigners,
-      gatewayChainID,
-      hostChainId,
-      verifyingContractAddressDecryption,
-      aclAdd,
-      'http://localhost:3000',
-      ethers.provider,
-    ),
-    createEncryptedInput: createEncryptedInputMocked,
-    getPublicKey: () => '0xFFAA44433',
-    generateKeypair: generateKeypair,
-    createEIP712: createEIP712(verifyingContractAddressDecryption, network.config.chainId!),
+const signDecryptionPermit = async (parameters: {
+  contractAddress: string;
+  signer: EthersT.Signer;
+  keypair: Keypair;
+}): Promise<MockedDecryptionPermit> => {
+  // For user decryption requests, the domain chain is the host chain.
+  const domain = {
+    name: 'Decryption',
+    version: '1',
+    chainId: network.config.chainId!,
+    verifyingContract: verifyingContractAddressDecryption,
   };
-  return instance;
+  const message = {
+    publicKey: parameters.keypair.publicKey,
+    contractAddresses: [parameters.contractAddress],
+    startTimestamp: Math.floor(Date.now() / 1000),
+    durationDays: permitDurationDays,
+    extraData: '0x00',
+  };
+  const signature = await parameters.signer.signTypedData(domain, userDecryptRequestTypes, message);
+  return {
+    eip712: { domain, types: userDecryptRequestTypes, primaryType: 'UserDecryptRequestVerification', message },
+    signature,
+    signerAddress: await parameters.signer.getAddress(),
+  };
+};
+
+// The mocked KMS never decrypts with the transport key, so random bytes are enough.
+const generateKeypair = async (): Promise<Keypair> => ({
+  publicKey: hexlify(randomBytes(32)),
+  privateKey: hexlify(randomBytes(32)),
+});
+
+const createInstanceMocked = async (): Promise<FhevmInstance> => {
+  return {
+    createEncryptedInput: createEncryptedInputMocked as (
+      contractAddress: string,
+      userAddress: string,
+    ) => EncryptedInput,
+    generateKeypair,
+    userDecryptSingleHandle: async ({ handle, contractAddress, signer, keypair }) => {
+      const permit = await signDecryptionPermit({ contractAddress, signer, keypair });
+      return userDecryptRequestMocked(handle, contractAddress, permit);
+    },
+    delegatedUserDecryptSingleHandle: async () => {
+      throw new Error('Delegated user decryption is not supported on the hardhat mock network');
+    },
+  };
 };
 
 export const createInstances = async (accounts: Signers): Promise<FhevmInstances> => {
-  // Create instance
-  const instances: FhevmInstances = {} as FhevmInstances;
-  if (network.name === 'hardhat') {
-    await Promise.all(
-      Object.keys(accounts).map(async (k) => {
-        instances[k as keyof FhevmInstances] = await createInstanceMocked();
-      }),
-    );
-  } else {
-    await Promise.all(
-      Object.keys(accounts).map(async (k) => {
-        instances[k as keyof FhevmInstances] = await createInstance();
-      }),
-    );
+  // Encryption and decryption are mocked: the tests only run on the in-process hardhat network.
+  if (network.name !== 'hardhat') {
+    throw new Error(`Tests are only supported on the hardhat network (current: ${network.name})`);
   }
+  const instances: FhevmInstances = {} as FhevmInstances;
+  await Promise.all(
+    Object.keys(accounts).map(async (k) => {
+      instances[k as keyof FhevmInstances] = await createInstanceMocked();
+    }),
+  );
   return instances;
 };
 
-export const createInstance = async () => {
-  const relayerUrl = 'http://localhost:3000';
-  const instance = await createFhevmInstance({
-    verifyingContractAddressDecryption,
-    verifyingContractAddressInputVerification: ethers.ZeroAddress,
-    kmsContractAddress: kmsAdd,
-    aclContractAddress: aclAdd,
-    inputVerifierContractAddress: inputVerificationAdd,
-    network: (network.config as any).url,
-    relayerUrl: relayerUrl,
-    gatewayChainId: gatewayChainID || 54321,
-  });
-  return instance;
-};
-
-const getCiphertext = async (handle: string, ethers: typeof hethers): Promise<string> => {
-  return ethers.provider.call(getCiphertextCallParams(handle));
-};
-
-const getDecryptor = () => {
-  if (clientKey == null) {
-    if (FHE_CLIENT_KEY_PATH) {
-      clientKey = readFileSync(FHE_CLIENT_KEY_PATH);
-    } else {
-      const home = homedir();
-      const clientKeyPath = path.join(home, 'network-fhe-keys/cks');
-      clientKey = readFileSync(clientKeyPath);
-    }
+// The debug decryption helpers below read the clear values computed by the mocked coprocessor, so
+// they are only available on the hardhat network.
+const getMockedClearText = async (handle: string): Promise<string> => {
+  if (network.name !== 'hardhat') {
+    throw new Error(`Debug decryption is only supported on the hardhat network (current: ${network.name})`);
   }
-  return clientKeyDecryptor(clientKey);
+  await awaitCoprocessor();
+  return getClearText(handle);
 };
 
 /**
  * @debug
  * This function is intended for debugging purposes only.
- * It cannot be used in production code, since it requires the FHE private key for decryption.
+ * It reads the clear value from the mocked coprocessor, so it only works on the hardhat network.
  *
  * @param {bigint} handle handle to decrypt
  * @returns {bool}
  */
 export const decryptBool = async (handle: string): Promise<boolean> => {
-  if (network.name === 'hardhat') {
-    await awaitCoprocessor();
-    return (await getClearText(handle)) === '1';
-  } else {
-    return getDecryptor().decryptBool(await getCiphertext(handle, ethers));
-  }
+  return (await getMockedClearText(handle)) === '1';
 };
 
 /**
  * @debug
  * This function is intended for debugging purposes only.
- * It cannot be used in production code, since it requires the FHE private key for decryption.
+ * It reads the clear value from the mocked coprocessor, so it only works on the hardhat network.
  *
  * @param {bigint} handle handle to decrypt
  * @returns {bigint}
  */
 export const decrypt8 = async (handle: string): Promise<bigint> => {
-  if (network.name === 'hardhat') {
-    await awaitCoprocessor();
-    return BigInt(await getClearText(handle));
-  } else {
-    return getDecryptor().decrypt8(await getCiphertext(handle, ethers));
-  }
+  return BigInt(await getMockedClearText(handle));
 };
 
 /**
  * @debug
  * This function is intended for debugging purposes only.
- * It cannot be used in production code, since it requires the FHE private key for decryption.
+ * It reads the clear value from the mocked coprocessor, so it only works on the hardhat network.
  *
  * @param {bigint} handle handle to decrypt
  * @returns {bigint}
  */
 export const decrypt16 = async (handle: string): Promise<bigint> => {
-  if (network.name === 'hardhat') {
-    await awaitCoprocessor();
-    return BigInt(await getClearText(handle));
-  } else {
-    return getDecryptor().decrypt16(await getCiphertext(handle, ethers));
-  }
+  return BigInt(await getMockedClearText(handle));
 };
 
 /**
  * @debug
  * This function is intended for debugging purposes only.
- * It cannot be used in production code, since it requires the FHE private key for decryption.
+ * It reads the clear value from the mocked coprocessor, so it only works on the hardhat network.
  *
  * @param {bigint} handle handle to decrypt
  * @returns {bigint}
  */
 export const decrypt32 = async (handle: string): Promise<bigint> => {
-  if (network.name === 'hardhat') {
-    await awaitCoprocessor();
-    return BigInt(await getClearText(handle));
-  } else {
-    return getDecryptor().decrypt32(await getCiphertext(handle, ethers));
-  }
+  return BigInt(await getMockedClearText(handle));
 };
 
 /**
  * @debug
  * This function is intended for debugging purposes only.
- * It cannot be used in production code, since it requires the FHE private key for decryption.
+ * It reads the clear value from the mocked coprocessor, so it only works on the hardhat network.
  *
  * @param {bigint} handle handle to decrypt
  * @returns {bigint}
  */
 export const decrypt64 = async (handle: string): Promise<bigint> => {
-  if (network.name === 'hardhat') {
-    await awaitCoprocessor();
-    return BigInt(await getClearText(handle));
-  } else {
-    return getDecryptor().decrypt64(await getCiphertext(handle, ethers));
-  }
+  return BigInt(await getMockedClearText(handle));
 };
 
 /**
  * @debug
  * This function is intended for debugging purposes only.
- * It cannot be used in production code, since it requires the FHE private key for decryption.
+ * It reads the clear value from the mocked coprocessor, so it only works on the hardhat network.
  *
  * @param {bigint} handle handle to decrypt
  * @returns {bigint}
  */
 export const decrypt128 = async (handle: string): Promise<bigint> => {
-  if (network.name === 'hardhat') {
-    await awaitCoprocessor();
-    return BigInt(await getClearText(handle));
-  } else {
-    return getDecryptor().decrypt128(await getCiphertext(handle, ethers));
-  }
+  return BigInt(await getMockedClearText(handle));
 };
 
 /**
  * @debug
  * This function is intended for debugging purposes only.
- * It cannot be used in production code, since it requires the FHE private key for decryption.
+ * It reads the clear value from the mocked coprocessor, so it only works on the hardhat network.
  *
  * @param {bigint} handle handle to decrypt
  * @returns {bigint}
  */
 export const decrypt256 = async (handle: string): Promise<bigint> => {
-  if (network.name === 'hardhat') {
-    await awaitCoprocessor();
-    return BigInt(await getClearText(handle));
-  } else {
-    return getDecryptor().decrypt256(await getCiphertext(handle, ethers));
-  }
+  return BigInt(await getMockedClearText(handle));
 };
 
 /**
  * @debug
  * This function is intended for debugging purposes only.
- * It cannot be used in production code, since it requires the FHE private key for decryption.
+ * It reads the clear value from the mocked coprocessor, so it only works on the hardhat network.
  *
  * @param {bigint} handle handle to decrypt
  * @returns {string}
  */
 export const decryptAddress = async (handle: string): Promise<string> => {
-  if (network.name === 'hardhat') {
-    await awaitCoprocessor();
-    const bigintAdd = BigInt(await getClearText(handle));
-    const handleStr = '0x' + bigintAdd.toString(16).padStart(40, '0');
-    return handleStr;
-  } else {
-    return getDecryptor().decryptAddress(await getCiphertext(handle, ethers));
-  }
+  const bigintAdd = BigInt(await getMockedClearText(handle));
+  const handleStr = '0x' + bigintAdd.toString(16).padStart(40, '0');
+  return handleStr;
 };

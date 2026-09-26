@@ -14,7 +14,6 @@ import {
   decryptBool,
 } from '../instance';
 import { getSigners, initSigners } from '../signers';
-import { bigIntToBytes256 } from '../utils';
 
 async function deployFHEVMManualTestFixture(): Promise<FHEVMManualTestSuite> {
   const signers = await getSigners();

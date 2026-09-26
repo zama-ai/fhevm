@@ -51,9 +51,6 @@ import {
 // listed in `allowedContracts`) reject a wallet decrypting a handle held by
 // itself. That shape stays covered by the raw-envelope protocol suite via
 // permissive `allowedContracts: []`.
-//
-// The suite skips itself when the legacy `@zama-fhe/relayer-sdk` adapter is
-// active (RELAYER_SDK_VERSION set): the surface exercised here is @fhevm/sdk's.
 
 const KNOWN_VALUE = 123456789n;
 const DURATION_SECONDS = 7 * 24 * 3600;
@@ -105,8 +102,7 @@ describe('ERC-1271 user decryption via the SDK client', function () {
     instances = await createInstances(signers);
 
     if (!(instances.alice instanceof FhevmSdk)) {
-      // Legacy @zama-fhe/relayer-sdk adapter active — the gap pinned here is @fhevm/sdk's.
-      this.skip();
+      throw new Error('Expected an FhevmSdk instance.');
     }
     sdk = instances.alice;
     client = sdk.rawClient;

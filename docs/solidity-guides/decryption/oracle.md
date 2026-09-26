@@ -21,9 +21,9 @@ This step is executed by the smart contract using the FHE Solidity library to si
 
 #### Step 2: Off-chain Decryption - Decryption and Proof Generation
 
-This step can be executed by any off-chain client using the Zama SDK.
+This step can be executed by any off-chain client using the [`@fhevm/sdk`](https://github.com/zama-ai/fhevm/blob/main/sdk/js-sdk/docs/decryption.md#public-decryption) library.
 
-- **Off-chain SDK Function:** `publicDecrypt` (see Zama SDK for exact naming)
+- **Off-chain SDK Function:** `decryptPublicValuesWithSignatures`
 - **Action:** The off-chain client submits the ciphertext handle to the Zama Relayer's Key Management System (KMS).
 - **Result:** The Zama Relayer returns three items:
   1. The cleartext (the decrypted value).
@@ -47,7 +47,7 @@ that results in 2 encrypted final values (ciphertexts) `_encryptedFoo` and `_enc
 
 Then, in order to finalize the workflow, the `FooBarContract` needs the decrypted clear values of both `_encryptedFoo` and `_encryptedBar` to decide whether to trigger some finalization logic (e.g. reveal a vote, transfer funds). The `FooBarContract`'s function `_runFooBarClearBusinessLogicFinalization` simulates this step. Since the FHEVM prevents direct on-chain decryption, the process must shift to an off-chain decryption phase, which presents a challenge: **_How can the `FooBarContract` trust that the cleartext submitted back to the chain is the authentic, unmodified result of the decryption of both `_encryptedFoo` and `_encryptedBar`?_**
 
-This is where the off-chain `publicDecrypt` function and the on-chain `checkSignatures` function come into play.
+This is where the off-chain `decryptPublicValuesWithSignatures` function and the on-chain `checkSignatures` function come into play.
 
 ### The Solidity Contract
 
@@ -162,7 +162,7 @@ const { efoo, ebar } = parseClearFooBarRequestedEvent(contract, txReceipt);
 
 ## Run Off-Chain Public Decryption
 
-Now that the ciphertexts are marked as publicly decryptable, we call the off-chain function `publicDecrypt` via the Zama SDK. This fetches the clear values along with the Zama KMS decryption proof required for the final on-chain verification.
+Now that the ciphertexts are marked as publicly decryptable, we call the off-chain function `decryptPublicValuesWithSignatures` of `@fhevm/sdk`. This fetches the clear values along with the Zama KMS decryption proof required for the final on-chain verification.
 
 {% hint style="warning" %}
 
@@ -171,12 +171,15 @@ Now that the ciphertexts are marked as publicly decryptable, we call the off-cha
 {% endhint %}
 
 ```typescript
-const instance: FhevmInstance = await createInstance();
-const results: PublicDecryptResults = await instance.publicDecrypt([efoo, ebar]);
-const clearFoo = results.values[efoo];
-const clearBar = results.values[ebar];
+// client: created with `createFhevmClient({ chain, provider })` from `@fhevm/sdk/ethers` or `@fhevm/sdk/viem`
+const { clearValues, checkSignaturesArgs } = await client.decryptPublicValuesWithSignatures({
+  encryptedValues: [efoo, ebar],
+});
+// clearValues[i] is the decrypted value of the i-th handle, in input order
+const clearFoo = clearValues[0].value as boolean;
+const clearBar = clearValues[1].value as number;
 // Warning! The decryption proof is computed for [efoo, ebar], NOT [ebar, efoo]!
-const decryptionProof: `0x${string}` = results.decryptionProof;
+const decryptionProof = checkSignaturesArgs.decryptionProof;
 ```
 
 {% endstep %}
@@ -187,7 +190,7 @@ const decryptionProof: `0x${string}` = results.decryptionProof;
 On the client side, we have computed all the clear values and, crucially, obtained the associated decryption proof. We can now securely move on to the final step: sending this data on-chain to trigger verification and final business logic simulated in the `_runFooBarClearBusinessLogicFinalization` contract function. If verification succeeds, the contract securely executes the `_runFooBarClearBusinessLogicFinalization` (e.g., transfers funds, publishes the vote result, etc.), completing the full confidential workflow.
 
 ```typescript
-const tx = await contract.finalizeClearFooBar(clearFoo, clearBar, results.decryptionProof);
+const tx = await contract.finalizeClearFooBar(clearFoo, clearBar, decryptionProof);
 const txReceipt = await tx.wait();
 ```
 
@@ -213,38 +216,42 @@ function makePubliclyDecryptable(euint256 value) internal;
 
 This function has no return value
 
-### Off-chain `publicDecrypt` function
+### Off-chain `decryptPublicValuesWithSignatures` function
 
-The off-chain `publicDecrypt` function (exposed by the Zama SDK) is defined as follow:
+The off-chain `decryptPublicValuesWithSignatures` function (exposed by the FHEVM client of [`@fhevm/sdk`](https://github.com/zama-ai/fhevm/blob/main/sdk/js-sdk/docs/api-reference.md)) is defined as follow:
 
 ```typescript
-export type PublicDecryptResults = {
-  clearValues: Record<`0x${string}`, bigint | boolean | `0x${string}`>;
-  abiEncodedClearValues: `0x${string}`;
-  decryptionProof: `0x${string}`;
-};
-export type FhevmInstance = {
-  //...
-  publicDecrypt: (handles: (string | Uint8Array)[]) => Promise<PublicDecryptResults>;
-  //...
-};
+decryptPublicValuesWithSignatures(parameters: {
+  readonly encryptedValues: readonly EncryptedValueLike[];
+  readonly options?: RelayerPublicDecryptOptions | undefined;
+}): Promise<{
+  readonly clearValues: readonly TypedValue[];
+  readonly checkSignaturesArgs: {
+    readonly handlesList: readonly `0x${string}`[];
+    readonly abiEncodedCleartexts: `0x${string}`;
+    readonly decryptionProof: `0x${string}`;
+  };
+}>;
 ```
+
+To read public values without the proof (for display only), use `decryptPublicValues` instead.
 
 #### Function arguments
 
-| Argument  | Description                                                                | Constraints                                                                                          |
-| --------- | -------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------- |
-| `handles` | The list of ciphertext handles (represented as bytes32 values) to decrypt. | These handles must correspond to ciphertexts that have been marked as publicly decryptable on-chain. |
+| Argument          | Description                                                                | Constraints                                                                                          |
+| ----------------- | -------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------- |
+| `encryptedValues` | The list of ciphertext handles (represented as bytes32 values) to decrypt. | These handles must correspond to ciphertexts that have been marked as publicly decryptable on-chain. |
 
-#### Function return type `PublicDecryptResults`
+#### Function return type
 
-The function returns an object containing the three essential components required for the final on-chain verification in Step 3 of the public decryption workflow:
+The function returns the decrypted values together with the three arguments required for the final on-chain verification in Step 3 of the public decryption workflow:
 
-| Property                | Type                                                        | Description                                                                                                                            | On-Chain usage                                                                  |
-| ----------------------- | ----------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------- |
-| `clearValues`           | `Record<`0x${string}`, bigint \| boolean \| `0x${string}`>` | An object mapping each input ciphertext handle to its raw decrypted cleartext value.                                                   | N/A                                                                             |
-| `abiEncodedClearValues` | `0x${string}`                                               | The ABI-encoded byte string of all decrypted cleartext values, preserving the exact order of the input handles list.                   | `abiEncodedCleartexts` argument when calling the on-chain `FHE.checkSignatures` |
-| `decryptionProof`       | `0x${string}`                                               | A byte array containing the KMS cryptographic signatures and necessary metadata that proves the decryption was legitimately performed. | `decryptionProof` argument when calling the on-chain `FHE.checkSignatures`      |
+| Property                                   | Type                  | Description                                                                                                                            | On-Chain usage                                                                  |
+| ------------------------------------------ | --------------------- | -------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------- |
+| `clearValues`                              | `TypedValue[]`        | The decrypted values, in the same order as the input handles. Each entry has a `value` and its Solidity `type` (e.g. `"uint8"`).       | N/A                                                                             |
+| `checkSignaturesArgs.handlesList`          | `` `0x${string}`[] `` | The input handles, normalized to bytes32 hex strings.                                                                                  | `handlesList` argument when calling the on-chain `FHE.checkSignatures`          |
+| `checkSignaturesArgs.abiEncodedCleartexts` | `` `0x${string}` ``   | The ABI-encoded byte string of all decrypted cleartext values, preserving the exact order of the input handles list.                   | `abiEncodedCleartexts` argument when calling the on-chain `FHE.checkSignatures` |
+| `checkSignaturesArgs.decryptionProof`      | `` `0x${string}` ``   | A byte array containing the KMS cryptographic signatures and necessary metadata that proves the decryption was legitimately performed. | `decryptionProof` argument when calling the on-chain `FHE.checkSignatures`      |
 
 ### On-chain `FHE.checkSignatures` function
 
@@ -258,7 +265,7 @@ function checkSignatures(bytes32[] memory handlesList, bytes memory abiEncodedCl
 | ---------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------- |
 | `handlesList`          | The list of ciphertext handles (represented as bytes32 values) whose decryption is being verified.                                                                              | Must contain the exact same number of elements as the cleartext values in abiEncodedCleartexts.                                                |
 | `abiEncodedCleartexts` | The ABI encoding of the decrypted cleartext values associated with the handles. (Use abi.encode to prepare this argument.)                                                      | Order is critical: The i-th value in this encoding must be the cleartext that corresponds to the i-th handle in handlesList. Types must match. |
-| `decryptionProof`      | A byte array containing the KMS cryptographic signatures and necessary metadata that prove the off-chain decryption was performed by the authorized Zama Key Management System. | This proof is generated by the Zama KMS and is obtained via the off-chain `publicDecrypt` function.                                            |
+| `decryptionProof`      | A byte array containing the KMS cryptographic signatures and necessary metadata that prove the off-chain decryption was performed by the authorized Zama Key Management System. | This proof is generated by the Zama KMS and is obtained via the off-chain `decryptPublicValuesWithSignatures` function.                        |
 
 #### Function return
 

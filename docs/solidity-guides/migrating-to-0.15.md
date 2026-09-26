@@ -1,6 +1,6 @@
 # Migrating to v0.15
 
-This page lists what changes for Solidity developers between protocol v0.14 and v0.15, and what to check in existing contracts before the upgrade reaches the network you deploy on. It only covers the `@fhevm/solidity` library and the host contracts it talks to; SDK changes are documented in the [SDK guides](https://docs.zama.ai/protocol/relayer-sdk-guides).
+This page lists what changes for Solidity developers between protocol v0.14 and v0.15, and what to check in existing contracts before the upgrade reaches the network you deploy on. It only covers the `@fhevm/solidity` library and the host contracts it talks to; SDK changes are documented in the [`@fhevm/sdk` documentation](https://github.com/zama-ai/fhevm/blob/main/sdk/js-sdk/docs/README.md).
 
 ## Behaviour changes
 

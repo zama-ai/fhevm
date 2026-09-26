@@ -157,8 +157,7 @@ task('task:deployFHEVMExecutor').setAction(async function (_taskArguments: TaskA
   const privateKey = getRequiredEnvVar('DEPLOYER_PRIVATE_KEY');
   const deployer = new ethers.Wallet(privateKey).connect(ethers.provider);
   const currentImplementation = await ethers.getContractFactory('EmptyUUPSProxy', deployer);
-  let newImplem;
-  newImplem = await ethers.getContractFactory('fhevmTemp/contracts/FHEVMExecutor.sol:FHEVMExecutor', deployer);
+  const newImplem = await ethers.getContractFactory('fhevmTemp/contracts/FHEVMExecutor.sol:FHEVMExecutor', deployer);
   const parsedEnv = dotenv.parse(fs.readFileSync('fhevmTemp/addresses/.env.host'));
   const proxyAddress = parsedEnv.FHEVM_EXECUTOR_CONTRACT_ADDRESS;
   const proxy = await upgrades.forceImport(proxyAddress, currentImplementation);
@@ -302,7 +301,7 @@ task('task:deployInputVerifier')
     const verifyingContractSource = getRequiredEnvVar('INPUT_VERIFICATION_ADDRESS');
     const chainIDSource = +getRequiredEnvVar('CHAIN_ID_GATEWAY');
 
-    let initialSigners: string[] = [];
+    const initialSigners: string[] = [];
     const numSigners = getRequiredCountEnvVar('NUM_COPROCESSORS');
     for (let idx = 0; idx < numSigners; idx++) {
       if (!taskArguments.useAddress) {
@@ -369,7 +368,7 @@ task('task:deployPauserSet').setAction(async function (_, hre) {
 
 task('task:setACLAddress')
   .addParam('address', 'The address of the contract')
-  .setAction(async function (taskArguments: TaskArguments, { ethers }) {
+  .setAction(async function (taskArguments: TaskArguments) {
     const envFilePath = path.join(__dirname, '../fhevmTemp/addresses/.env.host');
     const content = `ACL_CONTRACT_ADDRESS=${taskArguments.address}\n`;
     try {
@@ -402,7 +401,7 @@ address constant aclAdd = ${taskArguments.address};\n`;
 
 task('task:setFHEVMExecutorAddress')
   .addParam('address', 'The address of the contract')
-  .setAction(async function (taskArguments: TaskArguments, { ethers }) {
+  .setAction(async function (taskArguments: TaskArguments) {
     const envFilePath = path.join(__dirname, '../fhevmTemp/addresses/.env.host');
     const content = `FHEVM_EXECUTOR_CONTRACT_ADDRESS=${taskArguments.address}\n`;
     try {
@@ -432,7 +431,7 @@ address constant fhevmExecutorAdd = ${taskArguments.address};\n`;
 
 task('task:setKMSVerifierAddress')
   .addParam('address', 'The address of the contract')
-  .setAction(async function (taskArguments: TaskArguments, { ethers }) {
+  .setAction(async function (taskArguments: TaskArguments) {
     const envFilePath = path.join(__dirname, '../fhevmTemp/addresses/.env.host');
     const content = `KMS_VERIFIER_CONTRACT_ADDRESS=${taskArguments.address}\n`;
     try {
@@ -462,7 +461,7 @@ address constant kmsVerifierAdd = ${taskArguments.address};\n`;
 
 task('task:setInputVerifierAddress')
   .addParam('address', 'The address of the contract')
-  .setAction(async function (taskArguments: TaskArguments, { ethers }) {
+  .setAction(async function (taskArguments: TaskArguments) {
     // this script also computes the coprocessor address from its private key
     const envFilePath = path.join(__dirname, '../fhevmTemp/addresses/.env.host');
     const content = `INPUT_VERIFIER_CONTRACT_ADDRESS=${taskArguments.address}\n`;
@@ -493,7 +492,7 @@ address constant inputVerifierAdd = ${taskArguments.address};\n`;
 
 task('task:setHCULimitAddress')
   .addParam('address', 'The address of the contract')
-  .setAction(async function (taskArguments: TaskArguments, { ethers }) {
+  .setAction(async function (taskArguments: TaskArguments) {
     const envFilePath = path.join(__dirname, '../fhevmTemp/addresses/.env.host');
     const content = `HCU_LIMIT_CONTRACT_ADDRESS=${taskArguments.address}\n`;
     try {
@@ -523,7 +522,7 @@ address constant hcuLimitAdd = ${taskArguments.address};\n`;
 
 task('task:setPauserSetAddress')
   .addParam('address', 'The address of the contract')
-  .setAction(async function (taskArguments: TaskArguments, { ethers }) {
+  .setAction(async function (taskArguments: TaskArguments) {
     const envFilePath = path.join(__dirname, '../fhevmTemp/addresses/.env.host');
     const content = `PAUSER_SET_CONTRACT_ADDRESS=${taskArguments.address}\n`;
     try {
@@ -553,7 +552,7 @@ address constant pauserSetAdd = ${taskArguments.address};\n`;
 
 task('task:setProtocolConfigAddress')
   .addParam('address', 'The address of the contract')
-  .setAction(async function (taskArguments: TaskArguments, { ethers }) {
+  .setAction(async function (taskArguments: TaskArguments) {
     const envFilePath = path.join(__dirname, '../fhevmTemp/addresses/.env.host');
     const content = `PROTOCOL_CONFIG_CONTRACT_ADDRESS=${taskArguments.address}\n`;
     try {
@@ -583,7 +582,7 @@ address constant protocolConfigAdd = ${taskArguments.address};\n`;
 
 task('task:setBridgeAddress')
   .addParam('address', 'The address of the contract')
-  .setAction(async function (taskArguments: TaskArguments, { ethers }) {
+  .setAction(async function (taskArguments: TaskArguments) {
     const envFilePath = path.join(__dirname, '../fhevmTemp/addresses/.env.host');
     const content = `CONFIDENTIAL_BRIDGE_CONTRACT_ADDRESS=${taskArguments.address}\n`;
     try {
@@ -613,7 +612,7 @@ address constant confidentialBridgeAdd = ${taskArguments.address};\n`;
 
 task('task:setKMSGenerationAddress')
   .addParam('address', 'The address of the contract')
-  .setAction(async function (taskArguments: TaskArguments, { ethers }) {
+  .setAction(async function (taskArguments: TaskArguments) {
     const envFilePath = path.join(__dirname, '../fhevmTemp/addresses/.env.host');
     const content = `KMS_GENERATION_CONTRACT_ADDRESS=${taskArguments.address}\n`;
     try {
