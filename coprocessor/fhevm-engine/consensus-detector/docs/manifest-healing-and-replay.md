@@ -147,6 +147,16 @@ epochs in `consensus_epoch_history` install into `public`, where cutover merged
 their ciphertexts. A cutover therefore does not strand the previous epoch's
 findings. Failed epochs have no schema and are not healed. Row locks and the
 `healed_at IS NULL` install guard coordinate the healers of both stacks.
+The handle is the unit of repair. A reorg can leave several findings for one
+handle in different blocks, and a single install heals them all. Only active
+siblings count: those with a healable reason that are unhealed and not
+abandoned. A sibling without a target adopts the single target of the other
+active siblings, and a target pinned from the live attestation quorum is
+written on every sibling still without one. An abandoned or unhealable
+sibling, such as `ct128_mismatch`, no longer blocks its handle. Only two
+active siblings pinned to different digests do: a pinned target is never
+rewritten, so the handle stays unhealed and frozen. Each pass counts these
+handles in `coprocessor_ct64_healing_conflicting_targets` and logs one of them.
 `missing_here`, `error_here`, and `uncomputed_here` rows have no wrong local ct64
 for consumers to have read and are due without containment. Marking a row
 contained wakes the worker. A matching GET writes `ciphertexts` and `healed_at`

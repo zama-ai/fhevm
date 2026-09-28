@@ -1,6 +1,6 @@
 use std::sync::LazyLock;
 
-use prometheus::{register_int_counter_vec, IntCounterVec};
+use prometheus::{register_int_counter_vec, register_int_gauge_vec, IntCounterVec, IntGaugeVec};
 
 pub(super) static BAD_TARGET_DIGEST: LazyLock<IntCounterVec> = LazyLock::new(|| {
     register_int_counter_vec!(
@@ -24,6 +24,15 @@ pub(super) static HEALED_UNCONTAINED: LazyLock<IntCounterVec> = LazyLock::new(||
     register_int_counter_vec!(
         "coprocessor_ct64_healing_uncontained_total",
         "ct64 drift healed after the containment timeout without being contained; descendants rely on verification",
+        &["consensus_epoch"]
+    )
+    .unwrap()
+});
+
+pub(super) static CONFLICTING_TARGETS: LazyLock<IntGaugeVec> = LazyLock::new(|| {
+    register_int_gauge_vec!(
+        "coprocessor_ct64_healing_conflicting_targets",
+        "Handles whose unhealed findings are pinned to different ct64 targets; they are not healed and stay frozen until an operator resolves them",
         &["consensus_epoch"]
     )
     .unwrap()

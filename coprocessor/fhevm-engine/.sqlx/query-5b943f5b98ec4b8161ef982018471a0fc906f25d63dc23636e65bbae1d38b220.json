@@ -1,0 +1,20 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n        UPDATE drifted_handle\n           SET quorum_ct64_digest = COALESCE(quorum_ct64_digest, $1),\n               target_evidence = COALESCE(target_evidence, $2::text::jsonb),\n               peer_sources = CASE\n                 WHEN peer_sources = '[]'::jsonb THEN $3::text::jsonb\n                 ELSE peer_sources\n               END\n         WHERE consensus_epoch = $4\n           AND coprocessor_context_id = $5\n           AND host_chain_id = $6\n           AND handle = $7\n           AND healed_at IS NULL\n           AND reason IN ('ct64_mismatch', 'missing_here', 'error_here', 'uncomputed_here')\n           AND (quorum_ct64_digest IS NULL OR quorum_ct64_digest = $1)\n        ",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Bytea",
+        "Text",
+        "Text",
+        "Text",
+        "Bytea",
+        "Int8",
+        "Bytea"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "5b943f5b98ec4b8161ef982018471a0fc906f25d63dc23636e65bbae1d38b220"
+}
