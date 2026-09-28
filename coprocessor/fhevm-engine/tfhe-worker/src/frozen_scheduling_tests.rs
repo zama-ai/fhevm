@@ -63,6 +63,50 @@ fn filter_work_keeps_healthy_siblings_and_lists_empty_transactions() {
     );
 }
 
+fn binary(
+    tx: u8,
+    out: u8,
+    lhs: u8,
+    rhs: u8,
+    op: SupportedFheOperations,
+    is_scalar: bool,
+) -> WorkItem {
+    WorkItem {
+        dependencies: vec![handle(lhs), handle(rhs)],
+        fhe_operation: op as i16,
+        is_scalar,
+        ..item(tx, out, lhs, 1)
+    }
+}
+
+#[test]
+fn filter_work_ignores_scalar_operands_equal_to_drifted_handles() {
+    let drifted = HashSet::from([handle(1)]);
+    let scalar_rhs = binary(10, 2, 7, 1, SupportedFheOperations::FheAdd, true);
+    let encrypted_rhs = binary(11, 3, 7, 1, SupportedFheOperations::FheAdd, false);
+    let trivial = WorkItem {
+        fhe_operation: SupportedFheOperations::FheTrivialEncrypt as i16,
+        ..item(12, 4, 1, 1)
+    };
+    let consumer = item(13, 5, 2, 1);
+    let filtered = frozen_computations::filter_work(
+        vec![scalar_rhs, encrypted_rhs, trivial, consumer],
+        &drifted,
+    );
+    let kept: HashSet<_> = filtered
+        .kept
+        .iter()
+        .map(|row| row.output_handle.clone())
+        .collect();
+    assert_eq!(kept, HashSet::from([handle(2), handle(4), handle(5)]));
+    assert_eq!(
+        filtered.freeze.frozen,
+        HashSet::from([(handle(11), handle(3))])
+    );
+    // Only the encrypted operand counts as demand for handle 1.
+    assert_eq!(filtered.freeze.weights.get(&handle(1)).copied(), Some(1.0));
+}
+
 #[test]
 fn schedule_filter_counts_empty_pick_is_a_noop() {
     let filtered = frozen_computations::filter_work(vec![], &HashSet::new());
