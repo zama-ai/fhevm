@@ -109,14 +109,15 @@ commonConfig:
     periodSeconds: 10
     failureThreshold: 30
 
-  # Gateway chain configuration. Consumed by gwListener and txSender.
-  # Each field accepts either a literal `value` or a `valueFrom` block
-  # (secretKeyRef or configMapKeyRef). Leave unset to inject nothing.
-  gatewayUrl: {}
+  # Gateway chain configuration. Consumed by gwListener, txSender and
+  # consensusDetector. Each field accepts either a literal `value` or a
+  # `valueFrom` block (secretKeyRef or configMapKeyRef). Leave unset to inject
+  # nothing.
+  gatewayUrl: {}              # required by consensusDetector
   gatewayContractAddresses:
     inputVerification: {}     # required by gwListener, txSender
     ciphertextCommits: {}     # required by txSender; optional for gwListener (drift detection)
-    gatewayConfig: {}         # optional for gwListener (drift detection)
+    gatewayConfig: {}         # required by consensusDetector; optional for gwListener (drift detection)
     multichainAcl: {}         # legacy v0.11 txSender only; disable the arg on v0.12+
 
   # Distributed tracing configuration
