@@ -63,10 +63,12 @@ const SYNTHETIC_INPUT_ID_DOMAIN: &[u8] = b"FHEVM_BLUE_GREEN_SYNTHETIC_INPUT_ID_V
 
 /// Offset from `gw_start_block` at which the synthetic input is injected.
 ///
-/// Not `gw_start_block` itself: that block is the alignment boundary the upgrade-controller
-/// settles the Gateway side up to, and pre-start `verify_proofs` rows are pruned there. One
-/// block of clearance keeps the synthetic row clear of that prune.
-pub const SYNTHETIC_GW_BLOCK_OFFSET: i64 = 1;
+/// Zero: the synthetic input is injected at `gw_start_block` itself - the alignment boundary
+/// the upgrade-controller settles the Gateway side up to, and the block the Gateway consensus
+/// anchor (its S3 object name) is keyed on. All operators must anchor on the same Gateway
+/// block, so injecting exactly at `gw_start_block` keeps the anchor deterministic. The pre-start
+/// prune of `verify_proofs` is strictly below `gw_start_block`, so the boundary row survives.
+pub const SYNTHETIC_GW_BLOCK_OFFSET: i64 = 0;
 
 /// The plaintext encrypted by the synthetic input. Public by construction - see the module
 /// docs on why the seed needs no secrecy.

@@ -197,6 +197,21 @@ impl<P: Provider<Ethereum> + Clone + 'static> GatewayListener<P> {
                                 error!(last_processed_block = last, current_block = current_block,
                                     "Unexpectedly, last processed is ahead of current block, skipping this iteration");
                             }
+                            // GCS: no new Gateway blocks this tick, but still attempt the synthetic input
+                            // injection. When gw_start_block is in the past (the proposal landed after the
+                            // Gateway head moved on) and the Gateway is idle, no new block crosses the
+                            // trigger, so without this the gw consensus track never anchors and cutover is
+                            // never authorized. Idempotent: guarded by the deterministic zk_proof_id row.
+                            if let Err(e) = crate::synthetic_input::maybe_inject_synthetic_input(
+                                db_pool,
+                                self.stack_mode.gcs_mode(),
+                                current_block,
+                                &self.conf.verify_proof_req_db_channel,
+                            )
+                            .await
+                            {
+                                error!(error = %e, "GCS synthetic Gateway input injection (idle tick) failed");
+                            }
                             continue;
                         }
                         last + 1
@@ -497,7 +512,7 @@ impl<P: Provider<Ethereum> + Clone + 'static> GatewayListener<P> {
         log: Log,
     ) -> anyhow::Result<()> {
         let transaction_id = log.transaction_hash.map(|h| h.to_vec()).unwrap_or_default();
-        info!(zk_proof_id = %request.zkProofId, tid = %to_hex(&transaction_id), "Received ZK proof request event");
+        info!(block_number = ?log.block_number, zk_proof_id = %request.zkProofId, tid = %to_hex(&transaction_id), "Received ZK proof request event");
 
         let chain_id = ChainId::try_from(request.contractChainId)?;
 

@@ -750,13 +750,17 @@ where
 
 /// Sealed Gateway blocks for which this operator has already produced a local
 /// `state_hash` row — the candidate set for the Gateway consensus poll. Bounded
-/// to `[gw_start, gw_tip)` so only sealed blocks are polled, and capped to the
+/// to `[gw_start, gw_tip]` so only sealed blocks are polled, and capped to the
 /// earliest [`MAX_ANCHOR_CANDIDATES`]. The poll reads every operator's S3 blob,
 /// including our own; our own object is uploaded only for blocks we've hashed
 /// locally (see `upload_pending_gw_state_hashes`). So a block with no local
 /// `state_hash` row is one we'll never upload — our own slot stays empty and
 /// unanimity is unreachable — hence restricting candidates to locally-produced
 /// rows avoids polling peers for a block we ourselves can't contribute to.
+///
+/// The anchor block (`= gw_start`) is included even when it equals `gw_tip`: a
+/// `state_hash` row exists for it only if hash generation already produced one
+/// under the synthetic-anchor seal, so admitting it here is safe by construction.
 async fn pending_gw_consensus_blocks(
     pool: &Pool<Postgres>,
     gw_chain_id: i64,
@@ -765,7 +769,8 @@ async fn pending_gw_consensus_blocks(
 ) -> Result<Vec<i64>, Error> {
     let sql = format!(
         "SELECT block_number FROM {GCS_SCHEMA_QUOTED}.state_hash
-          WHERE chain_id = $1 AND block_number >= $2 AND block_number < $3
+          WHERE chain_id = $1 AND block_number >= $2
+            AND (block_number < $3 OR block_number = $2)
           ORDER BY block_number
           LIMIT {MAX_ANCHOR_CANDIDATES}"
     );
