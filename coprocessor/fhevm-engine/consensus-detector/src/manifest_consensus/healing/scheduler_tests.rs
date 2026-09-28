@@ -31,14 +31,37 @@ async fn insert_sibling(
     bucket_url: &str,
     body: &[u8],
 ) -> i64 {
-    let sources = format!(r#"[{{"s3_bucket_url":"{bucket_url}"}}]"#);
+    insert_sibling_row(
+        pool,
+        handle,
+        block,
+        Some(bucket_url),
+        Some(keccak256(body).as_slice().to_vec()),
+        "ct64_mismatch",
+    )
+    .await
+}
+
+/// A finding of `handle` in another block, as a reorg leaves; `target` None
+/// has no pinned quorum yet.
+async fn insert_sibling_row(
+    pool: &PgPool,
+    handle: u8,
+    block: u8,
+    bucket_url: Option<&str>,
+    target: Option<Vec<u8>>,
+    reason: &str,
+) -> i64 {
+    let sources = bucket_url
+        .map(|url| format!(r#"[{{"s3_bucket_url":"{url}"}}]"#))
+        .unwrap_or_else(|| "[]".into());
     sqlx::query_scalar(
         "INSERT INTO drifted_handle (
             consensus_epoch, coprocessor_context_id, host_chain_id,
             block_number, block_hash, handle, detection_kind, reason,
             local_present, quorum_present, quorum_ct64_digest, peer_sources,
             is_contained
-         ) SELECT consensus_epoch, $1, 1, $2, $3, $4, 'inferred', 'ct64_mismatch',
+         ) SELECT consensus_epoch, $1, 1, $2, $3, $4, 'inferred', $7,
                   TRUE, FALSE, $5, $6::jsonb, TRUE
              FROM blue_green_consensus_epoch
          RETURNING id",
@@ -47,11 +70,47 @@ async fn insert_sibling(
     .bind(i64::from(block))
     .bind(bytes(block))
     .bind(bytes(handle))
-    .bind(keccak256(body).as_slice().to_vec())
+    .bind(target)
     .bind(sources)
+    .bind(reason)
     .fetch_one(pool)
     .await
     .unwrap()
+}
+
+async fn seed_local_ct64(pool: &PgPool, handle: u8) {
+    sqlx::query(
+        "INSERT INTO ciphertexts (handle, ciphertext, ciphertext_version, ciphertext_type)
+         VALUES ($1, $2, 0, 0)
+         ON CONFLICT (handle, ciphertext_version) DO NOTHING",
+    )
+    .bind(bytes(handle))
+    .bind(vec![0xffu8; 4])
+    .execute(pool)
+    .await
+    .unwrap();
+}
+
+async fn pinned_target(pool: &PgPool, id: i64) -> Option<Vec<u8>> {
+    sqlx::query_scalar("SELECT quorum_ct64_digest FROM drifted_handle WHERE id = $1")
+        .bind(id)
+        .fetch_one(pool)
+        .await
+        .unwrap()
+}
+
+async fn abandon(pool: &PgPool, id: i64) {
+    sqlx::query("UPDATE drifted_handle SET heal_abandoned_at = NOW() WHERE id = $1")
+        .bind(id)
+        .execute(pool)
+        .await
+        .unwrap();
+}
+
+fn conflicting_targets() -> i64 {
+    metrics::CONFLICTING_TARGETS
+        .with_label_values(&[LEGACY_CONSENSUS_EPOCH])
+        .get()
 }
 
 async fn insert_healable_from(
@@ -657,6 +716,109 @@ async fn disagreeing_targets_are_left_unhealed() {
     assert_eq!(healed(&pool, first).await, (true, false));
     assert_eq!(healed(&pool, second).await, (true, false));
     assert_eq!(source.gets.load(Ordering::SeqCst), 0);
+    // A real conflict is not resolved against a pin, but it is not silent.
+    assert_eq!(conflicting_targets(), 1);
+}
+
+#[tokio::test]
+#[serial(db)]
+async fn unpinned_siblings_share_the_live_target_after_a_failed_get() {
+    let (_db, pool) = setup().await;
+    seed_registry(&pool, &["s3://peer-a", "s3://peer-b"], 2).await;
+    let body = vec![4u8; 8];
+    let first = insert_sibling_row(&pool, 11, 11, None, None, "ct64_mismatch").await;
+    let second = insert_sibling_row(&pool, 11, 21, None, None, "ct64_mismatch").await;
+    seed_local_ct64(&pool, 11).await;
+    let source = FakeCt64::default();
+    // Peers attest the digest but do not serve the bytes yet: the GET fails.
+    source.attest("s3://peer-a", 11, keccak256(&body));
+    source.attest("s3://peer-b", 11, keccak256(&body));
+
+    pass(&pool, &source).await;
+
+    // The live target is pinned on both siblings, not only the picked one,
+    // so they cannot exclude each other on the next pass.
+    let target = Some(keccak256(&body).as_slice().to_vec());
+    assert_eq!(pinned_target(&pool, first).await, target);
+    assert_eq!(pinned_target(&pool, second).await, target);
+    assert_eq!(heal_attempts(&pool, first).await.0, 1);
+    assert_eq!(heal_attempts(&pool, second).await.0, 1);
+
+    make_due(&pool, first).await;
+    make_due(&pool, second).await;
+    source.put("s3://peer-a", 11, body.clone());
+    pass(&pool, &source).await;
+
+    assert_eq!(healed(&pool, first).await, (false, true));
+    assert_eq!(healed(&pool, second).await, (false, true));
+    assert_eq!(stored_ct64(&pool, 11).await, body);
+    assert_eq!(conflicting_targets(), 0);
+}
+
+#[tokio::test]
+#[serial(db)]
+async fn unpinned_sibling_adopts_the_pinned_sibling_target() {
+    let (_db, pool) = setup().await;
+    let body = vec![4u8; 8];
+    let pinned = insert_sibling(&pool, 12, 12, "s3://peer-a", &body).await;
+    let unpinned = insert_sibling_row(&pool, 12, 22, None, None, "ct64_mismatch").await;
+    seed_local_ct64(&pool, 12).await;
+    let source = FakeCt64::default();
+    source.put("s3://peer-a", 12, body.clone());
+
+    pass(&pool, &source).await;
+
+    assert_eq!(healed(&pool, pinned).await, (false, true));
+    assert_eq!(healed(&pool, unpinned).await, (false, true));
+    assert_eq!(stored_ct64(&pool, 12).await, body);
+    assert_eq!(source.gets.load(Ordering::SeqCst), 1);
+}
+
+#[tokio::test]
+#[serial(db)]
+async fn abandoned_sibling_on_another_target_does_not_block() {
+    let (_db, pool) = setup().await;
+    let body = vec![4u8; 8];
+    let other = vec![5u8; 8];
+    let active = insert_sibling(&pool, 13, 13, "s3://peer-a", &body).await;
+    let abandoned = insert_sibling(&pool, 13, 23, "s3://peer-a", &other).await;
+    abandon(&pool, abandoned).await;
+    seed_local_ct64(&pool, 13).await;
+    let source = FakeCt64::default();
+    source.put("s3://peer-a", 13, body.clone());
+
+    pass(&pool, &source).await;
+
+    assert_eq!(healed(&pool, active).await, (false, true));
+    assert_eq!(stored_ct64(&pool, 13).await, body);
+    // Its own target was not installed: it stays unhealed and abandoned.
+    assert_eq!(healed(&pool, abandoned).await, (true, false));
+    assert_eq!(conflicting_targets(), 0);
+}
+
+#[tokio::test]
+#[serial(db)]
+async fn unhealable_sibling_does_not_block() {
+    let (_db, pool) = setup().await;
+    let body = vec![4u8; 8];
+    // A verified ct128 finding in block 14 carries a quorum ct64 other than the
+    // ct64 target of the active sibling in block 24.
+    let ct128 = crate::manifest_consensus::containment::propagation_tests::direct_root(
+        &pool,
+        14,
+        "ct128_mismatch",
+    )
+    .await;
+    let active = insert_sibling(&pool, 14, 24, "s3://peer-a", &body).await;
+    seed_local_ct64(&pool, 14).await;
+    let source = FakeCt64::default();
+    source.put("s3://peer-a", 14, body.clone());
+
+    pass(&pool, &source).await;
+
+    assert_eq!(healed(&pool, active).await, (false, true));
+    assert_eq!(stored_ct64(&pool, 14).await, body);
+    assert_eq!(healed(&pool, ct128).await, (false, false));
 }
 
 async fn listen(pool: &PgPool, channel: &str) -> PgListener {

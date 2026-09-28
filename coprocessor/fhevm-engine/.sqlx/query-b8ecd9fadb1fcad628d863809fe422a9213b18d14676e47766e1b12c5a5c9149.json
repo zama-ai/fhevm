@@ -1,0 +1,34 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n        SELECT consensus_epoch, host_chain_id, handle\n          FROM drifted_handle\n         WHERE consensus_epoch = ANY($1)\n           AND healed_at IS NULL\n           AND heal_abandoned_at IS NULL\n           AND reason IN ('ct64_mismatch', 'missing_here', 'error_here', 'uncomputed_here')\n           AND quorum_ct64_digest IS NOT NULL\n         GROUP BY consensus_epoch, coprocessor_context_id, host_chain_id, handle\n        HAVING COUNT(DISTINCT quorum_ct64_digest) > 1\n        ",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "consensus_epoch",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 1,
+        "name": "host_chain_id",
+        "type_info": "Int8"
+      },
+      {
+        "ordinal": 2,
+        "name": "handle",
+        "type_info": "Bytea"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "TextArray"
+      ]
+    },
+    "nullable": [
+      false,
+      false,
+      false
+    ]
+  },
+  "hash": "b8ecd9fadb1fcad628d863809fe422a9213b18d14676e47766e1b12c5a5c9149"
+}
