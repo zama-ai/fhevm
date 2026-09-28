@@ -123,14 +123,12 @@ Yellowstone blocks. It subscribes to the successful transactions naming the host
 program, one per message, and to every slot's block meta, and seals a slot when
 its block meta arrives. The provider must send every transaction of a slot
 before that slot's block meta, live and on `from_slot` replay; Yellowstone does.
-A start at the tip skips its first slot, which can arrive without its
-transactions, and one of the last 32 applied slots that arrives again unchanged
-is skipped. Any other break in the order stops the listener before it applies
-the slot, except a transaction for a slot already applied without it: the
-listener stops once, names the slot and the transaction, and resumes past the
-slot after the restart. DD-060 describes what follows and the repair. Each
+DD-060 lists the slots the listener skips, the order breaks that stop it, and
+the repair after a transaction arrives for a slot already applied. Each
 `fhe_execute` is paired with the `FheExecutedEvent` it emits: the listener
-stores the result handles in the event and re-derives each one as a check. On an empty database, `--start-slot <slot>` selects an existing
+stores the result handles in the event and re-derives each one as a check.
+
+On an empty database, `--start-slot <slot>` selects an existing
 confirmed block to replay **inclusively**. Choose a finalized block before the
 host activity that must be reconstructed. RPC supplies that block's hash; its
 transactions come from Yellowstone, or from the archive below if it is older

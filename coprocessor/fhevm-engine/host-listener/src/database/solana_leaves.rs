@@ -622,18 +622,9 @@ pub async fn load_encrypted_store_history(
     .transpose()
 }
 
-/// A leaf row as `find_leaf` reads it.
-struct LeafRow {
-    leaf_index: i64,
-    commitment: Vec<u8>,
-    leaf_kind: i16,
-    handle: Vec<u8>,
-    allowed_key: Option<Vec<u8>>,
-    transaction_index: i64,
-}
-
-/// The first leaf of `account` below `leaf_count` that records `kind` for `handle` and
-/// `key`. The oldest match sits in the oldest mountain, whose path changes least.
+/// The index and commitment of the first leaf of `account` below `leaf_count` that records
+/// `kind` for `handle` and `key`. The oldest match sits in the oldest mountain, whose path
+/// changes least.
 pub async fn find_leaf(
     pool: &sqlx::PgPool,
     account: [u8; 32],
@@ -641,63 +632,49 @@ pub async fn find_leaf(
     handle: [u8; 32],
     key: Option<[u8; 32]>,
     leaf_count: u64,
-) -> Result<Option<StagedLeaf>, SqlxError> {
+) -> Result<Option<(u64, [u8; 32])>, SqlxError> {
     let leaf_count = sql_i64(leaf_count, "leaf_count")?;
     // Two statements, because `allowed_key IS NOT DISTINCT FROM $4` cannot use the
     // semantic index.
     let row = match key {
-        Some(key) => {
-            sqlx::query_as!(
-                LeafRow,
-                r#"
-                SELECT leaf_index, commitment, leaf_kind, handle, allowed_key,
-                       transaction_index
-                FROM solana_encrypted_state_leaves
-                WHERE encrypted_state = $1 AND leaf_kind = $2 AND handle = $3
-                  AND allowed_key = $4 AND leaf_index < $5
-                ORDER BY leaf_index
-                LIMIT 1
-                "#,
-                &account[..],
-                kind as i16,
-                &handle[..],
-                &key[..],
-                leaf_count,
-            )
-            .fetch_optional(pool)
-            .await?
-        }
-        None => {
-            sqlx::query_as!(
-                LeafRow,
-                r#"
-                SELECT leaf_index, commitment, leaf_kind, handle, allowed_key,
-                       transaction_index
-                FROM solana_encrypted_state_leaves
-                WHERE encrypted_state = $1 AND leaf_kind = $2 AND handle = $3
-                  AND allowed_key IS NULL AND leaf_index < $4
-                ORDER BY leaf_index
-                LIMIT 1
-                "#,
-                &account[..],
-                kind as i16,
-                &handle[..],
-                leaf_count,
-            )
-            .fetch_optional(pool)
-            .await?
-        }
-    };
-    row.map(|row| {
-        leaf_row(
-            &account,
-            row.leaf_index,
-            &row.commitment,
-            row.leaf_kind,
-            &row.handle,
-            row.allowed_key.as_deref(),
-            row.transaction_index,
+        Some(key) => sqlx::query!(
+            r#"
+            SELECT leaf_index, commitment
+            FROM solana_encrypted_state_leaves
+            WHERE encrypted_state = $1 AND leaf_kind = $2 AND handle = $3
+              AND allowed_key = $4 AND leaf_index < $5
+            ORDER BY leaf_index
+            LIMIT 1
+            "#,
+            &account[..],
+            kind as i16,
+            &handle[..],
+            &key[..],
+            leaf_count,
         )
+        .fetch_optional(pool)
+        .await?
+        .map(|row| (row.leaf_index, row.commitment)),
+        None => sqlx::query!(
+            r#"
+            SELECT leaf_index, commitment
+            FROM solana_encrypted_state_leaves
+            WHERE encrypted_state = $1 AND leaf_kind = $2 AND handle = $3
+              AND allowed_key IS NULL AND leaf_index < $4
+            ORDER BY leaf_index
+            LIMIT 1
+            "#,
+            &account[..],
+            kind as i16,
+            &handle[..],
+            leaf_count,
+        )
+        .fetch_optional(pool)
+        .await?
+        .map(|row| (row.leaf_index, row.commitment)),
+    };
+    row.map(|(leaf_index, commitment)| {
+        Ok((sql_u64(leaf_index, "leaf_index")?, bytes32(&commitment)?))
     })
     .transpose()
 }

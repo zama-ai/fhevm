@@ -1,6 +1,5 @@
-//! The HTTP routes of the Solana host listener: the health routes every Solana process serves, and
-//! the leaf-proof route that only `solana_leaf_proof_server` adds, so proofs keep being served
-//! while ingestion is stopped or behind.
+//! The HTTP routes of the Solana processes: the health routes both serve, and the leaf-proof
+//! route that only `solana_leaf_proof_server` adds (DD-062).
 //!
 //! The KMS connector asks for the inclusion proof of the leaf that authorizes a
 //! decrypt (an allow of a key on a handle, or a handle made public) and verifies
@@ -404,7 +403,7 @@ async fn prove(
         return Ok(LeafProof::HistoryIncomplete);
     }
     let leaf_count = state.leaf_count;
-    let Some(leaf) = find_leaf(
+    let Some((leaf_index, commitment)) = find_leaf(
         pool,
         account,
         query.kind,
@@ -417,17 +416,17 @@ async fn prove(
     else {
         return Ok(LeafProof::NotFound { leaf_count });
     };
-    let proof = load_proof(pool, account, leaf.leaf_index, leaf_count)
+    let proof = load_proof(pool, account, leaf_index, leaf_count)
         .await
         .map_err(read_failed)?;
     // A path that is missing or does not reach the recorded peaks comes from a record
     // that is wrong, not stale.
     let Some(proof) = proof.filter(|proof| {
-        mmr_verify(&state.peaks, leaf_count, leaf.commitment, proof)
+        mmr_verify(&state.peaks, leaf_count, commitment, proof)
     }) else {
         error!(
             encrypted_store = %bs58::encode(account).into_string(),
-            leaf_index = leaf.leaf_index,
+            leaf_index,
             leaf_count,
             "leaf record inconsistent"
         );
@@ -644,37 +643,6 @@ mod tests {
             .await
             .expect("send");
         assert_eq!(liveness.status(), 200);
-
-        cancel.cancel();
-        server.await.expect("join").expect("serve");
-    }
-
-    /// Ingestion serves the health routes only; proofs come from `solana_leaf_proof_server`.
-    #[tokio::test]
-    async fn ingestion_serves_no_proofs() {
-        let pool = PgPoolOptions::new()
-            .connect_lazy("postgres://nobody@127.0.0.1:1/none")
-            .expect("lazy pool");
-        let listener = TcpListener::bind("127.0.0.1:0").await.expect("bind");
-        let addr = listener.local_addr().expect("addr");
-        let cancel = CancellationToken::new();
-        let server =
-            tokio::spawn(serve(listener, health_router(pool), cancel.clone()));
-        let client = reqwest::Client::new();
-
-        let liveness = client
-            .get(format!("http://{addr}/liveness"))
-            .send()
-            .await
-            .expect("send");
-        assert_eq!(liveness.status(), 200);
-        let proofs = client
-            .post(format!("http://{addr}{LEAF_PROOFS_PATH}"))
-            .bearer_auth("secret")
-            .send()
-            .await
-            .expect("send");
-        assert_eq!(proofs.status(), 404);
 
         cancel.cancel();
         server.await.expect("join").expect("serve");

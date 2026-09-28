@@ -4,8 +4,8 @@
 //! `getBlock` per slot and one `getTransaction` per host transaction, with
 //! `archive_catch_up_active` at 1; the lag then shows its progress.
 //! `failures_since_commit` keeps rising while one slot fails again and again or the provider stays
-//! unreachable, and a commit resets it. `handle_check_failures_total` counts steps whose emitted handle this listener could not
-//! re-derive, which means its software is wrong.
+//! unreachable, and a commit resets it. `handle_check_failures_total` counts steps whose emitted
+//! handle this listener could not re-derive, which means its software is wrong.
 
 use std::{sync::LazyLock, time::Duration};
 
@@ -121,7 +121,7 @@ pub(super) fn set_archive_catch_up(host_chain_id: u64, active: bool) {
         .set(i64::from(active));
 }
 
-pub(super) fn inc_reconnects(host_chain_id: u64) {
+pub(super) fn record_interruption(host_chain_id: u64) {
     let label = host_chain_id.to_string();
     RECONNECTS.with_label_values(&[&label]).inc();
     FAILURES_SINCE_COMMIT.with_label_values(&[&label]).inc();
@@ -170,8 +170,8 @@ mod tests {
         let gauge =
             FAILURES_SINCE_COMMIT.with_label_values(&[&chain.to_string()]);
         record_start(chain, &StartPosition::Tip);
-        inc_reconnects(chain);
-        inc_reconnects(chain);
+        record_interruption(chain);
+        record_interruption(chain);
         assert_eq!(gauge.get(), 2);
         record_applied(
             chain,

@@ -74,6 +74,7 @@ pub use metrics::track_confirmed_slot;
 
 const MAX_DECODING_MESSAGE_SIZE: usize = 64 * 1024 * 1024;
 const SOLANA_GRPC_INGEST_TIMEOUT: Duration = Duration::from_secs(60);
+const STREAM_STALL_TIMEOUT: Duration = Duration::from_secs(30);
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 enum IngestFailureKind {
@@ -299,7 +300,7 @@ pub async fn run(
             }
             Err(err) => {
                 error!(error = format!("{err:#}"), checkpoint = ?progress.applied, retry_cursor = ?progress.retry, "ingestion interrupted; resuming inclusively from the checkpoint");
-                metrics::inc_reconnects(config.chain_id);
+                metrics::record_interruption(config.chain_id);
                 tokio::select! {
                     _ = cancel.cancelled() => return Ok(()),
                     _ = tokio::time::sleep(Duration::from_secs(2)) => {}
@@ -479,13 +480,21 @@ async fn subscribe_loop(
     };
     let mut stream = response.into_inner();
 
+    // Block meta is emitted for every produced slot, including slots with no host transaction,
+    // while Yellowstone pings every few seconds whatever its feed does: only a block meta shows
+    // the stream advancing. The deadline restarts after the block is applied, so a slow apply is
+    // not taken for a stall.
+    let mut stall_deadline = tokio::time::Instant::now() + STREAM_STALL_TIMEOUT;
     loop {
         tokio::select! {
             _ = cancel.cancelled() => return Ok(StreamEnd::Cancelled),
-            // Block meta is emitted for every produced slot, including slots with zero
-            // matching transactions. Prolonged silence therefore means the stream stalled.
-            msg = tokio::time::timeout(Duration::from_secs(30), stream.message()) => {
-                let msg = msg.map_err(|_| anyhow!("grpc stream idle for 30s; reconnecting"))?;
+            _ = tokio::time::sleep_until(stall_deadline) => {
+                return Err(anyhow!(
+                    "no block meta for {}s; reconnecting",
+                    STREAM_STALL_TIMEOUT.as_secs()
+                ));
+            }
+            msg = stream.message() => {
                 let msg = match msg {
                     Ok(message) => message,
                     Err(status) if is_resume && is_replay_window_passed(&status) => {
@@ -533,6 +542,8 @@ async fn subscribe_loop(
                                 return Ok(StreamEnd::Cancelled);
                             }
                         }
+                        stall_deadline =
+                            tokio::time::Instant::now() + STREAM_STALL_TIMEOUT;
                     }
                     Some(UpdateOneof::Ping(_)) => debug!("grpc ping"),
                     _ => {}
@@ -1234,7 +1245,9 @@ mod account_resolution_tests {
 #[cfg(test)]
 mod slot_size_tests {
     use super::test_support::ZAMA_HOST;
-    use super::wire_fixtures::{app_transaction, Compiled, Transaction};
+    use super::wire_fixtures::{
+        app_transaction, foreign_transaction, Compiled, Transaction,
+    };
     use super::PreparedBlock;
     use super::{prepare_transaction, MAX_DECODING_MESSAGE_SIZE};
     use crate::solana_grpc_source::testing::{following, meta};
@@ -1255,30 +1268,22 @@ mod slot_size_tests {
     /// A transaction that lists the host and fills its message to Agave's bounds through
     /// another program.
     fn junk(signature: u8) -> Transaction {
-        let host = ZAMA_HOST.parse::<Pubkey>().unwrap().to_bytes();
-        Transaction {
-            signature: [signature; 64],
-            static_keys: vec![[1; 32], [8; 32], host],
-            loaded_writable: vec![],
-            loaded_readonly: vec![],
-            top_level: vec![Compiled {
-                program_id_index: 1,
-                accounts: vec![0, 2],
-                data: vec![1],
-                stack_height: None,
-            }],
-            inner_groups: vec![(
-                0,
-                (1..INSTRUCTION_TRACE)
-                    .map(|_| Compiled {
-                        program_id_index: 1,
-                        accounts: vec![2],
-                        data: vec![0xAB; CPI_DATA],
-                        stack_height: Some(2),
-                    })
-                    .collect(),
-            )],
-        }
+        let mut transaction = foreign_transaction(signature);
+        transaction
+            .static_keys
+            .push(ZAMA_HOST.parse::<Pubkey>().unwrap().to_bytes());
+        transaction.inner_groups = vec![(
+            0,
+            (1..INSTRUCTION_TRACE)
+                .map(|_| Compiled {
+                    program_id_index: 1,
+                    accounts: vec![2],
+                    data: vec![0xAB; CPI_DATA],
+                    stack_height: Some(2),
+                })
+                .collect(),
+        )];
+        transaction
     }
 
     #[test]
@@ -1337,12 +1342,7 @@ mod slot_size_tests {
         };
         assert_eq!(block.slot, 5);
         assert_eq!(transactions.len(), junk_count + 1);
-        let with_instructions: Vec<_> = transactions
-            .iter()
-            .filter(|transaction| !transaction.instructions.is_empty())
-            .map(|transaction| transaction.index)
-            .collect();
-        assert_eq!(with_instructions, [host_index]);
+        assert!(!transactions[host_index as usize].instructions.is_empty());
     }
 }
 

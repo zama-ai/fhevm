@@ -69,8 +69,8 @@ async fn main() -> Result<()> {
             .max_connections(args.database_pool_size)
             .acquire_timeout(Duration::from_secs(5)),
         Some(&cancel),
-        // The KMS connector gives up on a proof request after its `host_rpc_call_timeout`,
-        // 10 seconds by default, so a longer statement only holds a connection.
+        // The KMS connector gives up on a proof request after its `host_rpc_call_timeout`, so a
+        // longer statement only holds a connection.
         |options| with_statement_timeout(options, Duration::from_secs(10)),
     )
     .await

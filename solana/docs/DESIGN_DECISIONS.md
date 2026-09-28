@@ -2323,15 +2323,18 @@ logs, and `getTransaction` fetches each successful transaction that names the ho
 still grows with the block's transaction count and account keys. A block filled with transactions
 that load many lookup-table keys could list hundreds of megabytes (estimate, not measured), which a
 provider can refuse or not return within the archive client's 30-second timeout; catch-up then
-retries that block. Listing blocks with `transactionDetails: "signatures"` and selecting the host's
-transactions with `getSignaturesForAddress` would cost about 90 bytes per transaction, but it
-relies on the archive's address index being complete, which nothing checks (DD-059).
+retries that block. A provider that does return it can exhaust the pod's memory: the RPC client
+holds the whole response and its parsed JSON, and catch-up fetches up to 8 blocks at once. The pod
+then restarts at the same slot for as long as catch-up needs that block. Listing blocks with
+`transactionDetails: "signatures"` and selecting the host's transactions with
+`getSignaturesForAddress` would cost about 90 bytes per transaction, but it relies on the archive's
+address index being complete, which nothing checks (DD-059).
 
 Rejected alternatives:
 
 | Alternative | Why not |
 |---|---|
-| Raise the decoding limit | A block of junk carries about 550 MB at 60M compute units (estimate), so any lower limit stays attackable and the ceiling moves with Solana's block limits. Tonic reserves the whole message and decodes a copy, so a 512 MiB limit lets one block use more than 1 GB of the pod's 2 GiB. Tonic refuses an oversized message at its length prefix, so today a refusal downloads almost nothing, and a higher limit downloads the junk on every coprocessor. A hosted provider can cap message size in front of Yellowstone anyway. |
+| Raise the decoding limit | A block of junk carries about 550 MB at 60M compute units (estimate), so any lower limit stays attackable and the ceiling moves with Solana's block limits. Tonic reserves the whole message and decodes a copy, so a 512 MiB limit lets one block use more than 1 GB of the pod's 2 GiB. A hosted provider can cap message size in front of Yellowstone anyway. |
 
 Consequences:
 
@@ -2339,8 +2342,8 @@ The decoding limit stays at 64 MiB, which no valid transaction reaches
 (`a_slot_past_the_decoding_limit_streams_in_bounded_messages`). A transaction that only lists the
 host still arrives, one message of up to about 650 KB, and the listener keeps only its index and
 signature. On catch-up each one costs a `getTransaction` call, so junk that lists the host
-multiplies catch-up's RPC calls. The stream's idle timeout now counts block meta, which is sent for
-every slot.
+multiplies catch-up's RPC calls. The stream reconnects after 30 seconds without a block meta,
+which is sent for every slot. Yellowstone's pings, sent whatever its feed does, do not count.
 
 ## DD-061: A leaf proof reads its path by position
 
@@ -2429,11 +2432,9 @@ from then until ingestion catches up. The newest leaf sits in the smallest mount
 stale first, and anyone can append to a Store with a zero-value transfer. The connector takes the
 first proof that verifies from any coprocessor, so this costs nothing while one of them ingests;
 while every coprocessor's ingestion is stopped, a Store someone keeps appending to cannot be
-decrypted until one catches up. The connector retries a Gateway request up to
-`max_decryption_attempts` (20 by default) before marking it failed, and an HTTP caller gets
-`acl_denied` and resubmits. A grant made after
-the stop has no proof until ingestion catches up. `ingestion_serves_no_proofs` pins that the health
-router, the only one the listener serves, has no proof route, and
+decrypted until one catches up. The connector retries a Gateway request up to its
+`max_decryption_attempts` before marking it failed, and an HTTP caller gets `acl_denied` and
+resubmits. A grant made after the stop has no proof until ingestion catches up.
 `ci/preview-env/solana-host/test_charts.py` pins the two Deployments.
 
 ## Open product decisions
