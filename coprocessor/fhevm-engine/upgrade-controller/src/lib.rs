@@ -5221,6 +5221,60 @@ mod tests {
         assert_eq!(gcs_state(&pool).await, ("LIVE".into(), "completed".into()));
     }
 
+    /// A pre-witness blue SNS worker (v0.14) keeps running after the witness migration and
+    /// never writes `s3_publication_verified_*`. Its uploads must still release the cutover
+    /// guard, or the upgrade from that blue can never complete.
+    #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+    async fn cutover_accepts_uploads_completed_by_legacy_blue_sns() {
+        let (_instance, pool) = test_pool().await;
+        create_gcs_schema(&pool).await.expect("create gcs schema");
+        seed_gcs_row(&pool, "UpgradeAuthorized", "in_progress").await; // start=100
+
+        let handle = &[0xE3u8; 32][..];
+        sqlx::query(
+            "INSERT INTO computations
+                (output_handle, dependencies, fhe_operation,
+                 is_scalar, is_completed, host_chain_id, block_number)
+             VALUES ($1, ARRAY[]::bytea[], 0, false, TRUE, 1, 50)",
+        )
+        .bind(handle)
+        .execute(&pool)
+        .await
+        .expect("seed computation");
+        sqlx::query("INSERT INTO ciphertext_digest (handle, host_chain_id) VALUES ($1, 1)")
+            .bind(handle)
+            .execute(&pool)
+            .await
+            .expect("seed digest row");
+
+        let err = execute_cutover(&pool)
+            .await
+            .expect_err("cutover must refuse while the legacy upload is pending");
+        assert!(
+            matches!(err, Error::PendingBcsUploads { pending: 1 }),
+            "expected one pending upload, got: {err:?}"
+        );
+
+        // The v0.14 `mark_ciphertexts_uploaded`: digests and format version, no witness.
+        sqlx::query(
+            "UPDATE ciphertext_digest
+                SET ciphertext = decode(repeat('01', 32), 'hex'),
+                    ciphertext128 = decode(repeat('02', 32), 'hex'),
+                    ciphertext128_format = 0,
+                    s3_format_version = 0
+              WHERE handle = $1",
+        )
+        .bind(handle)
+        .execute(&pool)
+        .await
+        .expect("legacy mark uploaded");
+
+        execute_cutover(&pool)
+            .await
+            .expect("cutover proceeds once the legacy blue upload landed");
+        assert_eq!(gcs_state(&pool).await, ("LIVE".into(), "completed".into()));
+    }
+
     /// A pre-window PBS row whose handle's computation errored terminally must not block
     /// cutover forever — its ciphertext will never exist, so the sns-worker will never
     /// complete the row. A pre-window PBS row still genuinely in flight must keep blocking,
