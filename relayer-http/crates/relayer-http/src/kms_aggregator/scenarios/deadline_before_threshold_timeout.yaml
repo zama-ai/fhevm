@@ -1,0 +1,12 @@
+# Eight shares, five nodes hang: the deadline passes one short of the threshold.
+flow: user_decrypt
+threshold: 9
+timeout: 5s
+nodes:
+  - { count: 8, replies: [ok] }
+  - { count: 5, replies: [hang] }
+expect:
+  outcome: timeout
+  counted: 8
+  elapsed: 5s
+  attempts: 13

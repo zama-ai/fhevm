@@ -78,7 +78,7 @@ pub async fn retrieve_verified_ciphertext(
                         fhe_type
                     );
                     return Ok(TypedCiphertext {
-                        ciphertext: body,
+                        ciphertext: body.into(),
                         external_handle: handle.to_vec(),
                         fhe_type: fhe_type as i32,
                         ciphertext_format: ct_format.into(),

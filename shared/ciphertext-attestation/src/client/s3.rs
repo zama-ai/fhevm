@@ -158,11 +158,12 @@ impl BoundedClient {
             )));
         }
 
-        if response.content_length().unwrap_or(0) > ceiling as u64 {
+        let content_length = response.content_length().unwrap_or(ceiling as u64);
+        if content_length > ceiling as u64 {
             return Err(FetchCiphertextError::TooLarge { ceiling });
         }
 
-        let mut body = Vec::new();
+        let mut body = Vec::with_capacity(content_length as usize);
         while let Some(chunk) = response
             .chunk()
             .await

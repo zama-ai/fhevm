@@ -1,0 +1,15 @@
+# unsupported_attestation_type (endpoint validation, 400) is not retryable: one attempt even with retries on, and
+# it decides the dominant error. The relayer checks attestationType first, so this only happens on a crate mismatch.
+flow: user_decrypt
+threshold: 10
+timeout: 5s
+max_retries: 3
+nodes:
+  - { count: 9, replies: [ok] }
+  - { count: 4, replies: [unsupported_attestation_type, ok] }
+expect:
+  outcome: threshold_not_reached
+  counted: 9
+  dominant: unsupported_attestation_type
+  elapsed: 10ms
+  attempts: 13

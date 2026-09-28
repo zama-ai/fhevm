@@ -1,0 +1,14 @@
+# A rejected API key is never retried and counts as a failure for that node.
+flow: user_decrypt
+threshold: 9
+timeout: 5s
+max_retries: 2
+nodes:
+  - { count: 8, replies: [ok] }
+  - { count: 5, replies: [sender_authentication_failed] }
+expect:
+  outcome: threshold_not_reached
+  counted: 8
+  dominant: sender_authentication_failed
+  elapsed: 10ms
+  attempts: 13

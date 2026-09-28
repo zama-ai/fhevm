@@ -1,0 +1,14 @@
+# The 500 ms retry delay does not fit in a 400 ms deadline: the failing nodes give up at once.
+flow: user_decrypt
+threshold: 9
+timeout: 400ms
+max_retries: 2
+nodes:
+  - { count: 9, replies: [ok] }
+  - { count: 4, replies: [acl_denied] }
+expect:
+  outcome: ok
+  counted: 9
+  responses: 9
+  elapsed: 10ms
+  attempts: 13

@@ -1,0 +1,13 @@
+# checks.decryption_id_match: a response whose decryptionId is not the request's content hash is rejected.
+flow: user_decrypt
+threshold: 9
+timeout: 5s
+checks: { decryption_id_match: true }
+nodes:
+  - { count: 1, replies: [wrong_id] }
+  - { count: 12, replies: [ok] }
+expect:
+  outcome: ok
+  counted: 12
+  responses: 12
+  elapsed: 10ms

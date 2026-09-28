@@ -1,0 +1,14 @@
+# Eight identical results outvote three divergent ones; only the eight signatures are returned.
+flow: public_decrypt
+threshold: 5
+timeout: 5s
+nodes:
+  - { count: 8, replies: [ok] }
+  - { count: 3, replies: [divergent] }
+  - { count: 2, replies: [hang] }
+expect:
+  outcome: ok
+  counted: 8
+  responses: 8
+  elapsed: 5s
+  attempts: 13

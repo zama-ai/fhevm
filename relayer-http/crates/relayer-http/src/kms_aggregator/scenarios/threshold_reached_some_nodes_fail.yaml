@@ -1,0 +1,13 @@
+# Some nodes fail with a non-retryable-for-us error (single attempt); enough shares remain.
+flow: user_decrypt
+threshold: 9
+timeout: 5s
+nodes:
+  - { count: 10, replies: [ok] }
+  - { count: 3, replies: [ciphertext_not_found] }
+expect:
+  outcome: ok
+  counted: 10
+  responses: 10
+  elapsed: 10ms
+  attempts: 13

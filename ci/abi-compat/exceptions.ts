@@ -40,6 +40,8 @@ export const ABI_COMPAT_EXCEPTIONS: Partial<Record<PackageName, Partial<Record<s
       "event UserDecryptionThresholdUpdated(uint256 indexed,uint256)",
       "event KmsGenThresholdUpdated(uint256 indexed,uint256)",
       "event MpcThresholdUpdated(uint256 indexed,uint256)",
+      "error KmsContextNotCreated(uint256)",
+      "error ThresholdExceedsProofFormatLimit(string,uint256,uint256)",
     ],
   },
   "gateway-contracts": {
