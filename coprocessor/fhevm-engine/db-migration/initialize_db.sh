@@ -143,6 +143,22 @@ run_remove_tenants_prerequisites() {
     "CREATE UNIQUE INDEX CONCURRENTLY idx_pbs_computations_no_tenant ON pbs_computations (handle);"
 }
 
+precreate_blocks_valid_pending_index() {
+  local has_table
+  has_table=$(psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -Atc \
+    "SELECT to_regclass('public.host_chain_blocks_valid') IS NOT NULL;")
+  if [ "$has_table" != "t" ]; then
+    echo "Skipping pending-blocks index pre-creation (host_chain_blocks_valid not created yet)"
+    return 0
+  fi
+
+  echo "Pre-creating the pending-blocks index concurrently..."
+  precreate_index "idx_host_chain_blocks_valid_pending" \
+    "CREATE INDEX CONCURRENTLY idx_host_chain_blocks_valid_pending \
+     ON host_chain_blocks_valid (chain_id, block_number) \
+     WHERE block_status = 'pending';"
+}
+
 echo "-------------- Start database initilaization --------------"
 
 echo "Creating database..."
@@ -154,6 +170,7 @@ if [ "${RUN_MIGRATIONS_UNTIL_REMOVE_TENANTS:-}" = "true" ]; then
   # so do not attempt to seed.
   run_remove_tenants_prerequisites
 else
+  precreate_blocks_valid_pending_index
   sqlx migrate run --source "$MIGRATION_DIR" || { echo "Failed to run migrations."; exit 1; }
   seed_host_chains
 fi
