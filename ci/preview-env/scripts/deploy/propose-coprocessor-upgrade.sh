@@ -21,9 +21,9 @@ GCS_VERSION="${GCS_VERSION:-v0.15.0}"
 # Caller-supplied; contract does not enforce uniqueness. Default the Actions
 # run id so a reused namespace can re-propose after a rollback.
 PROPOSAL_ID="${PROPOSAL_ID:-${GITHUB_RUN_ID:-1}}"
-# Window = [now + START_LEAD_SECS, + WINDOW_DURATION]. Anvil only mines on txs, so keep the lead
-# tiny (tip+5 at the 1s fallback) and the historical 80-block window; continuously mining chains
-# get a window that covers the first e2e DAG.
+# Host window = [now + START_LEAD_SECS, + WINDOW_DURATION]. The preview anvil mines every second, so
+# keep the lead tiny (tip+5) and the historical 80-block window; external chains get a window that
+# covers the first e2e DAG. gwStartBlock is pinned to the gateway tip and needs no lead.
 if [[ "${EXTERNAL_CHAINS:-false}" == "true" ]]; then
   START_LEAD_SECS="${START_LEAD_SECS:-60}"
   WINDOW_DURATION="${WINDOW_DURATION:-5h}"
