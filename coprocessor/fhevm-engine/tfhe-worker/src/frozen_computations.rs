@@ -2,7 +2,7 @@
 
 use super::WorkItem;
 use crate::types::CoprocessorError;
-use fhevm_engine_common::types::{Handle, TxHash};
+use fhevm_engine_common::types::{Handle, SupportedFheOperations, TxHash};
 use lazy_static::lazy_static;
 use prometheus::{register_int_counter, IntCounter};
 use sqlx::{PgPool, Postgres, Transaction};
@@ -161,7 +161,7 @@ pub(super) fn filter_work(work: Vec<WorkItem>, drifted: &HashSet<Handle>) -> Fil
         .map(|row| BatchRow {
             output: row.output_handle.clone(),
             tx: row.transaction_id.clone(),
-            deps: row.dependencies.clone(),
+            deps: encrypted_dependencies(row),
         })
         .collect();
     let (dropped, weights) = score(&batch, drifted);
@@ -193,6 +193,21 @@ pub(super) fn filter_work(work: Vec<WorkItem>, drifted: &HashSet<Handle>) -> Fil
             weights,
         },
     }
+}
+
+/// Ciphertext operands of `row`. A plaintext scalar that equals a drifted
+/// handle must not freeze the op, so scalars are left out of the batch used by
+/// both the pick filter and `revise`. Same rule as the detector's containment
+/// scan; an unknown opcode keeps every operand.
+fn encrypted_dependencies(row: &WorkItem) -> Vec<Handle> {
+    let op = SupportedFheOperations::try_from(row.fhe_operation).ok();
+    let n_deps = row.dependencies.len();
+    row.dependencies
+        .iter()
+        .enumerate()
+        .filter(|(idx, _)| !op.is_some_and(|op| op.is_operand_scalar(row.is_scalar, *idx, n_deps)))
+        .map(|(_, dep)| dep.clone())
+        .collect()
 }
 
 pub(super) async fn penalize_frozen_transactions(
