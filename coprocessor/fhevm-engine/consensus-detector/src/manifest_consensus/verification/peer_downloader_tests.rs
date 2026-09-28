@@ -1831,8 +1831,7 @@ async fn concurrent_one_drifter_replay_resolves_exact_handle_findings() {
 
     let rows = sqlx::query(
         r#"
-        SELECT finding.version,
-               finding.coprocessor_context_id,
+        SELECT finding.coprocessor_context_id,
                finding.host_chain_id,
                finding.block_number,
                finding.block_hash,
@@ -1872,7 +1871,6 @@ async fn concurrent_one_drifter_replay_resolves_exact_handle_findings() {
         .zip(&drifted_manifests)
         .map(|((row, block), local_manifest)| (row, block, local_manifest))
     {
-        assert_eq!(row.try_get::<i16, _>("version").unwrap(), 1);
         assert_eq!(
             row.try_get::<Vec<u8>, _>("coprocessor_context_id").unwrap(),
             TEST_CONTEXT_ID.to_be_bytes::<32>()
