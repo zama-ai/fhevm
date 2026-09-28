@@ -152,6 +152,21 @@ precreate_blocks_valid_pending_index() {
     return 0
   fi
 
+  # This index only affects performance, so an INVALID leftover from an
+  # interrupted build is rebuilt rather than hard-failing every Job retry.
+  local index_valid
+  index_valid=$(psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -Atc \
+    "SELECT i.indisvalid
+       FROM pg_class c
+       JOIN pg_index i ON i.indexrelid = c.oid
+       JOIN pg_namespace n ON n.oid = c.relnamespace
+      WHERE n.nspname = 'public'
+        AND c.relname = 'idx_host_chain_blocks_valid_pending';")
+  if [ "$index_valid" = "f" ]; then
+    echo "Dropping invalid pending-blocks index left by an interrupted build"
+    run_sql "DROP INDEX CONCURRENTLY IF EXISTS idx_host_chain_blocks_valid_pending;"
+  fi
+
   echo "Pre-creating the pending-blocks index concurrently..."
   precreate_index "idx_host_chain_blocks_valid_pending" \
     "CREATE INDEX CONCURRENTLY idx_host_chain_blocks_valid_pending \
