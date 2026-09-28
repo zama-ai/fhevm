@@ -210,6 +210,9 @@ struct FakeCt64 {
     max_inflight: Arc<AtomicUsize>,
     /// GETs that fail with a non-S3 error, e.g. an oversize body.
     broken: Arc<Mutex<HashSet<FakeKey>>>,
+    /// When set, a GET signals `get_started` and waits for a permit.
+    held_gets: Option<Arc<tokio::sync::Semaphore>>,
+    get_started: Arc<tokio::sync::Notify>,
 }
 
 impl FakeCt64 {
@@ -247,6 +250,10 @@ impl Ct64Source for FakeCt64 {
         _coprocessor_context_id: U256,
     ) -> Result<Vec<u8>, ExecutionError> {
         self.gets.fetch_add(1, Ordering::SeqCst);
+        if let Some(held) = &self.held_gets {
+            self.get_started.notify_one();
+            held.acquire().await.unwrap().forget();
+        }
         let n = self.inflight.fetch_add(1, Ordering::SeqCst) + 1;
         self.max_inflight.fetch_max(n, Ordering::SeqCst);
         tokio::time::sleep(Duration::from_millis(50)).await;
@@ -1132,4 +1139,98 @@ async fn finding_of_a_failed_epoch_is_not_healed() {
     assert_eq!(source.gets.load(Ordering::SeqCst), 0);
     assert_eq!(healed(&pool, id).await, (true, false));
     assert_eq!(stored_ct64(&pool, 42).await, vec![0xffu8; 4]);
+}
+
+/// What the controller's rollback does to Green, under its exclusive cutover
+/// lock: the epoch fails and the schema is recreated empty, seeded with Blue's
+/// epoch.
+async fn roll_back_green(trx: &mut sqlx::Transaction<'_, sqlx::Postgres>) {
+    sqlx::query(
+        "INSERT INTO consensus_epoch_history (consensus_epoch, outcome, completed_at)
+         VALUES ('green', 'failed', NOW())",
+    )
+    .execute(trx.as_mut())
+    .await
+    .unwrap();
+    sqlx::query(&format!("DROP SCHEMA \"{GREEN_SCHEMA}\" CASCADE"))
+        .execute(trx.as_mut())
+        .await
+        .unwrap();
+    sqlx::query(&format!("CREATE SCHEMA \"{GREEN_SCHEMA}\""))
+        .execute(trx.as_mut())
+        .await
+        .unwrap();
+    for table in ["blue_green_consensus_epoch", "ciphertexts", "computations"] {
+        sqlx::query(&format!(
+            "CREATE TABLE \"{GREEN_SCHEMA}\".{table} (LIKE public.{table} INCLUDING ALL)"
+        ))
+        .execute(trx.as_mut())
+        .await
+        .unwrap();
+    }
+    sqlx::query(&format!(
+        "INSERT INTO \"{GREEN_SCHEMA}\".blue_green_consensus_epoch
+         SELECT * FROM public.blue_green_consensus_epoch"
+    ))
+    .execute(trx.as_mut())
+    .await
+    .unwrap();
+}
+
+#[tokio::test]
+#[serial(db)]
+async fn rollback_during_the_download_discards_the_install() {
+    let (_db, pool) = setup().await;
+    green_stack(&pool).await;
+    let body = vec![43u8; 8];
+    let id = insert_healable(&pool, 43, "s3://peer-a", &body).await;
+    set_epoch(&pool, id, "green").await;
+    let held = Arc::new(tokio::sync::Semaphore::new(0));
+    let source = FakeCt64 {
+        held_gets: Some(held.clone()),
+        ..FakeCt64::default()
+    };
+    source.put("s3://peer-a", 43, body);
+
+    let healer = tokio::spawn({
+        let pool = pool.clone();
+        let source = source.clone();
+        async move { pass(&pool, &source).await }
+    });
+    tokio::time::timeout(Duration::from_secs(5), source.get_started.notified())
+        .await
+        .expect("the healer must start the GET");
+    let mut rollback = pool.begin().await.unwrap();
+    sqlx::query("SELECT pg_advisory_xact_lock($1)")
+        .bind(fhevm_engine_common::versioning::CUTOVER_LOCK_ID)
+        .execute(rollback.as_mut())
+        .await
+        .unwrap();
+    held.add_permits(1);
+    tokio::time::timeout(Duration::from_secs(5), async {
+        loop {
+            let waiting: bool = sqlx::query_scalar(
+                "SELECT EXISTS (SELECT 1 FROM pg_locks WHERE locktype = 'advisory' AND mode = 'ShareLock' AND NOT granted AND objid = ($1::bigint & 4294967295)::oid)",
+            )
+            .bind(fhevm_engine_common::versioning::CUTOVER_LOCK_ID)
+            .fetch_one(&pool)
+            .await
+            .unwrap();
+            if waiting {
+                break;
+            }
+            tokio::time::sleep(Duration::from_millis(10)).await;
+        }
+    })
+    .await
+    .expect("the install must wait on the cutover lock");
+    roll_back_green(&mut rollback).await;
+    rollback.commit().await.unwrap();
+    tokio::time::timeout(Duration::from_secs(5), healer)
+        .await
+        .unwrap()
+        .unwrap();
+
+    assert_eq!(healed(&pool, id).await, (true, false));
+    assert_eq!(green_ct64(&pool, 43).await, None);
 }
