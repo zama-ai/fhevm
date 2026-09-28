@@ -878,8 +878,7 @@ window opens, roughly four minutes after you send, so the first round often fini
 the second and the refusal reads `completed` rather than `active`. Same guard either way. Send the
 duplicate as soon as the first `send` returns to catch it while `active`.
 
-The first proposal is a normal one, so the round then runs to a **cutover**. Keep traffic running
-for it, the gateway needs the work to make blocks. Case 6 costs a round and a `bg-reset.sh`,
+The first proposal is a normal one, so the round then runs to a **cutover**. Case 6 costs a round and a `bg-reset.sh`,
 so run it with the other cutover cases rather than among the ones that leave Blue live.
 
 ### Edge case 7. Operators disagree
@@ -932,9 +931,8 @@ resolve later.
 behind the tip (`DAO buffer violated`), whatever `BUFFER` is set to. The raw one takes literal block
 numbers and lets the contract and the listener be the only validators.
 
-Green must be up, as for any case, and **keep traffic running for all of them**: on testnets the
-gateway only makes blocks when something gives it work, and without them the round stalls for
-reasons that have nothing to do with the case. Run one proposal at a time.
+Green must be up, as for any case. Traffic is optional for these: the dry run injects its own work
+on both tracks. Run one proposal at a time.
 
 **First, read the tips.** Every window below is built from them:
 
@@ -1038,8 +1036,9 @@ kubectl exec -n $NAMESPACE postgres-coprocessor-1-0 -- \
 ```
 
 **Expect:** `gw_dry_run_started` turns true within seconds, even though the block is hundreds behind
-the gateway's current one. The gateway does not refuse it, it starts at the next block it
-sees. The round then completes normally and the version reaches `v0.15.0`.
+the gateway's current one. The gateway does not refuse it: the synthetic input is injected at
+`gw_start_block` on the listener's next tick, whether or not a new gateway block arrives, so an
+idle gateway still anchors. The round then completes normally and the version reaches `v0.15.0`.
 
 Check the flag **while the round is running**. After a failed round it reads `false` again, because
 the rollback resets it, that is not the same as it never having turned true.
@@ -1179,15 +1178,12 @@ a second proposal before the first has returned makes the first's cleanup delete
 resources. It shows up as `CreateContainerConfigError`, which looks like a broken environment and
 is not.
 
-**Every case that cuts over needs traffic running**: 1, 2, 5, 10, 11 and 12.
+**Cases 1, 2 and 5 need traffic running**, because they check that real balances still decrypt
+across the switch, and that needs real balances.
 
-Cases 1, 2 and 5 need it to have real balances to decrypt across the switch. Cases 10, 11 and 12
-need it because on `--testnets` the shared gateway only makes a block when something asks it to:
-with nothing happening `gw_dry_run_started` never turns true and the round sits in `DryRunStarted`
-with no error.
-
-The cases that end in failure, 3, 4, 8 and 9, do not need it. The dry run injects its own work at
-`start_block + 1`, and they finish before the gateway matters.
+The rest do not. The dry run injects its own work: the host side at `start_block + 1`, and the
+gateway side at `gw_start_block`, on idle ticks as well as on new blocks, so an idle gateway still
+anchors.
 
 When you do want it:
 
