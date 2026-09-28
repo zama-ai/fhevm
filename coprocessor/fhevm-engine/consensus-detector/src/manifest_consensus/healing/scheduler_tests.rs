@@ -1110,6 +1110,30 @@ async fn green_finding_is_installed_in_the_green_schema() {
 
 #[tokio::test]
 #[serial(db)]
+async fn green_shadowing_blue_epoch_leaves_blue_findings_in_public() {
+    let (_db, pool) = setup().await;
+    green_stack(&pool).await;
+    // Before allocation, and after rollback, Green's schema holds Blue's epoch.
+    sqlx::query(&format!(
+        "UPDATE \"{GREEN_SCHEMA}\".blue_green_consensus_epoch
+            SET consensus_epoch = (SELECT consensus_epoch FROM public.blue_green_consensus_epoch)"
+    ))
+    .execute(&pool)
+    .await
+    .unwrap();
+    let body = vec![44u8; 8];
+    let id = insert_healable(&pool, 44, "s3://peer-a", &body).await;
+    let source = FakeCt64::default();
+    source.put("s3://peer-a", 44, body.clone());
+
+    pass(&pool, &source).await;
+    assert_eq!(healed(&pool, id).await, (false, true));
+    assert_eq!(stored_ct64(&pool, 44).await, body);
+    assert_eq!(green_ct64(&pool, 44).await, None);
+}
+
+#[tokio::test]
+#[serial(db)]
 async fn finding_of_a_completed_epoch_is_installed_in_public() {
     let (_db, pool) = setup().await;
     record_epoch(&pool, "old-blue", "succeeded").await;
