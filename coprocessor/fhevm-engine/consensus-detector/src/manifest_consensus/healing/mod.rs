@@ -13,11 +13,13 @@
 //! reported, since a pinned target is never rewritten.
 //! Demand lives on a separate table so TFHE EMA writes never lock these rows.
 //! The pick lock is not held across S3. A matching GET installs the ct64 and
-//! sets `healed_at` in one transaction. Every epoch with a schema is healed,
-//! whichever stack runs the pass, and the ct64 is installed in the schema of
-//! the finding's epoch: a live stack's own schema, or `public` for earlier
-//! epochs merged at cutover. Failed epochs have no schema and are skipped. After a pass that installs at least
-//! one handle, the worker NOTIFYs `work_available` once so idle TFHE does
+//! sets `healed_at` in one transaction, which holds the shared cutover lock and
+//! resolves the epoch's schema again, so a cutover or rollback during the GET
+//! drops the job instead of writing into a replaced schema. Every epoch with a
+//! schema is healed, whichever stack runs the pass, and the ct64 is installed
+//! in the schema of the finding's epoch: a live stack's own schema, or `public`
+//! for earlier epochs merged at cutover. Failed epochs have no schema and are
+//! skipped. After a pass that installs at least one handle, the worker NOTIFYs `work_available` once so idle TFHE does
 //! not wait for its poll. Rows without a pin, and digest mismatches, HEAD
 //! registry attestations: a live quorum pins the digest, evidence, and sources
 //! on every active sibling without a target, then GETs. A pinned digest that
@@ -40,7 +42,7 @@ use fhevm_engine_common::pg_pool::is_fatal_connection_error;
 use fhevm_engine_common::types::get_ct_type;
 use fhevm_engine_common::CIPHERTEXT_VERSION;
 
-use super::containment::{epoch_schemas, set_execution_schema};
+use super::containment::{epoch_schemas, lock_cutover, set_execution_schema};
 use super::{ExecutionError, ManifestWorkGate};
 
 mod download;
@@ -817,9 +819,34 @@ async fn install_matching_ct64(
         return schedule_retry(pool, job, Failure::Terminal).await;
     };
     let mut trx = pool.begin().await?;
+    // The schema was resolved before the download. Cutover or rollback may have
+    // replaced it since, so resolve it again under the shared cutover lock,
+    // which holds it until commit.
+    lock_cutover(&mut trx).await.map_err(from_containment)?;
+    let schemas = epoch_schemas(&mut trx).await.map_err(from_containment)?;
+    let Some(schema) = schemas.get(&job.consensus_epoch) else {
+        trx.rollback().await?;
+        info!(
+            finding_id = job.id,
+            consensus_epoch = job.consensus_epoch,
+            "Finding's epoch lost its schema during the download; not installed"
+        );
+        return Ok(false);
+    };
+    if *schema != job.schema {
+        trx.rollback().await?;
+        info!(
+            finding_id = job.id,
+            consensus_epoch = job.consensus_epoch,
+            from = job.schema,
+            to = schema,
+            "Finding's epoch moved schema during the download; retried on the next pass"
+        );
+        return Ok(false);
+    }
     // `ciphertexts` and `computations` below resolve to the finding's stack;
     // `drifted_handle` exists only in public.
-    set_execution_schema(&mut trx, &job.schema)
+    set_execution_schema(&mut trx, schema)
         .await
         .map_err(from_containment)?;
     let marked = sqlx::query!(
