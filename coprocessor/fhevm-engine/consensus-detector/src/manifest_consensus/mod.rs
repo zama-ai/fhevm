@@ -219,8 +219,11 @@ pub(crate) async fn start(
     cancel: CancellationToken,
 ) -> Result<(), ExecutionError> {
     if config.my_bucket.is_none() {
-        tracing::warn!("Manifest publication disabled by --my-bucket=none");
-        tracing::warn!("Manifest verification disabled by --my-bucket=none");
+        // Healing only repairs drift found by verification, which compares
+        // peers against this stack's own manifests: none of the three can run.
+        tracing::warn!(
+            "Manifest publication, verification and ct64 healing disabled by --my-bucket=none; drift will be neither detected nor healed"
+        );
         return Ok(());
     }
 

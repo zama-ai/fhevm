@@ -1578,7 +1578,8 @@ consensusDetector:
 
   config:
     # Accepts `value` or `valueFrom`; empty uses the bucket fallback below. Set value to the
-    # literal `none` only to explicitly disable publication and verification.
+    # literal `none` only to explicitly disable manifest publication, verification and
+    # ct64 healing: drift is then neither detected nor healed.
     s3BucketName: {}
     # Interval between host-block discovery ticks (also seals/publishes
     # already-tracked work). After bootstrap, new heights arrive parent→child,
