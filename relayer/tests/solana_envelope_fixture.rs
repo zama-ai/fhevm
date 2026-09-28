@@ -25,6 +25,7 @@ mod permit_vectors;
 use alloy::primitives::U256;
 use fhevm_relayer::core::event::UserDecryptRequest;
 use fhevm_relayer::host::handle_chain_id::extract_chain_id_from_u256;
+use fhevm_relayer::host::solana_permit_prechecker::SolanaDeployments;
 use fhevm_relayer::host::verify_solana_permit;
 use fhevm_relayer::http::endpoints::v3::types::UserDecryptV3RequestJson;
 use permit_vectors::{PermitVectorFile, PERMIT_VECTOR_SCHEMA};
@@ -79,6 +80,7 @@ struct PermitHalf {
     payload: Map<String, Value>,
     signature: String,
     chain_id: u64,
+    verifying_program_id: [u8; 32],
     transport_key_hex: String,
     extra_data_hex: String,
 }
@@ -134,10 +136,18 @@ fn permit_half() -> PermitHalf {
         json!(format!("0x{}", record.permit.extra_data)),
     );
 
+    let verifying_program_id = <[u8; 32]>::try_from(
+        hex::decode(&record.permit.verifying_program_id)
+            .expect("the canon's program id is hex")
+            .as_slice(),
+    )
+    .expect("the canon's program id is 32 bytes");
+
     PermitHalf {
         payload,
         signature: format!("0x{}", record.signature),
         chain_id: record.permit.chain_id.parse().expect("decimal u64"),
+        verifying_program_id,
         transport_key_hex,
         extra_data_hex: record.permit.extra_data.clone(),
     }
@@ -254,12 +264,16 @@ fn every_accepted_record_becomes_a_solana_request() {
                     encrypted_stores,
                     "{name}: encryptedStore travels into the canonical request"
                 );
-                // The signature is the pre-check stage's to verify, not the conversion's: run it
-                // on the encoded request exactly as the endpoint does, so an accepted record is
-                // one the relayer forwards, not merely one it converts.
-                verify_solana_permit(solana_request).unwrap_or_else(|err| {
-                    panic!("{name}: should pass the signature pre-check: {err}")
-                });
+                // The signature and the deployment tie are the pre-check stage's to verify, not
+                // the conversion's: run it on the encoded request exactly as the endpoint does,
+                // for a relayer serving the canon's deployment, so an accepted record is one the
+                // relayer forwards, not merely one it converts.
+                let deployments = SolanaDeployments::from([(
+                    fixture.permit.chain_id,
+                    fixture.permit.verifying_program_id,
+                )]);
+                verify_solana_permit(solana_request, ct_handles, &deployments)
+                    .unwrap_or_else(|err| panic!("{name}: should pass the pre-check: {err}"));
             }
             other => panic!("{name}: converted into the wrong variant: {other:?}"),
         }

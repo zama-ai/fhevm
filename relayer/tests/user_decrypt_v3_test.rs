@@ -142,16 +142,31 @@ mod helpers {
 
     /// Build a `solana-srfc38-user-decrypt-v1` envelope for the fixture permit, signed by
     /// `signer`: the permit's own wallet for a valid request, any other wallet for a forged one.
+    /// The permit names the deployment [`TestSetup::new_with_solana_host_chain`] serves, and its
+    /// one direct entry is a handle from that chain.
+    pub fn create_srfc38_envelope_signed_by(
+        signer: &ed25519_dalek::SigningKey,
+    ) -> serde_json::Value {
+        create_srfc38_envelope_for(
+            signer,
+            utils::TEST_SOLANA_PROGRAM_ID,
+            utils::random_handle_with_chain_id(utils::TEST_SOLANA_HOST_CHAIN_ID),
+        )
+    }
+
+    /// Build a `solana-srfc38-user-decrypt-v1` envelope whose permit names `program_id` on the
+    /// served Solana host chain, with one direct entry on `handle`, signed by `signer`.
     ///
     /// The relayer verifies the ed25519 signature before it submits anything, so a random blob
     /// is not an envelope this endpoint accepts: the signature over the reconstructed permit
-    /// envelope is genuine. The handle uses `random_handle()` so its embedded chain id is a
-    /// configured host chain and the request survives the early chain-id gate; the permit fields
-    /// are shaped to pass the strict typed pre-check (`PermitFields::decode`): a 32-byte
-    /// identity, an 869-byte transport key, a validity window covering now, and a 65-byte `0x02`
-    /// KMS-routing `extraData`.
-    pub fn create_srfc38_envelope_signed_by(
+    /// envelope is genuine. The permit fields are shaped to pass the strict typed decode
+    /// (`PermitFields::decode`): a 32-byte identity, an 869-byte transport key, a validity
+    /// window covering now, and a 65-byte `0x02` KMS-routing `extraData`. The deployment the
+    /// permit names and the chain the handle embeds are the caller's to make agree — or not.
+    pub fn create_srfc38_envelope_for(
         signer: &ed25519_dalek::SigningKey,
+        program_id: [u8; 32],
+        handle: String,
     ) -> serde_json::Value {
         use ed25519_dalek::Signer;
         use zama_solana_permit::{build_envelope, PermitFields, PermitWireFields};
@@ -164,8 +179,8 @@ mod helpers {
         let user_pubkey = srfc38_wallet().verifying_key().to_bytes();
         let transport_key = vec![0u8; 869];
         let allowed_scope = [[0x05u8; 32], [0x06u8; 32]].concat();
-        let verifying_program_id = [0x02u8; 32];
-        let chain_id = fhevm_relayer::core::event::solana_host_chain_id(1);
+        let verifying_program_id = program_id;
+        let chain_id = utils::TEST_SOLANA_HOST_CHAIN_ID;
         let mut extra_data = vec![0x02u8];
         extra_data.extend_from_slice(&[0u8; 64]);
         let start_timestamp = now - 1;
@@ -199,7 +214,7 @@ mod helpers {
                 // 65-byte KMS routing: version 0x02 ‖ contextId(32) ‖ epochId(32).
                 "extraData": format!("0x{}", hex::encode(&extra_data)),
                 "handles": [{
-                    "handle": random_handle(),
+                    "handle": handle,
                     // The allowed key of a direct entry is the requester itself.
                     "allowedKey": format!("0x{}", hex::encode(user_pubkey)),
                     "encryptedStore": random_0x_hex(32),
@@ -246,7 +261,9 @@ async fn v3_accepts_direct_handle() {
 /// verifies the signature again, authoritatively.
 #[tokio::test]
 async fn v3_accepts_solana_srfc38_request() {
-    let setup = TestSetup::new().await.expect("Failed to create test setup");
+    let setup = TestSetup::new_with_solana_host_chain()
+        .await
+        .expect("Failed to create test setup");
     let payload = helpers::create_srfc38_envelope();
 
     let response = reqwest::Client::new()
@@ -273,7 +290,9 @@ async fn v3_accepts_solana_srfc38_request() {
 /// envelope rejects the retired EVM `userAddress` / ed25519 `nonce` shapes at the HTTP boundary.
 #[tokio::test]
 async fn v3_rejects_solana_srfc38_with_stray_field() {
-    let setup = TestSetup::new().await.expect("Failed to create test setup");
+    let setup = TestSetup::new_with_solana_host_chain()
+        .await
+        .expect("Failed to create test setup");
     let mut payload = helpers::create_srfc38_envelope();
     payload["attestedPayload"]["nonce"] = json!("0x00");
 
@@ -402,7 +421,9 @@ async fn v3_rejects_invalid_signature() {
 /// forwarded.
 #[tokio::test]
 async fn v3_rejects_solana_signature_from_another_wallet() {
-    let setup = TestSetup::new().await.expect("Failed to create test setup");
+    let setup = TestSetup::new_with_solana_host_chain()
+        .await
+        .expect("Failed to create test setup");
     let stranger = ed25519_dalek::SigningKey::from_bytes(&[0x99; 32]);
 
     test_endpoint(
@@ -421,7 +442,9 @@ async fn v3_rejects_solana_signature_from_another_wallet() {
 /// conversion; the answer is the same field-keyed 400 a validator refusal gets, not a 500.
 #[tokio::test]
 async fn v3_rejects_solana_entry_of_the_wrong_width_as_a_client_error() {
-    let setup = TestSetup::new().await.expect("Failed to create test setup");
+    let setup = TestSetup::new_with_solana_host_chain()
+        .await
+        .expect("Failed to create test setup");
 
     test_endpoint(
         &helpers::v3_user_decrypt_post_url(&setup),
@@ -431,6 +454,66 @@ async fn v3_rejects_solana_entry_of_the_wrong_width_as_a_client_error() {
                 json!(helpers::random_0x_hex(31));
         },
         expect_v2_validation_error("handles[0].encryptedStore", "expected 32"),
+    )
+    .await;
+
+    setup.shutdown().await;
+}
+
+/// v3 refuses a Solana permit whose handle was written on another host chain than the permit
+/// names. The handle embeds the EVM test chain, which the relayer serves, so the early handle gate
+/// passes it; the permit names the Solana chain. Without the pre-check's tie the request would
+/// cost a gateway transaction and the fee before the connector's own deployment check refused it,
+/// and the refusal would never reach the relayer. Answered as a form refusal: 400 on the handle.
+#[tokio::test]
+async fn v3_rejects_solana_handle_from_another_host_chain_than_the_permit() {
+    let setup = TestSetup::new_with_solana_host_chain()
+        .await
+        .expect("Failed to create test setup");
+
+    test_endpoint(
+        &helpers::v3_user_decrypt_post_url(&setup),
+        helpers::create_srfc38_envelope_for(
+            &helpers::srfc38_wallet(),
+            crate::common::utils::TEST_SOLANA_PROGRAM_ID,
+            crate::common::utils::random_handle_with_chain_id(
+                crate::common::utils::TEST_HOST_CHAIN_ID,
+            ),
+        ),
+        |_: &mut serde_json::Value| {},
+        expect_v2_validation_error(
+            "handles[0].handle",
+            &format!(
+                "belongs to host chain {}",
+                crate::common::utils::TEST_HOST_CHAIN_ID
+            ),
+        ),
+    )
+    .await;
+
+    setup.shutdown().await;
+}
+
+/// v3 refuses a Solana permit signed for another zama-host program than the one the relayer
+/// serves on the permit's chain: the connector would refuse it under its own deployment
+/// identity, after the fee. Answered as a form refusal: 400 on `verifyingProgramId`.
+#[tokio::test]
+async fn v3_rejects_solana_permit_for_another_program() {
+    let setup = TestSetup::new_with_solana_host_chain()
+        .await
+        .expect("Failed to create test setup");
+
+    test_endpoint(
+        &helpers::v3_user_decrypt_post_url(&setup),
+        helpers::create_srfc38_envelope_for(
+            &helpers::srfc38_wallet(),
+            [0x03; 32],
+            crate::common::utils::random_handle_with_chain_id(
+                crate::common::utils::TEST_SOLANA_HOST_CHAIN_ID,
+            ),
+        ),
+        |_: &mut serde_json::Value| {},
+        expect_v2_validation_error("verifyingProgramId", "names program"),
     )
     .await;
 
@@ -568,7 +651,9 @@ async fn v3_rejects_handle_entry_missing_contract_address() {
 
 #[tokio::test]
 async fn v3_rejects_solana_handle_entry_missing_encrypted_store() {
-    let setup = TestSetup::new().await.expect("Failed to create test setup");
+    let setup = TestSetup::new_with_solana_host_chain()
+        .await
+        .expect("Failed to create test setup");
     let url = helpers::v3_user_decrypt_post_url(&setup);
 
     test_endpoint(
