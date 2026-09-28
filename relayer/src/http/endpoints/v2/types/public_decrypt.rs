@@ -1,6 +1,7 @@
 use super::error::{ApiResponseStatus, V2ErrorResponseBody};
 use crate::host::handle_chain_id::extract_chain_id_from_handle;
 use crate::http::utils::redact::{redact_count, redact_len};
+use alloy::primitives::U256;
 use derivative::Derivative;
 use serde::{Deserialize, Serialize};
 use utoipa::ToSchema;
@@ -31,14 +32,32 @@ pub struct PublicDecryptRequestJson {
 }
 
 impl PublicDecryptRequestJson {
+    /// The handles as the request sends them to the Gateway: the `0x` prefix is optional and a
+    /// shorter value is left-padded to 32 bytes.
+    pub fn parse_ct_handles(&self) -> anyhow::Result<Vec<[u8; 32]>> {
+        self.ciphertext_handles
+            .iter()
+            .map(|ct_handle_hex| {
+                // TODO (Mano): The conversion to be bytes should happen in low level
+                // code. App code should deal with with higher level types like U256.
+                U256::from_str_radix(
+                    ct_handle_hex.strip_prefix("0x").unwrap_or(ct_handle_hex),
+                    16,
+                )
+                .map(|ct_handle| ct_handle.to_be_bytes())
+                .map_err(|e| anyhow::anyhow!("Failed to parse ct_handle: {}", e))
+            })
+            .collect()
+    }
+
     /// Solana handles name one 32-byte store each, and EVM handles name none. A request that
     /// mixes the two has no Gateway entry to go to.
     pub fn validate_encrypted_stores(&self, errors: &mut ValidationErrors) {
-        let handles: Vec<[u8; 32]> = self
-            .ciphertext_handles
-            .iter()
-            .filter_map(|handle| parse_handle(handle))
-            .collect();
+        // Judged on the handles the request converts to. One that does not parse fails the
+        // request on its own, and its chain is unknown.
+        let Ok(handles) = self.parse_ct_handles() else {
+            return;
+        };
         let solana_handles = handles
             .iter()
             .filter(|handle| is_solana_host_chain_id(extract_chain_id_from_handle(handle)))
@@ -46,7 +65,7 @@ impl PublicDecryptRequestJson {
         let message = match &self.encrypted_stores {
             None if solana_handles == 0 => return,
             None => "Required for Solana handles".to_string(),
-            Some(_) if solana_handles < self.ciphertext_handles.len() => {
+            Some(_) if solana_handles < handles.len() => {
                 "Only accepted when every handle is a Solana handle".to_string()
             }
             Some(stores) if stores.iter().any(|store| store.len() != 66) => {
@@ -62,13 +81,6 @@ impl PublicDecryptRequestJson {
             ValidationError::new("validation_error").with_message(message.into()),
         );
     }
-}
-
-fn parse_handle(handle: &str) -> Option<[u8; 32]> {
-    hex::decode(handle.strip_prefix("0x")?)
-        .ok()?
-        .try_into()
-        .ok()
 }
 
 // POST response with job ID and request tracking
@@ -194,6 +206,37 @@ mod tests {
 
         assert_eq!(store_error(&solana_request), None);
         assert_eq!(store_error(&evm_request), None);
+    }
+
+    /// The check sees the handle the Gateway gets: a short value is left-padded, so a Solana
+    /// chain id in its low bytes makes it a Solana handle.
+    #[test]
+    fn a_short_handle_is_judged_as_it_is_padded() {
+        let padded = handle_on(solana_host_chain_id(1), 0);
+        let short = PublicDecryptRequestJson {
+            ciphertext_handles: vec![format!("0x{}", hex::encode(&padded[22..]))],
+            extra_data: "0x00".to_string(),
+            encrypted_stores: None,
+        };
+
+        assert_eq!(short.parse_ct_handles().unwrap(), vec![padded]);
+        assert_eq!(
+            store_error(&short).as_deref(),
+            Some("Required for Solana handles")
+        );
+    }
+
+    /// A handle that does not parse is not a pairing error: the request fails on the handle.
+    #[test]
+    fn an_unparseable_handle_is_left_to_its_own_error() {
+        let too_long = PublicDecryptRequestJson {
+            ciphertext_handles: vec![format!("0x{}", hex::encode([0x11; 33]))],
+            extra_data: "0x00".to_string(),
+            encrypted_stores: Some(vec![store(0xaa)]),
+        };
+
+        assert!(too_long.parse_ct_handles().is_err());
+        assert_eq!(store_error(&too_long), None);
     }
 
     #[test]

@@ -73,7 +73,7 @@ are written as one narrative instead.
 | [DD-044](#dd-044-every-event-goes-through-the-event-cpi-or-is-not-emitted-at-all-emit-events-deleted)                                     | adopted; see the note under its status   | Every Event Goes Through The Event CPI, Or Is Not Emitted At All (`emit-events` deleted)                                        |
 | [DD-045](#dd-045-keep-burn-settlement-sequential-and-keep-wrapper-policy-separate-from-host-governance)                                   | adopted; see the note under its status   | Keep Burn Settlement Sequential and Keep Wrapper Policy Separate From Host Governance                                           |
 | [DD-046](#dd-046-the-program-heap-is-fixed-at-32-kb--no-custom-allocator-raised-heap-deleted)                                             | adopted                                  | The Program Heap Is Fixed At 32 KB — No Custom Allocator (`raised-heap` deleted)                                                |
-| [DD-047](#dd-047-the-application-is-program-scope--program-verified-scope-declared-rfc-035)                                               | adopted; see the note under its status   | The Application Is `(program, scope)` — Program Verified, Scope Declared (RFC 035)                                              |
+| [DD-047](#dd-047-the-application-is-program-scope--program-verified-scope-owned-by-program-rfc-035)                                       | adopted; see the note under its status   | The Application Is `(program, scope)` — Program Verified, Scope Owned By Program (RFC 035)                                      |
 | [DD-048](#dd-048-allows-are-sealed-on-the-write-the-deny-list-names-applications-one-connector-path-rfc-035)                              | adopted; see the note under its status   | Allows Are Sealed On The Write; The Deny List Names Applications; One Connector Path (RFC 035)                                  |
 | [DD-049](#dd-049-shared-encrypted-store-and-transaction-local-result-grants)                                                              | adopted                                  | Shared Encrypted Store And Transaction-Local Result Grants                                                                      |
 | [DD-050](#dd-050-transient-storage-shared-across-the-transaction)                                                                         | adopted                                  | Transient Storage Shared Across The Transaction                                                                                 |
@@ -1628,7 +1628,7 @@ it. Deleted.
 Reopening condition: a benchmark showing a real application blocked by the measured shape
 boundaries after the copy-reduction work (argument clone, decode-once, packet pre-sizing) landed.
 
-## DD-047: The Application Is `(program, scope)` — Program Verified, Scope Declared (RFC 035)
+## DD-047: The Application Is `(program, scope)` — Program Verified, Scope Owned By Program (RFC 035)
 
 Status: adopted
 
@@ -1676,9 +1676,9 @@ Rationale:
 A PDA is the one thing on Solana that a program, and only that program, can sign for — the
 `msg.sender` analog the port had been missing. Verifying the program through the authority costs one
 `create_program_address` per output and buys an unforgeable identity with no registry: the program
-is its own registry entry (the "Option B" DD-039 deferred). Declaring the scope rather than deriving
-it keeps the host ignorant of app seed layouts while still letting the token program meter per
-mint. Requiring an owned account instead of free bytes costs one owner comparison and gives the scope a
+is its own registry entry (the "Option B" DD-039 deferred). Letting the program name the scope
+rather than deriving it keeps the host ignorant of app seed layouts while still letting the token
+program meter per mint. Requiring an owned account instead of free bytes costs one owner comparison and gives the scope a
 meaning a reader can check: a permit or a delegation names an account, not a number the program chose.
 Every specimen program already had such an account at the call.
 
@@ -1704,14 +1704,18 @@ Consequences:
   lever that must bind a program regardless of its cooperation has to key on the one field the
   program cannot change, its program id (`["deny-program", program]`, or a program-level ceiling);
   neither is built, and EVM has no program-level ban either, so neither is a parity gap.
-  A create-time check that `scope` names an existing account owned by `program` would ground the
-  identifier — the reference confidential token already satisfies it, since its scope is the
-  address of a keypair-generated, program-owned `ConfidentialMint` — and would stop a program from
-  forwarding a caller-supplied scope and so handing out host-level trust or metering it was never
-  granted. It would not make the deny list or the meter binding. Because grounding is transitive
-  (updates and metering read the stored scope, `preflight.rs` `fold_app`), such a check has to be
-  unconditional and land before any Store exists that will not be wiped; it cannot be
-  retrofitted onto Stores already written.
+- **The owner check grounds the scope; it does not bind the program.** Because `scope` must be an
+  account `program` owns, a program cannot forward a caller-supplied scope it does not own and so
+  hand out trust or metering it was never granted, and a permit or a delegation names a real
+  account. The check is unconditional and runs where a scope enters the host:
+  `create_encrypted_store`, and `delegate_for_user_decryption` for a grant. Updates and metering
+  read the stored scope (`preflight.rs` `fold_app`) and do not re-check it. It does not
+  make the deny list or the meter binding: a hostile program can still create fresh accounts it
+  owns, one per scope it wants.
+- **A scope account must outlive its Stores.** Only a grant reads the scope account. If `program`
+  closes or reassigns it, its Stores keep working and existing delegation rows keep authorizing
+  until they expire or are revoked, but no new application-specific row can be granted for those
+  Stores, only the wildcard row (DD-061).
 
 ## DD-048: Allows Are Sealed On The Write; The Deny List Names Applications; One Connector Path (RFC 035)
 

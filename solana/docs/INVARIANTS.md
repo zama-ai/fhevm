@@ -310,7 +310,8 @@ delegation record for the encrypted store's application `(program, scope)`, the 
 store's program owns (`EncryptedStoreScopeNotProgramAccount`), and nothing lives at the sentinel; no program can be
 deployed at it; and the connector refuses a store that names it either way. `delegate_for_user_decryption` applies
 the same owner rule to a grant's scope (`DelegationScopeNotProgramAccount`, DD-061), so an application row names an
-application a store can have. Either row authorizes the delegate if its
+application a store can have. A scope account must therefore outlive its stores: once `program` closes or reassigns it,
+only the wildcard row can be granted for them (DD-047). Either row authorizes the delegate if its
 `expires_at` is after that Clock's `unix_timestamp`, as EVM's `expirationDate > block.timestamp`; a revocation writes 0.
 A dead row cannot veto a live one; a row the host program could not have written fails the entry closed, whatever
 the other row says. The connector then requires the delegator's allow leaf

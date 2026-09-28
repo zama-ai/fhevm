@@ -1651,6 +1651,30 @@ describe('Decryption', function () {
       ).to.be.revertedWithCustomError(decryption, 'InvalidNullContextId');
     });
 
+    it('Should report an unknown handle before a null contextId', async function () {
+      const nullContextExtraData = extraDataV1(0n);
+      const nullContextRequestMessage = createEIP712RequestUserDecrypt(
+        await decryption.getAddress(),
+        publicKey,
+        contractsInfo.addresses as string[],
+        contractsInfo.chainId as number,
+        requestValidity.startTimestamp.toString(),
+        requestValidity.durationDays.toString(),
+        nullContextExtraData,
+      );
+      const [nullContextUserSignature] = await getSignaturesUserDecryptRequest(nullContextRequestMessage, [user]);
+
+      await expect(
+        decryption
+          .connect(tokenFundedTxSender)
+          [
+            'userDecryptionRequest((bytes32,address)[],(uint256,uint256),(uint256,address[]),address,bytes,bytes,bytes)'
+          ]([newCtHandleContractPair], requestValidity, contractsInfo, user.address, publicKey, nullContextUserSignature, nullContextExtraData),
+      )
+        .to.be.revertedWithCustomError(ciphertextCommits, 'CiphertextMaterialNotFound')
+        .withArgs(newCtHandle);
+    });
+
     it('Should reject an invalid pinned context before collecting fees or creating the request', async function () {
       const invalidContextId = 999_999n;
       const invalidContextExtraData = extraDataV1(invalidContextId);
@@ -2724,6 +2748,40 @@ describe('Decryption', function () {
             nullContextExtraData,
           ),
       ).to.be.revertedWithCustomError(decryption, 'InvalidNullContextId');
+    });
+
+    it('Should report an unknown handle before a null contextId', async function () {
+      // The delegate signature commits to extraData, so the null-context payload needs its own.
+      const nullContextExtraData = extraDataV1(0n);
+      const nullContextRequestMessage = createEIP712RequestDelegatedUserDecrypt(
+        await decryption.getAddress(),
+        publicKey,
+        contractsInfo.addresses as string[],
+        delegatorAddress,
+        contractsInfo.chainId as number,
+        startTimestamp.toString(),
+        durationDays.toString(),
+        nullContextExtraData,
+      );
+      const [nullContextDelegateSignature] = await getSignaturesDelegatedUserDecryptRequest(nullContextRequestMessage, [
+        delegateAccount,
+      ]);
+
+      await expect(
+        decryption
+          .connect(tokenFundedTxSender)
+          .delegatedUserDecryptionRequest(
+            [newCtHandleContractPair],
+            requestValidity,
+            delegationAccounts,
+            contractsInfo,
+            publicKey,
+            nullContextDelegateSignature,
+            nullContextExtraData,
+          ),
+      )
+        .to.be.revertedWithCustomError(ciphertextCommits, 'CiphertextMaterialNotFound')
+        .withArgs(newCtHandles[0]);
     });
 
     it('Should reject an invalid pinned context before collecting fees or creating the request', async function () {

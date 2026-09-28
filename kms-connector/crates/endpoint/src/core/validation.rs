@@ -172,7 +172,7 @@ pub fn validate_solana_user_decryption(
             .collect(),
     };
     SolanaUserDecryptionRequestV1::new(U256::from_be_bytes(id.0), fields, blob)
-        .map_err(|e| ValidationError::InvalidSolanaRequest(e.to_string()))
+        .map_err(|e| invalid(e.to_string()))
 }
 
 /// Read before the payload, so an unsupported scheme is reported as such whatever shape its

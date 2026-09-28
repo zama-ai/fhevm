@@ -1064,20 +1064,7 @@ impl TryFrom<PublicDecryptRequestJson> for PublicDecryptRequest {
     fn try_from(value: PublicDecryptRequestJson) -> Result<Self, Self::Error> {
         info!("Converting PublicDecryptRequestJson to PublicDecryptRequest");
 
-        let mut ct_handles = Vec::new();
-        for ct_handle_hex in &value.ciphertext_handles {
-            let ct_handle = if let Some(ct_handle_hex_wo_prefix) = ct_handle_hex.strip_prefix("0x")
-            {
-                U256::from_str_radix(ct_handle_hex_wo_prefix, 16)
-            } else {
-                U256::from_str_radix(ct_handle_hex, 16)
-            }
-            .map_err(|e| anyhow::anyhow!("Failed to parse ct_handle: {}", e))?;
-
-            // TODO (Mano): The conversion to be bytes should happen in low level
-            // code. App code should deal with with higher level types like U256.
-            ct_handles.push(ct_handle.to_be_bytes());
-        }
+        let ct_handles = value.parse_ct_handles()?;
 
         // Parse extraData (validated at HTTP layer). It is propagated verbatim to the Gateway.
         let extra_data = Bytes::from_str(&value.extra_data)?;

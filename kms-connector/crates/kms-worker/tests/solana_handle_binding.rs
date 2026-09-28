@@ -669,10 +669,10 @@ fn an_ahead_path_verifies_against_the_observed_tree() {
     .expect("the ahead path is cut to the observed peak");
 }
 
-/// A proof built against an older leaf count still verifies, so it resolves the query at the first
-/// coprocessor and the next one is not asked.
+/// A proof built against an older leaf count still verifies against the observed peaks, so a
+/// coprocessor that has not seen the latest allow can still serve the request alone.
 #[tokio::test]
-async fn a_valid_older_proof_resolves_without_asking_the_next_coprocessor() {
+async fn a_proof_built_against_an_older_leaf_count_verifies() {
     let wallet = Wallet::new(1);
     let sealed = handle(0x62, FHE_TYPE_UINT64);
     let mut before = EncryptedStoreFixture::allowing(sealed, wallet.pubkey());
@@ -683,11 +683,10 @@ async fn a_valid_older_proof_resolves_without_asking_the_next_coprocessor() {
     let world = World::at_slot(100)
         .with_encrypted_store(&after)
         .with_watermark(wallet.pubkey(), 0);
-    let proofs = ScriptedProofReader::in_order(vec![ProofRecord::of(&[&before]), world.record()]);
+    let proofs = ScriptedProofReader::in_order(vec![ProofRecord::of(&[&before])]);
     authorize_request(&ScriptedReader::constant(world), &proofs, CONTEXT, &request)
         .await
         .expect("a proof against a surviving peak verifies");
-    assert_eq!(proofs.call_count(), 1);
 }
 
 /// A store holding allow leaves for `key` on two handles, resolved, and the two queries.

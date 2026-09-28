@@ -294,10 +294,9 @@ pub fn from_public_decryption_row(row: &PgRow) -> anyhow::Result<ProtocolEvent> 
     let kind = match row.try_get::<Option<Vec<Vec<u8>>>, _>("handle_encrypted_stores")? {
         Some(stores) => {
             let stores = stores
-                .iter()
-                .map(|s| B256::try_from(s.as_slice()))
-                .collect::<Result<Vec<_>, _>>()
-                .map_err(|_| anyhow!("encrypted store is not 32 bytes"))?;
+                .into_iter()
+                .map(|store| fixed_width::<32>(store, "handle_encrypted_stores").map(B256::from))
+                .collect::<anyhow::Result<Vec<_>>>()?;
             SolanaPublicDecryptionRequest::new(decryption_id, &ct_handles, &stores, extra_data)?
                 .into()
         }

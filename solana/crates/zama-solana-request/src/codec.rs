@@ -11,7 +11,8 @@
 use crate::assemble::SolanaRequestBlob;
 use borsh::BorshDeserialize;
 
-/// The one known layout version byte. No other layout is decoded.
+/// The one known layout version byte. Earlier layouts, `0x01` to `0x04`, were never deployed and
+/// are not decoded.
 pub const SOLANA_REQUEST_VERSION: u8 = 0x05;
 
 /// Why a request blob was refused.

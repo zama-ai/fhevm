@@ -155,11 +155,12 @@ contract Decryption is
      * @dev The KMS Connector authorizes a Solana request against a single atomic
      * `getMultipleAccounts` snapshot, and a standard Solana RPC node serves at most 100 accounts
      * per call (agave's `--rpc-max-multiple-accounts` default). The worst-case read, a delegated
-     * user decryption, carries 3 accounts per entry (its encrypted store plus the exact and wildcard delegation rows), the
-     * signer's permit-invalidation record and the Clock sysvar that delegation expiry is checked
-     * against: `3 * N + 2 <= 100` gives `N <= 32`. Enforced at admission, before the fee, so a
-     * request the Connector cannot read in one snapshot is never accepted or paid for. Counts list entries, not distinct handles,
-     * matching the Connector's own bound (`MAX_REQUEST_HANDLES` in zama-solana-request).
+     * user decryption, carries 3 accounts per entry (its encrypted store plus the exact and
+     * wildcard delegation rows), the signer's permit-invalidation record and the Clock sysvar that
+     * delegation expiry is checked against: `3 * N + 2 <= 100` gives `N <= 32`. Enforced at
+     * admission, before the fee, so a request the Connector cannot read in one snapshot is never
+     * accepted or paid for. Counts list entries, not distinct handles, matching the Connector's
+     * own bound (`MAX_REQUEST_HANDLES` in zama-solana-request).
      */
     uint8 internal constant MAX_SOLANA_DECRYPT_HANDLES = 32;
 
@@ -390,7 +391,7 @@ contract Decryption is
 
         (uint256 publicDecryptionId, ) = _registerPublicDecryptionRequest(ctHandles, extraData);
 
-        // Single emission: this entry has no pre-0.15 consumer, as the Solana user decryption.
+        // Single emission: this entry has no pre-0.15 consumer, like the Solana user decryption.
         emit SolanaPublicDecryptionRequest(publicDecryptionId, ctHandles, extraData, encryptedStores);
     }
 
@@ -568,14 +569,11 @@ contract Decryption is
             contractsInfo.chainId
         );
 
+        SnsCiphertextMaterial[] memory snsCtMaterials = _getUserDecryptionCtMaterials(ctHandles);
+        // After the ciphertext lookup: an unknown handle is reported before a bad or unknown context.
         uint256 contextId = _extractContextId(extraData);
-        (uint256 userDecryptionId, SnsCiphertextMaterial[] memory snsCtMaterials) = _registerUserDecryptionRequest(
-            ctHandles,
-            publicKey,
-            contextId
-        );
-        // After the ciphertext lookup: an unknown handle is reported before an unknown context.
         _validateContextId(contextId);
+        uint256 userDecryptionId = _registerUserDecryptionRequest(ctHandles, publicKey, contextId);
 
         // Collect the fee from the transaction sender for this user decryption request.
         _collectUserDecryptionFee(msg.sender);
@@ -643,14 +641,11 @@ contract Decryption is
             );
         }
 
+        SnsCiphertextMaterial[] memory snsCtMaterials = _getUserDecryptionCtMaterials(ctHandles);
+        // After the ciphertext lookup: an unknown handle is reported before a bad or unknown context.
         uint256 contextId = _extractContextId(extraData);
-        (uint256 userDecryptionId, SnsCiphertextMaterial[] memory snsCtMaterials) = _registerUserDecryptionRequest(
-            ctHandles,
-            publicKey,
-            contextId
-        );
-        // After the ciphertext lookup: an unknown handle is reported before an unknown context.
         _validateContextId(contextId);
+        uint256 userDecryptionId = _registerUserDecryptionRequest(ctHandles, publicKey, contextId);
 
         // Collect the fee from the transaction sender for this delegated user decryption request.
         _collectUserDecryptionFee(msg.sender);
@@ -728,11 +723,9 @@ contract Decryption is
         UserDecryptionRequestPayload memory payload,
         uint256 contextId
     ) internal virtual {
-        (uint256 userDecryptionId, SnsCiphertextMaterial[] memory snsCtMaterials) = _registerUserDecryptionRequest(
-            _extractCtHandlesCheckConformanceHandleEntry(handles),
-            payload.publicKey,
-            contextId
-        );
+        bytes32[] memory ctHandles = _extractCtHandlesCheckConformanceHandleEntry(handles);
+        SnsCiphertextMaterial[] memory snsCtMaterials = _getUserDecryptionCtMaterials(ctHandles);
+        uint256 userDecryptionId = _registerUserDecryptionRequest(ctHandles, payload.publicKey, contextId);
 
         // Dual emission: for both pre and post 0.15 consumers
         emit UserDecryptionRequest(userDecryptionId, snsCtMaterials, handles, payload);
@@ -771,11 +764,8 @@ contract Decryption is
      * @notice Executes the post-validation body of `solanaUserDecryptionRequest`:
      * conformance-checks the handles, fetches the SNS ciphertexts, updates storage, and emits
      * `SolanaUserDecryptionRequest`.
-     * @dev Mirrors `_executeUnifiedUserDecryptionRequest` and reuses the shared `userDecryptionCounter`
-     * and `userDecryptionPayloads`/`decryptionContextId` storage, so the response handler
-     * (`userDecryptionResponse`) is oblivious to the request's host chain — the host-side
-     * authorization lives in the KMS Connector, fed by the opaque `solanaRequest` this
-     * function forwards verbatim.
+     * @dev The host-side authorization lives in the KMS Connector, which reads the opaque
+     * `solanaRequest` this function forwards verbatim.
      */
     function _executeSolanaUserDecryptionRequest(
         bytes32[] calldata ctHandles,
@@ -787,7 +777,9 @@ contract Decryption is
     ) internal virtual {
         bytes32[] memory ctHandlesMem = ctHandles;
         _checkSolanaCtHandlesConformance(ctHandlesMem);
-        (uint256 userDecryptionId, ) = _registerUserDecryptionRequest(ctHandlesMem, publicKey, contextId);
+        // Only the lookup's checks: the event carries handles, not materials.
+        _getUserDecryptionCtMaterials(ctHandlesMem);
+        uint256 userDecryptionId = _registerUserDecryptionRequest(ctHandlesMem, publicKey, contextId);
 
         // Single emission: there is no pre-0.15 consumer of this entry to keep on the deprecated
         // `SnsCiphertextMaterial[]` shape, so this event is handles-only from the start
@@ -803,16 +795,12 @@ contract Decryption is
     }
 
     /**
-     * @notice The body every user decryption entry shares once its handles are checked: fetches
-     * the SNS ciphertexts, allocates the decryption ID from the shared `userDecryptionCounter`
-     * (so `userDecryptionResponse` is oblivious to the request path), stores the public key and
-     * handles for the response's signature check and pins the KMS context.
+     * @notice Fetches the SNS ciphertexts of a user decryption's handles. Reverts on an unknown
+     * handle or on handles under different keys.
      */
-    function _registerUserDecryptionRequest(
-        bytes32[] memory ctHandles,
-        bytes memory publicKey,
-        uint256 contextId
-    ) internal virtual returns (uint256 userDecryptionId, SnsCiphertextMaterial[] memory snsCtMaterials) {
+    function _getUserDecryptionCtMaterials(
+        bytes32[] memory ctHandles
+    ) internal view virtual returns (SnsCiphertextMaterial[] memory snsCtMaterials) {
         // Fetch the ciphertexts from the CiphertextCommits contract
         // This call is reverted if any of the ciphertexts are not found in the contract, but
         // this should not happen for now as a ciphertext cannot be allowed for decryption
@@ -823,7 +811,18 @@ contract Decryption is
         // TODO: remove when batched decryption requests with different keys is supported by the
         // KMS (see https://github.com/zama-ai/fhevm-internal/issues/376).
         _checkCtMaterialKeyIds(snsCtMaterials);
+    }
 
+    /**
+     * @notice Allocates a user decryption ID from the shared `userDecryptionCounter` (so
+     * `userDecryptionResponse` is oblivious to the request path), stores the public key and
+     * handles for the response's signature check and pins the KMS context.
+     */
+    function _registerUserDecryptionRequest(
+        bytes32[] memory ctHandles,
+        bytes memory publicKey,
+        uint256 contextId
+    ) internal virtual returns (uint256 userDecryptionId) {
         DecryptionStorage storage $ = _getDecryptionStorage();
 
         // Generate a globally unique decryptionId for the user decryption request.

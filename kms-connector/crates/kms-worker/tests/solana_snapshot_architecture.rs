@@ -476,10 +476,10 @@ async fn a_leaf_the_record_does_not_hold_is_read_once() {
     assert_eq!(proofs.call_count(), 1);
 }
 
-/// A coprocessor behind the chain hands the query to the next one. When every coprocessor is
-/// behind, the request is rejected retryably and the ordinary attempt budget decides.
+/// A coprocessor behind the chain does not sink a query another coprocessor serves. When every
+/// coprocessor is behind, the request is rejected retryably and the ordinary attempt budget decides.
 #[tokio::test]
-async fn a_coprocessor_behind_the_chain_hands_the_query_to_the_next() {
+async fn a_coprocessor_behind_the_chain_yields_to_one_in_step() {
     let (wallet, encrypted_store, handle) = direct_scenario();
     let request = RequestBuilder::new(&wallet)
         .direct(&encrypted_store, handle)
