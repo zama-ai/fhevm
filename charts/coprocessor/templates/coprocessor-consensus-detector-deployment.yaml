@@ -15,6 +15,16 @@
 {{- if and (or $bucket.valueFrom (ne ($bucket.value | default "") "none")) (not $component.wallet.enabled) -}}
 {{- fail "consensusDetector.wallet.enabled must be true when manifest publication is enabled" -}}
 {{- end -}}
+{{- /* Both are required by the binary: an unset variable leaves the literal
+     $(VAR) in the argument, which fails to parse and crash-loops the pod. */ -}}
+{{- $gatewayUrl := .Values.commonConfig.gatewayUrl | default dict -}}
+{{- if and (not (has "gw-url" $disabled)) (not (or $gatewayUrl.value $gatewayUrl.valueFrom)) -}}
+{{- fail "commonConfig.gatewayUrl must set value or valueFrom when consensusDetector is enabled" -}}
+{{- end -}}
+{{- $gatewayConfig := .Values.commonConfig.gatewayContractAddresses.gatewayConfig | default dict -}}
+{{- if and (not (has "gateway-config-address" $disabled)) (not (or $gatewayConfig.value $gatewayConfig.valueFrom)) -}}
+{{- fail "commonConfig.gatewayContractAddresses.gatewayConfig must set value or valueFrom when consensusDetector is enabled" -}}
+{{- end -}}
 apiVersion: apps/v1
 kind: Deployment
 metadata:
