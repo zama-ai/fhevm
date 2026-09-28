@@ -75,11 +75,17 @@ verification. At the next verification in the same epoch, containment processes
 the pending findings together with any new ones. Until then, further contaminated
 outputs can be computed and remain subject to verification.
 
-Inferred findings are recorded in the consuming execution epoch. Unhealed ct64
-from the other stack contaminates this one only when this stack has no stored
-ciphertext for the handle. A healthy independently recalculated copy of the
-same handle is not frozen by the other stack's finding. Each pass always
-reads both available execution stacks (`public` and any `gcs-*`) block by block.
+Inferred findings are recorded in the consuming execution epoch. A finding in
+the stack's own epoch always contaminates it. A Green schema seeded with Blue's
+epoch runs the same computation, so Blue's findings cover it too. Otherwise a
+finding contaminates a stack only when that stack reads the drifted ciphertext:
+the finding's epoch lives in the stack's schema (`public` holds Blue's epoch and
+every earlier epoch merged at cutover), or it lives in `public` and Green has no
+stored copy of its own. `public` never reads Green, so drift on Green never
+contaminates Blue, and a failed epoch's findings contaminate no stack. Both stacks
+run the same graph and compute their own intermediates, so walking through an
+unstored intermediate taints only the walking stack. Each pass reads both
+available execution stacks (`public` and any `gcs-*`) block by block.
 A newly inferred output on one stack is in the in-memory drifted set for later
 events on either stack, regardless of which stack initiated containment.
 Findings keep their owning epoch; imported roots are not duplicated merely to

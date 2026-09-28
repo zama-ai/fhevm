@@ -76,15 +76,11 @@ async fn pending_check_ignores_ct128_and_unconsumed_other_epochs() {
 
 #[tokio::test]
 #[serial(db)]
-async fn pending_check_runs_for_consumed_foreign_epoch_ct64() {
+async fn pending_check_runs_for_consumed_merged_epoch_ct64() {
     let (_instance, pool) = setup().await;
     let id = root(&pool, 1).await;
     computation(&pool, 2, 1, 2, true, true).await;
-    sqlx::query("UPDATE drifted_handle SET consensus_epoch = 'other-epoch' WHERE id = $1")
-        .bind(id)
-        .execute(&pool)
-        .await
-        .unwrap();
+    move_root_to_epoch(&pool, id, "merged-epoch", "succeeded").await;
     assert_eq!(
         enforce_guaranteed_containment(&pool)
             .await

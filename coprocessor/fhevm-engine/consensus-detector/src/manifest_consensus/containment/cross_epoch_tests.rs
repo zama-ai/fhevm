@@ -108,3 +108,151 @@ async fn same_handle_roots_keep_both_epochs_and_green_caller_covers_blue() {
         ]
     );
 }
+
+// Green-only drift must not freeze Blue: Blue never reads Green's ciphertexts,
+// whether or not it stored its own copy of the input.
+#[tokio::test]
+#[serial(db)]
+async fn green_drift_does_not_contaminate_blue() {
+    let (_db, blue) = setup().await;
+    let green = green_pool(&blue).await;
+    root(&green, 1).await;
+    store_ciphertext(&green, 1, 9).await;
+    store_ciphertext(&blue, 1, 1).await;
+    root(&green, 3).await;
+    store_ciphertext(&green, 3, 9).await;
+    computation(&green, 2, 1, 2, true, true).await;
+    computation(&blue, 2, 1, 2, true, true).await;
+    // Even without a stored copy of 3, Blue did not compute 4 from Green's.
+    computation(&blue, 4, 3, 4, true, true).await;
+    computation(&blue, 5, 4, 5, true, true).await;
+    let result = enforce_guaranteed_containment(&blue).await.unwrap();
+    assert_eq!(
+        result,
+        PropagationResult {
+            inferred_handles: 1,
+            contained_findings: 3
+        }
+    );
+    assert_eq!(
+        epoch_flags(&blue).await,
+        vec![
+            (bytes(1), "green".into(), true),
+            (bytes(2), "green".into(), true),
+            (bytes(3), "green".into(), true),
+        ]
+    );
+}
+
+// A Green intermediate walked through keeps Green's epoch: Blue's own
+// unstored copy of it does not carry the taint.
+#[tokio::test]
+#[serial(db)]
+async fn green_walked_intermediate_does_not_contaminate_blue() {
+    let (_db, blue) = setup().await;
+    let green = green_pool(&blue).await;
+    root(&green, 1).await;
+    store_ciphertext(&green, 1, 9).await;
+    store_ciphertext(&blue, 1, 1).await;
+    computation(&green, 2, 1, 2, true, true).await;
+    computation(&blue, 2, 1, 2, true, true).await;
+    computation(&green, 3, 2, 3, true, true).await;
+    computation(&blue, 3, 2, 3, true, true).await;
+    for pool in [&green, &blue] {
+        sqlx::query("DELETE FROM ciphertexts WHERE handle = $1")
+            .bind(bytes(2))
+            .execute(pool)
+            .await
+            .unwrap();
+    }
+    let result = enforce_guaranteed_containment(&blue).await.unwrap();
+    assert_eq!(
+        result,
+        PropagationResult {
+            inferred_handles: 1,
+            contained_findings: 2
+        }
+    );
+    assert_eq!(
+        epoch_flags(&blue).await,
+        vec![
+            (bytes(1), "green".into(), true),
+            (bytes(3), "green".into(), true),
+        ]
+    );
+}
+
+// Green seeded with Blue's epoch runs the same computation: Blue's finding
+// taints Green despite its stored copy. Green computed 2 before Blue did, so
+// only Green's scan can record it, in the shared epoch.
+#[tokio::test]
+#[serial(db)]
+async fn shadowing_green_shares_blue_findings() {
+    let (_db, blue) = setup().await;
+    let green = green_pool(&blue).await;
+    sqlx::query(
+        "UPDATE \"gcs-containment-test\".blue_green_consensus_epoch SET consensus_epoch = $1",
+    )
+    .bind(TEST_EPOCH)
+    .execute(&blue)
+    .await
+    .unwrap();
+    root(&blue, 1).await;
+    store_ciphertext(&blue, 1, 1).await;
+    store_ciphertext(&green, 1, 1).await;
+    computation(&blue, 2, 1, 2, false, true).await;
+    computation(&green, 2, 1, 2, true, true).await;
+    let result = enforce_guaranteed_containment(&blue).await.unwrap();
+    assert_eq!(
+        result,
+        PropagationResult {
+            inferred_handles: 1,
+            contained_findings: 2
+        }
+    );
+    assert_eq!(
+        epoch_flags(&blue).await,
+        vec![
+            (bytes(1), TEST_EPOCH.into(), true),
+            (bytes(2), TEST_EPOCH.into(), true),
+        ]
+    );
+}
+
+// Mirror: a Blue intermediate walked through does not reach Green, which
+// computes its own copy from its own, independent, input.
+#[tokio::test]
+#[serial(db)]
+async fn blue_walked_intermediate_does_not_contaminate_green() {
+    let (_db, blue) = setup().await;
+    let green = green_pool(&blue).await;
+    root(&blue, 1).await;
+    store_ciphertext(&blue, 1, 1).await;
+    store_ciphertext(&green, 1, 9).await;
+    computation(&blue, 2, 1, 2, true, true).await;
+    computation(&green, 2, 1, 2, true, true).await;
+    computation(&blue, 3, 2, 3, true, true).await;
+    computation(&green, 3, 2, 3, true, true).await;
+    for pool in [&green, &blue] {
+        sqlx::query("DELETE FROM ciphertexts WHERE handle = $1")
+            .bind(bytes(2))
+            .execute(pool)
+            .await
+            .unwrap();
+    }
+    let result = enforce_guaranteed_containment(&blue).await.unwrap();
+    assert_eq!(
+        result,
+        PropagationResult {
+            inferred_handles: 1,
+            contained_findings: 2
+        }
+    );
+    assert_eq!(
+        epoch_flags(&blue).await,
+        vec![
+            (bytes(1), TEST_EPOCH.into(), true),
+            (bytes(3), TEST_EPOCH.into(), true),
+        ]
+    );
+}
