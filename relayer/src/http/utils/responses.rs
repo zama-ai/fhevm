@@ -5,6 +5,8 @@ use axum::{
 };
 use validator::ValidationErrors;
 
+use crate::core::request_conversion::RequestConversionError;
+
 /// Error type for parsing and validation operations.
 /// This enum provides clean separation between parsing/validation logic and HTTP response creation.
 #[derive(Debug)]
@@ -19,8 +21,9 @@ pub enum ParseError {
     },
     /// Validation errors from the validator
     ValidationFailed(ValidationErrors),
-    /// Conversion error from JsonType to RequestType
-    ConversionFailed(String),
+    /// Conversion error from JsonType to RequestType: the caller's (a malformed wire form) or
+    /// the relayer's own, as the conversion reports it
+    ConversionFailed(RequestConversionError),
 }
 
 /// Type of field-specific JSON error
@@ -72,7 +75,18 @@ impl ParseError {
                 }
             }
             ParseError::ValidationFailed(errors) => AppResponse::validation_failed(errors.clone()),
-            ParseError::ConversionFailed(message) => {
+            ParseError::ConversionFailed(RequestConversionError::Malformed { field, issue }) => {
+                AppResponse::BadRequest {
+                    label: ErrorLabel::ValidationFailed,
+                    message: format!("Validation failed for 1 field in the request: {field}"),
+                    details: Some(vec![ErrorDetail {
+                        field: field.clone(),
+                        issue: issue.clone(),
+                    }]),
+                    request_id: None,
+                }
+            }
+            ParseError::ConversionFailed(RequestConversionError::Internal(message)) => {
                 tracing::error!(
                     "Internal error: Conversion failed after validation passed: {}",
                     message

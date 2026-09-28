@@ -25,6 +25,7 @@ mod permit_vectors;
 use alloy::primitives::U256;
 use fhevm_relayer::core::event::UserDecryptRequest;
 use fhevm_relayer::host::handle_chain_id::extract_chain_id_from_u256;
+use fhevm_relayer::host::verify_solana_permit;
 use fhevm_relayer::http::endpoints::v3::types::UserDecryptV3RequestJson;
 use permit_vectors::{PermitVectorFile, PERMIT_VECTOR_SCHEMA};
 use serde_json::{json, Map, Value};
@@ -188,9 +189,9 @@ fn name_of(record: &Value) -> &str {
 
 ////////////////////////////////////////////////////////////////////////////////
 
-/// Every accepted record travels the whole seam: it deserializes strictly, validates, and converts
-/// into the Solana request the gateway call is built from — including the permit signature check the
-/// conversion performs, which is what makes these records more than a JSON-shape test.
+/// Every accepted record travels the whole seam: it deserializes strictly, validates, converts into
+/// the Solana request the gateway call is built from, and passes the signature pre-check the
+/// endpoint runs on that request — which is what makes these records more than a JSON-shape test.
 #[test]
 fn every_accepted_record_becomes_a_solana_request() {
     let fixture = Fixture::load();
@@ -253,6 +254,12 @@ fn every_accepted_record_becomes_a_solana_request() {
                     encrypted_stores,
                     "{name}: encryptedStore travels into the canonical request"
                 );
+                // The signature is the pre-check stage's to verify, not the conversion's: run it
+                // on the encoded request exactly as the endpoint does, so an accepted record is
+                // one the relayer forwards, not merely one it converts.
+                verify_solana_permit(solana_request).unwrap_or_else(|err| {
+                    panic!("{name}: should pass the signature pre-check: {err}")
+                });
             }
             other => panic!("{name}: converted into the wrong variant: {other:?}"),
         }
