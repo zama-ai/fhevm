@@ -835,6 +835,159 @@ async fn definitive_publication_error_exhausts_past_the_skip_peel() {
     assert!(!retry_scheduled);
 }
 
+/// Seals the given rows and exhausts the skips (one attempt, `max_attempts = 1`).
+async fn seal_and_skip(pool: &PgPool, sealed: &[&[u8]], skipped: &[&[u8]]) {
+    for hash in sealed {
+        sqlx::query(
+            "UPDATE block_manifest_state
+                SET block_content_digest = $3, block_handle_count = 0
+              WHERE host_chain_id = $1 AND block_hash = $2",
+        )
+        .bind(CHAIN_ID)
+        .bind(*hash)
+        .bind(vec![0x11_u8; 32])
+        .execute(pool)
+        .await
+        .expect("seal cadence point");
+    }
+    for hash in skipped {
+        let block = load_pending_block(pool, hash).await;
+        record_manifest_publication_error(pool, &block, "S3 object rejected", 1, 1_000_000)
+            .await
+            .expect("exhaust skip");
+    }
+}
+
+async fn publish_and_peel(pool: &PgPool, block_hash: &[u8]) {
+    let published = load_pending_block(pool, block_hash).await;
+    let mut trx = pool.begin().await.expect("begin publication");
+    mark_manifest_published(
+        &mut trx,
+        &published,
+        Address::repeat_byte(0x63),
+        B256::repeat_byte(0x65),
+    )
+    .await
+    .expect("mark published");
+    retry_skipped_predecessor_once(&mut trx, &published, 1)
+        .await
+        .expect("peel a skip");
+    trx.commit().await.expect("commit publication");
+}
+
+async fn skip_state(pool: &PgPool, block_hash: &[u8]) -> (bool, i64) {
+    let row = sqlx::query(
+        "SELECT publication_next_retry_at IS NOT NULL AS retry, publication_error_count
+           FROM block_manifest_state
+          WHERE host_chain_id = $1 AND block_hash = $2",
+    )
+    .bind(CHAIN_ID)
+    .bind(block_hash)
+    .fetch_one(pool)
+    .await
+    .expect("load skip state");
+    (row.get("retry"), row.get("publication_error_count"))
+}
+
+#[tokio::test]
+#[serial(db)]
+async fn fork_skip_below_the_published_block_gets_its_extra_attempt() {
+    let (_instance, pool) = setup_pool().await;
+    let fork_60 = vec![0x3c; 32];
+    let canonical_60 = vec![0x4c; 32];
+    let published_90 = vec![0x5a; 32];
+    insert_manifest_state(&pool, 60, &fork_60, &[0x01; 32]).await;
+    insert_manifest_state(&pool, 60, &canonical_60, &[0x02; 32]).await;
+    insert_manifest_state(&pool, 90, &published_90, &canonical_60).await;
+    seal_and_skip(
+        &pool,
+        &[&fork_60, &canonical_60, &published_90],
+        &[&fork_60],
+    )
+    .await;
+    let canonical = load_pending_block(&pool, &canonical_60).await;
+    let mut trx = pool.begin().await.expect("begin canonical 60");
+    mark_manifest_published(
+        &mut trx,
+        &canonical,
+        Address::repeat_byte(0x63),
+        B256::repeat_byte(0x66),
+    )
+    .await
+    .expect("mark canonical 60 published");
+    trx.commit().await.expect("commit canonical 60");
+
+    publish_and_peel(&pool, &published_90).await;
+
+    assert_eq!(skip_state(&pool, &fork_60).await, (true, 1));
+}
+
+#[tokio::test]
+#[serial(db)]
+async fn orphaned_skip_is_exhausted_and_the_next_skip_is_retried() {
+    let (_instance, pool) = setup_pool().await;
+    let skip_30 = vec![0x1e; 32];
+    let orphan_60 = vec![0x3c; 32];
+    let canonical_60 = vec![0x4c; 32];
+    let published_90 = vec![0x5a; 32];
+    insert_manifest_state(&pool, 30, &skip_30, &[0x01; 32]).await;
+    insert_manifest_state(&pool, 60, &orphan_60, &skip_30).await;
+    insert_manifest_state(&pool, 60, &canonical_60, &skip_30).await;
+    insert_manifest_state(&pool, 90, &published_90, &canonical_60).await;
+    insert_host_block(&pool, 60, &orphan_60, &skip_30, "orphaned").await;
+    seal_and_skip(
+        &pool,
+        &[&skip_30, &orphan_60, &canonical_60, &published_90],
+        &[&skip_30, &orphan_60, &canonical_60],
+    )
+    .await;
+    sqlx::query(
+        "UPDATE block_manifest_state SET publication_error_count = 2
+          WHERE host_chain_id = $1 AND block_hash = $2",
+    )
+    .bind(CHAIN_ID)
+    .bind(&canonical_60)
+    .execute(&pool)
+    .await
+    .expect("canonical 60 already used its extra attempt");
+
+    publish_and_peel(&pool, &published_90).await;
+
+    assert_eq!(skip_state(&pool, &orphan_60).await, (false, 2));
+    assert_eq!(skip_state(&pool, &skip_30).await, (true, 1));
+}
+
+#[tokio::test]
+#[serial(db)]
+async fn skip_locked_by_another_worker_is_not_retried() {
+    let (_instance, pool) = setup_pool().await;
+    let skip_30 = vec![0x1e; 32];
+    let published_60 = vec![0x3c; 32];
+    insert_manifest_state(&pool, 30, &skip_30, &[0x01; 32]).await;
+    insert_manifest_state(&pool, 60, &published_60, &skip_30).await;
+    seal_and_skip(&pool, &[&skip_30, &published_60], &[&skip_30]).await;
+    let mut holder = pool.begin().await.expect("begin lock holder");
+    sqlx::query(
+        "SELECT 1 FROM block_manifest_state
+          WHERE host_chain_id = $1 AND block_hash = $2 FOR UPDATE",
+    )
+    .bind(CHAIN_ID)
+    .bind(&skip_30)
+    .execute(holder.as_mut())
+    .await
+    .expect("lock the skip");
+
+    tokio::time::timeout(
+        Duration::from_secs(5),
+        publish_and_peel(&pool, &published_60),
+    )
+    .await
+    .expect("peeling must not wait for a locked skip");
+    holder.rollback().await.expect("release lock holder");
+
+    assert_eq!(skip_state(&pool, &skip_30).await, (false, 1));
+}
+
 #[tokio::test]
 #[serial(db)]
 async fn transient_manifest_publication_errors_exhaust_the_finite_retry_budget() {
