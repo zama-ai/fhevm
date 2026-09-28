@@ -8,8 +8,11 @@
 //!
 //! `is_contained` is set only on the exclusive pass,
 //! so no TFHE batch can compute during the scan. Inferred findings belong
-//! to the consumer stack's epoch. An independent local ciphertext hides another
-//! epoch's copy of the same handle.
+//! to the consumer stack's epoch. A finding in the stack's own epoch always
+//! contaminates it. Otherwise it contaminates the stack only when the stack
+//! reads the drifted ciphertext: its epoch lives in the stack's schema, or it
+//! lives in `public` and Green has no stored copy of its own. `public` never
+//! reads Green's ciphertexts.
 
 use std::collections::{BTreeMap, BTreeSet, HashMap};
 use std::time::Duration;
@@ -69,6 +72,8 @@ struct HandleState {
     coprocessor_context_id: ContextId,
     /// Epochs where the handle has drifted. Could be both.
     epochs: BTreeSet<String>,
+    /// Epochs whose stack walked through the handle as an unstored intermediate.
+    walked_epochs: BTreeSet<String>,
 }
 
 /// DriftedHandle: roots one and also ones detected during propagation including in-memory handle (intermediate ct).
@@ -100,6 +105,7 @@ impl DriftedHandles {
             .or_insert_with(|| HandleState {
                 coprocessor_context_id: coprocessor_context_id.to_vec(),
                 epochs: BTreeSet::new(),
+                walked_epochs: BTreeSet::new(),
             })
     }
 
@@ -124,24 +130,16 @@ impl DriftedHandles {
     }
 
     /// Keep walking through a completed output that is not itself recorded.
+    /// The taint stays with the walking stack's epoch.
     fn add_in_memory_inferred(
         &mut self,
         chain: i64,
         handle: &[u8],
-        coprocessor_context_id: &[u8],
+        epoch: &str,
+        source: &HandleState,
     ) -> bool {
-        let handles = self.by_chain.entry(chain).or_default();
-        if handles.contains_key(handle) {
-            return false;
-        }
-        handles.insert(
-            handle.to_vec(),
-            HandleState {
-                coprocessor_context_id: coprocessor_context_id.to_vec(),
-                epochs: BTreeSet::new(),
-            },
-        );
-        true
+        let state = self.upsert(chain, handle, &source.coprocessor_context_id);
+        state.walked_epochs.insert(epoch.to_owned())
     }
 }
 
@@ -307,10 +305,12 @@ async fn propagate_drift(
 
     let mut to_insert = BTreeSet::new();
     let stacks = execution_stacks(trx).await?;
+    let schemas = epoch_schemas_of(trx, &owning_stacks(&stacks)).await?;
     for (chain, start_block) in start_block_by_chain {
         scan_blocks_to_infer_drifted(
             trx,
             &stacks,
+            &schemas,
             chain,
             start_block,
             &mut drifted,
@@ -360,6 +360,14 @@ async fn propagate_drift(
 pub(crate) async fn epoch_schemas(
     trx: &mut Transaction<'_, Postgres>,
 ) -> Result<HashMap<String, String>> {
+    let stacks = execution_stacks(trx).await?;
+    epoch_schemas_of(trx, &owning_stacks(&stacks)).await
+}
+
+async fn epoch_schemas_of(
+    trx: &mut Transaction<'_, Postgres>,
+    stacks: &[&ExecutionStack],
+) -> Result<HashMap<String, String>> {
     let mut schemas: HashMap<String, String> = sqlx::query_scalar!(
         r#"SELECT consensus_epoch FROM public.consensus_epoch_history
             WHERE outcome IN ('initial', 'succeeded')"#
@@ -369,20 +377,26 @@ pub(crate) async fn epoch_schemas(
     .into_iter()
     .map(|epoch| (epoch, "public".to_owned()))
     .collect();
-    let stacks = execution_stacks(trx).await?;
+    for stack in stacks {
+        schemas.insert(stack.consensus_epoch.clone(), stack.schema.clone());
+    }
+    Ok(schemas)
+}
+
+/// Stacks that own their epoch. A Green schema seeded with Blue's epoch only
+/// shadows it, so that epoch keeps mapping to `public`.
+fn owning_stacks(stacks: &[ExecutionStack]) -> Vec<&ExecutionStack> {
     let public_epoch = stacks
         .iter()
         .find(|stack| matches!(stack.kind, ExecutionStackKind::Public))
-        .map(|stack| stack.consensus_epoch.clone());
-    for stack in stacks {
-        if matches!(stack.kind, ExecutionStackKind::Gcs)
-            && public_epoch.as_ref() == Some(&stack.consensus_epoch)
-        {
-            continue;
-        }
-        schemas.insert(stack.consensus_epoch, stack.schema);
-    }
-    Ok(schemas)
+        .map(|stack| &stack.consensus_epoch);
+    stacks
+        .iter()
+        .filter(|stack| {
+            !(matches!(stack.kind, ExecutionStackKind::Gcs)
+                && public_epoch == Some(&stack.consensus_epoch))
+        })
+        .collect()
 }
 
 async fn execution_stacks(trx: &mut Transaction<'_, Postgres>) -> Result<Vec<ExecutionStack>> {
@@ -475,6 +489,7 @@ async fn load_uncontained_drifted(
 async fn scan_blocks_to_infer_drifted(
     trx: &mut Transaction<'_, Postgres>,
     stacks: &[ExecutionStack],
+    schemas: &HashMap<String, String>,
     chain: i64,
     start_block: i64,
     drifted: &mut DriftedHandles,
@@ -496,7 +511,7 @@ async fn scan_blocks_to_infer_drifted(
         blocks.extend(numbers);
     }
     for block in blocks {
-        infer_drifted_on_block(trx, stacks, chain, block, drifted, to_insert).await?;
+        infer_drifted_on_block(trx, stacks, schemas, chain, block, drifted, to_insert).await?;
     }
     Ok(())
 }
@@ -504,6 +519,7 @@ async fn scan_blocks_to_infer_drifted(
 async fn infer_drifted_on_block(
     trx: &mut Transaction<'_, Postgres>,
     ordered_execution_stacks: &[ExecutionStack],
+    schemas: &HashMap<String, String>,
     chain: i64,
     block: i64,
     drifted: &mut DriftedHandles,
@@ -513,16 +529,17 @@ async fn infer_drifted_on_block(
         let mut grown = false;
         for stack in ordered_execution_stacks {
             set_execution_schema(trx, &stack.schema).await?;
-            let mut cache_has_independent_ct = HashMap::<Handle, bool>::new();
+            let mut own_copies = HashMap::<Handle, bool>::new();
             let events = load_block_events(trx, chain, block).await?;
             for event in events {
                 let Some(source) = has_a_drifted_operand(
                     &event,
                     chain,
                     stack,
+                    schemas,
                     drifted,
                     trx,
-                    &mut cache_has_independent_ct,
+                    &mut own_copies,
                 )
                 .await?
                 else {
@@ -620,14 +637,15 @@ fn order_block_events(events: Vec<ComputationEvent>) -> Vec<ComputationEvent> {
     ordered
 }
 
-// Return the first dependency that is drifted.
+// Return the first dependency whose drift taints this stack.
 async fn has_a_drifted_operand(
     event: &ComputationEvent,
     chain: i64,
     stack: &ExecutionStack,
+    schemas: &HashMap<String, String>,
     drifted_handles: &DriftedHandles,
     trx: &mut Transaction<'_, Postgres>,
-    cache_has_independent_ct: &mut HashMap<Handle, bool>,
+    own_copies: &mut HashMap<Handle, bool>,
 ) -> Result<Option<HandleState>> {
     for (index, dependency) in event.dependencies.iter().enumerate() {
         if is_scalar_operand(event, index) {
@@ -636,11 +654,7 @@ async fn has_a_drifted_operand(
         let Some(drifted_handle) = drifted_handles.state(chain, dependency) else {
             continue;
         };
-        // Same epoch: poisoning is always real (Public→Public or Gcs→Gcs).
-        // Other epoch: GCS may have its own stored copy of the operand.
-        let depend_on_a_drifted_ct = drifted_handle.epochs.contains(&stack.consensus_epoch)
-            || !gcs_has_independent_copy(dependency, stack, trx, cache_has_independent_ct).await?;
-        if depend_on_a_drifted_ct {
+        if reads_drifted_copy(dependency, drifted_handle, stack, schemas, trx, own_copies).await? {
             return Ok(Some(drifted_handle.clone()));
         }
     }
@@ -655,34 +669,48 @@ fn is_scalar_operand(event: &ComputationEvent, operand_index: usize) -> bool {
     op.is_operand_scalar(event.is_scalar, operand_index, event.dependencies.len())
 }
 
-/// Finding on this stack always contaminates. A finding on the other stack
-/// contaminates only when this stack has no stored ciphertext for the handle.
-async fn gcs_has_independent_copy(
+/// Drift in the stack's own epoch always taints it, including a Green that
+/// shadows Blue's epoch: both then run the same computation. Otherwise a stack
+/// reads its own schema, and Green also reads `public` for a handle it has no
+/// stored copy of, one it never computed; `public` never reads Green. Drift
+/// from an epoch with no schema (failed, or pending without a live stack) is
+/// read by no stack. Both stacks run the same graph, so each computes its own
+/// intermediates: a walked epoch taints only the stack that walked it.
+async fn reads_drifted_copy(
     handle: &[u8],
+    drifted_handle: &HandleState,
     stack: &ExecutionStack,
+    schemas: &HashMap<String, String>,
     trx: &mut Transaction<'_, Postgres>,
-    independent: &mut HashMap<Handle, bool>,
+    own_copies: &mut HashMap<Handle, bool>,
 ) -> Result<bool> {
-    if matches!(stack.kind, ExecutionStackKind::Public) {
-        error!(
-            ?handle,
-            "Public handle cannot depend on a drifted Gcs handle"
-        );
+    if drifted_handle.epochs.contains(&stack.consensus_epoch)
+        || drifted_handle
+            .walked_epochs
+            .contains(&stack.consensus_epoch)
+    {
+        return Ok(true);
+    }
+    let mut drifted_in_public = false;
+    for epoch in &drifted_handle.epochs {
+        match schemas.get(epoch).map(String::as_str) {
+            Some(schema) if schema == stack.schema => return Ok(true),
+            Some("public") => drifted_in_public = true,
+            _ => {}
+        }
+    }
+    if !drifted_in_public || matches!(stack.kind, ExecutionStackKind::Public) {
         return Ok(false);
     }
-    if let Some(&has_copy) = independent.get(handle) {
-        return Ok(has_copy);
+    if let Some(&has_copy) = own_copies.get(handle) {
+        return Ok(!has_copy);
     }
-    let has_copy = stack_has_independent_copy(trx, handle).await?;
-    independent.insert(handle.to_vec(), has_copy);
-    Ok(has_copy)
+    let has_copy = stack_has_own_copy(trx, handle).await?;
+    own_copies.insert(handle.to_vec(), has_copy);
+    Ok(!has_copy)
 }
 
-// to check if gcs has its own computed copy
-async fn stack_has_independent_copy(
-    trx: &mut Transaction<'_, Postgres>,
-    handle: &[u8],
-) -> Result<bool> {
+async fn stack_has_own_copy(trx: &mut Transaction<'_, Postgres>, handle: &[u8]) -> Result<bool> {
     let stored = sqlx::query_scalar!(
         r#"SELECT EXISTS (
                 SELECT 1 FROM ciphertexts ct
@@ -756,7 +784,8 @@ async fn apply_event(
         return Ok(drifted.add_in_memory_inferred(
             chain,
             &event.output_handle,
-            &source.coprocessor_context_id,
+            &stack.consensus_epoch,
+            source,
         ));
     }
     Ok(false)
