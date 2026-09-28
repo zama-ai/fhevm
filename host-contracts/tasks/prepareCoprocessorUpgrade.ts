@@ -16,7 +16,7 @@ import {
 
 task(
   'task:buildProposeCoprocessorUpgradeCalldata',
-  'Builds Aragon proposal calldata for ProtocolConfig.proposeCoprocessorUpgrade by computing block windows across the environment host chains + gateway (DAO path, never broadcasts)',
+  'Builds Aragon proposal calldata for ProtocolConfig.proposeCoprocessorUpgrade by computing block windows across the environment host chains and pinning gwStartBlock to the gateway tip (DAO path, never broadcasts)',
 )
   .addParam('environment', 'Target environment: devnet | testnet | mainnet (local is the test-suite stack)')
   .addParam('startTime', 'ISO 8601 UTC start of the evaluation window (e.g. 2026-07-01T12:00:00Z)')

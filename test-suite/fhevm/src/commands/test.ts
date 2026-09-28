@@ -1063,7 +1063,24 @@ const runBlueGreenProfile = async (
         `(active scenario kind: "${state.scenario.kind}").`,
     );
   }
+  // The shared Gateway (Nitro) mints blocks only on transactions. Run the local anvil the same
+  // way for the whole profile so a gw_start_block the chain never reaches fails here, not only on
+  // preview environments. Anvil mining modes are exclusive: automine replaces interval mining.
+  const gatewayRpcUrl = hostReachableRpcUrl(state.discovery!.endpoints.gateway.http);
+  await run(["cast", "rpc", "--rpc-url", gatewayRpcUrl, "evm_setAutomine", "true"]);
+  console.log("OK:   Gateway anvil mines on demand for this profile");
+  try {
+    return await runBlueGreenSteps(state, options, gatewayRpcUrl);
+  } finally {
+    await run(["cast", "rpc", "--rpc-url", gatewayRpcUrl, "evm_setIntervalMining", "1"]);
+  }
+};
 
+const runBlueGreenSteps = async (
+  state: State,
+  options: Pick<TestOptions, "network" | "noHardhatCompile">,
+  gatewayRpcUrl: string,
+): Promise<boolean> => {
   // The E2E image already contains compiled contracts. Multiple traffic
   // streams share its artifacts directory, so none may compile or prune it.
   const precompiledOptions = { ...options, noHardhatCompile: true };
@@ -1139,7 +1156,31 @@ const runBlueGreenProfile = async (
   }
   console.log(`OK:   ${opCount} DB(s) at v0.14, empty upgrade_state, gcs-${gcsStackVersion} schema present`);
 
-  const gatewayRpcUrl = hostReachableRpcUrl(state.discovery!.endpoints.gateway.http);
+  const gatewayTip = async () =>
+    Number((await run(["cast", "block-number", "--rpc-url", gatewayRpcUrl])).stdout.trim());
+  // gw_start_block is pinned to the Gateway tip at proposal time, so the Gateway gate opens
+  // without any Gateway transaction.
+  const assertGatewayGateOpens = async (tipBeforeProposal: number, tipAfterProposal: number) => {
+    for (const db of operatorDatabases) {
+      const gwStartBlock = Number(
+        await psqlQuery(db, "SELECT MIN(gw_start_block) FROM upgrade_state WHERE stack_role='GCS';"),
+      );
+      if (gwStartBlock < tipBeforeProposal || gwStartBlock > tipAfterProposal) {
+        throw new Error(
+          `${db} gw_start_block=${gwStartBlock} is not the Gateway tip at proposal time (${tipBeforeProposal}..${tipAfterProposal})`,
+        );
+      }
+      await waitUntil({
+        label: `${db}  gw_dry_run_started without a Gateway tx (gw_start_block=${gwStartBlock}, tip=${tipAfterProposal})`,
+        timeoutSecs: 60,
+        check: async () =>
+          (await psqlQuery(
+            db,
+            "SELECT CASE WHEN BOOL_AND(gw_dry_run_started) THEN 'started' ELSE 'waiting' END FROM upgrade_state WHERE stack_role='GCS';",
+          )) === "started",
+      });
+    }
+  };
 
   const hostChains = state.scenario.hostChains;
   const testSuiteEnv = await readEnvFile(envPath("test-suite"));
@@ -1207,6 +1248,7 @@ const runBlueGreenProfile = async (
   const disabled = await setSyntheticOps(faultHost);
   console.log(`OK:   recreated ${disabled.length} GCS host-listener service(s); synthetic ops ${faultHost ? "enabled" : "disabled"}`);
   const failStartTime = new Date(Date.now() + 30_000).toISOString();
+  const failTipBefore = await gatewayTip();
   await runContractTask(
     "host-sc",
     "host-sc-deploy",
@@ -1222,6 +1264,7 @@ const runBlueGreenProfile = async (
       },
     },
   );
+  const failTipAfter = await gatewayTip();
   console.log(`OK:   activation emitted via task (proposalId=1, version=${gcsVersionLive}, start=${failStartTime})`);
 
   console.log(`\n[3/11] failed upgrade: wait for GCS DryRunStarted, then submit a Gateway-only input proof`);
@@ -1241,17 +1284,7 @@ const runBlueGreenProfile = async (
         )) === "ready",
     });
   }
-  // Wait for the Gateway tip to reach gw_start_block so the input lands in the window
-  // and anchors the GW track.
-  const failGwStartBlock = Number(
-    await psqlQuery(operatorDatabases[0]!, "SELECT gw_start_block FROM upgrade_state WHERE stack_role='GCS' LIMIT 1;"),
-  );
-  await waitUntil({
-    label: `gateway tip reaches window start ${failGwStartBlock}`,
-    timeoutSecs: 120,
-    check: async () =>
-      Number((await run(["cast", "block-number", "--rpc-url", gatewayRpcUrl])).stdout.trim()) >= failGwStartBlock,
-  });
+  await assertGatewayGateOpens(failTipBefore, failTipAfter);
   // Keep the Gateway track healthy in every arm. The deliberately quiet or
   // perturbed host track must prevent upgrade unanimity (asserted in [4/11]).
   await run(gatewayInputProbeArgv);
@@ -1361,6 +1394,7 @@ const runBlueGreenProfile = async (
   console.log(`\n[6/11] propose upgrade via task:proposeCoprocessorUpgrade`);
   // Exercise the EOA task on the success path (a longer window with real traffic).
   const proposeStartTime = new Date(Date.now() + 30_000).toISOString();
+  const proposeTipBefore = await gatewayTip();
   await runContractTask(
     "host-sc",
     "host-sc-deploy",
@@ -1376,6 +1410,7 @@ const runBlueGreenProfile = async (
       },
     },
   );
+  const proposeTipAfter = await gatewayTip();
   console.log(`OK:   activation emitted via task (proposalId=2, version=${gcsVersionLive}, start=${proposeStartTime})`);
 
   console.log(`\n[7/11] verify committed GCS DryRunStarted transitions per operator`);
@@ -1387,6 +1422,7 @@ const runBlueGreenProfile = async (
         dryRunEvidenceReadinessSql(gcsStackVersion, hostChains.map(chain => chain.chainId), 2))) === "ready",
     });
   }
+  await assertGatewayGateOpens(proposeTipBefore, proposeTipAfter);
 
   console.log(
     `\n[8/11] start ${blueGreenTrafficStreams} background stream(s) across ` +
