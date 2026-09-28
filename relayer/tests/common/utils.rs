@@ -431,6 +431,29 @@ impl TestSetup {
         Self::new_with_config_path_and_settings(Some(temp_config_path), mutate).await
     }
 
+    /// Same base config as [`TestSetup::new`], plus a Solana host chain
+    /// ([`TEST_SOLANA_HOST_CHAIN_ID`], program [`TEST_SOLANA_PROGRAM_ID`]) for the v3 Solana
+    /// tests: their handles must embed a chain the relayer serves to pass the early handle gate,
+    /// and their permits must name a deployment it serves to pass the pre-check.
+    ///
+    /// The entry's `url` is the host mock, which speaks no Solana JSON-RPC. Nothing dials it: a
+    /// direct entry's readiness runs no host read, and the tests observe the POST only. The mock
+    /// registers its ACL fixtures from the file config, before this entry exists, so the base58
+    /// `acl_address` never reaches an EVM address parser.
+    #[allow(dead_code)]
+    pub async fn new_with_solana_host_chain() -> anyhow::Result<Self> {
+        Self::new_with_settings(|settings| {
+            let url = settings.host_chains[0].url.clone();
+            settings.host_chains.push(HostChainConfig {
+                chain_id: TEST_SOLANA_HOST_CHAIN_ID,
+                url,
+                acl_address: solana_pubkey::Pubkey::new_from_array(TEST_SOLANA_PROGRAM_ID)
+                    .to_string(),
+            });
+        })
+        .await
+    }
+
     async fn new_with_config_path_and_settings(
         config_path: Option<std::path::PathBuf>,
         mutate: impl FnOnce(&mut Settings),
@@ -1066,6 +1089,13 @@ pub const TEST_HOST_CHAIN_ID: u64 = 8009;
 
 /// Second host chain ID for cross-chain tests.
 pub const TEST_HOST_CHAIN_ID_2: u64 = 9001;
+
+/// The Solana host chain [`TestSetup::new_with_solana_host_chain`] serves: an RFC-021 id with
+/// cluster tag 1, and the zama-host program every fixture permit names.
+#[allow(dead_code)]
+pub const TEST_SOLANA_HOST_CHAIN_ID: u64 = fhevm_relayer::core::event::solana_host_chain_id(1);
+#[allow(dead_code)]
+pub const TEST_SOLANA_PROGRAM_ID: [u8; 32] = [0x02; 32];
 
 /// ACL contract address for the second host chain (cross-chain tests).
 pub const TEST_HOST_ACL_ADDRESS_2: &str = "0x2222222222222222222222222222222222222222";

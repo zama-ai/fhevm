@@ -461,6 +461,42 @@ impl RelayerV2ResponseFailed {
         )
     }
 
+    /// Creates a `validation_failed` response (400) naming one payload field, the shape a
+    /// validator refusal has: for refusals raised after validation, at conversion or in the
+    /// pre-check stage, by a check that knows which field is at fault.
+    pub fn validation_failed_field(
+        field: &str,
+        issue: &str,
+        request_id: &str,
+    ) -> (StatusCode, Json<Self>) {
+        let status_code = StatusCode::BAD_REQUEST;
+        let label = "validation_failed";
+        let message = format!("Validation failed for 1 field in the request: {field}");
+
+        info!(
+            request_id,
+            http_status = status_code.as_u16(),
+            label,
+            message = message.as_str(),
+            "HTTP response"
+        );
+
+        (
+            status_code,
+            Json(Self {
+                status: ApiResponseStatus::Failed,
+                request_id: Some(request_id.to_string()),
+                error: V2ErrorResponseBody::validation_failed(
+                    message,
+                    vec![RelayerV2ErrorDetail {
+                        field: field.to_string(),
+                        issue: issue.to_string(),
+                    }],
+                ),
+            }),
+        )
+    }
+
     /// Creates an error response from a ParseError
     pub fn from_parse_error(
         parse_error: &ParseError,
@@ -585,31 +621,7 @@ impl RelayerV2ResponseFailed {
             // A wire form the validator cannot see (widths, ranges, ordering) refused at
             // conversion: the caller's mistake, answered like a validator refusal.
             ParseError::ConversionFailed(RequestConversionError::Malformed { field, issue }) => {
-                let label = "validation_failed";
-                let message = format!("Validation failed for 1 field in the request: {field}");
-
-                info!(
-                    request_id,
-                    http_status = status_code.as_u16(),
-                    label,
-                    message = message.as_str(),
-                    "HTTP response"
-                );
-
-                (
-                    status_code,
-                    Json(Self {
-                        status: ApiResponseStatus::Failed,
-                        request_id: Some(request_id.to_string()),
-                        error: V2ErrorResponseBody::validation_failed(
-                            message,
-                            vec![RelayerV2ErrorDetail {
-                                field: field.clone(),
-                                issue: issue.clone(),
-                            }],
-                        ),
-                    }),
-                )
+                Self::validation_failed_field(field, issue, request_id)
             }
             ParseError::ConversionFailed(RequestConversionError::Internal(message)) => {
                 tracing::error!(

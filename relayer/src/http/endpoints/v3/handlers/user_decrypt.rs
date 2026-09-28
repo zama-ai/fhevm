@@ -191,10 +191,10 @@ impl UserDecryptHandler {
             .into_response();
         }
 
-        // Signature pre-check, one check per arm (EIP-712 against the host chain, the Solana
-        // permit locally): reject detectably-bad signatures here so the SDK caller gets early
-        // feedback instead of waiting for the gateway/KMS round-trip. The KMS Connector remains
-        // the authoritative verifier on both arms.
+        // Pre-check, one check per arm (EIP-712 against the host chain; the Solana permit
+        // locally, then the deployment it names): reject what is detectably bad here so the SDK
+        // caller gets early feedback instead of waiting for the gateway/KMS round-trip. The KMS
+        // Connector remains the authoritative verifier on both arms.
         match self
             .signature_prechecker
             .verify(&user_decrypt_request)
@@ -211,6 +211,21 @@ impl UserDecryptHandler {
                 observe_signature_precheck(SignaturePreCheckOutcome::Rejected);
                 return RelayerV2ResponseFailed::invalid_signature(
                     &reason,
+                    &request_id.to_string(),
+                )
+                .into_response();
+            }
+            Err(SigPreCheckError::Deployment { field, issue }) => {
+                info!(
+                    field = %field,
+                    issue = %issue,
+                    request_id = %request_id,
+                    "v3 user-decrypt pre-check rejected a permit for another deployment"
+                );
+                observe_signature_precheck(SignaturePreCheckOutcome::Rejected);
+                return RelayerV2ResponseFailed::validation_failed_field(
+                    &field,
+                    &issue,
                     &request_id.to_string(),
                 )
                 .into_response();
