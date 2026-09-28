@@ -1681,23 +1681,28 @@ async fn invalid_descriptor_or_failed_upload_does_not_block_competing_lineages()
     assert!(blocked_child.block_content_digest.is_none());
     assert!(!blocked_child.manifest_published);
 
+    // The unknown-format sibling is published now: while the conflicting
+    // sibling waits for its retry, no work may be due at all (WorkBusy).
     for _ in 0..3 {
-        assert_eq!(
-            progress_chain(
-                &pool,
-                &client,
-                bucket,
-                CHAIN_ID,
-                &signer,
-                &consensus,
-                &ManifestWorkGate::always_enabled(),
-                block_manifest::LEGACY_CONSENSUS_EPOCH,
-            )
-            .await
-            .expect("retry permanently conflicting manifest"),
-            PublicationProgress::Waiting,
-        );
+        let progress = progress_chain(
+            &pool,
+            &client,
+            bucket,
+            CHAIN_ID,
+            &signer,
+            &consensus,
+            &ManifestWorkGate::always_enabled(),
+            block_manifest::LEGACY_CONSENSUS_EPOCH,
+        )
+        .await
+        .expect("retry permanently conflicting manifest");
+        assert_ne!(progress, PublicationProgress::Advanced, "{progress:?}");
     }
+    let blocked = load_seeded_block(&pool, CHAIN_ID, blocked_hash).await;
+    assert!(
+        !blocked.manifest_published,
+        "a conflicting immutable manifest is never published"
+    );
 }
 
 #[path = "publisher_test_support.rs"]
