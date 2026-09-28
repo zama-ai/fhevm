@@ -2299,15 +2299,18 @@ two separate broadcasts, and a client receives live broadcasts from before its f
 are set. Two cases follow:
 
 - The live messages buffered during a replay follow it, so recent slots can arrive again, whole or
-  as their block meta alone: every slot broadcast between the subscription and the replay. The
-  validator keeps the last `REDELIVERY_WINDOW` (32) sealed slots and skips a slot that arrives
-  again when its block meta equals the applied one and every transaction is one it already held.
+  as their block meta alone: every slot broadcast between the subscription and the replay, a
+  number nothing bounds. The validator keeps the last `REDELIVERY_WINDOW` (32) sealed slots and
+  skips a slot that arrives again when its block meta equals the applied one and every transaction
+  is one it already held. A re-delivery of an older slot it sealed is skipped unchecked: the next
+  new slot must still extend the newest sealed one, so a fork cannot pass, but a late transaction
+  for such a slot goes unnoticed.
 - A start at the tip can receive its first slot's block meta without the transactions before it.
   The listener skips the first slot and applies from the next.
 
-A transaction of another slot while one is open, a block meta for another slot, a slot older than
-the window, or a slot that does not extend the last applied one stops the listener without applying
-the slot. A transaction that a recent slot did not hold stops it too, but that slot is already
+A transaction of another slot while one is open, a block meta for another slot, an earlier slot the
+validator never sealed, or a slot that does not extend the last applied one stops the listener
+without applying the slot. A transaction that a recent slot did not hold stops it too, but that slot is already
 recorded without it, and the restart resumes from the checkpoint, past that slot. If the
 transaction wrote a Store, the next write to that Store does not continue its recorded leaf count,
 and the listener stops there until the leaf record, `solana_encrypted_state_nodes` included, is

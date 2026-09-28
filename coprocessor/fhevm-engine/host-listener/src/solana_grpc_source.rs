@@ -15,6 +15,7 @@ use std::collections::{BTreeSet, HashMap, VecDeque};
 use anchor_lang::prelude::Pubkey;
 use anyhow::{anyhow, bail, ensure, Context, Result};
 use solana_sdk::signature::Signature;
+use tracing::warn;
 use yellowstone_grpc_proto::prelude::{
     SubscribeRequest, SubscribeRequestFilterBlocksMeta,
     SubscribeRequestFilterTransactions, SubscribeUpdateBlockMeta,
@@ -53,9 +54,10 @@ pub(super) enum SealDecision {
     Process(PreparedBlock),
 }
 
-/// Recently sealed slots a re-delivery is matched against. Yellowstone sends again every slot it
-/// broadcast between the subscription and its `from_slot` replay, at most a burst of
-/// confirmations; 32 slots are about 13 seconds of them.
+/// Recently sealed slots a re-delivery is checked against, about 13 seconds of them. Yellowstone
+/// sends again every slot it broadcast between the subscription and its `from_slot` replay, which
+/// nothing bounds, so an older re-delivery is skipped unchecked: the next new slot must still
+/// extend the newest sealed one.
 const REDELIVERY_WINDOW: usize = 32;
 
 /// A sealed slot, which a re-delivery must match.
@@ -75,7 +77,8 @@ struct Sealed {
 /// sealed slots can arrive again, whole or as their block meta alone. A transaction the slot
 /// already holds is ignored, and a block meta must equal the slot's. A transaction the slot does
 /// not hold arrived after its block meta, when the slot was already applied without it: that stops
-/// the listener, and the slot needs the repair DD-060 describes.
+/// the listener, and the slot needs the repair DD-060 describes. A slot evicted from the window can
+/// no longer be checked, so its re-delivery is skipped.
 #[derive(Debug)]
 pub(super) struct BlockValidator {
     start: StartPosition,
@@ -83,6 +86,8 @@ pub(super) struct BlockValidator {
     open: Option<(u64, Vec<PreparedTransaction>)>,
     /// The last [`REDELIVERY_WINDOW`] sealed slots, oldest first.
     sealed: VecDeque<Sealed>,
+    /// The newest slot evicted from `sealed`.
+    evicted_through: Option<u64>,
 }
 
 impl BlockValidator {
@@ -92,11 +97,18 @@ impl BlockValidator {
             start,
             open: None,
             sealed: VecDeque::new(),
+            evicted_through: None,
         }
     }
 
     fn sealed(&self, slot: u64) -> Option<&Sealed> {
         self.sealed.iter().find(|sealed| sealed.block.slot == slot)
+    }
+
+    /// Whether `slot` was sealed and then evicted, so its re-delivery cannot be checked. A slot
+    /// the validator never sealed is not.
+    fn evicted(&self, slot: u64) -> bool {
+        self.evicted_through.is_some_and(|evicted| slot <= evicted)
     }
 
     fn seal(
@@ -105,7 +117,8 @@ impl BlockValidator {
         transactions: Option<BTreeSet<(u64, Signature)>>,
     ) {
         if self.sealed.len() == REDELIVERY_WINDOW {
-            self.sealed.pop_front();
+            self.evicted_through =
+                self.sealed.pop_front().map(|evicted| evicted.block.slot);
         }
         self.sealed.push_back(Sealed {
             block,
@@ -121,6 +134,9 @@ impl BlockValidator {
         if let Some(newest) = self.sealed.back().map(|sealed| sealed.block.slot)
         {
             if slot <= newest {
+                if self.evicted(slot) {
+                    return Ok(());
+                }
                 let sealed = self.sealed(slot).ok_or_else(|| {
                     anyhow!("transaction for slot {slot} arrived after slot {newest} was sealed")
                 })?;
@@ -193,6 +209,13 @@ impl BlockValidator {
 
         if let Some(newest) = self.sealed.back().map(|sealed| &sealed.block) {
             if block.slot <= newest.slot {
+                if self.evicted(block.slot) {
+                    warn!(
+                        slot = block.slot,
+                        "skipping a re-delivered slot older than the re-delivery window unchecked"
+                    );
+                    return Ok(SealDecision::Skip);
+                }
                 let sealed = self.sealed(block.slot).ok_or_else(|| {
                     anyhow!("out-of-order sealed block at slot {}", block.slot)
                 })?;
@@ -462,7 +485,7 @@ mod tests {
     }
 
     /// After a replay, several recent slots can arrive again; each is skipped, and a transaction
-    /// one of them did not hold halts. A slot past the window halts too.
+    /// one of them did not hold halts.
     #[test]
     fn a_redelivery_of_several_slots_is_skipped() {
         let mut validator = following(2);
@@ -485,14 +508,39 @@ mod tests {
             format!("{late:#}").contains("applied without it"),
             "{late:#}"
         );
+    }
 
+    /// A replay longer than the window is followed by re-deliveries it can no longer check: each
+    /// is skipped, whatever it carries, and the next new slot must still extend the newest.
+    #[test]
+    fn a_redelivery_older_than_the_window_is_skipped_unchecked() {
         let mut validator = following(2);
         let last = 2 + REDELIVERY_WINDOW as u64;
         for slot in 2..=last {
-            validator.block_meta(meta(slot, 0)).unwrap();
+            validator.transaction(slot, transaction(0)).unwrap();
+            assert_eq!(
+                indexes(validator.block_meta(meta(slot, 1)).unwrap()),
+                vec![0]
+            );
         }
-        assert!(validator.block_meta(meta(3, 0)).is_ok());
-        assert!(validator.block_meta(meta(2, 0)).is_err());
+
+        // Slot 2 was evicted; slot 3 is still checked.
+        validator.transaction(2, transaction(1)).unwrap();
+        assert!(matches!(
+            validator.block_meta(meta(2, 2)).unwrap(),
+            SealDecision::Skip
+        ));
+        assert!(validator.transaction(3, transaction(1)).is_err());
+        assert!(validator.block_meta(meta(3, 2)).is_err());
+
+        assert!(validator
+            .block_meta(SubscribeUpdateBlockMeta {
+                parent_blockhash: bs58::encode(hash(9)).into_string(),
+                ..meta(last + 1, 0)
+            })
+            .is_err());
+        assert!(indexes(validator.block_meta(meta(last + 1, 0)).unwrap())
+            .is_empty());
     }
 
     /// Every other break of the transactions-before-meta order halts.
