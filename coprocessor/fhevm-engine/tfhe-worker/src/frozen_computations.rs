@@ -128,10 +128,12 @@ pub(super) async fn containment_filter(
     Ok(filtered)
 }
 
-/// Unhealed ct64 drift that this stack can read. A finding of this stack's
-/// epoch always counts. Another epoch's finding counts only when this stack has
-/// no stored copy of the handle, so it would read the other stack's bytes; this
-/// matches containment's local-copy rule. `blue_green_consensus_epoch` and
+/// Unhealed ct64 drift that this stack can read. A finding of an epoch whose
+/// ciphertexts live in this stack's schema always counts: the current epoch,
+/// and on `public` every completed epoch, merged there at cutover. Another
+/// epoch's finding counts only when this stack has no stored copy of the
+/// handle, so it would read the other stack's bytes; this matches
+/// containment's local-copy rule. `blue_green_consensus_epoch` and
 /// `ciphertexts` are left unqualified: the search_path resolves them to this
 /// stack's schema.
 pub(super) async fn drifted_ct64_handles(
@@ -145,8 +147,13 @@ pub(super) async fn drifted_ct64_handles(
              AND (dh.consensus_epoch = (SELECT consensus_epoch
                                           FROM blue_green_consensus_epoch
                                          WHERE singleton)
+                  OR (current_schema() = 'public'
+                      AND EXISTS (SELECT 1 FROM public.consensus_epoch_history h
+                                   WHERE h.consensus_epoch = dh.consensus_epoch
+                                     AND h.outcome IN ('initial', 'succeeded')))
                   OR NOT EXISTS (SELECT 1 FROM ciphertexts ct
-                                  WHERE ct.handle = dh.handle))"#
+                                  WHERE ct.handle = dh.handle
+                                    AND octet_length(ct.ciphertext) > 0))"#
     )
     .fetch_all(pool)
     .await?
