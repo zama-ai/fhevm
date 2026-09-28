@@ -248,9 +248,10 @@ pub(crate) struct StoreAuthority<'info> {
 }
 
 impl<'info> StoreAuthority<'info> {
+    /// Creates this authority's store, scoped to `mint`, the confidential mint account.
     pub(crate) fn create_state(
         &self,
-        mint: Pubkey,
+        mint: AccountInfo<'info>,
         state: AccountInfo<'info>,
         payer: AccountInfo<'info>,
         host_config: AccountInfo<'info>,
@@ -263,6 +264,7 @@ impl<'info> StoreAuthority<'info> {
                 zama_host::cpi::accounts::CreateEncryptedStore {
                     payer,
                     authority: self.account_info(),
+                    scope: mint,
                     encrypted_store: state,
                     host_config,
                     system_program,
@@ -271,7 +273,6 @@ impl<'info> StoreAuthority<'info> {
             ),
             zama_host::instructions::CreateEncryptedStoreArgs {
                 program: crate::ID,
-                scope: mint.to_bytes(),
                 authority_seeds: seeds.as_slice().iter().map(|s| s.to_vec()).collect(),
             },
         )
@@ -536,7 +537,7 @@ mod tests {
         let input_account = zama_host::EncryptedStore {
             program: crate::ID,
             authority,
-            scope: [1; 32],
+            scope: Pubkey::new_from_array([1; 32]),
             slots: vec![zama_host::EncryptedSlot {
                 key: [1; 32],
                 handle: balance_handle(1),

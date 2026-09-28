@@ -84,12 +84,12 @@ for i in $(seq 1 "$NB_COPROCESSOR"); do
   kubectl rollout status "deployment/coprocessor-$i-zkproof-worker" -n "$NAMESPACE" --timeout=10m
 done
 
-endpoints=$(seq 1 "$NB_COPROCESSOR" | jq -Rsc 'split("\n")[:-1] | map("http://coprocessor-" + . + "-solana-host-listener:8080")')
+routes=$(seq 1 "$NB_COPROCESSOR" | jq -Rsc 'split("\n")[:-1] | map({url: ("http://coprocessor-" + . + "-solana-host-listener:8080"), apiKey: "$(SOLANA_PROOF_API_KEY)"})')
 for i in $(seq 1 "$NB_KMS_CORE"); do
   helm get values "kms-connector-$i" -n "$NAMESPACE" -o yaml > "$work/connector.yaml"
   helm upgrade "kms-connector-$i" "$KMS_CONNECTOR_CHART" -n "$NAMESPACE" \
     -f "$work/connector.yaml" -f "$values/values-solana-connector-e2e.yaml" \
-    --set-json "commonConfig.hostChains.solana.solanaProofEndpoints=$endpoints" \
+    --set-json "commonConfig.hostChains.solana.solanaProofRoutes=$routes" \
     --wait --wait-for-jobs --timeout=10m
 done
 # Relayer host dispatch also needs the Solana RPC/program identity; preserve its EVM entry.

@@ -155,7 +155,7 @@ fn substituting_the_transport_key_breaks_verification() {
 fn transport_key_substitution_never_verifies() {
     for seed in 0..64u64 {
         let mut wire = pseudo_valid_wire(seed);
-        wire.user_pubkey = pubkey_of_seed(USER_SEED).as_bytes().to_vec();
+        wire.user_address = pubkey_of_seed(USER_SEED).as_bytes().to_vec();
         let honest = decoded(&wire);
         let signature = sign_with_seed(USER_SEED, &zama_solana_permit::build_envelope(&honest));
 

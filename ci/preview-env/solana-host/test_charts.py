@@ -11,6 +11,7 @@ import yaml
 
 ROOT = pathlib.Path(__file__).resolve().parents[3]
 VALUES = ROOT / "ci/preview-env/solana-host"
+ROUTES = [{"url": "http://coprocessor-1-solana-host-listener:8080", "apiKey": "$(SOLANA_PROOF_API_KEY)"}]
 
 
 def render(release, chart, values, *options):
@@ -76,13 +77,13 @@ class SolanaCharts(unittest.TestCase):
 
     def test_connector_preserves_evm_and_exact_solana_chain_id(self):
         # Same composition as deploy-preview.sh: the party's values, the Solana overlay, and the
-        # proof endpoints the script sets. aclAddress is filled per party by deploy-kms-connector.sh.
+        # proof routes the script sets. aclAddress is filled per party by deploy-kms-connector.sh.
         documents = render("kms-connector-1", "kms-connector",
                            [ROOT / "ci/preview-env/kms-connector/values-kms-connector-e2e.yaml",
                             VALUES / "values-solana-connector-e2e.yaml"],
                            "--set-string", "commonConfig.hostChains.ethereum.aclAddress=0x" + "11" * 20,
                            "--set-json",
-                           'commonConfig.hostChains.solana.solanaProofEndpoints=["http://coprocessor-1-solana-host-listener:8080"]')
+                           'commonConfig.hostChains.solana.solanaProofRoutes=' + json.dumps(ROUTES))
         deployment = next(d for d in documents if d and d["kind"] == "Deployment" and "kms-worker" in d["metadata"]["name"])
         env = deployment["spec"]["template"]["spec"]["containers"][0]["env"]
         names = [e["name"] for e in env]
@@ -91,13 +92,68 @@ class SolanaCharts(unittest.TestCase):
         self.assertEqual(chains[12345]["aclAddress"], "0x" + "11" * 20)
         solana = chains[130140237723663404]
         self.assertNotIn("aclAddress", solana)
-        self.assertEqual(solana["chainKind"], "solana")
-        self.assertEqual(solana["solanaProofEndpoints"], ["http://coprocessor-1-solana-host-listener:8080"])
-        self.assertEqual(solana["solanaProofApiKey"], "$(SOLANA_PROOF_API_KEY)")
+        self.assertEqual(solana["solanaProofRoutes"], ROUTES)
         endpoint = next(d for d in documents if d and d["kind"] == "Deployment" and "endpoint" in d["metadata"]["name"])
         ids = next(e["value"] for e in endpoint["spec"]["template"]["spec"]["containers"][0]["env"]
                    if e["name"] == "KMS_CONNECTOR_SUPPORTED_CHAIN_IDS")
         self.assertIn("130140237723663404", ids.split(","))
+
+    def test_connector_reads_the_kind_from_the_type_byte_at_any_cluster_tag(self):
+        # The PoC chain id has cluster tag 12345: a wrong shift would read it as EVM.
+        documents = render("kms-connector-1", "kms-connector",
+                           [ROOT / "ci/preview-env/kms-connector/values-kms-connector-e2e.yaml",
+                            VALUES / "values-solana-connector-e2e.yaml"],
+                           "--set-string", "commonConfig.hostChains.ethereum.aclAddress=0x" + "11" * 20,
+                           "--set-string", "commonConfig.hostChains.solana.chainId=72057594037940281",
+                           "--set-json",
+                           'commonConfig.hostChains.solana.solanaProofRoutes=' + json.dumps(ROUTES))
+        deployment = next(d for d in documents if d and d["kind"] == "Deployment" and "kms-worker" in d["metadata"]["name"])
+        env = deployment["spec"]["template"]["spec"]["containers"][0]["env"]
+        chains = {c["chainId"]: c for c in json.loads(next(e["value"] for e in env if e["name"] == "KMS_CONNECTOR_HOST_CHAINS"))}
+        self.assertEqual(chains[72057594037940281]["solanaProofRoutes"], ROUTES)
+
+    def test_connector_refuses_an_entry_whose_settings_are_not_its_kind(self):
+        # YAML reads a large unquoted number as a float, which the chart must not round.
+        with tempfile.NamedTemporaryFile("w", suffix=".yaml") as unquoted:
+            unquoted.write("commonConfig:\n  hostChains:\n    solana:\n      chainId: 72057594037940281\n")
+            unquoted.flush()
+            cases = [
+                (["--set-string", "commonConfig.hostChains.solana.aclAddress=0x" + "11" * 20],
+                 "solana.aclAddress does not apply to a Solana chain"),
+                (["--set-string", "commonConfig.hostChains.solana.chainId=31888",
+                  "--set-string", "commonConfig.hostChains.solana.aclAddress=0x" + "11" * 20],
+                 "solana.solanaHostProgramId does not apply to an EVM chain"),
+                (["--set-string", "commonConfig.hostChains.solana.chainId=144115188075855881"],
+                 "solana.chainId has type byte 0x02, which names no host kind"),
+                (["--set-string", "commonConfig.hostChains.solana.chainId=abc"],
+                 'solana.chainId "abc" is not a decimal integer below 2^63'),
+                (["--set-string", "commonConfig.hostChains.solana.chainId=9295429630892703744"],
+                 'solana.chainId "9295429630892703744" is not a decimal integer below 2^63'),
+                (["--set-string", "commonConfig.hostChains.solana.chainId=0x0100000000003039"],
+                 'solana.chainId "0x0100000000003039" is not a decimal integer below 2^63'),
+                (["-f", unquoted.name],
+                 "quote it, as YAML reads a large unquoted number as a float"),
+            ]
+            for options, expected in cases:
+                command = ["helm", "template", "kms-connector-1", str(ROOT / "charts/kms-connector"),
+                           "-f", str(ROOT / "ci/preview-env/kms-connector/values-kms-connector-e2e.yaml"),
+                           "-f", str(VALUES / "values-solana-connector-e2e.yaml"),
+                           "--set-string", "commonConfig.hostChains.ethereum.aclAddress=0x" + "11" * 20,
+                           "--set-json", "commonConfig.hostChains.solana.solanaProofRoutes=" + json.dumps(ROUTES),
+                           *options]
+                result = subprocess.run(command, capture_output=True, text=True)
+                self.assertNotEqual(result.returncode, 0, expected)
+                self.assertIn(expected, result.stderr)
+
+    def test_connector_refuses_solana_settings_on_a_preset_chain(self):
+        command = ["helm", "template", "kms-connector-1", str(ROOT / "charts/kms-connector"),
+                   "--set", "commonConfig.network=devnet",
+                   *[option for name in ["ethereum", "polygon", "bnb"] for option in
+                     ["--set", f"commonConfig.hostChains.{name}.url=http://{name}:8545"]],
+                   "--set", "commonConfig.hostChains.ethereum.solanaHostProgramId=" + "1" * 32]
+        result = subprocess.run(command, capture_output=True, text=True)
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn("ethereum.solanaHostProgramId does not apply to a preset chain", result.stderr)
 
     def test_program_keys_are_optional_but_deployer_is_required(self):
         for filename in ["values-solana-programs-e2e.yaml", "values-solana-demos-e2e.yaml"]:

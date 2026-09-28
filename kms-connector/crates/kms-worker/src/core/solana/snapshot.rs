@@ -1,146 +1,190 @@
-//! Confirmed host account reads. Each read is one `getMultipleAccounts` at one slot.
+//! Confirmed host account reads. Each read is one `getMultipleAccounts` at one slot, answered
+//! in key order.
 //!
 //! The first read covers the signer's invalidation record and the named encrypted stores. A
-//! delegated request then reads the same accounts plus the delegation records the first read made
-//! derivable. Every rule uses that second read, which must not be older than the first.
+//! delegated request then reads them again with the Clock and the delegation rows the first read
+//! made derivable, at a slot no older than the first: the read passes `minContextSlot`, so a node
+//! behind the first read refuses it. The first read only locates the rows; every rule that
+//! authorizes uses the last read.
+//!
+//! A refusal from a node behind is recoverable. The worker loop retries a Gateway request; an HTTP
+//! request is not retried internally, so its caller receives `upstream_transient` and resubmits,
+//! as for any transient failure of an EVM request.
+//!
+//! Reads are at confirmed commitment, not finalized. A grant observed on a supermajority-confirmed
+//! fork is sufficient authorization; if that fork is rolled back, a share may already have been
+//! released against state the canonical chain no longer holds. That risk is accepted (INVARIANTS
+//! #46).
 
-use super::{SolanaPubkeyBytes, permit_invalidation_address};
-use connector_utils::types::solana_request::SolanaUserDecryptionRequestV1;
 use solana_account_decoder_client_types::{UiAccountData, UiAccountEncoding};
 use solana_commitment_config::CommitmentConfig;
 use solana_pubkey::Pubkey;
+use solana_rpc_client::api::{
+    client_error::ErrorKind, custom_error::JSON_RPC_SERVER_ERROR_MIN_CONTEXT_SLOT_NOT_REACHED,
+    request::RpcError,
+};
 use solana_rpc_client::{api::config::RpcAccountInfoConfig, nonblocking::rpc_client::RpcClient};
 use std::num::NonZeroUsize;
-use std::{
-    collections::{BTreeMap, BTreeSet},
-    future::Future,
-    sync::Arc,
-    time::Duration,
-};
+use std::{future::Future, sync::Arc, time::Duration};
 use tokio::sync::Semaphore;
 use url::Url;
-
-/// The System program's id: the owner of an account no program has taken over.
-pub const SYSTEM_PROGRAM_ID: SolanaPubkeyBytes = [0; 32];
+use zama_solana_acl::{AccountView, CLOCK_SYSVAR_ID, decode_clock_unix_timestamp};
 
 #[derive(Clone, PartialEq, Eq, Debug)]
 pub struct SnapshotAccount {
-    pub owner: SolanaPubkeyBytes,
+    pub owner: Pubkey,
     pub data: Vec<u8>,
 }
 
 impl SnapshotAccount {
-    /// System-owned and empty: what a bare transfer to a derivable address leaves. Such an account
-    /// says nothing about host state.
-    pub fn is_uninitialized_pda(&self) -> bool {
-        self.owner == SYSTEM_PROGRAM_ID && self.data.is_empty()
-    }
-}
-
-/// Account keys in read order, without repeats.
-#[derive(Clone, PartialEq, Eq, Debug, Default)]
-pub struct SnapshotKeys(Vec<SolanaPubkeyBytes>);
-
-impl SnapshotKeys {
-    pub fn new(keys: impl IntoIterator<Item = SolanaPubkeyBytes>) -> Self {
-        let mut seen = BTreeSet::new();
-        let mut ordered = Vec::new();
-        for key in keys {
-            if seen.insert(key) {
-                ordered.push(key);
-            }
+    /// The account as the shared verdicts read it.
+    pub fn view(&self) -> AccountView<'_> {
+        AccountView {
+            owner: self.owner.as_array(),
+            data: &self.data,
         }
-        Self(ordered)
-    }
-
-    pub fn as_slice(&self) -> &[SolanaPubkeyBytes] {
-        &self.0
-    }
-
-    pub fn contains(&self, key: &SolanaPubkeyBytes) -> bool {
-        self.0.contains(key)
-    }
-
-    pub fn len(&self) -> usize {
-        self.0.len()
-    }
-
-    pub fn is_empty(&self) -> bool {
-        self.0.is_empty()
     }
 }
 
+/// What one read returned: its slot, and one account per requested key, in key order.
 #[derive(Clone, PartialEq, Eq, Debug)]
-pub struct HostSnapshot {
-    observed_slot: u64,
-    accounts: BTreeMap<SolanaPubkeyBytes, Option<SnapshotAccount>>,
-}
-
-impl HostSnapshot {
-    /// `accounts` pairs every read key with what the node returned for it, `None` for no account.
-    pub fn new(
-        observed_slot: u64,
-        accounts: impl IntoIterator<Item = (SolanaPubkeyBytes, Option<SnapshotAccount>)>,
-    ) -> Self {
-        Self {
-            observed_slot,
-            accounts: accounts.into_iter().collect(),
-        }
-    }
-
-    pub fn observed_slot(&self) -> u64 {
-        self.observed_slot
-    }
-
-    /// An absent account is `Ok(None)`; a key that was never read is an error, so a key-planning
-    /// bug cannot pass as a missing account.
-    pub fn account(
-        &self,
-        key: &SolanaPubkeyBytes,
-    ) -> Result<Option<&SnapshotAccount>, UnreadAccount> {
-        match self.accounts.get(key) {
-            Some(account) => Ok(account.as_ref()),
-            None => Err(UnreadAccount { key: *key }),
-        }
-    }
-
-    /// Takes this read as the deciding one. A read older than the discovery read comes from a
-    /// node that fell behind, and would reject grants the discovery read already saw.
-    pub fn deciding_after(self, discovery: &HostSnapshot) -> Result<Self, SnapshotError> {
-        if self.observed_slot < discovery.observed_slot() {
-            return Err(SnapshotError::DecidingReadOlderThanDiscovery {
-                discovery_slot: discovery.observed_slot(),
-                deciding_slot: self.observed_slot,
-            });
-        }
-        Ok(self)
-    }
+pub struct AccountsRead {
+    pub slot: u64,
+    pub accounts: Vec<Option<SnapshotAccount>>,
 }
 
 pub trait HostStateReader: Send + Sync {
+    /// Reads `keys` at one slot no older than `min_context_slot`.
     fn read_accounts(
         &self,
-        keys: &SnapshotKeys,
-    ) -> impl Future<Output = Result<HostSnapshot, SnapshotError>> + Send;
+        keys: &[Pubkey],
+        min_context_slot: Option<u64>,
+    ) -> impl Future<Output = Result<AccountsRead, SnapshotError>> + Send;
 }
 
-pub fn plan_first_read(
-    request: &SolanaUserDecryptionRequestV1,
-    program_id: SolanaPubkeyBytes,
-) -> SnapshotKeys {
-    let signer = *request.permit().user_pubkey().as_bytes();
-    let (watermark_key, _) = permit_invalidation_address(program_id, signer);
-    let encrypted_stores = request.handles().iter().map(|entry| entry.encrypted_store);
-    SnapshotKeys::new(std::iter::once(watermark_key).chain(encrypted_stores))
+/// Reads `keys` and holds the answer to one account per key, whichever reader served it.
+pub async fn read_positional(
+    reader: &impl HostStateReader,
+    keys: &[Pubkey],
+    min_context_slot: Option<u64>,
+) -> Result<AccountsRead, SnapshotError> {
+    let read = reader.read_accounts(keys, min_context_slot).await?;
+    if read.accounts.len() != keys.len() {
+        return Err(SnapshotError::ResponseLengthMismatch {
+            requested: keys.len(),
+            returned: read.accounts.len(),
+        });
+    }
+    Ok(read)
 }
 
-pub fn plan_second_read(
-    first: &SnapshotKeys,
-    delegation_keys: impl IntoIterator<Item = SolanaPubkeyBytes>,
-) -> SnapshotKeys {
-    SnapshotKeys::new(first.as_slice().iter().copied().chain(delegation_keys))
+/// An address the Connector derived, with its canonical bump.
+pub type DerivedAddress = (Pubkey, u8);
+
+/// An account read at an address the Connector derived.
+#[derive(Clone, PartialEq, Eq, Debug)]
+pub struct ObservedRow {
+    pub key: Pubkey,
+    pub bump: u8,
+    pub account: Option<SnapshotAccount>,
 }
 
+/// The two delegation rows of one delegated entry, and the Clock's Unix time they are judged at.
+#[derive(Clone, PartialEq, Eq, Debug)]
+pub struct ObservedRows {
+    pub exact: ObservedRow,
+    pub wildcard: ObservedRow,
+    pub now: u64,
+}
+
+/// The delegation rows to read for the entry at `entry`.
+#[derive(Clone, Copy, PartialEq, Eq, Debug)]
+pub struct DelegationRowKeys {
+    pub entry: usize,
+    pub exact: DerivedAddress,
+    pub wildcard: DerivedAddress,
+}
+
+/// One request entry as read: its named store and, for a delegated entry, its delegation rows.
+#[derive(Clone, PartialEq, Eq, Debug)]
+pub struct ObservedEntry {
+    pub store: Option<SnapshotAccount>,
+    pub delegation: Option<ObservedRows>,
+}
+
+/// Everything one read observed, by role.
+#[derive(Clone, PartialEq, Eq, Debug)]
+pub struct HostObservation {
+    pub slot: u64,
+    pub watermark: ObservedRow,
+    pub entries: Vec<ObservedEntry>,
+}
+
+/// Reads the signer's invalidation record, the named stores and, when `delegated` is not empty,
+/// the Clock and those delegation rows. The keys are sent positionally, repeats included, so no
+/// account can be taken for another.
+pub async fn observe(
+    reader: &impl HostStateReader,
+    watermark: DerivedAddress,
+    stores: &[Pubkey],
+    delegated: &[DelegationRowKeys],
+    min_context_slot: Option<u64>,
+) -> Result<HostObservation, SnapshotError> {
+    let clock = (!delegated.is_empty()).then_some(Pubkey::new_from_array(CLOCK_SYSVAR_ID));
+    let keys: Vec<_> = std::iter::once(watermark.0)
+        .chain(clock)
+        .chain(stores.iter().copied())
+        .chain(
+            delegated
+                .iter()
+                .flat_map(|rows| [rows.exact.0, rows.wildcard.0]),
+        )
+        .collect();
+    let AccountsRead { slot, accounts } = read_positional(reader, &keys, min_context_slot).await?;
+    let mut accounts = accounts.into_iter();
+    let mut next = || accounts.next().expect("one account per key");
+    let row = |(key, bump): DerivedAddress, account| ObservedRow { key, bump, account };
+
+    let watermark = row(watermark, next());
+    let now = if clock.is_some() {
+        Some(unix_timestamp(next())?)
+    } else {
+        None
+    };
+    let mut entries: Vec<_> = stores
+        .iter()
+        .map(|_| ObservedEntry {
+            store: next(),
+            delegation: None,
+        })
+        .collect();
+    if let Some(now) = now {
+        for rows in delegated {
+            entries[rows.entry].delegation = Some(ObservedRows {
+                exact: row(rows.exact, next()),
+                wildcard: row(rows.wildcard, next()),
+                now,
+            });
+        }
+    }
+    Ok(HostObservation {
+        slot,
+        watermark,
+        entries,
+    })
+}
+
+/// The Clock's Unix time, which delegation expiry is checked against. The Clock always exists, so
+/// a read without a decodable one comes from a bad node.
+fn unix_timestamp(clock: Option<SnapshotAccount>) -> Result<u64, SnapshotError> {
+    let clock = clock.ok_or(SnapshotError::MalformedClock)?;
+    decode_clock_unix_timestamp(clock.owner.as_array(), &clock.data)
+        .map_err(|_| SnapshotError::MalformedClock)
+}
+
+/// The host reader: Anza's `solana-rpc-client`, the official client, as alloy is for EVM hosts.
+/// It is bounded as the EVM host provider is: a semaphore caps concurrent calls, and one deadline
+/// covers the client's internal retries.
 #[derive(Clone)]
 pub struct SolanaRpcClient {
     client: Arc<RpcClient>,
@@ -171,26 +215,24 @@ impl SolanaRpcClient {
 }
 
 impl HostStateReader for SolanaRpcClient {
-    async fn read_accounts(&self, keys: &SnapshotKeys) -> Result<HostSnapshot, SnapshotError> {
-        let pubkeys: Vec<_> = keys
-            .as_slice()
-            .iter()
-            .copied()
-            .map(Pubkey::new_from_array)
-            .collect();
+    async fn read_accounts(
+        &self,
+        keys: &[Pubkey],
+        min_context_slot: Option<u64>,
+    ) -> Result<AccountsRead, SnapshotError> {
         // As for EVM host RPC, waiting for a concurrency permit does not count against the call
-        // timeout. The SDK retries a throttled call internally, so the deadline wraps the retries
-        // rather than being the HTTP client's alone.
+        // timeout.
         let _permit = self
             .permits
             .acquire()
             .await
             .expect("the permit semaphore is never closed");
         let call = self.client.get_multiple_ui_accounts_with_config(
-            &pubkeys,
+            keys,
             RpcAccountInfoConfig {
                 encoding: Some(UiAccountEncoding::Base64),
                 commitment: Some(CommitmentConfig::confirmed()),
+                min_context_slot,
                 ..Default::default()
             },
         );
@@ -199,29 +241,27 @@ impl HostStateReader for SolanaRpcClient {
             .map_err(|_| SnapshotError::Unavailable {
                 reason: format!("Solana account read timed out after {:?}", self.timeout),
             })?
-            .map_err(|error| SnapshotError::Unavailable {
-                reason: error.to_string(),
+            .map_err(|error| match error.kind() {
+                ErrorKind::RpcError(RpcError::RpcResponseError { code, .. })
+                    if *code == JSON_RPC_SERVER_ERROR_MIN_CONTEXT_SLOT_NOT_REACHED =>
+                {
+                    SnapshotError::NodeBehind
+                }
+                _ => SnapshotError::Unavailable {
+                    reason: error.to_string(),
+                },
             })?;
-        if response.value.len() != keys.len() {
-            return Err(SnapshotError::ResponseLengthMismatch {
-                requested: keys.len(),
-                returned: response.value.len(),
-            });
-        }
         // The UI-account method reports undecodable data as an error instead of as a missing
-        // account.
+        // account. Every returned account is kept, so `read_positional` sees the node's count.
         let accounts = response
             .value
             .into_iter()
-            .zip(keys.as_slice())
-            .map(|(account, key)| {
+            .enumerate()
+            .map(|(position, account)| {
                 account
                     .map(|account| {
                         let malformed = || SnapshotError::Unavailable {
-                            reason: format!(
-                                "malformed Solana account at {}",
-                                Pubkey::new_from_array(*key)
-                            ),
+                            reason: format!("malformed Solana account at position {position}"),
                         };
                         if !matches!(
                             account.data,
@@ -230,19 +270,17 @@ impl HostStateReader for SolanaRpcClient {
                             return Err(malformed());
                         }
                         Ok(SnapshotAccount {
-                            owner: account
-                                .owner
-                                .parse::<Pubkey>()
-                                .map_err(|_| malformed())?
-                                .to_bytes(),
+                            owner: account.owner.parse::<Pubkey>().map_err(|_| malformed())?,
                             data: account.data.decode().ok_or_else(malformed)?,
                         })
                     })
                     .transpose()
-                    .map(|account| (*key, account))
             })
             .collect::<Result<Vec<_>, SnapshotError>>()?;
-        Ok(HostSnapshot::new(response.context.slot, accounts))
+        Ok(AccountsRead {
+            slot: response.context.slot,
+            accounts,
+        })
     }
 }
 
@@ -253,18 +291,8 @@ pub enum SnapshotError {
     Unavailable { reason: String },
     #[error("host state read returned {returned} accounts for {requested} keys")]
     ResponseLengthMismatch { requested: usize, returned: usize },
-    #[error(
-        "the deciding read observed slot {deciding_slot}, older than the discovery read's {discovery_slot}"
-    )]
-    DecidingReadOlderThanDiscovery {
-        discovery_slot: u64,
-        deciding_slot: u64,
-    },
-}
-
-/// A check asked for an account its read did not plan: a Connector bug, never a missing account.
-#[derive(Clone, Copy, PartialEq, Eq, Debug, thiserror::Error)]
-#[error("account {key:?} was never read")]
-pub struct UnreadAccount {
-    pub key: SolanaPubkeyBytes,
+    #[error("host state read returned no decodable Clock sysvar")]
+    MalformedClock,
+    #[error("the node has not reached the slot of the request's first read")]
+    NodeBehind,
 }

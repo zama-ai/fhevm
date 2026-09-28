@@ -30,6 +30,26 @@ pub struct MmrProof {
     pub siblings: Vec<[u8; 32]>,
 }
 
+impl MmrProof {
+    /// The proof of `leaf_index` against the tree's first `leaf_count` leaves, from `siblings`
+    /// built against any tree holding the leaf. A leaf's mountain only grows on append, so a
+    /// later tree's path starts with the path to the peak the leaf had at `leaf_count`. An
+    /// earlier tree's path is kept whole: it verifies only if the leaf's mountain has not grown
+    /// since. `None` when the leaf is not among the first `leaf_count`.
+    pub fn for_leaf_count(leaf_index: u64, siblings: &[[u8; 32]], leaf_count: u64) -> Option<Self> {
+        if leaf_index >= leaf_count {
+            return None;
+        }
+        // The leaf's mountain is the highest bit where `leaf_count` is set and `leaf_index` is
+        // not; its height is that bit's position.
+        let height = (leaf_count ^ leaf_index).ilog2() as usize;
+        Some(Self {
+            leaf_index,
+            siblings: siblings.iter().take(height).copied().collect(),
+        })
+    }
+}
+
 /// Hashes a leaf commitment into its MMR leaf node.
 pub fn mmr_leaf_node(commitment: &[u8; 32]) -> [u8; 32] {
     keccak256(&[LEAF_PREFIX, commitment])
@@ -191,6 +211,28 @@ mod tests {
             mmr_append(&mut peaks, &mut count, leaf(i)).unwrap();
         }
         (peaks, count)
+    }
+
+    #[test]
+    fn a_later_trees_proof_verifies_against_every_earlier_tree_holding_the_leaf() {
+        let leaves: Vec<_> = (0..33).map(leaf).collect();
+        for later in 1..=leaves.len() as u64 {
+            for index in 0..later {
+                let proof = mmr_build_proof(&leaves[..later as usize], index).unwrap();
+                for earlier in 1..=later {
+                    let trimmed = MmrProof::for_leaf_count(index, &proof.siblings, earlier);
+                    if index >= earlier {
+                        assert_eq!(trimmed, None);
+                        continue;
+                    }
+                    let peaks = mmr_peaks_from_leaves(&leaves[..earlier as usize]);
+                    assert!(
+                        mmr_verify(&peaks, earlier, leaf(index), &trimmed.unwrap()),
+                        "leaf {index} of {later} against {earlier}"
+                    );
+                }
+            }
+        }
     }
 
     #[test]

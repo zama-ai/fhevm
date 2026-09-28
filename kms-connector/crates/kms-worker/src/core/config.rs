@@ -1,4 +1,3 @@
-use crate::core::solana::SolanaPubkeyBytes;
 use alloy::{primitives::Address, transports::http::reqwest::Url};
 use ciphertext_attestation::MAX_SNS_CIPHERTEXT_SERIALIZED_SIZE;
 use connector_utils::{
@@ -16,13 +15,14 @@ use connector_utils::{
     monitoring::{health::default_healthcheck_timeout, server::default_monitoring_endpoint},
     tasks::default_task_limit,
 };
-use serde::{Deserialize, Deserializer, Serialize};
+use serde::{Deserialize, Deserializer};
 use solana_pubkey::Pubkey;
 use std::{net::SocketAddr, num::NonZeroUsize, str::FromStr, time::Duration};
+use zama_solana_request::host_chain::{EVM_CHAIN_TYPE, SOLANA_CHAIN_TYPE, chain_type_byte};
 
 /// Configuration of the `KmsWorker`.
 #[derive(Clone, Debug, Deserialize, PartialEq)]
-#[cfg_attr(test, derive(Serialize))]
+#[cfg_attr(test, derive(serde::Serialize))]
 pub struct Config {
     /// The URL of the Postgres database.
     pub database_url: String,
@@ -71,6 +71,7 @@ pub struct Config {
 
     /// The Host Chains configuration.
     #[serde(deserialize_with = "deserialize_host_chains")]
+    #[cfg_attr(test, serde(skip_serializing))]
     pub host_chains: Vec<HostChainConfig>,
 
     /// The KMS Core endpoints.
@@ -159,102 +160,177 @@ pub struct Config {
     pub healthcheck_timeout: Duration,
 }
 
-/// High byte of the eight-byte chain-id field. Matches the coprocessor and host.
-pub const EVM_CHAIN_TYPE: u8 = 0x00;
-pub const SOLANA_CHAIN_TYPE: u8 = 0x01;
-const CHAIN_TYPE_SHIFT: u32 = 56;
-
-pub const fn chain_type_byte(chain_id: u64) -> u8 {
-    (chain_id >> CHAIN_TYPE_SHIFT) as u8
-}
-
-pub const fn is_evm_host_chain_id(chain_id: u64) -> bool {
-    chain_type_byte(chain_id) == EVM_CHAIN_TYPE
-}
-
-pub const fn is_solana_host_chain_id(chain_id: u64) -> bool {
-    chain_type_byte(chain_id) == SOLANA_CHAIN_TYPE
-}
-
-#[cfg(test)]
-pub const fn solana_host_chain_id(cluster_tag: u64) -> u64 {
-    ((SOLANA_CHAIN_TYPE as u64) << CHAIN_TYPE_SHIFT) | (cluster_tag & 0x00ff_ffff_ffff_ffff)
-}
-
-/// Supported host-chain ACL backends.
-#[derive(Clone, Copy, Debug, Deserialize, Serialize, PartialEq, Eq)]
-#[serde(rename_all = "snake_case")]
-pub enum HostChainKind {
-    /// EVM host chain using the Solidity ACL contract ABI.
-    Evm,
-    /// Solana host chain using account-witness ACL verification.
-    Solana,
-}
-
-/// Configuration of a single Host Chain.
+/// Configuration of a single host chain. Its kind is its chain id's type byte, and it carries
+/// only that kind's settings.
 #[derive(Clone, Debug, Deserialize, PartialEq)]
-#[cfg_attr(test, derive(Serialize))]
+#[serde(try_from = "HostChainEntry")]
 pub struct HostChainConfig {
-    /// The Host Chain RPC endpoint.
+    /// The host chain RPC endpoint.
     pub url: Url,
-    /// The Chain ID of the Host Chain.
-    #[serde(alias = "chainId")]
+    /// The chain id of the host chain.
     pub chain_id: u64,
-    /// The ACL backend for this host chain.
-    #[serde(default = "default_host_chain_kind", alias = "chainKind")]
-    pub chain_kind: HostChainKind,
-    /// The `ACL` contract address on the Host Chain.
-    ///
-    /// Required for EVM chains (the worker binds the ACL contract here to gate decryptions).
-    /// Omitted for Solana chains, whose ACL is verified via `solana_host_program_id` instead.
+    /// What the connector verifies decryptions against on this chain.
+    pub host: HostSettings,
+}
+
+#[derive(Clone, Debug, PartialEq)]
+pub enum HostSettings {
+    Evm {
+        /// The `ACL` contract that gates decryptions.
+        acl_address: Address,
+    },
+    Solana(SolanaHostSettings),
+}
+
+#[derive(Clone, Debug, PartialEq)]
+pub struct SolanaHostSettings {
+    /// The zama-host program id.
+    pub host_program_id: Pubkey,
+    /// The coprocessors' leaf-proof routes, one per coprocessor, at least one. Every route is
+    /// asked at once, and the first proof that verifies is taken.
+    pub proof_routes: Vec<ProofRoute>,
+}
+
+/// One coprocessor's leaf-proof endpoint and the bearer key that endpoint expects.
+#[derive(Clone, Debug, Deserialize, PartialEq)]
+pub struct ProofRoute {
+    pub url: Url,
+    #[serde(alias = "apiKey")]
+    pub api_key: ApiKey,
+}
+
+/// A bearer key. Its [`Debug`] output is redacted, so it does not reach logs.
+#[derive(Clone, Deserialize, PartialEq)]
+#[serde(transparent)]
+pub struct ApiKey(String);
+
+impl ApiKey {
+    pub fn expose(&self) -> &str {
+        &self.0
+    }
+}
+
+impl From<String> for ApiKey {
+    fn from(key: String) -> Self {
+        Self(key)
+    }
+}
+
+impl std::fmt::Debug for ApiKey {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str("ApiKey(<redacted>)")
+    }
+}
+
+/// A host chain as written in the configuration, before its settings are checked against the
+/// kind its chain id names.
+#[derive(Deserialize)]
+struct HostChainEntry {
+    url: Url,
+    #[serde(alias = "chainId")]
+    chain_id: u64,
     #[serde(default, alias = "aclAddress")]
-    pub acl_address: Option<Address>,
-    /// The expected ZamaHost program id for Solana-owned ACL/material witnesses.
-    ///
-    /// Required for Solana ACL verification. A Solana host chain that omits it is rejected during
-    /// worker startup validation.
+    acl_address: Option<Address>,
     #[serde(
         default,
         deserialize_with = "deserialize_optional_solana_pubkey",
         alias = "solanaHostProgramId"
     )]
-    pub solana_host_program_id: Option<SolanaPubkeyBytes>,
-    /// Base URLs of the coprocessors' leaf-proof endpoint, one per coprocessor. Every one is
-    /// asked on each read and the answers are merged.
-    ///
-    /// Required, non-empty, for Solana chains; must be absent for EVM chains.
-    #[serde(default, alias = "solanaProofEndpoints")]
-    pub solana_proof_endpoints: Vec<Url>,
-    /// The bearer key the leaf-proof endpoint expects.
-    ///
-    /// Required for Solana chains; must be absent for EVM chains.
-    #[serde(default, alias = "solanaProofApiKey")]
-    pub solana_proof_api_key: Option<String>,
+    solana_host_program_id: Option<Pubkey>,
+    #[serde(default, alias = "solanaProofRoutes")]
+    solana_proof_routes: Vec<ProofRoute>,
 }
 
-fn default_host_chain_kind() -> HostChainKind {
-    HostChainKind::Evm
+impl TryFrom<HostChainEntry> for HostChainConfig {
+    type Error = String;
+
+    fn try_from(entry: HostChainEntry) -> Result<Self, Self::Error> {
+        let chain_id = entry.chain_id;
+        let host = match chain_type_byte(chain_id) {
+            EVM_CHAIN_TYPE => {
+                if entry.solana_host_program_id.is_some() || !entry.solana_proof_routes.is_empty() {
+                    return Err(format!(
+                        "EVM host chain {chain_id} must not set solana_host_program_id or solana_proof_routes"
+                    ));
+                }
+                let acl_address = entry.acl_address.ok_or_else(|| {
+                    format!(
+                        "EVM host chain {chain_id} requires acl_address (the ACL contract to gate decryptions)"
+                    )
+                })?;
+                HostSettings::Evm { acl_address }
+            }
+            SOLANA_CHAIN_TYPE => {
+                if entry.acl_address.is_some() {
+                    return Err(format!(
+                        "Solana host chain {chain_id} must not set acl_address"
+                    ));
+                }
+                let host_program_id = entry.solana_host_program_id.ok_or_else(|| {
+                    format!("Solana host chain {chain_id} requires solana_host_program_id")
+                })?;
+                if entry.solana_proof_routes.is_empty() {
+                    return Err(format!(
+                        "Solana host chain {chain_id} requires at least one solana_proof_routes entry"
+                    ));
+                }
+                if let Some(route) = entry
+                    .solana_proof_routes
+                    .iter()
+                    .find(|route| route.api_key.expose().is_empty())
+                {
+                    return Err(format!(
+                        "Solana host chain {chain_id} proof route {} has an empty api_key",
+                        route.url
+                    ));
+                }
+                HostSettings::Solana(SolanaHostSettings {
+                    host_program_id,
+                    proof_routes: entry.solana_proof_routes,
+                })
+            }
+            other => {
+                return Err(format!(
+                    "host chain {chain_id} has type byte {other:#04x}, which names no host kind"
+                ));
+            }
+        };
+        Ok(Self {
+            url: entry.url,
+            chain_id,
+            host,
+        })
+    }
 }
 
 fn deserialize_host_chains<'de, D>(d: D) -> Result<Vec<HostChainConfig>, D::Error>
 where
     D: Deserializer<'de>,
 {
-    let host_chains = if let Ok(host_chains_json_str) = std::env::var("KMS_CONNECTOR_HOST_CHAINS") {
-        serde_json::from_str(&host_chains_json_str).map_err(serde::de::Error::custom)?
-    } else {
-        <Vec<HostChainConfig>>::deserialize(d)?
-    };
+    let host_chains: Vec<HostChainConfig> =
+        if let Ok(host_chains_json_str) = std::env::var("KMS_CONNECTOR_HOST_CHAINS") {
+            serde_json::from_str(&host_chains_json_str).map_err(serde::de::Error::custom)?
+        } else {
+            <Vec<HostChainConfig>>::deserialize(d)?
+        };
     if host_chains.is_empty() {
-        Err(serde::de::Error::custom(
+        return Err(serde::de::Error::custom(
             "Field should not be an empty array",
-        ))
-    } else {
-        Ok(host_chains)
+        ));
     }
+    let mut chain_ids = std::collections::HashSet::with_capacity(host_chains.len());
+    for host_chain in &host_chains {
+        if !chain_ids.insert(host_chain.chain_id) {
+            return Err(serde::de::Error::custom(format!(
+                "Duplicate host chain in config for chain ID {}",
+                host_chain.chain_id
+            )));
+        }
+    }
+    Ok(host_chains)
 }
 
-fn deserialize_optional_solana_pubkey<'de, D>(d: D) -> Result<Option<SolanaPubkeyBytes>, D::Error>
+fn deserialize_optional_solana_pubkey<'de, D>(d: D) -> Result<Option<Pubkey>, D::Error>
 where
     D: Deserializer<'de>,
 {
@@ -262,7 +338,7 @@ where
         return Ok(None);
     };
     let pubkey = Pubkey::from_str(&pubkey).map_err(serde::de::Error::custom)?;
-    Ok(Some(pubkey.to_bytes()))
+    Ok(Some(pubkey))
 }
 
 fn deserialize_non_empty<'de, D, T>(d: D) -> Result<Vec<T>, D::Error>
@@ -371,11 +447,9 @@ impl Default for Config {
             host_chains: vec![HostChainConfig {
                 url: Url::from_str("http://localhost:8545").unwrap(),
                 chain_id: 12345,
-                chain_kind: HostChainKind::Evm,
-                acl_address: Some(Address::default()),
-                solana_host_program_id: None,
-                solana_proof_endpoints: Vec::new(),
-                solana_proof_api_key: None,
+                host: HostSettings::Evm {
+                    acl_address: Address::default(),
+                },
             }],
             kms_core_endpoints: vec!["http://localhost:50051".to_string()],
             grpc_request_retries: default_grpc_request_retries(),
@@ -405,6 +479,7 @@ mod tests {
     use alloy::primitives::Address;
     use serial_test::serial;
     use std::{env, str::FromStr};
+    use zama_solana_request::host_chain::solana_host_chain_id;
 
     fn cleanup_env_vars() {
         unsafe {
@@ -544,13 +619,10 @@ mod tests {
             vec![HostChainConfig {
                 url: Url::from_str("http://localhost:9545").unwrap(),
                 chain_id: 31888,
-                chain_kind: HostChainKind::Evm,
-                acl_address: Some(
-                    Address::from_str("0x5fbdb2315678afecb367f032d93f642f64180aa3").unwrap(),
-                ),
-                solana_host_program_id: None,
-                solana_proof_endpoints: Vec::new(),
-                solana_proof_api_key: None,
+                host: HostSettings::Evm {
+                    acl_address: Address::from_str("0x5fbdb2315678afecb367f032d93f642f64180aa3")
+                        .unwrap(),
+                },
             }]
         );
         assert_eq!(
@@ -637,10 +709,8 @@ mod tests {
                     [
                         {
                             "url": "http://localhost:9545",
-                            "chainId": 72057594037959824,
-                            "chainKind": "solana",
-                            "aclAddress": "0x5fbdb2315678afecb367f032d93f642f64180aa3",
-                            "solanaHostProgramId": "11111111111111111111111111111111"
+                            "chainId": 31888,
+                            "aclAddress": "0x5fbdb2315678afecb367f032d93f642f64180aa3"
                         }
                     ]
                 "#,
@@ -655,18 +725,222 @@ mod tests {
             config.host_chains,
             vec![HostChainConfig {
                 url: Url::from_str("http://localhost:9545").unwrap(),
-                // RFC-021 Solana host id: type byte 0x01 | 31888.
-                chain_id: solana_host_chain_id(31888),
-                chain_kind: HostChainKind::Solana,
-                acl_address: Some(
-                    Address::from_str("0x5fbdb2315678afecb367f032d93f642f64180aa3").unwrap(),
-                ),
-                solana_host_program_id: Some([0; 32]),
-                solana_proof_endpoints: Vec::new(),
-                solana_proof_api_key: None,
+                chain_id: 31888,
+                host: HostSettings::Evm {
+                    acl_address: Address::from_str("0x5fbdb2315678afecb367f032d93f642f64180aa3")
+                        .unwrap()
+                },
             }]
         );
         cleanup_env_vars();
+    }
+
+    #[test]
+    #[serial(config_tests)]
+    fn a_solana_host_chain_from_env_camel_case() {
+        cleanup_env_vars();
+        unsafe {
+            env::set_var(
+                "KMS_CONNECTOR_HOST_CHAINS",
+                r#"
+                    [
+                        {
+                            "url": "http://localhost:8899",
+                            "chainId": 72057594037959824,
+                            "solanaHostProgramId": "11111111111111111111111111111111",
+                            "solanaProofRoutes": [
+                                {"url": "http://coprocessor-1:8080", "apiKey": "first-key"}
+                            ]
+                        }
+                    ]
+                "#,
+            );
+        }
+
+        let config = Config::from_env_and_file(Some(example_config_path())).unwrap();
+
+        assert_eq!(
+            config.host_chains,
+            vec![HostChainConfig {
+                url: Url::from_str("http://localhost:8899").unwrap(),
+                // Type byte 0x01, cluster tag 31888.
+                chain_id: solana_host_chain_id(31888),
+                host: HostSettings::Solana(SolanaHostSettings {
+                    host_program_id: Pubkey::new_from_array([0; 32]),
+                    proof_routes: vec![ProofRoute {
+                        url: Url::from_str("http://coprocessor-1:8080").unwrap(),
+                        api_key: ApiKey::from("first-key".to_owned()),
+                    }],
+                }),
+            }]
+        );
+        cleanup_env_vars();
+    }
+
+    fn parse_host_chains(entries: serde_json::Value) -> Result<Vec<HostChainConfig>, String> {
+        deserialize_host_chains(entries).map_err(|error| error.to_string())
+    }
+
+    fn solana_entry(cluster_tag: u64) -> serde_json::Value {
+        serde_json::json!({
+            "url": "http://localhost:8899",
+            "chain_id": solana_host_chain_id(cluster_tag),
+            "solana_host_program_id": "11111111111111111111111111111111",
+            "solana_proof_routes": [{"url": "http://coprocessor-1:8080", "api_key": "first-key"}]
+        })
+    }
+
+    /// A host chain entry as main writes it: no kind, only the EVM fields.
+    #[test]
+    #[serial(config_tests)]
+    fn an_evm_entry_from_main_parses_unchanged() {
+        cleanup_env_vars();
+        let chains = parse_host_chains(serde_json::json!([{
+            "url": "http://localhost:8545",
+            "chain_id": 12345,
+            "acl_address": "0x5fbdb2315678afecb367f032d93f642f64180aa3"
+        }]))
+        .unwrap();
+        assert!(matches!(chains[0].host, HostSettings::Evm { .. }));
+    }
+
+    /// The chain id's type byte names the kind, so an entry carrying the other kind's settings,
+    /// missing its own, or naming no kind does not load.
+    #[test]
+    #[serial(config_tests)]
+    fn an_entry_whose_settings_do_not_match_its_chain_id_is_refused() {
+        cleanup_env_vars();
+        let evm = serde_json::json!({
+            "url": "http://localhost:8545",
+            "chain_id": 12345,
+            "acl_address": "0x5fbdb2315678afecb367f032d93f642f64180aa3"
+        });
+        let with = |mut entry: serde_json::Value, field: &str, value: serde_json::Value| {
+            entry[field] = value;
+            entry
+        };
+        let without = |mut entry: serde_json::Value, field: &str| {
+            entry.as_object_mut().unwrap().remove(field);
+            entry
+        };
+        let cases = [
+            (without(evm.clone(), "acl_address"), "requires acl_address"),
+            (
+                with(
+                    evm.clone(),
+                    "solana_host_program_id",
+                    "11111111111111111111111111111111".into(),
+                ),
+                "must not set solana_host_program_id or solana_proof_routes",
+            ),
+            (
+                with(
+                    evm.clone(),
+                    "solana_proof_routes",
+                    solana_entry(1)["solana_proof_routes"].clone(),
+                ),
+                "must not set solana_host_program_id or solana_proof_routes",
+            ),
+            (
+                with(solana_entry(1), "acl_address", evm["acl_address"].clone()),
+                "must not set acl_address",
+            ),
+            (
+                without(solana_entry(1), "solana_host_program_id"),
+                "requires solana_host_program_id",
+            ),
+            (
+                without(solana_entry(1), "solana_proof_routes"),
+                "requires at least one solana_proof_routes entry",
+            ),
+            (
+                with(
+                    solana_entry(1),
+                    "solana_proof_routes",
+                    serde_json::json!([{"url": "http://coprocessor-1:8080", "api_key": ""}]),
+                ),
+                "proof route http://coprocessor-1:8080/ has an empty api_key",
+            ),
+            (
+                with(evm.clone(), "chain_id", 0x0200_0000_0000_0009_u64.into()),
+                "has type byte 0x02, which names no host kind",
+            ),
+        ];
+        for (entry, expected) in cases {
+            let error = parse_host_chains(serde_json::json!([entry])).unwrap_err();
+            assert!(
+                error.contains(expected),
+                "expected {expected:?}, got {error}"
+            );
+        }
+    }
+
+    #[test]
+    #[serial(config_tests)]
+    fn a_chain_configured_twice_is_refused() {
+        cleanup_env_vars();
+        let error =
+            parse_host_chains(serde_json::json!([solana_entry(7), solana_entry(7)])).unwrap_err();
+        assert!(
+            error.contains(&format!(
+                "Duplicate host chain in config for chain ID {}",
+                solana_host_chain_id(7)
+            )),
+            "{error}"
+        );
+    }
+
+    #[test]
+    #[serial(config_tests)]
+    fn a_proof_key_is_redacted_from_debug_output() {
+        cleanup_env_vars();
+        let chains = parse_host_chains(serde_json::json!([solana_entry(1)])).unwrap();
+        let debug = format!("{chains:?}");
+        assert!(!debug.contains("first-key"), "{debug}");
+    }
+
+    /// The sample's commented Solana fields as a real entry: routes are TOML inline tables.
+    #[test]
+    #[serial(config_tests)]
+    fn a_solana_entry_loads_from_toml() {
+        cleanup_env_vars();
+        let sample = std::fs::read_to_string(example_config_path()).unwrap();
+        let path = env::temp_dir().join(format!("kms-worker-solana-{}.toml", std::process::id()));
+        let solana_chain_id = solana_host_chain_id(1);
+        std::fs::write(
+            &path,
+            format!(
+                r#"{sample}
+[[host_chains]]
+url = "http://localhost:8899"
+chain_id = {solana_chain_id}
+solana_host_program_id = "11111111111111111111111111111111"
+solana_proof_routes = [
+    {{ url = "http://coprocessor-1:8080", api_key = "first-key" }},
+    {{ url = "http://coprocessor-2:8080", api_key = "second-key" }},
+]
+"#
+            ),
+        )
+        .unwrap();
+        let config = Config::from_env_and_file(Some(&path));
+        std::fs::remove_file(&path).unwrap();
+
+        let HostSettings::Solana(solana) = &config.unwrap().host_chains[1].host else {
+            panic!("the second entry is a Solana chain");
+        };
+        let routes: Vec<_> = solana
+            .proof_routes
+            .iter()
+            .map(|route| (route.url.as_str(), route.api_key.expose()))
+            .collect();
+        assert_eq!(
+            routes,
+            [
+                ("http://coprocessor-1:8080/", "first-key"),
+                ("http://coprocessor-2:8080/", "second-key"),
+            ]
+        );
     }
 
     fn example_config_path() -> String {

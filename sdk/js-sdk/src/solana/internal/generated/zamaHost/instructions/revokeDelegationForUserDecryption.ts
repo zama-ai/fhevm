@@ -97,10 +97,7 @@ export type RevokeDelegationForUserDecryptionAsyncInput<
 > = {
   /** Delegator that owns the delegation. */
   delegator: TransactionSigner<TAccountDelegator>;
-  /**
-   * Singleton config PDA. Carried for the account list the clients already build, and pinned to
-   * the canonical singleton by its seeds; no flag on it gates this instruction.
-   */
+  /** Singleton config PDA, whose `acl_writes` pause flag gates this instruction. */
   hostConfig?: Address<TAccountHostConfig>;
   /** Delegation record to revoke. */
   delegationRecord: Address<TAccountDelegationRecord>;
@@ -168,10 +165,7 @@ export type RevokeDelegationForUserDecryptionInput<
 > = {
   /** Delegator that owns the delegation. */
   delegator: TransactionSigner<TAccountDelegator>;
-  /**
-   * Singleton config PDA. Carried for the account list the clients already build, and pinned to
-   * the canonical singleton by its seeds; no flag on it gates this instruction.
-   */
+  /** Singleton config PDA, whose `acl_writes` pause flag gates this instruction. */
   hostConfig: Address<TAccountHostConfig>;
   /** Delegation record to revoke. */
   delegationRecord: Address<TAccountDelegationRecord>;
@@ -230,10 +224,7 @@ export type ParsedRevokeDelegationForUserDecryptionInstruction<
   accounts: {
     /** Delegator that owns the delegation. */
     delegator: TAccountMetas[0];
-    /**
-     * Singleton config PDA. Carried for the account list the clients already build, and pinned to
-     * the canonical singleton by its seeds; no flag on it gates this instruction.
-     */
+    /** Singleton config PDA, whose `acl_writes` pause flag gates this instruction. */
     hostConfig: TAccountMetas[1];
     /** Delegation record to revoke. */
     delegationRecord: TAccountMetas[2];

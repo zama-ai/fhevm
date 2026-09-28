@@ -73,23 +73,20 @@ At least one of these two options must be provided.
 See the [architecture documentation](./docs/architecture.md) for more detail.
 
 Solana user decrypt uses the existing `user_decryption_requests` queue and worker.
-The Gateway's `UserDecryptionRequest_4` overload is decoded and checked at ingress; its
+The Gateway's `SolanaUserDecryptionRequest` event is decoded and checked at ingress; its
 canonical request bytes are not persisted. `POST /v1/user-decrypt` accepts the same data
 under `{attestationType, payload, signature}` with `attestationType` set to
 `solana-srfc38-user-decrypt-v1`. The EVM value remains `eip712-unified-user-decrypt-v1`.
 The Solana permit chain ID is derived from the handles; the HTTP payload has no numeric
 `chainId` field. This preserves the full chain ID in JavaScript clients.
 
-A Solana row has the typed columns `user_pubkey`, `handle_allowed_keys`,
-`handle_encrypted_stores`, `allowed_scopes` and `verifying_program_id`, and a NULL
-`user_address`. The generated `attestation_type` column (`legacy`, `eip712` or `solana`)
-follows from those columns, and a CHECK makes a row that mixes the EVM and Solana shapes unwritable. `from_user_decryption_row`
-is the only reader; it rebuilds the signed permit, so the worker authorizes exactly what the
-user signed.
-
-Solana is not deployed yet. The migration refuses rows in the earlier opaque `solana_request`
-format instead of converting them: clear that disposable preview state before upgrading. EVM
-rows are kept and tagged.
+A Solana row names its requester in `user_address` and each handle's owner in
+`handle_owner_addresses`, as an EVM row does, with 32-byte keys instead of 20-byte addresses.
+It adds `handle_encrypted_stores`, `allowed_scopes` and `verifying_program_id`, which have no
+EVM counterpart. The generated `attestation_type` column (`legacy`, `eip712` or `solana`)
+follows from those columns, and a CHECK makes a row that mixes the EVM and Solana shapes
+unwritable. `from_user_decryption_row` is the only reader; it rebuilds the signed permit, so
+the worker authorizes exactly what the user signed.
 
 ## Support
 
@@ -109,7 +106,7 @@ rows are kept and tagged.
 
 Every processing attempt, including an already-sent poll, checks the permit signature,
 window, deployment, KMS context, confirmed account snapshot, invalidation watermark,
-scope, allow leaf named by `allowed_key`, and any required delegation. A poll does not
+scope, allow leaf named by `owner_address`, and any required delegation. A poll does not
 prepare or resend the KMS request. KMS preparation, response publishing and retry limits
 use the existing user-decrypt flow.
 

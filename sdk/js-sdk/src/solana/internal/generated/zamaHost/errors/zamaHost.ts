@@ -68,8 +68,8 @@ export const ZAMA_HOST_ERROR__SCOPE_DENIED = 0x1788; // 6024
 export const ZAMA_HOST_ERROR__DELEGATION_PDA_MISMATCH = 0x1789; // 6025
 /** InvalidDelegation: delegation tuple is invalid */
 export const ZAMA_HOST_ERROR__INVALID_DELEGATION = 0x178a; // 6026
-/** DelegationRevoked: delegation has already been revoked */
-export const ZAMA_HOST_ERROR__DELEGATION_REVOKED = 0x178b; // 6027
+/** NotDelegatedYet: delegation is not granted */
+export const ZAMA_HOST_ERROR__NOT_DELEGATED_YET = 0x178b; // 6027
 /** DelegationUpdatedInCurrentSlot: delegation was already updated in the current slot */
 export const ZAMA_HOST_ERROR__DELEGATION_UPDATED_IN_CURRENT_SLOT = 0x178c; // 6028
 /** PreviousBankHashUnavailable: previous bank hash is not available */
@@ -190,6 +190,10 @@ export const ZAMA_HOST_ERROR__NOT_PAUSER = 0x17c5; // 6085
 export const ZAMA_HOST_ERROR__PAUSER_RECORD_MISMATCH = 0x17c6; // 6086
 /** WalletPauseThroughCpi: a wallet pauser must pause in a top-level instruction */
 export const ZAMA_HOST_ERROR__WALLET_PAUSE_THROUGH_CPI = 0x17c7; // 6087
+/** EncryptedStoreScopeNotProgramAccount: encrypted store scope is not an account of the store's program */
+export const ZAMA_HOST_ERROR__ENCRYPTED_STORE_SCOPE_NOT_PROGRAM_ACCOUNT = 0x17c8; // 6088
+/** DelegationScopeNotProgramAccount: delegation scope is not an account of the delegated program */
+export const ZAMA_HOST_ERROR__DELEGATION_SCOPE_NOT_PROGRAM_ACCOUNT = 0x17c9; // 6089
 
 export type ZamaHostError =
   | typeof ZAMA_HOST_ERROR__ACL_WRITES_PAUSED
@@ -198,7 +202,7 @@ export type ZamaHostError =
   | typeof ZAMA_HOST_ERROR__CLOCK_BEFORE_EPOCH
   | typeof ZAMA_HOST_ERROR__CURRENT_KMS_CONTEXT_CANNOT_BE_DESTROYED
   | typeof ZAMA_HOST_ERROR__DELEGATION_PDA_MISMATCH
-  | typeof ZAMA_HOST_ERROR__DELEGATION_REVOKED
+  | typeof ZAMA_HOST_ERROR__DELEGATION_SCOPE_NOT_PROGRAM_ACCOUNT
   | typeof ZAMA_HOST_ERROR__DELEGATION_UPDATED_IN_CURRENT_SLOT
   | typeof ZAMA_HOST_ERROR__DENY_RECORD_MISMATCH
   | typeof ZAMA_HOST_ERROR__DENY_RECORD_MISSING
@@ -215,6 +219,7 @@ export type ZamaHostError =
   | typeof ZAMA_HOST_ERROR__ENCRYPTED_STORE_MMR_PEAK_CAPACITY_EXCEEDED
   | typeof ZAMA_HOST_ERROR__ENCRYPTED_STORE_PDA_MISMATCH
   | typeof ZAMA_HOST_ERROR__ENCRYPTED_STORE_PUBLIC_HANDLE_MISMATCH
+  | typeof ZAMA_HOST_ERROR__ENCRYPTED_STORE_SCOPE_NOT_PROGRAM_ACCOUNT
   | typeof ZAMA_HOST_ERROR__EXECUTION_PAUSED
   | typeof ZAMA_HOST_ERROR__FHE_EXECUTE_ACCOUNT_COUNT_MISMATCH
   | typeof ZAMA_HOST_ERROR__FHE_EXECUTE_DICTIONARY_ENTRY_UNREFERENCED
@@ -257,6 +262,7 @@ export type ZamaHostError =
   | typeof ZAMA_HOST_ERROR__INVALID_RETURN_SELECTION
   | typeof ZAMA_HOST_ERROR__MALFORMED_INPUT_ATTESTATION
   | typeof ZAMA_HOST_ERROR__MUL_DIV_DIVISOR_ZERO
+  | typeof ZAMA_HOST_ERROR__NOT_DELEGATED_YET
   | typeof ZAMA_HOST_ERROR__NOT_PAUSER
   | typeof ZAMA_HOST_ERROR__PAUSER_RECORD_MISMATCH
   | typeof ZAMA_HOST_ERROR__PDA_CREATION_MISMATCH
@@ -290,7 +296,7 @@ if (process.env['NODE_ENV'] !== 'production') {
     [ZAMA_HOST_ERROR__CLOCK_BEFORE_EPOCH]: `clock is before the unix epoch`,
     [ZAMA_HOST_ERROR__CURRENT_KMS_CONTEXT_CANNOT_BE_DESTROYED]: `current KMS context cannot be destroyed`,
     [ZAMA_HOST_ERROR__DELEGATION_PDA_MISMATCH]: `delegation record does not match the canonical PDA`,
-    [ZAMA_HOST_ERROR__DELEGATION_REVOKED]: `delegation has already been revoked`,
+    [ZAMA_HOST_ERROR__DELEGATION_SCOPE_NOT_PROGRAM_ACCOUNT]: `delegation scope is not an account of the delegated program`,
     [ZAMA_HOST_ERROR__DELEGATION_UPDATED_IN_CURRENT_SLOT]: `delegation was already updated in the current slot`,
     [ZAMA_HOST_ERROR__DENY_RECORD_MISMATCH]: `deny-list account does not match the canonical PDA`,
     [ZAMA_HOST_ERROR__DENY_RECORD_MISSING]: `deny-list witness account is required`,
@@ -307,6 +313,7 @@ if (process.env['NODE_ENV'] !== 'production') {
     [ZAMA_HOST_ERROR__ENCRYPTED_STORE_MMR_PEAK_CAPACITY_EXCEEDED]: `encrypted value MMR peak capacity exceeded`,
     [ZAMA_HOST_ERROR__ENCRYPTED_STORE_PDA_MISMATCH]: `encrypted store does not match the canonical PDA`,
     [ZAMA_HOST_ERROR__ENCRYPTED_STORE_PUBLIC_HANDLE_MISMATCH]: `encrypted value public handle does not match the account`,
+    [ZAMA_HOST_ERROR__ENCRYPTED_STORE_SCOPE_NOT_PROGRAM_ACCOUNT]: `encrypted store scope is not an account of the store's program`,
     [ZAMA_HOST_ERROR__EXECUTION_PAUSED]: `host execution is paused`,
     [ZAMA_HOST_ERROR__FHE_EXECUTE_ACCOUNT_COUNT_MISMATCH]: `fhe_execute declared account count mismatch`,
     [ZAMA_HOST_ERROR__FHE_EXECUTE_DICTIONARY_ENTRY_UNREFERENCED]: `fhe_execute dictionary entry is not referenced by any step`,
@@ -349,6 +356,7 @@ if (process.env['NODE_ENV'] !== 'production') {
     [ZAMA_HOST_ERROR__INVALID_RETURN_SELECTION]: `invalid execution return selection`,
     [ZAMA_HOST_ERROR__MALFORMED_INPUT_ATTESTATION]: `input attestation payload is malformed`,
     [ZAMA_HOST_ERROR__MUL_DIV_DIVISOR_ZERO]: `fheMulDiv divisor must be non-zero`,
+    [ZAMA_HOST_ERROR__NOT_DELEGATED_YET]: `delegation is not granted`,
     [ZAMA_HOST_ERROR__NOT_PAUSER]: `signer is not an enabled pauser`,
     [ZAMA_HOST_ERROR__PAUSER_RECORD_MISMATCH]: `pauser record mismatch`,
     [ZAMA_HOST_ERROR__PDA_CREATION_MISMATCH]: `PDA creation target is invalid`,

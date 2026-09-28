@@ -151,11 +151,11 @@ describe("solana confidential-token consume vertical", () => {
       // the burn already sealed the leaf, so the certificate's proof stays valid through both.
       await discloseBurnedAmount(context, { owner: wallet.signer, mint, certificate, inclusionProof });
 
-      // Keep the v4 carrier and state binding intact; change only the committed context id.
+      // Keep the v1 KMS routing and the state binding intact; change only the committed context id.
       // The host must reject the context mismatch before checking the certificate signature.
       const wrongContextExtraData = hexToBytes(certificate.extraData);
-      expect(wrongContextExtraData.length).toBe(65);
-      expect(wrongContextExtraData[0]).toBe(4);
+      expect(wrongContextExtraData.length).toBe(33);
+      expect(wrongContextExtraData[0]).toBe(1);
       wrongContextExtraData[32] = wrongContextExtraData[32]! ^ 1;
       const wrongContextCertificate = { ...certificate, extraData: hex(wrongContextExtraData) };
       const rejection = await discloseBurnedAmount(context, {

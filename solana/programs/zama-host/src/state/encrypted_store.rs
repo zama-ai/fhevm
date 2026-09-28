@@ -12,7 +12,7 @@ pub struct EncryptedSlot {
 pub struct EncryptedStore {
     pub program: Pubkey,
     pub authority: Pubkey,
-    pub scope: [u8; 32],
+    pub scope: Pubkey,
     pub slots: Vec<EncryptedSlot>,
     pub leaf_count: u64,
     pub peaks: Vec<[u8; 32]>,
@@ -69,17 +69,13 @@ impl EncryptedStore {
     }
 }
 
-pub fn encrypted_store_address(
-    program: Pubkey,
-    authority: Pubkey,
-    scope: [u8; 32],
-) -> (Pubkey, u8) {
+pub fn encrypted_store_address(program: Pubkey, authority: Pubkey, scope: Pubkey) -> (Pubkey, u8) {
     Pubkey::find_program_address(
         &[
             ENCRYPTED_STORE_SEED,
             program.as_ref(),
             authority.as_ref(),
-            &scope,
+            scope.as_ref(),
         ],
         &crate::ID,
     )
@@ -97,7 +93,7 @@ mod tests {
         EncryptedStore {
             program: Pubkey::new_unique(),
             authority: Pubkey::new_unique(),
-            scope: [0; 32],
+            scope: Pubkey::new_unique(),
             slots: vec![],
             leaf_count: 0,
             peaks: vec![],
@@ -130,7 +126,7 @@ mod tests {
         let mut state = EncryptedStore {
             program: Pubkey::new_unique(),
             authority: Pubkey::new_unique(),
-            scope: [3; 32],
+            scope: Pubkey::new_unique(),
             slots: vec![EncryptedSlot {
                 key: [4; 32],
                 handle: [5; 32],

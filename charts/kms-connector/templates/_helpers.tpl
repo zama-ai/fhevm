@@ -38,9 +38,9 @@ hostChains is rendered as a map keyed by chain name (ethereum, polygon, ...):
   default from the preset. A commonConfig.hostChains key missing from the
   preset fails the render.
 - without a preset (network: ""), every commonConfig.hostChains entry must set
-  url, chainId and aclAddress. A Solana entry (chainKind: solana) sets
-  solanaHostProgramId, solanaProofEndpoints and solanaProofApiKey instead of
-  aclAddress.
+  url, chainId and aclAddress. A Solana entry (chain id type byte 0x01) sets
+  solanaHostProgramId and solanaProofRoutes (a list of {url, apiKey}, one per
+  coprocessor) instead of aclAddress.
 URLs are passed through untouched so they may reference an environment variable
 declared in commonConfig.env (e.g. "$(ETHEREUM_RPC_URL)").
 */}}
@@ -77,6 +77,11 @@ hostChains:
 {{- end }}
 {{- range $name, $presetChain := $presetChains }}
 {{- $chain := index $chains $name | default dict }}
+{{- range $field := list "solanaHostProgramId" "solanaProofRoutes" }}
+{{- if index $chain $field }}
+{{- fail (printf "commonConfig.hostChains.%s.%s does not apply to a preset chain: presets are EVM chains; set commonConfig.network to \"\" to configure a Solana chain" $name $field) }}
+{{- end }}
+{{- end }}
 {{- $url := $chain.url | default "" }}
 {{- if not $url }}
 {{- fail (printf "commonConfig.hostChains.%s.url must be set: %s is deployed on network %q" $name $name $network) }}
@@ -89,8 +94,25 @@ hostChains:
 {{- else }}
 {{- range $name, $chain := $chains }}
 {{- $chain = $chain | default dict }}
-{{- $solana := eq ($chain.chainKind | default "") "solana" }}
-{{- $required := ternary (list "url" "chainId" "solanaHostProgramId" "solanaProofEndpoints" "solanaProofApiKey") (list "url" "chainId" "aclAddress") $solana }}
+{{- /* These checks mirror the connector's `HostChainEntry` rules so a bad entry fails at render time. The chain id's type byte (bits 56..64) names the kind. */}}
+{{- if not $chain.chainId }}
+{{- fail (printf "commonConfig.hostChains.%s.chainId must be set when commonConfig.network is empty (no preset to default from)" $name) }}
+{{- end }}
+{{- $chainId := toString $chain.chainId }}
+{{- if not (and (regexMatch "^[0-9]+$" $chainId) (eq (toString (int64 $chainId)) $chainId)) }}
+{{- fail (printf "commonConfig.hostChains.%s.chainId %q is not a decimal integer below 2^63; quote it, as YAML reads a large unquoted number as a float" $name $chainId) }}
+{{- end }}
+{{- $type := div (int64 $chainId) 0x0100000000000000 }}
+{{- if not (or (eq $type 0) (eq $type 1)) }}
+{{- fail (printf "commonConfig.hostChains.%s.chainId has type byte 0x%02x, which names no host kind" $name $type) }}
+{{- end }}
+{{- $solana := eq $type 1 }}
+{{- $required := ternary (list "url" "solanaHostProgramId" "solanaProofRoutes") (list "url" "aclAddress") $solana }}
+{{- range $field := ternary (list "aclAddress") (list "solanaHostProgramId" "solanaProofRoutes") $solana }}
+{{- if index $chain $field }}
+{{- fail (printf "commonConfig.hostChains.%s.%s does not apply to %s chain" $name $field (ternary "a Solana" "an EVM" $solana)) }}
+{{- end }}
+{{- end }}
 {{- range $field := $required }}
 {{- if not (index $chain $field) }}
 {{- fail (printf "commonConfig.hostChains.%s.%s must be set when commonConfig.network is empty (no preset to default from)" $name $field) }}
@@ -98,12 +120,15 @@ hostChains:
 {{- end }}
   {{ $name }}:
     url: {{ $chain.url | quote }}
-    chainId: {{ $chain.chainId | toString | quote }}
+    chainId: {{ $chainId | quote }}
 {{- if $solana }}
-    chainKind: solana
+{{- range $route := $chain.solanaProofRoutes }}
+{{- if not (and $route.url $route.apiKey) }}
+{{- fail (printf "commonConfig.hostChains.%s.solanaProofRoutes entries must each set url and apiKey" $name) }}
+{{- end }}
+{{- end }}
     solanaHostProgramId: {{ $chain.solanaHostProgramId | quote }}
-    solanaProofEndpoints: {{ $chain.solanaProofEndpoints | toJson }}
-    solanaProofApiKey: {{ $chain.solanaProofApiKey | quote }}
+    solanaProofRoutes: {{ $chain.solanaProofRoutes | toJson }}
 {{- else }}
     aclAddress: {{ $chain.aclAddress | quote }}
 {{- end }}

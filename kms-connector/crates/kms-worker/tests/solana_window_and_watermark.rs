@@ -20,20 +20,19 @@
 mod solana_support;
 
 use kms_worker::core::solana::{
-    failure::AuthorizationFailure,
+    failure::{AuthorizationFailure, InvalidHostRecord},
     pipeline::{AuthorizationContext, authorize_request},
-    snapshot::{SYSTEM_PROGRAM_ID, SnapshotAccount, SnapshotKeys},
+    snapshot::SnapshotAccount,
     watermark::{
         WatermarkFailure, WindowFailure, check_not_invalidated, check_window, read_watermark,
     },
 };
+use solana_pubkey::Pubkey;
 use solana_support::*;
 
 /// Reads the watermark of `user` out of a world.
-fn watermark_in(world: &World, user: [u8; 32]) -> Result<u64, WatermarkFailure> {
-    let (key, _) = invalidation_address(user);
-    let snapshot = world.read(&SnapshotKeys::new([key]));
-    read_watermark(&snapshot, PROGRAM_ID, user)
+fn watermark_in(world: &World, user: Pubkey) -> Result<u64, WatermarkFailure> {
+    read_watermark(&world.row(invalidation_address(user)), PROGRAM_ID, user)
 }
 
 // ---------------------------------------------------------------------------
@@ -154,7 +153,7 @@ fn a_system_owned_invalidation_account_carrying_data_is_rejected() {
     let failure =
         watermark_in(&world, user).expect_err("only an empty account reads as never written");
 
-    assert!(matches!(failure, WatermarkFailure::ForeignOwner { .. }));
+    assert!(matches!(failure, WatermarkFailure::InvalidHostRecord(_)));
 }
 
 /// A stored watermark is read as written.
@@ -214,7 +213,7 @@ fn an_invalidation_record_naming_another_user_is_rejected() {
 
     assert!(matches!(
         failure,
-        WatermarkFailure::RecordNamesAnotherUser { account_key } if account_key == key
+        WatermarkFailure::InvalidHostRecord(InvalidHostRecord { account_key }) if account_key == key
     ));
 }
 
@@ -231,7 +230,7 @@ fn an_account_that_is_not_an_invalidation_record_is_rejected() {
 
     assert!(matches!(
         failure,
-        WatermarkFailure::NotAnInvalidationRecord { account_key } if account_key == key
+        WatermarkFailure::InvalidHostRecord(InvalidHostRecord { account_key }) if account_key == key
     ));
 }
 
@@ -241,12 +240,12 @@ fn an_invalidation_record_owned_by_another_program_is_rejected() {
     let user = Wallet::new(1).pubkey();
     let (key, _) = invalidation_address(user);
     let mut impostor = invalidation_account(user, DEFAULT_START + 5);
-    impostor.owner = [0xee; 32];
+    impostor.owner = pubkey(0xee);
     let world = World::at_slot(1).with_account(key, impostor);
 
     let failure = watermark_in(&world, user).expect_err("a foreign program cannot set a watermark");
 
-    assert!(matches!(failure, WatermarkFailure::ForeignOwner { .. }));
+    assert!(matches!(failure, WatermarkFailure::InvalidHostRecord(_)));
 }
 
 /// A record storing a bump other than the canonical one for its address is not the record this
@@ -270,7 +269,7 @@ fn an_invalidation_record_storing_a_non_canonical_bump_is_rejected() {
 
     assert!(matches!(
         failure,
-        WatermarkFailure::NotAnInvalidationRecord { account_key } if account_key == key
+        WatermarkFailure::InvalidHostRecord(InvalidHostRecord { account_key }) if account_key == key
     ));
 }
 
@@ -302,7 +301,7 @@ async fn the_watermark_is_keyed_by_the_signer_not_the_handle_owner() {
     let delegator = Wallet::new(2);
     let live = handle(0x20, FHE_TYPE_UINT64);
     let encrypted_store = EncryptedStoreFixture::allowing(live, delegator.pubkey());
-    let delegation = DelegationFixture::live(delegator.pubkey(), signer.pubkey(), 100);
+    let delegation = DelegationFixture::live(delegator.pubkey(), signer.pubkey());
     let request = RequestBuilder::new(&signer)
         .delegated(&encrypted_store, live, delegator.pubkey())
         .typed();
@@ -327,7 +326,7 @@ async fn a_revocation_by_the_signer_stops_a_delegated_request() {
     let delegator = Wallet::new(2);
     let live = handle(0x21, FHE_TYPE_UINT64);
     let encrypted_store = EncryptedStoreFixture::allowing(live, delegator.pubkey());
-    let delegation = DelegationFixture::live(delegator.pubkey(), signer.pubkey(), 100);
+    let delegation = DelegationFixture::live(delegator.pubkey(), signer.pubkey());
     let request = RequestBuilder::new(&signer)
         .delegated(&encrypted_store, live, delegator.pubkey())
         .typed();
@@ -428,7 +427,7 @@ async fn a_permit_for_another_host_program_is_refused_before_any_read() {
         &reader,
         &proofs,
         AuthorizationContext {
-            program_id: other_program,
+            program_id: Pubkey::new_from_array(other_program),
             ..CONTEXT
         },
         &request,
@@ -440,7 +439,7 @@ async fn a_permit_for_another_host_program_is_refused_before_any_read() {
         failure,
         AuthorizationFailure::ProgramIdMismatch {
             signed: PROGRAM_ID,
-            own: other_program,
+            own: Pubkey::new_from_array(other_program),
         }
     );
     assert!(!failure.is_recoverable());

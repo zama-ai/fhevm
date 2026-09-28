@@ -211,6 +211,11 @@ fn prepare_mocks(req: &ProtocolEventKind, already_sent: bool) -> MockSet {
         ProtocolEventKind::PublicDecryption(r) => {
             (r.decryptionId, "PublicDecrypt", "GetPublicDecryptionResult")
         }
+        ProtocolEventKind::SolanaPublicDecryption(r) => (
+            r.decryption_id,
+            "PublicDecrypt",
+            "GetPublicDecryptionResult",
+        ),
         ProtocolEventKind::UserDecryption(r) => {
             (r.decryptionId, "UserDecrypt", "GetUserDecryptionResult")
         }
@@ -253,7 +258,8 @@ fn prepare_mocks(req: &ProtocolEventKind, already_sent: bool) -> MockSet {
             "/kms_service.v1.CoreServiceEndpoint/{resp_endpoint}"
         ));
         match req {
-            ProtocolEventKind::PublicDecryption(_) => then.pb(PublicDecryptionResponse {
+            ProtocolEventKind::PublicDecryption(_)
+            | ProtocolEventKind::SolanaPublicDecryption(_) => then.pb(PublicDecryptionResponse {
                 payload: Some(PublicDecryptionResponsePayload::default()),
                 signatures: mock_signatures(),
                 ..Default::default()
@@ -309,7 +315,9 @@ async fn wait_for_response_in_db(
 ) -> anyhow::Result<KmsResponse> {
     info!("Waiting for response to be stored in DB...");
     let query = match req {
-        ProtocolEventKind::PublicDecryption(_) => "SELECT * FROM public_decryption_responses",
+        ProtocolEventKind::PublicDecryption(_) | ProtocolEventKind::SolanaPublicDecryption(_) => {
+            "SELECT * FROM public_decryption_responses"
+        }
         ProtocolEventKind::UserDecryption(_)
         | ProtocolEventKind::UserDecryptionV2(_)
         | ProtocolEventKind::SolanaUserDecryptionV1(_) => "SELECT * FROM user_decryption_responses",
@@ -333,7 +341,8 @@ async fn wait_for_response_in_db(
             tokio::time::sleep(Duration::from_millis(200)).await;
         } else {
             match req {
-                ProtocolEventKind::PublicDecryption(_) => {
+                ProtocolEventKind::PublicDecryption(_)
+                | ProtocolEventKind::SolanaPublicDecryption(_) => {
                     break kms_response::from_public_decryption_row(&result[0])?;
                 }
                 ProtocolEventKind::UserDecryption(_)
@@ -374,6 +383,14 @@ fn check_response_data(request: &ProtocolEventKind, response: KmsResponse) -> an
     let expected_response = match request {
         ProtocolEventKind::PublicDecryption(r) => KmsGrpcResponse::PublicDecryption {
             decryption_id: r.decryptionId,
+            grpc_response: PublicDecryptionResponse {
+                payload: Some(PublicDecryptionResponsePayload::default()),
+                signatures: mock_signatures(),
+                ..Default::default()
+            },
+        },
+        ProtocolEventKind::SolanaPublicDecryption(r) => KmsGrpcResponse::PublicDecryption {
+            decryption_id: r.decryption_id,
             grpc_response: PublicDecryptionResponse {
                 payload: Some(PublicDecryptionResponsePayload::default()),
                 signatures: mock_signatures(),

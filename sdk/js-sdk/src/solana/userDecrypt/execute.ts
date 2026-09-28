@@ -63,7 +63,7 @@ export function solanaUserDecryptRequestInputs(
   gatewayEip712Domain: SolanaGatewayEip712Domain,
 ): SolanaUserDecryptRequestInputs {
   return {
-    userPubkey: fields.userPubkey,
+    userAddress: fields.userAddress,
     hostChainId: fields.chainId,
     verifyingProgramId: fields.verifyingProgramId,
     handles,

@@ -13,15 +13,25 @@ use tracing::info;
 pub struct ComputeCalldata;
 
 impl ComputeCalldata {
-    /// Computes calldata for public decryption request
-    ///
-    /// This initiates a public decryption request on the gateway network
+    /// Computes calldata for a public decryption request. Picks the gateway entry by whether the
+    /// request names stores:
+    ///   - EVM, no stores → `publicDecryptionRequest(bytes32[], bytes)`
+    ///   - Solana, one store per handle → `solanaPublicDecryptionRequest(bytes32[], bytes, bytes32[])`
     pub fn public_decryption_req(
         handles: Vec<FixedBytes<32>>,
         extra_data: Bytes,
+        encrypted_stores: Vec<FixedBytes<32>>,
     ) -> Result<Bytes, EventProcessingError> {
-        let calldata =
-            Decryption::publicDecryptionRequestCall::new((handles, extra_data)).abi_encode();
+        let calldata = if encrypted_stores.is_empty() {
+            Decryption::publicDecryptionRequestCall::new((handles, extra_data)).abi_encode()
+        } else {
+            Decryption::solanaPublicDecryptionRequestCall::new((
+                handles,
+                extra_data,
+                encrypted_stores,
+            ))
+            .abi_encode()
+        };
 
         info!(
             "publicDecryptionRequest calldata: 0x{}",
@@ -61,7 +71,7 @@ impl ComputeCalldata {
                     startTimestamp: request_validity.start_timestamp,
                     durationDays: request_validity.duration_days,
                 };
-                let call = Decryption::userDecryptionRequest_2Call::new((
+                let call = Decryption::userDecryptionRequest_1Call::new((
                     pairs,
                     validity,
                     contracts_info,
@@ -70,7 +80,7 @@ impl ComputeCalldata {
                     signature,
                     extra_data,
                 ));
-                Decryption::userDecryptionRequest_2Call::abi_encode(&call)
+                Decryption::userDecryptionRequest_1Call::abi_encode(&call)
             }
             UserDecryptRequest::LegacyDelegated {
                 ct_handle_contract_pairs,
@@ -128,7 +138,7 @@ impl ComputeCalldata {
                     startTimestamp: request_validity.start_timestamp,
                     durationSeconds: request_validity.duration_seconds,
                 };
-                let call = Decryption::userDecryptionRequest_1Call::new((
+                let call = Decryption::userDecryptionRequest_0Call::new((
                     handle_entries,
                     user_address,
                     public_key,
@@ -137,7 +147,7 @@ impl ComputeCalldata {
                     signature,
                     extra_data,
                 ));
-                Decryption::userDecryptionRequest_1Call::abi_encode(&call)
+                Decryption::userDecryptionRequest_0Call::abi_encode(&call)
             }
             UserDecryptRequest::SolanaSrfc38V1 {
                 ct_handles,
@@ -146,7 +156,7 @@ impl ComputeCalldata {
                 extra_data,
                 solana_request,
             } => {
-                // The Solana overload: the gateway takes only what it consumes itself (handles,
+                // `solanaUserDecryptionRequest`: the gateway takes only what it consumes itself (handles,
                 // validity window, transport key, KMS routing) and carries everything else as
                 // one opaque `solanaRequest` the builder already serialized. The gateway never
                 // reads a byte of it; each KMS party's connector decodes it and verifies the
@@ -159,14 +169,14 @@ impl ComputeCalldata {
                     startTimestamp: request_validity.start_timestamp,
                     durationSeconds: request_validity.duration_seconds,
                 };
-                let call = Decryption::userDecryptionRequest_0Call::new((
+                let call = Decryption::solanaUserDecryptionRequestCall::new((
                     ct_handles,
                     validity,
                     public_key,
                     extra_data,
                     solana_request,
                 ));
-                Decryption::userDecryptionRequest_0Call::abi_encode(&call)
+                Decryption::solanaUserDecryptionRequestCall::abi_encode(&call)
             }
         };
 
@@ -244,7 +254,7 @@ mod solana_calldata_tests {
         let contract = FixedBytes::<32>::from([0x11u8; 32]);
         let user = FixedBytes::<32>::from([0x22u8; 32]);
         // RFC-021 Solana host chain id (type byte 0x01).
-        let chain_id = crate::core::event::solana_host_chain_id(12345);
+        let chain_id = zama_solana_request::host_chain::solana_host_chain_id(12345);
 
         let calldata = ComputeCalldata::verify_proof_req_solana(
             chain_id,
@@ -265,8 +275,8 @@ mod solana_calldata_tests {
     }
 
     #[test]
-    fn the_solana_arm_encodes_the_solana_overload() {
-        // The Solana arm must select the Solana `userDecryptionRequest` overload and place the
+    fn the_solana_arm_encodes_the_solana_entry() {
+        // The Solana arm must select `solanaUserDecryptionRequest` and place the
         // pre-computed pieces in the right slots — the zama-solana-request codec tests cover the
         // request bytes, this covers where they land in the gateway calldata.
         let solana_request = Bytes::from(vec![0x01, 0xaa, 0xbb, 0xcc]);
@@ -291,11 +301,11 @@ mod solana_calldata_tests {
 
         assert_eq!(
             calldata[0..4],
-            Decryption::userDecryptionRequest_0Call::SELECTOR,
-            "calldata must select the host-generic userDecryptionRequest overload"
+            Decryption::solanaUserDecryptionRequestCall::SELECTOR,
+            "calldata must select solanaUserDecryptionRequest"
         );
-        let decoded = Decryption::userDecryptionRequest_0Call::abi_decode_raw(&calldata[4..])
-            .expect("decode host-generic calldata");
+        let decoded = Decryption::solanaUserDecryptionRequestCall::abi_decode_raw(&calldata[4..])
+            .expect("decode Solana calldata");
         assert_eq!(decoded.ctHandles, vec![FixedBytes::<32>::from([0x11; 32])]);
         assert_eq!(decoded.publicKey, public_key);
         assert_eq!(decoded.extraData, extra_data);
@@ -308,5 +318,41 @@ mod solana_calldata_tests {
             decoded.requestValidity.durationSeconds,
             U256::from(604_800u64)
         );
+    }
+
+    #[test]
+    fn a_public_decrypt_with_stores_encodes_the_solana_entry() {
+        let handles = vec![FixedBytes::<32>::from([0x11; 32])];
+        let stores = vec![FixedBytes::<32>::from([0xaa; 32])];
+        let extra_data = Bytes::from(vec![0x00]);
+
+        let calldata = ComputeCalldata::public_decryption_req(
+            handles.clone(),
+            extra_data.clone(),
+            stores.clone(),
+        )
+        .expect("encode Solana public decrypt calldata");
+
+        let decoded = Decryption::solanaPublicDecryptionRequestCall::abi_decode(&calldata)
+            .expect("decode Solana public decrypt calldata");
+        assert_eq!(decoded.ctHandles, handles);
+        assert_eq!(decoded.extraData, extra_data);
+        assert_eq!(decoded.encryptedStores, stores);
+    }
+
+    #[test]
+    fn a_public_decrypt_without_stores_encodes_the_evm_entry() {
+        let handles = vec![FixedBytes::<32>::from([0x11; 32])];
+
+        let calldata = ComputeCalldata::public_decryption_req(
+            handles.clone(),
+            Bytes::from(vec![0x00]),
+            Vec::new(),
+        )
+        .expect("encode EVM public decrypt calldata");
+
+        let decoded = Decryption::publicDecryptionRequestCall::abi_decode(&calldata)
+            .expect("decode EVM public decrypt calldata");
+        assert_eq!(decoded.ctHandles, handles);
     }
 }

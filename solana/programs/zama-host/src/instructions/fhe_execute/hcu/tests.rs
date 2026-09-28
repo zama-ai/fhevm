@@ -738,7 +738,7 @@ fn run_walk(
     use crate::{AppScope, EncryptedSlot, EncryptedStore, FheExecuteArgs, HostConfig};
     let app = AppScope {
         program: Pubkey::new_from_array([2; 32]),
-        scope: [3; 32],
+        scope: Pubkey::new_from_array([3; 32]),
     };
     let authority = Pubkey::new_from_array([4; 32]);
     let mut state = EncryptedStore {

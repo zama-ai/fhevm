@@ -16,7 +16,7 @@ use connector_utils::{
     monitoring::otlp::PropagationContext,
     tests::{
         rand::solana_user_decryption_event_for,
-        setup::{S3_CT_HANDLE, S3Instance},
+        setup::{S3_SOLANA_CT_HANDLE, S3Instance},
     },
     types::{
         KmsResponseKind, ProtocolEvent, ProtocolEventKind,
@@ -26,7 +26,7 @@ use connector_utils::{
         solana_request::SolanaUserDecryptionRequestV1,
     },
 };
-use fhevm_gateway_bindings::decryption::Decryption::UserDecryptionRequest_4;
+use fhevm_gateway_bindings::decryption::Decryption::SolanaUserDecryptionRequest;
 use kms_connector_api::ErrorCode;
 use kms_grpc::kms::v1::{
     Empty, SigningMetadata, SigningSchemeType, TypedSignature, UserDecryptionRequest,
@@ -36,10 +36,13 @@ use kms_worker::core::{
     Config,
     event_processor::{
         CiphertextManager, ContextManager, DbEventProcessor, DecryptionProcessor, EventProcessor,
-        HostChainAclBackend, KMSGenerationProcessor, KmsClient, ProcessingErrorKind,
-        ProtocolConfigProcessor, RequestCheckError, RequestCheckKind,
+        KMSGenerationProcessor, KmsClient, ProcessingErrorKind, ProtocolConfigProcessor,
+        RequestCheckError, RequestCheckKind,
     },
-    solana::{failure::AuthorizationFailure, watermark::WatermarkFailure},
+    solana::{
+        SolanaDecryptionVerifier, failure::AuthorizationFailure, pipeline::authorize_request,
+        watermark::WatermarkFailure,
+    },
 };
 use mocktail::{Request, matchers::Matcher, server::MockServer};
 use prost::Message;
@@ -62,7 +65,7 @@ const NO_BUCKET: &str = "http://unused-bucket-url";
 struct Scenario {
     victim: Wallet,
     encrypted_store: EncryptedStoreFixture,
-    event: UserDecryptionRequest_4,
+    event: SolanaUserDecryptionRequest,
     host: HttpHost,
     chain_id: u64,
 }
@@ -78,18 +81,18 @@ impl Scenario {
         let chain_id = extract_chain_id_from_handle(&B256::from(live)).unwrap();
         let encrypted_store = EncryptedStoreFixture::allowing(live, victim.pubkey());
         let now = Utc::now().timestamp() as u64;
-        let request = RequestBuilder::new(&victim)
+        let (gateway, blob) = RequestBuilder::new(&victim)
             .permit(
                 PermitBuilder::new(victim.pubkey())
                     .chain_id(chain_id)
                     .window(now - 60, 3_600),
             )
             .direct(&encrypted_store, live)
-            .wire();
+            .parts();
         let query = encrypted_store.allowed_query(live, victim.pubkey());
 
         let mut scenario = Self {
-            event: solana_user_decryption_event_for(U256::ONE, &request),
+            event: solana_user_decryption_event_for(U256::ONE, &gateway, &blob),
             host: HttpHost::start().await,
             victim,
             encrypted_store,
@@ -118,8 +121,8 @@ impl Scenario {
         ]);
     }
 
-    async fn processor(&self) -> DecryptionProcessor<RootProvider, RootProvider> {
-        self.processor_reading(&config(), NO_BUCKET).await
+    fn verifier(&self) -> SolanaDecryptionVerifier {
+        SolanaDecryptionVerifier::new(HashMap::from([(self.chain_id, self.host.host())]))
     }
 
     /// A processor whose Gateway registry points at the ciphertext bucket `bucket_url`.
@@ -137,11 +140,7 @@ impl Scenario {
             CiphertextManager::connect(provider.clone(), config, CancellationToken::new())
                 .await
                 .unwrap();
-        let backends = HashMap::from([(
-            self.chain_id,
-            HostChainAclBackend::Solana(Box::new(self.host.host())),
-        )]);
-        DecryptionProcessor::new(config, provider, backends, ciphertext_manager)
+        DecryptionProcessor::new(config, provider, HashMap::new(), ciphertext_manager)
     }
 
     /// A worker whose KMS client has no channel, so a request that got past its checks would fail
@@ -175,6 +174,7 @@ impl Scenario {
             kms,
             context_manager,
             self.processor_reading(config, bucket_url).await,
+            self.verifier(),
             KMSGenerationProcessor::new(config),
             ProtocolConfigProcessor::new(config, provider),
             PgPoolOptions::new()
@@ -225,13 +225,13 @@ impl ContextManager for DestroyedContext {
 /// The relayer sets the event's key, window and routing, and those are the values stored, so
 /// changing one yields a permit the user never signed.
 #[rstest]
-#[case::transport_key(|event: &mut UserDecryptionRequest_4| {
+#[case::transport_key(|event: &mut SolanaUserDecryptionRequest| {
     event.publicKey = vec![0x5a; TRANSPORT_KEY_LEN].into();
 })]
-#[case::window(|event: &mut UserDecryptionRequest_4| {
+#[case::window(|event: &mut SolanaUserDecryptionRequest| {
     event.requestValidity.startTimestamp -= U256::from(60);
 })]
-#[case::kms_routing(|event: &mut UserDecryptionRequest_4| {
+#[case::kms_routing(|event: &mut SolanaUserDecryptionRequest| {
     event.extraData = KmsRouting::ContextAndEpoch {
         kms_context_id: Identity::new([0x13; 32]),
         kms_epoch_id: Identity::new([0x14; 32]),
@@ -241,7 +241,7 @@ impl ContextManager for DestroyedContext {
 })]
 #[tokio::test]
 async fn a_field_the_relayer_changed_fails_the_signature(
-    #[case] relayer: fn(&mut UserDecryptionRequest_4),
+    #[case] relayer: fn(&mut SolanaUserDecryptionRequest),
 ) {
     let scenario = Scenario::new().await;
     let mut event = scenario.event.clone();
@@ -249,9 +249,8 @@ async fn a_field_the_relayer_changed_fails_the_signature(
     let request = SolanaUserDecryptionRequestV1::try_from(event).unwrap();
 
     let error = scenario
-        .processor()
-        .await
-        .check_solana_user_decryption_request(&request)
+        .verifier()
+        .check_user_decryption(&request)
         .await
         .unwrap_err()
         .record();
@@ -264,6 +263,36 @@ async fn a_field_the_relayer_changed_fails_the_signature(
     ));
 }
 
+/// The permit's chain is the one the handles embed, so a handle moved to another chain changes the
+/// signed text. The worker refuses a chain it does not serve before authorizing, so this runs the
+/// authorization itself.
+#[tokio::test]
+async fn a_handle_of_another_chain_fails_the_signature() {
+    let wallet = Wallet::new(1);
+    let live = handle(0x31, FHE_TYPE_UINT64);
+    let encrypted_store = EncryptedStoreFixture::allowing(live, wallet.pubkey());
+    let world = World::at_slot(100)
+        .with_encrypted_store(&encrypted_store)
+        .with_watermark(wallet.pubkey(), 0);
+    let (mut gateway, blob) = RequestBuilder::new(&wallet)
+        .direct(&encrypted_store, live)
+        .parts();
+    gateway.handles[0][22..30].copy_from_slice(&(CHAIN_ID + 1).to_be_bytes());
+    let request = SolanaUserDecryptionRequestV1::new(U256::ONE, gateway, blob).unwrap();
+
+    let failure = authorize_request(
+        &ScriptedReader::constant(world.clone()),
+        &ScriptedProofReader::constant(world.record()),
+        CONTEXT,
+        &request,
+    )
+    .await
+    .expect_err("the signer never signed this chain");
+
+    assert!(matches!(failure, AuthorizationFailure::Signature(_)));
+    assert!(!failure.is_recoverable());
+}
+
 /// A poll of a request already sent to the KMS authorizes it again, so permits the signer
 /// invalidates after the send stop it.
 #[tokio::test]
@@ -271,9 +300,8 @@ async fn a_poll_rechecks_the_host() {
     let mut scenario = Scenario::new().await;
     let request = SolanaUserDecryptionRequestV1::try_from(scenario.event.clone()).unwrap();
     scenario
-        .processor()
-        .await
-        .check_solana_user_decryption_request(&request)
+        .verifier()
+        .check_user_decryption(&request)
         .await
         .expect("the victim's permit authorizes the request");
 
@@ -321,7 +349,7 @@ async fn a_solana_request_checks_its_signed_kms_context() {
 /// The identity a `UserDecrypt` call must carry for a Solana user.
 #[derive(Debug, PartialEq, PartialOrd)]
 struct SolanaIdentity {
-    user_pubkey: Vec<u8>,
+    user_address: Vec<u8>,
     verifying_program_id: Vec<u8>,
     transport_key: Vec<u8>,
 }
@@ -341,7 +369,7 @@ impl Matcher for SolanaIdentity {
             && request.enc_key == self.transport_key
             && request.signing_metadata
                 == [SigningMetadata::solana(
-                    self.user_pubkey.clone(),
+                    self.user_address.clone(),
                     self.verifying_program_id.clone(),
                 )]
     }
@@ -357,10 +385,10 @@ impl Matcher for SolanaIdentity {
 #[tokio::test]
 async fn an_authorized_request_reaches_the_kms_as_its_signer(#[case] already_sent: bool) {
     let bucket = S3Instance::setup().await.unwrap();
-    let scenario = Scenario::naming(B256::from_hex(S3_CT_HANDLE).unwrap().0).await;
+    let scenario = Scenario::naming(B256::from_hex(S3_SOLANA_CT_HANDLE).unwrap().0).await;
     let identity = SolanaIdentity {
-        user_pubkey: scenario.victim.pubkey().to_vec(),
-        verifying_program_id: PROGRAM_ID.to_vec(),
+        user_address: scenario.victim.pubkey().to_bytes().to_vec(),
+        verifying_program_id: PROGRAM_ID.to_bytes().to_vec(),
         transport_key: scenario.event.publicKey.to_vec(),
     };
     let mut kms = MockServer::new_grpc("kms_service.v1.CoreServiceEndpoint");

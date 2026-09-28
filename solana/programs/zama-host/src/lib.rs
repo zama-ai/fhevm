@@ -176,7 +176,7 @@ pub mod zama_host {
     pub fn set_hcu_app_trusted(
         ctx: Context<SetHcuAppTrusted>,
         program: Pubkey,
-        scope: [u8; 32],
+        scope: Pubkey,
         trusted: bool,
     ) -> Result<()> {
         instructions::set_hcu_app_trusted(ctx, program, scope, trusted)
@@ -187,7 +187,7 @@ pub mod zama_host {
     pub fn set_deny_scope(
         ctx: Context<SetDenyScope>,
         program: Pubkey,
-        scope: [u8; 32],
+        scope: Pubkey,
         denied: bool,
     ) -> Result<()> {
         instructions::set_deny_scope(ctx, program, scope, denied)
@@ -196,10 +196,10 @@ pub mod zama_host {
     pub fn delegate_for_user_decryption(
         ctx: Context<DelegateForUserDecryption>,
         delegate: Pubkey,
-        authority: Pubkey,
-        expiration_slot: u64,
+        program: Pubkey,
+        expires_at: u64,
     ) -> Result<()> {
-        instructions::delegate_for_user_decryption(ctx, delegate, authority, expiration_slot)
+        instructions::delegate_for_user_decryption(ctx, delegate, program, expires_at)
     }
 
     pub fn revoke_delegation_for_user_decryption(

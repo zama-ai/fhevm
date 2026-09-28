@@ -25,7 +25,7 @@ use crate::{
 impl PermitFields {
     /// Decodes the transport form, rejecting anything that violates the typed form.
     pub fn decode(wire: &PermitWireFields) -> Result<Self, PermitError> {
-        let user_pubkey = decode_identity(&wire.user_pubkey, IdentityField::UserPubkey)?;
+        let user_address = decode_identity(&wire.user_address, IdentityField::UserAddress)?;
 
         // The conversion is the length rule: a transport key of any other length has no
         // typed form to land in.
@@ -69,7 +69,7 @@ impl PermitFields {
         let extra_data = decode_kms_routing(&wire.extra_data)?;
 
         Ok(Self::from_validated(
-            user_pubkey,
+            user_address,
             transport_key,
             allowed_scopes,
             start_timestamp,

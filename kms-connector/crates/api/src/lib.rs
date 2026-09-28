@@ -14,8 +14,9 @@ pub use attestation::AttestationType;
 pub use error::{ErrorCode, ErrorResponse};
 pub use types::{
     HandleEntry, PublicDecryptionRequest, PublicDecryptionResponse, RequestValidity,
-    SolanaHandleEntry, SolanaUserDecryptionPayload, SolanaUserDecryptionRequest,
-    UserDecryptionPayload, UserDecryptionRequest, UserDecryptionResponse,
+    SolanaHandleEntry, SolanaPublicDecryptionRequest, SolanaUserDecryptionPayload,
+    SolanaUserDecryptionRequest, UserDecryptionPayload, UserDecryptionRequest,
+    UserDecryptionResponse,
 };
 pub use version::{
     INTERFACE_VERSION, PUBLIC_DECRYPTION_ROUTE, USER_DECRYPTION_ROUTE, VERSION_ROUTE,

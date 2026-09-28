@@ -105,6 +105,7 @@ pub fn register_event_latency(event: &ProtocolEvent) {
     if matches!(
         event.kind,
         ProtocolEventKind::PublicDecryption(_)
+            | ProtocolEventKind::SolanaPublicDecryption(_)
             | ProtocolEventKind::UserDecryption(_)
             | ProtocolEventKind::UserDecryptionV2(_)
             | ProtocolEventKind::SolanaUserDecryptionV1(_)
@@ -127,7 +128,7 @@ mod tests {
             ProtocolEventKind::SolanaUserDecryptionV1(
                 connector_utils::tests::rand::solana_user_decryption_request(
                     U256::ZERO,
-                    [0; 32].into(),
+                    connector_utils::tests::rand::rand_solana_handle(),
                 ),
             ),
             None,

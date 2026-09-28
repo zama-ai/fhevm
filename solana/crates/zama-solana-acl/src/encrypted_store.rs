@@ -2,7 +2,8 @@
 
 use borsh::{BorshDeserialize, BorshSerialize};
 
-use crate::{sha256, AclError, MAX_MMR_PEAKS};
+use crate::account::{initialized, AccountView};
+use crate::{sha256, AclError, MAX_MMR_PEAKS, WILDCARD_APP};
 
 pub const ENCRYPTED_STORE_SEED: &[u8] = b"encrypted-state";
 pub const MAX_STORE_SLOTS: usize = 32;
@@ -90,6 +91,55 @@ pub fn decode_encrypted_store(data: &[u8]) -> Result<EncryptedStore, AclError> {
     Ok(state)
 }
 
+/// Why the account a request names is not a usable encrypted store.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum StoreRejection {
+    /// Nothing is stored at the address.
+    Absent,
+    /// The account belongs to another program.
+    ForeignOwner([u8; 32]),
+    /// A host account of another type.
+    NotAnEncryptedStore,
+    /// The store's own fields derive another address, or none.
+    AddressMismatch(Option<[u8; 32]>),
+    /// A host-owned store the host program could not have written.
+    InvalidHostRecord,
+}
+
+/// The encrypted store at `account_key`, checked as the host program writes one: present, owned
+/// by `host_program`, decodable, at the address its own seeds and stored bump derive, and naming
+/// the wildcard sentinel in neither its program nor its scope. Trailing bytes are legal: a store
+/// grows by realloc and never shrinks.
+///
+/// `store_address` derives a store's address under the host program (`create_program_address`
+/// over [`EncryptedStore::seeds`] and its bump), `None` when those give no PDA. Derivation stays
+/// with each caller, which owns its solana-pubkey version.
+pub fn validate_store(
+    host_program: &[u8; 32],
+    account_key: &[u8; 32],
+    account: Option<AccountView<'_>>,
+    store_address: impl FnOnce(&EncryptedStore) -> Option<[u8; 32]>,
+) -> Result<EncryptedStore, StoreRejection> {
+    let account = initialized(account).ok_or(StoreRejection::Absent)?;
+    if account.owner != host_program {
+        return Err(StoreRejection::ForeignOwner(*account.owner));
+    }
+    let store = decode_encrypted_store(account.data).map_err(|error| match error {
+        AclError::BadDiscriminator => StoreRejection::NotAnEncryptedStore,
+        _ => StoreRejection::InvalidHostRecord,
+    })?;
+    let derived = store_address(&store);
+    if derived != Some(*account_key) {
+        return Err(StoreRejection::AddressMismatch(derived));
+    }
+    // With the sentinel as program, the store's delegation row would be the wildcard row itself.
+    // No legal store names it in either position (see `WILDCARD_APP`).
+    if store.program == WILDCARD_APP || store.scope == WILDCARD_APP {
+        return Err(StoreRejection::InvalidHostRecord);
+    }
+    Ok(store)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -118,5 +168,69 @@ mod tests {
             decode_encrypted_store(&encode(&state)),
             Err(AclError::MmrInconsistent)
         );
+    }
+
+    #[test]
+    fn a_store_is_validated_as_the_host_writes_one() {
+        const HOST: [u8; 32] = [7; 32];
+        const KEY: [u8; 32] = [8; 32];
+        let store = EncryptedStore {
+            program: [1; 32],
+            scope: [2; 32],
+            ..EncryptedStore::default()
+        };
+        let encode = |state: &EncryptedStore| {
+            let mut bytes = encrypted_store_discriminator().to_vec();
+            state.serialize(&mut bytes).unwrap();
+            bytes
+        };
+        let data = encode(&store);
+        let at_key = |_: &EncryptedStore| Some(KEY);
+        let validate =
+            |owner: &[u8; 32], data: &[u8], derive: fn(&EncryptedStore) -> Option<[u8; 32]>| {
+                validate_store(&HOST, &KEY, Some(AccountView { owner, data }), derive)
+            };
+
+        assert_eq!(validate(&HOST, &data, at_key), Ok(store.clone()));
+        let mut grown = data.clone();
+        grown.extend_from_slice(&[0; 64]);
+        assert_eq!(validate(&HOST, &grown, at_key), Ok(store.clone()));
+
+        assert_eq!(
+            validate_store(&HOST, &KEY, None, at_key),
+            Err(StoreRejection::Absent)
+        );
+        assert_eq!(validate(&[0; 32], &[], at_key), Err(StoreRejection::Absent));
+        assert_eq!(
+            validate(&[9; 32], &data, at_key),
+            Err(StoreRejection::ForeignOwner([9; 32]))
+        );
+        assert_eq!(
+            validate(&HOST, &[0; 16], at_key),
+            Err(StoreRejection::NotAnEncryptedStore)
+        );
+        assert_eq!(
+            validate(&HOST, &data[..data.len() - 1], at_key),
+            Err(StoreRejection::InvalidHostRecord)
+        );
+        assert_eq!(
+            validate(&HOST, &data, |_| None),
+            Err(StoreRejection::AddressMismatch(None))
+        );
+        for sentinel in [
+            EncryptedStore {
+                program: WILDCARD_APP,
+                ..store.clone()
+            },
+            EncryptedStore {
+                scope: WILDCARD_APP,
+                ..store.clone()
+            },
+        ] {
+            assert_eq!(
+                validate(&HOST, &encode(&sentinel), at_key),
+                Err(StoreRejection::InvalidHostRecord)
+            );
+        }
     }
 }

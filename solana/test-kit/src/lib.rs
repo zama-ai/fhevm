@@ -225,6 +225,14 @@ pub fn empty_system_account() -> Account {
     system_account(0)
 }
 
+/// A data-less account owned by `program`: an application account a store's scope can name.
+pub fn program_owned_account(program: Pubkey) -> Account {
+    Account {
+        owner: program,
+        ..system_account(1)
+    }
+}
+
 /// The system program's own executable account entry, for suites that seed it explicitly.
 pub fn system_program_account() -> Account {
     Account {

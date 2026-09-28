@@ -79,7 +79,7 @@ trusted for authorization.
 - **Roles are account positions, not `msg.sender`.** An execution names a
   payer and an execution authority, with Store authority signers resolved separately, and the
   application it runs as is `(program, scope)` — the program proven from the
-  authority's seeds, the scope that program declares (DD-047). That pair is
+  authority's seeds, the scope an account that program owns (DD-047). That pair is
   what the HCU meter charges and the deny list names.
 - **Eager scheduling, decoupled authorization.** The coprocessor computes on
   confirmed (not finalized) state and never unwinds; safety comes from the

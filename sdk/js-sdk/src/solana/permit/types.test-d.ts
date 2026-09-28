@@ -17,7 +17,7 @@ import { decodeSolanaPermitFields, renderSolanaPermitText } from './index.js';
 const identity = new Uint8Array(32);
 
 const wire = {
-  userPubkey: identity,
+  userAddress: identity,
   transportKey: new Uint8Array(869),
   allowedScopes: [],
   startTimestamp: 1_767_229_380n,
@@ -53,7 +53,7 @@ expectTypeOf(decodeSolanaPermitFields(wire)).toEqualTypeOf<SolanaPermitFields>()
 // @ts-expect-error The brand cannot be satisfied from outside the module, so validated fields
 // cannot be assembled by hand — not even from values that would pass every rule.
 const fabricated: SolanaPermitFields = {
-  userPubkey: identity,
+  userAddress: identity,
   transportKey: new Uint8Array(869),
   allowedScopes: [],
   startTimestamp: 1_767_229_380n,

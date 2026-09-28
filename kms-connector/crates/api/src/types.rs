@@ -77,7 +77,7 @@ sol! {
     #[serde(deny_unknown_fields)]
     struct SolanaHandleEntry {
         bytes32 handle;
-        bytes32 allowedKey;
+        bytes32 ownerAddress;
         bytes32 encryptedStore;
     }
 
@@ -86,12 +86,22 @@ sol! {
     #[serde(deny_unknown_fields)]
     struct SolanaUserDecryptionPayload {
         SolanaHandleEntry[] handles;
-        bytes32 userPubkey;
+        bytes32 userAddress;
         bytes publicKey;
         bytes[] allowedScopes;
         RequestValidity requestValidity;
         bytes32 verifyingProgramId;
         bytes extraData;
+    }
+
+    /// The Solana body of `POST v1/public-decrypt`: each handle names the encrypted store its
+    /// public-decrypt leaf is proven against, as a store is not derivable from a handle.
+    #[derive(Debug, PartialEq, Serialize, Deserialize)]
+    #[serde(deny_unknown_fields)]
+    struct SolanaPublicDecryptionRequest {
+        bytes32[] ctHandles;
+        bytes extraData;
+        bytes32[] encryptedStores;
     }
 
     /// The Solana body of `POST v1/user-decrypt`. The signature covers the canonical permit;
@@ -106,6 +116,14 @@ sol! {
 }
 
 impl SolanaUserDecryptionRequest {
+    pub fn id(&self) -> B256 {
+        self.eip712_signing_hash(&DECRYPTION_EIP712_DOMAIN)
+    }
+}
+
+impl SolanaPublicDecryptionRequest {
+    /// Derives the content-derived `decryption_id`: the EIP-712 signing hash of the body, whose
+    /// type hash differs from the EVM body's.
     pub fn id(&self) -> B256 {
         self.eip712_signing_hash(&DECRYPTION_EIP712_DOMAIN)
     }
@@ -193,10 +211,10 @@ mod tests {
             payload: SolanaUserDecryptionPayload {
                 handles: vec![SolanaHandleEntry {
                     handle: B256::repeat_byte(1),
-                    allowedKey: B256::repeat_byte(2),
+                    ownerAddress: B256::repeat_byte(2),
                     encryptedStore: B256::repeat_byte(3),
                 }],
-                userPubkey: B256::ZERO,
+                userAddress: B256::ZERO,
                 publicKey: Bytes::new(),
                 allowedScopes: vec![],
                 requestValidity: RequestValidity {
@@ -212,7 +230,7 @@ mod tests {
         // Independently encoded EIP-712 words, hashed with Foundry cast keccak.
         assert_eq!(
             id,
-            "0x92c9850b3f6d2d4daef38a9862829738a8975d91cbdf93459e0758dfd449c3d6"
+            "0x04e1a57fac578e2d2a40d1b8e596c2c142dc4507f41328586e524bd5cb8f8da1"
                 .parse::<B256>()
                 .unwrap()
         );
@@ -226,7 +244,7 @@ mod tests {
         other.signature = vec![5; 64].into();
         assert_ne!(id, other.id());
         let mut other = request.clone();
-        other.payload.handles[0].allowedKey = B256::repeat_byte(6);
+        other.payload.handles[0].ownerAddress = B256::repeat_byte(6);
         assert_ne!(id, other.id());
         let mut other = request.clone();
         other.payload.handles[0].encryptedStore = B256::repeat_byte(6);

@@ -38,7 +38,7 @@ fn envelope_layout_is_the_offchain_message_form() {
         b"\xffsolana offchain\x01\x01",
         "envelope header"
     );
-    assert_eq!(&envelope[18..50], fields.user_pubkey().as_bytes());
+    assert_eq!(&envelope[18..50], fields.user_address().as_bytes());
     assert_eq!(&envelope[50..], render_canonical_text(&fields).as_bytes());
     assert_eq!(envelope.len(), 666);
     assert_eq!(
@@ -50,7 +50,7 @@ fn envelope_layout_is_the_offchain_message_form() {
     // And the whole thing equals a wallet-shaped envelope built independently.
     assert_eq!(
         envelope,
-        envelope_over_text(fields.user_pubkey(), &render_canonical_text(&fields))
+        envelope_over_text(fields.user_address(), &render_canonical_text(&fields))
     );
 }
 
@@ -88,7 +88,7 @@ fn envelope_names_exactly_one_signer_which_is_the_permit_user() {
 
         assert_eq!(envelope[16], 1, "envelope version");
         assert_eq!(envelope[17], 1, "signer count");
-        assert_eq!(&envelope[18..50], fields.user_pubkey().as_bytes());
+        assert_eq!(&envelope[18..50], fields.user_address().as_bytes());
     }
 }
 
@@ -122,9 +122,9 @@ fn verify_accepts_a_signature_from_an_independent_implementation() {
 fn verify_accepts_a_correctly_signed_permit_across_the_admitted_space() {
     for seed in 0..128u64 {
         let mut wire = pseudo_valid_wire(seed);
-        // The generated user pubkey is arbitrary bytes; a signable permit needs the
+        // The generated user address is arbitrary bytes; a signable permit needs the
         // fixture wallet's key in that field.
-        wire.user_pubkey = pubkey_of_seed(USER_SEED).as_bytes().to_vec();
+        wire.user_address = pubkey_of_seed(USER_SEED).as_bytes().to_vec();
         let fields = decoded(&wire);
 
         let signature = sign_with_seed(USER_SEED, &build_envelope(&fields));
@@ -206,8 +206,8 @@ fn verify_rejects_signatures_over_mutated_envelope_headers() {
     two_signers.extend_from_slice(b"\xffsolana offchain");
     two_signers.push(1);
     two_signers.push(2);
-    two_signers.extend_from_slice(fields.user_pubkey().as_bytes());
-    two_signers.extend_from_slice(fields.user_pubkey().as_bytes());
+    two_signers.extend_from_slice(fields.user_address().as_bytes());
+    two_signers.extend_from_slice(fields.user_address().as_bytes());
     two_signers.extend_from_slice(text.as_bytes());
     variants.push(("two signers", two_signers));
 
@@ -256,14 +256,14 @@ fn verify_rejects_a_signature_with_a_non_canonical_scalar() {
     );
 }
 
-/// A user pubkey that is not a point on the curve cannot verify anything, and says so
+/// A user address that is not a point on the curve cannot verify anything, and says so
 /// distinctly — the permit is unusable, rather than carrying a bad signature.
 ///
 /// The encodings below are y-coordinates for which no curve point exists. Note that
 /// most 32-byte patterns one reaches for *are* valid points — an all-`0xff` key, for
 /// instance, decompresses fine — so the inputs here are chosen, not guessed.
 #[test]
-fn verify_rejects_a_user_pubkey_that_is_not_a_curve_point() {
+fn verify_rejects_a_user_address_that_is_not_a_curve_point() {
     for encoded in [
         "0200000000000000000000000000000000000000000000000000000000000000",
         "0700000000000000000000000000000000000000000000000000000000000000",
@@ -271,7 +271,7 @@ fn verify_rejects_a_user_pubkey_that_is_not_a_curve_point() {
         "7f7f7f7f7f7f7f7f7f7f7f7f7f7f7f7f7f7f7f7f7f7f7f7f7f7f7f7f7f7f7f7f",
     ] {
         let wire = PermitWireFields {
-            user_pubkey: bytes32(encoded).to_vec(),
+            user_address: bytes32(encoded).to_vec(),
             ..reference_wire()
         };
         // Strict decoding accepts it: the width is right, and whether the bytes are a
@@ -283,13 +283,13 @@ fn verify_rejects_a_user_pubkey_that_is_not_a_curve_point() {
 
         assert_eq!(
             verify_signature(&fields, &signature),
-            Err(PermitError::UnusableUserPubkey),
+            Err(PermitError::UnusableUserAddress),
             "key {encoded} is not a curve point and must be unusable"
         );
     }
 }
 
-/// A user pubkey whose y-coordinate is encoded above the field modulus is rejected,
+/// A user address whose y-coordinate is encoded above the field modulus is rejected,
 /// even though it decompresses to a perfectly good point.
 ///
 /// There is no attack behind this one: the encoding is part of the signed envelope, so
@@ -300,11 +300,11 @@ fn verify_rejects_a_user_pubkey_that_is_not_a_curve_point() {
 /// Every real wallet key is canonical, so rejecting non-canonical encodings costs
 /// nothing and removes the disagreement.
 #[test]
-fn verify_rejects_a_non_canonically_encoded_user_pubkey() {
+fn verify_rejects_a_non_canonically_encoded_user_address() {
     // y = 2^255 - 1, which reduces to the same point as the canonical encoding of 18.
     let non_canonical = "ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff";
     let wire = PermitWireFields {
-        user_pubkey: bytes32(non_canonical).to_vec(),
+        user_address: bytes32(non_canonical).to_vec(),
         ..reference_wire()
     };
     let fields = PermitFields::decode(&wire).expect("32 bytes is a well-formed identity");
@@ -313,7 +313,7 @@ fn verify_rejects_a_non_canonically_encoded_user_pubkey() {
 
     assert_eq!(
         verify_signature(&fields, &signature),
-        Err(PermitError::UnusableUserPubkey),
+        Err(PermitError::UnusableUserAddress),
         "a non-canonical coordinate encoding must not be usable as a permit user"
     );
 }
@@ -323,7 +323,7 @@ fn verify_rejects_a_non_canonically_encoded_user_pubkey() {
 /// These encodings belong to the torsion subgroup, where a signature can be forged
 /// for any message under some verification routines. Nothing may verify under them.
 #[test]
-fn verify_rejects_small_order_user_pubkeys() {
+fn verify_rejects_small_order_user_addresses() {
     let small_order = [
         "0000000000000000000000000000000000000000000000000000000000000000",
         "0100000000000000000000000000000000000000000000000000000000000000",
@@ -334,7 +334,7 @@ fn verify_rejects_small_order_user_pubkeys() {
 
     for encoded in small_order {
         let wire = PermitWireFields {
-            user_pubkey: bytes32(encoded).to_vec(),
+            user_address: bytes32(encoded).to_vec(),
             ..reference_wire()
         };
         let fields = PermitFields::decode(&wire).expect("well-formed width");
@@ -372,7 +372,7 @@ fn a_signature_does_not_carry_over_to_another_permit() {
 
     for seed in 0..32u64 {
         let mut wire = pseudo_valid_wire(seed);
-        wire.user_pubkey = pubkey_of_seed(USER_SEED).as_bytes().to_vec();
+        wire.user_address = pubkey_of_seed(USER_SEED).as_bytes().to_vec();
         let other = decoded(&wire);
         if other == fields {
             continue;

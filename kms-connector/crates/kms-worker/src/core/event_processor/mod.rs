@@ -10,7 +10,7 @@ mod rpc;
 
 pub use ciphertext::CiphertextManager;
 pub use context::{ContextManager, DbContextManager};
-pub use decryption::{DecryptionProcessor, HostChainAclBackend};
+pub use decryption::{DecryptionProcessor, UserDecryptionRecipient, UserIdentity};
 pub use error::{ProcessingError, ProcessingErrorKind, RequestCheckError, RequestCheckKind};
 pub use kms::KMSGenerationProcessor;
 pub use kms_client::{KmsClient, KmsPollTarget};

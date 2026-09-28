@@ -49,7 +49,7 @@ fn account_info(pubkey: Pubkey, is_writable: bool) -> AccountInfo<'static> {
 fn app() -> AppScope {
     AppScope {
         program: Pubkey::new_from_array([0xA9; 32]),
-        scope: [0xA5; 32],
+        scope: Pubkey::new_from_array([0xA5; 32]),
     }
 }
 
@@ -1223,7 +1223,7 @@ fn mixed_scopes_are_rejected_at_the_step_that_mixes() {
     let authority = Pubkey::new_unique();
     let other_app = AppScope {
         program: Pubkey::new_unique(),
-        scope: [7; 32],
+        scope: Pubkey::new_from_array([7; 32]),
     };
     let same =
         typed_store_slot::<Uint<64>>(balance_handle(1), test_store_slot(authority, 1)).unwrap();
@@ -1421,7 +1421,7 @@ fn step_that_fails_after_interning_leaves_the_builder_untouched() {
     let foreign = TestStoreSlot::new(
         AppScope {
             program: app().program,
-            scope: [9; 32],
+            scope: Pubkey::new_from_array([9; 32]),
         },
         authority,
         [2; 32],

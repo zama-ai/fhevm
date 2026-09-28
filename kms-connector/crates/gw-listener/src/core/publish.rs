@@ -8,8 +8,8 @@ use connector_utils::{
     types::{
         ProtocolEvent, ProtocolEventKind,
         db::{
-            ParamsTypeDb, RequestSource, insert_solana_user_decryption, invalidate_kms_context,
-            invalidate_kms_epoch,
+            ParamsTypeDb, RequestSource, insert_solana_public_decryption,
+            insert_solana_user_decryption, invalidate_kms_context, invalidate_kms_epoch,
         },
     },
 };
@@ -91,6 +91,11 @@ async fn publish_event_inner<'e>(
     let query_result = match event.kind {
         ProtocolEventKind::PublicDecryption(e) => {
             publish_public_decryption(executor, e, tx_hash, created_at, otlp_ctx).await
+        }
+        ProtocolEventKind::SolanaPublicDecryption(e) => {
+            let source = RequestSource::OnChain;
+            insert_solana_public_decryption(executor, &e, tx_hash, created_at, &otlp_ctx, source)
+                .await
         }
         ProtocolEventKind::UserDecryption(e) => {
             publish_user_decryption(executor, e, tx_hash, created_at, otlp_ctx).await

@@ -42,7 +42,7 @@ fn expect_accepted(wire: &PermitWireFields) -> PermitFields {
 fn decode_accepts_the_reference_permit() {
     let fields = expect_accepted(&reference_wire());
 
-    assert_eq!(fields.user_pubkey().as_bytes(), &bytes32(USER_PUBKEY_HEX));
+    assert_eq!(fields.user_address().as_bytes(), &bytes32(USER_PUBKEY_HEX));
     assert_eq!(
         fields.verifying_program_id().as_bytes(),
         &bytes32(VERIFYING_PROGRAM_ID_HEX)
@@ -84,16 +84,16 @@ fn decode_accepts_an_empty_scope_list_as_permissive() {
 /// checked here because they are unrepresentable once the typed form is reached —
 /// which is also why this test decodes rather than constructing typed values.
 #[test]
-fn decode_rejects_user_pubkey_of_wrong_width() {
+fn decode_rejects_user_address_of_wrong_width() {
     for len in [0usize, 1, 20, 31, 33, 64] {
         let wire = PermitWireFields {
-            user_pubkey: vec![0x11; len],
+            user_address: vec![0x11; len],
             ..reference_wire()
         };
         expect_rejected(
             &wire,
             PermitError::IdentityWidth {
-                field: IdentityField::UserPubkey,
+                field: IdentityField::UserAddress,
                 len,
             },
         );
@@ -560,7 +560,7 @@ fn kms_routing_round_trips_to_its_signed_bytes() {
 #[test]
 fn multiple_violations_produce_a_deterministic_rejection() {
     let wire = PermitWireFields {
-        user_pubkey: vec![0u8; 31],
+        user_address: vec![0u8; 31],
         duration_seconds: 0,
         start_timestamp: u64::MAX,
         transport_key: transport_key_bytes_of_len(7),

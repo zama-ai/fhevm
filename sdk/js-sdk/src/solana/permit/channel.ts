@@ -132,7 +132,7 @@ export async function signSolanaPermit(
   // Before the wallet is asked anything: a wallet holding another key would produce a genuine
   // signature the verification below rejects, at the cost of a signing prompt the user answered
   // for nothing.
-  if (!bytesEqual(wallet.account.publicKey, fields.userPubkey)) {
+  if (!bytesEqual(wallet.account.publicKey, fields.userAddress)) {
     throw new SolanaPermitChannelError({ reason: 'signer-mismatch' });
   }
 

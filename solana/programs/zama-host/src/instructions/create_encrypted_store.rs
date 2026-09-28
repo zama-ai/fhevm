@@ -8,7 +8,6 @@ use crate::{errors::ZamaHostError, state::*};
 #[derive(AnchorSerialize, AnchorDeserialize, Clone)]
 pub struct CreateEncryptedStoreArgs {
     pub program: Pubkey,
-    pub scope: [u8; 32],
     pub authority_seeds: Vec<Vec<u8>>,
 }
 
@@ -17,6 +16,8 @@ pub struct CreateEncryptedStore<'info> {
     #[account(mut)]
     pub payer: Signer<'info>,
     pub authority: Signer<'info>,
+    /// CHECK: only its key and owner are read; the owner must be the store's program.
+    pub scope: UncheckedAccount<'info>,
     /// CHECK: canonical PDA and uninitialized ownership are checked before creation.
     #[account(mut)]
     pub encrypted_store: UncheckedAccount<'info>,
@@ -40,7 +41,17 @@ pub fn create_encrypted_store(
         authority,
         ZamaHostError::EncryptedStoreAuthorityNotProgramPda
     );
-    let (address, bump) = encrypted_store_address(args.program, authority, args.scope);
+    // The scope names an account of the store's program, so two programs cannot pick the same
+    // application and a program id is never a scope (its owner is the loader). This also keeps the
+    // wildcard sentinel out: nothing can live there, and an absent account is System-owned, while
+    // `program` signed through the authority PDA above, which the System program never does.
+    let scope = ctx.accounts.scope.key();
+    require_keys_eq!(
+        *ctx.accounts.scope.owner,
+        args.program,
+        ZamaHostError::EncryptedStoreScopeNotProgramAccount
+    );
+    let (address, bump) = encrypted_store_address(args.program, authority, scope);
     let info = ctx.accounts.encrypted_store.to_account_info();
     require_keys_eq!(
         address,
@@ -56,7 +67,7 @@ pub fn create_encrypted_store(
             ENCRYPTED_STORE_SEED,
             args.program.as_ref(),
             authority.as_ref(),
-            &args.scope,
+            scope.as_ref(),
             &[bump],
         ],
     )?;
@@ -65,7 +76,7 @@ pub fn create_encrypted_store(
         &EncryptedStore {
             program: args.program,
             authority,
-            scope: args.scope,
+            scope,
             slots: Vec::new(),
             leaf_count: 0,
             peaks: Vec::new(),

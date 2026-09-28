@@ -35,13 +35,13 @@ import { bytesToHex } from '../proof.js';
 export const SOLANA_SRFC38_ATTESTATION_TYPE = 'solana-srfc38-user-decrypt-v1';
 
 /**
- * The handle-count cap: `MAX_SOLANA_USER_DECRYPT_HANDLES` in the Gateway's `Decryption.sol`. The
+ * The handle-count cap: `MAX_SOLANA_DECRYPT_HANDLES` in the Gateway's `Decryption.sol`. The
  * Connector refuses the same count terminally, so a request past it can only ever be paid for and
  * lost — the parity test beside this module pins the two constants to each other.
  */
-export const MAX_SOLANA_USER_DECRYPT_HANDLES = 33;
+export const MAX_SOLANA_DECRYPT_HANDLES = 32;
 
-/** One handle to decrypt: the handle, the key it was allowed to, and the account it lives in. */
+/** One handle to decrypt: the handle, the owner address whose allow authorizes it, and its store. */
 export interface SolanaUserDecryptHandleEntry {
   /** The 32-byte ciphertext handle. */
   readonly handle: Uint8Array;
@@ -49,7 +49,7 @@ export interface SolanaUserDecryptHandleEntry {
    * The 32-byte key whose allow on the handle authorizes this entry: the requester itself on a
    * direct entry, the delegator on a delegated one.
    */
-  readonly allowedKey: Uint8Array;
+  readonly ownerAddress: Uint8Array;
   /** The 32-byte address of the `EncryptedStore` account the handle lives in. */
   readonly encryptedStore: Uint8Array;
 }
@@ -57,18 +57,20 @@ export interface SolanaUserDecryptHandleEntry {
 /** One handle entry, as it travels. */
 export interface SolanaUserDecryptHandleJson {
   readonly handle: string;
-  readonly allowedKey: string;
+  readonly ownerAddress: string;
   readonly encryptedStore: string;
 }
 
-/** The attested payload: the eight signed permit fields, plus the unsigned handle entries. */
+/**
+ * The attested payload: the signed permit fields, plus the unsigned handle entries. The permit's
+ * chain id does not travel: it is the one every handle embeds.
+ */
 export interface SolanaUserDecryptPayloadJson {
-  readonly userPubkey: string;
+  readonly userAddress: string;
   readonly transportKey: string;
   readonly allowedScopes: readonly string[];
   readonly requestValidity: { readonly startTimestamp: string; readonly durationSeconds: string };
   readonly verifyingProgramId: string;
-  readonly chainId: string;
   readonly extraData: string;
   readonly handles: readonly SolanaUserDecryptHandleJson[];
 }
@@ -98,7 +100,7 @@ export type SolanaUserDecryptRequestFailure =
   | {
       readonly reason: 'entry-field-width';
       readonly index: number;
-      readonly field: 'allowedKey' | 'encryptedStore';
+      readonly field: 'ownerAddress' | 'encryptedStore';
     };
 
 /** A request that was refused before it reached the network. */
@@ -171,8 +173,8 @@ export function admitSolanaUserDecryptRequest(admission: {
       throw new SolanaUserDecryptRequestError({ reason: 'foreign-host-chain', index, chainId: embeddedChainId });
     }
 
-    if (entry.allowedKey.length !== 32) {
-      throw new SolanaUserDecryptRequestError({ reason: 'entry-field-width', index, field: 'allowedKey' });
+    if (entry.ownerAddress.length !== 32) {
+      throw new SolanaUserDecryptRequestError({ reason: 'entry-field-width', index, field: 'ownerAddress' });
     }
     if (entry.encryptedStore.length !== 32) {
       throw new SolanaUserDecryptRequestError({ reason: 'entry-field-width', index, field: 'encryptedStore' });
@@ -204,7 +206,7 @@ export function buildSolanaUserDecryptRequest(request: {
   return {
     attestationType: SOLANA_SRFC38_ATTESTATION_TYPE,
     attestedPayload: {
-      userPubkey: bytesToHex(fields.userPubkey),
+      userAddress: bytesToHex(fields.userAddress),
       transportKey: bytesToHex(fields.transportKey),
       allowedScopes: fields.allowedScopes.map((scope) => bytesToHex(scope)),
       requestValidity: {
@@ -212,11 +214,10 @@ export function buildSolanaUserDecryptRequest(request: {
         durationSeconds: fields.durationSeconds.toString(),
       },
       verifyingProgramId: bytesToHex(fields.verifyingProgramId),
-      chainId: fields.chainId.toString(),
       extraData: bytesToHex(encodeSolanaKmsRouting(fields.kmsRouting)),
       handles: entries.map((entry) => ({
         handle: bytesToHex(entry.handle),
-        allowedKey: bytesToHex(entry.allowedKey),
+        ownerAddress: bytesToHex(entry.ownerAddress),
         encryptedStore: bytesToHex(entry.encryptedStore),
       })),
     },
@@ -234,11 +235,11 @@ export function buildSolanaUserDecryptRequest(request: {
  */
 export function solanaUserDecryptRequestBits(handles: readonly Uint8Array[]): number {
   // The count first: it is a property of the list, so it is settled before any one handle is named.
-  if (handles.length > MAX_SOLANA_USER_DECRYPT_HANDLES) {
+  if (handles.length > MAX_SOLANA_DECRYPT_HANDLES) {
     throw new SolanaUserDecryptRequestError({
       reason: 'too-many-handles',
       count: handles.length,
-      max: MAX_SOLANA_USER_DECRYPT_HANDLES,
+      max: MAX_SOLANA_DECRYPT_HANDLES,
     });
   }
 
