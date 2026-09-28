@@ -113,14 +113,17 @@ pub(super) struct BatchRow {
 /// `frozen` can skip persist for those outputs; reload before insert in case
 /// drift arrived during execution.
 ///
+/// Drift is read on `trx`, the batch's own transaction: a pool connection
+/// would need one more than the listener and the batch already hold.
 /// `tx_unlock_potential` is written on `pool` into `drifted_handle_demand`
 /// so healing sees it before the batch commits and does not share a row
 /// lock with `drifted_handle`.
 pub(super) async fn containment_filter(
+    trx: &mut Transaction<'_, Postgres>,
     pool: &PgPool,
     work: Vec<WorkItem>,
 ) -> Result<FilteredWork, CoprocessorError> {
-    let drifted = drifted_ct64_handles(pool).await?;
+    let drifted = drifted_ct64_handles(trx).await?;
     let selected = work.len();
     let filtered = filter_work(work, &drifted);
     record_schedule_filter(selected, &filtered);
@@ -137,7 +140,7 @@ pub(super) async fn containment_filter(
 /// `ciphertexts` are left unqualified: the search_path resolves them to this
 /// stack's schema.
 pub(super) async fn drifted_ct64_handles(
-    pool: &PgPool,
+    trx: &mut Transaction<'_, Postgres>,
 ) -> Result<HashSet<Handle>, CoprocessorError> {
     Ok(sqlx::query_scalar!(
         r#"SELECT DISTINCT dh.handle
@@ -155,7 +158,7 @@ pub(super) async fn drifted_ct64_handles(
                                   WHERE ct.handle = dh.handle
                                     AND octet_length(ct.ciphertext) > 0))"#
     )
-    .fetch_all(pool)
+    .fetch_all(trx.as_mut())
     .await?
     .into_iter()
     .collect())
@@ -243,20 +246,22 @@ pub(super) async fn penalize_frozen_transactions(
     Ok(())
 }
 
-/// Reloads drift and re-scores `freeze.batch`.
+/// Reloads drift and re-scores `freeze.batch`. Each statement of the batch's
+/// READ COMMITTED transaction sees drift committed during execution.
 ///
 /// Late drifted handles are extra blockers on the same batch: in-batch
 /// transitivity is the same walk. Newly frozen outputs freeze their consumers;
 /// `k` grows for txs that gain a root. Replaces last update `n1` with `n2`
 /// in the same EMA slot.
 pub(super) async fn revise(
+    trx: &mut Transaction<'_, Postgres>,
     pool: &PgPool,
     freeze: &Freeze,
 ) -> Result<HashSet<(TxHash, Handle)>, CoprocessorError> {
     if freeze.batch.is_empty() {
         return Ok(HashSet::new());
     }
-    let drifted = drifted_ct64_handles(pool).await?;
+    let drifted = drifted_ct64_handles(trx).await?;
     let (dropped, n2) = score(&freeze.batch, &drifted);
     replace_last_update_tx_unlock_potential(pool, &freeze.weights, &n2).await?;
     Ok(freeze
