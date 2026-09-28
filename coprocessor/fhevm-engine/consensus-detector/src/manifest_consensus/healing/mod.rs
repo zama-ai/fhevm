@@ -4,10 +4,13 @@
 //! `event_healing_work` and also polls on `healing_poll_interval` so a missed
 //! NOTIFY still runs. Each pass takes up to `healing_batch_size` due
 //! `can_be_healed` rows with `FOR UPDATE OF` `drifted_handle` only for that
-//! pick, ordered by `drifted_handle_demand`. One row per handle: a reorg may
-//! leave several findings, and they are healed together only when every
-//! unhealed sibling has the same `quorum_ct64_digest`. Disagreeing targets
-//! stay in the inventory and are not installed.
+//! pick, ordered by `drifted_handle_demand`. The handle is the unit of repair:
+//! a reorg may leave several findings for one handle, and one install heals
+//! them all. Only active siblings (healable reason, unhealed, not abandoned)
+//! take part. A sibling without a target adopts the single target of the
+//! others, so every sibling shares one target. Two active siblings pinned to
+//! different digests are a real conflict: the handle is not installed and is
+//! reported, since a pinned target is never rewritten.
 //! Demand lives on a separate table so TFHE EMA writes never lock these rows.
 //! The pick lock is not held across S3. A matching GET installs the ct64 and
 //! sets `healed_at` in one transaction. Every epoch with a schema is healed,
@@ -16,9 +19,9 @@
 //! epochs merged at cutover. Failed epochs have no schema and are skipped. After a pass that installs at least
 //! one handle, the worker NOTIFYs `work_available` once so idle TFHE does
 //! not wait for its poll. Rows without a pin, and digest mismatches, HEAD
-//! registry attestations: a live quorum pins the digest, evidence, and sources,
-//! then GETs. A pinned digest that no longer matches the live quorum is
-//! counted, never rewritten.
+//! registry attestations: a live quorum pins the digest, evidence, and sources
+//! on every active sibling without a target, then GETs. A pinned digest that
+//! no longer matches the live quorum is counted, never rewritten.
 
 use std::collections::{BTreeMap, HashMap};
 use std::sync::Arc;
@@ -201,6 +204,7 @@ async fn run_healing_pass<S: Ct64Source>(
     if schemas.is_empty() {
         return Ok(());
     }
+    report_conflicting_targets(pool, &schemas).await?;
     let due = lock_due(
         pool,
         &schemas,
@@ -269,6 +273,7 @@ async fn lock_due(
     let containment_timeout_secs = i64::try_from(containment_timeout.as_secs())
         .map_err(|_| ExecutionError::InternalError("containment timeout exceeds BIGINT".into()))?;
     let mut trx = pool.begin().await?;
+    align_sibling_targets(&mut trx, &epochs).await?;
     let rows = sqlx::query!(
         r#"
         SELECT dh.id,
@@ -301,6 +306,10 @@ async fn lock_due(
                    AND (cand.reason <> 'ct64_mismatch' OR cand.is_contained
                         OR cand.detected_at <= NOW() - $3::BIGINT * INTERVAL '1 second')
                    AND (cand.next_retry_at IS NULL OR cand.next_retry_at <= NOW())
+                   -- Only an active sibling pinned to another digest blocks the
+                   -- handle: after alignment, a sibling without a target has
+                   -- none to disagree with, and abandoned or unhealable rows
+                   -- no longer decide.
                    AND NOT EXISTS (
                         SELECT 1
                           FROM drifted_handle other
@@ -309,6 +318,11 @@ async fn lock_due(
                            AND other.host_chain_id = cand.host_chain_id
                            AND other.handle = cand.handle
                            AND other.healed_at IS NULL
+                           AND other.heal_abandoned_at IS NULL
+                           AND other.reason IN (
+                                'ct64_mismatch', 'missing_here', 'error_here', 'uncomputed_here'
+                           )
+                           AND other.quorum_ct64_digest IS NOT NULL
                            AND other.quorum_ct64_digest IS DISTINCT FROM cand.quorum_ct64_digest
                    )
                  ORDER BY cand.host_chain_id,
@@ -357,6 +371,115 @@ async fn lock_due(
             })
         })
         .collect()
+}
+
+/// Gives every active sibling without a target the single target of the other
+/// active siblings of its handle, so one install heals them all. Abandoned
+/// siblings are filled too, so the install also marks them. A handle whose
+/// siblings are pinned to several digests is left alone: that conflict is
+/// reported, never resolved by rewriting a pin.
+async fn align_sibling_targets(
+    trx: &mut sqlx::Transaction<'_, sqlx::Postgres>,
+    epochs: &[String],
+) -> Result<(), ExecutionError> {
+    sqlx::query!(
+        r#"
+        WITH active AS (
+            SELECT id, consensus_epoch, coprocessor_context_id, host_chain_id, handle,
+                   block_number, quorum_ct64_digest, target_evidence, peer_sources
+              FROM drifted_handle
+             WHERE consensus_epoch = ANY($1)
+               AND healed_at IS NULL
+               AND heal_abandoned_at IS NULL
+               AND reason IN ('ct64_mismatch', 'missing_here', 'error_here', 'uncomputed_here')
+               AND quorum_ct64_digest IS NOT NULL
+        ),
+        single_target AS (
+            SELECT consensus_epoch, coprocessor_context_id, host_chain_id, handle
+              FROM active
+             GROUP BY consensus_epoch, coprocessor_context_id, host_chain_id, handle
+            HAVING COUNT(DISTINCT quorum_ct64_digest) = 1
+        ),
+        pinned AS (
+            SELECT DISTINCT ON (a.consensus_epoch, a.coprocessor_context_id, a.host_chain_id, a.handle)
+                   a.consensus_epoch, a.coprocessor_context_id, a.host_chain_id, a.handle,
+                   a.quorum_ct64_digest, a.target_evidence, a.peer_sources
+              FROM active a
+              JOIN single_target t
+                ON t.consensus_epoch = a.consensus_epoch
+               AND t.coprocessor_context_id = a.coprocessor_context_id
+               AND t.host_chain_id = a.host_chain_id
+               AND t.handle = a.handle
+             ORDER BY a.consensus_epoch, a.coprocessor_context_id, a.host_chain_id, a.handle,
+                      a.block_number ASC, a.id ASC
+        )
+        UPDATE drifted_handle dh
+           SET quorum_ct64_digest = pinned.quorum_ct64_digest,
+               target_evidence = COALESCE(dh.target_evidence, pinned.target_evidence),
+               peer_sources = CASE
+                 WHEN dh.peer_sources = '[]'::jsonb THEN pinned.peer_sources
+                 ELSE dh.peer_sources
+               END
+          FROM pinned
+         WHERE dh.consensus_epoch = pinned.consensus_epoch
+           AND dh.coprocessor_context_id = pinned.coprocessor_context_id
+           AND dh.host_chain_id = pinned.host_chain_id
+           AND dh.handle = pinned.handle
+           AND dh.healed_at IS NULL
+           AND dh.reason IN ('ct64_mismatch', 'missing_here', 'error_here', 'uncomputed_here')
+           AND dh.quorum_ct64_digest IS NULL
+        "#,
+        epochs,
+    )
+    .execute(trx.as_mut())
+    .await?;
+    Ok(())
+}
+
+/// Handles whose active siblings are pinned to different digests cannot be
+/// healed without choosing a target against a pin; they stay frozen until an
+/// operator resolves them.
+async fn report_conflicting_targets(
+    pool: &PgPool,
+    schemas: &HashMap<String, String>,
+) -> Result<(), ExecutionError> {
+    let epochs: Vec<String> = schemas.keys().cloned().collect();
+    let rows = sqlx::query!(
+        r#"
+        SELECT consensus_epoch, host_chain_id, handle
+          FROM drifted_handle
+         WHERE consensus_epoch = ANY($1)
+           AND healed_at IS NULL
+           AND heal_abandoned_at IS NULL
+           AND reason IN ('ct64_mismatch', 'missing_here', 'error_here', 'uncomputed_here')
+           AND quorum_ct64_digest IS NOT NULL
+         GROUP BY consensus_epoch, coprocessor_context_id, host_chain_id, handle
+        HAVING COUNT(DISTINCT quorum_ct64_digest) > 1
+        "#,
+        &epochs,
+    )
+    .fetch_all(pool)
+    .await?;
+    let mut per_epoch: HashMap<&str, i64> =
+        epochs.iter().map(|epoch| (epoch.as_str(), 0)).collect();
+    for row in &rows {
+        *per_epoch.entry(row.consensus_epoch.as_str()).or_default() += 1;
+    }
+    for (epoch, count) in per_epoch {
+        metrics::CONFLICTING_TARGETS
+            .with_label_values(&[epoch])
+            .set(count);
+    }
+    if let Some(first) = rows.first() {
+        error!(
+            conflicts = rows.len(),
+            consensus_epoch = first.consensus_epoch,
+            host_chain_id = first.host_chain_id,
+            handle = hex::encode(&first.handle),
+            "Unhealed findings of one handle are pinned to different ct64 targets; not healing them"
+        );
+    }
+    Ok(())
 }
 
 async fn heal_one<S: Ct64Source>(
@@ -572,23 +695,33 @@ async fn persist_live_quorum(
 ) -> Result<(), ExecutionError> {
     let sources = live_peer_sources(peers, buckets);
     let evidence = live_target_evidence(peers, buckets, digest, threshold);
+    // Pin the whole handle, not only this row: a sibling left without a target
+    // would neither share this attempt's accounting nor be marked by the
+    // install.
     sqlx::query!(
         r#"
         UPDATE drifted_handle
-           SET quorum_ct64_digest = COALESCE(quorum_ct64_digest, $2),
-               target_evidence = COALESCE(target_evidence, $3::jsonb),
+           SET quorum_ct64_digest = COALESCE(quorum_ct64_digest, $1),
+               target_evidence = COALESCE(target_evidence, $2::text::jsonb),
                peer_sources = CASE
-                 WHEN peer_sources = '[]'::jsonb THEN $4::jsonb
+                 WHEN peer_sources = '[]'::jsonb THEN $3::text::jsonb
                  ELSE peer_sources
                END
-         WHERE id = $1
+         WHERE consensus_epoch = $4
+           AND coprocessor_context_id = $5
+           AND host_chain_id = $6
+           AND handle = $7
            AND healed_at IS NULL
-           AND (quorum_ct64_digest IS NULL OR quorum_ct64_digest = $2)
+           AND reason IN ('ct64_mismatch', 'missing_here', 'error_here', 'uncomputed_here')
+           AND (quorum_ct64_digest IS NULL OR quorum_ct64_digest = $1)
         "#,
-        job.id,
         digest,
         evidence.as_str(),
         sources.as_str(),
+        job.consensus_epoch,
+        &job.coprocessor_context_id,
+        job.host_chain_id,
+        &job.handle,
     )
     .execute(pool)
     .await?;
