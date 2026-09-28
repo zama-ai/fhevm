@@ -771,10 +771,6 @@ async fn upsert_finding(
     let host_chain_id = i64_from_u256("manifest host chain id", payload.host_chain_id)?;
     let reason = drift_reason(local, observed);
     let sources_json = peer_sources_json(&finding.peer_sources);
-    let evidence_json = finding
-        .target_evidence
-        .as_ref()
-        .map(|evidence| serde_json::to_string(evidence).expect("target_evidence is a JSON object"));
     sqlx::query!(
         r#"
         INSERT INTO drifted_handle (
@@ -788,7 +784,7 @@ async fn upsert_finding(
         ) VALUES (
             $1, $2, $3, $4, $5, $6, 'unresolved',
             $7, $8, $9, $10, $11, $12, $13, $14, $15, $16,
-            $17, $18, $19::jsonb, $20::jsonb
+            $17, $18, $19, $20
         )
         ON CONFLICT (consensus_epoch, coprocessor_context_id, host_chain_id,
                      block_hash, handle)
@@ -859,7 +855,7 @@ async fn upsert_finding(
         local_ct64_digest, observed_ct64_digest,
         local_ct128_digest, observed_ct128_digest, local_ct128_format,
         observed_ct128_format,
-        task_id, reason, &sources_json, evidence_json.as_deref(),
+        task_id, reason, &sources_json, finding.target_evidence.as_ref(),
     )
     .execute(trx.as_mut())
     .await?;
@@ -909,19 +905,16 @@ fn manifest_target_evidence(
     }))
 }
 
-fn peer_sources_json(sources: &[(Address, String)]) -> String {
-    serde_json::to_string(
-        &sources
-            .iter()
-            .map(|(publisher, url)| {
-                serde_json::json!({
-                    "publisher": publisher.to_string(),
-                    "s3_bucket_url": url,
-                })
+fn peer_sources_json(sources: &[(Address, String)]) -> serde_json::Value {
+    sources
+        .iter()
+        .map(|(publisher, url)| {
+            serde_json::json!({
+                "publisher": publisher.to_string(),
+                "s3_bucket_url": url,
             })
-            .collect::<Vec<_>>(),
-    )
-    .expect("peer_sources is a JSON array of objects")
+        })
+        .collect()
 }
 
 fn u256_bytes(value: Option<U256>) -> Option<Vec<u8>> {
