@@ -354,6 +354,8 @@ async fn propagate_drift(
 /// Schema holding each consensus epoch's ciphertexts. A live stack's epoch maps
 /// to that stack's schema; earlier completed epochs were merged into `public` at
 /// cutover. Failed epochs, and pending ones without a live schema, have none.
+/// Before allocation and after rollback, Green's schema is seeded with Blue's
+/// epoch; that epoch stays in `public`, since Green only shadows it.
 /// Leaves the transaction's search_path on the last scanned schema.
 pub(crate) async fn epoch_schemas(
     trx: &mut Transaction<'_, Postgres>,
@@ -367,7 +369,17 @@ pub(crate) async fn epoch_schemas(
     .into_iter()
     .map(|epoch| (epoch, "public".to_owned()))
     .collect();
-    for stack in execution_stacks(trx).await? {
+    let stacks = execution_stacks(trx).await?;
+    let public_epoch = stacks
+        .iter()
+        .find(|stack| matches!(stack.kind, ExecutionStackKind::Public))
+        .map(|stack| stack.consensus_epoch.clone());
+    for stack in stacks {
+        if matches!(stack.kind, ExecutionStackKind::Gcs)
+            && public_epoch.as_ref() == Some(&stack.consensus_epoch)
+        {
+            continue;
+        }
         schemas.insert(stack.consensus_epoch, stack.schema);
     }
     Ok(schemas)
