@@ -136,7 +136,7 @@ async fn containment_failure_preserves_verification_and_remains_recoverable() {
             .fetch_one(&pool)
             .await
             .unwrap();
-    assert_eq!(state, (1, "retry_exhausted".into()));
+    assert_eq!(state, (1, "verified".into()));
     let contained: bool = sqlx::query_scalar("SELECT is_contained FROM drifted_handle")
         .fetch_one(&pool)
         .await
