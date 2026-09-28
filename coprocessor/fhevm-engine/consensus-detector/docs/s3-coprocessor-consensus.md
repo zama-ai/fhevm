@@ -249,8 +249,12 @@ unpublished, has no next retry time, and is no longer a descendant blocker. The
 cadence does not move. If heights 5 and 10 are skipped, height 15 still publishes
 and retries the nearest skip (10) once (`retry_count + 1` total). If 10 then
 succeeds, its publication peels 5 the same way. A skip that already used the extra
-attempt is not reopened. The `publication_retry_exhausted` gauge pages a
-still-skipped identity.
+attempt is not reopened. The nearest skip is looked up by height on the chain,
+not by lineage: a fork skip may get the extra attempt, which is harmless since
+selection still publishes by lineage. A skip whose host block is orphaned is
+exhausted instead and the next one is considered; a skip another worker holds is
+left alone. The `publication_retry_exhausted` gauge pages a still-skipped
+identity.
 
 ### 4. Download peer revisions
 
