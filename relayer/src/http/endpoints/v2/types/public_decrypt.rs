@@ -228,7 +228,7 @@ mod tests {
 
     /// A handle that does not parse is not a pairing error: the request fails on the handle.
     #[test]
-    fn an_unparseable_handle_is_left_to_its_own_error() {
+    fn an_unparsable_handle_is_left_to_its_own_error() {
         let too_long = PublicDecryptRequestJson {
             ciphertext_handles: vec![format!("0x{}", hex::encode([0x11; 33]))],
             extra_data: "0x00".to_string(),
