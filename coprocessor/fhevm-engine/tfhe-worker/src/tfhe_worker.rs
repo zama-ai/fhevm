@@ -3636,7 +3636,7 @@ WHERE c.transaction_id IN (
 
     let window_max = the_work.iter().map(|w| w.schedule_order).max();
     let filtered =
-        frozen_computations::containment_filter(deps_chain_mngr.pool(), the_work).await?;
+        frozen_computations::containment_filter(trx, deps_chain_mngr.pool(), the_work).await?;
     if let Some(window_max) = window_max {
         if !filtered.empty_transactions.is_empty() {
             frozen_computations::penalize_frozen_transactions(
@@ -4376,7 +4376,7 @@ async fn upload_transaction_graph_results<'a>(
     let graph_results = tx_graph.get_results();
     freeze
         .frozen
-        .extend(frozen_computations::revise(deps_mngr.pool(), freeze).await?);
+        .extend(frozen_computations::revise(trx, deps_mngr.pool(), freeze).await?);
     let mut handles_to_update = vec![];
     let mut cooldown_transactions: Vec<Vec<u8>> = vec![];
     let mut res = false;

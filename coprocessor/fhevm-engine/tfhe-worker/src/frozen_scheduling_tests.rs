@@ -191,9 +191,13 @@ fn late_blocker_on_the_same_batch_grows_k_and_adds_the_new_handle() {
 async fn no_unhealed_ct64_skips_filtering() {
     let (_db, pool) = setup().await;
     computation(&pool, 2, 1, 10, true, 90).await;
-    let filtered = frozen_computations::containment_filter(&pool, vec![item(10, 2, 1, 1)])
-        .await
-        .unwrap();
+    let filtered = frozen_computations::containment_filter(
+        &mut pool.begin().await.unwrap(),
+        &pool,
+        vec![item(10, 2, 1, 1)],
+    )
+    .await
+    .unwrap();
     assert!(filtered.freeze.frozen.is_empty());
     assert_eq!(filtered.kept.len(), 1);
     assert!(filtered.empty_transactions.is_empty());
@@ -218,10 +222,13 @@ async fn empty_transactions_are_pushed_behind_the_window() {
         .await
         .unwrap();
     let mut trx = pool.begin().await.unwrap();
-    let filtered =
-        frozen_computations::containment_filter(&pool, vec![item(10, 2, 1, 1), item(11, 3, 99, 5)])
-            .await
-            .unwrap();
+    let filtered = frozen_computations::containment_filter(
+        &mut pool.begin().await.unwrap(),
+        &pool,
+        vec![item(10, 2, 1, 1), item(11, 3, 99, 5)],
+    )
+    .await
+    .unwrap();
     assert_eq!(filtered.empty_transactions, vec![handle(10)]);
     assert!(filtered.freeze.frozen.contains(&(handle(10), handle(2))));
     frozen_computations::penalize_frozen_transactions(
@@ -249,7 +256,7 @@ async fn tx_unlock_potential_is_an_ema_visible_before_the_batch_commits() {
     computation(&pool, 4, 1, 11, true, 90).await;
     computation(&pool, 6, 1, 42, true, 90).await;
     let work = || vec![item(10, 2, 1, 1), item(11, 4, 1, 1), item(42, 6, 1, 1)];
-    frozen_computations::containment_filter(&pool, work())
+    frozen_computations::containment_filter(&mut pool.begin().await.unwrap(), &pool, work())
         .await
         .unwrap();
     // Three txs, k=1 each: (0 + 3) / 2 = 1.5, committed on the pool.
@@ -261,7 +268,7 @@ async fn tx_unlock_potential_is_an_ema_visible_before_the_batch_commits() {
     .await
     .unwrap();
     assert_eq!(first, 1.5);
-    frozen_computations::containment_filter(&pool, work())
+    frozen_computations::containment_filter(&mut pool.begin().await.unwrap(), &pool, work())
         .await
         .unwrap();
     let second: f64 = sqlx::query_scalar(
@@ -286,7 +293,11 @@ async fn tx_unlock_potential_does_not_lock_drifted_handle() {
         .unwrap();
     tokio::time::timeout(
         std::time::Duration::from_secs(1),
-        frozen_computations::containment_filter(&pool, vec![item(10, 2, 1, 1)]),
+        frozen_computations::containment_filter(
+            &mut pool.begin().await.unwrap(),
+            &pool,
+            vec![item(10, 2, 1, 1)],
+        ),
     )
     .await
     .expect("demand writes must not wait on drifted_handle row locks")
@@ -495,9 +506,13 @@ async fn healthy_sibling_in_a_partly_frozen_transaction_is_selected() {
 
 async fn frozen_after_filter(pool: &sqlx::PgPool) -> bool {
     computation(pool, 2, 1, 10, true, 90).await;
-    let filtered = frozen_computations::containment_filter(pool, vec![item(10, 2, 1, 1)])
-        .await
-        .unwrap();
+    let filtered = frozen_computations::containment_filter(
+        &mut pool.begin().await.unwrap(),
+        pool,
+        vec![item(10, 2, 1, 1)],
+    )
+    .await
+    .unwrap();
     !filtered.freeze.frozen.is_empty()
 }
 
