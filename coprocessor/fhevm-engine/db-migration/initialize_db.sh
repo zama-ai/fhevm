@@ -228,6 +228,37 @@ precreate_pending_dcid_index() {
      WHERE is_completed = false;"
 }
 
+precreate_blocks_valid_pending_index() {
+  local has_table
+  has_table=$(psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -Atc \
+    "SELECT to_regclass('public.host_chain_blocks_valid') IS NOT NULL;")
+  if [ "$has_table" != "t" ]; then
+    log "Skipping pending-blocks index pre-creation (host_chain_blocks_valid not created yet)"
+    return 0
+  fi
+
+  # This index only affects performance, so an INVALID leftover from an
+  # interrupted build is rebuilt rather than hard-failing every Job retry.
+  local index_valid
+  index_valid=$(psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -Atc \
+    "SELECT i.indisvalid
+       FROM pg_class c
+       JOIN pg_index i ON i.indexrelid = c.oid
+       JOIN pg_namespace n ON n.oid = c.relnamespace
+      WHERE n.nspname = 'public'
+        AND c.relname = 'idx_host_chain_blocks_valid_pending';")
+  if [ "$index_valid" = "f" ]; then
+    log "Dropping invalid pending-blocks index left by an interrupted build"
+    run_sql "DROP INDEX CONCURRENTLY IF EXISTS idx_host_chain_blocks_valid_pending;"
+  fi
+
+  log "Pre-creating the pending-blocks index concurrently..."
+  precreate_index "idx_host_chain_blocks_valid_pending" \
+    "CREATE INDEX CONCURRENTLY idx_host_chain_blocks_valid_pending \
+     ON host_chain_blocks_valid (chain_id, block_number) \
+     WHERE block_status = 'pending';"
+}
+
 log "-------------- Start database initialization --------------"
 
 # Only a release allowed to bootstrap may create the database itself. Otherwise
@@ -343,6 +374,7 @@ else
   repair_bridge_tables_migration_checksum
   precreate_dcid_acquisition_index
   precreate_pending_dcid_index
+  precreate_blocks_valid_pending_index
   sqlx migrate run --source "$MIGRATION_DIR" 2>&1 | log_stream || { log "Failed to run migrations."; exit 1; }
   seed_host_chains
   initialize_versions_for_deployment
