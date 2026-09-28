@@ -282,8 +282,8 @@ async fn lock_due(
                dh.host_chain_id,
                dh.coprocessor_context_id,
                dh.quorum_ct64_digest,
-               dh.peer_sources::text AS "peer_sources!",
-               dh.target_evidence::text AS "target_evidence?",
+               dh.peer_sources,
+               dh.target_evidence,
                (dh.reason = 'ct64_mismatch' AND NOT dh.is_contained) AS "uncontained!"
           FROM drifted_handle dh
           JOIN (
@@ -357,13 +357,8 @@ async fn lock_due(
                 handle: row.handle,
                 coprocessor_context_id: row.coprocessor_context_id,
                 quorum_ct64_digest: row.quorum_ct64_digest,
-                peer_sources: serde_json::from_str(&row.peer_sources)
-                    .unwrap_or(serde_json::Value::Array(vec![])),
-                target_evidence: row
-                    .target_evidence
-                    .as_deref()
-                    .and_then(|json| serde_json::from_str(json).ok())
-                    .unwrap_or(serde_json::Value::Null),
+                peer_sources: row.peer_sources,
+                target_evidence: row.target_evidence.unwrap_or(serde_json::Value::Null),
                 uncontained: row.uncontained,
                 containment_timeout_secs,
                 max_attempts,
@@ -702,9 +697,9 @@ async fn persist_live_quorum(
         r#"
         UPDATE drifted_handle
            SET quorum_ct64_digest = COALESCE(quorum_ct64_digest, $1),
-               target_evidence = COALESCE(target_evidence, $2::text::jsonb),
+               target_evidence = COALESCE(target_evidence, $2),
                peer_sources = CASE
-                 WHEN peer_sources = '[]'::jsonb THEN $3::text::jsonb
+                 WHEN peer_sources = '[]'::jsonb THEN $3
                  ELSE peer_sources
                END
          WHERE consensus_epoch = $4
@@ -716,8 +711,8 @@ async fn persist_live_quorum(
            AND (quorum_ct64_digest IS NULL OR quorum_ct64_digest = $1)
         "#,
         digest,
-        evidence.as_str(),
-        sources.as_str(),
+        evidence,
+        sources,
         job.consensus_epoch,
         &job.coprocessor_context_id,
         job.host_chain_id,
@@ -728,8 +723,8 @@ async fn persist_live_quorum(
     Ok(())
 }
 
-fn live_peer_sources(peers: &[RegistryPeer], buckets: &[String]) -> String {
-    let entries: Vec<serde_json::Value> = buckets
+fn live_peer_sources(peers: &[RegistryPeer], buckets: &[String]) -> serde_json::Value {
+    buckets
         .iter()
         .filter_map(|bucket| {
             peers
@@ -742,8 +737,7 @@ fn live_peer_sources(peers: &[RegistryPeer], buckets: &[String]) -> String {
                     })
                 })
         })
-        .collect();
-    serde_json::to_string(&entries).expect("peer_sources is a JSON array")
+        .collect()
 }
 
 fn live_target_evidence(
@@ -751,7 +745,7 @@ fn live_target_evidence(
     buckets: &[String],
     digest: &[u8],
     threshold: usize,
-) -> String {
+) -> serde_json::Value {
     let digest_hex = alloy_primitives::B256::try_from(digest)
         .map(|digest| digest.to_string())
         .unwrap_or_default();
@@ -769,13 +763,12 @@ fn live_target_evidence(
                 })
         })
         .collect();
-    serde_json::to_string(&serde_json::json!({
+    serde_json::json!({
         "required_quorum": threshold,
         "registered_coprocessor_count": peers.len(),
         "source": "attestation",
         "statements": statements,
-    }))
-    .expect("target_evidence is a JSON object")
+    })
 }
 
 fn pinned_threshold(evidence: &serde_json::Value) -> Option<usize> {
