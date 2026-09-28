@@ -1,0 +1,20 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "SELECT DISTINCT dh.handle\n           FROM public.drifted_handle dh\n           WHERE dh.reason = 'ct64_mismatch'\n             AND dh.healed_at IS NULL\n             AND (dh.consensus_epoch = (SELECT consensus_epoch\n                                          FROM blue_green_consensus_epoch\n                                         WHERE singleton)\n                  OR (current_schema() = 'public'\n                      AND EXISTS (SELECT 1 FROM public.consensus_epoch_history h\n                                   WHERE h.consensus_epoch = dh.consensus_epoch\n                                     AND h.outcome IN ('initial', 'succeeded')))\n                  OR NOT EXISTS (SELECT 1 FROM ciphertexts ct\n                                  WHERE ct.handle = dh.handle\n                                    AND octet_length(ct.ciphertext) > 0))",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "handle",
+        "type_info": "Bytea"
+      }
+    ],
+    "parameters": {
+      "Left": []
+    },
+    "nullable": [
+      false
+    ]
+  },
+  "hash": "62db86cc2b178e9e06e7e4afc1d1e574b4f6754996d7a677623e270c1bf6e9b6"
+}

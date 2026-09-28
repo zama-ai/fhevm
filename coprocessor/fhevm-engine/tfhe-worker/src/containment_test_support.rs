@@ -38,6 +38,22 @@ pub(super) async fn drift_in_other_epoch(pool: &PgPool, n: u8) {
         .unwrap();
 }
 
+/// Cutover: this stack moves to a new succeeded epoch; earlier findings keep
+/// their epoch.
+pub(super) async fn cut_over_to_new_epoch(pool: &PgPool) {
+    sqlx::query(
+        "INSERT INTO consensus_epoch_history (consensus_epoch, outcome, completed_at)
+         VALUES ('v1/block_1', 'succeeded', NOW())",
+    )
+    .execute(pool)
+    .await
+    .unwrap();
+    sqlx::query("UPDATE blue_green_consensus_epoch SET consensus_epoch = 'v1/block_1'")
+        .execute(pool)
+        .await
+        .unwrap();
+}
+
 /// This stack's own stored copy of a handle.
 pub(super) async fn stored_ciphertext(pool: &PgPool, n: u8) {
     sqlx::query(

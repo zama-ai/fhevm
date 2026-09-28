@@ -543,3 +543,15 @@ fn only_the_first_fully_frozen_pick_repolls_immediately() {
     picks = 0;
     assert!(repoll_after_empty_pick(&mut picks, true));
 }
+
+#[tokio::test]
+async fn completed_epoch_finding_still_freezes_after_cutover() {
+    let (_db, pool) = setup().await;
+    drift(&pool, 1).await;
+    stored_ciphertext(&pool, 1).await;
+    cut_over_to_new_epoch(&pool).await;
+    assert!(
+        frozen_after_filter(&pool).await,
+        "the stored copy is the drifted one, merged into public at cutover"
+    );
+}
