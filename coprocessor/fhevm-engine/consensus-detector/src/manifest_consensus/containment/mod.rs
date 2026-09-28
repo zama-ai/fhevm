@@ -263,9 +263,9 @@ fn is_lock_timeout(error: &sqlx::Error) -> bool {
         == Some("55P03")
 }
 
-async fn lock_cutover(trx: &mut Transaction<'_, Postgres>) -> Result<()> {
+pub(crate) async fn lock_cutover(trx: &mut Transaction<'_, Postgres>) -> Result<()> {
     // Match batch lock ordering: cutover, containment, then execution rows.
-    // Cutover/rollback cannot replace the dependency tables during either pass.
+    // Cutover/rollback cannot replace the dependency tables while it is held.
     sqlx::query!(
         "SELECT pg_advisory_xact_lock_shared($1)",
         fhevm_engine_common::versioning::CUTOVER_LOCK_ID
