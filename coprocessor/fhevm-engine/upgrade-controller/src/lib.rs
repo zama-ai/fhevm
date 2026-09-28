@@ -3925,7 +3925,14 @@ mod tests {
 
         let ready = timeout(
             Duration::from_secs(10),
-            wait_until_dry_run_ready(pool.clone(), CancellationToken::new(), &[0x02], 10, 1, 100),
+            wait_until_dry_run_ready(
+                pool.clone(),
+                CancellationToken::new(),
+                &[0x02; 32],
+                10,
+                1,
+                100,
+            ),
         )
         .await
         .expect("readiness loop did not exit")
