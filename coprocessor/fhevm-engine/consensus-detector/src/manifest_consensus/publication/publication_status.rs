@@ -130,73 +130,91 @@ pub(crate) async fn exhaust_manifest_publication_error(
 }
 
 /// After a cadence object is published, allow one extra attempt (`max_attempts + 1`)
-/// of the nearest skipped ancestor on this lineage. If that retry succeeds, its
-/// own publication peels the next older skip. A skip that already used the extra
-/// attempt (`publication_error_count > max_attempts`) is not reopened.
+/// of the nearest skipped identity below it on the chain. If that retry
+/// succeeds, its own publication peels the next older skip. A skip that already
+/// used the extra attempt (`publication_error_count > max_attempts`) is not
+/// reopened.
+///
+/// The skip is not required to be an ancestor: publishing a fork identity is
+/// harmless, and ordinary selection still publishes by lineage. A skip whose
+/// host block is orphaned (final, set at finalization) is exhausted instead and
+/// the next one is considered. Rows another worker holds are skipped, so the
+/// eligibility read under the row lock is current.
 pub(crate) async fn retry_skipped_predecessor_once(
     trx: &mut Transaction<'_, Postgres>,
     published: &PendingBlock,
     max_attempts: i64,
 ) -> Result<(), ExecutionError> {
-    sqlx::query!(
-        r#"
-        WITH RECURSIVE lineage AS (
-            SELECT consensus_epoch,
-                   host_chain_id,
-                   block_hash,
-                   parent_block_hash,
-                   block_number
-              FROM block_manifest_state
-             WHERE consensus_epoch = $1
-               AND host_chain_id = $2
-               AND block_hash = $3
-            UNION ALL
-            SELECT parent.consensus_epoch,
-                   parent.host_chain_id,
-                   parent.block_hash,
-                   parent.parent_block_hash,
-                   parent.block_number
-              FROM block_manifest_state parent
-              JOIN lineage child
-                ON parent.consensus_epoch = child.consensus_epoch
-               AND parent.host_chain_id = child.host_chain_id
-               AND parent.block_hash = child.parent_block_hash
-             WHERE parent.block_number < child.block_number
-        ),
-        nearest AS (
-            SELECT skipped.consensus_epoch,
-                   skipped.host_chain_id,
-                   skipped.block_hash
-              FROM lineage
-              JOIN block_manifest_state skipped
-                ON skipped.consensus_epoch = lineage.consensus_epoch
-               AND skipped.host_chain_id = lineage.host_chain_id
-               AND skipped.block_hash = lineage.block_hash
-             WHERE skipped.block_number < $4
+    loop {
+        let Some(skipped) = sqlx::query!(
+            r#"
+            SELECT skipped.block_hash,
+                   EXISTS (
+                       SELECT 1
+                         FROM host_chain_blocks_valid host
+                        WHERE host.chain_id = skipped.host_chain_id
+                          AND host.block_hash = skipped.block_hash
+                          AND host.block_status = 'orphaned'
+                   ) AS "orphaned!"
+              FROM block_manifest_state skipped
+             WHERE skipped.consensus_epoch = $1
+               AND skipped.host_chain_id = $2
+               AND skipped.block_number < $3
                AND skipped.manifest_required
                AND NOT skipped.manifest_published
                AND skipped.publication_error_count > 0
-               AND skipped.publication_error_count <= $5
+               AND skipped.publication_error_count <= $4
                AND skipped.publication_next_retry_at IS NULL
                AND skipped.block_content_digest IS NOT NULL
              ORDER BY skipped.block_number DESC
              LIMIT 1
+               FOR UPDATE OF skipped SKIP LOCKED
+            "#,
+            published.consensus_epoch,
+            published.host_chain_id,
+            published.block_number,
+            max_attempts,
         )
-        UPDATE block_manifest_state skipped
-           SET publication_next_retry_at = NOW(),
-               updated_at = NOW()
-          FROM nearest
-         WHERE skipped.consensus_epoch = nearest.consensus_epoch
-           AND skipped.host_chain_id = nearest.host_chain_id
-           AND skipped.block_hash = nearest.block_hash
-        "#,
-        published.consensus_epoch,
-        published.host_chain_id,
-        &published.block_hash,
-        published.block_number,
-        max_attempts,
-    )
-    .execute(trx.as_mut())
-    .await?;
-    Ok(())
+        .fetch_optional(trx.as_mut())
+        .await?
+        else {
+            return Ok(());
+        };
+        if skipped.orphaned {
+            sqlx::query!(
+                r#"
+                UPDATE block_manifest_state
+                   SET publication_error_count = $4,
+                       publication_last_error = 'host block orphaned; extra attempt not granted',
+                       updated_at = NOW()
+                 WHERE consensus_epoch = $1
+                   AND host_chain_id = $2
+                   AND block_hash = $3
+                "#,
+                published.consensus_epoch,
+                published.host_chain_id,
+                &skipped.block_hash,
+                max_attempts.saturating_add(1),
+            )
+            .execute(trx.as_mut())
+            .await?;
+            continue;
+        }
+        sqlx::query!(
+            r#"
+            UPDATE block_manifest_state
+               SET publication_next_retry_at = NOW(),
+                   updated_at = NOW()
+             WHERE consensus_epoch = $1
+               AND host_chain_id = $2
+               AND block_hash = $3
+            "#,
+            published.consensus_epoch,
+            published.host_chain_id,
+            &skipped.block_hash,
+        )
+        .execute(trx.as_mut())
+        .await?;
+        return Ok(());
+    }
 }
