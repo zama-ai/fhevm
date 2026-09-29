@@ -1,0 +1,16 @@
+{{- if .Values.consensusDetector.serviceMonitor.enabled -}}
+apiVersion: monitoring.coreos.com/v1
+kind: ServiceMonitor
+metadata:
+  labels:
+    app: coprocessor-consensus-detector
+    app.kubernetes.io/name: {{ include "consensusDetectorName" . }}
+  name: {{ include "consensusDetectorName" . }}
+spec:
+  selector:
+    matchLabels:
+      app: coprocessor-consensus-detector
+      app.kubernetes.io/name: {{ include "consensusDetectorName" . }}
+  endpoints:
+    - port: metrics
+{{- end -}}
