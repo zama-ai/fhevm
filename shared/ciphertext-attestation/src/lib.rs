@@ -10,16 +10,20 @@ use serde::{Deserialize, Serialize};
 
 pub mod consensus;
 pub mod sign;
-pub mod tracker;
+
+pub use consensus::{
+    ConsensusCheckError, ConsensusMaterial, ConsensusOutcome, ConsensusRound, CoprocessorEntry,
+    ResolvedConsensus,
+};
 
 #[cfg(feature = "client")]
 pub mod client;
 
 #[cfg(feature = "client")]
 pub use client::{
-    BoundedClient, ConsensusCheckError, CoprocessorEntry, CoprocessorRegistry,
-    CoprocessorRegistrySnapshot, CriticalFailurePolicy, FetchAttestationError,
-    FetchCiphertextError, RegistryError, ResolvedConsensus, fetch_attestations_and_check_consensus,
+    BoundedClient, CoprocessorRegistry, CoprocessorRegistrySnapshot, CriticalFailurePolicy,
+    FetchAttestationError, FetchCiphertextError, RegistryError,
+    fetch_attestations_and_check_consensus,
 };
 
 /// Domain separator for the canonical signed payload.
@@ -167,6 +171,7 @@ pub enum AttestationError {
     MalformedSignature(String),
     #[error("signature recovery failed: {0}")]
     Recovery(String),
+    /// The signature does not recover to the signer the attestation claims.
     #[error("signer mismatch: recovered {recovered}, expected {expected}")]
     SignerMismatch {
         recovered: Address,
@@ -176,11 +181,11 @@ pub enum AttestationError {
     Serde(#[from] serde_json::Error),
     #[error("signer error: {0}")]
     Signer(#[from] alloy_signer::Error),
-    /// The signature is genuine, but for a different bucket's key.
-    #[error("signer {embedded} is not the registered signer {registered} for this bucket")]
-    SignerNotRegisteredForBucket {
+    /// The attestation claims a signer other than the one the caller expects.
+    #[error("unexpected signer: attestation claims {embedded}, expected {expected}")]
+    UnexpectedSigner {
         embedded: Address,
-        registered: Address,
+        expected: Address,
     },
 }
 

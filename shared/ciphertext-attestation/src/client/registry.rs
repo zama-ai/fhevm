@@ -6,7 +6,7 @@
 //! would trigger N+1 RPC calls, so the [`CoprocessorRegistry`] holds a whole snapshot behind a
 //! short TTL and tolerates registration changes within one refresh window.
 
-pub use crate::tracker::CoprocessorEntry;
+pub use crate::consensus::CoprocessorEntry;
 
 use alloy::{
     network::{Ethereum, Network},
