@@ -168,6 +168,10 @@ export const SOLANA_VALIDATOR_WS_PORT = 8900;
 export const SOLANA_LEAF_PROOF_PORT = 8080;
 export const SOLANA_LISTENER_HEALTH_PORT = 8081;
 export const SOLANA_LISTENER_GRPC_PORT = 10000;
+// The cleartext stack's own validator (`src/solana/cleartext-stack.ts`), clear of the real one.
+export const SOLANA_CLEARTEXT_RPC_PORT = 28899;
+export const SOLANA_CLEARTEXT_FAUCET_PORT = 29900;
+export const SOLANA_CLEARTEXT_GOSSIP_PORT = 29901;
 export const DEMO_OPERATOR_PORT = 8091;
 export const DEMO_DAPP_PORT = 5173;
 export const PORTS = [

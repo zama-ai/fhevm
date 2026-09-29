@@ -82,6 +82,11 @@
       "import": "./_esm/solana/index.js",
       "default": "./_cjs/solana/index.js"
     },
+    "./solana/cleartext": {
+      "types": "./_types/solana/cleartext/index.d.ts",
+      "import": "./_esm/solana/cleartext/index.js",
+      "default": "./_cjs/solana/cleartext/index.js"
+    },
     "./viem": {
       "types": "./_types/viem/index.d.ts",
       "import": "./_esm/viem/index.js",

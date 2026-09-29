@@ -1,0 +1,6 @@
+{
+  "type": "module",
+  "types": "../../_types/solana/cleartext/index.d.ts",
+  "module": "../../_esm/solana/cleartext/index.js",
+  "main": "../../_cjs/solana/cleartext/index.js"
+}

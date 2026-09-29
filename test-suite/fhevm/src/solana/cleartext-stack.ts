@@ -1,0 +1,131 @@
+// cleartext-stack — a local Solana chain whose zama-host is the cleartext build: every handle's
+// plaintext is kept in the accounts the host writes, so encrypt, compute and decrypt run with no
+// coprocessor, KMS, relayer or gateway. The SDK's `@fhevm/sdk/solana/cleartext` clients sign as the
+// parties with the keys this stack registers and read plaintexts back from the same accounts.
+//
+// The programs load at genesis at their deployed ids (the cleartext host in place of zama_host),
+// and the only transactions before a scenario are the host bootstrap's. The stack is its own
+// validator on its own ports, so it runs next to the real local stack.
+//
+// Run directly to keep one up for a development loop (stops on Ctrl-C):
+//   bun run src/solana/cleartext-stack.ts
+import { mkdir, rm, writeFile } from 'node:fs/promises';
+import path from 'node:path';
+
+import { SOLANA_CLEARTEXT_GATEWAY, SOLANA_CLEARTEXT_SIGNER_ADDRESSES } from '@fhevm/sdk/solana/cleartext';
+import { createSolanaRpc, lamports } from '@solana/kit';
+
+import { bootstrapZamaHost } from '../../../../solana/deploy/src/bootstrap';
+import { evmAddressBytes } from '../../../../solana/deploy/src/gateway';
+import { createHostDeployContext } from '../../../../solana/deploy/src/send';
+import { solanaPubkeyFromKeypairFile } from '../generate/solana';
+import {
+  REPO_ROOT,
+  SOLANA_CLEARTEXT_FAUCET_PORT,
+  SOLANA_CLEARTEXT_GOSSIP_PORT,
+  SOLANA_CLEARTEXT_RPC_PORT,
+  STATE_DIR,
+} from '../layout';
+import { runStreaming } from '../utils/process';
+import { generateSolanaKeypair, loadKeypairSigner } from './provision';
+import { SOLANA_E2E_PROGRAMS, SOLANA_SPECIMEN_PROGRAMS, genesisDeployedPrograms, validatorStartArgs } from './validator';
+
+export const CLEARTEXT_SOLANA_ENDPOINTS = {
+  validatorRpc: `http://127.0.0.1:${SOLANA_CLEARTEXT_RPC_PORT}`,
+  validatorWs: `ws://127.0.0.1:${SOLANA_CLEARTEXT_RPC_PORT + 1}`,
+} as const;
+
+const SOLANA_DIR = path.join(REPO_ROOT, 'solana');
+const DEPLOY_DIR = path.join(SOLANA_DIR, 'target', 'deploy');
+const STACK_DIR = path.join(STATE_DIR, 'solana-cleartext');
+const BUILT_PROGRAMS = ['zama_host_cleartext', ...SOLANA_E2E_PROGRAMS.filter((program) => program !== 'zama_host')];
+
+export type CleartextStack = {
+  readonly rpcUrl: string;
+  readonly wsUrl: string;
+  /** The stack's own funded wallet: upgrade authority of every program and HostConfig admin. */
+  readonly deployerKeypairPath: string;
+  stop(): Promise<void>;
+};
+
+/** Builds the programs, starts a fresh validator with them at genesis, and bootstraps the host. */
+export const startCleartextStack = async (): Promise<CleartextStack> => {
+  await runStreaming(['bash', 'scripts/build-programs.sh', 'preview-env', ...BUILT_PROGRAMS], { cwd: SOLANA_DIR });
+
+  const ledgerDir = path.join(STACK_DIR, 'ledger');
+  await rm(ledgerDir, { recursive: true, force: true });
+  await mkdir(ledgerDir, { recursive: true });
+  const deployerKeypairPath = path.join(STACK_DIR, 'deployer.json');
+  await writeFile(deployerKeypairPath, JSON.stringify([...(await generateSolanaKeypair()).bytes]), { mode: 0o600 });
+
+  const specimens = SOLANA_SPECIMEN_PROGRAMS.map((program) => ({
+    address: solanaPubkeyFromKeypairFile(path.join(SOLANA_DIR, 'scripts/e2e/test-keypairs', `${program}-keypair.json`)),
+    soPath: path.join(DEPLOY_DIR, `${program}.so`),
+  }));
+  const deployed = genesisDeployedPrograms(deployerKeypairPath).map((program) =>
+    program.soPath.endsWith('/zama_host.so')
+      ? { ...program, soPath: path.join(DEPLOY_DIR, 'zama_host_cleartext.so') }
+      : program,
+  );
+  const logPath = path.join(STACK_DIR, 'validator.log');
+  const validator = Bun.spawn(
+    [
+      ...validatorStartArgs({
+        ledgerDir,
+        rpcPort: SOLANA_CLEARTEXT_RPC_PORT,
+        genesisPrograms: specimens,
+        genesisUpgradeablePrograms: deployed,
+      }),
+      '--faucet-port',
+      String(SOLANA_CLEARTEXT_FAUCET_PORT),
+      '--gossip-port',
+      String(SOLANA_CLEARTEXT_GOSSIP_PORT),
+    ],
+    { stdin: 'ignore', stdout: Bun.file(logPath), stderr: Bun.file(logPath) },
+  );
+  const stop = async () => {
+    validator.kill();
+    await validator.exited;
+  };
+
+  try {
+    const rpcUrl = CLEARTEXT_SOLANA_ENDPOINTS.validatorRpc;
+    const rpc = createSolanaRpc(rpcUrl);
+    for (let attempt = 0; ; attempt++) {
+      if (validator.exitCode !== null) throw new Error(`cleartext validator exited; see ${logPath}`);
+      if (attempt === 60) throw new Error(`cleartext validator not healthy after 60s; see ${logPath}`);
+      if ((await rpc.getHealth().send().catch(() => undefined)) === 'ok') break;
+      await Bun.sleep(1_000);
+    }
+
+    const payer = await loadKeypairSigner(deployerKeypairPath);
+    await rpc.requestAirdrop(payer.address, lamports(1_000_000_000_000n), { commitment: 'confirmed' }).send();
+    for (;;) {
+      const { value } = await rpc.getBalance(payer.address, { commitment: 'confirmed' }).send();
+      if (value > 0n) break;
+      await Bun.sleep(200);
+    }
+
+    const gateway = SOLANA_CLEARTEXT_GATEWAY;
+    await bootstrapZamaHost(createHostDeployContext(rpcUrl), {
+      payer,
+      gateway: {
+        gatewayChainId: BigInt(gateway.id),
+        inputVerificationContract: evmAddressBytes(gateway.contracts.inputVerification.address),
+        decryptionContract: evmAddressBytes(gateway.contracts.decryption.address),
+        coprocessorSigners: SOLANA_CLEARTEXT_SIGNER_ADDRESSES.coprocessor.map(evmAddressBytes),
+        kmsSigners: SOLANA_CLEARTEXT_SIGNER_ADDRESSES.kms.map(evmAddressBytes),
+      },
+    });
+    return { rpcUrl, wsUrl: CLEARTEXT_SOLANA_ENDPOINTS.validatorWs, deployerKeypairPath, stop };
+  } catch (error) {
+    await stop();
+    throw error;
+  }
+};
+
+if (import.meta.main) {
+  const stack = await startCleartextStack();
+  console.log(`cleartext Solana stack up at ${stack.rpcUrl} (deployer ${stack.deployerKeypairPath})`);
+  process.on('SIGINT', () => void stack.stop().then(() => process.exit(0)));
+}
