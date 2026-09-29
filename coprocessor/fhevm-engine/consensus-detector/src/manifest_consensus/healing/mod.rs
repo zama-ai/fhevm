@@ -87,6 +87,9 @@ struct DueHandle {
     id: i64,
     consensus_epoch: String,
     host_chain_id: i64,
+    /// Block the finding was verified in: a bridged destination is resolved
+    /// to its source in this block.
+    block_hash: Vec<u8>,
     handle: Vec<u8>,
     coprocessor_context_id: Vec<u8>,
     quorum_ct64_digest: Option<Vec<u8>>,
@@ -282,6 +285,7 @@ async fn lock_due(
                dh.consensus_epoch,
                dh.handle,
                dh.host_chain_id,
+               dh.block_hash,
                dh.coprocessor_context_id,
                dh.quorum_ct64_digest,
                dh.peer_sources,
@@ -356,6 +360,7 @@ async fn lock_due(
                 id: row.id,
                 consensus_epoch: row.consensus_epoch,
                 host_chain_id: row.host_chain_id,
+                block_hash: row.block_hash,
                 handle: row.handle,
                 coprocessor_context_id: row.coprocessor_context_id,
                 quorum_ct64_digest: row.quorum_ct64_digest,
@@ -491,6 +496,19 @@ async fn heal_one<S: Ct64Source>(
         );
         return schedule_retry(pool, &job, Failure::Terminal).await;
     };
+    if let Some(source_handle) = bridged_source(pool, &job).await? {
+        if let Some((bytes, digest)) =
+            fetch_from_bridged_source(pool, source, &job, context_id, &source_handle).await?
+        {
+            info!(
+                finding_id = job.id,
+                handle = hex::encode(&job.handle),
+                source_handle = hex::encode(&source_handle),
+                "Downloaded bridged ct64 from its source objects"
+            );
+            return install_matching_ct64(pool, &job, &bytes, &digest).await;
+        }
+    }
     let mut skip_buckets = Vec::new();
     if let Some(target) = job.quorum_ct64_digest.as_deref() {
         for bucket_url in peer_bucket_urls(&job.peer_sources) {
@@ -534,6 +552,118 @@ async fn heal_one<S: Ct64Source>(
         }
     }
     recover_from_attestations(pool, source, &job, context_id, &skip_buckets).await
+}
+
+/// Source handle when the finding is a `HandleBridged` destination of its
+/// block. The copy reuses the source's S3 objects, so peers serve its bytes
+/// under the source key, not under its own.
+async fn bridged_source(pool: &PgPool, job: &DueHandle) -> Result<Option<Vec<u8>>, ExecutionError> {
+    let mut trx = pool.begin().await?;
+    // Bridge events are per stack: read the finding's epoch.
+    set_execution_schema(&mut trx, &job.schema)
+        .await
+        .map_err(from_containment)?;
+    let source_handle = sqlx::query_scalar!(
+        r#"SELECT src_handle
+             FROM handle_bridged_events
+            WHERE dst_handle = $1
+              AND dst_chain_id = $2
+              AND block_hash = $3"#,
+        &job.handle,
+        job.host_chain_id,
+        &job.block_hash,
+    )
+    .fetch_optional(trx.as_mut())
+    .await?;
+    trx.rollback().await?;
+    Ok(source_handle)
+}
+
+/// Bytes for a bridged destination from the peers' source objects: the pinned
+/// sources first, then a live attestation quorum on the source handle. `None`
+/// sends the finding down the normal path, where a destination that a fallback
+/// grant materialized is served under its own key. Failures here charge no
+/// attempt; the normal path charges one.
+async fn fetch_from_bridged_source<S: Ct64Source>(
+    pool: &PgPool,
+    source: &S,
+    job: &DueHandle,
+    context_id: U256,
+    source_handle: &[u8],
+) -> Result<Option<(Vec<u8>, Vec<u8>)>, ExecutionError> {
+    let pinned = job.quorum_ct64_digest.as_deref();
+    let mut tried = Vec::new();
+    if let Some(target) = pinned {
+        for bucket_url in peer_bucket_urls(&job.peer_sources) {
+            match source
+                .get_ct64(&bucket_url, source_handle, context_id)
+                .await
+            {
+                Ok(bytes) if keccak256(&bytes).as_slice() == target => {
+                    return Ok(Some((bytes, target.to_vec())));
+                }
+                Ok(_) => {}
+                Err(err @ ExecutionError::DbError(_)) => return Err(err),
+                Err(err) => warn!(
+                    finding_id = job.id,
+                    bucket_url,
+                    error = %err,
+                    "Skipping peer bucket that did not serve the bridged source ct64"
+                ),
+            }
+            tried.push(bucket_url);
+        }
+    }
+    let peers = load_registry_peers(pool).await?;
+    let Some(first) = peers.first() else {
+        return Ok(None);
+    };
+    let threshold = pinned_threshold(&job.target_evidence).unwrap_or(first.threshold);
+    if threshold == 0 {
+        return Ok(None);
+    }
+    let heads = peers.iter().map(|peer| {
+        let source = source.clone();
+        let bucket_url = peer.bucket_url.clone();
+        let source_handle = source_handle.to_vec();
+        let signer = peer.signer;
+        async move {
+            let digest = source
+                .head_ct64_digest(&bucket_url, &source_handle, context_id, Some(signer))
+                .await;
+            (bucket_url, digest)
+        }
+    });
+    let votes: Vec<(String, Vec<u8>)> = join_all(heads)
+        .await
+        .into_iter()
+        .filter_map(|(bucket_url, digest)| Some((bucket_url, digest.ok()?.to_vec())))
+        .collect();
+    let Some((digest, buckets)) = majority_digest(&votes, threshold) else {
+        return Ok(None);
+    };
+    if pinned.is_some_and(|target| target != digest.as_slice()) {
+        return Ok(None);
+    }
+    for bucket_url in buckets.iter().filter(|bucket| !tried.contains(bucket)) {
+        match source.get_ct64(bucket_url, source_handle, context_id).await {
+            Ok(bytes) if keccak256(&bytes).as_slice() == digest.as_slice() => {
+                if pinned.is_none() {
+                    persist_live_quorum(pool, job, &digest, &buckets, &peers, threshold).await?;
+                }
+                return Ok(Some((bytes, digest)));
+            }
+            Ok(_) => {}
+            Err(err @ ExecutionError::DbError(_)) => return Err(err),
+            Err(err) => warn!(
+                finding_id = job.id,
+                bucket_url,
+                error = %err,
+                "Skipping quorum peer that did not serve the bridged source ct64"
+            ),
+        }
+    }
+    Ok(None)
 }
 
 async fn recover_from_attestations<S: Ct64Source>(

@@ -1,0 +1,24 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "SELECT src_handle\n             FROM handle_bridged_events\n            WHERE dst_handle = $1\n              AND dst_chain_id = $2\n              AND block_hash = $3",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "src_handle",
+        "type_info": "Bytea"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Bytea",
+        "Int8",
+        "Bytea"
+      ]
+    },
+    "nullable": [
+      false
+    ]
+  },
+  "hash": "295fb575427d3a7a53ad9bb406ebfe7ac0b6b53746f8bbe62a3054af8fab9a4f"
+}
