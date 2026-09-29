@@ -288,6 +288,7 @@ jobs:
           - coprocessor/fhevm-engine/Cargo.*
           - host-contracts/rust_bindings/**
           - gateway-contracts/rust_bindings/**
+          - shared/block-manifest/**
 
   check-changes-upgrade-controller:
     uses: ./.github/workflows/check-changes-for-docker-build.yml
