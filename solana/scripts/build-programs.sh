@@ -16,6 +16,8 @@ for program in "$@"; do
   case "$program" in
     # The specimens carry their own fixed test ids; they compile the same under every environment.
     zama_host|confidential_token|demo_vault|confidential_batcher|encrypted_counter|dep_chain) ;;
+    # The local simulator build of zama_host (src/cleartext), written beside the production one.
+    zama_host_cleartext) ;;
     *) echo "unknown program: $program" >&2; exit 1;;
   esac
 done
@@ -32,6 +34,14 @@ bash scripts/install-sbf-tools.sh
 # `anchor build -- <cargo-build-sbf args> -- <cargo args>`.
 cargo_config=(--config "env.PROGRAM_ENVIRONMENT.value=\"$environment\"" --config 'env.PROGRAM_ENVIRONMENT.force=true')
 for program in "$@"; do
+  if [[ "$program" == zama_host_cleartext ]]; then
+    production=target/deploy/zama_host.so
+    [[ ! -f "$production" ]] || mv "$production" "$production.production"
+    anchor build --ignore-keys --no-idl -p zama_host -- --features cleartext -- "${cargo_config[@]}"
+    mv "$production" target/deploy/zama_host_cleartext.so
+    [[ ! -f "$production.production" ]] || mv "$production.production" "$production"
+    continue
+  fi
   features=$(python3 -c 'import json, sys; print(",".join(json.load(open(sys.argv[1])).get("features", {}).get(sys.argv[2], [])))' "$environment_file" "$program")
   args=(build --ignore-keys --no-idl -p "$program" --)
   if [[ -n "$features" ]]; then args+=(--features "$features"); fi
