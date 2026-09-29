@@ -1,3 +1,4 @@
+use crate::host::handle_chain_id::extract_chain_id_from_handle;
 use crate::http::endpoints::common::types::{
     HandleContractPairJson, HandleEntryJson, RequestValidityJson, RequestValiditySecondsJson,
 };
@@ -7,6 +8,7 @@ use serde_json::Value;
 use std::str::FromStr;
 use std::time::{SystemTime, UNIX_EPOCH};
 use validator::ValidationError;
+use zama_solana_request::host_chain::is_solana_host_chain_id;
 
 // Generic validation error messages (reusable across fields)
 pub mod validation_messages {
@@ -30,6 +32,8 @@ pub mod validation_messages {
     pub const INVALID_EXTRA_DATA_FORMAT: &str =
         "Must be 0x00, or a versioned format: 0x01 + 32-byte contextId (0x07-tagged first byte), or 0x02 + 32-byte contextId (0x07-tagged) + 32-byte epochId (0x08-tagged)";
     pub const TIMESTAMP_MUST_NOT_BE_IN_FUTURE: &str = "Timestamp must not be in the future";
+    pub const HANDLE_MUST_BE_ON_AN_EVM_HOST_CHAIN: &str =
+        "Must be a handle on an EVM host chain; Solana handles use solana-srfc38-user-decrypt-v1";
 }
 
 pub fn de_string_or_number<'de, D: Deserializer<'de>>(deserializer: D) -> Result<String, D::Error> {
@@ -345,6 +349,19 @@ pub fn validate_handle_entries(entries: &Vec<HandleEntryJson>) -> Result<(), Val
         if entry.ct_handle.len() != 66 {
             return Err(ValidationError::new("validation_error")
                 .with_message(validation_messages::LENGTH_MUST_BE_64_CHARACTERS.into()));
+        }
+        // The EIP-712 arm is EVM-only: its signature is checked against an EVM host, which a
+        // Solana chain does not have. A Solana handle belongs in the Solana envelope.
+        let handle: [u8; 32] = hex::decode(&entry.ct_handle[2..])
+            .ok()
+            .and_then(|bytes| bytes.try_into().ok())
+            .ok_or_else(|| {
+                ValidationError::new("validation_error")
+                    .with_message(validation_messages::HEX_INVALID_STRING.into())
+            })?;
+        if is_solana_host_chain_id(extract_chain_id_from_handle(&handle)) {
+            return Err(ValidationError::new("validation_error")
+                .with_message(validation_messages::HANDLE_MUST_BE_ON_AN_EVM_HOST_CHAIN.into()));
         }
         validate_blockchain_address(&entry.contract_address)?;
         validate_blockchain_address(&entry.owner_address)?;

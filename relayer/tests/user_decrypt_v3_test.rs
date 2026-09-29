@@ -621,6 +621,29 @@ async fn v3_rejects_wrong_payload_type() {
     setup.shutdown().await;
 }
 
+/// An EIP-712 request naming a Solana handle is a validation error, not a server error, even on
+/// a relayer that serves that Solana chain.
+#[tokio::test]
+async fn v3_rejects_eip712_request_with_a_solana_handle() {
+    let setup = helpers::setup_with_a_solana_host().await;
+    let url = helpers::v3_user_decrypt_post_url(&setup);
+
+    test_endpoint(
+        &url,
+        helpers::create_v3_envelope(),
+        |p: &mut serde_json::Value| {
+            let mut handle: [u8; 32] = rand::random();
+            handle[22..30].copy_from_slice(&helpers::SOLANA_CHAIN_ID.to_be_bytes());
+            p["attestedPayload"]["handles"][0]["ctHandle"] =
+                json!(format!("0x{}", hex::encode(handle)));
+        },
+        expect_v2_validation_error("attestedPayload.handles", "EVM host chain"),
+    )
+    .await;
+
+    setup.shutdown().await;
+}
+
 #[tokio::test]
 async fn v3_rejects_empty_handles() {
     let setup = TestSetup::new().await.expect("Failed to create test setup");
