@@ -149,14 +149,24 @@ mod helpers {
 
     pub const SOLANA_CHAIN_ID: u64 = solana_host_chain_id(1);
 
-    /// A relayer serving [`SOLANA_CHAIN_ID`] beside its EVM host.
+    /// The zama-host program every fixture permit names.
+    pub const SOLANA_PROGRAM_ID: [u8; 32] = [0x02; 32];
+
+    /// A relayer serving [`SOLANA_CHAIN_ID`] beside its EVM host, with the program the fixture
+    /// permits name.
     pub async fn setup_with_a_solana_host() -> TestSetup {
+        setup_with_a_solana_program(SOLANA_PROGRAM_ID).await
+    }
+
+    /// A relayer serving [`SOLANA_CHAIN_ID`] beside its EVM host, with `program_id` as its
+    /// zama-host program.
+    pub async fn setup_with_a_solana_program(program_id: [u8; 32]) -> TestSetup {
         TestSetup::new_with_settings(|settings| {
             let url = settings.host_chains[0].url.clone();
             settings.host_chains.push(HostChainConfig {
                 chain_id: SOLANA_CHAIN_ID,
                 url,
-                acl_address: "11111111111111111111111111111111".to_string(),
+                acl_address: solana_pubkey::Pubkey::new_from_array(program_id).to_string(),
             });
         })
         .await
@@ -177,7 +187,7 @@ mod helpers {
         let user_address = wallet.verifying_key().to_bytes();
         let transport_key = vec![0u8; 869];
         let allowed_scope = [[0x05u8; 32], [0x06u8; 32]].concat();
-        let verifying_program_id = [0x02u8; 32];
+        let verifying_program_id = SOLANA_PROGRAM_ID;
         let handle_bytes: [u8; 32] = hex::decode(handle.trim_start_matches("0x"))
             .expect("hex handle")
             .try_into()
@@ -316,6 +326,35 @@ async fn v3_rejects_solana_srfc38_request_with_a_bad_signature() {
     let rejected_after = signature_precheck_total(&metrics_endpoint, "rejected").await;
     assert_eq!(rejected_after - rejected_before, 1.0);
     assert_eq!(accepted_after - accepted_before, 0.0);
+
+    setup.shutdown().await;
+}
+
+/// A genuinely signed Solana permit for another zama-host program on the served chain is refused
+/// on `verifyingProgramId` before any gateway transaction, and counted as a rejected pre-check.
+#[tokio::test]
+async fn v3_rejects_solana_srfc38_request_for_another_program() {
+    let setup = helpers::setup_with_a_solana_program([0x07; 32]).await;
+    let payload = helpers::create_srfc38_envelope();
+    let metrics_endpoint = setup.settings.metrics.endpoint.clone();
+    let rejected_before = signature_precheck_total(&metrics_endpoint, "rejected").await;
+
+    let response = reqwest::Client::new()
+        .post(helpers::v3_user_decrypt_post_url(&setup))
+        .json(&payload)
+        .send()
+        .await
+        .expect("POST failed");
+
+    assert_eq!(response.status(), reqwest::StatusCode::BAD_REQUEST);
+    let body: serde_json::Value = response.json().await.expect("JSON body");
+    assert_eq!(body["error"]["label"].as_str(), Some("validation_failed"));
+    assert_eq!(
+        body["error"]["details"][0]["field"].as_str(),
+        Some("verifyingProgramId")
+    );
+    let rejected_after = signature_precheck_total(&metrics_endpoint, "rejected").await;
+    assert_eq!(rejected_after - rejected_before, 1.0);
 
     setup.shutdown().await;
 }

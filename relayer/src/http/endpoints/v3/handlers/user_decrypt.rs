@@ -277,6 +277,24 @@ impl UserDecryptHandler {
                 )
                 .into_response();
             }
+            Err(SigPreCheckError::Deployment { field, issue }) => {
+                info!(
+                    field = %field,
+                    issue = %issue,
+                    request_id = %request_id,
+                    "v3 user-decrypt pre-check rejected a permit for another deployment"
+                );
+                observe_signature_precheck(SignaturePreCheckOutcome::Rejected);
+                return RelayerV2ResponseFailed::from_parse_error(
+                    &ParseError::FieldSpecificJson {
+                        field_name: field,
+                        issue,
+                        error_type: FieldJsonErrorType::InvalidType,
+                    },
+                    &request_id.to_string(),
+                )
+                .into_response();
+            }
             Err(SigPreCheckError::HostCallFailed(msg)) => {
                 warn!(
                     error = %msg,
