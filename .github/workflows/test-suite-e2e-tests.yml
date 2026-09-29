@@ -418,7 +418,7 @@ jobs:
           for container in $(docker ps --format '{{.Names}}' | grep -E '^coprocessor[0-9]*(-gcs)?-gw-listener$' | sort); do
             prefix="${container%-gw-listener}"
             label="${prefix}"
-            snapshot_logs "${label} - Host Listener" "${prefix}-host-listener"
+            snapshot_logs "${label} - Host Listener" "${prefix}-host-listener" "" all
             snapshot_logs "${label} - Gateway Listener" "${prefix}-gw-listener"
             snapshot_logs "${label} - SNS Worker" "${prefix}-sns-worker" "Selected 0 rows to process"
             snapshot_logs "${label} - Transaction Sender (filtered)" "${prefix}-transaction-sender" "Selected 0 rows to process"
