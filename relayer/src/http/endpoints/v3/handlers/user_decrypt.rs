@@ -24,6 +24,7 @@ use crate::http::retry_after::{
     DecryptQueueInfo, ReadinessQueueInfo, RetryAfterState, TxQueueInfo,
 };
 use crate::http::utils::BounceChecker;
+use crate::http::utils::FieldJsonErrorType;
 use crate::http::{parse_and_validate, AppResponse, ParseError};
 use crate::logging::UserDecryptStep;
 use crate::metrics::http::{self as http_metrics, HttpEndpoint, HttpMethod};
@@ -210,6 +211,17 @@ impl UserDecryptHandler {
                         )
                         .into_response();
                     }
+                    Err(SolanaAdmissionError::Field(error)) => {
+                        return RelayerV2ResponseFailed::from_parse_error(
+                            &ParseError::FieldSpecificJson {
+                                field_name: error.field,
+                                issue: error.issue,
+                                error_type: FieldJsonErrorType::InvalidType,
+                            },
+                            &request_id.to_string(),
+                        )
+                        .into_response();
+                    }
                     Err(SolanaAdmissionError::Encode(error)) => {
                         error!(%error, "Failed to encode an admitted Solana request");
                         return RelayerV2ResponseFailed::internal_server_error(
@@ -217,7 +229,7 @@ impl UserDecryptHandler {
                         )
                         .into_response();
                     }
-                    Err(error) => {
+                    Err(SolanaAdmissionError::Form(error)) => {
                         return RelayerV2ResponseFailed::request_error(
                             &error.to_string(),
                             &request_id.to_string(),

@@ -887,7 +887,7 @@ impl TryFrom<AttestedUserDecryptRequestJson> for UserDecryptRequest {
 pub enum SolanaAdmissionError {
     /// A field does not parse, or has the wrong width.
     #[error(transparent)]
-    Field(#[from] anyhow::Error),
+    Field(#[from] FieldError),
     #[error(transparent)]
     Form(#[from] SolanaRequestError),
     #[error("Solana permit signature is not valid: {0}")]
@@ -1008,26 +1008,44 @@ pub fn assemble_submitted_solana_request(
     )?)
 }
 
+/// A request field that does not parse, or has the wrong width.
+#[derive(Debug, thiserror::Error)]
+#[error("{field}: {issue}")]
+pub struct FieldError {
+    /// The field's path in the request payload, e.g. `handles[0].encryptedStore`.
+    pub field: String,
+    pub issue: String,
+}
+
+impl FieldError {
+    fn new(field: &str, issue: String) -> Self {
+        Self {
+            field: field.to_string(),
+            issue,
+        }
+    }
+}
+
 /// Parses a `0x`-hex string (the `0x` prefix optional) into bytes, naming the field on failure.
-fn parse_0x_hex(value: &str, field: &str) -> Result<Vec<u8>, anyhow::Error> {
+fn parse_0x_hex(value: &str, field: &str) -> Result<Vec<u8>, FieldError> {
     let stripped = value.strip_prefix("0x").unwrap_or(value);
-    hex::decode(stripped).map_err(|e| anyhow::anyhow!("Failed to parse {field} as 0x-hex: {e}"))
+    hex::decode(stripped).map_err(|e| FieldError::new(field, format!("is not 0x-hex: {e}")))
 }
 
 /// Parses a `0x`-hex string that must decode to exactly `N` bytes.
-fn parse_0x_hex_array<const N: usize>(value: &str, field: &str) -> Result<[u8; N], anyhow::Error> {
+fn parse_0x_hex_array<const N: usize>(value: &str, field: &str) -> Result<[u8; N], FieldError> {
     let bytes = parse_0x_hex(value, field)?;
     let len = bytes.len();
     bytes
         .try_into()
-        .map_err(|_| anyhow::anyhow!("{field} is {len} bytes, expected {N}"))
+        .map_err(|_| FieldError::new(field, format!("is {len} bytes, expected {N}")))
 }
 
 /// Parses a decimal string into a `u64`, naming the field on failure.
-fn parse_decimal_u64(value: &str, field: &str) -> Result<u64, anyhow::Error> {
+fn parse_decimal_u64(value: &str, field: &str) -> Result<u64, FieldError> {
     value
         .parse::<u64>()
-        .map_err(|e| anyhow::anyhow!("Failed to parse {field} as a u64: {e}"))
+        .map_err(|e| FieldError::new(field, format!("is not a u64: {e}")))
 }
 
 /// Builds the EVM EIP-712 variant of the unified request. Any `solana*` payload fields are

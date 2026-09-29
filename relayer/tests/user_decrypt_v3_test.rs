@@ -642,6 +642,26 @@ async fn v3_rejects_solana_handle_entry_missing_encrypted_store() {
     setup.shutdown().await;
 }
 
+/// A Solana field of the wrong width is a validation error on that field, not free text.
+#[tokio::test]
+async fn v3_rejects_solana_handle_entry_with_a_short_encrypted_store() {
+    let setup = TestSetup::new().await.expect("Failed to create test setup");
+    let url = helpers::v3_user_decrypt_post_url(&setup);
+
+    test_endpoint(
+        &url,
+        helpers::create_srfc38_envelope(),
+        |p: &mut serde_json::Value| {
+            p["attestedPayload"]["handles"][0]["encryptedStore"] =
+                json!(format!("0x{}", "ab".repeat(31)));
+        },
+        expect_v2_validation_error("handles[0].encryptedStore", "is 31 bytes, expected 32"),
+    )
+    .await;
+
+    setup.shutdown().await;
+}
+
 #[tokio::test]
 async fn v3_rejects_expired_request_validity_window() {
     let setup = TestSetup::new().await.expect("Failed to create test setup");
