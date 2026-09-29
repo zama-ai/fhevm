@@ -416,7 +416,11 @@ pub async fn ingest_block_logs(
         );
     }
 
-    for log in block_logs.logs.iter().chain(synthetic.iter()) {
+    let real_log_count = block_logs.logs.len();
+    for (log_position, log) in
+        block_logs.logs.iter().chain(synthetic.iter()).enumerate()
+    {
+        let is_synthetic = log_position >= real_log_count;
         let current_address = Some(log.inner.address);
         let is_acl_address = &current_address == acl_contract_address;
         if acl_contract_address.is_none() || is_acl_address {
@@ -452,6 +456,7 @@ pub async fn ingest_block_logs(
                     log_index: log.log_index,
                     operand_boundary_mask: None,
                     is_executor_minted: true,
+                    is_synthetic,
                 };
                 tfhe_event_log.push(log);
                 continue;
@@ -592,6 +597,7 @@ pub async fn ingest_block_logs(
                         // bridge event; the executor never called
                         // `_markMinted` for it.
                         is_executor_minted: false,
+                        is_synthetic: false,
                     });
                     at_least_one_insertion |= db
                         .insert_pbs_computations(
@@ -1556,6 +1562,7 @@ pub async fn synthesize_finalized_fallback_grants(
             // handle and it must not become a same-transaction minted
             // operand for a later real executor operation.
             is_executor_minted: false,
+            is_synthetic: false,
         });
     }
     if logs.is_empty() {
@@ -1862,6 +1869,7 @@ mod tests {
             log_index,
             operand_boundary_mask: None,
             is_executor_minted,
+            is_synthetic: false,
         }
     }
 

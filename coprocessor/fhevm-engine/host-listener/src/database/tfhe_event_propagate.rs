@@ -320,6 +320,9 @@ pub struct LogTfhe {
     /// executor, so its result must never become a same-transaction minted
     /// operand for a later real executor operation.
     pub is_executor_minted: bool,
+    /// Whether the GCS listener injected this event to anchor a dry run.
+    /// Cutover deletes that work, so its outputs never enter a manifest.
+    pub is_synthetic: bool,
 }
 
 pub type Transaction<'l> = sqlx::Transaction<'l, Postgres>;
@@ -920,18 +923,22 @@ impl Database {
         // at tx end, so a handle that must survive later blocks is persist-
         // allowed in the producing transaction (same host block). Later
         // Allowed events only add accounts; they do not write this table.
-        let producer_recorded = if log.is_output_allowed(&output_handle) {
-            insert_handle_producer_block(
-                tx,
-                self.chain_id.as_i64(),
-                &output_handle,
-                log.block_number as i64,
-                log.block_hash.as_slice(),
-            )
-            .await?
-        } else {
-            false
-        };
+        // Synthetic outputs are skipped: cutover deletes them, so an operator
+        // publishing after its cutover would otherwise disagree with one
+        // publishing before it.
+        let producer_recorded =
+            if !log.is_synthetic && log.is_output_allowed(&output_handle) {
+                insert_handle_producer_block(
+                    tx,
+                    self.chain_id.as_i64(),
+                    &output_handle,
+                    log.block_number as i64,
+                    log.block_hash.as_slice(),
+                )
+                .await?
+            } else {
+                false
+            };
         let inserted = self
             .insert_computation_legacy_row(
                 tx,

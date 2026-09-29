@@ -356,6 +356,7 @@ async fn test_allowed_computation_records_its_producer_block(
     let caller = Address::repeat_byte(0x11);
     let handle = FixedBytes::<32>::repeat_byte(0x42);
     let unallowed_handle = FixedBytes::<32>::repeat_byte(0x43);
+    let synthetic_handle = FixedBytes::<32>::repeat_byte(0x44);
     let first_block_hash = FixedBytes::<32>::repeat_byte(0x33);
     let competing_block_hash = FixedBytes::<32>::repeat_byte(0x34);
 
@@ -387,6 +388,7 @@ async fn test_allowed_computation_records_its_producer_block(
                 log_index: None,
                 operand_boundary_mask: Some(Default::default()),
                 is_executor_minted: true,
+                is_synthetic: false,
             }
         };
 
@@ -427,6 +429,16 @@ async fn test_allowed_computation_records_its_producer_block(
         ),
     )
     .await?;
+    // Cutover deletes the GCS synthetic work, so it never enters a manifest.
+    let mut synthetic = event(
+        synthetic_handle,
+        FixedBytes::repeat_byte(0x74),
+        first_block_hash,
+        true,
+        10,
+    );
+    synthetic.is_synthetic = true;
+    db.insert_tfhe_event(&mut tx, &synthetic).await?;
     tx.commit().await?;
 
     let rows = sqlx::query(
@@ -439,7 +451,11 @@ async fn test_allowed_computation_records_its_producer_block(
     .fetch_all(&pool)
     .await?;
 
-    assert_eq!(rows.len(), 2, "only allowed producers must be recorded");
+    assert_eq!(
+        rows.len(),
+        2,
+        "only allowed, non-synthetic producers must be recorded"
+    );
     assert!(rows
         .iter()
         .all(|row| row.get::<Vec<u8>, _>("handle") == handle.to_vec()));

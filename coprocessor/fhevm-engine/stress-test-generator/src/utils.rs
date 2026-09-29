@@ -291,6 +291,7 @@ pub async fn generate_trivial_encrypt(
         log_index: None,
         operand_boundary_mask: Some(operand_boundary_mask),
         is_executor_minted: true,
+        is_synthetic: false,
     };
     listener_event_to_db.insert_tfhe_event(tx, &log).await?;
     Ok(handle)
@@ -462,6 +463,7 @@ pub async fn insert_tfhe_event(
         log_index: None,
         operand_boundary_mask: Some(operand_boundary_mask),
         is_executor_minted: true,
+        is_synthetic: false,
     };
     listener_event_to_db.insert_tfhe_event(tx, &log).await?;
 
