@@ -4,7 +4,7 @@
 //! `HEAD` on `{bucket}/ct128/{hex handle}/{context id}` and reads the attestation out of the
 //! `x-amz-meta-ct-attestation` response header. That is plain HTTP, not JSON-RPC and not real S3
 //! — no SigV4, no XML, no bucket semantics — so it needs a listener of its own rather than a
-//! MinIO container.
+//! real object-store container.
 //!
 //! Each Coprocessor gets its own [`wiremock::MockServer`], hence its own port, so the bucket URLs
 //! the mocked `GatewayConfig` hands back are genuinely distinct origins. Attestations are signed

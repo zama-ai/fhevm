@@ -16,7 +16,7 @@ async function observe(chain, block, candidate) {
   assert.match(chain, /^[0-9]+$/);
   assert.match(block, /^[0-9]+$/);
   const reports = await Promise.all([0, 1, 2].map(async operator => {
-    const response = await fetch(`http://minio:9000/coproc-${operator}/state_hash/chain=${chain}/block=${block}.bin`,
+    const response = await fetch(`http://object-store:9000/coproc-${operator}/state_hash/chain=${chain}/block=${block}.bin`,
       { signal: AbortSignal.timeout(10_000) });
     assert.equal(response.status, 200, `operator ${operator} report unavailable`);
     const bytes = Buffer.from(await response.arrayBuffer());

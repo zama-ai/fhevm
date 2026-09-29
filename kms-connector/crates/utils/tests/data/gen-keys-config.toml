@@ -10,7 +10,7 @@ show_existing = false
 
 [aws]
 region = "eu-west-1"
-s3_endpoint = "http://minio:9000"
+s3_endpoint = "http://object-store:9000"
 
 [public_vault.storage.s3]
 bucket = "kms-public"

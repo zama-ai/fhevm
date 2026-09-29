@@ -460,17 +460,17 @@ build_features() {
 }
 
 write_host_env() {
-  local index="$1" source="$2" target="$3" minio_ip database_name
-  minio_ip="$(docker inspect -f '{{range.NetworkSettings.Networks}}{{.IPAddress}}{{end}}' fhevm-minio)"
-  [[ -n "$minio_ip" ]] || die "cannot determine fhevm-minio container IP"
+  local index="$1" source="$2" target="$3" object_store_ip database_name
+  object_store_ip="$(docker inspect -f '{{range.NetworkSettings.Networks}}{{.IPAddress}}{{end}}' fhevm-object-store)"
+  [[ -n "$object_store_ip" ]] || die "cannot determine fhevm-object-store container IP"
   database_name="$(grep '^DATABASE_URL=' "$source" | sed 's|.*/||')"
   [[ -n "$database_name" ]] || die "cannot determine database name from $source"
 
   umask 077
   sed \
     -e 's|postgresql://postgres:postgres@db:5432/|postgresql://postgres:postgres@localhost:5432/|g' \
-    -e "s|http://minio:9000|http://${minio_ip}:9000|g" \
-    -e "s|http://[0-9.]*:9000|http://${minio_ip}:9000|g" \
+    -e "s|http://object-store:9000|http://${object_store_ip}:9000|g" \
+    -e "s|http://[0-9.]*:9000|http://${object_store_ip}:9000|g" \
     "$source" | sed -E '/^(DATABASE_URL|RPC_HTTP_URL|RPC_WS_URL|GATEWAY_URL|GATEWAY_WS_URL|AWS_ENDPOINT_URL)=/d' >"$target"
   cat >>"$target" <<EOF
 DATABASE_URL=postgresql://postgres:postgres@localhost:5432/${database_name}
@@ -478,7 +478,7 @@ RPC_HTTP_URL=http://localhost:8545
 RPC_WS_URL=ws://localhost:8545
 GATEWAY_URL=http://localhost:8546
 GATEWAY_WS_URL=ws://localhost:8546
-AWS_ENDPOINT_URL=http://${minio_ip}:9000
+AWS_ENDPOINT_URL=http://${object_store_ip}:9000
 EOF
 }
 

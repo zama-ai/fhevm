@@ -45,19 +45,19 @@ import { GENERATED_CONFIG_DIR, REPO_ROOT } from "../layout";
 /** Knobs the generator needs that come from the surrounding stack (S3, image tag). */
 export type KmsRenderOptions = {
   coreImage: string; // e.g. ghcr.io/zama-ai/kms/core-service-insecure:${CORE_VERSION}
-  s3Endpoint: string; // e.g. http://minio:9000
+  s3Endpoint: string; // e.g. http://object-store:9000
   s3Bucket: string; // e.g. kms-public
   s3Region: string; // e.g. eu-west-1
-  s3AccessKey: string; // minio access key (shared with the rest of the stack)
-  s3SecretKey: string; // minio secret key
+  s3AccessKey: string; // object-store access key (shared with the rest of the stack)
+  s3SecretKey: string; // object-store secret key
 };
 
-/** Render options from the resolved core image version + fhevm minio defaults
- * (the static test credentials from templates/env/.env.minio).
+/** Render options from the resolved core image version + fhevm object-store defaults
+ * (the static test credentials from templates/env/.env.object-store).
  */
 export const kmsRenderOptionsFor = (coreVersion: string): KmsRenderOptions => ({
   coreImage: `${kmsCoreImageRepository(coreVersion)}:${coreVersion}`,
-  s3Endpoint: "http://minio:9000",
+  s3Endpoint: "http://object-store:9000",
   s3Bucket: "kms-public",
   s3Region: "eu-west-1",
   s3AccessKey: "fhevm-access-key",
@@ -177,7 +177,7 @@ export const thresholdCoreEnv = (
   KMS_CORE__PRIVATE_VAULT__STORAGE__S3__PREFIX: kmsPrivatePrefix(partyId),
   KMS_CORE__BACKUP_VAULT__STORAGE__FILE__PREFIX: kmsBackupPrefix(partyId),
   KMS_CORE__TELEMETRY__TRACING_SERVICE_NAME: `kms-threshold-${partyId}`,
-  // The core's AWS SDK reads the minio creds straight from the environment — no
+  // The core's AWS SDK reads the object-store creds straight from the environment — no
   // need to shell out and `cat` them from the shared secrets volume at startup.
   AWS_ACCESS_KEY_ID: opts.s3AccessKey,
   AWS_SECRET_ACCESS_KEY: opts.s3SecretKey,
