@@ -1089,7 +1089,7 @@ const runBlueGreenProfile = async (
   await run(["cast", "rpc", "--rpc-url", gatewayRpcUrl, "evm_setAutomine", "true"]);
   console.log("OK:   Gateway anvil mines on demand for this profile");
   try {
-    return await runBlueGreenSteps(state, options, gatewayRpcUrl);
+    return await runBlueGreenSteps(state, options, gatewayRpcUrl, withManifests);
   } finally {
     await run(["cast", "rpc", "--rpc-url", gatewayRpcUrl, "evm_setIntervalMining", "1"]);
   }
@@ -1099,6 +1099,7 @@ const runBlueGreenSteps = async (
   state: State,
   options: Pick<TestOptions, "network" | "noHardhatCompile">,
   gatewayRpcUrl: string,
+  withManifests: boolean,
 ): Promise<boolean> => {
   // The E2E image already contains compiled contracts. Multiple traffic
   // streams share its artifacts directory, so none may compile or prune it.
