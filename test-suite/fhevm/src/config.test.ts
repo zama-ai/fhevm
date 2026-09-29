@@ -44,14 +44,14 @@ describe("config", () => {
       {
         versions: { env: { RELAYER_VERSION: "v0.11.0" } } as never,
         discovery: {
-          minioKeyPrefix: "PUB-p1",
+          objectStoreKeyPrefix: "PUB-p1",
           fheKeyId: "f".repeat(64),
           crsKeyId: "c".repeat(64),
           actualFheKeyId: "a".repeat(64),
           actualCrsKeyId: "b".repeat(64),
           endpoints: {
-            minioInternal: "http://minio:9000",
-            minioExternal: "http://172.18.0.10:9000",
+            objectStoreInternal: "http://object-store:9000",
+            objectStoreExternal: "http://172.18.0.10:9000",
           },
         } as never,
       },

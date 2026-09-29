@@ -8,7 +8,7 @@ import {
   requiresLegacyKmsCoreConfig,
   requiresLegacyRelayerReadinessConfig,
 } from "../compat/compat";
-import { hostChainRuntimes, MINIO_INTERNAL_URL } from "../layout";
+import { hostChainRuntimes, OBJECT_STORE_INTERNAL_URL } from "../layout";
 import type { StackSpec } from "../stack-spec/stack-spec";
 import type { HostChainScenario, State } from "../types";
 import { hostReachableMaterialUrl, predictedCrsId, predictedKeyId } from "../utils/fs";
@@ -52,11 +52,11 @@ const rewriteRelayerKeyUrlConfig = (
   if (!requiresLegacyRelayerKeyUrlConfig(state)) {
     return config;
   }
-  const keyPrefix = state.discovery?.minioKeyPrefix ?? "PUB";
+  const keyPrefix = state.discovery?.objectStoreKeyPrefix ?? "PUB";
   const materialBase = `${(
-    state.discovery?.endpoints?.minioExternal ??
-    state.discovery?.endpoints?.minioInternal ??
-    MINIO_INTERNAL_URL
+    state.discovery?.endpoints?.objectStoreExternal ??
+    state.discovery?.endpoints?.objectStoreInternal ??
+    OBJECT_STORE_INTERNAL_URL
   ).replace(/\/$/, "")}/kms-public/${keyPrefix}`;
   const fheKeyId = state.discovery?.actualFheKeyId ?? state.discovery?.fheKeyId ?? predictedKeyId();
   const crsKeyId = state.discovery?.actualCrsKeyId ?? state.discovery?.crsKeyId ?? predictedCrsId();

@@ -66,7 +66,7 @@ struct Args {
     #[arg(long)]
     my_bucket: Option<String>,
 
-    /// S3 endpoint override (e.g. `http://minio:9000`).
+    /// S3 endpoint override (e.g. `http://object-store:9000`).
     #[arg(long)]
     s3_endpoint: Option<String>,
 

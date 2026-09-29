@@ -86,6 +86,16 @@ jobs:
             echo "Logging into ghcr.io..."
             echo "$GHCR_PASSWORD" | docker login ghcr.io -u "$GHCR_USERNAME" --password-stdin
 
+      - name: Login to Chainguard Registry
+        uses: zama-ai/ci-templates/.github/actions/retry@542103e14b9ae6a9aea27787b8724b3b35bb3918 # v1.0.9
+        env:
+          CGR_USERNAME: ${{ secrets.CGR_USERNAME }}
+          CGR_PASSWORD: ${{ secrets.CGR_PASSWORD }}
+        with:
+          command: |
+            echo "Logging into cgr.dev..."
+            echo "$CGR_PASSWORD" | docker login cgr.dev -u "$CGR_USERNAME" --password-stdin
+
       - name: Setup Rust
         uses: ./.github/actions/setup_rust
         with:

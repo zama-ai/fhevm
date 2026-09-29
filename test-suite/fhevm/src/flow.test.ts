@@ -118,8 +118,8 @@ const validDiscovery = (hostKeys: string[]): Discovery => ({
   endpoints: {
     gateway: { http: "http://gateway-node:8546", ws: "ws://gateway-node:8546" },
     hosts: Object.fromEntries(hostKeys.map((key) => [key, { http: `http://${key}:8545`, ws: `ws://${key}:8545` }])),
-    minioInternal: "http://minio:9000",
-    minioExternal: "http://localhost:9000",
+    objectStoreInternal: "http://object-store:9000",
+    objectStoreExternal: "http://localhost:9000",
   },
 });
 
@@ -164,7 +164,7 @@ describe("validateDiscovery", () => {
 describe("resumeRepairStep", () => {
   test("repairs from relayer when a partially running stack is missing fhevm-relayer", () => {
     const running = [
-      "fhevm-minio",
+      "fhevm-object-store",
       "coprocessor-and-kms-db",
       "kms-core",
       "host-node",
@@ -192,7 +192,7 @@ describe("resumeRepairStep", () => {
 
   test("expects the kms-connector endpoint and proxy only when the bundle pins their images", () => {
     const running = [
-      "fhevm-minio",
+      "fhevm-object-store",
       "coprocessor-and-kms-db",
       "kms-core",
       "host-node",
@@ -233,7 +233,7 @@ describe("resumeRepairStep", () => {
 
   test("returns nothing when every steady-state service is present", () => {
     const running = [
-      "fhevm-minio",
+      "fhevm-object-store",
       "coprocessor-and-kms-db",
       "kms-core",
       "host-node",
@@ -262,7 +262,7 @@ describe("resumeRepairStep", () => {
 
   test("repairs from listener-core when the publisher is missing", () => {
     const running = [
-      "fhevm-minio",
+      "fhevm-object-store",
       "coprocessor-and-kms-db",
       "kms-core",
       "host-node",
@@ -299,7 +299,7 @@ describe("resumeRepairStep", () => {
       },
     };
     const running = [
-      "fhevm-minio",
+      "fhevm-object-store",
       "coprocessor-and-kms-db",
       "kms-core",
       "host-node",
@@ -329,7 +329,7 @@ describe("resumeRepairStep", () => {
       { index: 1, source: { mode: "inherit" }, env: {}, args: {} },
     ];
     const running = [
-      "fhevm-minio",
+      "fhevm-object-store",
       "coprocessor-and-kms-db",
       "kms-core",
       "host-node",
@@ -363,7 +363,7 @@ describe("resumeRepairStep", () => {
   test("repairs partially completed stacks from base when base services are missing", () => {
     const state = completeState();
     state.completedSteps = ["preflight", "resolve", "generate", "base", "kms-signer"];
-    const running = ["fhevm-minio", "coprocessor-and-kms-db", "kms-core"];
+    const running = ["fhevm-object-store", "coprocessor-and-kms-db", "kms-core"];
     expect(resumeRepairStep(state, running)).toBe("base");
   });
 
@@ -374,7 +374,7 @@ describe("resumeRepairStep", () => {
       { key: "chain-b", chainId: "67890", rpcPort: 8547 },
     ];
     const running = [
-      "fhevm-minio",
+      "fhevm-object-store",
       "coprocessor-and-kms-db",
       "kms-core",
       "host-node",
@@ -406,7 +406,7 @@ describe("resumeRepairStep", () => {
 
   test("repairs from coprocessor when a required runtime container is unhealthy", () => {
     const live = new Map([
-      ["fhevm-minio", { status: "running" }],
+      ["fhevm-object-store", { status: "running" }],
       ["coprocessor-and-kms-db", { status: "running", health: "healthy" }],
       ["kms-core", { status: "running" }],
       ["host-node", { status: "running" }],
@@ -547,8 +547,8 @@ describe("runtime helpers", () => {
           "chain-a": { http: "http://host-node:8545", ws: "ws://host-node:8545" },
           "chain-b": { http: "http://host-node-chain-b:8547", ws: "ws://host-node-chain-b:8547" },
         },
-        minioInternal: "http://minio:9000",
-        minioExternal: "http://localhost:9000",
+        objectStoreInternal: "http://object-store:9000",
+        objectStoreExternal: "http://localhost:9000",
       },
     };
     const paths = runtimeArtifactPaths(state);

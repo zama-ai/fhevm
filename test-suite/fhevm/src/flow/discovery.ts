@@ -7,9 +7,9 @@ import {
 import { PreflightError } from "../errors";
 import {
   DEFAULT_GATEWAY_RPC_PORT,
-  MINIO_EXTERNAL_URL,
-  MINIO_INTERNAL_URL,
-  MINIO_PORT,
+  OBJECT_STORE_EXTERNAL_URL,
+  OBJECT_STORE_INTERNAL_URL,
+  OBJECT_STORE_PORT,
   gatewayAddressesPath,
   hostChainAddressesPath,
 } from "../layout";
@@ -19,14 +19,14 @@ import { run } from "../utils/process";
 import { hostChainsForState } from "./topology";
 
 /**
- * Discover the published port on the bridge gateway rather than MinIO's leased IP.
- * A stopped MinIO releases its address: a recovering worker can acquire it
- * before MinIO restarts. The gateway remains stable while the stack exists.
+ * Discover the published port on the bridge gateway rather than the object store's leased IP.
+ * A stopped object store releases its address: a recovering worker can acquire it
+ * before the object store restarts. The gateway remains stable while the stack exists.
  * A numeric endpoint also preserves path-style S3 requests in released workers.
  */
-export const minioPublishedEndpoint = async () => {
-  const result = await run(["docker", "inspect", "fhevm-minio"], { allowFailure: true });
-  if (result.code !== 0) throw new PreflightError("Could not inspect the published MinIO endpoint");
+export const objectStorePublishedEndpoint = async () => {
+  const result = await run(["docker", "inspect", "fhevm-object-store"], { allowFailure: true });
+  if (result.code !== 0) throw new PreflightError("Could not inspect the published object-store endpoint");
   let inspected: Array<{
     NetworkSettings: {
       Networks: Record<string, { Gateway?: string }>;
@@ -37,25 +37,25 @@ export const minioPublishedEndpoint = async () => {
     inspected = JSON.parse(result.stdout);
   } catch (error) {
     throw new PreflightError(
-      `docker inspect fhevm-minio returned invalid JSON: ${error instanceof Error ? error.message : String(error)}`,
+      `docker inspect fhevm-object-store returned invalid JSON: ${error instanceof Error ? error.message : String(error)}`,
     );
   }
   const network = inspected[0]?.NetworkSettings;
   const gateways = [...new Set(Object.values(network?.Networks ?? {}).map(value => value.Gateway)
     .filter((value): value is string => typeof value === "string" && isIP(value) === 4))];
-  if (gateways.length !== 1) throw new PreflightError("MinIO requires one unambiguous IPv4 bridge gateway");
-  const ports = [...new Set((network?.Ports?.[`${MINIO_PORT}/tcp`] ?? [])
+  if (gateways.length !== 1) throw new PreflightError("The object store requires one unambiguous IPv4 bridge gateway");
+  const ports = [...new Set((network?.Ports?.[`${OBJECT_STORE_PORT}/tcp`] ?? [])
     .filter(binding => binding.HostIp === "0.0.0.0" || binding.HostIp === "")
     .map(binding => binding.HostPort))];
   if (ports.length !== 1 || !/^[1-9][0-9]*$/.test(ports[0]) || Number(ports[0]) > 65535) {
-    throw new PreflightError("MinIO requires a published IPv4 port reachable through its bridge gateway");
+    throw new PreflightError("The object store requires a published IPv4 port reachable through its bridge gateway");
   }
   return `http://${gateways[0]}:${ports[0]}`;
 };
 
 /** Builds the initial endpoint discovery structure before addresses are known. */
 export const defaultEndpoints = async () => {
-  const minioExternal = await minioPublishedEndpoint();
+  const objectStoreExternal = await objectStorePublishedEndpoint();
   const hosts: Discovery["endpoints"]["hosts"] = {};
   return {
     gateway: {
@@ -63,8 +63,8 @@ export const defaultEndpoints = async () => {
       ws: `ws://gateway-node:${DEFAULT_GATEWAY_RPC_PORT}`,
     },
     hosts,
-    minioInternal: MINIO_INTERNAL_URL,
-    minioExternal,
+    objectStoreInternal: OBJECT_STORE_INTERNAL_URL,
+    objectStoreExternal,
   };
 };
 
