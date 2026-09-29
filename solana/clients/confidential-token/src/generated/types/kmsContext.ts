@@ -25,7 +25,12 @@ import {
   type Encoder,
   type ReadonlyUint8Array,
 } from '@solana/kit';
-import { getKmsThresholdsDecoder, getKmsThresholdsEncoder, type KmsThresholds, type KmsThresholdsArgs } from '.';
+import {
+  getKmsThresholdsDecoder,
+  getKmsThresholdsEncoder,
+  type KmsThresholds,
+  type KmsThresholdsArgs,
+} from './index.js';
 
 /** A KMS context: the signer set + thresholds active under a `context_id`. */
 export type KmsContext = {

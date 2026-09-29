@@ -30,7 +30,7 @@ import {
   type FixedSizeEncoder,
   type ReadonlyUint8Array,
 } from '@solana/kit';
-import { getPauseFlagsDecoder, getPauseFlagsEncoder, type PauseFlags, type PauseFlagsArgs } from '.';
+import { getPauseFlagsDecoder, getPauseFlagsEncoder, type PauseFlags, type PauseFlagsArgs } from './index.js';
 
 /**
  * Singleton host configuration and authority surface.

@@ -28,7 +28,12 @@ import {
   type Encoder,
   type ReadonlyUint8Array,
 } from '@solana/kit';
-import { getEncryptedSlotDecoder, getEncryptedSlotEncoder, type EncryptedSlot, type EncryptedSlotArgs } from '.';
+import {
+  getEncryptedSlotDecoder,
+  getEncryptedSlotEncoder,
+  type EncryptedSlot,
+  type EncryptedSlotArgs,
+} from './index.js';
 
 export type EncryptedStore = {
   program: Address;

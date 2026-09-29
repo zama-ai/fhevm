@@ -94,9 +94,27 @@ const targets = [
         'delegateForUserDecryption',
         'revokeDelegationForUserDecryption',
         'revokePermits',
+        // Decoded, never built: a store's history is read back from the transactions that wrote
+        // it (solana/storeHistory.ts).
+        'fheExecute',
+        'makeStoreHandlePublic',
       ]),
       accounts: new Set(['hostConfig', 'kmsContext']),
-      definedTypes: new Set(['kmsThresholds', 'pauseFlags']),
+      definedTypes: new Set([
+        'kmsThresholds',
+        'pauseFlags',
+        'coprocessorInputAttestation',
+        'executionResultRef',
+        'fheBinaryOpCode',
+        'fheExecuteEffect',
+        'fheExecuteOperand',
+        'fheExecuteRandomSeed',
+        'fheExecuteStep',
+        'fheTernaryOpCode',
+        'fheUnaryOpCode',
+        'resultGrant',
+        'slotWrite',
+      ]),
       // verifyPublicDecrypt and the delegation pair default their host_config account to the
       // same-program host-config PDA, so the generated builders import findHostConfigPda; keep
       // that PDA node so the import resolves.
@@ -323,7 +341,7 @@ for (const target of targets) {
       file,
       await format(
         source.replace(
-          /(from\s+['"]|export\s+\*\s+from\s+['"])(\.{1,2}\/[^'"]+)(['"])/g,
+          /(from\s+['"]|export\s+\*\s+from\s+['"])(\.{1,2}(?:\/[^'"]+)?)(['"])/g,
           (_, prefix, specifier, suffix) => {
             const targetPath = resolve(dirname(file), specifier);
             const extension = existsSync(targetPath) && statSync(targetPath).isDirectory() ? '/index.js' : '.js';
