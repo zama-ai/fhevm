@@ -14,6 +14,9 @@
 #![allow(unexpected_cfgs)]
 #![allow(clippy::diverging_sub_expression, clippy::too_many_arguments)]
 
+/// Plaintexts kept in host accounts by the cleartext simulator build (feature `cleartext`).
+#[cfg(feature = "cleartext")]
+pub mod cleartext;
 /// Shared constants, seed bytes, and fixed protocol sizes.
 pub mod constants;
 /// Off-chain decoding of instruction data and event self-CPIs (feature `decode`).

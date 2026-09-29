@@ -1,11 +1,10 @@
 //! Representative real-host conformance for Solana `fhe_execute` operator families.
 //!
-//! Each test executes one canonical instruction against the compiled `zama_host` program, then
-//! evaluates that exact execution in the test-owned cleartext evaluator. The exhaustive semantic
-//! contract stays in `operator_conformance`; this target covers only materially different host
-//! admission and result-binding shapes.
-
-use std::collections::HashMap;
+//! Each test executes one canonical instruction against the compiled cleartext host build
+//! (`zama_host_cleartext.so`), then reads the result's plaintext from the store it wrote. The
+//! exhaustive semantic contract stays in `operator_conformance`; this target covers only
+//! materially different host admission and result-binding shapes, and that the on-chain wiring
+//! (store sections, operand resolution) delivers the evaluator's values.
 
 use anchor_lang::{prelude::system_program, AccountDeserialize};
 use mollusk_svm::{result::Check, Mollusk};
@@ -19,11 +18,11 @@ use zama_host::{
     self as host, AppScope, FheBinaryOpCode, FheExecuteArgs, FheExecuteEffect, FheExecuteOperand,
     FheExecuteStep, FheUnaryOpCode, SlotWrite,
 };
-use zama_solana_test_kit::oracle::{evaluate, ClearInputs, TypedClearValue};
+use zama_solana_test_kit::cleartext::{self, Value};
 use zama_solana_test_kit::{
-    anchor_error_check, anchor_ix, empty_system_account, encrypted_store_account, event_authority,
-    funded_system_account, handle_for_chain, host_config_account, new_encrypted_store,
-    rand_nonce_account, system_program_account, HostConfigParams,
+    anchor_error_check, anchor_ix, empty_system_account, event_authority, funded_system_account,
+    handle_for_chain, host_config_account, new_encrypted_store, rand_nonce_account,
+    system_program_account, HostConfigParams,
 };
 
 mod host_fixtures;
@@ -159,7 +158,7 @@ fn membership_executes_then_reads_present_outcome() {
 fn random_executes_then_binds_seed_and_type() {
     let outcome = ExecutionFlow::new().execute(FheExecuteStep::Rand { fhe_type: 5 });
 
-    assert_eq!(outcome.only_cleartext().fhe_type, 5);
+    assert_eq!(outcome.value.fhe_type, 5);
     outcome.assert_handle(expected_rand_handle(expected_rand_seed(outcome.app), 5));
 }
 
@@ -238,7 +237,8 @@ struct ExecutionFlow {
     host_config: Pubkey,
     accounts: Vec<(Pubkey, Account)>,
     remaining: Vec<AccountMeta>,
-    cleartext: ClearInputs,
+    /// Plaintexts of the fixture store's slots, in slot order.
+    values: Vec<Value>,
     next_seed: u8,
     /// The host's rand nonce account, present iff the execution draws randomness.
     rand_nonce: Option<Pubkey>,
@@ -293,13 +293,13 @@ impl ExecutionFlow {
             accounts: vec![
                 (system_program::ID, system_program_account()),
                 (payer, funded_system_account()),
-                (state_address, encrypted_store_account(&state)),
+                (state_address, cleartext::store_account(&state, &[])),
                 (authority.key, empty_system_account()),
                 (host_config, host_config_account),
                 (event_authority(host::id()), Account::default()),
             ],
             remaining: vec![AccountMeta::new_readonly(state_address, false)],
-            cleartext: HashMap::new(),
+            values: Vec::new(),
             next_seed: 1,
             rand_nonce: None,
             effects: vec![],
@@ -314,8 +314,8 @@ impl ExecutionFlow {
         let seed = self.next_seed;
         self.next_seed += 1;
         let handle = handle_for_chain(seed, fhe_type);
-        self.cleartext
-            .insert(handle, TypedClearValue::from_u64(fhe_type, plaintext));
+        self.values
+            .push(Value::new(fhe_type, plaintext.into()).unwrap());
         let (address, mut state) = new_encrypted_store(self.app(), self.authority.key, []);
         let store_index = if let Some(index) = self
             .remaining
@@ -333,7 +333,7 @@ impl ExecutionFlow {
                 key: [seed; 32],
                 handle,
             });
-            *account = encrypted_store_account(&state);
+            *account = cleartext::store_account(&state, &self.values);
             index as u8
         } else {
             state.slots.push(host::EncryptedSlot {
@@ -344,7 +344,7 @@ impl ExecutionFlow {
             self.remaining
                 .push(AccountMeta::new_readonly(address, false));
             self.accounts
-                .push((address, encrypted_store_account(&state)));
+                .push((address, cleartext::store_account(&state, &self.values)));
             index
         };
         FheExecuteOperand::StoreSlot {
@@ -381,7 +381,7 @@ impl ExecutionFlow {
                 AccountMeta::new_readonly(address, false)
             });
             self.accounts
-                .push((address, encrypted_store_account(&state)));
+                .push((address, cleartext::store_account(&state, &[])));
             index
         };
         (
@@ -423,7 +423,7 @@ impl ExecutionFlow {
         }
         let (output, output_address) = self.writable_persistent_output();
         self.effects.push(output);
-        let (args, instruction) = self.instruction(step);
+        let (_, instruction) = self.instruction(step);
         let result = zama_solana_test_kit::transaction::check_fhe_instruction(
             &mollusk(),
             self.payer,
@@ -431,16 +431,20 @@ impl ExecutionFlow {
             &self.accounts,
             &[Check::success()],
         );
-        let cleartext = evaluate(&args, &self.cleartext)
-            .expect("accepted host execution must have valid cleartext semantics");
         let output_account = result.get_account(&output_address).unwrap();
-        let mut output_data: &[u8] = &output_account.data;
-        let output_handle = host::EncryptedStore::try_deserialize(&mut output_data)
-            .expect("state result account")
-            .get(&[100; 32])
+        let state = host::EncryptedStore::try_deserialize(&mut &output_account.data[..])
+            .expect("state result account");
+        let output_index = state
+            .slots
+            .iter()
+            .position(|slot| slot.key == [100; 32])
             .expect("output slot");
+        let output_handle = state.slots[output_index].handle;
+        let value =
+            host::cleartext::layout::store_value(&output_account.data, output_index, output_handle)
+                .expect("the cleartext build records the output");
         ExecutionOutcome {
-            cleartext,
+            value,
             output_handle,
             app: self.app(),
         }
@@ -489,27 +493,19 @@ impl ExecutionFlow {
 }
 
 struct ExecutionOutcome {
-    cleartext: Vec<TypedClearValue>,
+    value: Value,
     output_handle: [u8; 32],
     /// The application the execution ran as; the rand seed binds to it.
     app: AppScope,
 }
 
 impl ExecutionOutcome {
-    fn only_cleartext(&self) -> TypedClearValue {
-        assert_eq!(self.cleartext.len(), 1);
-        self.cleartext[0]
-    }
-
     fn only_u64(&self) -> u64 {
-        let value = self.only_cleartext().value;
-        assert_eq!(value[..24], [0; 24]);
-        u64::from_be_bytes(value[24..].try_into().unwrap())
+        u64::try_from(self.value.bits).expect("fits u64")
     }
 
     fn assert_u64(&self, fhe_type: u8, value: u64) {
-        assert_eq!(self.only_cleartext().fhe_type, fhe_type);
-        assert_eq!(self.only_u64(), value);
+        assert_eq!(self.value, Value::new(fhe_type, value.into()).unwrap());
     }
 
     fn assert_handle(&self, expected: [u8; 32]) {
@@ -521,7 +517,7 @@ impl ExecutionOutcome {
 /// hashes the previous bank hash and timestamp into the result, so both must be the fixed
 /// `PREVIOUS_BANK_HASH` / `UNIX_TIMESTAMP` rather than the kit's fresh values.
 fn mollusk() -> Mollusk {
-    let mut mollusk = zama_solana_test_kit::svm(&host::id(), "zama_host");
+    let mut mollusk = zama_solana_test_kit::svm(&host::id(), cleartext::HOST_PROGRAM);
     mollusk.sysvars.clock.slot = 100;
     mollusk.sysvars.clock.unix_timestamp = UNIX_TIMESTAMP;
     mollusk.sysvars.slot_hashes = solana_sdk::slot_hashes::SlotHashes::new(&[(

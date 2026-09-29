@@ -29,6 +29,11 @@ idl-build = ["anchor-lang/idl-build"]
 # `close_owned_accounts`, the preview-env wipe. Only solana/environments/preview-env.json enables it;
 # runtime-tests requests it, so the unification caveat on `decode` applies here too.
 admin-sweep = []
+# Cleartext simulator build for local tests (src/cleartext): `fhe_execute` also records the
+# plaintext of each result in the accounts it writes. Never listed in an environment file;
+# `scripts/check-zama-host-idl.sh` builds it as `zama_host_cleartext.so`. runtime-tests requests it,
+# so the unification caveat on `decode` applies here too.
+cleartext = []
 
 [build-dependencies]
 program-environment = { path = "../../crates/program-environment" }

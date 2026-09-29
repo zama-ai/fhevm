@@ -77,7 +77,7 @@ pub fn close_transient_store(ctx: Context<CloseTransientStore>) -> Result<()> {
         ZamaHostError::TransientCloseMissing
     );
     require!(
-        ctx.accounts.transient_store.to_account_info().data_len() == TransientStore::SPACE,
+        is_transient_store_len(ctx.accounts.transient_store.to_account_info().data_len()),
         ZamaHostError::TransientAccountInvalid
     );
     let transient_store = ctx.accounts.transient_store.load()?;
@@ -160,7 +160,7 @@ pub(super) fn opened_transient_store<'info>(
         ZamaHostError::TransientStoreNotOpened
     );
     require!(
-        account.data_len() == TransientStore::SPACE,
+        is_transient_store_len(account.data_len()),
         ZamaHostError::TransientStoreNotOpened
     );
     AccountLoader::try_from(account).map_err(|_| error!(ZamaHostError::TransientAccountInvalid))

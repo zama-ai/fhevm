@@ -2,17 +2,18 @@
 //!
 //! The kit holds only what is program-agnostic or `zama-host`-generic: the Mollusk environment,
 //! Anchor instruction/account plumbing, the host's fixture accounts (`HostConfig`, `KmsContext`,
-//! `EncryptedStore`, deny records), the coprocessor/KMS signature minting, the cleartext oracle
-//! that replays `fhe_execute` CPIs, and the rolling cost snapshots. Program-specific fixtures
+//! `EncryptedStore`, deny records), the coprocessor/KMS signature minting, plaintext reads of the
+//! cleartext host build, store ACL history for proofs, and the rolling cost snapshots. Program-specific fixtures
 //! (a token's mints, a batcher's batches) stay with their suites.
 //!
 //! The kit deliberately depends on no program crate other than `zama-host`: each suite registers
 //! its own programs on the `Mollusk` it gets from [`svm`], so a new consumer program can use the
 //! kit without pulling in every program in the workspace.
 
+pub mod cleartext;
 pub mod cost_snapshot;
-pub mod oracle;
 pub mod signing;
+pub mod store_history;
 pub mod transaction;
 
 pub mod contracts;

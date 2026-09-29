@@ -1162,7 +1162,7 @@ fn producer_reuses_its_result_across_calls_with_transaction_origin_and_depth() {
 }
 
 #[test]
-fn oracle_recovers_unstored_random_results_from_their_own_cpi_seed_event() {
+fn unstored_random_results_derive_from_their_own_cpi_seed_event() {
     let fixture = Fixture::new(0);
     let (config, config_account) = zama_solana_test_kit::host_config_account(
         &zama_solana_test_kit::HostConfigParams::new(fixture.payer),
@@ -1223,10 +1223,6 @@ fn oracle_recovers_unstored_random_results_from_their_own_cpi_seed_event() {
         .find_map(|inner| zama_solana_test_kit::decode_anchor_event(&inner.instruction.data))
         .unwrap();
     assert_eq!(event.seeds.len(), 2);
-    let mut ledger = zama_solana_test_kit::oracle::CleartextLedger::default();
-    let replay = ledger.replay_fhe_cpis(&context, &result);
-    assert_eq!(replay.executions, 1);
-    assert_eq!(replay.persistent_outputs, 0);
     let first =
         host::computed_rand_handle(event.seeds[0].seed, 5, host::ID, host::SOLANA_POC_CHAIN_ID);
     let second = host::computed_rand_bounded_handle(
@@ -1236,8 +1232,7 @@ fn oracle_recovers_unstored_random_results_from_their_own_cpi_seed_event() {
         host::ID,
         host::SOLANA_POC_CHAIN_ID,
     );
-    ledger.u64_for_handle(first);
-    assert!(ledger.u64_for_handle(second) < 16);
+    assert_eq!(event.results, vec![first, second]);
     assert!(
         zama_solana_test_kit::read_encrypted_store(&context, fixture.state)
             .slots

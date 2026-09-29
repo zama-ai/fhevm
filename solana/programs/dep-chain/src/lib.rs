@@ -5,7 +5,7 @@
 //! dependent chain into ONE `fhe_execute`, each step's operand being the previous step's transient
 //! result, so the coprocessor cannot parallelize any of it: the whole chain sits in the slow lane
 //! and must be computed strictly in order before the tail handle becomes decryptable. Its Mollusk
-//! test (`runtime-tests/tests/dep_chain_mollusk.rs`) proves the kit's cleartext oracle replays a
+//! test (`runtime-tests/tests/dep_chain_mollusk.rs`) proves the cleartext host build evaluates a
 //! chain at this program's full depth; the live load-smoke scenario drives the same dependent-step
 //! shape through the typed `fhe_execute` client against the running coprocessor.
 //!

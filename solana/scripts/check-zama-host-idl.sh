@@ -23,6 +23,10 @@ for program in zama_host confidential_token confidential_batcher demo_vault; do
   NO_DNA=1 anchor build --ignore-keys --no-idl -p "$program" -- --features admin-sweep 2>&1 | tee -a "$build_log"
   mv "target/deploy/$program.so" "target/deploy/${program}_admin_sweep.so"
 done
+# `cleartext` records plaintexts in host accounts for the local simulator (src/cleartext). It is a
+# test artifact only: build-programs.sh refuses it in environment files and deploy refuses its marker.
+NO_DNA=1 anchor build --ignore-keys --no-idl -p zama_host -- --features cleartext 2>&1 | tee -a "$build_log"
+mv target/deploy/zama_host.so target/deploy/zama_host_cleartext.so
 NO_DNA=1 anchor build --ignore-keys 2>&1 | tee -a "$build_log"
 if rg -n 'Error:.*([Ss]tack offset|overflows the maximum allowed)' "$build_log"; then
   echo "SBF stack limit exceeded" >&2
