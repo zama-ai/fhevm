@@ -33,6 +33,15 @@ if rg -n 'Error:.*([Ss]tack offset|overflows the maximum allowed)' "$build_log";
   exit 1
 fi
 
+# The deployer refuses any binary carrying the cleartext build's marker, so the marker must be in
+# the cleartext build and never in the production one.
+marker='zama-host cleartext build (test)'
+LC_ALL=C grep -qaF "$marker" target/deploy/zama_host_cleartext.so || { echo 'cleartext build lacks its marker' >&2; exit 1; }
+if LC_ALL=C grep -qaF "$marker" target/deploy/zama_host.so; then
+  echo 'production zama_host.so carries the cleartext marker' >&2
+  exit 1
+fi
+
 python3 scripts/check_solana_abi.py --root "$ROOT"
 python3 scripts/authority_table.py --root "$ROOT"
 

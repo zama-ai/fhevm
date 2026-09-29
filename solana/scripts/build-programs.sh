@@ -19,6 +19,11 @@ for program in "$@"; do
     *) echo "unknown program: $program" >&2; exit 1;;
   esac
 done
+# `cleartext` makes zama_host record plaintexts in its accounts; it is a local test build only.
+if python3 -c 'import json, sys; sys.exit(not any("cleartext" in f for f in json.load(open(sys.argv[1])).get("features", {}).values()))' "$environment_file"; then
+  echo "$environment_file enables the cleartext test build, which must never be deployed" >&2
+  exit 1
+fi
 bash scripts/install-sbf-tools.sh
 # build.rs reads the program ids from the environment file; each program's cargo features come from
 # the same file (`features.<program>`). The environment is passed as cargo config, not a shell

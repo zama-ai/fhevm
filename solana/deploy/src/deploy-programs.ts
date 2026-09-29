@@ -36,6 +36,10 @@ const run = (argv: string[], signal?: AbortSignal): Promise<string> =>
     });
   });
 
+// `zama_host::cleartext::layout::MAGIC`: the cleartext build writes it into every store, so it is
+// present in that binary and absent from the production one (scripts/check-zama-host-idl.sh).
+const CLEARTEXT_BUILD_MARKER = Buffer.from('zama-host cleartext build (test)');
+
 const addressOf = (keypairPath: string): Promise<string> => run(['solana', 'address', '-k', keypairPath]);
 
 /** Stable private buffer key; an interrupted upload is recoverable without its ephemeral disk. */
@@ -93,6 +97,9 @@ export const deployProgramArtifacts = async (parameters: {
     const soPath = path.join(parameters.artifactsDir, `${program}.so`);
     const keypairPath = parameters.programKeypairPaths[program];
     await access(soPath);
+    if ((await readFile(soPath)).includes(CLEARTEXT_BUILD_MARKER)) {
+      throw new Error(`${program}.so is a cleartext test build and must never be deployed`);
+    }
     const expected = declared[program];
     if (!expected) throw new Error(`${program} is unavailable in environment ${parameters.environment}`);
     const programId = keypairPath ? await addressOf(keypairPath) : expected;
