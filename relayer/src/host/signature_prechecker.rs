@@ -76,8 +76,9 @@ impl UserDecryptSignaturePreChecker {
         })
     }
 
-    /// Verify the signature on a unified v3 request. Non-unified variants are a no-op (the
-    /// pre-check is wired only into the v3 endpoint). Recomputes the EIP-712 digest, then runs
+    /// Verify the signature on a unified v3 request. Non-unified variants are a no-op: the
+    /// pre-check is wired only into the v3 endpoint, and a Solana request reaches it only after
+    /// admission verified its signature. Recomputes the EIP-712 digest, then runs
     /// the shared verifier, retrying transport failures and reasonless reverts like the host
     /// ACL checks do, and rejecting on definitive verification failures.
     pub async fn verify(&self, request: &UserDecryptRequest) -> Result<(), SigPreCheckError> {

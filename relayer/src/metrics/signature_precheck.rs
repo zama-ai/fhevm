@@ -12,7 +12,7 @@ static METRICS: OnceLock<SignaturePreCheckMetrics> = OnceLock::new();
 /// Outcome of a single pre-check, used as the metric label.
 #[derive(Debug, Clone, Copy)]
 pub enum SignaturePreCheckOutcome {
-    /// Signature accepted (EOA fast path or ERC-1271 magic value).
+    /// Signature accepted (EOA fast path, ERC-1271 magic value, or a Solana ed25519 permit).
     Accepted,
     /// Signature definitively rejected — request not forwarded.
     Rejected,

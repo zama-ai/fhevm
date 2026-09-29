@@ -195,7 +195,15 @@ impl UserDecryptHandler {
             UserDecryptV3RequestJson::SolanaSrfc38(json) => {
                 match UserDecryptRequest::try_from(json) {
                     Ok(request) => request,
+                    // The Solana signature is verified here, not in the pre-check stage below, so
+                    // its refusal is recorded here under the same metric as an EIP-712 one.
                     Err(SolanaAdmissionError::Signature(error)) => {
+                        info!(
+                            reason = %error,
+                            request_id = %request_id,
+                            "v3 user-decrypt Solana signature rejected at admission"
+                        );
+                        observe_signature_precheck(SignaturePreCheckOutcome::Rejected);
                         return RelayerV2ResponseFailed::invalid_signature(
                             &error.to_string(),
                             &request_id.to_string(),

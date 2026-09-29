@@ -8,8 +8,8 @@
 mod common;
 
 use crate::common::utils::{
-    assert_retry_after_header_present, sign_v3_user_decrypt_envelope, user_decrypt_test_signer,
-    TestSetup,
+    assert_retry_after_header_present, sign_v3_user_decrypt_envelope, signature_precheck_total,
+    user_decrypt_test_signer, TestSetup,
 };
 use crate::common::validation_helper::{
     expect_v2_malformed_json, expect_v2_missing_field, expect_v2_validation_error, test_endpoint,
@@ -262,6 +262,8 @@ async fn v3_accepts_direct_handle() {
 async fn v3_accepts_solana_srfc38_request() {
     let setup = helpers::setup_with_a_solana_host().await;
     let payload = helpers::create_srfc38_envelope();
+    let metrics_endpoint = setup.settings.metrics.endpoint.clone();
+    let accepted_before = signature_precheck_total(&metrics_endpoint, "accepted").await;
 
     let response = reqwest::Client::new()
         .post(helpers::v3_user_decrypt_post_url(&setup))
@@ -279,17 +281,22 @@ async fn v3_accepts_solana_srfc38_request() {
         response.status(),
         response.text().await
     );
+    let accepted_after = signature_precheck_total(&metrics_endpoint, "accepted").await;
+    assert_eq!(accepted_after - accepted_before, 1.0);
 
     setup.shutdown().await;
 }
 
 /// A Solana request whose signature does not verify is the requester's error, refused before
-/// anything is submitted.
+/// anything is submitted, and counted as a rejected pre-check.
 #[tokio::test]
 async fn v3_rejects_solana_srfc38_request_with_a_bad_signature() {
     let setup = helpers::setup_with_a_solana_host().await;
     let mut payload = helpers::create_srfc38_envelope();
     payload["attestedPayload"]["requestValidity"]["durationSeconds"] = json!("604801");
+    let metrics_endpoint = setup.settings.metrics.endpoint.clone();
+    let accepted_before = signature_precheck_total(&metrics_endpoint, "accepted").await;
+    let rejected_before = signature_precheck_total(&metrics_endpoint, "rejected").await;
 
     let response = reqwest::Client::new()
         .post(helpers::v3_user_decrypt_post_url(&setup))
@@ -305,6 +312,10 @@ async fn v3_rejects_solana_srfc38_request_with_a_bad_signature() {
         body["error"]["details"][0]["field"].as_str(),
         Some("signature")
     );
+    let accepted_after = signature_precheck_total(&metrics_endpoint, "accepted").await;
+    let rejected_after = signature_precheck_total(&metrics_endpoint, "rejected").await;
+    assert_eq!(rejected_after - rejected_before, 1.0);
+    assert_eq!(accepted_after - accepted_before, 0.0);
 
     setup.shutdown().await;
 }

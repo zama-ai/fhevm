@@ -1024,6 +1024,18 @@ pub async fn request_cache_total(metrics_endpoint: &str, req_type: &str, result:
     )
 }
 
+/// Cumulative v3 user-decryption signature pre-check counter for one outcome.
+///
+/// Process-global like the counters above: compare deltas, not absolutes.
+#[allow(dead_code)]
+pub async fn signature_precheck_total(metrics_endpoint: &str, outcome: &str) -> f64 {
+    let text = scrape_metrics(metrics_endpoint).await.unwrap_or_default();
+    metric_sample(
+        &text,
+        &format!(r#"relayer_user_decrypt_signature_precheck_total{{outcome="{outcome}"}}"#),
+    )
+}
+
 #[allow(dead_code)]
 pub fn create_user_decrypt_wait_config(
     temp_dir: &TempDir,
