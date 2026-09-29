@@ -1174,6 +1174,8 @@ const runBlueGreenSteps = async (
   // Compared against the BCS binary, not a hardcoded release: the scenario decides which version
   // BCS runs, and the two bootstrap paths store different forms ("v0.14" vs "0.15.0").
   const bcsStackVersion = await bcsBinaryRelease();
+  // The row as Blue stored it; the interrupt campaign compares against it verbatim.
+  const bcsStoredVersions = new Map<string, string>();
   for (const db of operatorDatabases) {
     const version = await psqlQuery(db, "SELECT stack_version FROM versioning;");
     if (!versioningMatchesRelease(version, bcsStackVersion)) {
@@ -1181,6 +1183,7 @@ const runBlueGreenSteps = async (
         `${db}.versioning = "${version}", expected the BCS release ${bcsStackVersion} (prior test residue?)`,
       );
     }
+    bcsStoredVersions.set(db, version);
     const rows = await psqlQuery(db, "SELECT count(*) FROM upgrade_state;");
     if (rows !== "0") {
       throw new Error(`${db}.upgrade_state has ${rows} rows, expected 0 (prior test residue?)`);
@@ -1667,7 +1670,7 @@ const runBlueGreenSteps = async (
     if (interrupt === "none") return await completeUpgrade();
     return await withRolloutSupervisor(STATE_DIR, "interrupt-upgrade-controller.sh", [], {
       BLUE_GREEN_INTERRUPT: interrupt, UPGRADE_FAULT_DATABASE: operatorDatabases[1]!,
-      UPGRADE_FAULT_VERSION: gcsStackVersion, UPGRADE_FAULT_OLD_VERSION: "v0.14",
+      UPGRADE_FAULT_VERSION: gcsStackVersion, UPGRADE_FAULT_OLD_VERSION: bcsStoredVersions.get(operatorDatabases[1]!)!,
     }, completeUpgrade);
   } catch (error) {
     profileFailure = error;
