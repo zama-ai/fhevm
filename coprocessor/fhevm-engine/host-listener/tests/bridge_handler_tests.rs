@@ -1551,3 +1551,191 @@ async fn bridge_handle_forces_source_computation_allowed() {
     // And SnS is enqueued, so its ct128/digest follow.
     assert_eq!(pbs_count(&db, src_handle).await, 1);
 }
+
+async fn producer_rows(
+    db: &Database,
+    handle: FixedBytes<32>,
+) -> Vec<(i64, Vec<u8>)> {
+    let pool = db.pool().await;
+    sqlx::query_as(
+        "SELECT producer_block_number, producer_block_hash
+           FROM handle_producer_block
+          WHERE handle = $1
+          ORDER BY producer_block_hash",
+    )
+    .bind(handle.as_slice())
+    .fetch_all(&pool)
+    .await
+    .expect("producer rows")
+}
+
+async fn seed_source_digest(db: &Database, src_handle: &[u8]) {
+    let pool = db.pool().await;
+    sqlx::query(
+        "INSERT INTO ciphertext_digest
+             (handle, ciphertext, ciphertext128, ciphertext128_format, host_chain_id, key_id_gw)
+         VALUES ($1, '\\xa1'::bytea, '\\xb2'::bytea, 11, $2, '\\xc3'::bytea)",
+    )
+    .bind(src_handle)
+    .bind(SRC_CHAIN_ID as i64)
+    .execute(&pool)
+    .await
+    .expect("seed source digest");
+}
+
+#[tokio::test]
+#[serial(db)]
+async fn handle_bridged_records_the_destination_producer_block() {
+    let (db, _inst) = fresh_db(DST_CHAIN_ID).await;
+    let src_handle = handle_for_chain(SRC_CHAIN_ID, 0x33);
+    let prev = FixedBytes::from([0xBB; 32]);
+    let dst_handle = FixedBytes::from(derive_dst_handle(
+        &src_handle.0,
+        &ACL,
+        DST_CHAIN_ID,
+        &prev.0,
+        BLOCK_TIMESTAMP,
+    ));
+    let event =
+        BridgeContractEvents::HandleBridged(BridgeContract::HandleBridged {
+            receiverDapp: Address::from([0xDB; 20]),
+            srcHandle: src_handle,
+            dstHandle: dst_handle,
+            guid: FixedBytes::from([0x44; 32]),
+        });
+
+    // Replayed ingest must not duplicate the row.
+    for _ in 0..2 {
+        ingest(&db, event.clone(), prev, Some(Address::from(ACL))).await;
+    }
+
+    assert_eq!(
+        producer_rows(&db, dst_handle).await,
+        vec![(BLOCK_NUMBER as i64, BLOCK_HASH.to_vec())],
+        "the bridging block owns the destination handle at observation"
+    );
+}
+
+#[tokio::test]
+#[serial(db)]
+async fn fallback_grant_producer_is_recorded_at_observation_before_finality() {
+    let (mut db, _inst) = fresh_db(DST_CHAIN_ID).await;
+    let dst_handle = fallback_dst_handle(DST_CHAIN_ID, 5);
+    let block_hash = FixedBytes::from([0xAB; 32]);
+
+    ingest_fallback_block_at(
+        &mut db,
+        &[(dst_handle, U256::from(123_u64), 0x77)],
+        BLOCK_NUMBER,
+        block_hash,
+        false,
+    )
+    .await;
+    let expected = vec![(BLOCK_NUMBER as i64, block_hash.to_vec())];
+    assert_eq!(
+        producer_rows(&db, dst_handle).await,
+        expected,
+        "a node following the head assigns the handle before synthesis"
+    );
+    assert_eq!(computation_count(&db, dst_handle).await, 0);
+
+    let mut tx = db
+        .new_transaction()
+        .await
+        .expect("tx")
+        .expect("new_transaction() returns Some on a live stack");
+    synthesize_finalized_fallback_grants(
+        &db,
+        &mut tx,
+        BLOCK_NUMBER as i64,
+        &block_hash,
+    )
+    .await
+    .expect("synthesis");
+    tx.commit().await.expect("commit");
+
+    assert_eq!(computation_count(&db, dst_handle).await, 1);
+    assert_eq!(
+        producer_rows(&db, dst_handle).await,
+        expected,
+        "synthesis at finality leaves the block's inventory unchanged"
+    );
+}
+
+#[tokio::test]
+#[serial(db)]
+async fn fallback_grant_producer_matches_between_catch_up_and_head() {
+    let (mut db, _inst) = fresh_db(DST_CHAIN_ID).await;
+    let dst_handle = fallback_dst_handle(DST_CHAIN_ID, 5);
+    let block_hash = FixedBytes::from([0xAC; 32]);
+
+    // Catch-up: the block is final at ingest and synthesized inline.
+    ingest_fallback_block_at(
+        &mut db,
+        &[(dst_handle, U256::from(123_u64), 0x77)],
+        BLOCK_NUMBER,
+        block_hash,
+        true,
+    )
+    .await;
+
+    assert_eq!(computation_count(&db, dst_handle).await, 1);
+    assert_eq!(
+        producer_rows(&db, dst_handle).await,
+        vec![(BLOCK_NUMBER as i64, block_hash.to_vec())],
+        "same inventory as a node that ingested the block before finality"
+    );
+}
+
+#[tokio::test]
+#[serial(db)]
+async fn fallback_grant_for_bridged_handle_records_no_producer() {
+    let (mut db, _inst) = fresh_db(DST_CHAIN_ID).await;
+    let dst_handle = fallback_dst_handle(DST_CHAIN_ID, 5);
+    // The bridging block already owns the handle; the grant only supplies
+    // its bytes.
+    seed_bridged_observation(
+        &db,
+        dst_handle.as_slice(),
+        DST_CHAIN_ID,
+        &[0x99; 32],
+        false,
+    )
+    .await;
+
+    ingest_fallback(&mut db, dst_handle, U256::from(7_u64)).await;
+
+    assert!(producer_rows(&db, dst_handle).await.is_empty());
+    assert_eq!(
+        computation_count(&db, dst_handle).await,
+        1,
+        "the grant still materializes a bridge that cannot be copied"
+    );
+}
+
+#[tokio::test]
+#[serial(db)]
+async fn fallback_grant_is_declined_while_the_bridged_source_can_be_copied() {
+    let (mut db, _inst) = fresh_db(DST_CHAIN_ID).await;
+    let dst_handle = fallback_dst_handle(DST_CHAIN_ID, 5);
+    // `seed_bridged_observation` bridges from source handle 0x01. An empty
+    // block hash is a legacy row that counts as not orphaned.
+    seed_bridged_observation(
+        &db,
+        dst_handle.as_slice(),
+        DST_CHAIN_ID,
+        &[],
+        false,
+    )
+    .await;
+    seed_source_digest(&db, &[0x01]).await;
+
+    ingest_fallback(&mut db, dst_handle, U256::from(7_u64)).await;
+
+    assert_eq!(
+        computation_count(&db, dst_handle).await,
+        0,
+        "the manifest already describes the destination with the source digests"
+    );
+    assert_eq!(pbs_count(&db, dst_handle).await, 0);
+}

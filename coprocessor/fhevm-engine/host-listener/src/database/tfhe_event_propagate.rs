@@ -320,6 +320,11 @@ pub struct LogTfhe {
     /// executor, so its result must never become a same-transaction minted
     /// operand for a later real executor operation.
     pub is_executor_minted: bool,
+    /// Whether this event materializes a `FallbackGrantedPlaintext`. The
+    /// grant's handle is assigned to a block when the grant is observed (see
+    /// `record_fallback_grant_producer`), not when it is synthesized, so this
+    /// computation writes no `handle_producer_block` row.
+    pub is_fallback_grant: bool,
 }
 
 pub type Transaction<'l> = sqlx::Transaction<'l, Postgres>;
@@ -920,7 +925,9 @@ impl Database {
         // at tx end, so a handle that must survive later blocks is persist-
         // allowed in the producing transaction (same host block). Later
         // Allowed events only add accounts; they do not write this table.
-        let producer_recorded = if log.is_output_allowed(&output_handle) {
+        let producer_recorded = if !log.is_fallback_grant
+            && log.is_output_allowed(&output_handle)
+        {
             insert_handle_producer_block(
                 tx,
                 self.chain_id.as_i64(),
@@ -2070,7 +2077,21 @@ impl Database {
                     dst_handle = to_hex(e.dstHandle.as_slice()),
                     "HandleBridged event"
                 );
-                sqlx::query!(
+                // The destination handle belongs to this block, like a
+                // computation output: its bytes are a later copy of the
+                // source ciphertext, but its manifest descriptor is known from
+                // the source digest (see the consensus-detector builder).
+                // `dst_handle` is derived from this block's parent hash, so
+                // each fork sibling owns its own handle.
+                let producer_recorded = insert_handle_producer_block(
+                    tx,
+                    self.chain_id.as_i64(),
+                    e.dstHandle.as_slice(),
+                    block_number as i64,
+                    block_hash.as_slice(),
+                )
+                .await?;
+                let event_recorded = sqlx::query!(
                     "INSERT INTO handle_bridged_events
                         (src_handle, dst_handle, dst_chain_id, receiver_dapp,
                          guid, block_number, block_hash, transaction_id)
@@ -2088,7 +2109,8 @@ impl Database {
                 .execute(tx.deref_mut())
                 .await?
                 .rows_affected()
-                    > 0
+                    > 0;
+                event_recorded || producer_recorded
             }
             // `FallbackGrantedPlaintext` is converted to a synthetic TrivialEncrypt
             // computation during ingest (see ingest.rs), so it is not handled here.
@@ -2252,6 +2274,85 @@ impl Database {
         .fetch_one(tx.deref_mut())
         .await?;
         Ok(conflicts)
+    }
+
+    /// Assigns a granted handle to the block that observed the grant, unless a
+    /// `HandleBridged` event already gave it to its own block: a grant only
+    /// supplies late bytes for a bridged handle. Written at observation, never
+    /// at synthesis, so the block's inventory is the same whether or not the
+    /// block was final when ingested.
+    pub async fn record_fallback_grant_producer(
+        &self,
+        tx: &mut Transaction<'_>,
+        dst_handle: &[u8],
+        block_number: u64,
+        block_hash: &[u8],
+    ) -> Result<bool, SqlxError> {
+        let done = sqlx::query!(
+            r#"
+            INSERT INTO handle_producer_block (
+                host_chain_id,
+                handle,
+                producer_block_number,
+                producer_block_hash
+            )
+            SELECT $1, $2, $3, $4
+             WHERE NOT EXISTS (
+                SELECT 1 FROM handle_bridged_events
+                 WHERE dst_handle = $2 AND dst_chain_id = $1
+             )
+            ON CONFLICT (host_chain_id, handle, producer_block_hash) DO NOTHING
+            "#,
+            self.chain_id.as_i64(),
+            dst_handle,
+            block_number as i64,
+            block_hash,
+        )
+        .execute(tx.deref_mut())
+        .await?;
+        Ok(done.rows_affected() > 0)
+    }
+
+    /// Whether this node can still copy the bridged source onto `dst_handle`:
+    /// the pair is not associated yet and the source digests exist. The
+    /// consensus-detector then seals the destination with the source digests,
+    /// so a fallback grant must not materialize different bytes here. The
+    /// grant is a permission: a node that can make the real association keeps
+    /// waiting for it.
+    pub async fn bridge_copy_pending(
+        &self,
+        tx: &mut Transaction<'_>,
+        dst_handle: &[u8],
+    ) -> Result<bool, SqlxError> {
+        let pending = sqlx::query_scalar!(
+            r#"
+            SELECT EXISTS (
+                SELECT 1
+                  FROM handle_bridged_events dst_event
+                  JOIN ciphertext_digest src_digest
+                    ON src_digest.handle = dst_event.src_handle
+                 WHERE dst_event.dst_handle = $1
+                   AND dst_event.dst_chain_id = $2
+                   AND NOT dst_event.is_associated
+                   AND src_digest.ciphertext IS NOT NULL
+                   AND src_digest.ciphertext128 IS NOT NULL
+                   AND (
+                        dst_event.block_hash = ''::bytea
+                        OR EXISTS (
+                            SELECT 1 FROM host_chain_blocks_valid dst_block
+                             WHERE dst_block.chain_id = dst_event.dst_chain_id
+                               AND dst_block.block_hash = dst_event.block_hash
+                               AND dst_block.block_status <> 'orphaned'
+                        )
+                   )
+            ) AS "pending!"
+            "#,
+            dst_handle,
+            self.chain_id.as_i64(),
+        )
+        .fetch_one(tx.deref_mut())
+        .await?;
+        Ok(pending)
     }
 
     /// Add the handle to the allowed_handles table
