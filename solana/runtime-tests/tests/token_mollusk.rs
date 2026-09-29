@@ -30,6 +30,7 @@ use mollusk_svm::{
 use solana_sdk::{
     account::Account,
     instruction::{AccountMeta, Instruction},
+    program_error::ProgramError,
     program_pack::Pack,
     pubkey::Pubkey,
 };
@@ -1462,6 +1463,91 @@ fn mollusk_overdrawn_confidential_transfer_succeeds_and_moves_an_encrypted_zero(
 
     assert_eq!(balance(&context, fixture.alice_token), 1_000);
     assert_eq!(balance(&context, fixture.bob_token), 100);
+}
+
+/// A value the cleartext host cannot know fails the execution rather than reading as zero: a store
+/// the production build wrote, and an input attestation without its plaintext.
+#[test]
+fn mollusk_cleartext_host_refuses_values_it_does_not_know() {
+    let fixture = TokenFixture::new();
+    let transfer = |attestation| {
+        confidential_transfer_ix(
+            &fixture,
+            fixture.alice_token,
+            fixture.bob_token,
+            fixture.alice_balance_store,
+            fixture.bob_balance_store,
+            attestation,
+        )
+    };
+    let cleartext_error =
+        |error: host::cleartext::CleartextError| Check::err(ProgramError::Custom(error.into()));
+
+    let production_stores = mollusk().with_context(fixture.base_accounts());
+    check_token_instruction(
+        &production_stores,
+        &transfer(sender_attestation(&fixture, 21, 400)),
+        &[cleartext_error(
+            host::cleartext::CleartextError::ValueUnknown,
+        )],
+    );
+
+    let context = fixture_context(mollusk(), fixture.base_accounts());
+    check_token_instruction(
+        &context,
+        &transfer(production_amount_attestation_for(
+            handle_for_chain(21, BALANCE_FHE_TYPE),
+            fixture.owner,
+            token::id(),
+        )),
+        &[cleartext_error(
+            host::cleartext::CleartextError::InputMalformed,
+        )],
+    );
+}
+
+/// Readers built for production stores decode a store the cleartext host wrote, plaintext section
+/// included.
+#[test]
+fn mollusk_cleartext_stores_decode_with_the_production_decoder() {
+    let fixture = TokenFixture::new();
+    let context = fixture_context(mollusk(), fixture.base_accounts());
+    seed_u64(&context, fixture.alice_initial, 1_000);
+    let transfer = confidential_transfer_ix(
+        &fixture,
+        fixture.alice_token,
+        fixture.bob_token,
+        fixture.alice_balance_store,
+        fixture.bob_balance_store,
+        sender_attestation(&fixture, 21, 400),
+    );
+    check_token_instruction(&context, &transfer, &[Check::success()]);
+
+    let data = context.account_store.borrow()[&fixture.alice_balance_store]
+        .data
+        .clone();
+    assert_eq!(data.len(), host::cleartext::layout::STORE_ACCOUNT_SIZE);
+    let store = read_encrypted_store(&context, fixture.alice_balance_store);
+    let expected = zama_solana_acl::EncryptedStore {
+        program: store.program.to_bytes(),
+        authority: store.authority.to_bytes(),
+        scope: store.scope.to_bytes(),
+        slots: store
+            .slots
+            .iter()
+            .map(|slot| zama_solana_acl::EncryptedSlot {
+                key: slot.key,
+                handle: slot.handle,
+            })
+            .collect(),
+        leaf_count: store.leaf_count,
+        peaks: store.peaks.clone(),
+        bump: store.bump,
+    };
+    assert_eq!(
+        zama_solana_acl::decode_encrypted_store(&data).expect("ACL decoder"),
+        expected
+    );
 }
 
 #[test]

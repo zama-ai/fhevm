@@ -186,3 +186,43 @@ fn write_entry(data: &mut [u8], section: usize, entry: usize, value: Value) -> R
 }
 
 const _: () = assert!(STORE_ACCOUNT_SIZE <= 10_240);
+// The SDK decoder accepts capacity past a store's Borsh encoding only in whole 32-byte words.
+const _: () = assert!((STORE_ACCOUNT_SIZE - STORE_SECTION_OFFSET).is_multiple_of(32));
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn handle(index: u8) -> [u8; 32] {
+        let mut handle = [index; 32];
+        handle[30] = 5;
+        handle
+    }
+
+    #[test]
+    fn history_keeps_the_latest_results_and_forgets_older_ones_loudly() {
+        let mut data = vec![0u8; STORE_ACCOUNT_SIZE];
+        init_store_section(&mut data).unwrap();
+        let value = |index: u8| Value::new(5, index.into()).unwrap();
+        for index in 0..=STORE_HISTORY_LEN as u8 {
+            record_store_history(&mut data, handle(index), value(index)).unwrap();
+        }
+        assert!(store_history_value(&data, handle(0)).is_err());
+        for index in 1..=STORE_HISTORY_LEN as u8 {
+            assert_eq!(
+                store_history_value(&data, handle(index)).unwrap(),
+                value(index)
+            );
+        }
+    }
+
+    #[test]
+    fn a_store_without_a_section_holds_no_value() {
+        let data = vec![0u8; STORE_ACCOUNT_SIZE];
+        assert!(store_value(&data, 0, handle(1)).is_err());
+        assert!(store_history_value(&data, handle(1)).is_err());
+        let mut data = data;
+        init_store_section(&mut data).unwrap();
+        assert!(store_value(&data, 0, handle(1)).is_err());
+    }
+}

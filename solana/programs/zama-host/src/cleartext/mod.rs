@@ -19,7 +19,7 @@ use crate::{
     assert_sum_operand_types, assert_supported_fhe_type, assert_ternary_operand_types,
     assert_unary_operand_type, assert_valid_bounded_rand_upper_bound, errors::ZamaHostError,
     handle_fhe_type, FheBinaryOpCode, FheExecuteArgs, FheExecuteOperand, FheExecuteStep,
-    FheTernaryOpCode, FheUnaryOpCode,
+    FheTernaryOpCode, FheUnaryOpCode, MAX_INPUT_ATTESTATION_EXTRA_DATA,
 };
 
 /// Errors only the cleartext build returns. Numbered apart from [`ZamaHostError`], whose codes
@@ -99,13 +99,19 @@ fn mask(fhe_type: u8) -> Result<u128> {
     })
 }
 
-/// Encodes the plaintexts of an input attestation's handles, in `ct_handles` order.
+/// Encodes the plaintexts of an input attestation's handles, in `ct_handles` order. Fails when
+/// they exceed the attestation's `extra_data` limit, which the host would reject: 15 `euint128`
+/// inputs fit, 16 do not.
 pub fn encode_input_values(values: &[Value]) -> Result<Vec<u8>> {
     let mut extra_data = vec![INPUT_VALUES_TAG];
     for value in values {
         let len = value_len(value.fhe_type)?;
         extra_data.extend_from_slice(&value.bits.to_be_bytes()[16 - len..]);
     }
+    require!(
+        extra_data.len() <= MAX_INPUT_ATTESTATION_EXTRA_DATA,
+        ZamaHostError::MalformedInputAttestation
+    );
     Ok(extra_data)
 }
 
@@ -408,5 +414,12 @@ mod tests {
         }
         assert!(decode_input_value(&extra_data[..extra_data.len() - 1], &handles, 0).is_err());
         assert!(decode_input_value(&[0x00], &handles[..0], 0).is_err());
+    }
+
+    #[test]
+    fn input_values_fit_the_attestation_extra_data_limit() {
+        let euint128 = |count| vec![value(6, u128::MAX); count];
+        assert_eq!(encode_input_values(&euint128(15)).unwrap().len(), 241);
+        assert!(encode_input_values(&euint128(16)).is_err());
     }
 }

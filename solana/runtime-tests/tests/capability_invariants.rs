@@ -19,18 +19,24 @@
 //! it, signing or not.
 //! `scripts/check-planted-bugs.sh` rebuilds the host with each patch in `planted-bugs/` and
 //! requires this suite to fail.
+//!
+//! The same sequences also run on the cleartext host build next to the production one: every
+//! transaction must end the same way, make the same calls other than to the System program, and
+//! leave the same host state once the plaintexts the cleartext build adds are set aside.
 
 use std::collections::{BTreeMap, BTreeSet, HashMap};
 use std::sync::OnceLock;
 
 use anchor_lang::prelude::system_program;
 use anchor_lang::{AccountDeserialize, AccountSerialize, Discriminator, InstructionData};
+use mollusk_svm::result::types::TransactionResult;
 use proptest::prelude::*;
 use proptest::strategy::ValueTree;
 use proptest::test_runner::{Config, TestRunner};
 use solana_sdk::{account::Account, instruction::Instruction, pubkey::Pubkey};
 use zama_host::encode::ExecutionDictionary;
 use zama_host::{self as host, AppScope, FheExecuteArgs, FheExecuteStep};
+use zama_solana_test_kit::cleartext;
 use zama_solana_test_kit::{
     anchor_ix, canonical_test_context_id, empty_system_account, encrypted_store_account,
     event_authority, funded_system_account, host_config_account, host_svm, kms_context_account,
@@ -392,6 +398,7 @@ fn changed<'a>(before: &'a Snapshot, after: &'a Snapshot) -> Vec<(Pubkey, Vec<&'
 /// context, Stores of three authorities across two programs, and four wallets. Wallet 0 is the
 /// first admin and the upgrade authority; wallet 1 is the first pauser.
 struct World {
+    build: Build,
     context: Ctx,
     admin: Pubkey,
     wallets: [Pubkey; WALLETS],
@@ -425,8 +432,15 @@ fn slot_key() -> [u8; 32] {
     label("slot")
 }
 
+/// The zama-host artifact a world runs.
+#[derive(Clone, Copy, PartialEq)]
+enum Build {
+    Production,
+    Cleartext,
+}
+
 impl World {
-    fn new() -> Self {
+    fn new(build: Build) -> Self {
         let wallets = std::array::from_fn(|index| Pubkey::new_from_array([0x10 + index as u8; 32]));
         // Two authorities of the first program and one of the second.
         let authorities = std::array::from_fn(|index| {
@@ -456,8 +470,13 @@ impl World {
             let app = app(index);
             accounts.insert(app.scope, program_owned_account(app.program));
         }
+        let mollusk = match build {
+            Build::Production => host_svm(),
+            Build::Cleartext => cleartext::host_svm(),
+        };
         let world = Self {
-            context: host_svm().with_context(HashMap::new()),
+            build,
+            context: mollusk.with_context(HashMap::new()),
             admin,
             wallets,
             authorities,
@@ -472,7 +491,11 @@ impl World {
                 let authority = world.store_authority(store);
                 let (address, state) =
                     new_encrypted_store(authority.app(world.store_scope(store)), authority.key, []);
-                accounts.insert(address, encrypted_store_account(&state));
+                let account = match world.build {
+                    Build::Production => encrypted_store_account(&state),
+                    Build::Cleartext => cleartext::store_account(&state, &[]),
+                };
+                accounts.insert(address, account);
             }
         }
         *world.context.account_store.borrow_mut() = accounts;
@@ -526,6 +549,33 @@ impl World {
             }
         }
         Ok(accounts)
+    }
+
+    /// Every host-owned account as the production build would hold it: a Store as its Borsh
+    /// encoding and a transient store without its plaintext tail, the parts the cleartext build
+    /// adds.
+    fn production_state(&self) -> Snapshot {
+        let accounts = self.context.account_store.borrow();
+        accounts
+            .iter()
+            .filter(|(_, account)| account.owner == host::id())
+            .map(|(address, account)| {
+                let data = &account.data;
+                let data = if data.starts_with(host::EncryptedStore::DISCRIMINATOR) {
+                    let mut encoded = Vec::new();
+                    host::EncryptedStore::try_deserialize(&mut data.as_slice())
+                        .expect("Store decodes")
+                        .try_serialize(&mut encoded)
+                        .expect("Store encodes");
+                    encoded
+                } else if data.starts_with(host::TransientStore::DISCRIMINATOR) {
+                    data[..host::TransientStore::SPACE].to_vec()
+                } else {
+                    data.clone()
+                };
+                (*address, data)
+            })
+            .collect()
     }
 
     /// The live config, read only to build instructions the host can accept.
@@ -1053,9 +1103,8 @@ impl World {
         fhe_transaction(payer, [unsign(ix, authority, role.signs)])
     }
 
-    /// Sends one action, checks H1 and H2 on the accounts it changed, and reports whether the
-    /// transaction succeeded.
-    fn step(&mut self, action: &Action) -> Result<bool, TestCaseError> {
+    /// Sends one action, checks H1 and H2 on the accounts it changed, and returns the result.
+    fn step(&mut self, action: &Action) -> Result<TransactionResult, TestCaseError> {
         let slot = self.context.mollusk.sysvars.clock.slot + 1;
         self.context.mollusk.warp_to_slot(slot);
 
@@ -1132,8 +1181,30 @@ impl World {
         if let (Action::SetAdmin { new_admin, .. }, Ok(())) = (action, &result.raw_result) {
             self.admin = self.key(*new_admin, self.admin);
         }
-        Ok(result.raw_result.is_ok())
+        Ok(result)
     }
+}
+
+/// The instructions a transaction invoked through CPI, which include the host's event CPIs.
+/// System calls are left out: the cleartext build allocates larger accounts, for more rent.
+fn inner_instructions(result: &TransactionResult) -> Vec<(Pubkey, Vec<u8>)> {
+    let keys = result
+        .message
+        .as_ref()
+        .expect("compiled message")
+        .account_keys();
+    result
+        .inner_instructions
+        .iter()
+        .flatten()
+        .map(|inner| {
+            let program = *keys
+                .get(inner.instruction.program_id_index as usize)
+                .expect("program key");
+            (program, inner.instruction.data.clone())
+        })
+        .filter(|(program, _)| *program != system_program::ID)
+        .collect()
 }
 
 /// Whether the only change to `root` is a signer with an enabled pauser record adding pause
@@ -1187,9 +1258,35 @@ proptest! {
     fn only_the_admin_changes_trust_roots_and_only_an_authority_changes_its_store(
         actions in prop::collection::vec(action(), 1..48)
     ) {
-        let mut world = World::new();
+        let mut world = World::new(Build::Production);
         for action in &actions {
             world.step(action)?;
+        }
+    }
+
+    #[test]
+    fn the_cleartext_build_behaves_as_the_production_build(
+        actions in prop::collection::vec(action(), 1..48)
+    ) {
+        let mut production = World::new(Build::Production);
+        let mut cleartext = World::new(Build::Cleartext);
+        for action in &actions {
+            let expected = production.step(action)?;
+            let actual = cleartext.step(action)?;
+            prop_assert_eq!(&actual.raw_result, &expected.raw_result, "{:?} ended differently", action);
+            prop_assert_eq!(&actual.return_data, &expected.return_data, "{:?} returned differently", action);
+            prop_assert_eq!(
+                inner_instructions(&actual),
+                inner_instructions(&expected),
+                "{:?} emitted differently",
+                action
+            );
+            prop_assert_eq!(
+                cleartext.production_state(),
+                production.production_state(),
+                "{:?} left different host state",
+                action
+            );
         }
     }
 }
@@ -1221,9 +1318,14 @@ fn generated_sequences_reach_every_state_change() {
     let sequences = prop::collection::vec(action(), 1..48);
     let mut succeeded = BTreeSet::new();
     for _ in 0..64 {
-        let mut world = World::new();
+        let mut world = World::new(Build::Production);
         for action in sequences.new_tree(&mut runner).expect("sequence").current() {
-            if world.step(&action).expect("the invariants hold") {
+            if world
+                .step(&action)
+                .expect("the invariants hold")
+                .raw_result
+                .is_ok()
+            {
                 succeeded.insert(action.instruction_name());
             }
         }
