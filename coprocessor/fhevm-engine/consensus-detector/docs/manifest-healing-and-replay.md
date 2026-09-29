@@ -466,6 +466,16 @@ explain this; healing cannot reinterpret verification. Any target change require
 a separate reconciliation decision. No-quorum inferred drift remains blocked
 until investigation and a fix permit repair or selective replay.
 
+A `HandleBridged` destination (`handle_bridged_events` in the finding's block
+and epoch schema) is a bit-for-bit copy of its source, and the bridge worker
+reuses the source's S3 objects: peers publish nothing under the destination
+key. Healing therefore tries the source first, `ct64/{src_handle}` from the
+pinned sources, then from a live attestation quorum on the source handle, and
+installs the bytes under the destination. Only when the source does not supply
+the target does it take the normal path on `ct64/{dst_handle}`, where peers
+serve a destination that a fallback grant materialized. One attempt is charged
+per pass either way.
+
 ### Install locally and resume
 
 Local ct64 repair is the first recovery deliverable. Atomically install validated

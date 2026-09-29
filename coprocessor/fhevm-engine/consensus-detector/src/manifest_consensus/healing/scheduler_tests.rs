@@ -1258,3 +1258,72 @@ async fn rollback_during_the_download_discards_the_install() {
     assert_eq!(healed(&pool, id).await, (true, false));
     assert_eq!(green_ct64(&pool, 43).await, None);
 }
+
+/// Records that `dst` was bridged from `src` in the block of `dst`'s finding
+/// (`insert_healable_from` puts a finding of `handle` in block `bytes(handle)`).
+async fn insert_bridge(pool: &PgPool, src: u8, dst: u8) {
+    sqlx::query(
+        "INSERT INTO handle_bridged_events (
+             src_handle, dst_handle, dst_chain_id, receiver_dapp, guid,
+             block_number, block_hash, is_associated
+         ) VALUES ($1, $2, 1, '\\xdb'::bytea, '\\x02'::bytea, $3, $2, TRUE)",
+    )
+    .bind(bytes(src))
+    .bind(bytes(dst))
+    .bind(i64::from(dst))
+    .execute(pool)
+    .await
+    .unwrap();
+}
+
+#[tokio::test]
+#[serial(db)]
+async fn bridged_destination_heals_from_its_source_objects() {
+    let (_db, pool) = setup().await;
+    let body = vec![5u8; 8];
+    // Peers never upload a bridged copy under its own key.
+    let id = insert_healable(&pool, 21, "s3://peer-a", &body).await;
+    insert_bridge(&pool, 20, 21).await;
+    let source = FakeCt64::default();
+    source.put("s3://peer-a", 20, body.clone());
+    pass(&pool, &source).await;
+    assert_eq!(stored_ct64(&pool, 21).await, body);
+    assert_eq!(healed(&pool, id).await, (false, true));
+}
+
+#[tokio::test]
+#[serial(db)]
+async fn bridged_destination_on_a_fallback_majority_heals_from_its_own_key() {
+    let (_db, pool) = setup().await;
+    let trivial = vec![6u8; 8];
+    let copy = vec![7u8; 8];
+    // The majority materialized the fallback grant's trivial encryption.
+    let id = insert_healable(&pool, 23, "s3://peer-a", &trivial).await;
+    insert_bridge(&pool, 22, 23).await;
+    let source = FakeCt64::default();
+    source.put("s3://peer-a", 22, copy);
+    source.put("s3://peer-a", 23, trivial.clone());
+    pass(&pool, &source).await;
+    assert_eq!(stored_ct64(&pool, 23).await, trivial);
+    assert_eq!(healed(&pool, id).await, (false, true));
+}
+
+#[tokio::test]
+#[serial(db)]
+async fn unpinned_bridged_destination_pins_the_source_attestation_quorum() {
+    let (_db, pool) = setup().await;
+    seed_registry(&pool, &["s3://peer-a", "s3://peer-b"], 2).await;
+    let body = vec![8u8; 8];
+    let id = insert_healable_from(&pool, 25, None, &body, false).await;
+    insert_bridge(&pool, 24, 25).await;
+    let source = FakeCt64::default();
+    source.put("s3://peer-a", 24, body.clone());
+    source.put("s3://peer-b", 24, body.clone());
+    pass(&pool, &source).await;
+    assert_eq!(stored_ct64(&pool, 25).await, body);
+    assert_eq!(healed(&pool, id).await, (false, true));
+    assert_eq!(
+        pinned_target(&pool, id).await,
+        Some(keccak256(&body).as_slice().to_vec())
+    );
+}
