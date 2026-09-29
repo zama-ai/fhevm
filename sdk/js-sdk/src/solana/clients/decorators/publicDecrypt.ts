@@ -3,6 +3,7 @@ import type { FhevmRuntime } from '../../../core/types/coreFhevmRuntime.js';
 import type {
   SolanaPublicDecryptCertificateClaim,
   SolanaPublicDecryptCertificateParameters,
+  SolanaPublicDecryptCertifier,
 } from '../../actions/publicDecryptCertificate.js';
 import { publicDecryptCertificate } from '../../actions/publicDecryptCertificate.js';
 
@@ -14,8 +15,13 @@ export type SolanaPublicDecryptActions = {
 };
 
 /** Binds raw certificate requests to their deployment and shared runtime. */
-export function solanaPublicDecryptActions(chain: FhevmSolanaChain, runtime: FhevmRuntime): SolanaPublicDecryptActions {
+export function solanaPublicDecryptActions(
+  chain: FhevmSolanaChain,
+  runtime: FhevmRuntime,
+  certify?: SolanaPublicDecryptCertifier,
+): SolanaPublicDecryptActions {
   return {
-    publicDecryptCertificate: (parameters) => publicDecryptCertificate({ chain, runtime }, parameters),
+    publicDecryptCertificate: (parameters) =>
+      certify === undefined ? publicDecryptCertificate({ chain, runtime }, parameters) : certify(parameters),
   };
 }

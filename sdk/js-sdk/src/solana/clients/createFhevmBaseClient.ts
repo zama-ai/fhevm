@@ -28,6 +28,7 @@ export type SolanaEncryptOptions = {
 // Core initialization and WASM ownership remain shared; EVM-only members stay private.
 export function createSolanaCore<C extends FhevmSolanaChain>(
   parameters: SolanaClientParameters<C> & { readonly options?: SolanaEncryptOptions | undefined },
+  runtime: FhevmRuntime = getSolanaRuntime(),
 ): Fhevm<undefined, FhevmRuntime, undefined> {
   assertValidSolanaChainId(parameters.chain.id);
   if (parameters.options !== undefined && Object.keys(parameters.options).some((key) => key !== 'fheEncryptionKey')) {
@@ -38,7 +39,7 @@ export function createSolanaCore<C extends FhevmSolanaChain>(
     throw new Error('Encryption key relayer URL does not match the Solana chain');
   }
   return createCoreFhevm(PRIVATE_SOLANA_TOKEN, {
-    runtime: getSolanaRuntime(),
+    runtime,
     options: parameters.options,
   });
 }

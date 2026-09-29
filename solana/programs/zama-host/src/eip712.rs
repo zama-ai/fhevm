@@ -411,6 +411,11 @@ mod tests {
             &[0x00],
         );
         let digest = typed_data_digest(&ds, &sh);
+        // The SDK's cleartext coprocessor signs this digest; its test pins the same value.
+        assert_eq!(
+            digest.map(|byte| format!("{byte:02x}")).concat(),
+            "6921062a83bd4a2174c90c298454b562aa5bedb4fc8b22417d74b89fd37c5aab"
+        );
         let sig = sign(&key, &digest);
 
         assert_eq!(recover_evm_address(&digest, &sig), Some(signer));

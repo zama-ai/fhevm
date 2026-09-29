@@ -11,7 +11,7 @@ import {
 } from '@solana/kit';
 import type { SolanaClientParameters } from '../clients/createFhevmBaseClient.js';
 import { solanaHostProgram } from '../clients/createFhevmBaseClient.js';
-import type { SolanaPublicDecryptCertificateParameters } from './publicDecryptCertificate.js';
+import type { SolanaPublicDecryptCertificateParameters, SolanaPublicDecryptCertifier } from './publicDecryptCertificate.js';
 import { publicDecryptCertificate, solanaPublicDecryptExtraData } from './publicDecryptCertificate.js';
 import { getSolanaRuntime } from '../internal/runtime.js';
 import { findHostConfigPda } from '../internal/generated/zamaHost/pdas/hostConfig.js';
@@ -70,6 +70,7 @@ export type SolanaDecryptPublicValueParameters = Omit<SolanaPublicDecryptCertifi
 export async function decryptPublicValue(
   client: SolanaClientParameters,
   parameters: SolanaDecryptPublicValueParameters,
+  certify?: SolanaPublicDecryptCertifier,
 ): Promise<TypedValue> {
   const signal = parameters.options?.signal;
   const checkAbort = (): void => {
@@ -111,10 +112,10 @@ export async function decryptPublicValue(
   const contextId = new Uint8Array(parameters.contextId ?? initial.currentKmsContextId);
   if (contextId.length !== 32 || contextId.every((byte) => byte === 0))
     throw new Error('KMS context is not configured');
-  const claim = await publicDecryptCertificate(
-    { chain: client.chain, runtime: getSolanaRuntime() },
-    { ...parameters, contextId },
-  );
+  const claim =
+    certify === undefined
+      ? await publicDecryptCertificate({ chain: client.chain, runtime: getSolanaRuntime() }, { ...parameters, contextId })
+      : await certify({ ...parameters, contextId });
   // Read the requested context after the response. A rotation preserves an old live context;
   // destruction invalidates it. Do not substitute the new current context for the signed one.
   const [contextAddress, contextBump] = await findKmsContextPda({ contextId }, { programAddress });
@@ -171,11 +172,12 @@ export async function decryptPublicValues(
   parameters: {
     readonly entries: readonly SolanaDecryptPublicValueParameters[];
   },
+  certify?: SolanaPublicDecryptCertifier,
 ): Promise<TypedValue[]> {
   const handles = parameters.entries.map((entry) => toFhevmHandle(entry.handle));
   if (handles.length === 0) throw new Error('Public decrypt requires at least one handle');
   assertKmsDecryptionBitLimit(handles);
   if (handles.some((handle) => BigInt(handle.chainId) !== client.chain.id))
     throw new Error('Public decrypt handle belongs to another chain');
-  return executeWithBatching(parameters.entries.map((entry) => () => decryptPublicValue(client, entry)));
+  return executeWithBatching(parameters.entries.map((entry) => () => decryptPublicValue(client, entry, certify)));
 }

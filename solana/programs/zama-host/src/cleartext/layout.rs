@@ -199,6 +199,20 @@ mod tests {
         handle
     }
 
+    /// `sdk/js-sdk/src/solana/cleartext/storeValues.ts` reads stores at these offsets.
+    #[test]
+    fn the_sdk_reader_offsets_hold() {
+        assert_eq!(
+            (
+                STORE_SECTION_OFFSET,
+                STORE_HISTORY_COUNT_OFFSET,
+                STORE_HISTORY_OFFSET,
+                STORE_ACCOUNT_SIZE
+            ),
+            (4217, 5273, 5305, 9401)
+        );
+    }
+
     #[test]
     fn history_keeps_the_latest_results_and_forgets_older_ones_loudly() {
         let mut data = vec![0u8; STORE_ACCOUNT_SIZE];
