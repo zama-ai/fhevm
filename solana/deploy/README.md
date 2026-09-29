@@ -56,7 +56,7 @@ The deployer must hold Solana devnet SOL. Cluster networking must reach the RPC/
 provider and allow connectors to reach `coprocessor-<party>-solana-leaf-proof-server:8080`.
 The proof API uses bearer authentication and a ClusterIP Service, with no public ingress.
 The listener stores computations, MMR leaves and checkpoints in its coprocessor's database;
-the leaf-proof server reads the leaves from it in its own Deployment (DD-062).
+the leaf-proof server reads the leaves from it in its own Deployment (DD-064).
 
 The fixed devnet programs have one active preview owner. Deployment acquires the
 `fhevm-ci-solana-owner` namespace with the preview namespace UID; a second preview
@@ -155,7 +155,7 @@ replay window, and the listener catches up from `--archive-url` beyond it (DD-05
 The gRPC provider must send every transaction of a slot before that slot's block meta, live
 and on `from_slot` replay, as Yellowstone does. The listener seals a slot on its block meta
 and stops if the order is broken. A transaction for a slot already applied without it stops the
-listener once; after the restart it resumes past that slot, which needs the repair in DD-060.
+listener once; after the restart it resumes past that slot, which needs the repair in DD-062.
 
 ## Validation
 

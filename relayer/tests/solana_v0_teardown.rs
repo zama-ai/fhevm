@@ -2,7 +2,7 @@
 //!
 //! The relayer used to carry Solana auth fields as optional EVM-payload fields, route them through
 //! a `SolanaUnifiedV1` variant, and build the named `userDecryptionRequestSolana` gateway calldata.
-//! Block 6 replaces all of that with the host-generic `solana-srfc38-user-decrypt-v1` path. A
+//! Block 6 replaces all of that with the `solana-srfc38-user-decrypt-v1` path. A
 //! survived reference keeps the dead surface alive silently, so this gate scans the relayer sources
 //! for the symbols that named it and fails while any of them exists.
 //!
@@ -18,7 +18,7 @@ use std::path::{Path, PathBuf};
 const FORBIDDEN: &[(&str, &str)] = &[
     (
         "SolanaUnifiedV1",
-        "the v0 core request variant; replaced by the host-generic SolanaSrfc38V1",
+        "the v0 core request variant; replaced by SolanaSrfc38V1",
     ),
     (
         "solana_unified_v1",
@@ -26,11 +26,11 @@ const FORBIDDEN: &[(&str, &str)] = &[
     ),
     (
         "userDecryptionRequestSolana",
-        "the v0 named gateway calldata; replaced by the host-generic userDecryptionRequest overload",
+        "the v0 named gateway calldata; replaced by solanaUserDecryptionRequest",
     ),
     (
         "UserDecryptionRequestSolana",
-        "the v0 named gateway event; the host-generic event is a UserDecryptionRequest overload",
+        "the v0 named gateway event; replaced by SolanaUserDecryptionRequest",
     ),
     (
         "solana_user_identity",

@@ -61,14 +61,14 @@ check requires its `assert_no_remaining_accounts` call. `?` marks an optional ac
 
 | Instruction | Signers | Writes | Reads | Calls | Remaining accounts |
 |---|---|---|---|---|---|
-| `create_encrypted_store` | `payer`: pays rent; no authority<br>`authority`: a PDA of the calling program, proven from `authority_seeds`; becomes the store's authority | `payer`, `encrypted_store` | `host_config` | System | — |
+| `create_encrypted_store` | `payer`: pays rent; no authority<br>`authority`: a PDA of the calling program, proven from `authority_seeds`; becomes the store's authority | `payer`, `encrypted_store` | `scope`, `host_config` | System | — |
 | `make_store_handle_public` | `payer`: pays rent; no authority<br>`authority`: `EncryptedStore.authority` | `payer`, `encrypted_store` | `host_config`, `deny_scope_record`? | System | — |
 
 ## User rights
 
 | Instruction | Signers | Writes | Reads | Calls | Remaining accounts |
 |---|---|---|---|---|---|
-| `delegate_for_user_decryption` | `payer`: pays rent; no authority<br>`delegator`: the user granting the delegation; a wallet must call at the top level, a PDA may call through CPI | `payer`, `delegation_record` | `host_config` | System | — |
+| `delegate_for_user_decryption` | `payer`: pays rent; no authority<br>`delegator`: the user granting the delegation; a wallet must call at the top level, a PDA may call through CPI | `payer`, `delegation_record` | `host_config`, `scope` | System | — |
 | `revoke_delegation_for_user_decryption` | `delegator`: the user who granted the delegation | `delegation_record` | `host_config` | — | — |
 | `revoke_permits` | `user`: the user whose permits are revoked; also pays rent | `user`, `invalidation` | — | System | — |
 

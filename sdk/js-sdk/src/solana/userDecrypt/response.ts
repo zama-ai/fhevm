@@ -129,8 +129,8 @@ export interface SolanaGatewayEip712Domain {
  * pass the one the response carries, which is the substitution the whole construction exists to stop.
  */
 export interface SolanaUserDecryptLinkInputs {
-  /** The recipient: the permit's 32-byte user pubkey. */
-  readonly userPubkey: Uint8Array;
+  /** The recipient: the permit's 32-byte user address. */
+  readonly userAddress: Uint8Array;
   /**
    * The host chain id the permit was signed for. Not a word of the struct: the host chain is bound
    * through the chain id every handle embeds, and this declared one is checked against it — a
@@ -208,7 +208,7 @@ function solanaRequestFieldsWasmArg(inputs: SolanaUserDecryptLinkInputs): {
   readonly verifying_program_id: string;
 } {
   return {
-    user_pubkey: bytesToHexNo0x(inputs.userPubkey),
+    user_pubkey: bytesToHexNo0x(inputs.userAddress),
     host_chain_id: inputs.hostChainId.toString(),
     verifying_program_id: bytesToHexNo0x(inputs.verifyingProgramId),
   };

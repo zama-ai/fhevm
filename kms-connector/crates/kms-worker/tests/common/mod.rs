@@ -11,7 +11,7 @@ use connector_utils::tests::{
 };
 use fhevm_gateway_bindings::{
     decryption::Decryption::{
-        CtHandleContractPair, userDecryptionRequest_2Call as userDecryptionRequestCall,
+        CtHandleContractPair, userDecryptionRequest_1Call as userDecryptionRequestCall,
     },
     gateway_config::GatewayConfig::Coprocessor,
 };
@@ -19,10 +19,10 @@ use fhevm_host_bindings::acl::ACL::ACLInstance;
 use kms_worker::core::{
     Config, DbEventPicker, DbKmsResponsePublisher, KmsWorker,
     event_processor::{
-        CiphertextManager, DbContextManager, DbEventProcessor, DecryptionProcessor,
-        HostChainAclBackend, HostRpcClient, KMSGenerationProcessor, KmsClient,
-        ProtocolConfigProcessor,
+        CiphertextManager, DbContextManager, DbEventProcessor, DecryptionProcessor, HostRpcClient,
+        KMSGenerationProcessor, KmsClient, ProtocolConfigProcessor,
     },
+    solana::SolanaDecryptionVerifier,
 };
 use sqlx::{Pool, Postgres};
 use std::{collections::HashMap, time::Duration};
@@ -61,27 +61,20 @@ where
     let event_picker = DbEventPicker::connect(db.clone(), &config).await?;
 
     let context_manager = DbContextManager::new(db.clone(), &config, provider.clone());
-    let host_chain_backends = acl_contracts_mock
+    let host_clients = acl_contracts_mock
         .into_iter()
-        .map(|(chain_id, acl)| {
-            (
-                chain_id,
-                HostChainAclBackend::Evm(HostRpcClient::new(chain_id, acl)),
-            )
-        })
+        .map(|(chain_id, acl)| (chain_id, HostRpcClient::new(chain_id, acl)))
         .collect();
-    let decryption_processor = DecryptionProcessor::new(
-        &config,
-        provider.clone(),
-        host_chain_backends,
-        ciphertext_manager,
-    );
+    let decryption_processor =
+        DecryptionProcessor::new(&config, provider.clone(), host_clients, ciphertext_manager);
+    let solana_verifier = SolanaDecryptionVerifier::new(HashMap::new());
     let kms_generation_processor = KMSGenerationProcessor::new(&config);
     let protocol_config_processor = ProtocolConfigProcessor::new(&config, provider.clone());
     let event_processor = DbEventProcessor::new(
         kms_client.clone(),
         context_manager,
         decryption_processor,
+        solana_verifier,
         kms_generation_processor,
         protocol_config_processor,
         db.clone(),

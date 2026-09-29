@@ -120,8 +120,8 @@ pub struct PermitVector {
 /// record declares — several records declare wrong ones on purpose.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct WirePermit {
-    /// User pubkey, hex.
-    pub user_pubkey: String,
+    /// User address, hex.
+    pub user_address: String,
     /// Name of the transport key in the file's `transport_keys` table.
     pub transport_key: String,
     /// Scope entries, each the 64 bytes `program ‖ scope` in hex, in the order signed.
@@ -178,7 +178,7 @@ pub mod rule {
     pub const KMS_ROUTING_LENGTH: &str = "kms-routing-length";
     /// The signature does not verify over the reconstructed envelope.
     pub const SIGNATURE_MISMATCH: &str = "signature-mismatch";
-    /// The user pubkey cannot be used as an Ed25519 verifying key.
+    /// The user address cannot be used as an Ed25519 verifying key.
     pub const UNUSABLE_USER_PUBKEY: &str = "unusable-user-pubkey";
 
     /// Every rule name, for coverage checks.

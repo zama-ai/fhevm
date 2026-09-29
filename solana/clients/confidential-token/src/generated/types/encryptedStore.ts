@@ -33,7 +33,7 @@ import { getEncryptedSlotDecoder, getEncryptedSlotEncoder, type EncryptedSlot, t
 export type EncryptedStore = {
   program: Address;
   authority: Address;
-  scope: ReadonlyUint8Array;
+  scope: Address;
   slots: Array<EncryptedSlot>;
   leafCount: bigint;
   peaks: Array<ReadonlyUint8Array>;
@@ -43,7 +43,7 @@ export type EncryptedStore = {
 export type EncryptedStoreArgs = {
   program: Address;
   authority: Address;
-  scope: ReadonlyUint8Array;
+  scope: Address;
   slots: Array<EncryptedSlotArgs>;
   leafCount: number | bigint;
   peaks: Array<ReadonlyUint8Array>;
@@ -54,7 +54,7 @@ export function getEncryptedStoreEncoder(): Encoder<EncryptedStoreArgs> {
   return getStructEncoder([
     ['program', getAddressEncoder()],
     ['authority', getAddressEncoder()],
-    ['scope', fixEncoderSize(getBytesEncoder(), 32)],
+    ['scope', getAddressEncoder()],
     ['slots', getArrayEncoder(getEncryptedSlotEncoder())],
     ['leafCount', getU64Encoder()],
     ['peaks', getArrayEncoder(fixEncoderSize(getBytesEncoder(), 32))],
@@ -66,7 +66,7 @@ export function getEncryptedStoreDecoder(): Decoder<EncryptedStore> {
   return getStructDecoder([
     ['program', getAddressDecoder()],
     ['authority', getAddressDecoder()],
-    ['scope', fixDecoderSize(getBytesDecoder(), 32)],
+    ['scope', getAddressDecoder()],
     ['slots', getArrayDecoder(getEncryptedSlotDecoder())],
     ['leafCount', getU64Decoder()],
     ['peaks', getArrayDecoder(fixDecoderSize(getBytesDecoder(), 32))],

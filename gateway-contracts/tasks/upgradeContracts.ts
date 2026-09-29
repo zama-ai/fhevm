@@ -507,7 +507,7 @@ task('task:prepareUpgradeInputVerification')
   });
 
 // No-reinitializer upgrade of the Decryption proxy to the implementation that adds the Solana
-// `userDecryptionRequest` overload (+ event). The change adds no storage, so the layout is identical to
+// decryption entries and their events. The change adds no storage, so the layout is identical to
 // the deployed implementation — a clean storage-compatible swap; `forceImport` rebuilds the OZ
 // upgrades manifest from the deployed proxy. Must be run by the GatewayConfig owner; inside the
 // `gateway-sc-deploy` container `DEPLOYER_PRIVATE_KEY` is that owner, so no key handling is needed
@@ -553,15 +553,10 @@ task('task:upgradeDecryptionSolana')
     if (after.toLowerCase() !== newImplAddr.toLowerCase()) {
       throw new Error(`upgrade did not take effect (impl=${after}, expected ${newImplAddr})`);
     }
-    // The Solana entry is an overload of `userDecryptionRequest`, so presence is checked by
-    // its exact selector rather than by name: every other overload shares the name.
-    const solanaEntry = 'userDecryptionRequest(bytes32[],(uint256,uint256),bytes,bytes,bytes)';
-    const hasFn = proxy.interface.fragments.some(
-      (f) => f.type === 'function' && (f as { format: (t: string) => string }).format('sighash') === solanaEntry,
-    );
-    console.log(`Solana ${solanaEntry} present in proxy ABI: ${hasFn}`);
-    if (!hasFn) {
-      throw new Error(`new implementation does not expose ${solanaEntry}`);
+    const solanaEntries = ['solanaUserDecryptionRequest', 'solanaPublicDecryptionRequest'];
+    const missing = solanaEntries.filter((name) => proxy.interface.getFunction(name) === null);
+    if (missing.length > 0) {
+      throw new Error(`new implementation does not expose ${missing.join(', ')}`);
     }
-    console.log('Decryption proxy upgraded — the Solana userDecryptionRequest overload is now live.');
+    console.log('Decryption proxy upgraded — the Solana decryption entries are now live.');
   });

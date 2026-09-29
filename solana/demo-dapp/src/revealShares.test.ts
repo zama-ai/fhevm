@@ -137,11 +137,10 @@ describe('confidential balance reveal evidence', () => {
     expect(JSON.stringify(readDecryptionEvidence(session))).not.toContain('72');
 
     // The permit is minted once through the session's wallet, and the request runs under it.
-    // The mocked address encoder yields zero bytes, so both halves of the scope read as zero here.
     expect(mocks.signPermit).toHaveBeenCalledExactlyOnceWith({
       wallet: PERMIT_WALLET,
       durationSeconds: 3_600n,
-      allowedScopes: [{ program: `0x${'00'.repeat(32)}`, scope: `0x${'00'.repeat(32)}` }],
+      allowedScopes: [{ program: session.config.programs.token, scope: session.config.mints.payoutConfidential }],
     });
     const [parameters] = mocks.decryptValues.mock.calls[0] ?? [];
     expect(parameters).toMatchObject({

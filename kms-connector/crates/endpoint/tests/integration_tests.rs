@@ -38,10 +38,14 @@ use tokio_util::sync::CancellationToken;
 use tracing::info;
 
 const CHAIN_ID: u64 = 31337;
+/// The Solana chain type byte over cluster tag 12345.
+const SOLANA_CHAIN_ID: u64 = 0x0100_0000_0000_3039;
 const EUINT64: u8 = FheTypes::Uint64 as u8;
 const PUBLIC_REQUESTS: &str = "public_decryption_requests";
 const USER_REQUESTS: &str = "user_decryption_requests";
 
+#[path = "cases/solana_public_decrypt.rs"]
+mod solana_public_decrypt;
 #[path = "cases/solana_user_decrypt.rs"]
 mod solana_user_decrypt;
 

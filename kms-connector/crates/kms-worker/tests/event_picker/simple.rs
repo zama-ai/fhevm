@@ -1,6 +1,16 @@
-use connector_utils::tests::{
-    db::requests::{InsertRequestOptions, TestEventType, insert_rand_request},
-    setup::TestInstanceBuilder,
+use alloy::primitives::U256;
+use connector_utils::{
+    monitoring::otlp::PropagationContext,
+    tests::{
+        db::requests::{InsertRequestOptions, TestEventType, insert_rand_request},
+        rand::{rand_digest, rand_solana_handle},
+        setup::TestInstanceBuilder,
+    },
+    types::{
+        ProtocolEventKind,
+        db::{RequestSource, insert_solana_public_decryption},
+        solana_request::SolanaPublicDecryptionRequest,
+    },
 };
 use kms_worker::core::{Config, DbEventPicker, EventPicker};
 use rstest::rstest;
@@ -40,5 +50,41 @@ async fn test_pick_request(#[case] event_type: TestEventType) -> anyhow::Result<
         vec![inserted_request],
     );
     info!("Data OK!");
+    Ok(())
+}
+
+#[rstest]
+#[timeout(Duration::from_secs(60))]
+#[tokio::test]
+async fn test_pick_solana_public_decryption_with_its_stores() -> anyhow::Result<()> {
+    let test_instance = TestInstanceBuilder::db_setup().await?;
+    let mut event_picker =
+        DbEventPicker::connect(test_instance.db().clone(), &Config::default()).await?;
+    // Two handles of one chain: they differ only outside the chain id bytes.
+    let first = rand_solana_handle();
+    let mut second = first;
+    second[0] ^= 1;
+    let request = SolanaPublicDecryptionRequest::new(
+        U256::ONE,
+        &[first, second],
+        &[rand_digest(), rand_digest()],
+        vec![0x00],
+    )?;
+    insert_solana_public_decryption(
+        test_instance.db(),
+        &request,
+        None,
+        sqlx::types::chrono::Utc::now(),
+        &PropagationContext::default(),
+        RequestSource::OnChain,
+    )
+    .await?;
+
+    let events = event_picker.pick_events().await?;
+
+    assert_eq!(
+        events.into_iter().map(|e| e.kind).collect::<Vec<_>>(),
+        vec![ProtocolEventKind::SolanaPublicDecryption(request)],
+    );
     Ok(())
 }

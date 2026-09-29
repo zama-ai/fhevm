@@ -11,7 +11,7 @@ pub struct StoreId {
 }
 
 impl StoreId {
-    pub fn new(program: Pubkey, authority: Pubkey, scope: [u8; 32]) -> Self {
+    pub fn new(program: Pubkey, authority: Pubkey, scope: Pubkey) -> Self {
         Self {
             address: zama_host::encrypted_store_address(program, authority, scope).0,
             authority,
@@ -128,7 +128,7 @@ mod tests {
         let account = zama_host::EncryptedStore {
             program: Pubkey::new_unique(),
             authority: Pubkey::new_unique(),
-            scope: [3; 32],
+            scope: Pubkey::new_from_array([3; 32]),
             slots: vec![],
             leaf_count: 0,
             peaks: vec![],

@@ -1,42 +1,39 @@
 //! The permit validity window and the per-user invalidation watermark. Together they pin a usable
 //! permit's start into `[last revocation, now]`.
 
-use super::snapshot::{HostSnapshot, UnreadAccount};
-use super::{SolanaPubkeyBytes, permit_invalidation_address};
+use super::failure::InvalidHostRecord;
+use super::snapshot::ObservedRow;
+use solana_pubkey::Pubkey;
 use zama_solana_acl::decode_permit_invalidation;
 
 /// Reads the watermark of the request signer. A user who never revoked has no record, which
 /// reads as zero.
 ///
 /// An empty System-owned account also reads as zero: anyone can fund the derivable address, and
-/// reading that as a refusal would let one transfer deny all of a user's requests. Any other
-/// account at the address must be the host's record for this user, or reading zero from a foreign
-/// layout would resurrect revoked permits.
+/// reading that as a refusal would let one transfer deny all of a user's requests. Anything else
+/// at the address must be the host's record for this user, or reading zero from a foreign layout
+/// would resurrect revoked permits.
 pub fn read_watermark(
-    snapshot: &HostSnapshot,
-    program_id: SolanaPubkeyBytes,
-    user: SolanaPubkeyBytes,
+    row: &ObservedRow,
+    program_id: Pubkey,
+    user: Pubkey,
 ) -> Result<u64, WatermarkFailure> {
-    let (account_key, canonical_bump) = permit_invalidation_address(program_id, user);
-    let Some(account) = snapshot.account(&account_key)? else {
+    let Some(account) = row
+        .account
+        .as_ref()
+        .filter(|account| !account.view().is_uninitialized())
+    else {
         return Ok(0);
     };
-    if account.is_uninitialized_pda() {
-        return Ok(0);
-    }
+    let invalid = InvalidHostRecord {
+        account_key: row.key,
+    };
     if account.owner != program_id {
-        return Err(WatermarkFailure::ForeignOwner {
-            account_key,
-            owner: account.owner,
-        });
+        return Err(invalid.into());
     }
-    let not_a_record = WatermarkFailure::NotAnInvalidationRecord { account_key };
-    let record = decode_permit_invalidation(&account.data).map_err(|_| not_a_record.clone())?;
-    if record.user != user {
-        return Err(WatermarkFailure::RecordNamesAnotherUser { account_key });
-    }
-    if record.bump != canonical_bump {
-        return Err(not_a_record);
+    let record = decode_permit_invalidation(&account.data).map_err(|_| invalid)?;
+    if record.user != user.to_bytes() || record.bump != row.bump {
+        return Err(invalid.into());
     }
     Ok(record.invalidation_watermark)
 }
@@ -84,17 +81,8 @@ pub enum WatermarkFailure {
         start_timestamp: u64,
         watermark: u64,
     },
-    #[error("account {account_key:?} is not a canonical invalidation record")]
-    NotAnInvalidationRecord { account_key: SolanaPubkeyBytes },
-    #[error("invalidation record {account_key:?} names another user")]
-    RecordNamesAnotherUser { account_key: SolanaPubkeyBytes },
-    #[error("invalidation record {account_key:?} is owned by {owner:?}")]
-    ForeignOwner {
-        account_key: SolanaPubkeyBytes,
-        owner: SolanaPubkeyBytes,
-    },
     #[error(transparent)]
-    UnreadAccount(#[from] UnreadAccount),
+    InvalidHostRecord(#[from] InvalidHostRecord),
 }
 
 #[derive(Clone, PartialEq, Eq, Debug, thiserror::Error)]

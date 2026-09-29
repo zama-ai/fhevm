@@ -26,6 +26,10 @@ use std::str::FromStr;
 use std::sync::Arc;
 use std::time::Duration;
 use tracing::{error, warn};
+use zama_solana_request::host_chain::{
+    chain_type_byte, is_evm_host_chain_id, is_solana_host_chain_id,
+};
+use zama_solana_request::SolanaUserDecryptRequest;
 
 type Provider = FillProvider<
     alloy::providers::fillers::JoinFill<
@@ -98,7 +102,7 @@ pub struct HostAclChecker {
     /// Direct entries and public decrypts are not pre-checked here — their authorization
     /// is an allow leaf sealed on the write, and this checker has no cheaper reading of it
     /// than the connector's own. Delegated user-decrypt entries ARE: the v3 request names
-    /// the allowed key and the encrypted store, which is everything the advisory
+    /// the owner address and the encrypted store, which is everything the advisory
     /// negative-only pre-check (`check_solana_delegated_user_decrypt`) needs to read the
     /// delegation rows.
     solana_chains: HashMap<u64, SolanaHostChain>,
@@ -126,7 +130,7 @@ impl HostAclChecker {
             // The type byte on the chain id is the sole discriminator. Settings validation
             // enforces the matching address encoding; keep this constructor fail-closed
             // for direct callers too.
-            if crate::core::event::is_solana_host_chain_id(hc.chain_id) {
+            if is_solana_host_chain_id(hc.chain_id) {
                 let program_id =
                     crate::http::utils::solana_address::decode_solana_address(&hc.acl_address)
                         .map_err(|e| {
@@ -149,10 +153,10 @@ impl HostAclChecker {
                 );
                 continue;
             }
-            if !crate::core::event::is_evm_host_chain_id(hc.chain_id) {
+            if !is_evm_host_chain_id(hc.chain_id) {
                 return Err(anyhow::anyhow!(
                     "unsupported chain type byte 0x{:02x} for chain {} (expected 0x00 EVM or 0x01 Solana)",
-                    crate::core::event::chain_type_byte(hc.chain_id),
+                    chain_type_byte(hc.chain_id),
                     hc.chain_id
                 ));
             }
@@ -564,74 +568,40 @@ impl HostAclChecker {
     }
 
     /// Execute a multicall against a host chain ACL contract with retry on RPC errors.
-    /// Advisory, negative-only pre-check of a Solana delegated user-decrypt request.
-    ///
-    /// The rule lives in [`super::solana_delegation_precheck`]; this method is the transport:
-    /// two batched `getMultipleAccounts` reads at `confirmed` — the encrypted stores
-    /// first (to learn each entry's encrypted store authority), then the delegation
-    /// rows, with the row read's own slot deciding liveness. That row read is ordered after the
-    /// first: it requires the first read's slot as `minContextSlot` and is compared against it
-    /// on arrival, so no verdict is reached on a view older than the plan was built from. A node
-    /// that stays behind that slot passes to the connector; direct entries are never checked.
-    /// Transport failures follow the EVM pre-check's policy: retried, then surfaced as
-    /// [`HostAclError::CallFailed`] rather than failed-open. Ambiguity of *data* (an account
-    /// this reader cannot judge) passes — the authoritative check is the KMS connectors'.
-    ///
-    /// The chain whose state is read is named by the permit's SIGNED `chain_id` — the same
-    /// field the connector authorizes against — never by the unsigned chain-id bytes embedded
-    /// in a handle: an advisory check that read a different chain's rows than its authority
-    /// could refuse what the authority would allow.
+    /// Advisory, negative-only pre-check of a Solana delegated user-decrypt request
+    /// ([`super::solana_delegation_precheck`] holds the rule). Two `getMultipleAccounts` reads at
+    /// `confirmed`: the encrypted stores, to learn each entry's application, then the delegation
+    /// rows with the Clock at or after the first read's slot. The chain read is the permit's
+    /// `chain_id`, which every handle embeds and the signature covers.
     pub async fn check_solana_delegated_user_decrypt(
         &self,
         job_id: &JobId,
-        solana_request: &[u8],
+        request: &SolanaUserDecryptRequest,
     ) -> Result<(), HostAclError> {
-        // Admission already verified the blob's shape and the permit signature over it; a
-        // re-decode failure here is this relayer's own defect, and an advisory check does not
-        // refuse users on its own defects.
-        let Ok(wire) = zama_solana_request::decode_solana_request(solana_request) else {
-            warn!(
-                int_job_id = %job_id,
-                "Solana delegation pre-check could not re-decode the request blob; passing"
-            );
-            return Ok(());
-        };
-        let chain_id = wire.permit.chain_id;
+        let chain_id = request.permit().chain_id();
         let Some(chain) = self.solana_chains.get(&chain_id) else {
             return Err(HostAclError::UnsupportedChain { chain_id });
         };
-        let Ok(user_pubkey) = <[u8; 32]>::try_from(wire.permit.user_pubkey.as_slice()) else {
-            warn!(
-                int_job_id = %job_id,
-                chain_id,
-                "Solana delegation pre-check saw a non-32-byte user pubkey; passing"
-            );
-            return Ok(());
-        };
+        let user_address = *request.permit().user_address().as_bytes();
 
-        let delegated: Vec<DelegatedEntry> = wire
-            .handles
+        let delegated: Vec<DelegatedEntry> = request
+            .entries()
             .iter()
-            .filter_map(|entry| {
-                let allowed_key = <[u8; 32]>::try_from(entry.allowed_key.as_slice()).ok()?;
-                let encrypted_store =
-                    <[u8; 32]>::try_from(entry.encrypted_store.as_slice()).ok()?;
-                (allowed_key != user_pubkey).then(|| DelegatedEntry {
-                    handle_hex: format!("0x{}", hex::encode(&entry.handle)),
-                    delegator: allowed_key,
-                    encrypted_store,
-                })
+            .filter(|entry| entry.owner_address != user_address)
+            .map(|entry| DelegatedEntry {
+                handle_hex: format!("0x{}", hex::encode(entry.handle)),
+                delegator: entry.owner_address,
+                encrypted_store: entry.encrypted_store,
             })
             .collect();
         if delegated.is_empty() {
             return Ok(());
         }
 
-        // Round 1: the encrypted stores the entries name, to learn each entry's
-        // authority. Its slot is
-        // the floor the row read must be served at or after — otherwise a load-balanced RPC can
-        // answer round 2 from a replica behind round 1, and a grant confirmed between the two
-        // reads as absent.
+        // Round 1: the encrypted stores the entries name, to learn each entry's application. Its
+        // slot is the floor the row read must be served at or after — otherwise a load-balanced
+        // RPC can answer round 2 from a replica behind round 1, and a grant confirmed between the
+        // two reads as absent.
         let encrypted_store_addresses = encrypted_store_read_addresses(&delegated);
         let (discovery_slot, encrypted_stores) = match self
             .solana_accounts_with_retry(job_id, chain, chain_id, &encrypted_store_addresses, None)
@@ -645,7 +615,7 @@ impl HostAclChecker {
 
         // Entries whose encrypted store this check cannot judge drop out of the plan
         // (indeterminate).
-        let plan = match plan_row_reads(chain.program_id, user_pubkey, delegated, encrypted_stores)
+        let plan = match plan_row_reads(chain.program_id, user_address, delegated, encrypted_stores)
         {
             Ok(plan) => plan,
             Err(defect) => {
@@ -653,7 +623,7 @@ impl HostAclChecker {
                     int_job_id = %job_id,
                     chain_id,
                     ?defect,
-                    "Solana delegation pre-check mispaired its own reads; passing"
+                    "Solana delegation pre-check cannot judge its own reads; passing"
                 );
                 return Ok(());
             }
@@ -662,9 +632,9 @@ impl HostAclChecker {
             return Ok(());
         }
 
-        // Round 2: the rows, whose read slot is the one liveness is decided at — required to be
-        // at or after round 1's, and checked again on arrival: this reader refuses only on an
-        // observation that is not older than the one the plan was built from.
+        // Round 2: the rows and the Clock, whose time liveness is decided at — required to be
+        // at or after round 1's slot, and checked again on arrival: this reader refuses only on
+        // an observation that is not older than the one the plan was built from.
         let (slot, row_accounts) = match self
             .solana_accounts_with_retry(
                 job_id,
@@ -691,10 +661,9 @@ impl HostAclChecker {
 
         let refusals = match judge_planned_entries(
             chain.program_id,
-            user_pubkey,
+            user_address,
             &plan.entries,
             &row_accounts,
-            slot,
         ) {
             Ok(refusals) => refusals,
             Err(defect) => {
@@ -702,7 +671,7 @@ impl HostAclChecker {
                     int_job_id = %job_id,
                     chain_id,
                     ?defect,
-                    "Solana delegation pre-check mispaired its own reads; passing"
+                    "Solana delegation pre-check cannot judge its own reads; passing"
                 );
                 return Ok(());
             }
@@ -1087,7 +1056,7 @@ mod tests {
         use crate::config::settings::HostChainConfig;
 
         // RFC-021 Solana host: type byte 0x01 + base58 acl_address (zama-host program).
-        let solana_chain_id = crate::core::event::solana_host_chain_id(12345);
+        let solana_chain_id = zama_solana_request::host_chain::solana_host_chain_id(12345);
         let host_chains = vec![HostChainConfig {
             chain_id: solana_chain_id,
             url: "http://127.0.0.1:8899".to_string(),
@@ -1123,7 +1092,10 @@ mod tests {
         let solana_address = "TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA";
 
         for (chain_id, acl_address) in [
-            (crate::core::event::solana_host_chain_id(12345), evm_address),
+            (
+                zama_solana_request::host_chain::solana_host_chain_id(12345),
+                evm_address,
+            ),
             (12345, solana_address),
         ] {
             let result = HostAclChecker::new(
@@ -1157,7 +1129,7 @@ mod tests {
 
         let checker = HostAclChecker::new(
             &[HostChainConfig {
-                chain_id: crate::core::event::solana_host_chain_id(12345),
+                chain_id: zama_solana_request::host_chain::solana_host_chain_id(12345),
                 url: format!("http://{addr}"),
                 acl_address: "TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA".to_string(),
             }],

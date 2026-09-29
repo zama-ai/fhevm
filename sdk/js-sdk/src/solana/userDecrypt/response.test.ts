@@ -130,7 +130,7 @@ function inputsOf(record: LinkerRecord): SolanaUserDecryptLinkInputs {
     throw new Error(`${record.name}: carries no domain; the domain-less record is exercised on its own below`);
   }
   return {
-    userPubkey: hexToBytes(`0x${record.receiver_id}`),
+    userAddress: hexToBytes(`0x${record.receiver_id}`),
     // A record that declares a chain id different from the one its handles embed is testing exactly
     // that disagreement, so the declared one is what goes in.
     hostChainId: BigInt(record.declared_chain_id_decimal ?? record.chain_id_decimal),

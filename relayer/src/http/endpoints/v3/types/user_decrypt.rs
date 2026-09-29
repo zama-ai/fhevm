@@ -123,8 +123,8 @@ pub struct Eip712UnifiedUserDecryptPayloadJson {
 
 /// v3 Solana user-decrypt envelope (`solana-srfc38-user-decrypt-v1`). A Solana-native shape
 /// with no EVM placeholders: the ed25519 `signature` is the wallet's over the permit fields, and
-/// the relayer forwards everything opaquely into the gateway's Solana `userDecryptionRequest`
-/// overload as `solanaRequest`. The relayer verifies the signature before it submits, and each
+/// the relayer forwards everything opaquely into the gateway's `solanaUserDecryptionRequest` as
+/// `solanaRequest`. The relayer verifies the signature before it submits, and each
 /// KMS party's connector verifies it again — that second check is the authorizing one.
 #[derive(Deserialize, Clone, ToSchema, Validate, Derivative)]
 #[derivative(Debug)]
@@ -145,17 +145,18 @@ pub struct SolanaUserDecryptRequestJson {
     pub signature: String,
 }
 
-/// The Solana-native user-decryption payload: the eight signed permit fields (§3.1) plus the
-/// per-handle entries. No `userAddress`, no `nonce`, no EVM per-handle addresses.
+/// The Solana-native user-decryption payload: the signed permit fields (§3.1) plus the per-handle
+/// entries. No `chainId` (the permit's is the one the handles embed), no `nonce`, no EVM
+/// per-handle addresses.
 #[derive(Deserialize, Serialize, Clone, ToSchema, Validate, Derivative)]
 #[derivative(Debug)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct SolanaSrfc38UserDecryptPayloadJson {
     /// The requester's 32-byte ed25519 pubkey: the wallet that signs this permit (`0x` + 64
-    /// hex). Not necessarily the allowed key of any entry — on a delegated entry the allowed
-    /// key is the delegator, and this key is the delegate acting on their behalf.
+    /// hex). Not necessarily the owner address of any entry — on a delegated entry the owner
+    /// address is the delegator, and this key is the delegate acting on their behalf.
     #[validate(custom(function = "crate::http::validate_0x_hex"))]
-    pub user_pubkey: String,
+    pub user_address: String,
 
     /// The transport (re-encryption) public key: the tfhe safe-serialized ML-KEM-512 container
     /// (`0x` + hex). The exact length is enforced downstream by the permit decode.
@@ -174,9 +175,6 @@ pub struct SolanaSrfc38UserDecryptPayloadJson {
     #[validate(custom(function = "crate::http::validate_0x_hex"))]
     pub verifying_program_id: String,
 
-    /// The host chain id the handles belong to (decimal string; type byte `0x01`).
-    pub chain_id: String,
-
     /// The signed KMS routing bytes (version `0x02` ‖ contextId ‖ epochId), `0x`-hex.
     #[validate(custom(function = "crate::http::validate_0x_hex"))]
     pub extra_data: String,
@@ -186,8 +184,8 @@ pub struct SolanaSrfc38UserDecryptPayloadJson {
     pub handles: Vec<SolanaHandleJson>,
 }
 
-/// One Solana handle entry: the handle, the key whose allow leaf authorizes it, and its state
-/// account. None of these fields are signed — a substituted value can fail the
+/// One Solana handle entry: the handle, the account whose permission authorizes it, and its
+/// state account. None of these fields are signed — a substituted value can fail the
 /// request but never widen access — and none is a proof: the connector fetches the allow leaf
 /// from the coprocessors and verifies it against the state it reads.
 #[derive(Deserialize, Serialize, Clone, ToSchema, Derivative)]
@@ -196,9 +194,10 @@ pub struct SolanaSrfc38UserDecryptPayloadJson {
 pub struct SolanaHandleJson {
     /// The 32-byte ciphertext handle (`0x` + 64 hex).
     pub handle: String,
-    /// The 32-byte key whose allow leaf on the handle authorizes the entry — the requester
-    /// itself for a direct entry, the delegator for a delegated one (`0x` + 64 hex).
-    pub allowed_key: String,
+    /// The 32-byte account whose permission authorizes the entry, i.e. whose allow leaf on the
+    /// handle is checked — the requester itself for a direct entry, the delegator for a
+    /// delegated one (`0x` + 64 hex).
+    pub owner_address: String,
     /// The 32-byte address of the `EncryptedStore` account whose history grants access
     /// (`0x` + 64 hex).
     pub encrypted_store: String,

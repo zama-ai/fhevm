@@ -118,7 +118,7 @@ async fn insert(db: &PgPool, id: u64, solana: bool, source: RequestSource) -> an
     if solana {
         let request = connector_utils::tests::rand::solana_user_decryption_request(
             U256::from(id),
-            [0; 32].into(),
+            connector_utils::tests::rand::rand_solana_handle(),
         );
         connector_utils::types::db::insert_solana_user_decryption(
             db,

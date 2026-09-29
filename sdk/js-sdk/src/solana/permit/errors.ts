@@ -15,7 +15,7 @@ import { PERMIT_IDENTITY_LEN, PERMIT_SCOPE_LEN } from './types.js';
  * The KMS context and epoch ids are absent on purpose: they live inside the routing field, whose
  * length is checked as a whole, so their widths cannot be wrong independently.
  */
-export type SolanaPermitIdentityField = { readonly field: 'userPubkey' } | { readonly field: 'verifyingProgramId' };
+export type SolanaPermitIdentityField = { readonly field: 'userAddress' } | { readonly field: 'verifyingProgramId' };
 
 /** A permit field the canon signs as a u64. */
 export type SolanaPermitU64Field = 'startTimestamp' | 'durationSeconds' | 'chainId';
@@ -40,7 +40,7 @@ export type SolanaPermitRejection =
   | { readonly code: 'UnknownKmsRoutingVersion'; readonly version: number | undefined }
   | { readonly code: 'KmsRoutingLength'; readonly version: number; readonly length: number }
   | { readonly code: 'SignatureMismatch' }
-  | { readonly code: 'UnusableUserPubkey' }
+  | { readonly code: 'UnusableUserAddress' }
   | { readonly code: 'LossyNumericInput'; readonly field: SolanaPermitU64Field }
   | { readonly code: 'NumericFieldNotU64'; readonly field: SolanaPermitU64Field; readonly value: string };
 
@@ -99,8 +99,8 @@ function describeRejection(rejection: SolanaPermitRejection): string {
       return `KMS routing version 0x${rejection.version.toString(16).padStart(2, '0')} is ${rejection.length} bytes, which its version does not admit`;
     case 'SignatureMismatch':
       return 'the signature does not verify over the locally reconstructed envelope';
-    case 'UnusableUserPubkey':
-      return 'the user pubkey is not a usable Ed25519 verifying key';
+    case 'UnusableUserAddress':
+      return 'the user address is not a usable Ed25519 verifying key';
     case 'LossyNumericInput':
       return `${rejection.field} was supplied as a number; pass a bigint or a decimal string, which cannot lose precision`;
     case 'NumericFieldNotU64':
@@ -115,8 +115,8 @@ function describeRejection(rejection: SolanaPermitRejection): string {
  */
 function describeIdentityField(field: SolanaPermitIdentityField): string {
   switch (field.field) {
-    case 'userPubkey':
-      return 'userPubkey';
+    case 'userAddress':
+      return 'userAddress';
     case 'verifyingProgramId':
       return 'verifyingProgramId';
   }

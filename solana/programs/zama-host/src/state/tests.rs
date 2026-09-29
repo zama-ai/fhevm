@@ -127,7 +127,7 @@ fn handle_derivation_rand_uses_keccak() {
 fn rand_seed_is_distinct_across_every_uniqueness_axis() {
     let app = AppScope {
         program: Pubkey::new_unique(),
-        scope: [7; 32],
+        scope: Pubkey::new_unique(),
     };
     let seed = |nonce: u64, app: AppScope, op_index: u16, slot_entropy: [u8; 32]| {
         computed_eval_rand_seed(
@@ -157,7 +157,7 @@ fn rand_seed_is_distinct_across_every_uniqueness_axis() {
         seed(
             5,
             AppScope {
-                scope: [8; 32],
+                scope: Pubkey::new_unique(),
                 ..app
             },
             0,

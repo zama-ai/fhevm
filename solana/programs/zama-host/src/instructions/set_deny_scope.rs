@@ -30,7 +30,7 @@ pub struct SetDenyScope<'info> {
 pub fn set_deny_scope(
     ctx: Context<SetDenyScope>,
     program: Pubkey,
-    scope: [u8; 32],
+    scope: Pubkey,
     denied: bool,
 ) -> Result<()> {
     assert_no_remaining_accounts(ctx.remaining_accounts)?;
@@ -54,7 +54,7 @@ pub fn set_deny_scope(
         &info,
         &ctx.accounts.system_program.to_account_info(),
         8 + DenyScopeRecord::SPACE,
-        &[DENY_SCOPE_SEED, program.as_ref(), &scope, &[bump]],
+        &[DENY_SCOPE_SEED, program.as_ref(), scope.as_ref(), &[bump]],
     )?;
 
     write_account(

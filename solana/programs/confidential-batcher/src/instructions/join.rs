@@ -115,6 +115,7 @@ pub fn join<'info>(
                 zama_host::cpi::accounts::CreateEncryptedStore {
                     payer: ctx.accounts.payer.to_account_info(),
                     authority: ctx.accounts.join_record.to_account_info(),
+                    scope: ctx.accounts.batch.to_account_info(),
                     encrypted_store: ctx.accounts.join_store.to_account_info(),
                     host_config: ctx.accounts.host_config.to_account_info(),
                     system_program: ctx.accounts.system_program.to_account_info(),
@@ -123,7 +124,6 @@ pub fn join<'info>(
             ),
             zama_host::instructions::CreateEncryptedStoreArgs {
                 program: crate::ID,
-                scope: batch_key.to_bytes(),
                 authority_seeds: authority_seeds.iter().map(|s| s.to_vec()).collect(),
             },
         )?;

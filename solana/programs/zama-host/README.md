@@ -45,9 +45,11 @@ RandNonce
   the host's global rand counter; every execution with a rand step passes and advances it
 
 UserDecryptionDelegation
-  PDA("user-decryption-delegation", delegator, delegate, authority)
-  read by the KMS connector on a delegated decrypt (INVARIANTS #27); counter-changing updates are
-  slot-guarded to reject same-slot regrant/revoke races
+  PDA("user-decryption-delegation", delegator, delegate, program, scope)
+  one delegation of one application, or of every application with 0xff×32 in both positions; live
+  while `expires_at` (Unix seconds) is ahead of the Clock, and zeroed by a revocation. Read by the
+  KMS connector on a delegated decrypt (INVARIANTS #27); counter-changing updates are slot-guarded to
+  reject same-slot regrant/revoke races
 ```
 
 Persistent handles occupy slots in `EncryptedStore`; ciphertext material lives off chain.

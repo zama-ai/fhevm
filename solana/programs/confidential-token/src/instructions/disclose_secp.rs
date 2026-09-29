@@ -48,7 +48,7 @@ pub fn disclose_secp(
     };
     require!(
         value.program == crate::ID
-            && value.scope == mint_key.to_bytes()
+            && value.scope == mint_key
             && value.authority == expected_authority,
         ConfidentialTokenError::DisclosedValueBindingMismatch
     );

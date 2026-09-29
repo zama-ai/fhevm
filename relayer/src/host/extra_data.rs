@@ -6,15 +6,10 @@ const EXTRA_DATA_V1_LENGTH: usize = 33; // 1 (version) + 32 (context_id)
 const EXTRA_DATA_V2_VERSION: u8 = 0x02; // RFC 005: context_id + epoch_id
 const EXTRA_DATA_V2_LENGTH: usize = 65; // 1 (version) + 32 (context_id) + 32 (epoch_id)
 
-const EXTRA_DATA_SOLANA_VERSION: u8 = 0x04; // Solana public decrypt: context_id + encrypted store
-const EXTRA_DATA_SOLANA_LENGTH: usize = 65; // 1 (version) + 32 (context_id) + 32 (account)
-
 /// Parse context ID from extra_data bytes.
 ///
-/// - v1: `[0x01 | context_id(32)]` — exactly 33 bytes (host parity)
+/// - v1: `[0x01 | context_id(32)]`
 /// - v2: `[0x02 | context_id(32) | epoch_id(32)]`
-/// - v4 (Solana public decrypt): `[0x04 | context_id(32) | encrypted_store(32)]` —
-///   only the shared `version ‖ context_id` prefix is read; the state is the connector's.
 /// - empty or `0x00`: returns `U256::ZERO` (use static default)
 /// - unknown version or truncated: returns `Err`
 pub fn parse_context_id_from_extra_data(extra_data: &[u8]) -> Result<U256, ExtraDataError> {
@@ -22,48 +17,28 @@ pub fn parse_context_id_from_extra_data(extra_data: &[u8]) -> Result<U256, Extra
         return Ok(U256::ZERO);
     };
 
-    let expected = match version {
+    match version {
         // 0x00 is the legacy/default marker — use static threshold
-        0x00 => return Ok(U256::ZERO),
-        // Host `extract_kms_context_id` requires v1 to be exactly 33 bytes.
-        EXTRA_DATA_V1_VERSION => ExpectedLength::Exactly(EXTRA_DATA_V1_LENGTH),
-        EXTRA_DATA_V2_VERSION => ExpectedLength::AtLeast(EXTRA_DATA_V2_LENGTH),
-        EXTRA_DATA_SOLANA_VERSION => ExpectedLength::Exactly(EXTRA_DATA_SOLANA_LENGTH),
-        _ => return Err(ExtraDataError::UnsupportedVersion(version)),
-    };
-    let len = extra_data.len();
-    if !expected.admits(len) {
-        return Err(ExtraDataError::BadLength {
-            version,
-            len,
-            expected,
-        });
-    }
-    let bytes: [u8; 32] = extra_data[1..33].try_into().expect("length checked above");
-    Ok(U256::from_be_bytes(bytes))
-}
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum ExpectedLength {
-    Exactly(usize),
-    AtLeast(usize),
-}
-
-impl ExpectedLength {
-    fn admits(self, len: usize) -> bool {
-        match self {
-            Self::Exactly(n) => len == n,
-            Self::AtLeast(n) => len >= n,
+        0x00 => Ok(U256::ZERO),
+        EXTRA_DATA_V1_VERSION | EXTRA_DATA_V2_VERSION => {
+            let min_len = if version == EXTRA_DATA_V1_VERSION {
+                EXTRA_DATA_V1_LENGTH
+            } else {
+                EXTRA_DATA_V2_LENGTH
+            };
+            if extra_data.len() < min_len {
+                return Err(ExtraDataError::TooShort {
+                    version,
+                    len: extra_data.len(),
+                    expected: min_len,
+                });
+            }
+            let bytes: [u8; 32] = extra_data[1..33]
+                .try_into()
+                .expect("slice is exactly 32 bytes");
+            Ok(U256::from_be_bytes(bytes))
         }
-    }
-}
-
-impl std::fmt::Display for ExpectedLength {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        match self {
-            Self::Exactly(n) => write!(f, "exactly {n}"),
-            Self::AtLeast(n) => write!(f, "at least {n}"),
-        }
+        _ => Err(ExtraDataError::UnsupportedVersion(version)),
     }
 }
 
@@ -72,11 +47,11 @@ pub enum ExtraDataError {
     #[error("Unsupported extra_data version: 0x{0:02x}")]
     UnsupportedVersion(u8),
 
-    #[error("extra_data bad length for v{version:#04x}: {len} bytes, expected {expected}")]
-    BadLength {
+    #[error("extra_data too short for v{version:#04x}: {len} bytes, expected at least {expected}")]
+    TooShort {
         version: u8,
         len: usize,
-        expected: ExpectedLength,
+        expected: usize,
     },
 }
 
@@ -136,15 +111,6 @@ mod tests {
     }
 
     #[test]
-    fn v1_with_trailing_bytes_returns_error() {
-        let context_id = U256::from(42u64);
-        let mut data = vec![EXTRA_DATA_V1_VERSION];
-        data.extend_from_slice(&context_id.to_be_bytes::<32>());
-        data.push(0xff);
-        assert!(parse_context_id_from_extra_data(&data).is_err());
-    }
-
-    #[test]
     fn v2_too_short_returns_error() {
         let mut data = vec![EXTRA_DATA_V2_VERSION];
         data.extend_from_slice(&[0u8; 32]); // only context_id, missing epoch_id
@@ -153,47 +119,8 @@ mod tests {
 
     #[test]
     fn unknown_version_returns_error() {
-        let mut data = vec![0x7f];
-        data.extend_from_slice(&[0u8; 64]);
-        assert!(parse_context_id_from_extra_data(&data).is_err());
-    }
-
-    #[test]
-    fn retired_solana_v3_is_rejected() {
         let mut data = vec![0x03];
-        data.extend_from_slice(&[0_u8; 64]);
-        assert_eq!(
-            parse_context_id_from_extra_data(&data)
-                .unwrap_err()
-                .to_string(),
-            "Unsupported extra_data version: 0x03"
-        );
-    }
-
-    #[test]
-    fn valid_solana_v4_returns_context_id() {
-        // Solana 0x04 carrier: [0x04 | context_id(32) | encrypted_store(32)].
-        // Only the shared version+context_id prefix is read; the state is opaque here.
-        let context_id = U256::from(0x1234u64);
-        let mut data = vec![EXTRA_DATA_SOLANA_VERSION];
-        data.extend_from_slice(&context_id.to_be_bytes::<32>());
-        data.extend_from_slice(&[7u8; 32]); // encrypted store
-
-        assert_eq!(parse_context_id_from_extra_data(&data).unwrap(), context_id);
-    }
-
-    #[test]
-    fn solana_v4_with_trailing_bytes_returns_error() {
-        let mut data = vec![EXTRA_DATA_SOLANA_VERSION];
         data.extend_from_slice(&[0u8; 64]);
-        data.push(0xff);
-        assert!(parse_context_id_from_extra_data(&data).is_err());
-    }
-
-    #[test]
-    fn solana_v4_too_short_returns_error() {
-        let mut data = vec![EXTRA_DATA_SOLANA_VERSION];
-        data.extend_from_slice(&[0u8; 10]); // truncated before full context_id
         assert!(parse_context_id_from_extra_data(&data).is_err());
     }
 

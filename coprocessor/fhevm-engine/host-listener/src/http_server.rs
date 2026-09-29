@@ -1,5 +1,5 @@
 //! The HTTP routes of the Solana processes: the health routes both serve, and the leaf-proof
-//! route that only `solana_leaf_proof_server` adds (DD-062).
+//! route that only `solana_leaf_proof_server` adds (DD-064).
 //!
 //! The KMS connector asks for the inclusion proof of the leaf that authorizes a
 //! decrypt (an allow of a key on a handle, or a handle made public) and verifies

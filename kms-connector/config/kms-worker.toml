@@ -173,27 +173,28 @@ address = "0x0000000000000000000000000000000000000000"
 # List of supported host chains (required)
 # ENV: KMS_CONNECTOR_HOST_CHAINS
 # Env var format: JSON string
-# Ex: KMS_CONNECTOR_HOST_CHAINS='[{"url": "http://localhost:8545", "chain_id": 12345, "chain_kind": "evm", "acl_address": "0x0000000000000000000000000000000000000000"}]'
+# Ex: KMS_CONNECTOR_HOST_CHAINS='[{"url": "http://localhost:8545", "chain_id": 12345, "acl_address": "0x0000000000000000000000000000000000000000"}]'
+#
+# A chain's kind is the type byte of its chain id (bits 56..64): 0x00 is an EVM chain, 0x01 a
+# Solana chain. Each kind takes only its own settings.
 [[host_chains]]
 # Host chain HTTP RPC URL endpoint (required)
 url = "http://localhost:8545"
 # Chain ID of the host chain (required)
 chain_id = 12345
-# ACL backend for this host chain (optional, defaults to "evm").
-# A Solana host chain is authorized by the connector itself: it reads the encrypted value account
-# at confirmed commitment, fetches the allow leaf's proof from the coprocessors' leaf record and
-# verifies it against the peaks it read (RFC 035). A public decrypt names its account in the
-# version-3 extraData; a user decrypt names the allowed key and the account per entry.
-chain_kind = "evm"
-# Address of the ACL contract (required for EVM chains, forbidden for Solana chains)
+# EVM chains only, required: the ACL contract that gates decryptions.
 # Format: hex string with 0x prefix
 acl_address = "0x0000000000000000000000000000000000000000"
-# Required for Solana chains and forbidden for EVM chains. Base58 ZamaHost program id expected to
-# own ACL/material witnesses.
+#
+# A Solana host chain is authorized by the connector itself: it reads the encrypted store at
+# confirmed commitment, fetches the allow leaf's proof from the coprocessors' leaf record and
+# verifies it against the peaks it read (RFC 035). A public decrypt names one store per handle
+# beside its extraData; a user decrypt names the owner address and the store per entry.
+# Solana chains only, required: the base58 zama-host program id.
 # solana_host_program_id = "11111111111111111111111111111111"
-# Solana chains only: the coprocessors' leaf-proof endpoints (`POST /v1/solana/leaf-proofs`). Each
-# request's leaves are read from every endpoint and the answers merged, so one lagging coprocessor
-# does not fail a request. Empty means no proof can be read and every user decryption fails.
-# solana_proof_endpoints = ["http://localhost:8080"]
-# Bearer key sent to the leaf-proof endpoints (optional).
-# solana_proof_api_key = "change-me"
+# Solana chains only, at least one: each coprocessor's leaf-proof endpoint
+# (`POST /v1/solana/leaf-proofs`) and the bearer key that coprocessor issued. Every route is asked
+# at once and the first proof that verifies is taken, so a lagging or stalled coprocessor neither
+# fails nor delays a request another one serves; each route therefore sees every proof read. A
+# route's key is sent only to it.
+# solana_proof_routes = [{ url = "http://localhost:8080", api_key = "change-me" }]

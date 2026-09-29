@@ -54,6 +54,7 @@ interface IDecryption {
     error EmptyCtHandleContractPairs();
     error EmptyCtHandles();
     error EmptyHandles();
+    error EncryptedStoresLengthMismatch(uint256 handlesLength, uint256 storesLength);
     error InvalidExtraDataLength(uint256 length, uint256 minimumLength);
     error InvalidNullContextId();
     error InvalidNullDurationDays();
@@ -64,6 +65,7 @@ interface IDecryption {
     error MaxDecryptionRequestBitSizeExceeded(uint256 maxBitSize, uint256 totalBitSize);
     error MaxDurationDaysExceeded(uint256 maxValue, uint256 actualValue);
     error MaxDurationSecondsExceeded(uint256 maxValue, uint256 actualValue);
+    error NotSolanaHostChain(uint256 chainId);
     error SolanaHandlesMaxLengthExceeded(uint256 maxLength, uint256 actualLength);
     error StartTimestampInFuture(uint256 currentTimestamp, uint256 startTimestamp);
     error UnsupportedExtraDataVersion(uint8 version);
@@ -75,11 +77,12 @@ interface IDecryption {
     event PublicDecryptionRequest(uint256 indexed decryptionId, bytes32[] ctHandles, bytes extraData);
     event PublicDecryptionResponse(uint256 indexed decryptionId, bytes decryptedResult, bytes[] signatures, bytes extraData);
     event PublicDecryptionResponseCall(uint256 indexed decryptionId, bytes decryptedResult, bytes signature, address kmsTxSender, bytes extraData);
+    event SolanaPublicDecryptionRequest(uint256 indexed decryptionId, bytes32[] ctHandles, bytes extraData, bytes32[] encryptedStores);
+    event SolanaUserDecryptionRequest(uint256 indexed decryptionId, bytes32[] ctHandles, RequestValiditySeconds requestValidity, bytes publicKey, bytes extraData, bytes solanaRequest);
     event UserDecryptionRequest(uint256 indexed decryptionId, SnsCiphertextMaterial[] snsCtMaterials, address userAddress, bytes publicKey, bytes extraData);
     event UserDecryptionRequest(uint256 indexed decryptionId, SnsCiphertextMaterial[] snsCtMaterials, HandleEntry[] handles, UserDecryptionRequestPayload payload);
     event UserDecryptionRequest(uint256 indexed decryptionId, bytes32[] ctHandles, address userAddress, bytes publicKey, bytes extraData);
     event UserDecryptionRequest(uint256 indexed decryptionId, HandleEntry[] handles, UserDecryptionRequestPayload payload);
-    event UserDecryptionRequest(uint256 indexed decryptionId, bytes32[] ctHandles, RequestValiditySeconds requestValidity, bytes publicKey, bytes extraData, bytes solanaRequest);
     event UserDecryptionResponse(uint256 indexed decryptionId, uint256 indexShare, bytes userDecryptedShare, bytes signature, bytes extraData);
     event UserDecryptionResponseThresholdReached(uint256 indexed decryptionId);
 
@@ -94,7 +97,8 @@ interface IDecryption {
     function isUserDecryptionReady(address userAddress, CtHandleContractPair[] memory ctHandleContractPairs, bytes memory extraData) external view returns (bool);
     function publicDecryptionRequest(bytes32[] memory ctHandles, bytes memory extraData) external;
     function publicDecryptionResponse(uint256 decryptionId, bytes memory decryptedResult, bytes memory signature, bytes memory extraData) external;
-    function userDecryptionRequest(bytes32[] memory ctHandles, RequestValiditySeconds memory requestValidity, bytes memory publicKey, bytes memory extraData, bytes memory solanaRequest) external;
+    function solanaPublicDecryptionRequest(bytes32[] memory ctHandles, bytes memory extraData, bytes32[] memory encryptedStores) external;
+    function solanaUserDecryptionRequest(bytes32[] memory ctHandles, RequestValiditySeconds memory requestValidity, bytes memory publicKey, bytes memory extraData, bytes memory solanaRequest) external;
     function userDecryptionRequest(HandleEntry[] memory handles, address userAddress, bytes memory publicKey, address[] memory allowedContracts, RequestValiditySeconds memory requestValidity, bytes memory signature, bytes memory extraData) external;
     function userDecryptionRequest(CtHandleContractPair[] memory ctHandleContractPairs, RequestValidity memory requestValidity, ContractsInfo memory contractsInfo, address userAddress, bytes memory publicKey, bytes memory signature, bytes memory extraData) external;
     function userDecryptionResponse(uint256 decryptionId, bytes memory userDecryptedShare, bytes memory signature, bytes memory extraData) external;
@@ -472,7 +476,30 @@ interface IDecryption {
   },
   {
     "type": "function",
-    "name": "userDecryptionRequest",
+    "name": "solanaPublicDecryptionRequest",
+    "inputs": [
+      {
+        "name": "ctHandles",
+        "type": "bytes32[]",
+        "internalType": "bytes32[]"
+      },
+      {
+        "name": "extraData",
+        "type": "bytes",
+        "internalType": "bytes"
+      },
+      {
+        "name": "encryptedStores",
+        "type": "bytes32[]",
+        "internalType": "bytes32[]"
+      }
+    ],
+    "outputs": [],
+    "stateMutability": "nonpayable"
+  },
+  {
+    "type": "function",
+    "name": "solanaUserDecryptionRequest",
     "inputs": [
       {
         "name": "ctHandles",
@@ -836,180 +863,7 @@ interface IDecryption {
   },
   {
     "type": "event",
-    "name": "UserDecryptionRequest",
-    "inputs": [
-      {
-        "name": "decryptionId",
-        "type": "uint256",
-        "indexed": true,
-        "internalType": "uint256"
-      },
-      {
-        "name": "snsCtMaterials",
-        "type": "tuple[]",
-        "indexed": false,
-        "internalType": "struct SnsCiphertextMaterial[]",
-        "components": [
-          {
-            "name": "ctHandle",
-            "type": "bytes32",
-            "internalType": "bytes32"
-          },
-          {
-            "name": "keyId",
-            "type": "uint256",
-            "internalType": "uint256"
-          },
-          {
-            "name": "snsCiphertextDigest",
-            "type": "bytes32",
-            "internalType": "bytes32"
-          },
-          {
-            "name": "coprocessorTxSenderAddresses",
-            "type": "address[]",
-            "internalType": "address[]"
-          }
-        ]
-      },
-      {
-        "name": "userAddress",
-        "type": "address",
-        "indexed": false,
-        "internalType": "address"
-      },
-      {
-        "name": "publicKey",
-        "type": "bytes",
-        "indexed": false,
-        "internalType": "bytes"
-      },
-      {
-        "name": "extraData",
-        "type": "bytes",
-        "indexed": false,
-        "internalType": "bytes"
-      }
-    ],
-    "anonymous": false
-  },
-  {
-    "type": "event",
-    "name": "UserDecryptionRequest",
-    "inputs": [
-      {
-        "name": "decryptionId",
-        "type": "uint256",
-        "indexed": true,
-        "internalType": "uint256"
-      },
-      {
-        "name": "snsCtMaterials",
-        "type": "tuple[]",
-        "indexed": false,
-        "internalType": "struct SnsCiphertextMaterial[]",
-        "components": [
-          {
-            "name": "ctHandle",
-            "type": "bytes32",
-            "internalType": "bytes32"
-          },
-          {
-            "name": "keyId",
-            "type": "uint256",
-            "internalType": "uint256"
-          },
-          {
-            "name": "snsCiphertextDigest",
-            "type": "bytes32",
-            "internalType": "bytes32"
-          },
-          {
-            "name": "coprocessorTxSenderAddresses",
-            "type": "address[]",
-            "internalType": "address[]"
-          }
-        ]
-      },
-      {
-        "name": "handles",
-        "type": "tuple[]",
-        "indexed": false,
-        "internalType": "struct HandleEntry[]",
-        "components": [
-          {
-            "name": "handle",
-            "type": "bytes32",
-            "internalType": "bytes32"
-          },
-          {
-            "name": "contractAddress",
-            "type": "address",
-            "internalType": "address"
-          },
-          {
-            "name": "ownerAddress",
-            "type": "address",
-            "internalType": "address"
-          }
-        ]
-      },
-      {
-        "name": "payload",
-        "type": "tuple",
-        "indexed": false,
-        "internalType": "struct IDecryption.UserDecryptionRequestPayload",
-        "components": [
-          {
-            "name": "userAddress",
-            "type": "address",
-            "internalType": "address"
-          },
-          {
-            "name": "publicKey",
-            "type": "bytes",
-            "internalType": "bytes"
-          },
-          {
-            "name": "allowedContracts",
-            "type": "address[]",
-            "internalType": "address[]"
-          },
-          {
-            "name": "requestValidity",
-            "type": "tuple",
-            "internalType": "struct IDecryption.RequestValiditySeconds",
-            "components": [
-              {
-                "name": "startTimestamp",
-                "type": "uint256",
-                "internalType": "uint256"
-              },
-              {
-                "name": "durationSeconds",
-                "type": "uint256",
-                "internalType": "uint256"
-              }
-            ]
-          },
-          {
-            "name": "extraData",
-            "type": "bytes",
-            "internalType": "bytes"
-          },
-          {
-            "name": "signature",
-            "type": "bytes",
-            "internalType": "bytes"
-          }
-        ]
-      }
-    ],
-    "anonymous": false
-  },
-  {
-    "type": "event",
-    "name": "UserDecryptionRequest",
+    "name": "SolanaPublicDecryptionRequest",
     "inputs": [
       {
         "name": "decryptionId",
@@ -1024,115 +878,23 @@ interface IDecryption {
         "internalType": "bytes32[]"
       },
       {
-        "name": "userAddress",
-        "type": "address",
-        "indexed": false,
-        "internalType": "address"
-      },
-      {
-        "name": "publicKey",
-        "type": "bytes",
-        "indexed": false,
-        "internalType": "bytes"
-      },
-      {
         "name": "extraData",
         "type": "bytes",
         "indexed": false,
         "internalType": "bytes"
+      },
+      {
+        "name": "encryptedStores",
+        "type": "bytes32[]",
+        "indexed": false,
+        "internalType": "bytes32[]"
       }
     ],
     "anonymous": false
   },
   {
     "type": "event",
-    "name": "UserDecryptionRequest",
-    "inputs": [
-      {
-        "name": "decryptionId",
-        "type": "uint256",
-        "indexed": true,
-        "internalType": "uint256"
-      },
-      {
-        "name": "handles",
-        "type": "tuple[]",
-        "indexed": false,
-        "internalType": "struct HandleEntry[]",
-        "components": [
-          {
-            "name": "handle",
-            "type": "bytes32",
-            "internalType": "bytes32"
-          },
-          {
-            "name": "contractAddress",
-            "type": "address",
-            "internalType": "address"
-          },
-          {
-            "name": "ownerAddress",
-            "type": "address",
-            "internalType": "address"
-          }
-        ]
-      },
-      {
-        "name": "payload",
-        "type": "tuple",
-        "indexed": false,
-        "internalType": "struct IDecryption.UserDecryptionRequestPayload",
-        "components": [
-          {
-            "name": "userAddress",
-            "type": "address",
-            "internalType": "address"
-          },
-          {
-            "name": "publicKey",
-            "type": "bytes",
-            "internalType": "bytes"
-          },
-          {
-            "name": "allowedContracts",
-            "type": "address[]",
-            "internalType": "address[]"
-          },
-          {
-            "name": "requestValidity",
-            "type": "tuple",
-            "internalType": "struct IDecryption.RequestValiditySeconds",
-            "components": [
-              {
-                "name": "startTimestamp",
-                "type": "uint256",
-                "internalType": "uint256"
-              },
-              {
-                "name": "durationSeconds",
-                "type": "uint256",
-                "internalType": "uint256"
-              }
-            ]
-          },
-          {
-            "name": "extraData",
-            "type": "bytes",
-            "internalType": "bytes"
-          },
-          {
-            "name": "signature",
-            "type": "bytes",
-            "internalType": "bytes"
-          }
-        ]
-      }
-    ],
-    "anonymous": false
-  },
-  {
-    "type": "event",
-    "name": "UserDecryptionRequest",
+    "name": "SolanaUserDecryptionRequest",
     "inputs": [
       {
         "name": "decryptionId",
@@ -1181,6 +943,302 @@ interface IDecryption {
         "type": "bytes",
         "indexed": false,
         "internalType": "bytes"
+      }
+    ],
+    "anonymous": false
+  },
+  {
+    "type": "event",
+    "name": "UserDecryptionRequest",
+    "inputs": [
+      {
+        "name": "decryptionId",
+        "type": "uint256",
+        "indexed": true,
+        "internalType": "uint256"
+      },
+      {
+        "name": "snsCtMaterials",
+        "type": "tuple[]",
+        "indexed": false,
+        "internalType": "struct SnsCiphertextMaterial[]",
+        "components": [
+          {
+            "name": "ctHandle",
+            "type": "bytes32",
+            "internalType": "bytes32"
+          },
+          {
+            "name": "keyId",
+            "type": "uint256",
+            "internalType": "uint256"
+          },
+          {
+            "name": "snsCiphertextDigest",
+            "type": "bytes32",
+            "internalType": "bytes32"
+          },
+          {
+            "name": "coprocessorTxSenderAddresses",
+            "type": "address[]",
+            "internalType": "address[]"
+          }
+        ]
+      },
+      {
+        "name": "userAddress",
+        "type": "address",
+        "indexed": false,
+        "internalType": "address"
+      },
+      {
+        "name": "publicKey",
+        "type": "bytes",
+        "indexed": false,
+        "internalType": "bytes"
+      },
+      {
+        "name": "extraData",
+        "type": "bytes",
+        "indexed": false,
+        "internalType": "bytes"
+      }
+    ],
+    "anonymous": false
+  },
+  {
+    "type": "event",
+    "name": "UserDecryptionRequest",
+    "inputs": [
+      {
+        "name": "decryptionId",
+        "type": "uint256",
+        "indexed": true,
+        "internalType": "uint256"
+      },
+      {
+        "name": "snsCtMaterials",
+        "type": "tuple[]",
+        "indexed": false,
+        "internalType": "struct SnsCiphertextMaterial[]",
+        "components": [
+          {
+            "name": "ctHandle",
+            "type": "bytes32",
+            "internalType": "bytes32"
+          },
+          {
+            "name": "keyId",
+            "type": "uint256",
+            "internalType": "uint256"
+          },
+          {
+            "name": "snsCiphertextDigest",
+            "type": "bytes32",
+            "internalType": "bytes32"
+          },
+          {
+            "name": "coprocessorTxSenderAddresses",
+            "type": "address[]",
+            "internalType": "address[]"
+          }
+        ]
+      },
+      {
+        "name": "handles",
+        "type": "tuple[]",
+        "indexed": false,
+        "internalType": "struct HandleEntry[]",
+        "components": [
+          {
+            "name": "handle",
+            "type": "bytes32",
+            "internalType": "bytes32"
+          },
+          {
+            "name": "contractAddress",
+            "type": "address",
+            "internalType": "address"
+          },
+          {
+            "name": "ownerAddress",
+            "type": "address",
+            "internalType": "address"
+          }
+        ]
+      },
+      {
+        "name": "payload",
+        "type": "tuple",
+        "indexed": false,
+        "internalType": "struct IDecryption.UserDecryptionRequestPayload",
+        "components": [
+          {
+            "name": "userAddress",
+            "type": "address",
+            "internalType": "address"
+          },
+          {
+            "name": "publicKey",
+            "type": "bytes",
+            "internalType": "bytes"
+          },
+          {
+            "name": "allowedContracts",
+            "type": "address[]",
+            "internalType": "address[]"
+          },
+          {
+            "name": "requestValidity",
+            "type": "tuple",
+            "internalType": "struct IDecryption.RequestValiditySeconds",
+            "components": [
+              {
+                "name": "startTimestamp",
+                "type": "uint256",
+                "internalType": "uint256"
+              },
+              {
+                "name": "durationSeconds",
+                "type": "uint256",
+                "internalType": "uint256"
+              }
+            ]
+          },
+          {
+            "name": "extraData",
+            "type": "bytes",
+            "internalType": "bytes"
+          },
+          {
+            "name": "signature",
+            "type": "bytes",
+            "internalType": "bytes"
+          }
+        ]
+      }
+    ],
+    "anonymous": false
+  },
+  {
+    "type": "event",
+    "name": "UserDecryptionRequest",
+    "inputs": [
+      {
+        "name": "decryptionId",
+        "type": "uint256",
+        "indexed": true,
+        "internalType": "uint256"
+      },
+      {
+        "name": "ctHandles",
+        "type": "bytes32[]",
+        "indexed": false,
+        "internalType": "bytes32[]"
+      },
+      {
+        "name": "userAddress",
+        "type": "address",
+        "indexed": false,
+        "internalType": "address"
+      },
+      {
+        "name": "publicKey",
+        "type": "bytes",
+        "indexed": false,
+        "internalType": "bytes"
+      },
+      {
+        "name": "extraData",
+        "type": "bytes",
+        "indexed": false,
+        "internalType": "bytes"
+      }
+    ],
+    "anonymous": false
+  },
+  {
+    "type": "event",
+    "name": "UserDecryptionRequest",
+    "inputs": [
+      {
+        "name": "decryptionId",
+        "type": "uint256",
+        "indexed": true,
+        "internalType": "uint256"
+      },
+      {
+        "name": "handles",
+        "type": "tuple[]",
+        "indexed": false,
+        "internalType": "struct HandleEntry[]",
+        "components": [
+          {
+            "name": "handle",
+            "type": "bytes32",
+            "internalType": "bytes32"
+          },
+          {
+            "name": "contractAddress",
+            "type": "address",
+            "internalType": "address"
+          },
+          {
+            "name": "ownerAddress",
+            "type": "address",
+            "internalType": "address"
+          }
+        ]
+      },
+      {
+        "name": "payload",
+        "type": "tuple",
+        "indexed": false,
+        "internalType": "struct IDecryption.UserDecryptionRequestPayload",
+        "components": [
+          {
+            "name": "userAddress",
+            "type": "address",
+            "internalType": "address"
+          },
+          {
+            "name": "publicKey",
+            "type": "bytes",
+            "internalType": "bytes"
+          },
+          {
+            "name": "allowedContracts",
+            "type": "address[]",
+            "internalType": "address[]"
+          },
+          {
+            "name": "requestValidity",
+            "type": "tuple",
+            "internalType": "struct IDecryption.RequestValiditySeconds",
+            "components": [
+              {
+                "name": "startTimestamp",
+                "type": "uint256",
+                "internalType": "uint256"
+              },
+              {
+                "name": "durationSeconds",
+                "type": "uint256",
+                "internalType": "uint256"
+              }
+            ]
+          },
+          {
+            "name": "extraData",
+            "type": "bytes",
+            "internalType": "bytes"
+          },
+          {
+            "name": "signature",
+            "type": "bytes",
+            "internalType": "bytes"
+          }
+        ]
       }
     ],
     "anonymous": false
@@ -1418,6 +1476,22 @@ interface IDecryption {
   },
   {
     "type": "error",
+    "name": "EncryptedStoresLengthMismatch",
+    "inputs": [
+      {
+        "name": "handlesLength",
+        "type": "uint256",
+        "internalType": "uint256"
+      },
+      {
+        "name": "storesLength",
+        "type": "uint256",
+        "internalType": "uint256"
+      }
+    ]
+  },
+  {
+    "type": "error",
     "name": "InvalidExtraDataLength",
     "inputs": [
       {
@@ -1528,6 +1602,17 @@ interface IDecryption {
       },
       {
         "name": "actualValue",
+        "type": "uint256",
+        "internalType": "uint256"
+      }
+    ]
+  },
+  {
+    "type": "error",
+    "name": "NotSolanaHostChain",
+    "inputs": [
+      {
+        "name": "chainId",
         "type": "uint256",
         "internalType": "uint256"
       }
@@ -4653,6 +4738,103 @@ error EmptyHandles();
     };
     #[derive(serde::Serialize, serde::Deserialize)]
     #[derive(Default, Debug, PartialEq, Eq, Hash)]
+    /**Custom error with signature `EncryptedStoresLengthMismatch(uint256,uint256)` and selector `0x07387ae9`.
+```solidity
+error EncryptedStoresLengthMismatch(uint256 handlesLength, uint256 storesLength);
+```*/
+    #[allow(non_camel_case_types, non_snake_case, clippy::pub_underscore_fields)]
+    #[derive(Clone)]
+    pub struct EncryptedStoresLengthMismatch {
+        #[allow(missing_docs)]
+        pub handlesLength: alloy::sol_types::private::primitives::aliases::U256,
+        #[allow(missing_docs)]
+        pub storesLength: alloy::sol_types::private::primitives::aliases::U256,
+    }
+    #[allow(
+        non_camel_case_types,
+        non_snake_case,
+        clippy::pub_underscore_fields,
+        clippy::style
+    )]
+    const _: () = {
+        use alloy::sol_types as alloy_sol_types;
+        #[doc(hidden)]
+        #[allow(dead_code)]
+        type UnderlyingSolTuple<'a> = (
+            alloy::sol_types::sol_data::Uint<256>,
+            alloy::sol_types::sol_data::Uint<256>,
+        );
+        #[doc(hidden)]
+        type UnderlyingRustTuple<'a> = (
+            alloy::sol_types::private::primitives::aliases::U256,
+            alloy::sol_types::private::primitives::aliases::U256,
+        );
+        #[cfg(test)]
+        #[allow(dead_code, unreachable_patterns)]
+        fn _type_assertion(
+            _t: alloy_sol_types::private::AssertTypeEq<UnderlyingRustTuple>,
+        ) {
+            match _t {
+                alloy_sol_types::private::AssertTypeEq::<
+                    <UnderlyingSolTuple as alloy_sol_types::SolType>::RustType,
+                >(_) => {}
+            }
+        }
+        #[automatically_derived]
+        #[doc(hidden)]
+        impl ::core::convert::From<EncryptedStoresLengthMismatch>
+        for UnderlyingRustTuple<'_> {
+            fn from(value: EncryptedStoresLengthMismatch) -> Self {
+                (value.handlesLength, value.storesLength)
+            }
+        }
+        #[automatically_derived]
+        #[doc(hidden)]
+        impl ::core::convert::From<UnderlyingRustTuple<'_>>
+        for EncryptedStoresLengthMismatch {
+            fn from(tuple: UnderlyingRustTuple<'_>) -> Self {
+                Self {
+                    handlesLength: tuple.0,
+                    storesLength: tuple.1,
+                }
+            }
+        }
+        #[automatically_derived]
+        impl alloy_sol_types::SolError for EncryptedStoresLengthMismatch {
+            type Parameters<'a> = UnderlyingSolTuple<'a>;
+            type Token<'a> = <Self::Parameters<
+                'a,
+            > as alloy_sol_types::SolType>::Token<'a>;
+            const SIGNATURE: &'static str = "EncryptedStoresLengthMismatch(uint256,uint256)";
+            const SELECTOR: [u8; 4] = [7u8, 56u8, 122u8, 233u8];
+            #[inline]
+            fn new<'a>(
+                tuple: <Self::Parameters<'a> as alloy_sol_types::SolType>::RustType,
+            ) -> Self {
+                tuple.into()
+            }
+            #[inline]
+            fn tokenize(&self) -> Self::Token<'_> {
+                (
+                    <alloy::sol_types::sol_data::Uint<
+                        256,
+                    > as alloy_sol_types::SolType>::tokenize(&self.handlesLength),
+                    <alloy::sol_types::sol_data::Uint<
+                        256,
+                    > as alloy_sol_types::SolType>::tokenize(&self.storesLength),
+                )
+            }
+            #[inline]
+            fn abi_decode_raw_validate(data: &[u8]) -> alloy_sol_types::Result<Self> {
+                <Self::Parameters<
+                    '_,
+                > as alloy_sol_types::SolType>::abi_decode_sequence_validate(data)
+                    .map(Self::new)
+            }
+        }
+    };
+    #[derive(serde::Serialize, serde::Deserialize)]
+    #[derive(Default, Debug, PartialEq, Eq, Hash)]
     /**Custom error with signature `InvalidExtraDataLength(uint256,uint256)` and selector `0x93548a66`.
 ```solidity
 error InvalidExtraDataLength(uint256 length, uint256 minimumLength);
@@ -5505,6 +5687,89 @@ error MaxDurationSecondsExceeded(uint256 maxValue, uint256 actualValue);
                     <alloy::sol_types::sol_data::Uint<
                         256,
                     > as alloy_sol_types::SolType>::tokenize(&self.actualValue),
+                )
+            }
+            #[inline]
+            fn abi_decode_raw_validate(data: &[u8]) -> alloy_sol_types::Result<Self> {
+                <Self::Parameters<
+                    '_,
+                > as alloy_sol_types::SolType>::abi_decode_sequence_validate(data)
+                    .map(Self::new)
+            }
+        }
+    };
+    #[derive(serde::Serialize, serde::Deserialize)]
+    #[derive(Default, Debug, PartialEq, Eq, Hash)]
+    /**Custom error with signature `NotSolanaHostChain(uint256)` and selector `0xda9adf5f`.
+```solidity
+error NotSolanaHostChain(uint256 chainId);
+```*/
+    #[allow(non_camel_case_types, non_snake_case, clippy::pub_underscore_fields)]
+    #[derive(Clone)]
+    pub struct NotSolanaHostChain {
+        #[allow(missing_docs)]
+        pub chainId: alloy::sol_types::private::primitives::aliases::U256,
+    }
+    #[allow(
+        non_camel_case_types,
+        non_snake_case,
+        clippy::pub_underscore_fields,
+        clippy::style
+    )]
+    const _: () = {
+        use alloy::sol_types as alloy_sol_types;
+        #[doc(hidden)]
+        #[allow(dead_code)]
+        type UnderlyingSolTuple<'a> = (alloy::sol_types::sol_data::Uint<256>,);
+        #[doc(hidden)]
+        type UnderlyingRustTuple<'a> = (
+            alloy::sol_types::private::primitives::aliases::U256,
+        );
+        #[cfg(test)]
+        #[allow(dead_code, unreachable_patterns)]
+        fn _type_assertion(
+            _t: alloy_sol_types::private::AssertTypeEq<UnderlyingRustTuple>,
+        ) {
+            match _t {
+                alloy_sol_types::private::AssertTypeEq::<
+                    <UnderlyingSolTuple as alloy_sol_types::SolType>::RustType,
+                >(_) => {}
+            }
+        }
+        #[automatically_derived]
+        #[doc(hidden)]
+        impl ::core::convert::From<NotSolanaHostChain> for UnderlyingRustTuple<'_> {
+            fn from(value: NotSolanaHostChain) -> Self {
+                (value.chainId,)
+            }
+        }
+        #[automatically_derived]
+        #[doc(hidden)]
+        impl ::core::convert::From<UnderlyingRustTuple<'_>> for NotSolanaHostChain {
+            fn from(tuple: UnderlyingRustTuple<'_>) -> Self {
+                Self { chainId: tuple.0 }
+            }
+        }
+        #[automatically_derived]
+        impl alloy_sol_types::SolError for NotSolanaHostChain {
+            type Parameters<'a> = UnderlyingSolTuple<'a>;
+            type Token<'a> = <Self::Parameters<
+                'a,
+            > as alloy_sol_types::SolType>::Token<'a>;
+            const SIGNATURE: &'static str = "NotSolanaHostChain(uint256)";
+            const SELECTOR: [u8; 4] = [218u8, 154u8, 223u8, 95u8];
+            #[inline]
+            fn new<'a>(
+                tuple: <Self::Parameters<'a> as alloy_sol_types::SolType>::RustType,
+            ) -> Self {
+                tuple.into()
+            }
+            #[inline]
+            fn tokenize(&self) -> Self::Token<'_> {
+                (
+                    <alloy::sol_types::sol_data::Uint<
+                        256,
+                    > as alloy_sol_types::SolType>::tokenize(&self.chainId),
                 )
             }
             #[inline]
@@ -6621,6 +6886,300 @@ event PublicDecryptionResponseCall(uint256 indexed decryptionId, bytes decrypted
     };
     #[derive(serde::Serialize, serde::Deserialize)]
     #[derive(Default, Debug, PartialEq, Eq, Hash)]
+    /**Event with signature `SolanaPublicDecryptionRequest(uint256,bytes32[],bytes,bytes32[])` and selector `0x26d48564c7566bec3ef9337aadeb96e44275e66cfa7cb445d64df539d9ddef97`.
+```solidity
+event SolanaPublicDecryptionRequest(uint256 indexed decryptionId, bytes32[] ctHandles, bytes extraData, bytes32[] encryptedStores);
+```*/
+    #[allow(
+        non_camel_case_types,
+        non_snake_case,
+        clippy::pub_underscore_fields,
+        clippy::style
+    )]
+    #[derive(Clone)]
+    pub struct SolanaPublicDecryptionRequest {
+        #[allow(missing_docs)]
+        pub decryptionId: alloy::sol_types::private::primitives::aliases::U256,
+        #[allow(missing_docs)]
+        pub ctHandles: alloy::sol_types::private::Vec<
+            alloy::sol_types::private::FixedBytes<32>,
+        >,
+        #[allow(missing_docs)]
+        pub extraData: alloy::sol_types::private::Bytes,
+        #[allow(missing_docs)]
+        pub encryptedStores: alloy::sol_types::private::Vec<
+            alloy::sol_types::private::FixedBytes<32>,
+        >,
+    }
+    #[allow(
+        non_camel_case_types,
+        non_snake_case,
+        clippy::pub_underscore_fields,
+        clippy::style
+    )]
+    const _: () = {
+        use alloy::sol_types as alloy_sol_types;
+        #[automatically_derived]
+        impl alloy_sol_types::SolEvent for SolanaPublicDecryptionRequest {
+            type DataTuple<'a> = (
+                alloy::sol_types::sol_data::Array<
+                    alloy::sol_types::sol_data::FixedBytes<32>,
+                >,
+                alloy::sol_types::sol_data::Bytes,
+                alloy::sol_types::sol_data::Array<
+                    alloy::sol_types::sol_data::FixedBytes<32>,
+                >,
+            );
+            type DataToken<'a> = <Self::DataTuple<
+                'a,
+            > as alloy_sol_types::SolType>::Token<'a>;
+            type TopicList = (
+                alloy_sol_types::sol_data::FixedBytes<32>,
+                alloy::sol_types::sol_data::Uint<256>,
+            );
+            const SIGNATURE: &'static str = "SolanaPublicDecryptionRequest(uint256,bytes32[],bytes,bytes32[])";
+            const SIGNATURE_HASH: alloy_sol_types::private::B256 = alloy_sol_types::private::B256::new([
+                38u8, 212u8, 133u8, 100u8, 199u8, 86u8, 107u8, 236u8, 62u8, 249u8, 51u8,
+                122u8, 173u8, 235u8, 150u8, 228u8, 66u8, 117u8, 230u8, 108u8, 250u8,
+                124u8, 180u8, 69u8, 214u8, 77u8, 245u8, 57u8, 217u8, 221u8, 239u8, 151u8,
+            ]);
+            const ANONYMOUS: bool = false;
+            #[allow(unused_variables)]
+            #[inline]
+            fn new(
+                topics: <Self::TopicList as alloy_sol_types::SolType>::RustType,
+                data: <Self::DataTuple<'_> as alloy_sol_types::SolType>::RustType,
+            ) -> Self {
+                Self {
+                    decryptionId: topics.1,
+                    ctHandles: data.0,
+                    extraData: data.1,
+                    encryptedStores: data.2,
+                }
+            }
+            #[inline]
+            fn check_signature(
+                topics: &<Self::TopicList as alloy_sol_types::SolType>::RustType,
+            ) -> alloy_sol_types::Result<()> {
+                if topics.0 != Self::SIGNATURE_HASH {
+                    return Err(
+                        alloy_sol_types::Error::invalid_event_signature_hash(
+                            Self::SIGNATURE,
+                            topics.0,
+                            Self::SIGNATURE_HASH,
+                        ),
+                    );
+                }
+                Ok(())
+            }
+            #[inline]
+            fn tokenize_body(&self) -> Self::DataToken<'_> {
+                (
+                    <alloy::sol_types::sol_data::Array<
+                        alloy::sol_types::sol_data::FixedBytes<32>,
+                    > as alloy_sol_types::SolType>::tokenize(&self.ctHandles),
+                    <alloy::sol_types::sol_data::Bytes as alloy_sol_types::SolType>::tokenize(
+                        &self.extraData,
+                    ),
+                    <alloy::sol_types::sol_data::Array<
+                        alloy::sol_types::sol_data::FixedBytes<32>,
+                    > as alloy_sol_types::SolType>::tokenize(&self.encryptedStores),
+                )
+            }
+            #[inline]
+            fn topics(&self) -> <Self::TopicList as alloy_sol_types::SolType>::RustType {
+                (Self::SIGNATURE_HASH.into(), self.decryptionId.clone())
+            }
+            #[inline]
+            fn encode_topics_raw(
+                &self,
+                out: &mut [alloy_sol_types::abi::token::WordToken],
+            ) -> alloy_sol_types::Result<()> {
+                if out.len() < <Self::TopicList as alloy_sol_types::TopicList>::COUNT {
+                    return Err(alloy_sol_types::Error::Overrun);
+                }
+                out[0usize] = alloy_sol_types::abi::token::WordToken(
+                    Self::SIGNATURE_HASH,
+                );
+                out[1usize] = <alloy::sol_types::sol_data::Uint<
+                    256,
+                > as alloy_sol_types::EventTopic>::encode_topic(&self.decryptionId);
+                Ok(())
+            }
+        }
+        #[automatically_derived]
+        impl alloy_sol_types::private::IntoLogData for SolanaPublicDecryptionRequest {
+            fn to_log_data(&self) -> alloy_sol_types::private::LogData {
+                From::from(self)
+            }
+            fn into_log_data(self) -> alloy_sol_types::private::LogData {
+                From::from(&self)
+            }
+        }
+        #[automatically_derived]
+        impl From<&SolanaPublicDecryptionRequest> for alloy_sol_types::private::LogData {
+            #[inline]
+            fn from(
+                this: &SolanaPublicDecryptionRequest,
+            ) -> alloy_sol_types::private::LogData {
+                alloy_sol_types::SolEvent::encode_log_data(this)
+            }
+        }
+    };
+    #[derive(serde::Serialize, serde::Deserialize)]
+    #[derive(Default, Debug, PartialEq, Eq, Hash)]
+    /**Event with signature `SolanaUserDecryptionRequest(uint256,bytes32[],(uint256,uint256),bytes,bytes,bytes)` and selector `0xaa5c63090db767e5b5c7d212722aabfdc19fc0cded058e5d4d26b45b3e8b644c`.
+```solidity
+event SolanaUserDecryptionRequest(uint256 indexed decryptionId, bytes32[] ctHandles, RequestValiditySeconds requestValidity, bytes publicKey, bytes extraData, bytes solanaRequest);
+```*/
+    #[allow(
+        non_camel_case_types,
+        non_snake_case,
+        clippy::pub_underscore_fields,
+        clippy::style
+    )]
+    #[derive(Clone)]
+    pub struct SolanaUserDecryptionRequest {
+        #[allow(missing_docs)]
+        pub decryptionId: alloy::sol_types::private::primitives::aliases::U256,
+        #[allow(missing_docs)]
+        pub ctHandles: alloy::sol_types::private::Vec<
+            alloy::sol_types::private::FixedBytes<32>,
+        >,
+        #[allow(missing_docs)]
+        pub requestValidity: <RequestValiditySeconds as alloy::sol_types::SolType>::RustType,
+        #[allow(missing_docs)]
+        pub publicKey: alloy::sol_types::private::Bytes,
+        #[allow(missing_docs)]
+        pub extraData: alloy::sol_types::private::Bytes,
+        #[allow(missing_docs)]
+        pub solanaRequest: alloy::sol_types::private::Bytes,
+    }
+    #[allow(
+        non_camel_case_types,
+        non_snake_case,
+        clippy::pub_underscore_fields,
+        clippy::style
+    )]
+    const _: () = {
+        use alloy::sol_types as alloy_sol_types;
+        #[automatically_derived]
+        impl alloy_sol_types::SolEvent for SolanaUserDecryptionRequest {
+            type DataTuple<'a> = (
+                alloy::sol_types::sol_data::Array<
+                    alloy::sol_types::sol_data::FixedBytes<32>,
+                >,
+                RequestValiditySeconds,
+                alloy::sol_types::sol_data::Bytes,
+                alloy::sol_types::sol_data::Bytes,
+                alloy::sol_types::sol_data::Bytes,
+            );
+            type DataToken<'a> = <Self::DataTuple<
+                'a,
+            > as alloy_sol_types::SolType>::Token<'a>;
+            type TopicList = (
+                alloy_sol_types::sol_data::FixedBytes<32>,
+                alloy::sol_types::sol_data::Uint<256>,
+            );
+            const SIGNATURE: &'static str = "SolanaUserDecryptionRequest(uint256,bytes32[],(uint256,uint256),bytes,bytes,bytes)";
+            const SIGNATURE_HASH: alloy_sol_types::private::B256 = alloy_sol_types::private::B256::new([
+                170u8, 92u8, 99u8, 9u8, 13u8, 183u8, 103u8, 229u8, 181u8, 199u8, 210u8,
+                18u8, 114u8, 42u8, 171u8, 253u8, 193u8, 159u8, 192u8, 205u8, 237u8, 5u8,
+                142u8, 93u8, 77u8, 38u8, 180u8, 91u8, 62u8, 139u8, 100u8, 76u8,
+            ]);
+            const ANONYMOUS: bool = false;
+            #[allow(unused_variables)]
+            #[inline]
+            fn new(
+                topics: <Self::TopicList as alloy_sol_types::SolType>::RustType,
+                data: <Self::DataTuple<'_> as alloy_sol_types::SolType>::RustType,
+            ) -> Self {
+                Self {
+                    decryptionId: topics.1,
+                    ctHandles: data.0,
+                    requestValidity: data.1,
+                    publicKey: data.2,
+                    extraData: data.3,
+                    solanaRequest: data.4,
+                }
+            }
+            #[inline]
+            fn check_signature(
+                topics: &<Self::TopicList as alloy_sol_types::SolType>::RustType,
+            ) -> alloy_sol_types::Result<()> {
+                if topics.0 != Self::SIGNATURE_HASH {
+                    return Err(
+                        alloy_sol_types::Error::invalid_event_signature_hash(
+                            Self::SIGNATURE,
+                            topics.0,
+                            Self::SIGNATURE_HASH,
+                        ),
+                    );
+                }
+                Ok(())
+            }
+            #[inline]
+            fn tokenize_body(&self) -> Self::DataToken<'_> {
+                (
+                    <alloy::sol_types::sol_data::Array<
+                        alloy::sol_types::sol_data::FixedBytes<32>,
+                    > as alloy_sol_types::SolType>::tokenize(&self.ctHandles),
+                    <RequestValiditySeconds as alloy_sol_types::SolType>::tokenize(
+                        &self.requestValidity,
+                    ),
+                    <alloy::sol_types::sol_data::Bytes as alloy_sol_types::SolType>::tokenize(
+                        &self.publicKey,
+                    ),
+                    <alloy::sol_types::sol_data::Bytes as alloy_sol_types::SolType>::tokenize(
+                        &self.extraData,
+                    ),
+                    <alloy::sol_types::sol_data::Bytes as alloy_sol_types::SolType>::tokenize(
+                        &self.solanaRequest,
+                    ),
+                )
+            }
+            #[inline]
+            fn topics(&self) -> <Self::TopicList as alloy_sol_types::SolType>::RustType {
+                (Self::SIGNATURE_HASH.into(), self.decryptionId.clone())
+            }
+            #[inline]
+            fn encode_topics_raw(
+                &self,
+                out: &mut [alloy_sol_types::abi::token::WordToken],
+            ) -> alloy_sol_types::Result<()> {
+                if out.len() < <Self::TopicList as alloy_sol_types::TopicList>::COUNT {
+                    return Err(alloy_sol_types::Error::Overrun);
+                }
+                out[0usize] = alloy_sol_types::abi::token::WordToken(
+                    Self::SIGNATURE_HASH,
+                );
+                out[1usize] = <alloy::sol_types::sol_data::Uint<
+                    256,
+                > as alloy_sol_types::EventTopic>::encode_topic(&self.decryptionId);
+                Ok(())
+            }
+        }
+        #[automatically_derived]
+        impl alloy_sol_types::private::IntoLogData for SolanaUserDecryptionRequest {
+            fn to_log_data(&self) -> alloy_sol_types::private::LogData {
+                From::from(self)
+            }
+            fn into_log_data(self) -> alloy_sol_types::private::LogData {
+                From::from(&self)
+            }
+        }
+        #[automatically_derived]
+        impl From<&SolanaUserDecryptionRequest> for alloy_sol_types::private::LogData {
+            #[inline]
+            fn from(
+                this: &SolanaUserDecryptionRequest,
+            ) -> alloy_sol_types::private::LogData {
+                alloy_sol_types::SolEvent::encode_log_data(this)
+            }
+        }
+    };
+    #[derive(serde::Serialize, serde::Deserialize)]
+    #[derive(Default, Debug, PartialEq, Eq, Hash)]
     /**Event with signature `UserDecryptionRequest(uint256,(bytes32,uint256,bytes32,address[])[],address,bytes,bytes)` and selector `0xf9011bd6ba0da6049c520d70fe5971f17ed7ab795486052544b51019896c596b`.
 ```solidity
 event UserDecryptionRequest(uint256 indexed decryptionId, SnsCiphertextMaterial[] snsCtMaterials, address userAddress, bytes publicKey, bytes extraData);
@@ -7169,158 +7728,6 @@ event UserDecryptionRequest(uint256 indexed decryptionId, HandleEntry[] handles,
             #[inline]
             fn from(
                 this: &UserDecryptionRequest_3,
-            ) -> alloy_sol_types::private::LogData {
-                alloy_sol_types::SolEvent::encode_log_data(this)
-            }
-        }
-    };
-    #[derive(serde::Serialize, serde::Deserialize)]
-    #[derive(Default, Debug, PartialEq, Eq, Hash)]
-    /**Event with signature `UserDecryptionRequest(uint256,bytes32[],(uint256,uint256),bytes,bytes,bytes)` and selector `0xaa48abd801afddf5400cc26de8bc9ab3cdaebaef43490703585c749a5cdb9c0e`.
-```solidity
-event UserDecryptionRequest(uint256 indexed decryptionId, bytes32[] ctHandles, RequestValiditySeconds requestValidity, bytes publicKey, bytes extraData, bytes solanaRequest);
-```*/
-    #[allow(
-        non_camel_case_types,
-        non_snake_case,
-        clippy::pub_underscore_fields,
-        clippy::style
-    )]
-    #[derive(Clone)]
-    pub struct UserDecryptionRequest_4 {
-        #[allow(missing_docs)]
-        pub decryptionId: alloy::sol_types::private::primitives::aliases::U256,
-        #[allow(missing_docs)]
-        pub ctHandles: alloy::sol_types::private::Vec<
-            alloy::sol_types::private::FixedBytes<32>,
-        >,
-        #[allow(missing_docs)]
-        pub requestValidity: <RequestValiditySeconds as alloy::sol_types::SolType>::RustType,
-        #[allow(missing_docs)]
-        pub publicKey: alloy::sol_types::private::Bytes,
-        #[allow(missing_docs)]
-        pub extraData: alloy::sol_types::private::Bytes,
-        #[allow(missing_docs)]
-        pub solanaRequest: alloy::sol_types::private::Bytes,
-    }
-    #[allow(
-        non_camel_case_types,
-        non_snake_case,
-        clippy::pub_underscore_fields,
-        clippy::style
-    )]
-    const _: () = {
-        use alloy::sol_types as alloy_sol_types;
-        #[automatically_derived]
-        impl alloy_sol_types::SolEvent for UserDecryptionRequest_4 {
-            type DataTuple<'a> = (
-                alloy::sol_types::sol_data::Array<
-                    alloy::sol_types::sol_data::FixedBytes<32>,
-                >,
-                RequestValiditySeconds,
-                alloy::sol_types::sol_data::Bytes,
-                alloy::sol_types::sol_data::Bytes,
-                alloy::sol_types::sol_data::Bytes,
-            );
-            type DataToken<'a> = <Self::DataTuple<
-                'a,
-            > as alloy_sol_types::SolType>::Token<'a>;
-            type TopicList = (
-                alloy_sol_types::sol_data::FixedBytes<32>,
-                alloy::sol_types::sol_data::Uint<256>,
-            );
-            const SIGNATURE: &'static str = "UserDecryptionRequest(uint256,bytes32[],(uint256,uint256),bytes,bytes,bytes)";
-            const SIGNATURE_HASH: alloy_sol_types::private::B256 = alloy_sol_types::private::B256::new([
-                170u8, 72u8, 171u8, 216u8, 1u8, 175u8, 221u8, 245u8, 64u8, 12u8, 194u8,
-                109u8, 232u8, 188u8, 154u8, 179u8, 205u8, 174u8, 186u8, 239u8, 67u8,
-                73u8, 7u8, 3u8, 88u8, 92u8, 116u8, 154u8, 92u8, 219u8, 156u8, 14u8,
-            ]);
-            const ANONYMOUS: bool = false;
-            #[allow(unused_variables)]
-            #[inline]
-            fn new(
-                topics: <Self::TopicList as alloy_sol_types::SolType>::RustType,
-                data: <Self::DataTuple<'_> as alloy_sol_types::SolType>::RustType,
-            ) -> Self {
-                Self {
-                    decryptionId: topics.1,
-                    ctHandles: data.0,
-                    requestValidity: data.1,
-                    publicKey: data.2,
-                    extraData: data.3,
-                    solanaRequest: data.4,
-                }
-            }
-            #[inline]
-            fn check_signature(
-                topics: &<Self::TopicList as alloy_sol_types::SolType>::RustType,
-            ) -> alloy_sol_types::Result<()> {
-                if topics.0 != Self::SIGNATURE_HASH {
-                    return Err(
-                        alloy_sol_types::Error::invalid_event_signature_hash(
-                            Self::SIGNATURE,
-                            topics.0,
-                            Self::SIGNATURE_HASH,
-                        ),
-                    );
-                }
-                Ok(())
-            }
-            #[inline]
-            fn tokenize_body(&self) -> Self::DataToken<'_> {
-                (
-                    <alloy::sol_types::sol_data::Array<
-                        alloy::sol_types::sol_data::FixedBytes<32>,
-                    > as alloy_sol_types::SolType>::tokenize(&self.ctHandles),
-                    <RequestValiditySeconds as alloy_sol_types::SolType>::tokenize(
-                        &self.requestValidity,
-                    ),
-                    <alloy::sol_types::sol_data::Bytes as alloy_sol_types::SolType>::tokenize(
-                        &self.publicKey,
-                    ),
-                    <alloy::sol_types::sol_data::Bytes as alloy_sol_types::SolType>::tokenize(
-                        &self.extraData,
-                    ),
-                    <alloy::sol_types::sol_data::Bytes as alloy_sol_types::SolType>::tokenize(
-                        &self.solanaRequest,
-                    ),
-                )
-            }
-            #[inline]
-            fn topics(&self) -> <Self::TopicList as alloy_sol_types::SolType>::RustType {
-                (Self::SIGNATURE_HASH.into(), self.decryptionId.clone())
-            }
-            #[inline]
-            fn encode_topics_raw(
-                &self,
-                out: &mut [alloy_sol_types::abi::token::WordToken],
-            ) -> alloy_sol_types::Result<()> {
-                if out.len() < <Self::TopicList as alloy_sol_types::TopicList>::COUNT {
-                    return Err(alloy_sol_types::Error::Overrun);
-                }
-                out[0usize] = alloy_sol_types::abi::token::WordToken(
-                    Self::SIGNATURE_HASH,
-                );
-                out[1usize] = <alloy::sol_types::sol_data::Uint<
-                    256,
-                > as alloy_sol_types::EventTopic>::encode_topic(&self.decryptionId);
-                Ok(())
-            }
-        }
-        #[automatically_derived]
-        impl alloy_sol_types::private::IntoLogData for UserDecryptionRequest_4 {
-            fn to_log_data(&self) -> alloy_sol_types::private::LogData {
-                From::from(self)
-            }
-            fn into_log_data(self) -> alloy_sol_types::private::LogData {
-                From::from(&self)
-            }
-        }
-        #[automatically_derived]
-        impl From<&UserDecryptionRequest_4> for alloy_sol_types::private::LogData {
-            #[inline]
-            fn from(
-                this: &UserDecryptionRequest_4,
             ) -> alloy_sol_types::private::LogData {
                 alloy_sol_types::SolEvent::encode_log_data(this)
             }
@@ -9542,13 +9949,203 @@ function publicDecryptionResponse(uint256 decryptionId, bytes memory decryptedRe
     };
     #[derive(serde::Serialize, serde::Deserialize)]
     #[derive(Default, Debug, PartialEq, Eq, Hash)]
-    /**Function with signature `userDecryptionRequest(bytes32[],(uint256,uint256),bytes,bytes,bytes)` and selector `0x20c157b3`.
+    /**Function with signature `solanaPublicDecryptionRequest(bytes32[],bytes,bytes32[])` and selector `0xfee9d5c4`.
 ```solidity
-function userDecryptionRequest(bytes32[] memory ctHandles, RequestValiditySeconds memory requestValidity, bytes memory publicKey, bytes memory extraData, bytes memory solanaRequest) external;
+function solanaPublicDecryptionRequest(bytes32[] memory ctHandles, bytes memory extraData, bytes32[] memory encryptedStores) external;
 ```*/
     #[allow(non_camel_case_types, non_snake_case, clippy::pub_underscore_fields)]
     #[derive(Clone)]
-    pub struct userDecryptionRequest_0Call {
+    pub struct solanaPublicDecryptionRequestCall {
+        #[allow(missing_docs)]
+        pub ctHandles: alloy::sol_types::private::Vec<
+            alloy::sol_types::private::FixedBytes<32>,
+        >,
+        #[allow(missing_docs)]
+        pub extraData: alloy::sol_types::private::Bytes,
+        #[allow(missing_docs)]
+        pub encryptedStores: alloy::sol_types::private::Vec<
+            alloy::sol_types::private::FixedBytes<32>,
+        >,
+    }
+    ///Container type for the return parameters of the [`solanaPublicDecryptionRequest(bytes32[],bytes,bytes32[])`](solanaPublicDecryptionRequestCall) function.
+    #[allow(non_camel_case_types, non_snake_case, clippy::pub_underscore_fields)]
+    #[derive(Clone)]
+    pub struct solanaPublicDecryptionRequestReturn {}
+    #[allow(
+        non_camel_case_types,
+        non_snake_case,
+        clippy::pub_underscore_fields,
+        clippy::style
+    )]
+    const _: () = {
+        use alloy::sol_types as alloy_sol_types;
+        {
+            #[doc(hidden)]
+            #[allow(dead_code)]
+            type UnderlyingSolTuple<'a> = (
+                alloy::sol_types::sol_data::Array<
+                    alloy::sol_types::sol_data::FixedBytes<32>,
+                >,
+                alloy::sol_types::sol_data::Bytes,
+                alloy::sol_types::sol_data::Array<
+                    alloy::sol_types::sol_data::FixedBytes<32>,
+                >,
+            );
+            #[doc(hidden)]
+            type UnderlyingRustTuple<'a> = (
+                alloy::sol_types::private::Vec<
+                    alloy::sol_types::private::FixedBytes<32>,
+                >,
+                alloy::sol_types::private::Bytes,
+                alloy::sol_types::private::Vec<alloy::sol_types::private::FixedBytes<32>>,
+            );
+            #[cfg(test)]
+            #[allow(dead_code, unreachable_patterns)]
+            fn _type_assertion(
+                _t: alloy_sol_types::private::AssertTypeEq<UnderlyingRustTuple>,
+            ) {
+                match _t {
+                    alloy_sol_types::private::AssertTypeEq::<
+                        <UnderlyingSolTuple as alloy_sol_types::SolType>::RustType,
+                    >(_) => {}
+                }
+            }
+            #[automatically_derived]
+            #[doc(hidden)]
+            impl ::core::convert::From<solanaPublicDecryptionRequestCall>
+            for UnderlyingRustTuple<'_> {
+                fn from(value: solanaPublicDecryptionRequestCall) -> Self {
+                    (value.ctHandles, value.extraData, value.encryptedStores)
+                }
+            }
+            #[automatically_derived]
+            #[doc(hidden)]
+            impl ::core::convert::From<UnderlyingRustTuple<'_>>
+            for solanaPublicDecryptionRequestCall {
+                fn from(tuple: UnderlyingRustTuple<'_>) -> Self {
+                    Self {
+                        ctHandles: tuple.0,
+                        extraData: tuple.1,
+                        encryptedStores: tuple.2,
+                    }
+                }
+            }
+        }
+        {
+            #[doc(hidden)]
+            #[allow(dead_code)]
+            type UnderlyingSolTuple<'a> = ();
+            #[doc(hidden)]
+            type UnderlyingRustTuple<'a> = ();
+            #[cfg(test)]
+            #[allow(dead_code, unreachable_patterns)]
+            fn _type_assertion(
+                _t: alloy_sol_types::private::AssertTypeEq<UnderlyingRustTuple>,
+            ) {
+                match _t {
+                    alloy_sol_types::private::AssertTypeEq::<
+                        <UnderlyingSolTuple as alloy_sol_types::SolType>::RustType,
+                    >(_) => {}
+                }
+            }
+            #[automatically_derived]
+            #[doc(hidden)]
+            impl ::core::convert::From<solanaPublicDecryptionRequestReturn>
+            for UnderlyingRustTuple<'_> {
+                fn from(value: solanaPublicDecryptionRequestReturn) -> Self {
+                    ()
+                }
+            }
+            #[automatically_derived]
+            #[doc(hidden)]
+            impl ::core::convert::From<UnderlyingRustTuple<'_>>
+            for solanaPublicDecryptionRequestReturn {
+                fn from(tuple: UnderlyingRustTuple<'_>) -> Self {
+                    Self {}
+                }
+            }
+        }
+        impl solanaPublicDecryptionRequestReturn {
+            fn _tokenize(
+                &self,
+            ) -> <solanaPublicDecryptionRequestCall as alloy_sol_types::SolCall>::ReturnToken<
+                '_,
+            > {
+                ()
+            }
+        }
+        #[automatically_derived]
+        impl alloy_sol_types::SolCall for solanaPublicDecryptionRequestCall {
+            type Parameters<'a> = (
+                alloy::sol_types::sol_data::Array<
+                    alloy::sol_types::sol_data::FixedBytes<32>,
+                >,
+                alloy::sol_types::sol_data::Bytes,
+                alloy::sol_types::sol_data::Array<
+                    alloy::sol_types::sol_data::FixedBytes<32>,
+                >,
+            );
+            type Token<'a> = <Self::Parameters<
+                'a,
+            > as alloy_sol_types::SolType>::Token<'a>;
+            type Return = solanaPublicDecryptionRequestReturn;
+            type ReturnTuple<'a> = ();
+            type ReturnToken<'a> = <Self::ReturnTuple<
+                'a,
+            > as alloy_sol_types::SolType>::Token<'a>;
+            const SIGNATURE: &'static str = "solanaPublicDecryptionRequest(bytes32[],bytes,bytes32[])";
+            const SELECTOR: [u8; 4] = [254u8, 233u8, 213u8, 196u8];
+            #[inline]
+            fn new<'a>(
+                tuple: <Self::Parameters<'a> as alloy_sol_types::SolType>::RustType,
+            ) -> Self {
+                tuple.into()
+            }
+            #[inline]
+            fn tokenize(&self) -> Self::Token<'_> {
+                (
+                    <alloy::sol_types::sol_data::Array<
+                        alloy::sol_types::sol_data::FixedBytes<32>,
+                    > as alloy_sol_types::SolType>::tokenize(&self.ctHandles),
+                    <alloy::sol_types::sol_data::Bytes as alloy_sol_types::SolType>::tokenize(
+                        &self.extraData,
+                    ),
+                    <alloy::sol_types::sol_data::Array<
+                        alloy::sol_types::sol_data::FixedBytes<32>,
+                    > as alloy_sol_types::SolType>::tokenize(&self.encryptedStores),
+                )
+            }
+            #[inline]
+            fn tokenize_returns(ret: &Self::Return) -> Self::ReturnToken<'_> {
+                solanaPublicDecryptionRequestReturn::_tokenize(ret)
+            }
+            #[inline]
+            fn abi_decode_returns(data: &[u8]) -> alloy_sol_types::Result<Self::Return> {
+                <Self::ReturnTuple<
+                    '_,
+                > as alloy_sol_types::SolType>::abi_decode_sequence(data)
+                    .map(Into::into)
+            }
+            #[inline]
+            fn abi_decode_returns_validate(
+                data: &[u8],
+            ) -> alloy_sol_types::Result<Self::Return> {
+                <Self::ReturnTuple<
+                    '_,
+                > as alloy_sol_types::SolType>::abi_decode_sequence_validate(data)
+                    .map(Into::into)
+            }
+        }
+    };
+    #[derive(serde::Serialize, serde::Deserialize)]
+    #[derive(Default, Debug, PartialEq, Eq, Hash)]
+    /**Function with signature `solanaUserDecryptionRequest(bytes32[],(uint256,uint256),bytes,bytes,bytes)` and selector `0x9063ff68`.
+```solidity
+function solanaUserDecryptionRequest(bytes32[] memory ctHandles, RequestValiditySeconds memory requestValidity, bytes memory publicKey, bytes memory extraData, bytes memory solanaRequest) external;
+```*/
+    #[allow(non_camel_case_types, non_snake_case, clippy::pub_underscore_fields)]
+    #[derive(Clone)]
+    pub struct solanaUserDecryptionRequestCall {
         #[allow(missing_docs)]
         pub ctHandles: alloy::sol_types::private::Vec<
             alloy::sol_types::private::FixedBytes<32>,
@@ -9562,10 +10159,10 @@ function userDecryptionRequest(bytes32[] memory ctHandles, RequestValiditySecond
         #[allow(missing_docs)]
         pub solanaRequest: alloy::sol_types::private::Bytes,
     }
-    ///Container type for the return parameters of the [`userDecryptionRequest(bytes32[],(uint256,uint256),bytes,bytes,bytes)`](userDecryptionRequest_0Call) function.
+    ///Container type for the return parameters of the [`solanaUserDecryptionRequest(bytes32[],(uint256,uint256),bytes,bytes,bytes)`](solanaUserDecryptionRequestCall) function.
     #[allow(non_camel_case_types, non_snake_case, clippy::pub_underscore_fields)]
     #[derive(Clone)]
-    pub struct userDecryptionRequest_0Return {}
+    pub struct solanaUserDecryptionRequestReturn {}
     #[allow(
         non_camel_case_types,
         non_snake_case,
@@ -9609,9 +10206,9 @@ function userDecryptionRequest(bytes32[] memory ctHandles, RequestValiditySecond
             }
             #[automatically_derived]
             #[doc(hidden)]
-            impl ::core::convert::From<userDecryptionRequest_0Call>
+            impl ::core::convert::From<solanaUserDecryptionRequestCall>
             for UnderlyingRustTuple<'_> {
-                fn from(value: userDecryptionRequest_0Call) -> Self {
+                fn from(value: solanaUserDecryptionRequestCall) -> Self {
                     (
                         value.ctHandles,
                         value.requestValidity,
@@ -9624,7 +10221,7 @@ function userDecryptionRequest(bytes32[] memory ctHandles, RequestValiditySecond
             #[automatically_derived]
             #[doc(hidden)]
             impl ::core::convert::From<UnderlyingRustTuple<'_>>
-            for userDecryptionRequest_0Call {
+            for solanaUserDecryptionRequestCall {
                 fn from(tuple: UnderlyingRustTuple<'_>) -> Self {
                     Self {
                         ctHandles: tuple.0,
@@ -9632,6 +10229,226 @@ function userDecryptionRequest(bytes32[] memory ctHandles, RequestValiditySecond
                         publicKey: tuple.2,
                         extraData: tuple.3,
                         solanaRequest: tuple.4,
+                    }
+                }
+            }
+        }
+        {
+            #[doc(hidden)]
+            #[allow(dead_code)]
+            type UnderlyingSolTuple<'a> = ();
+            #[doc(hidden)]
+            type UnderlyingRustTuple<'a> = ();
+            #[cfg(test)]
+            #[allow(dead_code, unreachable_patterns)]
+            fn _type_assertion(
+                _t: alloy_sol_types::private::AssertTypeEq<UnderlyingRustTuple>,
+            ) {
+                match _t {
+                    alloy_sol_types::private::AssertTypeEq::<
+                        <UnderlyingSolTuple as alloy_sol_types::SolType>::RustType,
+                    >(_) => {}
+                }
+            }
+            #[automatically_derived]
+            #[doc(hidden)]
+            impl ::core::convert::From<solanaUserDecryptionRequestReturn>
+            for UnderlyingRustTuple<'_> {
+                fn from(value: solanaUserDecryptionRequestReturn) -> Self {
+                    ()
+                }
+            }
+            #[automatically_derived]
+            #[doc(hidden)]
+            impl ::core::convert::From<UnderlyingRustTuple<'_>>
+            for solanaUserDecryptionRequestReturn {
+                fn from(tuple: UnderlyingRustTuple<'_>) -> Self {
+                    Self {}
+                }
+            }
+        }
+        impl solanaUserDecryptionRequestReturn {
+            fn _tokenize(
+                &self,
+            ) -> <solanaUserDecryptionRequestCall as alloy_sol_types::SolCall>::ReturnToken<
+                '_,
+            > {
+                ()
+            }
+        }
+        #[automatically_derived]
+        impl alloy_sol_types::SolCall for solanaUserDecryptionRequestCall {
+            type Parameters<'a> = (
+                alloy::sol_types::sol_data::Array<
+                    alloy::sol_types::sol_data::FixedBytes<32>,
+                >,
+                RequestValiditySeconds,
+                alloy::sol_types::sol_data::Bytes,
+                alloy::sol_types::sol_data::Bytes,
+                alloy::sol_types::sol_data::Bytes,
+            );
+            type Token<'a> = <Self::Parameters<
+                'a,
+            > as alloy_sol_types::SolType>::Token<'a>;
+            type Return = solanaUserDecryptionRequestReturn;
+            type ReturnTuple<'a> = ();
+            type ReturnToken<'a> = <Self::ReturnTuple<
+                'a,
+            > as alloy_sol_types::SolType>::Token<'a>;
+            const SIGNATURE: &'static str = "solanaUserDecryptionRequest(bytes32[],(uint256,uint256),bytes,bytes,bytes)";
+            const SELECTOR: [u8; 4] = [144u8, 99u8, 255u8, 104u8];
+            #[inline]
+            fn new<'a>(
+                tuple: <Self::Parameters<'a> as alloy_sol_types::SolType>::RustType,
+            ) -> Self {
+                tuple.into()
+            }
+            #[inline]
+            fn tokenize(&self) -> Self::Token<'_> {
+                (
+                    <alloy::sol_types::sol_data::Array<
+                        alloy::sol_types::sol_data::FixedBytes<32>,
+                    > as alloy_sol_types::SolType>::tokenize(&self.ctHandles),
+                    <RequestValiditySeconds as alloy_sol_types::SolType>::tokenize(
+                        &self.requestValidity,
+                    ),
+                    <alloy::sol_types::sol_data::Bytes as alloy_sol_types::SolType>::tokenize(
+                        &self.publicKey,
+                    ),
+                    <alloy::sol_types::sol_data::Bytes as alloy_sol_types::SolType>::tokenize(
+                        &self.extraData,
+                    ),
+                    <alloy::sol_types::sol_data::Bytes as alloy_sol_types::SolType>::tokenize(
+                        &self.solanaRequest,
+                    ),
+                )
+            }
+            #[inline]
+            fn tokenize_returns(ret: &Self::Return) -> Self::ReturnToken<'_> {
+                solanaUserDecryptionRequestReturn::_tokenize(ret)
+            }
+            #[inline]
+            fn abi_decode_returns(data: &[u8]) -> alloy_sol_types::Result<Self::Return> {
+                <Self::ReturnTuple<
+                    '_,
+                > as alloy_sol_types::SolType>::abi_decode_sequence(data)
+                    .map(Into::into)
+            }
+            #[inline]
+            fn abi_decode_returns_validate(
+                data: &[u8],
+            ) -> alloy_sol_types::Result<Self::Return> {
+                <Self::ReturnTuple<
+                    '_,
+                > as alloy_sol_types::SolType>::abi_decode_sequence_validate(data)
+                    .map(Into::into)
+            }
+        }
+    };
+    #[derive(serde::Serialize, serde::Deserialize)]
+    #[derive(Default, Debug, PartialEq, Eq, Hash)]
+    /**Function with signature `userDecryptionRequest((bytes32,address,address)[],address,bytes,address[],(uint256,uint256),bytes,bytes)` and selector `0xb4de2c37`.
+```solidity
+function userDecryptionRequest(HandleEntry[] memory handles, address userAddress, bytes memory publicKey, address[] memory allowedContracts, RequestValiditySeconds memory requestValidity, bytes memory signature, bytes memory extraData) external;
+```*/
+    #[allow(non_camel_case_types, non_snake_case, clippy::pub_underscore_fields)]
+    #[derive(Clone)]
+    pub struct userDecryptionRequest_0Call {
+        #[allow(missing_docs)]
+        pub handles: alloy::sol_types::private::Vec<
+            <HandleEntry as alloy::sol_types::SolType>::RustType,
+        >,
+        #[allow(missing_docs)]
+        pub userAddress: alloy::sol_types::private::Address,
+        #[allow(missing_docs)]
+        pub publicKey: alloy::sol_types::private::Bytes,
+        #[allow(missing_docs)]
+        pub allowedContracts: alloy::sol_types::private::Vec<
+            alloy::sol_types::private::Address,
+        >,
+        #[allow(missing_docs)]
+        pub requestValidity: <RequestValiditySeconds as alloy::sol_types::SolType>::RustType,
+        #[allow(missing_docs)]
+        pub signature: alloy::sol_types::private::Bytes,
+        #[allow(missing_docs)]
+        pub extraData: alloy::sol_types::private::Bytes,
+    }
+    ///Container type for the return parameters of the [`userDecryptionRequest((bytes32,address,address)[],address,bytes,address[],(uint256,uint256),bytes,bytes)`](userDecryptionRequest_0Call) function.
+    #[allow(non_camel_case_types, non_snake_case, clippy::pub_underscore_fields)]
+    #[derive(Clone)]
+    pub struct userDecryptionRequest_0Return {}
+    #[allow(
+        non_camel_case_types,
+        non_snake_case,
+        clippy::pub_underscore_fields,
+        clippy::style
+    )]
+    const _: () = {
+        use alloy::sol_types as alloy_sol_types;
+        {
+            #[doc(hidden)]
+            #[allow(dead_code)]
+            type UnderlyingSolTuple<'a> = (
+                alloy::sol_types::sol_data::Array<HandleEntry>,
+                alloy::sol_types::sol_data::Address,
+                alloy::sol_types::sol_data::Bytes,
+                alloy::sol_types::sol_data::Array<alloy::sol_types::sol_data::Address>,
+                RequestValiditySeconds,
+                alloy::sol_types::sol_data::Bytes,
+                alloy::sol_types::sol_data::Bytes,
+            );
+            #[doc(hidden)]
+            type UnderlyingRustTuple<'a> = (
+                alloy::sol_types::private::Vec<
+                    <HandleEntry as alloy::sol_types::SolType>::RustType,
+                >,
+                alloy::sol_types::private::Address,
+                alloy::sol_types::private::Bytes,
+                alloy::sol_types::private::Vec<alloy::sol_types::private::Address>,
+                <RequestValiditySeconds as alloy::sol_types::SolType>::RustType,
+                alloy::sol_types::private::Bytes,
+                alloy::sol_types::private::Bytes,
+            );
+            #[cfg(test)]
+            #[allow(dead_code, unreachable_patterns)]
+            fn _type_assertion(
+                _t: alloy_sol_types::private::AssertTypeEq<UnderlyingRustTuple>,
+            ) {
+                match _t {
+                    alloy_sol_types::private::AssertTypeEq::<
+                        <UnderlyingSolTuple as alloy_sol_types::SolType>::RustType,
+                    >(_) => {}
+                }
+            }
+            #[automatically_derived]
+            #[doc(hidden)]
+            impl ::core::convert::From<userDecryptionRequest_0Call>
+            for UnderlyingRustTuple<'_> {
+                fn from(value: userDecryptionRequest_0Call) -> Self {
+                    (
+                        value.handles,
+                        value.userAddress,
+                        value.publicKey,
+                        value.allowedContracts,
+                        value.requestValidity,
+                        value.signature,
+                        value.extraData,
+                    )
+                }
+            }
+            #[automatically_derived]
+            #[doc(hidden)]
+            impl ::core::convert::From<UnderlyingRustTuple<'_>>
+            for userDecryptionRequest_0Call {
+                fn from(tuple: UnderlyingRustTuple<'_>) -> Self {
+                    Self {
+                        handles: tuple.0,
+                        userAddress: tuple.1,
+                        publicKey: tuple.2,
+                        allowedContracts: tuple.3,
+                        requestValidity: tuple.4,
+                        signature: tuple.5,
+                        extraData: tuple.6,
                     }
                 }
             }
@@ -9682,11 +10499,11 @@ function userDecryptionRequest(bytes32[] memory ctHandles, RequestValiditySecond
         #[automatically_derived]
         impl alloy_sol_types::SolCall for userDecryptionRequest_0Call {
             type Parameters<'a> = (
-                alloy::sol_types::sol_data::Array<
-                    alloy::sol_types::sol_data::FixedBytes<32>,
-                >,
-                RequestValiditySeconds,
+                alloy::sol_types::sol_data::Array<HandleEntry>,
+                alloy::sol_types::sol_data::Address,
                 alloy::sol_types::sol_data::Bytes,
+                alloy::sol_types::sol_data::Array<alloy::sol_types::sol_data::Address>,
+                RequestValiditySeconds,
                 alloy::sol_types::sol_data::Bytes,
                 alloy::sol_types::sol_data::Bytes,
             );
@@ -9698,8 +10515,8 @@ function userDecryptionRequest(bytes32[] memory ctHandles, RequestValiditySecond
             type ReturnToken<'a> = <Self::ReturnTuple<
                 'a,
             > as alloy_sol_types::SolType>::Token<'a>;
-            const SIGNATURE: &'static str = "userDecryptionRequest(bytes32[],(uint256,uint256),bytes,bytes,bytes)";
-            const SELECTOR: [u8; 4] = [32u8, 193u8, 87u8, 179u8];
+            const SIGNATURE: &'static str = "userDecryptionRequest((bytes32,address,address)[],address,bytes,address[],(uint256,uint256),bytes,bytes)";
+            const SELECTOR: [u8; 4] = [180u8, 222u8, 44u8, 55u8];
             #[inline]
             fn new<'a>(
                 tuple: <Self::Parameters<'a> as alloy_sol_types::SolType>::RustType,
@@ -9710,19 +10527,25 @@ function userDecryptionRequest(bytes32[] memory ctHandles, RequestValiditySecond
             fn tokenize(&self) -> Self::Token<'_> {
                 (
                     <alloy::sol_types::sol_data::Array<
-                        alloy::sol_types::sol_data::FixedBytes<32>,
-                    > as alloy_sol_types::SolType>::tokenize(&self.ctHandles),
-                    <RequestValiditySeconds as alloy_sol_types::SolType>::tokenize(
-                        &self.requestValidity,
+                        HandleEntry,
+                    > as alloy_sol_types::SolType>::tokenize(&self.handles),
+                    <alloy::sol_types::sol_data::Address as alloy_sol_types::SolType>::tokenize(
+                        &self.userAddress,
                     ),
                     <alloy::sol_types::sol_data::Bytes as alloy_sol_types::SolType>::tokenize(
                         &self.publicKey,
                     ),
-                    <alloy::sol_types::sol_data::Bytes as alloy_sol_types::SolType>::tokenize(
-                        &self.extraData,
+                    <alloy::sol_types::sol_data::Array<
+                        alloy::sol_types::sol_data::Address,
+                    > as alloy_sol_types::SolType>::tokenize(&self.allowedContracts),
+                    <RequestValiditySeconds as alloy_sol_types::SolType>::tokenize(
+                        &self.requestValidity,
                     ),
                     <alloy::sol_types::sol_data::Bytes as alloy_sol_types::SolType>::tokenize(
-                        &self.solanaRequest,
+                        &self.signature,
+                    ),
+                    <alloy::sol_types::sol_data::Bytes as alloy_sol_types::SolType>::tokenize(
+                        &self.extraData,
                     ),
                 )
             }
@@ -9750,33 +10573,31 @@ function userDecryptionRequest(bytes32[] memory ctHandles, RequestValiditySecond
     };
     #[derive(serde::Serialize, serde::Deserialize)]
     #[derive(Default, Debug, PartialEq, Eq, Hash)]
-    /**Function with signature `userDecryptionRequest((bytes32,address,address)[],address,bytes,address[],(uint256,uint256),bytes,bytes)` and selector `0xb4de2c37`.
+    /**Function with signature `userDecryptionRequest((bytes32,address)[],(uint256,uint256),(uint256,address[]),address,bytes,bytes,bytes)` and selector `0xf1b57adb`.
 ```solidity
-function userDecryptionRequest(HandleEntry[] memory handles, address userAddress, bytes memory publicKey, address[] memory allowedContracts, RequestValiditySeconds memory requestValidity, bytes memory signature, bytes memory extraData) external;
+function userDecryptionRequest(CtHandleContractPair[] memory ctHandleContractPairs, RequestValidity memory requestValidity, ContractsInfo memory contractsInfo, address userAddress, bytes memory publicKey, bytes memory signature, bytes memory extraData) external;
 ```*/
     #[allow(non_camel_case_types, non_snake_case, clippy::pub_underscore_fields)]
     #[derive(Clone)]
     pub struct userDecryptionRequest_1Call {
         #[allow(missing_docs)]
-        pub handles: alloy::sol_types::private::Vec<
-            <HandleEntry as alloy::sol_types::SolType>::RustType,
+        pub ctHandleContractPairs: alloy::sol_types::private::Vec<
+            <CtHandleContractPair as alloy::sol_types::SolType>::RustType,
         >,
+        #[allow(missing_docs)]
+        pub requestValidity: <RequestValidity as alloy::sol_types::SolType>::RustType,
+        #[allow(missing_docs)]
+        pub contractsInfo: <ContractsInfo as alloy::sol_types::SolType>::RustType,
         #[allow(missing_docs)]
         pub userAddress: alloy::sol_types::private::Address,
         #[allow(missing_docs)]
         pub publicKey: alloy::sol_types::private::Bytes,
         #[allow(missing_docs)]
-        pub allowedContracts: alloy::sol_types::private::Vec<
-            alloy::sol_types::private::Address,
-        >,
-        #[allow(missing_docs)]
-        pub requestValidity: <RequestValiditySeconds as alloy::sol_types::SolType>::RustType,
-        #[allow(missing_docs)]
         pub signature: alloy::sol_types::private::Bytes,
         #[allow(missing_docs)]
         pub extraData: alloy::sol_types::private::Bytes,
     }
-    ///Container type for the return parameters of the [`userDecryptionRequest((bytes32,address,address)[],address,bytes,address[],(uint256,uint256),bytes,bytes)`](userDecryptionRequest_1Call) function.
+    ///Container type for the return parameters of the [`userDecryptionRequest((bytes32,address)[],(uint256,uint256),(uint256,address[]),address,bytes,bytes,bytes)`](userDecryptionRequest_1Call) function.
     #[allow(non_camel_case_types, non_snake_case, clippy::pub_underscore_fields)]
     #[derive(Clone)]
     pub struct userDecryptionRequest_1Return {}
@@ -9792,23 +10613,23 @@ function userDecryptionRequest(HandleEntry[] memory handles, address userAddress
             #[doc(hidden)]
             #[allow(dead_code)]
             type UnderlyingSolTuple<'a> = (
-                alloy::sol_types::sol_data::Array<HandleEntry>,
+                alloy::sol_types::sol_data::Array<CtHandleContractPair>,
+                RequestValidity,
+                ContractsInfo,
                 alloy::sol_types::sol_data::Address,
                 alloy::sol_types::sol_data::Bytes,
-                alloy::sol_types::sol_data::Array<alloy::sol_types::sol_data::Address>,
-                RequestValiditySeconds,
                 alloy::sol_types::sol_data::Bytes,
                 alloy::sol_types::sol_data::Bytes,
             );
             #[doc(hidden)]
             type UnderlyingRustTuple<'a> = (
                 alloy::sol_types::private::Vec<
-                    <HandleEntry as alloy::sol_types::SolType>::RustType,
+                    <CtHandleContractPair as alloy::sol_types::SolType>::RustType,
                 >,
+                <RequestValidity as alloy::sol_types::SolType>::RustType,
+                <ContractsInfo as alloy::sol_types::SolType>::RustType,
                 alloy::sol_types::private::Address,
                 alloy::sol_types::private::Bytes,
-                alloy::sol_types::private::Vec<alloy::sol_types::private::Address>,
-                <RequestValiditySeconds as alloy::sol_types::SolType>::RustType,
                 alloy::sol_types::private::Bytes,
                 alloy::sol_types::private::Bytes,
             );
@@ -9829,11 +10650,11 @@ function userDecryptionRequest(HandleEntry[] memory handles, address userAddress
             for UnderlyingRustTuple<'_> {
                 fn from(value: userDecryptionRequest_1Call) -> Self {
                     (
-                        value.handles,
+                        value.ctHandleContractPairs,
+                        value.requestValidity,
+                        value.contractsInfo,
                         value.userAddress,
                         value.publicKey,
-                        value.allowedContracts,
-                        value.requestValidity,
                         value.signature,
                         value.extraData,
                     )
@@ -9845,11 +10666,11 @@ function userDecryptionRequest(HandleEntry[] memory handles, address userAddress
             for userDecryptionRequest_1Call {
                 fn from(tuple: UnderlyingRustTuple<'_>) -> Self {
                     Self {
-                        handles: tuple.0,
-                        userAddress: tuple.1,
-                        publicKey: tuple.2,
-                        allowedContracts: tuple.3,
-                        requestValidity: tuple.4,
+                        ctHandleContractPairs: tuple.0,
+                        requestValidity: tuple.1,
+                        contractsInfo: tuple.2,
+                        userAddress: tuple.3,
+                        publicKey: tuple.4,
                         signature: tuple.5,
                         extraData: tuple.6,
                     }
@@ -9902,11 +10723,11 @@ function userDecryptionRequest(HandleEntry[] memory handles, address userAddress
         #[automatically_derived]
         impl alloy_sol_types::SolCall for userDecryptionRequest_1Call {
             type Parameters<'a> = (
-                alloy::sol_types::sol_data::Array<HandleEntry>,
+                alloy::sol_types::sol_data::Array<CtHandleContractPair>,
+                RequestValidity,
+                ContractsInfo,
                 alloy::sol_types::sol_data::Address,
                 alloy::sol_types::sol_data::Bytes,
-                alloy::sol_types::sol_data::Array<alloy::sol_types::sol_data::Address>,
-                RequestValiditySeconds,
                 alloy::sol_types::sol_data::Bytes,
                 alloy::sol_types::sol_data::Bytes,
             );
@@ -9914,230 +10735,6 @@ function userDecryptionRequest(HandleEntry[] memory handles, address userAddress
                 'a,
             > as alloy_sol_types::SolType>::Token<'a>;
             type Return = userDecryptionRequest_1Return;
-            type ReturnTuple<'a> = ();
-            type ReturnToken<'a> = <Self::ReturnTuple<
-                'a,
-            > as alloy_sol_types::SolType>::Token<'a>;
-            const SIGNATURE: &'static str = "userDecryptionRequest((bytes32,address,address)[],address,bytes,address[],(uint256,uint256),bytes,bytes)";
-            const SELECTOR: [u8; 4] = [180u8, 222u8, 44u8, 55u8];
-            #[inline]
-            fn new<'a>(
-                tuple: <Self::Parameters<'a> as alloy_sol_types::SolType>::RustType,
-            ) -> Self {
-                tuple.into()
-            }
-            #[inline]
-            fn tokenize(&self) -> Self::Token<'_> {
-                (
-                    <alloy::sol_types::sol_data::Array<
-                        HandleEntry,
-                    > as alloy_sol_types::SolType>::tokenize(&self.handles),
-                    <alloy::sol_types::sol_data::Address as alloy_sol_types::SolType>::tokenize(
-                        &self.userAddress,
-                    ),
-                    <alloy::sol_types::sol_data::Bytes as alloy_sol_types::SolType>::tokenize(
-                        &self.publicKey,
-                    ),
-                    <alloy::sol_types::sol_data::Array<
-                        alloy::sol_types::sol_data::Address,
-                    > as alloy_sol_types::SolType>::tokenize(&self.allowedContracts),
-                    <RequestValiditySeconds as alloy_sol_types::SolType>::tokenize(
-                        &self.requestValidity,
-                    ),
-                    <alloy::sol_types::sol_data::Bytes as alloy_sol_types::SolType>::tokenize(
-                        &self.signature,
-                    ),
-                    <alloy::sol_types::sol_data::Bytes as alloy_sol_types::SolType>::tokenize(
-                        &self.extraData,
-                    ),
-                )
-            }
-            #[inline]
-            fn tokenize_returns(ret: &Self::Return) -> Self::ReturnToken<'_> {
-                userDecryptionRequest_1Return::_tokenize(ret)
-            }
-            #[inline]
-            fn abi_decode_returns(data: &[u8]) -> alloy_sol_types::Result<Self::Return> {
-                <Self::ReturnTuple<
-                    '_,
-                > as alloy_sol_types::SolType>::abi_decode_sequence(data)
-                    .map(Into::into)
-            }
-            #[inline]
-            fn abi_decode_returns_validate(
-                data: &[u8],
-            ) -> alloy_sol_types::Result<Self::Return> {
-                <Self::ReturnTuple<
-                    '_,
-                > as alloy_sol_types::SolType>::abi_decode_sequence_validate(data)
-                    .map(Into::into)
-            }
-        }
-    };
-    #[derive(serde::Serialize, serde::Deserialize)]
-    #[derive(Default, Debug, PartialEq, Eq, Hash)]
-    /**Function with signature `userDecryptionRequest((bytes32,address)[],(uint256,uint256),(uint256,address[]),address,bytes,bytes,bytes)` and selector `0xf1b57adb`.
-```solidity
-function userDecryptionRequest(CtHandleContractPair[] memory ctHandleContractPairs, RequestValidity memory requestValidity, ContractsInfo memory contractsInfo, address userAddress, bytes memory publicKey, bytes memory signature, bytes memory extraData) external;
-```*/
-    #[allow(non_camel_case_types, non_snake_case, clippy::pub_underscore_fields)]
-    #[derive(Clone)]
-    pub struct userDecryptionRequest_2Call {
-        #[allow(missing_docs)]
-        pub ctHandleContractPairs: alloy::sol_types::private::Vec<
-            <CtHandleContractPair as alloy::sol_types::SolType>::RustType,
-        >,
-        #[allow(missing_docs)]
-        pub requestValidity: <RequestValidity as alloy::sol_types::SolType>::RustType,
-        #[allow(missing_docs)]
-        pub contractsInfo: <ContractsInfo as alloy::sol_types::SolType>::RustType,
-        #[allow(missing_docs)]
-        pub userAddress: alloy::sol_types::private::Address,
-        #[allow(missing_docs)]
-        pub publicKey: alloy::sol_types::private::Bytes,
-        #[allow(missing_docs)]
-        pub signature: alloy::sol_types::private::Bytes,
-        #[allow(missing_docs)]
-        pub extraData: alloy::sol_types::private::Bytes,
-    }
-    ///Container type for the return parameters of the [`userDecryptionRequest((bytes32,address)[],(uint256,uint256),(uint256,address[]),address,bytes,bytes,bytes)`](userDecryptionRequest_2Call) function.
-    #[allow(non_camel_case_types, non_snake_case, clippy::pub_underscore_fields)]
-    #[derive(Clone)]
-    pub struct userDecryptionRequest_2Return {}
-    #[allow(
-        non_camel_case_types,
-        non_snake_case,
-        clippy::pub_underscore_fields,
-        clippy::style
-    )]
-    const _: () = {
-        use alloy::sol_types as alloy_sol_types;
-        {
-            #[doc(hidden)]
-            #[allow(dead_code)]
-            type UnderlyingSolTuple<'a> = (
-                alloy::sol_types::sol_data::Array<CtHandleContractPair>,
-                RequestValidity,
-                ContractsInfo,
-                alloy::sol_types::sol_data::Address,
-                alloy::sol_types::sol_data::Bytes,
-                alloy::sol_types::sol_data::Bytes,
-                alloy::sol_types::sol_data::Bytes,
-            );
-            #[doc(hidden)]
-            type UnderlyingRustTuple<'a> = (
-                alloy::sol_types::private::Vec<
-                    <CtHandleContractPair as alloy::sol_types::SolType>::RustType,
-                >,
-                <RequestValidity as alloy::sol_types::SolType>::RustType,
-                <ContractsInfo as alloy::sol_types::SolType>::RustType,
-                alloy::sol_types::private::Address,
-                alloy::sol_types::private::Bytes,
-                alloy::sol_types::private::Bytes,
-                alloy::sol_types::private::Bytes,
-            );
-            #[cfg(test)]
-            #[allow(dead_code, unreachable_patterns)]
-            fn _type_assertion(
-                _t: alloy_sol_types::private::AssertTypeEq<UnderlyingRustTuple>,
-            ) {
-                match _t {
-                    alloy_sol_types::private::AssertTypeEq::<
-                        <UnderlyingSolTuple as alloy_sol_types::SolType>::RustType,
-                    >(_) => {}
-                }
-            }
-            #[automatically_derived]
-            #[doc(hidden)]
-            impl ::core::convert::From<userDecryptionRequest_2Call>
-            for UnderlyingRustTuple<'_> {
-                fn from(value: userDecryptionRequest_2Call) -> Self {
-                    (
-                        value.ctHandleContractPairs,
-                        value.requestValidity,
-                        value.contractsInfo,
-                        value.userAddress,
-                        value.publicKey,
-                        value.signature,
-                        value.extraData,
-                    )
-                }
-            }
-            #[automatically_derived]
-            #[doc(hidden)]
-            impl ::core::convert::From<UnderlyingRustTuple<'_>>
-            for userDecryptionRequest_2Call {
-                fn from(tuple: UnderlyingRustTuple<'_>) -> Self {
-                    Self {
-                        ctHandleContractPairs: tuple.0,
-                        requestValidity: tuple.1,
-                        contractsInfo: tuple.2,
-                        userAddress: tuple.3,
-                        publicKey: tuple.4,
-                        signature: tuple.5,
-                        extraData: tuple.6,
-                    }
-                }
-            }
-        }
-        {
-            #[doc(hidden)]
-            #[allow(dead_code)]
-            type UnderlyingSolTuple<'a> = ();
-            #[doc(hidden)]
-            type UnderlyingRustTuple<'a> = ();
-            #[cfg(test)]
-            #[allow(dead_code, unreachable_patterns)]
-            fn _type_assertion(
-                _t: alloy_sol_types::private::AssertTypeEq<UnderlyingRustTuple>,
-            ) {
-                match _t {
-                    alloy_sol_types::private::AssertTypeEq::<
-                        <UnderlyingSolTuple as alloy_sol_types::SolType>::RustType,
-                    >(_) => {}
-                }
-            }
-            #[automatically_derived]
-            #[doc(hidden)]
-            impl ::core::convert::From<userDecryptionRequest_2Return>
-            for UnderlyingRustTuple<'_> {
-                fn from(value: userDecryptionRequest_2Return) -> Self {
-                    ()
-                }
-            }
-            #[automatically_derived]
-            #[doc(hidden)]
-            impl ::core::convert::From<UnderlyingRustTuple<'_>>
-            for userDecryptionRequest_2Return {
-                fn from(tuple: UnderlyingRustTuple<'_>) -> Self {
-                    Self {}
-                }
-            }
-        }
-        impl userDecryptionRequest_2Return {
-            fn _tokenize(
-                &self,
-            ) -> <userDecryptionRequest_2Call as alloy_sol_types::SolCall>::ReturnToken<
-                '_,
-            > {
-                ()
-            }
-        }
-        #[automatically_derived]
-        impl alloy_sol_types::SolCall for userDecryptionRequest_2Call {
-            type Parameters<'a> = (
-                alloy::sol_types::sol_data::Array<CtHandleContractPair>,
-                RequestValidity,
-                ContractsInfo,
-                alloy::sol_types::sol_data::Address,
-                alloy::sol_types::sol_data::Bytes,
-                alloy::sol_types::sol_data::Bytes,
-                alloy::sol_types::sol_data::Bytes,
-            );
-            type Token<'a> = <Self::Parameters<
-                'a,
-            > as alloy_sol_types::SolType>::Token<'a>;
-            type Return = userDecryptionRequest_2Return;
             type ReturnTuple<'a> = ();
             type ReturnToken<'a> = <Self::ReturnTuple<
                 'a,
@@ -10180,7 +10777,7 @@ function userDecryptionRequest(CtHandleContractPair[] memory ctHandleContractPai
             }
             #[inline]
             fn tokenize_returns(ret: &Self::Return) -> Self::ReturnToken<'_> {
-                userDecryptionRequest_2Return::_tokenize(ret)
+                userDecryptionRequest_1Return::_tokenize(ret)
             }
             #[inline]
             fn abi_decode_returns(data: &[u8]) -> alloy_sol_types::Result<Self::Return> {
@@ -10418,11 +11015,13 @@ function userDecryptionResponse(uint256 decryptionId, bytes memory userDecrypted
         #[allow(missing_docs)]
         publicDecryptionResponse(publicDecryptionResponseCall),
         #[allow(missing_docs)]
+        solanaPublicDecryptionRequest(solanaPublicDecryptionRequestCall),
+        #[allow(missing_docs)]
+        solanaUserDecryptionRequest(solanaUserDecryptionRequestCall),
+        #[allow(missing_docs)]
         userDecryptionRequest_0(userDecryptionRequest_0Call),
         #[allow(missing_docs)]
         userDecryptionRequest_1(userDecryptionRequest_1Call),
-        #[allow(missing_docs)]
-        userDecryptionRequest_2(userDecryptionRequest_2Call),
         #[allow(missing_docs)]
         userDecryptionResponse(userDecryptionResponseCall),
     }
@@ -10437,54 +11036,57 @@ function userDecryptionResponse(uint256 decryptionId, bytes memory userDecrypted
             [4u8, 111u8, 158u8, 179u8],
             [9u8, 0u8, 204u8, 105u8],
             [13u8, 142u8, 110u8, 44u8],
-            [32u8, 193u8, 87u8, 179u8],
             [64u8, 20u8, 196u8, 205u8],
             [65u8, 11u8, 240u8, 186u8],
             [88u8, 245u8, 184u8, 171u8],
             [111u8, 137u8, 19u8, 188u8],
             [118u8, 34u8, 126u8, 237u8],
+            [144u8, 99u8, 255u8, 104u8],
             [159u8, 173u8, 90u8, 47u8],
             [180u8, 222u8, 44u8, 55u8],
             [216u8, 153u8, 143u8, 69u8],
             [226u8, 45u8, 27u8, 38u8],
             [241u8, 181u8, 122u8, 219u8],
             [251u8, 184u8, 50u8, 89u8],
+            [254u8, 233u8, 213u8, 196u8],
         ];
         /// The names of the variants in the same order as `SELECTORS`.
         pub const VARIANT_NAMES: &'static [&'static str] = &[
             ::core::stringify!(userDecryptionResponse),
             ::core::stringify!(getDecryptionConsensusTxSenders),
             ::core::stringify!(getVersion),
-            ::core::stringify!(userDecryptionRequest_0),
             ::core::stringify!(isPublicDecryptionReady),
             ::core::stringify!(isUserDecryptionReady_0),
             ::core::stringify!(isDecryptionDone),
             ::core::stringify!(publicDecryptionResponse),
             ::core::stringify!(isDelegatedUserDecryptionReady),
+            ::core::stringify!(solanaUserDecryptionRequest),
             ::core::stringify!(delegatedUserDecryptionRequest),
-            ::core::stringify!(userDecryptionRequest_1),
+            ::core::stringify!(userDecryptionRequest_0),
             ::core::stringify!(publicDecryptionRequest),
             ::core::stringify!(isUserDecryptionReady_1),
-            ::core::stringify!(userDecryptionRequest_2),
+            ::core::stringify!(userDecryptionRequest_1),
             ::core::stringify!(isUserDecryptionReady_2),
+            ::core::stringify!(solanaPublicDecryptionRequest),
         ];
         /// The signatures in the same order as `SELECTORS`.
         pub const SIGNATURES: &'static [&'static str] = &[
             <userDecryptionResponseCall as alloy_sol_types::SolCall>::SIGNATURE,
             <getDecryptionConsensusTxSendersCall as alloy_sol_types::SolCall>::SIGNATURE,
             <getVersionCall as alloy_sol_types::SolCall>::SIGNATURE,
-            <userDecryptionRequest_0Call as alloy_sol_types::SolCall>::SIGNATURE,
             <isPublicDecryptionReadyCall as alloy_sol_types::SolCall>::SIGNATURE,
             <isUserDecryptionReady_0Call as alloy_sol_types::SolCall>::SIGNATURE,
             <isDecryptionDoneCall as alloy_sol_types::SolCall>::SIGNATURE,
             <publicDecryptionResponseCall as alloy_sol_types::SolCall>::SIGNATURE,
             <isDelegatedUserDecryptionReadyCall as alloy_sol_types::SolCall>::SIGNATURE,
+            <solanaUserDecryptionRequestCall as alloy_sol_types::SolCall>::SIGNATURE,
             <delegatedUserDecryptionRequestCall as alloy_sol_types::SolCall>::SIGNATURE,
-            <userDecryptionRequest_1Call as alloy_sol_types::SolCall>::SIGNATURE,
+            <userDecryptionRequest_0Call as alloy_sol_types::SolCall>::SIGNATURE,
             <publicDecryptionRequestCall as alloy_sol_types::SolCall>::SIGNATURE,
             <isUserDecryptionReady_1Call as alloy_sol_types::SolCall>::SIGNATURE,
-            <userDecryptionRequest_2Call as alloy_sol_types::SolCall>::SIGNATURE,
+            <userDecryptionRequest_1Call as alloy_sol_types::SolCall>::SIGNATURE,
             <isUserDecryptionReady_2Call as alloy_sol_types::SolCall>::SIGNATURE,
+            <solanaPublicDecryptionRequestCall as alloy_sol_types::SolCall>::SIGNATURE,
         ];
         /// Returns the signature for the given selector, if known.
         #[inline]
@@ -10511,7 +11113,7 @@ function userDecryptionResponse(uint256 decryptionId, bytes memory userDecrypted
     impl alloy_sol_types::SolInterface for IDecryptionCalls {
         const NAME: &'static str = "IDecryptionCalls";
         const MIN_DATA_LENGTH: usize = 0usize;
-        const COUNT: usize = 15usize;
+        const COUNT: usize = 16usize;
         #[inline]
         fn selector(&self) -> [u8; 4] {
             match self {
@@ -10548,14 +11150,17 @@ function userDecryptionResponse(uint256 decryptionId, bytes memory userDecrypted
                 Self::publicDecryptionResponse(_) => {
                     <publicDecryptionResponseCall as alloy_sol_types::SolCall>::SELECTOR
                 }
+                Self::solanaPublicDecryptionRequest(_) => {
+                    <solanaPublicDecryptionRequestCall as alloy_sol_types::SolCall>::SELECTOR
+                }
+                Self::solanaUserDecryptionRequest(_) => {
+                    <solanaUserDecryptionRequestCall as alloy_sol_types::SolCall>::SELECTOR
+                }
                 Self::userDecryptionRequest_0(_) => {
                     <userDecryptionRequest_0Call as alloy_sol_types::SolCall>::SELECTOR
                 }
                 Self::userDecryptionRequest_1(_) => {
                     <userDecryptionRequest_1Call as alloy_sol_types::SolCall>::SELECTOR
-                }
-                Self::userDecryptionRequest_2(_) => {
-                    <userDecryptionRequest_2Call as alloy_sol_types::SolCall>::SELECTOR
                 }
                 Self::userDecryptionResponse(_) => {
                     <userDecryptionResponseCall as alloy_sol_types::SolCall>::SELECTOR
@@ -10613,17 +11218,6 @@ function userDecryptionResponse(uint256 decryptionId, bytes memory userDecrypted
                     getVersion
                 },
                 {
-                    fn userDecryptionRequest_0(
-                        data: &[u8],
-                    ) -> alloy_sol_types::Result<IDecryptionCalls> {
-                        <userDecryptionRequest_0Call as alloy_sol_types::SolCall>::abi_decode_raw(
-                                data,
-                            )
-                            .map(IDecryptionCalls::userDecryptionRequest_0)
-                    }
-                    userDecryptionRequest_0
-                },
-                {
                     fn isPublicDecryptionReady(
                         data: &[u8],
                     ) -> alloy_sol_types::Result<IDecryptionCalls> {
@@ -10679,6 +11273,17 @@ function userDecryptionResponse(uint256 decryptionId, bytes memory userDecrypted
                     isDelegatedUserDecryptionReady
                 },
                 {
+                    fn solanaUserDecryptionRequest(
+                        data: &[u8],
+                    ) -> alloy_sol_types::Result<IDecryptionCalls> {
+                        <solanaUserDecryptionRequestCall as alloy_sol_types::SolCall>::abi_decode_raw(
+                                data,
+                            )
+                            .map(IDecryptionCalls::solanaUserDecryptionRequest)
+                    }
+                    solanaUserDecryptionRequest
+                },
+                {
                     fn delegatedUserDecryptionRequest(
                         data: &[u8],
                     ) -> alloy_sol_types::Result<IDecryptionCalls> {
@@ -10690,15 +11295,15 @@ function userDecryptionResponse(uint256 decryptionId, bytes memory userDecrypted
                     delegatedUserDecryptionRequest
                 },
                 {
-                    fn userDecryptionRequest_1(
+                    fn userDecryptionRequest_0(
                         data: &[u8],
                     ) -> alloy_sol_types::Result<IDecryptionCalls> {
-                        <userDecryptionRequest_1Call as alloy_sol_types::SolCall>::abi_decode_raw(
+                        <userDecryptionRequest_0Call as alloy_sol_types::SolCall>::abi_decode_raw(
                                 data,
                             )
-                            .map(IDecryptionCalls::userDecryptionRequest_1)
+                            .map(IDecryptionCalls::userDecryptionRequest_0)
                     }
-                    userDecryptionRequest_1
+                    userDecryptionRequest_0
                 },
                 {
                     fn publicDecryptionRequest(
@@ -10723,15 +11328,15 @@ function userDecryptionResponse(uint256 decryptionId, bytes memory userDecrypted
                     isUserDecryptionReady_1
                 },
                 {
-                    fn userDecryptionRequest_2(
+                    fn userDecryptionRequest_1(
                         data: &[u8],
                     ) -> alloy_sol_types::Result<IDecryptionCalls> {
-                        <userDecryptionRequest_2Call as alloy_sol_types::SolCall>::abi_decode_raw(
+                        <userDecryptionRequest_1Call as alloy_sol_types::SolCall>::abi_decode_raw(
                                 data,
                             )
-                            .map(IDecryptionCalls::userDecryptionRequest_2)
+                            .map(IDecryptionCalls::userDecryptionRequest_1)
                     }
-                    userDecryptionRequest_2
+                    userDecryptionRequest_1
                 },
                 {
                     fn isUserDecryptionReady_2(
@@ -10743,6 +11348,17 @@ function userDecryptionResponse(uint256 decryptionId, bytes memory userDecrypted
                             .map(IDecryptionCalls::isUserDecryptionReady_2)
                     }
                     isUserDecryptionReady_2
+                },
+                {
+                    fn solanaPublicDecryptionRequest(
+                        data: &[u8],
+                    ) -> alloy_sol_types::Result<IDecryptionCalls> {
+                        <solanaPublicDecryptionRequestCall as alloy_sol_types::SolCall>::abi_decode_raw(
+                                data,
+                            )
+                            .map(IDecryptionCalls::solanaPublicDecryptionRequest)
+                    }
+                    solanaPublicDecryptionRequest
                 },
             ];
             let Ok(idx) = Self::SELECTORS.binary_search(&selector) else {
@@ -10796,17 +11412,6 @@ function userDecryptionResponse(uint256 decryptionId, bytes memory userDecrypted
                             .map(IDecryptionCalls::getVersion)
                     }
                     getVersion
-                },
-                {
-                    fn userDecryptionRequest_0(
-                        data: &[u8],
-                    ) -> alloy_sol_types::Result<IDecryptionCalls> {
-                        <userDecryptionRequest_0Call as alloy_sol_types::SolCall>::abi_decode_raw_validate(
-                                data,
-                            )
-                            .map(IDecryptionCalls::userDecryptionRequest_0)
-                    }
-                    userDecryptionRequest_0
                 },
                 {
                     fn isPublicDecryptionReady(
@@ -10864,6 +11469,17 @@ function userDecryptionResponse(uint256 decryptionId, bytes memory userDecrypted
                     isDelegatedUserDecryptionReady
                 },
                 {
+                    fn solanaUserDecryptionRequest(
+                        data: &[u8],
+                    ) -> alloy_sol_types::Result<IDecryptionCalls> {
+                        <solanaUserDecryptionRequestCall as alloy_sol_types::SolCall>::abi_decode_raw_validate(
+                                data,
+                            )
+                            .map(IDecryptionCalls::solanaUserDecryptionRequest)
+                    }
+                    solanaUserDecryptionRequest
+                },
+                {
                     fn delegatedUserDecryptionRequest(
                         data: &[u8],
                     ) -> alloy_sol_types::Result<IDecryptionCalls> {
@@ -10875,15 +11491,15 @@ function userDecryptionResponse(uint256 decryptionId, bytes memory userDecrypted
                     delegatedUserDecryptionRequest
                 },
                 {
-                    fn userDecryptionRequest_1(
+                    fn userDecryptionRequest_0(
                         data: &[u8],
                     ) -> alloy_sol_types::Result<IDecryptionCalls> {
-                        <userDecryptionRequest_1Call as alloy_sol_types::SolCall>::abi_decode_raw_validate(
+                        <userDecryptionRequest_0Call as alloy_sol_types::SolCall>::abi_decode_raw_validate(
                                 data,
                             )
-                            .map(IDecryptionCalls::userDecryptionRequest_1)
+                            .map(IDecryptionCalls::userDecryptionRequest_0)
                     }
-                    userDecryptionRequest_1
+                    userDecryptionRequest_0
                 },
                 {
                     fn publicDecryptionRequest(
@@ -10908,15 +11524,15 @@ function userDecryptionResponse(uint256 decryptionId, bytes memory userDecrypted
                     isUserDecryptionReady_1
                 },
                 {
-                    fn userDecryptionRequest_2(
+                    fn userDecryptionRequest_1(
                         data: &[u8],
                     ) -> alloy_sol_types::Result<IDecryptionCalls> {
-                        <userDecryptionRequest_2Call as alloy_sol_types::SolCall>::abi_decode_raw_validate(
+                        <userDecryptionRequest_1Call as alloy_sol_types::SolCall>::abi_decode_raw_validate(
                                 data,
                             )
-                            .map(IDecryptionCalls::userDecryptionRequest_2)
+                            .map(IDecryptionCalls::userDecryptionRequest_1)
                     }
-                    userDecryptionRequest_2
+                    userDecryptionRequest_1
                 },
                 {
                     fn isUserDecryptionReady_2(
@@ -10928,6 +11544,17 @@ function userDecryptionResponse(uint256 decryptionId, bytes memory userDecrypted
                             .map(IDecryptionCalls::isUserDecryptionReady_2)
                     }
                     isUserDecryptionReady_2
+                },
+                {
+                    fn solanaPublicDecryptionRequest(
+                        data: &[u8],
+                    ) -> alloy_sol_types::Result<IDecryptionCalls> {
+                        <solanaPublicDecryptionRequestCall as alloy_sol_types::SolCall>::abi_decode_raw_validate(
+                                data,
+                            )
+                            .map(IDecryptionCalls::solanaPublicDecryptionRequest)
+                    }
+                    solanaPublicDecryptionRequest
                 },
             ];
             let Ok(idx) = Self::SELECTORS.binary_search(&selector) else {
@@ -10996,6 +11623,16 @@ function userDecryptionResponse(uint256 decryptionId, bytes memory userDecrypted
                         inner,
                     )
                 }
+                Self::solanaPublicDecryptionRequest(inner) => {
+                    <solanaPublicDecryptionRequestCall as alloy_sol_types::SolCall>::abi_encoded_size(
+                        inner,
+                    )
+                }
+                Self::solanaUserDecryptionRequest(inner) => {
+                    <solanaUserDecryptionRequestCall as alloy_sol_types::SolCall>::abi_encoded_size(
+                        inner,
+                    )
+                }
                 Self::userDecryptionRequest_0(inner) => {
                     <userDecryptionRequest_0Call as alloy_sol_types::SolCall>::abi_encoded_size(
                         inner,
@@ -11003,11 +11640,6 @@ function userDecryptionResponse(uint256 decryptionId, bytes memory userDecrypted
                 }
                 Self::userDecryptionRequest_1(inner) => {
                     <userDecryptionRequest_1Call as alloy_sol_types::SolCall>::abi_encoded_size(
-                        inner,
-                    )
-                }
-                Self::userDecryptionRequest_2(inner) => {
-                    <userDecryptionRequest_2Call as alloy_sol_types::SolCall>::abi_encoded_size(
                         inner,
                     )
                 }
@@ -11087,6 +11719,18 @@ function userDecryptionResponse(uint256 decryptionId, bytes memory userDecrypted
                         out,
                     )
                 }
+                Self::solanaPublicDecryptionRequest(inner) => {
+                    <solanaPublicDecryptionRequestCall as alloy_sol_types::SolCall>::abi_encode_raw(
+                        inner,
+                        out,
+                    )
+                }
+                Self::solanaUserDecryptionRequest(inner) => {
+                    <solanaUserDecryptionRequestCall as alloy_sol_types::SolCall>::abi_encode_raw(
+                        inner,
+                        out,
+                    )
+                }
                 Self::userDecryptionRequest_0(inner) => {
                     <userDecryptionRequest_0Call as alloy_sol_types::SolCall>::abi_encode_raw(
                         inner,
@@ -11095,12 +11739,6 @@ function userDecryptionResponse(uint256 decryptionId, bytes memory userDecrypted
                 }
                 Self::userDecryptionRequest_1(inner) => {
                     <userDecryptionRequest_1Call as alloy_sol_types::SolCall>::abi_encode_raw(
-                        inner,
-                        out,
-                    )
-                }
-                Self::userDecryptionRequest_2(inner) => {
-                    <userDecryptionRequest_2Call as alloy_sol_types::SolCall>::abi_encode_raw(
                         inner,
                         out,
                     )
@@ -11144,6 +11782,8 @@ function userDecryptionResponse(uint256 decryptionId, bytes memory userDecrypted
         #[allow(missing_docs)]
         EmptyHandles(EmptyHandles),
         #[allow(missing_docs)]
+        EncryptedStoresLengthMismatch(EncryptedStoresLengthMismatch),
+        #[allow(missing_docs)]
         InvalidExtraDataLength(InvalidExtraDataLength),
         #[allow(missing_docs)]
         InvalidNullContextId(InvalidNullContextId),
@@ -11163,6 +11803,8 @@ function userDecryptionResponse(uint256 decryptionId, bytes memory userDecrypted
         MaxDurationDaysExceeded(MaxDurationDaysExceeded),
         #[allow(missing_docs)]
         MaxDurationSecondsExceeded(MaxDurationSecondsExceeded),
+        #[allow(missing_docs)]
+        NotSolanaHostChain(NotSolanaHostChain),
         #[allow(missing_docs)]
         SolanaHandlesMaxLengthExceeded(SolanaHandlesMaxLengthExceeded),
         #[allow(missing_docs)]
@@ -11184,6 +11826,7 @@ function userDecryptionResponse(uint256 decryptionId, bytes memory userDecrypted
         ///
         /// Prefer using `SolInterface` methods instead.
         pub const SELECTORS: &'static [[u8; 4usize]] = &[
+            [7u8, 56u8, 122u8, 233u8],
             [33u8, 57u8, 204u8, 44u8],
             [36u8, 14u8, 147u8, 9u8],
             [42u8, 135u8, 61u8, 39u8],
@@ -11206,6 +11849,7 @@ function userDecryptionResponse(uint256 decryptionId, bytes memory userDecrypted
             [203u8, 23u8, 183u8, 165u8],
             [207u8, 174u8, 146u8, 31u8],
             [212u8, 138u8, 249u8, 66u8],
+            [218u8, 154u8, 223u8, 95u8],
             [220u8, 77u8, 120u8, 177u8],
             [222u8, 40u8, 89u8, 193u8],
             [225u8, 50u8, 103u8, 12u8],
@@ -11214,6 +11858,7 @@ function userDecryptionResponse(uint256 decryptionId, bytes memory userDecrypted
         ];
         /// The names of the variants in the same order as `SELECTORS`.
         pub const VARIANT_NAMES: &'static [&'static str] = &[
+            ::core::stringify!(EncryptedStoresLengthMismatch),
             ::core::stringify!(UnsupportedExtraDataVersion),
             ::core::stringify!(EmptyHandles),
             ::core::stringify!(InvalidUserSignature),
@@ -11236,6 +11881,7 @@ function userDecryptionResponse(uint256 decryptionId, bytes memory userDecrypted
             ::core::stringify!(InvalidNullContextId),
             ::core::stringify!(DifferentKeyIdsNotAllowed),
             ::core::stringify!(DecryptionNotRequested),
+            ::core::stringify!(NotSolanaHostChain),
             ::core::stringify!(UserAddressInContractAddresses),
             ::core::stringify!(InvalidNullDurationDays),
             ::core::stringify!(SolanaHandlesMaxLengthExceeded),
@@ -11244,6 +11890,7 @@ function userDecryptionResponse(uint256 decryptionId, bytes memory userDecrypted
         ];
         /// The signatures in the same order as `SELECTORS`.
         pub const SIGNATURES: &'static [&'static str] = &[
+            <EncryptedStoresLengthMismatch as alloy_sol_types::SolError>::SIGNATURE,
             <UnsupportedExtraDataVersion as alloy_sol_types::SolError>::SIGNATURE,
             <EmptyHandles as alloy_sol_types::SolError>::SIGNATURE,
             <InvalidUserSignature as alloy_sol_types::SolError>::SIGNATURE,
@@ -11266,6 +11913,7 @@ function userDecryptionResponse(uint256 decryptionId, bytes memory userDecrypted
             <InvalidNullContextId as alloy_sol_types::SolError>::SIGNATURE,
             <DifferentKeyIdsNotAllowed as alloy_sol_types::SolError>::SIGNATURE,
             <DecryptionNotRequested as alloy_sol_types::SolError>::SIGNATURE,
+            <NotSolanaHostChain as alloy_sol_types::SolError>::SIGNATURE,
             <UserAddressInContractAddresses as alloy_sol_types::SolError>::SIGNATURE,
             <InvalidNullDurationDays as alloy_sol_types::SolError>::SIGNATURE,
             <SolanaHandlesMaxLengthExceeded as alloy_sol_types::SolError>::SIGNATURE,
@@ -11297,7 +11945,7 @@ function userDecryptionResponse(uint256 decryptionId, bytes memory userDecrypted
     impl alloy_sol_types::SolInterface for IDecryptionErrors {
         const NAME: &'static str = "IDecryptionErrors";
         const MIN_DATA_LENGTH: usize = 0usize;
-        const COUNT: usize = 27usize;
+        const COUNT: usize = 29usize;
         #[inline]
         fn selector(&self) -> [u8; 4] {
             match self {
@@ -11334,6 +11982,9 @@ function userDecryptionResponse(uint256 decryptionId, bytes memory userDecrypted
                 Self::EmptyHandles(_) => {
                     <EmptyHandles as alloy_sol_types::SolError>::SELECTOR
                 }
+                Self::EncryptedStoresLengthMismatch(_) => {
+                    <EncryptedStoresLengthMismatch as alloy_sol_types::SolError>::SELECTOR
+                }
                 Self::InvalidExtraDataLength(_) => {
                     <InvalidExtraDataLength as alloy_sol_types::SolError>::SELECTOR
                 }
@@ -11363,6 +12014,9 @@ function userDecryptionResponse(uint256 decryptionId, bytes memory userDecrypted
                 }
                 Self::MaxDurationSecondsExceeded(_) => {
                     <MaxDurationSecondsExceeded as alloy_sol_types::SolError>::SELECTOR
+                }
+                Self::NotSolanaHostChain(_) => {
+                    <NotSolanaHostChain as alloy_sol_types::SolError>::SELECTOR
                 }
                 Self::SolanaHandlesMaxLengthExceeded(_) => {
                     <SolanaHandlesMaxLengthExceeded as alloy_sol_types::SolError>::SELECTOR
@@ -11401,6 +12055,17 @@ function userDecryptionResponse(uint256 decryptionId, bytes memory userDecrypted
             static DECODE_SHIMS: &[fn(
                 &[u8],
             ) -> alloy_sol_types::Result<IDecryptionErrors>] = &[
+                {
+                    fn EncryptedStoresLengthMismatch(
+                        data: &[u8],
+                    ) -> alloy_sol_types::Result<IDecryptionErrors> {
+                        <EncryptedStoresLengthMismatch as alloy_sol_types::SolError>::abi_decode_raw(
+                                data,
+                            )
+                            .map(IDecryptionErrors::EncryptedStoresLengthMismatch)
+                    }
+                    EncryptedStoresLengthMismatch
+                },
                 {
                     fn UnsupportedExtraDataVersion(
                         data: &[u8],
@@ -11644,6 +12309,17 @@ function userDecryptionResponse(uint256 decryptionId, bytes memory userDecrypted
                     DecryptionNotRequested
                 },
                 {
+                    fn NotSolanaHostChain(
+                        data: &[u8],
+                    ) -> alloy_sol_types::Result<IDecryptionErrors> {
+                        <NotSolanaHostChain as alloy_sol_types::SolError>::abi_decode_raw(
+                                data,
+                            )
+                            .map(IDecryptionErrors::NotSolanaHostChain)
+                    }
+                    NotSolanaHostChain
+                },
+                {
                     fn UserAddressInContractAddresses(
                         data: &[u8],
                     ) -> alloy_sol_types::Result<IDecryptionErrors> {
@@ -11718,6 +12394,17 @@ function userDecryptionResponse(uint256 decryptionId, bytes memory userDecrypted
             static DECODE_VALIDATE_SHIMS: &[fn(
                 &[u8],
             ) -> alloy_sol_types::Result<IDecryptionErrors>] = &[
+                {
+                    fn EncryptedStoresLengthMismatch(
+                        data: &[u8],
+                    ) -> alloy_sol_types::Result<IDecryptionErrors> {
+                        <EncryptedStoresLengthMismatch as alloy_sol_types::SolError>::abi_decode_raw_validate(
+                                data,
+                            )
+                            .map(IDecryptionErrors::EncryptedStoresLengthMismatch)
+                    }
+                    EncryptedStoresLengthMismatch
+                },
                 {
                     fn UnsupportedExtraDataVersion(
                         data: &[u8],
@@ -11963,6 +12650,17 @@ function userDecryptionResponse(uint256 decryptionId, bytes memory userDecrypted
                     DecryptionNotRequested
                 },
                 {
+                    fn NotSolanaHostChain(
+                        data: &[u8],
+                    ) -> alloy_sol_types::Result<IDecryptionErrors> {
+                        <NotSolanaHostChain as alloy_sol_types::SolError>::abi_decode_raw_validate(
+                                data,
+                            )
+                            .map(IDecryptionErrors::NotSolanaHostChain)
+                    }
+                    NotSolanaHostChain
+                },
+                {
                     fn UserAddressInContractAddresses(
                         data: &[u8],
                     ) -> alloy_sol_types::Result<IDecryptionErrors> {
@@ -12084,6 +12782,11 @@ function userDecryptionResponse(uint256 decryptionId, bytes memory userDecrypted
                 Self::EmptyHandles(inner) => {
                     <EmptyHandles as alloy_sol_types::SolError>::abi_encoded_size(inner)
                 }
+                Self::EncryptedStoresLengthMismatch(inner) => {
+                    <EncryptedStoresLengthMismatch as alloy_sol_types::SolError>::abi_encoded_size(
+                        inner,
+                    )
+                }
                 Self::InvalidExtraDataLength(inner) => {
                     <InvalidExtraDataLength as alloy_sol_types::SolError>::abi_encoded_size(
                         inner,
@@ -12131,6 +12834,11 @@ function userDecryptionResponse(uint256 decryptionId, bytes memory userDecrypted
                 }
                 Self::MaxDurationSecondsExceeded(inner) => {
                     <MaxDurationSecondsExceeded as alloy_sol_types::SolError>::abi_encoded_size(
+                        inner,
+                    )
+                }
+                Self::NotSolanaHostChain(inner) => {
+                    <NotSolanaHostChain as alloy_sol_types::SolError>::abi_encoded_size(
                         inner,
                     )
                 }
@@ -12235,6 +12943,12 @@ function userDecryptionResponse(uint256 decryptionId, bytes memory userDecrypted
                         out,
                     )
                 }
+                Self::EncryptedStoresLengthMismatch(inner) => {
+                    <EncryptedStoresLengthMismatch as alloy_sol_types::SolError>::abi_encode_raw(
+                        inner,
+                        out,
+                    )
+                }
                 Self::InvalidExtraDataLength(inner) => {
                     <InvalidExtraDataLength as alloy_sol_types::SolError>::abi_encode_raw(
                         inner,
@@ -12295,6 +13009,12 @@ function userDecryptionResponse(uint256 decryptionId, bytes memory userDecrypted
                         out,
                     )
                 }
+                Self::NotSolanaHostChain(inner) => {
+                    <NotSolanaHostChain as alloy_sol_types::SolError>::abi_encode_raw(
+                        inner,
+                        out,
+                    )
+                }
                 Self::SolanaHandlesMaxLengthExceeded(inner) => {
                     <SolanaHandlesMaxLengthExceeded as alloy_sol_types::SolError>::abi_encode_raw(
                         inner,
@@ -12348,6 +13068,10 @@ function userDecryptionResponse(uint256 decryptionId, bytes memory userDecrypted
         #[allow(missing_docs)]
         PublicDecryptionResponseCall(PublicDecryptionResponseCall),
         #[allow(missing_docs)]
+        SolanaPublicDecryptionRequest(SolanaPublicDecryptionRequest),
+        #[allow(missing_docs)]
+        SolanaUserDecryptionRequest(SolanaUserDecryptionRequest),
+        #[allow(missing_docs)]
         UserDecryptionRequest_0(UserDecryptionRequest_0),
         #[allow(missing_docs)]
         UserDecryptionRequest_1(UserDecryptionRequest_1),
@@ -12355,8 +13079,6 @@ function userDecryptionResponse(uint256 decryptionId, bytes memory userDecrypted
         UserDecryptionRequest_2(UserDecryptionRequest_2),
         #[allow(missing_docs)]
         UserDecryptionRequest_3(UserDecryptionRequest_3),
-        #[allow(missing_docs)]
-        UserDecryptionRequest_4(UserDecryptionRequest_4),
         #[allow(missing_docs)]
         UserDecryptionResponse(UserDecryptionResponse),
         #[allow(missing_docs)]
@@ -12381,6 +13103,11 @@ function userDecryptionResponse(uint256 decryptionId, bytes memory userDecrypted
                 190u8, 197u8, 254u8, 246u8, 153u8, 126u8, 16u8, 149u8, 135u8, 255u8,
             ],
             [
+                38u8, 212u8, 133u8, 100u8, 199u8, 86u8, 107u8, 236u8, 62u8, 249u8, 51u8,
+                122u8, 173u8, 235u8, 150u8, 228u8, 66u8, 117u8, 230u8, 108u8, 250u8,
+                124u8, 180u8, 69u8, 214u8, 77u8, 245u8, 57u8, 217u8, 221u8, 239u8, 151u8,
+            ],
+            [
                 77u8, 123u8, 29u8, 186u8, 73u8, 233u8, 232u8, 70u8, 33u8, 94u8, 22u8,
                 33u8, 245u8, 115u8, 124u8, 129u8, 216u8, 97u8, 76u8, 79u8, 38u8, 132u8,
                 148u8, 216u8, 183u8, 135u8, 99u8, 44u8, 78u8, 89u8, 240u8, 229u8,
@@ -12401,9 +13128,9 @@ function userDecryptionResponse(uint256 decryptionId, bytes memory userDecrypted
                 170u8, 204u8, 197u8, 226u8, 63u8, 122u8, 183u8, 133u8, 170u8, 61u8, 174u8,
             ],
             [
-                170u8, 72u8, 171u8, 216u8, 1u8, 175u8, 221u8, 245u8, 64u8, 12u8, 194u8,
-                109u8, 232u8, 188u8, 154u8, 179u8, 205u8, 174u8, 186u8, 239u8, 67u8,
-                73u8, 7u8, 3u8, 88u8, 92u8, 116u8, 154u8, 92u8, 219u8, 156u8, 14u8,
+                170u8, 92u8, 99u8, 9u8, 13u8, 183u8, 103u8, 229u8, 181u8, 199u8, 210u8,
+                18u8, 114u8, 42u8, 171u8, 253u8, 193u8, 159u8, 192u8, 205u8, 237u8, 5u8,
+                142u8, 93u8, 77u8, 38u8, 180u8, 91u8, 62u8, 139u8, 100u8, 76u8,
             ],
             [
                 199u8, 30u8, 50u8, 200u8, 15u8, 49u8, 9u8, 198u8, 115u8, 169u8, 173u8,
@@ -12430,11 +13157,12 @@ function userDecryptionResponse(uint256 decryptionId, bytes memory userDecrypted
         pub const VARIANT_NAMES: &'static [&'static str] = &[
             ::core::stringify!(UserDecryptionRequest_1),
             ::core::stringify!(PublicDecryptionRequest_0),
+            ::core::stringify!(SolanaPublicDecryptionRequest),
             ::core::stringify!(PublicDecryptionResponseCall),
             ::core::stringify!(UserDecryptionResponse),
             ::core::stringify!(UserDecryptionRequest_3),
             ::core::stringify!(PublicDecryptionRequest_1),
-            ::core::stringify!(UserDecryptionRequest_4),
+            ::core::stringify!(SolanaUserDecryptionRequest),
             ::core::stringify!(UserDecryptionRequest_2),
             ::core::stringify!(PublicDecryptionResponse),
             ::core::stringify!(UserDecryptionResponseThresholdReached),
@@ -12444,11 +13172,12 @@ function userDecryptionResponse(uint256 decryptionId, bytes memory userDecrypted
         pub const SIGNATURES: &'static [&'static str] = &[
             <UserDecryptionRequest_1 as alloy_sol_types::SolEvent>::SIGNATURE,
             <PublicDecryptionRequest_0 as alloy_sol_types::SolEvent>::SIGNATURE,
+            <SolanaPublicDecryptionRequest as alloy_sol_types::SolEvent>::SIGNATURE,
             <PublicDecryptionResponseCall as alloy_sol_types::SolEvent>::SIGNATURE,
             <UserDecryptionResponse as alloy_sol_types::SolEvent>::SIGNATURE,
             <UserDecryptionRequest_3 as alloy_sol_types::SolEvent>::SIGNATURE,
             <PublicDecryptionRequest_1 as alloy_sol_types::SolEvent>::SIGNATURE,
-            <UserDecryptionRequest_4 as alloy_sol_types::SolEvent>::SIGNATURE,
+            <SolanaUserDecryptionRequest as alloy_sol_types::SolEvent>::SIGNATURE,
             <UserDecryptionRequest_2 as alloy_sol_types::SolEvent>::SIGNATURE,
             <PublicDecryptionResponse as alloy_sol_types::SolEvent>::SIGNATURE,
             <UserDecryptionResponseThresholdReached as alloy_sol_types::SolEvent>::SIGNATURE,
@@ -12478,7 +13207,7 @@ function userDecryptionResponse(uint256 decryptionId, bytes memory userDecrypted
     #[automatically_derived]
     impl alloy_sol_types::SolEventInterface for IDecryptionEvents {
         const NAME: &'static str = "IDecryptionEvents";
-        const COUNT: usize = 11usize;
+        const COUNT: usize = 12usize;
         fn decode_raw_log(
             topics: &[alloy_sol_types::Word],
             data: &[u8],
@@ -12521,6 +13250,24 @@ function userDecryptionResponse(uint256 decryptionId, bytes memory userDecrypted
                         .map(Self::PublicDecryptionResponseCall)
                 }
                 Some(
+                    <SolanaPublicDecryptionRequest as alloy_sol_types::SolEvent>::SIGNATURE_HASH,
+                ) => {
+                    <SolanaPublicDecryptionRequest as alloy_sol_types::SolEvent>::decode_raw_log(
+                            topics,
+                            data,
+                        )
+                        .map(Self::SolanaPublicDecryptionRequest)
+                }
+                Some(
+                    <SolanaUserDecryptionRequest as alloy_sol_types::SolEvent>::SIGNATURE_HASH,
+                ) => {
+                    <SolanaUserDecryptionRequest as alloy_sol_types::SolEvent>::decode_raw_log(
+                            topics,
+                            data,
+                        )
+                        .map(Self::SolanaUserDecryptionRequest)
+                }
+                Some(
                     <UserDecryptionRequest_0 as alloy_sol_types::SolEvent>::SIGNATURE_HASH,
                 ) => {
                     <UserDecryptionRequest_0 as alloy_sol_types::SolEvent>::decode_raw_log(
@@ -12555,15 +13302,6 @@ function userDecryptionResponse(uint256 decryptionId, bytes memory userDecrypted
                             data,
                         )
                         .map(Self::UserDecryptionRequest_3)
-                }
-                Some(
-                    <UserDecryptionRequest_4 as alloy_sol_types::SolEvent>::SIGNATURE_HASH,
-                ) => {
-                    <UserDecryptionRequest_4 as alloy_sol_types::SolEvent>::decode_raw_log(
-                            topics,
-                            data,
-                        )
-                        .map(Self::UserDecryptionRequest_4)
                 }
                 Some(
                     <UserDecryptionResponse as alloy_sol_types::SolEvent>::SIGNATURE_HASH,
@@ -12613,6 +13351,12 @@ function userDecryptionResponse(uint256 decryptionId, bytes memory userDecrypted
                 Self::PublicDecryptionResponseCall(inner) => {
                     alloy_sol_types::private::IntoLogData::to_log_data(inner)
                 }
+                Self::SolanaPublicDecryptionRequest(inner) => {
+                    alloy_sol_types::private::IntoLogData::to_log_data(inner)
+                }
+                Self::SolanaUserDecryptionRequest(inner) => {
+                    alloy_sol_types::private::IntoLogData::to_log_data(inner)
+                }
                 Self::UserDecryptionRequest_0(inner) => {
                     alloy_sol_types::private::IntoLogData::to_log_data(inner)
                 }
@@ -12623,9 +13367,6 @@ function userDecryptionResponse(uint256 decryptionId, bytes memory userDecrypted
                     alloy_sol_types::private::IntoLogData::to_log_data(inner)
                 }
                 Self::UserDecryptionRequest_3(inner) => {
-                    alloy_sol_types::private::IntoLogData::to_log_data(inner)
-                }
-                Self::UserDecryptionRequest_4(inner) => {
                     alloy_sol_types::private::IntoLogData::to_log_data(inner)
                 }
                 Self::UserDecryptionResponse(inner) => {
@@ -12650,6 +13391,12 @@ function userDecryptionResponse(uint256 decryptionId, bytes memory userDecrypted
                 Self::PublicDecryptionResponseCall(inner) => {
                     alloy_sol_types::private::IntoLogData::into_log_data(inner)
                 }
+                Self::SolanaPublicDecryptionRequest(inner) => {
+                    alloy_sol_types::private::IntoLogData::into_log_data(inner)
+                }
+                Self::SolanaUserDecryptionRequest(inner) => {
+                    alloy_sol_types::private::IntoLogData::into_log_data(inner)
+                }
                 Self::UserDecryptionRequest_0(inner) => {
                     alloy_sol_types::private::IntoLogData::into_log_data(inner)
                 }
@@ -12660,9 +13407,6 @@ function userDecryptionResponse(uint256 decryptionId, bytes memory userDecrypted
                     alloy_sol_types::private::IntoLogData::into_log_data(inner)
                 }
                 Self::UserDecryptionRequest_3(inner) => {
-                    alloy_sol_types::private::IntoLogData::into_log_data(inner)
-                }
-                Self::UserDecryptionRequest_4(inner) => {
                     alloy_sol_types::private::IntoLogData::into_log_data(inner)
                 }
                 Self::UserDecryptionResponse(inner) => {
@@ -12993,8 +13737,27 @@ the bytecode concatenated with the constructor's ABI-encoded arguments.*/
                 },
             )
         }
-        ///Creates a new call builder for the [`userDecryptionRequest_0`] function.
-        pub fn userDecryptionRequest_0(
+        ///Creates a new call builder for the [`solanaPublicDecryptionRequest`] function.
+        pub fn solanaPublicDecryptionRequest(
+            &self,
+            ctHandles: alloy::sol_types::private::Vec<
+                alloy::sol_types::private::FixedBytes<32>,
+            >,
+            extraData: alloy::sol_types::private::Bytes,
+            encryptedStores: alloy::sol_types::private::Vec<
+                alloy::sol_types::private::FixedBytes<32>,
+            >,
+        ) -> alloy_contract::SolCallBuilder<&P, solanaPublicDecryptionRequestCall, N> {
+            self.call_builder(
+                &solanaPublicDecryptionRequestCall {
+                    ctHandles,
+                    extraData,
+                    encryptedStores,
+                },
+            )
+        }
+        ///Creates a new call builder for the [`solanaUserDecryptionRequest`] function.
+        pub fn solanaUserDecryptionRequest(
             &self,
             ctHandles: alloy::sol_types::private::Vec<
                 alloy::sol_types::private::FixedBytes<32>,
@@ -13003,9 +13766,9 @@ the bytecode concatenated with the constructor's ABI-encoded arguments.*/
             publicKey: alloy::sol_types::private::Bytes,
             extraData: alloy::sol_types::private::Bytes,
             solanaRequest: alloy::sol_types::private::Bytes,
-        ) -> alloy_contract::SolCallBuilder<&P, userDecryptionRequest_0Call, N> {
+        ) -> alloy_contract::SolCallBuilder<&P, solanaUserDecryptionRequestCall, N> {
             self.call_builder(
-                &userDecryptionRequest_0Call {
+                &solanaUserDecryptionRequestCall {
                     ctHandles,
                     requestValidity,
                     publicKey,
@@ -13014,8 +13777,8 @@ the bytecode concatenated with the constructor's ABI-encoded arguments.*/
                 },
             )
         }
-        ///Creates a new call builder for the [`userDecryptionRequest_1`] function.
-        pub fn userDecryptionRequest_1(
+        ///Creates a new call builder for the [`userDecryptionRequest_0`] function.
+        pub fn userDecryptionRequest_0(
             &self,
             handles: alloy::sol_types::private::Vec<
                 <HandleEntry as alloy::sol_types::SolType>::RustType,
@@ -13028,9 +13791,9 @@ the bytecode concatenated with the constructor's ABI-encoded arguments.*/
             requestValidity: <RequestValiditySeconds as alloy::sol_types::SolType>::RustType,
             signature: alloy::sol_types::private::Bytes,
             extraData: alloy::sol_types::private::Bytes,
-        ) -> alloy_contract::SolCallBuilder<&P, userDecryptionRequest_1Call, N> {
+        ) -> alloy_contract::SolCallBuilder<&P, userDecryptionRequest_0Call, N> {
             self.call_builder(
-                &userDecryptionRequest_1Call {
+                &userDecryptionRequest_0Call {
                     handles,
                     userAddress,
                     publicKey,
@@ -13041,8 +13804,8 @@ the bytecode concatenated with the constructor's ABI-encoded arguments.*/
                 },
             )
         }
-        ///Creates a new call builder for the [`userDecryptionRequest_2`] function.
-        pub fn userDecryptionRequest_2(
+        ///Creates a new call builder for the [`userDecryptionRequest_1`] function.
+        pub fn userDecryptionRequest_1(
             &self,
             ctHandleContractPairs: alloy::sol_types::private::Vec<
                 <CtHandleContractPair as alloy::sol_types::SolType>::RustType,
@@ -13053,9 +13816,9 @@ the bytecode concatenated with the constructor's ABI-encoded arguments.*/
             publicKey: alloy::sol_types::private::Bytes,
             signature: alloy::sol_types::private::Bytes,
             extraData: alloy::sol_types::private::Bytes,
-        ) -> alloy_contract::SolCallBuilder<&P, userDecryptionRequest_2Call, N> {
+        ) -> alloy_contract::SolCallBuilder<&P, userDecryptionRequest_1Call, N> {
             self.call_builder(
-                &userDecryptionRequest_2Call {
+                &userDecryptionRequest_1Call {
                     ctHandleContractPairs,
                     requestValidity,
                     contractsInfo,
@@ -13122,6 +13885,18 @@ the bytecode concatenated with the constructor's ABI-encoded arguments.*/
         ) -> alloy_contract::Event<&P, PublicDecryptionResponseCall, N> {
             self.event_filter::<PublicDecryptionResponseCall>()
         }
+        ///Creates a new event filter for the [`SolanaPublicDecryptionRequest`] event.
+        pub fn SolanaPublicDecryptionRequest_filter(
+            &self,
+        ) -> alloy_contract::Event<&P, SolanaPublicDecryptionRequest, N> {
+            self.event_filter::<SolanaPublicDecryptionRequest>()
+        }
+        ///Creates a new event filter for the [`SolanaUserDecryptionRequest`] event.
+        pub fn SolanaUserDecryptionRequest_filter(
+            &self,
+        ) -> alloy_contract::Event<&P, SolanaUserDecryptionRequest, N> {
+            self.event_filter::<SolanaUserDecryptionRequest>()
+        }
         ///Creates a new event filter for the [`UserDecryptionRequest_0`] event.
         pub fn UserDecryptionRequest_0_filter(
             &self,
@@ -13145,12 +13920,6 @@ the bytecode concatenated with the constructor's ABI-encoded arguments.*/
             &self,
         ) -> alloy_contract::Event<&P, UserDecryptionRequest_3, N> {
             self.event_filter::<UserDecryptionRequest_3>()
-        }
-        ///Creates a new event filter for the [`UserDecryptionRequest_4`] event.
-        pub fn UserDecryptionRequest_4_filter(
-            &self,
-        ) -> alloy_contract::Event<&P, UserDecryptionRequest_4, N> {
-            self.event_filter::<UserDecryptionRequest_4>()
         }
         ///Creates a new event filter for the [`UserDecryptionResponse`] event.
         pub fn UserDecryptionResponse_filter(

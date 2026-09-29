@@ -45,7 +45,7 @@ import { bytesToHex, hexToBytes } from '../proof.js';
 
 /** One record's eight fields, in transport form. Several records declare wrong widths on purpose. */
 interface WirePermitRecord {
-  readonly user_pubkey: string;
+  readonly user_address: string;
   readonly transport_key: string;
   readonly allowed_scopes: readonly string[];
   readonly start_timestamp: string;
@@ -137,7 +137,7 @@ const RULE_REJECTION = {
   'unknown-kms-routing-version': 'UnknownKmsRoutingVersion',
   'kms-routing-length': 'KmsRoutingLength',
   'signature-mismatch': 'SignatureMismatch',
-  'unusable-user-pubkey': 'UnusableUserPubkey',
+  'unusable-user-pubkey': 'UnusableUserAddress',
 } as const satisfies Record<PermitVectorRule, MirroredRejectionCode>;
 
 /**
@@ -164,7 +164,7 @@ function wireOf(record: PermitVectorRecord): SolanaPermitWireFields {
     throw new Error(`${record.name}: transport key ${record.permit.transport_key} is not in the file's table`);
   }
   return {
-    userPubkey: unhex(record.permit.user_pubkey),
+    userAddress: unhex(record.permit.user_address),
     transportKey: unhex(transportKey),
     allowedScopes: record.permit.allowed_scopes.map(unhex),
     startTimestamp: record.permit.start_timestamp,
@@ -335,16 +335,16 @@ describe('records whose signature covers a text other than the canonical one', (
   // implementation renders. Checking the signature independently here is what makes the rejection
   // attributable to the text rather than to a signature that was never valid.
   it.each(named(shownADifferentText))('%s: the signature is genuine over the text the wallet saw', (_name, record) => {
-    const userPubkey = unhex(record.permit.user_pubkey);
+    const userAddress = unhex(record.permit.user_address);
     const shown = new TextEncoder().encode(record.signed_text);
-    const envelope = new Uint8Array(PERMIT_ENVELOPE_PREAMBLE.length + 2 + userPubkey.length + shown.length);
+    const envelope = new Uint8Array(PERMIT_ENVELOPE_PREAMBLE.length + 2 + userAddress.length + shown.length);
     envelope.set(PERMIT_ENVELOPE_PREAMBLE, 0);
     envelope[PERMIT_ENVELOPE_PREAMBLE.length] = PERMIT_ENVELOPE_VERSION;
     envelope[PERMIT_ENVELOPE_PREAMBLE.length + 1] = PERMIT_ENVELOPE_SIGNER_COUNT;
-    envelope.set(userPubkey, PERMIT_ENVELOPE_PREAMBLE.length + 2);
-    envelope.set(shown, PERMIT_ENVELOPE_PREAMBLE.length + 2 + userPubkey.length);
+    envelope.set(userAddress, PERMIT_ENVELOPE_PREAMBLE.length + 2);
+    envelope.set(shown, PERMIT_ENVELOPE_PREAMBLE.length + 2 + userAddress.length);
 
-    expect(ed25519.verify(unhex(record.signature), envelope, userPubkey)).toBe(true);
+    expect(ed25519.verify(unhex(record.signature), envelope, userAddress)).toBe(true);
   });
 });
 

@@ -38,7 +38,7 @@ const routing = (): Uint8Array => {
 
 const permitFields = (): SolanaPermitFields =>
   decodeSolanaPermitFields({
-    userPubkey: identity(0x11),
+    userAddress: identity(0x11),
     transportKey: new Uint8Array(PERMIT_TRANSPORT_KEY_LEN).fill(0x55),
     allowedScopes: [],
     startTimestamp: 1_767_229_380n,
@@ -62,7 +62,7 @@ const handle = (): Uint8Array => {
 };
 
 const ENTRIES: readonly SolanaUserDecryptHandleEntry[] = [
-  { handle: handle(), allowedKey: identity(0x11), encryptedStore: identity(0xea) },
+  { handle: handle(), ownerAddress: identity(0x11), encryptedStore: identity(0xea) },
 ];
 
 const clock = { delay: (): Promise<void> => Promise.resolve() };
@@ -94,7 +94,7 @@ describe('the request inputs a permit pins', () => {
     const handles = [handle()];
 
     expect(solanaUserDecryptRequestInputs(fields, handles, gatewayEip712Domain)).toEqual({
-      userPubkey: fields.userPubkey,
+      userAddress: fields.userAddress,
       hostChainId: PERMIT_CHAIN_ID,
       verifyingProgramId: fields.verifyingProgramId,
       handles,

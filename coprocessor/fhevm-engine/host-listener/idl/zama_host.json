@@ -61,6 +61,9 @@
           "signer": true
         },
         {
+          "name": "scope"
+        },
+        {
           "name": "encrypted_store",
           "writable": true
         },
@@ -285,6 +288,12 @@
           }
         },
         {
+          "name": "scope",
+          "docs": [
+            "The application's scope: an account `program` owns, or the wildcard sentinel."
+          ]
+        },
+        {
           "name": "delegation_record",
           "writable": true
         },
@@ -302,11 +311,11 @@
           "type": "pubkey"
         },
         {
-          "name": "authority",
+          "name": "program",
           "type": "pubkey"
         },
         {
-          "name": "expiration_slot",
+          "name": "expires_at",
           "type": "u64"
         }
       ]
@@ -908,8 +917,7 @@
         {
           "name": "host_config",
           "docs": [
-            "Singleton config PDA. Carried for the account list the clients already build, and pinned to",
-            "the canonical singleton by its seeds; no flag on it gates this instruction."
+            "Singleton config PDA, whose `acl_writes` pause flag gates this instruction."
           ],
           "pda": {
             "seeds": [
@@ -1215,12 +1223,7 @@
         },
         {
           "name": "scope",
-          "type": {
-            "array": [
-              "u8",
-              32
-            ]
-          }
+          "type": "pubkey"
         },
         {
           "name": "denied",
@@ -1454,12 +1457,7 @@
         },
         {
           "name": "scope",
-          "type": {
-            "array": [
-              "u8",
-              32
-            ]
-          }
+          "type": "pubkey"
         },
         {
           "name": "trusted",
@@ -2236,8 +2234,8 @@
     },
     {
       "code": 6027,
-      "name": "DelegationRevoked",
-      "msg": "delegation has already been revoked"
+      "name": "NotDelegatedYet",
+      "msg": "delegation is not granted"
     },
     {
       "code": 6028,
@@ -2538,6 +2536,16 @@
       "code": 6087,
       "name": "WalletPauseThroughCpi",
       "msg": "a wallet pauser must pause in a top-level instruction"
+    },
+    {
+      "code": 6088,
+      "name": "EncryptedStoreScopeNotProgramAccount",
+      "msg": "encrypted store scope is not an account of the store's program"
+    },
+    {
+      "code": 6089,
+      "name": "DelegationScopeNotProgramAccount",
+      "msg": "delegation scope is not an account of the delegated program"
     }
   ],
   "types": [
@@ -2648,15 +2656,6 @@
             "type": "pubkey"
           },
           {
-            "name": "scope",
-            "type": {
-              "array": [
-                "u8",
-                32
-              ]
-            }
-          },
-          {
             "name": "authority_seeds",
             "type": {
               "vec": "bytes"
@@ -2697,14 +2696,9 @@
           {
             "name": "scope",
             "docs": [
-              "The program-declared scope governed by the record."
+              "The scope governed by the record: an account of `program`."
             ],
-            "type": {
-              "array": [
-                "u8",
-                32
-              ]
-            }
+            "type": "pubkey"
           },
           {
             "name": "denied",
@@ -2764,12 +2758,7 @@
           },
           {
             "name": "scope",
-            "type": {
-              "array": [
-                "u8",
-                32
-              ]
-            }
+            "type": "pubkey"
           },
           {
             "name": "slots",
@@ -3603,14 +3592,9 @@
           {
             "name": "scope",
             "docs": [
-              "The program-declared scope governed by the record."
+              "The scope governed by the record: an account of `program`."
             ],
-            "type": {
-              "array": [
-                "u8",
-                32
-              ]
-            }
+            "type": "pubkey"
           },
           {
             "name": "trusted",
@@ -4491,18 +4475,12 @@
     {
       "name": "UserDecryptionDelegation",
       "docs": [
-        "PoC user-decryption delegation witness.",
+        "A delegator's grant letting a delegate request user decryption of the handles the delegator",
+        "is allowed on, in one application `(program, scope)` or, as the wildcard row, in every",
+        "application. EVM keys the same grant by `(delegator, delegate, contractAddress)`.",
         "",
-        "Gateway/KMS payloads do not yet carry these records, but the account shape is",
-        "present so the final witness format has a concrete Solana state target.",
-        "",
-        "Freshness contract for the future KMS consumer (stated here so the integration",
-        "doesn't have to reverse-engineer it): `delegation_counter` is a strictly monotonic",
-        "version — of two snapshots of the same record, the higher counter is authoritative —",
-        "and `last_update_slot` lets a reader require the witness be at least as fresh as a",
-        "slot it has observed. Writes require `last_update_slot < current slot`, so a record",
-        "mutates at most once per slot and every `(delegation_counter, last_update_slot)`",
-        "pair is unambiguous."
+        "The KMS Connector and the relayer read the record through `zama_solana_acl`'s decoder, so the",
+        "layout is pinned by `shared_crate_decoder_reads_what_the_program_serializes` below."
       ],
       "type": {
         "kind": "struct",
@@ -4522,40 +4500,40 @@
             "type": "pubkey"
           },
           {
-            "name": "authority",
+            "name": "program",
             "docs": [
-              "The encrypted store authority the delegation is scoped over. A delegation covers",
-              "every value of that authority in every scope: the scope is not one of the PDA's seeds."
+              "The application's program, or `WILDCARD_APP` for the wildcard row."
             ],
             "type": "pubkey"
           },
           {
-            "name": "expiration_slot",
+            "name": "scope",
             "docs": [
-              "Slot after which the delegation is invalid."
+              "The application's scope, or `WILDCARD_APP` for the wildcard row."
+            ],
+            "type": "pubkey"
+          },
+          {
+            "name": "expires_at",
+            "docs": [
+              "Unix second the delegation ends at, exclusive; 0 once revoked. EVM's `expirationDate`."
             ],
             "type": "u64"
           },
           {
             "name": "delegation_counter",
             "docs": [
-              "Monotonic counter incremented on every grant, regrant, and revoke."
+              "Incremented on every grant, renewal and revocation. EVM's `delegationCounter`."
             ],
             "type": "u64"
           },
           {
             "name": "last_update_slot",
             "docs": [
-              "Slot in which this row was last updated."
+              "Slot of the last grant or revocation, so a record changes at most once per slot. EVM's",
+              "`lastBlockDelegateOrRevoke`."
             ],
             "type": "u64"
-          },
-          {
-            "name": "revoked",
-            "docs": [
-              "Whether the delegation has been revoked by the delegator."
-            ],
-            "type": "bool"
           },
           {
             "name": "bump",

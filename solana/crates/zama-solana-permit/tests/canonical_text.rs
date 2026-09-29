@@ -23,7 +23,7 @@ use zama_solana_permit::{render_canonical_text, PermitFields, MAX_ALLOWED_SCOPES
 /// edits one without the other, every golden below would need rewriting — this
 /// fails first and says so.
 #[test]
-fn fixture_user_pubkey_belongs_to_fixture_seed() {
+fn fixture_user_address_belongs_to_fixture_seed() {
     assert_eq!(
         pubkey_of_seed(USER_SEED).as_bytes(),
         &bytes32(USER_PUBKEY_HEX),

@@ -238,9 +238,16 @@ impl GatewayHandler {
             .map(|bytes| FixedBytes::from(*bytes))
             .collect();
 
+        let encrypted_stores = decrypt_request
+            .encrypted_stores
+            .iter()
+            .map(|bytes| FixedBytes::from(*bytes))
+            .collect();
+
         self.send_to_gateway(
             handles_fixed_bytes,
             decrypt_request.extra_data.clone(),
+            encrypted_stores,
             job_id_hash,
         )
         .await?;
@@ -259,12 +266,13 @@ impl GatewayHandler {
         &self,
         handles: Vec<FixedBytes<32>>,
         extra_data: Bytes,
+        encrypted_stores: Vec<FixedBytes<32>>,
         job_id_hash: [u8; 32],
     ) -> Result<(), EventProcessingError> {
         let decryption_address = self.decryption_address;
 
         let calldata_bytes =
-            ComputeCalldata::public_decryption_req(handles.clone(), extra_data.clone())?;
+            ComputeCalldata::public_decryption_req(handles, extra_data, encrypted_stores)?;
 
         let job_id = JobId::from(job_id_hash);
 
@@ -792,13 +800,27 @@ impl TxLifecycleHooks for GatewayHandler {
         job_id: &JobId,
         receipt: &TxResult,
     ) -> Result<ReceiptRecordOutcome, EventProcessingError> {
-        let gw_reference_id = TransactionHelper::extract_gateway_id_from_receipt::<
+        // The EVM entry emits `PublicDecryptionRequest_0`; the Solana entry emits only
+        // `SolanaPublicDecryptionRequest`.
+        let gw_reference_id = match TransactionHelper::extract_gateway_id_from_receipt::<
             Decryption::PublicDecryptionRequest_0,
         >(
             receipt,
             Decryption::PublicDecryptionRequest_0::SIGNATURE_HASH,
             |event| event.decryptionId,
-        )?;
+        ) {
+            Ok(id) => id,
+            Err(EventProcessingError::ValidationFailed { .. }) => {
+                TransactionHelper::extract_gateway_id_from_receipt::<
+                    Decryption::SolanaPublicDecryptionRequest,
+                >(
+                    receipt,
+                    Decryption::SolanaPublicDecryptionRequest::SIGNATURE_HASH,
+                    |event| event.decryptionId,
+                )?
+            }
+            Err(e) => return Err(e),
+        };
 
         let tx_hash = format!("{:?}", receipt.transaction_hash);
 

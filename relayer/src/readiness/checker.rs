@@ -2,7 +2,7 @@ use crate::{
     config::settings::GatewayConfig,
     core::{
         errors::EventProcessingError,
-        event::{HandleContractPair, UserDecryptRequest},
+        event::{assemble_submitted_solana_request, HandleContractPair, UserDecryptRequest},
         job_id::JobId,
     },
     gateway::ciphertext_checker::CiphertextChecker,
@@ -12,6 +12,7 @@ use alloy::primitives::{Bytes, FixedBytes};
 use ciphertext_attestation::tracker::Round;
 use std::{fmt, time::Duration};
 use tokio_util::sync::CancellationToken;
+use tracing::warn;
 
 /// Steps for readiness checker operations
 #[derive(Debug, Clone, Copy)]
@@ -172,12 +173,37 @@ impl ReadinessChecker {
             // point, so a connector refusal is never observable at the relayer. Direct entries
             // are not pre-checked: their authorization is an allow leaf sealed on the write,
             // and there is no cheaper reading of it here than the connector's own.
-            // The chain is picked inside, from the permit's signed `chain_id` — the field the
-            // connector authorizes against — not from a handle's unsigned bytes.
-            UserDecryptRequest::SolanaSrfc38V1 { solana_request, .. } => {
-                self.host_acl
-                    .check_solana_delegated_user_decrypt(job_id, solana_request)
-                    .await
+            UserDecryptRequest::SolanaSrfc38V1 {
+                ct_handles,
+                request_validity,
+                public_key,
+                extra_data,
+                solana_request,
+            } => {
+                match assemble_submitted_solana_request(
+                    ct_handles,
+                    request_validity,
+                    public_key,
+                    extra_data,
+                    solana_request,
+                ) {
+                    Ok(request) => {
+                        self.host_acl
+                            .check_solana_delegated_user_decrypt(job_id, &request)
+                            .await
+                    }
+                    // Admission built these parts and verified the permit over them; failing to
+                    // join them again is this relayer's own defect, and an advisory check does
+                    // not refuse users on its own defects.
+                    Err(error) => {
+                        warn!(
+                            int_job_id = %job_id,
+                            %error,
+                            "Solana delegation pre-check could not rebuild the request; passing"
+                        );
+                        Ok(())
+                    }
+                }
             }
         };
         result.map_err(|e| match &e {

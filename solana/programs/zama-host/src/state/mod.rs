@@ -490,16 +490,25 @@ pub fn kms_context_address(context_id: [u8; 32]) -> (Pubkey, u8) {
 }
 
 /// The application identity every host policy keys on: the program that proved it controls a
-/// value's authority, and the scope that program declared for it.
+/// value's authority, and the scope, an account of that program.
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
 pub struct AppScope {
     pub program: Pubkey,
-    pub scope: [u8; 32],
+    pub scope: Pubkey,
 }
 
 impl AppScope {
+    /// The application of a wildcard delegation row, which covers every application.
+    pub const WILDCARD: Self = Self {
+        program: Pubkey::new_from_array(WILDCARD_APP),
+        scope: Pubkey::new_from_array(WILDCARD_APP),
+    };
+
     fn address(&self, prefix: &[u8]) -> (Pubkey, u8) {
-        Pubkey::find_program_address(&[prefix, self.program.as_ref(), &self.scope], &crate::ID)
+        Pubkey::find_program_address(
+            &[prefix, self.program.as_ref(), self.scope.as_ref()],
+            &crate::ID,
+        )
     }
 }
 
@@ -533,19 +542,20 @@ pub fn permit_invalidation_address(user: Pubkey) -> (Pubkey, u8) {
     Pubkey::find_program_address(&[PERMIT_INVALIDATION_SEED, user.as_ref()], &crate::ID)
 }
 
-/// Returns the canonical user-decryption delegation address.
+/// Returns the canonical user-decryption delegation address of `delegator → delegate` in `app`.
 pub fn user_decryption_delegation_address(
     delegator: Pubkey,
     delegate: Pubkey,
-    authority: Pubkey,
+    app: AppScope,
 ) -> (Pubkey, u8) {
+    let (delegator, delegate, program, scope) = (
+        delegator.to_bytes(),
+        delegate.to_bytes(),
+        app.program.to_bytes(),
+        app.scope.to_bytes(),
+    );
     Pubkey::find_program_address(
-        &[
-            DELEGATION_SEED,
-            delegator.as_ref(),
-            delegate.as_ref(),
-            authority.as_ref(),
-        ],
+        &zama_solana_acl::delegation_seeds(&delegator, &delegate, &program, &scope),
         &crate::ID,
     )
 }
@@ -721,7 +731,7 @@ pub fn computed_eval_rand_seed(
         &nonce_bytes,
         &op_index_bytes,
         app.program.as_ref(),
-        &app.scope,
+        app.scope.as_ref(),
         program_id.as_ref(),
         &chain_id_bytes,
         &previous_bank_hash,

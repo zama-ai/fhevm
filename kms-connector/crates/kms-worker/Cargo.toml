@@ -16,6 +16,7 @@ kms-connector-api.workspace = true
 user-decryption-signature.workspace = true
 zama-solana-acl.workspace = true
 zama-solana-permit.workspace = true
+zama-solana-request.workspace = true
 
 actix-web.workspace = true
 alloy.workspace = true
@@ -58,7 +59,6 @@ sha2.workspace = true
 testcontainers.workspace = true
 toml.workspace = true
 tracing-test.workspace = true
-zama-solana-request.workspace = true
 
 [[bin]]
 name = "kms-worker"

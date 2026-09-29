@@ -123,7 +123,7 @@ Yellowstone blocks. It subscribes to the successful transactions naming the host
 program, one per message, and to every slot's block meta, and seals a slot when
 its block meta arrives. The provider must send every transaction of a slot
 before that slot's block meta, live and on `from_slot` replay; Yellowstone does.
-DD-060 lists the slots the listener skips, the order breaks that stop it, and
+DD-062 lists the slots the listener skips, the order breaks that stop it, and
 the repair after a transaction arrives for a slot already applied. Each
 `fhe_execute` is paired with the `FheExecutedEvent` it emits: the listener
 stores the result handles in the event and re-derives each one as a check.
@@ -159,7 +159,7 @@ fork, stops ingestion without advancing the checkpoint.
 The listener's HTTP routes on `--http-port` are health checks of database
 availability, not of reconstruction catch-up. `solana_leaf_proof_server` serves
 the leaf proofs from the same database in its own deployment, so proofs keep
-being served while the listener is stopped (DD-062).
+being served while the listener is stopped (DD-064).
 Catch-up is exported as Prometheus metrics on `--metrics-addr`; the lag,
 reconnect and handle-check alarms are in
 [`docs/metrics/metrics.md`](../../../docs/metrics/metrics.md).
@@ -200,7 +200,7 @@ slot neither serves cannot be re-ingested. Take a database backup before step 2.
 This repairs computation rows only. A bug that recorded wrong leaves cannot be
 repaired by a replay, since the fixed listener stops at the first recorded leaf
 it does not reproduce. The same holds for a slot applied without a transaction
-that wrote a Store (DD-060).
+that wrote a Store (DD-062).
 
 ## Events in FHEVM
 

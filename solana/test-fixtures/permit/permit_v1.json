@@ -22,7 +22,7 @@
       "comment": "Two scopes of one program in byte order. The two scope halves are the base58 length counterexample pair: one encodes to 43 characters and the other to 44, so their byte order is the reverse of their string order. Every other record is derived from this one.",
       "result": "valid",
       "permit": {
-        "user_pubkey": "c11a7cf8eb1cdfcb1bcb84b9d8314ddec3bb1410f0a95badd9c4384f643a6427",
+        "user_address": "c11a7cf8eb1cdfcb1bcb84b9d8314ddec3bb1410f0a95badd9c4384f643a6427",
         "transport_key": "reference-mlkem-512",
         "allowed_scopes": [
           "c0ffee0000000000000000000000000000000000000000000000000000c0ffee0edbafda67ca37188cf28263571f03b9716879e4acc9c514ab6727ffffffffff",
@@ -49,7 +49,7 @@
       "comment": "Empty scope list. The canonical text must state the breadth of the grant on one explicit line rather than render an empty enumeration block.",
       "result": "valid",
       "permit": {
-        "user_pubkey": "c11a7cf8eb1cdfcb1bcb84b9d8314ddec3bb1410f0a95badd9c4384f643a6427",
+        "user_address": "c11a7cf8eb1cdfcb1bcb84b9d8314ddec3bb1410f0a95badd9c4384f643a6427",
         "transport_key": "reference-mlkem-512",
         "allowed_scopes": [],
         "start_timestamp": "1767229380",
@@ -73,7 +73,7 @@
       "comment": "The smallest enumerated list.",
       "result": "valid",
       "permit": {
-        "user_pubkey": "c11a7cf8eb1cdfcb1bcb84b9d8314ddec3bb1410f0a95badd9c4384f643a6427",
+        "user_address": "c11a7cf8eb1cdfcb1bcb84b9d8314ddec3bb1410f0a95badd9c4384f643a6427",
         "transport_key": "reference-mlkem-512",
         "allowed_scopes": [
           "ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff"
@@ -99,7 +99,7 @@
       "comment": "The largest admissible list.",
       "result": "valid",
       "permit": {
-        "user_pubkey": "c11a7cf8eb1cdfcb1bcb84b9d8314ddec3bb1410f0a95badd9c4384f643a6427",
+        "user_address": "c11a7cf8eb1cdfcb1bcb84b9d8314ddec3bb1410f0a95badd9c4384f643a6427",
         "transport_key": "reference-mlkem-512",
         "allowed_scopes": [
           "fffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff9",
@@ -131,7 +131,7 @@
       "comment": "Start at the latest representable timestamp and the longest permitted duration together. Documents that the typed-form bounds keep the sum away from the 64-bit edge, so the authorization layer needs no overflow check of its own.",
       "result": "valid",
       "permit": {
-        "user_pubkey": "c11a7cf8eb1cdfcb1bcb84b9d8314ddec3bb1410f0a95badd9c4384f643a6427",
+        "user_address": "c11a7cf8eb1cdfcb1bcb84b9d8314ddec3bb1410f0a95badd9c4384f643a6427",
         "transport_key": "reference-mlkem-512",
         "allowed_scopes": [
           "c0ffee0000000000000000000000000000000000000000000000000000c0ffee0edbafda67ca37188cf28263571f03b9716879e4acc9c514ab6727ffffffffff",
@@ -158,7 +158,7 @@
       "comment": "A one-second validity window: the shortest permitted.",
       "result": "valid",
       "permit": {
-        "user_pubkey": "c11a7cf8eb1cdfcb1bcb84b9d8314ddec3bb1410f0a95badd9c4384f643a6427",
+        "user_address": "c11a7cf8eb1cdfcb1bcb84b9d8314ddec3bb1410f0a95badd9c4384f643a6427",
         "transport_key": "reference-mlkem-512",
         "allowed_scopes": [
           "c0ffee0000000000000000000000000000000000000000000000000000c0ffee0edbafda67ca37188cf28263571f03b9716879e4acc9c514ab6727ffffffffff",
@@ -185,7 +185,7 @@
       "comment": "Chain id at the 64-bit maximum. A consumer that parses the field through a double-precision number loses precision here and will compute a different canonical text — which is why every 64-bit field in this file is a decimal string.",
       "result": "valid",
       "permit": {
-        "user_pubkey": "c11a7cf8eb1cdfcb1bcb84b9d8314ddec3bb1410f0a95badd9c4384f643a6427",
+        "user_address": "c11a7cf8eb1cdfcb1bcb84b9d8314ddec3bb1410f0a95badd9c4384f643a6427",
         "transport_key": "reference-mlkem-512",
         "allowed_scopes": [
           "c0ffee0000000000000000000000000000000000000000000000000000c0ffee0edbafda67ca37188cf28263571f03b9716879e4acc9c514ab6727ffffffffff",
@@ -212,7 +212,7 @@
       "comment": "The largest signed bytes the protocol admits: the maximum scope count, every identity at its longest base58 form, the longest chain id and duration, the latest timestamp. Pins the clear-signing budget.",
       "result": "valid",
       "permit": {
-        "user_pubkey": "c11a7cf8eb1cdfcb1bcb84b9d8314ddec3bb1410f0a95badd9c4384f643a6427",
+        "user_address": "c11a7cf8eb1cdfcb1bcb84b9d8314ddec3bb1410f0a95badd9c4384f643a6427",
         "transport_key": "worst-case-mlkem-512",
         "allowed_scopes": [
           "ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffef",
@@ -244,7 +244,7 @@
       "comment": "A permit whose validity window has not opened. The typed form and the signature are impeccable; whether it may be used is a question for the rules that own a clock and the revocation watermark, which are not in this layer.",
       "result": "acceptable",
       "permit": {
-        "user_pubkey": "c11a7cf8eb1cdfcb1bcb84b9d8314ddec3bb1410f0a95badd9c4384f643a6427",
+        "user_address": "c11a7cf8eb1cdfcb1bcb84b9d8314ddec3bb1410f0a95badd9c4384f643a6427",
         "transport_key": "reference-mlkem-512",
         "allowed_scopes": [
           "c0ffee0000000000000000000000000000000000000000000000000000c0ffee0edbafda67ca37188cf28263571f03b9716879e4acc9c514ab6727ffffffffff",
@@ -274,7 +274,7 @@
       "derived_from": "reference-permit-two-scopes",
       "mutation": "signature replaced with one made by a different wallet",
       "permit": {
-        "user_pubkey": "c11a7cf8eb1cdfcb1bcb84b9d8314ddec3bb1410f0a95badd9c4384f643a6427",
+        "user_address": "c11a7cf8eb1cdfcb1bcb84b9d8314ddec3bb1410f0a95badd9c4384f643a6427",
         "transport_key": "reference-mlkem-512",
         "allowed_scopes": [
           "c0ffee0000000000000000000000000000000000000000000000000000c0ffee0edbafda67ca37188cf28263571f03b9716879e4acc9c514ab6727ffffffffff",
@@ -304,7 +304,7 @@
       "derived_from": "reference-permit-two-scopes",
       "mutation": "signed a text with a trailing line feed",
       "permit": {
-        "user_pubkey": "c11a7cf8eb1cdfcb1bcb84b9d8314ddec3bb1410f0a95badd9c4384f643a6427",
+        "user_address": "c11a7cf8eb1cdfcb1bcb84b9d8314ddec3bb1410f0a95badd9c4384f643a6427",
         "transport_key": "reference-mlkem-512",
         "allowed_scopes": [
           "c0ffee0000000000000000000000000000000000000000000000000000c0ffee0edbafda67ca37188cf28263571f03b9716879e4acc9c514ab6727ffffffffff",
@@ -335,7 +335,7 @@
       "derived_from": "reference-permit-two-scopes",
       "mutation": "signed a text containing a non-ASCII homoglyph",
       "permit": {
-        "user_pubkey": "c11a7cf8eb1cdfcb1bcb84b9d8314ddec3bb1410f0a95badd9c4384f643a6427",
+        "user_address": "c11a7cf8eb1cdfcb1bcb84b9d8314ddec3bb1410f0a95badd9c4384f643a6427",
         "transport_key": "reference-mlkem-512",
         "allowed_scopes": [
           "c0ffee0000000000000000000000000000000000000000000000000000c0ffee0edbafda67ca37188cf28263571f03b9716879e4acc9c514ab6727ffffffffff",
@@ -366,7 +366,7 @@
       "derived_from": "reference-permit-two-scopes",
       "mutation": "signature scalar replaced by S + L",
       "permit": {
-        "user_pubkey": "c11a7cf8eb1cdfcb1bcb84b9d8314ddec3bb1410f0a95badd9c4384f643a6427",
+        "user_address": "c11a7cf8eb1cdfcb1bcb84b9d8314ddec3bb1410f0a95badd9c4384f643a6427",
         "transport_key": "reference-mlkem-512",
         "allowed_scopes": [
           "c0ffee0000000000000000000000000000000000000000000000000000c0ffee0edbafda67ca37188cf28263571f03b9716879e4acc9c514ab6727ffffffffff",
@@ -394,9 +394,9 @@
       "result": "invalid",
       "rule": "unusable-user-pubkey",
       "derived_from": "reference-permit-two-scopes",
-      "mutation": "user pubkey replaced with a small-order point",
+      "mutation": "user address replaced with a small-order point",
       "permit": {
-        "user_pubkey": "c7176a703d4dd84fba3c0b760d10670f2a2053fa2c39ccc64ec7fd7792ac03fa",
+        "user_address": "c7176a703d4dd84fba3c0b760d10670f2a2053fa2c39ccc64ec7fd7792ac03fa",
         "transport_key": "reference-mlkem-512",
         "allowed_scopes": [
           "c0ffee0000000000000000000000000000000000000000000000000000c0ffee0edbafda67ca37188cf28263571f03b9716879e4acc9c514ab6727ffffffffff",
@@ -420,13 +420,13 @@
     },
     {
       "name": "user-pubkey-not-on-the-curve",
-      "comment": "The user pubkey is a coordinate for which no curve point exists. Note that most byte patterns one would reach for are valid points, so this encoding is chosen rather than guessed.",
+      "comment": "The user address is a coordinate for which no curve point exists. Note that most byte patterns one would reach for are valid points, so this encoding is chosen rather than guessed.",
       "result": "invalid",
       "rule": "unusable-user-pubkey",
       "derived_from": "reference-permit-two-scopes",
-      "mutation": "user pubkey replaced with a non-curve coordinate",
+      "mutation": "user address replaced with a non-curve coordinate",
       "permit": {
-        "user_pubkey": "0200000000000000000000000000000000000000000000000000000000000000",
+        "user_address": "0200000000000000000000000000000000000000000000000000000000000000",
         "transport_key": "reference-mlkem-512",
         "allowed_scopes": [
           "c0ffee0000000000000000000000000000000000000000000000000000c0ffee0edbafda67ca37188cf28263571f03b9716879e4acc9c514ab6727ffffffffff",
@@ -454,9 +454,9 @@
       "result": "invalid",
       "rule": "unusable-user-pubkey",
       "derived_from": "reference-permit-two-scopes",
-      "mutation": "user pubkey re-encoded above the field modulus",
+      "mutation": "user address re-encoded above the field modulus",
       "permit": {
-        "user_pubkey": "ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff",
+        "user_address": "ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff",
         "transport_key": "reference-mlkem-512",
         "allowed_scopes": [
           "c0ffee0000000000000000000000000000000000000000000000000000c0ffee0edbafda67ca37188cf28263571f03b9716879e4acc9c514ab6727ffffffffff",
@@ -480,13 +480,13 @@
     },
     {
       "name": "user-pubkey-of-wrong-width",
-      "comment": "A 31-byte user pubkey. Widths are checked where transport values are decoded, because they are unrepresentable once the typed form is reached.",
+      "comment": "A 31-byte user address. Widths are checked where transport values are decoded, because they are unrepresentable once the typed form is reached.",
       "result": "invalid",
       "rule": "identity-width",
       "derived_from": "reference-permit-two-scopes",
-      "mutation": "user pubkey truncated to 31 bytes",
+      "mutation": "user address truncated to 31 bytes",
       "permit": {
-        "user_pubkey": "c11a7cf8eb1cdfcb1bcb84b9d8314ddec3bb1410f0a95badd9c4384f643a64",
+        "user_address": "c11a7cf8eb1cdfcb1bcb84b9d8314ddec3bb1410f0a95badd9c4384f643a64",
         "transport_key": "reference-mlkem-512",
         "allowed_scopes": [
           "c0ffee0000000000000000000000000000000000000000000000000000c0ffee0edbafda67ca37188cf28263571f03b9716879e4acc9c514ab6727ffffffffff",
@@ -508,7 +508,7 @@
       "derived_from": "reference-permit-two-scopes",
       "mutation": "verifying program id extended to 33 bytes",
       "permit": {
-        "user_pubkey": "c11a7cf8eb1cdfcb1bcb84b9d8314ddec3bb1410f0a95badd9c4384f643a6427",
+        "user_address": "c11a7cf8eb1cdfcb1bcb84b9d8314ddec3bb1410f0a95badd9c4384f643a6427",
         "transport_key": "reference-mlkem-512",
         "allowed_scopes": [
           "c0ffee0000000000000000000000000000000000000000000000000000c0ffee0edbafda67ca37188cf28263571f03b9716879e4acc9c514ab6727ffffffffff",
@@ -530,7 +530,7 @@
       "derived_from": "reference-permit-two-scopes",
       "mutation": "second scope truncated to its 32-byte program half",
       "permit": {
-        "user_pubkey": "c11a7cf8eb1cdfcb1bcb84b9d8314ddec3bb1410f0a95badd9c4384f643a6427",
+        "user_address": "c11a7cf8eb1cdfcb1bcb84b9d8314ddec3bb1410f0a95badd9c4384f643a6427",
         "transport_key": "reference-mlkem-512",
         "allowed_scopes": [
           "c0ffee0000000000000000000000000000000000000000000000000000c0ffee0edbafda67ca37188cf28263571f03b9716879e4acc9c514ab6727ffffffffff",
@@ -552,7 +552,7 @@
       "derived_from": "reference-permit-two-scopes",
       "mutation": "scope list extended one entry past the maximum",
       "permit": {
-        "user_pubkey": "c11a7cf8eb1cdfcb1bcb84b9d8314ddec3bb1410f0a95badd9c4384f643a6427",
+        "user_address": "c11a7cf8eb1cdfcb1bcb84b9d8314ddec3bb1410f0a95badd9c4384f643a6427",
         "transport_key": "reference-mlkem-512",
         "allowed_scopes": [
           "fffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff8",
@@ -580,7 +580,7 @@
       "derived_from": "reference-permit-two-scopes",
       "mutation": "the two scopes swapped into base58-string order",
       "permit": {
-        "user_pubkey": "c11a7cf8eb1cdfcb1bcb84b9d8314ddec3bb1410f0a95badd9c4384f643a6427",
+        "user_address": "c11a7cf8eb1cdfcb1bcb84b9d8314ddec3bb1410f0a95badd9c4384f643a6427",
         "transport_key": "reference-mlkem-512",
         "allowed_scopes": [
           "c0ffee0000000000000000000000000000000000000000000000000000c0ffee0edbafda67ca37188cf28263571f03b9716879e4acc9c514ab67280000000000",
@@ -602,7 +602,7 @@
       "derived_from": "reference-permit-two-scopes",
       "mutation": "second scope replaced by a copy of the first",
       "permit": {
-        "user_pubkey": "c11a7cf8eb1cdfcb1bcb84b9d8314ddec3bb1410f0a95badd9c4384f643a6427",
+        "user_address": "c11a7cf8eb1cdfcb1bcb84b9d8314ddec3bb1410f0a95badd9c4384f643a6427",
         "transport_key": "reference-mlkem-512",
         "allowed_scopes": [
           "c0ffee0000000000000000000000000000000000000000000000000000c0ffee0edbafda67ca37188cf28263571f03b9716879e4acc9c514ab6727ffffffffff",
@@ -624,7 +624,7 @@
       "derived_from": "reference-permit-two-scopes",
       "mutation": "duration set to zero",
       "permit": {
-        "user_pubkey": "c11a7cf8eb1cdfcb1bcb84b9d8314ddec3bb1410f0a95badd9c4384f643a6427",
+        "user_address": "c11a7cf8eb1cdfcb1bcb84b9d8314ddec3bb1410f0a95badd9c4384f643a6427",
         "transport_key": "reference-mlkem-512",
         "allowed_scopes": [
           "c0ffee0000000000000000000000000000000000000000000000000000c0ffee0edbafda67ca37188cf28263571f03b9716879e4acc9c514ab6727ffffffffff",
@@ -646,7 +646,7 @@
       "derived_from": "reference-permit-two-scopes",
       "mutation": "duration set one second above the maximum",
       "permit": {
-        "user_pubkey": "c11a7cf8eb1cdfcb1bcb84b9d8314ddec3bb1410f0a95badd9c4384f643a6427",
+        "user_address": "c11a7cf8eb1cdfcb1bcb84b9d8314ddec3bb1410f0a95badd9c4384f643a6427",
         "transport_key": "reference-mlkem-512",
         "allowed_scopes": [
           "c0ffee0000000000000000000000000000000000000000000000000000c0ffee0edbafda67ca37188cf28263571f03b9716879e4acc9c514ab6727ffffffffff",
@@ -668,7 +668,7 @@
       "derived_from": "reference-permit-two-scopes",
       "mutation": "start set one second above the maximum",
       "permit": {
-        "user_pubkey": "c11a7cf8eb1cdfcb1bcb84b9d8314ddec3bb1410f0a95badd9c4384f643a6427",
+        "user_address": "c11a7cf8eb1cdfcb1bcb84b9d8314ddec3bb1410f0a95badd9c4384f643a6427",
         "transport_key": "reference-mlkem-512",
         "allowed_scopes": [
           "c0ffee0000000000000000000000000000000000000000000000000000c0ffee0edbafda67ca37188cf28263571f03b9716879e4acc9c514ab6727ffffffffff",
@@ -690,7 +690,7 @@
       "derived_from": "reference-permit-two-scopes",
       "mutation": "transport key replaced with one of the larger variant's length",
       "permit": {
-        "user_pubkey": "c11a7cf8eb1cdfcb1bcb84b9d8314ddec3bb1410f0a95badd9c4384f643a6427",
+        "user_address": "c11a7cf8eb1cdfcb1bcb84b9d8314ddec3bb1410f0a95badd9c4384f643a6427",
         "transport_key": "mlkem-1024-length",
         "allowed_scopes": [
           "c0ffee0000000000000000000000000000000000000000000000000000c0ffee0edbafda67ca37188cf28263571f03b9716879e4acc9c514ab6727ffffffffff",
@@ -712,7 +712,7 @@
       "derived_from": "reference-permit-two-scopes",
       "mutation": "transport key truncated by one byte",
       "permit": {
-        "user_pubkey": "c11a7cf8eb1cdfcb1bcb84b9d8314ddec3bb1410f0a95badd9c4384f643a6427",
+        "user_address": "c11a7cf8eb1cdfcb1bcb84b9d8314ddec3bb1410f0a95badd9c4384f643a6427",
         "transport_key": "truncated-mlkem-512",
         "allowed_scopes": [
           "c0ffee0000000000000000000000000000000000000000000000000000c0ffee0edbafda67ca37188cf28263571f03b9716879e4acc9c514ab6727ffffffffff",
@@ -734,7 +734,7 @@
       "derived_from": "reference-permit-two-scopes",
       "mutation": "transport key replaced with the bare encapsulation key",
       "permit": {
-        "user_pubkey": "c11a7cf8eb1cdfcb1bcb84b9d8314ddec3bb1410f0a95badd9c4384f643a6427",
+        "user_address": "c11a7cf8eb1cdfcb1bcb84b9d8314ddec3bb1410f0a95badd9c4384f643a6427",
         "transport_key": "bare-mlkem-512-800",
         "allowed_scopes": [
           "c0ffee0000000000000000000000000000000000000000000000000000c0ffee0edbafda67ca37188cf28263571f03b9716879e4acc9c514ab6727ffffffffff",
@@ -756,7 +756,7 @@
       "derived_from": "reference-permit-two-scopes",
       "mutation": "routing version byte set to 0x03",
       "permit": {
-        "user_pubkey": "c11a7cf8eb1cdfcb1bcb84b9d8314ddec3bb1410f0a95badd9c4384f643a6427",
+        "user_address": "c11a7cf8eb1cdfcb1bcb84b9d8314ddec3bb1410f0a95badd9c4384f643a6427",
         "transport_key": "reference-mlkem-512",
         "allowed_scopes": [
           "c0ffee0000000000000000000000000000000000000000000000000000c0ffee0edbafda67ca37188cf28263571f03b9716879e4acc9c514ab6727ffffffffff",
@@ -778,7 +778,7 @@
       "derived_from": "reference-permit-two-scopes",
       "mutation": "one byte appended to the routing field",
       "permit": {
-        "user_pubkey": "c11a7cf8eb1cdfcb1bcb84b9d8314ddec3bb1410f0a95badd9c4384f643a6427",
+        "user_address": "c11a7cf8eb1cdfcb1bcb84b9d8314ddec3bb1410f0a95badd9c4384f643a6427",
         "transport_key": "reference-mlkem-512",
         "allowed_scopes": [
           "c0ffee0000000000000000000000000000000000000000000000000000c0ffee0edbafda67ca37188cf28263571f03b9716879e4acc9c514ab6727ffffffffff",

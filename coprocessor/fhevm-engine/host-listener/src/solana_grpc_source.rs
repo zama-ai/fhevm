@@ -77,7 +77,7 @@ struct Sealed {
 /// sealed slots can arrive again, whole or as their block meta alone. A transaction the slot
 /// already holds is ignored, and a block meta must equal the slot's. A transaction the slot does
 /// not hold arrived after its block meta, when the slot was already applied without it: that stops
-/// the listener, and the slot needs the repair DD-060 describes. A slot evicted from the window can
+/// the listener, and the slot needs the repair DD-062 describes. A slot evicted from the window can
 /// no longer be checked, so its re-delivery is skipped.
 #[derive(Debug)]
 pub(super) struct BlockValidator {
@@ -146,7 +146,7 @@ impl BlockValidator {
                 ensure!(
                     held,
                     "transaction {} (index {}) of slot {slot} arrived after the slot was applied \
-                     without it; its record needs the repair in DD-060",
+                     without it; its record needs the repair in DD-062",
                     transaction.signature,
                     transaction.index
                 );

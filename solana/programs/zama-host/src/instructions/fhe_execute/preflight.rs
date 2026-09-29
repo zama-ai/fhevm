@@ -318,7 +318,7 @@ mod tests {
     fn app(tag: u8) -> AppScope {
         AppScope {
             program: Pubkey::new_from_array([tag; 32]),
-            scope: [tag; 32],
+            scope: Pubkey::new_from_array([tag; 32]),
         }
     }
 

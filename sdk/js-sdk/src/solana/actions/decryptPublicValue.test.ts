@@ -16,7 +16,7 @@ const message = createKmsPublicDecryptEip712({
   verifyingContractAddressDecryption: '0x0000000000000000000000000000000000000042',
   handles: [handle],
   decryptedResult: `0x${'00'.repeat(31)}2a`,
-  extraData: `0x04${'44'.repeat(64)}`,
+  extraData: `0x01${'44'.repeat(32)}`,
 });
 const signingMessage = {
   ...message,
@@ -44,7 +44,7 @@ describe('Solana public decryption authentication', () => {
       verifyPublicDecryptSignatures(publicDecryptDigest(message), [signature, signature], registered, 2),
     ).toThrow('threshold');
   });
-  it.each(['cleartext', 'handle', 'store', 'context', 'chain', 'contract'])(
+  it.each(['cleartext', 'handle', 'context', 'chain', 'contract'])(
     'rejects a signature after changing %s',
     async (field) => {
       const signature = await alice.signTypedData(signingMessage);
@@ -54,12 +54,7 @@ describe('Solana public decryption authentication', () => {
           field === 'contract' ? '0x0000000000000000000000000000000000000043' : signingDomain.verifyingContract,
         handles: field === 'handle' ? [toFhevmHandle(`0x${'cd'.repeat(22)}01000000000030390500`)] : [handle],
         decryptedResult: field === 'cleartext' ? `0x${'00'.repeat(31)}2b` : message.message.decryptedResult,
-        extraData:
-          field === 'store'
-            ? `0x04${'44'.repeat(32)}${'55'.repeat(32)}`
-            : field === 'context'
-              ? `0x04${'55'.repeat(32)}${'44'.repeat(32)}`
-              : message.message.extraData,
+        extraData: field === 'context' ? `0x01${'55'.repeat(32)}` : message.message.extraData,
       });
       expect(() => verifyPublicDecryptSignatures(publicDecryptDigest(changed), [signature], registered, 1)).toThrow(
         'threshold',

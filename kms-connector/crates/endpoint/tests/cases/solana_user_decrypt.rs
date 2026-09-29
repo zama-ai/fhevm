@@ -14,9 +14,6 @@ use kms_connector_api::{
 };
 use sqlx::postgres::PgRow;
 
-/// The Solana chain type byte over cluster tag 12345.
-const SOLANA_CHAIN_ID: u64 = 0x0100_0000_0000_3039;
-
 #[tokio::test]
 async fn solana_http_and_gateway_requests_store_the_same_request() -> anyhow::Result<()> {
     let endpoint = setup_with(|config| Config {
@@ -38,7 +35,10 @@ async fn solana_http_and_gateway_requests_store_the_same_request() -> anyhow::Re
         http_row.get::<RowAttestationType, _>("attestation_type"),
         RowAttestationType::Solana
     );
-    assert_eq!(http_row.get::<Option<Vec<u8>>, _>("user_address"), None);
+    assert_eq!(
+        http_row.get::<Vec<u8>, _>("user_address"),
+        gateway.request.permit().user_address().as_bytes()
+    );
 
     insert_solana_user_decryption(
         &endpoint.db,
@@ -85,8 +85,9 @@ async fn solana_rows_of_the_wrong_shape_are_unwritable() -> anyhow::Result<()> {
     let id = request.decryption_id;
     for change in [
         "user_address = decode(repeat('00', 20), 'hex')",
-        "user_pubkey = NULL",
-        "handle_allowed_keys = NULL",
+        "handle_owner_addresses = NULL",
+        "signature = NULL",
+        "signature = decode(repeat('00', 63), 'hex')",
         "verifying_program_id = NULL",
         "handle_encrypted_stores = ARRAY[handle_encrypted_stores[1], handle_encrypted_stores[1]]",
         "allowed_contracts = ARRAY[decode(repeat('00', 20), 'hex')]",
@@ -101,8 +102,13 @@ async fn solana_rows_of_the_wrong_shape_are_unwritable() -> anyhow::Result<()> {
         );
     }
 
-    // Widths are the reader's to enforce, so a worker never acts on a truncated field.
-    update(&endpoint.db, id, "signature = decode('00', 'hex')").await?;
+    // Array element widths are the reader's to enforce, so a worker never acts on a truncated field.
+    update(
+        &endpoint.db,
+        id,
+        "handle_encrypted_stores = ARRAY[decode('00', 'hex')]",
+    )
+    .await?;
     let row = sqlx::query("SELECT * FROM user_decryption_requests WHERE decryption_id = $1")
         .bind(id.as_le_slice())
         .fetch_one(&endpoint.db)
@@ -128,20 +134,21 @@ async fn solana_attestation_type_with_an_eip712_payload_is_malformed() -> anyhow
 }
 
 fn http_body(request: &SolanaUserDecryptionRequestV1) -> SolanaUserDecryptionRequest {
-    let permit = request.permit();
+    let permit = request.request.permit();
     SolanaUserDecryptionRequest {
         attestationType: AttestationType::SolanaSrfc38UserDecryptV1.to_string(),
         payload: SolanaUserDecryptionPayload {
             handles: request
-                .handles()
+                .request
+                .entries()
                 .iter()
                 .map(|entry| SolanaHandleEntry {
                     handle: entry.handle.into(),
-                    allowedKey: entry.allowed_key.into(),
+                    ownerAddress: entry.owner_address.into(),
                     encryptedStore: entry.encrypted_store.into(),
                 })
                 .collect(),
-            userPubkey: (*permit.user_pubkey().as_bytes()).into(),
+            userAddress: (*permit.user_address().as_bytes()).into(),
             publicKey: permit.transport_key().as_bytes().to_vec().into(),
             allowedScopes: vec![],
             requestValidity: RequestValidity {
@@ -151,7 +158,7 @@ fn http_body(request: &SolanaUserDecryptionRequestV1) -> SolanaUserDecryptionReq
             verifyingProgramId: (*permit.verifying_program_id().as_bytes()).into(),
             extraData: request.extra_data().into(),
         },
-        signature: request.signature().as_bytes().to_vec().into(),
+        signature: request.request.signature().as_bytes().to_vec().into(),
     }
 }
 

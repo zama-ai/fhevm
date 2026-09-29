@@ -15,7 +15,7 @@ import type {
 import type { SolanaPermitFields, SolanaSignedPermit } from '../permit/index.js';
 import { describe, expect, it, vi } from 'vitest';
 import {
-  MAX_SOLANA_USER_DECRYPT_HANDLES,
+  MAX_SOLANA_DECRYPT_HANDLES,
   SOLANA_USER_DECRYPT_DEFAULT_ATTEMPTS,
   SOLANA_USER_DECRYPT_DEFAULT_RETRY_SECONDS,
   SolanaUserDecryptRequestError,
@@ -50,7 +50,7 @@ const routing = (): Uint8Array => {
 
 const permitFields = (): SolanaPermitFields =>
   decodeSolanaPermitFields({
-    userPubkey: identity(0x11),
+    userAddress: identity(0x11),
     transportKey: new Uint8Array(PERMIT_TRANSPORT_KEY_LEN),
     allowedScopes: [],
     startTimestamp: 1_767_229_380n,
@@ -75,7 +75,7 @@ const handle = (): Uint8Array => {
 };
 
 const ENTRIES: readonly SolanaUserDecryptHandleEntry[] = [
-  { handle: handle(), allowedKey: identity(0x11), encryptedStore: identity(0xea) },
+  { handle: handle(), ownerAddress: identity(0x11), encryptedStore: identity(0xea) },
 ];
 
 /**
@@ -264,9 +264,9 @@ describe('a request refused before the network', () => {
   it('is refused on the handle cap without submitting', async () => {
     const { submit, transport } = scriptedTransport([answered]);
     const { clock, delay } = recordingClock();
-    const overCap = Array.from({ length: MAX_SOLANA_USER_DECRYPT_HANDLES + 1 }, () => ({
+    const overCap = Array.from({ length: MAX_SOLANA_DECRYPT_HANDLES + 1 }, () => ({
       handle: handle(),
-      allowedKey: identity(0x11),
+      ownerAddress: identity(0x11),
       encryptedStore: identity(0xea),
     }));
 
