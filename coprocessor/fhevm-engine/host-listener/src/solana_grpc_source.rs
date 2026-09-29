@@ -389,6 +389,13 @@ mod tests {
         transactions.iter().map(|tx| tx.index).collect()
     }
 
+    /// Asserts that `result` stops the listener for `reason`, not for another error.
+    #[track_caller]
+    fn halts<T: std::fmt::Debug>(result: Result<T>, reason: &str) {
+        let error = format!("{:#}", result.unwrap_err());
+        assert!(error.contains(reason), "{error}");
+    }
+
     /// The first slot of a tip start can arrive as its block meta alone, so it is skipped and
     /// its late transactions ignored; the next slot is applied.
     #[test]
@@ -441,11 +448,14 @@ mod tests {
         let mut validator = following(2);
         validator.transaction(2, transaction(1)).unwrap();
         validator.transaction(2, transaction(1)).unwrap();
-        assert!(validator.block_meta(meta(2, 2)).is_err());
+        halts(validator.block_meta(meta(2, 2)), "duplicate");
 
         let mut validator = following(2);
         validator.transaction(2, transaction(1)).unwrap();
-        assert!(validator.block_meta(meta(2, 1)).is_err());
+        halts(
+            validator.block_meta(meta(2, 1)),
+            "outside executed transaction count",
+        );
     }
 
     /// After a replay the last slot can arrive again, whole or as its block meta alone: it is
@@ -474,13 +484,12 @@ mod tests {
             ..meta(2, 2)
         };
         for changed in [changed_time, changed_hash, meta(2, 3)] {
-            assert!(validator.block_meta(changed).is_err());
+            halts(validator.block_meta(changed), "conflicting");
         }
 
-        let late = validator.transaction(2, transaction(1)).unwrap_err();
-        assert!(
-            format!("{late:#}").contains("applied without it"),
-            "{late:#}"
+        halts(
+            validator.transaction(2, transaction(1)),
+            "applied without it",
         );
     }
 
@@ -503,10 +512,9 @@ mod tests {
                 SealDecision::Skip
             ));
         }
-        let late = validator.transaction(3, transaction(1)).unwrap_err();
-        assert!(
-            format!("{late:#}").contains("applied without it"),
-            "{late:#}"
+        halts(
+            validator.transaction(3, transaction(1)),
+            "applied without it",
         );
     }
 
@@ -530,15 +538,19 @@ mod tests {
             validator.block_meta(meta(2, 2)).unwrap(),
             SealDecision::Skip
         ));
-        assert!(validator.transaction(3, transaction(1)).is_err());
-        assert!(validator.block_meta(meta(3, 2)).is_err());
+        halts(
+            validator.transaction(3, transaction(1)),
+            "applied without it",
+        );
+        halts(validator.block_meta(meta(3, 2)), "conflicting");
 
-        assert!(validator
-            .block_meta(SubscribeUpdateBlockMeta {
+        halts(
+            validator.block_meta(SubscribeUpdateBlockMeta {
                 parent_blockhash: bs58::encode(hash(9)).into_string(),
                 ..meta(last + 1, 0)
-            })
-            .is_err());
+            }),
+            "ancestry mismatch",
+        );
         assert!(indexes(validator.block_meta(meta(last + 1, 0)).unwrap())
             .is_empty());
     }
@@ -549,28 +561,35 @@ mod tests {
         // A transaction of the next slot before this slot's block meta.
         let mut validator = following(2);
         validator.transaction(2, transaction(0)).unwrap();
-        assert!(validator.transaction(3, transaction(0)).is_err());
+        halts(
+            validator.transaction(3, transaction(0)),
+            "before the block meta of slot 2",
+        );
 
         // Another slot's block meta while this slot is open.
         let mut validator = following(2);
         validator.transaction(2, transaction(0)).unwrap();
-        assert!(validator.block_meta(meta(3, 1)).is_err());
+        halts(validator.block_meta(meta(3, 1)), "while slot 2 was open");
 
         // A transaction or a block meta for an earlier slot the validator never sealed.
         let mut validator = following(3);
-        assert!(validator.transaction(1, transaction(0)).is_err());
-        assert!(validator.block_meta(meta(1, 0)).is_err());
+        halts(
+            validator.transaction(1, transaction(0)),
+            "after slot 2 was sealed",
+        );
+        halts(validator.block_meta(meta(1, 0)), "out-of-order");
     }
 
     #[test]
     fn a_slot_that_does_not_extend_the_last_halts() {
         let mut validator = following(2);
-        assert!(validator
-            .block_meta(SubscribeUpdateBlockMeta {
+        halts(
+            validator.block_meta(SubscribeUpdateBlockMeta {
                 parent_blockhash: bs58::encode(hash(9)).into_string(),
                 ..meta(2, 0)
-            })
-            .is_err());
+            }),
+            "ancestry mismatch",
+        );
     }
 
     #[test]
@@ -581,7 +600,10 @@ mod tests {
         };
         let mut validator =
             BlockValidator::new(StartPosition::Resume(checkpoint.clone()));
-        assert!(validator.block_meta(meta(6, 0)).is_err());
+        halts(
+            validator.block_meta(meta(6, 0)),
+            "did not begin at checkpoint slot 5",
+        );
 
         let mut validator =
             BlockValidator::new(StartPosition::Resume(checkpoint));
@@ -592,13 +614,17 @@ mod tests {
         ));
         // The replayed checkpoint slot's transactions are what a re-delivery must match.
         validator.transaction(5, transaction(0)).unwrap();
-        assert!(validator.transaction(5, transaction(1)).is_err());
-        assert!(validator
-            .block_meta(SubscribeUpdateBlockMeta {
+        halts(
+            validator.transaction(5, transaction(1)),
+            "applied without it",
+        );
+        halts(
+            validator.block_meta(SubscribeUpdateBlockMeta {
                 parent_slot: 4,
                 ..meta(7, 0)
-            })
-            .is_err());
+            }),
+            "ancestry mismatch",
+        );
     }
 
     #[test]

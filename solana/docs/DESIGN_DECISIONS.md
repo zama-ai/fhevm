@@ -2434,7 +2434,7 @@ Rejected alternatives:
 Consequences:
 
 The decoding limit stays at 64 MiB, which no valid transaction reaches
-(`a_slot_past_the_decoding_limit_streams_in_bounded_messages`). A transaction that only lists the
+(`a_transaction_message_stays_far_below_the_decoding_limit`). A transaction that only lists the
 host still arrives, one message of up to about 650 KB, and the listener keeps only its index and
 signature. On catch-up each one costs a `getTransaction` call, so junk that lists the host
 multiplies catch-up's RPC calls. The stream reconnects after 30 seconds without a block meta,

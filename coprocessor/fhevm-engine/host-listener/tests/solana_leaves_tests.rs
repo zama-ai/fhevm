@@ -266,6 +266,35 @@ async fn leaf_record_round_trips_and_serves_verifiable_proofs(
     assert_eq!(body.proofs[2], LeafProof::NotFound { leaf_count: 3 });
     assert_eq!(body.proofs[3], LeafProof::UnknownAccount);
 
+    // A leaf at or past the store's `leaf_count`, as a block committed after the route
+    // read the store row leaves it, is not proved against that count.
+    sqlx::query(
+        "INSERT INTO solana_encrypted_state_leaves
+             (encrypted_state, leaf_index, commitment, leaf_kind, handle, allowed_key,
+              block_slot, transaction_index)
+         SELECT encrypted_state, 3, commitment, leaf_kind, decode(repeat('13', 32), 'hex'),
+                allowed_key, 12, 0
+         FROM solana_encrypted_state_leaves WHERE leaf_index = 0",
+    )
+    .execute(&pool)
+    .await?;
+    let response = client
+        .post(&url)
+        .bearer_auth("secret")
+        .json(&LeafProofRequest {
+            leaves: vec![LeafQuery {
+                encrypted_store: hex32(&ACCOUNT),
+                handle: hex32(&[0x13; 32]),
+                kind: LeafQueryKind::Allowed,
+                key: Some(hex32(&OWNER)),
+            }],
+        })
+        .send()
+        .await?;
+    assert_eq!(response.status(), 200);
+    let body: LeafProofResponse = response.json().await?;
+    assert_eq!(body.proofs, vec![LeafProof::NotFound { leaf_count: 3 }]);
+
     // A record missing a path row, or holding a wrong one, cannot serve a proof: the
     // route answers a retryable 502 rather than a path that misses the peaks. Leaf 0's
     // path is leaf 1.

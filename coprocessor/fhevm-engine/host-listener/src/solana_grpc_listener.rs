@@ -1286,8 +1286,12 @@ mod slot_size_tests {
         transaction
     }
 
+    /// A message carries one transaction because the subscription asks for transactions, not
+    /// blocks (`request_subscribes_to_host_transactions_and_block_meta`). This checks that a
+    /// transaction at Agave's bounds stays far below the decoding limit, and that a slot whose
+    /// junk adds up past it still yields its host transaction.
     #[test]
-    fn a_slot_past_the_decoding_limit_streams_in_bounded_messages() {
+    fn a_transaction_message_stays_far_below_the_decoding_limit() {
         let host = ZAMA_HOST.parse::<Pubkey>().unwrap();
         let junk_info = |index: u64| {
             let mut info = junk(index as u8).grpc_info(index);
