@@ -1206,3 +1206,158 @@ async fn discovery_waits_for_finalized_successor_after_pending_child_replacement
     );
     assert_eq!(discover_children(&pool).await.unwrap(), 0);
 }
+
+const SOURCE_CHAIN_ID: i64 = 1;
+
+async fn insert_bridged_event(
+    pool: &PgPool,
+    block_number: i64,
+    block_hash: &[u8],
+    src_handle: &[u8],
+    dst_handle: &[u8],
+) {
+    sqlx::query(
+        "INSERT INTO handle_bridged_events (
+             src_handle, dst_handle, dst_chain_id, receiver_dapp, guid,
+             block_number, block_hash
+         ) VALUES ($1, $2, $3, '\\xdb'::bytea, '\\x02'::bytea, $4, $5)",
+    )
+    .bind(src_handle)
+    .bind(dst_handle)
+    .bind(CHAIN_ID)
+    .bind(block_number)
+    .bind(block_hash)
+    .execute(pool)
+    .await
+    .expect("insert HandleBridged observation");
+}
+
+async fn insert_digest(pool: &PgPool, host_chain_id: i64, handle: &[u8], ct64: u8) {
+    sqlx::query(
+        "INSERT INTO ciphertext_digest (
+             host_chain_id, key_id_gw, handle, ciphertext, ciphertext128,
+             ciphertext128_format
+         ) VALUES ($1, $2, $3, $4, $5, 11)",
+    )
+    .bind(host_chain_id)
+    .bind(vec![0x11_u8; 32])
+    .bind(handle)
+    .bind(vec![ct64; 32])
+    .bind(vec![0x80_u8; 32])
+    .execute(pool)
+    .await
+    .expect("insert ciphertext digests");
+    // The descriptor needs a keyset for the digest's Gateway key.
+    sqlx::query(
+        "INSERT INTO keys (key_id_gw, key_id, pks_key, sks_key, chain_id, block_hash)
+         SELECT $1, $2, ''::BYTEA, ''::BYTEA, $3, $2
+          WHERE NOT EXISTS (SELECT 1 FROM keys WHERE key_id_gw = $1)",
+    )
+    .bind(vec![0x11_u8; 32])
+    .bind(vec![0x12_u8; 32])
+    .bind(host_chain_id)
+    .execute(pool)
+    .await
+    .expect("insert the digest's keyset");
+}
+
+async fn ready_descriptors(
+    pool: &PgPool,
+    block: &PendingBlock,
+) -> Option<Vec<CiphertextDescriptor>> {
+    let mut trx = pool.begin().await.expect("begin readiness check");
+    let ready = is_block_manifest_ready(&mut trx, block)
+        .await
+        .expect("check readiness");
+    let descriptors = if ready {
+        Some(
+            load_manifest_descriptors(&mut trx, block, false)
+                .await
+                .expect("load descriptors"),
+        )
+    } else {
+        None
+    };
+    trx.rollback().await.expect("rollback readiness check");
+    descriptors
+}
+
+/// A bridged destination is sealed from its source digests as soon as the
+/// source is computed, without waiting for the copy, which needs source
+/// finality. The copy then carries the same digests, so the seal stays valid.
+#[tokio::test]
+#[serial(db)]
+async fn bridged_destination_seals_with_the_source_digests_before_its_copy() {
+    let (_instance, pool) = setup_pool().await;
+    let block_number = 42;
+    let block_hash = vec![0x42; 32];
+    let src_handle = vec![0x51; 32];
+    let dst_handle = vec![0x52; 32];
+
+    insert_host_block(&pool, block_number, &block_hash, &[0x41; 32], "pending").await;
+    insert_producer_block(&pool, block_number, &block_hash, &dst_handle).await;
+    insert_bridged_event(&pool, block_number, &block_hash, &src_handle, &dst_handle).await;
+    discover_blocks(&pool)
+        .await
+        .expect("discover bridging block");
+    let block = load_pending_block(&pool, &block_hash).await;
+
+    assert!(
+        ready_descriptors(&pool, &block).await.is_none(),
+        "the destination waits for its source like any consumer"
+    );
+
+    insert_digest(&pool, SOURCE_CHAIN_ID, &src_handle, 0x64).await;
+    let from_source = ready_descriptors(&pool, &block)
+        .await
+        .expect("ready once the source is computed");
+    assert_eq!(from_source.len(), 1);
+
+    // The bridge worker copies the source digest row onto the destination.
+    insert_digest(&pool, CHAIN_ID, &dst_handle, 0x64).await;
+    assert_eq!(
+        ready_descriptors(&pool, &block).await,
+        Some(from_source),
+        "the copy describes the destination exactly like its source did"
+    );
+}
+
+/// Once this node materialized the destination, its own digest describes it,
+/// even when it differs from the source: the manifest reports what the node
+/// holds, and verification settles the difference.
+#[tokio::test]
+#[serial(db)]
+async fn bridged_destination_prefers_its_own_digest_over_the_source() {
+    let (_instance, pool) = setup_pool().await;
+    let block_number = 42;
+    let block_hash = vec![0x42; 32];
+    let src_handle = vec![0x51; 32];
+    let dst_handle = vec![0x52; 32];
+    let plain_handle = vec![0x53; 32];
+
+    insert_host_block(&pool, block_number, &block_hash, &[0x41; 32], "pending").await;
+    insert_producer_block(&pool, block_number, &block_hash, &dst_handle).await;
+    insert_bridged_event(&pool, block_number, &block_hash, &src_handle, &dst_handle).await;
+    insert_digest(&pool, SOURCE_CHAIN_ID, &src_handle, 0x64).await;
+    insert_digest(&pool, CHAIN_ID, &dst_handle, 0x65).await;
+    insert_manifest_state(&pool, block_number, &block_hash, &[0x41; 32]).await;
+    let bridged = ready_descriptors(&pool, &load_pending_block(&pool, &block_hash).await)
+        .await
+        .expect("bridged block ready");
+
+    // The same digests on a plain handle give the expected descriptor bytes.
+    let other_hash = vec![0x43; 32];
+    insert_host_block(&pool, block_number + 1, &other_hash, &block_hash, "pending").await;
+    insert_producer_block(&pool, block_number + 1, &other_hash, &plain_handle).await;
+    insert_digest(&pool, CHAIN_ID, &plain_handle, 0x65).await;
+    insert_manifest_state(&pool, block_number + 1, &other_hash, &block_hash).await;
+    let plain = ready_descriptors(&pool, &load_pending_block(&pool, &other_hash).await)
+        .await
+        .expect("plain block ready");
+
+    assert_eq!(
+        format!("{:?}", bridged[0]).replace(&hex::encode(&dst_handle), "H"),
+        format!("{:?}", plain[0]).replace(&hex::encode(&plain_handle), "H"),
+        "the destination is described by its own ct64 digest (0x65), not the source's (0x64)"
+    );
+}

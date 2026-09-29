@@ -35,6 +35,12 @@ pub(crate) type CiphertextDescriptor = BlockCiphertextDescriptor;
 /// no SNS digest; they are sealed as `is_error` descriptors. Missing
 /// ciphertext can also be sealed as `is_uncomputed` after
 /// [`missing_handles_are_uncomputed`] becomes true.
+///
+/// A `HandleBridged` destination is owned by the block that bridged it. Its
+/// bytes arrive later as a copy of the source ciphertext, after the source
+/// block is final, so until this node holds them the source digests describe
+/// it. The block seals as soon as the source is computed, without waiting for
+/// finality.
 pub(crate) async fn is_block_manifest_ready(
     trx: &mut Transaction<'_, Postgres>,
     block: &PendingBlock,
@@ -56,9 +62,31 @@ pub(crate) async fn is_block_manifest_ready(
                           AND c.is_error
                    ) AS is_error
               FROM handle_producer_block producer
-              LEFT JOIN ciphertext_digest d
-                ON d.host_chain_id = producer.host_chain_id
-               AND d.handle = producer.handle
+              LEFT JOIN LATERAL (
+                  -- A bridged handle's bytes are a later copy of its source, so until
+                  -- this node holds its own digest the source digest describes it.
+                  SELECT digest.key_id_gw, digest.ciphertext, digest.ciphertext128,
+                         digest.ciphertext128_format
+                    FROM (
+                      SELECT FALSE AS bridged, own.key_id_gw, own.ciphertext,
+                             own.ciphertext128, own.ciphertext128_format
+                        FROM ciphertext_digest own
+                       WHERE own.host_chain_id = producer.host_chain_id
+                         AND own.handle = producer.handle
+                      UNION ALL
+                      SELECT TRUE, source.key_id_gw, source.ciphertext,
+                             source.ciphertext128, source.ciphertext128_format
+                        FROM handle_bridged_events bridged
+                        JOIN ciphertext_digest source
+                          ON source.handle = bridged.src_handle
+                       WHERE bridged.dst_handle = producer.handle
+                         AND bridged.dst_chain_id = producer.host_chain_id
+                         AND bridged.block_hash = producer.producer_block_hash
+                    ) digest
+                   ORDER BY (NOT digest.bridged AND digest.ciphertext IS NOT NULL) DESC,
+                            digest.bridged DESC
+                   LIMIT 1
+              ) d ON TRUE
              WHERE producer.host_chain_id = $1
                AND producer.producer_block_number = $2
                AND producer.producer_block_hash = $3
@@ -201,9 +229,31 @@ pub(crate) async fn load_manifest_descriptors(
                     LIMIT 1
                ) AS "error_message?"
           FROM handle_producer_block producer
-          LEFT JOIN ciphertext_digest d
-            ON d.host_chain_id = producer.host_chain_id
-           AND d.handle = producer.handle
+          LEFT JOIN LATERAL (
+              -- A bridged handle's bytes are a later copy of its source, so until
+              -- this node holds its own digest the source digest describes it.
+              SELECT digest.key_id_gw, digest.ciphertext, digest.ciphertext128,
+                     digest.ciphertext128_format
+                FROM (
+                  SELECT FALSE AS bridged, own.key_id_gw, own.ciphertext,
+                         own.ciphertext128, own.ciphertext128_format
+                    FROM ciphertext_digest own
+                   WHERE own.host_chain_id = producer.host_chain_id
+                     AND own.handle = producer.handle
+                  UNION ALL
+                  SELECT TRUE, source.key_id_gw, source.ciphertext,
+                         source.ciphertext128, source.ciphertext128_format
+                    FROM handle_bridged_events bridged
+                    JOIN ciphertext_digest source
+                      ON source.handle = bridged.src_handle
+                   WHERE bridged.dst_handle = producer.handle
+                     AND bridged.dst_chain_id = producer.host_chain_id
+                     AND bridged.block_hash = producer.producer_block_hash
+                ) digest
+               ORDER BY (NOT digest.bridged AND digest.ciphertext IS NOT NULL) DESC,
+                        digest.bridged DESC
+               LIMIT 1
+          ) d ON TRUE
          WHERE producer.host_chain_id = $1
            AND producer.producer_block_number = $2
            AND producer.producer_block_hash = $3
