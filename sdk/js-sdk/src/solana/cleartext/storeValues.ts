@@ -71,9 +71,13 @@ export async function fetchCleartextStoreValue(
   programAddress: Address,
   encryptedStore: Uint8Array,
   handle: Uint8Array,
+  abortSignal?: AbortSignal,
 ): Promise<Uint8Array> {
   const address = getAddressDecoder().decode(encryptedStore);
-  const account = await fetchEncodedAccount(rpc, address, { commitment: 'confirmed' });
+  const account = await fetchEncodedAccount(rpc, address, {
+    commitment: 'confirmed',
+    ...(abortSignal === undefined ? {} : { abortSignal }),
+  });
   if (!account.exists || account.programAddress !== programAddress) {
     throw new Error(`No EncryptedStore of ${programAddress} at ${address}`);
   }

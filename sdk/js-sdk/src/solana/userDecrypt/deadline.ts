@@ -15,6 +15,12 @@ export type SolanaUserDecryptDeadline = SolanaUserDecryptClock & {
   throwIfAbortedOrExpired(): void;
   /** Records that a request already reported the abort, so it is not reported twice. */
   noteAbortReported(): void;
+  /**
+   * Runs `work` until it settles or the deadline ends it. `work` receives a signal that aborts
+   * when the deadline does, for the requests it owns; a wait it shares with other operations is
+   * ended for this one only.
+   */
+  bound<T>(work: (signal: AbortSignal) => Promise<T>): Promise<T>;
 };
 
 /**
@@ -85,6 +91,34 @@ export function createSolanaUserDecryptDeadline(config: {
     },
     noteAbortReported(): void {
       abortReported = true;
+    },
+    async bound<T>(work: (signal: AbortSignal) => Promise<T>): Promise<T> {
+      const milliseconds = remaining();
+      const caller = config.options?.signal;
+      const controller = new AbortController();
+      let timer: ReturnType<typeof setTimeout> | undefined;
+      let onAbort: (() => void) | undefined;
+      const ended = new Promise<() => never>((resolve) => {
+        timer = setTimeout(() => {
+          resolve(expire);
+        }, milliseconds);
+        onAbort = () => {
+          resolve(abort);
+        };
+        caller?.addEventListener('abort', onAbort, { once: true });
+      }).then((raise) => {
+        controller.abort();
+        return raise();
+      });
+      const running = work(controller.signal);
+      // Once the deadline ends it, what the work does next reaches no one.
+      running.catch(() => undefined);
+      try {
+        return await Promise.race([running, ended]);
+      } finally {
+        clearTimeout(timer);
+        if (onAbort !== undefined) caller?.removeEventListener('abort', onAbort);
+      }
     },
     async delay(seconds: number): Promise<void> {
       const milliseconds = remaining();

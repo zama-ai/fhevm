@@ -24,6 +24,7 @@ import { asBytes32, bytesToHex, bytesToHexNo0x, hexToBytes } from '../../core/ba
 import { bytes32ToHandle, toFhevmHandle } from '../../core/handle/FhevmHandle.js';
 import { createKmsPublicDecryptEip712, publicDecryptDigest } from '../../core/kms/createKmsPublicDecryptEip712.js';
 import { runSolanaUserDecrypt } from '../userDecrypt/index.js';
+import { abortableSleep } from '../../core/base/timeout.js';
 import { createSolanaUserDecryptDeadline } from '../userDecrypt/deadline.js';
 import { verifySolanaUserDecryptPlaintexts } from '../userDecrypt/response.js';
 import { solanaPublicDecryptExtraData } from '../actions/publicDecryptCertificate.js';
@@ -64,78 +65,79 @@ export function cleartextUserDecryptExecution(
   readLeafProofs: SolanaLeafProofReader,
 ): SolanaUserDecryptExecution {
   const programAddress = solanaHostProgram(chain);
-  const readAccounts = hostAccountsReader(rpc);
   return async ({ session, entries, attempts, options }) => {
     const { fields, signature } = session.signedPermit;
     // The caller's timeout and abort signal bound the whole run, as on the relayer path.
     const deadline = createSolanaUserDecryptDeadline({ url: `cleartext host ${programAddress}`, options });
     const transport: SolanaUserDecryptTransport<readonly SolanaUserDecryptPlaintext[]> = {
-      async submit() {
-        deadline.throwIfAbortedOrExpired();
-        // Each attempt is judged against the host as it is then, as the Connector rechecks the KMS
-        // context on every attempt.
-        const host = await fetchHostDecryptionState(rpc, programAddress, fields.kmsRouting.kmsContextId);
-        assertTrustMatchesHost(host, trust, fields.kmsRouting.kmsContextId);
+      // The deadline ends an attempt stalled on a read, as the relayer's own timeout would.
+      submit: () =>
+        deadline.bound(async (signal) => {
+          const readAccounts = hostAccountsReader(rpc, signal);
+          // Each attempt is judged against the host as it is then, as the Connector rechecks the KMS
+          // context on every attempt.
+          const host = await fetchHostDecryptionState(rpc, programAddress, fields.kmsRouting.kmsContextId, signal);
+          assertTrustMatchesHost(host, trust, fields.kmsRouting.kmsContextId);
 
-        // The relayer, when the request is posted: the signature over the chain the handles name,
-        // which admission made the permit's, then that chain.
-        try {
-          verifySolanaPermitSignature(fields, signature);
-        } catch (error) {
-          const message = `the permit signature does not verify: ${String(error)}`;
-          return { ok: false, rejection: { kind: 'refused', label: 'validation_failed', message } };
-        }
-        if (fields.chainId !== host.config.chainId) {
-          const message = `the handles are on host chain ${fields.chainId}; this host is chain ${host.config.chainId}`;
-          return { ok: false, rejection: { kind: 'refused', label: 'host_chain_id_not_supported', message } };
-        }
-        // The relayer's pre-check, before it spends a gateway transaction.
-        const delegationRefusal = await solanaRelayerDelegationRefusal({
-          programAddress,
-          fields,
-          entries,
-          readAccounts,
-        });
-        if (delegationRefusal !== undefined) {
-          return {
-            ok: false,
-            rejection: { kind: 'failed', label: 'not_allowed_on_host_acl', message: delegationRefusal },
-          };
-        }
-        // The gateway reverts a request outside its window, and the relayer reports the revert as its own error.
-        const now = BigInt(Math.floor(Date.now() / 1000));
-        const end = fields.startTimestamp + fields.durationSeconds;
-        if (fields.startTimestamp > now || end < now) {
-          const message = `the gateway refuses the window [${fields.startTimestamp}, ${end}] at ${now}`;
-          return { ok: false, rejection: { kind: 'failed', label: 'internal_server_error', message } };
-        }
+          // The relayer, when the request is posted: the signature over the chain the handles name,
+          // which admission made the permit's, then that chain.
+          try {
+            verifySolanaPermitSignature(fields, signature);
+          } catch (error) {
+            const message = `the permit signature does not verify: ${String(error)}`;
+            return { ok: false, rejection: { kind: 'refused', label: 'validation_failed', message } };
+          }
+          if (fields.chainId !== host.config.chainId) {
+            const message = `the handles are on host chain ${fields.chainId}; this host is chain ${host.config.chainId}`;
+            return { ok: false, rejection: { kind: 'refused', label: 'host_chain_id_not_supported', message } };
+          }
+          // The relayer's pre-check, before it spends a gateway transaction.
+          const delegationRefusal = await solanaRelayerDelegationRefusal({
+            programAddress,
+            fields,
+            entries,
+            readAccounts,
+          });
+          if (delegationRefusal !== undefined) {
+            return {
+              ok: false,
+              rejection: { kind: 'failed', label: 'not_allowed_on_host_acl', message: delegationRefusal },
+            };
+          }
+          // The gateway reverts a request outside its window, and the relayer reports the revert as its own error.
+          const now = BigInt(Math.floor(Date.now() / 1000));
+          const end = fields.startTimestamp + fields.durationSeconds;
+          if (fields.startTimestamp > now || end < now) {
+            const message = `the gateway refuses the window [${fields.startTimestamp}, ${end}] at ${now}`;
+            return { ok: false, rejection: { kind: 'failed', label: 'internal_server_error', message } };
+          }
 
-        // The Connector.
-        if (host.context.destroyed) {
-          neverAnswered(
-            'KmsContextDestroyed',
-            `KMS context ${bytesToHex(fields.kmsRouting.kmsContextId)} is destroyed`,
+          // The Connector.
+          if (host.context.destroyed) {
+            neverAnswered(
+              'KmsContextDestroyed',
+              `KMS context ${bytesToHex(fields.kmsRouting.kmsContextId)} is destroyed`,
+            );
+          }
+          const verdict = await judgeSolanaUserDecryption({
+            programAddress,
+            now,
+            fields,
+            signature,
+            entries,
+            readAccounts,
+            readLeafProofs,
+          });
+          const rejection = cleartextUserDecryptRejection(verdict);
+          if (rejection !== undefined) return { ok: false, rejection };
+          const plaintexts = await Promise.all(
+            entries.map(async (entry) => ({
+              bytes: await fetchCleartextStoreValue(rpc, programAddress, entry.encryptedStore, entry.handle, signal),
+              fheTypeId: bytes32ToHandle(asBytes32(entry.handle)).fheTypeId,
+            })),
           );
-        }
-        const verdict = await judgeSolanaUserDecryption({
-          programAddress,
-          now,
-          fields,
-          signature,
-          entries,
-          readAccounts,
-          readLeafProofs,
-        });
-        const rejection = cleartextUserDecryptRejection(verdict);
-        if (rejection !== undefined) return { ok: false, rejection };
-        const plaintexts = await Promise.all(
-          entries.map(async (entry) => ({
-            bytes: await fetchCleartextStoreValue(rpc, programAddress, entry.encryptedStore, entry.handle),
-            fheTypeId: bytes32ToHandle(asBytes32(entry.handle)).fheTypeId,
-          })),
-        );
-        return { ok: true, response: plaintexts };
-      },
+          return { ok: true, response: plaintexts };
+        }),
     };
     const { response } = await runSolanaUserDecrypt({
       signedPermit: session.signedPermit,
@@ -163,10 +165,12 @@ async function fetchHostDecryptionState(
   rpc: SolanaRpc,
   programAddress: Address,
   contextId: Uint8Array,
+  abortSignal?: AbortSignal,
 ): Promise<HostDecryptionState> {
+  const fetchConfig = { ...CONFIRMED, ...(abortSignal === undefined ? {} : { abortSignal }) };
   const [{ data: config }, { data: context }] = await Promise.all([
-    fetchHostConfig(rpc, (await findHostConfigPda({ programAddress }))[0], CONFIRMED),
-    fetchKmsContext(rpc, (await findKmsContextPda({ contextId }, { programAddress }))[0], CONFIRMED),
+    fetchHostConfig(rpc, (await findHostConfigPda({ programAddress }))[0], fetchConfig),
+    fetchKmsContext(rpc, (await findKmsContextPda({ contextId }, { programAddress }))[0], fetchConfig),
   ]);
   return { config, context };
 }
@@ -199,7 +203,7 @@ function assertTrustMatchesHost(
 
 /** One `getMultipleAccounts` read of the host accounts, at a slot no older than `minContextSlot`. */
 const hostAccountsReader =
-  (rpc: SolanaRpc): SolanaHostAccountsReader =>
+  (rpc: SolanaRpc, abortSignal?: AbortSignal): SolanaHostAccountsReader =>
   async (keys, minContextSlot) => {
     const { context, value } = await rpc
       .getMultipleAccounts(keys, {
@@ -207,7 +211,7 @@ const hostAccountsReader =
         encoding: 'base64',
         ...(minContextSlot === undefined ? {} : { minContextSlot }),
       })
-      .send();
+      .send(abortSignal === undefined ? {} : { abortSignal });
     if (value.length !== keys.length) {
       throw new Error(`getMultipleAccounts returned ${value.length} accounts for ${keys.length} keys`);
     }
@@ -246,14 +250,15 @@ export function cleartextPublicDecryptCertifier(
   readLeafProofs: SolanaLeafProofReader,
 ): SolanaPublicDecryptCertifier {
   const programAddress = solanaHostProgram(chain);
-  const readAccounts = hostAccountsReader(rpc);
   return async (parameters) => {
+    const signal = parameters.options?.signal;
+    const readAccounts = hostAccountsReader(rpc, signal);
     const handle = toFhevmHandle(parameters.handle);
     const handleBytes = hexToBytes(handle.bytes32Hex);
     const encryptedStore = getAddressDecoder().decode(parameters.encryptedStore);
     // The Connector retries a failure a later attempt may clear, such as a leaf record behind the store.
     for (let attempt = 1; ; attempt += 1) {
-      parameters.options?.signal?.throwIfAborted();
+      signal?.throwIfAborted();
       const verdict = await judgeSolanaPublicDecryption({
         programAddress,
         handles: [{ handle: handleBytes, encryptedStore }],
@@ -264,10 +269,16 @@ export function cleartextPublicDecryptCertifier(
       if (!CONNECTOR_FAILURE_RECOVERABLE[verdict.failure] || attempt === PUBLIC_DECRYPT_ATTEMPTS) {
         throw new Error(`the KMS Connector refuses to decrypt (${verdict.failure}): ${verdict.message}`);
       }
-      await new Promise((resolve) => setTimeout(resolve, PUBLIC_DECRYPT_RETRY_MS));
+      await abortableSleep(PUBLIC_DECRYPT_RETRY_MS, signal);
     }
-    const cleartext = await fetchCleartextStoreValue(rpc, programAddress, parameters.encryptedStore, handleBytes);
-    const { config, context } = await fetchHostDecryptionState(rpc, programAddress, parameters.contextId);
+    const cleartext = await fetchCleartextStoreValue(
+      rpc,
+      programAddress,
+      parameters.encryptedStore,
+      handleBytes,
+      signal,
+    );
+    const { config, context } = await fetchHostDecryptionState(rpc, programAddress, parameters.contextId, signal);
     const extraData = solanaPublicDecryptExtraData(parameters.contextId);
     const digest = publicDecryptDigest(
       createKmsPublicDecryptEip712({

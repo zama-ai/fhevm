@@ -18,10 +18,10 @@ import type { SolanaLeafProofOutcome, SolanaLeafProofReader } from './leafProofs
 import { bytesToHex } from '../../core/base/bytes.js';
 import { decodeSolanaEncryptedStore, isSolanaEncryptedStoreData } from '../encryptedStore.js';
 import {
+  createRetainedMmr,
   historicalAccessLeafCommitment,
-  mmrBuildProof,
-  mmrPeaksFromLeaves,
   publicDecryptLeafCommitment,
+  type RetainedMmr,
 } from '../proof.js';
 import {
   FHE_EXECUTE_DISCRIMINATOR,
@@ -45,8 +45,7 @@ type HostInstruction = {
 /** One store's sealed leaves, as far as `newest`, the newest of its transactions read so far. */
 type StoreRecord = {
   newest: Signature | undefined;
-  /** The leaf commitments, in append order. */
-  readonly leaves: Uint8Array[];
+  readonly tree: RetainedMmr;
   /** The first leaf of each `(handle, key)` or public `handle`, as the listener answers. */
   readonly firstLeaf: Map<string, number>;
 };
@@ -97,15 +96,15 @@ export function createSolanaLeafRecord(rpc: SolanaRpc, programAddress: Address):
 
     const record = records.get(encryptedStore) ?? {
       newest: undefined,
-      leaves: [],
+      tree: createRetainedMmr(),
       firstLeaf: new Map(),
     };
     records.set(encryptedStore, record);
     const covered = Number(live.leafCount);
     try {
       await extend(record, encryptedStore, covered);
-      if (record.leaves.length >= covered) {
-        const peaks = mmrPeaksFromLeaves(record.leaves.slice(0, covered)).map(bytesToHex);
+      if (record.tree.leafCount() >= covered) {
+        const peaks = record.tree.peaks(covered).map(bytesToHex);
         if (peaks.length !== live.peaks.length || peaks.some((peak, index) => peak !== bytesToHex(live.peaks[index]))) {
           throw new Error(`the leaves rebuilt for ${encryptedStore} do not match its peaks at leaf count ${covered}`);
         }
@@ -114,7 +113,7 @@ export function createSolanaLeafRecord(rpc: SolanaRpc, programAddress: Address):
       records.delete(encryptedStore);
       throw error;
     }
-    return { record, leafCount: record.leaves.length };
+    return { record, leafCount: record.tree.leafCount() };
   };
 
   /**
@@ -124,7 +123,7 @@ export function createSolanaLeafRecord(rpc: SolanaRpc, programAddress: Address):
   const extend = async (record: StoreRecord, encryptedStore: Address, covered: number): Promise<void> => {
     const { newest, successful } = await storeSignatures(rpc, encryptedStore, record.newest);
     if (newest === undefined) return;
-    const sealed = record.leaves.length;
+    const sealed = record.tree.leafCount();
     // Each write carries the leaf count it appended at, so its leaves land at their position
     // whatever order the RPC lists transactions in.
     const appended: Array<SolanaStoreHistoryEvent | undefined> = [];
@@ -151,7 +150,7 @@ export function createSolanaLeafRecord(rpc: SolanaRpc, programAddress: Address):
     run.forEach((event, offset) => {
       const index = sealed + offset;
       const key = event.kind === 'allowed' ? event.key : undefined;
-      record.leaves.push(
+      record.tree.append(
         key === undefined
           ? publicDecryptLeafCommitment(storeBytes, BigInt(index), event.handle)
           : historicalAccessLeafCommitment(storeBytes, BigInt(index), event.handle, key),
@@ -184,9 +183,12 @@ export function createSolanaLeafRecord(rpc: SolanaRpc, programAddress: Address):
       if (leafIndex === undefined || leafIndex >= leafCount) {
         return { status: 'notFound', leafCount: BigInt(leafCount) };
       }
-      const proof = mmrBuildProof(record.leaves.slice(0, leafCount), BigInt(leafIndex));
-      if (proof === undefined) throw new Error(`leaf ${leafIndex} is not among the ${leafCount} it was found in`);
-      return { status: 'found', leafIndex: BigInt(leafIndex), leafCount: BigInt(leafCount), siblings: proof.siblings };
+      return {
+        status: 'found',
+        leafIndex: BigInt(leafIndex),
+        leafCount: BigInt(leafCount),
+        siblings: record.tree.proof(leafIndex, leafCount).siblings,
+      };
     });
   };
 }
@@ -271,7 +273,6 @@ async function hostInstructions(
   const { message } = transaction.transaction;
   const loaded = transaction.meta?.loadedAddresses;
   const keys = [...message.accountKeys, ...(loaded?.writable ?? []), ...(loaded?.readonly ?? [])];
-  const roles = transactionRoles(message.header, message.accountKeys.length, loaded?.writable.length ?? 0);
   const base58 = getBase58Encoder();
   const resolve = (instruction: {
     readonly programIdIndex: number;
@@ -285,7 +286,8 @@ async function hostInstructions(
       accounts: instruction.accounts.map((index) => {
         const key = keys[index];
         if (key === undefined) throw new Error(`transaction ${signature} names account ${index} it does not load`);
-        return { address: key, role: roles(index) };
+        // The parsers read account positions, never roles.
+        return { address: key, role: AccountRole.READONLY };
       }),
     };
   };
@@ -297,33 +299,6 @@ async function hostInstructions(
         .flatMap((inner) => inner.instructions),
     ].flatMap((candidate) => resolve(candidate) ?? []),
   );
-}
-
-/**
- * The role of each account in a transaction, by its index in the static keys followed by the
- * writable and readonly lookup-table keys. An inner instruction may hold an account with fewer
- * privileges than the transaction grants it; the parsers read positions, never roles.
- */
-function transactionRoles(
-  header: {
-    readonly numRequiredSignatures: number;
-    readonly numReadonlySignedAccounts: number;
-    readonly numReadonlyUnsignedAccounts: number;
-  },
-  staticCount: number,
-  loadedWritableCount: number,
-): (index: number) => AccountRole {
-  return (index) => {
-    if (index < header.numRequiredSignatures) {
-      return index < header.numRequiredSignatures - header.numReadonlySignedAccounts
-        ? AccountRole.WRITABLE_SIGNER
-        : AccountRole.READONLY_SIGNER;
-    }
-    if (index < staticCount) {
-      return index < staticCount - header.numReadonlyUnsignedAccounts ? AccountRole.WRITABLE : AccountRole.READONLY;
-    }
-    return index < staticCount + loadedWritableCount ? AccountRole.WRITABLE : AccountRole.READONLY;
-  };
 }
 
 /**

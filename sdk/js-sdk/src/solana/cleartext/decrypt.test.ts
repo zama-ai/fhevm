@@ -192,13 +192,28 @@ describe('cleartextUserDecryptExecution', () => {
   // settles on the real clock, so the wait below yields real time as well as fake.
   const realSetTimeout = globalThis.setTimeout;
 
-  /** Runs until the retry loop waits: its backoff is then the one pending timer. */
-  const untilBackoff = async () => {
-    for (let step = 0; vi.getTimerCount() === 0; step += 1) {
-      if (step === 5_000) throw new Error('the run never reached its backoff');
-      await vi.advanceTimersByTimeAsync(0);
+  /** Runs, without advancing the fake clock, until `reached` holds. */
+  const until = async (reached: () => boolean) => {
+    for (let step = 0; !reached(); step += 1) {
+      if (step === 5_000) throw new Error('the run never got there');
       await new Promise((resolve) => realSetTimeout(resolve, 1));
     }
+  };
+
+  /** Runs until the first attempt has its verdict and the retry loop waits on its backoff. */
+  const untilBackoff = async () => {
+    await until(() => vi.mocked(authorization.judgeSolanaUserDecryption).mock.calls.length > 0);
+    await new Promise((resolve) => realSetTimeout(resolve, 1));
+  };
+
+  /** A read that never answers, keeping the signal it was given. */
+  const stalled = () => {
+    const signals: (AbortSignal | undefined)[] = [];
+    const read = (_rpc: unknown, _address: unknown, config?: { abortSignal?: AbortSignal }) => {
+      signals.push(config?.abortSignal);
+      return new Promise<never>(() => undefined);
+    };
+    return { signals, read };
   };
 
   /** The first attempt finds the leaf record one leaf behind the store; later ones find it caught up. */
@@ -278,6 +293,29 @@ describe('cleartextUserDecryptExecution', () => {
     controller.abort();
     expect(await outcome).toBeInstanceOf(RelayerAbortError);
     expect(kmsContextAccount.fetchKmsContext).toHaveBeenCalledTimes(1);
+  });
+
+  it('ends an attempt stalled on a host read at the caller timeout, and aborts the read', async () => {
+    const { signals, read } = stalled();
+    vi.mocked(kmsContextAccount.fetchKmsContext).mockImplementation(read);
+    const outcome = execute({ timeout: 1_000 }).catch((error: unknown) => error);
+    await until(() => signals.length > 0);
+    await vi.advanceTimersByTimeAsync(1_000);
+    expect(await outcome).toBeInstanceOf(RelayerTimeoutError);
+    expect(signals[0]?.aborted).toBe(true);
+  });
+
+  it('ends an attempt waiting on the shared leaf record when the signal aborts, reporting it once', async () => {
+    // The leaf record is shared by every caller, so the wait on it ends for this one only.
+    vi.mocked(authorization.judgeSolanaUserDecryption).mockReturnValue(new Promise(() => undefined));
+    const controller = new AbortController();
+    const onProgress = vi.fn();
+    const outcome = execute({ signal: controller.signal, onProgress } as never).catch((error: unknown) => error);
+    await until(() => vi.mocked(authorization.judgeSolanaUserDecryption).mock.calls.length > 0);
+    controller.abort();
+    expect(await outcome).toBeInstanceOf(RelayerAbortError);
+    await vi.runAllTimersAsync();
+    expect(onProgress.mock.calls.filter(([progress]) => progress.type === 'abort')).toHaveLength(1);
   });
 
   it('gives up at the caller timeout, backoff included', async () => {
