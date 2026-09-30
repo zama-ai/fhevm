@@ -1,12 +1,13 @@
 // The KMS's part of a decryption, played by the cleartext client: plaintexts come from the accounts
 // the cleartext host wrote. Everything around them runs as in production: the permit and request
 // admission of a user decryption, and the on-chain checks of a public-decrypt certificate, which
-// the client signs with the registered cleartext KMS key.
+// the client signs with the registered cleartext KMS key. A public decryption is refused, as the KMS
+// Connector refuses it, unless the store's history made the handle public.
 //
-// What this does not reproduce is the KMS Connector's authorization: a cleartext user decryption
-// does not check the requester's allow on the handle, nor a public decryption that the handle was
-// made public. Scenarios that depend on a refusal run against the real stack.
-import { fetchEncodedAccount, type Address } from '@solana/kit';
+// What this does not reproduce is the Connector's user-decrypt authorization: a cleartext user
+// decryption does not check the requester's allow leaf or delegation on the handle. Scenarios that
+// depend on that refusal run against the real stack.
+import { fetchEncodedAccount, getAddressDecoder, type Address } from '@solana/kit';
 import type { FhevmSolanaChain } from '../../core/types/fhevmSolanaChain.js';
 import type { SolanaRpc } from '../encryptedStore.js';
 import type { SolanaUserDecryptExecution } from '../clients/decorators/permitDecrypt.js';
@@ -24,6 +25,7 @@ import { getHostConfigDecoder } from '../internal/generated/zamaHost/accounts/ho
 import { getKmsContextDecoder } from '../internal/generated/zamaHost/accounts/kmsContext.js';
 import { solanaHostProgram } from '../clients/createFhevmBaseClient.js';
 import { signAsCleartextParty } from './parties.js';
+import { fetchSolanaStoreHistory } from './storeHistory.js';
 import { fetchCleartextStoreValue } from './storeValues.js';
 
 ////////////////////////////////////////////////////////////////////////////////
@@ -60,18 +62,24 @@ export function cleartextUserDecryptExecution(rpc: SolanaRpc, chain: FhevmSolana
 }
 
 /**
- * Certifies the plaintext the host recorded for a handle, signed by the registered cleartext KMS
- * key under the certificate's context, for the on-chain verifier to check.
+ * Certifies the plaintext the host recorded for a handle made public, signed by the registered
+ * cleartext KMS key under the certificate's context, for the on-chain verifier to check.
  */
 export function cleartextPublicDecryptCertifier(rpc: SolanaRpc, chain: FhevmSolanaChain): SolanaPublicDecryptCertifier {
   const programAddress = solanaHostProgram(chain);
   return async (parameters) => {
     const handle = toFhevmHandle(parameters.handle);
+    const handleBytes = hexToBytes(handle.bytes32Hex);
+    const encryptedStore = getAddressDecoder().decode(parameters.encryptedStore);
+    const history = await fetchSolanaStoreHistory(rpc, encryptedStore, programAddress);
+    if (!history.some((event) => event.kind === 'markedPublic' && bytesToHex(event.handle) === handle.bytes32Hex)) {
+      throw new Error(`handle ${handle.bytes32Hex} was not made public in EncryptedStore ${encryptedStore}`);
+    }
     const cleartext = await fetchCleartextStoreValue(
       rpc,
       programAddress,
       parameters.encryptedStore,
-      hexToBytes(handle.bytes32Hex),
+      handleBytes,
     );
     const [config, context] = await Promise.all([
       fetchHostAccount(rpc, programAddress, (await findHostConfigPda({ programAddress }))[0], getHostConfigDecoder()),

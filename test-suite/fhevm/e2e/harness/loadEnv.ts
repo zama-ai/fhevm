@@ -25,7 +25,7 @@
 // Source "cleartext": the cleartext stack (`src/solana/cleartext-stack.ts`), a local validator
 // whose zama-host keeps every plaintext in its accounts. Selected with `SOLANA_E2E_SOURCE=cleartext`.
 // No relayer, gateway, coprocessor or KMS serves it (`protocolServices: false`), so the fields
-// naming those services are unused there.
+// naming those services are unused there; the stack serves leaf proofs itself.
 //
 // A second source (the confidential-vault demo-config JSON, #1760) plugs in here: it reads the
 // runtime artifact and calls `resolveEnv(overrides, "demo-config")` with a `Partial<TestEnvOverrides>`
@@ -195,6 +195,7 @@ const sourceFromEnv = (env: NodeJS.ProcessEnv): "local" | "devnet" | "cleartext"
 const CLEARTEXT_DEFAULTS = {
   rpcUrl: CLEARTEXT_SOLANA_ENDPOINTS.validatorRpc,
   wsUrl: CLEARTEXT_SOLANA_ENDPOINTS.validatorWs,
+  leafProofUrl: CLEARTEXT_SOLANA_ENDPOINTS.leafProof,
   deployerKeypairPath: solanaCleartextDeployerPath,
 } as const;
 
