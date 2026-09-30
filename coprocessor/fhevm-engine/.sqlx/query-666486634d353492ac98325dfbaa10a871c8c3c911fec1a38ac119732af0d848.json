@@ -1,0 +1,18 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n        UPDATE drifted_handle\n           SET next_retry_at = NOW() + ($5::BIGINT * INTERVAL '1 second')\n         WHERE consensus_epoch = $1\n           AND coprocessor_context_id = $2\n           AND host_chain_id = $3\n           AND handle = $4\n           AND healed_at IS NULL\n        ",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Text",
+        "Bytea",
+        "Int8",
+        "Bytea",
+        "Int8"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "666486634d353492ac98325dfbaa10a871c8c3c911fec1a38ac119732af0d848"
+}

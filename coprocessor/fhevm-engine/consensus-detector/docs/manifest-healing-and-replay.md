@@ -1,7 +1,11 @@
 # Manifest healing and replay
 
 Status: containment propagation, TFHE scheduling/result checks, and healing-state
-fields are implemented. Healing workers remain planned.
+fields are implemented. The healing worker downloads known-source ct64 and
+installs it locally. Inferred rows start with no target and no sources; a live
+attestation quorum pins both, then GETs. A digest mismatch HEADs the same way.
+A new quorum digest or an unavailable pinned target is counted and retried.
+SNS/publication repair remain planned.
 
 Healing is local emergency recovery. It prevents further ct64 contamination,
 replaces erroneous local ciphertexts with quorum-identical material, and lets
@@ -48,14 +52,22 @@ first runs and commits the optimistic scan, then acquires the exclusive
 `DRIFT_CONTAINMENT_BARRIER` in a fresh transaction, repeats the scan, and commits.
 It returns inferred inserts and contained findings. If the
 protected pass fails, optimistic findings remain committed with containment
-still pending.
+still pending. Waiting for the barrier is bounded by a 60 s `lock_timeout`; the
+protected scan itself is not. New batches queue behind the exclusive request, so
+only a batch stuck past that bound times it out. The request then leaves the
+queue so other batches resume, findings stay uncontained until the next
+verification retries, and `coprocessor_containment_barrier_lock_timeout_total`
+counts the event: a stuck TFHE batch while ct64 drift is uncontained. Healing
+still proceeds after the containment timeout.
 After each committed verification attempt, the verifier spawns containment
 when uncontained ct64 findings remain, without awaiting it. No startup scan or periodic containment worker runs.
 The detached task logs errors; they do not change the committed verification
 result or consume another verification attempt. TFHE batches participate in the shared barrier and check containment before
 scheduling and result persistence. Freeze records `tx_unlock_potential`, an EMA
-of the per-batch unlock share of each drifted handle. Evidence collection and
-local repair are not implemented.
+of the per-batch unlock share of each drifted handle. Verification stores the
+quorum group's pinned registry S3 URLs on `peer_sources` and records the
+registry pin plus quorum ct64 statements on `target_evidence`. A matching
+download installs the ct64 and sets `healed_at` in one transaction.
 
 An interrupted or failed call can leave additional contaminated computations.
 This is an accepted containment delay: all outputs remain subject to manifest
@@ -63,11 +75,19 @@ verification. At the next verification in the same epoch, containment processes
 the pending findings together with any new ones. Until then, further contaminated
 outputs can be computed and remain subject to verification.
 
-Inferred findings are recorded in the consuming execution epoch. Unhealed ct64
-from the other stack contaminates this one only when this stack has no stored
-ciphertext for the handle. A healthy independently recalculated copy of the
-same handle is not frozen by the other stack's finding. Each pass always
-reads both available execution stacks (`public` and any `gcs-*`) block by block.
+Inferred findings are recorded in the consuming execution epoch. A finding in
+the stack's own epoch always contaminates it. A Green schema seeded with Blue's
+epoch runs the same computation, so Blue's findings cover it too. Otherwise a
+finding contaminates a stack only when that stack reads the drifted ciphertext:
+the finding's epoch lives in the stack's schema (`public` holds Blue's epoch and
+every earlier epoch merged at cutover), or it lives in `public` and Green has no
+stored copy of its own. `public` never reads Green, so drift on Green never
+contaminates Blue, and a failed epoch's findings contaminate no stack. The
+tfhe-worker freeze filter applies the same rule, so a stack freezes only work
+that reads a ciphertext it would read as drifted. Both stacks
+run the same graph and compute their own intermediates, so walking through an
+unstored intermediate taints only the walking stack. Each pass reads both
+available execution stacks (`public` and any `gcs-*`) block by block.
 A newly inferred output on one stack is in the in-memory drifted set for later
 events on either stack, regardless of which stack initiated containment.
 Findings keep their owning epoch; imported roots are not duplicated merely to
@@ -88,9 +108,11 @@ ct64-repair reason (ct64 mismatch, missing, error, or uncomputed here). It does 
 promise a downloadable source. Ct128-only, peer-side, and metadata-only reasons
 cannot enable ct64 replacement. Inferred outputs use `ct64_mismatch`; obtaining a
 target does not change their origin. A later verified observation of the same
-handle COALESCE-pins `target_ct64_digest` onto that inferred row and does not
-insert a second finding. Repeated observations do not overwrite a
-pinned healing candidate's target, claim, priority, or origin.
+handle COALESCE-pins the quorum descriptor (`quorum_ct64_digest`,
+`quorum_keyset_id`, and `quorum_ct128_*`), sources, and evidence onto that
+inferred row (`ON CONFLICT` on handle identity) and does not insert a second
+finding. Repeated observations do not overwrite a pinned healing candidate's
+target, claim, priority, or origin.
 
 An operation that failed while depending on drifted material is also recorded as
 `inferred` with reason `ct64_mismatch`, and `local_present = false` when no local
@@ -116,9 +138,74 @@ TFHE scheduling and result writing participate in the same query and lock
 contract through the shared barrier key and their frozen inventory.
 The worker-side integration uses the shared barrier and the frozen inventory. The containment
 directory holds the propagation functions. The healing worker starts with publication and
-verification: it LISTENs on `event_healing_work` and polls every 30s, then claims due
-`can_be_healed` rows and downloads matching ct64 from peer buckets. Local installation
-is not implemented yet.
+verification: it LISTENs on `event_healing_work` and polls on
+`--manifest-healing-poll-interval` (default **30s**), then picks up to
+`--manifest-healing-batch-size` (default **8**) due `can_be_healed` rows and
+downloads matching ct64 from peer buckets concurrently. A `ct64_mismatch` row is
+due once `is_contained` is set: installing it removes the root from the
+containment scan, so its already-computed descendants should be marked first.
+Containment only reduces propagation, so this wait is bounded: after
+`--manifest-healing-containment-timeout` (default **5m**) since `detected_at`, an
+uncontained row is healed anyway. Descendants the containment missed are then
+detected by the verification of their own blocks, and
+`coprocessor_ct64_healing_uncontained_total` counts these heals.
+Any stack's healer takes findings of every epoch that has a schema: a live
+stack's epoch installs into that stack's schema, and `initial` or `succeeded`
+epochs in `consensus_epoch_history` install into `public`, where cutover merged
+their ciphertexts. A cutover therefore does not strand the previous epoch's
+findings. Failed epochs have no schema and are not healed. Row locks and the
+`healed_at IS NULL` install guard coordinate the healers of both stacks.
+A cutover replaces the previous epoch's in-window ciphertexts in `public` with
+the new epoch's, so an older finding on such a block describes bytes that are
+gone. `public.drift_superseded` decides it when the finding is read: another
+`succeeded` epoch has a window on the finding's chain starting at or before its
+block, and after the start of the finding's own epoch there. Such a finding
+freezes nothing, is no containment root, and is never installed: healing marks
+it and its unhealed siblings `superseded_at`, and the install checks again under
+the cutover lock, so a cutover landing during the download writes nothing. It
+is decided at read time, so a finding committed just after the cutover is
+covered too.
+S3 attestations carry no epoch, so a live attestation quorum sets a target only
+where the finding's epoch uploaded the objects. `upload_start_block` on
+`consensus_epoch_block_window` is set at cutover, per chain, to one past the
+highest block known then. While it is NULL (dry run, Green's uploader parked)
+an unpinned finding waits without spending its budget; below it the objects are
+Blue's and the attempt is charged; `legacy` has no window and uploads from
+block 0. That bound is only local: a peer that cuts over later still uploads
+Blue's bytes for a few blocks above it. So each vote also carries the epoch of
+the stack that uploaded it: sns-worker writes the `consensus-epoch` S3 metadata
+key (`S3_METADATA_CONSENSUS_EPOCH_KEY`), and healing counts a vote only when it
+names the finding's epoch. An object without it predates the tag and counts as
+`legacy`. The tag is not signed; it can only exclude a vote, whose attestation
+is still verified. Pinned targets are unaffected and already reject bytes of
+another digest.
+The handle is the unit of repair. A reorg can leave several findings for one
+handle in different blocks, and a single install heals them all. Only active
+siblings count: those with a healable reason that are unhealed and not
+abandoned. A sibling without a target adopts the single target of the other
+active siblings, and a target pinned from the live attestation quorum is
+written on every sibling still without one. An abandoned or unhealable
+sibling, such as `ct128_mismatch`, no longer blocks its handle. Only two
+active siblings pinned to different digests do: a pinned target is never
+rewritten, so the handle stays unhealed and frozen. Each pass counts these
+handles in `coprocessor_ct64_healing_conflicting_targets` and logs one of them.
+`missing_here`, `error_here`, and `uncomputed_here` rows have no wrong local ct64
+for consumers to have read and are due without containment. Marking a row
+contained wakes the worker. A matching GET writes `ciphertexts` and `healed_at`
+in the same transaction, and completes the handle's pending or errored
+`computations` row with its error cleared, as the TFHE upload path does when it
+stores bytes. Consumers that failed on that input report their own `error_here`
+difference and are healed the same way. A pass that
+installs at least one handle NOTIFYs `work_available` once so idle TFHE
+picks unfrozen dependents without waiting for its poll.
+A failed attempt is retried 30s later and counted in `heal_attempts` on the
+row and its unhealed same-target siblings. After
+`--manifest-healing-max-attempts` (default **120**, about one hour), or at once
+for a finding that can never heal (invalid context id or handle type), the row
+gets `heal_abandoned_at` and is no longer picked; its dependents stay frozen.
+Resetting `heal_attempts` and `heal_abandoned_at` heals it again.
+`coprocessor_ct64_healing_attempts_total` counts attempts by `outcome`:
+`success`, `transient_failure` (retried) and `terminal_failure` (abandoned).
 
 ## Containment
 
@@ -404,6 +491,16 @@ and retry with backoff. Data loss, publication defects, or malicious behavior ma
 explain this; healing cannot reinterpret verification. Any target change requires
 a separate reconciliation decision. No-quorum inferred drift remains blocked
 until investigation and a fix permit repair or selective replay.
+
+A `HandleBridged` destination (`handle_bridged_events` in the finding's block
+and epoch schema) is a bit-for-bit copy of its source, and the bridge worker
+reuses the source's S3 objects: peers publish nothing under the destination
+key. Healing therefore tries the source first, `ct64/{src_handle}` from the
+pinned sources, then from a live attestation quorum on the source handle, and
+installs the bytes under the destination. Only when the source does not supply
+the target does it take the normal path on `ct64/{dst_handle}`, where peers
+serve a destination that a fallback grant materialized. One attempt is charged
+per pass either way.
 
 ### Install locally and resume
 
