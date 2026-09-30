@@ -43,6 +43,7 @@ for program in "$@"; do
     output_dir=$(mktemp -d)
     features=$(features_of zama_host)
     anchor build --ignore-keys --no-idl -p zama_host -- --sbf-out-dir "$output_dir" --features "${features:+$features,}cleartext" -- "${cargo_config[@]}"
+    mkdir -p target/deploy
     mv "$output_dir/zama_host.so" target/deploy/zama_host_cleartext.so
     rm -r "$output_dir"
     continue
