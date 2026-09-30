@@ -753,6 +753,172 @@ mod operand_sources {
     }
 }
 
+/// The operator cases of the EVM e2e (`library-solidity/codegen/overloads/e2e.json`), which run
+/// against the real coprocessor, so their outputs are what tfhe-rs computes. Every case on operand
+/// types the Solana host takes must come out the same here.
+mod evm_e2e_cases {
+    use super::*;
+    use std::collections::{BTreeMap, BTreeSet};
+
+    const CASES: &str = include_str!("../../../library-solidity/codegen/overloads/e2e.json");
+
+    #[derive(serde::Deserialize)]
+    struct Case {
+        inputs: Vec<String>,
+        output: serde_json::Value,
+    }
+
+    /// The FHE type of an operand name, and whether it is encrypted; `None` for a type Solana
+    /// does not ship (`euint256`).
+    fn operand(name: &str) -> Option<(u8, bool)> {
+        let (encrypted, plain) = match name.strip_prefix('e') {
+            Some(plain) => (true, plain),
+            None => (false, name),
+        };
+        let fhe_type = match plain {
+            "uint8" => 2,
+            "uint16" => 3,
+            "uint32" => 4,
+            "uint64" => 5,
+            "uint128" => 6,
+            _ => return None,
+        };
+        Some((fhe_type, encrypted))
+    }
+
+    fn binary_op(name: &str) -> FheBinaryOpCode {
+        use FheBinaryOpCode::*;
+        match name {
+            "add" => Add,
+            "sub" => Sub,
+            "mul" => Mul,
+            "div" => Div,
+            "rem" => Rem,
+            "and" => And,
+            "or" => Or,
+            "xor" => Xor,
+            "shl" => Shl,
+            "shr" => Shr,
+            "rotl" => Rotl,
+            "rotr" => Rotr,
+            "eq" => Eq,
+            "ne" => Ne,
+            "ge" => Ge,
+            "gt" => Gt,
+            "le" => Le,
+            "lt" => Lt,
+            "min" => Min,
+            "max" => Max,
+            other => panic!("e2e.json names an operator this test does not map: {other}"),
+        }
+    }
+
+    fn be128(value: u128) -> [u8; 32] {
+        let mut bytes = [0; 32];
+        bytes[16..].copy_from_slice(&value.to_be_bytes());
+        bytes
+    }
+
+    fn expected(output: &serde_json::Value) -> u128 {
+        match output {
+            serde_json::Value::Bool(bit) => u128::from(*bit),
+            serde_json::Value::String(number) => number.parse().unwrap(),
+            other => panic!("unexpected e2e.json output {other}"),
+        }
+    }
+
+    #[test]
+    fn the_evaluator_agrees_with_the_evm_e2e_cases() {
+        let overloads: BTreeMap<String, Vec<Case>> = serde_json::from_str(CASES).unwrap();
+        let mut checked = BTreeSet::new();
+        for (overload, cases) in &overloads {
+            let parts: Vec<&str> = overload.split('_').collect();
+            if parts[1..].iter().any(|name| operand(name).is_none()) {
+                continue;
+            }
+            for case in cases {
+                let inputs: Vec<u128> = case
+                    .inputs
+                    .iter()
+                    .map(|input| input.parse().unwrap())
+                    .collect();
+                let want = expected(&case.output);
+                let (step, operands, output_type) = match parts.as_slice() {
+                    [op @ ("not" | "neg"), name] => {
+                        let Some((fhe_type, true)) = operand(name) else {
+                            continue;
+                        };
+                        let op = if *op == "not" {
+                            FheUnaryOpCode::Not
+                        } else {
+                            FheUnaryOpCode::Neg
+                        };
+                        let input = handle(1, fhe_type);
+                        let step = FheExecuteStep::Unary {
+                            op,
+                            operand: persistent(input),
+                            output_fhe_type: fhe_type,
+                        };
+                        (step, HashMap::from([(input, inputs[0])]), fhe_type)
+                    }
+                    [op, lhs, rhs] => {
+                        // The Solana host takes an encrypted lhs and an rhs of the same type,
+                        // encrypted or scalar; the EVM library casts the other pairs first.
+                        let (Some((lhs_type, true)), Some((rhs_type, rhs_encrypted))) =
+                            (operand(lhs), operand(rhs))
+                        else {
+                            continue;
+                        };
+                        if lhs_type != rhs_type {
+                            continue;
+                        }
+                        let op = binary_op(op);
+                        let lhs_handle = handle(1, lhs_type);
+                        let mut operands = HashMap::from([(lhs_handle, inputs[0])]);
+                        let rhs = if rhs_encrypted {
+                            let rhs_handle = handle(2, rhs_type);
+                            operands.insert(rhs_handle, inputs[1]);
+                            persistent(rhs_handle)
+                        } else {
+                            scalar(be128(inputs[1]))
+                        };
+                        let output_type = match op {
+                            FheBinaryOpCode::Eq
+                            | FheBinaryOpCode::Ne
+                            | FheBinaryOpCode::Ge
+                            | FheBinaryOpCode::Gt
+                            | FheBinaryOpCode::Le
+                            | FheBinaryOpCode::Lt => 0,
+                            _ => lhs_type,
+                        };
+                        (
+                            binary(op, persistent(lhs_handle), rhs, output_type),
+                            operands,
+                            output_type,
+                        )
+                    }
+                    _ => panic!("unexpected e2e.json overload {overload}"),
+                };
+                let result = evaluate(&args(vec![step]), &operands)
+                    .unwrap_or_else(|error| panic!("{overload} {:?}: {error:?}", case.inputs));
+                assert_eq!(
+                    result,
+                    vec![Value::new(output_type, want).unwrap()],
+                    "{overload} {:?}",
+                    case.inputs
+                );
+                checked.insert(parts[0]);
+            }
+        }
+        // Every operator must keep at least one case, so the filter above cannot drop one silently.
+        let named: BTreeSet<&str> = overloads
+            .keys()
+            .map(|key| key.split('_').next().unwrap())
+            .collect();
+        assert_eq!(checked, named);
+    }
+}
+
 fn binary_ops() -> [FheBinaryOpCode; 20] {
     use FheBinaryOpCode::*;
     [
