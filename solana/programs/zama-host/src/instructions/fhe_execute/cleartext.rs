@@ -51,6 +51,11 @@ pub(super) fn record_execution<'info>(
     let results: &TransientStore = bytemuck::from_bytes(&data[8..TransientStore::SPACE]);
 
     for effect in &args.effects {
+        // As in production, an effect that only grants leaves its store untouched, and the store
+        // may be read-only.
+        if effect.slot.is_none() && effect.allow_indexes.is_empty() && !effect.make_public {
+            continue;
+        }
         let step = usize::from(effect.result.step_index);
         let handle = results
             .result(call_start + step)

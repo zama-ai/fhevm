@@ -52,6 +52,23 @@ pub fn open_transient_store<'info>(ctx: Context<'info, OpenTransientStore<'info>
         TransientStore::SPACE,
         &[TRANSIENT_SEED, payer.as_ref(), &[bump]],
     )?;
+    // The cleartext tail does not fit the 10 KiB an instruction may add to a new account, so the
+    // first execution appends it. Its rent is paid here so that append spends no transfer.
+    #[cfg(feature = "cleartext")]
+    {
+        let store = ctx.accounts.transient_store.to_account_info();
+        let rent = Rent::get()?.minimum_balance(crate::cleartext::layout::TRANSIENT_ACCOUNT_SIZE);
+        anchor_lang::system_program::transfer(
+            CpiContext::new(
+                ctx.accounts.system_program.key(),
+                anchor_lang::system_program::Transfer {
+                    from: ctx.accounts.payer.to_account_info(),
+                    to: store.clone(),
+                },
+            ),
+            rent.saturating_sub(store.lamports()),
+        )?;
+    }
     let loader = AccountLoader::<TransientStore>::try_from_unchecked(
         &crate::ID,
         &ctx.accounts.transient_store,

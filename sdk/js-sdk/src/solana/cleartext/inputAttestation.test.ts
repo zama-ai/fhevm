@@ -51,17 +51,15 @@ describe('cleartext input attestation', () => {
       ],
     });
     expect(bytesToHex(cleartextInputExtraData(proof))).toBe(
-      // c1 | bool | uint8 | uint64 | uint128
-      '0xc1' + '01' + '07' + '0000000000000190' + '80000000000000000000000000000005',
+      // bool | uint8 | uint64 | uint128
+      '0x' + '01' + '07' + '0000000000000190' + '80000000000000000000000000000005',
     );
   });
 
-  it('refuses inputs that exceed the extraData the host accepts', async () => {
-    const values = (count: number) => Array.from({ length: count }, () => ({ type: 'uint128', value: 1n }));
-    const fifteen = await client.generateZkProof({ ...identities, values: values(15) });
-    expect(cleartextInputExtraData(fifteen)).toHaveLength(241);
-    const sixteen = await client.generateZkProof({ ...identities, values: values(16) });
-    expect(() => cleartextInputExtraData(sixteen)).toThrow('the host accepts 256');
+  it('fits the largest input proof in the extraData the host accepts', async () => {
+    const values = Array.from({ length: 16 }, () => ({ type: 'uint128', value: 1n }));
+    const largest = await client.generateZkProof({ ...identities, values });
+    expect(cleartextInputExtraData(largest)).toHaveLength(256);
   });
 
   it('refuses a proof that carries no plaintexts', () => {

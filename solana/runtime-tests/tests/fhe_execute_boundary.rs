@@ -12,6 +12,7 @@
 //! `bash scripts/update-cost-snapshots.sh`.
 
 use anchor_lang::prelude::system_program;
+use mollusk_svm::Mollusk;
 use solana_sdk::{account::Account, instruction::Instruction, pubkey::Pubkey};
 use std::collections::BTreeMap;
 use zama_host::encode::ExecutionDictionary;
@@ -89,17 +90,17 @@ struct SweptBoundary {
 /// binary search so it can assert the boundary premise itself: success must be a prefix of the
 /// range. A success after a failure would mean step count is not what governs this shape, and a
 /// recorded boundary would be meaningless.
-fn sweep_step_boundary(min_steps: usize, build: impl Fn(usize) -> ProbeCase) -> SweptBoundary {
+fn sweep_step_boundary(
+    svm: &Mollusk,
+    min_steps: usize,
+    build: impl Fn(usize) -> ProbeCase,
+) -> SweptBoundary {
     let mut last_ok: Option<(usize, Instruction, mollusk_svm::result::InstructionResult)> = None;
     let mut first_failure: Option<(usize, String)> = None;
     for steps in min_steps..=host::MAX_FHE_EXECUTION_STEPS {
         let case = build(steps);
-        let result = host_fixtures::check_host_instruction(
-            &mollusk(),
-            &case.instruction,
-            &case.accounts,
-            &[],
-        );
+        let result =
+            host_fixtures::check_host_instruction(svm, &case.instruction, &case.accounts, &[]);
         let axis = failure_axis(&result);
         assert!(
             !axis.starts_with("other:"),
@@ -330,8 +331,9 @@ fn mature_updates_case(steps: usize, peak_count: u32, program: Pubkey) -> ProbeC
 }
 
 /// Every step consumes its own maximum-size verified input: an inline attestation covering
-/// `MAX_INPUT_ATTESTATION_HANDLES` handles with `MAX_INPUT_ATTESTATION_EXTRA_DATA` bytes of extra
-/// data, signed at the fixture threshold of one. Each attestation is decoded and re-verified
+/// `MAX_INPUT_ATTESTATION_HANDLES` `euint128` handles with `MAX_INPUT_ATTESTATION_EXTRA_DATA` bytes of
+/// extra data, which is exactly their plaintexts in the cleartext build, signed at the fixture
+/// threshold of one. Each attestation is decoded and re-verified
 /// (one secp256k1 recovery per signature) in-execution. A verified input binds to the
 /// application the execution proves, so the first step reads one persistent value of `program`
 /// to anchor it; every other operand is a scalar.
@@ -346,7 +348,7 @@ fn attestation_per_step_case(steps: usize, program: Pubkey) -> ProbeCase {
             coprocessor_threshold: 1,
             ..HostConfigParams::new(payer)
         });
-    let anchor_handle = handle_for_chain(0x8F, 5);
+    let anchor_handle = handle_for_chain(0x8F, 6);
     let (anchor_address, anchor_value) = new_state_with_slot(
         authority.app(scope),
         authority.key,
@@ -359,7 +361,7 @@ fn attestation_per_step_case(steps: usize, program: Pubkey) -> ProbeCase {
         .map(|step_index| {
             let ct_handles: Vec<[u8; 32]> = (0..host::MAX_INPUT_ATTESTATION_HANDLES)
                 .map(|position| {
-                    let mut handle = handle_for_chain(0x90 + step_index as u8, 5);
+                    let mut handle = handle_for_chain(0x90 + step_index as u8, 6);
                     // The host requires each covered handle to carry its own position.
                     handle[21] = position as u8;
                     handle
@@ -391,7 +393,7 @@ fn attestation_per_step_case(steps: usize, program: Pubkey) -> ProbeCase {
                     attestation: Box::new(attestation),
                 },
                 rhs,
-                output_fhe_type: 5,
+                output_fhe_type: 6,
             }
         })
         .collect();
@@ -706,7 +708,7 @@ fn cost_snapshot_boundary_sweeps() {
     let mut failures = Vec::new();
     for shape in boundary_shapes() {
         let outcome = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
-            let sweep = sweep_step_boundary(shape.min_steps, &shape.build);
+            let sweep = sweep_step_boundary(&mollusk(), shape.min_steps, &shape.build);
             assert_swept_boundary(shape.profile, &sweep);
             assert_wall_pin(shape.profile, &shape.pin, &sweep);
         }));
@@ -726,6 +728,38 @@ fn cost_snapshot_boundary_sweeps() {
         boundary_shapes().len(),
         failures.join("\n\n"),
     );
+}
+
+/// The cleartext host build stops every shape where the production build does, so a test on it
+/// neither refuses an execution production accepts nor accepts one production refuses: its
+/// evaluation and plaintext writes fit in the headroom the production walls leave.
+#[test]
+fn the_cleartext_build_stops_every_shape_at_the_production_wall() {
+    let (production, cleartext) = (mollusk(), zama_solana_test_kit::cleartext::host_svm());
+    let mismatches: Vec<String> = boundary_shapes()
+        .into_iter()
+        .filter_map(|shape| {
+            let expected = sweep_step_boundary(&production, shape.min_steps, &shape.build);
+            let actual = sweep_step_boundary(&cleartext, shape.min_steps, |steps| {
+                let mut case = (shape.build)(steps);
+                for (_, account) in &mut case.accounts {
+                    zama_solana_test_kit::cleartext::zero_fixture_store(account);
+                }
+                case
+            });
+            (actual.max_ok != expected.max_ok).then(|| {
+                format!(
+                    "{}: production runs {} steps ({} stops it), cleartext {} ({} stops it)",
+                    shape.profile,
+                    expected.max_ok,
+                    expected.limited_by,
+                    actual.max_ok,
+                    actual.limited_by
+                )
+            })
+        })
+        .collect();
+    assert!(mismatches.is_empty(), "{}", mismatches.join("\n"));
 }
 
 /// Prints every shape's full curve — CU, packet bytes, CPIs, and the failure axis per step

@@ -477,6 +477,16 @@ fn two_slots_share_history_and_stale_slot_writes_roll_back() {
 
 #[test]
 fn maximum_result_grants_fit_one_execution_and_leave_no_account() {
+    maximum_result_grants_fit(&host_svm());
+}
+
+/// The grants' store is read-only, as an execution that only grants may pass it.
+#[test]
+fn maximum_result_grants_fit_on_the_cleartext_build() {
+    maximum_result_grants_fit(&zama_solana_test_kit::cleartext::host_svm());
+}
+
+fn maximum_result_grants_fit(svm: &mollusk_svm::Mollusk) {
     let fixture = Fixture::new(0);
     let consumer = Fixture::new(0);
     let (config, config_account) = zama_solana_test_kit::host_config_account(
@@ -540,7 +550,7 @@ fn maximum_result_grants_fit_one_execution_and_leave_no_account() {
             AccountMeta::new_readonly(consumer.state, false),
         ],
     );
-    let result = host_svm().process_transaction_instructions(
+    let result = svm.process_transaction_instructions(
         &[fixture.open(), first.clone(), fixture.close()],
         &accounts,
     );
@@ -583,7 +593,7 @@ fn maximum_result_grants_fit_one_execution_and_leave_no_account() {
                 AccountMeta::new_readonly(consumer.state, false),
             ],
         );
-        let next_result = host_svm().process_transaction_instructions(
+        let next_result = svm.process_transaction_instructions(
             &[fixture.open(), first.clone(), second, fixture.close()],
             &accounts,
         );

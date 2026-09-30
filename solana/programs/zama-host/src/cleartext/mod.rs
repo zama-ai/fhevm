@@ -34,10 +34,6 @@ pub enum CleartextError {
     InputMalformed,
 }
 
-/// First byte of an input attestation's `extra_data` that carries plaintexts: then one big-endian
-/// value per attested handle, in `ct_handles` order, each [`value_len`] bytes wide.
-pub const INPUT_VALUES_TAG: u8 = 0xc1;
-
 /// A plaintext of a shipped FHE type (`0 | 2..=6`, at most 128 bits).
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct Value {
@@ -99,11 +95,11 @@ fn mask(fhe_type: u8) -> Result<u128> {
     })
 }
 
-/// Encodes the plaintexts of an input attestation's handles, in `ct_handles` order. Fails when
-/// they exceed the attestation's `extra_data` limit, which the host would reject: 15 `euint128`
-/// inputs fit, 16 do not.
+/// Encodes the plaintexts of an input attestation's handles as its `extra_data`: one big-endian
+/// value per handle, in `ct_handles` order, each [`value_len`] bytes wide. Fails when they exceed
+/// the attestation's `extra_data` limit, which the host would reject: 16 `euint128` inputs fit.
 pub fn encode_input_values(values: &[Value]) -> Result<Vec<u8>> {
-    let mut extra_data = vec![INPUT_VALUES_TAG];
+    let mut extra_data = Vec::new();
     for value in values {
         let len = value_len(value.fhe_type)?;
         extra_data.extend_from_slice(&value.bits.to_be_bytes()[16 - len..]);
@@ -122,8 +118,7 @@ pub fn decode_input_value(
     index: usize,
 ) -> Result<Value> {
     let malformed = || error!(CleartextError::InputMalformed);
-    let (tag, mut rest) = extra_data.split_first().ok_or_else(malformed)?;
-    require!(*tag == INPUT_VALUES_TAG, CleartextError::InputMalformed);
+    let mut rest = extra_data;
     let mut selected = None;
     for (position, handle) in ct_handles.iter().enumerate() {
         let fhe_type = handle_fhe_type(*handle);
@@ -160,6 +155,8 @@ pub fn evaluate_steps(
     rand_seed: impl Fn(u16) -> Result<[u8; 16]>,
 ) -> Result<Vec<Value>> {
     let mut produced = Vec::with_capacity(args.steps.len());
+    // One buffer for every Sum and IsIn step, because the host heap never frees.
+    let mut operand_handles: Vec<[u8; 32]> = Vec::new();
     for (index, step) in args.steps.iter().enumerate() {
         let mut encrypted = |operand: &FheExecuteOperand, produced: &[Value]| match operand {
             FheExecuteOperand::EarlierStep { producer_index } => produced
@@ -268,18 +265,15 @@ pub fn evaluate_steps(
                 Value::new(*output_fhe_type, bits)?
             }
             FheExecuteStep::Sum { operands, fhe_type } => {
-                let values = operands
-                    .iter()
-                    .map(|operand| encrypted(operand, &produced))
-                    .collect::<Result<Vec<_>>>()?;
-                let handles = values
-                    .iter()
-                    .map(|value| value.validation_handle())
-                    .collect::<Vec<_>>();
-                assert_sum_operand_types(&handles, *fhe_type)?;
-                let sum = values
-                    .iter()
-                    .fold(0u128, |sum, value| sum.wrapping_add(value.bits));
+                operand_handles.clear();
+                operand_handles.reserve(operands.len());
+                let mut sum = 0u128;
+                for operand in operands {
+                    let value = encrypted(operand, &produced)?;
+                    operand_handles.push(value.validation_handle());
+                    sum = sum.wrapping_add(value.bits);
+                }
+                assert_sum_operand_types(&operand_handles, *fhe_type)?;
                 Value::new(*fhe_type, sum)?
             }
             FheExecuteStep::IsIn {
@@ -288,19 +282,16 @@ pub fn evaluate_steps(
                 fhe_type,
             } => {
                 let value = encrypted(value, &produced)?;
-                let set = set
-                    .iter()
-                    .map(|operand| encrypted(operand, &produced))
-                    .collect::<Result<Vec<_>>>()?;
-                let handles = set
-                    .iter()
-                    .map(|item| item.validation_handle())
-                    .collect::<Vec<_>>();
-                assert_is_in_operand_types(value.validation_handle(), &handles, *fhe_type)?;
-                Value::new(
-                    0,
-                    u128::from(set.iter().any(|item| item.bits == value.bits)),
-                )?
+                operand_handles.clear();
+                operand_handles.reserve(set.len());
+                let mut found = false;
+                for operand in set {
+                    let item = encrypted(operand, &produced)?;
+                    operand_handles.push(item.validation_handle());
+                    found |= item.bits == value.bits;
+                }
+                assert_is_in_operand_types(value.validation_handle(), &operand_handles, *fhe_type)?;
+                Value::new(0, u128::from(found))?
             }
             FheExecuteStep::MulDiv {
                 factor1,
@@ -405,7 +396,7 @@ mod tests {
         let handles = [handle(0), handle(5), handle(6)];
         let values = [value(0, 1), value(5, 7), value(6, u128::MAX)];
         let extra_data = encode_input_values(&values).unwrap();
-        assert_eq!(extra_data.len(), 1 + 1 + 8 + 16);
+        assert_eq!(extra_data.len(), 1 + 8 + 16);
         for (index, expected) in values.iter().enumerate() {
             assert_eq!(
                 decode_input_value(&extra_data, &handles, index).unwrap(),
@@ -413,13 +404,14 @@ mod tests {
             );
         }
         assert!(decode_input_value(&extra_data[..extra_data.len() - 1], &handles, 0).is_err());
-        assert!(decode_input_value(&[0x00], &handles[..0], 0).is_err());
+        assert!(decode_input_value(&[extra_data.as_slice(), &[0]].concat(), &handles, 0).is_err());
+        assert!(decode_input_value(&[0x00], &handles[..1], 0).is_err());
     }
 
     #[test]
     fn input_values_fit_the_attestation_extra_data_limit() {
         let euint128 = |count| vec![value(6, u128::MAX); count];
-        assert_eq!(encode_input_values(&euint128(15)).unwrap().len(), 241);
-        assert!(encode_input_values(&euint128(16)).is_err());
+        assert_eq!(encode_input_values(&euint128(16)).unwrap().len(), 256);
+        assert!(encode_input_values(&euint128(17)).is_err());
     }
 }

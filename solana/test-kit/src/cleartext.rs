@@ -49,21 +49,27 @@ pub fn store_account(state: &host::EncryptedStore, values: &[Value]) -> Account 
 }
 
 /// A context over `accounts` for a Mollusk running the cleartext host, where every fixture
-/// `EncryptedStore` records 0 for each of its slots: the value a fixture balance starts at. Tests
-/// [`seed`] the values they assert on top.
+/// `EncryptedStore` records 0 for each of its slots ([`zero_fixture_store`]). Tests [`seed`] the
+/// values they assert on top.
 pub fn fixture_context(mollusk: Mollusk, accounts: HashMap<Pubkey, Account>) -> Ctx {
     let context = mollusk.with_context(accounts);
     for account in context.account_store.borrow_mut().values_mut() {
-        let Some(state) = fixture_store(account) else {
-            continue;
-        };
-        for (index, slot) in state.slots.iter().enumerate() {
-            if let Ok(zero) = Value::new(host::handle_fhe_type(slot.handle), 0) {
-                layout::set_store_value(&mut account.data, index, zero).unwrap();
-            }
-        }
+        zero_fixture_store(account);
     }
     context
+}
+
+/// Records 0 behind each slot of a production-layout fixture `EncryptedStore`, the value a fixture
+/// balance starts at, giving it a plaintext section first. Leaves any other account as it is.
+pub fn zero_fixture_store(account: &mut Account) {
+    let Some(state) = fixture_store(account) else {
+        return;
+    };
+    for (index, slot) in state.slots.iter().enumerate() {
+        if let Ok(zero) = Value::new(host::handle_fhe_type(slot.handle), 0) {
+            layout::set_store_value(&mut account.data, index, zero).unwrap();
+        }
+    }
 }
 
 /// Records `value` behind every store slot in the context that holds `handle`, giving a

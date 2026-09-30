@@ -33,16 +33,21 @@ bash scripts/install-sbf-tools.sh
 # into other builds, and this command-line value overrides that pin for this build only.
 # `anchor build -- <cargo-build-sbf args> -- <cargo args>`.
 cargo_config=(--config "env.PROGRAM_ENVIRONMENT.value=\"$environment\"" --config 'env.PROGRAM_ENVIRONMENT.force=true')
+features_of() {
+  python3 -c 'import json, sys; print(",".join(json.load(open(sys.argv[1])).get("features", {}).get(sys.argv[2], [])))' "$environment_file" "$1"
+}
 for program in "$@"; do
+  # The cleartext build is zama_host with the environment's features plus `cleartext`, built in its
+  # own directory so it never replaces the production zama_host.so.
   if [[ "$program" == zama_host_cleartext ]]; then
-    production=target/deploy/zama_host.so
-    [[ ! -f "$production" ]] || mv "$production" "$production.production"
-    anchor build --ignore-keys --no-idl -p zama_host -- --features cleartext -- "${cargo_config[@]}"
-    mv "$production" target/deploy/zama_host_cleartext.so
-    [[ ! -f "$production.production" ]] || mv "$production.production" "$production"
+    output_dir=$(mktemp -d)
+    features=$(features_of zama_host)
+    anchor build --ignore-keys --no-idl -p zama_host -- --sbf-out-dir "$output_dir" --features "${features:+$features,}cleartext" -- "${cargo_config[@]}"
+    mv "$output_dir/zama_host.so" target/deploy/zama_host_cleartext.so
+    rm -r "$output_dir"
     continue
   fi
-  features=$(python3 -c 'import json, sys; print(",".join(json.load(open(sys.argv[1])).get("features", {}).get(sys.argv[2], [])))' "$environment_file" "$program")
+  features=$(features_of "$program")
   args=(build --ignore-keys --no-idl -p "$program" --)
   if [[ -n "$features" ]]; then args+=(--features "$features"); fi
   args+=(-- "${cargo_config[@]}")

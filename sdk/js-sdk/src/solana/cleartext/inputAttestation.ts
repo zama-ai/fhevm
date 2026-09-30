@@ -18,10 +18,6 @@ import { signAsCleartextParty } from './parties.js';
 
 ////////////////////////////////////////////////////////////////////////////////
 
-/** First byte of an `extraData` that carries plaintexts (`zama_host::cleartext::INPUT_VALUES_TAG`). */
-const INPUT_VALUES_TAG = 0xc1;
-/** The host's `MAX_INPUT_ATTESTATION_EXTRA_DATA`. */
-const MAX_EXTRA_DATA_LEN = 256;
 /**
  * One value of a cleartext input proof, as the mock encrypt module packs it: an 8-byte nonce, the
  * 128-byte Solana input metadata, then the value as a 32-byte big-endian word.
@@ -92,13 +88,8 @@ export function cleartextInputExtraData(inputProof: SolanaZkProof): Uint8Array {
     const end = (index + 1) * PACKED_VALUE_LEN;
     return packed.subarray(end - length, end);
   });
-  const extraData = concatBytes(Uint8Array.of(INPUT_VALUES_TAG), ...values);
-  if (extraData.length > MAX_EXTRA_DATA_LEN) {
-    throw new InputProofError({
-      message: `Input values take ${extraData.length} bytes of attestation extraData; the host accepts ${MAX_EXTRA_DATA_LEN}`,
-    });
-  }
-  return extraData;
+  // The proof builder's 2048-bit cap keeps this within the host's 256-byte extraData limit.
+  return concatBytes(...values);
 }
 
 /**
