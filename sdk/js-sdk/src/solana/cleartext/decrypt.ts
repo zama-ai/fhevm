@@ -3,11 +3,13 @@
 // admission of a user decryption, and the on-chain checks of a public-decrypt certificate, which
 // the client signs with the registered cleartext KMS key.
 //
-// Before answering, the client judges a request as the KMS Connector does (./authorization.ts),
-// reading the same host state, and a public decryption needs the handle made public. What it does
-// not reproduce is the KMS itself: no signcryption, no response signatures, and so no check of the
-// FHE parameter or the KMS epoch. A refusal reaches the caller as it does on the real stack, except
-// that a request the Connector will never answer fails at once instead of timing out.
+// Before answering a user decryption, the client runs the real stack's checks in its order: the
+// relayer's at submission and its delegation pre-check, the gateway's validity window, then the KMS
+// Connector's authorization over the same host state (./authorization.ts). A public decryption is
+// judged by the Connector's rules for one. What the client does not reproduce is the KMS itself: no
+// signcryption, no response signatures, and so no check of the FHE parameter or the KMS epoch. A
+// refusal reaches the caller as it does on the real stack, except that a request the Connector will
+// never answer fails at once instead of timing out.
 import { getAddressDecoder, parseBase64RpcAccount, type Address } from '@solana/kit';
 import type { FhevmSolanaChain } from '../../core/types/fhevmSolanaChain.js';
 import type { SolanaRpc } from '../encryptedStore.js';
@@ -31,10 +33,12 @@ import { fetchHostConfig, type HostConfig } from '../internal/generated/zamaHost
 import { fetchKmsContext, type KmsContext } from '../internal/generated/zamaHost/accounts/kmsContext.js';
 import { solanaHostProgram } from '../clients/createFhevmBaseClient.js';
 import { signAsCleartextParty } from './parties.js';
+import { verifySolanaPermitSignature } from '../permit/envelope.js';
 import {
   CONNECTOR_FAILURE_RECOVERABLE,
   judgeSolanaPublicDecryption,
   judgeSolanaUserDecryption,
+  solanaRelayerDelegationRefusal,
   type ConnectorVerdict,
   type SolanaHostAccountsReader,
 } from './authorization.js';
@@ -67,10 +71,41 @@ export function cleartextUserDecryptExecution(
         // context on every attempt.
         const host = await fetchHostDecryptionState(rpc, programAddress, fields.kmsRouting.kmsContextId);
         assertTrustMatchesHost(host, trust, fields.kmsRouting.kmsContextId);
+        const readAccounts = hostAccountsReader(rpc);
+
+        // The relayer, when the request is posted.
         if (fields.chainId !== host.config.chainId) {
           const message = `the permit is for host chain ${fields.chainId}; this host is chain ${host.config.chainId}`;
           return { ok: false, rejection: { kind: 'refused', label: 'host_chain_id_not_supported', message } };
         }
+        try {
+          verifySolanaPermitSignature(fields, signature);
+        } catch (error) {
+          const message = `the permit signature does not verify: ${String(error)}`;
+          return { ok: false, rejection: { kind: 'refused', label: 'validation_failed', message } };
+        }
+        // The relayer's pre-check, before it spends a gateway transaction.
+        const delegationRefusal = await solanaRelayerDelegationRefusal({
+          programAddress,
+          fields,
+          entries,
+          readAccounts,
+        });
+        if (delegationRefusal !== undefined) {
+          return {
+            ok: false,
+            rejection: { kind: 'failed', label: 'not_allowed_on_host_acl', message: delegationRefusal },
+          };
+        }
+        // The gateway reverts a request outside its window, and the relayer reports the revert as its own error.
+        const now = BigInt(Math.floor(Date.now() / 1000));
+        const end = fields.startTimestamp + fields.durationSeconds;
+        if (fields.startTimestamp > now || end < now) {
+          const message = `the gateway refuses the window [${fields.startTimestamp}, ${end}] at ${now}`;
+          return { ok: false, rejection: { kind: 'failed', label: 'internal_server_error', message } };
+        }
+
+        // The Connector.
         if (host.context.destroyed) {
           neverAnswered(
             'KmsContextDestroyed',
@@ -79,11 +114,11 @@ export function cleartextUserDecryptExecution(
         }
         const verdict = await judgeSolanaUserDecryption({
           programAddress,
-          now: BigInt(Math.floor(Date.now() / 1000)),
+          now,
           fields,
           signature,
           entries,
-          readAccounts: hostAccountsReader(rpc),
+          readAccounts,
           readHistory,
         });
         const rejection = cleartextUserDecryptRejection(verdict);
@@ -168,6 +203,9 @@ const hostAccountsReader =
         ...(minContextSlot === undefined ? {} : { minContextSlot }),
       })
       .send();
+    if (value.length !== keys.length) {
+      throw new Error(`getMultipleAccounts returned ${value.length} accounts for ${keys.length} keys`);
+    }
     return {
       slot: context.slot,
       accounts: keys.map((key, index) => parseBase64RpcAccount(key, value[index] ?? null)),
@@ -183,19 +221,14 @@ function neverAnswered(failure: string, message: string): never {
 }
 
 /**
- * What the caller sees of the Connector's verdict on the real stack. The relayer refuses a permit
- * whose signature does not verify when the request is submitted, and its pre-check refuses a
- * delegated entry without a live delegation row. A failure a later attempt may clear, the Connector
- * retries itself: here the attempt goes unanswered and the retry loop submits it again. Any other
- * failure fails at once, where the real stack would leave the request to time out.
+ * What the caller sees of the Connector's verdict on the real stack. A failure a later attempt may
+ * clear, the Connector retries itself: here the attempt goes unanswered and the retry loop submits
+ * it again. Any other failure fails at once, where the real stack would leave the request to time out.
  */
 export function cleartextUserDecryptRejection(verdict: ConnectorVerdict): SolanaUserDecryptRejection | undefined {
   if (verdict.authorized) return undefined;
-  const { failure, message } = verdict;
-  if (failure === 'Signature') return { kind: 'refused', label: 'validation_failed', message };
-  if (failure === 'Delegation::NoLiveDelegation') return { kind: 'failed', label: 'not_allowed_on_host_acl', message };
-  if (CONNECTOR_FAILURE_RECOVERABLE[failure]) return { kind: 'unanswered' };
-  return neverAnswered(failure, message);
+  if (CONNECTOR_FAILURE_RECOVERABLE[verdict.failure]) return { kind: 'unanswered' };
+  return neverAnswered(verdict.failure, verdict.message);
 }
 
 /**

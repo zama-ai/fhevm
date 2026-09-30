@@ -1,6 +1,6 @@
 import { readFileSync } from 'node:fs';
 import { address, getAddressDecoder, lamports, type Address, type MaybeEncodedAccount } from '@solana/kit';
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 import { hexToBytes } from '../../core/base/bytes.js';
 import { decodeSolanaPermitFields } from '../permit/validate.js';
 import type { SolanaStoreHistoryEvent } from '../proof.js';
@@ -9,6 +9,7 @@ import {
   CONNECTOR_FAILURE_RECOVERABLE,
   judgeSolanaPublicDecryption,
   judgeSolanaUserDecryption,
+  solanaRelayerDelegationRefusal,
   type SolanaHostAccountsReader,
 } from './authorization.js';
 
@@ -122,29 +123,35 @@ const caseNamed = (name: string): Fixture['cases'][number] => {
   return found;
 };
 
+/** A case's signed permit and handle entries. */
+function requestOf({ permit, signature, entries }: Fixture['cases'][number]) {
+  return {
+    fields: decodeSolanaPermitFields({
+      userAddress: bytes(permit.user_address),
+      transportKey: bytes(permit.transport_key),
+      allowedScopes: permit.allowed_scopes.map(bytes),
+      startTimestamp: permit.start_timestamp,
+      durationSeconds: permit.duration_seconds,
+      verifyingProgramId: bytes(permit.verifying_program_id),
+      chainId: permit.chain_id,
+      extraData: bytes(permit.extra_data),
+    }),
+    signature: bytes(signature),
+    entries: entries.map((entry) => ({
+      handle: bytes(entry.handle),
+      ownerAddress: bytes(entry.owner_address),
+      encryptedStore: bytes(entry.encrypted_store),
+    })),
+  };
+}
+
 describe('the cleartext client judges a user decryption as the KMS Connector does', () => {
   for (const testCase of fixture.cases) {
     it(testCase.name, async () => {
-      const permit = testCase.permit;
       const verdict = await judgeSolanaUserDecryption({
         programAddress,
         now: BigInt(testCase.now),
-        fields: decodeSolanaPermitFields({
-          userAddress: bytes(permit.user_address),
-          transportKey: bytes(permit.transport_key),
-          allowedScopes: permit.allowed_scopes.map(bytes),
-          startTimestamp: permit.start_timestamp,
-          durationSeconds: permit.duration_seconds,
-          verifyingProgramId: bytes(permit.verifying_program_id),
-          chainId: permit.chain_id,
-          extraData: bytes(permit.extra_data),
-        }),
-        signature: bytes(testCase.signature),
-        entries: testCase.entries.map((entry) => ({
-          handle: bytes(entry.handle),
-          ownerAddress: bytes(entry.owner_address),
-          encryptedStore: bytes(entry.encrypted_store),
-        })),
+        ...requestOf(testCase),
         ...hostOf(testCase),
       });
 
@@ -169,6 +176,50 @@ describe('the cleartext client judges a user decryption as the KMS Connector doe
     const produced = new Set(fixture.cases.flatMap((c) => (c.verdict.authorized ? [] : [c.verdict.failure])));
     expect(new Set(Object.keys(CONNECTOR_FAILURE_RECOVERABLE))).toEqual(produced);
     for (const { failure } of fixture.rust_only) expect(produced.has(failure)).toBe(false);
+  });
+});
+
+// The relayer judges delegation rows by the Connector's rules, over the same worlds, but refuses
+// only what the Connector could never authorize.
+describe("the relayer's delegation pre-check", () => {
+  const precheck = (name: string) => {
+    const testCase = caseNamed(name);
+    const { fields, entries } = requestOf(testCase);
+    return solanaRelayerDelegationRefusal({
+      programAddress,
+      fields,
+      entries,
+      readAccounts: hostOf(testCase).readAccounts,
+    });
+  };
+
+  it('refuses a delegated entry whose rows are both dead at the host Clock', async () => {
+    for (const name of [
+      'a delegated entry with no delegation row',
+      'a revoked delegation',
+      "a delegation that has ended by the host's Clock but not by the local clock",
+    ]) {
+      await expect(precheck(name), name).resolves.toMatch(/has no live delegation .* at the host's clock/);
+    }
+  });
+
+  it('passes a live row, a row the host could not have written, and a store it cannot resolve', async () => {
+    for (const name of [
+      'a delegated entry through the wildcard row beside a revoked application row',
+      'a delegation row held by another program beside a live wildcard row',
+      "a delegated entry's store is resolved before the watermark",
+    ]) {
+      await expect(precheck(name), name).resolves.toBeUndefined();
+    }
+  });
+
+  it('reads nothing for direct entries', async () => {
+    const { fields, entries } = requestOf(caseNamed("a direct entry with the signer's allow leaf"));
+    const readAccounts = vi.fn<SolanaHostAccountsReader>();
+    await expect(
+      solanaRelayerDelegationRefusal({ programAddress, fields, entries, readAccounts }),
+    ).resolves.toBeUndefined();
+    expect(readAccounts).not.toHaveBeenCalled();
   });
 });
 

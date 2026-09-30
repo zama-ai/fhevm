@@ -239,12 +239,15 @@ returns `@fhevm/sdk/solana` with the three client factories replaced by those of
   history in place of the coprocessors' leaf record. The kms-worker test `solana_authorization_cases`
   runs the Connector on a set of cases and writes its verdicts to
   `solana/test-fixtures/authorization/user_decrypt_cases_v1.json`, and the SDK test holds the client
-  to them. A refusal reaches the caller as on the real stack: the relayer refuses a bad signature
-  (`validation_failed`) or a permit for another host chain (`host_chain_id_not_supported`) at
-  submission, its pre-check refuses a delegated entry without a live row
-  (`not_allowed_on_host_acl`), and a failure the Connector would retry leaves the attempt
-  unanswered for the retry loop. Any other failure, and a destroyed KMS context, throws at once and
-  names the failure, where the real stack leaves the request to time out. Otherwise the answer is
+  to them. The checks run in the real stack's order, and a refusal reaches the caller as it does
+  there. At submission, the relayer refuses a permit for another host chain
+  (`host_chain_id_not_supported`), then a bad signature (`validation_failed`). Its pre-check then
+  refuses a delegated entry whose two delegation rows are both dead (`not_allowed_on_host_acl`).
+  The gateway refuses a request outside its validity window, which the relayer reports as
+  `internal_server_error` and the retry loop submits again. Last, the Connector checks the KMS
+  context and authorizes the request. A failure the Connector would retry leaves the attempt
+  unanswered for the retry loop. Any other Connector failure, and a destroyed KMS context, throws
+  at once and names the failure, where the real stack leaves the request to time out. Otherwise the answer is
   the plaintext the host recorded in the store. The client also checks that the trust
   configuration names the KMS signers and gateway domain the host registers.
 - **Public decrypt.** The store and the handle's public leaf are judged by the Connector's rules.
@@ -257,8 +260,9 @@ fetches leaf proofs from `env.leafProof` on both targets.
 What the cleartext target does not prove, so these parts skip there
 (`capabilities.protocolServices` is false):
 
-- Relayer behavior: job coalescing (the coalescing step of `delegated-user-decrypt`), its
-  pre-check, and which refusals come back unanswered rather than labeled.
+- Relayer behavior: job coalescing (the coalescing step of `delegated-user-decrypt`), and which
+  refusals come back unanswered rather than labeled. The client applies the pre-check's rules; the
+  relayer's own code does not run.
 - The KMS: shares, signcryption and response signatures, and so the FHE parameter and the KMS
   epoch. Threshold topologies, and ciphertext materialization: `waitForSnsCommit` resolves at once.
 - Host upgrade with a listener restart (the third `fhe-vertical` test), and the Squads arc of
@@ -271,7 +275,7 @@ only just fits the 1232-byte packet, can fail on the cleartext build. Mollusk do
 transaction size, so only the validator stack catches the second. The gap only causes false
 failures: a transaction that fits on the cleartext build always fits in production. v1 transactions
 (SIMD-0385) raise the limit to 4096 bytes for both builds, so they move this wall rather than remove
-it. Our Solana transaction reads do not accept v1 yet, `fetchSolanaStoreHistory` among them
+it. Our Solana transaction reads do not accept v1 yet, `createSolanaStoreHistoryReader` among them
 (fhevm-internal#2080).
 Fuzz loops also rebuild a store's history from every transaction that wrote it, so each decrypt
 costs more as the history grows.

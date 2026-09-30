@@ -286,6 +286,71 @@ function verdictOf(error: unknown): ConnectorVerdict {
   };
 }
 
+/**
+ * The relayer's advisory pre-check of delegated entries (`relayer/src/host/solana_delegation_precheck.rs`),
+ * run before it spends a gateway transaction: why an entry's two delegation rows are both dead at
+ * the host's Clock, or `undefined`. What it cannot judge, a store that does not resolve or a row
+ * the host could not have written, passes for the Connector to decide.
+ */
+export async function solanaRelayerDelegationRefusal({
+  programAddress,
+  fields,
+  entries,
+  readAccounts,
+}: {
+  readonly programAddress: Address;
+  readonly fields: SolanaPermitFields;
+  readonly entries: readonly SolanaUserDecryptHandleEntry[];
+  readonly readAccounts: SolanaHostAccountsReader;
+}): Promise<string | undefined> {
+  const delegate = decodeAddress(fields.userAddress);
+  const delegated = entries
+    .map((entry) => ({
+      key: decodeAddress(entry.encryptedStore),
+      delegator: decodeAddress(entry.ownerAddress),
+    }))
+    .filter(({ delegator }) => delegator !== delegate);
+  if (delegated.length === 0) return undefined;
+
+  const first = await readAccounts(delegated.map(({ key }) => key));
+  const nextStore = cursor(first.accounts);
+  const planned = [];
+  for (const [index, { key, delegator }] of delegated.entries()) {
+    const account = nextStore();
+    let store: SolanaEncryptedStore;
+    try {
+      store = resolveStore(account, programAddress, key, index);
+    } catch (error) {
+      if (error instanceof ConnectorRefusal) continue;
+      throw error;
+    }
+    const rows = [
+      await delegationRow(delegator, delegate, store, programAddress),
+      await delegationRow(delegator, delegate, SOLANA_WILDCARD_APP, programAddress),
+    ] as const;
+    planned.push({ delegator, rows });
+  }
+  if (planned.length === 0) return undefined;
+
+  const rowKeys = planned.flatMap(({ rows }) => rows.map((row) => row.pda[0]));
+  const second = await readAccounts([...rowKeys, SYSVAR_CLOCK_ADDRESS], first.slot);
+  const nextRow = cursor(second.accounts);
+  const judged = planned.map((entry) => ({ ...entry, accounts: [nextRow(), nextRow()] as const }));
+  const clock = nextRow();
+  if (!clock.exists) return undefined;
+  const now = getSysvarClockDecoder().decode(clock.data).unixTimestamp;
+  for (const { delegator, rows, accounts } of judged) {
+    const verdicts = [
+      judgeRow(accounts[0], rows[0], delegator, delegate, programAddress, now),
+      judgeRow(accounts[1], rows[1], delegator, delegate, programAddress, now),
+    ];
+    if (verdicts.every((verdict) => verdict === 'dead')) {
+      return `${delegator} has no live delegation to ${delegate} at the host's clock ${now}`;
+    }
+  }
+  return undefined;
+}
+
 /** `check_public_decrypt` for one handle: the store it names, and its public leaf proven against it. */
 export async function judgeSolanaPublicDecryption({
   programAddress,
