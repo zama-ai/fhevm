@@ -205,14 +205,19 @@ describe('cleartextUserDecryptExecution', () => {
       .mocked(authorization.judgeSolanaUserDecryption)
       .mockResolvedValueOnce(refusal('HandleBinding::ProofRecordBehind'));
 
-  it("refuses a permit for another host chain before the relayer's signature check", async () => {
+  it("refuses a bad signature before the relayer's host-chain check", async () => {
     hostOnChain(hostChainId + 1n);
     badSignature();
-    expect(await firstRejection()).toMatchObject({ kind: 'refused', label: 'host_chain_id_not_supported' });
-    expect(envelope.verifySolanaPermitSignature).not.toHaveBeenCalled();
+    expect(await firstRejection()).toMatchObject({ kind: 'refused', label: 'validation_failed' });
   });
 
-  it('refuses a bad signature at submission, before any host read', async () => {
+  it('refuses handles on another host chain before the delegation pre-check', async () => {
+    hostOnChain(hostChainId + 1n);
+    expect(await firstRejection()).toMatchObject({ kind: 'refused', label: 'host_chain_id_not_supported' });
+    expect(authorization.solanaRelayerDelegationRefusal).not.toHaveBeenCalled();
+  });
+
+  it('refuses a bad signature at submission, before the delegation pre-check', async () => {
     badSignature();
     expect(await firstRejection()).toMatchObject({ kind: 'refused', label: 'validation_failed' });
     expect(authorization.solanaRelayerDelegationRefusal).not.toHaveBeenCalled();

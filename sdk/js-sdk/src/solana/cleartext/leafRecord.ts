@@ -50,6 +50,13 @@ type StoreRecord = {
   readonly firstLeaf: Map<string, number>;
 };
 
+/**
+ * A store's record as one catch-up left it. A later catch-up may append to the record while a read
+ * still answers from this one, so the read answers from the first `leafCount` leaves only, which no
+ * catch-up changes.
+ */
+type CaughtUp = { readonly record: StoreRecord; readonly leafCount: number };
+
 ////////////////////////////////////////////////////////////////////////////////
 
 const startsWith = (data: ReadonlyUint8Array, prefix: ReadonlyUint8Array): boolean =>
@@ -63,8 +70,9 @@ const leafKey = (handle: Uint8Array, key?: Uint8Array): string =>
  * store it names up to the confirmed chain, reading only the transactions newer than the last one
  * it kept, then answers from the record.
  *
- * - A store extends only by a whole, gap-free run of new leaves. While a transaction is not yet
- *   available, or the listing does not show a write yet, the record stays where it was, and the
+ * - A store extends only by a gap-free run of new leaves that reaches the leaf count of the account,
+ *   which is read before the listing. While a transaction is not yet available, or the listing or a
+ *   transaction does not show a write the account holds, the record stays where it was, and the
  *   Connector reads its shorter leaf count as a record behind the chain.
  * - Once the record holds as many leaves as the store's account, its peaks at that count must be the
  *   account's.
@@ -72,14 +80,15 @@ const leafKey = (handle: Uint8Array, key?: Uint8Array): string =>
  *   call make the read throw and drop the store's record. The next read rebuilds it from the store's
  *   first transaction.
  *
- * Catch-ups of one store run in turn; different stores catch up independently.
+ * Catch-ups of one store run in turn; different stores catch up independently. A read answers from
+ * the leaf count its own catch-up checked.
  */
 export function createSolanaLeafRecord(rpc: SolanaRpc, programAddress: Address): SolanaLeafProofReader {
   const records = new Map<Address, StoreRecord>();
-  const catchUps = new Map<Address, Promise<StoreRecord | undefined>>();
+  const catchUps = new Map<Address, Promise<CaughtUp | undefined>>();
 
   /** The record of `encryptedStore` up to the chain, or `undefined` when no host store lives there. */
-  const catchUp = async (encryptedStore: Address): Promise<StoreRecord | undefined> => {
+  const catchUp = async (encryptedStore: Address): Promise<CaughtUp | undefined> => {
     const account = await fetchEncodedAccount(rpc, encryptedStore, { commitment: 'confirmed' });
     if (!account.exists || account.programAddress !== programAddress) return undefined;
     if (!isSolanaEncryptedStoreData(account.data)) return undefined;
@@ -91,9 +100,9 @@ export function createSolanaLeafRecord(rpc: SolanaRpc, programAddress: Address):
       firstLeaf: new Map(),
     };
     records.set(encryptedStore, record);
+    const covered = Number(live.leafCount);
     try {
-      await extend(record, encryptedStore);
-      const covered = Number(live.leafCount);
+      await extend(record, encryptedStore, covered);
       if (record.tree.leafCount() >= covered) {
         const peaks = record.tree.peaks(covered).map(bytesToHex);
         if (peaks.length !== live.peaks.length || peaks.some((peak, index) => peak !== bytesToHex(live.peaks[index]))) {
@@ -104,11 +113,14 @@ export function createSolanaLeafRecord(rpc: SolanaRpc, programAddress: Address):
       records.delete(encryptedStore);
       throw error;
     }
-    return record;
+    return { record, leafCount: record.tree.leafCount() };
   };
 
-  /** Appends the leaves of the transactions newer than `record.newest`, all of them or none. */
-  const extend = async (record: StoreRecord, encryptedStore: Address): Promise<void> => {
+  /**
+   * Appends the leaves of the transactions newer than `record.newest`, all of them or none, and
+   * none while they stop short of the `covered` leaves the account holds.
+   */
+  const extend = async (record: StoreRecord, encryptedStore: Address, covered: number): Promise<void> => {
     const { newest, successful } = await storeSignatures(rpc, encryptedStore, record.newest);
     if (newest === undefined) return;
     const sealed = record.tree.leafCount();
@@ -132,6 +144,7 @@ export function createSolanaLeafRecord(rpc: SolanaRpc, programAddress: Address):
     // `Array.from` visits the holes a write the listing does not show yet leaves.
     const run = Array.from(appended);
     if (!run.every((event): event is SolanaStoreHistoryEvent => event !== undefined)) return;
+    if (sealed + run.length < covered) return;
 
     const storeBytes = new Uint8Array(getAddressEncoder().encode(encryptedStore));
     run.forEach((event, offset) => {
@@ -148,7 +161,7 @@ export function createSolanaLeafRecord(rpc: SolanaRpc, programAddress: Address):
     record.newest = newest;
   };
 
-  const catchUpInTurn = (encryptedStore: Address): Promise<StoreRecord | undefined> => {
+  const catchUpInTurn = (encryptedStore: Address): Promise<CaughtUp | undefined> => {
     const previous = catchUps.get(encryptedStore) ?? Promise.resolve(undefined);
     const next = previous.catch(() => undefined).then(() => catchUp(encryptedStore));
     catchUps.set(encryptedStore, next);
@@ -161,13 +174,15 @@ export function createSolanaLeafRecord(rpc: SolanaRpc, programAddress: Address):
       await Promise.all(stores.map(async (store) => [store, await catchUpInTurn(store)] as const)),
     );
     return queries.map(({ encryptedStore, handle, key }): SolanaLeafProofOutcome => {
-      const record = caught.get(encryptedStore);
-      if (record === undefined) return { status: 'unknownAccount' };
-      const leafCount = record.tree.leafCount();
+      const store = caught.get(encryptedStore);
+      if (store === undefined) return { status: 'unknownAccount' };
+      const { record, leafCount } = store;
       const leafIndex = record.firstLeaf.get(
         leafKey(handle, key === undefined ? undefined : new Uint8Array(getAddressEncoder().encode(key))),
       );
-      if (leafIndex === undefined) return { status: 'notFound', leafCount: BigInt(leafCount) };
+      if (leafIndex === undefined || leafIndex >= leafCount) {
+        return { status: 'notFound', leafCount: BigInt(leafCount) };
+      }
       return {
         status: 'found',
         leafIndex: BigInt(leafIndex),

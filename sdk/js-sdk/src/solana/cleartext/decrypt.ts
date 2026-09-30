@@ -78,16 +78,17 @@ export function cleartextUserDecryptExecution(
         const host = await fetchHostDecryptionState(rpc, programAddress, fields.kmsRouting.kmsContextId);
         assertTrustMatchesHost(host, trust, fields.kmsRouting.kmsContextId);
 
-        // The relayer, when the request is posted.
-        if (fields.chainId !== host.config.chainId) {
-          const message = `the permit is for host chain ${fields.chainId}; this host is chain ${host.config.chainId}`;
-          return { ok: false, rejection: { kind: 'refused', label: 'host_chain_id_not_supported', message } };
-        }
+        // The relayer, when the request is posted: the signature over the chain the handles name,
+        // which admission made the permit's, then that chain.
         try {
           verifySolanaPermitSignature(fields, signature);
         } catch (error) {
           const message = `the permit signature does not verify: ${String(error)}`;
           return { ok: false, rejection: { kind: 'refused', label: 'validation_failed', message } };
+        }
+        if (fields.chainId !== host.config.chainId) {
+          const message = `the handles are on host chain ${fields.chainId}; this host is chain ${host.config.chainId}`;
+          return { ok: false, rejection: { kind: 'refused', label: 'host_chain_id_not_supported', message } };
         }
         // The relayer's pre-check, before it spends a gateway transaction.
         const delegationRefusal = await solanaRelayerDelegationRefusal({

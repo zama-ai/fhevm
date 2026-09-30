@@ -242,8 +242,8 @@ returns `@fhevm/sdk/solana` with the three client factories replaced by those of
   asked for with the record's answers, and its verdict to
   `solana/test-fixtures/authorization/decrypt_cases_v1.json`. The SDK test holds the client to
   them. The checks run in the real stack's order, and a refusal reaches the caller as it does
-  there. At submission, the relayer refuses a permit for another host chain
-  (`host_chain_id_not_supported`), then a bad signature (`validation_failed`). Its pre-check then
+  there. At submission, the relayer refuses a bad signature (`validation_failed`), then handles on
+  a host chain it does not serve (`host_chain_id_not_supported`). Its pre-check then
   refuses a delegated entry whose two delegation rows are both dead (`not_allowed_on_host_acl`).
   The gateway refuses a request outside its validity window, which the relayer reports as
   `internal_server_error` and the retry loop submits again. Last, the Connector checks the KMS
