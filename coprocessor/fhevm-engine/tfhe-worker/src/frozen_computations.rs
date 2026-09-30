@@ -133,10 +133,11 @@ pub(super) async fn containment_filter(
 
 /// Unhealed ct64 drift that this stack can read. A finding of an epoch whose
 /// ciphertexts live in this stack's schema always counts: the current epoch,
-/// and on `public` every completed epoch, merged there at cutover. Another
-/// epoch's finding counts only when this stack has no stored copy of the
-/// handle, so it would read the other stack's bytes; this matches
-/// containment's local-copy rule. `blue_green_consensus_epoch` and
+/// and on `public` every completed epoch, merged there at cutover. Green also
+/// reads `public` for a handle it has no stored copy of, so a completed
+/// epoch's finding counts there too until Green stores its own. `public`
+/// never reads Green, and a failed or pending epoch's bytes live nowhere this
+/// stack reads; this matches containment's rule. `blue_green_consensus_epoch` and
 /// `ciphertexts` are left unqualified: the search_path resolves them to this
 /// stack's schema.
 pub(super) async fn drifted_ct64_handles(
@@ -150,13 +151,13 @@ pub(super) async fn drifted_ct64_handles(
              AND (dh.consensus_epoch = (SELECT consensus_epoch
                                           FROM blue_green_consensus_epoch
                                          WHERE singleton)
-                  OR (current_schema() = 'public'
-                      AND EXISTS (SELECT 1 FROM public.consensus_epoch_history h
-                                   WHERE h.consensus_epoch = dh.consensus_epoch
-                                     AND h.outcome IN ('initial', 'succeeded')))
-                  OR NOT EXISTS (SELECT 1 FROM ciphertexts ct
-                                  WHERE ct.handle = dh.handle
-                                    AND octet_length(ct.ciphertext) > 0))"#
+                  OR (EXISTS (SELECT 1 FROM public.consensus_epoch_history h
+                               WHERE h.consensus_epoch = dh.consensus_epoch
+                                 AND h.outcome IN ('initial', 'succeeded'))
+                      AND (current_schema() = 'public'
+                           OR NOT EXISTS (SELECT 1 FROM ciphertexts ct
+                                           WHERE ct.handle = dh.handle
+                                             AND octet_length(ct.ciphertext) > 0))))"#
     )
     .fetch_all(trx.as_mut())
     .await?

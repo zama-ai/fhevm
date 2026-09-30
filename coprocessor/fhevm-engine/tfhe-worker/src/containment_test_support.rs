@@ -28,6 +28,57 @@ pub(super) async fn drift(pool: &PgPool, n: u8) {
     .unwrap();
 }
 
+/// A ct64 finding recorded in `epoch`, with that epoch's history outcome.
+pub(super) async fn drift_in_epoch(pool: &PgPool, n: u8, epoch: &str, outcome: &str) {
+    sqlx::query(
+        "INSERT INTO consensus_epoch_history (consensus_epoch, outcome, completed_at)
+         VALUES ($1, $2, CASE WHEN $2 = 'pending' THEN NULL ELSE NOW() END)
+         ON CONFLICT DO NOTHING",
+    )
+    .bind(epoch)
+    .bind(outcome)
+    .execute(pool)
+    .await
+    .unwrap();
+    drift(pool, n).await;
+    sqlx::query("UPDATE drifted_handle SET consensus_epoch = $2 WHERE handle = $1")
+        .bind(handle(n))
+        .bind(epoch)
+        .execute(pool)
+        .await
+        .unwrap();
+}
+
+/// A Green stack on `epoch`: its own `ciphertexts` and epoch singleton, the
+/// rest resolved to `public` through the search_path.
+pub(super) async fn green_pool(pool: &PgPool, db_url: &str, epoch: &str) -> PgPool {
+    sqlx::query("CREATE SCHEMA gcs_frozen_test")
+        .execute(pool)
+        .await
+        .unwrap();
+    for table in ["ciphertexts", "blue_green_consensus_epoch"] {
+        sqlx::query(&format!(
+            "CREATE TABLE gcs_frozen_test.{table} (LIKE public.{table} INCLUDING ALL)"
+        ))
+        .execute(pool)
+        .await
+        .unwrap();
+    }
+    sqlx::query(
+        "INSERT INTO gcs_frozen_test.blue_green_consensus_epoch (singleton, consensus_epoch)
+         VALUES (TRUE, $1)",
+    )
+    .bind(epoch)
+    .execute(pool)
+    .await
+    .unwrap();
+    let options = db_url
+        .parse::<sqlx::postgres::PgConnectOptions>()
+        .unwrap()
+        .options([("search_path", "gcs_frozen_test,public")]);
+    PgPool::connect_with(options).await.unwrap()
+}
+
 /// A ct64 finding recorded by another stack's epoch.
 pub(super) async fn drift_in_other_epoch(pool: &PgPool, n: u8) {
     drift(pool, n).await;
