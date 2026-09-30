@@ -24,6 +24,13 @@
 //! registry attestations: a live quorum pins the digest, evidence, and sources
 //! on every active sibling without a target, then GETs. A pinned digest that
 //! no longer matches the live quorum is counted, never rewritten.
+//!
+//! S3 attestations carry no epoch, so they set a target only for a block whose
+//! objects the finding's epoch uploaded (`upload_start_block`): never during a
+//! dry run, when the Green uploader is parked. A finding superseded by a later
+//! epoch's cutover (`drift_superseded`) describes bytes that are gone: it is
+//! marked `superseded_at` and never installed, also when the cutover lands
+//! during its download.
 
 use std::collections::{BTreeMap, HashMap};
 use std::sync::Arc;
@@ -87,6 +94,8 @@ struct DueHandle {
     id: i64,
     consensus_epoch: String,
     host_chain_id: i64,
+    /// Decides whether an S3 attestation can be this epoch's evidence.
+    block_number: i64,
     /// Block the finding was verified in: a bridged destination is resolved
     /// to its source in this block.
     block_hash: Vec<u8>,
@@ -278,6 +287,7 @@ async fn lock_due(
     let containment_timeout_secs = i64::try_from(containment_timeout.as_secs())
         .map_err(|_| ExecutionError::InternalError("containment timeout exceeds BIGINT".into()))?;
     let mut trx = pool.begin().await?;
+    mark_superseded(&mut trx, &epochs, None).await?;
     align_sibling_targets(&mut trx, &epochs).await?;
     let rows = sqlx::query!(
         r#"
@@ -285,6 +295,7 @@ async fn lock_due(
                dh.consensus_epoch,
                dh.handle,
                dh.host_chain_id,
+               dh.block_number,
                dh.block_hash,
                dh.coprocessor_context_id,
                dh.quorum_ct64_digest,
@@ -301,6 +312,7 @@ async fn lock_due(
                     ON demand.handle = cand.handle
                  WHERE cand.healed_at IS NULL
                    AND cand.heal_abandoned_at IS NULL
+                   AND cand.superseded_at IS NULL
                    AND cand.reason IN (
                         'ct64_mismatch', 'missing_here', 'error_here', 'uncomputed_here'
                    )
@@ -325,6 +337,7 @@ async fn lock_due(
                            AND other.handle = cand.handle
                            AND other.healed_at IS NULL
                            AND other.heal_abandoned_at IS NULL
+                           AND other.superseded_at IS NULL
                            AND other.reason IN (
                                 'ct64_mismatch', 'missing_here', 'error_here', 'uncomputed_here'
                            )
@@ -360,6 +373,7 @@ async fn lock_due(
                 id: row.id,
                 consensus_epoch: row.consensus_epoch,
                 host_chain_id: row.host_chain_id,
+                block_number: row.block_number,
                 block_hash: row.block_hash,
                 handle: row.handle,
                 coprocessor_context_id: row.coprocessor_context_id,
@@ -373,6 +387,47 @@ async fn lock_due(
             })
         })
         .collect()
+}
+
+/// Marks unhealed findings superseded by a later epoch's cutover, for every
+/// sibling of a handle at once: one sibling in a replaced window means the
+/// stored ct64 is no longer the one these findings describe. `handle` limits
+/// the sweep to one handle. Returns the rows marked.
+async fn mark_superseded(
+    trx: &mut sqlx::Transaction<'_, sqlx::Postgres>,
+    epochs: &[String],
+    handle: Option<&[u8]>,
+) -> Result<u64, ExecutionError> {
+    let marked = sqlx::query!(
+        r#"
+        UPDATE drifted_handle dh
+           SET superseded_at = NOW(),
+               claimed_by = NULL,
+               claim_expires_at = NULL,
+               next_retry_at = NULL
+         WHERE dh.consensus_epoch = ANY($1)
+           AND ($2::BYTEA IS NULL OR dh.handle = $2)
+           AND dh.healed_at IS NULL
+           AND dh.superseded_at IS NULL
+           AND EXISTS (
+                SELECT 1
+                  FROM drifted_handle sibling
+                 WHERE sibling.consensus_epoch = dh.consensus_epoch
+                   AND sibling.coprocessor_context_id = dh.coprocessor_context_id
+                   AND sibling.host_chain_id = dh.host_chain_id
+                   AND sibling.handle = dh.handle
+                   AND sibling.healed_at IS NULL
+                   AND public.drift_superseded(
+                        sibling.consensus_epoch, sibling.host_chain_id, sibling.block_number
+                   )
+           )
+        "#,
+        epochs,
+        handle,
+    )
+    .execute(trx.as_mut())
+    .await?;
+    Ok(marked.rows_affected())
 }
 
 /// Gives every active sibling without a target the single target of the other
@@ -393,6 +448,7 @@ async fn align_sibling_targets(
              WHERE consensus_epoch = ANY($1)
                AND healed_at IS NULL
                AND heal_abandoned_at IS NULL
+               AND superseded_at IS NULL
                AND reason IN ('ct64_mismatch', 'missing_here', 'error_here', 'uncomputed_here')
                AND quorum_ct64_digest IS NOT NULL
         ),
@@ -428,6 +484,7 @@ async fn align_sibling_targets(
            AND dh.host_chain_id = pinned.host_chain_id
            AND dh.handle = pinned.handle
            AND dh.healed_at IS NULL
+           AND dh.superseded_at IS NULL
            AND dh.reason IN ('ct64_mismatch', 'missing_here', 'error_here', 'uncomputed_here')
            AND dh.quorum_ct64_digest IS NULL
         "#,
@@ -453,6 +510,7 @@ async fn report_conflicting_targets(
          WHERE consensus_epoch = ANY($1)
            AND healed_at IS NULL
            AND heal_abandoned_at IS NULL
+           AND superseded_at IS NULL
            AND reason IN ('ct64_mismatch', 'missing_here', 'error_here', 'uncomputed_here')
            AND quorum_ct64_digest IS NOT NULL
          GROUP BY consensus_epoch, coprocessor_context_id, host_chain_id, handle
@@ -614,6 +672,17 @@ async fn fetch_from_bridged_source<S: Ct64Source>(
             tried.push(bucket_url);
         }
     }
+    // Without a pin this quorum sets the target, so it must be the finding's
+    // epoch's evidence, judged on the destination's window; the normal path
+    // then applies the same rule.
+    if pinned.is_none()
+        && !matches!(
+            attestation_scope(pool, job).await?,
+            AttestationScope::Uploaded
+        )
+    {
+        return Ok(None);
+    }
     let peers = load_registry_peers(pool).await?;
     let Some(first) = peers.first() else {
         return Ok(None);
@@ -673,6 +742,27 @@ async fn recover_from_attestations<S: Ct64Source>(
     context_id: U256,
     skip_buckets: &[String],
 ) -> Result<bool, ExecutionError> {
+    match attestation_scope(pool, job).await? {
+        AttestationScope::Uploaded => {}
+        AttestationScope::Parked => {
+            info!(
+                finding_id = job.id,
+                consensus_epoch = job.consensus_epoch,
+                "Epoch's stack uploads nothing before cutover; its S3 attestations are another epoch's"
+            );
+            return defer_uncharged(pool, job).await;
+        }
+        AttestationScope::BeforeUpload(upload_start_block) => {
+            warn!(
+                finding_id = job.id,
+                consensus_epoch = job.consensus_epoch,
+                block_number = job.block_number,
+                upload_start_block,
+                "Block's S3 objects were uploaded by the previous epoch; no attestation target"
+            );
+            return schedule_retry(pool, job, Failure::Transient).await;
+        }
+    }
     let peers = load_registry_peers(pool).await?;
     if peers.is_empty() {
         warn!(
@@ -839,6 +929,7 @@ async fn persist_live_quorum(
            AND host_chain_id = $6
            AND handle = $7
            AND healed_at IS NULL
+           AND superseded_at IS NULL
            AND reason IN ('ct64_mismatch', 'missing_here', 'error_here', 'uncomputed_here')
            AND (quorum_ct64_digest IS NULL OR quorum_ct64_digest = $1)
         "#,
@@ -911,6 +1002,69 @@ fn pinned_threshold(evidence: &serde_json::Value) -> Option<usize> {
         .filter(|value| *value > 0)
 }
 
+enum AttestationScope {
+    /// The epoch's stack uploaded this block's S3 objects.
+    Uploaded,
+    /// The epoch's uploader is parked until cutover: every object is another
+    /// epoch's.
+    Parked,
+    /// Cut over from `upload_start_block`: this block's objects were uploaded
+    /// by the previous epoch and are only replaced one by one.
+    BeforeUpload(i64),
+}
+
+/// S3 attestations carry no epoch, so they are evidence for a finding only
+/// where the finding's own epoch uploaded the objects. `legacy` has no window
+/// and uploads from block 0.
+async fn attestation_scope(
+    pool: &PgPool,
+    job: &DueHandle,
+) -> Result<AttestationScope, ExecutionError> {
+    let window = sqlx::query_scalar!(
+        r#"
+        SELECT upload_start_block
+          FROM consensus_epoch_block_window
+         WHERE consensus_epoch = $1
+           AND host_chain_id = $2
+        "#,
+        job.consensus_epoch,
+        job.host_chain_id,
+    )
+    .fetch_optional(pool)
+    .await?;
+    Ok(match window {
+        None => AttestationScope::Uploaded,
+        Some(None) => AttestationScope::Parked,
+        Some(Some(start)) if job.block_number < start => AttestationScope::BeforeUpload(start),
+        Some(Some(_)) => AttestationScope::Uploaded,
+    })
+}
+
+/// Waits the retry delay without counting an attempt: the evidence can still
+/// appear, so the budget is kept for real failures.
+async fn defer_uncharged(pool: &PgPool, job: &DueHandle) -> Result<bool, ExecutionError> {
+    let retry_secs = i64::try_from(RETRY_DELAY.as_secs()).unwrap_or(30);
+    sqlx::query!(
+        r#"
+        UPDATE drifted_handle
+           SET next_retry_at = NOW() + ($5::BIGINT * INTERVAL '1 second')
+         WHERE consensus_epoch = $1
+           AND coprocessor_context_id = $2
+           AND host_chain_id = $3
+           AND handle = $4
+           AND healed_at IS NULL
+        "#,
+        job.consensus_epoch,
+        &job.coprocessor_context_id,
+        job.host_chain_id,
+        &job.handle,
+        retry_secs,
+    )
+    .execute(pool)
+    .await?;
+    Ok(false)
+}
+
 fn majority_digest(
     votes: &[(String, Vec<u8>)],
     threshold: usize,
@@ -974,6 +1128,25 @@ async fn install_matching_ct64(
         );
         return Ok(false);
     }
+    // A later epoch's cutover may have replaced the handle's bytes during the
+    // download: the finding then describes bytes that are gone, and installing
+    // it would overwrite the successor's copy.
+    if mark_superseded(
+        &mut trx,
+        std::slice::from_ref(&job.consensus_epoch),
+        Some(&job.handle),
+    )
+    .await?
+        > 0
+    {
+        trx.commit().await?;
+        info!(
+            finding_id = job.id,
+            consensus_epoch = job.consensus_epoch,
+            "Finding superseded by a later epoch's cutover; not installed"
+        );
+        return Ok(false);
+    }
     // `ciphertexts` and `computations` below resolve to the finding's stack;
     // `drifted_handle` exists only in public.
     set_execution_schema(&mut trx, schema)
@@ -991,6 +1164,7 @@ async fn install_matching_ct64(
            AND host_chain_id = $3
            AND handle = $4
            AND healed_at IS NULL
+           AND superseded_at IS NULL
            AND can_be_healed
            AND (reason <> 'ct64_mismatch' OR is_contained
                 OR detected_at <= NOW() - $6::BIGINT * INTERVAL '1 second')
@@ -1099,6 +1273,7 @@ async fn schedule_retry(
            AND dh.quorum_ct64_digest IS NOT DISTINCT FROM t.quorum_ct64_digest
            AND dh.healed_at IS NULL
            AND dh.heal_abandoned_at IS NULL
+           AND dh.superseded_at IS NULL
         RETURNING dh.id, dh.heal_attempts, dh.heal_abandoned_at IS NOT NULL AS "abandoned!"
         "#,
         job.id,
