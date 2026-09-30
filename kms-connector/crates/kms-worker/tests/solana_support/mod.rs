@@ -163,6 +163,8 @@ pub const DEFAULT_START: u64 = 1_700_000_000;
 pub const DEFAULT_DURATION: u64 = 3_600;
 /// A time inside the default window.
 pub const NOW_INSIDE_WINDOW: u64 = DEFAULT_START + 60;
+/// The transport key of every fixture permit.
+pub const TRANSPORT_KEY: [u8; TRANSPORT_KEY_LEN] = [0xa5; TRANSPORT_KEY_LEN];
 /// The Unix time the host's Clock reads in every world, unless a test sets another.
 pub const HOST_NOW: u64 = NOW_INSIDE_WINDOW;
 /// The fixture deployment inside the default window.
@@ -185,7 +187,7 @@ impl PermitBuilder {
         Self {
             wire: PermitWireFields {
                 user_address: user.to_bytes().to_vec(),
-                transport_key: vec![0xa5; TRANSPORT_KEY_LEN],
+                transport_key: TRANSPORT_KEY.to_vec(),
                 allowed_scopes: vec![scope_entry(APP_PROGRAM, SCOPE)],
                 start_timestamp: DEFAULT_START,
                 duration_seconds: DEFAULT_DURATION,
@@ -312,16 +314,6 @@ impl<'a> RequestBuilder<'a> {
             encrypted_store: encrypted_store.to_bytes(),
         });
         self
-    }
-
-    /// The permit in transport form and the wallet's signature over its envelope.
-    pub fn signed_permit(&self) -> (PermitWireFields, Signature) {
-        (self.permit.wire(), self.wallet.sign(&self.permit.typed()))
-    }
-
-    /// The handle entries, in request order.
-    pub fn entries(&self) -> &[HandleEntry] {
-        &self.entries
     }
 
     /// The request in its two carriers, signed: the fields the Gateway types, and the blob.
@@ -1180,7 +1172,7 @@ pub fn proof_route(url: &url::Url) -> ProofRoute {
 }
 
 /// A leaf-proof answer as the coprocessor route serializes it.
-fn wire_outcome(outcome: &LeafProofOutcome) -> serde_json::Value {
+pub fn wire_outcome(outcome: &LeafProofOutcome) -> serde_json::Value {
     match outcome {
         LeafProofOutcome::Found {
             leaf_index,

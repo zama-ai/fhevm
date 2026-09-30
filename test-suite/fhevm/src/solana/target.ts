@@ -5,20 +5,27 @@
 import type * as SolanaSdk from '@fhevm/sdk/solana';
 
 import { BRINGUP_KMS_CONTEXT_ID } from '../../../../solana/deploy/src/constants';
+import { SOLANA_LEAF_PROOF_API_KEY } from '../generate/solana';
 import { readActiveKmsPair, readGatewayBootstrapInputs } from './addresses';
+import { CLEARTEXT_SOLANA_ENDPOINTS } from './endpoints';
 
 export const targetsCleartext = (): boolean => process.env.SOLANA_E2E_SOURCE === 'cleartext';
 
-/** `@fhevm/sdk/solana`, with the cleartext client factories on a cleartext target. */
+/**
+ * `@fhevm/sdk/solana`, with the cleartext client factories on a cleartext target. Their decrypt
+ * clients read leaf proofs from the stack's leaf record, as the Connector reads a coprocessor's.
+ */
 export const loadSolanaSdk = async (): Promise<typeof SolanaSdk> => {
   const solana = await import('@fhevm/sdk/solana');
   if (!targetsCleartext()) return solana;
   const cleartext = await import('@fhevm/sdk/solana/cleartext');
+  const leafProofs = { url: CLEARTEXT_SOLANA_ENDPOINTS.leafProof, apiKey: SOLANA_LEAF_PROOF_API_KEY };
   return {
     ...solana,
     createFhevmEncryptClient: cleartext.createFhevmCleartextEncryptClient,
-    createFhevmDecryptClient: cleartext.createFhevmCleartextDecryptClient,
-    createFhevmPublicDecryptClient: cleartext.createFhevmCleartextPublicDecryptClient,
+    createFhevmDecryptClient: (parameters) => cleartext.createFhevmCleartextDecryptClient({ ...parameters, leafProofs }),
+    createFhevmPublicDecryptClient: (parameters) =>
+      cleartext.createFhevmCleartextPublicDecryptClient({ ...parameters, leafProofs }),
   };
 };
 

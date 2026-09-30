@@ -42,24 +42,29 @@ import {
   type ConnectorVerdict,
   type SolanaHostAccountsReader,
 } from './authorization.js';
-import { createSolanaStoreHistoryReader } from './storeHistory.js';
+import { createSolanaLeafProofClient, type SolanaLeafProofEndpoint } from './leafProofs.js';
 import { fetchCleartextStoreValue } from './storeValues.js';
 
 ////////////////////////////////////////////////////////////////////////////////
 
 const CONFIRMED = { commitment: 'confirmed' } as const;
+/** How often a public decryption is judged before a failure the Connector would retry stands. */
+const PUBLIC_DECRYPT_ATTEMPTS = 20;
+const PUBLIC_DECRYPT_RETRY_MS = 250;
 
 /**
  * Answers a user decryption with the plaintexts the host recorded for its handles, once the request
- * passes the Connector's authorization, through the production retry loop.
+ * passes the Connector's authorization, through the production retry loop. The leaf proofs come
+ * from the leaf record served at `leafProofs`.
  */
 export function cleartextUserDecryptExecution(
   rpc: SolanaRpc,
   chain: FhevmSolanaChain,
   trust: SolanaDecryptTrust,
+  leafProofs: SolanaLeafProofEndpoint,
 ): SolanaUserDecryptExecution {
   const programAddress = solanaHostProgram(chain);
-  const readHistory = createSolanaStoreHistoryReader(rpc, programAddress);
+  const readLeafProofs = createSolanaLeafProofClient(leafProofs);
   return async ({ session, entries, attempts, options }) => {
     const { fields, signature } = session.signedPermit;
     // The caller's timeout and abort signal bound the whole run, as on the relayer path.
@@ -119,7 +124,7 @@ export function cleartextUserDecryptExecution(
           signature,
           entries,
           readAccounts,
-          readHistory,
+          readLeafProofs,
         });
         const rejection = cleartextUserDecryptRejection(verdict);
         if (rejection !== undefined) return { ok: false, rejection };
@@ -235,21 +240,31 @@ export function cleartextUserDecryptRejection(verdict: ConnectorVerdict): Solana
  * Certifies the plaintext the host recorded for a handle made public, signed by the registered
  * cleartext KMS key under the certificate's context, for the on-chain verifier to check.
  */
-export function cleartextPublicDecryptCertifier(rpc: SolanaRpc, chain: FhevmSolanaChain): SolanaPublicDecryptCertifier {
+export function cleartextPublicDecryptCertifier(
+  rpc: SolanaRpc,
+  chain: FhevmSolanaChain,
+  leafProofs: SolanaLeafProofEndpoint,
+): SolanaPublicDecryptCertifier {
   const programAddress = solanaHostProgram(chain);
-  const readHistory = createSolanaStoreHistoryReader(rpc, programAddress);
+  const readLeafProofs = createSolanaLeafProofClient(leafProofs);
   return async (parameters) => {
     const handle = toFhevmHandle(parameters.handle);
     const handleBytes = hexToBytes(handle.bytes32Hex);
     const encryptedStore = getAddressDecoder().decode(parameters.encryptedStore);
-    const verdict = await judgeSolanaPublicDecryption({
-      programAddress,
-      encryptedStore,
-      handle: handleBytes,
-      readAccounts: hostAccountsReader(rpc),
-      readHistory,
-    });
-    if (!verdict.authorized) throw new Error(`the KMS Connector refuses to decrypt: ${verdict.message}`);
+    // The Connector retries a failure a later attempt may clear, such as a leaf record behind the store.
+    for (let attempt = 1; ; attempt += 1) {
+      const verdict = await judgeSolanaPublicDecryption({
+        programAddress,
+        handles: [{ handle: handleBytes, encryptedStore }],
+        readAccounts: hostAccountsReader(rpc),
+        readLeafProofs,
+      });
+      if (verdict.authorized) break;
+      if (!CONNECTOR_FAILURE_RECOVERABLE[verdict.failure] || attempt === PUBLIC_DECRYPT_ATTEMPTS) {
+        throw new Error(`the KMS Connector refuses to decrypt (${verdict.failure}): ${verdict.message}`);
+      }
+      await new Promise((resolve) => setTimeout(resolve, PUBLIC_DECRYPT_RETRY_MS));
+    }
     const cleartext = await fetchCleartextStoreValue(rpc, programAddress, parameters.encryptedStore, handleBytes);
     const [{ data: config }, { data: context }] = await Promise.all([
       fetchHostConfig(rpc, (await findHostConfigPda({ programAddress }))[0], CONFIRMED),

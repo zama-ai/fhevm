@@ -75,7 +75,7 @@ export type SolanaUserDecryptionDelegationTuple = SolanaDelegationApplication & 
 };
 
 /** The full record PDA of a tuple — address and canonical bump — under one deployment. */
-async function solanaUserDecryptionDelegationPda(
+export async function solanaUserDecryptionDelegationPda(
   tuple: SolanaUserDecryptionDelegationTuple,
   programAddress: Address,
 ): Promise<ProgramDerivedAddress> {

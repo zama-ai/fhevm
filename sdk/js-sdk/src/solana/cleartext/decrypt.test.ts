@@ -21,13 +21,19 @@ import {
   decodeSolanaPermitFields,
 } from '../permit/index.js';
 import { SolanaUserDecryptRunError } from '../userDecrypt/index.js';
-import { cleartextUserDecryptExecution, cleartextUserDecryptRejection } from './decrypt.js';
+import {
+  cleartextPublicDecryptCertifier,
+  cleartextUserDecryptExecution,
+  cleartextUserDecryptRejection,
+} from './decrypt.js';
 
 const host = address('11111111111111111111111111111112');
 const signer = address('SysvarRent111111111111111111111111111111111');
 const bytes = (value: Address): Uint8Array => new Uint8Array(getAddressEncoder().encode(value));
 const now = BigInt(Math.floor(Date.now() / 1000));
 const rpc = {} as SolanaRpc;
+const leafProofs = { url: 'http://leaf-record', apiKey: 'key' };
+const chain = { fhevm: { programs: { host: { address: bytesToHex(bytes(host)) } } } } as unknown as FhevmSolanaChain;
 
 const refusal = (failure: authorization.ConnectorFailure): authorization.ConnectorVerdict => ({
   authorized: false,
@@ -60,6 +66,37 @@ describe('cleartextUserDecryptRejection', () => {
   });
 });
 
+// The Connector retries a public decryption it may authorize later, and stops on one it never will.
+describe('cleartextPublicDecryptCertifier', () => {
+  const certify = cleartextPublicDecryptCertifier(rpc, chain, leafProofs);
+  const parameters = {
+    handle: buildHandle({ chainId: 5n, hash21: `0x${'b1'.repeat(21)}`, fheTypeId: 0 }).bytes32,
+    contextId: new Uint8Array(32),
+    encryptedStore: new Uint8Array(32).fill(0xea),
+  };
+
+  beforeEach(() => vi.useFakeTimers());
+  afterEach(() => vi.useRealTimers());
+
+  it('fails at once on a failure the Connector never clears', async () => {
+    vi.spyOn(authorization, 'judgeSolanaPublicDecryption').mockResolvedValue(
+      refusal('EncryptedStore::InvalidHostRecord'),
+    );
+    await expect(certify(parameters)).rejects.toThrow(/refuses to decrypt \(EncryptedStore::InvalidHostRecord\)/);
+    expect(authorization.judgeSolanaPublicDecryption).toHaveBeenCalledTimes(1);
+  });
+
+  it('retries a failure the Connector may clear, within a bounded budget', async () => {
+    vi.spyOn(authorization, 'judgeSolanaPublicDecryption').mockResolvedValue(
+      refusal('HandleBinding::ProofRecordBehind'),
+    );
+    const outcome = certify(parameters).catch((error: unknown) => error);
+    await vi.runAllTimersAsync();
+    expect(String(await outcome)).toMatch(/refuses to decrypt \(HandleBinding::ProofRecordBehind\)/);
+    expect(authorization.judgeSolanaPublicDecryption).toHaveBeenCalledTimes(20);
+  });
+});
+
 // The execution through the production retry loop: the order of the real stack's checks, what
 // changes between attempts, and what bounds them.
 describe('cleartextUserDecryptExecution', () => {
@@ -67,7 +104,6 @@ describe('cleartextUserDecryptExecution', () => {
   const gatewayChainId = 7n;
   const decryptionContract = new Uint8Array(20).fill(0xdc);
   const kmsSigner = new Uint8Array(20).fill(0x5e);
-  const chain = { fhevm: { programs: { host: { address: bytesToHex(bytes(host)) } } } } as unknown as FhevmSolanaChain;
   const trust = {
     gatewayEip712Domain: { chainId: gatewayChainId, verifyingContract: bytesToHex(decryptionContract) },
     kmsSigners: [{ address: bytesToHex(kmsSigner) }],
@@ -101,7 +137,12 @@ describe('cleartextUserDecryptExecution', () => {
     options?: { signal?: AbortSignal; timeout?: number },
     { attempts, start = now - 10n }: { attempts?: number; start?: bigint } = {},
   ) =>
-    cleartextUserDecryptExecution(rpc, chain, trust)({ session: sessionStarting(start), entries, attempts, options });
+    cleartextUserDecryptExecution(
+      rpc,
+      chain,
+      trust,
+      leafProofs,
+    )({ session: sessionStarting(start), entries, attempts, options });
   /** The rejection a run of one attempt ends on. */
   const firstRejection = async (start?: bigint) => {
     const error = await execute(undefined, { attempts: 1, ...(start === undefined ? {} : { start }) }).catch(

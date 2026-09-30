@@ -1,11 +1,11 @@
 // The KMS Connector's authorization of a Solana user or public decryption
 // (kms-connector/crates/kms-worker/src/core/solana/pipeline.rs and public_decrypt.rs), over the same
-// host accounts, read in the same order and judged by the same rules. The cleartext client asks no coprocessor: the
-// history it rebuilds from a store's transactions stands in for the coprocessors' leaf record, and
-// a leaf from it is proven against the observed store as the Connector proves a coprocessor's.
+// host accounts, read in the same order and judged by the same rules, and the leaf proofs of one
+// leaf record, asked and verified as the Connector asks and verifies a coprocessor's. The relayer's
+// delegation pre-check, which runs before the Connector sees a request, is here too.
 //
-// solana/test-fixtures/authorization/user_decrypt_cases_v1.json holds the Connector's verdicts on a
-// set of cases; authorization.test.ts holds this module to them.
+// solana/test-fixtures/authorization/decrypt_cases_v1.json holds the Connector's verdicts on a set
+// of cases; authorization.test.ts holds this module to them.
 import {
   getAddressDecoder,
   getAddressEncoder,
@@ -19,8 +19,7 @@ import { getSysvarClockDecoder, SYSVAR_CLOCK_ADDRESS } from '@solana/sysvars';
 import { sha256 } from '@noble/hashes/sha2.js';
 import type { SolanaPermitFields } from '../permit/types.js';
 import type { SolanaUserDecryptHandleEntry } from '../userDecrypt/index.js';
-import type { SolanaStoreHistoryEvent } from '../proof.js';
-import type { SolanaStoreHistoryReader } from './storeHistory.js';
+import type { SolanaLeafProofOutcome, SolanaLeafProofReader, SolanaLeafQuery } from './leafProofs.js';
 import { bytesToHex, concatBytes } from '../../core/base/bytes.js';
 import { verifySolanaPermitSignature } from '../permit/envelope.js';
 import {
@@ -33,15 +32,10 @@ import { SOLANA_PERMIT_INVALIDATION_SEED, solanaPermitInvalidationWatermark } fr
 import {
   decodeSolanaUserDecryptionDelegation,
   isSolanaUserDecryptionDelegationLiveAt,
-  SOLANA_USER_DECRYPTION_DELEGATION_SEED,
   SOLANA_WILDCARD_APP,
+  solanaUserDecryptionDelegationPda,
 } from '../actions/userDecryptionDelegation.js';
-import {
-  mmrBuildProof,
-  reconstructSolanaStoreHistory,
-  verifyHistoricalAccessProof,
-  verifyPublicDecryptProof,
-} from '../proof.js';
+import { verifyHistoricalAccessProof, verifyPublicDecryptProof } from '../proof.js';
 
 ////////////////////////////////////////////////////////////////////////////////
 
@@ -52,8 +46,8 @@ export type SolanaHostAccountsReader = (
 ) => Promise<{ readonly slot: bigint; readonly accounts: readonly MaybeEncodedAccount[] }>;
 
 /**
- * Whether the Connector may clear each failure on a later attempt (`failure.rs`). The failures the
- * cleartext client cannot produce, such as a coprocessor that is down, are not listed.
+ * Whether the Connector may clear each failure on a later attempt (`failure.rs`). A failed account
+ * or leaf-proof read is not listed: the cleartext client throws on one instead of judging.
  */
 export const CONNECTOR_FAILURE_RECOVERABLE = {
   Signature: false,
@@ -70,7 +64,10 @@ export const CONNECTOR_FAILURE_RECOVERABLE = {
   ScopeNotAllowed: false,
   'HandleBinding::NoLeaf': true,
   'HandleBinding::ProofRecordBehind': true,
+  'HandleBinding::AccountUnknownToProofRecord': true,
+  'HandleBinding::HistoryIncomplete': false,
   'HandleBinding::ProofDoesNotVerify': true,
+  'HandleBinding::LeafIndexOutOfRange': true,
   'Delegation::NoLiveDelegation': true,
   'Delegation::InvalidHostRecord': false,
 } as const satisfies Record<string, boolean>;
@@ -175,17 +172,25 @@ function resolveStore(
 /** A delegation row: its derived address and bump, and the application it is for. */
 type DelegationRow = { readonly pda: ProgramDerivedAddress; readonly program: Address; readonly scope: Address };
 
-async function delegationRow(
+/** The two rows that can authorize a delegated entry: its store's application, then the wildcard. */
+async function delegationRows(
   delegator: Address,
   delegate: Address,
-  { program, scope }: { readonly program: Address; readonly scope: Address },
+  store: SolanaEncryptedStore,
   programAddress: Address,
-): Promise<DelegationRow> {
-  const pda = await getProgramDerivedAddress({
-    programAddress,
-    seeds: [SOLANA_USER_DECRYPTION_DELEGATION_SEED, ...[delegator, delegate, program, scope].map(encodeAddress)],
+): Promise<readonly [DelegationRow, DelegationRow]> {
+  const row = async ({
+    program,
+    scope,
+  }: {
+    readonly program: Address;
+    readonly scope: Address;
+  }): Promise<DelegationRow> => ({
+    pda: await solanaUserDecryptionDelegationPda({ delegator, delegate, program, scope }, programAddress),
+    program,
+    scope,
   });
-  return { pda, program, scope };
+  return [await row(store), await row(SOLANA_WILDCARD_APP)];
 }
 
 /** `judge_delegation_row`: what one row says at host time `now`. */
@@ -217,62 +222,100 @@ function judgeRow(
   }
 }
 
-/** Hands out the accounts of one read in key order, as the Connector's `observe` does. */
-function cursor(accounts: readonly MaybeEncodedAccount[]): () => MaybeEncodedAccount {
+/** Hands out the answers of one read in the order they were asked for, as the Connector's `observe` does. */
+function cursor<T>(answers: readonly T[], source: string): () => T {
   let position = 0;
   return () => {
-    const account = accounts[position];
-    if (account === undefined) throw new Error(`the host read returned ${accounts.length} accounts, fewer than asked`);
+    const answer = answers[position];
+    if (answer === undefined) throw new Error(`${source} returned ${answers.length} answers, fewer than asked`);
     position += 1;
-    return account;
+    return answer;
   };
 }
 
-/** The leaf a decryption needs: an allow of `key` on `handle`, or `handle` made public. */
-type RequiredLeaf = { readonly handle: Uint8Array; readonly key?: Uint8Array };
+/**
+ * `verify_proofs` over one leaf record: every leaf asked in one read, then judged in order, so the
+ * first entry whose leaf is not proven is the one refused.
+ */
+async function proveLeaves(
+  readLeafProofs: SolanaLeafProofReader,
+  leaves: ReadonlyArray<{ readonly store: SolanaEncryptedStore; readonly query: SolanaLeafQuery }>,
+): Promise<void> {
+  const outcomes = await readLeafProofs(leaves.map(({ query }) => query));
+  if (outcomes.length !== leaves.length) {
+    throw new Error(`the leaf record answered ${outcomes.length} proofs for ${leaves.length} queries`);
+  }
+  const next = cursor(outcomes, 'the leaf record');
+  leaves.forEach(({ store, query }, index) => {
+    checkLeaf(store, query, next(), index);
+  });
+}
 
-/** `check_handle_binding` and `check_public_binding`, with the rebuilt history as the leaf record. */
-function proveLeaf(
-  storeKey: Address,
+/**
+ * `check_leaf`: whether the record's answer proves the queried leaf against the observed store. A
+ * proof is verified before the record's age is considered, since one built at a larger leaf count
+ * still verifies whenever the leaf's mountain has not merged since. Without a proof, a record at
+ * least as long as the store holds no such leaf, and a shorter one may catch up.
+ */
+function checkLeaf(
   store: SolanaEncryptedStore,
-  history: readonly SolanaStoreHistoryEvent[],
-  { handle, key }: RequiredLeaf,
+  { encryptedStore, handle, key }: SolanaLeafQuery,
+  outcome: SolanaLeafProofOutcome,
   index: number,
 ): void {
-  // The history is read after the store and can run past it: only the leaves the observed store
-  // had sealed are proven against it.
-  const sealed = history.slice(0, Number(store.leafCount));
-  const handleHex = bytesToHex(handle);
-  const leafIndex = sealed.findIndex((event) =>
-    key === undefined
-      ? event.kind === 'markedPublic' && bytesToHex(event.handle) === handleHex
-      : event.kind === 'allowed' && bytesToHex(event.handle) === handleHex && bytesToHex(event.key) === bytesToHex(key),
-  );
-  if (leafIndex < 0) {
-    if (BigInt(sealed.length) >= store.leafCount) {
-      refuse(
-        'HandleBinding::NoLeaf',
-        key === undefined
-          ? `handle ${handleHex} was not made public in ${storeKey}`
-          : `no leaf allows ${decodeAddress(key)} on handle ${handleHex} in ${storeKey}`,
+  const live = store.leafCount;
+  switch (outcome.status) {
+    case 'notFound':
+      if (outcome.leafCount >= live) {
+        return refuse(
+          'HandleBinding::NoLeaf',
+          `no leaf for this key and handle in ${outcome.leafCount} of ${live} leaves of ${encryptedStore}`,
+          index,
+        );
+      }
+      return refuse(
+        'HandleBinding::ProofRecordBehind',
+        `the leaf record is behind the chain (${outcome.leafCount} of ${live} leaves of ${encryptedStore})`,
         index,
       );
-    }
-    refuse(
-      'HandleBinding::ProofRecordBehind',
-      `the history holds ${sealed.length} of ${store.leafCount} leaves`,
+    case 'unknownAccount':
+      return refuse(
+        'HandleBinding::AccountUnknownToProofRecord',
+        `the leaf record does not know ${encryptedStore}`,
+        index,
+      );
+    case 'historyIncomplete':
+      return refuse(
+        'HandleBinding::HistoryIncomplete',
+        `the leaf record's history of ${encryptedStore} is incomplete`,
+        index,
+      );
+    case 'found':
+      break;
+  }
+  const { leafIndex, siblings } = outcome;
+  if (leafIndex >= live) {
+    return refuse(
+      'HandleBinding::LeafIndexOutOfRange',
+      `leaf index ${leafIndex} is not below the observed leaf count ${live}`,
       index,
     );
   }
-  const storeBytes = encodeAddress(storeKey);
-  const proof = mmrBuildProof(reconstructSolanaStoreHistory(storeBytes, sealed).leaves, BigInt(leafIndex));
+  // `MmrProof::for_leaf_count`: the leaf's mountain is the highest bit set in the observed count and
+  // not in the index, and its height is how many siblings reach that mountain's peak.
+  const height = (live ^ leafIndex).toString(2).length - 1;
+  const proof = { leafIndex, siblings: siblings.slice(0, height) };
+  const storeBytes = encodeAddress(encryptedStore);
   const verifies =
-    proof !== undefined &&
-    (key === undefined
-      ? verifyPublicDecryptProof(storeBytes, store.peaks, store.leafCount, handle, proof)
-      : verifyHistoricalAccessProof(storeBytes, store.peaks, store.leafCount, handle, key, proof));
+    key === undefined
+      ? verifyPublicDecryptProof(storeBytes, store.peaks, live, handle, proof)
+      : verifyHistoricalAccessProof(storeBytes, store.peaks, live, handle, encodeAddress(key), proof);
   if (!verifies) {
-    refuse('HandleBinding::ProofDoesNotVerify', `the leaf does not verify against the peaks of ${storeKey}`, index);
+    refuse(
+      'HandleBinding::ProofDoesNotVerify',
+      `the leaf proof does not verify against the observed peaks (record ${outcome.leafCount} leaves, chain ${live})`,
+      index,
+    );
   }
 }
 
@@ -313,7 +356,7 @@ export async function solanaRelayerDelegationRefusal({
   if (delegated.length === 0) return undefined;
 
   const first = await readAccounts(delegated.map(({ key }) => key));
-  const nextStore = cursor(first.accounts);
+  const nextStore = cursor(first.accounts, 'the host read');
   const planned = [];
   for (const [index, { key, delegator }] of delegated.entries()) {
     const account = nextStore();
@@ -324,17 +367,13 @@ export async function solanaRelayerDelegationRefusal({
       if (error instanceof ConnectorRefusal) continue;
       throw error;
     }
-    const rows = [
-      await delegationRow(delegator, delegate, store, programAddress),
-      await delegationRow(delegator, delegate, SOLANA_WILDCARD_APP, programAddress),
-    ] as const;
-    planned.push({ delegator, rows });
+    planned.push({ delegator, rows: await delegationRows(delegator, delegate, store, programAddress) });
   }
   if (planned.length === 0) return undefined;
 
   const rowKeys = planned.flatMap(({ rows }) => rows.map((row) => row.pda[0]));
   const second = await readAccounts([...rowKeys, SYSVAR_CLOCK_ADDRESS], first.slot);
-  const nextRow = cursor(second.accounts);
+  const nextRow = cursor(second.accounts, 'the host read');
   const judged = planned.map((entry) => ({ ...entry, accounts: [nextRow(), nextRow()] as const }));
   const clock = nextRow();
   if (!clock.exists) return undefined;
@@ -351,24 +390,29 @@ export async function solanaRelayerDelegationRefusal({
   return undefined;
 }
 
-/** `check_public_decrypt` for one handle: the store it names, and its public leaf proven against it. */
+/**
+ * `check_public_decrypt`: every handle's store, read in one snapshot and judged before any leaf, and
+ * then each handle's public leaf proven against its store.
+ */
 export async function judgeSolanaPublicDecryption({
   programAddress,
-  encryptedStore,
-  handle,
+  handles,
   readAccounts,
-  readHistory,
+  readLeafProofs,
 }: {
   readonly programAddress: Address;
-  readonly encryptedStore: Address;
-  readonly handle: Uint8Array;
+  readonly handles: ReadonlyArray<{ readonly handle: Uint8Array; readonly encryptedStore: Address }>;
   readonly readAccounts: SolanaHostAccountsReader;
-  readonly readHistory: SolanaStoreHistoryReader;
+  readonly readLeafProofs: SolanaLeafProofReader;
 }): Promise<ConnectorVerdict> {
   try {
-    const { accounts } = await readAccounts([encryptedStore]);
-    const store = resolveStore(cursor(accounts)(), programAddress, encryptedStore, 0);
-    proveLeaf(encryptedStore, store, await readHistory(encryptedStore), { handle }, 0);
+    const { accounts } = await readAccounts(handles.map(({ encryptedStore }) => encryptedStore));
+    const next = cursor(accounts, 'the host read');
+    const leaves = handles.map(({ handle, encryptedStore }, index) => ({
+      store: resolveStore(next(), programAddress, encryptedStore, index),
+      query: { encryptedStore, handle },
+    }));
+    await proveLeaves(readLeafProofs, leaves);
     return { authorized: true };
   } catch (error) {
     return verdictOf(error);
@@ -387,7 +431,7 @@ export async function judgeSolanaUserDecryption({
   signature,
   entries,
   readAccounts,
-  readHistory,
+  readLeafProofs,
 }: {
   readonly programAddress: Address;
   readonly now: bigint;
@@ -395,7 +439,7 @@ export async function judgeSolanaUserDecryption({
   readonly signature: Uint8Array;
   readonly entries: readonly SolanaUserDecryptHandleEntry[];
   readonly readAccounts: SolanaHostAccountsReader;
-  readonly readHistory: SolanaStoreHistoryReader;
+  readonly readLeafProofs: SolanaLeafProofReader;
 }): Promise<ConnectorVerdict> {
   try {
     try {
@@ -421,24 +465,30 @@ export async function judgeSolanaUserDecryption({
       programAddress,
       seeds: [SOLANA_PERMIT_INVALIDATION_SEED, encodeAddress(signer)],
     });
-    const storeKeys = entries.map((entry) => decodeAddress(entry.encryptedStore));
+    const claims = entries.map((entry, index) => ({
+      index,
+      handle: entry.handle,
+      storeKey: decodeAddress(entry.encryptedStore),
+      owner: decodeAddress(entry.ownerAddress),
+    }));
+    const storeKeys = claims.map(({ storeKey }) => storeKey);
     const first = await readAccounts([watermarkPda[0], ...storeKeys]);
-    const firstAccount = cursor(first.accounts);
-    firstAccount();
+    const firstRead = cursor(first.accounts, 'the host read');
+    // The watermark is judged on the last read.
+    firstRead();
     const located = [];
-    for (const [index, entry] of entries.entries()) {
-      const key = decodeAddress(entry.encryptedStore);
-      const owner = decodeAddress(entry.ownerAddress);
-      const account = firstAccount();
-      let rows: readonly [DelegationRow, DelegationRow] | undefined;
-      if (owner !== signer) {
-        const store = resolveStore(account, programAddress, key, index);
-        rows = [
-          await delegationRow(owner, signer, store, programAddress),
-          await delegationRow(owner, signer, SOLANA_WILDCARD_APP, programAddress),
-        ];
-      }
-      located.push({ index, entry, key, owner, rows });
+    for (const claim of claims) {
+      const account = firstRead();
+      const rows =
+        claim.owner === signer
+          ? undefined
+          : await delegationRows(
+              claim.owner,
+              signer,
+              resolveStore(account, programAddress, claim.storeKey, claim.index),
+              programAddress,
+            );
+      located.push({ ...claim, rows });
     }
 
     const rowKeys = located.flatMap(({ rows }) => (rows ?? []).map((row) => row.pda[0]));
@@ -446,18 +496,19 @@ export async function judgeSolanaUserDecryption({
     const last = delegated
       ? await readAccounts([watermarkPda[0], SYSVAR_CLOCK_ADDRESS, ...storeKeys, ...rowKeys], first.slot)
       : first;
-    const next = cursor(last.accounts);
-    const watermarkAccount = next();
+    const lastRead = cursor(last.accounts, 'the host read');
+    const watermarkAccount = lastRead();
     let hostNow = 0n;
     if (delegated) {
-      const clock = next();
+      const clock = lastRead();
       if (!clock.exists) throw new Error('the host read returned no Clock sysvar');
       hostNow = getSysvarClockDecoder().decode(clock.data).unixTimestamp;
     }
-    const observed = located.map((claim) => ({ ...claim, account: next() }));
-    const judged = observed.map((claim) => ({
+    // The read lists every store before any row, so each claim takes its store, then its rows.
+    const withStores = located.map((claim) => ({ ...claim, account: lastRead() }));
+    const judged = withStores.map((claim) => ({
       ...claim,
-      rowAccounts: claim.rows === undefined ? undefined : ([next(), next()] as const),
+      rowAccounts: claim.rows === undefined ? undefined : ([lastRead(), lastRead()] as const),
     }));
 
     let watermark = 0n;
@@ -475,8 +526,8 @@ export async function judgeSolanaUserDecryption({
 
     // Every host rule is judged before any leaf.
     const allowedScopes = new Set(fields.allowedScopes.map((scope) => bytesToHex(scope)));
-    const resolved = judged.map(({ index, entry, key, owner, rows, account, rowAccounts }) => {
-      const store = resolveStore(account, programAddress, key, index);
+    const resolved = judged.map(({ index, handle, storeKey, owner, rows, account, rowAccounts }) => {
+      const store = resolveStore(account, programAddress, storeKey, index);
       const application = bytesToHex(concatBytes(encodeAddress(store.program), encodeAddress(store.scope)));
       if (allowedScopes.size > 0 && !allowedScopes.has(application)) {
         refuse('ScopeNotAllowed', `application (${store.program}, ${store.scope}) is outside the signed scope`, index);
@@ -497,17 +548,11 @@ export async function judgeSolanaUserDecryption({
           refuse('Delegation::NoLiveDelegation', `${owner} has no live delegation to ${signer} at ${hostNow}`, index);
         }
       }
-      return { index, entry, key, store };
+      // The leaf must name the entry's owner: the signer for a direct entry, the delegator for a
+      // delegated one.
+      return { store, query: { encryptedStore: storeKey, handle, key: owner } };
     });
-
-    // The leaf must name the entry's owner: the signer for a direct entry, the delegator for a
-    // delegated one.
-    const histories = new Map<Address, readonly SolanaStoreHistoryEvent[]>();
-    for (const { index, entry, key, store } of resolved) {
-      const history = histories.get(key) ?? (await readHistory(key));
-      histories.set(key, history);
-      proveLeaf(key, store, history, { handle: entry.handle, key: entry.ownerAddress }, index);
-    }
+    await proveLeaves(readLeafProofs, resolved);
     return { authorized: true };
   } catch (error) {
     return verdictOf(error);

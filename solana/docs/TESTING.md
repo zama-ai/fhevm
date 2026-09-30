@@ -235,11 +235,13 @@ returns `@fhevm/sdk/solana` with the three client factories replaced by those of
   least two bytes each so that production's one-byte `0x00` never decodes as a value.
 - **User decrypt.** The permit and request are built as in production. The client then judges the
   request as the KMS Connector does (`sdk/js-sdk/src/solana/cleartext/authorization.ts`): the same
-  host accounts, read in the same order and judged by the same rules, with the store's rebuilt
-  history in place of the coprocessors' leaf record. The kms-worker test `solana_authorization_cases`
-  runs the Connector on a set of cases and writes its verdicts to
-  `solana/test-fixtures/authorization/user_decrypt_cases_v1.json`, and the SDK test holds the client
-  to them. The checks run in the real stack's order, and a refusal reaches the caller as it does
+  host accounts, read in the same order and judged by the same rules, and one batch of leaf proofs
+  from the stack's leaf record (below), verified against the observed stores as the Connector
+  verifies a coprocessor's. The kms-worker test `solana_authorization_cases` runs the Connector on a
+  set of user and public decryptions and writes, for each, the accounts, the leaf-proof batch it
+  asked for with the record's answers, and its verdict to
+  `solana/test-fixtures/authorization/decrypt_cases_v1.json`. The SDK test holds the client to
+  them. The checks run in the real stack's order, and a refusal reaches the caller as it does
   there. At submission, the relayer refuses a permit for another host chain
   (`host_chain_id_not_supported`), then a bad signature (`validation_failed`). Its pre-check then
   refuses a delegated entry whose two delegation rows are both dead (`not_allowed_on_host_acl`).
@@ -250,8 +252,9 @@ returns `@fhevm/sdk/solana` with the three client factories replaced by those of
   at once and names the failure, where the real stack leaves the request to time out. Otherwise the answer is
   the plaintext the host recorded in the store. The client also checks that the trust
   configuration names the KMS signers and gateway domain the host registers.
-- **Public decrypt.** The store and the handle's public leaf are judged by the Connector's rules.
-  The certificate is signed with the test KMS key, and the on-chain verifier checks it as usual.
+- **Public decrypt.** The store and the handle's public leaf are judged by the Connector's rules,
+  and a failure the Connector would retry is judged again, up to 20 times. The certificate is
+  signed with the test KMS key, and the on-chain verifier checks it as usual.
 
 The stack also serves `/v1/solana/leaf-proofs` in the host-listener's wire format. It rebuilds each
 store's history from the validator's transactions (`createSolanaStoreHistoryReader`), so app code
