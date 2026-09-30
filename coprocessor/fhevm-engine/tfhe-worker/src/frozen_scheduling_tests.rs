@@ -248,6 +248,42 @@ async fn empty_transactions_are_pushed_behind_the_window() {
     assert_eq!(bumped, schedule(6));
 }
 
+/// Penalized txs move as one block: a shared value would let the window pick
+/// a consumer before its producer, which then fails with MissingInputs.
+#[tokio::test]
+async fn penalty_keeps_the_order_of_frozen_transactions() {
+    let (_db, pool) = setup().await;
+    computation(&pool, 2, 1, 10, true, 90).await;
+    computation(&pool, 3, 2, 11, true, 90).await;
+    let depth = time::Duration::microseconds(1);
+    for (tx, order) in [(10, schedule(1)), (11, schedule(3) + depth)] {
+        sqlx::query("UPDATE computations SET schedule_order = $1 WHERE transaction_id = $2")
+            .bind(order)
+            .bind(handle(tx))
+            .execute(&pool)
+            .await
+            .unwrap();
+    }
+    let mut trx = pool.begin().await.unwrap();
+    frozen_computations::penalize_frozen_transactions(
+        &mut trx,
+        &[handle(11), handle(10)],
+        schedule(5),
+    )
+    .await
+    .unwrap();
+    trx.commit().await.unwrap();
+    let order = |tx: u8| {
+        sqlx::query_scalar::<_, PrimitiveDateTime>(
+            "SELECT schedule_order FROM computations WHERE transaction_id = $1",
+        )
+        .bind(handle(tx))
+        .fetch_one(&pool)
+    };
+    assert_eq!(order(10).await.unwrap(), schedule(6));
+    assert_eq!(order(11).await.unwrap(), schedule(8) + depth);
+}
+
 #[tokio::test]
 async fn tx_unlock_potential_is_an_ema_visible_before_the_batch_commits() {
     let (_db, pool) = setup().await;

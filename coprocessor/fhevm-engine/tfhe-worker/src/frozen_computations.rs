@@ -233,12 +233,21 @@ pub(super) async fn penalize_frozen_transactions(
         PrimitiveDateTime::new(n.date(), n.time())
     };
     let bumped = window_max.checked_add(Duration::seconds(1)).unwrap_or(now);
-    let schedule_order = if bumped > now { now } else { bumped };
+    let anchor = if bumped > now { now } else { bumped };
+    // One shift for the whole group: the earliest frozen tx lands on the
+    // anchor and the others keep their block-time + depth gaps, so producers
+    // stay ahead of their consumers. Only the anchor is capped at `now`.
     sqlx::query!(
         r#"UPDATE computations
-           SET schedule_order = $1
-           WHERE transaction_id = ANY($2) AND is_completed = FALSE"#,
-        schedule_order,
+           SET schedule_order = computations.schedule_order + ($1 - frozen.first_order)
+           FROM (
+               SELECT MIN(schedule_order) AS first_order
+               FROM computations
+               WHERE transaction_id = ANY($2) AND is_completed = FALSE
+           ) AS frozen
+           WHERE computations.transaction_id = ANY($2)
+             AND computations.is_completed = FALSE"#,
+        anchor,
         transaction_ids
     )
     .execute(trx.as_mut())

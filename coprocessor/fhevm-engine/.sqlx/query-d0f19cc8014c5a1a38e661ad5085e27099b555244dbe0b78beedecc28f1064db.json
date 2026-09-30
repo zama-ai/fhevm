@@ -1,0 +1,15 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "UPDATE computations\n           SET schedule_order = computations.schedule_order + ($1 - frozen.first_order)\n           FROM (\n               SELECT MIN(schedule_order) AS first_order\n               FROM computations\n               WHERE transaction_id = ANY($2) AND is_completed = FALSE\n           ) AS frozen\n           WHERE computations.transaction_id = ANY($2)\n             AND computations.is_completed = FALSE",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Timestamp",
+        "ByteaArray"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "d0f19cc8014c5a1a38e661ad5085e27099b555244dbe0b78beedecc28f1064db"
+}
