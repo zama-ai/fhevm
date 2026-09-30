@@ -316,9 +316,20 @@ pub(crate) async fn log_discovery_frontiers(
         let frontier = frontiers.get(&tip.host_chain_id);
         tracing::info!(consensus_epoch, host_chain_id = tip.host_chain_id,
             host_tip = tip.block_number,
+            host_finalized = ?tip.finalized_block_number,
             first_discovered = ?frontier.map(|f| f.first_block),
             last_discovered = ?frontier.map(|f| f.last_block),
             "Manifest discovery frontier");
+        if frontier.is_none()
+            && consensus_epoch == LEGACY_CONSENSUS_EPOCH
+            && tip.finalized_block_number.is_none()
+        {
+            tracing::warn!(
+                consensus_epoch,
+                host_chain_id = tip.host_chain_id,
+                "Manifest discovery waits for a finalized host block to seed the chain"
+            );
+        }
     }
     Ok(())
 }
