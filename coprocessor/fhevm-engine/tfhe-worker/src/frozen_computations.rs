@@ -137,7 +137,9 @@ pub(super) async fn containment_filter(
 /// reads `public` for a handle it has no stored copy of, so a completed
 /// epoch's finding counts there too until Green stores its own. `public`
 /// never reads Green, and a failed or pending epoch's bytes live nowhere this
-/// stack reads; this matches containment's rule. `blue_green_consensus_epoch` and
+/// stack reads; this matches containment's rule. A finding superseded by a
+/// later epoch's cutover describes bytes that are gone, so it never counts.
+/// `blue_green_consensus_epoch` and
 /// `ciphertexts` are left unqualified: the search_path resolves them to this
 /// stack's schema.
 pub(super) async fn drifted_ct64_handles(
@@ -148,6 +150,8 @@ pub(super) async fn drifted_ct64_handles(
            FROM public.drifted_handle dh
            WHERE dh.reason = 'ct64_mismatch'
              AND dh.healed_at IS NULL
+             AND dh.superseded_at IS NULL
+             AND NOT public.drift_superseded(dh.consensus_epoch, dh.host_chain_id, dh.block_number)
              AND (dh.consensus_epoch = (SELECT consensus_epoch
                                           FROM blue_green_consensus_epoch
                                          WHERE singleton)
