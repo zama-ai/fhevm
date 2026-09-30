@@ -58,7 +58,7 @@ const MANIFEST_DISCOVERY_BLOCK_OVERLAP: i64 = 5;
 /// not a first-pass bootstrap. Loaded as `MIN`/`MAX(block_number)` grouped by
 /// `host_chain_id`.
 ///
-/// `first_block` is the durable lower bound: the legacy bootstrap tip, an
+/// `first_block` is the durable lower bound: the legacy finalized seed, an
 /// upgrade `start_block`, or whatever was first inserted. Later passes must
 /// not walk below it (and not below the consensus_epoch window when one exists).
 ///
@@ -75,14 +75,18 @@ struct ExistingFrontier {
 enum DiscoveryKind {
     /// Rows already exist; revisit a small overlap from the highest known block.
     EstablishedFrontier,
-    /// First `legacy` pass; the current tip is the arbitrary history start.
-    LegacyTip,
+    /// First `legacy` pass; the latest finalized block is the arbitrary
+    /// history start, so no reorg can orphan the root.
+    LegacyFinalized,
     /// First upgrade-consensus_epoch pass; start at the configured window.
     UpgradeWindow,
 }
 
 struct DiscoveryBound {
     host_chain_id: i64,
+    /// Height of the discovery root: the consensus_epoch window start, or the
+    /// lowest stored block. Every lineage of the epoch passes through it.
+    root_block: i64,
     first_block: i64,
     /// Inclusive upper bound for producer-handle catch-up. `None` means
     /// unbounded (bootstrap). Established frontiers cap at `ExistingFrontier.last_block`.
@@ -148,7 +152,7 @@ pub fn publication_cadence_overrides(
 fn discovery_bound_for_chain(
     consensus_epoch: &str,
     host_chain_id: i64,
-    latest_block: i64,
+    latest_finalized_block: Option<i64>,
     frontier: Option<&ExistingFrontier>,
     window_start: Option<i64>,
     cadence_overrides: &BTreeMap<i64, i64>,
@@ -162,6 +166,7 @@ fn discovery_bound_for_chain(
             .max(floor);
         return Some(DiscoveryBound {
             host_chain_id,
+            root_block: floor,
             first_block,
             last_block: Some(frontier.last_block),
             publication_cadence,
@@ -169,17 +174,21 @@ fn discovery_bound_for_chain(
         });
     }
     if consensus_epoch == LEGACY_CONSENSUS_EPOCH {
+        let seed = latest_finalized_block?;
         return Some(DiscoveryBound {
             host_chain_id,
-            first_block: latest_block,
+            root_block: seed,
+            first_block: seed,
             last_block: None,
             publication_cadence,
-            kind: DiscoveryKind::LegacyTip,
+            kind: DiscoveryKind::LegacyFinalized,
         });
     }
+    let start = window_start?;
     Some(DiscoveryBound {
         host_chain_id,
-        first_block: window_start?,
+        root_block: start,
+        first_block: start,
         last_block: None,
         publication_cadence,
         kind: DiscoveryKind::UpgradeWindow,
@@ -196,11 +205,15 @@ fn discovery_bound_for_chain(
 /// its stack-version gate retires it at cutover.
 ///
 /// `block_manifest_state` is also the durable discovery frontier. The first
-/// consensus_epoch starts at the latest block already known on each chain because
+/// consensus_epoch starts at the latest finalized block on each chain because
 /// its historical boundary is intentionally arbitrary. Upgrade consensus_epochs
 /// start at their configured per-chain `start_block`. Once a frontier exists,
 /// each pass revisits a small block window to tolerate recently-arrived rows,
 /// without ever crossing an upgrade consensus_epoch's start boundary.
+///
+/// Parent-to-child discovery covers every fork above a tracked block, but not a
+/// reorg of the root itself: the replacement root has no tracked parent. Each
+/// pass therefore re-inserts the root height until a tracked root is finalized.
 #[cfg(test)]
 pub(crate) async fn discover_blocks(pool: &PgPool) -> Result<u64, ExecutionError> {
     let consensus_epoch =
@@ -222,19 +235,26 @@ pub(crate) async fn discover_blocks_for_consensus_epoch(
         let Some(bound) = discovery_bound_for_chain(
             consensus_epoch,
             latest.host_chain_id,
-            latest.block_number,
+            latest.finalized_block_number,
             frontiers.get(&latest.host_chain_id),
             windows.get(&latest.host_chain_id).copied(),
             cadence_overrides,
         ) else {
+            tracing::debug!(
+                consensus_epoch,
+                host_chain_id = latest.host_chain_id,
+                host_tip = latest.block_number,
+                "No discovery start yet: legacy waits for a finalized block, an upgrade for its window"
+            );
             continue;
         };
 
         inserted += match bound.kind {
             DiscoveryKind::EstablishedFrontier => {
-                insert_blocks_with_allowed_handles(pool, consensus_epoch, &bound).await?
+                insert_consensus_epoch_anchor(pool, consensus_epoch, &bound).await?
+                    + insert_blocks_with_allowed_handles(pool, consensus_epoch, &bound).await?
             }
-            DiscoveryKind::LegacyTip | DiscoveryKind::UpgradeWindow => {
+            DiscoveryKind::LegacyFinalized | DiscoveryKind::UpgradeWindow => {
                 insert_bootstrap_blocks(pool, consensus_epoch, &bound).await?
             }
         };
@@ -245,6 +265,7 @@ pub(crate) async fn discover_blocks_for_consensus_epoch(
 struct LatestValidBlock {
     host_chain_id: i64,
     block_number: i64,
+    finalized_block_number: Option<i64>,
 }
 
 async fn load_existing_frontiers(
@@ -302,7 +323,9 @@ async fn load_latest_valid_blocks(pool: &PgPool) -> Result<Vec<LatestValidBlock>
     let rows = sqlx::query!(
         r#"
         SELECT chain_id AS host_chain_id,
-               MAX(block_number) AS "block_number!"
+               MAX(block_number) AS "block_number!",
+               MAX(block_number) FILTER (WHERE block_status = 'finalized')
+                   AS finalized_block_number
           FROM host_chain_blocks_valid
          WHERE block_status <> 'orphaned'
            AND OCTET_LENGTH(parent_hash) = 32
@@ -316,6 +339,7 @@ async fn load_latest_valid_blocks(pool: &PgPool) -> Result<Vec<LatestValidBlock>
         .map(|row| LatestValidBlock {
             host_chain_id: row.host_chain_id,
             block_number: row.block_number,
+            finalized_block_number: row.finalized_block_number,
         })
         .collect())
 }
@@ -332,6 +356,9 @@ async fn insert_bootstrap_blocks(
     Ok(anchored + insert_blocks_with_allowed_handles(pool, consensus_epoch, bound).await?)
 }
 
+/// Inserts every live host block at the root height. On an established
+/// frontier this re-roots discovery after a reorg of the root, and stops once
+/// a tracked root is finalized since no later reorg can replace it.
 async fn insert_consensus_epoch_anchor(
     pool: &PgPool,
     consensus_epoch: &str,
@@ -359,6 +386,17 @@ async fn insert_consensus_epoch_anchor(
                AND host.block_number = $4
                AND host.block_status <> 'orphaned'
                AND OCTET_LENGTH(host.parent_hash) = 32
+               AND NOT EXISTS (
+                    SELECT 1
+                      FROM block_manifest_state root
+                      JOIN host_chain_blocks_valid root_host
+                        ON root_host.chain_id = root.host_chain_id
+                       AND root_host.block_hash = root.block_hash
+                     WHERE root.consensus_epoch = $1
+                       AND root.host_chain_id = $2
+                       AND root.block_number = $4
+                       AND root_host.block_status = 'finalized'
+               )
             ON CONFLICT (consensus_epoch, host_chain_id, block_hash) DO NOTHING
             RETURNING 1
         )
@@ -367,7 +405,7 @@ async fn insert_consensus_epoch_anchor(
         consensus_epoch,
         bound.host_chain_id,
         bound.publication_cadence,
-        bound.first_block,
+        bound.root_block,
     )
     .fetch_one(pool)
     .await?;
@@ -744,14 +782,14 @@ mod discovery_bound_tests {
     fn bound(
         consensus_epoch: &str,
         host_chain_id: i64,
-        latest_block: i64,
+        latest_finalized_block: Option<i64>,
         frontier: Option<&ExistingFrontier>,
         window_start: Option<i64>,
     ) -> Option<DiscoveryBound> {
         discovery_bound_for_chain(
             consensus_epoch,
             host_chain_id,
-            latest_block,
+            latest_finalized_block,
             frontier,
             window_start,
             &none(),
@@ -776,9 +814,15 @@ mod discovery_bound_tests {
         assert_eq!(publication_cadence(31337, &overrides), 1);
         assert_eq!(publication_cadence(1, &overrides), 5);
         assert_eq!(publication_cadence(137, &overrides), 30);
-        let bound =
-            discovery_bound_for_chain(LEGACY_CONSENSUS_EPOCH, 31337, 50, None, None, &overrides)
-                .unwrap();
+        let bound = discovery_bound_for_chain(
+            LEGACY_CONSENSUS_EPOCH,
+            31337,
+            Some(50),
+            None,
+            None,
+            &overrides,
+        )
+        .unwrap();
         assert_eq!(bound.publication_cadence, 1);
     }
 
@@ -795,23 +839,30 @@ mod discovery_bound_tests {
     }
 
     #[test]
-    fn legacy_without_frontier_starts_at_the_tip() {
-        let bound = bound(LEGACY_CONSENSUS_EPOCH, 137, 50, None, None).unwrap();
+    fn legacy_without_frontier_starts_at_the_latest_finalized_block() {
+        let bound = bound(LEGACY_CONSENSUS_EPOCH, 137, Some(50), None, None).unwrap();
+        assert_eq!(bound.root_block, 50);
         assert_eq!(bound.first_block, 50);
-        assert_eq!(bound.kind, DiscoveryKind::LegacyTip);
+        assert_eq!(bound.kind, DiscoveryKind::LegacyFinalized);
         assert_eq!(bound.publication_cadence, 30);
     }
 
     #[test]
+    fn legacy_without_finalized_block_waits() {
+        assert!(bound(LEGACY_CONSENSUS_EPOCH, 137, None, None, None).is_none());
+    }
+
+    #[test]
     fn upgrade_without_frontier_starts_at_the_window() {
-        let bound = bound("1", 137, 80, None, Some(60)).unwrap();
+        let bound = bound("1", 137, None, None, Some(60)).unwrap();
+        assert_eq!(bound.root_block, 60);
         assert_eq!(bound.first_block, 60);
         assert_eq!(bound.kind, DiscoveryKind::UpgradeWindow);
     }
 
     #[test]
     fn upgrade_without_window_is_skipped() {
-        assert!(bound("1", 137, 80, None, None).is_none());
+        assert!(bound("1", 137, Some(80), None, None).is_none());
     }
 
     #[test]
@@ -820,7 +871,15 @@ mod discovery_bound_tests {
             first_block: 100,
             last_block: 110,
         };
-        let bound = bound(LEGACY_CONSENSUS_EPOCH, 137, 200, Some(&frontier), None).unwrap();
+        let bound = bound(
+            LEGACY_CONSENSUS_EPOCH,
+            137,
+            Some(200),
+            Some(&frontier),
+            None,
+        )
+        .unwrap();
+        assert_eq!(bound.root_block, 100);
         assert_eq!(bound.first_block, 105);
         assert_eq!(bound.last_block, Some(110));
         assert_eq!(bound.kind, DiscoveryKind::EstablishedFrontier);
@@ -832,7 +891,8 @@ mod discovery_bound_tests {
             first_block: 50,
             last_block: 110,
         };
-        let bound = bound("1", 137, 200, Some(&frontier), Some(108)).unwrap();
+        let bound = bound("1", 137, Some(200), Some(&frontier), Some(108)).unwrap();
+        assert_eq!(bound.root_block, 108);
         assert_eq!(bound.first_block, 108);
         assert_eq!(bound.last_block, Some(110));
         assert_eq!(bound.kind, DiscoveryKind::EstablishedFrontier);
@@ -840,9 +900,9 @@ mod discovery_bound_tests {
 
     #[test]
     fn bootstrap_bounds_have_no_upper_cap() {
-        let legacy = bound(LEGACY_CONSENSUS_EPOCH, 137, 50, None, None).unwrap();
+        let legacy = bound(LEGACY_CONSENSUS_EPOCH, 137, Some(50), None, None).unwrap();
         assert_eq!(legacy.last_block, None);
-        let upgrade = bound("1", 137, 80, None, Some(60)).unwrap();
+        let upgrade = bound("1", 137, None, None, Some(60)).unwrap();
         assert_eq!(upgrade.last_block, None);
     }
 }

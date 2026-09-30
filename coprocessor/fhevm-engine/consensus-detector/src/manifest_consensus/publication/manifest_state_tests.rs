@@ -185,7 +185,7 @@ async fn detector_seeds_candidate_early_but_waits_for_every_allowed_handle() {
     let first_handle = vec![0x21; 32];
     let second_handle = vec![0x22; 32];
 
-    insert_host_block(&pool, block_number, &block_hash, &parent_hash, "pending").await;
+    insert_host_block(&pool, block_number, &block_hash, &parent_hash, "finalized").await;
     insert_producer_block(&pool, block_number, &block_hash, &first_handle).await;
     insert_producer_block(&pool, block_number, &block_hash, &second_handle).await;
     insert_completed_sns_digest(&pool, block_number, &block_hash, &first_handle).await;
@@ -303,25 +303,117 @@ async fn detector_caps_upgrade_discovery_at_the_consensus_epoch_start() {
 
 #[tokio::test]
 #[serial(db)]
-async fn initial_consensus_epoch_bootstraps_at_the_latest_known_block() {
+async fn initial_consensus_epoch_bootstraps_at_the_latest_finalized_block() {
     let (_instance, pool) = setup_pool().await;
     let historical_hash = vec![0x42; 32];
     let historical_handle = vec![0x21; 32];
-    let bootstrap_hash = vec![0x50; 32];
+    let bootstrap_hash = vec![0x45; 32];
+    let head_hash = vec![0x50; 32];
 
     insert_host_block(&pool, 42, &historical_hash, &[0x41; 32], "pending").await;
     insert_producer_block(&pool, 42, &historical_hash, &historical_handle).await;
     insert_completed_sns_digest(&pool, 42, &historical_hash, &historical_handle).await;
-    insert_host_block(&pool, 50, &bootstrap_hash, &[0x49; 32], "pending").await;
+    insert_host_block(&pool, 50, &head_hash, &[0x49; 32], "pending").await;
 
+    // A pending head can still be reorged away, and with it every lineage
+    // rooted there, so the first pass waits for a finalized seed.
+    assert_eq!(discover_blocks(&pool).await.unwrap(), 0);
+
+    insert_host_block(&pool, 45, &bootstrap_hash, &[0x44; 32], "finalized").await;
     assert_eq!(discover_blocks(&pool).await.unwrap(), 1);
     assert!(!manifest_state_exists(&pool, &historical_hash).await);
     assert!(manifest_state_exists(&pool, &bootstrap_hash).await);
+    assert!(!manifest_state_exists(&pool, &head_hash).await);
 
     // The persisted bootstrap block is the consensus_epoch-zero lower bound; a
     // restart must not widen the arbitrary initial history into older blocks.
     assert_eq!(discover_blocks(&pool).await.unwrap(), 0);
     assert!(!manifest_state_exists(&pool, &historical_hash).await);
+}
+
+async fn open_upgrade_window(pool: &PgPool, start_block: i64) {
+    sqlx::query(
+        "INSERT INTO consensus_epoch_history (
+             consensus_epoch, proposal_id, proposal_block, stack_version, outcome
+         ) VALUES ('1', $1, $2, 'test-green', 'pending')",
+    )
+    .bind(vec![0x91_u8; 32])
+    .bind(start_block - 10)
+    .execute(pool)
+    .await
+    .expect("allocate Green consensus_epoch");
+    sqlx::query(
+        "INSERT INTO consensus_epoch_block_window (
+             consensus_epoch, host_chain_id, start_block, consensus_deadline_block
+         ) VALUES ('1', $1, $2, $3)",
+    )
+    .bind(CHAIN_ID)
+    .bind(start_block)
+    .bind(start_block + 10)
+    .execute(pool)
+    .await
+    .expect("store Green consensus_epoch window");
+    sqlx::query(
+        "UPDATE blue_green_consensus_epoch
+            SET consensus_epoch = '1', updated_at = NOW()
+          WHERE singleton = TRUE",
+    )
+    .execute(pool)
+    .await
+    .expect("select Green consensus_epoch");
+}
+
+async fn set_host_status(pool: &PgPool, block_hash: &[u8], status: &str) {
+    sqlx::query(
+        "UPDATE host_chain_blocks_valid SET block_status = $3
+          WHERE chain_id = $1 AND block_hash = $2",
+    )
+    .bind(CHAIN_ID)
+    .bind(block_hash)
+    .bind(status)
+    .execute(pool)
+    .await
+    .expect("update host block status");
+}
+
+/// A reorg of the upgrade `start_block` leaves no tracked parent for the
+/// replacement root, so parent-to-child discovery alone never reaches the
+/// winning fork. Each pass re-inserts the root height until it is finalized.
+#[tokio::test]
+#[serial(db)]
+async fn upgrade_discovery_reroots_after_the_start_block_is_reorged() {
+    let (_instance, pool) = setup_pool().await;
+    let lost_root = vec![0x60; 32];
+    let lost_child = vec![0x61; 32];
+    let new_root = vec![0x6a; 32];
+    let new_child = vec![0x6b; 32];
+
+    open_upgrade_window(&pool, 60).await;
+    insert_host_block(&pool, 60, &lost_root, &[0x59; 32], "pending").await;
+    insert_host_block(&pool, 61, &lost_child, &lost_root, "pending").await;
+    assert_eq!(discover_blocks(&pool).await.unwrap(), 1);
+    assert_eq!(discover_children(&pool).await.unwrap(), 1);
+
+    // The winning fork forks below the start block and carries no handles in
+    // the producer catch-up window.
+    set_host_status(&pool, &lost_root, "orphaned").await;
+    set_host_status(&pool, &lost_child, "orphaned").await;
+    insert_host_block(&pool, 60, &new_root, &[0x5a; 32], "pending").await;
+    insert_host_block(&pool, 61, &new_child, &new_root, "pending").await;
+    assert_eq!(discover_children(&pool).await.unwrap(), 0);
+
+    assert_eq!(discover_blocks(&pool).await.unwrap(), 1);
+    assert!(manifest_state_exists(&pool, &new_root).await);
+    assert_eq!(discover_children(&pool).await.unwrap(), 1);
+    assert!(manifest_state_exists(&pool, &new_child).await);
+
+    // Once a tracked root is finalized, no reorg can replace it and the root
+    // height is no longer rechecked.
+    set_host_status(&pool, &new_root, "finalized").await;
+    let stray = vec![0x6c; 32];
+    insert_host_block(&pool, 60, &stray, &[0x5b; 32], "pending").await;
+    assert_eq!(discover_blocks(&pool).await.unwrap(), 0);
+    assert!(!manifest_state_exists(&pool, &stray).await);
 }
 
 #[tokio::test]
@@ -338,7 +430,7 @@ async fn anvil_publication_cadence_overlay_is_stored_on_insert() {
     .bind(&block_hash)
     .bind(vec![0x30_u8; 32])
     .bind(50_i64)
-    .bind("pending")
+    .bind("finalized")
     .execute(&pool)
     .await
     .expect("insert anvil host block");
@@ -427,7 +519,7 @@ async fn blue_and_green_discover_the_same_block_without_consensus_epoch_collisio
     .expect("select Green consensus_epoch");
 
     for stack in [&blue, &green] {
-        insert_host_block(stack, block_number, &block_hash, &parent_hash, "pending").await;
+        insert_host_block(stack, block_number, &block_hash, &parent_hash, "finalized").await;
         insert_producer_block(stack, block_number, &block_hash, &handle).await;
         insert_completed_sns_digest(stack, block_number, &block_hash, &handle).await;
     }
@@ -1325,7 +1417,7 @@ async fn bridged_destination_seals_with_the_source_digests_before_its_copy() {
     let src_handle = vec![0x51; 32];
     let dst_handle = vec![0x52; 32];
 
-    insert_host_block(&pool, block_number, &block_hash, &[0x41; 32], "pending").await;
+    insert_host_block(&pool, block_number, &block_hash, &[0x41; 32], "finalized").await;
     insert_producer_block(&pool, block_number, &block_hash, &dst_handle).await;
     insert_bridged_event(&pool, block_number, &block_hash, &src_handle, &dst_handle).await;
     insert_bridge_approval(&pool, &src_handle, "pending").await;
