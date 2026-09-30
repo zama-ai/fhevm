@@ -11,7 +11,7 @@ import { readEnvFile } from "../utils/fs";
 import { run } from "../utils/process";
 import { captureDriftTables } from "./manifest-drift-report";
 import { waitForManifestCondition } from "./manifest-lifecycle";
-import { DISABLE_STRESS_INJECTION, INSTALL_STRESS_INJECTION, stressHandleIsCorrupted } from "./manifest-stress-injection";
+import { DISABLE_STRESS_INJECTION, DROP_STRESS_AUDIT, INSTALL_STRESS_INJECTION, STRESS_AUDIT_REPORT, stressHandleIsCorrupted } from "./manifest-stress-injection";
 
 export type StressPhase = "seed" | "advance" | "pin roots" | "decrypt";
 type Fixture = { chainId: number; handles: string[]; heads: string[]; roots: string[]; rounds: number };
@@ -255,6 +255,13 @@ export async function runManifestHealingStressProfile(
           (SELECT encode(handle,'hex') handle,injected,byte_offset,original_byte,recorded_at FROM e2e_manifest_noise) r`);
         await fs.writeFile(reportPath, JSON.stringify(report, null, 2));
         await q(TARGET, "DROP TABLE e2e_manifest_noise");
+      } catch (error) { cleanupErrors.push(String(error)); }
+      try {
+        report.ciphertextRewrites = await json(TARGET, STRESS_AUDIT_REPORT);
+        if (report.result === "failed") {
+          console.log(`[manifest-healing-stress] node ${TARGET} ciphertext rewrites: ${JSON.stringify(report.ciphertextRewrites)}`);
+        }
+        await q(TARGET, DROP_STRESS_AUDIT);
       } catch (error) { cleanupErrors.push(String(error)); }
     }
     report.finalDriftTables = await captureDriftTables(q);

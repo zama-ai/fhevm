@@ -38,5 +38,31 @@ END;
 $$;
 CREATE TRIGGER e2e_ciphertexts_noise AFTER INSERT ON ciphertexts
   FOR EACH ROW EXECUTE FUNCTION e2e_inject_ct64_noise();
+-- Diagnostics: who writes or removes a stored ciphertext while the noise is on.
+CREATE TABLE e2e_ciphertexts_audit (
+  id BIGSERIAL PRIMARY KEY, op TEXT NOT NULL, handle BYTEA NOT NULL,
+  ciphertext_version SMALLINT NOT NULL, at TIMESTAMPTZ NOT NULL DEFAULT clock_timestamp(),
+  xid BIGINT NOT NULL DEFAULT txid_current(), client INET DEFAULT inet_client_addr(),
+  app TEXT DEFAULT current_setting('application_name'), query TEXT DEFAULT current_query()
+);
+CREATE FUNCTION e2e_audit_ciphertexts() RETURNS trigger LANGUAGE plpgsql AS $$
+BEGIN
+  IF TG_OP = 'DELETE' THEN
+    INSERT INTO e2e_ciphertexts_audit(op,handle,ciphertext_version) VALUES(TG_OP,OLD.handle,OLD.ciphertext_version);
+  ELSE
+    INSERT INTO e2e_ciphertexts_audit(op,handle,ciphertext_version) VALUES(TG_OP,NEW.handle,NEW.ciphertext_version);
+  END IF;
+  RETURN NULL;
+END;
+$$;
+CREATE TRIGGER e2e_ciphertexts_audit AFTER INSERT OR DELETE ON ciphertexts
+  FOR EACH ROW EXECUTE FUNCTION e2e_audit_ciphertexts();
 COMMIT;`;
 export const DISABLE_STRESS_INJECTION = "DROP TRIGGER IF EXISTS e2e_ciphertexts_noise ON ciphertexts; DROP FUNCTION IF EXISTS e2e_inject_ct64_noise();";
+export const DROP_STRESS_AUDIT = "DROP TRIGGER IF EXISTS e2e_ciphertexts_audit ON ciphertexts; DROP FUNCTION IF EXISTS e2e_audit_ciphertexts(); DROP TABLE IF EXISTS e2e_ciphertexts_audit;";
+/** Handles written more than once or removed while audited, with every audited event. */
+export const STRESS_AUDIT_REPORT = `SELECT COALESCE(json_agg(r ORDER BY r.id),'[]'::json)::text FROM (
+  SELECT a.id,a.op,encode(a.handle,'hex') handle,a.ciphertext_version,a.at,a.xid,host(a.client) client,a.app,left(a.query,400) query
+    FROM e2e_ciphertexts_audit a
+   WHERE a.handle IN (SELECT handle FROM e2e_ciphertexts_audit GROUP BY handle
+                      HAVING count(*) FILTER (WHERE op='INSERT') > 1 OR count(*) FILTER (WHERE op='DELETE') > 0)) r`;
