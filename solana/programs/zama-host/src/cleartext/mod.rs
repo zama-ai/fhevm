@@ -75,7 +75,7 @@ impl Value {
 }
 
 /// Width in bits of a shipped FHE type.
-pub fn bit_width(fhe_type: u8) -> Result<u32> {
+fn bit_width(fhe_type: u8) -> Result<u32> {
     match fhe_type {
         0 => Ok(1),
         2 => Ok(8),
@@ -88,7 +88,7 @@ pub fn bit_width(fhe_type: u8) -> Result<u32> {
 }
 
 /// Bytes one value of `fhe_type` takes in an input attestation (a bool takes one).
-pub fn value_len(fhe_type: u8) -> Result<usize> {
+fn value_len(fhe_type: u8) -> Result<usize> {
     Ok(bit_width(fhe_type)?.div_ceil(8) as usize)
 }
 
@@ -143,7 +143,7 @@ pub fn decode_input_value(
 
 /// The plaintext a rand step produces from its seed. Deterministic, so a replayed transaction
 /// reproduces it; it is a mock value, not TFHE's oblivious PRG output.
-pub fn rand_bits(seed: [u8; 16]) -> u128 {
+fn rand_bits(seed: [u8; 16]) -> u128 {
     let digest = solana_keccak_hasher::hashv(&[b"ZAMA_CLEARTEXT_RAND_V1", &seed]).to_bytes();
     u128::from_be_bytes(digest[16..].try_into().unwrap())
 }

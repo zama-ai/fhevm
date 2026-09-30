@@ -1,4 +1,4 @@
-// cleartext-leaf-proofs — the cleartext stack's stand-in for the coprocessor's leaf-proof service:
+// cleartext-leaf-proofs — the cleartext stack's stand-in for the host listener's leaf-proof endpoint:
 // `/v1/solana/leaf-proofs` in the host-listener's wire format
 // (`coprocessor/fhevm-engine/host-listener/openapi/solana_leaf_proofs.json`), so dapps fetch and
 // verify proofs exactly as they do against the real stack. Each request rebuilds the store's
