@@ -1,0 +1,16 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n        UPDATE block_manifest_peer_download\n           SET rejected_object_keys = CASE\n                   WHEN $3 = ANY(rejected_object_keys) THEN rejected_object_keys\n                   ELSE array_append(rejected_object_keys, $3)\n               END,\n               updated_at = NOW()\n         WHERE task_id = $1\n           AND publisher = $2\n        ",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Int8",
+        "Bytea",
+        "Text"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "8fc4967abf379ac066c08a29e84507d952f808ee06c75814235539941496297e"
+}
