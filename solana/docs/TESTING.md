@@ -31,7 +31,7 @@ immediately; just restart any long-lived test process.
 ### The cleartext host build
 
 `zama-host` built with `--features cleartext` (`target/deploy/zama_host_cleartext.so`, produced by
-`scripts/check-zama-host-idl.sh`) is the production host plus the plaintext of every handle it
+`scripts/check-zama-host-idl.sh` or `scripts/build-programs.sh <env> zama_host_cleartext`) is the production host plus the plaintext of every handle it
 produces, kept in the accounts it already writes: a section after each `EncryptedStore`'s largest
 Borsh encoding, and a tail on the `TransientStore` (`src/cleartext/layout.rs`). `fhe_execute` runs
 unchanged, then evaluates the same steps on plaintexts. Verified inputs carry their plaintexts in
@@ -163,9 +163,9 @@ The harness (`e2e/harness/`):
 
 - `loadEnv()` → a `TestEnv` (RPC/WS/relayer/gateway URLs, the DD-052 chain id, the zama-host
   program id, the user-decrypt context, the coprocessor DB container, the deployer
-  keypair root, and capability flags `faucet` / `freshMints` / `fastSlots`). Its source today is the
-  lifecycle-owned stack (env-var overridable); it is structured so a demo-config JSON or a
-  devnet/mainnet manifest slots in as a second source without touching scenarios.
+  keypair root, and capability flags `faucet` / `freshMints` / `fastSlots` / `protocolServices`).
+  Its source is the lifecycle-owned stack by default (env-var overridable), or `devnet`,
+  `cleartext` or a seeded demo-config.
 - `personas` → named actors backed by on-disk keypairs, with a capability-gated `fund()` (local
   airdrop).
 - `until(condition, { timeoutMs, intervalMs })` → a generic readiness-polling helper.
@@ -207,6 +207,48 @@ bun run test:e2e            # the scenario suite (needs the live stack)
 bun run test:e2e:harness    # the harness unit tests (loadEnv / personas — no stack needed)
 bun test src/utils          # the shared utilities, including until()'s timeout contract
 ```
+
+### The cleartext target
+
+`SOLANA_E2E_SOURCE=cleartext` runs the same scenarios against the cleartext stack
+(`test-suite/fhevm/src/solana/cleartext-stack.ts`) instead of the Zama localnet. That stack is a
+`solana-test-validator` on its own ports, loaded at genesis with the
+[cleartext host build](#the-cleartext-host-build) and the e2e programs, and bootstrapped with test
+coprocessor and KMS keys. No relayer, gateway, coprocessor or KMS runs. The whole suite takes
+about 20 seconds after the build, and needs no Docker.
+
+```bash
+cd test-suite/fhevm
+SOLANA_E2E_SOURCE=cleartext bun run test:e2e   # builds, starts the stack, runs, stops it
+
+# Development loop: keep a stack up, then run scenarios against it.
+bun run src/solana/cleartext-stack.ts
+SOLANA_E2E_SOURCE=cleartext bun test e2e/scenarios/fhe-vertical.scenario.test.ts
+```
+
+Scenarios switch nothing but their SDK clients. `loadSolanaSdk()` (`src/solana/target.ts`)
+returns `@fhevm/sdk/solana` with the three client factories replaced by those of
+`@fhevm/sdk/solana/cleartext`. These take the same parameters and return the same actions:
+
+- **Encrypt.** A mock input proof. The client signs its attestation with the test coprocessor
+  key, and the attestation's `extra_data` carries the plaintexts to the host.
+- **User decrypt.** The permit and request are built and admitted as in production. The answer
+  is the plaintext the host recorded in the store, checked with the production response checks.
+- **Public decrypt.** The certificate is signed with the test KMS key. The history must have made
+  the handle public, and the on-chain verifier checks the certificate as usual.
+
+The stack also serves `/v1/solana/leaf-proofs` in the host-listener's wire format. It rebuilds each
+store's history from the validator's transactions (`fetchSolanaStoreHistory`), so app code fetches
+leaf proofs from `env.leafProof` on both targets.
+
+What the cleartext target does not prove, so these scenarios skip there
+(`capabilities.protocolServices` is false):
+
+- The Connector's user-decrypt authorization: the allow leaf, delegation and revocation. A
+  cleartext user decrypt succeeds without them, so `delegated-user-decrypt` skips.
+- Relayer behavior (job coalescing, refusal labels), KMS shares and signcryption, threshold
+  topologies, and ciphertext materialization. `waitForSnsCommit` resolves at once.
+- Host upgrade with a listener restart (the third `fhe-vertical` test).
 
 ## Where the two decrypt leaves are tested
 
