@@ -80,7 +80,7 @@ Use three homogeneous coprocessors with quorum two, and enable the file argument
 only on the target detector. Use a publication cadence of one for the test chain.
 
 1. Leave the file absent. Start the stack and wait for the detector to establish
-   its publication frontier; a first-ever legacy startup starts at the current tip.
+   its publication frontier; a first-ever legacy startup starts at the latest finalized block.
 2. Stop the target detector before submitting the fixture. Other services continue.
 3. Submit the fixture and wait for its ciphertexts to materialize. Obtain the
    selected producer handle from the fixture receipt/events.
