@@ -1,0 +1,16 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n        UPDATE block_manifest_state\n           SET block_content_digest = NULL,\n               block_handle_count = NULL,\n               publication_error_count = 0,\n               publication_last_error = NULL,\n               publication_next_retry_at = NULL,\n               updated_at = NOW()\n         WHERE host_chain_id = $1\n           AND block_hash = $2\n           AND consensus_epoch = $3\n           AND manifest_published = FALSE\n           AND block_content_digest IS NOT NULL\n        ",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Int8",
+        "Bytea",
+        "Text"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "7f1719b288e7f9b5bdd77308240c01a8f3c397063c67b9638c0fb967c6d0091d"
+}
