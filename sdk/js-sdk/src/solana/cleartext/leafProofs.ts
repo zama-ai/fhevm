@@ -45,11 +45,13 @@ export type SolanaLeafProofEndpoint = { readonly url: string; readonly apiKey: s
 
 ////////////////////////////////////////////////////////////////////////////////
 
+// As the listener parses it: `0x` optional.
 const hex32 = (field: string, value: unknown): Uint8Array => {
-  if (typeof value !== 'string' || !/^[0-9a-fA-F]{64}$/.test(value)) {
-    throw new Error(`${field}: expected 32 bytes as unprefixed hex`);
+  const digits = typeof value === 'string' && value.startsWith('0x') ? value.slice(2) : value;
+  if (typeof digits !== 'string' || !/^[0-9a-fA-F]{64}$/.test(digits)) {
+    throw new Error(`${field}: expected 32 bytes as hex`);
   }
-  return hexToBytes(`0x${value}`);
+  return hexToBytes(`0x${digits}`);
 };
 
 const count = (field: string, value: unknown): bigint => {
@@ -75,7 +77,7 @@ export function decodeSolanaLeafQuery(value: unknown): SolanaLeafQuery {
     encryptedStore: getAddressDecoder().decode(hex32('encryptedStore', encryptedStore)),
     handle: hex32('handle', handle),
   };
-  if (kind === 'public' && key === undefined) return query;
+  if (kind === 'public' && (key === undefined || key === null)) return query;
   if (kind === 'allowed') return { ...query, key: getAddressDecoder().decode(hex32('key', key)) };
   throw new Error('kind: expected public without a key, or allowed with one');
 }

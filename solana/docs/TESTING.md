@@ -256,9 +256,14 @@ returns `@fhevm/sdk/solana` with the three client factories replaced by those of
   and a failure the Connector would retry is judged again, up to 20 times. The certificate is
   signed with the test KMS key, and the on-chain verifier checks it as usual.
 
-The stack also serves `/v1/solana/leaf-proofs` in the host-listener's wire format. It rebuilds each
-store's history from the validator's transactions (`createSolanaStoreHistoryReader`), so app code
-fetches leaf proofs from `env.leafProof` on both targets.
+The stack also serves `/v1/solana/leaf-proofs` in the host-listener's wire format, so app code
+fetches leaf proofs from `env.leafProof` on both targets, and the decrypt clients read the same
+endpoint. The leaf record behind it (`createSolanaLeafRecord`) lives in memory for as long as the
+stack runs. Each request first reads the store's transactions newer than the last one it kept.
+The record extends only by a gap-free run of leaves, so while a transaction is not served yet it
+answers at its older leaf count, which the Connector reads as a record behind the chain. Once it
+holds as many leaves as the store's account, its peaks at that count must be the account's.
+Otherwise the request fails and the store is rebuilt from its first transaction on the next one.
 
 What the cleartext target does not prove, so these parts skip there
 (`capabilities.protocolServices` is false):
@@ -278,10 +283,8 @@ only just fits the 1232-byte packet, can fail on the cleartext build. Mollusk do
 transaction size, so only the validator stack catches the second. The gap only causes false
 failures: a transaction that fits on the cleartext build always fits in production. v1 transactions
 (SIMD-0385) raise the limit to 4096 bytes for both builds, so they move this wall rather than remove
-it. Our Solana transaction reads do not accept v1 yet, `createSolanaStoreHistoryReader` among them
+it. Our Solana transaction reads do not accept v1 yet, `createSolanaLeafRecord` among them
 (fhevm-internal#2080).
-Fuzz loops also rebuild a store's history from every transaction that wrote it, so each decrypt
-costs more as the history grows.
 
 ## Where the two decrypt leaves are tested
 

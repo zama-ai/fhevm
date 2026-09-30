@@ -15,4 +15,4 @@ export {
   type SolanaLeafProofReader,
   type SolanaLeafQuery,
 } from './leafProofs.js';
-export { createSolanaStoreHistoryReader, type SolanaStoreHistoryReader } from './storeHistory.js';
+export { createSolanaLeafRecord } from './leafRecord.js';

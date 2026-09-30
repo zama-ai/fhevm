@@ -100,8 +100,8 @@ const targets = [
         'delegateForUserDecryption',
         'revokeDelegationForUserDecryption',
         'revokePermits',
-        // Decoded, never built: a store's history is read back from the transactions that wrote
-        // it (solana/cleartext/storeHistory.ts).
+        // Decoded, never built: a store's leaves are read back from the transactions that wrote
+        // them (solana/cleartext/leafRecord.ts).
         'fheExecute',
         'makeStoreHandlePublic',
       ]),

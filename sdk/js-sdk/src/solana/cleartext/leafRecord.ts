@@ -1,8 +1,11 @@
-// The leaf history of an `EncryptedStore`, rebuilt from the confirmed host transactions that wrote
-// to it, the way the coprocessor's host-listener records it (`solana_grpc_listener.rs`,
-// reconstruct). With no coprocessor, this is where a cleartext stack's leaf proofs come from.
+// The cleartext stack's leaf record: the leaves of every `EncryptedStore` the host writes, rebuilt
+// from the validator's confirmed transactions the way the coprocessors' host listener records them
+// (`solana_grpc_listener.rs`, reconstruct), kept in memory for as long as the stack runs, and
+// served over the listener's wire by `test-suite/fhevm/src/solana/cleartext-leaf-proofs.ts`.
 import {
   AccountRole,
+  fetchEncodedAccount,
+  getAddressEncoder,
   getBase58Encoder,
   type AccountMeta,
   type Address,
@@ -11,6 +14,15 @@ import {
 } from '@solana/kit';
 import type { SolanaRpc } from '../encryptedStore.js';
 import type { SolanaStoreHistoryEvent } from '../proof.js';
+import type { SolanaLeafProofOutcome, SolanaLeafProofReader } from './leafProofs.js';
+import { bytesToHex } from '../../core/base/bytes.js';
+import { decodeSolanaEncryptedStore, ENCRYPTED_STORE_DISCRIMINATOR } from '../encryptedStore.js';
+import {
+  createRetainedMmr,
+  historicalAccessLeafCommitment,
+  publicDecryptLeafCommitment,
+  type RetainedMmr,
+} from '../proof.js';
 import {
   FHE_EXECUTE_DISCRIMINATOR,
   parseFheExecuteInstruction,
@@ -30,65 +42,137 @@ type HostInstruction = {
   readonly data: Uint8Array;
 };
 
+/** One store's sealed leaves, as far as `newest`, the newest of its transactions read so far. */
+type StoreRecord = {
+  newest: Signature | undefined;
+  readonly tree: RetainedMmr;
+  /** The first leaf of each `(handle, key)` or public `handle`, as the listener answers. */
+  readonly firstLeaf: Map<string, number>;
+};
+
 ////////////////////////////////////////////////////////////////////////////////
 
 const startsWith = (data: ReadonlyUint8Array, prefix: ReadonlyUint8Array): boolean =>
   data.length >= prefix.length && prefix.every((byte, index) => data[index] === byte);
 
-/** Reads the leaf-appending events of an `EncryptedStore`, oldest first. */
-export type SolanaStoreHistoryReader = (encryptedStore: Address) => Promise<SolanaStoreHistoryEvent[]>;
-
-/** The leaf-appending events of one store, as far as its newest transaction seen so far. */
-type SeenHistory = { readonly newest: Signature; readonly events: ReadonlyArray<SolanaStoreHistoryEvent | undefined> };
+const leafKey = (handle: Uint8Array, key?: Uint8Array): string =>
+  key === undefined ? `public:${bytesToHex(handle)}` : `allowed:${bytesToHex(handle)}:${bytesToHex(key)}`;
 
 /**
- * Reads the leaf-appending events of each `EncryptedStore`, oldest first. The reader keeps what it
- * read, so a later read fetches only the transactions newer than the last one it saw; a validator
- * reset, which drops that transaction, makes it read the store from the start again.
+ * The leaf record of the stores the host at `programAddress` writes. Each read first brings every
+ * store it names up to the confirmed chain, reading only the transactions newer than the last one
+ * it kept, then answers from the record.
  *
- * Each write carries the leaf count it appended at, so events land at their position whatever order
- * the RPC lists transactions in. A read throws when two writes claim one leaf or no write claims
- * one, rather than returning a history whose proofs would fail on chain.
+ * - A store extends only by a whole, gap-free run of new leaves. While a transaction is not yet
+ *   available, or the listing does not show a write yet, the record stays where it was, and the
+ *   Connector reads its shorter leaf count as a record behind the chain.
+ * - Once the record holds as many leaves as the store's account, its peaks at that count must be the
+ *   account's.
+ * - Peaks that differ, two writes that claim one leaf, a write the parser cannot read or a failed RPC
+ *   call make the read throw and drop the store's record. The next read rebuilds it from the store's
+ *   first transaction.
+ *
+ * Catch-ups of one store run in turn; different stores catch up independently.
  */
-export function createSolanaStoreHistoryReader(rpc: SolanaRpc, programAddress: Address): SolanaStoreHistoryReader {
-  const seen = new Map<Address, SeenHistory>();
-  // Reads of one store run in turn, so each extends the history the one before it kept.
-  const reads = new Map<Address, Promise<unknown>>();
+export function createSolanaLeafRecord(rpc: SolanaRpc, programAddress: Address): SolanaLeafProofReader {
+  const records = new Map<Address, StoreRecord>();
+  const catchUps = new Map<Address, Promise<StoreRecord | undefined>>();
 
-  const extend = async (encryptedStore: Address): Promise<SolanaStoreHistoryEvent[]> => {
-    let base = seen.get(encryptedStore);
-    if (base !== undefined) {
-      const { value } = await rpc.getSignatureStatuses([base.newest], { searchTransactionHistory: true }).send();
-      if (value[0] === null) base = undefined;
+  /** The record of `encryptedStore` up to the chain, or `undefined` when no host store lives there. */
+  const catchUp = async (encryptedStore: Address): Promise<StoreRecord | undefined> => {
+    const account = await fetchEncodedAccount(rpc, encryptedStore, { commitment: 'confirmed' });
+    if (!account.exists || account.programAddress !== programAddress) return undefined;
+    if (!ENCRYPTED_STORE_DISCRIMINATOR.every((byte, index) => account.data[index] === byte)) return undefined;
+    const live = decodeSolanaEncryptedStore(account.data, encryptedStore);
+
+    const record = records.get(encryptedStore) ?? {
+      newest: undefined,
+      tree: createRetainedMmr(),
+      firstLeaf: new Map(),
+    };
+    records.set(encryptedStore, record);
+    try {
+      await extend(record, encryptedStore);
+      const covered = Number(live.leafCount);
+      if (record.tree.leafCount() >= covered) {
+        const peaks = record.tree.peaks(covered).map(bytesToHex);
+        if (peaks.length !== live.peaks.length || peaks.some((peak, index) => peak !== bytesToHex(live.peaks[index]))) {
+          throw new Error(`the leaves rebuilt for ${encryptedStore} do not match its peaks at leaf count ${covered}`);
+        }
+      }
+    } catch (error) {
+      records.delete(encryptedStore);
+      throw error;
     }
-    const { newest, successful } = await storeSignatures(rpc, encryptedStore, base?.newest);
-    const events = [...(base?.events ?? [])];
-    const place = (previousLeafCount: bigint, appended: readonly SolanaStoreHistoryEvent[]): void => {
-      appended.forEach((event, offset) => {
+    return record;
+  };
+
+  /** Appends the leaves of the transactions newer than `record.newest`, all of them or none. */
+  const extend = async (record: StoreRecord, encryptedStore: Address): Promise<void> => {
+    const { newest, successful } = await storeSignatures(rpc, encryptedStore, record.newest);
+    if (newest === undefined) return;
+    const sealed = record.tree.leafCount();
+    // Each write carries the leaf count it appended at, so its leaves land at their position
+    // whatever order the RPC lists transactions in.
+    const appended: Array<SolanaStoreHistoryEvent | undefined> = [];
+    const place = (previousLeafCount: bigint, events: readonly SolanaStoreHistoryEvent[]): void => {
+      events.forEach((event, offset) => {
         const index = Number(previousLeafCount) + offset;
-        if (events[index] !== undefined) throw new Error(`two writes to ${encryptedStore} claim leaf ${index}`);
-        events[index] = event;
+        if (index < sealed || appended[index - sealed] !== undefined) {
+          throw new Error(`two writes to ${encryptedStore} claim leaf ${index}`);
+        }
+        appended[index - sealed] = event;
       });
     };
     for (const signature of successful) {
-      placeWrites(await hostInstructions(rpc, signature, programAddress), signature, encryptedStore, place);
+      const instructions = await hostInstructions(rpc, signature, programAddress);
+      if (instructions === undefined) return;
+      placeWrites(instructions, signature, encryptedStore, place);
     }
-    // `Array.from` visits the holes a missed write leaves. A history with one is never kept, since
-    // later reads would not look behind its newest transaction again.
-    const history = Array.from(events, (event, index) => {
-      if (event === undefined) throw new Error(`no confirmed write to ${encryptedStore} records leaf ${index}`);
-      return event;
+    // `Array.from` visits the holes a write the listing does not show yet leaves.
+    const run = Array.from(appended);
+    if (!run.every((event): event is SolanaStoreHistoryEvent => event !== undefined)) return;
+
+    const storeBytes = new Uint8Array(getAddressEncoder().encode(encryptedStore));
+    run.forEach((event, offset) => {
+      const index = sealed + offset;
+      const key = event.kind === 'allowed' ? event.key : undefined;
+      record.tree.append(
+        key === undefined
+          ? publicDecryptLeafCommitment(storeBytes, BigInt(index), event.handle)
+          : historicalAccessLeafCommitment(storeBytes, BigInt(index), event.handle, key),
+      );
+      const found = leafKey(event.handle, key);
+      if (!record.firstLeaf.has(found)) record.firstLeaf.set(found, index);
     });
-    const last = newest ?? base?.newest;
-    if (last !== undefined) seen.set(encryptedStore, { newest: last, events });
-    return history;
+    record.newest = newest;
   };
 
-  return (encryptedStore) => {
-    const previous = reads.get(encryptedStore) ?? Promise.resolve();
-    const read = previous.catch(() => undefined).then(() => extend(encryptedStore));
-    reads.set(encryptedStore, read);
-    return read;
+  const caughtUp = (encryptedStore: Address): Promise<StoreRecord | undefined> => {
+    const previous = catchUps.get(encryptedStore) ?? Promise.resolve(undefined);
+    const next = previous.catch(() => undefined).then(() => catchUp(encryptedStore));
+    catchUps.set(encryptedStore, next);
+    return next;
+  };
+
+  return async (queries) => {
+    const stores = [...new Set(queries.map(({ encryptedStore }) => encryptedStore))];
+    const caught = new Map(await Promise.all(stores.map(async (store) => [store, await caughtUp(store)] as const)));
+    return queries.map(({ encryptedStore, handle, key }): SolanaLeafProofOutcome => {
+      const record = caught.get(encryptedStore);
+      if (record === undefined) return { status: 'unknownAccount' };
+      const leafCount = record.tree.leafCount();
+      const leafIndex = record.firstLeaf.get(
+        leafKey(handle, key === undefined ? undefined : new Uint8Array(getAddressEncoder().encode(key))),
+      );
+      if (leafIndex === undefined) return { status: 'notFound', leafCount: BigInt(leafCount) };
+      return {
+        status: 'found',
+        leafIndex: BigInt(leafIndex),
+        leafCount: BigInt(leafCount),
+        siblings: record.tree.proof(leafIndex, leafCount).siblings,
+      };
+    });
   };
 }
 
@@ -156,16 +240,19 @@ async function storeSignatures(
   }
 }
 
-/** The host program's instructions in `signature`, top-level and inner, in execution order. */
+/**
+ * The host program's instructions in `signature`, top-level and inner, in execution order, or
+ * `undefined` while the RPC does not serve the transaction yet.
+ */
 async function hostInstructions(
   rpc: SolanaRpc,
   signature: Signature,
   programAddress: Address,
-): Promise<HostInstruction[]> {
+): Promise<HostInstruction[] | undefined> {
   const transaction = await rpc
     .getTransaction(signature, { commitment: 'confirmed', encoding: 'json', maxSupportedTransactionVersion: 0 })
     .send();
-  if (transaction === null) throw new Error(`transaction ${signature} is not available from the RPC`);
+  if (transaction === null) return undefined;
   const { message } = transaction.transaction;
   const loaded = transaction.meta?.loadedAddresses;
   const keys = [...message.accountKeys, ...(loaded?.writable ?? []), ...(loaded?.readonly ?? [])];

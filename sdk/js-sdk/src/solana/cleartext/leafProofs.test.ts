@@ -34,6 +34,14 @@ describe('the leaf-proof wire', () => {
     expect(outcomes.map(encodeSolanaLeafProofOutcome)).toEqual(wire.proofs);
   });
 
+  it('reads the queries the listener reads: hex with or without 0x, and a null key as none', () => {
+    const [allowed, publicLeaf] = wire.request.leaves as Record<string, string>[];
+    expect(decodeSolanaLeafQuery({ ...allowed, handle: `0x${allowed?.handle}` })).toEqual(
+      decodeSolanaLeafQuery(allowed),
+    );
+    expect(decodeSolanaLeafQuery({ ...publicLeaf, key: null })).toEqual(decodeSolanaLeafQuery(publicLeaf));
+  });
+
   it('rejects a query that is neither an allow with a key nor a public leaf without one', () => {
     const [allowed, publicLeaf] = wire.request.leaves as Record<string, unknown>[];
     expect(() => decodeSolanaLeafQuery({ ...allowed, key: undefined })).toThrow(/key/);
