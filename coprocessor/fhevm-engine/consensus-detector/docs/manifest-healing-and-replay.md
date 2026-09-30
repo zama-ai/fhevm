@@ -82,7 +82,9 @@ finding contaminates a stack only when that stack reads the drifted ciphertext:
 the finding's epoch lives in the stack's schema (`public` holds Blue's epoch and
 every earlier epoch merged at cutover), or it lives in `public` and Green has no
 stored copy of its own. `public` never reads Green, so drift on Green never
-contaminates Blue, and a failed epoch's findings contaminate no stack. Both stacks
+contaminates Blue, and a failed epoch's findings contaminate no stack. The
+tfhe-worker freeze filter applies the same rule, so a stack freezes only work
+that reads a ciphertext it would read as drifted. Both stacks
 run the same graph and compute their own intermediates, so walking through an
 unstored intermediate taints only the walking stack. Each pass reads both
 available execution stacks (`public` and any `gcs-*`) block by block.
