@@ -560,14 +560,43 @@ async fn own_epoch_finding_freezes_even_with_a_stored_copy() {
     assert!(frozen_after_filter(&pool).await);
 }
 
+/// `public` never reads Green: a finding only in the pending Green epoch must
+/// not freeze Blue's live work, even before Blue stores its own copy.
 #[tokio::test]
-async fn other_epoch_finding_freezes_without_a_stored_copy() {
+async fn pending_green_finding_does_not_freeze_public() {
     let (_db, pool) = setup().await;
-    drift_in_other_epoch(&pool, 1).await;
-    assert!(
-        frozen_after_filter(&pool).await,
-        "without its own copy this stack reads the other stack's drifted bytes"
-    );
+    drift_in_epoch(&pool, 1, "v1/block_1", "pending").await;
+    assert!(!frozen_after_filter(&pool).await);
+}
+
+async fn green_reads_as_drifted(green: &sqlx::PgPool) -> bool {
+    let mut trx = green.begin().await.unwrap();
+    frozen_computations::drifted_ct64_handles(&mut trx)
+        .await
+        .unwrap()
+        .contains(&handle(1))
+}
+
+/// Green reads `public` for a handle it never stored, so Blue's drift counts
+/// there until Green has a copy of its own.
+#[tokio::test]
+async fn green_reads_public_drift_until_it_stores_its_own_copy() {
+    let (db, pool) = setup().await;
+    drift(&pool, 1).await;
+    let green = green_pool(&pool, db.db_url(), "v1/block_1").await;
+    assert!(green_reads_as_drifted(&green).await);
+    stored_ciphertext(&green, 1).await;
+    assert!(!green_reads_as_drifted(&green).await);
+}
+
+/// A failed epoch's bytes live in no schema: its findings must not freeze a
+/// later Green epoch.
+#[tokio::test]
+async fn failed_epoch_finding_does_not_freeze_a_later_green() {
+    let (db, pool) = setup().await;
+    drift_in_epoch(&pool, 1, "v1/block_1", "failed").await;
+    let green = green_pool(&pool, db.db_url(), "v1/block_2").await;
+    assert!(!green_reads_as_drifted(&green).await);
 }
 
 #[tokio::test]
