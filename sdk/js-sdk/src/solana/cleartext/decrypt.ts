@@ -48,7 +48,7 @@ import { fetchHostConfig, type HostConfig } from '../internal/generated/zamaHost
 import { fetchKmsContext, type KmsContext } from '../internal/generated/zamaHost/accounts/kmsContext.js';
 import { solanaHostProgram } from '../clients/createFhevmBaseClient.js';
 import { signAsCleartextParty } from './parties.js';
-import { fetchSolanaStoreHistory } from './storeHistory.js';
+import { createSolanaStoreHistoryReader, type SolanaStoreHistoryReader } from './storeHistory.js';
 import { fetchCleartextStoreValue } from './storeValues.js';
 
 ////////////////////////////////////////////////////////////////////////////////
@@ -65,6 +65,7 @@ export function cleartextUserDecryptExecution(
   trust: SolanaDecryptTrust,
 ): SolanaUserDecryptExecution {
   const programAddress = solanaHostProgram(chain);
+  const readHistory = createSolanaStoreHistoryReader(rpc, programAddress);
   return async ({ session, entries, attempts, options }) => {
     const { fields, signature } = session.signedPermit;
     // The caller's timeout and abort signal bound the whole run, as on the relayer path.
@@ -76,7 +77,15 @@ export function cleartextUserDecryptExecution(
         // context on every attempt.
         const host = await fetchHostDecryptionState(rpc, programAddress, fields.kmsRouting.kmsContextId);
         assertTrustMatchesHost(host, trust, fields.kmsRouting.kmsContextId);
-        const rejection = await userDecryptRejection(rpc, programAddress, host, fields, signature, entries);
+        const rejection = await userDecryptRejection(
+          rpc,
+          programAddress,
+          readHistory,
+          host,
+          fields,
+          signature,
+          entries,
+        );
         if (rejection !== undefined) return { ok: false, rejection };
         const plaintexts = await Promise.all(
           entries.map(async (entry) => ({
@@ -163,6 +172,7 @@ const refuse = (message: string): never => {
 export async function userDecryptRejection(
   rpc: SolanaRpc,
   programAddress: Address,
+  readHistory: SolanaStoreHistoryReader,
   { config, context }: HostDecryptionState,
   fields: SolanaPermitFields,
   signature: Uint8Array,
@@ -235,7 +245,7 @@ export async function userDecryptRejection(
         }
       }
       // The history is read after the store, so it reaches the store's leaf count unless it lags.
-      const history = histories.get(storeAddress) ?? (await fetchSolanaStoreHistory(rpc, storeAddress, programAddress));
+      const history = histories.get(storeAddress) ?? (await readHistory(storeAddress));
       histories.set(storeAddress, history);
       if (BigInt(history.length) < store.leafCount) return { kind: 'unanswered' };
       const [handle, key] = [bytesToHex(entry.handle), bytesToHex(entry.ownerAddress)];
@@ -260,11 +270,12 @@ export async function userDecryptRejection(
  */
 export function cleartextPublicDecryptCertifier(rpc: SolanaRpc, chain: FhevmSolanaChain): SolanaPublicDecryptCertifier {
   const programAddress = solanaHostProgram(chain);
+  const readHistory = createSolanaStoreHistoryReader(rpc, programAddress);
   return async (parameters) => {
     const handle = toFhevmHandle(parameters.handle);
     const handleBytes = hexToBytes(handle.bytes32Hex);
     const encryptedStore = getAddressDecoder().decode(parameters.encryptedStore);
-    const history = await fetchSolanaStoreHistory(rpc, encryptedStore, programAddress);
+    const history = await readHistory(encryptedStore);
     if (!history.some((event) => event.kind === 'markedPublic' && bytesToHex(event.handle) === handle.bytes32Hex)) {
       throw new Error(`handle ${handle.bytes32Hex} was not made public in EncryptedStore ${encryptedStore}`);
     }

@@ -12,6 +12,7 @@ import { getSysvarClockEncoder } from '@solana/sysvars';
 import type { FhevmSolanaChain } from '../../core/types/fhevmSolanaChain.js';
 import type { SolanaDecryptTrust } from '../clients/decorators/permitDecrypt.js';
 import type { SolanaRpc } from '../encryptedStore.js';
+import type { SolanaStoreHistoryReader } from './storeHistory.js';
 import type { SolanaPermitFields } from '../permit/types.js';
 import type { SolanaUserDecryptHandleEntry } from '../userDecrypt/index.js';
 import { bytesToHex } from '../../core/base/bytes.js';
@@ -59,11 +60,14 @@ function rpcAtClock(unixTimestamp: bigint): SolanaRpc {
 
 let fields: Record<string, unknown>;
 let entry: SolanaUserDecryptHandleEntry;
-let hostState: Parameters<typeof userDecryptRejection>[2];
+let hostState: Parameters<typeof userDecryptRejection>[3];
+const readHistory = vi.fn<SolanaStoreHistoryReader>();
 let rpc: SolanaRpc;
 
 const judge = () =>
-  userDecryptRejection(rpc, host, hostState, fields as unknown as SolanaPermitFields, new Uint8Array(64), [entry]);
+  userDecryptRejection(rpc, host, readHistory, hostState, fields as unknown as SolanaPermitFields, new Uint8Array(64), [
+    entry,
+  ]);
 const refusedWith = (message: RegExp) => ({
   kind: 'refused',
   label: 'not_allowed_on_host_acl',
@@ -90,9 +94,8 @@ beforeEach(() => {
     scope: host,
     leafCount: 1n,
   } as unknown as encryptedStore.SolanaEncryptedStore);
-  vi.spyOn(storeHistory, 'fetchSolanaStoreHistory').mockResolvedValue([
-    { kind: 'allowed', handle, key: bytes(signer) },
-  ]);
+  readHistory.mockReset().mockResolvedValue([{ kind: 'allowed', handle, key: bytes(signer) }]);
+  vi.spyOn(storeHistory, 'createSolanaStoreHistoryReader').mockReturnValue(readHistory);
 });
 
 afterEach(() => vi.restoreAllMocks());
@@ -148,9 +151,7 @@ describe('userDecryptRejection', () => {
 
   it('refuses a delegated entry at the second its delegation expires, and answers it before', async () => {
     entry = { ...entry, ownerAddress: bytes(delegator) };
-    vi.mocked(storeHistory.fetchSolanaStoreHistory).mockResolvedValue([
-      { kind: 'allowed', handle, key: bytes(delegator) },
-    ]);
+    readHistory.mockResolvedValue([{ kind: 'allowed', handle, key: bytes(delegator) }]);
     const live = { expiresAt: now } as delegation.SolanaUserDecryptionDelegationRecord;
     vi.spyOn(delegation, 'fetchSolanaUserDecryptionDelegation').mockResolvedValue({ exact: null, wildcard: live });
     await expect(judge()).resolves.toEqual(refusedWith(/no live delegation/));
@@ -180,7 +181,7 @@ describe('userDecryptRejection', () => {
 describe('userDecryptRejection reads', () => {
   it('reads each store and its history once, however many entries name it', async () => {
     const other = new Uint8Array(32).fill(8);
-    vi.mocked(storeHistory.fetchSolanaStoreHistory).mockResolvedValue([
+    readHistory.mockResolvedValue([
       { kind: 'allowed', handle, key: bytes(signer) },
       { kind: 'allowed', handle: other, key: bytes(signer) },
     ]);
@@ -193,6 +194,7 @@ describe('userDecryptRejection reads', () => {
     const rejection = await userDecryptRejection(
       rpc,
       host,
+      readHistory,
       hostState,
       fields as unknown as SolanaPermitFields,
       new Uint8Array(64),
@@ -200,7 +202,7 @@ describe('userDecryptRejection reads', () => {
     );
     expect(rejection).toBeUndefined();
     expect(encryptedStore.fetchSolanaEncryptedStore).toHaveBeenCalledTimes(1);
-    expect(storeHistory.fetchSolanaStoreHistory).toHaveBeenCalledTimes(1);
+    expect(readHistory).toHaveBeenCalledTimes(1);
   });
 });
 
@@ -249,9 +251,7 @@ describe('cleartextUserDecryptExecution', () => {
     } as unknown as Awaited<ReturnType<typeof hostConfigAccount.fetchHostConfig>>);
     vi.spyOn(kmsContextAccount, 'fetchKmsContext').mockResolvedValue(kmsContext(false));
     vi.spyOn(storeValues, 'fetchCleartextStoreValue').mockResolvedValue(new Uint8Array([1]));
-    vi.mocked(storeHistory.fetchSolanaStoreHistory).mockResolvedValue([
-      { kind: 'allowed', handle: permitHandle, key: bytes(signer) },
-    ]);
+    readHistory.mockResolvedValue([{ kind: 'allowed', handle: permitHandle, key: bytes(signer) }]);
   });
 
   afterEach(() => vi.useRealTimers());

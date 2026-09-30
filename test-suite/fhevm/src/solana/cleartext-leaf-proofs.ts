@@ -1,10 +1,10 @@
 // cleartext-leaf-proofs — the cleartext stack's stand-in for the host listener's leaf-proof endpoint:
 // `/v1/solana/leaf-proofs` in the host-listener's wire format
 // (`coprocessor/fhevm-engine/host-listener/openapi/solana_leaf_proofs.json`), so dapps fetch and
-// verify proofs exactly as they do against the real stack. Each request rebuilds the store's
-// history from the validator's transactions, so a proof always matches the chain as it is.
+// verify proofs exactly as they do against the real stack. Each request extends the store's history
+// with the validator's transactions since the last read, so a proof always matches the chain as it is.
 import { mmrBuildProof, reconstructSolanaStoreHistory } from '@fhevm/sdk/solana';
-import { fetchSolanaStoreHistory } from '@fhevm/sdk/solana/cleartext';
+import { createSolanaStoreHistoryReader } from '@fhevm/sdk/solana/cleartext';
 import { createSolanaRpc, fetchEncodedAccount, getAddressDecoder, type Address } from '@solana/kit';
 
 import { ZAMA_HOST_PROGRAM_ADDRESS } from '../../../../solana/deploy/src/generated/zamaHost/programAddress.js';
@@ -34,12 +34,13 @@ const errorResponse = (status: number, code: string, message: string) =>
 /** Serves leaf proofs for the host on the validator at `rpcUrl` until the server is stopped. */
 export const serveCleartextLeafProofs = (rpcUrl: string, port: number) => {
   const rpc = createSolanaRpc(rpcUrl);
+  const readHistory = createSolanaStoreHistoryReader(rpc, ZAMA_HOST_PROGRAM_ADDRESS);
 
   /** A store's history and its MMR leaves, or nothing when no host store lives at the address. */
   const readStore = async (store: Address, storeBytes: Uint8Array) => {
     const account = await fetchEncodedAccount(rpc, store, { commitment: 'confirmed' });
     if (!account.exists || account.programAddress !== ZAMA_HOST_PROGRAM_ADDRESS) return undefined;
-    const history = await fetchSolanaStoreHistory(rpc, store, ZAMA_HOST_PROGRAM_ADDRESS);
+    const history = await readHistory(store);
     return { history, leaves: reconstructSolanaStoreHistory(storeBytes, history).leaves };
   };
   type StoreRead = Awaited<ReturnType<typeof readStore>>;

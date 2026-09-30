@@ -35,76 +35,123 @@ type HostInstruction = {
 const startsWith = (data: ReadonlyUint8Array, prefix: ReadonlyUint8Array): boolean =>
   data.length >= prefix.length && prefix.every((byte, index) => data[index] === byte);
 
+/** Reads the leaf-appending events of an `EncryptedStore`, oldest first. */
+export type SolanaStoreHistoryReader = (encryptedStore: Address) => Promise<SolanaStoreHistoryEvent[]>;
+
+/** The leaf-appending events of one store, as far as its newest transaction seen so far. */
+type SeenHistory = { readonly newest: Signature; readonly events: ReadonlyArray<SolanaStoreHistoryEvent | undefined> };
+
 /**
- * The leaf-appending events of `encryptedStore`, oldest first. Each write carries the leaf count it
- * appended at, so events land at their position whatever order the RPC lists transactions in.
- * Throws when two writes claim one leaf or no write claims one, rather than returning a history
- * whose proofs would fail on chain.
+ * Reads the leaf-appending events of each `EncryptedStore`, oldest first. The reader keeps what it
+ * read, so a later read fetches only the transactions newer than the last one it saw; a validator
+ * reset, which drops that transaction, makes it read the store from the start again.
+ *
+ * Each write carries the leaf count it appended at, so events land at their position whatever order
+ * the RPC lists transactions in. A read throws when two writes claim one leaf or no write claims
+ * one, rather than returning a history whose proofs would fail on chain.
  */
-export async function fetchSolanaStoreHistory(
-  rpc: SolanaRpc,
-  encryptedStore: Address,
-  programAddress: Address,
-): Promise<SolanaStoreHistoryEvent[]> {
-  const events: Array<SolanaStoreHistoryEvent | undefined> = [];
-  const place = (previousLeafCount: bigint, appended: readonly SolanaStoreHistoryEvent[]): void => {
-    appended.forEach((event, offset) => {
-      const index = Number(previousLeafCount) + offset;
-      if (events[index] !== undefined) throw new Error(`two writes to ${encryptedStore} claim leaf ${index}`);
-      events[index] = event;
+export function createSolanaStoreHistoryReader(rpc: SolanaRpc, programAddress: Address): SolanaStoreHistoryReader {
+  const seen = new Map<Address, SeenHistory>();
+  // Reads of one store run in turn, so each extends the history the one before it kept.
+  const reads = new Map<Address, Promise<unknown>>();
+
+  const extend = async (encryptedStore: Address): Promise<SolanaStoreHistoryEvent[]> => {
+    let base = seen.get(encryptedStore);
+    if (base !== undefined) {
+      const { value } = await rpc.getSignatureStatuses([base.newest], { searchTransactionHistory: true }).send();
+      if (value[0] === null) base = undefined;
+    }
+    const { newest, successful } = await storeSignatures(rpc, encryptedStore, base?.newest);
+    const events = [...(base?.events ?? [])];
+    const place = (previousLeafCount: bigint, appended: readonly SolanaStoreHistoryEvent[]): void => {
+      appended.forEach((event, offset) => {
+        const index = Number(previousLeafCount) + offset;
+        if (events[index] !== undefined) throw new Error(`two writes to ${encryptedStore} claim leaf ${index}`);
+        events[index] = event;
+      });
+    };
+    for (const signature of successful) {
+      placeWrites(await hostInstructions(rpc, signature, programAddress), signature, encryptedStore, place);
+    }
+    // `Array.from` visits the holes a missed write leaves. A history with one is never kept, since
+    // later reads would not look behind its newest transaction again.
+    const history = Array.from(events, (event, index) => {
+      if (event === undefined) throw new Error(`no confirmed write to ${encryptedStore} records leaf ${index}`);
+      return event;
     });
+    const last = newest ?? base?.newest;
+    if (last !== undefined) seen.set(encryptedStore, { newest: last, events });
+    return history;
   };
 
-  for (const signature of await storeSignatures(rpc, encryptedStore)) {
-    const instructions = await hostInstructions(rpc, signature, programAddress);
-    instructions.forEach((instruction, position) => {
-      if (startsWith(instruction.data, FHE_EXECUTE_DISCRIMINATOR)) {
-        const { accounts, data: execution } = parseFheExecuteInstruction(instruction);
-        // An effect's `storeIndex` counts the accounts after the fixed ones the parser names.
-        const stores = instruction.accounts.slice(Object.keys(accounts).length);
-        const results = executedResults(instructions, position);
-        for (const effect of execution.effects) {
-          if (stores[effect.storeIndex]?.address !== encryptedStore) continue;
-          const handle = results[effect.result.stepIndex];
-          if (effect.result.outputIndex !== 0 || handle === undefined) {
-            throw new Error(`an fhe_execute in ${signature} writes a result its event does not carry`);
-          }
-          const allowed = [...effect.allowIndexes].map((index): SolanaStoreHistoryEvent => {
-            const key = execution.dictionary[index];
-            if (key === undefined)
-              throw new Error(`an fhe_execute in ${signature} allows a key outside its dictionary`);
-            return { kind: 'allowed', handle, key: new Uint8Array(key) };
-          });
-          place(effect.previousLeafCount, [
-            ...allowed,
-            ...(effect.makePublic ? [{ kind: 'markedPublic', handle } as const] : []),
-          ]);
-        }
-      } else if (startsWith(instruction.data, MAKE_STORE_HANDLE_PUBLIC_DISCRIMINATOR)) {
-        const { accounts, data } = parseMakeStoreHandlePublicInstruction(instruction);
-        if (accounts.encryptedStore.address !== encryptedStore) return;
-        place(data.previousLeafCount, [{ kind: 'markedPublic', handle: new Uint8Array(data.handle) }]);
-      }
-    });
-  }
+  return (encryptedStore) => {
+    const previous = reads.get(encryptedStore) ?? Promise.resolve();
+    const read = previous.catch(() => undefined).then(() => extend(encryptedStore));
+    reads.set(encryptedStore, read);
+    return read;
+  };
+}
 
-  // `Array.from` visits the holes a missed write leaves.
-  return Array.from(events, (event, index) => {
-    if (event === undefined) throw new Error(`no confirmed write to ${encryptedStore} records leaf ${index}`);
-    return event;
+/** Places the events every host instruction of `signature` appended to `encryptedStore`. */
+function placeWrites(
+  instructions: readonly HostInstruction[],
+  signature: Signature,
+  encryptedStore: Address,
+  place: (previousLeafCount: bigint, appended: readonly SolanaStoreHistoryEvent[]) => void,
+): void {
+  instructions.forEach((instruction, position) => {
+    if (startsWith(instruction.data, FHE_EXECUTE_DISCRIMINATOR)) {
+      const { accounts, data: execution } = parseFheExecuteInstruction(instruction);
+      // An effect's `storeIndex` counts the accounts after the fixed ones the parser names.
+      const stores = instruction.accounts.slice(Object.keys(accounts).length);
+      const results = executedResults(instructions, position);
+      for (const effect of execution.effects) {
+        if (stores[effect.storeIndex]?.address !== encryptedStore) continue;
+        const handle = results[effect.result.stepIndex];
+        if (effect.result.outputIndex !== 0 || handle === undefined) {
+          throw new Error(`an fhe_execute in ${signature} writes a result its event does not carry`);
+        }
+        const allowed = [...effect.allowIndexes].map((index): SolanaStoreHistoryEvent => {
+          const key = execution.dictionary[index];
+          if (key === undefined) throw new Error(`an fhe_execute in ${signature} allows a key outside its dictionary`);
+          return { kind: 'allowed', handle, key: new Uint8Array(key) };
+        });
+        place(effect.previousLeafCount, [
+          ...allowed,
+          ...(effect.makePublic ? [{ kind: 'markedPublic', handle } as const] : []),
+        ]);
+      }
+    } else if (startsWith(instruction.data, MAKE_STORE_HANDLE_PUBLIC_DISCRIMINATOR)) {
+      const { accounts, data } = parseMakeStoreHandlePublicInstruction(instruction);
+      if (accounts.encryptedStore.address !== encryptedStore) return;
+      place(data.previousLeafCount, [{ kind: 'markedPublic', handle: new Uint8Array(data.handle) }]);
+    }
   });
 }
 
-/** Every successful transaction that touched `address`, paged until the RPC has no older one. */
-async function storeSignatures(rpc: SolanaRpc, address: Address): Promise<Signature[]> {
-  const signatures: Signature[] = [];
+/**
+ * The successful transactions that touched `address` after `until` (all of them without it), and
+ * the newest transaction listed, failed or not, paged until the RPC has no older one.
+ */
+async function storeSignatures(
+  rpc: SolanaRpc,
+  address: Address,
+  until: Signature | undefined,
+): Promise<{ readonly newest: Signature | undefined; readonly successful: Signature[] }> {
+  const successful: Signature[] = [];
+  let newest: Signature | undefined;
   for (let before: Signature | undefined; ; ) {
     const page = await rpc
-      .getSignaturesForAddress(address, { commitment: 'confirmed', ...(before ? { before } : {}) })
+      .getSignaturesForAddress(address, {
+        commitment: 'confirmed',
+        ...(before ? { before } : {}),
+        ...(until ? { until } : {}),
+      })
       .send();
-    signatures.push(...page.filter((entry) => entry.err === null).map((entry) => entry.signature));
+    newest ??= page[0]?.signature;
+    successful.push(...page.filter((entry) => entry.err === null).map((entry) => entry.signature));
     const last = page.at(-1);
-    if (last === undefined) return signatures;
+    if (last === undefined) return { newest, successful };
     before = last.signature;
   }
 }
@@ -122,6 +169,7 @@ async function hostInstructions(
   const { message } = transaction.transaction;
   const loaded = transaction.meta?.loadedAddresses;
   const keys = [...message.accountKeys, ...(loaded?.writable ?? []), ...(loaded?.readonly ?? [])];
+  const roles = transactionRoles(message.header, message.accountKeys.length, loaded?.writable.length ?? 0);
   const base58 = getBase58Encoder();
   const resolve = (instruction: {
     readonly programIdIndex: number;
@@ -135,8 +183,7 @@ async function hostInstructions(
       accounts: instruction.accounts.map((index) => {
         const key = keys[index];
         if (key === undefined) throw new Error(`transaction ${signature} names account ${index} it does not load`);
-        // The generated parsers name accounts by position and never read their roles.
-        return { address: key, role: AccountRole.READONLY };
+        return { address: key, role: roles(index) };
       }),
     };
   };
@@ -148,6 +195,33 @@ async function hostInstructions(
         .flatMap((inner) => inner.instructions),
     ].flatMap((candidate) => resolve(candidate) ?? []),
   );
+}
+
+/**
+ * The role of each account in a transaction, by its index in the static keys followed by the
+ * writable and readonly lookup-table keys. An inner instruction may hold an account with fewer
+ * privileges than the transaction grants it; the parsers read positions, never roles.
+ */
+function transactionRoles(
+  header: {
+    readonly numRequiredSignatures: number;
+    readonly numReadonlySignedAccounts: number;
+    readonly numReadonlyUnsignedAccounts: number;
+  },
+  staticCount: number,
+  loadedWritableCount: number,
+): (index: number) => AccountRole {
+  return (index) => {
+    if (index < header.numRequiredSignatures) {
+      return index < header.numRequiredSignatures - header.numReadonlySignedAccounts
+        ? AccountRole.WRITABLE_SIGNER
+        : AccountRole.READONLY_SIGNER;
+    }
+    if (index < staticCount) {
+      return index < staticCount - header.numReadonlyUnsignedAccounts ? AccountRole.WRITABLE : AccountRole.READONLY;
+    }
+    return index < staticCount + loadedWritableCount ? AccountRole.WRITABLE : AccountRole.READONLY;
+  };
 }
 
 /**
