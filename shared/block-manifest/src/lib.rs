@@ -58,6 +58,15 @@ pub const MAX_MANIFEST_BYTES: usize = 16 * 1024 * 1024;
 /// upgrades using `{version}/block_{n}`, where `n` is the finalized proposal's
 /// block number. Selecting the active epoch is the caller's responsibility.
 pub const LEGACY_CONSENSUS_EPOCH: &str = "legacy";
+/// S3 user-defined metadata key naming the consensus epoch whose stack
+/// uploaded a ciphertext object. The object key and its attestation carry no
+/// epoch, so healing counts only attestation votes from the finding's own
+/// epoch. It is not signed: it only ever excludes a vote, whose attestation is
+/// still verified. An object without it was uploaded by
+/// [`LEGACY_CONSENSUS_EPOCH`].
+///
+/// AWS SDK metadata APIs expect this key without the `x-amz-meta-` prefix.
+pub const S3_METADATA_CONSENSUS_EPOCH_KEY: &str = "consensus-epoch";
 const MAX_CONSENSUS_EPOCH_BYTES: usize = 256;
 
 mod hex_bytes {
