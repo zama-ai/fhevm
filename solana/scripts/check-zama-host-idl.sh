@@ -30,7 +30,7 @@ NO_DNA=1 anchor build --ignore-keys --no-idl -p zama_host -- --sbf-out-dir "$cle
 mv "$cleartext_dir/zama_host.so" target/deploy/zama_host_cleartext.so
 rm -r "$cleartext_dir"
 NO_DNA=1 anchor build --ignore-keys 2>&1 | tee -a "$build_log"
-if rg -n 'Error:.*([Ss]tack offset|overflows the maximum allowed)' "$build_log"; then
+if grep -En 'Error:.*([Ss]tack offset|overflows the maximum allowed)' "$build_log"; then
   echo "SBF stack limit exceeded" >&2
   exit 1
 fi

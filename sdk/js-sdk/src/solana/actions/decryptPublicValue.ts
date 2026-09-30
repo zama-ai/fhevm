@@ -11,7 +11,10 @@ import {
 } from '@solana/kit';
 import type { SolanaClientParameters } from '../clients/createFhevmBaseClient.js';
 import { solanaHostProgram } from '../clients/createFhevmBaseClient.js';
-import type { SolanaPublicDecryptCertificateParameters, SolanaPublicDecryptCertifier } from './publicDecryptCertificate.js';
+import type {
+  SolanaPublicDecryptCertificateParameters,
+  SolanaPublicDecryptCertifier,
+} from './publicDecryptCertificate.js';
 import { publicDecryptCertificate, solanaPublicDecryptExtraData } from './publicDecryptCertificate.js';
 import { getSolanaRuntime } from '../internal/runtime.js';
 import { findHostConfigPda } from '../internal/generated/zamaHost/pdas/hostConfig.js';
@@ -114,7 +117,10 @@ export async function decryptPublicValue(
     throw new Error('KMS context is not configured');
   const claim =
     certify === undefined
-      ? await publicDecryptCertificate({ chain: client.chain, runtime: getSolanaRuntime() }, { ...parameters, contextId })
+      ? await publicDecryptCertificate(
+          { chain: client.chain, runtime: getSolanaRuntime() },
+          { ...parameters, contextId },
+        )
       : await certify({ ...parameters, contextId });
   // Read the requested context after the response. A rotation preserves an old live context;
   // destruction invalidates it. Do not substitute the new current context for the signed one.

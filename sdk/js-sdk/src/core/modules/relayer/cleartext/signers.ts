@@ -22,7 +22,10 @@ const KMS_PATH = "0'/3/";
 //
 ////////////////////////////////////////////////////////////////////////////////
 
-export const FORGE_FHEVM_V1_COPROCESSOR_SIGNER: { readonly address: ChecksummedAddress; readonly privateKey: BytesHex } = {
+export const FORGE_FHEVM_V1_COPROCESSOR_SIGNER: {
+  readonly address: ChecksummedAddress;
+  readonly privateKey: BytesHex;
+} = {
   address: '0xc9990FEfE0c27D31D0C2aa36196b085c0c4d456c' as ChecksummedAddress,
   privateKey: '0x7ec8ada6642fc4ccfb7729bc29c17cf8d21b61abd5642d1db992c0b8672ab901' as BytesHex,
 };
