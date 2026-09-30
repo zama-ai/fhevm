@@ -13,6 +13,7 @@ import { bytesToHex } from '../../core/base/bytes.js';
 import { buildHandle } from '../../core/handle/FhevmHandle.js';
 import { RelayerAbortError } from '../../core/errors/RelayerAbortError.js';
 import { RelayerTimeoutError } from '../../core/errors/RelayerTimeoutError.js';
+import type { RelayerUserDecryptOptions } from '../../core/types/relayer.js';
 import {
   PERMIT_IDENTITY_LEN,
   PERMIT_KMS_ROUTING_LEN,
@@ -149,7 +150,7 @@ describe('cleartextUserDecryptExecution', () => {
       ReturnType<typeof kmsContextAccount.fetchKmsContext>
     >;
   const execute = (
-    options?: { signal?: AbortSignal; timeout?: number },
+    options?: RelayerUserDecryptOptions,
     { attempts, start = now - 10n }: { attempts?: number; start?: bigint } = {},
   ) =>
     cleartextUserDecryptExecution(
@@ -310,7 +311,7 @@ describe('cleartextUserDecryptExecution', () => {
     vi.mocked(authorization.judgeSolanaUserDecryption).mockReturnValue(new Promise(() => undefined));
     const controller = new AbortController();
     const onProgress = vi.fn();
-    const outcome = execute({ signal: controller.signal, onProgress } as never).catch((error: unknown) => error);
+    const outcome = execute({ signal: controller.signal, onProgress }).catch((error: unknown) => error);
     await until(() => vi.mocked(authorization.judgeSolanaUserDecryption).mock.calls.length > 0);
     controller.abort();
     expect(await outcome).toBeInstanceOf(RelayerAbortError);

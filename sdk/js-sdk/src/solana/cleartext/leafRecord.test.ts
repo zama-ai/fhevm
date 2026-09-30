@@ -139,6 +139,16 @@ const execute = (at: bigint, handle: number, allowed: readonly number[]): Write 
   };
 };
 
+/** An application's transaction that names the store and succeeds, but writes it nothing. */
+const touch = (): Write => ({
+  at: 0n,
+  events: [],
+  accountKeys: [other, app, store],
+  loadedWritable: [],
+  instructions: [{ programIdIndex: 1, accounts: [0, 2], data: '' }],
+  inner: [],
+});
+
 /** The store's leaves in the order the host appended them, and the leaves they commit to. */
 const history = (writes: readonly Write[]) =>
   reconstructSolanaStoreHistory(
@@ -358,8 +368,11 @@ describe('createSolanaLeafRecord', () => {
 
   // A newer transaction that appends nothing, listed before the store's last write is, must not
   // carry the record past that write for good.
-  it('stays behind a last write the account holds but the listing does not show yet', async () => {
-    const chain = ledger([makePublic(0n, 2), makePublic(1n, 3), { ...makePublic(0n, 9), failed: true }]);
+  it.each([
+    ['a failed write', { ...makePublic(0n, 9), failed: true }],
+    ['a transaction that writes nothing', touch()],
+  ])('stays behind a last write the listing does not show yet, under %s listed after it', async (_name, newer) => {
+    const chain = ledger([makePublic(0n, 2), makePublic(1n, 3), newer]);
     chain.hide(1);
     expect(await chain.read([publicLeaf(2)])).toEqual([{ status: 'notFound', leafCount: 0n }]);
     chain.release(1);
