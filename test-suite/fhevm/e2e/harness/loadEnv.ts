@@ -38,6 +38,7 @@ import path from "node:path";
 import { SOLANA_LEAF_PROOF_API_KEY } from "../../src/generate/solana";
 import { coprocessorDbPsql, SOLANA_ACL_PROGRAM, solanaCleartextDeployerPath } from "../../src/layout";
 import { CLEARTEXT_SOLANA_ENDPOINTS, LOCAL_SOLANA_ENDPOINTS } from "../../src/solana/endpoints";
+import { solanaE2eSource } from "../../src/solana/target";
 
 export type Capabilities = {
   /** Can fund actors with SOL (local validator airdrop). Local: true. Devnet/mainnet: false. */
@@ -184,14 +185,6 @@ const psqlOverride = (env: NodeJS.ProcessEnv): Partial<Pick<TestEnvOverrides, "c
   return {};
 };
 
-const sourceFromEnv = (env: NodeJS.ProcessEnv): "local" | "devnet" | "cleartext" => {
-  const value = env.SOLANA_E2E_SOURCE ?? "local";
-  if (value !== "local" && value !== "devnet" && value !== "cleartext") {
-    throw new Error(`SOLANA_E2E_SOURCE must be "local", "devnet" or "cleartext", got ${value}`);
-  }
-  return value;
-};
-
 const CLEARTEXT_DEFAULTS = {
   rpcUrl: CLEARTEXT_SOLANA_ENDPOINTS.validatorRpc,
   wsUrl: CLEARTEXT_SOLANA_ENDPOINTS.validatorWs,
@@ -237,4 +230,4 @@ export const resolveEnv = (
 
 /** Builds the TestEnv the scenarios run against, from the current e2e runtime. */
 export const loadEnv = (env: NodeJS.ProcessEnv = process.env): TestEnv =>
-  resolveEnv(envOverrides(env), sourceFromEnv(env));
+  resolveEnv(envOverrides(env), solanaE2eSource(env));

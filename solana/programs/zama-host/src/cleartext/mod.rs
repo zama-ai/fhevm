@@ -151,8 +151,9 @@ fn rand_bits(seed: [u8; 16]) -> u128 {
 
 /// Evaluates every step of an execution on plaintexts, in step order.
 ///
-/// `resolve` answers the operands whose value lives outside the execution (a store slot, a
-/// transient result or a verified input); it also receives the values produced so far. `rand_seed`
+/// `resolve` answers the operands whose value lives in accounts (a store slot or a transient
+/// result); it also receives the values produced so far. A verified input decodes its
+/// attestation's `extra_data` here. `rand_seed`
 /// returns the seed of the rand step at an index. Operand and output types go through the host's
 /// own gates, so an execution the host would refuse is refused here too.
 pub fn evaluate_steps(
@@ -170,6 +171,11 @@ pub fn evaluate_steps(
                 .copied()
                 .ok_or_else(|| error!(ZamaHostError::FheExecuteEarlierStepMissing)),
             FheExecuteOperand::Scalar { .. } => err!(ZamaHostError::InvalidFheExecuteAccount),
+            FheExecuteOperand::VerifiedInput { attestation } => decode_input_value(
+                &attestation.extra_data,
+                &attestation.ct_handles,
+                usize::from(attestation.handle_index),
+            ),
             _ => resolve(operand, produced),
         };
         let value = match step {

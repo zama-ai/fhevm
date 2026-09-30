@@ -1,8 +1,8 @@
 // The leaf-proof wire of the coprocessors' leaf record, `POST /v1/solana/leaf-proofs`
 // (`coprocessor/fhevm-engine/host-listener/openapi/solana_leaf_proofs.json`), pinned by
 // `solana/test-fixtures/leaf-proofs/leaf_proofs_v1.json` as the listener and the KMS Connector are.
-// The cleartext client asks it as the Connector does, and the cleartext stack's server answers it
-// from `createSolanaLeafRecord`.
+// The cleartext stack's server answers it from `createSolanaLeafRecord`, which the cleartext decrypt
+// clients read directly; the Connector-case tests read the fixture's answers through it.
 import { getAddressDecoder, getAddressEncoder, type Address } from '@solana/kit';
 import { bytesToHexNo0x, hexToBytes } from '../../core/base/bytes.js';
 import { MAX_MMR_SIBLINGS } from '../proof.js';
@@ -39,9 +39,6 @@ export type SolanaLeafProofOutcome =
 
 /** One read of the leaf record: an outcome per query, in query order. */
 export type SolanaLeafProofReader = (queries: readonly SolanaLeafQuery[]) => Promise<readonly SolanaLeafProofOutcome[]>;
-
-/** Where a leaf record is served, and the bearer key it requires. */
-export type SolanaLeafProofEndpoint = { readonly url: string; readonly apiKey: string };
 
 ////////////////////////////////////////////////////////////////////////////////
 
@@ -120,26 +117,4 @@ export function decodeSolanaLeafProofOutcome(value: unknown): SolanaLeafProofOut
     default:
       throw new Error(`status: ${String(status)} is not a leaf-proof outcome`);
   }
-}
-
-/**
- * Reads the leaf record served at `endpoint`. A read that fails, or answers another number of
- * proofs than it was asked for, throws.
- */
-export function createSolanaLeafProofClient({ url, apiKey }: SolanaLeafProofEndpoint): SolanaLeafProofReader {
-  return async (queries) => {
-    const response = await fetch(`${url}${SOLANA_LEAF_PROOFS_PATH}`, {
-      method: 'POST',
-      headers: { 'content-type': 'application/json', authorization: `Bearer ${apiKey}` },
-      body: JSON.stringify({ leaves: queries.map(encodeSolanaLeafQuery) }),
-    });
-    if (!response.ok) {
-      throw new Error(`the leaf-proof server at ${url} answered HTTP ${response.status}: ${await response.text()}`);
-    }
-    const { proofs } = (await response.json()) as { proofs?: unknown };
-    if (!Array.isArray(proofs) || proofs.length !== queries.length) {
-      throw new Error(`the leaf-proof server at ${url} answered no proof list of ${queries.length}`);
-    }
-    return proofs.map(decodeSolanaLeafProofOutcome);
-  };
 }

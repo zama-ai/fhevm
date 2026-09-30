@@ -11,7 +11,6 @@ import { describe, expect, it } from 'vitest';
 import {
   buildPublicLeafProof,
   bytesToHex,
-  createRetainedMmr,
   hexToBytes,
   historicalAccessLeafCommitment,
   MAX_MMR_SIBLINGS,
@@ -204,42 +203,6 @@ describe('the primitives, one at a time', () => {
         siblings: Array.from({ length: MAX_MMR_SIBLINGS + 1 }, () => new Uint8Array(32)),
       }),
     ).toBe(false);
-  });
-});
-
-describe('createRetainedMmr', () => {
-  const account = new Uint8Array(32).fill(4);
-  const leaves = Array.from({ length: 70 }, (_, i) =>
-    publicDecryptLeafCommitment(account, BigInt(i), new Uint8Array(32).fill(i)),
-  );
-
-  // Every count up to 70 crosses mountains of heights 0 to 6, and the tree keeps growing past each
-  // count it is asked about, as the leaf record's does past the account it checks.
-  it('answers the peaks and proofs mmrPeaksFromLeaves and mmrBuildProof rebuild, at every past count', () => {
-    const tree = createRetainedMmr();
-    leaves.forEach((leaf) => {
-      tree.append(leaf);
-    });
-    expect(tree.leafCount()).toBe(70);
-    for (let count = 0; count <= leaves.length; count += 1) {
-      const prefix = leaves.slice(0, count);
-      expect(tree.peaks(count)).toEqual(mmrPeaksFromLeaves(prefix));
-      for (let index = 0; index < count; index += 1) {
-        const proof = tree.proof(index, count);
-        expect(proof).toEqual(mmrBuildProof(prefix, BigInt(index)));
-        expect(mmrVerify(mmrPeaksFromLeaves(prefix), BigInt(count), leaves[index]!, proof)).toBe(true);
-      }
-    }
-  });
-
-  it('refuses a count it does not hold and a leaf outside the count', () => {
-    const tree = createRetainedMmr();
-    leaves.slice(0, 3).forEach((leaf) => {
-      tree.append(leaf);
-    });
-    expect(() => tree.peaks(4)).toThrow(/holds 3 leaves, not 4/);
-    expect(() => tree.proof(0, 4)).toThrow(/holds 3 leaves, not 4/);
-    expect(() => tree.proof(2, 2)).toThrow(/leaf 2 is not among the first 2/);
   });
 });
 

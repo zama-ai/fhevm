@@ -42,7 +42,7 @@ import {
   type ConnectorVerdict,
   type SolanaHostAccountsReader,
 } from './authorization.js';
-import { createSolanaLeafProofClient, type SolanaLeafProofEndpoint } from './leafProofs.js';
+import type { SolanaLeafProofReader } from './leafProofs.js';
 import { fetchCleartextStoreValue } from './storeValues.js';
 
 ////////////////////////////////////////////////////////////////////////////////
@@ -55,17 +55,16 @@ const PUBLIC_DECRYPT_RETRY_MS = 250;
 /**
  * Answers a user decryption with the plaintexts the host recorded for its handles, once the request
  * passes the Connector's authorization, through the production retry loop. The leaf proofs come
- * from the leaf record served at `leafProofs`.
+ * from `readLeafProofs`.
  */
 export function cleartextUserDecryptExecution(
   rpc: SolanaRpc,
   chain: FhevmSolanaChain,
   trust: SolanaDecryptTrust,
-  leafProofs: SolanaLeafProofEndpoint,
+  readLeafProofs: SolanaLeafProofReader,
 ): SolanaUserDecryptExecution {
   const programAddress = solanaHostProgram(chain);
   const readAccounts = hostAccountsReader(rpc);
-  const readLeafProofs = createSolanaLeafProofClient(leafProofs);
   return async ({ session, entries, attempts, options }) => {
     const { fields, signature } = session.signedPermit;
     // The caller's timeout and abort signal bound the whole run, as on the relayer path.
@@ -244,11 +243,10 @@ export function cleartextUserDecryptRejection(verdict: ConnectorVerdict): Solana
 export function cleartextPublicDecryptCertifier(
   rpc: SolanaRpc,
   chain: FhevmSolanaChain,
-  leafProofs: SolanaLeafProofEndpoint,
+  readLeafProofs: SolanaLeafProofReader,
 ): SolanaPublicDecryptCertifier {
   const programAddress = solanaHostProgram(chain);
   const readAccounts = hostAccountsReader(rpc);
-  const readLeafProofs = createSolanaLeafProofClient(leafProofs);
   return async (parameters) => {
     const handle = toFhevmHandle(parameters.handle);
     const handleBytes = hexToBytes(handle.bytes32Hex);
@@ -269,14 +267,7 @@ export function cleartextPublicDecryptCertifier(
       await new Promise((resolve) => setTimeout(resolve, PUBLIC_DECRYPT_RETRY_MS));
     }
     const cleartext = await fetchCleartextStoreValue(rpc, programAddress, parameters.encryptedStore, handleBytes);
-    const [{ data: config }, { data: context }] = await Promise.all([
-      fetchHostConfig(rpc, (await findHostConfigPda({ programAddress }))[0], CONFIRMED),
-      fetchKmsContext(
-        rpc,
-        (await findKmsContextPda({ contextId: parameters.contextId }, { programAddress }))[0],
-        CONFIRMED,
-      ),
-    ]);
+    const { config, context } = await fetchHostDecryptionState(rpc, programAddress, parameters.contextId);
     const extraData = solanaPublicDecryptExtraData(parameters.contextId);
     const digest = publicDecryptDigest(
       createKmsPublicDecryptEip712({

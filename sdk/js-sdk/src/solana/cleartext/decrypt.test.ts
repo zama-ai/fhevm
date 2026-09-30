@@ -8,6 +8,7 @@ import { address, getAddressEncoder, type Address } from '@solana/kit';
 import type { FhevmSolanaChain } from '../../core/types/fhevmSolanaChain.js';
 import type { SolanaDecryptTrust } from '../clients/decorators/permitDecrypt.js';
 import type { SolanaRpc } from '../encryptedStore.js';
+import type { SolanaLeafProofReader } from './leafProofs.js';
 import { bytesToHex } from '../../core/base/bytes.js';
 import { buildHandle } from '../../core/handle/FhevmHandle.js';
 import { RelayerAbortError } from '../../core/errors/RelayerAbortError.js';
@@ -32,7 +33,8 @@ const signer = address('SysvarRent111111111111111111111111111111111');
 const bytes = (value: Address): Uint8Array => new Uint8Array(getAddressEncoder().encode(value));
 const now = BigInt(Math.floor(Date.now() / 1000));
 const rpc = {} as SolanaRpc;
-const leafProofs = { url: 'http://leaf-record', apiKey: 'key' };
+// The Connector's judgment is stubbed in these tests, so the leaf record is never read.
+const readLeafProofs: SolanaLeafProofReader = () => Promise.reject(new Error('the leaf record is not read here'));
 const chain = { fhevm: { programs: { host: { address: bytesToHex(bytes(host)) } } } } as unknown as FhevmSolanaChain;
 
 const refusal = (failure: authorization.ConnectorFailure): authorization.ConnectorVerdict => ({
@@ -68,7 +70,7 @@ describe('cleartextUserDecryptRejection', () => {
 
 // The Connector retries a public decryption it may authorize later, and stops on one it never will.
 describe('cleartextPublicDecryptCertifier', () => {
-  const certify = cleartextPublicDecryptCertifier(rpc, chain, leafProofs);
+  const certify = cleartextPublicDecryptCertifier(rpc, chain, readLeafProofs);
   const parameters = {
     handle: buildHandle({ chainId: 5n, hash21: `0x${'b1'.repeat(21)}`, fheTypeId: 0 }).bytes32,
     contextId: new Uint8Array(32),
@@ -154,7 +156,7 @@ describe('cleartextUserDecryptExecution', () => {
       rpc,
       chain,
       trust,
-      leafProofs,
+      readLeafProofs,
     )({ session: sessionStarting(start), entries, attempts, options });
   /** The rejection a run of one attempt ends on. */
   const firstRejection = async (start?: bigint) => {

@@ -48,6 +48,8 @@ jobs:
             solana:
               - .github/workflows/solana-tests.yml
               - solana/**
+              # Rendered by `zama_host::cleartext::sdk_constants`, whose test fails when it drifts.
+              - sdk/js-sdk/src/solana/cleartext/hostConstants.ts
               - coprocessor/fhevm-engine/host-listener/build.rs
               - coprocessor/fhevm-engine/host-listener/idl/zama_host.json
               # zama-solana-request pins its handle cap to the Gateway's.

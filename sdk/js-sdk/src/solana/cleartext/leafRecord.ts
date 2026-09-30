@@ -18,10 +18,10 @@ import type { SolanaLeafProofOutcome, SolanaLeafProofReader } from './leafProofs
 import { bytesToHex } from '../../core/base/bytes.js';
 import { decodeSolanaEncryptedStore, isSolanaEncryptedStoreData } from '../encryptedStore.js';
 import {
-  createRetainedMmr,
   historicalAccessLeafCommitment,
+  mmrBuildProof,
+  mmrPeaksFromLeaves,
   publicDecryptLeafCommitment,
-  type RetainedMmr,
 } from '../proof.js';
 import {
   FHE_EXECUTE_DISCRIMINATOR,
@@ -45,7 +45,8 @@ type HostInstruction = {
 /** One store's sealed leaves, as far as `newest`, the newest of its transactions read so far. */
 type StoreRecord = {
   newest: Signature | undefined;
-  readonly tree: RetainedMmr;
+  /** The leaf commitments, in append order. */
+  readonly leaves: Uint8Array[];
   /** The first leaf of each `(handle, key)` or public `handle`, as the listener answers. */
   readonly firstLeaf: Map<string, number>;
 };
@@ -96,15 +97,15 @@ export function createSolanaLeafRecord(rpc: SolanaRpc, programAddress: Address):
 
     const record = records.get(encryptedStore) ?? {
       newest: undefined,
-      tree: createRetainedMmr(),
+      leaves: [],
       firstLeaf: new Map(),
     };
     records.set(encryptedStore, record);
     const covered = Number(live.leafCount);
     try {
       await extend(record, encryptedStore, covered);
-      if (record.tree.leafCount() >= covered) {
-        const peaks = record.tree.peaks(covered).map(bytesToHex);
+      if (record.leaves.length >= covered) {
+        const peaks = mmrPeaksFromLeaves(record.leaves.slice(0, covered)).map(bytesToHex);
         if (peaks.length !== live.peaks.length || peaks.some((peak, index) => peak !== bytesToHex(live.peaks[index]))) {
           throw new Error(`the leaves rebuilt for ${encryptedStore} do not match its peaks at leaf count ${covered}`);
         }
@@ -113,7 +114,7 @@ export function createSolanaLeafRecord(rpc: SolanaRpc, programAddress: Address):
       records.delete(encryptedStore);
       throw error;
     }
-    return { record, leafCount: record.tree.leafCount() };
+    return { record, leafCount: record.leaves.length };
   };
 
   /**
@@ -123,7 +124,7 @@ export function createSolanaLeafRecord(rpc: SolanaRpc, programAddress: Address):
   const extend = async (record: StoreRecord, encryptedStore: Address, covered: number): Promise<void> => {
     const { newest, successful } = await storeSignatures(rpc, encryptedStore, record.newest);
     if (newest === undefined) return;
-    const sealed = record.tree.leafCount();
+    const sealed = record.leaves.length;
     // Each write carries the leaf count it appended at, so its leaves land at their position
     // whatever order the RPC lists transactions in.
     const appended: Array<SolanaStoreHistoryEvent | undefined> = [];
@@ -150,7 +151,7 @@ export function createSolanaLeafRecord(rpc: SolanaRpc, programAddress: Address):
     run.forEach((event, offset) => {
       const index = sealed + offset;
       const key = event.kind === 'allowed' ? event.key : undefined;
-      record.tree.append(
+      record.leaves.push(
         key === undefined
           ? publicDecryptLeafCommitment(storeBytes, BigInt(index), event.handle)
           : historicalAccessLeafCommitment(storeBytes, BigInt(index), event.handle, key),
@@ -183,12 +184,9 @@ export function createSolanaLeafRecord(rpc: SolanaRpc, programAddress: Address):
       if (leafIndex === undefined || leafIndex >= leafCount) {
         return { status: 'notFound', leafCount: BigInt(leafCount) };
       }
-      return {
-        status: 'found',
-        leafIndex: BigInt(leafIndex),
-        leafCount: BigInt(leafCount),
-        siblings: record.tree.proof(leafIndex, leafCount).siblings,
-      };
+      const proof = mmrBuildProof(record.leaves.slice(0, leafCount), BigInt(leafIndex));
+      if (proof === undefined) throw new Error(`leaf ${leafIndex} is not among the ${leafCount} it was found in`);
+      return { status: 'found', leafIndex: BigInt(leafIndex), leafCount: BigInt(leafCount), siblings: proof.siblings };
     });
   };
 }

@@ -5,27 +5,29 @@
 import type * as SolanaSdk from '@fhevm/sdk/solana';
 
 import { BRINGUP_KMS_CONTEXT_ID } from '../../../../solana/deploy/src/constants';
-import { SOLANA_LEAF_PROOF_API_KEY } from '../generate/solana';
 import { readActiveKmsPair, readGatewayBootstrapInputs } from './addresses';
-import { CLEARTEXT_SOLANA_ENDPOINTS } from './endpoints';
 
-export const targetsCleartext = (): boolean => process.env.SOLANA_E2E_SOURCE === 'cleartext';
+/** The protocol `SOLANA_E2E_SOURCE` names: the local stack, devnet, or the cleartext stack. */
+export const solanaE2eSource = (env: NodeJS.ProcessEnv = process.env): 'local' | 'devnet' | 'cleartext' => {
+  const value = env.SOLANA_E2E_SOURCE ?? 'local';
+  if (value !== 'local' && value !== 'devnet' && value !== 'cleartext') {
+    throw new Error(`SOLANA_E2E_SOURCE must be "local", "devnet" or "cleartext", got ${value}`);
+  }
+  return value;
+};
 
-/**
- * `@fhevm/sdk/solana`, with the cleartext client factories on a cleartext target. Their decrypt
- * clients read leaf proofs from the stack's leaf record, as the Connector reads a coprocessor's.
- */
+export const targetsCleartext = (): boolean => solanaE2eSource() === 'cleartext';
+
+/** `@fhevm/sdk/solana`, with the cleartext client factories on a cleartext target. */
 export const loadSolanaSdk = async (): Promise<typeof SolanaSdk> => {
   const solana = await import('@fhevm/sdk/solana');
   if (!targetsCleartext()) return solana;
   const cleartext = await import('@fhevm/sdk/solana/cleartext');
-  const leafProofs = { url: CLEARTEXT_SOLANA_ENDPOINTS.leafProof, apiKey: SOLANA_LEAF_PROOF_API_KEY };
   return {
     ...solana,
     createFhevmEncryptClient: cleartext.createFhevmCleartextEncryptClient,
-    createFhevmDecryptClient: (parameters) => cleartext.createFhevmCleartextDecryptClient({ ...parameters, leafProofs }),
-    createFhevmPublicDecryptClient: (parameters) =>
-      cleartext.createFhevmCleartextPublicDecryptClient({ ...parameters, leafProofs }),
+    createFhevmDecryptClient: cleartext.createFhevmCleartextDecryptClient,
+    createFhevmPublicDecryptClient: cleartext.createFhevmCleartextPublicDecryptClient,
   };
 };
 

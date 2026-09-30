@@ -5,7 +5,9 @@
 //! Give a fixture store its plaintexts with [`store_account`] or, once the context holds it, with
 //! [`seed`] (forge-fhevm-std's `seedCleartext`); give an input its plaintext with
 //! [`input_extra_data`] in its attestation. Read results with [`store_value`] or [`store_u64`].
-//! A slot nobody gave a value to fails the read, as it fails the host.
+//! A slot nobody gave a value to fails the read, as it fails the host, except that
+//! [`fixture_context`] records 0 behind every fixture store slot, a fixture balance's starting
+//! value: a test seeds every other value it relies on.
 
 use std::collections::HashMap;
 
@@ -177,14 +179,7 @@ pub fn evaluate(
             let handle_index = match operand {
                 host::FheExecuteOperand::StoreSlot { handle_index, .. }
                 | host::FheExecuteOperand::TransientResult { handle_index, .. } => *handle_index,
-                host::FheExecuteOperand::VerifiedInput { attestation } => {
-                    return host::cleartext::decode_input_value(
-                        &attestation.extra_data,
-                        &attestation.ct_handles,
-                        usize::from(attestation.handle_index),
-                    )
-                }
-                _ => unreachable!("the evaluator resolves steps and scalars itself"),
+                _ => unreachable!("the evaluator resolves steps, scalars and inputs itself"),
             };
             let handle = args.dictionary_bytes(handle_index)?;
             let bits = values.get(&handle).ok_or_else(|| {

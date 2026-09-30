@@ -113,12 +113,9 @@ fn resolve_operand(
                 None => layout::transient_value(transient_data, index, handle),
             }
         }
-        FheExecuteOperand::VerifiedInput { attestation } => cleartext::decode_input_value(
-            &attestation.extra_data,
-            &attestation.ct_handles,
-            usize::from(attestation.handle_index),
-        ),
-        FheExecuteOperand::EarlierStep { .. } | FheExecuteOperand::Scalar { .. } => {
+        FheExecuteOperand::VerifiedInput { .. }
+        | FheExecuteOperand::EarlierStep { .. }
+        | FheExecuteOperand::Scalar { .. } => {
             err!(ZamaHostError::InvalidFheExecuteAccount)
         }
     }

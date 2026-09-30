@@ -1,7 +1,6 @@
 export {
   createFhevmCleartextDecryptClient,
   createFhevmCleartextPublicDecryptClient,
-  type SolanaCleartextDecryptParameters,
 } from './createFhevmCleartextDecryptClient.js';
 export { createFhevmCleartextEncryptClient } from './createFhevmCleartextEncryptClient.js';
 export { SOLANA_CLEARTEXT_GATEWAY, SOLANA_CLEARTEXT_SIGNER_ADDRESSES } from './parties.js';
@@ -10,7 +9,6 @@ export {
   encodeSolanaLeafProofOutcome,
   SOLANA_LEAF_PROOFS_PATH,
   SOLANA_MAX_LEAVES_PER_READ,
-  type SolanaLeafProofEndpoint,
   type SolanaLeafProofOutcome,
   type SolanaLeafProofReader,
   type SolanaLeafQuery,
