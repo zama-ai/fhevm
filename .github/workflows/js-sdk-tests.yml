@@ -12,6 +12,8 @@ on:
       # The committed cross-implementation byte vectors the SDK's Solana user-decrypt
       # tests assert against: an edit to a vector alone must run its TS consumer.
       - "solana/test-fixtures/user-decrypt/**"
+      # The KMS Connector's verdicts the cleartext client's authorization is held to.
+      - "solana/test-fixtures/authorization/**"
       # The decryption-request budget parity test reads these three contracts at test time.
       - "gateway-contracts/contracts/Decryption.sol"
       - "gateway-contracts/contracts/shared/FheType.sol"

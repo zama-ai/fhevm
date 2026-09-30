@@ -3,44 +3,27 @@
 // admission of a user decryption, and the on-chain checks of a public-decrypt certificate, which
 // the client signs with the registered cleartext KMS key.
 //
-// Before answering, the client judges a request as the KMS Connector does
-// (kms-connector/crates/kms-worker/src/core/solana/pipeline.rs), reading the same host state: a user
-// decryption needs a KMS context that is not destroyed, a signed permit for this host chain and
-// program, inside its validity window and not revoked, a store in the permit's scopes, a live
-// delegation when the entry's owner is not the signer, and an allow leaf for the owner on the handle;
-// a public decryption needs the handle made public. What it
-// does not reproduce is the KMS itself: no signcryption, no response signatures, and so no check of
-// the FHE parameter or the KMS epoch. On the real stack the Connector's refusals come back
-// unanswered and the relayer's pre-check refuses some of them earlier; here every refusal comes
-// back as the relayer's `not_allowed_on_host_acl`, and a store history that lags the store's leaf
-// count comes back unanswered, which the retry loop submits again.
-import { getAddressDecoder, getAddressEncoder, type Address } from '@solana/kit';
-import { fetchSysvarClock } from '@solana/sysvars';
+// Before answering, the client judges a request as the KMS Connector does (./authorization.ts),
+// reading the same host state, and a public decryption needs the handle made public. What it does
+// not reproduce is the KMS itself: no signcryption, no response signatures, and so no check of the
+// FHE parameter or the KMS epoch. A refusal reaches the caller as it does on the real stack, except
+// that a request the Connector will never answer fails at once instead of timing out.
+import { getAddressDecoder, parseBase64RpcAccount, type Address } from '@solana/kit';
 import type { FhevmSolanaChain } from '../../core/types/fhevmSolanaChain.js';
-import type { SolanaEncryptedStore, SolanaRpc } from '../encryptedStore.js';
-import type { SolanaStoreHistoryEvent } from '../proof.js';
+import type { SolanaRpc } from '../encryptedStore.js';
 import type { SolanaDecryptTrust, SolanaUserDecryptExecution } from '../clients/decorators/permitDecrypt.js';
-import type { SolanaPermitFields } from '../permit/types.js';
 import type {
-  SolanaUserDecryptHandleEntry,
   SolanaUserDecryptPlaintext,
   SolanaUserDecryptRejection,
   SolanaUserDecryptTransport,
 } from '../userDecrypt/index.js';
 import type { SolanaPublicDecryptCertifier } from '../actions/publicDecryptCertificate.js';
-import { asBytes32, bytesToHex, bytesToHexNo0x, concatBytes, hexToBytes } from '../../core/base/bytes.js';
+import { asBytes32, bytesToHex, bytesToHexNo0x, hexToBytes } from '../../core/base/bytes.js';
 import { bytes32ToHandle, toFhevmHandle } from '../../core/handle/FhevmHandle.js';
 import { createKmsPublicDecryptEip712, publicDecryptDigest } from '../../core/kms/createKmsPublicDecryptEip712.js';
 import { runSolanaUserDecrypt } from '../userDecrypt/index.js';
 import { createSolanaUserDecryptDeadline } from '../userDecrypt/deadline.js';
 import { verifySolanaUserDecryptPlaintexts } from '../userDecrypt/response.js';
-import { verifySolanaPermitSignature } from '../permit/envelope.js';
-import { fetchSolanaEncryptedStore } from '../encryptedStore.js';
-import { fetchSolanaPermitInvalidation } from '../actions/revokePermits.js';
-import {
-  fetchSolanaUserDecryptionDelegation,
-  isSolanaUserDecryptionDelegationLiveAt,
-} from '../actions/userDecryptionDelegation.js';
 import { solanaPublicDecryptExtraData } from '../actions/publicDecryptCertificate.js';
 import { findHostConfigPda } from '../internal/generated/zamaHost/pdas/hostConfig.js';
 import { findKmsContextPda } from '../internal/generated/zamaHost/pdas/kmsContext.js';
@@ -48,7 +31,14 @@ import { fetchHostConfig, type HostConfig } from '../internal/generated/zamaHost
 import { fetchKmsContext, type KmsContext } from '../internal/generated/zamaHost/accounts/kmsContext.js';
 import { solanaHostProgram } from '../clients/createFhevmBaseClient.js';
 import { signAsCleartextParty } from './parties.js';
-import { createSolanaStoreHistoryReader, type SolanaStoreHistoryReader } from './storeHistory.js';
+import {
+  CONNECTOR_FAILURE_RECOVERABLE,
+  judgeSolanaPublicDecryption,
+  judgeSolanaUserDecryption,
+  type ConnectorVerdict,
+  type SolanaHostAccountsReader,
+} from './authorization.js';
+import { createSolanaStoreHistoryReader } from './storeHistory.js';
 import { fetchCleartextStoreValue } from './storeValues.js';
 
 ////////////////////////////////////////////////////////////////////////////////
@@ -77,15 +67,26 @@ export function cleartextUserDecryptExecution(
         // context on every attempt.
         const host = await fetchHostDecryptionState(rpc, programAddress, fields.kmsRouting.kmsContextId);
         assertTrustMatchesHost(host, trust, fields.kmsRouting.kmsContextId);
-        const rejection = await userDecryptRejection(
-          rpc,
+        if (fields.chainId !== host.config.chainId) {
+          const message = `the permit is for host chain ${fields.chainId}; this host is chain ${host.config.chainId}`;
+          return { ok: false, rejection: { kind: 'refused', label: 'host_chain_id_not_supported', message } };
+        }
+        if (host.context.destroyed) {
+          neverAnswered(
+            'KmsContextDestroyed',
+            `KMS context ${bytesToHex(fields.kmsRouting.kmsContextId)} is destroyed`,
+          );
+        }
+        const verdict = await judgeSolanaUserDecryption({
           programAddress,
-          readHistory,
-          host,
+          now: BigInt(Math.floor(Date.now() / 1000)),
           fields,
           signature,
           entries,
-        );
+          readAccounts: hostAccountsReader(rpc),
+          readHistory,
+        });
+        const rejection = cleartextUserDecryptRejection(verdict);
         if (rejection !== undefined) return { ok: false, rejection };
         const plaintexts = await Promise.all(
           entries.map(async (entry) => ({
@@ -156,112 +157,45 @@ function assertTrustMatchesHost(
   }
 }
 
-/** A Connector refusal, raised by a check and returned as the relayer's label. */
-class HostAclRefusal extends Error {}
+/** One `getMultipleAccounts` read of the host accounts, at a slot no older than `minContextSlot`. */
+const hostAccountsReader =
+  (rpc: SolanaRpc): SolanaHostAccountsReader =>
+  async (keys, minContextSlot) => {
+    const { context, value } = await rpc
+      .getMultipleAccounts(keys, {
+        ...CONFIRMED,
+        encoding: 'base64',
+        ...(minContextSlot === undefined ? {} : { minContextSlot }),
+      })
+      .send();
+    return {
+      slot: context.slot,
+      accounts: keys.map((key, index) => parseBase64RpcAccount(key, value[index] ?? null)),
+    };
+  };
 
-const refuse = (message: string): never => {
-  throw new HostAclRefusal(message);
-};
+/** A request the Connector will never answer: the relayer would time it out after its own timeout. */
+function neverAnswered(failure: string, message: string): never {
+  throw new Error(
+    `the KMS Connector refuses this request for good (${failure}: ${message}); on the real stack it is never ` +
+      `answered, and the relayer ends it as response_timed_out`,
+  );
+}
 
 /**
- * What the Connector would do with the request, in its order of checks: nothing if it would answer,
- * the relayer's `not_allowed_on_host_acl` if it would refuse, and no answer (which the retry loop
- * submits again) while the store's history does not reach its leaf count yet, as when coprocessors
- * have not indexed a leaf. A host record it cannot read refuses the request, as in the Connector.
+ * What the caller sees of the Connector's verdict on the real stack. The relayer refuses a permit
+ * whose signature does not verify when the request is submitted, and its pre-check refuses a
+ * delegated entry without a live delegation row. A failure a later attempt may clear, the Connector
+ * retries itself: here the attempt goes unanswered and the retry loop submits it again. Any other
+ * failure fails at once, where the real stack would leave the request to time out.
  */
-export async function userDecryptRejection(
-  rpc: SolanaRpc,
-  programAddress: Address,
-  readHistory: SolanaStoreHistoryReader,
-  { config, context }: HostDecryptionState,
-  fields: SolanaPermitFields,
-  signature: Uint8Array,
-  entries: readonly SolanaUserDecryptHandleEntry[],
-): Promise<SolanaUserDecryptRejection | undefined> {
-  try {
-    if (fields.chainId !== config.chainId) {
-      refuse(`the permit is for host chain ${fields.chainId}; this host is chain ${config.chainId}`);
-    }
-    if (context.destroyed) {
-      refuse(`KMS context ${bytesToHex(fields.kmsRouting.kmsContextId)} is destroyed`);
-    }
-    try {
-      verifySolanaPermitSignature(fields, signature);
-    } catch (error) {
-      refuse(`the permit signature does not verify: ${String(error)}`);
-    }
-    const now = BigInt(Math.floor(Date.now() / 1000));
-    const end = fields.startTimestamp + fields.durationSeconds;
-    if (now < fields.startTimestamp || now > end) {
-      refuse(`the permit is valid from ${fields.startTimestamp} to ${end}, not at ${now}`);
-    }
-    const decodeAddress = (bytes: Uint8Array): Address => getAddressDecoder().decode(bytes);
-    if (decodeAddress(fields.verifyingProgramId) !== programAddress) {
-      refuse(
-        `the permit is signed for host program ${decodeAddress(fields.verifyingProgramId)}, not ${programAddress}`,
-      );
-    }
-    const signer = decodeAddress(fields.userAddress);
-    const watermark = await fetchSolanaPermitInvalidation(rpc, signer, { ...CONFIRMED, programAddress }).catch(
-      (error: unknown) => refuse(`the permit invalidation of ${signer} is unreadable: ${String(error)}`),
-    );
-    if (fields.startTimestamp < watermark) {
-      refuse(`the permit starts at ${fields.startTimestamp}, before ${signer} revoked permits up to ${watermark}`);
-    }
-    const allowedScopes = new Set(fields.allowedScopes.map((scope) => bytesToHex(scope)));
-    let hostNow: bigint | undefined;
-    // One read of each store and of its history per attempt, however many entries name it.
-    const stores = new Map<Address, SolanaEncryptedStore>();
-    const histories = new Map<Address, SolanaStoreHistoryEvent[]>();
-    for (const [index, entry] of entries.entries()) {
-      const storeAddress = decodeAddress(entry.encryptedStore);
-      const store =
-        stores.get(storeAddress) ??
-        (await fetchSolanaEncryptedStore(rpc, storeAddress, CONFIRMED, programAddress).catch((error: unknown) =>
-          refuse(`entry ${index}: ${String(error)}`),
-        ));
-      stores.set(storeAddress, store);
-      const application = concatBytes(
-        new Uint8Array(getAddressEncoder().encode(store.program)),
-        new Uint8Array(getAddressEncoder().encode(store.scope)),
-      );
-      if (allowedScopes.size > 0 && !allowedScopes.has(bytesToHex(application))) {
-        refuse(`entry ${index}: the permit's scopes do not include (${store.program}, ${store.scope})`);
-      }
-      const owner = decodeAddress(entry.ownerAddress);
-      if (owner !== signer) {
-        const rows = await fetchSolanaUserDecryptionDelegation(
-          rpc,
-          { delegator: owner, delegate: signer, program: store.program, scope: store.scope },
-          { ...CONFIRMED, programAddress },
-        ).catch((error: unknown) => refuse(`entry ${index}: a delegation record is unreadable: ${String(error)}`));
-        // The Connector judges delegations against the host's Clock, not the local one.
-        hostNow ??= (await fetchSysvarClock(rpc, CONFIRMED)).unixTimestamp;
-        const live = hostNow;
-        if (
-          ![rows.exact, rows.wildcard].some((row) => row !== null && isSolanaUserDecryptionDelegationLiveAt(row, live))
-        ) {
-          refuse(`entry ${index}: ${owner} has no live delegation to ${signer} for (${store.program}, ${store.scope})`);
-        }
-      }
-      // The history is read after the store, so it reaches the store's leaf count unless it lags.
-      const history = histories.get(storeAddress) ?? (await readHistory(storeAddress));
-      histories.set(storeAddress, history);
-      if (BigInt(history.length) < store.leafCount) return { kind: 'unanswered' };
-      const [handle, key] = [bytesToHex(entry.handle), bytesToHex(entry.ownerAddress)];
-      if (
-        !history.some(
-          (event) => event.kind === 'allowed' && bytesToHex(event.handle) === handle && bytesToHex(event.key) === key,
-        )
-      ) {
-        refuse(`entry ${index}: ${owner} is not allowed on handle ${handle} in EncryptedStore ${storeAddress}`);
-      }
-    }
-    return undefined;
-  } catch (error) {
-    if (!(error instanceof HostAclRefusal)) throw error;
-    return { kind: 'refused', label: 'not_allowed_on_host_acl', message: error.message };
-  }
+export function cleartextUserDecryptRejection(verdict: ConnectorVerdict): SolanaUserDecryptRejection | undefined {
+  if (verdict.authorized) return undefined;
+  const { failure, message } = verdict;
+  if (failure === 'Signature') return { kind: 'refused', label: 'validation_failed', message };
+  if (failure === 'Delegation::NoLiveDelegation') return { kind: 'failed', label: 'not_allowed_on_host_acl', message };
+  if (CONNECTOR_FAILURE_RECOVERABLE[failure]) return { kind: 'unanswered' };
+  return neverAnswered(failure, message);
 }
 
 /**
@@ -275,10 +209,14 @@ export function cleartextPublicDecryptCertifier(rpc: SolanaRpc, chain: FhevmSola
     const handle = toFhevmHandle(parameters.handle);
     const handleBytes = hexToBytes(handle.bytes32Hex);
     const encryptedStore = getAddressDecoder().decode(parameters.encryptedStore);
-    const history = await readHistory(encryptedStore);
-    if (!history.some((event) => event.kind === 'markedPublic' && bytesToHex(event.handle) === handle.bytes32Hex)) {
-      throw new Error(`handle ${handle.bytes32Hex} was not made public in EncryptedStore ${encryptedStore}`);
-    }
+    const verdict = await judgeSolanaPublicDecryption({
+      programAddress,
+      encryptedStore,
+      handle: handleBytes,
+      readAccounts: hostAccountsReader(rpc),
+      readHistory,
+    });
+    if (!verdict.authorized) throw new Error(`the KMS Connector refuses to decrypt: ${verdict.message}`);
     const cleartext = await fetchCleartextStoreValue(rpc, programAddress, parameters.encryptedStore, handleBytes);
     const [{ data: config }, { data: context }] = await Promise.all([
       fetchHostConfig(rpc, (await findHostConfigPda({ programAddress }))[0], CONFIRMED),

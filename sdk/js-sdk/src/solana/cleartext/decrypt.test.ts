@@ -1,20 +1,14 @@
-import * as envelope from '../permit/envelope.js';
-import * as encryptedStore from '../encryptedStore.js';
-import * as revokePermits from '../actions/revokePermits.js';
-import * as delegation from '../actions/userDecryptionDelegation.js';
+import * as authorization from './authorization.js';
 import * as storeHistory from './storeHistory.js';
 import * as storeValues from './storeValues.js';
 import * as hostConfigAccount from '../internal/generated/zamaHost/accounts/hostConfig.js';
 import * as kmsContextAccount from '../internal/generated/zamaHost/accounts/kmsContext.js';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { address, getAddressEncoder, type Address } from '@solana/kit';
-import { getSysvarClockEncoder } from '@solana/sysvars';
 import type { FhevmSolanaChain } from '../../core/types/fhevmSolanaChain.js';
 import type { SolanaDecryptTrust } from '../clients/decorators/permitDecrypt.js';
 import type { SolanaRpc } from '../encryptedStore.js';
 import type { SolanaStoreHistoryReader } from './storeHistory.js';
-import type { SolanaPermitFields } from '../permit/types.js';
-import type { SolanaUserDecryptHandleEntry } from '../userDecrypt/index.js';
 import { bytesToHex } from '../../core/base/bytes.js';
 import { buildHandle } from '../../core/handle/FhevmHandle.js';
 import { RelayerAbortError } from '../../core/errors/RelayerAbortError.js';
@@ -28,181 +22,63 @@ import {
   decodeSolanaPermitFields,
 } from '../permit/index.js';
 import { SolanaUserDecryptRunError } from '../userDecrypt/index.js';
-import { cleartextUserDecryptExecution, userDecryptRejection } from './decrypt.js';
+import { cleartextUserDecryptExecution, cleartextUserDecryptRejection } from './decrypt.js';
 
 const host = address('11111111111111111111111111111112');
 const signer = address('SysvarRent111111111111111111111111111111111');
-const delegator = address('SysvarS1otHashes111111111111111111111111111');
-const store = address('SysvarStakeHistory1111111111111111111111111');
-const app = address('SysvarRecentB1ockHashes11111111111111111111');
 const bytes = (value: Address): Uint8Array => new Uint8Array(getAddressEncoder().encode(value));
-const handle = new Uint8Array(32).fill(7);
 const now = BigInt(Math.floor(Date.now() / 1000));
-
-/** An RPC that serves only the Clock sysvar, at `unixTimestamp`. */
-function rpcAtClock(unixTimestamp: bigint): SolanaRpc {
-  const data = getSysvarClockEncoder().encode({
-    slot: 0n,
-    epochStartTimestamp: unixTimestamp,
-    epoch: 0n,
-    leaderScheduleEpoch: 0n,
-    unixTimestamp,
-  } as Parameters<ReturnType<typeof getSysvarClockEncoder>['encode']>[0]);
-  const value = {
-    data: [Buffer.from(data).toString('base64'), 'base64'],
-    executable: false,
-    lamports: 1n,
-    owner: 'Sysvar1111111111111111111111111111111111111',
-    space: BigInt(data.length),
-  };
-  return { getAccountInfo: () => ({ send: () => Promise.resolve({ value }) }) } as unknown as SolanaRpc;
-}
-
-let fields: Record<string, unknown>;
-let entry: SolanaUserDecryptHandleEntry;
-let hostState: Parameters<typeof userDecryptRejection>[3];
 const readHistory = vi.fn<SolanaStoreHistoryReader>();
-let rpc: SolanaRpc;
+const rpc = {} as SolanaRpc;
 
-const judge = () =>
-  userDecryptRejection(rpc, host, readHistory, hostState, fields as unknown as SolanaPermitFields, new Uint8Array(64), [
-    entry,
-  ]);
-const refusedWith = (message: RegExp) => ({
-  kind: 'refused',
-  label: 'not_allowed_on_host_acl',
-  message: expect.stringMatching(message),
+const refusal = (failure: authorization.ConnectorFailure): authorization.ConnectorVerdict => ({
+  authorized: false,
+  failure,
+  entry: 0,
+  message: `entry 0: ${failure}`,
 });
 
 beforeEach(() => {
-  fields = {
-    chainId: 5n,
-    kmsRouting: { kmsContextId: new Uint8Array(32).fill(1) },
-    startTimestamp: now - 10n,
-    durationSeconds: 100n,
-    verifyingProgramId: bytes(host),
-    userAddress: bytes(signer),
-    allowedScopes: [],
-  };
-  entry = { handle, ownerAddress: bytes(signer), encryptedStore: bytes(store) } as SolanaUserDecryptHandleEntry;
-  hostState = { config: { chainId: 5n }, context: { destroyed: false } } as unknown as typeof hostState;
-  rpc = rpcAtClock(now);
-  vi.spyOn(envelope, 'verifySolanaPermitSignature').mockReturnValue(undefined as never);
-  vi.spyOn(revokePermits, 'fetchSolanaPermitInvalidation').mockResolvedValue(0n);
-  vi.spyOn(encryptedStore, 'fetchSolanaEncryptedStore').mockResolvedValue({
-    program: app,
-    scope: host,
-    leafCount: 1n,
-  } as unknown as encryptedStore.SolanaEncryptedStore);
-  readHistory.mockReset().mockResolvedValue([{ kind: 'allowed', handle, key: bytes(signer) }]);
   vi.spyOn(storeHistory, 'createSolanaStoreHistoryReader').mockReturnValue(readHistory);
 });
 
 afterEach(() => vi.restoreAllMocks());
 
-describe('userDecryptRejection', () => {
-  it('answers a request the Connector would authorize', async () => {
-    await expect(judge()).resolves.toBeUndefined();
+describe('cleartextUserDecryptRejection', () => {
+  it('answers a request the Connector authorizes', () => {
+    expect(cleartextUserDecryptRejection({ authorized: true })).toBeUndefined();
   });
 
-  it('refuses a permit for another host chain', async () => {
-    fields.chainId = 6n;
-    await expect(judge()).resolves.toEqual(refusedWith(/host chain 6/));
-  });
-
-  it('refuses under a destroyed KMS context', async () => {
-    hostState = { ...hostState, context: { ...hostState.context, destroyed: true } };
-    await expect(judge()).resolves.toEqual(refusedWith(/is destroyed/));
-  });
-
-  it('refuses a permit whose signature does not verify', async () => {
-    vi.mocked(envelope.verifySolanaPermitSignature).mockImplementation(() => {
-      throw new Error('bad signature');
+  it('refuses a bad signature at submission, as the relayer does', () => {
+    expect(cleartextUserDecryptRejection(refusal('Signature'))).toEqual({
+      kind: 'refused',
+      label: 'validation_failed',
+      message: 'entry 0: Signature',
     });
-    await expect(judge()).resolves.toEqual(refusedWith(/bad signature/));
   });
 
-  it('refuses outside the validity window', async () => {
-    fields.startTimestamp = now + 10n;
-    await expect(judge()).resolves.toEqual(refusedWith(/is valid from/));
-  });
-
-  it('refuses a permit signed for another host program', async () => {
-    fields.verifyingProgramId = bytes(app);
-    await expect(judge()).resolves.toEqual(refusedWith(/signed for host program/));
-  });
-
-  it('refuses a permit that starts before the revocation watermark', async () => {
-    vi.mocked(revokePermits.fetchSolanaPermitInvalidation).mockResolvedValue(now);
-    await expect(judge()).resolves.toEqual(refusedWith(/revoked permits up to/));
-  });
-
-  it('refuses a store it cannot read, as the Connector does', async () => {
-    vi.mocked(encryptedStore.fetchSolanaEncryptedStore).mockRejectedValue(new Error('does not exist'));
-    await expect(judge()).resolves.toEqual(refusedWith(/entry 0: Error: does not exist/));
-  });
-
-  it("refuses a store outside the permit's scopes, and admits every store under no scope", async () => {
-    fields.allowedScopes = [new Uint8Array([...bytes(app), ...bytes(app)])];
-    await expect(judge()).resolves.toEqual(refusedWith(/scopes do not include/));
-    fields.allowedScopes = [new Uint8Array([...bytes(app), ...bytes(host)])];
-    await expect(judge()).resolves.toBeUndefined();
-  });
-
-  it('refuses a delegated entry at the second its delegation expires, and answers it before', async () => {
-    entry = { ...entry, ownerAddress: bytes(delegator) };
-    readHistory.mockResolvedValue([{ kind: 'allowed', handle, key: bytes(delegator) }]);
-    const live = { expiresAt: now } as delegation.SolanaUserDecryptionDelegationRecord;
-    vi.spyOn(delegation, 'fetchSolanaUserDecryptionDelegation').mockResolvedValue({ exact: null, wildcard: live });
-    await expect(judge()).resolves.toEqual(refusedWith(/no live delegation/));
-    rpc = rpcAtClock(now - 1n);
-    await expect(judge()).resolves.toBeUndefined();
-  });
-
-  it("refuses an entry without the owner's allow leaf, even when the signer has one", async () => {
-    entry = { ...entry, ownerAddress: bytes(delegator) };
-    vi.spyOn(delegation, 'fetchSolanaUserDecryptionDelegation').mockResolvedValue({
-      exact: { expiresAt: now + 60n } as delegation.SolanaUserDecryptionDelegationRecord,
-      wildcard: null,
+  it("gives up on a delegated entry without a live row, as the relayer's pre-check does", () => {
+    expect(cleartextUserDecryptRejection(refusal('Delegation::NoLiveDelegation'))).toEqual({
+      kind: 'failed',
+      label: 'not_allowed_on_host_acl',
+      message: 'entry 0: Delegation::NoLiveDelegation',
     });
-    await expect(judge()).resolves.toEqual(refusedWith(/is not allowed on handle/));
   });
 
-  it('leaves the request unanswered while the history does not reach the leaf count', async () => {
-    vi.mocked(encryptedStore.fetchSolanaEncryptedStore).mockResolvedValue({
-      program: app,
-      scope: host,
-      leafCount: 2n,
-    } as unknown as encryptedStore.SolanaEncryptedStore);
-    await expect(judge()).resolves.toEqual({ kind: 'unanswered' });
+  it('leaves a failure the Connector would retry unanswered', () => {
+    for (const failure of [
+      'HandleBinding::ProofRecordBehind',
+      'EncryptedStore::Absent',
+      'Window::NotYetValid',
+    ] as const) {
+      expect(cleartextUserDecryptRejection(refusal(failure))).toEqual({ kind: 'unanswered' });
+    }
   });
-});
 
-describe('userDecryptRejection reads', () => {
-  it('reads each store and its history once, however many entries name it', async () => {
-    const other = new Uint8Array(32).fill(8);
-    readHistory.mockResolvedValue([
-      { kind: 'allowed', handle, key: bytes(signer) },
-      { kind: 'allowed', handle: other, key: bytes(signer) },
-    ]);
-    vi.mocked(encryptedStore.fetchSolanaEncryptedStore).mockResolvedValue({
-      program: app,
-      scope: host,
-      leafCount: 2n,
-    } as unknown as encryptedStore.SolanaEncryptedStore);
-    const entries = [entry, { ...entry, handle: other }, entry];
-    const rejection = await userDecryptRejection(
-      rpc,
-      host,
-      readHistory,
-      hostState,
-      fields as unknown as SolanaPermitFields,
-      new Uint8Array(64),
-      entries,
+  it('fails at once on a failure the Connector never clears, naming it', () => {
+    expect(() => cleartextUserDecryptRejection(refusal('ScopeNotAllowed'))).toThrow(
+      /ScopeNotAllowed: entry 0: ScopeNotAllowed.*response_timed_out/,
     );
-    expect(rejection).toBeUndefined();
-    expect(encryptedStore.fetchSolanaEncryptedStore).toHaveBeenCalledTimes(1);
-    expect(readHistory).toHaveBeenCalledTimes(1);
   });
 });
 
@@ -251,7 +127,7 @@ describe('cleartextUserDecryptExecution', () => {
     } as unknown as Awaited<ReturnType<typeof hostConfigAccount.fetchHostConfig>>);
     vi.spyOn(kmsContextAccount, 'fetchKmsContext').mockResolvedValue(kmsContext(false));
     vi.spyOn(storeValues, 'fetchCleartextStoreValue').mockResolvedValue(new Uint8Array([1]));
-    readHistory.mockResolvedValue([{ kind: 'allowed', handle: permitHandle, key: bytes(signer) }]);
+    vi.spyOn(authorization, 'judgeSolanaUserDecryption').mockResolvedValue({ authorized: true });
   });
 
   afterEach(() => vi.useRealTimers());
@@ -271,11 +147,9 @@ describe('cleartextUserDecryptExecution', () => {
 
   /** The first attempt finds the history one leaf behind the store; later ones find it caught up. */
   const lagOnce = () =>
-    vi.mocked(encryptedStore.fetchSolanaEncryptedStore).mockResolvedValueOnce({
-      program: app,
-      scope: host,
-      leafCount: 2n,
-    } as unknown as encryptedStore.SolanaEncryptedStore);
+    vi
+      .mocked(authorization.judgeSolanaUserDecryption)
+      .mockResolvedValueOnce(refusal('HandleBinding::ProofRecordBehind'));
 
   it('judges every attempt against the KMS context as it is then', async () => {
     lagOnce();
@@ -285,9 +159,18 @@ describe('cleartextUserDecryptExecution', () => {
     const outcome = execute().catch((error: unknown) => error);
     await untilBackoff();
     await vi.advanceTimersByTimeAsync(2_000);
-    const error = await outcome;
+    expect(String(await outcome)).toMatch(/KmsContextDestroyed: KMS context .* is destroyed/);
+    expect(kmsContextAccount.fetchKmsContext).toHaveBeenCalledTimes(2);
+  });
+
+  it('refuses a permit for another host chain at submission, as the relayer does', async () => {
+    vi.mocked(hostConfigAccount.fetchHostConfig).mockResolvedValue({
+      data: { chainId: hostChainId + 1n, gatewayChainId, decryptionContract },
+    } as unknown as Awaited<ReturnType<typeof hostConfigAccount.fetchHostConfig>>);
+    const error = await execute().catch((caught: unknown) => caught);
     expect(error).toBeInstanceOf(SolanaUserDecryptRunError);
-    expect(error).toMatchObject({ attempts: 2, rejection: refusedWith(/is destroyed/) });
+    expect(error).toMatchObject({ attempts: 1, rejection: { kind: 'refused', label: 'host_chain_id_not_supported' } });
+    expect(authorization.judgeSolanaUserDecryption).not.toHaveBeenCalled();
   });
 
   it('answers once the history catches up', async () => {
@@ -317,11 +200,7 @@ describe('cleartextUserDecryptExecution', () => {
   });
 
   it('gives up at the caller timeout, backoff included', async () => {
-    vi.mocked(encryptedStore.fetchSolanaEncryptedStore).mockResolvedValue({
-      program: app,
-      scope: host,
-      leafCount: 2n,
-    } as unknown as encryptedStore.SolanaEncryptedStore);
+    vi.mocked(authorization.judgeSolanaUserDecryption).mockResolvedValue(refusal('HandleBinding::ProofRecordBehind'));
     const outcome = execute({ timeout: 1_000 }).catch((error: unknown) => error);
     await untilBackoff();
     await vi.advanceTimersByTimeAsync(1_000);

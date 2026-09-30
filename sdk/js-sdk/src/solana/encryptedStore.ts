@@ -90,7 +90,7 @@ const encryptedStoreBodyDecoder = getStructDecoder([
 const DISCRIMINATOR_SIZE = 8;
 const VECTOR_ELEMENT_SIZE = 32;
 /** `sha256("account:EncryptedStore")[..8]` — the crate's `encrypted_store_discriminator()`. */
-const ENCRYPTED_STORE_DISCRIMINATOR = new Uint8Array([161, 143, 137, 73, 233, 30, 46, 118]);
+export const ENCRYPTED_STORE_DISCRIMINATOR = new Uint8Array([161, 143, 137, 73, 233, 30, 46, 118]);
 
 /**
  * Decodes an account's raw data, discriminator included, into its state.

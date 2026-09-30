@@ -234,21 +234,25 @@ returns `@fhevm/sdk/solana` with the three client factories replaced by those of
   key, and the attestation's `extra_data` is the plaintexts, one big-endian value per handle, at
   least two bytes each so that production's one-byte `0x00` never decodes as a value.
 - **User decrypt.** The permit and request are built as in production. The client then judges the
-  request as the KMS Connector does, against the same host state: the permit's host chain, a KMS
-  context that is not destroyed, the permit's signature, validity window, host program and
-  revocation watermark, the store's application in the permit's scopes, a live delegation when the
-  entry's owner is not the signer, and the owner's allow leaf on the handle. A refusal, including a
-  host record it cannot read, ends the run as the relayer's `not_allowed_on_host_acl` does. A store
-  history that does not reach the store's leaf count yet leaves the attempt unanswered, and the
-  retry loop submits it again. Otherwise the answer is the plaintext the host recorded in the
-  store. The client also checks that the trust
+  request as the KMS Connector does (`sdk/js-sdk/src/solana/cleartext/authorization.ts`): the same
+  host accounts, read in the same order and judged by the same rules, with the store's rebuilt
+  history in place of the coprocessors' leaf record. The kms-worker test `solana_authorization_cases`
+  runs the Connector on a set of cases and writes its verdicts to
+  `solana/test-fixtures/authorization/user_decrypt_cases_v1.json`, and the SDK test holds the client
+  to them. A refusal reaches the caller as on the real stack: the relayer refuses a bad signature
+  (`validation_failed`) or a permit for another host chain (`host_chain_id_not_supported`) at
+  submission, its pre-check refuses a delegated entry without a live row
+  (`not_allowed_on_host_acl`), and a failure the Connector would retry leaves the attempt
+  unanswered for the retry loop. Any other failure, and a destroyed KMS context, throws at once and
+  names the failure, where the real stack leaves the request to time out. Otherwise the answer is
+  the plaintext the host recorded in the store. The client also checks that the trust
   configuration names the KMS signers and gateway domain the host registers.
-- **Public decrypt.** The certificate is signed with the test KMS key. The history must have made
-  the handle public, and the on-chain verifier checks the certificate as usual.
+- **Public decrypt.** The store and the handle's public leaf are judged by the Connector's rules.
+  The certificate is signed with the test KMS key, and the on-chain verifier checks it as usual.
 
 The stack also serves `/v1/solana/leaf-proofs` in the host-listener's wire format. It rebuilds each
-store's history from the validator's transactions (`fetchSolanaStoreHistory`), so app code fetches
-leaf proofs from `env.leafProof` on both targets.
+store's history from the validator's transactions (`createSolanaStoreHistoryReader`), so app code
+fetches leaf proofs from `env.leafProof` on both targets.
 
 What the cleartext target does not prove, so these parts skip there
 (`capabilities.protocolServices` is false):

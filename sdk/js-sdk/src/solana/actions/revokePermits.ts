@@ -8,6 +8,8 @@ import {
   getProgramDerivedAddress,
   type Address,
   type Instruction,
+  type MaybeEncodedAccount,
+  type ProgramDerivedAddress,
 } from '@solana/kit';
 
 import { getRevokePermitsInstruction } from '../internal/generated/zamaHost/instructions/revokePermits.js';
@@ -60,11 +62,29 @@ export async function fetchSolanaPermitInvalidation(
   config: FetchAccountConfig & { readonly programAddress: Address },
 ): Promise<bigint> {
   const { programAddress, ...fetchConfig } = config;
-  const [address, bump] = await getProgramDerivedAddress({
+  const pda = await getProgramDerivedAddress({
     programAddress,
     seeds: [SOLANA_PERMIT_INVALIDATION_SEED, getAddressEncoder().encode(user)],
   });
-  const account = await fetchEncodedAccount(rpc, address, fetchConfig);
+  return solanaPermitInvalidationWatermark(
+    await fetchEncodedAccount(rpc, pda[0], fetchConfig),
+    pda,
+    user,
+    programAddress,
+  );
+}
+
+/**
+ * The watermark an account read at `user`'s invalidation address holds.
+ *
+ * @throws If the account is not the host's invalidation record of `user` at that address.
+ */
+export function solanaPermitInvalidationWatermark(
+  account: MaybeEncodedAccount,
+  [address, bump]: ProgramDerivedAddress,
+  user: Address,
+  programAddress: Address,
+): bigint {
   if (!account.exists) return 0n;
   // PermitInvalidation is an unchecked Anchor account and therefore absent from the IDL.
   // Its discriminator and 49-byte layout are pinned in state/permit_invalidation.rs.

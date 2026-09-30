@@ -231,6 +231,12 @@ impl PermitBuilder {
         self
     }
 
+    /// Replaces the signed host program.
+    pub fn verifying_program(mut self, program: Pubkey) -> Self {
+        self.wire.verifying_program_id = program.to_bytes().to_vec();
+        self
+    }
+
     /// Replaces the signed KMS routing pair.
     pub fn kms_pair(mut self, context: [u8; 32], epoch: [u8; 32]) -> Self {
         self.wire.extra_data = KmsRouting::ContextAndEpoch {
@@ -306,6 +312,16 @@ impl<'a> RequestBuilder<'a> {
             encrypted_store: encrypted_store.to_bytes(),
         });
         self
+    }
+
+    /// The permit in transport form and the wallet's signature over its envelope.
+    pub fn signed_permit(&self) -> (PermitWireFields, Signature) {
+        (self.permit.wire(), self.wallet.sign(&self.permit.typed()))
+    }
+
+    /// The handle entries, in request order.
+    pub fn entries(&self) -> &[HandleEntry] {
+        &self.entries
     }
 
     /// The request in its two carriers, signed: the fields the Gateway types, and the blob.
@@ -768,6 +784,11 @@ impl World {
             slot: self.slot,
             accounts: keys.iter().map(|key| self.account(key)).collect(),
         }
+    }
+
+    /// Every account the world holds, in key order.
+    pub fn accounts(&self) -> impl Iterator<Item = (&Pubkey, &SnapshotAccount)> {
+        self.accounts.iter()
     }
 
     /// The account at `key`, if the world holds one.
