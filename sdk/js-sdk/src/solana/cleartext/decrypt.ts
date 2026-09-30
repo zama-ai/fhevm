@@ -5,13 +5,15 @@
 //
 // Before answering, the client judges a request as the KMS Connector does
 // (kms-connector/crates/kms-worker/src/core/solana/pipeline.rs), reading the same host state: a user
-// decryption needs a signed permit for this host, inside its validity window and not revoked, a
-// store in the permit's scopes, a live delegation when the entry's owner is not the signer, and an
-// allow leaf for the owner on the handle; a public decryption needs the handle made public. What it
+// decryption needs a KMS context that is not destroyed, a signed permit for this host chain and
+// program, inside its validity window and not revoked, a store in the permit's scopes, a live
+// delegation when the entry's owner is not the signer, and an allow leaf for the owner on the handle;
+// a public decryption needs the handle made public. What it
 // does not reproduce is the KMS itself: no signcryption, no response signatures, and so no check of
 // the FHE parameter or the KMS epoch. On the real stack the Connector's refusals come back
 // unanswered and the relayer's pre-check refuses some of them earlier; here every refusal comes
-// back as the relayer's `not_allowed_on_host_acl`.
+// back as the relayer's `not_allowed_on_host_acl`, and a store history that lags the store's leaf
+// count comes back unanswered, which the retry loop submits again.
 import { fetchEncodedAccount, getAddressDecoder, getAddressEncoder, getI64Decoder, type Address } from '@solana/kit';
 import type { FhevmSolanaChain } from '../../core/types/fhevmSolanaChain.js';
 import type { SolanaRpc } from '../encryptedStore.js';
@@ -20,6 +22,7 @@ import type { SolanaPermitFields } from '../permit/types.js';
 import type {
   SolanaUserDecryptHandleEntry,
   SolanaUserDecryptPlaintext,
+  SolanaUserDecryptRejection,
   SolanaUserDecryptTransport,
 } from '../userDecrypt/index.js';
 import type { SolanaPublicDecryptCertifier } from '../actions/publicDecryptCertificate.js';
@@ -38,8 +41,8 @@ import {
 import { solanaPublicDecryptExtraData } from '../actions/publicDecryptCertificate.js';
 import { findHostConfigPda } from '../internal/generated/zamaHost/pdas/hostConfig.js';
 import { findKmsContextPda } from '../internal/generated/zamaHost/pdas/kmsContext.js';
-import { fetchHostConfig } from '../internal/generated/zamaHost/accounts/hostConfig.js';
-import { fetchKmsContext } from '../internal/generated/zamaHost/accounts/kmsContext.js';
+import { fetchHostConfig, type HostConfig } from '../internal/generated/zamaHost/accounts/hostConfig.js';
+import { fetchKmsContext, type KmsContext } from '../internal/generated/zamaHost/accounts/kmsContext.js';
 import { solanaHostProgram } from '../clients/createFhevmBaseClient.js';
 import { signAsCleartextParty } from './parties.js';
 import { fetchSolanaStoreHistory } from './storeHistory.js';
@@ -54,8 +57,7 @@ const CLOCK_UNIX_TIMESTAMP_OFFSET = 32;
 
 /**
  * Answers a user decryption with the plaintexts the host recorded for its handles, once the request
- * passes the Connector's authorization. A refusal goes through the production retry loop, which
- * gives up on it as on the relayer's.
+ * passes the Connector's authorization, through the production retry loop.
  */
 export function cleartextUserDecryptExecution(
   rpc: SolanaRpc,
@@ -65,13 +67,12 @@ export function cleartextUserDecryptExecution(
   const programAddress = solanaHostProgram(chain);
   return async ({ session, entries, attempts }) => {
     const { fields, signature } = session.signedPermit;
-    await assertTrustMatchesHost(rpc, programAddress, trust, fields.kmsRouting.kmsContextId);
+    const host = await fetchHostDecryptionState(rpc, programAddress, fields.kmsRouting.kmsContextId);
+    assertTrustMatchesHost(host, trust, fields.kmsRouting.kmsContextId);
     const transport: SolanaUserDecryptTransport<readonly SolanaUserDecryptPlaintext[]> = {
       async submit() {
-        const refusal = await userDecryptRefusal(rpc, programAddress, fields, signature, entries);
-        if (refusal !== undefined) {
-          return { ok: false, rejection: { kind: 'refused', label: 'not_allowed_on_host_acl', message: refusal } };
-        }
+        const rejection = await userDecryptRejection(rpc, programAddress, host, fields, signature, entries);
+        if (rejection !== undefined) return { ok: false, rejection };
         const plaintexts = await Promise.all(
           entries.map(async (entry) => ({
             bytes: await fetchCleartextStoreValue(rpc, programAddress, entry.encryptedStore, entry.handle),
@@ -85,7 +86,7 @@ export function cleartextUserDecryptExecution(
       signedPermit: session.signedPermit,
       entries,
       transport,
-      clock: { delay: () => Promise.resolve() },
+      clock: { delay: (seconds) => new Promise((resolve) => setTimeout(resolve, seconds * 1000)) },
       ...(attempts === undefined ? {} : { attempts }),
     });
     verifySolanaUserDecryptPlaintexts(
@@ -96,20 +97,33 @@ export function cleartextUserDecryptExecution(
   };
 }
 
-/**
- * Throws when the trust configuration names another KMS or gateway than the host registers: on the
- * real stack, response verification would reject every answer.
- */
-async function assertTrustMatchesHost(
+/** The host records a user decryption is judged against: its HostConfig and the permit's KMS context. */
+type HostDecryptionState = {
+  readonly config: HostConfig;
+  readonly context: KmsContext;
+};
+
+async function fetchHostDecryptionState(
   rpc: SolanaRpc,
   programAddress: Address,
-  trust: SolanaDecryptTrust,
   contextId: Uint8Array,
-): Promise<void> {
+): Promise<HostDecryptionState> {
   const [{ data: config }, { data: context }] = await Promise.all([
     fetchHostConfig(rpc, (await findHostConfigPda({ programAddress }))[0], CONFIRMED),
     fetchKmsContext(rpc, (await findKmsContextPda({ contextId }, { programAddress }))[0], CONFIRMED),
   ]);
+  return { config, context };
+}
+
+/**
+ * Throws when the trust configuration names another KMS or gateway than the host registers: on the
+ * real stack, response verification would reject every answer.
+ */
+function assertTrustMatchesHost(
+  { config, context }: HostDecryptionState,
+  trust: SolanaDecryptTrust,
+  contextId: Uint8Array,
+): void {
   const domain = trust.gatewayEip712Domain;
   const decryptionContract = bytesToHex(new Uint8Array(config.decryptionContract));
   if (domain.chainId !== config.gatewayChainId || domain.verifyingContract.toLowerCase() !== decryptionContract) {
@@ -127,69 +141,102 @@ async function assertTrustMatchesHost(
   }
 }
 
-/** Why the Connector would refuse the request, in its order of checks, or nothing if it would not. */
-async function userDecryptRefusal(
+/** A Connector refusal, raised by a check and returned as the relayer's label. */
+class HostAclRefusal extends Error {}
+
+const refuse = (message: string): never => {
+  throw new HostAclRefusal(message);
+};
+
+/**
+ * What the Connector would do with the request, in its order of checks: nothing if it would answer,
+ * the relayer's `not_allowed_on_host_acl` if it would refuse, and no answer (which the retry loop
+ * submits again) while the store's history does not reach its leaf count yet, as when coprocessors
+ * have not indexed a leaf. A host record it cannot read refuses the request, as in the Connector.
+ */
+export async function userDecryptRejection(
   rpc: SolanaRpc,
   programAddress: Address,
+  { config, context }: HostDecryptionState,
   fields: SolanaPermitFields,
   signature: Uint8Array,
   entries: readonly SolanaUserDecryptHandleEntry[],
-): Promise<string | undefined> {
+): Promise<SolanaUserDecryptRejection | undefined> {
   try {
-    verifySolanaPermitSignature(fields, signature);
-  } catch (error) {
-    return `the permit signature does not verify: ${String(error)}`;
-  }
-  const now = BigInt(Math.floor(Date.now() / 1000));
-  const end = fields.startTimestamp + fields.durationSeconds;
-  if (now < fields.startTimestamp || now > end) {
-    return `the permit is valid from ${fields.startTimestamp} to ${end}, not at ${now}`;
-  }
-  const decodeAddress = (bytes: Uint8Array): Address => getAddressDecoder().decode(bytes);
-  if (decodeAddress(fields.verifyingProgramId) !== programAddress) {
-    return `the permit is signed for host program ${decodeAddress(fields.verifyingProgramId)}, not ${programAddress}`;
-  }
-  const signer = decodeAddress(fields.userAddress);
-  const watermark = await fetchSolanaPermitInvalidation(rpc, signer, { ...CONFIRMED, programAddress });
-  if (fields.startTimestamp < watermark) {
-    return `the permit starts at ${fields.startTimestamp}, before ${signer} revoked permits up to ${watermark}`;
-  }
-  const allowedScopes = new Set(fields.allowedScopes.map((scope) => bytesToHex(scope)));
-  for (const [index, entry] of entries.entries()) {
-    const storeAddress = decodeAddress(entry.encryptedStore);
-    const store = await fetchSolanaEncryptedStore(rpc, storeAddress, CONFIRMED, programAddress);
-    const application = concatBytes(
-      new Uint8Array(getAddressEncoder().encode(store.program)),
-      new Uint8Array(getAddressEncoder().encode(store.scope)),
-    );
-    if (allowedScopes.size > 0 && !allowedScopes.has(bytesToHex(application))) {
-      return `entry ${index}: the permit's scopes do not include (${store.program}, ${store.scope})`;
+    if (fields.chainId !== config.chainId) {
+      refuse(`the permit is for host chain ${fields.chainId}; this host is chain ${config.chainId}`);
     }
-    const owner = decodeAddress(entry.ownerAddress);
-    if (owner !== signer) {
-      const rows = await fetchSolanaUserDecryptionDelegation(
-        rpc,
-        { delegator: owner, delegate: signer, program: store.program, scope: store.scope },
-        { ...CONFIRMED, programAddress },
+    if (context.destroyed) {
+      refuse(`KMS context ${bytesToHex(fields.kmsRouting.kmsContextId)} is destroyed`);
+    }
+    try {
+      verifySolanaPermitSignature(fields, signature);
+    } catch (error) {
+      refuse(`the permit signature does not verify: ${String(error)}`);
+    }
+    const now = BigInt(Math.floor(Date.now() / 1000));
+    const end = fields.startTimestamp + fields.durationSeconds;
+    if (now < fields.startTimestamp || now > end) {
+      refuse(`the permit is valid from ${fields.startTimestamp} to ${end}, not at ${now}`);
+    }
+    const decodeAddress = (bytes: Uint8Array): Address => getAddressDecoder().decode(bytes);
+    if (decodeAddress(fields.verifyingProgramId) !== programAddress) {
+      refuse(
+        `the permit is signed for host program ${decodeAddress(fields.verifyingProgramId)}, not ${programAddress}`,
       );
-      const hostNow = await fetchHostUnixTimestamp(rpc);
+    }
+    const signer = decodeAddress(fields.userAddress);
+    const watermark = await fetchSolanaPermitInvalidation(rpc, signer, { ...CONFIRMED, programAddress }).catch(
+      (error: unknown) => refuse(`the permit invalidation of ${signer} is unreadable: ${String(error)}`),
+    );
+    if (fields.startTimestamp < watermark) {
+      refuse(`the permit starts at ${fields.startTimestamp}, before ${signer} revoked permits up to ${watermark}`);
+    }
+    const allowedScopes = new Set(fields.allowedScopes.map((scope) => bytesToHex(scope)));
+    let hostNow: bigint | undefined;
+    for (const [index, entry] of entries.entries()) {
+      const storeAddress = decodeAddress(entry.encryptedStore);
+      const store = await fetchSolanaEncryptedStore(rpc, storeAddress, CONFIRMED, programAddress).catch(
+        (error: unknown) => refuse(`entry ${index}: ${String(error)}`),
+      );
+      const application = concatBytes(
+        new Uint8Array(getAddressEncoder().encode(store.program)),
+        new Uint8Array(getAddressEncoder().encode(store.scope)),
+      );
+      if (allowedScopes.size > 0 && !allowedScopes.has(bytesToHex(application))) {
+        refuse(`entry ${index}: the permit's scopes do not include (${store.program}, ${store.scope})`);
+      }
+      const owner = decodeAddress(entry.ownerAddress);
+      if (owner !== signer) {
+        const rows = await fetchSolanaUserDecryptionDelegation(
+          rpc,
+          { delegator: owner, delegate: signer, program: store.program, scope: store.scope },
+          { ...CONFIRMED, programAddress },
+        ).catch((error: unknown) => refuse(`entry ${index}: a delegation record is unreadable: ${String(error)}`));
+        hostNow ??= await fetchHostUnixTimestamp(rpc);
+        const live = hostNow;
+        if (
+          ![rows.exact, rows.wildcard].some((row) => row !== null && isSolanaUserDecryptionDelegationLiveAt(row, live))
+        ) {
+          refuse(`entry ${index}: ${owner} has no live delegation to ${signer} for (${store.program}, ${store.scope})`);
+        }
+      }
+      const history = await fetchSolanaStoreHistory(rpc, storeAddress, programAddress);
+      if (BigInt(history.length) < store.leafCount) return { kind: 'unanswered' };
+      const [handle, key] = [bytesToHex(entry.handle), bytesToHex(entry.ownerAddress)];
       if (
-        ![rows.exact, rows.wildcard].some((row) => row !== null && isSolanaUserDecryptionDelegationLiveAt(row, hostNow))
+        !history.some(
+          (event) => event.kind === 'allowed' && bytesToHex(event.handle) === handle && bytesToHex(event.key) === key,
+        )
       ) {
-        return `entry ${index}: ${owner} has no live delegation to ${signer} for (${store.program}, ${store.scope})`;
+        refuse(`entry ${index}: ${owner} is not allowed on handle ${handle} in EncryptedStore ${storeAddress}`);
       }
     }
-    const [handle, key] = [bytesToHex(entry.handle), bytesToHex(entry.ownerAddress)];
-    const history = await fetchSolanaStoreHistory(rpc, storeAddress, programAddress);
-    if (
-      !history.some(
-        (event) => event.kind === 'allowed' && bytesToHex(event.handle) === handle && bytesToHex(event.key) === key,
-      )
-    ) {
-      return `entry ${index}: ${owner} is not allowed on handle ${handle} in EncryptedStore ${storeAddress}`;
-    }
+    return undefined;
+  } catch (error) {
+    if (!(error instanceof HostAclRefusal)) throw error;
+    return { kind: 'refused', label: 'not_allowed_on_host_acl', message: error.message };
   }
-  return undefined;
 }
 
 /** The host's Clock, which the Connector judges delegations against. */

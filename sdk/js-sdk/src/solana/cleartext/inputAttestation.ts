@@ -87,7 +87,8 @@ export function cleartextInputExtraData(inputProof: SolanaZkProof): Uint8Array {
     const end = (index + 1) * PACKED_VALUE_LEN;
     return packed.subarray(end - length, end);
   });
-  // The proof builder's 2048-bit cap keeps this within the host's 256-byte extraData limit.
+  // The host takes at most 16 handles per attestation, so this is at most 16 × 16 = 256 bytes, its
+  // extraData limit.
   return concatBytes(...values);
 }
 

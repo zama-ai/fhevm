@@ -730,9 +730,10 @@ fn cost_snapshot_boundary_sweeps() {
     );
 }
 
-/// The cleartext host build stops every shape where the production build does, so a test on it
-/// neither refuses an execution production accepts nor accepts one production refuses: its
-/// evaluation and plaintext writes fit in the headroom the production walls leave.
+/// The cleartext host build stops every shape where the production build does: given the same
+/// instruction data, its evaluation and plaintext writes fit in the headroom the production walls
+/// leave. Its input attestations carry larger `extra_data`, so the transaction-size wall is not
+/// compared here.
 #[test]
 fn the_cleartext_build_stops_every_shape_at_the_production_wall() {
     let (production, cleartext) = (mollusk(), zama_solana_test_kit::cleartext::host_svm());

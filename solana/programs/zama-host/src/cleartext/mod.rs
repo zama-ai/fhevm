@@ -112,7 +112,8 @@ pub fn encode_input_values(values: &[Value]) -> Result<Vec<u8>> {
     Ok(extra_data)
 }
 
-/// The plaintext of `ct_handles[index]` in an input attestation's `extra_data`.
+/// The plaintext of `ct_handles[index]` in an input attestation's `extra_data`. Every value must
+/// fit its type, so no encoding reads as a different plaintext than the one it was built from.
 pub fn decode_input_value(
     extra_data: &[u8],
     ct_handles: &[[u8; 32]],
@@ -126,10 +127,12 @@ pub fn decode_input_value(
         let len = value_len(fhe_type)?;
         require!(rest.len() >= len, CleartextError::InputMalformed);
         let (bytes, tail) = rest.split_at(len);
+        let mut be = [0u8; 16];
+        be[16 - len..].copy_from_slice(bytes);
+        let bits = u128::from_be_bytes(be);
+        require!(bits <= mask(fhe_type)?, CleartextError::InputMalformed);
         if position == index {
-            let mut be = [0u8; 16];
-            be[16 - len..].copy_from_slice(bytes);
-            selected = Some(Value::new(fhe_type, u128::from_be_bytes(be))?);
+            selected = Some(Value::new(fhe_type, bits)?);
         }
         rest = tail;
     }
@@ -389,7 +392,7 @@ mod tests {
     }
 
     #[test]
-    fn input_values_round_trip_and_refuse_a_wrong_length() {
+    fn input_values_round_trip_and_refuse_malformed_encodings() {
         let handle = |fhe_type| {
             let mut handle = [0u8; 32];
             handle[30] = fhe_type;
@@ -409,6 +412,11 @@ mod tests {
         assert!(decode_input_value(&[extra_data.as_slice(), &[0]].concat(), &handles, 0).is_err());
         // Production's one-byte `0x00` is no input, not even a lone bool.
         assert!(decode_input_value(&[0x00], &handles[..1], 0).is_err());
+        // A value wider than its type is refused wherever it sits, not truncated.
+        assert!(decode_input_value(&[0x00, 0x02], &handles[..1], 0).is_err());
+        let mut too_wide = extra_data.clone();
+        too_wide[0] = 1;
+        assert!(decode_input_value(&too_wide, &handles, 2).is_err());
     }
 
     #[test]

@@ -234,11 +234,14 @@ returns `@fhevm/sdk/solana` with the three client factories replaced by those of
   key, and the attestation's `extra_data` is the plaintexts, one big-endian value per handle, at
   least two bytes each so that production's one-byte `0x00` never decodes as a value.
 - **User decrypt.** The permit and request are built as in production. The client then judges the
-  request as the KMS Connector does, against the same host state: the permit's signature, validity
-  window, host program and revocation watermark, the store's application in the permit's scopes, a
-  live delegation when the entry's owner is not the signer, and the owner's allow leaf on the
-  handle. A refusal ends the run as the relayer's `not_allowed_on_host_acl` does. Otherwise the
-  answer is the plaintext the host recorded in the store. The client also checks that the trust
+  request as the KMS Connector does, against the same host state: the permit's host chain, a KMS
+  context that is not destroyed, the permit's signature, validity window, host program and
+  revocation watermark, the store's application in the permit's scopes, a live delegation when the
+  entry's owner is not the signer, and the owner's allow leaf on the handle. A refusal, including a
+  host record it cannot read, ends the run as the relayer's `not_allowed_on_host_acl` does. A store
+  history that does not reach the store's leaf count yet leaves the attempt unanswered, and the
+  retry loop submits it again. Otherwise the answer is the plaintext the host recorded in the
+  store. The client also checks that the trust
   configuration names the KMS signers and gateway domain the host registers.
 - **Public decrypt.** The certificate is signed with the test KMS key. The history must have made
   the handle public, and the on-chain verifier checks the certificate as usual.
@@ -259,7 +262,9 @@ What the cleartext target does not prove, so these parts skip there
 - The demo vault flows (`deposit-arc`, `bun run demo`): the demo-dapp builds its own SDK clients.
 
 The input `extra_data` of the cleartext build is up to 256 bytes per attestation, where production's
-is the one byte `0x00`. An execution that only just fits the production heap can fail on the cleartext build.
+is the one byte `0x00`. An execution that only just fits the production heap, or a transaction that
+only just fits the 1232-byte packet, can fail on the cleartext build. Mollusk does not check
+transaction size, so only the validator stack catches the second.
 Fuzz loops also rebuild a store's history from every transaction that wrote it, so each decrypt
 costs more as the history grows.
 
