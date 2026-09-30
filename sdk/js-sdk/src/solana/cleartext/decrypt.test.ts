@@ -256,11 +256,16 @@ describe('cleartextUserDecryptExecution', () => {
 
   afterEach(() => vi.useRealTimers());
 
+  // Captured before the fake clock is installed. Each attempt derives PDAs with WebCrypto, which
+  // settles on the real clock, so the wait below yields real time as well as fake.
+  const realSetTimeout = globalThis.setTimeout;
+
   /** Runs until the retry loop waits: its backoff is then the one pending timer. */
   const untilBackoff = async () => {
     for (let step = 0; vi.getTimerCount() === 0; step += 1) {
-      if (step === 100) throw new Error('the run never reached its backoff');
+      if (step === 5_000) throw new Error('the run never reached its backoff');
       await vi.advanceTimersByTimeAsync(0);
+      await new Promise((resolve) => realSetTimeout(resolve, 1));
     }
   };
 
