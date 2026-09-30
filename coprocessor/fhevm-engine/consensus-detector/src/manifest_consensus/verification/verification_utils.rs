@@ -1,4 +1,4 @@
-use std::time::Duration;
+use std::{borrow::Cow, time::Duration};
 
 use alloy_primitives::{Address, B256, U256};
 use block_manifest::ManifestVersion;
@@ -13,6 +13,16 @@ pub(super) fn downloader_worker_id() -> String {
         .map(|duration| duration.as_nanos())
         .unwrap_or_default();
     format!("{}-{nanos}", std::process::id())
+}
+
+/// Error text often echoes peer bytes, e.g. serde's unknown-variant message,
+/// and PostgreSQL TEXT rejects NUL (SQLSTATE 22021). Replace it before storing.
+pub(super) fn storable_text(text: &str) -> Cow<'_, str> {
+    if text.contains('\0') {
+        Cow::Owned(text.replace('\0', "\u{FFFD}"))
+    } else {
+        Cow::Borrowed(text)
+    }
 }
 
 pub(super) fn duration_micros(field: &str, duration: Duration) -> Result<i64, ExecutionError> {

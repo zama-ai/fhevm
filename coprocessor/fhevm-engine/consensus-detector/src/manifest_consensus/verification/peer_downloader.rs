@@ -36,7 +36,9 @@ use super::peer_manifest_source::{
     PeerDownloadRequest, PeerManifestObject, PeerManifestSource, S3PeerManifestSource,
 };
 use super::verification_evidence::{persist_verification_evidence, VerificationAttemptEvidence};
-use super::verification_utils::{address, downloader_worker_id, duration_micros, internal};
+use super::verification_utils::{
+    address, downloader_worker_id, duration_micros, internal, storable_text,
+};
 use crate::manifest_consensus::manifest_archive::{
     load_highest_archived_revision, load_manifest_by_reference, load_previous_local_manifests,
     store_authenticated_manifest, AuthenticatedManifest, ManifestReference, ManifestSource,
@@ -670,6 +672,9 @@ async fn remember_rejected_object(
     Ok(())
 }
 
+/// Bookkeeping only: the attempt already treats this peer as failed, so a row
+/// that cannot be written must not abort the other peers' downloads. A lost
+/// connection or a lost claim still ends the attempt.
 pub(super) async fn record_peer_failure(
     pool: &PgPool,
     claim: &VerificationClaim,
@@ -679,7 +684,28 @@ pub(super) async fn record_peer_failure(
     PEER_MANIFEST_DOWNLOAD_FAILURE
         .with_label_values(&[&claim.scope.consensus_epoch])
         .inc();
-    let error = failure.to_string();
+    match write_peer_failure(pool, claim, publisher, failure).await {
+        Err(ExecutionError::DbError(error)) if !is_fatal_connection_error(&error) => {
+            warn!(
+                task_id = claim.task_id,
+                %publisher,
+                error = %error,
+                "Could not record the peer manifest failure; continuing with the other peers"
+            );
+            Ok(())
+        }
+        result => result,
+    }
+}
+
+async fn write_peer_failure(
+    pool: &PgPool,
+    claim: &VerificationClaim,
+    publisher: Address,
+    failure: &PeerManifestFailure,
+) -> Result<(), ExecutionError> {
+    let failure = failure.to_string();
+    let error = storable_text(&failure);
     let mut trx = pool.begin().await?;
     require_active_claim(&mut trx, claim).await?;
     sqlx::query!(
@@ -695,7 +721,7 @@ pub(super) async fn record_peer_failure(
         claim.task_id,
         publisher.as_slice(),
         claim.attempt,
-        &error,
+        &*error,
     )
     .execute(trx.as_mut())
     .await?;
@@ -1039,6 +1065,7 @@ async fn release_claimed_task_uncharged(
     claim: &VerificationClaim,
     error: &str,
 ) -> Result<(), ExecutionError> {
+    let error = storable_text(error);
     let mut trx = pool.begin().await?;
     require_active_claim(&mut trx, claim).await?;
     sqlx::query!(
@@ -1055,7 +1082,7 @@ async fn release_claimed_task_uncharged(
         "#,
         claim.task_id,
         &claim.worker_id,
-        error,
+        &*error,
     )
     .execute(trx.as_mut())
     .await?;
@@ -1069,6 +1096,7 @@ async fn fail_claimed_task(
     error: &str,
     exhaust: bool,
 ) -> Result<(), ExecutionError> {
+    let error = storable_text(error);
     let mut trx = pool.begin().await?;
     require_active_claim(&mut trx, claim).await?;
     let target = sqlx::query!(
@@ -1104,7 +1132,7 @@ async fn fail_claimed_task(
         &claim.worker_id,
         claim.attempt,
         state,
-        error,
+        &*error,
         target.retry_delay_secs,
     )
     .execute(trx.as_mut())

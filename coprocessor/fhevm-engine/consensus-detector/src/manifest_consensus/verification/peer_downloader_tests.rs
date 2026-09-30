@@ -55,6 +55,10 @@ impl FakePeerSource {
     }
 
     fn corrupt_manifest_body(&self, publisher: Address, manifest: &SignedManifest) {
+        self.replace_manifest_body(publisher, manifest, b"not a signed manifest".to_vec());
+    }
+
+    fn replace_manifest_body(&self, publisher: Address, manifest: &SignedManifest, body: Vec<u8>) {
         let object_key = manifest_object_key(manifest);
         let mut objects = self.objects.lock().expect("lock fake objects");
         let object = objects
@@ -65,7 +69,7 @@ impl FakePeerSource {
                     .find(|object| object.object_key == object_key)
             })
             .expect("fake manifest to corrupt");
-        object.signed_bytes = b"not a signed manifest".to_vec();
+        object.signed_bytes = body;
     }
 
     fn list_calls(&self, publisher: Address) -> usize {
@@ -377,6 +381,71 @@ async fn concurrent_retry_rejects_invalid_peer_then_uses_new_valid_revision() {
     assert_target(&pool, "consensus", "consensus", 2).await;
     assert_eq!(archive_count(&pool).await, 2);
     assert_eq!(source.body_downloads(signers[1].address()), 2);
+}
+
+/// serde's unknown-variant error echoes the peer's tag verbatim, and parsing
+/// runs before the signature check, so bucket write access alone can put a NUL
+/// into the recorded failure. It must neither reach TEXT nor end the attempt:
+/// the honest peers still decide the outcome.
+#[tokio::test(flavor = "multi_thread")]
+#[serial]
+async fn nul_in_a_peer_manifest_error_does_not_end_the_task() {
+    let (_instance, pool) = setup_download_db().await;
+    let signers = test_signers();
+    seed_registry(&pool, &signers, 2).await;
+    let local = sign_payload(&signers[0], payload(signers[0].address(), 1)).await;
+    schedule_local(&pool, &local, 1).await;
+
+    let source = Arc::new(FakePeerSource::default());
+    let honest = sign_payload(&signers[1], payload(signers[1].address(), 1)).await;
+    source.set_manifest(signers[1].address(), &honest);
+    let hostile = sign_payload(&signers[2], payload(signers[2].address(), 1)).await;
+    source.set_manifest(signers[2].address(), &hostile);
+    let mut body = serde_json::to_value(&hostile).expect("encode hostile manifest");
+    assert!(
+        replace_first_status(&mut body, "computed\0"),
+        "the test manifest carries a ciphertext status"
+    );
+    source.replace_manifest_body(
+        signers[2].address(),
+        &hostile,
+        serde_json::to_vec(&body).expect("serialize hostile manifest"),
+    );
+
+    let outcomes = concurrent_wave(&pool, &source).await;
+    assert_eq!(completed_runs(&outcomes), 1, "{outcomes:?}");
+    assert!(outcomes.iter().all(Result::is_ok), "{outcomes:?}");
+    let result = outcomes
+        .iter()
+        .find_map(|outcome| outcome.as_ref().ok().copied().flatten())
+        .expect("one worker completes the target");
+    assert_eq!(result.outcome, VerificationOutcome::Consensus);
+    assert_target(&pool, "consensus", "consensus", 1).await;
+    assert_peer_failure(&pool, "corrupted:").await;
+    let recorded = sqlx::query_scalar::<_, String>(
+        "SELECT last_error FROM block_manifest_peer_download WHERE last_error IS NOT NULL",
+    )
+    .fetch_one(&pool)
+    .await
+    .expect("load the hostile peer failure");
+    assert!(recorded.contains("computed\u{FFFD}"), "{recorded}");
+}
+
+fn replace_first_status(value: &mut serde_json::Value, status: &str) -> bool {
+    match value {
+        serde_json::Value::Object(map) => {
+            if let Some(slot) = map.get_mut("status").filter(|slot| slot.is_string()) {
+                *slot = serde_json::Value::String(status.to_owned());
+                return true;
+            }
+            map.values_mut()
+                .any(|child| replace_first_status(child, status))
+        }
+        serde_json::Value::Array(items) => items
+            .iter_mut()
+            .any(|child| replace_first_status(child, status)),
+        _ => false,
+    }
 }
 
 #[tokio::test(flavor = "multi_thread")]
