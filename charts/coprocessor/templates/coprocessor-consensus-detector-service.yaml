@@ -1,0 +1,18 @@
+{{- if .Values.consensusDetector.enabled }}
+apiVersion: v1
+kind: Service
+metadata:
+  labels:
+    app: coprocessor-consensus-detector
+    app.kubernetes.io/name: {{ include "consensusDetectorName" . }}
+  name: {{ include "consensusDetectorName" . }}
+spec:
+  ports:
+    - name: metrics
+      port: {{ .Values.consensusDetector.ports.metrics }}
+      targetPort: metrics
+  selector:
+    app: coprocessor-consensus-detector
+    app.kubernetes.io/name: {{ include "consensusDetectorName" . }}
+  type: ClusterIP
+{{- end }}
