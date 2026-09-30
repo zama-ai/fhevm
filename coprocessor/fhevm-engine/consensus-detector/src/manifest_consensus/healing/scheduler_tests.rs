@@ -1327,3 +1327,186 @@ async fn unpinned_bridged_destination_pins_the_source_attestation_quorum() {
         Some(keccak256(&body).as_slice().to_vec())
     );
 }
+
+/// A cutover to `epoch`, whose window on chain 1 starts at `start_block`.
+async fn cut_over_to(pool: &PgPool, epoch: &str, start_block: i64, upload_start: Option<i64>) {
+    sqlx::query(
+        "INSERT INTO consensus_epoch_history (consensus_epoch, outcome, completed_at)
+         VALUES ($1, 'succeeded', NOW())",
+    )
+    .bind(epoch)
+    .execute(pool)
+    .await
+    .unwrap();
+    sqlx::query(
+        "INSERT INTO consensus_epoch_block_window
+             (consensus_epoch, host_chain_id, start_block, consensus_deadline_block,
+              upload_start_block)
+         VALUES ($1, 1, $2, $2 + 10, $3)",
+    )
+    .bind(epoch)
+    .bind(start_block)
+    .bind(upload_start)
+    .execute(pool)
+    .await
+    .unwrap();
+}
+
+async fn superseded(pool: &PgPool, id: i64) -> bool {
+    sqlx::query_scalar("SELECT superseded_at IS NOT NULL FROM drifted_handle WHERE id = $1")
+        .bind(id)
+        .fetch_one(pool)
+        .await
+        .unwrap()
+}
+
+async fn move_to_epoch(pool: &PgPool, id: i64, epoch: &str) {
+    sqlx::query("UPDATE drifted_handle SET consensus_epoch = $2 WHERE id = $1")
+        .bind(id)
+        .bind(epoch)
+        .execute(pool)
+        .await
+        .unwrap();
+}
+
+/// Antoniu's repro on #4087: cutover replaced the in-window bytes of `public`
+/// with the successor's, so a surviving Blue finding there must not write.
+/// A Blue finding before the window still heals.
+#[tokio::test]
+#[serial(db)]
+async fn blue_finding_in_a_replaced_window_is_never_installed() {
+    let (_db, pool) = setup().await;
+    let body = vec![5u8; 8];
+    let in_window = insert_healable(&pool, 5, "s3://peer-a", &body).await;
+    let before_window = insert_healable(&pool, 2, "s3://peer-a", &body).await;
+    let source = FakeCt64::default();
+    source.put("s3://peer-a", 5, body.clone());
+    source.put("s3://peer-a", 2, body.clone());
+    cut_over_to(&pool, "v1/block_3", 3, Some(20)).await;
+
+    pass(&pool, &source).await;
+
+    assert!(superseded(&pool, in_window).await);
+    assert_eq!(healed(&pool, in_window).await, (true, false));
+    assert_eq!(stored_ct64(&pool, 5).await, vec![0xffu8; 4]);
+    assert_eq!(healed(&pool, before_window).await, (false, true));
+    assert_eq!(stored_ct64(&pool, 2).await, body);
+}
+
+/// The cutover lands while the healer downloads: the install re-checks under
+/// the cutover lock and writes nothing.
+#[tokio::test]
+#[serial(db)]
+async fn cutover_during_the_download_is_not_overwritten() {
+    let (_db, pool) = setup().await;
+    let body = vec![5u8; 8];
+    let id = insert_healable(&pool, 5, "s3://peer-a", &body).await;
+    let permits = Arc::new(tokio::sync::Semaphore::new(0));
+    let source = FakeCt64 {
+        held_gets: Some(permits.clone()),
+        ..FakeCt64::default()
+    };
+    source.put("s3://peer-a", 5, body.clone());
+    let started = source.get_started.clone();
+    let healer = {
+        let pool = pool.clone();
+        let source = source.clone();
+        tokio::spawn(async move { pass(&pool, &source).await })
+    };
+    started.notified().await;
+    cut_over_to(&pool, "v1/block_3", 3, Some(20)).await;
+    permits.add_permits(1);
+    healer.await.unwrap();
+
+    assert!(superseded(&pool, id).await);
+    assert_eq!(healed(&pool, id).await, (true, false));
+    assert_eq!(stored_ct64(&pool, 5).await, vec![0xffu8; 4]);
+}
+
+/// During a dry run only Blue uploads, so the S3 attestations describe Blue's
+/// bytes: an unpinned Green finding gets no target, and waits without using
+/// its budget.
+#[tokio::test]
+#[serial(db)]
+async fn parked_epoch_takes_no_attestation_target() {
+    let (_db, pool) = setup().await;
+    seed_registry(&pool, &["s3://peer-a", "s3://peer-b"], 2).await;
+    let body = vec![3u8; 8];
+    let id = insert_healable_from(&pool, 6, None, &body, false).await;
+    sqlx::query(
+        "INSERT INTO consensus_epoch_history
+             (consensus_epoch, proposal_id, proposal_block, stack_version, outcome)
+         VALUES ('v1/block_3', $1, 3, 'test-green', 'pending')",
+    )
+    .bind(bytes(0x91))
+    .execute(&pool)
+    .await
+    .unwrap();
+    sqlx::query(
+        "INSERT INTO consensus_epoch_block_window
+             (consensus_epoch, host_chain_id, start_block, consensus_deadline_block)
+         VALUES ('v1/block_3', 1, 3, 13)",
+    )
+    .execute(&pool)
+    .await
+    .unwrap();
+    move_to_epoch(&pool, id, "v1/block_3").await;
+    let source = FakeCt64::default();
+    source.put("s3://peer-a", 6, body.clone());
+    source.put("s3://peer-b", 6, body.clone());
+    let job = DueHandle {
+        id,
+        consensus_epoch: "v1/block_3".into(),
+        host_chain_id: 1,
+        block_number: 6,
+        block_hash: bytes(6),
+        handle: bytes(6),
+        coprocessor_context_id: bytes(1),
+        quorum_ct64_digest: None,
+        peer_sources: serde_json::json!([]),
+        target_evidence: serde_json::Value::Null,
+        uncontained: false,
+        schema: "public".into(),
+        containment_timeout_secs: 0,
+        max_attempts: DEFAULT_MAX_ATTEMPTS,
+    };
+
+    let installed = recover_from_attestations(&pool, &source, &job, U256::from(1), &[])
+        .await
+        .unwrap();
+
+    assert!(!installed);
+    assert_eq!(source.heads.load(Ordering::SeqCst), 0);
+    assert_eq!(pinned_target(&pool, id).await, None);
+    assert_eq!(heal_attempts(&pool, id).await, (0, false));
+    assert!(retry_is_scheduled(&pool, id).await);
+}
+
+/// After cutover the epoch's own uploads start at `upload_start_block`: below
+/// it the objects are Blue's, so there is no attestation target; above it the
+/// quorum is the epoch's own evidence.
+#[tokio::test]
+#[serial(db)]
+async fn attestation_target_only_from_the_epochs_own_uploads() {
+    let (_db, pool) = setup().await;
+    seed_registry(&pool, &["s3://peer-a", "s3://peer-b"], 2).await;
+    let body = vec![3u8; 8];
+    let before_upload = insert_healable_from(&pool, 6, None, &body, false).await;
+    let after_upload = insert_healable_from(&pool, 12, None, &body, false).await;
+    cut_over_to(&pool, "v1/block_3", 3, Some(10)).await;
+    move_to_epoch(&pool, before_upload, "v1/block_3").await;
+    move_to_epoch(&pool, after_upload, "v1/block_3").await;
+    let source = FakeCt64::default();
+    for handle in [6, 12] {
+        source.put("s3://peer-a", handle, body.clone());
+        source.put("s3://peer-b", handle, body.clone());
+    }
+
+    pass(&pool, &source).await;
+
+    assert_eq!(pinned_target(&pool, before_upload).await, None);
+    assert_eq!(healed(&pool, before_upload).await, (false, false));
+    assert_eq!(heal_attempts(&pool, before_upload).await, (1, false));
+    assert_eq!(healed(&pool, after_upload).await, (false, true));
+    assert_eq!(stored_ct64(&pool, 12).await, body);
+}

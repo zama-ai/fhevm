@@ -1709,6 +1709,46 @@ async fn merge_gcs_table(
 /// Completes the consensus_epoch recorded when the host listener accepted an upgrade.
 /// Older in-progress upgrades created before consensus_epoch tracking keep their
 /// existing cutover and rollback behavior.
+/// From cutover on, the promoted stack's uploader writes the S3 objects. Blue
+/// may have uploaded any block it knew, so only blocks past the highest one
+/// are this epoch's alone: healing takes S3 attestations as this epoch's
+/// evidence only there. Read before `revert_bcs_state` touches Blue's rows.
+async fn record_upload_start(
+    tx: &mut Transaction<'_, Postgres>,
+    proposal_id: &[u8],
+    proposal_block: i64,
+) -> Result<(), Error> {
+    let recorded = sqlx::query(
+        r#"
+        UPDATE consensus_epoch_block_window window_row
+           SET upload_start_block = GREATEST(
+                   window_row.start_block,
+                   COALESCE(
+                       (SELECT MAX(block.block_number) + 1
+                          FROM public.host_chain_blocks_valid block
+                         WHERE block.chain_id = window_row.host_chain_id),
+                       window_row.start_block
+                   )
+               )
+          FROM consensus_epoch_history history
+         WHERE history.consensus_epoch = window_row.consensus_epoch
+           AND history.proposal_id = $1
+           AND history.proposal_block = $2
+           AND window_row.upload_start_block IS NULL
+        "#,
+    )
+    .bind(proposal_id)
+    .bind(proposal_block)
+    .execute(tx.as_mut())
+    .await?
+    .rows_affected();
+    info!(
+        recorded,
+        "cutover: recorded the epoch's upload start per chain"
+    );
+    Ok(())
+}
+
 async fn finish_consensus_epoch(
     tx: &mut Transaction<'_, Postgres>,
     proposal_id: &[u8],
@@ -2340,6 +2380,7 @@ pub async fn execute_cutover(pool: &Pool<Postgres>) -> Result<(), Error> {
 
     if let (Some(proposal_id), Some(proposal_block)) = (&proposal_id, proposal_block) {
         finish_consensus_epoch(&mut tx, proposal_id, proposal_block, "succeeded").await?;
+        record_upload_start(&mut tx, proposal_id, proposal_block).await?;
     }
 
     // 3. Snapshot the handles BCS already committed on-chain: the merge would copy
@@ -3643,6 +3684,27 @@ mod tests {
         .execute(&pool)
         .await
         .expect("seed consensus_epoch history");
+        sqlx::query(
+            "INSERT INTO consensus_epoch_block_window
+                 (consensus_epoch, host_chain_id, start_block, consensus_deadline_block)
+             VALUES ('1', 1, 100, 200)",
+        )
+        .execute(&pool)
+        .await
+        .expect("seed consensus_epoch window");
+        for (number, hash) in [(150_i64, 0x15_u8), (160, 0x16)] {
+            sqlx::query(
+                "INSERT INTO host_chain_blocks_valid
+                     (chain_id, block_hash, parent_hash, block_number, block_status)
+                 VALUES (1, $1, $2, $3, 'pending')",
+            )
+            .bind(vec![hash; 32])
+            .bind(vec![hash - 1; 32])
+            .bind(number)
+            .execute(&pool)
+            .await
+            .expect("seed a block Blue knew at cutover");
+        }
 
         create_gcs_schema(&pool).await.expect("create gcs schema");
         select_green_consensus_epoch(&pool, &[0x02; 32], 50)
@@ -3651,6 +3713,17 @@ mod tests {
 
         // The bug surfaced exactly here: a planning-time ON CONFLICT error.
         execute_cutover(&pool).await.expect("cutover succeeds");
+
+        // Blue may have uploaded any block it knew: the promoted epoch's own
+        // S3 objects start one past the highest.
+        let (upload_start,): (Option<i64>,) = sqlx::query_as(
+            "SELECT upload_start_block FROM consensus_epoch_block_window
+              WHERE consensus_epoch = '1' AND host_chain_id = 1",
+        )
+        .fetch_one(&pool)
+        .await
+        .expect("promoted window");
+        assert_eq!(upload_start, Some(161));
 
         // versioning bumped to the new stack version inside the cutover tx.
         let (sv,): (String,) =

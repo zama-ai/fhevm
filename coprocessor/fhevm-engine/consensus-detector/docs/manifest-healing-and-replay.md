@@ -153,6 +153,25 @@ epochs in `consensus_epoch_history` install into `public`, where cutover merged
 their ciphertexts. A cutover therefore does not strand the previous epoch's
 findings. Failed epochs have no schema and are not healed. Row locks and the
 `healed_at IS NULL` install guard coordinate the healers of both stacks.
+A cutover replaces the previous epoch's in-window ciphertexts in `public` with
+the new epoch's, so an older finding on such a block describes bytes that are
+gone. `public.drift_superseded` decides it when the finding is read: another
+`succeeded` epoch has a window on the finding's chain starting at or before its
+block, and after the start of the finding's own epoch there. Such a finding
+freezes nothing, is no containment root, and is never installed: healing marks
+it and its unhealed siblings `superseded_at`, and the install checks again under
+the cutover lock, so a cutover landing during the download writes nothing. It
+is decided at read time, so a finding committed just after the cutover is
+covered too.
+S3 attestations carry no epoch, so a live attestation quorum sets a target only
+where the finding's epoch uploaded the objects. `upload_start_block` on
+`consensus_epoch_block_window` is set at cutover, per chain, to one past the
+highest block known then. While it is NULL (dry run, Green's uploader parked)
+an unpinned finding waits without spending its budget; below it the objects are
+Blue's and the attempt is charged; `legacy` has no window and uploads from
+block 0. This bound is local: a peer that cuts over later still uploaded Blue's
+bytes for a few blocks above it. Pinned targets are unaffected and already
+reject bytes of another digest.
 The handle is the unit of repair. A reorg can leave several findings for one
 handle in different blocks, and a single install heals them all. Only active
 siblings count: those with a healable reason that are unhealed and not
