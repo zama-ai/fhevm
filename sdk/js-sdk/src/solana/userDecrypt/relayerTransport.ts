@@ -22,10 +22,8 @@ import type { SolanaUserDecryptTransport, SolanaUserDecryptClock } from './sessi
 import { buildRelayerUrlString, validateRelayerBaseUrl } from '../../core/modules/relayer/module/relayerUrl.js';
 import { RelayerAsyncRequest } from '../../core/modules/relayer/module/RelayerAsyncRequest.js';
 import { RelayerResponseApiError } from '../../core/errors/RelayerResponseApiError.js';
-import { abortableSleep } from '../../core/base/timeout.js';
-import { RelayerAbortError } from '../../core/errors/RelayerAbortError.js';
 import type { FhevmRuntimeConfig } from '../../core/types/coreFhevmRuntime.js';
-import { RelayerTimeoutError } from '../../core/errors/RelayerTimeoutError.js';
+import { createSolanaUserDecryptDeadline } from './deadline.js';
 
 /**
  * Builds the transport and retry clock for one user-decrypt operation.
@@ -46,69 +44,13 @@ export function createSolanaUserDecryptRelayerTransport(config: {
   SolanaUserDecryptClock & { throwIfAbortedOrExpired(): void } {
   const baseUrl = validateRelayerBaseUrl(config.relayerUrl, config.options?.auth !== undefined);
   const url = buildRelayerUrlString(baseUrl, 'v3/user-decrypt');
-  const timeout = config.options?.timeout ?? RelayerAsyncRequest.DEFAULT_GLOBAL_REQUEST_TIMEOUT_MS;
-  if (!Number.isSafeInteger(timeout) || timeout < 1 || timeout > 2_147_483_647) {
-    throw new RangeError('timeout must be an integer from 1 to 2147483647 milliseconds');
-  }
-  const deadline = Date.now() + timeout;
-  const expire = (): never => {
-    const progress = {
-      url,
-      operation: 'USER_DECRYPT' as const,
-      retryCount: 0,
-      step: 0,
-      totalSteps: 0,
-      type: 'timeout' as const,
-    };
-    const onProgress = config.options?.onProgress;
-    if (onProgress) {
-      queueMicrotask(() => {
-        onProgress(progress);
-      });
-    }
-
-    throw new RelayerTimeoutError({ operation: 'USER_DECRYPT', url, timeoutMs: timeout });
-  };
-  let abortReported = false;
-  const abort = (): never => {
-    if (!abortReported) {
-      abortReported = true;
-      const onProgress = config.options?.onProgress;
-      if (onProgress) {
-        queueMicrotask(() => {
-          onProgress({
-            type: 'abort',
-            operation: 'USER_DECRYPT',
-            url,
-            retryCount: 0,
-            step: 0,
-            totalSteps: 0,
-          });
-        });
-      }
-    }
-    throw new RelayerAbortError({ operation: 'USER_DECRYPT', url });
-  };
-  const remaining = (): number => {
-    if (config.options?.signal?.aborted === true) abort();
-    const milliseconds = deadline - Date.now();
-    return milliseconds > 0 ? milliseconds : expire();
-  };
+  const deadline = createSolanaUserDecryptDeadline({ url, options: config.options });
 
   return {
-    throwIfAbortedOrExpired(): void {
-      remaining();
+    throwIfAbortedOrExpired: () => {
+      deadline.throwIfAbortedOrExpired();
     },
-    async delay(seconds: number): Promise<void> {
-      const milliseconds = remaining();
-      try {
-        await abortableSleep(Math.min(seconds * 1000, milliseconds), config.options?.signal);
-      } catch (error) {
-        if (config.options?.signal?.aborted === true) abort();
-        throw error;
-      }
-      remaining();
-    },
+    delay: (seconds: number) => deadline.delay(seconds),
     async submit(request: SolanaUserDecryptRequestJson) {
       // Whether the request became a job: the one fact that splits a refusal (the relayer never
       // accepted it) from a failure (the job it became did not produce an answer). The class keeps
@@ -122,9 +64,9 @@ export function createSolanaUserDecryptRelayerTransport(config: {
         payload: request as unknown as Record<string, unknown>,
         options: {
           ...config.options,
-          timeout: remaining(),
+          timeout: deadline.remaining(),
           onProgress: (progress: RelayerUserDecryptProgressArgs) => {
-            if (progress.type === 'abort') abortReported = true;
+            if (progress.type === 'abort') deadline.noteAbortReported();
             if (progress.type === 'queued') {
               queued = true;
             }

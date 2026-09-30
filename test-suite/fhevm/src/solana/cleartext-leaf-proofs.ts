@@ -5,7 +5,7 @@
 // history from the validator's transactions, so a proof always matches the chain as it is.
 import { mmrBuildProof, reconstructSolanaStoreHistory } from '@fhevm/sdk/solana';
 import { fetchSolanaStoreHistory } from '@fhevm/sdk/solana/cleartext';
-import { createSolanaRpc, fetchEncodedAccount, getAddressDecoder } from '@solana/kit';
+import { createSolanaRpc, fetchEncodedAccount, getAddressDecoder, type Address } from '@solana/kit';
 
 import { ZAMA_HOST_PROGRAM_ADDRESS } from '../../../../solana/deploy/src/generated/zamaHost/programAddress.js';
 import { SOLANA_LEAF_PROOF_API_KEY } from '../generate/solana';
@@ -35,7 +35,17 @@ const errorResponse = (status: number, code: string, message: string) =>
 export const serveCleartextLeafProofs = (rpcUrl: string, port: number) => {
   const rpc = createSolanaRpc(rpcUrl);
 
-  const prove = async (query: LeafQuery): Promise<LeafProof> => {
+  /** A store's history and its MMR leaves, or nothing when no host store lives at the address. */
+  const readStore = async (store: Address, storeBytes: Uint8Array) => {
+    const account = await fetchEncodedAccount(rpc, store, { commitment: 'confirmed' });
+    if (!account.exists || account.programAddress !== ZAMA_HOST_PROGRAM_ADDRESS) return undefined;
+    const history = await fetchSolanaStoreHistory(rpc, store, ZAMA_HOST_PROGRAM_ADDRESS);
+    return { history, leaves: reconstructSolanaStoreHistory(storeBytes, history).leaves };
+  };
+  type StoreRead = Awaited<ReturnType<typeof readStore>>;
+
+  // `stores` belongs to one request, so each store is read once per request and never across two.
+  const prove = async (query: LeafQuery, stores: Map<Address, Promise<StoreRead>>): Promise<LeafProof> => {
     const storeBytes = hex32('encryptedStore', query.encryptedStore);
     const handle = hex(hex32('handle', query.handle));
     if (query.kind !== 'public' && query.kind !== 'allowed') throw new MalformedQuery('kind: expected public or allowed');
@@ -45,9 +55,10 @@ export const serveCleartextLeafProofs = (rpcUrl: string, port: number) => {
     const key = query.kind === 'allowed' ? hex(hex32('key', query.key)) : undefined;
 
     const store = getAddressDecoder().decode(storeBytes);
-    const account = await fetchEncodedAccount(rpc, store, { commitment: 'confirmed' });
-    if (!account.exists || account.programAddress !== ZAMA_HOST_PROGRAM_ADDRESS) return { status: 'unknownAccount' };
-    const history = await fetchSolanaStoreHistory(rpc, store, ZAMA_HOST_PROGRAM_ADDRESS);
+    if (!stores.has(store)) stores.set(store, readStore(store, storeBytes));
+    const read = await stores.get(store);
+    if (read === undefined) return { status: 'unknownAccount' };
+    const { history, leaves } = read;
     // The first matching leaf, as the listener answers.
     const leafIndex = history.findIndex((event) =>
       event.kind === 'markedPublic'
@@ -55,7 +66,7 @@ export const serveCleartextLeafProofs = (rpcUrl: string, port: number) => {
         : query.kind === 'allowed' && hex(event.handle) === handle && hex(event.key) === key,
     );
     if (leafIndex === -1) return { status: 'notFound', leafCount: history.length };
-    const proof = mmrBuildProof(reconstructSolanaStoreHistory(storeBytes, history).leaves, BigInt(leafIndex));
+    const proof = mmrBuildProof(leaves, BigInt(leafIndex));
     if (proof === undefined) throw new Error(`leaf ${leafIndex} is outside the history it was found in`);
     return { status: 'found', leafIndex, leafCount: history.length, siblings: proof.siblings.map(hex) };
   };
@@ -74,7 +85,8 @@ export const serveCleartextLeafProofs = (rpcUrl: string, port: number) => {
         const body = (await request.json()) as { leaves?: readonly LeafQuery[] };
         if (!Array.isArray(body.leaves)) throw new MalformedQuery('leaves: expected an array');
         const proofs: LeafProof[] = [];
-        for (const query of body.leaves) proofs.push(await prove(query));
+        const stores = new Map<Address, Promise<StoreRead>>();
+        for (const query of body.leaves) proofs.push(await prove(query, stores));
         return Response.json({ proofs });
       } catch (error) {
         if (error instanceof MalformedQuery || error instanceof SyntaxError) {

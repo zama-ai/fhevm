@@ -14,9 +14,11 @@
 // unanswered and the relayer's pre-check refuses some of them earlier; here every refusal comes
 // back as the relayer's `not_allowed_on_host_acl`, and a store history that lags the store's leaf
 // count comes back unanswered, which the retry loop submits again.
-import { fetchEncodedAccount, getAddressDecoder, getAddressEncoder, getI64Decoder, type Address } from '@solana/kit';
+import { getAddressDecoder, getAddressEncoder, type Address } from '@solana/kit';
+import { fetchSysvarClock } from '@solana/sysvars';
 import type { FhevmSolanaChain } from '../../core/types/fhevmSolanaChain.js';
-import type { SolanaRpc } from '../encryptedStore.js';
+import type { SolanaEncryptedStore, SolanaRpc } from '../encryptedStore.js';
+import type { SolanaStoreHistoryEvent } from '../proof.js';
 import type { SolanaDecryptTrust, SolanaUserDecryptExecution } from '../clients/decorators/permitDecrypt.js';
 import type { SolanaPermitFields } from '../permit/types.js';
 import type {
@@ -30,6 +32,7 @@ import { asBytes32, bytesToHex, bytesToHexNo0x, concatBytes, hexToBytes } from '
 import { bytes32ToHandle, toFhevmHandle } from '../../core/handle/FhevmHandle.js';
 import { createKmsPublicDecryptEip712, publicDecryptDigest } from '../../core/kms/createKmsPublicDecryptEip712.js';
 import { runSolanaUserDecrypt } from '../userDecrypt/index.js';
+import { createSolanaUserDecryptDeadline } from '../userDecrypt/deadline.js';
 import { verifySolanaUserDecryptPlaintexts } from '../userDecrypt/response.js';
 import { verifySolanaPermitSignature } from '../permit/envelope.js';
 import { fetchSolanaEncryptedStore } from '../encryptedStore.js';
@@ -51,9 +54,6 @@ import { fetchCleartextStoreValue } from './storeValues.js';
 ////////////////////////////////////////////////////////////////////////////////
 
 const CONFIRMED = { commitment: 'confirmed' } as const;
-const CLOCK_SYSVAR = 'SysvarC1ock11111111111111111111111111111111' as Address;
-/** Offset of `unix_timestamp` in the Clock sysvar. */
-const CLOCK_UNIX_TIMESTAMP_OFFSET = 32;
 
 /**
  * Answers a user decryption with the plaintexts the host recorded for its handles, once the request
@@ -65,12 +65,17 @@ export function cleartextUserDecryptExecution(
   trust: SolanaDecryptTrust,
 ): SolanaUserDecryptExecution {
   const programAddress = solanaHostProgram(chain);
-  return async ({ session, entries, attempts }) => {
+  return async ({ session, entries, attempts, options }) => {
     const { fields, signature } = session.signedPermit;
-    const host = await fetchHostDecryptionState(rpc, programAddress, fields.kmsRouting.kmsContextId);
-    assertTrustMatchesHost(host, trust, fields.kmsRouting.kmsContextId);
+    // The caller's timeout and abort signal bound the whole run, as on the relayer path.
+    const deadline = createSolanaUserDecryptDeadline({ url: `cleartext host ${programAddress}`, options });
     const transport: SolanaUserDecryptTransport<readonly SolanaUserDecryptPlaintext[]> = {
       async submit() {
+        deadline.throwIfAbortedOrExpired();
+        // Each attempt is judged against the host as it is then, as the Connector rechecks the KMS
+        // context on every attempt.
+        const host = await fetchHostDecryptionState(rpc, programAddress, fields.kmsRouting.kmsContextId);
+        assertTrustMatchesHost(host, trust, fields.kmsRouting.kmsContextId);
         const rejection = await userDecryptRejection(rpc, programAddress, host, fields, signature, entries);
         if (rejection !== undefined) return { ok: false, rejection };
         const plaintexts = await Promise.all(
@@ -86,9 +91,10 @@ export function cleartextUserDecryptExecution(
       signedPermit: session.signedPermit,
       entries,
       transport,
-      clock: { delay: (seconds) => new Promise((resolve) => setTimeout(resolve, seconds * 1000)) },
+      clock: deadline,
       ...(attempts === undefined ? {} : { attempts }),
     });
+    deadline.throwIfAbortedOrExpired();
     verifySolanaUserDecryptPlaintexts(
       response,
       entries.map((entry) => entry.handle),
@@ -194,11 +200,17 @@ export async function userDecryptRejection(
     }
     const allowedScopes = new Set(fields.allowedScopes.map((scope) => bytesToHex(scope)));
     let hostNow: bigint | undefined;
+    // One read of each store and of its history per attempt, however many entries name it.
+    const stores = new Map<Address, SolanaEncryptedStore>();
+    const histories = new Map<Address, SolanaStoreHistoryEvent[]>();
     for (const [index, entry] of entries.entries()) {
       const storeAddress = decodeAddress(entry.encryptedStore);
-      const store = await fetchSolanaEncryptedStore(rpc, storeAddress, CONFIRMED, programAddress).catch(
-        (error: unknown) => refuse(`entry ${index}: ${String(error)}`),
-      );
+      const store =
+        stores.get(storeAddress) ??
+        (await fetchSolanaEncryptedStore(rpc, storeAddress, CONFIRMED, programAddress).catch((error: unknown) =>
+          refuse(`entry ${index}: ${String(error)}`),
+        ));
+      stores.set(storeAddress, store);
       const application = concatBytes(
         new Uint8Array(getAddressEncoder().encode(store.program)),
         new Uint8Array(getAddressEncoder().encode(store.scope)),
@@ -213,7 +225,8 @@ export async function userDecryptRejection(
           { delegator: owner, delegate: signer, program: store.program, scope: store.scope },
           { ...CONFIRMED, programAddress },
         ).catch((error: unknown) => refuse(`entry ${index}: a delegation record is unreadable: ${String(error)}`));
-        hostNow ??= await fetchHostUnixTimestamp(rpc);
+        // The Connector judges delegations against the host's Clock, not the local one.
+        hostNow ??= (await fetchSysvarClock(rpc, CONFIRMED)).unixTimestamp;
         const live = hostNow;
         if (
           ![rows.exact, rows.wildcard].some((row) => row !== null && isSolanaUserDecryptionDelegationLiveAt(row, live))
@@ -221,7 +234,9 @@ export async function userDecryptRejection(
           refuse(`entry ${index}: ${owner} has no live delegation to ${signer} for (${store.program}, ${store.scope})`);
         }
       }
-      const history = await fetchSolanaStoreHistory(rpc, storeAddress, programAddress);
+      // The history is read after the store, so it reaches the store's leaf count unless it lags.
+      const history = histories.get(storeAddress) ?? (await fetchSolanaStoreHistory(rpc, storeAddress, programAddress));
+      histories.set(storeAddress, history);
       if (BigInt(history.length) < store.leafCount) return { kind: 'unanswered' };
       const [handle, key] = [bytesToHex(entry.handle), bytesToHex(entry.ownerAddress)];
       if (
@@ -237,13 +252,6 @@ export async function userDecryptRejection(
     if (!(error instanceof HostAclRefusal)) throw error;
     return { kind: 'refused', label: 'not_allowed_on_host_acl', message: error.message };
   }
-}
-
-/** The host's Clock, which the Connector judges delegations against. */
-async function fetchHostUnixTimestamp(rpc: SolanaRpc): Promise<bigint> {
-  const clock = await fetchEncodedAccount(rpc, CLOCK_SYSVAR, CONFIRMED);
-  if (!clock.exists) throw new Error('the Clock sysvar is missing');
-  return getI64Decoder().decode(clock.data, CLOCK_UNIX_TIMESTAMP_OFFSET);
 }
 
 /**
