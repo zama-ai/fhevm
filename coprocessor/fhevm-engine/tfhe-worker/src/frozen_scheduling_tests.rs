@@ -577,6 +577,35 @@ async fn green_reads_as_drifted(green: &sqlx::PgPool) -> bool {
         .contains(&handle(1))
 }
 
+/// Cutover replaced the finding's in-window bytes with the successor's: the
+/// finding describes bytes that are gone and freezes nothing.
+#[tokio::test]
+async fn superseded_finding_does_not_freeze() {
+    let (_db, pool) = setup().await;
+    drift(&pool, 1).await;
+    assert!(frozen_after_filter(&pool).await);
+    sqlx::query(
+        "INSERT INTO consensus_epoch_history (consensus_epoch, outcome, completed_at)
+         VALUES ('v1/block_1', 'succeeded', NOW())",
+    )
+    .execute(&pool)
+    .await
+    .unwrap();
+    sqlx::query(
+        "INSERT INTO consensus_epoch_block_window
+             (consensus_epoch, host_chain_id, start_block, consensus_deadline_block)
+         VALUES ('v1/block_1', 1, 1, 10)",
+    )
+    .execute(&pool)
+    .await
+    .unwrap();
+    let mut trx = pool.begin().await.unwrap();
+    assert!(frozen_computations::drifted_ct64_handles(&mut trx)
+        .await
+        .unwrap()
+        .is_empty());
+}
+
 /// Green reads `public` for a handle it never stored, so Blue's drift counts
 /// there until Green has a copy of its own.
 #[tokio::test]
