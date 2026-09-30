@@ -95,6 +95,13 @@ const LOCAL_DB_URL: &str = "postgresql://postgres:postgres@127.0.0.1:5432/coproc
 
 async fn setup_test_app_existing_db() -> Result<TestInstance, Box<dyn std::error::Error>> {
     let db_url = local_benchmark_db_url()?;
+    {
+        let pool = sqlx::postgres::PgPoolOptions::new()
+            .max_connections(1)
+            .connect(&db_url)
+            .await?;
+        align_versioning_with_build(&pool).await?;
+    }
     ensure_benchmark_keys(&db_url).await?;
     let (app_close_channel, rx) = tokio::sync::watch::channel(false);
     let worker_thread = start_coprocessor(rx, &db_url).await?;
@@ -104,6 +111,30 @@ async fn setup_test_app_existing_db() -> Result<TestInstance, Box<dyn std::error
         worker_thread: Some(worker_thread),
         db_url,
     })
+}
+
+/// Record this build's stack and consensus protocol versions in `versioning`.
+///
+/// Migrations seed the release the schema was introduced with. A worker whose
+/// compiled consensus protocol is newer than the recorded one treats itself as
+/// the green side of a blue/green upgrade and parks, waiting for an upgrade
+/// controller to create its GCS schema ("waiting for the upgrade-controller to
+/// create the GCS schema"), so it never reaches readiness. Both the docker and
+/// the existing-database paths must therefore align the row before starting it.
+async fn align_versioning_with_build(pool: &PgPool) -> Result<(), sqlx::Error> {
+    let updated = sqlx::query(
+        "UPDATE versioning SET stack_version = $1, consensus_version = $2 WHERE singleton = TRUE",
+    )
+    .bind(fhevm_engine_common::STACK_VERSION)
+    .bind(i64::from(fhevm_engine_common::CONSENSUS_PROTOCOL_VERSION))
+    .execute(pool)
+    .await?;
+    if updated.rows_affected() != 1 {
+        return Err(sqlx::Error::Protocol(
+            "benchmark database has no versioning row; run its migrations first".into(),
+        ));
+    }
+    Ok(())
 }
 
 /// Seed the FHE keys the worker needs when the target database has none.
@@ -366,14 +397,7 @@ async fn setup_test_app_custom_docker() -> Result<TestInstance, Box<dyn std::err
         .await?;
 
     sqlx::migrate!("./migrations").run(&pool).await?;
-    // Match the database to this build so the worker runs live, not green.
-    sqlx::query(
-        "UPDATE versioning SET stack_version = $1, consensus_version = $2 WHERE singleton = TRUE",
-    )
-    .bind(fhevm_engine_common::STACK_VERSION)
-    .bind(i64::from(fhevm_engine_common::CONSENSUS_PROTOCOL_VERSION))
-    .execute(&pool)
-    .await?;
+    align_versioning_with_build(&pool).await?;
     setup_test_key(&pool, false).await?;
 
     let (app_close_channel, rx) = tokio::sync::watch::channel(false);
@@ -394,15 +418,35 @@ pub async fn wait_until_all_allowed_handles_computed(
         .max_connections(2)
         .connect(&db_url)
         .await?;
+    // A computation that fails stays incomplete with `is_error` set, so waiting
+    // only for completion would spin until the CI job's own time limit. Fail on
+    // the first error row and bound the whole wait.
+    let timeout = benchmark_wait_timeout()?;
+    let started = tokio::time::Instant::now();
     loop {
         tokio::time::sleep(tokio::time::Duration::from_millis(100)).await;
-        let current_count: i64 = sqlx::query_scalar(
-            "SELECT count(1) FROM computations WHERE is_allowed = TRUE AND is_completed = FALSE",
+        let (pending, errored): (i64, i64) = sqlx::query_as(
+            "SELECT count(1) FILTER (WHERE NOT is_completed), \
+                    count(1) FILTER (WHERE is_error) \
+             FROM computations WHERE is_allowed = TRUE",
         )
         .fetch_one(&pool)
         .await?;
-        if current_count == 0 {
+        if errored > 0 {
+            return Err(format!(
+                "{errored} allowed computation(s) failed; {pending} still incomplete"
+            )
+            .into());
+        }
+        if pending == 0 {
             break;
+        }
+        if started.elapsed() >= timeout {
+            return Err(format!(
+                "{pending} allowed computation(s) still incomplete after {}s (FHEVM_BENCH_WAIT_TIMEOUT_SECS)",
+                timeout.as_secs()
+            )
+            .into());
         }
     }
 
@@ -875,10 +919,82 @@ pub fn as_handle(v: u64) -> Handle {
     Handle::from(out)
 }
 
+/// FHE type codes carried in byte 30 of a handle (read by `get_ct_type`).
+#[allow(dead_code)]
+pub const FHE_BOOL: i32 = 0;
+#[allow(dead_code)]
+pub const FHE_UINT64: i32 = 5;
+#[allow(dead_code)]
+pub const FHE_UINT128: i32 = 6;
+
+/// A fresh fixture handle for a transaction, dependence chain or block id.
+///
+/// Laid out like the unit-test helper: byte 0 marks a namespace disjoint from
+/// scalar operands encoded with [`as_handle`], and the counter stays out of
+/// byte 30, which [`next_typed_handle`] overwrites with the FHE type. Were the
+/// counter to cover byte 30, handles 256 apart would collide once typed.
 pub fn next_handle(counter: &mut u64) -> Handle {
-    let out = as_handle(*counter);
-    *counter += 1;
+    let mut out = [0_u8; 32];
+    out[0] = 0x80;
+    out[22..30].copy_from_slice(&counter.to_be_bytes());
+    *counter = counter.wrapping_add(1);
+    Handle::from(out)
+}
+
+/// A fresh handle for a ciphertext of `fhe_type`.
+///
+/// The scheduler rejects an operation whose result type differs from the type
+/// its output handle declares (`MultiOutputFailure: output 0 has type X but was
+/// asked for Y`), so every fixture result and input must carry its real type.
+#[allow(dead_code)]
+pub fn next_typed_handle(counter: &mut u64, fhe_type: i32) -> Handle {
+    let mut out = next_handle(counter);
+    out[30] = u8::try_from(fhe_type).expect("FHE type fits in a handle byte");
     out
+}
+
+/// The result handle of `event` and the FHE type the worker will produce for
+/// it, for the operations these fixtures emit. `None` for other operations.
+fn fixture_result_type(event: &TfheContractEvents) -> Option<(Handle, i32)> {
+    use host_listener::contracts::TfheContract as C;
+    let operand = |handle: &Handle| i32::from(handle[30]);
+    Some(match event {
+        TfheContractEvents::TrivialEncrypt(C::TrivialEncrypt { toType, result, .. })
+        | TfheContractEvents::Cast(C::Cast { toType, result, .. }) => (*result, i32::from(*toType)),
+        TfheContractEvents::FheGe(C::FheGe { result, .. })
+        | TfheContractEvents::FheGt(C::FheGt { result, .. })
+        | TfheContractEvents::FheLe(C::FheLe { result, .. })
+        | TfheContractEvents::FheLt(C::FheLt { result, .. })
+        | TfheContractEvents::FheEq(C::FheEq { result, .. })
+        | TfheContractEvents::FheNe(C::FheNe { result, .. }) => (*result, FHE_BOOL),
+        TfheContractEvents::FheIfThenElse(C::FheIfThenElse { ifTrue, result, .. }) => {
+            (*result, operand(ifTrue))
+        }
+        TfheContractEvents::FheAdd(C::FheAdd { lhs, result, .. })
+        | TfheContractEvents::FheSub(C::FheSub { lhs, result, .. })
+        | TfheContractEvents::FheMul(C::FheMul { lhs, result, .. })
+        | TfheContractEvents::FheDiv(C::FheDiv { lhs, result, .. })
+        | TfheContractEvents::FheMin(C::FheMin { lhs, result, .. })
+        | TfheContractEvents::FheMax(C::FheMax { lhs, result, .. }) => (*result, operand(lhs)),
+        _ => return None,
+    })
+}
+
+/// Refuse to stage an event whose result handle declares the wrong type.
+///
+/// Without this the fixture stages fine and the worker then fails every
+/// affected transaction at execution, which a legacy bench reports as a
+/// silent stall rather than an error.
+fn check_fixture_result_type(event: &TfheContractEvents) -> Result<(), sqlx::Error> {
+    if let Some((result, expected)) = fixture_result_type(event) {
+        let declared = i32::from(result[30]);
+        if declared != expected {
+            return Err(sqlx::Error::Protocol(format!(
+                "bench fixture result handle {result} declares FHE type {declared}, but the operation produces type {expected}; create it with next_typed_handle"
+            )));
+        }
+    }
+    Ok(())
 }
 
 pub fn tfhe_event(data: TfheContractEvents) -> Log<TfheContractEvents> {
@@ -934,6 +1050,7 @@ pub async fn insert_tfhe_event_with_dependence_chain(
     dependence_chain: Handle,
     is_allowed: bool,
 ) -> Result<bool, sqlx::Error> {
+    check_fixture_result_type(&log.inner.data)?;
     // Bench staging bypasses ordered block ingestion, so nothing else creates
     // the DCID row the locking worker needs before it can claim this work.
     // Seed a ready, unowned, zero-dependency chain; `DO NOTHING` leaves any
