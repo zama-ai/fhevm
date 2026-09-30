@@ -185,7 +185,7 @@ async fn detector_seeds_candidate_early_but_waits_for_every_allowed_handle() {
     let first_handle = vec![0x21; 32];
     let second_handle = vec![0x22; 32];
 
-    insert_host_block(&pool, block_number, &block_hash, &parent_hash, "pending").await;
+    insert_host_block(&pool, block_number, &block_hash, &parent_hash, "finalized").await;
     insert_producer_block(&pool, block_number, &block_hash, &first_handle).await;
     insert_producer_block(&pool, block_number, &block_hash, &second_handle).await;
     insert_completed_sns_digest(&pool, block_number, &block_hash, &first_handle).await;
@@ -303,25 +303,117 @@ async fn detector_caps_upgrade_discovery_at_the_consensus_epoch_start() {
 
 #[tokio::test]
 #[serial(db)]
-async fn initial_consensus_epoch_bootstraps_at_the_latest_known_block() {
+async fn initial_consensus_epoch_bootstraps_at_the_latest_finalized_block() {
     let (_instance, pool) = setup_pool().await;
     let historical_hash = vec![0x42; 32];
     let historical_handle = vec![0x21; 32];
-    let bootstrap_hash = vec![0x50; 32];
+    let bootstrap_hash = vec![0x45; 32];
+    let head_hash = vec![0x50; 32];
 
     insert_host_block(&pool, 42, &historical_hash, &[0x41; 32], "pending").await;
     insert_producer_block(&pool, 42, &historical_hash, &historical_handle).await;
     insert_completed_sns_digest(&pool, 42, &historical_hash, &historical_handle).await;
-    insert_host_block(&pool, 50, &bootstrap_hash, &[0x49; 32], "pending").await;
+    insert_host_block(&pool, 50, &head_hash, &[0x49; 32], "pending").await;
 
+    // A pending head can still be reorged away, and with it every lineage
+    // rooted there, so the first pass waits for a finalized seed.
+    assert_eq!(discover_blocks(&pool).await.unwrap(), 0);
+
+    insert_host_block(&pool, 45, &bootstrap_hash, &[0x44; 32], "finalized").await;
     assert_eq!(discover_blocks(&pool).await.unwrap(), 1);
     assert!(!manifest_state_exists(&pool, &historical_hash).await);
     assert!(manifest_state_exists(&pool, &bootstrap_hash).await);
+    assert!(!manifest_state_exists(&pool, &head_hash).await);
 
     // The persisted bootstrap block is the consensus_epoch-zero lower bound; a
     // restart must not widen the arbitrary initial history into older blocks.
     assert_eq!(discover_blocks(&pool).await.unwrap(), 0);
     assert!(!manifest_state_exists(&pool, &historical_hash).await);
+}
+
+async fn open_upgrade_window(pool: &PgPool, start_block: i64) {
+    sqlx::query(
+        "INSERT INTO consensus_epoch_history (
+             consensus_epoch, proposal_id, proposal_block, stack_version, outcome
+         ) VALUES ('1', $1, $2, 'test-green', 'pending')",
+    )
+    .bind(vec![0x91_u8; 32])
+    .bind(start_block - 10)
+    .execute(pool)
+    .await
+    .expect("allocate Green consensus_epoch");
+    sqlx::query(
+        "INSERT INTO consensus_epoch_block_window (
+             consensus_epoch, host_chain_id, start_block, consensus_deadline_block
+         ) VALUES ('1', $1, $2, $3)",
+    )
+    .bind(CHAIN_ID)
+    .bind(start_block)
+    .bind(start_block + 10)
+    .execute(pool)
+    .await
+    .expect("store Green consensus_epoch window");
+    sqlx::query(
+        "UPDATE blue_green_consensus_epoch
+            SET consensus_epoch = '1', updated_at = NOW()
+          WHERE singleton = TRUE",
+    )
+    .execute(pool)
+    .await
+    .expect("select Green consensus_epoch");
+}
+
+async fn set_host_status(pool: &PgPool, block_hash: &[u8], status: &str) {
+    sqlx::query(
+        "UPDATE host_chain_blocks_valid SET block_status = $3
+          WHERE chain_id = $1 AND block_hash = $2",
+    )
+    .bind(CHAIN_ID)
+    .bind(block_hash)
+    .bind(status)
+    .execute(pool)
+    .await
+    .expect("update host block status");
+}
+
+/// A reorg of the upgrade `start_block` leaves no tracked parent for the
+/// replacement root, so parent-to-child discovery alone never reaches the
+/// winning fork. Each pass re-inserts the root height until it is finalized.
+#[tokio::test]
+#[serial(db)]
+async fn upgrade_discovery_reroots_after_the_start_block_is_reorged() {
+    let (_instance, pool) = setup_pool().await;
+    let lost_root = vec![0x60; 32];
+    let lost_child = vec![0x61; 32];
+    let new_root = vec![0x6a; 32];
+    let new_child = vec![0x6b; 32];
+
+    open_upgrade_window(&pool, 60).await;
+    insert_host_block(&pool, 60, &lost_root, &[0x59; 32], "pending").await;
+    insert_host_block(&pool, 61, &lost_child, &lost_root, "pending").await;
+    assert_eq!(discover_blocks(&pool).await.unwrap(), 1);
+    assert_eq!(discover_children(&pool).await.unwrap(), 1);
+
+    // The winning fork forks below the start block and carries no handles in
+    // the producer catch-up window.
+    set_host_status(&pool, &lost_root, "orphaned").await;
+    set_host_status(&pool, &lost_child, "orphaned").await;
+    insert_host_block(&pool, 60, &new_root, &[0x5a; 32], "pending").await;
+    insert_host_block(&pool, 61, &new_child, &new_root, "pending").await;
+    assert_eq!(discover_children(&pool).await.unwrap(), 0);
+
+    assert_eq!(discover_blocks(&pool).await.unwrap(), 1);
+    assert!(manifest_state_exists(&pool, &new_root).await);
+    assert_eq!(discover_children(&pool).await.unwrap(), 1);
+    assert!(manifest_state_exists(&pool, &new_child).await);
+
+    // Once a tracked root is finalized, no reorg can replace it and the root
+    // height is no longer rechecked.
+    set_host_status(&pool, &new_root, "finalized").await;
+    let stray = vec![0x6c; 32];
+    insert_host_block(&pool, 60, &stray, &[0x5b; 32], "pending").await;
+    assert_eq!(discover_blocks(&pool).await.unwrap(), 0);
+    assert!(!manifest_state_exists(&pool, &stray).await);
 }
 
 #[tokio::test]
@@ -338,7 +430,7 @@ async fn anvil_publication_cadence_overlay_is_stored_on_insert() {
     .bind(&block_hash)
     .bind(vec![0x30_u8; 32])
     .bind(50_i64)
-    .bind("pending")
+    .bind("finalized")
     .execute(&pool)
     .await
     .expect("insert anvil host block");
@@ -427,7 +519,7 @@ async fn blue_and_green_discover_the_same_block_without_consensus_epoch_collisio
     .expect("select Green consensus_epoch");
 
     for stack in [&blue, &green] {
-        insert_host_block(stack, block_number, &block_hash, &parent_hash, "pending").await;
+        insert_host_block(stack, block_number, &block_hash, &parent_hash, "finalized").await;
         insert_producer_block(stack, block_number, &block_hash, &handle).await;
         insert_completed_sns_digest(stack, block_number, &block_hash, &handle).await;
     }
@@ -1205,4 +1297,223 @@ async fn discovery_waits_for_finalized_successor_after_pending_child_replacement
         "discovered finalized successor allows retiring the parent"
     );
     assert_eq!(discover_children(&pool).await.unwrap(), 0);
+}
+
+const SOURCE_CHAIN_ID: i64 = 1;
+
+async fn insert_bridged_event(
+    pool: &PgPool,
+    block_number: i64,
+    block_hash: &[u8],
+    src_handle: &[u8],
+    dst_handle: &[u8],
+) {
+    sqlx::query(
+        "INSERT INTO handle_bridged_events (
+             src_handle, dst_handle, dst_chain_id, receiver_dapp, guid,
+             block_number, block_hash
+         ) VALUES ($1, $2, $3, '\\xdb'::bytea, '\\x02'::bytea, $4, $5)",
+    )
+    .bind(src_handle)
+    .bind(dst_handle)
+    .bind(CHAIN_ID)
+    .bind(block_number)
+    .bind(block_hash)
+    .execute(pool)
+    .await
+    .expect("insert HandleBridged observation");
+}
+
+/// The source chain's `BridgeHandle` approval for `src_handle`, in a source
+/// block with `status`.
+async fn insert_bridge_approval(pool: &PgPool, src_handle: &[u8], status: &str) {
+    let approval_block = vec![0x07_u8; 32];
+    sqlx::query(
+        "INSERT INTO bridge_handle_events (
+             src_handle, dst_chain_id, src_chain_id, sender_dapp, guid,
+             block_number, block_hash
+         ) VALUES ($1, $2, $3, '\\xda'::bytea, '\\x02'::bytea, 7, $4)",
+    )
+    .bind(src_handle)
+    .bind(CHAIN_ID)
+    .bind(SOURCE_CHAIN_ID)
+    .bind(&approval_block)
+    .execute(pool)
+    .await
+    .expect("insert BridgeHandle approval");
+    sqlx::query(
+        "INSERT INTO host_chain_blocks_valid \
+         (chain_id, block_hash, parent_hash, block_number, block_status) \
+         VALUES ($1, $2, $3, 7, $4)",
+    )
+    .bind(SOURCE_CHAIN_ID)
+    .bind(&approval_block)
+    .bind(vec![0x06_u8; 32])
+    .bind(status)
+    .execute(pool)
+    .await
+    .expect("insert source approval block");
+}
+
+async fn insert_digest(pool: &PgPool, host_chain_id: i64, handle: &[u8], ct64: u8) {
+    sqlx::query(
+        "INSERT INTO ciphertext_digest (
+             host_chain_id, key_id_gw, handle, ciphertext, ciphertext128,
+             ciphertext128_format
+         ) VALUES ($1, $2, $3, $4, $5, 11)",
+    )
+    .bind(host_chain_id)
+    .bind(vec![0x11_u8; 32])
+    .bind(handle)
+    .bind(vec![ct64; 32])
+    .bind(vec![0x80_u8; 32])
+    .execute(pool)
+    .await
+    .expect("insert ciphertext digests");
+    // The descriptor needs a keyset for the digest's Gateway key.
+    sqlx::query(
+        "INSERT INTO keys (key_id_gw, key_id, pks_key, sks_key, chain_id, block_hash)
+         SELECT $1, $2, ''::BYTEA, ''::BYTEA, $3, $2
+          WHERE NOT EXISTS (SELECT 1 FROM keys WHERE key_id_gw = $1)",
+    )
+    .bind(vec![0x11_u8; 32])
+    .bind(vec![0x12_u8; 32])
+    .bind(host_chain_id)
+    .execute(pool)
+    .await
+    .expect("insert the digest's keyset");
+}
+
+async fn ready_descriptors(
+    pool: &PgPool,
+    block: &PendingBlock,
+) -> Option<Vec<CiphertextDescriptor>> {
+    let mut trx = pool.begin().await.expect("begin readiness check");
+    let ready = is_block_manifest_ready(&mut trx, block)
+        .await
+        .expect("check readiness");
+    let descriptors = if ready {
+        Some(
+            load_manifest_descriptors(&mut trx, block, false)
+                .await
+                .expect("load descriptors"),
+        )
+    } else {
+        None
+    };
+    trx.rollback().await.expect("rollback readiness check");
+    descriptors
+}
+
+/// A bridged destination is sealed from its source digests as soon as the
+/// source is computed, without waiting for the copy, which needs source
+/// finality. The copy then carries the same digests, so the seal stays valid.
+#[tokio::test]
+#[serial(db)]
+async fn bridged_destination_seals_with_the_source_digests_before_its_copy() {
+    let (_instance, pool) = setup_pool().await;
+    let block_number = 42;
+    let block_hash = vec![0x42; 32];
+    let src_handle = vec![0x51; 32];
+    let dst_handle = vec![0x52; 32];
+
+    insert_host_block(&pool, block_number, &block_hash, &[0x41; 32], "finalized").await;
+    insert_producer_block(&pool, block_number, &block_hash, &dst_handle).await;
+    insert_bridged_event(&pool, block_number, &block_hash, &src_handle, &dst_handle).await;
+    insert_bridge_approval(&pool, &src_handle, "pending").await;
+    discover_blocks(&pool)
+        .await
+        .expect("discover bridging block");
+    let block = load_pending_block(&pool, &block_hash).await;
+
+    assert!(
+        ready_descriptors(&pool, &block).await.is_none(),
+        "the destination waits for its source like any consumer"
+    );
+
+    insert_digest(&pool, SOURCE_CHAIN_ID, &src_handle, 0x64).await;
+    let from_source = ready_descriptors(&pool, &block)
+        .await
+        .expect("ready once the source is computed");
+    assert_eq!(from_source.len(), 1);
+
+    // The bridge worker copies the source digest row onto the destination.
+    insert_digest(&pool, CHAIN_ID, &dst_handle, 0x64).await;
+    assert_eq!(
+        ready_descriptors(&pool, &block).await,
+        Some(from_source),
+        "the copy describes the destination exactly like its source did"
+    );
+}
+
+/// Once this node materialized the destination, its own digest describes it,
+/// even when it differs from the source: the manifest reports what the node
+/// holds, and verification settles the difference.
+#[tokio::test]
+#[serial(db)]
+async fn bridged_destination_prefers_its_own_digest_over_the_source() {
+    let (_instance, pool) = setup_pool().await;
+    let block_number = 42;
+    let block_hash = vec![0x42; 32];
+    let src_handle = vec![0x51; 32];
+    let dst_handle = vec![0x52; 32];
+    let plain_handle = vec![0x53; 32];
+
+    insert_host_block(&pool, block_number, &block_hash, &[0x41; 32], "pending").await;
+    insert_producer_block(&pool, block_number, &block_hash, &dst_handle).await;
+    insert_bridged_event(&pool, block_number, &block_hash, &src_handle, &dst_handle).await;
+    insert_digest(&pool, SOURCE_CHAIN_ID, &src_handle, 0x64).await;
+    insert_digest(&pool, CHAIN_ID, &dst_handle, 0x65).await;
+    insert_manifest_state(&pool, block_number, &block_hash, &[0x41; 32]).await;
+    let bridged = ready_descriptors(&pool, &load_pending_block(&pool, &block_hash).await)
+        .await
+        .expect("bridged block ready");
+
+    // The same digests on a plain handle give the expected descriptor bytes.
+    let other_hash = vec![0x43; 32];
+    insert_host_block(&pool, block_number + 1, &other_hash, &block_hash, "pending").await;
+    insert_producer_block(&pool, block_number + 1, &other_hash, &plain_handle).await;
+    insert_digest(&pool, CHAIN_ID, &plain_handle, 0x65).await;
+    insert_manifest_state(&pool, block_number + 1, &other_hash, &block_hash).await;
+    let plain = ready_descriptors(&pool, &load_pending_block(&pool, &other_hash).await)
+        .await
+        .expect("plain block ready");
+
+    assert_eq!(
+        format!("{:?}", bridged[0]).replace(&hex::encode(&dst_handle), "H"),
+        format!("{:?}", plain[0]).replace(&hex::encode(&plain_handle), "H"),
+        "the destination is described by its own ct64 digest (0x65), not the source's (0x64)"
+    );
+}
+
+/// Once the source's `BridgeHandle` block is orphaned the copy can never
+/// happen, so the source digests no longer describe the destination: it waits
+/// for its own bytes, which a fallback grant supplies.
+#[tokio::test]
+#[serial(db)]
+async fn bridged_destination_ignores_the_source_once_its_approval_is_orphaned() {
+    let (_instance, pool) = setup_pool().await;
+    let block_number = 42;
+    let block_hash = vec![0x42; 32];
+    let src_handle = vec![0x51; 32];
+    let dst_handle = vec![0x52; 32];
+
+    insert_host_block(&pool, block_number, &block_hash, &[0x41; 32], "pending").await;
+    insert_producer_block(&pool, block_number, &block_hash, &dst_handle).await;
+    insert_bridged_event(&pool, block_number, &block_hash, &src_handle, &dst_handle).await;
+    insert_bridge_approval(&pool, &src_handle, "orphaned").await;
+    insert_digest(&pool, SOURCE_CHAIN_ID, &src_handle, 0x64).await;
+    insert_manifest_state(&pool, block_number, &block_hash, &[0x41; 32]).await;
+    let block = load_pending_block(&pool, &block_hash).await;
+
+    assert!(
+        ready_descriptors(&pool, &block).await.is_none(),
+        "an orphaned approval never yields the copy the source digests predict"
+    );
+
+    insert_digest(&pool, CHAIN_ID, &dst_handle, 0x65).await;
+    assert!(
+        ready_descriptors(&pool, &block).await.is_some(),
+        "the grant's own bytes make the block ready"
+    );
 }
