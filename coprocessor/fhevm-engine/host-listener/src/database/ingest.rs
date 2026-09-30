@@ -452,6 +452,7 @@ pub async fn ingest_block_logs(
                     log_index: log.log_index,
                     operand_boundary_mask: None,
                     is_executor_minted: true,
+                    is_fallback_grant: false,
                 };
                 tfhe_event_log.push(log);
                 continue;
@@ -513,6 +514,17 @@ pub async fn ingest_block_logs(
                         block_hash.as_ref(),
                     )
                     .await?;
+                    // The handle's block is fixed here, whatever the finality:
+                    // a node catching up and a node following the head give
+                    // this block the same manifest inventory.
+                    at_least_one_insertion |= db
+                        .record_fallback_grant_producer(
+                            &mut tx,
+                            dst_handle.as_slice(),
+                            block_number,
+                            block_hash.as_ref(),
+                        )
+                        .await?;
                     // Materialization is finality-gated: once the async
                     // compute pipeline picks up the synthetic computation its
                     // ciphertext cannot be retracted on a reorg, and whether
@@ -557,6 +569,13 @@ pub async fn ingest_block_logs(
                         );
                         continue;
                     }
+                    if db.bridge_copy_pending(&mut tx, dst_handle.as_slice()).await? {
+                        warn!(
+                            dst_handle = ?dst_handle,
+                            "Ignoring FallbackGrantedPlaintext: the bridged source can still be copied"
+                        );
+                        continue;
+                    }
                     // Force the handle allowed so the synthetic computation runs.
                     // governance ensures the handle is in the ACL.
                     is_allowed.insert(dst_handle.to_vec());
@@ -592,6 +611,7 @@ pub async fn ingest_block_logs(
                         // bridge event; the executor never called
                         // `_markMinted` for it.
                         is_executor_minted: false,
+                        is_fallback_grant: true,
                     });
                     at_least_one_insertion |= db
                         .insert_pbs_computations(
@@ -1490,6 +1510,13 @@ pub async fn synthesize_finalized_fallback_grants(
             );
             continue;
         }
+        if db.bridge_copy_pending(tx, &handle_bytes).await? {
+            warn!(
+                dst_handle = ?handle_bytes,
+                "Skipping finalized FallbackGrantedPlaintext: the bridged source can still be copied"
+            );
+            continue;
+        }
         // The computation row needs a transaction id (NOT NULL, part of the
         // primary key), but `fallback_granted_events.transaction_id` is
         // nullable and None is a normal value here. A grant observed without
@@ -1556,6 +1583,7 @@ pub async fn synthesize_finalized_fallback_grants(
             // handle and it must not become a same-transaction minted
             // operand for a later real executor operation.
             is_executor_minted: false,
+            is_fallback_grant: true,
         });
     }
     if logs.is_empty() {
@@ -1862,6 +1890,7 @@ mod tests {
             log_index,
             operand_boundary_mask: None,
             is_executor_minted,
+            is_fallback_grant: false,
         }
     }
 

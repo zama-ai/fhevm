@@ -180,15 +180,19 @@ pub const COPROCESSOR_TABLES: &[CoprocessorTable] = &[
     },
     // Durable observations of on-chain events, written by the GCS host-listener
     // (tfhe_event_propagate); handle_bridged_events also by the GCS tfhe-worker.
+    // Merged at cutover: manifest publication and healing read them for bridged
+    // and granted handles, and a block green ingested before blue would
+    // otherwise lose its rows with the gcs schema. Green wins on conflict, so
+    // `is_associated` follows the ciphertexts merged above.
     CoprocessorTable {
         name: "fallback_granted_events",
         duplicated: true,
-        conflict_cols: &[],
+        conflict_cols: &["dst_handle", "block_hash"],
     },
     CoprocessorTable {
         name: "handle_bridged_events",
         duplicated: true,
-        conflict_cols: &[],
+        conflict_cols: &["dst_handle", "block_hash"],
     },
     // On-chain event / block-ingestion state written by the GCS host-listener
     // during the dry-run. All three are written ONLY by the host-listener
@@ -204,11 +208,12 @@ pub const COPROCESSOR_TABLES: &[CoprocessorTable] = &[
         duplicated: true,
         conflict_cols: &[],
     },
-    // Bridge approvals (RFC 008); sibling of handle_bridged_events above.
+    // Bridge approvals (RFC 008); sibling of handle_bridged_events above, merged
+    // at cutover for the same reason.
     CoprocessorTable {
         name: "bridge_handle_events",
         duplicated: true,
-        conflict_cols: &[],
+        conflict_cols: &["src_handle", "dst_chain_id", "block_hash"],
     },
     // Delegated-user-decrypt records (reorg-aware).
     CoprocessorTable {
@@ -231,11 +236,14 @@ pub const COPROCESSOR_TABLES: &[CoprocessorTable] = &[
     },
     // Stack-local producer inventory: Blue and Green must independently discover
     // the handles they observed. Sharing this table would let one stack's listener
-    // observations contaminate the other stack's manifest.
+    // observations contaminate the other stack's manifest. Merged at cutover:
+    // green keeps publishing after it, from public, and a block it tracked but
+    // had not yet published would otherwise be resealed with public's inventory,
+    // which is empty when blue predates this table. Rows are immutable.
     CoprocessorTable {
         name: "handle_producer_block",
         duplicated: true,
-        conflict_cols: &[],
+        conflict_cols: &["host_chain_id", "handle", "producer_block_hash"],
     },
     // Manifest construction state is shared in `public`.
     // Every row is consensus_epoch-qualified, so Blue and Green can write the same

@@ -387,6 +387,7 @@ async fn test_allowed_computation_records_its_producer_block(
                 log_index: None,
                 operand_boundary_mask: Some(Default::default()),
                 is_executor_minted: true,
+                is_fallback_grant: false,
             }
         };
 
