@@ -169,9 +169,14 @@ where the finding's epoch uploaded the objects. `upload_start_block` on
 highest block known then. While it is NULL (dry run, Green's uploader parked)
 an unpinned finding waits without spending its budget; below it the objects are
 Blue's and the attempt is charged; `legacy` has no window and uploads from
-block 0. This bound is local: a peer that cuts over later still uploaded Blue's
-bytes for a few blocks above it. Pinned targets are unaffected and already
-reject bytes of another digest.
+block 0. That bound is only local: a peer that cuts over later still uploads
+Blue's bytes for a few blocks above it. So each vote also carries the epoch of
+the stack that uploaded it: sns-worker writes the `consensus-epoch` S3 metadata
+key (`S3_METADATA_CONSENSUS_EPOCH_KEY`), and healing counts a vote only when it
+names the finding's epoch. An object without it predates the tag and counts as
+`legacy`. The tag is not signed; it can only exclude a vote, whose attestation
+is still verified. Pinned targets are unaffected and already reject bytes of
+another digest.
 The handle is the unit of repair. A reorg can leave several findings for one
 handle in different blocks, and a single install heals them all. Only active
 siblings count: those with a healable reason that are unhealed and not

@@ -1,3 +1,4 @@
+use super::download::AttestedCt64;
 use super::*;
 use crate::manifest_consensus::ManifestWorkGate;
 use alloy_primitives::{keccak256, Address, B256, U256};
@@ -196,6 +197,8 @@ async fn healed(pool: &PgPool, id: i64) -> (bool, bool) {
 struct FakeObject {
     digest: B256,
     body: Option<Vec<u8>>,
+    /// Uploading epoch tag; `None` is an object from before the tag.
+    epoch: Option<String>,
 }
 
 type FakeKey = (String, Vec<u8>);
@@ -223,14 +226,31 @@ impl FakeCt64 {
             FakeObject {
                 digest,
                 body: Some(body),
+                epoch: None,
             },
         );
+    }
+
+    fn put_in_epoch(&self, bucket_url: &str, handle: u8, body: Vec<u8>, epoch: &str) {
+        self.put(bucket_url, handle, body);
+        if let Some(object) = self
+            .objects
+            .lock()
+            .unwrap()
+            .get_mut(&(bucket_url.to_owned(), bytes(handle)))
+        {
+            object.epoch = Some(epoch.to_owned());
+        }
     }
 
     fn attest(&self, bucket_url: &str, handle: u8, digest: B256) {
         self.objects.lock().unwrap().insert(
             (bucket_url.to_owned(), bytes(handle)),
-            FakeObject { digest, body: None },
+            FakeObject {
+                digest,
+                body: None,
+                epoch: None,
+            },
         );
     }
 
@@ -278,13 +298,13 @@ impl Ct64Source for FakeCt64 {
         handle: &[u8],
         _coprocessor_context_id: U256,
         _expected_signer: Option<Address>,
-    ) -> Result<B256, ExecutionError> {
+    ) -> Result<AttestedCt64, ExecutionError> {
         self.heads.fetch_add(1, Ordering::SeqCst);
         self.objects
             .lock()
             .unwrap()
             .get(&(bucket_url.to_owned(), handle.to_vec()))
-            .map(|object| object.digest)
+            .map(|object| AttestedCt64::new(object.digest, object.epoch.as_deref()))
             .ok_or_else(|| ExecutionError::S3ObjectNotFound(bucket_url.to_owned()))
     }
 }
@@ -1498,8 +1518,8 @@ async fn attestation_target_only_from_the_epochs_own_uploads() {
     move_to_epoch(&pool, after_upload, "v1/block_3").await;
     let source = FakeCt64::default();
     for handle in [6, 12] {
-        source.put("s3://peer-a", handle, body.clone());
-        source.put("s3://peer-b", handle, body.clone());
+        source.put_in_epoch("s3://peer-a", handle, body.clone(), "v1/block_3");
+        source.put_in_epoch("s3://peer-b", handle, body.clone(), "v1/block_3");
     }
 
     pass(&pool, &source).await;
@@ -1509,4 +1529,37 @@ async fn attestation_target_only_from_the_epochs_own_uploads() {
     assert_eq!(heal_attempts(&pool, before_upload).await, (1, false));
     assert_eq!(healed(&pool, after_upload).await, (false, true));
     assert_eq!(stored_ct64(&pool, 12).await, body);
+}
+
+/// A peer that cuts over later still serves the previous epoch's bytes above
+/// our `upload_start_block`: only votes tagged with the finding's epoch count.
+#[tokio::test]
+#[serial(db)]
+async fn only_votes_uploaded_by_the_findings_epoch_set_a_target() {
+    let (_db, pool) = setup().await;
+    seed_registry(&pool, &["s3://peer-a", "s3://peer-b", "s3://peer-c"], 2).await;
+    let green = vec![3u8; 8];
+    let blue = vec![4u8; 8];
+    let id = insert_healable_from(&pool, 12, None, &green, false).await;
+    cut_over_to(&pool, "v1/block_3", 3, Some(10)).await;
+    move_to_epoch(&pool, id, "v1/block_3").await;
+    let source = FakeCt64::default();
+    // Two late peers: still Blue's untagged bytes, a majority on their own.
+    source.put("s3://peer-a", 12, blue.clone());
+    source.put("s3://peer-b", 12, blue.clone());
+    source.put_in_epoch("s3://peer-c", 12, green.clone(), "v1/block_3");
+
+    pass(&pool, &source).await;
+
+    assert_eq!(pinned_target(&pool, id).await, None);
+    assert_eq!(healed(&pool, id).await, (false, false));
+    assert_eq!(stored_ct64(&pool, 12).await, vec![0xffu8; 4]);
+
+    // Once a second peer has cut over, the finding's epoch has a quorum.
+    source.put_in_epoch("s3://peer-b", 12, green.clone(), "v1/block_3");
+    make_due(&pool, id).await;
+    pass(&pool, &source).await;
+
+    assert_eq!(healed(&pool, id).await, (false, true));
+    assert_eq!(stored_ct64(&pool, 12).await, green);
 }

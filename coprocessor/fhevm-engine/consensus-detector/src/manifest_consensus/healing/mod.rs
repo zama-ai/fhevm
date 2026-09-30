@@ -27,7 +27,9 @@
 //!
 //! S3 attestations carry no epoch, so they set a target only for a block whose
 //! objects the finding's epoch uploaded (`upload_start_block`): never during a
-//! dry run, when the Green uploader is parked. A finding superseded by a later
+//! dry run, when the Green uploader is parked. Each vote must also be tagged
+//! with the finding's epoch by its uploader (`S3_METADATA_CONSENSUS_EPOCH_KEY`),
+//! which covers peers that cut over later; an untagged object is `legacy`. A finding superseded by a later
 //! epoch's cutover (`drift_superseded`) describes bytes that are gone: it is
 //! marked `superseded_at` and never installed, also when the cutover lands
 //! during its download.
@@ -697,16 +699,20 @@ async fn fetch_from_bridged_source<S: Ct64Source>(
         let source_handle = source_handle.to_vec();
         let signer = peer.signer;
         async move {
-            let digest = source
+            let attested = source
                 .head_ct64_digest(&bucket_url, &source_handle, context_id, Some(signer))
                 .await;
-            (bucket_url, digest)
+            (bucket_url, attested)
         }
     });
     let votes: Vec<(String, Vec<u8>)> = join_all(heads)
         .await
         .into_iter()
-        .filter_map(|(bucket_url, digest)| Some((bucket_url, digest.ok()?.to_vec())))
+        .filter_map(|(bucket_url, attested)| {
+            let attested = attested.ok()?;
+            (attested.consensus_epoch == job.consensus_epoch)
+                .then(|| (bucket_url, attested.digest.to_vec()))
+        })
         .collect();
     let Some((digest, buckets)) = majority_digest(&votes, threshold) else {
         return Ok(None);
@@ -796,7 +802,17 @@ async fn recover_from_attestations<S: Ct64Source>(
     let mut votes = Vec::new();
     for (bucket_url, result) in join_all(heads).await {
         match result {
-            Ok(digest) => votes.push((bucket_url, digest.to_vec())),
+            // The S3 key and attestation carry no epoch: another epoch's
+            // object is no evidence for this finding.
+            Ok(attested) if attested.consensus_epoch != job.consensus_epoch => {
+                warn!(
+                    finding_id = job.id,
+                    bucket_url,
+                    uploaded_by = attested.consensus_epoch,
+                    "Skipping peer whose ct64 was uploaded by another epoch"
+                );
+            }
+            Ok(attested) => votes.push((bucket_url, attested.digest.to_vec())),
             Err(err) => {
                 warn!(
                     finding_id = job.id,

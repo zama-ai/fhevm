@@ -3,6 +3,7 @@ use std::time::Duration;
 
 use alloy_primitives::{Address, B256, U256};
 use aws_sdk_s3::Client;
+use block_manifest::{LEGACY_CONSENSUS_EPOCH, S3_METADATA_CONSENSUS_EPOCH_KEY};
 use ciphertext_attestation::{s3_ct64_key, CiphertextAttestation, S3_METADATA_ATTESTATION_KEY};
 use tokio::time::timeout;
 
@@ -12,6 +13,22 @@ use crate::manifest_consensus::ExecutionError;
 const DOWNLOAD_TIMEOUT: Duration = Duration::from_secs(30);
 const MAX_CT64_BYTES: usize = 16 * 1024 * 1024;
 
+/// A peer's attested ct64 digest and the epoch whose stack uploaded it.
+pub(super) struct AttestedCt64 {
+    pub(super) digest: B256,
+    pub(super) consensus_epoch: String,
+}
+
+impl AttestedCt64 {
+    /// An object without the epoch tag was uploaded by the `legacy` epoch.
+    pub(super) fn new(digest: B256, consensus_epoch: Option<&str>) -> Self {
+        Self {
+            digest,
+            consensus_epoch: consensus_epoch.unwrap_or(LEGACY_CONSENSUS_EPOCH).to_owned(),
+        }
+    }
+}
+
 pub(super) trait Ct64Source: Clone + Send + Sync + 'static {
     async fn get_ct64(
         &self,
@@ -20,15 +37,15 @@ pub(super) trait Ct64Source: Clone + Send + Sync + 'static {
         coprocessor_context_id: U256,
     ) -> Result<Vec<u8>, ExecutionError>;
 
-    /// Attested ct64 digest from object metadata (HEAD). `expected_signer` is
-    /// the registry signer for this bucket when known.
+    /// Attested ct64 digest and uploading epoch from object metadata (HEAD).
+    /// `expected_signer` is the registry signer for this bucket when known.
     async fn head_ct64_digest(
         &self,
         bucket_url: &str,
         handle: &[u8],
         coprocessor_context_id: U256,
         expected_signer: Option<Address>,
-    ) -> Result<B256, ExecutionError>;
+    ) -> Result<AttestedCt64, ExecutionError>;
 }
 
 #[derive(Clone)]
@@ -118,7 +135,7 @@ impl Ct64Source for S3Ct64Source {
         handle: &[u8],
         coprocessor_context_id: U256,
         expected_signer: Option<Address>,
-    ) -> Result<B256, ExecutionError> {
+    ) -> Result<AttestedCt64, ExecutionError> {
         let location = s3_bucket_location(bucket_url)?;
         let key = location.object_key(&s3_ct64_key(handle, coprocessor_context_id));
         let response = timeout(
@@ -184,6 +201,13 @@ impl Ct64Source for S3Ct64Source {
                 location.bucket, attestation.signer
             )));
         }
-        Ok(attestation.ciphertext_digest)
+        let consensus_epoch = response
+            .metadata()
+            .and_then(|meta| meta.get(S3_METADATA_CONSENSUS_EPOCH_KEY))
+            .map(String::as_str);
+        Ok(AttestedCt64::new(
+            attestation.ciphertext_digest,
+            consensus_epoch,
+        ))
     }
 }
