@@ -17,7 +17,8 @@ function rpcWithPublicWrites(previousLeafCounts: readonly bigint[]): SolanaRpc {
         instructions: [
           {
             programIdIndex: 0,
-            accounts: [1, 2, 3],
+            // payer, authority, encryptedStore, hostConfig, denyScopeRecord, systemProgram
+            accounts: [1, 2, 3, 1, 1, 1],
             data: getBase58Decoder().decode(
               getMakeStoreHandlePublicInstructionDataEncoder().encode({
                 key: new Uint8Array(32).fill(1),
@@ -36,8 +37,11 @@ function rpcWithPublicWrites(previousLeafCounts: readonly bigint[]): SolanaRpc {
     },
   });
   return {
-    getSignaturesForAddress: () => ({
-      send: () => Promise.resolve(previousLeafCounts.map((_, index) => ({ signature: `sig${index}`, err: null }))),
+    getSignaturesForAddress: (_: Address, { before }: { before?: string }) => ({
+      send: () =>
+        Promise.resolve(
+          before === undefined ? previousLeafCounts.map((_, index) => ({ signature: `sig${index}`, err: null })) : [],
+        ),
     }),
     getTransaction: (signature: string) => ({
       send: () => Promise.resolve(transaction(previousLeafCounts[Number(signature.slice(3))] ?? 0n)),

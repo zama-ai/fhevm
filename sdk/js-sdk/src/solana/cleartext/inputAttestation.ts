@@ -2,33 +2,21 @@
 // input's plaintext from the attestation's `extraData`, and verifies the attestation exactly as the
 // production host does, so the client signs the same EIP-712 message with a registered key.
 import { keccak_256 } from '@noble/hashes/sha3.js';
-import type { FheTypeId } from '../../core/types/fheType.js';
 import type { BytesHex } from '../../core/types/primitives.js';
 import type { SolanaZkProof } from '../../core/types/zkProof-p.js';
 import type { SolanaRpc } from '../encryptedStore.js';
 import type { SolanaSubmitInputProofParameters, SolanaSubmitInputProofResult } from '../actions/submitInputProof.js';
 import type { FhevmSolanaChain } from '../../core/types/fhevmSolanaChain.js';
 import { bytesToHex, concatBytes, hexToBytes } from '../../core/base/bytes.js';
+import { buildInputProofMetaData } from '../../core/coprocessor/buildInputProofMetaData-p.js';
+import { createCoprocessorEip712Domain } from '../../core/coprocessor/createCoprocessorEip712Domain.js';
 import { InputProofError } from '../../core/errors/InputProofError.js';
+import { unpackWithProofPacked } from '../../core/modules/encrypt/mock.js';
 import { solanaHostProgram } from '../clients/createFhevmBaseClient.js';
 import { findHostConfigPda } from '../internal/generated/zamaHost/pdas/hostConfig.js';
 import { fetchHostConfig } from '../internal/generated/zamaHost/accounts/hostConfig.js';
 import { signAsCleartextParty } from './parties.js';
-
-////////////////////////////////////////////////////////////////////////////////
-
-/**
- * One value of a cleartext input proof, as the mock encrypt module packs it: an 8-byte nonce, the
- * 128-byte Solana input metadata, then the value as a 32-byte big-endian word.
- */
-const PACKED_VALUE_LEN = 8 + 128 + 32;
-/** Bytes each shipped FHE type takes in `extraData` (`zama_host::cleartext::value_len`). */
-const VALUE_LEN: Partial<Record<FheTypeId, number>> = { 0: 2, 2: 2, 3: 2, 4: 4, 5: 8, 6: 16 };
-
-const DOMAIN_TYPE = 'EIP712Domain(string name,string version,uint256 chainId,address verifyingContract)';
-// RFC-021: the host identities are bytes32, where the EVM message has `address`.
-const CIPHERTEXT_VERIFICATION_TYPE =
-  'CiphertextVerification(bytes32[] ctHandles,bytes32 userAddress,bytes32 contractAddress,uint256 contractChainId,bytes extraData)';
+import { CIPHERTEXT_VERIFICATION_TYPE, EIP712_DOMAIN_TYPE, INPUT_VALUE_LEN } from './hostConstants.js';
 
 ////////////////////////////////////////////////////////////////////////////////
 
@@ -48,15 +36,17 @@ export function ciphertextVerificationDigest(parameters: {
   readonly contractChainId: bigint;
   readonly extraData: Uint8Array;
 }): BytesHex {
-  const verifyingContract = new Uint8Array(32);
-  verifyingContract.set(parameters.inputVerificationContract, 12);
+  const { name, version, chainId, verifyingContract } = createCoprocessorEip712Domain({
+    gatewayChainId: parameters.gatewayChainId,
+    verifyingContractAddressInputVerification: bytesToHex(parameters.inputVerificationContract),
+  });
   const domain = keccak_256(
     concatBytes(
-      keccak_256(utf8(DOMAIN_TYPE)),
-      keccak_256(utf8('InputVerification')),
-      keccak_256(utf8('1')),
-      word(parameters.gatewayChainId),
-      verifyingContract,
+      keccak_256(utf8(EIP712_DOMAIN_TYPE)),
+      keccak_256(utf8(name)),
+      keccak_256(utf8(version)),
+      word(chainId),
+      word(BigInt(verifyingContract)),
     ),
   );
   const struct = keccak_256(
@@ -75,17 +65,21 @@ export function ciphertextVerificationDigest(parameters: {
 /** The attestation `extraData` carrying the plaintexts of a cleartext input proof, in handle order. */
 export function cleartextInputExtraData(inputProof: SolanaZkProof): Uint8Array {
   const handles = inputProof.getInputHandles();
-  const packed = inputProof.ciphertextWithZkProof;
-  if (packed.length !== handles.length * PACKED_VALUE_LEN) {
+  const words = unpackWithProofPacked({
+    ciphertextWithZKProofBytes: inputProof.ciphertextWithZkProof,
+    metaData: buildInputProofMetaData(inputProof),
+    count: handles.length,
+  });
+  if (words === undefined) {
     throw new InputProofError({ message: 'Input proof was not built by the cleartext encrypt module' });
   }
   const values = handles.map((handle, index) => {
-    const length = VALUE_LEN[handle.fheTypeId];
-    if (length === undefined) {
+    const length = INPUT_VALUE_LEN[handle.fheTypeId];
+    const packed = words[index];
+    if (length === undefined || packed === undefined) {
       throw new InputProofError({ message: `The Solana host does not support FHE type ${handle.fheType}` });
     }
-    const end = (index + 1) * PACKED_VALUE_LEN;
-    return packed.subarray(end - length, end);
+    return packed.subarray(-length);
   });
   // The host takes at most 16 handles per attestation, so this is at most 16 × 16 = 256 bytes, its
   // extraData limit.

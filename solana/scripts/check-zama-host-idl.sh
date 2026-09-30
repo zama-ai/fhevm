@@ -36,13 +36,12 @@ if grep -En 'Error:.*([Ss]tack offset|overflows the maximum allowed)' "$build_lo
 fi
 
 # The deployer refuses any binary carrying the cleartext build's marker, so the marker must be in
-# the cleartext build and never in the production one. The deployer and the SDK's store reader
-# copy it from the host's `MAGIC`.
+# the cleartext build and never in the production one. The deployer copies it from the host's
+# `MAGIC`; the SDK reads it from `hostConstants.ts`, which a zama-host test renders.
 marker="$(sed -n 's/^pub const MAGIC: \[u8; 32\] = \*b"\(.*\)";$/\1/p' programs/zama-host/src/cleartext/layout.rs)"
 [[ -n "$marker" ]] || { echo 'cannot read MAGIC from src/cleartext/layout.rs' >&2; exit 1; }
-for copy in deploy/src/deploy-programs.ts ../sdk/js-sdk/src/solana/cleartext/storeValues.ts; do
-  grep -qF "'$marker'" "$copy" || { echo "$copy does not carry the cleartext marker '$marker'" >&2; exit 1; }
-done
+grep -qF "'$marker'" deploy/src/deploy-programs.ts ||
+  { echo "deploy/src/deploy-programs.ts does not carry the cleartext marker '$marker'" >&2; exit 1; }
 LC_ALL=C grep -qaF "$marker" target/deploy/zama_host_cleartext.so || { echo 'cleartext build lacks its marker' >&2; exit 1; }
 if LC_ALL=C grep -qaF "$marker" target/deploy/zama_host.so; then
   echo 'production zama_host.so carries the cleartext marker' >&2

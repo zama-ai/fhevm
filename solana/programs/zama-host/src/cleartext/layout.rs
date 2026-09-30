@@ -31,18 +31,21 @@ use crate::{TransientStore, MAX_TRANSIENT_RESULTS};
 /// Heads every plaintext section, and marks the artifact itself as a cleartext build: deploy
 /// tooling refuses a program binary that contains it.
 pub const MAGIC: [u8; 32] = *b"zama-host cleartext build (test)";
-const ENTRY_LEN: usize = 32;
-const HISTORY_RECORD_LEN: usize = 32 + ENTRY_LEN;
+pub(super) const ENTRY_LEN: usize = 32;
+/// Where the big-endian value starts inside an entry.
+pub(super) const ENTRY_VALUE_OFFSET: usize = ENTRY_LEN - core::mem::size_of::<u128>();
+pub(super) const HISTORY_RECORD_LEN: usize = 32 + ENTRY_LEN;
 /// Results an `EncryptedStore` keeps decryptable beyond its current slot values.
 pub const STORE_HISTORY_LEN: usize = 64;
-const RECORDED: u8 = 1;
+pub(super) const RECORDED: u8 = 1;
 
 /// Offset of an `EncryptedStore`'s plaintext section: past its largest Borsh encoding.
 pub const STORE_SECTION_OFFSET: usize =
     zama_solana_acl::EncryptedStore::account_size(MAX_STORE_SLOTS, MAX_MMR_PEAKS);
-const STORE_SLOTS_OFFSET: usize = STORE_SECTION_OFFSET + MAGIC.len();
-const STORE_HISTORY_COUNT_OFFSET: usize = STORE_SLOTS_OFFSET + MAX_STORE_SLOTS * ENTRY_LEN;
-const STORE_HISTORY_OFFSET: usize = STORE_HISTORY_COUNT_OFFSET + 32;
+pub(super) const STORE_SLOTS_OFFSET: usize = STORE_SECTION_OFFSET + MAGIC.len();
+pub(super) const STORE_HISTORY_COUNT_OFFSET: usize =
+    STORE_SLOTS_OFFSET + MAX_STORE_SLOTS * ENTRY_LEN;
+pub(super) const STORE_HISTORY_OFFSET: usize = STORE_HISTORY_COUNT_OFFSET + 32;
 /// Size of an `EncryptedStore` account in the cleartext build.
 pub const STORE_ACCOUNT_SIZE: usize = STORE_HISTORY_OFFSET + STORE_HISTORY_LEN * HISTORY_RECORD_LEN;
 
@@ -171,7 +174,7 @@ fn read_entry(data: &[u8], section: usize, entry: usize, handle: [u8; 32]) -> Re
     require!(entry[0] == RECORDED, CleartextError::ValueUnknown);
     Value::new(
         crate::handle_fhe_type(handle),
-        u128::from_be_bytes(entry[16..].try_into().unwrap()),
+        u128::from_be_bytes(entry[ENTRY_VALUE_OFFSET..].try_into().unwrap()),
     )
 }
 
@@ -181,7 +184,7 @@ fn write_entry(data: &mut [u8], section: usize, entry: usize, value: Value) -> R
         .get_mut(entry..entry + ENTRY_LEN)
         .ok_or_else(|| error!(CleartextError::ValueUnknown))?;
     entry[0] = RECORDED;
-    entry[16..].copy_from_slice(&value.bits.to_be_bytes());
+    entry[ENTRY_VALUE_OFFSET..].copy_from_slice(&value.bits.to_be_bytes());
     Ok(())
 }
 
@@ -197,20 +200,6 @@ mod tests {
         let mut handle = [index; 32];
         handle[30] = 5;
         handle
-    }
-
-    /// `sdk/js-sdk/src/solana/cleartext/storeValues.ts` reads stores at these offsets.
-    #[test]
-    fn the_sdk_reader_offsets_hold() {
-        assert_eq!(
-            (
-                STORE_SECTION_OFFSET,
-                STORE_HISTORY_COUNT_OFFSET,
-                STORE_HISTORY_OFFSET,
-                STORE_ACCOUNT_SIZE
-            ),
-            (4217, 5273, 5305, 9401)
-        );
     }
 
     #[test]

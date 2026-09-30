@@ -20,13 +20,13 @@
 use anchor_lang::prelude::*;
 use solana_keccak_hasher::hashv as keccak;
 
-const DOMAIN_TYPE: &[u8] =
+pub(crate) const DOMAIN_TYPE: &[u8] =
     b"EIP712Domain(string name,string version,uint256 chainId,address verifyingContract)";
 const PUBLIC_DECRYPT_TYPE: &[u8] =
     b"PublicDecryptVerification(bytes32[] ctHandles,bytes decryptedResult,bytes extraData)";
 // RFC-021 Solana form: EVM uses `address` for user/contract; host-chain addresses
 // are widened to bytes32 so Solana 32-byte pubkeys fit.
-const CIPHERTEXT_VERIFICATION_TYPE: &[u8] = b"CiphertextVerification(bytes32[] ctHandles,bytes32 userAddress,bytes32 contractAddress,uint256 contractChainId,bytes extraData)";
+pub(crate) const CIPHERTEXT_VERIFICATION_TYPE: &[u8] = b"CiphertextVerification(bytes32[] ctHandles,bytes32 userAddress,bytes32 contractAddress,uint256 contractChainId,bytes extraData)";
 
 /// keccak256 over the concatenation of `parts`.
 fn k(parts: &[&[u8]]) -> [u8; 32] {

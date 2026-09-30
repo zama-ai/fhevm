@@ -11,6 +11,8 @@
 //! the deployer refuses an artifact carrying [`layout::MAGIC`].
 
 pub mod layout;
+#[cfg(test)]
+mod sdk_constants;
 
 use anchor_lang::prelude::*;
 
