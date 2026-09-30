@@ -1012,12 +1012,12 @@ async fn assert_ciphertext_uploaded(
         .get(S3_METADATA_ATTESTATION_KEY)
         .expect("ciphertext object should include ct-attestation metadata");
     let attestation: CiphertextAttestation = serde_json::from_str(attestation_json)?;
+    let signer = PrivateKeySigner::from_str(&hex::encode(&test_env.private_key))?;
     attestation.verify(
         B256::from_slice(handle),
         crate::aws_upload::COPROCESSOR_CONTEXT_ID_1,
+        signer.address(),
     )?;
-
-    let signer = PrivateKeySigner::from_str(&hex::encode(&test_env.private_key))?;
 
     assert_eq!(
         attestation.key_id,
@@ -1033,11 +1033,6 @@ async fn assert_ciphertext_uploaded(
         attestation.sns_ciphertext_digest,
         B256::from_slice(&sns_ciphertext_digest),
         "attestation should include the expected ct128 digest"
-    );
-    assert_eq!(
-        attestation.signer,
-        signer.address(),
-        "attestation should include the expected signer"
     );
     assert_eq!(
         s3_format_version, S3_FORMAT_VERSION_V1,
