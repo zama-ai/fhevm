@@ -759,8 +759,8 @@ fn render_leaf_read(batch: &[LeafQuery], record: &ProofRecord) -> Value {
         .collect()
 }
 
-fn render_verdict((name, entry): (&str, Option<usize>)) -> Value {
-    json!({ "authorized": false, "failure": name, "entry": entry })
+fn render_verdict((name, entry): (&str, Option<usize>), recoverable: bool) -> Value {
+    json!({ "authorized": false, "failure": name, "entry": entry, "recoverable": recoverable })
 }
 
 fn render_case(case: &Case, failure: Option<&AuthorizationFailure>, batch: &[LeafQuery]) -> Value {
@@ -772,14 +772,9 @@ fn render_case(case: &Case, failure: Option<&AuthorizationFailure>, batch: &[Lea
         "{}: every case signs the fixture's transport key",
         case.name
     );
-    let verdict = match failure {
-        None => json!({ "authorized": true }),
-        Some(failure) => {
-            let mut verdict = render_verdict(failure_name(failure));
-            verdict["recoverable"] = failure.class().recoverable.into();
-            verdict
-        }
-    };
+    let verdict = failure.map_or(json!({ "authorized": true }), |failure| {
+        render_verdict(failure_name(failure), failure.is_recoverable())
+    });
     json!({
         "name": case.name,
         "now": case.now.to_string(),
@@ -817,7 +812,9 @@ fn render_public_case(
         })).collect::<Vec<_>>(),
         "accounts": render_accounts(&case.world),
         "leaf_read": render_leaf_read(batch, &case.record),
-        "verdict": failure.map_or(json!({ "authorized": true }), |failure| render_verdict(public_failure_name(failure))),
+        "verdict": failure.map_or(json!({ "authorized": true }), |failure| {
+            render_verdict(public_failure_name(failure), failure.is_recoverable())
+        }),
     })
 }
 

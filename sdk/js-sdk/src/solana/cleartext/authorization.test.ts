@@ -46,7 +46,7 @@ type PublicCase = {
   readonly handles: readonly { readonly handle: string; readonly encrypted_store: string }[];
   readonly accounts: Accounts;
   readonly leaf_read: LeafRead;
-  readonly verdict: Verdict;
+  readonly verdict: Verdict & { readonly recoverable?: boolean };
 };
 type Fixture = {
   readonly host_program: string;
@@ -214,6 +214,9 @@ describe('the cleartext client judges a public decryption as the KMS Connector d
       });
       expectVerdict(verdict, testCase.verdict);
       expect(record.asked()).toBe(testCase.leaf_read === null ? 0 : 1);
+      if (!verdict.authorized) {
+        expect(CONNECTOR_FAILURE_RECOVERABLE[verdict.failure]).toBe(testCase.verdict.recoverable);
+      }
     });
   }
 });

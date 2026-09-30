@@ -95,6 +95,19 @@ describe('cleartextPublicDecryptCertifier', () => {
     expect(String(await outcome)).toMatch(/refuses to decrypt \(HandleBinding::ProofRecordBehind\)/);
     expect(authorization.judgeSolanaPublicDecryption).toHaveBeenCalledTimes(20);
   });
+
+  it('stops retrying when the signal aborts', async () => {
+    vi.spyOn(authorization, 'judgeSolanaPublicDecryption').mockResolvedValue(
+      refusal('HandleBinding::ProofRecordBehind'),
+    );
+    const controller = new AbortController();
+    const outcome = certify({ ...parameters, options: { signal: controller.signal } }).catch((error: unknown) => error);
+    await vi.advanceTimersByTimeAsync(250);
+    controller.abort();
+    await vi.runAllTimersAsync();
+    expect(await outcome).toMatchObject({ name: 'AbortError' });
+    expect(authorization.judgeSolanaPublicDecryption).toHaveBeenCalledTimes(2);
+  });
 });
 
 // The execution through the production retry loop: the order of the real stack's checks, what

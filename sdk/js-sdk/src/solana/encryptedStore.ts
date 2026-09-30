@@ -12,6 +12,7 @@ import {
   getU8Decoder,
   type Address,
   type FetchAccountConfig,
+  type ReadonlyUint8Array,
   type Rpc,
   type SolanaRpcApi,
 } from '@solana/kit';
@@ -90,7 +91,12 @@ const encryptedStoreBodyDecoder = getStructDecoder([
 const DISCRIMINATOR_SIZE = 8;
 const VECTOR_ELEMENT_SIZE = 32;
 /** `sha256("account:EncryptedStore")[..8]` — the crate's `encrypted_store_discriminator()`. */
-export const ENCRYPTED_STORE_DISCRIMINATOR = new Uint8Array([161, 143, 137, 73, 233, 30, 46, 118]);
+const ENCRYPTED_STORE_DISCRIMINATOR = new Uint8Array([161, 143, 137, 73, 233, 30, 46, 118]);
+
+/** Whether `data` starts with the `EncryptedStore` discriminator. */
+export function isSolanaEncryptedStoreData(data: ReadonlyUint8Array): boolean {
+  return ENCRYPTED_STORE_DISCRIMINATOR.every((byte, index) => data[index] === byte);
+}
 
 /**
  * Decodes an account's raw data, discriminator included, into its state.
@@ -100,10 +106,8 @@ export const ENCRYPTED_STORE_DISCRIMINATOR = new Uint8Array([161, 143, 137, 73, 
  * @throws If the bytes do not decode as the assumed layout, or decode into an impossible MMR.
  */
 export function decodeSolanaEncryptedStore(data: Uint8Array, accountName: string): SolanaEncryptedStore {
-  for (let index = 0; index < ENCRYPTED_STORE_DISCRIMINATOR.length; index += 1) {
-    if (data[index] !== ENCRYPTED_STORE_DISCRIMINATOR[index]) {
-      throw new Error(`account ${accountName} does not carry the EncryptedStore discriminator`);
-    }
+  if (!isSolanaEncryptedStoreData(data)) {
+    throw new Error(`account ${accountName} does not carry the EncryptedStore discriminator`);
   }
   const body = data.slice(DISCRIMINATOR_SIZE);
   const [decoded, offset] = encryptedStoreBodyDecoder.read(body, 0);

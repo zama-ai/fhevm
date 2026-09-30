@@ -264,6 +264,14 @@ export function mmrBuildProof(leaves: readonly Uint8Array[], leafIndex: bigint):
 }
 
 /**
+ * The height of leaf `leafIndex`'s mountain among `leafCount` leaves, and so how many siblings its
+ * proof holds: the highest bit set in the count and not in the index.
+ */
+export function mmrMountainHeight(leafIndex: bigint, leafCount: bigint): number {
+  return (leafCount ^ leafIndex).toString(2).length - 1;
+}
+
+/**
  * An MMR built leaf by leaf that keeps every node it computes, so the peaks at a past leaf count
  * and a proof cost one node per level. Over the same leaves it matches `mmrPeaksFromLeaves` and
  * `mmrBuildProof`, which rebuild the tree on every call.
@@ -322,8 +330,7 @@ export function createRetainedMmr(): RetainedMmr {
       if (!Number.isSafeInteger(leafIndex) || leafIndex < 0 || leafIndex >= count) {
         throw new Error(`leaf ${leafIndex} is not among the first ${count}`);
       }
-      // The leaf's mountain is the highest bit set in the count and not in the index.
-      const height = (BigInt(count) ^ BigInt(leafIndex)).toString(2).length - 1;
+      const height = mmrMountainHeight(BigInt(leafIndex), BigInt(count));
       const siblings: Uint8Array[] = [];
       for (let level = 0; level < height; level += 1) {
         const ancestor = Math.floor(leafIndex / 2 ** level);

@@ -16,7 +16,7 @@ import type { SolanaRpc } from '../encryptedStore.js';
 import type { SolanaStoreHistoryEvent } from '../proof.js';
 import type { SolanaLeafProofOutcome, SolanaLeafProofReader } from './leafProofs.js';
 import { bytesToHex } from '../../core/base/bytes.js';
-import { decodeSolanaEncryptedStore, ENCRYPTED_STORE_DISCRIMINATOR } from '../encryptedStore.js';
+import { decodeSolanaEncryptedStore, isSolanaEncryptedStoreData } from '../encryptedStore.js';
 import {
   createRetainedMmr,
   historicalAccessLeafCommitment,
@@ -82,7 +82,7 @@ export function createSolanaLeafRecord(rpc: SolanaRpc, programAddress: Address):
   const catchUp = async (encryptedStore: Address): Promise<StoreRecord | undefined> => {
     const account = await fetchEncodedAccount(rpc, encryptedStore, { commitment: 'confirmed' });
     if (!account.exists || account.programAddress !== programAddress) return undefined;
-    if (!ENCRYPTED_STORE_DISCRIMINATOR.every((byte, index) => account.data[index] === byte)) return undefined;
+    if (!isSolanaEncryptedStoreData(account.data)) return undefined;
     const live = decodeSolanaEncryptedStore(account.data, encryptedStore);
 
     const record = records.get(encryptedStore) ?? {
@@ -148,7 +148,7 @@ export function createSolanaLeafRecord(rpc: SolanaRpc, programAddress: Address):
     record.newest = newest;
   };
 
-  const caughtUp = (encryptedStore: Address): Promise<StoreRecord | undefined> => {
+  const catchUpInTurn = (encryptedStore: Address): Promise<StoreRecord | undefined> => {
     const previous = catchUps.get(encryptedStore) ?? Promise.resolve(undefined);
     const next = previous.catch(() => undefined).then(() => catchUp(encryptedStore));
     catchUps.set(encryptedStore, next);
@@ -157,7 +157,9 @@ export function createSolanaLeafRecord(rpc: SolanaRpc, programAddress: Address):
 
   return async (queries) => {
     const stores = [...new Set(queries.map(({ encryptedStore }) => encryptedStore))];
-    const caught = new Map(await Promise.all(stores.map(async (store) => [store, await caughtUp(store)] as const)));
+    const caught = new Map(
+      await Promise.all(stores.map(async (store) => [store, await catchUpInTurn(store)] as const)),
+    );
     return queries.map(({ encryptedStore, handle, key }): SolanaLeafProofOutcome => {
       const record = caught.get(encryptedStore);
       if (record === undefined) return { status: 'unknownAccount' };

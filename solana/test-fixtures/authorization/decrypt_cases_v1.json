@@ -80,7 +80,8 @@
       "verdict": {
         "authorized": false,
         "entry": 0,
-        "failure": "HandleBinding::NoLeaf"
+        "failure": "HandleBinding::NoLeaf",
+        "recoverable": true
       }
     },
     {
@@ -119,7 +120,8 @@
       "verdict": {
         "authorized": false,
         "entry": 0,
-        "failure": "HandleBinding::ProofRecordBehind"
+        "failure": "HandleBinding::ProofRecordBehind",
+        "recoverable": true
       }
     },
     {
@@ -160,7 +162,8 @@
       "verdict": {
         "authorized": false,
         "entry": 0,
-        "failure": "HandleBinding::ProofDoesNotVerify"
+        "failure": "HandleBinding::ProofDoesNotVerify",
+        "recoverable": true
       }
     },
     {
@@ -182,7 +185,8 @@
       "verdict": {
         "authorized": false,
         "entry": 0,
-        "failure": "EncryptedStore::Absent"
+        "failure": "EncryptedStore::Absent",
+        "recoverable": true
       }
     },
     {
@@ -209,7 +213,8 @@
       "verdict": {
         "authorized": false,
         "entry": 0,
-        "failure": "EncryptedStore::InvalidHostRecord"
+        "failure": "EncryptedStore::InvalidHostRecord",
+        "recoverable": false
       }
     },
     {
@@ -245,7 +250,8 @@
       "verdict": {
         "authorized": false,
         "entry": 1,
-        "failure": "EncryptedStore::ForeignOwner"
+        "failure": "EncryptedStore::ForeignOwner",
+        "recoverable": false
       }
     }
   ],

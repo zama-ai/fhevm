@@ -1,7 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { address, getAddressEncoder, getBase58Decoder, type Address } from '@solana/kit';
 import type { SolanaRpc } from '../encryptedStore.js';
-import { ENCRYPTED_STORE_DISCRIMINATOR } from '../encryptedStore.js';
 import { getMakeStoreHandlePublicInstructionDataEncoder } from '../internal/generated/zamaHost/instructions/makeStoreHandlePublic.js';
 import { mmrBuildProof, reconstructSolanaStoreHistory, type SolanaStoreHistoryEvent } from '../proof.js';
 import { createSolanaLeafRecord } from './leafRecord.js';
@@ -10,6 +9,8 @@ const host = address('11111111111111111111111111111112');
 const store = address('SysvarC1ock11111111111111111111111111111111');
 const other = address('SysvarRent111111111111111111111111111111111');
 const storeBytes = new Uint8Array(getAddressEncoder().encode(store));
+/** `sha256("account:EncryptedStore")[..8]`. */
+const ENCRYPTED_STORE_DISCRIMINATOR = [161, 143, 137, 73, 233, 30, 46, 118];
 
 /** A `make_store_handle_public` that appends leaf `at`, making public the handle filled with `handle`. */
 type Write = { readonly at: bigint; readonly handle: number };

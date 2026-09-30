@@ -24,7 +24,7 @@ import { bytesToHex, concatBytes } from '../../core/base/bytes.js';
 import { verifySolanaPermitSignature } from '../permit/envelope.js';
 import {
   decodeSolanaEncryptedStore,
-  ENCRYPTED_STORE_DISCRIMINATOR,
+  isSolanaEncryptedStoreData,
   SOLANA_ENCRYPTED_STORE_SEED,
   type SolanaEncryptedStore,
 } from '../encryptedStore.js';
@@ -34,8 +34,9 @@ import {
   isSolanaUserDecryptionDelegationLiveAt,
   SOLANA_WILDCARD_APP,
   solanaUserDecryptionDelegationPda,
+  type SolanaDelegationApplication,
 } from '../actions/userDecryptionDelegation.js';
-import { verifyHistoricalAccessProof, verifyPublicDecryptProof } from '../proof.js';
+import { mmrMountainHeight, verifyHistoricalAccessProof, verifyPublicDecryptProof } from '../proof.js';
 
 ////////////////////////////////////////////////////////////////////////////////
 
@@ -141,7 +142,7 @@ function resolveStore(
   if (found.owner !== programAddress) {
     return refuse('EncryptedStore::ForeignOwner', `encrypted store ${key} is owned by ${found.owner}`, entry);
   }
-  if (!ENCRYPTED_STORE_DISCRIMINATOR.every((byte, index) => found.data[index] === byte)) {
+  if (!isSolanaEncryptedStoreData(found.data)) {
     return refuse('EncryptedStore::NotAnEncryptedStore', `account ${key} is not an encrypted store`, entry);
   }
   let store: SolanaEncryptedStore;
@@ -170,7 +171,7 @@ function resolveStore(
 }
 
 /** A delegation row: its derived address and bump, and the application it is for. */
-type DelegationRow = { readonly pda: ProgramDerivedAddress; readonly program: Address; readonly scope: Address };
+type DelegationRow = SolanaDelegationApplication & { readonly pda: ProgramDerivedAddress };
 
 /** The two rows that can authorize a delegated entry: its store's application, then the wildcard. */
 async function delegationRows(
@@ -179,13 +180,7 @@ async function delegationRows(
   store: SolanaEncryptedStore,
   programAddress: Address,
 ): Promise<readonly [DelegationRow, DelegationRow]> {
-  const row = async ({
-    program,
-    scope,
-  }: {
-    readonly program: Address;
-    readonly scope: Address;
-  }): Promise<DelegationRow> => ({
+  const row = async ({ program, scope }: SolanaDelegationApplication): Promise<DelegationRow> => ({
     pda: await solanaUserDecryptionDelegationPda({ delegator, delegate, program, scope }, programAddress),
     program,
     scope,
@@ -301,10 +296,8 @@ function checkLeaf(
       index,
     );
   }
-  // `MmrProof::for_leaf_count`: the leaf's mountain is the highest bit set in the observed count and
-  // not in the index, and its height is how many siblings reach that mountain's peak.
-  const height = (live ^ leafIndex).toString(2).length - 1;
-  const proof = { leafIndex, siblings: siblings.slice(0, height) };
+  // `MmrProof::for_leaf_count`: as many siblings as reach the leaf's peak at the observed count.
+  const proof = { leafIndex, siblings: siblings.slice(0, mmrMountainHeight(leafIndex, live)) };
   const storeBytes = encodeAddress(encryptedStore);
   const verifies =
     key === undefined
@@ -506,9 +499,9 @@ export async function judgeSolanaUserDecryption({
     }
     // The read lists every store before any row, so each claim takes its store, then its rows.
     const withStores = located.map((claim) => ({ ...claim, account: lastRead() }));
-    const judged = withStores.map((claim) => ({
+    const judged = withStores.map(({ rows, ...claim }) => ({
       ...claim,
-      rowAccounts: claim.rows === undefined ? undefined : ([lastRead(), lastRead()] as const),
+      delegation: rows === undefined ? undefined : { rows, accounts: [lastRead(), lastRead()] as const },
     }));
 
     let watermark = 0n;
@@ -526,16 +519,17 @@ export async function judgeSolanaUserDecryption({
 
     // Every host rule is judged before any leaf.
     const allowedScopes = new Set(fields.allowedScopes.map((scope) => bytesToHex(scope)));
-    const resolved = judged.map(({ index, handle, storeKey, owner, rows, account, rowAccounts }) => {
+    const resolved = judged.map(({ index, handle, storeKey, owner, account, delegation }) => {
       const store = resolveStore(account, programAddress, storeKey, index);
       const application = bytesToHex(concatBytes(encodeAddress(store.program), encodeAddress(store.scope)));
       if (allowedScopes.size > 0 && !allowedScopes.has(application)) {
         refuse('ScopeNotAllowed', `application (${store.program}, ${store.scope}) is outside the signed scope`, index);
       }
-      if (rows !== undefined && rowAccounts !== undefined) {
+      if (delegation !== undefined) {
+        const { rows, accounts } = delegation;
         const verdicts = [
-          judgeRow(rowAccounts[0], rows[0], owner, signer, programAddress, hostNow),
-          judgeRow(rowAccounts[1], rows[1], owner, signer, programAddress, hostNow),
+          judgeRow(accounts[0], rows[0], owner, signer, programAddress, hostNow),
+          judgeRow(accounts[1], rows[1], owner, signer, programAddress, hostNow),
         ];
         if (verdicts.includes('invalid')) {
           refuse(

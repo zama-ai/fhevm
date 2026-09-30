@@ -64,6 +64,7 @@ export function cleartextUserDecryptExecution(
   leafProofs: SolanaLeafProofEndpoint,
 ): SolanaUserDecryptExecution {
   const programAddress = solanaHostProgram(chain);
+  const readAccounts = hostAccountsReader(rpc);
   const readLeafProofs = createSolanaLeafProofClient(leafProofs);
   return async ({ session, entries, attempts, options }) => {
     const { fields, signature } = session.signedPermit;
@@ -76,7 +77,6 @@ export function cleartextUserDecryptExecution(
         // context on every attempt.
         const host = await fetchHostDecryptionState(rpc, programAddress, fields.kmsRouting.kmsContextId);
         assertTrustMatchesHost(host, trust, fields.kmsRouting.kmsContextId);
-        const readAccounts = hostAccountsReader(rpc);
 
         // The relayer, when the request is posted.
         if (fields.chainId !== host.config.chainId) {
@@ -246,6 +246,7 @@ export function cleartextPublicDecryptCertifier(
   leafProofs: SolanaLeafProofEndpoint,
 ): SolanaPublicDecryptCertifier {
   const programAddress = solanaHostProgram(chain);
+  const readAccounts = hostAccountsReader(rpc);
   const readLeafProofs = createSolanaLeafProofClient(leafProofs);
   return async (parameters) => {
     const handle = toFhevmHandle(parameters.handle);
@@ -253,10 +254,11 @@ export function cleartextPublicDecryptCertifier(
     const encryptedStore = getAddressDecoder().decode(parameters.encryptedStore);
     // The Connector retries a failure a later attempt may clear, such as a leaf record behind the store.
     for (let attempt = 1; ; attempt += 1) {
+      parameters.options?.signal?.throwIfAborted();
       const verdict = await judgeSolanaPublicDecryption({
         programAddress,
         handles: [{ handle: handleBytes, encryptedStore }],
-        readAccounts: hostAccountsReader(rpc),
+        readAccounts,
         readLeafProofs,
       });
       if (verdict.authorized) break;
