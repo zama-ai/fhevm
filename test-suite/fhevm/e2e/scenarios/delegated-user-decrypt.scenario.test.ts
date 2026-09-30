@@ -57,6 +57,7 @@ import {
   web3KeypairFromBytes,
   toWeb3Instruction,
 } from "../harness/solana/squads";
+import { until } from "../harness";
 import { loadEnv } from "../harness/loadEnv";
 import { verticalSetup, type VerticalTestSetup } from "../harness/solana/vertical";
 
@@ -150,6 +151,7 @@ describe("solana delegated user-decrypt", () => {
         expiresAt: (await hostUnixTime(setup)) + EXPIRY_SECONDS_AHEAD,
       });
       await context.sendTransaction(wallet.signer, [grant]);
+      const grantSlot = await context.rpc.getSlot({ commitment: "confirmed" }).send();
 
       // The rows the connector will read, checked the way a dapp would before paying for a job.
       const rows = await solana.fetchSolanaUserDecryptionDelegation(context.rpc, {
@@ -216,6 +218,11 @@ describe("solana delegated user-decrypt", () => {
       // expiry is the on-chain fact; the fast client-visible refusal is the relayer's
       // advisory pre-check (`not_allowed_on_host_acl`) — the connector's own terminal
       // rejection has no channel back (see 09-rejection-path-findings).
+      // The host refuses a second update of a delegation in the slot of the first.
+      await until(async () => (await context.rpc.getSlot({ commitment: "confirmed" }).send()) > grantSlot, {
+        description: "a slot after the grant",
+        timeoutMs: 30_000,
+      });
       const revoke = await solana.buildRevokeDelegationForUserDecryptionInstruction({
         programAddress: hostProgram,
         delegator: wallet.signer,
