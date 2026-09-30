@@ -52,7 +52,7 @@ describe('cleartext input attestation', () => {
     });
     expect(bytesToHex(cleartextInputExtraData(proof))).toBe(
       // bool | uint8 | uint64 | uint128
-      '0x' + '01' + '07' + '0000000000000190' + '80000000000000000000000000000005',
+      '0x' + '0001' + '0007' + '0000000000000190' + '80000000000000000000000000000005',
     );
   });
 
@@ -76,11 +76,15 @@ describe('cleartext input attestation', () => {
 
 describe('cleartext parties', () => {
   const digest = bytesToHex(fill(32, 9));
-  const registered = SOLANA_CLEARTEXT_SIGNER_ADDRESSES.coprocessor.map((address) => Buffer.from(address.slice(2), 'hex'));
+  const registered = SOLANA_CLEARTEXT_SIGNER_ADDRESSES.coprocessor.map((address) =>
+    Buffer.from(address.slice(2), 'hex'),
+  );
 
   it('sign as the registered signer', () => {
     const [signature] = signAsCleartextParty('coprocessor', registered, 1, digest);
-    expect(recoverAddress({ hash: digest, signature: signature! })).toBe(SOLANA_CLEARTEXT_SIGNER_ADDRESSES.coprocessor[0]);
+    expect(recoverAddress({ hash: digest, signature: signature! })).toBe(
+      SOLANA_CLEARTEXT_SIGNER_ADDRESSES.coprocessor[0],
+    );
   });
 
   it('refuse a signer set with a key they do not hold', () => {

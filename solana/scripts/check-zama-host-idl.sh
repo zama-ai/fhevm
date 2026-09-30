@@ -25,8 +25,10 @@ for program in zama_host confidential_token confidential_batcher demo_vault; do
 done
 # `cleartext` records plaintexts in host accounts for the local simulator (src/cleartext). It is a
 # test artifact only: build-programs.sh refuses it in environment files and deploy refuses its marker.
-NO_DNA=1 anchor build --ignore-keys --no-idl -p zama_host -- --features cleartext 2>&1 | tee -a "$build_log"
-mv target/deploy/zama_host.so target/deploy/zama_host_cleartext.so
+cleartext_dir="$(mktemp -d)"
+NO_DNA=1 anchor build --ignore-keys --no-idl -p zama_host -- --sbf-out-dir "$cleartext_dir" --features cleartext 2>&1 | tee -a "$build_log"
+mv "$cleartext_dir/zama_host.so" target/deploy/zama_host_cleartext.so
+rm -r "$cleartext_dir"
 NO_DNA=1 anchor build --ignore-keys 2>&1 | tee -a "$build_log"
 if rg -n 'Error:.*([Ss]tack offset|overflows the maximum allowed)' "$build_log"; then
   echo "SBF stack limit exceeded" >&2
@@ -34,8 +36,13 @@ if rg -n 'Error:.*([Ss]tack offset|overflows the maximum allowed)' "$build_log";
 fi
 
 # The deployer refuses any binary carrying the cleartext build's marker, so the marker must be in
-# the cleartext build and never in the production one.
-marker='zama-host cleartext build (test)'
+# the cleartext build and never in the production one. The deployer and the SDK's store reader
+# copy it from the host's `MAGIC`.
+marker="$(sed -n 's/^pub const MAGIC: \[u8; 32\] = \*b"\(.*\)";$/\1/p' programs/zama-host/src/cleartext/layout.rs)"
+[[ -n "$marker" ]] || { echo 'cannot read MAGIC from src/cleartext/layout.rs' >&2; exit 1; }
+for copy in deploy/src/deploy-programs.ts ../sdk/js-sdk/src/solana/cleartext/storeValues.ts; do
+  grep -qF "'$marker'" "$copy" || { echo "$copy does not carry the cleartext marker '$marker'" >&2; exit 1; }
+done
 LC_ALL=C grep -qaF "$marker" target/deploy/zama_host_cleartext.so || { echo 'cleartext build lacks its marker' >&2; exit 1; }
 if LC_ALL=C grep -qaF "$marker" target/deploy/zama_host.so; then
   echo 'production zama_host.so carries the cleartext marker' >&2

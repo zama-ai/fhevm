@@ -83,9 +83,10 @@ fn bit_width(fhe_type: u8) -> Result<u32> {
     }
 }
 
-/// Bytes one value of `fhe_type` takes in an input attestation (a bool takes one).
+/// Bytes one value of `fhe_type` takes in an input attestation. At least two, so no encoding is
+/// production's one-byte `extra_data` (`0x00`); 16 `euint128` inputs still fill 256 bytes.
 fn value_len(fhe_type: u8) -> Result<usize> {
-    Ok(bit_width(fhe_type)?.div_ceil(8) as usize)
+    Ok(bit_width(fhe_type)?.div_ceil(8).max(2) as usize)
 }
 
 fn mask(fhe_type: u8) -> Result<u128> {
@@ -220,7 +221,8 @@ pub fn evaluate_steps(
                 fhe_type,
             } => {
                 assert_supported_fhe_type(*fhe_type)?;
-                // A trivial bool reads only the last byte, as the test oracle always has.
+                // A trivial bool reads only the last byte, as the coprocessor's
+                // `trivial_encrypt_be_bytes` does.
                 if *fhe_type == 0 {
                     Value::new(0, u128::from(plaintext[31]))?
                 } else {
@@ -396,7 +398,7 @@ mod tests {
         let handles = [handle(0), handle(5), handle(6)];
         let values = [value(0, 1), value(5, 7), value(6, u128::MAX)];
         let extra_data = encode_input_values(&values).unwrap();
-        assert_eq!(extra_data.len(), 1 + 8 + 16);
+        assert_eq!(extra_data.len(), 2 + 8 + 16);
         for (index, expected) in values.iter().enumerate() {
             assert_eq!(
                 decode_input_value(&extra_data, &handles, index).unwrap(),
@@ -405,6 +407,7 @@ mod tests {
         }
         assert!(decode_input_value(&extra_data[..extra_data.len() - 1], &handles, 0).is_err());
         assert!(decode_input_value(&[extra_data.as_slice(), &[0]].concat(), &handles, 0).is_err());
+        // Production's one-byte `0x00` is no input, not even a lone bool.
         assert!(decode_input_value(&[0x00], &handles[..1], 0).is_err());
     }
 

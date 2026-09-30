@@ -35,6 +35,6 @@ export function createFhevmCleartextDecryptClient<C extends FhevmSolanaChain>(
     createFhevmCleartextPublicDecryptClient(parameters),
     parameters.trust,
     getCleartextSolanaRuntime(),
-    cleartextUserDecryptExecution(parameters.rpc, parameters.chain),
+    cleartextUserDecryptExecution(parameters.rpc, parameters.chain, parameters.trust),
   );
 }

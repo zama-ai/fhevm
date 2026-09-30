@@ -29,7 +29,11 @@ function rpcWithPublicWrites(previousLeafCounts: readonly bigint[]): SolanaRpc {
         ],
       },
     },
-    meta: { err: null, innerInstructions: [], loadedAddresses: { writable: [] as Address[], readonly: [] as Address[] } },
+    meta: {
+      err: null,
+      innerInstructions: [],
+      loadedAddresses: { writable: [] as Address[], readonly: [] as Address[] },
+    },
   });
   return {
     getSignaturesForAddress: () => ({
@@ -48,11 +52,7 @@ describe('fetchSolanaStoreHistory', () => {
   });
 
   it('refuses a history with a missing or a doubly claimed leaf', async () => {
-    await expect(fetchSolanaStoreHistory(rpcWithPublicWrites([0n, 2n]), store, host)).rejects.toThrow(
-      /records leaf 1/,
-    );
-    await expect(fetchSolanaStoreHistory(rpcWithPublicWrites([0n, 0n]), store, host)).rejects.toThrow(
-      /claim leaf 0/,
-    );
+    await expect(fetchSolanaStoreHistory(rpcWithPublicWrites([0n, 2n]), store, host)).rejects.toThrow(/records leaf 1/);
+    await expect(fetchSolanaStoreHistory(rpcWithPublicWrites([0n, 0n]), store, host)).rejects.toThrow(/claim leaf 0/);
   });
 });

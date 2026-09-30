@@ -1,7 +1,6 @@
 // The coprocessor's part of an input, played by the cleartext client: the cleartext host reads each
 // input's plaintext from the attestation's `extraData`, and verifies the attestation exactly as the
 // production host does, so the client signs the same EIP-712 message with a registered key.
-import { fetchEncodedAccount } from '@solana/kit';
 import { keccak_256 } from '@noble/hashes/sha3.js';
 import type { FheTypeId } from '../../core/types/fheType.js';
 import type { BytesHex } from '../../core/types/primitives.js';
@@ -13,7 +12,7 @@ import { bytesToHex, concatBytes, hexToBytes } from '../../core/base/bytes.js';
 import { InputProofError } from '../../core/errors/InputProofError.js';
 import { solanaHostProgram } from '../clients/createFhevmBaseClient.js';
 import { findHostConfigPda } from '../internal/generated/zamaHost/pdas/hostConfig.js';
-import { getHostConfigDecoder } from '../internal/generated/zamaHost/accounts/hostConfig.js';
+import { fetchHostConfig } from '../internal/generated/zamaHost/accounts/hostConfig.js';
 import { signAsCleartextParty } from './parties.js';
 
 ////////////////////////////////////////////////////////////////////////////////
@@ -24,7 +23,7 @@ import { signAsCleartextParty } from './parties.js';
  */
 const PACKED_VALUE_LEN = 8 + 128 + 32;
 /** Bytes each shipped FHE type takes in `extraData` (`zama_host::cleartext::value_len`). */
-const VALUE_LEN: Partial<Record<FheTypeId, number>> = { 0: 1, 2: 1, 3: 2, 4: 4, 5: 8, 6: 16 };
+const VALUE_LEN: Partial<Record<FheTypeId, number>> = { 0: 2, 2: 2, 3: 2, 4: 4, 5: 8, 6: 16 };
 
 const DOMAIN_TYPE = 'EIP712Domain(string name,string version,uint256 chainId,address verifyingContract)';
 // RFC-021: the host identities are bytes32, where the EVM message has `address`.
@@ -115,11 +114,7 @@ export function cleartextSubmitInputProof(rpc: SolanaRpc) {
 
     const programAddress = solanaHostProgram(context.solanaChain);
     const [hostConfigAddress] = await findHostConfigPda({ programAddress });
-    const account = await fetchEncodedAccount(rpc, hostConfigAddress, { commitment: 'confirmed' });
-    if (!account.exists || account.programAddress !== programAddress) {
-      throw new Error(`No HostConfig of ${programAddress} at ${hostConfigAddress}`);
-    }
-    const config = getHostConfigDecoder().decode(account.data);
+    const { data: config } = await fetchHostConfig(rpc, hostConfigAddress, { commitment: 'confirmed' });
     const digest = ciphertextVerificationDigest({
       gatewayChainId: config.gatewayChainId,
       inputVerificationContract: new Uint8Array(config.inputVerificationContract),

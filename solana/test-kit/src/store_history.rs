@@ -14,7 +14,7 @@ use solana_sdk::pubkey::Pubkey;
 use crate::{decode_fhe_execute_args, Ctx};
 
 /// What one instruction's recorded host calls covered.
-pub struct FheReplay {
+pub struct RecordedExecutions {
     /// Distinct `fhe_execute` CPIs decoded from the inner instructions.
     pub executions: usize,
     /// Effects that wrote a store slot.
@@ -46,7 +46,7 @@ impl StoreHistory {
 
     /// Appends the leaves of every `fhe_execute` and `make_store_handle_public` the instruction
     /// issued, in order, and checks each execution's event against the runtime sysvars.
-    pub fn record(&mut self, context: &Ctx, result: &InstructionResult) -> FheReplay {
+    pub fn record(&mut self, context: &Ctx, result: &InstructionResult) -> RecordedExecutions {
         let message = result
             .message
             .as_ref()
@@ -137,7 +137,7 @@ impl StoreHistory {
                 args.handle,
             ));
         }
-        FheReplay {
+        RecordedExecutions {
             executions,
             persistent_outputs,
         }

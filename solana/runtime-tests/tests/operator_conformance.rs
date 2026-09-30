@@ -325,11 +325,10 @@ mod rejected {
     use super::*;
     mod closed_world {
         use super::*;
-        /// The oracle widens operands before the host's own gate runs, so an unshipped width
-        /// (euint160, euint256) must fail with the host's error on both sides of a conformance
-        /// case.
+        /// An unshipped width (euint160, euint256) fails with the host's own type error, not
+        /// one of the evaluator's.
         #[test]
-        fn oracle_rejects_unshipped_widths_with_the_host_error() {
+        fn evaluator_rejects_unshipped_widths_with_the_host_error() {
             let u160 = handle(1, 7);
             let u256 = handle(2, 8);
             let inputs = HashMap::from([(u160, plain(1)), (u256, plain(1))]);

@@ -138,12 +138,12 @@ fn transferred_event_handle(result: &InstructionResult) -> [u8; 32] {
 /// Records the one `fhe_execute` CPI every token instruction is expected to issue and returns the
 /// number of store slots it wrote.
 fn record_fhe_cpi(history: &mut StoreHistory, context: &Ctx, result: &InstructionResult) -> usize {
-    let replay = history.record(context, result);
+    let recorded = history.record(context, result);
     assert_eq!(
-        replay.executions, 1,
+        recorded.executions, 1,
         "expected one token -> host fhe_execute CPI"
     );
-    replay.persistent_outputs
+    recorded.persistent_outputs
 }
 
 /// The balance the cleartext host recorded for `token_account`.

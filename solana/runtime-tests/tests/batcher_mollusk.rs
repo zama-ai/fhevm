@@ -129,12 +129,12 @@ fn check_batcher_instruction(
 /// Records a batcher instruction's `fhe_execute` CPIs (a token CPI's execution plus the
 /// batcher's own) and returns how many there were, which the tests assert exactly.
 fn record_fhe_cpis(history: &mut StoreHistory, context: &Ctx, result: &InstructionResult) -> usize {
-    let replay = history.record(context, result);
+    let recorded = history.record(context, result);
     assert!(
-        replay.executions > 0,
+        recorded.executions > 0,
         "expected at least one fhe_execute CPI in this instruction"
     );
-    replay.executions
+    recorded.executions
 }
 
 fn read_batch(context: &Ctx, address: Pubkey) -> batcher::Batch {

@@ -1,18 +1,7 @@
 // The leaf history of an `EncryptedStore`, rebuilt from the confirmed host transactions that wrote
 // to it, the way the coprocessor's host-listener records it (`solana_grpc_listener.rs`,
 // reconstruct). With no coprocessor, this is where a cleartext stack's leaf proofs come from.
-import {
-  fixDecoderSize,
-  getArrayDecoder,
-  getBase58Encoder,
-  getBytesDecoder,
-  getI64Decoder,
-  getStructDecoder,
-  getU8Decoder,
-  type Address,
-  type ReadonlyUint8Array,
-  type Signature,
-} from '@solana/kit';
+import { getBase58Encoder, type Address, type ReadonlyUint8Array, type Signature } from '@solana/kit';
 import type { SolanaRpc } from '../encryptedStore.js';
 import type { SolanaStoreHistoryEvent } from '../proof.js';
 import {
@@ -23,6 +12,7 @@ import {
   MAKE_STORE_HANDLE_PUBLIC_DISCRIMINATOR,
   getMakeStoreHandlePublicInstructionDataDecoder,
 } from '../internal/generated/zamaHost/instructions/makeStoreHandlePublic.js';
+import { getFheExecutedEventDecoder } from '../internal/generated/zamaHost/types/fheExecutedEvent.js';
 
 ////////////////////////////////////////////////////////////////////////////////
 
@@ -34,13 +24,6 @@ const EVENT_IX_TAG = new Uint8Array([228, 69, 165, 46, 81, 203, 154, 29]);
 const FHE_EXECUTED_EVENT_DISCRIMINATOR = new Uint8Array([234, 26, 200, 201, 187, 114, 93, 208]);
 const FHE_EXECUTED_EVENT_VERSION = 1;
 const SIGNATURE_PAGE = 1000;
-
-const fheExecutedEventDecoder = getStructDecoder([
-  ['version', getU8Decoder()],
-  ['previousBankHash', fixDecoderSize(getBytesDecoder(), 32)],
-  ['unixTimestamp', getI64Decoder()],
-  ['results', getArrayDecoder(fixDecoderSize(getBytesDecoder(), 32))],
-]);
 
 type HostInstruction = { readonly data: Uint8Array; readonly accounts: readonly Address[] };
 
@@ -83,7 +66,8 @@ export async function fetchSolanaStoreHistory(
           }
           const allowed = [...effect.allowIndexes].map((index): SolanaStoreHistoryEvent => {
             const key = execution.dictionary[index];
-            if (key === undefined) throw new Error(`an fhe_execute in ${signature} allows a key outside its dictionary`);
+            if (key === undefined)
+              throw new Error(`an fhe_execute in ${signature} allows a key outside its dictionary`);
             return { kind: 'allowed', handle, key: new Uint8Array(key) };
           });
           place(effect.previousLeafCount, [
@@ -113,7 +97,11 @@ async function storeSignatures(rpc: SolanaRpc, address: Address): Promise<Signat
   const signatures: Signature[] = [];
   for (let before: Signature | undefined; ; ) {
     const page = await rpc
-      .getSignaturesForAddress(address, { commitment: 'confirmed', limit: SIGNATURE_PAGE, ...(before ? { before } : {}) })
+      .getSignaturesForAddress(address, {
+        commitment: 'confirmed',
+        limit: SIGNATURE_PAGE,
+        ...(before ? { before } : {}),
+      })
       .send();
     signatures.push(...page.filter((entry) => entry.err === null).map((entry) => entry.signature));
     const last = page.at(-1);
@@ -123,7 +111,11 @@ async function storeSignatures(rpc: SolanaRpc, address: Address): Promise<Signat
 }
 
 /** The host program's instructions in `signature`, top-level and inner, in execution order. */
-async function hostInstructions(rpc: SolanaRpc, signature: Signature, programAddress: Address): Promise<HostInstruction[]> {
+async function hostInstructions(
+  rpc: SolanaRpc,
+  signature: Signature,
+  programAddress: Address,
+): Promise<HostInstruction[]> {
   const transaction = await rpc
     .getTransaction(signature, { commitment: 'confirmed', encoding: 'json', maxSupportedTransactionVersion: 0 })
     .send();
@@ -170,16 +162,14 @@ function executedResults(instructions: readonly HostInstruction[], position: num
     .slice(position + 1, next === -1 ? undefined : next)
     .filter(
       ({ data }) =>
-        startsWith(data, EVENT_IX_TAG) && startsWith(data.subarray(EVENT_IX_TAG.length), FHE_EXECUTED_EVENT_DISCRIMINATOR),
+        startsWith(data, EVENT_IX_TAG) &&
+        startsWith(data.subarray(EVENT_IX_TAG.length), FHE_EXECUTED_EVENT_DISCRIMINATOR),
     );
   const [only] = emitted;
   if (emitted.length !== 1 || only === undefined) {
     throw new Error(`an fhe_execute is followed by ${emitted.length} FheExecutedEvents, expected 1`);
   }
-  const event = fheExecutedEventDecoder.decode(
-    only.data,
-    EVENT_IX_TAG.length + FHE_EXECUTED_EVENT_DISCRIMINATOR.length,
-  );
+  const event = getFheExecutedEventDecoder().decode(only.data, EVENT_IX_TAG.length);
   if (event.version !== FHE_EXECUTED_EVENT_VERSION) {
     throw new Error(`FheExecutedEvent version ${event.version} is not ${FHE_EXECUTED_EVENT_VERSION}`);
   }

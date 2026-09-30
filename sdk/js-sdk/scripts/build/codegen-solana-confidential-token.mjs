@@ -15,7 +15,13 @@ import { fileURLToPath } from 'node:url';
 
 import { rootNodeFromAnchor } from '@codama/nodes-from-anchor';
 import { renderVisitor } from '@codama/renderers-js';
-import { createFromRoot, deleteNodesVisitor, updateInstructionsVisitor } from 'codama';
+import {
+  createFromRoot,
+  definedTypeNode,
+  deleteNodesVisitor,
+  updateInstructionsVisitor,
+  updateProgramsVisitor,
+} from 'codama';
 import { format, resolveConfig } from 'prettier';
 
 const sdkRoot = fileURLToPath(new URL('../..', import.meta.url));
@@ -95,7 +101,7 @@ const targets = [
         'revokeDelegationForUserDecryption',
         'revokePermits',
         // Decoded, never built: a store's history is read back from the transactions that wrote
-        // it (solana/storeHistory.ts).
+        // it (solana/cleartext/storeHistory.ts).
         'fheExecute',
         'makeStoreHandlePublic',
       ]),
@@ -115,6 +121,8 @@ const targets = [
         'resultGrant',
         'slotWrite',
       ]),
+      // Rendered as defined types, discriminator included: the JS renderer draws no events.
+      events: new Set(['fheExecutedEvent']),
       // verifyPublicDecrypt and the delegation pair default their host_config account to the
       // same-program host-config PDA, so the generated builders import findHostConfigPda; keep
       // that PDA node so the import resolves.
@@ -298,6 +306,19 @@ for (const target of targets) {
     ...(program.constants ?? []).map(({ name }) => `[constantNode]${name}`),
   ];
   codama.update(deleteNodesVisitor(selectors));
+  const keptEvents = program.events.filter(({ name }) => keep?.events?.has(name));
+  if (keptEvents.length > 0) {
+    codama.update(
+      updateProgramsVisitor({
+        [program.name]: {
+          definedTypes: [
+            ...codama.getRoot().program.definedTypes,
+            ...keptEvents.map(({ name, docs, data }) => definedTypeNode({ name, docs, type: data })),
+          ],
+        },
+      }),
+    );
+  }
   // Codama's linked PDA resolver drops the instruction's programAddress override.
   // Inline same-program PDA definitions while preserving their argument seed bindings.
   if (target.idlPath === idlUrl('zama_host.json')) {

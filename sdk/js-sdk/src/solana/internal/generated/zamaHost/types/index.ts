@@ -9,6 +9,7 @@
 export * from './coprocessorInputAttestation.js';
 export * from './executionResultRef.js';
 export * from './fheBinaryOpCode.js';
+export * from './fheExecutedEvent.js';
 export * from './fheExecuteEffect.js';
 export * from './fheExecuteOperand.js';
 export * from './fheExecuteRandomSeed.js';
