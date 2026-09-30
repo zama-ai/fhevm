@@ -1,0 +1,37 @@
+[profile.default]
+extends = "../../foundry.base.toml"
+libs = ["dependencies", "node_modules", "../../node_modules"]
+solc_version = '0.8.24'
+optimizer = true
+optimizer_runs = 800
+evm_version = 'cancun'
+via_ir = false
+src = 'pkg/src'
+out = "out"
+bytecode_hash = "none"
+skip = ["test/ts/node_modules/**"]
+fs_permissions = [
+    { access = "read-write", path = "./internal/.deploy-config" },   # nonce path
+    { access = "read-write", path = "./create2-deploy" },      # this path
+]
+
+[fmt]
+ignore = ["test/ts/node_modules"]
+
+[lint]
+ignore = ["pkg/src/contracts/**/*.sol", "test/ts/node_modules/**/*.sol"]
+exclude_lints = [
+    "unsafe-typecast", 
+    "incorrect-shift", 
+    "mixed-case-variable", 
+    "mixed-case-function", 
+    "named-struct-fields", 
+    "screaming-snake-case-const",
+    "pascal-case-struct",
+    "asm-keccak256",
+    "unwrapped-modifier-logic",
+    "unsafe-cheatcode"
+]
+
+[dependencies]
+forge-std = "1.11.0"

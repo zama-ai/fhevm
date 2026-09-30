@@ -1,0 +1,9 @@
+{
+  "rpcUrl": "http://127.0.0.1:8545",
+  "deploymentId": "anvil-rehearsal",
+  "outDir": ".out-upgrade-anvil",
+  "confirmations": 0,
+  "finality": false,
+  "git": false,
+  "previousAbiDir": "../v12/pkg/abi"
+}
