@@ -145,7 +145,32 @@ A handle whose matching `computations` row has `is_error` is still inventoried:
 it is sealed as an `is_error` descriptor with no ciphertext digests, so peers
 can agree the computation failed. `state_hash` continues to omit those rows.
 A handle with no computation row waits for digests until the uncomputed seal
-lag. Competing producer forks stay distinct; later allowance events are not
+lag.
+
+Two handles are owned by a block without being computed in it, and host-listener
+records both when the event is observed, whatever the block's finality, so a node
+that ingests the block before finality and one that catches up after it give it
+the same inventory:
+
+- A `HandleBridged` destination belongs to the bridging block. Its bytes arrive
+  later, as a copy of the source ciphertext once the source block is final, but
+  the copy is bit-for-bit, so until this node holds it the source's
+  `ciphertext_digest` describes it, as long as the copy can still happen: the
+  source's `BridgeHandle` block is not orphaned. The block seals as soon as the
+  source is computed, like any consumer waiting for its producer; the
+  destination's own digest, once present, takes precedence.
+- A `FallbackGrantedPlaintext` handle belongs to the grant's block only when no
+  `HandleBridged` event gave it to another block; otherwise the grant only
+  supplies late bytes for the bridged handle. The synthesized `TrivialEncrypt`
+  records no producer row. A node that can still copy the bridged source (the
+  pair is unassociated, the source digests exist and its `BridgeHandle` block is
+  not orphaned) declines the grant, since its manifest already describes the
+  destination with the source digests. Once that block is orphaned the copy can
+  never happen, so the grant materializes the handle.
+
+Accepted limit: when the bridge fails on every node and a grant materializes the
+handle, every node sealed the destination as `uncomputed`, and the trivial bytes
+are compared only through the handle's consumers. Competing producer forks stay distinct; later allowance events are not
 mixed into producer ownership. The table intentionally has no historical
 backfill; manifest discovery begins at the deployment or consensus epoch boundary.
 An empty
@@ -948,11 +973,14 @@ consensus epoch field is routing metadata for already-isolated computation resul
 it is not evidence derived from the ciphertext digest or block height.
 
 `block_manifest_state` provides a durable per-consensus epoch, per-chain discovery
-frontier. Consensus epoch zero bootstraps at the latest non-orphaned block already
+frontier. Consensus epoch zero bootstraps at the latest finalized block already
 known to the stack; that arbitrary boundary is retained across restarts. Later
 consensus epochs bootstrap at `consensus_epoch_block_window.start_block`. Subsequent
 passes revisit the frontier and its five preceding blocks, capped at that
-consensus epoch boundary. The block-number bound limits the scan; stack-local schema
+consensus epoch boundary. Parent→child discovery follows every fork above a
+tracked block, but a reorg of the root leaves its replacement without a tracked
+parent. Each pass therefore re-inserts the live blocks at the root height until a
+tracked root is finalized; a finalized seed never needs it. The block-number bound limits the scan; stack-local schema
 routing still determines which consensus epoch owns the discovered ciphertexts.
 
 This history stays in `public`, alongside `versioning` and `upgrade_state`; it
