@@ -1,6 +1,6 @@
 name: coprocessor
 description: A helm chart to distribute and deploy Zama fhevm Co-Processor services
-version: 0.13.21
+version: 0.13.22
 apiVersion: v2
 keywords:
   - fhevm
