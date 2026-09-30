@@ -1257,6 +1257,13 @@ async fn assert_ciphertext_uploaded(
         B256::from_slice(handle),
         crate::aws_upload::COPROCESSOR_CONTEXT_ID_1,
     )?;
+    assert_eq!(
+        metadata
+            .get(block_manifest::S3_METADATA_CONSENSUS_EPOCH_KEY)
+            .map(String::as_str),
+        Some(block_manifest::LEGACY_CONSENSUS_EPOCH),
+        "ciphertext object should name the uploading stack's epoch"
+    );
 
     let signer = PrivateKeySigner::from_str(&hex::encode(&test_env.private_key))?;
 
