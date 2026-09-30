@@ -693,10 +693,47 @@ async fn readiness_and_preparation_reject_incomplete_or_corrupted_block_content(
     .await
     .expect("corrupt manifest ciphertext format");
     let mut trx = pool.begin().await.expect("begin invalid descriptor check");
-    let err = load_manifest_descriptors(&mut trx, &block, false)
+    // A computed handle with an unknown format is published as an invalid
+    // descriptor carrying its digests, instead of stalling the chain.
+    let descriptors = load_manifest_descriptors(&mut trx, &block, false)
         .await
-        .expect_err("invalid ciphertext format must not enter a manifest");
-    assert!(err.to_string().contains("invalid ct128 format"));
+        .expect("an unknown ciphertext format does not block the manifest");
+    let invalid = descriptors
+        .iter()
+        .find(|descriptor| descriptor.handle == B256::repeat_byte(0x51))
+        .expect("the handle stays in the manifest");
+    assert!(invalid.is_invalid_descriptor());
+    assert_eq!(invalid.ct128_digest(), Some(B256::repeat_byte(0x57)));
+    assert!(invalid.ct64_digest().is_some());
+    let block_manifest::CiphertextStatus::InvalidDescriptor { reason, .. } = &invalid.status else {
+        unreachable!("checked invalid descriptor");
+    };
+    assert_eq!(reason.as_deref(), Some("unknown ct128 format 0"));
+    // A malformed digest is left out of the invalid descriptor.
+    sqlx::query(
+        "UPDATE ciphertext_digest SET ciphertext = $3 WHERE host_chain_id = $1 AND handle = $2",
+    )
+    .bind(CHAIN_ID)
+    .bind(B256::repeat_byte(0x51).as_slice())
+    .bind(vec![0x56u8; 31])
+    .execute(trx.as_mut())
+    .await
+    .expect("corrupt manifest ct64 digest length");
+    let descriptors = load_manifest_descriptors(&mut trx, &block, false)
+        .await
+        .expect("a malformed digest does not block the manifest");
+    let malformed = descriptors
+        .iter()
+        .find(|descriptor| descriptor.handle == B256::repeat_byte(0x51))
+        .expect("the handle stays in the manifest");
+    assert!(malformed.is_invalid_descriptor());
+    assert_eq!(malformed.ct64_digest(), None);
+    assert_eq!(malformed.ct128_digest(), Some(B256::repeat_byte(0x57)));
+    let block_manifest::CiphertextStatus::InvalidDescriptor { reason, .. } = &malformed.status
+    else {
+        unreachable!("checked invalid descriptor");
+    };
+    assert_eq!(reason.as_deref(), Some("invalid ct64 digest length 31"));
     trx.rollback()
         .await
         .expect("rollback invalid descriptor check");
@@ -1398,14 +1435,14 @@ async fn production_revert_preserves_immutable_manifest_archive_evidence() {
 
 #[tokio::test]
 #[serial(db)]
-async fn failed_creation_or_upload_does_not_block_competing_lineage_with_multiple_workers() {
+async fn invalid_descriptor_or_failed_upload_does_not_block_competing_lineages() {
     const CHAIN_ID: i64 = 9;
     const BLOCK_NUMBER: i64 = 42;
     const WORKER_COUNT: usize = 4;
     const ATTEMPTS_PER_WORKER: usize = 8;
     let context = U256::ONE;
     let blocked_hash = B256::repeat_byte(0x20);
-    let creation_failed_hash = B256::repeat_byte(0x25);
+    let invalid_descriptor_hash = B256::repeat_byte(0x25);
     let ready_hash = B256::repeat_byte(0x30);
 
     let instance = setup_test_db(ImportMode::None)
@@ -1450,7 +1487,7 @@ async fn failed_creation_or_upload_does_not_block_competing_lineage_with_multipl
         &pool,
         CHAIN_ID,
         BLOCK_NUMBER,
-        creation_failed_hash,
+        invalid_descriptor_hash,
         B256::repeat_byte(0x12),
         B256::repeat_byte(0x71),
         B256::repeat_byte(0x72),
@@ -1470,7 +1507,7 @@ async fn failed_creation_or_upload_does_not_block_competing_lineage_with_multipl
     .bind(B256::repeat_byte(0x71).as_slice())
     .execute(&pool)
     .await
-    .expect("make one sibling fail manifest creation");
+    .expect("give one sibling an unknown ct128 format");
     let blocked_child_hash = B256::repeat_byte(0x21);
     seed_revision_publication_block(
         &pool,
@@ -1606,7 +1643,9 @@ async fn failed_creation_or_upload_does_not_block_competing_lineage_with_multipl
     for state in states {
         let hash = B256::from_slice(&state.get::<Vec<u8>, _>("block_hash"));
         let published = state.get::<bool, _>("manifest_published");
-        assert_eq!(published, hash == ready_hash);
+        // An unknown ct128 format is published as an invalid descriptor; only
+        // the sibling whose immutable object conflicts stays unpublished.
+        assert_eq!(published, hash != blocked_hash, "{hash}");
     }
     let ready_archive_count = sqlx::query_scalar::<_, i64>(
         "SELECT COUNT(*) FROM block_manifest
@@ -1623,27 +1662,47 @@ async fn failed_creation_or_upload_does_not_block_competing_lineage_with_multipl
         ready_archive_count, 1,
         "only one worker publishes the manifest"
     );
+    let invalid_archive_count = sqlx::query_scalar::<_, i64>(
+        "SELECT COUNT(*) FROM block_manifest
+          WHERE publisher = $1 AND host_chain_id = $2
+            AND publication_block_hash = $3",
+    )
+    .bind(signer.address().as_slice())
+    .bind(CHAIN_ID)
+    .bind(invalid_descriptor_hash.as_slice())
+    .fetch_one(&pool)
+    .await
+    .expect("count invalid-descriptor manifest archive rows");
+    assert_eq!(
+        invalid_archive_count, 1,
+        "the invalid-descriptor sibling is published once"
+    );
     let blocked_child = load_seeded_block(&pool, CHAIN_ID, blocked_child_hash).await;
     assert!(blocked_child.block_content_digest.is_none());
     assert!(!blocked_child.manifest_published);
 
+    // The unknown-format sibling is published now: while the conflicting
+    // sibling waits for its retry, no work may be due at all (WorkBusy).
     for _ in 0..3 {
-        assert_eq!(
-            progress_chain(
-                &pool,
-                &client,
-                bucket,
-                CHAIN_ID,
-                &signer,
-                &consensus,
-                &ManifestWorkGate::always_enabled(),
-                block_manifest::LEGACY_CONSENSUS_EPOCH,
-            )
-            .await
-            .expect("retry permanently conflicting manifest"),
-            PublicationProgress::Waiting,
-        );
+        let progress = progress_chain(
+            &pool,
+            &client,
+            bucket,
+            CHAIN_ID,
+            &signer,
+            &consensus,
+            &ManifestWorkGate::always_enabled(),
+            block_manifest::LEGACY_CONSENSUS_EPOCH,
+        )
+        .await
+        .expect("retry permanently conflicting manifest");
+        assert_ne!(progress, PublicationProgress::Advanced, "{progress:?}");
     }
+    let blocked = load_seeded_block(&pool, CHAIN_ID, blocked_hash).await;
+    assert!(
+        !blocked.manifest_published,
+        "a conflicting immutable manifest is never published"
+    );
 }
 
 #[path = "publisher_test_support.rs"]

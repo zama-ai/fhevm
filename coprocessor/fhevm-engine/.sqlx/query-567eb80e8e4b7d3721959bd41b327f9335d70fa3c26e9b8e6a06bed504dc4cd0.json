@@ -1,0 +1,31 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n        INSERT INTO drifted_handle (\n            consensus_epoch, coprocessor_context_id, host_chain_id,\n            block_number, block_hash, handle, status,\n            local_present, quorum_present, local_keyset_id, quorum_keyset_id,\n            local_ct64_digest, quorum_ct64_digest,\n            local_ct128_digest, quorum_ct128_digest, local_ct128_format,\n            quorum_ct128_format,\n            last_quorum_task_id, reason\n        ) VALUES (\n            $1, $2, $3, $4, $5, $6, 'unresolved',\n            $7, $8, $9, $10, $11, $12, $13, $14, $15, $16,\n            $17, $18\n        )\n        ON CONFLICT (consensus_epoch, coprocessor_context_id, host_chain_id,\n                     block_hash, handle)\n        DO UPDATE SET\n            status = CASE\n                WHEN drifted_handle.can_be_healed THEN drifted_handle.status\n                ELSE 'unresolved'\n            END,\n            reason = CASE\n                WHEN drifted_handle.reason = 'ct64_mismatch' THEN drifted_handle.reason\n                WHEN drifted_handle.can_be_healed THEN drifted_handle.reason\n                ELSE EXCLUDED.reason\n            END,\n            local_present = CASE\n                WHEN drifted_handle.can_be_healed THEN drifted_handle.local_present\n                ELSE EXCLUDED.local_present\n            END,\n            quorum_present = CASE\n                WHEN drifted_handle.can_be_healed THEN drifted_handle.quorum_present\n                ELSE EXCLUDED.quorum_present\n            END,\n            local_keyset_id = CASE\n                WHEN drifted_handle.can_be_healed THEN drifted_handle.local_keyset_id\n                ELSE EXCLUDED.local_keyset_id\n            END,\n            local_ct64_digest = CASE\n                WHEN drifted_handle.can_be_healed THEN drifted_handle.local_ct64_digest\n                ELSE EXCLUDED.local_ct64_digest\n            END,\n            quorum_ct64_digest = COALESCE(\n                drifted_handle.quorum_ct64_digest, EXCLUDED.quorum_ct64_digest\n            ),\n            local_ct128_digest = CASE\n                WHEN drifted_handle.can_be_healed THEN drifted_handle.local_ct128_digest\n                ELSE EXCLUDED.local_ct128_digest\n            END,\n            quorum_ct128_digest = COALESCE(\n                drifted_handle.quorum_ct128_digest, EXCLUDED.quorum_ct128_digest\n            ),\n            local_ct128_format = CASE\n                WHEN drifted_handle.can_be_healed THEN drifted_handle.local_ct128_format\n                ELSE EXCLUDED.local_ct128_format\n            END,\n            quorum_ct128_format = COALESCE(\n                drifted_handle.quorum_ct128_format, EXCLUDED.quorum_ct128_format\n            ),\n            quorum_keyset_id = COALESCE(\n                drifted_handle.quorum_keyset_id, EXCLUDED.quorum_keyset_id\n            ),\n            last_quorum_task_id = COALESCE(EXCLUDED.last_quorum_task_id, drifted_handle.last_quorum_task_id),\n            resolved_task_id = CASE\n                WHEN drifted_handle.can_be_healed THEN drifted_handle.resolved_task_id\n                ELSE NULL\n            END\n        WHERE drifted_handle.healed_at IS NULL\n          AND (drifted_handle.last_quorum_task_id IS NULL\n               OR drifted_handle.last_quorum_task_id <= EXCLUDED.last_quorum_task_id)",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Text",
+        "Bytea",
+        "Int8",
+        "Int8",
+        "Bytea",
+        "Bytea",
+        "Bool",
+        "Bool",
+        "Bytea",
+        "Bytea",
+        "Bytea",
+        "Bytea",
+        "Bytea",
+        "Bytea",
+        "Int2",
+        "Int2",
+        "Int8",
+        "Text"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "567eb80e8e4b7d3721959bd41b327f9335d70fa3c26e9b8e6a06bed504dc4cd0"
+}

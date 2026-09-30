@@ -238,7 +238,7 @@ async fn json_envelope_pins_signature_shape_and_rejects_unknown_version() {
 }
 
 #[test]
-fn error_and_uncomputed_digest_vectors_are_pinned() {
+fn error_uncomputed_and_invalid_descriptor_digest_vectors_are_pinned() {
     // Fixed block 42 / chain 7 / context 1, handle 0x01..01, publisher zero.
     // Pin both the consensus commitment and signed-payload transcript.
     for (descriptor, content, signed_payload) in [
@@ -252,6 +252,20 @@ fn error_and_uncomputed_digest_vectors_are_pinned() {
             ),
             alloy_primitives::b256!(
                 "e6862fda47ea38ec13d672d282ac0292d728e51dc476aca3ffa85f2a2f533080"
+            ),
+        ),
+        (
+            BlockCiphertextDescriptor::from_invalid_descriptor(
+                B256::repeat_byte(1),
+                Some(B256::repeat_byte(2)),
+                Some(B256::repeat_byte(3)),
+                Some("unknown ct128 format".into()),
+            ),
+            alloy_primitives::b256!(
+                "32135a81462b7b0d565eb56d5f20eea0f8b8d59130e3696d30ba0b58cfcf42e6"
+            ),
+            alloy_primitives::b256!(
+                "da9a783b52980a96ff1e95a76031272b3825d2875211e88fc8e5a4766e7ac2f6"
             ),
         ),
         (
