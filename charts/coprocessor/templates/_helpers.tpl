@@ -166,6 +166,26 @@ volumes:
       name: {{ include "coprocessor.databaseSslRootCertConfigMapName" . }}
 {{- end -}}
 
+{{/* Whether the migration Job is a Helm hook. */}}
+{{- define "coprocessor.dbMigrationHookEnabled" -}}
+{{- if hasKey (.Values.dbMigration.annotations | default dict) "helm.sh/hook" -}}
+true
+{{- end -}}
+{{- end -}}
+
+{{/* Separate CA ConfigMap for the migration hook. */}}
+{{- define "coprocessor.databaseSslRootCertMigrationConfigMapName" -}}
+{{- printf "%s-rds-ca-cert-migration" .Release.Name | trunc 63 | trimSuffix "-" -}}
+{{- end -}}
+
+{{/* Migration hook volume; caller checks mount-enabled. */}}
+{{- define "coprocessor.databaseSslRootCertMigrationVolume" -}}
+volumes:
+  - name: rds-ca-cert
+    configMap:
+      name: {{ include "coprocessor.databaseSslRootCertMigrationConfigMapName" . }}
+{{- end -}}
+
 {{/*
 Container resources for FHE workers. CPU/memory keep the previous defaults;
 nvidia.com/gpu is passed through when set so pods can land on GPU nodepools.

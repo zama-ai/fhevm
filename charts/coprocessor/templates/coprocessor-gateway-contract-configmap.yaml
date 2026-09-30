@@ -17,6 +17,10 @@ metadata:
   namespace: {{ .Release.Namespace }}
   labels:
     app.kubernetes.io/name: {{ $cm.name }}
+  {{- if $cm.keepOnUninstall }}
+  annotations:
+    "helm.sh/resource-policy": keep
+  {{- end }}
 data:
   {{- range $k, $v := $merged }}
   {{ $k }}: {{ $v | quote }}

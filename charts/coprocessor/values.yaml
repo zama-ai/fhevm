@@ -150,6 +150,10 @@ hostContractConfigMap:
   # Resource name. Downstream components reference this via configMapKeyRef.name.
   name: eth-sc-addresses
 
+  # Retain on uninstall. Enable on Blue before removal; keep Green enabled=false
+  # until meta.helm.sh/release-name is transferred to Green.
+  keepOnUninstall: false
+
   # Selects a bundled preset from configs/ethereum-<network>.yaml.
   # Allowed values: "" (no preset), "devnet", "testnet", "mainnet".
   # An unrecognized value fails the render.
@@ -174,6 +178,10 @@ gatewayContractConfigMap:
   # Resource name. Downstream components reference this via configMapKeyRef.name.
   name: gw-sc-addresses
 
+  # Retain on uninstall. Enable on Blue before removal; keep Green enabled=false
+  # until meta.helm.sh/release-name is transferred to Green.
+  keepOnUninstall: false
+
   # Selects a bundled preset from configs/gateway-<network>.yaml.
   # Allowed values: "" (no preset), "devnet", "testnet", "mainnet".
   # An unrecognized value fails the render.
@@ -197,6 +205,10 @@ polygonContractConfigMap:
 
   # Resource name. Downstream components reference this via configMapKeyRef.name.
   name: polygon-sc-addresses
+
+  # Retain on uninstall. Enable on Blue before removal; keep Green enabled=false
+  # until meta.helm.sh/release-name is transferred to Green.
+  keepOnUninstall: false
 
   # Selects a bundled preset from configs/polygon-<network>.yaml.
   # Allowed values: "" (no preset), "devnet", "testnet", "mainnet".
@@ -238,8 +250,9 @@ dbMigration:
   # column this release's migration adds. A green (new release) fleet must start
   # after its migration Job has run: a service that starts earlier exits with an
   # error and restarts. For the green release, enable the hook below so Helm runs
-  # the Job before the Deployments. Every Job dependency must then be
-  # pre-existing or rendered as an earlier hook with a lower hook weight.
+  # the Job before the Deployments. The RDS CA hook runs at the same events with
+  # weight one below the Job; its ConfigMap survives uninstall. Other dependencies
+  # must already exist.
   annotations: {}
   # annotations:
   #   "helm.sh/hook": "pre-upgrade"

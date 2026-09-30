@@ -14,4 +14,22 @@ metadata:
 data:
   {{ $cfg.fileName }}: |-
 {{ $content | indent 4 }}
+{{- if and .Values.dbMigration.enabled (eq (include "coprocessor.dbMigrationHookEnabled" .) "true") }}
+---
+# Migration CA; replaced on the next hook run.
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: {{ include "coprocessor.databaseSslRootCertMigrationConfigMapName" . }}
+  namespace: {{ .Release.Namespace }}
+  labels:
+    app.kubernetes.io/name: {{ include "coprocessor.databaseSslRootCertMigrationConfigMapName" . }}
+  annotations:
+    "helm.sh/hook": {{ index .Values.dbMigration.annotations "helm.sh/hook" | quote }}
+    "helm.sh/hook-weight": {{ sub (int (index .Values.dbMigration.annotations "helm.sh/hook-weight" | default "0")) 1 | quote }}
+    "helm.sh/hook-delete-policy": "before-hook-creation"
+data:
+  {{ $cfg.fileName }}: |-
+{{ $content | indent 4 }}
+{{- end }}
 {{- end }}
