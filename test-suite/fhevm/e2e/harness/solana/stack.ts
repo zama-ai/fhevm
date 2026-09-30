@@ -45,6 +45,8 @@ export const ensureUp = async (env: TestEnv): Promise<SolanaStack> => {
     },
     { description: "validator RPC health", timeoutMs: 60_000 },
   );
+  // A cleartext stack has no relayer, and a value is readable once its transaction confirms.
+  if (!env.capabilities.protocolServices) return { env, waitForSnsCommit: async () => {} };
   await until(
     async () => (await fetch(`${env.relayerUrl}/liveness`, { signal: AbortSignal.timeout(PROBE_TIMEOUT_MS) })).ok,
     { description: "relayer liveness", timeoutMs: 60_000 },

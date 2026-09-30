@@ -12,7 +12,6 @@
 import { mkdir, rm, writeFile } from 'node:fs/promises';
 import path from 'node:path';
 
-import { SOLANA_CLEARTEXT_GATEWAY, SOLANA_CLEARTEXT_SIGNER_ADDRESSES } from '@fhevm/sdk/solana/cleartext';
 import { createSolanaRpc, lamports } from '@solana/kit';
 
 import { bootstrapZamaHost } from '../../../../solana/deploy/src/bootstrap';
@@ -23,21 +22,18 @@ import {
   REPO_ROOT,
   SOLANA_CLEARTEXT_FAUCET_PORT,
   SOLANA_CLEARTEXT_GOSSIP_PORT,
+  SOLANA_CLEARTEXT_DIR,
   SOLANA_CLEARTEXT_RPC_PORT,
-  STATE_DIR,
+  solanaCleartextDeployerPath,
 } from '../layout';
 import { runStreaming } from '../utils/process';
+import { CLEARTEXT_SOLANA_ENDPOINTS } from './endpoints';
 import { generateSolanaKeypair, loadKeypairSigner } from './provision';
 import { SOLANA_E2E_PROGRAMS, SOLANA_SPECIMEN_PROGRAMS, genesisDeployedPrograms, validatorStartArgs } from './validator';
 
-export const CLEARTEXT_SOLANA_ENDPOINTS = {
-  validatorRpc: `http://127.0.0.1:${SOLANA_CLEARTEXT_RPC_PORT}`,
-  validatorWs: `ws://127.0.0.1:${SOLANA_CLEARTEXT_RPC_PORT + 1}`,
-} as const;
-
 const SOLANA_DIR = path.join(REPO_ROOT, 'solana');
+const SDK_DIR = path.join(REPO_ROOT, 'sdk', 'js-sdk');
 const DEPLOY_DIR = path.join(SOLANA_DIR, 'target', 'deploy');
-const STACK_DIR = path.join(STATE_DIR, 'solana-cleartext');
 const BUILT_PROGRAMS = ['zama_host_cleartext', ...SOLANA_E2E_PROGRAMS.filter((program) => program !== 'zama_host')];
 
 export type CleartextStack = {
@@ -48,14 +44,22 @@ export type CleartextStack = {
   stop(): Promise<void>;
 };
 
-/** Builds the programs, starts a fresh validator with them at genesis, and bootstraps the host. */
+/**
+ * Builds the programs and the SDK, starts a fresh validator with the programs at genesis, and
+ * bootstraps the host with the SDK's cleartext parties.
+ */
 export const startCleartextStack = async (): Promise<CleartextStack> => {
-  await runStreaming(['bash', 'scripts/build-programs.sh', 'preview-env', ...BUILT_PROGRAMS], { cwd: SOLANA_DIR });
+  await Promise.all([
+    runStreaming(['bash', 'scripts/build-programs.sh', 'preview-env', ...BUILT_PROGRAMS], { cwd: SOLANA_DIR }),
+    runStreaming(['npm', 'run', 'build:esm'], { cwd: SDK_DIR }),
+  ]);
+  // After the build: the package resolves to its build output.
+  const { SOLANA_CLEARTEXT_GATEWAY, SOLANA_CLEARTEXT_SIGNER_ADDRESSES } = await import('@fhevm/sdk/solana/cleartext');
 
-  const ledgerDir = path.join(STACK_DIR, 'ledger');
+  const ledgerDir = path.join(SOLANA_CLEARTEXT_DIR, 'ledger');
   await rm(ledgerDir, { recursive: true, force: true });
   await mkdir(ledgerDir, { recursive: true });
-  const deployerKeypairPath = path.join(STACK_DIR, 'deployer.json');
+  const deployerKeypairPath = solanaCleartextDeployerPath;
   await writeFile(deployerKeypairPath, JSON.stringify([...(await generateSolanaKeypair()).bytes]), { mode: 0o600 });
 
   const specimens = SOLANA_SPECIMEN_PROGRAMS.map((program) => ({
@@ -67,7 +71,7 @@ export const startCleartextStack = async (): Promise<CleartextStack> => {
       ? { ...program, soPath: path.join(DEPLOY_DIR, 'zama_host_cleartext.so') }
       : program,
   );
-  const logPath = path.join(STACK_DIR, 'validator.log');
+  const logPath = path.join(SOLANA_CLEARTEXT_DIR, 'validator.log');
   const validator = Bun.spawn(
     [
       ...validatorStartArgs({

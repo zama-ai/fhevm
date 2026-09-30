@@ -41,7 +41,7 @@ describe("solana confidential-transfer scenario", () => {
 
       // Precondition (the suite may run right after a relayer (re)start): gate on
       // the stack's health before submitting.
-      await ensureUp(env);
+      const stack = await ensureUp(env);
 
       // The transfer arc pays its own tx fees from the deployer wallet; top it up where a faucet
       // exists (local). This genuinely exercises the faucet capability + persona funding.
@@ -59,7 +59,7 @@ describe("solana confidential-transfer scenario", () => {
           aclProgram: env.aclProgram,
           funding: env.funding,
           funderKeypairPath: env.capabilities.faucet ? undefined : env.roots.deployerKeypairPath,
-          coprocessorDbPsql: env.coprocessorDbPsql,
+          waitForHandle: stack.waitForSnsCommit,
           // Explicit env override only; otherwise the decrypts read the active KMS pair live from
           // the deployed ProtocolConfig.
           userDecryptContext:

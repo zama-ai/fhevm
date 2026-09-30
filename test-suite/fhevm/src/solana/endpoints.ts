@@ -8,6 +8,7 @@ import {
   DEMO_DAPP_PORT,
   DEMO_OPERATOR_PORT,
   RELAYER_PORT,
+  SOLANA_CLEARTEXT_RPC_PORT,
   SOLANA_LEAF_PROOF_PORT,
   SOLANA_LISTENER_GRPC_PORT,
   SOLANA_LISTENER_HEALTH_PORT,
@@ -32,3 +33,8 @@ export const LOCAL_SOLANA_ENDPOINTS = {
   demoDapp: loopback(DEMO_DAPP_PORT),
 } as const;
 
+/** The cleartext stack's validator (`./cleartext-stack.ts`), on its own ports beside the local stack. */
+export const CLEARTEXT_SOLANA_ENDPOINTS = {
+  validatorRpc: loopback(SOLANA_CLEARTEXT_RPC_PORT),
+  validatorWs: loopback(SOLANA_CLEARTEXT_RPC_PORT + 1, "ws"),
+} as const;

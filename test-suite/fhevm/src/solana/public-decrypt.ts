@@ -2,6 +2,7 @@ import type { SolanaPublicDecryptCertificateClaim } from '@fhevm/sdk/solana';
 import type { Bytes32Hex } from '@fhevm/sdk/types';
 
 import { PreflightError } from '../errors';
+import { loadSolanaSdk } from './target';
 
 export const SOLANA_PUBLIC_DECRYPT_PROFILE = 'solana-public-decrypt';
 export const SOLANA_PUBLIC_DECRYPT_DESCRIPTION =
@@ -60,7 +61,7 @@ const bytes32Hex = (environment: Environment, name: string): Bytes32Hex => {
 // Keep the dynamic import seam narrow: clean CLI checkouts do not contain the SDK's generated
 // `_types`, while the full vertical exercises this public package entry at runtime.
 const runPublicSdkPublicDecrypt: PublicDecryptSdkCall = async (input) => {
-  const solana = await import('@fhevm/sdk/solana');
+  const solana = await loadSolanaSdk();
   const { createSolanaRpc } = await import('@solana/kit');
   const rpc = createSolanaRpc(input.rpcUrl);
   const chain = solana.defineFhevmSolanaChain({ id: input.chainId, fhevm: {

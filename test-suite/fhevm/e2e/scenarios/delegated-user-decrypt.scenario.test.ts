@@ -57,6 +57,7 @@ import {
   web3KeypairFromBytes,
   toWeb3Instruction,
 } from "../harness/solana/squads";
+import { loadEnv } from "../harness/loadEnv";
 import { verticalSetup, type VerticalTestSetup } from "../harness/solana/vertical";
 
 // Each arc does its own compute + SNS commit wait (up to ~3min) + KMS round-trips, plus the
@@ -107,7 +108,9 @@ const squadsAvailable = (await squadsGenesisExtras()) !== undefined;
 // reason; this is the second gate, for a suite run against a stack that already booted.
 const squadsRequired = process.env.SOLANA_E2E_REQUIRE_SQUADS === "1";
 
-describe("solana delegated user-decrypt", () => {
+// Relayer coalescing and the Connector's refusal of a revoked delegation are what this proves; a
+// cleartext stack has neither, and its decrypt would succeed without the grant.
+describe.skipIf(!loadEnv().capabilities.protocolServices)("solana delegated user-decrypt", () => {
   test(
     "[headless] grant -> delegate decrypts 42 -> identical repeat is one job -> revoke -> refused",
     async () => {

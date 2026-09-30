@@ -50,6 +50,9 @@ const statePaths = (root: string) => {
     solanaBatchLookupTablesPath: path.join(solanaRuntimeDir, "batch-lookup-tables.json"),
     /** Written by the deposit-arc smoke on success; `demo:smoke` requires it back. */
     solanaDemoSmokeMarkerPath: path.join(solanaRuntimeDir, "demo-smoke-ran"),
+    /** The cleartext stack's ledger, log and deployer wallet (`src/solana/cleartext-stack.ts`). */
+    SOLANA_CLEARTEXT_DIR: path.join(stateDir, "solana-cleartext"),
+    solanaCleartextDeployerPath: path.join(stateDir, "solana-cleartext", "deployer.json"),
   };
 };
 let currentStatePaths = statePaths(process.env.FHEVM_STATE_DIR ?? DEFAULT_STATE_DIR);
@@ -72,6 +75,8 @@ export let solanaDemoConfigPath = currentStatePaths.solanaDemoConfigPath;
 export let SOLANA_DEMO_DIR = currentStatePaths.SOLANA_DEMO_DIR;
 export let solanaBatchLookupTablesPath = currentStatePaths.solanaBatchLookupTablesPath;
 export let solanaDemoSmokeMarkerPath = currentStatePaths.solanaDemoSmokeMarkerPath;
+export let SOLANA_CLEARTEXT_DIR = currentStatePaths.SOLANA_CLEARTEXT_DIR;
+export let solanaCleartextDeployerPath = currentStatePaths.solanaCleartextDeployerPath;
 export let gatewayAddressesSolidityPath = path.join(currentStatePaths.ADDRESS_DIR, "gateway", "GatewayAddresses.sol");
 export let paymentBridgingAddressesSolidityPath = path.join(
   currentStatePaths.ADDRESS_DIR,
@@ -99,6 +104,8 @@ export const setStateDir = (root = process.env.FHEVM_STATE_DIR ?? DEFAULT_STATE_
   SOLANA_DEMO_DIR = currentStatePaths.SOLANA_DEMO_DIR;
   solanaBatchLookupTablesPath = currentStatePaths.solanaBatchLookupTablesPath;
   solanaDemoSmokeMarkerPath = currentStatePaths.solanaDemoSmokeMarkerPath;
+  SOLANA_CLEARTEXT_DIR = currentStatePaths.SOLANA_CLEARTEXT_DIR;
+  solanaCleartextDeployerPath = currentStatePaths.solanaCleartextDeployerPath;
   gatewayAddressesSolidityPath = path.join(currentStatePaths.ADDRESS_DIR, "gateway", "GatewayAddresses.sol");
   paymentBridgingAddressesSolidityPath = path.join(
     currentStatePaths.ADDRESS_DIR,
