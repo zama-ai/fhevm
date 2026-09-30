@@ -39,8 +39,9 @@ pub(crate) type CiphertextDescriptor = BlockCiphertextDescriptor;
 /// A `HandleBridged` destination is owned by the block that bridged it. Its
 /// bytes arrive later as a copy of the source ciphertext, after the source
 /// block is final, so until this node holds them the source digests describe
-/// it. The block seals as soon as the source is computed, without waiting for
-/// finality.
+/// it, as long as the copy can still happen (the source's `BridgeHandle` block
+/// is not orphaned). The block seals as soon as the source is computed, without
+/// waiting for finality.
 pub(crate) async fn is_block_manifest_ready(
     trx: &mut Transaction<'_, Postgres>,
     block: &PendingBlock,
@@ -82,6 +83,22 @@ pub(crate) async fn is_block_manifest_ready(
                        WHERE bridged.dst_handle = producer.handle
                          AND bridged.dst_chain_id = producer.host_chain_id
                          AND bridged.block_hash = producer.producer_block_hash
+                         -- Only while the copy can still happen: its source approval
+                         -- is not orphaned. Otherwise a fallback grant supplies the bytes.
+                         AND EXISTS (
+                             SELECT 1 FROM bridge_handle_events approval
+                              WHERE approval.src_handle = bridged.src_handle
+                                AND approval.dst_chain_id = bridged.dst_chain_id
+                                AND (
+                                     approval.block_hash = ''::bytea
+                                     OR EXISTS (
+                                         SELECT 1 FROM host_chain_blocks_valid approval_block
+                                          WHERE approval_block.chain_id = approval.src_chain_id
+                                            AND approval_block.block_hash = approval.block_hash
+                                            AND approval_block.block_status <> 'orphaned'
+                                     )
+                                )
+                         )
                     ) digest
                    ORDER BY (NOT digest.bridged AND digest.ciphertext IS NOT NULL) DESC,
                             digest.bridged DESC
@@ -249,6 +266,22 @@ pub(crate) async fn load_manifest_descriptors(
                    WHERE bridged.dst_handle = producer.handle
                      AND bridged.dst_chain_id = producer.host_chain_id
                      AND bridged.block_hash = producer.producer_block_hash
+                     -- Only while the copy can still happen: its source approval
+                     -- is not orphaned. Otherwise a fallback grant supplies the bytes.
+                     AND EXISTS (
+                         SELECT 1 FROM bridge_handle_events approval
+                          WHERE approval.src_handle = bridged.src_handle
+                            AND approval.dst_chain_id = bridged.dst_chain_id
+                            AND (
+                                 approval.block_hash = ''::bytea
+                                 OR EXISTS (
+                                     SELECT 1 FROM host_chain_blocks_valid approval_block
+                                      WHERE approval_block.chain_id = approval.src_chain_id
+                                        AND approval_block.block_hash = approval.block_hash
+                                        AND approval_block.block_status <> 'orphaned'
+                                 )
+                            )
+                     )
                 ) digest
                ORDER BY (NOT digest.bridged AND digest.ciphertext IS NOT NULL) DESC,
                         digest.bridged DESC

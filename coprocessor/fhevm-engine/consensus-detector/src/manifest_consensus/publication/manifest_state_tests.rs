@@ -1232,6 +1232,37 @@ async fn insert_bridged_event(
     .expect("insert HandleBridged observation");
 }
 
+/// The source chain's `BridgeHandle` approval for `src_handle`, in a source
+/// block with `status`.
+async fn insert_bridge_approval(pool: &PgPool, src_handle: &[u8], status: &str) {
+    let approval_block = vec![0x07_u8; 32];
+    sqlx::query(
+        "INSERT INTO bridge_handle_events (
+             src_handle, dst_chain_id, src_chain_id, sender_dapp, guid,
+             block_number, block_hash
+         ) VALUES ($1, $2, $3, '\\xda'::bytea, '\\x02'::bytea, 7, $4)",
+    )
+    .bind(src_handle)
+    .bind(CHAIN_ID)
+    .bind(SOURCE_CHAIN_ID)
+    .bind(&approval_block)
+    .execute(pool)
+    .await
+    .expect("insert BridgeHandle approval");
+    sqlx::query(
+        "INSERT INTO host_chain_blocks_valid \
+         (chain_id, block_hash, parent_hash, block_number, block_status) \
+         VALUES ($1, $2, $3, 7, $4)",
+    )
+    .bind(SOURCE_CHAIN_ID)
+    .bind(&approval_block)
+    .bind(vec![0x06_u8; 32])
+    .bind(status)
+    .execute(pool)
+    .await
+    .expect("insert source approval block");
+}
+
 async fn insert_digest(pool: &PgPool, host_chain_id: i64, handle: &[u8], ct64: u8) {
     sqlx::query(
         "INSERT INTO ciphertext_digest (
@@ -1297,6 +1328,7 @@ async fn bridged_destination_seals_with_the_source_digests_before_its_copy() {
     insert_host_block(&pool, block_number, &block_hash, &[0x41; 32], "pending").await;
     insert_producer_block(&pool, block_number, &block_hash, &dst_handle).await;
     insert_bridged_event(&pool, block_number, &block_hash, &src_handle, &dst_handle).await;
+    insert_bridge_approval(&pool, &src_handle, "pending").await;
     discover_blocks(&pool)
         .await
         .expect("discover bridging block");
@@ -1359,5 +1391,37 @@ async fn bridged_destination_prefers_its_own_digest_over_the_source() {
         format!("{:?}", bridged[0]).replace(&hex::encode(&dst_handle), "H"),
         format!("{:?}", plain[0]).replace(&hex::encode(&plain_handle), "H"),
         "the destination is described by its own ct64 digest (0x65), not the source's (0x64)"
+    );
+}
+
+/// Once the source's `BridgeHandle` block is orphaned the copy can never
+/// happen, so the source digests no longer describe the destination: it waits
+/// for its own bytes, which a fallback grant supplies.
+#[tokio::test]
+#[serial(db)]
+async fn bridged_destination_ignores_the_source_once_its_approval_is_orphaned() {
+    let (_instance, pool) = setup_pool().await;
+    let block_number = 42;
+    let block_hash = vec![0x42; 32];
+    let src_handle = vec![0x51; 32];
+    let dst_handle = vec![0x52; 32];
+
+    insert_host_block(&pool, block_number, &block_hash, &[0x41; 32], "pending").await;
+    insert_producer_block(&pool, block_number, &block_hash, &dst_handle).await;
+    insert_bridged_event(&pool, block_number, &block_hash, &src_handle, &dst_handle).await;
+    insert_bridge_approval(&pool, &src_handle, "orphaned").await;
+    insert_digest(&pool, SOURCE_CHAIN_ID, &src_handle, 0x64).await;
+    insert_manifest_state(&pool, block_number, &block_hash, &[0x41; 32]).await;
+    let block = load_pending_block(&pool, &block_hash).await;
+
+    assert!(
+        ready_descriptors(&pool, &block).await.is_none(),
+        "an orphaned approval never yields the copy the source digests predict"
+    );
+
+    insert_digest(&pool, CHAIN_ID, &dst_handle, 0x65).await;
+    assert!(
+        ready_descriptors(&pool, &block).await.is_some(),
+        "the grant's own bytes make the block ready"
     );
 }

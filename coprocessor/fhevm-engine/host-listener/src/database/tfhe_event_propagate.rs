@@ -2314,7 +2314,8 @@ impl Database {
     }
 
     /// Whether this node can still copy the bridged source onto `dst_handle`:
-    /// the pair is not associated yet and the source digests exist. The
+    /// the pair is not associated yet, the source digests exist, and the
+    /// source's `BridgeHandle` block is not orphaned. The
     /// consensus-detector then seals the destination with the source digests,
     /// so a fallback grant must not materialize different bytes here. The
     /// grant is a permission: a node that can make the real association keeps
@@ -2336,6 +2337,22 @@ impl Database {
                    AND NOT dst_event.is_associated
                    AND src_digest.ciphertext IS NOT NULL
                    AND src_digest.ciphertext128 IS NOT NULL
+                   -- The copy also needs the source approval, which stays
+                   -- possible until its block is orphaned.
+                   AND EXISTS (
+                        SELECT 1 FROM bridge_handle_events src_event
+                         WHERE src_event.src_handle = dst_event.src_handle
+                           AND src_event.dst_chain_id = dst_event.dst_chain_id
+                           AND (
+                                src_event.block_hash = ''::bytea
+                                OR EXISTS (
+                                    SELECT 1 FROM host_chain_blocks_valid src_block
+                                     WHERE src_block.chain_id = src_event.src_chain_id
+                                       AND src_block.block_hash = src_event.block_hash
+                                       AND src_block.block_status <> 'orphaned'
+                                )
+                           )
+                   )
                    AND (
                         dst_event.block_hash = ''::bytea
                         OR EXISTS (

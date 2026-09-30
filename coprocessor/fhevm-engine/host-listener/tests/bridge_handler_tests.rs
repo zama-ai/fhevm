@@ -1569,6 +1569,41 @@ async fn producer_rows(
     .expect("producer rows")
 }
 
+/// A `BridgeHandle` approval for `src_handle` towards this chain, in a source
+/// block with `status`.
+async fn seed_source_approval(
+    db: &Database,
+    src_handle: &[u8],
+    block_hash: &[u8],
+    status: &str,
+) {
+    let pool = db.pool().await;
+    sqlx::query(
+        "INSERT INTO bridge_handle_events
+             (src_handle, dst_chain_id, src_chain_id, sender_dapp, guid, block_number, block_hash)
+         VALUES ($1, $2, $3, '\\xda'::bytea, '\\x02'::bytea, 7, $4)",
+    )
+    .bind(src_handle)
+    .bind(DST_CHAIN_ID as i64)
+    .bind(SRC_CHAIN_ID as i64)
+    .bind(block_hash)
+    .execute(&pool)
+    .await
+    .expect("seed bridge_handle_events");
+    sqlx::query(
+        "INSERT INTO host_chain_blocks_valid
+             (chain_id, block_hash, parent_hash, block_number, block_status)
+         VALUES ($1, $2, $3, 7, $4)",
+    )
+    .bind(SRC_CHAIN_ID as i64)
+    .bind(block_hash)
+    .bind(vec![0x06_u8; 32])
+    .bind(status)
+    .execute(&pool)
+    .await
+    .expect("seed source block");
+}
+
 async fn seed_source_digest(db: &Database, src_handle: &[u8]) {
     let pool = db.pool().await;
     sqlx::query(
@@ -1729,6 +1764,7 @@ async fn fallback_grant_is_declined_while_the_bridged_source_can_be_copied() {
     )
     .await;
     seed_source_digest(&db, &[0x01]).await;
+    seed_source_approval(&db, &[0x01], &[0x07; 32], "pending").await;
 
     ingest_fallback(&mut db, dst_handle, U256::from(7_u64)).await;
 
@@ -1738,4 +1774,32 @@ async fn fallback_grant_is_declined_while_the_bridged_source_can_be_copied() {
         "the manifest already describes the destination with the source digests"
     );
     assert_eq!(pbs_count(&db, dst_handle).await, 0);
+}
+
+#[tokio::test]
+#[serial(db)]
+async fn fallback_grant_materializes_once_the_bridged_source_approval_is_orphaned(
+) {
+    let (mut db, _inst) = fresh_db(DST_CHAIN_ID).await;
+    let dst_handle = fallback_dst_handle(DST_CHAIN_ID, 5);
+    seed_bridged_observation(
+        &db,
+        dst_handle.as_slice(),
+        DST_CHAIN_ID,
+        &[],
+        false,
+    )
+    .await;
+    seed_source_digest(&db, &[0x01]).await;
+    // The source was computed, but its approval is on an orphaned fork: the
+    // bridge worker will never copy it.
+    seed_source_approval(&db, &[0x01], &[0x07; 32], "orphaned").await;
+
+    ingest_fallback(&mut db, dst_handle, U256::from(7_u64)).await;
+
+    assert_eq!(
+        computation_count(&db, dst_handle).await,
+        1,
+        "only the grant can still materialize the destination"
+    );
 }
