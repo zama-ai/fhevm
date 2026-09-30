@@ -600,9 +600,10 @@ Pinned by `rejects_more_than_max_ops`, `cost_snapshot_fhe_execute_max_steps` and
 passes those flags.
 
 **47. [RETIRED]** The standalone proof service is gone (RFC 035, DD-048). The
-leaf record lives in each coprocessor's host listener, served behind an API
-key; the connector asks every configured coprocessor at once, so one behind,
-stalled or unreachable cannot sink or hold a request another can serve. Authorization was
+leaf record lives in each coprocessor's database, written by its host
+listener and served by its leaf-proof server behind an API key; the connector
+asks every configured coprocessor at once, so one behind, stalled or
+unreachable cannot sink or hold a request another can serve. Authorization was
 never its to give (#30).
 
 **48. [HOLDS]** Settle transactions at production KMS thresholds fit one packet

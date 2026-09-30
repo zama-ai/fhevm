@@ -34,6 +34,13 @@ test = false
 bench = false
 required-features = ["solana-grpc", "solana-reconstruct"]
 
+[[bin]]
+path = "src/bin/solana_leaf_proof_server.rs"
+name = "solana_leaf_proof_server"
+test = false
+bench = false
+required-features = ["solana-reconstruct"]
+
 [dependencies]
 # workspace dependencies
 anyhow = { workspace = true }
@@ -70,7 +77,7 @@ url = "2.5.7"
 solana-client = "3.0"
 solana-commitment-config = "3.1"
 solana-sdk = "3.0"
-# `getBlock` response types, for rebuilding a slot from an archive.
+# `getBlock` and `getTransaction` response types, for rebuilding a slot from an archive.
 solana-transaction-status-client-types = { version = "3.1", optional = true }
 
 # Yellowstone gRPC transport (optional; enabled via the `solana-grpc` feature).

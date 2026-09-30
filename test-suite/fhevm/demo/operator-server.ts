@@ -1,6 +1,6 @@
 // operator-server — the `demo:operator` entrypoint. Wires the pure operator (`./operator`) to a live
 // stack: the seeded demo-config (RPC endpoints, mints, personas), the environment-specific keeper and
-// mint-authority keypairs, the environment's SOL funder, the listener's proof endpoint and the
+// mint-authority keypairs, the environment's SOL funder, the leaf-proof server's endpoint and the
 // relayer's key material. It binds loopback: the dapp dev server proxies the browser to it and adds
 // the boot capability; `tailscale serve` may front it for direct callers on the tailnet.
 //

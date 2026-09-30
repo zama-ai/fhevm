@@ -1,7 +1,7 @@
 {
   "openapi": "3.1.0",
   "info": {
-    "title": "Solana host listener leaf proofs",
+    "title": "Solana leaf proofs",
     "description": "Inclusion proofs from the RFC 035 leaf record of Solana encrypted stores, for the KMS connector.",
     "license": {
       "name": "BSD-3-Clause-Clear",

@@ -11,7 +11,9 @@ import yaml
 
 ROOT = pathlib.Path(__file__).resolve().parents[3]
 VALUES = ROOT / "ci/preview-env/solana-host"
-ROUTES = [{"url": "http://coprocessor-1-solana-host-listener:8080", "apiKey": "$(SOLANA_PROOF_API_KEY)"}]
+LISTENER = "coprocessor-1-solana-host-listener"
+PROOF_SERVER = "coprocessor-1-solana-leaf-proof-server"
+ROUTES = [{"url": f"http://{PROOF_SERVER}:8080", "apiKey": "$(SOLANA_PROOF_API_KEY)"}]
 
 
 def render(release, chart, values, *options):
@@ -39,41 +41,49 @@ class SolanaCharts(unittest.TestCase):
             if release == "solana-host":
                 self.assertFalse(any("TOKEN_KEYPAIR" in e["name"] for e in container["env"]))
 
-    def test_listener_shares_database_and_keeps_proofs_private(self):
+    def test_listener_and_proof_server_share_the_database_and_keep_proofs_private(self):
         documents = render("coprocessor-1", "coprocessor", [ROOT / "ci/preview-env/coprocessor/values-coprocessor-e2e.yaml",
                             VALUES / "values-solana-coprocessor-e2e.yaml"])
-        name = "coprocessor-1-solana-host-listener"
-        deployment = next(d for d in documents if d and d["kind"] == "Deployment" and d["metadata"]["name"] == name)
-        self.assertEqual(deployment["spec"]["replicas"], 1)
-        self.assertEqual(deployment["spec"]["strategy"]["type"], "Recreate")
-        container = deployment["spec"]["template"]["spec"]["containers"][0]
-        env = {e["name"]: e for e in container["env"]}
-        self.assertEqual(env["DATABASE_URL"]["value"],
-                         "postgresql://$(DATABASE_USER):$(DATABASE_PASSWORD)@$(DATABASE_ENDPOINT)/fhevm_e2e")
-        names = [e["name"] for e in container["env"]]
-        for variable in ["DATABASE_USER", "DATABASE_PASSWORD", "DATABASE_ENDPOINT"]:
-            self.assertLess(names.index(variable), names.index("DATABASE_URL"))
-        self.assertEqual(env["SOLANA_PROOF_API_KEY"]["valueFrom"]["secretKeyRef"]["name"], "solana-proof-api")
-        service = next(d for d in documents if d and d["kind"] == "Service" and d["metadata"]["name"] == name)
+        deployments = {}
+        for name in [LISTENER, PROOF_SERVER]:
+            deployment = next(d for d in documents if d and d["kind"] == "Deployment" and d["metadata"]["name"] == name)
+            container = deployment["spec"]["template"]["spec"]["containers"][0]
+            env = {e["name"]: e for e in container["env"]}
+            self.assertEqual(env["DATABASE_URL"]["value"],
+                             "postgresql://$(DATABASE_USER):$(DATABASE_PASSWORD)@$(DATABASE_ENDPOINT)/fhevm_e2e")
+            names = [e["name"] for e in container["env"]]
+            for variable in ["DATABASE_USER", "DATABASE_PASSWORD", "DATABASE_ENDPOINT"]:
+                self.assertLess(names.index(variable), names.index("DATABASE_URL"))
+            deployments[name] = (deployment, env)
+        listener, listener_env = deployments[LISTENER]
+        self.assertEqual(listener["spec"]["replicas"], 1)
+        self.assertEqual(listener["spec"]["strategy"]["type"], "Recreate")
+        self.assertNotIn("SOLANA_PROOF_API_KEY", listener_env)
+        server, server_env = deployments[PROOF_SERVER]
+        self.assertEqual(server["spec"]["template"]["spec"]["containers"][0]["command"], ["solana_leaf_proof_server"])
+        self.assertEqual(server_env["SOLANA_PROOF_API_KEY"]["valueFrom"]["secretKeyRef"]["name"], "solana-proof-api")
+        service = next(d for d in documents if d and d["kind"] == "Service" and d["metadata"]["name"] == PROOF_SERVER)
         self.assertEqual(service["spec"]["type"], "ClusterIP")
-        self.assertEqual(service["spec"]["selector"], deployment["spec"]["selector"]["matchLabels"])
+        self.assertEqual(service["spec"]["selector"], server["spec"]["selector"]["matchLabels"])
+        listener_service = next(d for d in documents if d and d["kind"] == "Service" and d["metadata"]["name"] == LISTENER)
+        self.assertEqual([p["name"] for p in listener_service["spec"]["ports"]], ["metrics"])
 
-    def test_listener_iam_certificate_is_a_volume_list(self):
+    def test_iam_certificate_is_a_volume_list(self):
         documents = render("coprocessor-1", "coprocessor", [VALUES / "values-solana-coprocessor-e2e.yaml"],
                            "--set", "commonConfig.databaseAuthMode=iam",
                            "--set", "commonConfig.databaseSslRootCert.enabled=true")
-        deployment = next(d for d in documents if d and d["kind"] == "Deployment"
-                          and d["metadata"]["name"] == "coprocessor-1-solana-host-listener")
-        pod = deployment["spec"]["template"]["spec"]
-        container = pod["containers"][0]
-        self.assertIsInstance(pod["volumes"], list)
-        self.assertIsInstance(container["volumeMounts"], list)
-        self.assertGreater(container["securityContext"]["runAsUser"], 0)
-        self.assertTrue(container["securityContext"]["runAsNonRoot"])
-        self.assertEqual(container["volumeMounts"][0]["name"], pod["volumes"][0]["name"])
-        env = {e["name"]: e for e in container["env"]}
-        self.assertEqual(env["DATABASE_IAM_AUTH_ENABLED"]["value"], "true")
-        self.assertIn("DATABASE_SSL_ROOT_CERT_PATH", env)
+        for name in [LISTENER, PROOF_SERVER]:
+            deployment = next(d for d in documents if d and d["kind"] == "Deployment" and d["metadata"]["name"] == name)
+            pod = deployment["spec"]["template"]["spec"]
+            container = pod["containers"][0]
+            self.assertIsInstance(pod["volumes"], list)
+            self.assertIsInstance(container["volumeMounts"], list)
+            self.assertGreater(container["securityContext"]["runAsUser"], 0)
+            self.assertTrue(container["securityContext"]["runAsNonRoot"])
+            self.assertEqual(container["volumeMounts"][0]["name"], pod["volumes"][0]["name"])
+            env = {e["name"]: e for e in container["env"]}
+            self.assertEqual(env["DATABASE_IAM_AUTH_ENABLED"]["value"], "true")
+            self.assertIn("DATABASE_SSL_ROOT_CERT_PATH", env)
 
     def test_connector_preserves_evm_and_exact_solana_chain_id(self):
         # Same composition as deploy-preview.sh: the party's values, the Solana overlay, and the
@@ -226,6 +236,13 @@ class SolanaCharts(unittest.TestCase):
         for name, keys in consumed.items():
             self.assertTrue(keys, name)
             self.assertLessEqual(keys, synced[name], name)
+
+    def test_preview_routes_name_the_leaf_proof_servers(self):
+        # The connector tests pass ROUTES in themselves: this pins it to what deploy-preview.sh sets.
+        script = (VALUES / "deploy-preview.sh").read_text()
+        program = re.search(r"^routes=\$\(seq 1 \"\$NB_COPROCESSOR\" \| jq -Rsc '(.*)'\)$", script, re.M).group(1)
+        routes = subprocess.check_output(["jq", "-Rsc", program], input="1\n", text=True)
+        self.assertEqual(json.loads(routes), ROUTES)
 
     def test_dispatch_overrides_reject_unknown_keys_and_multiline_values(self):
         script = ROOT / "ci/preview-env/scripts/resolve/parse-overrides.cjs"

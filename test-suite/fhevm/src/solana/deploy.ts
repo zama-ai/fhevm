@@ -17,8 +17,7 @@ import { deployHostProgram } from '../../../../solana/deploy/src/deploy-host';
 import { deployProgramArtifacts } from '../../../../solana/deploy/src/deploy-programs';
 import { integerEnv } from '../../../../solana/deploy/src/gateway';
 import { SOLANA_LEAF_PROOF_API_KEY } from '../generate/solana';
-import { SOLANA_LEAF_PROOF_PORT } from '../layout';
-import { REPO_ROOT, STATE_DIR, envPath } from '../layout';
+import { REPO_ROOT, SOLANA_LEAF_PROOF_PORT, SOLANA_LISTENER_HEALTH_PORT, STATE_DIR, envPath } from '../layout';
 import { LOCAL_SOLANA_ENDPOINTS } from './endpoints';
 import { readEnvFile } from '../utils/fs';
 import { run, runStreaming } from '../utils/process';
@@ -197,45 +196,11 @@ export const startHostListener = async (parameters: {
   readonly logDir: string;
   readonly lifecycleDir?: string;
 }): Promise<void> => {
-  if (parameters.lifecycleDir) {
-    if ((await run(['pgrep', '-f', 'solana_host_listener'], { allowFailure: true })).code === 0) {
-      throw new Error('refusing to replace an unowned solana_host_listener in lifecycle mode');
-    }
-  } else {
-    await run(['pkill', '-f', 'solana_host_listener'], { allowFailure: true });
-    // Poll it gone rather than sleeping a flat second: the next step binds the same resources.
-    await until(async () => (await run(['pgrep', '-f', 'solana_host_listener'], { allowFailure: true })).code !== 0, {
-      description: 'previous solana_host_listener to exit',
-      timeoutMs: 15_000,
-      intervalMs: 100,
-    });
-  }
-  const buildLog = '/tmp/solana-host-listener-build.log';
-  const build = await run(
+  await replaceSolanaProcess('solana_host_listener', parameters.lifecycleDir);
+  await buildSolanaBinary('solana_host_listener');
+  await spawnSolanaProcess(
+    'solana_host_listener',
     [
-      'cargo',
-      'build',
-      '-p',
-      'host-listener',
-      '--features',
-      'solana-grpc,solana-reconstruct',
-      '--bin',
-      'solana_host_listener',
-    ],
-    { cwd: ENGINE_DIR, allowFailure: true },
-  );
-  await Bun.write(buildLog, `${build.stdout}\n${build.stderr}`);
-  if (build.code !== 0) {
-    throw new Error(
-      `host-listener (grpc,reconstruct) build failed; see ${buildLog}\n${build.stderr.split('\n').slice(-20).join('\n')}`,
-    );
-  }
-  // One shared descriptor for stdout+stderr — the same interleaving `>log 2>&1` produces; the
-  // child holds its own duplicate, so the parent copy closes right away.
-  const logFd = openSync(path.join(parameters.logDir, 'host-listener.log'), 'a');
-  const listener = Bun.spawn(
-    [
-      path.join(ENGINE_DIR, 'target', 'debug', 'solana_host_listener'),
       '--grpc-url',
       parameters.grpcUrl,
       '--database-url',
@@ -244,20 +209,91 @@ export const startHostListener = async (parameters: {
       VALIDATOR_RPC_URL,
       '--program-id',
       parameters.zamaHostId,
-      // The leaf-proof route the KMS connector reads. `--proof-api-key` has no default and the
-      // binary refuses to start without it.
+      '--http-port',
+      String(SOLANA_LISTENER_HEALTH_PORT),
+    ],
+    path.join(parameters.logDir, 'host-listener.log'),
+    parameters.lifecycleDir && path.join(parameters.lifecycleDir, 'listener.pid'),
+  );
+};
+
+/**
+ * Builds and runs the leaf-proof server the KMS connector reads, apart from the listener, as the
+ * coprocessor chart deploys it. `--proof-api-key` has no default and the binary refuses to start
+ * without it.
+ */
+export const startLeafProofServer = async (parameters: {
+  readonly databaseUrl: string;
+  readonly logDir: string;
+  readonly lifecycleDir?: string;
+}): Promise<void> => {
+  await replaceSolanaProcess('solana_leaf_proof_server', parameters.lifecycleDir);
+  await buildSolanaBinary('solana_leaf_proof_server');
+  await spawnSolanaProcess(
+    'solana_leaf_proof_server',
+    [
+      '--database-url',
+      parameters.databaseUrl,
       '--http-port',
       String(SOLANA_LEAF_PROOF_PORT),
       '--proof-api-key',
       SOLANA_LEAF_PROOF_API_KEY,
     ],
-    { stdin: 'ignore', stdout: logFd, stderr: logFd },
+    path.join(parameters.logDir, 'leaf-proof-server.log'),
+    parameters.lifecycleDir && path.join(parameters.lifecycleDir, 'leaf-proof-server.pid'),
   );
-  listener.unref();
-  closeSync(logFd);
-  if (parameters.lifecycleDir) {
-    await Bun.write(path.join(parameters.lifecycleDir, 'listener.pid'), `${listener.pid}\n`);
+};
+
+/** Stops a previous `binary`, or refuses to replace one the lifecycle does not own. */
+const replaceSolanaProcess = async (binary: string, lifecycleDir: string | undefined): Promise<void> => {
+  if (lifecycleDir) {
+    if ((await run(['pgrep', '-f', binary], { allowFailure: true })).code === 0) {
+      throw new Error(`refusing to replace an unowned ${binary} in lifecycle mode`);
+    }
+    return;
   }
+  await run(['pkill', '-f', binary], { allowFailure: true });
+  // Poll it gone rather than sleeping a flat second: the next step binds the same resources.
+  await until(async () => (await run(['pgrep', '-f', binary], { allowFailure: true })).code !== 0, {
+    description: `previous ${binary} to exit`,
+    timeoutMs: 15_000,
+    intervalMs: 100,
+  });
+};
+
+// Both binaries build with the listener's features, like the Dockerfile, so cargo reuses one
+// build of host-listener.
+const HOST_LISTENER_FEATURES = 'solana-grpc,solana-reconstruct';
+
+const buildSolanaBinary = async (binary: string): Promise<void> => {
+  const buildLog = `/tmp/${binary}-build.log`;
+  const build = await run(['cargo', 'build', '-p', 'host-listener', '--features', HOST_LISTENER_FEATURES, '--bin', binary], {
+    cwd: ENGINE_DIR,
+    allowFailure: true,
+  });
+  await Bun.write(buildLog, `${build.stdout}\n${build.stderr}`);
+  if (build.code !== 0) {
+    throw new Error(`${binary} build failed; see ${buildLog}\n${build.stderr.split('\n').slice(-20).join('\n')}`);
+  }
+};
+
+const spawnSolanaProcess = async (
+  binary: string,
+  args: readonly string[],
+  logPath: string,
+  pidFile: string | undefined,
+): Promise<void> => {
+  // One shared descriptor for stdout+stderr — the same interleaving `>log 2>&1` produces; the
+  // child holds its own duplicate, so the parent copy closes right away.
+  const logFd = openSync(logPath, 'a');
+  const child = Bun.spawn([path.join(ENGINE_DIR, 'target', 'debug', binary), ...args], {
+    stdin: 'ignore',
+    stdout: logFd,
+    stderr: logFd,
+  });
+  child.unref();
+  closeSync(logFd);
+  if (pidFile) await Bun.write(pidFile, `${child.pid}\n`);
 };
 
 /** Validates the lifecycle Compose project shape `demo/lifecycle.ts` allocates. */
@@ -326,14 +362,16 @@ export const provisionSolanaHostNode = async (): Promise<{ zamaHostId: string }>
   console.log('==> [3/4] register Solana host chain (coprocessor DB + gateway)');
   await registerSolanaHostChain({ zamaHostId, composeProject });
 
-  console.log('==> [4/4] run Solana host-listener');
+  console.log('==> [4/4] run Solana host-listener and leaf-proof server');
+  const databaseUrl = await readCoprocessorDatabaseUrl();
   await startHostListener({
     zamaHostId,
-    databaseUrl: await readCoprocessorDatabaseUrl(),
+    databaseUrl,
     grpcUrl: process.env.GRPC_URL ?? LOCAL_SOLANA_ENDPOINTS.listenerGrpc,
     logDir,
     lifecycleDir,
   });
+  await startLeafProofServer({ databaseUrl, logDir, lifecycleDir });
 
   console.log(
     `==> Solana side-stack ready. zama_host=${zamaHostId} host_chain_id=${SOLANA_HOST_CHAIN_ID}`,

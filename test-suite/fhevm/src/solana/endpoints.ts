@@ -10,6 +10,7 @@ import {
   RELAYER_PORT,
   SOLANA_LEAF_PROOF_PORT,
   SOLANA_LISTENER_GRPC_PORT,
+  SOLANA_LISTENER_HEALTH_PORT,
   SOLANA_VALIDATOR_RPC_PORT,
   SOLANA_VALIDATOR_WS_PORT,
 } from "../layout";
@@ -22,8 +23,10 @@ export const LOCAL_SOLANA_ENDPOINTS = {
   relayer: loopback(RELAYER_PORT),
   hostRpc: loopback(DEFAULT_HOST_RPC_PORT),
   gatewayRpc: loopback(DEFAULT_GATEWAY_RPC_PORT),
-  /** The first coprocessor's host listener: leaf proofs over HTTP, and its gRPC port. */
+  /** The first coprocessor's leaf-proof server. */
   leafProof: loopback(SOLANA_LEAF_PROOF_PORT),
+  /** The first coprocessor's host listener: its health routes, and the Yellowstone gRPC it reads. */
+  listenerHealth: loopback(SOLANA_LISTENER_HEALTH_PORT),
   listenerGrpc: loopback(SOLANA_LISTENER_GRPC_PORT),
   demoOperator: loopback(DEMO_OPERATOR_PORT),
   demoDapp: loopback(DEMO_DAPP_PORT),

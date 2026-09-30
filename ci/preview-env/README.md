@@ -63,7 +63,7 @@ ci/preview-env/
 │   ├── values-solana-programs-e2e.yaml   # contracts overlay, host deployment + HostConfig/KMS context
 │   ├── values-gateway-add-host-chains-solana-e2e.yaml # contracts overlay, register Solana host chain id
 │   ├── values-solana-register-coprocessor-e2e.yaml # contracts overlay, per-coprocessor DB registration
-│   ├── values-solana-coprocessor-e2e.yaml # coprocessor overlay, one solana_host_listener per release
+│   ├── values-solana-coprocessor-e2e.yaml # coprocessor overlay, one solana_host_listener and leaf-proof server per release
 │   ├── values-solana-connector-e2e.yaml  # kms-connector overlay: Solana env and hostChains.solana
 │   └── values-solana-demos-e2e.yaml      # contracts overlay, example programs (deploy_example_programs)
 ├── coprocessor/

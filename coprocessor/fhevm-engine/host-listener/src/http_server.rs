@@ -1,4 +1,5 @@
-//! The leaf-proof HTTP interface of the Solana host listener.
+//! The HTTP routes of the Solana processes: the health routes both serve, and the leaf-proof
+//! route that only `solana_leaf_proof_server` adds (DD-064).
 //!
 //! The KMS connector asks for the inclusion proof of the leaf that authorizes a
 //! decrypt (an allow of a key on a handle, or a handle made public) and verifies
@@ -27,9 +28,11 @@ use utoipa::{
     openapi::security::{Http, HttpAuthScheme, SecurityScheme},
     Modify, OpenApi, ToSchema,
 };
-use zama_solana_acl::{mmr_build_proof, mmr_peaks_from_leaves};
+use zama_solana_acl::mmr_verify;
 
-use crate::database::solana_leaves::{load_recorded_leaves, LeafKind};
+use crate::database::solana_leaves::{
+    find_leaf, load_encrypted_store_history, load_proof, LeafKind,
+};
 
 /// Most leaves one request may ask for.
 const MAX_LEAVES_PER_REQUEST: usize = 64;
@@ -43,52 +46,73 @@ struct AppState {
 }
 
 pub struct HttpServer {
-    state: AppState,
+    router: Router,
     port: u16,
     cancel_token: CancellationToken,
 }
 
 impl HttpServer {
-    pub fn new(
+    /// The health routes alone, for the ingestion process.
+    pub fn health(
+        pool: PgPool,
+        port: u16,
+        cancel_token: CancellationToken,
+    ) -> Self {
+        Self {
+            router: health_router(pool),
+            port,
+            cancel_token,
+        }
+    }
+
+    /// The health routes and the leaf-proof route, for the proof server.
+    pub fn leaf_proofs(
         pool: PgPool,
         api_key: String,
         port: u16,
         cancel_token: CancellationToken,
     ) -> Self {
         Self {
-            state: AppState {
-                pool,
-                api_key: api_key.into(),
-            },
+            router: leaf_proofs_router(pool, api_key),
             port,
             cancel_token,
         }
     }
 
     /// Serves until the cancellation token fires.
-    pub async fn start(&self) -> anyhow::Result<()> {
+    pub async fn start(self) -> anyhow::Result<()> {
         let addr = SocketAddr::from(([0, 0, 0, 0], self.port));
         let listener = TcpListener::bind(addr).await?;
         info!("Starting HTTP server on {}", addr);
-        serve(listener, self.state.clone(), self.cancel_token.clone()).await
+        serve(listener, self.router, self.cancel_token).await
     }
 }
 
-fn router(state: AppState) -> Router {
+fn health_router(pool: PgPool) -> Router {
     Router::new()
         .route("/healthz", get(healthz))
         .route("/liveness", get(liveness))
-        .route(LEAF_PROOFS_PATH, post(leaf_proofs))
-        .with_state(state)
+        .with_state(pool)
+}
+
+fn leaf_proofs_router(pool: PgPool, api_key: String) -> Router {
+    health_router(pool.clone()).merge(
+        Router::new()
+            .route(LEAF_PROOFS_PATH, post(leaf_proofs))
+            .with_state(AppState {
+                pool,
+                api_key: api_key.into(),
+            }),
+    )
 }
 
 async fn serve(
     listener: TcpListener,
-    state: AppState,
+    router: Router,
     cancel_token: CancellationToken,
 ) -> anyhow::Result<()> {
     let shutdown = async move { cancel_token.cancelled().await };
-    axum::serve(listener, router(state).into_make_service())
+    axum::serve(listener, router.into_make_service())
         .with_graceful_shutdown(shutdown)
         .await
         .map_err(|err| {
@@ -103,8 +127,8 @@ async fn liveness() -> StatusCode {
     StatusCode::OK
 }
 
-async fn healthz(State(state): State<AppState>) -> StatusCode {
-    match sqlx::query("SELECT 1").execute(&state.pool).await {
+async fn healthz(State(pool): State<PgPool>) -> StatusCode {
+    match sqlx::query("SELECT 1").execute(&pool).await {
         Ok(_) => StatusCode::OK,
         Err(err) => {
             error!(error = %err, "database health check failed");
@@ -358,53 +382,59 @@ fn parse_hex32(field: &str, value: &str) -> Result<[u8; 32], HttpError> {
         })
 }
 
+/// Three indexed reads: the state row, the first matching leaf below its `leaf_count`,
+/// and that leaf's path.
 async fn prove(
     pool: &PgPool,
     query: &ParsedQuery,
 ) -> Result<LeafProof, HttpError> {
-    let recorded = load_recorded_leaves(pool, query.encrypted_store)
+    let read_failed = |err: sqlx::Error| {
+        error!(error = %err, "leaf record read failed");
+        HttpError::new(ErrorCode::UpstreamTransient, "leaf record read failed")
+    };
+    let account = query.encrypted_store;
+    let Some(state) = load_encrypted_store_history(pool, account)
         .await
-        .map_err(|err| {
-            error!(error = %err, "leaf record read failed");
-            HttpError::new(
-                ErrorCode::UpstreamTransient,
-                "leaf record read failed",
-            )
-        })?;
-    let Some(recorded) = recorded else {
+        .map_err(read_failed)?
+    else {
         return Ok(LeafProof::UnknownAccount);
     };
-    if !recorded.state.history_complete {
+    if !state.history_complete {
         return Ok(LeafProof::HistoryIncomplete);
     }
-    let leaf_count = recorded.state.leaf_count;
-    let Some(leaf) = recorded.leaves.iter().find(|leaf| {
-        leaf.kind == query.kind
-            && leaf.handle == query.handle
-            && leaf.key == query.key
-    }) else {
+    let leaf_count = state.leaf_count;
+    let Some((leaf_index, commitment)) = find_leaf(
+        pool,
+        account,
+        query.kind,
+        query.handle,
+        query.key,
+        leaf_count,
+    )
+    .await
+    .map_err(read_failed)?
+    else {
         return Ok(LeafProof::NotFound { leaf_count });
     };
-    let commitments: Vec<[u8; 32]> =
-        recorded.leaves.iter().map(|leaf| leaf.commitment).collect();
-    // The record stores every leaf below `leaf_count` and the peaks those leaves
-    // imply; a proof from a record that fails this check would be wrong, not stale.
-    let inconsistent = || {
+    let proof = load_proof(pool, account, leaf_index, leaf_count)
+        .await
+        .map_err(read_failed)?;
+    // A path that is missing or does not reach the recorded peaks comes from a record
+    // that is wrong, not stale.
+    let Some(proof) = proof.filter(|proof| {
+        mmr_verify(&state.peaks, leaf_count, commitment, proof)
+    }) else {
         error!(
-            encrypted_store = %bs58::encode(query.encrypted_store).into_string(),
+            encrypted_store = %bs58::encode(account).into_string(),
+            leaf_index,
             leaf_count,
-            recorded_leaves = commitments.len(),
             "leaf record inconsistent"
         );
-        HttpError::new(ErrorCode::UpstreamTransient, "leaf record inconsistent")
+        return Err(HttpError::new(
+            ErrorCode::UpstreamTransient,
+            "leaf record inconsistent",
+        ));
     };
-    if commitments.len() as u64 != leaf_count
-        || mmr_peaks_from_leaves(&commitments) != recorded.state.peaks
-    {
-        return Err(inconsistent());
-    }
-    let proof = mmr_build_proof(&commitments, leaf.leaf_index)
-        .ok_or_else(inconsistent)?;
     Ok(LeafProof::Found {
         leaf_index: proof.leaf_index,
         leaf_count,
@@ -432,7 +462,7 @@ impl Modify for BearerApiKey {
 #[derive(OpenApi)]
 #[openapi(
     info(
-        title = "Solana host listener leaf proofs",
+        title = "Solana leaf proofs",
         description = "Inclusion proofs from the RFC 035 leaf record of Solana encrypted stores, for the KMS connector.",
         version = "1.0.0",
     ),
@@ -548,14 +578,14 @@ mod tests {
         let pool = PgPoolOptions::new()
             .connect_lazy("postgres://nobody@127.0.0.1:1/none")
             .expect("lazy pool");
-        let state = AppState {
-            pool,
-            api_key: "secret".into(),
-        };
         let listener = TcpListener::bind("127.0.0.1:0").await.expect("bind");
         let addr = listener.local_addr().expect("addr");
         let cancel = CancellationToken::new();
-        let server = tokio::spawn(serve(listener, state, cancel.clone()));
+        let server = tokio::spawn(serve(
+            listener,
+            leaf_proofs_router(pool, "secret".into()),
+            cancel.clone(),
+        ));
         let url = format!("http://{addr}{LEAF_PROOFS_PATH}");
         let client = reqwest::Client::new();
         let body = LeafProofRequest {

@@ -1,22 +1,21 @@
 {{- if .Values.solanaHostListener.enabled }}
 {{- $listener := .Values.solanaHostListener }}
-{{- $name := printf "%s-solana-host-listener" .Release.Name | trunc 63 | trimSuffix "-" }}
+{{- $server := $listener.proofServer }}
+{{- $name := printf "%s-solana-leaf-proof-server" .Release.Name | trunc 63 | trimSuffix "-" }}
 apiVersion: apps/v1
 kind: Deployment
 metadata:
   name: {{ $name }}
 spec:
-  # The durable Solana checkpoint is a singleton in this coprocessor database.
-  replicas: 1
-  strategy:
-    type: Recreate
+  # Stateless: it only reads the leaf record, so replicas and rolling updates are safe.
+  replicas: {{ $server.replicas }}
   selector:
     matchLabels:
       app.kubernetes.io/name: {{ $name }}
   template:
     metadata:
       labels:
-        {{- merge (dict "app.kubernetes.io/name" $name) ($listener.podLabels | default dict) (.Values.podLabels | default dict) | toYaml | nindent 8 }}
+        {{- merge (dict "app.kubernetes.io/name" $name) ($server.podLabels | default dict) (.Values.podLabels | default dict) | toYaml | nindent 8 }}
       {{- with .Values.podAnnotations }}
       annotations:
         {{- toYaml . | nindent 8 }}
@@ -40,20 +39,14 @@ spec:
         {{- toYaml . | nindent 8 }}
       {{- end }}
       containers:
-        - name: solana-host-listener
+        - name: solana-leaf-proof-server
           image: {{ $listener.image.name }}:{{ $listener.image.tag }}
-          command: ["solana_host_listener"]
-          # SOLANA_GRPC_X_TOKEN and SOLANA_ARCHIVE_URL are read from the environment by the binary.
+          command: ["solana_leaf_proof_server"]
+          # SOLANA_PROOF_API_KEY is read from the environment by the binary.
           args:
             - --database-url=$(DATABASE_URL)
-            - --url=$(SOLANA_RPC_URL)
-            - --grpc-url=$(SOLANA_GRPC_URL)
-            - --program-id=$(SOLANA_HOST_PROGRAM_ID)
-            - --http-port={{ $listener.httpPort }}
-            - --metrics-addr=0.0.0.0:{{ $listener.metricsPort }}
-            {{- with $listener.extraArgs }}
-            {{- toYaml . | nindent 12 }}
-            {{- end }}
+            - --database-pool-size={{ $server.databasePoolSize }}
+            - --http-port={{ $server.httpPort }}
           env:
             {{- with .Values.commonConfig.databaseUser }}
             - name: DATABASE_USER
@@ -107,22 +100,19 @@ spec:
             {{- with .Values.commonConfig.env }}
             {{- toYaml . | nindent 12 }}
             {{- end }}
-            {{- with $listener.env }}
+            {{- with $server.env }}
             {{- toYaml . | nindent 12 }}
             {{- end }}
           ports:
             - name: http
-              containerPort: {{ $listener.httpPort }}
-            - name: metrics
-              containerPort: {{ $listener.metricsPort }}
-          # Database/HTTP health only. The rollout must also prove an ingested transaction.
+              containerPort: {{ $server.httpPort }}
           readinessProbe:
             httpGet:
               path: /healthz
               port: http
             periodSeconds: 5
           resources:
-            {{- toYaml $listener.resources | nindent 12 }}
+            {{- toYaml $server.resources | nindent 12 }}
           securityContext:
             {{- toYaml $listener.securityContext | nindent 12 }}
           {{- if eq (include "coprocessor.databaseSslRootCertMountEnabled" .) "true" }}
@@ -143,22 +133,7 @@ spec:
   selector:
     app.kubernetes.io/name: {{ $name }}
   ports:
-    - name: metrics
-      port: {{ $listener.metricsPort }}
-      targetPort: metrics
-{{- if $listener.serviceMonitor.enabled }}
----
-apiVersion: monitoring.coreos.com/v1
-kind: ServiceMonitor
-metadata:
-  name: {{ $name }}
-  labels:
-    app.kubernetes.io/name: {{ $name }}
-spec:
-  selector:
-    matchLabels:
-      app.kubernetes.io/name: {{ $name }}
-  endpoints:
-    - port: metrics
-{{- end }}
+    - name: http
+      port: {{ $server.httpPort }}
+      targetPort: http
 {{- end }}

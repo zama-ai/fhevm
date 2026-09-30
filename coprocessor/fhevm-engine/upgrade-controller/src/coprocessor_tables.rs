@@ -180,6 +180,11 @@ pub const COPROCESSOR_TABLES: &[CoprocessorTable] = &[
         conflict_cols: &[],
     },
     CoprocessorTable {
+        name: "solana_encrypted_state_nodes",
+        duplicated: true,
+        conflict_cols: &[],
+    },
+    CoprocessorTable {
         name: "solana_listener_checkpoint",
         duplicated: true,
         conflict_cols: &[],
