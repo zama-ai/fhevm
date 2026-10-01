@@ -178,7 +178,8 @@ const PAGE = 2;
 
 /**
  * A validator whose writes to the store are `writes`, one transaction each, listed newest last.
- * The store account holds the leaves of every successful write, listed or not.
+ * Write `index` lands in slot `index + 1`. The store account holds the leaves of every successful
+ * write, listed or not, and is read at the slot of the last write it holds.
  */
 function ledger(initial: readonly Write[]) {
   const writes = [...initial];
@@ -232,7 +233,10 @@ function ledger(initial: readonly Write[]) {
     getAccountInfo: (address: Address) => ({
       send: async () => {
         await gates.get(address);
-        return { context: { slot: 0n }, value: address === store ? accountInfo() : null };
+        return {
+          context: { slot: BigInt(account.asOf ?? writes.length) },
+          value: address === store ? accountInfo() : null,
+        };
       },
     }),
     // Newest first, `PAGE` at a time.
@@ -247,6 +251,7 @@ function ledger(initial: readonly Write[]) {
         return Promise.resolve(
           listed.slice(0, PAGE).map((index) => ({
             signature: signatureOf(index),
+            slot: BigInt(index + 1),
             err: writes[index]?.failed === true ? { InstructionError: [0, 'Custom'] } : null,
           })),
         );
@@ -328,9 +333,12 @@ describe('createSolanaLeafRecord', () => {
     expect(await chain.read([publicLeaf(2)])).toEqual([chain.found(0)]);
   });
 
-  it('proves at its own leaf count when the account it read lags the listing', async () => {
+  it('answers at the leaf count of the account it read, and reads the later writes on a later read', async () => {
     const chain = ledger([makePublic(0n, 2), makePublic(1n, 3)]);
     chain.account.asOf = 1;
+    expect(await chain.read([publicLeaf(3)])).toEqual([{ status: 'notFound', leafCount: 1n }]);
+    expect(chain.fetched).toEqual(['sig0']);
+    chain.account.asOf = undefined;
     expect(await chain.read([publicLeaf(3)])).toEqual([chain.found(1)]);
   });
 
@@ -379,11 +387,13 @@ describe('createSolanaLeafRecord', () => {
     expect(await chain.read([publicLeaf(3)])).toEqual([chain.found(1)]);
   });
 
-  it('stays behind a listed write it cannot read, even one newer than the account it read', async () => {
-    const chain = ledger([makePublic(0n, 2), makePublic(1n, 3)]);
+  // The account read is older than a write the listing leaves out, and than a newer transaction it
+  // shows: the record must not move past the write for good.
+  it('lists a write after the account it read again, though the listing showed a newer transaction first', async () => {
+    const chain = ledger([makePublic(0n, 2), makePublic(1n, 3), touch()]);
     chain.account.asOf = 1;
-    chain.withhold(1);
-    expect(await chain.read([publicLeaf(2)])).toEqual([{ status: 'notFound', leafCount: 0n }]);
+    chain.hide(1);
+    expect(await chain.read([publicLeaf(2)])).toEqual([{ ...chain.found(0), leafCount: 1n, siblings: [] }]);
     chain.account.asOf = undefined;
     chain.release(1);
     expect(await chain.read([publicLeaf(3)])).toEqual([chain.found(1)]);

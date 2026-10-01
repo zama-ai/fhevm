@@ -4,9 +4,9 @@
 // served over the listener's wire by `test-suite/fhevm/src/solana/cleartext-leaf-proofs.ts`.
 import {
   AccountRole,
-  fetchEncodedAccount,
   getAddressEncoder,
   getBase58Encoder,
+  parseBase64RpcAccount,
   type AccountMeta,
   type Address,
   type ReadonlyUint8Array,
@@ -70,10 +70,13 @@ const leafKey = (handle: Uint8Array, key?: Uint8Array): string =>
  * store it names up to the confirmed chain, reading only the transactions newer than the last one
  * it kept, then answers from the record.
  *
- * - A store extends only by a gap-free run of new leaves that reaches the leaf count of the account,
- *   which is read before the listing. While a transaction is not yet available, or the listing or a
- *   transaction does not show a write the account holds, the record stays where it was, and the
+ * - A catch-up reads the store's account first, then only the transactions of the slots that
+ *   account read covers. A store extends by their leaves only when these fill the record up to the
+ *   account's leaf count without a gap. While a transaction is not yet available, or the listing or
+ *   a transaction does not show a write the account holds, the record stays where it was, and the
  *   Connector reads its shorter leaf count as a record behind the chain.
+ * - The next catch-up lists from the newest transaction of those slots, so a transaction after the
+ *   account read is listed again, even when the listing showed a newer one first.
  * - Once the record holds as many leaves as the store's account, its peaks at that count must be the
  *   account's.
  * - Peaks that differ, two writes that claim one leaf, a write the parser cannot read or a failed RPC
@@ -89,7 +92,10 @@ export function createSolanaLeafRecord(rpc: SolanaRpc, programAddress: Address):
 
   /** The record of `encryptedStore` up to the chain, or `undefined` when no host store lives there. */
   const catchUp = async (encryptedStore: Address): Promise<CaughtUp | undefined> => {
-    const account = await fetchEncodedAccount(rpc, encryptedStore, { commitment: 'confirmed' });
+    const { context, value } = await rpc
+      .getAccountInfo(encryptedStore, { commitment: 'confirmed', encoding: 'base64' })
+      .send();
+    const account = parseBase64RpcAccount(encryptedStore, value);
     if (!account.exists || account.programAddress !== programAddress) return undefined;
     if (!isSolanaEncryptedStoreData(account.data)) return undefined;
     const live = decodeSolanaEncryptedStore(account.data, encryptedStore);
@@ -102,7 +108,7 @@ export function createSolanaLeafRecord(rpc: SolanaRpc, programAddress: Address):
     records.set(encryptedStore, record);
     const covered = Number(live.leafCount);
     try {
-      await extend(record, encryptedStore, covered);
+      await extend(record, encryptedStore, covered, context.slot);
       if (record.tree.leafCount() >= covered) {
         const peaks = record.tree.peaks(covered).map(bytesToHex);
         if (peaks.length !== live.peaks.length || peaks.some((peak, index) => peak !== bytesToHex(live.peaks[index]))) {
@@ -117,11 +123,12 @@ export function createSolanaLeafRecord(rpc: SolanaRpc, programAddress: Address):
   };
 
   /**
-   * Appends the leaves of the transactions newer than `record.newest`, all of them or none, and
-   * none while they stop short of the `covered` leaves the account holds.
+   * Appends the leaves of the transactions newer than `record.newest`, up to `slot`, the slot of the
+   * account read: all of them or none, and none while they stop short of the `covered` leaves that
+   * account holds.
    */
-  const extend = async (record: StoreRecord, encryptedStore: Address, covered: number): Promise<void> => {
-    const { newest, successful } = await storeSignatures(rpc, encryptedStore, record.newest);
+  const extend = async (record: StoreRecord, encryptedStore: Address, covered: number, slot: bigint): Promise<void> => {
+    const { newest, successful } = await storeSignatures(rpc, encryptedStore, record.newest, slot);
     if (newest === undefined) return;
     const sealed = record.tree.leafCount();
     // Each write carries the leaf count it appended at, so its leaves land at their position
@@ -231,13 +238,15 @@ function placeWrites(
 }
 
 /**
- * The successful transactions that touched `address` after `until` (all of them without it), and
- * the newest transaction listed, failed or not, paged until the RPC has no older one.
+ * The successful transactions that touched `address` after `until` (all of them without it) and no
+ * later than `slot`, and the newest of those transactions, failed or not, paged until the RPC has no
+ * older one.
  */
 async function storeSignatures(
   rpc: SolanaRpc,
   address: Address,
   until: Signature | undefined,
+  slot: bigint,
 ): Promise<{ readonly newest: Signature | undefined; readonly successful: Signature[] }> {
   const successful: Signature[] = [];
   let newest: Signature | undefined;
@@ -249,8 +258,9 @@ async function storeSignatures(
         ...(until ? { until } : {}),
       })
       .send();
-    newest ??= page[0]?.signature;
-    successful.push(...page.filter((entry) => entry.err === null).map((entry) => entry.signature));
+    const covered = page.filter((entry) => entry.slot <= slot);
+    newest ??= covered[0]?.signature;
+    successful.push(...covered.filter((entry) => entry.err === null).map((entry) => entry.signature));
     const last = page.at(-1);
     if (last === undefined) return { newest, successful };
     before = last.signature;
