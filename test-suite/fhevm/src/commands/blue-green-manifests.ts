@@ -43,8 +43,13 @@ export function rangeGaps(ranges: PublishedRange[]): string[] {
   return gaps;
 }
 
-/** A local manifest whose verification reached quorum with the local operator in it. */
-const verifiedManifestSql = (epoch: string, hostChainId: number, fromBlock: number, withComputed: boolean) => `
+/**
+ * A local manifest whose verification reached quorum with the local operator in it.
+ * `duringDryRun` also requires the epoch to be still pending in the same snapshot:
+ * cutover marks it succeeded in the transaction that promotes the stack, so the
+ * manifest and its verification are then proven to predate cutover.
+ */
+const verifiedManifestSql = (epoch: string, hostChainId: number, fromBlock: number, withComputed: boolean, duringDryRun = false) => `
   SELECT COALESCE((SELECT row_to_json(r)::text FROM (
     SELECT m.id, m.publication_block_number, m.object_key,
            encode(m.signed_manifest, 'hex') AS body, g.s3_bucket_url AS bucket
@@ -58,6 +63,8 @@ const verifiedManifestSql = (epoch: string, hostChainId: number, fromBlock: numb
        AND m.host_chain_id = ${hostChainId} AND m.publication_block_number > ${fromBlock}
        AND a.outcome = 'consensus' AND a.local_quorum_status = 'matches_quorum'
        AND a.drifted_block_count = 0 AND a.drifted_handle_count = 0
+       ${duringDryRun ? `AND EXISTS (SELECT 1 FROM consensus_epoch_history h
+                     WHERE h.consensus_epoch = m.consensus_epoch AND h.outcome = 'pending')` : ""}
        ${withComputed ? `AND EXISTS (
          SELECT 1
            FROM jsonb_array_elements(convert_from(m.signed_manifest, 'UTF8')::jsonb -> 'detailed_range' -> 'blocks') b,
@@ -103,9 +110,18 @@ export function createBlueGreenManifestChecks(options: {
     assert.equal(signed.consensus_epoch, epoch, `${db} signed manifest epoch`);
   };
 
-  const waitVerified = async (label: string, db: string, epoch: string, chain: number, fromBlock: number, withComputed: boolean) => {
+  const waitVerified = async (label: string, db: string, epoch: string, chain: number, fromBlock: number, withComputed: boolean, duringDryRun = false) => {
     const manifest = (await waitForManifestCondition(`${db} chain ${chain} ${label}`,
-      async () => JSON.parse(await query(db, verifiedManifestSql(epoch, chain, fromBlock, withComputed))) as VerifiedManifest | null,
+      async () => {
+        const found = JSON.parse(await query(db, verifiedManifestSql(epoch, chain, fromBlock, withComputed, duringDryRun))) as VerifiedManifest | null;
+        if (found === null && duringDryRun) {
+          const outcome = await query(db, `SELECT outcome FROM consensus_epoch_history WHERE consensus_epoch = ${sqlText(epoch)}`);
+          if (outcome !== "pending") {
+            throw new Error(`${db} chain ${chain}: the dry run ended (epoch ${epoch} is ${outcome}) before a verified dry-run manifest`);
+          }
+        }
+        return found;
+      },
       value => value !== null, 600_000))!;
     await assertS3Copy(db, manifest, epoch);
     return manifest;
@@ -167,19 +183,22 @@ export function createBlueGreenManifestChecks(options: {
       }
     },
 
-    /** Dry run: Green publishes the proposal epoch and reaches quorum on computed handles. */
+    /**
+     * Dry run: Green publishes the proposal epoch and reaches quorum on computed
+     * handles, all before cutover. Must start while the epoch is pending.
+     */
     async duringDryRun() {
       const epochs = new Set<string>();
       for (const db of databases) {
         epochs.add(await query(db,
-          "SELECT consensus_epoch FROM consensus_epoch_history WHERE outcome IN ('pending', 'succeeded') AND proposal_id IS NOT NULL ORDER BY allocated_at DESC LIMIT 1"));
+          "SELECT consensus_epoch FROM consensus_epoch_history WHERE outcome = 'pending' AND proposal_id IS NOT NULL ORDER BY allocated_at DESC LIMIT 1"));
       }
-      assert.equal(epochs.size, 1, `operators disagree on the upgrade epoch: ${JSON.stringify([...epochs])}`);
+      assert.equal(epochs.size, 1, `operators disagree on the dry-run epoch: ${JSON.stringify([...epochs])}`);
       upgradeEpoch = [...epochs][0]!;
-      assert(upgradeEpoch && upgradeEpoch !== "legacy", `unexpected upgrade epoch ${upgradeEpoch}`);
+      assert(upgradeEpoch && upgradeEpoch !== "legacy", `no dry run in progress (pending upgrade epoch: ${JSON.stringify(upgradeEpoch)})`);
       for (const db of databases) {
         for (const chain of hostChainIds) {
-          const manifest = await waitVerified("dry-run manifest with computed handles", db, upgradeEpoch, chain, 0, true);
+          const manifest = await waitVerified("dry-run manifest with computed handles", db, upgradeEpoch, chain, 0, true, true);
           const version = await query(db, "SELECT stack_version FROM versioning");
           checkpoint({ phase: "dry run", db, chain, epoch: upgradeEpoch, manifestId: manifest.id,
             publicationBlock: manifest.publication_block_number, stackVersionAtCheck: version });
