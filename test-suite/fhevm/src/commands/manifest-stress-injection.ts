@@ -27,13 +27,14 @@ BEGIN
      OR octet_length(NEW.ciphertext) <= 64 THEN RETURN NULL; END IF;
   flip := get_byte(NEW.handle, 0) % 4 = 0;
   mid := octet_length(NEW.ciphertext) / 2;
-  -- A drift revert deletes and recomputes the block: the handle comes back and is
-  -- corrupted again by the same predicate, without failing the worker's insert.
+  -- Only a handle's first computation is corrupted. A later insert of the same
+  -- handle is a recompute, and one with a finding is a heal installing quorum
+  -- bytes: neither is touched, and neither may fail the writer's insert.
+  IF EXISTS (SELECT 1 FROM drifted_handle d WHERE d.handle = NEW.handle) THEN RETURN NULL; END IF;
   INSERT INTO e2e_manifest_noise(handle,ciphertext_version,injected,byte_offset,original_byte)
     VALUES(NEW.handle,NEW.ciphertext_version,flip,mid,get_byte(NEW.ciphertext,mid))
-    ON CONFLICT (handle,ciphertext_version) DO UPDATE
-      SET injected = EXCLUDED.injected, byte_offset = EXCLUDED.byte_offset,
-          original_byte = EXCLUDED.original_byte, recorded_at = now();
+    ON CONFLICT (handle,ciphertext_version) DO NOTHING;
+  IF NOT FOUND THEN RETURN NULL; END IF;
   IF flip THEN
     UPDATE ciphertexts SET ciphertext=set_byte(ciphertext,mid,get_byte(ciphertext,mid) # 128)
       WHERE handle=NEW.handle AND ciphertext_version=NEW.ciphertext_version;
