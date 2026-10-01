@@ -276,6 +276,34 @@ failures: a transaction that fits on the cleartext build always fits in producti
 it. Our Solana transaction reads do not accept v1 yet, `createSolanaLeafRecord` among them
 (fhevm-internal#2080).
 
+### Extending the cleartext target
+
+- **A new e2e scenario** runs on both targets when it creates its SDK clients from
+  `await loadSolanaSdk()` (`src/solana/target.ts`), as the existing scenarios do. Its other
+  imports from `@fhevm/sdk/solana` do not depend on the target. A part that needs real relayer or
+  KMS behavior skips with `test.skipIf(!loadEnv().capabilities.protocolServices)`, and the list
+  above names what it then leaves untested. `solana-tests/cleartext-e2e` runs the suite on every
+  change under `solana/`, `sdk/js-sdk/` or `test-suite/fhevm/`.
+- **A new Mollusk test** that asserts plaintexts loads the cleartext host with
+  `zama_solana_test_kit::cleartext::host_svm()` and reads results with `store_u64`,
+  `store_value` or `handle_value`. Fixture stores get their values with `fixture_context` and
+  `seed`, which record 0 behind every slot a test does not seed.
+- **A new `fhe_execute` step or operator** does not compile on the cleartext build until
+  `evaluate_steps` (`programs/zama-host/src/cleartext/mod.rs`) gives it plaintext semantics: the
+  match over steps has no catch-all. `operator_conformance` then checks it against the EVM cases
+  in `library-solidity/codegen/overloads/e2e.json`, and panics on an operator it does not map.
+- **A change to the store or transient layout, the input value widths or the input-attestation
+  type strings** fails `the_sdk_cleartext_constants_match_the_host` until the SDK's copy is
+  rewritten: `ZAMA_UPDATE_SDK_CONSTANTS=1 cargo test -p zama-host --features cleartext --lib
+  sdk_constants`, then commit `sdk/js-sdk/src/solana/cleartext/hostConstants.ts`.
+- **A change to the KMS Connector's Solana authorization** fails
+  `the_committed_cases_are_the_connectors_verdicts` until the cases are rewritten:
+  `ZAMA_UPDATE_AUTHORIZATION_CASES=1 cargo test -p kms-worker --test solana_authorization_cases`
+  from `kms-connector/`. The SDK's `authorization.test.ts` then fails until
+  `cleartext/authorization.ts` reaches the same verdicts. Add a case there for a new rule.
+- **A change to the relayer's admission or delegation pre-check, or to the gateway's validity
+  window,** has no generated check. Mirror it by hand in `cleartext/decrypt.ts` and its test.
+
 ## Where the two decrypt leaves are tested
 
 Every decrypt authorizes through exactly one leaf proof against the Store's confirmed peaks.
