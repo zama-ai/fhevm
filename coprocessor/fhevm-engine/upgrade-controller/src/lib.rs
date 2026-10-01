@@ -2592,17 +2592,39 @@ async fn try_cutover_if_consensus(
     pool: &Pool<Postgres>,
     cancel: &CancellationToken,
 ) -> Result<(), Error> {
-    let result = sqlx::query(
+    // Cutover is atomic across the whole proposal: every host chain's + the Gateway's
+    // consensus latch must be set. The per-chain host latches are now emitted independently
+    // by the consensus-detector (so host_consensus_reached reflects each chain on its own),
+    // which means the "don't cut over an all-quiet fleet" guard can no longer be carried by
+    // withholding those latches — it is enforced HERE instead: require at least one host
+    // chain with real (non-trivial) work in its dry-run window. FheTrivialEncrypt (opcode 24)
+    // is deterministic across operators and carries no consensus signal, so it does not count.
+    const FHE_TRIVIAL_ENCRYPT_OPCODE: i16 = 24;
+    let sql = format!(
         r#"
-        WITH eligible_attempt AS (
-            SELECT proposal_id, COALESCE(proposal_block, -1) AS proposal_block
-              FROM upgrade_state
-             WHERE stack_role = 'GCS' AND status = 'in_progress'
-             GROUP BY proposal_id, COALESCE(proposal_block, -1)
+        WITH per_row AS (
+            SELECT u.proposal_id,
+                   COALESCE(u.proposal_block, -1) AS proposal_block,
+                   u.state, u.host_consensus_reached, u.gw_consensus_reached,
+                   EXISTS (
+                       SELECT 1 FROM {GCS_SCHEMA_QUOTED}.computations c
+                        WHERE c.host_chain_id = u.host_chain_id
+                          AND c.block_number BETWEEN u.start_block AND u.end_block
+                          AND c.is_error = false
+                          AND c.fhe_operation <> {FHE_TRIVIAL_ENCRYPT_OPCODE}
+                   ) AS has_nontrivial
+              FROM upgrade_state u
+             WHERE u.stack_role = 'GCS' AND u.status = 'in_progress'
+        ),
+        eligible_attempt AS (
+            SELECT proposal_id, proposal_block
+              FROM per_row
+             GROUP BY proposal_id, proposal_block
             HAVING COUNT(*) > 0
                AND BOOL_AND(state = 'DryRunStarted')
                AND BOOL_AND(host_consensus_reached)
                AND BOOL_AND(gw_consensus_reached)
+               AND BOOL_OR(has_nontrivial)
         )
         UPDATE upgrade_state u
            SET state = 'UpgradeAuthorized', updated_at = NOW()
@@ -2610,10 +2632,9 @@ async fn try_cutover_if_consensus(
          WHERE u.stack_role = 'GCS'
            AND u.proposal_id = e.proposal_id
            AND COALESCE(u.proposal_block, -1) = e.proposal_block
-        "#,
-    )
-    .execute(pool)
-    .await?;
+        "#
+    );
+    let result = sqlx::query(&sql).execute(pool).await?;
     if result.rows_affected() == 0 {
         debug!("cutover deferred — gateway or a host chain's consensus latch not yet set");
         return Ok(());
@@ -4308,6 +4329,7 @@ mod tests {
         let (_instance, pool) = test_pool().await;
         seed_gcs_row(&pool, "DryRunStarted", "in_progress").await; // latches TRUE
         create_gcs_schema(&pool).await.expect("create gcs schema");
+        seed_gcs_nontrivial(&pool, 1).await; // cutover gate requires non-trivial work
 
         reconcile(
             &pool,
@@ -4362,6 +4384,25 @@ mod tests {
         set_live_versions_behind(pool).await;
     }
 
+    /// Seed one non-trivial computation into `gcs.computations` for `chain_id`
+    /// inside the dry-run window [100, 200], satisfying the cutover gate's
+    /// per-chain "non-trivial work" requirement (fhe_operation 0 != the trivial
+    /// encrypt opcode 24).
+    async fn seed_gcs_nontrivial(pool: &Pool<Postgres>, chain_id: i64) {
+        let sql = format!(
+            "INSERT INTO {GCS_SCHEMA_QUOTED}.computations
+                (output_handle, dependencies, fhe_operation,
+                 is_scalar, is_completed, host_chain_id, block_number)
+             VALUES ($1, ARRAY[]::bytea[], 0, false, TRUE, $2, 150)"
+        );
+        sqlx::query(&sql)
+            .bind(&[chain_id as u8; 32][..])
+            .bind(chain_id)
+            .execute(pool)
+            .await
+            .expect("seed gcs non-trivial computation");
+    }
+
     fn consensus_payload(chain_id: i64, block_height: i64) -> String {
         serde_json::json!({
             "proposal_id": vec![2; 32], "proposal_block": 10, "chain_id": chain_id,
@@ -4388,6 +4429,9 @@ mod tests {
     async fn try_cutover_defers_until_all_host_chains_reach_consensus() {
         let (_instance, pool) = test_pool().await;
         create_gcs_schema(&pool).await.expect("create gcs schema");
+        // cutover gate requires a non-trivial computation in each chain's window
+        seed_gcs_nontrivial(&pool, 1).await;
+        seed_gcs_nontrivial(&pool, 2).await;
 
         // Two chains, gateway agreed on both, but only chain 1 has host consensus.
         seed_gcs_chain(&pool, 1, true, true).await;
@@ -4416,6 +4460,7 @@ mod tests {
     #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
     async fn host_unanimity_sets_only_the_matching_chain_latch() {
         let (_instance, pool) = test_pool().await;
+        create_gcs_schema(&pool).await.expect("create gcs schema");
 
         seed_gcs_chain(&pool, 1, false, false).await;
         seed_gcs_chain(&pool, 2, false, false).await;
@@ -4447,6 +4492,7 @@ mod tests {
     #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
     async fn gateway_unanimity_sets_latch_on_all_chain_rows() {
         let (_instance, pool) = test_pool().await;
+        create_gcs_schema(&pool).await.expect("create gcs schema");
 
         seed_gcs_chain(&pool, 1, false, false).await;
         seed_gcs_chain(&pool, 2, false, false).await;
