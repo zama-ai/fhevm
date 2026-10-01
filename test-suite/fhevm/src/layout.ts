@@ -281,6 +281,21 @@ export const TEST_GREP: Record<string, string> = {
   "delegated-user-decryption": "test delegated user decrypt",
   "erc1271-user-decryption": "ERC-1271 user decryption",
   "unified-user-decryption": "Unified user decryption",
+  // Container half of the kms-context-qa-tests `epoch-rotation` case: asserts the SDK embeds the
+  // active (context, epoch) pair in the permit extraData. Driven by the profile, which injects the
+  // pair it observed on chain; also runnable standalone.
+  "kms-context-extradata": "KMS context extraData permit",
+  // The negative half of the KMS-context extraData story: an SDK-built request corrupted after
+  // signing, plus the malformed shapes the relayer refuses synchronously with HTTP 400. Driven by
+  // the kms-context-qa-tests `extradata-rejection` case; also runnable standalone.
+  "kms-context-extradata-rejection": "KMS context extraData rejection",
+  // The same corruption, one layer deeper: ABI calldata submitted straight to the Gateway's
+  // Decryption contract, bypassing the Relayer. Driven by the kms-context-qa-tests
+  // `extradata-gateway-rejection` case; also runnable standalone.
+  "kms-context-extradata-gateway": "KMS context extraData gateway rejection",
+  // The response half: drives one decryption per extraData version so the profile can read back,
+  // from the relayer's database, what each KMS share echoed. Driven by the `extradata-echo` case.
+  "kms-context-extradata-echo": "KMS context extraData echo",
   "decryption-signature-invalidation": "Decryption signature invalidation",
   "public-decryption":
     "test async decrypt (uint.*|ebytes.* trivial|ebytes64 non-trivial|ebytes256 non-trivial with snapshot|addresses|several addresses)",
