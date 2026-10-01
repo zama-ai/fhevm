@@ -77,9 +77,10 @@ Key inputs (all have sensible defaults — you rarely set more than a couple):
   Forces `nb_coprocessor=2` when N=1. The `preview-env-blue-green` PR label
   is the other gate. With `deploy_polygon` (so also with `chain_mode=testnets`)
   the upgrade spans both host chains.
-- `enable_gpu` — GPU workers + Default FHE params (default `false`). CLI
-  `--gpu`. Dispatch-only: the `preview-env-gpu` label cannot carry a worker
-  tag. With `enable_blue_green`, Green/GCS is GPU and Blue/BCS stays CPU.
+- `enable_gpu` — GPU workers + Default FHE params (default `false`), including
+  on Anvil. CLI `--gpu`. Dispatch-only: the `preview-env-gpu` label cannot
+  carry a worker tag. With `enable_blue_green`, Green/GCS is GPU and Blue/BCS
+  stays CPU. CPU Anvil stays on Test params.
 - `workers_tag` — image tag for tfhe, sns, and zkproof. Required when
   `enable_gpu=true` on a dispatch (CLI `--workers-tag`). Must be empty when
   GPU is off. The `preview-env-gpu` label cannot carry a tag, so a GPU

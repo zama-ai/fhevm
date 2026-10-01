@@ -911,8 +911,11 @@ jobs:
           NODE_PATH: /tmp/wallet-tools/node_modules
         run: bash ci/preview-env/scripts/wallets/fund-wallets.sh
 
-      - name: Apply external-chain values overlays
-        if: env.EXTERNAL_CHAINS == 'true'
+      # External chains rewrite RPC overlays. Anvil GPU only switches keygen
+      # to Default params; the script exits before those rewrites. CPU Anvil
+      # skips this step and keeps Test params.
+      - name: Apply chain values overlays
+        if: env.EXTERNAL_CHAINS == 'true' || env.GPU == 'true'
         run: bash ci/preview-env/scripts/deploy/apply-chain-env.sh
 
       ######################################################################

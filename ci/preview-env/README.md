@@ -292,7 +292,7 @@ The two host chains are the real public testnets, so this is the only preview sh
 - **Ceremony timing.** The kms-connector's Ethereum listener pins its reads to the
   *finalized* block, ~14 min behind head on Sepolia, and that is hardcoded in the
   connector. CPU launches keep **Test** FHE parameters (`params-type=1`). GPU
-  launches (`preview-env-gpu` + tests, or dispatch `enable_gpu` / `--gpu`) switch
+  launches (dispatch `enable_gpu` / `--gpu`, including Anvil) switch
   to production-size **Default** parameters (`params-type=0`) because Test
   parameters use drift noise reduction, which TFHE 1.6.3's GPU conversion rejects.
   A four-party Default-parameter DKG is multi-hour work, so GPU launches allow 4 h
