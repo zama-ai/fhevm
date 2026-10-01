@@ -508,9 +508,10 @@ deployed. Every Polygon step in the workflow is gated on `deploy_polygon == 'tru
   whatever kms `deploy.sh` picks for `aws-ci`.
 - ~~Add support for changing the coprocessor's FHE worker instance type~~ —
   `preview-env-gpu` + `preview-env-e2e-tests`, or dispatch `enable_gpu` /
-  `preview-env --gpu`, applies `values-coprocessor-gpu-e2e.yaml` to `tfhe` /
-  `sns` / `zkproof`, selects the pinned `b358436-cuda12.8-sm70` GPU images, and
-  generates Default FHE params. With `preview-env-blue-green` / `--blue-green`
+  `preview-env --gpu --workers-tag <tag>`, applies `values-coprocessor-gpu-e2e.yaml`
+  to `tfhe` / `sns` / `zkproof`, and uses that tag for those workers. The
+  `preview-env-gpu` label cannot carry a tag, so GPU deploys are dispatch-only.
+  GPU launches generate Default FHE params. With `preview-env-blue-green` / `--blue-green`
   as well, that overlay lands on Green (GCS) only; Blue (BCS) stays on the CPU
   `coprocessor` pool. CPU launches keep Test params.
 - ~~Add multichain support~~ — done, see "Multichain: second Polygon host chain

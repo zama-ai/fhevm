@@ -39,10 +39,13 @@ if [[ "${GPU:-false}" == "true" ]]; then
   fi
 fi
 
-# Single published GPU worker tag for tfhe / sns / zkproof. Do not derive it
-# from resolve-tags: GPU images are built separately and this pin is the one
-# that matches the coprocessor-gpu nodepool.
-GPU_IMAGE_TAG="${GPU_IMAGE_TAG:-fd282b1-cuda12.8-sm70}"
+# tfhe / sns / zkproof share one published GPU tag. Do not derive it from
+# resolve-tags: GPU images are built separately. Dispatch passes GPU_IMAGE_TAG
+# from the workers_tag input.
+if [[ "${GPU:-false}" == "true" && -z "${GPU_IMAGE_TAG:-}" ]]; then
+  echo "::error::GPU_IMAGE_TAG is required when GPU=true (dispatch workers_tag)"
+  exit 1
+fi
 
 worker_image_tag() {
   local key="$1"

@@ -4,8 +4,8 @@
 # in Blue/Green. BCS (v0.14.0-7 CPU images) stays on the `coprocessor` nodepool
 # so it does not consume MIG slices it cannot use.
 #
-# deploy-coprocessor.sh pairs this scheduling with the pinned GPU worker
-# tag fd282b1-cuda12.8-sm70 (override with GPU_IMAGE_TAG).
+# deploy-coprocessor.sh pairs this scheduling with GPU_IMAGE_TAG, the
+# dispatch workers_tag input.
 tfheWorker:
   resources:
     requests:
