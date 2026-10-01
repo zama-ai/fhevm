@@ -344,33 +344,42 @@ where
 /// the same S3 key repeatedly with whichever branch's `block-hash` metadata the
 /// planner happened to pick. Finalization leaves exactly one canonical row per
 /// height, so the join now yields a single deterministic block_hash per upload.
-/// `(an attempt is in progress, every chain's end_block was ingested by Blue at least
-/// cutoff ago)`. Past the cutoff peers have decided, so a hash published now could only
+/// The in-progress attempt `(proposal_id, proposal_block)`, if any.
+type Attempt = Option<(Vec<u8>, i64)>;
+
+/// `(in-progress attempt, every chain's end_block was ingested by Blue at least cutoff
+/// ago)`. Past the cutoff peers have decided, so a hash published now could only
 /// mislead a returning operator.
 pub(crate) async fn upload_window(
     pool: &Pool<Postgres>,
     cutoff: Duration,
-) -> Result<(bool, bool), sqlx::Error> {
-    sqlx::query_as(
-        "SELECT COUNT(*) > 0, COALESCE(BOOL_AND(COALESCE(
+) -> Result<(Attempt, bool), sqlx::Error> {
+    let (proposal_id, proposal_block, closed): (Option<Vec<u8>>, Option<i64>, bool) =
+        sqlx::query_as(
+            "SELECT (SELECT proposal_id FROM upgrade_state
+                  WHERE stack_role = 'GCS' AND status = 'in_progress' LIMIT 1),
+                (SELECT COALESCE(proposal_block, -1) FROM upgrade_state
+                  WHERE stack_role = 'GCS' AND status = 'in_progress' LIMIT 1),
+                COALESCE(BOOL_AND(COALESCE(
             (SELECT MIN(b.created_at) FROM public.host_chain_blocks_valid b
               WHERE b.chain_id = w.host_chain_id AND b.block_number >= w.end_block)
                 <= NOW() - make_interval(secs => $1), FALSE)), FALSE)
            FROM upgrade_state w WHERE w.stack_role = 'GCS' AND w.status = 'in_progress'",
-    )
-    .bind(cutoff.as_secs_f64())
-    .fetch_one(pool)
-    .await
+        )
+        .bind(cutoff.as_secs_f64())
+        .fetch_one(pool)
+        .await?;
+    Ok((proposal_id.zip(proposal_block), closed))
 }
 
 /// Also stops a batch whose attempt was rolled back or replaced after it started.
 async fn upload_stopped(
     pool: &Pool<Postgres>,
     cutoff: Duration,
-    started_active: bool,
+    started: &Attempt,
 ) -> Result<bool, sqlx::Error> {
-    let (active, closed) = upload_window(pool, cutoff).await?;
-    Ok(closed || (started_active && !active))
+    let (current, closed) = upload_window(pool, cutoff).await?;
+    Ok(closed || (started.is_some() && current != *started))
 }
 
 async fn upload_pending_state_hashes(
@@ -414,7 +423,7 @@ async fn upload_pending_state_hashes(
         empty = EMPTY_BLOCK_STATE_HASH,
         opcode = crate::FHE_TRIVIAL_ENCRYPT_OPCODE,
     );
-    let started_active = upload_window(pool, cutoff).await?.0;
+    let started = upload_window(pool, cutoff).await?.0;
     let pending: Vec<(i64, i64, String, Vec<u8>)> = sqlx::query_as(&sql)
         .bind(batch_limit)
         .fetch_all(pool)
@@ -455,7 +464,7 @@ async fn upload_pending_state_hashes(
         };
         let block_hash_hex = format!("0x{}", hex::encode(&row.3));
         let key = state_hash_key(chain_id, block_number);
-        if upload_stopped(pool, cutoff, started_active).await? {
+        if upload_stopped(pool, cutoff, &started).await? {
             return Ok(());
         }
         match s3
@@ -508,7 +517,7 @@ async fn upload_pending_gw_state_hashes(
          LIMIT $2
         "#
     );
-    let started_active = upload_window(pool, cutoff).await?.0;
+    let started = upload_window(pool, cutoff).await?.0;
     let pending = sqlx::query(&select_sql)
         .bind(gw_chain_id)
         .bind(batch_limit)
@@ -530,7 +539,7 @@ async fn upload_pending_gw_state_hashes(
             }
         };
         let key = state_hash_key(gw_chain_id, block_number);
-        if upload_stopped(pool, cutoff, started_active).await? {
+        if upload_stopped(pool, cutoff, &started).await? {
             return Ok(());
         }
         match s3
@@ -817,17 +826,29 @@ mod tests {
             .await
             .is_err());
 
+        let started = Some((vec![2u8], 10));
         sqlx::query("UPDATE public.upgrade_state SET status = 'failed'")
             .execute(&pool)
             .await
             .unwrap();
         assert!(
-            upload_stopped(&pool, cutoff, true).await.unwrap(),
+            upload_stopped(&pool, cutoff, &started).await.unwrap(),
             "attempt ended mid-batch"
         );
         assert!(
-            !upload_stopped(&pool, cutoff, false).await.unwrap(),
+            !upload_stopped(&pool, cutoff, &None).await.unwrap(),
             "no attempt at batch start"
+        );
+        sqlx::query(
+            "UPDATE public.upgrade_state
+                SET status = 'in_progress', proposal_id = '\\x03', end_block = 300",
+        )
+        .execute(&pool)
+        .await
+        .unwrap();
+        assert!(
+            upload_stopped(&pool, cutoff, &started).await.unwrap(),
+            "attempt replaced mid-batch"
         );
     }
 
