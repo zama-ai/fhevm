@@ -1,3 +1,5 @@
+import { CONNECTOR_OPTIONAL_VERSION_KEYS, CONNECTOR_VERSION_KEYS } from "../../src/flow/bootstrap";
+
 type Env = Record<string, string | undefined>;
 
 const required = (env: Env, name: string): string => {
@@ -8,12 +10,7 @@ const required = (env: Env, name: string): string => {
   return value;
 };
 
-export const connectorVersionKeys = [
-  "CONNECTOR_DB_MIGRATION_VERSION",
-  "CONNECTOR_GW_LISTENER_VERSION",
-  "CONNECTOR_KMS_WORKER_VERSION",
-  "CONNECTOR_TX_SENDER_VERSION",
-] as const;
+export const connectorVersionKeys = CONNECTOR_VERSION_KEYS;
 
 export const relayerVersionKeys = ["RELAYER_VERSION", "RELAYER_MIGRATE_VERSION"] as const;
 
@@ -63,6 +60,7 @@ export const migrationPhaseVersions = (
     ...relayer,
     CORE_VERSION: requiredVersion(target, "CORE_VERSION"),
     ...Object.fromEntries(connectorVersionKeys.map((key) => [key, requiredVersion(target, key)])),
+    ...Object.fromEntries(CONNECTOR_OPTIONAL_VERSION_KEYS.filter((key) => target[key]).map((key) => [key, target[key]!])),
   };
   const listenerCore: Record<string, string> = {
     ...connector,

@@ -137,8 +137,17 @@ describe("RFC 029 rollout gates", () => {
       ["task:upgradeCiphertextCommits", "CiphertextCommits"],
       ["task:upgradeInputVerification", "InputVerification"],
       ["task:upgradeGatewayConfig", "GatewayConfig"],
+      ["task:upgradeKMSGeneration", "KMSGeneration"],
     ]);
-    expect(hostContractUpgradePlan).toEqual([["task:upgradeKMSGeneration", "KMSGeneration"]]);
+    expect(hostContractUpgradePlan).toEqual([
+      ["task:upgradeKMSGeneration", "KMSGeneration"],
+      ["task:upgradeFHEVMExecutor", "FHEVMExecutor"],
+      ["task:upgradeACL", "ACL"],
+      ["task:upgradeHCULimit", "HCULimit"],
+      ["task:upgradeInputVerifier", "InputVerifier"],
+      ["task:upgradeKMSVerifier", "KMSVerifier"],
+      ["task:upgradeProtocolConfig", "ProtocolConfig"],
+    ]);
   });
 
   test("changes only the intended deployment unit in each version lock", () => {
@@ -152,6 +161,8 @@ describe("RFC 029 rollout gates", () => {
       ...baseline,
       TEST_SUITE_VERSION: "main-test-suite",
       CORE_VERSION: "main-core",
+      CONNECTOR_ENDPOINT_VERSION: "main-endpoint",
+      CONNECTOR_PROXY_VERSION: "main-proxy",
       HOST_VERSION: "main-host",
       GATEWAY_VERSION: "main-gateway",
       ...Object.fromEntries(connectorVersionKeys.map((key) => [key, `main-${key}`])),
@@ -163,6 +174,8 @@ describe("RFC 029 rollout gates", () => {
 
     expect(phases.contract.HOST_VERSION).toBe("main-host");
     expect(phases.contract.GATEWAY_VERSION).toBe("main-gateway");
+    expect(phases.contract.CONNECTOR_ENDPOINT_VERSION).toBeUndefined();
+    expect(phases.contract.CONNECTOR_PROXY_VERSION).toBeUndefined();
     expect(phases.contract.RELAYER_VERSION).toBe(baseline.RELAYER_VERSION);
     expect(phases.contract.CONNECTOR_KMS_WORKER_VERSION).toBe(baseline.CONNECTOR_KMS_WORKER_VERSION);
     expect(phases.contract.COPROCESSOR_TFHE_WORKER_VERSION).toBe(baseline.COPROCESSOR_TFHE_WORKER_VERSION);
@@ -170,6 +183,8 @@ describe("RFC 029 rollout gates", () => {
     expect(phases.relayer.CONNECTOR_KMS_WORKER_VERSION).toBe(baseline.CONNECTOR_KMS_WORKER_VERSION);
     expect(phases.connector.CONNECTOR_KMS_WORKER_VERSION).toBe("main-CONNECTOR_KMS_WORKER_VERSION");
     expect(phases.connector.CORE_VERSION).toBe("main-core");
+    expect(phases.connector.CONNECTOR_ENDPOINT_VERSION).toBe("main-endpoint");
+    expect(phases.connector.CONNECTOR_PROXY_VERSION).toBe("main-proxy");
     expect(phases.connector.COPROCESSOR_TFHE_WORKER_VERSION).toBe(baseline.COPROCESSOR_TFHE_WORKER_VERSION);
     expect(phases.listenerCore.LISTENER_CORE_VERSION).toBe("main-LISTENER_CORE_VERSION");
     expect(phases.listenerCore.COPROCESSOR_TFHE_WORKER_VERSION).toBe(baseline.COPROCESSOR_TFHE_WORKER_VERSION);

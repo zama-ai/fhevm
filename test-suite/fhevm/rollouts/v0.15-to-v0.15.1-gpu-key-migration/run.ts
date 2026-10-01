@@ -6,13 +6,20 @@ import path from "node:path";
 import type { RolloutRunContext } from "../../src/commands/rollout-run";
 import { waitForContainer } from "../../src/flow/readiness";
 import {
+  CANONICAL_HOST_CONTRACT_UPGRADES,
+  CONNECTOR_OPTIONAL_VERSION_KEYS,
+  GATEWAY_CONTRACT_UPGRADES,
+  HOST_CONTRACT_UPGRADES,
+  contractUpgradeCommand,
+} from "../../src/flow/bootstrap";
+import {
   COPROCESSOR_DB_CONTAINER,
   DEFAULT_POSTGRES_PASSWORD,
   DEFAULT_POSTGRES_USER,
   coprocessorDatabaseName,
   defaultHostChainKey,
   envPath,
-  MINIO_EXTERNAL_URL,
+  OBJECT_STORE_EXTERNAL_URL,
   REPO_ROOT,
   TEST_SUITE_CONTAINER,
 } from "../../src/layout";
@@ -37,8 +44,8 @@ const ACTIVE_MIGRATION_SERVICES = ["host-listener", "host-listener-poller", "hos
 
 // kms-init creates exactly this context/epoch; match KMS's own upgrade-test mapping.
 export const kmsEpochMigration = [{
-  context_id: "0700000000000000000000000000000000000000000000000000000000000001",
-  epoch_ids: ["0800000000000000000000000000000000000000000000000000000000000001"],
+  contextId: "0700000000000000000000000000000000000000000000000000000000000001",
+  epochIds: ["0800000000000000000000000000000000000000000000000000000000000001"],
 }];
 
 export const predecessorImagePlan = [
@@ -323,7 +330,7 @@ async function kmsPublicMaterialDigests(
 ): Promise<string[] | undefined> {
   const responses = await Promise.all(
     kmsPartyIds(CONNECTOR_PARTIES).map(async (party) => {
-      const response = await fetch(`${MINIO_EXTERNAL_URL}/kms-public/${kmsPublicPrefix(party)}/${type}/${keyId}`);
+      const response = await fetch(`${OBJECT_STORE_EXTERNAL_URL}/kms-public/${kmsPublicPrefix(party)}/${type}/${keyId}`);
       return { party, response };
     }),
   );
@@ -511,23 +518,8 @@ const assertGreenWorkersParked = async () => {
   }
 };
 
-const contractUpgradeCommand = (task: string, contract: string) =>
-  [
-    `npx hardhat ${task}`,
-    `--current-implementation previous-contracts/${contract}.sol:${contract}`,
-    `--new-implementation contracts/${contract}.sol:${contract}`,
-    "--verify-contract false",
-    "--use-internal-proxy-address true",
-  ].join(" ");
-
-export const gatewayContractUpgradePlan = [
-  ["task:upgradeDecryption", "Decryption"],
-  ["task:upgradeCiphertextCommits", "CiphertextCommits"],
-  ["task:upgradeInputVerification", "InputVerification"],
-  ["task:upgradeGatewayConfig", "GatewayConfig"],
-] as const;
-
-export const hostContractUpgradePlan = [["task:upgradeKMSGeneration", "KMSGeneration"]] as const;
+export const gatewayContractUpgradePlan = GATEWAY_CONTRACT_UPGRADES;
+export const hostContractUpgradePlan = [...CANONICAL_HOST_CONTRACT_UPGRADES, ...HOST_CONTRACT_UPGRADES];
 
 const upgradeContracts = async (ctx: RolloutRunContext, targetLock: string) => {
   await ctx.snapshotContracts("gateway");
@@ -544,6 +536,13 @@ const upgradeContracts = async (ctx: RolloutRunContext, targetLock: string) => {
   for (const [task, contract] of hostContractUpgradePlan) {
     await ctx.runHostContractTask(contractUpgradeCommand(task, contract));
   }
+  const state = await ctx.readState();
+  const canonicalHost = defaultHostChainKey(state.scenario.hostChains);
+  for (const chain of state.scenario.hostChains.filter((chain) => chain.key !== canonicalHost)) {
+    for (const [task, contract] of HOST_CONTRACT_UPGRADES) {
+      await ctx.runHostContractTaskOnChain(chain.key, contractUpgradeCommand(task, contract));
+    }
+  }
 };
 
 /** Executes the complete 0.14 to 0.15 rollout and returns the continuity probe. */
@@ -553,7 +552,7 @@ export const reconstructMigrated015Fixture = async (ctx: RolloutRunContext): Pro
   await pullCandidateImages(versions.blueTag, "0.15.0");
   await pullCandidateImages(versions.greenTag, "0.15.1");
   const testSuiteTag = await buildRolloutTestImage(versions.baseline.HOST_VERSION);
-  const baselineLock = await ctx.resolveVersionLock("rfc029-00-baseline", {
+  const resolvedBaselineLock = await ctx.resolveVersionLock("rfc029-baseline-snapshot", {
     versions: { ...versions.baseline, TEST_SUITE_VERSION: testSuiteTag },
     sources: versionSources,
   });
@@ -561,7 +560,13 @@ export const reconstructMigrated015Fixture = async (ctx: RolloutRunContext): Pro
     versions: {},
     sources: versionSources,
   });
-  const baselineSnapshot = (await Bun.file(baselineLock).json()) as { env: Record<string, string> };
+  const baselineSnapshot = (await Bun.file(resolvedBaselineLock).json()) as { env: Record<string, string> };
+  // These services did not ship in 0.14; introduce them only with the Connector upgrade.
+  for (const key of CONNECTOR_OPTIONAL_VERSION_KEYS) delete baselineSnapshot.env[key];
+  const baselineLock = await ctx.writeVersionLock("rfc029-00-baseline", {
+    versions: baselineSnapshot.env,
+    sources: versionSources,
+  });
   const targetSnapshot = (await Bun.file(targetSnapshotLock).json()) as { env: Record<string, string> };
   const phaseVersions = migrationPhaseVersions(baselineSnapshot.env, targetSnapshot.env, versions.blueTag);
   const contractLock = await ctx.writeVersionLock("rfc029-01-contract", {
@@ -594,6 +599,8 @@ export const reconstructMigrated015Fixture = async (ctx: RolloutRunContext): Pro
     lockFile: baselineLock,
     scenario,
   });
+  const booted = await ctx.readState();
+  await run(["cast", "rpc", "--rpc-url", hostReachableRpcUrl(booted.discovery!.endpoints.gateway.http), "evm_setAutomine", "true"]);
   const maxConnections = await sqlScalar(coprocessorDatabaseName(0), "SHOW max_connections;");
   console.log(`[rollout database] max_connections=${maxConnections}`);
   if (maxConnections !== "1000") throw new Error("Rollout database connection limit was not applied");
@@ -651,7 +658,7 @@ export const reconstructMigrated015Fixture = async (ctx: RolloutRunContext): Pro
   const baselineConnectorImages = (await connectorObservation(1)).images;
   await ctx.upgradeKmsOperators([1], {
     lockFile: connectorLock,
-    epochMigration: kmsEpochMigration,
+    migration: kmsEpochMigration,
     overrides: [{ group: "kms-connector" }],
   });
   await assertKmsCoreVersions([1], phaseVersions.connector.CORE_VERSION!);
@@ -677,7 +684,7 @@ export const reconstructMigrated015Fixture = async (ctx: RolloutRunContext): Pro
   for (const operator of [2, 3, 4]) {
     await ctx.upgradeKmsOperators([operator], {
       lockFile: connectorLock,
-      epochMigration: kmsEpochMigration,
+      migration: kmsEpochMigration,
       overrides: [{ group: "kms-connector" }],
     });
     const operatorBoundary = await mineHostBlock();
