@@ -49,8 +49,11 @@ launch options:
   --blue-green              enable_blue_green=true and nb_coprocessor=2; with --tests the
                             automated RFC-021 round, without it Blue only (manual QA mode)
   --gpu                     enable_gpu=true: GPU workers + Default FHE params (Test params
-                            stay on CPU). Combines with --testnets, --blockchain-dev, and
-                            --blue-green (Green/GCS GPU; Blue stays CPU)
+                            stay on CPU). Requires --workers-tag. Combines with
+                            --testnets, --blockchain-dev, and --blue-green
+                            (Green/GCS GPU; Blue stays CPU)
+  --workers-tag <tag>       image tag for tfhe, sns, and zkproof when --gpu is set
+                            (for example fd282b1-cuda12.8-sm70). Required with --gpu
   --blockchain-dev          chain_mode=blockchain-dev: shared Geth/Nitro instead of Anvil
   --testnets                chain_mode=testnets: public Sepolia + Amoy hosts, Nitro gateway
                             (implies --polygon; RPC URLs + funder key come from AWS
@@ -186,7 +189,7 @@ cmd_launch() {
   local ref="" parties="1" blue_green="false" gpu="false" chain_mode="anvil"
   local tests="false" polygon="false" observability="false"
   local build_images="true" test_suite_only="false" kms_parties="4"
-  local do_watch="false" lifetime="8"
+  local do_watch="false" lifetime="8" workers_tag=""
   local -a sets=()
 
   while [[ $# -gt 0 ]]; do
@@ -195,6 +198,7 @@ cmd_launch() {
       --parties) parties="${2:-}"; shift 2 ;;
       --blue-green) blue_green="true"; shift ;;
       --gpu) gpu="true"; shift ;;
+      --workers-tag) workers_tag="${2:-}"; shift 2 ;;
       --blockchain-dev) chain_mode="blockchain-dev"; shift ;;
       --testnets) chain_mode="testnets"; shift ;;
       --tests) tests="true"; shift ;;
@@ -222,6 +226,13 @@ cmd_launch() {
     *) die "--kms-parties must be 4 or 13" ;;
   esac
   require_hours "--lifetime" "${lifetime}" 4 96
+  if [[ "${gpu}" == "true" ]]; then
+    if [[ ! "${workers_tag}" =~ ^[A-Za-z0-9_][A-Za-z0-9_.-]{0,127}$ ]]; then
+      die "--gpu requires --workers-tag <image-tag> (got '${workers_tag}')"
+    fi
+  elif [[ -n "${workers_tag}" ]]; then
+    die "--workers-tag is only used with --gpu"
+  fi
   if [[ "${blue_green}" == "true" && "${parties}" == "1" ]]; then
     parties="2"
   fi
@@ -255,7 +266,7 @@ print(json.dumps(out, separators=(",", ":")))
 
   need_gh
   echo "dispatching ${DEPLOY_WORKFLOW} on ${REPO} @ ${ref}"
-  echo "  parties=${parties} blue_green=${blue_green} gpu=${gpu} chain_mode=${chain_mode} tests=${tests} polygon=${polygon} lifetime=${lifetime}h"
+  echo "  parties=${parties} blue_green=${blue_green} gpu=${gpu} workers_tag=${workers_tag:-<none>} chain_mode=${chain_mode} tests=${tests} polygon=${polygon} lifetime=${lifetime}h"
   echo "  overrides=${overrides}"
 
   gh workflow run "${DEPLOY_WORKFLOW}" -R "${REPO}" --ref "${ref}" \
@@ -266,6 +277,7 @@ print(json.dumps(out, separators=(",", ":")))
     -f "nb_coprocessor=${parties}" \
     -f "enable_blue_green=${blue_green}" \
     -f "enable_gpu=${gpu}" \
+    -f "workers_tag=${workers_tag}" \
     -f "nb_kms_core=${kms_parties}" \
     -f "deploy_polygon=${polygon}" \
     -f "chain_mode=${chain_mode}" \
