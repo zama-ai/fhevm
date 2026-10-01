@@ -351,7 +351,7 @@ async fn v3_rejects_solana_srfc38_request_for_another_program() {
     assert_eq!(body["error"]["label"].as_str(), Some("validation_failed"));
     assert_eq!(
         body["error"]["details"][0]["field"].as_str(),
-        Some("verifyingProgramId")
+        Some("attestedPayload.verifyingProgramId")
     );
     let rejected_after = signature_precheck_total(&metrics_endpoint, "rejected").await;
     assert_eq!(rejected_after - rejected_before, 1.0);
@@ -717,7 +717,10 @@ async fn v3_rejects_solana_handle_entry_with_a_short_encrypted_store() {
             p["attestedPayload"]["handles"][0]["encryptedStore"] =
                 json!(format!("0x{}", "ab".repeat(31)));
         },
-        expect_v2_validation_error("handles[0].encryptedStore", "is 31 bytes, expected 32"),
+        expect_v2_validation_error(
+            "attestedPayload.handles[0].encryptedStore",
+            "is 31 bytes, expected 32",
+        ),
     )
     .await;
 

@@ -111,16 +111,19 @@ pub fn validate_no_0x_hex(hex_str: &str) -> Result<(), ValidationError> {
 }
 
 pub fn validate_0x_hex(hex_str: &str) -> Result<(), ValidationError> {
-    if !hex_str.starts_with("0x") {
+    decode_0x_hex(hex_str).map(|_| ())
+}
+
+/// Decodes a `0x`-prefixed hex string, failing as [`validate_0x_hex`] does.
+fn decode_0x_hex(hex_str: &str) -> Result<Vec<u8>, ValidationError> {
+    let Some(digits) = hex_str.strip_prefix("0x") else {
         return Err(ValidationError::new("validation_error")
             .with_message(validation_messages::HEX_MUST_START_WITH_0X.into()));
     };
-
-    if hex::decode(&hex_str[2..]).is_err() {
-        return Err(ValidationError::new("validation_error")
-            .with_message(validation_messages::HEX_INVALID_STRING.into()));
-    }
-    Ok(())
+    hex::decode(digits).map_err(|_| {
+        ValidationError::new("validation_error")
+            .with_message(validation_messages::HEX_INVALID_STRING.into())
+    })
 }
 
 pub fn validate_0x_hexs(hex_strs: &Vec<String>) -> Result<(), ValidationError> {
@@ -345,20 +348,12 @@ pub fn validate_v3_payload_type(value: &str) -> Result<(), ValidationError> {
 /// addresses. The list must be non-empty (enforced by `length(min = 1)`).
 pub fn validate_handle_entries(entries: &Vec<HandleEntryJson>) -> Result<(), ValidationError> {
     for entry in entries {
-        validate_0x_hex(&entry.ct_handle)?;
-        if entry.ct_handle.len() != 66 {
-            return Err(ValidationError::new("validation_error")
-                .with_message(validation_messages::LENGTH_MUST_BE_64_CHARACTERS.into()));
-        }
+        let handle: [u8; 32] = decode_0x_hex(&entry.ct_handle)?.try_into().map_err(|_| {
+            ValidationError::new("validation_error")
+                .with_message(validation_messages::LENGTH_MUST_BE_64_CHARACTERS.into())
+        })?;
         // The EIP-712 arm is EVM-only: its signature is checked against an EVM host, which a
         // Solana chain does not have. A Solana handle belongs in the Solana envelope.
-        let handle: [u8; 32] = hex::decode(&entry.ct_handle[2..])
-            .ok()
-            .and_then(|bytes| bytes.try_into().ok())
-            .ok_or_else(|| {
-                ValidationError::new("validation_error")
-                    .with_message(validation_messages::HEX_INVALID_STRING.into())
-            })?;
         if is_solana_host_chain_id(extract_chain_id_from_handle(&handle)) {
             return Err(ValidationError::new("validation_error")
                 .with_message(validation_messages::HANDLE_MUST_BE_ON_AN_EVM_HOST_CHAIN.into()));

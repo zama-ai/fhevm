@@ -8,7 +8,7 @@ use crate::http::endpoints::v3::types::{
     AttestedUserDecryptRequestJson, Eip712UnifiedUserDecryptPayloadJson,
     SolanaUserDecryptRequestJson,
 };
-use zama_solana_permit::{verify_signature, PermitError};
+use zama_solana_permit::{verify_signature, IdentityField, PermitError};
 use zama_solana_request::host_chain::{
     chain_type_byte, is_evm_host_chain_id, is_solana_host_chain_id,
 };
@@ -888,13 +888,62 @@ pub enum SolanaAdmissionError {
     /// A field does not parse, or has the wrong width.
     #[error(transparent)]
     Field(#[from] FieldError),
+    /// The request breaks a rule that spans several fields.
     #[error(transparent)]
-    Form(#[from] SolanaRequestError),
+    Form(SolanaRequestError),
     #[error("Solana permit signature is not valid: {0}")]
     Signature(PermitError),
     /// This relayer could not encode a request it had parsed: its own defect.
     #[error(transparent)]
     Encode(#[from] SolanaRequestEncodeError),
+}
+
+impl SolanaAdmissionError {
+    /// Keys a form refusal by the field at fault when there is exactly one, as an EVM request's
+    /// is; a refusal that spans several fields stays a form refusal.
+    fn form(error: SolanaRequestError) -> Self {
+        match form_error_field(&error) {
+            Some(field) => Self::Field(FieldError::new(field, error.to_string())),
+            None => Self::Form(error),
+        }
+    }
+}
+
+/// The payload field a form refusal points at, if it points at a single one.
+fn form_error_field(error: &SolanaRequestError) -> Option<&'static str> {
+    match error {
+        SolanaRequestError::NoHandles | SolanaRequestError::TooManyHandles(_) => {
+            Some("attestedPayload.handles")
+        }
+        SolanaRequestError::StoreCount { .. }
+        | SolanaRequestError::EntryCount { .. }
+        | SolanaRequestError::MixedChains { .. }
+        | SolanaRequestError::NotSolanaChain(_) => None,
+        SolanaRequestError::Permit(permit) => match permit {
+            PermitError::IdentityWidth {
+                field: IdentityField::UserAddress,
+                ..
+            }
+            | PermitError::UnusableUserAddress => Some("attestedPayload.userAddress"),
+            PermitError::IdentityWidth {
+                field: IdentityField::VerifyingProgramId,
+                ..
+            } => Some("attestedPayload.verifyingProgramId"),
+            PermitError::ScopeWidth { .. }
+            | PermitError::TooManyScopes { .. }
+            | PermitError::ScopesNotAscending { .. }
+            | PermitError::DuplicateScope { .. } => Some("attestedPayload.allowedScopes"),
+            PermitError::DurationOutOfRange { .. }
+            | PermitError::StartTimestampOutOfRange { .. } => {
+                Some("attestedPayload.requestValidity")
+            }
+            PermitError::TransportKeyLength { .. } => Some("attestedPayload.transportKey"),
+            PermitError::UnknownKmsRoutingVersion { .. } | PermitError::KmsRoutingLength { .. } => {
+                Some("attestedPayload.extraData")
+            }
+            PermitError::SignatureMismatch => Some("signature"),
+        },
+    }
 }
 
 impl TryFrom<SolanaUserDecryptRequestJson> for UserDecryptRequest {
@@ -906,7 +955,7 @@ impl TryFrom<SolanaUserDecryptRequestJson> for UserDecryptRequest {
         let mut handles = Vec::with_capacity(payload.handles.len());
         let mut entries = Vec::with_capacity(payload.handles.len());
         for (index, entry) in payload.handles.iter().enumerate() {
-            let field = |name: &str| format!("handles[{index}].{name}");
+            let field = |name: &str| format!("attestedPayload.handles[{index}].{name}");
             handles.push(parse_0x_hex_array(&entry.handle, &field("handle"))?);
             entries.push(SolanaEntryClaims {
                 owner_address: parse_0x_hex_array(&entry.owner_address, &field("ownerAddress"))?,
@@ -921,27 +970,30 @@ impl TryFrom<SolanaUserDecryptRequestJson> for UserDecryptRequest {
         // fields its calldata types, and the blob.
         let fields = SolanaUserDecryptFields {
             handles,
-            transport_key: parse_0x_hex(&payload.transport_key, "transportKey")?,
+            transport_key: parse_0x_hex(&payload.transport_key, "attestedPayload.transportKey")?,
             start_timestamp: parse_decimal_u64(
                 &payload.request_validity.start_timestamp,
-                "startTimestamp",
+                "attestedPayload.requestValidity.startTimestamp",
             )?,
             duration_seconds: parse_decimal_u64(
                 &payload.request_validity.duration_seconds,
-                "durationSeconds",
+                "attestedPayload.requestValidity.durationSeconds",
             )?,
-            extra_data: parse_0x_hex(&payload.extra_data, "extraData")?,
+            extra_data: parse_0x_hex(&payload.extra_data, "attestedPayload.extraData")?,
         };
         let blob = SolanaRequestBlob {
-            user_address: parse_0x_hex_array(&payload.user_address, "userAddress")?,
+            user_address: parse_0x_hex_array(&payload.user_address, "attestedPayload.userAddress")?,
             allowed_scopes: payload
                 .allowed_scopes
                 .iter()
-                .map(|scope| parse_0x_hex_array(scope, "allowedScopes"))
+                .enumerate()
+                .map(|(index, scope)| {
+                    parse_0x_hex_array(scope, &format!("attestedPayload.allowedScopes[{index}]"))
+                })
                 .collect::<Result<Vec<_>, _>>()?,
             verifying_program_id: parse_0x_hex_array(
                 &payload.verifying_program_id,
-                "verifyingProgramId",
+                "attestedPayload.verifyingProgramId",
             )?,
             signature: parse_0x_hex_array(&value.signature, "signature")?,
             entries,
@@ -949,7 +1001,8 @@ impl TryFrom<SolanaUserDecryptRequestJson> for UserDecryptRequest {
         let solana_request = Bytes::from(encode_solana_request(&blob)?);
         // The connector types the request through the same function, so a request accepted here is
         // one no connector refuses on form.
-        let request = SolanaUserDecryptRequest::assemble(fields, blob)?;
+        let request =
+            SolanaUserDecryptRequest::assemble(fields, blob).map_err(SolanaAdmissionError::form)?;
 
         // The signature, verified here rather than only in the connector.
         //
@@ -1012,13 +1065,13 @@ pub fn assemble_submitted_solana_request(
 #[derive(Debug, thiserror::Error)]
 #[error("{field}: {issue}")]
 pub struct FieldError {
-    /// The field's path in the request payload, e.g. `handles[0].encryptedStore`.
+    /// The field's full JSON path in the request, e.g. `attestedPayload.handles[0].encryptedStore`.
     pub field: String,
     pub issue: String,
 }
 
 impl FieldError {
-    fn new(field: &str, issue: String) -> Self {
+    pub(crate) fn new(field: &str, issue: String) -> Self {
         Self {
             field: field.to_string(),
             issue,
@@ -1577,6 +1630,40 @@ mod tests {
         let error = UserDecryptRequest::try_from(solana_envelope(payload))
             .expect_err("a 31-byte encrypted store must be rejected");
         assert!(error.to_string().contains("encryptedStore"), "got: {error}");
+    }
+
+    #[test]
+    fn solana_builder_keys_a_single_field_form_refusal_by_that_field() {
+        // A zero-length validity window breaks a rule of `requestValidity` alone, so the refusal
+        // names that field, as an expired EVM window does.
+        let mut payload = valid_solana_payload();
+        payload.request_validity.duration_seconds = "0".to_string();
+        let error = UserDecryptRequest::try_from(solana_envelope(payload))
+            .expect_err("a zero-length validity window must be rejected");
+        let SolanaAdmissionError::Field(error) = error else {
+            panic!("expected a field refusal, got: {error}");
+        };
+        assert_eq!(error.field, "attestedPayload.requestValidity");
+    }
+
+    #[test]
+    fn solana_builder_keeps_a_cross_field_form_refusal_unkeyed() {
+        // Handles from two chains break a rule no single field owns.
+        let mut payload = valid_solana_payload();
+        let mut other_chain = solana_test_handle();
+        other_chain[29] ^= 0x01;
+        let mut second = payload.handles[0].clone();
+        second.handle = format!("0x{}", hex::encode(other_chain));
+        payload.handles.push(second);
+        let error = UserDecryptRequest::try_from(solana_envelope(payload))
+            .expect_err("handles from two chains must be rejected");
+        assert!(
+            matches!(
+                error,
+                SolanaAdmissionError::Form(SolanaRequestError::MixedChains { .. })
+            ),
+            "got: {error}"
+        );
     }
 
     /// A permit that is well formed in every typed respect but carries a signature from another

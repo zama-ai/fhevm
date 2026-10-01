@@ -14,9 +14,13 @@ static METRICS: OnceLock<SignaturePreCheckMetrics> = OnceLock::new();
 pub enum SignaturePreCheckOutcome {
     /// Signature accepted (EOA fast path, ERC-1271 magic value, or a Solana ed25519 permit).
     Accepted,
-    /// Signature definitively rejected — request not forwarded.
+    /// Signature definitively rejected, or a valid permit made for another deployment (an EVM
+    /// signature failing the EIP-712 domain check, a Solana permit naming another zama-host
+    /// program) — request not forwarded. A bad Solana signature is counted before the host-chain
+    /// check, an EVM one after it, so a Solana request on an unserved chain can count here.
     Rejected,
-    /// Host-chain call failed after retries — surfaced as a server error.
+    /// Host-chain call failed after retries, or the relayer failed internally during the
+    /// pre-check — surfaced as a server error.
     HostCallFailed,
 }
 
