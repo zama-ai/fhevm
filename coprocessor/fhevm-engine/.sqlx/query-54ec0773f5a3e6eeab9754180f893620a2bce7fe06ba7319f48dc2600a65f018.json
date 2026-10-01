@@ -1,0 +1,20 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "SELECT COUNT(*) FROM public.drifted_handle\n            WHERE reason = 'ct64_mismatch' AND healed_at IS NULL AND is_contained = false\n              AND superseded_at IS NULL\n              AND NOT public.drift_superseded(consensus_epoch, host_chain_id, block_number)",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "count",
+        "type_info": "Int8"
+      }
+    ],
+    "parameters": {
+      "Left": []
+    },
+    "nullable": [
+      null
+    ]
+  },
+  "hash": "54ec0773f5a3e6eeab9754180f893620a2bce7fe06ba7319f48dc2600a65f018"
+}

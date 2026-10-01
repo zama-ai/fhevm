@@ -1,0 +1,26 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "SELECT EXISTS (SELECT 1 FROM public.drifted_handle\n            WHERE consensus_epoch = $1 AND coprocessor_context_id = $2\n              AND host_chain_id = $3 AND handle = $4 AND block_hash = $5\n              AND healed_at IS NOT NULL) AS \"healed!\"",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "healed!",
+        "type_info": "Bool"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Text",
+        "Bytea",
+        "Int8",
+        "Bytea",
+        "Bytea"
+      ]
+    },
+    "nullable": [
+      null
+    ]
+  },
+  "hash": "50762936b233e58ea5c4fae159c167231c38657f2d9420a66428fe1d245708fe"
+}

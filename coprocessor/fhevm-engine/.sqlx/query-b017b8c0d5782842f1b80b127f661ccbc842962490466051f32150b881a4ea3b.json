@@ -1,0 +1,65 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "SELECT d.id, d.version, d.coprocessor_context_id, d.host_chain_id,\n                  d.handle, d.block_number, d.block_hash,\n                  d.consensus_epoch = $1 AS \"local!\"\n             FROM public.drifted_handle d\n            WHERE d.id = ANY($2) AND d.reason = 'ct64_mismatch' AND d.healed_at IS NULL\n              AND (\n                    d.consensus_epoch = $1\n                    OR (\n                        NOT EXISTS (\n                            SELECT 1 FROM public.drifted_handle cur\n                             WHERE cur.consensus_epoch = $1\n                               AND cur.host_chain_id = d.host_chain_id\n                               AND cur.handle = d.handle\n                               AND cur.reason = 'ct64_mismatch'\n                        )\n                        AND (\n                            (\n                                NOT EXISTS (\n                                    SELECT 1 FROM ciphertexts ct\n                                     WHERE ct.handle = d.handle\n                                       AND octet_length(ct.ciphertext) > 0\n                                )\n                                AND EXISTS (\n                                    SELECT 1 FROM computations c\n                                     WHERE c.host_chain_id = d.host_chain_id\n                                       AND c.dependencies @> ARRAY[d.handle]::bytea[]\n                                )\n                            )\n                            OR (\n                                d.local_ct64_digest IS NOT NULL\n                                AND EXISTS (\n                                    SELECT 1 FROM ciphertext_digest cd\n                                     WHERE cd.handle = d.handle\n                                       AND cd.ciphertext = d.local_ct64_digest\n                                )\n                            )\n                        )\n                    )\n              )\n            ORDER BY d.id",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "id",
+        "type_info": "Int8"
+      },
+      {
+        "ordinal": 1,
+        "name": "version",
+        "type_info": "Int2"
+      },
+      {
+        "ordinal": 2,
+        "name": "coprocessor_context_id",
+        "type_info": "Bytea"
+      },
+      {
+        "ordinal": 3,
+        "name": "host_chain_id",
+        "type_info": "Int8"
+      },
+      {
+        "ordinal": 4,
+        "name": "handle",
+        "type_info": "Bytea"
+      },
+      {
+        "ordinal": 5,
+        "name": "block_number",
+        "type_info": "Int8"
+      },
+      {
+        "ordinal": 6,
+        "name": "block_hash",
+        "type_info": "Bytea"
+      },
+      {
+        "ordinal": 7,
+        "name": "local!",
+        "type_info": "Bool"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Text",
+        "Int8Array"
+      ]
+    },
+    "nullable": [
+      false,
+      false,
+      false,
+      false,
+      false,
+      false,
+      false,
+      null
+    ]
+  },
+  "hash": "b017b8c0d5782842f1b80b127f661ccbc842962490466051f32150b881a4ea3b"
+}
