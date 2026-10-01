@@ -173,9 +173,9 @@ true
 {{- end -}}
 {{- end -}}
 
-{{/* Separate CA ConfigMap for the migration hook. */}}
+{{/* Separate CA ConfigMap for the migration hook. Truncates the release name, not the suffix, so it never matches the regular CA name. */}}
 {{- define "coprocessor.databaseSslRootCertMigrationConfigMapName" -}}
-{{- printf "%s-rds-ca-cert-migration" .Release.Name | trunc 63 | trimSuffix "-" -}}
+{{- printf "%s-rds-ca-cert-migration" (.Release.Name | trunc 41 | trimSuffix "-") -}}
 {{- end -}}
 
 {{/* Migration hook volume; caller checks mount-enabled. */}}
