@@ -850,6 +850,14 @@ mod tests {
             upload_stopped(&pool, cutoff, &started).await.unwrap(),
             "attempt replaced mid-batch"
         );
+        sqlx::query("UPDATE public.upgrade_state SET proposal_id = '\\x02', proposal_block = 11")
+            .execute(&pool)
+            .await
+            .unwrap();
+        assert!(
+            upload_stopped(&pool, cutoff, &started).await.unwrap(),
+            "same proposal re-proposed at another block"
+        );
     }
 
     #[test]
