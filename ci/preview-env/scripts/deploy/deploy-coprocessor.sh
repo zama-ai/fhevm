@@ -42,7 +42,7 @@ fi
 # Single published GPU worker tag for tfhe / sns / zkproof. Do not derive it
 # from resolve-tags: GPU images are built separately and this pin is the one
 # that matches the coprocessor-gpu nodepool.
-GPU_IMAGE_TAG="${GPU_IMAGE_TAG:-b358436-cuda12.8-sm70}"
+GPU_IMAGE_TAG="${GPU_IMAGE_TAG:-fd282b1-cuda12.8-sm70}"
 
 worker_image_tag() {
   local key="$1"

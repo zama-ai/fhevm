@@ -5,7 +5,7 @@
 # so it does not consume MIG slices it cannot use.
 #
 # deploy-coprocessor.sh pairs this scheduling with the pinned GPU worker
-# tag b358436-cuda12.8-sm70 (override with GPU_IMAGE_TAG).
+# tag fd282b1-cuda12.8-sm70 (override with GPU_IMAGE_TAG).
 tfheWorker:
   resources:
     requests:
