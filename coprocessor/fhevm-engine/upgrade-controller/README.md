@@ -1,4 +1,97 @@
-# Blue-Green Upgrade E2E Flow
+# Blue-Green Upgrades
+
+## Upgrade outcomes and recovery
+
+Blue is the stack running the current version. Green runs the proposed new version.
+The detector checks whether operators published matching state hashes. The controller
+then switches to Green (cutover) or rejects the upgrade and keeps Blue (rollback).
+
+Each operator decides from its own detector's result. No shared record tells all
+operators to commit or roll back. A split means some operators switch to Green while
+others roll back to Blue.
+
+### Publication cutoff and timeout
+
+There are two separate timers, both using `commitment_timeout` (60 seconds by default):
+
+1. **Stop uploading hashes.** On each host chain, Blue must have recorded a block at
+   or above `end_block` at least 60 seconds ago. Once this is true for every chain,
+   the detector stops starting hash uploads to S3. The time is measured locally when
+   Blue records the block, so operators can have different cutoffs.
+2. **Roll back without consensus.** The detector starts a 60-second timer when every
+   Green chain reaches `end_block`, or when uploads stop. If it still cannot confirm
+   matching hashes when that timer expires, it asks the controller to roll back.
+
+A stalled listener alone no longer starts the rollback timer. If Green stays behind
+while Blue and the detector keep running, rollback is roughly 120 seconds after
+Blue reaches the end of every chain's window, plus polling and processing delays.
+
+A running upload batch also stops if its attempt ends or is replaced. Each attempt
+is identified by its proposal ID and proposal block. An upload already past its
+check may still finish after the cutoff or rollback.
+
+### Automatic recovery
+
+“Automatic” below describes recovery after the required services are running.
+Operators restore services manually if they do not restart on their own.
+A new upgrade proposal is a **DAO action**, separate from operator recovery.
+After a failed round, operators report their status; the DAO decides whether to
+propose another attempt once all operators are ready.
+
+For rows 2–4, Blue kept up with the chain, the local upload cutoff has passed, and
+the operator never uploaded the hashes needed for consensus. Otherwise, see the cases requiring attention.
+
+| # | Situation | Behavior | Automatic or manual? |
+| --- | --- | --- | --- |
+| 1 | Normal round reaches consensus before timeout | Automatic cutover | **Automatic.** No operator action. |
+| 2 | Green controller and detector were down throughout the round | Returning detector cannot publish missing hashes; timeout rolls back | **Automatic** once services return. No manual rollback. |
+| 3 | Only Green's detector was down throughout the round | Missing hashes remain unpublished; timeout rolls back | **Automatic** once services return. No manual rollback. |
+| 4 | Whole Green stack restarts after the cutoff | Missing hashes remain unpublished; timeout rolls back once services run | **Automatic** once services return. No manual rollback. |
+| 5 | Required hashes were uploaded before the outage; other operators switched to Green | Returning services can confirm matching hashes again and switch to Green once preparation finishes | **Automatic** if preparation and consensus recovery succeed. |
+| 6 | Only the controller was down | Detector repeats its consensus or timeout notification; controller acts on it | **Automatic** recovery; **manual operator action** if outcomes differ. |
+| 7 | Every operator times out without consensus | Automatic rollback everywhere | **Automatic.** No operator state repair. |
+| 8 | No Green started, no `gcs-*` schema exists, and Blue's latest recorded block exceeds `end_block` on every chain | Blue fails the unclaimed proposal with `window_expired_no_gcs` | **Automatic.** No operator state repair. |
+| 9 | Green deployed on only some operators | Operators without Green fail it as in row 8; the others miss their hashes and time out | **Automatic** failure/timeout. **Manual operator action:** deploy Green where missing. |
+| 10 | Every operator answers but state hashes differ | Detector logs `state-hash divergence` and checks other blocks. If none provides the required agreement before timeout, it rolls back | **Automatic** consensus checks and timeout. **Manual investigation** to fix the divergence. |
+| 11 | Green is still waiting for host preparation and Blue is more than 1,000 blocks past `start_block` | Rolled back with `dry_run_readiness_stalled` | **Automatic** rollback. **Manual operator action:** investigate blocked preparation. |
+| 12 | Controller restarts during cutover (`UpgradeAuthorized`) | Cutover resumes on restart | **Automatic.** No operator action. |
+
+Slow Green computation or publication can exceed Blue's cutoff even before Green's
+own timeout. This can roll back a round that would have succeeded with more time.
+Consistent rollback across the fleet is acceptable; it is not a split.
+
+### Cases requiring attention
+
+| # | Situation | Possible outcome | Automatic or manual? |
+| --- | --- | --- | --- |
+| 1 | One detector cannot download a required hash near timeout, but others can | Local rollback while peers cut over | **Manual operator action:** compare outcomes and coordinate repair if split. |
+| 2 | Blue was down or ingested `end_block` later than peers | Local cutoff expires later; late uploads can allow a solo cutover after peers rolled back | **Manual operator action:** compare outcomes and coordinate repair if split. |
+| 3 | Green's listener stalls and local consensus stays incomplete, but peers have enough earlier hashes to commit | Local timeout rollback after peers cut over | **Manual operator action:** restore the listener and coordinate repair if split. |
+| 4 | An S3 upload finishes after the cutoff or rollback | Peers may use a late hash | **Manual operator action:** compare outcomes and coordinate repair if split. |
+| 5 | An old `gcs-*` schema remains with no Green running | Blue leaves the proposal unresolved | **Manual operator action:** restore Green or arrange cleanup after checking peers. |
+| 6 | Green has not reached `end_block`, and Blue has not recorded enough progress to close uploads | Attempt can remain pending | **Manual operator action** if listeners do not recover automatically. |
+| 7 | Green started the attempt, then stayed down | Attempt can stay `in_progress`; Blue's cleanup only handles proposals that no Green stack picked up | **Manual operator action:** restore Green and compare outcomes, or arrange cleanup if Green will not return. |
+| 8 | A new proposal arrives while an operator still has an unresolved attempt | That operator rejects it without queuing a retry. Operators that accept it cannot reach consensus without its hashes | **Manual operator action:** resolve remaining attempts and report fleet status to the DAO. |
+
+For manual investigation, compare `proposal_id`, `proposal_block`, `state`, `status`
+and `last_error` in the `stack_role = 'GCS'` rows of `upgrade_state`, plus the live
+version in `versioning`, on every operator. Compare rows with the same proposal ID
+and block.
+
+Before the DAO submits another proposal, operators must confirm that no unresolved
+`in_progress` attempt remains.
+For the same attempt, if every operator's Green row is `PAUSED/failed`, retrying needs
+no state repair. If some are `LIVE/completed` and others `PAUSED/failed`, the fleet has
+split. Agree on a recovery procedure across operators before editing database state
+or submitting another proposal. There is no recovery CLI in this implementation.
+Rollback resets Green's data while operators that committed already run the new
+version; setting a row to `UpgradeAuthorized` is not a supported repair.
+
+Manual cleanup must account for both the attempt's database state and Green's schema.
+Dropping the schema alone is not a general recovery procedure.
+
+Update these tables when publication, timeout, or reconciliation behavior changes.
+The following sections describe the E2E setup.
 
 ## 1. Run E2E in BCS Mode
 
@@ -146,7 +239,8 @@ Expected result:
 
 ## 5. Wait for Cutover
 
-Once `end_block` is reached, the cutover is executed automatically.
+Once the required host and Gateway consensus latches are set, the controller
+authorizes cutover automatically. Reaching `end_block` alone does not authorize it.
 
 During cutover:
 
