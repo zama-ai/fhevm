@@ -150,7 +150,6 @@ impl SwitchNSquashService {
         start_block_state: Arc<AtomicI64>,
         keys_cache: Arc<RwLock<lru::LruCache<DbKeyId, KeySet>>>,
     ) -> Result<SwitchNSquashService, ExecutionError> {
-        fhevm_engine_common::db_keys::reject_legacy_server_key_override()?;
         Ok(SwitchNSquashService {
             pool: pool_mngr.pool(),
             conf,
