@@ -1481,11 +1481,6 @@ const runBlueGreenSteps = async (
   const traffic = quietSynthetic
     ? { errored: new Promise<never>(() => {}), stop: async () => ({ iterations: 0, retries: 0, failures: 0 }) }
     : startContinuousErc20Traffic(trafficTargets, blueGreenTrafficStreams);
-  // The upgrade-controller cuts over on its own once consensus anchors, while the
-  // cross-cutover chain below is still running: the dry-run evidence must be
-  // collected now, alongside the traffic. The check fails if cutover wins.
-  const dryRunCheck = manifests?.duringDryRun();
-  dryRunCheck?.catch(() => {}); // Observed below; never an unhandled rejection meanwhile.
   let trafficStats: { iterations: number; retries: number; failures: number };
   try {
     // The chain is a stress signal — a fence hit mid-transfer is expected; [11/11] verifies actual transferCount.
@@ -1519,7 +1514,6 @@ const runBlueGreenSteps = async (
       }
     })();
     await Promise.race([chainPromise, traffic.errored]);
-    if (dryRunCheck) await Promise.race([dryRunCheck, traffic.errored]);
 
     console.log(`\n[9/11] wait for cutover (versioning=${gcsVersionLive} per operator)`);
     for (const db of operatorDatabases) {
@@ -1546,6 +1540,9 @@ const runBlueGreenSteps = async (
     }
     console.log(`OK:   consensus ${gcsConsensusVersion} active on every operator`);
     await manifests?.markCutover();
+    // Cutover can follow DryRunStarted within seconds, so the dry-run evidence is
+    // checked against the blocks the dry run computed, not against the clock.
+    await manifests?.duringDryRun();
 
     // BCS has no upgrade_state row — retires implicitly via `resolve_gcs_mode`.
     console.log(`\n[10/11] verify FSM final state`);
