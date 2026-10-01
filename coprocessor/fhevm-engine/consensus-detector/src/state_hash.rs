@@ -360,11 +360,10 @@ pub(crate) async fn upload_window(
                   WHERE stack_role = 'GCS' AND status = 'in_progress' LIMIT 1),
                 (SELECT COALESCE(proposal_block, -1) FROM upgrade_state
                   WHERE stack_role = 'GCS' AND status = 'in_progress' LIMIT 1),
-                COALESCE(BOOL_AND(COALESCE(
-            (SELECT b.created_at FROM public.host_chain_blocks_valid b
-              WHERE b.chain_id = w.host_chain_id AND b.block_number >= w.end_block
-              ORDER BY b.block_number, b.created_at LIMIT 1)
-                <= NOW() - make_interval(secs => $1), FALSE)), FALSE)
+                COALESCE(BOOL_AND(EXISTS(
+            SELECT 1 FROM public.host_chain_blocks_valid b
+             WHERE b.chain_id = w.host_chain_id AND b.block_number >= w.end_block
+               AND b.created_at <= NOW() - make_interval(secs => $1))), FALSE)
            FROM upgrade_state w WHERE w.stack_role = 'GCS' AND w.status = 'in_progress'",
         )
         .bind(cutoff.as_secs_f64())
