@@ -12,12 +12,19 @@ import { createSolanaLeafRecord } from './leafRecord.js';
 import { getCleartextSolanaRuntime } from './runtime.js';
 
 /**
+ * The leaf record a cleartext client reads, standing in for the coprocessors' the Connector reads.
+ * Pass one record from `createSolanaLeafRecord` to every client of a host, so each client reads
+ * only the store writes the record has not seen yet. A client without one keeps its own.
+ */
+type CleartextLeafRecordParameters = { readonly readLeafProofs?: SolanaLeafProofReader };
+
+/**
  * Creates a public decrypt client for a cleartext host: certificates are signed by the cleartext
  * KMS key over the plaintexts the host recorded. Same parameters and actions as
  * `createFhevmPublicDecryptClient`.
  */
 export function createFhevmCleartextPublicDecryptClient<C extends FhevmSolanaChain>(
-  parameters: SolanaClientParameters<C>,
+  parameters: SolanaClientParameters<C> & CleartextLeafRecordParameters,
 ): FhevmSolanaPublicDecryptClient<C> {
   return publicDecryptClient(parameters, leafRecordOf(parameters));
 }
@@ -28,7 +35,7 @@ export function createFhevmCleartextPublicDecryptClient<C extends FhevmSolanaCha
  * parameters and actions as `createFhevmDecryptClient`.
  */
 export function createFhevmCleartextDecryptClient<C extends FhevmSolanaChain>(
-  parameters: SolanaClientParameters<C> & { readonly trust: SolanaDecryptTrust },
+  parameters: SolanaClientParameters<C> & CleartextLeafRecordParameters & { readonly trust: SolanaDecryptTrust },
 ): FhevmSolanaDecryptClient<C> {
   const readLeafProofs = leafRecordOf(parameters);
   return withPermitDecrypt(
@@ -39,9 +46,12 @@ export function createFhevmCleartextDecryptClient<C extends FhevmSolanaChain>(
   );
 }
 
-/** The client's own leaf record, standing in for the coprocessors' the Connector reads. */
-function leafRecordOf({ rpc, chain }: SolanaClientParameters): SolanaLeafProofReader {
-  return createSolanaLeafRecord(rpc, solanaHostProgram(chain));
+function leafRecordOf({
+  rpc,
+  chain,
+  readLeafProofs,
+}: SolanaClientParameters & CleartextLeafRecordParameters): SolanaLeafProofReader {
+  return readLeafProofs ?? createSolanaLeafRecord(rpc, solanaHostProgram(chain));
 }
 
 function publicDecryptClient<C extends FhevmSolanaChain>(

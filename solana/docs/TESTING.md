@@ -251,9 +251,11 @@ returns `@fhevm/sdk/solana` with the three client factories replaced by those of
   signed with the test KMS key, and the on-chain verifier checks it as usual.
 
 Leaf proofs come from an in-memory leaf record of the validator (`createSolanaLeafRecord`, whose
-header gives its catch-up rules). The decrypt clients read their own record, and the stack serves
-one at `/v1/solana/leaf-proofs` in the host-listener's wire format, so app code fetches leaf proofs
-from `env.leafProof` on both targets.
+header gives its catch-up rules). The e2e's decrypt clients share one record for the test process
+(`readLeafProofs` in `test-suite/fhevm/src/solana/target.ts`), as coprocessors keep theirs, so a
+decrypt reads only the store writes since the last one. The stack serves another at
+`/v1/solana/leaf-proofs` in the host-listener's wire format, so app code fetches leaf proofs from
+`env.leafProof` on both targets.
 
 What the cleartext target does not prove, so these parts skip there
 (`capabilities.protocolServices` is false):
