@@ -162,11 +162,11 @@ spec:
         {{- include "coprocessor.databaseSslRootCertVolumeMount" . | nindent 8 }}
         {{- end }}
       {{- if eq (include "coprocessor.databaseSslRootCertMountEnabled" .) "true" }}
-      {{- if eq (include "coprocessor.dbMigrationHookEnabled" .) "true" }}
+      {{- if hasKey (.Values.dbMigration.annotations | default dict) "helm.sh/hook" }}
       volumes:
         - name: rds-ca-cert
           configMap:
-            name: {{ include "coprocessor.databaseSslRootCertMigrationConfigMapName" . }}
+            name: {{ .Release.Name }}-mig-ca
       {{- else }}
       {{- include "coprocessor.databaseSslRootCertVolume" . | nindent 6 }}
       {{- end }}

@@ -166,18 +166,6 @@ volumes:
       name: {{ include "coprocessor.databaseSslRootCertConfigMapName" . }}
 {{- end -}}
 
-{{/* Whether the migration Job is a Helm hook. */}}
-{{- define "coprocessor.dbMigrationHookEnabled" -}}
-{{- if hasKey (.Values.dbMigration.annotations | default dict) "helm.sh/hook" -}}
-true
-{{- end -}}
-{{- end -}}
-
-{{/* Helm release names are at most 53 characters; preserve the full name. */}}
-{{- define "coprocessor.databaseSslRootCertMigrationConfigMapName" -}}
-{{- printf "%s-mig-ca" .Release.Name -}}
-{{- end -}}
-
 {{/*
 Container resources for FHE workers. CPU/memory keep the previous defaults;
 nvidia.com/gpu is passed through when set so pods can land on GPU nodepools.
@@ -200,3 +188,4 @@ resources:
     nvidia.com/gpu: {{ . | quote }}
     {{- end }}
 {{- end -}}
+

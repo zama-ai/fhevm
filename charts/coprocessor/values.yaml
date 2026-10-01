@@ -150,10 +150,6 @@ hostContractConfigMap:
   # Resource name. Downstream components reference this via configMapKeyRef.name.
   name: eth-sc-addresses
 
-  # Retain on uninstall. Enable on Blue before removal; keep Green enabled=false
-  # until meta.helm.sh/release-name is transferred to Green.
-  keepOnUninstall: false
-
   # Selects a bundled preset from configs/ethereum-<network>.yaml.
   # Allowed values: "" (no preset), "devnet", "testnet", "mainnet".
   # An unrecognized value fails the render.
@@ -178,10 +174,6 @@ gatewayContractConfigMap:
   # Resource name. Downstream components reference this via configMapKeyRef.name.
   name: gw-sc-addresses
 
-  # Retain on uninstall. Enable on Blue before removal; keep Green enabled=false
-  # until meta.helm.sh/release-name is transferred to Green.
-  keepOnUninstall: false
-
   # Selects a bundled preset from configs/gateway-<network>.yaml.
   # Allowed values: "" (no preset), "devnet", "testnet", "mainnet".
   # An unrecognized value fails the render.
@@ -205,10 +197,6 @@ polygonContractConfigMap:
 
   # Resource name. Downstream components reference this via configMapKeyRef.name.
   name: polygon-sc-addresses
-
-  # Retain on uninstall. Enable on Blue before removal; keep Green enabled=false
-  # until meta.helm.sh/release-name is transferred to Green.
-  keepOnUninstall: false
 
   # Selects a bundled preset from configs/polygon-<network>.yaml.
   # Allowed values: "" (no preset), "devnet", "testnet", "mainnet".
