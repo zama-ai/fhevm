@@ -1578,7 +1578,8 @@ consensusDetector:
 
   config:
     # Accepts `value` or `valueFrom`; empty uses the bucket fallback below. Set value to the
-    # literal `none` only to explicitly disable publication and verification.
+    # literal `none` only to explicitly disable manifest publication, verification and
+    # ct64 healing: drift is then neither detected nor healed.
     s3BucketName: {}
     # Interval between host-block discovery ticks (also seals/publishes
     # already-tracked work). After bootstrap, new heights arrive parent→child,
@@ -1611,6 +1612,18 @@ consensusDetector:
     # Additional peer verification attempts after the initial attempt.
     # Clap: --manifest-verification-retry-count
     manifestVerificationRetryCount: 59
+    # Concurrent ct64 downloads per healing pass.
+    # Clap: --manifest-healing-batch-size
+    manifestHealingBatchSize: 8
+    # Fallback poll while waiting for event_healing_work.
+    # Clap: --manifest-healing-poll-interval
+    manifestHealingPollInterval: 30s
+    # Delay after detection before an uncontained ct64 drift is healed anyway.
+    # Clap: --manifest-healing-containment-timeout
+    manifestHealingContainmentTimeout: 5m
+    # Failed ct64 healing attempts (one every 30s) before a finding is abandoned.
+    # Clap: --manifest-healing-max-attempts
+    manifestHealingMaxAttempts: 120
     # Wall-clock stall with no newly computed handle before missing
     # ciphertext may be sealed as uncomputed. A computed handle resets it.
     # Clap: --incomplete-block-timeout

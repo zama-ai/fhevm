@@ -210,6 +210,7 @@ jobs:
           - coprocessor/fhevm-engine/fhevm-engine-common/**
           - coprocessor/fhevm-engine/Cargo.*
           - host-contracts/rust_bindings/**
+          - shared/block-manifest/**
           - shared/ciphertext-attestation/**
 
   check-changes-tfhe-worker:
