@@ -48,6 +48,7 @@ futures = "0.3.31"
 sha2 = "0.10.9"
 
 # local dependencies
+block-manifest = { path = "../../../shared/block-manifest" }
 ciphertext-attestation = { path = "../../../shared/ciphertext-attestation" }
 fhevm-engine-common = { path = "../fhevm-engine-common" }
 
