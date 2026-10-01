@@ -116,11 +116,7 @@ pub fn encode_input_values(values: &[Value]) -> Result<Vec<u8>> {
 
 /// The plaintext of `ct_handles[index]` in an input attestation's `extra_data`. Every value must
 /// fit its type, so no encoding reads as a different plaintext than the one it was built from.
-pub fn decode_input_value(
-    extra_data: &[u8],
-    ct_handles: &[[u8; 32]],
-    index: usize,
-) -> Result<Value> {
+fn decode_input_value(extra_data: &[u8], ct_handles: &[[u8; 32]], index: usize) -> Result<Value> {
     let malformed = || error!(CleartextError::InputMalformed);
     let mut rest = extra_data;
     let mut selected = None;

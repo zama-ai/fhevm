@@ -1,11 +1,10 @@
 // The leaf-proof wire of the coprocessors' leaf record, `POST /v1/solana/leaf-proofs`
 // (`coprocessor/fhevm-engine/host-listener/openapi/solana_leaf_proofs.json`), pinned by
 // `solana/test-fixtures/leaf-proofs/leaf_proofs_v1.json` as the listener and the KMS Connector are.
-// The cleartext stack's server answers it from `createSolanaLeafRecord`, which the cleartext decrypt
-// clients read directly; the Connector-case tests read the fixture's answers through it.
-import { getAddressDecoder, getAddressEncoder, type Address } from '@solana/kit';
+// The cleartext stack's server reads its queries and writes its answers here, from
+// `createSolanaLeafRecord`, which the cleartext decrypt clients read directly.
+import { getAddressDecoder, type Address } from '@solana/kit';
 import { bytesToHexNo0x, hexToBytes } from '../../core/base/bytes.js';
-import { MAX_MMR_SIBLINGS } from '../proof.js';
 
 ////////////////////////////////////////////////////////////////////////////////
 
@@ -51,23 +50,6 @@ const hex32 = (field: string, value: unknown): Uint8Array => {
   return hexToBytes(`0x${digits}`);
 };
 
-const count = (field: string, value: unknown): bigint => {
-  if (typeof value !== 'number' || !Number.isSafeInteger(value) || value < 0) {
-    throw new Error(`${field}: expected a leaf count or index`);
-  }
-  return BigInt(value);
-};
-
-const addressHex = (address: Address): string => bytesToHexNo0x(new Uint8Array(getAddressEncoder().encode(address)));
-
-export function encodeSolanaLeafQuery({ encryptedStore, handle, key }: SolanaLeafQuery): Record<string, string> {
-  return {
-    encryptedStore: addressHex(encryptedStore),
-    handle: bytesToHexNo0x(handle),
-    ...(key === undefined ? { kind: 'public' } : { kind: 'allowed', key: addressHex(key) }),
-  };
-}
-
 export function decodeSolanaLeafQuery(value: unknown): SolanaLeafQuery {
   const { encryptedStore, handle, kind, key } = (value ?? {}) as Record<string, unknown>;
   const query = {
@@ -93,28 +75,5 @@ export function encodeSolanaLeafProofOutcome(outcome: SolanaLeafProofOutcome): R
     case 'unknownAccount':
     case 'historyIncomplete':
       return { status: outcome.status };
-  }
-}
-
-export function decodeSolanaLeafProofOutcome(value: unknown): SolanaLeafProofOutcome {
-  const { status, leafIndex, leafCount, siblings } = (value ?? {}) as Record<string, unknown>;
-  switch (status) {
-    case 'found':
-      if (!Array.isArray(siblings) || siblings.length > MAX_MMR_SIBLINGS) {
-        throw new Error(`siblings: expected at most ${MAX_MMR_SIBLINGS}`);
-      }
-      return {
-        status,
-        leafIndex: count('leafIndex', leafIndex),
-        leafCount: count('leafCount', leafCount),
-        siblings: siblings.map((sibling: unknown) => hex32('sibling', sibling)),
-      };
-    case 'notFound':
-      return { status, leafCount: count('leafCount', leafCount) };
-    case 'unknownAccount':
-    case 'historyIncomplete':
-      return { status };
-    default:
-      throw new Error(`status: ${String(status)} is not a leaf-proof outcome`);
   }
 }

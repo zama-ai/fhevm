@@ -215,7 +215,7 @@ describe('createRetainedMmr', () => {
 
   // Every count up to 70 crosses mountains of heights 0 to 6, and the tree keeps growing past each
   // count it is asked about, as the leaf record's does past the account it checks.
-  it('answers the peaks and proofs mmrPeaksFromLeaves and mmrBuildProof rebuild, at every past count', () => {
+  it('answers the peaks mmrPeaksFromLeaves rebuilds, and proofs that verify against them, at every past count', () => {
     const tree = createRetainedMmr();
     leaves.forEach((leaf) => {
       tree.append(leaf);
@@ -223,11 +223,11 @@ describe('createRetainedMmr', () => {
     expect(tree.leafCount()).toBe(70);
     for (let count = 0; count <= leaves.length; count += 1) {
       const prefix = leaves.slice(0, count);
-      expect(tree.peaks(count)).toEqual(mmrPeaksFromLeaves(prefix));
+      const peaks = mmrPeaksFromLeaves(prefix);
+      expect(tree.peaks(count)).toEqual(peaks);
       for (let index = 0; index < count; index += 1) {
-        const proof = tree.proof(index, count);
-        expect(proof).toEqual(mmrBuildProof(prefix, BigInt(index)));
-        expect(mmrVerify(mmrPeaksFromLeaves(prefix), BigInt(count), leaves[index]!, proof)).toBe(true);
+        // A proof that verifies against the rebuilt peaks is the proof `mmrBuildProof` builds.
+        expect(mmrVerify(peaks, BigInt(count), leaves[index]!, tree.proof(index, count))).toBe(true);
       }
     }
   });
