@@ -361,8 +361,9 @@ pub(crate) async fn upload_window(
                 (SELECT COALESCE(proposal_block, -1) FROM upgrade_state
                   WHERE stack_role = 'GCS' AND status = 'in_progress' LIMIT 1),
                 COALESCE(BOOL_AND(COALESCE(
-            (SELECT MIN(b.created_at) FROM public.host_chain_blocks_valid b
-              WHERE b.chain_id = w.host_chain_id AND b.block_number >= w.end_block)
+            (SELECT b.created_at FROM public.host_chain_blocks_valid b
+              WHERE b.chain_id = w.host_chain_id AND b.block_number >= w.end_block
+              ORDER BY b.block_number, b.created_at LIMIT 1)
                 <= NOW() - make_interval(secs => $1), FALSE)), FALSE)
            FROM upgrade_state w WHERE w.stack_role = 'GCS' AND w.status = 'in_progress'",
         )
@@ -759,6 +760,99 @@ pub async fn run(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[tokio::test]
+    async fn host_upload_stops_once_the_window_closes() {
+        use test_harness::instance::{setup_test_db, ImportMode};
+        let instance = setup_test_db(ImportMode::None).await.unwrap();
+        let pool = sqlx::postgres::PgPoolOptions::new()
+            .connect(instance.db_url())
+            .await
+            .unwrap();
+        let localstack = test_harness::localstack::start_localstack().await.unwrap();
+        let s3 = test_harness::localstack::create_localstack_s3_client(localstack.host_port).await;
+        s3.create_bucket().bucket("hashes").send().await.unwrap();
+        let cutoff = Duration::from_secs(60);
+        sqlx::query(
+            "INSERT INTO upgrade_state
+                (stack_role, host_chain_id, state, status, proposal_id, proposal_block, end_block)
+             VALUES ('GCS', 1, 'DryRunStarted', 'in_progress', '\\x02', 10, 200)",
+        )
+        .execute(&pool)
+        .await
+        .unwrap();
+        // A finalized block with a non-trivial computation and a pending hash.
+        let pending_block = |block: i64| {
+            let pool = pool.clone();
+            async move {
+                sqlx::query(
+                    "INSERT INTO host_chain_blocks_valid (chain_id, block_hash, block_number, block_status)
+                     VALUES (1, $1, $2, 'finalized')",
+                )
+                .bind(vec![block as u8])
+                .bind(block)
+                .execute(&pool)
+                .await
+                .unwrap();
+                sqlx::query(
+                    "INSERT INTO computations (
+                         output_handle, dependencies, fhe_operation, is_scalar,
+                         transaction_id, host_chain_id, block_number, is_error, is_completed
+                     ) VALUES ($1, $2, 0, FALSE, $1, 1, $3, FALSE, TRUE)",
+                )
+                .bind(vec![block as u8])
+                .bind(Vec::<Vec<u8>>::new())
+                .bind(block)
+                .execute(&pool)
+                .await
+                .unwrap();
+                sqlx::query("INSERT INTO state_hash (chain_id, block_number, state_hash) VALUES (1, $1, 'aa')")
+                    .bind(block)
+                    .execute(&pool)
+                    .await
+                    .unwrap();
+            }
+        };
+        let uploaded = |block: i64| {
+            sqlx::query_scalar::<_, bool>(
+                "SELECT s3_uploaded_at IS NOT NULL FROM state_hash WHERE chain_id = 1 AND block_number = $1",
+            )
+            .bind(block)
+        };
+
+        pending_block(150).await;
+        upload_pending_state_hashes(&pool, &s3, "hashes", 10, cutoff)
+            .await
+            .unwrap();
+        assert!(
+            uploaded(150).fetch_one(&pool).await.unwrap(),
+            "open window uploads"
+        );
+
+        sqlx::query(
+            "INSERT INTO host_chain_blocks_valid
+                (chain_id, block_hash, block_number, block_status, created_at)
+             VALUES (1, '\\xc8', 200, 'finalized', NOW() - INTERVAL '2 minutes')",
+        )
+        .execute(&pool)
+        .await
+        .unwrap();
+        pending_block(151).await;
+        upload_pending_state_hashes(&pool, &s3, "hashes", 10, cutoff)
+            .await
+            .unwrap();
+        assert!(
+            !uploaded(151).fetch_one(&pool).await.unwrap(),
+            "closed window uploads nothing"
+        );
+        assert!(s3
+            .head_object()
+            .bucket("hashes")
+            .key(state_hash_key(1, 151))
+            .send()
+            .await
+            .is_err());
+    }
 
     #[tokio::test]
     async fn gw_upload_stops_once_the_window_closes_or_the_attempt_ends() {
