@@ -11,6 +11,7 @@ use aws_sdk_s3::primitives::ByteStream;
 use aws_sdk_s3::types::ChecksumMode;
 use aws_sdk_s3::Client;
 use base64::Engine;
+use block_manifest::S3_METADATA_CONSENSUS_EPOCH_KEY;
 use bytesize::ByteSize;
 use ciphertext_attestation::{
     s3_ct128_key, s3_ct64_key, CiphertextAttestation, CiphertextAttestationPayload,
@@ -447,6 +448,8 @@ struct S3ObjectMetadata {
     key_id: String,
     transaction_id: String,
     signer: String,
+    /// The uploading stack's epoch; see [`S3_METADATA_CONSENSUS_EPOCH_KEY`].
+    consensus_epoch: Option<String>,
 }
 
 struct UploadMaterial {
@@ -521,6 +524,18 @@ fn validate_existing_attestation(
     Ok(())
 }
 
+/// This stack's epoch: `search_path` resolves the selector to its own schema,
+/// and a cutover updates it in the same transaction that makes the stack live.
+async fn uploading_consensus_epoch(
+    trx: &mut Transaction<'_, Postgres>,
+) -> anyhow::Result<Option<String>> {
+    Ok(sqlx::query_scalar!(
+        "SELECT consensus_epoch FROM blue_green_consensus_epoch WHERE singleton = TRUE"
+    )
+    .fetch_optional(trx.as_mut())
+    .await?)
+}
+
 #[allow(clippy::too_many_arguments)]
 async fn upload_ct(
     span: Span,
@@ -543,6 +558,9 @@ async fn upload_ct(
         .metadata("Signer", metadata.signer)
         .key(&key)
         .body(ByteStream::from(ct_bytes));
+    if let Some(consensus_epoch) = metadata.consensus_epoch {
+        upload = upload.metadata(S3_METADATA_CONSENSUS_EPOCH_KEY, consensus_epoch);
+    }
     if let Some(checksum_sha256) = checksum_sha256 {
         upload = upload.checksum_sha256(checksum_sha256);
     }
@@ -706,6 +724,7 @@ async fn upload_ciphertexts(
         key_id: hex::encode(&task.key_id_gw),
         transaction_id: hex::encode(task.transaction_id.as_deref().unwrap_or_default()),
         signer: expected_signer.to_string(),
+        consensus_epoch: uploading_consensus_epoch(trx).await?,
     };
 
     if *ct128_digest != NO_SNS_CIPHERTEXT_DIGEST.to_vec() {
