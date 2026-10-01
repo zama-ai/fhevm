@@ -1,7 +1,10 @@
 version: 1
 kind: coprocessor-consensus
 name: Manifest lifecycle
-description: Three local coprocessors, quorum two, with separate startup-file manifest injection directories on each coprocessor.
+description: >
+  Three local coprocessors, quorum two, with separate startup-file manifest
+  injection directories on each coprocessor. Automatic drift revert is off, so
+  manifest containment and healing are the only recovery under test.
 topology:
   count: 3
   threshold: 2
@@ -12,15 +15,21 @@ instances:
         - --dangerous-drift-injection=/manifest-drift/injection.json
         - --manifest-discovery-interval=1s
         - --manifest-verification-retry-count=300
+    env:
+      DRIFT_AUTO_REVERT_ENABLED: "false"
   - index: 1
     args:
       consensus-detector:
         - --dangerous-drift-injection=/manifest-drift/injection.json
         - --manifest-discovery-interval=1s
         - --manifest-verification-retry-count=300
+    env:
+      DRIFT_AUTO_REVERT_ENABLED: "false"
   - index: 2
     args:
       consensus-detector:
         - --dangerous-drift-injection=/manifest-drift/injection.json
         - --manifest-discovery-interval=1s
         - --manifest-verification-retry-count=300
+    env:
+      DRIFT_AUTO_REVERT_ENABLED: "false"
