@@ -530,35 +530,13 @@ struct WindowState {
     /// Tracked proposal + per-chain window set; a change resets every track.
     tracked_window: Option<HostWindows>,
     timeout: WindowTimeout,
-    /// Stall detection: `chain_id -> (watermark, last-advance instant)`; reset with the window set.
-    host_progress: HashMap<i64, (i64, Instant)>,
 }
 
-/// Returns true if the timeout clock should start: either every chain finished its
-/// window, or one chain made no progress for `commitment_timeout` (a stuck listener
-/// that would otherwise leave the upgrade running forever). Also updates each chain's
-/// recorded progress.
-fn should_arm_timeout(
-    windows: &[(i64, i64, i64)],
-    watermarks: &HashMap<i64, i64>,
-    progress: &mut HashMap<i64, (i64, Instant)>,
-    now: Instant,
-    commitment_timeout: Duration,
-) -> bool {
-    let mut all_reached = true;
-    let mut stalled = false;
-    for &(chain_id, _start, end) in windows {
-        let watermark = watermarks.get(&chain_id).copied().unwrap_or(-1);
-        let entry = progress.entry(chain_id).or_insert((watermark, now));
-        if watermark > entry.0 {
-            *entry = (watermark, now);
-        }
-        if watermark < end {
-            all_reached = false;
-            stalled |= now.duration_since(entry.1) >= commitment_timeout;
-        }
-    }
-    all_reached || stalled
+/// Every chain finished its window.
+fn should_arm_timeout(windows: &[(i64, i64, i64)], watermarks: &HashMap<i64, i64>) -> bool {
+    windows
+        .iter()
+        .all(|&(chain_id, _, end)| watermarks.get(&chain_id).is_some_and(|&w| w >= end))
 }
 
 /// Host side is ready: every chain anchored and at least one anchor is non-trivial.
@@ -607,7 +585,6 @@ async fn consensus_pass(
         host_tracks.clear();
         gateway.reset();
         window_state.timeout = WindowTimeout::NotArmed;
-        window_state.host_progress.clear();
         window_state.tracked_window = active.clone();
     }
     let Some((proposal_id, proposal_block, windows)) = active else {
@@ -683,20 +660,17 @@ async fn consensus_pass(
                 for &(chain_id, _, _) in &windows {
                     watermarks.insert(chain_id, gcs_host_watermark(pool, chain_id).await?);
                 }
-                let now = Instant::now();
-                if should_arm_timeout(
-                    &windows,
-                    &watermarks,
-                    &mut window_state.host_progress,
-                    now,
-                    commitment_timeout,
-                ) {
-                    window_state.timeout = WindowTimeout::Armed(now + commitment_timeout);
+                // A stuck listener still ends once uploads are closed; by then peers have decided.
+                if should_arm_timeout(&windows, &watermarks)
+                    || state_hash::upload_window(pool, commitment_timeout).await?.1
+                {
+                    window_state.timeout =
+                        WindowTimeout::Armed(Instant::now() + commitment_timeout);
                     info!(
                         chains = windows.len(),
                         max_end_block = max_end,
                         timeout_secs = commitment_timeout.as_secs(),
-                        "arming consensus timeout (all chains reached end_block, or a host listener stalled)"
+                        "arming consensus timeout (all chains reached end_block, or uploads closed)"
                     );
                 }
             }
@@ -908,8 +882,16 @@ where
             // it, no GCS state hashes get uploaded and the poll always times
             // out. If it exits unexpectedly, cancel the parent so the service
             // crashes and is restarted by its supervisor.
-            if let Err(e) =
-                state_hash::run(pool, s3, bucket, batch_limit, gw_chain_id, worker_cancel).await
+            if let Err(e) = state_hash::run(
+                pool,
+                s3,
+                bucket,
+                batch_limit,
+                gw_chain_id,
+                config.commitment_timeout,
+                worker_cancel,
+            )
+            .await
             {
                 error!(error = %e, "state_hash worker exited with error; shutting down consensus-detector");
                 parent_cancel.cancel();
@@ -942,7 +924,6 @@ where
     let mut window_state = WindowState {
         tracked_window: None,
         timeout: WindowTimeout::NotArmed,
-        host_progress: HashMap::new(),
     };
 
     // The consensus poll cadence: re-attempt S3 every commitment_poll_interval,
@@ -1018,8 +999,6 @@ where
 mod tests {
     use super::*;
 
-    const CT: Duration = Duration::from_secs(60);
-
     const GW: i64 = 54321;
 
     fn track(chain_id: i64, anchored: Option<i64>, nontrivial: bool) -> ConsensusTrack {
@@ -1086,77 +1065,20 @@ mod tests {
     #[test]
     fn arm_timeout_when_all_chains_reached_end_block() {
         let windows = vec![(1, 0, 100), (2, 0, 200)];
-        let watermarks = HashMap::from([(1, 100), (2, 200)]);
-        let mut progress = HashMap::new();
         assert!(should_arm_timeout(
             &windows,
-            &watermarks,
-            &mut progress,
-            Instant::now(),
-            CT
+            &HashMap::from([(1, 100), (2, 200)])
         ));
     }
 
     #[test]
-    fn wait_while_a_chain_is_below_end_and_recently_seen() {
+    fn wait_while_a_chain_is_below_end_or_unseen() {
         let windows = vec![(1, 0, 100), (2, 0, 200)];
-        let watermarks = HashMap::from([(1, 100), (2, 150)]);
-        let mut progress = HashMap::new();
         assert!(!should_arm_timeout(
             &windows,
-            &watermarks,
-            &mut progress,
-            Instant::now(),
-            CT
+            &HashMap::from([(1, 100), (2, 150)])
         ));
-    }
-
-    #[test]
-    fn progressing_chain_never_stalls() {
-        let windows = vec![(1, 0, 100)];
-        let mut progress = HashMap::new();
-        let t0 = Instant::now();
-        // Below end_block, first observation → wait.
-        assert!(!should_arm_timeout(
-            &windows,
-            &HashMap::from([(1, 40)]),
-            &mut progress,
-            t0,
-            CT
-        ));
-        // Advanced after commitment_timeout — progress refreshes, so not stalled.
-        assert!(!should_arm_timeout(
-            &windows,
-            &HashMap::from([(1, 70)]),
-            &mut progress,
-            t0 + CT + Duration::from_secs(1),
-            CT,
-        ));
-    }
-
-    #[test]
-    fn stalled_listener_arms_after_commitment_timeout() {
-        // Chain 1 reached end_block; chain 2's GCS watermark is frozen below it.
-        let windows = vec![(1, 0, 100), (2, 0, 100)];
-        let watermarks = HashMap::from([(1, 100), (2, 40)]);
-        let mut progress = HashMap::new();
-        let t0 = Instant::now();
-        // First observation: not yet stalled.
-        assert!(!should_arm_timeout(
-            &windows,
-            &watermarks,
-            &mut progress,
-            t0,
-            CT
-        ));
-        // Still frozen commitment_timeout later → stalled listener → arm.
-        assert!(should_arm_timeout(
-            &windows,
-            &watermarks,
-            &mut progress,
-            t0 + CT + Duration::from_millis(1),
-            CT,
-        ));
+        assert!(!should_arm_timeout(&windows, &HashMap::from([(1, 100)])));
     }
 
     #[test]

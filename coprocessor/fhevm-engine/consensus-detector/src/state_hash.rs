@@ -344,11 +344,41 @@ where
 /// the same S3 key repeatedly with whichever branch's `block-hash` metadata the
 /// planner happened to pick. Finalization leaves exactly one canonical row per
 /// height, so the join now yields a single deterministic block_hash per upload.
+/// `(an attempt is in progress, every chain's end_block was ingested by Blue at least
+/// cutoff ago)`. Past the cutoff peers have decided, so a hash published now could only
+/// mislead a returning operator.
+pub(crate) async fn upload_window(
+    pool: &Pool<Postgres>,
+    cutoff: Duration,
+) -> Result<(bool, bool), sqlx::Error> {
+    sqlx::query_as(
+        "SELECT COUNT(*) > 0, COALESCE(BOOL_AND(COALESCE(
+            (SELECT MIN(b.created_at) FROM public.host_chain_blocks_valid b
+              WHERE b.chain_id = w.host_chain_id AND b.block_number >= w.end_block)
+                <= NOW() - make_interval(secs => $1), FALSE)), FALSE)
+           FROM upgrade_state w WHERE w.stack_role = 'GCS' AND w.status = 'in_progress'",
+    )
+    .bind(cutoff.as_secs_f64())
+    .fetch_one(pool)
+    .await
+}
+
+/// Also stops a batch whose attempt was rolled back or replaced after it started.
+async fn upload_stopped(
+    pool: &Pool<Postgres>,
+    cutoff: Duration,
+    started_active: bool,
+) -> Result<bool, sqlx::Error> {
+    let (active, closed) = upload_window(pool, cutoff).await?;
+    Ok(closed || (started_active && !active))
+}
+
 async fn upload_pending_state_hashes(
     pool: &Pool<Postgres>,
     s3: &aws_sdk_s3::Client,
     my_bucket: &str,
     batch_limit: i64,
+    cutoff: Duration,
 ) -> anyhow::Result<()> {
     // Only upload state_hashes for ELIGIBLE blocks: a block carrying at least one
     // non-trivial, successful FHE op (fhe_operation <> trivialEncrypt). Empty and
@@ -384,6 +414,7 @@ async fn upload_pending_state_hashes(
         empty = EMPTY_BLOCK_STATE_HASH,
         opcode = crate::FHE_TRIVIAL_ENCRYPT_OPCODE,
     );
+    let started_active = upload_window(pool, cutoff).await?.0;
     let pending: Vec<(i64, i64, String, Vec<u8>)> = sqlx::query_as(&sql)
         .bind(batch_limit)
         .fetch_all(pool)
@@ -424,6 +455,9 @@ async fn upload_pending_state_hashes(
         };
         let block_hash_hex = format!("0x{}", hex::encode(&row.3));
         let key = state_hash_key(chain_id, block_number);
+        if upload_stopped(pool, cutoff, started_active).await? {
+            return Ok(());
+        }
         match s3
             .put_object()
             .bucket(my_bucket)
@@ -463,6 +497,7 @@ async fn upload_pending_gw_state_hashes(
     my_bucket: &str,
     gw_chain_id: i64,
     batch_limit: i64,
+    cutoff: Duration,
 ) -> anyhow::Result<()> {
     let select_sql = format!(
         r#"
@@ -473,6 +508,7 @@ async fn upload_pending_gw_state_hashes(
          LIMIT $2
         "#
     );
+    let started_active = upload_window(pool, cutoff).await?.0;
     let pending = sqlx::query(&select_sql)
         .bind(gw_chain_id)
         .bind(batch_limit)
@@ -494,6 +530,9 @@ async fn upload_pending_gw_state_hashes(
             }
         };
         let key = state_hash_key(gw_chain_id, block_number);
+        if upload_stopped(pool, cutoff, started_active).await? {
+            return Ok(());
+        }
         match s3
             .put_object()
             .bucket(my_bucket)
@@ -547,6 +586,7 @@ async fn compute_and_upload_state_hashes(
     my_bucket: &str,
     batch_limit: i64,
     gw_chain_id: i64,
+    cutoff: Duration,
 ) -> anyhow::Result<()> {
     let mut tx = match begin_write_guarded(pool, true, GcsRollbackPolicy::Skip).await? {
         WriteGuard::Proceed(tx) => tx,
@@ -602,8 +642,9 @@ async fn compute_and_upload_state_hashes(
 
     // S3 upload: drains pending rows; runs every pass so failed PUTs retry.
     if let Some(s3) = s3 {
-        upload_pending_state_hashes(pool, s3, my_bucket, batch_limit).await?;
-        upload_pending_gw_state_hashes(pool, s3, my_bucket, gw_chain_id, batch_limit).await?;
+        upload_pending_state_hashes(pool, s3, my_bucket, batch_limit, cutoff).await?;
+        upload_pending_gw_state_hashes(pool, s3, my_bucket, gw_chain_id, batch_limit, cutoff)
+            .await?;
     }
     Ok(())
 }
@@ -659,6 +700,7 @@ pub async fn run(
     my_bucket: String,
     batch_limit: i64,
     gw_chain_id: i64,
+    cutoff: Duration,
     cancel: CancellationToken,
 ) -> anyhow::Result<()> {
     info!(batch_limit, bucket = %my_bucket, gw_chain_id, "starting state_hash worker");
@@ -672,9 +714,15 @@ pub async fn run(
         ])
         .await?;
 
-    if let Err(e) =
-        compute_and_upload_state_hashes(&pool, s3.as_deref(), &my_bucket, batch_limit, gw_chain_id)
-            .await
+    if let Err(e) = compute_and_upload_state_hashes(
+        &pool,
+        s3.as_deref(),
+        &my_bucket,
+        batch_limit,
+        gw_chain_id,
+        cutoff,
+    )
+    .await
     {
         warn!(error = %e, "initial state_hash pass failed");
     }
@@ -685,7 +733,7 @@ pub async fn run(
                 Ok(n) => {
                     debug!(channel = n.channel(), "state_hash pass triggered");
                     if let Err(e) =
-                        compute_and_upload_state_hashes(&pool, s3.as_deref(), &my_bucket, batch_limit, gw_chain_id).await
+                        compute_and_upload_state_hashes(&pool, s3.as_deref(), &my_bucket, batch_limit, gw_chain_id, cutoff).await
                     {
                         warn!(error = %e, "state_hash pass failed");
                     }
@@ -702,6 +750,86 @@ pub async fn run(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[tokio::test]
+    async fn gw_upload_stops_once_the_window_closes_or_the_attempt_ends() {
+        use test_harness::instance::{setup_test_db, ImportMode};
+        let instance = setup_test_db(ImportMode::None).await.unwrap();
+        let pool = sqlx::postgres::PgPoolOptions::new()
+            .connect(instance.db_url())
+            .await
+            .unwrap();
+        let localstack = test_harness::localstack::start_localstack().await.unwrap();
+        let s3 = test_harness::localstack::create_localstack_s3_client(localstack.host_port).await;
+        s3.create_bucket().bucket("hashes").send().await.unwrap();
+        let cutoff = Duration::from_secs(60);
+        for sql in [
+            format!("CREATE SCHEMA {GCS_SCHEMA_QUOTED}"),
+            format!("CREATE TABLE {GCS_SCHEMA_QUOTED}.state_hash (LIKE public.state_hash INCLUDING ALL)"),
+            "INSERT INTO public.upgrade_state
+                (stack_role, host_chain_id, state, status, proposal_id, proposal_block, end_block)
+             VALUES ('GCS', 1, 'DryRunStarted', 'in_progress', '\\x02', 10, 200)"
+                .into(),
+        ] {
+            sqlx::query(&sql).execute(&pool).await.unwrap();
+        }
+        let insert_sql = format!(
+            "INSERT INTO {GCS_SCHEMA_QUOTED}.state_hash (chain_id, block_number, state_hash)
+             VALUES (54321, $1, 'aa')"
+        );
+        let uploaded_sql = format!(
+            "SELECT s3_uploaded_at IS NOT NULL FROM {GCS_SCHEMA_QUOTED}.state_hash
+              WHERE block_number = $1"
+        );
+        let pending_hash = |block: i64| sqlx::query(&insert_sql).bind(block);
+        let uploaded = |block: i64| sqlx::query_scalar::<_, bool>(&uploaded_sql).bind(block);
+
+        pending_hash(1).execute(&pool).await.unwrap();
+        upload_pending_gw_state_hashes(&pool, &s3, "hashes", 54321, 10, cutoff)
+            .await
+            .unwrap();
+        assert!(
+            uploaded(1).fetch_one(&pool).await.unwrap(),
+            "open window uploads"
+        );
+
+        sqlx::query(
+            "INSERT INTO public.host_chain_blocks_valid
+                (chain_id, block_hash, block_number, block_status, created_at)
+             VALUES (1, '\\x01', 200, 'finalized', NOW() - INTERVAL '2 minutes')",
+        )
+        .execute(&pool)
+        .await
+        .unwrap();
+        pending_hash(2).execute(&pool).await.unwrap();
+        upload_pending_gw_state_hashes(&pool, &s3, "hashes", 54321, 10, cutoff)
+            .await
+            .unwrap();
+        assert!(
+            !uploaded(2).fetch_one(&pool).await.unwrap(),
+            "closed window uploads nothing"
+        );
+        assert!(s3
+            .head_object()
+            .bucket("hashes")
+            .key(state_hash_key(54321, 2))
+            .send()
+            .await
+            .is_err());
+
+        sqlx::query("UPDATE public.upgrade_state SET status = 'failed'")
+            .execute(&pool)
+            .await
+            .unwrap();
+        assert!(
+            upload_stopped(&pool, cutoff, true).await.unwrap(),
+            "attempt ended mid-batch"
+        );
+        assert!(
+            !upload_stopped(&pool, cutoff, false).await.unwrap(),
+            "no attempt at batch start"
+        );
+    }
 
     #[test]
     fn key_format_is_stable() {
