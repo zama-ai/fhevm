@@ -997,6 +997,7 @@ impl From<SupportedFheOperations> for i16 {
 }
 
 pub type Handle = Vec<u8>;
+pub type TxHash = Vec<u8>;
 pub const HANDLE_LEN: usize = 32;
 
 /// Byte 21 marker for handles produced by FHE operations or by the bridge,

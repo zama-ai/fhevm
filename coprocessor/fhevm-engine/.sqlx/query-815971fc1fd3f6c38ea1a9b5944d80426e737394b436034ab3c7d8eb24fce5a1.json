@@ -1,0 +1,29 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "INSERT INTO public.drifted_handle (\n            consensus_epoch, version, coprocessor_context_id, host_chain_id,\n            block_number, block_hash, handle, detection_kind, reason,\n            local_present, observed_present\n        ) SELECT $1, $2, $3, $4, $5, $6, $7, 'inferred', 'ct64_mismatch', $8, FALSE\n        WHERE NOT EXISTS (\n            SELECT 1 FROM public.drifted_handle\n            WHERE consensus_epoch = $1 AND version = $2 AND coprocessor_context_id = $3\n              AND host_chain_id = $4 AND block_hash = $6 AND handle = $7\n              AND reason = 'ct64_mismatch'\n        )\n        ON CONFLICT DO NOTHING RETURNING id",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "id",
+        "type_info": "Int8"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Text",
+        "Int2",
+        "Bytea",
+        "Int8",
+        "Int8",
+        "Bytea",
+        "Bytea",
+        "Bool"
+      ]
+    },
+    "nullable": [
+      false
+    ]
+  },
+  "hash": "815971fc1fd3f6c38ea1a9b5944d80426e737394b436034ab3c7d8eb24fce5a1"
+}
