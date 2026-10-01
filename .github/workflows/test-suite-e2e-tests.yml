@@ -383,6 +383,21 @@ jobs:
           docker start coprocessor-host-listener coprocessor-host-listener-consumer
           trap - EXIT
 
+      # DEBUG BRANCH ONLY: full logs and window database state for the cutover investigation.
+      - name: Capture cutover diagnostics (debug)
+        working-directory: test-suite/fhevm
+        if: always()
+        run: ./scripts/capture-cutover-debug.sh "$RUNNER_TEMP/cutover-debug" || true
+
+      - name: Upload cutover diagnostics (debug)
+        if: always()
+        uses: actions/upload-artifact@65c4c4a1ddee5b72f698fdd19549f0f0fb45cf08 # v4.6.0
+        with:
+          name: cutover-debug-${{ inputs.test-profile }}-${{ github.run_id }}
+          path: ${{ runner.temp }}/cutover-debug
+          retention-days: 7
+          if-no-files-found: warn
+
       - name: Show logs
         working-directory: test-suite/fhevm
         if: always()
