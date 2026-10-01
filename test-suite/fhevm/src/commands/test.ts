@@ -1089,7 +1089,7 @@ const runBlueGreenProfile = async (
   await run(["cast", "rpc", "--rpc-url", gatewayRpcUrl, "evm_setAutomine", "true"]);
   console.log("OK:   Gateway anvil mines on demand for this profile");
   try {
-    return await runBlueGreenSteps(state, options, gatewayRpcUrl);
+    return await runBlueGreenSteps(state, options, gatewayRpcUrl, withManifests);
   } finally {
     await run(["cast", "rpc", "--rpc-url", gatewayRpcUrl, "evm_setIntervalMining", "1"]);
   }
@@ -1099,6 +1099,7 @@ const runBlueGreenSteps = async (
   state: State,
   options: Pick<TestOptions, "network" | "noHardhatCompile">,
   gatewayRpcUrl: string,
+  withManifests: boolean,
 ): Promise<boolean> => {
   // The E2E image already contains compiled contracts. Multiple traffic
   // streams share its artifacts directory, so none may compile or prune it.
@@ -1480,6 +1481,11 @@ const runBlueGreenSteps = async (
   const traffic = quietSynthetic
     ? { errored: new Promise<never>(() => {}), stop: async () => ({ iterations: 0, retries: 0, failures: 0 }) }
     : startContinuousErc20Traffic(trafficTargets, blueGreenTrafficStreams);
+  // The upgrade-controller cuts over on its own once consensus anchors, while the
+  // cross-cutover chain below is still running: the dry-run evidence must be
+  // collected now, alongside the traffic. The check fails if cutover wins.
+  const dryRunCheck = manifests?.duringDryRun();
+  dryRunCheck?.catch(() => {}); // Observed below; never an unhandled rejection meanwhile.
   let trafficStats: { iterations: number; retries: number; failures: number };
   try {
     // The chain is a stress signal — a fence hit mid-transfer is expected; [11/11] verifies actual transferCount.
@@ -1513,7 +1519,7 @@ const runBlueGreenSteps = async (
       }
     })();
     await Promise.race([chainPromise, traffic.errored]);
-    if (manifests) await Promise.race([manifests.duringDryRun(), traffic.errored]);
+    if (dryRunCheck) await Promise.race([dryRunCheck, traffic.errored]);
 
     console.log(`\n[9/11] wait for cutover (versioning=${gcsVersionLive} per operator)`);
     for (const db of operatorDatabases) {
