@@ -12,6 +12,7 @@ import {
   assertSupportedBundleScenario,
   bootstrapUsesHostKmsGeneration,
   canonicalProtocolConfigSeedingUsesEnv,
+  kmsCoreUpgradeCrossesMaterialBreak,
   requiresGatewayKmsGenerationAddress,
   requiresLegacyHostChainSeedShim,
   requiresLegacyKmsBootstrapBudget,
@@ -105,16 +106,19 @@ import {
   readEnvFile,
   remove,
   toServiceName,
+  uint256ToId,
   withHexPrefix,
   writeEnvFile,
   writeJson,
 } from "../utils/fs";
 import { ensureDiscovery, createDiscovery, defaultEndpoints, discoverContracts, objectStorePublishedEndpoint, validateDiscovery } from "./discovery";
-import { kmsConnectorEnvName, kmsConnectorPrefix, kmsCoreName, reconstructionThreshold } from "../kms-party";
+import { kmsConnectorEnvName, kmsConnectorPrefix, kmsCoreName, kmsPartyIds, reconstructionThreshold } from "../kms-party";
+import { parseContextAndEpoch } from "../commands/kms-context-switch";
 import { defaultHostChain, extraHostChains, hostChainsForState } from "./topology";
 import {
   kmsConnectorHealthContainers,
   castBool,
+  castCall,
   coprocessorHealthContainers,
   waitForCoprocessorDbMigrations,
   discoverKmsSigners,
@@ -123,6 +127,7 @@ import {
   listenerContainersForChain,
   postBootHealthGate,
   probeBootstrap,
+  resolveKmsGenerationTarget,
   waitForCoprocessorKeyMaterial,
   waitForBootstrap,
   waitForContainer,
@@ -2286,6 +2291,18 @@ const executeUpgradePlan = async (nextState: State, plan: ReturnType<typeof reso
   await waitForUpgrade(nextState, plan.group, plan.runtimeServices);
 };
 
+/** The active KMS context and its epoch, which a 0.15+ core must be told own pre-0.15 material. */
+const activeKmsEpochMigration = async (state: State) => {
+  const target = resolveKmsGenerationTarget(state);
+  if (!target.configAddress) {
+    throw new PreflightError("KMS migration requires ProtocolConfig discovery");
+  }
+  const active = parseContextAndEpoch(
+    await castCall(target.rpcUrl, target.configAddress, "getCurrentKmsContextAndEpoch()(uint256,uint256)"),
+  );
+  return [{ contextId: uint256ToId(active.contextId), epochIds: [uint256ToId(active.epochId)] }];
+};
+
 /**
  * Ends the bootstrap step: regenerates the runtime and, when the stack booted at the scenario's
  * `bootstrap` release, upgrades it to the bundle now that the key material is ingested, in
@@ -2351,16 +2368,50 @@ const completeBootstrap = async (state: State) => {
       }
     }
   });
-  await once("kms-core", async () => {
-    advance("the KMS core", ["CORE_VERSION"], []);
-    await executeUpgradePlan(state, resolveUpgradePlan(state, "kms-core", { lockFile: true }));
-    // The core has no healthcheck; let it serve before the connector reconnects to it.
-    await waitForLog(KMS_CORE_CONTAINER, /KMS Server service socket address/);
-  });
-  await once("kms-connector", async () => {
-    advance("the KMS connector", [...CONNECTOR_VERSION_KEYS, ...CONNECTOR_OPTIONAL_VERSION_KEYS], ["kms-connector"]);
-    await executeUpgradePlan(state, resolveUpgradePlan(state, "kms-connector", { lockFile: true }));
-  });
+  if (state.scenario.kms.mode === "threshold") {
+    // A threshold core and its connector are one rollout unit: upgrade them operator by operator,
+    // like production and the rollouts, through the paired primitive.
+    const migration = kmsCoreUpgradeCrossesMaterialBreak(
+      state.versions.env.CORE_VERSION ?? "",
+      pending.target.env.CORE_VERSION ?? "",
+    )
+      ? await activeKmsEpochMigration(state)
+      : undefined;
+    const lockFile = path.join(STATE_DIR, "bootstrap-kms-operator-lock.json");
+    await writeJson(lockFile, {
+      ...state.versions,
+      env: bootstrapPhaseEnv(state.versions.env, pending.target.env, ["CORE_VERSION", ...CONNECTOR_VERSION_KEYS]),
+    });
+    const { target, lockPath, requiresGitHub } = state;
+    const overrides = pending.overrides.filter((override) => override.group === "kms-connector");
+    for (const operatorId of kmsPartyIds(state.scenario.kms.parties)) {
+      await once(`kms-operator:${operatorId}`, async () => {
+        console.log(`[bootstrap] key material ingested; upgrading KMS operator ${operatorId} to the bundle`);
+        await upgradeThresholdKmsOperator(operatorId, { lockFile, overrides, migration });
+        // Keep this `pending`, which `once` records progress on, and the bundle's own lock.
+        Object.assign(state, await loadState(), { bootstrapPending: pending, target, lockPath, requiresGitHub });
+      });
+    }
+    // The paired primitive recreates only each operator's core and connector runtime; start the
+    // connector services the bootstrap release did not ship (HTTP endpoint and proxy).
+    await once("kms-connector-http", async () => {
+      advance("the KMS connector HTTP path", CONNECTOR_OPTIONAL_VERSION_KEYS, ["kms-connector"]);
+      await generateRuntime(state, stackSpecForState(state));
+      await stepComposeUp("kms-connector", state, serviceNameList(state, "kms-connector"));
+      await waitForKmsConnector(state);
+    });
+  } else {
+    await once("kms-core", async () => {
+      advance("the KMS core", ["CORE_VERSION"], []);
+      await executeUpgradePlan(state, resolveUpgradePlan(state, "kms-core", { lockFile: true }));
+      // The core has no healthcheck; let it serve before the connector reconnects to it.
+      await waitForLog(KMS_CORE_CONTAINER, /KMS Server service socket address/);
+    });
+    await once("kms-connector", async () => {
+      advance("the KMS connector", [...CONNECTOR_VERSION_KEYS, ...CONNECTOR_OPTIONAL_VERSION_KEYS], ["kms-connector"]);
+      await executeUpgradePlan(state, resolveUpgradePlan(state, "kms-connector", { lockFile: true }));
+    });
+  }
   await once("listener-core", async () => {
     advance("listener-core", LISTENER_CORE_VERSION_KEYS, ["listener-core"]);
     await executeUpgradePlan(state, resolveUpgradePlan(state, "listener-core", { lockFile: true }));

@@ -309,6 +309,7 @@ const applyKmsThresholdGatewayEnv = async (
   envs: Record<string, Record<string, string>>,
   plan: StackSpec,
   deriveWallet: (mnemonic: string, index: number) => Promise<WalletMaterial>,
+  bootstrapCoreVersion?: string,
 ): Promise<KmsParty[]> => {
   if (plan.kms.mode !== "threshold") {
     return [];
@@ -340,7 +341,7 @@ const applyKmsThresholdGatewayEnv = async (
   gw.USER_DECRYPTION_THRESHOLD = reconstruct;
   gw.KMS_GENERATION_THRESHOLD = reconstruct;
 
-  applyProtocolConfigKmsGlobals(hostSc, plan);
+  applyProtocolConfigKmsGlobals(hostSc, plan, bootstrapCoreVersion);
 
   const result: KmsParty[] = [];
   for (let party = 1; party <= parties; party += 1) {
@@ -548,7 +549,12 @@ export const renderEnvMaps = async (
     throw new Error("Missing default host chain");
   }
   applyTopologyEnv(envs, plan);
-  const kmsParties = await applyKmsThresholdGatewayEnv(envs, plan, deriveWallet);
+  const kmsParties = await applyKmsThresholdGatewayEnv(
+    envs,
+    plan,
+    deriveWallet,
+    state.bootstrapPending?.target.env.CORE_VERSION,
+  );
   applyHostScKmsEnv(envs);
   applyBaseRuntimeEnv(envs, state);
   applyCompatEnv(envs, plan);

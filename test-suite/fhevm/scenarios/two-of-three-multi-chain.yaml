@@ -12,3 +12,11 @@ hostChains:
 topology:
   count: 3
   threshold: 2
+# 4-party threshold KMS (t=1). Insecure keygen keeps boot fast; the real MPC keygen is covered
+# by the four-party-threshold-kms and five-party-swap-threshold-kms legs.
+kms:
+  mode: threshold
+  parties: 4
+  threshold: 1
+  fheParams: Test
+  insecureTestKeygen: true
