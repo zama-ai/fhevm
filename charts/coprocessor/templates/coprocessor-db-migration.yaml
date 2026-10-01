@@ -163,7 +163,10 @@ spec:
         {{- end }}
       {{- if eq (include "coprocessor.databaseSslRootCertMountEnabled" .) "true" }}
       {{- if eq (include "coprocessor.dbMigrationHookEnabled" .) "true" }}
-      {{- include "coprocessor.databaseSslRootCertMigrationVolume" . | nindent 6 }}
+      volumes:
+        - name: rds-ca-cert
+          configMap:
+            name: {{ include "coprocessor.databaseSslRootCertMigrationConfigMapName" . }}
       {{- else }}
       {{- include "coprocessor.databaseSslRootCertVolume" . | nindent 6 }}
       {{- end }}

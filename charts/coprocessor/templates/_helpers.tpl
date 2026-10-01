@@ -173,17 +173,9 @@ true
 {{- end -}}
 {{- end -}}
 
-{{/* Separate CA ConfigMap for the migration hook. Truncates the release name, not the suffix, so it never matches the regular CA name. */}}
+{{/* Helm release names are at most 53 characters; preserve the full name. */}}
 {{- define "coprocessor.databaseSslRootCertMigrationConfigMapName" -}}
-{{- printf "%s-rds-ca-cert-migration" (.Release.Name | trunc 41 | trimSuffix "-") -}}
-{{- end -}}
-
-{{/* Migration hook volume; caller checks mount-enabled. */}}
-{{- define "coprocessor.databaseSslRootCertMigrationVolume" -}}
-volumes:
-  - name: rds-ca-cert
-    configMap:
-      name: {{ include "coprocessor.databaseSslRootCertMigrationConfigMapName" . }}
+{{- printf "%s-mig-ca" .Release.Name -}}
 {{- end -}}
 
 {{/*
@@ -208,4 +200,3 @@ resources:
     nvidia.com/gpu: {{ . | quote }}
     {{- end }}
 {{- end -}}
-
