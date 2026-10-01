@@ -24,6 +24,7 @@ use fhevm_engine_common::versioning::{
 
 pub mod containment;
 pub(crate) mod db_error;
+pub(crate) mod healing;
 pub(crate) mod lineage;
 pub(crate) mod manifest_archive;
 pub(crate) mod publication;
@@ -102,6 +103,14 @@ pub struct Config {
     pub verification_delay: Duration,
     pub verification_retry_delay: Duration,
     pub verification_retry_count: u32,
+    /// Concurrent ct64 downloads per healing pass. Must be at least 1.
+    pub healing_batch_size: i64,
+    /// LISTEN fallback so a missed `event_healing_work` still runs a pass.
+    pub healing_poll_interval: Duration,
+    /// Delay after which an uncontained ct64 finding is healed anyway.
+    pub healing_containment_timeout: Duration,
+    /// Failed attempts before a healing finding is abandoned. At least 1.
+    pub healing_max_attempts: i32,
     /// Wall-clock stall with no newly computed handle before missing
     /// ciphertext may be sealed as `is_uncomputed`.
     pub incomplete_block_timeout: Duration,
@@ -123,6 +132,10 @@ impl Default for Config {
             verification_delay: Duration::from_secs(10),
             verification_retry_delay: Duration::from_secs(10),
             verification_retry_count: 59,
+            healing_batch_size: healing::DEFAULT_BATCH_SIZE,
+            healing_poll_interval: healing::DEFAULT_POLL_INTERVAL,
+            healing_containment_timeout: healing::DEFAULT_CONTAINMENT_TIMEOUT,
+            healing_max_attempts: healing::DEFAULT_MAX_ATTEMPTS,
             incomplete_block_timeout: Duration::from_secs(5 * 60),
             incomplete_manifest_max_lag: 3,
             publication_cadence_overrides: BTreeMap::new(),
@@ -206,8 +219,11 @@ pub(crate) async fn start(
     cancel: CancellationToken,
 ) -> Result<(), ExecutionError> {
     if config.my_bucket.is_none() {
-        tracing::warn!("Manifest publication disabled by --my-bucket=none");
-        tracing::warn!("Manifest verification disabled by --my-bucket=none");
+        // Healing only repairs drift found by verification, which compares
+        // peers against this stack's own manifests: none of the three can run.
+        tracing::warn!(
+            "Manifest publication, verification and ct64 healing disabled by --my-bucket=none; drift will be neither detected nor healed"
+        );
         return Ok(());
     }
 
@@ -289,13 +305,27 @@ pub(crate) async fn start(
     supervise("manifest publisher", handle, cancel.clone());
 
     let handle = verification::peer_downloader::spawn_peer_manifest_downloader(
+        pool.clone(),
+        cancel.child_token(),
+        Arc::clone(&client),
+        Arc::clone(&work_gate),
+        config.manifest_consensus.verification_delay,
+    );
+    supervise("peer manifest verifier", handle, cancel.clone());
+
+    let handle = healing::spawn_healing_worker(
         pool,
         cancel.child_token(),
         client,
         work_gate,
-        config.manifest_consensus.verification_delay,
+        healing::HealingSettings {
+            batch_size: config.manifest_consensus.healing_batch_size,
+            poll_interval: config.manifest_consensus.healing_poll_interval,
+            containment_timeout: config.manifest_consensus.healing_containment_timeout,
+            max_attempts: config.manifest_consensus.healing_max_attempts,
+        },
     );
-    supervise("peer manifest verifier", handle, cancel);
+    supervise("healing worker", handle, cancel);
 
     Ok(())
 }

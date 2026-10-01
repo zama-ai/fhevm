@@ -51,7 +51,7 @@ async fn insert_root<'a>(executor: impl sqlx::PgExecutor<'a>, handle: u8) -> i64
         .bind(bytes(1)).bind(i64::from(handle)).bind(bytes(handle)).fetch_one(executor).await.unwrap()
 }
 
-async fn direct_root(pool: &PgPool, handle: u8, reason: &str) -> i64 {
+pub(crate) async fn direct_root(pool: &PgPool, handle: u8, reason: &str) -> i64 {
     let id = root(pool, handle).await;
     // Store a real signed local manifest to back the finding's required task FK.
     // This test exercises containment of recorded findings, not peer comparison.
@@ -207,6 +207,32 @@ async fn optimistic_then_guaranteed_pass_catches_late_outputs_and_is_idempotent(
         enforce_guaranteed_containment(&pool).await.unwrap(),
         PropagationResult::default()
     );
+}
+
+#[tokio::test]
+#[serial(db)]
+async fn inferred_insert_notifies_healing() {
+    let (_db, pool) = setup().await;
+    root(&pool, 1).await;
+    computation(&pool, 2, 1, 2, true, true).await;
+    let mut listener = sqlx::postgres::PgListener::connect_with(&pool)
+        .await
+        .unwrap();
+    listener
+        .listen(crate::manifest_consensus::healing::EVENT_HEALING_WORK)
+        .await
+        .unwrap();
+    assert!(
+        enforce_guaranteed_containment(&pool)
+            .await
+            .unwrap()
+            .inferred_handles
+            > 0
+    );
+    tokio::time::timeout(Duration::from_secs(2), listener.recv())
+        .await
+        .expect("inferred drifted_handle insert should NOTIFY event_healing_work")
+        .unwrap();
 }
 
 #[tokio::test]
@@ -611,17 +637,32 @@ async fn store_ciphertext(pool: &PgPool, handle: u8, payload: u8) {
     .unwrap();
 }
 
-#[tokio::test]
-#[serial(db)]
-async fn consumed_foreign_epoch_ct64_marks_descendants_in_this_epoch() {
-    let (_db, pool) = setup().await;
-    let foreign = root(&pool, 1).await;
-    computation(&pool, 2, 1, 2, true, true).await;
-    sqlx::query("UPDATE drifted_handle SET consensus_epoch = 'other-epoch' WHERE id = $1")
-        .bind(foreign)
-        .execute(&pool)
+async fn move_root_to_epoch(pool: &PgPool, id: i64, epoch: &str, outcome: &str) {
+    sqlx::query(
+        "INSERT INTO consensus_epoch_history (consensus_epoch, outcome, completed_at)
+         VALUES ($1, $2, NOW())",
+    )
+    .bind(epoch)
+    .bind(outcome)
+    .execute(pool)
+    .await
+    .unwrap();
+    sqlx::query("UPDATE drifted_handle SET consensus_epoch = $2 WHERE id = $1")
+        .bind(id)
+        .bind(epoch)
+        .execute(pool)
         .await
         .unwrap();
+}
+
+// An earlier epoch merged into `public` at cutover: Blue reads its ciphertexts.
+#[tokio::test]
+#[serial(db)]
+async fn merged_epoch_ct64_marks_public_descendants_in_this_epoch() {
+    let (_db, pool) = setup().await;
+    let merged = root(&pool, 1).await;
+    computation(&pool, 2, 1, 2, true, true).await;
+    move_root_to_epoch(&pool, merged, "merged-epoch", "succeeded").await;
     assert_eq!(
         enforce_guaranteed_containment(&pool).await.unwrap(),
         PropagationResult {
@@ -632,7 +673,7 @@ async fn consumed_foreign_epoch_ct64_marks_descendants_in_this_epoch() {
     assert_eq!(
         epoch_flags(&pool).await,
         vec![
-            (bytes(1), "other-epoch".into(), true),
+            (bytes(1), "merged-epoch".into(), true),
             (bytes(2), TEST_EPOCH.into(), true),
         ]
     );
@@ -642,18 +683,15 @@ async fn consumed_foreign_epoch_ct64_marks_descendants_in_this_epoch() {
     );
 }
 
+// The stored copy in `public` is the merged epoch's drifted ciphertext itself.
 #[tokio::test]
 #[serial(db)]
-async fn independent_local_copy_is_not_contaminated_by_foreign_drift() {
+async fn public_copy_of_a_merged_epoch_handle_is_not_independent() {
     let (_db, pool) = setup().await;
-    let foreign = root(&pool, 1).await;
+    let merged = root(&pool, 1).await;
     store_ciphertext(&pool, 1, 9).await;
     computation(&pool, 2, 1, 2, true, true).await;
-    sqlx::query("UPDATE drifted_handle SET consensus_epoch = 'other-epoch' WHERE id = $1")
-        .bind(foreign)
-        .execute(&pool)
-        .await
-        .unwrap();
+    move_root_to_epoch(&pool, merged, "merged-epoch", "succeeded").await;
     assert_eq!(
         enforce_guaranteed_containment(&pool).await.unwrap(),
         PropagationResult {
@@ -664,9 +702,30 @@ async fn independent_local_copy_is_not_contaminated_by_foreign_drift() {
     assert_eq!(
         epoch_flags(&pool).await,
         vec![
-            (bytes(1), "other-epoch".into(), true),
+            (bytes(1), "merged-epoch".into(), true),
             (bytes(2), TEST_EPOCH.into(), true),
         ]
+    );
+}
+
+// A failed epoch's ciphertexts are read by no stack: contain it, infer nothing.
+#[tokio::test]
+#[serial(db)]
+async fn failed_epoch_ct64_contaminates_no_stack() {
+    let (_db, pool) = setup().await;
+    let failed = root(&pool, 1).await;
+    computation(&pool, 2, 1, 2, true, true).await;
+    move_root_to_epoch(&pool, failed, "failed-epoch", "failed").await;
+    assert_eq!(
+        enforce_guaranteed_containment(&pool).await.unwrap(),
+        PropagationResult {
+            inferred_handles: 0,
+            contained_findings: 1
+        }
+    );
+    assert_eq!(
+        epoch_flags(&pool).await,
+        vec![(bytes(1), "failed-epoch".into(), true)]
     );
 }
 

@@ -32,9 +32,10 @@ jobs:
               - .github/actions/setup-rust-and-protoc/**
               - coprocessor/fhevm-engine/**
               - host-contracts/rust_bindings/**
-              # consensus-detector depends on this crate by path. Clippy of the
-              # engine compiles it, but does not run its own tests.
+              # consensus-detector depends on these crates by path. Clippy of the
+              # engine compiles them, but does not run their own tests.
               - shared/block-manifest/**
+              - shared/ciphertext-attestation/**
   cargo-clippy:
     name: coprocessor-cargo-clippy/cargo-clippy
     needs: check-changes

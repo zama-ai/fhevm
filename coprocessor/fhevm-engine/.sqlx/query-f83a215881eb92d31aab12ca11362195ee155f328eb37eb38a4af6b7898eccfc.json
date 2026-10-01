@@ -1,6 +1,6 @@
 {
   "db_name": "PostgreSQL",
-  "query": "SELECT consensus_epoch FROM blue_green_consensus_epoch WHERE singleton FOR SHARE",
+  "query": "SELECT consensus_epoch FROM public.consensus_epoch_history\n            WHERE outcome IN ('initial', 'succeeded')",
   "describe": {
     "columns": [
       {
@@ -16,5 +16,5 @@
       false
     ]
   },
-  "hash": "8191f796e2bfc222b4de2c7349ce72178e438af6142c93d9e4097dcaf4ae7e58"
+  "hash": "f83a215881eb92d31aab12ca11362195ee155f328eb37eb38a4af6b7898eccfc"
 }
