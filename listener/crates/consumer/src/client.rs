@@ -1,5 +1,7 @@
 use alloy_primitives::Address;
 use async_trait::async_trait;
+pub use broker::redis::GroupStatus;
+use broker::redis::StreamManager;
 pub use broker::{AckDecision, Broker, HandlerError};
 use broker::{BrokerError, CancellationToken, Consumer, Handler, Message, Topic};
 use primitives::event::{
@@ -13,6 +15,9 @@ use tracing::warn;
 
 pub use crate::error::ConsumerError;
 use crate::options::{CatchupConsumerOptions, LiveConsumerOptions};
+
+/// Redis start position meaning "deliver only what arrives from now on".
+const NEW_ENTRIES_ONLY: &str = "$";
 
 /// Chain & Consumer-scoped client for the consumer library.
 ///
@@ -58,6 +63,10 @@ pub struct ListenerConsumer {
     final_catchup_cancel: CancellationToken,
     live_options: LiveConsumerOptions,
     catchup_options: CatchupConsumerOptions,
+    /// Optional suffix appended to every delivery group name.
+    ///
+    /// See [`with_group_suffix`](Self::with_group_suffix).
+    group_suffix: Option<String>,
 }
 
 impl ListenerConsumer {
@@ -104,6 +113,51 @@ impl ListenerConsumer {
             final_catchup_cancel,
             live_options: live.unwrap_or_default(),
             catchup_options: catchup.unwrap_or_default(),
+            group_suffix: None,
+        }
+    }
+
+    /// Append a suffix to every delivery group name this consumer creates.
+    ///
+    /// Group name and stream name are the same string by default, which means
+    /// two builds of the same service cannot read the same stream
+    /// independently — they share a group, and every entry goes to exactly one
+    /// of them. A suffix separates the two: same stream, same `consumer_id`,
+    /// same registered filters, but its own cursor and its own copy of every
+    /// entry.
+    ///
+    /// The caller owns the suffix and therefore owns what counts as "a
+    /// different reader". Deriving it from something the two builds genuinely
+    /// disagree about — a protocol version, say — makes the separation happen
+    /// exactly when it is needed and not otherwise. Deriving it from something
+    /// an operator sets by hand makes it a footgun.
+    ///
+    /// A new group starts from the beginning of retained history, so the first
+    /// build to run with a suffix replays whatever is still on the stream.
+    ///
+    /// On AMQP the group is the queue, so changing the suffix points the
+    /// consumer at a different queue and anything still in the old one is left
+    /// behind.
+    pub fn with_group_suffix(mut self, suffix: impl Into<String>) -> Self {
+        let suffix = suffix.into();
+        self.group_suffix = if suffix.is_empty() {
+            None
+        } else {
+            Some(suffix)
+        };
+        self
+    }
+
+    /// Delivery group name for `topic` — the topic itself, plus the suffix
+    /// from [`with_group_suffix`](Self::with_group_suffix) if one is set.
+    ///
+    /// Kept in one place so the four pipelines cannot drift apart: they must
+    /// either all carry the suffix or none of them do, or a build reads some
+    /// of its streams independently and shares the rest.
+    fn group_for(&self, topic: &Topic) -> String {
+        match &self.group_suffix {
+            Some(suffix) => format!("{topic}.{suffix}"),
+            None => topic.to_string(),
         }
     }
 
@@ -333,7 +387,7 @@ impl ListenerConsumer {
         let mut builder = self
             .broker
             .consumer(&topic)
-            .group(topic.to_string())
+            .group(self.group_for(&topic))
             .prefetch(opts.prefetch())
             .max_retries(opts.max_retries())
             .with_cancellation(cancel);
@@ -370,7 +424,7 @@ impl ListenerConsumer {
         let mut builder = self
             .broker
             .consumer(&topic)
-            .group(topic.to_string())
+            .group(self.group_for(&topic))
             .prefetch(opts.prefetch())
             .max_retries(opts.max_retries())
             .with_cancellation(cancel);
@@ -408,7 +462,7 @@ impl ListenerConsumer {
         let mut builder = self
             .broker
             .consumer(&topic)
-            .group(topic.to_string())
+            .group(self.group_for(&topic))
             .prefetch(opts.prefetch())
             .max_retries(opts.max_retries())
             .with_cancellation(cancel);
@@ -442,7 +496,7 @@ impl ListenerConsumer {
         let mut builder = self
             .broker
             .consumer(&topic)
-            .group(topic.to_string())
+            .group(self.group_for(&topic))
             .prefetch(opts.prefetch())
             .max_retries(opts.max_retries())
             .with_cancellation(cancel);
@@ -537,41 +591,241 @@ impl ListenerConsumer {
     /// Ensure the consumer topology is set up in the broker.
     pub async fn ensure_consumer(&self) -> Result<(), BrokerError> {
         // TODO: start core listener
-        self.broker_consumer()?.ensure_topology().await
+        self.broker_consumer()?.ensure_topology().await?;
+        self.seed_group(&self.consumer_topic()).await
     }
 
     /// Ensure the catchup consumer topology is set up in the broker.
     pub async fn ensure_catchup_consumer(&self) -> Result<(), BrokerError> {
-        self.broker_catchup_consumer()?.ensure_topology().await
+        self.broker_catchup_consumer()?.ensure_topology().await?;
+        self.seed_group(&self.catchup_consumer_topic()).await
     }
 
     /// Ensure the finalized-only consumer topology is set up in the broker.
     ///
     /// On AMQP this declares the exchanges/queues/bindings up front. On Redis
-    /// it is a no-op — the stream is created when the
-    /// [`consume_final`](Self::consume_final) future starts. Until the queue
-    /// exists, events published by the listener for this consumer's FINAL
-    /// filters go through the listener's stale-publish handling (indefinite
-    /// retry by default), so start consuming promptly after registering
-    /// FINAL filters
+    /// it creates the stream and its dead-letter companion, so the destination
+    /// exists before the listener publishes to it — a publisher that checks
+    /// for the stream first would otherwise wait forever for a stream only a
+    /// running consumer would create.
+    ///
+    /// Call this before registering FINAL filters
     /// ([`register_final_contracts`](Self::register_final_contracts) /
-    /// [`register_final_full_block`](Self::register_final_full_block)).
+    /// [`register_final_full_block`](Self::register_final_full_block)), so no
+    /// event is ever published at a destination that does not exist yet.
     pub async fn ensure_final_consumer(&self) -> Result<(), BrokerError> {
-        self.broker_final_consumer()?.ensure_topology().await
+        self.broker_final_consumer()?.ensure_topology().await?;
+        self.seed_group(&self.final_consumer_topic()).await
     }
 
     /// Ensure the final catchup consumer topology is set up in the broker.
     ///
     /// On AMQP this declares the exchanges/queues/bindings up front. On Redis
-    /// it is a no-op — the stream is created when the
-    /// [`consume_final_catchup`](Self::consume_final_catchup) future starts,
-    /// so start consuming before (or promptly after)
+    /// it creates the stream and its dead-letter companion. Call it before
     /// [`request_final_catchup`](Self::request_final_catchup) so replayed
-    /// events have a queue to land on.
+    /// events have somewhere to land.
     pub async fn ensure_final_catchup_consumer(&self) -> Result<(), BrokerError> {
         self.broker_final_catchup_consumer()?
             .ensure_topology()
-            .await
+            .await?;
+        self.seed_group(&self.final_catchup_consumer_topic()).await
+    }
+
+    /// Create this identity's consumer group on one of its streams, at the
+    /// position it should start reading from.
+    ///
+    /// A consumer group's start position is fixed when the group is created
+    /// and never again: once it exists, creating it is a no-op and the
+    /// position argument is ignored. So the only chance to get it right is the
+    /// first time, and the right answer depends on what is already on the
+    /// stream:
+    ///
+    /// - **This group already exists.** Nothing to decide — it resumes from
+    ///   its own cursor.
+    /// - **A predecessor is reading this stream under the same identity
+    ///   without a group suffix.** Start where it is. Entries behind its
+    ///   cursor are work it already did, and this identity writes to the same
+    ///   database, so re-reading them would be redundant; entries ahead of it
+    ///   are work nobody has taken.
+    /// - **Nothing is reading this stream.** Start at the end. The retained
+    ///   entries are of unknown age with no cursor to inherit, and a gap in
+    ///   ingestion is recovered from the chain by catchup, not by replaying
+    ///   however much history the stream happens to be holding.
+    ///
+    /// Without this, a group created on a populated stream starts at `0` and
+    /// replays everything retained — which, on a stream whose trimming has
+    /// been pinned by an abandoned group, is as much history as the stream is
+    /// allowed to hold.
+    ///
+    /// AMQP has no consumer groups and no start positions; this does nothing.
+    async fn seed_group(&self, topic: &Topic) -> Result<(), BrokerError> {
+        let conn = match &self.broker {
+            Broker::Redis { conn, .. } => conn,
+            Broker::Amqp { .. } => return Ok(()),
+        };
+        let manager = StreamManager::new((**conn).clone());
+
+        let stream = topic.key();
+        let group = self.group_for(topic);
+        let existing = manager.list_groups(&stream).await?;
+
+        if existing.iter().any(|candidate| candidate.name == group) {
+            return Ok(());
+        }
+
+        let start = existing
+            .iter()
+            .find(|candidate| candidate.name == stream)
+            .map(|predecessor| predecessor.last_delivered_id.clone())
+            .unwrap_or_else(|| NEW_ENTRIES_ONLY.to_string());
+
+        manager
+            .ensure_consumer_group(&stream, &group, &start)
+            .await?;
+        Ok(())
+    }
+
+    /// The four streams this identity owns: live, catchup, finalized-only and
+    /// final catchup.
+    fn owned_topics(&self) -> [Topic; 4] {
+        [
+            self.consumer_topic(),
+            self.catchup_consumer_topic(),
+            self.final_consumer_topic(),
+            self.final_catchup_consumer_topic(),
+        ]
+    }
+
+    /// Report the consumer groups attached to each of this identity's four
+    /// streams, as `(stream key, groups)`.
+    ///
+    /// This is the read half of retiring a predecessor. A group whose
+    /// last-delivered ID does not move between samples while its lag is
+    /// non-zero has no live reader: entries are waiting and nobody is taking
+    /// them. How long "does not move" must hold before acting is the caller's
+    /// policy — this only reports what Redis says.
+    ///
+    /// Lag is `None` on Redis older than 7.0, which reports no lag field. A
+    /// caller that cannot tell how far behind a group is should decline to act
+    /// rather than assume zero.
+    ///
+    /// A stream that does not exist reports no groups. AMQP has no consumer
+    /// groups, so it reports nothing at all.
+    pub async fn group_status(&self) -> Result<Vec<(String, Vec<GroupStatus>)>, BrokerError> {
+        let conn = match &self.broker {
+            Broker::Redis { conn, .. } => conn,
+            Broker::Amqp { .. } => return Ok(Vec::new()),
+        };
+        let manager = StreamManager::new((**conn).clone());
+
+        let mut statuses = Vec::with_capacity(4);
+        for topic in self.owned_topics() {
+            let key = topic.key();
+            let groups = manager.list_groups(&key).await?;
+            statuses.push((key, groups));
+        }
+        Ok(statuses)
+    }
+
+    /// Where each of this identity's four streams was last written to.
+    ///
+    /// This is how a caller establishes that the publisher has *stopped*
+    /// before deleting anything. Unregistering an identity's filters only
+    /// queues a command; the row that drives publishing is removed some time
+    /// later, and until it is, traffic keeps arriving. Two identical readings
+    /// a poll apart mean nothing has been appended in that window.
+    ///
+    /// Stream length would be the wrong signal — it stays flat on a stream
+    /// trimmed as fast as it is written. These positions only move forwards.
+    ///
+    /// A stream that does not exist reports `None`. AMQP reports nothing.
+    pub async fn write_positions(&self) -> Result<Vec<(String, Option<String>)>, BrokerError> {
+        let conn = match &self.broker {
+            Broker::Redis { conn, .. } => conn,
+            Broker::Amqp { .. } => return Ok(Vec::new()),
+        };
+        let manager = StreamManager::new((**conn).clone());
+
+        let mut positions = Vec::with_capacity(4);
+        for topic in self.owned_topics() {
+            let key = topic.key();
+            let last = manager.last_generated_id(&key).await?;
+            positions.push((key, last));
+        }
+        Ok(positions)
+    }
+
+    /// Destroy the *unsuffixed* consumer group on each of this identity's four
+    /// streams, returning how many were actually destroyed.
+    ///
+    /// This retires a predecessor that read the same streams under the same
+    /// identity but without a group suffix. Group names are derived per
+    /// stream, so one logical reader holds four of them and there is no single
+    /// name to pass in; the name this removes is exactly the one
+    /// [`group_for`](Self::group_for) would produce with no suffix set.
+    ///
+    /// Destroying a group discards its pending list and its cursor. The stream
+    /// and its entries are untouched, which is what makes this safe to run
+    /// while another group is still reading the same stream.
+    ///
+    /// # Errors
+    ///
+    /// Refuses with [`ConsumerError::InvalidParameter`] when this client has no
+    /// group suffix, because then the unsuffixed group *is* this client's own
+    /// group and the call would cut the caller's own cursor out from under it.
+    pub async fn destroy_unsuffixed_groups(&self) -> Result<usize, ConsumerError> {
+        if self.group_suffix.is_none() {
+            return Err(ConsumerError::InvalidParameter(
+                "refusing to destroy the unsuffixed groups: this client has no group suffix, so \
+                 they are its own"
+                    .into(),
+            ));
+        }
+
+        let conn = match &self.broker {
+            Broker::Redis { conn, .. } => conn,
+            Broker::Amqp { .. } => return Ok(0),
+        };
+        let manager = StreamManager::new((**conn).clone());
+
+        let mut destroyed = 0;
+        for topic in self.owned_topics() {
+            let group = topic.to_string();
+            if manager
+                .destroy_group(&topic.key(), &group)
+                .await
+                .map_err(BrokerError::from)?
+            {
+                destroyed += 1;
+            }
+        }
+        Ok(destroyed)
+    }
+
+    /// Delete this identity's four streams and their dead-letter companions,
+    /// returning how many keys were actually removed.
+    ///
+    /// Unconditional and destructive: it does not check whether anything is
+    /// reading. Establish that the identity is drained first — see
+    /// [`group_status`](Self::group_status) — and stop the publisher writing to
+    /// it first, via [`unregister_contracts`](Self::unregister_contracts), or
+    /// the streams will simply be recreated by the next published event.
+    pub async fn delete_streams(&self) -> Result<usize, BrokerError> {
+        let conn = match &self.broker {
+            Broker::Redis { conn, .. } => conn,
+            Broker::Amqp { .. } => return Ok(0),
+        };
+        let manager = StreamManager::new((**conn).clone());
+
+        let mut deleted = 0;
+        for topic in self.owned_topics() {
+            for key in [topic.key(), topic.dead_key()] {
+                if manager.delete_stream(&key).await? {
+                    deleted += 1;
+                }
+            }
+        }
+        Ok(deleted)
     }
 
     /// Start consuming messages with the provided handler function.
