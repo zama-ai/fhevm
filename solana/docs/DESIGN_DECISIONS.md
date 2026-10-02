@@ -2697,10 +2697,10 @@ without an answer.
 `solana_merkle_proof_server` recovers the signer and answers only the tx-senders of the live KMS
 contexts. It reads them from the canonical `ProtocolConfig` at the finalized block every 60
 seconds: the live context ids, then each context's nodes from its `NewKmsContext` event at the
-context's anchor block. A refresh that fails, or takes more than 30 seconds, keeps the last set. Until the first read succeeds,
-every request gets `upstreamTransient` (502, retryable) and `/healthz` answers 503. A missing,
-expired, malformed or unknown signature gets `senderAuthenticationFailed` (401) before the database
-is read.
+context's anchor block. A refresh that fails, or takes more than 30 seconds, keeps the last set.
+Until the first read succeeds, every request gets `upstream_transient` (502, retryable) and
+`/healthz` answers 503. A missing, expired, malformed or unknown signature gets
+`sender_authentication_failed` (401) before the database is read.
 
 The bodies are CBOR (RFC 8949) over HTTP/2 without TLS negotiation (prior knowledge). Hashes and
 keys travel as 32-byte byte strings, and the requests kms-worker sends one coprocessor share one
@@ -2708,22 +2708,23 @@ connection. `solana/test-fixtures/merkle-proofs/merkle_proofs_v1.json` pins the 
 response bytes for both sides.
 
 No recipient is signed. A coprocessor that received a batch, or anyone who reads the plain-HTTP
-traffic inside the cluster, can resend it to the other coprocessors until it expires and receives
-their answer. Those answers are public proofs, so the server keeps no replay cache. The relayer
-does not call the Merkle proof server.
+traffic inside the cluster, can resend it to the other coprocessors until it expires. The answers
+are public proofs, so a replay learns nothing, and it must not cost anything either. Each server
+keeps the answer it gave to each signed request (`AnswerCache`, keyed by the EIP-712 signing hash,
+up to `MAX_CACHED_BYTES`, 64 MiB) until the signature expires. A repeat of the request gets the
+same bytes, with no rate charge and no database read. The relayer does not call the Merkle proof
+server.
 
-Each KMS tx-sender may send `--kms-tx-sender-requests-per-second` (50) requests per second to one
-server, in bursts of as many, counted after the signer is recovered and before the body is decoded.
-At most one request per database connection (`--database-pool-size`, 8) reads the record at a time;
-one more is refused at once instead of queued, because the connector asks the next coprocessor
-after `HEDGE_DELAY` anyway. Both refusals are `rateLimited` (429, retryable), and the connector
-treats them as a failed read. The rate is a backstop against a faulty or compromised connector, far
-above its load of one request per decryption batch, shared among the coprocessors. A replay is
-counted against the signer: a coprocessor that received a batch can resend it to the other servers
-until it expires, and so spend that connector's rate there. Signing the recipient, or refusing a
-signature a server has already seen, would close this. An honest connector never sends one
-signature twice to one server, since it asks each coprocessor at most once per signed batch and a
-retry signs again.
+Each KMS tx-sender may ask one server for `--kms-tx-sender-leaves-per-second` (4000) queried
+leaves per second, in bursts of as many and at least `MAX_LEAVES_PER_REQUEST` (64). A request is
+charged after its signer is recovered and its body decoded. All but one connection of the pool
+(`--database-pool-size`, 8) serve proof reads, one request each at a time, so `/healthz` always has
+one. A request waits up to `PROOF_READ_WAIT` (200 ms) for its turn. That is below the connector's
+`HEDGE_DELAY`, so a refusal sends the connector to the next coprocessor no later than its hedge
+would have. Both refusals are `rate_limited` (429, retryable), and the connector treats them as a
+failed read and asks the next coprocessor at once. The rate is a backstop against a faulty or
+compromised connector, at twice the 2,000 decryptions per second target, should one coprocessor
+serve all of a connector's batches.
 
 Rejected alternatives:
 
@@ -2733,6 +2734,8 @@ Rejected alternatives:
 | A key per connector, listed in each coprocessor's config | Each coprocessor edits its config when a KMS context changes; `ProtocolConfig` already lists the tx-senders. |
 | mTLS | Each coprocessor runs a certificate authority for the KMS parties, and the identity is not the on-chain one. |
 | Every coprocessor asked at once | Each coprocessor serves every proof read, so the load grows with the number of coprocessors, for an answer one coprocessor usually gives alone. |
+| Sign the recipient coprocessor | The coprocessors share no identity the connector signs for, and the connector would sign once per coprocessor instead of once per batch. |
+| Refuse a signature a server has already seen | The first coprocessor asked could replay the batch to the others before the connector reaches them, and the connector's own read would then be refused. |
 | JSON bodies | Hex doubles every hash: a full answer of 64 proofs with 64 siblings is about 280 KB instead of 150 KB, and both sides parse hex by hand. |
 | Protobuf or gRPC | A schema compiler and generated code in two workspaces, for four message types. |
 | A session key kms-worker registers with its tx-sender key | A second key to rotate and a registration round, for a signature per batch that AWS KMS already serves. |
@@ -2748,7 +2751,9 @@ signature from the quota the tx-sender also uses. A new KMS context is answered
 once its creation is finalized, up to 60 seconds later. The proof server reads the canonical
 `ProtocolConfig` over the RPC of the coprocessor's `chains[]` entry named by
 `commonConfig.canonicalProtocolConfigChainId`, and the chart refuses to render without it. The
-preview mints no proof secret.
+preview mints no proof secret. Each proof server holds up to 64 MiB of answers; past that it keeps
+no new answer until older ones expire, and a repeat of an answer it did not keep is charged and
+read again.
 
 ## Open product decisions
 

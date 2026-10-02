@@ -798,8 +798,9 @@ async fn every_coprocessor_missing_the_leaf_is_a_recoverable_denial() {
 }
 
 /// A coprocessor that fails the read, or answers the wrong number of outcomes, says nothing about
-/// any leaf: another coprocessor's answer decides.
-#[tokio::test]
+/// any leaf: another coprocessor's answer decides, asked at once rather than after the hedge
+/// delay.
+#[tokio::test(start_paused = true)]
 async fn a_failed_or_short_read_leaves_the_batch_to_another_coprocessor() {
     let (fixture, account, batch) = two_allowed_queries();
     let record = ProofRecord::of(&[&fixture]);
@@ -809,8 +810,10 @@ async fn a_failed_or_short_read_leaves_the_batch_to_another_coprocessor() {
         ProofSource::Serving(record),
     ]);
 
+    let started = tokio::time::Instant::now();
     let results = verify_with(&reader, &account, &batch).await.unwrap();
 
+    assert!(started.elapsed() < HEDGE_DELAY);
     assert_eq!(results, vec![Ok(()), Ok(())]);
     let queries: Vec<_> = batch.iter().map(|(query, _)| *query).collect();
     assert_eq!(

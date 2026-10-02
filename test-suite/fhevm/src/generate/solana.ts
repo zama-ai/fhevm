@@ -61,8 +61,8 @@ export const solanaValidatorUrl = (chain: { readonly rpcPort: number }): string 
  * connector runs in a container.
  *
  * One URL, because the demo runs one `solana_merkle_proof_server` (on `SOLANA_MERKLE_PROOF_PORT`).
- * The connector asks every URL at once, so a topology with several coprocessors would list one URL
- * per Merkle proof server.
+ * A topology with several coprocessors lists one URL per Merkle proof server; the connector asks
+ * them one after another, hedging a slow one.
  */
 export const solanaMerkleProofUrl = (): string => `http://host.docker.internal:${SOLANA_MERKLE_PROOF_PORT}`;
 
