@@ -23,7 +23,7 @@ pub use handler::{
     Handler, HandlerError, Message, MessageMetadata,
 };
 pub use publisher::{RedisPublisher, RedisPublisherBuilder, ReplicationConfig};
-pub use stream_manager::StreamManager;
+pub use stream_manager::{GroupStatus, StreamManager};
 pub use trimmer::{StreamTrimmer, StreamTrimmerConfig};
 
 // Re-export from traits for convenience
