@@ -5,6 +5,7 @@ import { syntheticTrackReadinessSql, syntheticEvidenceAuditSql, SYNTHETIC_EVIDEN
  * Runs named e2e test profiles, standard/heavy CI suites, and topology-specific test flows.
  */
 import { compatPolicyForState, supportsConnectorHttp, supportsCoprocessorDbStateRevert } from "../compat/compat";
+import { consumerOnlyHostListeners } from "../host-listener-mode";
 import { type DecryptionRunner, runKmsGenerationProfile } from "./kms-generation";
 import { runKmsGenerationAbortProfile } from "./kms-generation-abort";
 import { runKmsContextSwitchProfile } from "./kms-context-switch";
@@ -66,6 +67,8 @@ const DB_REVERT_CONTAINERS = [
   "zkproof-worker",
 ] as const;
 const DB_REVERT_RECOVERY_PROFILE = "input-proof-compute-decrypt";
+// These profiles revert coprocessor state, which consumer-only ingestion cannot replay.
+const CONSUMER_ONLY_SKIPPED_PROFILES = new Set(["coprocessor-db-state-revert", "ciphertext-drift-auto-recovery"]);
 const KEY_BOOTSTRAP_LOG = /Fetched keyset/;
 const KEY_BOOTSTRAP_PROFILES = new Set(["input-proof", "input-proof-compute-decrypt"]);
 // Intentional ciphertext drift must never run on shared/live networks.
@@ -2190,6 +2193,10 @@ export const test = async (testName: string | undefined, options: TestOptions) =
     const started = Date.now();
     await runLogged(label, started, async () => {
       for (const profile of profiles) {
+        if (CONSUMER_ONLY_SKIPPED_PROFILES.has(profile) && consumerOnlyHostListeners(state.scenario)) {
+          console.log(`[test] skipping ${profile}: host-consumers only pause during a drift revert and do not recover`);
+          continue;
+        }
         if (profile === "multi-chain-isolation" || profile === "confidential-bridge") {
           const skipReason = multiChainIsolationSkipReason();
           if (skipReason) {
