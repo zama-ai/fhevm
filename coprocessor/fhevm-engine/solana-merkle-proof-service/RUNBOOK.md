@@ -67,7 +67,7 @@ divergence.
    replica counts in its values, until the last step.
 3. **Replace the database.** Drop and recreate `solana_merkle`. `DROP DATABASE` needs the
    database owner's rights and no open connection, which step 2 ensures. Then
-   `pg_restore --no-owner --no-privileges --exit-on-error --single-transaction --dbname=<solana_merkle URL> <dump>`.
+   `pg_restore --no-owner --no-privileges --single-transaction --dbname=<solana_merkle URL> <dump>`.
    `pg_dump` must be the server's major version or newer, and `pg_restore` the version of the
    `pg_dump` that made the archive or newer.
 4. **Start the indexer.** Scale `<release>-solana-merkle-indexer` to 1. It resumes after the
@@ -77,8 +77,9 @@ divergence.
    - the indexer's lag alarm has cleared: `time() -
      solana_host_follower_applied_block_timestamp_seconds{service=~".*-solana-merkle-indexer"}`
      stays under 120 for every `host_chain_id`;
-   - `solana_merkle_indexer_store_check_completed_timestamp_seconds` is later than the time the
-     lag alarm cleared;
+   - a store check that started after the lag alarm cleared has completed: wait until
+     `solana_merkle_indexer_store_check_completed_timestamp_seconds` has moved twice since then,
+     because a check already running when the lag cleared compared the stores of a stale record;
    - `solana_merkle_indexer_quarantined_stores` is 0.
 
    A check that runs while the record is far behind finds most stores `behind` and compares
@@ -88,8 +89,8 @@ divergence.
 ## Rebuild from the chain
 
 A rebuild needs no dump: the indexer replays the whole host history from the archive RPC
-(DD-066). It takes hours on mainnet, during which the lag alarm fires and the proof server
-answers only what the record holds so far.
+(DD-066). It takes hours on mainnet, during which the lag alarm fires; the proof server stays
+stopped until the end.
 
 1. Stop the indexer, then the proof server, as in step 2 above.
 2. Drop and recreate `solana_merkle`, empty.

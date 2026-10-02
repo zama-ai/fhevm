@@ -228,8 +228,9 @@ pub enum HandleBindingFailure {
 mod tests {
     use super::*;
 
-    /// Only a proof built against the chain's own leaf count and failing is `invalid`, the
-    /// outcome that pages: a shorter record may be stale and a longer one ahead of this read.
+    /// A failing proof from a record holding as many leaves as the chain or more is `invalid`,
+    /// the outcome that pages: a correct one is cut to the chain's count and verifies. A shorter
+    /// record may only be stale.
     #[test]
     fn a_failing_proof_from_a_record_at_or_past_the_chain_leaf_count_is_invalid() {
         let does_not_verify = |record_leaf_count| {

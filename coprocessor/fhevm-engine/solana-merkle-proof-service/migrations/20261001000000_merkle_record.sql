@@ -46,7 +46,7 @@ CREATE TABLE nodes (
 -- Stores the indexer's store check found disagreeing with the chain: the account is no longer a
 -- valid store, or the record's peaks differ from the chain's at the chain's leaf count. The proof
 -- server answers them as inconsistent, which the KMS connector retries on another coprocessor,
--- until a later check matches.
+-- until a later check matches or finds the store closed.
 CREATE TABLE quarantined_stores (
     encrypted_store BYTEA PRIMARY KEY REFERENCES encrypted_stores (encrypted_store),
     detected_at TIMESTAMPTZ NOT NULL DEFAULT NOW()

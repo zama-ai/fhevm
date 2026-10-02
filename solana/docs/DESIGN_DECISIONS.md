@@ -2834,8 +2834,8 @@ Rejected alternatives:
 
 Consequences:
 
-A quarantined store has no proofs from that coprocessor until a later check matches, at most one
-interval after a restore. One `getMultipleAccounts` per 100 stores per interval reaches the
+A quarantined store has no proofs from that coprocessor until a check after the restored or rebuilt
+record catches up matches. One `getMultipleAccounts` per 100 stores per interval reaches the
 indexer's RPC provider. A store closed and recreated at the same address is reported `mismatch`
 once the new store holds a leaf, until the record is rebuilt, as DD-066 already requires. An RPC
 node that answers no account for a store it has not seen yet lifts that store's quarantine until
