@@ -135,15 +135,15 @@ fn transferred_event_handle(result: &InstructionResult) -> [u8; 32] {
     transfer_event(result).transferred_handle
 }
 
-/// Records the one `fhe_execute` CPI every token instruction is expected to issue and returns the
+/// Checks the one `fhe_execute` CPI every token instruction is expected to issue and returns the
 /// number of store slots it wrote.
-fn record_fhe_cpi(context: &Ctx, result: &InstructionResult) -> usize {
-    let recorded = executions::record(context, result);
+fn check_fhe_cpi(context: &Ctx, result: &InstructionResult) -> usize {
+    let checked = executions::check(context, result);
     assert_eq!(
-        recorded.executions, 1,
+        checked.executions, 1,
         "expected one token -> host fhe_execute CPI"
     );
-    recorded.persistent_outputs
+    checked.persistent_outputs
 }
 
 /// The balance the cleartext host recorded for `token_account`.
@@ -859,7 +859,7 @@ fn mollusk_mint_authority_allows_total_supply_viewers() {
         &allow_total_supply_viewers_ix(&fixture, fixture.owner, vec![auditor]),
         &[Check::success()],
     );
-    record_fhe_cpi(&context, &result);
+    check_fhe_cpi(&context, &result);
 
     // The grant is a re-write: same cleartext, a fresh handle, one allow leaf for the auditor
     // (nobody is allowed on the supply by default, so the auditor is the only leaf).
@@ -921,7 +921,7 @@ fn mollusk_owner_allows_balance_viewers() {
         ),
         &[Check::success()],
     );
-    record_fhe_cpi(&context, &result);
+    check_fhe_cpi(&context, &result);
 
     // The owner stays allowed on every balance write; the auditor is allowed on this handle only.
     assert_eq!(balance(&context, fixture.alice_token), 1_000);
@@ -1456,7 +1456,7 @@ fn mollusk_overdrawn_confidential_transfer_succeeds_and_moves_an_encrypted_zero(
     );
 
     let result = check_token_instruction(&context, &transfer, &[Check::success()]);
-    record_fhe_cpi(&context, &result);
+    check_fhe_cpi(&context, &result);
 
     assert_eq!(balance(&context, fixture.alice_token), 1_000);
     assert_eq!(balance(&context, fixture.bob_token), 100);
@@ -1563,7 +1563,7 @@ fn mollusk_confidential_transfer_updates_value_accounts_and_cleartext_balances()
     );
 
     let result = check_token_instruction(&context, &transfer, &[Check::success()]);
-    let persistent_outputs = record_fhe_cpi(&context, &result);
+    let persistent_outputs = check_fhe_cpi(&context, &result);
 
     assert_eq!(persistent_outputs, 2);
     assert_eq!(balance(&context, fixture.alice_token), 600);
@@ -3870,7 +3870,7 @@ fn mollusk_cancel_pending_burn_restores_balance_and_supply() {
         token::transfer_input_key(),
     );
     let burn_result = check_token_instruction(&context, &burn, &[Check::success()]);
-    record_fhe_cpi(&context, &burn_result);
+    check_fhe_cpi(&context, &burn_result);
     assert_eq!(balance(&context, fixture.token_account), 750);
     assert_eq!(
         store_u64(
@@ -3908,7 +3908,7 @@ fn mollusk_cancel_pending_burn_restores_balance_and_supply() {
 
     let cancel = cancel_pending_burn_ix(&fixture, pending_burn, Some(deny_record));
     let cancel_result = check_token_instruction(&context, &cancel, &[Check::success()]);
-    record_fhe_cpi(&context, &cancel_result);
+    check_fhe_cpi(&context, &cancel_result);
 
     assert_eq!(balance(&context, fixture.token_account), 1_000);
     assert_eq!(
@@ -4265,7 +4265,7 @@ fn mollusk_wrap_usdc_credits_balance_and_total_supply() {
 
     let ix = wrap_usdc_ix(&fixture, user_usdc, 100);
     let result = check_token_instruction(&context, &ix, &[Check::success()]);
-    record_fhe_cpi(&context, &result);
+    check_fhe_cpi(&context, &result);
 
     assert_eq!(balance(&context, fixture.token_account), 100);
     assert_eq!(
@@ -4310,7 +4310,7 @@ fn mollusk_wrap_token_2022_credits_balance_and_total_supply() {
         &wrap_usdc_ix(&fixture, user_tokens, 100),
         &[Check::success()],
     );
-    record_fhe_cpi(&context, &result);
+    check_fhe_cpi(&context, &result);
     assert_eq!(balance(&context, fixture.token_account), 100);
     assert_eq!(
         store_u64(
@@ -4878,7 +4878,7 @@ fn mollusk_transfer_from_value_spends_existing_amount() {
     );
 
     let result = check_token_instruction(&context, &transfer, &[Check::success()]);
-    let persistent_outputs = record_fhe_cpi(&context, &result);
+    let persistent_outputs = check_fhe_cpi(&context, &result);
 
     // Only the two balances and the sender's transferred_amount are updated — the amount is not
     // an output.
@@ -4961,7 +4961,7 @@ fn mollusk_transfer_from_value_checks_every_application_deny_record() {
             seed_u64(&context, fixture.bob_initial, 100);
             seed_u64(&context, amount_handle, 200);
             let result = check_token_instruction(&context, &transfer, &[Check::success()]);
-            record_fhe_cpi(&context, &result);
+            check_fhe_cpi(&context, &result);
             assert_eq!(balance(&context, fixture.alice_token), 800);
             assert_eq!(balance(&context, fixture.bob_token), 300);
         }
@@ -5072,7 +5072,7 @@ fn mollusk_transfer_from_value_spends_full_balance_with_balance_store_account_as
         fixture.alice_balance_store,
     );
     let result = check_token_instruction(&context, &transfer, &[Check::success()]);
-    let persistent_outputs = record_fhe_cpi(&context, &result);
+    let persistent_outputs = check_fhe_cpi(&context, &result);
 
     assert_eq!(persistent_outputs, 2);
     assert_eq!(balance(&context, fixture.alice_token), 0);
@@ -5332,7 +5332,7 @@ fn mollusk_burn_from_value_burns_existing_amount() {
         token::transfer_input_key(),
     );
     let result = check_token_instruction(&context, &burn, &[Check::success()]);
-    let persistent_outputs = record_fhe_cpi(&context, &result);
+    let persistent_outputs = check_fhe_cpi(&context, &result);
 
     // Three persistent outputs are updated — balance, burned_amount, total_supply — and the
     // amount is not one.
@@ -5402,7 +5402,7 @@ fn mollusk_burn_from_value_whole_balance_alias() {
         token::balance_key(),
     );
     let result = check_token_instruction(&context, &burn, &[Check::success()]);
-    let persistent_outputs = record_fhe_cpi(&context, &result);
+    let persistent_outputs = check_fhe_cpi(&context, &result);
 
     assert_eq!(persistent_outputs, 3);
     assert_eq!(balance(&context, fixture.token_account), 0);
@@ -5458,7 +5458,7 @@ fn mollusk_burn_from_value_reburns_burned_amount_that_is_also_this_output() {
         token::transfer_input_key(),
     );
     let first_result = check_token_instruction(&context, &first, &[Check::success()]);
-    record_fhe_cpi(&context, &first_result);
+    check_fhe_cpi(&context, &first_result);
     let first_burned = read_store_handle(
         &context,
         fixture.burned_amount_store,
@@ -5480,7 +5480,7 @@ fn mollusk_burn_from_value_reburns_burned_amount_that_is_also_this_output() {
     let pending_burn = token::pending_burn_address(fixture.mint, fixture.token_account).0;
     let cancel = cancel_pending_burn_ix(&fixture, pending_burn, None);
     let cancel_result = check_token_instruction(&context, &cancel, &[Check::success()]);
-    record_fhe_cpi(&context, &cancel_result);
+    check_fhe_cpi(&context, &cancel_result);
     let after_cancel = read_encrypted_store(&context, fixture.burned_amount_store);
     let restored_balance = store_handle(&after_cancel, token::balance_key());
 
@@ -5495,7 +5495,7 @@ fn mollusk_burn_from_value_reburns_burned_amount_that_is_also_this_output() {
         token::burned_amount_key(),
     );
     let again_result = check_token_instruction(&context, &again, &[Check::success()]);
-    let persistent_outputs = record_fhe_cpi(&context, &again_result);
+    let persistent_outputs = check_fhe_cpi(&context, &again_result);
 
     // Conservation after cancellation: the next burn's amount equals the previous burned delta
     // (250), so the restored balance and encrypted total supply each drop by 250.
@@ -5581,7 +5581,7 @@ fn mollusk_burn_from_value_pda_owner_via_invoke_signed() {
         token::transfer_input_key(),
     );
     let result = check_token_instruction(&context, &burn, &[Check::success()]);
-    record_fhe_cpi(&context, &result);
+    check_fhe_cpi(&context, &result);
 
     assert_eq!(balance(&context, fixture.token_account), 600);
     assert_eq!(
@@ -5637,7 +5637,7 @@ fn mollusk_burn_from_value_burned_handle_redeems() {
         token::transfer_input_key(),
     );
     let burn_result = check_token_instruction(&context, &burn, &[Check::success()]);
-    record_fhe_cpi(&context, &burn_result);
+    check_fhe_cpi(&context, &burn_result);
     let burned_handle = read_store_handle(
         &context,
         fixture.burned_amount_store,
@@ -5739,7 +5739,7 @@ fn mollusk_burn_from_value_checks_every_application_deny_record() {
             seed_u64(&context, fixture.initial_total_supply, 5_000);
             seed_u64(&context, amount_handle, 300);
             let result = check_token_instruction(&context, &burn, &[Check::success()]);
-            record_fhe_cpi(&context, &result);
+            check_fhe_cpi(&context, &result);
             assert_eq!(balance(&context, fixture.token_account), 700);
             assert_eq!(
                 store_u64(

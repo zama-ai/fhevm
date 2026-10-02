@@ -25,7 +25,7 @@
 // Source "cleartext": the cleartext stack (`src/solana/cleartext-stack.ts`), a local validator
 // whose zama-host keeps every plaintext in its accounts. Selected with `SOLANA_E2E_SOURCE=cleartext`.
 // No relayer, gateway, coprocessor or KMS serves it (`protocolServices: false`), so the fields
-// naming those services are unused there; the stack serves leaf proofs itself.
+// naming those services are unused there.
 //
 // A second source (the confidential-vault demo-config JSON, #1760) plugs in here: it reads the
 // runtime artifact and calls `resolveEnv(overrides, "demo-config")` with a `Partial<TestEnvOverrides>`

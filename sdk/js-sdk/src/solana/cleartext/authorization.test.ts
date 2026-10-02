@@ -3,12 +3,7 @@ import { address, getAddressDecoder, lamports, type Address, type MaybeEncodedAc
 import { describe, expect, it, vi } from 'vitest';
 import { hexToBytes } from '../../core/base/bytes.js';
 import { decodeSolanaPermitFields } from '../permit/validate.js';
-import {
-  decodeSolanaLeafQuery,
-  encodeSolanaLeafProofOutcome,
-  type SolanaLeafProofOutcome,
-  type SolanaLeafProofReader,
-} from './leafProofs.js';
+import type { SolanaLeafProofOutcome, SolanaLeafProofReader, SolanaLeafQuery } from './leafProofs.js';
 import {
   CONNECTOR_FAILURE_RECOVERABLE,
   judgeSolanaPublicDecryption,
@@ -103,10 +98,17 @@ function accountsReader(accounts: Accounts): SolanaHostAccountsReader {
   };
 }
 
-/** A recorded answer as the outcome it is; writing it back must give the recorded wire. */
+/** A recorded query as the leaf it asks for. */
+function queryOf(wire: unknown): SolanaLeafQuery {
+  const { encryptedStore, handle, kind, key } = wire as Record<string, string>;
+  const query = { encryptedStore: getAddressDecoder().decode(bytes(encryptedStore)), handle: bytes(handle) };
+  return kind === 'allowed' ? { ...query, key: getAddressDecoder().decode(bytes(key)) } : query;
+}
+
+/** A recorded answer as the outcome it is. */
 function outcomeOf(wire: unknown): SolanaLeafProofOutcome {
   const { status, leafIndex, leafCount, siblings } = wire as Record<string, unknown>;
-  const outcome = (
+  return (
     status === 'found'
       ? {
           status,
@@ -118,8 +120,6 @@ function outcomeOf(wire: unknown): SolanaLeafProofOutcome {
         ? { status, leafCount: BigInt(leafCount as number) }
         : { status }
   ) as SolanaLeafProofOutcome;
-  expect(encodeSolanaLeafProofOutcome(outcome)).toEqual(wire);
-  return outcome;
 }
 
 /**
@@ -132,7 +132,7 @@ function leafRecord(leafRead: LeafRead): { readLeafProofs: SolanaLeafProofReader
     readLeafProofs: (queries) => {
       reads += 1;
       if (leafRead === null) throw new Error('the Connector reads no leaf proof in this case');
-      expect(queries).toEqual(leafRead.map(({ query }) => decodeSolanaLeafQuery(query)));
+      expect(queries).toEqual(leafRead.map(({ query }) => queryOf(query)));
       return Promise.resolve(leafRead.map(({ outcome }) => outcomeOf(outcome)));
     },
     asked: () => reads,

@@ -8,7 +8,6 @@ import {
   DEMO_DAPP_PORT,
   DEMO_OPERATOR_PORT,
   RELAYER_PORT,
-  SOLANA_CLEARTEXT_LEAF_PROOF_PORT,
   SOLANA_CLEARTEXT_RPC_PORT,
   SOLANA_LEAF_PROOF_PORT,
   SOLANA_LISTENER_GRPC_PORT,
@@ -38,6 +37,4 @@ export const LOCAL_SOLANA_ENDPOINTS = {
 export const CLEARTEXT_SOLANA_ENDPOINTS = {
   validatorRpc: loopback(SOLANA_CLEARTEXT_RPC_PORT),
   validatorWs: loopback(SOLANA_CLEARTEXT_RPC_PORT + 1, "ws"),
-  /** Leaf proofs rebuilt from the validator's transaction history, in the listener's wire format. */
-  leafProof: loopback(SOLANA_CLEARTEXT_LEAF_PROOF_PORT),
 } as const;

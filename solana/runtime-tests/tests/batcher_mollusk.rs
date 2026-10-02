@@ -126,15 +126,15 @@ fn check_batcher_instruction(
     context.process_and_validate_instruction(ix, checks)
 }
 
-/// Records a batcher instruction's `fhe_execute` CPIs (a token CPI's execution plus the
+/// Checks a batcher instruction's `fhe_execute` CPIs (a token CPI's execution plus the
 /// batcher's own) and returns how many there were, which the tests assert exactly.
-fn record_fhe_cpis(context: &Ctx, result: &InstructionResult) -> usize {
-    let recorded = executions::record(context, result);
+fn check_fhe_cpis(context: &Ctx, result: &InstructionResult) -> usize {
+    let checked = executions::check(context, result);
     assert!(
-        recorded.executions > 0,
+        checked.executions > 0,
         "expected at least one fhe_execute CPI in this instruction"
     );
-    recorded.executions
+    checked.executions
 }
 
 fn read_batch(context: &Ctx, address: Pubkey) -> batcher::Batch {
@@ -1051,7 +1051,7 @@ fn run_join(
     let attestation = amount_attestation_for(amount_handle, amount, user.user, token::id());
     let ix = join_ix(fixture, keys, user, attestation);
     let result = check_batcher_instruction(context, &ix, &[Check::success()]);
-    assert_eq!(record_fhe_cpis(context, &result), 2);
+    assert_eq!(check_fhe_cpis(context, &result), 2);
 }
 
 /// Dispatches the batch and returns the created-public burned handle.
@@ -1066,7 +1066,7 @@ fn run_dispatch(context: &Ctx, fixture: &BatcherFixture, keys: &BatchKeys) -> [u
     );
     let ix = dispatch_ix(fixture, keys);
     let result = check_batcher_instruction(context, &ix, &[Check::success()]);
-    assert_eq!(record_fhe_cpis(context, &result), 1);
+    assert_eq!(check_fhe_cpis(context, &result), 1);
     read_batch(context, keys.batch).burned_total_handle
 }
 
@@ -1086,7 +1086,7 @@ fn run_settle(
     let result = check_batcher_instruction(context, &ix, &[Check::success()]);
     if total > 0 {
         // Only the wrap phase drives an execution at settle.
-        assert_eq!(record_fhe_cpis(context, &result), 1);
+        assert_eq!(check_fhe_cpis(context, &result), 1);
     }
     (ix, result)
 }
@@ -1103,7 +1103,7 @@ fn run_claim(context: &Ctx, fixture: &BatcherFixture, keys: &BatchKeys, user: &U
     let ix = claim_ix(fixture, keys, user);
     let result = check_batcher_instruction(context, &ix, &[Check::success()]);
     // The claim issues the batcher's MulDiv execution plus the transfer's execution.
-    assert_eq!(record_fhe_cpis(context, &result), 2);
+    assert_eq!(check_fhe_cpis(context, &result), 2);
 }
 
 // ---------------------------------------------------------------------------
@@ -1455,7 +1455,7 @@ fn mollusk_repeat_join_accumulates_and_quit_refunds_exactly() {
     // Quit refunds exactly 350 (all-or-nothing) and resets the encrypted store to zero.
     let quit = quit_ix(&fixture, &keys, &fixture.alice);
     let result = check_batcher_instruction(&context, &quit, &[Check::success()]);
-    assert_eq!(record_fhe_cpis(&context, &result), 2);
+    assert_eq!(check_fhe_cpis(&context, &result), 2);
     assert_eq!(
         store_u64(&context, pending, batcher::joined_amount_key()),
         0
@@ -1587,7 +1587,7 @@ fn mollusk_cancel_dispatch_restores_burn_and_allows_refunds() {
     let mut cancel = cancel_dispatch_ix(&fixture, &keys);
     cancel.accounts.push(readonly(deny_record));
     let result = check_batcher_instruction(&context, &cancel, &[Check::success()]);
-    assert_eq!(record_fhe_cpis(&context, &result), 1);
+    assert_eq!(check_fhe_cpis(&context, &result), 1);
     let batch = read_batch(&context, keys.batch);
     assert_eq!(batch.status, batcher::BatchStatus::Refunding);
     assert_eq!(batch.burned_total_handle, [0; 32]);
@@ -1665,7 +1665,7 @@ fn mollusk_cancel_dispatch_restores_burn_and_allows_refunds() {
 
     let quit = quit_ix(&fixture, &keys, &fixture.alice);
     let result = check_batcher_instruction(&context, &quit, &[Check::success()]);
-    assert_eq!(record_fhe_cpis(&context, &result), 2);
+    assert_eq!(check_fhe_cpis(&context, &result), 2);
     assert_eq!(
         store_u64(
             &context,
@@ -1977,7 +1977,7 @@ fn mollusk_redeem_repeat_join_accumulates_and_quit_refunds_exactly() {
     // Quit refunds exactly 350 shares (all-or-nothing) and resets the encrypted store.
     let quit = quit_ix(&fixture, &keys, &fixture.alice);
     let result = check_batcher_instruction(&context, &quit, &[Check::success()]);
-    assert_eq!(record_fhe_cpis(&context, &result), 2);
+    assert_eq!(check_fhe_cpis(&context, &result), 2);
     assert_eq!(
         store_u64(&context, pending, batcher::joined_amount_key()),
         0
@@ -2091,7 +2091,7 @@ fn mollusk_claim_after_quit_pays_zero() {
     // Alice quits; the batch dispatches and settles on bob's 500 alone.
     let quit = quit_ix(&fixture, &keys, &fixture.alice);
     let result = check_batcher_instruction(&context, &quit, &[Check::success()]);
-    assert_eq!(record_fhe_cpis(&context, &result), 2);
+    assert_eq!(check_fhe_cpis(&context, &result), 2);
     let burned_handle = run_dispatch(&context, &fixture, &keys);
     assert_eq!(
         store_u64(
@@ -2705,7 +2705,7 @@ fn snapshot_lifecycle(fixture: &BatcherFixture, context: &Ctx, prefix: &str) {
         production_amount_attestation_for(amount_handle, fixture.alice.user, token::id()),
     );
     let join_result = check_batcher_instruction(context, &join.clone(), &[Check::success()]);
-    record_fhe_cpis(context, &join_result);
+    check_fhe_cpis(context, &join_result);
     assert_batcher_cost(&format!("{prefix}join"), &join, &join_result);
 
     ensure_system_accounts(
@@ -2718,7 +2718,7 @@ fn snapshot_lifecycle(fixture: &BatcherFixture, context: &Ctx, prefix: &str) {
     );
     let dispatch = dispatch_ix(fixture, &keys);
     let dispatch_result = check_batcher_instruction(context, &dispatch, &[Check::success()]);
-    record_fhe_cpis(context, &dispatch_result);
+    check_fhe_cpis(context, &dispatch_result);
     assert_batcher_cost(&format!("{prefix}dispatch"), &dispatch, &dispatch_result);
 
     let burned_handle = read_batch(context, keys.batch).burned_total_handle;
@@ -2749,7 +2749,7 @@ fn snapshot_lifecycle(fixture: &BatcherFixture, context: &Ctx, prefix: &str) {
     );
     let claim = claim_ix(fixture, &keys, &fixture.alice);
     let claim_result = check_batcher_instruction(context, &claim.clone(), &[Check::success()]);
-    record_fhe_cpis(context, &claim_result);
+    check_fhe_cpis(context, &claim_result);
     assert_batcher_cost(&format!("{prefix}claim"), &claim, &claim_result);
 
     let reclaim = reclaim_batch_authority_ix(fixture, &keys, fixture.payer);
@@ -2833,7 +2833,7 @@ fn mollusk_dust_total_settle_reverts_and_batch_stays_dispatched() {
         &cancel_dispatch_ix(&fixture, &keys),
         &[Check::success()],
     );
-    record_fhe_cpis(&context, &result);
+    check_fhe_cpis(&context, &result);
     assert_eq!(
         read_batch(&context, keys.batch).status,
         batcher::BatchStatus::Refunding
@@ -2843,7 +2843,7 @@ fn mollusk_dust_total_settle_reverts_and_batch_stays_dispatched() {
         &quit_ix(&fixture, &keys, &fixture.alice),
         &[Check::success()],
     );
-    record_fhe_cpis(&context, &result);
+    check_fhe_cpis(&context, &result);
     assert_eq!(
         store_u64(
             &context,

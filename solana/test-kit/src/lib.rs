@@ -3,7 +3,8 @@
 //! The kit holds only what is program-agnostic or `zama-host`-generic: the Mollusk environment,
 //! Anchor instruction/account plumbing, the host's fixture accounts (`HostConfig`, `KmsContext`,
 //! `EncryptedStore`, deny records), the coprocessor/KMS signature minting, plaintext reads of the
-//! cleartext host build, store ACL history for proofs, and the rolling cost snapshots. Program-specific fixtures
+//! cleartext host build, the checks of an instruction's `fhe_execute` CPIs, and the rolling cost
+//! snapshots. Program-specific fixtures
 //! (a token's mints, a batcher's batches) stay with their suites.
 //!
 //! The kit deliberately depends on no program crate other than `zama-host`: each suite registers

@@ -1,8 +1,7 @@
 // cleartext-stack — a local Solana chain whose zama-host is the cleartext build: every handle's
 // plaintext is kept in the accounts the host writes, so encrypt, compute and decrypt run with no
 // coprocessor, KMS, relayer or gateway. The SDK's `@fhevm/sdk/solana/cleartext` clients sign as the
-// parties with the keys this stack registers and read plaintexts back from the same accounts, and
-// the stack serves the leaf proofs a coprocessor would (`./cleartext-leaf-proofs.ts`).
+// parties with the keys this stack registers and read plaintexts back from the same accounts.
 //
 // The programs load at genesis at their deployed ids (the cleartext host in place of zama_host),
 // and the only transactions before a scenario are the host bootstrap's. The stack is its own
@@ -26,7 +25,6 @@ import {
   SOLANA_CLEARTEXT_FAUCET_PORT,
   SOLANA_CLEARTEXT_GOSSIP_PORT,
   SOLANA_CLEARTEXT_DIR,
-  SOLANA_CLEARTEXT_LEAF_PROOF_PORT,
   SOLANA_CLEARTEXT_RPC_PORT,
   solanaCleartextDeployerPath,
 } from '../layout';
@@ -64,10 +62,7 @@ export const startCleartextStack = async (): Promise<CleartextStack> => {
     runStreaming(['npm', 'run', 'build:esm'], { cwd: SDK_DIR }),
   ]);
   // After the build: the package resolves to its build output.
-  const [{ SOLANA_CLEARTEXT_GATEWAY, SOLANA_CLEARTEXT_SIGNER_ADDRESSES }, { serveCleartextLeafProofs }] = await Promise.all([
-    import('@fhevm/sdk/solana/cleartext'),
-    import('./cleartext-leaf-proofs'),
-  ]);
+  const { SOLANA_CLEARTEXT_GATEWAY, SOLANA_CLEARTEXT_SIGNER_ADDRESSES } = await import('@fhevm/sdk/solana/cleartext');
 
   const ledgerDir = path.join(SOLANA_CLEARTEXT_DIR, 'ledger');
   await rm(ledgerDir, { recursive: true, force: true });
@@ -100,9 +95,7 @@ export const startCleartextStack = async (): Promise<CleartextStack> => {
     ],
     { stdin: 'ignore', stdout: Bun.file(logPath), stderr: Bun.file(logPath) },
   );
-  const leafProofs = serveCleartextLeafProofs(rpcUrl, SOLANA_CLEARTEXT_LEAF_PROOF_PORT);
   const stop = async () => {
-    await leafProofs.stop(true);
     validator.kill();
     await validator.exited;
   };

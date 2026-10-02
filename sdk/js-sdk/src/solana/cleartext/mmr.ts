@@ -269,7 +269,7 @@ function bytesEqual(a: Uint8Array, b: Uint8Array): boolean {
   return true;
 }
 
-/** Matches `zama_solana_acl::authorize_historical`: one allow of `key` on `handle` is proven. */
+/** Matches `zama_solana_acl::authorize_state_historical`: one allow of `key` on `handle` is proven. */
 export function verifyHistoricalAccessProof(
   encryptedStore: Uint8Array,
   peaks: readonly Uint8Array[],
@@ -282,7 +282,7 @@ export function verifyHistoricalAccessProof(
   return mmrVerify(peaks, leafCount, commitment, proof);
 }
 
-/** Matches `zama_solana_acl::authorize_public`: `handle` was made public, at exactly this leaf. */
+/** Matches `zama_solana_acl::authorize_state_public`: `handle` was made public, at exactly this leaf. */
 export function verifyPublicDecryptProof(
   encryptedStore: Uint8Array,
   peaks: readonly Uint8Array[],

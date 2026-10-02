@@ -8,8 +8,8 @@ use mollusk_svm::result::InstructionResult;
 
 use crate::{decode_fhe_execute_args, Ctx};
 
-/// What one instruction's host calls covered.
-pub struct RecordedExecutions {
+/// What one instruction's `fhe_execute` CPIs covered.
+pub struct CheckedExecutions {
     /// Distinct `fhe_execute` CPIs decoded from the inner instructions.
     pub executions: usize,
     /// Effects that wrote a store slot.
@@ -18,7 +18,7 @@ pub struct RecordedExecutions {
 
 /// Counts every `fhe_execute` the instruction issued, and checks each execution's event against
 /// the runtime sysvars.
-pub fn record(context: &Ctx, result: &InstructionResult) -> RecordedExecutions {
+pub fn check(context: &Ctx, result: &InstructionResult) -> CheckedExecutions {
     let message = result
         .message
         .as_ref()
@@ -57,7 +57,7 @@ pub fn record(context: &Ctx, result: &InstructionResult) -> RecordedExecutions {
             .filter(|effect| effect.slot.is_some())
             .count();
     }
-    RecordedExecutions {
+    CheckedExecutions {
         executions,
         persistent_outputs,
     }

@@ -1,7 +1,7 @@
 // The cleartext stack's leaf record: the leaves of every `EncryptedStore` the host writes, rebuilt
 // from the validator's confirmed transactions the way the coprocessors' host listener records them
-// (`solana_grpc_listener.rs`, reconstruct), kept in memory for as long as the stack runs, and
-// served over the listener's wire by `test-suite/fhevm/src/solana/cleartext-leaf-proofs.ts`.
+// (`solana_grpc_listener.rs`, reconstruct), kept in memory and read directly by the cleartext
+// decrypt clients.
 import {
   AccountRole,
   getAddressEncoder,
