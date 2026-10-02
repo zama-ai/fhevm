@@ -546,18 +546,21 @@ fn host_consensus_ready(host_tracks: &HashMap<i64, ConsensusTrack>) -> bool {
         && host_tracks.values().any(|t| t.anchored_nontrivial)
 }
 
-/// `(chain_id, block)` anchors to notify: host anchors only once `host_consensus_ready`
-/// holds, plus the Gateway anchor whenever it is set.
+/// `(chain_id, block)` anchors to notify. Each host track is emitted as soon as it
+/// anchors (per-chain), so `host_consensus_reached` reflects that chain's OWN consensus
+/// and never waits on a slower/idle sibling chain. Cutover stays atomic and all-quiet-safe:
+/// the upgrade-controller's cutover gate requires every host + the Gateway latch AND at least
+/// one host chain with real (non-trivial) work in its window — so decoupling the per-chain
+/// latch here cannot let a partial or all-quiet fleet cut over. The Gateway anchor is
+/// emitted independently as before.
 fn unanimity_notifications(
     host_tracks: &HashMap<i64, ConsensusTrack>,
     gateway: &ConsensusTrack,
 ) -> Vec<(i64, i64)> {
     let mut out = Vec::new();
-    if host_consensus_ready(host_tracks) {
-        for t in host_tracks.values() {
-            if let Some(block) = t.anchored {
-                out.push((t.chain_id, block));
-            }
+    for t in host_tracks.values() {
+        if let Some(block) = t.anchored {
+            out.push((t.chain_id, block));
         }
     }
     if let Some(block) = gateway.anchored {
@@ -629,9 +632,11 @@ async fn consensus_pass(
     }
 
     // Re-emit each anchor every pass so a controller that missed the NOTIFY still
-    // latches. Host anchors are withheld until host_consensus_ready holds (all host
-    // anchored + >=1 non-trivial), so the controller can't cut over on an all-quiet
-    // fleet; the Gateway anchor is independent.
+    // latches. Each host anchor is emitted per-chain the moment it anchors, so its
+    // host_consensus_reached latch reflects that chain alone and never waits on a
+    // slower/idle sibling. Atomic cutover is preserved by the controller's own gate
+    // (every host + Gateway latched AND >=1 host chain with non-trivial work), so
+    // decoupling the latch here can't let a partial or all-quiet fleet cut over.
     for (chain_id, block) in unanimity_notifications(host_tracks, gateway) {
         notify_unanimity(
             pool,
@@ -1026,40 +1031,41 @@ mod tests {
     }
 
     #[test]
-    fn unanimity_notifications_gate_hosts_on_nontrivial() {
+    fn unanimity_notifications_emit_each_anchored_host_independently() {
         let gateway = track(GW, Some(500), true);
         let sorted = |mut v: Vec<(i64, i64)>| {
             v.sort_unstable();
             v
         };
 
-        // 2 chains, 0 FHE ops (both empty), 1 GW input -> only GW notified -> NO cutover.
-        let all_quiet =
-            HashMap::from([(1, track(1, Some(5), false)), (2, track(2, Some(6), false))]);
-        assert_eq!(
-            unanimity_notifications(&all_quiet, &gateway),
-            vec![(GW, 500)]
-        );
+        // Each anchored host is notified as soon as IT anchors — regardless of triviality
+        // or whether sibling chains have anchored. The all-quiet / partial-fleet guard now
+        // lives in the controller's cutover gate, not by withholding notifications here.
 
-        // 2 chains, 1 FHE op (chain 2), chain 1 empty, 1 GW input -> all notified -> cutover.
-        let mixed = HashMap::from([(1, track(1, Some(5), false)), (2, track(2, Some(6), true))]);
+        // Both anchored (even all-trivial): both hosts + GW notified now.
+        let both = HashMap::from([(1, track(1, Some(5), false)), (2, track(2, Some(6), false))]);
         assert_eq!(
-            sorted(unanimity_notifications(&mixed, &gateway)),
+            sorted(unanimity_notifications(&both, &gateway)),
             vec![(1, 5), (2, 6), (GW, 500)]
         );
 
-        // 1 chain, 0 FHE ops (empty), 1 GW input -> only GW notified -> NO cutover.
-        let single_quiet = HashMap::from([(1, track(1, Some(5), false))]);
+        // Only one host anchored so far: that host + GW notified — no waiting on the sibling.
+        let partial = HashMap::from([(1, track(1, Some(5), true)), (2, track(2, None, false))]);
         assert_eq!(
-            unanimity_notifications(&single_quiet, &gateway),
-            vec![(GW, 500)]
-        );
-        // 1 chain, 1 FHE op, 1 GW input -> host + GW notified -> cutover.
-        let single_nt = HashMap::from([(1, track(1, Some(5), true))]);
-        assert_eq!(
-            sorted(unanimity_notifications(&single_nt, &gateway)),
+            sorted(unanimity_notifications(&partial, &gateway)),
             vec![(1, 5), (GW, 500)]
         );
+
+        // Single chain anchored: host + GW notified.
+        let single = HashMap::from([(1, track(1, Some(5), false))]);
+        assert_eq!(
+            sorted(unanimity_notifications(&single, &gateway)),
+            vec![(1, 5), (GW, 500)]
+        );
+
+        // No host anchored yet: only GW.
+        let none: HashMap<i64, ConsensusTrack> = HashMap::new();
+        assert_eq!(unanimity_notifications(&none, &gateway), vec![(GW, 500)]);
     }
 
     #[test]
