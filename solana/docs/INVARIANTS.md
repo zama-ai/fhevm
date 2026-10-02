@@ -508,8 +508,8 @@ with `InvalidationTimestampInTheFuture`. Pinned by the permit vector
 
 **45. [HOLDS]** The connector authorizes against the canonical EncryptedStore PDA, program-owned, rederived from the seeds the account carries,
 using the same compiled `zama_solana_acl` code the on-chain program runs
-(decode, seeds, MMR verification, both authorize functions). The leaf proof
-comes from the coprocessors' leaf record (`POST /v1/solana/leaf-proofs`,
+(decode, seeds, MMR verification, both authorize functions). The Merkle proof
+comes from the coprocessors' leaf record (`POST /v1/solana/merkle-proofs`,
 API key), never from the client, and is verified against the peaks of the
 account the connector read itself (`kms-worker/src/core/solana/`).
 Pinned by `an_encrypted_store_whose_fields_derive_another_address_is_rejected`,

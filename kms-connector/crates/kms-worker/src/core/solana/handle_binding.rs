@@ -7,7 +7,7 @@
 //! holds no grant, a shorter one may still catch up.
 
 use super::encrypted_store::ResolvedEncryptedStore;
-use super::proof::{HostProofReader, LeafProofOutcome, LeafQuery, ProofReadError, check_length};
+use super::proof::{HostProofReader, LeafQuery, MerkleProofOutcome, ProofReadError, check_length};
 use alloy::primitives::B256;
 use futures::stream::{FuturesUnordered, StreamExt};
 use solana_pubkey::Pubkey;
@@ -24,7 +24,7 @@ use zama_solana_acl::{
 pub async fn verify_proofs<P: HostProofReader, T: Sync>(
     reader: &P,
     batch: &[(LeafQuery, T)],
-    verify: impl Fn(&T, &LeafProofOutcome) -> Result<(), HandleBindingFailure>,
+    verify: impl Fn(&T, &MerkleProofOutcome) -> Result<(), HandleBindingFailure>,
 ) -> Result<Vec<Result<(), HandleBindingFailure>>, ProofReadError> {
     let queries: Vec<LeafQuery> = batch.iter().map(|(query, _)| *query).collect();
     let mut answers: FuturesUnordered<_> = (0..reader.source_count())
@@ -71,7 +71,7 @@ pub fn check_handle_binding(
     encrypted_store: &ResolvedEncryptedStore,
     handle: B256,
     owner_address: Pubkey,
-    outcome: &LeafProofOutcome,
+    outcome: &MerkleProofOutcome,
 ) -> Result<(), HandleBindingFailure> {
     check_leaf(encrypted_store, outcome, |state, proof| {
         authorize_state_historical(
@@ -88,7 +88,7 @@ pub fn check_handle_binding(
 pub fn check_public_binding(
     encrypted_store: &ResolvedEncryptedStore,
     handle: B256,
-    outcome: &LeafProofOutcome,
+    outcome: &MerkleProofOutcome,
 ) -> Result<(), HandleBindingFailure> {
     check_leaf(encrypted_store, outcome, |state, proof| {
         authorize_state_public(
@@ -102,31 +102,31 @@ pub fn check_public_binding(
 
 fn check_leaf(
     encrypted_store: &ResolvedEncryptedStore,
-    outcome: &LeafProofOutcome,
+    outcome: &MerkleProofOutcome,
     verify: impl Fn(&EncryptedStore, &MmrProof) -> Result<(), AclError>,
 ) -> Result<(), HandleBindingFailure> {
     let state = encrypted_store.encrypted_store();
     let live_leaf_count = state.leaf_count;
 
     let (leaf_index, siblings, record_leaf_count) = match outcome {
-        LeafProofOutcome::Found {
+        MerkleProofOutcome::Found {
             leaf_index,
             leaf_count,
             siblings,
         } => (*leaf_index, siblings, *leaf_count),
-        LeafProofOutcome::NotFound { leaf_count } if *leaf_count >= live_leaf_count => {
+        MerkleProofOutcome::NotFound { leaf_count } if *leaf_count >= live_leaf_count => {
             return Err(HandleBindingFailure::NoLeaf {
                 record_leaf_count: *leaf_count,
                 live_leaf_count,
             });
         }
-        LeafProofOutcome::NotFound { leaf_count } => {
+        MerkleProofOutcome::NotFound { leaf_count } => {
             return Err(HandleBindingFailure::ProofRecordBehind {
                 record_leaf_count: *leaf_count,
                 live_leaf_count,
             });
         }
-        LeafProofOutcome::UnknownAccount => {
+        MerkleProofOutcome::UnknownAccount => {
             return Err(HandleBindingFailure::AccountUnknownToProofRecord);
         }
     };
@@ -163,7 +163,7 @@ pub enum HandleBindingFailure {
     #[error("the leaf record does not know this encrypted store")]
     AccountUnknownToProofRecord,
     #[error(
-        "leaf proof does not verify against the observed peaks (record {record_leaf_count} \
+        "Merkle proof does not verify against the observed peaks (record {record_leaf_count} \
          leaves, chain {live_leaf_count})"
     )]
     ProofDoesNotVerify {

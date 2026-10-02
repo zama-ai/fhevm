@@ -30,7 +30,7 @@ flowchart LR
     CLIENT[client / js-sdk] --> RELAYER[relayer] --> GATEWAY[gateway contracts]
     GATEWAY --> CONNECTOR[KMS connectors, one per party]
     CONNECTOR -.->|reads encrypted stores| HOST
-    CONNECTOR -.->|fetches leaf proofs| LEAVES
+    CONNECTOR -.->|fetches Merkle proofs| LEAVES
     CONNECTOR --> KMS[KMS core]
 ```
 

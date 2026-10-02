@@ -1,5 +1,5 @@
 //! Whether a Solana decryption request is authorized: through the host program's accounts and the
-//! coprocessors' leaf proofs. Every check reads live host state and runs on every worker attempt.
+//! coprocessors' Merkle proofs. Every check reads live host state and runs on every worker attempt.
 //! EVM requests are authorized by `DecryptionProcessor`, as on main.
 
 use crate::core::{

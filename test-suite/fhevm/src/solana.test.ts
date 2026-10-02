@@ -2,12 +2,12 @@ import { describe, expect, test } from "bun:test";
 
 import {
   serializeKmsHostChains,
-  solanaLeafProofUrl,
+  solanaMerkleProofUrl,
   SOLANA_LEAF_PROOF_API_KEY,
 } from "./generate/solana";
 
 describe("solana", () => {
-  test("gives a Solana host chain the leaf-proof route the connector requires", () => {
+  test("gives a Solana host chain the Merkle proof route the connector requires", () => {
     const parsed = JSON.parse(
       serializeKmsHostChains([
         {
@@ -22,7 +22,7 @@ describe("solana", () => {
     // The kms-worker refuses to load a Solana chain without a proof route, and exits before
     // serving anything.
     expect(parsed[0]?.solana_proof_routes).toEqual([
-      { url: solanaLeafProofUrl(), api_key: SOLANA_LEAF_PROOF_API_KEY },
+      { url: solanaMerkleProofUrl(), api_key: SOLANA_LEAF_PROOF_API_KEY },
     ]);
     expect(parsed[0]?.solana_host_program_id).toBe("SoLaNaProgram111");
     expect(parsed[0]?.acl_address).toBeUndefined();

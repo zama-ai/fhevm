@@ -1,7 +1,7 @@
 {
   "openapi": "3.1.0",
   "info": {
-    "title": "Solana leaf proofs",
+    "title": "Solana Merkle proofs",
     "description": "Inclusion proofs from the RFC 035 leaf record of Solana encrypted stores, for the KMS connector.",
     "contact": {
       "name": "Zama"
@@ -13,18 +13,18 @@
     "version": "1.0.0"
   },
   "paths": {
-    "/v1/solana/leaf-proofs": {
+    "/v1/solana/merkle-proofs": {
       "post": {
         "tags": [
           "solana"
         ],
         "summary": "Builds the inclusion proof of each queried leaf from the leaf record.",
-        "operationId": "leaf_proofs",
+        "operationId": "merkle_proofs",
         "requestBody": {
           "content": {
             "application/json": {
               "schema": {
-                "$ref": "#/components/schemas/LeafProofRequest"
+                "$ref": "#/components/schemas/MerkleProofRequest"
               }
             }
           },
@@ -36,7 +36,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/LeafProofResponse"
+                  "$ref": "#/components/schemas/MerkleProofResponse"
                 }
               }
             }
@@ -110,7 +110,43 @@
           }
         }
       },
-      "LeafProof": {
+      "LeafQuery": {
+        "type": "object",
+        "description": "One leaf to prove. Byte fields are 32 bytes as lowercase hex, `0x` optional.",
+        "required": [
+          "encryptedStore",
+          "handle",
+          "kind"
+        ],
+        "properties": {
+          "encryptedStore": {
+            "type": "string",
+            "description": "The encrypted store account whose MMR holds the leaf."
+          },
+          "handle": {
+            "type": "string"
+          },
+          "key": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "The allowed key; required for `allowed`, absent for `public`."
+          },
+          "kind": {
+            "$ref": "#/components/schemas/LeafQueryKind"
+          }
+        }
+      },
+      "LeafQueryKind": {
+        "type": "string",
+        "description": "Which leaf authorizes the decrypt.",
+        "enum": [
+          "allowed",
+          "public"
+        ]
+      },
+      "MerkleProofOutcome": {
         "oneOf": [
           {
             "type": "object",
@@ -186,7 +222,7 @@
         ],
         "description": "The answer for one queried leaf, in request order."
       },
-      "LeafProofRequest": {
+      "MerkleProofRequest": {
         "type": "object",
         "required": [
           "leaves"
@@ -201,7 +237,7 @@
           }
         }
       },
-      "LeafProofResponse": {
+      "MerkleProofResponse": {
         "type": "object",
         "required": [
           "proofs"
@@ -210,46 +246,10 @@
           "proofs": {
             "type": "array",
             "items": {
-              "$ref": "#/components/schemas/LeafProof"
+              "$ref": "#/components/schemas/MerkleProofOutcome"
             }
           }
         }
-      },
-      "LeafQuery": {
-        "type": "object",
-        "description": "One leaf to prove. Byte fields are 32 bytes as lowercase hex, `0x` optional.",
-        "required": [
-          "encryptedStore",
-          "handle",
-          "kind"
-        ],
-        "properties": {
-          "encryptedStore": {
-            "type": "string",
-            "description": "The encrypted store account whose MMR holds the leaf."
-          },
-          "handle": {
-            "type": "string"
-          },
-          "key": {
-            "type": [
-              "string",
-              "null"
-            ],
-            "description": "The allowed key; required for `allowed`, absent for `public`."
-          },
-          "kind": {
-            "$ref": "#/components/schemas/LeafQueryKind"
-          }
-        }
-      },
-      "LeafQueryKind": {
-        "type": "string",
-        "description": "Which leaf authorizes the decrypt.",
-        "enum": [
-          "allowed",
-          "public"
-        ]
       }
     },
     "securitySchemes": {

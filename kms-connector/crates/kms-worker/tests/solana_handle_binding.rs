@@ -29,7 +29,7 @@ use kms_worker::core::solana::{
     failure::AuthorizationFailure,
     handle_binding::{HandleBindingFailure, check_handle_binding, verify_proofs},
     pipeline::authorize_request,
-    proof::{LeafKind, LeafProofOutcome, LeafQuery, ProofReadError},
+    proof::{LeafKind, LeafQuery, MerkleProofOutcome, ProofReadError},
 };
 use rstest::rstest;
 use solana_pubkey::Pubkey;
@@ -54,7 +54,7 @@ fn answer(
     encrypted_store: &EncryptedStoreFixture,
     handle: [u8; 32],
     key: Pubkey,
-) -> LeafProofOutcome {
+) -> MerkleProofOutcome {
     encrypted_store.outcome(&encrypted_store.allowed_query(handle, key))
 }
 
@@ -241,7 +241,7 @@ fn a_tampered_sibling_path_does_not_verify() {
     let live = handle(0x23, FHE_TYPE_UINT64);
     let mut encrypted_store = EncryptedStoreFixture::allowing(live, key);
     encrypted_store.allow(Wallet::new(2).pubkey());
-    let LeafProofOutcome::Found {
+    let MerkleProofOutcome::Found {
         leaf_index,
         leaf_count,
         mut siblings,
@@ -256,7 +256,7 @@ fn a_tampered_sibling_path_does_not_verify() {
         &resolved(&encrypted_store),
         B256::new(live),
         key,
-        &LeafProofOutcome::Found {
+        &MerkleProofOutcome::Found {
             leaf_index,
             leaf_count,
             siblings,
@@ -281,7 +281,7 @@ fn no_leaf_in_a_record_with_the_observed_history_is_retried() {
         &resolved(&encrypted_store),
         B256::new(live),
         key,
-        &LeafProofOutcome::NotFound { leaf_count: 1 },
+        &MerkleProofOutcome::NotFound { leaf_count: 1 },
     )
     .expect_err("nobody allowed this key");
 
@@ -313,7 +313,7 @@ fn no_leaf_in_a_record_ahead_of_the_chain_is_a_missing_leaf() {
         &resolved(&encrypted_store),
         B256::new(live),
         key,
-        &LeafProofOutcome::NotFound { leaf_count: 3 },
+        &MerkleProofOutcome::NotFound { leaf_count: 3 },
     )
     .expect_err("nobody allowed this key");
 
@@ -332,7 +332,7 @@ fn no_leaf_in_a_record_behind_the_chain_is_retryable() {
         &resolved(&encrypted_store),
         B256::new(live),
         key,
-        &LeafProofOutcome::NotFound { leaf_count: 0 },
+        &MerkleProofOutcome::NotFound { leaf_count: 0 },
     )
     .expect_err("a record behind the chain decides nothing");
 
@@ -364,7 +364,7 @@ fn an_account_unknown_to_the_record_is_retryable() {
         &resolved(&encrypted_store),
         B256::new(live),
         key,
-        &LeafProofOutcome::UnknownAccount,
+        &MerkleProofOutcome::UnknownAccount,
     )
     .expect_err("a record that does not know the account decides nothing");
 
@@ -680,8 +680,8 @@ fn two_allowed_queries() -> (
 }
 
 /// What the store's record answers for a query it does not hold.
-fn not_found(fixture: &EncryptedStoreFixture) -> LeafProofOutcome {
-    LeafProofOutcome::NotFound {
+fn not_found(fixture: &EncryptedStoreFixture) -> MerkleProofOutcome {
+    MerkleProofOutcome::NotFound {
         leaf_count: fixture.encrypted_store.leaf_count,
     }
 }

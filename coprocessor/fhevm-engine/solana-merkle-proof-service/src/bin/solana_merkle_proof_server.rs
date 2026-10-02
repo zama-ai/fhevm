@@ -32,11 +32,11 @@ struct Args {
     #[arg(long, default_value_t = 8)]
     database_pool_size: u32,
 
-    /// Port of the HTTP server: health routes and the leaf-proof route.
+    /// Port of the HTTP server: health routes and the Merkle proof route.
     #[arg(long, default_value_t = 8080)]
     http_port: u16,
 
-    /// Bearer API key the leaf-proof route requires.
+    /// Bearer API key the Merkle proof route requires.
     #[arg(long, env = "SOLANA_PROOF_API_KEY")]
     proof_api_key: String,
 
@@ -84,7 +84,7 @@ async fn main() -> Result<()> {
         }
     });
 
-    HttpServer::leaf_proofs(pool, args.proof_api_key, args.http_port, cancel)
+    HttpServer::merkle_proofs(pool, args.proof_api_key, args.http_port, cancel)
         .start()
         .await
 }

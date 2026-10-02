@@ -1,5 +1,5 @@
 //! The leaf record against a real Postgres: rows round-trip through the migration, the
-//! checkpoint moves, and the leaf-proof route answers from the stored leaves and nodes with
+//! checkpoint moves, and the Merkle proof route answers from the stored leaves and nodes with
 //! proofs that verify against the recorded peaks.
 
 mod support;
@@ -10,8 +10,9 @@ use serial_test::serial;
 use solana_host_follower::host::EncryptedStoreWrite;
 use solana_host_follower::BlockCheckpoint;
 use solana_merkle_proof_service::server::{
-    ErrorCode, ErrorResponse, HttpServer, LeafProof, LeafProofRequest,
-    LeafProofResponse, LeafQuery, LeafQueryKind, LEAF_PROOFS_PATH,
+    ErrorCode, ErrorResponse, HttpServer, LeafQuery, LeafQueryKind,
+    MerkleProofOutcome, MerkleProofRequest, MerkleProofResponse,
+    MERKLE_PROOFS_PATH,
 };
 use solana_merkle_proof_service::store::{
     load_block_leaves, load_checkpoint, load_recorded_through,
@@ -44,7 +45,7 @@ fn write(
     }
 }
 
-/// Starts the proof server on a free port and returns its leaf-proof URL once it answers.
+/// Starts the proof server on a free port and returns its Merkle proof URL once it answers.
 async fn serve_proofs(
     pool: &sqlx::PgPool,
     cancel: &CancellationToken,
@@ -53,7 +54,7 @@ async fn serve_proofs(
         .and_then(|probe| probe.local_addr())
         .expect("free port")
         .port();
-    let server = HttpServer::leaf_proofs(
+    let server = HttpServer::merkle_proofs(
         pool.clone(),
         "secret".to_owned(),
         port,
@@ -64,7 +65,7 @@ async fn serve_proofs(
     for _ in 0..50 {
         if reqwest::get(&liveness).await.is_ok() {
             return (
-                format!("http://127.0.0.1:{port}{LEAF_PROOFS_PATH}"),
+                format!("http://127.0.0.1:{port}{MERKLE_PROOFS_PATH}"),
                 task,
             );
         }
@@ -176,7 +177,7 @@ async fn leaf_record_round_trips_and_serves_verifiable_proofs(
     let response = client
         .post(&url)
         .bearer_auth("secret")
-        .json(&LeafProofRequest {
+        .json(&MerkleProofRequest {
             leaves: vec![
                 LeafQuery {
                     encrypted_store: hex32(&ACCOUNT),
@@ -207,12 +208,13 @@ async fn leaf_record_round_trips_and_serves_verifiable_proofs(
         .send()
         .await?;
     assert_eq!(response.status(), 200);
-    let body: LeafProofResponse = response.json().await?;
+    let body: MerkleProofResponse = response.json().await?;
     assert_eq!(body.proofs.len(), 4);
 
     let recorded_peaks = state.peaks.clone();
-    let verify = |proof: &LeafProof, commitment: [u8; 32]| match proof {
-        LeafProof::Found {
+    let verify = |proof: &MerkleProofOutcome, commitment: [u8; 32]| match proof
+    {
+        MerkleProofOutcome::Found {
             leaf_index,
             leaf_count,
             siblings,
@@ -239,8 +241,11 @@ async fn leaf_record_round_trips_and_serves_verifiable_proofs(
     };
     assert_eq!(verify(&body.proofs[0], second.leaves[1].commitment), 2);
     assert_eq!(verify(&body.proofs[1], first.leaves[0].commitment), 0);
-    assert_eq!(body.proofs[2], LeafProof::NotFound { leaf_count: 3 });
-    assert_eq!(body.proofs[3], LeafProof::UnknownAccount);
+    assert_eq!(
+        body.proofs[2],
+        MerkleProofOutcome::NotFound { leaf_count: 3 }
+    );
+    assert_eq!(body.proofs[3], MerkleProofOutcome::UnknownAccount);
 
     // A leaf at or past the store's `leaf_count`, as a block committed after the route
     // read the store row leaves it, is not proved against that count.
@@ -257,7 +262,7 @@ async fn leaf_record_round_trips_and_serves_verifiable_proofs(
     let response = client
         .post(&url)
         .bearer_auth("secret")
-        .json(&LeafProofRequest {
+        .json(&MerkleProofRequest {
             leaves: vec![LeafQuery {
                 encrypted_store: hex32(&ACCOUNT),
                 handle: hex32(&[0x13; 32]),
@@ -268,13 +273,16 @@ async fn leaf_record_round_trips_and_serves_verifiable_proofs(
         .send()
         .await?;
     assert_eq!(response.status(), 200);
-    let body: LeafProofResponse = response.json().await?;
-    assert_eq!(body.proofs, vec![LeafProof::NotFound { leaf_count: 3 }]);
+    let body: MerkleProofResponse = response.json().await?;
+    assert_eq!(
+        body.proofs,
+        vec![MerkleProofOutcome::NotFound { leaf_count: 3 }]
+    );
 
     // A record missing a path row, or holding a wrong one, cannot serve a proof: the
     // route answers a retryable 502 rather than a path that misses the peaks. Leaf 0's
     // path is leaf 1.
-    let owner_of_0x10 = LeafProofRequest {
+    let owner_of_0x10 = MerkleProofRequest {
         leaves: vec![LeafQuery {
             encrypted_store: hex32(&ACCOUNT),
             handle: hex32(&[0x10; 32]),
@@ -363,7 +371,7 @@ async fn prove_leaves_of_a_store(
     let response = reqwest::Client::new()
         .post(&url)
         .bearer_auth("secret")
-        .json(&LeafProofRequest {
+        .json(&MerkleProofRequest {
             leaves: proved
                 .iter()
                 .map(|&leaf_index| LeafQuery {
@@ -377,11 +385,11 @@ async fn prove_leaves_of_a_store(
         .send()
         .await?;
     assert_eq!(response.status(), 200);
-    let body: LeafProofResponse = response.json().await?;
+    let body: MerkleProofResponse = response.json().await?;
     let elapsed = started.elapsed();
 
     for (&leaf_index, proof) in proved.iter().zip(&body.proofs) {
-        let LeafProof::Found {
+        let MerkleProofOutcome::Found {
             leaf_index: found,
             leaf_count,
             siblings,
