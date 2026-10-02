@@ -152,7 +152,7 @@ impl Default for Config {
         Self {
             service_name: "consensus-detector".to_owned(),
             database_url: DatabaseURL::default(),
-            database_pool_size: 4,
+            database_pool_size: 16,
             gcs_mode: false,
             gateway_config_address: Address::ZERO,
             log_level: Level::INFO,
