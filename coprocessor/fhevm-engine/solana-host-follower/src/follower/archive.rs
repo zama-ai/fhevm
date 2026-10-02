@@ -145,14 +145,13 @@ async fn fetch_block(
     })
 }
 
-/// A hosted archive URL usually carries its API key, and reqwest errors print the URL.
 /// The confirmed block at `slot`, as an inclusive start for [`run`](super::run). Fails when
 /// `slot` holds no confirmed block, so a start slot can never quietly become the tip.
 pub async fn block_checkpoint(
-    rpc: &RpcClient,
+    archive: &RpcClient,
     slot: u64,
 ) -> Result<BlockCheckpoint> {
-    let block = rpc
+    let block = archive
         .get_block_with_config(
             slot,
             RpcBlockConfig {
@@ -176,6 +175,7 @@ pub async fn block_checkpoint(
     })
 }
 
+/// A hosted archive URL usually carries its API key, and reqwest errors print the URL.
 fn without_url(error: ClientError) -> ClientError {
     let ClientError { request, kind } = error;
     let kind = match *kind {

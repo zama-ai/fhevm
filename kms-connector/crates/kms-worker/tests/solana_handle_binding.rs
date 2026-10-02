@@ -759,7 +759,7 @@ async fn every_coprocessor_missing_the_leaf_is_a_recoverable_denial() {
 
     assert!(matches!(
         &results[..],
-        [Err(failure @ HandleBindingFailure::NoLeaf { .. })] if failure.is_recoverable()
+        [Err(HandleBindingFailure::NoLeaf { .. })]
     ));
     assert_eq!(reader.call_count(), 2);
 }

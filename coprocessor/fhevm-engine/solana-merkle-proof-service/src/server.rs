@@ -30,9 +30,7 @@ use utoipa::{
 };
 use zama_solana_acl::mmr_verify;
 
-use crate::store::{
-    find_leaf, load_encrypted_store_history, load_proof, LeafKind,
-};
+use crate::store::{find_leaf, load_proof, load_store_cursor, LeafKind};
 
 /// Most leaves one request may ask for.
 const MAX_LEAVES_PER_REQUEST: usize = 64;
@@ -390,13 +388,13 @@ async fn prove(
         HttpError::new(ErrorCode::UpstreamTransient, "leaf record read failed")
     };
     let account = query.encrypted_store;
-    let Some(state) = load_encrypted_store_history(pool, account)
+    let Some(cursor) = load_store_cursor(pool, account)
         .await
         .map_err(read_failed)?
     else {
         return Ok(LeafProof::UnknownAccount);
     };
-    let leaf_count = state.leaf_count;
+    let leaf_count = cursor.leaf_count;
     let Some((leaf_index, commitment)) = find_leaf(
         pool,
         account,
@@ -416,7 +414,7 @@ async fn prove(
     // A path that is missing or does not reach the recorded peaks comes from a record
     // that is wrong, not stale.
     let Some(proof) = proof.filter(|proof| {
-        mmr_verify(&state.peaks, leaf_count, commitment, proof)
+        mmr_verify(&cursor.peaks, leaf_count, commitment, proof)
     }) else {
         error!(
             encrypted_store = %bs58::encode(account).into_string(),

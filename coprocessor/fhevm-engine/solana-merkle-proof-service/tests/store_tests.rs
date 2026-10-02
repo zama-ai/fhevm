@@ -14,9 +14,10 @@ use solana_merkle_proof_service::server::{
     LeafProofResponse, LeafQuery, LeafQueryKind, LEAF_PROOFS_PATH,
 };
 use solana_merkle_proof_service::store::{
-    load_block_leaves, load_checkpoint, load_encrypted_store_histories,
-    load_encrypted_store_history, reduce_block_leaves, store_block_leaves,
-    store_checkpoint, TransactionStoreWrites,
+    load_block_leaves, load_checkpoint, load_recorded_through,
+    load_store_cursor, load_store_cursors, reduce_block_leaves,
+    replay_block_leaves, store_block_leaves, store_checkpoint,
+    TransactionStoreWrites,
 };
 use tokio_util::sync::CancellationToken;
 use zama_solana_acl::{mmr_verify, MmrProof};
@@ -82,10 +83,9 @@ async fn leaf_record_round_trips_and_serves_verifiable_proofs(
     // Block 10 creates the value allowing the owner; block 11 replaces the handle,
     // allows the owner again and makes it public.
     let mut tx = pool.begin().await?;
-    let existing = load_encrypted_store_histories(&mut tx, &[ACCOUNT]).await?;
+    let existing = load_store_cursors(&mut tx, &[ACCOUNT]).await?;
     assert!(existing.is_empty());
     let first = reduce_block_leaves(
-        10,
         &[TransactionStoreWrites {
             transaction_index: 0,
             sources: vec![write(0, [0x10; 32], vec![OWNER], false)],
@@ -104,11 +104,10 @@ async fn leaf_record_round_trips_and_serves_verifiable_proofs(
     tx.commit().await?;
 
     let mut tx = pool.begin().await?;
-    let existing = load_encrypted_store_histories(&mut tx, &[ACCOUNT]).await?;
+    let existing = load_store_cursors(&mut tx, &[ACCOUNT]).await?;
     assert_eq!(existing.len(), 1);
     assert_eq!(existing[&ACCOUNT].leaf_count, 1);
     let second = reduce_block_leaves(
-        11,
         &[TransactionStoreWrites {
             transaction_index: 2,
             sources: vec![write(1, [0x11; 32], vec![OWNER], true)],
@@ -133,21 +132,21 @@ async fn leaf_record_round_trips_and_serves_verifiable_proofs(
             block_hash: [0x1B; 32],
         })
     );
-    let state = load_encrypted_store_history(&pool, ACCOUNT)
+    let state = load_store_cursor(&pool, ACCOUNT)
         .await?
         .expect("account recorded");
-    assert_eq!(state, second.states[&ACCOUNT]);
+    assert_eq!(state, second.stores[&ACCOUNT]);
     let mut tx = pool.begin().await?;
     assert_eq!(
-        load_block_leaves(&mut tx, 11, [ACCOUNT]).await?,
+        load_block_leaves(&mut tx, 11).await?,
         BTreeMap::from([(ACCOUNT, second.leaves.clone())]),
         "leaves persist with their semantics and block position"
     );
     tx.rollback().await?;
-    assert_eq!(load_encrypted_store_history(&pool, [0xFF; 32]).await?, None);
+    assert_eq!(load_store_cursor(&pool, [0xFF; 32]).await?, None);
 
-    // A repair replays recorded slots: the recomputed leaves equal the recorded ones
-    // and nothing is appended. A replay that computes other leaves does not match.
+    // A repair replays recorded slots: the recomputed leaves equal the recorded ones. A
+    // replay that computes other leaves does not match.
     let replay_of_11 = |handle| {
         [TransactionStoreWrites {
             transaction_index: 2,
@@ -155,20 +154,19 @@ async fn leaf_record_round_trips_and_serves_verifiable_proofs(
         }]
     };
     let mut tx = pool.begin().await?;
-    let existing = load_encrypted_store_histories(&mut tx, &[ACCOUNT]).await?;
-    let replay =
-        reduce_block_leaves(11, &replay_of_11([0x11; 32]), existing.clone())?;
-    assert!(replay.states.is_empty() && replay.leaves.is_empty());
-    assert_eq!(replay.replayed[&ACCOUNT].len(), 2);
-    assert_eq!(
-        load_block_leaves(&mut tx, 11, replay.replayed.keys().copied()).await?,
-        replay.replayed
-    );
-    let forged = reduce_block_leaves(11, &replay_of_11([0x12; 32]), existing)?;
-    assert_ne!(
-        load_block_leaves(&mut tx, 11, forged.replayed.keys().copied()).await?,
-        forged.replayed
-    );
+    let recorded = load_block_leaves(&mut tx, 11).await?;
+    assert_eq!(replay_block_leaves(&replay_of_11([0x11; 32]))?, recorded);
+    assert_ne!(replay_block_leaves(&replay_of_11([0x12; 32]))?, recorded);
+    // Moving the checkpoint back keeps the slots after it replays.
+    store_checkpoint(
+        &mut tx,
+        &BlockCheckpoint {
+            slot: 10,
+            block_hash: [0x1A; 32],
+        },
+    )
+    .await?;
+    assert_eq!(load_recorded_through(&mut tx).await?, Some(11));
     tx.rollback().await?;
 
     // The HTTP route builds proofs from the same rows.
@@ -323,11 +321,10 @@ async fn prove_leaves_of_a_store(
     let handle = |leaf_index: u64| [(leaf_index / leaves_per_block) as u8; 32];
 
     let (_db, pool) = support::record_db().await;
-    let mut states = BTreeMap::new();
+    let mut stores = BTreeMap::new();
     for first in (0..leaves).step_by(leaves_per_block as usize) {
         let slot = first / leaves_per_block;
         let block = reduce_block_leaves(
-            slot,
             &[TransactionStoreWrites {
                 transaction_index: 0,
                 sources: vec![write(
@@ -339,14 +336,14 @@ async fn prove_leaves_of_a_store(
                     false,
                 )],
             }],
-            states,
+            stores,
         )?;
         let mut tx = pool.begin().await?;
         store_block_leaves(&mut tx, slot, &block).await?;
         tx.commit().await?;
-        states = block.states;
+        stores = block.stores;
     }
-    let state = &states[&ACCOUNT];
+    let state = &stores[&ACCOUNT];
     assert_eq!(state.leaf_count, leaves);
     let off_path = (0..leaves)
         .find(|leaf| proved.iter().all(|&p| *leaf != p && *leaf != p ^ 1))

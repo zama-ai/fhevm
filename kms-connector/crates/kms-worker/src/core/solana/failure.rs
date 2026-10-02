@@ -201,10 +201,6 @@ impl HandleBindingFailure {
     pub fn class(&self) -> FailureClass {
         ACL_DENIED
     }
-
-    pub fn is_recoverable(&self) -> bool {
-        self.class().recoverable
-    }
 }
 
 impl DelegationFailure {

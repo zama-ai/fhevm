@@ -282,8 +282,8 @@ fn reconstruct_records_for_insert(
                 &mut produced_in_tx,
             ) else {
                 anyhow::bail!(
-                    "reconstruct: fhe_execute in slot {slot} and its FheExecutedEvent \
-                     do not describe the same steps"
+                    "reconstruct: fhe_execute in slot {slot} has an operand its event \
+                     or dictionary does not resolve"
                 );
             };
             reconstructed.check_failures.extend(
