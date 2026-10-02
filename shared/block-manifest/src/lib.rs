@@ -166,7 +166,24 @@ pub struct BlockCiphertextDescriptor {
     pub handle: B256,
     #[serde(flatten)]
     pub status: CiphertextStatus,
+    /// The handle is the Blue/Green dry-run consensus probe, synthesized by the
+    /// incoming stack's host listener rather than emitted by a transaction. It
+    /// exists on no chain: peers compare it like any handle, but it is never
+    /// contained or healed, and its ciphertexts are dropped at cutover. Part of
+    /// the consensus digest. JSON omits it when false.
+    #[serde(default, skip_serializing_if = "is_false")]
+    pub synthetic: bool,
 }
+
+fn is_false(value: &bool) -> bool {
+    !*value
+}
+
+/// High bit of a descriptor's first status byte in the consensus and signed
+/// encodings: set for a synthetic handle. The two status bytes still select
+/// the layout that follows, so the encoding stays prefix-free, and a
+/// non-synthetic descriptor encodes exactly as before the flag existed.
+const SYNTHETIC_STATUS_BIT: u8 = 0x80;
 
 impl BlockCiphertextDescriptor {
     pub fn computed(
@@ -186,6 +203,7 @@ impl BlockCiphertextDescriptor {
                 ct128_digest,
                 ct128_format,
             },
+            synthetic: false,
         }
     }
 
@@ -195,6 +213,7 @@ impl BlockCiphertextDescriptor {
         Self {
             handle,
             status: CiphertextStatus::Error { error_message },
+            synthetic: false,
         }
     }
 
@@ -204,6 +223,7 @@ impl BlockCiphertextDescriptor {
         Self {
             handle,
             status: CiphertextStatus::Uncomputed,
+            synthetic: false,
         }
     }
 
@@ -222,7 +242,31 @@ impl BlockCiphertextDescriptor {
                 ct128_digest,
                 reason,
             },
+            synthetic: false,
         }
+    }
+
+    /// Marks this descriptor as the dry-run consensus probe; see
+    /// [`Self::synthetic`].
+    pub fn into_synthetic(mut self) -> Self {
+        self.synthetic = true;
+        self
+    }
+
+    /// Both status bytes, with [`SYNTHETIC_STATUS_BIT`] folded into the first.
+    fn status_tag(&self) -> [u8; 2] {
+        let [kind, variant] = match &self.status {
+            CiphertextStatus::Computed { .. } => [0, 0],
+            CiphertextStatus::Error { .. } => [1, 0],
+            CiphertextStatus::Uncomputed => [0, 1],
+            CiphertextStatus::InvalidDescriptor { .. } => [1, 1],
+        };
+        let flag = if self.synthetic {
+            SYNTHETIC_STATUS_BIT
+        } else {
+            0
+        };
+        [kind | flag, variant]
     }
 
     pub fn is_invalid_descriptor(&self) -> bool {
@@ -806,24 +850,24 @@ fn update_descriptor(hasher: &mut Keccak256, descriptor: &BlockCiphertextDescrip
             ct128_format,
             ..
         } => {
-            hasher.update([0, 0]);
+            hasher.update(descriptor.status_tag());
             update_u256(hasher, *keyset_id);
             hasher.update(ct64_digest.as_slice());
             hasher.update(ct128_digest.as_slice());
             hasher.update([*ct128_format as u8]);
         }
         CiphertextStatus::Error { .. } => {
-            hasher.update([1, 0]);
+            hasher.update(descriptor.status_tag());
         }
         CiphertextStatus::Uncomputed => {
-            hasher.update([0, 1]);
+            hasher.update(descriptor.status_tag());
         }
         CiphertextStatus::InvalidDescriptor {
             ct64_digest,
             ct128_digest,
             ..
         } => {
-            hasher.update([1, 1]);
+            hasher.update(descriptor.status_tag());
             update_optional_b256(hasher, *ct64_digest);
             update_optional_b256(hasher, *ct128_digest);
         }
@@ -841,8 +885,7 @@ fn push_descriptors(out: &mut Vec<u8>, descriptors: &[BlockCiphertextDescriptor]
                 ct128_digest,
                 ct128_format,
             } => {
-                out.push(0);
-                out.push(0);
+                out.extend_from_slice(&descriptor.status_tag());
                 push_u256(out, *keyset_id);
                 push_optional_u256(out, *gateway_key_id);
                 out.extend_from_slice(ct64_digest.as_slice());
@@ -850,21 +893,18 @@ fn push_descriptors(out: &mut Vec<u8>, descriptors: &[BlockCiphertextDescriptor]
                 out.push(*ct128_format as u8);
             }
             CiphertextStatus::Error { error_message } => {
-                out.push(1);
-                out.push(0);
+                out.extend_from_slice(&descriptor.status_tag());
                 push_optional_str(out, error_message.as_deref());
             }
             CiphertextStatus::Uncomputed => {
-                out.push(0);
-                out.push(1);
+                out.extend_from_slice(&descriptor.status_tag());
             }
             CiphertextStatus::InvalidDescriptor {
                 ct64_digest,
                 ct128_digest,
                 reason,
             } => {
-                out.push(1);
-                out.push(1);
+                out.extend_from_slice(&descriptor.status_tag());
                 push_optional_b256(out, *ct64_digest);
                 push_optional_b256(out, *ct128_digest);
                 push_optional_str(out, reason.as_deref());
