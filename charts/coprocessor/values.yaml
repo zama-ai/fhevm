@@ -1949,8 +1949,11 @@ solanaHostListener:
   # Serves the Merkle proofs to the KMS connectors with its own database pool, on a
   # ClusterIP Service with no public ingress, so proofs keep being served while
   # the indexer is stopped or behind. It runs the listener's image with its service
-  # account, scheduling and security context. Supply SOLANA_PROOF_API_KEY using
-  # secretKeyRef.
+  # account, scheduling and security context. It answers only requests signed by
+  # the tx-sender of a node in a live KMS context, which it reads from the
+  # ProtocolConfig of the `chains` entry whose chainId is
+  # commonConfig.canonicalProtocolConfigChainId (its httpUrl and
+  # protocolConfigContractAddress).
   proofServer:
     replicas: 1
     httpPort: 8080

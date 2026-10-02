@@ -217,6 +217,7 @@ jobs:
           - coprocessor/fhevm-engine/Cargo.*
           - host-contracts/rust_bindings/**
           - shared/block-manifest/**
+          - shared/request-authorization/**
           - shared/ciphertext-attestation/**
 
   check-changes-tfhe-worker:
@@ -296,6 +297,7 @@ jobs:
           - host-contracts/rust_bindings/**
           - gateway-contracts/rust_bindings/**
           - shared/block-manifest/**
+          - shared/request-authorization/**
           - shared/ciphertext-attestation/**
 
   check-changes-upgrade-controller:

@@ -118,6 +118,7 @@ COPY gateway-contracts/contracts ./gateway-contracts/contracts
 COPY solana ./solana
 COPY shared/ciphertext-attestation ./shared/ciphertext-attestation
 COPY shared/block-manifest ./shared/block-manifest
+COPY shared/request-authorization ./shared/request-authorization
 
 WORKDIR /app/coprocessor/fhevm-engine
 

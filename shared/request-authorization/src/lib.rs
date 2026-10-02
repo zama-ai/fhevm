@@ -14,6 +14,7 @@
 //! every recipient answers the same way and that start no new work.
 
 use alloy_primitives::{Address, B256, Signature, hex, keccak256};
+use alloy_signer::Signer;
 use alloy_sol_types::{Eip712Domain, SolStruct, eip712_domain, sol};
 
 sol! {
@@ -52,8 +53,22 @@ pub fn signing_hash(chain_id: u64, path: &str, body: &[u8], expires: u64) -> B25
     .eip712_signing_hash(&domain(chain_id))
 }
 
-/// The `Authorization` header value for `signature` over a request valid until `expires`.
-pub fn header_value(expires: u64, signature: &Signature) -> String {
+/// Signs `body` sent to `path`, valid until `expires` (Unix seconds), and returns the
+/// `Authorization` header value.
+pub async fn authorize<S: Signer + ?Sized>(
+    signer: &S,
+    chain_id: u64,
+    path: &str,
+    body: &[u8],
+    expires: u64,
+) -> alloy_signer::Result<String> {
+    let signature = signer
+        .sign_hash(&signing_hash(chain_id, path, body, expires))
+        .await?;
+    Ok(header_value(expires, &signature))
+}
+
+fn header_value(expires: u64, signature: &Signature) -> String {
     format!(
         "{SCHEME} expires={expires}, signature=0x{}",
         hex::encode(signature.as_bytes())
@@ -205,6 +220,17 @@ mod tests {
                 "{malformed}"
             );
         }
+    }
+
+    #[tokio::test]
+    async fn authorize_signs_what_recover_signer_checks() {
+        let header = authorize(&signer(), CHAIN_ID, PATH, BODY, NOW + 60)
+            .await
+            .unwrap();
+        assert_eq!(
+            recover_signer(CHAIN_ID, &header, PATH, BODY, NOW),
+            Ok(signer().address())
+        );
     }
 
     /// Pins the wire format. viem's `hashTypedData` and `signTypedData` produce the same values.

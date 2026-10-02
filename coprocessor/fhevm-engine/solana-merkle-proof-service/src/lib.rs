@@ -3,6 +3,7 @@
 //! `solana_merkle_proof_server` answers the KMS connector's inclusion proofs from it.
 
 pub mod indexer;
+pub mod kms_tx_senders;
 pub mod server;
 pub mod store;
 

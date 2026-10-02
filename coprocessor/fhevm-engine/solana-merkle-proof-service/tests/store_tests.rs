@@ -4,11 +4,19 @@
 
 mod support;
 
-use std::collections::BTreeMap;
+use std::{
+    collections::{BTreeMap, HashSet},
+    time::{SystemTime, UNIX_EPOCH},
+};
+
+use alloy::signers::local::PrivateKeySigner;
 
 use serial_test::serial;
 use solana_host_follower::host::EncryptedStoreWrite;
 use solana_host_follower::BlockCheckpoint;
+use solana_merkle_proof_service::kms_tx_senders::{
+    KmsTxSenderSet, KmsTxSenders,
+};
 use solana_merkle_proof_service::server::{
     ErrorCode, ErrorResponse, HttpServer, LeafQuery, LeafQueryKind,
     MerkleProofOutcome, MerkleProofRequest, MerkleProofResponse,
@@ -44,18 +52,60 @@ fn write(
     }
 }
 
-/// Starts the proof server on a free port and returns its Merkle proof URL once it answers.
+const CHAIN_ID: u64 = 12345;
+
+/// Posts Merkle proof requests signed by a KMS tx-sender the server accepts.
+struct ProofClient {
+    url: String,
+    client: reqwest::Client,
+    connector: PrivateKeySigner,
+}
+
+impl ProofClient {
+    async fn post(
+        &self,
+        request: &MerkleProofRequest,
+    ) -> reqwest::Result<reqwest::Response> {
+        let body = serde_json::to_vec(request).expect("encode");
+        let expires = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .expect("clock")
+            .as_secs()
+            + 60;
+        let authorization = request_authorization::authorize(
+            &self.connector,
+            CHAIN_ID,
+            MERKLE_PROOFS_PATH,
+            &body,
+            expires,
+        )
+        .await
+        .expect("sign");
+        self.client
+            .post(&self.url)
+            .header(reqwest::header::AUTHORIZATION, authorization)
+            .body(body)
+            .send()
+            .await
+    }
+}
+
+/// Starts the proof server on a free port and returns a client once it answers.
 async fn serve_proofs(
     pool: &sqlx::PgPool,
     cancel: &CancellationToken,
-) -> (String, tokio::task::JoinHandle<anyhow::Result<()>>) {
+) -> (ProofClient, tokio::task::JoinHandle<anyhow::Result<()>>) {
     let port = std::net::TcpListener::bind("127.0.0.1:0")
         .and_then(|probe| probe.local_addr())
         .expect("free port")
         .port();
+    let connector = PrivateKeySigner::random();
     let server = HttpServer::merkle_proofs(
         pool.clone(),
-        "secret".to_owned(),
+        KmsTxSenders::fixed(KmsTxSenderSet {
+            chain_id: CHAIN_ID,
+            senders: HashSet::from([connector.address()]),
+        }),
         port,
         cancel.clone(),
     );
@@ -63,10 +113,12 @@ async fn serve_proofs(
     let liveness = format!("http://127.0.0.1:{port}/liveness");
     for _ in 0..50 {
         if reqwest::get(&liveness).await.is_ok() {
-            return (
-                format!("http://127.0.0.1:{port}{MERKLE_PROOFS_PATH}"),
-                task,
-            );
+            let proofs = ProofClient {
+                url: format!("http://127.0.0.1:{port}{MERKLE_PROOFS_PATH}"),
+                client: reqwest::Client::new(),
+                connector,
+            };
+            return (proofs, task);
         }
         tokio::time::sleep(std::time::Duration::from_millis(50)).await;
     }
@@ -147,12 +199,9 @@ async fn leaf_record_round_trips_and_serves_verifiable_proofs(
 
     // The HTTP route builds proofs from the same rows.
     let cancel = CancellationToken::new();
-    let (url, server_task) = serve_proofs(&pool, &cancel).await;
-    let client = reqwest::Client::new();
-    let response = client
-        .post(&url)
-        .bearer_auth("secret")
-        .json(&MerkleProofRequest {
+    let (proofs, server_task) = serve_proofs(&pool, &cancel).await;
+    let response = proofs
+        .post(&MerkleProofRequest {
             leaves: vec![
                 LeafQuery {
                     encrypted_store: hex32(&ACCOUNT),
@@ -180,7 +229,6 @@ async fn leaf_record_round_trips_and_serves_verifiable_proofs(
                 },
             ],
         })
-        .send()
         .await?;
     assert_eq!(response.status(), 200);
     let body: MerkleProofResponse = response.json().await?;
@@ -234,10 +282,8 @@ async fn leaf_record_round_trips_and_serves_verifiable_proofs(
     )
     .execute(&pool)
     .await?;
-    let response = client
-        .post(&url)
-        .bearer_auth("secret")
-        .json(&MerkleProofRequest {
+    let response = proofs
+        .post(&MerkleProofRequest {
             leaves: vec![LeafQuery {
                 encrypted_store: hex32(&ACCOUNT),
                 handle: hex32(&[0x13; 32]),
@@ -245,7 +291,6 @@ async fn leaf_record_round_trips_and_serves_verifiable_proofs(
                 key: Some(hex32(&OWNER)),
             }],
         })
-        .send()
         .await?;
     assert_eq!(response.status(), 200);
     let body: MerkleProofResponse = response.json().await?;
@@ -270,11 +315,7 @@ async fn leaf_record_round_trips_and_serves_verifiable_proofs(
         "DELETE FROM leaves WHERE leaf_index = 1",
     ] {
         sqlx::query(corruption).execute(&pool).await?;
-        let response = client
-            .post(&url)
-            .bearer_auth("secret")
-            .json(&owner_of_0x10)
-            .send()
+        let response = proofs.post(&owner_of_0x10)
             .await?;
         assert_eq!(response.status(), 502, "{corruption}");
         let error: ErrorResponse = response.json().await?;
@@ -341,12 +382,10 @@ async fn prove_leaves_of_a_store(
     assert_eq!(deleted.rows_affected(), 1);
 
     let cancel = CancellationToken::new();
-    let (url, server_task) = serve_proofs(&pool, &cancel).await;
+    let (proofs, server_task) = serve_proofs(&pool, &cancel).await;
     let started = std::time::Instant::now();
-    let response = reqwest::Client::new()
-        .post(&url)
-        .bearer_auth("secret")
-        .json(&MerkleProofRequest {
+    let response = proofs
+        .post(&MerkleProofRequest {
             leaves: proved
                 .iter()
                 .map(|&leaf_index| LeafQuery {
@@ -357,7 +396,6 @@ async fn prove_leaves_of_a_store(
                 })
                 .collect(),
         })
-        .send()
         .await?;
     assert_eq!(response.status(), 200);
     let body: MerkleProofResponse = response.json().await?;
