@@ -24,12 +24,10 @@ import { readFileSync } from 'node:fs';
 import { ed25519 } from '@noble/curves/ed25519.js';
 import { describe, expect, it } from 'vitest';
 import {
-  PERMIT_ENVELOPE_PREAMBLE,
-  PERMIT_ENVELOPE_SIGNER_COUNT,
-  PERMIT_ENVELOPE_VERSION,
   PERMIT_SIGNATURE_LEN,
   SolanaPermitError,
   buildSolanaPermitEnvelope,
+  compileSolanaPermitEnvelope,
   decodeSolanaPermitFields,
   isPermissivePermit,
   renderSolanaPermitText,
@@ -336,13 +334,7 @@ describe('records whose signature covers a text other than the canonical one', (
   // attributable to the text rather than to a signature that was never valid.
   it.each(named(shownADifferentText))('%s: the signature is genuine over the text the wallet saw', (_name, record) => {
     const userAddress = unhex(record.permit.user_address);
-    const shown = new TextEncoder().encode(record.signed_text);
-    const envelope = new Uint8Array(PERMIT_ENVELOPE_PREAMBLE.length + 2 + userAddress.length + shown.length);
-    envelope.set(PERMIT_ENVELOPE_PREAMBLE, 0);
-    envelope[PERMIT_ENVELOPE_PREAMBLE.length] = PERMIT_ENVELOPE_VERSION;
-    envelope[PERMIT_ENVELOPE_PREAMBLE.length + 1] = PERMIT_ENVELOPE_SIGNER_COUNT;
-    envelope.set(userAddress, PERMIT_ENVELOPE_PREAMBLE.length + 2);
-    envelope.set(shown, PERMIT_ENVELOPE_PREAMBLE.length + 2 + userAddress.length);
+    const envelope = compileSolanaPermitEnvelope(userAddress, record.signed_text);
 
     expect(ed25519.verify(unhex(record.signature), envelope, userAddress)).toBe(true);
   });

@@ -22,45 +22,43 @@
 // `[s]B = R + [k]A`, over the wire encodings of R and A exactly as they were signed.
 
 import type { SolanaPermitFields } from './types.js';
+import { compileOffchainMessageV1Envelope, getAddressDecoder } from '@solana/kit';
 import { ed25519 } from '@noble/curves/ed25519.js';
 import { sha512 } from '@noble/hashes/sha2.js';
 import { SolanaPermitError } from './errors.js';
 import { renderSolanaPermitText } from './render.js';
 import { PERMIT_SIGNATURE_LEN } from './types.js';
 
-/** The offchain-message preamble. Its leading `0xff` cannot begin a transaction. */
-export const PERMIT_ENVELOPE_PREAMBLE = new Uint8Array([
-  0xff, 0x73, 0x6f, 0x6c, 0x61, 0x6e, 0x61, 0x20, 0x6f, 0x66, 0x66, 0x63, 0x68, 0x61, 0x69, 0x6e,
-]);
-
-/** Envelope format version. */
-export const PERMIT_ENVELOPE_VERSION = 1;
-
-/** A permit envelope always has exactly one signer, the permit's own user. */
-export const PERMIT_ENVELOPE_SIGNER_COUNT = 1;
-
 /** Half of a signature: the width of the encoded point R, and of the scalar s after it. */
 const SIGNATURE_POINT_LEN = PERMIT_SIGNATURE_LEN / 2;
 
 /**
+ * Wraps a text in the single-signer v1 offchain-message envelope that `signer`'s wallet signs:
+ * preamble, version, the one signer's key, then the UTF-8 text to the end — no length prefix and
+ * no application domain.
+ *
+ * @param signer - The sole signer's 32-byte public key.
+ * @param text - The message content, as handed to the wallet.
+ */
+export function compileSolanaPermitEnvelope(signer: Uint8Array, text: string): Uint8Array {
+  const { content } = compileOffchainMessageV1Envelope({
+    version: 1,
+    requiredSignatories: [{ address: getAddressDecoder().decode(signer) }],
+    content: text,
+  });
+  return new Uint8Array(content);
+}
+
+/**
  * Reconstructs the envelope bytes the wallet signed.
+ *
+ * The sole signer is the permit's own user, which is also what the text's `User:` line names — so
+ * the screen a human read and the bytes their wallet signed cannot disagree about who is consenting.
  *
  * @param fields - Validated permit fields.
  */
 export function buildSolanaPermitEnvelope(fields: SolanaPermitFields): Uint8Array {
-  const text = new TextEncoder().encode(renderSolanaPermitText(fields));
-
-  const envelope = new Uint8Array(PERMIT_ENVELOPE_PREAMBLE.length + 2 + fields.userAddress.length + text.length);
-  envelope.set(PERMIT_ENVELOPE_PREAMBLE, 0);
-  envelope[PERMIT_ENVELOPE_PREAMBLE.length] = PERMIT_ENVELOPE_VERSION;
-  envelope[PERMIT_ENVELOPE_PREAMBLE.length + 1] = PERMIT_ENVELOPE_SIGNER_COUNT;
-  // The sole signer is the permit's own user, which is also what the text's `User:` line names —
-  // so the screen a human read and the bytes their wallet signed cannot disagree about who is
-  // consenting.
-  envelope.set(fields.userAddress, PERMIT_ENVELOPE_PREAMBLE.length + 2);
-  // No length prefix and no application domain: the text runs to the end of the message.
-  envelope.set(text, PERMIT_ENVELOPE_PREAMBLE.length + 2 + fields.userAddress.length);
-  return envelope;
+  return compileSolanaPermitEnvelope(fields.userAddress, renderSolanaPermitText(fields));
 }
 
 /**
