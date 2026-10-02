@@ -383,6 +383,11 @@ jobs:
           docker start coprocessor-host-listener coprocessor-host-listener-consumer
           trap - EXIT
 
+      - name: Check the synthetic probe never reached publishing (debug)
+        working-directory: test-suite/fhevm
+        if: always()
+        run: ./scripts/check-synthetic-probe-debug.sh || true
+
       - name: Show logs
         working-directory: test-suite/fhevm
         if: always()
@@ -420,8 +425,8 @@ jobs:
             label="${prefix}"
             snapshot_logs "${label} - Host Listener" "${prefix}-host-listener" "" all
             snapshot_logs "${label} - Gateway Listener" "${prefix}-gw-listener"
-            snapshot_logs "${label} - SNS Worker" "${prefix}-sns-worker" "Selected 0 rows to process"
-            snapshot_logs "${label} - Transaction Sender (filtered)" "${prefix}-transaction-sender" "Selected 0 rows to process"
+            snapshot_logs "${label} - SNS Worker" "${prefix}-sns-worker" "Selected 0 rows to process" all
+            snapshot_logs "${label} - Transaction Sender (filtered)" "${prefix}-transaction-sender" "Selected 0 rows to process" all
             snapshot_logs "${label} - ZKProof Worker" "${prefix}-zkproof-worker"
             snapshot_logs "${label} - TFHE Worker" "${prefix}-tfhe-worker"
             snapshot_logs "${label} - Consensus Detector" "${prefix}-consensus-detector" "" all
