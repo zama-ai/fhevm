@@ -10,6 +10,7 @@ use std::{
 };
 
 use alloy::signers::local::PrivateKeySigner;
+use request_authorization::KeyRegistry;
 
 use serial_test::serial;
 use solana_host_follower::host::EncryptedStoreWrite;
@@ -52,7 +53,10 @@ fn write(
     }
 }
 
-const CHAIN_ID: u64 = 12345;
+const REGISTRY: KeyRegistry = KeyRegistry {
+    chain_id: 12345,
+    contract: alloy::primitives::Address::repeat_byte(0xC0),
+};
 
 /// Posts Merkle proof requests signed by a KMS tx-sender the server accepts.
 struct ProofClient {
@@ -74,7 +78,7 @@ impl ProofClient {
             + 60;
         let authorization = request_authorization::authorize(
             &self.connector,
-            CHAIN_ID,
+            &REGISTRY,
             MERKLE_PROOFS_PATH,
             &body,
             expires,
@@ -103,7 +107,7 @@ async fn serve_proofs(
     let server = HttpServer::merkle_proofs(
         pool.clone(),
         KmsTxSenders::fixed(KmsTxSenderSet {
-            chain_id: CHAIN_ID,
+            registry: REGISTRY,
             senders: HashSet::from([connector.address()]),
         }),
         port,
@@ -315,8 +319,7 @@ async fn leaf_record_round_trips_and_serves_verifiable_proofs(
         "DELETE FROM leaves WHERE leaf_index = 1",
     ] {
         sqlx::query(corruption).execute(&pool).await?;
-        let response = proofs.post(&owner_of_0x10)
-            .await?;
+        let response = proofs.post(&owner_of_0x10).await?;
         assert_eq!(response.status(), 502, "{corruption}");
         let error: ErrorResponse = response.json().await?;
         assert_eq!(error.code, ErrorCode::UpstreamTransient);

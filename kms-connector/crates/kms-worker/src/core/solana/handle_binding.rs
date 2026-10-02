@@ -15,8 +15,8 @@ use zama_solana_acl::{
     AclError, EncryptedStore, MmrProof, authorize_state_historical, authorize_state_public,
 };
 
-/// Asks every coprocessor for the whole batch at once, prepared once for all of them, and returns
-/// one result per query in batch order. Only a found proof that verifies against the observed peaks resolves a query; as soon as
+/// Asks every coprocessor for the whole batch at once and returns one result per query in batch
+/// order. Only a found proof that verifies against the observed peaks resolves a query; as soon as
 /// every query is resolved the reads still running are dropped, so one slow coprocessor does not
 /// hold a request another one can serve. Otherwise a query keeps the last failure a coprocessor
 /// answered; a failed read or an answer of the wrong length says nothing about any leaf. A query

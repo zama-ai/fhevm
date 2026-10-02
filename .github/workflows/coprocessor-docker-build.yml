@@ -189,6 +189,7 @@ jobs:
           - coprocessor/fhevm-engine/solana-host-follower/**
           - coprocessor/fhevm-engine/solana-merkle-proof-service/**
           - coprocessor/fhevm-engine/fhevm-engine-common/**
+          - shared/request-authorization/**
           - coprocessor/fhevm-engine/Cargo.*
           - host-contracts/rust_bindings/**
           - solana/programs/zama-host/**
@@ -217,7 +218,6 @@ jobs:
           - coprocessor/fhevm-engine/Cargo.*
           - host-contracts/rust_bindings/**
           - shared/block-manifest/**
-          - shared/request-authorization/**
           - shared/ciphertext-attestation/**
 
   check-changes-tfhe-worker:
@@ -297,7 +297,6 @@ jobs:
           - host-contracts/rust_bindings/**
           - gateway-contracts/rust_bindings/**
           - shared/block-manifest/**
-          - shared/request-authorization/**
           - shared/ciphertext-attestation/**
 
   check-changes-upgrade-controller:

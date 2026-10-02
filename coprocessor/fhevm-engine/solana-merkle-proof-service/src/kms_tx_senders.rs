@@ -23,21 +23,26 @@ use anyhow::{anyhow, Context};
 use fhevm_host_bindings::protocol_config::ProtocolConfig::{
     NewKmsContext, ProtocolConfigInstance,
 };
+use request_authorization::KeyRegistry;
 use tokio::sync::watch;
 use tokio_util::sync::CancellationToken;
 use tracing::{info, warn};
 
 const REFRESH_INTERVAL: Duration = Duration::from_secs(60);
 const RETRY_INTERVAL: Duration = Duration::from_secs(5);
+/// The RPC client has no request timeout, so a hung call would stall every later refresh.
+const READ_TIMEOUT: Duration = Duration::from_secs(30);
 
-/// Context ids are `[0x07 type tag | 31 counter bytes]`; the counter is the latest issued id.
-const CONTEXT_ID_COUNTER_BITS: usize = 248;
+/// Mirrors `KMS_CONTEXT_COUNTER_BASE` from `host-contracts/contracts/shared/Constants.sol`.
+const KMS_CONTEXT_COUNTER_BASE: U256 = U256::from_be_bytes([
+    7, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+    0, 0, 0, 0, 0, 0, 0,
+]);
 
-/// The accepted callers and the chain id that signs for them, once read.
+/// The accepted callers and the registry their signatures name, once read.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct KmsTxSenderSet {
-    /// The canonical chain's id: the request signatures' EIP-712 domain.
-    pub chain_id: u64,
+    pub registry: KeyRegistry,
     pub senders: HashSet<Address>,
 }
 
@@ -75,7 +80,12 @@ pub fn follow<P: Provider + 'static>(
     tokio::spawn(async move {
         let mut reader = KmsTxSenderReader::new(protocol_config);
         loop {
-            let delay = match reader.read().await {
+            let read = tokio::time::timeout(READ_TIMEOUT, reader.read())
+                .await
+                .unwrap_or_else(|_| {
+                    Err(anyhow!("no answer within {READ_TIMEOUT:?}"))
+                });
+            let delay = match read {
                 Ok(set) => {
                     if publish.borrow().as_deref() != Some(&set) {
                         info!(
@@ -128,11 +138,8 @@ impl<P: Provider> KmsTxSenderReader<P> {
             .call()
             .await
             .context("getCurrentKmsContextIdCounter")?;
-        let first = ((latest >> CONTEXT_ID_COUNTER_BITS)
-            << CONTEXT_ID_COUNTER_BITS)
-            + U256::from(1);
         let mut senders = HashSet::new();
-        let mut context_id = first;
+        let mut context_id = KMS_CONTEXT_COUNTER_BASE + U256::from(1);
         while context_id <= latest {
             let live = self
                 .protocol_config
@@ -150,7 +157,13 @@ impl<P: Provider> KmsTxSenderReader<P> {
             }
             context_id += U256::from(1);
         }
-        Ok(KmsTxSenderSet { chain_id, senders })
+        Ok(KmsTxSenderSet {
+            registry: KeyRegistry {
+                chain_id,
+                contract: *self.protocol_config.address(),
+            },
+            senders,
+        })
     }
 
     /// Reads the context's nodes from its `NewKmsContext` event, which also covers a Pending or
@@ -210,11 +223,10 @@ mod tests {
         ProtocolConfig::{self, KmsNodeParams},
     };
 
-    const BASE: u64 = 7;
     const CONTRACT: Address = Address::repeat_byte(0xC0);
 
     fn context(n: u64) -> U256 {
-        (U256::from(BASE) << CONTEXT_ID_COUNTER_BITS) + U256::from(n)
+        KMS_CONTEXT_COUNTER_BASE + U256::from(n)
     }
 
     fn node(tx_sender: Address) -> KmsNodeParams {
@@ -285,7 +297,13 @@ mod tests {
         anchor(&asserter, 30);
         asserter.push_success(&vec![new_context_log(context(3), &[c])]);
         let set = reader.read().await.expect("first read");
-        assert_eq!(set.chain_id, 12345);
+        assert_eq!(
+            set.registry,
+            KeyRegistry {
+                chain_id: 12345,
+                contract: CONTRACT
+            }
+        );
         assert_eq!(set.senders, HashSet::from([a, b, c]));
 
         chain_id(&asserter);

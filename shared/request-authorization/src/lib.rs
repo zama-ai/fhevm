@@ -33,37 +33,47 @@ pub const SCHEME: &str = "Zama-EIP712";
 /// validity; the margin absorbs clock skew.
 pub const MAX_VALIDITY_SECS: u64 = 300;
 
-/// The signing domain. `chain_id` is the canonical chain that registers the callers' keys, so a
-/// signature for one network is invalid on another.
-pub fn domain(chain_id: u64) -> Eip712Domain {
-    eip712_domain! {
-        name: "zama-request-authorization",
-        version: "1",
-        chain_id: chain_id,
-    }
+/// The contract that registers the callers' keys, and its chain: the EIP-712 domain's
+/// `verifyingContract` and `chainId`. A signature is valid for this registry only, so two networks
+/// on one chain do not accept each other's requests.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct KeyRegistry {
+    pub chain_id: u64,
+    pub contract: Address,
 }
 
-/// The hash a caller signs for `body` sent to `path`, valid until `expires` (Unix seconds).
-pub fn signing_hash(chain_id: u64, path: &str, body: &[u8], expires: u64) -> B256 {
-    RequestAuthorization {
-        path: path.to_owned(),
-        bodyDigest: keccak256(body),
-        expires,
+impl KeyRegistry {
+    fn domain(&self) -> Eip712Domain {
+        eip712_domain! {
+            name: "zama-request-authorization",
+            version: "1",
+            chain_id: self.chain_id,
+            verifying_contract: self.contract,
+        }
     }
-    .eip712_signing_hash(&domain(chain_id))
+
+    /// The hash a caller signs for `body` sent to `path`, valid until `expires` (Unix seconds).
+    fn signing_hash(&self, path: &str, body: &[u8], expires: u64) -> B256 {
+        RequestAuthorization {
+            path: path.to_owned(),
+            bodyDigest: keccak256(body),
+            expires,
+        }
+        .eip712_signing_hash(&self.domain())
+    }
 }
 
 /// Signs `body` sent to `path`, valid until `expires` (Unix seconds), and returns the
 /// `Authorization` header value.
 pub async fn authorize<S: Signer + ?Sized>(
     signer: &S,
-    chain_id: u64,
+    registry: &KeyRegistry,
     path: &str,
     body: &[u8],
     expires: u64,
 ) -> alloy_signer::Result<String> {
     let signature = signer
-        .sign_hash(&signing_hash(chain_id, path, body, expires))
+        .sign_hash(&registry.signing_hash(path, body, expires))
         .await?;
     Ok(header_value(expires, &signature))
 }
@@ -91,7 +101,7 @@ pub enum AuthorizationError {
 /// `now`. A signature over other fields recovers another address, so the caller must check the
 /// signer against the addresses it accepts.
 pub fn recover_signer(
-    chain_id: u64,
+    registry: &KeyRegistry,
     header: &str,
     path: &str,
     body: &[u8],
@@ -105,7 +115,7 @@ pub fn recover_signer(
         return Err(AuthorizationError::TooFarAhead { expires, now });
     }
     signature
-        .recover_address_from_prehash(&signing_hash(chain_id, path, body, expires))
+        .recover_address_from_prehash(&registry.signing_hash(path, body, expires))
         .map_err(|_| AuthorizationError::BadSignature)
 }
 
@@ -118,7 +128,7 @@ fn parse(header: &str) -> Result<(u64, Signature), AuthorizationError> {
     let (expires, signature) = parameters.split_once(", ").ok_or_else(malformed)?;
     let expires = expires
         .strip_prefix("expires=")
-        .filter(|digits| !digits.is_empty() && digits.bytes().all(|b| b.is_ascii_digit()))
+        .filter(|digits| digits.bytes().all(|b| b.is_ascii_digit()))
         .and_then(|digits| digits.parse().ok())
         .ok_or_else(malformed)?;
     let signature = signature
@@ -135,7 +145,10 @@ mod tests {
     use alloy_signer::SignerSync;
     use alloy_signer_local::PrivateKeySigner;
 
-    const CHAIN_ID: u64 = 12345;
+    const REGISTRY: KeyRegistry = KeyRegistry {
+        chain_id: 12345,
+        contract: Address::repeat_byte(0xC0),
+    };
     const PATH: &str = "/v1/solana/merkle-proofs";
     const BODY: &[u8] = b"{\"leaves\":[]}";
     const NOW: u64 = 1_790_950_000;
@@ -148,7 +161,7 @@ mod tests {
 
     fn header(expires: u64) -> String {
         let signature = signer()
-            .sign_hash_sync(&signing_hash(CHAIN_ID, PATH, BODY, expires))
+            .sign_hash_sync(&REGISTRY.signing_hash(PATH, BODY, expires))
             .unwrap();
         header_value(expires, &signature)
     }
@@ -158,7 +171,7 @@ mod tests {
         let address = signer().address();
         for expires in [NOW, NOW + 60, NOW + MAX_VALIDITY_SECS] {
             assert_eq!(
-                recover_signer(CHAIN_ID, &header(expires), PATH, BODY, NOW),
+                recover_signer(&REGISTRY, &header(expires), PATH, BODY, NOW),
                 Ok(address)
             );
         }
@@ -168,13 +181,22 @@ mod tests {
     fn other_fields_recover_another_signer() {
         let address = signer().address();
         let header = header(NOW + 60);
-        for (chain_id, path, body) in [
-            (CHAIN_ID + 1, PATH, BODY),
-            (CHAIN_ID, "/v1/other", BODY),
-            (CHAIN_ID, PATH, b"{\"leaves\":[1]}".as_slice()),
+        let other_chain = KeyRegistry {
+            chain_id: REGISTRY.chain_id + 1,
+            ..REGISTRY
+        };
+        let other_contract = KeyRegistry {
+            contract: Address::repeat_byte(0xC1),
+            ..REGISTRY
+        };
+        for (registry, path, body) in [
+            (other_chain, PATH, BODY),
+            (other_contract, PATH, BODY),
+            (REGISTRY, "/v1/other", BODY),
+            (REGISTRY, PATH, b"{\"leaves\":[1]}".as_slice()),
         ] {
             assert_ne!(
-                recover_signer(chain_id, &header, path, body, NOW),
+                recover_signer(&registry, &header, path, body, NOW),
                 Ok(address)
             );
         }
@@ -183,7 +205,7 @@ mod tests {
     #[test]
     fn an_expired_or_far_future_authorization_is_refused() {
         assert_eq!(
-            recover_signer(CHAIN_ID, &header(NOW - 1), PATH, BODY, NOW),
+            recover_signer(&REGISTRY, &header(NOW - 1), PATH, BODY, NOW),
             Err(AuthorizationError::Expired {
                 expires: NOW - 1,
                 now: NOW
@@ -191,7 +213,7 @@ mod tests {
         );
         let expires = NOW + MAX_VALIDITY_SECS + 1;
         assert_eq!(
-            recover_signer(CHAIN_ID, &header(expires), PATH, BODY, NOW),
+            recover_signer(&REGISTRY, &header(expires), PATH, BODY, NOW),
             Err(AuthorizationError::TooFarAhead { expires, now: NOW })
         );
     }
@@ -215,7 +237,7 @@ mod tests {
             format!("{SCHEME} expires={}, signature={signature}", NOW + 60),
         ] {
             assert_eq!(
-                recover_signer(CHAIN_ID, &malformed, PATH, BODY, NOW),
+                recover_signer(&REGISTRY, &malformed, PATH, BODY, NOW),
                 Err(AuthorizationError::Malformed),
                 "{malformed}"
             );
@@ -224,11 +246,11 @@ mod tests {
 
     #[tokio::test]
     async fn authorize_signs_what_recover_signer_checks() {
-        let header = authorize(&signer(), CHAIN_ID, PATH, BODY, NOW + 60)
+        let header = authorize(&signer(), &REGISTRY, PATH, BODY, NOW + 60)
             .await
             .unwrap();
         assert_eq!(
-            recover_signer(CHAIN_ID, &header, PATH, BODY, NOW),
+            recover_signer(&REGISTRY, &header, PATH, BODY, NOW),
             Ok(signer().address())
         );
     }
@@ -237,12 +259,12 @@ mod tests {
     #[test]
     fn the_wire_format_is_pinned() {
         assert_eq!(
-            signing_hash(CHAIN_ID, PATH, BODY, NOW + 60).to_string(),
-            "0x98d689106ab8952c9c7d3e50943f45752750c846203ef8cbec27ca0e71df6bb2"
+            REGISTRY.signing_hash(PATH, BODY, NOW + 60).to_string(),
+            "0x4e470f835159e2e36b00c1b761bf3ec15f71d13f87cf44ee9dea7bf0c4e7a02c"
         );
         assert_eq!(
             header(NOW + 60),
-            "Zama-EIP712 expires=1790950060, signature=0x1abede313062938323cae28925ae88625946020b7a6926e1d5a6e1bf219f59d37ba4926d26af15b5692a45fbb7f2753959409658a795c7a4c984c58161c173fd1b"
+            "Zama-EIP712 expires=1790950060, signature=0x8d81390596a2072fb5f3028e0ed67aec83eaab655969be9422e1b5c371897a896a3abbdad8acb39bc0215c511c506a4f934700ab2cb2de7c73d853188311a2ef1b"
         );
     }
 }

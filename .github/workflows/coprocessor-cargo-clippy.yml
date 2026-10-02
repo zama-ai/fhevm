@@ -41,8 +41,9 @@ jobs:
               # consensus-detector depends on these crates by path. Clippy of the
               # engine compiles them, but does not run their own tests.
               - shared/block-manifest/**
-              - shared/request-authorization/**
               - shared/ciphertext-attestation/**
+              # The Merkle proof server depends on it by path.
+              - shared/request-authorization/**
   cargo-clippy:
     name: coprocessor-cargo-clippy/cargo-clippy
     needs: check-changes
