@@ -124,7 +124,7 @@ keys (keep them aligned to the same kms release):
 
 | Key | Becomes | Role |
 | --- | --- | --- |
-| `kms_core_version` | `KMS_CORE_TAG` | GHCR tag for `core-service-enclave` → `deploy.sh --tag`. CI reads PCR labels from this image before install. |
+| `kms_core_version` | `KMS_CORE_TAG` | GHCR tag passed to `deploy.sh --tag`. CI reads PCR labels from the enclave image that `deploy.sh` installs (`core-service-enclave-insecure` on current kms main, `core-service-enclave` on `v0.14.1`). |
 | `kms_repo_ref` | `KMS_REPO_REF` | Git ref sparse-checked out of `zama-ai/kms` (`deploy.sh`, charts, threshold wiring). |
 
 Current defaults (also in `parse-overrides.cjs`): `kms_core_version=v0.14.1`,
