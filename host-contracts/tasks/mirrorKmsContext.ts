@@ -2,8 +2,8 @@ import { Interface, type Provider } from 'ethers';
 import { task, types } from 'hardhat/config';
 import type { ConfigurableTaskDefinition, HardhatRuntimeEnvironment } from 'hardhat/types';
 
-import type { ProtocolConfig } from '../types';
-import type { KmsNodeParamsStruct, PcrValuesStruct } from '../types/contracts/ProtocolConfig';
+import type { ProtocolConfig, ProtocolConfigReplica } from '../types';
+import type { KmsNodeParamsStruct, PcrValuesStruct } from '../types/contracts/ProtocolConfigReplica';
 import { broadcast, getProtocolConfigInterface, requireProtocolConfigAddress } from './kmsContext';
 import { type KmsThresholds, readCanonicalSnapshot } from './protocolConfigMirror';
 
@@ -148,9 +148,9 @@ export async function assertReplicaNeedsContextSwitch(
   canonicalContextId: bigint,
 ): Promise<void> {
   const replica = (await hre.ethers.getContractAt(
-    'ProtocolConfig',
+    'ProtocolConfigReplica',
     replicaProtocolConfigAddress,
-  )) as unknown as ProtocolConfig;
+  )) as unknown as ProtocolConfigReplica;
   const [replicaContextId] = await replica.getCurrentKmsContextAndEpoch();
   if (canonicalContextId <= replicaContextId) {
     throw new Error(
@@ -182,7 +182,7 @@ function addMirrorTaskParams(definition: ConfigurableTaskDefinition, readTarget:
     )
     .addOptionalParam(
       'useInternalProxyAddress',
-      'Resolve the replica ProtocolConfig address from the /addresses directory instead of the environment',
+      'Resolve the ProtocolConfigReplica address from the /addresses directory instead of the environment',
       false,
       types.boolean,
     );
@@ -191,14 +191,14 @@ function addMirrorTaskParams(definition: ConfigurableTaskDefinition, readTarget:
 addMirrorTaskParams(
   task(
     'task:buildMirrorKmsContextAndEpochCalldata',
-    "Builds Aragon proposal calldata for the replica ProtocolConfig.mirrorKmsContextAndEpoch from canonical's active KMS context (DAO path, never broadcasts)",
+    "Builds Aragon proposal calldata for ProtocolConfigReplica.mirrorKmsContextAndEpoch from canonical's active KMS context (DAO path, never broadcasts)",
   ),
   'the context switch',
 ).setAction(async function (
   { canonicalRpcUrl, canonicalProtocolConfigAddress, blockNumber, useInternalProxyAddress },
   hre,
 ): Promise<void> {
-  const iface = await getProtocolConfigInterface(hre);
+  const iface = await getProtocolConfigInterface(hre, 'ProtocolConfigReplica');
   const canonicalProvider = new hre.ethers.JsonRpcProvider(canonicalRpcUrl);
   const args = await readCanonicalContextSwitch(
     hre,
@@ -209,7 +209,7 @@ addMirrorTaskParams(
   await assertReplicaNeedsContextSwitch(hre, target, args.contextId);
   const calldata = encodeMirrorKmsContextAndEpoch(iface, args);
 
-  console.log('ProtocolConfig.mirrorKmsContextAndEpoch');
+  console.log('ProtocolConfigReplica.mirrorKmsContextAndEpoch');
   console.log('  contextId:', args.contextId.toString());
   console.log('  epochId:', args.epochId.toString());
   console.log('  kmsNodes:', args.kmsNodeParams.length);
@@ -220,14 +220,14 @@ addMirrorTaskParams(
 addMirrorTaskParams(
   task(
     'task:mirrorKmsContextAndEpoch',
-    "Broadcasts the replica ProtocolConfig.mirrorKmsContextAndEpoch from canonical's active KMS context with the deployer key",
+    "Broadcasts ProtocolConfigReplica.mirrorKmsContextAndEpoch from canonical's active KMS context with the deployer key",
   ),
   'the context switch',
 ).setAction(async function (
   { canonicalRpcUrl, canonicalProtocolConfigAddress, blockNumber, useInternalProxyAddress },
   hre,
 ): Promise<void> {
-  const iface = await getProtocolConfigInterface(hre);
+  const iface = await getProtocolConfigInterface(hre, 'ProtocolConfigReplica');
   const canonicalProvider = new hre.ethers.JsonRpcProvider(canonicalRpcUrl);
   const args = await readCanonicalContextSwitch(
     hre,
@@ -259,9 +259,9 @@ export async function assertReplicaNeedsEpochMirror(
   canonicalEpochId: bigint,
 ): Promise<void> {
   const replica = (await hre.ethers.getContractAt(
-    'ProtocolConfig',
+    'ProtocolConfigReplica',
     replicaProtocolConfigAddress,
-  )) as unknown as ProtocolConfig;
+  )) as unknown as ProtocolConfigReplica;
   const [replicaContextId, replicaEpochId] = await replica.getCurrentKmsContextAndEpoch();
   if (canonicalContextId !== replicaContextId) {
     throw new Error(
@@ -279,14 +279,14 @@ export async function assertReplicaNeedsEpochMirror(
 addMirrorTaskParams(
   task(
     'task:buildMirrorKmsEpochCalldata',
-    "Builds Aragon proposal calldata for the replica ProtocolConfig.mirrorKmsEpoch from canonical's active KMS epoch (DAO path, never broadcasts)",
+    "Builds Aragon proposal calldata for ProtocolConfigReplica.mirrorKmsEpoch from canonical's active KMS epoch (DAO path, never broadcasts)",
   ),
   'the active epoch',
 ).setAction(async function (
   { canonicalRpcUrl, canonicalProtocolConfigAddress, blockNumber, useInternalProxyAddress },
   hre,
 ): Promise<void> {
-  const iface = await getProtocolConfigInterface(hre);
+  const iface = await getProtocolConfigInterface(hre, 'ProtocolConfigReplica');
   const canonicalProvider = new hre.ethers.JsonRpcProvider(canonicalRpcUrl);
   const snapshot = await readCanonicalSnapshot(hre, {
     canonicalProvider,
@@ -297,7 +297,7 @@ addMirrorTaskParams(
   await assertReplicaNeedsEpochMirror(hre, target, snapshot.currentKmsContextId, snapshot.currentEpochId);
   const calldata = encodeMirrorKmsEpoch(iface, snapshot.currentKmsContextId, snapshot.currentEpochId);
 
-  console.log('ProtocolConfig.mirrorKmsEpoch');
+  console.log('ProtocolConfigReplica.mirrorKmsEpoch');
   console.log('  contextId:', snapshot.currentKmsContextId.toString());
   console.log('  epochId:', snapshot.currentEpochId.toString());
   console.log('  target:', target);
@@ -307,14 +307,14 @@ addMirrorTaskParams(
 addMirrorTaskParams(
   task(
     'task:mirrorKmsEpoch',
-    "Broadcasts the replica ProtocolConfig.mirrorKmsEpoch from canonical's active KMS epoch with the deployer key",
+    "Broadcasts ProtocolConfigReplica.mirrorKmsEpoch from canonical's active KMS epoch with the deployer key",
   ),
   'the active epoch',
 ).setAction(async function (
   { canonicalRpcUrl, canonicalProtocolConfigAddress, blockNumber, useInternalProxyAddress },
   hre,
 ): Promise<void> {
-  const iface = await getProtocolConfigInterface(hre);
+  const iface = await getProtocolConfigInterface(hre, 'ProtocolConfigReplica');
   const canonicalProvider = new hre.ethers.JsonRpcProvider(canonicalRpcUrl);
   const snapshot = await readCanonicalSnapshot(hre, {
     canonicalProvider,

@@ -3,6 +3,7 @@ pragma solidity ^0.8.24;
 
 import {ProtocolConfigBase} from "./ProtocolConfigBase.sol";
 import {IProtocolConfig} from "./interfaces/IProtocolConfig.sol";
+import {IProtocolConfigBase} from "./interfaces/IProtocolConfigBase.sol";
 import {IKMSGeneration} from "./interfaces/IKMSGeneration.sol";
 import {KmsContextAnchor, KmsThresholds, KmsNode, KmsNodeParams, PcrValues, ChainUpgradeWindow} from "./shared/Structs.sol";
 import {EPOCH_COUNTER_BASE, EXTRA_DATA_V2, KMS_CONTEXT_COUNTER_BASE} from "./shared/Constants.sol";
@@ -17,9 +18,7 @@ import {Strings} from "@openzeppelin/contracts/utils/Strings.sol";
  * @dev Ethereum is the canonical host and the single source of truth: the context/epoch lifecycle
  *      (`defineNewKmsContextAndEpoch` / `defineNewEpochForCurrentKmsContext`, then
  *      `confirmKmsContextCreation` / `confirmEpochActivation`) runs only there, alongside
- *      `KMSGeneration`. The same contract is deployed on every other host chain (e.g. Polygon) as a
- *      read-replica: those never run the quorum path and advance state only through the owner-only
- *      `mirrorKmsContextAndEpoch` / `mirrorKmsEpoch` methods (see the Mirror functions section).
+ *      `KMSGeneration`. Every other host chain (e.g. Polygon) runs `ProtocolConfigReplica` instead.
  */
 /// @custom:security-contact https://github.com/zama-ai/fhevm/blob/main/SECURITY.md
 contract ProtocolConfig is IProtocolConfig, ProtocolConfigBase, UUPSUpgradeableEmptyProxy, ACLOwnable {
@@ -32,16 +31,8 @@ contract ProtocolConfig is IProtocolConfig, ProtocolConfigBase, UUPSUpgradeableE
     uint256 private constant MINOR_VERSION = 3;
     uint256 private constant PATCH_VERSION = 0;
 
-    /// @dev Shared between `initializeFromEmptyProxy`, `initializeFromCanonical`, and `reinitializeV3`.
+    /// @dev Shared between `initializeFromEmptyProxy` and `reinitializeV3`.
     uint64 private constant REINITIALIZER_VERSION = 4;
-
-    /// @notice Upper bound on the KMS committee size and on every per-context threshold.
-    /// @dev Driven by the proof format consumed in
-    ///      `KMSVerifier.verifyDecryptionEIP712KMSSignatures`, which encodes the signature count
-    ///      in a single byte (`uint8(decryptionProof[0])`). A context registered above this
-    ///      bound cannot ever satisfy verification, so the limit is enforced at registration time
-    ///      to reject the misconfiguration loudly rather than silently bricking the context.
-    uint256 private constant MAX_KMS_SIGNERS = type(uint8).max;
 
     // -----------------------------------------------------------------------------------------
     // EIP-712 type hashes
@@ -117,39 +108,6 @@ contract ProtocolConfig is IProtocolConfig, ProtocolConfigBase, UUPSUpgradeableE
             initialThresholds,
             softwareVersion,
             pcrValues
-        );
-    }
-
-    /**
-     * @notice Canonical mirror initializer: seeds a non-canonical host from Ethereum's active state.
-     * @dev Preserves both the canonical context ID and canonical epoch ID instead of allocating a
-     *      fresh local epoch. This is the bootstrap path for read-replica ProtocolConfig deployments;
-     *      later canonical updates use `mirrorKmsContextAndEpoch` and `mirrorKmsEpoch`.
-     * @param canonicalContextId The active Ethereum KMS context ID to preserve.
-     * @param canonicalEpochId The active Ethereum epoch ID to preserve.
-     * @param canonicalKmsNodeParams The active Ethereum KMS node set, including MPC metadata.
-     * @param canonicalThresholds The active Ethereum thresholds.
-     */
-    /// @custom:oz-upgrades-unsafe-allow missing-initializer-call
-    /// @custom:oz-upgrades-validate-as-initializer
-    function initializeFromCanonical(
-        uint256 canonicalContextId,
-        uint256 canonicalEpochId,
-        KmsNodeParams[] calldata canonicalKmsNodeParams,
-        KmsThresholds calldata canonicalThresholds
-    ) public virtual onlyFromEmptyProxy reinitializer(REINITIALIZER_VERSION) {
-        if (canonicalContextId < KMS_CONTEXT_COUNTER_BASE + 1) {
-            revert InvalidKmsContext(canonicalContextId);
-        }
-        if (canonicalEpochId < EPOCH_COUNTER_BASE + 1) {
-            revert InvalidKmsEpoch(canonicalEpochId);
-        }
-
-        _storeAndActivateKmsContextAndEpoch(
-            canonicalContextId,
-            canonicalEpochId,
-            canonicalKmsNodeParams,
-            canonicalThresholds
         );
     }
 
@@ -456,58 +414,7 @@ contract ProtocolConfig is IProtocolConfig, ProtocolConfigBase, UUPSUpgradeableE
         emit CoprocessorUpgradeProposed(proposalId, softwareVersion, chainUpgradeWindows, gwStartBlock);
     }
 
-    // -----------------------------------------------------------------------------------------
-    // Mirror functions
-    //
-    // The non-canonical replica's only write path. They bypass the context-creation / epoch-activation
-    // quorum because a replica cannot re-run the MPC attestations — they import state Ethereum (the
-    // source of truth) has already finalized, landing it as immediately Active.
-    // -----------------------------------------------------------------------------------------
-
-    /// @inheritdoc IProtocolConfig
-    /// @dev Mirror path for non-canonical hosts: imports the canonical context as already active
-    ///      without replaying context-creation confirmations.
-    function mirrorKmsContextAndEpoch(
-        uint256 contextId,
-        uint256 epochId,
-        KmsNodeParams[] calldata kmsNodeParams,
-        KmsThresholds calldata thresholds,
-        string calldata softwareVersion,
-        PcrValues[] calldata pcrValues
-    ) external virtual onlyACLOwner {
-        ProtocolConfigStorage storage $ = _getProtocolConfigStorage();
-        uint256 latestActiveKmsContextId = $.latestActiveKmsContextId;
-        if (contextId <= latestActiveKmsContextId) {
-            revert NonIncreasingKmsContextId(contextId, latestActiveKmsContextId);
-        }
-        uint256 currentEpochId = $.epochCounter;
-        if (epochId <= currentEpochId) {
-            revert NonIncreasingEpochId(epochId, currentEpochId);
-        }
-
-        _storeAndActivateKmsContextAndEpoch(contextId, epochId, kmsNodeParams, thresholds);
-        emit MirrorKmsContextAndEpoch(contextId, epochId, kmsNodeParams, thresholds, softwareVersion, pcrValues);
-    }
-
-    /// @inheritdoc IProtocolConfig
-    /// @dev Mirror path for non-canonical hosts: advances the active epoch for the already
-    ///      mirrored active context without replaying epoch-activation confirmations.
-    function mirrorKmsEpoch(uint256 contextId, uint256 epochId) external virtual onlyACLOwner {
-        ProtocolConfigStorage storage $ = _getProtocolConfigStorage();
-        if (contextId != $.latestActiveKmsContextId || !_isLiveKmsContext(contextId)) {
-            revert InvalidKmsContext(contextId);
-        }
-        uint256 currentEpochId = $.epochCounter;
-        if (epochId <= currentEpochId) {
-            revert NonIncreasingEpochId(epochId, currentEpochId);
-        }
-
-        $.epochCounter = epochId;
-        _activateEpoch(epochId, contextId);
-        emit MirrorKmsEpoch(contextId, epochId);
-    }
-
-    /// @inheritdoc IProtocolConfig
+    /// @inheritdoc IProtocolConfigBase
     function getVersion() external pure virtual returns (string memory) {
         return
             string(
@@ -526,96 +433,6 @@ contract ProtocolConfig is IProtocolConfig, ProtocolConfigBase, UUPSUpgradeableE
     // -----------------------------------------------------------------------------------------
     // Internal
     // -----------------------------------------------------------------------------------------
-
-    /**
-     * @dev Stores a KMS context under the caller-provided `contextId`, validates nodes and
-     *      thresholds, and activates it under `epochId`. Use this on the bootstrap/mirror paths
-     *      where the context ID is externally determined. Callers are responsible for emitting
-     *      context lifecycle events and recording the matching `KmsContextAnchor` when appropriate.
-     */
-    function _storeAndActivateKmsContextAndEpoch(
-        uint256 contextId,
-        uint256 epochId,
-        KmsNodeParams[] calldata kmsNodeParams,
-        KmsThresholds calldata thresholds
-    ) internal virtual {
-        ProtocolConfigStorage storage $ = _getProtocolConfigStorage();
-        _storeKmsContext(contextId, kmsNodeParams, thresholds);
-
-        // Set the context to Active and update the active context and epoch IDs.
-        $.contextState[contextId] = ContextState.Active;
-        $.latestActiveKmsContextId = contextId;
-        $.epochCounter = epochId;
-        _activateEpoch(epochId, contextId);
-    }
-
-    function _storeKmsContext(
-        uint256 contextId,
-        KmsNodeParams[] calldata kmsNodeParams,
-        KmsThresholds calldata thresholds
-    ) internal virtual {
-        if (kmsNodeParams.length == 0) {
-            revert EmptyKmsNodes();
-        }
-        if (kmsNodeParams.length > MAX_KMS_SIGNERS) {
-            revert KmsSignerSetExceedsProofFormatLimit(kmsNodeParams.length, MAX_KMS_SIGNERS);
-        }
-
-        // Validate that thresholds are non-zero and not exceeding the node count.
-        _checkThreshold("publicDecryption", thresholds.publicDecryption, kmsNodeParams.length);
-        _checkThreshold("userDecryption", thresholds.userDecryption, kmsNodeParams.length);
-        _checkThreshold("kmsGen", thresholds.kmsGen, kmsNodeParams.length);
-        _checkThreshold("mpc", thresholds.mpc, kmsNodeParams.length);
-
-        ProtocolConfigStorage storage $ = _getProtocolConfigStorage();
-        // Single monotonic-uniqueness gate for every context-creation path.
-        if (contextId <= $.currentKmsContextId) {
-            revert NonIncreasingKmsContextId(contextId, $.currentKmsContextId);
-        }
-        $.currentKmsContextId = contextId;
-
-        for (uint256 i = 0; i < kmsNodeParams.length; i++) {
-            KmsNodeParams calldata params = kmsNodeParams[i];
-            KmsNode memory node = KmsNode({
-                txSenderAddress: params.txSenderAddress,
-                signerAddress: params.signerAddress,
-                ipAddress: params.ipAddress,
-                storageUrl: params.storageUrl
-            });
-            if (node.txSenderAddress == address(0)) {
-                revert KmsNodeNullTxSender();
-            }
-            if (node.signerAddress == address(0)) {
-                revert KmsNodeNullSigner();
-            }
-            if ($.isKmsTxSenderForContext[contextId][node.txSenderAddress]) {
-                revert KmsTxSenderAlreadyRegistered(node.txSenderAddress);
-            }
-            if ($.isKmsSignerForContext[contextId][node.signerAddress]) {
-                revert KmsSignerAlreadyRegistered(node.signerAddress);
-            }
-
-            $.kmsNodesForContext[contextId].push(node);
-            $.isKmsTxSenderForContext[contextId][node.txSenderAddress] = true;
-            $.isKmsSignerForContext[contextId][node.signerAddress] = true;
-            $.kmsNodeByTxSenderForContext[contextId][node.txSenderAddress] = node;
-            $.kmsSignerAddressesForContext[contextId].push(node.signerAddress);
-        }
-
-        // Store thresholds
-        $.publicDecryptionThresholdForContext[contextId] = thresholds.publicDecryption;
-        $.userDecryptionThresholdForContext[contextId] = thresholds.userDecryption;
-        $.kmsGenThresholdForContext[contextId] = thresholds.kmsGen;
-        $.mpcThresholdForContext[contextId] = thresholds.mpc;
-    }
-
-    /**
-     * @dev Validates a single threshold: must be non-zero and at most nodeCount.
-     */
-    function _checkThreshold(string memory name, uint256 value, uint256 nodeCount) internal pure {
-        if (value == 0) revert InvalidNullThreshold(name);
-        if (value > nodeCount) revert InvalidHighThreshold(name, value, nodeCount);
-    }
 
     function _requireExpectedSigner(
         address expectedSigner,
@@ -709,17 +526,6 @@ contract ProtocolConfig is IProtocolConfig, ProtocolConfigBase, UUPSUpgradeableE
         epochId = ++$.epochCounter;
         $.epochState[epochId] = EpochState.Pending;
         $.contextForEpoch[epochId] = contextId;
-    }
-
-    /**
-     * @dev Promotes `epochId` to Active under `contextId` and makes it the active epoch.
-     *      Callers own the matching context-state writes and any event emission.
-     */
-    function _activateEpoch(uint256 epochId, uint256 contextId) internal virtual {
-        ProtocolConfigStorage storage $ = _getProtocolConfigStorage();
-        $.epochState[epochId] = EpochState.Active;
-        $.contextForEpoch[epochId] = contextId;
-        $.latestActiveEpochId = epochId;
     }
 
     /**

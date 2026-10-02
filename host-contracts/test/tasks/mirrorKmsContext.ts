@@ -9,15 +9,16 @@ import {
   encodeMirrorKmsEpoch,
   readCanonicalContextSwitch,
 } from '../../tasks/mirrorKmsContext';
+import { EPOCH_COUNTER_BASE, KMS_CONTEXT_COUNTER_BASE } from '../../tasks/utils/kmsGenerationConstants';
 import { getRequiredEnvVar } from '../../tasks/utils/loadVariables';
-import type { ProtocolConfig } from '../../types';
+import type { ProtocolConfig, ProtocolConfigReplica } from '../../types';
 import {
   buildControllableKmsCommittee,
   buildProtocolConfigNodes,
   buildProtocolConfigThresholds,
   buildSingleKeyAndCrsActivationPayload,
   deployFreshProtocolConfigProxy,
-  deployFreshUninitializedProtocolConfigProxy,
+  deployFreshProtocolConfigReplicaProxy,
   rotateToNewKmsContext,
 } from './taskHelpers';
 
@@ -37,7 +38,7 @@ describe('KMS mirror tasks', function () {
       const [liveContextId, liveEpochId] = await canonical.getCurrentKmsContextAndEpoch();
       expect(liveContextId).to.equal(contextId);
 
-      const iface = await getProtocolConfigInterface(hre);
+      const iface = await getProtocolConfigInterface(hre, 'ProtocolConfigReplica');
       const args = await readCanonicalContextSwitch(
         hre,
         { canonicalProvider: ethers.provider, canonicalProtocolConfigAddress: canonicalAddress },
@@ -58,41 +59,30 @@ describe('KMS mirror tasks', function () {
       expect(args.thresholds.mpc).to.equal(BigInt(committee.thresholds.mpc));
     });
 
-    it('rejects an address with no context anchor as non-canonical', async function () {
-      // `initializeFromCanonical` (the replica bootstrap path) never writes a context anchor, so a
-      // replica passed as canonical must be rejected before any event scan. It requires ids matching
-      // a canonical genesis, so read them from a real canonical.
-      const canonicalAddress = await deployFreshProtocolConfigProxy(
+    it('rejects a replica, then the same proxy upgraded back to ProtocolConfig with no context anchor', async function () {
+      const replicaAddress = await deployFreshProtocolConfigReplicaProxy(
         deployer,
+        KMS_CONTEXT_COUNTER_BASE + 1n,
+        EPOCH_COUNTER_BASE + 1n,
         buildProtocolConfigNodes(),
         buildProtocolConfigThresholds(),
       );
-      const canonical = (await ethers.getContractAt('ProtocolConfig', canonicalAddress)) as unknown as ProtocolConfig;
-      const [canonicalContextId, canonicalEpochId] = await canonical.getCurrentKmsContextAndEpoch();
-
-      const replicaAddress = await deployFreshUninitializedProtocolConfigProxy(deployer);
-      const replica = (await ethers.getContractAt(
-        'ProtocolConfig',
-        replicaAddress,
-        deployer,
-      )) as unknown as ProtocolConfig;
-      await (
-        await replica.initializeFromCanonical(
-          canonicalContextId,
-          canonicalEpochId,
-          buildProtocolConfigNodes(),
-          buildProtocolConfigThresholds(),
-        )
-      ).wait();
-
-      const iface = await getProtocolConfigInterface(hre);
-      await expect(
+      const iface = await getProtocolConfigInterface(hre, 'ProtocolConfigReplica');
+      const read = () =>
         readCanonicalContextSwitch(
           hre,
           { canonicalProvider: ethers.provider, canonicalProtocolConfigAddress: replicaAddress },
           iface,
-        ),
-      ).to.be.rejectedWith(/has no context anchor recorded/);
+        );
+
+      // The version identity check rejects a replica before any event scan.
+      await expect(read()).to.be.rejectedWith(/reports version "ProtocolConfigReplica v/);
+
+      // Upgraded back to ProtocolConfig, the proxy passes the identity check but holds no anchor.
+      const implementation = await (await ethers.getContractFactory('ProtocolConfig', deployer)).deploy();
+      const replica = await ethers.getContractAt('ProtocolConfigReplica', replicaAddress, deployer);
+      await (await replica.upgradeToAndCall(await implementation.getAddress(), '0x')).wait();
+      await expect(read()).to.be.rejectedWith(/has no context anchor recorded/);
     });
   });
 
@@ -102,7 +92,7 @@ describe('KMS mirror tasks', function () {
       const canonicalAddress = await deployFreshProtocolConfigProxy(deployer, committee.nodes, committee.thresholds);
       await rotateToNewKmsContext(canonicalAddress, deployer, committee);
 
-      const iface = await getProtocolConfigInterface(hre);
+      const iface = await getProtocolConfigInterface(hre, 'ProtocolConfigReplica');
       const args = await readCanonicalContextSwitch(
         hre,
         { canonicalProvider: ethers.provider, canonicalProtocolConfigAddress: canonicalAddress },
@@ -153,13 +143,21 @@ describe('KMS mirror tasks', function () {
     it('mirrors a context switch, then a same-set epoch rotation, onto an independent replica', async function () {
       const committee = await buildControllableKmsCommittee();
       const canonicalAddress = await deployFreshProtocolConfigProxy(deployer, committee.nodes, committee.thresholds);
+      const canonical = (await ethers.getContractAt('ProtocolConfig', canonicalAddress)) as unknown as ProtocolConfig;
+      const [genesisContextId, genesisEpochId] = await canonical.getCurrentKmsContextAndEpoch();
       await rotateToNewKmsContext(canonicalAddress, deployer, committee);
 
-      // The replica is a wholly separate deployment, starting at its own genesis context (id 1), so
+      // The replica is a wholly separate deployment, starting at canonical's genesis context (id 1), so
       // canonical's rotated context (id 2) is strictly ahead of it. This is the context-switch case.
-      const replicaAddress = await deployFreshProtocolConfigProxy(deployer, committee.nodes, committee.thresholds);
+      const replicaAddress = await deployFreshProtocolConfigReplicaProxy(
+        deployer,
+        genesisContextId,
+        genesisEpochId,
+        committee.nodes,
+        committee.thresholds,
+      );
 
-      const iface = await getProtocolConfigInterface(hre);
+      const iface = await getProtocolConfigInterface(hre, 'ProtocolConfigReplica');
       const switchArgs = await readCanonicalContextSwitch(
         hre,
         { canonicalProvider: ethers.provider, canonicalProtocolConfigAddress: canonicalAddress },
@@ -170,7 +168,10 @@ describe('KMS mirror tasks', function () {
 
       await (await deployer.sendTransaction({ to: replicaAddress, data: contextCalldata })).wait();
 
-      const replica = (await ethers.getContractAt('ProtocolConfig', replicaAddress)) as unknown as ProtocolConfig;
+      const replica = (await ethers.getContractAt(
+        'ProtocolConfigReplica',
+        replicaAddress,
+      )) as unknown as ProtocolConfigReplica;
       const [mirroredContextId, mirroredEpochId] = await replica.getCurrentKmsContextAndEpoch();
       expect(mirroredContextId).to.equal(switchArgs.contextId);
       expect(mirroredEpochId).to.equal(switchArgs.epochId);

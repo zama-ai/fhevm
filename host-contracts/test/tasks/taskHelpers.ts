@@ -145,6 +145,25 @@ export async function deployFreshProtocolConfigProxy(
   return proxyAddress;
 }
 
+// Deploys a fresh EmptyUUPSProxy, upgrades it to ProtocolConfigReplica and runs `initializeFromCanonical`.
+export async function deployFreshProtocolConfigReplicaProxy(
+  deployer: Wallet,
+  contextId: bigint,
+  epochId: bigint,
+  kmsNodes: Array<{ txSenderAddress: string; signerAddress: string; ipAddress: string; storageUrl: string }>,
+  thresholds: { publicDecryption: number; userDecryption: number; kmsGen: number; mpc: number },
+): Promise<string> {
+  const proxyAddress = await deployFreshEmptyUUPSProxy(deployer);
+  const currentImplementation = await ethers.getContractFactory('EmptyUUPSProxy', deployer);
+  const newImplementation = await ethers.getContractFactory('ProtocolConfigReplica', deployer);
+  const proxy = await upgrades.forceImport(proxyAddress, currentImplementation);
+  const upgraded = await upgrades.upgradeProxy(proxy, newImplementation, {
+    call: { fn: 'initializeFromCanonical', args: [contextId, epochId, kmsNodes, thresholds] },
+  });
+  await upgraded.waitForDeployment();
+  return proxyAddress;
+}
+
 // A KMS committee whose tx-sender and signer addresses are backed by funded Hardhat accounts, so the
 // epoch-lifecycle confirmation steps (which are sent by those addresses) can be driven from a test.
 export interface ControllableKmsCommittee {

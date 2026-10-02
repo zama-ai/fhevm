@@ -16,6 +16,7 @@ const enum RequestType {
 }
 
 export const KMS_CONTEXT_COUNTER_BASE = BigInt(RequestType.KmsContext) << REQUEST_TYPE_SHIFT;
+export const EPOCH_COUNTER_BASE = BigInt(RequestType.Epoch) << REQUEST_TYPE_SHIFT;
 export const PREP_KEYGEN_COUNTER_BASE = BigInt(RequestType.PrepKeygen) << REQUEST_TYPE_SHIFT;
 export const KEY_COUNTER_BASE = BigInt(RequestType.Keygen) << REQUEST_TYPE_SHIFT;
 export const CRS_COUNTER_BASE = BigInt(RequestType.Crsgen) << REQUEST_TYPE_SHIFT;

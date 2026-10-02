@@ -2,11 +2,11 @@
 pragma solidity ^0.8.24;
 
 import {IProtocolConfigBase} from "./interfaces/IProtocolConfigBase.sol";
-import {KmsContextAnchor, KmsNode} from "./shared/Structs.sol";
+import {KmsContextAnchor, KmsNode, KmsNodeParams, KmsThresholds} from "./shared/Structs.sol";
 
 /**
  * @title ProtocolConfigBase
- * @notice Shared storage and reads for ProtocolConfig contracts on host chains.
+ * @notice Shared storage, reads and write helpers for ProtocolConfig and ProtocolConfigReplica.
  */
 abstract contract ProtocolConfigBase is IProtocolConfigBase {
     /// @notice Lifecycle state of a KMS context: created Pending, promoted to Created once the
@@ -25,6 +25,14 @@ abstract contract ProtocolConfigBase is IProtocolConfigBase {
         Pending,
         Active
     }
+
+    /// @notice Upper bound on the KMS committee size and on every per-context threshold.
+    /// @dev Driven by the proof format consumed in
+    ///      `KMSVerifier.verifyDecryptionEIP712KMSSignatures`, which encodes the signature count
+    ///      in a single byte (`uint8(decryptionProof[0])`). A context registered above this
+    ///      bound cannot ever satisfy verification, so the limit is enforced at registration time
+    ///      to reject the misconfiguration loudly rather than silently bricking the context.
+    uint256 private constant MAX_KMS_SIGNERS = type(uint8).max;
 
     // -----------------------------------------------------------------------------------------
     // ERC-7201 namespaced storage
@@ -286,5 +294,106 @@ abstract contract ProtocolConfigBase is IProtocolConfigBase {
         if (!_isValidKmsContext(kmsContextId)) {
             revert InvalidKmsContext(kmsContextId);
         }
+    }
+
+    /**
+     * @dev Stores a KMS context under the caller-provided `contextId`, validates nodes and
+     *      thresholds, and activates it under `epochId`. Use this on the bootstrap/mirror paths
+     *      where the context ID is externally determined. Callers are responsible for emitting
+     *      context lifecycle events and recording the matching `KmsContextAnchor` when appropriate.
+     */
+    function _storeAndActivateKmsContextAndEpoch(
+        uint256 contextId,
+        uint256 epochId,
+        KmsNodeParams[] calldata kmsNodeParams,
+        KmsThresholds calldata thresholds
+    ) internal virtual {
+        ProtocolConfigStorage storage $ = _getProtocolConfigStorage();
+        _storeKmsContext(contextId, kmsNodeParams, thresholds);
+
+        // Set the context to Active and update the active context and epoch IDs.
+        $.contextState[contextId] = ContextState.Active;
+        $.latestActiveKmsContextId = contextId;
+        $.epochCounter = epochId;
+        _activateEpoch(epochId, contextId);
+    }
+
+    function _storeKmsContext(
+        uint256 contextId,
+        KmsNodeParams[] calldata kmsNodeParams,
+        KmsThresholds calldata thresholds
+    ) internal virtual {
+        if (kmsNodeParams.length == 0) {
+            revert EmptyKmsNodes();
+        }
+        if (kmsNodeParams.length > MAX_KMS_SIGNERS) {
+            revert KmsSignerSetExceedsProofFormatLimit(kmsNodeParams.length, MAX_KMS_SIGNERS);
+        }
+
+        // Validate that thresholds are non-zero and not exceeding the node count.
+        _checkThreshold("publicDecryption", thresholds.publicDecryption, kmsNodeParams.length);
+        _checkThreshold("userDecryption", thresholds.userDecryption, kmsNodeParams.length);
+        _checkThreshold("kmsGen", thresholds.kmsGen, kmsNodeParams.length);
+        _checkThreshold("mpc", thresholds.mpc, kmsNodeParams.length);
+
+        ProtocolConfigStorage storage $ = _getProtocolConfigStorage();
+        // Single monotonic-uniqueness gate for every context-creation path.
+        if (contextId <= $.currentKmsContextId) {
+            revert NonIncreasingKmsContextId(contextId, $.currentKmsContextId);
+        }
+        $.currentKmsContextId = contextId;
+
+        for (uint256 i = 0; i < kmsNodeParams.length; i++) {
+            KmsNodeParams calldata params = kmsNodeParams[i];
+            KmsNode memory node = KmsNode({
+                txSenderAddress: params.txSenderAddress,
+                signerAddress: params.signerAddress,
+                ipAddress: params.ipAddress,
+                storageUrl: params.storageUrl
+            });
+            if (node.txSenderAddress == address(0)) {
+                revert KmsNodeNullTxSender();
+            }
+            if (node.signerAddress == address(0)) {
+                revert KmsNodeNullSigner();
+            }
+            if ($.isKmsTxSenderForContext[contextId][node.txSenderAddress]) {
+                revert KmsTxSenderAlreadyRegistered(node.txSenderAddress);
+            }
+            if ($.isKmsSignerForContext[contextId][node.signerAddress]) {
+                revert KmsSignerAlreadyRegistered(node.signerAddress);
+            }
+
+            $.kmsNodesForContext[contextId].push(node);
+            $.isKmsTxSenderForContext[contextId][node.txSenderAddress] = true;
+            $.isKmsSignerForContext[contextId][node.signerAddress] = true;
+            $.kmsNodeByTxSenderForContext[contextId][node.txSenderAddress] = node;
+            $.kmsSignerAddressesForContext[contextId].push(node.signerAddress);
+        }
+
+        // Store thresholds
+        $.publicDecryptionThresholdForContext[contextId] = thresholds.publicDecryption;
+        $.userDecryptionThresholdForContext[contextId] = thresholds.userDecryption;
+        $.kmsGenThresholdForContext[contextId] = thresholds.kmsGen;
+        $.mpcThresholdForContext[contextId] = thresholds.mpc;
+    }
+
+    /**
+     * @dev Validates a single threshold: must be non-zero and at most nodeCount.
+     */
+    function _checkThreshold(string memory name, uint256 value, uint256 nodeCount) internal pure {
+        if (value == 0) revert InvalidNullThreshold(name);
+        if (value > nodeCount) revert InvalidHighThreshold(name, value, nodeCount);
+    }
+
+    /**
+     * @dev Promotes `epochId` to Active under `contextId` and makes it the active epoch.
+     *      Callers own the matching context-state writes and any event emission.
+     */
+    function _activateEpoch(uint256 epochId, uint256 contextId) internal virtual {
+        ProtocolConfigStorage storage $ = _getProtocolConfigStorage();
+        $.epochState[epochId] = EpochState.Active;
+        $.contextForEpoch[epochId] = contextId;
+        $.latestActiveEpochId = epochId;
     }
 }
