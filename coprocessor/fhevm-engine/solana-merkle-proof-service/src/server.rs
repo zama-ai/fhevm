@@ -10,8 +10,8 @@
 //!
 //! A signature names no recipient, so whoever received a request can resend it
 //! to the other coprocessors while it is valid. The [`AnswerCache`] answers every
-//! copy of a signed request with the answer to its first copy, refusals included,
-//! so a copy costs neither the signer's rate nor a database read (DD-067).
+//! copy of a signed request with the answer to its first copy, so a server charges
+//! the signer and reads the record at most once per signed request (DD-067).
 //!
 //! Each KMS tx-sender may ask for [`HttpServer::merkle_proofs`]'s leaves per
 //! second and hold its bytes of requests in the cache. Proof reads take one

@@ -2723,25 +2723,28 @@ No recipient is signed. A coprocessor that received a batch, or anyone who reads
 traffic inside the cluster, can resend it to the other coprocessors until it expires. The answers
 are public proofs, so a replay learns nothing, and it must not cost anything either. Each server
 remembers every signed request it admitted until its signature expires (`AnswerCache`, keyed by
-the EIP-712 signing hash). A request is admitted once its body decodes and its signer's rate
-accepts it, both checked under the cache's lock; a malformed or over-rate request is refused and
-never remembered. The first copy to arrive is answered once, in a task of its own, so a caller
-that disconnects does not cancel it. Every other copy, sent at the same time or later, waits for
-that answer and gets the same bytes, a refusal included. Only the first copy is charged and reads
-the database. A copy that arrives after its request was forgotten at expiry is refused as expired
-rather than charged again. A worker retry signed within the same second as the batch it retries
+the EIP-712 signing hash). A request whose body does not decode is refused before the cache.
+A request is admitted once its signer's rate accepts it, charged under the cache's lock, so two
+copies arriving together are charged once; an over-rate request is refused and never remembered.
+The first copy to arrive is answered once, in a task of its own, so a caller that disconnects
+does not cancel it. Every other copy, sent at the same time or later, waits for that answer and
+gets the same bytes, including a refusal the answer ended in. A server therefore charges and reads
+at most once per signed request. A copy that arrives after its request was forgotten at expiry is
+refused as expired rather than charged again. The signing hash names no signer, so KMS nodes that
+sign the same body in the same second share one answer. A worker retry signed within the same second as the batch it retries
 has the same signing hash, and gets the earlier answer; the worker loop retries it again later.
 The relayer does not call the Merkle proof server.
 
 Each KMS tx-sender may ask one server for `--kms-tx-sender-leaves-per-second` (4000) queried
 leaves per second, in bursts of as many and at least `MAX_LEAVES_PER_REQUEST` (64). The rate is a
-backstop against a faulty or compromised connector, not sized from load data. All but one
+backstop against a faulty or compromised connector, not sized from load data; a sustained load
+meets the cache budget below first. All but one
 connection of the pool (`--database-pool-size`, 8, at least 2) serve proof reads, one request each
 at a time, so `/healthz` always has one. A request waits up to `PROOF_READ_WAIT` (200 ms) for its
 turn. That is below the connector's `HEDGE_DELAY`, so a refusal sends the connector to the next
 coprocessor no later than its hedge would have. A server remembers at most
 `--answer-cache-mib-per-kms-tx-sender` (16) MiB of each tx-sender's requests with their answers,
-counting `ENTRY_OVERHEAD_BYTES` (512) per request beside its answer. A new request past that is
+counting `ENTRY_OVERHEAD_BYTES` (768) per request beside its answer. A new request past that is
 refused rather than admitted unremembered, since a replay of it would then cost work again. The
 budget is per tx-sender, so a faulty or compromised connector refuses only its own requests. These
 refusals are `rate_limited` (429, retryable), and the connector treats them as a failed read and
@@ -2774,8 +2777,11 @@ once its creation is finalized, up to 60 seconds later. The proof server reads t
 `commonConfig.canonicalProtocolConfigChainId`, and the chart refuses to render without it. The
 preview mints no proof secret. A 64-leaf answer with 20-hash paths (a store of a million leaves)
 holds under 48 KiB, so a tx-sender's 16 MiB holds about 22,000 leaves: 730 per second for
-30 seconds each. kms-worker shuffles the coprocessors for each batch, so one server sees about its
-share of a connector's reads; a tx-sender past its budget is refused until older requests expire,
+30 seconds each, and about 450 in 1-leaf requests. This budget, not the rate, bounds a
+connector's sustained reads from one server. kms-worker shuffles the coprocessors for each
+batch, so one server sees about its share of the batches that the first coprocessor asked
+resolves; a batch with a query left unresolved, such as one whose leaf is not recorded yet,
+reaches every coprocessor. A tx-sender past its budget is refused until older requests expire,
 and the connector asks another coprocessor. 13 KMS nodes in two live contexts hold at most
 416 MiB, inside the chart's 512 MiB limit. The cache and the rate are per replica, so a copy that
 reaches another replica of the same server is charged there again.

@@ -41,16 +41,17 @@ struct Args {
     database_pool_size: u32,
 
     /// Queried leaves per second each KMS tx-sender may ask for, in bursts of as
-    /// many. A backstop against a faulty or compromised connector.
+    /// many. A backstop against a faulty or compromised connector: a sustained
+    /// load meets `--answer-cache-mib-per-kms-tx-sender` first.
     #[arg(long, default_value_t = NonZeroU32::new(4000).unwrap())]
     kms_tx_sender_leaves_per_second: NonZeroU32,
 
     /// MiB of each KMS tx-sender's signed requests and their answers the server
     /// remembers until the signatures expire; past it, that tx-sender's new
-    /// requests are refused. A 64-leaf request with 20-hash paths holds about
+    /// requests are refused. A 64-leaf request with 20-hash paths holds under
     /// 48 KiB, so 16 MiB is about 22,000 leaves: 730 per second at the
-    /// connector's 30 s validity. 13 KMS nodes in two live contexts hold at most
-    /// 416 MiB.
+    /// connector's 30 s validity, and about 450 in 1-leaf requests. 13 KMS nodes
+    /// in two live contexts hold at most 416 MiB.
     #[arg(long, default_value_t = 16)]
     answer_cache_mib_per_kms_tx_sender: usize,
 
