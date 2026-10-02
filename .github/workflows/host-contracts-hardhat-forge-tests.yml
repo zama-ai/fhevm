@@ -24,8 +24,9 @@ jobs:
         with:
           filters: |
             host-contracts:
-              - .github/workflows/host-contracts-npm-tests.yml
+              - .github/workflows/host-contracts-hardhat-forge-tests.yml
               - host-contracts/**
+              - package-lock.json
   build:
     needs: check-changes
     name: host-contracts-hardhat-forge-tests/build (bpr)

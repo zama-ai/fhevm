@@ -14,7 +14,7 @@ import {PauserSet} from "@fhevm-host-contracts/contracts/immutable/PauserSet.sol
 import {ProtocolConfig} from "@fhevm-host-contracts/contracts/ProtocolConfig.sol";
 import {KMSGeneration} from "@fhevm-host-contracts/contracts/KMSGeneration.sol";
 import {IProtocolConfig} from "@fhevm-host-contracts/contracts/interfaces/IProtocolConfig.sol";
-import {KmsNode, KmsNodeParams, PcrValues} from "@fhevm-host-contracts/contracts/shared/Structs.sol";
+import {KmsThresholds, KmsNode, KmsNodeParams, PcrValues} from "@fhevm-host-contracts/contracts/shared/Structs.sol";
 import {KMS_CONTEXT_COUNTER_BASE, EPOCH_COUNTER_BASE} from "@fhevm-host-contracts/contracts/shared/Constants.sol";
 import {Vm} from "forge-std/Test.sol";
 import {ERC1967Utils} from "@openzeppelin/contracts/proxy/ERC1967/ERC1967Utils.sol";
@@ -204,12 +204,7 @@ contract TestHostContractsDeployerTestUtils is HostContractsDeployerTestUtils {
         KmsNodeParams[] memory nodeParams = _makeKmsNodeParams(2);
         uint256 canonicalContextId = KMS_CONTEXT_COUNTER_BASE + 7;
         uint256 canonicalEpochId = EPOCH_COUNTER_BASE + 7;
-        IProtocolConfig.KmsThresholds memory thresholds = IProtocolConfig.KmsThresholds({
-            publicDecryption: 1,
-            userDecryption: 2,
-            kmsGen: 2,
-            mpc: 1
-        });
+        KmsThresholds memory thresholds = KmsThresholds({publicDecryption: 1, userDecryption: 2, kmsGen: 2, mpc: 1});
 
         (ProtocolConfig pcProxy, address pcImplementation) = _deployProtocolConfigMirror(
             OWNER,
@@ -241,7 +236,7 @@ contract TestHostContractsDeployerTestUtils is HostContractsDeployerTestUtils {
         ProtocolConfig pcProxy = ProtocolConfig(protocolConfigAdd);
 
         KmsNodeParams[] memory nodes = _makeKmsNodeParams(2);
-        IProtocolConfig.KmsThresholds memory thresholds = _defaultThresholds();
+        KmsThresholds memory thresholds = _defaultThresholds();
         uint256 mirroredContextId = KMS_CONTEXT_COUNTER_BASE + 4;
         uint256 mirroredEpochId = EPOCH_COUNTER_BASE + 4;
 
@@ -262,10 +257,7 @@ contract TestHostContractsDeployerTestUtils is HostContractsDeployerTestUtils {
         bool found;
         for (uint256 i = 0; i < logs.length; i++) {
             if (logs[i].topics[0] == IProtocolConfig.MirrorKmsContextAndEpoch.selector) {
-                (emitted, , , ) = abi.decode(
-                    logs[i].data,
-                    (KmsNodeParams[], IProtocolConfig.KmsThresholds, string, PcrValues[])
-                );
+                (emitted, , , ) = abi.decode(logs[i].data, (KmsNodeParams[], KmsThresholds, string, PcrValues[]));
                 assertEq(uint256(logs[i].topics[2]), mirroredEpochId, "epoch id topic mismatch");
                 found = true;
                 break;
