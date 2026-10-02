@@ -62,7 +62,7 @@
             }
           },
           "429": {
-            "description": "Signer over its rate, or no database connection free in time",
+            "description": "Signer over its rate, no database connection free in time, or no room to remember the request",
             "content": {
               "application/cbor": {
                 "schema": {
@@ -271,7 +271,7 @@
         "type": "apiKey",
         "in": "header",
         "name": "Authorization",
-        "description": "`Zama-EIP712 expires=<unix seconds>, signature=0x<65 bytes>`: an EIP-712 signature over this path and the exact body, by the tx-sender of a node in a live KMS context of the canonical ProtocolConfig, valid for at most 300 s. The `shared/request-authorization` crate defines the typed data."
+        "description": "`Zama-EIP712 expires=<unix seconds>, signature=0x<65 bytes>`: an EIP-712 signature over this path and the exact body, by the tx-sender of a node in a live KMS context of the canonical ProtocolConfig, valid for at most 60 s. The `shared/request-authorization` crate defines the typed data."
       }
     }
   }

@@ -37,14 +37,21 @@ struct Args {
 
     /// Most connections the server's pool holds. All but one serve requests
     /// reading the record, one at a time each; `/healthz` keeps the last.
-    #[arg(long, default_value_t = 8)]
+    #[arg(long, default_value_t = 8, value_parser = clap::value_parser!(u32).range(2..))]
     database_pool_size: u32,
 
     /// Queried leaves per second each KMS tx-sender may ask for, in bursts of as
-    /// many. A backstop at twice the 2,000 decryptions per second target, should
-    /// one coprocessor serve a connector's every batch.
+    /// many. A backstop against a faulty or compromised connector.
     #[arg(long, default_value_t = NonZeroU32::new(4000).unwrap())]
     kms_tx_sender_leaves_per_second: NonZeroU32,
+
+    /// MiB of signed requests and their answers the server remembers until the
+    /// signatures expire; past it, new requests are refused. A request holds
+    /// about 1.3 KiB with its answer, so 128 MiB is about 100,000 requests:
+    /// 3,300 per second at the connector's 30 s validity, 1,700 at the 60 s
+    /// maximum.
+    #[arg(long, default_value_t = 128)]
+    answer_cache_mib: usize,
 
     /// Port of the HTTP server: health routes and the Merkle proof route.
     #[arg(long, default_value_t = 8080)]
@@ -114,6 +121,7 @@ async fn main() -> Result<()> {
         pool,
         senders,
         args.kms_tx_sender_leaves_per_second,
+        args.answer_cache_mib << 20,
         args.http_port,
         cancel,
     )

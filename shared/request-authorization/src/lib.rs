@@ -30,8 +30,9 @@ sol! {
 pub const SCHEME: &str = "Zama-EIP712";
 
 /// How far ahead of the server's clock `expires` may be, in seconds. A caller picks a shorter
-/// validity; the margin absorbs clock skew.
-pub const MAX_VALIDITY_SECS: u64 = 300;
+/// validity; the margin absorbs clock skew. A server remembers each request it answered until it
+/// expires, so this also bounds that memory.
+pub const MAX_VALIDITY_SECS: u64 = 60;
 
 /// The contract that registers the callers' keys, and its chain: the EIP-712 domain's
 /// `verifyingContract` and `chainId`. A signature is valid for this registry only, so two networks
