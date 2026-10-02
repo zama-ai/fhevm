@@ -334,6 +334,25 @@ where
     Ok(row.and_then(|(v,)| v))
 }
 
+/// Whether the active GCS upgrade has already reached Gateway consensus. Once it has,
+/// the Gateway anchor is agreed and any further GW `state_hash` compute/upload is wasted
+/// work: the Gateway chain keeps producing blocks for the whole dry-run window, so left
+/// unchecked the worker firehoses thousands of GW hashes that no longer feed consensus and
+/// only steal throughput from the host tracks, delaying host unanimity. Stop GW work here
+/// as soon as the latch is set.
+pub(crate) async fn gw_consensus_reached<'e, E>(executor: E) -> Result<bool, sqlx::Error>
+where
+    E: sqlx::Executor<'e, Database = Postgres>,
+{
+    let v: Option<bool> = sqlx::query_scalar(
+        "SELECT BOOL_OR(gw_consensus_reached) FROM upgrade_state
+          WHERE stack_role = 'GCS' AND status = 'in_progress'",
+    )
+    .fetch_one(executor)
+    .await?;
+    Ok(v.unwrap_or(false))
+}
+
 /// Uploads GCS `state_hash` rows with `s3_uploaded_at IS NULL`, attaching the
 /// host-chain block_hash as S3 object metadata. Stamps `NOW()` on success;
 /// failures stay NULL and retry next sweep.
@@ -622,7 +641,15 @@ async fn compute_and_upload_state_hashes(
 
     // GCS hashes are only produced during an active upgrade window; BCS hashes
     // are not produced because they would never be uploaded or consumed.
+    // Once the Gateway track has anchored (gw_consensus_reached), stop all GW state_hash
+    // work — compute AND upload. The GW anchor is already agreed, so further GW hashes feed
+    // nothing, while the fast Gateway chain would otherwise have us firehose thousands of GW
+    // hashes for the rest of the window and starve the host tracks' uploads, delaying host
+    // unanimity. Skipping frees the pipeline for the host tracks. (Only meaningful during an
+    // active window; the post-cutover branch does no GW work anyway.)
+    let mut skip_gw = false;
     if let Some((_, _, windows)) = crate::active_upgrade_windows(&mut *tx).await? {
+        skip_gw = gw_consensus_reached(&mut *tx).await?;
         for (chain_id, start, end) in windows {
             compute_and_insert_gcs(
                 &mut tx,
@@ -636,24 +663,38 @@ async fn compute_and_upload_state_hashes(
         }
 
         // Gateway-inputs track: only once the GCS gw-listener has a watermark and
-        // gw_start_block is set. Bounded to sealed blocks (< gw_tip).
-        if let (Some(gw_start), Some(gw_tip)) = (
-            gw_start_block(&mut *tx).await?,
-            gw_listener_tip(&mut *tx).await?,
-        ) {
-            compute_and_insert_gw_input_hashes(&mut tx, gw_chain_id, gw_start, gw_tip, batch_limit)
+        // gw_start_block is set. Bounded to sealed blocks (< gw_tip). Skipped once the
+        // GW track has anchored.
+        if !skip_gw {
+            if let (Some(gw_start), Some(gw_tip)) = (
+                gw_start_block(&mut *tx).await?,
+                gw_listener_tip(&mut *tx).await?,
+            ) {
+                compute_and_insert_gw_input_hashes(
+                    &mut tx,
+                    gw_chain_id,
+                    gw_start,
+                    gw_tip,
+                    batch_limit,
+                )
                 .await?;
+            }
+        } else {
+            debug!("gw consensus reached — skipping GW state_hash compute/upload");
         }
     } else {
         compute_post_cutover_state_hashes(&mut tx, batch_limit).await?;
     }
     tx.commit().await?;
 
-    // S3 upload: drains pending rows; runs every pass so failed PUTs retry.
+    // S3 upload: drains pending rows; runs every pass so failed PUTs retry. GW uploads are
+    // skipped once the GW track has anchored (see skip_gw above).
     if let Some(s3) = s3 {
         upload_pending_state_hashes(pool, s3, my_bucket, batch_limit, cutoff).await?;
-        upload_pending_gw_state_hashes(pool, s3, my_bucket, gw_chain_id, batch_limit, cutoff)
-            .await?;
+        if !skip_gw {
+            upload_pending_gw_state_hashes(pool, s3, my_bucket, gw_chain_id, batch_limit, cutoff)
+                .await?;
+        }
     }
     Ok(())
 }
