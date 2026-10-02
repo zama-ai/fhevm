@@ -29,7 +29,7 @@ thiserror = { workspace = true }
 tokio = { workspace = true }
 tokio-util = { workspace = true }
 tracing = { workspace = true }
-# The leaf-proof route's committed OpenAPI document.
+# The Merkle proof route's committed OpenAPI document.
 utoipa = { workspace = true }
 
 solana-client = "3.0"

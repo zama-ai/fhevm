@@ -21,7 +21,7 @@ use kms_worker::core::solana::{
     failure::AuthorizationFailure,
     handle_binding::HandleBindingFailure,
     pipeline::authorize_request,
-    proof::{LeafKind, LeafProofOutcome, LeafQuery, ProofReadError},
+    proof::{LeafKind, MerkleProofOutcome, LeafQuery, ProofReadError},
     public_decrypt::{PublicDecryptFailure, check_public_decrypt},
     snapshot::{SnapshotAccount, SnapshotError},
     watermark::{WatermarkFailure, WindowFailure},
@@ -556,7 +556,7 @@ fn cases() -> Vec<Case> {
         )
         .record(ProofRecord::answering([(
             mine.allowed_query(h1, signer),
-            LeafProofOutcome::HistoryIncomplete,
+            MerkleProofOutcome::HistoryIncomplete,
         )])),
         case(
             "a leaf record ahead of the store, whose leaf the store has not sealed yet",
@@ -743,7 +743,7 @@ fn render_accounts(world: &World) -> Vec<Value> {
 }
 
 /// The batch the Connector asked for, each query with the record's answer, in the wire spelling of
-/// `POST /v1/solana/leaf-proofs`; `null` when it asked for none.
+/// `POST /v1/solana/merkle-proofs`; `null` when it asked for none.
 fn render_leaf_read(batch: &[LeafQuery], record: &ProofRecord) -> Value {
     if batch.is_empty() {
         return Value::Null;
@@ -869,7 +869,7 @@ async fn the_committed_cases_are_the_connectors_verdicts() {
 
     let file = json!({
         "schema": "zama-solana-decrypt-authorization-cases/v1",
-        "description": "The KMS Connector's verdicts on user and public decryptions, each over one host state and one leaf record. `leaf_read` is the leaf-proof batch the Connector asked for, with the record's answers, in the wire format of POST /v1/solana/leaf-proofs; null when it asked for none. Bytes are hex, 64-bit numbers decimal strings, addresses base58, account data base64. A missing account is absent. Every read of a case's accounts reports `slot`. The SDK's cleartext client must reach the same verdicts.",
+        "description": "The KMS Connector's verdicts on user and public decryptions, each over one host state and one leaf record. `leaf_read` is the Merkle proof batch the Connector asked for, with the record's answers, in the wire format of POST /v1/solana/merkle-proofs; null when it asked for none. Bytes are hex, 64-bit numbers decimal strings, addresses base58, account data base64. A missing account is absent. Every read of a case's accounts reports `slot`. The SDK's cleartext client must reach the same verdicts.",
         "generator": "ZAMA_UPDATE_AUTHORIZATION_CASES=1 cargo test -p kms-worker --test solana_authorization_cases",
         "host_program": PROGRAM_ID.to_string(),
         "slot": SLOT.to_string(),

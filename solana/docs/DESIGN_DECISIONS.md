@@ -2638,7 +2638,8 @@ binaries:
   the indexer stops and writes nothing. A replay that changes, adds or drops a write therefore
   stops it. Moving the checkpoint back is a supported repair: the indexer checks each block up to
   `recorded_through` and appends only after it.
-- `solana_merkle_proof_server` serves the proofs from that database (DD-063, DD-064).
+- `solana_merkle_proof_server` serves the proofs from that database over
+  `POST /v1/solana/merkle-proofs` (DD-063, DD-064).
 
 A record holds every Store from leaf zero or has not seen it, so a proof answer is `found`,
 `notFound` or `unknownAccount`; there is no incomplete history. The host listener writes only

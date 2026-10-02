@@ -19,7 +19,7 @@ import { integerEnv } from '../../../../solana/deploy/src/gateway';
 import { SOLANA_LEAF_PROOF_API_KEY } from '../generate/solana';
 import {
   REPO_ROOT,
-  SOLANA_LEAF_PROOF_PORT,
+  SOLANA_MERKLE_PROOF_PORT,
   SOLANA_LISTENER_HEALTH_PORT,
   SOLANA_MERKLE_INDEXER_HEALTH_PORT,
   STATE_DIR,
@@ -302,7 +302,7 @@ export const startMerkleProofServer = async (parameters: {
       '--database-url',
       parameters.databaseUrl,
       '--http-port',
-      String(SOLANA_LEAF_PROOF_PORT),
+      String(SOLANA_MERKLE_PROOF_PORT),
       '--proof-api-key',
       SOLANA_LEAF_PROOF_API_KEY,
     ],

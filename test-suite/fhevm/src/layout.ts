@@ -173,7 +173,7 @@ export const DEFAULT_POSTGRES_DB = "coprocessor";
 // into loopback URLs.
 export const SOLANA_VALIDATOR_RPC_PORT = 8899;
 export const SOLANA_VALIDATOR_WS_PORT = 8900;
-export const SOLANA_LEAF_PROOF_PORT = 8080;
+export const SOLANA_MERKLE_PROOF_PORT = 8080;
 export const SOLANA_LISTENER_HEALTH_PORT = 8081;
 export const SOLANA_MERKLE_INDEXER_HEALTH_PORT = 8082;
 export const SOLANA_LISTENER_GRPC_PORT = 10000;

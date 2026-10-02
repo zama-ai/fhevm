@@ -1,5 +1,5 @@
 //! The HTTP routes of the Merkle proof service: the health routes both binaries serve, and the
-//! leaf-proof route that only `solana_merkle_proof_server` adds (DD-064).
+//! Merkle proof route that only `solana_merkle_proof_server` adds (DD-064).
 //!
 //! The KMS connector asks for the inclusion proof of the leaf that authorizes a
 //! decrypt (an allow of a key on a handle, or a handle made public) and verifies
@@ -35,7 +35,7 @@ use crate::store::{find_leaf, load_proof, load_store_cursor, LeafKind};
 /// Most leaves one request may ask for.
 const MAX_LEAVES_PER_REQUEST: usize = 64;
 
-pub const LEAF_PROOFS_PATH: &str = "/v1/solana/leaf-proofs";
+pub const MERKLE_PROOFS_PATH: &str = "/v1/solana/merkle-proofs";
 
 #[derive(Clone)]
 struct AppState {
@@ -63,15 +63,15 @@ impl HttpServer {
         }
     }
 
-    /// The health routes and the leaf-proof route, for the proof server.
-    pub fn leaf_proofs(
+    /// The health routes and the Merkle proof route, for the proof server.
+    pub fn merkle_proofs(
         pool: PgPool,
         api_key: String,
         port: u16,
         cancel_token: CancellationToken,
     ) -> Self {
         Self {
-            router: leaf_proofs_router(pool, api_key),
+            router: merkle_proofs_router(pool, api_key),
             port,
             cancel_token,
         }
@@ -93,10 +93,10 @@ fn health_router(pool: PgPool) -> Router {
         .with_state(pool)
 }
 
-fn leaf_proofs_router(pool: PgPool, api_key: String) -> Router {
+fn merkle_proofs_router(pool: PgPool, api_key: String) -> Router {
     health_router(pool.clone()).merge(
         Router::new()
-            .route(LEAF_PROOFS_PATH, post(leaf_proofs))
+            .route(MERKLE_PROOFS_PATH, post(merkle_proofs))
             .with_state(AppState {
                 pool,
                 api_key: api_key.into(),
@@ -164,7 +164,7 @@ pub struct LeafQuery {
 
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize, ToSchema)]
 #[serde(rename_all = "camelCase")]
-pub struct LeafProofRequest {
+pub struct MerkleProofRequest {
     /// At most [`MAX_LEAVES_PER_REQUEST`] entries; answered in order.
     pub leaves: Vec<LeafQuery>,
 }
@@ -172,7 +172,7 @@ pub struct LeafProofRequest {
 /// The answer for one queried leaf, in request order.
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize, ToSchema)]
 #[serde(rename_all = "camelCase", tag = "status")]
-pub enum LeafProof {
+pub enum MerkleProofOutcome {
     /// The leaf is recorded. `leafCount` is the history the record had sealed
     /// when it built the proof; the caller verifies the path against the
     /// on-chain account's peaks and retries when the record is behind the
@@ -194,8 +194,8 @@ pub enum LeafProof {
 
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize, ToSchema)]
 #[serde(rename_all = "camelCase")]
-pub struct LeafProofResponse {
-    pub proofs: Vec<LeafProof>,
+pub struct MerkleProofResponse {
+    pub proofs: Vec<MerkleProofOutcome>,
 }
 
 /// Error codes, in the RFC 033 vocabulary.
@@ -266,27 +266,27 @@ impl IntoResponse for HttpError {
     }
 }
 
-// --- Leaf proofs -----------------------------------------------------------------
+// --- Merkle proofs -----------------------------------------------------------------
 
 /// Builds the inclusion proof of each queried leaf from the leaf record.
 #[utoipa::path(
     post,
-    path = LEAF_PROOFS_PATH,
+    path = MERKLE_PROOFS_PATH,
     tag = "solana",
-    request_body = LeafProofRequest,
+    request_body = MerkleProofRequest,
     responses(
-        (status = 200, description = "One answer per queried leaf, in request order", body = LeafProofResponse),
+        (status = 200, description = "One answer per queried leaf, in request order", body = MerkleProofResponse),
         (status = 400, description = "Malformed request", body = ErrorResponse),
         (status = 401, description = "Missing or wrong API key", body = ErrorResponse),
         (status = 502, description = "Leaf record unavailable", body = ErrorResponse),
     ),
     security(("bearer" = [])),
 )]
-async fn leaf_proofs(
+async fn merkle_proofs(
     State(state): State<AppState>,
     headers: HeaderMap,
-    body: Result<Json<LeafProofRequest>, JsonRejection>,
-) -> Result<Json<LeafProofResponse>, HttpError> {
+    body: Result<Json<MerkleProofRequest>, JsonRejection>,
+) -> Result<Json<MerkleProofResponse>, HttpError> {
     authenticate(&headers, &state.api_key)?;
     let Json(request) =
         body.map_err(|rejection| HttpError::malformed(rejection.body_text()))?;
@@ -305,7 +305,7 @@ async fn leaf_proofs(
     for query in queries {
         proofs.push(prove(&state.pool, &query).await?);
     }
-    Ok(Json(LeafProofResponse { proofs }))
+    Ok(Json(MerkleProofResponse { proofs }))
 }
 
 fn authenticate(headers: &HeaderMap, api_key: &str) -> Result<(), HttpError> {
@@ -382,7 +382,7 @@ fn parse_hex32(field: &str, value: &str) -> Result<[u8; 32], HttpError> {
 async fn prove(
     pool: &PgPool,
     query: &ParsedQuery,
-) -> Result<LeafProof, HttpError> {
+) -> Result<MerkleProofOutcome, HttpError> {
     let read_failed = |err: sqlx::Error| {
         error!(error = %err, "leaf record read failed");
         HttpError::new(ErrorCode::UpstreamTransient, "leaf record read failed")
@@ -392,7 +392,7 @@ async fn prove(
         .await
         .map_err(read_failed)?
     else {
-        return Ok(LeafProof::UnknownAccount);
+        return Ok(MerkleProofOutcome::UnknownAccount);
     };
     let leaf_count = cursor.leaf_count;
     let Some((leaf_index, commitment)) = find_leaf(
@@ -406,7 +406,7 @@ async fn prove(
     .await
     .map_err(read_failed)?
     else {
-        return Ok(LeafProof::NotFound { leaf_count });
+        return Ok(MerkleProofOutcome::NotFound { leaf_count });
     };
     let proof = load_proof(pool, account, leaf_index, leaf_count)
         .await
@@ -427,7 +427,7 @@ async fn prove(
             "leaf record inconsistent",
         ));
     };
-    Ok(LeafProof::Found {
+    Ok(MerkleProofOutcome::Found {
         leaf_index: proof.leaf_index,
         leaf_count,
         siblings: proof.siblings.iter().map(hex::encode).collect(),
@@ -450,21 +450,21 @@ impl Modify for BearerApiKey {
     }
 }
 
-/// The committed document lives at `openapi/solana_leaf_proofs.json`.
+/// The committed document lives at `openapi/solana_merkle_proofs.json`.
 #[derive(OpenApi)]
 #[openapi(
     info(
-        title = "Solana leaf proofs",
+        title = "Solana Merkle proofs",
         description = "Inclusion proofs from the RFC 035 leaf record of Solana encrypted stores, for the KMS connector.",
         version = "1.0.0",
     ),
-    paths(leaf_proofs),
+    paths(merkle_proofs),
     components(schemas(
         LeafQueryKind,
         LeafQuery,
-        LeafProofRequest,
-        LeafProof,
-        LeafProofResponse,
+        MerkleProofRequest,
+        MerkleProofOutcome,
+        MerkleProofResponse,
         ErrorCode,
         ErrorResponse,
     )),
@@ -479,19 +479,19 @@ mod tests {
 
     const OPENAPI_PATH: &str = concat!(
         env!("CARGO_MANIFEST_DIR"),
-        "/openapi/solana_leaf_proofs.json"
+        "/openapi/solana_merkle_proofs.json"
     );
 
     /// The shared spelling of the wire; the connector pins its own against the same file.
-    const LEAF_PROOFS_FIXTURE: &str = concat!(
+    const MERKLE_PROOFS_FIXTURE: &str = concat!(
         env!("CARGO_MANIFEST_DIR"),
-        "/../../../solana/test-fixtures/leaf-proofs/leaf_proofs_v1.json"
+        "/../../../solana/test-fixtures/merkle-proofs/merkle_proofs_v1.json"
     );
 
     #[test]
     fn wire_matches_the_shared_fixture() {
         let fixture: serde_json::Value = serde_json::from_str(
-            &std::fs::read_to_string(LEAF_PROOFS_FIXTURE)
+            &std::fs::read_to_string(MERKLE_PROOFS_FIXTURE)
                 .expect("read fixture"),
         )
         .expect("fixture is json");
@@ -499,7 +499,7 @@ mod tests {
             fixture["maxLeavesPerRequest"],
             serde_json::json!(MAX_LEAVES_PER_REQUEST)
         );
-        let request: LeafProofRequest =
+        let request: MerkleProofRequest =
             serde_json::from_value(fixture["request"].clone())
                 .expect("the fixture request decodes");
         assert_eq!(
@@ -508,8 +508,9 @@ mod tests {
         );
         assert_eq!(request.leaves.len(), 2);
         for proof in fixture["proofs"].as_array().expect("proofs") {
-            let decoded: LeafProof = serde_json::from_value(proof.clone())
-                .expect("every fixture proof decodes");
+            let decoded: MerkleProofOutcome =
+                serde_json::from_value(proof.clone())
+                    .expect("every fixture proof decodes");
             assert_eq!(
                 serde_json::to_value(&decoded).expect("serialize"),
                 *proof
@@ -529,7 +530,7 @@ mod tests {
             std::fs::read_to_string(OPENAPI_PATH).expect("read openapi");
         assert_eq!(
             committed, generated,
-            "openapi/solana_leaf_proofs.json is stale; rerun with UPDATE_OPENAPI=1"
+            "openapi/solana_merkle_proofs.json is stale; rerun with UPDATE_OPENAPI=1"
         );
     }
 
@@ -575,12 +576,12 @@ mod tests {
         let cancel = CancellationToken::new();
         let server = tokio::spawn(serve(
             listener,
-            leaf_proofs_router(pool, "secret".into()),
+            merkle_proofs_router(pool, "secret".into()),
             cancel.clone(),
         ));
-        let url = format!("http://{addr}{LEAF_PROOFS_PATH}");
+        let url = format!("http://{addr}{MERKLE_PROOFS_PATH}");
         let client = reqwest::Client::new();
-        let body = LeafProofRequest {
+        let body = MerkleProofRequest {
             leaves: vec![LeafQuery {
                 encrypted_store: "ac".repeat(32),
                 handle: "10".repeat(32),
@@ -617,7 +618,7 @@ mod tests {
         let error: ErrorResponse = response.json().await.expect("error body");
         assert_eq!(error.code, ErrorCode::Malformed);
 
-        let too_many = LeafProofRequest {
+        let too_many = MerkleProofRequest {
             leaves: vec![body.leaves[0].clone(); MAX_LEAVES_PER_REQUEST + 1],
         };
         let response = client
