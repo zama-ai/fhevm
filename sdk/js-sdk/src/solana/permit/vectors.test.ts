@@ -212,7 +212,7 @@ function rejectionOfRecord(record: PermitVectorRecord): {
 
 const accepted = file.vectors.filter((record) => record.result !== 'invalid');
 const rejected = file.vectors.filter((record) => record.result === 'invalid');
-const named = (records: readonly PermitVectorRecord[]): ReadonlyArray<readonly [string, PermitVectorRecord]> =>
+const named = <R extends PermitVectorRecord>(records: readonly R[]): ReadonlyArray<readonly [string, R]> =>
   records.map((record) => [record.name, record] as const);
 
 /** Looks a record up by name, so a test that needs a particular one says which. */
@@ -322,7 +322,9 @@ describe('rejecting records', () => {
 });
 
 describe('records whose signature covers a text other than the canonical one', () => {
-  const shownADifferentText = file.vectors.filter((record) => record.signed_text !== undefined);
+  const shownADifferentText = file.vectors.filter(
+    (record): record is PermitVectorRecord & { readonly signed_text: string } => record.signed_text !== undefined,
+  );
 
   it('are present in the file', () => {
     expect(shownADifferentText.length).toBeGreaterThan(0);
