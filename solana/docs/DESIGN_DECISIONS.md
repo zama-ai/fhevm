@@ -2552,6 +2552,8 @@ resubmits. A grant made after the stop has no proof until ingestion catches up.
 
 Status: adopted
 
+Recorded in zama-ai/fhevm#4201.
+
 `verify_public_decrypt` used to take the handle's Store and an MMR inclusion proof of its public
 leaf, and checked the proof against the Store's current peaks before it accepted the KMS
 certificate. The KMS connectors already check that public leaf before they decrypt (DD-048), so a
