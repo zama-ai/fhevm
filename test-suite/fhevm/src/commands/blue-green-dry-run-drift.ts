@@ -62,6 +62,8 @@ export const DRY_RUN_DRIFT_CLEANUP_SQL =
 
 export const GCS_SCHEMA_SQL = "SELECT nspname FROM pg_namespace WHERE nspname LIKE 'gcs-%' ORDER BY nspname";
 
+/** Finding reasons healing repairs; drifted_handle.can_be_healed also requires a pinned target. */
+const RECOVERABLE_REASONS = "('ct64_mismatch', 'missing_here', 'error_here', 'uncomputed_here')";
 const quoteIdent = (name: string) => `"${name.replaceAll('"', '""')}"`;
 const sqlText = (value: string) => `'${value.replaceAll("'", "''")}'`;
 
@@ -108,20 +110,34 @@ export async function assertDryRunDriftHealed(options: {
   assert.equal(detected.reason, "ct64_mismatch", `${db}: dry-run drift reason`);
   await waitFor(`${db} heals the dry-run drift`, async () => JSON.stringify((await finding())?.healed_at ?? null),
     value => value !== "null", 900_000);
-  await waitFor(`${db} has no pending healable finding in epoch ${epoch}`, () => query(db,
-    `SELECT count(*) FROM drifted_handle WHERE consensus_epoch = ${sqlText(epoch)} AND can_be_healed
-        AND healed_at IS NULL AND superseded_at IS NULL`), value => value === "0", 900_000);
+  // Pinned or not: an inferred descendant has no quorum digest until healing pins one, yet it
+  // keeps its TFHE consumers frozen, so `can_be_healed` alone would let it slip through.
+  await waitFor(`${db} has no unresolved recoverable finding in epoch ${epoch}`, () => query(db,
+    `SELECT count(*) FROM drifted_handle WHERE consensus_epoch = ${sqlText(epoch)}
+        AND reason IN ${RECOVERABLE_REASONS} AND healed_at IS NULL AND superseded_at IS NULL`),
+    value => value === "0", 900_000);
 
   const restored = await query(db, `SELECT get_byte(ciphertext, ${injected.byte_offset}) FROM public.ciphertexts
      WHERE handle = ${handle} AND ciphertext_version = 0`);
   assert.equal(Number(restored), injected.original_byte, `${db}: healed ct64 keeps the corrupted byte`);
-  const digests = new Map<string, string>();
-  for (const peer of databases) {
-    digests.set(peer, await query(peer, `SELECT encode(sha256(ciphertext), 'hex') FROM public.ciphertexts
-       WHERE handle = ${handle} AND ciphertext_version = 0`));
+  // Every finding, the root and each inferred descendant, must end with the peers' ct64:
+  // healed or recomputed, the frozen work ran again.
+  const findings = JSON.parse(await query(db, `SELECT COALESCE(json_agg(json_build_object(
+        'handle', encode(handle, 'hex'), 'detection', detection_kind) ORDER BY id), '[]')::text
+      FROM drifted_handle WHERE consensus_epoch = ${sqlText(epoch)} AND superseded_at IS NULL`)) as
+    { handle: string; detection: string }[];
+  assert(findings.some(f => f.handle === injected.handle), `${db}: the injected handle has no finding`);
+  for (const { handle: finding, detection } of findings) {
+    const digests = new Map<string, string>();
+    for (const peer of databases) {
+      digests.set(peer, await query(peer, `SELECT COALESCE((SELECT encode(sha256(ciphertext), 'hex')
+          FROM public.ciphertexts WHERE handle = decode('${finding}', 'hex') AND ciphertext_version = 0), '')`));
+    }
+    const values = [...digests.values()];
+    assert(values.every(value => value !== "") && new Set(values).size === 1,
+      `${detection} finding ${finding} did not recover to the peers' ct64: ${JSON.stringify(Object.fromEntries(digests))}`);
   }
-  assert.equal(new Set(digests.values()).size, 1, `healed ct64 differs across operators: ${JSON.stringify(Object.fromEntries(digests))}`);
-  const findings = Number(await query(db, `SELECT count(*) FROM drifted_handle WHERE consensus_epoch = ${sqlText(epoch)}`));
+  const byDetection = findings.reduce<Record<string, number>>((counts, f) => ({ ...counts, [f.detection]: (counts[f.detection] ?? 0) + 1 }), {});
   checkpoint({ phase: "dry-run drift healed", db, epoch, handle: injected.handle, detection: detected.detection_kind,
-    contained: detected.is_contained, findingsInEpoch: findings });
+    contained: detected.is_contained, findings: byDetection });
 }
