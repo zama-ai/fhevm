@@ -18,15 +18,17 @@ const message = createKmsPublicDecryptEip712({
   decryptedResult: `0x${'00'.repeat(31)}2a`,
   extraData: `0x01${'44'.repeat(32)}`,
 });
-const signingMessage = {
-  ...message,
+/** The SDK's EIP-712 message in the shape viem signs. */
+const typedData = (eip712: ReturnType<typeof createKmsPublicDecryptEip712>) => ({
+  ...eip712,
   message: {
-    ...message.message,
-    ctHandles: message.message.ctHandles as readonly `0x${string}`[],
-    decryptedResult: message.message.decryptedResult as `0x${string}`,
-    extraData: message.message.extraData as `0x${string}`,
+    ...eip712.message,
+    ctHandles: eip712.message.ctHandles as readonly `0x${string}`[],
+    decryptedResult: eip712.message.decryptedResult as `0x${string}`,
+    extraData: eip712.message.extraData as `0x${string}`,
   },
-};
+});
+const signingMessage = typedData(message);
 const { domain: signingDomain } = message;
 const registered = [alice, bob].map(({ address }) => hexToBytes(address));
 
@@ -278,39 +280,34 @@ describe('public decrypt client account-to-plaintext flow', () => {
     expect(f.rpc.getAccountInfo).not.toHaveBeenCalled();
     expect(f.request).not.toHaveBeenCalled();
   });
-  it('decodes a batch in order from one certificate, one request and one verification read', async () => {
+  it('decodes a batch in order, each word by its own type, from one certificate and one host read', async () => {
     const f = await accountFixture();
-    const other = toFhevmHandle(`0x${'cd'.repeat(22)}01000000000030390500`);
+    // An ebool beside the euint64: a word decoded under the wrong handle's type would come back 1n.
+    const other = toFhevmHandle(`0x${'cd'.repeat(22)}01000000000030390000`);
+    const otherStore = new Uint8Array(32).fill(0x66);
     const batch = createKmsPublicDecryptEip712({
       chainId: 31337n,
       verifyingContractAddressDecryption: signingDomain.verifyingContract,
       handles: [handle, other],
-      decryptedResult: `0x${'00'.repeat(31)}2a${'00'.repeat(31)}07`,
+      decryptedResult: `0x${'00'.repeat(31)}2a${'00'.repeat(31)}01`,
       extraData: message.message.extraData,
     });
-    const signature = await alice.signTypedData({
-      ...batch,
-      message: {
-        ...batch.message,
-        ctHandles: batch.message.ctHandles as readonly `0x${string}`[],
-        decryptedResult: batch.message.decryptedResult as `0x${string}`,
-        extraData: batch.message.extraData as `0x${string}`,
-      },
-    });
+    const signature = await alice.signTypedData(typedData(batch));
     f.request.mockResolvedValueOnce({
       handles: [handle.bytes32Hex, other.bytes32Hex],
       abiEncodedCleartext: batch.message.decryptedResult.slice(2),
       signatures: [signature.slice(2)],
       extraData: batch.message.extraData,
     });
-    const values = await f.client.decryptPublicValues({
-      entries: [
-        { handle, encryptedStore: store },
-        { handle: other, encryptedStore: store },
-      ],
-    });
-    expect(values.map((value) => value.value)).toEqual([42n, 7n]);
+    const entries = [
+      { handle, encryptedStore: store },
+      { handle: other, encryptedStore: otherStore },
+    ];
+    const values = await f.client.decryptPublicValues({ entries });
+    expect(values.map((value) => value.value)).toEqual([42n, true]);
     expect(f.request).toHaveBeenCalledTimes(1);
+    expect(f.request).toHaveBeenCalledWith(expect.anything(), { entries, contextId, options: undefined });
+    expect(f.rpc.getAccountInfo).toHaveBeenCalledTimes(1);
     expect(f.rpc.getMultipleAccounts).toHaveBeenCalledTimes(1);
   });
   it('rejects a batch certificate whose cleartext is short by one handle', async () => {
