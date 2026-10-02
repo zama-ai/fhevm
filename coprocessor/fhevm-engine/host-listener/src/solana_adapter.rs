@@ -62,8 +62,6 @@ pub struct SolanaIngestStats {
     pub inserted_records: usize,
 }
 
-// Only referenced by `solana_grpc_listener` (feature-gated) outside of tests.
-#[cfg_attr(not(feature = "solana-grpc"), allow(dead_code))]
 pub(crate) fn material_request(handle: [u8; 32]) -> SolanaMaterialRequest {
     SolanaMaterialRequest {
         handle: Handle::from(handle),

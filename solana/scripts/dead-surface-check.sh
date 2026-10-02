@@ -80,6 +80,7 @@ RUST_ROOTS=(
   solana/runtime-tests
   solana/test-kit
   coprocessor/fhevm-engine/host-listener/src
+  coprocessor/fhevm-engine/solana-host-follower/src
   # The relayer's Solana adapter (the ACL pre-check and the delegation pre-check) speaks this
   # vocabulary natively; the rest of the relayer is EVM prose whose "durable" and "superseded"
   # are its own words, not retired ACL names.
@@ -182,8 +183,8 @@ SENTINEL_ROOTS=(
   test-suite/fhevm
   coprocessor/fhevm-engine/host-listener/src/solana_adapter.rs
   coprocessor/fhevm-engine/host-listener/src/solana_reconstruct.rs
-  coprocessor/fhevm-engine/host-listener/src/solana_grpc_listener.rs
-  coprocessor/fhevm-engine/host-listener/src/solana_grpc_source.rs
+  coprocessor/fhevm-engine/host-listener/src/solana_listener.rs
+  coprocessor/fhevm-engine/solana-host-follower/src
 )
 # Files expected to still carry at least one retrofit sentinel. This is a STALENESS guard, not the
 # scan surface: check 4 finds retrofits anywhere in the owned trees, and this list fails loudly when

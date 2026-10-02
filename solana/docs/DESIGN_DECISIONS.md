@@ -981,8 +981,8 @@ Consequences:
 
 The coprocessor produces handle-only material requests and inserts them directly into
 `pbs_computations`; it does not derive authorization from instruction names or maintain allow reasons.
-The host listener's `solana_reconstruct.rs` decode arms parse raw instruction data (Anchor
-discriminators + borsh args) instead of dispatching on ACL events.
+The Solana host follower's decoder (`solana-host-follower/src/host.rs`) parses raw instruction data
+(Anchor discriminators + borsh args) instead of dispatching on ACL events.
 
 ## DD-034: Eager Compute Scheduling For Solana (Q11 Option A)
 
@@ -1447,7 +1447,7 @@ take the first option. Their eleven instructions gain Anchor's `#[event_cpi]` ac
 from two to four.
 
 Note that no in-tree component reads any of the five today; the only off-chain reader of host config
-state reads the account, not an event (`host-listener`'s `parse_host_config`). That is deliberate and is
+state reads the account, not an event (`solana-host-follower`'s `host_chain_id`). That is deliberate and is
 not an argument against emitting them: the transport exists because the category calls for it, so that
 a component which needs an admin change does not have to replay instruction data to find one. The test
 is the category, not the current existence of a reader — otherwise the rule would flip every time

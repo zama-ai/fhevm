@@ -32,7 +32,7 @@ jobs:
               - .github/actions/setup-rust-and-protoc/**
               - coprocessor/fhevm-engine/**
               - host-contracts/rust_bindings/**
-              # host-listener's solana-reconstruct feature compiles these three as path
+              # host-listener's solana feature compiles these as path
               # dependencies, so editing them can break a clippy lane that no other filter watches.
               - solana/programs/zama-host/**
               - solana/environments/**
@@ -96,7 +96,7 @@ jobs:
         # The Solana ingestion path is feature-gated, so the line above never compiles it — the
         # whole yellowstone client and its tests were going unlinted.
         SQLX_OFFLINE=true cargo clippy -p host-listener \
-          --features solana-grpc,solana-reconstruct --all-targets \
+          --features solana --all-targets \
           -- -D warnings
         SQLX_OFFLINE=true cargo clippy --all-targets --features "bench latency throughput" \
           -- -D warnings

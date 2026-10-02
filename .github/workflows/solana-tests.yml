@@ -74,6 +74,7 @@ jobs:
               - .github/workflows/solana-e2e.yml
               - solana/**
               - coprocessor/fhevm-engine/host-listener/src/**
+              - coprocessor/fhevm-engine/solana-host-follower/src/**
               - kms-connector/crates/**
               - sdk/js-sdk/src/solana/**
               - test-suite/fhevm/**

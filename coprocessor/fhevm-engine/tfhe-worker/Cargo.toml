@@ -55,9 +55,10 @@ anchor-lang = "1.2.0"
 anchor-spl = { version = "1.2.0", default-features = false, features = ["token", "token_2022", "associated_token"] }
 confidential-token = { path = "../../../solana/programs/confidential-token", features = ["no-entrypoint"] }
 criterion = { version = "0.5.1", features = ["async_futures"] }
-host-listener = { path = "../host-listener", features = ["solana-reconstruct"] }
+host-listener = { path = "../host-listener", features = ["solana"] }
 k256 = { version = "0.13.4", features = ["ecdsa"] }
 litesvm = "0.16.0"
+solana-host-follower = { path = "../solana-host-follower" }
 solana-sdk = "~4.0"
 testcontainers = { workspace = true }
 test-harness = { path = "../test-harness" }

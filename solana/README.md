@@ -132,9 +132,12 @@ geyser                          Yellowstone plugin build helpers for the event s
 The rest of the vertical lives elsewhere in this repository:
 
 ```text
-coprocessor/fhevm-engine/host-listener   Solana ingestion: solana_adapter.rs (mapping into the
-                                         coprocessor schema), solana_reconstruct.rs (handle
-                                         re-derivation), solana_grpc_listener.rs (Yellowstone),
+coprocessor/fhevm-engine/solana-host-follower
+                                         Follows zama-host over Yellowstone gRPC: block sealing,
+                                         archive catch-up, host-instruction decoding.
+coprocessor/fhevm-engine/host-listener   Solana ingestion: solana_listener.rs (the follower's
+                                         sink), solana_adapter.rs (mapping into the coprocessor
+                                         schema), solana_reconstruct.rs (handle re-derivation),
                                          database/solana_leaves.rs + http_server.rs (the leaf
                                          record and its proof route).
 gateway-contracts/                       Gateway (EVM) contracts, incl. the typed Solana
