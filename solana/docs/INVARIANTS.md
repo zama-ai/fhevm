@@ -358,7 +358,9 @@ data, and by `rebuilds_a_slot_from_get_block_alone` and `shared_transaction_deco
 never be what allows one: the KMS connector verifies every proof against
 the peaks it read on chain itself, asks the configured coprocessors one after another
 until a proof verifies for each query, and rejects a client-supplied proof outright. A compromised or lagging
-record fails or delays decrypts; it cannot authorize one (DD-048).
+record fails or delays decrypts; it cannot authorize one (DD-048). A record whose peaks differ
+from the chain's is quarantined, and its server refuses that store's proofs until a later check
+matches (DD-068, `a_store_that_disagrees_with_the_chain_is_quarantined_until_it_matches`).
 Pinned by `matches_on_chain_append_and_authorizes`, `one_serving_coprocessor_carries_a_request_the_others_cannot`,
 `a_record_behind_the_chain_is_retried_not_refused`, `a_slow_coprocessor_is_hedged`,
 `a_stalled_coprocessor_does_not_hold_a_served_batch` and
