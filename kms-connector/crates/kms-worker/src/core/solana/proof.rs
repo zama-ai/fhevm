@@ -155,6 +155,13 @@ struct MerkleProofResponse {
     proofs: Vec<MerkleProofOutcome>,
 }
 
+/// The coprocessor's error body (RFC 033), read only to report it.
+#[derive(Deserialize)]
+struct ErrorResponse {
+    code: String,
+    message: String,
+}
+
 /// The CBOR body asking for `queries`.
 pub fn encode_merkle_proof_request(queries: &[LeafQuery]) -> Vec<u8> {
     let request = MerkleProofRequest {
@@ -176,18 +183,15 @@ fn decode_siblings<'de, D: serde::Deserializer<'de>>(
     Ok(siblings.into_iter().map(ByteArray::into_array).collect())
 }
 
-/// Decodes exactly one CBOR response filling `body`.
-fn parse_merkle_proof_response(body: &[u8]) -> Result<Vec<MerkleProofOutcome>, ProofReadError> {
+/// Decodes exactly one CBOR item filling `body`.
+fn decode_cbor<T: serde::de::DeserializeOwned>(body: &[u8]) -> Result<T, String> {
     let mut rest = body;
-    let response: MerkleProofResponse = ciborium::from_reader(&mut rest)
-        .map_err(|error| unavailable(format!("response does not decode: {error}")))?;
+    let value = ciborium::from_reader(&mut rest)
+        .map_err(|error| format!("body does not decode: {error}"))?;
     if !rest.is_empty() {
-        return Err(unavailable(format!(
-            "{} bytes after the response",
-            rest.len()
-        )));
+        return Err(format!("{} bytes after the body", rest.len()));
     }
-    Ok(response.proofs)
+    Ok(value)
 }
 
 /// The client the proof reads share: HTTP/2 without TLS negotiation (prior knowledge), so the
@@ -252,45 +256,6 @@ impl CoprocessorProofClient {
             signing_timeout,
         }
     }
-
-    async fn read_from(
-        &self,
-        url: &Url,
-        batch: &SignedBatch,
-    ) -> Result<Vec<MerkleProofOutcome>, ProofReadError> {
-        let response = self
-            .client
-            .post(url.clone())
-            .header("authorization", &batch.authorization)
-            .header("content-type", "application/cbor")
-            .body(batch.body.clone())
-            .send()
-            .await
-            .map_err(|error| unavailable(format!("{url}: request failed: {error}")))?;
-        let status = response.status();
-        if !status.is_success() {
-            return Err(unavailable(format!("{url}: HTTP {status}")));
-        }
-        // At most 64 answers, each with at most 64 siblings of 34 bytes and under 128 bytes of
-        // other fields.
-        const MAX_RESPONSE_BYTES: usize =
-            MAX_LEAVES_PER_READ * (zama_solana_acl::MAX_MMR_PEAKS * 34 + 128);
-        let mut response = response;
-        let mut body = Vec::new();
-        while let Some(chunk) = response
-            .chunk()
-            .await
-            .map_err(|error| unavailable(format!("{url}: body could not be read: {error}")))?
-        {
-            if body.len() + chunk.len() > MAX_RESPONSE_BYTES {
-                return Err(unavailable(format!(
-                    "{url}: proof response exceeds {MAX_RESPONSE_BYTES} bytes"
-                )));
-            }
-            body.extend_from_slice(&chunk);
-        }
-        parse_merkle_proof_response(&body).map_err(|error| unavailable(format!("{url}: {error}")))
-    }
 }
 
 impl HostProofReader for CoprocessorProofClient {
@@ -338,7 +303,43 @@ impl HostProofReader for CoprocessorProofClient {
         source: usize,
         batch: &SignedBatch,
     ) -> Result<Vec<MerkleProofOutcome>, ProofReadError> {
-        self.read_from(&self.urls[source], batch).await
+        let url = &self.urls[source];
+        let failed = |reason: String| unavailable(format!("{url}: {reason}"));
+        let mut response = self
+            .client
+            .post(url.clone())
+            .header("authorization", &batch.authorization)
+            .header("content-type", "application/cbor")
+            .body(batch.body.clone())
+            .send()
+            .await
+            .map_err(|error| failed(format!("request failed: {error}")))?;
+        // At most 64 answers, each with at most 64 siblings of 34 bytes and under 128 bytes of
+        // other fields.
+        const MAX_RESPONSE_BYTES: usize =
+            MAX_LEAVES_PER_READ * (zama_solana_acl::MAX_MMR_PEAKS * 34 + 128);
+        let mut body = Vec::new();
+        while let Some(chunk) = response
+            .chunk()
+            .await
+            .map_err(|error| failed(format!("body could not be read: {error}")))?
+        {
+            if body.len() + chunk.len() > MAX_RESPONSE_BYTES {
+                return Err(failed(format!("body exceeds {MAX_RESPONSE_BYTES} bytes")));
+            }
+            body.extend_from_slice(&chunk);
+        }
+        let status = response.status();
+        if !status.is_success() {
+            let error = decode_cbor::<ErrorResponse>(&body).map_or_else(
+                |_| String::new(),
+                |error| format!(" {}: {}", error.code, error.message),
+            );
+            return Err(failed(format!("HTTP {status}{error}")));
+        }
+        decode_cbor::<MerkleProofResponse>(&body)
+            .map(|response| response.proofs)
+            .map_err(failed)
     }
 }
 
@@ -367,6 +368,7 @@ mod tests {
     #[test]
     fn request_body_matches_the_shared_fixture() {
         let fixture = fixture();
+        assert_eq!(fixture["path"], MERKLE_PROOFS_PATH);
         assert_eq!(
             fixture["maxLeavesPerRequest"],
             serde_json::json!(MAX_LEAVES_PER_READ)
@@ -395,7 +397,9 @@ mod tests {
     fn every_fixture_answer_decodes() {
         let body = alloy::hex::decode(fixture()["response"].as_str().unwrap()).unwrap();
         assert_eq!(
-            parse_merkle_proof_response(&body).expect("the fixture answers decode"),
+            decode_cbor::<MerkleProofResponse>(&body)
+                .expect("the fixture answers decode")
+                .proofs,
             vec![
                 MerkleProofOutcome::Found {
                     leaf_index: 1,
@@ -497,6 +501,41 @@ mod tests {
         );
     }
 
+    /// A refusal carries the coprocessor's error code and message into the read error.
+    #[tokio::test]
+    async fn a_refusal_reports_the_coprocessor_error() {
+        use mocktail::{StatusCode, server::MockServer};
+        let refusal = cbor(
+            cbor!({
+                "code" => "rate_limited",
+                "message" => "no database connection free within 200ms",
+                "retryable" => true,
+            })
+            .unwrap(),
+        );
+        let mut server = MockServer::new_http("refusal");
+        server.mock(move |when, then| {
+            when.post().path(MERKLE_PROOFS_PATH);
+            then.status(StatusCode::TOO_MANY_REQUESTS)
+                .bytes(refusal.clone());
+        });
+        server.start().await.unwrap();
+        let url = server.base_url().unwrap();
+        let client = client(&[url], &wallet());
+        let batch = client.prepare(&query()).await.unwrap();
+        let mut url = url.clone();
+        url.set_path(MERKLE_PROOFS_PATH);
+        assert_eq!(
+            client.read_proofs(0, &batch).await,
+            Err(ProofReadError::Unavailable {
+                reason: format!(
+                    "{url}: HTTP 429 Too Many Requests rate_limited: \
+                     no database connection free within 200ms"
+                ),
+            })
+        );
+    }
+
     /// Every coprocessor receives the same body and signature, which recovers to the wallet over
     /// that exact body.
     #[tokio::test]
@@ -540,13 +579,14 @@ mod tests {
             .unwrap()
             .as_secs();
         assert_eq!(
-            request_authorization::recover_signer(
+            request_authorization::recover_authorization(
                 &REGISTRY,
                 &batch.authorization,
                 MERKLE_PROOFS_PATH,
                 &batch.body,
                 now,
-            ),
+            )
+            .map(|authorization| authorization.signer),
             Ok(wallet.address())
         );
         assert_eq!(batch.body, encode_merkle_proof_request(&query()));
