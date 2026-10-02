@@ -100,9 +100,9 @@ function accountsReader(accounts: Accounts): SolanaHostAccountsReader {
 
 /** A recorded query as the leaf it asks for. */
 function queryOf(wire: unknown): SolanaLeafQuery {
-  const { encryptedStore, handle, kind, key } = wire as Record<string, string>;
+  const { encryptedStore, handle, key } = wire as { encryptedStore: string; handle: string; key?: string };
   const query = { encryptedStore: getAddressDecoder().decode(bytes(encryptedStore)), handle: bytes(handle) };
-  return kind === 'allowed' ? { ...query, key: getAddressDecoder().decode(bytes(key)) } : query;
+  return key === undefined ? query : { ...query, key: getAddressDecoder().decode(bytes(key)) };
 }
 
 /** A recorded answer as the outcome it is. */
