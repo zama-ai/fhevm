@@ -21,6 +21,14 @@ test("the fork consumer must use the fork listener's isolated stream", () => {
   expect(() => assertConsumerRoute(["--url=redis://listener-redis:6379/9"], false, 2, "three-of-three-fork")).toThrow();
   expect(() => assertConsumerRoute(["--url=redis://listener-redis:6379"], true, 0, "three-of-three")).not.toThrow();
 });
+test("each operator reads its own stream, never a share of operator 0's", () => {
+  expect(() => assertConsumerRoute(["--url=redis://listener-redis:6379/1"], true, 1, "three-of-three")).not.toThrow();
+  expect(() => assertConsumerRoute(["--url=redis://listener-redis:6379/2"], true, 2, "three-of-three")).not.toThrow();
+  // Two operators on one keyspace are two members of one consumer group: Redis
+  // would split the blocks between them instead of giving both every block.
+  expect(() => assertConsumerRoute(["--url=redis://listener-redis:6379"], true, 1, "three-of-three")).toThrow();
+  expect(() => assertConsumerRoute(["--url=redis://listener-redis:6379/1"], true, 2, "three-of-three")).toThrow();
+});
 test("two-of-three is observed without relabeling it as unanimous", () => {
   const value = state(2);
   value.scenario.sourcePath = "/scenarios/two-of-three.yaml";

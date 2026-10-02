@@ -12,15 +12,6 @@ description: >
 topology:
   count: 2
   threshold: 2
-instances:
-  - index: 0
-    args:
-      host-listener-consumer:
-        - --service-name=coprocessor-host-listener-consumer
-  - index: 1
-    args:
-      host-listener-consumer:
-        - --service-name=coprocessor1-host-listener-consumer
 kms:
   mode: threshold
   parties: 5          # cluster cores: 4-node committee + 1 spare

@@ -25,6 +25,12 @@ import {
   validateBundleCompatibility,
 } from "../compat/compat";
 import { blueGreenServiceNames, serviceNameList } from "../generate/compose";
+import {
+  listenerCoreServicesForState,
+  listenerDatabaseName,
+  listenerOperatorsForState,
+  listenerPublisherService,
+} from "../generate/listener-core";
 import { generateRuntime } from "../generate";
 import { resolveScenarioForOptions, stackSpecForState, topologyForState } from "../stack-spec/stack-spec";
 import { effectiveOverrides, listScenarioSummaries } from "../scenario/resolve";
@@ -1111,15 +1117,20 @@ export const runStep = async (state: State, step: StepName) => {
       if (!supportsHostListenerConsumer(state)) {
         break;
       }
-      await postgresExec("", ["-c", "CREATE DATABASE listener;"]);
+      // One publisher per operator, each with its own database and its own
+      // Redis keyspace: see src/generate/listener-core.ts.
+      for (const operator of listenerOperatorsForState(state)) {
+        await postgresExec("", ["-c", `CREATE DATABASE ${listenerDatabaseName(operator)};`]);
+      }
       await stepComposeUp("listener-core", state,
         ["listener-redis"]
       );
       await waitForContainer("listener-redis", "running");
-      await stepComposeUp("listener-core", state,
-        ["listener-publisher-for-anvil"]
-      );
-      await waitForContainer("listener-publisher-for-anvil", "running");
+      for (const operator of listenerOperatorsForState(state)) {
+        const publisher = listenerPublisherService(operator);
+        await stepComposeUp("listener-core", state, [publisher]);
+        await waitForContainer(publisher, "running");
+      }
       break;
     case "coprocessor": {
       // Before the coprocessors, so the instance routed to the fork finds a
@@ -2077,8 +2088,9 @@ const waitForUpgrade = async (state: State, group: UpgradeGroup, runtimeServices
     return;
   }
   if (group === "listener-core") {
-    await waitForContainer("listener-redis", "running");
-    await waitForContainer("listener-publisher-for-anvil", "running");
+    for (const service of listenerCoreServicesForState(state)) {
+      await waitForContainer(service, "running");
+    }
     return;
   }
   if (group === "relayer") {
@@ -2276,7 +2288,9 @@ const executeUpgradePlan = async (nextState: State, plan: ReturnType<typeof reso
   await saveState(nextState);
   await generateRuntime(nextState, stackSpecForState(nextState));
   if (plan.group === "listener-core") {
-    await postgresExec("", ["-c", "CREATE DATABASE listener;"]);
+    for (const operator of listenerOperatorsForState(nextState)) {
+      await postgresExec("", ["-c", `CREATE DATABASE ${listenerDatabaseName(operator)};`]);
+    }
   }
   for (const component of plan.components) {
     await maybeBuild(component.component, nextState, { force: true });

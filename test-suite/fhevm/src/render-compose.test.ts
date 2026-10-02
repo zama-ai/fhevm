@@ -261,6 +261,27 @@ describe("render-compose", () => {
     });
   });
 
+  test("gives every operator its own publisher, database and Redis keyspace", async () => {
+    const multiOperator: State = { ...state, overrides: [{ group: "listener-core" }] };
+    await withTempStateDir(async () => {
+      await mkdir(path.dirname(envPath("coprocessor")), { recursive: true });
+      await writeFile(envPath("coprocessor"), "\n");
+      await writeFile(envPath("coprocessor.1"), "\n");
+      await generateComposeOverrides(multiOperator, stackSpecForState(multiOperator));
+      const doc = YAML.parse(await readFile(composePath("listener-core"), "utf8")) as {
+        services: Record<string, { image?: string; build?: unknown; environment?: Record<string, string> }>;
+      };
+      const clone = doc.services["listener1-publisher-for-anvil"];
+      // The image is built once under the template name; the clone rides along.
+      expect(clone?.build).toBeUndefined();
+      expect(clone?.image).toBe(doc.services["listener-publisher-for-anvil"]?.image);
+      // Separate database and separate Redis keyspace: operator 1's blocks are
+      // its own, not a share of operator 0's.
+      expect(clone?.environment?.APP_DATABASE__DB_URL).toContain("/listener1");
+      expect(clone?.environment?.APP_BROKER__BROKER_URL).toBe("redis://listener-redis:6379/1");
+    });
+  });
+
   test("renders multi-instance coprocessor overrides with local poller siblings", async () => {
     await withTempStateDir(async () => {
       await mkdir(path.dirname(envPath("coprocessor")), { recursive: true });
@@ -473,8 +494,13 @@ describe("render-compose", () => {
       expect(doc.services["coprocessor1-host-listener"]?.image).toContain(":fhevm-local-i1");
       expect(doc.services["coprocessor-host-listener"]?.build).toBeTruthy();
       expect(doc.services["coprocessor1-host-listener"]?.build).toBeTruthy();
-      expect(doc.services["coprocessor-host-listener-consumer"]?.command).toContain("--service-name=host-listener-consumer");
-      expect(doc.services["coprocessor1-host-listener-consumer"]?.command).toContain("--service-name=coprocessor1-host-listener-consumer");
+      // Operators are separated by the stream they read, not by a name they
+      // are told to use: the consumer's broker identity is compiled in.
+      expect(doc.services["coprocessor-host-listener-consumer"]?.command).toContain("--url=redis://listener-redis:6379");
+      expect(doc.services["coprocessor1-host-listener-consumer"]?.command).toContain("--url=redis://listener-redis:6379/1");
+      expect(
+        doc.services["coprocessor1-host-listener-consumer"]?.command?.some((arg) => arg.startsWith("--service-name")),
+      ).toBe(false);
       const args = (doc.services["coprocessor-host-listener"]?.build as { args?: Record<string, string> })?.args;
       expect(args?.COPROCESSOR_RUNTIME_BASE_IMAGE).toBeUndefined();
       expect(args?.COPROCESSOR_DB_MIGRATION_RUNTIME_BASE_IMAGE).toBeUndefined();
@@ -979,13 +1005,17 @@ gcs:
       const doc = YAML.parse(await readFile(composePath("coprocessor"), "utf8")) as {
         services: Record<string, { container_name?: string; command?: string[] }>;
       };
-      const consumerNames = ["coprocessor", "coprocessor1", "coprocessor-gcs", "coprocessor1-gcs"].map(
-        (prefix) => doc.services[`${prefix}-host-listener-consumer`]?.command?.find(
-          (argument) => argument.startsWith("--service-name="),
-        ),
-      );
-      expect(consumerNames.every(Boolean)).toBe(true);
-      expect(new Set(consumerNames).size).toBe(4);
+      const consumerUrl = (prefix: string) =>
+        doc.services[`${prefix}-host-listener-consumer`]?.command?.find((argument) =>
+          argument.startsWith("--url="),
+        );
+      // Blue and Green of one operator share a coprocessor database, so they
+      // share a stream and each block is handled once. Operators do not: they
+      // have a database each and all need every block.
+      expect(consumerUrl("coprocessor")).toBe("--url=redis://listener-redis:6379");
+      expect(consumerUrl("coprocessor-gcs")).toBe("--url=redis://listener-redis:6379");
+      expect(consumerUrl("coprocessor1")).toBe("--url=redis://listener-redis:6379/1");
+      expect(consumerUrl("coprocessor1-gcs")).toBe("--url=redis://listener-redis:6379/1");
       // Operator 0: BCS as `coprocessor-*`, GCS as `coprocessor-gcs-*`.
       expect(doc.services["coprocessor-host-listener"]?.container_name).toBe("coprocessor-host-listener");
       expect(doc.services["coprocessor-gcs-host-listener"]?.container_name).toBe(
