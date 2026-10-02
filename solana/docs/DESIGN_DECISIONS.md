@@ -2782,7 +2782,7 @@ reaches another replica of the same server is charged there again.
 
 Status: adopted
 
-Recorded in its pull request.
+Recorded in zama-ai/fhevm#4221.
 
 The indexer refuses a replayed block that changes the record (DD-066), but nothing compared the
 record with the chain. A record restored from a diverged dump, edited by hand, damaged on disk or
