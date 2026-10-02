@@ -61,6 +61,16 @@
               }
             }
           },
+          "429": {
+            "description": "Signer over its rate, or every database connection reading",
+            "content": {
+              "application/cbor": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
           "502": {
             "description": "Leaf record or KMS tx-sender set unavailable",
             "content": {
@@ -88,7 +98,8 @@
         "enum": [
           "malformed",
           "sender_authentication_failed",
-          "upstream_transient"
+          "upstream_transient",
+          "rate_limited"
         ]
       },
       "ErrorResponse": {

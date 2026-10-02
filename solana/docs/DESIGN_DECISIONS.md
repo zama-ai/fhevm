@@ -2721,6 +2721,19 @@ traffic inside the cluster, can resend it to the other coprocessors until it exp
 their answer. Those answers are public proofs, so the server keeps no replay cache. The relayer
 does not call the Merkle proof server.
 
+Each KMS tx-sender may send `--kms-tx-sender-requests-per-second` (50) requests per second to one
+server, in bursts of as many, counted after the signer is recovered and before the body is decoded.
+At most one request per database connection (`--database-pool-size`, 8) reads the record at a time;
+one more is refused at once instead of queued, because the connector asks the next coprocessor
+after `HEDGE_DELAY` anyway. Both refusals are `rateLimited` (429, retryable), and the connector
+treats them as a failed read. The rate is a backstop against a faulty or compromised connector, far
+above its load of one request per decryption batch, shared among the coprocessors. A replay is
+counted against the signer: a coprocessor that received a batch can resend it to the other servers
+until it expires, and so spend that connector's rate there. Signing the recipient, or refusing a
+signature a server has already seen, would close this. An honest connector never sends one
+signature twice to one server, since it asks each coprocessor at most once per signed batch and a
+retry signs again.
+
 Rejected alternatives:
 
 | Alternative | Why not |

@@ -5,7 +5,7 @@
 //! store merges that leaf's mountain. It answers only the KMS connectors that the canonical
 //! `ProtocolConfig` lists, which it reads from an Ethereum RPC.
 
-use std::time::Duration;
+use std::{num::NonZeroU32, time::Duration};
 
 use alloy::{
     primitives::Address,
@@ -35,9 +35,16 @@ struct Args {
     #[arg(long)]
     database_url: DatabaseURL,
 
-    /// Most connections the server's pool holds.
+    /// Most connections the server's pool holds, and so most requests reading the
+    /// record at a time.
     #[arg(long, default_value_t = 8)]
     database_pool_size: u32,
+
+    /// Requests per second each KMS tx-sender may send, in bursts of as many.
+    /// A backstop well above a connector's load, which is one request per
+    /// decryption batch shared among the coprocessors.
+    #[arg(long, default_value_t = NonZeroU32::new(50).unwrap())]
+    kms_tx_sender_requests_per_second: NonZeroU32,
 
     /// Port of the HTTP server: health routes and the Merkle proof route.
     #[arg(long, default_value_t = 8080)]
@@ -103,7 +110,13 @@ async fn main() -> Result<()> {
         cancel.clone(),
     );
 
-    HttpServer::merkle_proofs(pool, senders, args.http_port, cancel)
-        .start()
-        .await
+    HttpServer::merkle_proofs(
+        pool,
+        senders,
+        args.kms_tx_sender_requests_per_second,
+        args.http_port,
+        cancel,
+    )
+    .start()
+    .await
 }

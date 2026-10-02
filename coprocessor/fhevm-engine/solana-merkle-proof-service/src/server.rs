@@ -8,12 +8,19 @@
 //! decision. It answers only callers in [`KmsTxSenders`]: each request carries a
 //! `request_authorization` signature by a KMS node's tx-sender.
 //!
+//! Each KMS tx-sender gets [`HttpServer::merkle_proofs`]'s requests per second,
+//! and at most one request per database connection reads the record at a time.
+//! Both refusals are `rateLimited` and come before any database read, so the
+//! connector asks another coprocessor at once.
+//!
 //! Bodies are CBOR (RFC 8949), served over HTTP/1.1 or HTTP/2 without TLS. The
 //! wire contract is the committed OpenAPI document in `openapi/`; a test keeps
 //! it in sync with the code. Errors use the RFC 033 body shape.
 
 use std::{
     net::SocketAddr,
+    num::NonZeroU32,
+    sync::Arc,
     time::{SystemTime, UNIX_EPOCH},
 };
 
@@ -26,10 +33,11 @@ use axum::{
     routing::{get, post},
     Router,
 };
+use governor::{DefaultKeyedRateLimiter, Quota, RateLimiter};
 use serde::{de::DeserializeOwned, Deserialize, Serialize};
 use serde_bytes::ByteArray;
 use sqlx::PgPool;
-use tokio::net::TcpListener;
+use tokio::{net::TcpListener, sync::Semaphore};
 use tokio_util::sync::CancellationToken;
 use tracing::{error, info};
 use utoipa::{
@@ -57,6 +65,8 @@ const CBOR: &str = "application/cbor";
 struct AppState {
     pool: PgPool,
     senders: KmsTxSenders,
+    per_kms_tx_sender: Arc<DefaultKeyedRateLimiter<Address>>,
+    proof_reads: Arc<Semaphore>,
 }
 
 pub struct HttpServer {
@@ -79,15 +89,24 @@ impl HttpServer {
         }
     }
 
-    /// The health routes and the Merkle proof route, for the proof server.
+    /// The health routes and the Merkle proof route, for the proof server. Each
+    /// KMS tx-sender may send `requests_per_second`, in bursts of as many.
     pub fn merkle_proofs(
         pool: PgPool,
         senders: KmsTxSenders,
+        requests_per_second: NonZeroU32,
         port: u16,
         cancel_token: CancellationToken,
     ) -> Self {
+        // A request reads one query at a time, so it holds one connection.
+        let proof_reads = pool.options().get_max_connections() as usize;
         Self {
-            router: merkle_proofs_router(pool, senders),
+            router: merkle_proofs_router(
+                pool,
+                senders,
+                requests_per_second,
+                proof_reads,
+            ),
             port,
             cancel_token,
         }
@@ -109,7 +128,20 @@ fn health_router(pool: PgPool) -> Router {
         .with_state(pool)
 }
 
-fn merkle_proofs_router(pool: PgPool, senders: KmsTxSenders) -> Router {
+fn merkle_proofs_router(
+    pool: PgPool,
+    senders: KmsTxSenders,
+    requests_per_second: NonZeroU32,
+    proof_reads: usize,
+) -> Router {
+    let state = AppState {
+        pool,
+        senders,
+        per_kms_tx_sender: Arc::new(RateLimiter::keyed(Quota::per_second(
+            requests_per_second,
+        ))),
+        proof_reads: Arc::new(Semaphore::new(proof_reads)),
+    };
     Router::new()
         .route("/healthz", get(proof_server_healthz))
         .route("/liveness", get(liveness))
@@ -117,7 +149,7 @@ fn merkle_proofs_router(pool: PgPool, senders: KmsTxSenders) -> Router {
             MERKLE_PROOFS_PATH,
             post(merkle_proofs).layer(DefaultBodyLimit::max(MAX_REQUEST_BYTES)),
         )
-        .with_state(AppState { pool, senders })
+        .with_state(state)
 }
 
 async fn serve(
@@ -246,6 +278,9 @@ pub enum ErrorCode {
     /// The leaf record could not be read or is inconsistent, or the KMS
     /// tx-sender set is not read yet; retry later.
     UpstreamTransient,
+    /// The signer is over its requests per second, or every database
+    /// connection is reading; ask another coprocessor or retry later.
+    RateLimited,
 }
 
 impl ErrorCode {
@@ -254,11 +289,12 @@ impl ErrorCode {
             Self::Malformed => StatusCode::BAD_REQUEST,
             Self::SenderAuthenticationFailed => StatusCode::UNAUTHORIZED,
             Self::UpstreamTransient => StatusCode::BAD_GATEWAY,
+            Self::RateLimited => StatusCode::TOO_MANY_REQUESTS,
         }
     }
 
     fn retryable(self) -> bool {
-        matches!(self, Self::UpstreamTransient)
+        matches!(self, Self::UpstreamTransient | Self::RateLimited)
     }
 }
 
@@ -344,6 +380,7 @@ fn decode_cbor<T: DeserializeOwned>(body: &[u8]) -> Result<T, HttpError> {
         (status = 200, description = "One answer per queried leaf, in request order", body = MerkleProofResponse, content_type = "application/cbor"),
         (status = 400, description = "Malformed request", body = ErrorResponse, content_type = "application/cbor"),
         (status = 401, description = "Request signature refused", body = ErrorResponse, content_type = "application/cbor"),
+        (status = 429, description = "Signer over its rate, or every database connection reading", body = ErrorResponse, content_type = "application/cbor"),
         (status = 502, description = "Leaf record or KMS tx-sender set unavailable", body = ErrorResponse, content_type = "application/cbor"),
     ),
     security(("request_authorization" = [])),
@@ -355,7 +392,13 @@ async fn merkle_proofs(
 ) -> Result<Cbor<MerkleProofResponse>, HttpError> {
     let body =
         body.map_err(|rejection| HttpError::malformed(rejection.body_text()))?;
-    authenticate(&state.senders, &headers, &body)?;
+    let signer = authenticate(&state.senders, &headers, &body)?;
+    if state.per_kms_tx_sender.check_key(&signer).is_err() {
+        return Err(HttpError::new(
+            ErrorCode::RateLimited,
+            format!("{signer} is over its requests per second"),
+        ));
+    }
     let request: MerkleProofRequest = decode_cbor(&body)?;
     if request.leaves.len() > MAX_LEAVES_PER_REQUEST {
         return Err(HttpError::malformed(format!(
@@ -368,6 +411,14 @@ async fn merkle_proofs(
         .iter()
         .map(ParsedQuery::parse)
         .collect::<Result<Vec<_>, _>>()?;
+    // Refused at once rather than queued: the connector asks the next
+    // coprocessor after its hedge delay anyway.
+    let Ok(_proof_read) = state.proof_reads.try_acquire() else {
+        return Err(HttpError::new(
+            ErrorCode::RateLimited,
+            "every database connection is reading",
+        ));
+    };
     let mut proofs = Vec::with_capacity(queries.len());
     for query in queries {
         proofs.push(prove(&state.pool, &query).await?);
@@ -701,6 +752,8 @@ mod tests {
 
     async fn spawn(
         senders: KmsTxSenders,
+        requests_per_second: u32,
+        proof_reads: usize,
     ) -> (String, CancellationToken, tokio::task::JoinHandle<()>) {
         let pool = PgPoolOptions::new()
             .connect_lazy("postgres://nobody@127.0.0.1:1/none")
@@ -711,9 +764,13 @@ mod tests {
         let server = tokio::spawn({
             let cancel = cancel.clone();
             async move {
-                serve(listener, merkle_proofs_router(pool, senders), cancel)
-                    .await
-                    .expect("serve")
+                let router = merkle_proofs_router(
+                    pool,
+                    senders,
+                    NonZeroU32::new(requests_per_second).expect("a rate"),
+                    proof_reads,
+                );
+                serve(listener, router, cancel).await.expect("serve")
             }
         });
         (format!("http://{addr}"), cancel, server)
@@ -724,12 +781,15 @@ mod tests {
     #[tokio::test]
     async fn rejects_before_touching_the_database() {
         let connector = PrivateKeySigner::random();
-        let (base, cancel, server) =
-            spawn(KmsTxSenders::fixed(KmsTxSenderSet {
+        let (base, cancel, server) = spawn(
+            KmsTxSenders::fixed(KmsTxSenderSet {
                 registry: REGISTRY,
                 senders: HashSet::from([connector.address()]),
-            }))
-            .await;
+            }),
+            1000,
+            1,
+        )
+        .await;
         let url = format!("{base}{MERKLE_PROOFS_PATH}");
         // As the KMS connector connects.
         let client = reqwest::Client::builder()
@@ -808,7 +868,7 @@ mod tests {
     /// Until the KMS tx-sender set is read, the server is not ready and asks callers to retry.
     #[tokio::test]
     async fn refuses_until_the_kms_tx_senders_are_read() {
-        let (base, cancel, server) = spawn(KmsTxSenders::unread()).await;
+        let (base, cancel, server) = spawn(KmsTxSenders::unread(), 1, 1).await;
         let client = reqwest::Client::new();
         let response = client
             .post(format!("{base}{MERKLE_PROOFS_PATH}"))
@@ -826,6 +886,58 @@ mod tests {
             .await
             .expect("send");
         assert_eq!(healthz.status(), 503);
+
+        cancel.cancel();
+        server.await.expect("join");
+    }
+
+    /// A signer over its rate, and a request finding every database connection
+    /// reading, are refused before the database, as retryable.
+    #[tokio::test]
+    async fn refuses_over_the_rate_and_when_every_connection_reads() {
+        let connector = PrivateKeySigner::random();
+        let (base, cancel, server) = spawn(
+            KmsTxSenders::fixed(KmsTxSenderSet {
+                registry: REGISTRY,
+                senders: HashSet::from([connector.address()]),
+            }),
+            1,
+            0,
+        )
+        .await;
+        let client = reqwest::Client::builder()
+            .http2_prior_knowledge()
+            .build()
+            .expect("client");
+        let body = encode_cbor(&MerkleProofRequest {
+            leaves: vec![LeafQuery {
+                encrypted_store: [0xAC; 32],
+                handle: [0x10; 32],
+                kind: LeafQueryKind::Public,
+                key: None,
+            }],
+        });
+        let authorization = signed(&connector, &body, now() + 60).await;
+        let mut messages = Vec::new();
+        for _ in 0..2 {
+            let response = client
+                .post(format!("{base}{MERKLE_PROOFS_PATH}"))
+                .header(header::AUTHORIZATION, &authorization)
+                .body(body.clone())
+                .send()
+                .await
+                .expect("send");
+            assert_eq!(response.status(), 429);
+            let error = error_of(response).await;
+            assert_eq!(error.code, ErrorCode::RateLimited);
+            assert!(error.retryable);
+            messages.push(error.message);
+        }
+        assert_eq!(messages[0], "every database connection is reading");
+        assert_eq!(
+            messages[1],
+            format!("{} is over its requests per second", connector.address())
+        );
 
         cancel.cancel();
         server.await.expect("join");

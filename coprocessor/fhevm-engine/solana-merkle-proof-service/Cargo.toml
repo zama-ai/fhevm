@@ -25,6 +25,8 @@ axum = { workspace = true, features = ["http2"] }
 bs58 = "0.5.1"
 ciborium = "0.2.2"
 clap = { workspace = true }
+# Already in the tree through solana-streamer.
+governor = "0.6.3"
 serde = { workspace = true, features = ["derive"] }
 serde_bytes = "0.11.19"
 sqlx = { workspace = true }
