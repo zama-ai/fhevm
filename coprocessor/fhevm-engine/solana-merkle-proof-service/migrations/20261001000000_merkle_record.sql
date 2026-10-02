@@ -45,7 +45,8 @@ CREATE TABLE nodes (
 
 -- The last sealed block the indexer applied, written in that block's transaction so a restart
 -- resumes exactly after the recorded work. `recorded_through` is the highest slot ever applied:
--- moving `slot` back replays the blocks up to it, each checked against its recorded leaves.
+-- moving `slot` back replays the blocks up to it, each checked against its recorded leaves, so a
+-- rewind re-verifies the record and never rewrites it.
 CREATE TABLE checkpoint (
     singleton SMALLINT PRIMARY KEY DEFAULT 1 CHECK (singleton = 1),
     slot BIGINT NOT NULL CHECK (slot >= 0),

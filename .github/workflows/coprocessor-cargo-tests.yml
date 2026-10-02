@@ -44,6 +44,8 @@ jobs:
               - solana/crates/zama-solana-acl/**
               - solana/crates/zama-solana-transaction/**
               - solana/crates/solana-ed25519-instruction/**
+              # The Merkle proof server's wire tests read the fixture the connector parses.
+              - solana/test-fixtures/merkle-proofs/**
               # consensus-detector depends on these crates by path.
               - shared/block-manifest/**
               - shared/ciphertext-attestation/**

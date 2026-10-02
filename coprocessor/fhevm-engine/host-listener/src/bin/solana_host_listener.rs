@@ -68,8 +68,8 @@ struct Args {
     grpc_url: String,
 
     /// Solana JSON-RPC endpoint whose ledger history rebuilds, with `getBlock` and
-    /// `getTransaction`, the slots Yellowstone can no longer replay. It may be another
-    /// provider's. Defaults to `--url`.
+    /// `getTransaction`, the slots Yellowstone can no longer replay, and reads the start block's
+    /// hash. It may be another provider's. Defaults to `--url`.
     #[arg(long, env = "SOLANA_ARCHIVE_URL")]
     archive_url: Option<String>,
 
@@ -179,8 +179,8 @@ async fn main() -> Result<()> {
         }
         None => match args.start_slot {
             // Anchored to an actual block, so a provider silently starting at the tip is
-            // rejected. The archive supplies only its identity; its transactions come from the
-            // stream or the archive.
+            // rejected. The archive reads the block's hash; its transactions come from the
+            // stream, or from the archive once the stream no longer retains them.
             Some(slot) => StartPosition::ReplayFrom(
                 block_checkpoint(&archive, slot).await?,
             ),

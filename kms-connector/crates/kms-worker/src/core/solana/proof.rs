@@ -102,7 +102,7 @@ pub enum ProofReadError {
 }
 
 // ------------------------------------------------------------------------------------------
-// The HTTP transport. Field names mirror the coprocessor's `http_server.rs`.
+// The HTTP transport. Field names mirror `coprocessor/fhevm-engine/solana-merkle-proof-service/src/server.rs`.
 
 #[derive(Serialize)]
 struct MerkleProofRequest<'a> {
