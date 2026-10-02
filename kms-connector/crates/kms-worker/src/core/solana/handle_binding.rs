@@ -8,10 +8,11 @@
 
 use super::encrypted_store::ResolvedEncryptedStore;
 use super::proof::{HostProofReader, LeafQuery, MerkleProofOutcome, ProofReadError, check_length};
+use crate::monitoring::metrics::SOLANA_PROOF_ANSWERS;
 use alloy::primitives::B256;
 use futures::stream::{FuturesUnordered, StreamExt};
 use solana_pubkey::Pubkey;
-use std::time::Duration;
+use std::{cmp::Ordering, time::Duration};
 use zama_solana_acl::{
     AclError, EncryptedStore, MmrProof, authorize_state_historical, authorize_state_public,
 };
@@ -54,18 +55,28 @@ pub async fn verify_proofs<P: HostProofReader, T: Sync>(
             }
             else => break,
         };
+        let source_name = reader.source_name(source);
         match answer.and_then(|outcomes| {
             check_length(queries.len(), outcomes.len())?;
             Ok(outcomes)
         }) {
             Ok(outcomes) => {
                 for ((kept, (_, item)), outcome) in results.iter_mut().zip(batch).zip(&outcomes) {
+                    let verified = verify(item, outcome);
+                    SOLANA_PROOF_ANSWERS
+                        .with_label_values(&[&source_name, answer_outcome(&verified)])
+                        .inc();
                     if *kept != Some(Ok(())) {
-                        *kept = Some(verify(item, outcome));
+                        *kept = Some(verified);
                     }
                 }
             }
-            Err(error) => read_failures.push(format!("coprocessor {source}: {error}")),
+            Err(error) => {
+                SOLANA_PROOF_ANSWERS
+                    .with_label_values(&[&source_name, "read_failed"])
+                    .inc_by(queries.len() as u64);
+                read_failures.push(format!("coprocessor {source_name}: {error}"));
+            }
         }
         if results.iter().all(|result| *result == Some(Ok(()))) {
             break;
@@ -80,6 +91,26 @@ pub async fn verify_proofs<P: HostProofReader, T: Sync>(
             })
         })
         .collect()
+}
+
+/// The `outcome` label of a coprocessor's answer for one leaf. A proof built against fewer leaves
+/// than the chain holds may fail only because it is stale; one built against as many is wrong.
+fn answer_outcome(verified: &Result<(), HandleBindingFailure>) -> &'static str {
+    match verified {
+        Ok(()) => "verified",
+        Err(HandleBindingFailure::NoLeaf { .. }) => "no_leaf",
+        Err(HandleBindingFailure::AccountUnknownToProofRecord) => "unknown_store",
+        Err(HandleBindingFailure::ProofRecordBehind { .. }) => "behind",
+        Err(HandleBindingFailure::LeafIndexOutOfRange { .. }) => "ahead",
+        Err(HandleBindingFailure::ProofDoesNotVerify {
+            record_leaf_count,
+            live_leaf_count,
+        }) => match record_leaf_count.cmp(live_leaf_count) {
+            Ordering::Less => "behind",
+            Ordering::Equal => "invalid",
+            Ordering::Greater => "ahead",
+        },
+    }
 }
 
 /// Establishes that `owner_address` may decrypt `handle` under this encrypted store. Taking the
@@ -189,4 +220,32 @@ pub enum HandleBindingFailure {
     },
     #[error("leaf index {leaf_index} is not below the observed leaf count {leaf_count}")]
     LeafIndexOutOfRange { leaf_index: u64, leaf_count: u64 },
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// Only a proof built against the chain's own leaf count and failing is `invalid`, the
+    /// outcome that pages: a shorter record may be stale and a longer one ahead of this read.
+    #[test]
+    fn only_a_failing_proof_at_the_chain_leaf_count_is_invalid() {
+        let does_not_verify = |record_leaf_count| {
+            answer_outcome(&Err(HandleBindingFailure::ProofDoesNotVerify {
+                record_leaf_count,
+                live_leaf_count: 8,
+            }))
+        };
+        assert_eq!(does_not_verify(7), "behind");
+        assert_eq!(does_not_verify(8), "invalid");
+        assert_eq!(does_not_verify(9), "ahead");
+        assert_eq!(answer_outcome(&Ok(())), "verified");
+        assert_eq!(
+            answer_outcome(&Err(HandleBindingFailure::ProofRecordBehind {
+                record_leaf_count: 7,
+                live_leaf_count: 8,
+            })),
+            "behind"
+        );
+    }
 }
