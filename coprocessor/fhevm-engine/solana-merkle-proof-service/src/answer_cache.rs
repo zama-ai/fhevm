@@ -5,7 +5,9 @@
 //! it to the other servers until it expires. The first copy of a request to reach a server is
 //! [`Admission::First`]: the server charges the signer and reads the record once. Every other
 //! copy, sent at the same time or later, is an [`Admission::Repeat`] and waits for that answer,
-//! a refusal included. A replay therefore neither spends the signer's rate nor adds load (DD-067).
+//! including a refusal the answer ended in. A server therefore charges and reads at most once per
+//! signed request (DD-067). The signing hash names no signer, so two KMS nodes that sign the same
+//! body in the same second share one answer.
 //!
 //! Each signer may hold [`AnswerCache::new`]'s bytes of requests. Past that, its new requests are
 //! refused ([`Admission::Full`]) rather than answered unremembered, so a faulty signer refuses
@@ -21,7 +23,7 @@ use tokio::sync::watch;
 
 /// Bytes a request holds besides its answer: its two map entries, its expiry entry and its
 /// channel, rounded up.
-pub const ENTRY_OVERHEAD_BYTES: usize = 512;
+pub const ENTRY_OVERHEAD_BYTES: usize = 768;
 
 pub struct AnswerCache<A> {
     max_bytes_per_signer: usize,
@@ -33,7 +35,8 @@ struct Requests<A> {
     by_expiry: BTreeSet<(u64, B256)>,
     bytes_by_signer: HashMap<Address, usize>,
     /// Every request whose signature expired before this Unix time is forgotten. A copy of one
-    /// that arrives later is refused rather than taken for a first copy.
+    /// that arrives later is refused rather than taken for a first copy. It follows the requests
+    /// forgotten, not the clock, so a clock that steps forward refuses no request still valid.
     forgotten_before: u64,
 }
 
@@ -135,6 +138,7 @@ impl<A> Requests<A> {
                 break;
             }
             self.by_expiry.pop_first();
+            self.forgotten_before = self.forgotten_before.max(expires + 1);
             let request = self
                 .by_signing_hash
                 .remove(&hash)
@@ -148,7 +152,6 @@ impl<A> Requests<A> {
                 self.bytes_by_signer.remove(&request.signer);
             }
         }
-        self.forgotten_before = self.forgotten_before.max(now);
     }
 }
 
@@ -200,10 +203,11 @@ mod tests {
 
     #[test]
     fn a_signer_at_its_bytes_refuses_only_itself() {
-        let cache = AnswerCache::new(2 * ENTRY_OVERHEAD_BYTES + 10);
+        // Room for three requests' overhead, less the answer counted below.
+        let cache = AnswerCache::new(3 * ENTRY_OVERHEAD_BYTES);
         first(cache.admit(hash(1), NOW, ALICE, NOW, charged));
+        cache.settle(&hash(1), 1);
         first(cache.admit(hash(2), NOW + 30, ALICE, NOW, charged));
-        cache.settle(&hash(2), 10);
         assert!(matches!(
             cache.admit(hash(3), NOW + 30, ALICE, NOW, not_charged),
             Admission::Full
@@ -213,8 +217,9 @@ mod tests {
             cache.admit(hash(2), NOW + 30, ALICE, NOW, not_charged),
             Admission::Repeat(_)
         ));
-        // The first request expired: its bytes make room for the third.
+        // The first request expired with its answer: its bytes make room for two more.
         first(cache.admit(hash(3), NOW + 30, ALICE, NOW + 1, charged));
+        first(cache.admit(hash(5), NOW + 30, ALICE, NOW + 1, charged));
     }
 
     #[test]
