@@ -29,7 +29,7 @@ use std::{
     net::SocketAddr,
     num::NonZeroU32,
     sync::{Arc, LazyLock},
-    time::{Duration, Instant, SystemTime, UNIX_EPOCH},
+    time::{Duration, Instant},
 };
 
 use alloy::primitives::Address;
@@ -62,6 +62,7 @@ use crate::{
     answer_cache::{Admission, AnswerCache},
     kms_tx_senders::KmsTxSenders,
     store::{find_leaf, load_proof, load_served_store, LeafKind},
+    unix_now_secs,
 };
 
 /// Most leaves one request may ask for.
@@ -82,8 +83,8 @@ pub const PROOF_READ_WAIT: Duration = Duration::from_millis(200);
 static REQUESTS: LazyLock<IntCounterVec> = LazyLock::new(|| {
     register_int_counter_vec!(
         "solana_merkle_proof_server_requests_total",
-        "Merkle proof requests answered, by status: ok, cached (a copy of a request already \
-         answered) or the error code",
+        "Merkle proof requests answered, by status: ok, cached (a copy of a request whose \
+         answer was ok) or the error code, which a copy of a refused request counts under too",
         &["status"]
     )
     .unwrap()
@@ -100,7 +101,8 @@ static REQUEST_DURATION: LazyLock<Histogram> = LazyLock::new(|| {
 static REQUESTS_BY_SIGNER: LazyLock<IntCounterVec> = LazyLock::new(|| {
     register_int_counter_vec!(
         "solana_merkle_proof_server_requests_by_signer_total",
-        "Authenticated Merkle proof requests, by the KMS tx-sender that signed them",
+        "Authenticated Merkle proof requests, by the KMS tx-sender that signed them: each KMS \
+         node's load on this server",
         &["signer"]
     )
     .unwrap()
@@ -109,7 +111,8 @@ static REQUESTS_BY_SIGNER: LazyLock<IntCounterVec> = LazyLock::new(|| {
 static LEAVES: LazyLock<IntCounterVec> = LazyLock::new(|| {
     register_int_counter_vec!(
         "solana_merkle_proof_server_leaves_total",
-        "Queried leaves, by outcome: found, not_found, unknown_store or inconsistent",
+        "Queried leaves, by outcome: found, not_found, unknown_store, quarantined, \
+         inconsistent or read_failed",
         &["outcome"]
     )
     .unwrap()
@@ -197,6 +200,10 @@ fn merkle_proofs_router(
     answer_cache_bytes_per_signer: usize,
     proof_reads: usize,
 ) -> Router {
+    // The outcomes that page exist before the first one is counted.
+    for outcome in ["inconsistent", "quarantined"] {
+        LEAVES.with_label_values(&[outcome]);
+    }
     // A burst always fits the largest request.
     let burst = leaves_per_second
         .max(NonZeroU32::new(MAX_LEAVES_PER_REQUEST as u32).expect("not zero"));
@@ -494,9 +501,7 @@ async fn answer_merkle_proofs(
 ) -> Result<Served, HttpError> {
     let body =
         body.map_err(|rejection| HttpError::malformed(rejection.body_text()))?;
-    let now = SystemTime::now()
-        .duration_since(UNIX_EPOCH)
-        .map_or(0, |elapsed| elapsed.as_secs());
+    let now = unix_now_secs();
     let authorization = authenticate(&state.senders, headers, &body, now)?;
     REQUESTS_BY_SIGNER
         .with_label_values(&[&authorization.signer.to_string()])
@@ -693,26 +698,30 @@ async fn prove(
         Ok(MerkleProofOutcome::Found { .. }) => "found",
         Ok(MerkleProofOutcome::NotFound { .. }) => "not_found",
         Ok(MerkleProofOutcome::UnknownAccount) => "unknown_store",
+        Err(LeafError::Quarantined) => "quarantined",
         Err(LeafError::Inconsistent) => "inconsistent",
-        Err(LeafError::ReadFailed) => return Err(read_failed()),
+        Err(LeafError::ReadFailed) => "read_failed",
     };
     LEAVES.with_label_values(&[label]).inc();
-    outcome.map_err(|_| {
-        HttpError::new(ErrorCode::UpstreamTransient, "leaf record inconsistent")
+    outcome.map_err(|err| {
+        let message = match err {
+            LeafError::ReadFailed => "leaf record read failed",
+            LeafError::Quarantined | LeafError::Inconsistent => {
+                "leaf record inconsistent"
+            }
+        };
+        HttpError::new(ErrorCode::UpstreamTransient, message)
     })
 }
 
-/// Why a leaf has no answer. Both are `upstream_transient`, which the connector retries on
+/// Why a leaf has no answer. All are `upstream_transient`, which the connector retries on
 /// another coprocessor.
 enum LeafError {
-    /// The record is wrong for this store: quarantined by the store check, or a path that
-    /// does not reach the recorded peaks.
+    /// The store check found this store's record disagrees with the chain.
+    Quarantined,
+    /// A path that is missing or does not reach the recorded peaks.
     Inconsistent,
     ReadFailed,
-}
-
-fn read_failed() -> HttpError {
-    HttpError::new(ErrorCode::UpstreamTransient, "leaf record read failed")
 }
 
 async fn prove_leaf(
@@ -731,7 +740,7 @@ async fn prove_leaf(
         return Ok(MerkleProofOutcome::UnknownAccount);
     };
     if store.quarantined {
-        return Err(LeafError::Inconsistent);
+        return Err(LeafError::Quarantined);
     }
     let cursor = store.cursor;
     let leaf_count = cursor.leaf_count;
@@ -942,13 +951,6 @@ mod tests {
         contract: Address::repeat_byte(0xC0),
     };
 
-    fn now() -> u64 {
-        SystemTime::now()
-            .duration_since(UNIX_EPOCH)
-            .unwrap()
-            .as_secs()
-    }
-
     async fn signed(
         signer: &PrivateKeySigner,
         body: &[u8],
@@ -1046,12 +1048,13 @@ mod tests {
 
         refused(post(None, body.clone()).await.expect("send")).await;
         let stranger = PrivateKeySigner::random();
-        let by_stranger = signed(&stranger, &body, now() + 30).await;
+        let by_stranger = signed(&stranger, &body, unix_now_secs() + 30).await;
         refused(post(Some(by_stranger), body.clone()).await.expect("send"))
             .await;
-        let expired = signed(&connector, &body, now() - 1).await;
+        let expired = signed(&connector, &body, unix_now_secs() - 1).await;
         refused(post(Some(expired), body.clone()).await.expect("send")).await;
-        let for_other_body = signed(&connector, &[0xA0], now() + 30).await;
+        let for_other_body =
+            signed(&connector, &[0xA0], unix_now_secs() + 30).await;
         refused(
             post(Some(for_other_body), body.clone())
                 .await
@@ -1060,7 +1063,8 @@ mod tests {
         .await;
 
         let not_cbor = b"{\"leaves\":[]}".to_vec();
-        let authorization = signed(&connector, &not_cbor, now() + 30).await;
+        let authorization =
+            signed(&connector, &not_cbor, unix_now_secs() + 30).await;
         let response = post(Some(authorization), not_cbor).await.expect("send");
         assert_eq!(response.status(), 400);
         assert_eq!(error_of(response).await.code, ErrorCode::Malformed);
@@ -1068,12 +1072,14 @@ mod tests {
         let too_many = encode_cbor(&MerkleProofRequest {
             leaves: vec![leaf; MAX_LEAVES_PER_REQUEST + 1],
         });
-        let authorization = signed(&connector, &too_many, now() + 30).await;
+        let authorization =
+            signed(&connector, &too_many, unix_now_secs() + 30).await;
         let response = post(Some(authorization), too_many).await.expect("send");
         assert_eq!(response.status(), 400);
 
         let too_large = vec![0; MAX_REQUEST_BYTES + 1];
-        let authorization = signed(&connector, &too_large, now() + 30).await;
+        let authorization =
+            signed(&connector, &too_large, unix_now_secs() + 30).await;
         let response =
             post(Some(authorization), too_large).await.expect("send");
         assert_eq!(response.status(), 400);
@@ -1172,7 +1178,8 @@ mod tests {
             .build()
             .expect("client");
         let body = full_request([0x10; 32]);
-        let authorization = signed(&connector, &body, now() + 30).await;
+        let authorization =
+            signed(&connector, &body, unix_now_secs() + 30).await;
         let mut copies = tokio::task::JoinSet::new();
         for _ in 0..10 {
             let (client, url, authorization, body) = (
@@ -1196,7 +1203,8 @@ mod tests {
         );
 
         let other = full_request([0x11; 32]);
-        let authorization = signed(&connector, &other, now() + 30).await;
+        let authorization =
+            signed(&connector, &other, unix_now_secs() + 30).await;
         assert_eq!(
             refusal(&client, &url, &authorization, other).await,
             format!("{} is over its leaves per second", connector.address())
@@ -1243,7 +1251,8 @@ mod tests {
         let url = format!("{base}{MERKLE_PROOFS_PATH}");
         let client = reqwest::Client::new();
         for not_cbor in [b"{}".to_vec(), b"[]".to_vec()] {
-            let authorization = signed(&alice, &not_cbor, now() + 30).await;
+            let authorization =
+                signed(&alice, &not_cbor, unix_now_secs() + 30).await;
             let response = client
                 .post(&url)
                 .header(header::AUTHORIZATION, authorization)
@@ -1258,7 +1267,8 @@ mod tests {
                 (client.clone(), url.clone(), signer.clone());
             async move {
                 let body = full_request([handle; 32]);
-                let authorization = signed(&signer, &body, now() + 30).await;
+                let authorization =
+                    signed(&signer, &body, unix_now_secs() + 30).await;
                 refusal(&client, &url, &authorization, body).await
             }
         };

@@ -1,0 +1,20 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "SELECT encrypted_store FROM quarantined_stores",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "encrypted_store",
+        "type_info": "Bytea"
+      }
+    ],
+    "parameters": {
+      "Left": []
+    },
+    "nullable": [
+      false
+    ]
+  },
+  "hash": "dda7a1142ba112c12f7540ea8210a7d511c3cda1dc0357c40ff89fb730fcbaf5"
+}
