@@ -14,10 +14,11 @@
 //! so a copy costs neither the signer's rate nor a database read (DD-067).
 //!
 //! Each KMS tx-sender may ask for [`HttpServer::merkle_proofs`]'s leaves per
-//! second. Proof reads take one connection each and leave one of the pool to
-//! `/healthz`; a request waits up to [`PROOF_READ_WAIT`] for its turn. These
-//! refusals, and a full answer cache, are `rate_limited`, before any database
-//! read, and the connector asks another coprocessor at once.
+//! second and hold its bytes of requests in the cache. Proof reads take one
+//! connection each and leave one of the pool to `/healthz`; a request waits up
+//! to [`PROOF_READ_WAIT`] for its turn. These refusals are `rate_limited`,
+//! before any database read, and the connector asks another coprocessor at
+//! once.
 //!
 //! Bodies are CBOR (RFC 8949), served over HTTP/1.1 or HTTP/2 without TLS. The
 //! wire contract is the committed OpenAPI document in `openapi/`; a test keeps
@@ -104,14 +105,15 @@ impl HttpServer {
     }
 
     /// The health routes and the Merkle proof route, for the proof server. Each
-    /// KMS tx-sender may ask for `leaves_per_second`, in bursts of as many. The
-    /// server remembers `answer_cache_bytes` of signed requests and their answers.
+    /// KMS tx-sender may ask for `leaves_per_second`, in bursts of as many, and
+    /// the server remembers `answer_cache_bytes_per_signer` of each one's signed
+    /// requests and their answers.
     /// The pool needs at least two connections.
     pub fn merkle_proofs(
         pool: PgPool,
         senders: KmsTxSenders,
         leaves_per_second: NonZeroU32,
-        answer_cache_bytes: usize,
+        answer_cache_bytes_per_signer: usize,
         port: u16,
         cancel_token: CancellationToken,
     ) -> Self {
@@ -124,7 +126,7 @@ impl HttpServer {
                 pool,
                 senders,
                 leaves_per_second,
-                answer_cache_bytes,
+                answer_cache_bytes_per_signer,
                 proof_reads,
             ),
             port,
@@ -152,7 +154,7 @@ fn merkle_proofs_router(
     pool: PgPool,
     senders: KmsTxSenders,
     leaves_per_second: NonZeroU32,
-    answer_cache_bytes: usize,
+    answer_cache_bytes_per_signer: usize,
     proof_reads: usize,
 ) -> Router {
     // A burst always fits the largest request.
@@ -161,7 +163,7 @@ fn merkle_proofs_router(
     let state = AppState {
         pool,
         senders,
-        answers: Arc::new(AnswerCache::new(answer_cache_bytes)),
+        answers: Arc::new(AnswerCache::new(answer_cache_bytes_per_signer)),
         per_kms_tx_sender: Arc::new(RateLimiter::keyed(
             Quota::per_second(leaves_per_second).allow_burst(burst),
         )),
@@ -303,8 +305,9 @@ pub enum ErrorCode {
     /// The leaf record could not be read or is inconsistent, or the KMS
     /// tx-sender set is not read yet; retry later.
     UpstreamTransient,
-    /// The signer is over its leaves per second, or no database connection
-    /// freed in time; ask another coprocessor or retry later.
+    /// The signer is over its leaves per second or holds as many signed
+    /// requests as it may, or no database connection freed in time; ask another
+    /// coprocessor or retry later.
     RateLimited,
 }
 
@@ -406,7 +409,7 @@ fn decode_cbor<T: DeserializeOwned>(body: &[u8]) -> Result<T, HttpError> {
         (status = 200, description = "One answer per queried leaf, in request order", body = MerkleProofResponse, content_type = "application/cbor"),
         (status = 400, description = "Malformed request", body = ErrorResponse, content_type = "application/cbor"),
         (status = 401, description = "Request signature refused", body = ErrorResponse, content_type = "application/cbor"),
-        (status = 429, description = "Signer over its rate, no database connection free in time, or no room to remember the request", body = ErrorResponse, content_type = "application/cbor"),
+        (status = 429, description = "Signer over its rate or holding as many signed requests as it may, or no database connection free in time", body = ErrorResponse, content_type = "application/cbor"),
         (status = 502, description = "Leaf record or KMS tx-sender set unavailable", body = ErrorResponse, content_type = "application/cbor"),
     ),
     security(("request_authorization" = [])),
@@ -422,18 +425,33 @@ async fn merkle_proofs(
         .duration_since(UNIX_EPOCH)
         .map_or(0, |elapsed| elapsed.as_secs());
     let authorization = authenticate(&state.senders, &headers, &body, now)?;
+    // Parsing costs neither the rate nor a read, so a malformed request is
+    // refused each time and never remembered.
+    let queries = parse_request(&body)?;
+    let signer = authorization.signer;
+    // An empty request costs one leaf. The burst fits the largest request, so
+    // `check_key_n` never reports insufficient capacity.
+    let leaves =
+        NonZeroU32::new(queries.len() as u32).unwrap_or(NonZeroU32::MIN);
+    let charge = || {
+        matches!(
+            state.per_kms_tx_sender.check_key_n(&signer, leaves),
+            Ok(Ok(()))
+        )
+    };
     let mut answer = match state.answers.admit(
         authorization.signing_hash,
         authorization.expires,
+        signer,
         now,
+        charge,
     ) {
         Admission::First(sender) => {
             let answer = sender.subscribe();
             // Spawned, so a caller that disconnects does not cancel the answer
             // the request's other copies wait for.
             tokio::spawn(async move {
-                let answer =
-                    answer_request(&state, authorization.signer, &body).await;
+                let answer = answer_request(&state, queries).await;
                 state.answers.settle(
                     &authorization.signing_hash,
                     answer.as_ref().map_or(0, Bytes::len),
@@ -446,7 +464,19 @@ async fn merkle_proofs(
         Admission::Full => {
             return Err(HttpError::new(
                 ErrorCode::RateLimited,
-                "no room to remember another signed request",
+                format!("{signer} holds as many signed requests as it may"),
+            ))
+        }
+        Admission::OverRate => {
+            return Err(HttpError::new(
+                ErrorCode::RateLimited,
+                format!("{signer} is over its leaves per second"),
+            ))
+        }
+        Admission::Expired => {
+            return Err(HttpError::new(
+                ErrorCode::SenderAuthenticationFailed,
+                "request authorization expired",
             ))
         }
     };
@@ -468,11 +498,7 @@ async fn merkle_proofs(
 /// refusal.
 type Answer = Result<Bytes, HttpError>;
 
-async fn answer_request(
-    state: &AppState,
-    signer: Address,
-    body: &[u8],
-) -> Answer {
+fn parse_request(body: &[u8]) -> Result<Vec<ParsedQuery>, HttpError> {
     let request: MerkleProofRequest = decode_cbor(body)?;
     if request.leaves.len() > MAX_LEAVES_PER_REQUEST {
         return Err(HttpError::malformed(format!(
@@ -480,24 +506,10 @@ async fn answer_request(
             request.leaves.len()
         )));
     }
-    let queries = request
-        .leaves
-        .iter()
-        .map(ParsedQuery::parse)
-        .collect::<Result<Vec<_>, _>>()?;
-    // An empty request costs one leaf. The burst fits the largest request, so
-    // `check_key_n` never reports insufficient capacity.
-    let leaves =
-        NonZeroU32::new(queries.len() as u32).unwrap_or(NonZeroU32::MIN);
-    if !matches!(
-        state.per_kms_tx_sender.check_key_n(&signer, leaves),
-        Ok(Ok(()))
-    ) {
-        return Err(HttpError::new(
-            ErrorCode::RateLimited,
-            format!("{signer} is over its leaves per second"),
-        ));
-    }
+    request.leaves.iter().map(ParsedQuery::parse).collect()
+}
+
+async fn answer_request(state: &AppState, queries: Vec<ParsedQuery>) -> Answer {
     let Ok(Ok(_proof_read)) =
         tokio::time::timeout(PROOF_READ_WAIT, state.proof_reads.acquire())
             .await
@@ -697,7 +709,9 @@ pub struct ApiDoc;
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::kms_tx_senders::KmsTxSenderSet;
+    use crate::{
+        answer_cache::ENTRY_OVERHEAD_BYTES, kms_tx_senders::KmsTxSenderSet,
+    };
     use alloy::signers::local::PrivateKeySigner;
     use request_authorization::KeyRegistry;
     use sqlx::postgres::PgPoolOptions;
@@ -847,7 +861,7 @@ mod tests {
     async fn spawn(
         senders: KmsTxSenders,
         leaves_per_second: u32,
-        answer_cache_bytes: usize,
+        answer_cache_bytes_per_signer: usize,
         proof_reads: usize,
     ) -> (String, CancellationToken, tokio::task::JoinHandle<()>) {
         let pool = PgPoolOptions::new()
@@ -863,7 +877,7 @@ mod tests {
                     pool,
                     senders,
                     NonZeroU32::new(leaves_per_second).expect("a rate"),
-                    answer_cache_bytes,
+                    answer_cache_bytes_per_signer,
                     proof_reads,
                 );
                 serve(listener, router, cancel).await.expect("serve")
@@ -1079,32 +1093,74 @@ mod tests {
         server.await.expect("join");
     }
 
-    /// A server that cannot remember a new request refuses it, before any charge.
+    /// The size `--answer-cache-mib-per-kms-tx-sender` is documented with.
+    #[test]
+    fn a_64_leaf_answer_with_20_hash_paths_holds_under_48_kib() {
+        let found = MerkleProofOutcome::Found {
+            leaf_index: 999_999,
+            leaf_count: 1_000_000,
+            siblings: vec![ByteArray::new([0x5B; 32]); 20],
+        };
+        let answer = encode_cbor(&MerkleProofResponse {
+            proofs: vec![found; MAX_LEAVES_PER_REQUEST],
+        });
+        assert!(
+            answer.len() + ENTRY_OVERHEAD_BYTES < 48 * 1024,
+            "{}",
+            answer.len()
+        );
+    }
+
+    /// A signer holding as many requests as it may is refused before any charge, and
+    /// refuses only itself. A malformed request is never remembered.
     #[tokio::test]
-    async fn refuses_a_request_it_has_no_room_to_remember() {
-        let connector = PrivateKeySigner::random();
+    async fn a_signer_at_its_bytes_refuses_only_itself() {
+        let (alice, bob) =
+            (PrivateKeySigner::random(), PrivateKeySigner::random());
         let (base, cancel, server) = spawn(
             KmsTxSenders::fixed(KmsTxSenderSet {
                 registry: REGISTRY,
-                senders: HashSet::from([connector.address()]),
+                senders: HashSet::from([alice.address(), bob.address()]),
             }),
             1,
+            ENTRY_OVERHEAD_BYTES,
             0,
-            1,
         )
         .await;
-        let body = full_request([0x10; 32]);
-        let authorization = signed(&connector, &body, now() + 30).await;
+        let url = format!("{base}{MERKLE_PROOFS_PATH}");
+        let client = reqwest::Client::new();
+        for not_cbor in [b"{}".to_vec(), b"[]".to_vec()] {
+            let authorization = signed(&alice, &not_cbor, now() + 30).await;
+            let response = client
+                .post(&url)
+                .header(header::AUTHORIZATION, authorization)
+                .body(not_cbor)
+                .send()
+                .await
+                .expect("send");
+            assert_eq!(response.status(), 400);
+        }
+        let ask = |signer: &PrivateKeySigner, handle: u8| {
+            let (client, url, signer) =
+                (client.clone(), url.clone(), signer.clone());
+            async move {
+                let body = full_request([handle; 32]);
+                let authorization = signed(&signer, &body, now() + 30).await;
+                refusal(&client, &url, &authorization, body).await
+            }
+        };
+        let no_connection =
+            format!("no database connection free within {PROOF_READ_WAIT:?}");
+        assert_eq!(ask(&alice, 0x10).await, no_connection);
+        // Alice's burst is spent too: the room is checked first.
         assert_eq!(
-            refusal(
-                &reqwest::Client::new(),
-                &format!("{base}{MERKLE_PROOFS_PATH}"),
-                &authorization,
-                body
+            ask(&alice, 0x11).await,
+            format!(
+                "{} holds as many signed requests as it may",
+                alice.address()
             )
-            .await,
-            "no room to remember another signed request"
         );
+        assert_eq!(ask(&bob, 0x12).await, no_connection);
 
         cancel.cancel();
         server.await.expect("join");

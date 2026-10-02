@@ -45,13 +45,14 @@ struct Args {
     #[arg(long, default_value_t = NonZeroU32::new(4000).unwrap())]
     kms_tx_sender_leaves_per_second: NonZeroU32,
 
-    /// MiB of signed requests and their answers the server remembers until the
-    /// signatures expire; past it, new requests are refused. A request holds
-    /// about 1.3 KiB with its answer, so 128 MiB is about 100,000 requests:
-    /// 3,300 per second at the connector's 30 s validity, 1,700 at the 60 s
-    /// maximum.
-    #[arg(long, default_value_t = 128)]
-    answer_cache_mib: usize,
+    /// MiB of each KMS tx-sender's signed requests and their answers the server
+    /// remembers until the signatures expire; past it, that tx-sender's new
+    /// requests are refused. A 64-leaf request with 20-hash paths holds about
+    /// 48 KiB, so 16 MiB is about 22,000 leaves: 730 per second at the
+    /// connector's 30 s validity. 13 KMS nodes in two live contexts hold at most
+    /// 416 MiB.
+    #[arg(long, default_value_t = 16)]
+    answer_cache_mib_per_kms_tx_sender: usize,
 
     /// Port of the HTTP server: health routes and the Merkle proof route.
     #[arg(long, default_value_t = 8080)]
@@ -121,7 +122,7 @@ async fn main() -> Result<()> {
         pool,
         senders,
         args.kms_tx_sender_leaves_per_second,
-        args.answer_cache_mib << 20,
+        args.answer_cache_mib_per_kms_tx_sender << 20,
         args.http_port,
         cancel,
     )

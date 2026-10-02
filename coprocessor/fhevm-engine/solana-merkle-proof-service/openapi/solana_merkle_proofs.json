@@ -62,7 +62,7 @@
             }
           },
           "429": {
-            "description": "Signer over its rate, no database connection free in time, or no room to remember the request",
+            "description": "Signer over its rate or holding as many signed requests as it may, or no database connection free in time",
             "content": {
               "application/cbor": {
                 "schema": {
