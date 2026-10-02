@@ -21,7 +21,7 @@ use yellowstone_grpc_proto::prelude::{
     TransactionStatusMeta,
 };
 
-use anchor_lang::{AnchorSerialize, Discriminator};
+use anchor_lang::InstructionData;
 use solana_transaction_status_client_types::{
     EncodedConfirmedTransactionWithStatusMeta, UiConfirmedBlock,
 };
@@ -353,12 +353,6 @@ fn execute_args(
     }
 }
 
-pub(crate) fn encoded_execution(args: &FheExecuteArgs) -> Vec<u8> {
-    let mut data = zama_host::instruction::FheExecute::DISCRIMINATOR.to_vec();
-    args.serialize(&mut data).unwrap();
-    data
-}
-
 /// The bytes of the event CPI a host emits for an execution whose step results are `results`.
 pub(crate) fn event_cpi_data(results: Vec<[u8; 32]>) -> Vec<u8> {
     let event = FheExecutedEvent {
@@ -386,7 +380,7 @@ fn app_calling_host(
     let FheExecuteStep::TrivialEncrypt { plaintext, .. } = args.steps[0] else {
         panic!("a trivial encryption")
     };
-    let execution_data = encoded_execution(&args);
+    let execution_data = zama_host::instruction::FheExecute { args }.data();
     let event_data = event_cpi_data(vec![plaintext]);
     Transaction {
         signature: [signature; 64],
