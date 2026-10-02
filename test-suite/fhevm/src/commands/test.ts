@@ -1179,6 +1179,16 @@ const runBlueGreenSteps = async (
     : undefined;
   const driftDatabase = dryRunDrift ? operatorDatabases[1]! : undefined;
   let dryRunDriftInstalled = false;
+  // Hosts switched to mine only on transactions for the dry-run drift; restored on every exit.
+  const automineHosts = new Set<string>();
+  const hostRpcUrl = (key: string) => hostReachableRpcUrl(state.discovery!.endpoints.hosts[key]!.http);
+  const restoreHostMining = async () => {
+    for (const key of [...automineHosts]) {
+      await run(["cast", "rpc", "--rpc-url", hostRpcUrl(key), "evm_setIntervalMining", "1"]);
+      automineHosts.delete(key);
+      console.log(`OK:   host ${key} mines every second again`);
+    }
+  };
   await manifests?.preflight();
 
   console.log(`\n==== blue-green E2E: ${opCount} operator(s) ====`);
@@ -1473,6 +1483,35 @@ const runBlueGreenSteps = async (
   // one: run traffic from the proposal until DryRunStarted, while Green queues
   // every block from start_block for the dry run to compute.
   const dryRunTraffic = driftDatabase ? startContinuousErc20Traffic(trafficTargets, trafficTargets.length) : undefined;
+  if (dryRunTraffic) {
+    // Cutover needs the probe block (start_block + 1) final, five blocks later, and can follow
+    // DryRunStarted within seconds. From the probe on, each host mines only on transactions, so
+    // every block the dry run computes after the probe carries traffic for the trigger to hit.
+    for (const chain of hostChains) {
+      let startBlock = Number.NaN;
+      await waitUntil({
+        label: `${chain.key} proposal window known`,
+        timeoutSecs: 120,
+        check: async () => {
+          startBlock = Number(await psqlQuery(operatorDatabases[0]!,
+            `SELECT COALESCE(max(w.start_block), -1) FROM consensus_epoch_block_window w
+               JOIN consensus_epoch_history h USING (consensus_epoch)
+              WHERE h.outcome = 'pending' AND w.host_chain_id = ${chain.chainId};`));
+          return startBlock >= 0;
+        },
+      });
+      await waitUntil({
+        label: `${chain.key} reached the probe block ${startBlock + 1}`,
+        timeoutSecs: 180,
+        intervalMs: 250,
+        check: async () =>
+          Number((await run(["cast", "block-number", "--rpc-url", hostRpcUrl(chain.key)])).stdout.trim()) >= startBlock + 1,
+      });
+      automineHosts.add(chain.key);
+      await run(["cast", "rpc", "--rpc-url", hostRpcUrl(chain.key), "evm_setAutomine", "true"]);
+      console.log(`OK:   host ${chain.key} mines only on transactions from the probe block on`);
+    }
+  }
 
   let dryRunTrafficFailures = 0;
   try {
@@ -1566,6 +1605,7 @@ const runBlueGreenSteps = async (
         traffic.errored,
       ]);
     }
+    await restoreHostMining();
 
     // Cutover takes the consensus version from the binary, so it must have moved too.
     for (const db of operatorDatabases) {
@@ -1713,6 +1753,7 @@ const runBlueGreenSteps = async (
       ...syntheticInstalled.map(db => psqlQuery(db, SYNTHETIC_EVIDENCE_CLEANUP_SQL)),
       ...dryRunInstalled.map(db => psqlQuery(db, DRY_RUN_EVIDENCE_CLEANUP_SQL)),
       ...(driftDatabase && dryRunDriftInstalled ? [psqlQuery(driftDatabase, DRY_RUN_DRIFT_CLEANUP_SQL)] : []),
+      restoreHostMining(),
     ]);
     const failures = cleanup.filter((result): result is PromiseRejectedResult => result.status === "rejected");
     if (failures.length) {
