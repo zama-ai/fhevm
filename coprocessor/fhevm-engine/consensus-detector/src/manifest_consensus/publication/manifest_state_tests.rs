@@ -1394,7 +1394,7 @@ async fn ready_descriptors(
         .expect("check readiness");
     let descriptors = if ready {
         Some(
-            load_manifest_descriptors(&mut trx, block, false)
+            load_manifest_descriptors(&mut trx, block, false, None)
                 .await
                 .expect("load descriptors"),
         )
