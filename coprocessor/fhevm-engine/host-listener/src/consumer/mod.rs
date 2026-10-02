@@ -357,8 +357,10 @@ pub async fn run_consumer(config: ConsumerConfig) -> Result<()> {
 
     info!("Consumer registering contracts");
     client.register_contracts(&contracts).await?;
-    info!("Consumer ensure queue");
+    client.register_final_contracts(&contracts).await?;
+    info!("Consumer ensure queues");
     client.ensure_consumer().await?;
+    client.ensure_final_consumer().await?;
 
     let health_check = HealthCheck {
         blockchain_timeout_tick: blockchain_timeout_tick.clone(),
@@ -406,8 +408,13 @@ pub async fn run_consumer(config: ConsumerConfig) -> Result<()> {
     if config.kms_generation_address.is_some() {
         spawn_kms_activations(db.clone(), None);
     }
-    let consumer_task = client.consume(move |payload, _cancel| {
-        blockchain_tick.update();
+    // Live and finalized deliveries share this handler. A finalized delivery
+    // re-ingests the block idempotently and marks it finalized.
+    let handle_block = move |payload: BlockPayload, _cancel| {
+        let finalized = payload.flow == BlockFlow::Final;
+        if !finalized {
+            blockchain_tick.update();
+        }
         let mut db = db.clone();
         let chain_id_str = chain_id_str.clone();
         let last_known_drift = last_known_drift.clone();
@@ -459,13 +466,16 @@ pub async fn run_consumer(config: ConsumerConfig) -> Result<()> {
                 timestamp: payload.timestamp,
             };
             let catchup = payload.flow == BlockFlow::Catchup;
-            observe_consumer_block_timing(
-                &db,
-                &chain_id_str,
-                &block_summary,
-                catchup,
-            )
-            .await;
+            // Finalized deliveries do not measure live ingestion timing.
+            if !finalized {
+                observe_consumer_block_timing(
+                    &db,
+                    &chain_id_str,
+                    &block_summary,
+                    catchup,
+                )
+                .await;
+            }
             let logs = collect_logs(&payload);
             info!(
                 chain_id = %payload.chain_id,
@@ -479,7 +489,7 @@ pub async fn run_consumer(config: ConsumerConfig) -> Result<()> {
                 summary: block_summary,
                 logs,
                 catchup: false,
-                finalized: false,
+                finalized,
             };
             match ingest_with_retry(
                 chain_id,
@@ -497,10 +507,24 @@ pub async fn run_consumer(config: ConsumerConfig) -> Result<()> {
             {
                 Ok(_) => {
                     db.tick.update();
+                    if finalized {
+                        if let Err(error) = db
+                            .prune_finalized_block_history(
+                                block_summary.number as i64,
+                            )
+                            .await
+                        {
+                            warn!(%error, "Could not prune finalized block history");
+                        }
+                    }
                     // As the legacy listener does, retry KMS activations after
-                    // each block: they only depend on database state.
+                    // each block: they only depend on database state. A
+                    // finalized block also provides the finalized height.
                     if config.kms_generation_address.is_some() {
-                        spawn_kms_activations(db.clone(), None);
+                        spawn_kms_activations(
+                            db.clone(),
+                            finalized.then_some(block_summary.number as i64),
+                        );
                     }
 
                     inc_blocks_processed(&chain_id_str, 1);
@@ -519,14 +543,19 @@ pub async fn run_consumer(config: ConsumerConfig) -> Result<()> {
                 }
             }
         }
-    });
+    };
 
     info!(
         chain_id = %config.chain_id,
         "Starting host-listener consumer"
     );
-    let consumer_run = tokio::spawn(consumer_task);
-    let consumer_result = consumer_run.await;
+    let live_run = tokio::spawn(client.consume(handle_block.clone()));
+    let final_run = tokio::spawn(client.consume_final(handle_block));
+    // Either flow ending stops the consumer; cancelling below stops the other.
+    let consumer_result = tokio::select! {
+        result = live_run => result,
+        result = final_run => result,
+    };
     info!(
         chain_id = %config.chain_id,
         "Host listener consumer graceful stop"
