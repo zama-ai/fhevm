@@ -19,7 +19,7 @@ START_SLOT = ["--set-string", "solanaHostListener.merkleIndexer.startSlot=4242"]
 # deploy-preview.sh merges the Solana values into the party's coprocessor release.
 COPROCESSOR = [ROOT / "ci/preview-env/coprocessor/values-coprocessor-e2e.yaml",
                VALUES / "values-solana-coprocessor-e2e.yaml"]
-ROUTES = [{"url": f"http://{PROOF_SERVER}:8080", "apiKey": "$(SOLANA_PROOF_API_KEY)"}]
+PROOF_URLS = [f"http://{PROOF_SERVER}:8080"]
 
 
 def render(release, chart, values, *options):
@@ -138,22 +138,25 @@ class SolanaCharts(unittest.TestCase):
 
     def test_connector_preserves_evm_and_exact_solana_chain_id(self):
         # Same composition as deploy-preview.sh: the party's values, the Solana overlay, and the
-        # proof routes the script sets. aclAddress is filled per party by deploy-kms-connector.sh.
+        # proof URLs the script sets. aclAddress is filled per party by deploy-kms-connector.sh.
         documents = render("kms-connector-1", "kms-connector",
                            [ROOT / "ci/preview-env/kms-connector/values-kms-connector-e2e.yaml",
                             VALUES / "values-solana-connector-e2e.yaml"],
                            "--set-string", "commonConfig.hostChains.ethereum.aclAddress=0x" + "11" * 20,
                            "--set-json",
-                           'commonConfig.hostChains.solana.solanaProofRoutes=' + json.dumps(ROUTES))
+                           'commonConfig.hostChains.solana.solanaProofUrls=' + json.dumps(PROOF_URLS))
         deployment = next(d for d in documents if d and d["kind"] == "Deployment" and "kms-worker" in d["metadata"]["name"])
         env = deployment["spec"]["template"]["spec"]["containers"][0]["env"]
-        names = [e["name"] for e in env]
-        self.assertLess(names.index("SOLANA_PROOF_API_KEY"), names.index("KMS_CONNECTOR_HOST_CHAINS"))
+        tx_sender = next(d for d in documents if d and d["kind"] == "Deployment" and "tx-sender" in d["metadata"]["name"])
+        tx_sender_env = {e["name"]: e for e in tx_sender["spec"]["template"]["spec"]["containers"][0]["env"]}
+        # kms-worker signs its proof requests with the tx-sender's key.
+        worker_env = {e["name"]: e for e in env}
+        self.assertEqual(worker_env["KMS_CONNECTOR_PRIVATE_KEY"], tx_sender_env["KMS_CONNECTOR_PRIVATE_KEY"])
         chains = {c["chainId"]: c for c in json.loads(next(e["value"] for e in env if e["name"] == "KMS_CONNECTOR_HOST_CHAINS"))}
         self.assertEqual(chains[12345]["aclAddress"], "0x" + "11" * 20)
         solana = chains[130140237723663404]
         self.assertNotIn("aclAddress", solana)
-        self.assertEqual(solana["solanaProofRoutes"], ROUTES)
+        self.assertEqual(solana["solanaProofUrls"], PROOF_URLS)
         endpoint = next(d for d in documents if d and d["kind"] == "Deployment" and "endpoint" in d["metadata"]["name"])
         ids = next(e["value"] for e in endpoint["spec"]["template"]["spec"]["containers"][0]["env"]
                    if e["name"] == "KMS_CONNECTOR_SUPPORTED_CHAIN_IDS")
@@ -167,11 +170,11 @@ class SolanaCharts(unittest.TestCase):
                            "--set-string", "commonConfig.hostChains.ethereum.aclAddress=0x" + "11" * 20,
                            "--set-string", "commonConfig.hostChains.solana.chainId=72057594037940281",
                            "--set-json",
-                           'commonConfig.hostChains.solana.solanaProofRoutes=' + json.dumps(ROUTES))
+                           'commonConfig.hostChains.solana.solanaProofUrls=' + json.dumps(PROOF_URLS))
         deployment = next(d for d in documents if d and d["kind"] == "Deployment" and "kms-worker" in d["metadata"]["name"])
         env = deployment["spec"]["template"]["spec"]["containers"][0]["env"]
         chains = {c["chainId"]: c for c in json.loads(next(e["value"] for e in env if e["name"] == "KMS_CONNECTOR_HOST_CHAINS"))}
-        self.assertEqual(chains[72057594037940281]["solanaProofRoutes"], ROUTES)
+        self.assertEqual(chains[72057594037940281]["solanaProofUrls"], PROOF_URLS)
 
     def test_connector_refuses_an_entry_whose_settings_are_not_its_kind(self):
         # YAML reads a large unquoted number as a float, which the chart must not round.
@@ -200,7 +203,7 @@ class SolanaCharts(unittest.TestCase):
                            "-f", str(ROOT / "ci/preview-env/kms-connector/values-kms-connector-e2e.yaml"),
                            "-f", str(VALUES / "values-solana-connector-e2e.yaml"),
                            "--set-string", "commonConfig.hostChains.ethereum.aclAddress=0x" + "11" * 20,
-                           "--set-json", "commonConfig.hostChains.solana.solanaProofRoutes=" + json.dumps(ROUTES),
+                           "--set-json", "commonConfig.hostChains.solana.solanaProofUrls=" + json.dumps(PROOF_URLS),
                            *options]
                 result = subprocess.run(command, capture_output=True, text=True)
                 self.assertNotEqual(result.returncode, 0, expected)
@@ -288,12 +291,12 @@ class SolanaCharts(unittest.TestCase):
             self.assertTrue(keys, name)
             self.assertLessEqual(keys, synced[name], name)
 
-    def test_preview_routes_name_the_merkle_proof_servers(self):
-        # The connector tests pass ROUTES in themselves: this pins it to what deploy-preview.sh sets.
+    def test_preview_proof_urls_name_the_merkle_proof_servers(self):
+        # The connector tests pass PROOF_URLS in themselves: this pins it to what deploy-preview.sh sets.
         script = (VALUES / "deploy-preview.sh").read_text()
-        program = re.search(r"^routes=\$\(seq 1 \"\$NB_COPROCESSOR\" \| jq -Rsc '(.*)'\)$", script, re.M).group(1)
-        routes = subprocess.check_output(["jq", "-Rsc", program], input="1\n", text=True)
-        self.assertEqual(json.loads(routes), ROUTES)
+        program = re.search(r"^proof_urls=\$\(seq 1 \"\$NB_COPROCESSOR\" \| jq -Rsc '(.*)'\)$", script, re.M).group(1)
+        proof_urls = subprocess.check_output(["jq", "-Rsc", program], input="1\n", text=True)
+        self.assertEqual(json.loads(proof_urls), PROOF_URLS)
 
     def test_dispatch_overrides_reject_unknown_keys_and_multiline_values(self):
         script = ROOT / "ci/preview-env/scripts/resolve/parse-overrides.cjs"

@@ -56,11 +56,7 @@ export const readActiveKmsPair = async (parameters: {
   /** Override for tests; defaults to the fhevm-cli primary host chain address artifact. */
   readonly addressesPath?: string;
 }): Promise<ActiveKmsPair> => {
-  const addresses = await readEnvFile(parameters.addressesPath ?? hostChainAddressesPath(DEFAULT_HOST_CHAIN_KEY));
-  const protocolConfig = addresses["PROTOCOL_CONFIG_CONTRACT_ADDRESS"];
-  if (!protocolConfig) {
-    throw new Error("missing PROTOCOL_CONFIG_CONTRACT_ADDRESS in the host chain address artifact");
-  }
+  const protocolConfig = await readProtocolConfigAddress(parameters.addressesPath);
   const client = createPublicClient({ transport: http(parameters.hostRpcUrl) });
   const [contextId, epochId] = await client.readContract({
     address: protocolConfig as `0x${string}`,
@@ -68,6 +64,16 @@ export const readActiveKmsPair = async (parameters: {
     functionName: "getCurrentKmsContextAndEpoch",
   });
   return { kmsContextId: contextId, kmsEpochId: epochId };
+};
+
+/** The primary host chain's `ProtocolConfig`, from the fhevm-cli address artifact. */
+export const readProtocolConfigAddress = async (addressesPath?: string): Promise<string> => {
+  const addresses = await readEnvFile(addressesPath ?? hostChainAddressesPath(DEFAULT_HOST_CHAIN_KEY));
+  const protocolConfig = addresses["PROTOCOL_CONFIG_CONTRACT_ADDRESS"];
+  if (!protocolConfig) {
+    throw new Error("missing PROTOCOL_CONFIG_CONTRACT_ADDRESS in the host chain address artifact");
+  }
+  return protocolConfig;
 };
 
 export const readGatewayBootstrapInputs = async (parameters: {
