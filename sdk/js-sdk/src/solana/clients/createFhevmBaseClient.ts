@@ -28,7 +28,7 @@ export type SolanaEncryptOptions = {
 // Core initialization and WASM ownership remain shared; EVM-only members stay private.
 export function createSolanaCore<C extends FhevmSolanaChain>(
   parameters: SolanaClientParameters<C> & { readonly options?: SolanaEncryptOptions | undefined },
-  runtime: FhevmRuntime = getSolanaRuntime(),
+  runtime: FhevmRuntime,
 ): Fhevm<undefined, FhevmRuntime, undefined> {
   assertValidSolanaChainId(parameters.chain.id);
   if (parameters.options !== undefined && Object.keys(parameters.options).some((key) => key !== 'fheEncryptionKey')) {
@@ -93,5 +93,5 @@ export type FhevmSolanaBaseClient<C extends FhevmSolanaChain = FhevmSolanaChain>
 export function createFhevmBaseClient<C extends FhevmSolanaChain>(
   parameters: SolanaClientParameters<C>,
 ): FhevmSolanaBaseClient<C> {
-  return solanaClientSurface(createSolanaCore(parameters), parameters);
+  return solanaClientSurface(createSolanaCore(parameters, getSolanaRuntime()), parameters);
 }

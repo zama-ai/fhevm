@@ -6,6 +6,9 @@ import type { FhevmRuntime } from '../../core/types/coreFhevmRuntime.js';
 import type { FhevmSolanaBaseClient, SolanaClientParameters, SolanaEncryptOptions } from './createFhevmBaseClient.js';
 import { createSolanaCore, solanaClientSurface } from './createFhevmBaseClient.js';
 import { solanaEncryptActions } from './decorators/encrypt.js';
+import { encryptModule } from '../../core/modules/encrypt/module/index.js';
+import { submitInputProof } from '../actions/submitInputProof.js';
+import { getSolanaRuntime } from '../internal/runtime.js';
 
 export type FhevmSolanaEncryptClient<C extends FhevmSolanaChain = FhevmSolanaChain> = FhevmSolanaBaseClient<C> &
   SolanaEncryptActions & {
@@ -22,14 +25,14 @@ export type SolanaEncryptValueParameters = Omit<Parameters<SolanaEncryptActions[
 export function createFhevmEncryptClient<C extends FhevmSolanaChain>(
   parameters: SolanaClientParameters<C> & { readonly options?: SolanaEncryptOptions | undefined },
 ): FhevmSolanaEncryptClient<C> {
-  return createSolanaEncryptClient(parameters);
+  return createSolanaEncryptClient(parameters, getSolanaRuntime(), { encryptModule, submitInputProof });
 }
 
 /** The encrypt client over a given runtime and backend; the cleartext client supplies both. */
 export function createSolanaEncryptClient<C extends FhevmSolanaChain>(
   parameters: SolanaClientParameters<C> & { readonly options?: SolanaEncryptOptions | undefined },
-  runtime?: FhevmRuntime,
-  backend?: SolanaEncryptBackend,
+  runtime: FhevmRuntime,
+  backend: SolanaEncryptBackend,
 ): FhevmSolanaEncryptClient<C> {
   const core = createSolanaCore(parameters, runtime).extend(
     solanaEncryptActions(parameters.chain.fhevm.programs.host.address, parameters.chain, backend),

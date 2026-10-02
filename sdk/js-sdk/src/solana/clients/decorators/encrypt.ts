@@ -15,9 +15,7 @@ import {
   setFrozenContext,
 } from '../../../core/runtime/CoreFhevm-p.js';
 import { createFhevmClientFrozenContext } from '../../../core/frozenContext/fhevmClientFrozenContext-p.js';
-import { encryptModule } from '../../../core/modules/encrypt/module/index.js';
 import { encryptInput } from '../../actions/encryptInput.js';
-import { submitInputProof } from '../../actions/submitInputProof.js';
 
 ////////////////////////////////////////////////////////////////////////////////
 
@@ -69,20 +67,20 @@ async function _initEncrypt(fhevm: FhevmBase<undefined, FhevmRuntime, OptionalNa
 }
 
 /**
- * Attaches the Solana `generateZkProof` action to a base Solana client, extending the runtime
- * with the TFHE encrypt module (the ZK prover). Mirrors the EVM encrypt decorator.
+ * Attaches the Solana encrypt actions to a base Solana client, extending the runtime with the
+ * backend's encrypt module. Mirrors the EVM encrypt decorator.
  *
  * @param aclProgramAddress - The zama-host program id as bytes32 (the Solana ACL identity).
- * @param backend - The prover and attester, the TFHE prover and the relayer when absent.
+ * @param backend - The prover and the attester.
  */
 export function solanaEncryptActions(
   aclProgramAddress: Bytes32Hex,
   solanaChain: FhevmSolanaChain,
-  backend?: SolanaEncryptBackend,
+  backend: SolanaEncryptBackend,
 ): (fhevm: SolanaClientBase) => FhevmExtension<SolanaEncryptActions, WithEncrypt> {
   return (fhevm: SolanaClientBase): FhevmExtension<SolanaEncryptActions, WithEncrypt> => {
-    const runtime = fhevm.runtime.extend(backend?.encryptModule ?? encryptModule);
-    const attest = backend?.submitInputProof ?? submitInputProof;
+    const runtime = fhevm.runtime.extend(backend.encryptModule);
+    const attest = backend.submitInputProof;
 
     const generateZkProof: SolanaEncryptActions['generateZkProof'] = async (parameters) => {
       await initPublicAction(fhevm);
