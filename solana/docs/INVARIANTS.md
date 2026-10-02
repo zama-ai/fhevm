@@ -513,7 +513,7 @@ with `InvalidationTimestampInTheFuture`. Pinned by the permit vector
 using the same compiled `zama_solana_acl` code the on-chain program runs
 (decode, seeds, MMR verification, both authorize functions). The Merkle proof
 comes from the coprocessors' leaf record (`POST /v1/solana/merkle-proofs`,
-API key), never from the client, and is verified against the peaks of the
+signed by the party's tx-sender, DD-067), never from the client, and is verified against the peaks of the
 account the connector read itself (`kms-worker/src/core/solana/`).
 Pinned by `an_encrypted_store_whose_fields_derive_another_address_is_rejected`,
 `an_encrypted_store_with_an_altered_bump_is_rejected` and `on_chain_account_decoder_reads_layout`.
@@ -611,7 +611,7 @@ Pinned by `rejects_more_than_max_ops`, `cost_snapshot_fhe_execute_max_steps` and
 
 **47. [RETIRED]** The standalone proof service is gone (RFC 035, DD-048). The
 leaf record lives in each coprocessor's Merkle proof service database, written
-by its Merkle indexer and served by its Merkle proof server behind an API key (DD-066); the connector
+by its Merkle indexer and served by its Merkle proof server (DD-066, DD-067); the connector
 asks every configured coprocessor at once, so one behind, stalled or
 unreachable cannot sink or hold a request another can serve. Authorization was
 never its to give (#30).

@@ -93,6 +93,7 @@ are written as one narrative instead.
 | [DD-064](#dd-064-leaf-proofs-are-served-apart-from-ingestion)                                                                             | adopted                                  | Leaf proofs are served apart from ingestion                                                                                    |
 | [DD-065](#dd-065-a-public-decryption-is-accepted-on-chain-by-its-certificate-alone)                                                       | adopted                                  | A public decryption is accepted on-chain by its certificate alone                                                              |
 | [DD-066](#dd-066-the-leaf-record-has-its-own-indexer-and-database)                                                                        | adopted                                  | The leaf record has its own indexer and database                                                                               |
+| [DD-067](#dd-067-a-merkle-proof-request-is-signed-by-a-kms-contexts-tx-sender)                                                             | adopted                                  | A Merkle proof request is signed by a KMS context's tx-sender                                                                  |
 
 ## DD-002: Keep App Store And Host ACL Store Separate
 
@@ -2666,6 +2667,57 @@ The preview wipe (DD-051) closes Stores, and a Store created again at the same a
 again at leaf zero, which the record reads as a skipped count. The preview rollout therefore
 recreates the Merkle database and takes a new start slot on every run. The coprocessor database
 has no leaf tables.
+
+## DD-067: A Merkle proof request is signed by a KMS context's tx-sender
+
+Status: adopted
+
+Recorded in its pull request.
+
+The Merkle proof server took one bearer key, shared by every KMS connector that asked it. Each
+coprocessor had to hand that key to every KMS party and rotate it with them, and the server could
+not tell one connector from another, so it could not limit or attribute what a connector asked.
+
+Decision:
+
+kms-worker signs each request with its party's tx-sender wallet, the key its tx-sender submits
+Gateway transactions with: a local private key or an AWS KMS key, never a session key. The
+signature is EIP-712 over `RequestAuthorization(string path, bytes32 bodyDigest, uint64 expires)`,
+with the domain `{name: "zama-request-authorization", version: "1", chainId}` of the canonical
+`ProtocolConfig` chain. It travels as `Authorization: Zama-EIP712 expires=<unix seconds>,
+signature=0x<65 bytes>`. The `shared/request-authorization` crate builds and checks it for both
+sides. A signature is valid for at most `MAX_VALIDITY_SECS` (300) seconds; kms-worker signs for
+120 seconds and sends the same signed batch to every coprocessor.
+
+`solana_merkle_proof_server` recovers the signer and answers only the tx-senders of the live KMS
+contexts. It reads them from the canonical `ProtocolConfig` at the finalized block every 60
+seconds: the live context ids, then each context's nodes from its `NewKmsContext` event at the
+context's anchor block. A refresh that fails keeps the last set. Until the first read succeeds,
+every request gets `upstreamTransient` (502, retryable) and `/healthz` answers 503. A missing,
+expired, malformed or unknown signature gets `senderAuthenticationFailed` (401) before the database
+is read.
+
+A replayed request within its validity returns the same public proofs to the same signer, so the
+server keeps no replay cache. The relayer does not call the Merkle proof server.
+
+Rejected alternatives:
+
+| Alternative | Why not |
+|---|---|
+| A bearer key per coprocessor | Every KMS party holds every coprocessor's key, and the server still cannot tell connectors apart. |
+| A key per connector, listed in each coprocessor's config | Each coprocessor edits its config when a KMS context changes; `ProtocolConfig` already lists the tx-senders. |
+| mTLS | Each coprocessor runs a certificate authority for the KMS parties, and the identity is not the on-chain one. |
+| A session key kms-worker registers with its tx-sender key | A second key to rotate and a registration round, for a signature per batch that AWS KMS already serves. |
+
+Consequences:
+
+kms-worker needs signing access to the tx-sender key: the same `KMS_CONNECTOR_PRIVATE_KEY` or
+`KMS_CONNECTOR_AWS_KMS_CONFIG__KEY_ID`, which the chart passes to kms-worker only when a Solana host
+chain is configured. Each signed batch costs one AWS KMS signature. A new KMS context is answered
+once its creation is finalized, up to 60 seconds later. The proof server reads the canonical
+`ProtocolConfig` over the RPC of the coprocessor's `chains[]` entry named by
+`commonConfig.canonicalProtocolConfigChainId`, and the chart refuses to render without it. The
+preview mints no proof secret.
 
 ## Open product decisions
 
