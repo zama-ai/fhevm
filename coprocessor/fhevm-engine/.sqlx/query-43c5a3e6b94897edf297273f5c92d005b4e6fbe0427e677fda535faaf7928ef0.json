@@ -1,0 +1,16 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n            UPDATE block_manifest_state\n               SET publication_next_retry_at = NOW(),\n                   updated_at = NOW()\n             WHERE consensus_epoch = $1\n               AND host_chain_id = $2\n               AND block_hash = $3\n            ",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Text",
+        "Int8",
+        "Bytea"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "43c5a3e6b94897edf297273f5c92d005b4e6fbe0427e677fda535faaf7928ef0"
+}

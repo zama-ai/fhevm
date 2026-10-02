@@ -1,0 +1,17 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n            INSERT INTO handle_producer_block (\n                host_chain_id,\n                handle,\n                producer_block_number,\n                producer_block_hash\n            )\n            SELECT $1, $2, $3, $4\n             WHERE NOT EXISTS (\n                SELECT 1 FROM handle_bridged_events\n                 WHERE dst_handle = $2 AND dst_chain_id = $1\n             )\n            ON CONFLICT (host_chain_id, handle, producer_block_hash) DO NOTHING\n            ",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Int8",
+        "Bytea",
+        "Int8",
+        "Bytea"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "21fad43265356a7b95ee0164e84235f5903b0092c145f7320cabf77db869fa9e"
+}

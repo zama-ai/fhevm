@@ -1,0 +1,1565 @@
+use super::download::AttestedCt64;
+use super::*;
+use crate::manifest_consensus::ManifestWorkGate;
+use alloy_primitives::{keccak256, Address, B256, U256};
+use block_manifest::LEGACY_CONSENSUS_EPOCH;
+use fhevm_engine_common::gcs_activation::WORK_AVAILABLE_CHANNEL;
+use serial_test::serial;
+use sqlx::postgres::PgListener;
+use std::collections::{HashMap, HashSet};
+use std::sync::atomic::{AtomicUsize, Ordering};
+use std::sync::{Arc, Mutex};
+use test_harness::instance::{setup_test_db, DBInstance, ImportMode};
+
+fn bytes(n: u8) -> Vec<u8> {
+    vec![n; 32]
+}
+
+async fn setup() -> (DBInstance, PgPool) {
+    let instance = setup_test_db(ImportMode::None).await.unwrap();
+    let pool = PgPool::connect(instance.db_url()).await.unwrap();
+    (instance, pool)
+}
+
+async fn insert_healable(pool: &PgPool, handle: u8, bucket_url: &str, body: &[u8]) -> i64 {
+    insert_healable_from(pool, handle, Some(bucket_url), body, true).await
+}
+
+async fn insert_sibling(
+    pool: &PgPool,
+    handle: u8,
+    block: u8,
+    bucket_url: &str,
+    body: &[u8],
+) -> i64 {
+    insert_sibling_row(
+        pool,
+        handle,
+        block,
+        Some(bucket_url),
+        Some(keccak256(body).as_slice().to_vec()),
+        "ct64_mismatch",
+    )
+    .await
+}
+
+/// A finding of `handle` in another block, as a reorg leaves; `target` None
+/// has no pinned quorum yet.
+async fn insert_sibling_row(
+    pool: &PgPool,
+    handle: u8,
+    block: u8,
+    bucket_url: Option<&str>,
+    target: Option<Vec<u8>>,
+    reason: &str,
+) -> i64 {
+    let sources = bucket_url
+        .map(|url| format!(r#"[{{"s3_bucket_url":"{url}"}}]"#))
+        .unwrap_or_else(|| "[]".into());
+    sqlx::query_scalar(
+        "INSERT INTO drifted_handle (
+            consensus_epoch, coprocessor_context_id, host_chain_id,
+            block_number, block_hash, handle, detection_kind, reason,
+            local_present, quorum_present, quorum_ct64_digest, peer_sources,
+            is_contained
+         ) SELECT consensus_epoch, $1, 1, $2, $3, $4, 'inferred', $7,
+                  TRUE, FALSE, $5, $6::jsonb, TRUE
+             FROM blue_green_consensus_epoch
+         RETURNING id",
+    )
+    .bind(bytes(1))
+    .bind(i64::from(block))
+    .bind(bytes(block))
+    .bind(bytes(handle))
+    .bind(target)
+    .bind(sources)
+    .bind(reason)
+    .fetch_one(pool)
+    .await
+    .unwrap()
+}
+
+async fn seed_local_ct64(pool: &PgPool, handle: u8) {
+    sqlx::query(
+        "INSERT INTO ciphertexts (handle, ciphertext, ciphertext_version, ciphertext_type)
+         VALUES ($1, $2, 0, 0)
+         ON CONFLICT (handle, ciphertext_version) DO NOTHING",
+    )
+    .bind(bytes(handle))
+    .bind(vec![0xffu8; 4])
+    .execute(pool)
+    .await
+    .unwrap();
+}
+
+async fn pinned_target(pool: &PgPool, id: i64) -> Option<Vec<u8>> {
+    sqlx::query_scalar("SELECT quorum_ct64_digest FROM drifted_handle WHERE id = $1")
+        .bind(id)
+        .fetch_one(pool)
+        .await
+        .unwrap()
+}
+
+async fn abandon(pool: &PgPool, id: i64) {
+    sqlx::query("UPDATE drifted_handle SET heal_abandoned_at = NOW() WHERE id = $1")
+        .bind(id)
+        .execute(pool)
+        .await
+        .unwrap();
+}
+
+fn conflicting_targets() -> i64 {
+    metrics::CONFLICTING_TARGETS
+        .with_label_values(&[LEGACY_CONSENSUS_EPOCH])
+        .get()
+}
+
+async fn insert_healable_from(
+    pool: &PgPool,
+    handle: u8,
+    bucket_url: Option<&str>,
+    body: &[u8],
+    pin: bool,
+) -> i64 {
+    let sources = bucket_url
+        .map(|url| format!(r#"[{{"s3_bucket_url":"{url}"}}]"#))
+        .unwrap_or_else(|| "[]".into());
+    let id: i64 = sqlx::query_scalar(
+        "INSERT INTO drifted_handle (
+            consensus_epoch, coprocessor_context_id, host_chain_id,
+            block_number, block_hash, handle, detection_kind, reason,
+            local_present, quorum_present, quorum_ct64_digest, peer_sources,
+            is_contained
+         ) SELECT consensus_epoch, $1, 1, $2, $3, $3, 'inferred', 'ct64_mismatch',
+                  TRUE, FALSE, $4, $5::jsonb, TRUE
+             FROM blue_green_consensus_epoch
+         RETURNING id",
+    )
+    .bind(bytes(1))
+    .bind(i64::from(handle))
+    .bind(bytes(handle))
+    .bind(pin.then(|| keccak256(body).as_slice().to_vec()))
+    .bind(sources)
+    .fetch_one(pool)
+    .await
+    .unwrap();
+    sqlx::query(
+        "INSERT INTO ciphertexts (handle, ciphertext, ciphertext_version, ciphertext_type)
+         VALUES ($1, $2, 0, 0)
+         ON CONFLICT (handle, ciphertext_version) DO NOTHING",
+    )
+    .bind(bytes(handle))
+    .bind(vec![0xffu8; 4])
+    .execute(pool)
+    .await
+    .unwrap();
+    id
+}
+
+async fn stored_ct64(pool: &PgPool, handle: u8) -> Vec<u8> {
+    sqlx::query_scalar(
+        "SELECT ciphertext FROM ciphertexts WHERE handle = $1 AND ciphertext_version = 0",
+    )
+    .bind(bytes(handle))
+    .fetch_one(pool)
+    .await
+    .unwrap()
+}
+
+async fn pass(pool: &PgPool, source: &FakeCt64) {
+    pass_with_max_attempts(pool, source, DEFAULT_MAX_ATTEMPTS).await;
+}
+
+async fn pass_with_max_attempts(pool: &PgPool, source: &FakeCt64, max_attempts: i32) {
+    run_healing_pass(
+        pool,
+        source,
+        &ManifestWorkGate::always_enabled(),
+        DEFAULT_BATCH_SIZE,
+        DEFAULT_CONTAINMENT_TIMEOUT,
+        max_attempts,
+    )
+    .await
+    .unwrap();
+}
+
+async fn healed(pool: &PgPool, id: i64) -> (bool, bool) {
+    let row: (bool, bool) = sqlx::query_as(
+        "SELECT can_be_healed, healed_at IS NOT NULL FROM drifted_handle WHERE id = $1",
+    )
+    .bind(id)
+    .fetch_one(pool)
+    .await
+    .unwrap();
+    row
+}
+
+struct FakeObject {
+    digest: B256,
+    body: Option<Vec<u8>>,
+    /// Uploading epoch tag; `None` is an object from before the tag.
+    epoch: Option<String>,
+}
+
+type FakeKey = (String, Vec<u8>);
+type FakeStore = HashMap<FakeKey, FakeObject>;
+
+#[derive(Clone, Default)]
+struct FakeCt64 {
+    objects: Arc<Mutex<FakeStore>>,
+    gets: Arc<AtomicUsize>,
+    heads: Arc<AtomicUsize>,
+    inflight: Arc<AtomicUsize>,
+    max_inflight: Arc<AtomicUsize>,
+    /// GETs that fail with a non-S3 error, e.g. an oversize body.
+    broken: Arc<Mutex<HashSet<FakeKey>>>,
+    /// When set, a GET signals `get_started` and waits for a permit.
+    held_gets: Option<Arc<tokio::sync::Semaphore>>,
+    get_started: Arc<tokio::sync::Notify>,
+}
+
+impl FakeCt64 {
+    fn put(&self, bucket_url: &str, handle: u8, body: Vec<u8>) {
+        let digest = keccak256(&body);
+        self.objects.lock().unwrap().insert(
+            (bucket_url.to_owned(), bytes(handle)),
+            FakeObject {
+                digest,
+                body: Some(body),
+                epoch: None,
+            },
+        );
+    }
+
+    fn put_in_epoch(&self, bucket_url: &str, handle: u8, body: Vec<u8>, epoch: &str) {
+        self.put(bucket_url, handle, body);
+        if let Some(object) = self
+            .objects
+            .lock()
+            .unwrap()
+            .get_mut(&(bucket_url.to_owned(), bytes(handle)))
+        {
+            object.epoch = Some(epoch.to_owned());
+        }
+    }
+
+    fn attest(&self, bucket_url: &str, handle: u8, digest: B256) {
+        self.objects.lock().unwrap().insert(
+            (bucket_url.to_owned(), bytes(handle)),
+            FakeObject {
+                digest,
+                body: None,
+                epoch: None,
+            },
+        );
+    }
+
+    fn break_get(&self, bucket_url: &str, handle: u8) {
+        self.broken
+            .lock()
+            .unwrap()
+            .insert((bucket_url.to_owned(), bytes(handle)));
+    }
+}
+
+impl Ct64Source for FakeCt64 {
+    async fn get_ct64(
+        &self,
+        bucket_url: &str,
+        handle: &[u8],
+        _coprocessor_context_id: U256,
+    ) -> Result<Vec<u8>, ExecutionError> {
+        self.gets.fetch_add(1, Ordering::SeqCst);
+        if let Some(held) = &self.held_gets {
+            self.get_started.notify_one();
+            held.acquire().await.unwrap().forget();
+        }
+        let n = self.inflight.fetch_add(1, Ordering::SeqCst) + 1;
+        self.max_inflight.fetch_max(n, Ordering::SeqCst);
+        tokio::time::sleep(Duration::from_millis(50)).await;
+        self.inflight.fetch_sub(1, Ordering::SeqCst);
+        let key = (bucket_url.to_owned(), handle.to_vec());
+        if self.broken.lock().unwrap().contains(&key) {
+            return Err(ExecutionError::InternalError(format!(
+                "ct64 from {bucket_url} exceeds the size limit"
+            )));
+        }
+        self.objects
+            .lock()
+            .unwrap()
+            .get(&(bucket_url.to_owned(), handle.to_vec()))
+            .and_then(|object| object.body.clone())
+            .ok_or_else(|| ExecutionError::S3ObjectNotFound(bucket_url.to_owned()))
+    }
+
+    async fn head_ct64_digest(
+        &self,
+        bucket_url: &str,
+        handle: &[u8],
+        _coprocessor_context_id: U256,
+        _expected_signer: Option<Address>,
+    ) -> Result<AttestedCt64, ExecutionError> {
+        self.heads.fetch_add(1, Ordering::SeqCst);
+        self.objects
+            .lock()
+            .unwrap()
+            .get(&(bucket_url.to_owned(), handle.to_vec()))
+            .map(|object| AttestedCt64::new(object.digest, object.epoch.as_deref()))
+            .ok_or_else(|| ExecutionError::S3ObjectNotFound(bucket_url.to_owned()))
+    }
+}
+
+async fn seed_registry(pool: &PgPool, buckets: &[&str], threshold: i64) {
+    for (index, bucket) in buckets.iter().enumerate() {
+        sqlx::query(
+            r#"
+            INSERT INTO gateway_config_coprocessors (
+                tx_sender_address,
+                signer_address,
+                s3_bucket_url,
+                coprocessor_threshold,
+                gateway_chain_id,
+                gateway_config_address,
+                snapshot_block_number,
+                snapshot_block_hash
+            )
+            VALUES ($1, $2, $3, $4, 54321, $5, 100, $6)
+            "#,
+        )
+        .bind(Address::repeat_byte(0x30 + index as u8).as_slice())
+        .bind(Address::repeat_byte(0x40 + index as u8).as_slice())
+        .bind(*bucket)
+        .bind(threshold)
+        .bind(Address::repeat_byte(0x10).as_slice())
+        .bind(B256::repeat_byte(0x20).as_slice())
+        .execute(pool)
+        .await
+        .unwrap();
+    }
+}
+
+#[tokio::test]
+#[serial(db)]
+async fn pass_downloads_matching_ct64_from_peer_bucket() {
+    let (_db, pool) = setup().await;
+    let body = vec![7u8; 8];
+    let id = insert_healable(&pool, 1, "s3://peer-a", &body).await;
+    let source = FakeCt64::default();
+    source.put("s3://peer-a", 1, body.clone());
+    pass(&pool, &source).await;
+    assert_eq!(source.gets.load(Ordering::SeqCst), 1);
+    assert_eq!(stored_ct64(&pool, 1).await, body);
+    assert_eq!(healed(&pool, id).await, (false, true));
+}
+
+async fn attempts(pool: &PgPool, outcome: &str) -> u64 {
+    let epoch: String =
+        sqlx::query_scalar("SELECT consensus_epoch FROM blue_green_consensus_epoch")
+            .fetch_one(pool)
+            .await
+            .unwrap();
+    metrics::ATTEMPTS
+        .with_label_values(&[&epoch, outcome])
+        .get()
+}
+
+#[tokio::test]
+#[serial(db)]
+async fn attempts_are_counted_by_outcome() {
+    let (_db, pool) = setup().await;
+    let body = vec![7u8; 8];
+    let healable = insert_healable(&pool, 40, "s3://peer-a", &body).await;
+    let unquorate = insert_healable_from(&pool, 41, None, &body, false).await;
+    let source = FakeCt64::default();
+    source.put("s3://peer-a", 40, body.clone());
+    let success = attempts(&pool, metrics::SUCCESS).await;
+    let transient = attempts(&pool, metrics::TRANSIENT_FAILURE).await;
+    let terminal = attempts(&pool, metrics::TERMINAL_FAILURE).await;
+    pass(&pool, &source).await;
+    assert_eq!(healed(&pool, healable).await, (false, true));
+    assert!(!healed(&pool, unquorate).await.1);
+    assert_eq!(attempts(&pool, metrics::SUCCESS).await, success + 1);
+    assert_eq!(
+        attempts(&pool, metrics::TRANSIENT_FAILURE).await,
+        transient + 1
+    );
+    assert_eq!(attempts(&pool, metrics::TERMINAL_FAILURE).await, terminal);
+}
+
+async fn heal_attempts(pool: &PgPool, id: i64) -> (i32, bool) {
+    let row: (i32, bool) = sqlx::query_as(
+        "SELECT heal_attempts, heal_abandoned_at IS NOT NULL FROM drifted_handle WHERE id = $1",
+    )
+    .bind(id)
+    .fetch_one(pool)
+    .await
+    .unwrap();
+    row
+}
+
+async fn make_due(pool: &PgPool, id: i64) {
+    sqlx::query("UPDATE drifted_handle SET next_retry_at = NOW() WHERE id = $1")
+        .bind(id)
+        .execute(pool)
+        .await
+        .unwrap();
+}
+
+#[tokio::test]
+#[serial(db)]
+async fn finding_is_abandoned_after_max_attempts() {
+    let (_db, pool) = setup().await;
+    let body = vec![6u8; 8];
+    let id = insert_healable_from(&pool, 42, None, &body, false).await;
+    let source = FakeCt64::default();
+    let terminal = attempts(&pool, metrics::TERMINAL_FAILURE).await;
+    pass_with_max_attempts(&pool, &source, 2).await;
+    assert_eq!(heal_attempts(&pool, id).await, (1, false));
+    make_due(&pool, id).await;
+    pass_with_max_attempts(&pool, &source, 2).await;
+    assert_eq!(heal_attempts(&pool, id).await, (2, true));
+    assert_eq!(
+        attempts(&pool, metrics::TERMINAL_FAILURE).await,
+        terminal + 1
+    );
+    make_due(&pool, id).await;
+    seed_registry(&pool, &["s3://peer-a"], 1).await;
+    source.put("s3://peer-a", 42, body.clone());
+    pass_with_max_attempts(&pool, &source, 2).await;
+    assert_eq!(heal_attempts(&pool, id).await, (2, true));
+    assert!(!healed(&pool, id).await.1);
+}
+
+#[tokio::test]
+#[serial(db)]
+async fn pass_downloads_due_handles_concurrently() {
+    let (_db, pool) = setup().await;
+    let body_a = vec![1u8; 8];
+    let body_b = vec![2u8; 8];
+    let id_a = insert_healable(&pool, 1, "s3://peer-a", &body_a).await;
+    let id_b = insert_healable(&pool, 2, "s3://peer-a", &body_b).await;
+    let source = FakeCt64::default();
+    source.put("s3://peer-a", 1, body_a.clone());
+    source.put("s3://peer-a", 2, body_b.clone());
+    pass(&pool, &source).await;
+    assert_eq!(source.gets.load(Ordering::SeqCst), 2);
+    assert!(source.max_inflight.load(Ordering::SeqCst) >= 2);
+    assert_eq!(stored_ct64(&pool, 1).await, body_a);
+    assert_eq!(stored_ct64(&pool, 2).await, body_b);
+    assert_eq!(healed(&pool, id_a).await, (false, true));
+    assert_eq!(healed(&pool, id_b).await, (false, true));
+}
+
+#[tokio::test]
+#[serial(db)]
+async fn notify_wakes_the_worker_before_the_poll() {
+    let (_db, pool) = setup().await;
+    let body = vec![9u8; 8];
+    let source = FakeCt64::default();
+    source.put("s3://peer-a", 3, body.clone());
+    let token = CancellationToken::new();
+    let worker = tokio::spawn(run_healing_worker(
+        pool.clone(),
+        token.clone(),
+        source.clone(),
+        ManifestWorkGate::always_enabled(),
+        HealingSettings::default(),
+    ));
+    tokio::time::sleep(Duration::from_millis(200)).await;
+    let id = insert_healable(&pool, 3, "s3://peer-a", &body).await;
+    tokio::time::timeout(Duration::from_secs(2), async {
+        loop {
+            if healed(&pool, id).await == (false, true) {
+                break;
+            }
+            tokio::time::sleep(Duration::from_millis(20)).await;
+        }
+    })
+    .await
+    .expect("healing worker should run on NOTIFY, not wait for the 30s poll");
+    assert_eq!(stored_ct64(&pool, 3).await, body);
+    token.cancel();
+    worker.await.unwrap().unwrap();
+}
+
+#[tokio::test]
+#[serial(db)]
+async fn digest_mismatch_does_not_install() {
+    let (_db, pool) = setup().await;
+    let target = vec![7u8; 8];
+    let id = insert_healable(&pool, 4, "s3://peer-a", &target).await;
+    let source = FakeCt64::default();
+    source.put("s3://peer-a", 4, vec![8u8; 8]);
+    pass(&pool, &source).await;
+    assert_eq!(healed(&pool, id).await, (true, false));
+    assert_eq!(stored_ct64(&pool, 4).await, vec![0xffu8; 4]);
+}
+
+#[tokio::test]
+#[serial(db)]
+async fn mismatch_falls_back_to_attestation_quorum_peer() {
+    let (_db, pool) = setup().await;
+    seed_registry(&pool, &["s3://peer-a", "s3://peer-b", "s3://peer-c"], 2).await;
+    let body = vec![7u8; 8];
+    let id = insert_healable(&pool, 5, "s3://peer-a", &body).await;
+    let source = FakeCt64::default();
+    source.put("s3://peer-a", 5, vec![8u8; 8]);
+    source.put("s3://peer-b", 5, body.clone());
+    source.put("s3://peer-c", 5, body.clone());
+    pass(&pool, &source).await;
+    assert_eq!(stored_ct64(&pool, 5).await, body);
+    assert_eq!(healed(&pool, id).await, (false, true));
+    assert!(source.heads.load(Ordering::SeqCst) >= 2);
+}
+
+async fn set_peer_sources(pool: &PgPool, id: i64, buckets: &[&str]) {
+    let sources = serde_json::Value::Array(
+        buckets
+            .iter()
+            .map(|url| serde_json::json!({ "s3_bucket_url": url }))
+            .collect(),
+    );
+    sqlx::query("UPDATE drifted_handle SET peer_sources = $2 WHERE id = $1")
+        .bind(id)
+        .bind(sources)
+        .execute(pool)
+        .await
+        .unwrap();
+}
+
+async fn retry_is_scheduled(pool: &PgPool, id: i64) -> bool {
+    sqlx::query_scalar("SELECT next_retry_at > NOW() FROM drifted_handle WHERE id = $1")
+        .bind(id)
+        .fetch_one(pool)
+        .await
+        .unwrap()
+}
+
+#[tokio::test]
+#[serial(db)]
+async fn failing_pinned_source_falls_through_to_the_next_bucket() {
+    let (_db, pool) = setup().await;
+    let body = vec![7u8; 8];
+    let id = insert_healable(&pool, 30, "s3://peer-a", &body).await;
+    set_peer_sources(&pool, id, &["s3://peer-a", "s3://peer-b"]).await;
+    let source = FakeCt64::default();
+    source.break_get("s3://peer-a", 30);
+    source.put("s3://peer-b", 30, body.clone());
+    pass(&pool, &source).await;
+    assert_eq!(stored_ct64(&pool, 30).await, body);
+    assert_eq!(healed(&pool, id).await, (false, true));
+}
+
+#[tokio::test]
+#[serial(db)]
+async fn failing_quorum_peer_falls_through_to_the_next_quorum_peer() {
+    let (_db, pool) = setup().await;
+    seed_registry(&pool, &["s3://peer-a", "s3://peer-b"], 2).await;
+    let body = vec![3u8; 8];
+    let id = insert_healable_from(&pool, 31, None, &body, false).await;
+    let source = FakeCt64::default();
+    source.put("s3://peer-a", 31, body.clone());
+    source.put("s3://peer-b", 31, body.clone());
+    source.break_get("s3://peer-a", 31);
+    pass(&pool, &source).await;
+    assert_eq!(stored_ct64(&pool, 31).await, body);
+    assert_eq!(healed(&pool, id).await, (false, true));
+}
+
+#[tokio::test]
+#[serial(db)]
+async fn only_failing_sources_schedule_a_retry() {
+    let (_db, pool) = setup().await;
+    seed_registry(&pool, &["s3://peer-a", "s3://peer-b"], 2).await;
+    let body = vec![5u8; 8];
+    let id = insert_healable(&pool, 32, "s3://peer-a", &body).await;
+    let source = FakeCt64::default();
+    source.put("s3://peer-a", 32, body.clone());
+    source.put("s3://peer-b", 32, body.clone());
+    source.break_get("s3://peer-a", 32);
+    source.break_get("s3://peer-b", 32);
+    pass(&pool, &source).await;
+    assert_eq!(stored_ct64(&pool, 32).await, vec![0xffu8; 4]);
+    assert!(!healed(&pool, id).await.1);
+    assert!(retry_is_scheduled(&pool, id).await);
+}
+
+#[tokio::test]
+#[serial(db)]
+async fn inferred_without_sources_uses_attestation_quorum() {
+    let (_db, pool) = setup().await;
+    seed_registry(&pool, &["s3://peer-a", "s3://peer-b"], 2).await;
+    let body = vec![3u8; 8];
+    let id = insert_healable_from(&pool, 6, None, &body, false).await;
+    let source = FakeCt64::default();
+    source.put("s3://peer-a", 6, body.clone());
+    source.put("s3://peer-b", 6, body.clone());
+    pass(&pool, &source).await;
+    assert_eq!(stored_ct64(&pool, 6).await, body);
+    assert_eq!(healed(&pool, id).await, (false, true));
+    let pinned: Vec<u8> =
+        sqlx::query_scalar("SELECT quorum_ct64_digest FROM drifted_handle WHERE id = $1")
+            .bind(id)
+            .fetch_one(&pool)
+            .await
+            .unwrap();
+    assert_eq!(pinned, keccak256(&body).as_slice());
+    let sources: serde_json::Value =
+        sqlx::query_scalar("SELECT peer_sources FROM drifted_handle WHERE id = $1")
+            .bind(id)
+            .fetch_one(&pool)
+            .await
+            .unwrap();
+    assert_eq!(sources.as_array().map(Vec::len), Some(2));
+    let evidence: serde_json::Value =
+        sqlx::query_scalar("SELECT target_evidence FROM drifted_handle WHERE id = $1")
+            .bind(id)
+            .fetch_one(&pool)
+            .await
+            .unwrap();
+    assert_eq!(evidence["source"], "attestation");
+}
+
+#[tokio::test]
+#[serial(db)]
+async fn attestation_quorum_on_another_digest_is_quorum_changed() {
+    let (_db, pool) = setup().await;
+    seed_registry(&pool, &["s3://peer-a", "s3://peer-b"], 2).await;
+    let target = vec![7u8; 8];
+    let other = vec![9u8; 8];
+    let id = insert_healable_from(&pool, 7, None, &target, true).await;
+    let source = FakeCt64::default();
+    source.put("s3://peer-a", 7, other.clone());
+    source.put("s3://peer-b", 7, other);
+    let before = metrics::QUORUM_CHANGED
+        .with_label_values(&[LEGACY_CONSENSUS_EPOCH])
+        .get();
+    pass(&pool, &source).await;
+    assert_eq!(healed(&pool, id).await, (true, false));
+    assert!(
+        metrics::QUORUM_CHANGED
+            .with_label_values(&[LEGACY_CONSENSUS_EPOCH])
+            .get()
+            > before
+    );
+}
+
+#[tokio::test]
+#[serial(db)]
+async fn matching_attestations_without_bytes_are_a_bad_target() {
+    let (_db, pool) = setup().await;
+    seed_registry(&pool, &["s3://peer-a", "s3://peer-b"], 2).await;
+    let body = vec![7u8; 8];
+    let digest = keccak256(&body);
+    let id = insert_healable_from(&pool, 8, None, &body, false).await;
+    let source = FakeCt64::default();
+    source.attest("s3://peer-a", 8, digest);
+    source.attest("s3://peer-b", 8, digest);
+    let before = metrics::BAD_TARGET_DIGEST
+        .with_label_values(&[LEGACY_CONSENSUS_EPOCH])
+        .get();
+    pass(&pool, &source).await;
+    assert_eq!(healed(&pool, id).await, (true, false));
+    assert!(
+        metrics::BAD_TARGET_DIGEST
+            .with_label_values(&[LEGACY_CONSENSUS_EPOCH])
+            .get()
+            > before
+    );
+}
+
+#[tokio::test]
+#[serial(db)]
+async fn pass_heals_at_most_batch_size_handles() {
+    let (_db, pool) = setup().await;
+    let source = FakeCt64::default();
+    let mut ids = Vec::new();
+    for handle in 1u8..=3 {
+        let body = vec![handle; 8];
+        source.put("s3://peer-a", handle, body.clone());
+        ids.push(insert_healable(&pool, handle, "s3://peer-a", &body).await);
+    }
+    run_healing_pass(
+        &pool,
+        &source,
+        &ManifestWorkGate::always_enabled(),
+        2,
+        DEFAULT_CONTAINMENT_TIMEOUT,
+        DEFAULT_MAX_ATTEMPTS,
+    )
+    .await
+    .unwrap();
+    let mut healed_count = 0;
+    for id in ids {
+        if healed(&pool, id).await.1 {
+            healed_count += 1;
+        }
+    }
+    assert_eq!(healed_count, 2);
+    assert_eq!(source.gets.load(Ordering::SeqCst), 2);
+}
+
+#[tokio::test]
+#[serial(db)]
+async fn same_target_siblings_heal_once() {
+    let (_db, pool) = setup().await;
+    let body = vec![4u8; 8];
+    let source = FakeCt64::default();
+    source.put("s3://peer-a", 9, body.clone());
+    let first = insert_sibling(&pool, 9, 9, "s3://peer-a", &body).await;
+    let second = insert_sibling(&pool, 9, 19, "s3://peer-a", &body).await;
+    sqlx::query(
+        "INSERT INTO ciphertexts (handle, ciphertext, ciphertext_version, ciphertext_type)
+         VALUES ($1, $2, 0, 0)
+         ON CONFLICT (handle, ciphertext_version) DO NOTHING",
+    )
+    .bind(bytes(9))
+    .bind(vec![0xffu8; 4])
+    .execute(&pool)
+    .await
+    .unwrap();
+
+    pass(&pool, &source).await;
+
+    assert_eq!(healed(&pool, first).await, (false, true));
+    assert_eq!(healed(&pool, second).await, (false, true));
+    assert_eq!(stored_ct64(&pool, 9).await, body);
+    assert_eq!(source.gets.load(Ordering::SeqCst), 1);
+}
+
+#[tokio::test]
+#[serial(db)]
+async fn disagreeing_targets_are_left_unhealed() {
+    let (_db, pool) = setup().await;
+    let body = vec![4u8; 8];
+    let other = vec![5u8; 8];
+    let source = FakeCt64::default();
+    source.put("s3://peer-a", 10, body.clone());
+    let first = insert_sibling(&pool, 10, 10, "s3://peer-a", &body).await;
+    let second = insert_sibling(&pool, 10, 20, "s3://peer-a", &other).await;
+
+    pass(&pool, &source).await;
+
+    assert_eq!(healed(&pool, first).await, (true, false));
+    assert_eq!(healed(&pool, second).await, (true, false));
+    assert_eq!(source.gets.load(Ordering::SeqCst), 0);
+    // A real conflict is not resolved against a pin, but it is not silent.
+    assert_eq!(conflicting_targets(), 1);
+}
+
+#[tokio::test]
+#[serial(db)]
+async fn unpinned_siblings_share_the_live_target_after_a_failed_get() {
+    let (_db, pool) = setup().await;
+    seed_registry(&pool, &["s3://peer-a", "s3://peer-b"], 2).await;
+    let body = vec![4u8; 8];
+    let first = insert_sibling_row(&pool, 11, 11, None, None, "ct64_mismatch").await;
+    let second = insert_sibling_row(&pool, 11, 21, None, None, "ct64_mismatch").await;
+    seed_local_ct64(&pool, 11).await;
+    let source = FakeCt64::default();
+    // Peers attest the digest but do not serve the bytes yet: the GET fails.
+    source.attest("s3://peer-a", 11, keccak256(&body));
+    source.attest("s3://peer-b", 11, keccak256(&body));
+
+    pass(&pool, &source).await;
+
+    // The live target is pinned on both siblings, not only the picked one,
+    // so they cannot exclude each other on the next pass.
+    let target = Some(keccak256(&body).as_slice().to_vec());
+    assert_eq!(pinned_target(&pool, first).await, target);
+    assert_eq!(pinned_target(&pool, second).await, target);
+    assert_eq!(heal_attempts(&pool, first).await.0, 1);
+    assert_eq!(heal_attempts(&pool, second).await.0, 1);
+
+    make_due(&pool, first).await;
+    make_due(&pool, second).await;
+    source.put("s3://peer-a", 11, body.clone());
+    pass(&pool, &source).await;
+
+    assert_eq!(healed(&pool, first).await, (false, true));
+    assert_eq!(healed(&pool, second).await, (false, true));
+    assert_eq!(stored_ct64(&pool, 11).await, body);
+    assert_eq!(conflicting_targets(), 0);
+}
+
+#[tokio::test]
+#[serial(db)]
+async fn unpinned_sibling_adopts_the_pinned_sibling_target() {
+    let (_db, pool) = setup().await;
+    let body = vec![4u8; 8];
+    let pinned = insert_sibling(&pool, 12, 12, "s3://peer-a", &body).await;
+    let unpinned = insert_sibling_row(&pool, 12, 22, None, None, "ct64_mismatch").await;
+    seed_local_ct64(&pool, 12).await;
+    let source = FakeCt64::default();
+    source.put("s3://peer-a", 12, body.clone());
+
+    pass(&pool, &source).await;
+
+    assert_eq!(healed(&pool, pinned).await, (false, true));
+    assert_eq!(healed(&pool, unpinned).await, (false, true));
+    assert_eq!(stored_ct64(&pool, 12).await, body);
+    assert_eq!(source.gets.load(Ordering::SeqCst), 1);
+}
+
+#[tokio::test]
+#[serial(db)]
+async fn abandoned_sibling_on_another_target_does_not_block() {
+    let (_db, pool) = setup().await;
+    let body = vec![4u8; 8];
+    let other = vec![5u8; 8];
+    let active = insert_sibling(&pool, 13, 13, "s3://peer-a", &body).await;
+    let abandoned = insert_sibling(&pool, 13, 23, "s3://peer-a", &other).await;
+    abandon(&pool, abandoned).await;
+    seed_local_ct64(&pool, 13).await;
+    let source = FakeCt64::default();
+    source.put("s3://peer-a", 13, body.clone());
+
+    pass(&pool, &source).await;
+
+    assert_eq!(healed(&pool, active).await, (false, true));
+    assert_eq!(stored_ct64(&pool, 13).await, body);
+    // Its own target was not installed: it stays unhealed and abandoned.
+    assert_eq!(healed(&pool, abandoned).await, (true, false));
+    assert_eq!(conflicting_targets(), 0);
+}
+
+#[tokio::test]
+#[serial(db)]
+async fn unhealable_sibling_does_not_block() {
+    let (_db, pool) = setup().await;
+    let body = vec![4u8; 8];
+    // A verified ct128 finding in block 14 carries a quorum ct64 other than the
+    // ct64 target of the active sibling in block 24.
+    let ct128 = crate::manifest_consensus::containment::propagation_tests::direct_root(
+        &pool,
+        14,
+        "ct128_mismatch",
+    )
+    .await;
+    let active = insert_sibling(&pool, 14, 24, "s3://peer-a", &body).await;
+    seed_local_ct64(&pool, 14).await;
+    let source = FakeCt64::default();
+    source.put("s3://peer-a", 14, body.clone());
+
+    pass(&pool, &source).await;
+
+    assert_eq!(healed(&pool, active).await, (false, true));
+    assert_eq!(stored_ct64(&pool, 14).await, body);
+    assert_eq!(healed(&pool, ct128).await, (false, false));
+}
+
+async fn listen(pool: &PgPool, channel: &str) -> PgListener {
+    let mut listener = PgListener::connect_with(pool).await.unwrap();
+    listener.listen(channel).await.unwrap();
+    listener
+}
+
+#[tokio::test]
+#[serial(db)]
+async fn pass_notifies_tfhe_after_a_successful_batch() {
+    let (_db, pool) = setup().await;
+    let body = vec![7u8; 8];
+    let source = FakeCt64::default();
+    source.put("s3://peer-a", 1, body.clone());
+    insert_healable(&pool, 1, "s3://peer-a", &body).await;
+    let mut listener = listen(&pool, WORK_AVAILABLE_CHANNEL).await;
+    pass(&pool, &source).await;
+    tokio::time::timeout(Duration::from_secs(2), listener.recv())
+        .await
+        .expect("idle TFHE should wake after a healing batch that installed ct64")
+        .unwrap();
+}
+
+#[tokio::test]
+#[serial(db)]
+async fn pass_does_not_notify_tfhe_when_nothing_installed() {
+    let (_db, pool) = setup().await;
+    let target = vec![7u8; 8];
+    insert_healable(&pool, 4, "s3://peer-a", &target).await;
+    let source = FakeCt64::default();
+    source.put("s3://peer-a", 4, vec![8u8; 8]);
+    let mut listener = listen(&pool, WORK_AVAILABLE_CHANNEL).await;
+    pass(&pool, &source).await;
+    assert!(
+        tokio::time::timeout(Duration::from_millis(300), listener.recv())
+            .await
+            .is_err(),
+        "a batch that only retries must not wake TFHE"
+    );
+}
+
+async fn set_contained(pool: &PgPool, id: i64, contained: bool) {
+    sqlx::query("UPDATE drifted_handle SET is_contained = $2 WHERE id = $1")
+        .bind(id)
+        .bind(contained)
+        .execute(pool)
+        .await
+        .unwrap();
+}
+
+async fn insert_computation(pool: &PgPool, handle: u8, is_error: bool) {
+    sqlx::query(
+        "INSERT INTO computations (
+            output_handle, dependencies, fhe_operation, is_scalar, transaction_id,
+            is_completed, is_error, error_message, error_retry_count
+         ) VALUES ($1, '{}', 0, FALSE, $2, FALSE, $3, $4, $5)",
+    )
+    .bind(bytes(handle))
+    .bind(bytes(0xee))
+    .bind(is_error)
+    .bind(is_error.then_some("local computation failed"))
+    .bind(if is_error { 3i16 } else { 0 })
+    .execute(pool)
+    .await
+    .unwrap();
+}
+
+async fn computation_state(pool: &PgPool, handle: u8) -> (bool, bool, Option<String>, i16) {
+    sqlx::query_as(
+        "SELECT is_completed, is_error, error_message, error_retry_count
+           FROM computations WHERE output_handle = $1",
+    )
+    .bind(bytes(handle))
+    .fetch_one(pool)
+    .await
+    .unwrap()
+}
+
+#[tokio::test]
+#[serial(db)]
+async fn uncontained_ct64_mismatch_waits_for_containment() {
+    let (_db, pool) = setup().await;
+    let body = vec![5u8; 8];
+    let id = insert_healable(&pool, 20, "s3://peer-a", &body).await;
+    set_contained(&pool, id, false).await;
+    let source = FakeCt64::default();
+    source.put("s3://peer-a", 20, body.clone());
+
+    pass(&pool, &source).await;
+    assert_eq!(source.gets.load(Ordering::SeqCst), 0);
+    assert_eq!(healed(&pool, id).await, (true, false));
+    assert_eq!(stored_ct64(&pool, 20).await, vec![0xffu8; 4]);
+
+    set_contained(&pool, id, true).await;
+    pass(&pool, &source).await;
+    assert_eq!(healed(&pool, id).await, (false, true));
+    assert_eq!(stored_ct64(&pool, 20).await, body);
+}
+
+#[tokio::test]
+#[serial(db)]
+async fn uncontained_sibling_is_not_marked_healed() {
+    let (_db, pool) = setup().await;
+    let body = vec![6u8; 8];
+    let first = insert_sibling(&pool, 21, 1, "s3://peer-a", &body).await;
+    let second = insert_sibling(&pool, 21, 2, "s3://peer-a", &body).await;
+    set_contained(&pool, second, false).await;
+    let source = FakeCt64::default();
+    source.put("s3://peer-a", 21, body.clone());
+
+    pass(&pool, &source).await;
+    assert_eq!(healed(&pool, first).await, (false, true));
+    assert_eq!(healed(&pool, second).await, (true, false));
+}
+
+#[tokio::test]
+#[serial(db)]
+async fn other_reasons_heal_without_containment_and_complete_the_computation() {
+    for (handle, reason, errored) in [
+        (30u8, "missing_here", false),
+        (31, "error_here", true),
+        (32, "uncomputed_here", false),
+    ] {
+        let (_db, pool) = setup().await;
+        let body = vec![handle; 8];
+        let id = crate::manifest_consensus::containment::propagation_tests::direct_root(
+            &pool, handle, reason,
+        )
+        .await;
+        sqlx::query(
+            "UPDATE drifted_handle
+                SET quorum_ct64_digest = $2,
+                    peer_sources = '[{\"s3_bucket_url\":\"s3://peer-a\"}]'::jsonb,
+                    is_contained = FALSE
+              WHERE id = $1",
+        )
+        .bind(id)
+        .bind(keccak256(&body).as_slice())
+        .execute(&pool)
+        .await
+        .unwrap();
+        insert_computation(&pool, handle, errored).await;
+        let source = FakeCt64::default();
+        source.put("s3://peer-a", handle, body.clone());
+
+        pass(&pool, &source).await;
+        assert_eq!(healed(&pool, id).await, (false, true), "{reason}");
+        assert_eq!(stored_ct64(&pool, handle).await, body, "{reason}");
+        assert_eq!(
+            computation_state(&pool, handle).await,
+            (true, false, None, 0),
+            "{reason}: installed bytes complete the computation"
+        );
+    }
+}
+
+#[tokio::test]
+#[serial(db)]
+async fn containment_wakes_healing() {
+    let (_db, pool) = setup().await;
+    let body = vec![7u8; 8];
+    let id = insert_healable(&pool, 22, "s3://peer-a", &body).await;
+    set_contained(&pool, id, false).await;
+    let mut listener = listen(&pool, "event_healing_work").await;
+    set_contained(&pool, id, true).await;
+    tokio::time::timeout(Duration::from_secs(2), listener.recv())
+        .await
+        .expect("marking a finding contained must wake healing")
+        .unwrap();
+}
+
+#[tokio::test]
+#[serial(db)]
+async fn uncontained_ct64_mismatch_heals_after_the_containment_timeout() {
+    let (_db, pool) = setup().await;
+    let body = vec![8u8; 8];
+    let id = insert_healable(&pool, 23, "s3://peer-a", &body).await;
+    set_contained(&pool, id, false).await;
+    sqlx::query(
+        "UPDATE drifted_handle SET detected_at = NOW() - $2 * INTERVAL '1 second' WHERE id = $1",
+    )
+    .bind(id)
+    .bind(i64::try_from(DEFAULT_CONTAINMENT_TIMEOUT.as_secs()).unwrap() + 1)
+    .execute(&pool)
+    .await
+    .unwrap();
+    let source = FakeCt64::default();
+    source.put("s3://peer-a", 23, body.clone());
+    let before = metrics::HEALED_UNCONTAINED
+        .with_label_values(&[LEGACY_CONSENSUS_EPOCH])
+        .get();
+
+    pass(&pool, &source).await;
+    assert_eq!(healed(&pool, id).await, (false, true));
+    assert_eq!(stored_ct64(&pool, 23).await, body);
+    assert_eq!(
+        metrics::HEALED_UNCONTAINED
+            .with_label_values(&[LEGACY_CONSENSUS_EPOCH])
+            .get(),
+        before + 1
+    );
+}
+
+const GREEN_SCHEMA: &str = "gcs-healing-test";
+
+/// A live Green stack in its own schema, whose epoch is `green`.
+async fn green_stack(pool: &PgPool) {
+    sqlx::query(&format!("CREATE SCHEMA \"{GREEN_SCHEMA}\""))
+        .execute(pool)
+        .await
+        .unwrap();
+    for table in ["blue_green_consensus_epoch", "ciphertexts", "computations"] {
+        sqlx::query(&format!(
+            "CREATE TABLE \"{GREEN_SCHEMA}\".{table} (LIKE public.{table} INCLUDING ALL)"
+        ))
+        .execute(pool)
+        .await
+        .unwrap();
+    }
+    sqlx::query(&format!(
+        "INSERT INTO \"{GREEN_SCHEMA}\".blue_green_consensus_epoch (singleton, consensus_epoch)
+         VALUES (TRUE, 'green')"
+    ))
+    .execute(pool)
+    .await
+    .unwrap();
+}
+
+async fn set_epoch(pool: &PgPool, id: i64, epoch: &str) {
+    sqlx::query("UPDATE drifted_handle SET consensus_epoch = $2 WHERE id = $1")
+        .bind(id)
+        .bind(epoch)
+        .execute(pool)
+        .await
+        .unwrap();
+}
+
+async fn record_epoch(pool: &PgPool, epoch: &str, outcome: &str) {
+    sqlx::query(
+        "INSERT INTO consensus_epoch_history (consensus_epoch, outcome, completed_at)
+         VALUES ($1, $2, NOW())",
+    )
+    .bind(epoch)
+    .bind(outcome)
+    .execute(pool)
+    .await
+    .unwrap();
+}
+
+async fn green_ct64(pool: &PgPool, handle: u8) -> Option<Vec<u8>> {
+    sqlx::query_scalar(&format!(
+        "SELECT ciphertext FROM \"{GREEN_SCHEMA}\".ciphertexts
+          WHERE handle = $1 AND ciphertext_version = 0"
+    ))
+    .bind(bytes(handle))
+    .fetch_optional(pool)
+    .await
+    .unwrap()
+}
+
+#[tokio::test]
+#[serial(db)]
+async fn green_finding_is_installed_in_the_green_schema() {
+    let (_db, pool) = setup().await;
+    green_stack(&pool).await;
+    let body = vec![40u8; 8];
+    let id = insert_healable(&pool, 40, "s3://peer-a", &body).await;
+    set_epoch(&pool, id, "green").await;
+    let source = FakeCt64::default();
+    source.put("s3://peer-a", 40, body.clone());
+
+    pass(&pool, &source).await;
+    assert_eq!(healed(&pool, id).await, (false, true));
+    assert_eq!(green_ct64(&pool, 40).await, Some(body));
+    assert_eq!(
+        stored_ct64(&pool, 40).await,
+        vec![0xffu8; 4],
+        "Blue's own copy is not the Green finding's ciphertext"
+    );
+}
+
+#[tokio::test]
+#[serial(db)]
+async fn green_shadowing_blue_epoch_leaves_blue_findings_in_public() {
+    let (_db, pool) = setup().await;
+    green_stack(&pool).await;
+    // Before allocation, and after rollback, Green's schema holds Blue's epoch.
+    sqlx::query(&format!(
+        "UPDATE \"{GREEN_SCHEMA}\".blue_green_consensus_epoch
+            SET consensus_epoch = (SELECT consensus_epoch FROM public.blue_green_consensus_epoch)"
+    ))
+    .execute(&pool)
+    .await
+    .unwrap();
+    let body = vec![44u8; 8];
+    let id = insert_healable(&pool, 44, "s3://peer-a", &body).await;
+    let source = FakeCt64::default();
+    source.put("s3://peer-a", 44, body.clone());
+
+    pass(&pool, &source).await;
+    assert_eq!(healed(&pool, id).await, (false, true));
+    assert_eq!(stored_ct64(&pool, 44).await, body);
+    assert_eq!(green_ct64(&pool, 44).await, None);
+}
+
+#[tokio::test]
+#[serial(db)]
+async fn finding_of_a_completed_epoch_is_installed_in_public() {
+    let (_db, pool) = setup().await;
+    record_epoch(&pool, "old-blue", "succeeded").await;
+    let body = vec![41u8; 8];
+    let id = insert_healable(&pool, 41, "s3://peer-a", &body).await;
+    set_epoch(&pool, id, "old-blue").await;
+    let source = FakeCt64::default();
+    source.put("s3://peer-a", 41, body.clone());
+
+    pass(&pool, &source).await;
+    assert_eq!(healed(&pool, id).await, (false, true));
+    assert_eq!(stored_ct64(&pool, 41).await, body);
+}
+
+#[tokio::test]
+#[serial(db)]
+async fn finding_of_a_failed_epoch_is_not_healed() {
+    let (_db, pool) = setup().await;
+    record_epoch(&pool, "rolled-back", "failed").await;
+    let body = vec![42u8; 8];
+    let id = insert_healable(&pool, 42, "s3://peer-a", &body).await;
+    set_epoch(&pool, id, "rolled-back").await;
+    let source = FakeCt64::default();
+    source.put("s3://peer-a", 42, body.clone());
+
+    pass(&pool, &source).await;
+    assert_eq!(source.gets.load(Ordering::SeqCst), 0);
+    assert_eq!(healed(&pool, id).await, (true, false));
+    assert_eq!(stored_ct64(&pool, 42).await, vec![0xffu8; 4]);
+}
+
+/// What the controller's rollback does to Green, under its exclusive cutover
+/// lock: the epoch fails and the schema is recreated empty, seeded with Blue's
+/// epoch.
+async fn roll_back_green(trx: &mut sqlx::Transaction<'_, sqlx::Postgres>) {
+    sqlx::query(
+        "INSERT INTO consensus_epoch_history (consensus_epoch, outcome, completed_at)
+         VALUES ('green', 'failed', NOW())",
+    )
+    .execute(trx.as_mut())
+    .await
+    .unwrap();
+    sqlx::query(&format!("DROP SCHEMA \"{GREEN_SCHEMA}\" CASCADE"))
+        .execute(trx.as_mut())
+        .await
+        .unwrap();
+    sqlx::query(&format!("CREATE SCHEMA \"{GREEN_SCHEMA}\""))
+        .execute(trx.as_mut())
+        .await
+        .unwrap();
+    for table in ["blue_green_consensus_epoch", "ciphertexts", "computations"] {
+        sqlx::query(&format!(
+            "CREATE TABLE \"{GREEN_SCHEMA}\".{table} (LIKE public.{table} INCLUDING ALL)"
+        ))
+        .execute(trx.as_mut())
+        .await
+        .unwrap();
+    }
+    sqlx::query(&format!(
+        "INSERT INTO \"{GREEN_SCHEMA}\".blue_green_consensus_epoch
+         SELECT * FROM public.blue_green_consensus_epoch"
+    ))
+    .execute(trx.as_mut())
+    .await
+    .unwrap();
+}
+
+#[tokio::test]
+#[serial(db)]
+async fn rollback_during_the_download_discards_the_install() {
+    let (_db, pool) = setup().await;
+    green_stack(&pool).await;
+    let body = vec![43u8; 8];
+    let id = insert_healable(&pool, 43, "s3://peer-a", &body).await;
+    set_epoch(&pool, id, "green").await;
+    let held = Arc::new(tokio::sync::Semaphore::new(0));
+    let source = FakeCt64 {
+        held_gets: Some(held.clone()),
+        ..FakeCt64::default()
+    };
+    source.put("s3://peer-a", 43, body);
+
+    let healer = tokio::spawn({
+        let pool = pool.clone();
+        let source = source.clone();
+        async move { pass(&pool, &source).await }
+    });
+    tokio::time::timeout(Duration::from_secs(5), source.get_started.notified())
+        .await
+        .expect("the healer must start the GET");
+    let mut rollback = pool.begin().await.unwrap();
+    sqlx::query("SELECT pg_advisory_xact_lock($1)")
+        .bind(fhevm_engine_common::versioning::CUTOVER_LOCK_ID)
+        .execute(rollback.as_mut())
+        .await
+        .unwrap();
+    held.add_permits(1);
+    tokio::time::timeout(Duration::from_secs(5), async {
+        loop {
+            let waiting: bool = sqlx::query_scalar(
+                "SELECT EXISTS (SELECT 1 FROM pg_locks WHERE locktype = 'advisory' AND mode = 'ShareLock' AND NOT granted AND objid = ($1::bigint & 4294967295)::oid)",
+            )
+            .bind(fhevm_engine_common::versioning::CUTOVER_LOCK_ID)
+            .fetch_one(&pool)
+            .await
+            .unwrap();
+            if waiting {
+                break;
+            }
+            tokio::time::sleep(Duration::from_millis(10)).await;
+        }
+    })
+    .await
+    .expect("the install must wait on the cutover lock");
+    roll_back_green(&mut rollback).await;
+    rollback.commit().await.unwrap();
+    tokio::time::timeout(Duration::from_secs(5), healer)
+        .await
+        .unwrap()
+        .unwrap();
+
+    assert_eq!(healed(&pool, id).await, (true, false));
+    assert_eq!(green_ct64(&pool, 43).await, None);
+}
+
+/// Records that `dst` was bridged from `src` in the block of `dst`'s finding
+/// (`insert_healable_from` puts a finding of `handle` in block `bytes(handle)`).
+async fn insert_bridge(pool: &PgPool, src: u8, dst: u8) {
+    sqlx::query(
+        "INSERT INTO handle_bridged_events (
+             src_handle, dst_handle, dst_chain_id, receiver_dapp, guid,
+             block_number, block_hash, is_associated
+         ) VALUES ($1, $2, 1, '\\xdb'::bytea, '\\x02'::bytea, $3, $2, TRUE)",
+    )
+    .bind(bytes(src))
+    .bind(bytes(dst))
+    .bind(i64::from(dst))
+    .execute(pool)
+    .await
+    .unwrap();
+}
+
+#[tokio::test]
+#[serial(db)]
+async fn bridged_destination_heals_from_its_source_objects() {
+    let (_db, pool) = setup().await;
+    let body = vec![5u8; 8];
+    // Peers never upload a bridged copy under its own key.
+    let id = insert_healable(&pool, 21, "s3://peer-a", &body).await;
+    insert_bridge(&pool, 20, 21).await;
+    let source = FakeCt64::default();
+    source.put("s3://peer-a", 20, body.clone());
+    pass(&pool, &source).await;
+    assert_eq!(stored_ct64(&pool, 21).await, body);
+    assert_eq!(healed(&pool, id).await, (false, true));
+}
+
+#[tokio::test]
+#[serial(db)]
+async fn bridged_destination_on_a_fallback_majority_heals_from_its_own_key() {
+    let (_db, pool) = setup().await;
+    let trivial = vec![6u8; 8];
+    let copy = vec![7u8; 8];
+    // The majority materialized the fallback grant's trivial encryption.
+    let id = insert_healable(&pool, 23, "s3://peer-a", &trivial).await;
+    insert_bridge(&pool, 22, 23).await;
+    let source = FakeCt64::default();
+    source.put("s3://peer-a", 22, copy);
+    source.put("s3://peer-a", 23, trivial.clone());
+    pass(&pool, &source).await;
+    assert_eq!(stored_ct64(&pool, 23).await, trivial);
+    assert_eq!(healed(&pool, id).await, (false, true));
+}
+
+#[tokio::test]
+#[serial(db)]
+async fn unpinned_bridged_destination_pins_the_source_attestation_quorum() {
+    let (_db, pool) = setup().await;
+    seed_registry(&pool, &["s3://peer-a", "s3://peer-b"], 2).await;
+    let body = vec![8u8; 8];
+    let id = insert_healable_from(&pool, 25, None, &body, false).await;
+    insert_bridge(&pool, 24, 25).await;
+    let source = FakeCt64::default();
+    source.put("s3://peer-a", 24, body.clone());
+    source.put("s3://peer-b", 24, body.clone());
+    pass(&pool, &source).await;
+    assert_eq!(stored_ct64(&pool, 25).await, body);
+    assert_eq!(healed(&pool, id).await, (false, true));
+    assert_eq!(
+        pinned_target(&pool, id).await,
+        Some(keccak256(&body).as_slice().to_vec())
+    );
+}
+
+/// A cutover to `epoch`, whose window on chain 1 starts at `start_block`.
+async fn cut_over_to(pool: &PgPool, epoch: &str, start_block: i64, upload_start: Option<i64>) {
+    sqlx::query(
+        "INSERT INTO consensus_epoch_history (consensus_epoch, outcome, completed_at)
+         VALUES ($1, 'succeeded', NOW())",
+    )
+    .bind(epoch)
+    .execute(pool)
+    .await
+    .unwrap();
+    sqlx::query(
+        "INSERT INTO consensus_epoch_block_window
+             (consensus_epoch, host_chain_id, start_block, consensus_deadline_block,
+              upload_start_block)
+         VALUES ($1, 1, $2, $2 + 10, $3)",
+    )
+    .bind(epoch)
+    .bind(start_block)
+    .bind(upload_start)
+    .execute(pool)
+    .await
+    .unwrap();
+}
+
+async fn superseded(pool: &PgPool, id: i64) -> bool {
+    sqlx::query_scalar("SELECT superseded_at IS NOT NULL FROM drifted_handle WHERE id = $1")
+        .bind(id)
+        .fetch_one(pool)
+        .await
+        .unwrap()
+}
+
+async fn move_to_epoch(pool: &PgPool, id: i64, epoch: &str) {
+    sqlx::query("UPDATE drifted_handle SET consensus_epoch = $2 WHERE id = $1")
+        .bind(id)
+        .bind(epoch)
+        .execute(pool)
+        .await
+        .unwrap();
+}
+
+/// Antoniu's repro on #4087: cutover replaced the in-window bytes of `public`
+/// with the successor's, so a surviving Blue finding there must not write.
+/// A Blue finding before the window still heals.
+#[tokio::test]
+#[serial(db)]
+async fn blue_finding_in_a_replaced_window_is_never_installed() {
+    let (_db, pool) = setup().await;
+    let body = vec![5u8; 8];
+    let in_window = insert_healable(&pool, 5, "s3://peer-a", &body).await;
+    let before_window = insert_healable(&pool, 2, "s3://peer-a", &body).await;
+    let source = FakeCt64::default();
+    source.put("s3://peer-a", 5, body.clone());
+    source.put("s3://peer-a", 2, body.clone());
+    cut_over_to(&pool, "v1/block_3", 3, Some(20)).await;
+
+    pass(&pool, &source).await;
+
+    assert!(superseded(&pool, in_window).await);
+    assert_eq!(healed(&pool, in_window).await, (true, false));
+    assert_eq!(stored_ct64(&pool, 5).await, vec![0xffu8; 4]);
+    assert_eq!(healed(&pool, before_window).await, (false, true));
+    assert_eq!(stored_ct64(&pool, 2).await, body);
+}
+
+/// The cutover lands while the healer downloads: the install re-checks under
+/// the cutover lock and writes nothing.
+#[tokio::test]
+#[serial(db)]
+async fn cutover_during_the_download_is_not_overwritten() {
+    let (_db, pool) = setup().await;
+    let body = vec![5u8; 8];
+    let id = insert_healable(&pool, 5, "s3://peer-a", &body).await;
+    let permits = Arc::new(tokio::sync::Semaphore::new(0));
+    let source = FakeCt64 {
+        held_gets: Some(permits.clone()),
+        ..FakeCt64::default()
+    };
+    source.put("s3://peer-a", 5, body.clone());
+    let started = source.get_started.clone();
+    let healer = {
+        let pool = pool.clone();
+        let source = source.clone();
+        tokio::spawn(async move { pass(&pool, &source).await })
+    };
+    started.notified().await;
+    cut_over_to(&pool, "v1/block_3", 3, Some(20)).await;
+    permits.add_permits(1);
+    healer.await.unwrap();
+
+    assert!(superseded(&pool, id).await);
+    assert_eq!(healed(&pool, id).await, (true, false));
+    assert_eq!(stored_ct64(&pool, 5).await, vec![0xffu8; 4]);
+}
+
+/// During a dry run only Blue uploads, so the S3 attestations describe Blue's
+/// bytes: an unpinned Green finding gets no target, and waits without using
+/// its budget.
+#[tokio::test]
+#[serial(db)]
+async fn parked_epoch_takes_no_attestation_target() {
+    let (_db, pool) = setup().await;
+    seed_registry(&pool, &["s3://peer-a", "s3://peer-b"], 2).await;
+    let body = vec![3u8; 8];
+    let id = insert_healable_from(&pool, 6, None, &body, false).await;
+    sqlx::query(
+        "INSERT INTO consensus_epoch_history
+             (consensus_epoch, proposal_id, proposal_block, stack_version, outcome)
+         VALUES ('v1/block_3', $1, 3, 'test-green', 'pending')",
+    )
+    .bind(bytes(0x91))
+    .execute(&pool)
+    .await
+    .unwrap();
+    sqlx::query(
+        "INSERT INTO consensus_epoch_block_window
+             (consensus_epoch, host_chain_id, start_block, consensus_deadline_block)
+         VALUES ('v1/block_3', 1, 3, 13)",
+    )
+    .execute(&pool)
+    .await
+    .unwrap();
+    move_to_epoch(&pool, id, "v1/block_3").await;
+    let source = FakeCt64::default();
+    source.put("s3://peer-a", 6, body.clone());
+    source.put("s3://peer-b", 6, body.clone());
+    let job = DueHandle {
+        id,
+        consensus_epoch: "v1/block_3".into(),
+        host_chain_id: 1,
+        block_number: 6,
+        block_hash: bytes(6),
+        handle: bytes(6),
+        coprocessor_context_id: bytes(1),
+        quorum_ct64_digest: None,
+        peer_sources: serde_json::json!([]),
+        target_evidence: serde_json::Value::Null,
+        uncontained: false,
+        schema: "public".into(),
+        containment_timeout_secs: 0,
+        max_attempts: DEFAULT_MAX_ATTEMPTS,
+    };
+
+    let installed = recover_from_attestations(&pool, &source, &job, U256::from(1), &[])
+        .await
+        .unwrap();
+
+    assert!(!installed);
+    assert_eq!(source.heads.load(Ordering::SeqCst), 0);
+    assert_eq!(pinned_target(&pool, id).await, None);
+    assert_eq!(heal_attempts(&pool, id).await, (0, false));
+    assert!(retry_is_scheduled(&pool, id).await);
+}
+
+/// After cutover the epoch's own uploads start at `upload_start_block`: below
+/// it the objects are Blue's, so there is no attestation target; above it the
+/// quorum is the epoch's own evidence.
+#[tokio::test]
+#[serial(db)]
+async fn attestation_target_only_from_the_epochs_own_uploads() {
+    let (_db, pool) = setup().await;
+    seed_registry(&pool, &["s3://peer-a", "s3://peer-b"], 2).await;
+    let body = vec![3u8; 8];
+    let before_upload = insert_healable_from(&pool, 6, None, &body, false).await;
+    let after_upload = insert_healable_from(&pool, 12, None, &body, false).await;
+    cut_over_to(&pool, "v1/block_3", 3, Some(10)).await;
+    move_to_epoch(&pool, before_upload, "v1/block_3").await;
+    move_to_epoch(&pool, after_upload, "v1/block_3").await;
+    let source = FakeCt64::default();
+    for handle in [6, 12] {
+        source.put_in_epoch("s3://peer-a", handle, body.clone(), "v1/block_3");
+        source.put_in_epoch("s3://peer-b", handle, body.clone(), "v1/block_3");
+    }
+
+    pass(&pool, &source).await;
+
+    assert_eq!(pinned_target(&pool, before_upload).await, None);
+    assert_eq!(healed(&pool, before_upload).await, (false, false));
+    assert_eq!(heal_attempts(&pool, before_upload).await, (1, false));
+    assert_eq!(healed(&pool, after_upload).await, (false, true));
+    assert_eq!(stored_ct64(&pool, 12).await, body);
+}
+
+/// A peer that cuts over later still serves the previous epoch's bytes above
+/// our `upload_start_block`: only votes tagged with the finding's epoch count.
+#[tokio::test]
+#[serial(db)]
+async fn only_votes_uploaded_by_the_findings_epoch_set_a_target() {
+    let (_db, pool) = setup().await;
+    seed_registry(&pool, &["s3://peer-a", "s3://peer-b", "s3://peer-c"], 2).await;
+    let green = vec![3u8; 8];
+    let blue = vec![4u8; 8];
+    let id = insert_healable_from(&pool, 12, None, &green, false).await;
+    cut_over_to(&pool, "v1/block_3", 3, Some(10)).await;
+    move_to_epoch(&pool, id, "v1/block_3").await;
+    let source = FakeCt64::default();
+    // Two late peers: still Blue's untagged bytes, a majority on their own.
+    source.put("s3://peer-a", 12, blue.clone());
+    source.put("s3://peer-b", 12, blue.clone());
+    source.put_in_epoch("s3://peer-c", 12, green.clone(), "v1/block_3");
+
+    pass(&pool, &source).await;
+
+    assert_eq!(pinned_target(&pool, id).await, None);
+    assert_eq!(healed(&pool, id).await, (false, false));
+    assert_eq!(stored_ct64(&pool, 12).await, vec![0xffu8; 4]);
+
+    // Once a second peer has cut over, the finding's epoch has a quorum.
+    source.put_in_epoch("s3://peer-b", 12, green.clone(), "v1/block_3");
+    make_due(&pool, id).await;
+    pass(&pool, &source).await;
+
+    assert_eq!(healed(&pool, id).await, (false, true));
+    assert_eq!(stored_ct64(&pool, 12).await, green);
+}

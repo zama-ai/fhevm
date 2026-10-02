@@ -180,15 +180,19 @@ pub const COPROCESSOR_TABLES: &[CoprocessorTable] = &[
     },
     // Durable observations of on-chain events, written by the GCS host-listener
     // (tfhe_event_propagate); handle_bridged_events also by the GCS tfhe-worker.
+    // Merged at cutover: manifest publication and healing read them for bridged
+    // and granted handles, and a block green ingested before blue would
+    // otherwise lose its rows with the gcs schema. Green wins on conflict, so
+    // `is_associated` follows the ciphertexts merged above.
     CoprocessorTable {
         name: "fallback_granted_events",
         duplicated: true,
-        conflict_cols: &[],
+        conflict_cols: &["dst_handle", "block_hash"],
     },
     CoprocessorTable {
         name: "handle_bridged_events",
         duplicated: true,
-        conflict_cols: &[],
+        conflict_cols: &["dst_handle", "block_hash"],
     },
     // On-chain event / block-ingestion state written by the GCS host-listener
     // during the dry-run. All three are written ONLY by the host-listener
@@ -204,11 +208,12 @@ pub const COPROCESSOR_TABLES: &[CoprocessorTable] = &[
         duplicated: true,
         conflict_cols: &[],
     },
-    // Bridge approvals (RFC 008); sibling of handle_bridged_events above.
+    // Bridge approvals (RFC 008); sibling of handle_bridged_events above, merged
+    // at cutover for the same reason.
     CoprocessorTable {
         name: "bridge_handle_events",
         duplicated: true,
-        conflict_cols: &[],
+        conflict_cols: &["src_handle", "dst_chain_id", "block_hash"],
     },
     // Delegated-user-decrypt records (reorg-aware).
     CoprocessorTable {
@@ -227,6 +232,67 @@ pub const COPROCESSOR_TABLES: &[CoprocessorTable] = &[
     CoprocessorTable {
         name: "drift_revert_signal",
         duplicated: true,
+        conflict_cols: &[],
+    },
+    // Stack-local producer inventory: Blue and Green must independently discover
+    // the handles they observed. Sharing this table would let one stack's listener
+    // observations contaminate the other stack's manifest. Merged at cutover:
+    // green keeps publishing after it, from public, and a block it tracked but
+    // had not yet published would otherwise be resealed with public's inventory,
+    // which is empty when blue predates this table. Rows are immutable.
+    CoprocessorTable {
+        name: "handle_producer_block",
+        duplicated: true,
+        conflict_cols: &["host_chain_id", "handle", "producer_block_hash"],
+    },
+    // Manifest construction, downloaded peer evidence, verification queues,
+    // localization progress, and drift inventory are shared in `public`.
+    // Every row is consensus_epoch-qualified, so Blue and Green can write the same
+    // physical tables without colliding. Keeping these tables out of GCS also
+    // makes failed consensus_epochs durable and removes manifest merging at cutover.
+    CoprocessorTable {
+        name: "block_manifest_state",
+        duplicated: false,
+        conflict_cols: &[],
+    },
+    CoprocessorTable {
+        name: "block_range_commitment",
+        duplicated: false,
+        conflict_cols: &[],
+    },
+    CoprocessorTable {
+        name: "block_manifest",
+        duplicated: false,
+        conflict_cols: &[],
+    },
+    CoprocessorTable {
+        name: "block_manifest_verification_task",
+        duplicated: false,
+        conflict_cols: &[],
+    },
+    CoprocessorTable {
+        name: "block_manifest_peer_download",
+        duplicated: false,
+        conflict_cols: &[],
+    },
+    CoprocessorTable {
+        name: "block_manifest_verification_attempt",
+        duplicated: false,
+        conflict_cols: &[],
+    },
+    CoprocessorTable {
+        name: "block_manifest_verification_attempt_drift",
+        duplicated: false,
+        conflict_cols: &[],
+    },
+    CoprocessorTable {
+        name: "drifted_handle",
+        duplicated: false,
+        conflict_cols: &[],
+    },
+    CoprocessorTable {
+        name: "drifted_handle_demand",
+        duplicated: false,
         conflict_cols: &[],
     },
     // ---------------------------------------------------------------------
@@ -301,6 +367,25 @@ pub const COPROCESSOR_TABLES: &[CoprocessorTable] = &[
         duplicated: false,
         conflict_cols: &[],
     },
+    // Event-derived consensus_epoch history is shared control-plane state. Blue and
+    // Green must see the same failed and successful attempts.
+    CoprocessorTable {
+        name: "consensus_epoch_history",
+        duplicated: false,
+        conflict_cols: &[],
+    },
+    CoprocessorTable {
+        name: "consensus_epoch_block_window",
+        duplicated: false,
+        conflict_cols: &[],
+    },
+    // Each stack owns its active consensus_epoch during overlap. At cutover the
+    // Green singleton replaces Blue's active value in public.
+    CoprocessorTable {
+        name: "blue_green_consensus_epoch",
+        duplicated: true,
+        conflict_cols: &["singleton"],
+    },
     // Shared configuration / key material — both stacks must read the same
     // rows, so isolating a green copy would be wrong.
     CoprocessorTable {
@@ -320,6 +405,13 @@ pub const COPROCESSOR_TABLES: &[CoprocessorTable] = &[
     },
     CoprocessorTable {
         name: "crs",
+        duplicated: false,
+        conflict_cols: &[],
+    },
+    // Current signer and bucket registry snapshot. Both stacks must authorize
+    // manifests against the same observed GatewayConfig state.
+    CoprocessorTable {
+        name: "gateway_config_coprocessors",
         duplicated: false,
         conflict_cols: &[],
     },
@@ -373,6 +465,28 @@ mod tests {
                     t.conflict_cols
                 );
             }
+        }
+    }
+
+    #[test]
+    fn manifest_tables_are_shared_public_state() {
+        const MANIFEST_TABLES: &[&str] = &[
+            "block_manifest_state",
+            "block_range_commitment",
+            "block_manifest",
+            "block_manifest_verification_task",
+            "block_manifest_peer_download",
+            "block_manifest_verification_attempt",
+            "block_manifest_verification_attempt_drift",
+            "drifted_handle",
+            "drifted_handle_demand",
+        ];
+        for name in MANIFEST_TABLES {
+            let table = COPROCESSOR_TABLES
+                .iter()
+                .find(|table| table.name == *name)
+                .expect("manifest table must be classified");
+            assert!(!table.duplicated, "{name} must remain public-only");
         }
     }
 
