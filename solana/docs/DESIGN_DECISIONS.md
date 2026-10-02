@@ -2796,9 +2796,10 @@ Decision:
 confirmed commitment, judges each account as the KMS connector does (`validate_store`, from
 `zama_solana_acl`), and compares at the chain's leaf count `n`:
 
-- no account: `absent`, the store was closed;
+- no account: `absent`, the store was closed, and its quarantine lifts;
 - an account that is not a valid store: `mismatch`;
-- a record holding fewer than `n` leaves: `behind`;
+- a record holding fewer than `n` leaves, read after the account: `behind`, compared once more
+  at the end of the check;
 - otherwise the record's peaks at `n`, read from its `nodes` rows, must equal the account's peaks:
   `match` or `mismatch`.
 
@@ -2813,10 +2814,14 @@ the proof server verifies each path against the recorded peaks before answering 
 
 `solana_merkle_indexer_quarantined_stores` above 0, any `inconsistent` leaf the proof server
 counts, and any `invalid` answer a KMS connector counts by coprocessor
-(`kms_connector_worker_solana_proof_answers_counter`), page the protocol on-call. The connector's
-count names the coprocessor, so a partner's wrong record is seen from the connectors too. `RUNBOOK.md` in the crate describes the repair: replace the
-database with a `pg_dump` from before the divergence and wait for a clean check. `/healthz` checks
-only the database; a record behind the chain is a lag alarm, not a health failure.
+(`kms_connector_worker_solana_proof_answers_counter`), page the protocol on-call. The connector
+counts a proof `invalid` when it was built against as many leaves as the chain holds or more: a
+correct proof from a longer record is cut to the chain's count and verifies, so only a proof from
+a shorter record can fail by being stale. The connector's count names the coprocessor, so a
+partner's wrong record is seen from the connectors too. `RUNBOOK.md` in the crate describes the
+repair: replace the database with a `pg_dump` from before the divergence, or rebuild it from the
+chain, and wait for a clean check after the indexer catches up. `/healthz` does not look at the
+record: a record behind the chain is a lag alarm, and a record that disagrees is a quarantine.
 
 Rejected alternatives:
 
@@ -2832,7 +2837,7 @@ Consequences:
 A quarantined store has no proofs from that coprocessor until a later check matches, at most one
 interval after a restore. One `getMultipleAccounts` per 100 stores per interval reaches the
 indexer's RPC provider. A store closed and recreated at the same address is reported `mismatch`
-until the record is rebuilt, as DD-066 already requires.
+once the new store holds a leaf, until the record is rebuilt, as DD-066 already requires.
 
 ## Open product decisions
 
