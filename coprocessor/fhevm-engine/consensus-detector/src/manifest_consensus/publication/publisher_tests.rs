@@ -230,6 +230,99 @@ async fn immutable_s3_retry_reads_the_existing_body_and_rejects_a_conflict() {
 
 #[tokio::test]
 #[serial(db)]
+async fn probe_seals_from_its_cutover_copy_without_waiting() {
+    const CHAIN_ID: i64 = 137;
+    let block_hash = B256::repeat_byte(0x42);
+    let real = B256::repeat_byte(0x51);
+    let probe = B256::repeat_byte(0x71);
+    let late_probe = B256::repeat_byte(0x72);
+    let gateway_key_id = B256::repeat_byte(0x54);
+    let instance = setup_test_db(ImportMode::None)
+        .await
+        .expect("create probe database");
+    let pool = sqlx::postgres::PgPoolOptions::new()
+        .max_connections(3)
+        .connect(instance.db_url())
+        .await
+        .expect("connect probe database");
+    seed_revision_publication_block(
+        &pool,
+        CHAIN_ID,
+        42,
+        block_hash,
+        B256::repeat_byte(0x41),
+        real,
+        B256::repeat_byte(0x52),
+        B256::repeat_byte(0x53),
+        gateway_key_id,
+        B256::repeat_byte(0x55),
+        B256::repeat_byte(0x56),
+        B256::repeat_byte(0x57),
+    )
+    .await;
+    // After cutover: the probe's producer rows were merged, its digest rows deleted.
+    for handle in [probe, late_probe] {
+        sqlx::query(
+            "INSERT INTO handle_producer_block (
+                 host_chain_id, producer_block_number, producer_block_hash, handle, synthetic
+             ) VALUES ($1, 42, $2, $3, TRUE)",
+        )
+        .bind(CHAIN_ID)
+        .bind(block_hash.as_slice())
+        .bind(handle.as_slice())
+        .execute(&pool)
+        .await
+        .expect("insert probe producer row");
+    }
+
+    let block = load_seeded_block(&pool, CHAIN_ID, block_hash).await;
+    let mut trx = pool.begin().await.expect("begin uncopied probe check");
+    assert!(!is_block_manifest_ready(&mut trx, &block)
+        .await
+        .expect("a probe without a digest or a copy waits like any handle"));
+    trx.rollback().await.expect("rollback uncopied probe check");
+
+    // Cutover's copy: one probe digested in full, one whose ct128 never came.
+    for (handle, ct128) in [(probe, Some(B256::repeat_byte(0x74))), (late_probe, None)] {
+        sqlx::query(
+            "INSERT INTO synthetic_handle_digest (
+                 host_chain_id, handle, key_id_gw, ciphertext, ciphertext128,
+                 ciphertext128_format
+             ) VALUES ($1, $2, $3, $4, $5, 11)",
+        )
+        .bind(CHAIN_ID)
+        .bind(handle.as_slice())
+        .bind(gateway_key_id.as_slice())
+        .bind(B256::repeat_byte(0x73).as_slice())
+        .bind(ct128.as_ref().map(|digest| digest.as_slice()))
+        .execute(&pool)
+        .await
+        .expect("insert probe copy");
+    }
+
+    let mut trx = pool.begin().await.expect("begin copied probe check");
+    assert!(is_block_manifest_ready(&mut trx, &block)
+        .await
+        .expect("a copied probe never keeps the block waiting"));
+    let descriptors = load_manifest_descriptors(&mut trx, &block, false)
+        .await
+        .expect("load descriptors with copied probes");
+    trx.rollback().await.expect("rollback copied probe check");
+
+    assert_eq!(
+        descriptors
+            .iter()
+            .map(|descriptor| (descriptor.handle, descriptor.synthetic))
+            .collect::<Vec<_>>(),
+        vec![(real, false), (probe, true), (late_probe, true)]
+    );
+    assert_eq!(descriptors[1].ct64_digest(), Some(B256::repeat_byte(0x73)));
+    assert_eq!(descriptors[1].ct128_digest(), Some(B256::repeat_byte(0x74)));
+    assert!(descriptors[2].is_uncomputed());
+}
+
+#[tokio::test]
+#[serial(db)]
 async fn readiness_includes_errored_handles_without_waiting_for_digests() {
     const CHAIN_ID: i64 = 137;
     let block_hash = B256::repeat_byte(0x42);
