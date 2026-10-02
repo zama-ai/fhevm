@@ -23,7 +23,7 @@ for name in solana-rpc solana-deployer; do
     -n "$NAMESPACE" -f "$values/values-$name.yaml"
   wait_external_secret "$name"
 done
-# The leaf-proof bearer token is only ever read inside this namespace, by the leaf-proof
+# The proof bearer token is only ever read inside this namespace, by the Merkle proof
 # servers and the connectors, so each preview mints its own.
 openssl rand -base64 32 | tr -d '\n' > "$work/proof-api-key"
 kubectl create secret generic solana-proof-api -n "$NAMESPACE" \

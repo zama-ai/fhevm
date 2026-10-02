@@ -2630,9 +2630,14 @@ binaries:
   the host listener follows it with. It writes each block's leaves, nodes, Store rows and
   checkpoint in one transaction. It resumes from its checkpoint. On an empty database it replays
   from `--start-slot`, a confirmed block before the first Store was created, such as the zama-host
-  deployment slot. It never starts at the tip. It stops on a Store first seen above leaf zero
-  (`UnrecordedHistory`), on a leaf count that skips, and on a replayed block whose leaves differ
-  from the recorded ones.
+  deployment slot, whose hash it reads from the archive endpoint. It never starts at the tip. It
+  stops on a Store first seen above leaf zero (`UnrecordedHistory`) and on a leaf count that
+  skips.
+- The checkpoint also keeps `recorded_through`, the highest slot ever applied. A block at or below
+  it is a replay. Its writes must reproduce every leaf recorded at its slot, across all Stores, or
+  the indexer stops and writes nothing. A replay that changes, adds or drops a write therefore
+  stops it. Moving the checkpoint back is a supported repair: the indexer checks each block up to
+  `recorded_through` and appends only after it.
 - `solana_merkle_proof_server` serves the proofs from that database (DD-063, DD-064).
 
 A record holds every Store from leaf zero or has not seen it, so a proof answer is `found`,
@@ -2651,6 +2656,7 @@ Rejected alternatives:
 | Start an empty record at the tip and backfill the missed history | The backfill is a second ingestion path, with its own ordering and checkpoint, racing the live one. |
 | A custom export and import of the record | `pg_dump` and `pg_restore` already move a consistent snapshot with its checkpoint, and operators know them. |
 | A separate image | As in DD-064: one more CI build and tag to keep in step. Both binaries ship in the host-listener image. |
+| One follower feeding both the compute rows and the record | The two start differently: the listener may start at the tip, the record only before the first Store. One process would also couple their failures again, so a record fault would stop compute ingestion. |
 
 Consequences:
 

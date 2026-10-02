@@ -1,7 +1,7 @@
 //! Solana host listener: reconstructs coprocessor work from confirmed Yellowstone
 //! transactions and block metas and ingests it into the coprocessor database.
 
-use std::{str::FromStr, sync::Arc, time::Duration};
+use std::{str::FromStr, sync::Arc};
 
 use anyhow::{Context, Result};
 use clap::Parser;
@@ -30,10 +30,8 @@ use host_listener::{
 };
 use solana_host_follower::{
     block_checkpoint, host::host_chain_id, run, track_confirmed_slot,
-    FollowerConfig, StartPosition,
+    FollowerConfig, StartPosition, SOLANA_RPC_REQUEST_TIMEOUT,
 };
-
-const SOLANA_RPC_REQUEST_TIMEOUT: Duration = Duration::from_secs(30);
 
 /// Healthy while the coprocessor database answers.
 struct DatabaseHealth(PgPool);
@@ -142,6 +140,10 @@ async fn main() -> Result<()> {
         CommitmentConfig::confirmed(),
     );
     let host_config_chain_id = host_chain_id(&rpc, &program_id).await?;
+    let archive = RpcClient::new_with_timeout(
+        args.archive_url.unwrap_or_else(|| args.url.clone()),
+        SOLANA_RPC_REQUEST_TIMEOUT,
+    );
     info!(
         chain_id = host_config_chain_id,
         "auto-detected handle-derivation params from confirmed HostConfig"
@@ -177,11 +179,11 @@ async fn main() -> Result<()> {
         }
         None => match args.start_slot {
             // Anchored to an actual block, so a provider silently starting at the tip is
-            // rejected. RPC supplies only its identity; its transactions come from the stream
-            // or the archive.
-            Some(slot) => {
-                StartPosition::ReplayFrom(block_checkpoint(&rpc, slot).await?)
-            }
+            // rejected. The archive supplies only its identity; its transactions come from the
+            // stream or the archive.
+            Some(slot) => StartPosition::ReplayFrom(
+                block_checkpoint(&archive, slot).await?,
+            ),
             None => StartPosition::Tip,
         },
     };
@@ -217,10 +219,6 @@ async fn main() -> Result<()> {
         result
     });
 
-    let archive = RpcClient::new_with_timeout(
-        args.archive_url.unwrap_or(args.url),
-        SOLANA_RPC_REQUEST_TIMEOUT,
-    );
     let sink = SolanaListenerSink::new(
         &db,
         SolanaListenerConfig {

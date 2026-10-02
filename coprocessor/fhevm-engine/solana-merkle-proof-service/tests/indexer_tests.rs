@@ -10,8 +10,10 @@ use std::process::Command;
 use anchor_lang::InstructionData;
 use serial_test::serial;
 use solana_host_follower::host::DecodedInstruction;
-use solana_host_follower::{PreparedBlock, PreparedTransaction, SealedBlock};
-use solana_merkle_proof_service::indexer::{apply_block, IndexerStart};
+use solana_host_follower::{
+    BlockSink, IngestFailure, PreparedBlock, PreparedTransaction, SealedBlock,
+};
+use solana_merkle_proof_service::indexer::{IndexerStart, MerkleIndexerSink};
 use solana_merkle_proof_service::store::load_checkpoint;
 use solana_merkle_proof_service::MIGRATOR;
 use solana_sdk::signature::Signature;
@@ -137,7 +139,7 @@ fn chain_peaks(
     stores
 }
 
-type StoreRow = (Vec<u8>, i64, Vec<Vec<u8>>, i64);
+type StoreRow = (Vec<u8>, i64, Vec<Vec<u8>>);
 type LeafRow = (
     Vec<u8>,
     i64,
@@ -156,14 +158,14 @@ struct Record {
     stores: Vec<StoreRow>,
     leaves: Vec<LeafRow>,
     nodes: Vec<NodeRow>,
-    checkpoint: Option<(i64, Vec<u8>)>,
+    checkpoint: Option<(i64, Vec<u8>, i64)>,
 }
 
 impl Record {
     async fn read(pool: &PgPool) -> Self {
         Self {
             stores: sqlx::query_as(
-                "SELECT encrypted_store, leaf_count, peaks, last_slot FROM encrypted_stores \
+                "SELECT encrypted_store, leaf_count, peaks FROM encrypted_stores \
                  ORDER BY encrypted_store",
             )
             .fetch_all(pool)
@@ -183,7 +185,9 @@ impl Record {
             .fetch_all(pool)
             .await
             .unwrap(),
-            checkpoint: sqlx::query_as("SELECT slot, block_hash FROM checkpoint")
+            checkpoint: sqlx::query_as(
+                "SELECT slot, block_hash, recorded_through FROM checkpoint",
+            )
                 .fetch_optional(pool)
                 .await
                 .unwrap(),
@@ -195,7 +199,7 @@ impl Record {
         let recorded: BTreeMap<[u8; 32], (u64, Vec<[u8; 32]>)> = self
             .stores
             .iter()
-            .map(|(store, leaf_count, peaks, _)| {
+            .map(|(store, leaf_count, peaks)| {
                 (
                     store.as_slice().try_into().unwrap(),
                     (
@@ -212,9 +216,16 @@ impl Record {
     }
 }
 
+async fn apply(
+    pool: &PgPool,
+    block: &PreparedBlock,
+) -> Result<(), IngestFailure> {
+    MerkleIndexerSink::new(pool.clone()).apply(block).await
+}
+
 async fn apply_all(pool: &PgPool, blocks: &[PreparedBlock]) {
     for block in blocks {
-        apply_block(pool, block).await.unwrap();
+        apply(pool, block).await.unwrap();
     }
 }
 
@@ -258,7 +269,7 @@ async fn a_record_built_through_crashes_is_the_uninterrupted_record() {
             .execute(&pool)
             .await
             .unwrap();
-            let failure = apply_block(&pool, block).await.unwrap_err();
+            let failure = apply(&pool, block).await.unwrap_err();
             assert!(
                 !failure.is_fatal(),
                 "slot {}: {failure}",
@@ -275,9 +286,9 @@ async fn a_record_built_through_crashes_is_the_uninterrupted_record() {
                 .await
                 .unwrap();
         }
-        apply_block(&pool, block).await.unwrap();
+        apply(&pool, block).await.unwrap();
         let after = Record::read(&pool).await;
-        apply_block(&pool, block).await.unwrap();
+        apply(&pool, block).await.unwrap();
         assert_eq!(
             Record::read(&pool).await,
             after,
@@ -288,8 +299,8 @@ async fn a_record_built_through_crashes_is_the_uninterrupted_record() {
     assert_eq!(Record::read(&pool).await, expected);
 }
 
-/// Rewinding the checkpoint and replaying recorded blocks reproduces the record; a replayed
-/// block whose writes differ from the recorded leaves stops the indexer.
+/// Moving the checkpoint back replays the later blocks, which reproduce the record. A replayed
+/// block that changes, adds or drops a write stops the indexer and leaves the record as it was.
 #[tokio::test]
 #[serial(db)]
 async fn replayed_blocks_must_reproduce_the_record() {
@@ -308,22 +319,68 @@ async fn replayed_blocks_must_reproduce_the_record() {
     apply_all(&pool, &blocks[5..]).await;
     assert_eq!(Record::read(&pool).await, expected);
 
-    let mut forged = blocks[5].clone();
-    let (_, first_leaf, ..) = expected
-        .leaves
-        .iter()
-        .find(|leaf| leaf.6 == forged.block.slot as i64)
-        .expect("the block recorded a leaf");
-    forged.transactions[0].instructions[0] =
-        make_public(STORES[0], [0xEE; 32], *first_leaf as u64);
-    let failure = apply_block(&pool, &forged).await.unwrap_err();
-    assert!(failure.is_fatal(), "{failure}");
-    assert_eq!(Record::read(&pool).await, expected);
+    // Slot 106 writes both stores, slot 105 only the first.
+    let both = blocks[6].clone();
+    assert_eq!(both.transactions.len(), 2);
+    let first_only = blocks[5].clone();
+    assert_eq!(first_only.transactions.len(), 1);
+    let first_leaf_at = |block: &PreparedBlock, store: usize| {
+        expected
+            .leaves
+            .iter()
+            .find(|leaf| {
+                leaf.0 == STORES[store] && leaf.6 == block.block.slot as i64
+            })
+            .map(|leaf| leaf.1 as u64)
+    };
+
+    let mut changed = first_only.clone();
+    changed.transactions[0].instructions[0] = make_public(
+        STORES[0],
+        [0xEE; 32],
+        first_leaf_at(&first_only, 0).unwrap(),
+    );
+    let mut added = first_only.clone();
+    let second_count = expected.stores[1].1 as u64;
+    added.transactions.push(PreparedTransaction {
+        signature: Signature::from([0xAD; 64]),
+        index: 1,
+        instructions: vec![make_public(STORES[1], [0xEE; 32], second_count)],
+    });
+    let mut dropped = both.clone();
+    dropped.transactions.pop();
+    assert!(first_leaf_at(&both, 1).is_some());
+
+    for (case, forged) in
+        [("changed", changed), ("added", added), ("dropped", dropped)]
+    {
+        let failure = apply(&pool, &forged).await.unwrap_err();
+        assert!(failure.is_fatal(), "{case}: {failure}");
+        assert_eq!(Record::read(&pool).await, expected, "{case}");
+    }
 }
 
-/// The healing runbook's restore: a `pg_dump` of the record taken at some block, restored into
-/// an empty database, resumes from its own checkpoint and catches up to the record an
-/// uninterrupted run builds. `pg_dump` and `pg_restore` run inside the database container, so
+/// A store whose first write the record sees already held leaves was created before the
+/// record's start block: the indexer stops instead of recording a partial history.
+#[tokio::test]
+#[serial(db)]
+async fn a_store_first_seen_above_leaf_zero_stops_the_indexer() {
+    let blocks = blocks();
+    let (_db, pool) = support::record_db().await;
+    apply_all(&pool, &blocks[..2]).await;
+    let before = Record::read(&pool).await;
+
+    let mut late = blocks[2].clone();
+    late.transactions[0]
+        .instructions
+        .push(make_public([0xC3; 32], [0xEE; 32], 3));
+    let failure = apply(&pool, &late).await.unwrap_err();
+    assert!(failure.is_fatal(), "{failure}");
+    assert_eq!(Record::read(&pool).await, before);
+}
+
+/// A `pg_dump` of the record taken at some block, restored into an empty database, resumes from
+/// its own checkpoint and catches up to the record an uninterrupted run builds. `pg_dump` and `pg_restore` run inside the database container, so
 /// their version is the server's.
 #[tokio::test]
 #[serial(db)]

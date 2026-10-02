@@ -127,7 +127,9 @@ Note that recommendations assume a smoke test that runs transactions/requests at
 
 ### solana-host-listener
 
-The `solana_host_follower_*` metrics come from the Solana host follower the listener runs. The listener resumes from its checkpoint through the stream while the Yellowstone provider can still replay it, about 24 hours for a hosted provider. Past that window it catches up from the archive RPC, with one `getBlock` per slot and one `getTransaction` per host transaction. A day of mainnet takes hours, so the lag alarm fires during a long catch-up too; `archive_catch_up_active` at 1 with the lag falling means it is progressing. A listener that fails the same slot, on the stream or during catch-up, retries it every 2 seconds: `failures_since_commit` keeps rising, and the lag and reconnect alarms fire too. `applied_slot` names the last committed slot and the listener's `ingestion interrupted` log line the error. The `/healthz` route checks only the database. A fatal ingestion error exits the process, so it shows up as container restarts, not as a metric.
+The `solana_host_follower_*` metrics come from the Solana host follower. The listener and the `solana-merkle-indexer` each run one and export these metrics with the same names and labels, so scope every recipe below to one of them by the `service` label its ServiceMonitor sets, such as `{service=~".*-solana-host-listener"}` or `{service=~".*-solana-merkle-indexer"}`, and alarm on each. The text below describes the listener; the indexer behaves the same, with its leaves and its own checkpoint in place of the compute rows. The listener resumes from its checkpoint through the stream while the Yellowstone provider can still replay it, about 24 hours for a hosted provider. Past that window it catches up from the archive RPC, with one `getBlock` per slot and one `getTransaction` per host transaction. A day of mainnet takes hours, so the lag alarm fires during a long catch-up too; `archive_catch_up_active` at 1 with the lag falling means it is progressing. A listener that fails the same slot, on the stream or during catch-up, retries it every 2 seconds: `failures_since_commit` keeps rising, and the lag and reconnect alarms fire too. `applied_slot` names the last committed slot and the listener's `ingestion interrupted` log line the error. The `/healthz` route checks only the database. A fatal ingestion error exits the process, so it shows up as container restarts, not as a metric.
+
+On an empty database the indexer starts from the zama-host deployment slot, not from the tip, so a rebuild catches up from the archive over the whole host history. Its lag alarms fire for the duration of that catch-up, and the proof server answers only the stores and leaves the record already holds.
 
 #### Metric Name: `solana_host_follower_applied_block_timestamp_seconds`
  - **Type**: Gauge (labeled by `host_chain_id`)
@@ -137,7 +139,7 @@ The `solana_host_follower_*` metrics come from the Solana host follower the list
 
 #### Metric Name: `solana_host_follower_applied_slot`
  - **Type**: Gauge (labeled by `host_chain_id`)
- - **Description**: Slot of the last block the listener committed with its compute rows, leaves and checkpoint. On a restart it starts at the resumed checkpoint.
+ - **Description**: Slot of the last block the follower committed with its checkpoint. On a restart it starts at the resumed checkpoint.
 
 #### Metric Name: `solana_host_follower_confirmed_slot`
  - **Type**: Gauge (labeled by `host_chain_id`)
