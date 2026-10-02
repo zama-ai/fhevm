@@ -22,9 +22,9 @@
       "max_cpi_instruction_data_bytes": 161
     },
     "verify_public_decrypt/happy": {
-      "compute_units": 37608,
-      "unique_accounts": 4,
-      "instruction_data_bytes": 158,
+      "compute_units": 34012,
+      "unique_accounts": 3,
+      "instruction_data_bytes": 146,
       "cpi_instructions": 0,
       "total_cpi_instruction_data_bytes": 0,
       "max_cpi_instruction_data_bytes": 0
