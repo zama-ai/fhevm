@@ -106,10 +106,11 @@ describe('RelayerAsyncRequest auth/edge error surfacing', () => {
   // 503 readiness_check_timed_out
   //////////////////////////////////////////////////////////////////////////////
 
-  it('503 readiness_check_timed_out is terminal unless the request opts into retrying it', async () => {
-    // The EVM relayer keeps answering the same 503 once the readiness check has timed out, so the
-    // default must surface the error instead of polling a dead job forever (the confidential-bridge
-    // e2e suite relies on this to detect a handle that is not publicly decryptable yet).
+  it('503 readiness_check_timed_out is terminal', async () => {
+    // The relayer keeps answering the same 503 for a job whose readiness check timed out, so the
+    // request surfaces the error instead of polling a dead job until its global timeout (the
+    // confidential-bridge e2e suite relies on this to detect a handle that is not publicly
+    // decryptable yet). A new request is a new job.
     mockFetchStatus(
       503,
       JSON.stringify({

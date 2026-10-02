@@ -94,36 +94,32 @@ describe('publicDecryptCertificate', () => {
     });
   });
 
-  it('retries only the typed KMS readiness timeout before queuing the certificate job', async () => {
+  it('surfaces a timed-out readiness check without polling the dead job again', async () => {
     vi.useFakeTimers();
     const fetchMock = vi
       .fn()
-      .mockResolvedValueOnce(
-        new Response(
-          JSON.stringify({
-            status: 'failed',
-            error: { label: 'readiness_check_timed_out', message: 'KMS material is still indexing' },
-          }),
-          { status: 503, headers: { 'Retry-After': '1' } },
-        ),
-      )
       .mockResolvedValueOnce(
         new Response(JSON.stringify({ status: 'queued', requestId: 'r1', result: { jobId: 'j1' } }), {
           status: 202,
           headers: { 'Retry-After': '1' },
         }),
       )
-      .mockResolvedValueOnce(
-        new Response(JSON.stringify({ status: 'succeeded', requestId: 'r1', result: successResult() }), {
-          status: 200,
-        }),
+      .mockResolvedValue(
+        new Response(
+          JSON.stringify({
+            status: 'failed',
+            error: { label: 'readiness_check_timed_out', message: 'ciphertext never became ready' },
+          }),
+          { status: 503, headers: { 'Retry-After': '1' } },
+        ),
       );
     global.fetch = fetchMock;
 
     const pending = publicDecryptCertificate(context, parameters());
+    const rejection = expect(pending).rejects.toThrow('readiness_check_timed_out');
     await vi.runAllTimersAsync();
-    await expect(pending).resolves.toMatchObject({ abiEncodedCleartext: '00' });
-    expect(fetchMock).toHaveBeenCalledTimes(3);
+    await rejection;
+    expect(fetchMock).toHaveBeenCalledTimes(2);
   });
 
   it('does not retry a non-readiness 503', async () => {
