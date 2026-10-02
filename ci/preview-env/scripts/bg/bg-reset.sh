@@ -192,6 +192,19 @@ for i in $(seq 1 "${NB_COPROCESSOR}"); do
     env PGPASSWORD=zama psql -U zama -d fhevm_e2e -v ON_ERROR_STOP=1 -q <<SQL
 BEGIN;
 TRUNCATE TABLE ${WORK_TABLES};
+-- Pin the poller to the head. The work tables are gone but the block bookkeeping stays,
+-- so without this the poller walks back over blocks whose ciphertexts were just
+-- truncated: re-reading the chain rebuilds the computations but not the input
+-- ciphertexts (those come from proof verification), and every chain spanning the reset
+-- is stuck on "Missing input to compute transaction". Clearing the cursor instead is
+-- worse -- the poller falls back to --seed-start-block and replays from genesis.
+UPDATE host_listener_poller_state p
+   SET last_caught_up_block = GREATEST(
+         p.last_caught_up_block,
+         COALESCE((SELECT max(b.block_number) - 2
+                     FROM host_chain_blocks_valid b
+                    WHERE b.chain_id = p.chain_id),
+                  p.last_caught_up_block));
 DELETE FROM upgrade_state;
 -- A dry run that ended without cutover (timeout, or Green uninstalled) leaves
 -- "gcs-<ver>" behind; the next controller would reuse its stale tables.
