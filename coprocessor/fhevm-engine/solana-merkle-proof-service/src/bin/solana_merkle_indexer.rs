@@ -35,7 +35,7 @@ struct Args {
     #[arg(long)]
     database_url: DatabaseURL,
 
-    /// Solana JSON-RPC endpoint used for HostConfig and start-block reads.
+    /// Solana JSON-RPC endpoint used for HostConfig reads.
     #[arg(long, default_value = "http://127.0.0.1:8899")]
     url: String,
 
@@ -44,8 +44,8 @@ struct Args {
     grpc_url: String,
 
     /// Solana JSON-RPC endpoint whose ledger history rebuilds, with `getBlock` and
-    /// `getTransaction`, the slots Yellowstone can no longer replay. It may be another
-    /// provider's. Defaults to `--url`.
+    /// `getTransaction`, the slots Yellowstone can no longer replay, and reads the start block's
+    /// hash. It may be another provider's. Defaults to `--url`.
     #[arg(long, env = "SOLANA_ARCHIVE_URL")]
     archive_url: Option<String>,
 

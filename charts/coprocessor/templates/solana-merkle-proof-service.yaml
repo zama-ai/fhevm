@@ -56,6 +56,12 @@
 {{- $indexer := $listener.merkleIndexer }}
 {{- $server := $listener.proofServer }}
 {{- $indexerName := printf "%s-solana-merkle-indexer" .Release.Name | trunc 63 | trimSuffix "-" }}
+{{- $startSlot := required "solanaHostListener.merkleIndexer.startSlot is required: a slot before the first encrypted store was created" $indexer.startSlot }}
+{{- /* A YAML number arrives as a float, which would render in exponent form. */}}
+{{- if kindIs "float64" $startSlot }}{{- $startSlot = int64 $startSlot }}{{- end }}
+{{- if not (regexMatch "^[0-9]+$" (toString $startSlot)) }}
+{{- fail (printf "solanaHostListener.merkleIndexer.startSlot must be a slot number, got %v" $startSlot) }}
+{{- end }}
 {{- $serverName := printf "%s-solana-merkle-proof-server" .Release.Name | trunc 63 | trimSuffix "-" }}
 apiVersion: apps/v1
 kind: Deployment
@@ -105,7 +111,7 @@ spec:
             - --url=$(SOLANA_RPC_URL)
             - --grpc-url=$(SOLANA_GRPC_URL)
             - --program-id=$(SOLANA_HOST_PROGRAM_ID)
-            - --start-slot={{ required "solanaHostListener.merkleIndexer.startSlot is required: a slot before the first encrypted store was created" $indexer.startSlot | int64 }}
+            - --start-slot={{ $startSlot }}
             - --http-port={{ $indexer.httpPort }}
             - --metrics-addr=0.0.0.0:{{ $indexer.metricsPort }}
           env:

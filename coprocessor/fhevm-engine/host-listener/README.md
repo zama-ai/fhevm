@@ -130,9 +130,9 @@ stores the result handles in the event and re-derives each one as a check.
 
 On an empty database, `--start-slot <slot>` selects an existing
 confirmed block to replay **inclusively**. Choose a finalized block before the
-host activity that must be reconstructed. RPC supplies that block's hash; its
-transactions come from Yellowstone, or from the archive below if it is older
-than the replay window. The first block must match the requested slot and hash.
+host activity that must be reconstructed. `--archive-url` supplies that block's
+hash; its transactions come from Yellowstone, or from the archive below if it is
+older than the replay window. The first block must match the requested slot and hash.
 
 Once a block's compute rows and checkpoint commit together, restarts
 resume from that checkpoint and ignore `--start-slot`. Inclusive replay verifies

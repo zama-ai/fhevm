@@ -21,6 +21,7 @@ import {
   REPO_ROOT,
   SOLANA_MERKLE_PROOF_PORT,
   SOLANA_LISTENER_HEALTH_PORT,
+  SOLANA_MERKLE_DATABASE,
   SOLANA_MERKLE_INDEXER_HEALTH_PORT,
   STATE_DIR,
   envPath,
@@ -89,12 +90,9 @@ export const readCoprocessorDatabaseUrl = async (): Promise<string> => {
   return url.replace('@db:', '@127.0.0.1:');
 };
 
-/** The Merkle proof service's own database, on the coprocessor's Postgres server. */
-const MERKLE_DATABASE = 'solana_merkle';
-
 const merkleDatabaseUrl = (coprocessorDatabaseUrl: string): string => {
   const url = new URL(coprocessorDatabaseUrl);
-  url.pathname = `/${MERKLE_DATABASE}`;
+  url.pathname = `/${SOLANA_MERKLE_DATABASE}`;
   return url.toString();
 };
 
@@ -103,7 +101,7 @@ const merkleDatabaseUrl = (coprocessorDatabaseUrl: string): string => {
  * every provision starts fresh, so a record left from an earlier ledger would fail its resume.
  */
 const recreateMerkleDatabase = async (): Promise<void> => {
-  for (const statement of [`DROP DATABASE IF EXISTS ${MERKLE_DATABASE} WITH (FORCE)`, `CREATE DATABASE ${MERKLE_DATABASE}`]) {
+  for (const statement of [`DROP DATABASE IF EXISTS ${SOLANA_MERKLE_DATABASE} WITH (FORCE)`, `CREATE DATABASE ${SOLANA_MERKLE_DATABASE}`]) {
     await run(['docker', 'exec', 'coprocessor-and-kms-db', 'psql', '-U', 'postgres', '-c', statement]);
   }
 };
