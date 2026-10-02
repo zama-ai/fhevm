@@ -188,19 +188,17 @@ impl Ct64Source for S3Ct64Source {
             ExecutionError::InternalError(format!("handle must be 32 bytes, got {}", handle.len()))
         })?;
         attestation
-            .verify(handle, coprocessor_context_id)
+            .verify(
+                handle,
+                coprocessor_context_id,
+                expected_signer.unwrap_or(attestation.signer),
+            )
             .map_err(|err| {
                 ExecutionError::DeserializationError(format!(
                     "ct64 attestation on {key} from {} failed verify: {err}",
                     location.bucket
                 ))
             })?;
-        if expected_signer.is_some_and(|signer| signer != attestation.signer) {
-            return Err(ExecutionError::DeserializationError(format!(
-                "ct64 attestation on {key} from {} signer {} is not the registry signer",
-                location.bucket, attestation.signer
-            )));
-        }
         let consensus_epoch = response
             .metadata()
             .and_then(|meta| meta.get(S3_METADATA_CONSENSUS_EPOCH_KEY))
