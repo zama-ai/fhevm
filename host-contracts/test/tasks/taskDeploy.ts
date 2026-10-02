@@ -225,6 +225,8 @@ describe('canonical snapshot apply (canonical → secondary deploy flow)', funct
       deployer,
     )) as unknown as ProtocolConfig;
 
+    expect(await secondary.getVersion()).to.match(/^ProtocolConfigReplica v/);
+
     const canonicalContextId = await canonical.getCurrentKmsContextId();
     const secondaryContextId = await secondary.getCurrentKmsContextId();
     expect(snapshot.currentKmsContextId).to.equal(canonicalContextId);

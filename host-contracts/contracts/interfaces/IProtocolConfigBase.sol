@@ -5,7 +5,7 @@ import {KmsNode} from "../shared/Structs.sol";
 
 /**
  * @title Interface for the shared ProtocolConfig reads and errors.
- * @notice Declares the read functions and errors that every ProtocolConfig deployment on a host chain shares.
+ * @notice Declares the read functions and errors that ProtocolConfig and ProtocolConfigReplica share.
  */
 interface IProtocolConfigBase {
     // -----------------------------------------------------------------------------------------
@@ -232,4 +232,10 @@ interface IProtocolConfigBase {
      * @return The MPC threshold for the context.
      */
     function getMpcThresholdForContext(uint256 kmsContextId) external view returns (uint256);
+
+    /**
+     * @notice Returns the contract version.
+     * @return The version string.
+     */
+    function getVersion() external pure returns (string memory);
 }

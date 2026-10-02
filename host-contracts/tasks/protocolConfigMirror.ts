@@ -119,7 +119,7 @@ export async function readCanonicalSnapshot(
   };
 }
 
-// Builds the upgrade for a secondary ProtocolConfig proxy from a snapshot: deploys the
+// Builds the ProtocolConfigReplica upgrade for a non-canonical proxy from a snapshot: deploys the
 // implementation and returns the upgradeToAndCall(initializeFromCanonical(... args ...)) payload.
 // The DAO path prints it for signers. The direct (devnet) path executes the very same payload with
 // the deployer key (executeUpgradeProposal). Mirror initialization lands the replica on canonical's
@@ -150,7 +150,7 @@ export async function buildCanonicalUpgradeProposal(
 
   return buildUpgradeProposal(hre, {
     proxyAddress,
-    contractName: 'contracts/ProtocolConfig.sol:ProtocolConfig',
+    contractName: 'contracts/ProtocolConfigReplica.sol:ProtocolConfigReplica',
     innerFunctionName: 'initializeFromCanonical',
     decodedArgs: [snapshot.currentKmsContextId, snapshot.currentEpochId, kmsNodeParams, snapshot.thresholds],
   });

@@ -12,8 +12,9 @@ import {InputVerifier} from "@fhevm-host-contracts/contracts/InputVerifier.sol";
 import {HCULimit} from "@fhevm-host-contracts/contracts/HCULimit.sol";
 import {PauserSet} from "@fhevm-host-contracts/contracts/immutable/PauserSet.sol";
 import {ProtocolConfig} from "@fhevm-host-contracts/contracts/ProtocolConfig.sol";
+import {ProtocolConfigReplica} from "@fhevm-host-contracts/contracts/ProtocolConfigReplica.sol";
 import {KMSGeneration} from "@fhevm-host-contracts/contracts/KMSGeneration.sol";
-import {IProtocolConfig} from "@fhevm-host-contracts/contracts/interfaces/IProtocolConfig.sol";
+import {IProtocolConfigReplica} from "@fhevm-host-contracts/contracts/interfaces/IProtocolConfigReplica.sol";
 import {KmsThresholds, KmsNode, KmsNodeParams, PcrValues} from "@fhevm-host-contracts/contracts/shared/Structs.sol";
 import {KMS_CONTEXT_COUNTER_BASE, EPOCH_COUNTER_BASE} from "@fhevm-host-contracts/contracts/shared/Constants.sol";
 import {Vm} from "forge-std/Test.sol";
@@ -206,7 +207,7 @@ contract TestHostContractsDeployerTestUtils is HostContractsDeployerTestUtils {
         uint256 canonicalEpochId = EPOCH_COUNTER_BASE + 7;
         KmsThresholds memory thresholds = KmsThresholds({publicDecryption: 1, userDecryption: 2, kmsGen: 2, mpc: 1});
 
-        (ProtocolConfig pcProxy, address pcImplementation) = _deployProtocolConfigMirror(
+        (ProtocolConfigReplica pcProxy, address pcImplementation) = _deployProtocolConfigMirror(
             OWNER,
             canonicalContextId,
             canonicalEpochId,
@@ -214,9 +215,9 @@ contract TestHostContractsDeployerTestUtils is HostContractsDeployerTestUtils {
             thresholds
         );
 
-        assertEq(address(pcProxy), protocolConfigAdd, "ProtocolConfig proxy address mismatch");
+        assertEq(address(pcProxy), protocolConfigAdd, "ProtocolConfigReplica proxy address mismatch");
         assertNotEq(pcImplementation, address(0), "Implementation not deployed");
-        assertEq(pcProxy.getVersion(), "ProtocolConfig v0.3.0", "Version mismatch");
+        assertEq(pcProxy.getVersion(), "ProtocolConfigReplica v0.1.0", "Version mismatch");
         assertEq(pcProxy.getCurrentKmsContextId(), canonicalContextId, "Context ID mismatch");
         assertEq(pcProxy.getUserDecryptionThreshold(), 2, "User decryption threshold mismatch");
         (uint256 activeContextId, uint256 activeEpochId) = pcProxy.getCurrentKmsContextAndEpoch();
@@ -232,8 +233,13 @@ contract TestHostContractsDeployerTestUtils is HostContractsDeployerTestUtils {
     function test_MirrorKmsContextAndEpoch_PreservesAllNodeParamFields() public {
         _deployACL(OWNER);
         KmsNodeParams[] memory bootstrap = _makeKmsNodeParams(1);
-        _deployProtocolConfig(OWNER, bootstrap, _defaultThresholds());
-        ProtocolConfig pcProxy = ProtocolConfig(protocolConfigAdd);
+        (ProtocolConfigReplica pcProxy, ) = _deployProtocolConfigMirror(
+            OWNER,
+            KMS_CONTEXT_COUNTER_BASE + 1,
+            EPOCH_COUNTER_BASE + 1,
+            bootstrap,
+            _defaultThresholds()
+        );
 
         KmsNodeParams[] memory nodes = _makeKmsNodeParams(2);
         KmsThresholds memory thresholds = _defaultThresholds();
@@ -256,7 +262,7 @@ contract TestHostContractsDeployerTestUtils is HostContractsDeployerTestUtils {
         KmsNodeParams[] memory emitted;
         bool found;
         for (uint256 i = 0; i < logs.length; i++) {
-            if (logs[i].topics[0] == IProtocolConfig.MirrorKmsContextAndEpoch.selector) {
+            if (logs[i].topics[0] == IProtocolConfigReplica.MirrorKmsContextAndEpoch.selector) {
                 (emitted, , , ) = abi.decode(logs[i].data, (KmsNodeParams[], KmsThresholds, string, PcrValues[]));
                 assertEq(uint256(logs[i].topics[2]), mirroredEpochId, "epoch id topic mismatch");
                 found = true;

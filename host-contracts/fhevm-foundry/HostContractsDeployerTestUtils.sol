@@ -13,6 +13,7 @@ import {PauserSet} from "@fhevm-host-contracts/contracts/immutable/PauserSet.sol
 import {EmptyUUPSProxy} from "@fhevm-host-contracts/contracts/emptyProxy/EmptyUUPSProxy.sol";
 import {EmptyUUPSProxyACL} from "@fhevm-host-contracts/contracts/emptyProxyACL/EmptyUUPSProxyACL.sol";
 import {ProtocolConfig} from "@fhevm-host-contracts/contracts/ProtocolConfig.sol";
+import {ProtocolConfigReplica} from "@fhevm-host-contracts/contracts/ProtocolConfigReplica.sol";
 import {KMSGeneration} from "@fhevm-host-contracts/contracts/KMSGeneration.sol";
 import {IProtocolConfig} from "@fhevm-host-contracts/contracts/interfaces/IProtocolConfig.sol";
 import {IKMSGeneration} from "@fhevm-host-contracts/contracts/interfaces/IKMSGeneration.sol";
@@ -249,7 +250,7 @@ abstract contract HostContractsDeployerTestUtils is Test {
         uint256 initialEpochId,
         KmsNodeParams[] memory initialKmsNodeParams,
         KmsThresholds memory initialThresholds
-    ) internal returns (ProtocolConfig protocolConfigProxy, address protocolConfigImplementation) {
+    ) internal returns (ProtocolConfigReplica protocolConfigProxy, address protocolConfigImplementation) {
         address emptyProxyImplementation = address(new EmptyUUPSProxy());
 
         deployCodeTo(
@@ -257,21 +258,21 @@ abstract contract HostContractsDeployerTestUtils is Test {
             abi.encode(emptyProxyImplementation, abi.encodeCall(EmptyUUPSProxy.initialize, ())),
             protocolConfigAdd
         );
-        vm.label(protocolConfigAdd, "ProtocolConfig Mirror Proxy");
+        vm.label(protocolConfigAdd, "ProtocolConfigReplica Proxy");
 
-        protocolConfigImplementation = address(new ProtocolConfig());
-        vm.label(protocolConfigImplementation, "ProtocolConfig Mirror Implementation");
+        protocolConfigImplementation = address(new ProtocolConfigReplica());
+        vm.label(protocolConfigImplementation, "ProtocolConfigReplica Implementation");
 
         vm.prank(owner);
         EmptyUUPSProxy(protocolConfigAdd).upgradeToAndCall(
             protocolConfigImplementation,
             abi.encodeCall(
-                ProtocolConfig.initializeFromCanonical,
+                ProtocolConfigReplica.initializeFromCanonical,
                 (initialContextId, initialEpochId, initialKmsNodeParams, initialThresholds)
             )
         );
 
-        protocolConfigProxy = ProtocolConfig(protocolConfigAdd);
+        protocolConfigProxy = ProtocolConfigReplica(protocolConfigAdd);
     }
 
     function _deployKMSGeneration(

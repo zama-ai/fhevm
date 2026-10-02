@@ -96,7 +96,7 @@ npx hardhat task:deployAllHostContracts --with-kms-generation false  # non-canon
 `KMSGeneration` is deployed only on the canonical host chain. Non-canonical host chains
 deploy the common host contracts only.
 
-### One contract, many chains: canonical vs. non-canonical
+### Canonical vs. non-canonical hosts
 
 **Ethereum is the canonical host — the single source of truth for KMS context/epoch state. The
 lifecycle runs only there.** Governance opens a context/epoch
@@ -104,10 +104,10 @@ lifecycle runs only there.** Governance opens a context/epoch
 quorum (`confirmKmsContextCreation`, `confirmEpochActivation`) before it activates. `KMSGeneration`
 is deployed only here.
 
-The **same** `ProtocolConfig` contract is deployed on every other host chain too (there is no
-separate "multichain" contract), but those non-canonical hosts (e.g. Polygon) are read-replicas:
-they never run the lifecycle/quorum path, since KMS resharing and attestations happen once, on
-Ethereum. They have no `KMSGeneration`, and their only write path is the mirror methods below.
+Every other host chain (e.g. Polygon) runs `ProtocolConfigReplica`, a read-replica that shares
+storage, reads and write helpers with `ProtocolConfig` through `ProtocolConfigBase`. Replicas never
+run the lifecycle/quorum path, since KMS resharing and attestations happen once, on Ethereum. They
+have no `KMSGeneration`, and their only write path is the mirror methods below.
 
 ### Mirror methods (non-canonical write path)
 
@@ -125,7 +125,7 @@ IDs must be **strictly increasing** — the only on-chain guard, preventing roll
 replica from **drifting** if a mirror call is skipped or applied out of order: replaying each
 Ethereum rotation to every replica, in order, is the operator's responsibility.
 
-### Initializing a non-canonical ProtocolConfig from the canonical chain
+### Initializing a ProtocolConfigReplica from the canonical chain
 
 The Ethereum `ProtocolConfig` is the source of truth for protocol state, so **new** host chains
 seed their replica from it.
@@ -150,7 +150,7 @@ tasks in step 3 read.
 artifact byte-for-byte — even after a later `defineNewKmsContextAndEpoch` rotation — by re-running the
 export with `--block-number <N>` from the artifact and diffing the output.
 
-**3. Apply** the reviewed artifact to the local `ProtocolConfig` proxy. Both environments run the
+**3. Apply** the reviewed artifact to the local `ProtocolConfigReplica` proxy. Both environments run the
 same prepare step — deploy the implementation and build the
 `upgradeToAndCall(initializeFromCanonical(contextId, epochId, …))` payload, landing the
 replica on canonical's active context and epoch instead of fresh local counters. They differ only in
