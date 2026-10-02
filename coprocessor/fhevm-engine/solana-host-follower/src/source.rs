@@ -17,11 +17,13 @@ use anyhow::{anyhow, bail, ensure, Context, Result};
 use solana_sdk::signature::Signature;
 use tracing::warn;
 use yellowstone_grpc_proto::prelude::{
-    SubscribeRequest, SubscribeRequestFilterBlocksMeta, SubscribeRequestFilterTransactions,
-    SubscribeUpdateBlockMeta,
+    SubscribeRequest, SubscribeRequestFilterBlocksMeta,
+    SubscribeRequestFilterTransactions, SubscribeUpdateBlockMeta,
 };
 
-use crate::follower::{BlockCheckpoint, PreparedBlock, PreparedTransaction, StartPosition};
+use crate::follower::{
+    BlockCheckpoint, PreparedBlock, PreparedTransaction, StartPosition,
+};
 
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct SealedBlock {
@@ -109,9 +111,14 @@ impl BlockValidator {
         self.evicted_through.is_some_and(|evicted| slot <= evicted)
     }
 
-    fn seal(&mut self, block: SealedBlock, transactions: Option<BTreeSet<(u64, Signature)>>) {
+    fn seal(
+        &mut self,
+        block: SealedBlock,
+        transactions: Option<BTreeSet<(u64, Signature)>>,
+    ) {
         if self.sealed.len() == REDELIVERY_WINDOW {
-            self.evicted_through = self.sealed.pop_front().map(|evicted| evicted.block.slot);
+            self.evicted_through =
+                self.sealed.pop_front().map(|evicted| evicted.block.slot);
         }
         self.sealed.push_back(Sealed {
             block,
@@ -119,8 +126,13 @@ impl BlockValidator {
         });
     }
 
-    pub fn transaction(&mut self, slot: u64, transaction: PreparedTransaction) -> Result<()> {
-        if let Some(newest) = self.sealed.back().map(|sealed| sealed.block.slot) {
+    pub fn transaction(
+        &mut self,
+        slot: u64,
+        transaction: PreparedTransaction,
+    ) -> Result<()> {
+        if let Some(newest) = self.sealed.back().map(|sealed| sealed.block.slot)
+        {
             if slot <= newest {
                 if self.evicted(slot) {
                     return Ok(());
@@ -128,10 +140,9 @@ impl BlockValidator {
                 let sealed = self.sealed(slot).ok_or_else(|| {
                     anyhow!("transaction for slot {slot} arrived after slot {newest} was sealed")
                 })?;
-                let held = sealed
-                    .transactions
-                    .as_ref()
-                    .is_none_or(|held| held.contains(&(transaction.index, transaction.signature)));
+                let held = sealed.transactions.as_ref().is_none_or(|held| {
+                    held.contains(&(transaction.index, transaction.signature))
+                });
                 ensure!(
                     held,
                     "transaction {} (index {}) of slot {slot} arrived after the slot was applied \
@@ -143,7 +154,9 @@ impl BlockValidator {
             }
         }
         match &mut self.open {
-            Some((open, transactions)) if *open == slot => transactions.push(transaction),
+            Some((open, transactions)) if *open == slot => {
+                transactions.push(transaction)
+            }
             Some((open, _)) => {
                 bail!("transaction for slot {slot} arrived before the block meta of slot {open}")
             }
@@ -153,12 +166,18 @@ impl BlockValidator {
     }
 
     /// Seals the slot of `meta` with the transactions held open for it.
-    pub fn block_meta(&mut self, meta: SubscribeUpdateBlockMeta) -> Result<SealDecision> {
+    pub fn block_meta(
+        &mut self,
+        meta: SubscribeUpdateBlockMeta,
+    ) -> Result<SealDecision> {
         let block = SealedBlock {
             slot: meta.slot,
             block_hash: decode_hash("blockhash", &meta.blockhash)?,
             parent_slot: meta.parent_slot,
-            parent_block_hash: decode_hash("parent blockhash", &meta.parent_blockhash)?,
+            parent_block_hash: decode_hash(
+                "parent blockhash",
+                &meta.parent_blockhash,
+            )?,
             block_time: meta.block_time.map(|time| time.timestamp),
             block_height: meta.block_height.map(|height| height.block_height),
             executed_transaction_count: meta.executed_transaction_count,
@@ -197,9 +216,9 @@ impl BlockValidator {
                     );
                     return Ok(SealDecision::Skip);
                 }
-                let sealed = self
-                    .sealed(block.slot)
-                    .ok_or_else(|| anyhow!("out-of-order sealed block at slot {}", block.slot))?;
+                let sealed = self.sealed(block.slot).ok_or_else(|| {
+                    anyhow!("out-of-order sealed block at slot {}", block.slot)
+                })?;
                 ensure!(
                     block == sealed.block,
                     "conflicting sealed block replay at slot {}",
@@ -208,7 +227,8 @@ impl BlockValidator {
                 return Ok(SealDecision::Skip);
             }
             ensure!(
-                block.parent_slot == newest.slot && block.parent_block_hash == newest.block_hash,
+                block.parent_slot == newest.slot
+                    && block.parent_block_hash == newest.block_hash,
                 "sealed block ancestry mismatch at slot {} (parent slot {})",
                 block.slot,
                 block.parent_slot
@@ -222,8 +242,8 @@ impl BlockValidator {
         );
 
         if !self.checkpoint_observed {
-            let (StartPosition::Resume(checkpoint) | StartPosition::ReplayFrom(checkpoint)) =
-                &self.start
+            let (StartPosition::Resume(checkpoint)
+            | StartPosition::ReplayFrom(checkpoint)) = &self.start
             else {
                 unreachable!("tip starts with checkpoint observed")
             };
@@ -276,8 +296,10 @@ pub(crate) fn build_subscribe_request(
             token_accounts: None,
         },
     )]);
-    let blocks_meta =
-        HashMap::from([("zama_host".to_owned(), SubscribeRequestFilterBlocksMeta {})]);
+    let blocks_meta = HashMap::from([(
+        "zama_host".to_owned(),
+        SubscribeRequestFilterBlocksMeta {},
+    )]);
     SubscribeRequest {
         accounts: HashMap::new(),
         slots: HashMap::new(),
@@ -286,14 +308,15 @@ pub(crate) fn build_subscribe_request(
         blocks: HashMap::new(),
         blocks_meta,
         entry: HashMap::new(),
-        commitment: Some(yellowstone_grpc_proto::prelude::CommitmentLevel::Confirmed as i32),
+        commitment: Some(
+            yellowstone_grpc_proto::prelude::CommitmentLevel::Confirmed as i32,
+        ),
         accounts_data_slice: vec![],
         ping: None,
         from_slot: match start {
             StartPosition::Tip => None,
-            StartPosition::Resume(checkpoint) | StartPosition::ReplayFrom(checkpoint) => {
-                Some(checkpoint.slot)
-            }
+            StartPosition::Resume(checkpoint)
+            | StartPosition::ReplayFrom(checkpoint) => Some(checkpoint.slot),
         },
     }
 }
@@ -302,7 +325,8 @@ fn decode_hash(name: &str, value: &str) -> Result<[u8; 32]> {
     let bytes = bs58::decode(value)
         .into_vec()
         .with_context(|| format!("invalid {name}"))?;
-    <[u8; 32]>::try_from(bytes.as_slice()).with_context(|| format!("{name} is not 32 bytes"))
+    <[u8; 32]>::try_from(bytes.as_slice())
+        .with_context(|| format!("{name} is not 32 bytes"))
 }
 
 /// Block metas and validators the follower's tests share.
@@ -317,7 +341,10 @@ pub(crate) mod testing {
 
     /// The block meta of `slot`, child of `slot - 1`, with `executed_transaction_count`
     /// transactions.
-    pub(crate) fn meta(slot: u64, executed_transaction_count: u64) -> SubscribeUpdateBlockMeta {
+    pub(crate) fn meta(
+        slot: u64,
+        executed_transaction_count: u64,
+    ) -> SubscribeUpdateBlockMeta {
         SubscribeUpdateBlockMeta {
             slot,
             blockhash: bs58::encode(hash(slot as u8)).into_string(),
@@ -354,7 +381,9 @@ mod tests {
     }
 
     fn indexes(decision: SealDecision) -> Vec<u64> {
-        let SealDecision::Process(PreparedBlock { transactions, .. }) = decision else {
+        let SealDecision::Process(PreparedBlock { transactions, .. }) =
+            decision
+        else {
             panic!("expected a processed slot, got {decision:?}")
         };
         transactions.iter().map(|tx| tx.index).collect()
@@ -522,7 +551,8 @@ mod tests {
             }),
             "ancestry mismatch",
         );
-        assert!(indexes(validator.block_meta(meta(last + 1, 0)).unwrap()).is_empty());
+        assert!(indexes(validator.block_meta(meta(last + 1, 0)).unwrap())
+            .is_empty());
     }
 
     /// Every other break of the transactions-before-meta order halts.
@@ -568,13 +598,15 @@ mod tests {
             slot: 5,
             block_hash: hash(5),
         };
-        let mut validator = BlockValidator::new(StartPosition::Resume(checkpoint.clone()));
+        let mut validator =
+            BlockValidator::new(StartPosition::Resume(checkpoint.clone()));
         halts(
             validator.block_meta(meta(6, 0)),
             "did not begin at checkpoint slot 5",
         );
 
-        let mut validator = BlockValidator::new(StartPosition::Resume(checkpoint));
+        let mut validator =
+            BlockValidator::new(StartPosition::Resume(checkpoint));
         validator.transaction(5, transaction(0)).unwrap();
         assert!(matches!(
             validator.block_meta(meta(5, 1)).unwrap(),
@@ -601,7 +633,8 @@ mod tests {
             slot: 5,
             block_hash: hash(5),
         };
-        let mut validator = BlockValidator::new(StartPosition::ReplayFrom(checkpoint));
+        let mut validator =
+            BlockValidator::new(StartPosition::ReplayFrom(checkpoint));
         assert!(matches!(
             validator.block_meta(meta(5, 0)).unwrap(),
             SealDecision::Process(..)
@@ -615,8 +648,12 @@ mod tests {
             block_hash: hash(9),
         };
         let program = Pubkey::new_unique();
-        let request = build_subscribe_request(&program, &StartPosition::Resume(checkpoint));
-        let [filter] = &request.transactions.values().collect::<Vec<_>>()[..] else {
+        let request = build_subscribe_request(
+            &program,
+            &StartPosition::Resume(checkpoint),
+        );
+        let [filter] = &request.transactions.values().collect::<Vec<_>>()[..]
+        else {
             panic!("one transaction filter")
         };
         assert_eq!(filter.account_include, vec![program.to_string()]);

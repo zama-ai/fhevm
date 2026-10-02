@@ -7,7 +7,10 @@
 
 use std::{sync::LazyLock, time::Duration};
 
-use prometheus::{register_int_counter_vec, register_int_gauge_vec, IntCounterVec, IntGaugeVec};
+use prometheus::{
+    register_int_counter_vec, register_int_gauge_vec, IntCounterVec,
+    IntGaugeVec,
+};
 use solana_client::nonblocking::rpc_client::RpcClient;
 use solana_commitment_config::CommitmentConfig;
 use tokio_util::sync::CancellationToken;
@@ -114,7 +117,11 @@ pub(super) fn record_interruption(host_chain_id: u64) {
 
 /// Polls the cluster's confirmed slot until `cancel` fires. It reads RPC, not the gRPC
 /// stream, so a stalled or delayed stream cannot hide its own lag.
-pub async fn track_confirmed_slot(rpc: RpcClient, host_chain_id: u64, cancel: CancellationToken) {
+pub async fn track_confirmed_slot(
+    rpc: RpcClient,
+    host_chain_id: u64,
+    cancel: CancellationToken,
+) {
     let gauge = CONFIRMED_SLOT.with_label_values(&[&host_chain_id.to_string()]);
     let mut interval = tokio::time::interval(CONFIRMED_SLOT_POLL_INTERVAL);
     loop {
@@ -142,7 +149,8 @@ mod tests {
     #[test]
     fn a_commit_resets_the_failures_since_commit() {
         let chain = 9_000_001;
-        let gauge = FAILURES_SINCE_COMMIT.with_label_values(&[&chain.to_string()]);
+        let gauge =
+            FAILURES_SINCE_COMMIT.with_label_values(&[&chain.to_string()]);
         record_start(chain, &StartPosition::Tip);
         record_interruption(chain);
         record_interruption(chain);

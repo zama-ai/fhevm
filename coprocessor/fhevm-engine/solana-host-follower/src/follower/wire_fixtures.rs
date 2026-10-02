@@ -15,16 +15,19 @@ use solana_sdk::{
     transaction::VersionedTransaction,
 };
 use yellowstone_grpc_proto::prelude::{
-    CompiledInstruction as GrpcCompiledInstruction, InnerInstruction, InnerInstructions,
-    Message as GrpcMessage, SubscribeUpdateTransaction, SubscribeUpdateTransactionInfo,
-    Transaction as GrpcTransaction, TransactionStatusMeta,
+    CompiledInstruction as GrpcCompiledInstruction, InnerInstruction,
+    InnerInstructions, Message as GrpcMessage, SubscribeUpdateTransaction,
+    SubscribeUpdateTransactionInfo, Transaction as GrpcTransaction,
+    TransactionStatusMeta,
 };
 
 use anchor_lang::{AnchorSerialize, Discriminator};
 use solana_transaction_status_client_types::{
     EncodedConfirmedTransactionWithStatusMeta, UiConfirmedBlock,
 };
-use zama_host::state::{ExecutionResultRef, FheExecuteArgs, FheExecuteEffect, FheExecuteStep};
+use zama_host::state::{
+    ExecutionResultRef, FheExecuteArgs, FheExecuteEffect, FheExecuteStep,
+};
 use zama_host::FheExecutedEvent;
 
 use super::test_support::ZAMA_HOST;
@@ -52,7 +55,8 @@ pub(crate) struct Transaction {
 impl Transaction {
     /// `getBlock`'s JSON for the transaction, spelled as the RPC wire format.
     pub(crate) fn rpc_json(&self, err: Value) -> Value {
-        let has_lookups = !self.loaded_writable.is_empty() || !self.loaded_readonly.is_empty();
+        let has_lookups = !self.loaded_writable.is_empty()
+            || !self.loaded_readonly.is_empty();
         let message = v0::Message {
             header: MessageHeader {
                 num_required_signatures: 1,
@@ -77,8 +81,10 @@ impl Transaction {
             address_table_lookups: if has_lookups {
                 vec![MessageAddressTableLookup {
                     account_key: Pubkey::new_from_array([0xAA; 32]),
-                    writable_indexes: (0..self.loaded_writable.len() as u8).collect(),
-                    readonly_indexes: (0..self.loaded_readonly.len() as u8).collect(),
+                    writable_indexes: (0..self.loaded_writable.len() as u8)
+                        .collect(),
+                    readonly_indexes: (0..self.loaded_readonly.len() as u8)
+                        .collect(),
                 }]
             } else {
                 vec![]
@@ -171,7 +177,10 @@ impl Transaction {
     }
 
     /// `getTransaction`'s response for the successful transaction in `slot`.
-    pub(crate) fn rpc_transaction(&self, slot: u64) -> EncodedConfirmedTransactionWithStatusMeta {
+    pub(crate) fn rpc_transaction(
+        &self,
+        slot: u64,
+    ) -> EncodedConfirmedTransactionWithStatusMeta {
         let mut response = self.rpc_json(Value::Null);
         response["slot"] = json!(slot);
         response["blockTime"] = json!(BLOCK_TIME);
@@ -180,7 +189,11 @@ impl Transaction {
 
     pub(crate) fn grpc(&self) -> (GrpcMessage, TransactionStatusMeta) {
         let message = GrpcMessage {
-            account_keys: self.static_keys.iter().map(|key| key.to_vec()).collect(),
+            account_keys: self
+                .static_keys
+                .iter()
+                .map(|key| key.to_vec())
+                .collect(),
             instructions: self
                 .top_level
                 .iter()
@@ -202,7 +215,9 @@ impl Transaction {
                     instructions: instructions
                         .iter()
                         .map(|instruction| InnerInstruction {
-                            program_id_index: u32::from(instruction.program_id_index),
+                            program_id_index: u32::from(
+                                instruction.program_id_index,
+                            ),
                             accounts: instruction.accounts.clone(),
                             data: instruction.data.clone(),
                             stack_height: instruction.stack_height,
@@ -226,7 +241,11 @@ impl Transaction {
     }
 
     /// The transaction as Yellowstone streams it, successful, at `index` in `slot`.
-    pub(crate) fn grpc_update(&self, slot: u64, index: u64) -> SubscribeUpdateTransaction {
+    pub(crate) fn grpc_update(
+        &self,
+        slot: u64,
+        index: u64,
+    ) -> SubscribeUpdateTransaction {
         SubscribeUpdateTransaction {
             transaction: Some(self.grpc_info(index)),
             slot,
@@ -234,7 +253,10 @@ impl Transaction {
     }
 
     /// The transaction as a Yellowstone transaction update carries it, at `index`.
-    pub(crate) fn grpc_info(&self, index: u64) -> SubscribeUpdateTransactionInfo {
+    pub(crate) fn grpc_info(
+        &self,
+        index: u64,
+    ) -> SubscribeUpdateTransactionInfo {
         let (message, meta) = self.grpc();
         SubscribeUpdateTransactionInfo {
             signature: self.signature.to_vec(),
@@ -251,7 +273,10 @@ impl Transaction {
 
 /// An app program's top-level instruction CPIs into `fhe_execute`, which emits its event
 /// through a self-CPI, as on chain.
-pub(crate) fn app_transaction(signature: u8, plaintext: [u8; 32]) -> Transaction {
+pub(crate) fn app_transaction(
+    signature: u8,
+    plaintext: [u8; 32],
+) -> Transaction {
     app_calling_host(signature, execute_args(plaintext, None), vec![])
 }
 
@@ -297,7 +322,10 @@ pub(crate) fn foreign_transaction(signature: u8) -> Transaction {
 }
 
 /// A trivial encryption of `plaintext`, optionally stored with one allowed key.
-fn execute_args(plaintext: [u8; 32], stored: Option<([u8; 32], u64)>) -> FheExecuteArgs {
+fn execute_args(
+    plaintext: [u8; 32],
+    stored: Option<([u8; 32], u64)>,
+) -> FheExecuteArgs {
     FheExecuteArgs {
         execution_store_index: 0,
         effects: stored
