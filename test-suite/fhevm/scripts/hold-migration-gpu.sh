@@ -12,7 +12,7 @@ umask 077
 receipt="$root/gpu-images.json"
 cp "$RFC029_GPU_IMAGES" "$receipt"
 revision="$(sr_revision "$REPO_ROOT")"
-[[ "$(jq -r .revision "$receipt")" == "$revision" ]] || { echo 'GPU image source differs from checkout' >&2; exit 1; }
+bun "$SCRIPT_DIR/validate-migration-gpu-images.ts" "$receipt" "$REPO_ROOT" "$revision" "$root/gpu-provenance.json" >&2
 device="$(jq -r .device "$receipt")"
 [[ "$device" =~ ^GPU-[a-f0-9-]+$ ]] || exit 2
 [[ "$(nvidia-smi --id="$device" --query-gpu=compute_cap --format=csv,noheader | tr -d '. ')" == "$(jq -r .capability "$receipt")" ]] || exit 1
@@ -57,7 +57,8 @@ for operator in '' 1; do
     image="$(jq -r --arg role "$role" '.images[$role]' "$receipt")"
     [[ "$image" =~ ^sha256:[a-f0-9]{64}$ ]] || exit 1
     docker image inspect "$image" > "$root/$role.image.json"
-    jq -e --arg revision "$revision" '.[0].Config.Labels | .["ai.zama.fhevm.gpu"]=="true" and .["org.opencontainers.image.revision"]==$revision' "$root/$role.image.json" >/dev/null
+    # The preflight verified source, reference and backend for this immutable ID.
+    jq -e --arg image "$image" '.[0].Id==$image' "$root/$role.image.json" >/dev/null
     jq --arg target "$target" --arg image "$(jq -r '.[0].Image' "$root/$target.json")" '.services[$target]={image:$image}' "$root/original-images.json" > "$root/next"
     mv "$root/next" "$root/original-images.json"
     jq --arg target "$target" --arg image "$image" --arg device "$device" \

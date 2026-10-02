@@ -801,6 +801,23 @@ export RFC029_GPU_IMAGES="$FHEVM_STATE_DIR/runtime/gpu-consensus-workers/migrati
 # Run the ordinary v0.14-to-v0.15-gpu-key-migration rollout with these variables.
 ```
 
+Alternatively, `RFC029_GPU_IMAGES` can name a published-image receipt with
+`mode: "published"`, `revision` (the peeled release commit), `releaseTag`,
+`device` (GPU UUID), `capability` (for example `"90"`), and two maps keyed by
+`tfhe-worker`, `sns-worker`, and `zkproof-worker`: `images` contains immutable
+Docker image IDs; `references` contains the corresponding release references
+including both the CUDA/SM tag and `@sha256:` registry digest. Pull all three
+references before running the rollout. The preflight checks their actual image
+IDs, GPU architecture and CUDA labels before stopping any worker. The checkout
+must be clean and may differ from the release only within `test-suite/`.
+
+Published images without an OCI source-revision label are accepted with that
+limitation explicitly recorded in `gpu-provenance.json`; their release tags and
+pinned artifacts do not independently attest their source. A conflicting source
+label is rejected. Local checkout receipts still require an exact source label
+and checkout revision. The rollout never relabels a published image as a local
+checkout build.
+
 The GPU continuation selects `Default` parameters and explicitly sets
 `kms.insecureTestKeygen: true`. Threshold `Test` parameters use drift noise
 reduction unsupported by CUDA; secure preprocessing with `Default` is too
