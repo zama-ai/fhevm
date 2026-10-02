@@ -73,7 +73,7 @@ fn component(
     assert_eq!(
         components.len(),
         1,
-        "transaction remains the materialisation unit"
+        "transaction remains the materialization unit"
     );
     let c = components.remove(0);
     (c.graph, c.inputs, c.transaction_id, c.component_id)

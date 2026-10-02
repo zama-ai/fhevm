@@ -1,4 +1,4 @@
-//! Operation readiness within a transaction, without changing materialisation.
+//! Operation readiness within a transaction, without changing materialization.
 //!
 //! Coordinators are async and never occupy the blocking pool while waiting for
 //! child work. Operations use that existing bounded pool and, on CUDA, the same
@@ -338,7 +338,7 @@ pub(super) async fn execute_partition(
                     Err(error),
                 )),
             }
-            // Failed producers also release dependants so they get explicit
+            // Failed producers also release dependents so they get explicit
             // missing-input outcomes; independent branches continue normally.
             for edge in dfg.graph.edges_directed(index, Direction::Outgoing) {
                 let child = edge.target();
