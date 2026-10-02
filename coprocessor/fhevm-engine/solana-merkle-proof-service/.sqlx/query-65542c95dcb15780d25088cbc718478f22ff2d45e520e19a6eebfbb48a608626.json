@@ -1,0 +1,34 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n        SELECT\n            leaf_count,\n            peaks,\n            EXISTS (\n                SELECT 1 FROM quarantined_stores AS q\n                WHERE q.encrypted_store = s.encrypted_store\n            ) AS \"quarantined!\"\n        FROM encrypted_stores AS s\n        WHERE encrypted_store = $1\n        ",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "leaf_count",
+        "type_info": "Int8"
+      },
+      {
+        "ordinal": 1,
+        "name": "peaks",
+        "type_info": "ByteaArray"
+      },
+      {
+        "ordinal": 2,
+        "name": "quarantined!",
+        "type_info": "Bool"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Bytea"
+      ]
+    },
+    "nullable": [
+      false,
+      false,
+      null
+    ]
+  },
+  "hash": "65542c95dcb15780d25088cbc718478f22ff2d45e520e19a6eebfbb48a608626"
+}

@@ -1,0 +1,14 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "DELETE FROM quarantined_stores WHERE encrypted_store = $1",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Bytea"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "13e945a573f544c0b4a890b07213b6b866319ef270fa62d752a18bdc849eeb11"
+}

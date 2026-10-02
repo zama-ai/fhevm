@@ -27,6 +27,7 @@ ciborium = "0.2.2"
 clap = { workspace = true }
 # Already in the tree through solana-streamer.
 governor = "0.6.3"
+prometheus = { workspace = true }
 serde = { workspace = true, features = ["derive"] }
 serde_bytes = "0.11.19"
 sqlx = { workspace = true }
@@ -51,6 +52,8 @@ zama-solana-acl = { path = "../../../solana/crates/zama-solana-acl" }
 [dev-dependencies]
 # Encodes host instructions for the indexer tests' blocks.
 anchor-lang = "1.2.0"
+# Encodes the encrypted store accounts of the store check tests.
+borsh = "1"
 zama-host = { path = "../../../solana/programs/zama-host", default-features = false, features = ["no-entrypoint", "decode"] }
 hex = { workspace = true }
 reqwest = { workspace = true, features = ["http2"] }

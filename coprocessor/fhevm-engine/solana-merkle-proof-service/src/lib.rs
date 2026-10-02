@@ -7,6 +7,7 @@ pub mod indexer;
 pub mod kms_tx_senders;
 pub mod server;
 pub mod store;
+pub mod store_check;
 
 /// The record's schema. The indexer applies it at start; the proof server only reads.
 pub static MIGRATOR: sqlx::migrate::Migrator = sqlx::migrate!("./migrations");

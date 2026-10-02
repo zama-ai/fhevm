@@ -25,6 +25,7 @@ use solana_merkle_proof_service::{
     indexer::{IndexerStart, MerkleIndexerSink},
     server::HttpServer,
     store::load_checkpoint,
+    store_check::run_store_checks,
     MIGRATOR,
 };
 
@@ -70,6 +71,11 @@ struct Args {
     /// Address of the Prometheus metrics server (e.g. 0.0.0.0:9100); unset disables it.
     #[arg(long)]
     metrics_addr: Option<String>,
+
+    /// Seconds between two store checks, which compare every recorded store with its account
+    /// on chain. The first runs at start.
+    #[arg(long, default_value_t = 600)]
+    store_check_interval_secs: u64,
 
     #[arg(long, default_value_t = Level::INFO)]
     log_level: Level,
@@ -148,6 +154,19 @@ async fn main() -> Result<()> {
             signal_cancel.cancel();
         }
     });
+
+    tokio::spawn(run_store_checks(
+        pool.clone(),
+        RpcClient::new_with_timeout_and_commitment(
+            args.url.clone(),
+            SOLANA_RPC_REQUEST_TIMEOUT,
+            CommitmentConfig::confirmed(),
+        ),
+        program_id,
+        chain_id,
+        Duration::from_secs(args.store_check_interval_secs),
+        cancel.child_token(),
+    ));
 
     if args.metrics_addr.is_some() {
         metrics_server::spawn(args.metrics_addr, cancel.child_token());

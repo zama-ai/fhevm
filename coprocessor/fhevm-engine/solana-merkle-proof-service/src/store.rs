@@ -19,7 +19,9 @@
 //! position ([`load_proof`]) instead of rebuilding the mountain from every leaf. Node
 //! `(height, index)` covers leaves `[index << height, (index + 1) << height)`: mountains
 //! are aligned to their size, so a node's position never depends on the leaf count.
-//! Height-0 path entries are leaf rows; only nodes of height 1 and above are stored.
+//! Height-0 path entries are leaf rows; only nodes of height 1 and above are stored. The same
+//! positions give the record's peaks at any leaf count it holds ([`load_peaks`]), which the
+//! indexer's store check compares with the chain's.
 
 use std::collections::BTreeMap;
 
@@ -46,6 +48,14 @@ pub struct TransactionStoreWrites {
 pub struct EncryptedStoreCursor {
     pub leaf_count: u64,
     pub peaks: Vec<[u8; 32]>,
+}
+
+/// A recorded store as the proof server reads it.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct ServedStore {
+    pub cursor: EncryptedStoreCursor,
+    /// The store check found the record's peaks differ from the chain's.
+    pub quarantined: bool,
 }
 
 /// Persisted as the `leaf_kind` column.
@@ -294,6 +304,21 @@ fn proof_path(leaf_index: u64, leaf_count: u64) -> Option<Vec<(u8, u64)>> {
     let height =
         (u64::BITS - 1 - (leaf_index ^ leaf_count).leading_zeros()) as u8;
     Some((0..height).map(|k| (k, (leaf_index >> k) ^ 1)).collect())
+}
+
+/// The positions of the peaks of the first `leaf_count` leaves, oldest mountain first, in
+/// [`proof_path`]'s notation. Each set bit of `leaf_count` is one mountain, aligned to its size.
+fn peak_positions(leaf_count: u64) -> Vec<(u8, u64)> {
+    let mut offset = 0;
+    (0..u64::BITS as u8)
+        .rev()
+        .filter(|height| leaf_count & (1 << height) != 0)
+        .map(|height| {
+            let position = (height, offset >> height);
+            offset += 1 << height;
+            position
+        })
+        .collect()
 }
 
 /// A historical-access leaf for `key`, or the public-decrypt leaf when `key` is `None`.
@@ -547,14 +572,20 @@ pub async fn load_checkpoint(
 /// The recorded cursor of `store`, read outside ingestion. Leaves and nodes are
 /// immutable once written and the cursor only grows, so reads bounded by this
 /// `leaf_count` agree with it while later blocks commit.
-pub async fn load_store_cursor(
+pub async fn load_served_store(
     pool: &sqlx::PgPool,
     store: [u8; 32],
-) -> Result<Option<EncryptedStoreCursor>, SqlxError> {
+) -> Result<Option<ServedStore>, SqlxError> {
     let row = sqlx::query!(
         r#"
-        SELECT leaf_count, peaks
-        FROM encrypted_stores
+        SELECT
+            leaf_count,
+            peaks,
+            EXISTS (
+                SELECT 1 FROM quarantined_stores AS q
+                WHERE q.encrypted_store = s.encrypted_store
+            ) AS "quarantined!"
+        FROM encrypted_stores AS s
         WHERE encrypted_store = $1
         "#,
         &store[..],
@@ -562,12 +593,88 @@ pub async fn load_store_cursor(
     .fetch_optional(pool)
     .await?;
     row.map(|row| {
-        Ok(EncryptedStoreCursor {
-            leaf_count: sql_u64(row.leaf_count, "leaf_count")?,
-            peaks: bytes32_vec(&row.peaks)?,
+        Ok(ServedStore {
+            cursor: EncryptedStoreCursor {
+                leaf_count: sql_u64(row.leaf_count, "leaf_count")?,
+                peaks: bytes32_vec(&row.peaks)?,
+            },
+            quarantined: row.quarantined,
         })
     })
     .transpose()
+}
+
+/// Up to `limit` recorded stores after `after` in address order, with their leaf counts: one
+/// page of the store check.
+pub async fn load_store_page(
+    pool: &sqlx::PgPool,
+    after: Option<[u8; 32]>,
+    limit: u16,
+) -> Result<Vec<([u8; 32], u64)>, SqlxError> {
+    let rows = sqlx::query!(
+        r#"
+        SELECT encrypted_store, leaf_count
+        FROM encrypted_stores
+        WHERE $1::BYTEA IS NULL OR encrypted_store > $1
+        ORDER BY encrypted_store
+        LIMIT $2
+        "#,
+        after.as_ref().map(|store| &store[..]),
+        i64::from(limit),
+    )
+    .fetch_all(pool)
+    .await?;
+    rows.into_iter()
+        .map(|row| {
+            Ok((
+                bytes32(&row.encrypted_store)?,
+                sql_u64(row.leaf_count, "leaf_count")?,
+            ))
+        })
+        .collect()
+}
+
+/// Quarantines `store`, which disagrees with the chain. A store already quarantined keeps the
+/// time it was first found.
+pub async fn quarantine_store(
+    pool: &sqlx::PgPool,
+    store: [u8; 32],
+) -> Result<(), SqlxError> {
+    sqlx::query!(
+        r#"
+        INSERT INTO quarantined_stores (encrypted_store) VALUES ($1)
+        ON CONFLICT (encrypted_store) DO NOTHING
+        "#,
+        &store[..],
+    )
+    .execute(pool)
+    .await?;
+    Ok(())
+}
+
+/// Lifts the quarantine of `store`, whose recorded peaks match the chain's again.
+pub async fn release_store(
+    pool: &sqlx::PgPool,
+    store: [u8; 32],
+) -> Result<(), SqlxError> {
+    sqlx::query!(
+        "DELETE FROM quarantined_stores WHERE encrypted_store = $1",
+        &store[..],
+    )
+    .execute(pool)
+    .await?;
+    Ok(())
+}
+
+pub async fn count_quarantined_stores(
+    pool: &sqlx::PgPool,
+) -> Result<u64, SqlxError> {
+    let count = sqlx::query_scalar!(
+        r#"SELECT COUNT(*) AS "count!" FROM quarantined_stores"#
+    )
+    .fetch_one(pool)
+    .await?;
+    sql_u64(count, "quarantined store count")
 }
 
 /// The index and commitment of the first leaf of `account` below `leaf_count` that records
@@ -639,17 +746,44 @@ pub async fn load_proof(
     let Some(path) = proof_path(leaf_index, leaf_count) else {
         return Ok(None);
     };
-    let Some(&(_, sibling_leaf)) = path.first() else {
-        return Ok(Some(MmrProof {
+    Ok(load_nodes_at(pool, account, &path)
+        .await?
+        .map(|siblings| MmrProof {
             leaf_index,
-            siblings: Vec::new(),
-        }));
-    };
+            siblings,
+        }))
+}
+
+/// The record's peaks of `account`'s first `leaf_count` leaves, oldest mountain first, read
+/// from the nodes those leaves completed. `None` when a peak row is missing, which a record
+/// holding `leaf_count` leaves never lacks.
+pub async fn load_peaks(
+    pool: &sqlx::PgPool,
+    account: [u8; 32],
+    leaf_count: u64,
+) -> Result<Option<Vec<[u8; 32]>>, SqlxError> {
+    load_nodes_at(pool, account, &peak_positions(leaf_count)).await
+}
+
+/// The MMR nodes of `account` at `positions`, in their order, read in one statement. A
+/// height-0 position is a leaf row, hashed into its node. The positions have distinct
+/// heights, and at most one is a leaf. `None` when a row is missing.
+async fn load_nodes_at(
+    pool: &sqlx::PgPool,
+    account: [u8; 32],
+    positions: &[(u8, u64)],
+) -> Result<Option<Vec<[u8; 32]>>, SqlxError> {
+    // No leaf has a negative index, so -1 reads no leaf row.
+    let mut leaf_index = -1;
     let mut heights = Vec::new();
     let mut indexes = Vec::new();
-    for &(height, index) in &path[1..] {
-        heights.push(i16::from(height));
-        indexes.push(sql_i64(index, "node_index")?);
+    for &(height, index) in positions {
+        if height == 0 {
+            leaf_index = sql_i64(index, "leaf_index")?;
+        } else {
+            heights.push(i16::from(height));
+            indexes.push(sql_i64(index, "node_index")?);
+        }
     }
     let rows = sqlx::query!(
         r#"
@@ -664,34 +798,28 @@ pub async fn load_proof(
         WHERE node.encrypted_store = $1
         "#,
         &account[..],
-        sql_i64(sibling_leaf, "leaf_index")?,
+        leaf_index,
         &heights,
         &indexes,
     )
     .fetch_all(pool)
     .await?;
-    let mut siblings = vec![None; path.len()];
+    let mut by_height = BTreeMap::new();
     for row in rows {
         let node = bytes32(&row.node)?;
-        let Some(sibling) = usize::try_from(row.height)
-            .ok()
-            .and_then(|height| siblings.get_mut(height))
-        else {
-            return Ok(None);
-        };
-        *sibling = Some(if row.height == 0 {
-            mmr_leaf_node(&node)
-        } else {
-            node
-        });
+        by_height.insert(
+            row.height,
+            if row.height == 0 {
+                mmr_leaf_node(&node)
+            } else {
+                node
+            },
+        );
     }
-    Ok(siblings
-        .into_iter()
-        .collect::<Option<Vec<_>>>()
-        .map(|siblings| MmrProof {
-            leaf_index,
-            siblings,
-        }))
+    Ok(positions
+        .iter()
+        .map(|&(height, _)| by_height.get(&i16::from(height)).copied())
+        .collect())
 }
 
 /// Every leaf recorded at `slot`, by store in leaf order. A replayed block's
@@ -753,7 +881,7 @@ fn leaf_row(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use zama_solana_acl::mmr_build_proof;
+    use zama_solana_acl::{mmr_build_proof, mmr_peaks_from_leaves};
 
     const STATE: [u8; 32] = [0xAC; 32];
     const OWNER: [u8; 32] = [0xA1; 32];
@@ -899,9 +1027,10 @@ mod tests {
     }
 
     /// Growing a store one block at a time, the recorded nodes and leaves hold every
-    /// path at every size: the path read by position equals the one rebuilt from all leaves.
+    /// path at every size, and the peaks of every smaller size: read by position, each equals
+    /// the one rebuilt from all leaves.
     #[test]
-    fn recorded_nodes_hold_every_proof_path() {
+    fn recorded_nodes_hold_every_proof_path_and_peaks() {
         let mut stores = BTreeMap::new();
         let mut commitments = Vec::new();
         let mut nodes = BTreeMap::new();
@@ -928,14 +1057,15 @@ mod tests {
                 nodes.len() as u64,
                 leaf_count - u64::from(leaf_count.count_ones())
             );
+            let node_at = |(height, index): (u8, u64)| match height {
+                0 => mmr_leaf_node(&commitments[index as usize]),
+                _ => nodes[&(height, index)],
+            };
             for leaf_index in 0..leaf_count {
                 let siblings = proof_path(leaf_index, leaf_count)
                     .unwrap()
                     .into_iter()
-                    .map(|(height, index)| match height {
-                        0 => mmr_leaf_node(&commitments[index as usize]),
-                        _ => nodes[&(height, index)],
-                    })
+                    .map(node_at)
                     .collect();
                 assert_eq!(
                     Some(MmrProof {
@@ -946,6 +1076,14 @@ mod tests {
                 );
             }
             assert_eq!(proof_path(leaf_count, leaf_count), None);
+            for size in 0..=leaf_count {
+                let peaks: Vec<_> =
+                    peak_positions(size).into_iter().map(node_at).collect();
+                assert_eq!(
+                    peaks,
+                    mmr_peaks_from_leaves(&commitments[..size as usize])
+                );
+            }
             stores = reduction.stores;
         }
     }
