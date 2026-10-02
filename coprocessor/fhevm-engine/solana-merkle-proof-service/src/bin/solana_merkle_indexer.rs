@@ -101,11 +101,15 @@ async fn main() -> Result<()> {
 
     let program_id = Pubkey::from_str(&args.program_id)
         .with_context(|| format!("invalid program id {}", args.program_id))?;
-    let rpc = RpcClient::new_with_timeout_and_commitment(
-        args.url.clone(),
-        SOLANA_RPC_REQUEST_TIMEOUT,
-        CommitmentConfig::confirmed(),
-    );
+    // Ingestion and the store check each get their own client.
+    let confirmed_rpc = || {
+        RpcClient::new_with_timeout_and_commitment(
+            args.url.clone(),
+            SOLANA_RPC_REQUEST_TIMEOUT,
+            CommitmentConfig::confirmed(),
+        )
+    };
+    let rpc = confirmed_rpc();
     let chain_id = host_chain_id(&rpc, &program_id).await?;
     let archive = RpcClient::new_with_timeout(
         args.archive_url.unwrap_or_else(|| args.url.clone()),
@@ -157,11 +161,7 @@ async fn main() -> Result<()> {
 
     tokio::spawn(run_store_checks(
         pool.clone(),
-        RpcClient::new_with_timeout_and_commitment(
-            args.url.clone(),
-            SOLANA_RPC_REQUEST_TIMEOUT,
-            CommitmentConfig::confirmed(),
-        ),
+        confirmed_rpc(),
         program_id,
         chain_id,
         Duration::from_secs(args.store_check_interval_secs),

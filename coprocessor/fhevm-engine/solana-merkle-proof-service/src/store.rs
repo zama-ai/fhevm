@@ -23,7 +23,7 @@
 //! positions give the record's peaks at any leaf count it holds ([`load_peaks`]), which the
 //! indexer's store check compares with the chain's.
 
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, HashSet};
 
 use sqlx::Error as SqlxError;
 use zama_solana_acl::{
@@ -54,7 +54,7 @@ pub struct EncryptedStoreCursor {
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct ServedStore {
     pub cursor: EncryptedStoreCursor,
-    /// The store check found the record's peaks differ from the chain's.
+    /// The store check found the record disagrees with the chain.
     pub quarantined: bool,
 }
 
@@ -569,9 +569,10 @@ pub async fn load_checkpoint(
     .transpose()
 }
 
-/// The recorded cursor of `store`, read outside ingestion. Leaves and nodes are
-/// immutable once written and the cursor only grows, so reads bounded by this
-/// `leaf_count` agree with it while later blocks commit.
+/// The recorded cursor of `store` and whether it is quarantined, read outside
+/// ingestion. Leaves and nodes are immutable once written and the cursor only
+/// grows, so reads bounded by this `leaf_count` agree with it while later blocks
+/// commit.
 pub async fn load_served_store(
     pool: &sqlx::PgPool,
     store: [u8; 32],
@@ -604,16 +605,15 @@ pub async fn load_served_store(
     .transpose()
 }
 
-/// Up to `limit` recorded stores after `after` in address order, with their leaf counts: one
-/// page of the store check.
+/// Up to `limit` recorded stores after `after`, in address order: one page of the store check.
 pub async fn load_store_page(
     pool: &sqlx::PgPool,
     after: Option<[u8; 32]>,
     limit: u16,
-) -> Result<Vec<([u8; 32], u64)>, SqlxError> {
-    let rows = sqlx::query!(
+) -> Result<Vec<[u8; 32]>, SqlxError> {
+    let rows = sqlx::query_scalar!(
         r#"
-        SELECT encrypted_store, leaf_count
+        SELECT encrypted_store
         FROM encrypted_stores
         WHERE $1::BYTEA IS NULL OR encrypted_store > $1
         ORDER BY encrypted_store
@@ -624,18 +624,21 @@ pub async fn load_store_page(
     )
     .fetch_all(pool)
     .await?;
-    rows.into_iter()
-        .map(|row| {
-            Ok((
-                bytes32(&row.encrypted_store)?,
-                sql_u64(row.leaf_count, "leaf_count")?,
-            ))
-        })
-        .collect()
+    rows.iter().map(|store| bytes32(store)).collect()
 }
 
-/// Quarantines `store`, which disagrees with the chain. A store already quarantined keeps the
-/// time it was first found.
+/// The stores the store check found disagreeing with the chain.
+pub async fn load_quarantined_stores(
+    pool: &sqlx::PgPool,
+) -> Result<HashSet<[u8; 32]>, SqlxError> {
+    let rows =
+        sqlx::query_scalar!("SELECT encrypted_store FROM quarantined_stores")
+            .fetch_all(pool)
+            .await?;
+    rows.iter().map(|store| bytes32(store)).collect()
+}
+
+/// Quarantines `store`, which disagrees with the chain.
 pub async fn quarantine_store(
     pool: &sqlx::PgPool,
     store: [u8; 32],
@@ -652,8 +655,8 @@ pub async fn quarantine_store(
     Ok(())
 }
 
-/// Lifts the quarantine of `store`, whose recorded peaks match the chain's again.
-pub async fn release_store(
+/// Lifts the quarantine of `store`, which matches the chain again or was closed.
+pub async fn lift_quarantine(
     pool: &sqlx::PgPool,
     store: [u8; 32],
 ) -> Result<(), SqlxError> {
@@ -664,17 +667,6 @@ pub async fn release_store(
     .execute(pool)
     .await?;
     Ok(())
-}
-
-pub async fn count_quarantined_stores(
-    pool: &sqlx::PgPool,
-) -> Result<u64, SqlxError> {
-    let count = sqlx::query_scalar!(
-        r#"SELECT COUNT(*) AS "count!" FROM quarantined_stores"#
-    )
-    .fetch_one(pool)
-    .await?;
-    sql_u64(count, "quarantined store count")
 }
 
 /// The index and commitment of the first leaf of `account` below `leaf_count` that records

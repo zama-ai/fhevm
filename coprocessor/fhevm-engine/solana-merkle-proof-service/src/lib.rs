@@ -11,3 +11,15 @@ pub mod store_check;
 
 /// The record's schema. The indexer applies it at start; the proof server only reads.
 pub static MIGRATOR: sqlx::migrate::Migrator = sqlx::migrate!("./migrations");
+
+/// Seconds since the Unix epoch; 0 before it.
+pub(crate) fn unix_now_secs() -> u64 {
+    std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map_or(0, |elapsed| elapsed.as_secs())
+}
+
+/// `value` as a Prometheus integer gauge holds it, saturated.
+pub(crate) fn gauge_value(value: u64) -> i64 {
+    i64::try_from(value).unwrap_or(i64::MAX)
+}
