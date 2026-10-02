@@ -113,6 +113,7 @@ fn execute_ready(
             // operations with NO compressed outputs. This never serializes to
             // the host or inserts a canonical compression boundary.
             #[cfg(feature = "gpu")]
+            #[allow(clippy::redundant_clone)] // Clone is the producer-stream fence.
             let first = first.clone();
             ready.push(Arc::new(first));
         }
