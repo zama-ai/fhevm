@@ -35,15 +35,20 @@ if not any(c["type"] in ("Complete", "Failed") and c["status"] == "True" for c i
 done < "$work/releases"
 bash "$script_dir/recover.sh" reset
 parties=$(sed -n 's/^solana-register-coprocessor-//p' "$work/releases")
-# shellcheck disable=SC2086 # one party number per word
-merkle_start_slot=$(reset_solana_merkle_records $parties)
+for party in $parties; do recreate_solana_merkle_record "$party"; done
+merkle_start_slot=$(confirmed_solana_slot)
+# The chart reads the start slot from this env var, so the reset needs no coprocessor chart; the
+# next deploy-preview.sh sets it again through Helm.
+for party in $parties; do
+  indexer="deployment/coprocessor-$party-solana-merkle-indexer"
+  kubectl set env "$indexer" -n "$NAMESPACE" "SOLANA_MERKLE_START_SLOT=$merkle_start_slot" >/dev/null
+  kubectl scale "$indexer" -n "$NAMESPACE" --replicas=1 >/dev/null
+  kubectl rollout status "$indexer" -n "$NAMESPACE" --timeout=10m
+done
 while read -r release; do
   kubectl delete job "$release-deploy" -n "$NAMESPACE" --ignore-not-found --wait=true
   helm upgrade "$release" charts/contracts -n "$NAMESPACE" -f "$work/$release.yaml" \
     --set scDeploy.preventRedeployment=false --wait --wait-for-jobs --timeout=20m
 done < "$work/releases"
-for party in $parties; do
-  helm upgrade "coprocessor-$party" "${COPROCESSOR_CHART:-charts/coprocessor}" -n "$NAMESPACE" --reuse-values \
-    --set-string "solanaHostListener.merkleIndexer.startSlot=$merkle_start_slot" --wait --timeout=10m
-done
+for party in $parties; do wait_solana_merkle_recorded "$party" "$merkle_start_slot"; done
 echo 'Solana state reinitialized; preview services and image pins retained. Reseed the local demo before use.'

@@ -39,8 +39,8 @@ if [[ -z $(kubectl get secret solana-recovery -n "$NAMESPACE" --ignore-not-found
 fi
 SOLANA_RECOVERY_IMAGE="hub.zama.org/ghcr/zama-ai/fhevm/solana-programs:$tag" \
   bash "$script_dir/recover.sh" reset
-# shellcheck disable=SC2046 # one party number per word
-merkle_start_slot=$(reset_solana_merkle_records $(seq 1 "$NB_COPROCESSOR"))
+for i in $(seq 1 "$NB_COPROCESSOR"); do recreate_solana_merkle_record "$i"; done
+merkle_start_slot=$(confirmed_solana_slot)
 
 # Keygen completion precedes asynchronous key download into each coprocessor DB.
 for i in $(seq 1 "$NB_COPROCESSOR"); do
@@ -114,14 +114,7 @@ for i in $(seq 1 "$NB_COPROCESSOR"); do
     sleep 5
   done
   [[ "$progressed" == true ]] || { echo "::error::Solana listener $i is ready but its sealed-block checkpoint is not advancing; check Yellowstone endpoint, credentials, connectivity and provider block delivery"; exit 1; }
-  # The indexer replays from the start slot, so its checkpoint passing it proves the replay ran.
-  recorded=false
-  for ((attempt=0; attempt<60; attempt++)); do
-    current=$(psql_party "$i" 'SELECT COALESCE(MAX(slot),0) FROM checkpoint' solana_merkle)
-    if (( current > merkle_start_slot )); then recorded=true; break; fi
-    sleep 5
-  done
-  [[ "$recorded" == true ]] || { echo "::error::Solana Merkle indexer $i has not recorded past start slot $merkle_start_slot; check its logs"; exit 1; }
+  wait_solana_merkle_recorded "$i" "$merkle_start_slot"
 done
 if [[ "$SOLANA_DEPLOY_EXAMPLE_PROGRAMS" == true ]]; then
   helm upgrade --install solana-demos "$CONTRACTS_CHART" -n "$NAMESPACE" \

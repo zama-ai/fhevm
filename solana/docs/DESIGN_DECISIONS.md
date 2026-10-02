@@ -2685,7 +2685,7 @@ Not settled by the decisions above. Forward requirements are detailed in
 - Whether confidential balances move to the staged inbound-credit profile (DD-016).
 - Rent and archival policy for the Store MMR (DD-049): one stable PDA serves a Store for its whole
   life and its size is bounded at `121 + 64·slots + 32·peaks` bytes, so compaction is a rent question,
-  not a liveness one. The off-chain leaf history the listener keeps for proofs is not bounded
+  not a liveness one. The off-chain leaf history the Merkle indexer keeps for proofs is not bounded
   (about 540 bytes per leaf per coprocessor with its MMR node, estimate, never pruned); fhevm-internal#2060 tracks row
   shrinking and per-Store cold archival.
 - General `HostConfig` config-version rotation semantics beyond the KMS-context pointer.

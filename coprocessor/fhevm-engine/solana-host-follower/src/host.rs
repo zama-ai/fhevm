@@ -273,22 +273,16 @@ fn allowed_keys(
 
 #[cfg(test)]
 mod tests {
-    use anchor_lang::{AnchorSerialize, Discriminator};
+    use anchor_lang::InstructionData;
+    use zama_host::instruction::FheExecute;
     use zama_host::state::{
         ExecutionResultRef, FheBinaryOpCode, FheExecuteOperand, FheExecuteStep,
     };
 
     use super::*;
-    use crate::follower::wire_fixtures::{encoded_execution, event_cpi_data};
+    use crate::follower::wire_fixtures::event_cpi_data;
 
     const FIXED_ACCOUNTS: usize = zama_host::FHE_EXECUTE_FIXED_ACCOUNTS;
-
-    fn host_instruction(
-        data: Vec<u8>,
-        accounts: Vec<[u8; 32]>,
-    ) -> DecodedInstruction {
-        DecodedInstruction { data, accounts }
-    }
 
     /// One trivial encryption with `effects`, followed by its event, whose result is `[7; 32]`.
     fn execution(
@@ -308,8 +302,14 @@ mod tests {
             }],
         };
         vec![
-            host_instruction(encoded_execution(&args), accounts),
-            host_instruction(event_cpi_data(vec![[7; 32]]), vec![]),
+            DecodedInstruction {
+                data: FheExecute { args }.data(),
+                accounts,
+            },
+            DecodedInstruction {
+                data: event_cpi_data(vec![[7; 32]]),
+                accounts: vec![],
+            },
         ]
     }
 
@@ -341,29 +341,22 @@ mod tests {
             .collect())
     }
 
-    fn instruction_data(
-        discriminator: &[u8],
-        args: impl AnchorSerialize,
-    ) -> Vec<u8> {
-        let mut data = discriminator.to_vec();
-        args.serialize(&mut data).unwrap();
-        data
-    }
-
     #[test]
     fn making_a_handle_public_writes_its_store() {
-        let data = instruction_data(
-            zama_host::instruction::MakeStoreHandlePublic::DISCRIMINATOR,
-            zama_host::instruction::MakeStoreHandlePublic {
-                key: [0x11; 32],
-                handle: [0x22; 32],
-                previous_leaf_count: 8,
-            },
-        );
+        let data = zama_host::instruction::MakeStoreHandlePublic {
+            key: [0x11; 32],
+            handle: [0x22; 32],
+            previous_leaf_count: 8,
+        }
+        .data();
         let mut accounts = vec![[0; 32]; 6];
         accounts[MAKE_PUBLIC_STORE_ACCOUNT_INDEX] = [0x33; 32];
         assert_eq!(
-            store_writes(&[host_instruction(data.clone(), accounts)]).unwrap(),
+            store_writes(&[DecodedInstruction {
+                data: data.clone(),
+                accounts
+            }])
+            .unwrap(),
             vec![EncryptedStoreWrite {
                 encrypted_store: [0x33; 32],
                 previous_leaf_count: 8,
@@ -375,9 +368,11 @@ mod tests {
 
         let mut truncated = data;
         truncated.pop();
-        let error =
-            store_writes(&[host_instruction(truncated, vec![[0; 32]; 6])])
-                .unwrap_err();
+        let error = store_writes(&[DecodedInstruction {
+            data: truncated,
+            accounts: vec![[0; 32]; 6],
+        }])
+        .unwrap_err();
         assert!(
             error.to_string().contains("make_store_handle_public"),
             "{error}"
@@ -388,17 +383,18 @@ mod tests {
     /// make-public arguments if the discriminator were ignored. It must never fabricate a write.
     #[test]
     fn other_host_instructions_write_nothing() {
-        let data = instruction_data(
-            zama_host::instruction::CreateEncryptedStore::DISCRIMINATOR,
-            zama_host::instruction::CreateEncryptedStore {
-                args: zama_host::instructions::CreateEncryptedStoreArgs {
-                    program: Pubkey::new_unique(),
-                    authority_seeds: vec![vec![12; 40]],
-                },
+        let data = zama_host::instruction::CreateEncryptedStore {
+            args: zama_host::instructions::CreateEncryptedStoreArgs {
+                program: Pubkey::new_unique(),
+                authority_seeds: vec![vec![12; 40]],
             },
-        );
+        }
+        .data();
         assert!(host_operations(
-            &[host_instruction(data, vec![[0; 32]; 6])],
+            &[DecodedInstruction {
+                data,
+                accounts: vec![[0; 32]; 6],
+            }],
             42
         )
         .unwrap()
@@ -427,7 +423,10 @@ mod tests {
             ],
         };
         // Serialized like the on-chain instruction: discriminator + borsh args.
-        let mut bytes = encoded_execution(&execution);
+        let mut bytes = FheExecute {
+            args: execution.clone(),
+        }
+        .data();
         let decoded =
             decode_fhe_execute_args(&bytes).expect("decode execution");
         assert_eq!(decoded, execution);
@@ -581,8 +580,14 @@ mod tests {
                     .collect();
                 host_operations(
                     &[
-                        host_instruction(encoded_execution(&args), vec![]),
-                        host_instruction(event_data, vec![]),
+                        DecodedInstruction {
+                            data: FheExecute { args }.data(),
+                            accounts: vec![],
+                        },
+                        DecodedInstruction {
+                            data: event_data,
+                            accounts: vec![],
+                        },
                     ],
                     42,
                 )

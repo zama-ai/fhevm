@@ -52,7 +52,7 @@ struct Args {
     /// Confirmed block to replay inclusively on an empty record: a slot before the first
     /// encrypted store was created, such as the zama-host deployment slot. Required on an empty
     /// record; a saved checkpoint wins.
-    #[arg(long)]
+    #[arg(long, env = "SOLANA_MERKLE_START_SLOT")]
     start_slot: Option<u64>,
 
     /// Optional `x-token` auth metadata for the gRPC endpoint.

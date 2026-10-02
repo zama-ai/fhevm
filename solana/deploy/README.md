@@ -57,9 +57,9 @@ provider and allow connectors to reach `coprocessor-<party>-solana-merkle-proof-
 The proof API uses bearer authentication and a ClusterIP Service, with no public ingress.
 The listener stores computations and its checkpoint in its coprocessor's database. The Merkle
 indexer records the leaves in the `solana_merkle` database on the same Postgres server, and the
-Merkle proof server reads them from it (DD-066). Every rollout recreates that database and starts
-the indexer from the slot read just before the host deployment, because the reset closes every
-Store.
+Merkle proof server reads them from it (DD-066). Every rollout and every `reset-preview.sh`
+recreates that database and starts the indexer from the slot read just after the reset, because
+the reset closes every Store.
 
 The fixed devnet programs have one active preview owner. Deployment acquires the
 `fhevm-ci-solana-owner` namespace with the preview namespace UID; a second preview

@@ -1927,7 +1927,8 @@ solanaHostListener:
   # $(DATABASE_USER)/$(DATABASE_PASSWORD)/$(DATABASE_ENDPOINT) references as
   # commonConfig.databaseUrl, naming another database, e.g.
   #   "postgresql://$(DATABASE_USER):$(DATABASE_PASSWORD)@$(DATABASE_ENDPOINT)/solana_merkle"
-  # The database must already exist; the indexer and the proof server only migrate it.
+  # The database must already exist: this chart does not create it. The indexer
+  # applies its migrations; the proof server only reads it.
   merkleDatabaseUrl: ""
   # Records every encrypted store's leaves, reading the listener's Solana env.
   # It resumes from its checkpoint; on an empty database it starts at `startSlot`,

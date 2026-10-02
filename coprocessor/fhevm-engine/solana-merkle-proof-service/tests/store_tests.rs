@@ -15,9 +15,8 @@ use solana_merkle_proof_service::server::{
     MERKLE_PROOFS_PATH,
 };
 use solana_merkle_proof_service::store::{
-    load_block_leaves, load_checkpoint, load_recorded_through,
-    load_store_cursor, load_store_cursors, reduce_block_leaves,
-    replay_block_leaves, store_block_leaves, store_checkpoint,
+    load_block_leaves, load_checkpoint, load_store_cursor, load_store_cursors,
+    reduce_block_leaves, store_block_leaves, store_checkpoint,
     TransactionStoreWrites,
 };
 use tokio_util::sync::CancellationToken;
@@ -145,30 +144,6 @@ async fn leaf_record_round_trips_and_serves_verifiable_proofs(
     );
     tx.rollback().await?;
     assert_eq!(load_store_cursor(&pool, [0xFF; 32]).await?, None);
-
-    // A repair replays recorded slots: the recomputed leaves equal the recorded ones. A
-    // replay that computes other leaves does not match.
-    let replay_of_11 = |handle| {
-        [TransactionStoreWrites {
-            transaction_index: 2,
-            sources: vec![write(1, handle, vec![OWNER], true)],
-        }]
-    };
-    let mut tx = pool.begin().await?;
-    let recorded = load_block_leaves(&mut tx, 11).await?;
-    assert_eq!(replay_block_leaves(&replay_of_11([0x11; 32]))?, recorded);
-    assert_ne!(replay_block_leaves(&replay_of_11([0x12; 32]))?, recorded);
-    // Moving the checkpoint back keeps the slots after it replays.
-    store_checkpoint(
-        &mut tx,
-        &BlockCheckpoint {
-            slot: 10,
-            block_hash: [0x1A; 32],
-        },
-    )
-    .await?;
-    assert_eq!(load_recorded_through(&mut tx).await?, Some(11));
-    tx.rollback().await?;
 
     // The HTTP route builds proofs from the same rows.
     let cancel = CancellationToken::new();

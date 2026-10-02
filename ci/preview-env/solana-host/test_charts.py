@@ -26,6 +26,15 @@ def render(release, chart, values, *options):
     return list(yaml.safe_load_all(subprocess.check_output(command + list(options), text=True)))
 
 
+def render_error(*options):
+    """Renders the Solana coprocessor values with `options` and returns why Helm refused."""
+    result = subprocess.run(["helm", "template", "coprocessor-1", str(ROOT / "charts/coprocessor"),
+                             "-f", str(VALUES / "values-solana-coprocessor-e2e.yaml"), *options],
+                            capture_output=True, text=True)
+    assert result.returncode != 0, "the chart rendered"
+    return result.stderr
+
+
 class SolanaCharts(unittest.TestCase):
     def test_host_and_demos_are_separate_jobs(self):
         for release, filename, operations in [
@@ -66,7 +75,7 @@ class SolanaCharts(unittest.TestCase):
         indexer, indexer_env = deployments[INDEXER]
         indexer_container = indexer["spec"]["template"]["spec"]["containers"][0]
         self.assertEqual(indexer_container["command"], ["solana_merkle_indexer"])
-        self.assertIn("--start-slot=4242", indexer_container["args"])
+        self.assertEqual(indexer_env["SOLANA_MERKLE_START_SLOT"]["value"], "4242")
         self.assertEqual(indexer_env["SOLANA_GRPC_URL"]["valueFrom"]["secretKeyRef"]["name"], "solana-rpc")
         server, server_env = deployments[PROOF_SERVER]
         self.assertEqual(server["spec"]["template"]["spec"]["containers"][0]["command"], ["solana_merkle_proof_server"])
@@ -79,33 +88,22 @@ class SolanaCharts(unittest.TestCase):
             self.assertEqual([p["name"] for p in writer_service["spec"]["ports"]], ["metrics"])
 
     def test_the_indexer_requires_a_start_slot(self):
-        with self.assertRaises(subprocess.CalledProcessError) as failure:
-            subprocess.run(["helm", "template", "coprocessor-1", str(ROOT / "charts/coprocessor"),
-                            "-f", str(VALUES / "values-solana-coprocessor-e2e.yaml")],
-                           check=True, capture_output=True, text=True)
-        self.assertIn("solanaHostListener.merkleIndexer.startSlot is required", failure.exception.stderr)
+        self.assertIn("solanaHostListener.merkleIndexer.startSlot is required", render_error())
 
     def test_a_numeric_start_slot_renders_as_an_integer(self):
         documents = render("coprocessor-1", "coprocessor", [VALUES / "values-solana-coprocessor-e2e.yaml"],
                            "--set-json", "solanaHostListener.merkleIndexer.startSlot=312000000")
         indexer = next(d for d in documents if d and d["kind"] == "Deployment" and d["metadata"]["name"] == INDEXER)
-        self.assertIn("--start-slot=312000000", indexer["spec"]["template"]["spec"]["containers"][0]["args"])
+        env = {e["name"]: e for e in indexer["spec"]["template"]["spec"]["containers"][0]["env"]}
+        self.assertEqual(env["SOLANA_MERKLE_START_SLOT"]["value"], "312000000")
 
     def test_a_start_slot_that_is_not_a_number_is_refused(self):
-        with self.assertRaises(subprocess.CalledProcessError) as failure:
-            subprocess.run(["helm", "template", "coprocessor-1", str(ROOT / "charts/coprocessor"),
-                            "-f", str(VALUES / "values-solana-coprocessor-e2e.yaml"),
-                            "--set-string", "solanaHostListener.merkleIndexer.startSlot=$(START_SLOT)"],
-                           check=True, capture_output=True, text=True)
-        self.assertIn("startSlot must be a slot number", failure.exception.stderr)
+        self.assertIn("startSlot must be a slot number",
+                      render_error("--set-string", "solanaHostListener.merkleIndexer.startSlot=$(START_SLOT)"))
 
     def test_the_merkle_service_requires_its_database(self):
-        with self.assertRaises(subprocess.CalledProcessError) as failure:
-            subprocess.run(["helm", "template", "coprocessor-1", str(ROOT / "charts/coprocessor"),
-                            "-f", str(VALUES / "values-solana-coprocessor-e2e.yaml"), *START_SLOT,
-                            "--set", "solanaHostListener.merkleDatabaseUrl="],
-                           check=True, capture_output=True, text=True)
-        self.assertIn("solanaHostListener.merkleDatabaseUrl is required", failure.exception.stderr)
+        self.assertIn("solanaHostListener.merkleDatabaseUrl is required",
+                      render_error(*START_SLOT, "--set", "solanaHostListener.merkleDatabaseUrl="))
 
     def test_iam_certificate_is_a_volume_list(self):
         documents = render("coprocessor-1", "coprocessor", [VALUES / "values-solana-coprocessor-e2e.yaml"],
