@@ -35,8 +35,11 @@ struct Args {
     #[arg(long)]
     database_url: Option<DatabaseURL>,
 
-    /// Postgres pool size.
-    #[arg(long, default_value_t = 4)]
+    /// Postgres pool size. The detector runs ~11 concurrent tasks (state-hash
+    /// uploader, manifest publisher, peer downloader, healer, metrics, consensus
+    /// pass) and `PgListener` parks one connection for the process lifetime, so a
+    /// small pool starves under load and the acquire timeout kills the service.
+    #[arg(long, default_value_t = 16)]
     database_pool_size: u32,
 
     /// Gateway RPC URL (websocket).
