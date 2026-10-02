@@ -4,8 +4,9 @@
 #
 # DESIGNED TO BE DELETED: this exists only because Solana user decryption is not yet in a
 # published `tkms` npm release; it lives on the kms `solana` branch. When kms publishes it,
-# delete this script and .regen-tkms.env, set the published version in versionsManifest.js and
-# run `npm run wasm:install -- --lib tkms --force`.
+# delete this script and .regen-tkms.env, set the published version in versionsManifest.js,
+# src/core/runtime/WasmVersions-p.ts and scripts/wasm/loaders/KmsLibApi.template.d.ts, and run
+# `npm run wasm:install -- --lib tkms --force` (it also regenerates the loaders).
 #
 # Consumers (SDK, e2e, all CI) use the COMMITTED WASM and never run this. Only a maintainer
 # bumping the client runs it. Requires the Rust toolchain + wasm-pack.

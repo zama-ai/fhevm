@@ -23,6 +23,7 @@ import { initTkmsModule } from '../../core/modules/decrypt/module/init-p.js';
 import { bytes32ToHandle } from '../../core/handle/FhevmHandle.js';
 import { bytesToHexNo0x, isBytes32 } from '../../core/base/bytes.js';
 import { remove0x } from '../../core/base/string.js';
+import { WasmScope } from '../../core/base/wasmScope.js';
 import { toChecksummedAddress } from '../../core/base/address.js';
 
 /**
@@ -166,14 +167,18 @@ export async function verifySolanaUserDecryptResponse(response: {
   const userAddress = getAddressDecoder().decode(request.userAddress);
   const domain = request.gatewayEip712Domain;
 
-  // The trust anchor: the registered signer set, from configuration the caller read on chain. A
-  // key carried inside the response acts only under its binding to one of these addresses.
-  const client = kmsLib.new_client(
-    response.signers.map((signer) => kmsLib.new_server_id_addr(signer.partyId, eip55Normalized(signer.address))),
-    userAddress,
-    response.fheParameter,
-  );
+  const scope = new WasmScope();
   try {
+    // The trust anchor: the registered signer set, from configuration the caller read on chain. A
+    // key carried inside the response acts only under its binding to one of these addresses. The
+    // server ids are moved into new_client, so only the client is tracked.
+    const client = scope.track(
+      kmsLib.new_client(
+        response.signers.map((signer) => kmsLib.new_server_id_addr(signer.partyId, eip55Normalized(signer.address))),
+        userAddress,
+        response.fheParameter,
+      ),
+    );
     const plaintexts = kmsLib.process_user_decryption_resp_from_js(
       client,
       {
@@ -197,15 +202,12 @@ export async function verifySolanaUserDecryptResponse(response: {
       true,
     );
     // The client already converts little-endian to big-endian, so `bytes` is the plaintext as-is.
-    const typed = plaintexts.map((plaintext) => {
-      const value = { bytes: plaintext.bytes, fheTypeId: plaintext.fhe_type };
-      plaintext.free();
-      return value;
-    });
+    plaintexts.forEach((plaintext) => scope.track(plaintext));
+    const typed = plaintexts.map((plaintext) => ({ bytes: plaintext.bytes, fheTypeId: plaintext.fhe_type }));
     verifySolanaUserDecryptPlaintexts(typed, request.handles);
     return typed;
   } finally {
-    client.free();
+    scope.free();
   }
 }
 
