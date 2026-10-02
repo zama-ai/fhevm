@@ -440,7 +440,10 @@ describe('Degraded-cluster consensus', function () {
     // All originals are durable before the first write. The central canary
     // helper waits for EACH operator's own publication under its row lock.
     for (const {operator,digest} of record.originals) {
-      const original = await tamperDigest(databaseUrls[operator], handle);
+      // A stale publication witness makes the listener defer comparison. Keep
+      // its binding valid so this arm reaches the consensus mismatch check;
+      // the durable canary journal restores both fields, including on abort.
+      const original = await tamperDigest(databaseUrls[operator], handle, {preservePublicationWitness: true});
       expect(original.toString('hex'), 'the published original changed during arming').to.eq(digest);
     }
     emitAssertions('DEG-06-GW-LISTENER-INFLIGHT', ['precondition', 'quorum'], 'The exact consensus event was identified while target gateway listeners remained behind its block.');

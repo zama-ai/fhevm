@@ -6,6 +6,7 @@ import { mkdtempSync, readdirSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { recoverAbortedSuite, completeDetectorRecovery } from './abortRecovery';
+import { tamperDigest } from './canary';
 import { INTERRUPTED_WORKER_LOCKS_SQL } from './faultEvidence';
 import { INSTALL_PROOF_OUTCOME_AUDIT, assertOriginalProofSucceeded, recoveredVerifierOutcomes, type ProofOutcome } from './proofRecovery';
 
@@ -24,7 +25,7 @@ const adminDatabaseUrl = process.env.CONSENSUS_ORACLE_TEST_DATABASE_URL;
     await pool.query(`
       CREATE TABLE verify_proofs (zk_proof_id bigint PRIMARY KEY, verified boolean, verified_at timestamptz, handles bytea);
       CREATE TABLE ciphertexts (handle bytea PRIMARY KEY, ciphertext bytea);
-      CREATE TABLE ciphertext_digest (handle bytea PRIMARY KEY, ciphertext bytea, txn_is_sent boolean);
+      CREATE TABLE ciphertext_digest (handle bytea PRIMARY KEY, ciphertext bytea, txn_is_sent boolean, s3_publication_verified_at timestamptz, s3_publication_verified_digest bytea);
       CREATE TABLE dependence_chain (dependence_chain_id bytea PRIMARY KEY, worker_id uuid, lock_expires_at timestamptz);
       ${INSTALL_PROOF_OUTCOME_AUDIT}`);
   });
@@ -101,7 +102,7 @@ const adminDatabaseUrl = process.env.CONSENSUS_ORACLE_TEST_DATABASE_URL;
     process.env.CONSENSUS_RECOVERY_DIR = directory;
     const original = Buffer.alloc(32, 0xcd);
     try {
-      await pool.query('INSERT INTO ciphertext_digest VALUES ($1,$2,false)', [handle, original]);
+      await pool.query('INSERT INTO ciphertext_digest (handle,ciphertext,txn_is_sent) VALUES ($1,$2,false)', [handle, original]);
       const child = spawnSync(process.execPath, ['-r', require.resolve('ts-node/register/transpile-only'), '-e',
         `require(${JSON.stringify(require.resolve('./canary'))}).tamperUnsubmittedDigest(process.env.CONSENSUS_ORACLE_TEST_DATABASE_URL, '0x${handle.toString('hex')}').then(() => process.kill(process.pid, 'SIGKILL')).catch(error => { console.error(error); process.exit(1); })`],
         { env: { ...process.env, CONSENSUS_ORACLE_TEST_DATABASE_URL: databaseUrl }, timeout: 10_000, encoding: 'utf8' });
@@ -131,7 +132,7 @@ const adminDatabaseUrl = process.env.CONSENSUS_ORACLE_TEST_DATABASE_URL;
     const original = Buffer.alloc(32, 0xcd);
     const handleHex = `0x${handle.toString('hex')}`;
     try {
-      await pool.query('INSERT INTO ciphertext_digest VALUES ($1,$2,false)', [handle, original]);
+      await pool.query('INSERT INTO ciphertext_digest (handle,ciphertext,txn_is_sent) VALUES ($1,$2,false)', [handle, original]);
       const child = spawnSync(process.execPath, ['-r', require.resolve('ts-node/register/transpile-only'), '-e',
         `const recovery=require(${JSON.stringify(require.resolve('./abortRecovery'))}); require(${JSON.stringify(require.resolve('./canary'))}).tamperUnsubmittedDigest(process.env.CONSENSUS_ORACLE_TEST_DATABASE_URL, '${handleHex}').then(() => { recovery.markDetectorPublicationStarted(process.env.CONSENSUS_ORACLE_TEST_DATABASE_URL, '${handleHex}'); process.kill(process.pid, 'SIGKILL'); }).catch(error => { console.error(error); process.exit(1); })`],
         { env: { ...process.env, CONSENSUS_ORACLE_TEST_DATABASE_URL: databaseUrl }, timeout: 10_000, encoding: 'utf8' });
@@ -153,5 +154,48 @@ const adminDatabaseUrl = process.env.CONSENSUS_ORACLE_TEST_DATABASE_URL;
       rmSync(directory, { recursive: true, force: true });
     }
   });
+
+  for (const witness of ['matching', 'missing', 'different', 'undated'] as const) {
+    it(witness === 'matching' ? 'restores a published digest and its witness after SIGKILL' : `refuses a ${witness} publication witness`, async function () {
+      this.timeout(15_000);
+      const directory = mkdtempSync(path.join(tmpdir(), 'published-canary-pg-'));
+      const previous = process.env.CONSENSUS_RECOVERY_DIR;
+      process.env.CONSENSUS_RECOVERY_DIR = directory;
+      const original = Buffer.alloc(32, 0xcd);
+      const handleHex = `0x${handle.toString('hex')}`;
+      try {
+        await pool.query(`INSERT INTO ciphertext_digest
+          (handle,ciphertext,txn_is_sent,s3_publication_verified_at,s3_publication_verified_digest)
+          VALUES ($1,$2,true,CASE WHEN $4 THEN NOW() ELSE NULL END,$3)`, [handle, original,
+          witness === 'different' ? Buffer.alloc(32, 0xef) : witness === 'missing' ? null : original, witness !== 'undated']);
+        const before = (await pool.query('SELECT * FROM ciphertext_digest')).rows[0];
+        if (witness !== 'matching') {
+          let error: unknown;
+          try { await tamperDigest(databaseUrl, handleHex, {preservePublicationWitness:true}); } catch (caught) { error = caught; }
+          expect(String(error)).to.include('refusing to manufacture publication readiness');
+          expect((await pool.query('SELECT * FROM ciphertext_digest')).rows[0]).to.deep.eq(before);
+          expect(readdirSync(directory)).to.have.length(0);
+          return;
+        }
+        const child = spawnSync(process.execPath, ['-r', require.resolve('ts-node/register/transpile-only'), '-e',
+          `require(${JSON.stringify(require.resolve('./canary'))}).tamperDigest(process.env.CONSENSUS_ORACLE_TEST_DATABASE_URL, '${handleHex}', {preservePublicationWitness:true}).then(() => process.kill(process.pid, 'SIGKILL')).catch(error => { console.error(error); process.exit(1); })`],
+          {env:{...process.env, CONSENSUS_ORACLE_TEST_DATABASE_URL:databaseUrl}, timeout:10_000, encoding:'utf8'});
+        expect(child.signal, child.stderr).to.eq('SIGKILL');
+        const poisoned = (await pool.query('SELECT * FROM ciphertext_digest')).rows[0];
+        expect(poisoned.ciphertext.equals(original)).to.eq(false);
+        expect(poisoned.s3_publication_verified_digest.equals(poisoned.ciphertext)).to.eq(true);
+        expect(poisoned.s3_publication_verified_at).to.deep.eq(before.s3_publication_verified_at);
+        expect(poisoned.txn_is_sent).to.eq(true);
+        expect(readdirSync(directory).filter(name => name.endsWith('.json'))).to.have.length(1);
+        await recoverAbortedSuite();
+        expect((await pool.query('SELECT * FROM ciphertext_digest')).rows[0]).to.deep.eq(before);
+        expect(readdirSync(directory)).to.have.length(0);
+      } finally {
+        if (previous === undefined) delete process.env.CONSENSUS_RECOVERY_DIR;
+        else process.env.CONSENSUS_RECOVERY_DIR = previous;
+        rmSync(directory, {recursive:true, force:true});
+      }
+    });
+  }
 
 });

@@ -24,7 +24,7 @@ describe('canary publication safety', () => {
     else process.env.CONSENSUS_RECOVERY_DIR = previousDir;
   });
 
-  function mockPublication(publications: boolean[], failUpdate = false, failCommit = false, expectedPublished = true) {
+  function mockPublication(publications: boolean[], failUpdate = false, failCommit = false, expectedPublished = true, witness = true) {
     const original = Buffer.alloc(32, 1);
     const calls: string[] = [];
     let selected = false;
@@ -43,7 +43,7 @@ describe('canary publication safety', () => {
         if (sql.startsWith('SELECT')) {
           expect(sql).to.include('FOR UPDATE');
           selected = publications.length > 1 ? publications.shift()! : publications[0];
-          return { rowCount: 1, rows: [{ ciphertext: original, txn_is_sent: selected }] };
+          return { rowCount: 1, rows: [{ ciphertext: original, txn_is_sent: selected, publication_verified: witness }] };
         }
         if (sql.startsWith('UPDATE')) {
           if ((params![1] as Buffer).equals(original)) {
@@ -84,6 +84,23 @@ describe('canary publication safety', () => {
     expect(String(error)).to.include('refusing to expose canary poison');
     expect(fixture.writes()).to.eq(0);
     expect(fixture.released()).to.eq(true);
+  });
+
+  it('journals restoration of the publication binding when the pending-event arm preserves it', async () => {
+    const fixture = mockPublication([true]);
+    await tamperDigest('mock-only', handle, { preservePublicationWitness: true });
+    expect(fixture.calls.find(sql => sql.startsWith('UPDATE'))).to.include('s3_publication_verified_digest = $2');
+    const journal = readdirSync(recoveryDir).find(name => name.endsWith('.json'))!;
+    expect(JSON.parse(readFileSync(path.join(recoveryDir, journal), 'utf8')).restorePublicationWitness).to.eq(true);
+  });
+
+  it('refuses to create publication readiness when the original witness is invalid', async () => {
+    const fixture = mockPublication([true], false, false, true, false);
+    let caught: unknown;
+    try { await tamperDigest('mock-only', handle, { preservePublicationWitness: true }); } catch (error) { caught = error; }
+    expect(String(caught)).to.include('refusing to manufacture publication readiness');
+    expect(fixture.writes()).to.eq(0);
+    expect(readdirSync(recoveryDir)).to.have.length(0);
   });
 
   it('rolls back and releases the lock on a failed poison write', async () => {

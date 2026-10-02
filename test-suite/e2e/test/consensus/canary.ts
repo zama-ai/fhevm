@@ -33,6 +33,14 @@ import { saveDigestRecovery, restoreRecordedDigest, saveCiphertextRecovery, rest
 
 const handleBytes = (handle: string) => Buffer.from(handle.replace(/^0x/, ''), 'hex');
 
+interface DigestTamperOptions {
+  timeoutMs?: number;
+  pollIntervalMs?: number;
+  /** Exercise a post-publication consumer's comparison, rather than its
+   * missing-publication guard. The original witness must already be valid. */
+  preservePublicationWitness?: boolean;
+}
+
 async function withPool<T>(databaseUrl: string, fn: (pool: Pool) => Promise<T>): Promise<T> {
   const pool = new Pool({ connectionString: databaseUrl, max: 1, connectionTimeoutMillis: 10_000, query_timeout: 10_000, statement_timeout: 10_000 });
   try {
@@ -51,7 +59,7 @@ async function tamperDigestWithPublication(
   databaseUrl: string,
   handle: string,
   published: boolean,
-  options: { timeoutMs?: number; pollIntervalMs?: number } = {},
+  options: DigestTamperOptions = {},
 ): Promise<Buffer> {
   const deadline = Date.now() + (options.timeoutMs ?? 6 * 60_000);
   let uncertainCommitOriginal: Buffer | undefined;
@@ -63,8 +71,10 @@ async function tamperDigestWithPublication(
         for (;;) {
           await client.query('BEGIN');
           inTransaction = true;
-          const current = await client.query<{ ciphertext: Buffer; txn_is_sent: boolean }>(
-            'SELECT ciphertext, txn_is_sent FROM ciphertext_digest WHERE handle = $1 FOR UPDATE',
+          const current = await client.query<{ ciphertext: Buffer; txn_is_sent: boolean; publication_verified?: boolean }>(
+            options.preservePublicationWitness
+              ? 'SELECT ciphertext, txn_is_sent, s3_publication_verified_at IS NOT NULL AND s3_publication_verified_digest = ciphertext AS publication_verified FROM ciphertext_digest WHERE handle = $1 FOR UPDATE'
+              : 'SELECT ciphertext, txn_is_sent FROM ciphertext_digest WHERE handle = $1 FOR UPDATE',
             [handleBytes(handle)],
           );
           if (current.rowCount !== 1) {
@@ -74,15 +84,20 @@ async function tamperDigestWithPublication(
             throw new Error(`operator already published ${handle}; detector fault must precede submission`);
           }
           if (current.rows[0].txn_is_sent === published) {
+            if (options.preservePublicationWitness && current.rows[0].publication_verified !== true) {
+              throw new Error(`no valid publication witness for ${handle}; refusing to manufacture publication readiness`);
+            }
             const original = current.rows[0].ciphertext;
             if (!Buffer.isBuffer(original) || original.length !== 32) {
               throw new Error(`published compute digest for ${handle} is not bytes32`);
             }
             const poisoned = Buffer.from(original);
             poisoned[0] ^= 0xff;
-            saveDigestRecovery(databaseUrl, handle, original);
+            saveDigestRecovery(databaseUrl, handle, original, options.preservePublicationWitness);
             uncertainCommitOriginal = original;
-            await client.query('UPDATE ciphertext_digest SET ciphertext = $2 WHERE handle = $1', [
+            await client.query(options.preservePublicationWitness
+              ? 'UPDATE ciphertext_digest SET ciphertext = $2, s3_publication_verified_digest = $2 WHERE handle = $1'
+              : 'UPDATE ciphertext_digest SET ciphertext = $2 WHERE handle = $1', [
               handleBytes(handle), poisoned,
             ]);
             await client.query('COMMIT');
@@ -122,7 +137,7 @@ async function tamperDigestWithPublication(
 
 /** A comparator canary must wait for this operator's own completed publication. */
 export async function tamperDigest(
-  databaseUrl: string, handle: string, options: { timeoutMs?: number; pollIntervalMs?: number } = {},
+  databaseUrl: string, handle: string, options: DigestTamperOptions = {},
 ): Promise<Buffer> {
   return tamperDigestWithPublication(databaseUrl, handle, true, options);
 }

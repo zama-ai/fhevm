@@ -9,7 +9,7 @@ import { FetchRequest, JsonRpcProvider } from 'ethers';
 import { Pool } from 'pg';
 
 export interface MiningRpc { send(method: string, params: unknown[]): Promise<unknown> }
-interface DigestRecovery { kind: 'digest'; databaseUrl: string; handle: string; original: string; publicationMayHaveBegun?: boolean }
+interface DigestRecovery { kind: 'digest'; databaseUrl: string; handle: string; original: string; publicationMayHaveBegun?: boolean; restorePublicationWitness?: boolean }
 interface MiningRecovery { kind: 'mining'; rpcUrl: string; automine: boolean; interval: number }
 interface CiphertextRecovery { kind: 'ciphertext'; databaseUrl: string; handle: string; version: number; ciphertext: string; digest: string }
 type Recovery = DigestRecovery | MiningRecovery | CiphertextRecovery;
@@ -46,13 +46,14 @@ function read(id: string): Recovery | undefined {
 }
 
 /** Called under the same row lock as publication check, BEFORE the poison write. */
-export function saveDigestRecovery(databaseUrl: string, handle: string, original: Buffer): void {
+export function saveDigestRecovery(databaseUrl: string, handle: string, original: Buffer, restorePublicationWitness = false): void {
   if (!/^0x[0-9a-f]{64}$/i.test(handle) || original.length !== 32) throw new Error('invalid canary recovery identity');
   const id = digestKey(databaseUrl, handle);
   if (read(id) || read(key('ciphertext', `${databaseUrl}:${handle.toLowerCase()}`))) {
     throw new Error(`unfinished canary recovery for ${handle}; restore it before another mutation`);
   }
-  save(id, { kind: 'digest', databaseUrl, handle, original: original.toString('hex') });
+  save(id, { kind: 'digest', databaseUrl, handle, original: original.toString('hex'),
+    ...(restorePublicationWitness ? { restorePublicationWitness: true } : {}) });
 }
 
 /** Remove the journal only after a fresh read verifies the restored digest. */
@@ -65,16 +66,22 @@ async function restoreDigestRecord(databaseUrl: string, handle: string, original
   if (record?.kind === 'digest' && record.publicationMayHaveBegun && !detectorRecoveryVerified) {
     throw new Error('detector publication may have begun; exact detector recovery must be verified before releasing this journal');
   }
+  const restoreWitness = record?.kind === 'digest' && record.restorePublicationWitness === true;
   const pool = new Pool({ connectionString: databaseUrl, max: 1, connectionTimeoutMillis: 5_000,
     query_timeout: 10_000, statement_timeout: 10_000 });
   try {
     const client = await pool.connect();
     try {
       const bytes = Buffer.from(handle.slice(2), 'hex');
-      const updated = await client.query('UPDATE ciphertext_digest SET ciphertext = $2 WHERE handle = $1', [bytes, original]);
+      const updated = await client.query(restoreWitness
+        ? 'UPDATE ciphertext_digest SET ciphertext = $2, s3_publication_verified_digest = $2 WHERE handle = $1'
+        : 'UPDATE ciphertext_digest SET ciphertext = $2 WHERE handle = $1', [bytes, original]);
       if (updated.rowCount !== 1) throw new Error(`could not restore the original digest for ${handle}: row is absent`);
-      const checked = await client.query<{ ciphertext: Buffer }>('SELECT ciphertext FROM ciphertext_digest WHERE handle = $1', [bytes]);
-      if (checked.rowCount !== 1 || !checked.rows[0].ciphertext.equals(original)) {
+      const checked = await client.query<{ ciphertext: Buffer; publication_verified?: boolean }>(restoreWitness
+        ? 'SELECT ciphertext, s3_publication_verified_at IS NOT NULL AND s3_publication_verified_digest = ciphertext AS publication_verified FROM ciphertext_digest WHERE handle = $1'
+        : 'SELECT ciphertext FROM ciphertext_digest WHERE handle = $1', [bytes]);
+      if (checked.rowCount !== 1 || !checked.rows[0].ciphertext.equals(original) ||
+          (restoreWitness && checked.rows[0].publication_verified !== true)) {
         throw new Error(`restored digest verification failed for ${handle}`);
       }
       remove(id);
