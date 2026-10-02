@@ -1,4 +1,4 @@
-//! `POST /v4/exp/user-decrypt`: the connector's v1 envelope topology (`attestationType`, `payload`, `signature`)
+//! `POST /v4/user-decrypt`: the connector's v1 envelope topology (`attestationType`, `payload`, `signature`)
 //! with the relayer's own field names inside, validated, converted to the connector DTO and aggregated.
 
 use alloy::primitives::{Address, B256, Bytes};
