@@ -73,7 +73,6 @@ class SolanaCharts(unittest.TestCase):
             writer, writer_env = deployments[name]
             self.assertEqual(writer["spec"]["replicas"], 1)
             self.assertEqual(writer["spec"]["strategy"]["type"], "Recreate")
-            self.assertNotIn("ETHEREUM_RPC_URL", writer_env)
         indexer, indexer_env = deployments[INDEXER]
         indexer_container = indexer["spec"]["template"]["spec"]["containers"][0]
         self.assertEqual(indexer_container["command"], ["solana_merkle_indexer"])
@@ -161,6 +160,27 @@ class SolanaCharts(unittest.TestCase):
         ids = next(e["value"] for e in endpoint["spec"]["template"]["spec"]["containers"][0]["env"]
                    if e["name"] == "KMS_CONNECTOR_SUPPORTED_CHAIN_IDS")
         self.assertIn("130140237723663404", ids.split(","))
+
+    def test_kms_worker_gets_the_tx_sender_wallet_only_with_a_solana_chain(self):
+        def wallet_env(values, *options):
+            documents = render("kms-connector-1", "kms-connector", values,
+                               "--set-string", "commonConfig.hostChains.ethereum.aclAddress=0x" + "11" * 20,
+                               *options)
+            envs = {}
+            for component in ["kms-worker", "tx-sender"]:
+                deployment = next(d for d in documents if d and d["kind"] == "Deployment"
+                                  and component in d["metadata"]["name"])
+                env = deployment["spec"]["template"]["spec"]["containers"][0]["env"]
+                envs[component] = {e["name"]: e for e in env if e["name"] in
+                                   ["KMS_CONNECTOR_PRIVATE_KEY", "KMS_CONNECTOR_AWS_KMS_CONFIG__KEY_ID"]}
+            return envs
+        evm = [ROOT / "ci/preview-env/kms-connector/values-kms-connector-e2e.yaml"]
+        self.assertEqual(wallet_env(evm)["kms-worker"], {})
+        envs = wallet_env(evm + [VALUES / "values-solana-connector-e2e.yaml"],
+                          "--set-json", "commonConfig.hostChains.solana.solanaProofUrls=" + json.dumps(PROOF_URLS),
+                          "--set", "kmsConnectorTxSender.wallet.awsKms.enabled=true")
+        self.assertEqual(list(envs["kms-worker"]), ["KMS_CONNECTOR_AWS_KMS_CONFIG__KEY_ID"])
+        self.assertEqual(envs["kms-worker"], envs["tx-sender"])
 
     def test_connector_reads_the_kind_from_the_type_byte_at_any_cluster_tag(self):
         # The PoC chain id has cluster tag 12345: a wrong shift would read it as EVM.

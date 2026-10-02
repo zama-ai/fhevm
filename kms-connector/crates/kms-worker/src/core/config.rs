@@ -69,7 +69,7 @@ pub struct Config {
     pub protocol_config_contract: ContractConfig,
 
     /// The private key of the connector's tx-sender wallet, which signs the Solana Merkle proof
-    /// requests: each coprocessor answers only the tx-senders of live KMS contexts.
+    /// requests.
     ///
     /// Intended for **testing purposes only**: production deployments configure `aws_kms_config`.
     pub private_key: Option<TestingPrivateKey>,

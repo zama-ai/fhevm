@@ -11,7 +11,8 @@ use aws_sdk_kms::Client as KmsClient;
 use serde::{Deserialize, Serialize};
 use tracing::{debug, info};
 
-/// KMS wallet used by `alloy::Provider` for signing decryption responses.
+/// The connector's tx-sender wallet. It signs the tx-sender's transactions and kms-worker's
+/// Solana Merkle proof requests.
 ///
 /// This wallet implementation provides functionality for:
 /// - Creating wallets from private key strings

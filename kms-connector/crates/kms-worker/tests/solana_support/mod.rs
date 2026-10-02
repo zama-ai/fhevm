@@ -1176,7 +1176,11 @@ pub fn proof_client(urls: &[url::Url], client: Client) -> CoprocessorProofClient
         None,
     )
     .expect("test key");
-    CoprocessorProofClient::new(urls, client, wallet, 12345)
+    let registry = request_authorization::KeyRegistry {
+        chain_id: 12345,
+        contract: alloy::primitives::Address::repeat_byte(0xC0),
+    };
+    CoprocessorProofClient::new(urls, client, wallet, registry, Duration::from_secs(5))
 }
 
 /// A Merkle proof answer as the coprocessor route serializes it.

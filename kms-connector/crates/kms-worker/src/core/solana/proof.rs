@@ -4,11 +4,12 @@
 
 use alloy::primitives::B256;
 use connector_utils::config::KmsWallet;
+use request_authorization::KeyRegistry;
 use serde::{Deserialize, Serialize};
 use solana_pubkey::Pubkey;
 use std::{
     future::Future,
-    time::{SystemTime, UNIX_EPOCH},
+    time::{Duration, SystemTime, UNIX_EPOCH},
 };
 use url::Url;
 
@@ -152,8 +153,7 @@ fn unavailable(reason: String) -> ProofReadError {
     ProofReadError::Unavailable { reason }
 }
 
-/// How long a signed batch stays valid. A batch is read within `host_rpc_call_timeout` of signing;
-/// the margin covers clock skew with the coprocessors.
+/// How long a signed batch stays valid: the reads of every coprocessor, plus clock skew with them.
 const AUTHORIZATION_VALIDITY_SECS: u64 = 120;
 const _: () = assert!(AUTHORIZATION_VALIDITY_SECS < request_authorization::MAX_VALIDITY_SECS);
 
@@ -163,11 +163,12 @@ const _: () = assert!(AUTHORIZATION_VALIDITY_SECS < request_authorization::MAX_V
 pub struct CoprocessorProofClient {
     urls: Vec<Url>,
     client: reqwest::Client,
-    /// The connector's tx-sender wallet: the coprocessors answer only live KMS contexts'
-    /// tx-senders.
+    /// The connector's tx-sender wallet.
     wallet: KmsWallet,
-    /// The canonical `ProtocolConfig` chain, which the signature's EIP-712 domain names.
-    chain_id: u64,
+    /// The canonical `ProtocolConfig`, which the signature's EIP-712 domain names.
+    registry: KeyRegistry,
+    /// Bounds the wallet's signature, an AWS KMS call in production.
+    signing_timeout: Duration,
 }
 
 /// A batch signed for every coprocessor.
@@ -177,7 +178,13 @@ pub struct SignedBatch {
 }
 
 impl CoprocessorProofClient {
-    pub fn new(urls: &[Url], client: reqwest::Client, wallet: KmsWallet, chain_id: u64) -> Self {
+    pub fn new(
+        urls: &[Url],
+        client: reqwest::Client,
+        wallet: KmsWallet,
+        registry: KeyRegistry,
+        signing_timeout: Duration,
+    ) -> Self {
         let urls = urls
             .iter()
             .map(|url| {
@@ -190,7 +197,8 @@ impl CoprocessorProofClient {
             urls,
             client,
             wallet,
-            chain_id,
+            registry,
+            signing_timeout,
         }
     }
 
@@ -248,15 +256,24 @@ impl HostProofReader for CoprocessorProofClient {
             .duration_since(UNIX_EPOCH)
             .map_or(0, |elapsed| elapsed.as_secs())
             + AUTHORIZATION_VALIDITY_SECS;
-        let authorization = request_authorization::authorize(
+        let signing = request_authorization::authorize(
             &self.wallet,
-            self.chain_id,
+            &self.registry,
             MERKLE_PROOFS_PATH,
             &body,
             expires,
-        )
-        .await
-        .map_err(|error| unavailable(format!("the proof request could not be signed: {error}")))?;
+        );
+        let authorization = tokio::time::timeout(self.signing_timeout, signing)
+            .await
+            .map_err(|_| {
+                unavailable(format!(
+                    "the proof request was not signed within {:?}",
+                    self.signing_timeout
+                ))
+            })?
+            .map_err(|error| {
+                unavailable(format!("the proof request could not be signed: {error}"))
+            })?;
         Ok(SignedBatch {
             body,
             authorization,
@@ -332,11 +349,20 @@ mod tests {
         );
     }
 
-    const CHAIN_ID: u64 = 12345;
+    const REGISTRY: KeyRegistry = KeyRegistry {
+        chain_id: 12345,
+        contract: alloy::primitives::Address::repeat_byte(0xC0),
+    };
 
     fn client(urls: &[&Url], wallet: &KmsWallet) -> CoprocessorProofClient {
         let urls: Vec<Url> = urls.iter().map(|url| (*url).clone()).collect();
-        CoprocessorProofClient::new(&urls, reqwest::Client::new(), wallet.clone(), CHAIN_ID)
+        CoprocessorProofClient::new(
+            &urls,
+            reqwest::Client::new(),
+            wallet.clone(),
+            REGISTRY,
+            Duration::from_secs(5),
+        )
     }
 
     fn query() -> [LeafQuery; 1] {
@@ -427,7 +453,7 @@ mod tests {
             .as_secs();
         assert_eq!(
             request_authorization::recover_signer(
-                CHAIN_ID,
+                &REGISTRY,
                 &batch.authorization,
                 MERKLE_PROOFS_PATH,
                 &batch.body,

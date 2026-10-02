@@ -118,8 +118,7 @@ database_url = "postgres://postgres:postgres@localhost/kms-connector"
 # task_limit = 1000
 
 # The connector's tx-sender wallet, which signs the Solana Merkle proof requests (required with a
-# Solana host chain). Configure the same key as the tx-sender's: each coprocessor answers only the
-# tx-senders of live KMS contexts.
+# Solana host chain). Configure the same key as the tx-sender's.
 # Private key as a hex string, with or without 0x prefix.
 # WARNING: Using a raw private key is intended for TESTING PURPOSES ONLY.
 #          Production deployments MUST use `aws_kms_config` instead (see below).
@@ -211,7 +210,6 @@ acl_address = "0x0000000000000000000000000000000000000000"
 # Solana chains only, at least one: each coprocessor's Merkle proof server
 # (`POST /v1/solana/merkle-proofs`). Every server is asked at once and the first proof that
 # verifies is taken, so a lagging or stalled coprocessor neither fails nor delays a request another
-# one serves; each server therefore sees every proof read. Each request is signed by the wallet
-# below, the connector's tx-sender key, and a server answers only the tx-senders of live KMS
-# contexts.
+# one serves; each server therefore sees every proof read. Each request is signed by the
+# tx-sender wallet configured above (`private_key` or `aws_kms_config`).
 # solana_proof_urls = ["http://localhost:8080"]

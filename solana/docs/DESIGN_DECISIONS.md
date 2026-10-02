@@ -2683,22 +2683,26 @@ Decision:
 kms-worker signs each request with its party's tx-sender wallet, the key its tx-sender submits
 Gateway transactions with: a local private key or an AWS KMS key, never a session key. The
 signature is EIP-712 over `RequestAuthorization(string path, bytes32 bodyDigest, uint64 expires)`,
-with the domain `{name: "zama-request-authorization", version: "1", chainId}` of the canonical
-`ProtocolConfig` chain. It travels as `Authorization: Zama-EIP712 expires=<unix seconds>,
+with the domain `{name: "zama-request-authorization", version: "1", chainId, verifyingContract}`
+naming the canonical `ProtocolConfig` and its chain, so two networks on one chain do not accept
+each other's requests. It travels as `Authorization: Zama-EIP712 expires=<unix seconds>,
 signature=0x<65 bytes>`. The `shared/request-authorization` crate builds and checks it for both
 sides. A signature is valid for at most `MAX_VALIDITY_SECS` (300) seconds; kms-worker signs for
-120 seconds and sends the same signed batch to every coprocessor.
+120 seconds, waits at most `host_rpc_call_timeout` for the signature, and sends the same signed
+batch to every coprocessor.
 
 `solana_merkle_proof_server` recovers the signer and answers only the tx-senders of the live KMS
 contexts. It reads them from the canonical `ProtocolConfig` at the finalized block every 60
 seconds: the live context ids, then each context's nodes from its `NewKmsContext` event at the
-context's anchor block. A refresh that fails keeps the last set. Until the first read succeeds,
+context's anchor block. A refresh that fails, or takes more than 30 seconds, keeps the last set. Until the first read succeeds,
 every request gets `upstreamTransient` (502, retryable) and `/healthz` answers 503. A missing,
 expired, malformed or unknown signature gets `senderAuthenticationFailed` (401) before the database
 is read.
 
-A replayed request within its validity returns the same public proofs to the same signer, so the
-server keeps no replay cache. The relayer does not call the Merkle proof server.
+No recipient is signed. A coprocessor that received a batch, or anyone who reads the plain-HTTP
+traffic inside the cluster, can resend it to the other coprocessors until it expires and receives
+their answer. Those answers are public proofs, so the server keeps no replay cache. The relayer
+does not call the Merkle proof server.
 
 Rejected alternatives:
 
@@ -2713,7 +2717,10 @@ Consequences:
 
 kms-worker needs signing access to the tx-sender key: the same `KMS_CONNECTOR_PRIVATE_KEY` or
 `KMS_CONNECTOR_AWS_KMS_CONFIG__KEY_ID`, which the chart passes to kms-worker only when a Solana host
-chain is configured. Each signed batch costs one AWS KMS signature. A new KMS context is answered
+chain is configured. With AWS KMS, kms-worker's own service account needs `kms:GetPublicKey` and
+`kms:Sign` on that key, or kms-worker exits at startup. A compromised kms-worker can then sign as
+the party's tx-sender, which submits its Gateway transactions. Each signed batch costs one AWS KMS
+signature from the quota the tx-sender also uses. A new KMS context is answered
 once its creation is finalized, up to 60 seconds later. The proof server reads the canonical
 `ProtocolConfig` over the RPC of the coprocessor's `chains[]` entry named by
 `commonConfig.canonicalProtocolConfigChainId`, and the chart refuses to render without it. The

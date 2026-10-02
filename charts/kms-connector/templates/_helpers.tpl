@@ -149,10 +149,8 @@ The host chain named "ethereum". Consume with `fromYaml`.
 {{- end -}}
 
 {{/*
-kms-worker KMS_CONNECTOR_HOST_CHAINS: JSON list with chainId as an integer.
-*/}}
-{{/*
-The tx-sender wallet's env. kms-worker signs its Solana Merkle proof requests with the same key.
+The tx-sender wallet's env. kms-worker signs its Solana Merkle proof requests with the same key; with
+AWS KMS, its own service account must be allowed to use that key.
 */}}
 {{- define "kmsConnector.txSenderWalletEnv" -}}
 {{- if .Values.kmsConnectorTxSender.wallet.awsKms.enabled }}
@@ -179,6 +177,9 @@ The tx-sender wallet's env. kms-worker signs its Solana Merkle proof requests wi
 {{- end -}}
 {{- end -}}
 
+{{/*
+kms-worker KMS_CONNECTOR_HOST_CHAINS: JSON list with chainId as an integer.
+*/}}
 {{- define "kmsConnector.hostChainsJson" -}}
 {{- $chains := list -}}
 {{- range $name, $chain := (include "kmsConnector.contracts" . | fromYaml).hostChains -}}

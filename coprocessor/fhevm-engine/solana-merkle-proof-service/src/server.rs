@@ -29,7 +29,7 @@ use serde::{Deserialize, Serialize};
 use sqlx::PgPool;
 use tokio::net::TcpListener;
 use tokio_util::sync::CancellationToken;
-use tracing::{error, info, warn};
+use tracing::{error, info};
 use utoipa::{
     openapi::security::{ApiKey, ApiKeyValue, SecurityScheme},
     Modify, OpenApi, ToSchema,
@@ -150,7 +150,6 @@ async fn healthz(State(pool): State<PgPool>) -> StatusCode {
 /// Not ready until the KMS tx-sender set is read, so a rollout waits for it.
 async fn proof_server_healthz(State(state): State<AppState>) -> StatusCode {
     if !state.senders.is_loaded() {
-        warn!("KMS tx-sender set not read yet");
         return StatusCode::SERVICE_UNAVAILABLE;
     }
     healthz(State(state.pool)).await
@@ -312,7 +311,7 @@ async fn merkle_proofs(
 ) -> Result<Json<MerkleProofResponse>, HttpError> {
     let body =
         body.map_err(|rejection| HttpError::malformed(rejection.body_text()))?;
-    authorize(&state.senders, &headers, &body)?;
+    authenticate(&state.senders, &headers, &body)?;
     let request: MerkleProofRequest = serde_json::from_slice(&body)
         .map_err(|err| HttpError::malformed(err.to_string()))?;
     if request.leaves.len() > MAX_LEAVES_PER_REQUEST {
@@ -334,7 +333,7 @@ async fn merkle_proofs(
 }
 
 /// Returns the KMS tx-sender that signed this exact body for this route.
-fn authorize(
+fn authenticate(
     senders: &KmsTxSenders,
     headers: &HeaderMap,
     body: &[u8],
@@ -356,7 +355,7 @@ fn authorize(
         .duration_since(UNIX_EPOCH)
         .map_or(0, |elapsed| elapsed.as_secs());
     let signer = request_authorization::recover_signer(
-        set.chain_id,
+        &set.registry,
         header,
         MERKLE_PROOFS_PATH,
         body,
@@ -365,7 +364,9 @@ fn authorize(
     .map_err(|err| refused(err.to_string()))?;
     if !set.senders.contains(&signer) {
         return Err(refused(format!(
-            "{signer} is not the tx-sender of a node in a live KMS context"
+            "{signer} is not the tx-sender of a node in a live KMS context of \
+             ProtocolConfig {} on chain {}",
+            set.registry.contract, set.registry.chain_id
         )));
     }
     Ok(signer)
@@ -473,9 +474,9 @@ async fn prove(
 
 // --- OpenAPI ----------------------------------------------------------------------
 
-struct RequestAuthorization;
+struct RequestAuthorizationScheme;
 
-impl Modify for RequestAuthorization {
+impl Modify for RequestAuthorizationScheme {
     fn modify(&self, openapi: &mut utoipa::openapi::OpenApi) {
         openapi
             .components
@@ -486,11 +487,9 @@ impl Modify for RequestAuthorization {
                     "Authorization",
                     &format!(
                         "`{} expires=<unix seconds>, signature=0x<65 bytes>`: an EIP-712 \
-                         `RequestAuthorization(string path, bytes32 bodyDigest, uint64 expires)` \
-                         signature, domain `{{name: \"zama-request-authorization\", version: \"1\", \
-                         chainId: <canonical ProtocolConfig chain>}}`, by the tx-sender of a node \
-                         in a live KMS context. `bodyDigest` is the keccak-256 of the exact body; \
-                         `expires` is at most {} s ahead.",
+                         signature over this path and the exact body, by the tx-sender of a node \
+                         in a live KMS context of the canonical ProtocolConfig, valid for at most \
+                         {} s. The `shared/request-authorization` crate defines the typed data.",
                         request_authorization::SCHEME,
                         request_authorization::MAX_VALIDITY_SECS,
                     ),
@@ -517,7 +516,7 @@ impl Modify for RequestAuthorization {
         ErrorCode,
         ErrorResponse,
     )),
-    modifiers(&RequestAuthorization),
+    modifiers(&RequestAuthorizationScheme),
 )]
 pub struct ApiDoc;
 
@@ -526,6 +525,7 @@ mod tests {
     use super::*;
     use crate::kms_tx_senders::KmsTxSenderSet;
     use alloy::signers::local::PrivateKeySigner;
+    use request_authorization::KeyRegistry;
     use sqlx::postgres::PgPoolOptions;
     use std::collections::HashSet;
 
@@ -616,7 +616,10 @@ mod tests {
         assert!(ParsedQuery::parse(&query).is_ok());
     }
 
-    const CHAIN_ID: u64 = 12345;
+    const REGISTRY: KeyRegistry = KeyRegistry {
+        chain_id: 12345,
+        contract: Address::repeat_byte(0xC0),
+    };
 
     fn now() -> u64 {
         SystemTime::now()
@@ -632,7 +635,7 @@ mod tests {
     ) -> String {
         request_authorization::authorize(
             signer,
-            CHAIN_ID,
+            &REGISTRY,
             MERKLE_PROOFS_PATH,
             body,
             expires,
@@ -668,7 +671,7 @@ mod tests {
         let connector = PrivateKeySigner::random();
         let (base, cancel, server) =
             spawn(KmsTxSenders::fixed(KmsTxSenderSet {
-                chain_id: CHAIN_ID,
+                registry: REGISTRY,
                 senders: HashSet::from([connector.address()]),
             }))
             .await;
