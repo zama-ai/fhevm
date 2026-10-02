@@ -959,6 +959,8 @@ pub enum ProofSource {
     Truncated(ProofRecord),
     /// Never answers, as a coprocessor that accepted the connection and stalled.
     Stalled,
+    /// Answers every query from this record after this delay.
+    Delayed(Duration, ProofRecord),
     /// Panics if asked: for scenarios rejected before the proof read, where reaching it would
     /// mean a rule ran out of order.
     MustNotBeAsked,
@@ -1019,8 +1021,8 @@ impl ScriptedProofReader {
 impl HostProofReader for ScriptedProofReader {
     type Batch = Vec<LeafQuery>;
 
-    fn source_count(&self) -> usize {
-        self.sources.len()
+    fn hedge_order(&self) -> Vec<usize> {
+        (0..self.sources.len()).collect()
     }
 
     async fn prepare(&self, queries: &[LeafQuery]) -> Result<Vec<LeafQuery>, ProofReadError> {
@@ -1046,6 +1048,10 @@ impl HostProofReader for ScriptedProofReader {
                 reason: format!("coprocessor {source} is down"),
             }),
             ProofSource::Stalled => std::future::pending().await,
+            ProofSource::Delayed(delay, record) => {
+                tokio::time::sleep(*delay).await;
+                Ok(answer(record))
+            }
             ProofSource::MustNotBeAsked => {
                 panic!("authorization read Merkle proofs where no read was expected")
             }

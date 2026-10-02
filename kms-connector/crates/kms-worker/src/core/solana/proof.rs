@@ -4,6 +4,7 @@
 
 use alloy::primitives::B256;
 use connector_utils::config::KmsWallet;
+use rand::seq::SliceRandom;
 use request_authorization::KeyRegistry;
 use serde::{Deserialize, Serialize};
 use serde_bytes::ByteArray;
@@ -64,8 +65,8 @@ pub trait HostProofReader: Send + Sync {
     /// A batch of queries made ready once and sent to any coprocessor.
     type Batch: Sync;
 
-    /// How many coprocessors can be asked.
-    fn source_count(&self) -> usize;
+    /// The coprocessors in the order to ask them.
+    fn hedge_order(&self) -> Vec<usize>;
 
     fn prepare(
         &self,
@@ -207,8 +208,8 @@ fn unavailable(reason: String) -> ProofReadError {
 const AUTHORIZATION_VALIDITY_SECS: u64 = 120;
 const _: () = assert!(AUTHORIZATION_VALIDITY_SECS < request_authorization::MAX_VALIDITY_SECS);
 
-/// The production reader: one signed `POST` per coprocessor. Every coprocessor of a batch receives
-/// the same body and signature, so the wallet signs once per batch.
+/// The production reader: one signed `POST` per coprocessor asked. Every coprocessor of a batch
+/// receives the same body and signature, so the wallet signs once per batch.
 #[derive(Clone, Debug)]
 pub struct CoprocessorProofClient {
     urls: Vec<Url>,
@@ -295,8 +296,11 @@ impl CoprocessorProofClient {
 impl HostProofReader for CoprocessorProofClient {
     type Batch = SignedBatch;
 
-    fn source_count(&self) -> usize {
-        self.urls.len()
+    /// A fresh random order per batch spreads the reads over the coprocessors.
+    fn hedge_order(&self) -> Vec<usize> {
+        let mut order: Vec<usize> = (0..self.urls.len()).collect();
+        order.shuffle(&mut rand::rng());
+        order
     }
 
     async fn prepare(&self, queries: &[LeafQuery]) -> Result<SignedBatch, ProofReadError> {
