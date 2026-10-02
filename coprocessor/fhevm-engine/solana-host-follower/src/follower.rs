@@ -27,8 +27,9 @@ use tonic::metadata::{Ascii, MetadataValue};
 use tonic::transport::{Channel, ClientTlsConfig};
 use yellowstone_grpc_proto::geyser::geyser_client::GeyserClient;
 use yellowstone_grpc_proto::prelude::{
-    subscribe_update::UpdateOneof, Message as TransactionMessage, SubscribeRequest,
-    SubscribeUpdateTransaction, SubscribeUpdateTransactionInfo, TransactionStatusMeta,
+    subscribe_update::UpdateOneof, Message as TransactionMessage,
+    SubscribeRequest, SubscribeUpdateTransaction,
+    SubscribeUpdateTransactionInfo, TransactionStatusMeta,
 };
 use zama_solana_transaction::{
     CompiledInstruction as CanonicalCompiledInstruction,
@@ -36,7 +37,9 @@ use zama_solana_transaction::{
 };
 
 use crate::host::DecodedInstruction;
-use crate::source::{build_subscribe_request, BlockValidator, SealDecision, SealedBlock};
+use crate::source::{
+    build_subscribe_request, BlockValidator, SealDecision, SealedBlock,
+};
 
 mod archive;
 mod metrics;
@@ -244,13 +247,27 @@ pub async fn run(
             return Ok(());
         }
         let start = progress.subscription_start();
-        let err = match subscribe_loop(sink, config, start, &mut progress, &cancel).await {
+        let err = match subscribe_loop(
+            sink,
+            config,
+            start,
+            &mut progress,
+            &cancel,
+        )
+        .await
+        {
             Ok(StreamEnd::Cancelled) => return Ok(()),
             Ok(StreamEnd::ReplayWindowPassed(status)) => {
                 warn!(%status, checkpoint = ?progress.applied, retry_cursor = ?progress.retry, "Yellowstone can no longer replay from the checkpoint; catching up from the archive RPC");
                 metrics::set_archive_catch_up(config.chain_id, true);
-                let caught_up =
-                    archive::catch_up(sink, config, archive, &mut progress, &cancel).await;
+                let caught_up = archive::catch_up(
+                    sink,
+                    config,
+                    archive,
+                    &mut progress,
+                    &cancel,
+                )
+                .await;
                 metrics::set_archive_catch_up(config.chain_id, false);
                 match caught_up {
                     Ok(true) => continue,
@@ -319,8 +336,10 @@ fn resolve_transaction_instructions(
         return Ok(Vec::new());
     }
     let static_keys = validated_account_keys(&message.account_keys)?;
-    let loaded_writable_keys = validated_account_keys(&meta.loaded_writable_addresses)?;
-    let loaded_readonly_keys = validated_account_keys(&meta.loaded_readonly_addresses)?;
+    let loaded_writable_keys =
+        validated_account_keys(&meta.loaded_writable_addresses)?;
+    let loaded_readonly_keys =
+        validated_account_keys(&meta.loaded_readonly_addresses)?;
     let top_level = message
         .instructions
         .iter()
@@ -382,7 +401,8 @@ async fn subscribe_loop(
     progress: &mut IngestionProgress,
     cancel: &CancellationToken,
 ) -> Result<StreamEnd> {
-    let endpoint = Channel::from_shared(config.grpc_url.clone()).context("invalid grpc url")?;
+    let endpoint = Channel::from_shared(config.grpc_url.clone())
+        .context("invalid grpc url")?;
     // from_shared leaves tls unset. Attach rustls when the parsed URI is https so hosted
     // Yellowstone handshakes; plaintext http (local e2e geyser) stays as-is.
     let endpoint = if endpoint.uri().scheme_str() == Some("https") {
@@ -404,12 +424,15 @@ async fn subscribe_loop(
         .transpose()
         .context("invalid x-token")?;
 
-    let mut client = GeyserClient::with_interceptor(channel, move |mut req: tonic::Request<()>| {
-        if let Some(token) = &token {
-            req.metadata_mut().insert("x-token", token.clone());
-        }
-        Ok(req)
-    })
+    let mut client = GeyserClient::with_interceptor(
+        channel,
+        move |mut req: tonic::Request<()>| {
+            if let Some(token) = &token {
+                req.metadata_mut().insert("x-token", token.clone());
+            }
+            Ok(req)
+        },
+    )
     .max_decoding_message_size(MAX_DECODING_MESSAGE_SIZE);
 
     let is_resume = !matches!(start, StartPosition::Tip);
@@ -519,9 +542,9 @@ fn accept_transaction(
     program: &Pubkey,
 ) -> Result<()> {
     let slot = update.slot;
-    let info = update
-        .transaction
-        .ok_or_else(|| anyhow!("transaction update in slot {slot} has no transaction"))?;
+    let info = update.transaction.ok_or_else(|| {
+        anyhow!("transaction update in slot {slot} has no transaction")
+    })?;
     match prepare_transaction(info, program)? {
         Some(transaction) => validator.transaction(slot, transaction),
         None => Ok(()),
@@ -534,8 +557,8 @@ fn prepare_transaction(
     info: SubscribeUpdateTransactionInfo,
     program: &Pubkey,
 ) -> Result<Option<PreparedTransaction>> {
-    let signature =
-        Signature::try_from(info.signature.as_slice()).context("invalid Solana signature")?;
+    let signature = Signature::try_from(info.signature.as_slice())
+        .context("invalid Solana signature")?;
     let meta = info
         .meta
         .as_ref()
@@ -547,11 +570,16 @@ fn prepare_transaction(
         .transaction
         .as_ref()
         .and_then(|transaction| transaction.message.as_ref())
-        .ok_or_else(|| anyhow!("successful transaction {signature} has no message"))?;
+        .ok_or_else(|| {
+            anyhow!("successful transaction {signature} has no message")
+        })?;
     Ok(Some(PreparedTransaction {
         signature,
         index: info.index,
-        instructions: host_instructions(resolve_transaction_instructions(message, meta)?, program),
+        instructions: host_instructions(
+            resolve_transaction_instructions(message, meta)?,
+            program,
+        ),
     }))
 }
 
@@ -590,15 +618,16 @@ fn is_replay_unsupported(status: &tonic::Status) -> bool {
 /// The requested slot is older than the provider's replay window.
 fn is_replay_window_passed(status: &tonic::Status) -> bool {
     let message = status.message();
-    message.starts_with("broadcast from ") && message.contains(" is not available")
+    message.starts_with("broadcast from ")
+        && message.contains(" is not available")
 }
 
 #[cfg(test)]
 mod replay_status_tests {
     use super::StartPosition;
     use super::{
-        is_replay_unsupported, is_replay_window_passed, BlockCheckpoint, IngestionProgress,
-        PreparedBlock,
+        is_replay_unsupported, is_replay_window_passed, BlockCheckpoint,
+        IngestionProgress, PreparedBlock,
     };
     use crate::source::testing::{following, meta};
     use crate::source::{BlockValidator, SealDecision};
@@ -606,8 +635,9 @@ mod replay_status_tests {
 
     #[test]
     fn classifies_replay_refusals_without_treating_transport_as_one() {
-        let passed =
-            tonic::Status::internal("broadcast from 7 is not available, last available: 12");
+        let passed = tonic::Status::internal(
+            "broadcast from 7 is not available, last available: 12",
+        );
         assert!(is_replay_window_passed(&passed));
         assert!(!is_replay_unsupported(&passed));
         let unsupported = tonic::Status::internal("from_slot is not supported");
@@ -652,12 +682,15 @@ mod replay_status_tests {
     }
 
     #[test]
-    fn bootstrap_anchor_survives_disconnect_and_is_processed_before_checkpointing() {
+    fn bootstrap_anchor_survives_disconnect_and_is_processed_before_checkpointing(
+    ) {
         let checkpoint = BlockCheckpoint {
             slot: 5,
             block_hash: [5; 32],
         };
-        let mut progress = IngestionProgress::from(StartPosition::ReplayFrom(checkpoint.clone()));
+        let mut progress = IngestionProgress::from(StartPosition::ReplayFrom(
+            checkpoint.clone(),
+        ));
         // Disconnects before the first block leave the inclusive, unapplied cursor intact.
         for _ in 0..2 {
             assert_eq!(
@@ -686,10 +719,12 @@ mod replay_status_tests {
     #[test]
     fn bootstrap_rejects_a_provider_that_skips_or_changes_the_anchor() {
         for (slot, hash) in [(6, [6; 32]), (5, [9; 32])] {
-            let mut validator = BlockValidator::new(StartPosition::ReplayFrom(BlockCheckpoint {
-                slot: 5,
-                block_hash: [5; 32],
-            }));
+            let mut validator = BlockValidator::new(StartPosition::ReplayFrom(
+                BlockCheckpoint {
+                    slot: 5,
+                    block_hash: [5; 32],
+                },
+            ));
             assert!(validator
                 .block_meta(SubscribeUpdateBlockMeta {
                     slot,
@@ -753,9 +788,9 @@ mod account_resolution_tests {
         let err = validated_account_keys([&vec![1; 32], &vec![2; 31]])
             .expect_err("short account keys must fail closed");
 
-        assert!(err
-            .to_string()
-            .contains("account key 1 has invalid length 31, expected 32 bytes"));
+        assert!(err.to_string().contains(
+            "account key 1 has invalid length 31, expected 32 bytes"
+        ));
     }
 
     #[test]
@@ -779,14 +814,17 @@ mod account_resolution_tests {
 #[cfg(test)]
 mod slot_size_tests {
     use super::test_support::ZAMA_HOST;
-    use super::wire_fixtures::{app_transaction, foreign_transaction, Compiled, Transaction};
+    use super::wire_fixtures::{
+        app_transaction, foreign_transaction, Compiled, Transaction,
+    };
     use super::PreparedBlock;
     use super::{prepare_transaction, MAX_DECODING_MESSAGE_SIZE};
     use crate::source::testing::{following, meta};
     use crate::source::SealDecision;
     use solana_sdk::pubkey::Pubkey;
     use yellowstone_grpc_proto::prelude::{
-        subscribe_update::UpdateOneof, SubscribeUpdate, SubscribeUpdateTransaction,
+        subscribe_update::UpdateOneof, SubscribeUpdate,
+        SubscribeUpdateTransaction,
     };
     use yellowstone_grpc_proto::prost::Message;
 
@@ -826,14 +864,17 @@ mod slot_size_tests {
         let host = ZAMA_HOST.parse::<Pubkey>().unwrap();
         let junk_info = |index: u64| {
             let mut info = junk(index as u8).grpc_info(index);
-            info.meta.as_mut().unwrap().log_messages = vec!["x".repeat(LOG_BYTES)];
+            info.meta.as_mut().unwrap().log_messages =
+                vec!["x".repeat(LOG_BYTES)];
             info
         };
         let message_size = SubscribeUpdate {
-            update_oneof: Some(UpdateOneof::Transaction(SubscribeUpdateTransaction {
-                transaction: Some(junk_info(0)),
-                slot: 5,
-            })),
+            update_oneof: Some(UpdateOneof::Transaction(
+                SubscribeUpdateTransaction {
+                    transaction: Some(junk_info(0)),
+                    slot: 5,
+                },
+            )),
             ..Default::default()
         }
         .encoded_len();
@@ -857,10 +898,12 @@ mod slot_size_tests {
             validator.transaction(5, prepared).unwrap();
         }
         let host_index = junk_count as u64;
-        let prepared =
-            prepare_transaction(app_transaction(0xF0, [7; 32]).grpc_info(host_index), &host)
-                .unwrap()
-                .unwrap();
+        let prepared = prepare_transaction(
+            app_transaction(0xF0, [7; 32]).grpc_info(host_index),
+            &host,
+        )
+        .unwrap()
+        .unwrap();
         validator.transaction(5, prepared).unwrap();
 
         let SealDecision::Process(PreparedBlock {
@@ -899,7 +942,8 @@ pub(crate) mod test_support {
 
     // A valid pubkey that is not the compiled-in `zama_host::ID`: following must use the
     // configured deployment.
-    pub(crate) const ZAMA_HOST: &str = "7DYCAhqwQSKqqL1h8V1XmY1BTcMWxrASQYKNMy87jeg3";
+    pub(crate) const ZAMA_HOST: &str =
+        "7DYCAhqwQSKqqL1h8V1XmY1BTcMWxrASQYKNMy87jeg3";
 
     pub(crate) fn config() -> FollowerConfig {
         FollowerConfig {

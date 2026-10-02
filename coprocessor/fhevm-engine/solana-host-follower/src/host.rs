@@ -10,7 +10,9 @@
 use anchor_lang::prelude::Pubkey;
 use anyhow::{bail, Context, Result};
 use solana_client::nonblocking::rpc_client::RpcClient;
-use zama_host::decode::{decode_instruction, is_fhe_execute_instruction, ZamaHostInstruction};
+use zama_host::decode::{
+    decode_instruction, is_fhe_execute_instruction, ZamaHostInstruction,
+};
 use zama_host::state::{FheExecuteArgs, FheExecuteEffect, FheExecuteStep};
 use zama_host::FheExecutedEvent;
 
@@ -56,22 +58,32 @@ impl HostOperation {
 }
 
 /// Decodes a `fhe_execute` instruction's data into the program's own `FheExecuteArgs`.
-pub fn decode_fhe_execute_args(instruction_data: &[u8]) -> Option<FheExecuteArgs> {
+pub fn decode_fhe_execute_args(
+    instruction_data: &[u8],
+) -> Option<FheExecuteArgs> {
     match decode_instruction(instruction_data) {
         Ok(Some(ZamaHostInstruction::FheExecute(args))) => Some(args),
         _ => None,
     }
 }
 
-pub fn decode_fhe_executed_event(instruction_data: &[u8]) -> Option<FheExecutedEvent> {
-    let event: FheExecutedEvent = zama_host::decode::decode_event_cpi(instruction_data)?;
+pub fn decode_fhe_executed_event(
+    instruction_data: &[u8],
+) -> Option<FheExecutedEvent> {
+    let event: FheExecutedEvent =
+        zama_host::decode::decode_event_cpi(instruction_data)?;
     (event.version == zama_host::EVENT_VERSION).then_some(event)
 }
 
 /// The chain id of `program_id`'s deployment, from its confirmed `HostConfig` account.
-pub async fn host_chain_id(rpc: &RpcClient, program_id: &Pubkey) -> Result<u64> {
-    let (host_config, _) =
-        Pubkey::find_program_address(&[zama_host::constants::HOST_CONFIG_SEED], program_id);
+pub async fn host_chain_id(
+    rpc: &RpcClient,
+    program_id: &Pubkey,
+) -> Result<u64> {
+    let (host_config, _) = Pubkey::find_program_address(
+        &[zama_host::constants::HOST_CONFIG_SEED],
+        program_id,
+    );
     let account = rpc
         .get_account(&host_config)
         .await
@@ -83,14 +95,21 @@ pub async fn host_chain_id(rpc: &RpcClient, program_id: &Pubkey) -> Result<u64> 
 /// cannot drift.
 fn parse_host_config(account_data: &[u8]) -> Result<u64> {
     use anchor_lang::AccountDeserialize;
-    let config = zama_host::state::HostConfig::try_deserialize(&mut &account_data[..])
-        .map_err(|e| anyhow::anyhow!("decode HostConfig account: {e}"))?;
+    let config =
+        zama_host::state::HostConfig::try_deserialize(&mut &account_data[..])
+            .map_err(|e| anyhow::anyhow!("decode HostConfig account: {e}"))?;
     Ok(config.chain_id)
 }
 
-fn fhe_execute_dynamic_account(accounts: &[[u8; 32]], remaining_index: u8) -> Option<[u8; 32]> {
+fn fhe_execute_dynamic_account(
+    accounts: &[[u8; 32]],
+    remaining_index: u8,
+) -> Option<[u8; 32]> {
     accounts
-        .get(zama_host::FHE_EXECUTE_FIXED_ACCOUNTS + usize::from(remaining_index))
+        .get(
+            zama_host::FHE_EXECUTE_FIXED_ACCOUNTS
+                + usize::from(remaining_index),
+        )
         .copied()
 }
 
@@ -110,7 +129,9 @@ pub fn host_operations(
                 // event tag was emitted by the host.
                 let mut events = instructions[instruction_index + 1..]
                     .iter()
-                    .take_while(|later| !is_fhe_execute_instruction(&later.data))
+                    .take_while(|later| {
+                        !is_fhe_execute_instruction(&later.data)
+                    })
                     .filter_map(|later| decode_fhe_executed_event(&later.data));
                 let (Some(event), None) = (events.next(), events.next()) else {
                     bail!(
@@ -125,7 +146,8 @@ pub fn host_operations(
                          the same steps"
                     );
                 }
-                let store_writes = fhe_execute_store_writes(ix, &args, &event, slot)?;
+                let store_writes =
+                    fhe_execute_store_writes(ix, &args, &event, slot)?;
                 operations.push(HostOperation::FheExecute {
                     args,
                     event,
@@ -146,13 +168,15 @@ pub fn host_operations(
                         ix.accounts.len()
                     );
                 };
-                operations.push(HostOperation::MakeStoreHandlePublic(EncryptedStoreWrite {
-                    encrypted_store,
-                    previous_leaf_count,
-                    handle,
-                    allowed_keys: Vec::new(),
-                    make_public: true,
-                }));
+                operations.push(HostOperation::MakeStoreHandlePublic(
+                    EncryptedStoreWrite {
+                        encrypted_store,
+                        previous_leaf_count,
+                        handle,
+                        allowed_keys: Vec::new(),
+                        make_public: true,
+                    },
+                ));
             }
             Ok(_) => {}
             Err(error) => bail!(
@@ -166,7 +190,10 @@ pub fn host_operations(
 }
 
 /// The event has one result per step and one seed per random step, in step order.
-fn event_matches_steps(args: &FheExecuteArgs, event: &FheExecutedEvent) -> bool {
+fn event_matches_steps(
+    args: &FheExecuteArgs,
+    event: &FheExecutedEvent,
+) -> bool {
     let random_steps = args
         .steps
         .iter()
@@ -174,7 +201,8 @@ fn event_matches_steps(args: &FheExecuteArgs, event: &FheExecutedEvent) -> bool 
         .filter(|(_, step)| {
             matches!(
                 step,
-                FheExecuteStep::Rand { .. } | FheExecuteStep::RandBounded { .. }
+                FheExecuteStep::Rand { .. }
+                    | FheExecuteStep::RandBounded { .. }
             )
         })
         .map(|(index, _)| index);
@@ -201,13 +229,17 @@ fn fhe_execute_store_writes(
         let Some(handle) = handle.copied() else {
             bail!("fhe_execute in slot {slot} writes the output of a step it does not have");
         };
-        if effect.slot.is_none() && effect.allow_indexes.is_empty() && !effect.make_public {
+        if effect.slot.is_none()
+            && effect.allow_indexes.is_empty()
+            && !effect.make_public
+        {
             continue;
         }
         let Some(allowed_keys) = allowed_keys(effect, &args.dictionary) else {
             bail!("fhe_execute in slot {slot} allows a key outside its dictionary");
         };
-        let Some(encrypted_store) = fhe_execute_dynamic_account(&ix.accounts, effect.store_index)
+        let Some(encrypted_store) =
+            fhe_execute_dynamic_account(&ix.accounts, effect.store_index)
         else {
             bail!(
                 "fhe_execute state output out of range in slot {slot}; remaining_index={}, \
@@ -228,7 +260,10 @@ fn fhe_execute_store_writes(
     Ok(writes)
 }
 
-fn allowed_keys(effect: &FheExecuteEffect, dictionary: &[[u8; 32]]) -> Option<Vec<[u8; 32]>> {
+fn allowed_keys(
+    effect: &FheExecuteEffect,
+    dictionary: &[[u8; 32]],
+) -> Option<Vec<[u8; 32]>> {
     effect
         .allow_indexes
         .iter()
@@ -248,7 +283,10 @@ mod tests {
 
     const FIXED_ACCOUNTS: usize = zama_host::FHE_EXECUTE_FIXED_ACCOUNTS;
 
-    fn host_instruction(data: Vec<u8>, accounts: Vec<[u8; 32]>) -> DecodedInstruction {
+    fn host_instruction(
+        data: Vec<u8>,
+        accounts: Vec<[u8; 32]>,
+    ) -> DecodedInstruction {
         DecodedInstruction { data, accounts }
     }
 
@@ -275,7 +313,11 @@ mod tests {
         ]
     }
 
-    fn effect(store_index: u8, allow_indexes: Vec<u8>, make_public: bool) -> FheExecuteEffect {
+    fn effect(
+        store_index: u8,
+        allow_indexes: Vec<u8>,
+        make_public: bool,
+    ) -> FheExecuteEffect {
         FheExecuteEffect {
             result: ExecutionResultRef {
                 step_index: 0,
@@ -290,14 +332,19 @@ mod tests {
         }
     }
 
-    fn store_writes(instructions: &[DecodedInstruction]) -> Result<Vec<EncryptedStoreWrite>> {
+    fn store_writes(
+        instructions: &[DecodedInstruction],
+    ) -> Result<Vec<EncryptedStoreWrite>> {
         Ok(host_operations(instructions, 42)?
             .iter()
             .flat_map(|operation| operation.store_writes().to_vec())
             .collect())
     }
 
-    fn instruction_data(discriminator: &[u8], args: impl AnchorSerialize) -> Vec<u8> {
+    fn instruction_data(
+        discriminator: &[u8],
+        args: impl AnchorSerialize,
+    ) -> Vec<u8> {
         let mut data = discriminator.to_vec();
         args.serialize(&mut data).unwrap();
         data
@@ -328,7 +375,9 @@ mod tests {
 
         let mut truncated = data;
         truncated.pop();
-        let error = store_writes(&[host_instruction(truncated, vec![[0; 32]; 6])]).unwrap_err();
+        let error =
+            store_writes(&[host_instruction(truncated, vec![[0; 32]; 6])])
+                .unwrap_err();
         assert!(
             error.to_string().contains("make_store_handle_public"),
             "{error}"
@@ -348,11 +397,12 @@ mod tests {
                 },
             },
         );
-        assert!(
-            host_operations(&[host_instruction(data, vec![[0; 32]; 6])], 42)
-                .unwrap()
-                .is_empty()
-        );
+        assert!(host_operations(
+            &[host_instruction(data, vec![[0; 32]; 6])],
+            42
+        )
+        .unwrap()
+        .is_empty());
     }
 
     #[test]
@@ -378,7 +428,8 @@ mod tests {
         };
         // Serialized like the on-chain instruction: discriminator + borsh args.
         let mut bytes = encoded_execution(&execution);
-        let decoded = decode_fhe_execute_args(&bytes).expect("decode execution");
+        let decoded =
+            decode_fhe_execute_args(&bytes).expect("decode execution");
         assert_eq!(decoded, execution);
         assert_eq!(decoded.steps.len(), 2);
         // Wrong/missing discriminator -> None.
@@ -390,8 +441,8 @@ mod tests {
 
     #[test]
     fn decodes_the_executed_event_and_rejects_other_versions() {
-        let decoded =
-            decode_fhe_executed_event(&event_cpi_data(vec![[5; 32]])).expect("decode event");
+        let decoded = decode_fhe_executed_event(&event_cpi_data(vec![[5; 32]]))
+            .expect("decode event");
         assert_eq!(decoded.results, vec![[5; 32]]);
 
         let mut other_version = event_cpi_data(vec![[5; 32]]);
@@ -500,41 +551,42 @@ mod tests {
     /// a sink that skipped this check would record a handle the chain never installed.
     #[test]
     fn an_execution_and_its_event_describe_the_same_steps() {
-        let rand = |steps: Vec<FheExecuteStep>, results: usize, seeds: Vec<u16>| {
-            let args = FheExecuteArgs {
-                execution_store_index: 0,
-                account_count: 0,
-                effects: vec![],
-                returned_results: vec![],
-                dictionary: vec![],
-                steps,
+        let rand =
+            |steps: Vec<FheExecuteStep>, results: usize, seeds: Vec<u16>| {
+                let args = FheExecuteArgs {
+                    execution_store_index: 0,
+                    account_count: 0,
+                    effects: vec![],
+                    returned_results: vec![],
+                    dictionary: vec![],
+                    steps,
+                };
+                let event = FheExecutedEvent {
+                    version: zama_host::EVENT_VERSION,
+                    previous_bank_hash: [0x44; 32],
+                    unix_timestamp: 0,
+                    results: vec![[7; 32]; results],
+                    seeds: seeds
+                        .into_iter()
+                        .map(|step_index| zama_host::FheExecuteRandomSeed {
+                            step_index,
+                            seed: [1; 16],
+                        })
+                        .collect(),
+                };
+                let event_data = anchor_lang::event::EVENT_IX_TAG_LE
+                    .iter()
+                    .copied()
+                    .chain(anchor_lang::Event::data(&event))
+                    .collect();
+                host_operations(
+                    &[
+                        host_instruction(encoded_execution(&args), vec![]),
+                        host_instruction(event_data, vec![]),
+                    ],
+                    42,
+                )
             };
-            let event = FheExecutedEvent {
-                version: zama_host::EVENT_VERSION,
-                previous_bank_hash: [0x44; 32],
-                unix_timestamp: 0,
-                results: vec![[7; 32]; results],
-                seeds: seeds
-                    .into_iter()
-                    .map(|step_index| zama_host::FheExecuteRandomSeed {
-                        step_index,
-                        seed: [1; 16],
-                    })
-                    .collect(),
-            };
-            let event_data = anchor_lang::event::EVENT_IX_TAG_LE
-                .iter()
-                .copied()
-                .chain(anchor_lang::Event::data(&event))
-                .collect();
-            host_operations(
-                &[
-                    host_instruction(encoded_execution(&args), vec![]),
-                    host_instruction(event_data, vec![]),
-                ],
-                42,
-            )
-        };
         let trivial = FheExecuteStep::TrivialEncrypt {
             plaintext: [7; 32],
             fhe_type: 5,

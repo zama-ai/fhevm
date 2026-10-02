@@ -10,12 +10,17 @@
 //! the host's instructions as it arrives ([`prepare_rpc_transaction`]).
 
 use anyhow::{anyhow, bail, ensure, Context, Result};
-use solana_sdk::{message::VersionedMessage, pubkey::Pubkey, signature::Signature};
-use solana_transaction_status_client_types::{
-    option_serializer::OptionSerializer, EncodedConfirmedTransactionWithStatusMeta,
-    EncodedTransaction, UiConfirmedBlock, UiInstruction, UiTransactionStatusMeta,
+use solana_sdk::{
+    message::VersionedMessage, pubkey::Pubkey, signature::Signature,
 };
-use zama_solana_transaction::{CompiledInstruction, InnerInstructionGroup, ResolvedInstruction};
+use solana_transaction_status_client_types::{
+    option_serializer::OptionSerializer,
+    EncodedConfirmedTransactionWithStatusMeta, EncodedTransaction,
+    UiConfirmedBlock, UiInstruction, UiTransactionStatusMeta,
+};
+use zama_solana_transaction::{
+    CompiledInstruction, InnerInstructionGroup, ResolvedInstruction,
+};
 
 use super::{host_instructions, PreparedTransaction};
 use crate::source::SealedBlock;
@@ -36,16 +41,16 @@ pub(super) fn list_rpc_block(
     block: UiConfirmedBlock,
     program: &Pubkey,
 ) -> Result<RpcBlockListing> {
-    let transactions = block
-        .transactions
-        .ok_or_else(|| anyhow!("getBlock response for slot {slot} has no transactions"))?;
+    let transactions = block.transactions.ok_or_else(|| {
+        anyhow!("getBlock response for slot {slot} has no transactions")
+    })?;
     let executed_transaction_count = transactions.len() as u64;
     let program_address = program.to_string();
     let mut matching = Vec::new();
     for (index, encoded) in transactions.into_iter().enumerate() {
-        let meta = encoded
-            .meta
-            .ok_or_else(|| anyhow!("transaction {index} in slot {slot} has no status meta"))?;
+        let meta = encoded.meta.ok_or_else(|| {
+            anyhow!("transaction {index} in slot {slot} has no status meta")
+        })?;
         let EncodedTransaction::Accounts(accounts) = encoded.transaction else {
             bail!(
                 "transaction {index} in slot {slot} is not an account list; request transactionDetails \"accounts\""
@@ -59,19 +64,21 @@ pub(super) fn list_rpc_block(
         {
             continue;
         }
-        let signature = accounts
-            .signatures
-            .first()
-            .ok_or_else(|| anyhow!("transaction {index} in slot {slot} has no signature"))?;
+        let signature = accounts.signatures.first().ok_or_else(|| {
+            anyhow!("transaction {index} in slot {slot} has no signature")
+        })?;
         let signature = signature.parse::<Signature>().with_context(|| {
-            format!("transaction {index} in slot {slot} has an invalid signature")
+            format!(
+                "transaction {index} in slot {slot} has an invalid signature"
+            )
         })?;
         matching.push((index as u64, signature));
     }
     Ok(RpcBlockListing {
         block: SealedBlock {
             slot,
-            block_hash: decode_hash(&block.blockhash).context("getBlock blockhash")?,
+            block_hash: decode_hash(&block.blockhash)
+                .context("getBlock blockhash")?,
             parent_slot: block.parent_slot,
             parent_block_hash: decode_hash(&block.previous_blockhash)
                 .context("getBlock previousBlockhash")?,
@@ -103,7 +110,9 @@ pub(super) fn prepare_rpc_transaction(
     ensure!(meta.err.is_none(), "transaction {signature} failed");
     let transaction =
         fetched.transaction.transaction.decode().ok_or_else(|| {
-            anyhow!("transaction {signature} is not a sanitized base64 transaction")
+            anyhow!(
+                "transaction {signature} is not a sanitized base64 transaction"
+            )
         })?;
     ensure!(
         transaction.signatures.first() == Some(&signature),
@@ -127,7 +136,9 @@ fn resolve_rpc_transaction(
         .iter()
         .map(|key| key.to_bytes())
         .collect::<Vec<_>>();
-    let (loaded_writable_keys, loaded_readonly_keys) = match &meta.loaded_addresses {
+    let (loaded_writable_keys, loaded_readonly_keys) = match &meta
+        .loaded_addresses
+    {
         OptionSerializer::Some(loaded) => (
             decode_keys(&loaded.writable)?,
             decode_keys(&loaded.readonly)?,
@@ -213,15 +224,20 @@ fn decode_hash(value: &str) -> Result<[u8; 32]> {
 mod tests {
     use base64::{prelude::BASE64_STANDARD, Engine};
     use serde_json::{json, Value};
-    use solana_sdk::{pubkey::Pubkey, signature::Signature, transaction::VersionedTransaction};
+    use solana_sdk::{
+        pubkey::Pubkey, signature::Signature, transaction::VersionedTransaction,
+    };
     use solana_transaction_status_client_types::{
         EncodedTransaction, TransactionBinaryEncoding, UiConfirmedBlock,
     };
 
     use super::super::wire_fixtures::{
-        app_transaction, block_json, foreign_transaction, Compiled, Transaction, BLOCK_TIME,
+        app_transaction, block_json, foreign_transaction, Compiled,
+        Transaction, BLOCK_TIME,
     };
-    use super::{list_rpc_block, prepare_rpc_transaction, resolve_rpc_transaction};
+    use super::{
+        list_rpc_block, prepare_rpc_transaction, resolve_rpc_transaction,
+    };
     use crate::follower::resolve_transaction_instructions;
     use crate::follower::test_support::ZAMA_HOST;
     use crate::follower::PreparedTransaction;
@@ -234,7 +250,8 @@ mod tests {
         ));
     }
     use shared_fixtures::{
-        fixture_key, transaction_decoding_fixtures, ExpectedInstruction, ExpectedOutcome,
+        fixture_key, transaction_decoding_fixtures, ExpectedInstruction,
+        ExpectedOutcome,
     };
 
     fn hash(slot: u64) -> [u8; 32] {
@@ -258,20 +275,28 @@ mod tests {
             panic!("base64 transaction")
         };
         let decoded: VersionedTransaction =
-            bincode::deserialize(&BASE64_STANDARD.decode(blob).unwrap()).unwrap();
+            bincode::deserialize(&BASE64_STANDARD.decode(blob).unwrap())
+                .unwrap();
         resolve_rpc_transaction(&decoded.message, &encoded.meta.unwrap())
     }
 
     /// Both wire formats resolve every shared fixture as it expects.
     #[test]
     fn shared_transaction_decoding_contract() {
-        let compiled = |instruction: &shared_fixtures::CompiledInstructionFixture| Compiled {
-            program_id_index: u8::try_from(instruction.program_id_index).unwrap(),
-            accounts: instruction.accounts.clone(),
-            data: instruction.data.clone(),
-            stack_height: instruction.stack_height,
-        };
-        let keys = |tags: &[u8]| tags.iter().copied().map(fixture_key).collect();
+        let compiled =
+            |instruction: &shared_fixtures::CompiledInstructionFixture| {
+                Compiled {
+                    program_id_index: u8::try_from(
+                        instruction.program_id_index,
+                    )
+                    .unwrap(),
+                    accounts: instruction.accounts.clone(),
+                    data: instruction.data.clone(),
+                    stack_height: instruction.stack_height,
+                }
+            };
+        let keys =
+            |tags: &[u8]| tags.iter().copied().map(fixture_key).collect();
         for fixture in transaction_decoding_fixtures() {
             let transaction = Transaction {
                 signature: [1; 64],
@@ -298,14 +323,18 @@ mod tests {
                 match &fixture.expected {
                     ExpectedOutcome::Accept { instructions } => {
                         let actual = decoded
-                            .unwrap_or_else(|error| panic!("{} ({wire}): {error:#}", fixture.name))
+                            .unwrap_or_else(|error| {
+                                panic!("{} ({wire}): {error:#}", fixture.name)
+                            })
                             .into_iter()
                             .map(|instruction| ExpectedInstruction {
                                 program: instruction.program_id,
                                 accounts: instruction.accounts,
                                 data: instruction.data,
-                                top_level_index: u32::try_from(instruction.top_level_index)
-                                    .unwrap(),
+                                top_level_index: u32::try_from(
+                                    instruction.top_level_index,
+                                )
+                                .unwrap(),
                                 stack_height: instruction.stack_height,
                             })
                             .collect::<Vec<_>>();
@@ -313,7 +342,11 @@ mod tests {
                             .iter()
                             .map(|instruction| instruction.resolve())
                             .collect::<Vec<_>>();
-                        assert_eq!(actual, expected, "{} ({wire})", fixture.name);
+                        assert_eq!(
+                            actual, expected,
+                            "{} ({wire})",
+                            fixture.name
+                        );
                     }
                     ExpectedOutcome::Reject => {
                         assert!(decoded.is_err(), "{} ({wire})", fixture.name);
@@ -342,13 +375,16 @@ mod tests {
             100,
             vec![
                 foreign_transaction(6).rpc_accounts_json(Value::Null),
-                failed.rpc_accounts_json(json!({ "InstructionError": [0, { "Custom": 1 }] })),
+                failed.rpc_accounts_json(
+                    json!({ "InstructionError": [0, { "Custom": 1 }] }),
+                ),
                 succeeded.rpc_accounts_json(Value::Null),
                 loaded.rpc_accounts_json(Value::Null),
             ],
         );
 
-        let listing = list_rpc_block(100, block, &ZAMA_HOST.parse().unwrap()).unwrap();
+        let listing =
+            list_rpc_block(100, block, &ZAMA_HOST.parse().unwrap()).unwrap();
         assert_eq!(listing.block.checkpoint().slot, 100);
         assert_eq!(listing.block.block_hash, hash(100));
         assert_eq!(listing.block.parent_block_hash, hash(99));
@@ -369,9 +405,13 @@ mod tests {
         .unwrap();
         assert_eq!(transaction.signature, Signature::from([8; 64]));
         assert_eq!(transaction.index, 2);
-        let loaded =
-            prepare_rpc_transaction(100, listing.matching[1], loaded.rpc_transaction(100), &host)
-                .unwrap();
+        let loaded = prepare_rpc_transaction(
+            100,
+            listing.matching[1],
+            loaded.rpc_transaction(100),
+            &host,
+        )
+        .unwrap();
         assert!(
             loaded.instructions.is_empty(),
             "the foreign program's instructions are dropped"
@@ -384,7 +424,8 @@ mod tests {
             "getTransaction and the stream resolve the same instructions"
         );
 
-        let operations = host_operations(&transaction.instructions, 100).unwrap();
+        let operations =
+            host_operations(&transaction.instructions, 100).unwrap();
         assert!(matches!(
             &operations[..],
             [HostOperation::FheExecute { event, .. }] if event.results == [[2; 32]]
@@ -406,12 +447,15 @@ mod tests {
     #[test]
     fn a_node_without_inner_instructions_is_refused() {
         let transaction = app_transaction(8, [2; 32]);
-        let mut fetched = serde_json::to_value(transaction.rpc_transaction(100)).unwrap();
+        let mut fetched =
+            serde_json::to_value(transaction.rpc_transaction(100)).unwrap();
         fetched["meta"]
             .as_object_mut()
             .unwrap()
             .remove("innerInstructions");
-        let error = prepare(&transaction, serde_json::from_value(fetched).unwrap()).unwrap_err();
+        let error =
+            prepare(&transaction, serde_json::from_value(fetched).unwrap())
+                .unwrap_err();
         assert!(
             format!("{error:#}").contains("no inner instructions"),
             "{error:#}"
