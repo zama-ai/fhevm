@@ -7,9 +7,7 @@ use std::{str::FromStr, time::Duration};
 
 use anyhow::{Context, Result};
 use clap::Parser;
-use solana_client::{
-    nonblocking::rpc_client::RpcClient, rpc_request::RpcRequest,
-};
+use solana_client::nonblocking::rpc_client::RpcClient;
 use solana_commitment_config::CommitmentConfig;
 use solana_sdk::pubkey::Pubkey;
 use tokio_util::sync::CancellationToken;
@@ -24,11 +22,11 @@ use host_listener::{
         solana_leaves::load_checkpoint, tfhe_event_propagate::Database,
     },
     http_server::HttpServer,
-    solana_grpc_listener::{
-        run, track_confirmed_slot, BlockCheckpoint, SolanaGrpcListenerConfig,
-        StartPosition,
-    },
-    solana_reconstruct::{parse_host_config, HOST_CONFIG_SEED},
+    solana_listener::{SolanaListenerConfig, SolanaListenerSink},
+};
+use solana_host_follower::{
+    block_checkpoint, host::host_chain_id, run, track_confirmed_slot,
+    BlockCheckpoint, FollowerConfig, StartPosition,
 };
 
 const SOLANA_RPC_REQUEST_TIMEOUT: Duration = Duration::from_secs(30);
@@ -120,15 +118,8 @@ async fn main() -> Result<()> {
         SOLANA_RPC_REQUEST_TIMEOUT,
         CommitmentConfig::confirmed(),
     );
-    let (host_config_pda, _) =
-        Pubkey::find_program_address(&[HOST_CONFIG_SEED], &program_id);
-    let account = rpc
-        .get_account(&host_config_pda)
-        .await
-        .with_context(|| format!("fetch HostConfig {host_config_pda}"))?;
-    let host_config_chain_id = parse_host_config(&account.data)?;
+    let host_config_chain_id = host_chain_id(&rpc, &program_id).await?;
     info!(
-        %host_config_pda,
         chain_id = host_config_chain_id,
         "auto-detected handle-derivation params from confirmed HostConfig"
     );
@@ -166,21 +157,11 @@ async fn main() -> Result<()> {
             })
         }
         None => match args.start_slot {
+            // Anchored to an actual block, so a provider silently starting at the tip is
+            // rejected. RPC supplies only its identity; its transactions come from the stream
+            // or the archive.
             Some(slot) => {
-                // Anchor to an actual block, so a provider silently starting at the tip is rejected.
-                // RPC supplies only its identity; its transactions come from the stream or archive.
-                let block: serde_json::Value = rpc.send(RpcRequest::GetBlock, serde_json::json!([
-                    slot, {"commitment": "confirmed", "transactionDetails": "none", "rewards": false}
-                ])).await.with_context(|| format!("fetch bootstrap block {slot}"))?;
-                let block_hash = block["blockhash"].as_str().context(
-                    "bootstrap slot must identify an existing confirmed block",
-                )?;
-                StartPosition::ReplayFrom(BlockCheckpoint {
-                    slot,
-                    block_hash: solana_sdk::hash::Hash::from_str(block_hash)
-                        .context("parse bootstrap block hash")?
-                        .to_bytes(),
-                })
+                StartPosition::ReplayFrom(block_checkpoint(&rpc, slot).await?)
             }
             None => StartPosition::Tip,
         },
@@ -217,15 +198,22 @@ async fn main() -> Result<()> {
         args.archive_url.unwrap_or(args.url),
         SOLANA_RPC_REQUEST_TIMEOUT,
     );
-    let listener_result = run(
+    let sink = SolanaListenerSink::new(
         &db,
+        SolanaListenerConfig {
+            program_id,
+            chain_id: host_config_chain_id,
+            dependent_ops_max_per_chain: args.dependent_ops_max_per_chain,
+        },
+    );
+    let listener_result = run(
+        &sink,
         &archive,
-        &SolanaGrpcListenerConfig {
+        &FollowerConfig {
             grpc_url: args.grpc_url,
             x_token: args.grpc_x_token,
             program_id,
             chain_id: host_config_chain_id,
-            dependent_ops_max_per_chain: args.dependent_ops_max_per_chain,
         },
         start,
         cancel.clone(),

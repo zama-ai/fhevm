@@ -1,21 +1,21 @@
 //! The Solana leaf record against a real Postgres: rows round-trip through the
 //! migration, the checkpoint moves, and the leaf-proof route answers from the
 //! stored leaves and nodes with proofs that verify against the recorded peaks.
-#![cfg(feature = "solana-reconstruct")]
+#![cfg(feature = "solana")]
 
 use std::collections::BTreeMap;
 
 use host_listener::database::solana_leaves::{
     load_block_leaves, load_checkpoint, load_encrypted_store_histories,
     load_encrypted_store_history, reduce_block_leaves, store_block_leaves,
-    store_checkpoint, EncryptedStoreWrite, StoredCheckpoint,
-    TransactionStoreWrites,
+    store_checkpoint, StoredCheckpoint, TransactionStoreWrites,
 };
 use host_listener::http_server::{
     ErrorCode, ErrorResponse, HttpServer, LeafProof, LeafProofRequest,
     LeafProofResponse, LeafQuery, LeafQueryKind, LEAF_PROOFS_PATH,
 };
 use serial_test::serial;
+use solana_host_follower::host::EncryptedStoreWrite;
 use sqlx::postgres::PgPoolOptions;
 use test_harness::instance::ImportMode;
 use tokio_util::sync::CancellationToken;
@@ -504,7 +504,7 @@ async fn proofs_read_their_path_by_position(
 /// fhevm-internal#2104: rebuilding a path from every leaf took 30 to 40 seconds for 8
 /// entries of a 1,000,000-leaf store, where the KMS connector waits 10 seconds. Storing the
 /// store takes about a minute in a debug build, so this runs on request:
-/// `cargo test -p host-listener --features solana-reconstruct --test solana_leaves_tests --
+/// `cargo test -p host-listener --features solana --test solana_leaves_tests --
 /// --ignored --nocapture`.
 #[tokio::test]
 #[serial(db)]
