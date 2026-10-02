@@ -2205,7 +2205,7 @@ function getWasmInfo() {
   const memory = wasm?.memory;
   return {
     name: 'tkms',
-    version: '0.15.0-1-solana.72c3c756',
+    version: '0.15.0-1-solana.97e46335',
     downloadFiles: [
       {
         filename: "kms_lib_bg.wasm",

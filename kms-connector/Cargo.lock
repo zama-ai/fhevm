@@ -2110,7 +2110,7 @@ checksum = "2af50177e190e07a26ab74f8b1efbfe2ef87da2116221318cb1c2e82baf7de06"
 [[package]]
 name = "bc2wrap"
 version = "2.0.1"
-source = "git+https://github.com/zama-ai/kms.git?rev=72c3c7564c6b4be91b3b4d6b4162461c38028916#72c3c7564c6b4be91b3b4d6b4162461c38028916"
+source = "git+https://github.com/zama-ai/kms.git?rev=97e46335036e237b00524a2c2c000034306f1833#97e46335036e237b00524a2c2c000034306f1833"
 dependencies = [
  "bincode 2.0.1",
  "serde",
@@ -3446,7 +3446,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "39cab71617ae0d63f51a36d69f866391735b51691dbda63cf6f96d042b63efeb"
 dependencies = [
  "libc",
- "windows-sys 0.59.0",
+ "windows-sys 0.61.2",
 ]
 
 [[package]]
@@ -4734,7 +4734,7 @@ dependencies = [
 [[package]]
 name = "kms-grpc"
 version = "0.15.0-1"
-source = "git+https://github.com/zama-ai/kms.git?rev=72c3c7564c6b4be91b3b4d6b4162461c38028916#72c3c7564c6b4be91b3b4d6b4162461c38028916"
+source = "git+https://github.com/zama-ai/kms.git?rev=97e46335036e237b00524a2c2c000034306f1833#97e46335036e237b00524a2c2c000034306f1833"
 dependencies = [
  "alloy-dyn-abi",
  "alloy-primitives",
@@ -5122,7 +5122,7 @@ version = "0.50.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "7957b9740744892f114936ab4a57b3f487491bbeafaf8083688b16841a4240e5"
 dependencies = [
- "windows-sys 0.59.0",
+ "windows-sys 0.61.2",
 ]
 
 [[package]]
@@ -6118,7 +6118,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "343d3bd7056eda839b03204e68deff7d1b13aba7af2b2fd16890697274262ee7"
 dependencies = [
  "heck",
- "itertools 0.12.1",
+ "itertools 0.14.0",
  "log",
  "multimap",
  "petgraph 0.8.3",
@@ -6139,7 +6139,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "8a56d757972c98b346a9b766e3f02746cde6dd1cd1d1d563472929fdd74bec4d"
 dependencies = [
  "anyhow",
- "itertools 0.12.1",
+ "itertools 0.14.0",
  "proc-macro2",
  "quote",
  "syn 2.0.117",
@@ -6152,7 +6152,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "b570b25f7617e43d59005d0990ccb79e950a423952cea19671b7a876da390adf"
 dependencies = [
  "anyhow",
- "itertools 0.12.1",
+ "itertools 0.14.0",
  "proc-macro2",
  "quote",
  "syn 2.0.117",
@@ -6871,7 +6871,7 @@ dependencies = [
  "errno",
  "libc",
  "linux-raw-sys",
- "windows-sys 0.59.0",
+ "windows-sys 0.61.2",
 ]
 
 [[package]]
@@ -6930,7 +6930,7 @@ dependencies = [
  "security-framework",
  "security-framework-sys",
  "webpki-root-certs",
- "windows-sys 0.59.0",
+ "windows-sys 0.61.2",
 ]
 
 [[package]]
@@ -9227,7 +9227,7 @@ dependencies = [
  "getrandom 0.4.2",
  "once_cell",
  "rustix",
- "windows-sys 0.59.0",
+ "windows-sys 0.61.2",
 ]
 
 [[package]]
@@ -9445,7 +9445,7 @@ dependencies = [
 [[package]]
 name = "threshold-hashing"
 version = "0.15.0-1"
-source = "git+https://github.com/zama-ai/kms.git?rev=72c3c7564c6b4be91b3b4d6b4162461c38028916#72c3c7564c6b4be91b3b4d6b4162461c38028916"
+source = "git+https://github.com/zama-ai/kms.git?rev=97e46335036e237b00524a2c2c000034306f1833#97e46335036e237b00524a2c2c000034306f1833"
 dependencies = [
  "anyhow",
  "bc2wrap",
@@ -9458,7 +9458,7 @@ dependencies = [
 [[package]]
 name = "threshold-types"
 version = "0.15.0-1"
-source = "git+https://github.com/zama-ai/kms.git?rev=72c3c7564c6b4be91b3b4d6b4162461c38028916#72c3c7564c6b4be91b3b4d6b4162461c38028916"
+source = "git+https://github.com/zama-ai/kms.git?rev=97e46335036e237b00524a2c2c000034306f1833#97e46335036e237b00524a2c2c000034306f1833"
 dependencies = [
  "anyhow",
  "async-trait",

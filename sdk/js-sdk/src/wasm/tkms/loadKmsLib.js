@@ -7,26 +7,26 @@
 
 ////////////////////////////////////////////////////////////////////////////////
 
-export const KMS_VERSIONS = Object.freeze(['0.15.0-1-solana.72c3c756']);
-export const DEFAULT_TKMS_VERSION = '0.15.0-1-solana.72c3c756';
+export const KMS_VERSIONS = Object.freeze(['0.15.0-1-solana.97e46335']);
+export const DEFAULT_TKMS_VERSION = '0.15.0-1-solana.97e46335';
 
 const _loaders = {
-  '0.15.0-1-solana.72c3c756': () => import('./v0.15.0-1-solana.72c3c756/kms_lib.js'),
+  '0.15.0-1-solana.97e46335': () => import('./v0.15.0-1-solana.97e46335/kms_lib.js'),
 };
 
 ////////////////////////////////////////////////////////////////////////////////
 
 const _wasmBase64Loaders = {
-  '0.15.0-1-solana.72c3c756': () => import('./v0.15.0-1-solana.72c3c756/kms_lib_bg.wasm.base64.js'),
+  '0.15.0-1-solana.97e46335': () => import('./v0.15.0-1-solana.97e46335/kms_lib_bg.wasm.base64.js'),
 };
 
 ////////////////////////////////////////////////////////////////////////////////
 
 const _assets = Object.freeze({
-  '0.15.0-1-solana.72c3c756': Object.freeze({
+  '0.15.0-1-solana.97e46335': Object.freeze({
     wasm: Object.freeze({
-      filename: 'kms_lib_bg.v0.15.0-1-solana.72c3c756.wasm',
-      localRelativePath: './v0.15.0-1-solana.72c3c756/kms_lib_bg.wasm',
+      filename: 'kms_lib_bg.v0.15.0-1-solana.97e46335.wasm',
+      localRelativePath: './v0.15.0-1-solana.97e46335/kms_lib_bg.wasm',
       sha256: '99b8b6eb0b0d063e19b4ef9314ca97d470f8e470266d363c8a918767a56b7576',
     }),
   }),
