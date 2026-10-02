@@ -1,0 +1,29 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n        SELECT encrypted_store, leaf_count\n        FROM encrypted_stores\n        WHERE $1::BYTEA IS NULL OR encrypted_store > $1\n        ORDER BY encrypted_store\n        LIMIT $2\n        ",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "encrypted_store",
+        "type_info": "Bytea"
+      },
+      {
+        "ordinal": 1,
+        "name": "leaf_count",
+        "type_info": "Int8"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Bytea",
+        "Int8"
+      ]
+    },
+    "nullable": [
+      false,
+      false
+    ]
+  },
+  "hash": "9f141797a40689f2d3e90ab11bc9bb4f7a2c8e7243a56fd1d0ad500fc029e9bd"
+}

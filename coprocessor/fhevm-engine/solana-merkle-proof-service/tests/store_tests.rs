@@ -5,7 +5,8 @@
 mod support;
 
 use std::{
-    collections::{BTreeMap, HashSet},
+    collections::{BTreeMap, HashMap, HashSet},
+    sync::Mutex,
     time::{SystemTime, UNIX_EPOCH},
 };
 
@@ -24,12 +25,16 @@ use solana_merkle_proof_service::server::{
     MERKLE_PROOFS_PATH,
 };
 use solana_merkle_proof_service::store::{
-    load_block_leaves, load_checkpoint, load_store_cursor, load_store_cursors,
+    load_block_leaves, load_checkpoint, load_served_store, load_store_cursors,
     reduce_block_leaves, store_block_leaves, store_checkpoint,
     TransactionStoreWrites,
 };
+use solana_merkle_proof_service::store_check::{check_stores, StoreAccounts};
+use solana_sdk::{account::Account, pubkey::Pubkey};
 use tokio_util::sync::CancellationToken;
-use zama_solana_acl::{mmr_verify, MmrProof};
+use zama_solana_acl::{
+    encrypted_store_discriminator, mmr_verify, EncryptedStore, MmrProof,
+};
 
 const ACCOUNT: [u8; 32] = [0xAC; 32];
 const OWNER: [u8; 32] = [0xA1; 32];
@@ -215,10 +220,11 @@ async fn leaf_record_round_trips_and_serves_verifiable_proofs(
             block_hash: [0x1B; 32],
         })
     );
-    let state = load_store_cursor(&pool, ACCOUNT)
+    let served = load_served_store(&pool, ACCOUNT)
         .await?
         .expect("account recorded");
-    assert_eq!(state, second.stores[&ACCOUNT]);
+    assert_eq!(served.cursor, second.stores[&ACCOUNT]);
+    assert!(!served.quarantined);
     let mut tx = pool.begin().await?;
     assert_eq!(
         load_block_leaves(&mut tx, 11).await?,
@@ -226,7 +232,7 @@ async fn leaf_record_round_trips_and_serves_verifiable_proofs(
         "leaves persist with their semantics and block position"
     );
     tx.rollback().await?;
-    assert_eq!(load_store_cursor(&pool, [0xFF; 32]).await?, None);
+    assert_eq!(load_served_store(&pool, [0xFF; 32]).await?, None);
 
     // The HTTP route builds proofs from the same rows.
     let cancel = CancellationToken::new();
@@ -265,7 +271,7 @@ async fn leaf_record_round_trips_and_serves_verifiable_proofs(
     let body: MerkleProofResponse = decode(response).await?;
     assert_eq!(body.proofs.len(), 4);
 
-    let recorded_peaks = state.peaks.clone();
+    let recorded_peaks = served.cursor.peaks.clone();
     let verify = |proof: &MerkleProofOutcome, commitment: [u8; 32]| match proof
     {
         MerkleProofOutcome::Found {
@@ -537,6 +543,151 @@ async fn a_repeated_request_gets_its_first_answer_at_no_cost(
     assert_eq!(other.status(), 429);
     let error: ErrorResponse = decode(other).await?;
     assert_eq!(error.code, ErrorCode::RateLimited);
+
+    cancel.cancel();
+    server_task.await??;
+    Ok(())
+}
+
+/// The accounts a test sets, as `getMultipleAccounts` would return them.
+#[derive(Default)]
+struct Chain(Mutex<HashMap<[u8; 32], Account>>);
+
+impl Chain {
+    fn set(&self, address: [u8; 32], store: Option<&EncryptedStore>) {
+        let mut accounts = self.0.lock().unwrap();
+        let Some(store) = store else {
+            accounts.remove(&address);
+            return;
+        };
+        let mut data = encrypted_store_discriminator().to_vec();
+        borsh::to_writer(&mut data, store).expect("encode");
+        accounts.insert(
+            address,
+            Account {
+                lamports: 1,
+                data,
+                owner: Pubkey::new_from_array(HOST_PROGRAM),
+                executable: false,
+                rent_epoch: 0,
+            },
+        );
+    }
+}
+
+impl StoreAccounts for Chain {
+    async fn accounts(
+        &self,
+        stores: &[[u8; 32]],
+    ) -> anyhow::Result<Vec<Option<Account>>> {
+        let accounts = self.0.lock().unwrap();
+        Ok(stores
+            .iter()
+            .map(|store| accounts.get(store).cloned())
+            .collect())
+    }
+}
+
+const HOST_PROGRAM: [u8; 32] = [0x40; 32];
+
+/// The store check quarantines a store whose recorded peaks differ from the chain's, the proof
+/// server then refuses its proofs as inconsistent, and a later check that matches releases it.
+/// A record behind the chain, or a closed store, is left serving.
+#[tokio::test]
+#[serial(db)]
+async fn a_store_that_disagrees_with_the_chain_is_quarantined_until_it_matches(
+) -> Result<(), Box<dyn std::error::Error>> {
+    let (_db, pool) = support::record_db().await;
+    let mut chain_store = EncryptedStore {
+        program: [1; 32],
+        authority: [2; 32],
+        scope: [3; 32],
+        ..EncryptedStore::default()
+    };
+    let (address, bump) = Pubkey::find_program_address(
+        &chain_store.seeds(),
+        &Pubkey::new_from_array(HOST_PROGRAM),
+    );
+    let address = address.to_bytes();
+    chain_store.bump = bump;
+    let mut tx = pool.begin().await?;
+    let block = reduce_block_leaves(
+        &[TransactionStoreWrites {
+            transaction_index: 0,
+            sources: vec![EncryptedStoreWrite {
+                encrypted_store: address,
+                previous_leaf_count: 0,
+                handle: [0x10; 32],
+                allowed_keys: vec![OWNER],
+                make_public: true,
+            }],
+        }],
+        BTreeMap::new(),
+    )?;
+    store_block_leaves(&mut tx, 10, &block).await?;
+    tx.commit().await?;
+    let recorded = &block.stores[&address];
+    assert_eq!(recorded.leaf_count, 2);
+    chain_store.leaf_count = recorded.leaf_count;
+    chain_store.peaks = recorded.peaks.clone();
+
+    let chain = Chain::default();
+    let host_program = Pubkey::new_from_array(HOST_PROGRAM);
+    let check = || check_stores(&pool, &chain, &host_program, "1");
+    let quarantined = || async {
+        load_served_store(&pool, address)
+            .await
+            .map(|store| store.expect("recorded").quarantined)
+    };
+    let cancel = CancellationToken::new();
+    let (proofs, server_task) = serve_proofs(&pool, UNLIMITED, &cancel).await;
+    // The public leaf asked `copies` times: each request has its own body, so none is a copy
+    // of an earlier one that the server answers from its cache.
+    let public_leaf = |copies| MerkleProofRequest {
+        leaves: vec![
+            LeafQuery {
+                encrypted_store: address,
+                handle: [0x10; 32],
+                kind: LeafQueryKind::Public,
+                key: None,
+            };
+            copies
+        ],
+    };
+
+    chain.set(address, Some(&chain_store));
+    check().await?;
+    assert!(!quarantined().await?);
+    assert_eq!(proofs.post(&public_leaf(1)).await?.status(), 200);
+
+    let mut diverged = chain_store.clone();
+    diverged.peaks[0][0] ^= 1;
+    chain.set(address, Some(&diverged));
+    check().await?;
+    assert!(quarantined().await?);
+    let refused = proofs.post(&public_leaf(2)).await?;
+    assert_eq!(refused.status(), 502);
+    let error: ErrorResponse = decode(refused).await?;
+    assert_eq!(
+        (error.code, error.message.as_str()),
+        (ErrorCode::UpstreamTransient, "leaf record inconsistent")
+    );
+
+    // Behind (a third leaf on chain) and closed leave the quarantine as it is.
+    let mut ahead = chain_store.clone();
+    ahead.leaf_count = 3;
+    ahead.peaks.push([0x33; 32]);
+    chain.set(address, Some(&ahead));
+    check().await?;
+    assert!(quarantined().await?);
+    chain.set(address, None);
+    check().await?;
+    assert!(quarantined().await?);
+
+    chain.set(address, Some(&chain_store));
+    check().await?;
+    assert!(!quarantined().await?);
+    assert_eq!(proofs.post(&public_leaf(3)).await?.status(), 200);
 
     cancel.cancel();
     server_task.await??;
