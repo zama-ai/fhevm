@@ -8,7 +8,7 @@ use crate::core::{
     solana::{
         SolanaHost,
         pipeline::{AuthorizationContext, authorize_request},
-        proof::CoprocessorProofClient,
+        proof::{CoprocessorProofClient, proof_http_client},
         public_decrypt::check_public_decrypt,
         snapshot::SolanaRpcClient,
     },
@@ -56,12 +56,7 @@ impl SolanaDecryptionVerifier {
             None,
         )
         .await?;
-        // The workspace `reqwest`, not alloy's re-export: alloy now vendors a different major, and
-        // the Solana readers are typed against the workspace crate.
-        let proof_client = ::reqwest::Client::builder()
-            .connect_timeout(config.host_rpc_call_timeout)
-            .timeout(config.host_rpc_call_timeout)
-            .build()?;
+        let proof_client = proof_http_client(config.host_rpc_call_timeout)?;
         let hosts = solana_chains
             .into_iter()
             .map(|(host_chain, solana)| {

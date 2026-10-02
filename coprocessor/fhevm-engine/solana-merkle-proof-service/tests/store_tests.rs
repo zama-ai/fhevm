@@ -34,10 +34,6 @@ use zama_solana_acl::{mmr_verify, MmrProof};
 const ACCOUNT: [u8; 32] = [0xAC; 32];
 const OWNER: [u8; 32] = [0xA1; 32];
 
-fn hex32(bytes: &[u8; 32]) -> String {
-    hex::encode(bytes)
-}
-
 fn write(
     previous_leaf_count: u64,
     handle: [u8; 32],
@@ -70,7 +66,8 @@ impl ProofClient {
         &self,
         request: &MerkleProofRequest,
     ) -> reqwest::Result<reqwest::Response> {
-        let body = serde_json::to_vec(request).expect("encode");
+        let mut body = Vec::new();
+        ciborium::into_writer(request, &mut body).expect("encode");
         let expires = SystemTime::now()
             .duration_since(UNIX_EPOCH)
             .expect("clock")
@@ -92,6 +89,12 @@ impl ProofClient {
             .send()
             .await
     }
+}
+
+async fn decode<T: serde::de::DeserializeOwned>(
+    response: reqwest::Response,
+) -> anyhow::Result<T> {
+    Ok(ciborium::from_reader(&response.bytes().await?[..])?)
 }
 
 /// Starts the proof server on a free port and returns a client once it answers.
@@ -119,7 +122,10 @@ async fn serve_proofs(
         if reqwest::get(&liveness).await.is_ok() {
             let proofs = ProofClient {
                 url: format!("http://127.0.0.1:{port}{MERKLE_PROOFS_PATH}"),
-                client: reqwest::Client::new(),
+                client: reqwest::Client::builder()
+                    .http2_prior_knowledge()
+                    .build()
+                    .expect("client"),
                 connector,
             };
             return (proofs, task);
@@ -208,26 +214,26 @@ async fn leaf_record_round_trips_and_serves_verifiable_proofs(
         .post(&MerkleProofRequest {
             leaves: vec![
                 LeafQuery {
-                    encrypted_store: hex32(&ACCOUNT),
-                    handle: hex32(&[0x11; 32]),
+                    encrypted_store: ACCOUNT,
+                    handle: [0x11; 32],
                     kind: LeafQueryKind::Public,
                     key: None,
                 },
                 LeafQuery {
-                    encrypted_store: hex32(&ACCOUNT),
-                    handle: hex32(&[0x10; 32]),
+                    encrypted_store: ACCOUNT,
+                    handle: [0x10; 32],
                     kind: LeafQueryKind::Allowed,
-                    key: Some(hex32(&OWNER)),
+                    key: Some(OWNER),
                 },
                 LeafQuery {
-                    encrypted_store: hex32(&ACCOUNT),
-                    handle: hex32(&[0x10; 32]),
+                    encrypted_store: ACCOUNT,
+                    handle: [0x10; 32],
                     kind: LeafQueryKind::Public,
                     key: None,
                 },
                 LeafQuery {
-                    encrypted_store: hex32(&[0xFF; 32]),
-                    handle: hex32(&[0x10; 32]),
+                    encrypted_store: [0xFF; 32],
+                    handle: [0x10; 32],
                     kind: LeafQueryKind::Public,
                     key: None,
                 },
@@ -235,7 +241,7 @@ async fn leaf_record_round_trips_and_serves_verifiable_proofs(
         })
         .await?;
     assert_eq!(response.status(), 200);
-    let body: MerkleProofResponse = response.json().await?;
+    let body: MerkleProofResponse = decode(response).await?;
     assert_eq!(body.proofs.len(), 4);
 
     let recorded_peaks = state.peaks.clone();
@@ -247,12 +253,7 @@ async fn leaf_record_round_trips_and_serves_verifiable_proofs(
             siblings,
         } => {
             assert_eq!(*leaf_count, 3);
-            let siblings = siblings
-                .iter()
-                .map(|sibling| {
-                    <[u8; 32]>::try_from(hex::decode(sibling).unwrap()).unwrap()
-                })
-                .collect();
+            let siblings = siblings.iter().map(|sibling| **sibling).collect();
             assert!(mmr_verify(
                 &recorded_peaks,
                 3,
@@ -289,15 +290,15 @@ async fn leaf_record_round_trips_and_serves_verifiable_proofs(
     let response = proofs
         .post(&MerkleProofRequest {
             leaves: vec![LeafQuery {
-                encrypted_store: hex32(&ACCOUNT),
-                handle: hex32(&[0x13; 32]),
+                encrypted_store: ACCOUNT,
+                handle: [0x13; 32],
                 kind: LeafQueryKind::Allowed,
-                key: Some(hex32(&OWNER)),
+                key: Some(OWNER),
             }],
         })
         .await?;
     assert_eq!(response.status(), 200);
-    let body: MerkleProofResponse = response.json().await?;
+    let body: MerkleProofResponse = decode(response).await?;
     assert_eq!(
         body.proofs,
         vec![MerkleProofOutcome::NotFound { leaf_count: 3 }]
@@ -308,10 +309,10 @@ async fn leaf_record_round_trips_and_serves_verifiable_proofs(
     // path is leaf 1.
     let owner_of_0x10 = MerkleProofRequest {
         leaves: vec![LeafQuery {
-            encrypted_store: hex32(&ACCOUNT),
-            handle: hex32(&[0x10; 32]),
+            encrypted_store: ACCOUNT,
+            handle: [0x10; 32],
             kind: LeafQueryKind::Allowed,
-            key: Some(hex32(&OWNER)),
+            key: Some(OWNER),
         }],
     };
     for corruption in [
@@ -321,7 +322,7 @@ async fn leaf_record_round_trips_and_serves_verifiable_proofs(
         sqlx::query(corruption).execute(&pool).await?;
         let response = proofs.post(&owner_of_0x10).await?;
         assert_eq!(response.status(), 502, "{corruption}");
-        let error: ErrorResponse = response.json().await?;
+        let error: ErrorResponse = decode(response).await?;
         assert_eq!(error.code, ErrorCode::UpstreamTransient);
         assert!(error.retryable);
     }
@@ -392,16 +393,16 @@ async fn prove_leaves_of_a_store(
             leaves: proved
                 .iter()
                 .map(|&leaf_index| LeafQuery {
-                    encrypted_store: hex32(&ACCOUNT),
-                    handle: hex32(&handle(leaf_index)),
+                    encrypted_store: ACCOUNT,
+                    handle: handle(leaf_index),
                     kind: LeafQueryKind::Allowed,
-                    key: Some(hex32(&key(leaf_index))),
+                    key: Some(key(leaf_index)),
                 })
                 .collect(),
         })
         .await?;
     assert_eq!(response.status(), 200);
-    let body: MerkleProofResponse = response.json().await?;
+    let body: MerkleProofResponse = decode(response).await?;
     let elapsed = started.elapsed();
 
     for (&leaf_index, proof) in proved.iter().zip(&body.proofs) {
@@ -420,12 +421,7 @@ async fn prove_leaves_of_a_store(
             handle(leaf_index),
             key(leaf_index),
         );
-        let siblings = siblings
-            .iter()
-            .map(|sibling| {
-                <[u8; 32]>::try_from(hex::decode(sibling).unwrap()).unwrap()
-            })
-            .collect();
+        let siblings = siblings.iter().map(|sibling| **sibling).collect();
         assert!(mmr_verify(
             &state.peaks,
             leaves,

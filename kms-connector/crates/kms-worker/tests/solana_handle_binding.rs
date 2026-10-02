@@ -29,7 +29,7 @@ use kms_worker::core::solana::{
     failure::AuthorizationFailure,
     handle_binding::{HandleBindingFailure, check_handle_binding, verify_proofs},
     pipeline::authorize_request,
-    proof::{LeafKind, LeafQuery, MerkleProofOutcome, ProofReadError},
+    proof::{LeafKind, LeafQuery, MerkleProofOutcome, ProofReadError, proof_http_client},
 };
 use rstest::rstest;
 use solana_pubkey::Pubkey;
@@ -819,7 +819,7 @@ async fn an_unavailable_coprocessor_leaves_the_batch_to_one_that_serves() {
             unavailable.base_url().unwrap().clone(),
             serving.base_url().unwrap().clone(),
         ],
-        reqwest::Client::new(),
+        proof_http_client(Duration::from_secs(10)).unwrap(),
     );
     let key = Wallet::new(1).pubkey();
 

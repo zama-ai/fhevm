@@ -2708,6 +2708,11 @@ every request gets `upstreamTransient` (502, retryable) and `/healthz` answers 5
 expired, malformed or unknown signature gets `senderAuthenticationFailed` (401) before the database
 is read.
 
+The bodies are CBOR (RFC 8949) over HTTP/2 without TLS negotiation (prior knowledge). Hashes and
+keys travel as 32-byte byte strings, and the requests kms-worker sends one coprocessor share one
+connection. `solana/test-fixtures/merkle-proofs/merkle_proofs_v1.json` pins the request and
+response bytes for both sides.
+
 No recipient is signed. A coprocessor that received a batch, or anyone who reads the plain-HTTP
 traffic inside the cluster, can resend it to the other coprocessors until it expires and receives
 their answer. Those answers are public proofs, so the server keeps no replay cache. The relayer
@@ -2720,6 +2725,8 @@ Rejected alternatives:
 | A bearer key per coprocessor | Every KMS party holds every coprocessor's key, and the server still cannot tell connectors apart. |
 | A key per connector, listed in each coprocessor's config | Each coprocessor edits its config when a KMS context changes; `ProtocolConfig` already lists the tx-senders. |
 | mTLS | Each coprocessor runs a certificate authority for the KMS parties, and the identity is not the on-chain one. |
+| JSON bodies | Hex doubles every hash: a full answer of 64 proofs with 64 siblings is about 280 KB instead of 150 KB, and both sides parse hex by hand. |
+| Protobuf or gRPC | A schema compiler and generated code in two workspaces, for four message types. |
 | A session key kms-worker registers with its tx-sender key | A second key to rotate and a registration round, for a signature per batch that AWS KMS already serves. |
 
 Consequences:
