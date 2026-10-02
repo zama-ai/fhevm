@@ -90,7 +90,8 @@ const verifiedManifestSql = (epoch: string, hostChainId: number, fromBlock: numb
          SELECT 1
            FROM jsonb_array_elements(convert_from(m.signed_manifest, 'UTF8')::jsonb -> 'detailed_range' -> 'blocks') b,
                 jsonb_array_elements(b -> 'ciphertexts') c
-          WHERE c ->> 'status' = 'computed')` : ""}
+          WHERE c ->> 'status' = 'computed'
+            ${dryRunBlocks ? `AND (c ->> 'synthetic')::boolean IS TRUE` : ""})` : ""}
      ORDER BY m.publication_block_number LIMIT 1) r), 'null')`;
 
 type VerifiedManifest = { id: number; publication_block_number: number; object_key: string; body: string; bucket: string };
@@ -206,9 +207,10 @@ export function createBlueGreenManifestChecks(options: {
     },
 
     /**
-     * Dry run: Green published the proposal epoch and reached quorum on computed
-     * handles of blocks the dry run computed. Runs after cutover, which records
-     * that boundary; verification itself may complete just after it.
+     * Dry run: Green published the proposal epoch and reached quorum on the
+     * computed dry-run probe, the synthetic handle Green injects into its window,
+     * however its block's seal falls relative to cutover. Runs after cutover,
+     * which records the dry-run boundary; verification may complete just after it.
      */
     async duringDryRun() {
       const epochs = new Set<string>();
@@ -221,7 +223,7 @@ export function createBlueGreenManifestChecks(options: {
       assert(upgradeEpoch && upgradeEpoch !== "legacy", `no promoted upgrade epoch (got ${JSON.stringify(upgradeEpoch)})`);
       for (const db of databases) {
         for (const chain of hostChainIds) {
-          const manifest = await waitVerified("dry-run block manifest with computed handles", db, upgradeEpoch, chain, 0, true, true);
+          const manifest = await waitVerified("dry-run manifest with the computed synthetic probe", db, upgradeEpoch, chain, 0, true, true);
           const version = await query(db, "SELECT stack_version FROM versioning");
           checkpoint({ phase: "dry run", db, chain, epoch: upgradeEpoch, manifestId: manifest.id,
             publicationBlock: manifest.publication_block_number, stackVersionAtCheck: version });

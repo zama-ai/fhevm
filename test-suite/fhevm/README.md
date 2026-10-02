@@ -936,8 +936,10 @@ every operator, with no drift allowed at any point:
   parked until `DryRunStarted`;
 - after the failed upgrade rolls back, its epoch stops publishing;
 - during the dry run, Green publishes the proposal's consensus epoch, and a
-  manifest with computed handles reaches `matches_quorum`; its S3 bytes match
-  the archive and its key carries the epoch;
+  dry-run manifest carrying the computed synthetic probe (the handle Green
+  injects into its window) reaches `matches_quorum`, whether its block sealed
+  before or after cutover; its S3 bytes match the archive and its key carries
+  the epoch;
 - after cutover, the epoch is the active one and `succeeded`, a manifest past
   the cutover block reaches quorum, the detailed ranges leave no gap, no task is
   `retry_exhausted`, and no `legacy` manifest exists.
