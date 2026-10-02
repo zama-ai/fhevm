@@ -4,6 +4,9 @@
  * so only Green publishes: parked before DryRunStarted, in the proposal's
  * consensus epoch during the dry run, and in that same epoch after cutover.
  * Every check is no-drift: any drift outcome or drifted_handle row fails.
+ * With a drifting operator (`BLUE_GREEN_DRY_RUN_DRIFT=1`), Green corrupts one
+ * dry-run handle there: the healthy operators must stay in quorum with no
+ * drifted handle, and the faulty one must detect and heal it after cutover.
  */
 import assert from "node:assert/strict";
 import fs from "node:fs/promises";
@@ -11,6 +14,7 @@ import path from "node:path";
 import { PreflightError } from "../errors";
 import { TEST_SUITE_CONTAINER } from "../layout";
 import { run } from "../utils/process";
+import { assertDryRunDriftHealed } from "./blue-green-dry-run-drift";
 import { waitForManifestCondition } from "./manifest-lifecycle";
 
 type Query = (database: string, sql: string) => Promise<string>;
@@ -49,7 +53,22 @@ export function rangeGaps(ranges: PublishedRange[]): string[] {
  * `start_block` up to `upload_start_block`, which cutover sets to one past the
  * highest block known when it promoted the stack.
  */
-const verifiedManifestSql = (epoch: string, hostChainId: number, fromBlock: number, withComputed: boolean, dryRunBlocks = false) => `
+/**
+ * How a local manifest's verification must end: in full consensus, with this
+ * node in the quorum while a peer's signed history differs, or verified at all
+ * (the faulty node, whose own history keeps its drifted block).
+ */
+type Verified = "consensus" | "in-quorum" | "verified";
+
+const verifiedOutcomeSql = (verified: Verified) => ({
+  consensus: `AND a.outcome = 'consensus' AND a.local_quorum_status = 'matches_quorum'
+       AND a.drifted_block_count = 0 AND a.drifted_handle_count = 0`,
+  "in-quorum": "AND a.local_quorum_status = 'matches_quorum'",
+  verified: "",
+}[verified]);
+
+const verifiedManifestSql = (epoch: string, hostChainId: number, fromBlock: number, withComputed: boolean, dryRunBlocks = false,
+  verified: Verified = "consensus") => `
   SELECT COALESCE((SELECT row_to_json(r)::text FROM (
     SELECT m.id, m.publication_block_number, m.object_key,
            encode(m.signed_manifest, 'hex') AS body, g.s3_bucket_url AS bucket
@@ -61,8 +80,7 @@ const verifiedManifestSql = (epoch: string, hostChainId: number, fromBlock: numb
         ON a.task_id = t.id AND a.consensus_epoch = t.consensus_epoch
      WHERE m.consensus_epoch = ${sqlText(epoch)} AND m.manifest_source = 'local'
        AND m.host_chain_id = ${hostChainId} AND m.publication_block_number > ${fromBlock}
-       AND a.outcome = 'consensus' AND a.local_quorum_status = 'matches_quorum'
-       AND a.drifted_block_count = 0 AND a.drifted_handle_count = 0
+       ${verifiedOutcomeSql(verified)}
        ${dryRunBlocks ? `AND EXISTS (SELECT 1 FROM consensus_epoch_block_window w
                      WHERE w.consensus_epoch = m.consensus_epoch AND w.host_chain_id = m.host_chain_id
                        AND w.upload_start_block IS NOT NULL
@@ -82,8 +100,10 @@ export function createBlueGreenManifestChecks(options: {
   hostChainIds: number[];
   query: Query;
   reportPath: string;
+  /** The operator whose Green corrupts one dry-run handle, if any. */
+  driftDatabase?: string;
 }) {
-  const { databases, hostChainIds, query, reportPath } = options;
+  const { databases, hostChainIds, query, reportPath, driftDatabase } = options;
   const report: Record<string, unknown> = { checkpoints: [] };
   const checkpoint = (entry: Record<string, unknown>) => {
     (report.checkpoints as unknown[]).push(entry);
@@ -93,14 +113,21 @@ export function createBlueGreenManifestChecks(options: {
   let upgradeEpoch: string | undefined;
   const cutoverBlocks = new Map<string, Map<number, number>>();
 
+  // With a drifting operator, its peers observe the drift (outcome `drift`) but
+  // never leave the quorum or record a drifted handle; the faulty one is checked
+  // by its own healing assertions.
   const assertNoDrift = async (label: string, epoch?: string) => {
     for (const db of databases) {
+      if (db === driftDatabase) continue;
       const scope = epoch ? `WHERE consensus_epoch = ${sqlText(epoch)}` : "";
       assert.equal(await count(db, `SELECT count(*) FROM drifted_handle ${scope}`), 0, `${db} ${label}: drifted_handle rows`);
-      assert.equal(await count(db, `SELECT count(*) FROM block_manifest_verification_attempt ${scope ? `${scope} AND` : "WHERE"} outcome = 'drift'`),
-        0, `${db} ${label}: drift verification outcomes`);
+      const failing = driftDatabase ? "local_quorum_status = 'differs_from_quorum'" : "outcome = 'drift'";
+      assert.equal(await count(db, `SELECT count(*) FROM block_manifest_verification_attempt ${scope ? `${scope} AND` : "WHERE"} ${failing}`),
+        0, `${db} ${label}: ${driftDatabase ? "verification outside the quorum" : "drift verification outcomes"}`);
     }
   };
+  const postCutoverVerification = (db: string): Verified =>
+    !driftDatabase ? "consensus" : db === driftDatabase ? "verified" : "in-quorum";
 
   const assertS3Copy = async (db: string, manifest: VerifiedManifest, epoch: string) => {
     assert(manifest.object_key.includes("/consensus_epoch/"), `${db} object key ${manifest.object_key} has no consensus epoch segment`);
@@ -113,9 +140,10 @@ export function createBlueGreenManifestChecks(options: {
     assert.equal(signed.consensus_epoch, epoch, `${db} signed manifest epoch`);
   };
 
-  const waitVerified = async (label: string, db: string, epoch: string, chain: number, fromBlock: number, withComputed: boolean, dryRunBlocks = false) => {
+  const waitVerified = async (label: string, db: string, epoch: string, chain: number, fromBlock: number, withComputed: boolean, dryRunBlocks = false,
+    verified: Verified = "consensus") => {
     const manifest = (await waitForManifestCondition(`${db} chain ${chain} ${label}`,
-      async () => JSON.parse(await query(db, verifiedManifestSql(epoch, chain, fromBlock, withComputed, dryRunBlocks))) as VerifiedManifest | null,
+      async () => JSON.parse(await query(db, verifiedManifestSql(epoch, chain, fromBlock, withComputed, dryRunBlocks, verified))) as VerifiedManifest | null,
       value => value !== null, 600_000))!;
     await assertS3Copy(db, manifest, epoch);
     return manifest;
@@ -214,7 +242,10 @@ export function createBlueGreenManifestChecks(options: {
       checkpoint({ phase: "cutover", blocks: Object.fromEntries([...cutoverBlocks].map(([db, blocks]) => [db, Object.fromEntries(blocks)])) });
     },
 
-    /** After cutover: same epoch, no gap across cutover, quorum on post-cutover blocks. */
+    /**
+     * After cutover: same epoch, no gap across cutover, quorum on post-cutover
+     * blocks, and the dry-run drift, if any, healed on the faulty operator.
+     */
     async afterCutover() {
       assert(upgradeEpoch, "duringDryRun must run before afterCutover");
       for (const db of databases) {
@@ -226,7 +257,8 @@ export function createBlueGreenManifestChecks(options: {
           `${db} has legacy-epoch manifests, but the v0.14 Blue has no detector`);
         for (const chain of hostChainIds) {
           const cutoverBlock = cutoverBlocks.get(db)?.get(chain) ?? 0;
-          const manifest = await waitVerified("post-cutover manifest", db, upgradeEpoch, chain, cutoverBlock, false);
+          const manifest = await waitVerified("post-cutover manifest", db, upgradeEpoch, chain, cutoverBlock, false, false,
+            postCutoverVerification(db));
           const ranges = await publishedRanges(db, upgradeEpoch, chain);
           assert.deepEqual(rangeGaps(ranges), [], `${db} chain ${chain} manifests leave gaps`);
           const startBlock = await query(db,
@@ -244,6 +276,10 @@ export function createBlueGreenManifestChecks(options: {
         }
       }
       await assertNoDrift("after cutover");
+      if (driftDatabase) {
+        await assertDryRunDriftHealed({ faultyDatabase: driftDatabase, databases, epoch: upgradeEpoch, query, checkpoint,
+          waitFor: waitForManifestCondition });
+      }
     },
 
     async writeReport(result: "passed" | "failed", error?: unknown) {

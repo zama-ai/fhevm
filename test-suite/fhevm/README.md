@@ -946,3 +946,22 @@ The report is written to `$FHEVM_STATE_DIR/blue-green-manifests-report.json`.
 Test profile `blue-green-manifests` is the same run without the environment
 variable. In CI, dispatch `test-suite-e2e-tests.yml` with scenario
 `blue-green-manifest`, test-profile `blue-green-manifests`, and the build enabled.
+
+`BLUE_GREEN_DRY_RUN_DRIFT=1` (test profile `blue-green-dry-run-drift`, same
+scenario) adds a drift that the upgrade must survive. One state-hash agreement
+per chain is enough for cutover, so a Green ct64 that diverges on a later
+dry-run block does not roll the upgrade back. After the rollback, a trigger on
+operator 1's Green schema corrupts the first allowed handle its dry run
+computes past the probe block; ERC-20 traffic from the proposal to
+`DryRunStarted` provides that handle. The checks then require:
+
+- the upgrade cuts over, and the probe's dry-run manifest still reaches
+  consensus everywhere;
+- the healthy operators never leave the quorum and record no drifted handle;
+  their verification still reports the divergence they observe;
+- the faulty operator records the drift in the upgrade epoch, on a block of the
+  dry run, heals it, and ends with no pending healable finding; the healed
+  ct64 matches every peer's.
+
+The faulty operator's later manifests keep the drifted block in their signed
+history, so only an attempt, not consensus, is required of them.
