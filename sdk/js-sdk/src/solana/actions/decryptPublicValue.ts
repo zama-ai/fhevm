@@ -1,6 +1,5 @@
 import { RelayerAbortError } from '../../core/errors/RelayerAbortError.js';
 import { buildRelayerUrlString, validateRelayerBaseUrl } from '../../core/modules/relayer/module/relayerUrl.js';
-import { executeWithBatching } from '../../core/base/promise.js';
 import { assertKmsDecryptionBitLimit } from '../../core/kms/utils.js';
 import {
   getEncodedSize,
@@ -11,10 +10,9 @@ import {
 } from '@solana/kit';
 import type { SolanaClientParameters } from '../clients/createFhevmBaseClient.js';
 import { solanaHostProgram } from '../clients/createFhevmBaseClient.js';
-import type {
-  SolanaPublicDecryptCertificateParameters,
-  SolanaPublicDecryptCertifier,
-} from './publicDecryptCertificate.js';
+import type { RelayerPublicDecryptOptions } from '../../core/types/relayer.js';
+import type { SolanaPublicDecryptCertifier, SolanaPublicHandleEntry } from './publicDecryptCertificate.js';
+import { MAX_SOLANA_DECRYPT_HANDLES } from '../userDecrypt/request.js';
 import { solanaPublicDecryptExtraData } from './publicDecryptCertificate.js';
 import { findHostConfigPda } from '../internal/generated/zamaHost/pdas/hostConfig.js';
 import { findKmsContextPda } from '../internal/generated/zamaHost/pdas/kmsContext.js';
@@ -61,8 +59,17 @@ export function verifyPublicDecryptSignatures(
   if (valid.size < threshold) throw new Error('Public decryption signature threshold not met');
 }
 
-export type SolanaDecryptPublicValueParameters = Omit<SolanaPublicDecryptCertificateParameters, 'contextId'> & {
+export type SolanaDecryptPublicValueParameters = SolanaPublicHandleEntry & {
+  /** The KMS context the certificate commits to; the host's current context when omitted. */
   readonly contextId?: Uint8Array | undefined;
+  readonly options?: RelayerPublicDecryptOptions | undefined;
+};
+
+export type SolanaDecryptPublicValuesParameters = Omit<
+  SolanaDecryptPublicValueParameters,
+  'handle' | 'encryptedStore'
+> & {
+  readonly entries: readonly SolanaPublicHandleEntry[];
 };
 
 /**
@@ -74,6 +81,21 @@ export async function decryptPublicValue(
   parameters: SolanaDecryptPublicValueParameters,
   certify: SolanaPublicDecryptCertifier,
 ): Promise<TypedValue> {
+  const { handle, encryptedStore, ...shared } = parameters;
+  const [value] = await decryptPublicValues(client, { ...shared, entries: [{ handle, encryptedStore }] }, certify);
+  if (value === undefined) throw new Error('Public decrypt returned no value');
+  return value;
+}
+
+/**
+ * Authenticates and decodes the plaintexts of several public handles, in order, from one
+ * certificate: one relayer request and one host read for the whole batch.
+ */
+export async function decryptPublicValues(
+  client: SolanaClientParameters,
+  parameters: SolanaDecryptPublicValuesParameters,
+  certify: SolanaPublicDecryptCertifier,
+): Promise<TypedValue[]> {
   const signal = parameters.options?.signal;
   const checkAbort = (): void => {
     if (signal?.aborted === true)
@@ -83,8 +105,13 @@ export async function decryptPublicValue(
       });
   };
   checkAbort();
-  const handle = toFhevmHandle(parameters.handle);
-  if (BigInt(handle.chainId) !== client.chain.id) throw new Error('Public decrypt handle belongs to another chain');
+  const handles = parameters.entries.map((entry) => toFhevmHandle(entry.handle));
+  if (handles.length === 0) throw new Error('Public decrypt requires at least one handle');
+  if (handles.length > MAX_SOLANA_DECRYPT_HANDLES)
+    throw new Error(`Public decrypt takes at most ${MAX_SOLANA_DECRYPT_HANDLES} handles per request`);
+  assertKmsDecryptionBitLimit(handles);
+  if (handles.some((handle) => BigInt(handle.chainId) !== client.chain.id))
+    throw new Error('Public decrypt handle belongs to another chain');
   const programAddress = solanaHostProgram(client.chain);
   const read = (account: MaybeEncodedAccount | undefined, discriminator: ReadonlyUint8Array): Uint8Array => {
     if (
@@ -114,7 +141,7 @@ export async function decryptPublicValue(
   const contextId = new Uint8Array(parameters.contextId ?? initial.currentKmsContextId);
   if (contextId.length !== 32 || contextId.every((byte) => byte === 0))
     throw new Error('KMS context is not configured');
-  const claim = await certify({ ...parameters, contextId });
+  const claim = await certify({ entries: parameters.entries, contextId, options: parameters.options });
   // Read the requested context after the response. A rotation preserves an old live context;
   // destruction invalidates it. Do not substitute the new current context for the signed one.
   const [contextAddress, contextBump] = await findKmsContextPda({ contextId }, { programAddress });
@@ -140,12 +167,13 @@ export async function decryptPublicValue(
   // Use the schema size, not the allocated account length: trailing bytes may exist.
   const destroyedOffset = getEncodedSize(kms, getKmsContextEncoder()) - 2;
   if (contextBytes[destroyedOffset] !== 0) throw new Error('Invalid or destroyed KMS context');
+  // One 32-byte ABI word per handle, in request order.
   const cleartext = hexToBytes(claim.abiEncodedCleartext);
-  if (cleartext.length !== 32) throw new Error('Public decrypt cleartext must be 32 bytes');
+  if (cleartext.length !== 32 * handles.length) throw new Error('Public decrypt cleartext must be 32 bytes per handle');
   const eip712 = createKmsPublicDecryptEip712({
     verifyingContractAddressDecryption: bytesToHex(new Uint8Array(config.decryptionContract)),
     chainId: config.gatewayChainId,
-    handles: [handle],
+    handles,
     decryptedResult: bytesToHex(cleartext),
     extraData: solanaPublicDecryptExtraData(contextId),
   });
@@ -155,28 +183,14 @@ export async function decryptPublicValue(
     kms.signers,
     kms.thresholds.publicDecryption,
   );
-  return clearValueToTypedValue(
-    createClearValue({
-      handle,
-      value: bytesToClearValueType(handle.fheType, cleartext),
-      originToken: PUBLIC_DECRYPT_TOKEN,
-    }),
-    PUBLIC_DECRYPT_TOKEN,
+  return handles.map((handle, index) =>
+    clearValueToTypedValue(
+      createClearValue({
+        handle,
+        value: bytesToClearValueType(handle.fheType, cleartext.subarray(32 * index, 32 * (index + 1))),
+        originToken: PUBLIC_DECRYPT_TOKEN,
+      }),
+      PUBLIC_DECRYPT_TOKEN,
+    ),
   );
-}
-
-/** Ordered single-handle certificates; the current Solana verifier does not accept a batch certificate. */
-export async function decryptPublicValues(
-  client: SolanaClientParameters,
-  parameters: {
-    readonly entries: readonly SolanaDecryptPublicValueParameters[];
-  },
-  certify: SolanaPublicDecryptCertifier,
-): Promise<TypedValue[]> {
-  const handles = parameters.entries.map((entry) => toFhevmHandle(entry.handle));
-  if (handles.length === 0) throw new Error('Public decrypt requires at least one handle');
-  assertKmsDecryptionBitLimit(handles);
-  if (handles.some((handle) => BigInt(handle.chainId) !== client.chain.id))
-    throw new Error('Public decrypt handle belongs to another chain');
-  return executeWithBatching(parameters.entries.map((entry) => () => decryptPublicValue(client, entry, certify)));
 }
