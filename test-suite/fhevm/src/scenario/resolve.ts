@@ -757,8 +757,8 @@ export const resolveBlueGreenScenario = (
   };
   const kms = resolveKmsTopology(input.kms, "scenario.kms");
   const bootstrap = input.bootstrap;
-  if (bootstrap && kms.mode !== "centralized") {
-    throw new Error("bootstrap is only supported with a centralized KMS; threshold clusters upgrade per operator");
+  if (bootstrap && kms.parties !== kms.committeeSize) {
+    throw new Error("bootstrap does not support spare KMS parties; threshold clusters upgrade per serving operator");
   }
   const gcs = {
     source: normalizeSource(input.gcs.source ?? { mode: "local" as const }),
