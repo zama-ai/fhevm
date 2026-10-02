@@ -999,13 +999,12 @@ fn metadata_matches_expected(
         || attestation.key_id != key_id
         || attestation.ciphertext_digest != ct64_digest
         || attestation.sns_ciphertext_digest != ct128_digest
-        || attestation.signer != material.signer
     {
         return false;
     }
 
     if attestation
-        .verify(handle, COPROCESSOR_CONTEXT_ID_1)
+        .verify(handle, COPROCESSOR_CONTEXT_ID_1, material.signer)
         .is_err()
     {
         return false;
