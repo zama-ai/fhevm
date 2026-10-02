@@ -15,6 +15,8 @@ use std::{
 };
 use url::Url;
 
+use crate::monitoring::metrics::SOLANA_PROOF_ANSWER_COUNTER;
+
 /// The coprocessor route that answers Merkle proof queries. The same literal as the coprocessor's
 /// `MERKLE_PROOFS_PATH`; the shared vectors pin the request and response bytes.
 pub const MERKLE_PROOFS_PATH: &str = "/v1/solana/merkle-proofs";
@@ -254,13 +256,19 @@ impl CoprocessorProofClient {
                 url
             })
             .collect();
-        Self {
+        let client = Self {
             urls,
             client,
             wallet,
             registry,
             signing_timeout,
+        };
+        // The outcome that pages exists for every coprocessor before its first answer.
+        for source in 0..client.urls.len() {
+            SOLANA_PROOF_ANSWER_COUNTER
+                .with_label_values(&[&client.source_name(source), "invalid"]);
         }
+        client
     }
 }
 

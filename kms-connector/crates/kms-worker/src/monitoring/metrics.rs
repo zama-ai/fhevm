@@ -6,18 +6,6 @@ use prometheus::{
 use sqlx::types::chrono::Utc;
 use std::sync::LazyLock;
 
-/// Each coprocessor's answer for each queried leaf: `verified`, `no_leaf`, `unknown_store`,
-/// `behind` (its record holds fewer leaves than the chain), `ahead` (more than this connector
-/// observed), `invalid` (as many leaves as the chain, yet the proof fails) or `read_failed`.
-pub static SOLANA_PROOF_ANSWERS: LazyLock<IntCounterVec> = LazyLock::new(|| {
-    register_int_counter_vec!(
-        "kms_connector_worker_solana_proof_answers_counter",
-        "Merkle proof answers per queried leaf, by coprocessor and outcome",
-        &["source", "outcome"]
-    )
-    .expect("Failed to register kms_connector_worker_solana_proof_answers_counter metric")
-});
-
 pub static EVENT_RECEIVED_COUNTER: LazyLock<IntCounterVec> = LazyLock::new(|| {
     register_int_counter_vec!(
         "kms_connector_worker_event_received_counter",
@@ -95,6 +83,16 @@ pub static REQUEST_CHECK_ERRORS: LazyLock<IntCounterVec> = LazyLock::new(|| {
         &["check_type"]
     )
     .expect("Failed to register kms_connector_worker_request_check_errors metric")
+});
+
+/// Each coprocessor's Merkle proof answer for each queried leaf of a Solana decryption.
+pub static SOLANA_PROOF_ANSWER_COUNTER: LazyLock<IntCounterVec> = LazyLock::new(|| {
+    register_int_counter_vec!(
+        "kms_connector_worker_solana_proof_answers_counter",
+        "Merkle proof answers per queried leaf, by coprocessor and outcome",
+        &["source", "outcome"]
+    )
+    .expect("Failed to register kms_connector_worker_solana_proof_answers_counter metric")
 });
 
 /// Histogram bucket boundaries (in seconds) for decryption latency measurements.
