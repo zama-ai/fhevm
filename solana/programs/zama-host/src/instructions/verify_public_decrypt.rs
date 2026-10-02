@@ -1,12 +1,13 @@
 //! Stateless public-decrypt verifier (fhevm-internal#1704).
 //!
 //! `verify_public_decrypt` is a pull-oracle: a caller (usually via CPI) brings a KMS
-//! `PublicDecryptVerification` certificate plus an MMR public-leaf inclusion proof in its own
-//! transaction, this instruction verifies both against on-chain state, and returns the proven
-//! `(handle, cleartext, context_id)` through `return_data`. It creates nothing, mutates nothing, emits nothing,
-//! and needs no signer — everything it asserts is signed off-chain (the cert) or committed on-chain
-//! (the sealed public-decrypt leaf). Act-once and timeout live in the consuming app's own state
-//! machine, exactly as an EVM app tracks its decryption callbacks.
+//! `PublicDecryptVerification` certificate in its own transaction, this instruction verifies it,
+//! and returns the certified `(handle, cleartext, context_id)` through `return_data`. It creates
+//! nothing, mutates nothing, emits nothing, and needs no signer. Like EVM `FHE.checkSignatures`, it
+//! reads no ACL state: every KMS connector proved the handle's public leaf before decrypting, so the
+//! certificate is the authorization. A consumer binds the certificate to its own state by passing a
+//! handle it pinned in an account it owns (INVARIANTS #21). Act-once and timeout live in the
+//! consuming app's own state machine, exactly as an EVM app tracks its decryption callbacks.
 //!
 //! The cert is verified against the `KmsContext` the certificate itself names in its signed
 //! `extra_data` (EVM `_extractContextId` parity), as long as that context is still alive
@@ -48,27 +49,6 @@ use anchor_lang::solana_program::program::set_return_data;
 use super::common::assert_no_remaining_accounts;
 use crate::{eip712, errors::ZamaHostError, state::*};
 
-/// Anchor-native mirror of `zama_solana_acl::MmrProof` for use as an instruction argument. The
-/// shared ACL crate is deliberately Anchor-free (pure `borsh`) so it cannot derive Anchor IDL
-/// metadata; this local type carries the identical wire shape and converts into the shared proof.
-/// Defined in the host program so CPI callers depend only on the host IDL, never on token types.
-#[derive(AnchorSerialize, AnchorDeserialize, Clone, Debug, Default, PartialEq, Eq)]
-pub struct MmrInclusionProof {
-    /// Index of the proven leaf within the encrypted store's MMR.
-    pub leaf_index: u64,
-    /// Authentication path from the leaf up to its mountain peak.
-    pub siblings: Vec<[u8; 32]>,
-}
-
-impl From<MmrInclusionProof> for zama_solana_acl::MmrProof {
-    fn from(proof: MmrInclusionProof) -> Self {
-        zama_solana_acl::MmrProof {
-            leaf_index: proof.leaf_index,
-            siblings: proof.siblings,
-        }
-    }
-}
-
 /// Typed layout of the `return_data` written by `verify_public_decrypt`, shared with CPI
 /// consumers so nobody hand-computes byte offsets. Borsh of this struct is
 /// `handle ‖ cleartext ‖ context_id` (96 bytes).
@@ -95,14 +75,10 @@ pub struct VerifyPublicDecrypt<'info> {
     /// KMS context PDA; must be the canonical PDA for the id the certificate commits to in its
     /// signed `extra_data`, and must not be destroyed. Verified in the handler.
     pub kms_context: Account<'info, KmsContext>,
-    /// The encrypted store whose peaks the inclusion proof is checked against.
-    /// CHECK: layout, ownership, and canonical PDA are validated in the handler via `read_canonical_encrypted_store`.
-    pub encrypted_store: UncheckedAccount<'info>,
 }
 
 /// Verifies a KMS public-decrypt certificate against the context the cert names (any live context)
-/// plus an MMR public-leaf inclusion proof, and returns `(handle ++ cleartext ++ context_id)` via
-/// `return_data`.
+/// and returns `(handle ++ cleartext ++ context_id)` via `return_data`.
 ///
 /// `cleartext` is the 32-byte big-endian `uint256` the KMS signs over (today's decrypted result
 /// fits in 32 bytes); `context_id` is the verified 32-byte id; `return_data` is 96
@@ -113,7 +89,6 @@ pub fn verify_public_decrypt(
     cleartext: [u8; 32],
     signatures: Vec<[u8; 65]>,
     extra_data: Vec<u8>,
-    proof: MmrInclusionProof,
 ) -> Result<()> {
     assert_no_remaining_accounts(ctx.remaining_accounts)?;
     let host_config = &ctx.accounts.host_config;
@@ -164,27 +139,6 @@ pub fn verify_public_decrypt(
         ZamaHostError::InvalidKmsCertificate
     );
 
-    // Exact-handle public-decrypt proof against the encrypted store's current peaks (no roll-forward): a
-    // handle sealed public stays provable after later updates move the peaks.
-    let info = ctx.accounts.encrypted_store.to_account_info();
-    require_keys_eq!(
-        *info.owner,
-        crate::ID,
-        ZamaHostError::PublicDecryptProofInvalid
-    );
-    let state = zama_solana_acl::decode_encrypted_store(&info.try_borrow_data()?)
-        .map_err(|_| error!(ZamaHostError::PublicDecryptProofInvalid))?;
-    let (expected, bump) = encrypted_store_address(
-        Pubkey::new_from_array(state.program),
-        Pubkey::new_from_array(state.authority),
-        Pubkey::new_from_array(state.scope),
-    );
-    require!(
-        info.key() == expected && state.bump == bump,
-        ZamaHostError::PublicDecryptProofInvalid
-    );
-    zama_solana_acl::authorize_state_public(info.key().to_bytes(), &state, handle, &proof.into())
-        .map_err(|_| error!(ZamaHostError::PublicDecryptProofInvalid))?;
 
     let return_data = PublicDecryptReturnData {
         handle,

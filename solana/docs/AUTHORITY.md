@@ -47,7 +47,7 @@ check requires its `assert_no_remaining_accounts` call. `?` marks an optional ac
 | `destroy_kms_context` | `admin`: `HostConfig.admin` | `kms_context` | `host_config` | self (event CPI) | — |
 | `set_coprocessor_signers` | `admin`: `HostConfig.admin` | `host_config` | — | self (event CPI) | — |
 | `set_eip712_domain` | `admin`: `HostConfig.admin` | `host_config` | — | self (event CPI) | — |
-| `verify_public_decrypt` | — | — | `host_config`, `kms_context`, `encrypted_store` | — | — |
+| `verify_public_decrypt` | — | — | `host_config`, `kms_context` | — | — |
 
 ## Execution
 

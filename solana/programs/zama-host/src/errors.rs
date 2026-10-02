@@ -214,10 +214,6 @@ pub enum ZamaHostError {
     /// against the cert-named context's signer set.
     #[msg("KMS public-decrypt certificate is invalid")]
     InvalidKmsCertificate,
-    /// The MMR public-decrypt inclusion proof does not prove the exact handle public against the
-    /// encrypted store's current peaks.
-    #[msg("public-decrypt inclusion proof is invalid")]
-    PublicDecryptProofInvalid,
 
     /// The coprocessor signer set is empty. Input verification requires at least one registered
     /// signer (analog of `EmptyKmsContext` for the coprocessor path).

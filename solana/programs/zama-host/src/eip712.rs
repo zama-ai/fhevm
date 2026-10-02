@@ -118,7 +118,6 @@ const SECP256K1_HALF_ORDER: [u8; 32] = [
 /// `KMSVerifier._extractKmsContextId`: empty or version-0 `extra_data` selects the current
 /// context; version 1 is exactly 33 bytes and carries the 32-byte context id in
 /// `extra_data[1..33]`; version 2 is exactly 65 bytes: the same id, then the epoch id.
-/// This function extracts only the context id; the verifier checks the public leaf separately.
 /// Because the KMS signs over `extra_data`, the returned id is authenticated by the
 /// certificate. Returns `None` for an unsupported version or a short payload.
 ///

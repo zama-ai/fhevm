@@ -838,7 +838,6 @@ fn settle_ix(
     cleartext_total: u64,
     signatures: Vec<[u8; 65]>,
     extra_data: Vec<u8>,
-    proof: host::instructions::MmrInclusionProof,
     pending_burn: Pubkey,
 ) -> Instruction {
     anchor_ix(
@@ -884,7 +883,6 @@ fn settle_ix(
             cleartext_total,
             signatures,
             extra_data,
-            proof,
             authority_funding_lamports: AUTHORITY_FUNDING,
         },
     )
@@ -1114,17 +1112,8 @@ fn run_settle(
         );
     }
     let (signatures, extra_data) = amount_public_decrypt_cert(burned_handle, total);
-    let proof = ledger.public_decrypt_proof(keys.burned_amount_store, burned_handle);
     let pending_burn = keys.pending_burn(fixture.join_mint().mint);
-    let ix = settle_ix(
-        fixture,
-        keys,
-        total,
-        signatures,
-        extra_data,
-        proof,
-        pending_burn,
-    );
+    let ix = settle_ix(fixture, keys, total, signatures, extra_data, pending_burn);
     let result = check_batcher_instruction(context, &ix, &[Check::success()]);
     if total > 0 {
         // Only the wrap phase drives an execution at settle.
@@ -1588,15 +1577,7 @@ fn mollusk_cancel_dispatch_restores_burn_and_allows_refunds() {
     let pending_burn = keys.pending_burn(fixture.join_mint().mint);
     let burned_handle = run_dispatch(&context, &fixture, &keys, &mut ledger);
     let (signatures, extra_data) = amount_public_decrypt_cert(burned_handle, 300);
-    let settle = settle_ix(
-        &fixture,
-        &keys,
-        300,
-        signatures,
-        extra_data,
-        ledger.public_decrypt_proof(keys.burned_amount_store, burned_handle),
-        pending_burn,
-    );
+    let settle = settle_ix(&fixture, &keys, 300, signatures, extra_data, pending_burn);
     assert_eq!(
         ledger.u64_in_state(&context, keys.join_balance_store, token::balance_key()),
         0
@@ -2978,17 +2959,8 @@ fn mollusk_dust_total_settle_reverts_and_batch_stays_dispatched() {
     let burned_handle = run_dispatch(&context, &fixture, &keys, &mut ledger);
 
     let (signatures, extra_data) = amount_public_decrypt_cert(burned_handle, 100);
-    let proof = ledger.public_decrypt_proof(keys.burned_amount_store, burned_handle);
     let pending_burn = keys.pending_burn(fixture.join_mint().mint);
-    let ix = settle_ix(
-        &fixture,
-        &keys,
-        100,
-        signatures,
-        extra_data,
-        proof,
-        pending_burn,
-    );
+    let ix = settle_ix(&fixture, &keys, 100, signatures, extra_data, pending_burn);
     check_batcher_instruction(
         &context,
         &ix,
@@ -3041,29 +3013,23 @@ fn mollusk_dust_total_settle_reverts_and_batch_stays_dispatched() {
 // Settle transaction wire size: legacy vs v0 + address lookup table
 // ---------------------------------------------------------------------------
 
-/// Serializes the REAL settle instruction (the full account list and
-/// realistically shaped cert/proof data) as (a) a legacy `Transaction` and
-/// (b) a v0 `VersionedTransaction` whose non-payer accounts load through one
-/// address lookup table, across cert thresholds and proof depths. Legacy
-/// settle never fits one packet (the ~35-account meta list alone approaches
-/// the limit); v0+ALT fits comfortably at every reachable batcher shape —
-/// proof depth grows with the shared State history. These rows measure representative
-/// depths; a sufficiently deep proof requires a separate transport solution (#1750).
+/// Serializes the REAL settle instruction (the full account list and a
+/// realistically shaped certificate) as (a) a legacy `Transaction` and (b) a v0
+/// `VersionedTransaction` whose non-payer accounts load through one address
+/// lookup table, across cert thresholds. Legacy settle never fits one packet
+/// (the ~35-account meta list alone approaches the limit); v0+ALT fits up to
+/// the production KMS threshold.
 fn assert_settle_wire_sizes(fixture: &BatcherFixture) {
     let keys = BatchKeys::new(fixture, 0);
     let pending_burn = keys.pending_burn(fixture.join_mint().mint);
 
-    let settle_with = |threshold: usize, proof_depth: usize| -> Instruction {
+    let settle_with = |threshold: usize| -> Instruction {
         settle_ix(
             fixture,
             &keys,
             800,
             vec![[0u8; 65]; threshold],
             vec![0x00],
-            host::instructions::MmrInclusionProof {
-                leaf_index: 0,
-                siblings: vec![[0u8; 32]; proof_depth],
-            },
             pending_burn,
         )
     };
@@ -3105,37 +3071,27 @@ fn assert_settle_wire_sizes(fixture: &BatcherFixture) {
         bincode::serialize(&transaction).unwrap().len()
     };
 
-    // (threshold, proof depth): the Mollusk fixture shape, the realistic
-    // production cert (7-of-13 majority), and a deeper shared-State proof.
+    // The Mollusk fixture's threshold and the production cert (7-of-13 majority).
     // JavaScript tests separately measure the table actually provisioned by the demo.
-    let mut sizes = Vec::new();
-    for (threshold, depth) in [(1usize, 0usize), (7, 0), (7, 20)] {
-        let ix = settle_with(threshold, depth);
+    for threshold in [1usize, 7] {
+        let ix = settle_with(threshold);
         let legacy = legacy_size(&ix);
         let v0 = v0_with_lookup_table_size(&ix);
         println!(
-            "settle wire size ({:?}) t={threshold} depth={depth}: legacy={legacy}B v0+ALT={v0}B \
+            "settle wire size ({:?}) t={threshold}: legacy={legacy}B v0+ALT={v0}B \
              (packet limit {})",
             fixture.direction,
             solana_packet::PACKET_DATA_SIZE
         );
-        sizes.push((threshold, depth, legacy, v0));
-    }
-
-    for (threshold, depth, legacy, v0) in sizes {
         // Legacy settle never fits: a legacy transaction is impossible.
         assert!(
             legacy > solana_packet::PACKET_DATA_SIZE,
-            "legacy settle t={threshold} depth={depth} unexpectedly fits: {legacy}B"
+            "legacy settle t={threshold} unexpectedly fits: {legacy}B"
         );
-        if depth == 0 {
-            // The minimum proof fits up to the production KMS threshold.
-            // Shared-State history can make later proofs larger.
-            assert!(
-                v0 <= solana_packet::PACKET_DATA_SIZE,
-                "v0+ALT settle t={threshold} depth={depth} overflows: {v0}B"
-            );
-        }
+        assert!(
+            v0 <= solana_packet::PACKET_DATA_SIZE,
+            "v0+ALT settle t={threshold} overflows: {v0}B"
+        );
     }
 }
 

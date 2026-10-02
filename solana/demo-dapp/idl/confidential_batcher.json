@@ -1763,14 +1763,6 @@
           "type": "bytes"
         },
         {
-          "name": "proof",
-          "type": {
-            "defined": {
-              "name": "MmrInclusionProof"
-            }
-          }
-        },
-        {
           "name": "authority_funding_lamports",
           "type": "u64"
         }
@@ -2841,41 +2833,6 @@
                 "u8",
                 32
               ]
-            }
-          }
-        ]
-      }
-    },
-    {
-      "name": "MmrInclusionProof",
-      "docs": [
-        "Anchor-native mirror of `zama_solana_acl::MmrProof` for use as an instruction argument. The",
-        "shared ACL crate is deliberately Anchor-free (pure `borsh`) so it cannot derive Anchor IDL",
-        "metadata; this local type carries the identical wire shape and converts into the shared proof.",
-        "Defined in the host program so CPI callers depend only on the host IDL, never on token types."
-      ],
-      "type": {
-        "kind": "struct",
-        "fields": [
-          {
-            "name": "leaf_index",
-            "docs": [
-              "Index of the proven leaf within the encrypted store's MMR."
-            ],
-            "type": "u64"
-          },
-          {
-            "name": "siblings",
-            "docs": [
-              "Authentication path from the leaf up to its mountain peak."
-            ],
-            "type": {
-              "vec": {
-                "array": [
-                  "u8",
-                  32
-                ]
-              }
             }
           }
         ]

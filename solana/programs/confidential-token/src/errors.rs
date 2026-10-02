@@ -58,10 +58,6 @@ pub enum ConfidentialTokenError {
     /// The KMS EIP-712 public-decrypt certificate failed secp256k1 threshold verification.
     #[msg("KMS public-decrypt certificate is invalid")]
     InvalidKmsCertificate,
-    /// The MMR public-decrypt proof for the pinned burned handle did not verify against
-    /// the encrypted store's current peaks.
-    #[msg("public-decrypt MMR proof is invalid for this encrypted store")]
-    PublicDecryptProofInvalid,
     /// The host gateway verifier config (KMS signer / decryption contract) is unset.
     #[msg("gateway verifier config is not set")]
     GatewayVerifierConfigUnset,

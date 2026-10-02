@@ -692,35 +692,4 @@ impl CleartextLedger {
         assert_eq!(value.value[..24], [0; 24]);
         u64::from_be_bytes(value.value[24..].try_into().unwrap())
     }
-
-    pub fn public_decrypt_proof(
-        &self,
-        state: Pubkey,
-        handle: [u8; 32],
-    ) -> zama_host::instructions::MmrInclusionProof {
-        let leaves = self
-            .state_leaves
-            .get(&state)
-            .expect("oracle history for encrypted store");
-        let leaf_index = leaves
-            .iter()
-            .enumerate()
-            .rev()
-            .find_map(|(index, commitment)| {
-                (*commitment
-                    == zama_solana_acl::public_decrypt_leaf_commitment(
-                        state.to_bytes(),
-                        index as u64,
-                        handle,
-                    ))
-                .then_some(index as u64)
-            })
-            .expect("public-decrypt leaf for handle");
-        let proof = zama_solana_acl::mmr_build_proof(leaves, leaf_index)
-            .expect("public-decrypt inclusion proof");
-        zama_host::instructions::MmrInclusionProof {
-            leaf_index: proof.leaf_index,
-            siblings: proof.siblings,
-        }
-    }
 }

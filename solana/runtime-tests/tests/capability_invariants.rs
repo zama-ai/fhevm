@@ -181,9 +181,7 @@ enum Action {
     RevokePermits {
         user: usize,
     },
-    VerifyPublicDecrypt {
-        store: usize,
-    },
+    VerifyPublicDecrypt,
 }
 
 impl Action {
@@ -215,7 +213,7 @@ impl Action {
                 "revoke_delegation_for_user_decryption"
             }
             Action::RevokePermits { .. } => "revoke_permits",
-            Action::VerifyPublicDecrypt { .. } => "verify_public_decrypt",
+            Action::VerifyPublicDecrypt => "verify_public_decrypt",
         }
     }
 }
@@ -305,7 +303,7 @@ fn action() -> impl Strategy<Value = Action> {
         1 => wallet().prop_map(|delegator| Action::DelegateForUserDecryption { delegator }),
         1 => wallet().prop_map(|delegator| Action::RevokeDelegationForUserDecryption { delegator }),
         1 => wallet().prop_map(|user| Action::RevokePermits { user }),
-        1 => (0..STORES).prop_map(|store| Action::VerifyPublicDecrypt { store }),
+        1 => Just(Action::VerifyPublicDecrypt),
     ]
 }
 
@@ -958,30 +956,19 @@ impl World {
                     host::instruction::RevokePermits {},
                 )
             }
-            Action::VerifyPublicDecrypt { store } => {
-                let handle = self
-                    .store_state(*store)
-                    .and_then(|state| state.slots.first().map(|slot| slot.handle))
-                    .unwrap_or([0; 32]);
-                anchor_ix(
-                    host::id(),
-                    host::accounts::VerifyPublicDecrypt {
-                        host_config,
-                        kms_context: host::kms_context_address(kms_context_id(0)).0,
-                        encrypted_store: self.store_address(*store),
-                    },
-                    host::instruction::VerifyPublicDecrypt {
-                        handle,
-                        cleartext: [0; 32],
-                        signatures: vec![],
-                        extra_data: vec![0],
-                        proof: host::instructions::MmrInclusionProof {
-                            leaf_index: 0,
-                            siblings: vec![],
-                        },
-                    },
-                )
-            }
+            Action::VerifyPublicDecrypt => anchor_ix(
+                host::id(),
+                host::accounts::VerifyPublicDecrypt {
+                    host_config,
+                    kms_context: host::kms_context_address(kms_context_id(0)).0,
+                },
+                host::instruction::VerifyPublicDecrypt {
+                    handle: [0; 32],
+                    cleartext: [0; 32],
+                    signatures: vec![],
+                    extra_data: vec![0],
+                },
+            ),
         };
         vec![body]
     }
