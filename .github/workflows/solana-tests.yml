@@ -75,6 +75,7 @@ jobs:
               - solana/**
               - coprocessor/fhevm-engine/host-listener/src/**
               - coprocessor/fhevm-engine/solana-host-follower/src/**
+              - coprocessor/fhevm-engine/solana-merkle-proof-service/src/**
               - kms-connector/crates/**
               - sdk/js-sdk/src/solana/**
               - test-suite/fhevm/**

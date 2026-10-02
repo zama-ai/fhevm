@@ -6,9 +6,8 @@
 //!   `declare_id!`. Instruction layout still has no runtime handshake: deploy the listener from
 //!   the same rev as the program (INVARIANTS #33).
 //!
-//! Each sealed block is applied in one database transaction: its compute rows, the
-//! leaves its writes sealed (`database::solana_leaves`) and the resume checkpoint.
-//! Compute rows and leaves both carry the result handles each `FheExecutedEvent`
+//! Each sealed block is applied in one database transaction: its compute rows and the
+//! resume checkpoint. Compute rows carry the result handles each `FheExecutedEvent`
 //! emitted, so they name the chain's handles even where re-derivation disagrees.
 //! A step whose handle this listener does not re-derive is held back: its row is
 //! inserted as a terminal error, and the tfhe-worker drains everything that depends
@@ -20,7 +19,7 @@ use anchor_lang::prelude::Pubkey;
 use anyhow::{anyhow, Result};
 use prometheus::{register_int_counter_vec, IntCounterVec};
 use solana_host_follower::host::{
-    host_operations, DecodedInstruction, EncryptedStoreWrite, HostOperation,
+    host_operations, DecodedInstruction, HostOperation,
 };
 use solana_host_follower::{
     BlockSink, IngestFailure, PreparedBlock, SealedBlock,
@@ -28,11 +27,7 @@ use solana_host_follower::{
 use time::{OffsetDateTime, PrimitiveDateTime};
 use tracing::{error, info};
 
-use crate::database::solana_leaves::{
-    load_block_leaves, load_encrypted_store_histories, reduce_block_leaves,
-    store_block_leaves, store_checkpoint, StoredCheckpoint,
-    TransactionStoreWrites,
-};
+use crate::database::solana_checkpoint::store_checkpoint;
 use crate::database::tfhe_event_propagate::{Database, TransactionId};
 use crate::solana_adapter::{
     hold_back_computations, insert_solana_block_records, material_request,
@@ -85,7 +80,7 @@ impl BlockSink for SolanaListenerSink<'_> {
 }
 
 /// Applies one sealed block in one database transaction: every covered
-/// transaction's compute rows, the leaves the block sealed, and the checkpoint.
+/// transaction's compute rows and the checkpoint.
 async fn apply_block(
     db: &Database,
     config: &SolanaListenerConfig,
@@ -122,18 +117,11 @@ async fn apply_block(
     };
 
     let mut records_by_transaction = Vec::new();
-    let mut leaf_sources = Vec::new();
     let mut held_back = Vec::new();
     let mut check_failures = Vec::new();
     for (transaction, records) in reconstructed {
         let transaction_id = TransactionId::from(transaction.signature);
         records_by_transaction.push((transaction_id, records.records));
-        if !records.leaf_sources.is_empty() {
-            leaf_sources.push(TransactionStoreWrites {
-                transaction_index: transaction.index,
-                sources: records.leaf_sources,
-            });
-        }
         for failure in records.check_failures {
             held_back.push(HeldBackComputation {
                 transaction_id,
@@ -184,58 +172,11 @@ async fn apply_block(
         )));
     }
 
-    let mut touched: Vec<[u8; 32]> = leaf_sources
-        .iter()
-        .flat_map(|transaction| transaction.sources.iter())
-        .map(|source| source.encrypted_store)
-        .collect();
-    touched.sort_unstable();
-    touched.dedup();
-    let existing = load_encrypted_store_histories(&mut db_tx, &touched)
+    store_checkpoint(&mut db_tx, &sealed_block.checkpoint())
         .await
         .map_err(|err| {
-        IngestFailure::retryable(err).context("load encrypted store histories")
-    })?;
-    // The chain accepted every write; a write this record cannot follow means the
-    // record diverged from chain state, and continuing would seal wrong leaves.
-    let reduction =
-        reduce_block_leaves(sealed_block.slot, &leaf_sources, existing)
-            .map_err(|err| {
-                IngestFailure::fatal(err).context("reduce Solana leaves")
-            })?;
-    // A replayed slot must reproduce its recorded leaves exactly; anything else means
-    // the record and the chain disagree about history the proofs already cover.
-    if !reduction.replayed.is_empty() {
-        let recorded = load_block_leaves(
-            &mut db_tx,
-            sealed_block.slot,
-            reduction.replayed.keys().copied(),
-        )
-        .await
-        .map_err(|err| {
-            IngestFailure::retryable(err).context("load replayed Solana leaves")
+            IngestFailure::retryable(err).context("store checkpoint")
         })?;
-        if recorded != reduction.replayed {
-            return Err(IngestFailure::fatal(anyhow!(
-                "replayed slot {} does not reproduce its recorded leaves",
-                sealed_block.slot
-            )));
-        }
-    }
-    store_block_leaves(&mut db_tx, sealed_block.slot, &reduction)
-        .await
-        .map_err(|err| {
-            IngestFailure::retryable(err).context("store Solana leaves")
-        })?;
-    store_checkpoint(
-        &mut db_tx,
-        &StoredCheckpoint {
-            slot: sealed_block.slot,
-            block_hash: sealed_block.block_hash,
-        },
-    )
-    .await
-    .map_err(|err| IngestFailure::retryable(err).context("store checkpoint"))?;
     db_tx
         .commit()
         .await
@@ -254,14 +195,12 @@ async fn apply_block(
             .inc_by(check_failures.len() as u64);
     }
 
-    if stats.inserted_records > 0 || !reduction.leaves.is_empty() {
+    if stats.inserted_records > 0 {
         info!(
             slot = sealed_block.slot,
             tfhe_events = stats.tfhe_events,
             material_requests = stats.material_requests,
             inserted_records = stats.inserted_records,
-            leaves = reduction.leaves.len(),
-            encrypted_stores = reduction.states.len(),
             "ingested Solana host records (gRPC)"
         );
     }
@@ -279,13 +218,11 @@ fn sealed_block_timestamp(block: &SealedBlock) -> Option<PrimitiveDateTime> {
     block.block_time.and_then(unix_to_pdt)
 }
 
-/// One covered transaction, rebuilt off-chain: the compute rows to insert, the
-/// leaf sources its host instructions sealed, in on-chain order, and the steps
-/// whose emitted handle re-derivation did not reproduce.
+/// One covered transaction, rebuilt off-chain: the compute rows to insert, in on-chain
+/// order, and the steps whose emitted handle re-derivation did not reproduce.
 #[derive(Debug, Default)]
 struct ReconstructedTransaction {
     records: Vec<SolanaHostRecord>,
-    leaf_sources: Vec<EncryptedStoreWrite>,
     check_failures: Vec<HandleCheckFailure>,
 }
 
@@ -319,8 +256,8 @@ enum ReconstructionOutcome {
 }
 
 /// Rebuilds the ingestable record set off-chain from a transaction's instructions.
-/// Covers `fhe_execute` (one op record per step, plus a material request and
-/// history append for each state output), decoded from the same ordered
+/// Covers `fhe_execute` (one op record per step, plus a material request for each
+/// store write) and `make_store_handle_public`, decoded from the same ordered
 /// instruction list together with each execution's `FheExecutedEvent`.
 fn reconstruct_records_for_insert(
     config: &SolanaListenerConfig,
@@ -366,7 +303,6 @@ fn reconstruct_records_for_insert(
                 .push(SolanaHostRecord::MaterialRequest(material_request(
                     write.handle,
                 )));
-            reconstructed.leaf_sources.push(write.clone());
         }
     }
     Ok(ReconstructionOutcome::Complete(reconstructed))
@@ -495,10 +431,11 @@ mod fhe_execute_acl_tests {
     };
     use super::HandleCheckFailure;
     use solana_host_follower::host::{
-        decode_fhe_executed_event, DecodedInstruction, EncryptedStoreWrite,
+        decode_fhe_executed_event, DecodedInstruction,
     };
     use zama_host::state::{FheExecuteArgs, FheExecuteStep};
 
+    use crate::solana_adapter::SolanaHostRecord;
     use crate::solana_reconstruct::HandleMismatch;
 
     #[test]
@@ -638,7 +575,7 @@ mod fhe_execute_acl_tests {
     }
 
     #[test]
-    fn store_output_reconstructs_address_cursor_and_leaves() {
+    fn a_store_output_requests_its_material() {
         let args = FheExecuteArgs {
             execution_store_index: 0,
             effects: vec![zama_host::FheExecuteEffect {
@@ -669,17 +606,19 @@ mod fhe_execute_acl_tests {
             accounts,
         }]))
         .unwrap();
-        let handle = reconstructed.leaf_sources[0].handle;
-        assert_eq!(
-            reconstructed.leaf_sources,
-            vec![EncryptedStoreWrite {
-                encrypted_store: STATE,
-                previous_leaf_count: 4,
-                handle,
-                allowed_keys: vec![[0x33; 32]],
-                make_public: true,
-            }]
-        );
+        let output = reconstructed
+            .records
+            .iter()
+            .find_map(|record| match record {
+                SolanaHostRecord::TrivialEncrypt(op) => Some(op.result),
+                _ => None,
+            })
+            .unwrap();
+        assert!(reconstructed.records.iter().any(|record| matches!(
+            record,
+            SolanaHostRecord::MaterialRequest(request)
+                if request.handle == output
+        )));
     }
 }
 
@@ -690,7 +629,7 @@ mod apply_block_tests {
         config, context, encoded_execution, event_instruction, with_events,
         STATE,
     };
-    use crate::database::solana_leaves::load_checkpoint;
+    use crate::database::solana_checkpoint::load_checkpoint;
     use crate::database::tfhe_event_propagate::Database;
     use fhevm_engine_common::chain_id::ChainId;
     use serial_test::serial;
@@ -842,11 +781,11 @@ mod apply_block_tests {
     }
 
     /// The repair: rewind the checkpoint and revert the rows past a slot with the operator
-    /// scripts, then replay. The consumer the worker drained comes back as a fresh row, the
-    /// replay reproduces the recorded leaves, and the checkpoint returns to the tip.
+    /// scripts, then replay. The consumer the worker drained comes back as a fresh row and
+    /// the checkpoint returns to the tip.
     #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
     #[serial(handle_check_failures)]
-    async fn a_reverted_slot_replays_with_fresh_rows_and_its_recorded_leaves() {
+    async fn a_reverted_slot_replays_with_fresh_rows() {
         let key = [0x33; 32];
         let slot_41 = PreparedBlock {
             block: sealed(41, [0x41; 32], [0x40; 32]),
@@ -898,23 +837,6 @@ mod apply_block_tests {
             .execute(&pool)
             .await
             .unwrap();
-        let leaves = || async {
-            sqlx::query("SELECT leaf_index, commitment, block_slot FROM solana_encrypted_state_leaves ORDER BY leaf_index")
-                .fetch_all(&pool)
-                .await
-                .unwrap()
-                .iter()
-                .map(|row| {
-                    (
-                        row.get::<i64, _>("leaf_index"),
-                        row.get::<Vec<u8>, _>("commitment"),
-                        row.get::<i64, _>("block_slot"),
-                    )
-                })
-                .collect::<Vec<_>>()
-        };
-        let recorded_leaves = leaves().await;
-        assert_eq!(recorded_leaves.len(), 2);
 
         sqlx::query("INSERT INTO host_chains (chain_id, name, acl_contract_address) VALUES ($1, 'solana', '') ON CONFLICT DO NOTHING")
             .bind(chain_id.as_i64())
@@ -973,7 +895,6 @@ mod apply_block_tests {
             !consumer_errored,
             "the replay re-inserts the drained consumer fresh"
         );
-        assert_eq!(leaves().await, recorded_leaves);
         assert_eq!(load_checkpoint(&pool).await.unwrap().unwrap().slot, 42);
     }
 

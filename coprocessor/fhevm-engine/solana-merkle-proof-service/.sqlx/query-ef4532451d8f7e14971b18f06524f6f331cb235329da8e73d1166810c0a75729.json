@@ -1,6 +1,6 @@
 {
   "db_name": "PostgreSQL",
-  "query": "\n        SELECT leaf_count, peaks, history_complete, last_slot\n        FROM solana_encrypted_states\n        WHERE encrypted_state = $1\n        ",
+  "query": "\n        SELECT leaf_count, peaks, last_slot\n        FROM encrypted_stores\n        WHERE encrypted_store = $1\n        ",
   "describe": {
     "columns": [
       {
@@ -15,11 +15,6 @@
       },
       {
         "ordinal": 2,
-        "name": "history_complete",
-        "type_info": "Bool"
-      },
-      {
-        "ordinal": 3,
         "name": "last_slot",
         "type_info": "Int8"
       }
@@ -32,9 +27,8 @@
     "nullable": [
       false,
       false,
-      false,
       false
     ]
   },
-  "hash": "8b05ed6e202dc817f2f8e3eb094daf2ddacf3c0fcfe2b0cba040443ef4aedee1"
+  "hash": "ef4532451d8f7e14971b18f06524f6f331cb235329da8e73d1166810c0a75729"
 }

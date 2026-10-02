@@ -1,8 +1,8 @@
-//! Solana leaf-proof server: answers the KMS connector's leaf inclusion proofs from the leaf
-//! record that `solana_host_listener` ingests. It runs as its own deployment with its own
-//! database pool, so it keeps serving while ingestion is stopped or behind. A proof from a record
-//! that is behind still verifies against the chain's peaks until a later append to the Store
-//! merges that leaf's mountain.
+//! Solana Merkle proof server: answers the KMS connector's leaf inclusion proofs from the leaf
+//! record that `solana_merkle_indexer` writes. It runs as its own deployment with its own
+//! database pool, so it keeps serving while the indexer is stopped or behind. A proof from a
+//! record that is behind still verifies against the chain's peaks until a later append to the
+//! store merges that leaf's mountain.
 
 use std::time::Duration;
 
@@ -19,12 +19,12 @@ use fhevm_engine_common::{
     telemetry,
     utils::DatabaseURL,
 };
-use host_listener::http_server::HttpServer;
+use solana_merkle_proof_service::server::HttpServer;
 
 #[derive(Parser, Debug, Clone)]
-#[command(version, about = "Solana leaf-proof server", long_about = None)]
+#[command(version, about = "Solana Merkle proof server", long_about = None)]
 struct Args {
-    /// PostgreSQL connection string for the coprocessor database.
+    /// PostgreSQL connection string for the Merkle record's database.
     #[arg(long)]
     database_url: DatabaseURL,
 
@@ -43,7 +43,7 @@ struct Args {
     #[arg(long, default_value_t = Level::INFO)]
     log_level: Level,
 
-    #[arg(long, default_value = "solana-leaf-proof-server")]
+    #[arg(long, default_value = "solana-merkle-proof-server")]
     service_name: String,
 }
 
@@ -74,7 +74,7 @@ async fn main() -> Result<()> {
         |options| with_statement_timeout(options, Duration::from_secs(10)),
     )
     .await
-    .context("connect coprocessor database")?;
+    .context("connect Merkle record database")?;
 
     let signal_cancel = cancel.clone();
     tokio::spawn(async move {

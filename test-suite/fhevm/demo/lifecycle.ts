@@ -13,6 +13,7 @@ import {
   SOLANA_LEAF_PROOF_PORT,
   SOLANA_LISTENER_GRPC_PORT,
   SOLANA_LISTENER_HEALTH_PORT,
+  SOLANA_MERKLE_INDEXER_HEALTH_PORT,
   SOLANA_VALIDATOR_RPC_PORT,
 } from "../src/layout";
 import { solanaImages } from "../src/solana/images";
@@ -116,11 +117,12 @@ export const demoReservedPorts = (observability = false): readonly number[] => [
     SOLANA_VALIDATOR_RPC_PORT,
     SOLANA_LISTENER_GRPC_PORT,
     SOLANA_LISTENER_HEALTH_PORT,
+    SOLANA_MERKLE_INDEXER_HEALTH_PORT,
     SOLANA_LEAF_PROOF_PORT,
     ...(observability ? OBSERVABILITY_PORTS : []),
   ]),
 ];
-const PROCESS_NAMES = ["validator", "listener", "proofServer", "operator", "dapp"] as const;
+const PROCESS_NAMES = ["validator", "listener", "indexer", "proofServer", "operator", "dapp"] as const;
 // The core runs the INSECURE image as only the insecure build allows no `[threshold.tls]` config.
 const CORE_IMAGE = `ghcr.io/zama-ai/kms/core-service-insecure:${solanaImages.CORE_VERSION}`;
 const REQUIRED_KEYPAIRS = [
@@ -1100,7 +1102,7 @@ const startOwnedProcess = async (
 };
 
 const processFromPidFile = async (
-  name: "validator" | "listener" | "proofServer",
+  name: "validator" | "listener" | "indexer" | "proofServer",
   command: readonly string[],
   pidFile: string,
   logPath: string,
@@ -1388,6 +1390,7 @@ const dockerLogContains = async (
 type DemoHealth = {
   readonly validator: boolean;
   readonly listener: boolean;
+  readonly indexer: boolean;
   readonly proofServer: boolean;
   readonly operator: boolean;
   readonly dapp: boolean;
@@ -1421,6 +1424,7 @@ const demoHealth = async (manifest: DemoManifest): Promise<DemoHealth> => {
   );
   const [
     validator,
+    indexer,
     proofServer,
     operator,
     dapp,
@@ -1433,6 +1437,7 @@ const demoHealth = async (manifest: DemoManifest): Promise<DemoHealth> => {
     jaeger,
   ] = await Promise.all([
     validatorHealthy().catch(() => false),
+    httpHealthy(`${LOCAL_SOLANA_ENDPOINTS.merkleIndexerHealth}/healthz`),
     httpHealthy(`${LOCAL_SOLANA_ENDPOINTS.leafProof}/healthz`),
     httpHealthy(`${LOCAL_SOLANA_ENDPOINTS.demoOperator}/health`),
     demoDappHealthy(),
@@ -1466,6 +1471,7 @@ const demoHealth = async (manifest: DemoManifest): Promise<DemoHealth> => {
   return {
     validator: exactEndpointReady(exact.get("validator") === true, validator),
     listener: exact.get("listener") === true,
+    indexer: exactEndpointReady(exact.get("indexer") === true, indexer),
     proofServer: exactEndpointReady(exact.get("proofServer") === true, proofServer),
     operator: exactEndpointReady(exact.get("operator") === true, operator),
     dapp: exactEndpointReady(exact.get("dapp") === true, dapp),
@@ -1486,6 +1492,7 @@ const demoHealth = async (manifest: DemoManifest): Promise<DemoHealth> => {
 const allDemoHealthReady = (health: DemoHealth): boolean =>
   health.validator &&
   health.listener &&
+  health.indexer &&
   health.proofServer &&
   health.operator &&
   health.dapp &&
@@ -1501,6 +1508,7 @@ const allDemoHealthReady = (health: DemoHealth): boolean =>
 export const reseedHealthReady = (health: DemoHealth): boolean =>
   health.validator &&
   health.listener &&
+  health.indexer &&
   health.proofServer &&
   health.kmsCore &&
   health.relayer &&
@@ -1516,6 +1524,7 @@ const assertDemoHealthReady = (health: DemoHealth): void => {
   const serviceNames = [
     "validator",
     "listener",
+    "indexer",
     "proofServer",
     "operator",
     "dapp",
@@ -1671,11 +1680,17 @@ export const upDemo = async ({
         path.join(runtimeDir, "listener.pid"),
         path.join(logsDir, "host-listener.log"),
       );
+      const indexer = await processFromPidFile(
+        "indexer",
+        ["solana_merkle_indexer"],
+        path.join(runtimeDir, "merkle-indexer.pid"),
+        path.join(logsDir, "merkle-indexer.log"),
+      );
       const proofServer = await processFromPidFile(
         "proofServer",
-        ["solana_leaf_proof_server"],
-        path.join(runtimeDir, "leaf-proof-server.pid"),
-        path.join(logsDir, "leaf-proof-server.log"),
+        ["solana_merkle_proof_server"],
+        path.join(runtimeDir, "merkle-proof-server.pid"),
+        path.join(logsDir, "merkle-proof-server.log"),
       );
       if (observability) await startObservability(composeProject);
       const resources = await readOwnedDockerResources(composeProject);
@@ -1684,7 +1699,7 @@ export const upDemo = async ({
       manifest = {
         ...manifest,
         ...resources,
-        processes: { validator, listener, proofServer },
+        processes: { validator, listener, indexer, proofServer },
       };
       await writeDemoManifest(manifest);
       const operator = await startOwnedProcess(
@@ -1747,10 +1762,16 @@ export const upDemo = async ({
           path.join(logsDir, "host-listener.log"),
         ],
         [
+          "indexer",
+          ["solana_merkle_indexer"],
+          path.join(runtimeDir, "merkle-indexer.pid"),
+          path.join(logsDir, "merkle-indexer.log"),
+        ],
+        [
           "proofServer",
-          ["solana_leaf_proof_server"],
-          path.join(runtimeDir, "leaf-proof-server.pid"),
-          path.join(logsDir, "leaf-proof-server.log"),
+          ["solana_merkle_proof_server"],
+          path.join(runtimeDir, "merkle-proof-server.pid"),
+          path.join(logsDir, "merkle-proof-server.log"),
         ],
       ] as const) {
         if (recoveredProcesses[name] !== undefined) continue;
@@ -2144,7 +2165,7 @@ export const downDemo = async (): Promise<void> =>
   });
 
 /**
- * Restart only this boot's listener; its validator, leaf-proof server and coprocessor database
+ * Restart only this boot's listener; its validator, Merkle indexer, Merkle proof server and coprocessor database
  * stay intact.
  */
 export const restartDemoSolanaListener = async (): Promise<void> =>
@@ -2216,6 +2237,7 @@ export const reseedDemo = async ({
         processes: {
           validator: manifest.processes.validator,
           listener: manifest.processes.listener,
+          indexer: manifest.processes.indexer,
           proofServer: manifest.processes.proofServer,
         },
       };
@@ -2223,10 +2245,11 @@ export const reseedDemo = async ({
       if (
         !(await isExactOwnedProcess(manifest.processes.validator!)) ||
         !(await isExactOwnedProcess(manifest.processes.listener!)) ||
+        !(await isExactOwnedProcess(manifest.processes.indexer!)) ||
         !(await isExactOwnedProcess(manifest.processes.proofServer!))
       ) {
         throw new Error(
-          "validator, listener or proof server ownership changed before demo redeployment",
+          "validator, listener, Merkle indexer or Merkle proof server ownership changed before demo redeployment",
         );
       }
       const runtimeDir = path.join(DEMO_RUNTIME_DIR, manifest.bootId);
@@ -2365,6 +2388,7 @@ export const statusDemo = async (): Promise<boolean> => {
   for (const [service, ready] of [
     ["validator", serviceHealth.validator],
     ["listener", serviceHealth.listener],
+    ["indexer", serviceHealth.indexer],
     ["proofServer", serviceHealth.proofServer],
     ["operator", serviceHealth.operator],
     ["dapp", serviceHealth.dapp],

@@ -3,6 +3,9 @@
   "info": {
     "title": "Solana leaf proofs",
     "description": "Inclusion proofs from the RFC 035 leaf record of Solana encrypted stores, for the KMS connector.",
+    "contact": {
+      "name": "Zama"
+    },
     "license": {
       "name": "BSD-3-Clause-Clear",
       "identifier": "BSD-3-Clause-Clear"
@@ -176,21 +179,6 @@
                 "type": "string",
                 "enum": [
                   "unknownAccount"
-                ]
-              }
-            }
-          },
-          {
-            "type": "object",
-            "description": "The account was first seen through an update, so its earlier leaves are\nunknown and no proof can be served for it.",
-            "required": [
-              "status"
-            ],
-            "properties": {
-              "status": {
-                "type": "string",
-                "enum": [
-                  "historyIncomplete"
                 ]
               }
             }

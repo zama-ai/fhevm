@@ -1735,6 +1735,7 @@ Consequences:
 Status: adopted
 
 Superseded in part by DD-049: the `EncryptedStore` layout. DD-060 moves the public-decrypt Store out of `extraData`.
+DD-066 moves the leaf record out of the host listener into its own database.
 
 Recorded as fhevm-internal RFC 035.
 
@@ -2379,6 +2380,9 @@ Consequences:
 
 Status: adopted
 
+Superseded in part by DD-066: the Merkle indexer, not the listener, stops at a Store write whose
+leaf count does not continue the record.
+
 Recorded in fhevm-internal#2104 (RFC 035 review, finding 1, fixes A and B).
 
 The listener used to subscribe to whole blocks with `account_include: [host]`. Yellowstone keeps every
@@ -2421,9 +2425,9 @@ validator never sealed, or a slot that does not extend the last applied one stop
 without applying the slot. A transaction that a recent slot did not hold stops it too, but that slot is already
 recorded without it, and the restart resumes from the checkpoint, past that slot. If the
 transaction wrote a Store, the next write to that Store does not continue its recorded leaf count,
-and the listener stops there until the leaf record, `solana_encrypted_state_nodes` included, is
-rewritten by hand: a replay computes leaves the record does not hold and stops too. If it wrote no
-Store, ingestion continues without its computation rows. The error, which names the slot and the
+and the Merkle indexer, which follows the same stream, stops there until its record is rebuilt
+(DD-066): a replay computes leaves the record does not hold and stops too. The listener continues
+without the transaction's computation rows. The error, which names the slot and the
 transaction, and the restart alarm are then the only trace, and the replay repair in the
 host-listener README restores the rows. Whether other providers keep this order is
 fhevm-internal#2087.
@@ -2459,6 +2463,9 @@ which is sent for every slot. Yellowstone's pings, sent whatever its feed does, 
 ## DD-063: A leaf proof reads its path by position
 
 Status: adopted
+
+Superseded in part by DD-066: the Merkle indexer records the nodes, in the `nodes` table of its own
+database.
 
 Recorded in fhevm-internal#2104 (RFC 035 review, findings 2 and 4, fix C).
 
@@ -2505,6 +2512,10 @@ verification: nothing is deployed, so no backfill exists.
 ## DD-064: Leaf proofs are served apart from ingestion
 
 Status: adopted
+
+Superseded in part by DD-066: the server is `solana_merkle_proof_server`, behind
+`<release>-solana-merkle-proof-server`, and reads the Merkle proof service's database. Ingestion
+here means the Merkle indexer.
 
 Recorded in fhevm-internal#2104 (RFC 035 review, findings 2 and 3, fix D).
 
@@ -2597,6 +2608,63 @@ packet up to 12 signatures (`runtime-tests/tests/disclose_packet_fit.rs`). Remov
 `PublicDecryptProofInvalid` renumbered the later Anchor error codes of zama-host and
 confidential-token.
 
+## DD-066: The leaf record has its own indexer and database
+
+Status: adopted
+
+The host listener wrote the leaf record into the coprocessor database, in the transaction that
+wrote the compute rows (DD-048). The record could only start where the listener started. A
+listener started at the tip, or on a database restored without the record, met Stores whose
+earlier leaves it never saw. It marked them `history_complete = false` and answered
+`historyIncomplete` for them until someone replayed it from before their creation. A fault in the
+record, such as a leaf count that skips, also stopped compute ingestion, and the only repair was
+editing the coprocessor database by hand.
+
+Decision:
+
+The leaf record belongs to the `solana-merkle-proof-service` crate, in its own Postgres database
+with its own migrations: `encrypted_stores`, `leaves`, `nodes` and `checkpoint`. The crate has two
+binaries:
+
+- `solana_merkle_indexer` follows the confirmed stream through `solana-host-follower`, the crate
+  the host listener follows it with. It writes each block's leaves, nodes, Store rows and
+  checkpoint in one transaction. It resumes from its checkpoint. On an empty database it replays
+  from `--start-slot`, a confirmed block before the first Store was created, such as the zama-host
+  deployment slot. It never starts at the tip. It stops on a Store first seen above leaf zero
+  (`UnrecordedHistory`), on a leaf count that skips, and on a replayed block whose leaves differ
+  from the recorded ones.
+- `solana_merkle_proof_server` serves the proofs from that database (DD-063, DD-064).
+
+A record holds every Store from leaf zero or has not seen it, so a proof answer is `found`,
+`notFound` or `unknownAccount`; there is no incomplete history. The host listener writes only
+compute rows and its own checkpoint.
+
+A lost or broken record is rebuilt in one of two ways. A `pg_dump` of a healthy record restored
+into an empty database resumes from the checkpoint inside it and catches up
+(`a_restored_dump_resumes_and_catches_up`). An empty database replays from the start slot.
+
+Rejected alternatives:
+
+| Alternative | Why not |
+|---|---|
+| Keep the record in the listener and mark incomplete histories | A Store the record missed has no proofs from that coprocessor until a manual replay, and a record fault stops compute ingestion. |
+| Start an empty record at the tip and backfill the missed history | The backfill is a second ingestion path, with its own ordering and checkpoint, racing the live one. |
+| A custom export and import of the record | `pg_dump` and `pg_restore` already move a consistent snapshot with its checkpoint, and operators know them. |
+| A separate image | As in DD-064: one more CI build and tag to keep in step. Both binaries ship in the host-listener image. |
+
+Consequences:
+
+Each coprocessor runs one more Deployment and one more database on its Postgres server, and opens a
+second Yellowstone subscription. The record and the compute rows no longer commit together, so they
+can disagree about which blocks were applied. Nothing reads both: the connector checks each proof
+against the peaks it reads on chain. A deployment must know a start slot before its first Store:
+the chart requires `solanaHostListener.merkleIndexer.startSlot` and the Merkle database's URL.
+The preview wipe (DD-051) closes Stores, and a Store created again at the same address starts
+again at leaf zero, which the record reads as a skipped count. The preview rollout therefore
+recreates the Merkle database and takes a new start slot on every run. The coprocessor database
+drops `solana_encrypted_states`, `solana_encrypted_state_leaves` and
+`solana_encrypted_state_nodes`. Nothing is deployed, so nothing is migrated.
+
 ## Open product decisions
 
 Not settled by the decisions above. Forward requirements are detailed in
@@ -2619,10 +2687,9 @@ Not settled by the decisions above. Forward requirements are detailed in
 - Historical handle discovery conventions for apps.
 - Production role and governance names for public-decrypt and grant authority.
 - Leaf-record availability (DD-048): the connector asks every configured coprocessor at once, so
-  one behind, stalled or unreachable cannot sink or hold a request another can serve. A Store first
-  seen by a coprocessor through an update still has no served proofs until that listener is
-  replayed from before the Store's creation (`history_complete`). The replay and bootstrap policy is operational and
-  undocumented beyond the listener's own flags.
+  one behind, stalled or unreachable cannot sink or hold a request another can serve. A record
+  rebuilt by replay from the start slot catches up at the archive's speed; how a coprocessor heals
+  faster, for instance from another coprocessor's `pg_dump`, is not yet a runbook (DD-066).
 - A Solana-native composition pattern for contract-to-contract confidential calls has not been
   designed since the receiver-callback flow was deleted (DD-011, in DESIGN_HISTORY.md).
 - There is no per-Store cap on allows (RFC 035): allows are leaves, and the app-side wall is the
