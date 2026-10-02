@@ -169,12 +169,13 @@ export const DEFAULT_POSTGRES_USER = "postgres";
 export const DEFAULT_POSTGRES_PASSWORD = "postgres";
 export const DEFAULT_POSTGRES_DB = "coprocessor";
 // Solana side of the local stack: the test validator, the native host listener (health HTTP and
-// gRPC), the leaf-proof server, and the demo's own processes. `src/solana/endpoints.ts` turns these
+// gRPC), the Merkle indexer's health HTTP, the Merkle proof server, and the demo's own processes. `src/solana/endpoints.ts` turns these
 // into loopback URLs.
 export const SOLANA_VALIDATOR_RPC_PORT = 8899;
 export const SOLANA_VALIDATOR_WS_PORT = 8900;
 export const SOLANA_LEAF_PROOF_PORT = 8080;
 export const SOLANA_LISTENER_HEALTH_PORT = 8081;
+export const SOLANA_MERKLE_INDEXER_HEALTH_PORT = 8082;
 export const SOLANA_LISTENER_GRPC_PORT = 10000;
 // The cleartext stack's own validator (`src/solana/cleartext-stack.ts`), clear of the real stack's.
 export const SOLANA_CLEARTEXT_RPC_PORT = 28899;

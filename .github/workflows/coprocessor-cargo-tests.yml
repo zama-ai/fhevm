@@ -125,6 +125,11 @@ jobs:
             needs_localstack: false
             needs_foundry: false
             runner: runs-on=${{ github.run_id }}/runner=4cpu-linux-x64/spot=false
+          - service: solana-merkle-proof-service
+            package: solana-merkle-proof-service
+            needs_localstack: false
+            needs_foundry: false
+            runner: runs-on=${{ github.run_id }}/runner=4cpu-linux-x64/spot=false
           - service: common
             package: fhevm-engine-common
             needs_localstack: false

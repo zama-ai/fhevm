@@ -169,9 +169,9 @@ The `solana_host_follower_*` metrics come from the Solana host follower the list
     - **Recommendation**: `increase(counter[5m]) > 0`.
 
 #### Container restarts
- - **Description**: A fatal ingestion error, such as a block whose ancestry does not match the checkpoint or a provider that cannot replay from any slot, exits the listener, which then resumes from its checkpoint. A restart that catches up quickly never trips the lag alarm, so restarts need their own alarm. The leaf proofs come from the separate `solana-leaf-proof-server` container, which keeps serving through a listener restart. It restarts when it crashes or cannot reach its database at startup. A database lost later makes it not ready, which removes it from its Service without a restart.
- - **Alarm**: Any restart of either container.
-    - **Recommendation**: `increase(kube_pod_container_status_restarts_total{container=~"solana-host-listener|solana-leaf-proof-server"}[15m]) > 0`.
+ - **Description**: A fatal ingestion error, such as a block whose ancestry does not match the checkpoint or a provider that cannot replay from any slot, exits the listener, which then resumes from its checkpoint. A restart that catches up quickly never trips the lag alarm, so restarts need their own alarm. The `solana-merkle-indexer` container follows the same stream into the leaf record's own database and exits the same way, resuming from its own checkpoint; it also exits on a Store whose history the record does not hold, and then restarts at the same block until the record is rebuilt. The leaf proofs come from the separate `solana-merkle-proof-server` container, which keeps serving through an indexer restart. It restarts when it crashes or cannot reach its database at startup. A database lost later makes it not ready, which removes it from its Service without a restart.
+ - **Alarm**: Any restart of the three containers.
+    - **Recommendation**: `increase(kube_pod_container_status_restarts_total{container=~"solana-host-listener|solana-merkle-indexer|solana-merkle-proof-server"}[15m]) > 0`.
 
 ### zkproof-worker
 

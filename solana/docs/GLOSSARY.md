@@ -77,7 +77,8 @@ stack where one exists.
 | **KmsContext** | The on-chain account naming one KMS committee's signer set and threshold; certificates bind to the context that issued them. | — | gateway KMS context |
 | **MMR** | Append-only Merkle mountain range shared by all decrypt permissions under a Store. Only peaks and leaf count are stored on-chain; proofs establish exact historical leaves. | — | — |
 | **leaf** | Historical-access commitment `(store, leaf_index, handle, allowed_key)` or public commitment `(store, leaf_index, handle)`, each domain-separated. Fresh Store outputs append allows in declaration order, then a public leaf if requested. | — | — |
-| **leaf record** | The coprocessors' record of every leaf the host sealed, kept by the host listener next to the compute rows it was derived with and served by `solana_leaf_proof_server` over `POST /v1/solana/leaf-proofs` behind an API key. A source of proofs, never of decisions: the connector verifies each proof against the peaks it read on chain. | proof service, `solana-proof-service` | — |
+| **leaf record** | The coprocessors' record of every leaf the host sealed, kept by the Merkle proof service in its own database and served by `solana_merkle_proof_server` over `POST /v1/solana/leaf-proofs` behind an API key. A source of proofs, never of decisions: the connector verifies each proof against the peaks it read on chain. | `solana-proof-service` | — |
+| **Merkle proof service** | Each coprocessor's keeper of the leaf record, the `solana-merkle-proof-service` crate with its own database: the Merkle indexer (`solana_merkle_indexer`) records every Store's leaves from a block before the Store existed, and the Merkle proof server (`solana_merkle_proof_server`) serves their proofs to the KMS connectors. | leaf-proof server, proof service | — |
 | **disclosed value kind** | `DisclosedValueKind` selects the current token slot when requesting publication. The generic `HandleDisclosedEvent` carries the certified handle and cleartext, not the slot kind; original operation events identify the result. | — | generic amount disclosure |
 
 ## Off-chain
@@ -105,8 +106,8 @@ stack where one exists.
 - **"domain"** in the ACL sense (`acl_domain_key`, "mint domain"): say
   *application* or *scope*. EIP-712 signing domains and hash-domain separation
   keep the word.
-- **"standalone proof service"** for a separate trusted component: the leaf-proof server serves
-  proofs from the listener's leaf record, and consumers verify them against their own chain snapshot.
+- **"standalone proof service"** for a separate trusted component: the Merkle proof service serves
+  proofs from its leaf record, and the connector verifies them against its own chain snapshot.
 - **`value_key`**, or the retired `EncryptedValue` account: Store identity is `(program, authority, scope)`;
   a slot key selects a handle within that Store.
 - Any synonym in a "Replaces" cell above.

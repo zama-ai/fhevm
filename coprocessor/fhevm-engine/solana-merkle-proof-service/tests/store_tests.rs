@@ -1,23 +1,23 @@
-//! The Solana leaf record against a real Postgres: rows round-trip through the
-//! migration, the checkpoint moves, and the leaf-proof route answers from the
-//! stored leaves and nodes with proofs that verify against the recorded peaks.
-#![cfg(feature = "solana")]
+//! The leaf record against a real Postgres: rows round-trip through the migration, the
+//! checkpoint moves, and the leaf-proof route answers from the stored leaves and nodes with
+//! proofs that verify against the recorded peaks.
+
+mod support;
 
 use std::collections::BTreeMap;
 
-use host_listener::database::solana_leaves::{
-    load_block_leaves, load_checkpoint, load_encrypted_store_histories,
-    load_encrypted_store_history, reduce_block_leaves, store_block_leaves,
-    store_checkpoint, StoredCheckpoint, TransactionStoreWrites,
-};
-use host_listener::http_server::{
+use serial_test::serial;
+use solana_host_follower::host::EncryptedStoreWrite;
+use solana_host_follower::BlockCheckpoint;
+use solana_merkle_proof_service::server::{
     ErrorCode, ErrorResponse, HttpServer, LeafProof, LeafProofRequest,
     LeafProofResponse, LeafQuery, LeafQueryKind, LEAF_PROOFS_PATH,
 };
-use serial_test::serial;
-use solana_host_follower::host::EncryptedStoreWrite;
-use sqlx::postgres::PgPoolOptions;
-use test_harness::instance::ImportMode;
+use solana_merkle_proof_service::store::{
+    load_block_leaves, load_checkpoint, load_encrypted_store_histories,
+    load_encrypted_store_history, reduce_block_leaves, store_block_leaves,
+    store_checkpoint, TransactionStoreWrites,
+};
 use tokio_util::sync::CancellationToken;
 use zama_solana_acl::{mmr_verify, MmrProof};
 
@@ -41,21 +41,6 @@ fn write(
         allowed_keys,
         make_public,
     }
-}
-
-/// A reused local database keeps rows between runs.
-async fn clear_leaf_record(pool: &sqlx::PgPool) -> Result<(), sqlx::Error> {
-    for table in [
-        "solana_encrypted_state_nodes",
-        "solana_encrypted_state_leaves",
-        "solana_encrypted_states",
-        "solana_listener_checkpoint",
-    ] {
-        sqlx::query(&format!("DELETE FROM {table}"))
-            .execute(pool)
-            .await?;
-    }
-    Ok(())
 }
 
 /// Starts the proof server on a free port and returns its leaf-proof URL once it answers.
@@ -91,14 +76,7 @@ async fn serve_proofs(
 #[serial(db)]
 async fn leaf_record_round_trips_and_serves_verifiable_proofs(
 ) -> Result<(), Box<dyn std::error::Error>> {
-    let db_instance =
-        test_harness::instance::setup_test_db(ImportMode::None).await?;
-    let pool = PgPoolOptions::new()
-        .max_connections(2)
-        .connect(db_instance.db_url())
-        .await?;
-
-    clear_leaf_record(&pool).await?;
+    let (_db, pool) = support::record_db().await;
     assert_eq!(load_checkpoint(&pool).await?, None);
 
     // Block 10 creates the value allowing the owner; block 11 replaces the handle,
@@ -117,7 +95,7 @@ async fn leaf_record_round_trips_and_serves_verifiable_proofs(
     store_block_leaves(&mut tx, 10, &first).await?;
     store_checkpoint(
         &mut tx,
-        &StoredCheckpoint {
+        &BlockCheckpoint {
             slot: 10,
             block_hash: [0x1A; 32],
         },
@@ -140,7 +118,7 @@ async fn leaf_record_round_trips_and_serves_verifiable_proofs(
     store_block_leaves(&mut tx, 11, &second).await?;
     store_checkpoint(
         &mut tx,
-        &StoredCheckpoint {
+        &BlockCheckpoint {
             slot: 11,
             block_hash: [0x1B; 32],
         },
@@ -150,7 +128,7 @@ async fn leaf_record_round_trips_and_serves_verifiable_proofs(
 
     assert_eq!(
         load_checkpoint(&pool).await?,
-        Some(StoredCheckpoint {
+        Some(BlockCheckpoint {
             slot: 11,
             block_hash: [0x1B; 32],
         })
@@ -269,12 +247,12 @@ async fn leaf_record_round_trips_and_serves_verifiable_proofs(
     // A leaf at or past the store's `leaf_count`, as a block committed after the route
     // read the store row leaves it, is not proved against that count.
     sqlx::query(
-        "INSERT INTO solana_encrypted_state_leaves
-             (encrypted_state, leaf_index, commitment, leaf_kind, handle, allowed_key,
+        "INSERT INTO leaves
+             (encrypted_store, leaf_index, commitment, leaf_kind, handle, allowed_key,
               block_slot, transaction_index)
-         SELECT encrypted_state, 3, commitment, leaf_kind, decode(repeat('13', 32), 'hex'),
+         SELECT encrypted_store, 3, commitment, leaf_kind, decode(repeat('13', 32), 'hex'),
                 allowed_key, 12, 0
-         FROM solana_encrypted_state_leaves WHERE leaf_index = 0",
+         FROM leaves WHERE leaf_index = 0",
     )
     .execute(&pool)
     .await?;
@@ -307,8 +285,8 @@ async fn leaf_record_round_trips_and_serves_verifiable_proofs(
         }],
     };
     for corruption in [
-        "UPDATE solana_encrypted_state_leaves SET commitment = decode(repeat('00', 32), 'hex') WHERE leaf_index = 1",
-        "DELETE FROM solana_encrypted_state_leaves WHERE leaf_index = 1",
+        "UPDATE leaves SET commitment = decode(repeat('00', 32), 'hex') WHERE leaf_index = 1",
+        "DELETE FROM leaves WHERE leaf_index = 1",
     ] {
         sqlx::query(corruption).execute(&pool).await?;
         let response = client
@@ -322,46 +300,6 @@ async fn leaf_record_round_trips_and_serves_verifiable_proofs(
         assert_eq!(error.code, ErrorCode::UpstreamTransient);
         assert!(error.retryable);
     }
-
-    // An account first seen through an update serves no proof.
-    let mut tx = pool.begin().await?;
-    let incomplete = reduce_block_leaves(
-        12,
-        &[TransactionStoreWrites {
-            transaction_index: 0,
-            sources: vec![EncryptedStoreWrite {
-                encrypted_store: [0xBB; 32],
-                previous_leaf_count: 7,
-                handle: [0x21; 32],
-                allowed_keys: vec![OWNER],
-                make_public: false,
-            }],
-        }],
-        BTreeMap::new(),
-    )?;
-    store_block_leaves(&mut tx, 12, &incomplete).await?;
-    tx.commit().await?;
-    let recorded_incomplete = load_encrypted_store_history(&pool, [0xBB; 32])
-        .await?
-        .expect("incomplete cursor recorded");
-    assert_eq!(recorded_incomplete.leaf_count, 8);
-    assert!(recorded_incomplete.peaks.is_empty());
-    assert!(incomplete.leaves.is_empty() && incomplete.nodes.is_empty());
-    let response = client
-        .post(&url)
-        .bearer_auth("secret")
-        .json(&LeafProofRequest {
-            leaves: vec![LeafQuery {
-                encrypted_store: hex32(&[0xBB; 32]),
-                handle: hex32(&[0x21; 32]),
-                kind: LeafQueryKind::Allowed,
-                key: Some(hex32(&OWNER)),
-            }],
-        })
-        .send()
-        .await?;
-    let body: LeafProofResponse = response.json().await?;
-    assert_eq!(body.proofs, vec![LeafProof::HistoryIncomplete]);
 
     cancel.cancel();
     server_task.await??;
@@ -384,13 +322,7 @@ async fn prove_leaves_of_a_store(
     };
     let handle = |leaf_index: u64| [(leaf_index / leaves_per_block) as u8; 32];
 
-    let db_instance =
-        test_harness::instance::setup_test_db(ImportMode::None).await?;
-    let pool = PgPoolOptions::new()
-        .max_connections(2)
-        .connect(db_instance.db_url())
-        .await?;
-    clear_leaf_record(&pool).await?;
+    let (_db, pool) = support::record_db().await;
     let mut states = BTreeMap::new();
     for first in (0..leaves).step_by(leaves_per_block as usize) {
         let slot = first / leaves_per_block;
@@ -420,8 +352,7 @@ async fn prove_leaves_of_a_store(
         .find(|leaf| proved.iter().all(|&p| *leaf != p && *leaf != p ^ 1))
         .expect("a leaf off every requested path");
     let deleted = sqlx::query(
-        "DELETE FROM solana_encrypted_state_leaves
-         WHERE encrypted_state = $1 AND leaf_index = $2",
+        "DELETE FROM leaves WHERE encrypted_store = $1 AND leaf_index = $2",
     )
     .bind(&ACCOUNT[..])
     .bind(off_path as i64)
@@ -504,8 +435,7 @@ async fn proofs_read_their_path_by_position(
 /// fhevm-internal#2104: rebuilding a path from every leaf took 30 to 40 seconds for 8
 /// entries of a 1,000,000-leaf store, where the KMS connector waits 10 seconds. Storing the
 /// store takes about a minute in a debug build, so this runs on request:
-/// `cargo test -p host-listener --features solana --test solana_leaves_tests --
-/// --ignored --nocapture`.
+/// `cargo test -p solana-merkle-proof-service --test store_tests -- --ignored --nocapture`.
 #[tokio::test]
 #[serial(db)]
 #[ignore = "stores 1,000,000 leaves; run on request"]

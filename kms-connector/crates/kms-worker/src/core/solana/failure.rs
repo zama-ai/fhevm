@@ -196,18 +196,10 @@ impl EncryptedStoreFailure {
 }
 
 impl HandleBindingFailure {
-    /// A proof record behind the chain may catch up, and so may the node this connector reads: a
-    /// missing leaf is recoverable, as an EVM ACL denial is. A record whose history has a gap
-    /// cannot serve this store until it is rebuilt.
+    /// A proof record behind the chain may catch up, and so may the node this connector reads:
+    /// every binding failure is recoverable, as an EVM ACL denial is.
     pub fn class(&self) -> FailureClass {
-        match self {
-            Self::NoLeaf { .. }
-            | Self::ProofRecordBehind { .. }
-            | Self::AccountUnknownToProofRecord
-            | Self::LeafIndexOutOfRange { .. }
-            | Self::ProofDoesNotVerify { .. } => ACL_DENIED,
-            Self::HistoryIncomplete => UNPROCESSABLE,
-        }
+        ACL_DENIED
     }
 
     pub fn is_recoverable(&self) -> bool {
@@ -462,11 +454,6 @@ mod tests {
                 RETRY,
             ),
             (
-                binding(HandleBindingFailure::HistoryIncomplete),
-                UNPROCESSABLE,
-                TERMINAL,
-            ),
-            (
                 delegation(DelegationFailure::NoLiveDelegation {
                     exact: DeadRow::NotLive { expires_at: 0 },
                     wildcard: DeadRow::Absent,
@@ -539,14 +526,6 @@ mod tests {
                 },
                 DENIED,
                 RETRY,
-            ),
-            (
-                PublicDecryptFailure::HandleBinding {
-                    index: 0,
-                    source: HandleBindingFailure::HistoryIncomplete,
-                },
-                UNPROCESSABLE,
-                TERMINAL,
             ),
         ];
         for (failure, (check, code), kind) in cases {
