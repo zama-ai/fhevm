@@ -76,7 +76,7 @@ divergence.
 5. **Wait for a clean store check.** Re-admit only when all three hold:
    - the indexer's lag alarm has cleared: `time() -
      solana_host_follower_applied_block_timestamp_seconds{service=~".*-solana-merkle-indexer"}`
-     stays under 120;
+     stays under 120 for every `host_chain_id`;
    - `solana_merkle_indexer_store_check_completed_timestamp_seconds` is later than the time the
      lag alarm cleared;
    - `solana_merkle_indexer_quarantined_stores` is 0.

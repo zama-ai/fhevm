@@ -681,6 +681,15 @@ async fn a_store_that_disagrees_with_the_chain_is_quarantined_until_it_matches(
     assert!(!quarantined().await?);
     assert_eq!(proofs.post(&public_leaf(1)).await?.status(), 200);
 
+    // A third leaf on chain the record does not hold yet is behind: no peaks are compared, and
+    // the store neither enters nor leaves the quarantine.
+    let mut chain_grew = chain_store.clone();
+    chain_grew.leaf_count = 3;
+    chain_grew.peaks.push([0x33; 32]);
+    chain.set(address, Some(&chain_grew));
+    check().await?;
+    assert!(!quarantined().await?);
+
     let mut diverged = chain_store.clone();
     diverged.peaks[0][0] ^= 1;
     chain.set(address, Some(&diverged));
@@ -694,10 +703,6 @@ async fn a_store_that_disagrees_with_the_chain_is_quarantined_until_it_matches(
         (ErrorCode::UpstreamTransient, "leaf record inconsistent")
     );
 
-    // A third leaf on chain the record does not hold yet leaves the quarantine as it is.
-    let mut chain_grew = chain_store.clone();
-    chain_grew.leaf_count = 3;
-    chain_grew.peaks.push([0x33; 32]);
     chain.set(address, Some(&chain_grew));
     check().await?;
     assert!(quarantined().await?);

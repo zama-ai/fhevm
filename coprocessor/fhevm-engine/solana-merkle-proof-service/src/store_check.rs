@@ -15,7 +15,7 @@ use std::{
 };
 
 use prometheus::{
-    register_int_counter_vec, register_int_gauge_vec, IntCounterVec,
+    register_int_counter_vec, register_int_gauge_vec, IntCounterVec, IntGauge,
     IntGaugeVec,
 };
 use solana_client::nonblocking::rpc_client::RpcClient;
@@ -96,6 +96,58 @@ impl StoreCheck {
     }
 }
 
+/// The quarantined stores as the table holds them, with their gauge. Each change is written
+/// to the table first and then shown, so the gauge follows the table even when a check stops
+/// partway.
+struct Quarantine {
+    stores: HashSet<[u8; 32]>,
+    gauge: IntGauge,
+}
+
+impl Quarantine {
+    async fn load(
+        pool: &sqlx::PgPool,
+        host_chain_id: &str,
+    ) -> Result<Self, sqlx::Error> {
+        let quarantine = Self {
+            stores: load_quarantined_stores(pool).await?,
+            gauge: QUARANTINED_STORES.with_label_values(&[host_chain_id]),
+        };
+        quarantine.show();
+        Ok(quarantine)
+    }
+
+    async fn add(
+        &mut self,
+        pool: &sqlx::PgPool,
+        store: [u8; 32],
+    ) -> Result<(), sqlx::Error> {
+        if !self.stores.contains(&store) {
+            quarantine_store(pool, store).await?;
+            self.stores.insert(store);
+            self.show();
+        }
+        Ok(())
+    }
+
+    async fn lift(
+        &mut self,
+        pool: &sqlx::PgPool,
+        store: [u8; 32],
+    ) -> Result<(), sqlx::Error> {
+        if self.stores.contains(&store) {
+            lift_quarantine(pool, store).await?;
+            self.stores.remove(&store);
+            self.show();
+        }
+        Ok(())
+    }
+
+    fn show(&self) {
+        self.gauge.set(gauge_value(self.stores.len() as u64));
+    }
+}
+
 /// The on-chain accounts of a page of stores, `None` where nothing is stored.
 pub trait StoreAccounts {
     fn accounts(
@@ -128,11 +180,8 @@ pub async fn run_store_checks(
 ) {
     let chain = host_chain_id.to_string();
     // The quarantine left by an earlier run pages before this run's first check completes.
-    match load_quarantined_stores(&pool).await {
-        Ok(quarantined) => QUARANTINED_STORES
-            .with_label_values(&[&chain])
-            .set(gauge_value(quarantined.len() as u64)),
-        Err(err) => warn!(error = %err, "quarantined stores not read"),
+    if let Err(err) = Quarantine::load(&pool, &chain).await {
+        warn!(error = %err, "quarantined stores not read");
     }
     loop {
         if let Err(err) =
@@ -157,7 +206,7 @@ pub async fn check_stores(
     host_program: &Pubkey,
     host_chain_id: &str,
 ) -> anyhow::Result<()> {
-    let mut quarantined = load_quarantined_stores(pool).await?;
+    let mut quarantine = Quarantine::load(pool, host_chain_id).await?;
     let mut behind = Vec::new();
     let mut results = Vec::new();
     let mut after = None;
@@ -179,7 +228,7 @@ pub async fn check_stores(
                 host_program,
                 store,
                 account.as_ref(),
-                &mut quarantined,
+                &mut quarantine,
             )
             .await?
             {
@@ -196,7 +245,7 @@ pub async fn check_stores(
                 host_program,
                 store,
                 account.as_ref(),
-                &mut quarantined,
+                &mut quarantine,
             )
             .await?,
         );
@@ -206,9 +255,6 @@ pub async fn check_stores(
             .with_label_values(&[host_chain_id, result.label()])
             .inc();
     }
-    QUARANTINED_STORES
-        .with_label_values(&[host_chain_id])
-        .set(gauge_value(quarantined.len() as u64));
     STORE_CHECK_COMPLETED
         .with_label_values(&[host_chain_id])
         .set(gauge_value(unix_now_secs()));
@@ -218,21 +264,21 @@ pub async fn check_stores(
         .count();
     info!(
         mismatches,
-        quarantined = quarantined.len(),
+        quarantined = quarantine.stores.len(),
         "store check completed"
     );
     Ok(())
 }
 
 /// Compares one recorded store with its account, as the KMS connector judges a store
-/// (`validate_store`), and moves it in or out of `quarantined`. The record's leaf count is read
+/// (`validate_store`), and moves it in or out of `quarantine`. The record's leaf count is read
 /// after the account, so a store the indexer wrote meanwhile is compared rather than behind.
 async fn check_store(
     pool: &sqlx::PgPool,
     host_program: &Pubkey,
     store: [u8; 32],
     account: Option<&Account>,
-    quarantined: &mut HashSet<[u8; 32]>,
+    quarantine: &mut Quarantine,
 ) -> anyhow::Result<StoreCheck> {
     let store_address = |chain: &zama_solana_acl::EncryptedStore| {
         let bump = [chain.bump];
@@ -255,10 +301,9 @@ async fn check_store(
     ) {
         Ok(chain) => chain,
         Err(StoreRejection::Absent) => {
-            // A closed store has nothing left to serve.
-            if quarantined.remove(&store) {
-                lift_quarantine(pool, store).await?;
-            }
+            // A closed store has nothing left to serve. An RPC node that answers `null` for a
+            // store it has not seen lifts the quarantine until the next check.
+            quarantine.lift(pool, store).await?;
             return Ok(StoreCheck::Absent);
         }
         Err(rejection) => {
@@ -267,9 +312,7 @@ async fn check_store(
                 ?rejection,
                 "encrypted store account is not a valid store"
             );
-            if quarantined.insert(store) {
-                quarantine_store(pool, store).await?;
-            }
+            quarantine.add(pool, store).await?;
             return Ok(StoreCheck::Mismatch);
         }
     };
@@ -281,9 +324,7 @@ async fn check_store(
     }
     let recorded = load_peaks(pool, store, chain.leaf_count).await?;
     if recorded.as_ref() == Some(&chain.peaks) {
-        if quarantined.remove(&store) {
-            lift_quarantine(pool, store).await?;
-        }
+        quarantine.lift(pool, store).await?;
         return Ok(StoreCheck::Match);
     }
     error!(
@@ -292,8 +333,6 @@ async fn check_store(
         chain_leaf_count = chain.leaf_count,
         "encrypted store's recorded peaks differ from the chain's"
     );
-    if quarantined.insert(store) {
-        quarantine_store(pool, store).await?;
-    }
+    quarantine.add(pool, store).await?;
     Ok(StoreCheck::Mismatch)
 }
