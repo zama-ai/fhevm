@@ -14,7 +14,7 @@
 import { mkdir, rm, writeFile } from 'node:fs/promises';
 import path from 'node:path';
 
-import { createSolanaRpc, lamports } from '@solana/kit';
+import { createSolanaRpc } from '@solana/kit';
 
 import { bootstrapZamaHost } from '../../../../solana/deploy/src/bootstrap';
 import { evmAddressBytes } from '../../../../solana/deploy/src/gateway';
@@ -29,8 +29,9 @@ import {
   solanaCleartextDeployerPath,
 } from '../layout';
 import { runStreaming } from '../utils/process';
+import { until } from '../utils/until';
 import { CLEARTEXT_SOLANA_ENDPOINTS } from './endpoints';
-import { generateSolanaKeypair, loadKeypairSigner } from './provision';
+import { createProvisioningContext, generateSolanaKeypair, loadKeypairSigner } from './provision';
 import { SOLANA_E2E_PROGRAMS, SOLANA_SPECIMEN_PROGRAMS, genesisDeployedPrograms, validatorStartArgs } from './validator';
 
 const SOLANA_DIR = path.join(REPO_ROOT, 'solana');
@@ -40,7 +41,6 @@ const BUILT_PROGRAMS = ['zama_host_cleartext', ...SOLANA_E2E_PROGRAMS.filter((pr
 
 export type CleartextStack = {
   readonly rpcUrl: string;
-  readonly wsUrl: string;
   /** The stack's own funded wallet: upgrade authority of every program and HostConfig admin. */
   readonly deployerKeypairPath: string;
   stop(): Promise<void>;
@@ -101,20 +101,14 @@ export const startCleartextStack = async (): Promise<CleartextStack> => {
   };
 
   try {
-    for (let attempt = 0; ; attempt++) {
-      if (validator.exitCode !== null) throw new Error(`cleartext validator exited; see ${logPath}`);
-      if (attempt === 60) throw new Error(`cleartext validator not healthy after 60s; see ${logPath}`);
-      if ((await rpc.getHealth().send().catch(() => undefined)) === 'ok') break;
-      await Bun.sleep(1_000);
-    }
+    const health = await until(
+      async () => (validator.exitCode !== null ? 'exited' : (await rpc.getHealth().send()) === 'ok' && 'ok'),
+      { timeoutMs: 60_000, intervalMs: 1_000, description: `cleartext validator health; see ${logPath}` },
+    );
+    if (health === 'exited') throw new Error(`cleartext validator exited; see ${logPath}`);
 
     const payer = await loadKeypairSigner(deployerKeypairPath);
-    await rpc.requestAirdrop(payer.address, lamports(1_000_000_000_000n), { commitment: 'confirmed' }).send();
-    for (;;) {
-      const { value } = await rpc.getBalance(payer.address, { commitment: 'confirmed' }).send();
-      if (value > 0n) break;
-      await Bun.sleep(200);
-    }
+    await createProvisioningContext(rpcUrl, CLEARTEXT_SOLANA_ENDPOINTS.validatorWs).fundSol(payer.address, 1_000);
 
     const gateway = SOLANA_CLEARTEXT_GATEWAY;
     await bootstrapZamaHost(createHostDeployContext(rpcUrl), {
@@ -127,7 +121,7 @@ export const startCleartextStack = async (): Promise<CleartextStack> => {
         kmsSigners: SOLANA_CLEARTEXT_SIGNER_ADDRESSES.kms.map(evmAddressBytes),
       },
     });
-    return { rpcUrl, wsUrl: CLEARTEXT_SOLANA_ENDPOINTS.validatorWs, deployerKeypairPath, stop };
+    return { rpcUrl, deployerKeypairPath, stop };
   } catch (error) {
     await stop();
     throw error;

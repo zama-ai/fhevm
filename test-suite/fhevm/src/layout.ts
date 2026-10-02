@@ -26,6 +26,7 @@ const statePaths = (root: string) => {
   // Everything the Solana demo writes lives under one runtime subtree, so a preview namespace or a
   // test swaps it wholesale with FHEVM_STATE_DIR like the rest of the layout.
   const solanaRuntimeDir = path.join(runtimeDir, "solana");
+  const solanaCleartextDir = path.join(stateDir, "solana-cleartext");
   return {
     STATE_DIR: stateDir,
     PERSISTED_STATE_DIR: persistedStateDir,
@@ -51,8 +52,8 @@ const statePaths = (root: string) => {
     /** Written by the deposit-arc smoke on success; `demo:smoke` requires it back. */
     solanaDemoSmokeMarkerPath: path.join(solanaRuntimeDir, "demo-smoke-ran"),
     /** The cleartext stack's ledger, log and deployer wallet (`src/solana/cleartext-stack.ts`). */
-    SOLANA_CLEARTEXT_DIR: path.join(stateDir, "solana-cleartext"),
-    solanaCleartextDeployerPath: path.join(stateDir, "solana-cleartext", "deployer.json"),
+    SOLANA_CLEARTEXT_DIR: solanaCleartextDir,
+    solanaCleartextDeployerPath: path.join(solanaCleartextDir, "deployer.json"),
   };
 };
 let currentStatePaths = statePaths(process.env.FHEVM_STATE_DIR ?? DEFAULT_STATE_DIR);
