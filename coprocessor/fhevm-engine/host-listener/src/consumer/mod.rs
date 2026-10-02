@@ -29,6 +29,8 @@ use crate::database::tfhe_event_propagate::{
     spawn_stack_version_listener, Database,
 };
 use crate::health_check::HealthCheck;
+use crate::kms_generation::aws_s3::AwsS3Client;
+use crate::kms_generation::process_kms_generation_activations;
 
 use consumer::{
     AckDecision, BlockPayload, Broker, HandlerError, ListenerConsumer,
@@ -400,6 +402,10 @@ pub async fn run_consumer(config: ConsumerConfig) -> Result<()> {
         chain_id_str.clone(),
         client.cancel_token.clone(),
     ));
+    // Resume pending downloads and activations without waiting for a block.
+    if config.kms_generation_address.is_some() {
+        spawn_kms_activations(db.clone(), None);
+    }
     let consumer_task = client.consume(move |payload, _cancel| {
         blockchain_tick.update();
         let mut db = db.clone();
@@ -491,6 +497,11 @@ pub async fn run_consumer(config: ConsumerConfig) -> Result<()> {
             {
                 Ok(_) => {
                     db.tick.update();
+                    // As the legacy listener does, retry KMS activations after
+                    // each block: they only depend on database state.
+                    if config.kms_generation_address.is_some() {
+                        spawn_kms_activations(db.clone(), None);
+                    }
 
                     inc_blocks_processed(&chain_id_str, 1);
                     Ok(AckDecision::Ack)
@@ -538,6 +549,22 @@ pub async fn run_consumer(config: ConsumerConfig) -> Result<()> {
             anyhow::bail!("Consumer spawn error: {}", err)
         }
     }
+}
+
+/// Spawn one KMS activation pass: cancel orphaned candidates, activate
+/// finalized ready keys/CRS, and download and verify pending material.
+fn spawn_kms_activations(db: Database, finalized_height: Option<i64>) {
+    tokio::spawn(async move {
+        if let Err(error) = process_kms_generation_activations(
+            db.pool().await,
+            AwsS3Client {},
+            finalized_height,
+        )
+        .await
+        {
+            error!(%error, "Error processing KMSGeneration activations");
+        }
+    });
 }
 
 #[allow(clippy::too_many_arguments)]
