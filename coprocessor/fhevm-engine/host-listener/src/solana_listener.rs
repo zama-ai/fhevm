@@ -627,14 +627,13 @@ mod apply_block_tests {
     use super::apply_block;
     use super::test_support::{
         config, context, encoded_execution, event_instruction, with_events,
-        STATE,
     };
     use crate::database::solana_checkpoint::load_checkpoint;
     use crate::database::tfhe_event_propagate::Database;
     use fhevm_engine_common::chain_id::ChainId;
     use serial_test::serial;
     use solana_host_follower::host::{
-        decode_fhe_execute_args, decode_fhe_executed_event, DecodedInstruction,
+        decode_fhe_executed_event, DecodedInstruction,
     };
     use solana_host_follower::{
         PreparedBlock, PreparedTransaction, SealedBlock,
@@ -687,35 +686,6 @@ mod apply_block_tests {
             }),
             accounts: vec![],
         }
-    }
-
-    /// Stores step `step_index`'s result into [`STATE`], allowing the dictionary key at
-    /// `key_index`: one historical-access leaf.
-    fn storing(
-        mut instruction: DecodedInstruction,
-        step_index: u8,
-        key_index: u8,
-        previous_leaf_count: u64,
-    ) -> DecodedInstruction {
-        let mut args = decode_fhe_execute_args(&instruction.data).unwrap();
-        args.account_count = 1;
-        args.effects = vec![zama_host::FheExecuteEffect {
-            result: zama_host::ExecutionResultRef {
-                step_index,
-                output_index: 0,
-            },
-            store_index: 0,
-            previous_leaf_count,
-            slot: None,
-            allow_indexes: vec![key_index],
-            make_public: false,
-            grants: vec![],
-        }];
-        instruction.data = encoded_execution(args);
-        instruction.accounts =
-            vec![[0; 32]; zama_host::FHE_EXECUTE_FIXED_ACCOUNTS];
-        instruction.accounts.push(STATE);
-        instruction
     }
 
     /// A trivial encryption of `plaintext` followed by its sum with [`SCALAR`], the first
@@ -786,32 +756,21 @@ mod apply_block_tests {
     #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
     #[serial(handle_check_failures)]
     async fn a_reverted_slot_replays_with_fresh_rows() {
-        let key = [0x33; 32];
         let slot_41 = PreparedBlock {
             block: sealed(41, [0x41; 32], [0x40; 32]),
             transactions: vec![PreparedTransaction {
                 signature: Signature::from([1; 64]),
                 index: 0,
-                instructions: with_events([storing(
-                    execution(
-                        vec![FheExecuteStep::TrivialEncrypt {
-                            plaintext: [1; 32],
-                            fhe_type: 5,
-                        }],
-                        vec![key],
-                    ),
-                    0,
-                    0,
-                    0,
+                instructions: with_events([execution(
+                    vec![FheExecuteStep::TrivialEncrypt {
+                        plaintext: [1; 32],
+                        fhe_type: 5,
+                    }],
+                    vec![],
                 )]),
             }],
         };
-        let mut tampered = with_events([storing(
-            two_steps([2; 32], vec![SCALAR, key]),
-            1,
-            1,
-            1,
-        )]);
+        let mut tampered = with_events([two_steps([2; 32], vec![SCALAR])]);
         let (consumer, _) = tamper(&mut tampered);
         let slot_42 = PreparedBlock {
             block: sealed(42, [0x42; 32], [0x41; 32]),

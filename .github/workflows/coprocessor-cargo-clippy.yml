@@ -93,8 +93,8 @@ jobs:
         # other ones require specific dependencies (e.g. GPU, etc.).
         SQLX_OFFLINE=true cargo clippy -p host-listener --all-targets \
           -- -D warnings
-        # The Solana ingestion path is feature-gated, so the line above never compiles it — the
-        # whole yellowstone client and its tests were going unlinted.
+        # The Solana ingestion path is feature-gated, so the line above never compiles the
+        # listener's Solana sink and reconstruction, or their tests.
         SQLX_OFFLINE=true cargo clippy -p host-listener \
           --features solana --all-targets \
           -- -D warnings

@@ -30,6 +30,7 @@ jobs:
               - '.github/workflows/charts-helm-checks.yml'
               - 'charts/**'
               - 'ci/preview-env/solana-host/**'
+              - 'ci/preview-env/scripts/lib.sh'
   lint:
     name: charts-helm-checks/lint
     needs: check-changes
@@ -78,6 +79,7 @@ jobs:
         run: |
           pip install pyyaml
           python3 ci/preview-env/solana-host/test_charts.py
+          python3 ci/preview-env/solana-host/test_reset_preview.py
 
       - name: Run chart-testing (list-changed)
         id: list-changed

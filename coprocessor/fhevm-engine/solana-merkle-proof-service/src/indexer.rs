@@ -125,8 +125,6 @@ async fn apply_block(
                     IngestFailure::retryable(err)
                         .context("load encrypted stores")
                 })?;
-        // The chain accepted every write; a write this record cannot follow means the
-        // record diverged from chain state, and continuing would seal wrong leaves.
         let reduction =
             reduce_block_leaves(&writes, existing).map_err(|err| {
                 IngestFailure::fatal(err).context("reduce leaves")

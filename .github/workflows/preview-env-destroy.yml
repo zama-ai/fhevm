@@ -147,6 +147,7 @@ jobs:
             ci/preview-env/solana-host/recover.sh
             ci/preview-env/solana-host/ownership.sh
             ci/preview-env/solana-host/reset-preview.sh
+            ci/preview-env/scripts/lib.sh
             charts/contracts
           sparse-checkout-cone-mode: false
 

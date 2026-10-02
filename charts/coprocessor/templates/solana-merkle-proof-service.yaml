@@ -111,10 +111,12 @@ spec:
             - --url=$(SOLANA_RPC_URL)
             - --grpc-url=$(SOLANA_GRPC_URL)
             - --program-id=$(SOLANA_HOST_PROGRAM_ID)
-            - --start-slot={{ $startSlot }}
             - --http-port={{ $indexer.httpPort }}
             - --metrics-addr=0.0.0.0:{{ $indexer.metricsPort }}
           env:
+            # An env var rather than an argument, so a preview reset can set it without the chart.
+            - name: SOLANA_MERKLE_START_SLOT
+              value: {{ $startSlot | quote }}
             {{- include "coprocessor.solanaMerkleDatabaseEnv" . | trim | nindent 12 }}
             {{- with $listener.env }}
             {{- toYaml . | nindent 12 }}
