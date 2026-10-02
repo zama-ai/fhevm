@@ -5,13 +5,12 @@
 // configuration — and the one field the permit does not carry, the gateway domain, from the trust
 // configuration handed in beside the signer set. So the link this client computes can only disagree
 // with the KMS if the permit does, or if the configured domain is not the gateway's. The execute
-// wiring around it is pinned to the extent real vectors allow: an answered transport feeds
-// verification (which refuses garbage shares), and an unanswered one surfaces the session's own
-// error untouched.
+// wiring around it: an answered transport feeds verification (which refuses garbage shares), and an
+// unanswered one surfaces the session's own error untouched.
 
 import type { SolanaSigncryptedShare, SolanaUserDecryptHandleEntry } from './index.js';
 import type { SolanaPermitFields, SolanaSignedPermit } from '../permit/index.js';
-import { describe, expect, it } from 'vitest';
+import { beforeAll, describe, expect, it } from 'vitest';
 import {
   PERMIT_IDENTITY_LEN,
   PERMIT_KMS_ROUTING_LEN,
@@ -20,7 +19,14 @@ import {
   PERMIT_TRANSPORT_KEY_LEN,
   decodeSolanaPermitFields,
 } from '../permit/index.js';
-import { SolanaUserDecryptRunError, executeSolanaUserDecrypt, solanaUserDecryptRequestInputs } from './index.js';
+import { setFhevmRuntimeConfig } from '../internal/config.js';
+import { getSolanaRuntime } from '../internal/runtime.js';
+import {
+  SolanaUserDecryptRunError,
+  executeSolanaUserDecrypt,
+  generateSolanaTransportKeyPair,
+  solanaUserDecryptRequestInputs,
+} from './index.js';
 
 ////////////////////////////////////////////////////////////////////////////////
 
@@ -95,8 +101,6 @@ describe('the request inputs a permit pins', () => {
 
     expect(solanaUserDecryptRequestInputs(fields, handles, gatewayEip712Domain)).toEqual({
       userAddress: fields.userAddress,
-      hostChainId: PERMIT_CHAIN_ID,
-      verifyingProgramId: fields.verifyingProgramId,
       handles,
       transportKey: fields.transportKey,
       gatewayEip712Domain,
@@ -106,13 +110,27 @@ describe('the request inputs a permit pins', () => {
 });
 
 describe('executing one user decryption', () => {
+  beforeAll(() => {
+    setFhevmRuntimeConfig({});
+  });
+
   it('feeds an answered transport into verification, which refuses shares that prove nothing', async () => {
     const shares: readonly SolanaSigncryptedShare[] = [{ signature: '0x00', payload: '0x00', extraData: '0x' }];
     const transport = { submit: () => Promise.resolve({ ok: true as const, response: shares }) };
+    // A real key pair, so the refusal comes from the KMS client reading the share rather than from
+    // a malformed key rejected before any share is read.
+    const keyPair = await generateSolanaTransportKeyPair(getSolanaRuntime());
 
     await expect(
-      executeSolanaUserDecrypt({ session: session(), entries: ENTRIES, transport, clock, verification }),
-    ).rejects.toThrow();
+      executeSolanaUserDecrypt({
+        runtime: getSolanaRuntime(),
+        session: { ...session(), keyPair },
+        entries: ENTRIES,
+        transport,
+        clock,
+        verification,
+      }),
+    ).rejects.toThrow(/response parsing failed/);
   });
 
   it('surfaces the session error of a run that was never answered, untouched', async () => {
@@ -123,6 +141,7 @@ describe('executing one user decryption', () => {
 
     await expect(
       executeSolanaUserDecrypt({
+        runtime: getSolanaRuntime(),
         session: session(),
         entries: ENTRIES,
         transport,

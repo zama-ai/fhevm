@@ -1,55 +1,41 @@
 // Turning the KMS answer into plaintext, and refusing every answer that is not this request's.
 //
-// Four rules stand between the shares and a plaintext, and all four are about the same thing: the
-// response must be bound to the request the client actually made. The link is recomputed here from the
-// client's own fields — the EIP-712 `SolanaUserDecryptionLinker` struct hashed under the gateway's
-// `Decryption` domain — never from anything the response echoed back, which is why this module's
-// parameters carry no field a response could supply. Each share's signature is checked before its link
-// is compared, so an unauthenticated share cannot even be considered. The comparison is byte equality.
-// And the shares that survive must agree on one link and reach the threshold: a set that disagrees
-// yields nothing rather than a partial answer.
+// A Solana user decryption runs the KMS client's user-decryption path, through the same WASM module
+// and entry points as the EVM decrypt module. The user address is base58 of the permit's 32-byte
+// user key, and that format is what makes the client hold the response to the Solana link: the
+// EIP-712 `SolanaUserDecryptionLinker(publicKey, handles, userAddress)` struct hashed under the
+// gateway's `Decryption` domain. The client checks each share's node signature, the link, and the
+// 2t+1 agreement; a set that fails any of them yields nothing rather than a partial answer.
 //
-// The request's `extra_data` — the KMS routing the permit signed — is not a link input. It is
-// authenticated by the node signature on each share instead, and the blob compares the route a share
-// carries against the client's own before that signature is even checked.
-//
-// The rules live inside the KMS client (the vendored TKMS blob), which is deliberate — the same code
-// the KMS side runs, rather than a second implementation of the same arithmetic in TypeScript. What
-// belongs here is passing it the client's own inputs, and the committed linker vectors are what proves
-// the link this SDK computes is the link the KMS computes.
+// Every input passed to the client is the client's own: the permit's fields, the requested handles
+// and the trust configuration. None comes from the response, which is why this module's parameters
+// have no field a response could supply. The request's `extra_data`, the KMS route the permit
+// signed, is not a link input; the node signature on each share covers it.
 //
 // One rule does live here: the typed answer. The link binds the handles' bytes, not the payload's
 // type field, so the verified plaintexts are checked against the request's handles — one per handle,
 // in order, each of the type its handle embeds — before anything is returned.
 
-import initSolanaTkms, {
-  type PrivateEncKeyMlKem512,
-  type PublicEncKeyMlKem512,
-  compute_solana_user_decrypt_link_from_js,
-  ml_kem_pke_get_pk,
-  ml_kem_pke_keygen,
-  ml_kem_pke_pk_to_u8vec,
-  new_server_id_addr,
-  new_solana_client,
-  process_user_decryption_resp_solana_from_js,
-} from '../../wasm/tkms/kms_lib.v0.15.0-1-solana.e521f478.js';
-import { tkmsWasmBase64 } from '../../wasm/tkms/kms_lib_bg.v0.15.0-1-solana.e521f478.wasm.base64.js';
+import type { FhevmRuntime } from '../../core/types/coreFhevmRuntime.js';
+import type { PrivateEncKeyMlKem512, PublicEncKeyMlKem512 } from '../../wasm/tkms/KmsLibApi.js';
+import { getAddressDecoder } from '@solana/kit';
+import { initTkmsModule } from '../../core/modules/decrypt/module/init-p.js';
 import { bytes32ToHandle } from '../../core/handle/FhevmHandle.js';
 import { bytesToHexNo0x, isBytes32 } from '../../core/base/bytes.js';
-import { isomorphicCompileWasmFromBase64 } from '../../core/base/wasm.js';
 import { remove0x } from '../../core/base/string.js';
+import { WasmScope } from '../../core/base/wasmScope.js';
 import { toChecksummedAddress } from '../../core/base/address.js';
 
 /**
- * The EIP-55 form of a configured EVM address, for the blob's checksum-validating parser.
+ * The EIP-55 form of a configured EVM address, for the client's checksum-validating parser.
  *
- * The blob refuses anything but EIP-55 mixed case ("Bad address checksum"), while configuration
+ * The client refuses anything but EIP-55 mixed case ("Bad address checksum"), while configuration
  * produced from on-chain bytes is naturally all-lowercase — a valid address the parser would
  * reject. Only the case-insensitive spellings are re-encoded here: all-lowercase and all-uppercase
  * carry no checksum to preserve. A mixed-case spelling claims a checksum and passes through
- * untouched, so a wrong claim is still refused by the blob — re-encoding it would erase the typo
+ * untouched, so a wrong claim is still refused by the client — re-encoding it would erase the typo
  * protection EIP-55 exists for. A string that is not a 20-byte 0x-hex also passes through, to be
- * refused by the blob's parser rather than mapped to a second error shape here.
+ * refused by the client's parser rather than mapped to a second error shape here.
  */
 function eip55Normalized(address: string): string {
   const hexNo0x = remove0x(address);
@@ -58,16 +44,6 @@ function eip55Normalized(address: string): string {
     return address;
   }
   return toChecksummedAddress(`0x${hexNo0x.toLowerCase()}`) ?? address;
-}
-
-/** One lazy initialization of the vendored blob, shared by every entry point of this module. */
-let initialized: Promise<void> | undefined;
-
-function ensureInit(): Promise<void> {
-  initialized ??= isomorphicCompileWasmFromBase64(tkmsWasmBase64)
-    .then((module) => initSolanaTkms({ module_or_path: module }))
-    .then(() => undefined);
-  return initialized;
 }
 
 /** The ML-KEM transport keypair of one permit session. The secret key never leaves the client. */
@@ -109,9 +85,7 @@ export interface SolanaUserDecryptPlaintext {
  * domain a KMS node signed the response's external signature under.
  *
  * Trusted configuration, like the signer set: a domain taken from the response would let the
- * response choose both the link it is held to and the key it is verified against. It is required
- * — without it there is no link to recompute, and the blob refuses to proceed rather than falling
- * back to an empty domain.
+ * response choose both the link it is held to and the key it is verified against.
  */
 export interface SolanaGatewayEip712Domain {
   readonly name: string;
@@ -123,39 +97,25 @@ export interface SolanaGatewayEip712Domain {
 }
 
 /**
- * The fields the link is computed over. Every one of them is the client's own.
+ * The request fields the response is verified against. Every one of them is the client's own.
  *
  * There is no `link` parameter and no room for one: a caller who could pass a link would be able to
- * pass the one the response carries, which is the substitution the whole construction exists to stop.
+ * pass the one the response carries, which is the substitution the link exists to stop.
  */
-export interface SolanaUserDecryptLinkInputs {
+export interface SolanaUserDecryptRequestInputs {
   /** The recipient: the permit's 32-byte user address. */
   readonly userAddress: Uint8Array;
-  /**
-   * The host chain id the permit was signed for. Not a word of the struct: the host chain is bound
-   * through the chain id every handle embeds, and this declared one is checked against it — a
-   * request whose handles name another cluster is refused, not hashed.
-   */
-  readonly hostChainId: bigint;
-  /** The 32-byte program id the permit was signed for. */
-  readonly verifyingProgramId: Uint8Array;
   /** The requested handles, in the order the request carried them — position is part of the link. */
   readonly handles: readonly Uint8Array[];
   /** The serialized transport key, in full: the link commits to the key, not to its fingerprint. */
   readonly transportKey: Uint8Array;
-  /** The gateway domain the struct is hashed under; a different domain is a different link. */
+  /** The gateway domain the link is hashed under; a different domain is a different link. */
   readonly gatewayEip712Domain: SolanaGatewayEip712Domain;
-}
-
-/**
- * The link inputs plus the one request field the link does not bind: the KMS route.
- *
- * The route is the request's `extra_data`, verbatim — the routing envelope the permit signed, in
- * its wire form. The node signature on each share covers it, and the blob compares the route a
- * share carries against these bytes before checking that signature, so what goes in here must be
- * the exact bytes the request carried: rebuilt from the signed permit, never copied from a response.
- */
-export interface SolanaUserDecryptRequestInputs extends SolanaUserDecryptLinkInputs {
+  /**
+   * The request's `extra_data`, verbatim: the KMS routing the permit signed, in its wire form. Each
+   * node signature covers it, so it must be the exact bytes the request carried — rebuilt from the
+   * signed permit, never copied from a response.
+   */
   readonly extraData: Uint8Array;
 }
 
@@ -164,100 +124,25 @@ export interface SolanaUserDecryptRequestInputs extends SolanaUserDecryptLinkInp
  *
  * A fresh pair per permit: the permit commits to this key's fingerprint, so reusing a key across
  * permits would let one permit's response be de-signcrypted under another's.
+ *
+ * @param runtime - The client runtime that owns the KMS WASM module.
  */
-export async function generateSolanaTransportKeyPair(): Promise<SolanaTransportKeyPair> {
-  await ensureInit();
-  const secretKey = ml_kem_pke_keygen();
-  const publicKey = ml_kem_pke_get_pk(secretKey);
-  return { secretKey, publicKey, publicKeyBytes: ml_kem_pke_pk_to_u8vec(publicKey) };
-}
-
-/**
- * Computes the link a response must carry, from the client's own request fields.
- *
- * Exported for the committed linker vectors, which are the only thing that makes "the SDK and the KMS
- * compute the same link" checkable rather than assumed.
- *
- * @param inputs - The client's own fields.
- * @throws If the inputs are not a well-formed request: an identity of the wrong width, a handle that
- *   is not a Solana handle, an empty handle list, handles disagreeing about their embedded chain id, or
- *   an embedded chain id that is not the declared one.
- */
-export async function solanaUserDecryptLink(inputs: SolanaUserDecryptLinkInputs): Promise<Uint8Array> {
-  await ensureInit();
-  // Marshaling and nothing else: the one canonical link computation lives in the blob, and a
-  // second copy here would be a link rule that agrees today and drifts tomorrow.
-  return compute_solana_user_decrypt_link_from_js(
-    solanaRequestFieldsWasmArg(inputs),
-    inputs.handles.map((handle) => bytesToHexNo0x(handle)),
-    inputs.transportKey,
-    gatewayDomainWasmArg(inputs.gatewayEip712Domain),
-  );
-}
-
-/**
- * The Solana-owned request fields in the blob's named shape: identities as hex strings and the
- * chain id as a decimal string. A Solana chain id has type byte `0x01` and does not fit a JS number, and
- * the blob refuses a Number in that field rather than rounding it into a different chain.
- *
- * @param inputs - The client's own fields.
- */
-function solanaRequestFieldsWasmArg(inputs: SolanaUserDecryptLinkInputs): {
-  readonly user_pubkey: string;
-  readonly host_chain_id: string;
-  readonly verifying_program_id: string;
-} {
-  return {
-    user_pubkey: bytesToHexNo0x(inputs.userAddress),
-    host_chain_id: inputs.hostChainId.toString(),
-    verifying_program_id: bytesToHexNo0x(inputs.verifyingProgramId),
-  };
-}
-
-/**
- * The request half of the link contract, in the blob's request shape — from the client's own
- * request inputs, none of them from the response.
- *
- * The EVM-shaped fields are zeroed, not read on this path: the recipient is the raw ed25519 key
- * passed alongside, the domain is the explicit trailing argument, and the link is the Solana struct
- * computed from those plus the handles and transport key here. The extra_data is not one of the
- * zeroed fields: the link does not bind it, but the blob compares it against the route the
- * response carries before any signature is checked, and the node signature covers it — so it must
- * be the exact bytes the permit signed, rebuilt from the signed permit and never copied from the
- * response, or the comparison would be the response agreeing with itself.
- *
- * Exported so it can be pinned directly: the committed vectors carry no signcrypted shares, so no
- * test reaches the blob's route comparison through a full verification.
- *
- * @param request - The client's own request fields.
- */
-export function solanaUserDecryptRequestHalf(request: SolanaUserDecryptRequestInputs): {
-  readonly signature: undefined;
-  readonly client_address: string;
-  readonly enc_key: string;
-  readonly ciphertext_handles: readonly string[];
-  readonly eip712_verifying_contract: string;
-  readonly extra_data: string;
-} {
-  return {
-    signature: undefined,
-    client_address: '0x0000000000000000000000000000000000000000',
-    enc_key: bytesToHexNo0x(request.transportKey),
-    ciphertext_handles: request.handles.map((handle) => bytesToHexNo0x(handle)),
-    eip712_verifying_contract: '0x0000000000000000000000000000000000000000',
-    extra_data: bytesToHexNo0x(request.extraData),
-  };
+export async function generateSolanaTransportKeyPair(runtime: FhevmRuntime): Promise<SolanaTransportKeyPair> {
+  const kmsLib = await initTkmsModule(runtime);
+  const secretKey = kmsLib.ml_kem_pke_keygen();
+  const publicKey = kmsLib.ml_kem_pke_get_pk(secretKey);
+  return { secretKey, publicKey, publicKeyBytes: kmsLib.ml_kem_pke_pk_to_u8vec(publicKey) };
 }
 
 /**
  * Verifies the KMS response and returns the plaintexts, or refuses the whole response.
  *
- * All or nothing: a share whose link does not match the recomputed one is discarded, and if what
- * remains cannot reconstruct, the call fails rather than returning the values it could recover. A
- * partial answer would be indistinguishable from a complete one to the caller.
+ * All or nothing: a share that does not authenticate or does not carry the recomputed link is
+ * discarded, and if what remains cannot reconstruct, the call fails rather than returning the values
+ * it could recover. A partial answer would be indistinguishable from a complete one to the caller.
  *
- * @param response.request - The client's own request fields: the link inputs, the gateway domain
- * the link is hashed under and node signatures verify against, and the signed KMS route.
+ * @param response.runtime - The client runtime that owns the KMS WASM module.
+ * @param response.request - The client's own request fields.
  * @param response.shares - The signcrypted shares as returned, in any order.
  * @param response.keyPair - The session's transport keypair; the secret key stays here.
  * @param response.signers - The registered KMS signer set, from trusted configuration.
@@ -265,6 +150,7 @@ export function solanaUserDecryptRequestHalf(request: SolanaUserDecryptRequestIn
  * @throws If no set of authenticated shares agrees on the recomputed link and reaches the threshold.
  */
 export async function verifySolanaUserDecryptResponse(response: {
+  readonly runtime: FhevmRuntime;
   readonly request: SolanaUserDecryptRequestInputs;
   readonly shares: readonly SolanaSigncryptedShare[];
   readonly keyPair: SolanaTransportKeyPair;
@@ -276,41 +162,53 @@ export async function verifySolanaUserDecryptResponse(response: {
   if (response.shares.length === 0) {
     throw new Error('the response carries no shares, and a response with no shares reaches no threshold');
   }
-  await ensureInit();
+  const kmsLib = await initTkmsModule(response.runtime);
+  const { request } = response;
+  const userAddress = getAddressDecoder().decode(request.userAddress);
+  const domain = request.gatewayEip712Domain;
 
-  // The trust anchor: the registered signer set, from configuration the caller read on chain. A
-  // key carried inside the response acts only under its binding to one of these addresses. The
-  // addresses are EIP-55-normalized at this crossing: on-chain reads produce lowercase, which the
-  // blob's checksum-validating parser would refuse as a valid address spelled without a checksum.
-  const client = new_solana_client(
-    response.signers.map((signer) => new_server_id_addr(signer.partyId, eip55Normalized(signer.address))),
-    response.fheParameter,
-  );
-
-  const request = solanaUserDecryptRequestHalf(response.request);
-
-  const aggResp = response.shares.map((share) => ({
-    signature: remove0x(share.signature),
-    payload: remove0x(share.payload),
-    extra_data: remove0x(share.extraData),
-  }));
-
-  // The trailing EIP-712 domain comes from trusted configuration and does double duty: the blob
-  // recomputes the expected link under it and verifies every node signature against it.
-  const plaintexts = process_user_decryption_resp_solana_from_js(
-    client,
-    request,
-    solanaRequestFieldsWasmArg(response.request),
-    aggResp,
-    response.keyPair.publicKey,
-    response.keyPair.secretKey,
-    gatewayDomainWasmArg(response.request.gatewayEip712Domain),
-  );
-
-  // The wrapper already converts little-endian to big-endian, so `bytes` is the plaintext as-is.
-  const typed = plaintexts.map((plaintext) => ({ bytes: plaintext.bytes, fheTypeId: plaintext.fhe_type }));
-  verifySolanaUserDecryptPlaintexts(typed, response.request.handles);
-  return typed;
+  const scope = new WasmScope();
+  try {
+    // The trust anchor: the registered signer set, from configuration the caller read on chain. A
+    // key carried inside the response acts only under its binding to one of these addresses. The
+    // server ids are moved into new_client, so only the client is tracked.
+    const client = scope.track(
+      kmsLib.new_client(
+        response.signers.map((signer) => kmsLib.new_server_id_addr(signer.partyId, eip55Normalized(signer.address))),
+        userAddress,
+        response.fheParameter,
+      ),
+    );
+    const plaintexts = kmsLib.process_user_decryption_resp_from_js(
+      client,
+      {
+        signature: undefined,
+        client_address: userAddress,
+        enc_key: bytesToHexNo0x(request.transportKey),
+        ciphertext_handles: request.handles.map((handle) => bytesToHexNo0x(handle)),
+        eip712_verifying_contract: eip55Normalized(domain.verifyingContract),
+        extra_data: bytesToHexNo0x(request.extraData),
+      },
+      gatewayDomainWasmArg(domain),
+      response.shares.map((share) => ({
+        signature: remove0x(share.signature),
+        payload: remove0x(share.payload),
+        extra_data: remove0x(share.extraData),
+      })),
+      response.keyPair.publicKey,
+      response.keyPair.secretKey,
+      // Left to the client, which derives t from n = 3t + 1, as the EVM decrypt module does.
+      undefined,
+      true,
+    );
+    // The client already converts little-endian to big-endian, so `bytes` is the plaintext as-is.
+    plaintexts.forEach((plaintext) => scope.track(plaintext));
+    const typed = plaintexts.map((plaintext) => ({ bytes: plaintext.bytes, fheTypeId: plaintext.fhe_type }));
+    verifySolanaUserDecryptPlaintexts(typed, request.handles);
+    return typed;
+  } finally {
+    scope.free();
+  }
 }
 
 /**
@@ -321,9 +219,6 @@ export async function verifySolanaUserDecryptResponse(response: {
  * the KMS answers under the right link with the wrong type — a euint64 released as an ebool. This
  * is the one rule that reads the type, and it lives here because the response layer is the only
  * layer holding both the plaintexts and the handles they answer.
- *
- * Exported so it can be pinned directly: the committed vectors carry no signcrypted shares, so no
- * test reaches this check through a full verification.
  *
  * @param plaintexts - The decrypted values, as verification produced them.
  * @param handles - The requested handles, in the order the request carried them.
@@ -357,9 +252,7 @@ export function verifySolanaUserDecryptPlaintexts(
 }
 
 /**
- * The domain in the blob's JS shape: the chain id as 32 big-endian bytes, no salt. One marshaling
- * for both uses of the domain — the link computation and the response verification — so the two
- * cannot be handed different spellings of the same configuration.
+ * The domain in the client's JS shape: the chain id as 32 big-endian bytes, no salt.
  *
  * @param domain - The configured gateway domain.
  */
@@ -380,7 +273,7 @@ function gatewayDomainWasmArg(domain: SolanaGatewayEip712Domain): {
     name: domain.name,
     version: domain.version,
     chain_id: chainId,
-    // EIP-55-normalized at this crossing, like the signer set: the blob's domain parser refuses a
+    // EIP-55-normalized at this crossing, like the signer set: the client's domain parser refuses a
     // lowercase spelling of a valid contract address as a bad checksum.
     verifying_contract: eip55Normalized(domain.verifyingContract),
     salt: null,

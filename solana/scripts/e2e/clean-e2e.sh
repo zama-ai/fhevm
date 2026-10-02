@@ -12,7 +12,7 @@
 # One command brings up the WHOLE stack from scratch with the Solana code baked in
 # (no hand-swapped containers), then the Solana side-stack, then drives the vertical.
 #
-# The kms-core image carrying `compute_link_solana` is pinned in the lock; its tag is the
+# The kms-core image is pinned in the lock; its tag is the
 # single source of truth in test-suite/fhevm/solana-images.env (kms-core is not an fhevm
 # override group). The six source-built groups are passed as --override so they build from
 # THIS worktree (by default — CI narrows the set via SOLANA_E2E_OVERRIDES/SOLANA_E2E_LOCK_PINS,

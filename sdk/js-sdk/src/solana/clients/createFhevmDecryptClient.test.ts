@@ -1,13 +1,11 @@
 import { createSolanaRpc } from '@solana/kit';
 // The decrypt client's action surface, pinned.
 //
-// One absence here is load-bearing: the client must not offer `generateTransportKeyPair`. That
-// action produced a pair from the core EVM-generation TKMS blob, and a permit built over such a pair
-// is broken twice — the permit commits to the 869-byte MlKem512 container only the Solana blob
-// serializes, and response verification checks wasm class identity, so the pair fails there even
-// when its width happens to fit. A generator whose output the permit path cannot consume must not be
-// reachable from the Solana surface at all; the permit path's own generator is
-// `generateSolanaTransportKeyPair` in `solana/userDecrypt`.
+// One absence here is load-bearing: the client must not offer `generateTransportKeyPair`. That core
+// action returns the EVM decrypt module's opaque private key, which the permit path cannot consume:
+// a permit commits to the serialized public key, and response verification needs the raw key pair.
+// `signPermit` makes its own pair with `generateSolanaTransportKeyPair` in `solana/userDecrypt`, so a
+// second generator would only offer a key no Solana action accepts.
 
 import type { FhevmSolanaChain } from '../../core/types/fhevmSolanaChain.js';
 import { describe, expect, it } from 'vitest';
@@ -24,7 +22,7 @@ const chain = {
 } as const satisfies FhevmSolanaChain;
 
 describe('createFhevmPublicDecryptClient', () => {
-  it('offers the public-decrypt set, and no EVM-blob transport key generator', async () => {
+  it('offers the public-decrypt set, and no core transport key generator', async () => {
     setFhevmRuntimeConfig({});
 
     const client = createFhevmPublicDecryptClient({ chain, rpc: createSolanaRpc('http://localhost:8899') });

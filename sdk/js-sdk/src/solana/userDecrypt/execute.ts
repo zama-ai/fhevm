@@ -9,6 +9,7 @@
 // exception by nature: the permit does not carry it, so it comes from the same trust configuration
 // as the signer set and is bound into the link there.
 
+import type { FhevmRuntime } from '../../core/types/coreFhevmRuntime.js';
 import type { SolanaPermitFields, SolanaPermitWarning, SolanaSignedPermit } from '../permit/index.js';
 import type {
   SolanaGatewayEip712Domain,
@@ -64,8 +65,6 @@ export function solanaUserDecryptRequestInputs(
 ): SolanaUserDecryptRequestInputs {
   return {
     userAddress: fields.userAddress,
-    hostChainId: fields.chainId,
-    verifyingProgramId: fields.verifyingProgramId,
     handles,
     transportKey: fields.transportKey,
     gatewayEip712Domain,
@@ -76,6 +75,7 @@ export function solanaUserDecryptRequestInputs(
 /**
  * Runs one user decryption end to end: the retry session to an answer, then its verification.
  *
+ * @param run.runtime - The client runtime that owns the KMS WASM module.
  * @param run.session - The signed permit and its transport keypair.
  * @param run.entries - The handles to decrypt, in the order they will be requested.
  * @param run.transport - Submits a request and waits for its outcome.
@@ -86,6 +86,7 @@ export function solanaUserDecryptRequestInputs(
  * @throws If the answer does not verify as this request's.
  */
 export async function executeSolanaUserDecrypt(run: {
+  readonly runtime: FhevmRuntime;
   readonly session: SolanaPermitSession;
   readonly entries: readonly SolanaUserDecryptHandleEntry[];
   readonly transport: SolanaUserDecryptTransport<readonly SolanaSigncryptedShare[]>;
@@ -102,6 +103,7 @@ export async function executeSolanaUserDecrypt(run: {
   });
 
   return verifySolanaUserDecryptResponse({
+    runtime: run.runtime,
     request: solanaUserDecryptRequestInputs(
       run.session.signedPermit.fields,
       run.entries.map((entry) => entry.handle),

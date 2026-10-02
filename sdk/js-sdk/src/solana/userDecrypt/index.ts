@@ -28,8 +28,6 @@ export type { SolanaUserDecryptRecovery, SolanaUserDecryptRejection } from './fa
 
 export {
   generateSolanaTransportKeyPair,
-  solanaUserDecryptLink,
-  solanaUserDecryptRequestHalf,
   verifySolanaUserDecryptPlaintexts,
   verifySolanaUserDecryptResponse,
 } from './response.js';
@@ -38,7 +36,6 @@ export type {
   SolanaKmsSigner,
   SolanaSigncryptedShare,
   SolanaTransportKeyPair,
-  SolanaUserDecryptLinkInputs,
   SolanaUserDecryptPlaintext,
   SolanaUserDecryptRequestInputs,
 } from './response.js';

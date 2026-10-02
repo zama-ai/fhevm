@@ -155,6 +155,7 @@ export function solanaPermitDecryptActions(
       options: { auth: runtime.config.auth, ...options },
     });
     const plaintexts = await executeSolanaUserDecrypt({
+      runtime,
       session,
       entries,
       transport,
@@ -175,7 +176,7 @@ export function solanaPermitDecryptActions(
       const invalidationWatermark = await fetchPermitInvalidation(
         getAddressDecoder().decode(parameters.wallet.account.publicKey),
       );
-      const keyPair = await generateSolanaTransportKeyPair();
+      const keyPair = await generateSolanaTransportKeyPair(runtime);
       const now = BigInt(Math.floor(Date.now() / 1000));
       const startTimestamp = normalizeSolanaPermitStart({
         now,

@@ -15,16 +15,13 @@ description: >-
        correctly: src/generate/kms-core.ts builds one `coreImage` from
        plan.versions.env.CORE_VERSION and every generated service (gen-keys, the N cores,
        kms-core-init) uses it, so pinning the Solana-capable tag covers the whole cluster with
-       no change. The pinned commit is threshold-capable (kms-init.rs + engine/threshold/service
-       both present at b14d45dc). Note party 1's service is named `kms-core`, reusing the
-       centralized name; parties 2..N are `kms-core-2`..`kms-core-N`.
+       no change. Note party 1's service is named `kms-core`, reusing the centralized name;
+       parties 2..N are `kms-core-2`..`kms-core-N`.
     2. secure keygen completes and reaches activeKeyId.
     3. the on-chain KmsContext carries 4 signers with cert thresholds 2t+1 = 3
        (the side-stack bootstrap, src/solana/deploy.ts, derives these from KMS_THRESHOLD).
-    4. user-decrypt then FAILS client-side in kms `process_user_decryption_resp_solana`
-       (`stored_server_addrs.len() != 1`), because that path is a copy of the centralized
-       flow with no Shamir reconstruction. That failure is the point of the experiment: it
-       confirms the remaining work is the client-side refactor and not infrastructure.
+    4. user-decrypt succeeds: a Solana user decryption runs the KMS client's shared
+       user-decryption path, which reconstructs from 2t+1 = 3 threshold shares as on EVM.
 
   Unlike four-party-threshold-kms.yaml this must NOT use the published connector: the Solana
   vertical requires the kms-connector built from the worktree (`--override kms-connector`),
