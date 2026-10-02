@@ -1646,8 +1646,10 @@ describe("consumer-only host ingestion", () => {
       expect(Object.values(main.services).filter(legacy)).toHaveLength(6);
       const extraConsumers = Object.fromEntries(Object.entries(extra.services).filter(([, service]) => !legacy(service)));
       expect(Object.keys(extraConsumers)).toHaveLength(3);
-      for (const service of Object.values(extraConsumers)) {
+      for (const [name, service] of Object.entries(extraConsumers)) {
         expect(service.command[0]).toBe("host_listener_consumer");
+        // A shared service name would load-balance blocks between operators.
+        expect(service.command).toContain(`--service-name=${name}`);
       }
       expect(Object.values(extra.services).filter(legacy)).toHaveLength(6);
 

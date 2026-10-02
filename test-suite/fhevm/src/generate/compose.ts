@@ -1187,6 +1187,15 @@ const buildExtraCoprocessorListenerOverride = async (
       if (plan.coprocessor.hostListenerMode === "consumer" && isLegacyHostListener(suffix)) {
         adjusted.profiles = ["legacy-host-listeners"];
       }
+      // As on the default chain, each operator's consumer needs its own broker
+      // queue: a shared service name load-balances blocks between operators.
+      if (
+        suffix === "host-listener-consumer" &&
+        Array.isArray(adjusted.command) &&
+        !adjusted.command.some((argument: string) => argument === "--service-name" || argument.startsWith("--service-name="))
+      ) {
+        adjusted.command = [...adjusted.command, `--service-name=${cloneName}`];
+      }
       // Extra chains keep their env canonical id (default chain), so they don't decode proposals.
       applyCoprocessorSource(adjusted, baseName, instance, locallyBuilt, plan.e2ePublicRuntime, plan.versions.env);
       delete adjusted.depends_on;
