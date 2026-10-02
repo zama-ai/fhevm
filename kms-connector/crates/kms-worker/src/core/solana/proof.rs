@@ -208,8 +208,9 @@ fn unavailable(reason: String) -> ProofReadError {
     ProofReadError::Unavailable { reason }
 }
 
-/// How long a signed batch stays valid: the reads of every coprocessor, plus clock skew with them.
-const AUTHORIZATION_VALIDITY_SECS: u64 = 120;
+/// How long a signed batch stays valid. A coprocessor checks it when the request arrives, and
+/// every coprocessor is asked within a few `HEDGE_DELAY`s of signing, so this covers clock skew.
+const AUTHORIZATION_VALIDITY_SECS: u64 = 30;
 const _: () = assert!(AUTHORIZATION_VALIDITY_SECS < request_authorization::MAX_VALIDITY_SECS);
 
 /// The production reader: one signed `POST` per coprocessor asked. Every coprocessor of a batch
@@ -520,16 +521,15 @@ mod tests {
                 .bytes(refusal.clone());
         });
         server.start().await.unwrap();
-        let url = server.base_url().unwrap();
-        let client = client(&[url], &wallet());
+        let base_url = server.base_url().unwrap();
+        let client = client(&[base_url], &wallet());
         let batch = client.prepare(&query()).await.unwrap();
-        let mut url = url.clone();
-        url.set_path(MERKLE_PROOFS_PATH);
+        let proofs_url = base_url.join(MERKLE_PROOFS_PATH).unwrap();
         assert_eq!(
             client.read_proofs(0, &batch).await,
             Err(ProofReadError::Unavailable {
                 reason: format!(
-                    "{url}: HTTP 429 Too Many Requests rate_limited: \
+                    "{proofs_url}: HTTP 429 Too Many Requests rate_limited: \
                      no database connection free within 200ms"
                 ),
             })

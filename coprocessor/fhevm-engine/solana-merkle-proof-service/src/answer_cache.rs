@@ -1,82 +1,108 @@
-//! The answers the Merkle proof server gave, by the signing hash of the request that asked.
+//! The answer the Merkle proof server gives each signed request, by the signing hash of its
+//! authorization, until the signature expires.
 //!
 //! A request's signature names no recipient, so a coprocessor that received a request can resend
-//! it to the other servers until it expires. A server answers such a repeat from here, without
-//! charging the signer or reading the database again, so a replay neither spends the signer's rate
-//! nor adds load (DD-067). The connector's own hedge to a server that a replay reached first gets
-//! the same answer. An answer lives until its signature expires. Past [`MAX_CACHED_BYTES`] a new
-//! answer is not kept, and a later repeat of it is new work again.
+//! it to the other servers until it expires. The first copy of a request to reach a server is
+//! [`Admission::First`]: the server charges the signer and reads the record once. Every other
+//! copy, sent at the same time or later, is an [`Admission::Repeat`] and waits for that answer,
+//! a refusal included. A replay therefore neither spends the signer's rate nor adds load (DD-067).
+//! When a server holds [`AnswerCache::new`]'s bytes of requests, it refuses new ones
+//! ([`Admission::Full`]) rather than answer a request it could not recognize when replayed.
 
-use std::{collections::HashMap, sync::Mutex};
+use std::{
+    collections::{BTreeSet, HashMap},
+    sync::Mutex,
+};
 
 use alloy::primitives::B256;
-use axum::body::Bytes;
+use tokio::sync::watch;
 
-/// About a minute of answers at a few thousand requests per second.
-pub const MAX_CACHED_BYTES: usize = 64 * 1024 * 1024;
+/// Bytes a request holds besides its answer: its map entry, its expiry entry and its channel.
+pub const ENTRY_OVERHEAD_BYTES: usize = 256;
 
-pub struct AnswerCache {
+pub struct AnswerCache<A> {
     max_bytes: usize,
-    inner: Mutex<Answers>,
+    inner: Mutex<Requests<A>>,
 }
 
-#[derive(Default)]
-struct Answers {
-    by_signing_hash: HashMap<B256, (u64, Bytes)>,
+struct Requests<A> {
+    by_signing_hash: HashMap<B256, Request<A>>,
+    by_expiry: BTreeSet<(u64, B256)>,
     bytes: usize,
 }
 
-impl AnswerCache {
+struct Request<A> {
+    answer: watch::Receiver<Option<A>>,
+    bytes: usize,
+}
+
+/// How a server treats a signed request.
+pub enum Admission<A> {
+    /// The first copy: send its answer here, then count its size with [`AnswerCache::settle`].
+    First(watch::Sender<Option<A>>),
+    /// A copy of a request already admitted: its answer, once the first copy has one.
+    Repeat(watch::Receiver<Option<A>>),
+    /// The cache holds as many requests as it may.
+    Full,
+}
+
+impl<A> AnswerCache<A> {
     pub fn new(max_bytes: usize) -> Self {
         Self {
             max_bytes,
-            inner: Mutex::default(),
+            inner: Mutex::new(Requests {
+                by_signing_hash: HashMap::new(),
+                by_expiry: BTreeSet::new(),
+                bytes: 0,
+            }),
         }
     }
 
-    /// The answer to `signing_hash`, while its signature is valid at Unix time `now`.
-    pub fn get(&self, signing_hash: &B256, now: u64) -> Option<Bytes> {
-        let answers = self.inner.lock().unwrap_or_else(|err| err.into_inner());
-        answers
-            .by_signing_hash
-            .get(signing_hash)
-            .filter(|(expires, _)| *expires >= now)
-            .map(|(_, answer)| answer.clone())
-    }
-
-    /// Keeps `answer` to the request signed over `signing_hash` until `expires`. When it does
-    /// not fit, the expired answers go first; an answer that still does not fit is not kept.
-    pub fn insert(
+    /// Admits the request signed over `signing_hash`, valid until `expires`, at Unix time
+    /// `now`. Requests whose signature expired before `now` are forgotten first.
+    pub fn admit(
         &self,
         signing_hash: B256,
         expires: u64,
-        answer: Bytes,
         now: u64,
-    ) {
-        let mut answers =
+    ) -> Admission<A> {
+        let mut requests =
             self.inner.lock().unwrap_or_else(|err| err.into_inner());
-        if answers.bytes + answer.len() > self.max_bytes {
-            let Answers {
-                by_signing_hash,
-                bytes,
-            } = &mut *answers;
-            by_signing_hash.retain(|_, (kept_until, kept)| {
-                let live = *kept_until >= now;
-                if !live {
-                    *bytes -= kept.len();
-                }
-                live
-            });
-            if *bytes + answer.len() > self.max_bytes {
-                return;
+        while let Some(&(oldest, hash)) = requests.by_expiry.first() {
+            if oldest >= now {
+                break;
+            }
+            requests.by_expiry.pop_first();
+            if let Some(request) = requests.by_signing_hash.remove(&hash) {
+                requests.bytes -= request.bytes;
             }
         }
-        answers.bytes += answer.len();
-        if let Some((_, replaced)) = answers
-            .by_signing_hash
-            .insert(signing_hash, (expires, answer))
-        {
-            answers.bytes -= replaced.len();
+        if let Some(request) = requests.by_signing_hash.get(&signing_hash) {
+            return Admission::Repeat(request.answer.clone());
+        }
+        if requests.bytes + ENTRY_OVERHEAD_BYTES > self.max_bytes {
+            return Admission::Full;
+        }
+        let (sender, answer) = watch::channel(None);
+        requests.by_signing_hash.insert(
+            signing_hash,
+            Request {
+                answer,
+                bytes: ENTRY_OVERHEAD_BYTES,
+            },
+        );
+        requests.by_expiry.insert((expires, signing_hash));
+        requests.bytes += ENTRY_OVERHEAD_BYTES;
+        Admission::First(sender)
+    }
+
+    /// Counts the `answer_bytes` the answer to `signing_hash` holds.
+    pub fn settle(&self, signing_hash: &B256, answer_bytes: usize) {
+        let mut requests =
+            self.inner.lock().unwrap_or_else(|err| err.into_inner());
+        if let Some(request) = requests.by_signing_hash.get_mut(signing_hash) {
+            request.bytes += answer_bytes;
+            requests.bytes += answer_bytes;
         }
     }
 }
@@ -87,48 +113,48 @@ mod tests {
 
     const NOW: u64 = 1_790_950_000;
 
-    #[test]
-    fn an_answer_is_kept_until_its_signature_expires() {
-        let cache = AnswerCache::new(1024);
-        let answer = Bytes::from_static(b"proofs");
-        cache.insert(B256::repeat_byte(1), NOW + 60, answer.clone(), NOW);
-        assert_eq!(cache.get(&B256::repeat_byte(1), NOW + 60), Some(answer));
-        assert_eq!(cache.get(&B256::repeat_byte(1), NOW + 61), None);
-        assert_eq!(cache.get(&B256::repeat_byte(2), NOW), None);
+    fn first(admission: Admission<u8>) -> watch::Sender<Option<u8>> {
+        match admission {
+            Admission::First(sender) => sender,
+            _ => panic!("expected the first copy"),
+        }
+    }
+
+    #[tokio::test]
+    async fn every_copy_until_expiry_gets_the_first_answer() {
+        let cache = AnswerCache::new(1 << 20);
+        let sender = first(cache.admit(B256::repeat_byte(1), NOW + 30, NOW));
+        let Admission::Repeat(mut early) =
+            cache.admit(B256::repeat_byte(1), NOW + 30, NOW)
+        else {
+            panic!("a copy sent before the answer is a repeat");
+        };
+        sender.send_replace(Some(7));
+        assert_eq!(*early.wait_for(Option::is_some).await.unwrap(), Some(7));
+        let Admission::Repeat(late) =
+            cache.admit(B256::repeat_byte(1), NOW + 30, NOW + 30)
+        else {
+            panic!("a copy sent at the expiry is a repeat");
+        };
+        assert_eq!(*late.borrow(), Some(7));
+        first(cache.admit(B256::repeat_byte(1), NOW + 61, NOW + 31));
     }
 
     #[test]
-    fn a_full_cache_drops_expired_answers_then_keeps_no_more() {
-        let cache = AnswerCache::new(8);
-        cache.insert(
-            B256::repeat_byte(1),
-            NOW,
-            Bytes::from_static(b"1234"),
-            NOW,
-        );
-        cache.insert(
-            B256::repeat_byte(2),
-            NOW + 60,
-            Bytes::from_static(b"5678"),
-            NOW,
-        );
-        // Full: the expired first answer makes room for the third.
-        cache.insert(
-            B256::repeat_byte(3),
-            NOW + 60,
-            Bytes::from_static(b"9abc"),
-            NOW + 1,
-        );
-        assert_eq!(cache.get(&B256::repeat_byte(1), NOW), None);
-        assert!(cache.get(&B256::repeat_byte(3), NOW + 1).is_some());
-        // Full of live answers: the fourth is not kept.
-        cache.insert(
-            B256::repeat_byte(4),
-            NOW + 60,
-            Bytes::from_static(b"defg"),
-            NOW + 1,
-        );
-        assert_eq!(cache.get(&B256::repeat_byte(4), NOW + 1), None);
-        assert!(cache.get(&B256::repeat_byte(2), NOW + 1).is_some());
+    fn a_full_cache_refuses_new_requests_until_old_ones_expire() {
+        let cache = AnswerCache::new(2 * ENTRY_OVERHEAD_BYTES + 10);
+        first(cache.admit(B256::repeat_byte(1), NOW, NOW));
+        first(cache.admit(B256::repeat_byte(2), NOW + 30, NOW));
+        cache.settle(&B256::repeat_byte(2), 10);
+        assert!(matches!(
+            cache.admit(B256::repeat_byte(3), NOW + 30, NOW),
+            Admission::Full
+        ));
+        assert!(matches!(
+            cache.admit(B256::repeat_byte(2), NOW + 30, NOW),
+            Admission::Repeat(_)
+        ));
+        // The first request expired: its bytes make room for the third.
+        first(cache.admit(B256::repeat_byte(3), NOW + 30, NOW + 1));
     }
 }

@@ -2698,9 +2698,11 @@ with the domain `{name: "zama-request-authorization", version: "1", chainId, ver
 naming the canonical `ProtocolConfig` and its chain, so two networks on one chain do not accept
 each other's requests. It travels as `Authorization: Zama-EIP712 expires=<unix seconds>,
 signature=0x<65 bytes>`. The `shared/request-authorization` crate builds and checks it for both
-sides. A signature is valid for at most `MAX_VALIDITY_SECS` (300) seconds; kms-worker signs for
-120 seconds, waits at most `host_rpc_call_timeout` for the signature, and sends the same signed
-batch to each coprocessor it asks. It asks them one after another in a random order: the next one
+sides. A signature is valid for at most `MAX_VALIDITY_SECS` (60) seconds after the server's clock;
+kms-worker signs for 30 seconds, waits at most `host_rpc_call_timeout` for the signature, and sends
+the same signed batch to each coprocessor it asks. A server checks the expiry when a request
+arrives, and kms-worker asks every coprocessor within a few hedge delays, so 30 seconds leaves room
+for clock skew. It asks them one after another in a random order: the next one
 as soon as an answer leaves a query without a verified proof, or after `HEDGE_DELAY` (250 ms)
 without an answer.
 
@@ -2720,21 +2722,25 @@ response bytes for both sides.
 No recipient is signed. A coprocessor that received a batch, or anyone who reads the plain-HTTP
 traffic inside the cluster, can resend it to the other coprocessors until it expires. The answers
 are public proofs, so a replay learns nothing, and it must not cost anything either. Each server
-keeps the answer it gave to each signed request (`AnswerCache`, keyed by the EIP-712 signing hash,
-up to `MAX_CACHED_BYTES`, 64 MiB) until the signature expires. A repeat of the request gets the
-same bytes, with no rate charge and no database read. The relayer does not call the Merkle proof
-server.
+remembers every signed request it admitted until its signature expires (`AnswerCache`, keyed by
+the EIP-712 signing hash). The first copy to arrive is answered once, in a task of its own, so a
+caller that disconnects does not cancel it. Every other copy, sent at the same time or later, waits
+for that answer and gets the same bytes, a refusal included. Only the first copy is charged and
+reads the database. A worker retry signed within the same second as the batch it retries has the
+same signing hash, and gets the earlier answer; the worker loop retries it again later. The
+relayer does not call the Merkle proof server.
 
 Each KMS tx-sender may ask one server for `--kms-tx-sender-leaves-per-second` (4000) queried
-leaves per second, in bursts of as many and at least `MAX_LEAVES_PER_REQUEST` (64). A request is
-charged after its signer is recovered and its body decoded. All but one connection of the pool
-(`--database-pool-size`, 8) serve proof reads, one request each at a time, so `/healthz` always has
-one. A request waits up to `PROOF_READ_WAIT` (200 ms) for its turn. That is below the connector's
-`HEDGE_DELAY`, so a refusal sends the connector to the next coprocessor no later than its hedge
-would have. Both refusals are `rate_limited` (429, retryable), and the connector treats them as a
-failed read and asks the next coprocessor at once. The rate is a backstop against a faulty or
-compromised connector, at twice the 2,000 decryptions per second target, should one coprocessor
-serve all of a connector's batches.
+leaves per second, in bursts of as many and at least `MAX_LEAVES_PER_REQUEST` (64). The rate is a
+backstop against a faulty or compromised connector, not sized from load data. All but one
+connection of the pool (`--database-pool-size`, 8, at least 2) serve proof reads, one request each
+at a time, so `/healthz` always has one. A request waits up to `PROOF_READ_WAIT` (200 ms) for its
+turn. That is below the connector's `HEDGE_DELAY`, so a refusal sends the connector to the next
+coprocessor no later than its hedge would have. A server remembers at most `--answer-cache-mib`
+(128) MiB of requests with their answers, counting 256 bytes per request beside its answer. A
+new request past that is refused rather than admitted unremembered, since a replay of it would
+then cost work again. These refusals are `rate_limited` (429, retryable), and the connector treats
+them as a failed read and asks the next coprocessor at once.
 
 Rejected alternatives:
 
@@ -2761,9 +2767,11 @@ signature from the quota the tx-sender also uses. A new KMS context is answered
 once its creation is finalized, up to 60 seconds later. The proof server reads the canonical
 `ProtocolConfig` over the RPC of the coprocessor's `chains[]` entry named by
 `commonConfig.canonicalProtocolConfigChainId`, and the chart refuses to render without it. The
-preview mints no proof secret. Each proof server holds up to 64 MiB of answers; past that it keeps
-no new answer until older ones expire, and a repeat of an answer it did not keep is charged and
-read again.
+preview mints no proof secret. A request holds about 1.3 KiB with a one-leaf answer, so
+128 MiB is about 100,000 requests: 3,300 per second for 30 seconds each, or 1,700 at the 60-second
+maximum. A server past that refuses new requests until older ones expire, and the connector asks
+another coprocessor. The cache and the rate are per replica, so a copy that reaches another
+replica of the same server is charged there again.
 
 ## Open product decisions
 

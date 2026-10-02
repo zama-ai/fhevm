@@ -78,7 +78,7 @@ impl ProofClient {
             .duration_since(UNIX_EPOCH)
             .expect("clock")
             .as_secs()
-            + 60;
+            + 30;
         let authorization = request_authorization::authorize(
             &self.connector,
             &REGISTRY,
@@ -111,6 +111,9 @@ async fn decode<T: serde::de::DeserializeOwned>(
     Ok(ciborium::from_reader(&response.bytes().await?[..])?)
 }
 
+/// A rate no test reaches.
+const UNLIMITED: u32 = 100_000;
+
 /// Starts the proof server on a free port, allowing its KMS tx-sender
 /// `leaves_per_second`, and returns a client once it answers.
 async fn serve_proofs(
@@ -130,6 +133,7 @@ async fn serve_proofs(
             senders: HashSet::from([connector.address()]),
         }),
         std::num::NonZeroU32::new(leaves_per_second).expect("a rate"),
+        1 << 20,
         port,
         cancel.clone(),
     );
@@ -226,7 +230,7 @@ async fn leaf_record_round_trips_and_serves_verifiable_proofs(
 
     // The HTTP route builds proofs from the same rows.
     let cancel = CancellationToken::new();
-    let (proofs, server_task) = serve_proofs(&pool, 100_000, &cancel).await;
+    let (proofs, server_task) = serve_proofs(&pool, UNLIMITED, &cancel).await;
     let response = proofs
         .post(&MerkleProofRequest {
             leaves: vec![
@@ -403,7 +407,7 @@ async fn prove_leaves_of_a_store(
     assert_eq!(deleted.rows_affected(), 1);
 
     let cancel = CancellationToken::new();
-    let (proofs, server_task) = serve_proofs(&pool, 100_000, &cancel).await;
+    let (proofs, server_task) = serve_proofs(&pool, UNLIMITED, &cancel).await;
     let started = std::time::Instant::now();
     let response = proofs
         .post(&MerkleProofRequest {
