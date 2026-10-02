@@ -26,7 +26,7 @@ import { sha256 } from '@noble/hashes/sha2.js';
 import { hashTypedData, keccak256, toBytes } from 'viem';
 import { privateKeyToAccount } from 'viem/accounts';
 import { describe, expect, it } from 'vitest';
-import { compute_solana_user_decrypt_link_from_js } from '../../wasm/tkms/kms_lib.v0.15.0-0-solana.294802eb.js';
+import { compute_solana_user_decrypt_link_from_js } from '../../wasm/tkms/kms_lib.v0.15.0-1-solana.e521f478.js';
 import { toChecksummedAddress } from '../../core/base/address.js';
 import { sign } from '../../core/base/sign.js';
 import { PERMIT_KMS_ROUTING_VERSION, encodeSolanaKmsRouting } from '../permit/index.js';

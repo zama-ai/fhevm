@@ -32,8 +32,8 @@ import initSolanaTkms, {
   new_server_id_addr,
   new_solana_client,
   process_user_decryption_resp_solana_from_js,
-} from '../../wasm/tkms/kms_lib.v0.15.0-0-solana.294802eb.js';
-import { tkmsWasmBase64 } from '../../wasm/tkms/kms_lib_bg.v0.15.0-0-solana.294802eb.wasm.base64.js';
+} from '../../wasm/tkms/kms_lib.v0.15.0-1-solana.e521f478.js';
+import { tkmsWasmBase64 } from '../../wasm/tkms/kms_lib_bg.v0.15.0-1-solana.e521f478.wasm.base64.js';
 import { bytes32ToHandle } from '../../core/handle/FhevmHandle.js';
 import { bytesToHexNo0x, isBytes32 } from '../../core/base/bytes.js';
 import { isomorphicCompileWasmFromBase64 } from '../../core/base/wasm.js';

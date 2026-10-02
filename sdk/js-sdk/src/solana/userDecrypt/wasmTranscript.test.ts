@@ -15,8 +15,8 @@ import init, {
   process_user_decryption_resp_solana_from_js,
   u8vec_to_ml_kem_pke_pk,
   u8vec_to_ml_kem_pke_sk,
-} from '../../wasm/tkms/kms_lib.v0.15.0-0-solana.294802eb.js';
-import { tkmsWasmBase64 } from '../../wasm/tkms/kms_lib_bg.v0.15.0-0-solana.294802eb.wasm.base64.js';
+} from '../../wasm/tkms/kms_lib.v0.15.0-1-solana.e521f478.js';
+import { tkmsWasmBase64 } from '../../wasm/tkms/kms_lib_bg.v0.15.0-1-solana.e521f478.wasm.base64.js';
 import { isomorphicCompileWasmFromBase64 } from '../../core/base/wasm.js';
 
 /* eslint-disable @typescript-eslint/naming-convention -- KMS transcript wire fields */
