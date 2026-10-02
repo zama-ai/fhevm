@@ -1029,7 +1029,6 @@ fn seed_open_batch_balances(context: &Ctx, keys: &BatchKeys, ledger: &mut Cleart
     for state in [keys.join_balance_store, keys.payout_balance_store] {
         let handle = read_store_handle(context, state, token::balance_key());
         ledger.seed_amount(handle, 0);
-        ledger.seed_state_allow(state, handle, keys.batch_authority);
     }
 }
 
@@ -1043,10 +1042,6 @@ fn run_join(
     amount_handle: [u8; 32],
     amount: u64,
 ) {
-    let open_handle = read_store_handle(context, keys.join_balance_store, token::balance_key());
-    if read_account::<host::EncryptedStore>(context, keys.join_balance_store).leaf_count == 1 {
-        ledger.seed_state_allow(keys.join_balance_store, open_handle, keys.batch_authority);
-    }
     ledger.seed_amount(amount_handle, amount);
     ensure_system_accounts(
         context,
@@ -1070,14 +1065,6 @@ fn run_dispatch(
     keys: &BatchKeys,
     ledger: &mut CleartextLedger,
 ) -> [u8; 32] {
-    let current_handle = read_store_handle(context, keys.join_balance_store, token::balance_key());
-    if read_account::<host::EncryptedStore>(context, keys.join_balance_store).leaf_count == 1 {
-        ledger.seed_state_allow(
-            keys.join_balance_store,
-            current_handle,
-            keys.batch_authority,
-        );
-    }
     ensure_system_accounts(
         context,
         &[
@@ -1103,14 +1090,6 @@ fn run_settle(
     burned_handle: [u8; 32],
     total: u64,
 ) -> (Instruction, InstructionResult) {
-    let payout_handle = read_store_handle(context, keys.payout_balance_store, token::balance_key());
-    if read_account::<host::EncryptedStore>(context, keys.payout_balance_store).leaf_count == 1 {
-        ledger.seed_state_allow(
-            keys.payout_balance_store,
-            payout_handle,
-            keys.batch_authority,
-        );
-    }
     let (signatures, extra_data) = amount_public_decrypt_cert(burned_handle, total);
     let pending_burn = keys.pending_burn(fixture.join_mint().mint);
     let ix = settle_ix(fixture, keys, total, signatures, extra_data, pending_burn);

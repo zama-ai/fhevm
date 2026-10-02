@@ -1050,8 +1050,6 @@ describe("demo lifecycle ownership primitives", () => {
       "DEMO_CONFIG_PATH",
       "DEMO_DAPP_URL",
       "DEMO_OPERATOR_URL",
-      "DEMO_PROOF_API_KEY",
-      "DEMO_PROOF_URL",
       "DEMO_RELAYER_URL",
       "FHEVM_STATE_DIR",
     ]);

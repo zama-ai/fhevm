@@ -198,7 +198,13 @@ pub mod confidential_token {
         signatures: Vec<[u8; 65]>,
         extra_data: Vec<u8>,
     ) -> Result<()> {
-        instructions::redeem_burned_amount(ctx, burned_handle, cleartext_amount, signatures, extra_data)
+        instructions::redeem_burned_amount(
+            ctx,
+            burned_handle,
+            cleartext_amount,
+            signatures,
+            extra_data,
+        )
     }
 
     /// Cancels a pending burn by FHE-crediting the burned amount back onto confidential balance and

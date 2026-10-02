@@ -54,7 +54,7 @@ use crate::{eip712, errors::ZamaHostError, state::*};
 /// `handle ‖ cleartext ‖ context_id` (96 bytes).
 #[derive(AnchorSerialize, AnchorDeserialize, Clone, Debug, PartialEq, Eq)]
 pub struct PublicDecryptReturnData {
-    /// The exact handle proven publicly decryptable.
+    /// The handle the KMS certificate covers.
     pub handle: [u8; 32],
     /// The certified 32-byte big-endian `uint256` cleartext.
     pub cleartext: [u8; 32],
@@ -138,7 +138,6 @@ pub fn verify_public_decrypt(
         ),
         ZamaHostError::InvalidKmsCertificate
     );
-
 
     let return_data = PublicDecryptReturnData {
         handle,

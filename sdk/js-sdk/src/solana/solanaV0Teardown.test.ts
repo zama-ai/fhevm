@@ -39,7 +39,7 @@ const FORBIDDEN: ReadonlyArray<readonly [string, string]> = [
   ['deriveEncryptedValueId', 'the sha256 identity derivation; the account is a PDA of four seeds'],
   ['SolanaAccessEvidence', 'the client-side evidence resolution; the Connector resolves the leaf'],
   ['resolve-again', 'the re-resolution recovery; an unanswered request is resubmitted unchanged'],
-  ['MmrProofTransportBlob', 'the mode-prefixed proof blob; proofs travel as (leafIndex, siblings) on chain only'],
+  ['MmrProofTransportBlob', 'the mode-prefixed proof blob; only the Connector handles proofs'],
   ['MMR_PROOF_MODE_', 'the proof-blob mode bytes; there is no proof blob'],
   ['aclValueKey', 'the extraData field; the 0x03 tail is the encrypted value account alone'],
 ];

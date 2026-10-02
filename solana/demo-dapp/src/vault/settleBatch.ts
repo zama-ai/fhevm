@@ -1,5 +1,4 @@
 import { INSTRUCTIONS_SYSVAR_ADDRESS, appendTransientStoreInstructions, prepareTransientStore } from '@fhevm/sdk/solana';
-import { publicProof, type ProofService } from './internal/publicProof.js';
 import {
   getBase64EncodedWireTransaction,
   getSignatureFromTransaction,
@@ -37,7 +36,6 @@ const ZERO_HANDLE = new Uint8Array(32);
 /** What `settleBatch` needs beyond the certificate phase and the keeper signer. */
 export type SolanaVaultSettleOptions = {
   readonly rpc: Rpc<SolanaRpcApi>;
-  readonly proofService: ProofService;
   readonly rpcSubscriptions: RpcSubscriptions<SolanaRpcSubscriptionsApi>;
   /** The batcher's demo topology; every settle account is derived from these. */
   readonly roots: VaultDemoRoots;
@@ -59,13 +57,12 @@ export type SolanaVaultSettleOptions = {
 };
 
 /**
- * Settles the batch's pinned burn handle with a KMS certificate and public-access proof.
- * The Connector fetches its own proof for the certificate request. After that request finishes,
- * this caller fetches a fresh proof from the leaf-proof server and verifies it against the on-chain state peaks.
+ * Settles the batch's pinned burn handle with a KMS certificate. The settle program checks the
+ * certificate against the burned handle pinned in the batch's `PendingBurn`.
  * The resulting settle instruction uses the batch's lookup table to fit the transaction packet.
  */
 export async function settleBatch(
-  client: Pick<FhevmSolanaPublicDecryptClient, 'publicDecryptCertificate' | 'fetchEncryptedStore'>,
+  client: Pick<FhevmSolanaPublicDecryptClient, 'publicDecryptCertificate'>,
   keeper: TransactionSigner,
   options: SolanaVaultSettleOptions,
 ): Promise<Signature> {
@@ -98,12 +95,6 @@ export async function settleBatch(
   });
 
   const cleartextTotal = settleTotalFromCleartext(hexToBytes(claim.abiEncodedCleartext));
-  const inclusionProof = await publicProof(
-    client,
-    options.proofService,
-    accounts.batchBurnedAmountStore,
-    burnedTotalHandle,
-  );
 
   const signatures = claim.signatures.map((signature, index) => {
     const bytes = hexToBytes(signature);
@@ -129,8 +120,6 @@ export async function settleBatch(
     cleartextTotal,
     signatures,
     extraData: hexToBytes(claim.extraData),
-    leafIndex: inclusionProof.leafIndex,
-    siblings: [...inclusionProof.siblings],
     authorityFundingLamports: options.authorityFundingLamports,
   });
 

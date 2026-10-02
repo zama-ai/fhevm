@@ -181,10 +181,6 @@ export type SettleInstructionData = {
   cleartextTotal: bigint;
   signatures: Array<ReadonlyUint8Array>;
   extraData: ReadonlyUint8Array;
-  /** Index of the proven leaf within the encrypted store's MMR. */
-  leafIndex: bigint;
-  /** Authentication path from the leaf up to its mountain peak. */
-  siblings: Array<ReadonlyUint8Array>;
   authorityFundingLamports: bigint;
 };
 
@@ -192,10 +188,6 @@ export type SettleInstructionDataArgs = {
   cleartextTotal: number | bigint;
   signatures: Array<ReadonlyUint8Array>;
   extraData: ReadonlyUint8Array;
-  /** Index of the proven leaf within the encrypted store's MMR. */
-  leafIndex: number | bigint;
-  /** Authentication path from the leaf up to its mountain peak. */
-  siblings: Array<ReadonlyUint8Array>;
   authorityFundingLamports: number | bigint;
 };
 
@@ -206,8 +198,6 @@ export function getSettleInstructionDataEncoder(): Encoder<SettleInstructionData
       ['cleartextTotal', getU64Encoder()],
       ['signatures', getArrayEncoder(fixEncoderSize(getBytesEncoder(), 65))],
       ['extraData', addEncoderSizePrefix(getBytesEncoder(), getU32Encoder())],
-      ['leafIndex', getU64Encoder()],
-      ['siblings', getArrayEncoder(fixEncoderSize(getBytesEncoder(), 32))],
       ['authorityFundingLamports', getU64Encoder()],
     ]),
     (value) => ({ ...value, discriminator: SETTLE_DISCRIMINATOR }),
@@ -220,8 +210,6 @@ export function getSettleInstructionDataDecoder(): Decoder<SettleInstructionData
     ['cleartextTotal', getU64Decoder()],
     ['signatures', getArrayDecoder(fixDecoderSize(getBytesDecoder(), 65))],
     ['extraData', addDecoderSizePrefix(getBytesDecoder(), getU32Decoder())],
-    ['leafIndex', getU64Decoder()],
-    ['siblings', getArrayDecoder(fixDecoderSize(getBytesDecoder(), 32))],
     ['authorityFundingLamports', getU64Decoder()],
   ]);
 }
@@ -336,8 +324,6 @@ export type SettleAsyncInput<
   cleartextTotal: SettleInstructionDataArgs['cleartextTotal'];
   signatures: SettleInstructionDataArgs['signatures'];
   extraData: SettleInstructionDataArgs['extraData'];
-  leafIndex: SettleInstructionDataArgs['leafIndex'];
-  siblings: SettleInstructionDataArgs['siblings'];
   authorityFundingLamports: SettleInstructionDataArgs['authorityFundingLamports'];
 };
 
@@ -789,8 +775,6 @@ export type SettleInput<
   cleartextTotal: SettleInstructionDataArgs['cleartextTotal'];
   signatures: SettleInstructionDataArgs['signatures'];
   extraData: SettleInstructionDataArgs['extraData'];
-  leafIndex: SettleInstructionDataArgs['leafIndex'];
-  siblings: SettleInstructionDataArgs['siblings'];
   authorityFundingLamports: SettleInstructionDataArgs['authorityFundingLamports'];
 };
 

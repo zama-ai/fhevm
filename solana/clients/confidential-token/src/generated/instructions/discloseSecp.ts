@@ -36,12 +36,6 @@ import {
 } from '@solana/kit';
 import { getAccountMetaFactory, type ResolvedInstructionAccount } from '@solana/program-client-core';
 import { CONFIDENTIAL_TOKEN_PROGRAM_ADDRESS } from '../programAddress.js';
-import {
-  getMmrInclusionProofDecoder,
-  getMmrInclusionProofEncoder,
-  type MmrInclusionProof,
-  type MmrInclusionProofArgs,
-} from '../types/index.js';
 
 export const DISCLOSE_SECP_DISCRIMINATOR: ReadonlyUint8Array = new Uint8Array([151, 135, 187, 69, 92, 159, 136, 128]);
 
@@ -51,9 +45,6 @@ export function getDiscloseSecpDiscriminatorBytes(): ReadonlyUint8Array {
 
 export type DiscloseSecpInstruction<
   TProgram extends string = typeof CONFIDENTIAL_TOKEN_PROGRAM_ADDRESS,
-  TAccountMint extends string | AccountMeta<string> = string,
-  TAccountTokenAccount extends string | AccountMeta<string> = string,
-  TAccountEncryptedStore extends string | AccountMeta<string> = string,
   TAccountHostConfig extends string | AccountMeta<string> = string,
   TAccountKmsContext extends string | AccountMeta<string> = string,
   TAccountZamaProgram extends string | AccountMeta<string> = 'DPq5y89RDZPq9NcMh9X1NgjBWgYmSXg3QoipSBV3ZMzQ',
@@ -64,9 +55,6 @@ export type DiscloseSecpInstruction<
   InstructionWithData<ReadonlyUint8Array> &
   InstructionWithAccounts<
     [
-      TAccountMint extends string ? ReadonlyAccount<TAccountMint> : TAccountMint,
-      TAccountTokenAccount extends string ? ReadonlyAccount<TAccountTokenAccount> : TAccountTokenAccount,
-      TAccountEncryptedStore extends string ? ReadonlyAccount<TAccountEncryptedStore> : TAccountEncryptedStore,
       TAccountHostConfig extends string ? ReadonlyAccount<TAccountHostConfig> : TAccountHostConfig,
       TAccountKmsContext extends string ? ReadonlyAccount<TAccountKmsContext> : TAccountKmsContext,
       TAccountZamaProgram extends string ? ReadonlyAccount<TAccountZamaProgram> : TAccountZamaProgram,
@@ -82,7 +70,6 @@ export type DiscloseSecpInstructionData = {
   cleartext: ReadonlyUint8Array;
   signatures: Array<ReadonlyUint8Array>;
   extraData: ReadonlyUint8Array;
-  proof: MmrInclusionProof;
 };
 
 export type DiscloseSecpInstructionDataArgs = {
@@ -90,7 +77,6 @@ export type DiscloseSecpInstructionDataArgs = {
   cleartext: ReadonlyUint8Array;
   signatures: Array<ReadonlyUint8Array>;
   extraData: ReadonlyUint8Array;
-  proof: MmrInclusionProofArgs;
 };
 
 export function getDiscloseSecpInstructionDataEncoder(): Encoder<DiscloseSecpInstructionDataArgs> {
@@ -101,7 +87,6 @@ export function getDiscloseSecpInstructionDataEncoder(): Encoder<DiscloseSecpIns
       ['cleartext', fixEncoderSize(getBytesEncoder(), 32)],
       ['signatures', getArrayEncoder(fixEncoderSize(getBytesEncoder(), 65))],
       ['extraData', addEncoderSizePrefix(getBytesEncoder(), getU32Encoder())],
-      ['proof', getMmrInclusionProofEncoder()],
     ]),
     (value) => ({ ...value, discriminator: DISCLOSE_SECP_DISCRIMINATOR }),
   );
@@ -114,7 +99,6 @@ export function getDiscloseSecpInstructionDataDecoder(): Decoder<DiscloseSecpIns
     ['cleartext', fixDecoderSize(getBytesDecoder(), 32)],
     ['signatures', getArrayDecoder(fixDecoderSize(getBytesDecoder(), 65))],
     ['extraData', addDecoderSizePrefix(getBytesDecoder(), getU32Decoder())],
-    ['proof', getMmrInclusionProofDecoder()],
   ]);
 }
 
@@ -126,25 +110,12 @@ export function getDiscloseSecpInstructionDataCodec(): Codec<
 }
 
 export type DiscloseSecpInput<
-  TAccountMint extends string = string,
-  TAccountTokenAccount extends string = string,
-  TAccountEncryptedStore extends string = string,
   TAccountHostConfig extends string = string,
   TAccountKmsContext extends string = string,
   TAccountZamaProgram extends string = string,
   TAccountEventAuthority extends string = string,
   TAccountProgram extends string = string,
 > = {
-  /** Confidential mint whose application scopes the disclosed encrypted store and event. */
-  mint: Address<TAccountMint>;
-  /** Token account whose Store contains the handle. Absent for the mint total-supply Store. */
-  tokenAccount?: Address<TAccountTokenAccount>;
-  /**
-   * The Store whose history contains a public permission for the disclosed handle.
-   * The handler binds its program, mint scope and token-account or total-supply authority.
-   * Disclosure authenticates the handle and cleartext, without a token-specific field label.
-   */
-  encryptedStore: Address<TAccountEncryptedStore>;
   /** Host config carrying the current KMS context id and gateway EIP-712 domain. */
   hostConfig: Address<TAccountHostConfig>;
   /**
@@ -160,13 +131,9 @@ export type DiscloseSecpInput<
   cleartext: DiscloseSecpInstructionDataArgs['cleartext'];
   signatures: DiscloseSecpInstructionDataArgs['signatures'];
   extraData: DiscloseSecpInstructionDataArgs['extraData'];
-  proof: DiscloseSecpInstructionDataArgs['proof'];
 };
 
 export function getDiscloseSecpInstruction<
-  TAccountMint extends string,
-  TAccountTokenAccount extends string,
-  TAccountEncryptedStore extends string,
   TAccountHostConfig extends string,
   TAccountKmsContext extends string,
   TAccountZamaProgram extends string,
@@ -175,9 +142,6 @@ export function getDiscloseSecpInstruction<
   TProgramAddress extends Address = typeof CONFIDENTIAL_TOKEN_PROGRAM_ADDRESS,
 >(
   input: DiscloseSecpInput<
-    TAccountMint,
-    TAccountTokenAccount,
-    TAccountEncryptedStore,
     TAccountHostConfig,
     TAccountKmsContext,
     TAccountZamaProgram,
@@ -187,9 +151,6 @@ export function getDiscloseSecpInstruction<
   config?: { programAddress?: TProgramAddress },
 ): DiscloseSecpInstruction<
   TProgramAddress,
-  TAccountMint,
-  TAccountTokenAccount,
-  TAccountEncryptedStore,
   TAccountHostConfig,
   TAccountKmsContext,
   TAccountZamaProgram,
@@ -201,9 +162,6 @@ export function getDiscloseSecpInstruction<
 
   // Original accounts.
   const originalAccounts = {
-    mint: { value: input.mint ?? null, isWritable: false },
-    tokenAccount: { value: input.tokenAccount ?? null, isWritable: false },
-    encryptedStore: { value: input.encryptedStore ?? null, isWritable: false },
     hostConfig: { value: input.hostConfig ?? null, isWritable: false },
     kmsContext: { value: input.kmsContext ?? null, isWritable: false },
     zamaProgram: { value: input.zamaProgram ?? null, isWritable: false },
@@ -224,9 +182,6 @@ export function getDiscloseSecpInstruction<
   const getAccountMeta = getAccountMetaFactory(programAddress, 'programId');
   return Object.freeze({
     accounts: [
-      getAccountMeta('mint', accounts.mint),
-      getAccountMeta('tokenAccount', accounts.tokenAccount),
-      getAccountMeta('encryptedStore', accounts.encryptedStore),
       getAccountMeta('hostConfig', accounts.hostConfig),
       getAccountMeta('kmsContext', accounts.kmsContext),
       getAccountMeta('zamaProgram', accounts.zamaProgram),
@@ -237,9 +192,6 @@ export function getDiscloseSecpInstruction<
     programAddress,
   } as DiscloseSecpInstruction<
     TProgramAddress,
-    TAccountMint,
-    TAccountTokenAccount,
-    TAccountEncryptedStore,
     TAccountHostConfig,
     TAccountKmsContext,
     TAccountZamaProgram,
@@ -254,27 +206,17 @@ export type ParsedDiscloseSecpInstruction<
 > = {
   programAddress: Address<TProgram>;
   accounts: {
-    /** Confidential mint whose application scopes the disclosed encrypted store and event. */
-    mint: TAccountMetas[0];
-    /** Token account whose Store contains the handle. Absent for the mint total-supply Store. */
-    tokenAccount?: TAccountMetas[1] | undefined;
-    /**
-     * The Store whose history contains a public permission for the disclosed handle.
-     * The handler binds its program, mint scope and token-account or total-supply authority.
-     * Disclosure authenticates the handle and cleartext, without a token-specific field label.
-     */
-    encryptedStore: TAccountMetas[2];
     /** Host config carrying the current KMS context id and gateway EIP-712 domain. */
-    hostConfig: TAccountMetas[3];
+    hostConfig: TAccountMetas[0];
     /**
      * KMS context PDA for the id the certificate commits to (any live context; validated by the
      * verifier CPI).
      */
-    kmsContext: TAccountMetas[4];
+    kmsContext: TAccountMetas[1];
     /** ZamaHost program used for the stateless verifier CPI. */
-    zamaProgram: TAccountMetas[5];
-    eventAuthority: TAccountMetas[6];
-    program: TAccountMetas[7];
+    zamaProgram: TAccountMetas[2];
+    eventAuthority: TAccountMetas[3];
+    program: TAccountMetas[4];
   };
   data: DiscloseSecpInstructionData;
 };
@@ -282,10 +224,10 @@ export type ParsedDiscloseSecpInstruction<
 export function parseDiscloseSecpInstruction<TProgram extends string, TAccountMetas extends readonly AccountMeta[]>(
   instruction: Instruction<TProgram> & InstructionWithAccounts<TAccountMetas> & InstructionWithData<ReadonlyUint8Array>,
 ): ParsedDiscloseSecpInstruction<TProgram, TAccountMetas> {
-  if (instruction.accounts.length < 8) {
+  if (instruction.accounts.length < 5) {
     throw new SolanaError(SOLANA_ERROR__PROGRAM_CLIENTS__INSUFFICIENT_ACCOUNT_METAS, {
       actualAccountMetas: instruction.accounts.length,
-      expectedAccountMetas: 8,
+      expectedAccountMetas: 5,
     });
   }
   let accountIndex = 0;
@@ -294,16 +236,9 @@ export function parseDiscloseSecpInstruction<TProgram extends string, TAccountMe
     accountIndex += 1;
     return accountMeta;
   };
-  const getNextOptionalAccount = () => {
-    const accountMeta = getNextAccount();
-    return accountMeta.address === CONFIDENTIAL_TOKEN_PROGRAM_ADDRESS ? undefined : accountMeta;
-  };
   return {
     programAddress: instruction.programAddress,
     accounts: {
-      mint: getNextAccount(),
-      tokenAccount: getNextOptionalAccount(),
-      encryptedStore: getNextAccount(),
       hostConfig: getNextAccount(),
       kmsContext: getNextAccount(),
       zamaProgram: getNextAccount(),

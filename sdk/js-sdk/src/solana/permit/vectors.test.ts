@@ -35,7 +35,7 @@ import {
   renderSolanaPermitText,
   verifySolanaPermitSignature,
 } from './index.js';
-import { bytesToHex, hexToBytes } from '../proof.js';
+import { bytesToHex, hexToBytes } from '../../core/base/bytes.js';
 
 ////////////////////////////////////////////////////////////////////////////////
 // The committed file, and the schema it is read under

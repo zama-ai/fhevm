@@ -14,7 +14,6 @@ export * from './encryptedStore.js';
 export * from './hostConfig.js';
 export * from './kmsContext.js';
 export * from './kmsThresholds.js';
-export * from './mmrInclusionProof.js';
 export * from './pauseFlags.js';
 export * from './totalSupplyUpdateReason.js';
 export * from './transferInput.js';

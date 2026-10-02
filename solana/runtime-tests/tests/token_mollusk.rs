@@ -3443,10 +3443,8 @@ fn mollusk_two_sequential_burns_each_redeemable_exactly_once() {
     let context = burn_redeem_mollusk().with_context(fixture.accounts(1_000));
     let pending_burn = token::pending_burn_address(fixture.mint, fixture.token_account).0;
 
-    // Execute a real first burn, then redeem its public leaf.
+    // Execute a real first burn, then redeem it.
     let first_handle = run_burn(&context, &fixture, 41);
-    let first_state = read_encrypted_store(&context, fixture.burned_amount_store);
-    let first_balance = store_handle(&first_state, token::balance_key());
     let (sig_h1, extra_h1) = amount_public_decrypt_cert(first_handle, 300);
     check_token_instruction(
         &context,
@@ -3461,21 +3459,8 @@ fn mollusk_two_sequential_burns_each_redeemable_exactly_once() {
         &[Check::success()],
     );
 
-    // Only after H1 settles can a real second burn reopen the canonical pending account. Its
-    // write appends H2's allow and public leaves behind H1's.
+    // Only after H1 settles can a real second burn reopen the canonical pending account.
     let second_handle = run_burn(&context, &fixture, 42);
-    let second_state = read_encrypted_store(&context, fixture.burned_amount_store);
-    let mut leaves = burn_update_leaves(&fixture, 0, first_balance, first_handle);
-    leaves.extend(burn_update_leaves(
-        &fixture,
-        3,
-        store_handle(&second_state, token::balance_key()),
-        second_handle,
-    ));
-    assert_eq!(
-        second_state.peaks,
-        zama_solana_acl::mmr_peaks_from_leaves(&leaves)
-    );
 
     // The old H1 certificate cannot consume the reopened H2 pending burn.
     let stale = redeem_burned_amount_ix(
@@ -3495,7 +3480,7 @@ fn mollusk_two_sequential_burns_each_redeemable_exactly_once() {
     );
     assert_eq!(read_spl_amount(&context, fixture.destination_usdc), 300);
 
-    // Redeem H2 from leaf 4, reusing the canonical pending account after H1 closed.
+    // Redeem H2, reusing the canonical pending account after H1 closed.
     let (sig_h2, extra_h2) = amount_public_decrypt_cert(second_handle, 200);
     check_token_instruction(
         &context,
@@ -3700,8 +3685,36 @@ fn mollusk_redeem_rejects_mismatched_pending_identity_without_payout() {
     }
 }
 
-/// A certificate for the pinned burned handle does not redeem once the burned-amount store no
-/// longer holds that handle.
+/// The certificate is the only thing that binds the cleartext to the pinned handle: a certificate
+/// over another handle, or over another amount, does not redeem and leaves every account untouched.
+#[test]
+fn mollusk_redeem_rejects_certificate_not_over_pinned_handle_and_amount() {
+    let pinned = handle_for_chain(41, BALANCE_FHE_TYPE);
+    for (certified_handle, certified_amount) in
+        [(handle_for_chain(42, BALANCE_FHE_TYPE), 500), (pinned, 900)]
+    {
+        let fixture = BurnRedeemFixture::new();
+        let mut accounts = fixture.accounts(1_000);
+        seed_single_burn_value_account(&fixture, &mut accounts, pinned);
+        let context = burn_redeem_mollusk().with_context(accounts);
+        let pending = seed_pending_burn_in_context(&context, &fixture, pinned);
+        let (signatures, extra_data) =
+            amount_public_decrypt_cert(certified_handle, certified_amount);
+        let ix = redeem_burned_amount_ix(&fixture, pinned, 500, signatures, extra_data, pending);
+        let before = context.account_store.borrow().clone();
+        check_token_instruction(
+            &context,
+            &ix,
+            &[host_error(
+                host::errors::ZamaHostError::InvalidKmsCertificate,
+            )],
+        );
+        assert_eq!(*context.account_store.borrow(), before);
+    }
+}
+
+/// Defense in depth: the sequential pending-burn invariant keeps the pinned handle current, and
+/// redeem still refuses it once the burned-amount store no longer holds that handle.
 #[test]
 fn mollusk_redeem_rejects_pinned_handle_that_is_not_current() {
     let fixture = BurnRedeemFixture::new();

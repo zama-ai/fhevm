@@ -92,7 +92,7 @@ pub enum ConfidentialTokenError {
     /// data, or the return was not produced by the ZamaHost program.
     #[msg("public-decrypt verifier return data is invalid")]
     VerifierReturnDataInvalid,
-    /// The handle proven public by the host verifier did not equal the caller-pinned handle.
+    /// The handle the KMS certificate covers did not equal the caller-pinned handle.
     #[msg("disclosed handle does not match the pinned handle")]
     DisclosedHandleMismatch,
     /// The certified `uint256` cleartext does not fit the token's euint64 width (nonzero high bytes).

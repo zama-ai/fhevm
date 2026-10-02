@@ -6,14 +6,10 @@ vi.mock('@solana/kit', async (importOriginal) => ({
   sendAndConfirmTransactionFactory: () => sendAndConfirm,
 }));
 
-const publicProof = vi.hoisted(() => vi.fn());
-vi.mock('./internal/publicProof.js', () => ({ publicProof }));
-
 const certificate = vi.hoisted(() => vi.fn());
 
 const getCurrentBatch = vi.hoisted(() => vi.fn());
-const getEncryptedStore = vi.hoisted(() => vi.fn());
-vi.mock('./reads.js', () => ({ getCurrentBatch, getEncryptedStore }));
+vi.mock('./reads.js', () => ({ getCurrentBatch }));
 
 import {
   address,
@@ -81,7 +77,7 @@ function claim(cleartext: string) {
   };
 }
 
-async function options(overrides: { burnedHandle?: Uint8Array; extraLeaves?: number } = {}): Promise<{
+async function options(overrides: { burnedHandle?: Uint8Array } = {}): Promise<{
   keeper: Awaited<ReturnType<typeof generateKeyPairSigner>>;
   opts: SolanaVaultSettleOptions;
 }> {
@@ -90,8 +86,6 @@ async function options(overrides: { burnedHandle?: Uint8Array; extraLeaves?: num
   const addresses = await deriveBatchAddresses(roots(), 0n);
 
   getCurrentBatch.mockResolvedValue({ index: 0n, addresses, state: { burnedTotalHandle: burnedHandle } });
-  if (overrides.extraLeaves) publicProof.mockRejectedValue(new Error('public proof does not match on-chain state'));
-  else publicProof.mockResolvedValue({ leafIndex: 3n, siblings: [new Uint8Array(32), new Uint8Array(32)] });
 
   const opts: SolanaVaultSettleOptions = {
     rpc: {
@@ -101,7 +95,6 @@ async function options(overrides: { burnedHandle?: Uint8Array; extraLeaves?: num
       simulateTransaction: vi.fn().mockReturnValue({ send: vi.fn().mockResolvedValue({ value: { err: null } }) }),
     } as unknown as SolanaVaultSettleOptions['rpc'],
     rpcSubscriptions: {} as SolanaVaultSettleOptions['rpcSubscriptions'],
-    proofService: { url: 'http://listener-proof-endpoint', apiKey: 'test' },
     roots: roots(),
     contextId: new Uint8Array(32),
     lookupTableAddress: addr(200),
@@ -115,15 +108,13 @@ describe('settleBatch', () => {
     sendAndConfirm.mockReset().mockResolvedValue(undefined);
     certificate.mockReset();
     getCurrentBatch.mockReset();
-    getEncryptedStore.mockReset();
-    publicProof.mockReset();
   });
   afterEach(() => vi.unstubAllGlobals());
 
   it('resolves the current batch and builds an ALT-aware v0 settle with pending_burn in the table', async () => {
     certificate.mockResolvedValue(claim(cleartextHex(800n)));
     const { keeper, opts } = await options();
-    await expect(settleBatch({ publicDecryptCertificate: certificate, fetchEncryptedStore: getEncryptedStore }, keeper, opts)).resolves.toEqual(expect.any(String));
+    await expect(settleBatch({ publicDecryptCertificate: certificate }, keeper, opts)).resolves.toEqual(expect.any(String));
 
     // The batch was resolved from chain state, not supplied.
     expect(getCurrentBatch).toHaveBeenCalledTimes(1);
@@ -179,9 +170,8 @@ describe('settleBatch', () => {
     // the static set.
     expect(staticAccounts.filter((address) => provisioned.includes(address))).toEqual([]);
 
-    // The certified 32-byte cleartext was decoded to the u64 settle argument, and the locally built
-    // proof of the second leaf rode along. instructions[0] is the prepended SetComputeUnitLimit; the
-    // open is instructions[1] and settle is instructions[2].
+    // The certified 32-byte cleartext was decoded to the u64 settle argument. instructions[0] is the
+    // prepended SetComputeUnitLimit; the open is instructions[1] and settle is instructions[2].
     const compiledInstructions = compiled.instructions;
     expect(compiledInstructions).toHaveLength(4);
     expect(compiledInstructions.at(-1)!.data).toEqual(CLOSE_TRANSIENT_STORE_DISCRIMINATOR);
@@ -200,31 +190,27 @@ describe('settleBatch', () => {
     expect(close.accounts?.[0]?.address).toBe(parsed.accounts.instructions.address);
     const data = getSettleInstructionDataDecoder().decode(compiledInstructions[2]!.data!);
     expect(data.cleartextTotal).toBe(800n);
-    expect(data.leafIndex).toBe(3n);
-    expect(data.siblings).toHaveLength(2);
   });
 
-  it.each([{ threshold: 1, depth: 2 }, { threshold: 7, depth: 0 }, { threshold: 7, depth: 2 }, { threshold: 7, depth: 5 }])('fits $threshold signatures and $depth proof siblings with the provisioned table', async ({ threshold, depth }) => {
+  it.each([{ threshold: 1 }, { threshold: 7 }])('fits $threshold signatures with the provisioned table', async ({ threshold }) => {
     const { keeper, opts } = await options();
     certificate.mockResolvedValue({
       ...claim(cleartextHex(800n)),
       signatures: Array.from({ length: threshold }, () => hex(new Uint8Array(65).fill(0x11))),
     });
-    publicProof.mockResolvedValue({ leafIndex: 0n, siblings: Array.from({ length: depth }, () => new Uint8Array(32)) });
-    await settleBatch({ publicDecryptCertificate: certificate, fetchEncryptedStore: getEncryptedStore }, keeper, opts);
+    await settleBatch({ publicDecryptCertificate: certificate }, keeper, opts);
     const simulate = opts.rpc.simulateTransaction as unknown as ReturnType<typeof vi.fn>;
     const bytes = getBase64Encoder().encode(simulate.mock.calls[0]![0] as string);
     expect(bytes.length).toBeLessThanOrEqual(1232);
   });
 
-  it('rejects an oversized certificate/proof before simulation or send', async () => {
+  it('rejects an oversized certificate before simulation or send', async () => {
     const { keeper, opts } = await options();
     certificate.mockResolvedValue({
       ...claim(cleartextHex(800n)),
-      signatures: Array.from({ length: 7 }, () => hex(new Uint8Array(65).fill(0x11))),
+      signatures: Array.from({ length: 16 }, () => hex(new Uint8Array(65).fill(0x11))),
     });
-    publicProof.mockResolvedValue({ leafIndex: 0n, siblings: Array.from({ length: 6 }, () => new Uint8Array(32)) });
-    await expect(settleBatch({ publicDecryptCertificate: certificate, fetchEncryptedStore: getEncryptedStore }, keeper, opts)).rejects.toThrow('exceeds limit of 1232 bytes');
+    await expect(settleBatch({ publicDecryptCertificate: certificate }, keeper, opts)).rejects.toThrow('exceeds limit of 1232 bytes');
     expect(opts.rpc.simulateTransaction).not.toHaveBeenCalled();
     expect(sendAndConfirm).not.toHaveBeenCalled();
   });
@@ -232,7 +218,7 @@ describe('settleBatch', () => {
   it('rejects a batch that has not been dispatched (zero burned handle) before any phase', async () => {
     certificate.mockResolvedValue(claim(cleartextHex(800n)));
     const { keeper, opts } = await options({ burnedHandle: new Uint8Array(32) });
-    await expect(settleBatch({ publicDecryptCertificate: certificate, fetchEncryptedStore: getEncryptedStore }, keeper, opts)).rejects.toThrow('no burned total handle');
+    await expect(settleBatch({ publicDecryptCertificate: certificate }, keeper, opts)).rejects.toThrow('no burned total handle');
     expect(certificate).not.toHaveBeenCalled();
     expect(sendAndConfirm).not.toHaveBeenCalled();
   });
@@ -240,18 +226,8 @@ describe('settleBatch', () => {
   it('rejects a certified total that does not fit u64 before touching the RPC or sending', async () => {
     certificate.mockResolvedValue(claim(cleartextHex(1n, 0x01))); // a high byte set
     const { keeper, opts } = await options();
-    await expect(settleBatch({ publicDecryptCertificate: certificate, fetchEncryptedStore: getEncryptedStore }, keeper, opts)).rejects.toThrow('exceeds u64');
+    await expect(settleBatch({ publicDecryptCertificate: certificate }, keeper, opts)).rejects.toThrow('exceeds u64');
     expect(opts.rpc.simulateTransaction).not.toHaveBeenCalled();
-    expect(sendAndConfirm).not.toHaveBeenCalled();
-  });
-
-  it('fetches the proof after the certificate and rejects invalid evidence before sending', async () => {
-    certificate.mockResolvedValue(claim(cleartextHex(800n)));
-    const { keeper, opts } = await options({ extraLeaves: 1 });
-    await expect(settleBatch({ publicDecryptCertificate: certificate, fetchEncryptedStore: getEncryptedStore }, keeper, opts)).rejects.toThrow('does not match');
-    expect(certificate).toHaveBeenCalledTimes(1);
-    expect(publicProof.mock.invocationCallOrder[0]).toBeGreaterThan(certificate.mock.invocationCallOrder[0]!);
-    expect(opts.rpc.getLatestBlockhash).not.toHaveBeenCalled();
     expect(sendAndConfirm).not.toHaveBeenCalled();
   });
 });

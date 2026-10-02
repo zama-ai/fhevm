@@ -29,7 +29,7 @@ import {
 import { isBytes32 } from '../../core/base/bytes.js';
 import { bytes32ToHandle } from '../../core/handle/FhevmHandle.js';
 import { encodeSolanaKmsRouting } from '../permit/index.js';
-import { bytesToHex } from '../proof.js';
+import { bytesToHex } from '../../core/base/bytes.js';
 
 /** The attestation type that selects this envelope at the relayer. */
 export const SOLANA_SRFC38_ATTESTATION_TYPE = 'solana-srfc38-user-decrypt-v1';

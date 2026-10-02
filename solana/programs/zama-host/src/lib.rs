@@ -236,7 +236,8 @@ pub mod zama_host {
 
     /// Stateless pull-oracle verifier (fhevm-internal#1704, #1765): verifies a KMS public-decrypt
     /// certificate against the live `KmsContext` the certificate itself names and returns
-    /// `(handle, cleartext, context_id)` via `return_data`. Creates and mutates nothing; emits nothing.
+    /// `(handle, cleartext, context_id)` via `return_data`. Creates and mutates nothing; emits
+    /// nothing.
     pub fn verify_public_decrypt(
         ctx: Context<VerifyPublicDecrypt>,
         handle: [u8; 32],

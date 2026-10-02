@@ -85,7 +85,7 @@ pub struct Settle<'info> {
     pub pending_burn: UncheckedAccount<'info>,
     /// CHECK: ZamaHost config PDA; validated by host/token CPIs.
     pub host_config: UncheckedAccount<'info>,
-    /// CHECK: KMS context for the host's current context id; validated by the
+    /// CHECK: KMS context the certificate names (any live context); validated by the
     /// verifier CPI.
     pub kms_context: UncheckedAccount<'info>,
 

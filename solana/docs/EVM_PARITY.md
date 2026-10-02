@@ -40,7 +40,7 @@ the count (the accepted behavior tracked in #1888 differs from EVM's rejection).
 | Burn / underlying redemption                       | Burn reduces balance/supply, records its result in a slot and creates one PendingBurn per token account. Redemption verifies the exact result/certificate and consumes PendingBurn before another burn can start.                                                                      |
 | Cancel pending burn                                | Restores encrypted balance and supply; cannot also redeem that same pending burn. Batcher cancellation requires the join mint authority and opens user refunds.                                                                                                                        |
 | Rent after a batch                                 | Once a batch is settled, canceled or refunding, the join mint authority reclaims the batch authority's unspent funding (`reclaim_batch_authority`) and a user closes a claimed or canceled-batch join record (`close_join_record`). The demo keeper cranks both with the settle lookup tables.  |
-| Public disclosure                                  | `disclose_secp` verifies Store binding, exact-handle public proof and KMS certificate, then emits Store/handle/cleartext. It does not certify a caller-supplied token-kind label. Original token events identify transfer/burn provenance.                                             |
+| Public disclosure                                  | `disclose_secp` verifies the KMS certificate and emits the certified handle and cleartext, as ERC-7984 `discloseEncryptedAmount` does. It reads no token state and certifies no caller-supplied token-kind label. Original token events identify the account and the operation.        |
 | Later viewers                                      | Authority-gated balance/supply wrappers produce a new output with the requested viewers. They do not grant a new viewer access to an arbitrary history-only handle.                                                                                                                    |
 
 Classic Token and extension-free Token-2022 are supported. Mint extensions fail closed;
@@ -67,10 +67,8 @@ independently of return selection. Compute records, leaves and checkpoint commit
 consumers verify them against their own chain snapshot. Missing retained history fails closed and needs recovery beyond an ordinary
 retry. The listener's confirmed-chain scheduling does not itself authorize plaintext release.
 
-Public consumers verify the KMS certificate and MMR proof on-chain. History growth can make
-a fetched proof stale before submission; rejection is atomic and a refreshed proof can reuse
-the same exact-handle certificate. Shared-history proofs are not assumed to have fixed depth;
-large proofs remain subject to Solana packet limits (#1750).
+Public consumers verify only the KMS certificate on-chain, as EVM `FHE.checkSignatures` does, and compare the
+certified handle with one they pinned (DD-065). The KMS connectors check the public leaf before they decrypt.
 
 Ciphertext material uses the shared gateway/coprocessor infrastructure, without a Solana
 HandleMaterialCommitment account. Gateway material registration and copro attestations are

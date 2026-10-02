@@ -44,16 +44,6 @@ export { createFhevmEncryptClient } from './clients/createFhevmEncryptClient.js'
 export type { FhevmSolanaEncryptClient } from './clients/createFhevmEncryptClient.js';
 export { clearSolanaEncryptionKeyCache } from './encryptionKeyCache.js';
 
-export {
-  buildPublicLeafProof,
-  mmrBuildProof,
-  mmrPeaksFromLeaves,
-  reconstructSolanaStoreHistory,
-  verifyHistoricalAccessProof,
-  verifyPublicDecryptProof,
-} from './proof.js';
-export type { MmrProof, SolanaStoreHistoryEvent, SolanaReconstructedStoreHistory } from './proof.js';
-
 export type {
   SolanaPublicDecryptCertificateClaim,
   SolanaPublicDecryptCertificateParameters,

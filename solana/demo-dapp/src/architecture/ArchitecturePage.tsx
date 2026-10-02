@@ -160,9 +160,9 @@ flowchart TB
     subgraph settlement["Settle public total"]
         direction LR
         Burn["Batcher burns<br/>encrypted batch balance"]
-        Proof["Leaf-proof server serves the<br/>released handle's public-leaf proof"]
+        Proof["KMS connectors check the<br/>burned handle's public leaf"]
         KMS["KMS returns total<br/>and signed certificate"]
-        Solana["Solana verifies<br/>proof and certificate"]
+        Solana["Solana verifies the certificate<br/>for the pinned burned handle"]
         Vault["Vault deposits total<br/>and returns public shares"]
         Burn --> Proof --> KMS --> Solana --> Vault
     end

@@ -1,11 +1,11 @@
 //! Redeems a KMS-certified burned amount from the SPL vault through the stateless host verifier.
 //!
 //! This is the whole burn-redemption path after the burn-redemption request-witness lifecycle was
-//! dissolved (fhevm-internal#1763, DD-040). It mirrors `disclose_secp`: the redeemer brings the KMS
-//! `PublicDecryptVerification` certificate in its own transaction, the program CPIs the stateless
-//! `zama_host::verify_public_decrypt` for the `burned_handle` pinned in `PendingBurn`, and asserts
-//! that the certified cleartext equals the claimed `cleartext_amount`. There is no request witness, no request-time KMS context pin, and
-//! no expiry: the certificate is verified against the live `KmsContext` its signed extra_data names
+//! dissolved (fhevm-internal#1763, DD-040). Like `disclose_secp`, the redeemer brings the KMS
+//! `PublicDecryptVerification` certificate in its own transaction, and the program CPIs the
+//! stateless `zama_host::verify_public_decrypt`. Unlike disclosure, redeem binds the certificate to
+//! the `burned_handle` pinned in `PendingBurn` and to the claimed `cleartext_amount`. There is no
+//! request witness, no request-time KMS context pin, and no expiry: the certificate is verified against the live `KmsContext` its signed extra_data names
 //! (any non-destroyed context, fhevm-internal#1765; `destroy_kms_context` is the revocation lever,
 //! one layer down in the host verifier).
 //!

@@ -37,7 +37,7 @@ import {
   verifySolanaUserDecryptPlaintexts,
   verifySolanaUserDecryptResponse,
 } from './index.js';
-import { bytesToHex, hexToBytes } from '../proof.js';
+import { bytesToHex, hexToBytes } from '../../core/base/bytes.js';
 
 /* eslint-disable @typescript-eslint/naming-convention -- the fixture's own field names are snake_case */
 

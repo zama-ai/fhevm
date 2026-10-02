@@ -194,8 +194,8 @@ const targets = [
         'reclaimBatchAuthority',
         'closeJoinRecord',
       ]),
-      // Anchor inlines the CoprocessorInputAttestation (join) and MmrInclusionProof (settle) structs
-      // directly into the instruction data. Keep the initializeBatcher direction enum plus batchStatus
+      // Anchor inlines the CoprocessorInputAttestation (join) struct directly into the instruction
+      // data. Keep the initializeBatcher direction enum plus batchStatus
       // — the Batch account decoder references it; confidentialMint/vault stay pruned (account-only).
       definedTypes: new Set(['batchDirection', 'batchStatus']),
       // Keep the three account decoders the vault-module reads consume: Batcher (direction + mints +

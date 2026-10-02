@@ -1,7 +1,6 @@
 // operator-server — the `demo:operator` entrypoint. Wires the pure operator (`./operator`) to a live
 // stack: the seeded demo-config (RPC endpoints, mints, personas), the environment-specific keeper and
-// mint-authority keypairs, the environment's SOL funder, the leaf-proof server's endpoint and the
-// relayer's key material. It binds loopback: the dapp dev server proxies the browser to it and adds
+// mint-authority keypairs, the environment's SOL funder and the relayer's key material. It binds loopback: the dapp dev server proxies the browser to it and adds
 // the boot capability; `tailscale serve` may front it for direct callers on the tailnet.
 //
 // The SPL instructions are hand-built with `@solana/kit` primitives on purpose: the test-suite
@@ -100,7 +99,6 @@ const main = async (): Promise<void> => {
   const authorization = await readDemoAuthorizationFromEnv();
   const allowedOrigin = readDemoAllowedOriginFromEnv();
   const relayerUrl = process.env.DEMO_RELAYER_URL ?? LOCAL_SOLANA_ENDPOINTS.relayer;
-  const proofService = { url: requiredEnv("DEMO_PROOF_URL"), apiKey: requiredEnv("DEMO_PROOF_API_KEY") };
   const tailscaleLogins = (process.env[TAILSCALE_LOGINS_ENV] ?? "")
     .split(",")
     .map((login) => login.trim())
@@ -135,7 +133,7 @@ const main = async (): Promise<void> => {
       throw new Error(`keeper signer ${keeper.address} does not match seeded keeper ${config.personas.keeper}`);
     }
     await fundSol(keeper.address, 0.2);
-    return { config, keeper, proofService, relayerApiKey };
+    return { config, keeper, relayerApiKey };
   };
   const encryptionKey = createEncryptionKeyMaterial({ relayerUrl, apiKey: relayerApiKey, network: seeded.network });
 

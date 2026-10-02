@@ -10,7 +10,6 @@
 
 use std::collections::HashMap;
 
-use anchor_lang::{AnchorDeserialize, Discriminator};
 use mollusk_svm::result::InstructionResult;
 use num_bigint::BigUint;
 use rand::{rngs::StdRng, RngCore, SeedableRng};
@@ -508,7 +507,6 @@ pub struct FheReplay {
 #[derive(Default)]
 pub struct CleartextLedger {
     pub values: ClearInputs,
-    state_leaves: HashMap<Pubkey, Vec<[u8; 32]>>,
 }
 
 impl CleartextLedger {
@@ -528,21 +526,6 @@ impl CleartextLedger {
         u64::from_be_bytes(value.value[24..].try_into().unwrap())
     }
 
-    pub fn seed_state_allow(&mut self, state: Pubkey, handle: [u8; 32], key: Pubkey) {
-        let leaves = self.state_leaves.entry(state).or_default();
-        let commitment = zama_solana_acl::historical_access_leaf_commitment(
-            state.to_bytes(),
-            0,
-            handle,
-            key.to_bytes(),
-        );
-        if leaves.is_empty() {
-            leaves.push(commitment);
-        } else {
-            assert_eq!(leaves[0], commitment, "different initial state history");
-        }
-    }
-
     /// Replays every `fhe_execute` CPI the instruction issued — in order, so a later execution
     /// can consume an earlier execution's persisted outputs. Each instruction writes any
     /// encrypted store at most once, so binding results to the end-of-instruction
@@ -552,11 +535,7 @@ impl CleartextLedger {
             .message
             .as_ref()
             .expect("Mollusk result must include its compiled message");
-        enum HostReplay<'a> {
-            Execute(FheExecuteArgs, &'a [u8], zama_host::FheExecutedEvent),
-            MakePublic(zama_host::instruction::MakeStoreHandlePublic, &'a [u8]),
-        }
-        let host_instructions = result
+        let executions_to_replay = result
             .inner_instructions
             .iter()
             .enumerate()
@@ -568,59 +547,31 @@ impl CleartextLedger {
                     == Some(zama_host::id())
             })
             .filter_map(|(index, inner)| {
-                let accounts = inner.instruction.accounts.as_slice();
-                if let Some(args) = decode_fhe_execute_args(&inner.instruction.data) {
-                    let mut events = result.inner_instructions[index + 1..]
-                        .iter()
-                        .take_while(|child| child.stack_height > inner.stack_height)
-                        .filter(|child| {
-                            message.account_keys()[child.instruction.program_id_index as usize]
-                                == zama_host::ID
-                        })
-                        .filter_map(|child| {
-                            crate::decode_anchor_event::<zama_host::FheExecutedEvent>(
-                                &child.instruction.data,
-                            )
-                        });
-                    let event = events
-                        .next()
-                        .expect("every execution emits FheExecutedEvent");
-                    assert_eq!(event.version, zama_host::EVENT_VERSION);
-                    assert!(events.next().is_none(), "one executed event per execution");
-                    return Some(HostReplay::Execute(args, accounts, event));
-                }
-                let payload = inner
-                    .instruction
-                    .data
-                    .strip_prefix(zama_host::instruction::MakeStoreHandlePublic::DISCRIMINATOR)?;
-                zama_host::instruction::MakeStoreHandlePublic::deserialize(&mut &*payload)
-                    .ok()
-                    .map(|args| HostReplay::MakePublic(args, accounts))
+                let args = decode_fhe_execute_args(&inner.instruction.data)?;
+                let mut events = result.inner_instructions[index + 1..]
+                    .iter()
+                    .take_while(|child| child.stack_height > inner.stack_height)
+                    .filter(|child| {
+                        message.account_keys()[child.instruction.program_id_index as usize]
+                            == zama_host::ID
+                    })
+                    .filter_map(|child| {
+                        crate::decode_anchor_event::<zama_host::FheExecutedEvent>(
+                            &child.instruction.data,
+                        )
+                    });
+                let event = events
+                    .next()
+                    .expect("every execution emits FheExecutedEvent");
+                assert_eq!(event.version, zama_host::EVENT_VERSION);
+                assert!(events.next().is_none(), "one executed event per execution");
+                Some((args, event))
             })
             .collect::<Vec<_>>();
 
         let mut executions = 0;
         let mut persistent_outputs = 0;
-        for instruction in host_instructions {
-            let HostReplay::Execute(args, accounts, event) = instruction else {
-                let HostReplay::MakePublic(args, accounts) = instruction else {
-                    unreachable!()
-                };
-                let account_index = accounts[2] as usize;
-                let address = message.account_keys()[account_index];
-                let leaves = self.state_leaves.entry(address).or_default();
-                assert_eq!(
-                    leaves.len() as u64,
-                    args.previous_leaf_count,
-                    "oracle missed EncryptedStore history before public sealing {address}"
-                );
-                leaves.push(zama_solana_acl::public_decrypt_leaf_commitment(
-                    address.to_bytes(),
-                    leaves.len() as u64,
-                    args.handle,
-                ));
-                continue;
-            };
+        for (args, event) in executions_to_replay {
             executions += 1;
             let outputs = evaluate(&args, &self.values)
                 .expect("every emitted FHE batch must be valid in cleartext");
@@ -643,38 +594,11 @@ impl CleartextLedger {
             for (&handle, value) in handles.iter().zip(outputs) {
                 self.values.insert(handle, value);
             }
-            for effect in &args.effects {
-                let handle = handles[usize::from(effect.result.step_index)];
-                let account_index = accounts
-                    [zama_host::FHE_EXECUTE_FIXED_ACCOUNTS + usize::from(effect.store_index)]
-                    as usize;
-                let address = message.account_keys()[account_index];
-                let leaves = self.state_leaves.entry(address).or_default();
-                assert_eq!(
-                    leaves.len() as u64,
-                    effect.previous_leaf_count,
-                    "oracle missed EncryptedStore history before {address}: {effect:?}"
-                );
-                for allow_index in &effect.allow_indexes {
-                    let key = args
-                        .dictionary_bytes(*allow_index)
-                        .expect("valid allow dictionary index");
-                    leaves.push(zama_solana_acl::historical_access_leaf_commitment(
-                        address.to_bytes(),
-                        leaves.len() as u64,
-                        handle,
-                        key,
-                    ));
-                }
-                if effect.make_public {
-                    leaves.push(zama_solana_acl::public_decrypt_leaf_commitment(
-                        address.to_bytes(),
-                        leaves.len() as u64,
-                        handle,
-                    ));
-                }
-                persistent_outputs += usize::from(effect.slot.is_some());
-            }
+            persistent_outputs += args
+                .effects
+                .iter()
+                .filter(|effect| effect.slot.is_some())
+                .count();
         }
         FheReplay {
             executions,

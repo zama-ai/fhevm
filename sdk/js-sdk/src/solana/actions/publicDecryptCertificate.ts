@@ -8,7 +8,7 @@ import type { BytesHex, Uint256BigInt } from '../../core/types/primitives.js';
 import { toFhevmHandle } from '../../core/handle/FhevmHandle.js';
 import { RelayerAsyncRequest } from '../../core/modules/relayer/module/RelayerAsyncRequest.js';
 import { buildRelayerUrlString, validateRelayerBaseUrl } from '../../core/modules/relayer/module/relayerUrl.js';
-import { hexToBytes } from '../proof.js';
+import { hexToBytes } from '../../core/base/bytes.js';
 
 export type SolanaPublicDecryptCertificateContext = {
   readonly chain: FhevmSolanaChain;
@@ -29,8 +29,8 @@ export type SolanaPublicDecryptCertificateParameters = {
 /**
  * An untrusted public-decrypt certificate claim returned by the relayer. Authority exists only
  * after the stateless host `verify_public_decrypt` verifies this certificate on-chain against the
- * current `KmsContext` (directly, or via the token `disclose_secp` wrapper), together with the
- * public-leaf inclusion proof the caller builds from the account's history.
+ * certificate's `KmsContext` (directly, or via the token `disclose_secp` wrapper). The consuming
+ * program binds it to its own state by comparing the certified handle with one it pinned.
  */
 export type SolanaPublicDecryptCertificateClaim = {
   readonly handle: string;

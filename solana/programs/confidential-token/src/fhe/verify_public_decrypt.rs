@@ -27,8 +27,9 @@ pub struct VerifyPublicDecrypt<'a, 'info> {
 /// it wrote to `return_data`, asserting the return came from ZamaHost and that the certified handle
 /// equals the caller-pinned `expected_handle`. Returns the certified 32-byte cleartext. The host
 /// verifies the KMS certificate against the context the cert names (any live, non-destroyed
-/// context); this wrapper adds only the return-data integrity + pinned-handle checks. It deliberately does NOT constrain the returned context id: token
-/// disclosure and redemption accept any live context, matching EVM's valid-until-destroyed rotation
+/// context); this wrapper adds only the return-data integrity + pinned-handle checks. It
+/// deliberately does NOT constrain the returned context id: token disclosure and redemption accept
+/// any live context, matching EVM's valid-until-destroyed rotation
 /// grace (`destroy_kms_context` is the revocation lever). The verified id is the `context_id`
 /// field of [`zama_host::instructions::PublicDecryptReturnData`] for a consumer that wants a
 /// current-only policy.
