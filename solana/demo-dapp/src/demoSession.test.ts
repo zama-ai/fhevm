@@ -232,8 +232,8 @@ describe('Wallet Standard boundary', () => {
         new Error(
           [
             `Program ${ZAMA_HOST_PROGRAM_ADDRESS} invoke [1]`,
-            'Program log: AnchorError caused by account: transient_store. Error Code: TransientStoreNotOpened. Error Number: 6080. Error Message: transient store must be opened for this transaction and closed last.',
-            `Program ${ZAMA_HOST_PROGRAM_ADDRESS} failed: custom program error: 0x17c0`,
+            'Program log: AnchorError caused by account: transient_store. Error Code: TransientStoreNotOpened. Error Number: 6079. Error Message: transient store must be opened for this transaction and closed last.',
+            `Program ${ZAMA_HOST_PROGRAM_ADDRESS} failed: custom program error: 0x17bf`,
           ].join('\n'),
         ),
         'transaction',

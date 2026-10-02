@@ -48,7 +48,7 @@ const toOverrides = (config: SolanaDemoConfig) => ({
 /**
  * Loads the demo runtime: the harness `TestEnv` (source "demo-config") plus the full vault config.
  * The seeded config decides every endpoint and identity it carries; what it cannot carry because it
- * is local to the machine (deployer keypair path, coprocessor psql, leaf-proof endpoint) comes from
+ * is local to the machine (deployer keypair path, coprocessor psql) comes from
  * the process environment, as it does for `loadEnv`, so an operator or scenario started against a
  * remote stack funds and probes through the same roots the seed used.
  */

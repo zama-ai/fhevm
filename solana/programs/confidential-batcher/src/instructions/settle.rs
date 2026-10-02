@@ -4,7 +4,7 @@
 //! only direction branch (the vault CPI; `initialize_batcher` additionally
 //! validates the mint wiring per direction at setup):
 //! 1. `redeem_burned_amount` — the host verifies the KMS certificate on-chain
-//!    (current context + exact-handle MMR public-decrypt proof) and releases
+//!    (any live context, for the burned handle pinned in `PendingBurn`) and releases
 //!    the certified plain tokens (vault underlying for deposit batchers,
 //!    vault shares for redeem batchers) to the batch authority.
 //! 2. The vault phase — `demo_vault::deposit` for deposit batchers,
@@ -85,7 +85,7 @@ pub struct Settle<'info> {
     pub pending_burn: UncheckedAccount<'info>,
     /// CHECK: ZamaHost config PDA; validated by host/token CPIs.
     pub host_config: UncheckedAccount<'info>,
-    /// CHECK: KMS context for the host's current context id; validated by the
+    /// CHECK: KMS context the certificate names (any live context); validated by the
     /// verifier CPI.
     pub kms_context: UncheckedAccount<'info>,
 
@@ -156,7 +156,6 @@ pub fn settle(
     cleartext_total: u64,
     signatures: Vec<[u8; 65]>,
     extra_data: Vec<u8>,
-    proof: zama_host::instructions::MmrInclusionProof,
     authority_funding_lamports: u64,
 ) -> Result<()> {
     require!(
@@ -241,7 +240,6 @@ pub fn settle(
         cleartext_total,
         signatures,
         extra_data,
-        proof,
     )?;
 
     // Zero-total batch: nothing to move through the vault, no rate to record —

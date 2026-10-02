@@ -1,7 +1,6 @@
 import { getProgramDerivedAddress, type Address, type Instruction } from '@solana/kit';
 
 import type { SolanaPublicDecryptCertificateClaim } from '@fhevm/sdk/solana';
-import type { MmrProof } from '@fhevm/sdk/solana';
 import { verifyPublicDecryptArgsFromClaim } from '@fhevm/sdk/solana';
 import { getDiscloseSecpInstruction, CONFIDENTIAL_TOKEN_PROGRAM_ADDRESS } from '@fhevm/confidential-token';
 
@@ -9,13 +8,7 @@ const EVENT_AUTHORITY_SEED = new TextEncoder().encode('__event_authority');
 
 /** Accounts for the confidential-token `disclose_secp` consume instruction. */
 export type SolanaDiscloseSecpAccounts = {
-  /** Confidential mint: the scope the disclosed encrypted value account and event carry. */
-  readonly mint: Address;
-  /** Confidential token account for account-scoped state; omit only for total supply. */
-  readonly tokenAccount?: Address | undefined;
-  /** The encrypted store whose history authorizes the disclosed handle. */
-  readonly encryptedStore: Address;
-  /** KMS context PDA for the host's current context id. */
+  /** KMS context PDA for the context id the certificate commits to. */
   readonly kmsContext: Address;
   /** ZamaHost config account forwarded to the host verifier. */
   readonly hostConfig: Address;
@@ -31,10 +24,10 @@ async function tokenEventAuthority(): Promise<Address> {
 }
 
 /**
- * Builds the confidential-token `disclose_secp` consume instruction from a certificate claim and
- * the public leaf's inclusion proof (built by the caller from the account's history with
- * `mmrBuildProof`). The instruction CPIs the stateless host verifier, asserts the proven handle
- * equals the pinned handle, and emits a token-scoped `HandleDisclosedEvent`.
+ * Builds the confidential-token `disclose_secp` instruction from a certificate claim. The
+ * instruction CPIs the stateless host verifier and emits `HandleDisclosedEvent { handle,
+ * cleartext_amount }`, as ERC-7984 `discloseEncryptedAmount` does. A reader links the handle to a
+ * token account through the token's handle history.
  *
  * Disclosure is idempotent by design — there is no on-chain replay marker — so this instruction can
  * be submitted more than once for the same handle without failing; act-once, if needed, is the
@@ -43,13 +36,9 @@ async function tokenEventAuthority(): Promise<Address> {
 export async function buildDiscloseSecpInstruction(
   accounts: SolanaDiscloseSecpAccounts,
   claim: SolanaPublicDecryptCertificateClaim,
-  inclusionProof: MmrProof,
 ): Promise<Instruction> {
-  const args = verifyPublicDecryptArgsFromClaim(claim, inclusionProof);
+  const args = verifyPublicDecryptArgsFromClaim(claim);
   return getDiscloseSecpInstruction({
-    mint: accounts.mint,
-    ...(accounts.tokenAccount !== undefined ? { tokenAccount: accounts.tokenAccount } : {}),
-    encryptedStore: accounts.encryptedStore,
     kmsContext: accounts.kmsContext,
     hostConfig: accounts.hostConfig,
     eventAuthority: await tokenEventAuthority(),
@@ -58,6 +47,5 @@ export async function buildDiscloseSecpInstruction(
     cleartext: args.cleartext,
     signatures: [...args.signatures],
     extraData: args.extraData,
-    proof: { leafIndex: args.leafIndex, siblings: [...args.siblings] },
   });
 }

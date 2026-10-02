@@ -1078,8 +1078,8 @@
     {
       "name": "disclose_secp",
       "docs": [
-        "Consumes a KMS public-decrypt certificate through the stateless host verifier and emits a",
-        "token-scoped disclosed event. See `instructions::disclose_secp` for the act-once semantics",
+        "Consumes a KMS public-decrypt certificate through the stateless host verifier and emits the",
+        "certified handle and cleartext. See `instructions::disclose_secp` for the act-once semantics",
         "(idempotent by design — no on-chain replay marker)."
       ],
       "discriminator": [
@@ -1093,27 +1093,6 @@
         128
       ],
       "accounts": [
-        {
-          "name": "mint",
-          "docs": [
-            "Confidential mint whose application scopes the disclosed encrypted store and event."
-          ]
-        },
-        {
-          "name": "token_account",
-          "docs": [
-            "Token account whose Store contains the handle. Absent for the mint total-supply Store."
-          ],
-          "optional": true
-        },
-        {
-          "name": "encrypted_store",
-          "docs": [
-            "The Store whose history contains a public permission for the disclosed handle.",
-            "The handler binds its program, mint scope and token-account or total-supply authority.",
-            "Disclosure authenticates the handle and cleartext, without a token-specific field label."
-          ]
-        },
         {
           "name": "host_config",
           "docs": [
@@ -1174,14 +1153,6 @@
         {
           "name": "extra_data",
           "type": "bytes"
-        },
-        {
-          "name": "proof",
-          "type": {
-            "defined": {
-              "name": "MmrInclusionProof"
-            }
-          }
         }
       ]
     },
@@ -1648,9 +1619,9 @@
       "docs": [
         "Redeems a KMS-certified burned amount from the SPL vault through the stateless host verifier.",
         "Verifies the KMS `PublicDecryptVerification` certificate against the context the cert names",
-        "(any live, non-destroyed context, EVM-parity rotation grace) plus an exact-handle MMR",
-        "public-decrypt proof, then pays out `cleartext_amount` and closes the `PendingBurn`",
-        "account opened at burn time. See `instructions::redeem_burned_amount`."
+        "(any live, non-destroyed context, EVM-parity rotation grace) for the handle pinned in the",
+        "`PendingBurn` account opened at burn time, then pays out `cleartext_amount` and closes that",
+        "account. See `instructions::redeem_burned_amount`."
       ],
       "discriminator": [
         75,
@@ -1739,8 +1710,8 @@
           "name": "burned_amount_store",
           "docs": [
             "Burned amount `EncryptedStore` account whose handle is redeemed. Bound to the mint/token",
-            "account by `assert_burned_amount_store_account`; its canonical PDA, layout, host ownership,",
-            "and the exact-handle MMR inclusion proof are validated by the `verify_public_decrypt` CPI."
+            "account by `assert_burned_amount_store_account`; the handler requires its current handle to",
+            "equal the pinned burned handle."
           ]
         },
         {
@@ -1840,14 +1811,6 @@
         {
           "name": "extra_data",
           "type": "bytes"
-        },
-        {
-          "name": "proof",
-          "type": {
-            "defined": {
-              "name": "MmrInclusionProof"
-            }
-          }
         }
       ]
     },
@@ -2272,131 +2235,126 @@
     },
     {
       "code": 6017,
-      "name": "PublicDecryptProofInvalid",
-      "msg": "public-decrypt MMR proof is invalid for this encrypted store"
-    },
-    {
-      "code": 6018,
       "name": "GatewayVerifierConfigUnset",
       "msg": "gateway verifier config is not set"
     },
     {
-      "code": 6019,
+      "code": 6018,
       "name": "InvalidKmsContext",
       "msg": "KMS context is not valid for this request"
     },
     {
-      "code": 6020,
+      "code": 6019,
       "name": "InvalidFheExecution",
       "msg": "FHE execution is invalid"
     },
     {
-      "code": 6021,
+      "code": 6020,
       "name": "DuplicateFheExecuteAccount",
       "msg": "fhe_execute account list contains a duplicate account"
     },
     {
-      "code": 6022,
+      "code": 6021,
       "name": "UnexpectedFheExecuteAccount",
       "msg": "fhe_execute account list contains an unexpected account"
     },
     {
-      "code": 6023,
+      "code": 6022,
       "name": "MissingFheExecuteAccount",
       "msg": "FHE execution is missing a required dynamic account"
     },
     {
-      "code": 6024,
+      "code": 6023,
       "name": "FheExecuteAccountNotWritable",
       "msg": "fhe_execute dynamic account must be writable"
     },
     {
-      "code": 6025,
+      "code": 6024,
       "name": "DuplicateFheOutputAuthority",
       "msg": "fhe_execute output authority list contains a duplicate authority"
     },
     {
-      "code": 6026,
+      "code": 6025,
       "name": "UnexpectedFheOutputAuthority",
       "msg": "fhe_execute output authority list contains an unexpected authority"
     },
     {
-      "code": 6027,
+      "code": 6026,
       "name": "MissingFheOutputAuthority",
       "msg": "FHE execution is missing a required output authority"
     },
     {
-      "code": 6028,
+      "code": 6027,
       "name": "VerifierReturnDataInvalid",
       "msg": "public-decrypt verifier return data is invalid"
     },
     {
-      "code": 6029,
+      "code": 6028,
       "name": "DisclosedHandleMismatch",
       "msg": "disclosed handle does not match the pinned handle"
     },
     {
-      "code": 6030,
+      "code": 6029,
       "name": "CleartextExceedsEuint64",
       "msg": "certified cleartext exceeds euint64 width"
     },
     {
-      "code": 6031,
+      "code": 6030,
       "name": "PendingBurnAddressMismatch",
       "msg": "pending burn address does not match"
     },
     {
-      "code": 6032,
+      "code": 6031,
       "name": "PendingBurnAlreadyInitialized",
       "msg": "pending burn is already initialized"
     },
     {
-      "code": 6033,
+      "code": 6032,
       "name": "PendingBurnHandleNotCurrent",
       "msg": "pending burn handle is not the burned amount current handle"
     },
     {
-      "code": 6034,
+      "code": 6033,
       "name": "PendingBurnMismatch",
       "msg": "pending burn fields do not match"
     },
     {
-      "code": 6035,
+      "code": 6034,
       "name": "UnderlyingTokenProgramMismatch",
       "msg": "underlying token program does not match"
     },
     {
-      "code": 6036,
+      "code": 6035,
       "name": "UnsupportedToken2022Extension",
       "msg": "unsupported Token-2022 extension"
     },
     {
-      "code": 6037,
+      "code": 6036,
       "name": "UnderlyingTokenAccountFrozen",
       "msg": "underlying token account is frozen"
     },
     {
-      "code": 6038,
+      "code": 6037,
       "name": "DisclosedValueBindingMismatch",
       "msg": "disclosed value does not match its declared token state field"
     },
     {
-      "code": 6039,
+      "code": 6038,
       "name": "EncryptedStoreAuthorityMismatch",
       "msg": "encrypted store authority does not match token account"
     },
     {
-      "code": 6040,
+      "code": 6039,
       "name": "TokenEncryptedStoreMismatch",
       "msg": "token encrypted store is not canonical"
     },
     {
-      "code": 6041,
+      "code": 6040,
       "name": "UnderlyingAssociatedAccountMismatch",
       "msg": "underlying associated token account does not match"
     },
     {
-      "code": 6042,
+      "code": 6041,
       "name": "ResultGrantMismatch",
       "msg": "invalid result grant accounts or self-transfer result request"
     }
@@ -2997,9 +2955,9 @@
     {
       "name": "HandleDisclosedEvent",
       "docs": [
-        "Emits a verified handle and cleartext under the token's state.",
-        "The original operation event identifies what the handle represents; this event does not",
-        "certify a slot key or value kind. Publication must already have been authorized."
+        "Emits a KMS-certified handle and its cleartext. It does not say which account or slot the handle",
+        "belongs to: a reader learns that from the token's own handle events, as an EVM reader does from",
+        "ERC-7984 `AmountDisclosed`."
       ],
       "type": {
         "kind": "struct",
@@ -3012,16 +2970,9 @@
             "type": "u8"
           },
           {
-            "name": "mint",
-            "docs": [
-              "Confidential mint whose application scopes the disclosed encrypted store."
-            ],
-            "type": "pubkey"
-          },
-          {
             "name": "handle",
             "docs": [
-              "Disclosed handle, proven public by the host verifier."
+              "Disclosed handle, covered by the verified KMS certificate."
             ],
             "type": {
               "array": [
@@ -3029,20 +2980,6 @@
                 32
               ]
             }
-          },
-          {
-            "name": "encrypted_store",
-            "docs": [
-              "ZamaHost `EncryptedStore` encrypted store the handle belongs to."
-            ],
-            "type": "pubkey"
-          },
-          {
-            "name": "authority",
-            "docs": [
-              "Controller of the state containing the historical public leaf."
-            ],
-            "type": "pubkey"
           },
           {
             "name": "cleartext_amount",
@@ -3318,41 +3255,6 @@
               "Threshold for MPC (KMS-internal; stored for fidelity)."
             ],
             "type": "u8"
-          }
-        ]
-      }
-    },
-    {
-      "name": "MmrInclusionProof",
-      "docs": [
-        "Anchor-native mirror of `zama_solana_acl::MmrProof` for use as an instruction argument. The",
-        "shared ACL crate is deliberately Anchor-free (pure `borsh`) so it cannot derive Anchor IDL",
-        "metadata; this local type carries the identical wire shape and converts into the shared proof.",
-        "Defined in the host program so CPI callers depend only on the host IDL, never on token types."
-      ],
-      "type": {
-        "kind": "struct",
-        "fields": [
-          {
-            "name": "leaf_index",
-            "docs": [
-              "Index of the proven leaf within the encrypted store's MMR."
-            ],
-            "type": "u64"
-          },
-          {
-            "name": "siblings",
-            "docs": [
-              "Authentication path from the leaf up to its mountain peak."
-            ],
-            "type": {
-              "vec": {
-                "array": [
-                  "u8",
-                  32
-                ]
-              }
-            }
           }
         ]
       }

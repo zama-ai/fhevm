@@ -1,4 +1,3 @@
-import { SOLANA_LEAF_PROOF_API_KEY } from "../src/generate/solana";
 import { LOCAL_SOLANA_ENDPOINTS } from "../src/solana/endpoints";
 import { createHash } from "node:crypto";
 import { closeSync, openSync } from "node:fs";
@@ -1137,8 +1136,6 @@ export const authorizedServiceEnv = (
 ): Record<string, string> => ({
   FHEVM_STATE_DIR: STATE_DIR,
   DEMO_CONFIG_PATH,
-  DEMO_PROOF_URL: LOCAL_SOLANA_ENDPOINTS.leafProof,
-  DEMO_PROOF_API_KEY: SOLANA_LEAF_PROOF_API_KEY,
   [DEMO_ALLOWED_ORIGIN_ENV]: LOCAL_SOLANA_ENDPOINTS.demoDapp,
   DEMO_DAPP_URL: LOCAL_SOLANA_ENDPOINTS.demoDapp,
   DEMO_OPERATOR_URL: LOCAL_SOLANA_ENDPOINTS.demoOperator,

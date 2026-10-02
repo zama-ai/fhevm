@@ -58,10 +58,6 @@ pub enum ConfidentialTokenError {
     /// The KMS EIP-712 public-decrypt certificate failed secp256k1 threshold verification.
     #[msg("KMS public-decrypt certificate is invalid")]
     InvalidKmsCertificate,
-    /// The MMR public-decrypt proof for the pinned burned handle did not verify against
-    /// the encrypted store's current peaks.
-    #[msg("public-decrypt MMR proof is invalid for this encrypted store")]
-    PublicDecryptProofInvalid,
     /// The host gateway verifier config (KMS signer / decryption contract) is unset.
     #[msg("gateway verifier config is not set")]
     GatewayVerifierConfigUnset,
@@ -96,7 +92,7 @@ pub enum ConfidentialTokenError {
     /// data, or the return was not produced by the ZamaHost program.
     #[msg("public-decrypt verifier return data is invalid")]
     VerifierReturnDataInvalid,
-    /// The handle proven public by the host verifier did not equal the caller-pinned handle.
+    /// The handle the KMS certificate covers did not equal the caller-pinned handle.
     #[msg("disclosed handle does not match the pinned handle")]
     DisclosedHandleMismatch,
     /// The certified `uint256` cleartext does not fit the token's euint64 width (nonzero high bytes).

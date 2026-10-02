@@ -5117,7 +5117,6 @@ dependencies = [
  "solana-program",
  "solana-sdk",
  "zama-host",
- "zama-solana-acl",
 ]
 
 [[package]]

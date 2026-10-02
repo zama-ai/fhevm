@@ -164,7 +164,6 @@ pub mod confidential_batcher {
         cleartext_total: u64,
         signatures: Vec<[u8; 65]>,
         extra_data: Vec<u8>,
-        proof: zama_host::instructions::MmrInclusionProof,
         authority_funding_lamports: u64,
     ) -> Result<()> {
         instructions::settle(
@@ -172,7 +171,6 @@ pub mod confidential_batcher {
             cleartext_total,
             signatures,
             extra_data,
-            proof,
             authority_funding_lamports,
         )
     }

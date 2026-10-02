@@ -91,6 +91,7 @@ are written as one narrative instead.
 | [DD-062](#dd-062-the-listener-reads-one-transaction-per-message)                                                                          | adopted                                  | The listener reads one transaction per message                                                                                 |
 | [DD-063](#dd-063-a-leaf-proof-reads-its-path-by-position)                                                                                 | adopted                                  | A leaf proof reads its path by position                                                                                        |
 | [DD-064](#dd-064-leaf-proofs-are-served-apart-from-ingestion)                                                                             | adopted                                  | Leaf proofs are served apart from ingestion                                                                                    |
+| [DD-065](#dd-065-a-public-decryption-is-accepted-on-chain-by-its-certificate-alone)                                                       | adopted                                  | A public decryption is accepted on-chain by its certificate alone                                                              |
 
 ## DD-002: Keep App Store And Host ACL Store Separate
 
@@ -1014,6 +1015,9 @@ before a decrypt request; plaintext is released only after KMS authorization suc
 
 Status: adopted
 
+Superseded in part by DD-065: the verifier takes no MMR inclusion proof and no Store; it reads only
+`host_config` and `kms_context`.
+
 Context:
 
 App-usable public decrypt on EVM is a relayer-paid callback into a passive contract, so the gateway
@@ -1095,8 +1099,8 @@ fallback is a caller-provided scratch account. The proof-freshness (stale-proof)
 known bounded-retry surface (#1687): an update between proof generation and consume moves the MMR
 peaks and fails the inclusion proof; the victim regenerates the proof and retries. The one wrong app
 pattern is binding consume logic to the live `current_handle` instead of the sealed handle — the
-sealed leaf is append-only, so the OLD sealed handle stays verifiable after an update (covered by
-`mollusk_verify_public_decrypt_survives_update_after_seal`).
+sealed leaf is append-only, so the OLD sealed handle stays verifiable after an update (covered
+today by `mollusk_historical_proof_round_trip_after_two_updates`).
 
 Scope: this PR added the host verifier additively. Dissolving the confidential-token `DisclosureRequest`
 lifecycle (`request_disclose_*`, `disclose_*_secp`, `close_*_disclosure_request`,
@@ -1171,6 +1175,9 @@ the account is gone, and a new burn cannot start until that close has committed.
 ## DD-041: Coprocessor Input Trust Is A Registered n-of-m Signer Set In `HostConfig`
 
 Status: adopted
+
+Superseded in part by DD-065: public-decrypt consume transactions carry no MMR proof; their sizes
+are in `runtime-tests/tests/disclose_packet_fit.rs`.
 
 Input `CiphertextVerification` attestations are now verified against a **registered coprocessor
 signer set + configurable threshold**, matching EVM `InputVerifier`'s trust model, instead of the
@@ -1500,6 +1507,9 @@ surviving events as dead.
 
 Status: adopted
 
+Superseded in part by DD-065: settlement and disclosure take no proof, and disclosure reads no token
+state.
+
 Superseded in part by DD-048 and DD-049: allows are sealed on the write and the Store model replaces per-value accounts.
 
 Recorded in fhevm-internal#1862.
@@ -1793,6 +1803,9 @@ Consequences:
 ## DD-049: Shared Encrypted Store And Transaction-Local Result Grants
 
 Status: adopted
+
+Superseded in part by DD-065: generic disclosure emits the certified handle and cleartext and reads
+no Store; only the KMS connectors check exact-handle MMR proofs.
 
 Adopted with RFC 035 (fhevm PR #3883). No compatibility with the retired per-value account model.
 
@@ -2283,6 +2296,9 @@ in the archive's history.
 
 Status: adopted
 
+Superseded in part by DD-065: the host verifier no longer checks the public leaf; the KMS connectors
+do.
+
 Recorded in zama-ai/fhevm#4120. Supersedes the v4 `extraData` carrier of DD-049.
 
 A Solana public decrypt used to carry its Store inside `extraData` as version 4:
@@ -2531,6 +2547,55 @@ decrypted until one catches up. The connector retries a Gateway request up to it
 `max_decryption_attempts` before marking it failed, and an HTTP caller gets `acl_denied` and
 resubmits. A grant made after the stop has no proof until ingestion catches up.
 `ci/preview-env/solana-host/test_charts.py` pins the two Deployments.
+
+## DD-065: A public decryption is accepted on-chain by its certificate alone
+
+Status: adopted
+
+Recorded in zama-ai/fhevm#4201.
+
+`verify_public_decrypt` used to take the handle's Store and an MMR inclusion proof of its public
+leaf, and checked the proof against the Store's current peaks before it accepted the KMS
+certificate. The KMS connectors already check that public leaf before they decrypt (DD-048), so a
+certificate exists only for a handle sealed public, unless the KMS committee is dishonest at its
+threshold (INVARIANTS #23). The on-chain check repeated a check the certificate already depends on,
+and it made every consumer fetch a proof from a coprocessor's leaf record. That proof went stale as
+soon as a later append merged its mountain. The newest leaf sits in the smallest mountain, so one
+append makes its proof stale half the time, and a busy Store could reject a settle more than once.
+
+Decision:
+
+`verify_public_decrypt` checks only the KMS certificate over `(handle, cleartext)`, against the
+context the certificate names (DD-040), as EVM `FHE.checkSignatures` does. It reads no Store and
+takes no proof, and no instruction takes an MMR proof. A consumer binds the certificate to its own
+state by comparing the certified handle with one it pinned in an account it owns.
+`redeem_burned_amount` compares it with `PendingBurn.burned_handle`, and the batcher's `settle`
+passes its pinned `burned_total_handle` to that check. `disclose_secp` emits
+`HandleDisclosedEvent { handle, cleartext_amount }`, as ERC-7984 `discloseEncryptedAmount` emits
+`AmountDisclosed`, and reads no token state. A reader links the handle to an account through the
+token's own handle events.
+
+Merkle proofs travel only from a coprocessor's leaf record to the KMS connector. The SDK, the demo
+dapp and the test harness fetch, build and check none.
+
+Rejected alternatives:
+
+| Alternative | Why not |
+|---|---|
+| Keep the on-chain proof check | It repeats the connectors' check, adds `12 + 32·depth` bytes to every consume transaction, and makes the consumer fetch a proof that one append can make stale. |
+| Keep a ring of recently removed peaks in the Store, so a slightly stale proof still verifies | A ring that gives real margin under load needs dozens of peaks, paid in rent by every Store. |
+| Write a `PublicHandle` record at make-public and have disclose read it | One more account per public handle, to say what the certificate and the handle history already say. |
+| Return the proof with the certificate and submit it on-chain | It moves the fetch into the connector response but keeps the staleness race and the transaction size. |
+
+Consequences:
+
+On-chain, publicness rests on the connectors' leaf check and on the KMS committee's threshold
+honesty (INVARIANTS #21, #23), as on EVM. A program that wants on-chain proof that a handle it did
+not pin is public would need a separate proof-taking entry point; none is wanted today. Consume
+transactions shrink: a legacy redeem with 7 signatures is 1145 bytes, and `disclose_secp` fits one
+packet up to 12 signatures (`runtime-tests/tests/disclose_packet_fit.rs`). Removing
+`PublicDecryptProofInvalid` renumbered the later Anchor error codes of zama-host and
+confidential-token.
 
 ## Open product decisions
 

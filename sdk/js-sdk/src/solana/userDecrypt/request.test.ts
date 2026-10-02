@@ -24,7 +24,7 @@ import {
   buildSolanaUserDecryptRequest,
 } from './index.js';
 import { decodeSolanaPermitFields } from '../permit/index.js';
-import { bytesToHex, hexToBytes } from '../proof.js';
+import { bytesToHex, hexToBytes } from '../../core/base/bytes.js';
 
 /* eslint-disable @typescript-eslint/naming-convention -- the fixtures' own field names are snake_case */
 

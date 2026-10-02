@@ -19,7 +19,7 @@ import {
   decodeSolanaPermitFields,
   verifySolanaPermitSignature,
 } from './index.js';
-import { hexToBytes } from '../proof.js';
+import { hexToBytes } from '../../core/base/bytes.js';
 
 /* eslint-disable @typescript-eslint/naming-convention -- the fixtures' own field names are snake_case */
 

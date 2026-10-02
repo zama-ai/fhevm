@@ -30,7 +30,7 @@ import {
   PERMIT_TRANSPORT_KEY_LEN,
   decodeSolanaPermitFields,
 } from '../permit/index.js';
-import { bytesToHex } from '../proof.js';
+import { bytesToHex } from '../../core/base/bytes.js';
 
 ////////////////////////////////////////////////////////////////////////////////
 // A permit, a handle, and the ports around them

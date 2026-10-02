@@ -445,8 +445,8 @@ pub(crate) fn assert_token_value(
 }
 
 /// Encrypted value account checks for the redeem path: burned-amount handle type and the exact
-/// token state field. The caller separately requires the pending handle to be current and proves
-/// its publicness through the exact-handle MMR proof verified by `verify_public_decrypt`.
+/// token state field. The caller separately requires the pending handle to be current and verifies
+/// the KMS certificate for it through `verify_public_decrypt`.
 pub(crate) fn assert_burned_amount_store_account(
     amount_store: &Account<zama_host::EncryptedStore>,
     burned_handle: [u8; 32],

@@ -13,7 +13,6 @@ describe("loadEnv", () => {
     expect(env.capabilities).toEqual({ faucet: true, freshMints: true, fastSlots: true });
     expect(env.roots.deployerKeypairPath).toContain(".config/solana/id.json");
     expect(env.coprocessorDbPsql).toEqual(["docker", "exec", "coprocessor-and-kms-db", "psql", "-U", "postgres", "-d", "coprocessor"]);
-    expect(env.leafProof).toEqual({ url: "http://127.0.0.1:8080", apiKey: "00000000-0000-0000-0000-000000000000" });
   });
 
   test("environment variables override defaults", () => {
@@ -41,11 +40,8 @@ describe("loadEnv", () => {
     const env = loadEnv({
       SOLANA_E2E_SOURCE: "devnet",
       COPROCESSOR_DB_PSQL: "kubectl exec -n ns db-0 -- psql -U zama -d e2e",
-      SOLANA_LEAF_PROOF_URL: "http://127.0.0.1:18080",
-      SOLANA_LEAF_PROOF_API_KEY: "preview-token",
     });
     expect(env.source).toBe("devnet");
-    expect(env.leafProof).toEqual({ url: "http://127.0.0.1:18080", apiKey: "preview-token" });
     expect(env.network).toBe("devnet");
     expect(env.capabilities).toEqual({ faucet: false, freshMints: true, fastSlots: false });
     expect(env.funding.primarySol).toBeLessThan(1);

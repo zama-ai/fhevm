@@ -29,7 +29,7 @@ stack where one exists.
 | Term | Definition | Replaces | EVM equivalent |
 |---|---|---|---|
 | **pending burn** | The one unsettled burn allowed for a confidential token account. Its `PendingBurn` PDA is derived from `(mint, token account)`. A second burn is rejected until the pending burn is settled. Parallel burns may use separate app-owned token accounts; multiple pending burns per token account are deferred. | burn lane | — |
-| **redeem** | Settle a pending burn by verifying its public-decryption certificate and proof, transferring the certified underlying amount from the wrapper vault, and closing `PendingBurn`. | claim burn | withdraw |
+| **redeem** | Settle a pending burn by verifying its public-decryption certificate, transferring the certified underlying amount from the wrapper vault, and closing `PendingBurn`. | claim burn | withdraw |
 | **cancel** | Settle a pending burn without an underlying payout by restoring the encrypted balance and encrypted total supply and closing `PendingBurn`. Only the token account owner can cancel, and the burned handle must still be current. This term does not describe `BatchStatus::Canceled`. | recover | — |
 | **settled** | Terminal description for a pending burn that was either redeemed or cancelled. It is an adjective describing the burn lifecycle, not an instruction name or the batcher's `BatchStatus::Settled`. | finalized, recovered | — |
 
@@ -78,7 +78,7 @@ stack where one exists.
 | **MMR** | Append-only Merkle mountain range shared by all decrypt permissions under a Store. Only peaks and leaf count are stored on-chain; proofs establish exact historical leaves. | — | — |
 | **leaf** | Historical-access commitment `(store, leaf_index, handle, allowed_key)` or public commitment `(store, leaf_index, handle)`, each domain-separated. Fresh Store outputs append allows in declaration order, then a public leaf if requested. | — | — |
 | **leaf record** | The coprocessors' record of every leaf the host sealed, kept by the host listener next to the compute rows it was derived with and served by `solana_leaf_proof_server` over `POST /v1/solana/leaf-proofs` behind an API key. A source of proofs, never of decisions: the connector verifies each proof against the peaks it read on chain. | proof service, `solana-proof-service` | — |
-| **disclosed value kind** | `DisclosedValueKind` selects the current token slot when requesting publication. The generic `HandleDisclosedEvent` certifies Store, handle and cleartext, not the slot kind; original operation events identify the result. | — | generic amount disclosure |
+| **disclosed value kind** | `DisclosedValueKind` selects the current token slot when requesting publication. The generic `HandleDisclosedEvent` carries the certified handle and cleartext, not the slot kind; original operation events identify the result. | — | generic amount disclosure |
 
 ## Off-chain
 

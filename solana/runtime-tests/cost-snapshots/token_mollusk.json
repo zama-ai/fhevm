@@ -14,7 +14,7 @@
       "max_cpi_instruction_data_bytes": 406
     },
     "confidential_transfer/direct": {
-      "compute_units": 231815,
+      "compute_units": 231818,
       "unique_accounts": 17,
       "instruction_data_bytes": 223,
       "cpi_instructions": 5,
@@ -22,7 +22,7 @@
       "max_cpi_instruction_data_bytes": 736
     },
     "confidential_transfer/steady_state": {
-      "compute_units": 231763,
+      "compute_units": 231766,
       "unique_accounts": 17,
       "instruction_data_bytes": 223,
       "cpi_instructions": 5,

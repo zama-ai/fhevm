@@ -1,4 +1,5 @@
-//! Packet-size envelope for `disclose_secp` under high KMS threshold × deep MMR proofs.
+//! Packet-size envelope for the KMS-certificate consumers `disclose_secp` and
+//! `redeem_burned_amount` as the KMS threshold grows.
 //!
 //! Kept out of `token_mollusk.rs` so wire-size measurements do not grow the behavioral suite.
 //! Signatures are placeholders; account and payload lengths match the current ABI.
@@ -7,177 +8,111 @@
 
 use anchor_lang::prelude::Pubkey;
 use confidential_token as token;
-use solana_sdk::{message::Message, transaction::Transaction};
+use solana_sdk::{instruction::Instruction, message::Message, transaction::Transaction};
 use zama_host as host;
 use zama_solana_test_kit::{anchor_ix, canonical_test_context_id, event_authority};
 
-fn public_extra_data(state: Pubkey) -> Vec<u8> {
-    [&[4][..], &canonical_test_context_id(1), &state.to_bytes()].concat()
+/// Version-1 `extra_data`: the certificate names its KMS context explicitly.
+fn public_extra_data() -> Vec<u8> {
+    [&[1][..], &canonical_test_context_id(1)].concat()
 }
 
-/// Builds a `disclose_secp` transaction carrying `sig_count` signatures and an MMR proof of
-/// `sibling_count` siblings over the real account layout, and returns its bincode-serialized wire
-/// size.
-fn disclose_secp_tx_size(sig_count: usize, sibling_count: usize) -> usize {
-    let owner = Pubkey::new_unique();
-    let mint = Pubkey::new_unique();
-    let token_account = Pubkey::new_unique();
-    let encrypted_store = Pubkey::new_unique();
-    let host_config = host::host_config_address().0;
-    let kms_context = host::kms_context_address(canonical_test_context_id(1)).0;
-    let proof = host::instructions::MmrInclusionProof {
-        leaf_index: 0,
-        siblings: vec![[0u8; 32]; sibling_count],
-    };
-    let ix = anchor_ix(
-        token::id(),
-        token::accounts::DiscloseSecp {
-            mint,
-            token_account: Some(token_account),
-            encrypted_store,
-            host_config,
-            kms_context,
-            zama_program: host::id(),
-            event_authority: event_authority(token::id()),
-            program: token::id(),
-        },
-        token::instruction::DiscloseSecp {
-            handle: [0u8; 32],
-            cleartext: [0u8; 32],
-            signatures: vec![[0u8; 65]; sig_count],
-            extra_data: public_extra_data(encrypted_store),
-            proof,
-        },
-    );
-    let message = Message::new(&[ix], Some(&owner));
-    let tx = Transaction::new_unsigned(message);
+fn legacy_tx_size(ix: Instruction, payer: Pubkey) -> usize {
+    let tx = Transaction::new_unsigned(Message::new(&[ix], Some(&payer)));
     bincode::serialize(&tx)
         .expect("serialize transaction")
         .len()
 }
 
-/// Builds a `redeem_burned_amount` legacy transaction carrying `sig_count` signatures and an MMR
-/// proof of `sibling_count` siblings over the real account layout, and returns its
-/// bincode-serialized wire size. Redeem carries the same cert + MMR proof payload as `disclose_secp`
-/// but over the larger burn-redemption account list (vault, destination, pending_burn, ...), so its
-/// single-packet envelope is the binding one for the shared verifier path.
-fn redeem_burned_amount_tx_size(sig_count: usize, sibling_count: usize) -> usize {
-    let owner = Pubkey::new_unique();
-    let mint = Pubkey::new_unique();
-    let encrypted_store = Pubkey::new_unique();
-    let host_config = host::host_config_address().0;
-    let kms_context = host::kms_context_address(canonical_test_context_id(1)).0;
-    let proof = host::instructions::MmrInclusionProof {
-        leaf_index: 0,
-        siblings: vec![[0u8; 32]; sibling_count],
-    };
-    let ix = anchor_ix(
-        token::id(),
-        token::accounts::RedeemBurnedAmount {
-            owner,
-            mint,
-            token_account: Pubkey::new_unique(),
-            underlying_mint: Pubkey::new_unique(),
-            vault_usdc: Pubkey::new_unique(),
-            destination_usdc: Pubkey::new_unique(),
-            vault_authority: Pubkey::new_unique(),
-            burned_amount_store: encrypted_store,
-            pending_burn: Pubkey::new_unique(),
-            host_config,
-            kms_context,
-            zama_program: host::id(),
-            token_program: Pubkey::new_unique(),
-            event_authority: event_authority(token::id()),
-            program: token::id(),
-        },
-        token::instruction::RedeemBurnedAmount {
-            burned_handle: [0u8; 32],
-            cleartext_amount: 0,
-            signatures: vec![[0u8; 65]; sig_count],
-            extra_data: public_extra_data(encrypted_store),
-            proof,
-        },
-    );
-    let message = Message::new(&[ix], Some(&owner));
-    let tx = Transaction::new_unsigned(message);
-    bincode::serialize(&tx)
-        .expect("serialize transaction")
-        .len()
-}
-
-#[test]
-fn redeem_burned_amount_threshold_fit_table() {
-    // Companion to `disclose_secp_threshold_fit_table` for the burn-redemption path introduced by
-    // #3243, which reuses the same stateless-verifier cert + MMR proof payload. Redeem carries a
-    // larger fixed account list than disclose (vault, destination, and pending_burn),
-    // so at the same (t, depth) it is ~242B larger and its single-packet envelope is strictly
-    // tighter. Measured fitting corner: t=7 at depth 0 (1159B); t=7/depth-10 already overflows
-    // (1479B, over by 247), and t>=9 overflows before the proof. Same qualitative boundary as
-    // disclose, so the deep-encrypted store × high-threshold redeem is the binding corner for the shared
-    // verifier path and needs the #1704 two-tx fallback when it overflows.
-    let cases = [
-        (7usize, 0usize, true),
-        (7, 10, false),
-        (7, 20, false),
-        (9, 10, false),
-        (13, 10, false),
-    ];
-    let limit = solana_packet::PACKET_DATA_SIZE;
-    eprintln!("redeem_burned_amount threshold fit table (packet limit = {limit} bytes):");
-    for (t, depth, expected_fits) in cases {
-        let size = redeem_burned_amount_tx_size(t, depth);
-        let fits = size <= limit;
-        eprintln!(
-            "  t={t:>2} sigs, depth={depth:>2} siblings -> {size:>4} bytes  ({}{})",
-            if fits { "FITS" } else { "OVER" },
-            if fits {
-                String::new()
-            } else {
-                format!(" by {}", size - limit)
+fn disclose_secp_tx_size(sig_count: usize) -> usize {
+    legacy_tx_size(
+        anchor_ix(
+            token::id(),
+            token::accounts::DiscloseSecp {
+                host_config: host::host_config_address().0,
+                kms_context: host::kms_context_address(canonical_test_context_id(1)).0,
+                zama_program: host::id(),
+                event_authority: event_authority(token::id()),
+                program: token::id(),
             },
-        );
+            token::instruction::DiscloseSecp {
+                handle: [0u8; 32],
+                cleartext: [0u8; 32],
+                signatures: vec![[0u8; 65]; sig_count],
+                extra_data: public_extra_data(),
+            },
+        ),
+        Pubkey::new_unique(),
+    )
+}
+
+/// Redeem carries the same certificate as `disclose_secp` over the larger burn-redemption account
+/// list (vault, destination, pending_burn, ...), so its envelope is the binding one. The owner
+/// signs and pays.
+fn redeem_burned_amount_tx_size(sig_count: usize) -> usize {
+    let owner = Pubkey::new_unique();
+    legacy_tx_size(
+        anchor_ix(
+            token::id(),
+            token::accounts::RedeemBurnedAmount {
+                owner,
+                mint: Pubkey::new_unique(),
+                token_account: Pubkey::new_unique(),
+                underlying_mint: Pubkey::new_unique(),
+                vault_usdc: Pubkey::new_unique(),
+                destination_usdc: Pubkey::new_unique(),
+                vault_authority: Pubkey::new_unique(),
+                burned_amount_store: Pubkey::new_unique(),
+                pending_burn: Pubkey::new_unique(),
+                host_config: host::host_config_address().0,
+                kms_context: host::kms_context_address(canonical_test_context_id(1)).0,
+                zama_program: host::id(),
+                token_program: Pubkey::new_unique(),
+                event_authority: event_authority(token::id()),
+                program: token::id(),
+            },
+            token::instruction::RedeemBurnedAmount {
+                burned_handle: [0u8; 32],
+                cleartext_amount: 0,
+                signatures: vec![[0u8; 65]; sig_count],
+                extra_data: public_extra_data(),
+            },
+        ),
+        owner,
+    )
+}
+
+/// Asserts each `(threshold, expected_fits)` row against the 1232-byte packet limit.
+fn assert_fit_table(name: &str, tx_size: fn(usize) -> usize, cases: &[(usize, bool)]) {
+    let limit = solana_packet::PACKET_DATA_SIZE;
+    eprintln!("{name} threshold fit table (packet limit = {limit} bytes):");
+    for &(t, expected_fits) in cases {
+        let size = tx_size(t);
+        let fits = size <= limit;
+        eprintln!("  t={t:>2} sigs -> {size:>4} bytes");
         assert_eq!(
             fits, expected_fits,
-            "t={t}, depth={depth} measured {size} bytes (fits={fits}); table expected fits={expected_fits}. \
-             The single-packet envelope moved — update the table and revisit the #1704 two-tx fallback."
+            "{name} t={t} measured {size} bytes (fits={fits}); table expected fits={expected_fits}. \
+             The single-packet envelope moved: update the table."
         );
     }
 }
 
 #[test]
 fn disclose_secp_threshold_fit_table() {
-    // Corner table: (threshold t, MMR proof sibling depth, expected-to-fit). Measured wire sizes for
-    // the full `disclose_secp` legacy transaction against the 1232-byte packet limit.
-    //
-    // Re-measured against the thin consume path (fhevm-internal#1704). Dropping the DisclosureRequest
-    // witness did NOT shrink the tx enough to keep t=7/depth-10 inside the packet: disclose_secp is
-    // ~24B larger than the old disclose_amount_secp at the same (t, depth). Fitting corner today:
-    // t=7 at depth 0 only. Deep-encrypted store × high-threshold consumes need the #1704 two-tx fallback.
-    let cases = [
-        (7usize, 0usize, true),
-        (7, 10, false),
-        (7, 20, false),
-        (9, 10, false),
-        (13, 10, false),
-    ];
-    let limit = solana_packet::PACKET_DATA_SIZE;
-    eprintln!("disclose_secp threshold fit table (packet limit = {limit} bytes):");
-    for (t, depth, expected_fits) in cases {
-        let size = disclose_secp_tx_size(t, depth);
-        let fits = size <= limit;
-        eprintln!(
-            "  t={t:>2} sigs, depth={depth:>2} siblings -> {size:>4} bytes  ({}{})",
-            if fits { "FITS" } else { "OVER" },
-            if fits {
-                String::new()
-            } else {
-                format!(" by {}", size - limit)
-            },
-        );
-        assert_eq!(
-            fits, expected_fits,
-            "t={t}, depth={depth} measured {size} bytes (fits={fits}); table expected fits={expected_fits}. \
-             The single-packet envelope moved — update the table and revisit the #1704 two-tx fallback."
-        );
-    }
+    assert_fit_table(
+        "disclose_secp",
+        disclose_secp_tx_size,
+        &[(7, true), (12, true), (13, false)],
+    );
+}
+
+#[test]
+fn redeem_burned_amount_threshold_fit_table() {
+    // The production KMS threshold is 7 of 13 signers.
+    assert_fit_table(
+        "redeem_burned_amount",
+        redeem_burned_amount_tx_size,
+        &[(7, true), (8, true), (9, false)],
+    );
 }

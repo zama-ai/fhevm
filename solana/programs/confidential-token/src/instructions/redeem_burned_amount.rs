@@ -1,14 +1,14 @@
 //! Redeems a KMS-certified burned amount from the SPL vault through the stateless host verifier.
 //!
 //! This is the whole burn-redemption path after the burn-redemption request-witness lifecycle was
-//! dissolved (fhevm-internal#1763, DD-040). It mirrors `disclose_secp`: the redeemer brings the KMS
-//! `PublicDecryptVerification` certificate plus an MMR public-leaf inclusion proof in its own
-//! transaction, CPIs the stateless `zama_host::verify_public_decrypt`, and asserts the handle the
-//! host proved public equals the `burned_handle` it pinned and that the certified cleartext equals
-//! the claimed `cleartext_amount`. There is no request witness, no request-time KMS context pin, and
-//! no expiry: the certificate is verified against the live `KmsContext` its signed extra_data names
-//! (any non-destroyed context, fhevm-internal#1765; `destroy_kms_context` is the revocation lever,
-//! one layer down in the host verifier).
+//! dissolved (fhevm-internal#1763, DD-040). Like `disclose_secp`, the redeemer brings the KMS
+//! `PublicDecryptVerification` certificate in its own transaction, and the program CPIs the
+//! stateless `zama_host::verify_public_decrypt`. Unlike disclosure, redeem binds the certificate to
+//! the `burned_handle` pinned in `PendingBurn` and to the claimed `cleartext_amount`. There is no
+//! request witness, no request-time KMS context pin, and no expiry: the certificate is verified
+//! against the live `KmsContext` its signed extra_data names (any non-destroyed context,
+//! fhevm-internal#1765; `destroy_kms_context` is the revocation lever, one layer down in the host
+//! verifier).
 //!
 //! ## Act-once IS enforced here
 //!
@@ -53,8 +53,8 @@ pub struct RedeemBurnedAmount<'info> {
     #[account(seeds = [b"vault-authority", mint.key().as_ref()], bump)]
     pub vault_authority: UncheckedAccount<'info>,
     /// Burned amount `EncryptedStore` account whose handle is redeemed. Bound to the mint/token
-    /// account by `assert_burned_amount_store_account`; its canonical PDA, layout, host ownership,
-    /// and the exact-handle MMR inclusion proof are validated by the `verify_public_decrypt` CPI.
+    /// account by `assert_burned_amount_store_account`; the handler requires its current handle to
+    /// equal the pinned burned handle.
     pub burned_amount_store: Box<Account<'info, zama_host::EncryptedStore>>,
     /// Pending-burn account opened at burn time; closed on successful redemption.
     #[account(
@@ -87,7 +87,6 @@ pub fn redeem_burned_amount(
     cleartext_amount: u64,
     signatures: Vec<[u8; 65]>,
     extra_data: Vec<u8>,
-    proof: zama_host::instructions::MmrInclusionProof,
 ) -> Result<()> {
     assert_no_remaining_accounts(ctx.remaining_accounts)?;
     assert_confidential_mint_shape(&ctx.accounts.mint)?;
@@ -155,7 +154,6 @@ pub fn redeem_burned_amount(
         ConfidentialTokenError::PendingBurnHandleNotCurrent
     );
     // The sequential pending-burn invariant makes the burned handle current until redeem or cancel.
-    // The exact-handle public-decrypt proof is checked inside the verifier CPI.
     assert_burned_amount_store_account(
         &ctx.accounts.burned_amount_store,
         burned_handle,
@@ -164,16 +162,14 @@ pub fn redeem_burned_amount(
     )?;
 
     // Verify the KMS certificate against the context the cert names (any live, non-destroyed
-    // context, EVM-parity rotation grace) plus the exact-handle MMR proof. The wrapper asserts the
-    // returned handle equals `burned_handle`; we additionally require the certified cleartext to
-    // equal the claimed `cleartext_amount`.
+    // context, EVM-parity rotation grace). The wrapper asserts the returned handle equals the
+    // pinned `burned_handle`; we additionally require the certified cleartext to equal the claimed
+    // `cleartext_amount`.
     let certified_cleartext = fhe::verify_public_decrypt(fhe::VerifyPublicDecrypt {
         expected_handle: burned_handle,
         cleartext: kms_decrypted_result_bytes(cleartext_amount),
         signatures,
         extra_data,
-        proof,
-        encrypted_store: ctx.accounts.burned_amount_store.to_account_info(),
         host_config: &ctx.accounts.host_config,
         kms_context: ctx.accounts.kms_context.to_account_info(),
         zama_program: &ctx.accounts.zama_program,

@@ -85,21 +85,15 @@ pub enum TotalSupplyUpdateReason {
     AllowViewers,
 }
 
-/// Emits a verified handle and cleartext under the token's state.
-/// The original operation event identifies what the handle represents; this event does not
-/// certify a slot key or value kind. Publication must already have been authorized.
+/// Emits a KMS-certified handle and its cleartext. It does not say which account or slot the handle
+/// belongs to: a reader learns that from the token's own handle events, as an EVM reader does from
+/// ERC-7984 `AmountDisclosed`.
 #[event]
 pub struct HandleDisclosedEvent {
     /// Event schema version.
     pub version: u8,
-    /// Confidential mint whose application scopes the disclosed encrypted store.
-    pub mint: Pubkey,
-    /// Disclosed handle, proven public by the host verifier.
+    /// Disclosed handle, covered by the verified KMS certificate.
     pub handle: [u8; 32],
-    /// ZamaHost `EncryptedStore` encrypted store the handle belongs to.
-    pub encrypted_store: Pubkey,
-    /// Controller of the state containing the historical public leaf.
-    pub authority: Pubkey,
     /// KMS-certified cleartext amount (low 64 bits of the certified `uint256`).
     pub cleartext_amount: u64,
 }

@@ -1,5 +1,4 @@
 import type { Bytes32Hex } from '@fhevm/sdk/types';
-import type { ProofService } from './vault/internal/publicProof.js';
 import {
   createSolanaRpc,
   createSolanaRpcSubscriptions,
@@ -42,7 +41,6 @@ const SETTLE_HYGIENE_COMPUTE_UNIT_LIMIT = 100_000;
 
 export type DemoOperatorSession = {
   readonly relayerApiKey: string;
-  readonly proofService: ProofService;
   readonly config: DemoConfig;
   readonly keeper: TransactionSigner;
 };
@@ -175,7 +173,6 @@ export const settleVaultBatch = async (
   const signature = await settleBatch(publicDecryptClient, session.keeper, {
     rpc,
     rpcSubscriptions,
-    proofService: session.proofService,
     roots,
     batchIndex: position.batchIndex,
     contextId: asBytes32BigEndian(session.config.userDecryptContextId),

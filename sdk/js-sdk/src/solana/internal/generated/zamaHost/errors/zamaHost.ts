@@ -136,64 +136,62 @@ export const ZAMA_HOST_ERROR__FHE_EXECUTE_MIXED_SCOPES = 0x17aa; // 6058
 export const ZAMA_HOST_ERROR__INVALID_KMS_CONTEXT = 0x17ab; // 6059
 /** InvalidKmsCertificate: KMS public-decrypt certificate is invalid */
 export const ZAMA_HOST_ERROR__INVALID_KMS_CERTIFICATE = 0x17ac; // 6060
-/** PublicDecryptProofInvalid: public-decrypt inclusion proof is invalid */
-export const ZAMA_HOST_ERROR__PUBLIC_DECRYPT_PROOF_INVALID = 0x17ad; // 6061
 /** EmptyCoprocessorSignerSet: coprocessor signer set must not be empty */
-export const ZAMA_HOST_ERROR__EMPTY_COPROCESSOR_SIGNER_SET = 0x17ae; // 6062
+export const ZAMA_HOST_ERROR__EMPTY_COPROCESSOR_SIGNER_SET = 0x17ad; // 6061
 /** TooManyCoprocessorSigners: coprocessor signer set exceeds the maximum size */
-export const ZAMA_HOST_ERROR__TOO_MANY_COPROCESSOR_SIGNERS = 0x17af; // 6063
+export const ZAMA_HOST_ERROR__TOO_MANY_COPROCESSOR_SIGNERS = 0x17ae; // 6062
 /** InvalidCoprocessorThreshold: coprocessor threshold must be between 1 and the signer count */
-export const ZAMA_HOST_ERROR__INVALID_COPROCESSOR_THRESHOLD = 0x17b0; // 6064
+export const ZAMA_HOST_ERROR__INVALID_COPROCESSOR_THRESHOLD = 0x17af; // 6063
 /** DuplicateCoprocessorSigner: coprocessor signer set contains a duplicate signer */
-export const ZAMA_HOST_ERROR__DUPLICATE_COPROCESSOR_SIGNER = 0x17b1; // 6065
+export const ZAMA_HOST_ERROR__DUPLICATE_COPROCESSOR_SIGNER = 0x17b0; // 6064
 /** ZeroCoprocessorSigner: coprocessor signer set contains the zero address */
-export const ZAMA_HOST_ERROR__ZERO_COPROCESSOR_SIGNER = 0x17b2; // 6066
+export const ZAMA_HOST_ERROR__ZERO_COPROCESSOR_SIGNER = 0x17b1; // 6065
 /** ZeroKmsSigner: KMS signer set contains the zero address */
-export const ZAMA_HOST_ERROR__ZERO_KMS_SIGNER = 0x17b3; // 6067
+export const ZAMA_HOST_ERROR__ZERO_KMS_SIGNER = 0x17b2; // 6066
 /** PermitInvalidationPdaMismatch: permit invalidation account is not the canonical account for the signer */
-export const ZAMA_HOST_ERROR__PERMIT_INVALIDATION_PDA_MISMATCH = 0x17b4; // 6068
+export const ZAMA_HOST_ERROR__PERMIT_INVALIDATION_PDA_MISMATCH = 0x17b3; // 6067
 /** PermitInvalidationAccountInvalid: permit invalidation account is not a valid watermark record */
-export const ZAMA_HOST_ERROR__PERMIT_INVALIDATION_ACCOUNT_INVALID = 0x17b5; // 6069
+export const ZAMA_HOST_ERROR__PERMIT_INVALIDATION_ACCOUNT_INVALID = 0x17b4; // 6068
 /** ClockBeforeEpoch: clock is before the unix epoch */
-export const ZAMA_HOST_ERROR__CLOCK_BEFORE_EPOCH = 0x17b6; // 6070
+export const ZAMA_HOST_ERROR__CLOCK_BEFORE_EPOCH = 0x17b5; // 6069
 /** FheExecuteDictionaryIndexOutOfBounds: fhe_execute dictionary index out of bounds */
-export const ZAMA_HOST_ERROR__FHE_EXECUTE_DICTIONARY_INDEX_OUT_OF_BOUNDS = 0x17b7; // 6071
+export const ZAMA_HOST_ERROR__FHE_EXECUTE_DICTIONARY_INDEX_OUT_OF_BOUNDS = 0x17b6; // 6070
 /** FheExecuteAccountCountMismatch: fhe_execute declared account count mismatch */
-export const ZAMA_HOST_ERROR__FHE_EXECUTE_ACCOUNT_COUNT_MISMATCH = 0x17b8; // 6072
+export const ZAMA_HOST_ERROR__FHE_EXECUTE_ACCOUNT_COUNT_MISMATCH = 0x17b7; // 6071
 /** FheExecuteDictionaryEntryUnreferenced: fhe_execute dictionary entry is not referenced by any step */
-export const ZAMA_HOST_ERROR__FHE_EXECUTE_DICTIONARY_ENTRY_UNREFERENCED = 0x17b9; // 6073
+export const ZAMA_HOST_ERROR__FHE_EXECUTE_DICTIONARY_ENTRY_UNREFERENCED = 0x17b8; // 6072
 /** HcuLimitZeroReserved: 0 is not a valid HCU limit; use u64::MAX for unlimited */
-export const ZAMA_HOST_ERROR__HCU_LIMIT_ZERO_RESERVED = 0x17ba; // 6074
+export const ZAMA_HOST_ERROR__HCU_LIMIT_ZERO_RESERVED = 0x17b9; // 6073
 /** TransientAccountInvalid: invalid transient workspace account */
-export const ZAMA_HOST_ERROR__TRANSIENT_ACCOUNT_INVALID = 0x17bb; // 6075
+export const ZAMA_HOST_ERROR__TRANSIENT_ACCOUNT_INVALID = 0x17ba; // 6074
 /** TransientCloseMissing: matching final top-level transient_store close is required */
-export const ZAMA_HOST_ERROR__TRANSIENT_CLOSE_MISSING = 0x17bc; // 6076
+export const ZAMA_HOST_ERROR__TRANSIENT_CLOSE_MISSING = 0x17bb; // 6075
 /** TransientCapacityExceeded: transient workspace grant capacity exceeded */
-export const ZAMA_HOST_ERROR__TRANSIENT_CAPACITY_EXCEEDED = 0x17bd; // 6077
+export const ZAMA_HOST_ERROR__TRANSIENT_CAPACITY_EXCEEDED = 0x17bc; // 6076
 /** EncryptedStoreCapacityExceeded: encrypted store slot capacity exceeded */
-export const ZAMA_HOST_ERROR__ENCRYPTED_STORE_CAPACITY_EXCEEDED = 0x17be; // 6078
+export const ZAMA_HOST_ERROR__ENCRYPTED_STORE_CAPACITY_EXCEEDED = 0x17bd; // 6077
 /** InvalidReturnSelection: invalid execution return selection */
-export const ZAMA_HOST_ERROR__INVALID_RETURN_SELECTION = 0x17bf; // 6079
+export const ZAMA_HOST_ERROR__INVALID_RETURN_SELECTION = 0x17be; // 6078
 /** TransientStoreNotOpened: transient store must be opened for this transaction and closed last */
-export const ZAMA_HOST_ERROR__TRANSIENT_STORE_NOT_OPENED = 0x17c0; // 6080
+export const ZAMA_HOST_ERROR__TRANSIENT_STORE_NOT_OPENED = 0x17bf; // 6079
 /** WalletDelegationThroughCpi: a wallet delegator must delegate in a top-level instruction */
-export const ZAMA_HOST_ERROR__WALLET_DELEGATION_THROUGH_CPI = 0x17c1; // 6081
+export const ZAMA_HOST_ERROR__WALLET_DELEGATION_THROUGH_CPI = 0x17c0; // 6080
 /** VerifiedInputsPaused: verified inputs are paused */
-export const ZAMA_HOST_ERROR__VERIFIED_INPUTS_PAUSED = 0x17c2; // 6082
+export const ZAMA_HOST_ERROR__VERIFIED_INPUTS_PAUSED = 0x17c1; // 6081
 /** AclWritesPaused: ACL writes are paused */
-export const ZAMA_HOST_ERROR__ACL_WRITES_PAUSED = 0x17c3; // 6083
+export const ZAMA_HOST_ERROR__ACL_WRITES_PAUSED = 0x17c2; // 6082
 /** PublicDecryptPaused: public-decrypt verification is paused */
-export const ZAMA_HOST_ERROR__PUBLIC_DECRYPT_PAUSED = 0x17c4; // 6084
+export const ZAMA_HOST_ERROR__PUBLIC_DECRYPT_PAUSED = 0x17c3; // 6083
 /** NotPauser: signer is not an enabled pauser */
-export const ZAMA_HOST_ERROR__NOT_PAUSER = 0x17c5; // 6085
+export const ZAMA_HOST_ERROR__NOT_PAUSER = 0x17c4; // 6084
 /** PauserRecordMismatch: pauser record mismatch */
-export const ZAMA_HOST_ERROR__PAUSER_RECORD_MISMATCH = 0x17c6; // 6086
+export const ZAMA_HOST_ERROR__PAUSER_RECORD_MISMATCH = 0x17c5; // 6085
 /** WalletPauseThroughCpi: a wallet pauser must pause in a top-level instruction */
-export const ZAMA_HOST_ERROR__WALLET_PAUSE_THROUGH_CPI = 0x17c7; // 6087
+export const ZAMA_HOST_ERROR__WALLET_PAUSE_THROUGH_CPI = 0x17c6; // 6086
 /** EncryptedStoreScopeNotProgramAccount: encrypted store scope is not an account of the store's program */
-export const ZAMA_HOST_ERROR__ENCRYPTED_STORE_SCOPE_NOT_PROGRAM_ACCOUNT = 0x17c8; // 6088
+export const ZAMA_HOST_ERROR__ENCRYPTED_STORE_SCOPE_NOT_PROGRAM_ACCOUNT = 0x17c7; // 6087
 /** DelegationScopeNotProgramAccount: delegation scope is not an account of the delegated program */
-export const ZAMA_HOST_ERROR__DELEGATION_SCOPE_NOT_PROGRAM_ACCOUNT = 0x17c9; // 6089
+export const ZAMA_HOST_ERROR__DELEGATION_SCOPE_NOT_PROGRAM_ACCOUNT = 0x17c8; // 6088
 
 export type ZamaHostError =
   | typeof ZAMA_HOST_ERROR__ACL_WRITES_PAUSED
@@ -271,7 +269,6 @@ export type ZamaHostError =
   | typeof ZAMA_HOST_ERROR__PREVIOUS_BANK_HASH_UNAVAILABLE
   | typeof ZAMA_HOST_ERROR__PREVIOUS_STORE_MISMATCH
   | typeof ZAMA_HOST_ERROR__PUBLIC_DECRYPT_PAUSED
-  | typeof ZAMA_HOST_ERROR__PUBLIC_DECRYPT_PROOF_INVALID
   | typeof ZAMA_HOST_ERROR__SCOPE_DENIED
   | typeof ZAMA_HOST_ERROR__TOO_MANY_COPROCESSOR_SIGNERS
   | typeof ZAMA_HOST_ERROR__TOO_MANY_KMS_SIGNERS
@@ -365,7 +362,6 @@ if (process.env['NODE_ENV'] !== 'production') {
     [ZAMA_HOST_ERROR__PREVIOUS_BANK_HASH_UNAVAILABLE]: `previous bank hash is not available`,
     [ZAMA_HOST_ERROR__PREVIOUS_STORE_MISMATCH]: `encrypted value previous handle does not match the account`,
     [ZAMA_HOST_ERROR__PUBLIC_DECRYPT_PAUSED]: `public-decrypt verification is paused`,
-    [ZAMA_HOST_ERROR__PUBLIC_DECRYPT_PROOF_INVALID]: `public-decrypt inclusion proof is invalid`,
     [ZAMA_HOST_ERROR__SCOPE_DENIED]: `application scope is deny-listed`,
     [ZAMA_HOST_ERROR__TOO_MANY_COPROCESSOR_SIGNERS]: `coprocessor signer set exceeds the maximum size`,
     [ZAMA_HOST_ERROR__TOO_MANY_KMS_SIGNERS]: `KMS context exceeds the maximum signer count`,

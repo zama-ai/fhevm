@@ -2,7 +2,7 @@
 //!
 //! Replaces the forever `BurnRedemption` replay marker. Exactly one account may exist for a
 //! confidential token account. It is opened when a burn completes and closed by either:
-//! - **redeem** (`redeem_burned_amount`): certificate + proof -> underlying-token payout
+//! - **redeem** (`redeem_burned_amount`): KMS certificate -> underlying-token payout
 //! - **cancel** (`cancel_pending_burn`): FHE re-credit to confidential balance and total supply
 //!
 //! A new burn cannot begin until the previous pending burn has been settled through one of those

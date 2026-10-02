@@ -173,8 +173,8 @@ pub mod confidential_token {
         instructions::confidential_transfer_from_value(ctx, amount_source)
     }
 
-    /// Consumes a KMS public-decrypt certificate through the stateless host verifier and emits a
-    /// token-scoped disclosed event. See `instructions::disclose_secp` for the act-once semantics
+    /// Consumes a KMS public-decrypt certificate through the stateless host verifier and emits the
+    /// certified handle and cleartext. See `instructions::disclose_secp` for the act-once semantics
     /// (idempotent by design — no on-chain replay marker).
     pub fn disclose_secp(
         ctx: Context<DiscloseSecp>,
@@ -182,23 +182,21 @@ pub mod confidential_token {
         cleartext: [u8; 32],
         signatures: Vec<[u8; 65]>,
         extra_data: Vec<u8>,
-        proof: zama_host::instructions::MmrInclusionProof,
     ) -> Result<()> {
-        instructions::disclose_secp(ctx, handle, cleartext, signatures, extra_data, proof)
+        instructions::disclose_secp(ctx, handle, cleartext, signatures, extra_data)
     }
 
     /// Redeems a KMS-certified burned amount from the SPL vault through the stateless host verifier.
     /// Verifies the KMS `PublicDecryptVerification` certificate against the context the cert names
-    /// (any live, non-destroyed context, EVM-parity rotation grace) plus an exact-handle MMR
-    /// public-decrypt proof, then pays out `cleartext_amount` and closes the `PendingBurn`
-    /// account opened at burn time. See `instructions::redeem_burned_amount`.
+    /// (any live, non-destroyed context, EVM-parity rotation grace) for the handle pinned in the
+    /// `PendingBurn` account opened at burn time, then pays out `cleartext_amount` and closes that
+    /// account. See `instructions::redeem_burned_amount`.
     pub fn redeem_burned_amount(
         ctx: Context<RedeemBurnedAmount>,
         burned_handle: [u8; 32],
         cleartext_amount: u64,
         signatures: Vec<[u8; 65]>,
         extra_data: Vec<u8>,
-        proof: zama_host::instructions::MmrInclusionProof,
     ) -> Result<()> {
         instructions::redeem_burned_amount(
             ctx,
@@ -206,7 +204,6 @@ pub mod confidential_token {
             cleartext_amount,
             signatures,
             extra_data,
-            proof,
         )
     }
 

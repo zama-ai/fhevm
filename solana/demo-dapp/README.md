@@ -180,16 +180,18 @@ sequenceDiagram
     Listener-->>Listener: Rebuild recorded history
     Keeper->>Relayer: Request clear batch total
     Relayer->>Keys: Decrypt and sign total
-    Keys->>Listener: Get proof that this value was recorded
+    Keys->>Listener: Get proof that this value was made public
     Keys-->>Relayer: Return clear total and signature
-    Keeper->>Batch: Submit history proof and signed total
+    Keeper->>Batch: Submit signed total
     Batch->>Vault: Deposit public batch total
     Vault-->>Batch: Mint normal shares
     Keeper->>Batch: Claim for user
     Batch-->>User: Add encrypted cShares
 ```
 
-Solana checks both the history proof and the key service's signed result before settlement. Anyone
+Before decrypting, the key service checks the listener's proof that the batch total was made public.
+Solana checks the key service's signed result, and that it covers the batch's own total, before
+settlement. Anyone
 may close, settle, or claim a ready batch. A claim can only credit the confidential token account
 derived for that user.
 
@@ -279,7 +281,7 @@ No component in the confidential deposit and redemption path is mocked or skippe
 | Solana transactions; vault, batcher, token, and host programs | Local validator, test USDC, and toy vault |
 | Encrypted inputs, balances, math, and stored encrypted data | Test keys and local workers |
 | Chain listener and confirmed-state reconstruction | Local event stream |
-| History proof generation and Solana verification | Listener proof verified against the current shared-state MMR |
+| History proof generation and verification | Listener proof checked by the key service against the current shared-state MMR |
 | Request service, decryption worker, key service, and signed results | One centralized key service |
 | Wallet signing and authorized balance reveals | Built-in or external wallet; one signature per reveal |
 | Closing, settlement, and claims | Local keeper |

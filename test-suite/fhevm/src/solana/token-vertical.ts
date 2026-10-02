@@ -8,8 +8,6 @@ import { INSTRUCTIONS_SYSVAR_ADDRESS, appendTransientStoreInstructions, prepareT
 
 import { getAddressEncoder, getProgramDerivedAddress, type Address, type TransactionSigner } from "@solana/kit";
 
-import type { MmrProof } from "@fhevm/sdk/solana";
-
 import { associatedTokenAddress, SPL_TOKEN_PROGRAM_ADDRESS } from "./spl";
 import { BRINGUP_KMS_CONTEXT_ID } from "./addresses";
 import { findKmsContextPda } from "../../../../solana/deploy/src/generated/zamaHost/pdas/index.js";
@@ -111,10 +109,9 @@ export const confidentialBurn = async (
 
 /**
  * Redeems the KMS-certified burned amount from the SPL vault (`redeem_burned_amount`): the host
- * verifier CPI checks the certificate against the live KMS context it names plus the burned
- * handle's public-leaf inclusion proof (built by the caller from the account's history), the token
- * account's PendingBurn closes, and the cleartext amount of underlying releases to the owner's
- * associated token account.
+ * verifier CPI checks the certificate against the live KMS context it names, the token program
+ * requires the certified handle to be the one pinned in PendingBurn, the PendingBurn closes, and
+ * the cleartext amount of underlying releases to the owner's associated token account.
  */
 export const redeemBurnedAmount = async (
   context: SolanaProvisioningContext,
@@ -123,11 +120,10 @@ export const redeemBurnedAmount = async (
     readonly mint: Address;
     readonly underlyingMint: Address;
     readonly certificate: PublicDecryptCertificate;
-    readonly inclusionProof: MmrProof;
   },
 ): Promise<void> => {
   const { verifyPublicDecryptArgsFromClaim } = await sdkVerifyModule();
-  const args = verifyPublicDecryptArgsFromClaim(params.certificate, params.inclusionProof);
+  const args = verifyPublicDecryptArgsFromClaim(params.certificate);
   const target = await confidentialBurnTarget(params.mint, params.owner.address);
   const [vaultAuthority] = await findVaultAuthorityPda({ mint: params.mint });
   const instruction = await getRedeemBurnedAmountInstructionAsync({
@@ -154,7 +150,6 @@ export const redeemBurnedAmount = async (
     cleartextAmount: certificateCleartext(params.certificate),
     signatures: [...args.signatures],
     extraData: args.extraData,
-    proof: { leafIndex: args.leafIndex, siblings: [...args.siblings] },
   });
   await context.sendTransaction(params.owner, [instruction]);
 };
@@ -184,30 +179,20 @@ export const sealBurnedAmountHandle = async (
 };
 
 /**
- * Publishes the KMS-certified burned-amount cleartext on-chain (`disclose_secp`): the same host
- * verifier CPI as redeem, then a token-scoped disclosure event. Idempotent by design.
+ * Publishes a KMS-certified handle and cleartext on-chain (`disclose_secp`): the same host
+ * verifier CPI as redeem, then a `HandleDisclosedEvent`. Idempotent by design. `payer` only pays.
  */
-export const discloseBurnedAmount = async (
+export const discloseCertifiedHandle = async (
   context: SolanaProvisioningContext,
   params: {
-    readonly owner: TransactionSigner;
-    readonly mint: Address;
+    readonly payer: TransactionSigner;
     readonly certificate: PublicDecryptCertificate;
-    readonly inclusionProof: MmrProof;
   },
 ): Promise<void> => {
   const vault = await vaultModule();
-  const target = await confidentialBurnTarget(params.mint, params.owner.address);
   const instruction = await vault.buildDiscloseSecpInstruction(
-    {
-      mint: params.mint,
-      tokenAccount: target.tokenAccount,
-      encryptedStore: target.burnedAmountStore,
-      kmsContext: await kmsContextAddress(),
-      hostConfig: await hostConfigAddress(),
-    },
+    { kmsContext: await kmsContextAddress(), hostConfig: await hostConfigAddress() },
     params.certificate,
-    params.inclusionProof,
   );
-  await context.sendTransaction(params.owner, [instruction]);
+  await context.sendTransaction(params.payer, [instruction]);
 };

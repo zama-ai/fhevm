@@ -1809,9 +1809,9 @@
       "name": "verify_public_decrypt",
       "docs": [
         "Stateless pull-oracle verifier (fhevm-internal#1704, #1765): verifies a KMS public-decrypt",
-        "certificate against the live `KmsContext` the certificate itself names plus an MMR",
-        "public-leaf inclusion proof, and returns `(handle, cleartext, context_id)` via",
-        "`return_data`. Creates and mutates nothing; emits nothing."
+        "certificate against the live `KmsContext` the certificate itself names and returns",
+        "`(handle, cleartext, context_id)` via `return_data`. Creates and mutates nothing; emits",
+        "nothing."
       ],
       "discriminator": [
         128,
@@ -1857,12 +1857,6 @@
             "KMS context PDA; must be the canonical PDA for the id the certificate commits to in its",
             "signed `extra_data`, and must not be destroyed. Verified in the handler."
           ]
-        },
-        {
-          "name": "encrypted_store",
-          "docs": [
-            "The encrypted store whose peaks the inclusion proof is checked against."
-          ]
         }
       ],
       "args": [
@@ -1898,14 +1892,6 @@
         {
           "name": "extra_data",
           "type": "bytes"
-        },
-        {
-          "name": "proof",
-          "type": {
-            "defined": {
-              "name": "MmrInclusionProof"
-            }
-          }
         }
       ]
     }
@@ -2404,146 +2390,141 @@
     },
     {
       "code": 6061,
-      "name": "PublicDecryptProofInvalid",
-      "msg": "public-decrypt inclusion proof is invalid"
-    },
-    {
-      "code": 6062,
       "name": "EmptyCoprocessorSignerSet",
       "msg": "coprocessor signer set must not be empty"
     },
     {
-      "code": 6063,
+      "code": 6062,
       "name": "TooManyCoprocessorSigners",
       "msg": "coprocessor signer set exceeds the maximum size"
     },
     {
-      "code": 6064,
+      "code": 6063,
       "name": "InvalidCoprocessorThreshold",
       "msg": "coprocessor threshold must be between 1 and the signer count"
     },
     {
-      "code": 6065,
+      "code": 6064,
       "name": "DuplicateCoprocessorSigner",
       "msg": "coprocessor signer set contains a duplicate signer"
     },
     {
-      "code": 6066,
+      "code": 6065,
       "name": "ZeroCoprocessorSigner",
       "msg": "coprocessor signer set contains the zero address"
     },
     {
-      "code": 6067,
+      "code": 6066,
       "name": "ZeroKmsSigner",
       "msg": "KMS signer set contains the zero address"
     },
     {
-      "code": 6068,
+      "code": 6067,
       "name": "PermitInvalidationPdaMismatch",
       "msg": "permit invalidation account is not the canonical account for the signer"
     },
     {
-      "code": 6069,
+      "code": 6068,
       "name": "PermitInvalidationAccountInvalid",
       "msg": "permit invalidation account is not a valid watermark record"
     },
     {
-      "code": 6070,
+      "code": 6069,
       "name": "ClockBeforeEpoch",
       "msg": "clock is before the unix epoch"
     },
     {
-      "code": 6071,
+      "code": 6070,
       "name": "FheExecuteDictionaryIndexOutOfBounds",
       "msg": "fhe_execute dictionary index out of bounds"
     },
     {
-      "code": 6072,
+      "code": 6071,
       "name": "FheExecuteAccountCountMismatch",
       "msg": "fhe_execute declared account count mismatch"
     },
     {
-      "code": 6073,
+      "code": 6072,
       "name": "FheExecuteDictionaryEntryUnreferenced",
       "msg": "fhe_execute dictionary entry is not referenced by any step"
     },
     {
-      "code": 6074,
+      "code": 6073,
       "name": "HcuLimitZeroReserved",
       "msg": "0 is not a valid HCU limit; use u64::MAX for unlimited"
     },
     {
-      "code": 6075,
+      "code": 6074,
       "name": "TransientAccountInvalid",
       "msg": "invalid transient workspace account"
     },
     {
-      "code": 6076,
+      "code": 6075,
       "name": "TransientCloseMissing",
       "msg": "matching final top-level transient_store close is required"
     },
     {
-      "code": 6077,
+      "code": 6076,
       "name": "TransientCapacityExceeded",
       "msg": "transient workspace grant capacity exceeded"
     },
     {
-      "code": 6078,
+      "code": 6077,
       "name": "EncryptedStoreCapacityExceeded",
       "msg": "encrypted store slot capacity exceeded"
     },
     {
-      "code": 6079,
+      "code": 6078,
       "name": "InvalidReturnSelection",
       "msg": "invalid execution return selection"
     },
     {
-      "code": 6080,
+      "code": 6079,
       "name": "TransientStoreNotOpened",
       "msg": "transient store must be opened for this transaction and closed last"
     },
     {
-      "code": 6081,
+      "code": 6080,
       "name": "WalletDelegationThroughCpi",
       "msg": "a wallet delegator must delegate in a top-level instruction"
     },
     {
-      "code": 6082,
+      "code": 6081,
       "name": "VerifiedInputsPaused",
       "msg": "verified inputs are paused"
     },
     {
-      "code": 6083,
+      "code": 6082,
       "name": "AclWritesPaused",
       "msg": "ACL writes are paused"
     },
     {
-      "code": 6084,
+      "code": 6083,
       "name": "PublicDecryptPaused",
       "msg": "public-decrypt verification is paused"
     },
     {
-      "code": 6085,
+      "code": 6084,
       "name": "NotPauser",
       "msg": "signer is not an enabled pauser"
     },
     {
-      "code": 6086,
+      "code": 6085,
       "name": "PauserRecordMismatch",
       "msg": "pauser record mismatch"
     },
     {
-      "code": 6087,
+      "code": 6086,
       "name": "WalletPauseThroughCpi",
       "msg": "a wallet pauser must pause in a top-level instruction"
     },
     {
-      "code": 6088,
+      "code": 6087,
       "name": "EncryptedStoreScopeNotProgramAccount",
       "msg": "encrypted store scope is not an account of the store's program"
     },
     {
-      "code": 6089,
+      "code": 6088,
       "name": "DelegationScopeNotProgramAccount",
       "msg": "delegation scope is not an account of the delegated program"
     }
@@ -4065,41 +4046,6 @@
               "Threshold for MPC (KMS-internal; stored for fidelity)."
             ],
             "type": "u8"
-          }
-        ]
-      }
-    },
-    {
-      "name": "MmrInclusionProof",
-      "docs": [
-        "Anchor-native mirror of `zama_solana_acl::MmrProof` for use as an instruction argument. The",
-        "shared ACL crate is deliberately Anchor-free (pure `borsh`) so it cannot derive Anchor IDL",
-        "metadata; this local type carries the identical wire shape and converts into the shared proof.",
-        "Defined in the host program so CPI callers depend only on the host IDL, never on token types."
-      ],
-      "type": {
-        "kind": "struct",
-        "fields": [
-          {
-            "name": "leaf_index",
-            "docs": [
-              "Index of the proven leaf within the encrypted store's MMR."
-            ],
-            "type": "u64"
-          },
-          {
-            "name": "siblings",
-            "docs": [
-              "Authentication path from the leaf up to its mountain peak."
-            ],
-            "type": {
-              "vec": {
-                "array": [
-                  "u8",
-                  32
-                ]
-              }
-            }
           }
         ]
       }

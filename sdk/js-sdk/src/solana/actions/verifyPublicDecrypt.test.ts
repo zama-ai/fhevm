@@ -2,7 +2,6 @@ import { describe, expect, it } from 'vitest';
 import { address, type Address } from '@solana/kit';
 import { base58 } from '@scure/base';
 
-import type { MmrProof } from '../proof.js';
 import type { SolanaPublicDecryptCertificateClaim } from './publicDecryptCertificate.js';
 import { buildVerifyPublicDecryptInstruction, verifyPublicDecryptArgsFromClaim } from './verifyPublicDecrypt.js';
 import { getVerifyPublicDecryptInstructionDataDecoder } from '../internal/generated/zamaHost/instructions/verifyPublicDecrypt.js';
@@ -16,8 +15,6 @@ const cleartextBytes = new Uint8Array(32);
 cleartextBytes[31] = 0x2a; // 42 as a uint256 low byte
 const signatureBytes = new Uint8Array(65).fill(0x11);
 const extraDataBytes = new Uint8Array([0x00]);
-const sibling = new Uint8Array(32).fill(0x07);
-const inclusionProof: MmrProof = { leafIndex: 3n, siblings: [sibling] };
 
 function hex(bytes: Uint8Array): string {
   return Array.from(bytes)
@@ -37,30 +34,26 @@ function claim(overrides: Partial<SolanaPublicDecryptCertificateClaim> = {}): So
 
 describe('verifyPublicDecryptArgsFromClaim', () => {
   it('decodes every claim field into the verifier wire types', () => {
-    const args = verifyPublicDecryptArgsFromClaim(claim(), inclusionProof);
+    const args = verifyPublicDecryptArgsFromClaim(claim());
     expect(Array.from(args.handle)).toEqual(Array.from(handleBytes));
     expect(Array.from(args.cleartext)).toEqual(Array.from(cleartextBytes));
     expect(args.signatures).toHaveLength(1);
     expect(Array.from(args.signatures[0]!)).toEqual(Array.from(signatureBytes));
     expect(Array.from(args.extraData)).toEqual(Array.from(extraDataBytes));
-    expect(args.leafIndex).toBe(3n);
-    expect(args.siblings.map((s) => Array.from(s))).toEqual([Array.from(sibling)]);
   });
 
   it('rejects a non-32-byte handle', () => {
-    expect(() => verifyPublicDecryptArgsFromClaim(claim({ handle: '0xabcd' }), inclusionProof)).toThrow(
-      /handle must be 32 bytes/,
-    );
+    expect(() => verifyPublicDecryptArgsFromClaim(claim({ handle: '0xabcd' }))).toThrow(/handle must be 32 bytes/);
   });
 
   it('rejects a non-32-byte cleartext', () => {
-    expect(() => verifyPublicDecryptArgsFromClaim(claim({ abiEncodedCleartext: '2a' }), inclusionProof)).toThrow(
+    expect(() => verifyPublicDecryptArgsFromClaim(claim({ abiEncodedCleartext: '2a' }))).toThrow(
       /cleartext must be a 32-byte uint256/,
     );
   });
 
   it('rejects a non-65-byte signature', () => {
-    expect(() => verifyPublicDecryptArgsFromClaim(claim({ signatures: ['1122'] }), inclusionProof)).toThrow(
+    expect(() => verifyPublicDecryptArgsFromClaim(claim({ signatures: ['1122'] }))).toThrow(
       /signature\[0\] must be 65 bytes/,
     );
   });
@@ -69,20 +62,14 @@ describe('verifyPublicDecryptArgsFromClaim', () => {
 describe('buildVerifyPublicDecryptInstruction', () => {
   it('maps a claim onto the raw host verify_public_decrypt instruction', async () => {
     const kmsContext = addr(2);
-    const encryptedStore = addr(3);
     const hostConfig = addr(4);
     const programAddress = addr(9);
-    const instruction = await buildVerifyPublicDecryptInstruction(
-      { hostConfig, kmsContext, encryptedStore, programAddress },
-      claim(),
-      inclusionProof,
-    );
+    const instruction = await buildVerifyPublicDecryptInstruction({ hostConfig, kmsContext, programAddress }, claim());
 
     expect(instruction.programAddress).toBe(programAddress);
     expect(instruction.accounts?.map((a: { readonly address: Address }) => a.address)).toEqual([
       hostConfig,
       kmsContext,
-      encryptedStore,
     ]);
 
     const decoded = getVerifyPublicDecryptInstructionDataDecoder().decode(instruction.data!);
@@ -90,7 +77,5 @@ describe('buildVerifyPublicDecryptInstruction', () => {
     expect(Array.from(decoded.cleartext)).toEqual(Array.from(cleartextBytes));
     expect(decoded.signatures.map((s) => Array.from(s))).toEqual([Array.from(signatureBytes)]);
     expect(Array.from(decoded.extraData)).toEqual(Array.from(extraDataBytes));
-    expect(decoded.leafIndex).toBe(3n);
-    expect(decoded.siblings.map((s) => Array.from(s))).toEqual([Array.from(sibling)]);
   });
 });

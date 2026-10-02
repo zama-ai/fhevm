@@ -428,18 +428,16 @@ describe.skipIf(!runsDemoScenarios)("solana deposit-arc scenario", () => {
       console.log("deposit-arc settle: waiting for the SNS commit of the burned total handle...");
       await waitForSnsCommit(burnedHandleHex, env.coprocessorDbPsql);
 
-      // Step 13: settle. One SDK call runs both off-chain phases (the MMR inclusion proof rebuilt
-      // from the burned value's account history, and the KMS burn certificate — its runtime
-      // consumes the auth config already set before the join) and the on-chain settle as a v0
+      // Step 13: settle. One SDK call fetches the KMS burn certificate (its runtime consumes the
+      // auth config already set before the join) and sends the on-chain settle as a v0
       // transaction against the seeded lookup table. The keeper signs;
       // authorityFundingLamports must suffice to cover the rent settle's CPIs charge to this
       // batch's authority — the seed recorded the open_batch value as a known-good amount.
-      console.log("deposit-arc settle: calling settleBatch (MMR proof + KMS certificate + on-chain settle)...");
+      console.log("deposit-arc settle: calling settleBatch (KMS certificate + on-chain settle)...");
       const publicDecryptClient = solanaSdk.createFhevmPublicDecryptClient({ chain, rpc });
       await vault.settleBatch(publicDecryptClient, keeper, {
         rpc,
         rpcSubscriptions,
-        proofService: env.leafProof,
         roots,
         contextId: asBytes32BigEndian(config.userDecryptContextId),
         lookupTableAddress: settleLookupTable,
@@ -711,9 +709,7 @@ test.skipIf(!runsDemoScenarios)(
     const session = async () => {
       await personas.fund(personas.roles.keeper!, 0.2);
       return { config: await readConfig(), keeper: await loadSigner(demoKeypairs(env).keeper),
-        relayerApiKey: process.env.ZAMA_FHEVM_API_KEY ?? 'local', proofService: {
-          url: process.env.DEMO_PROOF_URL!, apiKey: process.env.DEMO_PROOF_API_KEY!,
-        } };
+        relayerApiKey: process.env.ZAMA_FHEVM_API_KEY ?? 'local' };
     };
     expect(await dispatchVaultBatch(await session(), position, 'deposit')).not.toBeNull();
     const pendingBurn = await vault.pendingBurnAddress(mint, batchJoinTokenAccount);

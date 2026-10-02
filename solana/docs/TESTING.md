@@ -199,11 +199,11 @@ Every decrypt authorizes through exactly one leaf proof against the Store's conf
 | Leaf                               | Check                                                                         | Where tested                                                                                                                                                                                                       |
 | ---------------------------------- | ----------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
 | **allow** (`HistoricalAccessLeaf`) | MMR proof against live peaks, for the current handle and a replaced one alike | `zama-solana-acl` unit tests (`authorize_state_historical`, MMR append and verify); `host_mollusk` write-then-prove; `kms-worker` `solana_` tests (`handle_binding`, `proof`); host-listener `solana_leaves_tests` |
-| **public** (`PublicDecryptLeaf`)   | MMR proof against live peaks, exact handle                                    | `zama-solana-acl` (`authorize_state_public`); `token_mollusk` burn then redeem and `disclose_secp` after an update; `host_mollusk` `verify_public_decrypt` negatives (DD-040)                                      |
+| **public** (`PublicDecryptLeaf`)   | MMR proof against live peaks, exact handle                                    | `zama-solana-acl` (`authorize_state_public`); `kms-worker` `solana_public_decrypt` tests. On chain, consumers check only the KMS certificate (DD-065)                                                              |
 
 Each has negative coverage: wrong key, wrong handle, a proof from a foreign Store, an invalid or
-forged proof, and a leaf record that is behind all fail closed (the `*_rejects_*` Mollusk tests and
-the connector's `ProofRecordBehind` and `NoLeaf` classification).
+forged proof, and a leaf record that is behind all fail closed (the `zama-solana-acl` tests, the
+kms-worker `solana_` tests and the connector's `ProofRecordBehind` and `NoLeaf` classification).
 
 The central correctness bet is that off-chain consumers reproduce on-chain MMR state exactly. The
 solana-e2e scenarios exercise host-listener reconstruction against the full stack, and every proof

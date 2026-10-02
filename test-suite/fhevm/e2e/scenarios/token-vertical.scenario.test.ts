@@ -5,7 +5,7 @@ import { describe, expect, test } from "bun:test";
 
 import { getAddressEncoder, isSolanaError, SOLANA_ERROR__INSTRUCTION_ERROR__CUSTOM, type Address } from "@solana/kit";
 
-import { livePublicLeafProof, certifiedPublicDecrypt, currentHandle } from "../../src/solana/fhe-vertical";
+import { certifiedPublicDecrypt, currentHandle } from "../../src/solana/fhe-vertical";
 import {
   createConfidentialMint,
   createSplMint,
@@ -16,7 +16,7 @@ import {
 import {
   confidentialBurn,
   confidentialBurnTarget,
-  discloseBurnedAmount,
+  discloseCertifiedHandle,
   redeemBurnedAmount,
   sealBurnedAmountHandle,
 } from "../../src/solana/token-vertical";
@@ -113,17 +113,9 @@ describe("solana confidential-token consume vertical", () => {
       const burnedHandle = await currentHandle(context, target.burnedAmountStore, new TextEncoder().encode("burned_amount___________________"));
       await stack.waitForSnsCommit(hex(burnedHandle));
 
-      // Seal through the token wrapper (it signs the Host CPI as the State authority). The burn already appended [allowed(owner), markedPublic]; this explicit re-seal
-      // appends a third leaf. The proof below is built for the burn's own public leaf (index 1)
-      // against the 3-leaf history, which is what proves both the lifecycle leaves and the re-seal
-      // reached the account in order.
+      // The burn already sealed the handle public. Sealing it again through the token wrapper (it
+      // signs the Host CPI as the Store authority) exercises the wrapper's make-public path live.
       await sealBurnedAmountHandle(context, { owner: wallet.signer, mint, handle: burnedHandle });
-      const inclusionProof = await livePublicLeafProof(
-        context,
-        target.burnedAmountStore,
-        burnedHandle,
-        env.leafProof,
-      );
 
       const { cleartext, certificate } = await timed("certified public decrypt (KMS)", () =>
         certifiedPublicDecrypt(config, {
@@ -134,35 +126,32 @@ describe("solana confidential-token consume vertical", () => {
       expect(cleartext).toBe(BURN_AMOUNT);
 
       // Redeem: the host verifier CPI checks the KMS certificate against the live context it
-      // names plus the burned handle's MMR public-leaf proof, the PendingBurn closes, and the
-      // certified amount of underlying releases to the owner.
+      // names, the token program requires the burned handle pinned in PendingBurn, the PendingBurn
+      // closes, and the certified amount of underlying releases to the owner.
       const balanceBefore = BigInt(
         (await context.rpc.getTokenAccountBalance(ownerUnderlying, { commitment: "confirmed" }).send()).value.amount,
       );
-      await timed("redeem with certificate + leaf proof (host verifier CPI)", () =>
-        redeemBurnedAmount(context, { owner: wallet.signer, mint, underlyingMint, certificate, inclusionProof }),
+      await timed("redeem with certificate (host verifier CPI)", () =>
+        redeemBurnedAmount(context, { owner: wallet.signer, mint, underlyingMint, certificate }),
       );
       const balanceAfter = BigInt(
         (await context.rpc.getTokenAccountBalance(ownerUnderlying, { commitment: "confirmed" }).send()).value.amount,
       );
       expect(balanceAfter - balanceBefore).toBe(BURN_AMOUNT);
 
-      // Disclose: same verifier CPI, then the generic state/handle/cleartext event. Idempotent by design;
-      // the burn already sealed the leaf, so the certificate's proof stays valid through both.
-      await discloseBurnedAmount(context, { owner: wallet.signer, mint, certificate, inclusionProof });
+      // Disclose: same verifier CPI, then the handle/cleartext event. Idempotent by design.
+      await discloseCertifiedHandle(context, { payer: wallet.signer, certificate });
 
-      // Keep the v1 KMS routing and the state binding intact; change only the committed context id.
+      // Keep the v1 KMS routing intact; change only the committed context id.
       // The host must reject the context mismatch before checking the certificate signature.
       const wrongContextExtraData = hexToBytes(certificate.extraData);
       expect(wrongContextExtraData.length).toBe(33);
       expect(wrongContextExtraData[0]).toBe(1);
       wrongContextExtraData[32] = wrongContextExtraData[32]! ^ 1;
       const wrongContextCertificate = { ...certificate, extraData: hex(wrongContextExtraData) };
-      const rejection = await discloseBurnedAmount(context, {
-        owner: wallet.signer,
-        mint,
+      const rejection = await discloseCertifiedHandle(context, {
+        payer: wallet.signer,
         certificate: wrongContextCertificate,
-        inclusionProof,
       }).then(
         () => undefined,
         (error: unknown) => error,

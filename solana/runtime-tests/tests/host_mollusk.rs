@@ -4492,89 +4492,27 @@ fn kms_context_account(context_id: [u8; 32]) -> (Pubkey, Account) {
     kms_context_account_with(context_id, kms_context_signers(), 1, false)
 }
 
-#[allow(clippy::too_many_arguments)]
 fn verify_public_decrypt_ix(
     host_config: Pubkey,
     kms_context: Pubkey,
-    encrypted_store: Pubkey,
     handle: [u8; 32],
     cleartext: [u8; 32],
     signatures: Vec<[u8; 65]>,
     extra_data: Vec<u8>,
-    proof: host::instructions::MmrInclusionProof,
 ) -> Instruction {
     anchor_ix(
         host::id(),
         host::accounts::VerifyPublicDecrypt {
             host_config,
             kms_context,
-            encrypted_store,
         },
         host::instruction::VerifyPublicDecrypt {
             handle,
             cleartext,
             signatures,
             extra_data,
-            proof,
         },
     )
-}
-
-fn mmr_inclusion_proof(proof: zama_solana_acl::MmrProof) -> host::instructions::MmrInclusionProof {
-    host::instructions::MmrInclusionProof {
-        leaf_index: proof.leaf_index,
-        siblings: proof.siblings,
-    }
-}
-
-/// Seals `handle` public on a fresh value of `app` via `make_handle_public`, returning the value's
-/// address, the resulting on-chain value, and a verified inclusion proof for the sealed leaf.
-fn seal_public_leaf(
-    payer: Pubkey,
-    app: &App,
-    host_config: Pubkey,
-    host_config_account: &Account,
-    handle: [u8; 32],
-) -> (
-    Pubkey,
-    EncryptedStore,
-    host::instructions::MmrInclusionProof,
-) {
-    let (address, value) = app.value("balance", handle);
-    let seal_ix = make_handle_public_ix(
-        payer,
-        app.key(),
-        address,
-        host_config,
-        value.slots[0].key,
-        handle,
-        value.leaf_count,
-        None,
-    );
-    let seal_accounts = make_public_accounts(
-        payer,
-        app,
-        address,
-        &value,
-        host_config,
-        host_config_account.clone(),
-    );
-    let sealed = read_encrypted_store_from_result(
-        &check_host_instruction(&mollusk(), &seal_ix, &seal_accounts, &[Check::success()]),
-        address,
-    );
-    let events = [StoreHistoryEvent::MarkedPublic { handle }];
-    let proof = mmr_inclusion_proof(
-        zama_solana_acl::build_verified_proof_from_events(
-            address.to_bytes(),
-            &events,
-            &sealed.peaks,
-            sealed.leaf_count,
-            0,
-        )
-        .unwrap(),
-    );
-    (address, sealed, proof)
 }
 
 /// A KMS public-decrypt certificate for `handle` -> 4242 under the fixtures' gateway domain.
@@ -4601,29 +4539,23 @@ fn expected_return_data(handle: [u8; 32], cleartext: [u8; 32], context_id: [u8; 
 #[test]
 fn mollusk_verify_public_decrypt_returns_handle_and_cleartext() {
     let admin = Pubkey::new_unique();
-    let app = App::new();
     let (host_config, host_config_account) = host_config_with_context(admin, KMS_CONTEXT_ID);
     let (kms_context, kms_context_acct) = kms_context_account(KMS_CONTEXT_ID);
     let handle = handle_for_chain(5, 5);
-    let (address, sealed, proof) =
-        seal_public_leaf(admin, &app, host_config, &host_config_account, handle);
 
     let extra_data = vec![0x00u8]; // v0: bind to the current context
     let (cleartext, signatures) = public_decrypt_cert(handle, &extra_data);
     let ix = verify_public_decrypt_ix(
         host_config,
         kms_context,
-        address,
         handle,
         cleartext,
         signatures,
         extra_data,
-        proof,
     );
     let accounts = vec![
         (host_config, host_config_account),
         (kms_context, kms_context_acct),
-        (address, encrypted_store_account(&sealed)),
     ];
     // v0 extra_data resolves to the current context, so return_data carries the current id.
     let expected = expected_return_data(handle, cleartext, KMS_CONTEXT_ID);
@@ -4633,33 +4565,25 @@ fn mollusk_verify_public_decrypt_returns_handle_and_cleartext() {
         &accounts,
         &[Check::success(), Check::return_data(&expected)],
     );
-    // return_data is exactly handle ++ cleartext ++ context_id, and nothing was written back.
+    // return_data is exactly handle ++ cleartext ++ context_id.
     assert_eq!(result.return_data, expected);
-    let unchanged = read_encrypted_store_from_result(&result, address);
-    assert_eq!(unchanged.slots[0].handle, sealed.slots[0].handle);
-    assert_eq!(unchanged.leaf_count, sealed.leaf_count);
-    assert_eq!(unchanged.peaks, sealed.peaks);
 }
 
 #[test]
 fn mollusk_only_the_public_decrypt_flag_stops_verify_public_decrypt() {
     let admin = Pubkey::new_unique();
-    let app = App::new();
     let (host_config, live_config) = host_config_with_context(admin, KMS_CONTEXT_ID);
     let (kms_context, kms_context_acct) = kms_context_account(KMS_CONTEXT_ID);
     let handle = handle_for_chain(5, 5);
-    let (address, sealed, proof) = seal_public_leaf(admin, &app, host_config, &live_config, handle);
     let extra_data = vec![0x00u8];
     let (cleartext, signatures) = public_decrypt_cert(handle, &extra_data);
     let ix = verify_public_decrypt_ix(
         host_config,
         kms_context,
-        address,
         handle,
         cleartext,
         signatures,
         extra_data,
-        proof,
     );
 
     let none = host::PauseFlags::default();
@@ -4705,7 +4629,6 @@ fn mollusk_only_the_public_decrypt_flag_stops_verify_public_decrypt() {
                 },
             ),
             (kms_context, kms_context_acct.clone()),
-            (address, encrypted_store_account(&sealed)),
         ];
         let check = error.map_or_else(Check::success, custom_error);
         check_host_instruction(&mollusk(), &ix, &accounts, &[check]);
@@ -4716,12 +4639,9 @@ fn mollusk_only_the_public_decrypt_flag_stops_verify_public_decrypt() {
 fn mollusk_verify_public_decrypt_accepts_v2_kms_routing() {
     // Version 2 routes by context and epoch, as on EVM. Only the context selects the signers.
     let admin = Pubkey::new_unique();
-    let app = App::new();
     let (host_config, host_config_account) = host_config_with_context(admin, KMS_CONTEXT_ID);
     let (kms_context, kms_context_acct) = kms_context_account(KMS_CONTEXT_ID);
     let handle = handle_for_chain(5, 5);
-    let (address, sealed, proof) =
-        seal_public_leaf(admin, &app, host_config, &host_config_account, handle);
 
     let epoch_id = [0x08; 32];
     let extra_data = [&[2][..], &KMS_CONTEXT_ID, &epoch_id].concat();
@@ -4729,17 +4649,14 @@ fn mollusk_verify_public_decrypt_accepts_v2_kms_routing() {
     let ix = verify_public_decrypt_ix(
         host_config,
         kms_context,
-        address,
         handle,
         cleartext,
         signatures,
         extra_data,
-        proof,
     );
     let accounts = vec![
         (host_config, host_config_account),
         (kms_context, kms_context_acct),
-        (address, encrypted_store_account(&sealed)),
     ];
     let expected = expected_return_data(handle, cleartext, KMS_CONTEXT_ID);
     check_host_instruction(
@@ -4797,11 +4714,8 @@ fn mollusk_verify_public_decrypt_accepts_live_rotated_out_context() {
     // EVM-parity liveness: a cert minted under context 1 stays verifiable after the operator rotates
     // to context 2, because context 1's account persists and is not destroyed. return_data carries 1.
     let admin = Pubkey::new_unique();
-    let app = App::new();
     let (host_config, host_config_account) = host_config_with_context(admin, KMS_CONTEXT_ID);
     let handle = handle_for_chain(5, 5);
-    let (address, sealed, proof) =
-        seal_public_leaf(admin, &app, host_config, &host_config_account, handle);
 
     // Rotate 1 -> 2; context 1 is now the old (but still live) context.
     let (rotated_host_config, _next_kms_context, _next_acct) =
@@ -4813,17 +4727,14 @@ fn mollusk_verify_public_decrypt_accepts_live_rotated_out_context() {
     let ix = verify_public_decrypt_ix(
         host_config,
         kms_context,
-        address,
         handle,
         cleartext,
         signatures,
         extra_data,
-        proof,
     );
     let accounts = vec![
         (host_config, rotated_host_config),
         (kms_context, kms_context_acct),
-        (address, encrypted_store_account(&sealed)),
     ];
     let expected = expected_return_data(handle, cleartext, KMS_CONTEXT_ID);
     let result = check_host_instruction(
@@ -4840,11 +4751,8 @@ fn mollusk_verify_public_decrypt_rejects_after_destroy() {
     // The revocation lever end to end: rotate 1 -> 2, then `destroy_kms_context(1)`. The same cert
     // that verified while 1 was live now fails closed — destroy invalidates every outstanding 1-cert.
     let admin = Pubkey::new_unique();
-    let app = App::new();
     let (host_config, host_config_account) = host_config_with_context(admin, KMS_CONTEXT_ID);
     let handle = handle_for_chain(5, 5);
-    let (address, sealed, proof) =
-        seal_public_leaf(admin, &app, host_config, &host_config_account, handle);
 
     // Rotate 1 -> 2 so context 1 is no longer current and may be destroyed.
     let (rotated_host_config, _next_kms_context, _next_acct) =
@@ -4874,17 +4782,14 @@ fn mollusk_verify_public_decrypt_rejects_after_destroy() {
     let ix = verify_public_decrypt_ix(
         host_config,
         kms_context,
-        address,
         handle,
         cleartext,
         signatures,
         extra_data,
-        proof,
     );
     let accounts = vec![
         (host_config, rotated_host_config),
         (kms_context, destroyed_kms_context_acct),
-        (address, encrypted_store_account(&sealed)),
     ];
     check_host_instruction(
         &mollusk(),
@@ -4899,30 +4804,24 @@ fn mollusk_verify_public_decrypt_rejects_destroyed_context() {
     // A destroyed context account supplied directly (canonical PDA, cert commits its id) is rejected
     // on the `!destroyed` check.
     let admin = Pubkey::new_unique();
-    let app = App::new();
     let (host_config, host_config_account) = host_config_with_context(admin, KMS_CONTEXT_ID);
     let (kms_context, kms_context_acct) =
         kms_context_account_with(KMS_CONTEXT_ID, kms_context_signers(), 1, true);
     let handle = handle_for_chain(5, 5);
-    let (address, sealed, proof) =
-        seal_public_leaf(admin, &app, host_config, &host_config_account, handle);
 
     let extra_data = vec![0x00u8];
     let (cleartext, signatures) = public_decrypt_cert(handle, &extra_data);
     let ix = verify_public_decrypt_ix(
         host_config,
         kms_context,
-        address,
         handle,
         cleartext,
         signatures,
         extra_data,
-        proof,
     );
     let accounts = vec![
         (host_config, host_config_account),
         (kms_context, kms_context_acct),
-        (address, encrypted_store_account(&sealed)),
     ];
     check_host_instruction(
         &mollusk(),
@@ -4938,11 +4837,8 @@ fn mollusk_verify_public_decrypt_rejects_context_account_mismatch() {
     // account (context 2's canonical PDA). The cert-id -> canonical-PDA binding fails: context 2's
     // PDA is not the canonical PDA for id 1, so verification is rejected.
     let admin = Pubkey::new_unique();
-    let app = App::new();
     let (host_config, host_config_account) = host_config_with_context(admin, KMS_CONTEXT_ID);
     let handle = handle_for_chain(5, 5);
-    let (address, sealed, proof) =
-        seal_public_leaf(admin, &app, host_config, &host_config_account, handle);
 
     // Rotate 1 -> 2 to obtain a real, live context-2 account at its canonical PDA.
     let (rotated_host_config, next_kms_context, next_kms_context_acct) =
@@ -4954,17 +4850,14 @@ fn mollusk_verify_public_decrypt_rejects_context_account_mismatch() {
     let ix = verify_public_decrypt_ix(
         host_config,
         next_kms_context,
-        address,
         handle,
         cleartext,
         signatures,
         extra_data,
-        proof,
     );
     let accounts = vec![
         (host_config, rotated_host_config),
         (next_kms_context, next_kms_context_acct),
-        (address, encrypted_store_account(&sealed)),
     ];
     check_host_instruction(
         &mollusk(),
@@ -4980,11 +4873,8 @@ fn mollusk_verify_public_decrypt_rejects_nonexistent_context_id() {
     // no `KmsContext` (a system-owned placeholder stands in), so Anchor's account loader rejects it
     // before the handler: there is no live signer set to verify against.
     let admin = Pubkey::new_unique();
-    let app = App::new();
     let (host_config, host_config_account) = host_config_with_context(admin, KMS_CONTEXT_ID);
     let handle = handle_for_chain(5, 5);
-    let (address, sealed, proof) =
-        seal_public_leaf(admin, &app, host_config, &host_config_account, handle);
 
     let nonexistent_context_id = canonical_test_context_id(99);
     let (nonexistent_kms_context, _) = host::kms_context_address(nonexistent_context_id);
@@ -4993,18 +4883,15 @@ fn mollusk_verify_public_decrypt_rejects_nonexistent_context_id() {
     let ix = verify_public_decrypt_ix(
         host_config,
         nonexistent_kms_context,
-        address,
         handle,
         cleartext,
         signatures,
         extra_data,
-        proof,
     );
     let accounts = vec![
         (host_config, host_config_account),
         // No KmsContext exists at the canonical PDA for id 99; a system-owned account stands in.
         (nonexistent_kms_context, funded_system_account()),
-        (address, encrypted_store_account(&sealed)),
     ];
     check_host_instruction(
         &mollusk(),
@@ -5019,7 +4906,6 @@ fn mollusk_verify_public_decrypt_rejects_nonexistent_context_id() {
 #[test]
 fn mollusk_verify_public_decrypt_rejects_sub_threshold_signatures() {
     let admin = Pubkey::new_unique();
-    let app = App::new();
     let (host_config, host_config_account) = host_config_with_context(admin, KMS_CONTEXT_ID);
     // Context requires two distinct signers; the cert carries only one.
     let (kms_context, kms_context_acct) = kms_context_account_with(
@@ -5032,25 +4918,20 @@ fn mollusk_verify_public_decrypt_rejects_sub_threshold_signatures() {
         false,
     );
     let handle = handle_for_chain(5, 5);
-    let (address, sealed, proof) =
-        seal_public_leaf(admin, &app, host_config, &host_config_account, handle);
 
     let extra_data = vec![0x00u8];
     let (cleartext, signatures) = public_decrypt_cert(handle, &extra_data);
     let ix = verify_public_decrypt_ix(
         host_config,
         kms_context,
-        address,
         handle,
         cleartext,
         signatures,
         extra_data,
-        proof,
     );
     let accounts = vec![
         (host_config, host_config_account),
         (kms_context, kms_context_acct),
-        (address, encrypted_store_account(&sealed)),
     ];
     check_host_instruction(
         &mollusk(),
@@ -5063,46 +4944,34 @@ fn mollusk_verify_public_decrypt_rejects_sub_threshold_signatures() {
 }
 
 #[test]
-fn mollusk_verify_public_decrypt_rejects_handle_proof_mismatch() {
+fn mollusk_verify_public_decrypt_rejects_certificate_for_another_handle() {
+    // The certificate is the authorization: a cert valid over one handle never certifies another,
+    // so a caller cannot attach a genuine certificate to the handle its consumer pinned.
     let admin = Pubkey::new_unique();
-    let app = App::new();
     let (host_config, host_config_account) = host_config_with_context(admin, KMS_CONTEXT_ID);
     let (kms_context, kms_context_acct) = kms_context_account(KMS_CONTEXT_ID);
-    let sealed_handle = handle_for_chain(5, 5);
-    let (address, sealed, proof) = seal_public_leaf(
-        admin,
-        &app,
-        host_config,
-        &host_config_account,
-        sealed_handle,
-    );
-
-    // A cert valid over a DIFFERENT handle, presented with the sealed handle's proof: the cert check
-    // passes but the exact-handle inclusion proof does not authorize the unsealed handle.
+    let pinned_handle = handle_for_chain(5, 5);
     let other_handle = handle_for_chain(6, 5);
     let extra_data = vec![0x00u8];
     let (cleartext, signatures) = public_decrypt_cert(other_handle, &extra_data);
     let ix = verify_public_decrypt_ix(
         host_config,
         kms_context,
-        address,
-        other_handle,
+        pinned_handle,
         cleartext,
         signatures,
         extra_data,
-        proof,
     );
     let accounts = vec![
         (host_config, host_config_account),
         (kms_context, kms_context_acct),
-        (address, encrypted_store_account(&sealed)),
     ];
     check_host_instruction(
         &mollusk(),
         &ix,
         &accounts,
         &[custom_error(
-            host::errors::ZamaHostError::PublicDecryptProofInvalid,
+            host::errors::ZamaHostError::InvalidKmsCertificate,
         )],
     );
 }
@@ -5110,184 +4979,31 @@ fn mollusk_verify_public_decrypt_rejects_handle_proof_mismatch() {
 #[test]
 fn mollusk_verify_public_decrypt_rejects_non_canonical_kms_context() {
     let admin = Pubkey::new_unique();
-    let app = App::new();
     let (host_config, host_config_account) = host_config_with_context(admin, KMS_CONTEXT_ID);
     // Canonical context data, placed at a non-canonical address.
     let (_, kms_context_acct) = kms_context_account(KMS_CONTEXT_ID);
     let wrong_kms_context = Pubkey::new_unique();
     let handle = handle_for_chain(5, 5);
-    let (address, sealed, proof) =
-        seal_public_leaf(admin, &app, host_config, &host_config_account, handle);
 
     let extra_data = vec![0x00u8];
     let (cleartext, signatures) = public_decrypt_cert(handle, &extra_data);
     let ix = verify_public_decrypt_ix(
         host_config,
         wrong_kms_context,
-        address,
         handle,
         cleartext,
         signatures,
         extra_data,
-        proof,
     );
     let accounts = vec![
         (host_config, host_config_account),
         (wrong_kms_context, kms_context_acct),
-        (address, encrypted_store_account(&sealed)),
     ];
     check_host_instruction(
         &mollusk(),
         &ix,
         &accounts,
         &[custom_error(host::errors::ZamaHostError::InvalidKmsContext)],
-    );
-}
-
-#[test]
-fn mollusk_verify_public_decrypt_survives_update_after_seal() {
-    // The dust-race claim: an update between seal and consume moves the MMR peaks but can neither
-    // invalidate nor retarget the sealed leaf. The OLD handle still verifies with a proof rebuilt
-    // against the updated peaks.
-    let admin = Pubkey::new_unique();
-    let app = App::new();
-    let viewer = Pubkey::new_unique();
-    let (host_config, host_config_account) = host_config_with_context(admin, KMS_CONTEXT_ID);
-    let (kms_context, kms_context_acct) = kms_context_account(KMS_CONTEXT_ID);
-    let handle0 = handle_for_chain(30, 5);
-    let (address, sealed, _) =
-        seal_public_leaf(admin, &app, host_config, &host_config_account, handle0);
-
-    // Update the value (dust transfer analog) after the seal.
-    let final_value = update_with_fhe_execute(
-        admin,
-        &app,
-        host_config,
-        host_config_account.clone(),
-        address,
-        &sealed,
-        &[viewer],
-        31,
-    );
-    assert_ne!(final_value.slots[0].handle, handle0);
-
-    // Rebuild the proof for the sealed leaf 0 against the post-update peaks.
-    let mut events = vec![StoreHistoryEvent::MarkedPublic { handle: handle0 }];
-    events.extend(allowed_events(final_value.slots[0].handle, &[viewer]));
-    let proof = mmr_inclusion_proof(
-        zama_solana_acl::build_verified_proof_from_events(
-            address.to_bytes(),
-            &events,
-            &final_value.peaks,
-            final_value.leaf_count,
-            0,
-        )
-        .unwrap(),
-    );
-
-    let extra_data = vec![0x00u8];
-    let (cleartext, signatures) = public_decrypt_cert(handle0, &extra_data);
-    let ix = verify_public_decrypt_ix(
-        host_config,
-        kms_context,
-        address,
-        handle0,
-        cleartext,
-        signatures,
-        extra_data,
-        proof,
-    );
-    let accounts = vec![
-        (host_config, host_config_account),
-        (kms_context, kms_context_acct),
-        (address, encrypted_store_account(&final_value)),
-    ];
-    let expected = expected_return_data(handle0, cleartext, KMS_CONTEXT_ID);
-    let result = check_host_instruction(
-        &mollusk(),
-        &ix,
-        &accounts,
-        &[Check::success(), Check::return_data(&expected)],
-    );
-    assert_eq!(result.return_data, expected);
-}
-
-#[test]
-fn mollusk_verify_public_decrypt_rejects_historical_only_leaf() {
-    // Public-vs-historical leaf domain separation: a value written WITHOUT make_handle_public has
-    // only historical-access leaves. A proof for such a leaf must not authorize a public decrypt,
-    // even though the leaf genuinely exists — the two use distinct leaf commitments.
-    let admin = Pubkey::new_unique();
-    let app = App::new();
-    let viewer = Pubkey::new_unique();
-    let (host_config, host_config_account) = host_config_with_context(admin, KMS_CONTEXT_ID);
-    let (kms_context, kms_context_acct) = kms_context_account(KMS_CONTEXT_ID);
-    let (address, value0) = app.value("balance", handle_for_chain(40, 5));
-
-    // The update seals a historical-access leaf for (new handle, viewer); no public-decrypt leaf.
-    let final_value = update_with_fhe_execute(
-        admin,
-        &app,
-        host_config,
-        host_config_account.clone(),
-        address,
-        &value0,
-        &[viewer],
-        41,
-    );
-    let handle1 = final_value.slots[0].handle;
-
-    let events = allowed_events(handle1, &[viewer]);
-    let shared_proof = zama_solana_acl::build_verified_proof_from_events(
-        address.to_bytes(),
-        &events,
-        &final_value.peaks,
-        final_value.leaf_count,
-        0,
-    )
-    .unwrap();
-    // The leaf really exists (it authorizes historically), but the public-decrypt domain rejects it.
-    let shared = shared_state(&final_value);
-    assert!(zama_solana_acl::authorize_state_historical(
-        address.to_bytes(),
-        &shared,
-        handle1,
-        viewer.to_bytes(),
-        &shared_proof,
-    )
-    .is_ok());
-    assert!(zama_solana_acl::authorize_state_public(
-        address.to_bytes(),
-        &shared,
-        handle1,
-        &shared_proof
-    )
-    .is_err());
-
-    let extra_data = vec![0x00u8];
-    let (cleartext, signatures) = public_decrypt_cert(handle1, &extra_data);
-    let ix = verify_public_decrypt_ix(
-        host_config,
-        kms_context,
-        address,
-        handle1,
-        cleartext,
-        signatures,
-        extra_data,
-        mmr_inclusion_proof(shared_proof),
-    );
-    let accounts = vec![
-        (host_config, host_config_account),
-        (kms_context, kms_context_acct),
-        (address, encrypted_store_account(&final_value)),
-    ];
-    check_host_instruction(
-        &mollusk(),
-        &ix,
-        &accounts,
-        &[custom_error(
-            host::errors::ZamaHostError::PublicDecryptProofInvalid,
-        )],
     );
 }
 
@@ -5299,32 +5015,26 @@ fn mollusk_verify_public_decrypt_rejects_historical_only_leaf() {
 
 #[test]
 fn cost_snapshot_verify_public_decrypt() {
-    // Happy-path stateless verify with fixed fixture keys: three read-only accounts, one secp
-    // recovery, one MMR inclusion check. Per-consume CU is the price of statelessness (#1704).
+    // Happy-path stateless verify with fixed fixture keys: two read-only accounts and one secp
+    // recovery. Per-consume CU is the price of statelessness (#1704).
     let admin = Pubkey::new_from_array([0x31; 32]);
-    let app = App::with_program(Pubkey::new_from_array([0x33; 32]));
     let (host_config, host_config_account) = host_config_with_context(admin, KMS_CONTEXT_ID);
     let (kms_context, kms_context_acct) = kms_context_account(KMS_CONTEXT_ID);
     let handle = handle_for_chain(5, 5);
-    let (address, sealed, proof) =
-        seal_public_leaf(admin, &app, host_config, &host_config_account, handle);
 
     let extra_data = vec![0x00u8];
     let (cleartext, signatures) = public_decrypt_cert(handle, &extra_data);
     let ix = verify_public_decrypt_ix(
         host_config,
         kms_context,
-        address,
         handle,
         cleartext,
         signatures,
         extra_data,
-        proof,
     );
     let accounts = vec![
         (host_config, host_config_account),
         (kms_context, kms_context_acct),
-        (address, encrypted_store_account(&sealed)),
     ];
     let result = check_host_instruction(&mollusk(), &ix, &accounts, &[Check::success()]);
     cost_snapshot::assert_cost_snapshot(

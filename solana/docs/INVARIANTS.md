@@ -41,7 +41,7 @@ grant, transient store, application.
 **1. [HOLDS]** Plaintext values never appear on-chain: the chain stores handles
 and access state; ciphertexts live only in the coprocessor.
 Holds by construction: a confidential value reaches the host and token programs only as a handle, and the one
-instruction that accepts a cleartext is `verify_public_decrypt`, for a handle already sealed public (#21). Values public
+instruction that accepts a cleartext is `verify_public_decrypt`, for a handle the KMS certified public (#21). Values public
 by design, such as trivially encrypted constants and the SPL amounts of wrap and redeem, are outside this entry.
 
 **2. [HOLDS]** A failed confidential transfer is indistinguishable on-chain from
@@ -79,8 +79,9 @@ and the state test `canonical_validation_rejects_wrong_bump_address_and_duplicat
 
 **8. [HOLDS]** Sealed history (the MMR) is append-only: a handle sealed public
 stays provable after any number of later updates.
-Pinned by `mollusk_historical_proof_round_trip_after_two_updates`, `mollusk_verify_public_decrypt_survives_update_after_seal`
-and the MMR test `every_leaf_verifies_and_tampering_fails`.
+Pinned by `mollusk_historical_proof_round_trip_after_two_updates`, `mollusk_public_decrypt_proof_has_no_roll_forward`,
+the kms-worker test `a_public_leaf_the_record_serves_authorizes_the_handle` and the MMR test
+`every_leaf_verifies_and_tampering_fails`.
 
 **9. [RETIRED]** The instruction that removed a viewer went with the stored list
 (RFC 035, DD-048): allows are sealed on the write and never removed. A handle with no allows and
@@ -267,18 +268,23 @@ own allows.
 Holds by construction: a verified input is an operand of one execution, and an execution persists only its declared
 Store outputs (#5). No test tries to persist one otherwise, because no instruction could.
 
-**21. [HOLDS]** Public cleartext is accepted on-chain only through
-`verify_public_decrypt`: a KMS threshold certificate **and** an MMR
-inclusion proof that the exact handle was sealed public.
+**21. [HOLDS]** Public cleartext is accepted on-chain only through `verify_public_decrypt`, with a KMS threshold
+certificate over the exact handle and cleartext. The verifier reads no ACL state, as EVM `FHE.checkSignatures` reads
+none (DD-065). The KMS connectors check the handle's public leaf before they decrypt, so a certificate exists only for a
+handle sealed public (#23). A consumer binds the certificate to its own state by comparing the certified handle with
+one it pinned.
 Pinned by `mollusk_verify_public_decrypt_returns_handle_and_cleartext`,
-`mollusk_verify_public_decrypt_rejects_handle_proof_mismatch`, `mollusk_verify_public_decrypt_rejects_historical_only_leaf`
-and `mollusk_verify_public_decrypt_rejects_sub_threshold_signatures`.
+`mollusk_verify_public_decrypt_rejects_certificate_for_another_handle`,
+`mollusk_verify_public_decrypt_rejects_sub_threshold_signatures`,
+`mollusk_redeem_rejects_certificate_not_over_pinned_handle_and_amount`,
+`mollusk_two_sequential_burns_each_redeemable_exactly_once` and the kms-worker tests
+`an_allow_leaf_does_not_prove_public_ness` and `a_handle_not_made_public_is_retried`.
 
 **22. [HOLDS]** Certificate binding chain: signed `extra_data` → context id → canonical KmsContext PDA → signer set.
 Empty or version-0 `extra_data` selects the current context; version 1 is exactly 33 bytes and carries the 32-byte id;
 version 2 is exactly 65 bytes, the id then an epoch id, as EVM `KMSVerifier` reads it. Every other version is rejected.
 `extra_data` names no Store (DD-060). The verifier authenticates the context, handle and cleartext through the
-certificate and independently verifies the exact handle's public leaf against the supplied Store's current peaks.
+certificate. It reads no Store (#21).
 Destroying a context invalidates its certificates; rotation alone invalidates none.
 Pinned by `extract_kms_context_id_mirrors_evm_extractcontextid`,
 `mollusk_verify_public_decrypt_accepts_v2_kms_routing`,
@@ -528,11 +534,13 @@ chain type first.
 
 ## H. Reference confidential applications
 
-**55. [HOLDS]** `disclose_secp` binds a certificate to this token program, the mint as scope, the canonical Store of one
-token account or of the total supply, the exact handle and the certified cleartext, then emits `HandleDisclosedEvent`
-with those fields. The event carries no slot key and no token kind; which operation produced the handle is known from
-that operation's own event. A public leaf stays usable after the slot moves on, so an old handle can be disclosed at any
-time. Pinned by `mollusk_disclose_secp_is_idempotent_no_replay_marker`.
+**55. [HOLDS]** `disclose_secp` verifies a KMS certificate through `verify_public_decrypt` and emits
+`HandleDisclosedEvent { handle, cleartext_amount }`, as ERC-7984 `discloseEncryptedAmount` emits `AmountDisclosed`. It
+reads no token account, no Store and no mint. The event carries no slot key and no token kind; which account and
+operation produced the handle is known from that operation's own event. A certificate stays valid after the slot moves
+on, so an old handle can be disclosed at any time, and disclosing it again emits the same event.
+Pinned by `mollusk_disclose_secp_emits_certified_handle_and_cleartext`,
+`mollusk_disclose_secp_rejects_cleartext_wider_than_u64` and `mollusk_disclose_secp_is_idempotent_no_replay_marker`.
 
 **56. [HOLDS]** An underlying mint's owner pins one token program. Wrap and
 redeem require that program to own the underlying mint and both token

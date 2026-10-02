@@ -14,13 +14,10 @@ describe('generated host instruction defaults', () => {
       const instruction = await getVerifyPublicDecryptInstructionAsync(
         {
           kmsContext: programAddress,
-          encryptedStore: programAddress,
           handle: new Uint8Array(32),
           cleartext: new Uint8Array(32),
           signatures: [],
           extraData: new Uint8Array(),
-          leafIndex: 0n,
-          siblings: [],
         },
         { programAddress },
       );

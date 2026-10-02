@@ -47,12 +47,6 @@ import {
 } from '@solana/program-client-core';
 import { findPendingBurnPda, findVaultAuthorityPda } from '../pdas/index.js';
 import { CONFIDENTIAL_TOKEN_PROGRAM_ADDRESS } from '../programAddress.js';
-import {
-  getMmrInclusionProofDecoder,
-  getMmrInclusionProofEncoder,
-  type MmrInclusionProof,
-  type MmrInclusionProofArgs,
-} from '../types/index.js';
 
 export const REDEEM_BURNED_AMOUNT_DISCRIMINATOR: ReadonlyUint8Array = new Uint8Array([
   75, 99, 73, 176, 121, 166, 244, 3,
@@ -111,7 +105,6 @@ export type RedeemBurnedAmountInstructionData = {
   cleartextAmount: bigint;
   signatures: Array<ReadonlyUint8Array>;
   extraData: ReadonlyUint8Array;
-  proof: MmrInclusionProof;
 };
 
 export type RedeemBurnedAmountInstructionDataArgs = {
@@ -119,7 +112,6 @@ export type RedeemBurnedAmountInstructionDataArgs = {
   cleartextAmount: number | bigint;
   signatures: Array<ReadonlyUint8Array>;
   extraData: ReadonlyUint8Array;
-  proof: MmrInclusionProofArgs;
 };
 
 export function getRedeemBurnedAmountInstructionDataEncoder(): Encoder<RedeemBurnedAmountInstructionDataArgs> {
@@ -130,7 +122,6 @@ export function getRedeemBurnedAmountInstructionDataEncoder(): Encoder<RedeemBur
       ['cleartextAmount', getU64Encoder()],
       ['signatures', getArrayEncoder(fixEncoderSize(getBytesEncoder(), 65))],
       ['extraData', addEncoderSizePrefix(getBytesEncoder(), getU32Encoder())],
-      ['proof', getMmrInclusionProofEncoder()],
     ]),
     (value) => ({
       ...value,
@@ -146,7 +137,6 @@ export function getRedeemBurnedAmountInstructionDataDecoder(): Decoder<RedeemBur
     ['cleartextAmount', getU64Decoder()],
     ['signatures', getArrayDecoder(fixDecoderSize(getBytesDecoder(), 65))],
     ['extraData', addDecoderSizePrefix(getBytesDecoder(), getU32Decoder())],
-    ['proof', getMmrInclusionProofDecoder()],
   ]);
 }
 
@@ -192,8 +182,8 @@ export type RedeemBurnedAmountAsyncInput<
   vaultAuthority?: Address<TAccountVaultAuthority>;
   /**
    * Burned amount `EncryptedStore` account whose handle is redeemed. Bound to the mint/token
-   * account by `assert_burned_amount_store_account`; its canonical PDA, layout, host ownership,
-   * and the exact-handle MMR inclusion proof are validated by the `verify_public_decrypt` CPI.
+   * account by `assert_burned_amount_store_account`; the handler requires its current handle to
+   * equal the pinned burned handle.
    */
   burnedAmountStore: Address<TAccountBurnedAmountStore>;
   /** Pending-burn account opened at burn time; closed on successful redemption. */
@@ -215,7 +205,6 @@ export type RedeemBurnedAmountAsyncInput<
   cleartextAmount: RedeemBurnedAmountInstructionDataArgs['cleartextAmount'];
   signatures: RedeemBurnedAmountInstructionDataArgs['signatures'];
   extraData: RedeemBurnedAmountInstructionDataArgs['extraData'];
-  proof: RedeemBurnedAmountInstructionDataArgs['proof'];
 };
 
 export async function getRedeemBurnedAmountInstructionAsync<
@@ -400,8 +389,8 @@ export type RedeemBurnedAmountInput<
   vaultAuthority: Address<TAccountVaultAuthority>;
   /**
    * Burned amount `EncryptedStore` account whose handle is redeemed. Bound to the mint/token
-   * account by `assert_burned_amount_store_account`; its canonical PDA, layout, host ownership,
-   * and the exact-handle MMR inclusion proof are validated by the `verify_public_decrypt` CPI.
+   * account by `assert_burned_amount_store_account`; the handler requires its current handle to
+   * equal the pinned burned handle.
    */
   burnedAmountStore: Address<TAccountBurnedAmountStore>;
   /** Pending-burn account opened at burn time; closed on successful redemption. */
@@ -423,7 +412,6 @@ export type RedeemBurnedAmountInput<
   cleartextAmount: RedeemBurnedAmountInstructionDataArgs['cleartextAmount'];
   signatures: RedeemBurnedAmountInstructionDataArgs['signatures'];
   extraData: RedeemBurnedAmountInstructionDataArgs['extraData'];
-  proof: RedeemBurnedAmountInstructionDataArgs['proof'];
 };
 
 export function getRedeemBurnedAmountInstruction<
@@ -584,8 +572,8 @@ export type ParsedRedeemBurnedAmountInstruction<
     vaultAuthority: TAccountMetas[6];
     /**
      * Burned amount `EncryptedStore` account whose handle is redeemed. Bound to the mint/token
-     * account by `assert_burned_amount_store_account`; its canonical PDA, layout, host ownership,
-     * and the exact-handle MMR inclusion proof are validated by the `verify_public_decrypt` CPI.
+     * account by `assert_burned_amount_store_account`; the handler requires its current handle to
+     * equal the pinned burned handle.
      */
     burnedAmountStore: TAccountMetas[7];
     /** Pending-burn account opened at burn time; closed on successful redemption. */

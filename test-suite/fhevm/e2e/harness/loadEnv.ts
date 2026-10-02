@@ -30,7 +30,6 @@
 import os from "node:os";
 import path from "node:path";
 
-import { SOLANA_LEAF_PROOF_API_KEY } from "../../src/generate/solana";
 import { coprocessorDbPsql, SOLANA_ACL_PROGRAM } from "../../src/layout";
 import { LOCAL_SOLANA_ENDPOINTS } from "../../src/solana/endpoints";
 
@@ -66,14 +65,10 @@ export type TestEnv = {
   readonly userDecryptContextId: string | undefined;
   /** Command prefix that runs `psql` against the coprocessor DB (for ciphertext-materialization waits). */
   readonly coprocessorDbPsql: readonly string[];
-  /** The first coprocessor's leaf-proof endpoint (`/v1/solana/leaf-proofs`) and its bearer token. */
-  readonly leafProof: LeafProofEndpoint;
   readonly roots: { readonly deployerKeypairPath: string };
   readonly capabilities: Capabilities;
   readonly funding: Funding;
 };
-
-export type LeafProofEndpoint = { readonly url: string; readonly apiKey: string };
 
 /** "local" and "devnet" assemble from process env and defaults; "demo-config" from a seed's artifact. */
 export type TestEnvSource = "local" | "demo-config" | "devnet";
@@ -100,8 +95,6 @@ type TestEnvOverrides = {
   aclProgram: string;
   userDecryptContextId: string;
   coprocessorDbPsql: readonly string[];
-  leafProofUrl: string;
-  leafProofApiKey: string;
   deployerKeypairPath: string;
 };
 
@@ -117,8 +110,6 @@ const LOCAL_DEFAULTS = {
   chainId: "72057594037940281",
   aclProgram: SOLANA_ACL_PROGRAM,
   coprocessorDbPsql: coprocessorDbPsql(),
-  leafProofUrl: LOCAL_SOLANA_ENDPOINTS.leafProof,
-  leafProofApiKey: SOLANA_LEAF_PROOF_API_KEY,
 } as const;
 
 // A local validator airdrops and advances slots on demand; devnet does neither. The demo-config
@@ -170,8 +161,6 @@ export const envOverrides = (env: NodeJS.ProcessEnv): Partial<TestEnvOverrides> 
     ...pick("aclProgram", "SOLANA_ACL_PROGRAM"),
     ...pick("userDecryptContextId", "SOLANA_UD_CONTEXT_ID"),
     ...psqlOverride(env),
-    ...pick("leafProofUrl", "SOLANA_LEAF_PROOF_URL"),
-    ...pick("leafProofApiKey", "SOLANA_LEAF_PROOF_API_KEY"),
     ...pick("deployerKeypairPath", "SOLANA_DEPLOYER_KEYPAIR"),
   };
 };
@@ -217,7 +206,6 @@ export const resolveEnv = (
         ? undefined
         : decimalString(merged.userDecryptContextId, "userDecryptContextId"),
     coprocessorDbPsql: merged.coprocessorDbPsql,
-    leafProof: { url: merged.leafProofUrl, apiKey: merged.leafProofApiKey },
     roots: { deployerKeypairPath },
     capabilities: capabilitiesFor(source, network),
     funding: FUNDING_BY_NETWORK[network],

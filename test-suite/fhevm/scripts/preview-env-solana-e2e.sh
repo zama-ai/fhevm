@@ -24,9 +24,8 @@
 #   - the devnet RPC URL (secret `solana-rpc`; the websocket URL is the same endpoint over wss);
 #   - the deployer keypair (secret `solana-deployer`) unless SOLANA_DEPLOYER_KEYPAIR already
 #     names a funded devnet wallet; it funds every scenario actor by transfer;
-#   - the leaf-proof server's bearer token (secret `solana-proof-api`) for the demo operator.
-# The relayer, both anvil chains and the first coprocessor's proof endpoint are port-forwarded to
-# the loopback ports the local stack uses, so no default URL changes.
+# The relayer and both anvil chains are port-forwarded to the loopback ports the local stack
+# uses, so no default URL changes.
 set +x
 set -euo pipefail
 umask 077
@@ -73,7 +72,6 @@ up)
   fi
   deployer=$(cd "$(dirname "$deployer")" && pwd)/$(basename "$deployer")
   rpc_url=$(secret_value solana-rpc 'rpc-url')
-  proof_api_key=$(secret_value solana-proof-api 'api-key')
 
   # Demo boot capability: a UUID boot id and a 256-bit base64url token in a 0600 file (the shape
   # `demo/authorization.ts` validates), kept across `up` runs so the seeded runtime config stays valid.
@@ -89,14 +87,12 @@ up)
   relayer_port=${PREVIEW_RELAYER_PORT:-3000}
   gateway_port=${PREVIEW_GATEWAY_RPC_PORT:-8546}
   host_port=${PREVIEW_HOST_RPC_PORT:-8545}
-  leaf_proof_port=${PREVIEW_LEAF_PROOF_PORT:-18080}
   dapp_port=${PREVIEW_DAPP_PORT:-5173}
   operator_port=${PREVIEW_OPERATOR_PORT:-8091}
   relayer=$(kubectl get svc -n "$namespace" -l app.kubernetes.io/instance=relayer -o name | head -1)
   forward "${relayer:-svc/relayer}" "$relayer_port:3000"
   forward svc/anvil-gateway-anvil-node "$gateway_port:8546"
   forward svc/anvil-host-anvil-node "$host_port:8545"
-  forward svc/coprocessor-1-solana-leaf-proof-server "$leaf_proof_port:8080"
   sleep 2
   while read -r forward_pid; do
     if ! kill -0 "$forward_pid" 2>/dev/null; then
@@ -124,11 +120,6 @@ up)
     env_line FHEVM_STATE_DIR "$state"
     env_line COPROCESSOR_DB_PSQL "kubectl exec -n $namespace postgres-coprocessor-1-0 -- psql -U zama -d fhevm_e2e"
     env_line SOLANA_DEPLOYER_KEYPAIR "$deployer"
-    # The same endpoint for the harness (SOLANA_*) and the dapp dev server (DEMO_*).
-    env_line SOLANA_LEAF_PROOF_URL "http://127.0.0.1:$leaf_proof_port"
-    env_line SOLANA_LEAF_PROOF_API_KEY "$proof_api_key"
-    env_line DEMO_PROOF_URL "http://127.0.0.1:$leaf_proof_port"
-    env_line DEMO_PROOF_API_KEY "$proof_api_key"
     env_line DEMO_BOOT_ID "$demo_boot_id"
     env_line DEMO_AUTH_TOKEN_FILE "$state/demo-authorization-token"
     env_line DEMO_DAPP_URL "http://127.0.0.1:$dapp_port"

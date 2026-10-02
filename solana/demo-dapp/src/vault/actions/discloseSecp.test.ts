@@ -2,7 +2,6 @@ import { describe, expect, it } from 'vitest';
 import { address, type Address } from '@solana/kit';
 import { base58 } from '@scure/base';
 
-import type { MmrProof } from '@fhevm/sdk/solana';
 import type { SolanaPublicDecryptCertificateClaim } from '@fhevm/sdk/solana';
 import { buildDiscloseSecpInstruction } from './discloseSecp.js';
 import { ZAMA_HOST_PROGRAM_ADDRESS } from '@fhevm/sdk/solana/host';
@@ -17,8 +16,6 @@ const cleartextBytes = new Uint8Array(32);
 cleartextBytes[31] = 0x2a; // 42 as a uint256 low byte
 const signatureBytes = new Uint8Array(65).fill(0x11);
 const extraDataBytes = new Uint8Array([0x00]);
-const sibling = new Uint8Array(32).fill(0x07);
-const inclusionProof: MmrProof = { leafIndex: 3n, siblings: [sibling] };
 
 function hex(bytes: Uint8Array): string {
   return Array.from(bytes)
@@ -38,28 +35,18 @@ function claim(overrides: Partial<SolanaPublicDecryptCertificateClaim> = {}): So
 
 describe('buildDiscloseSecpInstruction', () => {
   it('maps a claim onto the token disclose_secp instruction with the right accounts', async () => {
-    const mint = addr(5);
-    const tokenAccount = addr(8);
-    const encryptedStore = addr(6);
     const kmsContext = addr(7);
     const hostConfig = addr(9);
-    const instruction = await buildDiscloseSecpInstruction(
-      { mint, tokenAccount, encryptedStore, kmsContext, hostConfig },
-      claim(),
-      inclusionProof,
-    );
+    const instruction = await buildDiscloseSecpInstruction({ kmsContext, hostConfig }, claim());
 
     expect(instruction.programAddress).toBe(CONFIDENTIAL_TOKEN_PROGRAM_ADDRESS);
     const addresses = instruction.accounts?.map((a: { readonly address: Address }) => a.address) ?? [];
-    // mint, tokenAccount, encryptedStore, hostConfig, kmsContext, zamaProgram, eventAuthority, program
-    expect(addresses).toHaveLength(8);
-    expect(addresses[0]).toBe(mint);
-    expect(addresses[1]).toBe(tokenAccount);
-    expect(addresses[2]).toBe(encryptedStore);
-    expect(addresses[3]).toBe(hostConfig);
-    expect(addresses[4]).toBe(kmsContext);
-    expect(addresses[5]).toBe(ZAMA_HOST_PROGRAM_ADDRESS);
-    expect(addresses[7]).toBe(CONFIDENTIAL_TOKEN_PROGRAM_ADDRESS);
+    // hostConfig, kmsContext, zamaProgram, eventAuthority, program
+    expect(addresses).toHaveLength(5);
+    expect(addresses[0]).toBe(hostConfig);
+    expect(addresses[1]).toBe(kmsContext);
+    expect(addresses[2]).toBe(ZAMA_HOST_PROGRAM_ADDRESS);
+    expect(addresses[4]).toBe(CONFIDENTIAL_TOKEN_PROGRAM_ADDRESS);
 
     const decoded = getDiscloseSecpInstructionDataDecoder().decode(instruction.data!);
     expect('kind' in decoded).toBe(false);
@@ -67,7 +54,5 @@ describe('buildDiscloseSecpInstruction', () => {
     expect(Array.from(decoded.cleartext)).toEqual(Array.from(cleartextBytes));
     expect(decoded.signatures.map((s) => Array.from(s))).toEqual([Array.from(signatureBytes)]);
     expect(Array.from(decoded.extraData)).toEqual(Array.from(extraDataBytes));
-    expect(decoded.proof.leafIndex).toBe(3n);
-    expect(decoded.proof.siblings.map((s) => Array.from(s))).toEqual([Array.from(sibling)]);
   });
 });

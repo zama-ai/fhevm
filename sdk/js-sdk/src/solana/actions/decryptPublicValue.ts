@@ -63,7 +63,10 @@ export type SolanaDecryptPublicValueParameters = Omit<SolanaPublicDecryptCertifi
   readonly contextId?: Uint8Array | undefined;
 };
 
-/** Authenticates and decodes plaintext. On-chain consumers still need the public MMR proof. */
+/**
+ * Authenticates and decodes plaintext. An on-chain consumer verifies the certificate itself and
+ * compares the certified handle with one it pinned.
+ */
 export async function decryptPublicValue(
   client: SolanaClientParameters,
   parameters: SolanaDecryptPublicValueParameters,
