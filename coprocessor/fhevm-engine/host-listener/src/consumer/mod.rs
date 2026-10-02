@@ -17,6 +17,7 @@ use fhevm_engine_common::chain_id::ChainId;
 use fhevm_engine_common::healthz_server::HttpServer as HealthHttpServer;
 use fhevm_engine_common::utils::{DatabaseURL, HeartBeat};
 use fhevm_engine_common::versioning::StackMode;
+use fhevm_engine_common::CONSENSUS_PROTOCOL_VERSION;
 use primitives::event::BlockFlow;
 
 use crate::cmd::block_history::BlockSummary;
@@ -44,6 +45,19 @@ const STATS_REPORT_INTERVAL: Duration = Duration::from_secs(60);
 static SLOW_LANE_PROMOTION_ATTEMPTED: AtomicBool = AtomicBool::new(false);
 const STATS_FINALIZATION_MARGIN: i64 = 5;
 
+/// Data-plane identity of this listener on the broker.
+///
+/// Together with the chain id this names the `filters.consumer_id` row the
+/// publisher fans out to, and the four stream keys those events land on. It is
+/// a constant on purpose: it must not move when a deployment is renamed, when
+/// an operator sets a different OTLP service name, or when blue and green run
+/// side by side. Blue and green share this identity and are told apart by the
+/// consumer group suffix below, not by the stream they read.
+///
+/// Changing this value orphans the previous streams and filter rows. That is a
+/// migration, not a configuration change.
+const DEFAULT_CONSUMER_ID: &str = "host-listener-consumer";
+
 #[derive(Clone, Debug)]
 pub struct ConsumerConfig {
     pub url: String,
@@ -54,7 +68,6 @@ pub struct ConsumerConfig {
     pub confidential_bridge_address: Option<Address>,
     pub database_url: DatabaseURL,
     pub database_retry_interval: Duration,
-    pub service_name: String,
     pub health_port: u16,
     // Dependence chain settings
     pub dependence_cache_size: u16,
@@ -342,9 +355,17 @@ pub async fn run_consumer(config: ConsumerConfig) -> Result<()> {
 
     let broker_url = config.url.clone(); // e.g."amqp://user:pass@localhost:5672";
     let broker = Broker::from_url(&broker_url).await?;
-    let consumer_id = format!("{}.{}", config.service_name, config.chain_id);
+    // Identity is a constant, not the telemetry name: see `DEFAULT_CONSUMER_ID`.
+    let consumer_id = format!("{}.{}", DEFAULT_CONSUMER_ID, config.chain_id);
+    // Blue and green share the streams and the filter row, and are separated by
+    // the consensus version they were compiled against. A build only ever reads
+    // the group matching its own version, so a cutover cannot deliver a block to
+    // a stack that would disagree about how to execute it. This is compiled in
+    // rather than configured: no operator flag can make two stacks collide, and
+    // no stack can be talked into reading another version's group.
     let client =
-        ListenerConsumer::new(&broker, chain_id.as_u64(), &consumer_id);
+        ListenerConsumer::new(&broker, chain_id.as_u64(), &consumer_id)
+            .with_group_suffix(format!("v{CONSENSUS_PROTOCOL_VERSION}"));
 
     let stack_mode = StackMode::new(config.gcs_mode);
     let db = Database::new_with_stack_mode(
