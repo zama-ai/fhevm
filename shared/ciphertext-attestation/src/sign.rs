@@ -76,7 +76,7 @@ impl CiphertextAttestation {
     ) -> Result<(), AttestationError> {
         if self.signer != expected_signer {
             return Err(AttestationError::UnexpectedSigner {
-                embedded: self.signer,
+                claimed: self.signer,
                 expected: expected_signer,
             });
         }
@@ -99,7 +99,7 @@ impl CiphertextAttestation {
         if recovered != self.signer {
             return Err(AttestationError::SignerMismatch {
                 recovered,
-                expected: self.signer,
+                claimed: self.signer,
             });
         }
         Ok(())
@@ -197,8 +197,8 @@ mod tests {
         let err = att.verify(HANDLE, CTX, other.address()).unwrap_err();
         assert!(matches!(
             err,
-            AttestationError::UnexpectedSigner { embedded, expected }
-                if embedded == signer.address() && expected == other.address()
+            AttestationError::UnexpectedSigner { claimed, expected }
+                if claimed == signer.address() && expected == other.address()
         ));
     }
 

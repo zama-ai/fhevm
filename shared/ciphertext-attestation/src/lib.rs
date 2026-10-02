@@ -172,21 +172,18 @@ pub enum AttestationError {
     #[error("signature recovery failed: {0}")]
     Recovery(String),
     /// The signature does not recover to the signer the attestation claims.
-    #[error("signer mismatch: recovered {recovered}, expected {expected}")]
+    #[error("signer mismatch: recovered {recovered}, attestation claims {claimed}")]
     SignerMismatch {
         recovered: Address,
-        expected: Address,
+        claimed: Address,
     },
     #[error("serde error: {0}")]
     Serde(#[from] serde_json::Error),
     #[error("signer error: {0}")]
     Signer(#[from] alloy_signer::Error),
     /// The attestation claims a signer other than the one the caller expects.
-    #[error("unexpected signer: attestation claims {embedded}, expected {expected}")]
-    UnexpectedSigner {
-        embedded: Address,
-        expected: Address,
-    },
+    #[error("unexpected signer: attestation claims {claimed}, expected {expected}")]
+    UnexpectedSigner { claimed: Address, expected: Address },
 }
 
 pub(crate) mod hex_bytes {
