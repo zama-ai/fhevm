@@ -598,7 +598,10 @@ like any handle, so a disagreement still shows as a differing block, but
 verification never records it as drifted, so it is never contained or healed.
 Cutover deletes the probe's work as before, after copying its descriptor
 material to `synthetic_handle_digest`, which only the manifest builder reads: the
-probe block seals the same way whether it seals before or after cutover. JSON
+probe block seals the same way whether it seals before or after cutover. Cutover
+first waits for that descriptor to be final (ct128 included, or a terminal
+error): the state hash covers ct64 only, and an operator whose SNS lagged would
+otherwise copy, and publish, a different descriptor than its peers. JSON
 omits the field when false.
 
 `keyset_id` identifies the compatible FHE key generation. It participates in
