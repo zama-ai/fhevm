@@ -2673,7 +2673,7 @@ has no leaf tables.
 
 Status: adopted
 
-Recorded in its pull request.
+Recorded in zama-ai/fhevm#4219.
 
 The Merkle proof server took one bearer key, shared by every KMS connector that asked it. Each
 coprocessor had to hand that key to every KMS party and rotate it with them, and the server could
