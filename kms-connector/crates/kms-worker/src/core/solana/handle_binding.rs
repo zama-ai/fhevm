@@ -8,7 +8,7 @@
 
 use super::encrypted_store::ResolvedEncryptedStore;
 use super::proof::{HostProofReader, LeafQuery, MerkleProofOutcome, ProofReadError, check_length};
-use crate::monitoring::metrics::SOLANA_PROOF_ANSWERS;
+use crate::monitoring::metrics::SOLANA_PROOF_ANSWER_COUNTER;
 use alloy::primitives::B256;
 use futures::stream::{FuturesUnordered, StreamExt};
 use solana_pubkey::Pubkey;
@@ -63,7 +63,7 @@ pub async fn verify_proofs<P: HostProofReader, T: Sync>(
             Ok(outcomes) => {
                 for ((kept, (_, item)), outcome) in results.iter_mut().zip(batch).zip(&outcomes) {
                     let verified = verify(item, outcome);
-                    SOLANA_PROOF_ANSWERS
+                    SOLANA_PROOF_ANSWER_COUNTER
                         .with_label_values(&[&source_name, answer_outcome(&verified)])
                         .inc();
                     if *kept != Some(Ok(())) {
@@ -72,7 +72,7 @@ pub async fn verify_proofs<P: HostProofReader, T: Sync>(
                 }
             }
             Err(error) => {
-                SOLANA_PROOF_ANSWERS
+                SOLANA_PROOF_ANSWER_COUNTER
                     .with_label_values(&[&source_name, "read_failed"])
                     .inc_by(queries.len() as u64);
                 read_failures.push(format!("coprocessor {source_name}: {error}"));
@@ -93,8 +93,11 @@ pub async fn verify_proofs<P: HostProofReader, T: Sync>(
         .collect()
 }
 
-/// The `outcome` label of a coprocessor's answer for one leaf. A proof built against fewer leaves
-/// than the chain holds may fail only because it is stale; one built against as many is wrong.
+/// The `outcome` label of a coprocessor's answer for one leaf: `verified`, `no_leaf`,
+/// `unknown_store`, `behind` (its record holds fewer leaves than the chain), `ahead` (a leaf past
+/// the count this connector observed) or `invalid`. A proof built against fewer leaves than the
+/// chain holds may fail only because it is stale. One built against as many or more is wrong: a
+/// correct proof from a longer record is cut to the chain's count and verifies.
 fn answer_outcome(verified: &Result<(), HandleBindingFailure>) -> &'static str {
     match verified {
         Ok(()) => "verified",
@@ -107,8 +110,7 @@ fn answer_outcome(verified: &Result<(), HandleBindingFailure>) -> &'static str {
             live_leaf_count,
         }) => match record_leaf_count.cmp(live_leaf_count) {
             Ordering::Less => "behind",
-            Ordering::Equal => "invalid",
-            Ordering::Greater => "ahead",
+            Ordering::Equal | Ordering::Greater => "invalid",
         },
     }
 }
@@ -229,7 +231,7 @@ mod tests {
     /// Only a proof built against the chain's own leaf count and failing is `invalid`, the
     /// outcome that pages: a shorter record may be stale and a longer one ahead of this read.
     #[test]
-    fn only_a_failing_proof_at_the_chain_leaf_count_is_invalid() {
+    fn a_failing_proof_from_a_record_at_or_past_the_chain_leaf_count_is_invalid() {
         let does_not_verify = |record_leaf_count| {
             answer_outcome(&Err(HandleBindingFailure::ProofDoesNotVerify {
                 record_leaf_count,
@@ -238,7 +240,7 @@ mod tests {
         };
         assert_eq!(does_not_verify(7), "behind");
         assert_eq!(does_not_verify(8), "invalid");
-        assert_eq!(does_not_verify(9), "ahead");
+        assert_eq!(does_not_verify(9), "invalid");
         assert_eq!(answer_outcome(&Ok(())), "verified");
         assert_eq!(
             answer_outcome(&Err(HandleBindingFailure::ProofRecordBehind {
