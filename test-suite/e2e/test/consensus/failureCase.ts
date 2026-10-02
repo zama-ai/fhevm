@@ -140,10 +140,12 @@ async function computeRowPresent(databaseUrl: string, handle: string): Promise<b
 }
 
 /** Whether an operator has written the SNS digest for a handle yet. */
-async function snsDigestPresent(databaseUrl: string, handle: string): Promise<boolean> {
+async function snsDigestPresent(databaseUrl: string, handle: string, requirePublicationWitness = false): Promise<boolean> {
   return withPool(databaseUrl, async (pool) => {
     const result = await pool.query<{ present: boolean }>(
-      'SELECT ciphertext128 IS NOT NULL AS present FROM ciphertext_digest WHERE handle = $1',
+      requirePublicationWitness
+        ? 'SELECT ciphertext IS NOT NULL AND ciphertext128 IS NOT NULL AND s3_publication_verified_at IS NOT NULL AND s3_publication_verified_digest = ciphertext AS present FROM ciphertext_digest WHERE handle = $1'
+        : 'SELECT ciphertext128 IS NOT NULL AS present FROM ciphertext_digest WHERE handle = $1',
       [handleBytes(handle)],
     );
     return result.rows[0]?.present === true;
@@ -534,7 +536,8 @@ describe('Service failure case', function () {
         armed.handles = [handle, control];
         const deadline = Date.now() + 6 * 60_000;
         for (;;) {
-          const digest = await snsDigestPresent(databaseUrls[VICTIM], handle);
+          // The sender can only publish material with a current upload witness.
+          const digest = await snsDigestPresent(databaseUrls[VICTIM], handle, true);
           const sent = await submissionSent(databaseUrls[VICTIM], handle);
           if (digest && sent === false) break;
           if (sent === true) {
@@ -548,7 +551,7 @@ describe('Service failure case', function () {
         }
         const signalsBeforeByOperator = await Promise.all(databaseUrls.map(driftSignals));
         const signalsBefore = signalsBeforeByOperator[VICTIM];
-        const original = await tamperUnsubmittedDigest(databaseUrls[VICTIM], handle);
+        const original = await tamperUnsubmittedDigest(databaseUrls[VICTIM], handle, {preservePublicationWitness:true});
         armed.detail = { originalDigest: original.toString('hex'), signalsBefore, signalsBeforeByOperator, control };
         console.info(
           `[failure-case/${CASE_ID}] poisoned operator ${VICTIM}'s pre-submission digest for ${handle}; ` +

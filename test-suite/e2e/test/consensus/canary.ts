@@ -144,8 +144,8 @@ export async function tamperDigest(
 
 /** Detector fault only: sender must be held, and the original is journaled
  * under the row lock before the pending submission can be poisoned. */
-export async function tamperUnsubmittedDigest(databaseUrl: string, handle: string): Promise<Buffer> {
-  return tamperDigestWithPublication(databaseUrl, handle, false);
+export async function tamperUnsubmittedDigest(databaseUrl: string, handle: string, options: DigestTamperOptions = {}): Promise<Buffer> {
+  return tamperDigestWithPublication(databaseUrl, handle, false, options);
 }
 
 export async function restoreDigest(databaseUrl: string, handle: string, original: Buffer): Promise<void> {

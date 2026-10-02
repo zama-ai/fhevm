@@ -132,11 +132,15 @@ const adminDatabaseUrl = process.env.CONSENSUS_ORACLE_TEST_DATABASE_URL;
     const original = Buffer.alloc(32, 0xcd);
     const handleHex = `0x${handle.toString('hex')}`;
     try {
-      await pool.query('INSERT INTO ciphertext_digest (handle,ciphertext,txn_is_sent) VALUES ($1,$2,false)', [handle, original]);
+      await pool.query('INSERT INTO ciphertext_digest (handle,ciphertext,txn_is_sent,s3_publication_verified_at,s3_publication_verified_digest) VALUES ($1,$2,false,NOW(),$2)', [handle, original]);
       const child = spawnSync(process.execPath, ['-r', require.resolve('ts-node/register/transpile-only'), '-e',
-        `const recovery=require(${JSON.stringify(require.resolve('./abortRecovery'))}); require(${JSON.stringify(require.resolve('./canary'))}).tamperUnsubmittedDigest(process.env.CONSENSUS_ORACLE_TEST_DATABASE_URL, '${handleHex}').then(() => { recovery.markDetectorPublicationStarted(process.env.CONSENSUS_ORACLE_TEST_DATABASE_URL, '${handleHex}'); process.kill(process.pid, 'SIGKILL'); }).catch(error => { console.error(error); process.exit(1); })`],
+        `const recovery=require(${JSON.stringify(require.resolve('./abortRecovery'))}); require(${JSON.stringify(require.resolve('./canary'))}).tamperUnsubmittedDigest(process.env.CONSENSUS_ORACLE_TEST_DATABASE_URL, '${handleHex}', {preservePublicationWitness:true}).then(() => { recovery.markDetectorPublicationStarted(process.env.CONSENSUS_ORACLE_TEST_DATABASE_URL, '${handleHex}'); process.kill(process.pid, 'SIGKILL'); }).catch(error => { console.error(error); process.exit(1); })`],
         { env: { ...process.env, CONSENSUS_ORACLE_TEST_DATABASE_URL: databaseUrl }, timeout: 10_000, encoding: 'utf8' });
       expect(child.signal, child.stderr).to.eq('SIGKILL');
+      const poisoned = (await pool.query('SELECT ciphertext, s3_publication_verified_digest, txn_is_sent FROM ciphertext_digest')).rows[0];
+      expect(poisoned.ciphertext.equals(original)).to.eq(false);
+      expect(poisoned.ciphertext.equals(poisoned.s3_publication_verified_digest)).to.eq(true);
+      expect(poisoned.txn_is_sent).to.eq(false);
       let caught: unknown;
       try { await recoverAbortedSuite(); } catch (error) { caught = error; }
       expect(String(caught)).to.include('retain the private recovery journal');
@@ -144,7 +148,7 @@ const adminDatabaseUrl = process.env.CONSENSUS_ORACLE_TEST_DATABASE_URL;
       expect((await pool.query('SELECT ciphertext FROM ciphertext_digest')).rows[0].ciphertext.equals(original)).to.eq(false);
       // A later verified detector completion is a different authority from
       // generic abort cleanup. Its caller must prove the signal reached done.
-      await pool.query('UPDATE ciphertext_digest SET ciphertext=$1, txn_is_sent=true', [original]);
+      await pool.query('UPDATE ciphertext_digest SET ciphertext=$1, s3_publication_verified_digest=$1, txn_is_sent=true', [original]);
       await completeDetectorRecovery(databaseUrl!, handleHex, original);
       expect(readdirSync(directory)).to.have.length(0);
       await recoverAbortedSuite();

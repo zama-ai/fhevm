@@ -129,6 +129,13 @@ describe('canary publication safety', () => {
     expect(readdirSync(recoveryDir).filter(name => name.endsWith('.json'))).to.have.length(1);
   });
 
+  it('keeps the upload binding valid while the detector victim is still unsubmitted', async () => {
+    const fixture = mockPublication([false], false, false, false);
+    await tamperUnsubmittedDigest('mock-only', handle, {preservePublicationWitness:true});
+    expect(fixture.calls.find(sql => sql.startsWith('UPDATE'))).to.include('s3_publication_verified_digest = $2');
+    expect(fixture.writes()).to.eq(1);
+  });
+
   it('refuses a detector mutation when the sender already published', async () => {
     const fixture = mockPublication([true]);
     let caught: unknown;
