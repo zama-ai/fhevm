@@ -24,6 +24,7 @@ use crate::http::retry_after::{
     DecryptQueueInfo, ReadinessQueueInfo, RetryAfterState, TxQueueInfo,
 };
 use crate::http::utils::BounceChecker;
+use crate::http::utils::FieldJsonErrorType;
 use crate::http::{parse_and_validate, AppResponse, ParseError};
 use crate::logging::UserDecryptStep;
 use crate::metrics::http::{self as http_metrics, HttpEndpoint, HttpMethod};
@@ -195,9 +196,28 @@ impl UserDecryptHandler {
             UserDecryptV3RequestJson::SolanaSrfc38(json) => {
                 match UserDecryptRequest::try_from(json) {
                     Ok(request) => request,
+                    // The Solana signature is verified here, not in the pre-check stage below, so
+                    // its refusal is recorded here under the same metric as an EIP-712 one.
                     Err(SolanaAdmissionError::Signature(error)) => {
+                        info!(
+                            reason = %error,
+                            request_id = %request_id,
+                            "v3 user-decrypt Solana signature rejected at admission"
+                        );
+                        observe_signature_precheck(SignaturePreCheckOutcome::Rejected);
                         return RelayerV2ResponseFailed::invalid_signature(
                             &error.to_string(),
+                            &request_id.to_string(),
+                        )
+                        .into_response();
+                    }
+                    Err(SolanaAdmissionError::Field(error)) => {
+                        return RelayerV2ResponseFailed::from_parse_error(
+                            &ParseError::FieldSpecificJson {
+                                field_name: error.field,
+                                issue: error.issue,
+                                error_type: FieldJsonErrorType::InvalidType,
+                            },
                             &request_id.to_string(),
                         )
                         .into_response();
@@ -209,7 +229,7 @@ impl UserDecryptHandler {
                         )
                         .into_response();
                     }
-                    Err(error) => {
+                    Err(SolanaAdmissionError::Form(error)) => {
                         return RelayerV2ResponseFailed::request_error(
                             &error.to_string(),
                             &request_id.to_string(),
@@ -253,6 +273,24 @@ impl UserDecryptHandler {
                 observe_signature_precheck(SignaturePreCheckOutcome::Rejected);
                 return RelayerV2ResponseFailed::invalid_signature(
                     &reason,
+                    &request_id.to_string(),
+                )
+                .into_response();
+            }
+            Err(SigPreCheckError::Deployment(error)) => {
+                info!(
+                    field = %error.field,
+                    issue = %error.issue,
+                    request_id = %request_id,
+                    "v3 user-decrypt pre-check rejected a permit for another deployment"
+                );
+                observe_signature_precheck(SignaturePreCheckOutcome::Rejected);
+                return RelayerV2ResponseFailed::from_parse_error(
+                    &ParseError::FieldSpecificJson {
+                        field_name: error.field,
+                        issue: error.issue,
+                        error_type: FieldJsonErrorType::InvalidType,
+                    },
                     &request_id.to_string(),
                 )
                 .into_response();

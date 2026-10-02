@@ -5,14 +5,16 @@
 //! returning a specific error to the caller instead of letting the request fail downstream.
 
 use crate::config::settings::{HostChainConfig, RetrySettings};
-use crate::core::event::UserDecryptRequest;
+use crate::core::event::{FieldError, UserDecryptRequest};
 use crate::host::handle_chain_id::extract_chain_id_from_u256;
+use crate::http::utils::decode_solana_address;
 use alloy::primitives::{Address, U256};
 use alloy::providers::{ProviderBuilder, RootProvider};
 use fhevm_gateway_bindings::decryption::IDecryption::{
     RequestValiditySeconds as SolRequestValiditySeconds, UserDecryptionRequestPayload,
 };
 use reqwest::Url;
+use solana_pubkey::Pubkey;
 use std::collections::HashMap;
 use std::str::FromStr;
 use std::time::Duration;
@@ -20,6 +22,8 @@ use tracing::warn;
 use user_decryption_signature::{
     compute_user_decrypt_digest, default_user_decrypt_domain, verify_signature, Erc1271Error,
 };
+use zama_solana_request::decode_solana_request;
+use zama_solana_request::host_chain::is_solana_host_chain_id;
 
 /// Outcome of a failed pre-check.
 #[derive(Debug, thiserror::Error)]
@@ -28,8 +32,13 @@ pub enum SigPreCheckError {
     /// way the request must not be forwarded.
     #[error("invalid user-decryption signature for {signer}: {reason}")]
     Invalid { signer: Address, reason: String },
-    /// The host-chain call could not complete (transport error after retries). Surfaced as a
-    /// server error, mirroring how host ACL call failures are handled.
+    /// A Solana permit names a zama-host program this relayer does not serve on the request's
+    /// chain. Keyed by the payload field at fault, the way a form refusal is.
+    #[error(transparent)]
+    Deployment(FieldError),
+    /// The host-chain call could not complete (transport error after retries), or the relayer
+    /// failed internally during the pre-check. Surfaced as a server error, mirroring how host
+    /// ACL call failures are handled.
     #[error("host-chain call failed during signature pre-check: {0}")]
     HostCallFailed(String),
 }
@@ -38,6 +47,8 @@ pub enum SigPreCheckError {
 pub struct UserDecryptSignaturePreChecker {
     /// One read-only provider per supported host chain, keyed by chain id.
     providers: HashMap<u64, RootProvider>,
+    /// The zama-host program (`acl_address`) per Solana host chain, keyed by chain id.
+    solana_programs: HashMap<u64, [u8; 32]>,
     /// Gateway `Decryption` contract — the EIP-712 verifying contract.
     decryption_contract: Address,
     /// Gas cap for the ERC-1271 `isValidSignature` static call.
@@ -57,7 +68,18 @@ impl UserDecryptSignaturePreChecker {
             .map_err(|e| anyhow::anyhow!("Invalid decryption address: {e}"))?;
 
         let mut providers = HashMap::new();
+        let mut solana_programs = HashMap::new();
         for hc in host_chains {
+            if is_solana_host_chain_id(hc.chain_id) {
+                let program_id = decode_solana_address(&hc.acl_address).map_err(|e| {
+                    anyhow::anyhow!(
+                        "Invalid Solana ACL address for chain {}: {}: {e}",
+                        hc.chain_id,
+                        hc.acl_address
+                    )
+                })?;
+                solana_programs.insert(hc.chain_id, program_id);
+            }
             let url = Url::parse(&hc.url).map_err(|e| {
                 anyhow::anyhow!("Invalid host chain URL for chain {}: {}", hc.chain_id, e)
             })?;
@@ -70,18 +92,21 @@ impl UserDecryptSignaturePreChecker {
 
         Ok(Self {
             providers,
+            solana_programs,
             decryption_contract,
             erc1271_gas_limit,
             retry,
         })
     }
 
-    /// Verify the signature on a unified v3 request. Non-unified variants are a no-op (the
-    /// pre-check is wired only into the v3 endpoint). Recomputes the EIP-712 digest, then runs
+    /// Verify the signature on a unified v3 request. A Solana request reaches this stage only
+    /// after admission verified its signature, so what is left to check is the program it names
+    /// (see [`Self::verify_solana_program`]). The legacy variants are a no-op: the pre-check is
+    /// wired only into the v3 endpoint. Recomputes the EIP-712 digest, then runs
     /// the shared verifier, retrying transport failures and reasonless reverts like the host
     /// ACL checks do, and rejecting on definitive verification failures.
     pub async fn verify(&self, request: &UserDecryptRequest) -> Result<(), SigPreCheckError> {
-        let UserDecryptRequest::Eip712UnifiedV1 {
+        let (
             handles,
             user_address,
             allowed_contracts,
@@ -89,11 +114,32 @@ impl UserDecryptSignaturePreChecker {
             signature,
             public_key,
             extra_data,
-        } = request
-        else {
-            return Ok(());
+        ) = match request {
+            UserDecryptRequest::Eip712UnifiedV1 {
+                handles,
+                user_address,
+                allowed_contracts,
+                request_validity,
+                signature,
+                public_key,
+                extra_data,
+            } => (
+                handles,
+                *user_address,
+                allowed_contracts,
+                request_validity,
+                signature,
+                public_key,
+                extra_data,
+            ),
+            UserDecryptRequest::SolanaSrfc38V1 {
+                ct_handles,
+                solana_request,
+                ..
+            } => return self.verify_solana_program(ct_handles, solana_request),
+            UserDecryptRequest::LegacyDirect { .. }
+            | UserDecryptRequest::LegacyDelegated { .. } => return Ok(()),
         };
-        let user_address = *user_address;
 
         let chain_id = single_chain_id(handles.iter().map(|h| &h.ct_handle))?;
         let provider = self.providers.get(&chain_id).ok_or_else(|| {
@@ -169,6 +215,57 @@ impl UserDecryptSignaturePreChecker {
             )),
         }
     }
+
+    /// Refuses a Solana permit that names another zama-host program than the one configured for
+    /// its chain.
+    ///
+    /// The EIP-712 domain is built from this relayer's own verifying contract, so a signature
+    /// for another deployment fails the check above. A Solana permit carries its program instead,
+    /// and admission verified the signature over whatever program it names. The connector refuses
+    /// a permit for another program, but only after the gateway fee is paid, and that refusal
+    /// never reaches the relayer: the request times out. Refused here instead, before any
+    /// transaction.
+    ///
+    /// The chain is the handles' one: admission refused handles from more than one chain, and the
+    /// early host-chain gate refused a chain that is not configured. A chain with no program here
+    /// therefore means this relayer's configuration is inconsistent, and is a server error.
+    ///
+    /// A blob that cannot be read is a server error: admission produced it a moment ago through
+    /// the same crate, so a decode failure is this relayer's own defect. Letting it through would
+    /// leave the request to the timeout this check exists to prevent.
+    fn verify_solana_program(
+        &self,
+        ct_handles: &[U256],
+        solana_request: &[u8],
+    ) -> Result<(), SigPreCheckError> {
+        let blob = decode_solana_request(solana_request).map_err(|error| {
+            SigPreCheckError::HostCallFailed(format!(
+                "could not decode an admitted Solana request: {error}"
+            ))
+        })?;
+        let Some(chain_id) = ct_handles.first().map(extract_chain_id_from_u256) else {
+            return Err(SigPreCheckError::Deployment(FieldError::new(
+                "attestedPayload.handles",
+                "names no handles".to_string(),
+            )));
+        };
+        let program_id = self.solana_programs.get(&chain_id).ok_or_else(|| {
+            SigPreCheckError::HostCallFailed(format!(
+                "no zama-host program configured for chain {chain_id}"
+            ))
+        })?;
+        if blob.verifying_program_id != *program_id {
+            return Err(SigPreCheckError::Deployment(FieldError::new(
+                "attestedPayload.verifyingProgramId",
+                format!(
+                    "names program {}, the zama-host program on chain {chain_id} is {}",
+                    Pubkey::new_from_array(blob.verifying_program_id),
+                    Pubkey::new_from_array(*program_id),
+                ),
+            )));
+        }
+        Ok(())
+    }
 }
 
 /// All handles in a unified request share one host chain (the EIP-712 domain carries a single
@@ -202,8 +299,8 @@ mod tests {
     // The `verify_signature` outcomes (ecrecover / ERC-1271 magic / wrong magic / short
     // returndata / empty signature) are covered by the `user-decryption-signature` crate, and
     // the accept/reject paths end-to-end by `tests/user_decrypt_v3_test.rs`. These cover only
-    // the glue this module adds: chain-id handling, the non-unified no-op, and the
-    // transport-retry-then-`HostCallFailed` mapping.
+    // the glue this module adds: chain-id handling, the non-unified no-op, the
+    // transport-retry-then-`HostCallFailed` mapping, and the Solana relayer-fault mappings.
     use super::*;
     use crate::core::event::{HandleEntry, RequestValiditySeconds};
     use alloy::primitives::Bytes;
@@ -235,6 +332,7 @@ mod tests {
         );
         UserDecryptSignaturePreChecker {
             providers,
+            solana_programs: HashMap::new(),
             decryption_contract: Address::from([0xCA; 20]),
             erc1271_gas_limit: 250_000,
             retry: RetrySettings {
@@ -325,6 +423,62 @@ mod tests {
             extra_data: Bytes::new(),
         };
         checker(Asserter::new()).verify(&request).await.unwrap();
+    }
+
+    fn solana_request(solana_request: Bytes) -> UserDecryptRequest {
+        UserDecryptRequest::SolanaSrfc38V1 {
+            ct_handles: vec![handle_for_chain(TEST_CHAIN_ID)],
+            request_validity: RequestValiditySeconds {
+                start_timestamp: U256::ZERO,
+                duration_seconds: U256::ZERO,
+            },
+            public_key: Bytes::new(),
+            extra_data: Bytes::new(),
+            solana_request,
+        }
+    }
+
+    #[tokio::test]
+    async fn undecodable_admitted_solana_request_is_server_error() {
+        // The chain has a program, so only the decode can fail: a relayer defect, not a 400,
+        // and not a pass that would leave the request to time out at the connector.
+        let mut checker = checker(Asserter::new());
+        checker.solana_programs.insert(TEST_CHAIN_ID, [0x11; 32]);
+
+        let err = checker
+            .verify(&solana_request(Bytes::from(vec![0xFF; 4])))
+            .await
+            .unwrap_err();
+        assert!(
+            matches!(err, SigPreCheckError::HostCallFailed(_)),
+            "{err:?}"
+        );
+    }
+
+    #[tokio::test]
+    async fn solana_chain_without_program_is_server_error() {
+        // The early host-chain gate admitted this chain, so a missing program is an inconsistent
+        // relayer configuration, not a fault in the request.
+        let blob = zama_solana_request::SolanaRequestBlob {
+            user_address: [0x22; 32],
+            allowed_scopes: vec![],
+            verifying_program_id: [0x11; 32],
+            signature: [0x33; 64],
+            entries: vec![zama_solana_request::SolanaEntryClaims {
+                owner_address: [0x22; 32],
+                encrypted_store: [0x44; 32],
+            }],
+        };
+        let encoded = zama_solana_request::encode_solana_request(&blob).unwrap();
+
+        let err = checker(Asserter::new())
+            .verify(&solana_request(Bytes::from(encoded)))
+            .await
+            .unwrap_err();
+        assert!(
+            matches!(err, SigPreCheckError::HostCallFailed(_)),
+            "{err:?}"
+        );
     }
 
     #[test]
