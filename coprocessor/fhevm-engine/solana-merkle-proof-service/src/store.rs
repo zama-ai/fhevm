@@ -23,7 +23,7 @@
 //! positions give the record's peaks at any leaf count it holds ([`load_peaks`]), which the
 //! indexer's store check compares with the chain's.
 
-use std::collections::{BTreeMap, HashSet};
+use std::collections::{BTreeMap, HashMap, HashSet};
 
 use sqlx::Error as SqlxError;
 use zama_solana_acl::{
@@ -625,6 +625,32 @@ pub async fn load_store_page(
     .fetch_all(pool)
     .await?;
     rows.iter().map(|store| bytes32(store)).collect()
+}
+
+/// The recorded leaf count of each of `stores` the record holds.
+pub async fn load_leaf_counts(
+    pool: &sqlx::PgPool,
+    stores: &[[u8; 32]],
+) -> Result<HashMap<[u8; 32], u64>, SqlxError> {
+    let stores: Vec<&[u8]> = stores.iter().map(|store| &store[..]).collect();
+    let rows = sqlx::query!(
+        r#"
+        SELECT encrypted_store, leaf_count
+        FROM encrypted_stores
+        WHERE encrypted_store = ANY($1::BYTEA[])
+        "#,
+        &stores as &[&[u8]],
+    )
+    .fetch_all(pool)
+    .await?;
+    rows.iter()
+        .map(|row| {
+            Ok((
+                bytes32(&row.encrypted_store)?,
+                sql_u64(row.leaf_count, "leaf_count")?,
+            ))
+        })
+        .collect()
 }
 
 /// The stores the store check found disagreeing with the chain.

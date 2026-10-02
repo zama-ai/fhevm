@@ -558,22 +558,49 @@ struct Chain(Mutex<HashMap<[u8; 32], Account>>);
 impl Chain {
     fn set(&self, address: [u8; 32], store: Option<&EncryptedStore>) {
         let mut accounts = self.0.lock().unwrap();
-        let Some(store) = store else {
-            accounts.remove(&address);
-            return;
+        match store {
+            Some(store) => accounts.insert(address, store_account(store)),
+            None => accounts.remove(&address),
         };
-        let mut data = encrypted_store_discriminator().to_vec();
-        borsh::to_writer(&mut data, store).expect("encode");
-        accounts.insert(
-            address,
-            Account {
-                lamports: 1,
-                data,
-                owner: Pubkey::new_from_array(HOST_PROGRAM),
-                executable: false,
-                rent_epoch: 0,
-            },
-        );
+    }
+}
+
+/// `store` as the host program's account.
+fn store_account(store: &EncryptedStore) -> Account {
+    let mut data = encrypted_store_discriminator().to_vec();
+    borsh::to_writer(&mut data, store).expect("encode");
+    Account {
+        lamports: 1,
+        data,
+        owner: Pubkey::new_from_array(HOST_PROGRAM),
+        executable: false,
+        rent_epoch: 0,
+    }
+}
+
+/// A chain whose store gains a leaf while the check reads it: the indexer records the leaf before
+/// the account read answers, as it can while a check runs.
+struct ChainWritingDuringTheRead<'a> {
+    pool: &'a sqlx::PgPool,
+    store: EncryptedStore,
+    write: Mutex<Option<EncryptedStoreWrite>>,
+}
+
+impl StoreAccounts for ChainWritingDuringTheRead<'_> {
+    async fn accounts(
+        &self,
+        stores: &[[u8; 32]],
+    ) -> anyhow::Result<Vec<Option<Account>>> {
+        let write = self.write.lock().unwrap().take().expect("read once");
+        let cursor = record(self.pool, 11, vec![write])
+            .await
+            .map_err(|err| anyhow::anyhow!("{err}"))?;
+        let store = EncryptedStore {
+            leaf_count: cursor.leaf_count,
+            peaks: cursor.peaks,
+            ..self.store.clone()
+        };
+        Ok(stores.iter().map(|_| Some(store_account(&store))).collect())
     }
 }
 
@@ -769,5 +796,49 @@ async fn the_store_check_compares_the_record_at_the_chain_leaf_count(
     chain.set(address, Some(&diverged));
     check_stores(&pool, &chain, &host_program, "1").await?;
     assert!(quarantined().await?);
+    Ok(())
+}
+
+/// A store the indexer writes while the check reads the chain is compared at the chain's new
+/// count, not left behind: here its matching peaks lift an earlier quarantine.
+#[tokio::test]
+#[serial(db)]
+async fn a_store_written_during_the_check_is_compared(
+) -> Result<(), Box<dyn std::error::Error>> {
+    let (_db, pool) = support::record_db().await;
+    let (address, chain_store) = host_store();
+    let key_write = |previous_leaf_count, handle| EncryptedStoreWrite {
+        encrypted_store: address,
+        previous_leaf_count,
+        handle: [handle; 32],
+        allowed_keys: vec![OWNER],
+        make_public: false,
+    };
+    let first = record(&pool, 10, vec![key_write(0, 0x10)]).await?;
+    let host_program = Pubkey::new_from_array(HOST_PROGRAM);
+    let quarantined = || async {
+        load_served_store(&pool, address)
+            .await
+            .map(|store| store.expect("recorded").quarantined)
+    };
+
+    let mut diverged = EncryptedStore {
+        leaf_count: first.leaf_count,
+        peaks: first.peaks,
+        ..chain_store.clone()
+    };
+    diverged.peaks[0][0] ^= 1;
+    let chain = Chain::default();
+    chain.set(address, Some(&diverged));
+    check_stores(&pool, &chain, &host_program, "1").await?;
+    assert!(quarantined().await?);
+
+    let growing = ChainWritingDuringTheRead {
+        pool: &pool,
+        store: chain_store,
+        write: Mutex::new(Some(key_write(1, 0x11))),
+    };
+    check_stores(&pool, &growing, &host_program, "1").await?;
+    assert!(!quarantined().await?);
     Ok(())
 }

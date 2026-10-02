@@ -199,7 +199,7 @@ fn merkle_proofs_router(
     answer_cache_bytes_per_signer: usize,
     proof_reads: usize,
 ) -> Router {
-    // The outcomes that page exist before the first one is counted.
+    // The outcomes alerts watch exist before the first one is counted.
     for outcome in ["inconsistent", "quarantined"] {
         LEAVES.with_label_values(&[outcome]);
     }
