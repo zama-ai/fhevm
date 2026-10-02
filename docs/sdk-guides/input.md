@@ -1,52 +1,11 @@
-# Input registration
+# Input
 
-This document explains how to register ciphertexts to the FHEVM.
-Registering ciphertexts to the FHEVM allows for future use on-chain using the `FHE.fromExternal` solidity function.
-All values encrypted for use with the FHEVM are encrypted under a public key of the protocol.
+{% hint style="warning" %}
+The Relayer SDK (`@zama-fhe/relayer-sdk`) has been replaced by [`@fhevm/sdk`](https://www.npmjs.com/package/@fhevm/sdk). This page is no longer maintained.
+{% endhint %}
 
-```ts
-// We first create a buffer for values to encrypt and register to the fhevm
-const buffer = instance.createEncryptedInput(
-  // The address of the contract allowed to interact with the "fresh" ciphertexts
-  contractAddress,
-  // The address of the entity allowed to import ciphertexts to the contract at `contractAddress`
-  userAddress,
-);
+Encrypted inputs are now created with a single declarative call, `client.encryptValues({ contractAddress, userAddress, values: [{ type, value }] })`, instead of the `createEncryptedInput().add32(…).encrypt()` builder.
 
-// We add the values with associated data-type method
-buffer.add64(BigInt(23393893233));
-buffer.add64(BigInt(1));
-// buffer.addBool(false);
-// buffer.add8(BigInt(43));
-// buffer.add16(BigInt(87));
-// buffer.add32(BigInt(2339389323));
-// buffer.add128(BigInt(233938932390));
-// buffer.addAddress('0xa5e1defb98EFe38EBb2D958CEe052410247F4c80');
-// buffer.add256(BigInt('2339389323922393930'));
+➡️ See [**Encryption**](https://github.com/zama-ai/fhevm/blob/main/sdk/js-sdk/docs/encryption.md) in the `@fhevm/sdk` documentation.
 
-// This will encrypt the values, generate a proof of knowledge for it, and then upload the ciphertexts using the relayer.
-// This action will return the list of ciphertext handles.
-const ciphertexts = await buffer.encrypt();
-```
-
-With a contract `MyContract` that implements the following it is possible to add two "fresh" ciphertexts.
-
-```solidity
-contract MyContract {
-  ...
-
-  function add(
-    externalEuint64 a,
-    externalEuint64 b,
-    bytes calldata proof
-  ) public virtual returns (euint64) {
-    return FHE.add(FHE.fromExternal(a, proof), FHE.fromExternal(b, proof))
-  }
-}
-```
-
-With `my_contract` the contract in question using `ethers` it is possible to call the add function as following.
-
-```js
-my_contract.add(ciphertexts.handles[0], ciphertexts.handles[1], ciphertexts.inputProof);
-```
+Migrating existing code? See [Migrating from the Relayer SDK](https://github.com/zama-ai/fhevm/blob/main/sdk/js-sdk/docs/migration.md).

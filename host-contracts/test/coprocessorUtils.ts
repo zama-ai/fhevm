@@ -13,14 +13,11 @@ const coprocAddress = parsedEnvCoprocessor.FHEVM_EXECUTOR_CONTRACT_ADDRESS;
 
 let firstBlockListening = 0;
 let lastBlockSnapshot = 0;
-let lastCounterRand = 0;
-let counterRand = 0;
-let chainId: number;
 
 //const db = new Database('./sql.db'); // on-disk db for debugging
 const db = new Database(':memory:');
 
-export function insertSQL(handle: string, clearText: BigInt | string, replace: boolean = false) {
+export function insertSQL(handle: string, clearText: bigint | string, replace: boolean = false) {
   if (replace) {
     // this is useful if using snapshots while sampling different random numbers on each revert
     db.run('INSERT OR REPLACE INTO ciphertexts (handle, clearText) VALUES (?, ?)', [handle, clearText.toString()]);
@@ -102,7 +99,7 @@ function getRandomBigInt(numBits: number): bigint {
   return randomBigInt;
 }
 
-function bitwiseNotUintBits(value: BigInt, numBits: number) {
+function bitwiseNotUintBits(value: bigint, numBits: number) {
   if (typeof value !== 'bigint') {
     throw new TypeError('The input value must be a BigInt.');
   }
@@ -115,7 +112,6 @@ function bitwiseNotUintBits(value: BigInt, numBits: number) {
 }
 
 export const awaitCoprocessor = async (): Promise<void> => {
-  chainId = Number((await ethers.provider.getNetwork()).chainId);
   await processAllPastFHEVMExecutorEvents();
 };
 
@@ -162,10 +158,9 @@ async function processAllPastFHEVMExecutorEvents() {
 
   if (process.env.SOLIDITY_COVERAGE !== 'true') {
     // evm_snapshot is not supported in coverage mode
-    [lastBlockSnapshot, lastCounterRand] = await provider.send('get_lastBlockSnapshot');
+    [lastBlockSnapshot] = await provider.send('get_lastBlockSnapshot');
     if (lastBlockSnapshot < firstBlockListening) {
       firstBlockListening = lastBlockSnapshot + 1;
-      counterRand = Number(lastCounterRand);
     }
   }
 
@@ -566,7 +561,7 @@ async function insertHandleFromEvent(event: FHEVMEvent) {
       }
       break;
 
-    case 'FheIfThenElse':
+    case 'FheIfThenElse': {
       handle = ethers.toBeHex(event.args[4], 32);
       resultType = parseInt(handle.slice(-4, -2), 16);
       handle = ethers.toBeHex(event.args[4], 32);
@@ -580,13 +575,13 @@ async function insertHandleFromEvent(event: FHEVMEvent) {
       }
       insertSQL(handle, clearText);
       break;
+    }
 
     case 'FheRand':
       resultType = parseInt(event.args[1]);
       handle = ethers.toBeHex(event.args[3], 32);
       clearText = getRandomBigInt(Number(NumBits[resultType as keyof typeof NumBits]));
       insertSQL(handle, clearText, true);
-      counterRand++;
       break;
 
     case 'FheRandBounded':
@@ -594,7 +589,6 @@ async function insertHandleFromEvent(event: FHEVMEvent) {
       handle = ethers.toBeHex(event.args[4], 32);
       clearText = getRandomBigInt(Number(log2(BigInt(event.args[1]))));
       insertSQL(handle, clearText, true);
-      counterRand++;
       break;
 
     case 'FheSum': {
@@ -658,8 +652,8 @@ export function getTxHCUFromTxReceipt(
     return hcuMap[handle];
   }
 
-  let hcuMap: Record<string, number> = {};
-  let handleSet: Set<string> = new Set();
+  const hcuMap: Record<string, number> = {};
+  const handleSet: Set<string> = new Set();
 
   const contract = new ethers.Contract(coprocAddress, abi, ethers.provider);
   const relevantLogs = receipt.logs.filter((log: Log) => {

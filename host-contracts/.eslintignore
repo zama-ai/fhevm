@@ -2,22 +2,22 @@
 .coverage_artifacts
 .coverage_cache
 .coverage_contracts
+addresses
 artifacts
 build
 cache
 coverage
 dist
+fhevm-foundry
+lib
+lz-wiring
 node_modules
-typechain-types
+rust_bindings
 types
 
 # files
 *.env
-commitlint.config.ts
 *.log
 .DS_Store
-.pnp.*
 coverage.json
 package-lock.json
-pnpm-lock.yaml
-yarn.lock

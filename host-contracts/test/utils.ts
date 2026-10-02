@@ -1,13 +1,14 @@
 import { HardhatEthersSigner } from '@nomicfoundation/hardhat-ethers/signers';
 import { toBufferBE } from 'bigint-buffer';
 import { ContractMethodArgs, Typed } from 'ethers';
-import { Signer } from 'ethers';
+import type { BytesLike, Signer } from 'ethers';
 import { ethers, network } from 'hardhat';
 import hre from 'hardhat';
 
 import type { Counter } from '../types';
 import { TypedContractMethod } from '../types/common';
 import { getSigners } from './signers';
+import type { FhevmInstance } from './types';
 
 export async function checkIsHardhatSigner(signer: HardhatEthersSigner) {
   const signers = await hre.ethers.getSigners();
@@ -124,46 +125,12 @@ export const bigIntToBytes256 = (value: bigint) => {
 };
 
 export const userDecryptSingleHandle = async (
-  handle: string,
+  handle: BytesLike,
   contractAddress: string,
-  instance: any,
+  instance: FhevmInstance,
   signer: Signer,
   privateKey: string,
   publicKey: string,
 ): Promise<bigint> => {
-  const ctHandleContractPairs = [
-    {
-      ctHandle: handle,
-      contractAddress: contractAddress,
-    },
-  ];
-  const startTimeStamp = Math.floor(Date.now() / 1000).toString();
-  const durationDays = '10'; // String for consistency
-  const contractAddresses = [contractAddress];
-
-  // Use the new createEIP712 function
-  const eip712 = instance.createEIP712(publicKey, contractAddresses, startTimeStamp, durationDays);
-
-  // Update the signing to match the new primaryType
-  const signature = await signer.signTypedData(
-    eip712.domain,
-    { UserDecryptRequestVerification: eip712.types.UserDecryptRequestVerification },
-    eip712.message,
-  );
-
-  const signerAddress = await signer.getAddress();
-
-  const decryptedValue = (
-    await instance.userDecrypt(
-      ctHandleContractPairs,
-      privateKey,
-      publicKey,
-      signature.replace('0x', ''),
-      contractAddresses,
-      signerAddress,
-      startTimeStamp,
-      durationDays,
-    )
-  )[0];
-  return decryptedValue;
+  return instance.userDecryptSingleHandle({ handle, contractAddress, signer, keypair: { publicKey, privateKey } });
 };

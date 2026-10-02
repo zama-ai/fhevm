@@ -28,7 +28,7 @@ describe('InputVerifier', function () {
     signers = await getSigners();
     instances = await createInstances(signers);
     inputVerifierFactory = await ethers.getContractFactory('InputVerifier');
-    aliceKeys = instances.alice.generateKeypair();
+    aliceKeys = await instances.alice.generateKeypair();
   });
 
   beforeEach(async function () {
@@ -47,18 +47,18 @@ describe('InputVerifier', function () {
   }
 
   async function removeLastSigner(params: { threshold: number }) {
-    let signersList = [...(await inputVerifier.getCoprocessorSigners())];
+    const signersList = [...(await inputVerifier.getCoprocessorSigners())];
     signersList.pop();
     const tx = await inputVerifier.connect(deployer).defineNewContext(signersList, params.threshold);
     await tx.wait();
   }
 
   async function testInputSetUint64(value: bigint) {
-    let inputAlice = instances.alice.createEncryptedInput(testInputContractAddress, signers.alice.address);
+    const inputAlice = instances.alice.createEncryptedInput(testInputContractAddress, signers.alice.address);
     inputAlice.add64(value);
-    let encryptedAmount = await inputAlice.encrypt();
+    const encryptedAmount = await inputAlice.encrypt();
 
-    let tx = await testInputContract.setUint64(encryptedAmount.handles[0], encryptedAmount.inputProof);
+    const tx = await testInputContract.setUint64(encryptedAmount.handles[0], encryptedAmount.inputProof);
     await tx.wait();
   }
 
@@ -146,7 +146,7 @@ describe('InputVerifier', function () {
 
       // Add 2 new coproc signers (total 4)
       await addSigners({ list: [coprocessorAddressSigner2, coprocessorAddressSigner3], threshold: 1 });
-      let tx = await inputVerifier.connect(deployer).setThreshold(2n);
+      const tx = await inputVerifier.connect(deployer).setThreshold(2n);
       await tx.wait();
 
       // - 1 active coprocessor
@@ -251,7 +251,7 @@ describe('InputVerifier', function () {
 
       await deployTestInput();
 
-      let tx = await inputVerifier
+      const tx = await inputVerifier
         .connect(deployer)
         .defineNewContext([coprocessorAddressSigner0, coprocessorAddressSigner1], 2);
       await tx.wait();

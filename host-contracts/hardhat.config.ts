@@ -33,7 +33,7 @@ export const HOST_ADDRESSES_ENV_FILE_NAME = '.env.host';
 
 const NUM_ACCOUNTS = 15;
 
-extendProvider(async (provider, config, network) => {
+extendProvider(async (provider) => {
   const newProvider = new CustomProvider(provider);
   return newProvider;
 });

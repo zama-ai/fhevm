@@ -18,7 +18,7 @@ describe('Ownership tasks', function () {
   const newOwner = new ethers.Wallet(newOwnerPrivateKey).connect(ethers.provider);
 
   before(async function () {
-    let aclFactory = await ethers.getContractFactory('ACL');
+    const aclFactory = await ethers.getContractFactory('ACL');
     const aclAddress = dotenv.parse(fs.readFileSync('addresses/.env.host')).ACL_CONTRACT_ADDRESS;
     acl = (await aclFactory.attach(aclAddress)) as ACL;
   });

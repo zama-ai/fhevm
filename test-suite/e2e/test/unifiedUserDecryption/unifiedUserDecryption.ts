@@ -186,8 +186,7 @@ describe('Unified user decryption', function () {
     // path a real 0.14 dapp takes.
     const sdk = instances.alice;
     if (!(sdk instanceof FhevmSdk)) {
-      // Legacy @zama-fhe/relayer-sdk adapter: no unified permit to exercise.
-      this.skip();
+      throw new Error('Expected an FhevmSdk instance.');
     }
     const handle = await aliceContract.xUint64();
     const clear = await sdk.userDecryptSingleHandleUnified({

@@ -7,7 +7,7 @@ use utoipa::ToSchema;
 ///
 /// The on-chain CRS material does not carry its parameter size, so this is fixed
 /// to the single supported size. Kept as a constant to preserve the response shape
-/// expected by the relayer-sdk (`crs."2048"`).
+/// expected by the fhevm/sdk (`crs."2048"`).
 pub const CRS_PARAM_SIZE_KEY: &str = "2048";
 
 #[derive(Serialize, Deserialize, Debug, Clone, ToSchema)]

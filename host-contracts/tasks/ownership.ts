@@ -34,7 +34,7 @@ task('task:transferHostOwnership', "Transfers the deployer's ownership of the ho
 task(
   'task:acceptHostOwnership',
   'Accepts ownership of the host contracts. This can only be used if the account is an EOA.',
-).setAction(async function ({}, { ethers }) {
+).setAction(async function (_taskArguments, { ethers }) {
   // Get the new owner wallet.
   const newOwner = new Wallet(getRequiredEnvVar('NEW_OWNER_PRIVATE_KEY')).connect(ethers.provider);
 

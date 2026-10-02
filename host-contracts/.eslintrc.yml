@@ -9,7 +9,6 @@ env:
 parserOptions:
   project:
     - "./tsconfig.json"
-    - "./**/tsconfig.json"
 plugins:
   - "@typescript-eslint"
 root: true

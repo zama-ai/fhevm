@@ -27,7 +27,7 @@ Otherwise:
 
 🟨 Go to [**Solidity Guides**](https://docs.zama.ai/protocol/solidity-guides) to explore how encrypted types, operations, ACLs, and other core features work in practice.
 
-🟨 Go to [**Relayer SDK Guides**](https://docs.zama.ai/protocol/relayer-sdk-guides) to build a frontend that can encrypt, decrypt, and interact securely with the blockchain.
+🟨 Go to [**FHEVM SDK documentation**](https://github.com/zama-ai/fhevm/blob/main/sdk/js-sdk/docs/README.md) to build a frontend that can encrypt, decrypt, and interact securely with the blockchain.
 
 🟨 Go to [**FHE on Blockchain**](architecture/overview.md) to learn the architecture in depth and understand how encrypted computation flows through both on-chain and off-chain components.
 

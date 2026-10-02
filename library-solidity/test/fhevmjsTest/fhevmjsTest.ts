@@ -75,7 +75,7 @@ describe('Testing fhevmjs/fhevmjsMocked', function () {
     input.add128(6887n);
     input.add64(6887n);
     input.add64(6887n);
-    let bits = input.getBits();
+    const bits = input.getBits();
     let total = 0;
     for (let i = 0; i < bits.length; ++i) {
       total += bits[i];
