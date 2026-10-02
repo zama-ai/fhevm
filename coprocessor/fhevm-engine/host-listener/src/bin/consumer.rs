@@ -74,7 +74,11 @@ struct Args {
     )]
     log_level: Level,
 
-    #[arg(long, default_value = "host-listener-consumer")]
+    #[arg(
+        long,
+        default_value = "host-listener-consumer",
+        help = "OTLP service name. Telemetry only — it does not name the broker identity, which is a compiled-in constant"
+    )]
     service_name: String,
 
     #[arg(
@@ -208,7 +212,6 @@ async fn main() -> anyhow::Result<()> {
         database_retry_interval: Duration::from_millis(
             args.database_retry_interval,
         ),
-        service_name: args.service_name,
         health_port: args.health_port,
         dependence_cache_size: args.dependence_cache_size,
         dependence_by_connexity: args.dependence_by_connexity,
