@@ -113,6 +113,7 @@ async fn serve_proofs(
             registry: REGISTRY,
             senders: HashSet::from([connector.address()]),
         }),
+        std::num::NonZeroU32::new(1000).expect("a rate"),
         port,
         cancel.clone(),
     );

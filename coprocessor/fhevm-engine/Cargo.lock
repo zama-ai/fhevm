@@ -10260,6 +10260,7 @@ dependencies = [
  "clap",
  "fhevm-engine-common",
  "fhevm_host_bindings",
+ "governor",
  "hex",
  "request-authorization",
  "reqwest 0.12.28",
