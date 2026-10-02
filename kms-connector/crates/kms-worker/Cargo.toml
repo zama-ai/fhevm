@@ -28,6 +28,7 @@ futures.workspace = true
 humantime-serde.workspace = true
 kms-grpc.workspace = true
 prometheus.workspace = true
+rand.workspace = true
 reqwest.workspace = true
 ring.workspace = true
 serde.workspace = true
@@ -61,6 +62,8 @@ rstest.workspace = true
 serial_test.workspace = true
 sha2.workspace = true
 testcontainers.workspace = true
+# Paused time for the hedging tests.
+tokio = { workspace = true, features = ["test-util"] }
 toml.workspace = true
 tracing-test.workspace = true
 

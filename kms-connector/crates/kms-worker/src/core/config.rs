@@ -193,8 +193,8 @@ pub enum HostSettings {
 pub struct SolanaHostSettings {
     /// The zama-host program id.
     pub host_program_id: Pubkey,
-    /// The coprocessors' Merkle proof servers, one per coprocessor, at least one. Every server is
-    /// asked at once, and the first proof that verifies is taken.
+    /// The coprocessors' Merkle proof servers, one per coprocessor, at least one. They are asked
+    /// one after another in a random order until a proof verifies for every query.
     pub proof_urls: Vec<Url>,
 }
 

@@ -27,7 +27,7 @@ use alloy::primitives::B256;
 use kms_worker::core::solana::{
     encrypted_store::{ResolvedEncryptedStore, resolve_encrypted_store},
     failure::AuthorizationFailure,
-    handle_binding::{HandleBindingFailure, check_handle_binding, verify_proofs},
+    handle_binding::{HEDGE_DELAY, HandleBindingFailure, check_handle_binding, verify_proofs},
     pipeline::authorize_request,
     proof::{LeafKind, LeafQuery, MerkleProofOutcome, ProofReadError, proof_http_client},
 };
@@ -698,8 +698,8 @@ async fn verify_with(
     .await
 }
 
-/// Coprocessor A holds only the first leaf and B holds both: both queries resolve. Every
-/// coprocessor is asked for the whole batch.
+/// Coprocessor A holds only the first leaf and B holds both: both queries resolve. B is asked for
+/// the whole batch once A leaves a query unresolved.
 #[tokio::test]
 async fn a_query_any_coprocessor_proves_is_resolved() {
     let (fixture, account, batch) = two_allowed_queries();
@@ -717,6 +717,39 @@ async fn a_query_any_coprocessor_proves_is_resolved() {
         reader.calls(),
         vec![(0, vec![first, second]), (1, vec![first, second])]
     );
+}
+
+/// A coprocessor that serves the whole batch is the only one asked.
+#[tokio::test]
+async fn a_coprocessor_serving_the_batch_is_the_only_one_asked() {
+    let (fixture, account, batch) = two_allowed_queries();
+    let record = ProofRecord::of(&[&fixture]);
+    let reader = ScriptedProofReader::in_order(vec![record.clone(), record]);
+
+    let results = verify_with(&reader, &account, &batch).await.unwrap();
+
+    assert_eq!(results, vec![Ok(()), Ok(())]);
+    assert_eq!(reader.call_count(), 1);
+}
+
+/// A coprocessor slower than the hedge delay has the next one asked as well; one that answers
+/// within it is the only one asked.
+#[rstest]
+#[case::within_the_delay(HEDGE_DELAY / 2, 1)]
+#[case::beyond_the_delay(HEDGE_DELAY * 2, 2)]
+#[tokio::test(start_paused = true)]
+async fn a_slow_coprocessor_is_hedged(#[case] delay: Duration, #[case] reads: usize) {
+    let (fixture, account, batch) = two_allowed_queries();
+    let record = ProofRecord::of(&[&fixture]);
+    let reader = ScriptedProofReader::coprocessors(vec![
+        ProofSource::Delayed(delay, record.clone()),
+        ProofSource::Serving(record),
+    ]);
+
+    let results = verify_with(&reader, &account, &batch).await.unwrap();
+
+    assert_eq!(results, vec![Ok(()), Ok(())]);
+    assert_eq!(reader.call_count(), reads);
 }
 
 /// A coprocessor that never answers does not hold the request: the batch resolves on the one that

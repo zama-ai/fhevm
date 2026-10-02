@@ -1761,11 +1761,12 @@ Decision:
 2. **One decrypt path.** A user decrypt proves the allow leaf; the current handle and a replaced
    one authorize the same way, so `authorize_current` is gone. A public decrypt proves the public
    leaf. Both proofs are fetched by the KMS connector from the coprocessors' leaf record
-   (`POST /v1/solana/leaf-proofs`, API key; every configured coprocessor asked at once, the first
-   proof that verifies taken, with no retry inside an attempt) and verified against the peaks the
-   connector read on chain. Each coprocessor therefore serves every proof read: the load grows with
-   their number, and in exchange one stalled or unreachable coprocessor cannot delay a batch
-   another one serves (fhevm-internal#2104).
+   (`POST /v1/solana/merkle-proofs`, signed by the KMS context's tx-sender, DD-067) and verified
+   against the peaks the connector read on chain. The connector asks the coprocessors one after
+   another in a random order: the next one as soon as an answer leaves a proof missing, or after
+   `HEDGE_DELAY` (250 ms) without an answer. There is no retry inside an attempt. One stalled or
+   unreachable coprocessor therefore delays a batch another one serves by at most that delay, and a
+   coprocessor that serves the whole batch is the only one asked (fhevm-internal#2104).
    A request names only the Store and, for a delegated entry, the delegator as owner address; a
    client-supplied proof is rejected. A public decrypt names each handle's Store beside `extraData` (DD-060).
 3. **The leaf record lives in the host listener.** Leaves are recomputed from the confirmed
@@ -2698,7 +2699,9 @@ each other's requests. It travels as `Authorization: Zama-EIP712 expires=<unix s
 signature=0x<65 bytes>`. The `shared/request-authorization` crate builds and checks it for both
 sides. A signature is valid for at most `MAX_VALIDITY_SECS` (300) seconds; kms-worker signs for
 120 seconds, waits at most `host_rpc_call_timeout` for the signature, and sends the same signed
-batch to every coprocessor.
+batch to each coprocessor it asks. It asks them one after another in a random order: the next one
+as soon as an answer leaves a query without a verified proof, or after `HEDGE_DELAY` (250 ms)
+without an answer.
 
 `solana_merkle_proof_server` recovers the signer and answers only the tx-senders of the live KMS
 contexts. It reads them from the canonical `ProtocolConfig` at the finalized block every 60
@@ -2725,6 +2728,7 @@ Rejected alternatives:
 | A bearer key per coprocessor | Every KMS party holds every coprocessor's key, and the server still cannot tell connectors apart. |
 | A key per connector, listed in each coprocessor's config | Each coprocessor edits its config when a KMS context changes; `ProtocolConfig` already lists the tx-senders. |
 | mTLS | Each coprocessor runs a certificate authority for the KMS parties, and the identity is not the on-chain one. |
+| Every coprocessor asked at once | Each coprocessor serves every proof read, so the load grows with the number of coprocessors, for an answer one coprocessor usually gives alone. |
 | JSON bodies | Hex doubles every hash: a full answer of 64 proofs with 64 siblings is about 280 KB instead of 150 KB, and both sides parse hex by hand. |
 | Protobuf or gRPC | A schema compiler and generated code in two workspaces, for four message types. |
 | A session key kms-worker registers with its tx-sender key | A second key to rotate and a registration round, for a signature per batch that AWS KMS already serves. |
@@ -2763,8 +2767,9 @@ Not settled by the decisions above. Forward requirements are detailed in
   (DD-003, DD-059, fhevm-internal#2087).
 - Historical handle discovery conventions for apps.
 - Production role and governance names for public-decrypt and grant authority.
-- Leaf-record availability (DD-048): the connector asks every configured coprocessor at once, so
-  one behind, stalled or unreachable cannot sink or hold a request another can serve. A record
+- Leaf-record availability (DD-048): the connector asks the next coprocessor when one answers
+  without a proof, fails, or takes longer than `HEDGE_DELAY` (250 ms), so one behind, stalled or
+  unreachable cannot sink a request another can serve, or hold it longer than that delay. A record
   rebuilt by replay from the start slot catches up at the archive's speed; how a coprocessor heals
   faster, for instance from another coprocessor's `pg_dump`, is not yet a runbook (DD-066).
 - A Solana-native composition pattern for contract-to-contract confidential calls has not been

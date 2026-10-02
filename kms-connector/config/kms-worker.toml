@@ -208,8 +208,9 @@ acl_address = "0x0000000000000000000000000000000000000000"
 # Solana chains only, required: the base58 zama-host program id.
 # solana_host_program_id = "11111111111111111111111111111111"
 # Solana chains only, at least one: each coprocessor's Merkle proof server
-# (`POST /v1/solana/merkle-proofs`). Every server is asked at once and the first proof that
-# verifies is taken, so a lagging or stalled coprocessor neither fails nor delays a request another
-# one serves; each server therefore sees every proof read. Each request is signed by the
+# (`POST /v1/solana/merkle-proofs`). The servers are asked one after another in a random order:
+# the next one as soon as an answer leaves a query unproven, or after 250 ms without an answer, so
+# a lagging or stalled coprocessor neither fails a request another one serves nor delays it by
+# more than that. Each request is signed by the
 # tx-sender wallet configured above (`private_key` or `aws_kms_config`).
 # solana_proof_urls = ["http://localhost:8080"]
