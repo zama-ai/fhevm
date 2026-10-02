@@ -8,6 +8,11 @@ CREATE TABLE handle_producer_block
     producer_block_number BIGINT NOT NULL CHECK (producer_block_number >= 0),
     producer_block_hash BYTEA NOT NULL CHECK (OCTET_LENGTH(producer_block_hash) = 32),
     created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    -- The Blue/Green dry-run consensus probe, synthesized by the incoming
+    -- stack's host listener (see host-listener `database::synthetic_ops`).
+    -- Manifests flag it so peers compare it, but it exists on no chain:
+    -- verification never contains or heals it.
+    synthetic BOOLEAN NOT NULL DEFAULT FALSE,
 
     PRIMARY KEY (host_chain_id, handle, producer_block_hash)
 );

@@ -232,6 +232,14 @@ pub enum Error {
     /// real failure.
     #[error("{pending} pre-start_block BCS ciphertext(s) are still awaiting S3 upload")]
     PendingBcsUploads { pending: i64 },
+
+    /// A dry-run probe has no final descriptor yet: its ct128 (SNS) is still pending.
+    /// Cutover deletes the probe's work, so it waits until every operator would copy the
+    /// same descriptor; the state hash only covers ct64.
+    ///
+    /// **Transient**, like [`Error::PendingBcsUploads`]: green's sns-worker clears it.
+    #[error("{pending} dry-run probe(s) have no final manifest descriptor yet")]
+    PendingSyntheticProbe { pending: i64 },
     #[error("invalid upgrade state: {0}")]
     InvalidState(String),
 }
@@ -240,7 +248,10 @@ impl Error {
     /// True for conditions that clear on their own, where retrying is the correct response
     /// and nothing has actually gone wrong.
     fn is_transient(&self) -> bool {
-        matches!(self, Error::PendingBcsUploads { .. })
+        matches!(
+            self,
+            Error::PendingBcsUploads { .. } | Error::PendingSyntheticProbe { .. }
+        )
     }
 }
 
@@ -2052,6 +2063,100 @@ async fn delete_synthetic_rows_by_handle(
     Ok(total)
 }
 
+/// Fails with the transient [`Error::PendingSyntheticProbe`] while a canonical dry-run probe
+/// has neither a complete digest (key id, ct64, ct128 and format) nor a terminal computation
+/// error.
+///
+/// Every operator's green agreed on the probe's ct64 to authorize cutover, but its ct128 is
+/// produced asynchronously by the sns-worker. Copying before it lands would freeze the probe
+/// as uncomputed on that operator only, a permanent manifest disagreement between healthy
+/// peers that synthetic filtering keeps healing from resolving. A probe on an orphaned branch
+/// is never published, so it does not hold cutover back.
+async fn assert_synthetic_probes_final(tx: &mut Transaction<'_, Postgres>) -> Result<(), Error> {
+    let sql = format!(
+        "SELECT COUNT(*)
+           FROM {GCS_SCHEMA_QUOTED}.handle_producer_block probe
+          WHERE probe.synthetic
+            AND NOT EXISTS (
+                SELECT 1 FROM {GCS_SCHEMA_QUOTED}.host_chain_blocks_valid block
+                 WHERE block.chain_id = probe.host_chain_id
+                   AND block.block_hash = probe.producer_block_hash
+                   AND block.block_status = 'orphaned')
+            AND NOT EXISTS (
+                SELECT 1 FROM {GCS_SCHEMA_QUOTED}.ciphertext_digest digest
+                 WHERE digest.host_chain_id = probe.host_chain_id
+                   AND digest.handle = probe.handle
+                   AND digest.key_id_gw IS NOT NULL
+                   AND digest.ciphertext IS NOT NULL
+                   AND digest.ciphertext128 IS NOT NULL
+                   AND digest.ciphertext128_format IS NOT NULL)
+            AND NOT EXISTS (
+                SELECT 1 FROM {GCS_SCHEMA_QUOTED}.computations c
+                 WHERE c.host_chain_id = probe.host_chain_id
+                   AND c.block_number = probe.producer_block_number
+                   AND c.output_handle = probe.handle
+                   AND c.is_error
+                   AND COALESCE(c.error_message, '') NOT LIKE '%' || $1 || '%')"
+    );
+    let pending: i64 = sqlx::query_scalar(&sql)
+        .bind(RETRYABLE_STAMP_MARKER)
+        .fetch_one(&mut **tx)
+        .await?;
+    if pending > 0 {
+        warn!(
+            pending,
+            "cutover deferred: a dry-run probe's ct128 is still pending"
+        );
+        return Err(Error::PendingSyntheticProbe { pending });
+    }
+    Ok(())
+}
+
+/// Copies the dry-run probe's manifest descriptor material into
+/// `public.synthetic_handle_digest` before [`delete_gcs_synthetic_ops`] removes it.
+///
+/// The probe block seals once it is final and its ciphertexts are digested,
+/// which can come after cutover. Without this copy, a node that seals it after
+/// cutover finds the probe in the merged producer inventory but no digest,
+/// stalls, then publishes it uncomputed while a node that sealed before cutover
+/// published it computed. Only the manifest builder reads the copy, so the
+/// probe still never reaches the publishing paths.
+async fn copy_synthetic_probe_digests(tx: &mut Transaction<'_, Postgres>) -> Result<(), Error> {
+    let sql = format!(
+        "INSERT INTO public.synthetic_handle_digest (
+             host_chain_id, handle, key_id_gw, ciphertext, ciphertext128,
+             ciphertext128_format, is_error, error_message
+         )
+         SELECT DISTINCT ON (probe.host_chain_id, probe.handle)
+                probe.host_chain_id, probe.handle, digest.key_id_gw, digest.ciphertext,
+                digest.ciphertext128, digest.ciphertext128_format,
+                COALESCE(failure.failed, FALSE), failure.error_message
+           FROM {GCS_SCHEMA_QUOTED}.handle_producer_block probe
+           LEFT JOIN {GCS_SCHEMA_QUOTED}.ciphertext_digest digest
+             ON digest.host_chain_id = probe.host_chain_id
+            AND digest.handle = probe.handle
+           LEFT JOIN LATERAL (
+               SELECT TRUE AS failed, c.error_message
+                 FROM {GCS_SCHEMA_QUOTED}.computations c
+                WHERE c.host_chain_id = probe.host_chain_id
+                  AND c.block_number = probe.producer_block_number
+                  AND c.output_handle = probe.handle
+                  AND c.is_error
+                ORDER BY c.error_message NULLS LAST
+                LIMIT 1
+           ) failure ON TRUE
+          WHERE probe.synthetic
+          ORDER BY probe.host_chain_id, probe.handle, digest.ciphertext128 IS NULL
+         ON CONFLICT (host_chain_id, handle) DO NOTHING"
+    );
+    let copied = sqlx::query(&sql).execute(&mut **tx).await?.rows_affected();
+    info!(
+        copied,
+        "cutover: kept the synthetic probe's manifest descriptor"
+    );
+    Ok(())
+}
+
 /// Delete the synthetic FHE work the GCS host-listener injected into each host chain's dry-run
 /// window, together with every ciphertext derived from it, before the merge carries `gcs.*` into
 /// `public`.
@@ -2294,7 +2399,9 @@ async fn delete_gcs_synthetic_inputs(tx: &mut Transaction<'_, Postgres>) -> Resu
 ///   4. `revert_bcs_state`: delete blue's in-window rows, host chains then the
 ///      gateway/input side, and the dependence chains left with no computations.
 ///   5. `delete_gcs_synthetic_ops` + `delete_gcs_synthetic_inputs`: drop the synthetic work
-///      injected to anchor dry-run consensus, so it never merges into `public`.
+///      injected to anchor dry-run consensus, so it never merges into `public`. The probe's
+///      manifest descriptor is first copied to `public.synthetic_handle_digest`
+///      (`copy_synthetic_probe_digests`), read only by the manifest builder.
 ///   6. Merge every `gcs.<table>` marked [`CoprocessorTable::is_merged`] into
 ///      `public`, then restore the snapshotted `txn_is_sent` flags.
 ///   7. DROP SCHEMA gcs CASCADE.
@@ -2406,6 +2513,11 @@ pub async fn execute_cutover(pool: &Pool<Postgres>) -> Result<(), Error> {
     // 5. Drop the GCS stack's synthetic work before anything merges: it exists only to anchor
     //    dry-run consensus and must not become live data. Host ops before the Gateway input,
     //    so each by-handle sweep finishes with its own temp table before the next is created.
+    //    The probe's manifest descriptor is copied aside first: its block may seal after this.
+    //    It must be final, or an operator whose SNS lagged would copy, and publish, a
+    //    different descriptor than its peers.
+    assert_synthetic_probes_final(&mut tx).await?;
+    copy_synthetic_probe_digests(&mut tx).await?;
     delete_gcs_synthetic_ops(&mut tx).await?;
     delete_gcs_synthetic_inputs(&mut tx).await?;
 
@@ -3490,6 +3602,9 @@ mod tests {
         // Run both cleanups in one transaction, exactly as execute_cutover does — this also
         // exercises the two temp tables coexisting in the same transaction.
         let mut tx = pool.begin().await.expect("begin");
+        copy_synthetic_probe_digests(&mut tx)
+            .await
+            .expect("copy_synthetic_probe_digests");
         delete_gcs_synthetic_ops(&mut tx)
             .await
             .expect("delete_gcs_synthetic_ops");
@@ -3524,6 +3639,194 @@ mod tests {
         .await
         .expect("read markers");
         assert!(marker.is_empty(), "synthetic_txn_hashes was not cleared");
+    }
+
+    /// The probe must have a final descriptor before cutover copies and deletes it: an
+    /// operator whose SNS lags would otherwise freeze it without ct128, unlike its peers.
+    /// A probe on an orphaned branch, or one whose computation failed terminally, does not
+    /// hold cutover back; a retryable failure still does.
+    #[tokio::test]
+    async fn cutover_waits_for_the_probe_ct128() {
+        let (_instance, pool) = test_pool().await;
+        create_gcs_schema(&pool).await.expect("create gcs schema");
+        let probe = vec![0x11u8; 32];
+        let canonical = vec![0xB1u8; 32];
+        let orphaned = vec![0xB2u8; 32];
+        let gcs = |sql: &str| sql.replace("GCS", GCS_SCHEMA_QUOTED);
+        for (handle, block) in [(&probe, &canonical), (&vec![0x12u8; 32], &orphaned)] {
+            sqlx::query(&gcs("INSERT INTO GCS.handle_producer_block
+                      (host_chain_id, handle, producer_block_number, producer_block_hash, synthetic)
+                      VALUES (12345, $1, 101, $2, TRUE)"))
+            .bind(handle)
+            .bind(block)
+            .execute(&pool)
+            .await
+            .expect("seed probe producer row");
+        }
+        sqlx::query(&gcs(
+            "INSERT INTO GCS.host_chain_blocks_valid (chain_id, block_hash, block_number, block_status)
+                  VALUES (12345, $1, 101, 'orphaned')",
+        ))
+        .bind(&orphaned)
+        .execute(&pool)
+        .await
+        .expect("seed orphaned block");
+        // ct64 agreed on, ct128 still pending in the sns-worker.
+        sqlx::query(&gcs("INSERT INTO GCS.ciphertext_digest
+                  (handle, host_chain_id, key_id_gw, ciphertext, ciphertext128_format)
+                  VALUES ($1, 12345, '\\x0a'::bytea, '\\x02'::bytea, 11)"))
+        .bind(&probe)
+        .execute(&pool)
+        .await
+        .expect("seed digest without ct128");
+
+        let check = || async {
+            let mut tx = pool.begin().await.expect("begin");
+            let result = assert_synthetic_probes_final(&mut tx).await;
+            tx.rollback().await.expect("rollback");
+            result
+        };
+        let err = check()
+            .await
+            .expect_err("a probe without ct128 defers cutover");
+        assert!(
+            matches!(err, Error::PendingSyntheticProbe { pending: 1 }),
+            "unexpected error: {err:?}"
+        );
+        assert!(err.is_transient());
+
+        // A retryable failure is not final either; a terminal one is.
+        sqlx::query(&gcs(
+            "INSERT INTO GCS.computations
+                  (output_handle, dependencies, fhe_operation, is_scalar, transaction_id,
+                   host_chain_id, block_number, is_error, error_message)
+                  VALUES ($1, ARRAY[]::bytea[], 0, false, '\\xcd'::bytea, 12345, 101, true, $2)",
+        ))
+        .bind(&probe)
+        .bind(format!("{RETRYABLE_STAMP_MARKER}: transient"))
+        .execute(&pool)
+        .await
+        .expect("seed retryable failure");
+        assert!(matches!(
+            check().await,
+            Err(Error::PendingSyntheticProbe { pending: 1 })
+        ));
+        sqlx::query(&gcs("UPDATE GCS.computations SET error_message = 'Unknown fhe operation' WHERE output_handle = $1"))
+            .bind(&probe)
+            .execute(&pool)
+            .await
+            .expect("make the failure terminal");
+        check().await.expect("a terminally failed probe is final");
+
+        sqlx::query(&gcs(
+            "DELETE FROM GCS.computations WHERE output_handle = $1",
+        ))
+        .bind(&probe)
+        .execute(&pool)
+        .await
+        .expect("drop the failure");
+        sqlx::query(&gcs(
+            "UPDATE GCS.ciphertext_digest SET ciphertext128 = '\\x03'::bytea WHERE handle = $1",
+        ))
+        .bind(&probe)
+        .execute(&pool)
+        .await
+        .expect("ct128 lands");
+        check().await.expect("a digested probe is final");
+    }
+
+    /// Cutover deletes the probe's digest row, yet its block may seal after cutover: the
+    /// descriptor material is copied to `public.synthetic_handle_digest` first, for the
+    /// manifest builder only. A real handle of the same block is not copied, and the copy
+    /// keeps its incomplete ct128 as is.
+    #[tokio::test]
+    async fn cutover_keeps_the_probe_descriptor_for_manifests() {
+        let (_instance, pool) = test_pool().await;
+        create_gcs_schema(&pool).await.expect("create gcs schema");
+
+        let probe = vec![0x11u8; 32];
+        let uncomputed_probe = vec![0x12u8; 32];
+        let real = vec![0x22u8; 32];
+        let block_hash = vec![0xB1u8; 32];
+        for (handle, synthetic) in [(&probe, true), (&uncomputed_probe, true), (&real, false)] {
+            sqlx::query(&format!(
+                "INSERT INTO {GCS_SCHEMA_QUOTED}.handle_producer_block
+                      (host_chain_id, handle, producer_block_number, producer_block_hash, synthetic)
+                      VALUES (12345, $1, 101, $2, $3)"
+            ))
+            .bind(handle)
+            .bind(&block_hash)
+            .bind(synthetic)
+            .execute(&pool)
+            .await
+            .expect("seed producer row");
+        }
+        for (handle, ct128) in [
+            (&probe, Some(vec![0x03u8; 32])),
+            (&uncomputed_probe, None),
+            (&real, Some(vec![0x04u8; 32])),
+        ] {
+            sqlx::query(&format!(
+                "INSERT INTO {GCS_SCHEMA_QUOTED}.ciphertext_digest
+                      (handle, host_chain_id, key_id_gw, ciphertext, ciphertext128,
+                       ciphertext128_format)
+                      VALUES ($1, 12345, '\\x0a'::bytea, '\\x02'::bytea, $2, 11)"
+            ))
+            .bind(handle)
+            .bind(ct128)
+            .execute(&pool)
+            .await
+            .expect("seed digest row");
+        }
+
+        let mut tx = pool.begin().await.expect("begin");
+        copy_synthetic_probe_digests(&mut tx)
+            .await
+            .expect("copy probe descriptor");
+        // A retried cutover attempt copies again without failing.
+        copy_synthetic_probe_digests(&mut tx)
+            .await
+            .expect("copy probe descriptor again");
+        tx.commit().await.expect("commit");
+
+        type ProbeCopy = (
+            Vec<u8>,
+            Vec<u8>,
+            Option<Vec<u8>>,
+            Option<Vec<u8>>,
+            Option<i16>,
+            bool,
+        );
+        let copied: Vec<ProbeCopy> = sqlx::query_as(
+            "SELECT handle, key_id_gw, ciphertext, ciphertext128, ciphertext128_format, is_error
+                   FROM public.synthetic_handle_digest
+                  WHERE host_chain_id = 12345
+                  ORDER BY handle",
+        )
+        .fetch_all(&pool)
+        .await
+        .expect("read copies");
+        assert_eq!(
+            copied,
+            vec![
+                (
+                    probe,
+                    vec![0x0a],
+                    Some(vec![0x02]),
+                    Some(vec![0x03u8; 32]),
+                    Some(11),
+                    false
+                ),
+                (
+                    uncomputed_probe,
+                    vec![0x0a],
+                    Some(vec![0x02]),
+                    None,
+                    Some(11),
+                    false
+                ),
+            ]
+        );
     }
 
     /// The reorg case the concatenated column exists for.
