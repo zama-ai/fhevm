@@ -73,9 +73,13 @@ describe('cleartextUserDecryptRejection', () => {
 describe('cleartextPublicDecryptCertifier', () => {
   const certify = cleartextPublicDecryptCertifier(rpc, chain, readLeafProofs);
   const parameters = {
-    handle: buildHandle({ chainId: 5n, hash21: `0x${'b1'.repeat(21)}`, fheTypeId: 0 }).bytes32,
+    entries: [
+      {
+        handle: buildHandle({ chainId: 5n, hash21: `0x${'b1'.repeat(21)}`, fheTypeId: 0 }).bytes32,
+        encryptedStore: new Uint8Array(32).fill(0xea),
+      },
+    ],
     contextId: new Uint8Array(32),
-    encryptedStore: new Uint8Array(32).fill(0xea),
   };
 
   beforeEach(() => vi.useFakeTimers());

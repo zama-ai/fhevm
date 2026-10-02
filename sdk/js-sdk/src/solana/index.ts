@@ -28,7 +28,10 @@ export type {
   SolanaClientParameters,
   SolanaEncryptOptions,
 } from './clients/createFhevmBaseClient.js';
-export type { SolanaDecryptPublicValueParameters } from './actions/decryptPublicValue.js';
+export type {
+  SolanaDecryptPublicValueParameters,
+  SolanaDecryptPublicValuesParameters,
+} from './actions/decryptPublicValue.js';
 
 export {
   SOLANA_ENCRYPTED_STORE_SEED,

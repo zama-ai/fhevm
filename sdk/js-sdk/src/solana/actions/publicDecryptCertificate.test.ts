@@ -4,8 +4,9 @@ import { RelayerAsyncRequest } from '../../core/modules/relayer/module/RelayerAs
 import { bytesToHex } from '../../core/base/bytes.js';
 import {
   publicDecryptCertificate,
+  singlePublicDecryptCertificate,
   solanaPublicDecryptExtraData,
-  type SolanaPublicDecryptCertificateParameters,
+  type SolanaPublicDecryptBatch,
 } from './publicDecryptCertificate.js';
 import { asBytes32Hex } from '../../core/base/bytes.js';
 
@@ -14,10 +15,9 @@ handle[22] = 0x01;
 const account = new Uint8Array(32).fill(4);
 const contextId = new Uint8Array(32).fill(5);
 
-const parameters = (): SolanaPublicDecryptCertificateParameters => ({
-  handle,
+const parameters = (): SolanaPublicDecryptBatch => ({
+  entries: [{ handle, encryptedStore: account }],
   contextId,
-  encryptedStore: account,
   options: { fetchRetries: 1 },
 });
 
@@ -42,7 +42,7 @@ describe('solanaPublicDecryptExtraData', () => {
   it('refuses a field of the wrong width before anything is sent', async () => {
     expect(() => solanaPublicDecryptExtraData(new Uint8Array(31))).toThrow('contextId must be 32 bytes');
     await expect(
-      publicDecryptCertificate(context, { ...parameters(), encryptedStore: new Uint8Array(33) }),
+      publicDecryptCertificate(context, { ...parameters(), entries: [{ handle, encryptedStore: new Uint8Array(33) }] }),
     ).rejects.toThrow('encryptedStore must be 32 bytes');
   });
 });
@@ -59,7 +59,7 @@ describe('publicDecryptCertificate', () => {
     vi.restoreAllMocks();
   });
 
-  it('follows the queued relayer path and returns an untrusted claim', async () => {
+  it('follows the queued relayer path and returns an untrusted claim over the whole batch', async () => {
     vi.useFakeTimers();
     const fetchMock = vi
       .fn()
@@ -76,18 +76,27 @@ describe('publicDecryptCertificate', () => {
       );
     global.fetch = fetchMock;
 
-    const pending = publicDecryptCertificate(context, parameters());
+    const otherHandle = handle.slice();
+    otherHandle[0] = 0x07;
+    const otherAccount = new Uint8Array(32).fill(8);
+    const pending = publicDecryptCertificate(context, {
+      ...parameters(),
+      entries: [
+        { handle, encryptedStore: account },
+        { handle: otherHandle, encryptedStore: otherAccount },
+      ],
+    });
     await vi.runAllTimersAsync();
     const claim = await pending;
 
     expect(fetchMock).toHaveBeenCalledTimes(2);
     expect(JSON.parse(String((fetchMock.mock.calls[0]?.[1] as RequestInit).body))).toEqual({
-      ciphertextHandles: [bytesToHex(handle)],
+      ciphertextHandles: [bytesToHex(handle), bytesToHex(otherHandle)],
       extraData: requestExtraData(),
-      encryptedStores: [bytesToHex(account)],
+      encryptedStores: [bytesToHex(account), bytesToHex(otherAccount)],
     });
     expect(claim).toEqual({
-      handle: bytesToHex(handle),
+      handles: [bytesToHex(handle), bytesToHex(otherHandle)],
       abiEncodedCleartext: '00',
       signatures: [signature],
       extraData: requestExtraData(),
@@ -146,5 +155,23 @@ describe('publicDecryptCertificate', () => {
       thrown = error;
     }
     expect(thrown).toBe(terminal);
+  });
+});
+
+describe('singlePublicDecryptCertificate', () => {
+  const batchClaim = { abiEncodedCleartext: '00'.repeat(32), signatures: [signature], extraData: requestExtraData() };
+
+  it('certifies a batch of one and returns the claim the host verifier takes', async () => {
+    const certify = vi.fn().mockResolvedValue({ ...batchClaim, handles: [bytesToHex(handle)] });
+    const claim = await singlePublicDecryptCertificate(certify)({ handle, encryptedStore: account, contextId });
+    expect(certify).toHaveBeenCalledWith({ contextId, entries: [{ handle, encryptedStore: account }] });
+    expect(claim).toEqual({ ...batchClaim, handle: bytesToHex(handle) });
+  });
+
+  it('refuses a certificate that does not cover exactly the requested handle', async () => {
+    const certify = vi.fn().mockResolvedValue({ ...batchClaim, handles: [bytesToHex(handle), bytesToHex(handle)] });
+    await expect(
+      singlePublicDecryptCertificate(certify)({ handle, encryptedStore: account, contextId }),
+    ).rejects.toThrow('exactly the requested handle');
   });
 });
