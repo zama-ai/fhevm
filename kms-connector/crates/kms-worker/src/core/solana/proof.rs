@@ -68,6 +68,11 @@ pub trait HostProofReader: Send + Sync {
     /// The coprocessors in the order to ask them.
     fn hedge_order(&self) -> Vec<usize>;
 
+    /// How metrics name coprocessor `source`.
+    fn source_name(&self, source: usize) -> String {
+        source.to_string()
+    }
+
     fn prepare(
         &self,
         queries: &[LeafQuery],
@@ -262,6 +267,15 @@ impl CoprocessorProofClient {
 
 impl HostProofReader for CoprocessorProofClient {
     type Batch = SignedBatch;
+
+    /// The coprocessor's host and port.
+    fn source_name(&self, source: usize) -> String {
+        let url = &self.urls[source];
+        match (url.host_str(), url.port_or_known_default()) {
+            (Some(host), Some(port)) => format!("{host}:{port}"),
+            _ => source.to_string(),
+        }
+    }
 
     /// A fresh random order per batch spreads the reads over the coprocessors.
     fn hedge_order(&self) -> Vec<usize> {
