@@ -893,6 +893,13 @@ mod tests {
         );
     }
 
+    /// A write that seals no leaf replays to nothing, as the record holds nothing for it.
+    #[test]
+    fn a_zero_leaf_write_replays_to_no_leaves() {
+        let block = [transaction(vec![write(4, [1; 32], vec![], false)])];
+        assert!(replay_block_leaves(&block).unwrap().is_empty());
+    }
+
     /// Growing a store one block at a time, the recorded nodes and leaves hold every
     /// path at every size: the path read by position equals the one rebuilt from all leaves.
     #[test]

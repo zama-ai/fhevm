@@ -65,7 +65,7 @@ The listener reconstructs all executed operations and permission leaves from tra
 independently of return selection. Compute records and the listener's checkpoint commit atomically.
 The Merkle indexer records the leaves from the same stream into its own database, from a block
 before the first Store, and `solana_merkle_proof_server` serves their inclusion proofs via
-`/v1/solana/leaf-proofs`; the connector verifies them against its own chain snapshot (DD-066). A
+`/v1/solana/merkle-proofs`; the connector verifies them against its own chain snapshot (DD-066). A
 record missing a Store's history stops the indexer, and the record is rebuilt. The listener's confirmed-chain scheduling does not itself authorize plaintext release.
 
 Public consumers verify only the KMS certificate on-chain, as EVM `FHE.checkSignatures` does, and compare the

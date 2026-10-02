@@ -3,7 +3,7 @@
 //! The centre of this module is two scripted readers over two kinds of state. [`World`] plus
 //! [`ScriptedReader`] is a set of accounts at a slot and a reader that answers from it while
 //! recording what it was asked for; [`ProofRecord`] plus [`ScriptedProofReader`] is a
-//! coprocessor's leaf record and a reader that answers leaf-proof queries from a list of them,
+//! coprocessor's leaf record and a reader that answers Merkle proof queries from a list of them,
 //! likewise recording. Together they turn a race into a value — a scenario is two worlds, or a world and a
 //! record that disagree, not two moments — and they let the suite assert how many times
 //! authorization reads either source, which is otherwise an invisible property.
@@ -24,8 +24,8 @@ use kms_worker::core::solana::{
     SolanaHost,
     pipeline::AuthorizationContext,
     proof::{
-        CoprocessorProofClient, HostProofReader, LeafKind, LeafProofOutcome, LeafQuery,
-        ProofReadError, leaf_proof_request_body,
+        CoprocessorProofClient, HostProofReader, LeafKind, LeafQuery, MerkleProofOutcome,
+        ProofReadError, merkle_proof_request_body,
     },
     snapshot::{
         AccountsRead, DerivedAddress, HostStateReader, ObservedRow, ObservedRows, SnapshotAccount,
@@ -508,18 +508,18 @@ impl EncryptedStoreFixture {
 
     /// What the coprocessors' record answers for `query` when it has sealed exactly this
     /// account's leaves.
-    pub fn outcome(&self, query: &LeafQuery) -> LeafProofOutcome {
+    pub fn outcome(&self, query: &LeafQuery) -> MerkleProofOutcome {
         let leaf_count = self.encrypted_store.leaf_count;
         match self.leaves.iter().position(|leaf| leaf.query == *query) {
             Some(index) => {
                 let proof = self.proof(index as u64);
-                LeafProofOutcome::Found {
+                MerkleProofOutcome::Found {
                     leaf_index: proof.leaf_index,
                     leaf_count,
                     siblings: proof.siblings,
                 }
             }
-            None => LeafProofOutcome::NotFound { leaf_count },
+            None => MerkleProofOutcome::NotFound { leaf_count },
         }
     }
 
@@ -901,7 +901,7 @@ impl HostStateReader for ScriptedReader {
 #[derive(Clone, Debug, Default)]
 pub struct ProofRecord {
     accounts: BTreeMap<Pubkey, EncryptedStoreFixture>,
-    answers: BTreeMap<LeafQuery, LeafProofOutcome>,
+    answers: BTreeMap<LeafQuery, MerkleProofOutcome>,
 }
 
 impl ProofRecord {
@@ -927,7 +927,7 @@ impl ProofRecord {
 
     /// A record answering exactly these queries with exactly these outcomes. Any other query is
     /// an account unknown to it.
-    pub fn answering(answers: impl IntoIterator<Item = (LeafQuery, LeafProofOutcome)>) -> Self {
+    pub fn answering(answers: impl IntoIterator<Item = (LeafQuery, MerkleProofOutcome)>) -> Self {
         Self {
             accounts: BTreeMap::new(),
             answers: answers.into_iter().collect(),
@@ -935,13 +935,13 @@ impl ProofRecord {
     }
 
     /// What the record answers for one query.
-    pub fn answer(&self, query: &LeafQuery) -> LeafProofOutcome {
+    pub fn answer(&self, query: &LeafQuery) -> MerkleProofOutcome {
         if let Some(outcome) = self.answers.get(query) {
             return outcome.clone();
         }
         self.accounts
             .get(&query.encrypted_store)
-            .map_or(LeafProofOutcome::UnknownAccount, |account| {
+            .map_or(MerkleProofOutcome::UnknownAccount, |account| {
                 account.outcome(query)
             })
     }
@@ -1024,7 +1024,7 @@ impl HostProofReader for ScriptedProofReader {
         &self,
         source: usize,
         queries: &[LeafQuery],
-    ) -> Result<Vec<LeafProofOutcome>, ProofReadError> {
+    ) -> Result<Vec<MerkleProofOutcome>, ProofReadError> {
         self.calls
             .lock()
             .expect("proof reader lock")
@@ -1040,7 +1040,7 @@ impl HostProofReader for ScriptedProofReader {
             }),
             ProofSource::Stalled => std::future::pending().await,
             ProofSource::MustNotBeAsked => {
-                panic!("authorization read leaf proofs where no read was expected")
+                panic!("authorization read Merkle proofs where no read was expected")
             }
         }
     }
@@ -1050,8 +1050,8 @@ impl HostProofReader for ScriptedProofReader {
 // A host behind real HTTP
 // ---------------------------------------------------------------------------
 
-/// The route the connector reads leaf proofs from. A literal, so a moved route fails the tests.
-pub const LEAF_PROOFS_ROUTE: &str = "/v1/solana/leaf-proofs";
+/// The route the connector reads Merkle proofs from. A literal, so a moved route fails the tests.
+pub const MERKLE_PROOFS_ROUTE: &str = "/v1/solana/merkle-proofs";
 
 /// A Solana node and a coprocessor behind real HTTP, for tests that go through the production
 /// readers. Each answers only the exact request body it is scripted for, which pins the keys,
@@ -1103,8 +1103,8 @@ impl HttpHost {
         });
     }
 
-    /// Replaces the coprocessor's record: one leaf-proof batch of these queries.
-    pub fn serve_proofs(&mut self, answers: &[(LeafQuery, LeafProofOutcome)]) {
+    /// Replaces the coprocessor's record: one Merkle proof batch of these queries.
+    pub fn serve_proofs(&mut self, answers: &[(LeafQuery, MerkleProofOutcome)]) {
         serve_proofs(&mut self.coprocessor, answers);
     }
 
@@ -1131,17 +1131,17 @@ pub fn multiple_accounts_request(
     })
 }
 
-/// Scripts `coprocessor` to answer one leaf-proof batch.
-pub fn serve_proofs(coprocessor: &mut MockServer, answers: &[(LeafQuery, LeafProofOutcome)]) {
+/// Scripts `coprocessor` to answer one Merkle proof batch.
+pub fn serve_proofs(coprocessor: &mut MockServer, answers: &[(LeafQuery, MerkleProofOutcome)]) {
     let queries: Vec<_> = answers.iter().map(|(query, _)| *query).collect();
     // Mocktail compares bytes; going through a `Value` would reorder the typed fields.
-    let request = serde_json::to_string(&leaf_proof_request_body(&queries)).unwrap();
+    let request = serde_json::to_string(&merkle_proof_request_body(&queries)).unwrap();
     let response = serde_json::json!({
         "proofs": answers.iter().map(|(_, outcome)| wire_outcome(outcome)).collect::<Vec<_>>(),
     });
     coprocessor.mocks().clear();
     coprocessor.mock(move |when, then| {
-        when.post().path(LEAF_PROOFS_ROUTE).text(request.clone());
+        when.post().path(MERKLE_PROOFS_ROUTE).text(request.clone());
         then.json(response.clone());
     });
 }
@@ -1163,7 +1163,7 @@ pub fn solana_host(rpc: &MockServer, coprocessors: &[&MockServer]) -> SolanaHost
     }
 }
 
-/// A leaf-proof route to the coprocessor at `url`.
+/// A Merkle proof route to the coprocessor at `url`.
 pub fn proof_route(url: &url::Url) -> ProofRoute {
     ProofRoute {
         url: url.clone(),
@@ -1171,10 +1171,10 @@ pub fn proof_route(url: &url::Url) -> ProofRoute {
     }
 }
 
-/// A leaf-proof answer as the coprocessor route serializes it.
-pub fn wire_outcome(outcome: &LeafProofOutcome) -> serde_json::Value {
+/// A Merkle proof answer as the coprocessor route serializes it.
+pub fn wire_outcome(outcome: &MerkleProofOutcome) -> serde_json::Value {
     match outcome {
-        LeafProofOutcome::Found {
+        MerkleProofOutcome::Found {
             leaf_index,
             leaf_count,
             siblings,
@@ -1184,9 +1184,9 @@ pub fn wire_outcome(outcome: &LeafProofOutcome) -> serde_json::Value {
             "leafCount": leaf_count,
             "siblings": siblings.iter().map(alloy::hex::encode).collect::<Vec<_>>(),
         }),
-        LeafProofOutcome::NotFound { leaf_count } => {
+        MerkleProofOutcome::NotFound { leaf_count } => {
             serde_json::json!({ "status": "notFound", "leafCount": leaf_count })
         }
-        LeafProofOutcome::UnknownAccount => serde_json::json!({ "status": "unknownAccount" }),
+        MerkleProofOutcome::UnknownAccount => serde_json::json!({ "status": "unknownAccount" }),
     }
 }

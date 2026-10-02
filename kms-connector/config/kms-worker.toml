@@ -191,8 +191,8 @@ acl_address = "0x0000000000000000000000000000000000000000"
 # beside its extraData; a user decrypt names the owner address and the store per entry.
 # Solana chains only, required: the base58 zama-host program id.
 # solana_host_program_id = "11111111111111111111111111111111"
-# Solana chains only, at least one: each coprocessor's leaf-proof endpoint
-# (`POST /v1/solana/leaf-proofs`) and the bearer key that coprocessor issued. Every route is asked
+# Solana chains only, at least one: each coprocessor's Merkle proof endpoint
+# (`POST /v1/solana/merkle-proofs`) and the bearer key that coprocessor issued. Every route is asked
 # at once and the first proof that verifies is taken, so a lagging or stalled coprocessor neither
 # fails nor delays a request another one serves; each route therefore sees every proof read. A
 # route's key is sent only to it.

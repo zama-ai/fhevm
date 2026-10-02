@@ -185,12 +185,12 @@ pub enum HostSettings {
 pub struct SolanaHostSettings {
     /// The zama-host program id.
     pub host_program_id: Pubkey,
-    /// The coprocessors' leaf-proof routes, one per coprocessor, at least one. Every route is
+    /// The coprocessors' Merkle proof routes, one per coprocessor, at least one. Every route is
     /// asked at once, and the first proof that verifies is taken.
     pub proof_routes: Vec<ProofRoute>,
 }
 
-/// One coprocessor's leaf-proof endpoint and the bearer key that endpoint expects.
+/// One coprocessor's Merkle proof endpoint and the bearer key that endpoint expects.
 #[derive(Clone, Debug, Deserialize, PartialEq)]
 pub struct ProofRoute {
     pub url: Url,

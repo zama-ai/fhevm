@@ -10,7 +10,7 @@ import {
   FHEVM_COMPOSE_PROJECT_ENV,
   PORTS,
   REPO_ROOT,
-  SOLANA_LEAF_PROOF_PORT,
+  SOLANA_MERKLE_PROOF_PORT,
   SOLANA_LISTENER_GRPC_PORT,
   SOLANA_LISTENER_HEALTH_PORT,
   SOLANA_MERKLE_INDEXER_HEALTH_PORT,
@@ -118,7 +118,7 @@ export const demoReservedPorts = (observability = false): readonly number[] => [
     SOLANA_LISTENER_GRPC_PORT,
     SOLANA_LISTENER_HEALTH_PORT,
     SOLANA_MERKLE_INDEXER_HEALTH_PORT,
-    SOLANA_LEAF_PROOF_PORT,
+    SOLANA_MERKLE_PROOF_PORT,
     ...(observability ? OBSERVABILITY_PORTS : []),
   ]),
 ];
@@ -1438,7 +1438,7 @@ const demoHealth = async (manifest: DemoManifest): Promise<DemoHealth> => {
   ] = await Promise.all([
     validatorHealthy().catch(() => false),
     httpHealthy(`${LOCAL_SOLANA_ENDPOINTS.merkleIndexerHealth}/healthz`),
-    httpHealthy(`${LOCAL_SOLANA_ENDPOINTS.leafProof}/healthz`),
+    httpHealthy(`${LOCAL_SOLANA_ENDPOINTS.merkleProof}/healthz`),
     httpHealthy(`${LOCAL_SOLANA_ENDPOINTS.demoOperator}/health`),
     demoDappHealthy(),
     dockerLogContains(

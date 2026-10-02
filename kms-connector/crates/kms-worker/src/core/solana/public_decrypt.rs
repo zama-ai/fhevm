@@ -63,7 +63,7 @@ pub enum PublicDecryptFailure {
         index: usize,
         source: EncryptedStoreFailure,
     },
-    #[error("leaf proofs: {0}")]
+    #[error("Merkle proofs: {0}")]
     ProofRead(#[from] ProofReadError),
     #[error("entry {index}: handle binding: {source}")]
     HandleBinding {
