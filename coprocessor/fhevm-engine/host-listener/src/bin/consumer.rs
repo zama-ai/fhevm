@@ -83,6 +83,17 @@ struct Args {
 
     #[arg(
         long,
+        help = "Service name this environment ran under before the broker identity became a \
+                compiled-in constant, when the two were the same thing. The chain id is appended \
+                to it, giving the identity to retire once it stops being read: its streams are \
+                deleted and its filters unregistered, or, when that identity is the current one, \
+                only its unsuffixed consumer group is destroyed. Temporary — remove it after the \
+                environment has migrated"
+    )]
+    migrate_from_service_name: Option<String>,
+
+    #[arg(
+        long,
         default_value_t = DEFAULT_DEPENDENCE_CACHE_SIZE,
         help = "Pre-computation dependence chain cache size"
     )]
@@ -221,6 +232,7 @@ async fn main() -> anyhow::Result<()> {
         gcs_mode,
         disable_synthetic_ops: args.disable_synthetic_ops,
         canonical_protocol_config_chain_id: args.protocol_config.chain_id,
+        migrate_from_service_name: args.migrate_from_service_name,
     };
 
     run_consumer(config).await
