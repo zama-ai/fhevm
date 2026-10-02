@@ -1,8 +1,6 @@
 //! The Merkle indexer's sink for the Solana host follower: records the leaves each sealed block's
 //! store writes seal, with the resume checkpoint, in one database transaction per block.
 
-use std::collections::BTreeMap;
-
 use anyhow::anyhow;
 use solana_host_follower::host::host_operations;
 use solana_host_follower::{
@@ -12,8 +10,9 @@ use sqlx::PgPool;
 use tracing::info;
 
 use crate::store::{
-    load_block_leaves, load_encrypted_store_histories, reduce_block_leaves,
-    store_block_leaves, store_checkpoint, TransactionStoreWrites,
+    load_block_leaves, load_recorded_through, load_store_cursors,
+    reduce_block_leaves, replay_block_leaves, store_block_leaves,
+    store_checkpoint, TransactionStoreWrites,
 };
 
 pub struct MerkleIndexerSink {
@@ -59,8 +58,10 @@ impl IndexerStart {
     }
 }
 
-/// Applies one sealed block: its leaves, nodes and store cursors, and the checkpoint.
-pub async fn apply_block(
+/// Applies one sealed block: its leaves, nodes and store cursors, and the checkpoint. A block
+/// the record already applied must reproduce the leaves recorded at its slot and writes nothing
+/// else.
+async fn apply_block(
     pool: &PgPool,
     prepared: &PreparedBlock,
 ) -> Result<(), IngestFailure> {
@@ -87,44 +88,56 @@ pub async fn apply_block(
         .begin()
         .await
         .map_err(|err| IngestFailure::retryable(err).context("open db tx"))?;
-    let mut touched: Vec<[u8; 32]> = writes
-        .iter()
-        .flat_map(|transaction| transaction.sources.iter())
-        .map(|write| write.encrypted_store)
-        .collect();
-    touched.sort_unstable();
-    touched.dedup();
-    let existing = load_encrypted_store_histories(&mut db_tx, &touched)
-        .await
-        .map_err(|err| {
-        IngestFailure::retryable(err).context("load encrypted stores")
-    })?;
-    // The chain accepted every write; a write this record cannot follow means the
-    // record diverged from chain state, and continuing would seal wrong leaves.
-    let reduction = reduce_block_leaves(block.slot, &writes, existing)
-        .map_err(|err| IngestFailure::fatal(err).context("reduce leaves"))?;
-    // A replayed slot must reproduce its recorded leaves exactly; anything else means
-    // the record and the chain disagree about history the proofs already cover.
-    if !reduction.replayed.is_empty() {
-        let recorded: BTreeMap<_, _> = load_block_leaves(
-            &mut db_tx,
-            block.slot,
-            reduction.replayed.keys().copied(),
-        )
-        .await
-        .map_err(|err| {
-            IngestFailure::retryable(err).context("load replayed leaves")
+    let recorded_through =
+        load_recorded_through(&mut db_tx).await.map_err(|err| {
+            IngestFailure::retryable(err).context("load checkpoint")
         })?;
-        if recorded != reduction.replayed {
+    let mut recorded_leaves = 0;
+    if recorded_through.is_some_and(|through| block.slot <= through) {
+        // Anything but the recorded leaves means the record and the chain disagree about
+        // history the proofs already cover.
+        let replayed = replay_block_leaves(&writes).map_err(|err| {
+            IngestFailure::fatal(err).context("replay leaves")
+        })?;
+        let recorded = load_block_leaves(&mut db_tx, block.slot)
+            .await
+            .map_err(|err| {
+                IngestFailure::retryable(err).context("load recorded leaves")
+            })?;
+        if replayed != recorded {
             return Err(IngestFailure::fatal(anyhow!(
                 "replayed slot {} does not reproduce its recorded leaves",
                 block.slot
             )));
         }
+    } else {
+        let mut written: Vec<[u8; 32]> = writes
+            .iter()
+            .flat_map(|transaction| transaction.sources.iter())
+            .map(|write| write.encrypted_store)
+            .collect();
+        written.sort_unstable();
+        written.dedup();
+        let existing =
+            load_store_cursors(&mut db_tx, &written)
+                .await
+                .map_err(|err| {
+                    IngestFailure::retryable(err)
+                        .context("load encrypted stores")
+                })?;
+        // The chain accepted every write; a write this record cannot follow means the
+        // record diverged from chain state, and continuing would seal wrong leaves.
+        let reduction =
+            reduce_block_leaves(&writes, existing).map_err(|err| {
+                IngestFailure::fatal(err).context("reduce leaves")
+            })?;
+        store_block_leaves(&mut db_tx, block.slot, &reduction)
+            .await
+            .map_err(|err| {
+                IngestFailure::retryable(err).context("store leaves")
+            })?;
+        recorded_leaves = reduction.leaves.len();
     }
-    store_block_leaves(&mut db_tx, block.slot, &reduction)
-        .await
-        .map_err(|err| IngestFailure::retryable(err).context("store leaves"))?;
     store_checkpoint(&mut db_tx, &block.checkpoint())
         .await
         .map_err(|err| {
@@ -135,11 +148,10 @@ pub async fn apply_block(
         .await
         .map_err(|err| IngestFailure::retryable(err).context("commit db tx"))?;
 
-    if !reduction.leaves.is_empty() {
+    if recorded_leaves > 0 {
         info!(
             slot = block.slot,
-            leaves = reduction.leaves.len(),
-            encrypted_stores = reduction.states.len(),
+            leaves = recorded_leaves,
             "recorded Solana leaves"
         );
     }

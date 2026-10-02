@@ -3,12 +3,11 @@
 -- from it and verifies them against the on-chain store's peaks; the record itself is never
 -- trusted for authorization.
 
--- One row per encrypted store the record follows: its MMR cursor after `last_slot`.
+-- One row per encrypted store the record follows: its MMR cursor.
 CREATE TABLE encrypted_stores (
     encrypted_store BYTEA PRIMARY KEY CHECK (octet_length(encrypted_store) = 32),
     leaf_count BIGINT NOT NULL CHECK (leaf_count >= 0),
-    peaks BYTEA[] NOT NULL,
-    last_slot BIGINT NOT NULL CHECK (last_slot >= 0)
+    peaks BYTEA[] NOT NULL
 );
 
 -- leaf_kind: 0 = historical-access leaf (ZAMA_HIST_ACCESS_LEAF_V1, keyed by handle + allowed_key),
@@ -30,6 +29,9 @@ CREATE TABLE leaves (
 CREATE INDEX leaves_semantic_idx
     ON leaves (encrypted_store, leaf_kind, handle, allowed_key, leaf_index);
 
+-- A replayed block is compared with every leaf recorded at its slot.
+CREATE INDEX leaves_block_slot_idx ON leaves (block_slot);
+
 -- The MMR nodes of height 1 and above, written in the transaction that appends the leaves
 -- completing them. A proof takes its path from here by position; height-0 siblings are leaf
 -- rows. Node (height, node_index) covers leaves [node_index << height, (node_index + 1) << height).
@@ -42,10 +44,13 @@ CREATE TABLE nodes (
 );
 
 -- The last sealed block the indexer applied, written in that block's transaction so a restart
--- resumes exactly after the recorded work.
+-- resumes exactly after the recorded work. `recorded_through` is the highest slot ever applied:
+-- moving `slot` back replays the blocks up to it, each checked against its recorded leaves.
 CREATE TABLE checkpoint (
     singleton SMALLINT PRIMARY KEY DEFAULT 1 CHECK (singleton = 1),
     slot BIGINT NOT NULL CHECK (slot >= 0),
     block_hash BYTEA NOT NULL CHECK (octet_length(block_hash) = 32),
-    updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+    recorded_through BIGINT NOT NULL,
+    updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    CHECK (recorded_through >= slot)
 );

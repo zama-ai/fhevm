@@ -19,7 +19,7 @@ use fhevm_engine_common::{
 };
 use solana_host_follower::{
     block_checkpoint, host::host_chain_id, run, track_confirmed_slot,
-    FollowerConfig, StartPosition,
+    FollowerConfig, StartPosition, SOLANA_RPC_REQUEST_TIMEOUT,
 };
 use solana_merkle_proof_service::{
     indexer::{IndexerStart, MerkleIndexerSink},
@@ -27,8 +27,6 @@ use solana_merkle_proof_service::{
     store::load_checkpoint,
     MIGRATOR,
 };
-
-const SOLANA_RPC_REQUEST_TIMEOUT: Duration = Duration::from_secs(30);
 
 #[derive(Parser, Debug, Clone)]
 #[command(version, about = "Solana Merkle indexer", long_about = None)]
@@ -103,6 +101,10 @@ async fn main() -> Result<()> {
         CommitmentConfig::confirmed(),
     );
     let chain_id = host_chain_id(&rpc, &program_id).await?;
+    let archive = RpcClient::new_with_timeout(
+        args.archive_url.unwrap_or_else(|| args.url.clone()),
+        SOLANA_RPC_REQUEST_TIMEOUT,
+    );
 
     let cancel = CancellationToken::new();
     let (pool, _refresh) = connect_pool_with_options(
@@ -132,9 +134,10 @@ async fn main() -> Result<()> {
             StartPosition::Resume(checkpoint)
         }
         // Anchored to an actual block, so a provider silently starting at the tip is rejected.
+        // The start slot is usually older than the live endpoint's ledger.
         IndexerStart::From(slot) => {
             info!(slot, "building the record from the start slot");
-            StartPosition::ReplayFrom(block_checkpoint(&rpc, slot).await?)
+            StartPosition::ReplayFrom(block_checkpoint(&archive, slot).await?)
         }
     };
 
@@ -161,10 +164,6 @@ async fn main() -> Result<()> {
         result
     });
 
-    let archive = RpcClient::new_with_timeout(
-        args.archive_url.unwrap_or(args.url),
-        SOLANA_RPC_REQUEST_TIMEOUT,
-    );
     let indexer_result = run(
         &MerkleIndexerSink::new(pool),
         &archive,

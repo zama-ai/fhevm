@@ -118,8 +118,8 @@ cargo test -p host-listener --test host_listener_integration_tests \
 
 ### Solana bootstrap and restart
 
-`solana_host_listener` reconstructs compute rows and ACL leaves from confirmed
-Yellowstone blocks. It subscribes to the successful transactions naming the host
+`solana_host_listener` reconstructs compute rows from confirmed Yellowstone
+blocks. It subscribes to the successful transactions naming the host
 program, one per message, and to every slot's block meta, and seals a slot when
 its block meta arrives. The provider must send every transaction of a slot
 before that slot's block meta, live and on `from_slot` replay; Yellowstone does.
@@ -134,12 +134,12 @@ host activity that must be reconstructed. RPC supplies that block's hash; its
 transactions come from Yellowstone, or from the archive below if it is older
 than the replay window. The first block must match the requested slot and hash.
 
-Once a block's compute rows, leaves, and checkpoint commit together, restarts
+Once a block's compute rows and checkpoint commit together, restarts
 resume from that checkpoint and ignore `--start-slot`. Inclusive replay verifies
 the committed block's identity without applying it twice. A disconnect before
 the first commit retains the unapplied bootstrap anchor for reconnection.
-Without a checkpoint or `--start-slot`, the listener starts at the stream tip;
-this cannot recover earlier leaves.
+Without a checkpoint or `--start-slot`, the listener starts at the stream tip
+and does not reconstruct earlier computations.
 
 Yellowstone replays only recent slots: **256** with the local configuration in
 `solana/geyser/yellowstone-config.json`, about 24 hours on a hosted provider.
@@ -168,8 +168,7 @@ reconnect and handle-check alarms are in
 
 A step whose emitted handle does not re-derive is held back. Its computation row
 is inserted as a terminal error, so the tfhe-worker never computes it and ends
-its dependents as errors. The rest of the block is ingested, and the ACL leaves
-keep the emitted handle. The listener logs `solana handle check failed` with the
+its dependents as errors. The rest of the block is ingested. The listener logs `solana handle check failed` with the
 slot, signature, execution, step and both handles, and increments
 `coprocessor_solana_host_listener_handle_check_failures_total`. The mismatch is
 a listener bug: either the derivation or the step decoding is wrong (DD-056 in
@@ -194,13 +193,10 @@ slot neither serves cannot be re-ingested. Take a database backup before step 2.
    Solana chain whose checkpoint is still after `S`, since the listener would
    never re-ingest the deleted rows.
 3. Restart the services with the fixed listener. It replays every slot after `S`
-   and inserts the rows again as new work. ACL leaves are kept: a replayed write
-   must reproduce the leaves recorded for it, or the listener stops.
+   and inserts the rows again as new work.
 
-This repairs computation rows only. A bug that recorded wrong leaves cannot be
-repaired by a replay, since the fixed listener stops at the first recorded leaf
-it does not reproduce. The same holds for a slot applied without a transaction
-that wrote a Store (DD-062).
+This repairs computation rows only. The leaf record is in the Merkle proof
+service's database, which this revert does not touch (DD-066).
 
 ## Events in FHEVM
 

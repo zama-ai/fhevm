@@ -85,6 +85,20 @@ class SolanaCharts(unittest.TestCase):
                            check=True, capture_output=True, text=True)
         self.assertIn("solanaHostListener.merkleIndexer.startSlot is required", failure.exception.stderr)
 
+    def test_a_numeric_start_slot_renders_as_an_integer(self):
+        documents = render("coprocessor-1", "coprocessor", [VALUES / "values-solana-coprocessor-e2e.yaml"],
+                           "--set-json", "solanaHostListener.merkleIndexer.startSlot=312000000")
+        indexer = next(d for d in documents if d and d["kind"] == "Deployment" and d["metadata"]["name"] == INDEXER)
+        self.assertIn("--start-slot=312000000", indexer["spec"]["template"]["spec"]["containers"][0]["args"])
+
+    def test_the_merkle_service_requires_its_database(self):
+        with self.assertRaises(subprocess.CalledProcessError) as failure:
+            subprocess.run(["helm", "template", "coprocessor-1", str(ROOT / "charts/coprocessor"),
+                            "-f", str(VALUES / "values-solana-coprocessor-e2e.yaml"), *START_SLOT,
+                            "--set", "solanaHostListener.merkleDatabaseUrl="],
+                           check=True, capture_output=True, text=True)
+        self.assertIn("solanaHostListener.merkleDatabaseUrl is required", failure.exception.stderr)
+
     def test_iam_certificate_is_a_volume_list(self):
         documents = render("coprocessor-1", "coprocessor", [VALUES / "values-solana-coprocessor-e2e.yaml"],
                            "--set", "commonConfig.databaseAuthMode=iam",

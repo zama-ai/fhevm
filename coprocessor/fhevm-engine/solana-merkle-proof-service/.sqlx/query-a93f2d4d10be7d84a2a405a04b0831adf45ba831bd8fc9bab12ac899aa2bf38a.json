@@ -1,0 +1,16 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n            INSERT INTO encrypted_stores (encrypted_store, leaf_count, peaks)\n            VALUES ($1, $2, $3)\n            ON CONFLICT (encrypted_store) DO UPDATE SET\n                leaf_count = EXCLUDED.leaf_count,\n                peaks = EXCLUDED.peaks\n            ",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Bytea",
+        "Int8",
+        "ByteaArray"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "a93f2d4d10be7d84a2a405a04b0831adf45ba831bd8fc9bab12ac899aa2bf38a"
+}

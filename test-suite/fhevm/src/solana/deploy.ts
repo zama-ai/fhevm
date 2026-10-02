@@ -92,7 +92,7 @@ export const readCoprocessorDatabaseUrl = async (): Promise<string> => {
 /** The Merkle proof service's own database, on the coprocessor's Postgres server. */
 const MERKLE_DATABASE = 'solana_merkle';
 
-export const merkleDatabaseUrl = (coprocessorDatabaseUrl: string): string => {
+const merkleDatabaseUrl =(coprocessorDatabaseUrl: string): string => {
   const url = new URL(coprocessorDatabaseUrl);
   url.pathname = `/${MERKLE_DATABASE}`;
   return url.toString();
