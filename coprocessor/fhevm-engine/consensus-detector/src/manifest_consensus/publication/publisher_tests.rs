@@ -304,7 +304,7 @@ async fn probe_seals_from_its_cutover_copy_without_waiting() {
     assert!(is_block_manifest_ready(&mut trx, &block)
         .await
         .expect("a copied probe never keeps the block waiting"));
-    let descriptors = load_manifest_descriptors(&mut trx, &block, false)
+    let descriptors = load_manifest_descriptors(&mut trx, &block, false, None)
         .await
         .expect("load descriptors with copied probes");
     trx.rollback().await.expect("rollback copied probe check");
