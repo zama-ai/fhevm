@@ -202,8 +202,8 @@ Every decrypt authorizes through exactly one leaf proof against the Store's conf
 | **public** (`PublicDecryptLeaf`)   | MMR proof against live peaks, exact handle                                    | `zama-solana-acl` (`authorize_state_public`); `kms-worker` `solana_public_decrypt` tests. On chain, consumers check only the KMS certificate (DD-065)                                                              |
 
 Each has negative coverage: wrong key, wrong handle, a proof from a foreign Store, an invalid or
-forged proof, and a leaf record that is behind all fail closed (the `*_rejects_*` Mollusk tests and
-the connector's `ProofRecordBehind` and `NoLeaf` classification).
+forged proof, and a leaf record that is behind all fail closed (the `zama-solana-acl` tests, the
+kms-worker `solana_` tests and the connector's `ProofRecordBehind` and `NoLeaf` classification).
 
 The central correctness bet is that off-chain consumers reproduce on-chain MMR state exactly. The
 solana-e2e scenarios exercise host-listener reconstruction against the full stack, and every proof

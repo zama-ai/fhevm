@@ -5,9 +5,10 @@
 //! `PublicDecryptVerification` certificate in its own transaction, and the program CPIs the
 //! stateless `zama_host::verify_public_decrypt`. Unlike disclosure, redeem binds the certificate to
 //! the `burned_handle` pinned in `PendingBurn` and to the claimed `cleartext_amount`. There is no
-//! request witness, no request-time KMS context pin, and no expiry: the certificate is verified against the live `KmsContext` its signed extra_data names
-//! (any non-destroyed context, fhevm-internal#1765; `destroy_kms_context` is the revocation lever,
-//! one layer down in the host verifier).
+//! request witness, no request-time KMS context pin, and no expiry: the certificate is verified
+//! against the live `KmsContext` its signed extra_data names (any non-destroyed context,
+//! fhevm-internal#1765; `destroy_kms_context` is the revocation lever, one layer down in the host
+//! verifier).
 //!
 //! ## Act-once IS enforced here
 //!

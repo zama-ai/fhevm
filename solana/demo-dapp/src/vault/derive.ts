@@ -52,7 +52,7 @@ export interface BatchAddresses {
   readonly batchJoinUnderlying: Address;
   /** Plain SPL account receiving the vault phase's output (payout underlying). */
   readonly batchPayoutUnderlying: Address;
-  /** The batch's burned-amount encrypted store on the join mint (the settle proof's `encrypted_store`). */
+  /** The batch's burned-amount encrypted store on the join mint, which settle passes to redeem. */
   readonly batchBurnedAmountStore: Address;
   /** The batch payout token account's confidential balance encrypted store. */
   readonly batchPayoutBalanceStore: Address;

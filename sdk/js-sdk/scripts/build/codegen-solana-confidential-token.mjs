@@ -195,8 +195,8 @@ const targets = [
         'closeJoinRecord',
       ]),
       // Anchor inlines the CoprocessorInputAttestation (join) struct directly into the instruction
-      // data. Keep the initializeBatcher direction enum plus batchStatus
-      // — the Batch account decoder references it; confidentialMint/vault stay pruned (account-only).
+      // data. Keep the initializeBatcher direction enum plus batchStatus, which the Batch account
+      // decoder references; confidentialMint/vault stay pruned (account-only).
       definedTypes: new Set(['batchDirection', 'batchStatus']),
       // Keep the three account decoders the vault-module reads consume: Batcher (direction + mints +
       // vault + min_batch_age_slots + next_batch_index), Batch (status + opened_slot + join_count +

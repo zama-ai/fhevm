@@ -110,8 +110,8 @@ export const confidentialBurn = async (
 /**
  * Redeems the KMS-certified burned amount from the SPL vault (`redeem_burned_amount`): the host
  * verifier CPI checks the certificate against the live KMS context it names, the token program
- * requires the certified handle to be the one pinned in PendingBurn, the PendingBurn closes, and the cleartext amount of underlying releases to the owner's
- * associated token account.
+ * requires the certified handle to be the one pinned in PendingBurn, the PendingBurn closes, and
+ * the cleartext amount of underlying releases to the owner's associated token account.
  */
 export const redeemBurnedAmount = async (
   context: SolanaProvisioningContext,

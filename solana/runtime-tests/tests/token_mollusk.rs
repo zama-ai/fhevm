@@ -3685,8 +3685,8 @@ fn mollusk_redeem_rejects_mismatched_pending_identity_without_payout() {
     }
 }
 
-/// The certificate is the only thing that binds the cleartext to the pinned handle: a certificate
-/// over another handle, or over another amount, does not redeem and leaves every account untouched.
+/// Redeem hands the verifier the pinned handle and the claimed amount, so a certificate over another
+/// handle, or over another amount, fails there and leaves every account untouched.
 #[test]
 fn mollusk_redeem_rejects_certificate_not_over_pinned_handle_and_amount() {
     let pinned = handle_for_chain(41, BALANCE_FHE_TYPE);

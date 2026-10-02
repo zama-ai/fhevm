@@ -38,9 +38,9 @@ pub fn disclose_secp(
         zama_program: &ctx.accounts.zama_program,
     })?;
 
-    // Token encrypted stores are euint64 today, so the certified uint256 cleartext must fit in 64 bits: the
-    // high 24 bytes must be zero for the low-64-bit truncation below to be lossless. Reject anything
-    // wider rather than silently discarding high bits.
+    // `HandleDisclosedEvent.cleartext_amount` is a u64, so the certified uint256 cleartext must fit
+    // in 64 bits: the high 24 bytes must be zero for the truncation below to be lossless. Reject
+    // anything wider rather than silently discarding high bits.
     require!(
         certified_cleartext[..24].iter().all(|byte| *byte == 0),
         ConfidentialTokenError::CleartextExceedsEuint64

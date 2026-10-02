@@ -113,9 +113,8 @@ describe("solana confidential-token consume vertical", () => {
       const burnedHandle = await currentHandle(context, target.burnedAmountStore, new TextEncoder().encode("burned_amount___________________"));
       await stack.waitForSnsCommit(hex(burnedHandle));
 
-      // Seal through the token wrapper (it signs the Host CPI as the State authority). The burn
-      // already appended [allowed(owner), markedPublic]; this explicit re-seal appends a third leaf,
-      // and the KMS connectors must still find the burn's public leaf behind it.
+      // The burn already sealed the handle public. Sealing it again through the token wrapper (it
+      // signs the Host CPI as the Store authority) exercises the wrapper's make-public path live.
       await sealBurnedAmountHandle(context, { owner: wallet.signer, mint, handle: burnedHandle });
 
       const { cleartext, certificate } = await timed("certified public decrypt (KMS)", () =>

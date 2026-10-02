@@ -1,12 +1,5 @@
-// fhe-vertical — the decrypt half the live scenarios share: read a value's state, request the KMS
-// public-decrypt certificate of a public handle, and build the public-leaf inclusion proof the
-// on-chain consume steps (redeem, disclose) verify.
-//
-// The client fetches no proof for a decrypt (RFC 035): the request names `(handle, account)` and
-// the Connector reads the account and asks the coprocessors for the leaf. The proof built here is
-// for the ON-CHAIN verifier only, rebuilt from the account's history exactly as the demo vault's
-// settle does, and cross-checked against the live peaks so a history the scenario got wrong fails
-// here with the leaf count named, not inside the program as a generic verifier error.
+// fhe-vertical — the decrypt half the live scenarios share: read a value's state and request the
+// KMS public-decrypt certificate of a public handle.
 //
 // The decrypt requests themselves go through the strict, unit-tested request builders the
 // fhevm-cli already ships (`./public-decrypt`, `./current-user-decrypt`).

@@ -1099,8 +1099,8 @@ fallback is a caller-provided scratch account. The proof-freshness (stale-proof)
 known bounded-retry surface (#1687): an update between proof generation and consume moves the MMR
 peaks and fails the inclusion proof; the victim regenerates the proof and retries. The one wrong app
 pattern is binding consume logic to the live `current_handle` instead of the sealed handle — the
-sealed leaf is append-only, so the OLD sealed handle stays verifiable after an update (covered by
-`mollusk_verify_public_decrypt_survives_update_after_seal`).
+sealed leaf is append-only, so the OLD sealed handle stays verifiable after an update (covered
+today by `mollusk_historical_proof_round_trip_after_two_updates`).
 
 Scope: this PR added the host verifier additively. Dissolving the confidential-token `DisclosureRequest`
 lifecycle (`request_disclose_*`, `disclose_*_secp`, `close_*_disclosure_request`,
@@ -1506,6 +1506,9 @@ surviving events as dead.
 ## DD-045: Keep Burn Settlement Sequential and Keep Wrapper Policy Separate From Host Governance
 
 Status: adopted
+
+Superseded in part by DD-065: settlement and disclosure take no proof, and disclosure reads no token
+state.
 
 Superseded in part by DD-048 and DD-049: allows are sealed on the write and the Store model replaces per-value accounts.
 

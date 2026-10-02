@@ -29,7 +29,7 @@ stack where one exists.
 | Term | Definition | Replaces | EVM equivalent |
 |---|---|---|---|
 | **pending burn** | The one unsettled burn allowed for a confidential token account. Its `PendingBurn` PDA is derived from `(mint, token account)`. A second burn is rejected until the pending burn is settled. Parallel burns may use separate app-owned token accounts; multiple pending burns per token account are deferred. | burn lane | — |
-| **redeem** | Settle a pending burn by verifying its public-decryption certificate and proof, transferring the certified underlying amount from the wrapper vault, and closing `PendingBurn`. | claim burn | withdraw |
+| **redeem** | Settle a pending burn by verifying its public-decryption certificate, transferring the certified underlying amount from the wrapper vault, and closing `PendingBurn`. | claim burn | withdraw |
 | **cancel** | Settle a pending burn without an underlying payout by restoring the encrypted balance and encrypted total supply and closing `PendingBurn`. Only the token account owner can cancel, and the burned handle must still be current. This term does not describe `BatchStatus::Canceled`. | recover | — |
 | **settled** | Terminal description for a pending burn that was either redeemed or cancelled. It is an adjective describing the burn lifecycle, not an instruction name or the batcher's `BatchStatus::Settled`. | finalized, recovered | — |
 

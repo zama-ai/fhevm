@@ -1,7 +1,8 @@
 // operator-server — the `demo:operator` entrypoint. Wires the pure operator (`./operator`) to a live
 // stack: the seeded demo-config (RPC endpoints, mints, personas), the environment-specific keeper and
-// mint-authority keypairs, the environment's SOL funder and the relayer's key material. It binds loopback: the dapp dev server proxies the browser to it and adds
-// the boot capability; `tailscale serve` may front it for direct callers on the tailnet.
+// mint-authority keypairs, the environment's SOL funder and the relayer's key material. It binds
+// loopback: the dapp dev server proxies the browser to it and adds the boot capability;
+// `tailscale serve` may front it for direct callers on the tailnet.
 //
 // The SPL instructions are hand-built with `@solana/kit` primitives on purpose: the test-suite
 // carries no `@solana-program/token` dependency; they come from `../src/solana/spl` (shared with

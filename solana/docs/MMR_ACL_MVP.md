@@ -24,9 +24,9 @@ The token returns the transferred result; the batcher adds it to its own contrib
 
 ## Off-chain trust and recovery
 
-The listener reconstructs every executed operation and leaf from the same transaction, regardless of return selection. Compute records, leaves and checkpoint commit atomically. KMS validates proofs against its deciding on-chain Store snapshot, not listener-proof-endpoint assertions. Public consumers verify the certificate and exact-handle public proof on-chain. Generic disclosure carries no authenticated token-kind label.
+The listener reconstructs every executed operation and leaf from the same transaction, regardless of return selection. Compute records, leaves and checkpoint commit atomically. KMS validates proofs against its deciding on-chain Store snapshot, not listener-proof-endpoint assertions. On-chain public consumers verify only the certificate and compare its handle with one they pinned (DD-065). Generic disclosure carries no authenticated token-kind label.
 
-An incomplete local history refuses proofs. Advancing its cursor does not repair it; retention recovery and coverage must be checked separately. A fetched proof can become stale before submission; the consumer rejects it and a retry must fetch fresh evidence. Old acceptance does not prove current freshness.
+An incomplete local history refuses proofs. Advancing its cursor does not repair it; retention recovery and coverage must be checked separately. A fetched proof can become stale before the connector checks it; the connector rejects it and a retry must fetch fresh evidence. Old acceptance does not prove current freshness.
 
 ## Resources and verification
 

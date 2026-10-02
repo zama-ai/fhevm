@@ -276,7 +276,8 @@ one it pinned.
 Pinned by `mollusk_verify_public_decrypt_returns_handle_and_cleartext`,
 `mollusk_verify_public_decrypt_rejects_certificate_for_another_handle`,
 `mollusk_verify_public_decrypt_rejects_sub_threshold_signatures`,
-`mollusk_redeem_rejects_certificate_not_over_pinned_handle_and_amount` and the kms-worker tests
+`mollusk_redeem_rejects_certificate_not_over_pinned_handle_and_amount`,
+`mollusk_two_sequential_burns_each_redeemable_exactly_once` and the kms-worker tests
 `an_allow_leaf_does_not_prove_public_ness` and `a_handle_not_made_public_is_retried`.
 
 **22. [HOLDS]** Certificate binding chain: signed `extra_data` → context id → canonical KmsContext PDA → signer set.

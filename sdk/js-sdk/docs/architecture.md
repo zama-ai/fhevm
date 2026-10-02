@@ -148,7 +148,8 @@ The private-decrypt client requires `SolanaDecryptTrust` and exposes `signPermit
 factory requires no private-decrypt trust. Its `decryptPublicValue(s)` actions read
 HostConfig and KmsContext through RPC, authenticate distinct KMS signatures, and return
 shared `TypedValue` results. The lower-level `publicDecryptCertificate` returns the raw
-claim for on-chain consumers, which must still verify the public MMR inclusion proof.
+claim for on-chain consumers, which verify only the certificate and compare its handle with one
+they pinned.
 The trust configuration includes the KMS signer set, routing identifiers, FHE
 parameter and response-signature domain. These are trusted deployment inputs,
 not values inferred from the response. A missing domain is rejected when the

@@ -137,9 +137,6 @@ export function decodeSolanaEncryptedStore(data: Uint8Array, accountName: string
 /**
  * Reads one EncryptedStore account and decodes it.
  *
- * One read is one snapshot: the current handle, the leaf count and the peaks come out of the same
- * account data, so they describe one state.
- *
  * @param rpc - The Solana RPC to read through.
  * @param address - The account's address.
  * @param config - Standard fetch passthrough, e.g. `{ commitment: 'confirmed' }`.
