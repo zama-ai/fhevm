@@ -25,10 +25,7 @@ for program in zama_host confidential_token confidential_batcher demo_vault; do
 done
 # `cleartext` records plaintexts in host accounts for the local simulator (src/cleartext). It is a
 # test artifact only: build-programs.sh refuses it in environment files and deploy refuses its marker.
-cleartext_dir="$(mktemp -d)"
-NO_DNA=1 anchor build --ignore-keys --no-idl -p zama_host -- --sbf-out-dir "$cleartext_dir" --features cleartext 2>&1 | tee -a "$build_log"
-mv "$cleartext_dir/zama_host.so" target/deploy/zama_host_cleartext.so
-rm -r "$cleartext_dir"
+NO_DNA=1 bash scripts/build-programs.sh preview-env zama_host_cleartext 2>&1 | tee -a "$build_log"
 NO_DNA=1 anchor build --ignore-keys 2>&1 | tee -a "$build_log"
 if grep -En 'Error:.*([Ss]tack offset|overflows the maximum allowed)' "$build_log"; then
   echo "SBF stack limit exceeded" >&2

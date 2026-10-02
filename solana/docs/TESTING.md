@@ -31,7 +31,7 @@ immediately; just restart any long-lived test process.
 ### The cleartext host build
 
 `zama-host` built with `--features cleartext` (`target/deploy/zama_host_cleartext.so`, produced by
-`scripts/check-zama-host-idl.sh` or `scripts/build-programs.sh <env> zama_host_cleartext`) is the production host plus the plaintext of every handle it
+`scripts/build-programs.sh <env> zama_host_cleartext`, which `scripts/check-zama-host-idl.sh` runs) is the production host plus the plaintext of every handle it
 produces, kept in the accounts it already writes: a section after each `EncryptedStore`'s largest
 Borsh encoding, and a tail on the `TransientStore` (`src/cleartext/layout.rs`). `fhe_execute` runs
 unchanged, then evaluates the same steps on plaintexts. Verified inputs carry their plaintexts in
