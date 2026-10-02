@@ -25,10 +25,10 @@ extend-exclude = [
     "coprocessor/fhevm-engine/host-listener/README.md",
     "sdk/js-sdk/src/wasm/tfhe/v1.8.1/tfhe-worker.mjs",
 
-    # Vendored TKMS wasm blobs and their generated typings: copied verbatim from
-    # the kms repo by scripts/regen-tkms-wasm.sh, so any wording fixed here comes
-    # back on the next regeneration. The directory rather than the file, because
-    # the filenames carry the source commit and change with it.
+    # Vendored TKMS wasm and its generated typings: built from the kms repo by
+    # scripts/regen-tkms-wasm.sh, so any wording fixed here comes back on the next
+    # regeneration. The directory rather than the file, because the version
+    # directory carries the source commit and changes with it.
     "sdk/js-sdk/src/wasm/tkms/",
 
     # Keys and charts (binary/config data)
@@ -39,12 +39,6 @@ extend-exclude = [
     # random fragments read as misspelled words. The keys are part of the frozen
     # canon four implementations consume, so they cannot be reworded.
     "solana/test-fixtures/permit/permit_v1.json",
-
-    # Vendored linker vector set: copied byte for byte from the kms repo by
-    # sdk/js-sdk/scripts/regen-tkms-wasm.sh and checked against its own SHA-256
-    # on both sides, so a wording fix here would break the digest. Spelling is
-    # fixed at the source (kms core/grpc/tests/solana_linker_vectors.rs).
-    "solana/test-fixtures/user-decrypt/solana_linker_v2.json",
 
     # Protocol buffers (generated)
     "proto/",

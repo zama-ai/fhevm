@@ -686,8 +686,7 @@ fn build_vector_file() -> PermitVectorFile {
         "transport key replaced with the bare encapsulation key",
         "bare-mlkem-512-800",
         PermitWireFields {
-            // The genuine bare key, not filler: the KMS linker vector set carries the
-            // same bytes under the same name, and a shared name must mean shared bytes.
+            // The genuine bare key, not filler.
             transport_key: reference_bare_transport_key(),
             ..reference_wire()
         },

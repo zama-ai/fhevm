@@ -1,16 +1,14 @@
 #!/usr/bin/env bash
-# Regenerate the vendored TKMS WASM bindings from a kms checkout. SINGLE producer of
-# sdk/js-sdk/src/wasm/tkms/kms_lib* and of the linker vector set it is checked against
-# (solana/test-fixtures/user-decrypt/solana_linker_v2.*). See FI#1546.
+# Build the TKMS WASM client from a kms commit and install it as the SDK's single TKMS version.
+# EVM and Solana user decryption both load it through versionsManifest.js.
 #
-# DESIGNED TO BE DELETED: this exists only because the Solana de-signcryption
-# (process_user_decryption_resp_solana / compute_link_solana) is not yet in a published
-# @zama-fhe TKMS package — it lives on the kms `solana` branch. When kms ships those
-# bits in a real release, delete this script + .regen-tkms.env + the vendored blob and
-# `npm i` the published package instead.
+# DESIGNED TO BE DELETED: this exists only because Solana user decryption is not yet in a
+# published `tkms` npm release; it lives on the kms `solana` branch. When kms publishes it,
+# delete this script and .regen-tkms.env, set the published version in versionsManifest.js and
+# run `npm run wasm:install -- --lib tkms --force`.
 #
-# Consumers (SDK, e2e, all CI) use the COMMITTED blob and never run this. Only a maintainer
-# bumping the bindings runs it. Requires the Rust toolchain + wasm-pack.
+# Consumers (SDK, e2e, all CI) use the COMMITTED WASM and never run this. Only a maintainer
+# bumping the client runs it. Requires the Rust toolchain + wasm-pack.
 #
 # kms path is an INPUT (no hardcoded dev path): optional path arg > $KMS_DIR >
 # scripts/.regen-tkms.env > sibling default. The kms source is also required:
@@ -20,6 +18,8 @@
 # Usage:
 #   sdk/js-sdk/scripts/regen-tkms-wasm.sh [/path/to/kms] <40-character-kms-commit|--feature-head>
 #   sdk/js-sdk/scripts/regen-tkms-wasm.sh <40-character-kms-commit|--feature-head>
+# Then set the printed version in versionsManifest.js, src/core/runtime/WasmVersions-p.ts and
+# scripts/wasm/loaders/KmsLibApi.template.d.ts, and run `npm run codegen:loaders`.
 set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
@@ -105,39 +105,26 @@ VERSION="${KMS_VERSION}-solana.${HEAD_SHA:0:8}"
 echo "[regen] head=$HEAD_SHA base=$BASE_SHA -> version v$VERSION"
 
 # 2. Build in an isolated worktree so the verified source cannot drift and the caller's
-#    checkout is left untouched.
+#    checkout is left untouched. This is the build kms releases as the `tkms` npm package.
 BUILD_ROOT="$(mktemp -d "${TMPDIR:-/tmp}/kms-tkms-regen.XXXXXX")"
 BUILD_DIR="$BUILD_ROOT/kms"
 cleanup() {
   git -C "$KMS_DIR" worktree remove --force "$BUILD_DIR" >/dev/null 2>&1 || true
-  rmdir "$BUILD_ROOT" >/dev/null 2>&1 || true
+  rm -rf "$BUILD_ROOT"
 }
 trap cleanup EXIT
 git -C "$KMS_DIR" worktree add --detach --quiet "$BUILD_DIR" "$HEAD_SHA"
-( cd "$BUILD_DIR/core/service" && wasm-pack build --target web . --no-default-features )
-PKG="$BUILD_DIR/core/service/pkg"
+( cd "$BUILD_DIR/core/service" && wasm-pack build --target web --out-dir pkg-web . --no-default-features )
+PKG="$BUILD_DIR/core/service/pkg-web"
 [ -f "$PKG/kms_lib_bg.wasm" ] || { echo "ERROR: wasm-pack did not produce $PKG/kms_lib_bg.wasm" >&2; exit 1; }
+# kms publishes this package as `tkms`, and install-tkms.sh requires that name.
+node -e 'const fs = require("fs"); const p = process.argv[1]; const j = JSON.parse(fs.readFileSync(p)); j.name = "tkms"; fs.writeFileSync(p, JSON.stringify(j, null, 2) + "\n");' "$PKG/package.json"
 
-# 3. Vendor the blob under versioned names (the SDK imports version-embedded filenames).
-cp "$PKG/kms_lib.js"        "$TKMS_DIR/kms_lib.v$VERSION.js"
-cp "$PKG/kms_lib.d.ts"      "$TKMS_DIR/kms_lib.v$VERSION.d.ts"
-cp "$PKG/kms_lib_bg.wasm"   "$TKMS_DIR/kms_lib_bg.v$VERSION.wasm"
+# 3. Install it as the only TKMS version, the same way as a published release.
+find "$TKMS_DIR" -mindepth 1 -maxdepth 1 -type d -name 'v*' -exec rm -rf {} +
+"$SCRIPT_DIR/wasm/kms/install-tkms.sh" "$VERSION" --source "file:$PKG" --force
 
-# 4. Emit the base64-inlined copy (bundlers lazy-load this ~0.85MB chunk; no fetch of the .wasm).
-B64_JS="$TKMS_DIR/kms_lib_bg.v$VERSION.wasm.base64.js"
-node - "$TKMS_DIR/kms_lib_bg.v$VERSION.wasm" "$B64_JS" <<'NODE'
-const fs = require("node:fs"), crypto = require("node:crypto");
-const [wasmPath, outPath] = process.argv.slice(2);
-const b64 = fs.readFileSync(wasmPath).toString("base64");
-const sha = crypto.createHash("sha256").update(b64).digest("hex"); // hash of the base64 payload
-fs.writeFileSync(outPath,
-  `// Auto-generated — do not edit. Run: sdk/js-sdk/scripts/regen-tkms-wasm.sh\n` +
-  `// SHA-256: ${sha}\n` +
-  `export const tkmsWasmBase64 = "${b64}";\n`);
-NODE
-printf 'export const tkmsWasmBase64: string;\n' > "$TKMS_DIR/kms_lib_bg.v$VERSION.wasm.base64.d.ts"
-
-# 5. Stamp provenance so the committed blob is traceable to an exact kms commit (the branch moves).
+# 4. Stamp provenance so the committed WASM is traceable to an exact kms commit (the branch moves).
 cat > "$TKMS_DIR/KMS_BUILT_FROM" <<EOF
 # Provenance of the vendored TKMS WASM (regen-tkms-wasm.sh). Do not hand-edit.
 kms_branch=$KMS_BRANCH
@@ -146,30 +133,5 @@ kms_base=$BASE_SHA
 tkms_wasm_version=v$VERSION
 EOF
 
-# 6. Vendor the linker vector set the same build computes links with. Blob and vectors travel
-#    together on purpose: a blob from one kms commit checked against vectors from another is the
-#    exact drift this script exists to prevent. The set carries its own digest file, which the SDK
-#    runner re-checks — the same cross-repository contract the kms-side suites assert.
-VECTORS_SRC="$BUILD_DIR/core/grpc/test-vectors"
-VECTORS_DST="$ROOT/solana/test-fixtures/user-decrypt"
-for vector_file in solana_linker_v2.json solana_linker_v2.sha256; do
-  [ -f "$VECTORS_SRC/$vector_file" ] || {
-    echo "ERROR: kms commit $HEAD_SHA carries no $vector_file — the linker vector set moved or was renamed." >&2
-    exit 1
-  }
-  cp "$VECTORS_SRC/$vector_file" "$VECTORS_DST/$vector_file"
-done
-( cd "$VECTORS_DST" && shasum -a 256 -c solana_linker_v2.sha256 >/dev/null ) || {
-  echo "ERROR: the copied linker vector set does not match its own digest file." >&2
-  exit 1
-}
-echo "[regen] vendored linker vectors: solana/test-fixtures/user-decrypt/solana_linker_v2.json (digest verified)"
-
-# 7. This is the SOLANA-ONLY blob. It is NOT swapped into the EVM decrypt module: kms
-#    `solana` is a newer kms snapshot whose TKMS JS API differs from the EVM-vendored
-#    blob (e.g. `getWasmInfo` removed, `process_user_decryption_resp_from_js` gained a `threshold`
-#    arg), so reusing it for EVM would break the EVM path. Only the Solana de-signcryption path
-#    imports this blob by its versioned filename. The two blobs coexist until fhevm upgrades the
-#    EVM TKMS bindings to this kms version, at which point they converge (delete one).
-echo "[regen] vendored Solana-only TKMS blob: kms_lib.v$VERSION.* — imported by the Solana userDecrypt path; EVM blob untouched."
-echo "[regen] done. Verify the Solana de-signcryption against a live stack, then commit the v$VERSION blob + KMS_BUILT_FROM."
+echo "[regen] installed src/wasm/tkms/v$VERSION. Set $VERSION as the TKMS version (see the header),"
+echo "[regen] run \`npm run codegen:loaders\`, then commit src/wasm/tkms/."

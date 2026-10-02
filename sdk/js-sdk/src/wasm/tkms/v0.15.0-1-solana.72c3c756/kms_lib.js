@@ -376,16 +376,6 @@ export class TypedCiphertext {
         return ret;
     }
     /**
-     * The actual ciphertext to decrypt, taken directly from fhevm.
-     * @returns {Uint8Array}
-     */
-    get ciphertext() {
-        const ret = wasm.__wbg_get_typedciphertext_ciphertext(this.__wbg_ptr);
-        var v1 = getArrayU8FromWasm0(ret[0], ret[1]).slice();
-        wasm.__wbindgen_free(ret[0], ret[1] * 1, 1);
-        return v1;
-    }
-    /**
      * The external handle of the ciphertext (the handle used in the copro).
      * @returns {Uint8Array}
      */
@@ -413,15 +403,6 @@ export class TypedCiphertext {
         wasm.__wbg_set_typedciphertext_ciphertext_format(this.__wbg_ptr, arg0);
     }
     /**
-     * The actual ciphertext to decrypt, taken directly from fhevm.
-     * @param {Uint8Array} arg0
-     */
-    set ciphertext(arg0) {
-        const ptr0 = passArray8ToWasm0(arg0, wasm.__wbindgen_malloc);
-        const len0 = WASM_VECTOR_LEN;
-        wasm.__wbg_set_typedciphertext_ciphertext(this.__wbg_ptr, ptr0, len0);
-    }
-    /**
      * The external handle of the ciphertext (the handle used in the copro).
      * @param {Uint8Array} arg0
      */
@@ -437,6 +418,25 @@ export class TypedCiphertext {
      */
     set fhe_type(arg0) {
         wasm.__wbg_set_typedciphertext_fhe_type(this.__wbg_ptr, arg0);
+    }
+    /**
+     * The actual ciphertext to decrypt, taken directly from fhevm.
+     * @returns {Uint8Array}
+     */
+    get ciphertext() {
+        const ret = wasm.typedciphertext_ciphertext(this.__wbg_ptr);
+        var v1 = getArrayU8FromWasm0(ret[0], ret[1]).slice();
+        wasm.__wbindgen_free(ret[0], ret[1] * 1, 1);
+        return v1;
+    }
+    /**
+     * Replaces the ciphertext bytes.
+     * @param {Uint8Array} ciphertext
+     */
+    set ciphertext(ciphertext) {
+        const ptr0 = passArray8ToWasm0(ciphertext, wasm.__wbindgen_malloc);
+        const len0 = WASM_VECTOR_LEN;
+        wasm.typedciphertext_set_ciphertext(this.__wbg_ptr, ptr0, len0);
     }
 }
 if (Symbol.dispose) TypedCiphertext.prototype[Symbol.dispose] = TypedCiphertext.prototype.free;
@@ -676,7 +676,9 @@ export class UserDecryptionRequest {
         wasm.__wbg_userdecryptionrequest_free(ptr, 0);
     }
     /**
-     * The client's (blockchain wallet) address, encoded using EIP-55. I.e. including `0x`.
+     * The client's (blockchain wallet) address: EIP-55 with the `0x` prefix for an EVM user, or
+     * base58 of the 32-byte public key for a Solana user. Its format picks the linker. The KMS does
+     * not check that the handles come from the same kind of host chain as the user; the caller does.
      * @returns {string}
      */
     get client_address() {
@@ -701,7 +703,7 @@ export class UserDecryptionRequest {
         return ret === 0 ? undefined : RequestId.__wrap(ret);
     }
     /**
-     * The user's EIP712 domain. This MUST be present. Furthermore, the `verifying_contract` MUST be set and be distinct from `client_address`.
+     * The user's EIP712 domain. This MUST be present. Furthermore, the `verifying_contract` MUST be set and, for an EVM user, be distinct from `client_address`.
      * @returns {Eip712DomainMsg | undefined}
      */
     get domain() {
@@ -774,12 +776,14 @@ export class UserDecryptionRequest {
      */
     get typed_ciphertexts() {
         const ret = wasm.__wbg_get_userdecryptionrequest_typed_ciphertexts(this.__wbg_ptr);
-        var v1 = getArrayJsValueFromWasm0(ret[0], ret[1]).slice();
+        var v1 = getArrayJsValueFromWasm0(ret[0], ret[1]);
         wasm.__wbindgen_free(ret[0], ret[1] * 4, 4);
         return v1;
     }
     /**
-     * The client's (blockchain wallet) address, encoded using EIP-55. I.e. including `0x`.
+     * The client's (blockchain wallet) address: EIP-55 with the `0x` prefix for an EVM user, or
+     * base58 of the 32-byte public key for a Solana user. Its format picks the linker. The KMS does
+     * not check that the handles come from the same kind of host chain as the user; the caller does.
      * @param {string} arg0
      */
     set client_address(arg0) {
@@ -801,7 +805,7 @@ export class UserDecryptionRequest {
         wasm.__wbg_set_userdecryptionrequest_context_id(this.__wbg_ptr, ptr0);
     }
     /**
-     * The user's EIP712 domain. This MUST be present. Furthermore, the `verifying_contract` MUST be set and be distinct from `client_address`.
+     * The user's EIP712 domain. This MUST be present. Furthermore, the `verifying_contract` MUST be set and, for an EVM user, be distinct from `client_address`.
      * @param {Eip712DomainMsg | null} [arg0]
      */
     set domain(arg0) {
@@ -961,7 +965,7 @@ export class UserDecryptionResponse {
      */
     get signatures() {
         const ret = wasm.__wbg_get_userdecryptionresponse_signatures(this.__wbg_ptr);
-        var v1 = getArrayJsValueFromWasm0(ret[0], ret[1]).slice();
+        var v1 = getArrayJsValueFromWasm0(ret[0], ret[1]);
         wasm.__wbindgen_free(ret[0], ret[1] * 4, 4);
         return v1;
     }
@@ -1083,7 +1087,7 @@ export class UserDecryptionResponsePayload {
      */
     get signcrypted_ciphertexts() {
         const ret = wasm.__wbg_get_userdecryptionresponsepayload_signcrypted_ciphertexts(this.__wbg_ptr);
-        var v1 = getArrayJsValueFromWasm0(ret[0], ret[1]).slice();
+        var v1 = getArrayJsValueFromWasm0(ret[0], ret[1]);
         wasm.__wbindgen_free(ret[0], ret[1] * 4, 4);
         return v1;
     }
@@ -1185,7 +1189,7 @@ export function get_client_secret_key(client) {
 export function get_server_addrs(client) {
     _assertClass(client, Client);
     const ret = wasm.get_server_addrs(client.__wbg_ptr);
-    var v1 = getArrayJsValueFromWasm0(ret[0], ret[1]).slice();
+    var v1 = getArrayJsValueFromWasm0(ret[0], ret[1]);
     wasm.__wbindgen_free(ret[0], ret[1] * 4, 4);
     return v1;
 }
@@ -1295,20 +1299,20 @@ export function ml_kem_pke_sk_to_u8vec(sk) {
  * * `server_addrs` - a list of KMS server ID with EIP-55 addresses,
  * the elements in the list can be created using [new_server_id_addr].
  *
- * * `client_address_hex` - the client (wallet) address in hex,
- * must be prefixed with "0x".
+ * * `client_address` - the client (wallet) address: an EVM address in EIP-55 hex prefixed
+ * with "0x", or a Solana public key in base58.
  *
  * * `fhe_parameter` - the parameter choice, which can be either `"test"` or `"default"`.
  * The "default" parameter choice is selected if no matching string is found.
  * @param {ServerIdAddr[]} server_addrs
- * @param {string} client_address_hex
+ * @param {string} client_address
  * @param {string} fhe_parameter
  * @returns {Client}
  */
-export function new_client(server_addrs, client_address_hex, fhe_parameter) {
+export function new_client(server_addrs, client_address, fhe_parameter) {
     const ptr0 = passArrayJsValueToWasm0(server_addrs, wasm.__wbindgen_malloc);
     const len0 = WASM_VECTOR_LEN;
-    const ptr1 = passStringToWasm0(client_address_hex, wasm.__wbindgen_malloc, wasm.__wbindgen_realloc);
+    const ptr1 = passStringToWasm0(client_address, wasm.__wbindgen_malloc, wasm.__wbindgen_realloc);
     const len1 = WASM_VECTOR_LEN;
     const ptr2 = passStringToWasm0(fhe_parameter, wasm.__wbindgen_malloc, wasm.__wbindgen_realloc);
     const len2 = WASM_VECTOR_LEN;
@@ -1361,7 +1365,8 @@ export function private_sig_key_to_u8vec(sk) {
  * * `request` - the initial user_decryption request JS object.
  * It can be set to null if `verify` is false.
  * Otherwise the caller needs to give the following JS object.
- * Note that `client_address` and `eip712_verifying_contract` follow EIP-55.
+ * Note that `eip712_verifying_contract` follows EIP-55, and so does `client_address` for an EVM
+ * user. For a Solana user, `client_address` is the user's base58 public key.
  * The signature field is not needed.
  * ```
  * {
@@ -1434,7 +1439,7 @@ export function process_user_decryption_resp_from_js(client, request, eip712_dom
     if (ret[3]) {
         throw takeFromExternrefTable0(ret[2]);
     }
-    var v1 = getArrayJsValueFromWasm0(ret[0], ret[1]).slice();
+    var v1 = getArrayJsValueFromWasm0(ret[0], ret[1]);
     wasm.__wbindgen_free(ret[0], ret[1] * 4, 4);
     return v1;
 }
@@ -1509,11 +1514,11 @@ export function u8vec_to_public_sig_key(v) {
 function __wbg_get_imports() {
     const import0 = {
         __proto__: null,
-        __wbg_Error_fdd633d4bb5dd76a: function(arg0, arg1) {
+        __wbg_Error_408e67f47ca7b58b: function(arg0, arg1) {
             const ret = Error(getStringFromWasm0(arg0, arg1));
             return ret;
         },
-        __wbg_Number_c4bdf66bb78f7977: function(arg0) {
+        __wbg_Number_3890faa6d3ff057d: function(arg0) {
             const ret = Number(arg0);
             return ret;
         },
@@ -1524,54 +1529,54 @@ function __wbg_get_imports() {
             getDataViewMemory0().setInt32(arg0 + 4 * 1, len1, true);
             getDataViewMemory0().setInt32(arg0 + 4 * 0, ptr1, true);
         },
-        __wbg___wbindgen_boolean_get_edaed31a367ce1bd: function(arg0) {
+        __wbg___wbindgen_boolean_get_c9c83ebd41b34df3: function(arg0) {
             const v = arg0;
             const ret = typeof(v) === 'boolean' ? v : undefined;
             return isLikeNone(ret) ? 0xFFFFFF : ret ? 1 : 0;
         },
-        __wbg___wbindgen_debug_string_8a447059637473e2: function(arg0, arg1) {
+        __wbg___wbindgen_debug_string_a57024b9c6e4a48b: function(arg0, arg1) {
             const ret = debugString(arg1);
             const ptr1 = passStringToWasm0(ret, wasm.__wbindgen_malloc, wasm.__wbindgen_realloc);
             const len1 = WASM_VECTOR_LEN;
             getDataViewMemory0().setInt32(arg0 + 4 * 1, len1, true);
             getDataViewMemory0().setInt32(arg0 + 4 * 0, ptr1, true);
         },
-        __wbg___wbindgen_in_4990f46af709e33c: function(arg0, arg1) {
+        __wbg___wbindgen_in_ac983077f137f2e6: function(arg0, arg1) {
             const ret = arg0 in arg1;
             return ret;
         },
-        __wbg___wbindgen_is_function_acc5528be2b923f2: function(arg0) {
+        __wbg___wbindgen_is_function_5e4570eb24ffa122: function(arg0) {
             const ret = typeof(arg0) === 'function';
             return ret;
         },
-        __wbg___wbindgen_is_null_6d937fbfb6478470: function(arg0) {
+        __wbg___wbindgen_is_null_7d13f41e1a2d5140: function(arg0) {
             const ret = arg0 === null;
             return ret;
         },
-        __wbg___wbindgen_is_object_0beba4a1980d3eea: function(arg0) {
+        __wbg___wbindgen_is_object_a2790eb24c211ea0: function(arg0) {
             const val = arg0;
             const ret = typeof(val) === 'object' && val !== null;
             return ret;
         },
-        __wbg___wbindgen_is_string_1fca8072260dd261: function(arg0) {
+        __wbg___wbindgen_is_string_e6f02f0ea5f20a32: function(arg0) {
             const ret = typeof(arg0) === 'string';
             return ret;
         },
-        __wbg___wbindgen_is_undefined_721f8decd50c87a3: function(arg0) {
+        __wbg___wbindgen_is_undefined_6cff064c44e0d823: function(arg0) {
             const ret = arg0 === undefined;
             return ret;
         },
-        __wbg___wbindgen_jsval_loose_eq_4b9aba9e5b3c4582: function(arg0, arg1) {
+        __wbg___wbindgen_jsval_loose_eq_acf2776254a8d832: function(arg0, arg1) {
             const ret = arg0 == arg1;
             return ret;
         },
-        __wbg___wbindgen_number_get_1cc01dd708740256: function(arg0, arg1) {
+        __wbg___wbindgen_number_get_136b9679cab35cfb: function(arg0, arg1) {
             const obj = arg1;
             const ret = typeof(obj) === 'number' ? obj : undefined;
             getDataViewMemory0().setFloat64(arg0 + 8 * 1, isLikeNone(ret) ? 0 : ret, true);
             getDataViewMemory0().setInt32(arg0 + 4 * 0, !isLikeNone(ret), true);
         },
-        __wbg___wbindgen_string_get_71bb4348194e31f0: function(arg0, arg1) {
+        __wbg___wbindgen_string_get_d154f1e671052120: function(arg0, arg1) {
             const obj = arg1;
             const ret = typeof(obj) === 'string' ? obj : undefined;
             var ptr1 = isLikeNone(ret) ? 0 : passStringToWasm0(ret, wasm.__wbindgen_malloc, wasm.__wbindgen_realloc);
@@ -1579,26 +1584,26 @@ function __wbg_get_imports() {
             getDataViewMemory0().setInt32(arg0 + 4 * 1, len1, true);
             getDataViewMemory0().setInt32(arg0 + 4 * 0, ptr1, true);
         },
-        __wbg___wbindgen_throw_ea4887a5f8f9a9db: function(arg0, arg1) {
+        __wbg___wbindgen_throw_bb96b2010945f0bc: function(arg0, arg1) {
             throw new Error(getStringFromWasm0(arg0, arg1));
         },
-        __wbg_call_5575218572ead796: function() { return handleError(function (arg0, arg1, arg2) {
-            const ret = arg0.call(arg1, arg2);
+        __wbg_call_1c5886ab9c57d1c7: function() { return handleError(function (arg0, arg1) {
+            const ret = arg0.call(arg1);
             return ret;
         }, arguments); },
-        __wbg_call_8e98ed2f3c86c4b5: function() { return handleError(function (arg0, arg1) {
-            const ret = arg0.call(arg1);
+        __wbg_call_35dba3c747ad7521: function() { return handleError(function (arg0, arg1, arg2) {
+            const ret = arg0.call(arg1, arg2);
             return ret;
         }, arguments); },
         __wbg_crypto_38df2bab126b63dc: function(arg0) {
             const ret = arg0.crypto;
             return ret;
         },
-        __wbg_done_b62d4a7d2286852a: function(arg0) {
+        __wbg_done_669171204c3dcae2: function(arg0) {
             const ret = arg0.done;
             return ret;
         },
-        __wbg_error_a6fa202b58aa1cd3: function(arg0, arg1) {
+        __wbg_error_757e9472f8410341: function(arg0, arg1) {
             let deferred0_0;
             let deferred0_1;
             try {
@@ -1612,11 +1617,11 @@ function __wbg_get_imports() {
         __wbg_getRandomValues_c44a50d8cfdaebeb: function() { return handleError(function (arg0, arg1) {
             arg0.getRandomValues(arg1);
         }, arguments); },
-        __wbg_get_9a29be2cb383ed9a: function() { return handleError(function (arg0, arg1) {
+        __wbg_get_d173c0308df22d37: function() { return handleError(function (arg0, arg1) {
             const ret = Reflect.get(arg0, arg1);
             return ret;
         }, arguments); },
-        __wbg_get_unchecked_54a4374c38e08460: function(arg0, arg1) {
+        __wbg_get_unchecked_e20b893aeafc3fca: function(arg0, arg1) {
             const ret = arg0[arg1 >>> 0];
             return ret;
         },
@@ -1624,7 +1629,7 @@ function __wbg_get_imports() {
             const ret = arg0[arg1];
             return ret;
         },
-        __wbg_instanceof_ArrayBuffer_2a7bb09fee70c2da: function(arg0) {
+        __wbg_instanceof_ArrayBuffer_993d02d2d254cad1: function(arg0) {
             let result;
             try {
                 result = arg0 instanceof ArrayBuffer;
@@ -1634,7 +1639,7 @@ function __wbg_get_imports() {
             const ret = result;
             return ret;
         },
-        __wbg_instanceof_Uint8Array_f080092dc70f5d58: function(arg0) {
+        __wbg_instanceof_Uint8Array_f935dbb0aa7cdeed: function(arg0) {
             let result;
             try {
                 result = arg0 instanceof Uint8Array;
@@ -1644,23 +1649,23 @@ function __wbg_get_imports() {
             const ret = result;
             return ret;
         },
-        __wbg_isArray_145a34fd0a38d37b: function(arg0) {
+        __wbg_isArray_6339f732981044bf: function(arg0) {
             const ret = Array.isArray(arg0);
             return ret;
         },
-        __wbg_isSafeInteger_a3389a198582f5f6: function(arg0) {
+        __wbg_isSafeInteger_f3d6cd19ccfe4512: function(arg0) {
             const ret = Number.isSafeInteger(arg0);
             return ret;
         },
-        __wbg_iterator_cc47ba25a2be735a: function() {
+        __wbg_iterator_5cebbb86e33c6dd6: function() {
             const ret = Symbol.iterator;
             return ret;
         },
-        __wbg_length_589238bdcf171f0e: function(arg0) {
+        __wbg_length_36bd29c6848c2144: function(arg0) {
             const ret = arg0.length;
             return ret;
         },
-        __wbg_length_c6054974c0a6cdb9: function(arg0) {
+        __wbg_length_ecfa2c63d3d0d82c: function(arg0) {
             const ret = arg0.length;
             return ret;
         },
@@ -1672,19 +1677,19 @@ function __wbg_get_imports() {
             const ret = new Error();
             return ret;
         },
-        __wbg_new_81880fb5002cb255: function(arg0) {
+        __wbg_new_77cc4f4f472aeb81: function(arg0) {
             const ret = new Uint8Array(arg0);
             return ret;
         },
-        __wbg_new_with_length_9b650f44b5c44a4e: function(arg0) {
+        __wbg_new_with_length_3ffc1c56427c525c: function(arg0) {
             const ret = new Uint8Array(arg0 >>> 0);
             return ret;
         },
-        __wbg_next_0c4066e251d2eff9: function() { return handleError(function (arg0) {
+        __wbg_next_42cf16ee0dafc9e2: function() { return handleError(function (arg0) {
             const ret = arg0.next();
             return ret;
         }, arguments); },
-        __wbg_next_402fa10b59ab20c3: function(arg0) {
+        __wbg_next_8f26b64fa5e9f64b: function(arg0) {
             const ret = arg0.next;
             return ret;
         },
@@ -1696,7 +1701,7 @@ function __wbg_get_imports() {
             const ret = arg0.process;
             return ret;
         },
-        __wbg_prototypesetcall_d721637c7ca66eb8: function(arg0, arg1, arg2) {
+        __wbg_prototypesetcall_de8e0d9553586985: function(arg0, arg1, arg2) {
             Uint8Array.prototype.set.call(getArrayU8FromWasm0(arg0, arg1), arg2);
         },
         __wbg_randomFillSync_6c25eac9869eb53c: function() { return handleError(function (arg0, arg1) {
@@ -1721,23 +1726,23 @@ function __wbg_get_imports() {
             getDataViewMemory0().setInt32(arg0 + 4 * 1, len1, true);
             getDataViewMemory0().setInt32(arg0 + 4 * 0, ptr1, true);
         },
-        __wbg_static_accessor_GLOBAL_THIS_2fee5048bcca5938: function() {
+        __wbg_static_accessor_GLOBAL_THIS_466428f93b4eaa76: function() {
             const ret = typeof globalThis === 'undefined' ? null : globalThis;
             return isLikeNone(ret) ? 0 : addToExternrefTable0(ret);
         },
-        __wbg_static_accessor_GLOBAL_ce44e66a4935da8c: function() {
+        __wbg_static_accessor_GLOBAL_c7aea38d4de089bc: function() {
             const ret = typeof global === 'undefined' ? null : global;
             return isLikeNone(ret) ? 0 : addToExternrefTable0(ret);
         },
-        __wbg_static_accessor_SELF_44f6e0cb5e67cdad: function() {
+        __wbg_static_accessor_SELF_42d4fae05e59267a: function() {
             const ret = typeof self === 'undefined' ? null : self;
             return isLikeNone(ret) ? 0 : addToExternrefTable0(ret);
         },
-        __wbg_static_accessor_WINDOW_168f178805d978fe: function() {
+        __wbg_static_accessor_WINDOW_e0db14a0eba6a812: function() {
             const ret = typeof window === 'undefined' ? null : window;
             return isLikeNone(ret) ? 0 : addToExternrefTable0(ret);
         },
-        __wbg_subarray_b0e8ac4ed313fea8: function(arg0, arg1, arg2) {
+        __wbg_subarray_a4cc58201c7359fd: function(arg0, arg1, arg2) {
             const ret = arg0.subarray(arg1 >>> 0, arg2 >>> 0);
             return ret;
         },
@@ -1769,7 +1774,7 @@ function __wbg_get_imports() {
             const ret = TypedSigncryptedCiphertext.__unwrap(arg0);
             return ret;
         },
-        __wbg_value_49f783bb59765962: function(arg0) {
+        __wbg_value_1e2369fab29b420e: function(arg0) {
             const ret = arg0.value;
             return ret;
         },
@@ -2113,11 +2118,15 @@ function __wbg_finalize_init(instance, module) {
 
 async function __wbg_load(module, imports) {
     if (typeof Response === 'function' && module instanceof Response) {
+        if (!module.ok) {
+            throw new Error(`failed to fetch Wasm: ${module.status} ${module.statusText} fetching '${module.url}'`);
+        }
+
         if (typeof WebAssembly.instantiateStreaming === 'function') {
             try {
                 return await WebAssembly.instantiateStreaming(module, imports);
             } catch (e) {
-                const validResponse = module.ok && expectedResponseType(module.type);
+                const validResponse = expectedResponseType(module.type);
 
                 if (validResponse && module.headers.get('Content-Type') !== 'application/wasm') {
                     console.warn("`WebAssembly.instantiateStreaming` failed because your server does not serve Wasm with `application/wasm` MIME type. Falling back to `WebAssembly.instantiate` which is slower. Original error:\n", e);
@@ -2196,11 +2205,11 @@ function getWasmInfo() {
   const memory = wasm?.memory;
   return {
     name: 'tkms',
-    version: '0.15.0-0',
+    version: '0.15.0-1-solana.72c3c756',
     downloadFiles: [
       {
         filename: "kms_lib_bg.wasm",
-        sha256: "0e33f45989dc2bb2350494da8c336eab98a7cbe0c711b820f5aa1bd79a4d8f12",
+        sha256: "99b8b6eb0b0d063e19b4ef9314ca97d470f8e470266d363c8a918767a56b7576",
       }
     ],
     memory:

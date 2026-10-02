@@ -6,7 +6,7 @@ import { RelayerAbortError } from '../../../core/errors/RelayerAbortError.js';
 // `signPermit` is the piece worth pinning end to end: it is the only writer of the permit's
 // derived fields, and a mistake here is signed by a real wallet and refused by every verifier
 // after it. The wallet below is the conforming one — it builds the envelope itself around the
-// text it is handed — and the transport pair is the real vendored blob's, so the permit that
+// text it is handed — and the transport pair is the real TKMS module's, so the permit that
 // comes out is exactly what production would mint. Construction fails fast on a chain that does
 // not name the identity the path stands on.
 
@@ -159,7 +159,7 @@ describe('signing a permit through the client', () => {
     expect(fields.kmsRouting.kmsEpochId).toEqual(hexToBytes32(EPOCH_ID));
     expect(fields.userAddress).toEqual(USER_PUBKEY);
 
-    // The permit commits to the real blob's transport key, generated for this session.
+    // The permit commits to the real TKMS module's transport key, generated for this session.
     expect(fields.transportKey).toEqual(session.keyPair.publicKeyBytes);
     expect(fields.transportKey).toHaveLength(PERMIT_TRANSPORT_KEY_LEN);
 
