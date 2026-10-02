@@ -100,4 +100,4 @@ Typical guards: a boolean or a status enum per request, a mapping keyed by the h
 | `DeserializingDecryptionProofFail()` | Proof shorter than `1 + 65 * numSigners`.                          |
 | `DeserializingExtraDataFail()`     | `extraData` length does not match its version.                       |
 | `UnsupportedExtraDataVersion(v)`   | Unknown `extraData` version byte.                                    |
-| `KmsContextNotCreated(...)`, `InvalidKmsContext(...)` | The proof references a KMS context the `ProtocolConfig` does not know or no longer serves (destroyed). |
+| `InvalidKmsContext(...)` | The proof references a KMS context the `ProtocolConfig` does not know or no longer serves (destroyed). |

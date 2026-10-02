@@ -30,6 +30,10 @@ overrides:
       # braces under the v1 plugin.
       bracketSpacing: false
       singleQuote: false
+  - files: "gateway-contracts/**/*.sol"
+    options:
+      # Keep the gateway contracts on their historical double-quote style.
+      singleQuote: false
   - files: ".github/workflows/js-sdk-*.yml"
     options:
       printWidth: 160

@@ -44,6 +44,9 @@ jobs:
               - solana/crates/zama-solana-acl/**
               - solana/crates/zama-solana-transaction/**
               - solana/crates/solana-ed25519-instruction/**
+              # consensus-detector depends on these crates by path.
+              - shared/block-manifest/**
+              - shared/ciphertext-attestation/**
   cargo-tests:
     name: coprocessor-cargo-test/${{ matrix.service }}
     needs: check-changes

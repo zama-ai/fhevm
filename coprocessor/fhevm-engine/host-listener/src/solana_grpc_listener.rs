@@ -981,12 +981,12 @@ async fn apply_block(
         );
     }
 
-    if stats.inserted_rows > 0 || !reduction.leaves.is_empty() {
+    if stats.inserted_records > 0 || !reduction.leaves.is_empty() {
         info!(
             slot = sealed_block.slot,
             tfhe_events = stats.tfhe_events,
             material_requests = stats.material_requests,
-            inserted_rows = stats.inserted_rows,
+            inserted_records = stats.inserted_records,
             leaves = reduction.leaves.len(),
             encrypted_stores = reduction.states.len(),
             "ingested Solana host records (gRPC)"

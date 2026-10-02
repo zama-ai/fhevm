@@ -557,7 +557,7 @@ async function probeKmsNamespaceAttestation(
  * Wait for one fully published output to be observable through every
  * GatewayConfig bucket from the exact network namespace used by the KMS
  * connector.  This is deliberately an E2E-only guard: it prevents a fixture
- * from burning terminal UserDecryptionRequest retries while MinIO/namespace
+ * from burning terminal UserDecryptionRequest retries while object-store/namespace
  * routing has not yet converged, and does not alter connector retry semantics.
  */
 export function attestationReadinessMode(bucketCount: number, expectedCount: number, mode: string | undefined): 'probe' | 'skip' {

@@ -155,7 +155,7 @@ export const DEFAULT_EXTRA_HOST_RPC_PORT = 8547;
  * of silent mistargeting that makes a consensus result meaningless.
  */
 export const DEFAULT_FORK_RPC_PORT = 8548;
-export const MINIO_PORT = 9000;
+export const OBJECT_STORE_PORT = 9000;
 export const POSTGRES_PORT = 5432;
 export const DEFAULT_POSTGRES_USER = "postgres";
 export const DEFAULT_POSTGRES_PASSWORD = "postgres";
@@ -179,11 +179,12 @@ export const PORTS = [
   DEFAULT_HOST_RPC_PORT,
   DEFAULT_GATEWAY_RPC_PORT,
   DEFAULT_EXTRA_HOST_RPC_PORT,
-  MINIO_PORT,
+  OBJECT_STORE_PORT,
   9001,
 ];
-export const MINIO_INTERNAL_URL = `http://minio:${MINIO_PORT}`;
-export const MINIO_EXTERNAL_URL = `http://localhost:${MINIO_PORT}`;
+export const OBJECT_STORE_INTERNAL_URL = `http://object-store:${OBJECT_STORE_PORT}`;
+export const OBJECT_STORE_EXTERNAL_URL = `http://localhost:${OBJECT_STORE_PORT}`;
+export const KMS_STORAGE_PUBLISHED_URL = `http://minio:${OBJECT_STORE_PORT}`;
 export const POSTGRES_HOST = `db:${POSTGRES_PORT}`;
 export const COPROCESSOR_DB_CONTAINER = "coprocessor-and-kms-db";
 /** Command prefix that opens `psql` on the local coprocessor database. */
@@ -217,6 +218,8 @@ export const TEST_SUITE_CONTAINER = "fhevm-test-suite-e2e-debug";
 export const KEYGEN_ID_SELECTOR = "0xd52f10eb";
 export const CRSGEN_ID_SELECTOR = "0xbaff211e";
 export const DEFAULT_CHAIN_ID = "12345";
+/** Classic Anvil/Hardhat chain id. Local E2E uses `DEFAULT_CHAIN_ID` instead. */
+export const ANVIL_CHAIN_ID = "31337";
 
 /**
  * Confidential bridge opt-out: a real LayerZero endpoint preconfigured for a chain via
@@ -226,7 +229,7 @@ export const realLzEndpointFor = (chainKey: string): string | undefined =>
   process.env[`BRIDGE_LZ_ENDPOINT_${chainKey.toUpperCase().replace(/[^A-Z0-9]/g, "_")}`];
 
 export const COMPONENTS = [
-  "minio",
+  "object-store",
   "database",
   "core",
   "core-threshold",
@@ -246,7 +249,7 @@ export const COMPONENT_BY_STEP: Record<StepName, string[]> = {
   "preflight": [],
   "resolve": [],
   "generate": [],
-  "base": ["minio", "core", "database", "host-node", "gateway-node"],
+  "base": ["object-store", "core", "database", "host-node", "gateway-node"],
   "kms-signer": [],
   "gateway-deploy": ["gateway-mocked-payment", "gateway-sc"],
   "host-deploy": ["host-sc"],

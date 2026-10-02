@@ -1,5 +1,4 @@
 use alloy::{primitives::Address, transports::http::reqwest::Url};
-use ciphertext_attestation::MAX_SNS_CIPHERTEXT_SERIALIZED_SIZE;
 use connector_utils::{
     config::{
         ContractConfig, DeserializeConfig,
@@ -86,7 +85,7 @@ pub struct Config {
 
     /// Number of attempts for S3 ciphertext retrieval.
     #[serde(default = "default_s3_ciphertext_retrieval_attempts")]
-    pub s3_ciphertext_retrieval_attempts: u8,
+    pub s3_ciphertext_retrieval_attempts: NonZeroUsize,
     /// Timeout to connect to a S3 bucket.
     #[serde(
         deserialize_with = "deserialize_non_zero_duration",
@@ -380,8 +379,8 @@ fn default_max_decryption_attempts() -> u16 {
     20
 }
 
-fn default_s3_ciphertext_retrieval_attempts() -> u8 {
-    3
+fn default_s3_ciphertext_retrieval_attempts() -> NonZeroUsize {
+    NonZeroUsize::new(3).unwrap()
 }
 
 fn default_s3_connect_timeout() -> Duration {
@@ -413,12 +412,13 @@ fn default_s3_max_concurrent_heads_per_bucket() -> NonZeroUsize {
 }
 
 fn default_s3_max_concurrent_gets() -> NonZeroUsize {
-    // Kept low: SNS ciphertexts are big, so too many buffered at once would OOM the worker.
-    NonZeroUsize::new(16).unwrap()
+    NonZeroUsize::new(256).unwrap()
 }
 
 fn default_s3_max_ciphertext_size() -> NonZeroUsize {
-    NonZeroUsize::new(MAX_SNS_CIPHERTEXT_SERIALIZED_SIZE as usize).unwrap()
+    // Only compressed SNS ciphertexts reach S3, and the largest is ~97.3KiB with the current tfhe
+    // parameters. Revisit this ceiling whenever those parameters change.
+    NonZeroUsize::new(128 * 1024).unwrap()
 }
 
 fn default_erc1271_gas_limit() -> u64 {
@@ -631,7 +631,7 @@ mod tests {
         );
         assert_eq!(config.grpc_request_retries, 5);
         assert_eq!(config.max_decryption_attempts, 300);
-        assert_eq!(config.s3_ciphertext_retrieval_attempts, 5);
+        assert_eq!(config.s3_ciphertext_retrieval_attempts.get(), 5);
         assert_eq!(config.s3_connect_timeout.as_secs(), 4);
         assert_eq!(config.s3_head_timeout.as_secs(), 6);
         assert_eq!(config.s3_get_timeout.as_secs(), 30);

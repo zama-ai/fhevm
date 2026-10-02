@@ -1,4 +1,4 @@
-use crate::tests::setup::{MINIO_ACCESS_KEY, MINIO_SECRET_KEY, ROOT_CARGO_TOML};
+use crate::tests::setup::{OBJECT_STORE_ACCESS_KEY, OBJECT_STORE_SECRET_KEY, ROOT_CARGO_TOML};
 use std::{path::PathBuf, str::FromStr, time::Duration};
 use testcontainers::{
     ContainerAsync, GenericImage, ImageExt,
@@ -25,8 +25,9 @@ impl KmsInstance {
         // between parallel tests.
         let s3_port: u16 = s3_url.split(":").nth(2).unwrap().parse()?;
         let s3_internal_url = format!("http://host.docker.internal:{s3_port}");
-        let cmd = "kms-gen-keys --config-file config/compose_centralized_keygen.toml \
-             && kms-server --config-file config/config.toml";
+
+        let cmd = "kms-gen-keys --config-file config/gen-keys-config.toml && \
+            kms-server --config-file config/config.toml";
         let version = ROOT_CARGO_TOML.get_kms_grpc_version();
         let container = GenericImage::new("ghcr.io/zama-ai/kms/core-service", &version)
             .with_exposed_port(ContainerPort::Tcp(50051))
@@ -35,8 +36,8 @@ impl KmsInstance {
             ))
             .with_entrypoint("/bin/sh")
             .with_host("host.docker.internal", Host::HostGateway)
-            .with_env_var("AWS_ACCESS_KEY_ID", MINIO_ACCESS_KEY)
-            .with_env_var("AWS_SECRET_ACCESS_KEY", MINIO_SECRET_KEY)
+            .with_env_var("AWS_ACCESS_KEY_ID", OBJECT_STORE_ACCESS_KEY)
+            .with_env_var("AWS_SECRET_ACCESS_KEY", OBJECT_STORE_SECRET_KEY)
             .with_env_var(
                 "KMS_CORE__PUBLIC_VAULT__STORAGE__S3__BUCKET",
                 KMS_PUBLIC_VAULT_URL,
@@ -50,6 +51,14 @@ impl KmsInstance {
                 "/app/kms/core/service/config/config.toml".to_string(),
                 PathBuf::from_str(&format!(
                     "{}/tests/data/core-service-config.toml",
+                    env!("CARGO_MANIFEST_DIR"),
+                ))
+                .unwrap(),
+            )
+            .with_copy_to(
+                "/app/kms/core/service/config/gen-keys-config.toml".to_string(),
+                PathBuf::from_str(&format!(
+                    "{}/tests/data/gen-keys-config.toml",
                     env!("CARGO_MANIFEST_DIR"),
                 ))
                 .unwrap(),

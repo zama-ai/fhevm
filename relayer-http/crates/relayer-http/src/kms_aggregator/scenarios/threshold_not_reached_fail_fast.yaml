@@ -1,0 +1,13 @@
+# Five failures at once make 9 unreachable (8 pending): the hung nodes are cancelled immediately.
+flow: user_decrypt
+threshold: 9
+timeout: 5s
+nodes:
+  - { count: 5, replies: [acl_denied] }
+  - { count: 8, replies: [hang] }
+expect:
+  outcome: threshold_not_reached
+  counted: 0
+  dominant: acl_denied
+  elapsed: 10ms
+  attempts: 13

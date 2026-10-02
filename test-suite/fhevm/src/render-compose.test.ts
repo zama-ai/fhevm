@@ -12,7 +12,7 @@ import {
   loadMergedComposeDoc,
   serviceNameList,
 } from "./generate/compose";
-import { COMPOSE_OUT_DIR, TEMPLATE_COMPOSE_DIR, composePath, envPath } from "./layout";
+import { ANVIL_CHAIN_ID, DEFAULT_CHAIN_ID, COMPOSE_OUT_DIR, TEMPLATE_COMPOSE_DIR, composePath, envPath } from "./layout";
 import { presetBundle } from "./resolve/target";
 import {
   loadCoprocessorScenario,
@@ -138,6 +138,8 @@ instances:
         - --error-sleep-max-secs=30
       host-listener:
         - --initial-block-time=2
+      host-listener-consumer:
+        - --service-name=custom-consumer-one
 `),
   ),
 };
@@ -267,9 +269,22 @@ describe("render-compose", () => {
     });
   });
 
-  test("persists kms-core private vault and supplies both keygen CLI formats", async () => {
+  test("selects the published centralized core repository for an older release", async () => {
+    await withTempStateDir(async () => {
+      await mkdir(path.dirname(envPath("coprocessor")), { recursive: true });
+      await writeFile(envPath("coprocessor"), "\n");
+      await writeFile(envPath("coprocessor.1"), "\n");
+      const pinned = structuredClone(state);
+      pinned.versions.env.CORE_VERSION = "v0.14.0-1";
+      await generateComposeOverrides(pinned, stackSpecForState(pinned));
+      const doc = YAML.parse(await readFile(composePath("core"), "utf8"));
+      expect(doc.services["kms-core"].image).toBe("ghcr.io/zama-ai/kms/core-service:v0.14.0-1");
+    });
+  });
+
+  test("persists kms-core private vault, supplies both keygen CLI formats and names the secrets volume", async () => {
     const doc = await loadMergedComposeDoc("core");
-    const minio = (await loadMergedComposeDoc("minio")) as typeof doc & {
+    const objectStore = (await loadMergedComposeDoc("object-store")) as typeof doc & {
       volumes?: Record<string, { name?: string }>;
     };
     const volumes = doc.services["kms-core"]?.volumes as string[] | undefined;
@@ -279,12 +294,12 @@ describe("render-compose", () => {
     expect(volumes?.some((mount) => mount.endsWith("config/kms-gen-keys.toml"))).toBe(true);
     expect(entrypoint).toContain("--public-storage");
     expect(entrypoint).toContain("--config-file config/kms-gen-keys.toml");
-    expect(minio.volumes?.minio_secrets?.name).toBe("fhevm_minio_secrets");
+    expect(objectStore.volumes?.object_store_secrets?.name).toBe("fhevm_object_store_secrets");
   });
 
-  test("keeps localhost MinIO URLs reachable from the e2e container", async () => {
+  test("keeps localhost object-store URLs reachable from the e2e container", async () => {
     const doc = await loadMergedComposeDoc("test-suite");
-    expect(doc.services["test-suite-e2e-debug"]?.network_mode).toBe("container:fhevm-minio");
+    expect(doc.services["test-suite-e2e-debug"]?.network_mode).toBe("container:fhevm-object-store");
   });
 
   test("renders listener-core local override for the publisher only", async () => {
@@ -395,6 +410,30 @@ describe("render-compose", () => {
     });
   });
 
+  test("passes anvil publication cadence overlays to consensus-detector", async () => {
+    await withTempStateDir(async () => {
+      await mkdir(path.dirname(envPath("coprocessor")), { recursive: true });
+      const coprocessorEnv = [
+        `CHAIN_ID=${DEFAULT_CHAIN_ID}`,
+        `HOST_CHAIN_0_ID=${DEFAULT_CHAIN_ID}`,
+        "HOST_CHAIN_1_ID=67890",
+        "",
+      ].join("\n");
+      await writeFile(envPath("coprocessor"), coprocessorEnv);
+      await writeFile(envPath("coprocessor.1"), coprocessorEnv);
+      await generateComposeOverrides(state, stackSpecForState(state));
+      const doc = YAML.parse(await readFile(composePath("coprocessor"), "utf8")) as {
+        services: Record<string, { command?: string[] }>;
+      };
+      const command = doc.services["coprocessor-consensus-detector"]?.command ?? [];
+      expect(command).toContain(`--manifest-publication-cadence=${ANVIL_CHAIN_ID}:1`);
+      expect(command).toContain(`--manifest-publication-cadence=${DEFAULT_CHAIN_ID}:1`);
+      expect(command).toContain("--manifest-publication-cadence=67890:1");
+      const cadenceFlags = command.filter((item) => item.startsWith("--manifest-publication-cadence="));
+      expect(cadenceFlags).toEqual([...new Set(cadenceFlags)]);
+    });
+  });
+
   test("does not request host-listener consumer services for legacy coprocessor bundles", () => {
     const legacyState: State = {
       ...state,
@@ -476,19 +515,21 @@ describe("render-compose", () => {
     expect(services).toContain("kms-connector-3-tx-sender");
   });
 
-  test("renders inherited two-of-two instances with local build tags when coprocessor build is active", async () => {
+  test("renders inherited two-of-two instances with local build tags and isolated broker identities", async () => {
     await withTempStateDir(async () => {
       await mkdir(path.dirname(envPath("coprocessor")), { recursive: true });
       await writeFile(envPath("coprocessor"), "\n");
       await writeFile(envPath("coprocessor.1"), "\n");
       await generateComposeOverrides(inheritedScenarioState, stackSpecForState(inheritedScenarioState));
       const doc = YAML.parse(await readFile(composePath("coprocessor"), "utf8")) as {
-        services: Record<string, { image?: string; build?: unknown }>;
+        services: Record<string, { image?: string; build?: unknown; command?: string[] }>;
       };
       expect(doc.services["coprocessor-host-listener"]?.image).toContain(":fhevm-local-i0");
       expect(doc.services["coprocessor1-host-listener"]?.image).toContain(":fhevm-local-i1");
       expect(doc.services["coprocessor-host-listener"]?.build).toBeTruthy();
       expect(doc.services["coprocessor1-host-listener"]?.build).toBeTruthy();
+      expect(doc.services["coprocessor-host-listener-consumer"]?.command).toContain("--service-name=host-listener-consumer");
+      expect(doc.services["coprocessor1-host-listener-consumer"]?.command).toContain("--service-name=coprocessor1-host-listener-consumer");
       const args = (doc.services["coprocessor-host-listener"]?.build as { args?: Record<string, string> })?.args;
       expect(args?.COPROCESSOR_RUNTIME_BASE_IMAGE).toBeUndefined();
       expect(args?.COPROCESSOR_DB_MIGRATION_RUNTIME_BASE_IMAGE).toBeUndefined();
@@ -736,6 +777,9 @@ describe("render-compose", () => {
       expect(doc.services["coprocessor1-host-listener"]?.command).toEqual(
         expect.arrayContaining(["--error-sleep-max-secs=30", "--initial-block-time=2"]),
       );
+      expect(doc.services["coprocessor1-host-listener-consumer"]?.command?.filter(
+        (argument) => argument.startsWith("--service-name="),
+      )).toEqual(["--service-name=custom-consumer-one"]);
     });
   });
 
@@ -994,8 +1038,15 @@ gcs:
       await writeFile(envPath("coprocessor.1"), "\n");
       await generateComposeOverrides(bgState, stackSpecForState(bgState));
       const doc = YAML.parse(await readFile(composePath("coprocessor"), "utf8")) as {
-        services: Record<string, { container_name?: string }>;
+        services: Record<string, { container_name?: string; command?: string[] }>;
       };
+      const consumerNames = ["coprocessor", "coprocessor1", "coprocessor-gcs", "coprocessor1-gcs"].map(
+        (prefix) => doc.services[`${prefix}-host-listener-consumer`]?.command?.find(
+          (argument) => argument.startsWith("--service-name="),
+        ),
+      );
+      expect(consumerNames.every(Boolean)).toBe(true);
+      expect(new Set(consumerNames).size).toBe(4);
       // Operator 0: BCS as `coprocessor-*`, GCS as `coprocessor-gcs-*`.
       expect(doc.services["coprocessor-host-listener"]?.container_name).toBe("coprocessor-host-listener");
       expect(doc.services["coprocessor-gcs-host-listener"]?.container_name).toBe(

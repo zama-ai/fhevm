@@ -103,7 +103,7 @@ export const resumeSteadyStateServices = (state: State) => {
   const listenerSuffixes = coprocessorListenerSuffixes(state);
   return {
     "base": [
-      "fhevm-minio",
+      "fhevm-object-store",
       "coprocessor-and-kms-db",
       KMS_CORE_CONTAINER,
       "gateway-node",

@@ -14,7 +14,7 @@ CR_RUN_ID=diagnostic; CR_REVISION=abc123; CR_BACKEND_CLASS=cpu; CR_HARDWARE_CLAS
 CR_SCENARIO=none; CR_OPERATORS=0; CR_THRESHOLD=0
 CONSENSUS_RESULTS_DIR='${dir}/records'; export CONSENSUS_RESULTS_DIR
 reason="$(cr_failure_reason 'AssertionError: postgresql://test:dummy@localhost/coproc is missing fixture output')"
-cr_record HAR-03-READINESS-CONTRACTS FAIL cleanup=ok detail="$reason" || exit 2
+cr_record HAR-01-FAULT-CONTRACTS FAIL cleanup=ok detail="$reason" || exit 2
 # Direct detail/cleanup/assert diagnostics are sanitized at the record boundary too.
 cr_record HAR-02-INVENTORY-AGGREGATE FAIL cleanup=failed \\
  detail='postgres://test:dummy@localhost/coproc could not be queried' \\
@@ -22,7 +22,7 @@ cr_record HAR-02-INVENTORY-AGGREGATE FAIL cleanup=failed \\
  assert='safety=fail:postgresql://test:dummy@localhost/coproc missing' || exit 3
 long="$(printf 'x%.0s' {1..240})"
 cr_failure_reason "AssertionError: postgresql://test:$long@localhost/coproc is missing fixture output"
-bun "$CR_INVENTORY_CLI" record --run direct --case HAR-03-READINESS-CONTRACTS --state FAIL \\
+bun "$CR_INVENTORY_CLI" record --run direct --case HAR-01-FAULT-CONTRACTS --state FAIL \\
  --revision abc123 --backend-class cpu --hardware-class cpu --scenario none --cleanup ok \\
  --detail 'postgresql://test:dummy@localhost/coproc assertion failed' --quiet >/dev/null 2>&1
 [[ "$?" != 0 ]]

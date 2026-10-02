@@ -27,7 +27,7 @@ import {
   DEMO_BOOT_ID_ENV,
   readDemoAuthorizationFromEnv,
 } from "./authorization";
-import { MINIO_EXTERNAL_URL, SOLANA_DEMO_DIR, STATE_DIR } from "../src/layout";
+import { OBJECT_STORE_EXTERNAL_URL, SOLANA_DEMO_DIR, STATE_DIR } from "../src/layout";
 import { resolveDemoConfigPath } from "./config";
 import {
   requestSupervisorReseed,
@@ -1298,7 +1298,7 @@ export const ownedContainer = (
   );
 
 const EXPECTED_ONE_SHOT_CONTAINERS = new Set([
-  "fhevm-minio-setup",
+  "fhevm-object-store-setup",
   "coprocessor-db-migration",
   "kms-connector-db-migration",
   "relayer-db-migration",
@@ -1398,7 +1398,7 @@ type DemoHealth = {
   readonly relayer: boolean;
   readonly hostRpc: boolean;
   readonly gatewayRpc: boolean;
-  readonly minio: boolean;
+  readonly objectStore: boolean;
   readonly prometheus: boolean;
   readonly jaeger: boolean;
   readonly containers: ReadonlyMap<
@@ -1431,7 +1431,7 @@ const demoHealth = async (manifest: DemoManifest): Promise<DemoHealth> => {
     relayerEndpoint,
     hostRpc,
     gatewayRpc,
-    minio,
+    objectStore,
     prometheus,
     jaeger,
   ] = await Promise.all([
@@ -1447,7 +1447,7 @@ const demoHealth = async (manifest: DemoManifest): Promise<DemoHealth> => {
     httpHealthy(`${LOCAL_SOLANA_ENDPOINTS.relayer}/healthz`),
     evmRpcHealthy(8545),
     evmRpcHealthy(8546),
-    httpHealthy(`${MINIO_EXTERNAL_URL}/minio/health/ready`),
+    httpHealthy(`${OBJECT_STORE_EXTERNAL_URL}/health/ready`),
     manifest.observability
       ? fetch(`${METRICS_URL}/api/v1/targets`, {
           signal: AbortSignal.timeout(2_000),
@@ -1476,7 +1476,7 @@ const demoHealth = async (manifest: DemoManifest): Promise<DemoHealth> => {
     relayer: containerReady("fhevm-relayer") && relayerEndpoint,
     hostRpc: containerReady("host-node") && hostRpc,
     gatewayRpc: containerReady("gateway-node") && gatewayRpc,
-    minio: containerReady("fhevm-minio") && minio,
+    objectStore: containerReady("fhevm-object-store") && objectStore,
     prometheus:
       !manifest.observability ||
       (containerReady("prometheus") && prometheus),
@@ -1496,7 +1496,7 @@ const allDemoHealthReady = (health: DemoHealth): boolean =>
   health.relayer &&
   health.hostRpc &&
   health.gatewayRpc &&
-  health.minio &&
+  health.objectStore &&
   health.prometheus &&
   health.jaeger &&
   [...health.containers.values()].every(({ ready }) => ready);
@@ -1509,7 +1509,7 @@ export const reseedHealthReady = (health: DemoHealth): boolean =>
   health.relayer &&
   health.hostRpc &&
   health.gatewayRpc &&
-  health.minio &&
+  health.objectStore &&
   health.prometheus &&
   health.jaeger &&
   [...health.containers.values()].every(({ ready }) => ready);
@@ -1526,7 +1526,7 @@ const assertDemoHealthReady = (health: DemoHealth): void => {
     "relayer",
     "hostRpc",
     "gatewayRpc",
-    "minio",
+    "objectStore",
     "prometheus",
     "jaeger",
   ] as const;
@@ -2375,7 +2375,7 @@ export const statusDemo = async (): Promise<boolean> => {
     ["relayer", serviceHealth.relayer],
     ["hostRpc", serviceHealth.hostRpc],
     ["gatewayRpc", serviceHealth.gatewayRpc],
-    ["minio", serviceHealth.minio],
+    ["objectStore", serviceHealth.objectStore],
     ...(manifest.observability
       ? ([
           ["prometheus", serviceHealth.prometheus],

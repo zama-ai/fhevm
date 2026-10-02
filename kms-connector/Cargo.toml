@@ -23,11 +23,11 @@ tx-sender.path = "crates/tx-sender"
 connector-utils.path = "crates/utils"
 fhevm_gateway_bindings = { path = "../gateway-contracts/rust_bindings", default-features = false }
 fhevm_host_bindings = { path = "../host-contracts/rust_bindings", default-features = false }
-kms-grpc = { git = "https://github.com/zama-ai/kms.git", rev = "294802eb9291ca5e1841f97c4f5b0d73a61f25bf", default-features = true }
-bc2wrap = { git = "https://github.com/zama-ai/kms.git", rev = "294802eb9291ca5e1841f97c4f5b0d73a61f25bf", default-features = true }
+kms-grpc = { git = "https://github.com/zama-ai/kms.git", rev = "e521f478b70efaee2a1230d71fd9b924ec81da6c", default-features = true }
+bc2wrap = { git = "https://github.com/zama-ai/kms.git", rev = "e521f478b70efaee2a1230d71fd9b924ec81da6c", default-features = true }
 tfhe = { version = "=1.8.1", default-features = false }
 user-decryption-signature = { path = "../shared/user-decryption-signature", default-features = false }
-ciphertext-attestation = { path = "../shared/ciphertext-attestation" }
+ciphertext-attestation = { path = "../shared/ciphertext-attestation", features = ["client"] }
 zama-solana-acl = { path = "../solana/crates/zama-solana-acl" }
 zama-solana-permit = { path = "../solana/crates/zama-solana-permit" }
 zama-solana-request = { path = "../solana/crates/zama-solana-request" }
@@ -45,8 +45,8 @@ alloy = { version = "=2.2.0", default-features = false, features = [
     "signer-aws",
     "std",
 ] }
-anyhow = { version = "=1.0.102", default-features = false }
-async-trait = { version = "=0.1.89", default-features = false }
+anyhow = { version = "=1.0.104", default-features = false }
+async-trait = { version = "=0.1.92", default-features = false }
 aws-config = { version = "=1.8.6", default-features = false, features = [
     "default-https-client",
     "rt-tokio",
@@ -56,7 +56,7 @@ aws-sdk-kms = { version = "=1.86.0", default-features = false, features = [
     "rt-tokio",
 ] }
 aws-sdk-s3 = { version = "=1.105.0", default-features = true }
-bytes = { version = "=1.11.1", default-features = false }
+bytes = { version = "=1.12.1", default-features = false }
 clap = { version = "=4.5.47", default-features = true, features = [
     "cargo",
     "derive",
@@ -84,7 +84,7 @@ ring = "=0.17.14"
 rustls = { version = "=0.23.45", default-features = false, features = [
     "aws-lc-rs",
 ] }
-serde = { version = "=1.0.228", default-features = false, features = [
+serde = { version = "=1.0.229", default-features = false, features = [
     "derive",
     "std",
 ] }
@@ -108,7 +108,7 @@ sqlx = { version = "=0.8.6", default-features = false, features = [
     "tls-rustls",
 ] }
 subtle = { version = "=2.6.1", default-features = false }
-thiserror = { version = "=2.0.18", default-features = false }
+thiserror = { version = "=2.0.20", default-features = false }
 tokio = { version = "=1.48.0", default-features = false, features = [
     "macros",
     "rt-multi-thread",

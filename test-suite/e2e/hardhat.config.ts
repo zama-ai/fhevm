@@ -33,20 +33,22 @@ task('coverage').setAction(async (taskArgs, hre, runSuper) => {
 });
 
 task('test', async (taskArgs, hre, runSuper) => {
+  // `--no-compile` reaches this override as a plain task argument.
+  const { noCompile } = taskArgs as { noCompile?: boolean };
   // Run modified test task
   if (hre.network.name === 'hardhat') {
     const privKeyFhevmDeployer = process.env.PRIVATE_KEY_FHEVM_DEPLOYER;
     // await hre.run('task:faucetToPrivate', { privateKey: privKeyFhevmDeployer });
     // await hre.run('task:faucetToPrivate', { privateKey: privKeyFhevmRelayer });
 
-    await hre.run('compile:specific', { contract: 'contracts/emptyProxy' });
+    if (!noCompile) await hre.run('compile:specific', { contract: 'contracts/emptyProxy' });
     await hre.run('task:deployEmptyUUPSProxies', {
       privateKey: privKeyFhevmDeployer,
       useCoprocessorAddress: false,
     });
 
-    await hre.run('compile:specific', { contract: 'contracts' });
-    await hre.run('compile:specific', { contract: 'lib' });
+    if (!noCompile) await hre.run('compile:specific', { contract: 'contracts' });
+    if (!noCompile) await hre.run('compile:specific', { contract: 'lib' });
 
     await hre.run('task:deployACL', { privateKey: privKeyFhevmDeployer });
     await hre.run('task:deployTFHEExecutor', {
@@ -68,7 +70,7 @@ task('test', async (taskArgs, hre, runSuper) => {
       useAddress: false,
     });
   }
-  await hre.run('compile:specific', { contract: 'examples' });
+  if (!noCompile) await hre.run('compile:specific', { contract: 'examples' });
   await runSuper();
 });
 

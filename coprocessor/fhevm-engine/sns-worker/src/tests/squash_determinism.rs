@@ -550,3 +550,50 @@ fn squash_under_two_server_key_clones() {
         println!("[clone] clones are equivalent — the clone is not the variable");
     }
 }
+
+/// Required CPU regression: generated keys make this independent of developer
+/// fixture paths. The diagnostic experiments above remain explicitly optional.
+#[cfg(not(feature = "gpu"))]
+#[test]
+fn generated_key_squash_agrees_across_reconstruction_and_threads() {
+    use fhevm_engine_common::keys::FhevmKeys;
+    use tfhe::prelude::FheEncrypt;
+    let keys = FhevmKeys::new();
+    keys.set_server_key_for_current_thread();
+    let client = keys.client_key.as_ref().expect("generated client key");
+    let lhs = tfhe::FheUint8::encrypt(7u8, client);
+    let rhs = tfhe::FheUint8::encrypt(5u8, client);
+    let noisy = SupportedFheCiphertexts::FheUint8(&lhs + &rhs);
+    assert_eq!(noisy.decrypt(client), "12");
+    let canonical = noisy.compress().expect("canonical input");
+    let mut results = Vec::new();
+    for threads in [1, 2] {
+        let server = keys.server_key.clone();
+        let pool = rayon::ThreadPoolBuilder::new()
+            .num_threads(threads)
+            .start_handler(move |_| tfhe::set_server_key(server.clone()))
+            .build()
+            .unwrap();
+        use rayon::prelude::*;
+        let repeated: Vec<Vec<u8>> = pool.install(|| {
+            (0..2)
+                .into_par_iter()
+                .map(|_| {
+                    let reconstructed =
+                        SupportedFheCiphertexts::decompress_no_memcheck(2, &canonical).unwrap();
+                    reconstructed.squash_noise_and_serialize(true).unwrap()
+                })
+                .collect()
+        });
+        results.extend(repeated);
+    }
+    let agrees = |values: &[Vec<u8>]| {
+        values.len() == 4 && !values[0].is_empty() && values.iter().all(|value| value == &values[0])
+    };
+    assert!(agrees(&results), "fixed canonical input/key must squash identically across reconstruction and thread policies");
+    results[3][0] ^= 1;
+    assert!(
+        !agrees(&results),
+        "a changed result must fail the agreement gate"
+    );
+}

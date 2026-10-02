@@ -1,5 +1,10 @@
 import { expect } from 'chai';
 import { ethers } from 'ethers';
+import { assertGatewayTopology, getCoprocessorDbUrls, waitForDatabaseReadiness, waitForConsensusDatabaseReports } from '../consensus/helpers';
+import { assertRunValidity, assertCiphertext128Format } from '../consensus/validity';
+import { assertQuorumOutcome } from '../consensus/probe';
+import { emitAssertions } from '../consensus/assertionEvidence';
+import { bridgeHandle, waitForBridgeAgreement } from '../consensus/bridgeEvidence';
 
 import {
   ChainConfig,
@@ -99,6 +104,7 @@ describe('Confidential Bridge', function () {
   // must clear their sum; the mock relay stays fast.
   this.timeout(USE_REAL_LZ ? 3_600_000 : 600_000);
 
+  const produced = new Map<string, ethers.TransactionReceipt>();
   let host: BridgeEnd;
   let chainB: BridgeEnd;
 
@@ -114,7 +120,9 @@ describe('Confidential Bridge', function () {
       })
       .find((parsed: ethers.LogDescription | null) => parsed?.name === 'HandleMinted');
     if (!minted) throw new Error('HandleMinted not emitted');
-    return minted.args.handle as string;
+    const handle = minted.args.handle as string;
+    produced.set(handle, receipt);
+    return handle;
   }
 
   /** Mints a handle ACL-allowed to the source `alice`; `addend` switches to a computed handle. */
@@ -174,10 +182,10 @@ describe('Confidential Bridge', function () {
           ? { kind: 'public' }
           : { kind: 'account', account: ethers.AbiCoder.defaultAbiCoder().decode(['address'], payload)[0] as string };
       await waitForComposeApplied(getProvider(dst.cfg), dst.cfg.aclAddress, dstHandles, grant, DECRYPT_TIMEOUT_MS);
-      return { dstHandles, ctx, compose: undefined };
+      return { dstHandles, ctx, compose: undefined, sendReceipt, receiveReceipt: undefined };
     }
-    const { dstHandles, compose } = await relayBridgeMessage(sendReceipt, ctx, { skipCompose });
-    return { dstHandles, ctx, compose };
+    const { dstHandles, compose, receiveReceipt } = await relayBridgeMessage(sendReceipt, ctx, { skipCompose });
+    return { dstHandles, ctx, compose, sendReceipt, receiveReceipt };
   }
 
   /** Mints and bridges in a SINGLE transaction with only the executor's transient allowance (no
@@ -268,6 +276,61 @@ describe('Confidential Bridge', function () {
     };
     host = await build(0);
     chainB = await build(1);
+  });
+
+  it('compares local and bridged dependencies on both operator databases', async function () {
+    if (process.env.RUN_BRIDGE_BYTE_CONSENSUS !== '1') this.skip();
+    if (USE_REAL_LZ) throw new Error('receipt-bound bridge campaign requires the isolated mock endpoint');
+    const databases = getCoprocessorDbUrls(Number(process.env.COPROCESSOR_COUNT));
+    const gateway = process.env.GATEWAY_RPC_URL!;
+    const membership = await assertGatewayTopology(gateway, process.env.GATEWAY_CONFIG_ADDRESS!, databases.length, Number(process.env.CONSENSUS_THRESHOLD));
+    await waitForDatabaseReadiness(databases);
+    for (const end of [host, chainB]) await assertRunValidity({ databaseUrls: databases, rpcUrl: end.cfg.rpcUrl });
+    const backend = process.env.CONSENSUS_BACKEND_CLASS;
+    if (!backend || (!backend.startsWith('cpu') && !backend.startsWith('gpu'))) throw new Error('bridge campaign requires an observed backend');
+    const checkComputed = async (end: BridgeEnd, handle: string, expected: bigint) => {
+      const receipt = produced.get(handle)!;
+      expect(receipt.status).to.eq(1);
+      const reports = await waitForConsensusDatabaseReports(databases, [handle], { timeoutMs: 300_000 });
+      for (const report of reports) {
+        expect(report.transactions).to.have.length(1);
+        const transaction = report.transactions[0];
+        expect('0x' + transaction.transactionId.toString('hex')).to.eq(receipt.hash.toLowerCase());
+        expect(transaction.hostChainId).to.eq(end.cfg.chainId);
+        expect(transaction.blockNumber).to.eq(receipt.blockNumber);
+        expect(transaction.totalCount).to.eq(2); // explicit trivial addend plus add
+        expect(transaction.completedCount).to.eq(2);
+        expect(transaction.errorCount).to.eq(0);
+      }
+      await assertCiphertext128Format(databases, backend, [handle]);
+      await assertQuorumOutcome({ mode: 'required', gatewayRpcUrl: gateway, ciphertextCommitsAddress: process.env.CIPHERTEXT_COMMITS_ADDRESS!,
+        handle, authorizedSenders: membership.txSenders, threshold: membership.threshold, label: 'bridge dependent' });
+      expect(await userDecrypt(end, handle)).to.eq(expected);
+      console.info(`[bridge-consensus] chain=${end.cfg.chainId} transaction=${receipt.hash} handle=${handle} value=${expected}`);
+    };
+    const source = await mint(host, 37, 5);
+    await checkComputed(host, source, 42n);
+    const local = await computeOn(host, source, 9);
+    await checkComputed(host, local, 51n);
+    expect(produced.get(local)!.blockNumber).to.be.greaterThan(produced.get(source)!.blockNumber);
+    const transfer = await bridge(host, chainB, [source], ethers.AbiCoder.defaultAbiCoder().encode(['address'], [chainB.alice.address]));
+    expect(transfer.dstHandles).to.have.length(1);
+    if (!transfer.receiveReceipt) throw new Error('bridge delivery receipt missing');
+    const destination = transfer.dstHandles[0];
+    const block = await getProvider(chainB.cfg).getBlock(transfer.receiveReceipt.blockHash);
+    if (!block) throw new Error('destination receipt block missing');
+    expect(destination).to.eq(bridgeHandle(source, chainB.cfg.aclAddress, BigInt(chainB.cfg.chainId), block.parentHash, BigInt(block.timestamp)));
+    expect(destination).to.not.eq(source);
+    await waitForBridgeAgreement(databases, { source, destination, sourceChain: host.cfg.chainId, destinationChain: chainB.cfg.chainId,
+      sender: host.alice.address, receiver: chainB.appAddr, guid: extractBridgeGuid(transfer.sendReceipt, host.endpoint),
+      send: transfer.sendReceipt, receive: transfer.receiveReceipt });
+    expect(await userDecrypt(chainB, destination)).to.eq(42n);
+    const dependent = await computeOn(chainB, destination, 17);
+    expect(produced.get(dependent)!.blockNumber).to.be.greaterThan(transfer.receiveReceipt.blockNumber);
+    await checkComputed(chainB, dependent, 59n);
+    emitAssertions('MAT-08-BRIDGED-DEPENDENCY', ['bytes', 'provenance', 'quorum', 'correctness', 'liveness'],
+      'Source reused locally and bridged with exact receipt/handle derivation; canonical association preserved fleet bytes, and both dependent computations completed with quorum and model plaintexts.');
+    console.info('[bridge-consensus] CASE COMPLETE');
   });
 
   it('bridges a handle host->chain-b and publicly decrypts it on the destination', async function () {

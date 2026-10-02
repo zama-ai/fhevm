@@ -1,0 +1,21 @@
+version: 1
+kind: coprocessor-consensus
+name: Three Of Three Bounded Backlog
+description: >-
+  Isolated replay/backlog campaign. Four-row/page acquisition bounds make twelve
+  named transactions cross multiple pages and batches without a throughput test.
+  Poll faster than the one-second local chain so catch-up remains possible.
+topology: { count: 3, threshold: 3 }
+instances:
+  - index: 0
+    args:
+      tfhe-worker: [--work-items-batch-size=4, --dependence-chains-per-batch=4]
+      host-listener-poller: [--batch-size=4, --poll-interval-ms=250]
+  - index: 1
+    args:
+      tfhe-worker: [--work-items-batch-size=4, --dependence-chains-per-batch=4]
+      host-listener-poller: [--batch-size=4, --poll-interval-ms=250]
+  - index: 2
+    args:
+      tfhe-worker: [--work-items-batch-size=4, --dependence-chains-per-batch=4]
+      host-listener-poller: [--batch-size=4, --poll-interval-ms=250]

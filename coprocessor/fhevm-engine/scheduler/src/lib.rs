@@ -3,6 +3,8 @@ use prometheus::Histogram;
 use std::sync::{LazyLock, OnceLock};
 
 pub mod dfg;
+#[cfg(any(feature = "gpu", test))]
+mod gpu_execution;
 
 pub static RERAND_LATENCY_BATCH_HISTOGRAM_CONF: OnceLock<MetricsConfig> = OnceLock::new();
 pub static RERAND_LATENCY_BATCH_HISTOGRAM: LazyLock<Histogram> = LazyLock::new(|| {

@@ -5,6 +5,7 @@ edition.workspace = true
 license.workspace = true
 
 [features]
+test-failpoints = []
 default = ["redis", "amqp"]
 redis   = ["dep:redis"]
 amqp    = ["dep:lapin"]

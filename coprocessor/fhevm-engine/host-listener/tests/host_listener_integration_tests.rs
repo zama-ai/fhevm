@@ -337,6 +337,102 @@ async fn test_mark_block_as_valid_repairs_missing_parent_hash(
     Ok(())
 }
 
+#[tokio::test]
+#[serial(db)]
+async fn test_allowed_computation_records_its_producer_block(
+) -> Result<(), Box<dyn std::error::Error>> {
+    use host_listener::database::computation::Computation;
+    use host_listener::database::tfhe_event_propagate::LogTfhe;
+    use sqlx::types::time::PrimitiveDateTime;
+
+    let test_instance =
+        test_harness::instance::setup_test_db(ImportMode::WithKeysNoSns)
+            .await?;
+    let chain_id = ChainId::try_from(42_u64)?;
+    let db = Database::new(&test_instance.db_url, chain_id, 128).await?;
+    let pool = db.pool.read().await.clone();
+
+    let handle = FixedBytes::<32>::repeat_byte(0x42);
+    let unallowed_handle = FixedBytes::<32>::repeat_byte(0x43);
+    let first_block_hash = FixedBytes::<32>::repeat_byte(0x33);
+    let competing_block_hash = FixedBytes::<32>::repeat_byte(0x34);
+
+    let event = |handle,
+                 transaction_hash: [u8; 32],
+                 block_hash,
+                 is_allowed: bool,
+                 clear| {
+        let transaction_hash = TransactionId::from(transaction_hash);
+        let mut plaintext = [0; 32];
+        plaintext[31] = clear;
+        LogTfhe {
+            computation: Computation::trivial(plaintext, 4, handle),
+            transaction_hash: Some(transaction_hash),
+            allowed_outputs: if is_allowed {
+                HashSet::from([handle])
+            } else {
+                HashSet::new()
+            },
+            block_number: 7,
+            block_hash,
+            block_timestamp: PrimitiveDateTime::MAX,
+            dependence_chain: transaction_hash,
+            tx_depth_size: 0,
+            log_index: None,
+            operand_boundary_mask: Some(Default::default()),
+            is_executor_minted: true,
+            is_fallback_grant: false,
+        }
+    };
+
+    let mut tx = db
+        .new_transaction()
+        .await?
+        .expect("new_transaction() returns Some on a live stack");
+    db.insert_tfhe_event(
+        &mut tx,
+        &event(handle, [0x71; 32], first_block_hash, true, 7),
+    )
+    .await?;
+    db.insert_tfhe_event(
+        &mut tx,
+        &event(unallowed_handle, [0x72; 32], first_block_hash, false, 8),
+    )
+    .await?;
+    db.insert_tfhe_event(
+        &mut tx,
+        &event(handle, [0x73; 32], competing_block_hash, true, 9),
+    )
+    .await?;
+    tx.commit().await?;
+
+    let rows = sqlx::query(
+        "SELECT handle, producer_block_number, producer_block_hash
+           FROM handle_producer_block
+          WHERE host_chain_id = $1
+          ORDER BY producer_block_hash",
+    )
+    .bind(chain_id.as_i64())
+    .fetch_all(&pool)
+    .await?;
+
+    assert_eq!(rows.len(), 2, "only allowed producers must be recorded");
+    assert!(rows
+        .iter()
+        .all(|row| row.get::<Vec<u8>, _>("handle") == handle.to_vec()));
+    assert!(rows
+        .iter()
+        .all(|row| row.get::<i64, _>("producer_block_number") == 7));
+    assert_eq!(
+        rows.iter()
+            .map(|row| row.get::<Vec<u8>, _>("producer_block_hash"))
+            .collect::<Vec<_>>(),
+        vec![first_block_hash.to_vec(), competing_block_hash.to_vec()]
+    );
+
+    Ok(())
+}
+
 async fn ingest_blocks_for_receipts(
     db: &mut Database,
     setup: &Setup,

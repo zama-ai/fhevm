@@ -1,0 +1,12 @@
+# Every node answers: the aggregation ends when the last one does, with every share.
+flow: user_decrypt
+threshold: 9
+timeout: 5s
+nodes:
+  - { count: 13, replies: [ok] }
+expect:
+  outcome: ok
+  counted: 13
+  responses: 13
+  elapsed: 10ms
+  attempts: 13

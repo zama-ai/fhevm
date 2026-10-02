@@ -42,6 +42,8 @@ fhevm-engine-common = { path = "../fhevm-engine-common" }
 scheduler = { path = "../scheduler" }
 
 [features]
+# Explicit opt-in for deterministic E2E interruption boundaries; absent from production builds.
+test-failpoints = ["fhevm-engine-common/test-failpoints", "scheduler/test-failpoints"]
 nightly-avx512 = ["tfhe/nightly-avx512"]
 gpu = ["tfhe/gpu", "scheduler/gpu", "fhevm-engine-common/gpu", "test-harness/gpu"]
 bench = []

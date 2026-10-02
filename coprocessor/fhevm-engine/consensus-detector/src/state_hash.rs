@@ -184,8 +184,20 @@ async fn compute_gcs_hash(
 /// A Gateway block is a candidate when:
 ///   * it has ≥1 `input_handles` row (blocks with no inputs are skipped entirely
 ///     — proofs are sparse, so unlike the L1 path we emit no sentinel);
-///   * `block_number < gw_tip` — the Gateway tip has advanced past it, so no new
-///     `VerifyProofRequest` can still land in it (**sealed**);
+///   * it is **sealed**, established one of two ways:
+///       - a non-anchor block by `block_number < gw_tip` — the Gateway tip has
+///         advanced past it, so no new `VerifyProofRequest` can still land in it;
+///       - the **synthetic anchor** block (`= gw_start_block`) by the presence of its
+///         synthetic `verify_proofs` row (`zk_proof_id >= SYNTHETIC_ZK_PROOF_ID_BASE`).
+///         `< gw_tip` can never seal it: on an idle Gateway `gw_start_block == gw_tip`,
+///         and the synthetic is back-dated into it after the tip already passed, so the
+///         tip never advances beyond it. The seal is completeness instead: the synthetic
+///         is the only input that can arrive after the watermark (real requests are
+///         frozen once the listener reached the block), so once its row exists the
+///         `verified IS NULL` gate below waits for it to verify, and the zkproof-worker
+///         commits `verified=true` atomically with the ciphertext. This guarantees the
+///         anchor's hash always includes the synthetic and never a real-only subset
+///         (which the one-shot `state_hash` insert would otherwise make permanent).
 ///   * every `verify_proofs` row for it is resolved (`verified IS NOT NULL`) — the
 ///     zkproof-worker has caught up, mirroring the L1 `bool_and(is_completed)`
 ///     gate. Otherwise the block is left for a later pass.
@@ -204,7 +216,20 @@ async fn compute_and_insert_gw_input_hashes(
         SELECT DISTINCT ih.block_number
           FROM {GCS_SCHEMA_QUOTED}.input_handles ih
          WHERE ih.block_number >= $1
-           AND ih.block_number < $2
+           AND (
+                 -- Non-anchor blocks: sealed once the tip has advanced strictly past them.
+                 (ih.block_number > $1 AND ih.block_number < $2)
+                 -- Synthetic anchor block (gw_start_block, = $1): admitted only once its
+                 -- synthetic verify_proofs row exists. This is the one block whose seal
+                 -- cannot come from `< gw_tip` (on an idle Gateway it equals the tip), so
+                 -- it comes from completeness instead — see the doc comment. EXISTS of the
+                 -- synthetic row also implies the listener has reached $1, so every real
+                 -- request in the block is already frozen.
+              OR (ih.block_number = $1
+                    AND EXISTS (
+                        SELECT 1 FROM {GCS_SCHEMA_QUOTED}.verify_proofs vp
+                         WHERE vp.block_number = $1 AND vp.zk_proof_id >= $5))
+               )
            AND NOT EXISTS (
                SELECT 1 FROM {GCS_SCHEMA_QUOTED}.state_hash sh
                 WHERE sh.chain_id = $3 AND sh.block_number = ih.block_number)
@@ -220,6 +245,7 @@ async fn compute_and_insert_gw_input_hashes(
         .bind(gw_tip)
         .bind(gw_chain_id)
         .bind(batch_limit)
+        .bind(fhevm_engine_common::synthetic_input::SYNTHETIC_ZK_PROOF_ID_BASE)
         .fetch_all(&mut **tx)
         .await?;
 
@@ -308,6 +334,25 @@ where
     Ok(row.and_then(|(v,)| v))
 }
 
+/// Whether the active GCS upgrade has already reached Gateway consensus. Once it has,
+/// the Gateway anchor is agreed and any further GW `state_hash` compute/upload is wasted
+/// work: the Gateway chain keeps producing blocks for the whole dry-run window, so left
+/// unchecked the worker firehoses thousands of GW hashes that no longer feed consensus and
+/// only steal throughput from the host tracks, delaying host unanimity. Stop GW work here
+/// as soon as the latch is set.
+pub(crate) async fn gw_consensus_reached<'e, E>(executor: E) -> Result<bool, sqlx::Error>
+where
+    E: sqlx::Executor<'e, Database = Postgres>,
+{
+    let v: Option<bool> = sqlx::query_scalar(
+        "SELECT BOOL_OR(gw_consensus_reached) FROM upgrade_state
+          WHERE stack_role = 'GCS' AND status = 'in_progress'",
+    )
+    .fetch_one(executor)
+    .await?;
+    Ok(v.unwrap_or(false))
+}
+
 /// Uploads GCS `state_hash` rows with `s3_uploaded_at IS NULL`, attaching the
 /// host-chain block_hash as S3 object metadata. Stamps `NOW()` on success;
 /// failures stay NULL and retry next sweep.
@@ -318,11 +363,50 @@ where
 /// the same S3 key repeatedly with whichever branch's `block-hash` metadata the
 /// planner happened to pick. Finalization leaves exactly one canonical row per
 /// height, so the join now yields a single deterministic block_hash per upload.
+/// The in-progress attempt `(proposal_id, proposal_block)`, if any.
+type Attempt = Option<(Vec<u8>, i64)>;
+
+/// `(in-progress attempt, every chain's end_block was ingested by Blue at least cutoff
+/// ago)`. Past the cutoff peers have decided, so a hash published now could only
+/// mislead a returning operator.
+pub(crate) async fn upload_window(
+    pool: &Pool<Postgres>,
+    cutoff: Duration,
+) -> Result<(Attempt, bool), sqlx::Error> {
+    let (proposal_id, proposal_block, closed): (Option<Vec<u8>>, Option<i64>, bool) =
+        sqlx::query_as(
+            "SELECT (SELECT proposal_id FROM upgrade_state
+                  WHERE stack_role = 'GCS' AND status = 'in_progress' LIMIT 1),
+                (SELECT COALESCE(proposal_block, -1) FROM upgrade_state
+                  WHERE stack_role = 'GCS' AND status = 'in_progress' LIMIT 1),
+                COALESCE(BOOL_AND(EXISTS(
+            SELECT 1 FROM public.host_chain_blocks_valid b
+             WHERE b.chain_id = w.host_chain_id AND b.block_number >= w.end_block
+               AND b.created_at <= NOW() - make_interval(secs => $1))), FALSE)
+           FROM upgrade_state w WHERE w.stack_role = 'GCS' AND w.status = 'in_progress'",
+        )
+        .bind(cutoff.as_secs_f64())
+        .fetch_one(pool)
+        .await?;
+    Ok((proposal_id.zip(proposal_block), closed))
+}
+
+/// Also stops a batch whose attempt was rolled back or replaced after it started.
+async fn upload_stopped(
+    pool: &Pool<Postgres>,
+    cutoff: Duration,
+    started: &Attempt,
+) -> Result<bool, sqlx::Error> {
+    let (current, closed) = upload_window(pool, cutoff).await?;
+    Ok(closed || (started.is_some() && current != *started))
+}
+
 async fn upload_pending_state_hashes(
     pool: &Pool<Postgres>,
     s3: &aws_sdk_s3::Client,
     my_bucket: &str,
     batch_limit: i64,
+    cutoff: Duration,
 ) -> anyhow::Result<()> {
     // Only upload state_hashes for ELIGIBLE blocks: a block carrying at least one
     // non-trivial, successful FHE op (fhe_operation <> trivialEncrypt). Empty and
@@ -358,6 +442,7 @@ async fn upload_pending_state_hashes(
         empty = EMPTY_BLOCK_STATE_HASH,
         opcode = crate::FHE_TRIVIAL_ENCRYPT_OPCODE,
     );
+    let started = upload_window(pool, cutoff).await?.0;
     let pending: Vec<(i64, i64, String, Vec<u8>)> = sqlx::query_as(&sql)
         .bind(batch_limit)
         .fetch_all(pool)
@@ -366,6 +451,12 @@ async fn upload_pending_state_hashes(
     for row in pending {
         let chain_id = row.0;
         let block_number = row.1;
+        #[cfg(feature = "test-failpoints")]
+        let report_fault = crate::test_host_report::fault(pool, chain_id, block_number).await?;
+        #[cfg(feature = "test-failpoints")]
+        if matches!(report_fault, Some(crate::test_host_report::Fault::Withhold)) {
+            continue;
+        }
         let bytes = match hex::decode(&row.2) {
             Ok(b) => b,
             Err(e) => {
@@ -373,8 +464,28 @@ async fn upload_pending_state_hashes(
                 continue;
             }
         };
+        #[cfg(feature = "test-failpoints")]
+        let bytes = {
+            let mut bytes = bytes;
+            if matches!(report_fault, Some(crate::test_host_report::Fault::Diverge)) {
+                crate::test_host_report::journal(
+                    pool,
+                    chain_id,
+                    block_number,
+                    &row.2,
+                    &format!("0x{}", hex::encode(&row.3)),
+                    my_bucket,
+                )
+                .await?;
+                crate::test_host_report::divergent_hash(&mut bytes);
+            }
+            bytes
+        };
         let block_hash_hex = format!("0x{}", hex::encode(&row.3));
         let key = state_hash_key(chain_id, block_number);
+        if upload_stopped(pool, cutoff, &started).await? {
+            return Ok(());
+        }
         match s3
             .put_object()
             .bucket(my_bucket)
@@ -414,6 +525,7 @@ async fn upload_pending_gw_state_hashes(
     my_bucket: &str,
     gw_chain_id: i64,
     batch_limit: i64,
+    cutoff: Duration,
 ) -> anyhow::Result<()> {
     let select_sql = format!(
         r#"
@@ -424,6 +536,7 @@ async fn upload_pending_gw_state_hashes(
          LIMIT $2
         "#
     );
+    let started = upload_window(pool, cutoff).await?.0;
     let pending = sqlx::query(&select_sql)
         .bind(gw_chain_id)
         .bind(batch_limit)
@@ -445,6 +558,9 @@ async fn upload_pending_gw_state_hashes(
             }
         };
         let key = state_hash_key(gw_chain_id, block_number);
+        if upload_stopped(pool, cutoff, &started).await? {
+            return Ok(());
+        }
         match s3
             .put_object()
             .bucket(my_bucket)
@@ -498,6 +614,7 @@ async fn compute_and_upload_state_hashes(
     my_bucket: &str,
     batch_limit: i64,
     gw_chain_id: i64,
+    cutoff: Duration,
 ) -> anyhow::Result<()> {
     let mut tx = match begin_write_guarded(pool, true, GcsRollbackPolicy::Skip).await? {
         WriteGuard::Proceed(tx) => tx,
@@ -524,7 +641,15 @@ async fn compute_and_upload_state_hashes(
 
     // GCS hashes are only produced during an active upgrade window; BCS hashes
     // are not produced because they would never be uploaded or consumed.
+    // Once the Gateway track has anchored (gw_consensus_reached), stop all GW state_hash
+    // work — compute AND upload. The GW anchor is already agreed, so further GW hashes feed
+    // nothing, while the fast Gateway chain would otherwise have us firehose thousands of GW
+    // hashes for the rest of the window and starve the host tracks' uploads, delaying host
+    // unanimity. Skipping frees the pipeline for the host tracks. (Only meaningful during an
+    // active window; the post-cutover branch does no GW work anyway.)
+    let mut skip_gw = false;
     if let Some((_, _, windows)) = crate::active_upgrade_windows(&mut *tx).await? {
+        skip_gw = gw_consensus_reached(&mut *tx).await?;
         for (chain_id, start, end) in windows {
             compute_and_insert_gcs(
                 &mut tx,
@@ -538,23 +663,38 @@ async fn compute_and_upload_state_hashes(
         }
 
         // Gateway-inputs track: only once the GCS gw-listener has a watermark and
-        // gw_start_block is set. Bounded to sealed blocks (< gw_tip).
-        if let (Some(gw_start), Some(gw_tip)) = (
-            gw_start_block(&mut *tx).await?,
-            gw_listener_tip(&mut *tx).await?,
-        ) {
-            compute_and_insert_gw_input_hashes(&mut tx, gw_chain_id, gw_start, gw_tip, batch_limit)
+        // gw_start_block is set. Bounded to sealed blocks (< gw_tip). Skipped once the
+        // GW track has anchored.
+        if !skip_gw {
+            if let (Some(gw_start), Some(gw_tip)) = (
+                gw_start_block(&mut *tx).await?,
+                gw_listener_tip(&mut *tx).await?,
+            ) {
+                compute_and_insert_gw_input_hashes(
+                    &mut tx,
+                    gw_chain_id,
+                    gw_start,
+                    gw_tip,
+                    batch_limit,
+                )
                 .await?;
+            }
+        } else {
+            debug!("gw consensus reached — skipping GW state_hash compute/upload");
         }
     } else {
         compute_post_cutover_state_hashes(&mut tx, batch_limit).await?;
     }
     tx.commit().await?;
 
-    // S3 upload: drains pending rows; runs every pass so failed PUTs retry.
+    // S3 upload: drains pending rows; runs every pass so failed PUTs retry. GW uploads are
+    // skipped once the GW track has anchored (see skip_gw above).
     if let Some(s3) = s3 {
-        upload_pending_state_hashes(pool, s3, my_bucket, batch_limit).await?;
-        upload_pending_gw_state_hashes(pool, s3, my_bucket, gw_chain_id, batch_limit).await?;
+        upload_pending_state_hashes(pool, s3, my_bucket, batch_limit, cutoff).await?;
+        if !skip_gw {
+            upload_pending_gw_state_hashes(pool, s3, my_bucket, gw_chain_id, batch_limit, cutoff)
+                .await?;
+        }
     }
     Ok(())
 }
@@ -610,6 +750,7 @@ pub async fn run(
     my_bucket: String,
     batch_limit: i64,
     gw_chain_id: i64,
+    cutoff: Duration,
     cancel: CancellationToken,
 ) -> anyhow::Result<()> {
     info!(batch_limit, bucket = %my_bucket, gw_chain_id, "starting state_hash worker");
@@ -623,9 +764,15 @@ pub async fn run(
         ])
         .await?;
 
-    if let Err(e) =
-        compute_and_upload_state_hashes(&pool, s3.as_deref(), &my_bucket, batch_limit, gw_chain_id)
-            .await
+    if let Err(e) = compute_and_upload_state_hashes(
+        &pool,
+        s3.as_deref(),
+        &my_bucket,
+        batch_limit,
+        gw_chain_id,
+        cutoff,
+    )
+    .await
     {
         warn!(error = %e, "initial state_hash pass failed");
     }
@@ -636,7 +783,7 @@ pub async fn run(
                 Ok(n) => {
                     debug!(channel = n.channel(), "state_hash pass triggered");
                     if let Err(e) =
-                        compute_and_upload_state_hashes(&pool, s3.as_deref(), &my_bucket, batch_limit, gw_chain_id).await
+                        compute_and_upload_state_hashes(&pool, s3.as_deref(), &my_bucket, batch_limit, gw_chain_id, cutoff).await
                     {
                         warn!(error = %e, "state_hash pass failed");
                     }
@@ -653,6 +800,199 @@ pub async fn run(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[tokio::test]
+    async fn host_upload_stops_once_the_window_closes() {
+        use test_harness::instance::{setup_test_db, ImportMode};
+        let instance = setup_test_db(ImportMode::None).await.unwrap();
+        let pool = sqlx::postgres::PgPoolOptions::new()
+            .connect(instance.db_url())
+            .await
+            .unwrap();
+        let localstack = test_harness::localstack::start_localstack().await.unwrap();
+        let s3 = test_harness::localstack::create_localstack_s3_client(localstack.host_port).await;
+        s3.create_bucket().bucket("hashes").send().await.unwrap();
+        let cutoff = Duration::from_secs(60);
+        sqlx::query(
+            "INSERT INTO upgrade_state
+                (stack_role, host_chain_id, state, status, proposal_id, proposal_block, end_block)
+             VALUES ('GCS', 1, 'DryRunStarted', 'in_progress', '\\x02', 10, 200)",
+        )
+        .execute(&pool)
+        .await
+        .unwrap();
+        // A finalized block with a non-trivial computation and a pending hash.
+        let pending_block = |block: i64| {
+            let pool = pool.clone();
+            async move {
+                sqlx::query(
+                    "INSERT INTO host_chain_blocks_valid (chain_id, block_hash, block_number, block_status)
+                     VALUES (1, $1, $2, 'finalized')",
+                )
+                .bind(vec![block as u8])
+                .bind(block)
+                .execute(&pool)
+                .await
+                .unwrap();
+                sqlx::query(
+                    "INSERT INTO computations (
+                         output_handle, dependencies, fhe_operation, is_scalar,
+                         transaction_id, host_chain_id, block_number, is_error, is_completed
+                     ) VALUES ($1, $2, 0, FALSE, $1, 1, $3, FALSE, TRUE)",
+                )
+                .bind(vec![block as u8])
+                .bind(Vec::<Vec<u8>>::new())
+                .bind(block)
+                .execute(&pool)
+                .await
+                .unwrap();
+                sqlx::query("INSERT INTO state_hash (chain_id, block_number, state_hash) VALUES (1, $1, 'aa')")
+                    .bind(block)
+                    .execute(&pool)
+                    .await
+                    .unwrap();
+            }
+        };
+        let uploaded = |block: i64| {
+            sqlx::query_scalar::<_, bool>(
+                "SELECT s3_uploaded_at IS NOT NULL FROM state_hash WHERE chain_id = 1 AND block_number = $1",
+            )
+            .bind(block)
+        };
+
+        pending_block(150).await;
+        upload_pending_state_hashes(&pool, &s3, "hashes", 10, cutoff)
+            .await
+            .unwrap();
+        assert!(
+            uploaded(150).fetch_one(&pool).await.unwrap(),
+            "open window uploads"
+        );
+
+        sqlx::query(
+            "INSERT INTO host_chain_blocks_valid
+                (chain_id, block_hash, block_number, block_status, created_at)
+             VALUES (1, '\\xc8', 200, 'finalized', NOW() - INTERVAL '2 minutes')",
+        )
+        .execute(&pool)
+        .await
+        .unwrap();
+        pending_block(151).await;
+        upload_pending_state_hashes(&pool, &s3, "hashes", 10, cutoff)
+            .await
+            .unwrap();
+        assert!(
+            !uploaded(151).fetch_one(&pool).await.unwrap(),
+            "closed window uploads nothing"
+        );
+        assert!(s3
+            .head_object()
+            .bucket("hashes")
+            .key(state_hash_key(1, 151))
+            .send()
+            .await
+            .is_err());
+    }
+
+    #[tokio::test]
+    async fn gw_upload_stops_once_the_window_closes_or_the_attempt_ends() {
+        use test_harness::instance::{setup_test_db, ImportMode};
+        let instance = setup_test_db(ImportMode::None).await.unwrap();
+        let pool = sqlx::postgres::PgPoolOptions::new()
+            .connect(instance.db_url())
+            .await
+            .unwrap();
+        let localstack = test_harness::localstack::start_localstack().await.unwrap();
+        let s3 = test_harness::localstack::create_localstack_s3_client(localstack.host_port).await;
+        s3.create_bucket().bucket("hashes").send().await.unwrap();
+        let cutoff = Duration::from_secs(60);
+        for sql in [
+            format!("CREATE SCHEMA {GCS_SCHEMA_QUOTED}"),
+            format!("CREATE TABLE {GCS_SCHEMA_QUOTED}.state_hash (LIKE public.state_hash INCLUDING ALL)"),
+            "INSERT INTO public.upgrade_state
+                (stack_role, host_chain_id, state, status, proposal_id, proposal_block, end_block)
+             VALUES ('GCS', 1, 'DryRunStarted', 'in_progress', '\\x02', 10, 200)"
+                .into(),
+        ] {
+            sqlx::query(&sql).execute(&pool).await.unwrap();
+        }
+        let insert_sql = format!(
+            "INSERT INTO {GCS_SCHEMA_QUOTED}.state_hash (chain_id, block_number, state_hash)
+             VALUES (54321, $1, 'aa')"
+        );
+        let uploaded_sql = format!(
+            "SELECT s3_uploaded_at IS NOT NULL FROM {GCS_SCHEMA_QUOTED}.state_hash
+              WHERE block_number = $1"
+        );
+        let pending_hash = |block: i64| sqlx::query(&insert_sql).bind(block);
+        let uploaded = |block: i64| sqlx::query_scalar::<_, bool>(&uploaded_sql).bind(block);
+
+        pending_hash(1).execute(&pool).await.unwrap();
+        upload_pending_gw_state_hashes(&pool, &s3, "hashes", 54321, 10, cutoff)
+            .await
+            .unwrap();
+        assert!(
+            uploaded(1).fetch_one(&pool).await.unwrap(),
+            "open window uploads"
+        );
+
+        sqlx::query(
+            "INSERT INTO public.host_chain_blocks_valid
+                (chain_id, block_hash, block_number, block_status, created_at)
+             VALUES (1, '\\x01', 200, 'finalized', NOW() - INTERVAL '2 minutes')",
+        )
+        .execute(&pool)
+        .await
+        .unwrap();
+        pending_hash(2).execute(&pool).await.unwrap();
+        upload_pending_gw_state_hashes(&pool, &s3, "hashes", 54321, 10, cutoff)
+            .await
+            .unwrap();
+        assert!(
+            !uploaded(2).fetch_one(&pool).await.unwrap(),
+            "closed window uploads nothing"
+        );
+        assert!(s3
+            .head_object()
+            .bucket("hashes")
+            .key(state_hash_key(54321, 2))
+            .send()
+            .await
+            .is_err());
+
+        let started = Some((vec![2u8], 10));
+        sqlx::query("UPDATE public.upgrade_state SET status = 'failed'")
+            .execute(&pool)
+            .await
+            .unwrap();
+        assert!(
+            upload_stopped(&pool, cutoff, &started).await.unwrap(),
+            "attempt ended mid-batch"
+        );
+        assert!(
+            !upload_stopped(&pool, cutoff, &None).await.unwrap(),
+            "no attempt at batch start"
+        );
+        sqlx::query(
+            "UPDATE public.upgrade_state
+                SET status = 'in_progress', proposal_id = '\\x03', end_block = 300",
+        )
+        .execute(&pool)
+        .await
+        .unwrap();
+        assert!(
+            upload_stopped(&pool, cutoff, &started).await.unwrap(),
+            "attempt replaced mid-batch"
+        );
+        sqlx::query("UPDATE public.upgrade_state SET proposal_id = '\\x02', proposal_block = 11")
+            .execute(&pool)
+            .await
+            .unwrap();
+        assert!(
+            upload_stopped(&pool, cutoff, &started).await.unwrap(),
+            "same proposal re-proposed at another block"
+        );
+    }
 
     #[test]
     fn key_format_is_stable() {

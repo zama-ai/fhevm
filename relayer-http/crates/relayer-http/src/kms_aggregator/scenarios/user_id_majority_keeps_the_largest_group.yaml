@@ -1,0 +1,13 @@
+# checks.decryption_id_majority: only the shares carrying the majority decryptionId count and are returned.
+flow: user_decrypt
+threshold: 9
+timeout: 5s
+checks: { decryption_id_majority: true }
+nodes:
+  - { count: 4, replies: [wrong_id] }
+  - { count: 9, replies: [ok] }
+expect:
+  outcome: ok
+  counted: 9
+  responses: 9
+  elapsed: 10ms

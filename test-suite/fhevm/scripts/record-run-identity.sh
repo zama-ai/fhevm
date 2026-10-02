@@ -47,6 +47,10 @@ revision="$(sr_revision "$REPO_ROOT")" || exit 1
 emit checkout_revision "$revision"
 emit build_mode "${CONSENSUS_BUILD_MODE:-unspecified}"
 emit software_class "${CONSENSUS_SOFTWARE_CLASS:-unverified}"
+# Which Cargo features the checkout images were built with. A fault-enabled
+# build and the production feature set are both "checkout"; only this tells
+# them apart.
+emit build_features "${CONSENSUS_BUILD_FEATURES:-${FHEVM_CONSENSUS_TEST_FEATURES:-none}}"
 
 # Resolved image ids for every container in the project, keyed by container
 # name: this is what `up` actually started, whether built or pulled.
@@ -73,6 +77,7 @@ if [[ -f "${GPU_RUNTIME_DIR}/build-manifest.env" ]]; then
     [[ -n "$key" ]] || continue
     case "$key" in
       software_revision|*_sha256|gpu_*|hardware_*) emit "gpu_${key}" "${value//\'/}" ;;
+      test_features) value="${value//\'/}"; emit gpu_test_features "${value:-none}" ;;
     esac
   done <"${GPU_RUNTIME_DIR}/build-manifest.env"
 fi

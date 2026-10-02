@@ -348,6 +348,7 @@ mod tests {
         "allowed_handles",
         "pbs_computations",
         "host_chain_blocks_valid",
+        "handle_producer_block",
         "solana_encrypted_states",
         "solana_encrypted_state_leaves",
         "solana_encrypted_state_nodes",

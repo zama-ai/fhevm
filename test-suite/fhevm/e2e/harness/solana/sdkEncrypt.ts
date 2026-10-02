@@ -4,8 +4,8 @@ import { createSolanaRpc, type Rpc, type SolanaRpcApi } from "@solana/kit";
 // Every input-proof phase does the same dance: dynamically import the SDK (kept out of the static
 // module graph so `bun test src` stays runnable before the SDK workspace is materialized),
 // configure the relayer auth, define the chain, and submit one uint64 input proof — with the
-// relayer's docker-internal MinIO URLs rewritten to the host-published endpoint while the prover
-// fetches key material.
+// relayer's docker-internal object-store URLs rewritten to the host-published endpoint while the
+// prover fetches key material.
 
 import { hostReachableMaterialUrl } from "../../../src/utils/fs";
 
@@ -35,9 +35,9 @@ const loadSolanaSdkEncrypt = async (): Promise<SolanaSdkEncryptSurface> => {
 };
 
 /**
- * Runs `body` with `globalThis.fetch` rewriting docker-internal MinIO URLs to the host-published
- * endpoint. The relayer hands out key-material URLs naming the compose-internal `minio:9000`;
- * a host-side prover has to fetch them through the published port instead.
+ * Runs `body` with `globalThis.fetch` rewriting docker-internal object-store URLs to the
+ * host-published endpoint. The relayer hands out key-material URLs naming the on-chain KMS storage
+ * host `minio:9000`; a host-side prover has to fetch them through the published port instead.
  */
 export const withHostReachableFetch = async <T>(body: () => Promise<T>): Promise<T> => {
   const originalFetch = globalThis.fetch;

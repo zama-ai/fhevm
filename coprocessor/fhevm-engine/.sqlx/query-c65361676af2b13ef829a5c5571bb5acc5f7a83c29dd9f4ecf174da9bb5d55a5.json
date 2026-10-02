@@ -1,0 +1,26 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n        SELECT consensus_epoch,\n               COUNT(*)::BIGINT AS \"unresolved_drift!\"\n          FROM drifted_handle\n         WHERE status = 'unresolved' AND healed_at IS NULL\n         GROUP BY consensus_epoch\n        ",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "consensus_epoch",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 1,
+        "name": "unresolved_drift!",
+        "type_info": "Int8"
+      }
+    ],
+    "parameters": {
+      "Left": []
+    },
+    "nullable": [
+      false,
+      null
+    ]
+  },
+  "hash": "c65361676af2b13ef829a5c5571bb5acc5f7a83c29dd9f4ecf174da9bb5d55a5"
+}

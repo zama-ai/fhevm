@@ -35,7 +35,7 @@ import {
   ContainerStartError,
   GitHubApiError,
   IncompatibleVersions,
-  MinioError,
+  ObjectStoreError,
   PreflightError,
   ProbeTimeout,
   ResumeError,
@@ -65,9 +65,9 @@ import {
   KMS_CORE_CONTAINER,
   LOCK_DIR,
   LOG_TARGETS,
-  MINIO_PORT,
-  MINIO_EXTERNAL_URL,
-  MINIO_INTERNAL_URL,
+  OBJECT_STORE_PORT,
+  OBJECT_STORE_EXTERNAL_URL,
+  OBJECT_STORE_INTERNAL_URL,
   PORTS,
   PROJECT,
   REPO_ROOT,
@@ -110,7 +110,7 @@ import {
   writeEnvFile,
   writeJson,
 } from "../utils/fs";
-import { ensureDiscovery, createDiscovery, defaultEndpoints, discoverContracts, minioIp, validateDiscovery } from "./discovery";
+import { ensureDiscovery, createDiscovery, defaultEndpoints, discoverContracts, objectStorePublishedEndpoint, validateDiscovery } from "./discovery";
 import { kmsConnectorEnvName, kmsConnectorPrefix, kmsCoreName, reconstructionThreshold } from "../kms-party";
 import { defaultHostChain, extraHostChains, hostChainsForState } from "./topology";
 import {
@@ -188,7 +188,7 @@ export {
   dockerInspect,
   ensureDiscovery,
   ensureMaterial,
-  minioIp,
+  objectStorePublishedEndpoint,
   multiChainCoprocessorUpgradeTargets,
   pause,
   postBootHealthGate,
@@ -877,9 +877,9 @@ export const runStep = async (state: State, step: StepName) => {
         ["docker", "network", "create", "--label", `com.docker.compose.project=${PROJECT}`, "--label", "com.docker.compose.network=default", `${PROJECT}_default`],
         { allowFailure: true },
       );
-      await stepComposeUp("minio", state);
-      await waitForContainer("fhevm-minio", "healthy");
-      await waitForContainer("fhevm-minio-setup", "complete");
+      await stepComposeUp("object-store", state);
+      await waitForContainer("fhevm-object-store", "healthy");
+      await waitForContainer("fhevm-object-store-setup", "complete");
       // Threshold mode boots the dedicated N-node cluster component instead of
       // the single centralized core. Party 1 keeps the `kms-core` name, so the
       // readiness wait below is unchanged.
@@ -945,10 +945,10 @@ export const runStep = async (state: State, step: StepName) => {
     case "kms-signer": {
       // `kms.parties` is 1 for centralized and N for threshold, so one call covers both.
       const discovery = await ensureDiscovery(state);
-      const { signers, caCerts, minioKeyPrefix } = await discoverKmsSigners(state.scenario.kms.parties);
+      const { signers, caCerts, objectStoreKeyPrefix } = await discoverKmsSigners(state.scenario.kms.parties);
       discovery.kmsSigners = signers;
       discovery.kmsCaCerts = caCerts;
-      discovery.minioKeyPrefix = minioKeyPrefix;
+      discovery.objectStoreKeyPrefix = objectStoreKeyPrefix;
       await generateRuntime(state, stackSpecForState(state));
       break;
     }
@@ -1197,7 +1197,7 @@ export const runStep = async (state: State, step: StepName) => {
       break;
     case "bootstrap": {
       await ensureRuntimeArtifacts(state, "bootstrap");
-      const bootstrapDone = await probeBootstrap(state).catch((error) => (error instanceof MinioError ? null : Promise.reject(error)));
+      const bootstrapDone = await probeBootstrap(state).catch((error) => (error instanceof ObjectStoreError ? null : Promise.reject(error)));
       if (bootstrapDone) {
         state.discovery!.actualFheKeyId = bootstrapDone.actualFheKeyId;
         state.discovery!.actualCrsKeyId = bootstrapDone.actualCrsKeyId;
@@ -1225,7 +1225,7 @@ export const runStep = async (state: State, step: StepName) => {
         );
         await waitForContainer("gateway-sc-add-network", "complete");
       }
-      const bootstrapReady = await probeBootstrap(state).catch((error) => (error instanceof MinioError ? null : Promise.reject(error)));
+      const bootstrapReady = await probeBootstrap(state).catch((error) => (error instanceof ObjectStoreError ? null : Promise.reject(error)));
       if (bootstrapReady) {
         state.discovery!.actualFheKeyId = bootstrapReady.actualFheKeyId;
         state.discovery!.actualCrsKeyId = bootstrapReady.actualCrsKeyId;
@@ -1626,7 +1626,9 @@ export const upDryRun = async (options: Omit<UpOptions, "dryRun">) => {
 
 /** Deletes generated runtime artifacts while keeping persisted stack state. */
 const pruneGeneratedRuntimeArtifacts = async () => {
-  const targets = [ENV_DIR, COMPOSE_OUT_DIR, GENERATED_CONFIG_DIR, ADDRESS_DIR];
+  // Retained-material baselines belong to the stack that seeded them; a new
+  // stack must reseed rather than verify against the previous stack's rows.
+  const targets = [ENV_DIR, COMPOSE_OUT_DIR, GENERATED_CONFIG_DIR, ADDRESS_DIR, path.join(STATE_DIR, "runtime", "retained-material")];
   await Promise.all(targets.map(async (target) => {
     if (await exists(target)) {
       await remove(target);
@@ -1880,7 +1882,7 @@ export const kmsConnectorRuntimeReplacementServices = (state: Pick<State, "scena
  * Produces the only connector-service selection change allowed by `upgrade
  * kms-connector --adopt-local-override --e2e-public-runtime`.
  *
- * The existing databases, MinIO buckets, generated KMS material, contract
+ * The existing databases, object-store buckets, generated KMS material, contract
  * discovery and proof cache are deliberately copied through untouched.  This
  * path changes image source for the long-lived connector services only;
  * it must never run a migration or replay the ordinary deployment pipeline.
@@ -2129,7 +2131,7 @@ const waitForUpgrade = async (state: State, group: UpgradeGroup, runtimeServices
  *
  * This is needed when a source-matched connector is required to read existing
  * ciphertext object paths, but the current host cannot pull the certified
- * Chainguard runtime.  Preserving the KMS DB, MinIO, keys and proof cache is
+ * Chainguard runtime.  Preserving the KMS DB, object store, keys and proof cache is
  * correctness-critical: regenerating any of them would turn a connector
  * compatibility check into a different E2E deployment.
  */
@@ -2195,7 +2197,7 @@ export const adoptRunningE2eKmsConnectorOverride = async (
   // `maybeBuild` sees only the three runtime services recorded above.  The
   // explicit force/recreate pair makes Docker replace their containers even
   // when a prior local image with the same tag exists, while `--no-deps`
-  // prevents Compose from touching Postgres, MinIO, KMS core, or any other
+  // prevents Compose from touching Postgres, the object store, KMS core, or any other
   // persisted service.
   await operations.maybeBuild("kms-connector", nextState, { force: true });
   const runtimeServices = kmsConnectorRuntimeReplacementServices(nextState);
@@ -2715,7 +2717,7 @@ const thresholdKmsOperatorUpgradeOperations: ThresholdKmsOperatorUpgradeOperatio
 /** Upgrades one serving operator's KMS Core and matching Connector without yielding between them. */
 export const upgradeThresholdKmsOperator = async (
   operatorId: number,
-  options: { lockFile: string; overrides?: LocalOverride[] },
+  options: { lockFile: string; overrides?: LocalOverride[]; migration?: NonNullable<State["kmsMigrationByNodeId"]>[string] },
   operations: ThresholdKmsOperatorUpgradeOperations = thresholdKmsOperatorUpgradeOperations,
 ) => {
   const state = await operations.loadState();
@@ -2818,6 +2820,9 @@ export const upgradeThresholdKmsOperator = async (
     },
     kmsCoreVersionByNodeId: Object.keys(perNodeVersions).length ? perNodeVersions : undefined,
     kmsConnectorDeploymentByNodeId: Object.keys(perNodeConnectors).length ? perNodeConnectors : undefined,
+    kmsMigrationByNodeId: options.migration
+      ? { ...state.kmsMigrationByNodeId, [operatorId]: options.migration }
+      : state.kmsMigrationByNodeId,
   };
   await assertSchemaCompatibility(nextState.versions, nextState.overrides, nextState.scenario, false);
   await operations.assertQuorum(state, operatorId);

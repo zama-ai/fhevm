@@ -1,0 +1,13 @@
+# Consensus is there, two nodes never answer: answered at the deadline with eleven signatures.
+flow: public_decrypt
+threshold: 5
+timeout: 5s
+nodes:
+  - { count: 11, replies: [ok] }
+  - { count: 2, replies: [hang] }
+expect:
+  outcome: ok
+  counted: 11
+  responses: 11
+  elapsed: 5s
+  attempts: 13

@@ -36,27 +36,28 @@ import {
   kmsPrivatePrefix,
   kmsPublicPrefix,
   kmsServicePort,
+  kmsTestKeygenProxyName,
 } from "../kms-party";
 import { kmsCoreImageRepository } from "../compat/compat";
-import type { ResolvedKmsTopology } from "../types";
-import { GENERATED_CONFIG_DIR } from "../layout";
+import type { KmsEpochAssociation, ResolvedKmsTopology } from "../types";
+import { GENERATED_CONFIG_DIR, REPO_ROOT } from "../layout";
 
 /** Knobs the generator needs that come from the surrounding stack (S3, image tag). */
 export type KmsRenderOptions = {
   coreImage: string; // e.g. ghcr.io/zama-ai/kms/core-service-insecure:${CORE_VERSION}
-  s3Endpoint: string; // e.g. http://minio:9000
+  s3Endpoint: string; // e.g. http://object-store:9000
   s3Bucket: string; // e.g. kms-public
   s3Region: string; // e.g. eu-west-1
-  s3AccessKey: string; // minio access key (shared with the rest of the stack)
-  s3SecretKey: string; // minio secret key
+  s3AccessKey: string; // object-store access key (shared with the rest of the stack)
+  s3SecretKey: string; // object-store secret key
 };
 
-/** Render options from the resolved core image version + fhevm minio defaults
- * (the static test credentials from templates/env/.env.minio).
+/** Render options from the resolved core image version + fhevm object-store defaults
+ * (the static test credentials from templates/env/.env.object-store).
  */
 export const kmsRenderOptionsFor = (coreVersion: string): KmsRenderOptions => ({
   coreImage: `${kmsCoreImageRepository(coreVersion)}:${coreVersion}`,
-  s3Endpoint: "http://minio:9000",
+  s3Endpoint: "http://object-store:9000",
   s3Bucket: "kms-public",
   s3Region: "eu-west-1",
   s3AccessKey: "fhevm-access-key",
@@ -78,6 +79,31 @@ export const KMS_CORE_PLATFORM = "${CORE_PLATFORM:-linux/amd64}";
 
 /** The committee threshold config filename (mounted into the `committeeSize` committee cores). */
 export const KMS_THRESHOLD_CONFIG_NAME = "kms-core-threshold.toml";
+export const kmsMigrationConfigName = (partyId: number): string => `kms-core-migration-${partyId}.toml`;
+
+/** Preserve explicit ownership; never infer epoch/context associations from numeric IDs. */
+export const renderKmsMigration = (associations: readonly KmsEpochAssociation[]): string => {
+  const contexts = new Set<string>();
+  const epochs = new Set<string>();
+  const id = (value: string) => {
+    if (!/^(?:0x)?[0-9a-fA-F]{64}$/.test(value)) throw new Error("KMS migration IDs must be 32-byte hex");
+    return value.replace(/^0x/, "").toLowerCase();
+  };
+  if (!associations.length) throw new Error("KMS migration requires an epoch/context mapping");
+  return associations.map((association) => {
+    const context = id(association.contextId);
+    if (contexts.has(context) || !association.epochIds.length) throw new Error("KMS migration requires unique contexts with epochs");
+    contexts.add(context);
+    const mapped = association.epochIds.map((value) => {
+      const epoch = id(value);
+      if (epochs.has(epoch)) throw new Error("KMS migration epoch assigned more than once");
+      epochs.add(epoch);
+      return epoch;
+    });
+    return `\n[[migration.context_associations]]\ncontext_id = "${context}"\nepoch_ids = ${JSON.stringify(mapped)}\n`;
+  }).join("");
+};
+
 /** The spare threshold config filename: same template with NO peer roster (peers=None), so spare
  *  cores skip the `3t+1` startup validation and boot idle, joining a committee dynamically when a
  *  context names them. Mounted into cores with party id > committeeSize. */
@@ -167,7 +193,7 @@ export const thresholdCoreEnv = (
   KMS_CORE__PRIVATE_VAULT__STORAGE__S3__PREFIX: kmsPrivatePrefix(partyId),
   KMS_CORE__BACKUP_VAULT__STORAGE__FILE__PREFIX: kmsBackupPrefix(partyId),
   KMS_CORE__TELEMETRY__TRACING_SERVICE_NAME: `kms-threshold-${partyId}`,
-  // The core's AWS SDK reads the minio creds straight from the environment — no
+  // The core's AWS SDK reads the object-store creds straight from the environment — no
   // need to shell out and `cat` them from the shared secrets volume at startup.
   AWS_ACCESS_KEY_ID: opts.s3AccessKey,
   AWS_SECRET_ACCESS_KEY: opts.s3SecretKey,
@@ -221,6 +247,7 @@ export const buildKmsThresholdOverride = (
   topology: ResolvedKmsTopology,
   opts: KmsRenderOptions,
   coreVersionByNodeId: Readonly<Record<string, string>> = {},
+  migrationByNodeId: Readonly<Record<string, KmsEpochAssociation[]>> = {},
 ): ComposeDoc => {
   if (topology.mode !== "threshold") {
     throw new Error("buildKmsThresholdOverride called for a non-threshold topology");
@@ -245,8 +272,22 @@ export const buildKmsThresholdOverride = (
 
   for (const partyId of kmsPartyIds(topology.parties)) {
     const name = kmsCoreName(partyId);
+    if (topology.insecureTestKeygen) {
+      services[kmsTestKeygenProxyName(partyId)] = {
+        container_name: kmsTestKeygenProxyName(partyId),
+        image: "node:22-bookworm-slim@sha256:48e4b67d85f87bd551df43704e24d252f56cc5f8e9718841aace50f19948f0f9",
+        command: ["node", "/proxy.cjs", `http://${name}:${kmsServicePort(partyId)}`],
+        volumes: [`${path.join(REPO_ROOT, "test-suite/fhevm/scripts/lib/kms-test-keygen-proxy.cjs")}:/proxy.cjs:ro`],
+        depends_on: { [name]: { condition: "service_healthy" } },
+        healthcheck: {
+          test: ["CMD", "node", "-e", "const s=require('node:net').connect(3000,'127.0.0.1',()=>{s.end();process.exit(0)});s.on('error',()=>process.exit(1))"],
+          interval: "3s", timeout: "3s", retries: 30,
+        },
+      };
+    }
+
     // Cores beyond the committee boot as spares with the peers=None config (idle until a context names them).
-    const configName =
+    const configName = migrationByNodeId[partyId] ? kmsMigrationConfigName(partyId) :
       partyId > topology.committeeSize ? KMS_THRESHOLD_SPARE_CONFIG_NAME : KMS_THRESHOLD_CONFIG_NAME;
     services[name] = {
       container_name: name,
@@ -287,9 +328,9 @@ export const buildKmsThresholdOverride = (
     platform: KMS_CORE_PLATFORM,
     entrypoint: ["/bin/sh", "-c", `kms-init -a ${initEndpoints}`],
     depends_on: Object.fromEntries(
-      kmsPartyIds(topology.parties).map((partyId) => [
-        kmsCoreName(partyId),
-        { condition: "service_healthy" },
+      kmsPartyIds(topology.parties).flatMap((partyId) => [
+        [kmsCoreName(partyId), { condition: "service_healthy" }],
+        ...(topology.insecureTestKeygen ? [[kmsTestKeygenProxyName(partyId), { condition: "service_healthy" }]] : []),
       ]),
     ),
   };

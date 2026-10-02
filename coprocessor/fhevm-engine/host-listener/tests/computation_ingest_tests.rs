@@ -124,21 +124,30 @@ async fn grouped_outputs_preserve_order_permissions_and_replay_counts(
         dependence_chain: TransactionId::Hash(Handle::repeat_byte(20)),
         log_index: Some(0),
         is_executor_minted: true,
+        is_fallback_grant: false,
     };
     let mut tx = pool.begin().await?;
-    assert_eq!(db.insert_tfhe_event(&mut tx, &log).await?, 2);
+    assert!(db.insert_tfhe_event(&mut tx, &log).await?);
     assert!(
-        db.insert_tfhe_event(&mut tx, &log).await? == 0,
+        !db.insert_tfhe_event(&mut tx, &log).await?,
         "group replay must be idempotent"
     );
     sqlx::query("DELETE FROM computations WHERE output_handle = $1")
         .bind(outputs[1].to_vec())
         .execute(&mut *tx)
         .await?;
-    assert_eq!(
+    assert!(
         db.insert_tfhe_event(&mut tx, &log).await?,
-        1,
-        "partial replay counts only the missing row"
+        "partial replay restores the missing row"
+    );
+    let producers: Vec<Vec<u8>> =
+        sqlx::query_scalar("SELECT handle FROM handle_producer_block")
+            .fetch_all(&mut *tx)
+            .await?;
+    assert_eq!(
+        producers,
+        vec![outputs[1].to_vec()],
+        "only the allowed output records its producer block"
     );
     let rows = sqlx::query("SELECT output_handle, dependencies, is_scalar, group_id, output_index, output_count, is_allowed, operand_boundary_mask FROM computations ORDER BY output_index")
         .fetch_all(&mut *tx).await?;
@@ -219,7 +228,7 @@ async fn solana_records_reach_the_shared_sql_and_scheduler_path(
         0,
     )
     .await?;
-    assert_eq!(stats.inserted_rows, 2);
+    assert_eq!(stats.inserted_records, 2);
     let row = sqlx::query("SELECT dependencies, is_scalar, operand_boundary_mask, transaction_id, is_allowed FROM computations WHERE output_handle = $1")
         .bind(vec![4_u8; 32]).fetch_one(&mut *tx).await?;
     assert_eq!(
@@ -233,6 +242,18 @@ async fn solana_records_reach_the_shared_sql_and_scheduler_path(
     assert_eq!(row.get::<Vec<u8>, _>("operand_boundary_mask")[31], 2);
     assert_eq!(row.get::<Vec<u8>, _>("transaction_id"), vec![7_u8; 64]);
     assert!(row.get::<bool, _>("is_allowed"));
+    let producers: Vec<(Vec<u8>, i64, Vec<u8>)> = sqlx::query_as(
+        "SELECT handle, producer_block_number, producer_block_hash FROM handle_producer_block ORDER BY handle",
+    )
+    .fetch_all(&mut *tx)
+    .await?;
+    assert_eq!(
+        producers,
+        [[1_u8; 32], [4; 32]]
+            .map(|handle| (handle.to_vec(), 4, vec![5; 32]))
+            .to_vec(),
+        "every Solana output records the slot and block hash that produced it"
+    );
     assert_eq!(
         sqlx::query_scalar::<_, i64>("SELECT count(*) FROM dependence_chain")
             .fetch_one(&mut *tx)
@@ -355,7 +376,7 @@ async fn solana_block_priority_preserves_transaction_origins_replay_and_slow_par
             .await?;
     assert_eq!(stats.tfhe_events, 3);
     assert_eq!(stats.material_requests, 2);
-    assert_eq!(stats.inserted_rows, 5);
+    assert_eq!(stats.inserted_records, 5);
     let rows = sqlx::query("SELECT c.output_handle, c.dependence_chain_id, c.schedule_order, c.operand_boundary_mask, d.schedule_priority FROM computations c JOIN dependence_chain d ON c.dependence_chain_id = d.dependence_chain_id ORDER BY c.output_handle")
         .fetch_all(&mut *tx).await?;
     assert_eq!(rows.len(), 3);
@@ -397,7 +418,7 @@ async fn solana_block_priority_preserves_transaction_origins_replay_and_slow_par
         .await?;
     let replay =
         insert_solana_block_records(&db, &mut tx, records, block, 1).await?;
-    assert_eq!(replay.inserted_rows, 0);
+    assert_eq!(replay.inserted_records, 0);
     assert_eq!(
         sqlx::query_scalar::<_, i64>(
             "SELECT count(*) FROM dependence_chain WHERE status != 'processed'"

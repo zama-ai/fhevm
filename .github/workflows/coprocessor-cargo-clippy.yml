@@ -38,6 +38,10 @@ jobs:
               - solana/environments/**
               - solana/crates/zama-solana-acl/**
               - solana/crates/zama-solana-transaction/**
+              # consensus-detector depends on these crates by path. Clippy of the
+              # engine compiles them, but does not run their own tests.
+              - shared/block-manifest/**
+              - shared/ciphertext-attestation/**
   cargo-clippy:
     name: coprocessor-cargo-clippy/cargo-clippy
     needs: check-changes

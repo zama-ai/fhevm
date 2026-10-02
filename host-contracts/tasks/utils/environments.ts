@@ -20,7 +20,6 @@ export interface EnvChainEntry {
 
 export interface EnvGatewayEntry {
   label: string;
-  fallbackBlockTimeSeconds: number;
   rpcUrlEnv: string;
   defaultRpcUrl?: string;
 }
@@ -70,7 +69,7 @@ export const ENVIRONMENTS: Record<string, EnvironmentDef> = {
       },
     ],
     // Devnet gateway is a Zama-internal endpoint — no public default; env var required.
-    gateway: { label: 'gateway-devnet', fallbackBlockTimeSeconds: 2, rpcUrlEnv: 'GATEWAY_DEVNET_RPC_URL' },
+    gateway: { label: 'gateway-devnet', rpcUrlEnv: 'GATEWAY_DEVNET_RPC_URL' },
   },
   testnet: {
     chains: [
@@ -105,7 +104,6 @@ export const ENVIRONMENTS: Record<string, EnvironmentDef> = {
     ],
     gateway: {
       label: 'gateway-testnet',
-      fallbackBlockTimeSeconds: 2,
       rpcUrlEnv: 'GATEWAY_TESTNET_RPC_URL',
       defaultRpcUrl: 'https://rpc.testnet.zama.org',
     },
@@ -117,12 +115,12 @@ export const ENVIRONMENTS: Record<string, EnvironmentDef> = {
       { chainId: 137, label: 'polygon', fallbackBlockTimeSeconds: 2, rpcUrlEnv: 'POLYGON_MAINNET_RPC_URL' },
       { chainId: 56, label: 'bnb', fallbackBlockTimeSeconds: 0.45, rpcUrlEnv: 'BNB_MAINNET_RPC_URL' },
     ],
-    gateway: { label: 'gateway-mainnet', fallbackBlockTimeSeconds: 2, rpcUrlEnv: 'GATEWAY_MAINNET_RPC_URL' },
+    gateway: { label: 'gateway-mainnet', rpcUrlEnv: 'GATEWAY_MAINNET_RPC_URL' },
   },
   // Local anvil stack for the blue-green e2e: single host chain + local gateway, RPCs from env vars.
   local: {
     chains: [{ chainId: 12345, label: 'host-local', fallbackBlockTimeSeconds: 1, rpcUrlEnv: 'LOCAL_HOST_RPC_URL' }],
-    gateway: { label: 'gateway-local', fallbackBlockTimeSeconds: 1, rpcUrlEnv: 'LOCAL_GATEWAY_RPC_URL' },
+    gateway: { label: 'gateway-local', rpcUrlEnv: 'LOCAL_GATEWAY_RPC_URL' },
   },
 };
 

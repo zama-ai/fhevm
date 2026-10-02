@@ -84,8 +84,20 @@ export const migrationVersions = (env: Env = process.env): MigrationVersions => 
   };
 };
 
-export const migrationTargetSha = (env: Env = process.env) =>
-  env.RFC029_TARGET_FHEVM_SHA?.trim() || DEFAULT_TARGET_FHEVM_SHA;
+/** Historical reproduction remains explicit; candidate acceptance cannot fall
+ * back to the original migration implementation or silently pick a release tag.
+ */
+export const migrationTargetSha = (env: Env = process.env): string => {
+  const candidate = env.RFC029_ACCEPTANCE_MODE === "candidate";
+  const target = env.RFC029_TARGET_FHEVM_SHA?.trim();
+  if (candidate && (!target || target === DEFAULT_TARGET_FHEVM_SHA || !/^[0-9a-f]{40}$/.test(target))) {
+    throw new Error("candidate migration requires an explicit full RFC029_TARGET_FHEVM_SHA; the historical default is not candidate evidence");
+  }
+  if (candidate && !env.RFC029_BASELINE_FHEVM_TAG?.trim()) {
+    throw new Error("candidate migration requires an explicit RFC029_BASELINE_FHEVM_TAG; identify the actual baseline build separately");
+  }
+  return target || DEFAULT_TARGET_FHEVM_SHA;
+};
 
 export const migrationBaselineVersions = (
   target: Record<string, string>,
@@ -100,3 +112,9 @@ export const versionSources = [
   "rollout=v0.14-to-v0.15-gpu-key-migration",
   "migration=same-key-compressed-xof",
 ];
+
+export function assertMigrationCandidateCheckout(target: string, checkout: string): void {
+  if (target !== checkout || !/^[0-9a-f]{40}$/.test(checkout)) {
+    throw new Error("candidate target must equal the clean checkout used to build Green and the local test harness");
+  }
+}

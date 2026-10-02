@@ -306,7 +306,7 @@ describe.skipIf(!runsDemoScenarios)("solana deposit-arc scenario", () => {
       const { batch, batchAuthority, batchJoinTokenAccount } = batchBeforeJoin.addresses;
       const joinMint = config.mints.joinConfidential;
 
-      // The MinIO fetch rewrite is scoped to the join phase only: just the input proof's
+      // The object-store fetch rewrite is scoped to the join phase only: just the input proof's
       // key-material fetch needs it — settle's certificate phase talks to the relayer's
       // /v2/public-decrypt endpoint only (verified against actions/publicDecryptCertificate.ts).
       await withHostReachableFetch(async () => {

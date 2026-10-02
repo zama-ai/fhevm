@@ -79,6 +79,8 @@ export type KmsScenarioBlock = {
    *  as spares (peers=None) so a context switch can rotate one in (e.g. a node swap). */
   committeeSize?: number;
   fheParams?: KmsFheParams;
+  /** Test only: route preprocessing/keygen through the KMS insecure APIs. */
+  insecureTestKeygen?: boolean;
 };
 
 /** Fully-resolved KMS topology carried on the resolved scenario / StackSpec. */
@@ -90,6 +92,7 @@ export type ResolvedKmsTopology = {
   /** Initial on-chain committee (and the `3t+1` MPC group); `<= parties`. Cores beyond it are spares. */
   committeeSize: number;
   fheParams: KmsFheParams;
+  insecureTestKeygen?: boolean;
 };
 
 export type CoprocessorScenario = {
@@ -222,18 +225,18 @@ export type Discovery = {
   hosts: Record<string, Record<string, string>>;
   kmsSigners: string[];
   // Per-party serialized CA certificate (hex `0x…`), discovered alongside the signers. Optional
-  // like minioKeyPrefix: seeded to [] by createDiscovery and filled at the `kms-signer` step.
+  // like objectStoreKeyPrefix: seeded to [] by createDiscovery and filled at the `kms-signer` step.
   kmsCaCerts?: string[];
   fheKeyId: string;
   crsKeyId: string;
   actualFheKeyId?: string;
   actualCrsKeyId?: string;
-  minioKeyPrefix?: string;
+  objectStoreKeyPrefix?: string;
   endpoints: {
     gateway: RpcEndpoints;
     hosts: Record<string, RpcEndpoints>;
-    minioInternal: string;
-    minioExternal: string;
+    objectStoreInternal: string;
+    objectStoreExternal: string;
   };
 };
 
@@ -256,6 +259,8 @@ export type KmsConnectorPartyDeployment = {
   versions: Record<string, string>;
 };
 
+export type KmsEpochAssociation = { contextId: string; epochIds: string[] };
+
 export type State = {
   target: VersionTarget;
   lockPath: string;
@@ -263,6 +268,8 @@ export type State = {
   versions: VersionBundle;
   /** Per-node threshold KMS core versions while a rollout is intentionally mixed. */
   kmsCoreVersionByNodeId?: Record<string, string>;
+  /** Explicit legacy epoch ownership for KMS storage migration, retained across regeneration. */
+  kmsMigrationByNodeId?: Record<string, KmsEpochAssociation[]>;
   /** Per-party Connector deployment while a threshold KMS rollout is intentionally mixed. */
   kmsConnectorDeploymentByNodeId?: Record<string, KmsConnectorPartyDeployment>;
   overrides: LocalOverride[];

@@ -22,11 +22,11 @@ name: preview-env-deploy
 #     from this branch's checkout.
 #   - preview-env-e2e-tests: same, plus auto-run the e2e test DAG and report
 #     pass/fail back to the PR.
-#   - preview-env-gpu: with preview-env-e2e-tests, request one GPU for each FHE
-#     worker and place them on the coprocessor-gpu nodepool. Combines with
-#     preview-env-e2e (HEAD workers) or preview-env-blue-green (Green/GCS
-#     workers; Blue/BCS stays CPU). Does nothing without preview-env-e2e-tests.
-#     Dispatch opt-in is enable_gpu=true (CLI --gpu); Default FHE params are
+#   - preview-env-gpu: rejected. A label cannot carry the worker image tag.
+#     GPU is dispatch-only: enable_gpu=true (CLI --gpu) plus workers_tag
+#     (CLI --workers-tag), the image tag for tfhe, sns, and zkproof.
+#     Workers land on the coprocessor-gpu nodepool. With enable_blue_green,
+#     Green/GCS is GPU and Blue/BCS stays CPU. Default FHE params are
 #     generated only on this path.
 #   - preview-env-blue-green: deploy RFC-021 BCS+GCS on each party (forces
 #     nb_coprocessor=2) on chain_mode=blockchain-dev. Dispatch opt-in is
@@ -91,13 +91,18 @@ on:
           - "false"
           - "true"
       enable_gpu:
-        description: "Schedule TFHE/SnS/zkproof workers on the coprocessor-gpu nodepool (one GPU each) and generate Default FHE parameters. PR path still requires preview-env-gpu + preview-env-e2e-tests. With enable_blue_green, Green/GCS is GPU and Blue/BCS stays CPU."
+        description: "Schedule TFHE/SnS/zkproof workers on the coprocessor-gpu nodepool (one GPU each) and generate Default FHE parameters. Requires workers_tag. With enable_blue_green, Green/GCS is GPU and Blue/BCS stays CPU. The preview-env-gpu label cannot set this."
         required: true
         type: choice
         default: "false"
         options:
           - "false"
           - "true"
+      workers_tag:
+        description: "Image tag for tfhe, sns, and zkproof when enable_gpu=true (for example fd282b1-cuda12.8-sm70). Required with GPU. Leave empty when enable_gpu=false."
+        required: false
+        default: ""
+        type: string
       nb_kms_core:
         description: "Number of kms-core parties to deploy (1:1 with kms-connector + dedicated Postgres releases)"
         required: true
@@ -226,6 +231,7 @@ jobs:
       build_test_suite_only: ${{ steps.check.outputs.build_test_suite_only }}
       automated_tests: ${{ steps.check.outputs.automated_tests }}
       gpu: ${{ steps.check.outputs.gpu }}
+      workers_tag: ${{ steps.check.outputs.workers_tag }}
       observability: ${{ steps.check.outputs.observability }}
       blue_green: ${{ steps.check.outputs.blue_green }}
       nb_coprocessor: ${{ steps.check.outputs.nb_coprocessor }}
@@ -237,9 +243,22 @@ jobs:
         if: github.event_name == 'workflow_dispatch'
         env:
           LIFETIME: ${{ inputs.lifetime }}
+          ENABLE_GPU: ${{ inputs.enable_gpu }}
+          WORKERS_TAG: ${{ inputs.workers_tag }}
         run: |
           if [[ ! "${LIFETIME}" =~ ^[0-9]+$ ]] || (( 10#$LIFETIME < 4 || 10#$LIFETIME > 96 )); then
             echo "::error::lifetime must be an integer from 4 to 96 (got '${LIFETIME}')"
+            exit 1
+          fi
+          # workers_tag selects the published GPU images. It is not a build
+          # output, so a missing or unsafe tag must fail before checkout.
+          if [[ "${ENABLE_GPU}" == "true" ]]; then
+            if [[ ! "${WORKERS_TAG}" =~ ^[A-Za-z0-9_][A-Za-z0-9_.-]{0,127}$ ]]; then
+              echo "::error::workers_tag is required when enable_gpu=true and must be an image tag (got '${WORKERS_TAG}')"
+              exit 1
+            fi
+          elif [[ -n "${WORKERS_TAG}" ]]; then
+            echo "::error::workers_tag is only used when enable_gpu=true"
             exit 1
           fi
 
@@ -292,6 +311,7 @@ jobs:
           DISPATCH_NB_COPROCESSOR: ${{ inputs.nb_coprocessor || '1' }}
           DISPATCH_ENABLE_BLUE_GREEN: ${{ inputs.enable_blue_green || 'false' }}
           DISPATCH_ENABLE_GPU: ${{ inputs.enable_gpu || 'false' }}
+          DISPATCH_WORKERS_TAG: ${{ inputs.workers_tag }}
           DISPATCH_CHAIN_MODE: ${{ inputs.chain_mode || 'anvil' }}
           PR_LABELS: ${{ toJSON(github.event.pull_request.labels.*.name) }}
         run: |
@@ -299,8 +319,9 @@ jobs:
           # never set it (always build everything they're allowed to).
           # automated_tests defaults off; dispatch reads its input, PR runs opt
           # in via the preview-env-e2e-tests label (handled below).
-          # GPU scheduling: dispatch enable_gpu, or preview-env-gpu with
-          # preview-env-e2e-tests. observability is a dispatch-only knob for
+          # GPU scheduling is dispatch enable_gpu plus workers_tag. The
+          # preview-env-gpu label has no tag, so check-labels fails it.
+          # observability is a dispatch-only knob for
           # now (no PR label), off by default.
           # RFC-021 dual fleet. Dispatch: enable_blue_green=true (plain N=2
           # is two-party consensus). PRs: preview-env-blue-green label, N=2.
@@ -308,6 +329,7 @@ jobs:
             echo "build_test_suite_only=false"
             echo "automated_tests=false"
             echo "gpu=false"
+            echo "workers_tag="
             echo "observability=false"
             echo "blue_green=false"
             echo "nb_coprocessor=1"
@@ -316,6 +338,10 @@ jobs:
           if [[ "${EVENT_NAME}" == "workflow_dispatch" ]]; then
             blue_green=false
             nb_coprocessor="${DISPATCH_NB_COPROCESSOR:-1}"
+            workers_tag=""
+            if [[ "${DISPATCH_ENABLE_GPU}" == "true" ]]; then
+              workers_tag="${DISPATCH_WORKERS_TAG}"
+            fi
             if [[ "${DISPATCH_ENABLE_BLUE_GREEN}" == "true" ]]; then
               blue_green=true
               if [[ "${nb_coprocessor}" == "1" ]]; then
@@ -328,6 +354,7 @@ jobs:
               echo "build_test_suite_only=${DISPATCH_BUILD_TEST_SUITE_ONLY:-false}"
               echo "automated_tests=${DISPATCH_AUTOMATED_TESTS:-false}"
               echo "gpu=${DISPATCH_ENABLE_GPU:-false}"
+              echo "workers_tag=${workers_tag}"
               echo "observability=${DISPATCH_OBSERVABILITY:-false}"
               echo "blue_green=${blue_green}"
               echo "nb_coprocessor=${nb_coprocessor}"
@@ -344,6 +371,7 @@ jobs:
           build_images=false
           automated_tests=false
           gpu=false
+          workers_tag=""
           blue_green=false
           chain_mode=anvil
           nb_coprocessor="${DISPATCH_NB_COPROCESSOR:-1}"
@@ -355,7 +383,8 @@ jobs:
           fi
           if [[ "${automated_tests}" == "true" ]] &&
              echo "$PR_LABELS" | jq -e '.[] | select(. == "preview-env-gpu")' > /dev/null; then
-            gpu=true
+            echo "::error::preview-env-gpu cannot set a worker image. Dispatch preview-env-deploy with enable_gpu=true and workers_tag."
+            exit 1
           fi
           if echo "$PR_LABELS" | jq -e '.[] | select(. == "preview-env-e2e")' > /dev/null; then
             should_deploy=true
@@ -379,6 +408,7 @@ jobs:
             echo "build_images=${build_images}"
             echo "automated_tests=${automated_tests}"
             echo "gpu=${gpu}"
+            echo "workers_tag=${workers_tag}"
             echo "blue_green=${blue_green}"
             echo "nb_coprocessor=${nb_coprocessor}"
             echo "chain_mode=${chain_mode}"
@@ -576,6 +606,7 @@ jobs:
       # deploy + report steps): dispatch input or the preview-env-e2e-tests label.
       AUTOMATED_TESTS: ${{ needs.check-labels.outputs.automated_tests }}
       GPU: ${{ needs.check-labels.outputs.gpu }}
+      GPU_IMAGE_TAG: ${{ needs.check-labels.outputs.workers_tag }}
       OBSERVABILITY: ${{ needs.check-labels.outputs.observability }}
       BLUE_GREEN: ${{ needs.check-labels.outputs.blue_green }}
       NB_COPROCESSOR: ${{ needs.check-labels.outputs.nb_coprocessor }}
@@ -934,8 +965,11 @@ jobs:
           NODE_PATH: /tmp/wallet-tools/node_modules
         run: bash ci/preview-env/scripts/wallets/fund-wallets.sh
 
-      - name: Apply external-chain values overlays
-        if: env.EXTERNAL_CHAINS == 'true'
+      # External chains rewrite RPC overlays. Anvil GPU only switches keygen
+      # to Default params; the script exits before those rewrites. CPU Anvil
+      # skips this step and keeps Test params.
+      - name: Apply chain values overlays
+        if: env.EXTERNAL_CHAINS == 'true' || env.GPU == 'true'
         run: bash ci/preview-env/scripts/deploy/apply-chain-env.sh
 
       ######################################################################

@@ -5,7 +5,11 @@ image:
   name: ghcr.io/foundry-rs/foundry
   tag: v1.3.5
 network:
-  blockTime: "1"
+  # Empty: no --block-time, so anvil mines a block per transaction instead of on a timer. The
+  # production gateway is Nitro, which only produces blocks when it has work; a timer here hides
+  # every bug that needs an idle gateway. The host chains keep their timer, matching Ethereum
+  # and Polygon, which produce blocks regardless.
+  blockTime: ""
   host: "0.0.0.0"
   chainId: "54321"
   accounts: "120"

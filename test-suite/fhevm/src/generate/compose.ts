@@ -18,6 +18,7 @@ import {
   supportsUpgradeController,
 } from "../compat/compat";
 import {
+  ANVIL_CHAIN_ID,
   COMPONENTS,
   COMPOSE_OUT_DIR,
   DEFAULT_CHAIN_ID,
@@ -182,6 +183,7 @@ const coprocessorBuildSpec = (target: string, e2ePublicRuntime = false) =>
   buildSpec("../../..", "coprocessor/fhevm-engine/Dockerfile.workspace", {
     target,
     args: {
+      CARGO_FEATURES: "${FHEVM_CONSENSUS_TEST_FEATURES:-}",
       RUST_IMAGE_VERSION: COPROCESSOR_RUST_IMAGE_VERSION,
       ...(e2ePublicRuntime
         ? {
@@ -435,6 +437,53 @@ const rewriteCoprocessorDependsOn = (
     ]),
   );
 
+const PUBLICATION_CADENCE_FLAG = "--manifest-publication-cadence";
+const LOCAL_PUBLICATION_CADENCE = "1";
+
+/** Host chain ids that should publish every block on local Anvil / E2E. */
+const localPublicationCadenceChainIds = (envVars: Record<string, string>): string[] => {
+  const ids = new Set<string>([ANVIL_CHAIN_ID, DEFAULT_CHAIN_ID]);
+  if (envVars.CHAIN_ID) {
+    ids.add(envVars.CHAIN_ID);
+  }
+  for (const [key, value] of Object.entries(envVars)) {
+    if (/^HOST_CHAIN_\d+_ID$/.test(key) && value) {
+      ids.add(value);
+    }
+  }
+  return [...ids];
+};
+
+/**
+ * Keeps unique `--manifest-publication-cadence=CHAIN_ID:1` overlays for local
+ * Anvil (31337), the docker/preview host (12345), and any extra host chains.
+ * `mergeArgs` would collapse repeatable cadence flags to the last value.
+ */
+const withLocalPublicationCadenceOverlays = (command: string[], envVars: Record<string, string>): string[] => {
+  const seen = new Set<string>();
+  const kept: string[] = [];
+  for (const item of command) {
+    if (!item.startsWith(`${PUBLICATION_CADENCE_FLAG}=`)) {
+      kept.push(item);
+      continue;
+    }
+    const chainId = item.slice(`${PUBLICATION_CADENCE_FLAG}=`.length).split(":")[0] ?? "";
+    if (!chainId || chainId.includes("${") || seen.has(chainId)) {
+      continue;
+    }
+    seen.add(chainId);
+    kept.push(item);
+  }
+  for (const chainId of localPublicationCadenceChainIds(envVars)) {
+    if (seen.has(chainId)) {
+      continue;
+    }
+    kept.push(`${PUBLICATION_CADENCE_FLAG}=${chainId}:${LOCAL_PUBLICATION_CADENCE}`);
+    seen.add(chainId);
+  }
+  return kept;
+};
+
 /** Applies env, compat, and instance-specific command adjustments to a service. */
 const applyInstanceAdjustments = (
   baseServiceName: string,
@@ -486,6 +535,9 @@ const applyInstanceAdjustments = (
   if (next.command) {
     const current = Array.isArray(next.command) ? next.command : [];
     next.command = mergeArgs(current, [...(override.args["*"] ?? []), ...(override.args[serviceKey] ?? [])]);
+  }
+  if (serviceKey === "consensus-detector" && Array.isArray(next.command)) {
+    next.command = withLocalPublicationCadenceOverlays(next.command.map(String), envVars);
   }
   return next;
 };
@@ -843,6 +895,17 @@ const buildCoprocessorOverride = async (plan: StackSpec) => {
     }
   }
 
+  // A listener consumer's service name also identifies its broker queue.
+  // Sharing it across operator databases or Blue/Green roles load-balances
+  // blocks instead of delivering each block to every independent recipient.
+  for (const [serviceName, service] of Object.entries(services)) {
+    if (!serviceName.endsWith("-host-listener-consumer") || !Array.isArray(service.command)) continue;
+    if (service.command.some((argument: string) => argument === "--service-name" || argument.startsWith("--service-name="))) continue;
+    // Retain the original primary queue, including for single-operator stacks.
+    const identity = serviceName === "coprocessor-host-listener-consumer" ? "host-listener-consumer" : serviceName;
+    service.command = [...service.command, `--service-name=${identity}`];
+  }
+
   next.services = services;
   return next;
 };
@@ -959,12 +1022,19 @@ const applyDockerSocketRuntime = (services: ComposeDoc["services"]) => {
 
 /** Builds the generated compose override for one component. */
 const buildComposeOverride = async (component: string, plan: StackSpec) => {
-  if (component === "core") {
-    const platform = plan.kms.mode === "centralized" ? centralizedKmsCorePlatform() : undefined;
-    if (platform !== undefined) return { services: { "kms-core": { platform } } };
-  }
   if (component === "coprocessor") {
     return buildCoprocessorOverride(plan);
+  }
+  if (component === "core") {
+    const platform = centralizedKmsCorePlatform();
+    return {
+      services: {
+        "kms-core": {
+          image: kmsRenderOptionsFor(plan.versions.env.CORE_VERSION).coreImage,
+          ...(platform === undefined ? {} : { platform }),
+        },
+      },
+    };
   }
   if (component === "core-threshold") {
     // Dedicated threshold-cluster component (gen-keys + N cores + kms-init).
@@ -973,6 +1043,7 @@ const buildComposeOverride = async (component: string, plan: StackSpec) => {
       plan.kms,
       kmsRenderOptionsFor(plan.versions.env.CORE_VERSION),
       plan.kmsCoreVersionByNodeId,
+      plan.kmsMigrationByNodeId,
     );
   }
   if (component === "kms-connector" && plan.kms.mode === "threshold") {
@@ -1168,11 +1239,10 @@ const buildExtraCoprocessorListenerOverride = async (
 export const generatedComposeComponents = (plan: Pick<StackSpec, "overrides" | "kms">) =>
   new Set([
     "coprocessor",
-    ...(plan.kms.mode === "centralized" && centralizedKmsCorePlatform() !== undefined ? ["core"] : []),
     // Always generated: it carries the host Docker socket wiring for the e2e runner,
     // which depends on host facts rather than on any local build override.
     "test-suite",
-    ...(plan.kms.mode === "threshold" ? ["core-threshold", "kms-connector"] : []),
+    ...(plan.kms.mode === "threshold" ? ["core-threshold", "kms-connector"] : ["core"]),
     ...plan.overrides.flatMap((override) => GROUP_BUILD_COMPONENTS[override.group]),
   ]);
 

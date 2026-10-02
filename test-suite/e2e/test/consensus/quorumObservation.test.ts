@@ -3,11 +3,11 @@ import { observeForbiddenQuorum, type QuorumWindowSnapshot } from './quorumObser
 
 const expected = { keyId: '1', ciphertextDigest: '0xaa', snsCiphertextDigest: '0xbb' };
 const submissions = ['0x01', '0x02'].map(sender => ({ sender, ...expected }));
-function fixture(snapshot: (time: number) => QuorumWindowSnapshot) {
+function fixture(snapshot: (time: number) => QuorumWindowSnapshot, survivorCount = 2) {
   let time = 0;
   return {
     run: () => observeForbiddenQuorum({ read: async () => snapshot(time), expected,
-      authorizedSenders: ['0x01', '0x02', '0x03'], survivorCount: 2,
+      authorizedSenders: ['0x01', '0x02', '0x03'], survivorCount,
       windowMs: 100, maxStallMs: 30, pollMs: 10, submissionTimeoutMs: 100,
       now: () => time, sleep: async ms => { time += ms; } }),
     time: () => time,
@@ -19,6 +19,10 @@ async function rejects(run: () => Promise<unknown>, message: string) {
   expect(String(caught)).to.include(message);
 }
 describe('no-quorum observation validity', () => {
+  it('requires exactly one visible sender for the below-majority partition', async () => {
+    expect((await fixture(time => ({ block: time + 1, consensusCount: 0, submissions: submissions.slice(0, 1) }), 1).run()).samples).to.be.greaterThan(1);
+    await rejects(fixture(time => ({ block: time + 1, consensusCount: 0, submissions }), 1).run, 'additional senders');
+  });
   it('starts the full window only after healthy survivor submissions and observes progress inside it', async () => {
     const test = fixture(time => ({ block: time + 1, consensusCount: 0, submissions: time < 20 ? [] : submissions }));
     expect(await test.run()).to.deep.eq({ firstBlock: 21, lastBlock: 121, samples: 13 });

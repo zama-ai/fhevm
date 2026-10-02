@@ -1,5 +1,6 @@
 /** Scheduling evidence comes from persisted batch sizes, never timer-poll counts. */
 import { expect } from 'chai';
+import { parseGpuExecutionCounters, type GpuExecutionCounters } from './gpuExecutionEvidence';
 
 import { parseSchedulingClasses } from './helpers';
 import { InvalidRunError, looksLikeCoprocessorWorker, parseGauge, tfheWorkerMetricsUrl, withDeadline } from './validity';
@@ -7,6 +8,7 @@ import { InvalidRunError, looksLikeCoprocessorWorker, parseGauge, tfheWorkerMetr
 /** Counters that describe executed scheduling, read from a worker's exposition. */
 export interface SchedulingCounters {
   operator: number;
+  gpuExecution?: GpuExecutionCounters[];
   /** Persisted batches (histogram observation count). */
   batches: number;
   /** Transactions in persisted batches (histogram sum). */
@@ -51,6 +53,7 @@ export async function readSchedulingCounters(
   // checks that against the delta.
   return {
     operator,
+    gpuExecution: parseGpuExecutionCounters(exposition),
     batches: parseGauge(exposition, COUNTERS.batches) ?? 0,
     transactions: parseGauge(exposition, COUNTERS.transactions) ?? 0,
     itemsProcessed: parseGauge(exposition, COUNTERS.itemsProcessed) ?? 0,

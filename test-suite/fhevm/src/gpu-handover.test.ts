@@ -157,3 +157,20 @@ test('GPU fault recovery refuses a binary rebuilt with another feature set', () 
   expect(result.error).toContain('binary changed since this invocation');
   expect(existsSync(path.join(runtime,'../../restarted'))).toBe(false);
 }));
+
+test('the lifecycle campaign stops after failed GPU restoration', () => {
+  const runner=readFileSync(path.join(import.meta.dir,'../scripts/run-gpu-lifecycle-cases.sh'),'utf8');
+  const main=runner.slice(runner.indexOf('main() {'),runner.lastIndexOf('\nmain'));
+  const result=Bun.spawnSync(['bash','-c',`
+    CASE=all; ENV_DIR=/tmp; FAILURES=0
+    docker() { :; }; operator_count() { echo 3; }; cr_init() { :; }; cr_now() { echo now; }
+    case_gpu01() { :; }
+    case_gpu03() { GPU_LIFECYCLE_CLEANUP_FAILED=1; return 1; }
+    case_gpu02() { echo UNEXPECTED_LATER_CASE; }
+    case_gpu04() { echo UNEXPECTED_LATER_CASE; }
+    ${main}
+    main
+  `]);
+  expect(result.exitCode).toBe(1);
+  expect(result.stdout.toString()).not.toContain('UNEXPECTED_LATER_CASE');
+});

@@ -5,6 +5,8 @@ import { OVERRIDE_GROUPS } from "../types";
 export interface BuildReceipt {
   revision: string;
   mode: "checkout" | "published";
+  /** Cargo features the coprocessor image was built with, or "none". */
+  features: string;
   startedAt: string;
   completedAt: string;
   images: { ref: string; id: string; group: string }[];
@@ -17,6 +19,7 @@ export function validateBuildReceipt(value: unknown): BuildReceipt {
     /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d+)?Z$/.test(v) && Number.isFinite(Date.parse(v));
   if (typeof r.revision !== "string" || !/^[a-f0-9]{40}$/.test(r.revision) ||
       typeof r.mode !== "string" || !["checkout", "published"].includes(r.mode) ||
+      typeof r.features !== "string" || !/^(?:none|[A-Za-z0-9_\/-]+(?: [A-Za-z0-9_\/-]+)*)$/.test(r.features) ||
       !timestamp(r.startedAt) || !timestamp(r.completedAt) || Date.parse(r.completedAt) < Date.parse(r.startedAt) || !Array.isArray(r.images) ||
       r.images.some((i) => !i || typeof i !== "object" || Array.isArray(i) || typeof i.ref !== "string" || !i.ref.trim() ||
         typeof i.group !== "string" || !(OVERRIDE_GROUPS as readonly string[]).includes(i.group) || typeof i.id !== "string" || !sha.test(i.id))) {

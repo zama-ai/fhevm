@@ -16,7 +16,8 @@ import {
   COPROCESSOR_WALLET_INDICES,
   DEFAULT_TENANT_API_KEY,
   KMS_NODE_WALLET_INDICES,
-  MINIO_INTERNAL_URL,
+  KMS_STORAGE_PUBLISHED_URL,
+  OBJECT_STORE_INTERNAL_URL,
   POSTGRES_HOST,
   coprocessorDatabaseName,
   hostChainRuntimes,
@@ -32,6 +33,7 @@ import {
   kmsPartyIds,
   kmsPublicPrefix,
   kmsServicePort,
+  kmsTestKeygenProxyName,
   reconstructionThreshold,
 } from "../kms-party";
 import type { State } from "../types";
@@ -110,8 +112,8 @@ const applyBaseRuntimeEnv = (
   envs: Record<string, Record<string, string>>,
   state: Pick<State, "discovery">,
 ) => {
-  const keyPrefix = state.discovery?.minioKeyPrefix ?? "PUB";
-  const minioInternal = state.discovery?.endpoints.minioInternal ?? MINIO_INTERNAL_URL;
+  const keyPrefix = state.discovery?.objectStoreKeyPrefix ?? "PUB";
+  const objectStoreInternal = state.discovery?.endpoints.objectStoreInternal ?? OBJECT_STORE_INTERNAL_URL;
   const fheKeyId = state.discovery?.actualFheKeyId ?? state.discovery?.fheKeyId ?? predictedKeyId();
   const crsKeyId = state.discovery?.actualCrsKeyId ?? state.discovery?.crsKeyId ?? predictedCrsId();
 
@@ -124,12 +126,12 @@ const applyBaseRuntimeEnv = (
   envs["coprocessor"].DRIFT_REVERT_TEST_HOLD_SECS = "15";
   envs["coprocessor"].TENANT_API_KEY = DEFAULT_TENANT_API_KEY;
   envs["coprocessor"].COPROCESSOR_API_KEY = DEFAULT_TENANT_API_KEY;
-  envs["coprocessor"].AWS_ENDPOINT_URL = state.discovery?.endpoints.minioExternal ?? MINIO_INTERNAL_URL;
+  envs["coprocessor"].AWS_ENDPOINT_URL = state.discovery?.endpoints.objectStoreExternal ?? OBJECT_STORE_INTERNAL_URL;
   envs["coprocessor"].FHE_KEY_ID = fheKeyId;
-  envs["coprocessor"].KMS_PUBLIC_KEY = `${minioInternal}/kms-public/${keyPrefix}/PublicKey/${fheKeyId}`;
-  envs["coprocessor"].KMS_SERVER_KEY = `${minioInternal}/kms-public/${keyPrefix}/ServerKey/${fheKeyId}`;
-  envs["coprocessor"].KMS_SNS_KEY = `${minioInternal}/kms-public/${keyPrefix}/SnsKey/${fheKeyId}`;
-  envs["coprocessor"].KMS_CRS_KEY = `${minioInternal}/kms-public/${keyPrefix}/CRS/${crsKeyId}`;
+  envs["coprocessor"].KMS_PUBLIC_KEY = `${objectStoreInternal}/kms-public/${keyPrefix}/PublicKey/${fheKeyId}`;
+  envs["coprocessor"].KMS_SERVER_KEY = `${objectStoreInternal}/kms-public/${keyPrefix}/ServerKey/${fheKeyId}`;
+  envs["coprocessor"].KMS_SNS_KEY = `${objectStoreInternal}/kms-public/${keyPrefix}/SnsKey/${fheKeyId}`;
+  envs["coprocessor"].KMS_CRS_KEY = `${objectStoreInternal}/kms-public/${keyPrefix}/CRS/${crsKeyId}`;
 };
 
 /** Applies compatibility-driven env aliases and URL rewrites. */
@@ -292,7 +294,7 @@ const applyProtocolConfigKmsGlobals = (
  * Centralized mode: the single KMS node's ProtocolConfig params the threshold path sets per-node.
  * The rest (tx-sender, IP, storage URL, signer, CA cert) already come from the templates and
  * discovery. storagePrefix is "PUB" for the centralized core (PUB-p{i} is threshold-only), so it
- * tracks the discovered minioKeyPrefix. Must run after applyDiscoveryEnv.
+ * tracks the discovered objectStoreKeyPrefix. Must run after applyDiscoveryEnv.
  */
 const applyKmsCentralizedHostEnv = (
   envs: Record<string, Record<string, string>>,
@@ -307,7 +309,7 @@ const applyKmsCentralizedHostEnv = (
   applyProtocolConfigKmsGlobals(hostSc, plan, state.bootstrapPending?.target.env.CORE_VERSION);
   hostSc.KMS_NODE_PARTY_ID_0 = "1";
   hostSc.KMS_NODE_MPC_IDENTITY_0 = kmsCoreName(1);
-  hostSc.KMS_NODE_STORAGE_PREFIX_0 = state.discovery?.minioKeyPrefix ?? "PUB";
+  hostSc.KMS_NODE_STORAGE_PREFIX_0 = state.discovery?.objectStoreKeyPrefix ?? "PUB";
 };
 
 /**
@@ -361,7 +363,7 @@ const applyKmsThresholdGatewayEnv = async (
     gw[`KMS_TX_SENDER_ADDRESS_${idx}`] = wallet.address;
     // external_url: the core does url::Url::parse() and requires host+port, so it needs a scheme.
     gw[`KMS_NODE_IP_ADDRESS_${idx}`] = `http://${kmsCoreName(party)}:${kmsMpcPort(party)}`;
-    gw[`KMS_NODE_STORAGE_URL_${idx}`] = `${MINIO_INTERNAL_URL}/kms-public`;
+    gw[`KMS_NODE_STORAGE_URL_${idx}`] = `${KMS_STORAGE_PUBLISHED_URL}/kms-public`;
     // Per-node KmsNodeParams the host ProtocolConfig deploy reads. partyId is 1-based
     // (the env index is 0-based), mpcIdentity must match the node's TLS cert CN (gen-keys sets
     // --tls-subject to the core name), and storagePrefix is the node's public vault prefix. The
@@ -373,7 +375,9 @@ const applyKmsThresholdGatewayEnv = async (
     hostSc[`KMS_NODE_IP_${idx}`] = gw[`KMS_NODE_IP_ADDRESS_${idx}`];
     hostSc[`KMS_NODE_STORAGE_URL_${idx}`] = gw[`KMS_NODE_STORAGE_URL_${idx}`];
     // KMS_SIGNER_ADDRESS_{idx} comes from per-party signing-key discovery.
-    const endpoint = `http://${kmsCoreName(party)}:${kmsServicePort(party)}`;
+    const endpoint = plan.kms.insecureTestKeygen
+      ? `http://${kmsTestKeygenProxyName(party)}:3000`
+      : `http://${kmsCoreName(party)}:${kmsServicePort(party)}`;
     const dbName = kmsConnectorDbName(party);
     if (party === 1) {
       envs["kms-connector"].KMS_CONNECTOR_KMS_CORE_ENDPOINTS = endpoint;
@@ -499,7 +503,7 @@ const buildInstanceEnvs = async (
     const opBucket = `coproc-${index}`;
     envs["gateway-sc"][`COPROCESSOR_TX_SENDER_ADDRESS_${index}`] = wallet.address;
     envs["gateway-sc"][`COPROCESSOR_SIGNER_ADDRESS_${index}`] = wallet.address;
-    envs["gateway-sc"][`COPROCESSOR_S3_BUCKET_URL_${index}`] = `${MINIO_INTERNAL_URL}/${opBucket}`;
+    envs["gateway-sc"][`COPROCESSOR_S3_BUCKET_URL_${index}`] = `${OBJECT_STORE_INTERNAL_URL}/${opBucket}`;
     envs["host-sc"][`COPROCESSOR_SIGNER_ADDRESS_${index}`] = wallet.address;
     if (index === 0) {
       envs["coprocessor"].TX_SENDER_PRIVATE_KEY = wallet.privateKey;
@@ -710,10 +714,10 @@ export const renderEnvMaps = async (
   const compat = compatPolicyForState(plan);
 
   const versionsEnv: Record<string, string> = { ...plan.versions.env, ...compat.composeEnv };
-  // Threshold + Test params: keygen/crsgen triggers read ${KEYGEN_PARAMS_TYPE}
-  // from the compose env (versions.env) → ParamsType.Test (=1).
-  if (plan.kms.mode === "threshold" && plan.kms.fheParams === "Test") {
-    versionsEnv.KEYGEN_PARAMS_TYPE = "1";
+  // Bind keygen/crsgen triggers explicitly to the selected parameter family.
+  // Do not inherit a stale Test value when opting into Default test keygen.
+  if (plan.kms.mode === "threshold") {
+    versionsEnv.KEYGEN_PARAMS_TYPE = plan.kms.fheParams === "Test" ? "1" : "0";
   }
   return { componentEnvs: envs, instanceEnvs, versionsEnv };
 };

@@ -965,6 +965,8 @@ mod tests {
             transaction_hash: Some(alloy::primitives::B256::repeat_byte(9)),
             ..Default::default()
         };
+        let replay_activation = activation.clone();
+        let replay_log = log.clone();
         insert_key_activation_event(
             &mut tx,
             activation,
@@ -1010,6 +1012,68 @@ mod tests {
         assert_eq!(migration.len(), 1);
         assert_eq!(migration[0].key_id, migration_request_id);
         assert_eq!(migration[0].existing_key_id, key_id);
+        // Exercise the actual download -> digest -> parser -> stage boundary.
+        // A matching digest does not make malformed serialization ready.
+        #[derive(Clone)]
+        struct MalformedTransport;
+        #[async_trait::async_trait]
+        impl super::super::aws_s3::AwsS3Interface for MalformedTransport {
+            async fn get_bucket_key(
+                &self,
+                _: &str,
+                _: &str,
+                _: &str,
+            ) -> anyhow::Result<tokio_util::bytes::Bytes> {
+                Ok(tokio_util::bytes::Bytes::from_static(
+                    b"malformed-key-with-valid-digest",
+                ))
+            }
+        }
+        let mut malformed = PendingCompressedKeyMaterial {
+            chain_id: migration[0].chain_id,
+            block_hash: migration[0].block_hash.clone(),
+            block_number: migration[0].block_number,
+            transaction_hash: migration[0].transaction_hash.clone(),
+            key_id: migration[0].key_id.clone(),
+            existing_key_id: migration[0].existing_key_id.clone(),
+            key_digest: super::super::digest::digest_key(
+                b"malformed-key-with-valid-digest",
+            )
+            .to_vec(),
+            storage_urls: vec![
+                "https://test-bucket.s3.eu-west-1.amazonaws.com/".to_owned(),
+            ],
+        };
+        for valid_digest in [false, true] {
+            if !valid_digest {
+                malformed.key_digest = vec![0; 32];
+            } else {
+                malformed.key_digest = super::super::digest::digest_key(
+                    b"malformed-key-with-valid-digest",
+                )
+                .to_vec();
+            }
+            let error =
+                super::super::download_and_store_compressed_key_material(
+                    &mut tx,
+                    &MalformedTransport,
+                    &malformed,
+                )
+                .await
+                .expect_err("invalid bytes cannot become ready");
+            assert_eq!(
+                error.to_string().contains("Invalid Key digest"),
+                !valid_digest
+            );
+            if valid_digest {
+                assert!(matches!(error.downcast_ref::<fhevm_engine_common::types::FhevmError>(),
+                    Some(fhevm_engine_common::types::FhevmError::DeserializationError(_))),
+                    "matching-digest payload must reach the real parser: {error}");
+            }
+            let untouched: bool = sqlx::query_scalar("SELECT status='pending' AND key_content_compressed_xof_keyset IS NULL FROM kms_key_activation_events WHERE key_id=$1")
+                .bind(&migration_request_id).fetch_one(&mut *tx).await?;
+            assert!(untouched, "failed validation partially staged material");
+        }
         set_ready_compressed_key_material(&mut tx, &migration[0], &compressed)
             .await?;
         tx.commit().await?;
@@ -1053,6 +1117,28 @@ mod tests {
         .fetch_one(&pool)
         .await?;
         assert_eq!(status, "activated");
+        // Redeliver the identical decoded event through the production insertion
+        // function, then run the ordinary activation pass again.
+        let mut replay = pool.begin().await?;
+        insert_key_activation_event(
+            &mut replay,
+            replay_activation,
+            replay_log,
+            ChainId::try_from(chain_id as u64)?,
+            &migration_block,
+            10,
+        )
+        .await?;
+        assert!(apply_ready_compressed_key_materials(&mut replay, Some(10))
+            .await?
+            .is_empty());
+        let count: i64 = sqlx::query_scalar("SELECT count(*) FROM keys WHERE key_id=$1 AND pks_key=$2 AND sks_key=$3 AND compressed_xof_keyset=$4")
+            .bind(&key_id).bind(&legacy_public).bind(&legacy_server).bind(&compressed).fetch_one(&mut *replay).await?;
+        assert_eq!(count, 1, "replay must preserve exactly one logical key");
+        let count: i64 = sqlx::query_scalar("SELECT count(*) FROM kms_key_activation_events WHERE key_id=$1 AND status='activated'")
+            .bind(&migration_request_id).fetch_one(&mut *replay).await?;
+        assert_eq!(count, 1, "replay must not reset the activation");
+        replay.commit().await?;
         Ok(())
     }
 }

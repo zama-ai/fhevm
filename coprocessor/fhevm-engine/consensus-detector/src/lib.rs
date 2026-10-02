@@ -1,5 +1,8 @@
-//! Consensus Detector (`consensus-detector`) — watches operator S3 buckets for
-//! unanimous state-hash agreement during an active GCS blue-green upgrade.
+//! Consensus Detector (`consensus-detector`) runs two independent consensus
+//! responsibilities: GCS upgrade state-hash agreement and consensus_epoch-scoped
+//! ciphertext-manifest publication and verification.
+//!
+//! ## GCS upgrade state-hash agreement
 //!
 //! At startup the service queries the on-chain `GatewayConfig` contract for the
 //! set of coprocessor signers and resolves each one's `s3BucketUrl`. That URL
@@ -34,6 +37,27 @@
 //! **Timeout.** If a track is still un-anchored `commitment_timeout` after `end_block`,
 //! `unanimity_consensus_timeout` is emitted (and re-emitted each pass) until the
 //! upgrade-controller rolls the dry-run back.
+//!
+//! ## Ciphertext manifest lifecycle
+//!
+//! Each stack independently discovers completed ciphertext blocks, publishes signed
+//! manifests to its operator S3 bucket, downloads peer manifests, verifies their
+//! registered signers and canonical identities, compares exact commitments, and
+//! persists drift evidence. Manifest results are observation only: they do not alter
+//! Gateway readiness or computation state.
+//!
+//! Blue runs manifest publication and verification in its pinned consensus_epoch during
+//! normal operation and throughout an upgrade. Green is deployed with the same
+//! workers parked, activates them only at `DryRunStarted`, and uses its separately
+//! pinned consensus_epoch. Consensus epoch-qualified database identities and S3 keys let both
+//! stacks operate concurrently without overwriting or synchronizing their mutable
+//! work. Green parks again on rollback; after cutover it continues as the live stack,
+//! while the retired Blue instance is fenced by the stack-version transition.
+//!
+//! Manifest archive and work-state tables live in `public`, while ciphertext
+//! discovery follows each stack's database `search_path`. This preserves shared
+//! audit history while keeping Blue and Green computation inputs isolated. See
+//! `docs/s3-coprocessor-consensus.md` for the implemented protocol.
 
 use std::collections::{HashMap, HashSet};
 use std::sync::Arc;
@@ -52,6 +76,7 @@ use tokio::sync::RwLock;
 use tokio_util::sync::CancellationToken;
 use tracing::{debug, error, info, warn, Level};
 
+pub mod manifest_consensus;
 pub mod s3;
 pub mod state_hash;
 
@@ -86,15 +111,20 @@ const FHE_TRIVIAL_ENCRYPT_OPCODE: i16 = 24;
 /// exactly one) gives robustness if a single block stalls on one operator.
 const MAX_ANCHOR_CANDIDATES: i64 = 8;
 
-#[derive(Debug, Clone)]
+#[derive(Clone)]
 pub struct Config {
     pub service_name: String,
     pub database_url: DatabaseURL,
     pub database_pool_size: u32,
+    /// False for the live Blue stack (`public`), true for Green
+    /// (`"gcs-<version>",public`).
+    pub gcs_mode: bool,
     /// On-chain `GatewayConfig` contract address. Queried at startup to
     /// resolve the operator S3 buckets.
     pub gateway_config_address: Address,
     pub log_level: Level,
+    pub metrics_addr: Option<String>,
+    pub gauge_update_interval_secs: Option<u32>,
     /// Fallback poll interval used while waiting for notifications so a missed
     /// NOTIFY (e.g. dropped connection) still gets re-checked eventually.
     pub poll_interval: Duration,
@@ -104,12 +134,17 @@ pub struct Config {
     /// Hard cap on how long we wait for unanimity before giving up and
     /// emitting `unanimity_consensus_timeout`.
     pub commitment_timeout: Duration,
-    /// This operator's S3 bucket. `None` disables GCS uploads (read-only).
+    /// This operator's S3 bucket. `None` represents the explicit CLI value
+    /// `--my-bucket=none` and disables uploads and manifest work.
     pub my_bucket: Option<String>,
-    /// S3 endpoint override (e.g. `http://minio:9000`).
+    /// S3 endpoint override (e.g. `http://object-store:9000`).
     pub s3_endpoint: Option<String>,
     /// Max pending blocks processed per state_hash pass.
     pub state_hash_batch_limit: i64,
+    /// Consensus epoch-scoped manifest publication and peer verification.
+    pub manifest_consensus: manifest_consensus::Config,
+    /// Signer used for this consensus_epoch's immutable manifests.
+    pub manifest_signer: Option<fhevm_engine_common::types::CoproSigner>,
 }
 
 impl Default for Config {
@@ -117,15 +152,20 @@ impl Default for Config {
         Self {
             service_name: "consensus-detector".to_owned(),
             database_url: DatabaseURL::default(),
-            database_pool_size: 4,
+            database_pool_size: 16,
+            gcs_mode: false,
             gateway_config_address: Address::ZERO,
             log_level: Level::INFO,
+            metrics_addr: None,
+            gauge_update_interval_secs: None,
             poll_interval: Duration::from_secs(30),
             commitment_poll_interval: Duration::from_secs(5),
             commitment_timeout: Duration::from_secs(60),
             my_bucket: None,
             s3_endpoint: None,
             state_hash_batch_limit: 256,
+            manifest_consensus: manifest_consensus::Config::default(),
+            manifest_signer: None,
         }
     }
 }
@@ -147,6 +187,9 @@ struct UnanimityPayload<'a> {
     block_height: i64,
     block_hash: &'a str,
 }
+
+#[cfg(feature = "test-failpoints")]
+mod test_host_report;
 
 #[derive(Debug, Error)]
 pub enum Error {
@@ -487,35 +530,13 @@ struct WindowState {
     /// Tracked proposal + per-chain window set; a change resets every track.
     tracked_window: Option<HostWindows>,
     timeout: WindowTimeout,
-    /// Stall detection: `chain_id -> (watermark, last-advance instant)`; reset with the window set.
-    host_progress: HashMap<i64, (i64, Instant)>,
 }
 
-/// Returns true if the timeout clock should start: either every chain finished its
-/// window, or one chain made no progress for `commitment_timeout` (a stuck listener
-/// that would otherwise leave the upgrade running forever). Also updates each chain's
-/// recorded progress.
-fn should_arm_timeout(
-    windows: &[(i64, i64, i64)],
-    watermarks: &HashMap<i64, i64>,
-    progress: &mut HashMap<i64, (i64, Instant)>,
-    now: Instant,
-    commitment_timeout: Duration,
-) -> bool {
-    let mut all_reached = true;
-    let mut stalled = false;
-    for &(chain_id, _start, end) in windows {
-        let watermark = watermarks.get(&chain_id).copied().unwrap_or(-1);
-        let entry = progress.entry(chain_id).or_insert((watermark, now));
-        if watermark > entry.0 {
-            *entry = (watermark, now);
-        }
-        if watermark < end {
-            all_reached = false;
-            stalled |= now.duration_since(entry.1) >= commitment_timeout;
-        }
-    }
-    all_reached || stalled
+/// Every chain finished its window.
+fn should_arm_timeout(windows: &[(i64, i64, i64)], watermarks: &HashMap<i64, i64>) -> bool {
+    windows
+        .iter()
+        .all(|&(chain_id, _, end)| watermarks.get(&chain_id).is_some_and(|&w| w >= end))
 }
 
 /// Host side is ready: every chain anchored and at least one anchor is non-trivial.
@@ -525,18 +546,21 @@ fn host_consensus_ready(host_tracks: &HashMap<i64, ConsensusTrack>) -> bool {
         && host_tracks.values().any(|t| t.anchored_nontrivial)
 }
 
-/// `(chain_id, block)` anchors to notify: host anchors only once `host_consensus_ready`
-/// holds, plus the Gateway anchor whenever it is set.
+/// `(chain_id, block)` anchors to notify. Each host track is emitted as soon as it
+/// anchors (per-chain), so `host_consensus_reached` reflects that chain's OWN consensus
+/// and never waits on a slower/idle sibling chain. Cutover stays atomic and all-quiet-safe:
+/// the upgrade-controller's cutover gate requires every host + the Gateway latch AND at least
+/// one host chain with real (non-trivial) work in its window — so decoupling the per-chain
+/// latch here cannot let a partial or all-quiet fleet cut over. The Gateway anchor is
+/// emitted independently as before.
 fn unanimity_notifications(
     host_tracks: &HashMap<i64, ConsensusTrack>,
     gateway: &ConsensusTrack,
 ) -> Vec<(i64, i64)> {
     let mut out = Vec::new();
-    if host_consensus_ready(host_tracks) {
-        for t in host_tracks.values() {
-            if let Some(block) = t.anchored {
-                out.push((t.chain_id, block));
-            }
+    for t in host_tracks.values() {
+        if let Some(block) = t.anchored {
+            out.push((t.chain_id, block));
         }
     }
     if let Some(block) = gateway.anchored {
@@ -564,7 +588,6 @@ async fn consensus_pass(
         host_tracks.clear();
         gateway.reset();
         window_state.timeout = WindowTimeout::NotArmed;
-        window_state.host_progress.clear();
         window_state.tracked_window = active.clone();
     }
     let Some((proposal_id, proposal_block, windows)) = active else {
@@ -609,9 +632,11 @@ async fn consensus_pass(
     }
 
     // Re-emit each anchor every pass so a controller that missed the NOTIFY still
-    // latches. Host anchors are withheld until host_consensus_ready holds (all host
-    // anchored + >=1 non-trivial), so the controller can't cut over on an all-quiet
-    // fleet; the Gateway anchor is independent.
+    // latches. Each host anchor is emitted per-chain the moment it anchors, so its
+    // host_consensus_reached latch reflects that chain alone and never waits on a
+    // slower/idle sibling. Atomic cutover is preserved by the controller's own gate
+    // (every host + Gateway latched AND >=1 host chain with non-trivial work), so
+    // decoupling the latch here can't let a partial or all-quiet fleet cut over.
     for (chain_id, block) in unanimity_notifications(host_tracks, gateway) {
         notify_unanimity(
             pool,
@@ -640,20 +665,17 @@ async fn consensus_pass(
                 for &(chain_id, _, _) in &windows {
                     watermarks.insert(chain_id, gcs_host_watermark(pool, chain_id).await?);
                 }
-                let now = Instant::now();
-                if should_arm_timeout(
-                    &windows,
-                    &watermarks,
-                    &mut window_state.host_progress,
-                    now,
-                    commitment_timeout,
-                ) {
-                    window_state.timeout = WindowTimeout::Armed(now + commitment_timeout);
+                // A stuck listener still ends once uploads are closed; by then peers have decided.
+                if should_arm_timeout(&windows, &watermarks)
+                    || state_hash::upload_window(pool, commitment_timeout).await?.1
+                {
+                    window_state.timeout =
+                        WindowTimeout::Armed(Instant::now() + commitment_timeout);
                     info!(
                         chains = windows.len(),
                         max_end_block = max_end,
                         timeout_secs = commitment_timeout.as_secs(),
-                        "arming consensus timeout (all chains reached end_block, or a host listener stalled)"
+                        "arming consensus timeout (all chains reached end_block, or uploads closed)"
                     );
                 }
             }
@@ -740,6 +762,7 @@ where
         payload = raw_payload,
         "new_operator_added received (placeholder — operator set refresh not yet wired)"
     );
+
     // Suppress unused-variable warnings without dropping the wiring.
     let _ = (s3_urls, s3_service);
     Ok(())
@@ -747,13 +770,17 @@ where
 
 /// Sealed Gateway blocks for which this operator has already produced a local
 /// `state_hash` row — the candidate set for the Gateway consensus poll. Bounded
-/// to `[gw_start, gw_tip)` so only sealed blocks are polled, and capped to the
+/// to `[gw_start, gw_tip]` so only sealed blocks are polled, and capped to the
 /// earliest [`MAX_ANCHOR_CANDIDATES`]. The poll reads every operator's S3 blob,
 /// including our own; our own object is uploaded only for blocks we've hashed
 /// locally (see `upload_pending_gw_state_hashes`). So a block with no local
 /// `state_hash` row is one we'll never upload — our own slot stays empty and
 /// unanimity is unreachable — hence restricting candidates to locally-produced
 /// rows avoids polling peers for a block we ourselves can't contribute to.
+///
+/// The anchor block (`= gw_start`) is included even when it equals `gw_tip`: a
+/// `state_hash` row exists for it only if hash generation already produced one
+/// under the synthetic-anchor seal, so admitting it here is safe by construction.
 async fn pending_gw_consensus_blocks(
     pool: &Pool<Postgres>,
     gw_chain_id: i64,
@@ -762,7 +789,8 @@ async fn pending_gw_consensus_blocks(
 ) -> Result<Vec<i64>, Error> {
     let sql = format!(
         "SELECT block_number FROM {GCS_SCHEMA_QUOTED}.state_hash
-          WHERE chain_id = $1 AND block_number >= $2 AND block_number < $3
+          WHERE chain_id = $1 AND block_number >= $2
+            AND (block_number < $3 OR block_number = $2)
           ORDER BY block_number
           LIMIT {MAX_ANCHOR_CANDIDATES}"
     );
@@ -783,7 +811,7 @@ async fn build_s3_client(config: &Config) -> aws_sdk_s3::Client {
     let sdk_config = loader.load().await;
     let mut builder = aws_sdk_s3::config::Builder::from(&sdk_config);
     if config.s3_endpoint.is_some() {
-        // path-style addressing is required by minio / localstack
+        // path-style addressing is required by self-hosted S3-compatible stores / localstack
         builder = builder.force_path_style(true);
     }
     aws_sdk_s3::Client::from_conf(builder.build())
@@ -819,6 +847,8 @@ where
         "starting consensus-detector"
     );
 
+    fhevm_engine_common::metrics_server::spawn(config.metrics_addr.clone(), cancel.child_token());
+
     let s3_service = S3Service::new(provider, config.gateway_config_address);
     let urls = s3_service.refresh_signer_urls().await?;
     if urls.is_empty() {
@@ -837,12 +867,14 @@ where
         .timeout(Duration::from_secs(5))
         .build()?;
 
-    // GCS upload only when --my-bucket is set.
+    let s3_client = Arc::new(build_s3_client(&config).await);
+
+    // GCS upload only when --my-bucket names a real bucket.
     let s3 = if config.my_bucket.is_none() {
-        info!("--my-bucket not set; GCS upload disabled");
+        info!("--my-bucket=none; GCS upload disabled");
         None
     } else {
-        Some(Arc::new(build_s3_client(&config).await))
+        Some(Arc::clone(&s3_client))
     };
     {
         let pool = pool.clone();
@@ -855,14 +887,30 @@ where
             // it, no GCS state hashes get uploaded and the poll always times
             // out. If it exits unexpectedly, cancel the parent so the service
             // crashes and is restarted by its supervisor.
-            if let Err(e) =
-                state_hash::run(pool, s3, bucket, batch_limit, gw_chain_id, worker_cancel).await
+            if let Err(e) = state_hash::run(
+                pool,
+                s3,
+                bucket,
+                batch_limit,
+                gw_chain_id,
+                config.commitment_timeout,
+                worker_cancel,
+            )
+            .await
             {
                 error!(error = %e, "state_hash worker exited with error; shutting down consensus-detector");
                 parent_cancel.cancel();
             }
         });
     }
+
+    manifest_consensus::start(
+        &config,
+        pool.clone(),
+        Arc::clone(&s3_client),
+        cancel.clone(),
+    )
+    .await?;
 
     let channels = [
         NEW_BLOCK_CHANNEL,
@@ -881,7 +929,6 @@ where
     let mut window_state = WindowState {
         tracked_window: None,
         timeout: WindowTimeout::NotArmed,
-        host_progress: HashMap::new(),
     };
 
     // The consensus poll cadence: re-attempt S3 every commitment_poll_interval,
@@ -957,8 +1004,6 @@ where
 mod tests {
     use super::*;
 
-    const CT: Duration = Duration::from_secs(60);
-
     const GW: i64 = 54321;
 
     fn track(chain_id: i64, anchored: Option<i64>, nontrivial: bool) -> ConsensusTrack {
@@ -986,116 +1031,60 @@ mod tests {
     }
 
     #[test]
-    fn unanimity_notifications_gate_hosts_on_nontrivial() {
+    fn unanimity_notifications_emit_each_anchored_host_independently() {
         let gateway = track(GW, Some(500), true);
         let sorted = |mut v: Vec<(i64, i64)>| {
             v.sort_unstable();
             v
         };
 
-        // 2 chains, 0 FHE ops (both empty), 1 GW input -> only GW notified -> NO cutover.
-        let all_quiet =
-            HashMap::from([(1, track(1, Some(5), false)), (2, track(2, Some(6), false))]);
-        assert_eq!(
-            unanimity_notifications(&all_quiet, &gateway),
-            vec![(GW, 500)]
-        );
+        // Each anchored host is notified as soon as IT anchors — regardless of triviality
+        // or whether sibling chains have anchored. The all-quiet / partial-fleet guard now
+        // lives in the controller's cutover gate, not by withholding notifications here.
 
-        // 2 chains, 1 FHE op (chain 2), chain 1 empty, 1 GW input -> all notified -> cutover.
-        let mixed = HashMap::from([(1, track(1, Some(5), false)), (2, track(2, Some(6), true))]);
+        // Both anchored (even all-trivial): both hosts + GW notified now.
+        let both = HashMap::from([(1, track(1, Some(5), false)), (2, track(2, Some(6), false))]);
         assert_eq!(
-            sorted(unanimity_notifications(&mixed, &gateway)),
+            sorted(unanimity_notifications(&both, &gateway)),
             vec![(1, 5), (2, 6), (GW, 500)]
         );
 
-        // 1 chain, 0 FHE ops (empty), 1 GW input -> only GW notified -> NO cutover.
-        let single_quiet = HashMap::from([(1, track(1, Some(5), false))]);
+        // Only one host anchored so far: that host + GW notified — no waiting on the sibling.
+        let partial = HashMap::from([(1, track(1, Some(5), true)), (2, track(2, None, false))]);
         assert_eq!(
-            unanimity_notifications(&single_quiet, &gateway),
-            vec![(GW, 500)]
-        );
-        // 1 chain, 1 FHE op, 1 GW input -> host + GW notified -> cutover.
-        let single_nt = HashMap::from([(1, track(1, Some(5), true))]);
-        assert_eq!(
-            sorted(unanimity_notifications(&single_nt, &gateway)),
+            sorted(unanimity_notifications(&partial, &gateway)),
             vec![(1, 5), (GW, 500)]
         );
+
+        // Single chain anchored: host + GW notified.
+        let single = HashMap::from([(1, track(1, Some(5), false))]);
+        assert_eq!(
+            sorted(unanimity_notifications(&single, &gateway)),
+            vec![(1, 5), (GW, 500)]
+        );
+
+        // No host anchored yet: only GW.
+        let none: HashMap<i64, ConsensusTrack> = HashMap::new();
+        assert_eq!(unanimity_notifications(&none, &gateway), vec![(GW, 500)]);
     }
 
     #[test]
     fn arm_timeout_when_all_chains_reached_end_block() {
         let windows = vec![(1, 0, 100), (2, 0, 200)];
-        let watermarks = HashMap::from([(1, 100), (2, 200)]);
-        let mut progress = HashMap::new();
         assert!(should_arm_timeout(
             &windows,
-            &watermarks,
-            &mut progress,
-            Instant::now(),
-            CT
+            &HashMap::from([(1, 100), (2, 200)])
         ));
     }
 
     #[test]
-    fn wait_while_a_chain_is_below_end_and_recently_seen() {
+    fn wait_while_a_chain_is_below_end_or_unseen() {
         let windows = vec![(1, 0, 100), (2, 0, 200)];
-        let watermarks = HashMap::from([(1, 100), (2, 150)]);
-        let mut progress = HashMap::new();
         assert!(!should_arm_timeout(
             &windows,
-            &watermarks,
-            &mut progress,
-            Instant::now(),
-            CT
+            &HashMap::from([(1, 100), (2, 150)])
         ));
-    }
-
-    #[test]
-    fn progressing_chain_never_stalls() {
-        let windows = vec![(1, 0, 100)];
-        let mut progress = HashMap::new();
-        let t0 = Instant::now();
-        // Below end_block, first observation → wait.
-        assert!(!should_arm_timeout(
-            &windows,
-            &HashMap::from([(1, 40)]),
-            &mut progress,
-            t0,
-            CT
-        ));
-        // Advanced after commitment_timeout — progress refreshes, so not stalled.
-        assert!(!should_arm_timeout(
-            &windows,
-            &HashMap::from([(1, 70)]),
-            &mut progress,
-            t0 + CT + Duration::from_secs(1),
-            CT,
-        ));
-    }
-
-    #[test]
-    fn stalled_listener_arms_after_commitment_timeout() {
-        // Chain 1 reached end_block; chain 2's GCS watermark is frozen below it.
-        let windows = vec![(1, 0, 100), (2, 0, 100)];
-        let watermarks = HashMap::from([(1, 100), (2, 40)]);
-        let mut progress = HashMap::new();
-        let t0 = Instant::now();
-        // First observation: not yet stalled.
-        assert!(!should_arm_timeout(
-            &windows,
-            &watermarks,
-            &mut progress,
-            t0,
-            CT
-        ));
-        // Still frozen commitment_timeout later → stalled listener → arm.
-        assert!(should_arm_timeout(
-            &windows,
-            &watermarks,
-            &mut progress,
-            t0 + CT + Duration::from_millis(1),
-            CT,
-        ));
+        assert!(!should_arm_timeout(&windows, &HashMap::from([(1, 100)])));
     }
 
     #[test]

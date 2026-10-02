@@ -23,6 +23,7 @@ test("actual CI receipt requires a cold clean build and binds successful immutab
     expect(call("finish", "", { TEST_REVISION: "b".repeat(40) }).exitCode).not.toBe(0);
     expect(call("finish").exitCode).toBe(0);
     expect(JSON.parse(readFileSync(receipt, "utf8")).images).toEqual(images);
+    expect(JSON.parse(readFileSync(receipt, "utf8")).features).toBe("none");
     const identity = path.join(dir, "identities.env");
     writeFileSync(identity, `image_fhevm-test-suite-e2e-debug=${images[0].id} (suite:local)\nimage_coprocessor-tfhe-worker=${images[1].id} (worker:local)\n`);
     expect(call("attach", identity).exitCode).toBe(0);
@@ -52,7 +53,7 @@ else exit 91; fi
 `, { mode: 0o755 });
     const revision = "a".repeat(40), suite = `sha256:${"1".repeat(64)}`, worker = `sha256:${"2".repeat(64)}`;
     const observed = { "image_fhevm-test-suite-e2e-debug": `${suite} (suite:local)`, "image_coprocessor-tfhe-worker": `${worker} (worker:local)` };
-    const identities = { ...observed, ...receiptArtifacts({ revision, mode: "checkout", startedAt: "2026-09-13T00:00:00Z", completedAt: "2026-09-13T00:01:00Z",
+    const identities = { ...observed, ...receiptArtifacts({ revision, mode: "checkout", features: "none", startedAt: "2026-09-13T00:00:00Z", completedAt: "2026-09-13T00:01:00Z",
       images: [{ ref: "suite:local", id: suite, group: "test-suite" }, { ref: "worker:local", id: worker, group: "coprocessor" }] }, observed) };
     const file = path.join(dir, "identity.env");
     writeFileSync(file, Object.entries(identities).map(([k,v]) => `${k}=${v}\n`).join(""));

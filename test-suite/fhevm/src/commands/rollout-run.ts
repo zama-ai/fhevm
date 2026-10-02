@@ -25,6 +25,7 @@ import type { LocalOverride, State, UpOptions, VersionBundle, VersionTarget } fr
 import { ensureDir, writeJson } from "../utils/fs";
 import { partyContainers, setRunning, waitForPartiesRunning, waitForPartiesStopped } from "./kms-generation";
 import { type RolloutReceipt, createRolloutReceipt } from "./rollout-receipt";
+import { prepareRolloutSolidity } from "./rollout-solidity";
 import { test as runTest } from "./test";
 
 type RolloutUpOptions = {
@@ -42,6 +43,7 @@ type RolloutKmsNodeUpgradeOptions = {
   lockFile: string;
 };
 type RolloutKmsOperatorUpgradeOptions = RolloutKmsNodeUpgradeOptions & {
+  migration?: NonNullable<State["kmsMigrationByNodeId"]>[string];
   overrides?: LocalOverride[];
 };
 type RolloutVersionLockOptions = {
@@ -51,6 +53,8 @@ type RolloutVersionLockOptions = {
 };
 
 type RolloutTestOptions = {
+  /** Resolved baseline commit for fixtures that must also run on an older host ABI. */
+  solidityLibraryRevision?: string;
   grep?: string;
   network?: string;
   noHardhatCompile?: boolean;
@@ -132,6 +136,12 @@ const runRolloutTest = async (receipt: RolloutReceipt, profile: string, options:
   await receipt.record("refresh-test-suite", "recreated test-suite container with current env", {
     details: { profile },
   });
+  if (options.solidityLibraryRevision) {
+    const library = await prepareRolloutSolidity(options.solidityLibraryRevision);
+    await receipt.record("fixture-solidity", "compiled fixtures against pinned baseline Solidity", {
+      details: { profile, ...library },
+    });
+  }
   await runTest(profile, {
     network: options.network ?? "staging",
     verbose: false,

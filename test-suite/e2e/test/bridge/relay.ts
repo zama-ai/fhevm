@@ -96,7 +96,7 @@ async function deliver(
     message: string;
   },
   skipCompose: boolean,
-): Promise<{ dstHandles: string[]; compose: PendingCompose }> {
+): Promise<{ dstHandles: string[]; compose: PendingCompose; receiveReceipt: ethers.TransactionReceipt }> {
   const endpoint = new ethers.Contract(ctx.dstEndpoint, ENDPOINT_ABI, ctx.dstSigner);
   const lib = new ethers.Contract(
     await endpoint.defaultReceiveLibrary(packet.origin.srcEid),
@@ -124,7 +124,7 @@ async function deliver(
   };
 
   if (!skipCompose) await relayCompose(ctx, compose);
-  return { dstHandles, compose };
+  return { dstHandles, compose, receiveReceipt: recvReceipt };
 }
 
 /** Relays one bridged message, returning dst handles in source handleList order; with `skipCompose`, only `lzReceive` runs (dst app's `onConfidentialBridgeReceived` left pending for a later {@link relayCompose}). */
@@ -132,18 +132,18 @@ export async function relayBridgeMessage(
   sendReceipt: ethers.TransactionReceipt,
   ctx: RelayContext,
   opts: { skipCompose?: boolean } = {},
-): Promise<{ dstHandles: string[]; guid: string; compose: PendingCompose }> {
+): Promise<{ dstHandles: string[]; guid: string; compose: PendingCompose; receiveReceipt: ethers.TransactionReceipt }> {
   const [packetSent] = parseEvent(sendReceipt.logs, endpointIface, 'PacketSent', ctx.srcEndpoint);
   if (!packetSent) throw new Error('relay: no PacketSent emitted by ConfidentialBridge.send');
   const encodedPacket = packetSent.args[0] as string;
   const pkt = decodePacket(encodedPacket);
   const origin = { srcEid: pkt.srcEid, sender: pkt.sender, nonce: pkt.nonce };
-  const { dstHandles, compose } = await deliver(
+  const { dstHandles, compose, receiveReceipt } = await deliver(
     ctx,
     { encodedPacket, origin, guid: pkt.guid, message: pkt.message },
     opts.skipCompose ?? false,
   );
-  return { dstHandles, guid: pkt.guid, compose };
+  return { dstHandles, guid: pkt.guid, compose, receiveReceipt };
 }
 
 /** Delivers the compose leg captured by {@link relayBridgeMessage} (runs the dst app's onConfidentialBridgeReceived). */

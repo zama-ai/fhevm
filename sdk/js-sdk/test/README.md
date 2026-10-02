@@ -43,6 +43,7 @@ export CHAIN=devnet && source ../test/.env && export MNEMONIC && forge script sc
 Add to `/etc/hosts`:
 
 ```sh
+127.0.0.1	object-store
 127.0.0.1	minio
 ```
 

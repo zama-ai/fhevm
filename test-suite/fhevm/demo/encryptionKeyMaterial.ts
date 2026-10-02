@@ -2,12 +2,12 @@
 //
 // The relayer names the current key and CRS (`/v2/keyurl`) with the URLs they are served from. The
 // material is public, but the fetch runs from this process, so the URL policy is explicit: the local
-// stack serves keys from MinIO on loopback, a preview namespace from S3 over TLS. The material is
-// cached per fingerprint (ids plus the objects' ETags), so a key rotation is picked up without a
-// restart and an unchanged key costs one HEAD per check.
+// stack serves keys from the object store on loopback, a preview namespace from S3 over TLS. The
+// material is cached per fingerprint (ids plus the objects' ETags), so a key rotation is picked up
+// without a restart and an unchanged key costs one HEAD per check.
 
 import type { DemoEncryptionKey } from "./operator";
-import { MINIO_PORT } from "../src/layout";
+import { KMS_STORAGE_PUBLISHED_URL, OBJECT_STORE_PORT } from "../src/layout";
 
 type Descriptor = {
   readonly fingerprint: string;
@@ -33,12 +33,13 @@ const objectUrl = (value: unknown, name: string, network: "localnet" | "devnet")
     if (url.protocol !== "https:") throw new Error(`${name} must use https on devnet`);
     return url.toString();
   }
-  if (url.protocol !== "http:" || url.port !== String(MINIO_PORT)) {
-    throw new Error(`${name} must use the local MinIO HTTP endpoint`);
+  if (url.protocol !== "http:" || url.port !== String(OBJECT_STORE_PORT)) {
+    throw new Error(`${name} must use the local object-store HTTP endpoint`);
   }
-  // The relayer names MinIO by its compose service name; this process reaches it on loopback.
-  if (url.hostname === "minio") url.hostname = "127.0.0.1";
-  if (url.hostname !== "127.0.0.1") throw new Error(`${name} must use the local MinIO host`);
+  // The relayer names the object store by its on-chain KMS storage host; this process reaches it
+  // on loopback.
+  if (url.hostname === new URL(KMS_STORAGE_PUBLISHED_URL).hostname) url.hostname = "127.0.0.1";
+  if (url.hostname !== "127.0.0.1") throw new Error(`${name} must use the local object-store host`);
   return url.toString();
 };
 

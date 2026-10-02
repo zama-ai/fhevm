@@ -160,7 +160,7 @@ describe("inventory validation", () => {
 
   it("loads the checked-in inventory", () => {
     const inventory = loadInventory();
-    expect(inventory.cases.length).toBeGreaterThan(0);
+    expect(inventory.cases.length).toBeGreaterThan(20);
     // Every required case must name a runner that could execute it.
     for (const entry of inventory.cases) {
       expect(entry.runner.length, `${entry.id} has no runner`).toBeGreaterThan(0);
@@ -183,10 +183,18 @@ describe("case selection", () => {
   });
 
   it("unions a term that names both a family and a leg", () => {
-    const real = parseInventory(MINIMAL);
-    real.families.set("other", "Another family");
-    real.cases.push({ ...real.cases[0], id: "OTHER-01-AGREE", family: "other", ci: { leg: "demo", backend: "cpu" } });
-    expect(selectCases(real, { terms: ["demo"] }).cases.map(entry => entry.id)).toEqual(["DEMO-01-AGREE", "OTHER-01-AGREE"]);
+    // `degraded` and `crash-retry` are both a family and a CI leg in the real
+    // inventory, and a first-match rule dropped the cases that belong to the
+    // leg without belonging to the family -- including the canary the whole
+    // suite's credibility rests on: MAT-04 is filed under `materialization`
+    // and runs in the `degraded` leg.
+    const real = loadInventory();
+    const degraded = selectCases(real, { terms: ["degraded"] }).cases.map((entry) => entry.id);
+    expect(degraded).toContain("MAT-04-CANARY-COMPUTE-DIGEST");
+    expect(degraded).toContain("DEG-01-AGREEMENT-QUORUM");
+    const crashRetry = selectCases(real, { terms: ["crash-retry"] }).cases.map((entry) => entry.id);
+    expect(crashRetry).toContain("REG-03-SUPERVISED-DAEMON-RECOVERY");
+    expect(crashRetry).toContain("CR-01-INTERRUPT-BEFORE-COMMIT");
   });
 
   it("rejects an unknown term rather than selecting nothing", () => {

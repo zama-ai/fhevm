@@ -52,3 +52,6 @@ export const kmsConnectorDbName = (party: number) =>
 export const kmsPublicPrefix = (party: number) => `PUB-p${party}`;
 export const kmsPrivatePrefix = (party: number) => `PRIV-p${party}`;
 export const kmsBackupPrefix = (party: number) => `BACKUP-p${party}`;
+
+/** Isolated test-only gRPC adapter; the real MPC core address is unchanged. */
+export const kmsTestKeygenProxyName = (party: number) => `kms-test-keygen-proxy-${party}`;

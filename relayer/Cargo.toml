@@ -75,9 +75,7 @@ zama-solana-request = { path = "../solana/crates/zama-solana-request" }
 zama-solana-acl = { path = "../solana/crates/zama-solana-acl" }
 # Canonical `solanaRequest` serialization forwarded into the gateway's Solana calldata.
 borsh = { version = "1", features = ["derive"] }
-# Off-chain Coprocessor attestation consensus, backing the ciphertext readiness check. `client`
-# brings in the networked half (registry mirroring, S3 fetch, consensus fan-out); the base half
-# (e.g. `tracker::Round`, carried typed through ReadinessCheckError) is always available.
+# Off-chain Coprocessor attestation consensus, backing the ciphertext readiness check.
 ciphertext-attestation = { path = "../shared/ciphertext-attestation", features = ["client"] }
 utoipa = { version = "5.4.0", features = ["axum_extras", "preserve_path_order"] }
 utoipa-redoc = { version = "6.0.0", features = ["axum"] }

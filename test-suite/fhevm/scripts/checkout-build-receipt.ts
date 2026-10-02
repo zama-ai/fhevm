@@ -14,7 +14,10 @@ const revision = () => {
 if (command === "begin") {
   if (existsSync(STATE_FILE)) throw new Error("CI checkout build requires a cold state; refusing to attribute cached state");
   if (!["checkout", "published"].includes(mode)) throw new Error("build mode required");
-  writeFileSync(file, JSON.stringify({ revision: revision(), mode, startedAt: new Date().toISOString() }));
+  // A checkout built with test failpoints is not the production feature set;
+  // the receipt must say which one this run executed.
+  const features = (process.env.FHEVM_CONSENSUS_TEST_FEATURES ?? "").trim().split(/\s+/).filter(Boolean).join(" ") || "none";
+  writeFileSync(file, JSON.stringify({ revision: revision(), mode, features, startedAt: new Date().toISOString() }));
 } else if (command === "finish") {
   const before = JSON.parse(readFileSync(file, "utf8"));
   const state = JSON.parse(readFileSync(STATE_FILE, "utf8"));

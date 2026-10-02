@@ -50,6 +50,7 @@ url.workspace = true
 [dev-dependencies]
 base64.workspace = true
 borsh.workspace = true
+ciphertext-attestation = { workspace = true, features = ["test-utils"] }
 connector-utils = { workspace = true, features = ["tests"] }
 mocktail.workspace = true
 prost.workspace = true

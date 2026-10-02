@@ -75,9 +75,9 @@ export class BuildError extends CliError {
   }
 }
 
-export class MinioError extends CliError {
+export class ObjectStoreError extends CliError {
   constructor(message: string) {
-    super("MinioError", message);
+    super("ObjectStoreError", message);
   }
 }
 

@@ -5,6 +5,7 @@ edition = "2021"
 license.workspace = true
 
 [features]
+test-failpoints = ["consumer/test-failpoints"]
 default = []
 test_bypass_key_extraction = []
 solana-grpc = ["dep:yellowstone-grpc-proto", "dep:tonic", "dep:zama-solana-transaction", "dep:solana-transaction-status-client-types"]
@@ -40,6 +41,13 @@ name = "solana_leaf_proof_server"
 test = false
 bench = false
 required-features = ["solana-reconstruct"]
+
+[[bin]]
+path = "src/bin/migration_test_key.rs"
+name = "migration_test_key"
+required-features = ["test-failpoints"]
+test = false
+bench = false
 
 [dependencies]
 # workspace dependencies

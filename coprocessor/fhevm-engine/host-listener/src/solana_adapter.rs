@@ -58,7 +58,8 @@ pub struct SolanaBlockMeta {
 pub struct SolanaIngestStats {
     pub tfhe_events: usize,
     pub material_requests: usize,
-    pub inserted_rows: usize,
+    /// Computations and material requests that inserted at least one new row.
+    pub inserted_records: usize,
 }
 
 // Only referenced by `solana_grpc_listener` (feature-gated) outside of tests.
@@ -176,19 +177,19 @@ pub async fn insert_solana_block_records(
     )
     .await;
 
-    let mut inserted_compute = 0;
+    let mut inserted_records = 0;
     let mut dependent_ops_by_chain = HashMap::new();
     for log in &tfhe_logs {
         let inserted = db.insert_tfhe_event(tx, log).await?;
-        inserted_compute += inserted;
-        if dependent_ops_max_per_chain > 0 && inserted > 0 {
+        inserted_records += usize::from(inserted);
+        if dependent_ops_max_per_chain > 0 && inserted {
             let count = dependent_ops_by_chain
                 .entry(log.dependence_chain)
                 .or_insert(0_u64);
-            *count = count.saturating_add(inserted as u64);
+            *count = count.saturating_add(1);
         }
     }
-    let mut inserted_rows = inserted_compute;
+    let computation_inserted = inserted_records > 0;
     for (transaction_id, request) in &material_requests {
         if db
             .insert_pbs_computations(
@@ -199,11 +200,11 @@ pub async fn insert_solana_block_records(
             )
             .await?
         {
-            inserted_rows += 1;
+            inserted_records += 1;
         }
     }
-    // A complete replay must not rearm a processed chain.
-    if inserted_compute > 0 {
+    // A replay that inserts nothing must not rearm a processed chain.
+    if computation_inserted {
         let slow_chains = classify_slow_chains(
             db,
             tx,
@@ -224,7 +225,7 @@ pub async fn insert_solana_block_records(
     Ok(SolanaIngestStats {
         tfhe_events: tfhe_logs.len(),
         material_requests: material_requests.len(),
-        inserted_rows,
+        inserted_records,
     })
 }
 
@@ -295,6 +296,7 @@ fn to_log_tfhe(
         // the same walk the EVM ingest path uses.
         operand_boundary_mask: None,
         is_executor_minted: true,
+        is_fallback_grant: false,
     }
 }
 

@@ -1,4 +1,6 @@
-use super::computation::{Computation, Operand, OperandBoundaryMask};
+use super::computation::{
+    Computation, Operand, OperandBoundaryMask, OutputPosition,
+};
 use alloy_primitives::Address;
 use alloy_primitives::FixedBytes;
 use alloy_primitives::Log;
@@ -40,7 +42,6 @@ use crate::cmd::block_history::BlockSummary;
 use crate::contracts::AclContract::AclContractEvents;
 use crate::contracts::BridgeContract::BridgeContractEvents;
 
-type FheOperation = i32;
 pub type Handle = FixedBytes<32>;
 pub use super::transaction_id::TransactionId;
 pub type ToType = u8;
@@ -161,6 +162,12 @@ const SEALED_CHAIN_RETRY_BACKOFF_SECS: &[u64] = &[1, 5, 30, 120, 300];
 /// Finalized `host_chain_blocks_valid` rows older than this many blocks
 /// below the finalized head are eligible for pruning (when unreferenced).
 const BLOCKS_VALID_RETENTION: i64 = 10_000;
+/// Rows are also kept for this long after ingestion, whatever the block rate.
+/// This lets a stopped consensus-detector resume: it discovers new blocks
+/// parent→child from these rows, and once a row it has not reached yet is
+/// pruned, its manifest publication for that chain stops for good. Seven days
+/// covers a long outage; 10,000 blocks alone is only ~5.5 h on Polygon.
+const BLOCKS_VALID_MIN_AGE_SECS: i64 = 7 * 24 * 3600;
 /// Upper bound of rows removed per pruning pass; keeps each pass short.
 const BLOCKS_VALID_PRUNE_BATCH: i64 = 1_000;
 const SLOW_LANE_RESET_ADVISORY_LOCK_KEY_BASE: i64 = 1_907_000_000;
@@ -174,6 +181,34 @@ const RECONNECTION_DELAY: Duration = Duration::from_millis(100);
 /// Delay before rebinding the stack-version listener to a replaced pool, so a
 /// database that is down does not turn the respawn loop into a busy loop.
 const LISTENER_RESPAWN_DELAY: Duration = Duration::from_secs(1);
+
+async fn insert_handle_producer_block(
+    tx: &mut Transaction<'_>,
+    chain_id: i64,
+    handle: &[u8],
+    producer_block_number: i64,
+    producer_block_hash: &[u8],
+) -> Result<bool, SqlxError> {
+    let done = sqlx::query!(
+        r#"
+        INSERT INTO handle_producer_block (
+            host_chain_id,
+            handle,
+            producer_block_number,
+            producer_block_hash
+        )
+        VALUES ($1, $2, $3, $4)
+        ON CONFLICT (host_chain_id, handle, producer_block_hash) DO NOTHING
+        "#,
+        chain_id,
+        handle,
+        producer_block_number,
+        producer_block_hash,
+    )
+    .execute(tx.deref_mut())
+    .await?;
+    Ok(done.rows_affected() > 0)
+}
 
 struct AllowedHandleInsert {
     handle: Vec<u8>,
@@ -272,6 +307,11 @@ pub struct LogTfhe {
     /// executor, so its result must never become a same-transaction minted
     /// operand for a later real executor operation.
     pub is_executor_minted: bool,
+    /// Whether this event materializes a `FallbackGrantedPlaintext`. The
+    /// grant's handle is assigned to a block when the grant is observed (see
+    /// `record_fallback_grant_producer`), not when it is synthesized, so this
+    /// computation writes no `handle_producer_block` row.
+    pub is_fallback_grant: bool,
 }
 
 pub type Transaction<'l> = sqlx::Transaction<'l, Postgres>;
@@ -777,17 +817,52 @@ impl Database {
         drop(old_refresh_handle);
     }
 
-    #[allow(clippy::too_many_arguments)]
-    async fn insert_computation_row(
+    async fn insert_computation(
         &self,
         tx: &mut Transaction<'_>,
-        output_handle: &[u8],
+        computation: &Computation,
+        output: OutputPosition<'_>,
         dependencies: &[Vec<u8>],
-        fhe_operation: FheOperation,
-        is_scalar: bool,
-        group_id: Option<&[u8]>,
-        output_index: i16,
-        output_count: i16,
+        log: &LogTfhe,
+    ) -> Result<bool, SqlxError> {
+        let output_handle = output.handle.as_slice();
+        // The output is allowed when this block also emitted persistent
+        // `Allowed` / `AllowedForDecryption` for the result. ACL.allow
+        // requires the caller to already be allowed, and transient allow dies
+        // at tx end, so a handle that must survive later blocks is persist-
+        // allowed in the producing transaction (same host block). Later
+        // Allowed events only add accounts; they do not write this table.
+        let producer_recorded =
+            if !log.is_fallback_grant && log.is_output_allowed(output_handle) {
+                insert_handle_producer_block(
+                    tx,
+                    self.chain_id.as_i64(),
+                    output_handle,
+                    log.block_number as i64,
+                    log.block_hash.as_slice(),
+                )
+                .await?
+            } else {
+                false
+            };
+        let inserted = self
+            .insert_computation_legacy_row(
+                tx,
+                computation,
+                output,
+                dependencies,
+                log,
+            )
+            .await?;
+        Ok(producer_recorded || inserted)
+    }
+
+    async fn insert_computation_legacy_row(
+        &self,
+        tx: &mut Transaction<'_>,
+        computation: &Computation,
+        output: OutputPosition<'_>,
+        dependencies: &[Vec<u8>],
         log: &LogTfhe,
     ) -> Result<bool, SqlxError> {
         let operand_boundary_mask = log.operand_boundary_mask.as_ref().ok_or_else(|| {
@@ -799,7 +874,7 @@ impl Database {
         // Schema isolation handles BCS/GCS routing at the connection layer
         // (`search_path = gcs,public` for GCS, default `public` for BCS), so
         // this INSERT references `computations` unqualified.
-        let group_id_vec = group_id.map(|g| g.to_vec());
+        let output_handle = output.handle.as_slice();
         let output_allowed = log.is_output_allowed(output_handle);
         let query = sqlx::query!(
             r#"
@@ -826,8 +901,8 @@ impl Database {
             "#,
             output_handle,
             dependencies as _,
-            fhe_operation as i16,
-            is_scalar,
+            computation.operation() as i16,
+            computation.is_scalar(),
             log.dependence_chain.to_vec(),
             log.transaction_hash.map(|txh| txh.to_vec()) as _,
             output_allowed,
@@ -839,9 +914,9 @@ impl Database {
             self.chain_id.as_i64(),
             log.block_number as i64,
             operand_boundary_mask.as_slice(),
-            group_id_vec,
-            output_index,
-            output_count,
+            output.group_id.map(|group_id| group_id.as_slice()),
+            output.index,
+            output.count,
         );
         query
             .execute(tx.deref_mut())
@@ -854,9 +929,8 @@ impl Database {
         &self,
         tx: &mut Transaction<'_>,
         log: &LogTfhe,
-    ) -> Result<usize, SqlxError> {
+    ) -> Result<bool, SqlxError> {
         let computation = &log.computation;
-        let outputs = computation.outputs();
         telemetry::record_short_hex_if_some(
             &tracing::Span::current(),
             "txn_id",
@@ -872,23 +946,11 @@ impl Database {
             .iter()
             .map(Operand::bytes)
             .collect::<Vec<_>>();
-        let group = (outputs.len() > 1).then(|| outputs[0].as_slice());
-        let mut inserted = 0;
-        for (index, output) in outputs.iter().enumerate() {
-            inserted += usize::from(
-                self.insert_computation_row(
-                    tx,
-                    output.as_slice(),
-                    &dependencies,
-                    computation.operation() as i32,
-                    computation.is_scalar(),
-                    group,
-                    index as i16,
-                    outputs.len() as i16,
-                    log,
-                )
-                .await?,
-            );
+        let mut inserted = false;
+        for output in computation.output_positions() {
+            inserted |= self
+                .insert_computation(tx, computation, output, &dependencies, log)
+                .await?;
         }
         Ok(inserted)
     }
@@ -1405,8 +1467,8 @@ impl Database {
     /// The table records one row per observed block and nothing deleted it,
     /// so it grew without bound (and with it every ancestry probe). Rows are
     /// deleted only when they are (a) finalized, (b) older than
-    /// [`BLOCKS_VALID_RETENTION`] blocks below the finalized head, and
-    /// (c) referenced by NO bridge, fallback or KMS-activation state — so
+    /// [`BLOCKS_VALID_RETENTION`] blocks below the finalized head and
+    /// ingested more than [`BLOCKS_VALID_MIN_AGE_SECS`] ago, and (c) referenced by NO bridge, fallback or KMS-activation state — so
     /// orphan guards (orphaned rows are never pruned) and bridge/fallback
     /// readiness checks are unaffected by construction. Most blocks carry no
     /// FHE activity, so in steady state nearly everything old is prunable.
@@ -1430,6 +1492,7 @@ impl Database {
                 WHERE c.chain_id = $1
                   AND c.block_status = 'finalized'
                   AND c.block_number < $2
+                  AND c.created_at < NOW() - $4::BIGINT * INTERVAL '1 second'
                   AND NOT EXISTS (
                       SELECT 1 FROM bridge_handle_events r
                       WHERE r.block_hash = c.block_hash
@@ -1461,6 +1524,7 @@ impl Database {
             self.chain_id.as_i64(),
             prune_below,
             BLOCKS_VALID_PRUNE_BATCH,
+            BLOCKS_VALID_MIN_AGE_SECS,
         )
         .execute(&pool)
         .await?
@@ -1816,7 +1880,21 @@ impl Database {
                     dst_handle = to_hex(e.dstHandle.as_slice()),
                     "HandleBridged event"
                 );
-                sqlx::query!(
+                // The destination handle belongs to this block, like a
+                // computation output: its bytes are a later copy of the
+                // source ciphertext, but its manifest descriptor is known from
+                // the source digest (see the consensus-detector builder).
+                // `dst_handle` is derived from this block's parent hash, so
+                // each fork sibling owns its own handle.
+                let producer_recorded = insert_handle_producer_block(
+                    tx,
+                    self.chain_id.as_i64(),
+                    e.dstHandle.as_slice(),
+                    block_number as i64,
+                    block_hash.as_slice(),
+                )
+                .await?;
+                let event_recorded = sqlx::query!(
                     "INSERT INTO handle_bridged_events
                         (src_handle, dst_handle, dst_chain_id, receiver_dapp,
                          guid, block_number, block_hash, transaction_id)
@@ -1834,7 +1912,8 @@ impl Database {
                 .execute(tx.deref_mut())
                 .await?
                 .rows_affected()
-                    > 0
+                    > 0;
+                event_recorded || producer_recorded
             }
             // `FallbackGrantedPlaintext` is converted to a synthetic TrivialEncrypt
             // computation during ingest (see ingest.rs), so it is not handled here.
@@ -1998,6 +2077,102 @@ impl Database {
         .fetch_one(tx.deref_mut())
         .await?;
         Ok(conflicts)
+    }
+
+    /// Assigns a granted handle to the block that observed the grant, unless a
+    /// `HandleBridged` event already gave it to its own block: a grant only
+    /// supplies late bytes for a bridged handle. Written at observation, never
+    /// at synthesis, so the block's inventory is the same whether or not the
+    /// block was final when ingested.
+    pub async fn record_fallback_grant_producer(
+        &self,
+        tx: &mut Transaction<'_>,
+        dst_handle: &[u8],
+        block_number: u64,
+        block_hash: &[u8],
+    ) -> Result<bool, SqlxError> {
+        let done = sqlx::query!(
+            r#"
+            INSERT INTO handle_producer_block (
+                host_chain_id,
+                handle,
+                producer_block_number,
+                producer_block_hash
+            )
+            SELECT $1, $2, $3, $4
+             WHERE NOT EXISTS (
+                SELECT 1 FROM handle_bridged_events
+                 WHERE dst_handle = $2 AND dst_chain_id = $1
+             )
+            ON CONFLICT (host_chain_id, handle, producer_block_hash) DO NOTHING
+            "#,
+            self.chain_id.as_i64(),
+            dst_handle,
+            block_number as i64,
+            block_hash,
+        )
+        .execute(tx.deref_mut())
+        .await?;
+        Ok(done.rows_affected() > 0)
+    }
+
+    /// Whether this node can still copy the bridged source onto `dst_handle`:
+    /// the pair is not associated yet, the source digests exist, and the
+    /// source's `BridgeHandle` block is not orphaned. The
+    /// consensus-detector then seals the destination with the source digests,
+    /// so a fallback grant must not materialize different bytes here. The
+    /// grant is a permission: a node that can make the real association keeps
+    /// waiting for it.
+    pub async fn bridge_copy_pending(
+        &self,
+        tx: &mut Transaction<'_>,
+        dst_handle: &[u8],
+    ) -> Result<bool, SqlxError> {
+        let pending = sqlx::query_scalar!(
+            r#"
+            SELECT EXISTS (
+                SELECT 1
+                  FROM handle_bridged_events dst_event
+                  JOIN ciphertext_digest src_digest
+                    ON src_digest.handle = dst_event.src_handle
+                 WHERE dst_event.dst_handle = $1
+                   AND dst_event.dst_chain_id = $2
+                   AND NOT dst_event.is_associated
+                   AND src_digest.ciphertext IS NOT NULL
+                   AND src_digest.ciphertext128 IS NOT NULL
+                   -- The copy also needs the source approval, which stays
+                   -- possible until its block is orphaned.
+                   AND EXISTS (
+                        SELECT 1 FROM bridge_handle_events src_event
+                         WHERE src_event.src_handle = dst_event.src_handle
+                           AND src_event.dst_chain_id = dst_event.dst_chain_id
+                           AND (
+                                src_event.block_hash = ''::bytea
+                                OR EXISTS (
+                                    SELECT 1 FROM host_chain_blocks_valid src_block
+                                     WHERE src_block.chain_id = src_event.src_chain_id
+                                       AND src_block.block_hash = src_event.block_hash
+                                       AND src_block.block_status <> 'orphaned'
+                                )
+                           )
+                   )
+                   AND (
+                        dst_event.block_hash = ''::bytea
+                        OR EXISTS (
+                            SELECT 1 FROM host_chain_blocks_valid dst_block
+                             WHERE dst_block.chain_id = dst_event.dst_chain_id
+                               AND dst_block.block_hash = dst_event.block_hash
+                               AND dst_block.block_status <> 'orphaned'
+                        )
+                   )
+            ) AS "pending!"
+            "#,
+            dst_handle,
+            self.chain_id.as_i64(),
+        )
+        .fetch_one(tx.deref_mut())
+        .await?;
+        Ok(pending)
     }
 
     /// Add the handle to the allowed_handles table

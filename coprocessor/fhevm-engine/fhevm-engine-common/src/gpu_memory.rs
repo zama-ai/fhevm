@@ -173,6 +173,10 @@ pub fn reserve_memory_on_gpu(
 ) -> Result<GpuMemoryReservation<'static>, GpuMemoryReservationError> {
     GPU_MEMORY_POOL
         .acquire_with(amount, gpu_idx, max_wait, |total, idx| {
+            #[cfg(feature = "test-failpoints")]
+            if crate::reservation_test_control::denied(total, idx) {
+                return false;
+            }
             check_valid_cuda_malloc(total, GpuIndex::new(idx as u32))
         })
         .inspect_err(|error| {

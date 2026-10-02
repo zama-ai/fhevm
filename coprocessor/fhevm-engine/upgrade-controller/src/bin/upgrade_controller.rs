@@ -38,6 +38,14 @@ struct Args {
     )]
     log_level: Level,
 
+    /// Print the compiled-in consensus protocol version and exit.
+    #[arg(long)]
+    consensus_version: bool,
+
+    /// Print whether this binary includes opt-in test boundaries and exit.
+    #[arg(long)]
+    test_failpoints: bool,
+
     /// Print the compiled-in coprocessor stack version and exit.
     #[arg(long)]
     stack_version: bool,
@@ -60,6 +68,14 @@ fn install_signal_handlers(cancel: CancellationToken) -> anyhow::Result<()> {
 async fn main() -> anyhow::Result<()> {
     fhevm_engine_common::handle_stack_version_flag();
     let args = Args::parse();
+    if args.consensus_version {
+        println!("{}", fhevm_engine_common::CONSENSUS_PROTOCOL_VERSION);
+        return Ok(());
+    }
+    if args.test_failpoints {
+        println!("{}", cfg!(feature = "test-failpoints"));
+        return Ok(());
+    }
 
     tracing_subscriber::fmt()
         .with_max_level(args.log_level)

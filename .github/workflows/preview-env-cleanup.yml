@@ -100,8 +100,11 @@ jobs:
             remaining=$((exp_epoch - now))
 
             if (( remaining > 0 && remaining <= 7200 )) && [[ "${warned}" != "${expires}" ]]; then
-              post_once "${ns}" "${expires}" "preview.zama.ai/warned-at" \
-                "preview ${ns} (actor ${actor}) expires at ${expires}. Keep it with \`preview-env extend ${ns} <hours>\` (1-48)."
+              paris=$(TZ=Europe/Paris date -d "${expires}" +%H:%M)
+              utc=$(date -u -d "${expires}" +%H:%M)
+              text="Preview-env namespace ${ns} (launched by ${actor}) expires at ${paris} Paris (${utc} UTC)."
+              text+=$'\n'"Keep it for 8 hours more with preview-env CLI: preview-env extend ${ns} 8"
+              post_once "${ns}" "${expires}" "preview.zama.ai/warned-at" "${text}"
             fi
 
             if (( remaining <= 0 )); then

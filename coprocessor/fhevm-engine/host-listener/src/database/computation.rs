@@ -41,6 +41,17 @@ impl Operand {
     }
 }
 
+/// One output of a computation, placed among its siblings.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(crate) struct OutputPosition<'a> {
+    pub handle: &'a Handle,
+    /// The first output's handle, shared by every output of a multi-output
+    /// computation.
+    pub group_id: Option<&'a Handle>,
+    pub index: i16,
+    pub count: i16,
+}
+
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct Computation {
     operation: SupportedFheOperations,
@@ -147,6 +158,23 @@ impl Computation {
 
     pub fn outputs(&self) -> &[Handle] {
         &self.outputs
+    }
+
+    /// Each output with the position its `computations` row records.
+    pub(crate) fn output_positions(
+        &self,
+    ) -> impl Iterator<Item = OutputPosition<'_>> {
+        let count = i16::try_from(self.outputs.len())
+            .expect("Computation::new caps outputs at MAX_MULTI_OUTPUT_ARITY");
+        let group_id = (self.outputs.len() > 1).then(|| &self.outputs[0]);
+        (0..)
+            .zip(&self.outputs)
+            .map(move |(index, handle)| OutputPosition {
+                handle,
+                group_id,
+                index,
+                count,
+            })
     }
 
     pub fn trivial(plaintext: [u8; 32], fhe_type: u8, result: Handle) -> Self {

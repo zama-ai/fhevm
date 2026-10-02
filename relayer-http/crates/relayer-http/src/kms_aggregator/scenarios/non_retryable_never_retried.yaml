@@ -1,0 +1,14 @@
+# malformed is not retryable: one attempt even with retries on, and it decides the dominant error.
+flow: user_decrypt
+threshold: 10
+timeout: 5s
+max_retries: 3
+nodes:
+  - { count: 9, replies: [ok] }
+  - { count: 4, replies: [malformed, ok] }
+expect:
+  outcome: threshold_not_reached
+  counted: 9
+  dominant: malformed
+  elapsed: 10ms
+  attempts: 13

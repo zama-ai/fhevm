@@ -10,6 +10,8 @@ import {
   KMS_THRESHOLD_CONFIG_NAME,
   KMS_THRESHOLD_SPARE_CONFIG_NAME,
   kmsRenderOptionsFor,
+  kmsMigrationConfigName,
+  renderKmsMigration,
   kmsThresholdGenKeysConfigName,
   renderThresholdCoreConfig,
   renderThresholdGenKeysConfig,
@@ -145,6 +147,13 @@ export const generateRuntime = async (state: State, plan: StackSpec) => {
       path.join(GENERATED_CONFIG_DIR, KMS_THRESHOLD_CONFIG_NAME),
       renderThresholdCoreConfig(thresholdTemplate, plan.kms),
     );
+    for (const [nodeId, associations] of Object.entries(plan.kmsMigrationByNodeId ?? {})) {
+      const party = Number(nodeId);
+      if (!Number.isInteger(party) || party < 1 || party > plan.kms.parties) throw new Error(`Invalid KMS migration party ${nodeId}`);
+      const config = party > plan.kms.committeeSize
+        ? renderThresholdSpareConfig(thresholdTemplate) : renderThresholdCoreConfig(thresholdTemplate, plan.kms);
+      await writeWritableFile(path.join(GENERATED_CONFIG_DIR, kmsMigrationConfigName(party)), config + renderKmsMigration(associations));
+    }
     // Spare cores (parties > committeeSize) mount a peers=None config so they boot idle and join a
     // committee dynamically via a context switch.
     if (plan.kms.parties > plan.kms.committeeSize) {

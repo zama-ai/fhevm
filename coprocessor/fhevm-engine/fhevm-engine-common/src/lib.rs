@@ -4,6 +4,7 @@ pub mod chain_id;
 pub mod crs;
 pub mod database;
 pub mod db_keys;
+pub mod drift_containment;
 pub mod drift_revert;
 pub mod gcs_activation;
 pub mod gpu_arch;
@@ -14,6 +15,8 @@ pub mod host_chains;
 pub mod keys;
 pub mod metrics_server;
 pub mod pg_pool;
+#[cfg(feature = "test-failpoints")]
+pub mod reservation_test_control;
 pub mod synthetic_input;
 pub mod telemetry;
 pub mod tfhe_ops;
@@ -57,6 +60,8 @@ pub(crate) use stack_version;
 ///
 /// Change it every release. It never decides blue/green mode.
 pub const STACK_VERSION: &str = stack_version!();
+
+pub use versioning::{format_consensus_epoch, versions_equal};
 
 pub const CIPHERTEXT_VERSION: i16 = 0;
 

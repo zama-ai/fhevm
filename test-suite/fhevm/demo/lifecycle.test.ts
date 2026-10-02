@@ -174,7 +174,7 @@ describe("demo lifecycle collision policy", () => {
       relayer: true,
       hostRpc: true,
       gatewayRpc: true,
-      minio: true,
+      objectStore: true,
       prometheus: true,
       jaeger: true,
       containers: new Map([["kms-core", { ready: true, detail: "running" }]]),
