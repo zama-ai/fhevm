@@ -6,7 +6,8 @@ pub mod host;
 mod source;
 
 pub use follower::{
-    block_checkpoint, run, track_confirmed_slot, BlockCheckpoint, BlockSink, FollowerConfig,
-    IngestFailure, PreparedBlock, PreparedTransaction, StartPosition,
+    block_checkpoint, run, track_confirmed_slot, BlockCheckpoint, BlockSink,
+    FollowerConfig, IngestFailure, PreparedBlock, PreparedTransaction,
+    StartPosition,
 };
 pub use source::SealedBlock;

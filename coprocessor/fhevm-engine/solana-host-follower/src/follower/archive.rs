@@ -21,16 +21,16 @@ use solana_client::{
 use solana_commitment_config::CommitmentConfig;
 use solana_sdk::{pubkey::Pubkey, signature::Signature};
 use solana_transaction_status_client_types::{
-    EncodedConfirmedTransactionWithStatusMeta, TransactionDetails, UiConfirmedBlock,
-    UiTransactionEncoding,
+    EncodedConfirmedTransactionWithStatusMeta, TransactionDetails,
+    UiConfirmedBlock, UiTransactionEncoding,
 };
 use tokio_util::sync::CancellationToken;
 use tracing::info;
 
 use super::rpc_block::{list_rpc_block, prepare_rpc_transaction};
 use super::{
-    apply_prepared_block, BlockCheckpoint, BlockSink, FatalIngestError, FollowerConfig,
-    IngestionProgress, PreparedBlock, StartPosition,
+    apply_prepared_block, BlockCheckpoint, BlockSink, FatalIngestError,
+    FollowerConfig, IngestionProgress, PreparedBlock, StartPosition,
 };
 use crate::source::SealedBlock;
 
@@ -51,7 +51,10 @@ pub(super) trait Archive: Sync {
         last: u64,
     ) -> impl Future<Output = Result<Vec<u64>>> + Send;
     /// The block with its transactions as account lists.
-    fn block(&self, slot: u64) -> impl Future<Output = Result<UiConfirmedBlock>> + Send;
+    fn block(
+        &self,
+        slot: u64,
+    ) -> impl Future<Output = Result<UiConfirmedBlock>> + Send;
     fn transaction(
         &self,
         signature: Signature,
@@ -67,10 +70,14 @@ impl Archive for RpcClient {
     }
 
     async fn produced_slots(&self, first: u64, last: u64) -> Result<Vec<u64>> {
-        self.get_blocks_with_commitment(first, Some(last), CommitmentConfig::finalized())
-            .await
-            .map_err(without_url)
-            .with_context(|| format!("archive getBlocks {first}..={last}"))
+        self.get_blocks_with_commitment(
+            first,
+            Some(last),
+            CommitmentConfig::finalized(),
+        )
+        .await
+        .map_err(without_url)
+        .with_context(|| format!("archive getBlocks {first}..={last}"))
     }
 
     async fn block(&self, slot: u64) -> Result<UiConfirmedBlock> {
@@ -112,15 +119,22 @@ impl Archive for RpcClient {
 
 /// Fetches and prepares the block at `slot`. A failed read is retried; a response that does not
 /// decode stops the follower.
-async fn fetch_block(archive: &impl Archive, slot: u64, program: &Pubkey) -> Result<PreparedBlock> {
+async fn fetch_block(
+    archive: &impl Archive,
+    slot: u64,
+    program: &Pubkey,
+) -> Result<PreparedBlock> {
     let fatal = |error: anyhow::Error| -> anyhow::Error {
-        FatalIngestError::new(error.context("prepare archive Solana block")).into()
+        FatalIngestError::new(error.context("prepare archive Solana block"))
+            .into()
     };
-    let listing = list_rpc_block(slot, archive.block(slot).await?, program).map_err(fatal)?;
+    let listing = list_rpc_block(slot, archive.block(slot).await?, program)
+        .map_err(fatal)?;
     let transactions = stream::iter(listing.matching)
         .map(|listed @ (_, signature)| async move {
             let fetched = archive.transaction(signature).await?;
-            prepare_rpc_transaction(slot, listed, fetched, program).map_err(fatal)
+            prepare_rpc_transaction(slot, listed, fetched, program)
+                .map_err(fatal)
         })
         .buffered(TRANSACTIONS_IN_FLIGHT)
         .try_collect()
@@ -134,7 +148,10 @@ async fn fetch_block(archive: &impl Archive, slot: u64, program: &Pubkey) -> Res
 /// A hosted archive URL usually carries its API key, and reqwest errors print the URL.
 /// The confirmed block at `slot`, as an inclusive start for [`run`](super::run). Fails when
 /// `slot` holds no confirmed block, so a start slot can never quietly become the tip.
-pub async fn block_checkpoint(rpc: &RpcClient, slot: u64) -> Result<BlockCheckpoint> {
+pub async fn block_checkpoint(
+    rpc: &RpcClient,
+    slot: u64,
+) -> Result<BlockCheckpoint> {
     let block = rpc
         .get_block_with_config(
             slot,
@@ -162,7 +179,9 @@ pub async fn block_checkpoint(rpc: &RpcClient, slot: u64) -> Result<BlockCheckpo
 fn without_url(error: ClientError) -> ClientError {
     let ClientError { request, kind } = error;
     let kind = match *kind {
-        ClientErrorKind::Reqwest(error) => ClientErrorKind::Reqwest(error.without_url()),
+        ClientErrorKind::Reqwest(error) => {
+            ClientErrorKind::Reqwest(error.without_url())
+        }
         kind => kind,
     };
     ClientError {
@@ -182,7 +201,9 @@ pub(super) async fn catch_up(
 ) -> Result<bool> {
     let program = config.program_id;
     let mut first = first_missing_slot(&progress.subscription_start())?;
-    let Some(target) = until_cancelled(cancel, archive.finalized_slot()).await? else {
+    let Some(target) =
+        until_cancelled(cancel, archive.finalized_slot()).await?
+    else {
         return Ok(false);
     };
     if target < first {
@@ -197,7 +218,9 @@ pub(super) async fn catch_up(
     );
     while first <= target {
         let last = target.min(first + SLOTS_PER_PAGE - 1);
-        let Some(slots) = until_cancelled(cancel, archive.produced_slots(first, last)).await?
+        let Some(slots) =
+            until_cancelled(cancel, archive.produced_slots(first, last))
+                .await?
         else {
             return Ok(false);
         };
@@ -211,8 +234,13 @@ pub(super) async fn catch_up(
             };
             let Some(prepared) = next else { break };
             let prepared = prepared?;
-            extends_checkpoint(&progress.subscription_start(), &prepared.block)?;
-            if !apply_prepared_block(sink, config, &prepared, progress, cancel).await? {
+            extends_checkpoint(
+                &progress.subscription_start(),
+                &prepared.block,
+            )?;
+            if !apply_prepared_block(sink, config, &prepared, progress, cancel)
+                .await?
+            {
                 return Ok(false);
             }
         }
@@ -249,7 +277,10 @@ fn first_missing_slot(start: &StartPosition) -> Result<u64> {
 /// other block names the last applied one as its parent. A block that descends from a slot the
 /// archive did not list, the unapplied checkpoint included, means the archive skipped produced
 /// slots, which is retried; any other mismatch is a fork.
-fn extends_checkpoint(start: &StartPosition, block: &SealedBlock) -> Result<()> {
+fn extends_checkpoint(
+    start: &StartPosition,
+    block: &SealedBlock,
+) -> Result<()> {
     let fork = match start {
         StartPosition::ReplayFrom(unapplied) if block.checkpoint() == *unapplied => return Ok(()),
         StartPosition::ReplayFrom(unapplied)
@@ -295,7 +326,10 @@ fn extends_checkpoint(start: &StartPosition, block: &SealedBlock) -> Result<()> 
 
 /// The stream only refuses a replay, so a tip start never reaches catch-up.
 fn no_checkpoint() -> anyhow::Error {
-    FatalIngestError::new(anyhow!("archive catch-up needs a checkpoint to extend")).into()
+    FatalIngestError::new(anyhow!(
+        "archive catch-up needs a checkpoint to extend"
+    ))
+    .into()
 }
 
 #[cfg(test)]
@@ -313,17 +347,19 @@ mod tests {
     };
     use tokio_util::sync::CancellationToken;
     use yellowstone_grpc_proto::prelude::{
-        BlockHeight, SubscribeUpdateBlockMeta, SubscribeUpdateTransaction, UnixTimestamp,
+        BlockHeight, SubscribeUpdateBlockMeta, SubscribeUpdateTransaction,
+        UnixTimestamp,
     };
 
     use super::super::test_support::{config, ZAMA_HOST};
     use super::super::wire_fixtures::{
-        app_transaction, block_json, foreign_transaction, storing_app_transaction, Transaction,
-        BLOCK_TIME,
+        app_transaction, block_json, foreign_transaction,
+        storing_app_transaction, Transaction, BLOCK_TIME,
     };
     use super::super::{
-        accept_transaction, apply_prepared_block, BlockCheckpoint, BlockSink, FatalIngestError,
-        IngestFailure, IngestionProgress, PreparedBlock, StartPosition,
+        accept_transaction, apply_prepared_block, BlockCheckpoint, BlockSink,
+        FatalIngestError, IngestFailure, IngestionProgress, PreparedBlock,
+        StartPosition,
     };
     use super::{catch_up, extends_checkpoint, first_missing_slot, Archive};
     use crate::host::host_operations;
@@ -335,7 +371,10 @@ mod tests {
     struct RecordingSink(Mutex<Vec<PreparedBlock>>);
 
     impl BlockSink for RecordingSink {
-        async fn apply(&self, block: &PreparedBlock) -> std::result::Result<(), IngestFailure> {
+        async fn apply(
+            &self,
+            block: &PreparedBlock,
+        ) -> std::result::Result<(), IngestFailure> {
             self.0.lock().unwrap().push(block.clone());
             Ok(())
         }
@@ -381,29 +420,42 @@ mod tests {
                 hash,
                 self.transactions
                     .iter()
-                    .map(|transaction| transaction.rpc_accounts_json(Value::Null))
+                    .map(|transaction| {
+                        transaction.rpc_accounts_json(Value::Null)
+                    })
                     .collect(),
             )
         }
 
         /// Each transaction's `getTransaction` JSON.
-        fn rpc_transactions(&self) -> impl Iterator<Item = (Signature, serde_json::Value)> + '_ {
+        fn rpc_transactions(
+            &self,
+        ) -> impl Iterator<Item = (Signature, serde_json::Value)> + '_ {
             self.transactions.iter().map(|transaction| {
-                let response = serde_json::to_value(transaction.rpc_transaction(self.slot));
+                let response = serde_json::to_value(
+                    transaction.rpc_transaction(self.slot),
+                );
                 (Signature::from(transaction.signature), response.unwrap())
             })
         }
 
         /// The slot as the stream delivers it: the transactions naming the host, at their index
         /// in the block, then the block meta.
-        fn grpc(&self) -> (Vec<SubscribeUpdateTransaction>, SubscribeUpdateBlockMeta) {
+        fn grpc(
+            &self,
+        ) -> (Vec<SubscribeUpdateTransaction>, SubscribeUpdateBlockMeta)
+        {
             let host = ZAMA_HOST.parse::<Pubkey>().unwrap().to_bytes();
             let transactions = self
                 .transactions
                 .iter()
                 .enumerate()
-                .filter(|(_, transaction)| transaction.static_keys.contains(&host))
-                .map(|(index, transaction)| transaction.grpc_update(self.slot, index as u64))
+                .filter(|(_, transaction)| {
+                    transaction.static_keys.contains(&host)
+                })
+                .map(|(index, transaction)| {
+                    transaction.grpc_update(self.slot, index as u64)
+                })
                 .collect();
             let meta = SubscribeUpdateBlockMeta {
                 slot: self.slot,
@@ -443,7 +495,9 @@ mod tests {
             Slot {
                 slot: 43,
                 parent: 41,
-                transactions: vec![storing_app_transaction(2, [2; 32], STORE, ALLOWED, 1)],
+                transactions: vec![storing_app_transaction(
+                    2, [2; 32], STORE, ALLOWED, 1,
+                )],
             },
             Slot {
                 slot: 44,
@@ -468,7 +522,11 @@ mod tests {
             Ok(self.finalized.fetch_add(1, Ordering::Relaxed))
         }
 
-        async fn produced_slots(&self, first: u64, last: u64) -> Result<Vec<u64>> {
+        async fn produced_slots(
+            &self,
+            first: u64,
+            last: u64,
+        ) -> Result<Vec<u64>> {
             Ok(self
                 .blocks
                 .range(first..=last)
@@ -497,7 +555,11 @@ mod tests {
 
     /// Streams `slots` from `progress`'s start through the stream's preparation, validator and
     /// ingest path.
-    async fn stream(sink: &RecordingSink, slots: &[&Slot], progress: &mut IngestionProgress) {
+    async fn stream(
+        sink: &RecordingSink,
+        slots: &[&Slot],
+        progress: &mut IngestionProgress,
+    ) {
         let host = ZAMA_HOST.parse::<Pubkey>().unwrap();
         let mut validator = BlockValidator::new(progress.subscription_start());
         for slot in slots {
@@ -505,7 +567,9 @@ mod tests {
             for update in transactions {
                 accept_transaction(&mut validator, update, &host).unwrap();
             }
-            if let SealDecision::Process(prepared) = validator.block_meta(meta).unwrap() {
+            if let SealDecision::Process(prepared) =
+                validator.block_meta(meta).unwrap()
+            {
                 assert!(apply_prepared_block(
                     sink,
                     &config(),
@@ -523,7 +587,8 @@ mod tests {
         sink: &RecordingSink,
         archive: &FakeArchive,
     ) -> (Result<bool>, IngestionProgress) {
-        let mut progress = IngestionProgress::from(StartPosition::Resume(checkpoint(40)));
+        let mut progress =
+            IngestionProgress::from(StartPosition::Resume(checkpoint(40)));
         // A catch-up chasing the moving finalized slot would never end.
         let result = tokio::time::timeout(
             Duration::from_secs(30),
@@ -545,7 +610,8 @@ mod tests {
     /// at the archive's finalized slot, then hand back to the stream. The sink is handed exactly
     /// the blocks uninterrupted streaming hands it.
     #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
-    async fn catching_up_from_the_archive_then_streaming_matches_uninterrupted_streaming() {
+    async fn catching_up_from_the_archive_then_streaming_matches_uninterrupted_streaming(
+    ) {
         let chain = chain();
         let at = |slot: u64| chain.iter().find(|s| s.slot == slot).unwrap();
         let archive_of = |finalized: u64, slots: &[u64]| FakeArchive {
@@ -558,14 +624,18 @@ mod tests {
         };
 
         let streaming = RecordingSink::default();
-        let mut progress = IngestionProgress::from(StartPosition::Resume(checkpoint(40)));
-        stream(&streaming, &[at(40), at(41), at(43), at(44)], &mut progress).await;
+        let mut progress =
+            IngestionProgress::from(StartPosition::Resume(checkpoint(40)));
+        stream(&streaming, &[at(40), at(41), at(43), at(44)], &mut progress)
+            .await;
         assert_eq!(progress.applied, Some(checkpoint(44)));
         let streamed = streaming.blocks();
         let operations = streamed
             .iter()
             .flat_map(|block| &block.transactions)
-            .map(|transaction| host_operations(&transaction.instructions, 0).unwrap())
+            .map(|transaction| {
+                host_operations(&transaction.instructions, 0).unwrap()
+            })
             .collect::<Vec<_>>();
         assert_eq!(operations.iter().flatten().count(), 3, "{streamed:#?}");
         assert_eq!(
@@ -580,7 +650,8 @@ mod tests {
 
         let catching_up = RecordingSink::default();
         let archive = archive_of(43, &[41, 43, 44]);
-        let (caught_up, mut progress) = catch_up_from_40(&catching_up, &archive).await;
+        let (caught_up, mut progress) =
+            catch_up_from_40(&catching_up, &archive).await;
         assert!(caught_up.unwrap());
         assert_eq!(
             progress.applied,
@@ -606,7 +677,8 @@ mod tests {
         // An archive without the history after the checkpoint is retried too, and applies
         // nothing past the gap.
         let gapped = RecordingSink::default();
-        let (gap, progress) = catch_up_from_40(&gapped, &archive_of(43, &[43])).await;
+        let (gap, progress) =
+            catch_up_from_40(&gapped, &archive_of(43, &[43])).await;
         let gap = gap.unwrap_err();
         assert!(!is_fatal(&gap), "{gap:#}");
         assert!(
@@ -633,7 +705,11 @@ mod tests {
         assert!(forking.blocks().is_empty());
     }
 
-    fn sealed(slot: u64, parent: u64, parent_block_hash: [u8; 32]) -> SealedBlock {
+    fn sealed(
+        slot: u64,
+        parent: u64,
+        parent_block_hash: [u8; 32],
+    ) -> SealedBlock {
         SealedBlock {
             slot,
             block_hash: hash(slot),
@@ -652,7 +728,10 @@ mod tests {
         struct FailingSink(fn() -> IngestFailure);
 
         impl BlockSink for FailingSink {
-            async fn apply(&self, _: &PreparedBlock) -> std::result::Result<(), IngestFailure> {
+            async fn apply(
+                &self,
+                _: &PreparedBlock,
+            ) -> std::result::Result<(), IngestFailure> {
                 Err((self.0)())
             }
         }
@@ -663,15 +742,20 @@ mod tests {
         };
         for (sink, fatal) in [
             (
-                FailingSink(|| IngestFailure::retryable(anyhow!("database down"))),
+                FailingSink(|| {
+                    IngestFailure::retryable(anyhow!("database down"))
+                }),
                 false,
             ),
             (
-                FailingSink(|| IngestFailure::fatal(anyhow!("record diverged"))),
+                FailingSink(|| {
+                    IngestFailure::fatal(anyhow!("record diverged"))
+                }),
                 true,
             ),
         ] {
-            let mut progress = IngestionProgress::from(StartPosition::Resume(checkpoint(40)));
+            let mut progress =
+                IngestionProgress::from(StartPosition::Resume(checkpoint(40)));
             let error = apply_prepared_block(
                 &sink,
                 &config(),
@@ -693,11 +777,16 @@ mod tests {
         assert_eq!(first_missing_slot(&start).unwrap(), 41);
         assert!(extends_checkpoint(&start, &sealed(41, 40, hash(40))).is_ok());
         assert!(extends_checkpoint(&start, &sealed(42, 40, hash(40))).is_ok());
-        for (slot, parent, parent_hash) in [(41, 40, [0xEE; 32]), (41, 39, hash(39))] {
-            let error = extends_checkpoint(&start, &sealed(slot, parent, parent_hash)).unwrap_err();
+        for (slot, parent, parent_hash) in
+            [(41, 40, [0xEE; 32]), (41, 39, hash(39))]
+        {
+            let error =
+                extends_checkpoint(&start, &sealed(slot, parent, parent_hash))
+                    .unwrap_err();
             assert!(is_fatal(&error), "{error:#}");
         }
-        let gap = extends_checkpoint(&start, &sealed(43, 42, hash(42))).unwrap_err();
+        let gap =
+            extends_checkpoint(&start, &sealed(43, 42, hash(42))).unwrap_err();
         assert!(!is_fatal(&gap), "{gap:#}");
         assert!(
             format!("{gap:#}").contains("missing slots 41..=42"),
