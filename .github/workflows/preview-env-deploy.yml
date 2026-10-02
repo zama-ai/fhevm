@@ -710,21 +710,39 @@ jobs:
             charts/kms-core
           path: .kms-deploy
 
+      - name: Resolve KMS enclave image
+        working-directory: .kms-deploy
+        # PCR labels must come from the image deploy.sh will start.
+        # v0.14.1 hardcodes core-service-enclave. Current kms main defaults
+        # KMS_CORE_ENCLAVE_IMAGE_NAME to core-service-enclave-insecure.
+        run: |
+          image_name="hub.zama.org/ghcr/zama-ai/kms/core-service-enclave"
+          line=$(grep -E '^KMS_CORE_ENCLAVE_IMAGE_NAME=' ci/scripts/deploy.sh || true)
+          if [[ "${line}" =~ :-(hub\.zama\.org[^}\"[:space:]]+) ]]; then
+            image_name="${BASH_REMATCH[1]}"
+          fi
+          if [[ ! "${image_name}" =~ ^hub\.zama\.org/ghcr/zama-ai/kms/core-service-enclave(-insecure)?$ ]]; then
+            echo "::error::refusing unexpected KMS enclave image '${image_name}'"
+            exit 1
+          fi
+          echo "KMS enclave image: ${image_name}:${KMS_CORE_TAG}"
+          echo "KMS_ENCLAVE_IMAGE=${image_name}" >> "$GITHUB_ENV"
+
       - name: Pull KMS enclave image
         uses: zama-ai/ci-templates/.github/actions/retry@d13c806c229167a30eab20c228b87467d0e2e470 # v1.0.12
         env:
-          IMAGE_REPO: hub.zama.org/ghcr/zama-ai/kms
+          KMS_ENCLAVE_IMAGE: ${{ env.KMS_ENCLAVE_IMAGE }}
         with:
           command: |
-            docker pull "${IMAGE_REPO}/core-service-enclave:${KMS_CORE_TAG}"
+            docker pull "${KMS_ENCLAVE_IMAGE}:${KMS_CORE_TAG}"
 
       - name: Fetch enclave PCR values for KMS_CORE_TAG
         # kms's enclave images are labeled with zama.kms.eif_pcr{0,1,2} (wired
         # into kms-core's trustedReleases). deploy.sh reads them as PCR0/1/2.
         env:
-          IMAGE_REPO: hub.zama.org/ghcr/zama-ai/kms
+          KMS_ENCLAVE_IMAGE: ${{ env.KMS_ENCLAVE_IMAGE }}
         run: |
-          image="${IMAGE_REPO}/core-service-enclave:${KMS_CORE_TAG}"
+          image="${KMS_ENCLAVE_IMAGE}:${KMS_CORE_TAG}"
           inspect=$(docker inspect "${image}")
           for n in 0 1 2; do
             pcr=$(jq -r ".[0].Config.Labels[\"zama.kms.eif_pcr${n}\"]" <<<"${inspect}")
@@ -778,9 +796,12 @@ jobs:
         working-directory: .kms-deploy
         env:
           # deploy.sh's parse_args takes CLI flags, not env vars, for these
-          # (--tag sets both KMS_CORE_TAG and KMS_CLIENT_TAG). TLS is the one
-          # env-var exception.
+          # (--tag sets both KMS_CORE_TAG and KMS_CLIENT_TAG). TLS and the
+          # enclave image name are the env-var exceptions. The image is the
+          # one whose PCR labels were read above; current kms main uses it,
+          # v0.14.1 ignores it and hardcodes the same secure name.
           TLS: "true"
+          KMS_CORE_ENCLAVE_IMAGE_NAME: ${{ env.KMS_ENCLAVE_IMAGE }}
         run: |
           # kms-core OTLP tracing: only when the observability stack is
           # deployed AND the pinned KMS_REPO_REF's deploy.sh already knows the
