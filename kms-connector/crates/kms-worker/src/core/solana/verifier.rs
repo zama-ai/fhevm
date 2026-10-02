@@ -14,8 +14,9 @@ use crate::core::{
     },
 };
 use anyhow::anyhow;
-use connector_utils::types::solana_request::{
-    SolanaPublicDecryptionRequest, SolanaUserDecryptionRequestV1,
+use connector_utils::{
+    config::KmsWallet,
+    types::solana_request::{SolanaPublicDecryptionRequest, SolanaUserDecryptionRequestV1},
 };
 use kms_connector_api::ErrorCode;
 use sqlx::types::chrono::Utc;
@@ -34,21 +35,35 @@ impl SolanaDecryptionVerifier {
         Self { hosts }
     }
 
-    /// Builds a reader for every Solana host chain in `config`.
-    pub fn connect(config: &Config) -> anyhow::Result<Self> {
+    /// Builds a reader for every Solana host chain in `config`. The proof requests are signed by
+    /// the configured tx-sender wallet, which a Solana host chain therefore requires.
+    pub async fn connect(config: &Config) -> anyhow::Result<Self> {
+        let solana_chains: Vec<_> = config
+            .host_chains
+            .iter()
+            .filter_map(|host_chain| match &host_chain.host {
+                HostSettings::Solana(solana) => Some((host_chain, solana)),
+                HostSettings::Evm { .. } => None,
+            })
+            .collect();
+        if solana_chains.is_empty() {
+            return Ok(Self::new(HashMap::new()));
+        }
+        let wallet = KmsWallet::from_config(
+            config.private_key.as_ref(),
+            config.aws_kms_config.as_ref(),
+            None,
+        )
+        .await?;
         // The workspace `reqwest`, not alloy's re-export: alloy now vendors a different major, and
         // the Solana readers are typed against the workspace crate.
         let proof_client = ::reqwest::Client::builder()
             .connect_timeout(config.host_rpc_call_timeout)
             .timeout(config.host_rpc_call_timeout)
             .build()?;
-        let hosts = config
-            .host_chains
-            .iter()
-            .filter_map(|host_chain| {
-                let HostSettings::Solana(solana) = &host_chain.host else {
-                    return None;
-                };
+        let hosts = solana_chains
+            .into_iter()
+            .map(|(host_chain, solana)| {
                 let host = SolanaHost {
                     program_id: solana.host_program_id,
                     reader: SolanaRpcClient::new(
@@ -56,9 +71,14 @@ impl SolanaDecryptionVerifier {
                         config.host_rpc_call_timeout,
                         config.host_rpc_max_concurrent_calls,
                     ),
-                    proofs: CoprocessorProofClient::new(&solana.proof_routes, proof_client.clone()),
+                    proofs: CoprocessorProofClient::new(
+                        &solana.proof_urls,
+                        proof_client.clone(),
+                        wallet.clone(),
+                        config.ethereum_chain_id,
+                    ),
                 };
-                Some((host_chain.chain_id, host))
+                (host_chain.chain_id, host)
             })
             .collect();
         Ok(Self::new(hosts))
@@ -115,7 +135,7 @@ impl SolanaDecryptionVerifier {
 mod tests {
     use super::*;
     use crate::core::{
-        config::{ApiKey, HostChainConfig, ProofRoute, SolanaHostSettings},
+        config::{HostChainConfig, SolanaHostSettings},
         event_processor::{ProcessingError, ProcessingErrorKind},
         solana::{
             proof::{HostProofReader, LeafKind, LeafQuery},
@@ -135,10 +155,7 @@ mod tests {
             chain_id: solana_host_chain_id(cluster_tag),
             host: HostSettings::Solana(SolanaHostSettings {
                 host_program_id: Pubkey::new_from_array([7; 32]),
-                proof_routes: vec![ProofRoute {
-                    url: endpoint.parse().unwrap(),
-                    api_key: ApiKey::from("test-key".to_owned()),
-                }],
+                proof_urls: vec![endpoint.parse().unwrap()],
             }),
         }
     }
@@ -184,7 +201,7 @@ mod tests {
             ..Default::default()
         };
 
-        let verifier = SolanaDecryptionVerifier::connect(&config).unwrap();
+        let verifier = SolanaDecryptionVerifier::connect(&config).await.unwrap();
 
         assert_eq!(verifier.hosts.len(), 1);
         assert_eq!(
@@ -203,7 +220,7 @@ mod tests {
             host_rpc_call_timeout: Duration::from_millis(250),
             ..Default::default()
         };
-        let verifier = SolanaDecryptionVerifier::connect(&config).unwrap();
+        let verifier = SolanaDecryptionVerifier::connect(&config).await.unwrap();
         let host = &verifier.hosts[&solana_host_chain_id(2)];
         let keys = [Pubkey::new_from_array([1; 32])];
         let queries = [LeafQuery {
@@ -217,12 +234,38 @@ mod tests {
                 Duration::from_secs(3),
                 host.reader.read_accounts(&keys, None)
             ),
-            timeout(Duration::from_secs(3), host.proofs.read_proofs(0, &queries)),
+            timeout(Duration::from_secs(3), async {
+                let batch = host.proofs.prepare(&queries).await?;
+                host.proofs.read_proofs(0, &batch).await
+            }),
         );
 
         assert!(rpc.expect("the RPC client must time out").is_err());
         assert!(proofs.expect("the proof client must time out").is_err());
         drop(listener);
+    }
+
+    #[tokio::test]
+    async fn a_solana_host_chain_requires_the_wallet() {
+        let config = Config {
+            host_chains: vec![solana_chain(2, "http://coprocessor.test:8080")],
+            private_key: None,
+            ..Default::default()
+        };
+        let error = SolanaDecryptionVerifier::connect(&config)
+            .await
+            .err()
+            .expect("no wallet is configured");
+        assert!(
+            error.to_string().contains("Either AWS KMS or private key"),
+            "{error}"
+        );
+
+        let evm_only = Config {
+            private_key: None,
+            ..Default::default()
+        };
+        assert!(SolanaDecryptionVerifier::connect(&evm_only).await.is_ok());
     }
 
     #[tokio::test]

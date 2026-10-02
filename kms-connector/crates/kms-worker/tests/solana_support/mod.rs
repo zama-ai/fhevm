@@ -17,6 +17,7 @@
 use alloy::primitives::B256;
 use alloy::primitives::U256;
 use base64::{Engine, engine::general_purpose::STANDARD as BASE64_STANDARD};
+use connector_utils::config::KmsWallet;
 use connector_utils::types::solana_request::{
     SolanaEntryClaims, SolanaRequestBlob, SolanaUserDecryptFields, SolanaUserDecryptionRequestV1,
 };
@@ -32,7 +33,6 @@ use kms_worker::core::solana::{
         SnapshotError, SolanaRpcClient,
     },
 };
-use kms_worker::core::{ApiKey, ProofRoute};
 use mocktail::server::MockServer;
 use reqwest::Client;
 use ring::signature::{Ed25519KeyPair, KeyPair};
@@ -1016,14 +1016,20 @@ impl ScriptedProofReader {
 }
 
 impl HostProofReader for ScriptedProofReader {
+    type Batch = Vec<LeafQuery>;
+
     fn source_count(&self) -> usize {
         self.sources.len()
+    }
+
+    async fn prepare(&self, queries: &[LeafQuery]) -> Result<Vec<LeafQuery>, ProofReadError> {
+        Ok(queries.to_vec())
     }
 
     async fn read_proofs(
         &self,
         source: usize,
-        queries: &[LeafQuery],
+        queries: &Vec<LeafQuery>,
     ) -> Result<Vec<MerkleProofOutcome>, ProofReadError> {
         self.calls
             .lock()
@@ -1148,9 +1154,9 @@ pub fn serve_proofs(coprocessor: &mut MockServer, answers: &[(LeafQuery, MerkleP
 
 /// A host of the fixture deployment reading from `rpc` and asking every one of `coprocessors`.
 pub fn solana_host(rpc: &MockServer, coprocessors: &[&MockServer]) -> SolanaHost {
-    let routes: Vec<_> = coprocessors
+    let urls: Vec<_> = coprocessors
         .iter()
-        .map(|coprocessor| proof_route(coprocessor.base_url().unwrap()))
+        .map(|coprocessor| coprocessor.base_url().unwrap().clone())
         .collect();
     SolanaHost {
         program_id: PROGRAM_ID,
@@ -1159,16 +1165,18 @@ pub fn solana_host(rpc: &MockServer, coprocessors: &[&MockServer]) -> SolanaHost
             Duration::from_secs(10),
             NonZeroUsize::MIN,
         ),
-        proofs: CoprocessorProofClient::new(&routes, Client::new()),
+        proofs: proof_client(&urls, Client::new()),
     }
 }
 
-/// A Merkle proof route to the coprocessor at `url`.
-pub fn proof_route(url: &url::Url) -> ProofRoute {
-    ProofRoute {
-        url: url.clone(),
-        api_key: ApiKey::from("test-key".to_owned()),
-    }
+/// The production proof client asking `urls`, signing as a test tx-sender.
+pub fn proof_client(urls: &[url::Url], client: Client) -> CoprocessorProofClient {
+    let wallet = KmsWallet::from_private_key_str(
+        "0x3f45b129a7fd099146e9fe63851a71646231f7743c712695f3b2d2bf0e41c774",
+        None,
+    )
+    .expect("test key");
+    CoprocessorProofClient::new(urls, client, wallet, 12345)
 }
 
 /// A Merkle proof answer as the coprocessor route serializes it.

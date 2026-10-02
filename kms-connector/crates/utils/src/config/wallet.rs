@@ -2,9 +2,10 @@ use crate::config::{Error, Result};
 use alloy::{
     hex::decode,
     network::{EthereumWallet, IntoWallet},
-    primitives::{Address, ChainId},
+    primitives::{Address, B256, ChainId, Signature},
     signers::{Signer, aws::AwsSigner, k256::ecdsa::SigningKey, local::PrivateKeySigner},
 };
+use async_trait::async_trait;
 use aws_config::BehaviorVersion;
 use aws_sdk_kms::Client as KmsClient;
 use serde::{Deserialize, Serialize};
@@ -73,6 +74,24 @@ pub struct AwsKmsConfig {
 }
 
 impl KmsWallet {
+    /// The wallet a connector service configures: the testing private key when set, else the AWS
+    /// KMS key.
+    pub async fn from_config(
+        private_key: Option<&TestingPrivateKey>,
+        aws_kms_config: Option<&AwsKmsConfig>,
+        chain_id: Option<ChainId>,
+    ) -> Result<Self> {
+        if let Some(private_key) = private_key {
+            Self::from_private_key_str(private_key.as_str(), chain_id)
+        } else if let Some(aws_kms_config) = aws_kms_config {
+            Self::from_aws_kms(aws_kms_config.clone(), chain_id).await
+        } else {
+            Err(Error::InvalidConfig(
+                "Either AWS KMS or private key must be configured".into(),
+            ))
+        }
+    }
+
     /// Create a new wallet from a private key string
     ///
     /// The private key string should be a hexadecimal string with or without '0x' prefix.
@@ -154,6 +173,34 @@ impl KmsWallet {
         match &self {
             Self::Local(signer) => signer.address(),
             Self::AwsKms(signer) => signer.address(),
+        }
+    }
+}
+
+#[async_trait]
+impl Signer for KmsWallet {
+    async fn sign_hash(&self, hash: &B256) -> alloy::signers::Result<Signature> {
+        match self {
+            Self::Local(signer) => signer.sign_hash(hash).await,
+            Self::AwsKms(signer) => signer.sign_hash(hash).await,
+        }
+    }
+
+    fn address(&self) -> Address {
+        KmsWallet::address(self)
+    }
+
+    fn chain_id(&self) -> Option<ChainId> {
+        match self {
+            Self::Local(signer) => signer.chain_id(),
+            Self::AwsKms(signer) => signer.chain_id(),
+        }
+    }
+
+    fn set_chain_id(&mut self, chain_id: Option<ChainId>) {
+        match self {
+            Self::Local(signer) => signer.set_chain_id(chain_id),
+            Self::AwsKms(signer) => signer.set_chain_id(chain_id),
         }
     }
 }

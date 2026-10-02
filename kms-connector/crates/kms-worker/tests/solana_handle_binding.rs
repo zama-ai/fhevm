@@ -803,7 +803,6 @@ async fn no_answer_from_any_coprocessor_is_a_proof_read_error() {
 /// Through the production client: an unavailable coprocessor leaves the batch to one that serves.
 #[tokio::test]
 async fn an_unavailable_coprocessor_leaves_the_batch_to_one_that_serves() {
-    use kms_worker::core::solana::proof::CoprocessorProofClient;
     use mocktail::{StatusCode, server::MockServer};
     let (fixture, account, [entry, _]) = two_allowed_queries();
     let mut unavailable = MockServer::new_http("unavailable-coprocessor");
@@ -815,10 +814,10 @@ async fn an_unavailable_coprocessor_leaves_the_batch_to_one_that_serves() {
     let mut serving = MockServer::new_http("serving-coprocessor");
     serve_proofs(&mut serving, &[(entry.0, fixture.outcome(&entry.0))]);
     serving.start().await.unwrap();
-    let client = CoprocessorProofClient::new(
+    let client = proof_client(
         &[
-            proof_route(unavailable.base_url().unwrap()),
-            proof_route(serving.base_url().unwrap()),
+            unavailable.base_url().unwrap().clone(),
+            serving.base_url().unwrap().clone(),
         ],
         reqwest::Client::new(),
     );

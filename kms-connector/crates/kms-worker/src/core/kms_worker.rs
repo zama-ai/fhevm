@@ -314,7 +314,7 @@ impl
             let host_client = HostRpcClient::new(host_chain_id, acl_contract);
             host_clients.insert(host_chain_id, host_client);
         }
-        let solana_verifier = SolanaDecryptionVerifier::connect(&config)?;
+        let solana_verifier = SolanaDecryptionVerifier::connect(&config).await?;
 
         let kms_client = KmsClient::connect(&config).await?;
         let kms_health_client = KmsHealthClient::connect(&config.kms_core_endpoints).await?;
