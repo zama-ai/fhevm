@@ -39,7 +39,7 @@ hostChains is rendered as a map keyed by chain name (ethereum, polygon, ...):
   preset fails the render.
 - without a preset (network: ""), every commonConfig.hostChains entry must set
   url, chainId and aclAddress. A Solana entry (chain id type byte 0x01) sets
-  solanaHostProgramId and solanaProofRoutes (a list of {url, apiKey}, one per
+  solanaHostProgramId and solanaProofUrls (the Merkle proof server of each
   coprocessor) instead of aclAddress.
 URLs are passed through untouched so they may reference an environment variable
 declared in commonConfig.env (e.g. "$(ETHEREUM_RPC_URL)").
@@ -77,7 +77,7 @@ hostChains:
 {{- end }}
 {{- range $name, $presetChain := $presetChains }}
 {{- $chain := index $chains $name | default dict }}
-{{- range $field := list "solanaHostProgramId" "solanaProofRoutes" }}
+{{- range $field := list "solanaHostProgramId" "solanaProofUrls" }}
 {{- if index $chain $field }}
 {{- fail (printf "commonConfig.hostChains.%s.%s does not apply to a preset chain: presets are EVM chains; set commonConfig.network to \"\" to configure a Solana chain" $name $field) }}
 {{- end }}
@@ -107,8 +107,8 @@ hostChains:
 {{- fail (printf "commonConfig.hostChains.%s.chainId has type byte 0x%02x, which names no host kind" $name $type) }}
 {{- end }}
 {{- $solana := eq $type 1 }}
-{{- $required := ternary (list "url" "solanaHostProgramId" "solanaProofRoutes") (list "url" "aclAddress") $solana }}
-{{- range $field := ternary (list "aclAddress") (list "solanaHostProgramId" "solanaProofRoutes") $solana }}
+{{- $required := ternary (list "url" "solanaHostProgramId" "solanaProofUrls") (list "url" "aclAddress") $solana }}
+{{- range $field := ternary (list "aclAddress") (list "solanaHostProgramId" "solanaProofUrls") $solana }}
 {{- if index $chain $field }}
 {{- fail (printf "commonConfig.hostChains.%s.%s does not apply to %s chain" $name $field (ternary "a Solana" "an EVM" $solana)) }}
 {{- end }}
@@ -122,13 +122,16 @@ hostChains:
     url: {{ $chain.url | quote }}
     chainId: {{ $chainId | quote }}
 {{- if $solana }}
-{{- range $route := $chain.solanaProofRoutes }}
-{{- if not (and $route.url $route.apiKey) }}
-{{- fail (printf "commonConfig.hostChains.%s.solanaProofRoutes entries must each set url and apiKey" $name) }}
+{{- if not (kindIs "slice" $chain.solanaProofUrls) }}
+{{- fail (printf "commonConfig.hostChains.%s.solanaProofUrls must be a list of URLs" $name) }}
+{{- end }}
+{{- range $url := $chain.solanaProofUrls }}
+{{- if not (and (kindIs "string" $url) $url) }}
+{{- fail (printf "commonConfig.hostChains.%s.solanaProofUrls entries must each be a URL" $name) }}
 {{- end }}
 {{- end }}
     solanaHostProgramId: {{ $chain.solanaHostProgramId | quote }}
-    solanaProofRoutes: {{ $chain.solanaProofRoutes | toJson }}
+    solanaProofUrls: {{ $chain.solanaProofUrls | toJson }}
 {{- else }}
     aclAddress: {{ $chain.aclAddress | quote }}
 {{- end }}
@@ -148,6 +151,34 @@ The host chain named "ethereum". Consume with `fromYaml`.
 {{/*
 kms-worker KMS_CONNECTOR_HOST_CHAINS: JSON list with chainId as an integer.
 */}}
+{{/*
+The tx-sender wallet's env. kms-worker signs its Solana Merkle proof requests with the same key.
+*/}}
+{{- define "kmsConnector.txSenderWalletEnv" -}}
+{{- if .Values.kmsConnectorTxSender.wallet.awsKms.enabled }}
+- name: KMS_CONNECTOR_AWS_KMS_CONFIG__KEY_ID
+  valueFrom:
+    configMapKeyRef:
+      name: {{ .Values.kmsConnectorTxSender.wallet.awsKms.configmap.name | quote }}
+      key: {{ .Values.kmsConnectorTxSender.wallet.awsKms.configmap.key | quote }}
+{{- else }}
+- name: KMS_CONNECTOR_PRIVATE_KEY
+  valueFrom:
+    secretKeyRef:
+      name: {{ .Values.kmsConnectorTxSender.wallet.secret.name | quote }}
+      key: {{ .Values.kmsConnectorTxSender.wallet.secret.key | quote }}
+{{- end }}
+{{- end -}}
+
+{{/*
+"true" when a deployed host chain is a Solana chain.
+*/}}
+{{- define "kmsConnector.hasSolanaHostChain" -}}
+{{- range $name, $chain := (include "kmsConnector.contracts" . | fromYaml).hostChains -}}
+{{- if $chain.solanaHostProgramId }}true{{ end -}}
+{{- end -}}
+{{- end -}}
+
 {{- define "kmsConnector.hostChainsJson" -}}
 {{- $chains := list -}}
 {{- range $name, $chain := (include "kmsConnector.contracts" . | fromYaml).hostChains -}}

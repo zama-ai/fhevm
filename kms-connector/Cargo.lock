@@ -4780,6 +4780,7 @@ dependencies = [
  "mocktail",
  "prometheus",
  "prost 0.14.4",
+ "request-authorization",
  "reqwest 0.12.24",
  "ring",
  "rstest",
@@ -6569,6 +6570,16 @@ name = "relative-path"
 version = "1.9.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "ba39f3699c378cd8970968dcbff9c43159ea4cfbd88d43c00b22f2ef10a435d2"
+
+[[package]]
+name = "request-authorization"
+version = "0.15.0"
+dependencies = [
+ "alloy-primitives",
+ "alloy-signer",
+ "alloy-sol-types",
+ "thiserror 2.0.20",
+]
 
 [[package]]
 name = "reqwest"

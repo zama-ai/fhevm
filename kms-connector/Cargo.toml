@@ -27,6 +27,7 @@ kms-grpc = { git = "https://github.com/zama-ai/kms.git", rev = "e521f478b70efaee
 bc2wrap = { git = "https://github.com/zama-ai/kms.git", rev = "e521f478b70efaee2a1230d71fd9b924ec81da6c", default-features = true }
 tfhe = { version = "=1.8.1", default-features = false }
 user-decryption-signature = { path = "../shared/user-decryption-signature", default-features = false }
+request-authorization = { path = "../shared/request-authorization" }
 ciphertext-attestation = { path = "../shared/ciphertext-attestation", features = ["client"] }
 zama-solana-acl = { path = "../solana/crates/zama-solana-acl" }
 zama-solana-permit = { path = "../solana/crates/zama-solana-permit" }

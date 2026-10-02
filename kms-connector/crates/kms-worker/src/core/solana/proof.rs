@@ -2,11 +2,14 @@
 //! events; the account holds only the peaks. Each coprocessor is a source of proofs, never of
 //! decisions: every answer is verified against the observed peaks.
 
-use crate::core::config::{ApiKey, ProofRoute};
 use alloy::primitives::B256;
+use connector_utils::config::KmsWallet;
 use serde::{Deserialize, Serialize};
 use solana_pubkey::Pubkey;
-use std::future::Future;
+use std::{
+    future::Future,
+    time::{SystemTime, UNIX_EPOCH},
+};
 use url::Url;
 
 /// The coprocessor route that answers Merkle proof queries. The same literal as the coprocessor's
@@ -64,15 +67,23 @@ pub enum MerkleProofOutcome {
 
 /// Implemented by [`CoprocessorProofClient`]; tests drive authorization with canned proofs.
 pub trait HostProofReader: Send + Sync {
+    /// A batch of queries made ready once and sent to any coprocessor.
+    type Batch: Sync;
+
     /// How many coprocessors can be asked.
     fn source_count(&self) -> usize;
+
+    fn prepare(
+        &self,
+        queries: &[LeafQuery],
+    ) -> impl Future<Output = Result<Self::Batch, ProofReadError>> + Send;
 
     /// What coprocessor `source` answers, one outcome per query in query order. No outcome is
     /// trusted here.
     fn read_proofs(
         &self,
         source: usize,
-        queries: &[LeafQuery],
+        batch: &Self::Batch,
     ) -> impl Future<Output = Result<Vec<MerkleProofOutcome>, ProofReadError>> + Send;
 }
 
@@ -141,44 +152,65 @@ fn unavailable(reason: String) -> ProofReadError {
     ProofReadError::Unavailable { reason }
 }
 
-/// The production reader: one authenticated `POST` to one coprocessor per read. Each
-/// coprocessor receives only the key it issued.
+/// How long a signed batch stays valid. A batch is read within `host_rpc_call_timeout` of signing;
+/// the margin covers clock skew with the coprocessors.
+const AUTHORIZATION_VALIDITY_SECS: u64 = 120;
+const _: () = assert!(AUTHORIZATION_VALIDITY_SECS < request_authorization::MAX_VALIDITY_SECS);
+
+/// The production reader: one signed `POST` per coprocessor. Every coprocessor of a batch receives
+/// the same body and signature, so the wallet signs once per batch.
 #[derive(Clone, Debug)]
 pub struct CoprocessorProofClient {
-    routes: Vec<(Url, ApiKey)>,
+    urls: Vec<Url>,
     client: reqwest::Client,
+    /// The connector's tx-sender wallet: the coprocessors answer only live KMS contexts'
+    /// tx-senders.
+    wallet: KmsWallet,
+    /// The canonical `ProtocolConfig` chain, which the signature's EIP-712 domain names.
+    chain_id: u64,
+}
+
+/// A batch signed for every coprocessor.
+pub struct SignedBatch {
+    body: Vec<u8>,
+    authorization: String,
 }
 
 impl CoprocessorProofClient {
-    pub fn new(routes: &[ProofRoute], client: reqwest::Client) -> Self {
-        let routes = routes
+    pub fn new(urls: &[Url], client: reqwest::Client, wallet: KmsWallet, chain_id: u64) -> Self {
+        let urls = urls
             .iter()
-            .map(|route| {
-                let mut url = route.url.clone();
+            .map(|url| {
+                let mut url = url.clone();
                 url.set_path(MERKLE_PROOFS_PATH);
-                (url, route.api_key.clone())
+                url
             })
             .collect();
-        Self { routes, client }
+        Self {
+            urls,
+            client,
+            wallet,
+            chain_id,
+        }
     }
 
     async fn read_from(
         &self,
-        (route, api_key): &(Url, ApiKey),
-        body: &[u8],
+        url: &Url,
+        batch: &SignedBatch,
     ) -> Result<Vec<MerkleProofOutcome>, ProofReadError> {
         let response = self
             .client
-            .post(route.clone())
-            .bearer_auth(api_key.expose())
+            .post(url.clone())
+            .header("authorization", &batch.authorization)
             .header("content-type", "application/json")
-            .body(body.to_vec())
+            .body(batch.body.clone())
             .send()
             .await
-            .map_err(|error| unavailable(format!("{route}: request failed: {error}")))?;
+            .map_err(|error| unavailable(format!("{url}: request failed: {error}")))?;
         let status = response.status();
         if !status.is_success() {
-            return Err(unavailable(format!("{route}: HTTP {status}")));
+            return Err(unavailable(format!("{url}: HTTP {status}")));
         }
         // At most 64 queries, each with 64 hex siblings and bounded numeric metadata.
         const MAX_RESPONSE_BYTES: usize =
@@ -188,33 +220,55 @@ impl CoprocessorProofClient {
         while let Some(chunk) = response
             .chunk()
             .await
-            .map_err(|error| unavailable(format!("{route}: body could not be read: {error}")))?
+            .map_err(|error| unavailable(format!("{url}: body could not be read: {error}")))?
         {
             if body.len() + chunk.len() > MAX_RESPONSE_BYTES {
                 return Err(unavailable(format!(
-                    "{route}: proof response exceeds {MAX_RESPONSE_BYTES} bytes"
+                    "{url}: proof response exceeds {MAX_RESPONSE_BYTES} bytes"
                 )));
             }
             body.extend_from_slice(&chunk);
         }
-        let text = std::str::from_utf8(&body).map_err(|e| unavailable(format!("{route}: {e}")))?;
+        let text = std::str::from_utf8(&body).map_err(|e| unavailable(format!("{url}: {e}")))?;
         parse_merkle_proof_response(text)
     }
 }
 
 impl HostProofReader for CoprocessorProofClient {
+    type Batch = SignedBatch;
+
     fn source_count(&self) -> usize {
-        self.routes.len()
+        self.urls.len()
+    }
+
+    async fn prepare(&self, queries: &[LeafQuery]) -> Result<SignedBatch, ProofReadError> {
+        let body = serde_json::to_vec(&merkle_proof_request_body(queries))
+            .expect("a Merkle proof request has no map keys or fallible fields");
+        let expires = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .map_or(0, |elapsed| elapsed.as_secs())
+            + AUTHORIZATION_VALIDITY_SECS;
+        let authorization = request_authorization::authorize(
+            &self.wallet,
+            self.chain_id,
+            MERKLE_PROOFS_PATH,
+            &body,
+            expires,
+        )
+        .await
+        .map_err(|error| unavailable(format!("the proof request could not be signed: {error}")))?;
+        Ok(SignedBatch {
+            body,
+            authorization,
+        })
     }
 
     async fn read_proofs(
         &self,
         source: usize,
-        queries: &[LeafQuery],
+        batch: &SignedBatch,
     ) -> Result<Vec<MerkleProofOutcome>, ProofReadError> {
-        let body = serde_json::to_vec(&merkle_proof_request_body(queries))
-            .expect("a Merkle proof request has no map keys or fallible fields");
-        self.read_from(&self.routes[source], &body).await
+        self.read_from(&self.urls[source], batch).await
     }
 }
 
@@ -278,6 +332,29 @@ mod tests {
         );
     }
 
+    const CHAIN_ID: u64 = 12345;
+
+    fn client(urls: &[&Url], wallet: &KmsWallet) -> CoprocessorProofClient {
+        let urls: Vec<Url> = urls.iter().map(|url| (*url).clone()).collect();
+        CoprocessorProofClient::new(&urls, reqwest::Client::new(), wallet.clone(), CHAIN_ID)
+    }
+
+    fn query() -> [LeafQuery; 1] {
+        [LeafQuery {
+            encrypted_store: Pubkey::new_from_array([1; 32]),
+            handle: B256::new([2; 32]),
+            kind: LeafKind::Public,
+        }]
+    }
+
+    fn wallet() -> KmsWallet {
+        KmsWallet::from_private_key_str(
+            "0x3f45b129a7fd099146e9fe63851a71646231f7743c712695f3b2d2bf0e41c774",
+            None,
+        )
+        .unwrap()
+    }
+
     #[tokio::test]
     async fn malformed_and_oversized_proof_responses_are_recoverable_read_errors() {
         use mocktail::server::MockServer;
@@ -297,77 +374,70 @@ mod tests {
         ] {
             let mut server = MockServer::new_http("proof-response");
             server.mock(move |when, then| {
-                when.post()
-                    .path(MERKLE_PROOFS_PATH)
-                    .header("authorization", "Bearer secret");
+                when.post().path(MERKLE_PROOFS_PATH);
                 then.text(body.clone());
             });
             server.start().await.unwrap();
-            let client = CoprocessorProofClient::new(
-                &[route(server.base_url().unwrap(), "secret")],
-                reqwest::Client::new(),
-            );
+            let client = client(&[server.base_url().unwrap()], &wallet());
+            let batch = client.prepare(&query()).await.unwrap();
             client
-                .read_proofs(
-                    0,
-                    &[LeafQuery {
-                        encrypted_store: Pubkey::new_from_array([1; 32]),
-                        handle: B256::new([2; 32]),
-                        kind: LeafKind::Public,
-                    }],
-                )
+                .read_proofs(0, &batch)
                 .await
                 .expect_err("a malformed response is a failed read");
         }
     }
 
-    fn route(url: &Url, api_key: &str) -> ProofRoute {
-        ProofRoute {
-            url: url.clone(),
-            api_key: ApiKey::from(api_key.to_owned()),
-        }
-    }
-
-    /// Each coprocessor issues its own key, so a route sends only the key configured with it, and
-    /// neither key reaches the client's debug output.
+    /// Every coprocessor receives the same body and signature, which recovers to the wallet over
+    /// that exact body.
     #[tokio::test]
-    async fn each_coprocessor_receives_only_its_own_key() {
+    async fn every_coprocessor_receives_one_signature_by_the_wallet() {
         use mocktail::server::MockServer;
+        let wallet = wallet();
+        let batch = client(&[], &wallet).prepare(&query()).await.unwrap();
         let mut servers = Vec::new();
-        for key in ["first-key", "second-key"] {
-            let mut server = MockServer::new_http(key);
+        for name in ["first", "second"] {
+            let mut server = MockServer::new_http(name);
+            let authorization = batch.authorization.clone();
             server.mock(move |when, then| {
                 when.post()
                     .path(MERKLE_PROOFS_PATH)
-                    .header("authorization", format!("Bearer {key}"));
+                    .header("authorization", authorization.clone());
                 then.text(r#"{"proofs":[{"status":"notFound","leafCount":0}]}"#);
             });
             server.start().await.unwrap();
             servers.push(server);
         }
-        let client = CoprocessorProofClient::new(
+        let client = client(
             &[
-                route(servers[0].base_url().unwrap(), "first-key"),
-                route(servers[1].base_url().unwrap(), "second-key"),
+                servers[0].base_url().unwrap(),
+                servers[1].base_url().unwrap(),
             ],
-            reqwest::Client::new(),
+            &wallet,
         );
-        let query = [LeafQuery {
-            encrypted_store: Pubkey::new_from_array([1; 32]),
-            handle: B256::new([2; 32]),
-            kind: LeafKind::Public,
-        }];
-
         for source in 0..2 {
             client
-                .read_proofs(source, &query)
+                .read_proofs(source, &batch)
                 .await
-                .expect("each coprocessor accepts its own key");
+                .expect("each coprocessor receives the batch's signature");
         }
-        let debug = format!("{client:?}");
-        assert!(
-            !debug.contains("first-key") && !debug.contains("second-key"),
-            "{debug}"
+
+        let now = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .unwrap()
+            .as_secs();
+        assert_eq!(
+            request_authorization::recover_signer(
+                CHAIN_ID,
+                &batch.authorization,
+                MERKLE_PROOFS_PATH,
+                &batch.body,
+                now,
+            ),
+            Ok(wallet.address())
+        );
+        assert_eq!(
+            batch.body,
+            serde_json::to_vec(&merkle_proof_request_body(&query())).unwrap()
         );
     }
 }

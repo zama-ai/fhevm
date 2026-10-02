@@ -15,8 +15,8 @@ use zama_solana_acl::{
     AclError, EncryptedStore, MmrProof, authorize_state_historical, authorize_state_public,
 };
 
-/// Asks every coprocessor for the whole batch at once, and returns one result per query in batch
-/// order. Only a found proof that verifies against the observed peaks resolves a query; as soon as
+/// Asks every coprocessor for the whole batch at once, prepared once for all of them, and returns
+/// one result per query in batch order. Only a found proof that verifies against the observed peaks resolves a query; as soon as
 /// every query is resolved the reads still running are dropped, so one slow coprocessor does not
 /// hold a request another one can serve. Otherwise a query keeps the last failure a coprocessor
 /// answered; a failed read or an answer of the wrong length says nothing about any leaf. A query
@@ -27,10 +27,11 @@ pub async fn verify_proofs<P: HostProofReader, T: Sync>(
     verify: impl Fn(&T, &MerkleProofOutcome) -> Result<(), HandleBindingFailure>,
 ) -> Result<Vec<Result<(), HandleBindingFailure>>, ProofReadError> {
     let queries: Vec<LeafQuery> = batch.iter().map(|(query, _)| *query).collect();
+    let prepared = reader.prepare(&queries).await?;
     let mut answers: FuturesUnordered<_> = (0..reader.source_count())
         .map(|source| {
-            let queries = &queries;
-            async move { (source, reader.read_proofs(source, queries).await) }
+            let prepared = &prepared;
+            async move { (source, reader.read_proofs(source, prepared).await) }
         })
         .collect();
     let mut results: Vec<Option<Result<(), HandleBindingFailure>>> = vec![None; batch.len()];
