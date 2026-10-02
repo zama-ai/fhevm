@@ -83,6 +83,24 @@ use redis::{RedisConnectionManager, RedisPublisher, RedisQueueInspector};
 use traits::depth::QueueInspector;
 use traits::publisher::DynPublisher;
 
+/// Hard ceiling applied to every Redis stream via `MAXLEN ~` on each `XADD`.
+///
+/// This is a backstop, not a retention policy. Normal reclamation is the
+/// background trimmer, which trims to the oldest ID still unread by any
+/// consumer group. That mechanism is correct but *conditional*: a consumer
+/// group whose consumers are gone keeps its `last-delivered-id` frozen
+/// forever, which pins the trimmer's safe point and lets the stream grow
+/// without bound. The trimmer's own `fallback_maxlen` does not help, because
+/// it only applies when a stream has **no** consumer groups at all.
+///
+/// This ceiling is unconditional, so an abandoned group costs a bounded amount
+/// of memory instead of an unbounded one. It is deliberately far above any
+/// healthy working set: at one block every twelve seconds a chain produces on
+/// the order of 300 entries an hour, so this is weeks of headroom and will only
+/// ever be reached by a stream nobody is draining.
+#[cfg(feature = "redis")]
+pub const REDIS_STREAM_MAXLEN_CEILING: usize = 1_000_000;
+
 /// Default shared AMQP main exchange for broker-level global topology.
 #[cfg(feature = "amqp")]
 const AMQP_DEFAULT_MAIN_EXCHANGE: &str = "main";
@@ -301,7 +319,11 @@ impl Broker {
                 let mut builder = RedisPublisher::builder((**conn).clone())
                     .max_retries(3)
                     .auto_trim(Duration::from_secs(60))
-                    .fallback_maxlen(100_000);
+                    .fallback_maxlen(100_000)
+                    // Unconditional backstop — see REDIS_STREAM_MAXLEN_CEILING.
+                    // `fallback_maxlen` above only covers streams with no
+                    // consumer groups, which is not the case that grows.
+                    .max_stream_len(REDIS_STREAM_MAXLEN_CEILING);
 
                 if *ensure_publish {
                     builder = builder.replication_wait(1, Duration::from_millis(500));

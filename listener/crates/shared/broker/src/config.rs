@@ -93,6 +93,10 @@ pub struct RedisOptions {
     pub claim_min_idle_secs: Option<u64>,
     /// Interval in seconds between claim sweep cycles (default: 10).
     pub claim_interval_secs: Option<u64>,
+    /// Where a newly created consumer group starts reading (default: `"0"`).
+    ///
+    /// Ignored if the group already exists.
+    pub start_id: Option<String>,
 }
 
 /// AMQP-specific options (optional).
