@@ -263,7 +263,7 @@ const replaceSolanaProcess = async (binary: string, lifecycleDir: string | undef
 
 // Both binaries build with the listener's features, like the Dockerfile, so cargo reuses one
 // build of host-listener.
-const HOST_LISTENER_FEATURES = 'solana-grpc,solana-reconstruct';
+const HOST_LISTENER_FEATURES = 'solana';
 
 const buildSolanaBinary = async (binary: string): Promise<void> => {
   const buildLog = `/tmp/${binary}-build.log`;

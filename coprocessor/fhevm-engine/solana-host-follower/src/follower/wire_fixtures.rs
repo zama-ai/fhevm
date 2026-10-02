@@ -15,48 +15,44 @@ use solana_sdk::{
     transaction::VersionedTransaction,
 };
 use yellowstone_grpc_proto::prelude::{
-    CompiledInstruction as GrpcCompiledInstruction, InnerInstruction,
-    InnerInstructions, Message as GrpcMessage, SubscribeUpdateTransaction,
-    SubscribeUpdateTransactionInfo, Transaction as GrpcTransaction,
-    TransactionStatusMeta,
+    CompiledInstruction as GrpcCompiledInstruction, InnerInstruction, InnerInstructions,
+    Message as GrpcMessage, SubscribeUpdateTransaction, SubscribeUpdateTransactionInfo,
+    Transaction as GrpcTransaction, TransactionStatusMeta,
 };
 
+use anchor_lang::{AnchorSerialize, Discriminator};
 use solana_transaction_status_client_types::{
     EncodedConfirmedTransactionWithStatusMeta, UiConfirmedBlock,
 };
-use zama_host::state::{
-    ExecutionResultRef, FheExecuteArgs, FheExecuteEffect, FheExecuteStep,
-};
+use zama_host::state::{ExecutionResultRef, FheExecuteArgs, FheExecuteEffect, FheExecuteStep};
+use zama_host::FheExecutedEvent;
 
-use super::test_support::{encoded_execution, with_events, ZAMA_HOST};
-use super::FHE_EXECUTE_REMAINING_BASE;
-use crate::solana_reconstruct::DecodedInstruction;
+use super::test_support::ZAMA_HOST;
 
-pub(super) const BLOCK_TIME: i64 = 1_700_000_000;
+pub(crate) const BLOCK_TIME: i64 = 1_700_000_000;
 
 /// A compiled instruction as the fixtures and both wire formats describe it.
-pub(super) struct Compiled {
-    pub(super) program_id_index: u8,
-    pub(super) accounts: Vec<u8>,
-    pub(super) data: Vec<u8>,
-    pub(super) stack_height: Option<u32>,
+pub(crate) struct Compiled {
+    pub(crate) program_id_index: u8,
+    pub(crate) accounts: Vec<u8>,
+    pub(crate) data: Vec<u8>,
+    pub(crate) stack_height: Option<u32>,
 }
 
 /// One transaction, written once and rendered in both wire formats.
-pub(super) struct Transaction {
-    pub(super) signature: [u8; 64],
-    pub(super) static_keys: Vec<[u8; 32]>,
-    pub(super) loaded_writable: Vec<[u8; 32]>,
-    pub(super) loaded_readonly: Vec<[u8; 32]>,
-    pub(super) top_level: Vec<Compiled>,
-    pub(super) inner_groups: Vec<(u8, Vec<Compiled>)>,
+pub(crate) struct Transaction {
+    pub(crate) signature: [u8; 64],
+    pub(crate) static_keys: Vec<[u8; 32]>,
+    pub(crate) loaded_writable: Vec<[u8; 32]>,
+    pub(crate) loaded_readonly: Vec<[u8; 32]>,
+    pub(crate) top_level: Vec<Compiled>,
+    pub(crate) inner_groups: Vec<(u8, Vec<Compiled>)>,
 }
 
 impl Transaction {
     /// `getBlock`'s JSON for the transaction, spelled as the RPC wire format.
-    pub(super) fn rpc_json(&self, err: Value) -> Value {
-        let has_lookups = !self.loaded_writable.is_empty()
-            || !self.loaded_readonly.is_empty();
+    pub(crate) fn rpc_json(&self, err: Value) -> Value {
+        let has_lookups = !self.loaded_writable.is_empty() || !self.loaded_readonly.is_empty();
         let message = v0::Message {
             header: MessageHeader {
                 num_required_signatures: 1,
@@ -81,10 +77,8 @@ impl Transaction {
             address_table_lookups: if has_lookups {
                 vec![MessageAddressTableLookup {
                     account_key: Pubkey::new_from_array([0xAA; 32]),
-                    writable_indexes: (0..self.loaded_writable.len() as u8)
-                        .collect(),
-                    readonly_indexes: (0..self.loaded_readonly.len() as u8)
-                        .collect(),
+                    writable_indexes: (0..self.loaded_writable.len() as u8).collect(),
+                    readonly_indexes: (0..self.loaded_readonly.len() as u8).collect(),
                 }]
             } else {
                 vec![]
@@ -140,7 +134,7 @@ impl Transaction {
 
     /// `getBlock`'s JSON for the transaction with `transactionDetails: "accounts"`: its
     /// signatures, account keys and status, without instructions or logs.
-    pub(super) fn rpc_accounts_json(&self, err: Value) -> Value {
+    pub(crate) fn rpc_accounts_json(&self, err: Value) -> Value {
         let full = self.rpc_json(err.clone());
         let keys = |keys: &[[u8; 32]], source: &str| {
             keys.iter()
@@ -177,23 +171,16 @@ impl Transaction {
     }
 
     /// `getTransaction`'s response for the successful transaction in `slot`.
-    pub(super) fn rpc_transaction(
-        &self,
-        slot: u64,
-    ) -> EncodedConfirmedTransactionWithStatusMeta {
+    pub(crate) fn rpc_transaction(&self, slot: u64) -> EncodedConfirmedTransactionWithStatusMeta {
         let mut response = self.rpc_json(Value::Null);
         response["slot"] = json!(slot);
         response["blockTime"] = json!(BLOCK_TIME);
         serde_json::from_value(response).expect("getTransaction JSON")
     }
 
-    pub(super) fn grpc(&self) -> (GrpcMessage, TransactionStatusMeta) {
+    pub(crate) fn grpc(&self) -> (GrpcMessage, TransactionStatusMeta) {
         let message = GrpcMessage {
-            account_keys: self
-                .static_keys
-                .iter()
-                .map(|key| key.to_vec())
-                .collect(),
+            account_keys: self.static_keys.iter().map(|key| key.to_vec()).collect(),
             instructions: self
                 .top_level
                 .iter()
@@ -215,9 +202,7 @@ impl Transaction {
                     instructions: instructions
                         .iter()
                         .map(|instruction| InnerInstruction {
-                            program_id_index: u32::from(
-                                instruction.program_id_index,
-                            ),
+                            program_id_index: u32::from(instruction.program_id_index),
                             accounts: instruction.accounts.clone(),
                             data: instruction.data.clone(),
                             stack_height: instruction.stack_height,
@@ -241,11 +226,7 @@ impl Transaction {
     }
 
     /// The transaction as Yellowstone streams it, successful, at `index` in `slot`.
-    pub(super) fn grpc_update(
-        &self,
-        slot: u64,
-        index: u64,
-    ) -> SubscribeUpdateTransaction {
+    pub(crate) fn grpc_update(&self, slot: u64, index: u64) -> SubscribeUpdateTransaction {
         SubscribeUpdateTransaction {
             transaction: Some(self.grpc_info(index)),
             slot,
@@ -253,10 +234,7 @@ impl Transaction {
     }
 
     /// The transaction as a Yellowstone transaction update carries it, at `index`.
-    pub(super) fn grpc_info(
-        &self,
-        index: u64,
-    ) -> SubscribeUpdateTransactionInfo {
+    pub(crate) fn grpc_info(&self, index: u64) -> SubscribeUpdateTransactionInfo {
         let (message, meta) = self.grpc();
         SubscribeUpdateTransactionInfo {
             signature: self.signature.to_vec(),
@@ -273,16 +251,13 @@ impl Transaction {
 
 /// An app program's top-level instruction CPIs into `fhe_execute`, which emits its event
 /// through a self-CPI, as on chain.
-pub(super) fn app_transaction(
-    signature: u8,
-    plaintext: [u8; 32],
-) -> Transaction {
+pub(crate) fn app_transaction(signature: u8, plaintext: [u8; 32]) -> Transaction {
     app_calling_host(signature, execute_args(plaintext, None), vec![])
 }
 
 /// [`app_transaction`], storing its result into `store` and allowing `key`: one leaf, the
 /// store's `previous_leaf_count`-th.
-pub(super) fn storing_app_transaction(
+pub(crate) fn storing_app_transaction(
     signature: u8,
     plaintext: [u8; 32],
     store: [u8; 32],
@@ -295,7 +270,7 @@ pub(super) fn storing_app_transaction(
     let mut transaction = app_calling_host(
         signature,
         execute_args(plaintext, Some((key, previous_leaf_count))),
-        [FIXED; FHE_EXECUTE_REMAINING_BASE]
+        [FIXED; zama_host::FHE_EXECUTE_FIXED_ACCOUNTS]
             .into_iter()
             .chain([STORE])
             .collect(),
@@ -305,7 +280,7 @@ pub(super) fn storing_app_transaction(
 }
 
 /// A transaction of another program, which the stream's account filter leaves out.
-pub(super) fn foreign_transaction(signature: u8) -> Transaction {
+pub(crate) fn foreign_transaction(signature: u8) -> Transaction {
     Transaction {
         signature: [signature; 64],
         static_keys: vec![[1; 32], [8; 32]],
@@ -322,10 +297,7 @@ pub(super) fn foreign_transaction(signature: u8) -> Transaction {
 }
 
 /// A trivial encryption of `plaintext`, optionally stored with one allowed key.
-fn execute_args(
-    plaintext: [u8; 32],
-    stored: Option<([u8; 32], u64)>,
-) -> FheExecuteArgs {
+fn execute_args(plaintext: [u8; 32], stored: Option<([u8; 32], u64)>) -> FheExecuteArgs {
     FheExecuteArgs {
         execution_store_index: 0,
         effects: stored
@@ -353,23 +325,41 @@ fn execute_args(
     }
 }
 
-/// `execution_accounts` index the transaction's static keys.
+pub(crate) fn encoded_execution(args: &FheExecuteArgs) -> Vec<u8> {
+    let mut data = zama_host::instruction::FheExecute::DISCRIMINATOR.to_vec();
+    args.serialize(&mut data).unwrap();
+    data
+}
+
+/// The bytes of the event CPI a host emits for an execution whose step results are `results`.
+pub(crate) fn event_cpi_data(results: Vec<[u8; 32]>) -> Vec<u8> {
+    let event = FheExecutedEvent {
+        version: zama_host::EVENT_VERSION,
+        previous_bank_hash: [0x44; 32],
+        unix_timestamp: BLOCK_TIME,
+        results,
+        seeds: vec![],
+    };
+    anchor_lang::event::EVENT_IX_TAG_LE
+        .iter()
+        .copied()
+        .chain(anchor_lang::Event::data(&event))
+        .collect()
+}
+
+/// `execution_accounts` index the transaction's static keys. The execution's one result is
+/// `plaintext`, read as a handle: the follower carries handles, it does not derive them.
 fn app_calling_host(
     signature: u8,
     args: FheExecuteArgs,
     execution_accounts: Vec<u8>,
 ) -> Transaction {
     let host: [u8; 32] = ZAMA_HOST.parse::<Pubkey>().unwrap().to_bytes();
-    let execution = DecodedInstruction {
-        program: ZAMA_HOST.to_owned(),
-        data: encoded_execution(args),
-        accounts: vec![],
-        top_level_index: 0,
-        is_inner: true,
+    let FheExecuteStep::TrivialEncrypt { plaintext, .. } = args.steps[0] else {
+        panic!("a trivial encryption")
     };
-    let [execution, event] = &with_events([execution])[..] else {
-        panic!("one execution, one event")
-    };
+    let execution_data = encoded_execution(&args);
+    let event_data = event_cpi_data(vec![plaintext]);
     Transaction {
         signature: [signature; 64],
         // Payer, app program, host program, event authority.
@@ -388,13 +378,13 @@ fn app_calling_host(
                 Compiled {
                     program_id_index: 2,
                     accounts: execution_accounts,
-                    data: execution.data.clone(),
+                    data: execution_data,
                     stack_height: Some(2),
                 },
                 Compiled {
                     program_id_index: 2,
                     accounts: vec![3],
-                    data: event.data.clone(),
+                    data: event_data,
                     stack_height: Some(3),
                 },
             ],
@@ -403,7 +393,7 @@ fn app_calling_host(
 }
 
 /// `getBlock`'s JSON for a block at `slot` whose parent is `parent`, hashed with `hash`.
-pub(super) fn block_json(
+pub(crate) fn block_json(
     slot: u64,
     parent: u64,
     hash: impl Fn(u64) -> [u8; 32],

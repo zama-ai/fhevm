@@ -12,6 +12,7 @@ members = [
     "stress-test-generator",
     "upgrade-controller",
     "consensus-detector",
+    "solana-host-follower",
 ]
 
 [workspace.package]

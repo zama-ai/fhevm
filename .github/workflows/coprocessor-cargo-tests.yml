@@ -112,14 +112,19 @@ jobs:
             runner: runs-on=${{ github.run_id }}/runner=16cpu-linux-x64/spot=false/volume=80gb
           - service: host-listener
             package: host-listener
-            # The Solana listener binary requires both features; without them the Solana
-            # modules are not compiled at all, so this leg would test half the crate.
-            features: solana-grpc,solana-reconstruct
+            # Without the feature the Solana modules are not compiled at all, so this leg
+            # would test half the crate.
+            features: solana
             needs_localstack: false
             needs_foundry: true
             # Larger disk: coverage build of host-listener plus the restored cargo
             # cache exceeds the default runner disk.
             runner: runs-on=${{ github.run_id }}/runner=16cpu-linux-x64/spot=false/volume=80gb
+          - service: solana-host-follower
+            package: solana-host-follower
+            needs_localstack: false
+            needs_foundry: false
+            runner: runs-on=${{ github.run_id }}/runner=4cpu-linux-x64/spot=false
           - service: common
             package: fhevm-engine-common
             needs_localstack: false

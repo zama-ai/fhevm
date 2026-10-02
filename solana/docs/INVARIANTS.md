@@ -604,8 +604,7 @@ overhead and application CPIs.
 Pinned by `rejects_more_than_max_ops`, `cost_snapshot_fhe_execute_max_steps` and `cost_snapshot_boundary_sweeps`.
 
 **34. [OPERATIONAL]** Reconstruction fixtures compile only under
-`--features solana-grpc,solana-reconstruct`; coverage exists only where CI
-passes those flags.
+`--features solana`; coverage exists only where CI passes that flag.
 
 **47. [RETIRED]** The standalone proof service is gone (RFC 035, DD-048). The
 leaf record lives in each coprocessor's database, written by its host

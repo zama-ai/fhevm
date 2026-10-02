@@ -30,16 +30,7 @@ use zama_solana_acl::{
 };
 
 use crate::database::tfhe_event_propagate::Transaction;
-
-/// A `fhe_execute` state output, with its account resolved.
-#[derive(Clone, Debug, PartialEq, Eq)]
-pub struct EncryptedStoreWrite {
-    pub encrypted_store: [u8; 32],
-    pub previous_leaf_count: u64,
-    pub handle: [u8; 32],
-    pub allowed_keys: Vec<[u8; 32]>,
-    pub make_public: bool,
-}
+use solana_host_follower::host::EncryptedStoreWrite;
 
 /// The leaf sources of one confirmed transaction.
 #[derive(Clone, Debug, PartialEq, Eq)]

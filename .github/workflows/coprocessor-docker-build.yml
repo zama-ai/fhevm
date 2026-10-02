@@ -186,6 +186,7 @@ jobs:
         host-listener:
           - .github/workflows/coprocessor-docker-build.yml
           - coprocessor/fhevm-engine/host-listener/**
+          - coprocessor/fhevm-engine/solana-host-follower/**
           - coprocessor/fhevm-engine/fhevm-engine-common/**
           - coprocessor/fhevm-engine/Cargo.*
           - host-contracts/rust_bindings/**
