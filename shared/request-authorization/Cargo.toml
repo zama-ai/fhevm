@@ -1,0 +1,15 @@
+[package]
+authors = ["Zama"]
+name = "request-authorization"
+version = "0.15.0"
+edition = "2024"
+license = "BSD-3-Clause-Clear"
+
+[dependencies]
+alloy-primitives = { version = "1", default-features = false, features = ["std", "k256"] }
+alloy-sol-types = { version = "1", default-features = false, features = ["std"] }
+thiserror = { version = "2", default-features = false }
+
+[dev-dependencies]
+alloy-signer = { version = "2", default-features = false }
+alloy-signer-local = { version = "2", default-features = false }
