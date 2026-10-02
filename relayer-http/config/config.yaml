@@ -16,8 +16,8 @@ kms_aggregator:
   call:
     timeout: 5000ms            # the deadline: one aggregation, and every call in it, ends by then
     retries:                   # retryable connector errors only; a retry never starts past the deadline
-      max_retries: 0           # retries after the first attempt; 0 = single attempt; the deadline is the real bound
-      delay: 500ms             # retry k waits min(delay * 2^(k-1), backoff_max)
+      max_retries: 5           # retries after the first attempt; 0 = single attempt; the deadline is the real bound
+      delay: 200ms             # retry k waits min(delay * 2^(k-1), backoff_max)
       backoff_max: 4s          # cap of the exponential delay; <= call.timeout
   public_decrypt:
     threshold: 5               # identical (decryptedResult, extraData) answers needed; protocol config value (5 at n = 13) (t + 1)

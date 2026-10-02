@@ -35,6 +35,8 @@ target-test/
 # Advisory db and lock file
 Advisory-db*
 advisory-db*
+.cargo/advisory-db
+.cargo/advisory-db..lock
 
 config/*.local.yaml
 
