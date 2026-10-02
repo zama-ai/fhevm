@@ -16,9 +16,16 @@ for program in "$@"; do
   case "$program" in
     # The specimens carry their own fixed test ids; they compile the same under every environment.
     zama_host|confidential_token|demo_vault|confidential_batcher|encrypted_counter|dep_chain) ;;
+    # The local simulator build of zama_host (src/cleartext), written beside the production one.
+    zama_host_cleartext) ;;
     *) echo "unknown program: $program" >&2; exit 1;;
   esac
 done
+# `cleartext` makes zama_host record plaintexts in its accounts; it is a local test build only.
+if python3 -c 'import json, sys; sys.exit(not any("cleartext" in f for f in json.load(open(sys.argv[1])).get("features", {}).values()))' "$environment_file"; then
+  echo "$environment_file enables the cleartext test build, which must never be deployed" >&2
+  exit 1
+fi
 bash scripts/install-sbf-tools.sh
 # build.rs reads the program ids from the environment file; each program's cargo features come from
 # the same file (`features.<program>`). The environment is passed as cargo config, not a shell
@@ -27,6 +34,16 @@ bash scripts/install-sbf-tools.sh
 # `anchor build -- <cargo-build-sbf args> -- <cargo args>`.
 cargo_config=(--config "env.PROGRAM_ENVIRONMENT.value=\"$environment\"" --config 'env.PROGRAM_ENVIRONMENT.force=true')
 for program in "$@"; do
+  # The cleartext build is zama_host plus `cleartext` and no environment features, since no
+  # environment deploys it. It is built in its own directory so it never replaces zama_host.so.
+  if [[ "$program" == zama_host_cleartext ]]; then
+    output_dir=$(mktemp -d)
+    anchor build --ignore-keys --no-idl -p zama_host -- --sbf-out-dir "$output_dir" --features cleartext -- "${cargo_config[@]}"
+    mkdir -p target/deploy
+    mv "$output_dir/zama_host.so" target/deploy/zama_host_cleartext.so
+    rm -r "$output_dir"
+    continue
+  fi
   features=$(python3 -c 'import json, sys; print(",".join(json.load(open(sys.argv[1])).get("features", {}).get(sys.argv[2], [])))' "$environment_file" "$program")
   args=(build --ignore-keys --no-idl -p "$program" --)
   if [[ -n "$features" ]]; then args+=(--features "$features"); fi

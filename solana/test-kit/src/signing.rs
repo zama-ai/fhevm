@@ -52,16 +52,44 @@ pub(crate) fn secp_sign(key: &SigningKey, digest: &[u8; 32]) -> [u8; 65] {
     out
 }
 
-/// Builds a coprocessor-signed `fromExternal` attestation over `amount_handle`, binding it to
-/// (`user`, `contract`), signed by the default single coprocessor key. Consumers check
-/// `user == transfer authority` and `contract == the consuming program`;
-/// the host re-verifies the signature(s) in-execution.
+/// Builds a coprocessor-signed `fromExternal` attestation over `amount_handle`, whose plaintext is
+/// `amount`, binding it to (`user`, `contract`), signed by the default single coprocessor key.
+/// Consumers check `user == transfer authority` and `contract == the consuming program`;
+/// the host re-verifies the signature(s) in-execution. `extra_data` carries `amount` for the
+/// cleartext host build (see [`crate::cleartext::input_extra_data`]); the production build does
+/// not read it.
 pub fn amount_attestation_for(
+    amount_handle: [u8; 32],
+    amount: u64,
+    user: Pubkey,
+    contract: Pubkey,
+) -> host::CoprocessorInputAttestation {
+    amount_attestation_signed_by(
+        amount_handle,
+        amount,
+        user,
+        contract,
+        &[coprocessor_signing_key()],
+    )
+}
+
+/// [`amount_attestation_for`] in the shape a real coprocessor returns, `extra_data = [0x00]` with
+/// no plaintext: for cost snapshots on the production host, which must measure the real
+/// transaction.
+pub fn production_amount_attestation_for(
     amount_handle: [u8; 32],
     user: Pubkey,
     contract: Pubkey,
 ) -> host::CoprocessorInputAttestation {
-    amount_attestation_signed_by(amount_handle, user, contract, &[coprocessor_signing_key()])
+    attestation_signed_by(
+        amount_handle,
+        vec![amount_handle],
+        0,
+        user,
+        contract,
+        vec![0x00u8],
+        &[coprocessor_signing_key()],
+    )
 }
 
 /// Like [`amount_attestation_for`], but produces one signature per key in `keys` (n-of-m
@@ -69,6 +97,7 @@ pub fn amount_attestation_for(
 /// digest.
 pub fn amount_attestation_signed_by(
     amount_handle: [u8; 32],
+    amount: u64,
     user: Pubkey,
     contract: Pubkey,
     keys: &[SigningKey],
@@ -79,7 +108,7 @@ pub fn amount_attestation_signed_by(
         0,
         user,
         contract,
-        vec![0x00u8],
+        crate::cleartext::input_extra_data(&[crate::cleartext::u64_value(amount)]),
         keys,
     )
 }

@@ -10,10 +10,14 @@ import { DEFAULT_SOLANA_ENVIRONMENT } from '../../../solana/deploy/src/environme
 const env = loadEnv();
 const runId = randomUUID();
 process.env.SOLANA_RECOVERY_RUN_ID = runId;
+// The cleartext target is started here and lives for the run; the other targets are brought up
+// beforehand (`bun run demo up`, or a preview namespace).
+const cleartextStack = env.source === 'cleartext' ? await (await import('../src/solana/cleartext-stack')).startCleartextStack() : undefined;
 let status = 1;
 try {
   status = await Bun.spawn(['bun', 'test', ...(process.argv.length > 2 ? process.argv.slice(2) : ['e2e/scenarios'])], { stdin: 'inherit', stdout: 'inherit', stderr: 'inherit' }).exited;
 } finally {
+  await cleartextStack?.stop();
   if (env.network === 'devnet') {
     try {
       await recoverPreview(createHostDeployContext(env.rpcUrl), await loadKeypairSigner(env.roots.deployerKeypairPath), DEFAULT_SOLANA_ENVIRONMENT, recoveryDirectory(), false, env.roots.deployerKeypairPath, false, runId);

@@ -6,5 +6,17 @@
  * @see https://github.com/codama-idl/codama
  */
 
+export * from './coprocessorInputAttestation.js';
+export * from './executionResultRef.js';
+export * from './fheBinaryOpCode.js';
+export * from './fheExecutedEvent.js';
+export * from './fheExecuteEffect.js';
+export * from './fheExecuteOperand.js';
+export * from './fheExecuteRandomSeed.js';
+export * from './fheExecuteStep.js';
+export * from './fheTernaryOpCode.js';
+export * from './fheUnaryOpCode.js';
 export * from './kmsThresholds.js';
 export * from './pauseFlags.js';
+export * from './resultGrant.js';
+export * from './slotWrite.js';

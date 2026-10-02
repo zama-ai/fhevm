@@ -126,4 +126,14 @@ pub fn transient_store_address(payer: Pubkey) -> (Pubkey, u8) {
     Pubkey::find_program_address(&[TRANSIENT_SEED, payer.as_ref()], &crate::ID)
 }
 
+/// Whether `len` is the size of an opened `TransientStore`. The cleartext build also accepts the
+/// store once an execution appended its plaintext tail.
+pub fn is_transient_store_len(len: usize) -> bool {
+    #[cfg(feature = "cleartext")]
+    if len == crate::cleartext::layout::TRANSIENT_ACCOUNT_SIZE {
+        return true;
+    }
+    len == TransientStore::SPACE
+}
+
 const _: () = assert!(TransientStore::SPACE <= 10_240);

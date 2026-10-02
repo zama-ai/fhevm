@@ -1,0 +1,287 @@
+import { concatBytes, unsafeBytesEquals } from '../../core/base/bytes.js';
+import { keccak_256 } from '@noble/hashes/sha3.js';
+
+/**
+ * MMR primitives of the Zama Solana `EncryptedStore` ACL (RFC 035), for the cleartext client's
+ * stand-in for the KMS Connector: it keeps each store's leaves and judges a decryption against them
+ * as the Connector does.
+ *
+ * Every hash primitive here MUST be byte-identical to the Rust shared crate
+ * (`solana/crates/zama-solana-acl`), which runs on-chain and in the KMS Connector. The committed
+ * leaf vectors (`solana/test-fixtures/leaves/leaves_v1.json`) are what prove the agreement.
+ *
+ * Domain-separation prefixes and encodings are pinned 1:1 to the Rust crate:
+ * - `ZAMA_MMR_LEAF_V1` / `ZAMA_MMR_NODE_V1`     — MMR leaf/internal node hashing (`mmr.rs`).
+ * - `ZAMA_HIST_ACCESS_LEAF_V1`                  — historical-access leaf commitment.
+ * - `ZAMA_PUBLIC_DECRYPT_LEAF_V1`               — public-decrypt leaf commitment.
+ * - `leaf_index` is encoded big-endian (8 bytes) everywhere it is hashed.
+ * - Leaf commitment preimages are `(account key ‖ leaf_index ‖ handle [‖ key])`.
+ */
+
+const LEAF_PREFIX = utf8('ZAMA_MMR_LEAF_V1');
+const NODE_PREFIX = utf8('ZAMA_MMR_NODE_V1');
+const HISTORICAL_ACCESS_LEAF_PREFIX = utf8('ZAMA_HIST_ACCESS_LEAF_V1');
+const PUBLIC_DECRYPT_LEAF_PREFIX = utf8('ZAMA_PUBLIC_DECRYPT_LEAF_V1');
+
+function utf8(s: string): Uint8Array {
+  return new TextEncoder().encode(s);
+}
+
+function assertLen(bytes: Uint8Array, len: number, name: string): void {
+  if (bytes.length !== len) {
+    throw new Error(`${name} must be exactly ${len} bytes, got ${bytes.length}`);
+  }
+}
+
+/** Big-endian 8-byte encoding of a `leaf_index`/`u64`. Matches `to_be_bytes()` in Rust. */
+function u64BE(value: bigint): Uint8Array {
+  if (value < 0n || value > 0xffffffffffffffffn) {
+    throw new Error(`u64BE: value out of range: ${value}`);
+  }
+  const out = new Uint8Array(8);
+  const view = new DataView(out.buffer);
+  view.setBigUint64(0, value, false);
+  return out;
+}
+
+/** keccak256 of the concatenation of `parts`. Matches the Rust crate's `keccak256(&[...])` helper. */
+function keccak256Parts(...parts: readonly Uint8Array[]): Uint8Array {
+  return keccak_256(concatBytes(...parts));
+}
+
+/** Matches `zama_solana_acl::mmr::mmr_leaf_node`. */
+export function mmrLeafNode(commitment: Uint8Array): Uint8Array {
+  assertLen(commitment, 32, 'commitment');
+  return keccak256Parts(LEAF_PREFIX, commitment);
+}
+
+/** Matches `zama_solana_acl::mmr::mmr_node`. */
+export function mmrNode(left: Uint8Array, right: Uint8Array): Uint8Array {
+  assertLen(left, 32, 'left');
+  assertLen(right, 32, 'right');
+  return keccak256Parts(NODE_PREFIX, left, right);
+}
+
+/**
+ * Matches `zama_solana_acl::historical_access_leaf_commitment`: the preimage of a
+ * `HistoricalAccessLeaf { encrypted_store_account, leaf_index, handle, key }` — one allow of
+ * `key` on `handle`.
+ */
+export function historicalAccessLeafCommitment(
+  encryptedStore: Uint8Array,
+  leafIndex: bigint,
+  handle: Uint8Array,
+  key: Uint8Array,
+): Uint8Array {
+  assertLen(encryptedStore, 32, 'encryptedStore');
+  assertLen(handle, 32, 'handle');
+  assertLen(key, 32, 'key');
+  return keccak256Parts(HISTORICAL_ACCESS_LEAF_PREFIX, encryptedStore, u64BE(leafIndex), handle, key);
+}
+
+/**
+ * Matches `zama_solana_acl::public_decrypt_leaf_commitment`: the preimage of a
+ * `PublicDecryptLeaf { encrypted_store_account, leaf_index, handle }`.
+ */
+export function publicDecryptLeafCommitment(
+  encryptedStore: Uint8Array,
+  leafIndex: bigint,
+  handle: Uint8Array,
+): Uint8Array {
+  assertLen(encryptedStore, 32, 'encryptedStore');
+  assertLen(handle, 32, 'handle');
+  return keccak256Parts(PUBLIC_DECRYPT_LEAF_PREFIX, encryptedStore, u64BE(leafIndex), handle);
+}
+
+/** An MMR inclusion proof: sibling hashes from the leaf up to its mountain's peak. */
+export type MmrProof = {
+  readonly leafIndex: bigint;
+  readonly siblings: readonly Uint8Array[];
+};
+
+/** Upper bound on the sibling path; a 64-bit leaf count has at most 64 levels. */
+const MAX_MMR_SIBLINGS = 64;
+
+/**
+ * One leaf-appending operation in an encrypted value account's history, in chronological order.
+ * Mirrors `zama_solana_acl::history::StoreHistoryEvent`.
+ */
+export type SolanaStoreHistoryEvent =
+  /** One `allow` of `key` on `handle`, sealed by the write that installed `handle`. */
+  | { readonly kind: 'allowed'; readonly handle: Uint8Array; readonly key: Uint8Array }
+  /** `handle` was made publicly decryptable. */
+  | { readonly kind: 'markedPublic'; readonly handle: Uint8Array };
+
+/** The leaf `event` appends at `leafIndex` of `encryptedStore`'s history. */
+export function storeLeafCommitment(
+  encryptedStore: Uint8Array,
+  leafIndex: bigint,
+  event: SolanaStoreHistoryEvent,
+): Uint8Array {
+  switch (event.kind) {
+    case 'allowed':
+      return historicalAccessLeafCommitment(encryptedStore, leafIndex, event.handle, event.key);
+    case 'markedPublic':
+      return publicDecryptLeafCommitment(encryptedStore, leafIndex, event.handle);
+  }
+}
+
+/**
+ * The height of leaf `leafIndex`'s mountain among `leafCount` leaves, and so how many siblings its
+ * proof holds: the highest bit set in the count and not in the index.
+ */
+export function mmrMountainHeight(leafIndex: bigint, leafCount: bigint): number {
+  return (leafCount ^ leafIndex).toString(2).length - 1;
+}
+
+/**
+ * An MMR built leaf by leaf that keeps every node it computes, so the peaks at a past leaf count
+ * and a proof cost one node per level.
+ */
+export type RetainedMmr = {
+  readonly leafCount: () => number;
+  readonly append: (commitment: Uint8Array) => void;
+  /** The peaks after the first `leafCount` leaves, oldest mountain first. */
+  readonly peaks: (leafCount: number) => readonly Uint8Array[];
+  /** The proof of leaf `leafIndex` against the peaks after the first `leafCount` leaves. */
+  readonly proof: (leafIndex: number, leafCount: number) => MmrProof;
+};
+
+export function createRetainedMmr(): RetainedMmr {
+  // `levels[height][index]` is the node over leaves `[index * 2^height, (index + 1) * 2^height)`.
+  const levels: Uint8Array[][] = [];
+  const node = (height: number, index: number): Uint8Array => {
+    const found = levels[height]?.[index];
+    if (found === undefined) throw new Error(`the MMR holds no node ${index} at height ${height}`);
+    return found;
+  };
+  const leafCount = (): number => levels[0]?.length ?? 0;
+  const assertCovered = (count: number): void => {
+    if (!Number.isSafeInteger(count) || count < 0 || count > leafCount()) {
+      throw new Error(`the MMR holds ${leafCount()} leaves, not ${count}`);
+    }
+  };
+  return {
+    leafCount,
+    append(commitment) {
+      let current = mmrLeafNode(commitment);
+      for (let height = 0; ; height += 1) {
+        const level = (levels[height] ??= []);
+        level.push(current);
+        const index = level.length - 1;
+        // A right child completes its parent.
+        if (index % 2 === 0) return;
+        current = mmrNode(node(height, index - 1), current);
+      }
+    },
+    peaks(count) {
+      assertCovered(count);
+      const peaks: Uint8Array[] = [];
+      let offset = 0;
+      for (let height = Math.floor(Math.log2(Math.max(count, 1))); height >= 0; height -= 1) {
+        const size = 2 ** height;
+        if (count - offset >= size) {
+          peaks.push(node(height, offset / size));
+          offset += size;
+        }
+      }
+      return peaks;
+    },
+    proof(leafIndex, count) {
+      assertCovered(count);
+      if (!Number.isSafeInteger(leafIndex) || leafIndex < 0 || leafIndex >= count) {
+        throw new Error(`leaf ${leafIndex} is not among the first ${count}`);
+      }
+      const height = mmrMountainHeight(BigInt(leafIndex), BigInt(count));
+      const siblings: Uint8Array[] = [];
+      for (let level = 0; level < height; level += 1) {
+        const ancestor = Math.floor(leafIndex / 2 ** level);
+        siblings.push(node(level, ancestor % 2 === 0 ? ancestor + 1 : ancestor - 1));
+      }
+      return { leafIndex: BigInt(leafIndex), siblings };
+    },
+  };
+}
+
+////////////////////////////////////////////////////////////////////////////////
+// Verification
+////////////////////////////////////////////////////////////////////////////////
+
+function popcount64(value: bigint): number {
+  let count = 0;
+  let v = value;
+  while (v > 0n) {
+    count += Number(v & 1n);
+    v >>= 1n;
+  }
+  return count;
+}
+
+/**
+ * Verifies that `commitment` is the leaf at `proof.leafIndex` of the MMR with these `peaks` and
+ * `leafCount`. Matches `zama_solana_acl::mmr::mmr_verify`.
+ */
+export function mmrVerify(
+  peaks: readonly Uint8Array[],
+  leafCount: bigint,
+  commitment: Uint8Array,
+  proof: MmrProof,
+): boolean {
+  if (proof.siblings.length > MAX_MMR_SIBLINGS) {
+    return false;
+  }
+  if (proof.leafIndex >= leafCount || peaks.length !== popcount64(leafCount)) {
+    return false;
+  }
+
+  let offset = 0n;
+  let peakPos = 0;
+  for (let height = 63; height >= 0; height--) {
+    const bit = 1n << BigInt(height);
+    if ((leafCount & bit) === 0n) {
+      continue;
+    }
+    if (proof.leafIndex >= offset && proof.leafIndex < offset + bit) {
+      if (proof.siblings.length !== height) {
+        return false;
+      }
+      let node = mmrLeafNode(commitment);
+      let local = proof.leafIndex - offset;
+      for (const sibling of proof.siblings) {
+        assertLen(sibling, 32, 'sibling');
+        node = local % 2n === 0n ? mmrNode(node, sibling) : mmrNode(sibling, node);
+        local >>= 1n;
+      }
+      const peak = peaks[peakPos];
+      return peak !== undefined && unsafeBytesEquals(node, peak);
+    }
+    offset += bit;
+    peakPos += 1;
+  }
+  return false;
+}
+
+/** Matches `zama_solana_acl::authorize_state_historical`: one allow of `key` on `handle` is proven. */
+export function verifyHistoricalAccessProof(
+  encryptedStore: Uint8Array,
+  peaks: readonly Uint8Array[],
+  leafCount: bigint,
+  handle: Uint8Array,
+  key: Uint8Array,
+  proof: MmrProof,
+): boolean {
+  const commitment = historicalAccessLeafCommitment(encryptedStore, proof.leafIndex, handle, key);
+  return mmrVerify(peaks, leafCount, commitment, proof);
+}
+
+/** Matches `zama_solana_acl::authorize_state_public`: `handle` was made public, at exactly this leaf. */
+export function verifyPublicDecryptProof(
+  encryptedStore: Uint8Array,
+  peaks: readonly Uint8Array[],
+  leafCount: bigint,
+  handle: Uint8Array,
+  proof: MmrProof,
+): boolean {
+  const commitment = publicDecryptLeafCommitment(encryptedStore, proof.leafIndex, handle);
+  return mmrVerify(peaks, leafCount, commitment, proof);
+}

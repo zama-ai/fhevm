@@ -116,7 +116,8 @@ crates/zama-solana-acl          The shared ACL crate: account layout, decode, MM
                                 connector, so both sides run identical code.
 crates/solana-ed25519-instruction  Ed25519 instruction-sysvar helpers.
 test-kit                        The fixture library every Rust test imports: Mollusk boot,
-                                account fixtures, mock KMS signing, the cleartext oracle.
+                                account fixtures, mock KMS signing, plaintext reads of the
+                                cleartext host build.
 runtime-tests                   Fast evaluator contracts plus real-SBF Mollusk suites
                                 (docs/TESTING.md explains what each layer proves).
 demo-dapp                       The confidential vault demo frontend.

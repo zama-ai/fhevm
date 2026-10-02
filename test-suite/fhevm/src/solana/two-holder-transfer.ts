@@ -7,7 +7,7 @@ import { address, getAddressEncoder, type Address, type TransactionSigner } from
 
 import { REPO_ROOT, SOLANA_ACL_PROGRAM, coprocessorDbPsql } from "../layout";
 import { LOCAL_SOLANA_ENDPOINTS } from "./endpoints";
-import { bytes32HexFromId, readActiveKmsPair, readGatewayBootstrapInputs } from "./addresses";
+import { bytes32HexFromId } from "./addresses";
 import { runSolanaCurrentUserDecrypt } from "./current-user-decrypt";
 import {
   createConfidentialMint,
@@ -23,6 +23,7 @@ import {
   type SolanaProvisioningContext,
 } from "./provision";
 import { waitForSnsCommit } from "./sns";
+import { readDecryptTrustInputs } from "./target";
 import { run } from "../utils/process";
 import { timed } from "../utils/timing";
 
@@ -71,8 +72,8 @@ export type TwoHolderConfig = {
   readonly userDecryptContext: string | undefined;
   /** SOL each holder starts with: Alice pays every provisioning rent and the arc's fees, Bob his own account. */
   readonly funding: { readonly primarySol: number; readonly secondarySol: number };
-  /** Command prefix that opens the coprocessor database, where the SNS-commit wait polls. */
-  readonly coprocessorDbPsql: readonly string[];
+  /** Resolves once a handle's ciphertext is decryptable: the SNS commit on the real stack. */
+  readonly waitForHandle: (handle: string) => Promise<void>;
   /** Wallet the holders are funded from by transfer; absent, they are airdropped (local validators). */
   readonly funderKeypairPath: string | undefined;
 };
@@ -130,7 +131,7 @@ const resolveConfig = (config: Partial<TwoHolderConfig>): TwoHolderConfig => ({
   userDecryptContext: config.userDecryptContext,
   funding: config.funding ?? { primarySol: 10, secondarySol: 5 },
   funderKeypairPath: config.funderKeypairPath,
-  coprocessorDbPsql: config.coprocessorDbPsql ?? coprocessorDbPsql(),
+  waitForHandle: config.waitForHandle ?? ((handle) => waitForSnsCommit(handle, coprocessorDbPsql())),
 });
 
 export const createRealTwoHolderDependencies = (config: Partial<TwoHolderConfig> = {}): TwoHolderDependencies => {
@@ -191,9 +192,7 @@ export const createRealTwoHolderDependencies = (config: Partial<TwoHolderConfig>
     async readBalance(scenario, holder) {
       return readTokenBalanceStore(context(), { mint: address(scenario.mint), owner: address(holder.owner) });
     },
-    async waitForHandle(handle) {
-      await waitForSnsCommit(handle, cfg.coprocessorDbPsql);
-    },
+    waitForHandle: cfg.waitForHandle,
     async transfer(scenario, alice, bob) {
       if (alice.chainId !== bob.chainId) throw new Error("Alice and Bob balance handles disagree on chain id");
       // bun, not node: the worker imports the demo dapp's vault module (TS sources resolved
@@ -220,15 +219,8 @@ export const createRealTwoHolderDependencies = (config: Partial<TwoHolderConfig>
       parseTransferWorkerResult(result.stdout);
     },
     decrypt: async (scenario, holder, state, expected) => {
-      // The permit path's trust inputs, read live from the deployed stack: signer set and
-      // Decryption contract from the gateway (party ids follow this registry order inside the
-      // runner), the active KMS context/epoch pair from the primary host chain's ProtocolConfig —
-      // the same source the KMS Connector validates each permit's signed pair against.
-      const [gateway, kmsPair] = await Promise.all([
-        readGatewayBootstrapInputs({ gatewayRpcUrl: cfg.gatewayRpcUrl }),
-        readActiveKmsPair({ hostRpcUrl: cfg.hostRpcUrl }),
-      ]);
-      const hex20 = (bytes: Uint8Array): string => `0x${Buffer.from(bytes).toString("hex")}`;
+      // The permit path's trust inputs; party ids follow the signer registry order inside the runner.
+      const trust = await readDecryptTrustInputs(cfg);
       return runSolanaCurrentUserDecrypt({
         UD_RPC_URL: cfg.rpcUrl,
         UD_RELAYER_URL: cfg.relayerUrl,
@@ -238,12 +230,12 @@ export const createRealTwoHolderDependencies = (config: Partial<TwoHolderConfig>
         // the owner's allow leaf itself.
         UD_ENCRYPTED_STORE: `0x${Buffer.from(getAddressEncoder().encode(address(state.encryptedStore))).toString("hex")}`,
         UD_SECRET_KEY: holder.secretKey,
-        UD_CONTEXT_ID: cfg.userDecryptContext ?? bytes32HexFromId(kmsPair.kmsContextId),
-        UD_EPOCH_ID: bytes32HexFromId(kmsPair.kmsEpochId),
+        UD_CONTEXT_ID: cfg.userDecryptContext ?? bytes32HexFromId(trust.kmsContextId),
+        UD_EPOCH_ID: bytes32HexFromId(trust.kmsEpochId),
         UD_VERIFYING_PROGRAM_ID: cfg.aclProgram,
-        UD_KMS_SIGNERS: gateway.kmsSigners.map(hex20).join(","),
-        UD_GATEWAY_CHAIN_ID: gateway.gatewayChainId.toString(),
-        UD_GATEWAY_DECRYPTION_CONTRACT: hex20(gateway.decryptionContract),
+        UD_KMS_SIGNERS: trust.kmsSigners.join(","),
+        UD_GATEWAY_CHAIN_ID: trust.gatewayChainId.toString(),
+        UD_GATEWAY_DECRYPTION_CONTRACT: trust.decryptionContract,
         UD_EXPECTED: expected.toString(),
       });
     },

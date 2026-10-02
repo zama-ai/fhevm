@@ -126,3 +126,9 @@ test('matching bytecode does not require upgrade authority', async () => {
   await deployProgramArtifacts(await fixture({ exists: true, wrongAuthority: true }));
   expect(await calls()).not.toContain('deploy');
 });
+test('a cleartext test build is refused before any deployment call', async () => {
+  const parameters = await fixture();
+  await writeFile(path.join(directory!, 'zama_host.so'), 'elf..zama-host cleartext build (test)..');
+  await expect(deployProgramArtifacts(parameters)).rejects.toThrow('cleartext test build');
+  expect(await calls()).toBe('');
+});

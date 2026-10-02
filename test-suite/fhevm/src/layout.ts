@@ -26,6 +26,7 @@ const statePaths = (root: string) => {
   // Everything the Solana demo writes lives under one runtime subtree, so a preview namespace or a
   // test swaps it wholesale with FHEVM_STATE_DIR like the rest of the layout.
   const solanaRuntimeDir = path.join(runtimeDir, "solana");
+  const solanaCleartextDir = path.join(stateDir, "solana-cleartext");
   return {
     STATE_DIR: stateDir,
     PERSISTED_STATE_DIR: persistedStateDir,
@@ -50,6 +51,9 @@ const statePaths = (root: string) => {
     solanaBatchLookupTablesPath: path.join(solanaRuntimeDir, "batch-lookup-tables.json"),
     /** Written by the deposit-arc smoke on success; `demo:smoke` requires it back. */
     solanaDemoSmokeMarkerPath: path.join(solanaRuntimeDir, "demo-smoke-ran"),
+    /** The cleartext stack's ledger, log and deployer wallet (`src/solana/cleartext-stack.ts`). */
+    SOLANA_CLEARTEXT_DIR: solanaCleartextDir,
+    solanaCleartextDeployerPath: path.join(solanaCleartextDir, "deployer.json"),
   };
 };
 let currentStatePaths = statePaths(process.env.FHEVM_STATE_DIR ?? DEFAULT_STATE_DIR);
@@ -72,6 +76,8 @@ export let solanaDemoConfigPath = currentStatePaths.solanaDemoConfigPath;
 export let SOLANA_DEMO_DIR = currentStatePaths.SOLANA_DEMO_DIR;
 export let solanaBatchLookupTablesPath = currentStatePaths.solanaBatchLookupTablesPath;
 export let solanaDemoSmokeMarkerPath = currentStatePaths.solanaDemoSmokeMarkerPath;
+export let SOLANA_CLEARTEXT_DIR = currentStatePaths.SOLANA_CLEARTEXT_DIR;
+export let solanaCleartextDeployerPath = currentStatePaths.solanaCleartextDeployerPath;
 export let gatewayAddressesSolidityPath = path.join(currentStatePaths.ADDRESS_DIR, "gateway", "GatewayAddresses.sol");
 export let paymentBridgingAddressesSolidityPath = path.join(
   currentStatePaths.ADDRESS_DIR,
@@ -99,6 +105,8 @@ export const setStateDir = (root = process.env.FHEVM_STATE_DIR ?? DEFAULT_STATE_
   SOLANA_DEMO_DIR = currentStatePaths.SOLANA_DEMO_DIR;
   solanaBatchLookupTablesPath = currentStatePaths.solanaBatchLookupTablesPath;
   solanaDemoSmokeMarkerPath = currentStatePaths.solanaDemoSmokeMarkerPath;
+  SOLANA_CLEARTEXT_DIR = currentStatePaths.SOLANA_CLEARTEXT_DIR;
+  solanaCleartextDeployerPath = currentStatePaths.solanaCleartextDeployerPath;
   gatewayAddressesSolidityPath = path.join(currentStatePaths.ADDRESS_DIR, "gateway", "GatewayAddresses.sol");
   paymentBridgingAddressesSolidityPath = path.join(
     currentStatePaths.ADDRESS_DIR,
@@ -168,6 +176,10 @@ export const SOLANA_VALIDATOR_WS_PORT = 8900;
 export const SOLANA_LEAF_PROOF_PORT = 8080;
 export const SOLANA_LISTENER_HEALTH_PORT = 8081;
 export const SOLANA_LISTENER_GRPC_PORT = 10000;
+// The cleartext stack's own validator (`src/solana/cleartext-stack.ts`), clear of the real stack's.
+export const SOLANA_CLEARTEXT_RPC_PORT = 28899;
+export const SOLANA_CLEARTEXT_FAUCET_PORT = 29900;
+export const SOLANA_CLEARTEXT_GOSSIP_PORT = 29901;
 export const DEMO_OPERATOR_PORT = 8091;
 export const DEMO_DAPP_PORT = 5173;
 export const PORTS = [

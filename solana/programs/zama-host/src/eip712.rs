@@ -20,13 +20,13 @@
 use anchor_lang::prelude::*;
 use solana_keccak_hasher::hashv as keccak;
 
-const DOMAIN_TYPE: &[u8] =
+pub(crate) const DOMAIN_TYPE: &[u8] =
     b"EIP712Domain(string name,string version,uint256 chainId,address verifyingContract)";
 const PUBLIC_DECRYPT_TYPE: &[u8] =
     b"PublicDecryptVerification(bytes32[] ctHandles,bytes decryptedResult,bytes extraData)";
 // RFC-021 Solana form: EVM uses `address` for user/contract; host-chain addresses
 // are widened to bytes32 so Solana 32-byte pubkeys fit.
-const CIPHERTEXT_VERIFICATION_TYPE: &[u8] = b"CiphertextVerification(bytes32[] ctHandles,bytes32 userAddress,bytes32 contractAddress,uint256 contractChainId,bytes extraData)";
+pub(crate) const CIPHERTEXT_VERIFICATION_TYPE: &[u8] = b"CiphertextVerification(bytes32[] ctHandles,bytes32 userAddress,bytes32 contractAddress,uint256 contractChainId,bytes extraData)";
 
 /// keccak256 over the concatenation of `parts`.
 fn k(parts: &[&[u8]]) -> [u8; 32] {
@@ -411,6 +411,11 @@ mod tests {
             &[0x00],
         );
         let digest = typed_data_digest(&ds, &sh);
+        // The SDK's cleartext coprocessor signs this digest; its test pins the same value.
+        assert_eq!(
+            digest.map(|byte| format!("{byte:02x}")).concat(),
+            "6921062a83bd4a2174c90c298454b562aa5bedb4fc8b22417d74b89fd37c5aab"
+        );
         let sig = sign(&key, &digest);
 
         assert_eq!(recover_evm_address(&digest, &sig), Some(signer));

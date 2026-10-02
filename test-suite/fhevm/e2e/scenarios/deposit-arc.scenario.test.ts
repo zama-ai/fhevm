@@ -33,6 +33,7 @@ import { loadPersonas, until } from "../harness";
 import { withHostReachableFetch } from "../harness/solana/sdkEncrypt";
 import { waitForSnsCommit } from "../../src/solana/sns";
 import { solanaDemoSmokeMarkerPath } from "../../src/layout";
+import { targetsCleartext } from "../../src/solana/target";
 import { depositRoots, resolveDemoConfigPath, type VaultDemoRoots } from "../../demo/config";
 import { readDemoAuthorization } from "../../demo/lifecycle";
 import { demoKeypairs, loadDemoEnv } from "../../demo/loadDemoEnv";
@@ -111,6 +112,10 @@ const asBytes32BigEndian = (decimal: string): Uint8Array => {
 // seeded demo-config cannot exist there. The `demo:smoke` script sets RUN_DEMO_SCENARIOS=1; under
 // it the test runs unconditionally, so a missing config still fails the acceptance gate loudly.
 const runsDemoScenarios = process.env.RUN_DEMO_SCENARIOS === "1";
+// The demo-dapp vault flows build their own SDK clients, which the cleartext target does not swap.
+if (runsDemoScenarios && targetsCleartext()) {
+  throw new Error("the demo scenarios run against the real Zama stack only, not SOLANA_E2E_SOURCE=cleartext");
+}
 
 
 describe.skipIf(!runsDemoScenarios)("solana deposit-arc scenario", () => {

@@ -7,6 +7,7 @@ import { createSolanaRpc, type Rpc, type SolanaRpcApi } from "@solana/kit";
 // relayer's docker-internal object-store URLs rewritten to the host-published endpoint while the
 // prover fetches key material.
 
+import { loadSolanaSdk } from "../../../src/solana/target";
 import { hostReachableMaterialUrl } from "../../../src/utils/fs";
 
 /** The SDK encrypt surface the scenarios drive (untyped: runtime dynamic-import seam). */
@@ -29,10 +30,8 @@ export type SolanaInputProofSubmission = {
   extraData: `0x${string}`;
 };
 
-const loadSolanaSdkEncrypt = async (): Promise<SolanaSdkEncryptSurface> => {
-  const solanaModule = "@fhevm/sdk/solana";
-  return (await import(solanaModule)) as unknown as SolanaSdkEncryptSurface;
-};
+const loadSolanaSdkEncrypt = async (): Promise<SolanaSdkEncryptSurface> =>
+  (await loadSolanaSdk()) as unknown as SolanaSdkEncryptSurface;
 
 /**
  * Runs `body` with `globalThis.fetch` rewriting docker-internal object-store URLs to the

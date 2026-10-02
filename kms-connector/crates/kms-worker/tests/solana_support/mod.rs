@@ -163,6 +163,8 @@ pub const DEFAULT_START: u64 = 1_700_000_000;
 pub const DEFAULT_DURATION: u64 = 3_600;
 /// A time inside the default window.
 pub const NOW_INSIDE_WINDOW: u64 = DEFAULT_START + 60;
+/// The transport key of every fixture permit.
+pub const TRANSPORT_KEY: [u8; TRANSPORT_KEY_LEN] = [0xa5; TRANSPORT_KEY_LEN];
 /// The Unix time the host's Clock reads in every world, unless a test sets another.
 pub const HOST_NOW: u64 = NOW_INSIDE_WINDOW;
 /// The fixture deployment inside the default window.
@@ -185,7 +187,7 @@ impl PermitBuilder {
         Self {
             wire: PermitWireFields {
                 user_address: user.to_bytes().to_vec(),
-                transport_key: vec![0xa5; TRANSPORT_KEY_LEN],
+                transport_key: TRANSPORT_KEY.to_vec(),
                 allowed_scopes: vec![scope_entry(APP_PROGRAM, SCOPE)],
                 start_timestamp: DEFAULT_START,
                 duration_seconds: DEFAULT_DURATION,
@@ -228,6 +230,12 @@ impl PermitBuilder {
     /// Replaces the signed chain, which every handle of the request must name.
     pub fn chain_id(mut self, chain_id: u64) -> Self {
         self.wire.chain_id = chain_id;
+        self
+    }
+
+    /// Replaces the signed host program.
+    pub fn verifying_program(mut self, program: Pubkey) -> Self {
+        self.wire.verifying_program_id = program.to_bytes().to_vec();
         self
     }
 
@@ -770,6 +778,11 @@ impl World {
         }
     }
 
+    /// Every account the world holds, in key order.
+    pub fn accounts(&self) -> impl Iterator<Item = (&Pubkey, &SnapshotAccount)> {
+        self.accounts.iter()
+    }
+
     /// The account at `key`, if the world holds one.
     pub fn account(&self, key: &Pubkey) -> Option<SnapshotAccount> {
         self.accounts.get(key).cloned()
@@ -1159,7 +1172,7 @@ pub fn proof_route(url: &url::Url) -> ProofRoute {
 }
 
 /// A leaf-proof answer as the coprocessor route serializes it.
-fn wire_outcome(outcome: &LeafProofOutcome) -> serde_json::Value {
+pub fn wire_outcome(outcome: &LeafProofOutcome) -> serde_json::Value {
     match outcome {
         LeafProofOutcome::Found {
             leaf_index,

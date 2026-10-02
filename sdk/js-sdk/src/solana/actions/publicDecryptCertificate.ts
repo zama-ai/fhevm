@@ -40,6 +40,11 @@ export type SolanaPublicDecryptCertificateClaim = {
   readonly extraData: string;
 };
 
+/** Obtains the certificate of one public handle; the relayer unless a cleartext client signs it. */
+export type SolanaPublicDecryptCertifier = (
+  parameters: SolanaPublicDecryptCertificateParameters,
+) => Promise<SolanaPublicDecryptCertificateClaim>;
+
 /**
  * The KMS routing a Solana public decrypt carries in `extraData`: version 1, `0x01 ‖ contextId`.
  * The host `KmsContext` holds no epoch, so this is what the EVM flow sends when no epoch is set.

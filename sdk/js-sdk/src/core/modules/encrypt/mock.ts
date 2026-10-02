@@ -1,6 +1,6 @@
 /* eslint-disable @typescript-eslint/require-await */
 import type { TfheVersion } from '../../../wasm/tfhe/TfheApi.js';
-import { concatBytes, hexToBytes32 } from '../../base/bytes.js';
+import { concatBytes, hexToBytes32, unsafeBytesEquals } from '../../base/bytes.js';
 import { remove0x } from '../../base/string.js';
 import { typedValueToBytes32Hex } from '../../base/typedValue.js';
 import type { FhevmRuntime } from '../../types/coreFhevmRuntime.js';
@@ -140,6 +140,10 @@ export async function parseTFHEProvenCompactCiphertextList(
 // buildWithProofPacked
 ////////////////////////////////////////////////////////////////////////////////
 
+// Per typedValue: random nonce || metaData || value as a 32-byte big-endian word.
+const PACKED_NONCE_LEN = 8;
+const PACKED_VALUE_LEN = 32;
+
 export async function buildWithProofPacked(
   parameters: BuildWithProofPackedParameters,
 ): Promise<BuildWithProofPackedReturnType> {
@@ -158,9 +162,8 @@ export async function buildWithProofPacked(
   const typedValuesBytes32HexNo0x = typedValues.map(typedValueToBytes32Hex).map(remove0x).join('');
   const cleartextExtraData = `0x${typedValuesBytes32HexNo0x}${remove0x(extraData)}` as BytesHex;
 
-  // Per typedValue: random nonce (8 bytes) || metaData || value bytes (32).
   const perValueBlobs = typedValues.map((tv) => {
-    const nonce = crypto.getRandomValues(new Uint8Array(new ArrayBuffer(8)));
+    const nonce = crypto.getRandomValues(new Uint8Array(new ArrayBuffer(PACKED_NONCE_LEN)));
     const valueBytes = hexToBytes32(typedValueToBytes32Hex(tv));
     return concatBytes(nonce, metaData, valueBytes);
   });
@@ -172,6 +175,29 @@ export async function buildWithProofPacked(
     extraData: cleartextExtraData,
     tfheVersion: tfheCompactPublicKeyImpl.tfheVersion,
   };
+}
+
+/**
+ * The values `buildWithProofPacked` packed with `metaData`, as 32-byte big-endian words in input
+ * order, or `undefined` when `ciphertextWithZKProofBytes` is not that packing of `count` values.
+ */
+export function unpackWithProofPacked(parameters: {
+  readonly ciphertextWithZKProofBytes: Uint8Array;
+  readonly metaData: Uint8Array;
+  readonly count: number;
+}): Uint8Array[] | undefined {
+  const { ciphertextWithZKProofBytes: packed, metaData, count } = parameters;
+  const blobLength = PACKED_NONCE_LEN + metaData.length + PACKED_VALUE_LEN;
+  if (packed.length !== count * blobLength) return undefined;
+  const values: Uint8Array[] = [];
+  for (let start = 0; start < packed.length; start += blobLength) {
+    const blob = packed.subarray(start, start + blobLength);
+    if (!unsafeBytesEquals(blob.subarray(PACKED_NONCE_LEN, PACKED_NONCE_LEN + metaData.length), metaData)) {
+      return undefined;
+    }
+    values.push(blob.subarray(blobLength - PACKED_VALUE_LEN));
+  }
+  return values;
 }
 
 ////////////////////////////////////////////////////////////////////////////////

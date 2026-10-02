@@ -88,8 +88,10 @@ describe('solana specimen decrypt vertical', () => {
 });
 
 // The same source compiled with another optimization level supplies a genuinely different,
-// compatible executable without introducing a test-only instruction into the host program.
-test.skipIf(loadEnv().network !== 'localnet')(
+// compatible executable without introducing a test-only instruction into the host program. The
+// listener restart it checks needs the real services.
+const upgradeEnv = loadEnv();
+test.skipIf(upgradeEnv.network !== 'localnet' || !upgradeEnv.capabilities.protocolServices)(
   'host upgrade and listener restart retain old decryptable values',
   async () => {
     const { env, stack, context, wallets, wallet, config, secretKey } = await verticalSetup();

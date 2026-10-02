@@ -19,6 +19,8 @@ use crate::{
 
 mod account_table;
 mod block_cap;
+#[cfg(feature = "cleartext")]
+mod cleartext;
 mod event_transport;
 mod hcu;
 mod preflight;
@@ -159,6 +161,16 @@ pub fn fhe_execute<'info>(
     account_table.flush_states(
         &ctx.accounts.payer.to_account_info(),
         &ctx.accounts.system_program.to_account_info(),
+    )?;
+    #[cfg(feature = "cleartext")]
+    cleartext::record_execution(
+        &mut account_table,
+        &ctx.accounts.transient_store,
+        &ctx.accounts.payer.to_account_info(),
+        &ctx.accounts.system_program.to_account_info(),
+        call_start,
+        &args,
+        &random_seeds,
     )?;
     let transient_store = transient_store_account.load()?;
     emit_executed_event(

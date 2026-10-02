@@ -23,9 +23,25 @@ for program in zama_host confidential_token confidential_batcher demo_vault; do
   NO_DNA=1 anchor build --ignore-keys --no-idl -p "$program" -- --features admin-sweep 2>&1 | tee -a "$build_log"
   mv "target/deploy/$program.so" "target/deploy/${program}_admin_sweep.so"
 done
+# `cleartext` records plaintexts in host accounts for the local simulator (src/cleartext). It is a
+# test artifact only: build-programs.sh refuses it in environment files and deploy refuses its marker.
+NO_DNA=1 bash scripts/build-programs.sh preview-env zama_host_cleartext 2>&1 | tee -a "$build_log"
 NO_DNA=1 anchor build --ignore-keys 2>&1 | tee -a "$build_log"
-if rg -n 'Error:.*([Ss]tack offset|overflows the maximum allowed)' "$build_log"; then
+if grep -En 'Error:.*([Ss]tack offset|overflows the maximum allowed)' "$build_log"; then
   echo "SBF stack limit exceeded" >&2
+  exit 1
+fi
+
+# The deployer refuses any binary carrying the cleartext build's marker, so the marker must be in
+# the cleartext build and never in the production one. The deployer copies it from the host's
+# `MAGIC`; the SDK reads it from `hostConstants.ts`, which a zama-host test renders.
+marker="$(sed -n 's/^pub const MAGIC: \[u8; 32\] = \*b"\(.*\)";$/\1/p' programs/zama-host/src/cleartext/layout.rs)"
+[[ -n "$marker" ]] || { echo 'cannot read MAGIC from src/cleartext/layout.rs' >&2; exit 1; }
+grep -qF "'$marker'" deploy/src/deploy-programs.ts ||
+  { echo "deploy/src/deploy-programs.ts does not carry the cleartext marker '$marker'" >&2; exit 1; }
+LC_ALL=C grep -qaF "$marker" target/deploy/zama_host_cleartext.so || { echo 'cleartext build lacks its marker' >&2; exit 1; }
+if LC_ALL=C grep -qaF "$marker" target/deploy/zama_host.so; then
+  echo 'production zama_host.so carries the cleartext marker' >&2
   exit 1
 fi
 

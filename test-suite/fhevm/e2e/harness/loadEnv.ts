@@ -22,6 +22,11 @@
 // the SNS probe reaches the coprocessor Postgres through whatever command `COPROCESSOR_DB_PSQL`
 // names (a `kubectl exec ... psql` prefix) instead of the local `docker exec`.
 //
+// Source "cleartext": the cleartext stack (`src/solana/cleartext-stack.ts`), a local validator
+// whose zama-host keeps every plaintext in its accounts. Selected with `SOLANA_E2E_SOURCE=cleartext`.
+// No relayer, gateway, coprocessor or KMS serves it (`protocolServices: false`), so the fields
+// naming those services are unused there.
+//
 // A second source (the confidential-vault demo-config JSON, #1760) plugs in here: it reads the
 // runtime artifact and calls `resolveEnv(overrides, "demo-config")` with a `Partial<TestEnvOverrides>`
 // mapped from the file (see `demo/loadDemoEnv.ts`). The mapping lives with the demo package, not
@@ -30,8 +35,9 @@
 import os from "node:os";
 import path from "node:path";
 
-import { coprocessorDbPsql, SOLANA_ACL_PROGRAM } from "../../src/layout";
-import { LOCAL_SOLANA_ENDPOINTS } from "../../src/solana/endpoints";
+import { coprocessorDbPsql, SOLANA_ACL_PROGRAM, solanaCleartextDeployerPath } from "../../src/layout";
+import { CLEARTEXT_SOLANA_ENDPOINTS, LOCAL_SOLANA_ENDPOINTS } from "../../src/solana/endpoints";
+import { solanaE2eSource } from "../../src/solana/target";
 
 export type Capabilities = {
   /** Can fund actors with SOL (local validator airdrop). Local: true. Devnet/mainnet: false. */
@@ -40,6 +46,8 @@ export type Capabilities = {
   readonly freshMints: boolean;
   /** Slots advance on demand (local validator). Live networks: false. */
   readonly fastSlots: boolean;
+  /** A relayer, coprocessors and KMS serve the chain. Cleartext: false. */
+  readonly protocolServices: boolean;
 };
 
 export type TestEnv = {
@@ -70,8 +78,8 @@ export type TestEnv = {
   readonly funding: Funding;
 };
 
-/** "local" and "devnet" assemble from process env and defaults; "demo-config" from a seed's artifact. */
-export type TestEnvSource = "local" | "demo-config" | "devnet";
+/** "local", "devnet" and "cleartext" assemble from process env and defaults; "demo-config" from a seed's artifact. */
+export type TestEnvSource = "local" | "demo-config" | "devnet" | "cleartext";
 export type SolanaNetwork = "localnet" | "devnet";
 
 /**
@@ -119,6 +127,7 @@ const capabilitiesFor = (source: TestEnvSource, network: SolanaNetwork): Capabil
   faucet: network === "localnet",
   freshMints: source !== "demo-config",
   fastSlots: network === "localnet",
+  protocolServices: source !== "cleartext",
 });
 
 const FUNDING_BY_NETWORK: Record<SolanaNetwork, Funding> = {
@@ -173,13 +182,11 @@ const psqlOverride = (env: NodeJS.ProcessEnv): Partial<Pick<TestEnvOverrides, "c
   return {};
 };
 
-const sourceFromEnv = (env: NodeJS.ProcessEnv): "local" | "devnet" => {
-  const value = env.SOLANA_E2E_SOURCE ?? "local";
-  if (value !== "local" && value !== "devnet") {
-    throw new Error(`SOLANA_E2E_SOURCE must be "local" or "devnet", got ${value}`);
-  }
-  return value;
-};
+const CLEARTEXT_DEFAULTS = {
+  rpcUrl: CLEARTEXT_SOLANA_ENDPOINTS.validatorRpc,
+  wsUrl: CLEARTEXT_SOLANA_ENDPOINTS.validatorWs,
+  deployerKeypairPath: solanaCleartextDeployerPath,
+} as const;
 
 /** Assembles a validated TestEnv from `defaults <- overrides`. Exported for the scenario tests. */
 export const resolveEnv = (
@@ -187,9 +194,13 @@ export const resolveEnv = (
   source: TestEnvSource = "local",
   network: SolanaNetwork = source === "devnet" ? "devnet" : "localnet",
 ): TestEnv => {
-  const merged = { ...LOCAL_DEFAULTS, ...(network === "devnet" ? { chainId: "130140237723663404" } : {}), ...overrides };
-  const deployerKeypairPath =
-    overrides.deployerKeypairPath ?? path.join(os.homedir(), ".config/solana/id.json");
+  const merged = {
+    ...LOCAL_DEFAULTS,
+    deployerKeypairPath: path.join(os.homedir(), ".config/solana/id.json"),
+    ...(network === "devnet" ? { chainId: "130140237723663404" } : {}),
+    ...(source === "cleartext" ? CLEARTEXT_DEFAULTS : {}),
+    ...overrides,
+  };
   if (source === "devnet" && network !== "devnet") throw new Error('source "devnet" runs on network "devnet"');
   return {
     source,
@@ -206,7 +217,7 @@ export const resolveEnv = (
         ? undefined
         : decimalString(merged.userDecryptContextId, "userDecryptContextId"),
     coprocessorDbPsql: merged.coprocessorDbPsql,
-    roots: { deployerKeypairPath },
+    roots: { deployerKeypairPath: merged.deployerKeypairPath },
     capabilities: capabilitiesFor(source, network),
     funding: FUNDING_BY_NETWORK[network],
   };
@@ -214,4 +225,4 @@ export const resolveEnv = (
 
 /** Builds the TestEnv the scenarios run against, from the current e2e runtime. */
 export const loadEnv = (env: NodeJS.ProcessEnv = process.env): TestEnv =>
-  resolveEnv(envOverrides(env), sourceFromEnv(env));
+  resolveEnv(envOverrides(env), solanaE2eSource(env));

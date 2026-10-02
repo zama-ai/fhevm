@@ -58,11 +58,17 @@ pub fn create_encrypted_store(
         info.key(),
         ZamaHostError::EncryptedStorePdaMismatch
     );
+    // The cleartext build allocates the largest shape up front so its plaintext section sits at a
+    // fixed offset no later Borsh write reaches.
+    #[cfg(not(feature = "cleartext"))]
+    let space = zama_solana_acl::EncryptedStore::account_size(0, 0);
+    #[cfg(feature = "cleartext")]
+    let space = crate::cleartext::layout::STORE_ACCOUNT_SIZE;
     create_pda_strict(
         &ctx.accounts.payer.to_account_info(),
         &info,
         &ctx.accounts.system_program.to_account_info(),
-        zama_solana_acl::EncryptedStore::account_size(0, 0),
+        space,
         &[
             ENCRYPTED_STORE_SEED,
             args.program.as_ref(),
@@ -82,5 +88,8 @@ pub fn create_encrypted_store(
             peaks: Vec::new(),
             bump,
         },
-    )
+    )?;
+    #[cfg(feature = "cleartext")]
+    crate::cleartext::layout::init_store_section(&mut info.try_borrow_mut_data()?)?;
+    Ok(())
 }

@@ -52,6 +52,25 @@ pub fn open_transient_store<'info>(ctx: Context<'info, OpenTransientStore<'info>
         TransientStore::SPACE,
         &[TRANSIENT_SEED, payer.as_ref(), &[bump]],
     )?;
+    // The cleartext tail does not fit the 10 KiB an instruction may add to a new account, so the
+    // first execution appends it. Its rent is paid here so that append spends no transfer.
+    #[cfg(feature = "cleartext")]
+    {
+        use anchor_lang::solana_program::{program::invoke, system_instruction};
+        let (payer, store) = (
+            ctx.accounts.payer.to_account_info(),
+            ctx.accounts.transient_store.to_account_info(),
+        );
+        let rent = Rent::get()?.minimum_balance(crate::cleartext::layout::TRANSIENT_ACCOUNT_SIZE);
+        invoke(
+            &system_instruction::transfer(
+                payer.key,
+                store.key,
+                rent.saturating_sub(store.lamports()),
+            ),
+            &[payer, store, ctx.accounts.system_program.to_account_info()],
+        )?;
+    }
     let loader = AccountLoader::<TransientStore>::try_from_unchecked(
         &crate::ID,
         &ctx.accounts.transient_store,
@@ -77,7 +96,7 @@ pub fn close_transient_store(ctx: Context<CloseTransientStore>) -> Result<()> {
         ZamaHostError::TransientCloseMissing
     );
     require!(
-        ctx.accounts.transient_store.to_account_info().data_len() == TransientStore::SPACE,
+        is_transient_store_len(ctx.accounts.transient_store.to_account_info().data_len()),
         ZamaHostError::TransientAccountInvalid
     );
     let transient_store = ctx.accounts.transient_store.load()?;
@@ -160,7 +179,7 @@ pub(super) fn opened_transient_store<'info>(
         ZamaHostError::TransientStoreNotOpened
     );
     require!(
-        account.data_len() == TransientStore::SPACE,
+        is_transient_store_len(account.data_len()),
         ZamaHostError::TransientStoreNotOpened
     );
     AccountLoader::try_from(account).map_err(|_| error!(ZamaHostError::TransientAccountInvalid))

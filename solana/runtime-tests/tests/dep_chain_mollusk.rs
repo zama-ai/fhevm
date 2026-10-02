@@ -4,8 +4,9 @@
 //! full depth builds and invokes a maximum execution inside the specimen program, so this test is
 //! what verifies under SBF that an at-cap on-chain build — tables, packet, account resolution,
 //! Anchor deserialization — fits the fixed 32 KB program heap that `heap_budget/` counts
-//! host-side. It also proves the kit's cleartext oracle replays transient intermediates and that a
-//! full-depth chain fits one instruction's compute budget.
+//! host-side. On the cleartext host build it also proves transient intermediates resolve to their
+//! plaintexts on chain and that a full-depth chain fits one instruction's compute budget with the
+//! simulator's evaluation added.
 
 use dep_chain as chain_program;
 use mollusk_svm::result::Check;
@@ -13,7 +14,6 @@ use solana_sdk::{instruction::Instruction, pubkey::Pubkey};
 use std::collections::HashMap;
 use zama_host as host;
 use zama_solana_test_kit as kit;
-use zama_solana_test_kit::oracle::CleartextLedger;
 use zama_solana_test_kit::{
     anchor_error_check, anchor_ix, ensure_system_accounts, event_authority, host_config_account,
     system_account, HostConfigParams,
@@ -27,7 +27,7 @@ fn full_depth_dependent_chain_computes_in_one_execution() {
     let encrypted_store = chain_program::chain_state_id(chain).address();
     let (host_config, host_config_data) = host_config_account(&HostConfigParams::new(owner));
     let mut mollusk = kit::svm(&chain_program::id(), "dep_chain");
-    mollusk.add_program(&host::id(), "zama_host");
+    mollusk.add_program(&host::id(), kit::cleartext::HOST_PROGRAM);
     kit::set_previous_bank_hash_sysvars(&mut mollusk);
     let context = mollusk.with_context(HashMap::from([
         (owner, system_account(50_000_000_000)),
@@ -35,7 +35,6 @@ fn full_depth_dependent_chain_computes_in_one_execution() {
         (event_authority(host::id()), system_account(0)),
     ]));
     ensure_system_accounts(&context, &[chain, chain_authority, encrypted_store]);
-    let mut ledger = CleartextLedger::default();
 
     let initialize = || {
         anchor_ix(
@@ -73,16 +72,12 @@ fn full_depth_dependent_chain_computes_in_one_execution() {
             chain_program::instruction::Extend { links, amount },
         )
     };
-    // Runs one chain instruction, replays its single `fhe_execute` CPI in cleartext — every
-    // transient link included — and asserts the tail behind the one persisted handle.
-    let assert_tail = |ledger: &mut CleartextLedger, ix: &Instruction, expected: u64| {
-        let result =
-            kit::transaction::process_fhe_instruction(&context, owner, ix, &[Check::success()]);
-        let replay = ledger.replay_fhe_cpis(&context, &result);
-        assert_eq!(replay.executions, 1);
-        assert_eq!(replay.persistent_outputs, 1);
+    // Runs one chain instruction and asserts the tail the host recorded behind the one persisted
+    // handle, which every transient link fed.
+    let assert_tail = |ix: &Instruction, expected: u64| {
+        kit::transaction::process_fhe_instruction(&context, owner, ix, &[Check::success()]);
         assert_eq!(
-            ledger.u64_in_state(
+            kit::cleartext::store_u64(
                 &context,
                 encrypted_store,
                 chain_program::encrypted_tail_label()
@@ -91,13 +86,13 @@ fn full_depth_dependent_chain_computes_in_one_execution() {
         );
     };
 
-    assert_tail(&mut ledger, &initialize(), 0);
+    assert_tail(&initialize(), 0);
     // The full-depth chain: 32 dependent adds in one execution — the host's cap, built on-chain,
     // which is the at-cap heap proof described in the module docs.
-    assert_tail(&mut ledger, &extend(chain_program::MAX_CHAIN_LINKS, 1), 32);
+    assert_tail(&extend(chain_program::MAX_CHAIN_LINKS, 1), 32);
     // A short chain over the persisted tail; and the single-link degenerate form persists directly.
-    assert_tail(&mut ledger, &extend(4, 2), 40);
-    assert_tail(&mut ledger, &extend(1, 2), 42);
+    assert_tail(&extend(4, 2), 40);
+    assert_tail(&extend(1, 2), 42);
 
     // Chain-length bounds fail closed before any CPI runs.
     kit::transaction::process_fhe_instruction(

@@ -57,6 +57,8 @@ import {
   web3KeypairFromBytes,
   toWeb3Instruction,
 } from "../harness/solana/squads";
+import { until } from "../harness";
+import { loadEnv } from "../harness/loadEnv";
 import { verticalSetup, type VerticalTestSetup } from "../harness/solana/vertical";
 
 // Each arc does its own compute + SNS commit wait (up to ~3min) + KMS round-trips, plus the
@@ -107,6 +109,11 @@ const squadsAvailable = (await squadsGenesisExtras()) !== undefined;
 // reason; this is the second gate, for a suite run against a stack that already booted.
 const squadsRequired = process.env.SOLANA_E2E_REQUIRE_SQUADS === "1";
 
+// A cleartext stack has no relayer to coalesce jobs and no Squads program: there the headless arc
+// skips its coalescing step and the squads arc does not run. Its client refuses a revoked delegation
+// as the Connector does.
+const protocolServices = loadEnv().capabilities.protocolServices;
+
 describe("solana delegated user-decrypt", () => {
   test(
     "[headless] grant -> delegate decrypts 42 -> identical repeat is one job -> revoke -> refused",
@@ -144,6 +151,7 @@ describe("solana delegated user-decrypt", () => {
         expiresAt: (await hostUnixTime(setup)) + EXPIRY_SECONDS_AHEAD,
       });
       await context.sendTransaction(wallet.signer, [grant]);
+      const grantSlot = await context.rpc.getSlot({ commitment: "confirmed" }).send();
 
       // The rows the connector will read, checked the way a dapp would before paying for a job.
       const rows = await solana.fetchSolanaUserDecryptionDelegation(context.rpc, {
@@ -157,57 +165,64 @@ describe("solana delegated user-decrypt", () => {
       // The delegate decrypts the delegator's value.
       expect(await delegatedDecrypt(setup, { value, handle, delegateSecretKey })).toBe(42n);
 
-      // Dedup: the same session, the same bytes, twice — the relayer coalesces them into one
-      // job. Asserted at the wire: both POST bodies are byte-identical and both answers carry
-      // the same job id. The interception passes everything through untouched.
-      solana.setFhevmRuntimeConfig({ auth: { type: "ApiKeyHeader", value: "local" } });
-      const trust: SolanaDecryptTrust = {
-        kmsSigners: config.kmsSigners.map((address, index) => ({ partyId: index + 1, address })),
-        kmsContextId: solanaUserDecryptContext(config.userDecryptContextId) as SolanaDecryptTrust["kmsContextId"],
-        kmsEpochId: config.kmsEpochId as SolanaDecryptTrust["kmsEpochId"],
-        fheParameter: config.fheParameter,
-        gatewayEip712Domain: {
-          name: "Decryption",
-          version: "1",
-          chainId: BigInt(config.gatewayChainId),
-          verifyingContract: config.gatewayDecryptionContract,
-        } as SolanaDecryptTrust["gatewayEip712Domain"],
-      };
-      const client = solana.createFhevmDecryptClient({ chain, rpc: context.rpc, trust });
-      const session = await client.signPermit({
-        wallet: solana.solanaPermitWalletFromSecretKey(delegate.bytes.subarray(0, 32)),
-        durationSeconds: 3_600n,
-      });
-      const submissions: { body: string; jobId: string }[] = [];
-      const realFetch = globalThis.fetch;
-      globalThis.fetch = (async (input: RequestInfo | URL, init?: RequestInit) => {
-        const url = String(input instanceof Request ? input.url : input);
-        const response = await realFetch(input as never, init);
-        if (url.includes("/v3/user-decrypt") && (init?.method ?? "GET") === "POST") {
-          const answer = (await response.clone().json()) as { result?: { jobId?: string } };
-          submissions.push({ body: String(init?.body), jobId: answer.result?.jobId ?? "<no job id>" });
+      if (protocolServices) {
+        // Dedup: the same session, the same bytes, twice — the relayer coalesces them into one
+        // job. Asserted at the wire: both POST bodies are byte-identical and both answers carry
+        // the same job id. The interception passes everything through untouched.
+        solana.setFhevmRuntimeConfig({ auth: { type: "ApiKeyHeader", value: "local" } });
+        const trust: SolanaDecryptTrust = {
+          kmsSigners: config.kmsSigners.map((address, index) => ({ partyId: index + 1, address })),
+          kmsContextId: solanaUserDecryptContext(config.userDecryptContextId) as SolanaDecryptTrust["kmsContextId"],
+          kmsEpochId: config.kmsEpochId as SolanaDecryptTrust["kmsEpochId"],
+          fheParameter: config.fheParameter,
+          gatewayEip712Domain: {
+            name: "Decryption",
+            version: "1",
+            chainId: BigInt(config.gatewayChainId),
+            verifyingContract: config.gatewayDecryptionContract,
+          } as SolanaDecryptTrust["gatewayEip712Domain"],
+        };
+        const client = solana.createFhevmDecryptClient({ chain, rpc: context.rpc, trust });
+        const session = await client.signPermit({
+          wallet: solana.solanaPermitWalletFromSecretKey(delegate.bytes.subarray(0, 32)),
+          durationSeconds: 3_600n,
+        });
+        const submissions: { body: string; jobId: string }[] = [];
+        const realFetch = globalThis.fetch;
+        globalThis.fetch = (async (input: RequestInfo | URL, init?: RequestInit) => {
+          const url = String(input instanceof Request ? input.url : input);
+          const response = await realFetch(input as never, init);
+          if (url.includes("/v3/user-decrypt") && (init?.method ?? "GET") === "POST") {
+            const answer = (await response.clone().json()) as { result?: { jobId?: string } };
+            submissions.push({ body: String(init?.body), jobId: answer.result?.jobId ?? "<no job id>" });
+          }
+          return response;
+        }) as typeof fetch;
+        try {
+          const entries = [
+            { handle, encryptedStore: addressBytes(value.encryptedStore), ownerAddress: addressBytes(value.owner) },
+          ];
+          const first = await client.decryptValues({ session, entries });
+          const second = await client.decryptValues({ session, entries });
+          expect(BigInt(first[0]!.value as bigint)).toBe(42n);
+          expect(BigInt(second[0]!.value as bigint)).toBe(42n);
+        } finally {
+          globalThis.fetch = realFetch;
         }
-        return response;
-      }) as typeof fetch;
-      try {
-        const entries = [
-          { handle, encryptedStore: addressBytes(value.encryptedStore), ownerAddress: addressBytes(value.owner) },
-        ];
-        const first = await client.decryptValues({ session, entries });
-        const second = await client.decryptValues({ session, entries });
-        expect(BigInt(first[0]!.value as bigint)).toBe(42n);
-        expect(BigInt(second[0]!.value as bigint)).toBe(42n);
-      } finally {
-        globalThis.fetch = realFetch;
+        expect(submissions).toHaveLength(2);
+        expect(submissions[1]!.body).toBe(submissions[0]!.body);
+        expect(submissions[1]!.jobId).toBe(submissions[0]!.jobId);
       }
-      expect(submissions).toHaveLength(2);
-      expect(submissions[1]!.body).toBe(submissions[0]!.body);
-      expect(submissions[1]!.jobId).toBe(submissions[0]!.jobId);
 
       // Revoke — the delegator's lever. The delegate's permit is untouched. The record's zeroed
       // expiry is the on-chain fact; the fast client-visible refusal is the relayer's
       // advisory pre-check (`not_allowed_on_host_acl`) — the connector's own terminal
       // rejection has no channel back (see 09-rejection-path-findings).
+      // The host refuses a second update of a delegation in the slot of the first.
+      await until(async () => (await context.rpc.getSlot({ commitment: "confirmed" }).send()) > grantSlot, {
+        description: "a slot after the grant",
+        timeoutMs: 30_000,
+      });
       const revoke = await solana.buildRevokeDelegationForUserDecryptionInstruction({
         programAddress: hostProgram,
         delegator: wallet.signer,
@@ -233,7 +248,7 @@ describe("solana delegated user-decrypt", () => {
     SCENARIO_TIMEOUT_MS,
   );
 
-  test.skipIf(!squadsAvailable && !squadsRequired)(
+  test.skipIf(!protocolServices || (!squadsAvailable && !squadsRequired))(
     "[squads] a 2-of-3 multisig grants through its vault -> delegate decrypts the DAO's 42 -> revokes",
     async () => {
       if (!squadsAvailable) {

@@ -8,6 +8,8 @@
 
 export * from './closeTransientStore.js';
 export * from './delegateForUserDecryption.js';
+export * from './fheExecute.js';
+export * from './makeStoreHandlePublic.js';
 export * from './openTransientStore.js';
 export * from './revokeDelegationForUserDecryption.js';
 export * from './revokePermits.js';

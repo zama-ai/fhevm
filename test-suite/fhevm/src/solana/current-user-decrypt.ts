@@ -1,6 +1,7 @@
 import type { Bytes32Hex } from '@fhevm/sdk/types';
 import type { SolanaDecryptTrust } from '@fhevm/sdk/solana';
 import { PreflightError } from '../errors';
+import { loadSolanaSdk } from './target';
 
 export const SOLANA_CURRENT_USER_DECRYPT_PROFILE = 'solana-current-user-decrypt';
 export const SOLANA_CURRENT_USER_DECRYPT_DESCRIPTION =
@@ -70,7 +71,7 @@ const evmAddress = (value: string, name: string): `0x${string}` => {
 };
 
 const runPublicSdkUserDecrypt: CurrentUserDecryptSdkCall = async (input) => {
-  const solana = await import('@fhevm/sdk/solana');
+  const solana = await loadSolanaSdk();
   const { createSolanaRpc } = await import('@solana/kit');
   const rpc = createSolanaRpc(input.rpcUrl);
   const chain = solana.defineFhevmSolanaChain({
