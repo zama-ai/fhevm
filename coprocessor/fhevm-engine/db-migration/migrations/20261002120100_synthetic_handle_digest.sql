@@ -1,8 +1,9 @@
 -- The probe's manifest descriptor material, copied by cutover just before it
 -- deletes the probe's work, so its block seals the same way before or after
 -- cutover. Written only by cutover and read only to build manifests: the
--- publishing paths (transaction-sender, S3 upload) never see the probe. A copy
--- without ct128 means it was not computed by cutover and never will be.
+-- publishing paths (transaction-sender, S3 upload) never see the probe. Cutover
+-- waits for a final descriptor (ct128 included, or a terminal error) before copying,
+-- so every operator copies the same one.
 CREATE TABLE IF NOT EXISTS synthetic_handle_digest
 (
     host_chain_id BIGINT NOT NULL CHECK (host_chain_id >= 0),
