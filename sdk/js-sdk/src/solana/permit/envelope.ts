@@ -5,9 +5,9 @@
 // can never be replayed as a transaction.
 //
 // Verification is reconstruction: the envelope is rebuilt locally from validated typed fields and
-// the signature is checked over those bytes. Neither the text nor the envelope is ever accepted
-// from a caller, which is why the signed bytes are never parsed for a security decision — and why
-// neither function here has a variant taking a text or an envelope.
+// the signature is checked over those bytes. The verifier never accepts a text or an envelope from
+// a caller, which is why the signed bytes are never parsed for a security decision. The text-taking
+// compiler is the wallet-side encoder that the reconstruction shares.
 //
 // What "verifies" means: the signature scalar must be reduced and neither R nor A may be of small
 // order (`verify_strict`, not the permissive entry point), the user address must be an on-curve point
@@ -34,8 +34,8 @@ const SIGNATURE_POINT_LEN = PERMIT_SIGNATURE_LEN / 2;
 
 /**
  * Wraps a text in the single-signer v1 offchain-message envelope that `signer`'s wallet signs:
- * preamble, version, the one signer's key, then the UTF-8 text to the end — no length prefix and
- * no application domain.
+ * preamble, version, a signer count of one, that signer's key, then the UTF-8 text to the end —
+ * no length prefix and no application domain.
  *
  * @param signer - The sole signer's 32-byte public key.
  * @param text - The message content, as handed to the wallet.

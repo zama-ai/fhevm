@@ -30,6 +30,7 @@ describe('RelayerAsyncRequest auth/edge error surfacing', () => {
   afterEach(() => {
     global.fetch = originalFetch;
     vi.restoreAllMocks();
+    vi.useRealTimers();
   });
 
   //////////////////////////////////////////////////////////////////////////////
@@ -129,5 +130,35 @@ describe('RelayerAsyncRequest auth/edge error surfacing', () => {
       expect(err.relayerApiError.label).toBe('readiness_check_timed_out');
     }
     expect(global.fetch).toHaveBeenCalledTimes(1);
+  });
+
+  it('503 readiness_check_timed_out while polling a queued job is terminal', async () => {
+    vi.useFakeTimers();
+    let calls = 0;
+    global.fetch = vi.fn().mockImplementation(() => {
+      calls += 1;
+      return Promise.resolve(
+        calls === 1
+          ? new Response(JSON.stringify({ status: 'queued', requestId: 'r1', result: { jobId: 'j1' } }), {
+              status: 202,
+              headers: { 'Retry-After': '1' },
+            })
+          : new Response(
+              JSON.stringify({
+                status: 'failed',
+                error: { label: 'readiness_check_timed_out', message: 'ciphertext never became ready' },
+              }),
+              { status: 503, headers: { 'Retry-After': '1' } },
+            ),
+      );
+    });
+
+    const rejection = expect(newRequest().run()).rejects.toMatchObject({
+      status: 503,
+      relayerApiError: { label: 'readiness_check_timed_out' },
+    });
+    await vi.runAllTimersAsync();
+    await rejection;
+    expect(global.fetch).toHaveBeenCalledTimes(2);
   });
 });

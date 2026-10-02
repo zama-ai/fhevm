@@ -30,11 +30,11 @@ import {
   SolanaPermitChannelError,
   SolanaPermitError,
   buildSolanaPermitEnvelope,
-  compileSolanaPermitEnvelope,
   decodeSolanaPermitFields,
   renderSolanaPermitText,
   signSolanaPermit,
 } from './index.js';
+import { compileSolanaPermitEnvelope } from './envelope.js';
 
 ////////////////////////////////////////////////////////////////////////////////
 // A wallet, and the permit it is asked to sign

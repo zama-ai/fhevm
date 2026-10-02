@@ -16,11 +16,8 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 import { base58 } from '@scure/base';
 import { ed25519 } from '@noble/curves/ed25519.js';
 import { asBytes32Hex, hexToBytes32 } from '../../../core/base/bytes.js';
-import {
-  PERMIT_TRANSPORT_KEY_LEN,
-  SOLANA_SIGN_OFFCHAIN_MESSAGE_FEATURE,
-  compileSolanaPermitEnvelope,
-} from '../../permit/index.js';
+import { PERMIT_TRANSPORT_KEY_LEN, SOLANA_SIGN_OFFCHAIN_MESSAGE_FEATURE } from '../../permit/index.js';
+import { compileSolanaPermitEnvelope } from '../../permit/envelope.js';
 import { createFhevmDecryptClient } from '../createFhevmDecryptClient.js';
 import * as responseVerification from '../../userDecrypt/response.js';
 import { setFhevmRuntimeConfig } from '../../internal/config.js';
