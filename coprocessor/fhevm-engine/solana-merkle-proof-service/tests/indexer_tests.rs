@@ -231,8 +231,9 @@ async fn apply_all(pool: &PgPool, blocks: &[PreparedBlock]) {
 
 /// A process killed at any point of a block, or restarted after it, leaves the record it would
 /// have built uninterrupted. A crash inside a block's transaction commits none of the block, its
-/// checkpoint included, and is retryable; the follower then hands the block again. A restart
-/// re-hands the block it last committed, which must change nothing.
+/// checkpoint included, and is retryable; the follower then hands the block again. An `apply`
+/// dropped on timeout may still commit, so the follower can also hand a committed block again,
+/// which must change nothing.
 #[tokio::test]
 #[serial(db)]
 async fn a_record_built_through_crashes_is_the_uninterrupted_record() {
@@ -299,8 +300,9 @@ async fn a_record_built_through_crashes_is_the_uninterrupted_record() {
     assert_eq!(Record::read(&pool).await, expected);
 }
 
-/// Moving the checkpoint back replays the later blocks, which reproduce the record. A replayed
-/// block that changes, adds or drops a write stops the indexer and leaves the record as it was.
+/// Moving the checkpoint back replays the later blocks, which must reproduce the record. A
+/// replayed block that changes, adds or drops a leaf stops the indexer and leaves the record as
+/// it was.
 #[tokio::test]
 #[serial(db)]
 async fn replayed_blocks_must_reproduce_the_record() {
@@ -380,8 +382,8 @@ async fn a_store_first_seen_above_leaf_zero_stops_the_indexer() {
 }
 
 /// A `pg_dump` of the record taken at some block, restored into an empty database, resumes from
-/// its own checkpoint and catches up to the record an uninterrupted run builds. `pg_dump` and `pg_restore` run inside the database container, so
-/// their version is the server's.
+/// its own checkpoint and catches up to the record an uninterrupted run builds. `pg_dump` and
+/// `pg_restore` run inside the database container, so their version is the server's.
 #[tokio::test]
 #[serial(db)]
 async fn a_restored_dump_resumes_and_catches_up() {

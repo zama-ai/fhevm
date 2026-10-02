@@ -39,24 +39,8 @@ if [[ -z $(kubectl get secret solana-recovery -n "$NAMESPACE" --ignore-not-found
 fi
 SOLANA_RECOVERY_IMAGE="hub.zama.org/ghcr/zama-ai/fhevm/solana-programs:$tag" \
   bash "$script_dir/recover.sh" reset
-
-# The reset closed every zama-host account, and a store created again at the same address
-# restarts at leaf zero, so each rollout records from an empty Merkle database and from a block
-# before the deployment below.
-for i in $(seq 1 "$NB_COPROCESSOR"); do
-  indexer="deployment/coprocessor-$i-solana-merkle-indexer"
-  if [[ -n $(kubectl get "$indexer" -n "$NAMESPACE" --ignore-not-found -o name) ]]; then
-    kubectl scale "$indexer" -n "$NAMESPACE" --replicas=0
-    kubectl wait pod -n "$NAMESPACE" -l "app.kubernetes.io/name=coprocessor-$i-solana-merkle-indexer" \
-      --for=delete --timeout=2m
-  fi
-  psql_party "$i" 'DROP DATABASE IF EXISTS solana_merkle WITH (FORCE)'
-  psql_party "$i" 'CREATE DATABASE solana_merkle'
-done
-rpc_url=$(kubectl get secret solana-rpc -n "$NAMESPACE" -o jsonpath='{.data.rpc-url}' | base64 -d)
-merkle_start_slot=$(curl -fsS "$rpc_url" -H 'content-type: application/json' \
-  -d '{"jsonrpc":"2.0","id":1,"method":"getSlot","params":[{"commitment":"confirmed"}]}' | jq -er .result)
-
+# shellcheck disable=SC2046 # one party number per word
+merkle_start_slot=$(reset_solana_merkle_records $(seq 1 "$NB_COPROCESSOR"))
 
 # Keygen completion precedes asynchronous key download into each coprocessor DB.
 for i in $(seq 1 "$NB_COPROCESSOR"); do

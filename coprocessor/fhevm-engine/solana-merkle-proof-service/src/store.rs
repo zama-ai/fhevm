@@ -11,7 +11,9 @@
 //!
 //! A block at or below the highest slot the record applied ([`load_recorded_through`]) is a
 //! replay: its recomputed leaves ([`replay_block_leaves`]) must equal every leaf recorded at
-//! that slot ([`load_block_leaves`]), so a replay that adds, drops or changes a write stops.
+//! that slot ([`load_block_leaves`]), so a replay that adds, drops or changes a leaf stops the
+//! indexer. Moving the checkpoint back therefore re-verifies the record and cannot repair it; a
+//! wrong record is rebuilt from the start slot or restored from a dump.
 //!
 //! Each append also records the MMR nodes it completes, so a proof reads its path by
 //! position ([`load_proof`]) instead of rebuilding the mountain from every leaf. Node
@@ -19,7 +21,7 @@
 //! are aligned to their size, so a node's position never depends on the leaf count.
 //! Height-0 path entries are leaf rows; only nodes of height 1 and above are stored.
 
-use std::collections::{BTreeMap, BTreeSet};
+use std::collections::BTreeMap;
 
 use sqlx::Error as SqlxError;
 use zama_solana_acl::{
@@ -122,14 +124,13 @@ pub enum LeafReduceError {
 /// Reduces the leaf sources of a block the record has not applied over the stores' recorded
 /// cursors.
 ///
-/// `existing` holds the recorded cursor of every store the block writes. A store first seen
-/// above leaf zero fails with [`LeafReduceError::UnrecordedHistory`].
+/// `existing` holds the recorded cursor of each store the block writes, and of no other. A store
+/// first seen above leaf zero fails with [`LeafReduceError::UnrecordedHistory`].
 pub fn reduce_block_leaves(
     transactions: &[TransactionStoreWrites],
     mut existing: BTreeMap<[u8; 32], EncryptedStoreCursor>,
 ) -> Result<BlockLeafReduction, LeafReduceError> {
     let mut reduction = BlockLeafReduction::default();
-    let mut written = BTreeSet::new();
     for transaction in transactions {
         for write in &transaction.sources {
             let store = write.encrypted_store;
@@ -146,13 +147,9 @@ pub fn reduce_block_leaves(
                 write,
                 transaction.transaction_index,
             )?;
-            written.insert(store);
         }
     }
-    reduction.stores = existing
-        .into_iter()
-        .filter(|(store, _)| written.contains(store))
-        .collect();
+    reduction.stores = existing;
     Ok(reduction)
 }
 
@@ -516,7 +513,8 @@ pub async fn store_checkpoint(
 }
 
 /// Locks the checkpoint and returns the highest slot the record applied. A block at or below
-/// it is a replay: after a restart, or after the checkpoint was moved back.
+/// it is a replay: a block handed again after its dropped `apply` committed, or a block up to
+/// `recorded_through` after the checkpoint was moved back.
 pub async fn load_recorded_through(
     tx: &mut Transaction<'_>,
 ) -> Result<Option<u64>, SqlxError> {

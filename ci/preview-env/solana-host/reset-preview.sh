@@ -6,6 +6,8 @@ umask 077
 : "${NAMESPACE:?}"
 [[ "$NAMESPACE" == fhevm-ci-* && "$NAMESPACE" != fhevm-ci-solana-owner ]] || exit 2
 script_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+# shellcheck source=ci/preview-env/scripts/lib.sh
+source "${script_dir}/../scripts/lib.sh"
 # shellcheck source=ci/preview-env/solana-host/ownership.sh
 source "$script_dir/ownership.sh"
 work=$(mktemp -d)
@@ -32,9 +34,16 @@ if not any(c["type"] in ("Complete", "Failed") and c["status"] == "True" for c i
 '
 done < "$work/releases"
 bash "$script_dir/recover.sh" reset
+parties=$(sed -n 's/^solana-register-coprocessor-//p' "$work/releases")
+# shellcheck disable=SC2086 # one party number per word
+merkle_start_slot=$(reset_solana_merkle_records $parties)
 while read -r release; do
   kubectl delete job "$release-deploy" -n "$NAMESPACE" --ignore-not-found --wait=true
   helm upgrade "$release" charts/contracts -n "$NAMESPACE" -f "$work/$release.yaml" \
     --set scDeploy.preventRedeployment=false --wait --wait-for-jobs --timeout=20m
 done < "$work/releases"
+for party in $parties; do
+  helm upgrade "coprocessor-$party" "${COPROCESSOR_CHART:-charts/coprocessor}" -n "$NAMESPACE" --reuse-values \
+    --set-string "solanaHostListener.merkleIndexer.startSlot=$merkle_start_slot" --wait --timeout=10m
+done
 echo 'Solana state reinitialized; preview services and image pins retained. Reseed the local demo before use.'

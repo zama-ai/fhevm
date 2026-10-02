@@ -91,6 +91,14 @@ class SolanaCharts(unittest.TestCase):
         indexer = next(d for d in documents if d and d["kind"] == "Deployment" and d["metadata"]["name"] == INDEXER)
         self.assertIn("--start-slot=312000000", indexer["spec"]["template"]["spec"]["containers"][0]["args"])
 
+    def test_a_start_slot_that_is_not_a_number_is_refused(self):
+        with self.assertRaises(subprocess.CalledProcessError) as failure:
+            subprocess.run(["helm", "template", "coprocessor-1", str(ROOT / "charts/coprocessor"),
+                            "-f", str(VALUES / "values-solana-coprocessor-e2e.yaml"),
+                            "--set-string", "solanaHostListener.merkleIndexer.startSlot=$(START_SLOT)"],
+                           check=True, capture_output=True, text=True)
+        self.assertIn("startSlot must be a slot number", failure.exception.stderr)
+
     def test_the_merkle_service_requires_its_database(self):
         with self.assertRaises(subprocess.CalledProcessError) as failure:
             subprocess.run(["helm", "template", "coprocessor-1", str(ROOT / "charts/coprocessor"),

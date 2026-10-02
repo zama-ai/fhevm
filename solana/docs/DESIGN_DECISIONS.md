@@ -88,10 +88,11 @@ are written as one narrative instead.
 | [DD-059](#dd-059-the-listener-catches-up-from-an-archive-when-the-stream-cannot-replay)                                                   | adopted                                  | The listener catches up from an archive when the stream cannot replay                                                          |
 | [DD-060](#dd-060-a-public-decrypt-names-its-stores-beside-the-kms-routing)                                                                | adopted                                  | A public decrypt names its stores beside the KMS routing                                                                       |
 | [DD-061](#dd-061-a-delegation-is-keyed-by-application-and-expires-on-unix-time)                                                           | adopted                                  | A delegation is keyed by application and expires on Unix time                                                                  |
-| [DD-062](#dd-062-the-listener-reads-one-transaction-per-message)                                                                          | adopted                                  | The listener reads one transaction per message                                                                                 |
-| [DD-063](#dd-063-a-leaf-proof-reads-its-path-by-position)                                                                                 | adopted                                  | A leaf proof reads its path by position                                                                                        |
-| [DD-064](#dd-064-leaf-proofs-are-served-apart-from-ingestion)                                                                             | adopted                                  | Leaf proofs are served apart from ingestion                                                                                    |
+| [DD-062](#dd-062-the-listener-reads-one-transaction-per-message)                                                                          | adopted; see the note under its status   | The listener reads one transaction per message                                                                                 |
+| [DD-063](#dd-063-a-leaf-proof-reads-its-path-by-position)                                                                                 | adopted; see the note under its status   | A leaf proof reads its path by position                                                                                        |
+| [DD-064](#dd-064-leaf-proofs-are-served-apart-from-ingestion)                                                                             | adopted; see the note under its status   | Leaf proofs are served apart from ingestion                                                                                    |
 | [DD-065](#dd-065-a-public-decryption-is-accepted-on-chain-by-its-certificate-alone)                                                       | adopted                                  | A public decryption is accepted on-chain by its certificate alone                                                              |
+| [DD-066](#dd-066-the-leaf-record-has-its-own-indexer-and-database)                                                                        | adopted                                  | The leaf record has its own indexer and database                                                                               |
 
 ## DD-002: Keep App Store And Host ACL Store Separate
 
@@ -2635,9 +2636,10 @@ binaries:
   skips.
 - The checkpoint also keeps `recorded_through`, the highest slot ever applied. A block at or below
   it is a replay. Its writes must reproduce every leaf recorded at its slot, across all Stores, or
-  the indexer stops and writes nothing. A replay that changes, adds or drops a write therefore
-  stops it. Moving the checkpoint back is a supported repair: the indexer checks each block up to
-  `recorded_through` and appends only after it.
+  the indexer stops and writes nothing. A replay that changes, adds or drops a leaf therefore
+  stops it. Moving the checkpoint back re-verifies the record: the indexer checks each block up
+  to `recorded_through` and appends only after it. It cannot repair a wrong record, which is
+  rebuilt from the start slot into an empty database or restored from another record's dump.
 - `solana_merkle_proof_server` serves the proofs from that database over
   `POST /v1/solana/merkle-proofs` (DD-063, DD-064).
 
