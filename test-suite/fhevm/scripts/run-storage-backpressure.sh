@@ -144,8 +144,11 @@ FAULT_AT="$(jq -r -s --arg path "$OBJECT_PATH" '[.[] | select(.mode=="rejected" 
 # A recorded HTTP failure is insufficient if the uploader nevertheless marked
 # the same handle publishable. Repeat the negative check with the fault active.
 for checkpoint in 1 2; do
-  state="$(docker exec coprocessor-and-kms-db psql -U postgres -d coprocessor_1 -At -v ON_ERROR_STOP=1 -c "SELECT (SELECT count(*) FROM ciphertexts128 WHERE handle=decode('${handle#0x}','hex'))::text || '|' || EXISTS(SELECT 1 FROM ciphertext_digest WHERE handle=decode('${handle#0x}','hex') AND (ciphertext128 IS NOT NULL OR txn_is_sent))::text")" || fail 'cannot inspect pending upload'
-  [[ "$state" == '1|false' ]] || fail "premature publication or lost pending squash: $state"
+  # SNS stores the computed digests when it queues the upload. They do not
+  # authorize publication: the sender requires the post-upload S3 witness.
+  # Require the named pending squash and its digests, with no witness or send.
+  state="$(docker exec coprocessor-and-kms-db psql -U postgres -d coprocessor_1 -At -v ON_ERROR_STOP=1 -c "SELECT (SELECT count(*) FROM ciphertexts128 WHERE handle=decode('${handle#0x}','hex'))::text || '|' || EXISTS(SELECT 1 FROM ciphertext_digest WHERE handle=decode('${handle#0x}','hex') AND ciphertext IS NOT NULL AND ciphertext128 IS NOT NULL AND s3_publication_verified_at IS NULL AND s3_publication_verified_digest IS NULL AND NOT txn_is_sent)::text")" || fail 'cannot inspect pending upload'
+  [[ "$state" == '1|true' ]] || fail "premature publication or lost pending squash/digests: $state"
   [[ "$checkpoint" == 2 ]] || sleep 5
 done
 [[ "$(sc_state "$TARGET")" == running ]] || fail 'SNS worker did not survive rejected uploads'
