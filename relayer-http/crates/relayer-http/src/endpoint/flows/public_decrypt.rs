@@ -1,4 +1,4 @@
-//! `POST /v4/exp/public-decrypt`: the current relayer's body, validated, converted to the connector DTO and
+//! `POST /v4/public-decrypt`: the current relayer's body, validated, converted to the connector DTO and
 //! aggregated.
 
 use alloy::primitives::{B256, Bytes};

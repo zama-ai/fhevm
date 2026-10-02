@@ -22,7 +22,7 @@ run(async () => {
   ];
   console.log(`handles: ${show(handles)}`);
 
-  const reply = await postUntilSettled<PublicReply>('/v4/exp/public-decrypt', { ciphertextHandles: handles, extraData: '0x00' });
+  const reply = await postUntilSettled<PublicReply>('/v4/public-decrypt', { ciphertextHandles: handles, extraData: '0x00' });
   if (reply.status !== 200) fail('public decrypt', reply);
   const clear = decodeDecryptedResult(handles, `0x${reply.body.result.decryptedValue}`);
   console.log(

@@ -51,7 +51,7 @@ run(async () => {
   );
   console.log(`handle: ${handle}`);
 
-  const reply = await postUntilSettled<UserReply>('/v4/exp/user-decrypt', {
+  const reply = await postUntilSettled<UserReply>('/v4/user-decrypt', {
     attestationType: UNIFIED_ATTESTATION_TYPE,
     payload: {
       handles: request.handles,

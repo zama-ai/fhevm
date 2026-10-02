@@ -45,7 +45,7 @@ config: ## write dev/config/kms-$(KMS).yaml for KMS connectors and threshold T (
 	scripts/gen-config.sh $(KMS) $(T)
 
 # --- flows (run inside the e2e debug container, against the relayer on the host) ----------------------------------
-public-decrypt: ## deploy HTTPPublicDecrypt and POST /v4/exp/public-decrypt
+public-decrypt: ## deploy HTTPPublicDecrypt and POST /v4/public-decrypt
 	scripts/e2e.sh public-decrypt.ts
-user-decrypt: ## deploy UserDecrypt, sign the unified request and POST /v4/exp/user-decrypt
+user-decrypt: ## deploy UserDecrypt, sign the unified request and POST /v4/user-decrypt
 	scripts/e2e.sh user-decrypt.ts
