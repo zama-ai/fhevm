@@ -35,16 +35,16 @@ struct Args {
     #[arg(long)]
     database_url: DatabaseURL,
 
-    /// Most connections the server's pool holds, and so most requests reading the
-    /// record at a time.
+    /// Most connections the server's pool holds. All but one serve requests
+    /// reading the record, one at a time each; `/healthz` keeps the last.
     #[arg(long, default_value_t = 8)]
     database_pool_size: u32,
 
-    /// Requests per second each KMS tx-sender may send, in bursts of as many.
-    /// A backstop well above a connector's load, which is one request per
-    /// decryption batch shared among the coprocessors.
-    #[arg(long, default_value_t = NonZeroU32::new(50).unwrap())]
-    kms_tx_sender_requests_per_second: NonZeroU32,
+    /// Queried leaves per second each KMS tx-sender may ask for, in bursts of as
+    /// many. A backstop at twice the 2,000 decryptions per second target, should
+    /// one coprocessor serve a connector's every batch.
+    #[arg(long, default_value_t = NonZeroU32::new(4000).unwrap())]
+    kms_tx_sender_leaves_per_second: NonZeroU32,
 
     /// Port of the HTTP server: health routes and the Merkle proof route.
     #[arg(long, default_value_t = 8080)]
@@ -113,7 +113,7 @@ async fn main() -> Result<()> {
     HttpServer::merkle_proofs(
         pool,
         senders,
-        args.kms_tx_sender_requests_per_second,
+        args.kms_tx_sender_leaves_per_second,
         args.http_port,
         cancel,
     )

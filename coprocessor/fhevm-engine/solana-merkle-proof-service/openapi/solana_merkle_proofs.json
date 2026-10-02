@@ -62,7 +62,7 @@
             }
           },
           "429": {
-            "description": "Signer over its rate, or every database connection reading",
+            "description": "Signer over its rate, or no database connection free in time",
             "content": {
               "application/cbor": {
                 "schema": {

@@ -33,11 +33,9 @@ const RETRY_INTERVAL: Duration = Duration::from_secs(5);
 /// The RPC client has no request timeout, so a hung call would stall every later refresh.
 const READ_TIMEOUT: Duration = Duration::from_secs(30);
 
-/// Mirrors `KMS_CONTEXT_COUNTER_BASE` from `host-contracts/contracts/shared/Constants.sol`.
-const KMS_CONTEXT_COUNTER_BASE: U256 = U256::from_be_bytes([
-    7, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
-    0, 0, 0, 0, 0, 0, 0,
-]);
+/// Mirrors `KMS_CONTEXT_COUNTER_BASE` from `host-contracts/contracts/shared/Constants.sol`:
+/// `0x07 << 248`, the top byte of the highest limb.
+const KMS_CONTEXT_COUNTER_BASE: U256 = U256::from_limbs([0, 0, 0, 0x07 << 56]);
 
 /// The accepted callers and the registry their signatures name, once read.
 #[derive(Clone, Debug, PartialEq, Eq)]

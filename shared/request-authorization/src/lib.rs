@@ -10,8 +10,8 @@
 //! `bodyDigest` is the keccak-256 of the exact body bytes, so a server checks what it received
 //! without re-encoding it. The server recovers the signer and decides whether that address may
 //! call. No recipient is signed: one signature covers every server the caller sends the same
-//! request to, so a server can replay it to the others until it expires. That suits requests that
-//! every recipient answers the same way and that start no new work.
+//! request to, so a server can replay it to the others until it expires. A server therefore answers
+//! a repeat of [`Authorization::signing_hash`] without new work, and charges its caller once.
 
 use alloy_primitives::{Address, B256, Signature, hex, keccak256};
 use alloy_signer::Signer;
@@ -97,16 +97,27 @@ pub enum AuthorizationError {
     BadSignature,
 }
 
+/// An `Authorization` header within its validity, and who signed it.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct Authorization {
+    pub signer: Address,
+    /// What the signer signed: one hash per registry, path, body and expiry, whichever of a
+    /// signature's two encodings carried it.
+    pub signing_hash: B256,
+    /// Unix seconds.
+    pub expires: u64,
+}
+
 /// Recovers who signed the `Authorization` header `header` for `body` sent to `path`, at Unix time
 /// `now`. A signature over other fields recovers another address, so the caller must check the
 /// signer against the addresses it accepts.
-pub fn recover_signer(
+pub fn recover_authorization(
     registry: &KeyRegistry,
     header: &str,
     path: &str,
     body: &[u8],
     now: u64,
-) -> Result<Address, AuthorizationError> {
+) -> Result<Authorization, AuthorizationError> {
     let (expires, signature) = parse(header)?;
     if expires < now {
         return Err(AuthorizationError::Expired { expires, now });
@@ -114,9 +125,15 @@ pub fn recover_signer(
     if expires > now.saturating_add(MAX_VALIDITY_SECS) {
         return Err(AuthorizationError::TooFarAhead { expires, now });
     }
-    signature
-        .recover_address_from_prehash(&registry.signing_hash(path, body, expires))
-        .map_err(|_| AuthorizationError::BadSignature)
+    let signing_hash = registry.signing_hash(path, body, expires);
+    let signer = signature
+        .recover_address_from_prehash(&signing_hash)
+        .map_err(|_| AuthorizationError::BadSignature)?;
+    Ok(Authorization {
+        signer,
+        signing_hash,
+        expires,
+    })
 }
 
 fn parse(header: &str) -> Result<(u64, Signature), AuthorizationError> {
@@ -171,7 +188,8 @@ mod tests {
         let address = signer().address();
         for expires in [NOW, NOW + 60, NOW + MAX_VALIDITY_SECS] {
             assert_eq!(
-                recover_signer(&REGISTRY, &header(expires), PATH, BODY, NOW),
+                recover_authorization(&REGISTRY, &header(expires), PATH, BODY, NOW)
+                    .map(|authorization| authorization.signer),
                 Ok(address)
             );
         }
@@ -196,7 +214,8 @@ mod tests {
             (REGISTRY, PATH, b"{\"leaves\":[1]}".as_slice()),
         ] {
             assert_ne!(
-                recover_signer(&registry, &header, path, body, NOW),
+                recover_authorization(&registry, &header, path, body, NOW)
+                    .map(|authorization| authorization.signer),
                 Ok(address)
             );
         }
@@ -205,7 +224,7 @@ mod tests {
     #[test]
     fn an_expired_or_far_future_authorization_is_refused() {
         assert_eq!(
-            recover_signer(&REGISTRY, &header(NOW - 1), PATH, BODY, NOW),
+            recover_authorization(&REGISTRY, &header(NOW - 1), PATH, BODY, NOW),
             Err(AuthorizationError::Expired {
                 expires: NOW - 1,
                 now: NOW
@@ -213,7 +232,7 @@ mod tests {
         );
         let expires = NOW + MAX_VALIDITY_SECS + 1;
         assert_eq!(
-            recover_signer(&REGISTRY, &header(expires), PATH, BODY, NOW),
+            recover_authorization(&REGISTRY, &header(expires), PATH, BODY, NOW),
             Err(AuthorizationError::TooFarAhead { expires, now: NOW })
         );
     }
@@ -237,7 +256,7 @@ mod tests {
             format!("{SCHEME} expires={}, signature={signature}", NOW + 60),
         ] {
             assert_eq!(
-                recover_signer(&REGISTRY, &malformed, PATH, BODY, NOW),
+                recover_authorization(&REGISTRY, &malformed, PATH, BODY, NOW),
                 Err(AuthorizationError::Malformed),
                 "{malformed}"
             );
@@ -245,15 +264,53 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn authorize_signs_what_recover_signer_checks() {
+    async fn authorize_signs_what_recover_authorization_checks() {
         let header = authorize(&signer(), &REGISTRY, PATH, BODY, NOW + 60)
             .await
             .unwrap();
         assert_eq!(
-            recover_signer(&REGISTRY, &header, PATH, BODY, NOW),
-            Ok(signer().address())
+            recover_authorization(&REGISTRY, &header, PATH, BODY, NOW),
+            Ok(Authorization {
+                signer: signer().address(),
+                signing_hash: REGISTRY.signing_hash(PATH, BODY, NOW + 60),
+                expires: NOW + 60,
+            })
         );
     }
+
+    /// The other encoding of one ECDSA signature, `s` mirrored to `n - s` with the parity flipped,
+    /// recovers the same signer over the same hash, so a server keying repeats by the hash sees
+    /// it as the same request.
+    #[test]
+    fn both_encodings_of_a_signature_name_one_signing_hash() {
+        let hash = REGISTRY.signing_hash(PATH, BODY, NOW + 60);
+        let signature = signer().sign_hash_sync(&hash).unwrap();
+        let mirrored = Signature::new(
+            signature.r(),
+            alloy_primitives::U256::from_be_bytes(SECP256K1N) - signature.s(),
+            !signature.v(),
+        );
+        let first = recover_authorization(
+            &REGISTRY,
+            &header_value(NOW + 60, &signature),
+            PATH,
+            BODY,
+            NOW,
+        );
+        let second = recover_authorization(
+            &REGISTRY,
+            &header_value(NOW + 60, &mirrored),
+            PATH,
+            BODY,
+            NOW,
+        );
+        assert_eq!(first, second);
+        assert_eq!(first.unwrap().signer, signer().address());
+    }
+
+    /// The secp256k1 group order.
+    const SECP256K1N: [u8; 32] =
+        alloy_primitives::hex!("fffffffffffffffffffffffffffffffebaaedce6af48a03bbfd25e8cd0364141");
 
     /// Pins the wire format. viem's `hashTypedData` and `signTypedData` produce the same values.
     #[test]
