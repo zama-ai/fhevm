@@ -4,8 +4,8 @@
 //! Anchor instruction/account plumbing, the host's fixture accounts (`HostConfig`, `KmsContext`,
 //! `EncryptedStore`, deny records), the coprocessor/KMS signature minting, plaintext reads of the
 //! cleartext host build, the checks of an instruction's `fhe_execute` CPIs, and the rolling cost
-//! snapshots. Program-specific fixtures
-//! (a token's mints, a batcher's batches) stay with their suites.
+//! snapshots. Program-specific fixtures (a token's mints, a batcher's batches) stay with their
+//! suites.
 //!
 //! The kit deliberately depends on no program crate other than `zama-host`: each suite registers
 //! its own programs on the `Mollusk` it gets from [`svm`], so a new consumer program can use the

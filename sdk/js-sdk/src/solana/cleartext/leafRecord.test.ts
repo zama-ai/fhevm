@@ -4,6 +4,8 @@ import {
   getAddressDecoder,
   getAddressEncoder,
   getBase58Decoder,
+  getU32Encoder,
+  getU64Encoder,
   type Address,
   type ReadonlyUint8Array,
 } from '@solana/kit';
@@ -27,8 +29,8 @@ const bytes32 = (fill: number): Uint8Array => new Uint8Array(32).fill(fill);
 const keyOf = (fill: number): Address => getAddressDecoder().decode(bytes32(fill));
 const base58 = (data: ReadonlyUint8Array): string => getBase58Decoder().decode(data);
 
-const u32 = (value: number): Uint8Array => new Uint8Array(new Uint32Array([value]).buffer);
-const u64 = (value: bigint): Uint8Array => new Uint8Array(new BigUint64Array([value]).buffer);
+const u32 = (value: number): ReadonlyUint8Array => getU32Encoder().encode(value);
+const u64 = (value: bigint): ReadonlyUint8Array => getU64Encoder().encode(value);
 
 type CompiledInstruction = { programIdIndex: number; accounts: number[]; data: string };
 

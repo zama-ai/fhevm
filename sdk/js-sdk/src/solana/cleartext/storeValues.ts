@@ -2,7 +2,7 @@
 // lives in, at the offsets `zama_host::cleartext::layout` renders into `hostConstants.ts`.
 import { fetchEncodedAccount, getAddressDecoder, type Address } from '@solana/kit';
 import type { SolanaRpc } from '../encryptedStore.js';
-import { bytesToHex } from '../../core/base/bytes.js';
+import { bytesToHex, unsafeBytesEquals } from '../../core/base/bytes.js';
 import { decodeSolanaEncryptedStore } from '../encryptedStore.js';
 import {
   ENTRY_LEN,
@@ -24,9 +24,6 @@ const MAGIC_BYTES = new TextEncoder().encode(MAGIC);
 
 ////////////////////////////////////////////////////////////////////////////////
 
-const sameBytes = (a: Uint8Array, b: Uint8Array): boolean =>
-  a.length === b.length && a.every((byte, index) => byte === b[index]);
-
 /** The value of the entry at `offset` as a 32-byte big-endian word, or undefined if none was recorded. */
 function entryValue(data: Uint8Array, offset: number): Uint8Array | undefined {
   if (data[offset] !== RECORDED) return undefined;
@@ -44,11 +41,11 @@ export function cleartextStoreValue(data: Uint8Array, accountName: string, handl
   const store = decodeSolanaEncryptedStore(data, accountName);
   if (
     data.length < STORE_ACCOUNT_SIZE ||
-    !sameBytes(data.subarray(STORE_SECTION_OFFSET, STORE_SLOTS_OFFSET), MAGIC_BYTES)
+    !unsafeBytesEquals(data.subarray(STORE_SECTION_OFFSET, STORE_SLOTS_OFFSET), MAGIC_BYTES)
   ) {
     throw new Error(`EncryptedStore ${accountName} holds no plaintexts: a cleartext host did not write it`);
   }
-  const slot = store.slots.findIndex((entry) => sameBytes(entry.handle, handle));
+  const slot = store.slots.findIndex((entry) => unsafeBytesEquals(entry.handle, handle));
   const current = slot < 0 ? undefined : entryValue(data, STORE_SLOTS_OFFSET + slot * ENTRY_LEN);
   if (current !== undefined) return current;
 
@@ -57,7 +54,7 @@ export function cleartextStoreValue(data: Uint8Array, accountName: string, handl
   const kept = count < BigInt(STORE_HISTORY_LEN) ? count : BigInt(STORE_HISTORY_LEN);
   for (let age = 0n; age < kept; age += 1n) {
     const offset = STORE_HISTORY_OFFSET + Number((count - 1n - age) % BigInt(STORE_HISTORY_LEN)) * HISTORY_RECORD_LEN;
-    if (sameBytes(data.subarray(offset, offset + 32), handle)) {
+    if (unsafeBytesEquals(data.subarray(offset, offset + 32), handle)) {
       const value = entryValue(data, offset + 32);
       if (value !== undefined) return value;
     }

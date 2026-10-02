@@ -171,7 +171,7 @@ pub fn input_extra_data(values: &[Value]) -> Vec<u8> {
 /// `extra_data`; rand steps use a fixed seed.
 pub fn evaluate(
     args: &host::FheExecuteArgs,
-    values: &std::collections::HashMap<[u8; 32], u128>,
+    values: &HashMap<[u8; 32], u128>,
 ) -> anchor_lang::Result<Vec<Value>> {
     host::cleartext::evaluate_steps(
         args,

@@ -12,7 +12,8 @@ import { createSolanaLeafRecord } from './leafRecord.js';
 import { getCleartextSolanaRuntime } from './runtime.js';
 
 /**
- * The leaf record a cleartext client reads, standing in for the coprocessors' the Connector reads.
+ * The leaf record a cleartext client reads, standing in for the coprocessors' leaf-proof endpoint
+ * that the Connector reads.
  * Pass one record from `createSolanaLeafRecord` to every client of a host, so each client reads
  * only the store writes the record has not seen yet. A client without one keeps its own.
  */

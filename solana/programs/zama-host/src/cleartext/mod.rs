@@ -149,9 +149,9 @@ fn rand_bits(seed: [u8; 16]) -> u128 {
 ///
 /// `resolve` answers the operands whose value lives in accounts (a store slot or a transient
 /// result); it also receives the values produced so far. A verified input decodes its
-/// attestation's `extra_data` here. `rand_seed`
-/// returns the seed of the rand step at an index. Operand and output types go through the host's
-/// own gates, so an execution the host would refuse is refused here too.
+/// attestation's `extra_data` here. `rand_seed` returns the seed of the rand step at an index.
+/// Operand and output types go through the host's own gates, so an execution the host would refuse
+/// is refused here too.
 pub fn evaluate_steps(
     args: &FheExecuteArgs,
     mut resolve: impl FnMut(&FheExecuteOperand, &[Value]) -> Result<Value>,

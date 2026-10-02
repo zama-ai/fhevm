@@ -56,12 +56,12 @@ pub fn open_transient_store<'info>(ctx: Context<'info, OpenTransientStore<'info>
     // first execution appends it. Its rent is paid here so that append spends no transfer.
     #[cfg(feature = "cleartext")]
     {
+        use anchor_lang::solana_program::{program::invoke, system_instruction};
         let (payer, store) = (
             ctx.accounts.payer.to_account_info(),
             ctx.accounts.transient_store.to_account_info(),
         );
         let rent = Rent::get()?.minimum_balance(crate::cleartext::layout::TRANSIENT_ACCOUNT_SIZE);
-        use anchor_lang::solana_program::{program::invoke, system_instruction};
         invoke(
             &system_instruction::transfer(
                 payer.key,

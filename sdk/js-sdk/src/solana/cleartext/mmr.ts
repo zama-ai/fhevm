@@ -1,4 +1,4 @@
-import { concatBytes } from '../../core/base/bytes.js';
+import { concatBytes, unsafeBytesEquals } from '../../core/base/bytes.js';
 import { keccak_256 } from '@noble/hashes/sha3.js';
 
 /**
@@ -253,20 +253,12 @@ export function mmrVerify(
         local >>= 1n;
       }
       const peak = peaks[peakPos];
-      return peak !== undefined && bytesEqual(node, peak);
+      return peak !== undefined && unsafeBytesEquals(node, peak);
     }
     offset += bit;
     peakPos += 1;
   }
   return false;
-}
-
-function bytesEqual(a: Uint8Array, b: Uint8Array): boolean {
-  if (a.length !== b.length) return false;
-  for (let i = 0; i < a.length; i++) {
-    if (a[i] !== b[i]) return false;
-  }
-  return true;
 }
 
 /** Matches `zama_solana_acl::authorize_state_historical`: one allow of `key` on `handle` is proven. */
