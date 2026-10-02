@@ -29,7 +29,7 @@ use crate::database::tfhe_event_propagate::{
     spawn_stack_version_listener, Database,
 };
 use crate::health_check::HealthCheck;
-use crate::kms_generation::aws_s3::AwsS3Client;
+use crate::kms_generation::aws_s3::{AwsS3Client, AwsS3Interface};
 use crate::kms_generation::process_kms_generation_activations;
 
 use consumer::{
@@ -338,7 +338,7 @@ pub async fn run_consumer(config: ConsumerConfig) -> Result<()> {
     let blockchain_timeout_tick = HeartBeat::new();
     let blockchain_provider = Arc::new(RwLock::new(None));
 
-    let broker_url = config.url; // e.g."amqp://user:pass@localhost:5672";
+    let broker_url = config.url.clone(); // e.g."amqp://user:pass@localhost:5672";
     let broker = Broker::from_url(&broker_url).await?;
     let consumer_id = format!("{}.{}", config.service_name, config.chain_id);
     let client =
@@ -406,10 +406,11 @@ pub async fn run_consumer(config: ConsumerConfig) -> Result<()> {
     ));
     // Resume pending downloads and activations without waiting for a block.
     if config.kms_generation_address.is_some() {
-        spawn_kms_activations(db.clone(), None);
+        spawn_kms_activations(db.clone(), None, AwsS3Client {});
     }
     // Live and finalized deliveries share this handler. A finalized delivery
     // re-ingests the block idempotently and marks it finalized.
+    let handler_config = config.clone();
     let handle_block = move |payload: BlockPayload, _cancel| {
         let finalized = payload.flow == BlockFlow::Final;
         if !finalized {
@@ -420,6 +421,7 @@ pub async fn run_consumer(config: ConsumerConfig) -> Result<()> {
         let last_known_drift = last_known_drift.clone();
         let ingest_options = ingest_options.clone();
         let stack_mode = stack_mode.clone();
+        let config = handler_config.clone();
         async move {
             // Paused (retired blue stack after cutover): no-op — ack and drop
             // the block without writing anything to the DB.
@@ -459,89 +461,15 @@ pub async fn run_consumer(config: ConsumerConfig) -> Result<()> {
                 );
                 return Ok(AckDecision::Ack);
             }
-            let block_summary = BlockSummary {
-                number: payload.block_number,
-                hash: payload.block_hash,
-                parent_hash: payload.parent_hash,
-                timestamp: payload.timestamp,
-            };
-            let catchup = payload.flow == BlockFlow::Catchup;
-            // Finalized deliveries do not measure live ingestion timing.
-            if !finalized {
-                observe_consumer_block_timing(
-                    &db,
-                    &chain_id_str,
-                    &block_summary,
-                    catchup,
-                )
-                .await;
-            }
-            let logs = collect_logs(&payload);
-            info!(
-                chain_id = %payload.chain_id,
-                block_number = payload.block_number,
-                block_hash = ?payload.block_hash,
-                nb_tx = payload.transactions.len(),
-                nb_logs = logs.len(),
-                "Received new block payload"
-            );
-            let block_logs = BlockLogs {
-                summary: block_summary,
-                logs,
-                catchup: false,
-                finalized,
-            };
-            match ingest_with_retry(
-                chain_id,
+            ingest_payload(
                 &mut db,
-                &block_logs,
-                config.acl_address,
-                config.tfhe_address,
-                config.kms_generation_address,
-                config.protocol_config_address,
-                config.confidential_bridge_address,
-                config.database_retry_interval,
-                ingest_options.clone(),
+                &config,
+                &ingest_options,
+                &chain_id_str,
+                &payload,
+                AwsS3Client {},
             )
             .await
-            {
-                Ok(_) => {
-                    db.tick.update();
-                    if finalized {
-                        if let Err(error) = db
-                            .prune_finalized_block_history(
-                                block_summary.number as i64,
-                            )
-                            .await
-                        {
-                            warn!(%error, "Could not prune finalized block history");
-                        }
-                    }
-                    // As the legacy listener does, retry KMS activations after
-                    // each block: they only depend on database state. A
-                    // finalized block also provides the finalized height.
-                    if config.kms_generation_address.is_some() {
-                        spawn_kms_activations(
-                            db.clone(),
-                            finalized.then_some(block_summary.number as i64),
-                        );
-                    }
-
-                    inc_blocks_processed(&chain_id_str, 1);
-                    Ok(AckDecision::Ack)
-                }
-                Err((err, retries)) => {
-                    inc_db_errors(&chain_id_str, 1);
-                    error!(
-                        block_number = block_summary.number,
-                        block_hash = ?block_logs.summary.hash,
-                        error = %err,
-                        retries = retries,
-                        "Failed to ingest block"
-                    );
-                    Err(HandlerError::Transient(err.into()))
-                }
-            }
         }
     };
 
@@ -580,13 +508,113 @@ pub async fn run_consumer(config: ConsumerConfig) -> Result<()> {
     }
 }
 
+/// Ingest one live or finalized payload. A finalized payload re-ingests the
+/// block idempotently and marks it finalized. Then spawn a KMS activation pass.
+async fn ingest_payload<A: AwsS3Interface + Clone + 'static>(
+    db: &mut Database,
+    config: &ConsumerConfig,
+    ingest_options: &IngestOptions,
+    chain_id_str: &str,
+    payload: &BlockPayload,
+    s3: A,
+) -> Result<AckDecision, HandlerError> {
+    let chain_id = db.chain_id;
+    let finalized = payload.flow == BlockFlow::Final;
+    let block_summary = BlockSummary {
+        number: payload.block_number,
+        hash: payload.block_hash,
+        parent_hash: payload.parent_hash,
+        timestamp: payload.timestamp,
+    };
+    let catchup = payload.flow == BlockFlow::Catchup;
+    // Finalized deliveries do not measure live ingestion timing.
+    if !finalized {
+        observe_consumer_block_timing(
+            db,
+            chain_id_str,
+            &block_summary,
+            catchup,
+        )
+        .await;
+    }
+    let logs = collect_logs(payload);
+    info!(
+        chain_id = %payload.chain_id,
+        block_number = payload.block_number,
+        block_hash = ?payload.block_hash,
+        nb_tx = payload.transactions.len(),
+        nb_logs = logs.len(),
+        "Received new block payload"
+    );
+    let block_logs = BlockLogs {
+        summary: block_summary,
+        logs,
+        catchup: false,
+        finalized,
+    };
+    match ingest_with_retry(
+        chain_id,
+        db,
+        &block_logs,
+        config.acl_address,
+        config.tfhe_address,
+        config.kms_generation_address,
+        config.protocol_config_address,
+        config.confidential_bridge_address,
+        config.database_retry_interval,
+        ingest_options.clone(),
+    )
+    .await
+    {
+        Ok(_) => {
+            db.tick.update();
+            if finalized {
+                if let Err(error) = db
+                    .prune_finalized_block_history(block_summary.number as i64)
+                    .await
+                {
+                    warn!(%error, "Could not prune finalized block history");
+                }
+            }
+            // As the legacy listener does, retry KMS activations after
+            // each block: they only depend on database state. A
+            // finalized block also provides the finalized height.
+            if config.kms_generation_address.is_some() {
+                spawn_kms_activations(
+                    db.clone(),
+                    finalized.then_some(block_summary.number as i64),
+                    s3,
+                );
+            }
+
+            inc_blocks_processed(chain_id_str, 1);
+            Ok(AckDecision::Ack)
+        }
+        Err((err, retries)) => {
+            inc_db_errors(chain_id_str, 1);
+            error!(
+                block_number = block_summary.number,
+                block_hash = ?block_logs.summary.hash,
+                error = %err,
+                retries = retries,
+                "Failed to ingest block"
+            );
+            Err(HandlerError::Transient(err.into()))
+        }
+    }
+}
+
 /// Spawn one KMS activation pass: cancel orphaned candidates, activate
 /// finalized ready keys/CRS, and download and verify pending material.
-fn spawn_kms_activations(db: Database, finalized_height: Option<i64>) {
+fn spawn_kms_activations<A: AwsS3Interface + Clone + 'static>(
+    db: Database,
+    finalized_height: Option<i64>,
+    s3: A,
+) {
     tokio::spawn(async move {
         if let Err(error) = process_kms_generation_activations(
             db.pool().await,
-            AwsS3Client {},
+            s3,
             finalized_height,
         )
         .await
