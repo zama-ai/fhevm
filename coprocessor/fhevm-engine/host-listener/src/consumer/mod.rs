@@ -25,6 +25,7 @@ use crate::consumer::metrics::{
     inc_blocks_duplicated, inc_blocks_missing, inc_blocks_processed,
     inc_db_errors, observe_legacy_insert_delay_seconds,
 };
+use crate::consumer::migration::spawn_id_migration;
 use crate::database::ingest::{ingest_block_logs, BlockLogs, IngestOptions};
 use crate::database::tfhe_event_propagate::{
     spawn_stack_version_listener, Database,
@@ -39,6 +40,7 @@ use consumer::{
 #[cfg(test)]
 mod finalization_tests;
 mod metrics;
+mod migration;
 
 const MAX_DB_RETRIES: u64 = 10;
 const STATS_REPORT_INTERVAL: Duration = Duration::from_secs(60);
@@ -55,7 +57,7 @@ const STATS_FINALIZATION_MARGIN: i64 = 5;
 /// consumer group suffix below, not by the stream they read.
 ///
 /// Changing this value orphans the previous streams and filter rows. That is a
-/// migration, not a configuration change.
+/// migration (see `--migrate-from-service-name`), not a configuration change.
 const DEFAULT_CONSUMER_ID: &str = "host-listener-consumer";
 
 #[derive(Clone, Debug)]
@@ -78,6 +80,11 @@ pub struct ConsumerConfig {
     pub gcs_mode: bool,
     pub disable_synthetic_ops: bool,
     pub canonical_protocol_config_chain_id: Option<u64>,
+    /// Service name this environment ran under when that name was also its
+    /// broker identity, before [`DEFAULT_CONSUMER_ID`]. The chain id is
+    /// appended to it to name the identity to retire, exactly as it is for the
+    /// live one. Temporary — see [`migration`].
+    pub migrate_from_service_name: Option<String>,
 }
 
 pub fn collect_logs(payload: &BlockPayload) -> Vec<Log> {
@@ -419,6 +426,24 @@ pub async fn run_consumer(config: ConsumerConfig) -> Result<()> {
         stack_mode.clone(),
         client.cancel_token.clone(),
     );
+
+    // Temporary: retires whatever identity this environment used before
+    // `DEFAULT_CONSUMER_ID`. Removed once every environment has been through
+    // the release that introduced it. See `migration`.
+    if let Some(old_service_name) = config.migrate_from_service_name.clone() {
+        // Composed exactly as the live identity is above. The chain id belongs
+        // to this process, which serves one chain, so it is not something an
+        // operator should have to restate and so cannot be restated wrongly.
+        let old_consumer_id =
+            format!("{}.{}", old_service_name, config.chain_id);
+        spawn_id_migration(
+            broker.clone(),
+            client.clone(),
+            old_consumer_id,
+            contracts.clone(),
+            client.cancel_token.clone(),
+        );
+    }
 
     let last_known_drift = Arc::new(RwLock::new(STARTING_DRIFT));
     let chain_id_str = config.chain_id.to_string();
