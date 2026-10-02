@@ -36,7 +36,7 @@ import {
   solanaUserDecryptionDelegationPda,
   type SolanaDelegationApplication,
 } from '../actions/userDecryptionDelegation.js';
-import { mmrMountainHeight, verifyHistoricalAccessProof, verifyPublicDecryptProof } from '../proof.js';
+import { mmrMountainHeight, verifyHistoricalAccessProof, verifyPublicDecryptProof } from './mmr.js';
 
 ////////////////////////////////////////////////////////////////////////////////
 

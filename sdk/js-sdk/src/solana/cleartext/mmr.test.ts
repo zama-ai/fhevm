@@ -8,25 +8,21 @@
 
 import { readFileSync } from 'node:fs';
 import { describe, expect, it } from 'vitest';
+import { bytesToHex, hexToBytes } from '../../core/base/bytes.js';
 import {
-  buildPublicLeafProof,
-  bytesToHex,
   createRetainedMmr,
-  hexToBytes,
   historicalAccessLeafCommitment,
-  MAX_MMR_SIBLINGS,
-  mmrBuildProof,
   mmrLeafNode,
   mmrNode,
-  mmrPeaksFromLeaves,
   mmrVerify,
   publicDecryptLeafCommitment,
-  reconstructSolanaStoreHistory,
+  storeLeafCommitment,
   verifyHistoricalAccessProof,
   verifyPublicDecryptProof,
   type MmrProof,
+  type RetainedMmr,
   type SolanaStoreHistoryEvent,
-} from './proof.js';
+} from './mmr.js';
 
 /* eslint-disable @typescript-eslint/naming-convention -- the fixture's own field names are snake_case */
 
@@ -59,7 +55,7 @@ interface LeafVector {
 /* eslint-enable @typescript-eslint/naming-convention */
 
 const file = JSON.parse(
-  readFileSync(new URL('../../../../solana/test-fixtures/leaves/leaves_v1.json', import.meta.url), 'utf8'),
+  readFileSync(new URL('../../../../../solana/test-fixtures/leaves/leaves_v1.json', import.meta.url), 'utf8'),
 ) as LeafVectorFile;
 
 const unhex = (hex: string): Uint8Array => hexToBytes(`0x${hex}`);
@@ -78,6 +74,24 @@ const proofOf = (vector: LeafVector): MmrProof => ({
 });
 
 const named = file.vectors.map((vector) => [vector.id, vector] as const);
+
+/** A tree over `leaves`, in order. */
+const treeOf = (leaves: readonly Uint8Array[]): RetainedMmr => {
+  const tree = createRetainedMmr();
+  leaves.forEach((leaf) => {
+    tree.append(leaf);
+  });
+  return tree;
+};
+
+/** The vector's leaves, as the host appends them, and the tree over them. */
+const rebuild = (vector: LeafVector) => {
+  const leaves = eventsOf(vector).map((event, index) =>
+    storeLeafCommitment(unhex(vector.encrypted_store_account), BigInt(index), event),
+  );
+  const tree = treeOf(leaves);
+  return { leaves, tree, leafCount: BigInt(leaves.length), peaks: tree.peaks(leaves.length) };
+};
 
 ////////////////////////////////////////////////////////////////////////////////
 
@@ -99,7 +113,7 @@ describe('the leaf vector file', () => {
 
 describe('reconstructing an account history', () => {
   it.each(named)('%s: reproduces every leaf, the leaf count and the peaks', (_id, vector) => {
-    const rebuilt = reconstructSolanaStoreHistory(unhex(vector.encrypted_store_account), eventsOf(vector));
+    const rebuilt = rebuild(vector);
     expect(rebuilt.leaves.map(rehex)).toEqual(vector.leaves);
     expect(rebuilt.leafCount).toBe(BigInt(vector.leaf_count));
     expect(rebuilt.peaks.map(rehex)).toEqual(vector.peaks);
@@ -107,11 +121,11 @@ describe('reconstructing an account history', () => {
 
   it.each(named)('%s: builds the committed proof, and the proof verifies against the peaks', (_id, vector) => {
     const account = unhex(vector.encrypted_store_account);
-    const rebuilt = reconstructSolanaStoreHistory(account, eventsOf(vector));
+    const rebuilt = rebuild(vector);
     const expected = proofOf(vector);
 
-    const built = mmrBuildProof(rebuilt.leaves, expected.leafIndex);
-    expect(built?.siblings.map(rehex)).toEqual(vector.proof.siblings);
+    const built = rebuilt.tree.proof(Number(expected.leafIndex), rebuilt.leaves.length);
+    expect(built.siblings.map(rehex)).toEqual(vector.proof.siblings);
 
     const commitment = rebuilt.leaves[Number(expected.leafIndex)]!;
     expect(mmrVerify(rebuilt.peaks, rebuilt.leafCount, commitment, expected)).toBe(true);
@@ -134,19 +148,12 @@ describe('reconstructing an account history', () => {
 
   it('builds a verifying proof for every leaf of every vector', () => {
     for (const vector of file.vectors) {
-      const rebuilt = reconstructSolanaStoreHistory(unhex(vector.encrypted_store_account), eventsOf(vector));
+      const rebuilt = rebuild(vector);
       for (const [index, leaf] of rebuilt.leaves.entries()) {
-        const proof = mmrBuildProof(rebuilt.leaves, BigInt(index));
-        expect(proof, `${vector.id}: leaf ${index}`).toBeDefined();
-        expect(mmrVerify(rebuilt.peaks, rebuilt.leafCount, leaf, proof!), `${vector.id}: leaf ${index}`).toBe(true);
+        const proof = rebuilt.tree.proof(index, rebuilt.leaves.length);
+        expect(mmrVerify(rebuilt.peaks, rebuilt.leafCount, leaf, proof), `${vector.id}: leaf ${index}`).toBe(true);
       }
     }
-  });
-
-  it('has no proof for a leaf index past the list', () => {
-    expect(mmrBuildProof([], 0n)).toBeUndefined();
-    expect(mmrBuildProof([new Uint8Array(32)], 1n)).toBeUndefined();
-    expect(mmrBuildProof([new Uint8Array(32)], -1n)).toBeUndefined();
   });
 
   it('binds the account into every leaf', () => {
@@ -176,9 +183,9 @@ describe('the primitives, one at a time', () => {
     );
   });
 
-  it('computes peaks the same way the proof builder walks them', () => {
+  it('builds one peak per complete mountain, oldest first', () => {
     const leaves = Array.from({ length: 5 }, (_, i) => publicDecryptLeafCommitment(account, BigInt(i), handle));
-    const peaks = mmrPeaksFromLeaves(leaves);
+    const peaks = treeOf(leaves).peaks(5);
     // Five leaves: mountains of height 2 and 0.
     expect(peaks).toHaveLength(2);
     expect(peaks[1]).toEqual(mmrLeafNode(leaves[4]!));
@@ -192,8 +199,9 @@ describe('the primitives, one at a time', () => {
 
   it('refuses a proof that names another leaf count, an index out of range, or too many siblings', () => {
     const leaves = Array.from({ length: 3 }, (_, i) => publicDecryptLeafCommitment(account, BigInt(i), handle));
-    const peaks = mmrPeaksFromLeaves(leaves);
-    const proof = mmrBuildProof(leaves, 1n)!;
+    const tree = treeOf(leaves);
+    const peaks = tree.peaks(3);
+    const proof = tree.proof(1, 3);
 
     expect(mmrVerify(peaks, 3n, leaves[1]!, proof)).toBe(true);
     expect(mmrVerify(peaks, 4n, leaves[1]!, proof)).toBe(false);
@@ -201,7 +209,7 @@ describe('the primitives, one at a time', () => {
     expect(
       mmrVerify(peaks, 3n, leaves[0]!, {
         leafIndex: 0n,
-        siblings: Array.from({ length: MAX_MMR_SIBLINGS + 1 }, () => new Uint8Array(32)),
+        siblings: Array.from({ length: 65 }, () => new Uint8Array(32)),
       }),
     ).toBe(false);
   });
@@ -215,63 +223,22 @@ describe('createRetainedMmr', () => {
 
   // Every count up to 70 crosses mountains of heights 0 to 6, and the tree keeps growing past each
   // count it is asked about, as the leaf record's does past the account it checks.
-  it('answers the peaks mmrPeaksFromLeaves rebuilds, and proofs that verify against them, at every past count', () => {
-    const tree = createRetainedMmr();
-    leaves.forEach((leaf) => {
-      tree.append(leaf);
-    });
+  it('answers the peaks a tree over only the first leaves has, and proofs against them, at every past count', () => {
+    const tree = treeOf(leaves);
     expect(tree.leafCount()).toBe(70);
     for (let count = 0; count <= leaves.length; count += 1) {
-      const prefix = leaves.slice(0, count);
-      const peaks = mmrPeaksFromLeaves(prefix);
+      const peaks = treeOf(leaves.slice(0, count)).peaks(count);
       expect(tree.peaks(count)).toEqual(peaks);
       for (let index = 0; index < count; index += 1) {
-        // A proof that verifies against the rebuilt peaks is the proof `mmrBuildProof` builds.
         expect(mmrVerify(peaks, BigInt(count), leaves[index]!, tree.proof(index, count))).toBe(true);
       }
     }
   });
 
   it('refuses a count it does not hold and a leaf outside the count', () => {
-    const tree = createRetainedMmr();
-    leaves.slice(0, 3).forEach((leaf) => {
-      tree.append(leaf);
-    });
+    const tree = treeOf(leaves.slice(0, 3));
     expect(() => tree.peaks(4)).toThrow(/holds 3 leaves, not 4/);
     expect(() => tree.proof(0, 4)).toThrow(/holds 3 leaves, not 4/);
     expect(() => tree.proof(2, 2)).toThrow(/leaf 2 is not among the first 2/);
-  });
-});
-
-describe('buildPublicLeafProof', () => {
-  // The proof handed to a consume step must verify against the peaks it was cross-checked with, and a
-  // live account that disagrees with the expected history must fail here, naming the leaf count, not
-  // later inside the on-chain verifier.
-  const account = new Uint8Array(32).fill(0x0c);
-  const handle = new Uint8Array(32).fill(0x92);
-  const owner = new Uint8Array(32).fill(0x11);
-  // What a burn writes, then an explicit re-seal: one allow, the public leaf, the public leaf again.
-  const history: readonly SolanaStoreHistoryEvent[] = [
-    { kind: 'allowed', handle, key: owner },
-    { kind: 'markedPublic', handle },
-    { kind: 'markedPublic', handle },
-  ];
-  const live = reconstructSolanaStoreHistory(account, history);
-
-  it('builds a proof of the requested public leaf that verifies against the live peaks', () => {
-    const proof = buildPublicLeafProof(account, live, history, 1n);
-    expect(proof.leafIndex).toBe(1n);
-    expect(verifyPublicDecryptProof(account, live.peaks, live.leafCount, handle, proof)).toBe(true);
-  });
-
-  it('rejects a live account whose leaves disagree with the expected history', () => {
-    const shorter = reconstructSolanaStoreHistory(account, history.slice(0, 2));
-    expect(() => buildPublicLeafProof(account, shorter, history, 1n)).toThrow(
-      /holds 2 leaves that do not match the 3-leaf history/,
-    );
-  });
-
-  it('refuses to prove a leaf that is not public', () => {
-    expect(() => buildPublicLeafProof(account, live, history, 0n)).toThrow(/not a public leaf/);
   });
 });

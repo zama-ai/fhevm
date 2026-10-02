@@ -13,16 +13,10 @@ import {
   type Signature,
 } from '@solana/kit';
 import type { SolanaRpc } from '../encryptedStore.js';
-import type { SolanaStoreHistoryEvent } from '../proof.js';
 import type { SolanaLeafProofOutcome, SolanaLeafProofReader } from './leafProofs.js';
 import { bytesToHex } from '../../core/base/bytes.js';
 import { decodeSolanaEncryptedStore, isSolanaEncryptedStoreData } from '../encryptedStore.js';
-import {
-  createRetainedMmr,
-  historicalAccessLeafCommitment,
-  publicDecryptLeafCommitment,
-  type RetainedMmr,
-} from '../proof.js';
+import { createRetainedMmr, storeLeafCommitment, type RetainedMmr, type SolanaStoreHistoryEvent } from './mmr.js';
 import {
   FHE_EXECUTE_DISCRIMINATOR,
   parseFheExecuteInstruction,
@@ -156,13 +150,8 @@ export function createSolanaLeafRecord(rpc: SolanaRpc, programAddress: Address):
     const storeBytes = new Uint8Array(getAddressEncoder().encode(encryptedStore));
     run.forEach((event, offset) => {
       const index = sealed + offset;
-      const key = event.kind === 'allowed' ? event.key : undefined;
-      record.tree.append(
-        key === undefined
-          ? publicDecryptLeafCommitment(storeBytes, BigInt(index), event.handle)
-          : historicalAccessLeafCommitment(storeBytes, BigInt(index), event.handle, key),
-      );
-      const found = leafKey(event.handle, key);
+      record.tree.append(storeLeafCommitment(storeBytes, BigInt(index), event));
+      const found = leafKey(event.handle, event.kind === 'allowed' ? event.key : undefined);
       if (!record.firstLeaf.has(found)) record.firstLeaf.set(found, index);
     });
     record.newest = newest;

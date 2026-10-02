@@ -11,7 +11,7 @@ import type { SolanaRpc } from '../encryptedStore.js';
 import { getFheExecuteInstructionDataEncoder } from '../internal/generated/zamaHost/instructions/fheExecute.js';
 import { getMakeStoreHandlePublicInstructionDataEncoder } from '../internal/generated/zamaHost/instructions/makeStoreHandlePublic.js';
 import { getFheExecutedEventEncoder } from '../internal/generated/zamaHost/types/fheExecutedEvent.js';
-import { mmrBuildProof, reconstructSolanaStoreHistory, type SolanaStoreHistoryEvent } from '../proof.js';
+import { createRetainedMmr, storeLeafCommitment, type SolanaStoreHistoryEvent } from './mmr.js';
 import { EVENT_IX_TAG, EVENT_VERSION } from './hostConstants.js';
 import { createSolanaLeafRecord } from './leafRecord.js';
 
@@ -149,15 +149,19 @@ const touch = (): Write => ({
   inner: [],
 });
 
-/** The store's leaves in the order the host appended them, and the leaves they commit to. */
-const history = (writes: readonly Write[]) =>
-  reconstructSolanaStoreHistory(
-    storeBytes,
-    writes
-      .filter((write) => write.failed !== true)
-      .sort((left, right) => Number(left.at - right.at))
-      .flatMap((write) => write.events),
-  );
+/** The store's leaf count, peaks and proofs, from its leaves in the order the host appended them. */
+const history = (writes: readonly Write[]) => {
+  const tree = createRetainedMmr();
+  writes
+    .filter((write) => write.failed !== true)
+    .sort((left, right) => Number(left.at - right.at))
+    .flatMap((write) => write.events)
+    .forEach((event, index) => {
+      tree.append(storeLeafCommitment(storeBytes, BigInt(index), event));
+    });
+  const leafCount = tree.leafCount();
+  return { tree, leafCount: BigInt(leafCount), peaks: tree.peaks(leafCount) };
+};
 
 /** The borsh bytes of the store account with `leafCount` leaves under `peaks`. */
 const storeAccount = (leafCount: bigint, peaks: readonly Uint8Array[]): Uint8Array =>
@@ -290,12 +294,12 @@ function ledger(initial: readonly Write[]) {
     },
     /** The answer a record over every write gives for leaf `leafIndex`. */
     found: (leafIndex: number) => {
-      const { leaves } = history(writes);
+      const { tree, leafCount } = history(writes);
       return {
         status: 'found',
         leafIndex: BigInt(leafIndex),
-        leafCount: BigInt(leaves.length),
-        siblings: mmrBuildProof(leaves, BigInt(leafIndex))?.siblings,
+        leafCount,
+        siblings: tree.proof(leafIndex, tree.leafCount()).siblings,
       };
     },
   };

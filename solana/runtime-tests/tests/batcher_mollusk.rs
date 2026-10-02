@@ -11,10 +11,10 @@
 //! through the marked-signer stand-in used by the token suite's PDA-owner
 //! test.
 //!
-//! Encrypted store is checked with the cleartext history: each instruction's
-//! `fhe_execute` CPIs (there can be several — a token CPI's execution plus the
-//! batcher's own) are decoded from the inner instructions and replayed in
-//! cleartext, binding results to the handles the host persisted.
+//! Encrypted values come from the cleartext host build, which records each
+//! plaintext in its store. Each instruction's `fhe_execute` CPIs (there can be
+//! several — a token CPI's execution plus the batcher's own) are decoded from
+//! the inner instructions, counted and checked against the runtime sysvars.
 //!
 //! The fixture is direction-parametric: the same two confidential mints (one
 //! wrapping the vault's underlying, one wrapping its share mint) serve a
@@ -41,17 +41,17 @@ use solana_sdk::{
 use std::collections::HashMap;
 use zama_host as host;
 use zama_solana_test_kit::cleartext::{fixture_context, seed_u64, store_u64};
+use zama_solana_test_kit::executions;
 use zama_solana_test_kit::signing::{
     amount_attestation_for, amount_public_decrypt_cert, kms_signing_key,
     production_amount_attestation_for, secp_evm_address,
 };
-use zama_solana_test_kit::store_history::StoreHistory;
 use zama_solana_test_kit::{
     anchor_error_check, anchor_ix, coprocessor_signer_address, cost_snapshot,
     deny_scope_record_account, encrypted_store_account, ensure_system_accounts, event_authority,
     handle_for_chain, host_config_account, kms_context_account, new_encrypted_store, read_account,
-    read_spl_amount, read_store_handle, readonly, serialized_account, spl_mint_account,
-    spl_token_account, system_account, Ctx, HostConfigParams, BALANCE_FHE_TYPE, DECIMALS,
+    read_spl_amount, readonly, serialized_account, spl_mint_account, spl_token_account,
+    system_account, Ctx, HostConfigParams, BALANCE_FHE_TYPE, DECIMALS,
 };
 
 const KMS_CONTEXT_ID: [u8; 32] = {
@@ -128,8 +128,8 @@ fn check_batcher_instruction(
 
 /// Records a batcher instruction's `fhe_execute` CPIs (a token CPI's execution plus the
 /// batcher's own) and returns how many there were, which the tests assert exactly.
-fn record_fhe_cpis(history: &mut StoreHistory, context: &Ctx, result: &InstructionResult) -> usize {
-    let recorded = history.record(context, result);
+fn record_fhe_cpis(context: &Ctx, result: &InstructionResult) -> usize {
+    let recorded = executions::record(context, result);
     assert!(
         recorded.executions > 0,
         "expected at least one fhe_execute CPI in this instruction"
@@ -1030,29 +1030,15 @@ fn ensure_open_batch_accounts(context: &Ctx, fixture: &BatcherFixture, keys: &Ba
     );
 }
 
-/// Records the allow leaf of the batch's freshly created (encrypted zero) balance stores, which
-/// the open instruction wrote before the history started recording.
-fn seed_open_batch_balances(context: &Ctx, keys: &BatchKeys, history: &mut StoreHistory) {
-    for state in [keys.join_balance_store, keys.payout_balance_store] {
-        let handle = read_store_handle(context, state, token::balance_key());
-        history.seed_state_allow(state, handle, keys.batch_authority);
-    }
-}
-
-/// Runs one join and replays its FHE CPIs into the history.
+/// Runs one join and checks its FHE CPIs.
 fn run_join(
     context: &Ctx,
     fixture: &BatcherFixture,
     keys: &BatchKeys,
     user: &UserKeys,
-    history: &mut StoreHistory,
     amount_handle: [u8; 32],
     amount: u64,
 ) {
-    let open_handle = read_store_handle(context, keys.join_balance_store, token::balance_key());
-    if read_account::<host::EncryptedStore>(context, keys.join_balance_store).leaf_count == 1 {
-        history.seed_state_allow(keys.join_balance_store, open_handle, keys.batch_authority);
-    }
     ensure_system_accounts(
         context,
         &[
@@ -1065,24 +1051,11 @@ fn run_join(
     let attestation = amount_attestation_for(amount_handle, amount, user.user, token::id());
     let ix = join_ix(fixture, keys, user, attestation);
     let result = check_batcher_instruction(context, &ix, &[Check::success()]);
-    assert_eq!(record_fhe_cpis(history, context, &result), 2);
+    assert_eq!(record_fhe_cpis(context, &result), 2);
 }
 
 /// Dispatches the batch and returns the created-public burned handle.
-fn run_dispatch(
-    context: &Ctx,
-    fixture: &BatcherFixture,
-    keys: &BatchKeys,
-    history: &mut StoreHistory,
-) -> [u8; 32] {
-    let current_handle = read_store_handle(context, keys.join_balance_store, token::balance_key());
-    if read_account::<host::EncryptedStore>(context, keys.join_balance_store).leaf_count == 1 {
-        history.seed_state_allow(
-            keys.join_balance_store,
-            current_handle,
-            keys.batch_authority,
-        );
-    }
+fn run_dispatch(context: &Ctx, fixture: &BatcherFixture, keys: &BatchKeys) -> [u8; 32] {
     ensure_system_accounts(
         context,
         &[
@@ -1093,7 +1066,7 @@ fn run_dispatch(
     );
     let ix = dispatch_ix(fixture, keys);
     let result = check_batcher_instruction(context, &ix, &[Check::success()]);
-    assert_eq!(record_fhe_cpis(history, context, &result), 1);
+    assert_eq!(record_fhe_cpis(context, &result), 1);
     read_batch(context, keys.batch).burned_total_handle
 }
 
@@ -1104,38 +1077,22 @@ fn run_settle(
     context: &Ctx,
     fixture: &BatcherFixture,
     keys: &BatchKeys,
-    history: &mut StoreHistory,
     burned_handle: [u8; 32],
     total: u64,
 ) -> (Instruction, InstructionResult) {
-    let payout_handle = read_store_handle(context, keys.payout_balance_store, token::balance_key());
-    if read_account::<host::EncryptedStore>(context, keys.payout_balance_store).leaf_count == 1 {
-        history.seed_state_allow(
-            keys.payout_balance_store,
-            payout_handle,
-            keys.batch_authority,
-        );
-    }
     let (signatures, extra_data) = amount_public_decrypt_cert(burned_handle, total);
-    let proof = history.public_decrypt_proof(keys.burned_amount_store, burned_handle);
     let pending_burn = keys.pending_burn(fixture.join_mint().mint);
     let ix = settle_ix(fixture, keys, total, signatures, extra_data, pending_burn);
     let result = check_batcher_instruction(context, &ix, &[Check::success()]);
     if total > 0 {
         // Only the wrap phase drives an execution at settle.
-        assert_eq!(record_fhe_cpis(history, context, &result), 1);
+        assert_eq!(record_fhe_cpis(context, &result), 1);
     }
     (ix, result)
 }
 
 /// Claims for one user, replaying the MulDiv and transfer executions.
-fn run_claim(
-    context: &Ctx,
-    fixture: &BatcherFixture,
-    keys: &BatchKeys,
-    user: &UserKeys,
-    history: &mut StoreHistory,
-) {
+fn run_claim(context: &Ctx, fixture: &BatcherFixture, keys: &BatchKeys, user: &UserKeys) {
     ensure_system_accounts(
         context,
         &[
@@ -1146,7 +1103,7 @@ fn run_claim(
     let ix = claim_ix(fixture, keys, user);
     let result = check_batcher_instruction(context, &ix, &[Check::success()]);
     // The claim issues the batcher's MulDiv execution plus the transfer's execution.
-    assert_eq!(record_fhe_cpis(history, context, &result), 2);
+    assert_eq!(record_fhe_cpis(context, &result), 2);
 }
 
 // ---------------------------------------------------------------------------
@@ -1162,7 +1119,6 @@ fn run_claim(
 fn mollusk_lifecycle_two_users_deposit_dispatch_settle_claim() {
     let fixture = BatcherFixture::new(batcher::BatchDirection::Deposit);
     let context = fixture_context(mollusk(), fixture.accounts(0, 0));
-    let mut history = StoreHistory::default();
     fixture.seed_values(&context, (1_000, 0), (2_000, 0), (1_000_000, 0));
 
     let keys = initialize_and_open_first_batch(&context, &fixture, 0);
@@ -1170,14 +1126,12 @@ fn mollusk_lifecycle_two_users_deposit_dispatch_settle_claim() {
     // Batch opens with an encrypted zero balance on both sides.
     let open_result = read_batch(&context, keys.batch);
     assert_eq!(open_result.status, batcher::BatchStatus::Pending);
-    seed_open_batch_balances(&context, &keys, &mut history);
 
     run_join(
         &context,
         &fixture,
         &keys,
         &fixture.alice,
-        &mut history,
         handle_for_chain(41, BALANCE_FHE_TYPE),
         300,
     );
@@ -1186,7 +1140,6 @@ fn mollusk_lifecycle_two_users_deposit_dispatch_settle_claim() {
         &fixture,
         &keys,
         &fixture.bob,
-        &mut history,
         handle_for_chain(42, BALANCE_FHE_TYPE),
         500,
     );
@@ -1234,7 +1187,7 @@ fn mollusk_lifecycle_two_users_deposit_dispatch_settle_claim() {
 
     // Dispatch burns the batch's whole balance; the burned encrypted store carries the
     // batch total, created publicly decryptable.
-    let burned_handle = run_dispatch(&context, &fixture, &keys, &mut history);
+    let burned_handle = run_dispatch(&context, &fixture, &keys);
     assert_eq!(
         store_u64(&context, keys.join_balance_store, token::balance_key()),
         0
@@ -1260,7 +1213,7 @@ fn mollusk_lifecycle_two_users_deposit_dispatch_settle_claim() {
 
     // Settle: the KMS certifies 800; the vault (empty, 1:1) mints 800 shares;
     // the informational rate lands at exactly RATE_SCALE.
-    run_settle(&context, &fixture, &keys, &mut history, burned_handle, 800);
+    run_settle(&context, &fixture, &keys, burned_handle, 800);
     let settled = read_batch(&context, keys.batch);
     assert_eq!(settled.status, batcher::BatchStatus::Settled);
     assert_eq!(settled.total_joined, 800);
@@ -1288,7 +1241,7 @@ fn mollusk_lifecycle_two_users_deposit_dispatch_settle_claim() {
     );
 
     // Claims: each user receives their exact proportional encrypted shares.
-    run_claim(&context, &fixture, &keys, &fixture.alice, &mut history);
+    run_claim(&context, &fixture, &keys, &fixture.alice);
 
     // Once settled, the operator takes the unspent authority funding back. A stranger cannot, and
     // Bob's claim afterwards shows claims pay their own rent: the drained authority only signs.
@@ -1305,7 +1258,7 @@ fn mollusk_lifecycle_two_users_deposit_dispatch_settle_claim() {
         )],
     );
     run_reclaim_batch_authority(&context, &fixture, &keys);
-    run_claim(&context, &fixture, &keys, &fixture.bob, &mut history);
+    run_claim(&context, &fixture, &keys, &fixture.bob);
     assert_eq!(
         store_u64(
             &context,
@@ -1351,18 +1304,15 @@ fn mollusk_lifecycle_with_yield_rate_rounds_down() {
     let fixture = BatcherFixture::new(batcher::BatchDirection::Deposit);
     // Share price ~2: 2_000 assets backing 1_000 shares.
     let context = fixture_context(mollusk(), fixture.accounts(2_000, 1_000));
-    let mut history = StoreHistory::default();
     fixture.seed_values(&context, (1_000, 0), (2_000, 0), (1_000_000, 0));
 
     let keys = initialize_and_open_first_batch(&context, &fixture, 0);
-    seed_open_batch_balances(&context, &keys, &mut history);
 
     run_join(
         &context,
         &fixture,
         &keys,
         &fixture.alice,
-        &mut history,
         handle_for_chain(41, BALANCE_FHE_TYPE),
         300,
     );
@@ -1371,12 +1321,11 @@ fn mollusk_lifecycle_with_yield_rate_rounds_down() {
         &fixture,
         &keys,
         &fixture.bob,
-        &mut history,
         handle_for_chain(42, BALANCE_FHE_TYPE),
         500,
     );
-    let burned_handle = run_dispatch(&context, &fixture, &keys, &mut history);
-    run_settle(&context, &fixture, &keys, &mut history, burned_handle, 800);
+    let burned_handle = run_dispatch(&context, &fixture, &keys);
+    run_settle(&context, &fixture, &keys, burned_handle, 800);
 
     // shares = 800 * (1_000 + 1) / (2_000 + 1) = 400 (floor);
     // informational rate = 400 * RATE_SCALE / 800 = RATE_SCALE / 2.
@@ -1384,8 +1333,8 @@ fn mollusk_lifecycle_with_yield_rate_rounds_down() {
     assert_eq!(settled.payout_received, 400);
     assert_eq!(settled.payout_rate, batcher::RATE_SCALE / 2);
 
-    run_claim(&context, &fixture, &keys, &fixture.alice, &mut history);
-    run_claim(&context, &fixture, &keys, &fixture.bob, &mut history);
+    run_claim(&context, &fixture, &keys, &fixture.alice);
+    run_claim(&context, &fixture, &keys, &fixture.bob);
     // 300 * 400 / 800 = 150 and 500 -> 250; the claims sum exactly to the
     // wrapped 400 here, and can never exceed it by the floor rounding.
     assert_eq!(
@@ -1419,11 +1368,9 @@ fn mollusk_lifecycle_with_yield_rate_rounds_down() {
 fn mollusk_single_user_batch_reveals_that_users_amount() {
     let fixture = BatcherFixture::new(batcher::BatchDirection::Deposit);
     let context = fixture_context(mollusk(), fixture.accounts(0, 0));
-    let mut history = StoreHistory::default();
     fixture.seed_values(&context, (1_000, 0), (2_000, 0), (1_000_000, 0));
 
     let keys = initialize_and_open_first_batch(&context, &fixture, 0);
-    seed_open_batch_balances(&context, &keys, &mut history);
 
     let alice_amount = 777;
     run_join(
@@ -1431,19 +1378,11 @@ fn mollusk_single_user_batch_reveals_that_users_amount() {
         &fixture,
         &keys,
         &fixture.alice,
-        &mut history,
         handle_for_chain(41, BALANCE_FHE_TYPE),
         alice_amount,
     );
-    let burned_handle = run_dispatch(&context, &fixture, &keys, &mut history);
-    run_settle(
-        &context,
-        &fixture,
-        &keys,
-        &mut history,
-        burned_handle,
-        alice_amount,
-    );
+    let burned_handle = run_dispatch(&context, &fixture, &keys);
+    run_settle(&context, &fixture, &keys, burned_handle, alice_amount);
 
     // The amount-reveal caveat: with one participant, the public batch total
     // equals their private deposit exactly.
@@ -1458,7 +1397,7 @@ fn mollusk_single_user_batch_reveals_that_users_amount() {
         )
     );
 
-    run_claim(&context, &fixture, &keys, &fixture.alice, &mut history);
+    run_claim(&context, &fixture, &keys, &fixture.alice);
     assert_eq!(
         store_u64(
             &context,
@@ -1476,11 +1415,9 @@ fn mollusk_single_user_batch_reveals_that_users_amount() {
 fn mollusk_repeat_join_accumulates_and_quit_refunds_exactly() {
     let fixture = BatcherFixture::new(batcher::BatchDirection::Deposit);
     let context = fixture_context(mollusk(), fixture.accounts(0, 0));
-    let mut history = StoreHistory::default();
     fixture.seed_values(&context, (1_000, 0), (2_000, 0), (1_000_000, 0));
 
     let keys = initialize_and_open_first_batch(&context, &fixture, 0);
-    seed_open_batch_balances(&context, &keys, &mut history);
 
     // Two joins accumulate: the second join's execution reads the joined encrypted store
     // as an operand AND updates it as the output (the #3238 aliasing class
@@ -1490,7 +1427,6 @@ fn mollusk_repeat_join_accumulates_and_quit_refunds_exactly() {
         &fixture,
         &keys,
         &fixture.alice,
-        &mut history,
         handle_for_chain(41, BALANCE_FHE_TYPE),
         100,
     );
@@ -1499,7 +1435,6 @@ fn mollusk_repeat_join_accumulates_and_quit_refunds_exactly() {
         &fixture,
         &keys,
         &fixture.alice,
-        &mut history,
         handle_for_chain(42, BALANCE_FHE_TYPE),
         250,
     );
@@ -1520,7 +1455,7 @@ fn mollusk_repeat_join_accumulates_and_quit_refunds_exactly() {
     // Quit refunds exactly 350 (all-or-nothing) and resets the encrypted store to zero.
     let quit = quit_ix(&fixture, &keys, &fixture.alice);
     let result = check_batcher_instruction(&context, &quit, &[Check::success()]);
-    assert_eq!(record_fhe_cpis(&mut history, &context, &result), 2);
+    assert_eq!(record_fhe_cpis(&context, &result), 2);
     assert_eq!(
         store_u64(&context, pending, batcher::joined_amount_key()),
         0
@@ -1544,7 +1479,6 @@ fn mollusk_repeat_join_accumulates_and_quit_refunds_exactly() {
         &fixture,
         &keys,
         &fixture.alice,
-        &mut history,
         handle_for_chain(43, BALANCE_FHE_TYPE),
         40,
     );
@@ -1565,33 +1499,22 @@ fn mollusk_repeat_join_accumulates_and_quit_refunds_exactly() {
 fn mollusk_cancel_dispatch_restores_burn_and_allows_refunds() {
     let fixture = BatcherFixture::new(batcher::BatchDirection::Deposit);
     let context = fixture_context(mollusk(), fixture.accounts(0, 0));
-    let mut history = StoreHistory::default();
     fixture.seed_values(&context, (1_000, 0), (2_000, 0), (1_000_000, 0));
 
     let keys = initialize_and_open_first_batch(&context, &fixture, 0);
-    seed_open_batch_balances(&context, &keys, &mut history);
     run_join(
         &context,
         &fixture,
         &keys,
         &fixture.alice,
-        &mut history,
         handle_for_chain(41, BALANCE_FHE_TYPE),
         300,
     );
 
     let pending_burn = keys.pending_burn(fixture.join_mint().mint);
-    let burned_handle = run_dispatch(&context, &fixture, &keys, &mut history);
+    let burned_handle = run_dispatch(&context, &fixture, &keys);
     let (signatures, extra_data) = amount_public_decrypt_cert(burned_handle, 300);
-    let settle = settle_ix(
-        &fixture,
-        &keys,
-        300,
-        signatures,
-        extra_data,
-        history.public_decrypt_proof(keys.burned_amount_store, burned_handle),
-        pending_burn,
-    );
+    let settle = settle_ix(&fixture, &keys, 300, signatures, extra_data, pending_burn);
     assert_eq!(
         store_u64(&context, keys.join_balance_store, token::balance_key()),
         0
@@ -1664,7 +1587,7 @@ fn mollusk_cancel_dispatch_restores_burn_and_allows_refunds() {
     let mut cancel = cancel_dispatch_ix(&fixture, &keys);
     cancel.accounts.push(readonly(deny_record));
     let result = check_batcher_instruction(&context, &cancel, &[Check::success()]);
-    assert_eq!(record_fhe_cpis(&mut history, &context, &result), 1);
+    assert_eq!(record_fhe_cpis(&context, &result), 1);
     let batch = read_batch(&context, keys.batch);
     assert_eq!(batch.status, batcher::BatchStatus::Refunding);
     assert_eq!(batch.burned_total_handle, [0; 32]);
@@ -1742,7 +1665,7 @@ fn mollusk_cancel_dispatch_restores_burn_and_allows_refunds() {
 
     let quit = quit_ix(&fixture, &keys, &fixture.alice);
     let result = check_batcher_instruction(&context, &quit, &[Check::success()]);
-    assert_eq!(record_fhe_cpis(&mut history, &context, &result), 2);
+    assert_eq!(record_fhe_cpis(&context, &result), 2);
     assert_eq!(
         store_u64(
             &context,
@@ -1773,12 +1696,11 @@ fn mollusk_cancel_dispatch_restores_burn_and_allows_refunds() {
 fn mollusk_zero_total_batch_cancels_at_settle() {
     let fixture = BatcherFixture::new(batcher::BatchDirection::Deposit);
     let context = fixture_context(mollusk(), fixture.accounts(0, 0));
-    let mut history = StoreHistory::default();
     fixture.seed_values(&context, (1_000, 0), (2_000, 0), (1_000_000, 0));
 
     let keys = initialize_and_open_first_batch(&context, &fixture, 0);
 
-    let burned_handle = run_dispatch(&context, &fixture, &keys, &mut history);
+    let burned_handle = run_dispatch(&context, &fixture, &keys);
     assert_eq!(
         store_u64(
             &context,
@@ -1787,7 +1709,7 @@ fn mollusk_zero_total_batch_cancels_at_settle() {
         ),
         0
     );
-    run_settle(&context, &fixture, &keys, &mut history, burned_handle, 0);
+    run_settle(&context, &fixture, &keys, burned_handle, 0);
 
     let batch = read_batch(&context, keys.batch);
     assert_eq!(batch.status, batcher::BatchStatus::Canceled);
@@ -1832,7 +1754,6 @@ fn mollusk_redeem_lifecycle_two_users_join_dispatch_settle_claim() {
     // 1_000 assets backing 1_000 outstanding shares, all of them wrapped as
     // the users' confidential share positions.
     let context = fixture_context(mollusk(), redeem_accounts(&fixture, 1_000, 1_000, 1_000));
-    let mut history = StoreHistory::default();
     fixture.seed_values(&context, (0, 600), (0, 400), (0, 1_000));
 
     let keys = initialize_and_open_first_batch(&context, &fixture, 0);
@@ -1840,14 +1761,12 @@ fn mollusk_redeem_lifecycle_two_users_join_dispatch_settle_claim() {
         read_batch(&context, keys.batch).status,
         batcher::BatchStatus::Pending
     );
-    seed_open_batch_balances(&context, &keys, &mut history);
 
     run_join(
         &context,
         &fixture,
         &keys,
         &fixture.alice,
-        &mut history,
         handle_for_chain(41, BALANCE_FHE_TYPE),
         300,
     );
@@ -1856,7 +1775,6 @@ fn mollusk_redeem_lifecycle_two_users_join_dispatch_settle_claim() {
         &fixture,
         &keys,
         &fixture.bob,
-        &mut history,
         handle_for_chain(42, BALANCE_FHE_TYPE),
         400,
     );
@@ -1886,7 +1804,7 @@ fn mollusk_redeem_lifecycle_two_users_join_dispatch_settle_claim() {
     assert_eq!(read_batch(&context, keys.batch).join_count, 2);
 
     // Dispatch burns the batch's whole confidential-share balance.
-    let burned_handle = run_dispatch(&context, &fixture, &keys, &mut history);
+    let burned_handle = run_dispatch(&context, &fixture, &keys);
     assert_eq!(
         store_u64(&context, keys.join_balance_store, token::balance_key()),
         0
@@ -1903,7 +1821,7 @@ fn mollusk_redeem_lifecycle_two_users_join_dispatch_settle_claim() {
     // Settle: the KMS certifies 700 shares; the vault (1:1) pays 700
     // underlying; the underlying is wrapped into the batch's confidential
     // payout account.
-    run_settle(&context, &fixture, &keys, &mut history, burned_handle, 700);
+    run_settle(&context, &fixture, &keys, burned_handle, 700);
     let settled = read_batch(&context, keys.batch);
     assert_eq!(settled.status, batcher::BatchStatus::Settled);
     assert_eq!(settled.total_joined, 700);
@@ -1924,8 +1842,8 @@ fn mollusk_redeem_lifecycle_two_users_join_dispatch_settle_claim() {
     );
 
     // Claims: each user receives their exact proportional encrypted underlying.
-    run_claim(&context, &fixture, &keys, &fixture.alice, &mut history);
-    run_claim(&context, &fixture, &keys, &fixture.bob, &mut history);
+    run_claim(&context, &fixture, &keys, &fixture.alice);
+    run_claim(&context, &fixture, &keys, &fixture.bob);
     assert_eq!(
         store_u64(
             &context,
@@ -1958,18 +1876,15 @@ fn mollusk_redeem_lifecycle_two_users_join_dispatch_settle_claim() {
 fn mollusk_redeem_lifecycle_with_yield_rounds_down() {
     let fixture = BatcherFixture::new(batcher::BatchDirection::Redeem);
     let context = fixture_context(mollusk(), redeem_accounts(&fixture, 2_000, 1_000, 1_000));
-    let mut history = StoreHistory::default();
     fixture.seed_values(&context, (0, 600), (0, 400), (0, 1_000));
 
     let keys = initialize_and_open_first_batch(&context, &fixture, 0);
-    seed_open_batch_balances(&context, &keys, &mut history);
 
     run_join(
         &context,
         &fixture,
         &keys,
         &fixture.alice,
-        &mut history,
         handle_for_chain(41, BALANCE_FHE_TYPE),
         300,
     );
@@ -1978,19 +1893,18 @@ fn mollusk_redeem_lifecycle_with_yield_rounds_down() {
         &fixture,
         &keys,
         &fixture.bob,
-        &mut history,
         handle_for_chain(42, BALANCE_FHE_TYPE),
         400,
     );
-    let burned_handle = run_dispatch(&context, &fixture, &keys, &mut history);
-    run_settle(&context, &fixture, &keys, &mut history, burned_handle, 700);
+    let burned_handle = run_dispatch(&context, &fixture, &keys);
+    run_settle(&context, &fixture, &keys, burned_handle, 700);
 
     // assets = 700 * (2_000 + 1) / (1_000 + 1) = 1_399 (floor).
     let settled = read_batch(&context, keys.batch);
     assert_eq!(settled.payout_received, 1_399);
 
-    run_claim(&context, &fixture, &keys, &fixture.alice, &mut history);
-    run_claim(&context, &fixture, &keys, &fixture.bob, &mut history);
+    run_claim(&context, &fixture, &keys, &fixture.alice);
+    run_claim(&context, &fixture, &keys, &fixture.bob);
     // Exact proportional floors: 300 * 1_399 / 700 = 599, 400 * 1_399 / 700
     // = 799. Sum 1_398 <= 1_399; the one dust unit stays with the batch.
     assert_eq!(
@@ -2024,11 +1938,9 @@ fn mollusk_redeem_lifecycle_with_yield_rounds_down() {
 fn mollusk_redeem_repeat_join_accumulates_and_quit_refunds_exactly() {
     let fixture = BatcherFixture::new(batcher::BatchDirection::Redeem);
     let context = fixture_context(mollusk(), redeem_accounts(&fixture, 1_000, 1_000, 1_000));
-    let mut history = StoreHistory::default();
     fixture.seed_values(&context, (0, 600), (0, 400), (0, 1_000));
 
     let keys = initialize_and_open_first_batch(&context, &fixture, 0);
-    seed_open_batch_balances(&context, &keys, &mut history);
 
     // Two joins accumulate: the second join's execution reads the joined encrypted store
     // as an operand AND updates it as the output.
@@ -2037,7 +1949,6 @@ fn mollusk_redeem_repeat_join_accumulates_and_quit_refunds_exactly() {
         &fixture,
         &keys,
         &fixture.alice,
-        &mut history,
         handle_for_chain(41, BALANCE_FHE_TYPE),
         100,
     );
@@ -2046,7 +1957,6 @@ fn mollusk_redeem_repeat_join_accumulates_and_quit_refunds_exactly() {
         &fixture,
         &keys,
         &fixture.alice,
-        &mut history,
         handle_for_chain(42, BALANCE_FHE_TYPE),
         250,
     );
@@ -2067,7 +1977,7 @@ fn mollusk_redeem_repeat_join_accumulates_and_quit_refunds_exactly() {
     // Quit refunds exactly 350 shares (all-or-nothing) and resets the encrypted store.
     let quit = quit_ix(&fixture, &keys, &fixture.alice);
     let result = check_batcher_instruction(&context, &quit, &[Check::success()]);
-    assert_eq!(record_fhe_cpis(&mut history, &context, &result), 2);
+    assert_eq!(record_fhe_cpis(&context, &result), 2);
     assert_eq!(
         store_u64(&context, pending, batcher::joined_amount_key()),
         0
@@ -2091,7 +2001,6 @@ fn mollusk_redeem_repeat_join_accumulates_and_quit_refunds_exactly() {
         &fixture,
         &keys,
         &fixture.alice,
-        &mut history,
         handle_for_chain(43, BALANCE_FHE_TYPE),
         40,
     );
@@ -2111,17 +2020,14 @@ fn mollusk_redeem_repeat_join_accumulates_and_quit_refunds_exactly() {
 fn mollusk_quit_rejects_refund_destination_that_is_not_the_users_account() {
     let fixture = BatcherFixture::new(batcher::BatchDirection::Deposit);
     let context = fixture_context(mollusk(), fixture.accounts(0, 0));
-    let mut history = StoreHistory::default();
     fixture.seed_values(&context, (1_000, 0), (2_000, 0), (1_000_000, 0));
 
     let keys = initialize_and_open_first_batch(&context, &fixture, 0);
-    seed_open_batch_balances(&context, &keys, &mut history);
     run_join(
         &context,
         &fixture,
         &keys,
         &fixture.alice,
-        &mut history,
         handle_for_chain(41, BALANCE_FHE_TYPE),
         100,
     );
@@ -2161,18 +2067,15 @@ fn mollusk_quit_rejects_refund_destination_that_is_not_the_users_account() {
 fn mollusk_claim_after_quit_pays_zero() {
     let fixture = BatcherFixture::new(batcher::BatchDirection::Deposit);
     let context = fixture_context(mollusk(), fixture.accounts(0, 0));
-    let mut history = StoreHistory::default();
     fixture.seed_values(&context, (1_000, 0), (2_000, 0), (1_000_000, 0));
 
     let keys = initialize_and_open_first_batch(&context, &fixture, 0);
-    seed_open_batch_balances(&context, &keys, &mut history);
 
     run_join(
         &context,
         &fixture,
         &keys,
         &fixture.alice,
-        &mut history,
         handle_for_chain(41, BALANCE_FHE_TYPE),
         300,
     );
@@ -2181,7 +2084,6 @@ fn mollusk_claim_after_quit_pays_zero() {
         &fixture,
         &keys,
         &fixture.bob,
-        &mut history,
         handle_for_chain(42, BALANCE_FHE_TYPE),
         500,
     );
@@ -2189,8 +2091,8 @@ fn mollusk_claim_after_quit_pays_zero() {
     // Alice quits; the batch dispatches and settles on bob's 500 alone.
     let quit = quit_ix(&fixture, &keys, &fixture.alice);
     let result = check_batcher_instruction(&context, &quit, &[Check::success()]);
-    assert_eq!(record_fhe_cpis(&mut history, &context, &result), 2);
-    let burned_handle = run_dispatch(&context, &fixture, &keys, &mut history);
+    assert_eq!(record_fhe_cpis(&context, &result), 2);
+    let burned_handle = run_dispatch(&context, &fixture, &keys);
     assert_eq!(
         store_u64(
             &context,
@@ -2199,11 +2101,11 @@ fn mollusk_claim_after_quit_pays_zero() {
         ),
         500
     );
-    run_settle(&context, &fixture, &keys, &mut history, burned_handle, 500);
+    run_settle(&context, &fixture, &keys, burned_handle, 500);
 
     // Alice's claim computes 0 * 500 / 500 = encrypted zero and transfers
     // nothing; her record still flips to claimed (the record survives quit).
-    run_claim(&context, &fixture, &keys, &fixture.alice, &mut history);
+    run_claim(&context, &fixture, &keys, &fixture.alice);
     assert_eq!(
         store_u64(
             &context,
@@ -2223,7 +2125,7 @@ fn mollusk_claim_after_quit_pays_zero() {
     assert!(read_join_record(&context, keys.join_record(fixture.alice.user)).claimed);
 
     // Bob's claim still pays the full settled batch.
-    run_claim(&context, &fixture, &keys, &fixture.bob, &mut history);
+    run_claim(&context, &fixture, &keys, &fixture.bob);
     assert_eq!(
         store_u64(
             &context,
@@ -2244,12 +2146,11 @@ fn mollusk_claim_after_quit_pays_zero() {
 fn mollusk_redeem_zero_total_batch_cancels_at_settle() {
     let fixture = BatcherFixture::new(batcher::BatchDirection::Redeem);
     let context = fixture_context(mollusk(), redeem_accounts(&fixture, 1_000, 1_000, 1_000));
-    let mut history = StoreHistory::default();
     fixture.seed_values(&context, (0, 600), (0, 400), (0, 1_000));
 
     let keys = initialize_and_open_first_batch(&context, &fixture, 0);
 
-    let burned_handle = run_dispatch(&context, &fixture, &keys, &mut history);
+    let burned_handle = run_dispatch(&context, &fixture, &keys);
     assert_eq!(
         store_u64(
             &context,
@@ -2258,7 +2159,7 @@ fn mollusk_redeem_zero_total_batch_cancels_at_settle() {
         ),
         0
     );
-    run_settle(&context, &fixture, &keys, &mut history, burned_handle, 0);
+    run_settle(&context, &fixture, &keys, burned_handle, 0);
 
     let batch = read_batch(&context, keys.batch);
     assert_eq!(batch.status, batcher::BatchStatus::Canceled);
@@ -2281,23 +2182,20 @@ fn mollusk_redeem_one_share_dust_settles_at_extreme_price() {
     // Share price ~20_000 underlying per share: 2_000_000 assets backing 100
     // shares (the price shape that bricks sub-price deposit batches).
     let context = fixture_context(mollusk(), redeem_accounts(&fixture, 2_000_000, 100, 100));
-    let mut history = StoreHistory::default();
     fixture.seed_values(&context, (0, 60), (0, 40), (0, 100));
 
     let keys = initialize_and_open_first_batch(&context, &fixture, 0);
-    seed_open_batch_balances(&context, &keys, &mut history);
 
     run_join(
         &context,
         &fixture,
         &keys,
         &fixture.alice,
-        &mut history,
         handle_for_chain(41, BALANCE_FHE_TYPE),
         1,
     );
-    let burned_handle = run_dispatch(&context, &fixture, &keys, &mut history);
-    run_settle(&context, &fixture, &keys, &mut history, burned_handle, 1);
+    let burned_handle = run_dispatch(&context, &fixture, &keys);
+    run_settle(&context, &fixture, &keys, burned_handle, 1);
 
     // assets = 1 * (2_000_000 + 1) / (100 + 1) = 19_801 (floor) — always
     // >= 1 per share at any reachable price, so no ZeroAssets, no stuck batch.
@@ -2306,7 +2204,7 @@ fn mollusk_redeem_one_share_dust_settles_at_extreme_price() {
     assert_eq!(settled.total_joined, 1);
     assert_eq!(settled.payout_received, 19_801);
 
-    run_claim(&context, &fixture, &keys, &fixture.alice, &mut history);
+    run_claim(&context, &fixture, &keys, &fixture.alice);
     assert_eq!(
         store_u64(
             &context,
@@ -2337,17 +2235,14 @@ fn mollusk_redeem_preloaded_underlying_stays_inert() {
         spl_token_account(fixture.underlying_mint, attacker, PRELOAD),
     );
     let context = fixture_context(mollusk(), accounts);
-    let mut history = StoreHistory::default();
     fixture.seed_values(&context, (0, 600), (0, 400), (0, 1_000));
 
     let keys = initialize_and_open_first_batch(&context, &fixture, 0);
-    seed_open_batch_balances(&context, &keys, &mut history);
     run_join(
         &context,
         &fixture,
         &keys,
         &fixture.alice,
-        &mut history,
         handle_for_chain(41, BALANCE_FHE_TYPE),
         300,
     );
@@ -2356,7 +2251,6 @@ fn mollusk_redeem_preloaded_underlying_stays_inert() {
         &fixture,
         &keys,
         &fixture.bob,
-        &mut history,
         handle_for_chain(42, BALANCE_FHE_TYPE),
         400,
     );
@@ -2374,8 +2268,8 @@ fn mollusk_redeem_preloaded_underlying_stays_inert() {
     check_batcher_instruction(&context, &preload_transfer, &[Check::success()]);
     assert_eq!(read_spl_amount(&context, keys.payout_underlying), PRELOAD);
 
-    let burned_handle = run_dispatch(&context, &fixture, &keys, &mut history);
-    run_settle(&context, &fixture, &keys, &mut history, burned_handle, 700);
+    let burned_handle = run_dispatch(&context, &fixture, &keys);
+    run_settle(&context, &fixture, &keys, burned_handle, 700);
 
     // Settle succeeded and the batch accounting reflects only the vault-paid
     // delta: 700 shares in, 700 underlying out at the 1:1 price. The preload
@@ -2390,8 +2284,8 @@ fn mollusk_redeem_preloaded_underlying_stays_inert() {
         700
     );
 
-    run_claim(&context, &fixture, &keys, &fixture.alice, &mut history);
-    run_claim(&context, &fixture, &keys, &fixture.bob, &mut history);
+    run_claim(&context, &fixture, &keys, &fixture.alice);
+    run_claim(&context, &fixture, &keys, &fixture.bob);
     assert_eq!(
         store_u64(
             &context,
@@ -2426,15 +2320,12 @@ fn mollusk_deposit_and_redeem_batchers_run_concurrently() {
     let mut accounts = deposit.accounts_with_escrows(1_000, 1_000, 1_000_000, 1_000);
     accounts.insert(redeem.batcher, system_account(0));
     let context = fixture_context(mollusk(), accounts);
-    let mut history = StoreHistory::default();
     // Users hold both cUnderlying (to deposit) and cShares (to redeem).
     deposit.seed_values(&context, (1_000, 600), (2_000, 400), (1_000_000, 1_000));
 
     let deposit_keys = initialize_and_open_first_batch(&context, &deposit, 0);
     let redeem_keys = initialize_and_open_first_batch(&context, &redeem, 0);
     assert_ne!(deposit_keys.batch, redeem_keys.batch);
-    seed_open_batch_balances(&context, &deposit_keys, &mut history);
-    seed_open_batch_balances(&context, &redeem_keys, &mut history);
 
     // Interleaved joins: both batches are pending at once, and each user
     // participates in both directions.
@@ -2443,7 +2334,6 @@ fn mollusk_deposit_and_redeem_batchers_run_concurrently() {
         &deposit,
         &deposit_keys,
         &deposit.alice,
-        &mut history,
         handle_for_chain(41, BALANCE_FHE_TYPE),
         300,
     );
@@ -2452,7 +2342,6 @@ fn mollusk_deposit_and_redeem_batchers_run_concurrently() {
         &redeem,
         &redeem_keys,
         &redeem.alice,
-        &mut history,
         handle_for_chain(43, BALANCE_FHE_TYPE),
         200,
     );
@@ -2461,7 +2350,6 @@ fn mollusk_deposit_and_redeem_batchers_run_concurrently() {
         &deposit,
         &deposit_keys,
         &deposit.bob,
-        &mut history,
         handle_for_chain(42, BALANCE_FHE_TYPE),
         500,
     );
@@ -2470,7 +2358,6 @@ fn mollusk_deposit_and_redeem_batchers_run_concurrently() {
         &redeem,
         &redeem_keys,
         &redeem.bob,
-        &mut history,
         handle_for_chain(44, BALANCE_FHE_TYPE),
         300,
     );
@@ -2494,20 +2381,13 @@ fn mollusk_deposit_and_redeem_batchers_run_concurrently() {
     );
 
     // Interleaved dispatches: two independent burned handles on two mints.
-    let deposit_burned = run_dispatch(&context, &deposit, &deposit_keys, &mut history);
-    let redeem_burned = run_dispatch(&context, &redeem, &redeem_keys, &mut history);
+    let deposit_burned = run_dispatch(&context, &deposit, &deposit_keys);
+    let redeem_burned = run_dispatch(&context, &redeem, &redeem_keys);
     assert_ne!(deposit_burned, redeem_burned);
 
     // Settle the redeem batch first: 500 shares withdraw 500 underlying at
     // the 1:1 price, leaving the vault at (500, 500).
-    run_settle(
-        &context,
-        &redeem,
-        &redeem_keys,
-        &mut history,
-        redeem_burned,
-        500,
-    );
+    run_settle(&context, &redeem, &redeem_keys, redeem_burned, 500);
     let redeem_settled = read_batch(&context, redeem_keys.batch);
     assert_eq!(redeem_settled.status, batcher::BatchStatus::Settled);
     assert_eq!(redeem_settled.total_joined, 500);
@@ -2516,14 +2396,7 @@ fn mollusk_deposit_and_redeem_batchers_run_concurrently() {
 
     // Then the deposit batch: 800 underlying at the (still 1:1) price mints
     // 800 shares; the vault ends at (1_300, 1_300).
-    run_settle(
-        &context,
-        &deposit,
-        &deposit_keys,
-        &mut history,
-        deposit_burned,
-        800,
-    );
+    run_settle(&context, &deposit, &deposit_keys, deposit_burned, 800);
     let deposit_settled = read_batch(&context, deposit_keys.batch);
     assert_eq!(deposit_settled.status, batcher::BatchStatus::Settled);
     assert_eq!(deposit_settled.total_joined, 800);
@@ -2545,22 +2418,10 @@ fn mollusk_deposit_and_redeem_batchers_run_concurrently() {
     );
 
     // Interleaved claims across both directions.
-    run_claim(
-        &context,
-        &deposit,
-        &deposit_keys,
-        &deposit.alice,
-        &mut history,
-    );
-    run_claim(&context, &redeem, &redeem_keys, &redeem.alice, &mut history);
-    run_claim(&context, &redeem, &redeem_keys, &redeem.bob, &mut history);
-    run_claim(
-        &context,
-        &deposit,
-        &deposit_keys,
-        &deposit.bob,
-        &mut history,
-    );
+    run_claim(&context, &deposit, &deposit_keys, &deposit.alice);
+    run_claim(&context, &redeem, &redeem_keys, &redeem.alice);
+    run_claim(&context, &redeem, &redeem_keys, &redeem.bob);
+    run_claim(&context, &deposit, &deposit_keys, &deposit.bob);
 
     // Final per-user balances: cShares = start - redeem join + deposit claim;
     // cUnderlying = start - deposit join + redeem claim.
@@ -2647,7 +2508,6 @@ fn mollusk_dispatch_before_min_batch_age_rejects() {
 fn mollusk_join_quit_and_claim_respect_batch_status() {
     let fixture = BatcherFixture::new(batcher::BatchDirection::Deposit);
     let context = fixture_context(mollusk(), fixture.accounts(0, 0));
-    let mut history = StoreHistory::default();
     fixture.seed_values(&context, (1_000, 0), (2_000, 0), (1_000_000, 0));
 
     let keys = initialize_and_open_first_batch(&context, &fixture, 0);
@@ -2656,7 +2516,6 @@ fn mollusk_join_quit_and_claim_respect_batch_status() {
         &fixture,
         &keys,
         &fixture.alice,
-        &mut history,
         handle_for_chain(41, BALANCE_FHE_TYPE),
         300,
     );
@@ -2677,7 +2536,7 @@ fn mollusk_join_quit_and_claim_respect_batch_status() {
         &[batcher_error(batcher::BatcherError::BatchNotSettled)],
     );
 
-    let _burned = run_dispatch(&context, &fixture, &keys, &mut history);
+    let _burned = run_dispatch(&context, &fixture, &keys);
 
     // Join after dispatch rejects.
     let attestation = amount_attestation_for(
@@ -2712,23 +2571,20 @@ fn mollusk_join_quit_and_claim_respect_batch_status() {
 fn mollusk_double_claim_rejects() {
     let fixture = BatcherFixture::new(batcher::BatchDirection::Deposit);
     let context = fixture_context(mollusk(), fixture.accounts(0, 0));
-    let mut history = StoreHistory::default();
     fixture.seed_values(&context, (1_000, 0), (2_000, 0), (1_000_000, 0));
 
     let keys = initialize_and_open_first_batch(&context, &fixture, 0);
-    seed_open_batch_balances(&context, &keys, &mut history);
     run_join(
         &context,
         &fixture,
         &keys,
         &fixture.alice,
-        &mut history,
         handle_for_chain(41, BALANCE_FHE_TYPE),
         300,
     );
-    let burned_handle = run_dispatch(&context, &fixture, &keys, &mut history);
-    run_settle(&context, &fixture, &keys, &mut history, burned_handle, 300);
-    run_claim(&context, &fixture, &keys, &fixture.alice, &mut history);
+    let burned_handle = run_dispatch(&context, &fixture, &keys);
+    run_settle(&context, &fixture, &keys, burned_handle, 300);
+    run_claim(&context, &fixture, &keys, &fixture.alice);
 
     check_batcher_instruction(
         &context,
@@ -2819,12 +2675,7 @@ const SETTLE_REDEEM_MAX_COMPUTE_UNITS: u64 = 430_000;
 /// One fixed-key run through open/join/dispatch/claim, snapshotting each
 /// instruction's cost profile under `prefix`. Fixed fixture keys keep the PDA
 /// bump searches — part of the measured compute — stable across runs.
-fn snapshot_lifecycle(
-    fixture: &BatcherFixture,
-    context: &Ctx,
-    history: &mut StoreHistory,
-    prefix: &str,
-) {
+fn snapshot_lifecycle(fixture: &BatcherFixture, context: &Ctx, prefix: &str) {
     check_batcher_instruction(
         context,
         &initialize_batcher_ix(fixture, 0),
@@ -2835,7 +2686,6 @@ fn snapshot_lifecycle(
     let open = open_batch_ix(fixture, &keys, None);
     let open_result = check_batcher_instruction(context, &open, &[Check::success()]);
     assert_batcher_cost(&format!("{prefix}open_batch"), &open, &open_result);
-    seed_open_batch_balances(context, &keys, history);
 
     let amount_handle = handle_for_chain(0x71, BALANCE_FHE_TYPE);
     ensure_system_accounts(
@@ -2855,7 +2705,7 @@ fn snapshot_lifecycle(
         production_amount_attestation_for(amount_handle, fixture.alice.user, token::id()),
     );
     let join_result = check_batcher_instruction(context, &join.clone(), &[Check::success()]);
-    record_fhe_cpis(history, context, &join_result);
+    record_fhe_cpis(context, &join_result);
     assert_batcher_cost(&format!("{prefix}join"), &join, &join_result);
 
     ensure_system_accounts(
@@ -2868,11 +2718,11 @@ fn snapshot_lifecycle(
     );
     let dispatch = dispatch_ix(fixture, &keys);
     let dispatch_result = check_batcher_instruction(context, &dispatch, &[Check::success()]);
-    record_fhe_cpis(history, context, &dispatch_result);
+    record_fhe_cpis(context, &dispatch_result);
     assert_batcher_cost(&format!("{prefix}dispatch"), &dispatch, &dispatch_result);
 
     let burned_handle = read_batch(context, keys.batch).burned_total_handle;
-    let (settle, settle_result) = run_settle(context, fixture, &keys, history, burned_handle, 300);
+    let (settle, settle_result) = run_settle(context, fixture, &keys, burned_handle, 300);
     assert_batcher_cost(&format!("{prefix}settle"), &settle, &settle_result);
     let settle_compute_units = settle_result.compute_units_consumed;
     let settle_bound = match fixture.direction {
@@ -2899,7 +2749,7 @@ fn snapshot_lifecycle(
     );
     let claim = claim_ix(fixture, &keys, &fixture.alice);
     let claim_result = check_batcher_instruction(context, &claim.clone(), &[Check::success()]);
-    record_fhe_cpis(history, context, &claim_result);
+    record_fhe_cpis(context, &claim_result);
     assert_batcher_cost(&format!("{prefix}claim"), &claim, &claim_result);
 
     let reclaim = reclaim_batch_authority_ix(fixture, &keys, fixture.payer);
@@ -2919,16 +2769,14 @@ fn snapshot_lifecycle(
 fn cost_snapshot_batcher_lifecycle() {
     let fixture = BatcherFixture::fixed(batcher::BatchDirection::Deposit, 0x61);
     let context = production_mollusk().with_context(fixture.accounts(0, 0));
-    let mut history = StoreHistory::default();
-    snapshot_lifecycle(&fixture, &context, &mut history, "");
+    snapshot_lifecycle(&fixture, &context, "");
 }
 
 #[test]
 fn cost_snapshot_batcher_redeem_lifecycle() {
     let fixture = BatcherFixture::fixed(batcher::BatchDirection::Redeem, 0x51);
     let context = production_mollusk().with_context(redeem_accounts(&fixture, 1_000, 1_000, 1_000));
-    let mut history = StoreHistory::default();
-    snapshot_lifecycle(&fixture, &context, &mut history, "redeem_");
+    snapshot_lifecycle(&fixture, &context, "redeem_");
 }
 
 // ---------------------------------------------------------------------------
@@ -2943,7 +2791,6 @@ fn mollusk_dust_total_settle_reverts_and_batch_stays_dispatched() {
     // Share price ~20_000 underlying per share (e.g. after an adversarial
     // harvest donation): 2_000_000 assets backing 100 shares.
     let context = fixture_context(mollusk(), fixture.accounts(2_000_000, 100));
-    let mut history = StoreHistory::default();
     fixture.seed_values(&context, (1_000, 0), (2_000, 0), (1_000_000, 0));
 
     let keys = initialize_and_open_first_batch(&context, &fixture, 0);
@@ -2955,14 +2802,12 @@ fn mollusk_dust_total_settle_reverts_and_batch_stays_dispatched() {
         &fixture,
         &keys,
         &fixture.alice,
-        &mut history,
         handle_for_chain(41, BALANCE_FHE_TYPE),
         100,
     );
-    let burned_handle = run_dispatch(&context, &fixture, &keys, &mut history);
+    let burned_handle = run_dispatch(&context, &fixture, &keys);
 
     let (signatures, extra_data) = amount_public_decrypt_cert(burned_handle, 100);
-    let proof = history.public_decrypt_proof(keys.burned_amount_store, burned_handle);
     let pending_burn = keys.pending_burn(fixture.join_mint().mint);
     let ix = settle_ix(&fixture, &keys, 100, signatures, extra_data, pending_burn);
     check_batcher_instruction(
@@ -2988,7 +2833,7 @@ fn mollusk_dust_total_settle_reverts_and_batch_stays_dispatched() {
         &cancel_dispatch_ix(&fixture, &keys),
         &[Check::success()],
     );
-    record_fhe_cpis(&mut history, &context, &result);
+    record_fhe_cpis(&context, &result);
     assert_eq!(
         read_batch(&context, keys.batch).status,
         batcher::BatchStatus::Refunding
@@ -2998,7 +2843,7 @@ fn mollusk_dust_total_settle_reverts_and_batch_stays_dispatched() {
         &quit_ix(&fixture, &keys, &fixture.alice),
         &[Check::success()],
     );
-    record_fhe_cpis(&mut history, &context, &result);
+    record_fhe_cpis(&context, &result);
     assert_eq!(
         store_u64(
             &context,
@@ -3148,17 +2993,14 @@ fn mollusk_preloaded_shares_do_not_poison_the_rate() {
         spl_token_account(fixture.share_mint, attacker, 0),
     );
     let context = fixture_context(mollusk(), accounts);
-    let mut history = StoreHistory::default();
     fixture.seed_values(&context, (1_000, 0), (2_000, 0), (1_000_000, 0));
 
     let keys = initialize_and_open_first_batch(&context, &fixture, 0);
-    seed_open_batch_balances(&context, &keys, &mut history);
     run_join(
         &context,
         &fixture,
         &keys,
         &fixture.alice,
-        &mut history,
         handle_for_chain(41, BALANCE_FHE_TYPE),
         300,
     );
@@ -3167,7 +3009,6 @@ fn mollusk_preloaded_shares_do_not_poison_the_rate() {
         &fixture,
         &keys,
         &fixture.bob,
-        &mut history,
         handle_for_chain(42, BALANCE_FHE_TYPE),
         500,
     );
@@ -3204,8 +3045,8 @@ fn mollusk_preloaded_shares_do_not_poison_the_rate() {
     check_batcher_instruction(&context, &preload_transfer, &[Check::success()]);
     assert_eq!(read_spl_amount(&context, keys.payout_underlying), PRELOAD);
 
-    let burned_handle = run_dispatch(&context, &fixture, &keys, &mut history);
-    run_settle(&context, &fixture, &keys, &mut history, burned_handle, 800);
+    let burned_handle = run_dispatch(&context, &fixture, &keys);
+    run_settle(&context, &fixture, &keys, burned_handle, 800);
 
     // Settle succeeded and the recorded payout reflects only the vault-minted
     // delta: 800 in, 800 shares out at the (still ~1:1) price, informational
@@ -3223,8 +3064,8 @@ fn mollusk_preloaded_shares_do_not_poison_the_rate() {
     );
 
     // Claims pay out exactly as in the clean lifecycle.
-    run_claim(&context, &fixture, &keys, &fixture.alice, &mut history);
-    run_claim(&context, &fixture, &keys, &fixture.bob, &mut history);
+    run_claim(&context, &fixture, &keys, &fixture.alice);
+    run_claim(&context, &fixture, &keys, &fixture.bob);
     assert_eq!(
         store_u64(
             &context,

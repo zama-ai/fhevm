@@ -38,12 +38,12 @@ use std::cell::RefCell;
 use std::collections::HashMap;
 use zama_host as host;
 use zama_solana_test_kit::cleartext::{fixture_context, handle_value, seed_u64, store_u64};
+use zama_solana_test_kit::executions;
 use zama_solana_test_kit::signing::{
     amount_attestation_for, amount_attestation_signed_by, amount_public_decrypt_cert,
     amount_public_decrypt_cert_signed_by, coprocessor_signing_key, coprocessor_signing_key_n,
     production_amount_attestation_for, secp_evm_address,
 };
-use zama_solana_test_kit::store_history::StoreHistory;
 use zama_solana_test_kit::{
     anchor_error_check, anchor_framework_error_check, anchor_ix, canonical_test_context_id,
     cost_snapshot, decode_anchor_event, deny_scope_record_account, encrypted_store_account,
@@ -137,8 +137,8 @@ fn transferred_event_handle(result: &InstructionResult) -> [u8; 32] {
 
 /// Records the one `fhe_execute` CPI every token instruction is expected to issue and returns the
 /// number of store slots it wrote.
-fn record_fhe_cpi(history: &mut StoreHistory, context: &Ctx, result: &InstructionResult) -> usize {
-    let recorded = history.record(context, result);
+fn record_fhe_cpi(context: &Ctx, result: &InstructionResult) -> usize {
+    let recorded = executions::record(context, result);
     assert_eq!(
         recorded.executions, 1,
         "expected one token -> host fhe_execute CPI"
@@ -852,7 +852,6 @@ fn mollusk_mint_authority_allows_total_supply_viewers() {
     let fixture = BurnRedeemFixture::new();
     let auditor = Pubkey::new_unique();
     let context = fixture_context(burn_redeem_mollusk(), fixture.accounts(0));
-    let mut history = StoreHistory::default();
     seed_u64(&context, fixture.initial_total_supply, 5_000);
 
     let result = check_token_instruction(
@@ -860,7 +859,7 @@ fn mollusk_mint_authority_allows_total_supply_viewers() {
         &allow_total_supply_viewers_ix(&fixture, fixture.owner, vec![auditor]),
         &[Check::success()],
     );
-    record_fhe_cpi(&mut history, &context, &result);
+    record_fhe_cpi(&context, &result);
 
     // The grant is a re-write: same cleartext, a fresh handle, one allow leaf for the auditor
     // (nobody is allowed on the supply by default, so the auditor is the only leaf).
@@ -908,7 +907,6 @@ fn mollusk_owner_allows_balance_viewers() {
     let fixture = TokenFixture::new();
     let auditor = Pubkey::new_unique();
     let context = fixture_context(mollusk(), fixture.base_accounts());
-    let mut history = StoreHistory::default();
     seed_u64(&context, fixture.alice_initial, 1_000);
 
     let result = check_token_instruction(
@@ -923,7 +921,7 @@ fn mollusk_owner_allows_balance_viewers() {
         ),
         &[Check::success()],
     );
-    record_fhe_cpi(&mut history, &context, &result);
+    record_fhe_cpi(&context, &result);
 
     // The owner stays allowed on every balance write; the auditor is allowed on this handle only.
     assert_eq!(balance(&context, fixture.alice_token), 1_000);
@@ -1446,7 +1444,6 @@ fn mollusk_confidential_transfer_rejects_frozen_recipient_ata() {
 fn mollusk_overdrawn_confidential_transfer_succeeds_and_moves_an_encrypted_zero() {
     let fixture = TokenFixture::new();
     let context = fixture_context(mollusk(), fixture.base_accounts());
-    let mut history = StoreHistory::default();
     seed_u64(&context, fixture.alice_initial, 1_000);
     seed_u64(&context, fixture.bob_initial, 100);
     let transfer = confidential_transfer_ix(
@@ -1459,7 +1456,7 @@ fn mollusk_overdrawn_confidential_transfer_succeeds_and_moves_an_encrypted_zero(
     );
 
     let result = check_token_instruction(&context, &transfer, &[Check::success()]);
-    record_fhe_cpi(&mut history, &context, &result);
+    record_fhe_cpi(&context, &result);
 
     assert_eq!(balance(&context, fixture.alice_token), 1_000);
     assert_eq!(balance(&context, fixture.bob_token), 100);
@@ -1554,7 +1551,6 @@ fn mollusk_cleartext_stores_decode_with_the_production_decoder() {
 fn mollusk_confidential_transfer_updates_value_accounts_and_cleartext_balances() {
     let fixture = TokenFixture::new();
     let context = fixture_context(mollusk(), fixture.base_accounts());
-    let mut history = StoreHistory::default();
     seed_u64(&context, fixture.alice_initial, 1_000);
     seed_u64(&context, fixture.bob_initial, 100);
     let transfer = confidential_transfer_ix(
@@ -1567,7 +1563,7 @@ fn mollusk_confidential_transfer_updates_value_accounts_and_cleartext_balances()
     );
 
     let result = check_token_instruction(&context, &transfer, &[Check::success()]);
-    let persistent_outputs = record_fhe_cpi(&mut history, &context, &result);
+    let persistent_outputs = record_fhe_cpi(&context, &result);
 
     assert_eq!(persistent_outputs, 2);
     assert_eq!(balance(&context, fixture.alice_token), 600);
@@ -3380,43 +3376,6 @@ fn mollusk_redeem_rejects_frozen_token_2022_destination() {
     assert_eq!(read_spl_amount(&context, fixture.vault_usdc), 1_000);
 }
 
-/// An out-of-range leaf index for the two-leaf accumulator fails closed with the host's
-/// `PublicDecryptProofInvalid` (surfaced through the CPI) and leaves the vault untouched.
-#[test]
-fn mollusk_redeem_rejects_out_of_range_public_decrypt_leaf() {
-    let fixture = BurnRedeemFixture::new();
-    let first_handle = handle_for_chain(41, BALANCE_FHE_TYPE);
-    let mut proof = single_burn_public_decrypt_proof(&fixture, first_handle);
-
-    let mut accounts = fixture.accounts(1_000);
-    seed_single_burn_value_account(&fixture, &mut accounts, first_handle);
-    let context = fixture_context(burn_redeem_mollusk(), accounts);
-
-    proof.leaf_index = 2; // Outside the two-leaf accumulator.
-
-    let cleartext_amount = 500;
-    let (signatures, extra_data) = amount_public_decrypt_cert(first_handle, cleartext_amount);
-    let pending_burn = seed_pending_burn_in_context(&context, &fixture, first_handle);
-    check_token_instruction(
-        &context,
-        &redeem_burned_amount_ix(
-            &fixture,
-            first_handle,
-            cleartext_amount,
-            signatures,
-            extra_data,
-            proof,
-            pending_burn,
-        ),
-        &[host_error(
-            host::errors::ZamaHostError::PublicDecryptProofInvalid,
-        )],
-    );
-
-    assert_eq!(read_spl_amount(&context, fixture.vault_usdc), 1_000);
-    assert_eq!(read_spl_amount(&context, fixture.destination_usdc), 0);
-}
-
 /// Accept-any-live-context (EVM parity): a cert committing the fixture's context id 9 still redeems
 /// after the operator rotates the host's current context to 10, because context 9's account persists
 /// and is not destroyed. Redemption accepts any live context, so the payout goes through.
@@ -3840,7 +3799,7 @@ fn mollusk_redeem_rejects_certificate_not_over_pinned_handle_and_amount() {
         let fixture = BurnRedeemFixture::new();
         let mut accounts = fixture.accounts(1_000);
         seed_single_burn_value_account(&fixture, &mut accounts, pinned);
-        let context = burn_redeem_mollusk().with_context(accounts);
+        let context = fixture_context(burn_redeem_mollusk(), accounts);
         let pending = seed_pending_burn_in_context(&context, &fixture, pinned);
         let (signatures, extra_data) =
             amount_public_decrypt_cert(certified_handle, certified_amount);
@@ -3869,7 +3828,7 @@ fn mollusk_redeem_rejects_pinned_handle_that_is_not_current() {
         &mut accounts,
         handle_for_chain(42, BALANCE_FHE_TYPE),
     );
-    let context = burn_redeem_mollusk().with_context(accounts);
+    let context = fixture_context(burn_redeem_mollusk(), accounts);
     let pending = seed_pending_burn_in_context(&context, &fixture, pinned);
     let (signatures, extra_data) = amount_public_decrypt_cert(pinned, 500);
     let ix = redeem_burned_amount_ix(&fixture, pinned, 500, signatures, extra_data, pending);
@@ -3898,7 +3857,6 @@ fn mollusk_cancel_pending_burn_restores_balance_and_supply() {
     );
     let context = fixture_context(burn_redeem_mollusk(), accounts);
 
-    let mut history = StoreHistory::default();
     seed_u64(&context, fixture.initial_balance, 1_000);
     seed_u64(&context, fixture.initial_total_supply, 5_000);
     seed_u64(&context, amount_handle, 250);
@@ -3912,7 +3870,7 @@ fn mollusk_cancel_pending_burn_restores_balance_and_supply() {
         token::transfer_input_key(),
     );
     let burn_result = check_token_instruction(&context, &burn, &[Check::success()]);
-    record_fhe_cpi(&mut history, &context, &burn_result);
+    record_fhe_cpi(&context, &burn_result);
     assert_eq!(balance(&context, fixture.token_account), 750);
     assert_eq!(
         store_u64(
@@ -3950,7 +3908,7 @@ fn mollusk_cancel_pending_burn_restores_balance_and_supply() {
 
     let cancel = cancel_pending_burn_ix(&fixture, pending_burn, Some(deny_record));
     let cancel_result = check_token_instruction(&context, &cancel, &[Check::success()]);
-    record_fhe_cpi(&mut history, &context, &cancel_result);
+    record_fhe_cpi(&context, &cancel_result);
 
     assert_eq!(balance(&context, fixture.token_account), 1_000);
     assert_eq!(
@@ -4302,13 +4260,12 @@ fn mollusk_wrap_usdc_credits_balance_and_total_supply() {
     let user_usdc = fund_wrap_source(&mut accounts, &fixture, 1_000);
     let context = fixture_context(burn_redeem_mollusk(), accounts);
 
-    let mut history = StoreHistory::default();
     seed_u64(&context, fixture.initial_balance, 0);
     seed_u64(&context, fixture.initial_total_supply, 0);
 
     let ix = wrap_usdc_ix(&fixture, user_usdc, 100);
     let result = check_token_instruction(&context, &ix, &[Check::success()]);
-    record_fhe_cpi(&mut history, &context, &result);
+    record_fhe_cpi(&context, &result);
 
     assert_eq!(balance(&context, fixture.token_account), 100);
     assert_eq!(
@@ -4345,7 +4302,6 @@ fn mollusk_wrap_token_2022_credits_balance_and_total_supply() {
     let user_tokens = fund_wrap_source(&mut accounts, &fixture, 1_000);
     let context = fixture_context(burn_redeem_mollusk(), accounts);
 
-    let mut history = StoreHistory::default();
     seed_u64(&context, fixture.initial_balance, 0);
     seed_u64(&context, fixture.initial_total_supply, 0);
 
@@ -4354,7 +4310,7 @@ fn mollusk_wrap_token_2022_credits_balance_and_total_supply() {
         &wrap_usdc_ix(&fixture, user_tokens, 100),
         &[Check::success()],
     );
-    record_fhe_cpi(&mut history, &context, &result);
+    record_fhe_cpi(&context, &result);
     assert_eq!(balance(&context, fixture.token_account), 100);
     assert_eq!(
         store_u64(
@@ -4652,21 +4608,8 @@ fn assert_disclosed(result: &InstructionResult, handle: [u8; 32], cleartext_amou
 #[test]
 fn mollusk_disclose_secp_emits_certified_handle_and_cleartext() {
     let fixture = DiscloseFixture::new();
-    let pinned = handle_for_chain(43, BALANCE_FHE_TYPE);
-    let (value, proof) = public_leaf_value_account(
-        fixture.amount_store,
-        fixture.token_account,
-        fixture.mint,
-        token::burned_amount_key(),
-        &[fixture.owner],
-        pinned,
-        None,
-    );
-    assert_eq!(store_handle(&value, token::burned_amount_key()), pinned);
-
-    let mut accounts = fixture.base();
-    accounts.insert(fixture.amount_store, encrypted_store_account(&value));
-    let context = fixture_context(mollusk(), accounts);
+    let handle = handle_for_chain(43, BALANCE_FHE_TYPE);
+    let context = fixture_context(mollusk(), fixture.base());
 
     let cleartext_amount = 500;
     let (signatures, extra_data) = amount_public_decrypt_cert(handle, cleartext_amount);
@@ -4702,344 +4645,19 @@ fn mollusk_disclose_secp_rejected_when_host_paused() {
 }
 
 #[test]
-fn mollusk_disclose_secp_balance_happy_path() {
-    let fixture = DiscloseFixture::new();
-    let pinned = handle_for_chain(33, BALANCE_FHE_TYPE);
-    let (value, proof) = public_leaf_value_account(
-        fixture.balance_store,
-        fixture.token_account,
-        fixture.mint,
-        token::balance_key(),
-        &[fixture.owner],
-        pinned,
-        None,
-    );
-
-    let mut accounts = fixture.base();
-    accounts.insert(fixture.balance_store, encrypted_store_account(&value));
-    let context = fixture_context(mollusk(), accounts);
-
-    let cleartext_amount = 700;
-    let (signatures, extra_data) = amount_public_decrypt_cert(pinned, cleartext_amount);
-    let result = check_token_instruction(
-        &context,
-        &disclose_secp_ix(
-            &fixture,
-            fixture.balance_store,
-            pinned,
-            u256_be(cleartext_amount),
-            signatures,
-            extra_data,
-            proof,
-        ),
-        &[Check::success()],
-    );
-    assert_disclosed(
-        &result,
-        ExpectedDisclosure {
-            mint: fixture.mint,
-            handle: pinned,
-            encrypted_store: fixture.balance_store,
-            cleartext_amount,
-            authority: fixture.token_account,
-        },
-    );
-}
-
-#[test]
-fn mollusk_disclose_secp_total_supply_requires_no_token_account() {
-    let fixture = DiscloseFixture::new();
-    let pinned = handle_for_chain(35, BALANCE_FHE_TYPE);
-    let authority = token::total_supply_authority_address(fixture.mint).0;
-    let total_supply_store = token::total_supply_slot(fixture.mint).0.address();
-    // The supply's writes allow nobody; sealing it public is its only leaf.
-    let (value, proof) = public_leaf_value_account(
-        total_supply_store,
-        authority,
-        fixture.mint,
-        token::total_supply_key(),
-        &[],
-        pinned,
-        None,
-    );
-    let mut accounts = fixture.base();
-    accounts.insert(total_supply_store, encrypted_store_account(&value));
-    let context = fixture_context(mollusk(), accounts);
-    let cleartext_amount = 10_000;
-    let (signatures, extra_data) = amount_public_decrypt_cert(pinned, cleartext_amount);
-
-    let result = check_token_instruction(
-        &context,
-        &disclose_total_supply_ix(
-            &fixture,
-            total_supply_store,
-            pinned,
-            u256_be(cleartext_amount),
-            signatures.clone(),
-            extra_data.clone(),
-            proof.clone(),
-        ),
-        &[Check::success()],
-    );
-    assert_disclosed(
-        &result,
-        ExpectedDisclosure {
-            mint: fixture.mint,
-            handle: pinned,
-            encrypted_store: total_supply_store,
-            cleartext_amount,
-            authority,
-        },
-    );
-
-    check_token_instruction(
-        &context,
-        &disclose_secp_ix(
-            &fixture,
-            total_supply_store,
-            pinned,
-            u256_be(cleartext_amount),
-            signatures,
-            extra_data,
-            proof,
-        ),
-        &[token_error(
-            token::ConfidentialTokenError::DisclosedValueBindingMismatch,
-        )],
-    );
-}
-
-#[test]
-fn mollusk_disclose_secp_after_an_update_consumes_with_public_proof() {
-    // The griefing case preserved end-to-end: the handle is sealed public while current, then the
-    // encrypted store is replaced to H2 (e.g. an inbound transfer) before the consume
-    // lands. The pinned handle must still disclose, authorized by its permanent public-decrypt
-    // leaf, not the live handle. This is the host verifier's survives-update property observed one
-    // layer up.
-    let fixture = DiscloseFixture::new();
-    let pinned = handle_for_chain(41, BALANCE_FHE_TYPE);
-    let replaced = handle_for_chain(42, BALANCE_FHE_TYPE);
-    let (value, proof) = public_leaf_value_account(
-        fixture.amount_store,
-        fixture.token_account,
-        fixture.mint,
-        token::burned_amount_key(),
-        &[fixture.owner],
-        pinned,
-        Some(replaced),
-    );
-    assert_ne!(store_handle(&value, token::burned_amount_key()), pinned);
-
-    let mut accounts = fixture.base();
-    accounts.insert(fixture.amount_store, encrypted_store_account(&value));
-    let context = fixture_context(mollusk(), accounts);
-
-    let cleartext_amount = 500;
-    let (signatures, extra_data) = amount_public_decrypt_cert(pinned, cleartext_amount);
-    let result = check_token_instruction(
-        &context,
-        &disclose_secp_ix(
-            &fixture,
-            fixture.amount_store,
-            pinned,
-            u256_be(cleartext_amount),
-            signatures,
-            extra_data,
-            proof,
-        ),
-        &[Check::success()],
-    );
-    assert_disclosed(
-        &result,
-        ExpectedDisclosure {
-            mint: fixture.mint,
-            handle: pinned,
-            encrypted_store: fixture.amount_store,
-            cleartext_amount,
-            authority: fixture.token_account,
-        },
-    );
-}
-
-#[test]
-fn mollusk_disclose_refreshes_a_proof_after_history_grows() {
-    let fixture = DiscloseFixture::new();
-    let pinned = handle_for_chain(41, BALANCE_FHE_TYPE);
-    let replaced = handle_for_chain(42, BALANCE_FHE_TYPE);
-    let (_, stale_proof) = public_leaf_value_account(
-        fixture.amount_store,
-        fixture.token_account,
-        fixture.mint,
-        token::burned_amount_key(),
-        &[fixture.owner],
-        pinned,
-        None,
-    );
-    // Another transaction appends enough leaves to merge the proof's mountain after fetch.
-    let (updated, fresh_proof) = public_leaf_value_account(
-        fixture.amount_store,
-        fixture.token_account,
-        fixture.mint,
-        token::burned_amount_key(),
-        &[fixture.owner],
-        pinned,
-        Some(replaced),
-    );
-    assert_ne!(stale_proof.siblings, fresh_proof.siblings);
-    let mut accounts = fixture.base();
-    accounts.insert(fixture.amount_store, encrypted_store_account(&updated));
-    let context = fixture_context(mollusk(), accounts);
-    let before = context.account_store.borrow().clone();
-    let (signatures, extra_data) = amount_public_decrypt_cert(pinned, 500);
-    let instruction = |proof| {
-        disclose_secp_ix(
-            &fixture,
-            fixture.amount_store,
-            pinned,
-            u256_be(500),
-            signatures.clone(),
-            extra_data.clone(),
-            proof,
-        )
-    };
-    check_token_instruction(
-        &context,
-        &instruction(stale_proof),
-        &[host_error(
-            host::errors::ZamaHostError::PublicDecryptProofInvalid,
-        )],
-    );
-    assert_eq!(*context.account_store.borrow(), before);
-    // Refresh only the inclusion proof: the certificate still authenticates the same handle.
-    let result = check_token_instruction(&context, &instruction(fresh_proof), &[Check::success()]);
-    assert_disclosed(
-        &result,
-        ExpectedDisclosure {
-            mint: fixture.mint,
-            handle: pinned,
-            encrypted_store: fixture.amount_store,
-            cleartext_amount: 500,
-            authority: fixture.token_account,
-        },
-    );
-}
-
-#[test]
 fn mollusk_disclose_secp_is_idempotent_no_replay_marker() {
     // Disclosure is informational, so re-running the same cert succeeds again and re-emits the
     // same event. No replay marker PDA exists by design (contrast redeem_burned_amount). Apps that
     // need consume-once track it in their own state.
     let fixture = DiscloseFixture::new();
     let handle = handle_for_chain(44, BALANCE_FHE_TYPE);
-    let context = mollusk().with_context(fixture.base());
+    let context = fixture_context(mollusk(), fixture.base());
 
-    let mut accounts = fixture.base();
-    accounts.insert(fixture.amount_store, encrypted_store_account(&value));
-    let context = fixture_context(mollusk(), accounts);
-
-    let cleartext_amount = 500;
-    let (signatures, extra_data) = amount_public_decrypt_cert(pinned, cleartext_amount);
-    let ix = disclose_secp_ix(
-        &fixture,
-        fixture.amount_store,
-        pinned,
-        u256_be(cleartext_amount),
-        signatures,
-        extra_data,
-        proof,
-    );
+    let (signatures, extra_data) = amount_public_decrypt_cert(handle, 500);
+    let ix = disclose_secp_ix(&fixture, handle, u256_be(500), signatures, extra_data);
     check_token_instruction(&context, &ix, &[Check::success()]);
-    // Same cert, same accounts, run again: still succeeds (idempotent, no consume-once).
-    check_token_instruction(&context, &ix, &[Check::success()]);
-}
-
-#[test]
-fn mollusk_disclose_secp_rejects_foreign_public_decrypt_proof() {
-    // A structurally valid proof aimed at the WRONG leaf position (H2's public leaf, not H1's):
-    // the host verifier recomputes public(H1)@leaf_index against the peaks and rejects it, so the
-    // consume fails closed and emits no cleartext. This is the token layer surfacing the host's
-    // proof check through the CPI — the wrong-handle rejection at the token boundary.
-    let fixture = DiscloseFixture::new();
-    let pinned = handle_for_chain(46, BALANCE_FHE_TYPE);
-    let replaced = handle_for_chain(47, BALANCE_FHE_TYPE);
-    let (value, mut proof) = public_leaf_value_account(
-        fixture.amount_store,
-        fixture.token_account,
-        fixture.mint,
-        token::burned_amount_key(),
-        &[fixture.owner],
-        pinned,
-        Some(replaced),
-    );
-    // Leaves: allow(H1)@0, public(H1)@1, allow(H2)@2, public(H2)@3.
-    proof.leaf_index = 3; // H2's public-decrypt leaf, not H1's.
-
-    let mut accounts = fixture.base();
-    accounts.insert(fixture.amount_store, encrypted_store_account(&value));
-    let context = fixture_context(mollusk(), accounts);
-
-    let cleartext_amount = 500;
-    let (signatures, extra_data) = amount_public_decrypt_cert(pinned, cleartext_amount);
-    check_token_instruction(
-        &context,
-        &disclose_secp_ix(
-            &fixture,
-            fixture.amount_store,
-            pinned,
-            u256_be(cleartext_amount),
-            signatures,
-            extra_data,
-            proof,
-        ),
-        &[host_error(
-            host::errors::ZamaHostError::PublicDecryptProofInvalid,
-        )],
-    );
-}
-
-#[test]
-fn mollusk_disclose_secp_rejects_foreign_mint_scope() {
-    // The disclosed encrypted store must belong to this mint's application: the token
-    // layer binds the value's (program, scope, authority, label) to the mint so the emitted event
-    // is genuinely token-scoped. A value in another mint's scope is rejected before the verifier
-    // CPI.
-    let fixture = DiscloseFixture::new();
-    let pinned = handle_for_chain(48, BALANCE_FHE_TYPE);
-    let foreign_mint = Pubkey::new_unique();
-    // A public encrypted store in a different mint's scope, at its own canonical address
-    // so the account still deserializes as a valid EncryptedStore.
-    let foreign_value_addr = token::encrypted_store_address(foreign_mint, fixture.token_account).0;
-    let (foreign_value, proof) = public_leaf_value_account(
-        foreign_value_addr,
-        fixture.token_account,
-        foreign_mint,
-        token::burned_amount_key(),
-        &[fixture.owner],
-        pinned,
-        None,
-    );
-
-    let mut accounts = fixture.base();
-    accounts.insert(foreign_value_addr, encrypted_store_account(&foreign_value));
-    let context = fixture_context(mollusk(), accounts);
-
-    let cleartext_amount = 500;
-    let (signatures, extra_data) = amount_public_decrypt_cert(pinned, cleartext_amount);
-    check_token_instruction(
-        &context,
-        &disclose_secp_ix(
-            &fixture,
-            foreign_value_addr,
-            pinned,
-            u256_be(cleartext_amount),
-            signatures,
-            extra_data,
-            proof,
-        ),
-        &[token_error(
-            token::ConfidentialTokenError::DisclosedValueBindingMismatch,
-        )],
-    );
+    let result = check_token_instruction(&context, &ix, &[Check::success()]);
+    assert_disclosed(&result, handle, 500);
 }
 
 #[test]
@@ -5049,20 +4667,8 @@ fn mollusk_disclose_secp_rejects_cleartext_wider_than_u64() {
     // token layer then rejects a value with nonzero high bytes rather than silently truncating it
     // to the low 64 bits.
     let fixture = DiscloseFixture::new();
-    let pinned = handle_for_chain(49, BALANCE_FHE_TYPE);
-    let (value, proof) = public_leaf_value_account(
-        fixture.amount_store,
-        fixture.token_account,
-        fixture.mint,
-        token::burned_amount_key(),
-        &[fixture.owner],
-        pinned,
-        None,
-    );
-
-    let mut accounts = fixture.base();
-    accounts.insert(fixture.amount_store, encrypted_store_account(&value));
-    let context = fixture_context(mollusk(), accounts);
+    let handle = handle_for_chain(49, BALANCE_FHE_TYPE);
+    let context = fixture_context(mollusk(), fixture.base());
 
     // A cleartext whose value exceeds u64::MAX: a nonzero byte in the high 24 (here index 8).
     let mut wide = [0u8; 32];
@@ -5257,7 +4863,6 @@ fn mollusk_transfer_from_value_spends_existing_amount() {
     );
     let context = fixture_context(mollusk(), accounts);
 
-    let mut history = StoreHistory::default();
     seed_u64(&context, fixture.alice_initial, 1_000);
     seed_u64(&context, fixture.bob_initial, 100);
     seed_u64(&context, amount_handle, 250);
@@ -5273,7 +4878,7 @@ fn mollusk_transfer_from_value_spends_existing_amount() {
     );
 
     let result = check_token_instruction(&context, &transfer, &[Check::success()]);
-    let persistent_outputs = record_fhe_cpi(&mut history, &context, &result);
+    let persistent_outputs = record_fhe_cpi(&context, &result);
 
     // Only the two balances and the sender's transferred_amount are updated — the amount is not
     // an output.
@@ -5352,12 +4957,11 @@ fn mollusk_transfer_from_value_checks_every_application_deny_record() {
                 fixture.alice_initial
             );
         } else {
-            let mut history = StoreHistory::default();
             seed_u64(&context, fixture.alice_initial, 1_000);
             seed_u64(&context, fixture.bob_initial, 100);
             seed_u64(&context, amount_handle, 200);
             let result = check_token_instruction(&context, &transfer, &[Check::success()]);
-            record_fhe_cpi(&mut history, &context, &result);
+            record_fhe_cpi(&context, &result);
             assert_eq!(balance(&context, fixture.alice_token), 800);
             assert_eq!(balance(&context, fixture.bob_token), 300);
         }
@@ -5454,7 +5058,6 @@ fn mollusk_transfer_from_value_spends_full_balance_with_balance_store_account_as
     let accounts = fixture.base_accounts();
     let context = fixture_context(mollusk(), accounts);
 
-    let mut history = StoreHistory::default();
     seed_u64(&context, fixture.alice_initial, 1_000);
     seed_u64(&context, fixture.bob_initial, 100);
 
@@ -5469,7 +5072,7 @@ fn mollusk_transfer_from_value_spends_full_balance_with_balance_store_account_as
         fixture.alice_balance_store,
     );
     let result = check_token_instruction(&context, &transfer, &[Check::success()]);
-    let persistent_outputs = record_fhe_cpi(&mut history, &context, &result);
+    let persistent_outputs = record_fhe_cpi(&context, &result);
 
     assert_eq!(persistent_outputs, 2);
     assert_eq!(balance(&context, fixture.alice_token), 0);
@@ -5716,7 +5319,6 @@ fn mollusk_burn_from_value_burns_existing_amount() {
     );
     let context = fixture_context(burn_redeem_mollusk(), accounts);
 
-    let mut history = StoreHistory::default();
     seed_u64(&context, fixture.initial_balance, 1_000);
     seed_u64(&context, fixture.initial_total_supply, 5_000);
     seed_u64(&context, amount_handle, 250);
@@ -5730,7 +5332,7 @@ fn mollusk_burn_from_value_burns_existing_amount() {
         token::transfer_input_key(),
     );
     let result = check_token_instruction(&context, &burn, &[Check::success()]);
-    let persistent_outputs = record_fhe_cpi(&mut history, &context, &result);
+    let persistent_outputs = record_fhe_cpi(&context, &result);
 
     // Three persistent outputs are updated — balance, burned_amount, total_supply — and the
     // amount is not one.
@@ -5787,7 +5389,6 @@ fn mollusk_burn_from_value_whole_balance_alias() {
     let accounts = fixture.accounts(1_000);
     let context = fixture_context(burn_redeem_mollusk(), accounts);
 
-    let mut history = StoreHistory::default();
     seed_u64(&context, fixture.initial_balance, 1_000);
     seed_u64(&context, fixture.initial_total_supply, 5_000);
 
@@ -5801,7 +5402,7 @@ fn mollusk_burn_from_value_whole_balance_alias() {
         token::balance_key(),
     );
     let result = check_token_instruction(&context, &burn, &[Check::success()]);
-    let persistent_outputs = record_fhe_cpi(&mut history, &context, &result);
+    let persistent_outputs = record_fhe_cpi(&context, &result);
 
     assert_eq!(persistent_outputs, 3);
     assert_eq!(balance(&context, fixture.token_account), 0);
@@ -5843,7 +5444,6 @@ fn mollusk_burn_from_value_reburns_burned_amount_that_is_also_this_output() {
     );
     let context = fixture_context(burn_redeem_mollusk(), accounts);
 
-    let mut history = StoreHistory::default();
     seed_u64(&context, fixture.initial_balance, 1_000);
     seed_u64(&context, fixture.initial_total_supply, 5_000);
     seed_u64(&context, amount_handle, 250);
@@ -5858,7 +5458,7 @@ fn mollusk_burn_from_value_reburns_burned_amount_that_is_also_this_output() {
         token::transfer_input_key(),
     );
     let first_result = check_token_instruction(&context, &first, &[Check::success()]);
-    record_fhe_cpi(&mut history, &context, &first_result);
+    record_fhe_cpi(&context, &first_result);
     let first_burned = read_store_handle(
         &context,
         fixture.burned_amount_store,
@@ -5880,7 +5480,7 @@ fn mollusk_burn_from_value_reburns_burned_amount_that_is_also_this_output() {
     let pending_burn = token::pending_burn_address(fixture.mint, fixture.token_account).0;
     let cancel = cancel_pending_burn_ix(&fixture, pending_burn, None);
     let cancel_result = check_token_instruction(&context, &cancel, &[Check::success()]);
-    record_fhe_cpi(&mut history, &context, &cancel_result);
+    record_fhe_cpi(&context, &cancel_result);
     let after_cancel = read_encrypted_store(&context, fixture.burned_amount_store);
     let restored_balance = store_handle(&after_cancel, token::balance_key());
 
@@ -5895,7 +5495,7 @@ fn mollusk_burn_from_value_reburns_burned_amount_that_is_also_this_output() {
         token::burned_amount_key(),
     );
     let again_result = check_token_instruction(&context, &again, &[Check::success()]);
-    let persistent_outputs = record_fhe_cpi(&mut history, &context, &again_result);
+    let persistent_outputs = record_fhe_cpi(&context, &again_result);
 
     // Conservation after cancellation: the next burn's amount equals the previous burned delta
     // (250), so the restored balance and encrypted total supply each drop by 250.
@@ -5968,7 +5568,6 @@ fn mollusk_burn_from_value_pda_owner_via_invoke_signed() {
     );
     let context = fixture_context(burn_redeem_mollusk(), accounts);
 
-    let mut history = StoreHistory::default();
     seed_u64(&context, fixture.initial_balance, 1_000);
     seed_u64(&context, fixture.initial_total_supply, 5_000);
     seed_u64(&context, amount_handle, 400);
@@ -5982,7 +5581,7 @@ fn mollusk_burn_from_value_pda_owner_via_invoke_signed() {
         token::transfer_input_key(),
     );
     let result = check_token_instruction(&context, &burn, &[Check::success()]);
-    record_fhe_cpi(&mut history, &context, &result);
+    record_fhe_cpi(&context, &result);
 
     assert_eq!(balance(&context, fixture.token_account), 600);
     assert_eq!(
@@ -6026,7 +5625,6 @@ fn mollusk_burn_from_value_burned_handle_redeems() {
 
     // Burn 500 from the existing amount handle; the created-public burned handle is the new
     // value handle.
-    let mut history = StoreHistory::default();
     seed_u64(&context, fixture.initial_balance, 1_000);
     seed_u64(&context, fixture.initial_total_supply, 5_000);
     seed_u64(&context, amount_handle, 500);
@@ -6039,7 +5637,7 @@ fn mollusk_burn_from_value_burned_handle_redeems() {
         token::transfer_input_key(),
     );
     let burn_result = check_token_instruction(&context, &burn, &[Check::success()]);
-    record_fhe_cpi(&mut history, &context, &burn_result);
+    record_fhe_cpi(&context, &burn_result);
     let burned_handle = read_store_handle(
         &context,
         fixture.burned_amount_store,
@@ -6137,12 +5735,11 @@ fn mollusk_burn_from_value_checks_every_application_deny_record() {
                 fixture.initial_balance
             );
         } else {
-            let mut history = StoreHistory::default();
             seed_u64(&context, fixture.initial_balance, 1_000);
             seed_u64(&context, fixture.initial_total_supply, 5_000);
             seed_u64(&context, amount_handle, 300);
             let result = check_token_instruction(&context, &burn, &[Check::success()]);
-            record_fhe_cpi(&mut history, &context, &result);
+            record_fhe_cpi(&context, &result);
             assert_eq!(balance(&context, fixture.token_account), 700);
             assert_eq!(
                 store_u64(

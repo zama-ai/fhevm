@@ -1,20 +1,14 @@
-import { bytesToHex, concatBytes } from '../core/base/bytes.js';
-export { bytesToHex, hexToBytes } from '../core/base/bytes.js';
+import { concatBytes } from '../../core/base/bytes.js';
 import { keccak_256 } from '@noble/hashes/sha3.js';
 
 /**
- * Client-side MMR primitives for the Zama Solana `EncryptedStore` ACL (RFC 035).
+ * MMR primitives of the Zama Solana `EncryptedStore` ACL (RFC 035), for the cleartext client's
+ * stand-in for the KMS Connector: it keeps each store's leaves and judges a decryption against them
+ * as the Connector does.
  *
  * Every hash primitive here MUST be byte-identical to the Rust shared crate
- * (`solana/crates/zama-solana-acl`), which is the single source of truth run identically on-chain,
- * in the coprocessor and in the KMS connector. The committed leaf vectors
- * (`solana/test-fixtures/leaves/leaves_v1.json`) are what prove the agreement.
- *
- * Two uses. A dapp that knows an encrypted value account's history rebuilds its leaf list with
- * {@link reconstructSolanaStoreHistory}, checks the peaks against the on-chain account and
- * builds the public-leaf inclusion proof `verify_public_decrypt` takes on chain. A verifier that
- * received a proof checks it with {@link verifyPublicDecryptProof} or
- * {@link verifyHistoricalAccessProof} before acting on it.
+ * (`solana/crates/zama-solana-acl`), which runs on-chain and in the KMS Connector. The committed
+ * leaf vectors (`solana/test-fixtures/leaves/leaves_v1.json`) are what prove the agreement.
  *
  * Domain-separation prefixes and encodings are pinned 1:1 to the Rust crate:
  * - `ZAMA_MMR_LEAF_V1` / `ZAMA_MMR_NODE_V1`     — MMR leaf/internal node hashing (`mmr.rs`).
@@ -40,7 +34,7 @@ function assertLen(bytes: Uint8Array, len: number, name: string): void {
 }
 
 /** Big-endian 8-byte encoding of a `leaf_index`/`u64`. Matches `to_be_bytes()` in Rust. */
-export function u64BE(value: bigint): Uint8Array {
+function u64BE(value: bigint): Uint8Array {
   if (value < 0n || value > 0xffffffffffffffffn) {
     throw new Error(`u64BE: value out of range: ${value}`);
   }
@@ -106,11 +100,7 @@ export type MmrProof = {
 };
 
 /** Upper bound on the sibling path; a 64-bit leaf count has at most 64 levels. */
-export const MAX_MMR_SIBLINGS = 64;
-
-////////////////////////////////////////////////////////////////////////////////
-// Reconstruction: the leaf list an account's history implies
-////////////////////////////////////////////////////////////////////////////////
+const MAX_MMR_SIBLINGS = 64;
 
 /**
  * One leaf-appending operation in an encrypted value account's history, in chronological order.
@@ -122,145 +112,18 @@ export type SolanaStoreHistoryEvent =
   /** `handle` was made publicly decryptable. */
   | { readonly kind: 'markedPublic'; readonly handle: Uint8Array };
 
-/** The full ordered leaf list of an encrypted value account plus the MMR state it implies. */
-export type SolanaReconstructedStoreHistory = {
-  readonly leaves: readonly Uint8Array[];
-  readonly leafCount: bigint;
-  readonly peaks: readonly Uint8Array[];
-};
-
-/**
- * Rebuilds the full ordered leaf list from an account's chronological events, exactly as the host
- * program appends them: one commitment per event, the leaf index bound into each from a single
- * running counter. Matches `zama_solana_acl::encrypted_store_account::reconstruct`.
- *
- * The caller cross-checks `peaks` and `leafCount` against the on-chain account before trusting a
- * proof built from this: a missed or reordered event yields a different leaf list whose peaks
- * diverge, and a proof built from it would be rejected at verify time.
- *
- * @param encryptedStore - The 32-byte account address the leaves bind.
- * @param events - The account's history, oldest first.
- */
-export function reconstructSolanaStoreHistory(
+/** The leaf `event` appends at `leafIndex` of `encryptedStore`'s history. */
+export function storeLeafCommitment(
   encryptedStore: Uint8Array,
-  events: readonly SolanaStoreHistoryEvent[],
-): SolanaReconstructedStoreHistory {
-  const leaves = events.map((event, index) => {
-    const leafIndex = BigInt(index);
-    switch (event.kind) {
-      case 'allowed':
-        return historicalAccessLeafCommitment(encryptedStore, leafIndex, event.handle, event.key);
-      case 'markedPublic':
-        return publicDecryptLeafCommitment(encryptedStore, leafIndex, event.handle);
-    }
-  });
-  return { leaves, leafCount: BigInt(leaves.length), peaks: mmrPeaksFromLeaves(leaves) };
-}
-
-/**
- * The MMR peaks of a leaf list, oldest mountain first. Matches
- * `zama_solana_acl::mmr::mmr_peaks_from_leaves`.
- *
- * @param leaves - Leaf commitments in append order.
- */
-/**
- * The inclusion proof of leaf `publicLeafIndex` in the encrypted value account `account`, rebuilt
- * from the account's chronological `history` and cross-checked against the `live` peaks and leaf
- * count. Throws when the live account disagrees with the history: a proof built from a wrong history
- * would only fail later, inside the on-chain verifier, with nothing pointing at the leaf.
- */
-export function buildPublicLeafProof(
-  account: Uint8Array,
-  live: { readonly leafCount: bigint; readonly peaks: readonly Uint8Array[] },
-  history: readonly SolanaStoreHistoryEvent[],
-  publicLeafIndex: bigint,
-): MmrProof {
-  const rebuilt = reconstructSolanaStoreHistory(account, history);
-  const samePeaks =
-    rebuilt.leafCount === live.leafCount &&
-    rebuilt.peaks.length === live.peaks.length &&
-    rebuilt.peaks.every((peak, index) => {
-      const livePeak = live.peaks[index];
-      return livePeak !== undefined && bytesToHex(peak) === bytesToHex(livePeak);
-    });
-  if (!samePeaks) {
-    throw new Error(
-      `encrypted value account holds ${live.leafCount} leaves that do not match the ` +
-        `${rebuilt.leafCount}-leaf history expected of it`,
-    );
+  leafIndex: bigint,
+  event: SolanaStoreHistoryEvent,
+): Uint8Array {
+  switch (event.kind) {
+    case 'allowed':
+      return historicalAccessLeafCommitment(encryptedStore, leafIndex, event.handle, event.key);
+    case 'markedPublic':
+      return publicDecryptLeafCommitment(encryptedStore, leafIndex, event.handle);
   }
-  if (history[Number(publicLeafIndex)]?.kind !== 'markedPublic') {
-    throw new Error(`leaf ${publicLeafIndex} of the expected history is not a public leaf`);
-  }
-  const proof = mmrBuildProof(rebuilt.leaves, publicLeafIndex);
-  if (proof === undefined) throw new Error(`leaf ${publicLeafIndex} is outside the ${rebuilt.leafCount}-leaf history`);
-  return proof;
-}
-
-export function mmrPeaksFromLeaves(leaves: readonly Uint8Array[]): readonly Uint8Array[] {
-  // The append algorithm: push a height-0 node, then merge while the two topmost mountains have
-  // the same height. What remains is the peak list, oldest mountain first.
-  const stack: Array<{ node: Uint8Array; height: number }> = [];
-  for (const leaf of leaves) {
-    let current = { node: mmrLeafNode(leaf), height: 0 };
-    for (;;) {
-      const top = stack.at(-1);
-      if (top?.height !== current.height) {
-        break;
-      }
-      stack.pop();
-      current = { node: mmrNode(top.node, current.node), height: current.height + 1 };
-    }
-    stack.push(current);
-  }
-  return stack.map((entry) => entry.node);
-}
-
-/**
- * The inclusion proof for the leaf at `leafIndex`, or `undefined` if it is out of range. Matches
- * `zama_solana_acl::mmr::mmr_build_proof`.
- *
- * @param leaves - Leaf commitments in append order.
- * @param leafIndex - The leaf to prove.
- */
-export function mmrBuildProof(leaves: readonly Uint8Array[], leafIndex: bigint): MmrProof | undefined {
-  const count = BigInt(leaves.length);
-  if (leafIndex < 0n || leafIndex >= count) {
-    return undefined;
-  }
-  let offset = 0n;
-  for (let height = 63; height >= 0; height--) {
-    const bit = 1n << BigInt(height);
-    if ((count & bit) === 0n) {
-      continue;
-    }
-    if (leafIndex >= offset && leafIndex < offset + bit) {
-      let level = leaves.slice(Number(offset), Number(offset + bit)).map(mmrLeafNode);
-      let local = Number(leafIndex - offset);
-      const siblings: Uint8Array[] = [];
-      while (level.length > 1) {
-        const sibling = level[local % 2 === 0 ? local + 1 : local - 1];
-        if (sibling === undefined) {
-          throw new Error('mmrBuildProof: a complete mountain has a sibling at every level');
-        }
-        siblings.push(sibling);
-        const next: Uint8Array[] = [];
-        for (let i = 0; i + 1 < level.length; i += 2) {
-          const left = level[i];
-          const right = level[i + 1];
-          if (left === undefined || right === undefined) {
-            throw new Error('mmrBuildProof: a complete mountain pairs every node');
-          }
-          next.push(mmrNode(left, right));
-        }
-        level = next;
-        local = Math.floor(local / 2);
-      }
-      return { leafIndex, siblings };
-    }
-    offset += bit;
-  }
-  return undefined;
 }
 
 /**
@@ -273,8 +136,7 @@ export function mmrMountainHeight(leafIndex: bigint, leafCount: bigint): number 
 
 /**
  * An MMR built leaf by leaf that keeps every node it computes, so the peaks at a past leaf count
- * and a proof cost one node per level. Over the same leaves it matches `mmrPeaksFromLeaves` and
- * `mmrBuildProof`, which rebuild the tree on every call.
+ * and a proof cost one node per level.
  */
 export type RetainedMmr = {
   readonly leafCount: () => number;

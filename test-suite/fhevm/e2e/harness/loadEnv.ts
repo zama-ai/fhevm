@@ -35,7 +35,6 @@
 import os from "node:os";
 import path from "node:path";
 
-import { SOLANA_LEAF_PROOF_API_KEY } from "../../src/generate/solana";
 import { coprocessorDbPsql, SOLANA_ACL_PROGRAM, solanaCleartextDeployerPath } from "../../src/layout";
 import { CLEARTEXT_SOLANA_ENDPOINTS, LOCAL_SOLANA_ENDPOINTS } from "../../src/solana/endpoints";
 import { solanaE2eSource } from "../../src/solana/target";
@@ -78,8 +77,6 @@ export type TestEnv = {
   readonly capabilities: Capabilities;
   readonly funding: Funding;
 };
-
-export type LeafProofEndpoint = { readonly url: string; readonly apiKey: string };
 
 /** "local", "devnet" and "cleartext" assemble from process env and defaults; "demo-config" from a seed's artifact. */
 export type TestEnvSource = "local" | "demo-config" | "devnet" | "cleartext";
@@ -188,7 +185,6 @@ const psqlOverride = (env: NodeJS.ProcessEnv): Partial<Pick<TestEnvOverrides, "c
 const CLEARTEXT_DEFAULTS = {
   rpcUrl: CLEARTEXT_SOLANA_ENDPOINTS.validatorRpc,
   wsUrl: CLEARTEXT_SOLANA_ENDPOINTS.validatorWs,
-  leafProofUrl: CLEARTEXT_SOLANA_ENDPOINTS.leafProof,
   deployerKeypairPath: solanaCleartextDeployerPath,
 } as const;
 
@@ -221,7 +217,6 @@ export const resolveEnv = (
         ? undefined
         : decimalString(merged.userDecryptContextId, "userDecryptContextId"),
     coprocessorDbPsql: merged.coprocessorDbPsql,
-    leafProof: { url: merged.leafProofUrl, apiKey: merged.leafProofApiKey },
     roots: { deployerKeypairPath: merged.deployerKeypairPath },
     capabilities: capabilitiesFor(source, network),
     funding: FUNDING_BY_NETWORK[network],

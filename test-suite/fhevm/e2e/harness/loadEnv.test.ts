@@ -68,7 +68,6 @@ describe("loadEnv", () => {
     expect(env.network).toBe("localnet");
     expect(env.rpcUrl).toBe("http://127.0.0.1:28899");
     expect(env.wsUrl).toBe("ws://127.0.0.1:28900");
-    expect(env.leafProof).toEqual({ url: "http://127.0.0.1:28080", apiKey: "00000000-0000-0000-0000-000000000000" });
     expect(env.roots.deployerKeypairPath).toEndWith("solana-cleartext/deployer.json");
     expect(env.capabilities).toEqual({ faucet: true, freshMints: true, fastSlots: true, protocolServices: false });
     expect(loadEnv({ SOLANA_E2E_SOURCE: "cleartext", SOLANA_RPC_URL: "http://10.0.0.1:1" }).rpcUrl).toBe("http://10.0.0.1:1");
