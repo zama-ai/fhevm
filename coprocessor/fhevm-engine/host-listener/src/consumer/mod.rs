@@ -35,6 +35,8 @@ use crate::kms_generation::process_kms_generation_activations;
 use consumer::{
     AckDecision, BlockPayload, Broker, HandlerError, ListenerConsumer,
 };
+#[cfg(test)]
+mod finalization_tests;
 mod metrics;
 
 const MAX_DB_RETRIES: u64 = 10;
