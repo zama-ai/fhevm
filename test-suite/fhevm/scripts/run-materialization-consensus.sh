@@ -235,12 +235,16 @@ main() {
     # Use the same generated-file exemption as build and artifact identity.
     # Running image IDs are recorded separately from this suite revision.
     CONSENSUS_SCHEDULING_CLASSES="$(observed_scheduling_classes)" ||
-      die "cannot establish CPU scheduling classes"
-    export CONSENSUS_SCHEDULING_CLASSES
+      die "cannot establish container scheduling classes"
+    local execution_class runtime_revision
+    execution_class="$(bun "$SCRIPT_DIR/observe-container-execution.ts" "$count")" ||
+      die "cannot establish container execution class"
+    IFS='|' read -r CONSENSUS_BACKEND_CLASS CONSENSUS_HARDWARE_CLASS runtime_revision <<<"$execution_class"
+    export CONSENSUS_SCHEDULING_CLASSES CONSENSUS_BACKEND_CLASS CONSENSUS_HARDWARE_CLASS
     class_env=(
-      -e "CONSENSUS_SOFTWARE_REVISION=$revision"
-      -e "CONSENSUS_BACKEND_CLASS=cpu"
-      -e "CONSENSUS_HARDWARE_CLASS=cpu-$(uname -m)"
+      -e "CONSENSUS_SOFTWARE_REVISION=${runtime_revision:-$revision}"
+      -e "CONSENSUS_BACKEND_CLASS=$CONSENSUS_BACKEND_CLASS"
+      -e "CONSENSUS_HARDWARE_CLASS=$CONSENSUS_HARDWARE_CLASS"
       -e "CONSENSUS_SCHEDULING_CLASSES=$CONSENSUS_SCHEDULING_CLASSES"
     )
   fi

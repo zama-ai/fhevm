@@ -12,8 +12,8 @@ const baseStart = source.indexOf("  local -a base_record=(");
 const baseRecord = source.slice(baseStart, source.indexOf("\n  )", baseStart) + "\n  )".length);
 const expected = [0, 1, 2].map(index => `${index}=window:${16 + index},chains:default,threads:default,streams:default,adaptive:false,batch:default`).join(";");
 
-for (const state of ["PASS", "FAIL"] as const) {
-  test(`CPU materialization ${state} records the same observed scheduling classes passed to E2E`, () => {
+for (const backend of ["cpu", "gpu-cuda"]) for (const state of ["PASS", "FAIL"] as const) {
+  test(`${backend} materialization ${state} records the same observed scheduling classes passed to E2E`, () => {
     const dir = mkdtempSync(path.join(tmpdir(), "materialization-cpu-class-"));
     try {
       const result = Bun.spawnSync(["bash", "-c", `set -uo pipefail
@@ -29,6 +29,8 @@ docker() {
     printf '%s\\n' "--work-items-batch-size=$((16 + \${4#operator}))"
   else printf '%s\\n' FHEVM_DCID_ADAPTIVE_BATCH_EXECUTION=false; fi
 }
+count=3
+bun() { if [[ "$1" == */observe-container-execution.ts ]]; then printf '${backend}|hardware-fixture|${backend === "cpu" ? "" : "a".repeat(40)}\\n'; else command bun "$@"; fi; }
 sr_revision() { echo fixture; }
 die() { echo "$*" >&2; exit 91; }
 ${discovery}
@@ -40,7 +42,7 @@ ${cpuBranch}
   local started=2026-09-14T00:00:00Z
 ${baseRecord}
   CR_RUN_ID=cpu-class; CR_REVISION=fixture; CR_SCENARIO=three-of-three
-  CR_OPERATORS=3; CR_THRESHOLD=3; CR_BACKEND_CLASS=cpu; CR_HARDWARE_CLASS=fixture
+  CR_OPERATORS=3; CR_THRESHOLD=3; CR_BACKEND_CLASS="$CONSENSUS_BACKEND_CLASS"; CR_HARDWARE_CLASS="$CONSENSUS_HARDWARE_CLASS"
   cr_record MAT-01-BOUNDARY-FANOUT ${state} "\${base_record[@]}" detail='fixture outcome' \\
     assert=bytes=pass:fixture assert=digest=pass:fixture assert=provenance=pass:fixture \\
     assert=liveness=pass:fixture assert=quorum=pass:fixture
@@ -53,6 +55,8 @@ run_cpu_branch
       expect(readFileSync(path.join(dir, "observations"), "utf8").trim().split("\n")).toHaveLength(3);
       const record = JSON.parse(readFileSync(path.join(dir, "results/cpu-class.jsonl"), "utf8"));
       expect(record.state).toBe(state);
+      expect(record.executionClass.backend).toBe(backend);
+      expect(readFileSync(path.join(dir, "docker-env"), "utf8")).toContain(`CONSENSUS_BACKEND_CLASS=${backend}\n`);
       expect(record.schedulingClasses).toBe(expected);
     } finally { rmSync(dir, { recursive: true, force: true }); }
   });
@@ -61,6 +65,8 @@ run_cpu_branch
 test("CPU materialization refuses failed scheduling discovery before launching or recording", () => {
   const result = Bun.spawnSync(["bash", "-c", `set -uo pipefail
 REPO_ROOT=/unused
+count=3
+bun() { if [[ "$1" == */observe-container-execution.ts ]]; then printf 'cpu|cpu-fixture|\\n'; else command bun "$@"; fi; }
 sr_revision() { echo fixture; }
 observed_scheduling_classes() { echo partial; return 1; }
 die() { echo "$*" >&2; exit 91; }
@@ -72,6 +78,6 @@ ${cpuBranch}
 run_cpu_branch
 `], { timeout: 5000 });
   expect(result.exitCode).toBe(91);
-  expect(result.stderr.toString()).toContain("cannot establish CPU scheduling classes");
+  expect(result.stderr.toString()).toContain("cannot establish container scheduling classes");
   expect(result.stdout.toString()).not.toContain("unsafe-continuation");
 });
