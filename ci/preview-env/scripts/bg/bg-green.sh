@@ -143,6 +143,7 @@ green_helm_args() {
     --set-string "hostListenerConsumerShared.config.brokerUrl.value=redis://coprocessor-redis-${party}-master:6379"
     --set-string "txSender.wallet.secret.value=${privkey}"
     --set-string "snsWorker.wallet.secret.value=${privkey}"
+    --set-string "consensusDetector.wallet.secret.value=${privkey}"
   )
   for img in dbMigration gwListener hostListenerShared hostListenerPollerShared hostListenerCatchupOnlyShared \
              hostListenerConsumerShared snsWorker tfheWorker txSender zkProofWorker upgradeController consensusDetector; do
