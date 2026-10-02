@@ -20,7 +20,7 @@ import type {
   SolanaUserDecryptTransport,
 } from '../userDecrypt/index.js';
 import type { SolanaPublicDecryptCertifier } from '../actions/publicDecryptCertificate.js';
-import { asBytes32, bytesToHex, bytesToHexNo0x, hexToBytes } from '../../core/base/bytes.js';
+import { asBytes32, bytesToHex, bytesToHexNo0x, concatBytes, hexToBytes } from '../../core/base/bytes.js';
 import { bytes32ToHandle, toFhevmHandle } from '../../core/handle/FhevmHandle.js';
 import { createKmsPublicDecryptEip712, publicDecryptDigest } from '../../core/kms/createKmsPublicDecryptEip712.js';
 import { runSolanaUserDecrypt } from '../userDecrypt/index.js';
@@ -241,8 +241,8 @@ export function cleartextUserDecryptRejection(verdict: ConnectorVerdict): Solana
 }
 
 /**
- * Certifies the plaintext the host recorded for a handle made public, signed by the registered
- * cleartext KMS key under the certificate's context, for the on-chain verifier to check.
+ * Certifies the plaintexts the host recorded for handles made public, signed by the registered
+ * cleartext KMS key under the certificate's context, as the KMS signs one batch.
  */
 export function cleartextPublicDecryptCertifier(
   rpc: SolanaRpc,
@@ -253,15 +253,19 @@ export function cleartextPublicDecryptCertifier(
   return async (parameters) => {
     const signal = parameters.options?.signal;
     const readAccounts = hostAccountsReader(rpc, signal);
-    const handle = toFhevmHandle(parameters.handle);
-    const handleBytes = hexToBytes(handle.bytes32Hex);
-    const encryptedStore = getAddressDecoder().decode(parameters.encryptedStore);
+    const entries = parameters.entries.map((entry) => {
+      const handle = toFhevmHandle(entry.handle);
+      return { handle, handleBytes: hexToBytes(handle.bytes32Hex), encryptedStore: entry.encryptedStore };
+    });
     // The Connector retries a failure a later attempt may clear, such as a leaf record behind the store.
     for (let attempt = 1; ; attempt += 1) {
       signal?.throwIfAborted();
       const verdict = await judgeSolanaPublicDecryption({
         programAddress,
-        handles: [{ handle: handleBytes, encryptedStore }],
+        handles: entries.map(({ handleBytes, encryptedStore }) => ({
+          handle: handleBytes,
+          encryptedStore: getAddressDecoder().decode(encryptedStore),
+        })),
         readAccounts,
         readLeafProofs,
       });
@@ -271,20 +275,19 @@ export function cleartextPublicDecryptCertifier(
       }
       await abortableSleep(PUBLIC_DECRYPT_RETRY_MS, signal);
     }
-    const cleartext = await fetchCleartextStoreValue(
-      rpc,
-      programAddress,
-      parameters.encryptedStore,
-      handleBytes,
-      signal,
+    const cleartexts = await Promise.all(
+      entries.map(({ handleBytes, encryptedStore }) =>
+        fetchCleartextStoreValue(rpc, programAddress, encryptedStore, handleBytes, signal),
+      ),
     );
+    const cleartext = concatBytes(...cleartexts);
     const { config, context } = await fetchHostDecryptionState(rpc, programAddress, parameters.contextId, signal);
     const extraData = solanaPublicDecryptExtraData(parameters.contextId);
     const digest = publicDecryptDigest(
       createKmsPublicDecryptEip712({
         verifyingContractAddressDecryption: bytesToHex(new Uint8Array(config.decryptionContract)),
         chainId: config.gatewayChainId,
-        handles: [handle],
+        handles: entries.map(({ handle }) => handle),
         decryptedResult: bytesToHex(cleartext),
         extraData,
       }),
@@ -297,7 +300,7 @@ export function cleartextPublicDecryptCertifier(
     );
     // The relayer's wire form: unprefixed hex.
     return {
-      handle: handle.bytes32Hex,
+      handles: entries.map(({ handle }) => handle.bytes32Hex),
       abiEncodedCleartext: bytesToHexNo0x(cleartext),
       signatures: signatures.map((signature) => signature.slice(2)),
       extraData,
