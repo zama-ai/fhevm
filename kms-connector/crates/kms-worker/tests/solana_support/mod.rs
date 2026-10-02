@@ -17,6 +17,7 @@
 use alloy::primitives::B256;
 use alloy::primitives::U256;
 use base64::{Engine, engine::general_purpose::STANDARD as BASE64_STANDARD};
+use ciborium::cbor;
 use connector_utils::config::KmsWallet;
 use connector_utils::types::solana_request::{
     SolanaEntryClaims, SolanaRequestBlob, SolanaUserDecryptFields, SolanaUserDecryptionRequestV1,
@@ -26,7 +27,7 @@ use kms_worker::core::solana::{
     pipeline::AuthorizationContext,
     proof::{
         CoprocessorProofClient, HostProofReader, LeafKind, LeafQuery, MerkleProofOutcome,
-        ProofReadError, merkle_proof_request_body,
+        ProofReadError, encode_merkle_proof_request, proof_http_client,
     },
     snapshot::{
         AccountsRead, DerivedAddress, HostStateReader, ObservedRow, ObservedRows, SnapshotAccount,
@@ -1140,15 +1141,21 @@ pub fn multiple_accounts_request(
 /// Scripts `coprocessor` to answer one Merkle proof batch.
 pub fn serve_proofs(coprocessor: &mut MockServer, answers: &[(LeafQuery, MerkleProofOutcome)]) {
     let queries: Vec<_> = answers.iter().map(|(query, _)| *query).collect();
-    // Mocktail compares bytes; going through a `Value` would reorder the typed fields.
-    let request = serde_json::to_string(&merkle_proof_request_body(&queries)).unwrap();
-    let response = serde_json::json!({
-        "proofs": answers.iter().map(|(_, outcome)| wire_outcome(outcome)).collect::<Vec<_>>(),
-    });
+    let request = encode_merkle_proof_request(&queries);
+    let proofs = answers
+        .iter()
+        .map(|(_, outcome)| wire_outcome(outcome))
+        .collect();
+    let mut response = Vec::new();
+    ciborium::into_writer(
+        &ciborium::Value::Map(vec![("proofs".into(), ciborium::Value::Array(proofs))]),
+        &mut response,
+    )
+    .unwrap();
     coprocessor.mocks().clear();
     coprocessor.mock(move |when, then| {
-        when.post().path(MERKLE_PROOFS_ROUTE).text(request.clone());
-        then.json(response.clone());
+        when.post().path(MERKLE_PROOFS_ROUTE).bytes(request.clone());
+        then.bytes(response.clone());
     });
 }
 
@@ -1165,7 +1172,7 @@ pub fn solana_host(rpc: &MockServer, coprocessors: &[&MockServer]) -> SolanaHost
             Duration::from_secs(10),
             NonZeroUsize::MIN,
         ),
-        proofs: proof_client(&urls, Client::new()),
+        proofs: proof_client(&urls, proof_http_client(Duration::from_secs(10)).unwrap()),
     }
 }
 
@@ -1184,21 +1191,25 @@ pub fn proof_client(urls: &[url::Url], client: Client) -> CoprocessorProofClient
 }
 
 /// A Merkle proof answer as the coprocessor route serializes it.
-pub fn wire_outcome(outcome: &MerkleProofOutcome) -> serde_json::Value {
+fn wire_outcome(outcome: &MerkleProofOutcome) -> ciborium::Value {
     match outcome {
         MerkleProofOutcome::Found {
             leaf_index,
             leaf_count,
             siblings,
-        } => serde_json::json!({
-            "status": "found",
-            "leafIndex": leaf_index,
-            "leafCount": leaf_count,
-            "siblings": siblings.iter().map(alloy::hex::encode).collect::<Vec<_>>(),
+        } => cbor!({
+            "status" => "found",
+            "leafIndex" => leaf_index,
+            "leafCount" => leaf_count,
+            "siblings" => siblings
+                .iter()
+                .map(|sibling| ciborium::Value::Bytes(sibling.to_vec()))
+                .collect::<Vec<_>>(),
         }),
         MerkleProofOutcome::NotFound { leaf_count } => {
-            serde_json::json!({ "status": "notFound", "leafCount": leaf_count })
+            cbor!({ "status" => "notFound", "leafCount" => leaf_count })
         }
-        MerkleProofOutcome::UnknownAccount => serde_json::json!({ "status": "unknownAccount" }),
+        MerkleProofOutcome::UnknownAccount => cbor!({ "status" => "unknownAccount" }),
     }
+    .unwrap()
 }

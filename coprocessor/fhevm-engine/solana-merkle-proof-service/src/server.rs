@@ -8,7 +8,8 @@
 //! decision. It answers only callers in [`KmsTxSenders`]: each request carries a
 //! `request_authorization` signature by a KMS node's tx-sender.
 //!
-//! The wire contract is the committed OpenAPI document in `openapi/`; a test keeps
+//! Bodies are CBOR (RFC 8949), served over HTTP/1.1 or HTTP/2 without TLS. The
+//! wire contract is the committed OpenAPI document in `openapi/`; a test keeps
 //! it in sync with the code. Errors use the RFC 033 body shape.
 
 use std::{
@@ -21,11 +22,12 @@ use axum::{
     body::Bytes,
     extract::{rejection::BytesRejection, DefaultBodyLimit, State},
     http::{header, HeaderMap, StatusCode},
-    response::{IntoResponse, Json, Response},
+    response::{IntoResponse, Response},
     routing::{get, post},
     Router,
 };
-use serde::{Deserialize, Serialize};
+use serde::{de::DeserializeOwned, Deserialize, Serialize};
+use serde_bytes::ByteArray;
 use sqlx::PgPool;
 use tokio::net::TcpListener;
 use tokio_util::sync::CancellationToken;
@@ -48,6 +50,8 @@ const MAX_LEAVES_PER_REQUEST: usize = 64;
 const MAX_REQUEST_BYTES: usize = 64 * 1024;
 
 pub const MERKLE_PROOFS_PATH: &str = "/v1/solana/merkle-proofs";
+
+const CBOR: &str = "application/cbor";
 
 #[derive(Clone)]
 struct AppState {
@@ -169,17 +173,26 @@ pub enum LeafQueryKind {
     Public,
 }
 
-/// One leaf to prove. Byte fields are 32 bytes as lowercase hex, `0x` optional.
+/// One leaf to prove. Byte fields are 32-byte CBOR byte strings.
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize, ToSchema)]
 #[serde(rename_all = "camelCase")]
 pub struct LeafQuery {
     /// The encrypted store account whose MMR holds the leaf.
-    pub encrypted_store: String,
-    pub handle: String,
+    #[serde(with = "serde_bytes")]
+    #[schema(value_type = String, format = Binary)]
+    pub encrypted_store: [u8; 32],
+    #[serde(with = "serde_bytes")]
+    #[schema(value_type = String, format = Binary)]
+    pub handle: [u8; 32],
     pub kind: LeafQueryKind,
     /// The allowed key; required for `allowed`, absent for `public`.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub key: Option<String>,
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        with = "serde_bytes"
+    )]
+    #[schema(value_type = Option<String>, format = Binary)]
+    pub key: Option<[u8; 32]>,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize, ToSchema)]
@@ -201,8 +214,9 @@ pub enum MerkleProofOutcome {
     Found {
         leaf_index: u64,
         leaf_count: u64,
-        /// Authentication path from the leaf to its peak.
-        siblings: Vec<String>,
+        /// Authentication path from the leaf to its peak, 32-byte byte strings.
+        #[schema(value_type = Vec<String>)]
+        siblings: Vec<ByteArray<32>>,
     },
     /// The account is recorded but no such leaf is, at `leafCount` leaves. Either
     /// it was never sealed or the record has not reached the block that sealed it.
@@ -224,7 +238,7 @@ pub struct MerkleProofResponse {
 )]
 #[serde(rename_all = "snake_case")]
 pub enum ErrorCode {
-    /// Malformed body, bad hex, missing key, too many leaves.
+    /// Malformed body, missing key, too many leaves.
     Malformed,
     /// The request signature is missing, malformed or expired, or its signer is
     /// not the tx-sender of a node in a live KMS context.
@@ -278,7 +292,7 @@ impl IntoResponse for HttpError {
     fn into_response(self) -> Response {
         (
             self.code.http_status(),
-            Json(ErrorResponse {
+            Cbor(ErrorResponse {
                 code: self.code,
                 message: self.message,
                 retryable: self.code.retryable(),
@@ -288,6 +302,36 @@ impl IntoResponse for HttpError {
     }
 }
 
+/// An `application/cbor` response body.
+struct Cbor<T>(T);
+
+impl<T: Serialize> IntoResponse for Cbor<T> {
+    fn into_response(self) -> Response {
+        ([(header::CONTENT_TYPE, CBOR)], encode_cbor(&self.0)).into_response()
+    }
+}
+
+fn encode_cbor(value: &impl Serialize) -> Vec<u8> {
+    let mut body = Vec::new();
+    ciborium::into_writer(value, &mut body)
+        .expect("the wire types have no fallible fields");
+    body
+}
+
+/// Decodes exactly one CBOR item filling `body`.
+fn decode_cbor<T: DeserializeOwned>(body: &[u8]) -> Result<T, HttpError> {
+    let mut rest = body;
+    let value = ciborium::from_reader(&mut rest)
+        .map_err(|err| HttpError::malformed(format!("not CBOR: {err}")))?;
+    if !rest.is_empty() {
+        return Err(HttpError::malformed(format!(
+            "{} bytes after the CBOR body",
+            rest.len()
+        )));
+    }
+    Ok(value)
+}
+
 // --- Merkle proofs -----------------------------------------------------------------
 
 /// Builds the inclusion proof of each queried leaf from the leaf record.
@@ -295,12 +339,12 @@ impl IntoResponse for HttpError {
     post,
     path = MERKLE_PROOFS_PATH,
     tag = "solana",
-    request_body = MerkleProofRequest,
+    request_body(content = MerkleProofRequest, content_type = "application/cbor"),
     responses(
-        (status = 200, description = "One answer per queried leaf, in request order", body = MerkleProofResponse),
-        (status = 400, description = "Malformed request", body = ErrorResponse),
-        (status = 401, description = "Request signature refused", body = ErrorResponse),
-        (status = 502, description = "Leaf record or KMS tx-sender set unavailable", body = ErrorResponse),
+        (status = 200, description = "One answer per queried leaf, in request order", body = MerkleProofResponse, content_type = "application/cbor"),
+        (status = 400, description = "Malformed request", body = ErrorResponse, content_type = "application/cbor"),
+        (status = 401, description = "Request signature refused", body = ErrorResponse, content_type = "application/cbor"),
+        (status = 502, description = "Leaf record or KMS tx-sender set unavailable", body = ErrorResponse, content_type = "application/cbor"),
     ),
     security(("request_authorization" = [])),
 )]
@@ -308,12 +352,11 @@ async fn merkle_proofs(
     State(state): State<AppState>,
     headers: HeaderMap,
     body: Result<Bytes, BytesRejection>,
-) -> Result<Json<MerkleProofResponse>, HttpError> {
+) -> Result<Cbor<MerkleProofResponse>, HttpError> {
     let body =
         body.map_err(|rejection| HttpError::malformed(rejection.body_text()))?;
     authenticate(&state.senders, &headers, &body)?;
-    let request: MerkleProofRequest = serde_json::from_slice(&body)
-        .map_err(|err| HttpError::malformed(err.to_string()))?;
+    let request: MerkleProofRequest = decode_cbor(&body)?;
     if request.leaves.len() > MAX_LEAVES_PER_REQUEST {
         return Err(HttpError::malformed(format!(
             "at most {MAX_LEAVES_PER_REQUEST} leaves per request, got {}",
@@ -329,7 +372,7 @@ async fn merkle_proofs(
     for query in queries {
         proofs.push(prove(&state.pool, &query).await?);
     }
-    Ok(Json(MerkleProofResponse { proofs }))
+    Ok(Cbor(MerkleProofResponse { proofs }))
 }
 
 /// Returns the KMS tx-sender that signed this exact body for this route.
@@ -381,9 +424,9 @@ struct ParsedQuery {
 
 impl ParsedQuery {
     fn parse(query: &LeafQuery) -> Result<Self, HttpError> {
-        let (kind, key) = match (query.kind, &query.key) {
+        let (kind, key) = match (query.kind, query.key) {
             (LeafQueryKind::Allowed, Some(key)) => {
-                (LeafKind::HistoricalAccess, Some(parse_hex32("key", key)?))
+                (LeafKind::HistoricalAccess, Some(key))
             }
             (LeafQueryKind::Allowed, None) => {
                 return Err(HttpError::malformed("allowed leaf needs a key"))
@@ -394,25 +437,12 @@ impl ParsedQuery {
             }
         };
         Ok(Self {
-            encrypted_store: parse_hex32(
-                "encryptedStore",
-                &query.encrypted_store,
-            )?,
-            handle: parse_hex32("handle", &query.handle)?,
+            encrypted_store: query.encrypted_store,
+            handle: query.handle,
             kind,
             key,
         })
     }
-}
-
-fn parse_hex32(field: &str, value: &str) -> Result<[u8; 32], HttpError> {
-    let digits = value.strip_prefix("0x").unwrap_or(value);
-    hex::decode(digits)
-        .ok()
-        .and_then(|bytes| <[u8; 32]>::try_from(bytes).ok())
-        .ok_or_else(|| {
-            HttpError::malformed(format!("{field}: expected 32 bytes as hex"))
-        })
 }
 
 /// Three indexed reads: the state row, the first matching leaf below its `leaf_count`,
@@ -468,7 +498,7 @@ async fn prove(
     Ok(MerkleProofOutcome::Found {
         leaf_index: proof.leaf_index,
         leaf_count,
-        siblings: proof.siblings.iter().map(hex::encode).collect(),
+        siblings: proof.siblings.into_iter().map(ByteArray::new).collect(),
     })
 }
 
@@ -540,6 +570,8 @@ mod tests {
         "/../../../solana/test-fixtures/merkle-proofs/merkle_proofs_v1.json"
     );
 
+    /// The server decodes the connector's request bytes and encodes the answer bytes the
+    /// connector decodes.
     #[test]
     fn wire_matches_the_shared_fixture() {
         let fixture: serde_json::Value = serde_json::from_str(
@@ -551,23 +583,53 @@ mod tests {
             fixture["maxLeavesPerRequest"],
             serde_json::json!(MAX_LEAVES_PER_REQUEST)
         );
-        let request: MerkleProofRequest =
-            serde_json::from_value(fixture["request"].clone())
-                .expect("the fixture request decodes");
+        let hex_field = |name: &str| {
+            hex::decode(fixture[name].as_str().expect("hex string"))
+                .expect("hex")
+        };
+        let request: MerkleProofRequest = decode_cbor(&hex_field("request"))
+            .ok()
+            .expect("the fixture request decodes");
         assert_eq!(
-            serde_json::to_value(&request).expect("serialize"),
-            fixture["request"]
+            request.leaves,
+            [
+                LeafQuery {
+                    encrypted_store: [0xAC; 32],
+                    handle: [0x10; 32],
+                    kind: LeafQueryKind::Allowed,
+                    key: Some([0xA1; 32]),
+                },
+                LeafQuery {
+                    encrypted_store: [0xAC; 32],
+                    handle: [0x11; 32],
+                    kind: LeafQueryKind::Public,
+                    key: None,
+                },
+            ]
         );
-        assert_eq!(request.leaves.len(), 2);
-        for proof in fixture["proofs"].as_array().expect("proofs") {
-            let decoded: MerkleProofOutcome =
-                serde_json::from_value(proof.clone())
-                    .expect("every fixture proof decodes");
-            assert_eq!(
-                serde_json::to_value(&decoded).expect("serialize"),
-                *proof
-            );
-        }
+        let response = MerkleProofResponse {
+            proofs: vec![
+                MerkleProofOutcome::Found {
+                    leaf_index: 1,
+                    leaf_count: 3,
+                    siblings: vec![ByteArray::new([0x5B; 32])],
+                },
+                MerkleProofOutcome::NotFound { leaf_count: 3 },
+                MerkleProofOutcome::UnknownAccount,
+            ],
+        };
+        assert_eq!(
+            hex::encode(encode_cbor(&response)),
+            fixture["response"].as_str().expect("hex string")
+        );
+    }
+
+    #[test]
+    fn a_body_with_trailing_bytes_is_malformed() {
+        let mut body = encode_cbor(&MerkleProofRequest { leaves: vec![] });
+        assert!(decode_cbor::<MerkleProofRequest>(&body).is_ok());
+        body.push(0);
+        assert!(decode_cbor::<MerkleProofRequest>(&body).is_err());
     }
 
     /// Regenerate with `UPDATE_OPENAPI=1`.
@@ -587,28 +649,15 @@ mod tests {
     }
 
     #[test]
-    fn hex_fields_accept_optional_prefix_and_reject_wrong_length() {
-        let bare = "ac".repeat(32);
-        assert_eq!(parse_hex32("handle", &bare).ok(), Some([0xAC; 32]));
-        assert_eq!(
-            parse_hex32("handle", &format!("0x{bare}")).ok(),
-            Some([0xAC; 32])
-        );
-        assert!(parse_hex32("handle", "ac").is_err());
-        assert!(parse_hex32("handle", "zz").is_err());
-    }
-
-    #[test]
     fn allowed_needs_a_key_and_public_refuses_one() {
-        let bare = "ac".repeat(32);
         let mut query = LeafQuery {
-            encrypted_store: bare.clone(),
-            handle: bare.clone(),
+            encrypted_store: [0xAC; 32],
+            handle: [0xAC; 32],
             kind: LeafQueryKind::Allowed,
             key: None,
         };
         assert!(ParsedQuery::parse(&query).is_err());
-        query.key = Some(bare);
+        query.key = Some([0xAC; 32]);
         assert!(ParsedQuery::parse(&query).is_ok());
         query.kind = LeafQueryKind::Public;
         assert!(ParsedQuery::parse(&query).is_err());
@@ -644,6 +693,12 @@ mod tests {
         .expect("sign")
     }
 
+    async fn error_of(response: reqwest::Response) -> ErrorResponse {
+        assert_eq!(response.headers()[header::CONTENT_TYPE], CBOR);
+        let body = response.bytes().await.expect("error body");
+        decode_cbor(&body).ok().expect("a CBOR error body")
+    }
+
     async fn spawn(
         senders: KmsTxSenders,
     ) -> (String, CancellationToken, tokio::task::JoinHandle<()>) {
@@ -676,16 +731,20 @@ mod tests {
             }))
             .await;
         let url = format!("{base}{MERKLE_PROOFS_PATH}");
-        let client = reqwest::Client::new();
-        let body = serde_json::to_vec(&MerkleProofRequest {
-            leaves: vec![LeafQuery {
-                encrypted_store: "ac".repeat(32),
-                handle: "10".repeat(32),
-                kind: LeafQueryKind::Public,
-                key: None,
-            }],
-        })
-        .expect("encode");
+        // As the KMS connector connects.
+        let client = reqwest::Client::builder()
+            .http2_prior_knowledge()
+            .build()
+            .expect("client");
+        let leaf = LeafQuery {
+            encrypted_store: [0xAC; 32],
+            handle: [0x10; 32],
+            kind: LeafQueryKind::Public,
+            key: None,
+        };
+        let body = encode_cbor(&MerkleProofRequest {
+            leaves: vec![leaf.clone()],
+        });
         let post = |authorization: Option<String>, body: Vec<u8>| {
             let mut request = client.post(&url).body(body);
             if let Some(authorization) = authorization {
@@ -694,9 +753,9 @@ mod tests {
             request.send()
         };
         let refused = |response: reqwest::Response| async move {
+            assert_eq!(response.version(), reqwest::Version::HTTP_2);
             assert_eq!(response.status(), 401);
-            let error: ErrorResponse =
-                response.json().await.expect("error body");
+            let error = error_of(response).await;
             assert_eq!(error.code, ErrorCode::SenderAuthenticationFailed);
             assert!(!error.retryable);
         };
@@ -708,7 +767,7 @@ mod tests {
             .await;
         let expired = signed(&connector, &body, now() - 1).await;
         refused(post(Some(expired), body.clone()).await.expect("send")).await;
-        let for_other_body = signed(&connector, b"{}", now() + 60).await;
+        let for_other_body = signed(&connector, &[0xA0], now() + 60).await;
         refused(
             post(Some(for_other_body), body.clone())
                 .await
@@ -716,26 +775,20 @@ mod tests {
         )
         .await;
 
-        let not_json = b"{not json".to_vec();
-        let authorization = signed(&connector, &not_json, now() + 60).await;
-        let response = post(Some(authorization), not_json).await.expect("send");
+        let not_cbor = b"{\"leaves\":[]}".to_vec();
+        let authorization = signed(&connector, &not_cbor, now() + 60).await;
+        let response = post(Some(authorization), not_cbor).await.expect("send");
         assert_eq!(response.status(), 400);
-        let error: ErrorResponse = response.json().await.expect("error body");
-        assert_eq!(error.code, ErrorCode::Malformed);
+        assert_eq!(error_of(response).await.code, ErrorCode::Malformed);
 
-        let leaf: serde_json::Value =
-            serde_json::from_slice::<serde_json::Value>(&body).unwrap()
-                ["leaves"][0]
-                .clone();
-        let too_many = serde_json::to_vec(&serde_json::json!({
-            "leaves": vec![leaf; MAX_LEAVES_PER_REQUEST + 1]
-        }))
-        .unwrap();
+        let too_many = encode_cbor(&MerkleProofRequest {
+            leaves: vec![leaf; MAX_LEAVES_PER_REQUEST + 1],
+        });
         let authorization = signed(&connector, &too_many, now() + 60).await;
         let response = post(Some(authorization), too_many).await.expect("send");
         assert_eq!(response.status(), 400);
 
-        let too_large = vec![b' '; MAX_REQUEST_BYTES + 1];
+        let too_large = vec![0; MAX_REQUEST_BYTES + 1];
         let authorization = signed(&connector, &too_large, now() + 60).await;
         let response =
             post(Some(authorization), too_large).await.expect("send");
@@ -759,12 +812,12 @@ mod tests {
         let client = reqwest::Client::new();
         let response = client
             .post(format!("{base}{MERKLE_PROOFS_PATH}"))
-            .body("{}")
+            .body(vec![0xA0])
             .send()
             .await
             .expect("send");
         assert_eq!(response.status(), 502);
-        let error: ErrorResponse = response.json().await.expect("error body");
+        let error = error_of(response).await;
         assert_eq!(error.code, ErrorCode::UpstreamTransient);
         assert!(error.retryable);
         let healthz = client

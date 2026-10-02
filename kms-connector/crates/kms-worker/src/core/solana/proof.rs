@@ -6,6 +6,7 @@ use alloy::primitives::B256;
 use connector_utils::config::KmsWallet;
 use request_authorization::KeyRegistry;
 use serde::{Deserialize, Serialize};
+use serde_bytes::ByteArray;
 use solana_pubkey::Pubkey;
 use std::{
     future::Future,
@@ -14,33 +15,25 @@ use std::{
 use url::Url;
 
 /// The coprocessor route that answers Merkle proof queries. The same literal as the coprocessor's
-/// `MERKLE_PROOFS_PATH`; the shared vectors pin the request and response shapes.
+/// `MERKLE_PROOFS_PATH`; the shared vectors pin the request and response bytes.
 pub const MERKLE_PROOFS_PATH: &str = "/v1/solana/merkle-proofs";
 
 /// The coprocessor's cap on queries per read. A validated request stays below it: it has at most
 /// `MAX_REQUEST_HANDLES` entries.
 const MAX_LEAVES_PER_READ: usize = 64;
 
-#[derive(Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Debug, Serialize)]
-#[serde(tag = "kind", rename_all = "snake_case")]
+#[derive(Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Debug)]
 pub enum LeafKind {
     /// `key` was allowed on the handle.
-    Allowed {
-        #[serde(with = "alloy::hex::serde::no_prefix")]
-        key: Pubkey,
-    },
+    Allowed { key: Pubkey },
     /// The handle was made public.
     Public,
 }
 
-#[derive(Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Debug, Serialize)]
-#[serde(rename_all = "camelCase")]
+#[derive(Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Debug)]
 pub struct LeafQuery {
-    #[serde(with = "alloy::hex::serde::no_prefix")]
     pub encrypted_store: Pubkey,
-    #[serde(with = "alloy::hex::serde::no_prefix")]
     pub handle: B256,
-    #[serde(flatten)]
     pub kind: LeafKind,
 }
 
@@ -114,11 +107,46 @@ pub enum ProofReadError {
 }
 
 // ------------------------------------------------------------------------------------------
-// The HTTP transport. Field names mirror `coprocessor/fhevm-engine/solana-merkle-proof-service/src/server.rs`.
+// The HTTP transport: CBOR bodies over HTTP/2. Field names mirror
+// `coprocessor/fhevm-engine/solana-merkle-proof-service/src/server.rs`.
 
 #[derive(Serialize)]
-struct MerkleProofRequest<'a> {
-    leaves: &'a [LeafQuery],
+struct MerkleProofRequest {
+    leaves: Vec<WireLeaf>,
+}
+
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+struct WireLeaf {
+    #[serde(with = "serde_bytes")]
+    encrypted_store: [u8; 32],
+    #[serde(with = "serde_bytes")]
+    handle: [u8; 32],
+    kind: WireLeafKind,
+    #[serde(skip_serializing_if = "Option::is_none", with = "serde_bytes")]
+    key: Option<[u8; 32]>,
+}
+
+#[derive(Serialize)]
+#[serde(rename_all = "snake_case")]
+enum WireLeafKind {
+    Allowed,
+    Public,
+}
+
+impl From<&LeafQuery> for WireLeaf {
+    fn from(query: &LeafQuery) -> Self {
+        let (kind, key) = match query.kind {
+            LeafKind::Allowed { key } => (WireLeafKind::Allowed, Some(key.to_bytes())),
+            LeafKind::Public => (WireLeafKind::Public, None),
+        };
+        Self {
+            encrypted_store: query.encrypted_store.to_bytes(),
+            handle: query.handle.0,
+            kind,
+            key,
+        }
+    }
 }
 
 #[derive(Deserialize)]
@@ -126,27 +154,49 @@ struct MerkleProofResponse {
     proofs: Vec<MerkleProofOutcome>,
 }
 
-pub fn merkle_proof_request_body(queries: &[LeafQuery]) -> impl Serialize + '_ {
-    MerkleProofRequest { leaves: queries }
+/// The CBOR body asking for `queries`.
+pub fn encode_merkle_proof_request(queries: &[LeafQuery]) -> Vec<u8> {
+    let request = MerkleProofRequest {
+        leaves: queries.iter().map(WireLeaf::from).collect(),
+    };
+    let mut body = Vec::new();
+    ciborium::into_writer(&request, &mut body)
+        .expect("a Merkle proof request has no fallible fields");
+    body
 }
 
 fn decode_siblings<'de, D: serde::Deserializer<'de>>(
     deserializer: D,
 ) -> Result<Vec<[u8; 32]>, D::Error> {
-    let siblings = Vec::<String>::deserialize(deserializer)?;
+    let siblings = Vec::<ByteArray<32>>::deserialize(deserializer)?;
     if siblings.len() > zama_solana_acl::MAX_MMR_PEAKS {
         return Err(serde::de::Error::custom("too many proof siblings"));
     }
-    siblings
-        .iter()
-        .map(|s| alloy::hex::decode_to_array(s).map_err(serde::de::Error::custom))
-        .collect()
+    Ok(siblings.into_iter().map(ByteArray::into_array).collect())
 }
 
-pub fn parse_merkle_proof_response(body: &str) -> Result<Vec<MerkleProofOutcome>, ProofReadError> {
-    let response: MerkleProofResponse = serde_json::from_str(body)
+/// Decodes exactly one CBOR response filling `body`.
+fn parse_merkle_proof_response(body: &[u8]) -> Result<Vec<MerkleProofOutcome>, ProofReadError> {
+    let mut rest = body;
+    let response: MerkleProofResponse = ciborium::from_reader(&mut rest)
         .map_err(|error| unavailable(format!("response does not decode: {error}")))?;
+    if !rest.is_empty() {
+        return Err(unavailable(format!(
+            "{} bytes after the response",
+            rest.len()
+        )));
+    }
     Ok(response.proofs)
+}
+
+/// The client the proof reads share: HTTP/2 without TLS negotiation (prior knowledge), so the
+/// requests to one coprocessor share one connection.
+pub fn proof_http_client(timeout: Duration) -> reqwest::Result<reqwest::Client> {
+    reqwest::Client::builder()
+        .http2_prior_knowledge()
+        .connect_timeout(timeout)
+        .timeout(timeout)
+        .build()
 }
 
 fn unavailable(reason: String) -> ProofReadError {
@@ -211,7 +261,7 @@ impl CoprocessorProofClient {
             .client
             .post(url.clone())
             .header("authorization", &batch.authorization)
-            .header("content-type", "application/json")
+            .header("content-type", "application/cbor")
             .body(batch.body.clone())
             .send()
             .await
@@ -220,9 +270,10 @@ impl CoprocessorProofClient {
         if !status.is_success() {
             return Err(unavailable(format!("{url}: HTTP {status}")));
         }
-        // At most 64 queries, each with 64 hex siblings and bounded numeric metadata.
+        // At most 64 answers, each with at most 64 siblings of 34 bytes and under 128 bytes of
+        // other fields.
         const MAX_RESPONSE_BYTES: usize =
-            MAX_LEAVES_PER_READ * (zama_solana_acl::MAX_MMR_PEAKS * 68 + 256);
+            MAX_LEAVES_PER_READ * (zama_solana_acl::MAX_MMR_PEAKS * 34 + 128);
         let mut response = response;
         let mut body = Vec::new();
         while let Some(chunk) = response
@@ -237,8 +288,7 @@ impl CoprocessorProofClient {
             }
             body.extend_from_slice(&chunk);
         }
-        let text = std::str::from_utf8(&body).map_err(|e| unavailable(format!("{url}: {e}")))?;
-        parse_merkle_proof_response(text)
+        parse_merkle_proof_response(&body).map_err(|error| unavailable(format!("{url}: {error}")))
     }
 }
 
@@ -250,8 +300,7 @@ impl HostProofReader for CoprocessorProofClient {
     }
 
     async fn prepare(&self, queries: &[LeafQuery]) -> Result<SignedBatch, ProofReadError> {
-        let body = serde_json::to_vec(&merkle_proof_request_body(queries))
-            .expect("a Merkle proof request has no map keys or fallible fields");
+        let body = encode_merkle_proof_request(queries);
         let expires = SystemTime::now()
             .duration_since(UNIX_EPOCH)
             .map_or(0, |elapsed| elapsed.as_secs())
@@ -292,6 +341,7 @@ impl HostProofReader for CoprocessorProofClient {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use ciborium::cbor;
 
     /// The shared spelling of the wire; the coprocessor pins its own against the same file.
     const MERKLE_PROOFS_FIXTURE: &str = concat!(
@@ -302,6 +352,12 @@ mod tests {
     fn fixture() -> serde_json::Value {
         serde_json::from_str(&std::fs::read_to_string(MERKLE_PROOFS_FIXTURE).expect("read fixture"))
             .expect("fixture is json")
+    }
+
+    fn cbor(value: ciborium::Value) -> Vec<u8> {
+        let mut body = Vec::new();
+        ciborium::into_writer(&value, &mut body).unwrap();
+        body
     }
 
     #[test]
@@ -326,15 +382,14 @@ mod tests {
             },
         ];
         assert_eq!(
-            serde_json::to_value(merkle_proof_request_body(&queries)).unwrap(),
-            fixture["request"]
+            alloy::hex::encode(encode_merkle_proof_request(&queries)),
+            fixture["request"].as_str().unwrap()
         );
     }
 
     #[test]
     fn every_fixture_answer_decodes() {
-        let fixture = fixture();
-        let body = serde_json::json!({ "proofs": fixture["proofs"] }).to_string();
+        let body = alloy::hex::decode(fixture()["response"].as_str().unwrap()).unwrap();
         assert_eq!(
             parse_merkle_proof_response(&body).expect("the fixture answers decode"),
             vec![
@@ -358,7 +413,7 @@ mod tests {
         let urls: Vec<Url> = urls.iter().map(|url| (*url).clone()).collect();
         CoprocessorProofClient::new(
             &urls,
-            reqwest::Client::new(),
+            proof_http_client(Duration::from_secs(5)).unwrap(),
             wallet.clone(),
             REGISTRY,
             Duration::from_secs(5),
@@ -384,24 +439,35 @@ mod tests {
     #[tokio::test]
     async fn malformed_and_oversized_proof_responses_are_recoverable_read_errors() {
         use mocktail::server::MockServer;
-        let found = |siblings: serde_json::Value| {
-            serde_json::json!({
-                "proofs": [{"status": "found", "leafIndex": 0, "leafCount": 1, "siblings": siblings}]
+        let found = |siblings: Vec<Vec<u8>>| {
+            cbor!({
+                "proofs" => [{
+                    "status" => "found",
+                    "leafIndex" => 0,
+                    "leafCount" => 1,
+                    "siblings" => siblings
+                        .into_iter()
+                        .map(ciborium::Value::Bytes)
+                        .collect::<Vec<_>>(),
+                }]
             })
-            .to_string()
+            .unwrap()
         };
-        let invalid_sibling = found(serde_json::json!(["00"]));
-        let too_many_siblings = found(serde_json::json!(vec!["00".repeat(32); 65]));
+        let not_found =
+            cbor(cbor!({ "proofs" => [{ "status" => "notFound", "leafCount" => 0 }] }).unwrap());
+        let mut trailing = not_found.clone();
+        trailing.push(0);
         for body in [
-            "not JSON".to_owned(),
-            invalid_sibling,
-            too_many_siblings,
-            " ".repeat(300_000),
+            b"{\"proofs\":[]}".to_vec(),
+            cbor(found(vec![vec![0]])),
+            cbor(found(vec![vec![0; 32]; 65])),
+            trailing,
+            vec![0; 300_000],
         ] {
             let mut server = MockServer::new_http("proof-response");
             server.mock(move |when, then| {
                 when.post().path(MERKLE_PROOFS_PATH);
-                then.text(body.clone());
+                then.bytes(body.clone());
             });
             server.start().await.unwrap();
             let client = client(&[server.base_url().unwrap()], &wallet());
@@ -411,6 +477,20 @@ mod tests {
                 .await
                 .expect_err("a malformed response is a failed read");
         }
+
+        let mut server = MockServer::new_http("proof-response");
+        server.mock(move |when, then| {
+            when.post().path(MERKLE_PROOFS_PATH);
+            then.bytes(not_found.clone());
+        });
+        server.start().await.unwrap();
+        let client = client(&[server.base_url().unwrap()], &wallet());
+        let batch = client.prepare(&query()).await.unwrap();
+        assert_eq!(
+            client.read_proofs(0, &batch).await,
+            Ok(vec![MerkleProofOutcome::NotFound { leaf_count: 0 }]),
+            "the same answer without trailing bytes decodes"
+        );
     }
 
     /// Every coprocessor receives the same body and signature, which recovers to the wallet over
@@ -421,14 +501,18 @@ mod tests {
         let wallet = wallet();
         let batch = client(&[], &wallet).prepare(&query()).await.unwrap();
         let mut servers = Vec::new();
+        let answer =
+            cbor(cbor!({ "proofs" => [{ "status" => "notFound", "leafCount" => 0 }] }).unwrap());
         for name in ["first", "second"] {
             let mut server = MockServer::new_http(name);
             let authorization = batch.authorization.clone();
+            let answer = answer.clone();
             server.mock(move |when, then| {
                 when.post()
                     .path(MERKLE_PROOFS_PATH)
-                    .header("authorization", authorization.clone());
-                then.text(r#"{"proofs":[{"status":"notFound","leafCount":0}]}"#);
+                    .header("authorization", authorization.clone())
+                    .header("content-type", "application/cbor");
+                then.bytes(answer.clone());
             });
             server.start().await.unwrap();
             servers.push(server);
@@ -461,9 +545,6 @@ mod tests {
             ),
             Ok(wallet.address())
         );
-        assert_eq!(
-            batch.body,
-            serde_json::to_vec(&merkle_proof_request_body(&query())).unwrap()
-        );
+        assert_eq!(batch.body, encode_merkle_proof_request(&query()));
     }
 }

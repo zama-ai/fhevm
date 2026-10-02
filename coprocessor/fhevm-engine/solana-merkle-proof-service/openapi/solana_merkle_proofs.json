@@ -22,7 +22,7 @@
         "operationId": "merkle_proofs",
         "requestBody": {
           "content": {
-            "application/json": {
+            "application/cbor": {
               "schema": {
                 "$ref": "#/components/schemas/MerkleProofRequest"
               }
@@ -34,7 +34,7 @@
           "200": {
             "description": "One answer per queried leaf, in request order",
             "content": {
-              "application/json": {
+              "application/cbor": {
                 "schema": {
                   "$ref": "#/components/schemas/MerkleProofResponse"
                 }
@@ -44,7 +44,7 @@
           "400": {
             "description": "Malformed request",
             "content": {
-              "application/json": {
+              "application/cbor": {
                 "schema": {
                   "$ref": "#/components/schemas/ErrorResponse"
                 }
@@ -54,7 +54,7 @@
           "401": {
             "description": "Request signature refused",
             "content": {
-              "application/json": {
+              "application/cbor": {
                 "schema": {
                   "$ref": "#/components/schemas/ErrorResponse"
                 }
@@ -64,7 +64,7 @@
           "502": {
             "description": "Leaf record or KMS tx-sender set unavailable",
             "content": {
-              "application/json": {
+              "application/cbor": {
                 "schema": {
                   "$ref": "#/components/schemas/ErrorResponse"
                 }
@@ -112,7 +112,7 @@
       },
       "LeafQuery": {
         "type": "object",
-        "description": "One leaf to prove. Byte fields are 32 bytes as lowercase hex, `0x` optional.",
+        "description": "One leaf to prove. Byte fields are 32-byte CBOR byte strings.",
         "required": [
           "encryptedStore",
           "handle",
@@ -121,16 +121,19 @@
         "properties": {
           "encryptedStore": {
             "type": "string",
+            "format": "binary",
             "description": "The encrypted store account whose MMR holds the leaf."
           },
           "handle": {
-            "type": "string"
+            "type": "string",
+            "format": "binary"
           },
           "key": {
             "type": [
               "string",
               "null"
             ],
+            "format": "binary",
             "description": "The allowed key; required for `allowed`, absent for `public`."
           },
           "kind": {
@@ -173,7 +176,7 @@
                 "items": {
                   "type": "string"
                 },
-                "description": "Authentication path from the leaf to its peak."
+                "description": "Authentication path from the leaf to its peak, 32-byte byte strings."
               },
               "status": {
                 "type": "string",
