@@ -2052,6 +2052,51 @@ async fn delete_synthetic_rows_by_handle(
     Ok(total)
 }
 
+/// Copies the dry-run probe's manifest descriptor material into
+/// `public.synthetic_handle_digest` before [`delete_gcs_synthetic_ops`] removes it.
+///
+/// The probe block seals once it is final and its ciphertexts are digested,
+/// which can come after cutover. Without this copy, a node that seals it after
+/// cutover finds the probe in the merged producer inventory but no digest,
+/// stalls, then publishes it uncomputed while a node that sealed before cutover
+/// published it computed. Only the manifest builder reads the copy, so the
+/// probe still never reaches the publishing paths.
+async fn copy_synthetic_probe_digests(tx: &mut Transaction<'_, Postgres>) -> Result<(), Error> {
+    let sql = format!(
+        "INSERT INTO public.synthetic_handle_digest (
+             host_chain_id, handle, key_id_gw, ciphertext, ciphertext128,
+             ciphertext128_format, is_error, error_message
+         )
+         SELECT DISTINCT ON (probe.host_chain_id, probe.handle)
+                probe.host_chain_id, probe.handle, digest.key_id_gw, digest.ciphertext,
+                digest.ciphertext128, digest.ciphertext128_format,
+                COALESCE(failure.failed, FALSE), failure.error_message
+           FROM {GCS_SCHEMA_QUOTED}.handle_producer_block probe
+           LEFT JOIN {GCS_SCHEMA_QUOTED}.ciphertext_digest digest
+             ON digest.host_chain_id = probe.host_chain_id
+            AND digest.handle = probe.handle
+           LEFT JOIN LATERAL (
+               SELECT TRUE AS failed, c.error_message
+                 FROM {GCS_SCHEMA_QUOTED}.computations c
+                WHERE c.host_chain_id = probe.host_chain_id
+                  AND c.block_number = probe.producer_block_number
+                  AND c.output_handle = probe.handle
+                  AND c.is_error
+                ORDER BY c.error_message NULLS LAST
+                LIMIT 1
+           ) failure ON TRUE
+          WHERE probe.synthetic
+          ORDER BY probe.host_chain_id, probe.handle, digest.ciphertext128 IS NULL
+         ON CONFLICT (host_chain_id, handle) DO NOTHING"
+    );
+    let copied = sqlx::query(&sql).execute(&mut **tx).await?.rows_affected();
+    info!(
+        copied,
+        "cutover: kept the synthetic probe's manifest descriptor"
+    );
+    Ok(())
+}
+
 /// Delete the synthetic FHE work the GCS host-listener injected into each host chain's dry-run
 /// window, together with every ciphertext derived from it, before the merge carries `gcs.*` into
 /// `public`.
@@ -2294,7 +2339,9 @@ async fn delete_gcs_synthetic_inputs(tx: &mut Transaction<'_, Postgres>) -> Resu
 ///   4. `revert_bcs_state`: delete blue's in-window rows, host chains then the
 ///      gateway/input side, and the dependence chains left with no computations.
 ///   5. `delete_gcs_synthetic_ops` + `delete_gcs_synthetic_inputs`: drop the synthetic work
-///      injected to anchor dry-run consensus, so it never merges into `public`.
+///      injected to anchor dry-run consensus, so it never merges into `public`. The probe's
+///      manifest descriptor is first copied to `public.synthetic_handle_digest`
+///      (`copy_synthetic_probe_digests`), read only by the manifest builder.
 ///   6. Merge every `gcs.<table>` marked [`CoprocessorTable::is_merged`] into
 ///      `public`, then restore the snapshotted `txn_is_sent` flags.
 ///   7. DROP SCHEMA gcs CASCADE.
@@ -2406,6 +2453,8 @@ pub async fn execute_cutover(pool: &Pool<Postgres>) -> Result<(), Error> {
     // 5. Drop the GCS stack's synthetic work before anything merges: it exists only to anchor
     //    dry-run consensus and must not become live data. Host ops before the Gateway input,
     //    so each by-handle sweep finishes with its own temp table before the next is created.
+    //    The probe's manifest descriptor is copied aside first: its block may seal after this.
+    copy_synthetic_probe_digests(&mut tx).await?;
     delete_gcs_synthetic_ops(&mut tx).await?;
     delete_gcs_synthetic_inputs(&mut tx).await?;
 
@@ -3490,6 +3539,9 @@ mod tests {
         // Run both cleanups in one transaction, exactly as execute_cutover does — this also
         // exercises the two temp tables coexisting in the same transaction.
         let mut tx = pool.begin().await.expect("begin");
+        copy_synthetic_probe_digests(&mut tx)
+            .await
+            .expect("copy_synthetic_probe_digests");
         delete_gcs_synthetic_ops(&mut tx)
             .await
             .expect("delete_gcs_synthetic_ops");
@@ -3524,6 +3576,100 @@ mod tests {
         .await
         .expect("read markers");
         assert!(marker.is_empty(), "synthetic_txn_hashes was not cleared");
+    }
+
+    /// Cutover deletes the probe's digest row, yet its block may seal after cutover: the
+    /// descriptor material is copied to `public.synthetic_handle_digest` first, for the
+    /// manifest builder only. A real handle of the same block is not copied, and the copy
+    /// keeps its incomplete ct128 as is.
+    #[tokio::test]
+    async fn cutover_keeps_the_probe_descriptor_for_manifests() {
+        let (_instance, pool) = test_pool().await;
+        create_gcs_schema(&pool).await.expect("create gcs schema");
+
+        let probe = vec![0x11u8; 32];
+        let uncomputed_probe = vec![0x12u8; 32];
+        let real = vec![0x22u8; 32];
+        let block_hash = vec![0xB1u8; 32];
+        for (handle, synthetic) in [(&probe, true), (&uncomputed_probe, true), (&real, false)] {
+            sqlx::query(&format!(
+                "INSERT INTO {GCS_SCHEMA_QUOTED}.handle_producer_block
+                      (host_chain_id, handle, producer_block_number, producer_block_hash, synthetic)
+                      VALUES (12345, $1, 101, $2, $3)"
+            ))
+            .bind(handle)
+            .bind(&block_hash)
+            .bind(synthetic)
+            .execute(&pool)
+            .await
+            .expect("seed producer row");
+        }
+        for (handle, ct128) in [
+            (&probe, Some(vec![0x03u8; 32])),
+            (&uncomputed_probe, None),
+            (&real, Some(vec![0x04u8; 32])),
+        ] {
+            sqlx::query(&format!(
+                "INSERT INTO {GCS_SCHEMA_QUOTED}.ciphertext_digest
+                      (handle, host_chain_id, key_id_gw, ciphertext, ciphertext128,
+                       ciphertext128_format)
+                      VALUES ($1, 12345, '\\x0a'::bytea, '\\x02'::bytea, $2, 11)"
+            ))
+            .bind(handle)
+            .bind(ct128)
+            .execute(&pool)
+            .await
+            .expect("seed digest row");
+        }
+
+        let mut tx = pool.begin().await.expect("begin");
+        copy_synthetic_probe_digests(&mut tx)
+            .await
+            .expect("copy probe descriptor");
+        // A retried cutover attempt copies again without failing.
+        copy_synthetic_probe_digests(&mut tx)
+            .await
+            .expect("copy probe descriptor again");
+        tx.commit().await.expect("commit");
+
+        type ProbeCopy = (
+            Vec<u8>,
+            Vec<u8>,
+            Option<Vec<u8>>,
+            Option<Vec<u8>>,
+            Option<i16>,
+            bool,
+        );
+        let copied: Vec<ProbeCopy> = sqlx::query_as(
+            "SELECT handle, key_id_gw, ciphertext, ciphertext128, ciphertext128_format, is_error
+                   FROM public.synthetic_handle_digest
+                  WHERE host_chain_id = 12345
+                  ORDER BY handle",
+        )
+        .fetch_all(&pool)
+        .await
+        .expect("read copies");
+        assert_eq!(
+            copied,
+            vec![
+                (
+                    probe,
+                    vec![0x0a],
+                    Some(vec![0x02]),
+                    Some(vec![0x03u8; 32]),
+                    Some(11),
+                    false
+                ),
+                (
+                    uncomputed_probe,
+                    vec![0x0a],
+                    Some(vec![0x02]),
+                    None,
+                    Some(11),
+                    false
+                ),
+            ]
+        );
     }
 
     /// The reorg case the concatenated column exists for.

@@ -541,8 +541,9 @@ for optional fixed-width fields.
 Each newly generated allowed handle has one descriptor:
 
 ```text
-handle:  bytes32
-status:  computed | error | uncomputed | invalid_descriptor
+handle:     bytes32
+status:     computed | error | uncomputed | invalid_descriptor
+synthetic?: bool
 ```
 
 `computed` then carries:
@@ -590,6 +591,16 @@ It is signed with the manifest body and omitted from JSON when absent. It is
 not hashed into the block content digest, so GPU vs CPU `Display` differences
 cannot create ciphertext drift.
 
+`synthetic` marks the Blue/Green dry-run probe: the handle the incoming stack's
+host listener injects into one block of its dry-run window so a quiet chain
+still anchors cutover consensus. The probe exists on no chain. Peers compare it
+like any handle, so a disagreement still shows as a differing block, but
+verification never records it as drifted, so it is never contained or healed.
+Cutover deletes the probe's work as before, after copying its descriptor
+material to `synthetic_handle_digest`, which only the manifest builder reads: the
+probe block seals the same way whether it seals before or after cutover. JSON
+omits the field when false.
+
 `keyset_id` identifies the compatible FHE key generation. It participates in
 consensus because different key generations can explain otherwise valid but
 incompatible material. `gateway_key_id` is optional signed legacy provenance. It is
@@ -616,7 +627,9 @@ A = keccak256(
 ```
 
 The descriptor contribution contains `handle` and two flags derived from
-`status` (`error`, `uncomputed`; both set for `invalid_descriptor`). Successful
+`status` (`error`, `uncomputed`; both set for `invalid_descriptor`). A synthetic
+descriptor sets the high bit (`0x80`) of the first flag byte; any other
+descriptor encodes exactly as it did before the flag existed. Successful
 descriptors then contribute `keyset_id`, both ciphertext digests, and
 `ct128_format`. Invalid descriptors contribute both ciphertext digests, each
 behind a presence byte. Error and

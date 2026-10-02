@@ -61,8 +61,13 @@ pub(crate) async fn is_block_manifest_ready(
                           AND c.block_number = producer.producer_block_number
                           AND c.output_handle = producer.handle
                           AND c.is_error
-                   ) AS is_error
+                   ) OR COALESCE(probe_copy.is_error, FALSE) AS is_error,
+                   probe_copy.handle IS NOT NULL AS frozen_probe
               FROM handle_producer_block producer
+              LEFT JOIN synthetic_handle_digest probe_copy
+                ON producer.synthetic
+               AND probe_copy.host_chain_id = producer.host_chain_id
+               AND probe_copy.handle = producer.handle
               LEFT JOIN LATERAL (
                   -- A bridged handle's bytes are a later copy of its source, so until
                   -- this node holds its own digest the source digest describes it.
@@ -74,6 +79,14 @@ pub(crate) async fn is_block_manifest_ready(
                         FROM ciphertext_digest own
                        WHERE own.host_chain_id = producer.host_chain_id
                          AND own.handle = producer.handle
+                      UNION ALL
+                      -- The dry-run probe after cutover, which deleted its digest row.
+                      SELECT FALSE, probe.key_id_gw, probe.ciphertext, probe.ciphertext128,
+                             probe.ciphertext128_format
+                        FROM synthetic_handle_digest probe
+                       WHERE producer.synthetic
+                         AND probe.host_chain_id = producer.host_chain_id
+                         AND probe.handle = producer.handle
                       UNION ALL
                       SELECT TRUE, source.key_id_gw, source.ciphertext,
                              source.ciphertext128, source.ciphertext128_format
@@ -112,6 +125,8 @@ pub(crate) async fn is_block_manifest_ready(
                    SELECT 1
                      FROM block_handles
                     WHERE NOT is_error
+                      -- A probe copied by cutover is final: incomplete, it seals uncomputed.
+                      AND NOT frozen_probe
                       AND (
                           key_id_gw IS NULL
                           OR ct64_digest IS NULL
@@ -223,6 +238,7 @@ pub(crate) async fn load_manifest_descriptors(
     let rows = sqlx::query!(
         r#"
         SELECT DISTINCT producer.handle AS "handle!",
+               producer.synthetic AS "synthetic!",
                d.key_id_gw AS "key_id_gw?",
                d.ciphertext AS "ct64_digest?",
                d.ciphertext128 AS "ct128_digest?",
@@ -234,8 +250,8 @@ pub(crate) async fn load_manifest_descriptors(
                       AND c.block_number = producer.producer_block_number
                       AND c.output_handle = producer.handle
                       AND c.is_error
-               ) AS "is_error!",
-               (
+               ) OR COALESCE(probe_copy.is_error, FALSE) AS "is_error!",
+               COALESCE((
                    SELECT c.error_message
                      FROM computations c
                     WHERE c.host_chain_id = producer.host_chain_id
@@ -244,8 +260,13 @@ pub(crate) async fn load_manifest_descriptors(
                       AND c.is_error
                     ORDER BY c.error_message NULLS LAST
                     LIMIT 1
-               ) AS "error_message?"
+               ), probe_copy.error_message) AS "error_message?",
+               probe_copy.handle IS NOT NULL AS "frozen_probe!"
           FROM handle_producer_block producer
+          LEFT JOIN synthetic_handle_digest probe_copy
+            ON producer.synthetic
+           AND probe_copy.host_chain_id = producer.host_chain_id
+           AND probe_copy.handle = producer.handle
           LEFT JOIN LATERAL (
               -- A bridged handle's bytes are a later copy of its source, so until
               -- this node holds its own digest the source digest describes it.
@@ -257,6 +278,14 @@ pub(crate) async fn load_manifest_descriptors(
                     FROM ciphertext_digest own
                    WHERE own.host_chain_id = producer.host_chain_id
                      AND own.handle = producer.handle
+                  UNION ALL
+                  -- The dry-run probe after cutover, which deleted its digest row.
+                  SELECT FALSE, probe.key_id_gw, probe.ciphertext, probe.ciphertext128,
+                         probe.ciphertext128_format
+                    FROM synthetic_handle_digest probe
+                   WHERE producer.synthetic
+                     AND probe.host_chain_id = producer.host_chain_id
+                     AND probe.handle = producer.handle
                   UNION ALL
                   SELECT TRUE, source.key_id_gw, source.ciphertext,
                          source.ciphertext128, source.ciphertext128_format
@@ -313,6 +342,14 @@ pub(crate) async fn load_manifest_descriptors(
             )));
         }
         previous_handle = Some(row.handle.clone());
+        // The dry-run probe is sealed from its own rows like any handle, only flagged.
+        let mut push = |descriptor: CiphertextDescriptor| {
+            descriptors.push(if row.synthetic {
+                descriptor.into_synthetic()
+            } else {
+                descriptor
+            });
+        };
 
         if row.is_error {
             if row.handle.len() != 32 {
@@ -323,7 +360,7 @@ pub(crate) async fn load_manifest_descriptors(
                     block.block_number,
                 )));
             }
-            descriptors.push(CiphertextDescriptor::from_computation_error(
+            push(CiphertextDescriptor::from_computation_error(
                 B256::from_slice(&row.handle),
                 row.error_message.filter(|message| !message.is_empty()),
             ));
@@ -333,7 +370,8 @@ pub(crate) async fn load_manifest_descriptors(
         let (Some(ct64_digest), Some(ct128_digest), Some(ct128_format)) =
             (row.ct64_digest, row.ct128_digest, row.ct128_format)
         else {
-            if allow_uncomputed {
+            // A probe copied by cutover can no longer complete.
+            if allow_uncomputed || row.frozen_probe {
                 if row.handle.len() != 32 {
                     return Err(internal(format!(
                         "invalid handle length {} in chain {} block {}",
@@ -342,7 +380,7 @@ pub(crate) async fn load_manifest_descriptors(
                         block.block_number,
                     )));
                 }
-                descriptors.push(CiphertextDescriptor::from_uncomputed(B256::from_slice(
+                push(CiphertextDescriptor::from_uncomputed(B256::from_slice(
                     &row.handle,
                 )));
                 continue;
@@ -414,7 +452,7 @@ pub(crate) async fn load_manifest_descriptors(
                 reason,
                 "Publishing an invalid descriptor for a computed handle"
             );
-            descriptors.push(CiphertextDescriptor::from_invalid_descriptor(
+            push(CiphertextDescriptor::from_invalid_descriptor(
                 handle,
                 ct64,
                 ct128,
@@ -423,7 +461,7 @@ pub(crate) async fn load_manifest_descriptors(
             continue;
         };
 
-        descriptors.push(CiphertextDescriptor::computed(
+        push(CiphertextDescriptor::computed(
             handle,
             U256::from_be_slice(keyset_id),
             gateway_key_id.as_deref().map(U256::from_be_slice),
