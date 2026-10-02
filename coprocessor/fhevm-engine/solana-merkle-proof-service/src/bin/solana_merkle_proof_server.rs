@@ -2,12 +2,19 @@
 //! record that `solana_merkle_indexer` writes. It runs as its own deployment with its own
 //! database pool, so it keeps serving while the indexer is stopped or behind. A proof from a
 //! record that is behind still verifies against the chain's peaks until a later append to the
-//! store merges that leaf's mountain.
+//! store merges that leaf's mountain. It answers only the KMS connectors that the canonical
+//! `ProtocolConfig` lists, which it reads from an Ethereum RPC.
 
 use std::time::Duration;
 
+use alloy::{
+    primitives::Address,
+    providers::{Provider, ProviderBuilder},
+    transports::http::reqwest::Url,
+};
 use anyhow::{Context, Result};
 use clap::Parser;
+use fhevm_host_bindings::protocol_config::ProtocolConfig;
 use sqlx::postgres::PgPoolOptions;
 use tokio_util::sync::CancellationToken;
 use tracing::{info, Level};
@@ -19,7 +26,7 @@ use fhevm_engine_common::{
     telemetry,
     utils::DatabaseURL,
 };
-use solana_merkle_proof_service::server::HttpServer;
+use solana_merkle_proof_service::{kms_tx_senders, server::HttpServer};
 
 #[derive(Parser, Debug, Clone)]
 #[command(version, about = "Solana Merkle proof server", long_about = None)]
@@ -36,9 +43,13 @@ struct Args {
     #[arg(long, default_value_t = 8080)]
     http_port: u16,
 
-    /// Bearer API key the Merkle proof route requires.
-    #[arg(long, env = "SOLANA_PROOF_API_KEY")]
-    proof_api_key: String,
+    /// HTTP RPC of the canonical chain that hosts `ProtocolConfig`.
+    #[arg(long)]
+    ethereum_rpc_url: Url,
+
+    /// The canonical `ProtocolConfig`, whose live KMS contexts' tx-senders may call.
+    #[arg(long)]
+    protocol_config_address: Address,
 
     #[arg(long, default_value_t = Level::INFO)]
     log_level: Level,
@@ -84,7 +95,15 @@ async fn main() -> Result<()> {
         }
     });
 
-    HttpServer::merkle_proofs(pool, args.proof_api_key, args.http_port, cancel)
+    let ethereum = ProviderBuilder::new()
+        .connect_http(args.ethereum_rpc_url)
+        .erased();
+    let senders = kms_tx_senders::follow(
+        ProtocolConfig::new(args.protocol_config_address, ethereum),
+        cancel.clone(),
+    );
+
+    HttpServer::merkle_proofs(pool, senders, args.http_port, cancel)
         .start()
         .await
 }

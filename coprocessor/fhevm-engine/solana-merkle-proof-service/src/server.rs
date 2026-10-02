@@ -4,16 +4,22 @@
 //! The KMS connector asks for the inclusion proof of the leaf that authorizes a
 //! decrypt (an allow of a key on a handle, or a handle made public) and verifies
 //! it against the peaks of the on-chain account it read itself. This server only
-//! reads the leaf record ([`crate::store`]): it holds no chain client and
-//! makes no authorization decision. Requests carry a bearer API key.
+//! reads the leaf record ([`crate::store`]) and makes no decrypt authorization
+//! decision. It answers only callers in [`KmsTxSenders`]: each request carries a
+//! `request_authorization` signature by a KMS node's tx-sender.
 //!
 //! The wire contract is the committed OpenAPI document in `openapi/`; a test keeps
 //! it in sync with the code. Errors use the RFC 033 body shape.
 
-use std::{net::SocketAddr, sync::Arc};
+use std::{
+    net::SocketAddr,
+    time::{SystemTime, UNIX_EPOCH},
+};
 
+use alloy::primitives::Address;
 use axum::{
-    extract::{rejection::JsonRejection, State},
+    body::Bytes,
+    extract::{rejection::BytesRejection, DefaultBodyLimit, State},
     http::{header, HeaderMap, StatusCode},
     response::{IntoResponse, Json, Response},
     routing::{get, post},
@@ -23,24 +29,30 @@ use serde::{Deserialize, Serialize};
 use sqlx::PgPool;
 use tokio::net::TcpListener;
 use tokio_util::sync::CancellationToken;
-use tracing::{error, info};
+use tracing::{error, info, warn};
 use utoipa::{
-    openapi::security::{Http, HttpAuthScheme, SecurityScheme},
+    openapi::security::{ApiKey, ApiKeyValue, SecurityScheme},
     Modify, OpenApi, ToSchema,
 };
 use zama_solana_acl::mmr_verify;
 
-use crate::store::{find_leaf, load_proof, load_store_cursor, LeafKind};
+use crate::{
+    kms_tx_senders::KmsTxSenders,
+    store::{find_leaf, load_proof, load_store_cursor, LeafKind},
+};
 
 /// Most leaves one request may ask for.
 const MAX_LEAVES_PER_REQUEST: usize = 64;
+
+/// Comfortably above [`MAX_LEAVES_PER_REQUEST`] queries.
+const MAX_REQUEST_BYTES: usize = 64 * 1024;
 
 pub const MERKLE_PROOFS_PATH: &str = "/v1/solana/merkle-proofs";
 
 #[derive(Clone)]
 struct AppState {
     pool: PgPool,
-    api_key: Arc<str>,
+    senders: KmsTxSenders,
 }
 
 pub struct HttpServer {
@@ -66,12 +78,12 @@ impl HttpServer {
     /// The health routes and the Merkle proof route, for the proof server.
     pub fn merkle_proofs(
         pool: PgPool,
-        api_key: String,
+        senders: KmsTxSenders,
         port: u16,
         cancel_token: CancellationToken,
     ) -> Self {
         Self {
-            router: merkle_proofs_router(pool, api_key),
+            router: merkle_proofs_router(pool, senders),
             port,
             cancel_token,
         }
@@ -93,15 +105,15 @@ fn health_router(pool: PgPool) -> Router {
         .with_state(pool)
 }
 
-fn merkle_proofs_router(pool: PgPool, api_key: String) -> Router {
-    health_router(pool.clone()).merge(
-        Router::new()
-            .route(MERKLE_PROOFS_PATH, post(merkle_proofs))
-            .with_state(AppState {
-                pool,
-                api_key: api_key.into(),
-            }),
-    )
+fn merkle_proofs_router(pool: PgPool, senders: KmsTxSenders) -> Router {
+    Router::new()
+        .route("/healthz", get(proof_server_healthz))
+        .route("/liveness", get(liveness))
+        .route(
+            MERKLE_PROOFS_PATH,
+            post(merkle_proofs).layer(DefaultBodyLimit::max(MAX_REQUEST_BYTES)),
+        )
+        .with_state(AppState { pool, senders })
 }
 
 async fn serve(
@@ -133,6 +145,15 @@ async fn healthz(State(pool): State<PgPool>) -> StatusCode {
             StatusCode::SERVICE_UNAVAILABLE
         }
     }
+}
+
+/// Not ready until the KMS tx-sender set is read, so a rollout waits for it.
+async fn proof_server_healthz(State(state): State<AppState>) -> StatusCode {
+    if !state.senders.is_loaded() {
+        warn!("KMS tx-sender set not read yet");
+        return StatusCode::SERVICE_UNAVAILABLE;
+    }
+    healthz(State(state.pool)).await
 }
 
 // --- Wire types -----------------------------------------------------------------
@@ -206,9 +227,11 @@ pub struct MerkleProofResponse {
 pub enum ErrorCode {
     /// Malformed body, bad hex, missing key, too many leaves.
     Malformed,
-    /// Missing or wrong bearer API key.
+    /// The request signature is missing, malformed or expired, or its signer is
+    /// not the tx-sender of a node in a live KMS context.
     SenderAuthenticationFailed,
-    /// The leaf record could not be read or is inconsistent; retry later.
+    /// The leaf record could not be read or is inconsistent, or the KMS
+    /// tx-sender set is not read yet; retry later.
     UpstreamTransient,
 }
 
@@ -277,19 +300,21 @@ impl IntoResponse for HttpError {
     responses(
         (status = 200, description = "One answer per queried leaf, in request order", body = MerkleProofResponse),
         (status = 400, description = "Malformed request", body = ErrorResponse),
-        (status = 401, description = "Missing or wrong API key", body = ErrorResponse),
-        (status = 502, description = "Leaf record unavailable", body = ErrorResponse),
+        (status = 401, description = "Request signature refused", body = ErrorResponse),
+        (status = 502, description = "Leaf record or KMS tx-sender set unavailable", body = ErrorResponse),
     ),
-    security(("bearer" = [])),
+    security(("request_authorization" = [])),
 )]
 async fn merkle_proofs(
     State(state): State<AppState>,
     headers: HeaderMap,
-    body: Result<Json<MerkleProofRequest>, JsonRejection>,
+    body: Result<Bytes, BytesRejection>,
 ) -> Result<Json<MerkleProofResponse>, HttpError> {
-    authenticate(&headers, &state.api_key)?;
-    let Json(request) =
+    let body =
         body.map_err(|rejection| HttpError::malformed(rejection.body_text()))?;
+    authorize(&state.senders, &headers, &body)?;
+    let request: MerkleProofRequest = serde_json::from_slice(&body)
+        .map_err(|err| HttpError::malformed(err.to_string()))?;
     if request.leaves.len() > MAX_LEAVES_PER_REQUEST {
         return Err(HttpError::malformed(format!(
             "at most {MAX_LEAVES_PER_REQUEST} leaves per request, got {}",
@@ -308,30 +333,42 @@ async fn merkle_proofs(
     Ok(Json(MerkleProofResponse { proofs }))
 }
 
-fn authenticate(headers: &HeaderMap, api_key: &str) -> Result<(), HttpError> {
-    let presented = headers
+/// Returns the KMS tx-sender that signed this exact body for this route.
+fn authorize(
+    senders: &KmsTxSenders,
+    headers: &HeaderMap,
+    body: &[u8],
+) -> Result<Address, HttpError> {
+    let refused = |message: String| {
+        HttpError::new(ErrorCode::SenderAuthenticationFailed, message)
+    };
+    let Some(set) = senders.current() else {
+        return Err(HttpError::new(
+            ErrorCode::UpstreamTransient,
+            "KMS tx-sender set not read yet",
+        ));
+    };
+    let header = headers
         .get(header::AUTHORIZATION)
         .and_then(|value| value.to_str().ok())
-        .and_then(|value| value.strip_prefix("Bearer "))
-        .ok_or_else(|| {
-            HttpError::new(
-                ErrorCode::SenderAuthenticationFailed,
-                "missing bearer API key",
-            )
-        })?;
-    if constant_time_eq(presented.as_bytes(), api_key.as_bytes()) {
-        Ok(())
-    } else {
-        Err(HttpError::new(
-            ErrorCode::SenderAuthenticationFailed,
-            "wrong API key",
-        ))
+        .unwrap_or_default();
+    let now = SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .map_or(0, |elapsed| elapsed.as_secs());
+    let signer = request_authorization::recover_signer(
+        set.chain_id,
+        header,
+        MERKLE_PROOFS_PATH,
+        body,
+        now,
+    )
+    .map_err(|err| refused(err.to_string()))?;
+    if !set.senders.contains(&signer) {
+        return Err(refused(format!(
+            "{signer} is not the tx-sender of a node in a live KMS context"
+        )));
     }
-}
-
-fn constant_time_eq(a: &[u8], b: &[u8]) -> bool {
-    a.len() == b.len()
-        && a.iter().zip(b).fold(0u8, |acc, (x, y)| acc | (x ^ y)) == 0
+    Ok(signer)
 }
 
 struct ParsedQuery {
@@ -436,16 +473,28 @@ async fn prove(
 
 // --- OpenAPI ----------------------------------------------------------------------
 
-struct BearerApiKey;
+struct RequestAuthorization;
 
-impl Modify for BearerApiKey {
+impl Modify for RequestAuthorization {
     fn modify(&self, openapi: &mut utoipa::openapi::OpenApi) {
         openapi
             .components
             .get_or_insert_with(Default::default)
             .add_security_scheme(
-                "bearer",
-                SecurityScheme::Http(Http::new(HttpAuthScheme::Bearer)),
+                "request_authorization",
+                SecurityScheme::ApiKey(ApiKey::Header(ApiKeyValue::with_description(
+                    "Authorization",
+                    &format!(
+                        "`{} expires=<unix seconds>, signature=0x<65 bytes>`: an EIP-712 \
+                         `RequestAuthorization(string path, bytes32 bodyDigest, uint64 expires)` \
+                         signature, domain `{{name: \"zama-request-authorization\", version: \"1\", \
+                         chainId: <canonical ProtocolConfig chain>}}`, by the tx-sender of a node \
+                         in a live KMS context. `bodyDigest` is the keccak-256 of the exact body; \
+                         `expires` is at most {} s ahead.",
+                        request_authorization::SCHEME,
+                        request_authorization::MAX_VALIDITY_SECS,
+                    ),
+                ))),
             );
     }
 }
@@ -468,14 +517,17 @@ impl Modify for BearerApiKey {
         ErrorCode,
         ErrorResponse,
     )),
-    modifiers(&BearerApiKey),
+    modifiers(&RequestAuthorization),
 )]
 pub struct ApiDoc;
 
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::kms_tx_senders::KmsTxSenderSet;
+    use alloy::signers::local::PrivateKeySigner;
     use sqlx::postgres::PgPoolOptions;
+    use std::collections::HashSet;
 
     const OPENAPI_PATH: &str = concat!(
         env!("CARGO_MANIFEST_DIR"),
@@ -564,80 +616,162 @@ mod tests {
         assert!(ParsedQuery::parse(&query).is_ok());
     }
 
-    /// Authentication and body validation are answered before any database read,
-    /// so a pool that never connects is enough to pin the error contract.
-    #[tokio::test]
-    async fn rejects_before_touching_the_database() {
+    const CHAIN_ID: u64 = 12345;
+
+    fn now() -> u64 {
+        SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .unwrap()
+            .as_secs()
+    }
+
+    async fn signed(
+        signer: &PrivateKeySigner,
+        body: &[u8],
+        expires: u64,
+    ) -> String {
+        request_authorization::authorize(
+            signer,
+            CHAIN_ID,
+            MERKLE_PROOFS_PATH,
+            body,
+            expires,
+        )
+        .await
+        .expect("sign")
+    }
+
+    async fn spawn(
+        senders: KmsTxSenders,
+    ) -> (String, CancellationToken, tokio::task::JoinHandle<()>) {
         let pool = PgPoolOptions::new()
             .connect_lazy("postgres://nobody@127.0.0.1:1/none")
             .expect("lazy pool");
         let listener = TcpListener::bind("127.0.0.1:0").await.expect("bind");
         let addr = listener.local_addr().expect("addr");
         let cancel = CancellationToken::new();
-        let server = tokio::spawn(serve(
-            listener,
-            merkle_proofs_router(pool, "secret".into()),
-            cancel.clone(),
-        ));
-        let url = format!("http://{addr}{MERKLE_PROOFS_PATH}");
+        let server = tokio::spawn({
+            let cancel = cancel.clone();
+            async move {
+                serve(listener, merkle_proofs_router(pool, senders), cancel)
+                    .await
+                    .expect("serve")
+            }
+        });
+        (format!("http://{addr}"), cancel, server)
+    }
+
+    /// Authentication and body validation are answered before any database read,
+    /// so a pool that never connects is enough to pin the error contract.
+    #[tokio::test]
+    async fn rejects_before_touching_the_database() {
+        let connector = PrivateKeySigner::random();
+        let (base, cancel, server) =
+            spawn(KmsTxSenders::fixed(KmsTxSenderSet {
+                chain_id: CHAIN_ID,
+                senders: HashSet::from([connector.address()]),
+            }))
+            .await;
+        let url = format!("{base}{MERKLE_PROOFS_PATH}");
         let client = reqwest::Client::new();
-        let body = MerkleProofRequest {
+        let body = serde_json::to_vec(&MerkleProofRequest {
             leaves: vec![LeafQuery {
                 encrypted_store: "ac".repeat(32),
                 handle: "10".repeat(32),
                 kind: LeafQueryKind::Public,
                 key: None,
             }],
+        })
+        .expect("encode");
+        let post = |authorization: Option<String>, body: Vec<u8>| {
+            let mut request = client.post(&url).body(body);
+            if let Some(authorization) = authorization {
+                request = request.header(header::AUTHORIZATION, authorization);
+            }
+            request.send()
+        };
+        let refused = |response: reqwest::Response| async move {
+            assert_eq!(response.status(), 401);
+            let error: ErrorResponse =
+                response.json().await.expect("error body");
+            assert_eq!(error.code, ErrorCode::SenderAuthenticationFailed);
+            assert!(!error.retryable);
         };
 
-        let response =
-            client.post(&url).json(&body).send().await.expect("send");
-        assert_eq!(response.status(), 401);
-        let error: ErrorResponse = response.json().await.expect("error body");
-        assert_eq!(error.code, ErrorCode::SenderAuthenticationFailed);
-        assert!(!error.retryable);
+        refused(post(None, body.clone()).await.expect("send")).await;
+        let stranger = PrivateKeySigner::random();
+        let by_stranger = signed(&stranger, &body, now() + 60).await;
+        refused(post(Some(by_stranger), body.clone()).await.expect("send"))
+            .await;
+        let expired = signed(&connector, &body, now() - 1).await;
+        refused(post(Some(expired), body.clone()).await.expect("send")).await;
+        let for_other_body = signed(&connector, b"{}", now() + 60).await;
+        refused(
+            post(Some(for_other_body), body.clone())
+                .await
+                .expect("send"),
+        )
+        .await;
 
-        let response = client
-            .post(&url)
-            .bearer_auth("wrong")
-            .json(&body)
-            .send()
-            .await
-            .expect("send");
-        assert_eq!(response.status(), 401);
-
-        let response = client
-            .post(&url)
-            .bearer_auth("secret")
-            .header(header::CONTENT_TYPE, "application/json")
-            .body("{not json")
-            .send()
-            .await
-            .expect("send");
+        let not_json = b"{not json".to_vec();
+        let authorization = signed(&connector, &not_json, now() + 60).await;
+        let response = post(Some(authorization), not_json).await.expect("send");
         assert_eq!(response.status(), 400);
         let error: ErrorResponse = response.json().await.expect("error body");
         assert_eq!(error.code, ErrorCode::Malformed);
 
-        let too_many = MerkleProofRequest {
-            leaves: vec![body.leaves[0].clone(); MAX_LEAVES_PER_REQUEST + 1],
-        };
-        let response = client
-            .post(&url)
-            .bearer_auth("secret")
-            .json(&too_many)
-            .send()
-            .await
-            .expect("send");
+        let leaf: serde_json::Value =
+            serde_json::from_slice::<serde_json::Value>(&body).unwrap()
+                ["leaves"][0]
+                .clone();
+        let too_many = serde_json::to_vec(&serde_json::json!({
+            "leaves": vec![leaf; MAX_LEAVES_PER_REQUEST + 1]
+        }))
+        .unwrap();
+        let authorization = signed(&connector, &too_many, now() + 60).await;
+        let response = post(Some(authorization), too_many).await.expect("send");
+        assert_eq!(response.status(), 400);
+
+        let too_large = vec![b' '; MAX_REQUEST_BYTES + 1];
+        let authorization = signed(&connector, &too_large, now() + 60).await;
+        let response =
+            post(Some(authorization), too_large).await.expect("send");
         assert_eq!(response.status(), 400);
 
         let liveness = client
-            .get(format!("http://{addr}/liveness"))
+            .get(format!("{base}/liveness"))
             .send()
             .await
             .expect("send");
         assert_eq!(liveness.status(), 200);
 
         cancel.cancel();
-        server.await.expect("join").expect("serve");
+        server.await.expect("join");
+    }
+
+    /// Until the KMS tx-sender set is read, the server is not ready and asks callers to retry.
+    #[tokio::test]
+    async fn refuses_until_the_kms_tx_senders_are_read() {
+        let (base, cancel, server) = spawn(KmsTxSenders::unread()).await;
+        let client = reqwest::Client::new();
+        let response = client
+            .post(format!("{base}{MERKLE_PROOFS_PATH}"))
+            .body("{}")
+            .send()
+            .await
+            .expect("send");
+        assert_eq!(response.status(), 502);
+        let error: ErrorResponse = response.json().await.expect("error body");
+        assert_eq!(error.code, ErrorCode::UpstreamTransient);
+        assert!(error.retryable);
+        let healthz = client
+            .get(format!("{base}/healthz"))
+            .send()
+            .await
+            .expect("send");
+        assert_eq!(healthz.status(), 503);
+
+        cancel.cancel();
+        server.await.expect("join");
     }
 }

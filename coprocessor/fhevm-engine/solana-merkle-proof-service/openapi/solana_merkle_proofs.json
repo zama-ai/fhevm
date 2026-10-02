@@ -52,7 +52,7 @@
             }
           },
           "401": {
-            "description": "Missing or wrong API key",
+            "description": "Request signature refused",
             "content": {
               "application/json": {
                 "schema": {
@@ -62,7 +62,7 @@
             }
           },
           "502": {
-            "description": "Leaf record unavailable",
+            "description": "Leaf record or KMS tx-sender set unavailable",
             "content": {
               "application/json": {
                 "schema": {
@@ -74,7 +74,7 @@
         },
         "security": [
           {
-            "bearer": []
+            "request_authorization": []
           }
         ]
       }
@@ -253,9 +253,11 @@
       }
     },
     "securitySchemes": {
-      "bearer": {
-        "type": "http",
-        "scheme": "bearer"
+      "request_authorization": {
+        "type": "apiKey",
+        "in": "header",
+        "name": "Authorization",
+        "description": "`Zama-EIP712 expires=<unix seconds>, signature=0x<65 bytes>`: an EIP-712 `RequestAuthorization(string path, bytes32 bodyDigest, uint64 expires)` signature, domain `{name: \"zama-request-authorization\", version: \"1\", chainId: <canonical ProtocolConfig chain>}`, by the tx-sender of a node in a live KMS context. `bodyDigest` is the keccak-256 of the exact body; `expires` is at most 300 s ahead."
       }
     }
   }

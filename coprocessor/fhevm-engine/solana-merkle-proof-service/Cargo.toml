@@ -18,12 +18,14 @@ test = false
 bench = false
 
 [dependencies]
+alloy = { workspace = true }
 anyhow = { workspace = true }
 axum = { workspace = true }
 bs58 = "0.5.1"
 clap = { workspace = true }
 hex = { workspace = true }
 serde = { workspace = true, features = ["derive"] }
+serde_json = { workspace = true }
 sqlx = { workspace = true }
 thiserror = { workspace = true }
 tokio = { workspace = true }
@@ -33,6 +35,8 @@ tracing = { workspace = true }
 utoipa = { workspace = true }
 
 fhevm-engine-common = { path = "../fhevm-engine-common" }
+fhevm_host_bindings = { path = "../../../host-contracts/rust_bindings", default-features = false }
+request-authorization = { path = "../../../shared/request-authorization" }
 solana-host-follower = { path = "../solana-host-follower" }
 # Leaf commitments and MMR of the RFC 035 leaf record, shared with the on-chain host.
 zama-solana-acl = { path = "../../../solana/crates/zama-solana-acl" }
@@ -42,7 +46,6 @@ zama-solana-acl = { path = "../../../solana/crates/zama-solana-acl" }
 anchor-lang = "1.2.0"
 zama-host = { path = "../../../solana/programs/zama-host", default-features = false, features = ["no-entrypoint", "decode"] }
 reqwest = { workspace = true, features = ["json"] }
-serde_json = { workspace = true }
 serial_test = { workspace = true }
 solana-sdk = "3.0"
 test-harness = { path = "../test-harness" }

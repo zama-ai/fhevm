@@ -16,6 +16,9 @@ INDEXER = "coprocessor-1-solana-merkle-indexer"
 PROOF_SERVER = "coprocessor-1-solana-merkle-proof-server"
 # deploy-preview.sh sets it on every rollout.
 START_SLOT = ["--set-string", "solanaHostListener.merkleIndexer.startSlot=4242"]
+# deploy-preview.sh merges the Solana values into the party's coprocessor release.
+COPROCESSOR = [ROOT / "ci/preview-env/coprocessor/values-coprocessor-e2e.yaml",
+               VALUES / "values-solana-coprocessor-e2e.yaml"]
 ROUTES = [{"url": f"http://{PROOF_SERVER}:8080", "apiKey": "$(SOLANA_PROOF_API_KEY)"}]
 
 
@@ -29,7 +32,7 @@ def render(release, chart, values, *options):
 def render_error(*options):
     """Renders the Solana coprocessor values with `options` and returns why Helm refused."""
     result = subprocess.run(["helm", "template", "coprocessor-1", str(ROOT / "charts/coprocessor"),
-                             "-f", str(VALUES / "values-solana-coprocessor-e2e.yaml"), *options],
+                             *[option for values in COPROCESSOR for option in ["-f", str(values)]], *options],
                             capture_output=True, text=True)
     assert result.returncode != 0, "the chart rendered"
     return result.stderr
@@ -54,8 +57,7 @@ class SolanaCharts(unittest.TestCase):
                 self.assertFalse(any("TOKEN_KEYPAIR" in e["name"] for e in container["env"]))
 
     def test_the_merkle_service_has_its_own_database_and_keeps_proofs_private(self):
-        documents = render("coprocessor-1", "coprocessor", [ROOT / "ci/preview-env/coprocessor/values-coprocessor-e2e.yaml",
-                            VALUES / "values-solana-coprocessor-e2e.yaml"], *START_SLOT)
+        documents = render("coprocessor-1", "coprocessor", COPROCESSOR, *START_SLOT)
         deployments = {}
         for name, database in [(LISTENER, "fhevm_e2e"), (INDEXER, "solana_merkle"), (PROOF_SERVER, "solana_merkle")]:
             deployment = next(d for d in documents if d and d["kind"] == "Deployment" and d["metadata"]["name"] == name)
@@ -71,7 +73,7 @@ class SolanaCharts(unittest.TestCase):
             writer, writer_env = deployments[name]
             self.assertEqual(writer["spec"]["replicas"], 1)
             self.assertEqual(writer["spec"]["strategy"]["type"], "Recreate")
-            self.assertNotIn("SOLANA_PROOF_API_KEY", writer_env)
+            self.assertNotIn("ETHEREUM_RPC_URL", writer_env)
         indexer, indexer_env = deployments[INDEXER]
         indexer_container = indexer["spec"]["template"]["spec"]["containers"][0]
         self.assertEqual(indexer_container["command"], ["solana_merkle_indexer"])
@@ -79,7 +81,9 @@ class SolanaCharts(unittest.TestCase):
         self.assertEqual(indexer_env["SOLANA_GRPC_URL"]["valueFrom"]["secretKeyRef"]["name"], "solana-rpc")
         server, server_env = deployments[PROOF_SERVER]
         self.assertEqual(server["spec"]["template"]["spec"]["containers"][0]["command"], ["solana_merkle_proof_server"])
-        self.assertEqual(server_env["SOLANA_PROOF_API_KEY"]["valueFrom"]["secretKeyRef"]["name"], "solana-proof-api")
+        self.assertEqual(server_env["ETHEREUM_RPC_URL"]["value"], "http://anvil-host-anvil-node:8545")
+        self.assertEqual(server_env["PROTOCOL_CONFIG_ADDRESS"]["valueFrom"]["configMapKeyRef"],
+                         {"name": "host-sc-addresses", "key": "protocol_config.address"})
         service = next(d for d in documents if d and d["kind"] == "Service" and d["metadata"]["name"] == PROOF_SERVER)
         self.assertEqual(service["spec"]["type"], "ClusterIP")
         self.assertEqual(service["spec"]["selector"], server["spec"]["selector"]["matchLabels"])
@@ -91,7 +95,7 @@ class SolanaCharts(unittest.TestCase):
         self.assertIn("solanaHostListener.merkleIndexer.startSlot is required", render_error())
 
     def test_a_numeric_start_slot_renders_as_an_integer(self):
-        documents = render("coprocessor-1", "coprocessor", [VALUES / "values-solana-coprocessor-e2e.yaml"],
+        documents = render("coprocessor-1", "coprocessor", COPROCESSOR,
                            "--set-json", "solanaHostListener.merkleIndexer.startSlot=312000000")
         indexer = next(d for d in documents if d and d["kind"] == "Deployment" and d["metadata"]["name"] == INDEXER)
         env = {e["name"]: e for e in indexer["spec"]["template"]["spec"]["containers"][0]["env"]}
@@ -105,8 +109,18 @@ class SolanaCharts(unittest.TestCase):
         self.assertIn("solanaHostListener.merkleDatabaseUrl is required",
                       render_error(*START_SLOT, "--set", "solanaHostListener.merkleDatabaseUrl="))
 
+    def test_the_proof_server_requires_the_canonical_chain(self):
+        self.assertIn("commonConfig.canonicalProtocolConfigChainId is required",
+                      render_error(*START_SLOT, "--set", "commonConfig.canonicalProtocolConfigChainId="))
+        self.assertIn("needs a chains entry with chainId 1, the canonicalProtocolConfigChainId",
+                      render_error(*START_SLOT, "--set-string", "commonConfig.canonicalProtocolConfigChainId=1"))
+        self.assertIn("chains entry host needs httpUrl or httpUrlValueFrom",
+                      render_error(*START_SLOT, "--set", "chains[0].httpUrl="))
+        self.assertIn("chains entry host needs protocolConfigContractAddress",
+                      render_error(*START_SLOT, "--set", "chains[0].protocolConfigContractAddressValueFrom=null"))
+
     def test_iam_certificate_is_a_volume_list(self):
-        documents = render("coprocessor-1", "coprocessor", [VALUES / "values-solana-coprocessor-e2e.yaml"],
+        documents = render("coprocessor-1", "coprocessor", COPROCESSOR,
                            "--set", "commonConfig.databaseAuthMode=iam",
                            "--set", "commonConfig.databaseSslRootCert.enabled=true", *START_SLOT)
         for name in [LISTENER, INDEXER, PROOF_SERVER]:
