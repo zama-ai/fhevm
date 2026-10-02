@@ -4,15 +4,14 @@ Minimal first version of the relayer's HTTP layer: two synchronous decryption ro
 one port, with raw axum. Reading order: this file, `mod.rs`, `flows/user_decrypt.rs`, `flows/public_decrypt.rs`,
 `validate.rs`, `error.rs`.
 
-The routes are experimental (`/v4/exp/`): the request and response payloads may be simplified or extended in later
-iterations, and the error mapping is a first version (section 5).
+The error mapping is a first version (section 5).
 
 ## 1. Routes
 
 | method | path | purpose |
 |---|---|---|
-| `POST` | `/v4/exp/user-decrypt` | user decryption: the KMS nodes' signcrypted shares for the caller's public key |
-| `POST` | `/v4/exp/public-decrypt` | public decryption: the plaintexts and the KMS signatures over them |
+| `POST` | `/v4/user-decrypt` | user decryption: the KMS nodes' signcrypted shares for the caller's public key |
+| `POST` | `/v4/public-decrypt` | public decryption: the plaintexts and the KMS signatures over them |
 | `GET` | `/liveness` | the process runs |
 | `GET` | `/healthz` | the pod is ready to serve (503 while shutting down) |
 
@@ -29,7 +28,7 @@ Hex fields are typed: a handle is 32 bytes, an
 address 20 bytes, `Bytes` any `0x`-prefixed hex; a wrong length or an unknown field is a `400 malformed` naming the
 field. The body must be `application/json`.
 
-### `POST /v4/exp/user-decrypt`
+### `POST /v4/user-decrypt`
 
 ```json
 {
@@ -62,7 +61,7 @@ Conversion to the connector request (`kms-connector-api::UserDecryptionRequest`)
 envelope topology (`attestationType`, `payload`, `signature`) with the relayer's field names, so a relayer-only field
 can be added later without touching the connector DTO.
 
-### `POST /v4/exp/public-decrypt`
+### `POST /v4/public-decrypt`
 
 ```json
 { "ciphertextHandles": ["0x0000000000000000000000000000000000000000000000000000000000010401"], "extraData": "0x00" }
@@ -235,7 +234,7 @@ Manual smoke, with the API key env vars set:
 
 ```sh
 cargo run -p relayer-http -- config/config.yaml
-curl -s -i localhost:8080/v4/exp/public-decrypt -H 'content-type: application/json' \
+curl -s -i localhost:8080/v4/public-decrypt -H 'content-type: application/json' \
   -d '{"ciphertextHandles":[],"extraData":"0x00"}'     # 400 malformed, "ciphertextHandles: must not be empty"
 curl -s localhost:8080/healthz                         # {"status":"ready"}
 ```

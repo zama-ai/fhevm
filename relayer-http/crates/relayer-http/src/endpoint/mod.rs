@@ -17,11 +17,8 @@ use crate::App;
 /// Every route of the process, on one port.
 pub fn router(app: App) -> Router {
     Router::new()
-        .route("/v4/exp/user-decrypt", post(flows::user_decrypt::handle))
-        .route(
-            "/v4/exp/public-decrypt",
-            post(flows::public_decrypt::handle),
-        )
+        .route("/v4/user-decrypt", post(flows::user_decrypt::handle))
+        .route("/v4/public-decrypt", post(flows::public_decrypt::handle))
         .route("/liveness", get(ops::liveness))
         .route("/healthz", get(ops::healthz))
         .fallback(error::not_found)
@@ -91,7 +88,7 @@ mod tests {
         let never = futures_util::stream::pending::<Result<bytes::Bytes, std::io::Error>>();
         let request = Request::builder()
             .method("POST")
-            .uri("/v4/exp/public-decrypt")
+            .uri("/v4/public-decrypt")
             .header(header::CONTENT_TYPE, "application/json")
             .body(Body::from_stream(never))
             .unwrap();
@@ -135,7 +132,7 @@ mod tests {
         let (status, request_id, body) = call(
             healthy(),
             "POST",
-            "/v4/exp/public-decrypt",
+            "/v4/public-decrypt",
             &flows::public_decrypt::tests::wire(),
         )
         .await;
@@ -150,7 +147,7 @@ mod tests {
     #[tokio::test]
     async fn user_decrypt_answers_the_envelope() {
         let (status, request_id, body) =
-            call(healthy(), "POST", "/v4/exp/user-decrypt", &user_wire()).await;
+            call(healthy(), "POST", "/v4/user-decrypt", &user_wire()).await;
         assert_eq!(status, StatusCode::OK, "{body}");
         assert_eq!(body["requestId"], request_id);
         assert_eq!(body["result"]["result"].as_array().unwrap().len(), 13);
@@ -177,8 +174,7 @@ mod tests {
             ),
         ];
         for (payload, expected) in cases {
-            let (status, id, body) =
-                call(healthy(), "POST", "/v4/exp/public-decrypt", payload).await;
+            let (status, id, body) = call(healthy(), "POST", "/v4/public-decrypt", payload).await;
             assert_eq!(status, StatusCode::BAD_REQUEST, "{payload}");
             assert_eq!(body["code"], "malformed");
             assert!(
@@ -195,7 +191,7 @@ mod tests {
             r#"{{"ciphertextHandles": [], "extraData": "0x{}"}}"#,
             "00".repeat(3000)
         );
-        let (status, _, body) = call(healthy(), "POST", "/v4/exp/public-decrypt", &big).await;
+        let (status, _, body) = call(healthy(), "POST", "/v4/public-decrypt", &big).await;
         assert_eq!(
             (status, body["code"].as_str().unwrap()),
             (StatusCode::BAD_REQUEST, "malformed")
@@ -205,7 +201,7 @@ mod tests {
             .oneshot(
                 Request::builder()
                     .method("POST")
-                    .uri("/v4/exp/public-decrypt")
+                    .uri("/v4/public-decrypt")
                     .header(header::CONTENT_TYPE, "text/plain")
                     .body(Body::from(flows::public_decrypt::tests::wire()))
                     .unwrap(),
@@ -222,7 +218,7 @@ mod tests {
             (status, body["code"].as_str().unwrap()),
             (StatusCode::NOT_FOUND, "not_found")
         );
-        let (status, _, body) = call(healthy(), "GET", "/v4/exp/public-decrypt", "").await;
+        let (status, _, body) = call(healthy(), "GET", "/v4/public-decrypt", "").await;
         assert_eq!(
             (status, body["code"].as_str().unwrap()),
             (StatusCode::METHOD_NOT_ALLOWED, "method_not_allowed")
@@ -232,7 +228,7 @@ mod tests {
     #[tokio::test]
     async fn aggregation_failure_is_the_dominant_connector_error() {
         let app = app(Reply::Error(ErrorCode::AclDenied), CancellationToken::new());
-        let (status, _, body) = call(app, "POST", "/v4/exp/user-decrypt", &user_wire()).await;
+        let (status, _, body) = call(app, "POST", "/v4/user-decrypt", &user_wire()).await;
         assert_eq!(status, StatusCode::FORBIDDEN, "{body}");
         assert_eq!(body["code"], "acl_denied");
         assert!(body["message"].as_str().unwrap().contains("0 of 9"));
@@ -256,7 +252,7 @@ mod tests {
         let (status, _, body) = call(
             app,
             "POST",
-            "/v4/exp/public-decrypt",
+            "/v4/public-decrypt",
             &flows::public_decrypt::tests::wire(),
         )
         .await;
@@ -294,10 +290,10 @@ mod tests {
     async fn every_endpoint_log_line_carries_the_identifiers() {
         let (_guard, sink) = capture_logs().await;
 
-        let (_, ok_id, _) = call(healthy(), "POST", "/v4/exp/user-decrypt", &user_wire()).await;
+        let (_, ok_id, _) = call(healthy(), "POST", "/v4/user-decrypt", &user_wire()).await;
         let no_key = user_wire().replace(r#""publicKey": "0x20002000""#, r#""publicKey": "0x""#);
-        call(healthy(), "POST", "/v4/exp/user-decrypt", &no_key).await;
-        call(healthy(), "POST", "/v4/exp/public-decrypt", r#"{"x":1}"#).await;
+        call(healthy(), "POST", "/v4/user-decrypt", &no_key).await;
+        call(healthy(), "POST", "/v4/public-decrypt", r#"{"x":1}"#).await;
 
         let lines = sink.lines("request ");
         let messages: Vec<&str> = lines
