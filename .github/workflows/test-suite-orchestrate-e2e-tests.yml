@@ -9,7 +9,7 @@ on:
   workflow_dispatch:
     inputs:
       run-threshold-legs:
-        description: "Also run the non-gating threshold-KMS legs (keygen, context-switch, node-swap)"
+        description: "Also run the non-gating secure-keygen KMS legs (keygen and 2t+1 quorum, context-switch, node-swap)"
         type: boolean
         default: false
       run-blue-green-leg:

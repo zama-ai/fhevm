@@ -48,19 +48,24 @@ const fourParty = resolveKmsTopology({ mode: "threshold", parties: 4, threshold:
 const swapTopology = resolveKmsTopology({ mode: "threshold", parties: 5, threshold: 1, committeeSize: 4 });
 
 describe("resolveKmsTopology", () => {
-  test("absent block keeps today's centralized single node", () => {
+  test("absent block is the 4-party cluster with insecure keygen and Default params", () => {
     expect(resolveKmsTopology(undefined)).toEqual({
-      mode: "centralized",
-      parties: 1,
+      parties: 4,
       threshold: 1,
-      committeeSize: 1,
+      committeeSize: 4,
       fheParams: "Default",
+      insecureTestKeygen: true,
     });
   });
 
-  test("threshold defaults to 4 parties / t=1 / Test params", () => {
+  test("rejects the removed centralized mode", () => {
+    expect(() =>
+      resolveKmsTopology({ mode: "centralized" } as unknown as Parameters<typeof resolveKmsTopology>[0]),
+    ).toThrow(/centralized KMS is no longer supported/);
+  });
+
+  test("a present block defaults to 4 parties / t=1 / Test params with secure keygen", () => {
     expect(resolveKmsTopology({ mode: "threshold" })).toEqual({
-      mode: "threshold",
       parties: 4,
       threshold: 1,
       committeeSize: 4,
@@ -111,8 +116,7 @@ describe("resolveKmsTopology", () => {
     );
   });
 
-  test("insecure test keygen is explicit, threshold-only, and routes every party", () => {
-    expect(() => resolveKmsTopology({ mode: "centralized", insecureTestKeygen: true })).toThrow(/threshold/);
+  test("insecure test keygen is explicit and routes every party", () => {
     expect(() => resolveKmsTopology({ mode: "threshold", insecureTestKeygen: "true" as unknown as boolean })).toThrow(/boolean/);
     const topology = resolveKmsTopology({ mode: "threshold", fheParams: "Default", insecureTestKeygen: true });
     const services = buildKmsThresholdOverride(topology, RENDER_OPTS).services;
@@ -125,17 +129,13 @@ describe("resolveKmsTopology", () => {
     expect(Object.keys(buildKmsThresholdOverride(fourParty, RENDER_OPTS).services).some(name => name.startsWith("kms-test-keygen-proxy"))).toBe(false);
   });
 
-  test("rejects Test params for centralized (it would be a silent no-op)", () => {
-    expect(() => resolveKmsTopology({ mode: "centralized", fheParams: "Test" })).toThrow(/threshold/);
-  });
-
   test("rejects an empty `kms:` key (YAML null) instead of crashing", () => {
     expect(() => resolveKmsTopology(null as unknown as undefined)).toThrow(/must be a map/);
   });
 
-  test("rejects unknown fheParams values in centralized mode (e.g. a typo)", () => {
+  test("rejects unknown fheParams values (e.g. a typo)", () => {
     expect(() =>
-      resolveKmsTopology({ mode: "centralized", fheParams: "default" as unknown as "Default" }),
+      resolveKmsTopology({ fheParams: "default" as unknown as "Default" }),
     ).toThrow(/must be "Test" or "Default"/);
   });
 });
@@ -215,10 +215,6 @@ describe("buildKmsThresholdOverride", () => {
     for (const name of ["kms-core-gen-keys", "kms-core", "kms-core-4", "kms-core-init"]) {
       expect(services[name].platform).toBe("linux/amd64");
     }
-  });
-
-  test("rejects a non-threshold topology", () => {
-    expect(() => buildKmsThresholdOverride(resolveKmsTopology(undefined), RENDER_OPTS)).toThrow();
   });
 
   test("each core runs the binary directly (no shell), with config + creds from env", () => {
@@ -327,7 +323,7 @@ describe("buildKmsConnectorOverride (--override kms-connector)", () => {
       versions: presetBundle("latest-main", "abcdef0", "latest-main.json"),
       kmsConnectorDeploymentByNodeId,
       overrides,
-      scenario: testDefaultScenario({ kms: { mode: "threshold", parties: 4, threshold: 1, committeeSize: 4, fheParams: "Test" } }),
+      scenario: testDefaultScenario({ kms: { parties: 4, threshold: 1, committeeSize: 4, fheParams: "Test" } }),
     });
 
   test("without an override every party runs the resolved published image (no build specs)", async () => {
@@ -441,7 +437,7 @@ describe("renderEnvMaps (threshold)", () => {
       requiresGitHub: true,
       versions: presetBundle("latest-main", "abcdef0", "latest-main.json"),
       overrides: [],
-      scenario: testDefaultScenario({ kms: { mode: "threshold", parties: 4, threshold: 1, committeeSize: 4, fheParams: "Test" } }),
+      scenario: testDefaultScenario({ kms: { parties: 4, threshold: 1, committeeSize: 4, fheParams: "Test" } }),
       completedSteps: [],
       updatedAt: "2026-03-30T00:00:00.000Z",
     };
@@ -551,16 +547,17 @@ describe("buildHostScSwapEnv / buildGatewayScSwapEnv (node swap)", () => {
   });
 });
 
-describe("resolveUpgradePlan (threshold guard)", () => {
+describe("resolveUpgradePlan (KMS groups)", () => {
   const thresholdState = {
     overrides: [],
-    scenario: testDefaultScenario({ kms: { mode: "threshold", parties: 4, threshold: 1, committeeSize: 4, fheParams: "Test" } }),
+    scenario: testDefaultScenario({ kms: { parties: 4, threshold: 1, committeeSize: 4, fheParams: "Test" } }),
   };
 
-  test("refuses to upgrade the single-core/connector KMS groups on a threshold-mode cluster", () => {
-    expect(() => resolveUpgradePlan(thresholdState, "kms", { lockFile: true })).toThrow(/threshold-mode KMS/);
-    expect(() => resolveUpgradePlan(thresholdState, "kms-core", { lockFile: true })).toThrow(/threshold-mode KMS/);
-    expect(() => resolveUpgradePlan(thresholdState, "kms-connector", { lockFile: true })).toThrow(/operator-paired/);
+  test("keeps the KMS groups out of group plans", () => {
+    for (const group of ["kms", "kms-core"]) {
+      expect(() => resolveUpgradePlan(thresholdState, group, { lockFile: true })).toThrow(/handled per operator/);
+    }
+    expect(() => resolveUpgradePlan(thresholdState, "kms-connector", { lockFile: true })).toThrow(/not supported yet/);
   });
 });
 
@@ -575,7 +572,7 @@ describe("upgradeThresholdKmsNode", () => {
         versions,
         overrides: [],
         scenario: testDefaultScenario({
-          kms: { mode: "threshold", parties: 4, threshold: 1, committeeSize: 4, fheParams: "Test" },
+          kms: { parties: 4, threshold: 1, committeeSize: 4, fheParams: "Test" },
         }),
         completedSteps: ["base"],
         updatedAt: "2026-07-14T00:00:00.000Z",
@@ -636,7 +633,7 @@ describe("upgradeThresholdKmsNode", () => {
         versions,
         overrides: [],
         scenario: testDefaultScenario({
-          kms: { mode: "threshold", parties: 4, threshold: 1, committeeSize: 4, fheParams: "Test" },
+          kms: { parties: 4, threshold: 1, committeeSize: 4, fheParams: "Test" },
         }),
         completedSteps: ["base"],
         updatedAt: "2026-07-14T00:00:00.000Z",
@@ -682,7 +679,7 @@ describe("upgradeThresholdKmsNode", () => {
         versions,
         overrides: [],
         scenario: testDefaultScenario({
-          kms: { mode: "threshold", parties: 5, threshold: 1, committeeSize: 4, fheParams: "Test" },
+          kms: { parties: 5, threshold: 1, committeeSize: 4, fheParams: "Test" },
         }),
         completedSteps: ["base"],
         updatedAt: "2026-07-14T00:00:00.000Z",
@@ -721,7 +718,7 @@ describe("upgradeThresholdKmsNode", () => {
   test("rejects a spare node before changing runtime artifacts", async () => {
     const state = {
       scenario: testDefaultScenario({
-        kms: { mode: "threshold", parties: 5, threshold: 1, committeeSize: 4, fheParams: "Test" },
+        kms: { parties: 5, threshold: 1, committeeSize: 4, fheParams: "Test" },
       }),
       completedSteps: ["base"],
     } as State;
@@ -756,7 +753,7 @@ describe("upgradeThresholdKmsOperator", () => {
         versions,
         overrides: [],
         scenario: testDefaultScenario({
-          kms: { mode: "threshold", parties: 4, threshold: 1, committeeSize: 4, fheParams: "Test" },
+          kms: { parties: 4, threshold: 1, committeeSize: 4, fheParams: "Test" },
         }),
         completedSteps: ["base"],
         updatedAt: "2026-07-14T00:00:00.000Z",
@@ -857,7 +854,7 @@ describe("upgradeThresholdKmsOperator", () => {
         versions,
         overrides: [],
         scenario: testDefaultScenario({
-          kms: { mode: "threshold", parties: 4, threshold: 1, committeeSize: 4, fheParams: "Test" },
+          kms: { parties: 4, threshold: 1, committeeSize: 4, fheParams: "Test" },
         }),
         completedSteps: ["base"],
         updatedAt: "2026-07-14T00:00:00.000Z",
@@ -928,7 +925,7 @@ describe("upgradeThresholdKmsOperator", () => {
   test("blocks before shutdown when a remaining quorum operator is not ready", async () => {
     const state = {
       scenario: testDefaultScenario({
-        kms: { mode: "threshold", parties: 4, threshold: 1, committeeSize: 4, fheParams: "Test" },
+        kms: { parties: 4, threshold: 1, committeeSize: 4, fheParams: "Test" },
       }),
     } as State;
     await expect(
@@ -946,7 +943,7 @@ describe("upgradeThresholdKmsOperator", () => {
   test("allows a larger committee to proceed when the ready operators still meet reconstruction quorum", async () => {
     const state = {
       scenario: testDefaultScenario({
-        kms: { mode: "threshold", parties: 7, threshold: 2, committeeSize: 7, fheParams: "Test" },
+        kms: { parties: 7, threshold: 2, committeeSize: 7, fheParams: "Test" },
       }),
     } as State;
     await expect(
@@ -964,7 +961,7 @@ describe("upgradeThresholdKmsOperator", () => {
   test("accepts running Connector services without Docker healthchecks", async () => {
     const state = {
       scenario: testDefaultScenario({
-        kms: { mode: "threshold", parties: 4, threshold: 1, committeeSize: 4, fheParams: "Test" },
+        kms: { parties: 4, threshold: 1, committeeSize: 4, fheParams: "Test" },
       }),
     } as State;
     await expect(
@@ -982,7 +979,7 @@ describe("upgradeThresholdKmsOperator", () => {
   test("counts a running Connector as unavailable until its readiness signals are present", async () => {
     const state = {
       scenario: testDefaultScenario({
-        kms: { mode: "threshold", parties: 4, threshold: 1, committeeSize: 4, fheParams: "Test" },
+        kms: { parties: 4, threshold: 1, committeeSize: 4, fheParams: "Test" },
       }),
     } as State;
     await expect(
@@ -1000,7 +997,7 @@ describe("upgradeThresholdKmsOperator", () => {
   test("rejects spare topologies before changing runtime artifacts", async () => {
     const state = {
       scenario: testDefaultScenario({
-        kms: { mode: "threshold", parties: 5, threshold: 1, committeeSize: 4, fheParams: "Test" },
+        kms: { parties: 5, threshold: 1, committeeSize: 4, fheParams: "Test" },
       }),
       completedSteps: ["base"],
     } as State;

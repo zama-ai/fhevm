@@ -423,11 +423,11 @@ jobs:
             snapshot_logs "${label} - ZKProof Worker" "${prefix}-zkproof-worker"
             snapshot_logs "${label} - TFHE Worker" "${prefix}-tfhe-worker"
           done
-          # Threshold-mode KMS only (no-op on a centralized single-core stack): party 1 is the bare
-          # `kms-core` / `kms-connector-*` already captured above; parties 2..N use the `-{i}-`
-          # suffix. Use `docker ps -a` so a crashed or exited party core/connector (the usual
-          # threshold flake) still has its logs surfaced. `kms-core-init` is the one-shot
-          # PRSS/epoch setup; gen-keys is dropped before boot so it is not expected here.
+          # Party 1 of the KMS cluster is the bare `kms-core` / `kms-connector-*` already
+          # captured above; parties 2..N use the `-{i}-` suffix. Use `docker ps -a` so a crashed
+          # or exited party core/connector (the usual threshold flake) still has its logs
+          # surfaced. `kms-core-init` is the one-shot PRSS/epoch setup; gen-keys is dropped
+          # before boot so it is not expected here.
           snapshot_logs "KMS Core Init" kms-core-init
           for core in $(docker ps -a --format '{{.Names}}' | grep -E '^kms-core-[0-9]+$' | sort); do
             snapshot_logs "KMS Core (${core})" "${core}"

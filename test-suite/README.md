@@ -6,10 +6,7 @@ For overview of the system, architecture and details on individual components, r
 
 ## Main features
 
-KMS can be configured to two modes:
-
-- Centralized
-- Threshold
+The KMS runs as a threshold cluster: by default 4 parties (t=1) with fast insecure keygen and Default FHE params. A scenario's `kms` block can change the topology or select a secure MPC keygen (see `fhevm/README.md`).
 
 ## Table of contents
 
@@ -96,19 +93,7 @@ When specifying individual services, use the short suffix after the group prefix
 
 ### Resuming a deployment
 
-If a boot fails mid-way, you can resume from a specific step:
-
-```sh
-./fhevm-cli up --resume --from-step kms-connector
-```
-
-Resume steps (in order):
-`preflight`, `resolve`, `generate`, `base`, `kms-signer`, `gateway-deploy`, `host-deploy`, `discover`,
-`regenerate`, `validate`, `coprocessor`, `kms-connector`, `bootstrap`, `relayer`, `test-suite`.
-
-When resuming:
-- Steps before the resume step are preserved
-- Steps from the resume step onward are regenerated and restarted under `.fhevm`
+`--resume` and `--from-step` are not supported with the threshold KMS cluster: the resume lifecycle map models a single `kms-core` and connector, and would leave the other parties stale. If a boot fails mid-way, run `./fhevm-cli up` again to recreate the stack.
 
 ## Security policy
 

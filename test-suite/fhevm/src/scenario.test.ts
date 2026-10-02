@@ -260,7 +260,7 @@ bootstrap:
   tag: v0.14.2-0
 `);
       const resolved = resolveBlueGreenScenario("/tmp/bootstrap.yaml", parsed);
-      expect(resolved.kms.mode).toBe("threshold");
+      expect(resolved.kms.parties).toBe(4);
       expect(resolved.bootstrap).toEqual({ tag: "v0.14.2-0" });
     });
 

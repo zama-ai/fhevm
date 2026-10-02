@@ -851,8 +851,8 @@ const buildCoprocessorOverride = async (plan: StackSpec) => {
  * Each party's services read `kms-connector[.i].env` (own core endpoint, signer
  * key, DB) and depend on that party's own db-migration.
  *
- * `--override kms-connector` behaves exactly as in centralized mode: overridden
- * services run the locally built image on EVERY party. Only the party-1 (base
+ * `--override kms-connector` makes overridden services run the locally built
+ * image on EVERY party. Only the party-1 (base
  * name) clone carries the build spec — maybeBuild builds by base service name —
  * so the image is built once and parties 2..N reference the same tag. Without
  * an override every party runs the resolved published image (secure threshold
@@ -959,12 +959,8 @@ const buildComposeOverride = async (component: string, plan: StackSpec) => {
   if (component === "coprocessor") {
     return buildCoprocessorOverride(plan);
   }
-  if (component === "core") {
-    return { services: { "kms-core": { image: kmsRenderOptionsFor(plan.versions.env.CORE_VERSION).coreImage } } };
-  }
   if (component === "core-threshold") {
-    // Dedicated threshold-cluster component (gen-keys + N cores + kms-init).
-    // Separate from `core` so it never merges with the centralized template.
+    // The KMS cluster component (gen-keys + N cores + kms-init).
     return buildKmsThresholdOverride(
       plan.kms,
       kmsRenderOptionsFor(plan.versions.env.CORE_VERSION),
@@ -972,7 +968,7 @@ const buildComposeOverride = async (component: string, plan: StackSpec) => {
       plan.kmsMigrationByNodeId,
     );
   }
-  if (component === "kms-connector" && plan.kms.mode === "threshold") {
+  if (component === "kms-connector") {
     // One connector per KMS party (each cores↔connector pair is independent).
     return buildKmsConnectorOverride(plan);
   }
@@ -1168,7 +1164,8 @@ export const generatedComposeComponents = (plan: Pick<StackSpec, "overrides" | "
     // Always generated: it carries the host Docker socket wiring for the e2e runner,
     // which depends on host facts rather than on any local build override.
     "test-suite",
-    ...(plan.kms.mode === "threshold" ? ["core-threshold", "kms-connector"] : ["core"]),
+    "core-threshold",
+    "kms-connector",
     ...plan.overrides.flatMap((override) => GROUP_BUILD_COMPONENTS[override.group]),
   ]);
 

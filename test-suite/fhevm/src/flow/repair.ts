@@ -23,6 +23,7 @@ import { extraHostChains, hostChainsForState } from "./topology";
 
 const UPGRADEABLE_GROUPS = ["coprocessor", "kms-connector", "kms-core", "kms", "listener-core", "relayer", "test-suite"] as const;
 export type UpgradeGroup = (typeof UPGRADEABLE_GROUPS)[number];
+const CLI_UPGRADEABLE_GROUPS: readonly UpgradeGroup[] = ["coprocessor", "listener-core", "relayer", "test-suite"];
 const UPGRADE_VERSION_KEYS: Record<UpgradeGroup, string[]> = {
   "coprocessor": [
     "COPROCESSOR_DB_MIGRATION_VERSION",
@@ -174,32 +175,18 @@ export const resolveUpgradePlan = (
   groupValue: string | undefined,
   options: { lockFile?: boolean } = {},
 ) => {
-  if (!groupValue || !UPGRADEABLE_GROUPS.includes(groupValue as UpgradeGroup)) {
-    throw new Error(`upgrade expects one of ${UPGRADEABLE_GROUPS.join(", ")}`);
-  }
-  const group = groupValue as UpgradeGroup;
-  const lockFileMode = options.lockFile === true;
-  // A threshold KMS Core and its matching Connector are one rollout unit. Generic group upgrades
-  // cannot preserve that boundary, so threshold deployments must use the paired operator primitive.
-  if ((group === "kms" || group === "kms-core" || group === "kms-connector") && state.scenario.kms.mode === "threshold") {
+  if (groupValue === "kms" || groupValue === "kms-core" || groupValue === "kms-connector") {
     throw new Error(
-      `upgrade ${group} is not supported for a threshold-mode KMS cluster; use the operator-paired rollout primitive`,
+      groupValue === "kms-connector"
+        ? "upgrade kms-connector is not supported yet; use `upgrade kms`"
+        : `upgrade ${groupValue} is handled per operator`,
     );
   }
-  if (group === "kms") {
-    if (!lockFileMode) {
-      throw new Error("upgrade kms requires --lock-file");
-    }
-    const core = splitServices("core", ["kms-core"]);
-    const connector = splitServices("kms-connector", kmsConnectorServices(state));
-    return upgradePlan(group, [core, connector], ["base", "kms-connector"]);
+  if (!groupValue || !CLI_UPGRADEABLE_GROUPS.includes(groupValue as UpgradeGroup)) {
+    throw new Error(`upgrade expects one of ${[...CLI_UPGRADEABLE_GROUPS, "kms", "kms-core"].join(", ")}`);
   }
-  if (group === "kms-core") {
-    if (!lockFileMode) {
-      throw new Error("upgrade kms-core requires --lock-file");
-    }
-    return upgradePlan(group, [splitServices("core", ["kms-core"])], ["base"]);
-  }
+  const group = groupValue as Exclude<UpgradeGroup, "kms" | "kms-core" | "kms-connector">;
+  const lockFileMode = options.lockFile === true;
   if (group === "listener-core") {
     if (lockFileMode) {
       return upgradePlan(group, [splitServices("listener-core", LISTENER_CORE_SERVICES)], ["listener-core"]);
@@ -217,7 +204,7 @@ export const resolveUpgradePlan = (
     throw new Error(`No runtime component registered for ${group}`);
   }
   const selectedServices = groupOverrides.flatMap((item) => item.services ?? []);
-  const groupServices = group === "kms-connector" ? kmsConnectorServices(state) : GROUP_BUILD_SERVICES[group];
+  const groupServices = GROUP_BUILD_SERVICES[group];
   const fullGroupServices = groupOverrides.length && !selectedServices.length
     ? group === "coprocessor"
       ? coprocessorServices(state)
