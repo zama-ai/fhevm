@@ -2291,6 +2291,20 @@ const executeUpgradePlan = async (nextState: State, plan: ReturnType<typeof reso
   await waitForUpgrade(nextState, plan.group, plan.runtimeServices);
 };
 
+/** Retries the operator-upgrade quorum gate until the other operators are ready again. */
+const waitForKmsOperatorUpgradeQuorum = async (state: State, operatorId: number, attempts = 36) => {
+  for (let attempt = 1; ; attempt += 1) {
+    try {
+      return await assertKmsOperatorUpgradeQuorum(state, operatorId);
+    } catch (error) {
+      if (!(error instanceof PreflightError) || attempt >= attempts) {
+        throw error;
+      }
+      await Bun.sleep(5_000);
+    }
+  }
+};
+
 /** The active KMS context and its epoch, which a 0.15+ core must be told own pre-0.15 material. */
 const activeKmsEpochMigration = async (state: State) => {
   const target = resolveKmsGenerationTarget(state);
@@ -2387,6 +2401,9 @@ const completeBootstrap = async (state: State) => {
     for (const operatorId of kmsPartyIds(state.scenario.kms.parties)) {
       await once(`kms-operator:${operatorId}`, async () => {
         console.log(`[bootstrap] key material ingested; upgrading KMS operator ${operatorId} to the bundle`);
+        // The previous operator only waited for running containers; let its connector settle
+        // before the next one goes down, or the quorum gate sees it as unavailable.
+        await waitForKmsOperatorUpgradeQuorum(state, operatorId);
         await upgradeThresholdKmsOperator(operatorId, { lockFile, overrides, migration });
         // Keep this `pending`, which `once` records progress on, and the bundle's own lock.
         Object.assign(state, await loadState(), { bootstrapPending: pending, target, lockPath, requiresGitHub });
