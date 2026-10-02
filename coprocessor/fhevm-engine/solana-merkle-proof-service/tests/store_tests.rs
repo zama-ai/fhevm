@@ -70,7 +70,7 @@ impl ProofClient {
         self.send(body, &authorization).await
     }
 
-    /// The body of `request` and its authorization header, valid for a minute.
+    /// The body of `request` and its authorization header, valid for 30 seconds as the connector signs.
     async fn sign(&self, request: &MerkleProofRequest) -> (Vec<u8>, String) {
         let mut body = Vec::new();
         ciborium::into_writer(request, &mut body).expect("encode");
