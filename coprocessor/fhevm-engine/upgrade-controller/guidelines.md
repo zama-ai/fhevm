@@ -43,7 +43,7 @@ The upgrade is driven by one on-chain `proposeCoprocessorUpgrade` call; everythi
 | Proposal | Send the proposal (devnet: broadcast; testnet: DAO) | Generate in-window host traffic so the dry-run has real work |
 | Dry-run | Watch operator logs/health | Watch `upgrade_state` + S3 convergence across operators |
 | Cutover | Confirm version bump + schema drop on every operator | Run post-cutover functional + decryption tests |
-| Rollback | Reset `consensus_version` to baseline, re-propose if needed | Re-run tests after rollback to confirm Blue is intact |
+
 
 ## Pre-flight checklist
 
@@ -94,6 +94,8 @@ and check Green pod logs for the resolved mode (it logs `gcs_mode` resolved from
 
 ## Step 3 - Send the upgrade proposal
 
+> For the contracts-side detail of this step (task reference, parameters, and the DAO flow), see the host-contracts [Coprocessor upgrade runbook](https://github.com/zama-ai/fhevm/blob/9957e9c44ac34f97e37aaf05c0b72f8f2e5bd125/host-contracts/COPROCESSOR_UPGRADE_RUNBOOK.md).
+
 The proposal is one on-chain `ProtocolConfig.proposeCoprocessorUpgrade(proposalId, softwareVersion, chainUpgradeWindows[], gwStartBlock)`. Use the host-contracts tasks - they sample block times per chain, compute one `[startBlock, endBlock]` per host chain, and **pin `gwStartBlock` to the current gateway tip** (do not hand-pick block numbers).
 
 **Devnet (no DAO) - broadcast directly:**
@@ -116,7 +118,7 @@ npx hardhat task:proposeCoprocessorUpgrade \
 **Testnet (DAO path):** build the calldata and route it through the DAO instead of broadcasting:
 
 ```
-npx hardhat task:buildProposeCoprocessorUpgradeCalldata --environment testnet --duration 30m --buffer <DAO-lead> --proposal-id <int> --software-version v0.15.0 --network <host-network>
+npx hardhat task:buildProposeCoprocessorUpgradeCalldata --environment testnet --start-time <ISO8601 UTC, e.g. 2026-10-02T12:00:00Z> --duration 30m --buffer <DAO-lead> --proposal-id <int> --software-version v0.15.0 --network <host-network>
 ```
 
 Submit the printed Aragon calldata as the DAO proposal; `gwStartBlock` is still pinned to the gateway tip, and the DAO signing lead keeps `startBlock` in the past by the time it executes.
@@ -156,6 +158,17 @@ Cutover is **automatic** once both tracks reach consensus inside the window - yo
 - v0.14.0 Service logs errors indicating that it's been retired.
 
 If some operators cut over and others do not inside a reasonable margin, treat it as a split: stop the lagging operators, do not let them rejoin on the old version, and go to rollback/recovery. There will be CLI tool that will facilitate the healing process.
+
+## Step 6 - Retire & scale down Blue (BCS)
+
+Cutover flips the version but does **not** stop the old Blue fleet - the BCS pods keep running. Their stack-version listener puts them into no-op mode: every write path is guarded (it can no longer touch the DB), so they do no useful work and just log info-level `... skipping ... on retired stack` lines on each cycle. They still consume CPU, memory, and - importantly - **DB connection-pool slots** against the shared Postgres, so leaving them up wastes resources and eats into `max_connections` for no reason.
+
+Once cutover is verified healthy on **every** operator (checks above), scale the Blue fleet to zero. Blue cannot resume on its own anyway - the schema was merged and `consensus_version` bumped, so a return to the old version requires the rollback/recovery procedure, not just restarting these pods.
+
+- k8s: scale each operator's Blue (non-`-gcs-`) deployment set to 0 replicas (host-listener, gw-listener, tfhe-worker, sns-worker, zkproof-worker, transaction-sender, consensus-detector, upgrade-controller).
+- compose/box: stop the Blue coprocessor containers for each operator.
+
+Leave shared infrastructure (Postgres, object-store, gateway/host nodes) running - only the retired BCS coprocessor services are scaled down. The now-live Green (`-gcs-`) fleet keeps serving.
 
 ## Rollback & recovery
 
