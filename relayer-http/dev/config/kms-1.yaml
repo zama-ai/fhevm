@@ -18,10 +18,10 @@ kms_aggregator:
   allow_insecure_http: false            # loopback http is allowed as is
   max_concurrent_calls: 16
   call:
-    timeout: 60s                        # local decrypts are slow; 60s is the configured maximum
+    timeout: 5s                         # the deadline of one aggregation
     retries:
-      max_retries: 0
-      delay: 500ms
+      max_retries: 5                    # retryable connector errors only: waits 200, 400, 800, 1600 ms (the 5th, 3.2 s, does not fit the deadline)
+      delay: 200ms
       backoff_max: 4s
   public_decrypt:
     threshold: 1
