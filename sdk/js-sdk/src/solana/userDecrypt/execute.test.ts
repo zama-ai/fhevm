@@ -21,7 +21,12 @@ import {
 } from '../permit/index.js';
 import { setFhevmRuntimeConfig } from '../internal/config.js';
 import { getSolanaRuntime } from '../internal/runtime.js';
-import { SolanaUserDecryptRunError, executeSolanaUserDecrypt, solanaUserDecryptRequestInputs } from './index.js';
+import {
+  SolanaUserDecryptRunError,
+  executeSolanaUserDecrypt,
+  generateSolanaTransportKeyPair,
+  solanaUserDecryptRequestInputs,
+} from './index.js';
 
 ////////////////////////////////////////////////////////////////////////////////
 
@@ -112,17 +117,20 @@ describe('executing one user decryption', () => {
   it('feeds an answered transport into verification, which refuses shares that prove nothing', async () => {
     const shares: readonly SolanaSigncryptedShare[] = [{ signature: '0x00', payload: '0x00', extraData: '0x' }];
     const transport = { submit: () => Promise.resolve({ ok: true as const, response: shares }) };
+    // A real key pair, so the refusal comes from the KMS client reading the share rather than from
+    // a malformed key rejected before any share is read.
+    const keyPair = await generateSolanaTransportKeyPair(getSolanaRuntime());
 
     await expect(
       executeSolanaUserDecrypt({
         runtime: getSolanaRuntime(),
-        session: session(),
+        session: { ...session(), keyPair },
         entries: ENTRIES,
         transport,
         clock,
         verification,
       }),
-    ).rejects.toThrow();
+    ).rejects.toThrow(/response parsing failed/);
   });
 
   it('surfaces the session error of a run that was never answered, untouched', async () => {
