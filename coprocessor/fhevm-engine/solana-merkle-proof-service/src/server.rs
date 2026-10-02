@@ -8,10 +8,16 @@
 //! decision. It answers only callers in [`KmsTxSenders`]: each request carries a
 //! `request_authorization` signature by a KMS node's tx-sender.
 //!
-//! Each KMS tx-sender gets [`HttpServer::merkle_proofs`]'s requests per second,
-//! and at most one request per database connection reads the record at a time.
-//! Both refusals are `rateLimited` and come before any database read, so the
-//! connector asks another coprocessor at once.
+//! A signature names no recipient, so whoever received a request can resend it
+//! to the other coprocessors while it is valid. A repeat of a request already
+//! answered gets the same answer from the [`AnswerCache`], and costs neither the
+//! signer's rate nor a database read (DD-067).
+//!
+//! Each KMS tx-sender may ask for [`HttpServer::merkle_proofs`]'s leaves per
+//! second. At most one request per database connection but one reads the record
+//! at a time, so `/healthz` always finds a connection; a request waits up to
+//! [`PROOF_READ_WAIT`] for its turn. Both refusals are `rate_limited`, before any
+//! database read, and the connector asks another coprocessor at once.
 //!
 //! Bodies are CBOR (RFC 8949), served over HTTP/1.1 or HTTP/2 without TLS. The
 //! wire contract is the committed OpenAPI document in `openapi/`; a test keeps
@@ -21,7 +27,7 @@ use std::{
     net::SocketAddr,
     num::NonZeroU32,
     sync::Arc,
-    time::{SystemTime, UNIX_EPOCH},
+    time::{Duration, SystemTime, UNIX_EPOCH},
 };
 
 use alloy::primitives::Address;
@@ -34,6 +40,7 @@ use axum::{
     Router,
 };
 use governor::{DefaultKeyedRateLimiter, Quota, RateLimiter};
+use request_authorization::Authorization;
 use serde::{de::DeserializeOwned, Deserialize, Serialize};
 use serde_bytes::ByteArray;
 use sqlx::PgPool;
@@ -47,12 +54,15 @@ use utoipa::{
 use zama_solana_acl::mmr_verify;
 
 use crate::{
+    answer_cache::{AnswerCache, MAX_CACHED_BYTES},
     kms_tx_senders::KmsTxSenders,
     store::{find_leaf, load_proof, load_store_cursor, LeafKind},
 };
 
 /// Most leaves one request may ask for.
 const MAX_LEAVES_PER_REQUEST: usize = 64;
+const MAX_LEAVES_PER_REQUEST_NONZERO: NonZeroU32 =
+    NonZeroU32::new(MAX_LEAVES_PER_REQUEST as u32).unwrap();
 
 /// Comfortably above [`MAX_LEAVES_PER_REQUEST`] queries.
 const MAX_REQUEST_BYTES: usize = 64 * 1024;
@@ -61,10 +71,16 @@ pub const MERKLE_PROOFS_PATH: &str = "/v1/solana/merkle-proofs";
 
 const CBOR: &str = "application/cbor";
 
+/// How long a request waits for a database connection before it is refused. Below the KMS
+/// connector's 250 ms hedge delay, so a refusal sends the connector to the next coprocessor no
+/// later than the hedge would have.
+pub const PROOF_READ_WAIT: Duration = Duration::from_millis(200);
+
 #[derive(Clone)]
 struct AppState {
     pool: PgPool,
     senders: KmsTxSenders,
+    answers: Arc<AnswerCache>,
     per_kms_tx_sender: Arc<DefaultKeyedRateLimiter<Address>>,
     proof_reads: Arc<Semaphore>,
 }
@@ -90,21 +106,24 @@ impl HttpServer {
     }
 
     /// The health routes and the Merkle proof route, for the proof server. Each
-    /// KMS tx-sender may send `requests_per_second`, in bursts of as many.
+    /// KMS tx-sender may ask for `leaves_per_second`, in bursts of as many.
     pub fn merkle_proofs(
         pool: PgPool,
         senders: KmsTxSenders,
-        requests_per_second: NonZeroU32,
+        leaves_per_second: NonZeroU32,
         port: u16,
         cancel_token: CancellationToken,
     ) -> Self {
-        // A request reads one query at a time, so it holds one connection.
-        let proof_reads = pool.options().get_max_connections() as usize;
+        // A request reads one query at a time, so it holds one connection. One
+        // connection is left for `/healthz`.
+        let proof_reads = (pool.options().get_max_connections() as usize)
+            .saturating_sub(1)
+            .max(1);
         Self {
             router: merkle_proofs_router(
                 pool,
                 senders,
-                requests_per_second,
+                leaves_per_second,
                 proof_reads,
             ),
             port,
@@ -131,15 +150,18 @@ fn health_router(pool: PgPool) -> Router {
 fn merkle_proofs_router(
     pool: PgPool,
     senders: KmsTxSenders,
-    requests_per_second: NonZeroU32,
+    leaves_per_second: NonZeroU32,
     proof_reads: usize,
 ) -> Router {
+    // A burst always fits the largest request.
+    let burst = leaves_per_second.max(MAX_LEAVES_PER_REQUEST_NONZERO);
     let state = AppState {
         pool,
         senders,
-        per_kms_tx_sender: Arc::new(RateLimiter::keyed(Quota::per_second(
-            requests_per_second,
-        ))),
+        answers: Arc::new(AnswerCache::new(MAX_CACHED_BYTES)),
+        per_kms_tx_sender: Arc::new(RateLimiter::keyed(
+            Quota::per_second(leaves_per_second).allow_burst(burst),
+        )),
         proof_reads: Arc::new(Semaphore::new(proof_reads)),
     };
     Router::new()
@@ -278,8 +300,8 @@ pub enum ErrorCode {
     /// The leaf record could not be read or is inconsistent, or the KMS
     /// tx-sender set is not read yet; retry later.
     UpstreamTransient,
-    /// The signer is over its requests per second, or every database
-    /// connection is reading; ask another coprocessor or retry later.
+    /// The signer is over its leaves per second, or no database connection
+    /// freed in time; ask another coprocessor or retry later.
     RateLimited,
 }
 
@@ -380,7 +402,7 @@ fn decode_cbor<T: DeserializeOwned>(body: &[u8]) -> Result<T, HttpError> {
         (status = 200, description = "One answer per queried leaf, in request order", body = MerkleProofResponse, content_type = "application/cbor"),
         (status = 400, description = "Malformed request", body = ErrorResponse, content_type = "application/cbor"),
         (status = 401, description = "Request signature refused", body = ErrorResponse, content_type = "application/cbor"),
-        (status = 429, description = "Signer over its rate, or every database connection reading", body = ErrorResponse, content_type = "application/cbor"),
+        (status = 429, description = "Signer over its rate, or no database connection free in time", body = ErrorResponse, content_type = "application/cbor"),
         (status = 502, description = "Leaf record or KMS tx-sender set unavailable", body = ErrorResponse, content_type = "application/cbor"),
     ),
     security(("request_authorization" = [])),
@@ -389,15 +411,15 @@ async fn merkle_proofs(
     State(state): State<AppState>,
     headers: HeaderMap,
     body: Result<Bytes, BytesRejection>,
-) -> Result<Cbor<MerkleProofResponse>, HttpError> {
+) -> Result<Response, HttpError> {
     let body =
         body.map_err(|rejection| HttpError::malformed(rejection.body_text()))?;
-    let signer = authenticate(&state.senders, &headers, &body)?;
-    if state.per_kms_tx_sender.check_key(&signer).is_err() {
-        return Err(HttpError::new(
-            ErrorCode::RateLimited,
-            format!("{signer} is over its requests per second"),
-        ));
+    let now = SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .map_or(0, |elapsed| elapsed.as_secs());
+    let authorization = authenticate(&state.senders, &headers, &body, now)?;
+    if let Some(answer) = state.answers.get(&authorization.signing_hash, now) {
+        return Ok(cbor_response(answer));
     }
     let request: MerkleProofRequest = decode_cbor(&body)?;
     if request.leaves.len() > MAX_LEAVES_PER_REQUEST {
@@ -411,27 +433,52 @@ async fn merkle_proofs(
         .iter()
         .map(ParsedQuery::parse)
         .collect::<Result<Vec<_>, _>>()?;
-    // Refused at once rather than queued: the connector asks the next
-    // coprocessor after its hedge delay anyway.
-    let Ok(_proof_read) = state.proof_reads.try_acquire() else {
+    let signer = authorization.signer;
+    let leaves =
+        NonZeroU32::new(queries.len() as u32).unwrap_or(NonZeroU32::MIN);
+    if !matches!(
+        state.per_kms_tx_sender.check_key_n(&signer, leaves),
+        Ok(Ok(()))
+    ) {
         return Err(HttpError::new(
             ErrorCode::RateLimited,
-            "every database connection is reading",
+            format!("{signer} is over its leaves per second"),
+        ));
+    }
+    let Ok(Ok(_proof_read)) =
+        tokio::time::timeout(PROOF_READ_WAIT, state.proof_reads.acquire())
+            .await
+    else {
+        return Err(HttpError::new(
+            ErrorCode::RateLimited,
+            format!("no database connection free within {PROOF_READ_WAIT:?}"),
         ));
     };
     let mut proofs = Vec::with_capacity(queries.len());
     for query in queries {
         proofs.push(prove(&state.pool, &query).await?);
     }
-    Ok(Cbor(MerkleProofResponse { proofs }))
+    let answer = Bytes::from(encode_cbor(&MerkleProofResponse { proofs }));
+    state.answers.insert(
+        authorization.signing_hash,
+        authorization.expires,
+        answer.clone(),
+        now,
+    );
+    Ok(cbor_response(answer))
 }
 
-/// Returns the KMS tx-sender that signed this exact body for this route.
+fn cbor_response(body: Bytes) -> Response {
+    ([(header::CONTENT_TYPE, CBOR)], body).into_response()
+}
+
+/// Returns what the KMS tx-sender that signed this exact body for this route signed.
 fn authenticate(
     senders: &KmsTxSenders,
     headers: &HeaderMap,
     body: &[u8],
-) -> Result<Address, HttpError> {
+    now: u64,
+) -> Result<Authorization, HttpError> {
     let refused = |message: String| {
         HttpError::new(ErrorCode::SenderAuthenticationFailed, message)
     };
@@ -445,10 +492,7 @@ fn authenticate(
         .get(header::AUTHORIZATION)
         .and_then(|value| value.to_str().ok())
         .unwrap_or_default();
-    let now = SystemTime::now()
-        .duration_since(UNIX_EPOCH)
-        .map_or(0, |elapsed| elapsed.as_secs());
-    let signer = request_authorization::recover_signer(
+    let authorization = request_authorization::recover_authorization(
         &set.registry,
         header,
         MERKLE_PROOFS_PATH,
@@ -456,14 +500,14 @@ fn authenticate(
         now,
     )
     .map_err(|err| refused(err.to_string()))?;
-    if !set.senders.contains(&signer) {
+    if !set.senders.contains(&authorization.signer) {
         return Err(refused(format!(
-            "{signer} is not the tx-sender of a node in a live KMS context of \
+            "{} is not the tx-sender of a node in a live KMS context of \
              ProtocolConfig {} on chain {}",
-            set.registry.contract, set.registry.chain_id
+            authorization.signer, set.registry.contract, set.registry.chain_id
         )));
     }
-    Ok(signer)
+    Ok(authorization)
 }
 
 struct ParsedQuery {
@@ -630,6 +674,7 @@ mod tests {
                 .expect("read fixture"),
         )
         .expect("fixture is json");
+        assert_eq!(fixture["path"], MERKLE_PROOFS_PATH);
         assert_eq!(
             fixture["maxLeavesPerRequest"],
             serde_json::json!(MAX_LEAVES_PER_REQUEST)
@@ -752,7 +797,7 @@ mod tests {
 
     async fn spawn(
         senders: KmsTxSenders,
-        requests_per_second: u32,
+        leaves_per_second: u32,
         proof_reads: usize,
     ) -> (String, CancellationToken, tokio::task::JoinHandle<()>) {
         let pool = PgPoolOptions::new()
@@ -767,7 +812,7 @@ mod tests {
                 let router = merkle_proofs_router(
                     pool,
                     senders,
-                    NonZeroU32::new(requests_per_second).expect("a rate"),
+                    NonZeroU32::new(leaves_per_second).expect("a rate"),
                     proof_reads,
                 );
                 serve(listener, router, cancel).await.expect("serve")
@@ -891,10 +936,11 @@ mod tests {
         server.await.expect("join");
     }
 
-    /// A signer over its rate, and a request finding every database connection
-    /// reading, are refused before the database, as retryable.
+    /// A request finding no database connection within [`PROOF_READ_WAIT`], and a
+    /// signer over its leaves per second, are refused before the database, as
+    /// retryable. The first request spends the signer's whole burst.
     #[tokio::test]
-    async fn refuses_over_the_rate_and_when_every_connection_reads() {
+    async fn refuses_over_the_rate_and_when_no_connection_frees() {
         let connector = PrivateKeySigner::random();
         let (base, cancel, server) = spawn(
             KmsTxSenders::fixed(KmsTxSenderSet {
@@ -910,12 +956,15 @@ mod tests {
             .build()
             .expect("client");
         let body = encode_cbor(&MerkleProofRequest {
-            leaves: vec![LeafQuery {
-                encrypted_store: [0xAC; 32],
-                handle: [0x10; 32],
-                kind: LeafQueryKind::Public,
-                key: None,
-            }],
+            leaves: vec![
+                LeafQuery {
+                    encrypted_store: [0xAC; 32],
+                    handle: [0x10; 32],
+                    kind: LeafQueryKind::Public,
+                    key: None,
+                };
+                MAX_LEAVES_PER_REQUEST
+            ],
         });
         let authorization = signed(&connector, &body, now() + 60).await;
         let mut messages = Vec::new();
@@ -933,10 +982,13 @@ mod tests {
             assert!(error.retryable);
             messages.push(error.message);
         }
-        assert_eq!(messages[0], "every database connection is reading");
+        assert_eq!(
+            messages[0],
+            format!("no database connection free within {PROOF_READ_WAIT:?}")
+        );
         assert_eq!(
             messages[1],
-            format!("{} is over its requests per second", connector.address())
+            format!("{} is over its leaves per second", connector.address())
         );
 
         cancel.cancel();

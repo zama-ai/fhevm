@@ -66,6 +66,12 @@ impl ProofClient {
         &self,
         request: &MerkleProofRequest,
     ) -> reqwest::Result<reqwest::Response> {
+        let (body, authorization) = self.sign(request).await;
+        self.send(body, &authorization).await
+    }
+
+    /// The body of `request` and its authorization header, valid for a minute.
+    async fn sign(&self, request: &MerkleProofRequest) -> (Vec<u8>, String) {
         let mut body = Vec::new();
         ciborium::into_writer(request, &mut body).expect("encode");
         let expires = SystemTime::now()
@@ -82,6 +88,14 @@ impl ProofClient {
         )
         .await
         .expect("sign");
+        (body, authorization)
+    }
+
+    async fn send(
+        &self,
+        body: Vec<u8>,
+        authorization: &str,
+    ) -> reqwest::Result<reqwest::Response> {
         self.client
             .post(&self.url)
             .header(reqwest::header::AUTHORIZATION, authorization)
@@ -97,9 +111,11 @@ async fn decode<T: serde::de::DeserializeOwned>(
     Ok(ciborium::from_reader(&response.bytes().await?[..])?)
 }
 
-/// Starts the proof server on a free port and returns a client once it answers.
+/// Starts the proof server on a free port, allowing its KMS tx-sender
+/// `leaves_per_second`, and returns a client once it answers.
 async fn serve_proofs(
     pool: &sqlx::PgPool,
+    leaves_per_second: u32,
     cancel: &CancellationToken,
 ) -> (ProofClient, tokio::task::JoinHandle<anyhow::Result<()>>) {
     let port = std::net::TcpListener::bind("127.0.0.1:0")
@@ -113,7 +129,7 @@ async fn serve_proofs(
             registry: REGISTRY,
             senders: HashSet::from([connector.address()]),
         }),
-        std::num::NonZeroU32::new(1000).expect("a rate"),
+        std::num::NonZeroU32::new(leaves_per_second).expect("a rate"),
         port,
         cancel.clone(),
     );
@@ -210,7 +226,7 @@ async fn leaf_record_round_trips_and_serves_verifiable_proofs(
 
     // The HTTP route builds proofs from the same rows.
     let cancel = CancellationToken::new();
-    let (proofs, server_task) = serve_proofs(&pool, &cancel).await;
+    let (proofs, server_task) = serve_proofs(&pool, 100_000, &cancel).await;
     let response = proofs
         .post(&MerkleProofRequest {
             leaves: vec![
@@ -387,7 +403,7 @@ async fn prove_leaves_of_a_store(
     assert_eq!(deleted.rows_affected(), 1);
 
     let cancel = CancellationToken::new();
-    let (proofs, server_task) = serve_proofs(&pool, &cancel).await;
+    let (proofs, server_task) = serve_proofs(&pool, 100_000, &cancel).await;
     let started = std::time::Instant::now();
     let response = proofs
         .post(&MerkleProofRequest {
@@ -468,5 +484,57 @@ async fn eight_proofs_of_a_million_leaf_store_answer_well_within_the_connector_t
     .await?;
     eprintln!("8 proofs of a 1,000,000-leaf store answered in {elapsed:?}");
     assert!(elapsed < std::time::Duration::from_secs(2), "{elapsed:?}");
+    Ok(())
+}
+
+/// A coprocessor that received a signed request can resend it to the others while it is valid.
+/// A server answers such a repeat as it answered the request, without charging the signer
+/// again: here the first request spends the signer's whole burst, its repeat still gets the
+/// same bytes, and only a new request is refused.
+#[tokio::test]
+#[serial(db)]
+async fn a_repeated_request_gets_its_first_answer_at_no_cost(
+) -> Result<(), Box<dyn std::error::Error>> {
+    let (_db, pool) = support::record_db().await;
+    let mut tx = pool.begin().await?;
+    let block = reduce_block_leaves(
+        &[TransactionStoreWrites {
+            transaction_index: 0,
+            sources: vec![write(0, [0x10; 32], vec![OWNER], false)],
+        }],
+        load_store_cursors(&mut tx, &[ACCOUNT]).await?,
+    )?;
+    store_block_leaves(&mut tx, 10, &block).await?;
+    tx.commit().await?;
+
+    let cancel = CancellationToken::new();
+    // One leaf per second, so the burst is the 64 leaves of the largest request.
+    let (proofs, server_task) = serve_proofs(&pool, 1, &cancel).await;
+    let full_request = |handle| MerkleProofRequest {
+        leaves: vec![
+            LeafQuery {
+                encrypted_store: ACCOUNT,
+                handle,
+                kind: LeafQueryKind::Allowed,
+                key: Some(OWNER),
+            };
+            64
+        ],
+    };
+    let (body, authorization) = proofs.sign(&full_request([0x10; 32])).await;
+    let first = proofs.send(body.clone(), &authorization).await?;
+    assert_eq!(first.status(), 200);
+    let first = first.bytes().await?;
+    let repeat = proofs.send(body, &authorization).await?;
+    assert_eq!(repeat.status(), 200);
+    assert_eq!(repeat.bytes().await?, first);
+
+    let other = proofs.post(&full_request([0x11; 32])).await?;
+    assert_eq!(other.status(), 429);
+    let error: ErrorResponse = decode(other).await?;
+    assert_eq!(error.code, ErrorCode::RateLimited);
+
+    cancel.cancel();
+    server_task.await??;
     Ok(())
 }
