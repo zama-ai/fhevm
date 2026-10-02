@@ -240,7 +240,7 @@ pub(super) async fn concurrent_manifest_worker(
                 assert!(is_block_manifest_ready(&mut trx, &block)
                     .await
                     .expect("check concurrent block readiness"));
-                let descriptors = load_manifest_descriptors(&mut trx, &block, false)
+                let descriptors = load_manifest_descriptors(&mut trx, &block, false, None)
                     .await
                     .expect("load concurrent block descriptors");
                 seal_block_content(&mut trx, &block, SEQUENCE_CONTEXT_ID, &descriptors)
@@ -260,10 +260,15 @@ pub(super) async fn concurrent_manifest_worker(
                         block.block_number,
                     );
                 }
-                let prepared =
-                    prepare_manifest(&mut trx, &block, SEQUENCE_CONTEXT_ID, signer.address())
-                        .await
-                        .expect("prepare concurrent manifest");
+                let prepared = prepare_manifest(
+                    &mut trx,
+                    &block,
+                    SEQUENCE_CONTEXT_ID,
+                    signer.address(),
+                    None,
+                )
+                .await
+                .expect("prepare concurrent manifest");
                 let signed = prepared
                     .payload
                     .sign(signer.as_ref())
