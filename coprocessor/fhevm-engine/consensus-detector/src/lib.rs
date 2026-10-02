@@ -1004,6 +1004,42 @@ where
 mod tests {
     use super::*;
 
+    #[tokio::test]
+    async fn default_pool_leaves_query_capacity_with_all_green_listeners() {
+        use sqlx::postgres::PgPoolOptions;
+        use test_harness::instance::{setup_test_db, ImportMode};
+
+        let instance = setup_test_db(ImportMode::SkipMigrations).await.unwrap();
+        let pool = PgPoolOptions::new()
+            .max_connections(Config::default().database_pool_size)
+            .acquire_timeout(Duration::from_secs(1))
+            .connect(instance.db_url())
+            .await
+            .unwrap();
+        let mut listeners = Vec::new();
+        for channel in [
+            "state_hash",
+            "consensus",
+            "stack_version",
+            "healing",
+            "green_activation",
+        ] {
+            let mut listener = PgListener::connect_with(&pool).await.unwrap();
+            listener.listen(channel).await.unwrap();
+            listeners.push(listener);
+        }
+        // Hold a worker transaction while another worker acquires a connection.
+        let mut publication = pool.begin().await.unwrap();
+        sqlx::query("SELECT 1")
+            .execute(&mut *publication)
+            .await
+            .unwrap();
+        sqlx::query("SELECT 1").execute(&pool).await.unwrap();
+        publication.rollback().await.unwrap();
+        drop(listeners);
+        pool.close().await;
+    }
+
     const GW: i64 = 54321;
 
     fn track(chain_id: i64, anchored: Option<i64>, nontrivial: bool) -> ConsensusTrack {
