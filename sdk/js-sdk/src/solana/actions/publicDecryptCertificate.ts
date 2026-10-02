@@ -15,16 +15,25 @@ export type SolanaPublicDecryptCertificateContext = {
   readonly runtime: FhevmRuntime;
 };
 
-export type SolanaPublicDecryptCertificateParameters = {
-  /** The ciphertext handle covered by the public-decrypt certificate. */
+/** A handle made public in an encrypted store. */
+export type SolanaPublicHandleEntry = {
   readonly handle: EncryptedValueLike;
-  /** The 32-byte KMS context id the certificate commits to. */
-  readonly contextId: Uint8Array;
   /** The 32-byte EncryptedStore address whose history authorizes public decryption. */
   readonly encryptedStore: Uint8Array;
+};
+
+/** Handles certified together: one request, one KMS context, one signature set. */
+export type SolanaPublicDecryptBatch = {
+  readonly entries: readonly SolanaPublicHandleEntry[];
+  /** The 32-byte KMS context id the certificate commits to. */
+  readonly contextId: Uint8Array;
   /** Relayer HTTP/polling budget; RPC calls use the supplied signal and the RPC transport policy. */
   readonly options?: RelayerPublicDecryptOptions | undefined;
 };
+
+/** The one handle an on-chain consumer has certified. */
+export type SolanaPublicDecryptCertificateParameters = SolanaPublicHandleEntry &
+  Omit<SolanaPublicDecryptBatch, 'entries'>;
 
 /**
  * An untrusted public-decrypt certificate claim returned by the relayer. Authority exists only
@@ -38,11 +47,6 @@ export type SolanaPublicDecryptCertificateClaim = {
   readonly abiEncodedCleartext: string;
   readonly signatures: readonly string[];
   readonly extraData: string;
-};
-
-/** Handles certified together: one request, one KMS context, one signature set. */
-export type SolanaPublicDecryptBatch = Omit<SolanaPublicDecryptCertificateParameters, 'handle' | 'encryptedStore'> & {
-  readonly entries: ReadonlyArray<Pick<SolanaPublicDecryptCertificateParameters, 'handle' | 'encryptedStore'>>;
 };
 
 /** A certificate over every handle of a batch; `abiEncodedCleartext` holds one 32-byte word per handle. */
@@ -62,11 +66,11 @@ export function singlePublicDecryptCertificate(
   certify: SolanaPublicDecryptCertifier,
 ): (parameters: SolanaPublicDecryptCertificateParameters) => Promise<SolanaPublicDecryptCertificateClaim> {
   return async ({ handle, encryptedStore, ...shared }) => {
+    const requested = toFhevmHandle(handle).bytes32Hex;
     const { handles, ...claim } = await certify({ ...shared, entries: [{ handle, encryptedStore }] });
-    const [certified] = handles;
-    if (certified === undefined || handles.length !== 1)
+    if (handles.length !== 1 || handles[0]?.toLowerCase() !== requested.toLowerCase())
       throw new Error('public-decrypt certificate must cover exactly the requested handle');
-    return { ...claim, handle: certified };
+    return { ...claim, handle: requested };
   };
 }
 

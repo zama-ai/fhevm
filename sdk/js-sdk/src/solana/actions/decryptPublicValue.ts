@@ -11,7 +11,7 @@ import {
 import type { SolanaClientParameters } from '../clients/createFhevmBaseClient.js';
 import { solanaHostProgram } from '../clients/createFhevmBaseClient.js';
 import type { RelayerPublicDecryptOptions } from '../../core/types/relayer.js';
-import type { SolanaPublicDecryptBatch, SolanaPublicDecryptCertifier } from './publicDecryptCertificate.js';
+import type { SolanaPublicDecryptCertifier, SolanaPublicHandleEntry } from './publicDecryptCertificate.js';
 import { MAX_SOLANA_DECRYPT_HANDLES } from '../userDecrypt/request.js';
 import { solanaPublicDecryptExtraData } from './publicDecryptCertificate.js';
 import { findHostConfigPda } from '../internal/generated/zamaHost/pdas/hostConfig.js';
@@ -58,9 +58,6 @@ export function verifyPublicDecryptSignatures(
   }
   if (valid.size < threshold) throw new Error('Public decryption signature threshold not met');
 }
-
-/** One handle made public in an encrypted store. */
-export type SolanaPublicHandleEntry = SolanaPublicDecryptBatch['entries'][number];
 
 export type SolanaDecryptPublicValueParameters = SolanaPublicHandleEntry & {
   /** The KMS context the certificate commits to; the host's current context when omitted. */

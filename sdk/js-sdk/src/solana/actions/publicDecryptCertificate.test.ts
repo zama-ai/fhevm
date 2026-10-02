@@ -168,8 +168,11 @@ describe('singlePublicDecryptCertificate', () => {
     expect(claim).toEqual({ ...batchClaim, handle: bytesToHex(handle) });
   });
 
-  it('refuses a certificate that does not cover exactly the requested handle', async () => {
-    const certify = vi.fn().mockResolvedValue({ ...batchClaim, handles: [bytesToHex(handle), bytesToHex(handle)] });
+  it.each([
+    ['two handles', [bytesToHex(handle), bytesToHex(handle)]],
+    ['another handle', [`0x${'07'.repeat(22)}01${'00'.repeat(9)}`]],
+  ])('refuses a certificate covering %s', async (_case, handles) => {
+    const certify = vi.fn().mockResolvedValue({ ...batchClaim, handles });
     await expect(
       singlePublicDecryptCertificate(certify)({ handle, encryptedStore: account, contextId }),
     ).rejects.toThrow('exactly the requested handle');
