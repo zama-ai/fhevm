@@ -51,7 +51,7 @@ const MAX_DECODING_MESSAGE_SIZE: usize = 64 * 1024 * 1024;
 const SOLANA_GRPC_INGEST_TIMEOUT: Duration = Duration::from_secs(60);
 const STREAM_STALL_TIMEOUT: Duration = Duration::from_secs(30);
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[derive(Clone, Copy, Debug)]
 enum IngestFailureKind {
     Retryable,
     Fatal,
@@ -85,8 +85,9 @@ impl IngestFailure {
         }
     }
 
-    fn kind(&self) -> IngestFailureKind {
-        self.kind
+    /// Whether the follower stops on this failure instead of replaying the block.
+    pub fn is_fatal(&self) -> bool {
+        matches!(self.kind, IngestFailureKind::Fatal)
     }
 
     pub(crate) fn into_error(self) -> anyhow::Error {
@@ -570,7 +571,7 @@ async fn apply_prepared_block(
             Ok(true)
         }
         Ok(BlockIngestOutcome::Cancelled) => Ok(false),
-        Err(err) if err.kind() == IngestFailureKind::Retryable => Err(err
+        Err(err) if !err.is_fatal() => Err(err
             .into_error()
             .context("retryable sealed block ingest failure")),
         Err(err) => Err(FatalIngestError::new(

@@ -1,0 +1,21 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n            INSERT INTO leaves\n                (encrypted_store, leaf_index, commitment, leaf_kind, handle,\n                 allowed_key, block_slot, transaction_index)\n            SELECT encrypted_store, leaf_index, commitment, leaf_kind, handle,\n                   allowed_key, $7, transaction_index\n            FROM UNNEST($1::BYTEA[], $2::BIGINT[], $3::BYTEA[], $4::SMALLINT[],\n                        $5::BYTEA[], $6::BYTEA[], $8::BIGINT[])\n                AS leaf(encrypted_store, leaf_index, commitment, leaf_kind, handle,\n                        allowed_key, transaction_index)\n            ",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "ByteaArray",
+        "Int8Array",
+        "ByteaArray",
+        "Int2Array",
+        "ByteaArray",
+        "ByteaArray",
+        "Int8",
+        "Int8Array"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "44c3b6f24e8d4c2bdb4b153d4dc7972586c4c211ffbbba89898359e2bb62b051"
+}

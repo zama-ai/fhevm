@@ -1,35 +1,58 @@
-//! Solana host listener: reconstructs coprocessor work and the RFC 035 leaf record
-//! from confirmed Yellowstone transactions and block metas and ingests both into the shared
-//! database.
-//! `solana_leaf_proof_server` serves the leaf inclusion proofs apart from it.
+//! Solana host listener: reconstructs coprocessor work from confirmed Yellowstone
+//! transactions and block metas and ingests it into the coprocessor database.
 
-use std::{str::FromStr, time::Duration};
+use std::{str::FromStr, sync::Arc, time::Duration};
 
 use anyhow::{Context, Result};
 use clap::Parser;
 use solana_client::nonblocking::rpc_client::RpcClient;
 use solana_commitment_config::CommitmentConfig;
 use solana_sdk::pubkey::Pubkey;
+use sqlx::PgPool;
 use tokio_util::sync::CancellationToken;
 use tracing::{info, Level};
 
 use fhevm_engine_common::{
-    chain_id::ChainId, metrics_server, telemetry, utils::DatabaseURL,
+    chain_id::ChainId,
+    healthz_server::{
+        default_get_version, HealthCheckService, HealthStatus, HttpServer,
+        Version,
+    },
+    metrics_server, telemetry,
+    utils::DatabaseURL,
 };
 use host_listener::{
     cmd::DEFAULT_DEPENDENCE_CACHE_SIZE,
     database::{
-        solana_leaves::load_checkpoint, tfhe_event_propagate::Database,
+        solana_checkpoint::load_checkpoint, tfhe_event_propagate::Database,
     },
-    http_server::HttpServer,
     solana_listener::{SolanaListenerConfig, SolanaListenerSink},
 };
 use solana_host_follower::{
     block_checkpoint, host::host_chain_id, run, track_confirmed_slot,
-    BlockCheckpoint, FollowerConfig, StartPosition,
+    FollowerConfig, StartPosition,
 };
 
 const SOLANA_RPC_REQUEST_TIMEOUT: Duration = Duration::from_secs(30);
+
+/// Healthy while the coprocessor database answers.
+struct DatabaseHealth(PgPool);
+
+impl HealthCheckService for DatabaseHealth {
+    async fn health_check(&self) -> HealthStatus {
+        let mut status = HealthStatus::default();
+        status.set_db_connected(&self.0).await;
+        status
+    }
+
+    async fn is_alive(&self) -> bool {
+        true
+    }
+
+    fn get_version(&self) -> Version {
+        default_get_version()
+    }
+}
 
 #[derive(Parser, Debug, Clone)]
 #[command(version, about = "Solana host listener", long_about = None)]
@@ -143,18 +166,14 @@ async fn main() -> Result<()> {
     }
 
     let pool = db.pool.read().await.clone();
-    // Resume after the last block whose compute rows and leaves were committed; the
-    // leaf record can only be continued from where it stopped.
+    // Resume after the last block whose compute rows were committed.
     let start = match load_checkpoint(&pool).await.context("load checkpoint")? {
         Some(checkpoint) => {
             info!(
                 slot = checkpoint.slot,
                 "resuming after the recorded checkpoint"
             );
-            StartPosition::Resume(BlockCheckpoint {
-                slot: checkpoint.slot,
-                block_hash: checkpoint.block_hash,
-            })
+            StartPosition::Resume(checkpoint)
         }
         None => match args.start_slot {
             // Anchored to an actual block, so a provider silently starting at the tip is
@@ -185,7 +204,11 @@ async fn main() -> Result<()> {
         ));
     }
 
-    let http_server = HttpServer::health(pool, args.http_port, cancel.clone());
+    let http_server = HttpServer::new(
+        Arc::new(DatabaseHealth(pool)),
+        args.http_port,
+        cancel.clone(),
+    );
     let http_cancel = cancel.clone();
     let http_task = tokio::spawn(async move {
         let result = http_server.start().await;

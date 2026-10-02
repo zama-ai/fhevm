@@ -48,13 +48,14 @@ RUN --mount=type=cache,target=/usr/local/cargo/registry,sharing=locked \
       export AWS_SECRET_ACCESS_KEY="$(cat /run/secrets/sccache_aws_secret_access_key)"; \
     fi && \
     cargo fetch && \
-    SQLX_OFFLINE=true BUILD_ID=$(cat BUILD_ID) cargo build --profile=${CARGO_PROFILE} -p host-listener --features solana && \
+    SQLX_OFFLINE=true BUILD_ID=$(cat BUILD_ID) cargo build --profile=${CARGO_PROFILE} -p host-listener --features solana -p solana-merkle-proof-service && \
     if [ -n "${SCCACHE_BUCKET}" ] && command -v sccache >/dev/null 2>&1; then sccache --show-stats; fi && \
     cp target/${CARGO_PROFILE}/host_listener /tmp/host_listener && \
     cp target/${CARGO_PROFILE}/host_listener_poller /tmp/host_listener_poller && \
     cp target/${CARGO_PROFILE}/host_listener_consumer /tmp/host_listener_consumer && \
     cp target/${CARGO_PROFILE}/solana_host_listener /tmp/solana_host_listener && \
-    cp target/${CARGO_PROFILE}/solana_leaf_proof_server /tmp/solana_leaf_proof_server
+    cp target/${CARGO_PROFILE}/solana_merkle_indexer /tmp/solana_merkle_indexer && \
+    cp target/${CARGO_PROFILE}/solana_merkle_proof_server /tmp/solana_merkle_proof_server
 
 # Stage 2: Runtime image
 FROM cgr.dev/zama.ai/glibc-dynamic:15.2.0 AS prod
@@ -66,7 +67,9 @@ COPY --from=builder --chown=fhevm:fhevm /tmp/host_listener_poller /usr/local/bin
 COPY --from=builder --chown=fhevm:fhevm /tmp/host_listener_consumer /usr/local/bin/host_listener_consumer
 
 COPY --from=builder --chown=fhevm:fhevm /tmp/solana_host_listener /usr/local/bin/solana_host_listener
-COPY --from=builder --chown=fhevm:fhevm /tmp/solana_leaf_proof_server /usr/local/bin/solana_leaf_proof_server
+# The Merkle proof service shares the Solana host image; it is its own crate and database.
+COPY --from=builder --chown=fhevm:fhevm /tmp/solana_merkle_indexer /usr/local/bin/solana_merkle_indexer
+COPY --from=builder --chown=fhevm:fhevm /tmp/solana_merkle_proof_server /usr/local/bin/solana_merkle_proof_server
 
 USER fhevm:fhevm
 

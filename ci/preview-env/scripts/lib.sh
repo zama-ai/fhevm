@@ -27,7 +27,7 @@ wait_external_secret() {
 
 # The per-party preview Postgres instances use the shared ephemeral credentials.
 psql_party() {
-  local party="$1" sql="$2"
+  local party="$1" sql="$2" database="${3:-fhevm_e2e}"
   kubectl exec -n "${NAMESPACE}" "postgres-coprocessor-${party}-0" -- \
-    env PGPASSWORD=zama psql -U zama -d fhevm_e2e -tAqc "${sql}"
+    env PGPASSWORD=zama psql -U zama -d "${database}" -tAqc "${sql}"
 }

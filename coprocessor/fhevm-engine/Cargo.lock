@@ -5456,7 +5456,6 @@ dependencies = [
  "aws-credential-types",
  "aws-sdk-s3",
  "aws-smithy-mocks",
- "axum 0.7.9",
  "bigdecimal",
  "bs58",
  "clap",
@@ -5482,7 +5481,6 @@ dependencies = [
  "sqlx",
  "test-harness",
  "tfhe",
- "thiserror 2.0.20",
  "time",
  "tokio",
  "tokio-util",
@@ -5491,9 +5489,7 @@ dependencies = [
  "tracing-test",
  "union-find",
  "url",
- "utoipa",
  "zama-host",
- "zama-solana-acl",
 ]
 
 [[package]]
@@ -10240,6 +10236,36 @@ name = "solana-measure"
 version = "3.1.14"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "2b0eef68497ca818f50da3de449c64dc406d28170e395fd2ec40b64b6798afec"
+
+[[package]]
+name = "solana-merkle-proof-service"
+version = "0.7.0"
+dependencies = [
+ "anchor-lang",
+ "anyhow",
+ "axum 0.7.9",
+ "bs58",
+ "clap",
+ "fhevm-engine-common",
+ "hex",
+ "reqwest 0.12.28",
+ "serde",
+ "serde_json",
+ "serial_test",
+ "solana-client",
+ "solana-commitment-config",
+ "solana-host-follower",
+ "solana-sdk 3.0.0",
+ "sqlx",
+ "test-harness",
+ "thiserror 2.0.20",
+ "tokio",
+ "tokio-util",
+ "tracing",
+ "utoipa",
+ "zama-host",
+ "zama-solana-acl",
+]
 
 [[package]]
 name = "solana-message"

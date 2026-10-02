@@ -56,9 +56,9 @@ export const solanaValidatorUrl = (chain: { readonly rpcPort: number }): string 
   `http://host.docker.internal:${chain.rpcPort}`;
 
 /**
- * Bearer key the Solana leaf-proof server requires (its port is `SOLANA_LEAF_PROOF_PORT` in the
- * layout). Both sides of the same connection read these: `startLeafProofServer` passes them to
- * `solana_leaf_proof_server` as `--http-port` / `--proof-api-key`,
+ * Bearer key the Solana Merkle proof server requires (its port is `SOLANA_LEAF_PROOF_PORT` in the
+ * layout). Both sides of the same connection read these: `startMerkleProofServer` passes them to
+ * `solana_merkle_proof_server` as `--http-port` / `--proof-api-key`,
  * and `serializeKmsHostChains` puts them in the connector's host-chain entry. Passed explicitly
  * rather than relying on the binary's own default, so the two cannot drift apart silently.
  */
@@ -69,8 +69,8 @@ export const SOLANA_LEAF_PROOF_API_KEY = "00000000-0000-0000-0000-000000000000";
  * as {@link solanaValidatorUrl}: the proof server runs natively next to the validator, the
  * connector runs in a container.
  *
- * One route, because the demo runs one `solana_leaf_proof_server`. The connector asks every route
- * at once, so a topology with several coprocessors would list one route per leaf-proof server,
+ * One route, because the demo runs one `solana_merkle_proof_server`. The connector asks every route
+ * at once, so a topology with several coprocessors would list one route per Merkle proof server,
  * each with the key that server requires.
  */
 export const solanaLeafProofUrl = (): string => `http://host.docker.internal:${SOLANA_LEAF_PROOF_PORT}`;

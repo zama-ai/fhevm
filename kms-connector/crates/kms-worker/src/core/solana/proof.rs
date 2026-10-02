@@ -60,8 +60,6 @@ pub enum LeafProofOutcome {
     NotFound { leaf_count: u64 },
     /// The record has never seen this account.
     UnknownAccount,
-    /// The record's history for this account has a gap it cannot close until it is rebuilt.
-    HistoryIncomplete,
 }
 
 /// Implemented by [`CoprocessorProofClient`]; tests drive authorization with canned proofs.
@@ -276,7 +274,6 @@ mod tests {
                 },
                 LeafProofOutcome::NotFound { leaf_count: 3 },
                 LeafProofOutcome::UnknownAccount,
-                LeafProofOutcome::HistoryIncomplete,
             ]
         );
     }

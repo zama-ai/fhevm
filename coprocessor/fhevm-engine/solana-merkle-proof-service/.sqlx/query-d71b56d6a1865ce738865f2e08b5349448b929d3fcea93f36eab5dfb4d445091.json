@@ -1,6 +1,6 @@
 {
   "db_name": "PostgreSQL",
-  "query": "\n            SELECT leaf_index, commitment\n            FROM solana_encrypted_state_leaves\n            WHERE encrypted_state = $1 AND leaf_kind = $2 AND handle = $3\n              AND allowed_key IS NULL AND leaf_index < $4\n            ORDER BY leaf_index\n            LIMIT 1\n            ",
+  "query": "\n            SELECT leaf_index, commitment\n            FROM leaves\n            WHERE encrypted_store = $1 AND leaf_kind = $2 AND handle = $3\n              AND allowed_key = $4 AND leaf_index < $5\n            ORDER BY leaf_index\n            LIMIT 1\n            ",
   "describe": {
     "columns": [
       {
@@ -19,6 +19,7 @@
         "Bytea",
         "Int2",
         "Bytea",
+        "Bytea",
         "Int8"
       ]
     },
@@ -27,5 +28,5 @@
       false
     ]
   },
-  "hash": "32824e68bc2d8afbeccce64c7dbe636effae1e0440f9025b804d273116f9e14a"
+  "hash": "d71b56d6a1865ce738865f2e08b5349448b929d3fcea93f36eab5dfb4d445091"
 }

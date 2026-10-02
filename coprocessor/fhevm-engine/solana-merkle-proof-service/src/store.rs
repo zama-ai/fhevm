@@ -1,19 +1,16 @@
-//! The RFC 035 leaf record of Solana encrypted store accounts.
+//! The RFC 035 leaf record of Solana encrypted stores.
 //!
-//! Every state output the host accepts may seal leaves: one
-//! historical-access leaf per allowed key on the handle it installs, then one
-//! public-decrypt leaf when the handle is made public. The listener recomputes
-//! those leaves from the confirmed instruction stream and keeps them next to the
-//! compute rows they were derived with, in the same database transaction, so the
-//! two records can never disagree about which blocks were applied.
+//! Every store write the host accepts may seal leaves: one historical-access leaf per allowed
+//! key on the handle it installs, then one public-decrypt leaf when the handle is made public.
+//! The indexer recomputes those leaves from the confirmed instruction stream, from a block
+//! before any store existed, so every store's record starts at leaf zero.
 //!
-//! The reduce rule ([`reduce_block_leaves`]) is a pure function over one block, in
-//! the style of `dependence_chains.rs`; the SQL steps around it load the touched
-//! accounts, persist the reduction, and move the checkpoint.
+//! The reduce rule ([`reduce_block_leaves`]) is a pure function over one block; the SQL steps
+//! around it load the touched stores, persist the reduction, and move the checkpoint, all in
+//! one transaction per block.
 //!
-//! Repair replays slots the record already holds: the operator reverts the compute rows
-//! and the checkpoint, and leaves stay. A replayed block's leaves are recomputed and
-//! must equal the recorded ones exactly ([`load_block_leaves`]).
+//! A block the record already holds is recomputed, and its leaves must equal the recorded ones
+//! exactly ([`load_block_leaves`]).
 //!
 //! Each append also records the MMR nodes it completes, so a proof reads its path by
 //! position ([`load_proof`]) instead of rebuilding the mountain from every leaf. Node
@@ -29,8 +26,10 @@ use zama_solana_acl::{
     public_decrypt_leaf_commitment, AclError, MmrProof,
 };
 
-use crate::database::tfhe_event_propagate::Transaction;
 use solana_host_follower::host::EncryptedStoreWrite;
+use solana_host_follower::BlockCheckpoint;
+
+type Transaction<'c> = sqlx::Transaction<'c, sqlx::Postgres>;
 
 /// The leaf sources of one confirmed transaction.
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -39,15 +38,12 @@ pub struct TransactionStoreWrites {
     pub sources: Vec<EncryptedStoreWrite>,
 }
 
-/// The persisted proof-history cursor of one encrypted store account.
+/// The persisted MMR cursor of one encrypted store.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct EncryptedStoreHistory {
     pub leaf_count: u64,
     pub peaks: Vec<[u8; 32]>,
-    /// False when the first observed output declared a nonzero prior count. The
-    /// numeric cursor advances, but no leaf or proof can be served.
-    pub history_complete: bool,
-    /// Slot of the last block that wrote the account.
+    /// Slot of the last block that wrote the store.
     pub last_slot: u64,
 }
 
@@ -105,6 +101,13 @@ pub struct BlockLeafReduction {
 /// diverged from chain state, and continuing would seal wrong leaves.
 #[derive(Debug, Clone, PartialEq, Eq, thiserror::Error)]
 pub enum LeafReduceError {
+    /// The record first sees a store that already holds leaves: the indexer started after the
+    /// store was created, and the earlier leaves can never be recovered from later blocks.
+    #[error("encrypted store {} already held {previous_leaf_count} leaves when the record first saw it: rebuild the record on an empty database with a --start-slot before the store was created", bs58::encode(encrypted_store).into_string())]
+    UnrecordedHistory {
+        encrypted_store: [u8; 32],
+        previous_leaf_count: u64,
+    },
     #[error("encrypted store {} declared previous leaf count {declared}, record holds {recorded}", bs58::encode(encrypted_store).into_string())]
     PreviousLeafCountMismatch {
         encrypted_store: [u8; 32],
@@ -122,9 +125,8 @@ pub enum LeafReduceError {
 
 /// Reduces the leaf sources of the block at `slot` over the accounts' prior states.
 ///
-/// `existing` holds the recorded cursor of every state the block touches. A
-/// state first seen above leaf zero is tracked with `history_complete = false`:
-/// its cursor advances, but no leaf or proof is stored.
+/// `existing` holds the recorded cursor of every store the block touches. A store
+/// first seen above leaf zero fails with [`LeafReduceError::UnrecordedHistory`].
 ///
 /// An account whose last recorded write is at or after `slot` already holds this
 /// block: its writes are replayed below the cursor instead of appended.
@@ -152,12 +154,17 @@ pub fn reduce_block_leaves(
                     write,
                     transaction.transaction_index,
                 )?,
-                _ => {
+                recorded => {
+                    if recorded.is_none() && write.previous_leaf_count != 0 {
+                        return Err(LeafReduceError::UnrecordedHistory {
+                            encrypted_store: account,
+                            previous_leaf_count: write.previous_leaf_count,
+                        });
+                    }
                     let state = existing.entry(account).or_insert_with(|| {
                         EncryptedStoreHistory {
-                            leaf_count: write.previous_leaf_count,
+                            leaf_count: 0,
                             peaks: Vec::new(),
-                            history_complete: write.previous_leaf_count == 0,
                             last_slot: slot,
                         }
                     });
@@ -210,18 +217,15 @@ fn replay_write(
     }
     replay_cursors.insert(account, end);
     let leaves = reduction.replayed.entry(account).or_default();
-    if recorded.history_complete {
-        for (leaf_index, key) in
-            (write.previous_leaf_count..).zip(leaf_keys(write))
-        {
-            leaves.push(staged(
-                account,
-                leaf_index,
-                write.handle,
-                key,
-                transaction_index,
-            ));
-        }
+    for (leaf_index, key) in (write.previous_leaf_count..).zip(leaf_keys(write))
+    {
+        leaves.push(staged(
+            account,
+            leaf_index,
+            write.handle,
+            key,
+            transaction_index,
+        ));
     }
     Ok(())
 }
@@ -262,17 +266,11 @@ fn apply_write(
             recorded: state.leaf_count,
         });
     }
-    if state.history_complete
-        && state.peaks.len() != state.leaf_count.count_ones() as usize
-    {
+    if state.peaks.len() != state.leaf_count.count_ones() as usize {
         return Err(LeafReduceError::Mmr {
             encrypted_store: account,
             error: AclError::MmrInconsistent,
         });
-    }
-    if !state.history_complete {
-        state.leaf_count = leaf_count_after(write, state.leaf_count)?;
-        return Ok(());
     }
     for key in leaf_keys(write) {
         let leaf = staged(
@@ -394,7 +392,7 @@ fn sql_u64(value: i64, field: &str) -> Result<u64, SqlxError> {
         .map_err(|_| SqlxError::Decode(format!("{field} is negative").into()))
 }
 
-/// Locks and loads the recorded state of `accounts`; accounts without a row are
+/// Locks and loads the recorded cursor of `accounts`; stores without a row are
 /// absent from the result.
 pub async fn load_encrypted_store_histories(
     tx: &mut Transaction<'_>,
@@ -407,9 +405,9 @@ pub async fn load_encrypted_store_histories(
         accounts.iter().map(|account| account.to_vec()).collect();
     let rows = sqlx::query!(
         r#"
-        SELECT encrypted_state, leaf_count, peaks, history_complete, last_slot
-        FROM solana_encrypted_states
-        WHERE encrypted_state = ANY($1)
+        SELECT encrypted_store, leaf_count, peaks, last_slot
+        FROM encrypted_stores
+        WHERE encrypted_store = ANY($1)
         FOR UPDATE
         "#,
         &keys,
@@ -419,11 +417,10 @@ pub async fn load_encrypted_store_histories(
     rows.into_iter()
         .map(|row| {
             Ok((
-                bytes32(&row.encrypted_state)?,
+                bytes32(&row.encrypted_store)?,
                 EncryptedStoreHistory {
                     leaf_count: sql_u64(row.leaf_count, "leaf_count")?,
                     peaks: bytes32_vec(&row.peaks)?,
-                    history_complete: row.history_complete,
                     last_slot: sql_u64(row.last_slot, "last_slot")?,
                 },
             ))
@@ -431,7 +428,7 @@ pub async fn load_encrypted_store_histories(
         .collect()
 }
 
-/// Persists a block's reduction: advanced state cursors upserted, leaves and nodes appended.
+/// Persists a block's reduction: advanced store cursors upserted, leaves and nodes appended.
 pub async fn store_block_leaves(
     tx: &mut Transaction<'_>,
     slot: u64,
@@ -444,10 +441,9 @@ pub async fn store_block_leaves(
             state.peaks.iter().map(|peak| peak.to_vec()).collect();
         sqlx::query!(
             r#"
-            INSERT INTO solana_encrypted_states
-                (encrypted_state, leaf_count, peaks, history_complete, last_slot)
-            VALUES ($1, $2, $3, $4, $5)
-            ON CONFLICT (encrypted_state) DO UPDATE SET
+            INSERT INTO encrypted_stores (encrypted_store, leaf_count, peaks, last_slot)
+            VALUES ($1, $2, $3, $4)
+            ON CONFLICT (encrypted_store) DO UPDATE SET
                 leaf_count = EXCLUDED.leaf_count,
                 peaks = EXCLUDED.peaks,
                 last_slot = EXCLUDED.last_slot
@@ -455,7 +451,6 @@ pub async fn store_block_leaves(
             &account[..],
             leaf_count,
             &peaks,
-            state.history_complete,
             last_slot,
         )
         .execute(tx.as_mut())
@@ -465,14 +460,14 @@ pub async fn store_block_leaves(
     if !leaves.is_empty() {
         sqlx::query!(
             r#"
-            INSERT INTO solana_encrypted_state_leaves
-                (encrypted_state, leaf_index, commitment, leaf_kind, handle,
+            INSERT INTO leaves
+                (encrypted_store, leaf_index, commitment, leaf_kind, handle,
                  allowed_key, block_slot, transaction_index)
-            SELECT encrypted_state, leaf_index, commitment, leaf_kind, handle,
+            SELECT encrypted_store, leaf_index, commitment, leaf_kind, handle,
                    allowed_key, $7, transaction_index
             FROM UNNEST($1::BYTEA[], $2::BIGINT[], $3::BYTEA[], $4::SMALLINT[],
                         $5::BYTEA[], $6::BYTEA[], $8::BIGINT[])
-                AS leaf(encrypted_state, leaf_index, commitment, leaf_kind, handle,
+                AS leaf(encrypted_store, leaf_index, commitment, leaf_kind, handle,
                         allowed_key, transaction_index)
             "#,
             &leaves
@@ -515,8 +510,7 @@ pub async fn store_block_leaves(
     if !nodes.is_empty() {
         sqlx::query!(
             r#"
-            INSERT INTO solana_encrypted_state_nodes
-                (encrypted_state, height, node_index, node)
+            INSERT INTO nodes (encrypted_store, height, node_index, node)
             SELECT * FROM UNNEST($1::BYTEA[], $2::SMALLINT[], $3::BIGINT[], $4::BYTEA[])
             "#,
             &nodes
@@ -539,21 +533,15 @@ pub async fn store_block_leaves(
     Ok(())
 }
 
-/// The last sealed block the listener applied, moved inside each block's
-/// transaction so a restart resumes exactly after the recorded work.
-#[derive(Clone, Debug, PartialEq, Eq)]
-pub struct StoredCheckpoint {
-    pub slot: u64,
-    pub block_hash: [u8; 32],
-}
-
+/// Moves the record's checkpoint to `checkpoint`, inside the transaction that applied its block,
+/// so a restart resumes exactly after the recorded work.
 pub async fn store_checkpoint(
     tx: &mut Transaction<'_>,
-    checkpoint: &StoredCheckpoint,
+    checkpoint: &BlockCheckpoint,
 ) -> Result<(), SqlxError> {
     sqlx::query!(
         r#"
-        INSERT INTO solana_listener_checkpoint (singleton, slot, block_hash)
+        INSERT INTO checkpoint (singleton, slot, block_hash)
         VALUES (1, $1, $2)
         ON CONFLICT (singleton) DO UPDATE SET
             slot = EXCLUDED.slot,
@@ -570,14 +558,14 @@ pub async fn store_checkpoint(
 
 pub async fn load_checkpoint(
     pool: &sqlx::PgPool,
-) -> Result<Option<StoredCheckpoint>, SqlxError> {
+) -> Result<Option<BlockCheckpoint>, SqlxError> {
     let row = sqlx::query!(
-        "SELECT slot, block_hash FROM solana_listener_checkpoint WHERE singleton = 1"
+        "SELECT slot, block_hash FROM checkpoint WHERE singleton = 1"
     )
     .fetch_optional(pool)
     .await?;
     row.map(|row| {
-        Ok(StoredCheckpoint {
+        Ok(BlockCheckpoint {
             slot: sql_u64(row.slot, "checkpoint slot")?,
             block_hash: bytes32(&row.block_hash)?,
         })
@@ -594,9 +582,9 @@ pub async fn load_encrypted_store_history(
 ) -> Result<Option<EncryptedStoreHistory>, SqlxError> {
     let row = sqlx::query!(
         r#"
-        SELECT leaf_count, peaks, history_complete, last_slot
-        FROM solana_encrypted_states
-        WHERE encrypted_state = $1
+        SELECT leaf_count, peaks, last_slot
+        FROM encrypted_stores
+        WHERE encrypted_store = $1
         "#,
         &account[..],
     )
@@ -606,7 +594,6 @@ pub async fn load_encrypted_store_history(
         Ok(EncryptedStoreHistory {
             leaf_count: sql_u64(row.leaf_count, "leaf_count")?,
             peaks: bytes32_vec(&row.peaks)?,
-            history_complete: row.history_complete,
             last_slot: sql_u64(row.last_slot, "last_slot")?,
         })
     })
@@ -631,8 +618,8 @@ pub async fn find_leaf(
         Some(key) => sqlx::query!(
             r#"
             SELECT leaf_index, commitment
-            FROM solana_encrypted_state_leaves
-            WHERE encrypted_state = $1 AND leaf_kind = $2 AND handle = $3
+            FROM leaves
+            WHERE encrypted_store = $1 AND leaf_kind = $2 AND handle = $3
               AND allowed_key = $4 AND leaf_index < $5
             ORDER BY leaf_index
             LIMIT 1
@@ -649,8 +636,8 @@ pub async fn find_leaf(
         None => sqlx::query!(
             r#"
             SELECT leaf_index, commitment
-            FROM solana_encrypted_state_leaves
-            WHERE encrypted_state = $1 AND leaf_kind = $2 AND handle = $3
+            FROM leaves
+            WHERE encrypted_store = $1 AND leaf_kind = $2 AND handle = $3
               AND allowed_key IS NULL AND leaf_index < $4
             ORDER BY leaf_index
             LIMIT 1
@@ -697,14 +684,14 @@ pub async fn load_proof(
     let rows = sqlx::query!(
         r#"
         SELECT 0::SMALLINT AS "height!", commitment AS "node!"
-        FROM solana_encrypted_state_leaves
-        WHERE encrypted_state = $1 AND leaf_index = $2
+        FROM leaves
+        WHERE encrypted_store = $1 AND leaf_index = $2
         UNION ALL
         SELECT node.height, node.node
-        FROM solana_encrypted_state_nodes AS node
+        FROM nodes AS node
         JOIN UNNEST($3::SMALLINT[], $4::BIGINT[]) AS path(height, node_index)
             USING (height, node_index)
-        WHERE node.encrypted_state = $1
+        WHERE node.encrypted_store = $1
         "#,
         &account[..],
         sql_i64(sibling_leaf, "leaf_index")?,
@@ -755,11 +742,11 @@ pub async fn load_block_leaves(
         recorded.keys().map(|account| account.to_vec()).collect();
     let rows = sqlx::query!(
         r#"
-        SELECT encrypted_state, leaf_index, commitment, leaf_kind, handle, allowed_key,
+        SELECT encrypted_store, leaf_index, commitment, leaf_kind, handle, allowed_key,
                transaction_index
-        FROM solana_encrypted_state_leaves
-        WHERE encrypted_state = ANY($1) AND block_slot = $2
-        ORDER BY encrypted_state, leaf_index
+        FROM leaves
+        WHERE encrypted_store = ANY($1) AND block_slot = $2
+        ORDER BY encrypted_store, leaf_index
         "#,
         &keys,
         sql_i64(slot, "block_slot")?,
@@ -768,7 +755,7 @@ pub async fn load_block_leaves(
     .await?;
     for row in rows {
         let leaf = leaf_row(
-            &row.encrypted_state,
+            &row.encrypted_store,
             row.leaf_index,
             &row.commitment,
             row.leaf_kind,
@@ -847,7 +834,6 @@ mod tests {
         )
         .unwrap();
         let history = &reduction.states[&STATE];
-        assert!(history.history_complete);
         assert_eq!(history.leaf_count, 3);
         assert_eq!(history.peaks.len(), 2);
         assert_eq!(reduction.leaves.len(), 3);
@@ -857,62 +843,49 @@ mod tests {
         assert_eq!(reduction.leaves[2].handle, [2; 32]);
     }
 
+    /// A store first seen above leaf zero was created before the record started; its earlier
+    /// leaves are lost, so the indexer stops instead of serving a partial history.
     #[test]
-    fn first_seen_mid_history_stays_incomplete_but_tracks_continuity() {
-        let first = reduce_block_leaves(
+    fn a_store_first_seen_above_leaf_zero_is_fatal() {
+        let error = reduce_block_leaves(
             10,
             &[transaction(vec![write(7, [1; 32], vec![OWNER], true)])],
             BTreeMap::new(),
         )
-        .unwrap();
-        let history = &first.states[&STATE];
-        assert!(!history.history_complete);
-        assert_eq!(history.leaf_count, 9);
-        assert!(history.peaks.is_empty());
-        assert!(first.leaves.is_empty());
-
-        let second = reduce_block_leaves(
-            11,
-            &[transaction(vec![write(9, [2; 32], vec![OWNER], false)])],
-            first.states,
-        )
-        .unwrap();
-        assert_eq!(second.states[&STATE].leaf_count, 10);
-        assert!(!second.states[&STATE].history_complete);
-        assert!(second.leaves.is_empty());
+        .unwrap_err();
+        assert_eq!(
+            error,
+            LeafReduceError::UnrecordedHistory {
+                encrypted_store: STATE,
+                previous_leaf_count: 7,
+            }
+        );
+        assert!(error.to_string().contains("--start-slot"), "{error}");
     }
 
     #[test]
-    fn rejects_count_gap_for_complete_and_incomplete_histories() {
-        for history in [
-            EncryptedStoreHistory {
-                leaf_count: 4,
-                peaks: vec![[1; 32]],
-                history_complete: true,
-                last_slot: 10,
-            },
-            EncryptedStoreHistory {
-                leaf_count: 4,
-                peaks: vec![],
-                history_complete: false,
-                last_slot: 10,
-            },
-        ] {
-            let error = reduce_block_leaves(
-                11,
-                &[transaction(vec![write(3, [2; 32], vec![], false)])],
-                BTreeMap::from([(STATE, history)]),
-            )
-            .unwrap_err();
-            assert_eq!(
-                error,
-                LeafReduceError::PreviousLeafCountMismatch {
-                    encrypted_store: STATE,
-                    declared: 3,
-                    recorded: 4,
-                }
-            );
-        }
+    fn rejects_a_count_gap() {
+        let error = reduce_block_leaves(
+            11,
+            &[transaction(vec![write(3, [2; 32], vec![], false)])],
+            BTreeMap::from([(
+                STATE,
+                EncryptedStoreHistory {
+                    leaf_count: 4,
+                    peaks: vec![[1; 32]],
+                    last_slot: 10,
+                },
+            )]),
+        )
+        .unwrap_err();
+        assert_eq!(
+            error,
+            LeafReduceError::PreviousLeafCountMismatch {
+                encrypted_store: STATE,
+                declared: 3,
+                recorded: 4,
+            }
+        );
     }
 
     #[test]
@@ -924,12 +897,11 @@ mod tests {
         )
         .unwrap();
         assert_eq!(reduction.states[&STATE].leaf_count, 0);
-        assert!(reduction.states[&STATE].history_complete);
         assert!(reduction.leaves.is_empty());
     }
 
     #[test]
-    fn zero_leaf_output_rejects_malformed_complete_history() {
+    fn zero_leaf_output_rejects_malformed_history() {
         let error = reduce_block_leaves(
             11,
             &[transaction(vec![write(0, [1; 32], vec![], false)])],
@@ -938,7 +910,6 @@ mod tests {
                 EncryptedStoreHistory {
                     leaf_count: 0,
                     peaks: vec![[1; 32]],
-                    history_complete: true,
                     last_slot: 10,
                 },
             )]),
@@ -1036,7 +1007,6 @@ mod tests {
             EncryptedStoreHistory {
                 leaf_count: 3,
                 peaks: vec![[1; 32], [2; 32]],
-                history_complete: true,
                 last_slot: 11,
             },
         )]);

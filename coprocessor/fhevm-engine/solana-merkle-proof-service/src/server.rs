@@ -1,10 +1,10 @@
-//! The HTTP routes of the Solana processes: the health routes both serve, and the leaf-proof
-//! route that only `solana_leaf_proof_server` adds (DD-064).
+//! The HTTP routes of the Merkle proof service: the health routes both binaries serve, and the
+//! leaf-proof route that only `solana_merkle_proof_server` adds (DD-064).
 //!
 //! The KMS connector asks for the inclusion proof of the leaf that authorizes a
 //! decrypt (an allow of a key on a handle, or a handle made public) and verifies
 //! it against the peaks of the on-chain account it read itself. This server only
-//! reads the leaf record (`database::solana_leaves`): it holds no chain client and
+//! reads the leaf record ([`crate::store`]): it holds no chain client and
 //! makes no authorization decision. Requests carry a bearer API key.
 //!
 //! The wire contract is the committed OpenAPI document in `openapi/`; a test keeps
@@ -30,7 +30,7 @@ use utoipa::{
 };
 use zama_solana_acl::mmr_verify;
 
-use crate::database::solana_leaves::{
+use crate::store::{
     find_leaf, load_encrypted_store_history, load_proof, LeafKind,
 };
 
@@ -52,7 +52,7 @@ pub struct HttpServer {
 }
 
 impl HttpServer {
-    /// The health routes alone, for the ingestion process.
+    /// The health routes alone, for the indexer.
     pub fn health(
         pool: PgPool,
         port: u16,
@@ -192,9 +192,6 @@ pub enum LeafProof {
     NotFound { leaf_count: u64 },
     /// The record never saw this account.
     UnknownAccount,
-    /// The account was first seen through an update, so its earlier leaves are
-    /// unknown and no proof can be served for it.
-    HistoryIncomplete,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize, ToSchema)]
@@ -399,9 +396,6 @@ async fn prove(
     else {
         return Ok(LeafProof::UnknownAccount);
     };
-    if !state.history_complete {
-        return Ok(LeafProof::HistoryIncomplete);
-    }
     let leaf_count = state.leaf_count;
     let Some((leaf_index, commitment)) = find_leaf(
         pool,

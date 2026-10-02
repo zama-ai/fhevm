@@ -10,8 +10,6 @@
 -- the provider's replay window; past it, the listener catches up from `--archive-url`, so
 -- `slot` must be in that archive's history.
 --
--- Recorded Solana leaves are kept: the replay recomputes them and requires them to match.
---
 -- Usage:
 --   psql -v slot=<SLOT> -v block_hash=<HEX> -f rewind_solana_listener_checkpoint.sql
 

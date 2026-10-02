@@ -40,6 +40,23 @@ fi
 SOLANA_RECOVERY_IMAGE="hub.zama.org/ghcr/zama-ai/fhevm/solana-programs:$tag" \
   bash "$script_dir/recover.sh" reset
 
+# The reset closed every zama-host account, and a store created again at the same address
+# restarts at leaf zero, so each rollout records from an empty Merkle database and from a block
+# before the deployment below.
+for i in $(seq 1 "$NB_COPROCESSOR"); do
+  indexer="deployment/coprocessor-$i-solana-merkle-indexer"
+  if [[ -n $(kubectl get "$indexer" -n "$NAMESPACE" --ignore-not-found -o name) ]]; then
+    kubectl scale "$indexer" -n "$NAMESPACE" --replicas=0
+    kubectl wait pod -n "$NAMESPACE" -l "app.kubernetes.io/name=coprocessor-$i-solana-merkle-indexer" \
+      --for=delete --timeout=2m
+  fi
+  psql_party "$i" 'DROP DATABASE IF EXISTS solana_merkle WITH (FORCE)'
+  psql_party "$i" 'CREATE DATABASE solana_merkle'
+done
+rpc_url=$(kubectl get secret solana-rpc -n "$NAMESPACE" -o jsonpath='{.data.rpc-url}' | base64 -d)
+merkle_start_slot=$(curl -fsS "$rpc_url" -H 'content-type: application/json' \
+  -d '{"jsonrpc":"2.0","id":1,"method":"getSlot","params":[{"commitment":"confirmed"}]}' | jq -er .result)
+
 
 # Keygen completion precedes asynchronous key download into each coprocessor DB.
 for i in $(seq 1 "$NB_COPROCESSOR"); do
@@ -78,13 +95,14 @@ for i in $(seq 1 "$NB_COPROCESSOR"); do
   helm upgrade "coprocessor-$i" "$COPROCESSOR_CHART" -n "$NAMESPACE" \
     -f "$work/coprocessor.yaml" -f "$values/values-solana-coprocessor-e2e.yaml" \
     --set-string "solanaHostListener.image.tag=$(jq -r .coprocessor_host_listener <<< "$TAGS_JSON")" \
+    --set-string "solanaHostListener.merkleIndexer.startSlot=$merkle_start_slot" \
     --set-string "solanaHostListener.serviceAccountName=coprocessor-$i" --wait --wait-for-jobs --timeout=10m
   # zkproof loads host_chains only at startup.
   kubectl rollout restart "deployment/coprocessor-$i-zkproof-worker" -n "$NAMESPACE"
   kubectl rollout status "deployment/coprocessor-$i-zkproof-worker" -n "$NAMESPACE" --timeout=10m
 done
 
-routes=$(seq 1 "$NB_COPROCESSOR" | jq -Rsc 'split("\n")[:-1] | map({url: ("http://coprocessor-" + . + "-solana-leaf-proof-server:8080"), apiKey: "$(SOLANA_PROOF_API_KEY)"})')
+routes=$(seq 1 "$NB_COPROCESSOR" | jq -Rsc 'split("\n")[:-1] | map({url: ("http://coprocessor-" + . + "-solana-merkle-proof-server:8080"), apiKey: "$(SOLANA_PROOF_API_KEY)"})')
 for i in $(seq 1 "$NB_KMS_CORE"); do
   helm get values "kms-connector-$i" -n "$NAMESPACE" -o yaml > "$work/connector.yaml"
   helm upgrade "kms-connector-$i" "$KMS_CONNECTOR_CHART" -n "$NAMESPACE" \
@@ -112,6 +130,14 @@ for i in $(seq 1 "$NB_COPROCESSOR"); do
     sleep 5
   done
   [[ "$progressed" == true ]] || { echo "::error::Solana listener $i is ready but its sealed-block checkpoint is not advancing; check Yellowstone endpoint, credentials, connectivity and provider block delivery"; exit 1; }
+  # The indexer replays from the start slot, so its checkpoint passing it proves the replay ran.
+  recorded=false
+  for ((attempt=0; attempt<60; attempt++)); do
+    current=$(psql_party "$i" 'SELECT COALESCE(MAX(slot),0) FROM checkpoint' solana_merkle)
+    if (( current > merkle_start_slot )); then recorded=true; break; fi
+    sleep 5
+  done
+  [[ "$recorded" == true ]] || { echo "::error::Solana Merkle indexer $i has not recorded past start slot $merkle_start_slot; check its logs"; exit 1; }
 done
 if [[ "$SOLANA_DEPLOY_EXAMPLE_PROGRAMS" == true ]]; then
   helm upgrade --install solana-demos "$CONTRACTS_CHART" -n "$NAMESPACE" \

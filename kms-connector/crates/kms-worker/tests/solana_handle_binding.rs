@@ -381,32 +381,6 @@ fn an_account_unknown_to_the_record_is_retryable() {
     );
 }
 
-/// A record whose history for the account has a gap can answer nothing about it until rebuilt,
-/// and no retry within a request's budget rebuilds it.
-#[test]
-fn an_incomplete_history_is_terminal() {
-    let key = Wallet::new(1).pubkey();
-    let live = handle(0x34, FHE_TYPE_UINT64);
-    let encrypted_store = EncryptedStoreFixture::allowing(live, key);
-
-    let failure = check_handle_binding(
-        &resolved(&encrypted_store),
-        B256::new(live),
-        key,
-        &LeafProofOutcome::HistoryIncomplete,
-    )
-    .expect_err("a broken record proves nothing");
-
-    assert!(matches!(failure, HandleBindingFailure::HistoryIncomplete));
-    assert!(
-        !AuthorizationFailure::HandleBinding {
-            index: 0,
-            source: failure
-        }
-        .is_recoverable()
-    );
-}
-
 // ---------------------------------------------------------------------------
 // A proof and the chain's history
 // ---------------------------------------------------------------------------
@@ -824,80 +798,6 @@ async fn no_answer_from_any_coprocessor_is_a_proof_read_error() {
         panic!("expected an unavailable read, got {error}");
     };
     assert!(reason.contains("coprocessor 0") && reason.contains("coprocessor 1"));
-}
-
-/// One coprocessor whose history for the store is incomplete cannot make the entry terminal while
-/// another reports a recoverable miss, whichever answers first.
-#[rstest]
-#[case::incomplete_first(false)]
-#[case::incomplete_last(true)]
-#[tokio::test]
-async fn a_terminal_answer_does_not_replace_a_recoverable_one(#[case] incomplete_last: bool) {
-    let (fixture, account, [entry, _]) = two_allowed_queries();
-    let mut records = vec![
-        ProofRecord::answering([(entry.0, LeafProofOutcome::HistoryIncomplete)]),
-        ProofRecord::answering([(entry.0, not_found(&fixture))]),
-    ];
-    if incomplete_last {
-        records.reverse();
-    }
-
-    let results = verify_with(&ScriptedProofReader::in_order(records), &account, &[entry])
-        .await
-        .unwrap();
-
-    assert!(matches!(
-        &results[..],
-        [Err(HandleBindingFailure::NoLeaf { .. })]
-    ));
-}
-
-/// When every coprocessor answers that its history for the store is incomplete, the entry fails
-/// terminally.
-#[tokio::test]
-async fn a_terminal_answer_from_every_coprocessor_stands() {
-    let (_, account, [entry, _]) = two_allowed_queries();
-    let incomplete = || ProofRecord::answering([(entry.0, LeafProofOutcome::HistoryIncomplete)]);
-    let reader = ScriptedProofReader::in_order(vec![incomplete(), incomplete()]);
-
-    let results = verify_with(&reader, &account, &[entry]).await.unwrap();
-
-    assert!(matches!(
-        &results[..],
-        [Err(HandleBindingFailure::HistoryIncomplete)]
-    ));
-}
-
-/// A terminal answer stands only when every coprocessor answered: one that could not be read may
-/// still hold the history the other lacks, whichever is asked first.
-#[rstest]
-#[case::incomplete_first(false)]
-#[case::incomplete_last(true)]
-#[tokio::test]
-async fn a_terminal_answer_beside_an_unread_coprocessor_is_a_proof_read_error(
-    #[case] incomplete_last: bool,
-) {
-    let (_, account, [entry, _]) = two_allowed_queries();
-    let mut sources = vec![
-        ProofSource::Serving(ProofRecord::answering([(
-            entry.0,
-            LeafProofOutcome::HistoryIncomplete,
-        )])),
-        ProofSource::Down,
-    ];
-    if incomplete_last {
-        sources.reverse();
-    }
-
-    let error = verify_with(
-        &ScriptedProofReader::coprocessors(sources),
-        &account,
-        &[entry],
-    )
-    .await
-    .unwrap_err();
-
-    assert!(matches!(error, ProofReadError::Unavailable { .. }));
 }
 
 /// Through the production client: an unavailable coprocessor leaves the batch to one that serves.

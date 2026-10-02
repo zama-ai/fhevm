@@ -1188,8 +1188,5 @@ pub fn wire_outcome(outcome: &LeafProofOutcome) -> serde_json::Value {
             serde_json::json!({ "status": "notFound", "leafCount": leaf_count })
         }
         LeafProofOutcome::UnknownAccount => serde_json::json!({ "status": "unknownAccount" }),
-        LeafProofOutcome::HistoryIncomplete => {
-            serde_json::json!({ "status": "historyIncomplete" })
-        }
     }
 }
