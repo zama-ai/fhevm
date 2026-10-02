@@ -967,3 +967,22 @@ computes past the probe block; ERC-20 traffic from the proposal to
 
 The faulty operator's later manifests keep the drifted block in their signed
 history, so only an attempt, not consensus, is required of them.
+
+`BLUE_GREEN_DELAY_SNS=hold` (test profile `blue-green-delayed-sns`, same
+scenario) checks that cutover never copies an incomplete dry-run probe. A
+trigger on operator 1's Green `pbs_computations` hides the probe's job on
+insert, so its sns-worker is released and busy but cannot produce the probe's
+ct128. The state hash only needs ct64, so the two other operators cut over;
+operator 1 must log that it defers on the probe's ct128 and stay on the old
+stack. Once the job is released it cuts over, every operator holds the same
+complete copy in `synthetic_handle_digest`, and the dry-run check finds the
+computed probe at quorum on all three.
+
+`BLUE_GREEN_DELAY_SNS=outage` (test profile `blue-green-sns-outage`) pauses
+operator 1's Green sns-worker container through the whole dry run instead, so
+it misses its own release: once resumed it must still be released and let the
+operator cut over, with the same checks.
+
+Both resolve before the background traffic starts: while the delayed operator
+still runs Blue, its ciphertexts differ from its upgraded peers', which the e2e
+consensus watchdog rejects.
