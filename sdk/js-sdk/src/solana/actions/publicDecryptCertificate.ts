@@ -31,7 +31,7 @@ export type SolanaPublicDecryptBatch = {
   readonly options?: RelayerPublicDecryptOptions | undefined;
 };
 
-/** The one handle an on-chain consumer has certified. */
+/** A request to certify one handle, as an on-chain consumer submits it. */
 export type SolanaPublicDecryptCertificateParameters = SolanaPublicHandleEntry &
   Omit<SolanaPublicDecryptBatch, 'entries'>;
 
