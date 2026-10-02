@@ -1,8 +1,10 @@
 pub mod block_repo;
+pub mod catchup_repo;
 pub mod filter_repo;
 pub mod final_block_repo;
 use crate::store::client::PgClient;
 pub use block_repo::BlockRepository;
+pub use catchup_repo::CatchupRepository;
 pub use filter_repo::FilterRepository;
 pub use final_block_repo::FinalBlockRepository;
 use std::sync::Arc;
@@ -16,6 +18,7 @@ pub struct Repositories {
     pub blocks: BlockRepository,
     pub filters: FilterRepository,
     pub final_blocks: FinalBlockRepository,
+    pub catchups: CatchupRepository,
     chain_id: i64,
 }
 
@@ -25,7 +28,8 @@ impl Repositories {
         Self {
             blocks: BlockRepository::new(client.clone(), chain_id),
             filters: FilterRepository::new(client.clone(), chain_id),
-            final_blocks: FinalBlockRepository::new(client, chain_id),
+            final_blocks: FinalBlockRepository::new(client.clone(), chain_id),
+            catchups: CatchupRepository::new(client, chain_id),
             chain_id,
         }
     }

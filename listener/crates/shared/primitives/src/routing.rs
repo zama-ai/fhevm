@@ -12,10 +12,12 @@ pub const FINAL_EVENT: &str = "final-event";
 pub const CATCHUP: &str = "catchup";
 pub const RANGE_CATCHUP: &str = "range-catchup";
 pub const CATCHUP_EVENT: &str = "catchup-event";
+pub const CANCEL_CATCHUP: &str = "cancel-catchup";
 // Final catchup routing keys (finality flow).
 pub const FINAL_CATCHUP: &str = "final-catchup";
 pub const RANGE_FINAL_CATCHUP: &str = "range-final-catchup";
 pub const FINAL_CATCHUP_EVENT: &str = "final-catchup-event";
+pub const CANCEL_FINAL_CATCHUP: &str = "cancel-final-catchup";
 
 pub fn consumer_new_event_routing(consumer_id: String) -> String {
     format!("{}.{}", consumer_id, NEW_EVENT)

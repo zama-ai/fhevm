@@ -230,6 +230,7 @@ fn sample_block_payload(flow: BlockFlow, chain_id: u64, block_number: u64) -> Bl
         parent_hash: [0u8; 32].into(),
         timestamp: 1_700_000_000,
         transactions: vec![],
+        catchup_id: None,
     }
 }
 
@@ -278,7 +279,11 @@ async fn request_final_catchup_publishes_payload() {
     });
 
     tokio::time::sleep(Duration::from_millis(400)).await;
-    consumer.request_final_catchup(100, 200).await.unwrap();
+    let catchup_id = uuid::Uuid::now_v7();
+    consumer
+        .request_final_catchup(catchup_id, 100, 200)
+        .await
+        .unwrap();
 
     let deadline = tokio::time::Instant::now() + Duration::from_secs(5);
     while received.lock().unwrap().is_none() && tokio::time::Instant::now() < deadline {
@@ -299,6 +304,9 @@ async fn request_final_catchup_publishes_payload() {
     assert_eq!(payload.consumer_id, "gateway");
     assert_eq!(payload.block_start, 100);
     assert_eq!(payload.block_end, 200);
+    // The caller-supplied id must survive the wire — it is the only handle
+    // that can later cancel this request.
+    assert_eq!(payload.catchup_id, Some(catchup_id));
 }
 
 /// Shared slot the delivery-roundtrip handlers write into. Tests run under
