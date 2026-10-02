@@ -27,12 +27,12 @@ import {
   PERMIT_SIGNATURE_LEN,
   SolanaPermitError,
   buildSolanaPermitEnvelope,
-  compileSolanaPermitEnvelope,
   decodeSolanaPermitFields,
   isPermissivePermit,
   renderSolanaPermitText,
   verifySolanaPermitSignature,
 } from './index.js';
+import { compileSolanaPermitEnvelope } from './envelope.js';
 import { bytesToHex, hexToBytes } from '../../core/base/bytes.js';
 
 ////////////////////////////////////////////////////////////////////////////////

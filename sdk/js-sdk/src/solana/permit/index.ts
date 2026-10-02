@@ -39,7 +39,7 @@ export {
   renderSolanaPermitText,
 } from './render.js';
 
-export { buildSolanaPermitEnvelope, compileSolanaPermitEnvelope, verifySolanaPermitSignature } from './envelope.js';
+export { buildSolanaPermitEnvelope, verifySolanaPermitSignature } from './envelope.js';
 
 export {
   SOLANA_OFFCHAIN_MESSAGE_VERSION,

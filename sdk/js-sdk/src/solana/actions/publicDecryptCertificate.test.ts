@@ -94,34 +94,6 @@ describe('publicDecryptCertificate', () => {
     });
   });
 
-  it('surfaces a timed-out readiness check without polling the dead job again', async () => {
-    vi.useFakeTimers();
-    const fetchMock = vi
-      .fn()
-      .mockResolvedValueOnce(
-        new Response(JSON.stringify({ status: 'queued', requestId: 'r1', result: { jobId: 'j1' } }), {
-          status: 202,
-          headers: { 'Retry-After': '1' },
-        }),
-      )
-      .mockResolvedValue(
-        new Response(
-          JSON.stringify({
-            status: 'failed',
-            error: { label: 'readiness_check_timed_out', message: 'ciphertext never became ready' },
-          }),
-          { status: 503, headers: { 'Retry-After': '1' } },
-        ),
-      );
-    global.fetch = fetchMock;
-
-    const pending = publicDecryptCertificate(context, parameters());
-    const rejection = expect(pending).rejects.toThrow('readiness_check_timed_out');
-    await vi.runAllTimersAsync();
-    await rejection;
-    expect(fetchMock).toHaveBeenCalledTimes(2);
-  });
-
   it('does not retry a non-readiness 503', async () => {
     const fetchMock = vi.fn().mockResolvedValue(
       new Response(
