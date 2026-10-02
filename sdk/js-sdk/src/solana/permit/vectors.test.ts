@@ -24,9 +24,6 @@ import { readFileSync } from 'node:fs';
 import { ed25519 } from '@noble/curves/ed25519.js';
 import { describe, expect, it } from 'vitest';
 import {
-  PERMIT_ENVELOPE_PREAMBLE,
-  PERMIT_ENVELOPE_SIGNER_COUNT,
-  PERMIT_ENVELOPE_VERSION,
   PERMIT_SIGNATURE_LEN,
   SolanaPermitError,
   buildSolanaPermitEnvelope,
@@ -35,6 +32,7 @@ import {
   renderSolanaPermitText,
   verifySolanaPermitSignature,
 } from './index.js';
+import { compileSolanaPermitEnvelope } from './envelope.js';
 import { bytesToHex, hexToBytes } from '../../core/base/bytes.js';
 
 ////////////////////////////////////////////////////////////////////////////////
@@ -214,7 +212,7 @@ function rejectionOfRecord(record: PermitVectorRecord): {
 
 const accepted = file.vectors.filter((record) => record.result !== 'invalid');
 const rejected = file.vectors.filter((record) => record.result === 'invalid');
-const named = (records: readonly PermitVectorRecord[]): ReadonlyArray<readonly [string, PermitVectorRecord]> =>
+const named = <R extends PermitVectorRecord>(records: readonly R[]): ReadonlyArray<readonly [string, R]> =>
   records.map((record) => [record.name, record] as const);
 
 /** Looks a record up by name, so a test that needs a particular one says which. */
@@ -324,7 +322,9 @@ describe('rejecting records', () => {
 });
 
 describe('records whose signature covers a text other than the canonical one', () => {
-  const shownADifferentText = file.vectors.filter((record) => record.signed_text !== undefined);
+  const shownADifferentText = file.vectors.filter(
+    (record): record is PermitVectorRecord & { readonly signed_text: string } => record.signed_text !== undefined,
+  );
 
   it('are present in the file', () => {
     expect(shownADifferentText.length).toBeGreaterThan(0);
@@ -336,13 +336,7 @@ describe('records whose signature covers a text other than the canonical one', (
   // attributable to the text rather than to a signature that was never valid.
   it.each(named(shownADifferentText))('%s: the signature is genuine over the text the wallet saw', (_name, record) => {
     const userAddress = unhex(record.permit.user_address);
-    const shown = new TextEncoder().encode(record.signed_text);
-    const envelope = new Uint8Array(PERMIT_ENVELOPE_PREAMBLE.length + 2 + userAddress.length + shown.length);
-    envelope.set(PERMIT_ENVELOPE_PREAMBLE, 0);
-    envelope[PERMIT_ENVELOPE_PREAMBLE.length] = PERMIT_ENVELOPE_VERSION;
-    envelope[PERMIT_ENVELOPE_PREAMBLE.length + 1] = PERMIT_ENVELOPE_SIGNER_COUNT;
-    envelope.set(userAddress, PERMIT_ENVELOPE_PREAMBLE.length + 2);
-    envelope.set(shown, PERMIT_ENVELOPE_PREAMBLE.length + 2 + userAddress.length);
+    const envelope = compileSolanaPermitEnvelope(userAddress, record.signed_text);
 
     expect(ed25519.verify(unhex(record.signature), envelope, userAddress)).toBe(true);
   });

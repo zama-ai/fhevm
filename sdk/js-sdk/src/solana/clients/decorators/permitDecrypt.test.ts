@@ -16,13 +16,8 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 import { base58 } from '@scure/base';
 import { ed25519 } from '@noble/curves/ed25519.js';
 import { asBytes32Hex, hexToBytes32 } from '../../../core/base/bytes.js';
-import {
-  PERMIT_ENVELOPE_PREAMBLE,
-  PERMIT_ENVELOPE_SIGNER_COUNT,
-  PERMIT_ENVELOPE_VERSION,
-  PERMIT_TRANSPORT_KEY_LEN,
-  SOLANA_SIGN_OFFCHAIN_MESSAGE_FEATURE,
-} from '../../permit/index.js';
+import { PERMIT_TRANSPORT_KEY_LEN, SOLANA_SIGN_OFFCHAIN_MESSAGE_FEATURE } from '../../permit/index.js';
+import { compileSolanaPermitEnvelope } from '../../permit/envelope.js';
 import { createFhevmDecryptClient } from '../createFhevmDecryptClient.js';
 import * as responseVerification from '../../userDecrypt/response.js';
 import { setFhevmRuntimeConfig } from '../../internal/config.js';
@@ -75,13 +70,7 @@ function conformingWallet() {
   const signOffchainMessage = vi.fn((...inputs: readonly { readonly message: string }[]) =>
     Promise.resolve(
       inputs.map(({ message }) => {
-        const text = new TextEncoder().encode(message);
-        const envelope = new Uint8Array(PERMIT_ENVELOPE_PREAMBLE.length + 2 + USER_PUBKEY.length + text.length);
-        envelope.set(PERMIT_ENVELOPE_PREAMBLE, 0);
-        envelope[PERMIT_ENVELOPE_PREAMBLE.length] = PERMIT_ENVELOPE_VERSION;
-        envelope[PERMIT_ENVELOPE_PREAMBLE.length + 1] = PERMIT_ENVELOPE_SIGNER_COUNT;
-        envelope.set(USER_PUBKEY, PERMIT_ENVELOPE_PREAMBLE.length + 2);
-        envelope.set(text, PERMIT_ENVELOPE_PREAMBLE.length + 2 + USER_PUBKEY.length);
+        const envelope = compileSolanaPermitEnvelope(USER_PUBKEY, message);
         return { signedOffchainMessage: envelope, signature: ed25519.sign(envelope, USER_SEED) };
       }),
     ),
