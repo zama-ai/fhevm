@@ -2613,6 +2613,8 @@ confidential-token.
 
 Status: adopted
 
+Recorded in zama-ai/fhevm#4215.
+
 The host listener wrote the leaf record into the coprocessor database, in the transaction that
 wrote the compute rows (DD-048). The record could only start where the listener started. A
 listener started at the tip, or on a database restored without the record, met Stores whose
