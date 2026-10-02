@@ -912,13 +912,16 @@ const buildCoprocessorOverride = async (plan: StackSpec) => {
 export const buildKmsConnectorOverride = async (plan: StackSpec) => {
   const doc = rewriteComposePaths(await loadComposeDoc("kms-connector"));
   const overridden = overriddenServicesForComponent(plan, "kms-connector");
-  const includeHttp = supportsConnectorHttp(plan);
   const services: Record<string, Record<string, unknown>> = {};
   const buildOwners = new Set<string>();
   for (let party = 1; party <= plan.kms.parties; party += 1) {
     const prefix = `${kmsConnectorPrefix(party)}-`;
     const envFileValue = envPath(kmsConnectorEnvName(party));
     const deployment = plan.kmsConnectorDeploymentByNodeId?.[party];
+    const includeHttp = supportsConnectorHttp(deployment ? {
+      versions: { ...plan.versions, env: deployment.versions },
+      overrides: deployment.locallyBuilt ? [{ group: "kms-connector" }] : [],
+    } : plan);
     for (const [name, service] of Object.entries(doc.services)) {
       const suffix = name.replace(/^kms-connector-/, "");
       if (KMS_CONNECTOR_HTTP_SUFFIXES.includes(suffix) && !includeHttp) {

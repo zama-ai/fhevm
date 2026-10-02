@@ -6,7 +6,7 @@ services:
     command:
       - postgres
       - -c
-      - max_connections=500
+      - max_connections=${FHEVM_POSTGRES_MAX_CONNECTIONS:-500}
     env_file:
       - ${FHEVM_STATE_DIR:-../../../.fhevm}/runtime/env/database.env
     ports:

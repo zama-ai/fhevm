@@ -1,5 +1,9 @@
 ARG NODE_VERSION=22.22.2-alpine3.22
 
+# Rollouts can supply the predecessor library through a named build context.
+FROM scratch AS solidity-library
+COPY library-solidity/ /
+
 # --- Builder Stage ---
 FROM node:${NODE_VERSION} AS builder
 
@@ -40,7 +44,7 @@ RUN npm ci && \
     npm prune
 
 # Copy sources after deps are cached
-COPY library-solidity ./library-solidity
+COPY --from=solidity-library / ./library-solidity
 COPY test-suite/e2e ./test-suite/e2e
 COPY sdk/js-sdk ./sdk/js-sdk
 
