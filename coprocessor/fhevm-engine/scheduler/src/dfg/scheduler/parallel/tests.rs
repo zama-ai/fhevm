@@ -309,6 +309,7 @@ struct ProbeState {
 }
 struct Probe {
     tid: Handle,
+    expected_active: usize,
     state: Mutex<ProbeState>,
     wake: Condvar,
 }
@@ -331,7 +332,9 @@ pub(super) fn operation_started(tid: &Handle, index: usize) -> Option<ProbeGuard
     probe.wake.notify_all();
     let (mut state, timeout) = probe
         .wake
-        .wait_timeout_while(state, Duration::from_secs(5), |s| s.entered < 2)
+        .wait_timeout_while(state, Duration::from_secs(5), |s| {
+            s.entered < probe.expected_active
+        })
         .unwrap();
     state.timed_out |= timeout.timed_out();
     drop(state);
@@ -344,8 +347,19 @@ fn independent_operations_in_one_transaction_really_overlap() {
     tfhe::set_server_key(f.key.clone());
     let a = SupportedFheCiphertexts::FheUint8(tfhe::FheUint8::encrypt(17u8, &f.client));
     let b = SupportedFheCiphertexts::FheUint8(tfhe::FheUint8::encrypt(29u8, &f.client));
+    // CPU admission respects the process cpuset; GPU admission uses the
+    // explicitly configured per-device budget even on a single-CPU host.
+    let expected_active = if cfg!(feature = "gpu") {
+        2
+    } else {
+        std::thread::available_parallelism()
+            .map(usize::from)
+            .unwrap_or(1)
+            .min(2)
+    };
     let probe = Arc::new(Probe {
         tid: vec![0xd1; 32],
+        expected_active,
         state: Mutex::new(ProbeState::default()),
         wake: Condvar::new(),
     });
@@ -354,10 +368,13 @@ fn independent_operations_in_one_transaction_really_overlap() {
     *PROBE.lock().unwrap() = None;
     assert_eq!(bytes(result).len(), 4);
     let state = probe.state.lock().unwrap();
-    assert_eq!(state.peak, 2, "ready siblings must execute concurrently");
+    assert_eq!(
+        state.peak, expected_active,
+        "ready siblings must use the available operation budget"
+    );
     assert!(
         !state.timed_out,
-        "serial execution must fail the overlap control"
+        "ready work must not serialize when the operation budget allows overlap"
     );
 }
 

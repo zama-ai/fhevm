@@ -101,24 +101,26 @@ mod tests {
 
     #[tokio::test]
     async fn shared_capacity_blocks_and_records_real_overlap() {
-        let limiter = GpuExecutionLimiter::new(1, 2).unwrap();
-        assert_eq!(limiter.total_capacity(), 2);
-        let metric = PERMITS_AT_ACQUISITION.with_label_values(&["0", "2"]);
+        let limiter = GpuExecutionLimiter::new(2, 2).unwrap();
+        assert_eq!(limiter.total_capacity(), 4);
+        // Use a simulated device distinct from the GPU scheduler fixtures.
+        // Their concurrent observations must not change this metric delta.
+        let metric = PERMITS_AT_ACQUISITION.with_label_values(&["1", "2"]);
         let count = metric.get_sample_count();
         let sum = metric.get_sample_sum();
-        let first = limiter.acquire(0).await.unwrap();
-        let second = limiter.clone().acquire(0).await.unwrap();
+        let first = limiter.acquire(1).await.unwrap();
+        let second = limiter.clone().acquire(1).await.unwrap();
         assert_eq!(metric.get_sample_count() - count, 2);
         assert_eq!(metric.get_sample_sum() - sum, 3.0);
         assert!(
-            tokio::time::timeout(std::time::Duration::from_millis(20), limiter.acquire(0))
+            tokio::time::timeout(std::time::Duration::from_millis(20), limiter.acquire(1))
                 .await
                 .is_err()
         );
         drop(first);
-        let replacement = limiter.acquire(0).await.unwrap();
+        let replacement = limiter.acquire(1).await.unwrap();
         drop((second, replacement));
-        assert!(limiter.acquire(1).await.is_err());
+        assert!(limiter.acquire(2).await.is_err());
         assert!(GpuExecutionLimiter::new(0, 1).is_err());
         assert!(GpuExecutionLimiter::new(1, 0).is_err());
     }
