@@ -153,6 +153,7 @@ impl Harness {
             &CHAIN_ID.to_string(),
             payload,
             self.store.clone(),
+            &tokio_util::sync::CancellationToken::new(),
         )
         .await
         .unwrap();
@@ -288,4 +289,31 @@ async fn consumer_activates_kms_material_only_on_finalized_blocks() {
     .await
     .unwrap();
     assert_eq!(finalized, 3);
+
+    // A drift revert that is not done holds every KMS pass.
+    use fhevm_engine_common::drift_revert::{
+        create_revert_signal, update_signal_status, SignalStatus,
+    };
+    let signal = create_revert_signal(&pool, CHAIN_ID as i64, 500)
+        .await
+        .unwrap()
+        .unwrap();
+    let held = activation(300, BlockFlow::Final, false);
+    for _ in 0..3 {
+        harness.deliver(&held).await;
+    }
+    tokio::time::sleep(Duration::from_millis(500)).await;
+    assert_eq!(
+        status(&pool, "kms_key_activation_events", 300)
+            .await
+            .as_deref(),
+        Some("pending"),
+        "no KMS pass may run during a drift revert"
+    );
+    update_signal_status(&pool, signal, &SignalStatus::Done)
+        .await
+        .unwrap();
+    harness
+        .deliver_until(&held, "kms_key_activation_events", 300, "activated")
+        .await;
 }

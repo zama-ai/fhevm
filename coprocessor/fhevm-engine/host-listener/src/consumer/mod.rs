@@ -408,11 +408,17 @@ pub async fn run_consumer(config: ConsumerConfig) -> Result<()> {
     ));
     // Resume pending downloads and activations without waiting for a block.
     if config.kms_generation_address.is_some() {
-        spawn_kms_activations(db.clone(), None, AwsS3Client {});
+        spawn_kms_activations(
+            db.clone(),
+            None,
+            AwsS3Client {},
+            client.cancel_token.clone(),
+        );
     }
     // Live and finalized deliveries share this handler. A finalized delivery
     // re-ingests the block idempotently and marks it finalized.
     let handler_config = config.clone();
+    let kms_cancel = client.cancel_token.clone();
     let handle_block = move |payload: BlockPayload, _cancel| {
         let finalized = payload.flow == BlockFlow::Final;
         if !finalized {
@@ -424,6 +430,7 @@ pub async fn run_consumer(config: ConsumerConfig) -> Result<()> {
         let ingest_options = ingest_options.clone();
         let stack_mode = stack_mode.clone();
         let config = handler_config.clone();
+        let kms_cancel = kms_cancel.clone();
         async move {
             // Paused (retired blue stack after cutover): no-op — ack and drop
             // the block without writing anything to the DB.
@@ -470,6 +477,7 @@ pub async fn run_consumer(config: ConsumerConfig) -> Result<()> {
                 &chain_id_str,
                 &payload,
                 AwsS3Client {},
+                &kms_cancel,
             )
             .await
         }
@@ -519,6 +527,7 @@ async fn ingest_payload<A: AwsS3Interface + Clone + 'static>(
     chain_id_str: &str,
     payload: &BlockPayload,
     s3: A,
+    kms_cancel: &CancellationToken,
 ) -> Result<AckDecision, HandlerError> {
     let chain_id = db.chain_id;
     let finalized = payload.flow == BlockFlow::Final;
@@ -586,6 +595,7 @@ async fn ingest_payload<A: AwsS3Interface + Clone + 'static>(
                     db.clone(),
                     finalized.then_some(block_summary.number as i64),
                     s3,
+                    kms_cancel.clone(),
                 );
             }
 
@@ -608,20 +618,44 @@ async fn ingest_payload<A: AwsS3Interface + Clone + 'static>(
 
 /// Spawn one KMS activation pass: cancel orphaned candidates, activate
 /// finalized ready keys/CRS, and download and verify pending material.
+/// The pass is skipped while a drift revert is not done, and stops on
+/// shutdown, releasing its transaction.
 fn spawn_kms_activations<A: AwsS3Interface + Clone + 'static>(
     db: Database,
     finalized_height: Option<i64>,
     s3: A,
+    cancel: CancellationToken,
 ) {
     tokio::spawn(async move {
-        if let Err(error) = process_kms_generation_activations(
-            db.pool().await,
-            s3,
-            finalized_height,
-        )
-        .await
-        {
-            error!(%error, "Error processing KMSGeneration activations");
+        let pass = async {
+            let pool = db.pool().await;
+            // The cached drift state is only refreshed by block handling, so
+            // read the latest signal: a revert may start after the block gate.
+            let signal =
+                fhevm_engine_common::drift_revert::latest_signal_for_chain(
+                    &pool,
+                    db.chain_id.as_i64(),
+                )
+                .await?;
+            if let Some(signal) =
+                signal.filter(|signal| signal.status != DriftStatus::Done)
+            {
+                info!(
+                    drift_id = signal.id,
+                    status = ?signal.status,
+                    "Skipping KMSGeneration activations while a drift revert is not done"
+                );
+                return Ok(0);
+            }
+            process_kms_generation_activations(pool, s3, finalized_height).await
+        };
+        tokio::select! {
+            _ = cancel.cancelled() => {}
+            result = pass => {
+                if let Err(error) = result {
+                    error!(%error, "Error processing KMSGeneration activations");
+                }
+            }
         }
     });
 }
