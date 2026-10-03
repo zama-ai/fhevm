@@ -33,3 +33,22 @@ txSender:
   config:
     gatewayUrl:
       value: "ws://anvil-gateway-anvil-node:8546"
+
+# TEMPORARY — manufactures a predecessor identity so the one-off migration can
+# be exercised. Drop this block and its twin in values-coprocessor-gcs-e2e.yaml
+# together, along with the --migrate-from-service-name flag itself.
+#
+# v0.14.1 derives its broker identity from --service-name, so naming it here
+# makes Blue register host-listener-consumer-legacy.12345 and the listener fan
+# out to that identity's own four streams. That is a predecessor identity
+# created the way the real one was: by a rename. Green runs HEAD, whose
+# identity is compiled in and cannot be renamed, and carries
+# --migrate-from-service-name pointed back at this name.
+#
+# This departs from the default topology on purpose. Unmodified, both fleets
+# share one identity and are separated by consumer group; that is what the
+# overlay deploys normally. A single run cannot cover both arrangements,
+# because manufacturing the predecessor is what splits them apart.
+hostListenerConsumerShared:
+  args:
+    serviceName: host-listener-consumer-legacy
