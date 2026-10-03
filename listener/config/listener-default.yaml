@@ -33,6 +33,14 @@ broker:
   broker_type: amqp
   broker_url: "placeholder-overridden-by-env"
   ensure_publish: false
+  # Redis only. Upper bound on the entries kept per stream, applied on every
+  # publish so a consumer that stops acknowledging cannot grow a stream without
+  # limit. Size it from how much backlog a returning consumer can actually drain
+  # inside an acceptable recovery window, not from how much the node can store:
+  # a backlog that cannot be drained is lost either way.
+  # 0 turns the bound off entirely, which leaves the instance exposed to an
+  # unbounded stream, so only do that where Redis has its own memory policy.
+  redis_max_stream_len: 1000000
 
 blockchain:
   type: evm
