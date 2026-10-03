@@ -3,6 +3,7 @@ import { runRetainedMaterial } from "../../src/consensus/retained-material-run";
 import { withRolloutSupervisor } from "../../src/consensus/rollout-supervision";
 import { withHeldRecipient } from "./held-recipient";
 import { upgradeMigrationHostContracts } from "./host-contract-upgrades";
+import { prepareMigrationDownloadFixture } from "./download-fixture";
 import { createHash } from "node:crypto";
 import path from "node:path";
 
@@ -417,6 +418,10 @@ export default async function runMigration(ctx: RolloutRunContext) {
   // Select the production parameter family before seeding any retained ciphertexts.
   const gpuContinuation = process.env.RFC029_GPU_CONTINUATION === "1";
   if (!["none", "lagging-recipient", "application-interruption", "download-interrupt", "download-wrong-digest", "download-malformed", "download-wrong-key"].includes(migrationFault)) throw new Error(`unsupported migration fault ${migrationFault}`);
+  // A cold Rust build can exceed the fault supervisor's three-minute setup
+  // budget. Finish it before changing the stack; the supervisor revalidates
+  // the fixture using the same now-built helper immediately before delivery.
+  await prepareMigrationDownloadFixture(migrationFault, process.env.RFC029_WRONG_KEY_FILE);
   const versions = migrationVersions();
   // Run the same baseline-compatible dApps throughout the migration. Current
   // Solidity can call executor methods that did not exist before the upgrade.

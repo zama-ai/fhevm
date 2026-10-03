@@ -200,6 +200,13 @@ Release rollouts are executable TypeScript runbooks under `rollouts/`. A runbook
 
 Use `./fhevm-cli rollout receipt` to print the markdown receipt of the most recent rollout run.
 
+The key-migration runbook's `download-wrong-key` mode requires
+`RFC029_WRONG_KEY_FILE` to name an independently generated compressed-key fixture.
+It builds and deserializes that fixture before booting the baseline, so a cold
+Rust build does not consume the fault supervisor's three-minute setup budget.
+The supervisor revalidates the file immediately before delivery. Other migration
+modes do not need this fixture or its native build.
+
 Runbooks use the same primitives an operator needs during a release:
 
 - `ctx.up(...)` starts the old baseline once.
