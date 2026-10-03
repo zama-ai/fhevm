@@ -604,7 +604,7 @@ async fn retiring_an_identity_deletes_only_its_own_streams() {
     new.ensure_consumer().await.unwrap();
 
     // Let the old identity's group exist, then take its reader away: that is
-    // the state the migration task is built to recognise.
+    // the state the migration task is built to recognize.
     let old_handle = start_live_consumer(&url, &old).await;
     old.cancel();
     old_handle.abort();

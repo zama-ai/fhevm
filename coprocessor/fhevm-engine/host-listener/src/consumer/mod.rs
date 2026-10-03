@@ -664,7 +664,7 @@ pub async fn run_consumer(config: ConsumerConfig) -> Result<()> {
 /// a frozen cursor starts holding the stream. Stopping the reader here is what
 /// lets the caller release the group afterwards.
 ///
-/// Polled rather than signalled: `paused` is a plain flag, and a load every
+/// Polled rather than signaled: `paused` is a plain flag, and a load every
 /// [`RETIREMENT_POLL_INTERVAL`] costs nothing next to reacting to it late.
 /// There is no path back — `paused` is only ever set, never cleared — so this
 /// returns as soon as it fires.
