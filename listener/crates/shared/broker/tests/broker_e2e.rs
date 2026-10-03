@@ -60,6 +60,34 @@ async fn redis_xlen(url: &str, stream: &str) -> u64 {
         .unwrap_or(0)
 }
 
+/// Create a consumer group that is never read from. Its `last-delivered-id`
+/// stays at `0-0`, which pins the background trimmer's safe point and leaves
+/// the `XADD` cap as the only thing that can bound the stream.
+async fn freeze_group(url: &str, stream: &str) {
+    let client = redis::Client::open(url).unwrap();
+    let mut conn = client.get_multiplexed_async_connection().await.unwrap();
+    let _: String = redis::cmd("XGROUP")
+        .arg("CREATE")
+        .arg(stream)
+        .arg("frozen")
+        .arg("0")
+        .arg("MKSTREAM")
+        .query_async(&mut conn)
+        .await
+        .unwrap();
+}
+
+async fn publish_n(broker: &Broker, stream: &str, count: u64) {
+    let publisher = broker.publisher_unscoped().await.unwrap();
+    for block_number in 0..count {
+        publisher
+            .publish(stream, &BlockEvent { block_number })
+            .await
+            .unwrap();
+    }
+    publisher.shutdown().await;
+}
+
 // ── Test 1: Simple roundtrip via Broker facade ──────────────────────────────
 
 #[tokio::test]
@@ -1210,5 +1238,57 @@ async fn test_start_id_skips_the_backlog() {
         vec![6],
         "a group started at `$` must see only what was published after it was created, \
          but it saw {seen:?} — the start ID did not reach XGROUP CREATE"
+    );
+}
+
+// ── Test: the configured stream cap reaches the publisher ───────────────────
+
+/// `Broker` owns the `MAXLEN ~` that rides on every `XADD`, so whatever a
+/// deployment configures has to survive the trip from constructor to
+/// publisher. A frozen consumer group is what makes the cap matter at all:
+/// the background trimmer will not reclaim past such a group's cursor, so
+/// without the cap nothing bounds the stream.
+///
+/// Both directions are asserted, because they fail differently. A cap dropped
+/// on the way through looks healthy right up until a consumer dies and the
+/// stream eats the instance. A cap applied when it was configured away
+/// silently discards entries an operator asked to keep.
+#[tokio::test]
+#[ignore = "requires Docker"]
+async fn test_configured_max_stream_len_reaches_the_publisher() {
+    let url = shared_redis_url().await;
+    let suffix = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .unwrap()
+        .as_nanos();
+
+    let cap: usize = 100;
+    let published: u64 = 3000;
+
+    let capped_stream = format!("maxlen.capped.{suffix}");
+    freeze_group(url, &capped_stream).await;
+    let capped = Broker::redis_with_options(url, false, Some(cap))
+        .await
+        .unwrap();
+    publish_n(&capped, &capped_stream, published).await;
+
+    let uncapped_stream = format!("maxlen.uncapped.{suffix}");
+    freeze_group(url, &uncapped_stream).await;
+    let uncapped = Broker::redis_with_options(url, false, None).await.unwrap();
+    publish_n(&uncapped, &uncapped_stream, published).await;
+
+    let capped_len = redis_xlen(url, &capped_stream).await;
+    let uncapped_len = redis_xlen(url, &uncapped_stream).await;
+
+    // `MAXLEN ~` trims on macro-node boundaries, so assert an order of
+    // magnitude rather than the exact cap.
+    assert!(
+        capped_len <= (cap as u64) * 10,
+        "a configured cap must bound the stream despite the frozen group \
+         (len={capped_len}, cap={cap}, published={published})"
+    );
+    assert_eq!(
+        uncapped_len, published,
+        "a cap configured off must keep every entry"
     );
 }
