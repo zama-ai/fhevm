@@ -2104,60 +2104,6 @@
         },
         {
           "address": "FehRgP9PH3JfNt9E1uYaSTzrKWEy4kJ3kNFuCgxuC539",
-          "data_base64": "oY+JSekeLnYBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMBAAAAYmFsYW5jZV9fX19fX19fX19fX19fX19fX19fX19fX1+hoaGhoaGhoaGhoaGhoaGhoaGhoaGhASNFZ4mrze8FAAEAAAAAAAAAAQAAAMfdTyQ5tSW9RI1PIkiRZ+FT5vHIfvkch99YWvgSfu94/w==",
-          "owner": "US517G5965aydkZ46HS38QLi7UQiSojurfbQfKCELFx"
-        }
-      ],
-      "entries": [
-        {
-          "encrypted_store": "d9abd0f01294f83d1c81b999cc325b1fe3549e8d807e8cd074d281fae1c754a4",
-          "handle": "a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a10123456789abcdef0500",
-          "owner_address": "884b8857f4eaa1613c61504db34d4beaf346517a0e31de3cddd4d9b4201d9d0b"
-        }
-      ],
-      "leaf_read": [
-        {
-          "outcome": {
-            "status": "historyIncomplete"
-          },
-          "query": {
-            "encryptedStore": "d9abd0f01294f83d1c81b999cc325b1fe3549e8d807e8cd074d281fae1c754a4",
-            "handle": "a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a10123456789abcdef0500",
-            "key": "884b8857f4eaa1613c61504db34d4beaf346517a0e31de3cddd4d9b4201d9d0b",
-            "kind": "allowed"
-          }
-        }
-      ],
-      "name": "a leaf record with a gap in the store's history",
-      "now": "1700000060",
-      "permit": {
-        "allowed_scopes": [
-          "01010101010101010101010101010101010101010101010101010101010101010303030303030303030303030303030303030303030303030303030303030303"
-        ],
-        "chain_id": "81985529216486895",
-        "duration_seconds": "3600",
-        "extra_data": "0211111111111111111111111111111111111111111111111111111111111111111212121212121212121212121212121212121212121212121212121212121212",
-        "start_timestamp": "1700000000",
-        "user_address": "884b8857f4eaa1613c61504db34d4beaf346517a0e31de3cddd4d9b4201d9d0b",
-        "verifying_program_id": "0707070707070707070707070707070707070707070707070707070707070707"
-      },
-      "signature": "30b70740500880efc780c725912624f9a9f793d50363c60431f40e6f56d66a670e64b995d01dfa6aed2b79764846dee747066eb820bb33ffd8cfc5224b11b607",
-      "verdict": {
-        "authorized": false,
-        "entry": 0,
-        "failure": "HandleBinding::HistoryIncomplete",
-        "recoverable": false
-      }
-    },
-    {
-      "accounts": [
-        {
-          "address": "SysvarC1ock11111111111111111111111111111111",
-          "data_base64": "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA88VNlAAAAAA==",
-          "owner": "Sysvar1111111111111111111111111111111111111"
-        },
-        {
-          "address": "FehRgP9PH3JfNt9E1uYaSTzrKWEy4kJ3kNFuCgxuC539",
           "data_base64": "oY+JSekeLnYBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMBAAAAYmFsYW5jZV9fX19fX19fX19fX19fX19fX19fX19fX1+hoaGhoaGhoaGhoaGhoaGhoaGhoaGhASNFZ4mrze8FAAEAAAAAAAAAAQAAALptBs4+i6v2NC3Tnafv+ckLdj8VSDVTQ2mfQy2XO6o8/w==",
           "owner": "US517G5965aydkZ46HS38QLi7UQiSojurfbQfKCELFx"
         }

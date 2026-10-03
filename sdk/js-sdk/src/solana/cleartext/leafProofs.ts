@@ -21,9 +21,7 @@ export type SolanaLeafProofOutcome =
   /** The record knows the store and has no such leaf in the `leafCount` leaves it has sealed. */
   | { readonly status: 'notFound'; readonly leafCount: bigint }
   /** The record has never seen the store. */
-  | { readonly status: 'unknownAccount' }
-  /** The record's history of the store contradicts the chain. */
-  | { readonly status: 'historyIncomplete' };
+  | { readonly status: 'unknownAccount' };
 
 /** One read of the leaf record: an outcome per query, in query order. */
 export type SolanaLeafProofReader = (queries: readonly SolanaLeafQuery[]) => Promise<readonly SolanaLeafProofOutcome[]>;
