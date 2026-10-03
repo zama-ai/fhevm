@@ -21,7 +21,7 @@ use kms_worker::core::solana::{
     failure::AuthorizationFailure,
     handle_binding::HandleBindingFailure,
     pipeline::authorize_request,
-    proof::{LeafKind, MerkleProofOutcome, LeafQuery, ProofReadError},
+    proof::{LeafKind, LeafQuery, ProofReadError},
     public_decrypt::{PublicDecryptFailure, check_public_decrypt},
     snapshot::{SnapshotAccount, SnapshotError},
     watermark::{WatermarkFailure, WindowFailure},
@@ -39,7 +39,7 @@ const UPDATE_ENV: &str = "ZAMA_UPDATE_AUTHORIZATION_CASES";
 const SLOT: u64 = 100;
 
 /// Every failure [`failure_name`] can return.
-const FAILURES: [&str; 26] = [
+const FAILURES: [&str; 25] = [
     "Signature",
     "Window::NotYetValid",
     "Window::Expired",
@@ -61,7 +61,6 @@ const FAILURES: [&str; 26] = [
     "HandleBinding::NoLeaf",
     "HandleBinding::ProofRecordBehind",
     "HandleBinding::AccountUnknownToProofRecord",
-    "HandleBinding::HistoryIncomplete",
     "HandleBinding::ProofDoesNotVerify",
     "HandleBinding::LeafIndexOutOfRange",
     "Delegation::NoLiveDelegation",
@@ -116,7 +115,6 @@ fn handle_binding_name(source: &HandleBindingFailure) -> &'static str {
         HandleBindingFailure::AccountUnknownToProofRecord => {
             "HandleBinding::AccountUnknownToProofRecord"
         }
-        HandleBindingFailure::HistoryIncomplete => "HandleBinding::HistoryIncomplete",
         HandleBindingFailure::ProofDoesNotVerify { .. } => "HandleBinding::ProofDoesNotVerify",
         HandleBindingFailure::LeafIndexOutOfRange { .. } => "HandleBinding::LeafIndexOutOfRange",
     }
@@ -548,16 +546,6 @@ fn cases() -> Vec<Case> {
             Some(("HandleBinding::AccountUnknownToProofRecord", Some(0))),
         )
         .record(ProofRecord::default()),
-        case(
-            "a leaf record with a gap in the store's history",
-            request().direct(&mine, h1),
-            world().with_encrypted_store(&mine),
-            Some(("HandleBinding::HistoryIncomplete", Some(0))),
-        )
-        .record(ProofRecord::answering([(
-            mine.allowed_query(h1, signer),
-            MerkleProofOutcome::HistoryIncomplete,
-        )])),
         case(
             "a leaf record ahead of the store, whose leaf the store has not sealed yet",
             request().direct(&strangers, h1),
