@@ -16,7 +16,7 @@ use fhevm_engine_common::drift_revert::SignalStatus as DriftStatus;
 use fhevm_engine_common::chain_id::ChainId;
 use fhevm_engine_common::healthz_server::HttpServer as HealthHttpServer;
 use fhevm_engine_common::utils::{DatabaseURL, HeartBeat};
-use fhevm_engine_common::versioning::StackMode;
+use fhevm_engine_common::versioning::{is_retired, StackMode};
 use fhevm_engine_common::CONSENSUS_PROTOCOL_VERSION;
 use primitives::event::BlockFlow;
 
@@ -42,6 +42,8 @@ const MAX_DB_RETRIES: u64 = 10;
 const STATS_REPORT_INTERVAL: Duration = Duration::from_secs(60);
 static SLOW_LANE_PROMOTION_ATTEMPTED: AtomicBool = AtomicBool::new(false);
 const STATS_FINALIZATION_MARGIN: i64 = 5;
+/// How often the retirement watcher re-reads the paused flag.
+const RETIREMENT_POLL_INTERVAL: Duration = Duration::from_secs(10);
 
 /// Data-plane identity of this listener on the broker.
 ///
@@ -381,13 +383,36 @@ pub async fn run_consumer(config: ConsumerConfig) -> Result<()> {
 
     db.tick.update();
 
-    // Queue before filters, in that order: registering a contract is what
-    // starts the listener publishing, and a group created afterwards starts at
-    // the end of the stream and never sees what was published in between.
-    info!("Consumer ensure queue");
-    client.ensure_consumer().await?;
-    info!("Consumer registering contracts");
-    client.register_contracts(&contracts).await?;
+    // A stack whose consensus version is behind the live one is retired: every
+    // guarded transaction it attempts is refused and the consume handler below
+    // acks and drops. Reading would only move a cursor nobody acts on, so it
+    // does not create a group to begin with. Checked here because
+    // `resolve_gcs_mode` cannot tell a retired build from an ordinary blue one
+    // — compiled-older is not compiled-newer — so without this a retired pod
+    // would create a group on every restart and leave it behind.
+    let retired = {
+        let pool = db.pool.read().await;
+        let mut conn = pool.acquire().await?;
+        is_retired(&mut conn).await?
+    };
+
+    if retired {
+        warn!(
+            chain_id = %config.chain_id,
+            consensus_version = CONSENSUS_PROTOCOL_VERSION,
+            "Consensus version is behind the live one: this stack is retired \
+             and will not consume"
+        );
+    } else {
+        // Queue before filters, in that order: registering a contract is what
+        // starts the listener publishing, and a group created afterwards starts
+        // at the end of the stream and never sees what was published in
+        // between.
+        info!("Consumer ensure queue");
+        client.ensure_consumer().await?;
+        info!("Consumer registering contracts");
+        client.register_contracts(&contracts).await?;
+    }
 
     let health_check = HealthCheck {
         blockchain_timeout_tick: blockchain_timeout_tick.clone(),
@@ -424,6 +449,17 @@ pub async fn run_consumer(config: ConsumerConfig) -> Result<()> {
         client.cancel_token.clone(),
     );
 
+    // ...and when it does, stop reading. Only the live flow is cancelled: the
+    // stats observer and the identity migration below are children of the
+    // parent token and keep running until shutdown. The group cannot be
+    // released while something is still blocked in `XREADGROUP` on it, so the
+    // release happens after this loop has returned, not here.
+    spawn_retirement_watcher(
+        stack_mode.clone(),
+        client.clone(),
+        client.cancel_token.clone(),
+    );
+
     // Temporary: retires whatever identity this environment used before
     // `DEFAULT_CONSUMER_ID`. Removed once every environment has been through
     // the release that introduced it. See `migration`.
@@ -449,6 +485,9 @@ pub async fn run_consumer(config: ConsumerConfig) -> Result<()> {
         chain_id_str.clone(),
         client.cancel_token.clone(),
     ));
+    // The closure below takes the mode; keep a handle for the check after
+    // the loop has returned.
+    let retirement_mode = stack_mode.clone();
     let consumer_task = client.consume(move |payload, _cancel| {
         blockchain_tick.update();
         let mut db = db.clone();
@@ -563,8 +602,16 @@ pub async fn run_consumer(config: ConsumerConfig) -> Result<()> {
         chain_id = %config.chain_id,
         "Starting host-listener consumer"
     );
-    let consumer_run = tokio::spawn(consumer_task);
-    let consumer_result = consumer_run.await;
+    let consumer_result = if retired {
+        // Nothing to read, but the process stays up: its pod is managed like
+        // any other and exiting here would just crash-loop until the operator
+        // removes it.
+        client.cancel_token.cancelled().await;
+        Ok(Ok(()))
+    } else {
+        let consumer_run = tokio::spawn(consumer_task);
+        consumer_run.await
+    };
     info!(
         chain_id = %config.chain_id,
         "Host listener consumer graceful stop"
@@ -572,6 +619,26 @@ pub async fn run_consumer(config: ConsumerConfig) -> Result<()> {
     client.cancel();
     if let Err(err) = stats_task.await {
         error!(error = %err, "Consumer stats background task failed");
+    }
+
+    // The read loop has returned, so nothing is on these groups any more and
+    // they can go. A retired build's cursors never move again, and the broker's
+    // trimmer will not reclaim past the furthest-behind group on a stream, so
+    // leaving them pins the backlog until the hard ceiling cuts it. Only this
+    // build's own groups are released: the streams, their entries and the
+    // incoming build's groups are shared with it and must survive.
+    if retired || retirement_mode.is_paused() {
+        match client.destroy_own_groups().await {
+            Ok(0) => {}
+            Ok(released) => {
+                info!(released, "Retired stack released its consumer groups")
+            }
+            Err(err) => warn!(
+                error = %err,
+                "Retired stack failed to release its consumer groups; they \
+                 will be released on the next shutdown"
+            ),
+        }
     }
     match consumer_result {
         Ok(Ok(())) => {
@@ -585,6 +652,61 @@ pub async fn run_consumer(config: ConsumerConfig) -> Result<()> {
         Err(err) => {
             error!(error = %err, "Consumer spawn error");
             anyhow::bail!("Consumer spawn error: {}", err)
+        }
+    }
+}
+
+/// Stop the live flow once the cutover retires this stack.
+///
+/// `spawn_stack_version_listener` sets `paused` but leaves the reader running,
+/// which is correct while the stack is up: the handler acks and drops, so the
+/// cursor keeps moving and nothing is pinned. It is only once the pods go that
+/// a frozen cursor starts holding the stream. Stopping the reader here is what
+/// lets the caller release the group afterwards.
+///
+/// Polled rather than signalled: `paused` is a plain flag, and a load every
+/// [`RETIREMENT_POLL_INTERVAL`] costs nothing next to reacting to it late.
+/// There is no path back — `paused` is only ever set, never cleared — so this
+/// returns as soon as it fires.
+fn spawn_retirement_watcher(
+    stack_mode: Arc<StackMode>,
+    client: ListenerConsumer,
+    cancel: CancellationToken,
+) {
+    tokio::spawn(async move {
+        if awaiting_retirement(
+            || stack_mode.is_paused(),
+            &cancel,
+            RETIREMENT_POLL_INTERVAL,
+        )
+        .await
+        {
+            warn!("Stack retired by cutover: stopping the consumer read loop");
+            client.cancel_live();
+        }
+    });
+}
+
+/// Resolve to `true` once the stack is retired, or `false` if shutdown came
+/// first.
+///
+/// Split out from the spawn above so the decision can be tested without a
+/// broker: which of the two it returns is the whole of the logic, and acting on
+/// it is one call. The check is a predicate rather than the mode itself because
+/// `paused` has no public setter — a one-way latch should not have one — and a
+/// test that cannot arrange the condition cannot assert on it.
+async fn awaiting_retirement(
+    retired: impl Fn() -> bool,
+    cancel: &CancellationToken,
+    poll_interval: Duration,
+) -> bool {
+    loop {
+        if retired() {
+            return true;
+        }
+        tokio::select! {
+            _ = cancel.cancelled() => return false,
+            _ = sleep(poll_interval) => {}
         }
     }
 }
@@ -636,5 +758,69 @@ async fn ingest_with_retry(
                 sleep(retry_interval).await;
             }
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    const TICK: Duration = Duration::from_millis(5);
+
+    /// A stack that is already retired is seen as such without waiting out a
+    /// poll.
+    ///
+    /// The restart case: a pod coming back up after the cutover must not spend
+    /// a poll interval behaving as though it were live.
+    #[tokio::test]
+    async fn retirement_already_in_effect_is_seen_immediately() {
+        assert!(
+            awaiting_retirement(|| true, &CancellationToken::new(), TICK).await
+        );
+    }
+
+    /// Retirement arriving while the watcher is waiting is picked up.
+    ///
+    /// This is the cutover itself, and the reason the wait is a loop rather
+    /// than a single read: `paused` is a plain flag with nothing to wake on, so
+    /// a watcher that only looked once at startup would never fire.
+    #[tokio::test]
+    async fn retirement_arriving_later_is_picked_up_by_the_poll() {
+        let retired = Arc::new(AtomicBool::new(false));
+        let cancel = CancellationToken::new();
+
+        let setter = {
+            let retired = Arc::clone(&retired);
+            tokio::spawn(async move {
+                sleep(TICK * 4).await;
+                retired.store(true, Ordering::SeqCst);
+            })
+        };
+
+        assert!(tokio::time::timeout(
+            Duration::from_secs(5),
+            awaiting_retirement(
+                || retired.load(Ordering::SeqCst),
+                &cancel,
+                TICK
+            ),
+        )
+        .await
+        .expect("the poll must observe a flag set while it waits"));
+        setter.await.unwrap();
+    }
+
+    /// An ordinary shutdown is not a retirement.
+    ///
+    /// Reporting one here would have the caller destroy the consumer group of a
+    /// stack that is merely restarting. On the way back up it would find no
+    /// group, reseed at the tip of the stream, and silently skip whatever was
+    /// published while it was down.
+    #[tokio::test]
+    async fn shutdown_without_a_cutover_is_not_a_retirement() {
+        let cancel = CancellationToken::new();
+        cancel.cancel();
+
+        assert!(!awaiting_retirement(|| false, &cancel, TICK).await);
     }
 }

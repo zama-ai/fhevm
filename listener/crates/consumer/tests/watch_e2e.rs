@@ -961,3 +961,103 @@ async fn unwatch_contract_publishes_unregister_filter() {
         assert_filter_command_roundtrip(routing::UNWATCH, "watch-e2e-unregister", &command).await;
     assert_eq!(msg, command);
 }
+
+/// Ensure all four groups for `client`, so the whole identity is represented
+/// rather than only the live flow.
+async fn ensure_all_four(client: &ListenerConsumer) {
+    client.ensure_consumer().await.unwrap();
+    client.ensure_catchup_consumer().await.unwrap();
+    client.ensure_final_consumer().await.unwrap();
+    client.ensure_final_catchup_consumer().await.unwrap();
+}
+
+/// A retired build takes its own four groups with it and leaves everything else
+/// standing.
+///
+/// After a cutover the outgoing build writes nothing, so its cursors are dead
+/// weight: once its pods go they stop moving and the trimmer will not reclaim
+/// past them. It can clean up after itself, but only its own side. The two
+/// builds share one identity and therefore the same four streams, so the
+/// entries and the incoming build's groups have to survive untouched.
+///
+/// The negative half is the real assertion. Destroying by stream key, or
+/// reaching for `delete_streams`, would also pass a test that only checked that
+/// the retired build's groups were gone.
+#[tokio::test]
+#[ignore = "requires Docker"]
+async fn a_retired_build_destroys_its_own_groups_and_leaves_the_rest() {
+    let _guard = REDIS_TEST_LOCK.lock().await;
+    let url = consumer_redis_url().await;
+    reset_redis(&url).await;
+    let broker = Broker::redis(&url).await.unwrap();
+
+    let consumer_id = unique_name("retire-consumer");
+    let blue = ListenerConsumer::new(&broker, 1, &consumer_id).with_group_suffix("v2");
+    let green = ListenerConsumer::new(&broker, 1, &consumer_id).with_group_suffix("v3");
+
+    ensure_all_four(&blue).await;
+    ensure_all_four(&green).await;
+
+    // A backlog the surviving build has not read yet. Taking the stream, or the
+    // entries on it, would show up as the survivor's lag collapsing.
+    let live = blue.consumer_topic().key();
+    publish_blocks(&broker, &live, 3).await;
+
+    let topics = [
+        blue.consumer_topic(),
+        blue.catchup_consumer_topic(),
+        blue.final_consumer_topic(),
+        blue.final_catchup_consumer_topic(),
+    ];
+
+    for topic in &topics {
+        let key = topic.key();
+        let mut names = redis_group_names(&url, &key).await;
+        names.sort();
+        assert_eq!(
+            names,
+            vec![format!("{key}.v2"), format!("{key}.v3")],
+            "setup: both builds must hold a group on {key} before the retirement"
+        );
+    }
+
+    let destroyed = blue.destroy_own_groups().await.unwrap();
+    assert_eq!(destroyed, 4, "the retired build owns one group per stream");
+
+    for topic in &topics {
+        let key = topic.key();
+        assert_eq!(
+            redis_group_names(&url, &key).await,
+            vec![format!("{key}.v3")],
+            "the surviving build's group must be the only one left on {key}"
+        );
+        assert!(
+            broker.exists(topic).await.unwrap(),
+            "{key} is shared with the surviving build and must not be deleted"
+        );
+    }
+
+    let survivor = group_named(&green, &live, &format!("{live}.v3"))
+        .await
+        .expect("the surviving build's group is still there");
+    assert_eq!(
+        survivor.lag,
+        Some(3),
+        "the backlog the survivor has not read must be exactly where it was"
+    );
+
+    // A restarted pod re-running this must converge rather than error.
+    assert_eq!(
+        blue.destroy_own_groups().await.unwrap(),
+        0,
+        "a second pass has nothing left to destroy"
+    );
+
+    // Without a suffix a client's "own" group is the bare legacy name, which a
+    // predecessor sharing these streams may still be reading.
+    let unsuffixed = ListenerConsumer::new(&broker, 1, &consumer_id);
+    assert!(
+        unsuffixed.destroy_own_groups().await.is_err(),
+        "a client with no suffix must refuse: its own group is the legacy one"
+    );
+}

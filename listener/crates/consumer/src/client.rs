@@ -802,6 +802,58 @@ impl ListenerConsumer {
         Ok(destroyed)
     }
 
+    /// Destroy *this client's own* consumer group on each of its four streams,
+    /// returning how many were actually destroyed.
+    ///
+    /// This is how a retired stack gives back what it holds. Once
+    /// `versioning.consensus_version` has moved past the version this binary
+    /// was built against, the stack writes nothing — guarded transactions are
+    /// refused and the consume handler drops what it reads — so its cursor is
+    /// pure overhead. Left behind after the pods go, that cursor never moves
+    /// again and the trimmer will not reclaim past it.
+    ///
+    /// Only the groups are removed. The streams, their entries and the groups
+    /// belonging to *other* suffixes are untouched, which is what makes this
+    /// safe to run while the incoming stack reads the same four streams.
+    ///
+    /// Idempotent: destroying an absent group is not an error, it just does
+    /// not count towards the total.
+    ///
+    /// # Errors
+    ///
+    /// Refuses with [`ConsumerError::InvalidParameter`] when this client has
+    /// no group suffix. An unsuffixed client's own group is the bare legacy
+    /// name, which a predecessor sharing these streams may still be reading —
+    /// see [`destroy_unsuffixed_groups`](Self::destroy_unsuffixed_groups),
+    /// whose guard this mirrors from the other side.
+    pub async fn destroy_own_groups(&self) -> Result<usize, ConsumerError> {
+        if self.group_suffix.is_none() {
+            return Err(ConsumerError::InvalidParameter(
+                "refusing to destroy this client's own groups: without a group suffix they are \
+                 the bare legacy names, which a predecessor may still hold"
+                    .into(),
+            ));
+        }
+
+        let conn = match &self.broker {
+            Broker::Redis { conn, .. } => conn,
+            Broker::Amqp { .. } => return Ok(0),
+        };
+        let manager = StreamManager::new((**conn).clone());
+
+        let mut destroyed = 0;
+        for topic in self.owned_topics() {
+            if manager
+                .destroy_group(&topic.key(), &self.group_for(&topic))
+                .await
+                .map_err(BrokerError::from)?
+            {
+                destroyed += 1;
+            }
+        }
+        Ok(destroyed)
+    }
+
     /// Delete this identity's four streams and their dead-letter companions,
     /// returning how many keys were actually removed.
     ///
