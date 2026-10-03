@@ -14,7 +14,7 @@
  * operators, who have a database each and all need every block.
  *
  * The invariant is one consumer identity per coprocessor database. The harness
- * honours it by giving every operator its own listener: its own publisher
+ * honors it by giving every operator its own listener: its own publisher
  * container, its own listener database, and its own Redis logical database on
  * the shared Redis container. One Redis server with N keyspaces costs one
  * container instead of N and separates the streams just as completely.
