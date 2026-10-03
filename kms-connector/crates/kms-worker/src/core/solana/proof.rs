@@ -15,6 +15,8 @@ use std::{
 };
 use url::Url;
 
+use crate::monitoring::metrics::SOLANA_PROOF_ANSWER_COUNTER;
+
 /// The coprocessor route that answers Merkle proof queries. The same literal as the coprocessor's
 /// `MERKLE_PROOFS_PATH`; the shared vectors pin the request and response bytes.
 pub const MERKLE_PROOFS_PATH: &str = "/v1/solana/merkle-proofs";
@@ -67,6 +69,11 @@ pub trait HostProofReader: Send + Sync {
 
     /// The coprocessors in the order to ask them.
     fn hedge_order(&self) -> Vec<usize>;
+
+    /// How metrics name coprocessor `source`.
+    fn source_name(&self, source: usize) -> String {
+        source.to_string()
+    }
 
     fn prepare(
         &self,
@@ -249,18 +256,33 @@ impl CoprocessorProofClient {
                 url
             })
             .collect();
-        Self {
+        let client = Self {
             urls,
             client,
             wallet,
             registry,
             signing_timeout,
+        };
+        // The outcome that pages exists for every coprocessor before its first answer.
+        for source in 0..client.urls.len() {
+            SOLANA_PROOF_ANSWER_COUNTER
+                .with_label_values(&[&client.source_name(source), "invalid"]);
         }
+        client
     }
 }
 
 impl HostProofReader for CoprocessorProofClient {
     type Batch = SignedBatch;
+
+    /// The coprocessor's host and port.
+    fn source_name(&self, source: usize) -> String {
+        let url = &self.urls[source];
+        match (url.host_str(), url.port_or_known_default()) {
+            (Some(host), Some(port)) => format!("{host}:{port}"),
+            _ => source.to_string(),
+        }
+    }
 
     /// A fresh random order per batch spreads the reads over the coprocessors.
     fn hedge_order(&self) -> Vec<usize> {

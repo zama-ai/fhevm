@@ -23,7 +23,7 @@ use fhevm_engine_common::{
     database::{
         connect_pool_with_options_and_connect_options, with_statement_timeout,
     },
-    telemetry,
+    metrics_server, telemetry,
     utils::DatabaseURL,
 };
 use solana_merkle_proof_service::{kms_tx_senders, server::HttpServer};
@@ -58,6 +58,10 @@ struct Args {
     /// Port of the HTTP server: health routes and the Merkle proof route.
     #[arg(long, default_value_t = 8080)]
     http_port: u16,
+
+    /// Address of the Prometheus metrics server (e.g. 0.0.0.0:9100); unset disables it.
+    #[arg(long)]
+    metrics_addr: Option<String>,
 
     /// HTTP RPC of the canonical chain that hosts `ProtocolConfig`.
     #[arg(long)]
@@ -110,6 +114,8 @@ async fn main() -> Result<()> {
             signal_cancel.cancel();
         }
     });
+
+    metrics_server::spawn(args.metrics_addr, cancel.child_token());
 
     let ethereum = ProviderBuilder::new()
         .connect_http(args.ethereum_rpc_url)

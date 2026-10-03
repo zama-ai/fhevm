@@ -25,6 +25,7 @@ use solana_merkle_proof_service::{
     indexer::{IndexerStart, MerkleIndexerSink},
     server::HttpServer,
     store::load_checkpoint,
+    store_check::run_store_checks,
     MIGRATOR,
 };
 
@@ -71,6 +72,11 @@ struct Args {
     #[arg(long)]
     metrics_addr: Option<String>,
 
+    /// Seconds between two store checks, which compare every recorded store with its account
+    /// on chain. The first runs at start.
+    #[arg(long, default_value_t = 600)]
+    store_check_interval_secs: u64,
+
     #[arg(long, default_value_t = Level::INFO)]
     log_level: Level,
 
@@ -95,11 +101,15 @@ async fn main() -> Result<()> {
 
     let program_id = Pubkey::from_str(&args.program_id)
         .with_context(|| format!("invalid program id {}", args.program_id))?;
-    let rpc = RpcClient::new_with_timeout_and_commitment(
-        args.url.clone(),
-        SOLANA_RPC_REQUEST_TIMEOUT,
-        CommitmentConfig::confirmed(),
-    );
+    // Ingestion and the store check each get their own client.
+    let confirmed_rpc = || {
+        RpcClient::new_with_timeout_and_commitment(
+            args.url.clone(),
+            SOLANA_RPC_REQUEST_TIMEOUT,
+            CommitmentConfig::confirmed(),
+        )
+    };
+    let rpc = confirmed_rpc();
     let chain_id = host_chain_id(&rpc, &program_id).await?;
     let archive = RpcClient::new_with_timeout(
         args.archive_url.unwrap_or_else(|| args.url.clone()),
@@ -148,6 +158,15 @@ async fn main() -> Result<()> {
             signal_cancel.cancel();
         }
     });
+
+    tokio::spawn(run_store_checks(
+        pool.clone(),
+        confirmed_rpc(),
+        program_id,
+        chain_id,
+        Duration::from_secs(args.store_check_interval_secs),
+        cancel.child_token(),
+    ));
 
     if args.metrics_addr.is_some() {
         metrics_server::spawn(args.metrics_addr, cancel.child_token());

@@ -1,0 +1,14 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n        INSERT INTO quarantined_stores (encrypted_store) VALUES ($1)\n        ON CONFLICT (encrypted_store) DO NOTHING\n        ",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Bytea"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "16e9d6289f6a1ba9279198ceece0f8e6695f39f009444c7954e342e65284bc4d"
+}

@@ -27,8 +27,8 @@
 use std::{
     net::SocketAddr,
     num::NonZeroU32,
-    sync::Arc,
-    time::{Duration, SystemTime, UNIX_EPOCH},
+    sync::{Arc, LazyLock},
+    time::{Duration, Instant},
 };
 
 use alloy::primitives::Address;
@@ -41,6 +41,9 @@ use axum::{
     Router,
 };
 use governor::{DefaultKeyedRateLimiter, Quota, RateLimiter};
+use prometheus::{
+    register_histogram, register_int_counter_vec, Histogram, IntCounterVec,
+};
 use request_authorization::Authorization;
 use serde::{de::DeserializeOwned, Deserialize, Serialize};
 use serde_bytes::ByteArray;
@@ -57,7 +60,8 @@ use zama_solana_acl::mmr_verify;
 use crate::{
     answer_cache::{Admission, AnswerCache},
     kms_tx_senders::KmsTxSenders,
-    store::{find_leaf, load_proof, load_store_cursor, LeafKind},
+    store::{find_leaf, load_proof, load_served_store, LeafKind},
+    unix_now_secs,
 };
 
 /// Most leaves one request may ask for.
@@ -74,6 +78,44 @@ const CBOR: &str = "application/cbor";
 /// connector's 250 ms hedge delay, so a refusal sends the connector to the next coprocessor no
 /// later than the hedge would have.
 pub const PROOF_READ_WAIT: Duration = Duration::from_millis(200);
+
+static REQUESTS: LazyLock<IntCounterVec> = LazyLock::new(|| {
+    register_int_counter_vec!(
+        "solana_merkle_proof_server_requests_total",
+        "Merkle proof requests answered, by status: ok, cached (a copy of a request whose \
+         answer was ok) or the error code, which a copy of a refused request counts under too",
+        &["status"]
+    )
+    .unwrap()
+});
+
+static REQUEST_DURATION: LazyLock<Histogram> = LazyLock::new(|| {
+    register_histogram!(
+        "solana_merkle_proof_server_request_duration_seconds",
+        "Time to answer a Merkle proof request"
+    )
+    .unwrap()
+});
+
+static REQUESTS_BY_SIGNER: LazyLock<IntCounterVec> = LazyLock::new(|| {
+    register_int_counter_vec!(
+        "solana_merkle_proof_server_requests_by_signer_total",
+        "Authenticated Merkle proof requests, by the KMS tx-sender that signed them: each KMS \
+         node's load on this server",
+        &["signer"]
+    )
+    .unwrap()
+});
+
+static LEAVES: LazyLock<IntCounterVec> = LazyLock::new(|| {
+    register_int_counter_vec!(
+        "solana_merkle_proof_server_leaves_total",
+        "Queried leaves, by outcome: found, not_found, unknown_store, quarantined, \
+         inconsistent or read_failed",
+        &["outcome"]
+    )
+    .unwrap()
+});
 
 #[derive(Clone)]
 struct AppState {
@@ -157,6 +199,10 @@ fn merkle_proofs_router(
     answer_cache_bytes_per_signer: usize,
     proof_reads: usize,
 ) -> Router {
+    // The outcomes alerts watch exist before the first one is counted.
+    for outcome in ["inconsistent", "quarantined"] {
+        LEAVES.with_label_values(&[outcome]);
+    }
     // A burst always fits the largest request.
     let burst = leaves_per_second
         .max(NonZeroU32::new(MAX_LEAVES_PER_REQUEST as u32).expect("not zero"));
@@ -324,6 +370,16 @@ impl ErrorCode {
     fn retryable(self) -> bool {
         matches!(self, Self::UpstreamTransient | Self::RateLimited)
     }
+
+    /// The code as the wire spells it, for the request metric.
+    fn label(self) -> &'static str {
+        match self {
+            Self::Malformed => "malformed",
+            Self::SenderAuthenticationFailed => "sender_authentication_failed",
+            Self::UpstreamTransient => "upstream_transient",
+            Self::RateLimited => "rate_limited",
+        }
+    }
 }
 
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize, ToSchema)]
@@ -419,12 +475,36 @@ async fn merkle_proofs(
     headers: HeaderMap,
     body: Result<Bytes, BytesRejection>,
 ) -> Result<Response, HttpError> {
+    let started = Instant::now();
+    let answer = answer_merkle_proofs(state, &headers, body).await;
+    let status = match &answer {
+        Ok(Served { repeat: true, .. }) => "cached",
+        Ok(Served { repeat: false, .. }) => "ok",
+        Err(error) => error.code.label(),
+    };
+    REQUESTS.with_label_values(&[status]).inc();
+    REQUEST_DURATION.observe(started.elapsed().as_secs_f64());
+    answer.map(|served| served.response)
+}
+
+struct Served {
+    response: Response,
+    /// A copy of a request already admitted.
+    repeat: bool,
+}
+
+async fn answer_merkle_proofs(
+    state: AppState,
+    headers: &HeaderMap,
+    body: Result<Bytes, BytesRejection>,
+) -> Result<Served, HttpError> {
     let body =
         body.map_err(|rejection| HttpError::malformed(rejection.body_text()))?;
-    let now = SystemTime::now()
-        .duration_since(UNIX_EPOCH)
-        .map_or(0, |elapsed| elapsed.as_secs());
-    let authorization = authenticate(&state.senders, &headers, &body, now)?;
+    let now = unix_now_secs();
+    let authorization = authenticate(&state.senders, headers, &body, now)?;
+    REQUESTS_BY_SIGNER
+        .with_label_values(&[&authorization.signer.to_string()])
+        .inc();
     // Parsing costs neither the rate nor a read, so a malformed request is
     // refused each time and never remembered.
     let queries = parse_request(&body)?;
@@ -439,13 +519,15 @@ async fn merkle_proofs(
             Ok(Ok(()))
         )
     };
-    let mut answer = match state.answers.admit(
+    let admission = state.answers.admit(
         authorization.signing_hash,
         authorization.expires,
         signer,
         now,
         charge,
-    ) {
+    );
+    let repeat = matches!(admission, Admission::Repeat(_));
+    let mut answer = match admission {
         Admission::First(sender) => {
             let answer = sender.subscribe();
             // Spawned, so a caller that disconnects does not cancel the answer
@@ -491,7 +573,10 @@ async fn merkle_proofs(
         })?
         .clone()
         .expect("waited for an answer");
-    answer.map(cbor_response)
+    answer.map(|body| Served {
+        response: cbor_response(body),
+        repeat,
+    })
 }
 
 /// What the server answers a request's first copy: the CBOR body of a 200, or the
@@ -607,17 +692,56 @@ async fn prove(
     pool: &PgPool,
     query: &ParsedQuery,
 ) -> Result<MerkleProofOutcome, HttpError> {
+    let outcome = prove_leaf(pool, query).await;
+    let label = match &outcome {
+        Ok(MerkleProofOutcome::Found { .. }) => "found",
+        Ok(MerkleProofOutcome::NotFound { .. }) => "not_found",
+        Ok(MerkleProofOutcome::UnknownAccount) => "unknown_store",
+        Err(LeafError::Quarantined) => "quarantined",
+        Err(LeafError::Inconsistent) => "inconsistent",
+        Err(LeafError::ReadFailed) => "read_failed",
+    };
+    LEAVES.with_label_values(&[label]).inc();
+    outcome.map_err(|err| {
+        let message = match err {
+            LeafError::ReadFailed => "leaf record read failed",
+            LeafError::Quarantined | LeafError::Inconsistent => {
+                "leaf record inconsistent"
+            }
+        };
+        HttpError::new(ErrorCode::UpstreamTransient, message)
+    })
+}
+
+/// Why a leaf has no answer. All are `upstream_transient`, which the connector retries on
+/// another coprocessor.
+enum LeafError {
+    /// The store check found this store's record disagrees with the chain.
+    Quarantined,
+    /// A path that is missing or does not reach the recorded peaks.
+    Inconsistent,
+    ReadFailed,
+}
+
+async fn prove_leaf(
+    pool: &PgPool,
+    query: &ParsedQuery,
+) -> Result<MerkleProofOutcome, LeafError> {
     let read_failed = |err: sqlx::Error| {
         error!(error = %err, "leaf record read failed");
-        HttpError::new(ErrorCode::UpstreamTransient, "leaf record read failed")
+        LeafError::ReadFailed
     };
     let account = query.encrypted_store;
-    let Some(cursor) = load_store_cursor(pool, account)
+    let Some(store) = load_served_store(pool, account)
         .await
         .map_err(read_failed)?
     else {
         return Ok(MerkleProofOutcome::UnknownAccount);
     };
+    if store.quarantined {
+        return Err(LeafError::Quarantined);
+    }
+    let cursor = store.cursor;
     let leaf_count = cursor.leaf_count;
     let Some((leaf_index, commitment)) = find_leaf(
         pool,
@@ -646,10 +770,7 @@ async fn prove(
             leaf_count,
             "leaf record inconsistent"
         );
-        return Err(HttpError::new(
-            ErrorCode::UpstreamTransient,
-            "leaf record inconsistent",
-        ));
+        return Err(LeafError::Inconsistent);
     };
     Ok(MerkleProofOutcome::Found {
         leaf_index: proof.leaf_index,
@@ -829,13 +950,6 @@ mod tests {
         contract: Address::repeat_byte(0xC0),
     };
 
-    fn now() -> u64 {
-        SystemTime::now()
-            .duration_since(UNIX_EPOCH)
-            .unwrap()
-            .as_secs()
-    }
-
     async fn signed(
         signer: &PrivateKeySigner,
         body: &[u8],
@@ -933,12 +1047,13 @@ mod tests {
 
         refused(post(None, body.clone()).await.expect("send")).await;
         let stranger = PrivateKeySigner::random();
-        let by_stranger = signed(&stranger, &body, now() + 30).await;
+        let by_stranger = signed(&stranger, &body, unix_now_secs() + 30).await;
         refused(post(Some(by_stranger), body.clone()).await.expect("send"))
             .await;
-        let expired = signed(&connector, &body, now() - 1).await;
+        let expired = signed(&connector, &body, unix_now_secs() - 1).await;
         refused(post(Some(expired), body.clone()).await.expect("send")).await;
-        let for_other_body = signed(&connector, &[0xA0], now() + 30).await;
+        let for_other_body =
+            signed(&connector, &[0xA0], unix_now_secs() + 30).await;
         refused(
             post(Some(for_other_body), body.clone())
                 .await
@@ -947,7 +1062,8 @@ mod tests {
         .await;
 
         let not_cbor = b"{\"leaves\":[]}".to_vec();
-        let authorization = signed(&connector, &not_cbor, now() + 30).await;
+        let authorization =
+            signed(&connector, &not_cbor, unix_now_secs() + 30).await;
         let response = post(Some(authorization), not_cbor).await.expect("send");
         assert_eq!(response.status(), 400);
         assert_eq!(error_of(response).await.code, ErrorCode::Malformed);
@@ -955,12 +1071,14 @@ mod tests {
         let too_many = encode_cbor(&MerkleProofRequest {
             leaves: vec![leaf; MAX_LEAVES_PER_REQUEST + 1],
         });
-        let authorization = signed(&connector, &too_many, now() + 30).await;
+        let authorization =
+            signed(&connector, &too_many, unix_now_secs() + 30).await;
         let response = post(Some(authorization), too_many).await.expect("send");
         assert_eq!(response.status(), 400);
 
         let too_large = vec![0; MAX_REQUEST_BYTES + 1];
-        let authorization = signed(&connector, &too_large, now() + 30).await;
+        let authorization =
+            signed(&connector, &too_large, unix_now_secs() + 30).await;
         let response =
             post(Some(authorization), too_large).await.expect("send");
         assert_eq!(response.status(), 400);
@@ -1059,7 +1177,8 @@ mod tests {
             .build()
             .expect("client");
         let body = full_request([0x10; 32]);
-        let authorization = signed(&connector, &body, now() + 30).await;
+        let authorization =
+            signed(&connector, &body, unix_now_secs() + 30).await;
         let mut copies = tokio::task::JoinSet::new();
         for _ in 0..10 {
             let (client, url, authorization, body) = (
@@ -1083,7 +1202,8 @@ mod tests {
         );
 
         let other = full_request([0x11; 32]);
-        let authorization = signed(&connector, &other, now() + 30).await;
+        let authorization =
+            signed(&connector, &other, unix_now_secs() + 30).await;
         assert_eq!(
             refusal(&client, &url, &authorization, other).await,
             format!("{} is over its leaves per second", connector.address())
@@ -1130,7 +1250,8 @@ mod tests {
         let url = format!("{base}{MERKLE_PROOFS_PATH}");
         let client = reqwest::Client::new();
         for not_cbor in [b"{}".to_vec(), b"[]".to_vec()] {
-            let authorization = signed(&alice, &not_cbor, now() + 30).await;
+            let authorization =
+                signed(&alice, &not_cbor, unix_now_secs() + 30).await;
             let response = client
                 .post(&url)
                 .header(header::AUTHORIZATION, authorization)
@@ -1145,7 +1266,8 @@ mod tests {
                 (client.clone(), url.clone(), signer.clone());
             async move {
                 let body = full_request([handle; 32]);
-                let authorization = signed(&signer, &body, now() + 30).await;
+                let authorization =
+                    signed(&signer, &body, unix_now_secs() + 30).await;
                 refusal(&client, &url, &authorization, body).await
             }
         };

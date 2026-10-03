@@ -175,6 +175,65 @@ On an empty database the indexer starts from the zama-host deployment slot, not 
  - **Alarm**: Any restart of the three containers.
     - **Recommendation**: `increase(kube_pod_container_status_restarts_total{container=~"solana-host-listener|solana-merkle-indexer|solana-merkle-proof-server"}[15m]) > 0`.
 
+### solana-merkle-indexer
+
+The store check compares every recorded store with its account on chain, once at start and then every `--store-check-interval-secs` (600). Each store compares at the chain's leaf count: a record holding fewer leaves is behind and is compared once more at the end of the check, and otherwise its peaks at that count must equal the chain's. A store that disagrees is written to `quarantined_stores`, and the proof server answers it as inconsistent until a later check matches or the store is closed. [`RUNBOOK.md`](../../coprocessor/fhevm-engine/solana-merkle-proof-service/RUNBOOK.md) says how to heal it.
+
+#### Metric Name: `solana_merkle_indexer_store_checks_total`
+ - **Type**: Counter (labeled by `host_chain_id`, `result`)
+ - **Description**: Recorded stores compared with their account on chain, one per store per check, by `result`: `match`, `mismatch` (the peaks differ, or the account is not a valid store), `behind` (the record still holds fewer leaves than the chain at the end of the check) or `absent` (the store was closed).
+ - **Alarm**: Covered by `solana_merkle_indexer_quarantined_stores`: every `mismatch` quarantines its store. `behind` on many stores at every check means the indexer lags, which its lag alarm reports.
+
+#### Metric Name: `solana_merkle_indexer_quarantined_stores`
+ - **Type**: Gauge (labeled by `host_chain_id`)
+ - **Description**: Stores the proof server refuses to prove from, as the last completed store check left them. The indexer also sets it from the database when it starts, so a quarantine left by an earlier run shows before the first check completes. A quarantine lifts when a later check matches or finds the store closed.
+ - **Alarm**: Above 0.
+    - **Recommendation**: critical, `max(gauge) > 0` for 1 minute, with the runbook as `runbook_url`.
+
+#### Metric Name: `solana_merkle_indexer_store_check_completed_timestamp_seconds`
+ - **Type**: Gauge (labeled by `host_chain_id`)
+ - **Description**: Unix time the last store check over every recorded store completed. The runbook uses it to confirm a clean check after a restore.
+ - **Alarm**: No completed check for three intervals, or no series at all (the first check has not completed since the indexer started).
+    - **Recommendation**: warning, `time() - gauge > 1800`, and `absent_over_time(gauge[30m])`.
+
+#### Metric Name: `solana_merkle_indexer_store_check_failures_total`
+ - **Type**: Counter (labeled by `host_chain_id`)
+ - **Description**: Store checks stopped by an RPC or database error. The check runs again at the next interval.
+ - **Alarm**: Covered by the completed-timestamp alarm; a single failure is not actionable.
+
+### solana-merkle-proof-server
+
+#### Metric Name: `solana_merkle_proof_server_requests_total`
+ - **Type**: Counter (labeled by `status`)
+ - **Description**: Merkle proof requests answered, by `status`: `ok`, `cached` (a copy of a signed request whose first answer was `ok`, served from the answer cache) or the error code (`malformed`, `sender_authentication_failed`, `upstream_transient`, `rate_limited`). A copy of a refused request counts under the refusal's code.
+ - **Alarm**: Sustained refusals.
+    - **Recommendation**: warning, `sum(rate(counter{status="rate_limited"}[5m])) > 0` for 15 minutes. A rising `cached` share means someone replays signed requests; it costs no work, so it is a signal, not an alarm.
+
+#### Metric Name: `solana_merkle_proof_server_request_duration_seconds`
+ - **Type**: Histogram
+ - **Description**: Time to answer a Merkle proof request, refusals included. The KMS connector asks the next coprocessor after 250 ms without an answer.
+
+#### Metric Name: `solana_merkle_proof_server_requests_by_signer_total`
+ - **Type**: Counter (labeled by `signer`)
+ - **Description**: Authenticated requests, by the KMS tx-sender that signed them: each KMS node's load on this server. One series per KMS node of the live contexts.
+
+#### Metric Name: `solana_merkle_proof_server_leaves_total`
+ - **Type**: Counter (labeled by `outcome`)
+ - **Description**: Queried leaves read from the record, by `outcome`: `found`, `not_found`, `unknown_store`, `quarantined` (the store check quarantined the store), `inconsistent` (a recorded path is missing or does not reach the recorded peaks) or `read_failed`. Cached answers are not counted again. The `inconsistent` and `quarantined` series exist at 0 from startup.
+ - **Alarm**: Any `inconsistent`. `quarantined` does not page: `solana_merkle_indexer_quarantined_stores` already does.
+    - **Recommendation**: critical, `increase(counter{outcome="inconsistent"}[5m]) > 0`, with the runbook as `runbook_url`.
+
+#### Metric Name: `solana_merkle_proof_server_kms_tx_senders`
+ - **Type**: Gauge
+ - **Description**: KMS tx-senders the last successful read of the canonical `ProtocolConfig` allows; 0 until the first read.
+ - **Alarm**: 0 while the server serves. The server refuses every request until its first read.
+
+#### Metric Name: `solana_merkle_proof_server_kms_tx_senders_read_timestamp_seconds`
+ - **Type**: Gauge
+ - **Description**: Unix time of the last successful read of the KMS tx-senders. The server reads every 60 seconds and keeps the last set when a read fails.
+ - **Alarm**: Stale reads.
+    - **Recommendation**: warning, `time() - gauge > 600`.
+
 ### zkproof-worker
 
 Metrics for zkproof-worker are to be added in future releases, if/when needed. Currently, the transaction-sender handles ZK proof related metrics, please see its section.
@@ -350,6 +409,15 @@ Metrics for zkproof-worker are to be added in future releases, if/when needed. C
  - **Description**: Counts request pre-flight check failures. Mostly decryption checks (ACL, signature, copro consensus), but the `kms_context` family also covers key-management requests.
  - **Alarm**: If the counter increases over a period of time.
    - **Recommendation**: more than 60 failures in 1 minute, i.e. `sum(increase(counter[1m])) > 60`.
+
+#### Metric Name: `kms_connector_worker_solana_proof_answers_counter`
+ - **Type**: Counter
+ - **Labels**:
+   - `source`: the coprocessor's Merkle proof server, as host and port.
+   - `outcome`: its answer for one queried leaf: `verified`, `no_leaf`, `unknown_store`, `behind` (its record holds fewer leaves than the chain), `ahead` (a leaf past the count the connector observed), `invalid` (built against as many leaves as the chain or more, yet the proof does not verify) or `read_failed` (the read failed, was refused, or answered a different number of leaves than asked).
+ - **Description**: Counts each coprocessor's Merkle proof answers on Solana decryptions. The connector verifies every proof against the chain and asks the next coprocessor when one fails, so a coprocessor counting `invalid` costs no wrong decryption, only its share of the reads. `behind` and `read_failed` from one `source` mean it lags or is down; a store that coprocessor quarantined also shows as `read_failed`. The `invalid` series of every configured coprocessor exists at 0 from startup.
+ - **Alarm**: Any `invalid`: that coprocessor's leaf record disagrees with the chain. Page and tell the coprocessor's operator; [the Merkle record runbook](../../coprocessor/fhevm-engine/solana-merkle-proof-service/RUNBOOK.md) is the repair.
+   - **Recommendation**: critical, `increase(counter{outcome="invalid"}[5m]) > 0`, by `source`.
 
 #### Metric Name: `kms_connector_worker_decryption_latency_seconds`
  - **Type**: Histogram

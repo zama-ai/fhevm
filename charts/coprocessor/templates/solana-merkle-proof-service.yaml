@@ -231,6 +231,7 @@ spec:
             - --database-url=$(DATABASE_URL)
             - --database-pool-size={{ $server.databasePoolSize }}
             - --http-port={{ $server.httpPort }}
+            - --metrics-addr=0.0.0.0:{{ $server.metricsPort }}
             - --ethereum-rpc-url=$(ETHEREUM_RPC_URL)
             - --protocol-config-address=$(PROTOCOL_CONFIG_ADDRESS)
           env:
@@ -255,6 +256,8 @@ spec:
           ports:
             - name: http
               containerPort: {{ $server.httpPort }}
+            - name: metrics
+              containerPort: {{ $server.metricsPort }}
           readinessProbe:
             httpGet:
               path: /healthz
@@ -285,4 +288,22 @@ spec:
     - name: http
       port: {{ $server.httpPort }}
       targetPort: http
+    - name: metrics
+      port: {{ $server.metricsPort }}
+      targetPort: metrics
+{{- if $listener.serviceMonitor.enabled }}
+---
+apiVersion: monitoring.coreos.com/v1
+kind: ServiceMonitor
+metadata:
+  name: {{ $serverName }}
+  labels:
+    app.kubernetes.io/name: {{ $serverName }}
+spec:
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: {{ $serverName }}
+  endpoints:
+    - port: metrics
+{{- end }}
 {{- end }}
