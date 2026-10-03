@@ -653,6 +653,7 @@ impl DatabaseConfig {
 ///   broker_type: redis
 ///   broker_url: redis://localhost:6379
 ///   ensure_publish: true
+///   redis_max_stream_len: 1000000
 /// ```
 #[derive(Deserialize, Clone, Derivative)]
 #[derivative(Debug)]
@@ -682,6 +683,27 @@ pub struct BrokerConfig {
 
     #[serde(default = "default_claim_min_idle")]
     pub claim_min_idle: u64,
+
+    /// Approximate cap on the length of each Redis stream, applied via
+    /// `MAXLEN ~` on every `XADD`. Ignored by the AMQP backend.
+    ///
+    /// This bounds a stream whose consumer group has stopped advancing. The
+    /// background trimmer cannot reclaim past such a group's cursor, so
+    /// without this cap one abandoned group grows its stream without limit.
+    ///
+    /// Set to `0` to remove the cap. Nothing then bounds that growth, and a
+    /// Redis instance that runs out of memory stops accepting writes for every
+    /// stream on it — not just the one that grew. Only do this where Redis
+    /// memory is bounded by other means.
+    ///
+    /// Default: `1_000_000`. See `broker::REDIS_STREAM_MAXLEN_CEILING` for how
+    /// to size it against how fast the consumer drains.
+    #[serde(default = "default_redis_max_stream_len")]
+    pub redis_max_stream_len: usize,
+}
+
+fn default_redis_max_stream_len() -> usize {
+    broker::REDIS_STREAM_MAXLEN_CEILING
 }
 
 fn default_claim_min_idle() -> u64 {
@@ -702,6 +724,11 @@ impl BrokerConfig {
     /// Get the broker URL.
     pub fn url(&self) -> &str {
         &self.broker_url
+    }
+
+    /// The stream cap to hand the broker, where a configured `0` means "none".
+    pub fn max_stream_len(&self) -> Option<usize> {
+        (self.redis_max_stream_len != 0).then_some(self.redis_max_stream_len)
     }
 
     pub fn validate(&self) -> Result<(), ConfigError> {
@@ -1157,6 +1184,7 @@ mod tests {
             circuit_breaker_cooldown_secs: 10,
             circuit_breaker_threshold: 3,
             claim_min_idle: 30,
+            redis_max_stream_len: 1_000_000,
         };
         let result = config.validate();
         assert!(result.is_err());
@@ -1172,10 +1200,45 @@ mod tests {
             circuit_breaker_cooldown_secs: 10,
             circuit_breaker_threshold: 3,
             claim_min_idle: 30,
+            redis_max_stream_len: 1_000_000,
         };
         let result = config.validate();
         assert!(result.is_err());
         assert!(result.unwrap_err().to_string().contains("redis://"));
+    }
+
+    #[test]
+    fn test_broker_max_stream_len_zero_means_no_cap() {
+        let mut config = BrokerConfig {
+            broker_type: BrokerType::Redis,
+            broker_url: "redis://localhost:6379".to_string(),
+            ensure_publish: false,
+            circuit_breaker_cooldown_secs: 10,
+            circuit_breaker_threshold: 3,
+            claim_min_idle: 30,
+            redis_max_stream_len: 0,
+        };
+        assert_eq!(
+            config.max_stream_len(),
+            None,
+            "0 is how a deployment opts out of the cap"
+        );
+
+        config.redis_max_stream_len = 250_000;
+        assert_eq!(config.max_stream_len(), Some(250_000));
+    }
+
+    #[test]
+    fn test_broker_max_stream_len_defaults_to_the_broker_ceiling() {
+        let config: BrokerConfig = serde_json::from_str(
+            r#"{"broker_type":"redis","broker_url":"redis://localhost:6379"}"#,
+        )
+        .unwrap();
+        assert_eq!(
+            config.max_stream_len(),
+            Some(broker::REDIS_STREAM_MAXLEN_CEILING),
+            "omitting the field must not silently disable the cap"
+        );
     }
 
     #[test]
@@ -1192,6 +1255,7 @@ mod tests {
             circuit_breaker_cooldown_secs: 10,
             circuit_breaker_threshold: 3,
             claim_min_idle: 30,
+            redis_max_stream_len: 1_000_000,
         };
         assert_eq!(amqp_config.url(), "amqp://localhost:5672");
 
@@ -1202,6 +1266,7 @@ mod tests {
             circuit_breaker_cooldown_secs: 10,
             circuit_breaker_threshold: 3,
             claim_min_idle: 30,
+            redis_max_stream_len: 1_000_000,
         };
         assert_eq!(redis_config.url(), "redis://localhost:6379");
     }
@@ -1215,6 +1280,7 @@ mod tests {
             circuit_breaker_cooldown_secs: 10,
             circuit_breaker_threshold: 3,
             claim_min_idle: 30,
+            redis_max_stream_len: 1_000_000,
         };
         assert!(config.validate().is_ok());
     }
@@ -1228,6 +1294,7 @@ mod tests {
             circuit_breaker_cooldown_secs: 10,
             circuit_breaker_threshold: 3,
             claim_min_idle: 30,
+            redis_max_stream_len: 1_000_000,
         };
         assert!(config.validate().is_ok());
     }
@@ -1272,6 +1339,7 @@ mod tests {
             circuit_breaker_cooldown_secs: 10,
             circuit_breaker_threshold: 3,
             claim_min_idle: 30,
+            redis_max_stream_len: 1_000_000,
         };
         let debug_output = format!("{:?}", broker_config);
         assert!(!debug_output.contains("secret_password"));
