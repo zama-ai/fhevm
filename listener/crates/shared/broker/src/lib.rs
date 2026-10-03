@@ -83,7 +83,7 @@ use redis::{RedisConnectionManager, RedisPublisher, RedisQueueInspector};
 use traits::depth::QueueInspector;
 use traits::publisher::DynPublisher;
 
-/// Hard ceiling applied to every Redis stream via `MAXLEN ~` on each `XADD`.
+/// Default ceiling applied to every Redis stream via `MAXLEN ~` on each `XADD`.
 ///
 /// This is a backstop, not a retention policy. Normal reclamation is the
 /// background trimmer, which trims to the oldest ID still unread by any
@@ -99,12 +99,20 @@ use traits::publisher::DynPublisher;
 /// best-effort: a pod killed before it gets there leaves the group behind
 /// anyway.
 ///
-/// This ceiling is what covers that, and it is unconditional, so an abandoned
-/// group costs a bounded amount of memory instead of an unbounded one. It is
-/// deliberately far above any healthy working set: at one block every twelve
-/// seconds a chain produces on the order of 300 entries an hour, so this is
-/// months of headroom and will only ever be reached by a stream nobody is
-/// draining.
+/// This ceiling is what covers that, and it is applied unconditionally, so an
+/// abandoned group costs a bounded amount of memory instead of an unbounded
+/// one. It is deliberately far above any healthy working set: at one block
+/// every twelve seconds a chain produces on the order of 300 entries an hour,
+/// so this is months of headroom and will only ever be reached by a stream
+/// nobody is draining.
+///
+/// This value is only the default. A deployment picks its own with
+/// `broker.redis_max_stream_len`, and `0` there removes the cap altogether.
+/// The number worth choosing is the backlog a consumer could still work
+/// through, roughly `(drain_rate - block_rate) * recovery_window`: at a
+/// sustained fifty blocks a second this default is about six hours of replay.
+/// Raising it beyond what the consumer can drain does not avoid a loss, it
+/// defers one.
 #[cfg(feature = "redis")]
 pub const REDIS_STREAM_MAXLEN_CEILING: usize = 1_000_000;
 
@@ -181,6 +189,11 @@ pub enum Broker {
         conn: Arc<RedisConnectionManager>,
         /// When true, publisher issues `WAIT` after each `XADD` for replication durability.
         ensure_publish: bool,
+        /// Approximate cap applied to every stream via `MAXLEN ~` on each `XADD`.
+        ///
+        /// `None` removes the cap. See [`REDIS_STREAM_MAXLEN_CEILING`] for what
+        /// the cap is for and how to size it.
+        max_stream_len: Option<usize>,
     },
     /// RabbitMQ backend.
     #[cfg(feature = "amqp")]
@@ -209,26 +222,32 @@ impl Broker {
     /// ```
     #[cfg(feature = "redis")]
     pub async fn redis(url: &str) -> Result<Self, BrokerError> {
-        let conn = RedisConnectionManager::new_with_retry(url).await;
-        Ok(Self::Redis {
-            conn: Arc::new(conn),
-            ensure_publish: false,
-        })
+        Self::redis_with_options(url, false, Some(REDIS_STREAM_MAXLEN_CEILING)).await
     }
 
-    /// Create a Redis broker from URL with `ensure_publish` replication durability.
+    /// Create a Redis broker with an explicit cap on stream length.
     ///
     /// When `ensure_publish` is true, the publisher issues `WAIT 1 500` after
     /// each `XADD` to confirm replication to at least one replica.
+    ///
+    /// `max_stream_len` is the approximate `MAXLEN ~` applied on every `XADD`.
+    /// `None` removes it, which leaves nothing bounding a stream whose consumer
+    /// group has stopped advancing: the background trimmer will not reclaim
+    /// past that group's cursor, so the stream grows until the Redis instance
+    /// refuses writes. That refusal is instance-wide, so it takes down every
+    /// other stream sharing the instance as well. Prefer a large cap to `None`
+    /// unless Redis memory is bounded by other means.
     #[cfg(feature = "redis")]
-    pub async fn redis_with_ensure_publish(
+    pub async fn redis_with_options(
         url: &str,
         ensure_publish: bool,
+        max_stream_len: Option<usize>,
     ) -> Result<Self, BrokerError> {
         let conn = RedisConnectionManager::new_with_retry(url).await;
         Ok(Self::Redis {
             conn: Arc::new(conn),
             ensure_publish,
+            max_stream_len,
         })
     }
 
@@ -322,15 +341,20 @@ impl Broker {
             Broker::Redis {
                 conn,
                 ensure_publish,
+                max_stream_len,
             } => {
                 let mut builder = RedisPublisher::builder((**conn).clone())
                     .max_retries(3)
                     .auto_trim(Duration::from_secs(60))
-                    .fallback_maxlen(100_000)
-                    // Unconditional backstop — see REDIS_STREAM_MAXLEN_CEILING.
-                    // `fallback_maxlen` above only covers streams with no
-                    // consumer groups, which is not the case that grows.
-                    .max_stream_len(REDIS_STREAM_MAXLEN_CEILING);
+                    .fallback_maxlen(100_000);
+
+                // Backstop — see REDIS_STREAM_MAXLEN_CEILING. `fallback_maxlen`
+                // above only covers streams with no consumer groups, which is
+                // not the case that grows. `None` means this deployment has
+                // opted out of the backstop.
+                if let Some(maxlen) = max_stream_len {
+                    builder = builder.max_stream_len(*maxlen);
+                }
 
                 if *ensure_publish {
                     builder = builder.replication_wait(1, Duration::from_millis(500));
