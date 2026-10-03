@@ -23,7 +23,7 @@ for name in solana-rpc solana-deployer; do
     -n "$NAMESPACE" -f "$values/values-$name.yaml"
   wait_external_secret "$name"
 done
-# The leaf-proof bearer token is only ever read inside this namespace, by the leaf-proof
+# The proof bearer token is only ever read inside this namespace, by the Merkle proof
 # servers and the connectors, so each preview mints its own.
 openssl rand -base64 32 | tr -d '\n' > "$work/proof-api-key"
 kubectl create secret generic solana-proof-api -n "$NAMESPACE" \
@@ -39,7 +39,8 @@ if [[ -z $(kubectl get secret solana-recovery -n "$NAMESPACE" --ignore-not-found
 fi
 SOLANA_RECOVERY_IMAGE="hub.zama.org/ghcr/zama-ai/fhevm/solana-programs:$tag" \
   bash "$script_dir/recover.sh" reset
-
+for i in $(seq 1 "$NB_COPROCESSOR"); do recreate_solana_merkle_record "$i"; done
+merkle_start_slot=$(confirmed_solana_slot)
 
 # Keygen completion precedes asynchronous key download into each coprocessor DB.
 for i in $(seq 1 "$NB_COPROCESSOR"); do
@@ -78,13 +79,14 @@ for i in $(seq 1 "$NB_COPROCESSOR"); do
   helm upgrade "coprocessor-$i" "$COPROCESSOR_CHART" -n "$NAMESPACE" \
     -f "$work/coprocessor.yaml" -f "$values/values-solana-coprocessor-e2e.yaml" \
     --set-string "solanaHostListener.image.tag=$(jq -r .coprocessor_host_listener <<< "$TAGS_JSON")" \
+    --set-string "solanaHostListener.merkleIndexer.startSlot=$merkle_start_slot" \
     --set-string "solanaHostListener.serviceAccountName=coprocessor-$i" --wait --wait-for-jobs --timeout=10m
   # zkproof loads host_chains only at startup.
   kubectl rollout restart "deployment/coprocessor-$i-zkproof-worker" -n "$NAMESPACE"
   kubectl rollout status "deployment/coprocessor-$i-zkproof-worker" -n "$NAMESPACE" --timeout=10m
 done
 
-routes=$(seq 1 "$NB_COPROCESSOR" | jq -Rsc 'split("\n")[:-1] | map({url: ("http://coprocessor-" + . + "-solana-leaf-proof-server:8080"), apiKey: "$(SOLANA_PROOF_API_KEY)"})')
+routes=$(seq 1 "$NB_COPROCESSOR" | jq -Rsc 'split("\n")[:-1] | map({url: ("http://coprocessor-" + . + "-solana-merkle-proof-server:8080"), apiKey: "$(SOLANA_PROOF_API_KEY)"})')
 for i in $(seq 1 "$NB_KMS_CORE"); do
   helm get values "kms-connector-$i" -n "$NAMESPACE" -o yaml > "$work/connector.yaml"
   helm upgrade "kms-connector-$i" "$KMS_CONNECTOR_CHART" -n "$NAMESPACE" \
@@ -112,6 +114,7 @@ for i in $(seq 1 "$NB_COPROCESSOR"); do
     sleep 5
   done
   [[ "$progressed" == true ]] || { echo "::error::Solana listener $i is ready but its sealed-block checkpoint is not advancing; check Yellowstone endpoint, credentials, connectivity and provider block delivery"; exit 1; }
+  wait_solana_merkle_recorded "$i" "$merkle_start_slot"
 done
 if [[ "$SOLANA_DEPLOY_EXAMPLE_PROGRAMS" == true ]]; then
   helm upgrade --install solana-demos "$CONTRACTS_CHART" -n "$NAMESPACE" \

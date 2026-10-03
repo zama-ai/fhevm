@@ -1,37 +1,56 @@
-//! Solana host listener: reconstructs coprocessor work and the RFC 035 leaf record
-//! from confirmed Yellowstone transactions and block metas and ingests both into the shared
-//! database.
-//! `solana_leaf_proof_server` serves the leaf inclusion proofs apart from it.
+//! Solana host listener: reconstructs coprocessor work from confirmed Yellowstone
+//! transactions and block metas and ingests it into the coprocessor database.
 
-use std::{str::FromStr, time::Duration};
+use std::{str::FromStr, sync::Arc};
 
 use anyhow::{Context, Result};
 use clap::Parser;
-use solana_client::{
-    nonblocking::rpc_client::RpcClient, rpc_request::RpcRequest,
-};
+use solana_client::nonblocking::rpc_client::RpcClient;
 use solana_commitment_config::CommitmentConfig;
 use solana_sdk::pubkey::Pubkey;
+use sqlx::PgPool;
 use tokio_util::sync::CancellationToken;
 use tracing::{info, Level};
 
 use fhevm_engine_common::{
-    chain_id::ChainId, metrics_server, telemetry, utils::DatabaseURL,
+    chain_id::ChainId,
+    healthz_server::{
+        default_get_version, HealthCheckService, HealthStatus, HttpServer,
+        Version,
+    },
+    metrics_server, telemetry,
+    utils::DatabaseURL,
 };
 use host_listener::{
     cmd::DEFAULT_DEPENDENCE_CACHE_SIZE,
     database::{
-        solana_leaves::load_checkpoint, tfhe_event_propagate::Database,
+        solana_checkpoint::load_checkpoint, tfhe_event_propagate::Database,
     },
-    http_server::HttpServer,
-    solana_grpc_listener::{
-        run, track_confirmed_slot, BlockCheckpoint, SolanaGrpcListenerConfig,
-        StartPosition,
-    },
-    solana_reconstruct::{parse_host_config, HOST_CONFIG_SEED},
+    solana_listener::{SolanaListenerConfig, SolanaListenerSink},
+};
+use solana_host_follower::{
+    block_checkpoint, host::host_chain_id, run, track_confirmed_slot,
+    FollowerConfig, StartPosition, SOLANA_RPC_REQUEST_TIMEOUT,
 };
 
-const SOLANA_RPC_REQUEST_TIMEOUT: Duration = Duration::from_secs(30);
+/// Healthy while the coprocessor database answers.
+struct DatabaseHealth(PgPool);
+
+impl HealthCheckService for DatabaseHealth {
+    async fn health_check(&self) -> HealthStatus {
+        let mut status = HealthStatus::default();
+        status.set_db_connected(&self.0).await;
+        status
+    }
+
+    async fn is_alive(&self) -> bool {
+        true
+    }
+
+    fn get_version(&self) -> Version {
+        default_get_version()
+    }
+}
 
 #[derive(Parser, Debug, Clone)]
 #[command(version, about = "Solana host listener", long_about = None)]
@@ -49,8 +68,8 @@ struct Args {
     grpc_url: String,
 
     /// Solana JSON-RPC endpoint whose ledger history rebuilds, with `getBlock` and
-    /// `getTransaction`, the slots Yellowstone can no longer replay. It may be another
-    /// provider's. Defaults to `--url`.
+    /// `getTransaction`, the slots Yellowstone can no longer replay, and reads the start block's
+    /// hash. It may be another provider's. Defaults to `--url`.
     #[arg(long, env = "SOLANA_ARCHIVE_URL")]
     archive_url: Option<String>,
 
@@ -120,15 +139,12 @@ async fn main() -> Result<()> {
         SOLANA_RPC_REQUEST_TIMEOUT,
         CommitmentConfig::confirmed(),
     );
-    let (host_config_pda, _) =
-        Pubkey::find_program_address(&[HOST_CONFIG_SEED], &program_id);
-    let account = rpc
-        .get_account(&host_config_pda)
-        .await
-        .with_context(|| format!("fetch HostConfig {host_config_pda}"))?;
-    let host_config_chain_id = parse_host_config(&account.data)?;
+    let host_config_chain_id = host_chain_id(&rpc, &program_id).await?;
+    let archive = RpcClient::new_with_timeout(
+        args.archive_url.unwrap_or_else(|| args.url.clone()),
+        SOLANA_RPC_REQUEST_TIMEOUT,
+    );
     info!(
-        %host_config_pda,
         chain_id = host_config_chain_id,
         "auto-detected handle-derivation params from confirmed HostConfig"
     );
@@ -152,36 +168,22 @@ async fn main() -> Result<()> {
     }
 
     let pool = db.pool.read().await.clone();
-    // Resume after the last block whose compute rows and leaves were committed; the
-    // leaf record can only be continued from where it stopped.
+    // Resume after the last block whose compute rows were committed.
     let start = match load_checkpoint(&pool).await.context("load checkpoint")? {
         Some(checkpoint) => {
             info!(
                 slot = checkpoint.slot,
                 "resuming after the recorded checkpoint"
             );
-            StartPosition::Resume(BlockCheckpoint {
-                slot: checkpoint.slot,
-                block_hash: checkpoint.block_hash,
-            })
+            StartPosition::Resume(checkpoint)
         }
         None => match args.start_slot {
-            Some(slot) => {
-                // Anchor to an actual block, so a provider silently starting at the tip is rejected.
-                // RPC supplies only its identity; its transactions come from the stream or archive.
-                let block: serde_json::Value = rpc.send(RpcRequest::GetBlock, serde_json::json!([
-                    slot, {"commitment": "confirmed", "transactionDetails": "none", "rewards": false}
-                ])).await.with_context(|| format!("fetch bootstrap block {slot}"))?;
-                let block_hash = block["blockhash"].as_str().context(
-                    "bootstrap slot must identify an existing confirmed block",
-                )?;
-                StartPosition::ReplayFrom(BlockCheckpoint {
-                    slot,
-                    block_hash: solana_sdk::hash::Hash::from_str(block_hash)
-                        .context("parse bootstrap block hash")?
-                        .to_bytes(),
-                })
-            }
+            // Anchored to an actual block, so a provider silently starting at the tip is
+            // rejected. The archive reads the block's hash; its transactions come from the
+            // stream, or from the archive once the stream no longer retains them.
+            Some(slot) => StartPosition::ReplayFrom(
+                block_checkpoint(&archive, slot).await?,
+            ),
             None => StartPosition::Tip,
         },
     };
@@ -204,7 +206,11 @@ async fn main() -> Result<()> {
         ));
     }
 
-    let http_server = HttpServer::health(pool, args.http_port, cancel.clone());
+    let http_server = HttpServer::new(
+        Arc::new(DatabaseHealth(pool)),
+        args.http_port,
+        cancel.clone(),
+    );
     let http_cancel = cancel.clone();
     let http_task = tokio::spawn(async move {
         let result = http_server.start().await;
@@ -213,19 +219,22 @@ async fn main() -> Result<()> {
         result
     });
 
-    let archive = RpcClient::new_with_timeout(
-        args.archive_url.unwrap_or(args.url),
-        SOLANA_RPC_REQUEST_TIMEOUT,
+    let sink = SolanaListenerSink::new(
+        &db,
+        SolanaListenerConfig {
+            program_id,
+            chain_id: host_config_chain_id,
+            dependent_ops_max_per_chain: args.dependent_ops_max_per_chain,
+        },
     );
     let listener_result = run(
-        &db,
+        &sink,
         &archive,
-        &SolanaGrpcListenerConfig {
+        &FollowerConfig {
             grpc_url: args.grpc_url,
             x_token: args.grpc_x_token,
             program_id,
             chain_id: host_config_chain_id,
-            dependent_ops_max_per_chain: args.dependent_ops_max_per_chain,
         },
         start,
         cancel.clone(),

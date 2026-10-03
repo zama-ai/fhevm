@@ -5456,10 +5456,7 @@ dependencies = [
  "aws-credential-types",
  "aws-sdk-s3",
  "aws-smithy-mocks",
- "axum 0.7.9",
- "base64 0.22.1",
  "bigdecimal",
- "bincode",
  "bs58",
  "clap",
  "consumer",
@@ -5479,26 +5476,20 @@ dependencies = [
  "sha3 0.10.8",
  "solana-client",
  "solana-commitment-config",
+ "solana-host-follower",
  "solana-sdk 3.0.0",
- "solana-transaction-status-client-types",
  "sqlx",
  "test-harness",
  "tfhe",
- "thiserror 2.0.20",
  "time",
  "tokio",
  "tokio-util",
- "tonic 0.14.6",
  "tracing",
  "tracing-subscriber",
  "tracing-test",
  "union-find",
  "url",
- "utoipa",
- "yellowstone-grpc-proto",
  "zama-host",
- "zama-solana-acl",
- "zama-solana-transaction",
 ]
 
 [[package]]
@@ -10032,6 +10023,32 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "7ce934b02bab639341f2fd62c3e7e3c39dcceb47f0196b7630ed1f82ecb704bd"
 
 [[package]]
+name = "solana-host-follower"
+version = "0.7.0"
+dependencies = [
+ "anchor-lang",
+ "anyhow",
+ "base64 0.22.1",
+ "bincode",
+ "bs58",
+ "futures-util",
+ "prometheus",
+ "serde",
+ "serde_json",
+ "solana-client",
+ "solana-commitment-config",
+ "solana-sdk 3.0.0",
+ "solana-transaction-status-client-types",
+ "tokio",
+ "tokio-util",
+ "tonic 0.14.6",
+ "tracing",
+ "yellowstone-grpc-proto",
+ "zama-host",
+ "zama-solana-transaction",
+]
+
+[[package]]
 name = "solana-inflation"
 version = "3.2.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -10219,6 +10236,36 @@ name = "solana-measure"
 version = "3.1.14"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "2b0eef68497ca818f50da3de449c64dc406d28170e395fd2ec40b64b6798afec"
+
+[[package]]
+name = "solana-merkle-proof-service"
+version = "0.7.0"
+dependencies = [
+ "anchor-lang",
+ "anyhow",
+ "axum 0.7.9",
+ "bs58",
+ "clap",
+ "fhevm-engine-common",
+ "hex",
+ "reqwest 0.12.28",
+ "serde",
+ "serde_json",
+ "serial_test",
+ "solana-client",
+ "solana-commitment-config",
+ "solana-host-follower",
+ "solana-sdk 3.0.0",
+ "sqlx",
+ "test-harness",
+ "thiserror 2.0.20",
+ "tokio",
+ "tokio-util",
+ "tracing",
+ "utoipa",
+ "zama-host",
+ "zama-solana-acl",
+]
 
 [[package]]
 name = "solana-message"
@@ -13099,6 +13146,7 @@ dependencies = [
  "serde",
  "serde_json",
  "serial_test",
+ "solana-host-follower",
  "solana-sdk 4.0.1",
  "sqlx",
  "strum 0.26.3",

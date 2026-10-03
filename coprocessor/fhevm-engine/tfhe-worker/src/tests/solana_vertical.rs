@@ -24,12 +24,11 @@ use fhevm_engine_common::{tfhe_ops::current_ciphertext_version, types::Supported
 use host_listener::{
     database::tfhe_event_propagate::{Handle, TransactionId},
     solana_adapter::{insert_solana_block_records, SolanaBlockMeta, SolanaHostRecord},
-    solana_reconstruct::{
-        decode_fhe_execute_args, decode_fhe_executed_event, reconstruct_fhe_execute,
-    },
+    solana_reconstruct::reconstruct_fhe_execute,
 };
 use litesvm::{types::TransactionMetadata, LiteSVM};
 use serial_test::serial;
+use solana_host_follower::host::{decode_fhe_execute_args, decode_fhe_executed_event};
 use solana_sdk::{
     account::Account,
     clock::Clock,

@@ -80,6 +80,8 @@ RUST_ROOTS=(
   solana/runtime-tests
   solana/test-kit
   coprocessor/fhevm-engine/host-listener/src
+  coprocessor/fhevm-engine/solana-host-follower/src
+  coprocessor/fhevm-engine/solana-merkle-proof-service/src
   # The relayer's Solana adapter (the ACL pre-check and the delegation pre-check) speaks this
   # vocabulary natively; the rest of the relayer is EVM prose whose "durable" and "superseded"
   # are its own words, not retired ACL names.
@@ -182,8 +184,9 @@ SENTINEL_ROOTS=(
   test-suite/fhevm
   coprocessor/fhevm-engine/host-listener/src/solana_adapter.rs
   coprocessor/fhevm-engine/host-listener/src/solana_reconstruct.rs
-  coprocessor/fhevm-engine/host-listener/src/solana_grpc_listener.rs
-  coprocessor/fhevm-engine/host-listener/src/solana_grpc_source.rs
+  coprocessor/fhevm-engine/host-listener/src/solana_listener.rs
+  coprocessor/fhevm-engine/solana-host-follower/src
+  coprocessor/fhevm-engine/solana-merkle-proof-service/src
 )
 # Files expected to still carry at least one retrofit sentinel. This is a STALENESS guard, not the
 # scan surface: check 4 finds retrofits anywhere in the owned trees, and this list fails loudly when
@@ -530,9 +533,11 @@ if run_check 3; then
   check_alias 'value_key identifier — renamed to encrypted_value_id' kms \
     '' -iE 'value_key'
   # Deliberate records of the retirement (the teardown gates, INVARIANTS #47, DD-035) say the
-  # service is gone; the EVM input-proof service is another thing.
-  check_alias 'proof service — the leaf record lives in the host listener' kms \
-    'is gone|proof-service client|external input proof service' -iE 'proof[ _-]service'
+  # trusted service is gone; the EVM input-proof service is another thing. The Merkle proof
+  # service is its own name: an untrusted source of proofs the connector verifies on chain.
+  check_alias 'proof service — say Merkle proof service, whose proofs the connector verifies' kms \
+    'is gone|proof-service client|external input proof service|merkle[ _-]proof[ _-]service' \
+    -iE 'proof[ _-]service'
   # Reject the retired ACL collection and mutation API, not ordinary English or unrelated
   # variables called "subject" (for example a polling condition or TLS certificate field).
   check_alias 'subject — say allow / viewer; the account keeps no list' kms \
@@ -1014,7 +1019,7 @@ PersistentEvalTarget|eval — say execution; evaluate is the verb
 born-public|born / birth — renamed to created-public / create
 are born with|born / birth — renamed to created-public / create
 value_key|value_key identifier — renamed to encrypted_value_id
-the proof service answers|proof service — the leaf record lives in the host listener
+the proof service answers|proof service — say Merkle proof service, whose proofs the connector verifies
 the subject set|subject — say allow / viewer; the account keeps no list
 compute_subject|compute subject / compute signer — reads are admitted by the value authority
 ACL domain key|domain — say application (program, scope)

@@ -1889,7 +1889,8 @@ upgradeController:
       maxUnavailable: 0
 
 # One Solana stream writer per coprocessor database, alongside the EVM consumers.
-# `proofServer` serves its leaf proofs from a separate Deployment.
+# The Merkle proof service runs from the same image: `merkleIndexer` records the
+# leaves into its own database and `proofServer` serves their proofs.
 solanaHostListener:
   enabled: false
   image:
@@ -1922,9 +1923,32 @@ solanaHostListener:
     limits:
       cpu: "2"
       memory: 2Gi
-  # Serves the leaf proofs to the KMS connectors with its own database pool, on a
+  # The Merkle record's own database, on the coprocessor's Postgres server. Same
+  # $(DATABASE_USER)/$(DATABASE_PASSWORD)/$(DATABASE_ENDPOINT) references as
+  # commonConfig.databaseUrl, naming another database, e.g.
+  #   "postgresql://$(DATABASE_USER):$(DATABASE_PASSWORD)@$(DATABASE_ENDPOINT)/solana_merkle"
+  # The database must already exist: this chart does not create it. The indexer
+  # applies its migrations; the proof server only reads it.
+  merkleDatabaseUrl: ""
+  # Records every encrypted store's leaves, reading the listener's Solana env.
+  # It resumes from its checkpoint; on an empty database it starts at `startSlot`,
+  # a confirmed block before the first encrypted store was created, such as the
+  # zama-host deployment slot. A store first seen above leaf zero stops it.
+  merkleIndexer:
+    startSlot: ""
+    httpPort: 8080
+    metricsPort: 9100
+    podLabels: {}
+    resources:
+      requests:
+        cpu: 100m
+        memory: 256Mi
+      limits:
+        cpu: "1"
+        memory: 1Gi
+  # Serves the Merkle proofs to the KMS connectors with its own database pool, on a
   # ClusterIP Service with no public ingress, so proofs keep being served while
-  # ingestion is stopped or behind. It runs the listener's image with its service
+  # the indexer is stopped or behind. It runs the listener's image with its service
   # account, scheduling and security context. Supply SOLANA_PROOF_API_KEY using
   # secretKeyRef.
   proofServer:

@@ -28,7 +28,7 @@ assuming the opposite. Numbers are stable across both parts and never reused, so
 entry that moves between them keeps its number.
 
 Scope note: this register covers the Solana feature branch: `zama-host`, the `zama-fhe` SDK, the host-listener
-reconstruction path and its leaf record, the KMS connector's Solana pipeline, and the reference confidential-token and
+reconstruction path, the Merkle proof service's leaf record, the KMS connector's Solana pipeline, and the reference confidential-token and
 confidential-batcher applications. Vocabulary follows GLOSSARY.md: execution, dictionary, Store, slot, allow, result
 grant, transient store, application.
 
@@ -508,8 +508,8 @@ with `InvalidationTimestampInTheFuture`. Pinned by the permit vector
 
 **45. [HOLDS]** The connector authorizes against the canonical EncryptedStore PDA, program-owned, rederived from the seeds the account carries,
 using the same compiled `zama_solana_acl` code the on-chain program runs
-(decode, seeds, MMR verification, both authorize functions). The leaf proof
-comes from the coprocessors' leaf record (`POST /v1/solana/leaf-proofs`,
+(decode, seeds, MMR verification, both authorize functions). The Merkle proof
+comes from the coprocessors' leaf record (`POST /v1/solana/merkle-proofs`,
 API key), never from the client, and is verified against the peaks of the
 account the connector read itself (`kms-worker/src/core/solana/`).
 Pinned by `an_encrypted_store_whose_fields_derive_another_address_is_rejected`,
@@ -604,12 +604,11 @@ overhead and application CPIs.
 Pinned by `rejects_more_than_max_ops`, `cost_snapshot_fhe_execute_max_steps` and `cost_snapshot_boundary_sweeps`.
 
 **34. [OPERATIONAL]** Reconstruction fixtures compile only under
-`--features solana-grpc,solana-reconstruct`; coverage exists only where CI
-passes those flags.
+`--features solana`; coverage exists only where CI passes that flag.
 
 **47. [RETIRED]** The standalone proof service is gone (RFC 035, DD-048). The
-leaf record lives in each coprocessor's database, written by its host
-listener and served by its leaf-proof server behind an API key; the connector
+leaf record lives in each coprocessor's Merkle proof service database, written
+by its Merkle indexer and served by its Merkle proof server behind an API key (DD-066); the connector
 asks every configured coprocessor at once, so one behind, stalled or
 unreachable cannot sink or hold a request another can serve. Authorization was
 never its to give (#30).

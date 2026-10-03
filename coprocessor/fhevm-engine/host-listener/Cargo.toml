@@ -8,8 +8,8 @@ license.workspace = true
 test-failpoints = ["consumer/test-failpoints"]
 default = []
 test_bypass_key_extraction = []
-solana-grpc = ["dep:yellowstone-grpc-proto", "dep:tonic", "dep:zama-solana-transaction", "dep:solana-transaction-status-client-types"]
-solana-reconstruct = ["dep:zama-host", "dep:anchor-lang", "dep:zama-solana-acl", "dep:axum", "dep:utoipa"]
+# The Solana host listener and its reconstruction.
+solana = ["dep:solana-host-follower", "dep:zama-host", "dep:anchor-lang"]
 
 [[bin]]
 path = "src/bin/main.rs"
@@ -33,14 +33,7 @@ path = "src/bin/solana_host_listener.rs"
 name = "solana_host_listener"
 test = false
 bench = false
-required-features = ["solana-grpc", "solana-reconstruct"]
-
-[[bin]]
-path = "src/bin/solana_leaf_proof_server.rs"
-name = "solana_leaf_proof_server"
-test = false
-bench = false
-required-features = ["solana-reconstruct"]
+required-features = ["solana"]
 
 [[bin]]
 path = "src/bin/migration_test_key.rs"
@@ -58,9 +51,7 @@ async-trait = { workspace = true }
 aws-config = { workspace = true }
 aws-credential-types = { workspace = true }
 aws-sdk-s3 = { workspace = true }
-base64 = "0.22.1"
 bigdecimal = { workspace = true }
-bs58 = "0.5.1"
 clap = { workspace = true }
 futures-util = { workspace = true }
 hex = { workspace = true }
@@ -73,7 +64,6 @@ serde_json = { workspace = true }
 sha3 = { workspace = true }
 sqlx = { workspace = true }
 tfhe = { workspace = true }
-thiserror = { workspace = true }
 time = { workspace = true }
 tokio = { workspace = true }
 tokio-util = { workspace = true }
@@ -85,41 +75,14 @@ url = "2.5.7"
 solana-client = "3.0"
 solana-commitment-config = "3.1"
 solana-sdk = "3.0"
-# `getBlock` and `getTransaction` response types, for rebuilding a slot from an archive.
-solana-transaction-status-client-types = { version = "3.1", optional = true }
-
-# Yellowstone gRPC transport (optional; enabled via the `solana-grpc` feature).
-# TLS is needed for hosted Yellowstone endpoints (https://); the local plugin in e2e is plaintext.
-# aws-lc is the rustls provider the rest of the workspace uses (rustls, reqwest, sqlx).
-tonic = { workspace = true, optional = true, features = ["tls-aws-lc", "tls-webpki-roots"] }
-# Pinned to the SAME tag as the plugin solana/geyser/build-yellowstone-plugin.sh fetches, so the
-# client proto and the server proto are generated from the same file. The geyser plugin has no
-# stable ABI, so that tag also tracks the agave line the validator runs — 4.1 today.
-#
-# The tag and the workspace tonic version move together and cannot be split: this crate's proto is
-# generated against whatever tonic the tag was cut with, and mixing that with a different tonic in
-# our own code gives two incompatible `Body`/`Interceptor` types with the same name.
-#
-# This crate also brings its own solana-pubkey (4.3.0) alongside the 3.0.0 one solana-sdk pulls in.
-# Harmless because nothing crosses the boundary as a Pubkey: the wire carries base58 strings and raw
-# bytes, and we parse those into our own types. Keep it that way — handing one crate's Pubkey to the
-# other does not compile, and the error names the type, not the version skew behind it.
-#
-# We drive the tonic GeyserClient directly rather than through yellowstone-grpc-client.
-yellowstone-grpc-proto = { git = "https://github.com/rpcpool/yellowstone-grpc", tag = "v14.2.2+solana.4.1.0", default-features = false, features = ["tonic", "tonic-compression"], optional = true }
-
-# Phase 2 reconstruction (optional; enabled via the `solana-reconstruct` feature).
+# Solana reconstruction (the `solana` feature).
 # no-entrypoint builds the program crate as a host library so we can call its
 # deterministic computed_*_handle functions directly (parity, not a copy).
 zama-host = { path = "../../../solana/programs/zama-host", default-features = false, features = ["no-entrypoint", "decode"], optional = true }
 # AnchorDeserialize for reusing zama-host's FheExecuteArgs to decode the fhe_execute batch.
 anchor-lang = { version = "1.2.0", optional = true }
-# Leaf commitments and MMR of the RFC 035 leaf record (same parity rationale).
-zama-solana-acl = { path = "../../../solana/crates/zama-solana-acl", optional = true }
-# The leaf-proof HTTP interface the KMS connector reads, with its committed OpenAPI document.
-axum = { workspace = true, optional = true }
-utoipa = { workspace = true, optional = true }
-zama-solana-transaction = { path = "../../../solana/crates/zama-solana-transaction", optional = true }
+# Follows the zama-host program over Yellowstone gRPC.
+solana-host-follower = { path = "../solana-host-follower", optional = true }
 
 # local dependencies
 fhevm-engine-common = { path = "../fhevm-engine-common" }
@@ -132,7 +95,7 @@ primitives = { path = "../../../listener/crates/shared/primitives" }
 alloy = { workspace = true, features = ["node-bindings"] }
 anyhow = { workspace = true }
 aws-smithy-mocks = "0.1.1"
-bincode = "1.3"
+bs58 = "0.5.1"
 serial_test = { workspace = true }
 test-harness = { path = "../test-harness" }
 tracing-test = { workspace = true }

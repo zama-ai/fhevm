@@ -66,7 +66,6 @@ export const CONNECTOR_FAILURE_RECOVERABLE = {
   'HandleBinding::NoLeaf': true,
   'HandleBinding::ProofRecordBehind': true,
   'HandleBinding::AccountUnknownToProofRecord': true,
-  'HandleBinding::HistoryIncomplete': false,
   'HandleBinding::ProofDoesNotVerify': true,
   'HandleBinding::LeafIndexOutOfRange': true,
   'Delegation::NoLiveDelegation': true,
@@ -277,12 +276,6 @@ function checkLeaf(
       return refuse(
         'HandleBinding::AccountUnknownToProofRecord',
         `the leaf record does not know ${encryptedStore}`,
-        index,
-      );
-    case 'historyIncomplete':
-      return refuse(
-        'HandleBinding::HistoryIncomplete',
-        `the leaf record's history of ${encryptedStore} is incomplete`,
         index,
       );
     case 'found':

@@ -1,0 +1,34 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n        SELECT encrypted_store, leaf_count, peaks\n        FROM encrypted_stores\n        WHERE encrypted_store = ANY($1)\n        FOR UPDATE\n        ",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "encrypted_store",
+        "type_info": "Bytea"
+      },
+      {
+        "ordinal": 1,
+        "name": "leaf_count",
+        "type_info": "Int8"
+      },
+      {
+        "ordinal": 2,
+        "name": "peaks",
+        "type_info": "ByteaArray"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "ByteaArray"
+      ]
+    },
+    "nullable": [
+      false,
+      false,
+      false
+    ]
+  },
+  "hash": "4644467d6aafa56afcad060e690c578606295664bedba4885a592421cd2174c2"
+}

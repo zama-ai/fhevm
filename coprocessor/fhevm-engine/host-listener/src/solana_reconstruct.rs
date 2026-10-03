@@ -1,10 +1,8 @@
-//! Reconstruct zama-host operations and State effects from instruction data and
-//! each execution's `FheExecutedEvent`.
+//! Reconstruct zama-host operations from an `fhe_execute` and its `FheExecutedEvent`.
 //!
-//! Covers the `fhe_execute` execution walk (records carry the result handles the host
+//! The execution walk emits one record per step. Records carry the result handles the host
 //! emitted, and each is re-derived through the program's own `computed_*` functions as a
-//! check), and the encrypted-state history the effects append (the keys they allow and
-//! whether a result is made public: the leaf record of RFC 035).
+//! check.
 
 use std::collections::HashSet;
 
@@ -13,8 +11,8 @@ use zama_host::state::{
     computed_eval_mul_div_handle, computed_eval_sum_handle,
     computed_eval_ternary_handle, computed_eval_trivial_handle,
     computed_eval_unary_handle, computed_rand_bounded_handle,
-    computed_rand_handle, FheExecuteArgs, FheExecuteEffect, FheExecuteOperand,
-    FheExecuteStep, HandleDerivationContext,
+    computed_rand_handle, FheExecuteArgs, FheExecuteOperand, FheExecuteStep,
+    HandleDerivationContext,
 };
 use zama_host::FheExecutedEvent;
 
@@ -26,80 +24,6 @@ use zama_host::records::{
 use zama_host::EVENT_VERSION;
 
 use anchor_lang::prelude::Pubkey;
-use anchor_lang::{AnchorDeserialize, Discriminator};
-
-pub fn is_fhe_execute_instruction(instruction_data: &[u8]) -> bool {
-    zama_host::decode::is_fhe_execute_instruction(instruction_data)
-}
-
-/// Decodes a `fhe_execute` instruction's data into the program's own `FheExecuteArgs`
-/// execution through `zama_host::decode` (so there is no bespoke decoder to
-/// drift from the on-chain layout). The decoded execution is the input to the execution
-/// walk that reconstructs one op record per step, together with the execution's
-/// `FheExecutedEvent`.
-pub fn decode_fhe_execute_args(
-    instruction_data: &[u8],
-) -> Option<FheExecuteArgs> {
-    match zama_host::decode::decode_instruction(instruction_data) {
-        Ok(Some(zama_host::decode::ZamaHostInstruction::FheExecute(args))) => {
-            Some(args)
-        }
-        _ => None,
-    }
-}
-
-pub fn decode_fhe_executed_event(
-    instruction_data: &[u8],
-) -> Option<FheExecutedEvent> {
-    let event: FheExecutedEvent =
-        zama_host::decode::decode_event_cpi(instruction_data)?;
-    (event.version == zama_host::EVENT_VERSION).then_some(event)
-}
-
-pub const MAKE_STATE_ENCRYPTED_STORE_INDEX: usize = 2;
-
-pub fn is_make_store_handle_public_instruction(data: &[u8]) -> bool {
-    data.get(..8)
-        == Some(zama_host::instruction::MakeStoreHandlePublic::DISCRIMINATOR)
-}
-
-pub fn decode_make_store_handle_public(
-    data: &[u8],
-) -> Option<([u8; 32], [u8; 32], u64)> {
-    if !is_make_store_handle_public_instruction(data) {
-        return None;
-    }
-    let mut body = data.get(8..)?;
-    let args =
-        zama_host::instruction::MakeStoreHandlePublic::deserialize(&mut body)
-            .ok()?;
-    Some((args.key, args.handle, args.previous_leaf_count))
-}
-
-/// A decoded instruction invocation: program id, instruction data, resolved
-/// account addresses, and the top-level instruction frame it belongs to.
-#[derive(Clone, Debug)]
-pub struct DecodedInstruction {
-    pub program: String,
-    pub data: Vec<u8>,
-    pub accounts: Vec<[u8; 32]>,
-    pub top_level_index: u32,
-    pub is_inner: bool,
-}
-
-/// Seed for the singleton HostConfig PDA (`PDA("host-config")`), re-exported so the
-/// transport can derive its address to fetch the on-chain config.
-pub use zama_host::constants::HOST_CONFIG_SEED;
-
-/// Reads the on-chain `HostConfig` account and returns the chain id used for
-/// handle derivation, reusing the program's own type so the layout cannot drift.
-pub fn parse_host_config(account_data: &[u8]) -> anyhow::Result<u64> {
-    use anchor_lang::AccountDeserialize;
-    let config =
-        zama_host::state::HostConfig::try_deserialize(&mut &account_data[..])
-            .map_err(|e| anyhow::anyhow!("decode HostConfig account: {e}"))?;
-    Ok(config.chain_id)
-}
 
 /// Resolves an execution operand to its handle from the emitted results of earlier
 /// steps and the execution's interned dictionary — no on-chain account reads.
@@ -165,11 +89,11 @@ pub struct HandleMismatch {
 /// that differs is reported in `mismatches`, never substituted. Random steps use the
 /// emitted seeds, which bind the host's rand nonce and cannot be recomputed.
 ///
-/// Returns `None` when the instruction and the event do not describe the same walk: an
-/// operand or dictionary reference out of range, a `Scalar` where only an encrypted
-/// operand is valid, a result count other than the step count, or seeds that are not
-/// exactly the random steps. `program_id` is the deployment followed, not the id this
-/// crate was compiled with; `chain_id` comes from the on-chain `HostConfig`.
+/// `host_operations` already checked that the event holds one result per step and one seed
+/// per random step. Returns `None` when the walk still does not fit: an operand or dictionary
+/// reference out of range, or a `Scalar` where only an encrypted operand is valid.
+/// `program_id` is the deployment followed, not the id this crate was compiled with;
+/// `chain_id` comes from the on-chain `HostConfig`.
 pub fn reconstruct_fhe_execute(
     execution: &FheExecuteArgs,
     event: &FheExecutedEvent,
@@ -177,28 +101,6 @@ pub fn reconstruct_fhe_execute(
     chain_id: u64,
     produced_in_tx: &mut HashSet<[u8; 32]>,
 ) -> Option<ReconstructedExecution> {
-    let random_steps = execution
-        .steps
-        .iter()
-        .enumerate()
-        .filter_map(|(index, step)| {
-            matches!(
-                step,
-                FheExecuteStep::Rand { .. }
-                    | FheExecuteStep::RandBounded { .. }
-            )
-            .then_some(index as u16)
-        })
-        .collect::<Vec<_>>();
-    if event.results.len() != execution.steps.len()
-        || random_steps.len() != event.seeds.len()
-        || random_steps
-            .iter()
-            .zip(&event.seeds)
-            .any(|(expected, actual)| *expected != actual.step_index)
-    {
-        return None;
-    }
     let ctx = HandleDerivationContext {
         program_id,
         chain_id,
@@ -219,8 +121,8 @@ pub fn reconstruct_fhe_execute(
 
     for (index, step) in execution.steps.iter().enumerate() {
         let op_index = index as u16;
-        let earlier = &event.results[..index];
-        let result = event.results[index];
+        let earlier = event.results.get(..index)?;
+        let result = *event.results.get(index)?;
         let (record, derived) = match step {
             FheExecuteStep::Binary {
                 op,
@@ -457,24 +359,8 @@ pub fn reconstruct_fhe_execute(
         produced_in_tx.insert(result);
         records.push(record);
     }
-    let mut store_outputs = Vec::new();
-    for effect in &execution.effects {
-        if effect.result.output_index != 0 {
-            return None;
-        }
-        let handle =
-            *event.results.get(usize::from(effect.result.step_index))?;
-        // A computation-only grant does not ask the worker to persist its result.
-        if effect.slot.is_some()
-            || !effect.allow_indexes.is_empty()
-            || effect.make_public
-        {
-            store_outputs.push(state_leaf_output(effect, dictionary, handle)?);
-        }
-    }
     Some(ReconstructedExecution {
         records,
-        store_outputs,
         mismatches,
     })
 }
@@ -491,51 +377,7 @@ fn boundary_mask(
 
 pub struct ReconstructedExecution {
     pub records: Vec<SolanaHostRecord>,
-    pub store_outputs: Vec<StoreLeafOutput>,
     pub mismatches: Vec<HandleMismatch>,
-}
-
-/// The leaves a `State` output appends, read from instruction data the host
-/// validated before accepting the confirmed transaction.
-#[derive(Clone, Debug, PartialEq, Eq)]
-pub struct StoreLeafOutput {
-    /// Index into `remaining_accounts` of the `EncryptedStore` PDA.
-    pub store_index: u8,
-    /// The state's leaf count before this output.
-    pub previous_leaf_count: u64,
-    pub handle: [u8; 32],
-    /// Keys allowed on `handle`, one historical-access leaf each, in this order.
-    pub allowed_keys: Vec<[u8; 32]>,
-    /// Whether a public-decrypt leaf for `handle` follows the allow leaves.
-    pub make_public: bool,
-}
-
-fn state_leaf_output(
-    effect: &FheExecuteEffect,
-    dictionary: &[[u8; 32]],
-    handle: [u8; 32],
-) -> Option<StoreLeafOutput> {
-    Some(StoreLeafOutput {
-        store_index: effect.store_index,
-        previous_leaf_count: effect.previous_leaf_count,
-        handle,
-        allowed_keys: effect
-            .allow_indexes
-            .iter()
-            .map(|index| dictionary.get(usize::from(*index)).copied())
-            .collect::<Option<Vec<_>>>()?,
-        make_public: effect.make_public,
-    })
-}
-
-/// `event`'s bytes as the host's event CPI carries them.
-#[cfg(test)]
-pub(crate) fn event_cpi_data(event: &FheExecutedEvent) -> Vec<u8> {
-    anchor_lang::event::EVENT_IX_TAG_LE
-        .iter()
-        .copied()
-        .chain(anchor_lang::Event::data(event))
-        .collect()
 }
 
 /// The event a host would emit for `execution`: its results are this listener's own
@@ -578,7 +420,6 @@ pub(crate) fn event_with_derived_results(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use anchor_lang::{prelude::Pubkey, AnchorSerialize};
     use zama_host::state::{FheBinaryOpCode, FheUnaryOpCode};
 
     fn ctx() -> HandleDerivationContext {
@@ -632,105 +473,6 @@ mod tests {
     /// An event of the right shape whose results are placeholders.
     fn placeholder_event(execution: &FheExecuteArgs) -> FheExecutedEvent {
         event(vec![[0; 32]; execution.steps.len()], vec![])
-    }
-
-    #[test]
-    fn decodes_state_public_args_from_program_type() {
-        let args = zama_host::instruction::MakeStoreHandlePublic {
-            key: [1; 32],
-            handle: [2; 32],
-            previous_leaf_count: 7,
-        };
-        let mut data =
-            zama_host::instruction::MakeStoreHandlePublic::DISCRIMINATOR
-                .to_vec();
-        args.serialize(&mut data).unwrap();
-        assert!(is_make_store_handle_public_instruction(&data));
-        assert_eq!(
-            decode_make_store_handle_public(&data),
-            Some(([1; 32], [2; 32], 7))
-        );
-        data.pop();
-        assert_eq!(decode_make_store_handle_public(&data), None);
-
-        // A create-state payload starts with enough fixed-width bytes to deserialize as the
-        // public-seal arguments if the discriminator is ignored. It must never fabricate a
-        // history write.
-        let create = zama_host::instruction::CreateEncryptedStore {
-            args: zama_host::instructions::CreateEncryptedStoreArgs {
-                program: Pubkey::new_unique(),
-                authority_seeds: vec![vec![12; 40]],
-            },
-        };
-        let mut create_data =
-            zama_host::instruction::CreateEncryptedStore::DISCRIMINATOR
-                .to_vec();
-        create.serialize(&mut create_data).unwrap();
-        assert_eq!(decode_make_store_handle_public(&create_data), None);
-    }
-
-    #[test]
-    fn fhe_execute_batch_round_trips_via_program_type() {
-        use anchor_lang::AnchorSerialize;
-        use zama_host::state::{
-            FheBinaryOpCode, FheExecuteArgs, FheExecuteOperand, FheExecuteStep,
-        };
-        let execution = FheExecuteArgs {
-            execution_store_index: 0,
-            effects: vec![],
-
-            returned_results: Vec::new(),
-            account_count: 0,
-            dictionary: vec![[2u8; 32]],
-            steps: vec![
-                FheExecuteStep::TrivialEncrypt {
-                    plaintext: [7u8; 32],
-                    fhe_type: 5,
-                },
-                FheExecuteStep::Binary {
-                    op: FheBinaryOpCode::Add,
-                    lhs: FheExecuteOperand::EarlierStep { producer_index: 0 },
-                    rhs: FheExecuteOperand::Scalar { value_index: 0 },
-                    output_fhe_type: 5,
-                },
-            ],
-        };
-        // Serialize like the on-chain instruction: discriminator + borsh args.
-        let mut bytes =
-            zama_host::instruction::FheExecute::DISCRIMINATOR.to_vec();
-        execution
-            .serialize(&mut bytes)
-            .expect("serialize execution");
-        let decoded =
-            decode_fhe_execute_args(&bytes).expect("decode execution");
-        assert_eq!(decoded, execution);
-        assert_eq!(decoded.steps.len(), 2);
-        // Wrong/missing discriminator -> None.
-        assert!(decode_fhe_execute_args(&bytes[1..]).is_none());
-
-        bytes.extend_from_slice(&[0xAA, 0xBB]);
-        assert_eq!(decode_fhe_execute_args(&bytes), Some(execution));
-    }
-
-    #[test]
-    fn decodes_the_executed_event_and_rejects_other_versions() {
-        let mut event = FheExecutedEvent {
-            version: EVENT_VERSION,
-            previous_bank_hash: [3; 32],
-            unix_timestamp: 1_700_000_000,
-            results: vec![[5; 32]],
-            seeds: vec![zama_host::FheExecuteRandomSeed {
-                step_index: 0,
-                seed: [7; 16],
-            }],
-        };
-        let decoded = decode_fhe_executed_event(&event_cpi_data(&event))
-            .expect("decode event");
-        assert_eq!(decoded.results, event.results);
-        assert_eq!(decoded.seeds, event.seeds);
-
-        event.version = EVENT_VERSION.wrapping_add(1);
-        assert!(decode_fhe_executed_event(&event_cpi_data(&event)).is_none());
     }
 
     #[test]
@@ -1136,103 +878,6 @@ mod tests {
             &mut HashSet::new()
         )
         .map(|execution| execution.records)
-        .is_none());
-    }
-
-    /// A `State` output exposes only proof-history inputs; slot and grant policy
-    /// do not enter leaf reconstruction.
-    #[test]
-    fn fhe_execute_walk_extracts_store_output() {
-        let execution = FheExecuteArgs {
-            execution_store_index: 0,
-            effects: vec![zama_host::FheExecuteEffect {
-                result: zama_host::ExecutionResultRef {
-                    step_index: 0,
-                    output_index: 0,
-                },
-                store_index: 3,
-                previous_leaf_count: 9,
-                slot: None,
-                allow_indexes: vec![0, 1],
-                make_public: true,
-                grants: vec![],
-            }],
-
-            returned_results: Vec::new(),
-            account_count: 1,
-            dictionary: vec![[0xB1; 32], [0xB2; 32]],
-            steps: vec![FheExecuteStep::TrivialEncrypt {
-                plaintext: [7u8; 32],
-                fhe_type: 5,
-            }],
-        };
-        let steps = walk(&execution, vec![]);
-        let handle = match &steps.records[0] {
-            SolanaHostRecord::TrivialEncrypt(e) => e.result,
-            other => panic!("expected TrivialEncrypt, got {other:?}"),
-        };
-        assert_eq!(
-            steps.store_outputs,
-            vec![StoreLeafOutput {
-                store_index: 3,
-                previous_leaf_count: 9,
-                handle,
-                allowed_keys: vec![[0xB1; 32], [0xB2; 32]],
-                make_public: true,
-            }]
-        );
-    }
-
-    #[test]
-    fn transient_has_no_store_output() {
-        let execution = FheExecuteArgs {
-            execution_store_index: 0,
-            effects: vec![],
-
-            returned_results: Vec::new(),
-            account_count: 0,
-            dictionary: vec![],
-            steps: vec![FheExecuteStep::TrivialEncrypt {
-                plaintext: [7u8; 32],
-                fhe_type: 5,
-            }],
-        };
-        let steps = walk(&execution, vec![]);
-        assert!(steps.store_outputs.is_empty());
-    }
-
-    #[test]
-    fn rejects_store_output_dictionary_overflow() {
-        let execution = FheExecuteArgs {
-            execution_store_index: 0,
-            effects: vec![zama_host::FheExecuteEffect {
-                result: zama_host::ExecutionResultRef {
-                    step_index: 0,
-                    output_index: 0,
-                },
-                store_index: 0,
-                previous_leaf_count: 0,
-                slot: None,
-                allow_indexes: vec![1],
-                make_public: false,
-                grants: vec![],
-            }],
-
-            returned_results: Vec::new(),
-            account_count: 1,
-            dictionary: vec![[0xA1; 32]],
-            steps: vec![FheExecuteStep::TrivialEncrypt {
-                plaintext: [7u8; 32],
-                fhe_type: 5,
-            }],
-        };
-        assert!(reconstruct_fhe_execute(
-            &execution,
-            &placeholder_event(&execution),
-            ctx().program_id,
-            ctx().chain_id,
-            &mut HashSet::new()
-        )
         .is_none());
     }
 }

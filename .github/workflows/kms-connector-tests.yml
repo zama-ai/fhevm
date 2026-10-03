@@ -52,7 +52,7 @@ jobs:
             - solana/crates/zama-solana-permit/**
             - solana/crates/zama-solana-request/**
             # The cross-implementation fixture sets kms-worker and connector-utils tests consume
-            # (permit, leaf-proof, user-decrypt byte vectors, authorization cases): an edit to a committed vector
+            # (permit, Merkle proof, user-decrypt byte vectors, authorization cases): an edit to a committed vector
             # alone must run the Rust consumers that assert against it.
             - solana/test-fixtures/**
 
