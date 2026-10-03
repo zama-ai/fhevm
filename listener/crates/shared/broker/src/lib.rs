@@ -93,11 +93,18 @@ use traits::publisher::DynPublisher;
 /// without bound. The trimmer's own `fallback_maxlen` does not help, because
 /// it only applies when a stream has **no** consumer groups at all.
 ///
-/// This ceiling is unconditional, so an abandoned group costs a bounded amount
-/// of memory instead of an unbounded one. It is deliberately far above any
-/// healthy working set: at one block every twelve seconds a chain produces on
-/// the order of 300 entries an hour, so this is weeks of headroom and will only
-/// ever be reached by a stream nobody is draining.
+/// A stack that retires at a cutover releases its own groups on the way out
+/// (`ListenerConsumer::destroy_own_groups`), which unpins the trimmer in the
+/// ordinary case. That runs after the consume loop returns, so it is
+/// best-effort: a pod killed before it gets there leaves the group behind
+/// anyway.
+///
+/// This ceiling is what covers that, and it is unconditional, so an abandoned
+/// group costs a bounded amount of memory instead of an unbounded one. It is
+/// deliberately far above any healthy working set: at one block every twelve
+/// seconds a chain produces on the order of 300 entries an hour, so this is
+/// months of headroom and will only ever be reached by a stream nobody is
+/// draining.
 #[cfg(feature = "redis")]
 pub const REDIS_STREAM_MAXLEN_CEILING: usize = 1_000_000;
 
