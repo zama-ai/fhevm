@@ -44,3 +44,14 @@ consensusDetector:
 hostListenerConsumerShared:
   args:
     serviceName: host-listener-consumer-gcs
+  # TEMPORARY — retires the predecessor identity the BCS overlay manufactures.
+  # Drop both blocks together. While they are in place the paragraph above
+  # describes the default topology, not this one: Blue is on its own identity
+  # here, which is the whole point.
+  #
+  # Green takes the Rename branch — unregister Blue's filters, wait for its
+  # streams to stop being written to, then delete them. It only fires once
+  # Blue's groups have sat still for ten minutes with entries waiting behind
+  # them, so scaling Blue's consumer to zero is what starts the clock.
+  extraArgs:
+    - --migrate-from-service-name=host-listener-consumer-legacy
