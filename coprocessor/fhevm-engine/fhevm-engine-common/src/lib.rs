@@ -77,7 +77,7 @@ pub const HANDLE_VERSION: i16 = 0;
 //
 // Before raising it, the start-position ladder in the consumer SDK
 // (`ListenerConsumer::seed_group`) needs a rung for a versioned predecessor. It
-// recognises an unsuffixed one only, so a stack coming up at vN+1 does not match
+// recognizes an unsuffixed one only, so a stack coming up at vN+1 does not match
 // the live vN group, starts at the tip of the stream, and never sees what was
 // published before its own group existed. The host-listener poller backfills that
 // under the default topology; nothing does when the host side runs on the listener
