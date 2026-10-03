@@ -116,7 +116,7 @@ describe("RFC 029 rollout gates", () => {
     expect(phases.connector.TEST_SUITE_VERSION).toBe("baseline-test-suite");
   });
 
-  test("upgrades every changed 0.15 contract in dependency order", () => {
+  test("upgrades Gateway consumers in dependency order and KMSGeneration on the canonical host", () => {
     expect(gatewayContractUpgradePlan).toEqual([
       ["task:upgradeDecryption", "Decryption"],
       ["task:upgradeCiphertextCommits", "CiphertextCommits"],

@@ -2,6 +2,7 @@ import { probeSoftwareCandidate, assertSoftwareCandidateRunning } from "./softwa
 import { runRetainedMaterial } from "../../src/consensus/retained-material-run";
 import { withRolloutSupervisor } from "../../src/consensus/rollout-supervision";
 import { withHeldRecipient } from "./held-recipient";
+import { upgradeMigrationHostContracts } from "./host-contract-upgrades";
 import { createHash } from "node:crypto";
 import path from "node:path";
 
@@ -407,6 +408,7 @@ const upgradeContracts = async (ctx: RolloutRunContext, targetLock: string) => {
   for (const [task, contract] of hostContractUpgradePlan) {
     await ctx.runHostContractTask(contractUpgradeCommand(task, contract));
   }
+  await upgradeMigrationHostContracts(ctx, (await ctx.readState()).scenario.hostChains);
 };
 
 export default async function runMigration(ctx: RolloutRunContext) {

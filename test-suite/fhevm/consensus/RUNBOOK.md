@@ -756,6 +756,13 @@ rollout stack until recovery is completed.
 
 ### Retained material and migrated-key GPU continuation
 
+Before upgrading runtime consumers, the migration rollout upgrades Gateway
+consumers and canonical-host KMSGeneration, then applies the bootstrap host
+contract plan to every configured host chain. This includes FHEVMExecutor,
+InputVerifier, KMSVerifier and ProtocolConfig. Contracts whose reinitializer
+version is unchanged from the baseline snapshot are skipped by the shared
+bootstrap helper; retained application checks still run after this stage.
+
 The key-migration rollout compiles its application fixtures against the Solidity
 library from `RFC029_BASELINE_FHEVM_TAG` (default `v0.14.1`). That ref must exist
 in the local Git clone. The runner resolves it to an immutable commit before
