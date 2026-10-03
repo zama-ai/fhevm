@@ -16,7 +16,6 @@ import { registerSolanaCoprocessorSql } from '../../../../solana/deploy/src/copr
 import { deployHostProgram } from '../../../../solana/deploy/src/deploy-host';
 import { deployProgramArtifacts } from '../../../../solana/deploy/src/deploy-programs';
 import { integerEnv } from '../../../../solana/deploy/src/gateway';
-import { SOLANA_LEAF_PROOF_API_KEY } from '../generate/solana';
 import {
   REPO_ROOT,
   SOLANA_MERKLE_PROOF_PORT,
@@ -30,7 +29,7 @@ import { LOCAL_SOLANA_ENDPOINTS } from './endpoints';
 import { readEnvFile } from '../utils/fs';
 import { run, runStreaming } from '../utils/process';
 import { until } from '../utils/until';
-import { SOLANA_HOST_CHAIN_ID, readGatewayBootstrapInputs } from './addresses';
+import { SOLANA_HOST_CHAIN_ID, readGatewayBootstrapInputs, readProtocolConfigAddress } from './addresses';
 import {
   SOLANA_E2E_PROGRAMS,
   SOLANA_SPECIMEN_PROGRAMS,
@@ -284,11 +283,13 @@ export const startMerkleIndexer = async (parameters: {
 
 /**
  * Builds and runs the Merkle proof server the KMS connector reads, apart from the indexer, as the
- * coprocessor chart deploys it. `--proof-api-key` has no default and the binary refuses to start
- * without it.
+ * coprocessor chart deploys it. It answers only the tx-senders of the live KMS contexts of the
+ * primary host chain's `ProtocolConfig`, which the local connector's wallet is.
  */
 export const startMerkleProofServer = async (parameters: {
   readonly databaseUrl: string;
+  readonly ethereumRpcUrl: string;
+  readonly protocolConfigAddress: string;
   readonly logDir: string;
   readonly lifecycleDir?: string;
 }): Promise<void> => {
@@ -301,8 +302,10 @@ export const startMerkleProofServer = async (parameters: {
       parameters.databaseUrl,
       '--http-port',
       String(SOLANA_MERKLE_PROOF_PORT),
-      '--proof-api-key',
-      SOLANA_LEAF_PROOF_API_KEY,
+      '--ethereum-rpc-url',
+      parameters.ethereumRpcUrl,
+      '--protocol-config-address',
+      parameters.protocolConfigAddress,
     ],
     path.join(parameters.logDir, 'merkle-proof-server.log'),
     parameters.lifecycleDir && path.join(parameters.lifecycleDir, 'merkle-proof-server.pid'),
@@ -442,7 +445,13 @@ export const provisionSolanaHostNode = async (): Promise<{ zamaHostId: string }>
     logDir,
     lifecycleDir,
   });
-  await startMerkleProofServer({ databaseUrl: merkleUrl, logDir, lifecycleDir });
+  await startMerkleProofServer({
+    databaseUrl: merkleUrl,
+    ethereumRpcUrl: LOCAL_SOLANA_ENDPOINTS.hostRpc,
+    protocolConfigAddress: await readProtocolConfigAddress(),
+    logDir,
+    lifecycleDir,
+  });
 
   console.log(
     `==> Solana side-stack ready. zama_host=${zamaHostId} host_chain_id=${SOLANA_HOST_CHAIN_ID}`,

@@ -294,7 +294,9 @@ kmsConnectorTxSender:
   # Wallet configuration for transaction signing
   wallet:
     awsKms:
-      # If set to true, will use the AWS KMS key specified in the configmap instead of the private key specified in the secret
+      # If set to true, will use the AWS KMS key specified in the configmap instead of the private key specified in the secret.
+      # With a Solana host chain, kms-worker signs with this key too: its service account needs
+      # kms:GetPublicKey and kms:Sign on it.
       enabled: false
       configmap:
         name: mpc-party

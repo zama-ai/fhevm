@@ -1,4 +1,8 @@
 # Merge into EACH existing coprocessor release, keeping its commonConfig/database and workers.
+commonConfig:
+  # The release's `host` chains entry: the Merkle proof server reads its callers from its
+  # ProtocolConfig.
+  canonicalProtocolConfigChainId: "12345"
 solanaHostListener:
   enabled: true
   image:
@@ -20,8 +24,3 @@ solanaHostListener:
         configMapKeyRef: {name: solana-host-addresses, key: zama_host.address}
   # deploy-preview.sh recreates this database and sets merkleIndexer.startSlot on every rollout.
   merkleDatabaseUrl: "postgresql://$(DATABASE_USER):$(DATABASE_PASSWORD)@$(DATABASE_ENDPOINT)/solana_merkle"
-  proofServer:
-    env:
-      - name: SOLANA_PROOF_API_KEY
-        valueFrom:
-          secretKeyRef: {name: solana-proof-api, key: api-key}

@@ -63,6 +63,21 @@
 {{- fail (printf "solanaHostListener.merkleIndexer.startSlot must be a slot number, got %v" $startSlot) }}
 {{- end }}
 {{- $serverName := printf "%s-solana-merkle-proof-server" .Release.Name | trunc 63 | trimSuffix "-" }}
+{{- /* The proof server reads its callers from the canonical chain's ProtocolConfig. */}}
+{{- $canonicalChainId := required "commonConfig.canonicalProtocolConfigChainId is required: the Merkle proof server reads its callers from that chain's ProtocolConfig" .Values.commonConfig.canonicalProtocolConfigChainId | toString }}
+{{- $canonical := dict }}
+{{- range .Values.chains }}
+{{- if eq (toString .chainId) $canonicalChainId }}{{- $canonical = . }}{{- end }}
+{{- end }}
+{{- if not $canonical }}
+{{- fail (printf "the Merkle proof server needs a chains entry with chainId %s, the canonicalProtocolConfigChainId" $canonicalChainId) }}
+{{- end }}
+{{- if not (or $canonical.httpUrl $canonical.httpUrlValueFrom) }}
+{{- fail (printf "chains entry %s needs httpUrl or httpUrlValueFrom for the Merkle proof server" $canonical.name) }}
+{{- end }}
+{{- if not (or $canonical.protocolConfigContractAddress $canonical.protocolConfigContractAddressValueFrom) }}
+{{- fail (printf "chains entry %s needs protocolConfigContractAddress or protocolConfigContractAddressValueFrom for the Merkle proof server" $canonical.name) }}
+{{- end }}
 apiVersion: apps/v1
 kind: Deployment
 metadata:
@@ -212,12 +227,27 @@ spec:
         - name: solana-merkle-proof-server
           image: {{ $listener.image.name }}:{{ $listener.image.tag }}
           command: ["solana_merkle_proof_server"]
-          # SOLANA_PROOF_API_KEY is read from the environment by the binary.
           args:
             - --database-url=$(DATABASE_URL)
             - --database-pool-size={{ $server.databasePoolSize }}
             - --http-port={{ $server.httpPort }}
+            - --ethereum-rpc-url=$(ETHEREUM_RPC_URL)
+            - --protocol-config-address=$(PROTOCOL_CONFIG_ADDRESS)
           env:
+            - name: ETHEREUM_RPC_URL
+              {{- if $canonical.httpUrl }}
+              value: {{ $canonical.httpUrl | quote }}
+              {{- else }}
+              valueFrom:
+                {{- toYaml $canonical.httpUrlValueFrom | nindent 16 }}
+              {{- end }}
+            - name: PROTOCOL_CONFIG_ADDRESS
+              {{- if $canonical.protocolConfigContractAddress }}
+              value: {{ $canonical.protocolConfigContractAddress | quote }}
+              {{- else }}
+              valueFrom:
+                {{- toYaml $canonical.protocolConfigContractAddressValueFrom | nindent 16 }}
+              {{- end }}
             {{- include "coprocessor.solanaMerkleDatabaseEnv" . | trim | nindent 12 }}
             {{- with $server.env }}
             {{- toYaml . | nindent 12 }}

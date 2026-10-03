@@ -166,16 +166,12 @@ impl DeserializeConfig for Config {}
 
 impl Config {
     pub async fn build_wallet(&self, chain_id: u64) -> Result<KmsWallet, Error> {
-        let chain_id = Some(chain_id);
-        if let Some(private_key) = &self.private_key {
-            KmsWallet::from_private_key_str(private_key.as_str(), chain_id)
-        } else if let Some(aws_kms_config) = self.aws_kms_config.clone() {
-            KmsWallet::from_aws_kms(aws_kms_config, chain_id).await
-        } else {
-            Err(Error::InvalidConfig(
-                "Either AWS KMS or private key must be configured".into(),
-            ))
-        }
+        KmsWallet::from_config(
+            self.private_key.as_ref(),
+            self.aws_kms_config.as_ref(),
+            Some(chain_id),
+        )
+        .await
     }
 }
 

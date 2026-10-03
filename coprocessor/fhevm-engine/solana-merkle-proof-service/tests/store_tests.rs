@@ -4,11 +4,20 @@
 
 mod support;
 
-use std::collections::BTreeMap;
+use std::{
+    collections::{BTreeMap, HashSet},
+    time::{SystemTime, UNIX_EPOCH},
+};
+
+use alloy::signers::local::PrivateKeySigner;
+use request_authorization::KeyRegistry;
 
 use serial_test::serial;
 use solana_host_follower::host::EncryptedStoreWrite;
 use solana_host_follower::BlockCheckpoint;
+use solana_merkle_proof_service::kms_tx_senders::{
+    KmsTxSenderSet, KmsTxSenders,
+};
 use solana_merkle_proof_service::server::{
     ErrorCode, ErrorResponse, HttpServer, LeafQuery, LeafQueryKind,
     MerkleProofOutcome, MerkleProofRequest, MerkleProofResponse,
@@ -25,10 +34,6 @@ use zama_solana_acl::{mmr_verify, MmrProof};
 const ACCOUNT: [u8; 32] = [0xAC; 32];
 const OWNER: [u8; 32] = [0xA1; 32];
 
-fn hex32(bytes: &[u8; 32]) -> String {
-    hex::encode(bytes)
-}
-
 fn write(
     previous_leaf_count: u64,
     handle: [u8; 32],
@@ -44,18 +49,91 @@ fn write(
     }
 }
 
-/// Starts the proof server on a free port and returns its Merkle proof URL once it answers.
+const REGISTRY: KeyRegistry = KeyRegistry {
+    chain_id: 12345,
+    contract: alloy::primitives::Address::repeat_byte(0xC0),
+};
+
+/// Posts Merkle proof requests signed by a KMS tx-sender the server accepts.
+struct ProofClient {
+    url: String,
+    client: reqwest::Client,
+    connector: PrivateKeySigner,
+}
+
+impl ProofClient {
+    async fn post(
+        &self,
+        request: &MerkleProofRequest,
+    ) -> reqwest::Result<reqwest::Response> {
+        let (body, authorization) = self.sign(request).await;
+        self.send(body, &authorization).await
+    }
+
+    /// The body of `request` and its authorization header, valid for 30 seconds as the connector signs.
+    async fn sign(&self, request: &MerkleProofRequest) -> (Vec<u8>, String) {
+        let mut body = Vec::new();
+        ciborium::into_writer(request, &mut body).expect("encode");
+        let expires = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .expect("clock")
+            .as_secs()
+            + 30;
+        let authorization = request_authorization::authorize(
+            &self.connector,
+            &REGISTRY,
+            MERKLE_PROOFS_PATH,
+            &body,
+            expires,
+        )
+        .await
+        .expect("sign");
+        (body, authorization)
+    }
+
+    async fn send(
+        &self,
+        body: Vec<u8>,
+        authorization: &str,
+    ) -> reqwest::Result<reqwest::Response> {
+        self.client
+            .post(&self.url)
+            .header(reqwest::header::AUTHORIZATION, authorization)
+            .body(body)
+            .send()
+            .await
+    }
+}
+
+async fn decode<T: serde::de::DeserializeOwned>(
+    response: reqwest::Response,
+) -> anyhow::Result<T> {
+    Ok(ciborium::from_reader(&response.bytes().await?[..])?)
+}
+
+/// A rate no test reaches.
+const UNLIMITED: u32 = 100_000;
+
+/// Starts the proof server on a free port, allowing its KMS tx-sender
+/// `leaves_per_second`, and returns a client once it answers.
 async fn serve_proofs(
     pool: &sqlx::PgPool,
+    leaves_per_second: u32,
     cancel: &CancellationToken,
-) -> (String, tokio::task::JoinHandle<anyhow::Result<()>>) {
+) -> (ProofClient, tokio::task::JoinHandle<anyhow::Result<()>>) {
     let port = std::net::TcpListener::bind("127.0.0.1:0")
         .and_then(|probe| probe.local_addr())
         .expect("free port")
         .port();
+    let connector = PrivateKeySigner::random();
     let server = HttpServer::merkle_proofs(
         pool.clone(),
-        "secret".to_owned(),
+        KmsTxSenders::fixed(KmsTxSenderSet {
+            registry: REGISTRY,
+            senders: HashSet::from([connector.address()]),
+        }),
+        std::num::NonZeroU32::new(leaves_per_second).expect("a rate"),
+        1 << 20,
         port,
         cancel.clone(),
     );
@@ -63,10 +141,15 @@ async fn serve_proofs(
     let liveness = format!("http://127.0.0.1:{port}/liveness");
     for _ in 0..50 {
         if reqwest::get(&liveness).await.is_ok() {
-            return (
-                format!("http://127.0.0.1:{port}{MERKLE_PROOFS_PATH}"),
-                task,
-            );
+            let proofs = ProofClient {
+                url: format!("http://127.0.0.1:{port}{MERKLE_PROOFS_PATH}"),
+                client: reqwest::Client::builder()
+                    .http2_prior_knowledge()
+                    .build()
+                    .expect("client"),
+                connector,
+            };
+            return (proofs, task);
         }
         tokio::time::sleep(std::time::Duration::from_millis(50)).await;
     }
@@ -147,43 +230,39 @@ async fn leaf_record_round_trips_and_serves_verifiable_proofs(
 
     // The HTTP route builds proofs from the same rows.
     let cancel = CancellationToken::new();
-    let (url, server_task) = serve_proofs(&pool, &cancel).await;
-    let client = reqwest::Client::new();
-    let response = client
-        .post(&url)
-        .bearer_auth("secret")
-        .json(&MerkleProofRequest {
+    let (proofs, server_task) = serve_proofs(&pool, UNLIMITED, &cancel).await;
+    let response = proofs
+        .post(&MerkleProofRequest {
             leaves: vec![
                 LeafQuery {
-                    encrypted_store: hex32(&ACCOUNT),
-                    handle: hex32(&[0x11; 32]),
+                    encrypted_store: ACCOUNT,
+                    handle: [0x11; 32],
                     kind: LeafQueryKind::Public,
                     key: None,
                 },
                 LeafQuery {
-                    encrypted_store: hex32(&ACCOUNT),
-                    handle: hex32(&[0x10; 32]),
+                    encrypted_store: ACCOUNT,
+                    handle: [0x10; 32],
                     kind: LeafQueryKind::Allowed,
-                    key: Some(hex32(&OWNER)),
+                    key: Some(OWNER),
                 },
                 LeafQuery {
-                    encrypted_store: hex32(&ACCOUNT),
-                    handle: hex32(&[0x10; 32]),
+                    encrypted_store: ACCOUNT,
+                    handle: [0x10; 32],
                     kind: LeafQueryKind::Public,
                     key: None,
                 },
                 LeafQuery {
-                    encrypted_store: hex32(&[0xFF; 32]),
-                    handle: hex32(&[0x10; 32]),
+                    encrypted_store: [0xFF; 32],
+                    handle: [0x10; 32],
                     kind: LeafQueryKind::Public,
                     key: None,
                 },
             ],
         })
-        .send()
         .await?;
     assert_eq!(response.status(), 200);
-    let body: MerkleProofResponse = response.json().await?;
+    let body: MerkleProofResponse = decode(response).await?;
     assert_eq!(body.proofs.len(), 4);
 
     let recorded_peaks = state.peaks.clone();
@@ -195,12 +274,7 @@ async fn leaf_record_round_trips_and_serves_verifiable_proofs(
             siblings,
         } => {
             assert_eq!(*leaf_count, 3);
-            let siblings = siblings
-                .iter()
-                .map(|sibling| {
-                    <[u8; 32]>::try_from(hex::decode(sibling).unwrap()).unwrap()
-                })
-                .collect();
+            let siblings = siblings.iter().map(|sibling| **sibling).collect();
             assert!(mmr_verify(
                 &recorded_peaks,
                 3,
@@ -234,21 +308,18 @@ async fn leaf_record_round_trips_and_serves_verifiable_proofs(
     )
     .execute(&pool)
     .await?;
-    let response = client
-        .post(&url)
-        .bearer_auth("secret")
-        .json(&MerkleProofRequest {
+    let response = proofs
+        .post(&MerkleProofRequest {
             leaves: vec![LeafQuery {
-                encrypted_store: hex32(&ACCOUNT),
-                handle: hex32(&[0x13; 32]),
+                encrypted_store: ACCOUNT,
+                handle: [0x13; 32],
                 kind: LeafQueryKind::Allowed,
-                key: Some(hex32(&OWNER)),
+                key: Some(OWNER),
             }],
         })
-        .send()
         .await?;
     assert_eq!(response.status(), 200);
-    let body: MerkleProofResponse = response.json().await?;
+    let body: MerkleProofResponse = decode(response).await?;
     assert_eq!(
         body.proofs,
         vec![MerkleProofOutcome::NotFound { leaf_count: 3 }]
@@ -259,10 +330,10 @@ async fn leaf_record_round_trips_and_serves_verifiable_proofs(
     // path is leaf 1.
     let owner_of_0x10 = MerkleProofRequest {
         leaves: vec![LeafQuery {
-            encrypted_store: hex32(&ACCOUNT),
-            handle: hex32(&[0x10; 32]),
+            encrypted_store: ACCOUNT,
+            handle: [0x10; 32],
             kind: LeafQueryKind::Allowed,
-            key: Some(hex32(&OWNER)),
+            key: Some(OWNER),
         }],
     };
     for corruption in [
@@ -270,14 +341,9 @@ async fn leaf_record_round_trips_and_serves_verifiable_proofs(
         "DELETE FROM leaves WHERE leaf_index = 1",
     ] {
         sqlx::query(corruption).execute(&pool).await?;
-        let response = client
-            .post(&url)
-            .bearer_auth("secret")
-            .json(&owner_of_0x10)
-            .send()
-            .await?;
+        let response = proofs.post(&owner_of_0x10).await?;
         assert_eq!(response.status(), 502, "{corruption}");
-        let error: ErrorResponse = response.json().await?;
+        let error: ErrorResponse = decode(response).await?;
         assert_eq!(error.code, ErrorCode::UpstreamTransient);
         assert!(error.retryable);
     }
@@ -341,26 +407,23 @@ async fn prove_leaves_of_a_store(
     assert_eq!(deleted.rows_affected(), 1);
 
     let cancel = CancellationToken::new();
-    let (url, server_task) = serve_proofs(&pool, &cancel).await;
+    let (proofs, server_task) = serve_proofs(&pool, UNLIMITED, &cancel).await;
     let started = std::time::Instant::now();
-    let response = reqwest::Client::new()
-        .post(&url)
-        .bearer_auth("secret")
-        .json(&MerkleProofRequest {
+    let response = proofs
+        .post(&MerkleProofRequest {
             leaves: proved
                 .iter()
                 .map(|&leaf_index| LeafQuery {
-                    encrypted_store: hex32(&ACCOUNT),
-                    handle: hex32(&handle(leaf_index)),
+                    encrypted_store: ACCOUNT,
+                    handle: handle(leaf_index),
                     kind: LeafQueryKind::Allowed,
-                    key: Some(hex32(&key(leaf_index))),
+                    key: Some(key(leaf_index)),
                 })
                 .collect(),
         })
-        .send()
         .await?;
     assert_eq!(response.status(), 200);
-    let body: MerkleProofResponse = response.json().await?;
+    let body: MerkleProofResponse = decode(response).await?;
     let elapsed = started.elapsed();
 
     for (&leaf_index, proof) in proved.iter().zip(&body.proofs) {
@@ -379,12 +442,7 @@ async fn prove_leaves_of_a_store(
             handle(leaf_index),
             key(leaf_index),
         );
-        let siblings = siblings
-            .iter()
-            .map(|sibling| {
-                <[u8; 32]>::try_from(hex::decode(sibling).unwrap()).unwrap()
-            })
-            .collect();
+        let siblings = siblings.iter().map(|sibling| **sibling).collect();
         assert!(mmr_verify(
             &state.peaks,
             leaves,
@@ -430,5 +488,57 @@ async fn eight_proofs_of_a_million_leaf_store_answer_well_within_the_connector_t
     .await?;
     eprintln!("8 proofs of a 1,000,000-leaf store answered in {elapsed:?}");
     assert!(elapsed < std::time::Duration::from_secs(2), "{elapsed:?}");
+    Ok(())
+}
+
+/// A coprocessor that received a signed request can resend it to the others while it is valid.
+/// A server answers such a repeat as it answered the request, without charging the signer
+/// again: here the first request spends the signer's whole burst, its repeat still gets the
+/// same bytes, and only a new request is refused.
+#[tokio::test]
+#[serial(db)]
+async fn a_repeated_request_gets_its_first_answer_at_no_cost(
+) -> Result<(), Box<dyn std::error::Error>> {
+    let (_db, pool) = support::record_db().await;
+    let mut tx = pool.begin().await?;
+    let block = reduce_block_leaves(
+        &[TransactionStoreWrites {
+            transaction_index: 0,
+            sources: vec![write(0, [0x10; 32], vec![OWNER], false)],
+        }],
+        load_store_cursors(&mut tx, &[ACCOUNT]).await?,
+    )?;
+    store_block_leaves(&mut tx, 10, &block).await?;
+    tx.commit().await?;
+
+    let cancel = CancellationToken::new();
+    // One leaf per second, so the burst is the 64 leaves of the largest request.
+    let (proofs, server_task) = serve_proofs(&pool, 1, &cancel).await;
+    let full_request = |handle| MerkleProofRequest {
+        leaves: vec![
+            LeafQuery {
+                encrypted_store: ACCOUNT,
+                handle,
+                kind: LeafQueryKind::Allowed,
+                key: Some(OWNER),
+            };
+            64
+        ],
+    };
+    let (body, authorization) = proofs.sign(&full_request([0x10; 32])).await;
+    let first = proofs.send(body.clone(), &authorization).await?;
+    assert_eq!(first.status(), 200);
+    let first = first.bytes().await?;
+    let repeat = proofs.send(body, &authorization).await?;
+    assert_eq!(repeat.status(), 200);
+    assert_eq!(repeat.bytes().await?, first);
+
+    let other = proofs.post(&full_request([0x11; 32])).await?;
+    assert_eq!(other.status(), 429);
+    let error: ErrorResponse = decode(other).await?;
+    assert_eq!(error.code, ErrorCode::RateLimited);
+
+    cancel.cancel();
+    server_task.await??;
     Ok(())
 }

@@ -149,6 +149,7 @@ jobs:
           - kms-connector/Cargo.*
           - gateway-contracts/rust_bindings/**
           - host-contracts/rust_bindings/**
+          - shared/request-authorization/**
 
   check-changes-tx-sender:
     uses: ./.github/workflows/check-changes-for-docker-build.yml

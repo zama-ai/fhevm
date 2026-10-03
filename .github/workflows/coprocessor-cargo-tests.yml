@@ -49,6 +49,8 @@ jobs:
               # consensus-detector depends on these crates by path.
               - shared/block-manifest/**
               - shared/ciphertext-attestation/**
+              # The Merkle proof server depends on it by path.
+              - shared/request-authorization/**
   cargo-tests:
     name: coprocessor-cargo-test/${{ matrix.service }}
     needs: check-changes

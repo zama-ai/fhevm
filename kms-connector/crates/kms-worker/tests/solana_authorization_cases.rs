@@ -21,7 +21,7 @@ use kms_worker::core::solana::{
     failure::AuthorizationFailure,
     handle_binding::HandleBindingFailure,
     pipeline::authorize_request,
-    proof::{LeafKind, LeafQuery, ProofReadError},
+    proof::{LeafKind, LeafQuery, MerkleProofOutcome, ProofReadError},
     public_decrypt::{PublicDecryptFailure, check_public_decrypt},
     snapshot::{SnapshotAccount, SnapshotError},
     watermark::{WatermarkFailure, WindowFailure},
@@ -730,7 +730,7 @@ fn render_accounts(world: &World) -> Vec<Value> {
         .collect()
 }
 
-/// The batch the Connector asked for, each query with the record's answer, in the wire spelling of
+/// The batch the Connector asked for, each query with the record's answer, with the fields of
 /// `POST /v1/solana/merkle-proofs`; `null` when it asked for none.
 fn render_leaf_read(batch: &[LeafQuery], record: &ProofRecord) -> Value {
     if batch.is_empty() {
@@ -740,11 +740,45 @@ fn render_leaf_read(batch: &[LeafQuery], record: &ProofRecord) -> Value {
         .iter()
         .map(|query| {
             json!({
-                "query": serde_json::to_value(query).expect("a query serializes"),
-                "outcome": wire_outcome(&record.answer(query)),
+                "query": render_query(query),
+                "outcome": render_outcome(&record.answer(query)),
             })
         })
         .collect()
+}
+
+fn render_query(query: &LeafQuery) -> Value {
+    let mut rendered = json!({
+        "encryptedStore": hex(query.encrypted_store.as_ref()),
+        "handle": hex(query.handle.as_slice()),
+    });
+    match query.kind {
+        LeafKind::Allowed { key } => {
+            rendered["kind"] = json!("allowed");
+            rendered["key"] = json!(hex(key.as_ref()));
+        }
+        LeafKind::Public => rendered["kind"] = json!("public"),
+    }
+    rendered
+}
+
+fn render_outcome(outcome: &MerkleProofOutcome) -> Value {
+    match outcome {
+        MerkleProofOutcome::Found {
+            leaf_index,
+            leaf_count,
+            siblings,
+        } => json!({
+            "status": "found",
+            "leafIndex": leaf_index,
+            "leafCount": leaf_count,
+            "siblings": siblings.iter().map(|sibling| hex(&sibling[..])).collect::<Vec<_>>(),
+        }),
+        MerkleProofOutcome::NotFound { leaf_count } => {
+            json!({ "status": "notFound", "leafCount": leaf_count })
+        }
+        MerkleProofOutcome::UnknownAccount => json!({ "status": "unknownAccount" }),
+    }
 }
 
 fn render_verdict((name, entry): (&str, Option<usize>), recoverable: bool) -> Value {
@@ -857,7 +891,7 @@ async fn the_committed_cases_are_the_connectors_verdicts() {
 
     let file = json!({
         "schema": "zama-solana-decrypt-authorization-cases/v1",
-        "description": "The KMS Connector's verdicts on user and public decryptions, each over one host state and one leaf record. `leaf_read` is the Merkle proof batch the Connector asked for, with the record's answers, in the wire format of POST /v1/solana/merkle-proofs; null when it asked for none. Bytes are hex, 64-bit numbers decimal strings, addresses base58, account data base64. A missing account is absent. Every read of a case's accounts reports `slot`. The SDK's cleartext client must reach the same verdicts.",
+        "description": "The KMS Connector's verdicts on user and public decryptions, each over one host state and one leaf record. `leaf_read` is the Merkle proof batch the Connector asked for, with the record's answers, with the fields of POST /v1/solana/merkle-proofs; null when it asked for none. Bytes are hex, 64-bit numbers decimal strings, addresses base58, account data base64. A missing account is absent. Every read of a case's accounts reports `slot`. The SDK's cleartext client must reach the same verdicts.",
         "generator": "ZAMA_UPDATE_AUTHORIZATION_CASES=1 cargo test -p kms-worker --test solana_authorization_cases",
         "host_program": PROGRAM_ID.to_string(),
         "slot": SLOT.to_string(),
