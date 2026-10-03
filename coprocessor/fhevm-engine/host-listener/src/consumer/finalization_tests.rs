@@ -55,7 +55,7 @@ fn config() -> ConsumerConfig {
         confidential_bridge_address: None,
         database_url: Default::default(),
         database_retry_interval: Duration::from_millis(1),
-        service_name: "kms-finality-test".into(),
+        migrate_from_service_name: None,
         health_port: 0,
         dependence_cache_size: 16,
         dependence_by_connexity: false,
