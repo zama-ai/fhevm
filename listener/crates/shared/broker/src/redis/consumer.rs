@@ -149,7 +149,7 @@ impl RedisConsumer {
     /// dead-letter companion so that a publisher which gates on stream
     /// existence can route to this consumer before it has ever run.
     ///
-    /// This is not merely an optimisation. A publisher that checks the stream
+    /// This is not merely an optimization. A publisher that checks the stream
     /// exists before writing, and a consumer that only creates the stream once
     /// it starts reading, will wait for each other indefinitely. Declaring the
     /// topology up front is what breaks that cycle — which is why the AMQP side
