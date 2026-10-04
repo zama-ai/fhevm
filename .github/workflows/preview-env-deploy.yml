@@ -96,9 +96,12 @@ on:
           - "true"
       listener_v2_only:
         description: "Run the host side on the listener v2 stack ONLY (listener-core producer -> Redis -> host-listener-consumer): skip the host-listener pollers (coprocessor-poller-<i>, coprocessor-poller-polygon-<i>). Pair with automated_tests to run e2e against it."
-        required: false
-        type: boolean
-        default: false
+        required: true
+        type: choice
+        default: "false"
+        options:
+          - "false"
+          - "true"
       workers_tag:
         description: "Image tag for tfhe, sns, and zkproof when enable_gpu=true (for example fd282b1-cuda12.8-sm70). Required with GPU. Leave empty when enable_gpu=false."
         required: false
