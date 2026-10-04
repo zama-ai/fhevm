@@ -172,6 +172,23 @@ impl<'a> ConsumerBuilder<'a> {
         self
     }
 
+    /// Redis: where a newly created consumer group starts reading.
+    ///
+    /// Defaults to the beginning of retained history. Pass `"$"` for new
+    /// entries only, or an explicit stream ID to start at a known point —
+    /// which is how a new group joins a stream another group is already
+    /// working, without replaying everything behind it.
+    ///
+    /// Only consulted when this consumer creates the group. An existing group
+    /// resumes from its own cursor.
+    ///
+    /// **Silently ignored on AMQP.**
+    #[cfg(feature = "redis")]
+    pub fn redis_start_id(mut self, start_id: impl Into<String>) -> Self {
+        self.redis_opts.start_id = Some(start_id.into());
+        self
+    }
+
     /// Redis: Minimum idle time (seconds) before claiming a pending message.
     ///
     /// **Silently ignored on AMQP.**
@@ -287,6 +304,9 @@ impl<'a> ConsumerBuilder<'a> {
         if let Some(block_ms) = self.redis_opts.block_ms {
             builder = builder.block_ms(block_ms);
         }
+        if let Some(start_id) = &self.redis_opts.start_id {
+            builder = builder.start_id(start_id);
+        }
         if let Some(claim_min_idle) = self.redis_opts.claim_min_idle_secs {
             builder = builder.claim_min_idle(Duration::from_secs(claim_min_idle));
         }
@@ -374,11 +394,23 @@ impl Consumer {
     /// before checking queue depth (`is_empty`) or publishing seed messages,
     /// otherwise AMQP silently drops messages with no bound queue.
     ///
-    /// For Redis: no-op (streams are auto-created on first XADD).
+    /// For Redis: creates the main stream and its dead-letter companion.
+    ///
+    /// The Redis arm used to be a no-op, on the reasoning that streams are
+    /// auto-created by the first `XADD`. That is true of Redis, but not of this
+    /// system: a publisher which checks the stream exists before writing will
+    /// never issue that first `XADD`, while a consumer which creates the stream
+    /// only when it starts reading will never create it either. Both sides then
+    /// wait for the other. Declaring the streams here breaks the cycle, and
+    /// gives both backends the same postcondition — after this returns, the
+    /// destination exists and is safe to publish to.
     pub async fn ensure_topology(&self) -> Result<(), BrokerError> {
         match &self.inner {
             #[cfg(feature = "redis")]
-            ConsumerInner::Redis { .. } => Ok(()),
+            ConsumerInner::Redis { consumer, config } => {
+                consumer.ensure_topology(config).await?;
+                Ok(())
+            }
             #[cfg(feature = "amqp")]
             ConsumerInner::Amqp { consumer, config } => {
                 consumer.ensure_topology(config).await?;

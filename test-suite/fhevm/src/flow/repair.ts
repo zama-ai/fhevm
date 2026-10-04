@@ -5,6 +5,7 @@ import {
   supportsUpgradeController,
 } from "../compat/compat";
 import { GCS_ONLY_SUFFIXES } from "../generate/compose";
+import { listenerCoreServicesForState } from "../generate/listener-core";
 import { hasLocalCoprocessorInstance } from "../scenario/resolve";
 import { topologyForState } from "../stack-spec/stack-spec";
 import {
@@ -57,7 +58,6 @@ const UPGRADE_VERSION_KEYS: Record<UpgradeGroup, string[]> = {
   "relayer": ["RELAYER_VERSION", "RELAYER_MIGRATE_VERSION"],
   "test-suite": ["TEST_SUITE_VERSION"],
 };
-const LISTENER_CORE_SERVICES = ["listener-redis", "listener-publisher-for-anvil"];
 type UpgradeComponentPlan = {
   component: string;
   services: string[];
@@ -103,7 +103,7 @@ export const resumeSteadyStateServices = (state: State) => {
   const listenerSuffixes = coprocessorListenerSuffixes(state);
   return {
     "base": ["fhevm-object-store", "coprocessor-and-kms-db", KMS_CORE_CONTAINER, "gateway-node", ...chains.map((chain) => chain.node)],
-    ...(supportsHostListenerConsumer(state) ? { "listener-core": ["listener-redis", "listener-publisher-for-anvil"] } : {}),
+    ...(supportsHostListenerConsumer(state) ? { "listener-core": listenerCoreServicesForState(state) } : {}),
     "coprocessor": [
       ...Array.from({ length: topology.count }, (_, index) => {
         const prefix = index === 0 ? "coprocessor-" : `coprocessor${index}-`;
@@ -202,7 +202,7 @@ export const resolveUpgradePlan = (
   }
   if (group === "listener-core") {
     if (lockFileMode) {
-      return upgradePlan(group, [splitServices("listener-core", LISTENER_CORE_SERVICES)], ["listener-core"]);
+      return upgradePlan(group, [splitServices("listener-core", listenerCoreServicesForState(state))], ["listener-core"]);
     }
   }
   const groupOverrides = state.overrides.filter((item) => item.group === group);

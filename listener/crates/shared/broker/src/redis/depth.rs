@@ -10,6 +10,7 @@ use tracing::debug;
 
 use super::connection::RedisConnectionManager;
 use super::error::RedisConsumerError;
+use super::stream_manager::parse_group_statuses;
 
 /// Inspects Redis Streams depth using XLEN and XINFO GROUPS.
 ///
@@ -175,61 +176,10 @@ impl QueueInspector for RedisQueueInspector {
 ///
 /// Returns `None` if the target group is not found.
 fn parse_group_depth_info(value: &Value, target_group: &str) -> Option<(u64, Option<u64>)> {
-    let groups = match value {
-        Value::Array(items) => items,
-        _ => return None,
-    };
-
-    for group_value in groups {
-        let fields = match group_value {
-            Value::Array(f) => f,
-            _ => continue,
-        };
-
-        let map = flat_array_to_map(fields);
-
-        let name = map.get("name")?;
-        if name != target_group {
-            continue;
-        }
-
-        let pending = map
-            .get("pending")
-            .and_then(|v| v.parse::<u64>().ok())
-            .unwrap_or(0);
-
-        // `lag` is only available on Redis 7.0+.
-        let lag = map.get("lag").and_then(|v| v.parse::<u64>().ok());
-
-        return Some((pending, lag));
-    }
-
-    None
-}
-
-/// Convert a flat Redis field array `[key, value, key, value, ...]` to a
-/// `HashMap<String, String>`.
-///
-/// Same pattern used by `StreamTrimmer::flat_array_to_map`.
-fn flat_array_to_map(fields: &[Value]) -> std::collections::HashMap<String, String> {
-    let mut map = std::collections::HashMap::new();
-    let mut iter = fields.iter();
-    while let Some(key) = iter.next() {
-        if let Value::BulkString(k) = key {
-            if let Some(val) = iter.next() {
-                let v = match val {
-                    Value::BulkString(b) => String::from_utf8_lossy(b).to_string(),
-                    Value::Int(n) => n.to_string(),
-                    _ => continue,
-                };
-                map.insert(String::from_utf8_lossy(k).to_string(), v);
-            }
-        } else {
-            // Skip non-bulk-string keys (shouldn't happen in XINFO output).
-            let _ = iter.next();
-        }
-    }
-    map
+    parse_group_statuses(value)
+        .into_iter()
+        .find(|g| g.name == target_group)
+        .map(|g| (g.pending, g.lag))
 }
 
 #[cfg(test)]

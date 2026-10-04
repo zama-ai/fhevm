@@ -404,6 +404,27 @@ pub async fn publish_block_events(
             }
         })?;
 
+    // 1b. How many distinct consumer identities subscribe to this chain.
+    //     One is healthy, including during a blue/green cutover: both fleets
+    //     share an identity and are told apart by consumer group, not by
+    //     stream. Two means an identity is mid-migration. Two that never falls
+    //     back to one means an identity has drifted and orphaned itself — the
+    //     publisher still fanning out to streams nobody reads, which is what
+    //     went unnoticed on 25 September. Counted here because the rows are
+    //     already in hand, and before the early return below so a chain that
+    //     loses every filter reports zero instead of going stale.
+    metrics::gauge!(
+        "listener_chain_consumer_ids",
+        "chain_id" => chain_id.to_string()
+    )
+    .set(
+        filters
+            .iter()
+            .map(|f| f.consumer_id.as_str())
+            .collect::<HashSet<_>>()
+            .len() as f64,
+    );
+
     if filters.is_empty() {
         return Ok(());
     }

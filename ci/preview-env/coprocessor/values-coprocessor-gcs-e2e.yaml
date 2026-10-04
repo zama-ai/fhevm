@@ -28,10 +28,30 @@ consensusDetector:
   image: {name: hub.zama.org/ghcr/zama-ai/fhevm/coprocessor/consensus-detector, tag: latest}
   serviceAccountName: coprocessor
 
-# Own Redis consumer group. Default service-name is host-listener-consumer,
-# same as BCS, so both fleets shared one group and split the stream — GCS
-# never saw CoprocessorUpgradeProposed (BCS v0.14.1 only notifies, no
-# upgrade_state write). Distinct id = both get every block.
+# Telemetry name only — it no longer picks the Redis identity or consumer group.
+#
+# It used to do both, and that was the bug: the default was host-listener-consumer
+# on both fleets, so BCS and GCS shared one group and split the stream between
+# them — GCS never saw CoprocessorUpgradeProposed (BCS v0.14.1 only notifies, no
+# upgrade_state write). Setting a distinct name here gave GCS its own streams and
+# its own copy of every block.
+#
+# The fleets are now separated by consumer group instead: the identity is a
+# compiled-in constant, so both fleets read the same streams, and each reads the
+# group matching the consensus version it was built against. BCS v0.14.1 predates
+# the suffix and reads the unsuffixed group, so the two cannot collide. Keeping a
+# distinct name here is still worth it to tell the two fleets apart in traces.
 hostListenerConsumerShared:
   args:
     serviceName: host-listener-consumer-gcs
+  # TEMPORARY — retires the predecessor identity the BCS overlay manufactures.
+  # Drop both blocks together. While they are in place the paragraph above
+  # describes the default topology, not this one: Blue is on its own identity
+  # here, which is the whole point.
+  #
+  # Green takes the Rename branch — unregister Blue's filters, wait for its
+  # streams to stop being written to, then delete them. It only fires once
+  # Blue's groups have sat still for ten minutes with entries waiting behind
+  # them, so scaling Blue's consumer to zero is what starts the clock.
+  extraArgs:
+    - --migrate-from-service-name=host-listener-consumer-legacy

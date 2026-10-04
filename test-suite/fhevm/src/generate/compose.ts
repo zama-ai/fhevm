@@ -37,6 +37,14 @@ import {
 import { kmsConnectorEnvName, kmsConnectorPrefix } from "../kms-party";
 import { type StackSpec, topologyForState } from "../stack-spec/stack-spec";
 import { buildKmsThresholdOverride, kmsRenderOptionsFor } from "./kms-core";
+import {
+  LISTENER_BROKER_URL,
+  listenerBrokerUrl,
+  listenerDatabaseName,
+  listenerDatabaseUrl,
+  listenerOperators,
+  listenerPublisherService,
+} from "./listener-core";
 import type { HostChainScenario, ResolvedCoprocessorScenarioInstance, State } from "../types";
 import { ensureDir, exists, mergeArgs, readEnvFile, remove, toServiceName } from "../utils/fs";
 
@@ -886,15 +894,20 @@ const buildCoprocessorOverride = async (plan: StackSpec) => {
     }
   }
 
-  // A listener consumer's service name also identifies its broker queue.
-  // Sharing it across operator databases or Blue/Green roles load-balances
-  // blocks instead of delivering each block to every independent recipient.
+  // Each operator reads its own listener, on its own Redis logical database.
+  // The consumer's broker identity is compiled in, so two operators sharing a
+  // keyspace would share a consumer group and split the blocks between them
+  // instead of each receiving all of them. An operator's Blue and Green
+  // consumers do share one, deliberately: they also share that operator's
+  // coprocessor database, so each block wants handling once.
   for (const [serviceName, service] of Object.entries(services)) {
-    if (!serviceName.endsWith("-host-listener-consumer") || !Array.isArray(service.command)) continue;
-    if (service.command.some((argument: string) => argument === "--service-name" || argument.startsWith("--service-name="))) continue;
-    // Retain the original primary queue, including for single-operator stacks.
-    const identity = serviceName === "coprocessor-host-listener-consumer" ? "host-listener-consumer" : serviceName;
-    service.command = [...service.command, `--service-name=${identity}`];
+    const operator = serviceName.match(/^coprocessor(\d*)-(?:gcs-)?host-listener-consumer$/);
+    if (!operator || !Array.isArray(service.command)) continue;
+    const url = listenerBrokerUrl(Number(operator[1] || 0));
+    // A scenario that routes this consumer itself keeps that routing.
+    service.command = service.command.map((argument: string) =>
+      argument === `--url=${LISTENER_BROKER_URL}` ? `--url=${url}` : argument,
+    );
   }
 
   next.services = services;
@@ -1011,10 +1024,62 @@ const applyDockerSocketRuntime = (services: ComposeDoc["services"]) => {
   services[TEST_SUITE_RUNNER_SERVICE] = service;
 };
 
+/**
+ * Replicates the listener publisher once per operator (mirrors
+ * `buildCoprocessorOverride`). Operator 0 keeps every template name — service,
+ * container, listener database, Redis keyspace — so a single-operator stack
+ * renders exactly as it did. Operators 1..N get a clone pointed at their own
+ * listener database and their own Redis logical database, set through the
+ * listener's `APP_*` environment contract so they can share the one mounted
+ * config file.
+ *
+ * Only the template name carries a build spec: `maybeBuild` builds by base
+ * service name, so the image is built once and the clones reference its tag.
+ */
+const buildListenerCoreOverride = async (plan: StackSpec): Promise<ComposeDoc> => {
+  const template = rewriteComposePaths(structuredClone(await loadComposeDoc("listener-core")));
+  const base = template.services[listenerPublisherService(0)];
+  const overridden = overriddenServicesForComponent(plan, "listener-core");
+  const services: ComposeDoc["services"] = {};
+  if (base && overridden.has(listenerPublisherService(0))) {
+    const next = structuredClone(base);
+    applyBuildPolicy(next, true);
+    const build = localBuildSpecFor("listener-core", listenerPublisherService(0), plan.e2ePublicRuntime);
+    if (build) {
+      next.build = build;
+    }
+    services[listenerPublisherService(0)] = next;
+  }
+  const instances = plan.coprocessor?.instances ?? [];
+  if (!base || instances.length < 2) {
+    return { services };
+  }
+  for (const operator of listenerOperators(instances.length, instances)) {
+    if (operator === 0) continue;
+    const name = listenerPublisherService(operator);
+    const clone = structuredClone(services[listenerPublisherService(0)] ?? base);
+    delete clone.build;
+    clone.image = (services[listenerPublisherService(0)] ?? base).image;
+    clone.container_name = name;
+    clone.profiles = [name];
+    clone.environment = {
+      ...normalizeEnvironment(clone.environment),
+      APP_NAME: listenerDatabaseName(operator),
+      APP_DATABASE__DB_URL: listenerDatabaseUrl(operator),
+      APP_BROKER__BROKER_URL: listenerBrokerUrl(operator),
+    };
+    services[name] = clone;
+  }
+  return { services };
+};
+
 /** Builds the generated compose override for one component. */
 const buildComposeOverride = async (component: string, plan: StackSpec) => {
   if (component === "coprocessor") {
     return buildCoprocessorOverride(plan);
+  }
+  if (component === "listener-core") {
+    return buildListenerCoreOverride(plan);
   }
   if (component === "core") {
     return { services: { "kms-core": { image: kmsRenderOptionsFor(plan.versions.env.CORE_VERSION).coreImage } } };

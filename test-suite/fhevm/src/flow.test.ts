@@ -336,6 +336,7 @@ describe("resumeRepairStep", () => {
       "gateway-node",
       "listener-redis",
       "listener-publisher-for-anvil",
+      "listener1-publisher-for-anvil",
       "coprocessor-host-listener",
       "coprocessor-host-listener-poller",
       "coprocessor-host-listener-consumer",
