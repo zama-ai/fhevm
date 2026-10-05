@@ -1275,7 +1275,8 @@ participant's contribution Store through the transient store (DD-049), so the ba
 deposit into that Store in the same join transaction. Each batch gets its **own token
 account**, so the burned/revealed total is exactly that batch's sum (the EVM code documents the
 inter-batch dust leak this prevents). Lifecycle is Pending -> Dispatched -> Settled/Canceled, or
-Refunding after a cancelled dispatch, with permissionless dispatch/settle/claim and an exact-refund `quit` — no operator custody of principal.
+Refunding after a cancelled dispatch, with permissionless dispatch/settle/claim and an
+exact-refund `quit` — no operator custody of principal.
 
 Deliberate non-goals, carrying the EVM team's recorded lessons: **no participant-count gates**
 (trivially defeated by one actor joining N times with encrypted zeros; a single-participant batch
@@ -1994,8 +1995,8 @@ the connector. Nothing invents a second integer.
 `gateway_chain_id`.
 HostConfig then holds the chosen row. The listener, connector and relayer must use that
 same value. The listener reads `chain_id` from HostConfig rather than from its own config. A
-deployment on a named public row may also compare RPC `getGenesisHash` with the hash above to confirm it is on the intended cluster, without that comparison defining
-the id.
+deployment on a named public row may also compare RPC `getGenesisHash` with the hash above to
+confirm it is on the intended cluster, without that comparison defining the id.
 
 #1880 proposed this type byte and the genesis recipe. This entry accepts both and writes
 the numbers down. It rejects deriving localnet from RPC at boot, and it rejects treating
