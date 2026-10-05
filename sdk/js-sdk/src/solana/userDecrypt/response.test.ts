@@ -73,11 +73,13 @@ const shares = transcript.responses.map((share) => ({
 }));
 
 const signers = transcript.server_addrs.map(({ id, addr }) => ({ partyId: id, address: addr }));
+/** The corruption threshold the client derives from the signer count, n = 3t + 1. */
+const t = (signers.length - 1) / 3;
 
 /** Passed every KMS client rule, and stopped at the typed answer on the transcript's 8-byte handle. */
 const PASSED_THE_CLIENT = /the handle at position 0 is not a 32-byte handle/;
-/** Every share's node signature failed, so none counts toward the threshold. */
-const NODE_SIGNATURE = /Not enough correct responses/;
+/** Fewer than 2t + 1 shares authenticated: their node signatures failed, or too few were sent. */
+const NOT_ENOUGH_SHARES = /Not enough correct responses/;
 const LINK_MISMATCH = /not linked to the correct request/;
 
 let keyPair: SolanaTransportKeyPair;
@@ -175,35 +177,41 @@ describe('the response verification', () => {
   it('refuses the shares once the request carries another transport key', async () => {
     await expect(
       verify({ request: { transportKey: flippedAt(request.transportKey, request.transportKey.length - 1) } }),
-    ).rejects.toThrow(NODE_SIGNATURE);
+    ).rejects.toThrow(NOT_ENOUGH_SHARES);
   });
 
-  // The client derives t from the signer count, n = 3t + 1, and needs 2t + 1 authenticated shares
-  // from distinct parties. The rule lives in the KMS WASM, so this boundary pair is its evidence.
+  // The client needs 2t + 1 authenticated shares from distinct parties. The rule lives in the KMS
+  // WASM, so these boundary cases are its evidence.
   it('passes 2t + 1 shares and refuses 2t', async () => {
-    const t = (signers.length - 1) / 3;
     await expect(verify({ shares: shares.slice(0, 2 * t + 1) })).rejects.toThrow(PASSED_THE_CLIENT);
-    await expect(verify({ shares: shares.slice(0, 2 * t) })).rejects.toThrow(NODE_SIGNATURE);
+    await expect(verify({ shares: shares.slice(0, 2 * t) })).rejects.toThrow(NOT_ENOUGH_SHARES);
   });
 
-  // A share authenticates only under its party's trusted address: a signer set that gives one
-  // included share's party an address that signed nothing leaves 2t, which is too few.
-  it('refuses 2t + 1 shares once one of their parties has a foreign address', async () => {
-    // Share order is not party order. Shares 0-2 are parties 3, 4 and 2; share 3 is party 1.
-    const threeShares = shares.slice(0, 3);
-    const foreign = (partyId: number) =>
-      signers.map((signer) =>
-        signer.partyId === partyId ? { ...signer, address: '0x1111111111111111111111111111111111111111' } : signer,
-      );
-    await expect(verify({ shares: threeShares })).rejects.toThrow(PASSED_THE_CLIENT);
-    await expect(verify({ shares: threeShares, signers: foreign(3) })).rejects.toThrow(NODE_SIGNATURE);
-    // The control: changing the address of the one party with no share here refuses nothing.
-    await expect(verify({ shares: threeShares, signers: foreign(1) })).rejects.toThrow(PASSED_THE_CLIENT);
+  it('counts a party whose share is sent twice once', async () => {
+    const [first, second] = shares;
+    if (first === undefined || second === undefined) throw new Error('the transcript has too few shares');
+    await expect(verify({ shares: [first, first, second] })).rejects.toThrow(NOT_ENOUGH_SHARES);
+  });
+
+  // A share authenticates only under its own party's trusted address, not under any address in the
+  // set: swapping two parties' addresses leaves one of 2t + 1 shares unauthenticated.
+  it("refuses 2t + 1 shares once one of their parties is trusted under another party's address", async () => {
+    // Share order is not party order: shares 0-2 are parties 3, 4 and 2, and share 3 is party 1.
+    const included = shares.slice(0, 2 * t + 1);
+    // Parties 3 and 1 trade addresses: party 3's share is included, party 1's is not.
+    const addressOf = new Map(signers.map(({ partyId, address }) => [partyId, address]));
+    const tradedWith: Partial<Record<number, number>> = { 1: 3, 3: 1 };
+    const swapped = signers.map((signer) => ({
+      ...signer,
+      address: addressOf.get(tradedWith[signer.partyId] ?? signer.partyId) ?? signer.address,
+    }));
+    await expect(verify({ shares: included })).rejects.toThrow(PASSED_THE_CLIENT);
+    await expect(verify({ shares: included, signers: swapped })).rejects.toThrow(NOT_ENOUGH_SHARES);
   });
 
   it('refuses shares whose node signatures do not verify', async () => {
     await expect(verify({ shares: shares.map((share) => ({ ...share, signature: '00'.repeat(65) })) })).rejects.toThrow(
-      NODE_SIGNATURE,
+      NOT_ENOUGH_SHARES,
     );
   });
 
@@ -218,12 +226,12 @@ describe('the response verification', () => {
   // The route is the client's own: the node signature covers it, so a route that is not the one
   // the shares were signed over refuses them, from either side.
   it('refuses the shares once the request carries another KMS route', async () => {
-    await expect(verify({ request: { extraData: Uint8Array.of(0x01) } })).rejects.toThrow(NODE_SIGNATURE);
+    await expect(verify({ request: { extraData: Uint8Array.of(0x01) } })).rejects.toThrow(NOT_ENOUGH_SHARES);
   });
 
   it('refuses shares that carry another KMS route than the request', async () => {
     await expect(verify({ shares: shares.map((share) => ({ ...share, extraData: '01' })) })).rejects.toThrow(
-      NODE_SIGNATURE,
+      NOT_ENOUGH_SHARES,
     );
   });
 
@@ -231,7 +239,7 @@ describe('the response verification', () => {
   // gateway's domain refuses real shares by the signature rule, which runs first.
   it('refuses the shares under a foreign gateway domain', async () => {
     const gatewayEip712Domain = { ...request.gatewayEip712Domain, chainId: request.gatewayEip712Domain.chainId + 1n };
-    await expect(verify({ request: { gatewayEip712Domain } })).rejects.toThrow(NODE_SIGNATURE);
+    await expect(verify({ request: { gatewayEip712Domain } })).rejects.toThrow(NOT_ENOUGH_SHARES);
   });
 
   // Configuration read from on-chain bytes is naturally all-lowercase, which the client's parser
