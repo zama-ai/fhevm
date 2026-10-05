@@ -76,9 +76,9 @@ images_for() {
 #     zama-solana-transaction) and tfhe-worker/Cargo.toml (confidential-token, zama-host,
 #     zama-fhe).
 #   - kms-connector (kms-connector/crates/*/Dockerfile + connector-db/Dockerfile COPY lines):
-#     kms-connector/, both rust_bindings, shared/, and ONLY solana/crates/zama-solana-acl of the
-#     solana tree (its Cargo.toml deliberately avoids workspace inheritance), hence the dedicated
-#     zama-solana-acl rule below instead of the general solana fan-out.
+#     kms-connector/, both rust_bindings, shared/, and ONLY zama-solana-acl, zama-solana-permit
+#     and zama-solana-request of the solana tree (their Cargo.tomls deliberately avoid workspace
+#     inheritance), hence the dedicated rule below instead of the general solana fan-out.
 #   - relayer (relayer/docker/relayer[-migrate]/Dockerfile bind mounts): relayer/, both
 #     rust_bindings, shared/user-decryption-signature, whole solana Rust tree (zama-host +
 #     transitive path deps via relayer/Cargo.toml).
@@ -109,8 +109,9 @@ groups_for_path() {
     # On-chain-only demo and specimen programs: no docker image compiles them (checked against
     # the Cargo.tomls and Dockerfile COPY lines cited above).
     solana/programs/demo-vault/*|solana/programs/encrypted-counter/*|solana/programs/dep-chain/*) echo "" ;;
-    # The one solana crate the kms-connector images consume (kms-connector/crates/*/Dockerfile).
-    solana/crates/zama-solana-acl/*|solana/crates/zama-solana-request/*) echo "coprocessor kms-connector relayer" ;;
+    # The three solana crates kms-connector/Cargo.toml path-depends on, copied into every
+    # kms-connector image (kms-connector/crates/*/Dockerfile).
+    solana/crates/zama-solana-acl/*|solana/crates/zama-solana-permit/*|solana/crates/zama-solana-request/*) echo "coprocessor kms-connector relayer" ;;
     solana/programs/*|solana/crates/*|solana/Cargo.toml|solana/Cargo.lock) echo "coprocessor relayer" ;;
     *) echo "" ;;
   esac
