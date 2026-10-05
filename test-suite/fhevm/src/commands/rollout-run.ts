@@ -440,7 +440,14 @@ export const createRolloutContext = (
       await receipt.record("upgrade-runtime", group, { lockFile: options.lockFile });
     },
     async startDeferredGreen() {
-      await startStackDeferredGreen();
+      await startStackDeferredGreen(undefined, {
+        onStartupFailure: async (error) => {
+          await receipt.record("failed-start-green", "Green startup failed before cleanup", {
+            details: { error: error instanceof Error ? error.message : String(error) },
+            diagnostics: true,
+          });
+        },
+      });
       await receipt.record("start-green", "started deferred Green fleet", { docker: true });
     },
     async restagePromotedGreen(options) {

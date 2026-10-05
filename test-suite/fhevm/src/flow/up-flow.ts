@@ -2414,7 +2414,7 @@ const deferredGreenOperations: DeferredGreenOperations = {
 /** Builds and starts a Green fleet that was intentionally absent during prerequisite migration. */
 export const startDeferredGreen = async (
   operations: DeferredGreenOperations = deferredGreenOperations,
-  options: { rebuild?: boolean } = {},
+  options: { rebuild?: boolean; onStartupFailure?: (error: unknown) => Promise<void> } = {},
 ) => {
   const state = await operations.loadState();
   if (!state || state.scenario.kind !== "blue-green" || !state.scenario.gcs.deferredStart) {
@@ -2462,6 +2462,11 @@ export const startDeferredGreen = async (
     await operations.postBootHealthGate([...greenServices, ...extraGreenListeners]);
     await operations.saveState(nextState);
   } catch (error) {
+    try {
+      await options.onStartupFailure?.(error);
+    } catch (diagnosticError) {
+      console.warn("[green] failed to capture startup diagnostics", diagnosticError);
+    }
     try {
       await operations.removeContainers([...greenServices, ...extraGreenListeners]);
       await operations.generateRuntime(state, stackSpecForState(state));

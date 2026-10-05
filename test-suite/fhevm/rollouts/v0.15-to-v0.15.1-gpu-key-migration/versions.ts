@@ -74,7 +74,7 @@ export const migrationPhaseVersions = (
 };
 
 export const migrationVersions = (env: Env = process.env): MigrationVersions => {
-  const releaseTag = env.RFC029_BASELINE_FHEVM_TAG?.trim() || "v0.14.1";
+  const releaseTag = env.RFC029_BASELINE_FHEVM_TAG?.trim() || "v0.14.2";
   const hostTag = env.RFC029_BASELINE_HOST_TAG?.trim() || releaseTag;
   const blueRef = required(env, "RFC029_BLUE_TAG");
   if (!/^(?:v0\.15\.0-\d+|[0-9a-f]{40})$/i.test(blueRef)) {

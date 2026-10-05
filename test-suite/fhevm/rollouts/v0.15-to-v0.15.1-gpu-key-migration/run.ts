@@ -26,6 +26,7 @@ import {
 import { kmsConnectorDbName, kmsConnectorPrefix, kmsPartyIds, kmsPublicPrefix } from "../../src/kms-party";
 import { hostReachableRpcUrl, readEnvFile } from "../../src/utils/fs";
 import { run, runStreaming } from "../../src/utils/process";
+import { REPO_KEYS } from "../../src/resolve/target";
 import {
   type ConnectorObservation,
   type OperatorMaterial,
@@ -551,13 +552,21 @@ export const reconstructMigrated015Fixture = async (ctx: RolloutRunContext): Pro
   logPhase("00 pull and verify published 0.15.0 and 0.15.1 candidates");
   await pullCandidateImages(versions.blueTag, "0.15.0");
   await pullCandidateImages(versions.greenTag, "0.15.1");
+  const blueSha = (await run(["git", "rev-parse", `${versions.blueRef}^{commit}`], { cwd: REPO_ROOT })).stdout.trim();
   const testSuiteTag = await buildRolloutTestImage(versions.baseline.HOST_VERSION);
   const resolvedBaselineLock = await ctx.resolveVersionLock("rfc029-baseline-snapshot", {
+    target: "sha",
+    sha: blueSha,
     versions: { ...versions.baseline, TEST_SUITE_VERSION: testSuiteTag },
     sources: versionSources,
   });
   const targetSnapshotLock = await ctx.resolveVersionLock("rfc029-target-snapshot", {
-    versions: {},
+    target: "sha",
+    sha: blueSha,
+    versions: {
+      ...Object.fromEntries([...REPO_KEYS].map((key) => [key, versions.blueTag])),
+      TEST_SUITE_VERSION: testSuiteTag,
+    },
     sources: versionSources,
   });
   const baselineSnapshot = (await Bun.file(resolvedBaselineLock).json()) as { env: Record<string, string> };

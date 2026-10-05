@@ -338,6 +338,7 @@ describe("stack", () => {
     let buildPersistedState = true;
     const generatedDeferredStates: boolean[] = [];
     let removedContainers: string[] = [];
+    const failureEvents: string[] = [];
     const operations = {
       async loadState() { return state; },
       async generateRuntime(next: State) {
@@ -353,15 +354,30 @@ describe("stack", () => {
       async waitForCoprocessorServices() {},
       async multiChainComposeUp() {},
       async postBootHealthGate() { throw new Error("Green unhealthy"); },
-      async removeContainers(containers: string[]) { removedContainers = containers; },
+      async removeContainers(containers: string[]) {
+        failureEvents.push("cleanup");
+        removedContainers = containers;
+      },
       async saveState(next: State) { saved = next; },
     };
 
-    await expect(startDeferredGreen(operations)).rejects.toThrow("Green unhealthy");
+    await expect(startDeferredGreen(operations, {
+      async onStartupFailure(error) {
+        expect((error as Error).message).toBe("Green unhealthy");
+        failureEvents.push("diagnostics");
+      },
+    })).rejects.toThrow("Green unhealthy");
+    expect(failureEvents).toEqual(["diagnostics", "cleanup"]);
     expect(buildPersistedState).toBe(false);
     expect(saved).toBeUndefined();
     expect(generatedDeferredStates).toEqual([false, true]);
     expect(removedContainers.length).toBeGreaterThan(0);
+
+    failureEvents.length = 0;
+    await expect(startDeferredGreen(operations, {
+      async onStartupFailure() { throw new Error("receipt unavailable"); },
+    })).rejects.toThrow("Green unhealthy");
+    expect(failureEvents).toEqual(["cleanup"]);
 
     await startDeferredGreen({ ...operations, async postBootHealthGate() {} });
     expect(saved?.scenario.kind).toBe("blue-green");

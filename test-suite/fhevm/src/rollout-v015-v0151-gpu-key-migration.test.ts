@@ -15,6 +15,7 @@ import {
   gatewayContractUpgradePlan,
   hostContractUpgradePlan,
   predecessorImagePlan,
+  reconstructMigrated015Fixture,
 } from "../rollouts/v0.15-to-v0.15.1-gpu-key-migration/run";
 import {
   connectorVersionKeys,
@@ -97,10 +98,52 @@ describe("RFC 029 rollout gates", () => {
 
   test("uses the last published 0.14 images as the first rollout predecessor", () => {
     const versions = migrationVersions({ ...greenCandidate, RFC029_BLUE_TAG: "v0.15.0-0" });
-    expect(versions.baselineTag).toBe("v0.14.1");
+    expect(versions.baselineTag).toBe("v0.14.2");
     expect(versions.baseline.CORE_VERSION).toBe("v0.14.1");
-    expect(versions.baseline.HOST_VERSION).toBe("v0.14.1");
-    expect(versions.baseline.GATEWAY_VERSION).toBe("v0.14.1");
+    expect(versions.baseline.HOST_VERSION).toBe("v0.14.2");
+    expect(versions.baseline.GATEWAY_VERSION).toBe("v0.14.2");
+  });
+
+  test("pins both snapshots to the RC source and keeps the baseline-compatible test image", async () => {
+    const previousBlue = process.env.RFC029_BLUE_TAG;
+    const previousGreen = process.env.RFC029_GREEN_SHA;
+    process.env.RFC029_BLUE_TAG = "v0.15.0-0";
+    process.env.RFC029_GREEN_SHA = greenCandidate.RFC029_GREEN_SHA;
+    const blueSha = "9bcd19f5a9e35314d7c07498369af61fa122c432";
+    const commands = spyOn(processUtils, "run").mockImplementation(async (argv) => ({
+      code: 0,
+      stderr: "",
+      stdout: argv[0] === "git" ? blueSha
+        : argv.includes("--stack-version") ? (argv.some((arg) => arg.endsWith(":v0.15.0-0")) ? "0.15.0" : "0.15.1")
+        : "[]",
+    }));
+    const streaming = spyOn(processUtils, "runStreaming").mockResolvedValue(0);
+    const snapshots: Array<Parameters<RolloutRunContext["resolveVersionLock"]>[1]> = [];
+    try {
+      await expect(reconstructMigrated015Fixture({
+        async resolveVersionLock(_name, options) {
+          snapshots.push(options);
+          if (snapshots.length === 2) throw new Error("snapshots captured");
+          return "/unused-baseline.json";
+        },
+      } as RolloutRunContext)).rejects.toThrow("snapshots captured");
+      for (const snapshot of snapshots) {
+        expect(snapshot.target).toBe("sha");
+        expect(snapshot.sha).toBe(blueSha);
+      }
+      expect(snapshots[0]!.versions.HOST_VERSION).toBe("v0.14.2");
+      expect(snapshots[1]!.versions.HOST_VERSION).toBe("v0.15.0-0");
+      expect(snapshots[1]!.versions.CONNECTOR_ENDPOINT_VERSION).toBe("v0.15.0-0");
+      expect(snapshots[1]!.versions.TEST_SUITE_VERSION).toBe(snapshots[0]!.versions.TEST_SUITE_VERSION);
+      expect(snapshots[1]!.versions.TEST_SUITE_VERSION).toStartWith("rfc029-");
+    } finally {
+      if (previousBlue === undefined) delete process.env.RFC029_BLUE_TAG;
+      else process.env.RFC029_BLUE_TAG = previousBlue;
+      if (previousGreen === undefined) delete process.env.RFC029_GREEN_SHA;
+      else process.env.RFC029_GREEN_SHA = previousGreen;
+      commands.mockRestore();
+      streaming.mockRestore();
+    }
   });
 
   test("starts exact 0.15 Green with the legacy safeguard", () => {
