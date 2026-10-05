@@ -1,6 +1,6 @@
 # Encrypted Store and MMR reviewer map
 
-This describes the current Store implementation of the Solana access control RFC. Historical per-value decisions are retained in DESIGN_DECISIONS.md; they are not alternate supported APIs.
+This describes the current Store implementation of the Solana access control RFC. Historical per-value decisions are retained in DESIGN_HISTORY.md; they are not alternate supported APIs.
 
 ## Identity and current state
 

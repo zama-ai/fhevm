@@ -3,7 +3,9 @@
 Decisions the Solana port no longer follows, kept in their original wording so a reader can see why
 a current decision looks the way it does. Each entry's status line names what replaced it; the
 replacing entry in [`DESIGN_DECISIONS.md`](DESIGN_DECISIONS.md) is the one the code follows. The
-vocabulary here predates [`GLOSSARY.md`](GLOSSARY.md) and is intentionally left as written.
+vocabulary here predates [`GLOSSARY.md`](GLOSSARY.md) and is intentionally left as written. When a
+later decision replaced only part of a live entry, the replaced wording is under
+[Replaced parts of live decisions](#replaced-parts-of-live-decisions).
 
 | Decision                                                                                                   | Replaced by                  |
 | ---------------------------------------------------------------------------------------------------------- | ---------------------------- |
@@ -739,6 +741,43 @@ Decision, as first written:
 Events are discovery and indexing signals. Production authorization must be rebuilt from
 policy-approved transaction/account data and verified against host-owned ACL,
 material, delegation, and replay witnesses.
+
+### DD-007, replaced in part by DD-023
+
+The input path was rebuilt around the `fhe_execute` operand. The change record and the replaced
+design, as first written:
+
+What changed:
+
+- The bespoke input verifier-set and the `verify_input_and_bind` Ed25519 path were REMOVED.
+- Inputs are now the `FheExecuteOperand::VerifiedInput` operand of `fhe_execute`. The earlier standalone
+  `verify_coprocessor_input` instruction and its `InputVerifiedEvent` receipt were **deleted**, along
+  with the short-lived output-taint binding (`VerifiedInputBinding` / output-ACL constraints): derived
+  outputs are unconstrained by the input.
+- The "caller is the attested contract" gate is enforced at input-consumption time
+  (`attestation.contract_address == program`, DD-047).
+- The `verify_input_and_bind` and standalone `mock_input_verified_and_bind` instructions were removed;
+  the shared verifier `zama_host::eip712::verify_coprocessor_input` (via
+  `instructions::input_verification::verify_input_attestation`) is invoked in-execution by `fhe_execute`.
+
+Replaced design (stub): the earlier `verify_input_and_bind` bound inputs with a native Ed25519
+"input verifier set" signing a `SolanaInputBindIntent`. Reversed because it was a Solana-only trust
+root divorced from the EVM coprocessor; the coprocessor attestation is the canonical trust root.
+
+### DD-008, replaced in part by DD-050
+
+DD-050's transaction-wide transient store holds intermediates across calls. Rationale and
+Consequences, as first written:
+
+Solana has no hidden transaction-local map a later instruction can read; temporary permission must be
+explicit. Keeping intermediates instruction-local avoids rent and prevents a temporary compute grant
+from silently becoming persistent ACL or decrypt authority.
+
+The earlier persisted one-shot `TransientSession` / capability-account tier (a cross-instruction
+handoff account with same-transaction creation proof) was **removed** (zama-ai/fhevm#2834): it was
+real rent-bearing state that added a permission leak surface for no path the port needed. A Store
+output derived from transient inputs still passes its authority check and declares its own allows;
+nothing is public unless the output says so.
 
 ### DD-015, replaced in part by DD-043 and DD-050
 

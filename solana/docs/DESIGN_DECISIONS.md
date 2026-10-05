@@ -44,10 +44,12 @@ are written as one narrative instead.
 | [DD-014](#dd-014-host-handle-creation-has-no-local-test-relaxation)                                                                       | adopted                                  | Host Handle Creation Has No Local Test Relaxation                                                                               |
 | [DD-015](#dd-015-handle-creation-keeps-per-block-entropy)                                                                                 | adopted                                  | Handle Creation Keeps Per-Block Entropy                                                                                         |
 | [DD-016](#dd-016-confidential-balances-use-the-immediate-available-balance-profile)                                                       | product-open                             | Confidential Balances Use The Immediate-Available-Balance Profile                                                               |
+| DD-017                                                                                                                                    | replaced by DD-023                       | Role-Aware `fhe_execute` And Per-Op Bind Instructions (replaced), in [DESIGN_HISTORY.md](DESIGN_HISTORY.md)                     |
 | DD-018                                                                                                                                    | replaced by DD-011                       | Transfer-And-Call Refund Prepare/Finalize (replaced), in [DESIGN_HISTORY.md](DESIGN_HISTORY.md)                                 |
 | DD-019                                                                                                                                    | replaced by DD-049                       | Confidential Transfer Persists Only Final Balance And Transferred-Amount ACL Records, in [DESIGN_HISTORY.md](DESIGN_HISTORY.md) |
 | [DD-020](#dd-020-verifierset-removed--canonical-kms-context-singleton)                                                                    | adopted                                  | VerifierSet Removed → Canonical KMS Context Singleton                                                                           |
 | [DD-021](#dd-021-on-chain-secp256k1-kms-public-decrypt-cert-verification)                                                                 | adopted                                  | On-Chain secp256k1 KMS Public-Decrypt Cert Verification                                                                         |
+| DD-022                                                                                                                                    | replaced by DD-040, DD-045               | Witness PDAs Created Before The secp Consume (replaced), in [DESIGN_HISTORY.md](DESIGN_HISTORY.md)                              |
 | [DD-023](#dd-023-fhe_execute-composed-executor--typed-fheexecutionbuilder-dsl)                                                            | adopted                                  | `fhe_execute` Composed Executor + Typed `FheExecutionBuilder` DSL                                                               |
 | [DD-024](#dd-024-eager-ciphertext-material-preparation-coprocessor-side)                                                                  | adopted                                  | Eager Ciphertext-Material Preparation (coprocessor side)                                                                        |
 | [DD-025](#dd-025-where-the-release-gate-sits)                                                                                             | adopted                                  | Where The Release Gate Sits                                                                                                     |
@@ -71,7 +73,7 @@ are written as one narrative instead.
 | [DD-043](#dd-043-two-derivation-regimes--content-addressed-deterministic-handles-persistent-write-anchored-rand-seeds-context_id-deleted) | adopted                                  | Two Derivation Regimes — Content-Addressed Deterministic Handles, Persistent-Write-Anchored Rand Seeds (`context_id` deleted)   |
 | [DD-044](#dd-044-every-event-goes-through-the-event-cpi-or-is-not-emitted-at-all)                                                         | adopted                                  | Every Event Goes Through The Event CPI, Or Is Not Emitted At All                                                                |
 | [DD-045](#dd-045-keep-burn-settlement-sequential-and-keep-wrapper-policy-separate-from-host-governance)                                   | adopted                                  | Keep Burn Settlement Sequential and Keep Wrapper Policy Separate From Host Governance                                           |
-| [DD-046](#dd-046-the-program-heap-is-fixed-at-32-kb--no-custom-allocator-raised-heap-deleted)                                             | adopted                                  | The Program Heap Is Fixed At 32 KB — No Custom Allocator (`raised-heap` deleted)                                                |
+| [DD-046](#dd-046-the-program-heap-is-fixed-at-32-kb--no-custom-allocator)                                             | adopted                                  | The Program Heap Is Fixed At 32 KB — No Custom Allocator (`raised-heap` deleted)                                                |
 | [DD-047](#dd-047-the-application-is-program-scope--program-verified-scope-owned-by-program)                                               | adopted                                  | The Application Is `(program, scope)` — Program Verified, Scope Owned By Program                                                |
 | [DD-048](#dd-048-allows-are-sealed-on-the-write-the-deny-list-names-applications-one-connector-path)                                      | adopted                                  | Allows Are Sealed On The Write; The Deny List Names Applications; One Connector Path                                            |
 | [DD-049](#dd-049-shared-encrypted-store-and-transaction-local-result-grants)                                                              | adopted                                  | Shared Encrypted Store And Transaction-Local Result Grants                                                                      |
@@ -228,22 +230,15 @@ that could drift. Consuming it as an in-execution operand (rather than a standal
 receipt) restores EVM parity (verify ≠ allow) and removes a persistent ACL account per input — one of
 the "3 ACLs" that inflated per-tx cost — so it is also a cost win.
 
-What changed:
+Consequences:
 
-- The bespoke input verifier-set and the `verify_input_and_bind` Ed25519 path were REMOVED.
-- Inputs are now the `FheExecuteOperand::VerifiedInput` operand of `fhe_execute`. The earlier standalone
-  `verify_coprocessor_input` instruction and its `InputVerifiedEvent` receipt were **deleted**, along
-  with the short-lived output-taint binding (`VerifiedInputBinding` / output-ACL constraints): derived
-  outputs are unconstrained by the input.
+- Inputs are the `FheExecuteOperand::VerifiedInput` operand of `fhe_execute`. There is no standalone
+  verify instruction, receipt event or output-taint binding, so derived outputs are unconstrained by
+  the input.
 - The "caller is the attested contract" gate is enforced at input-consumption time
   (`attestation.contract_address == program`, DD-047).
-- The `verify_input_and_bind` and standalone `mock_input_verified_and_bind` instructions were removed;
-  the shared verifier `zama_host::eip712::verify_coprocessor_input` (via
-  `instructions::input_verification::verify_input_attestation`) is invoked in-execution by `fhe_execute`.
-
-Replaced design (stub): the earlier `verify_input_and_bind` bound inputs with a native Ed25519
-"input verifier set" signing a `SolanaInputBindIntent`. Reversed because it was a Solana-only trust
-root divorced from the EVM coprocessor; the coprocessor attestation is the canonical trust root.
+- `fhe_execute` invokes the shared verifier `zama_host::eip712::verify_coprocessor_input` (via
+  `instructions::input_verification::verify_input_attestation`) in-execution.
 
 Open for debate / follow-up: the input proof / ZKPoK / transciphering behind the attestation is still
 a harness shortcut; real ZKPoK + transciphering is production work.
@@ -268,16 +263,14 @@ execution only (DD-007). A value that must outlive the transaction is written to
 Rationale:
 
 Solana has no hidden transaction-local map a later instruction can read; temporary permission must be
-explicit. Keeping intermediates instruction-local avoids rent and prevents a temporary compute grant
-from silently becoming persistent ACL or decrypt authority.
+explicit. Keeping intermediates in the transaction's transient store, closed at the end of the
+transaction, leaves no rent behind and prevents a temporary compute grant from silently becoming
+persistent ACL or decrypt authority.
 
 Consequences:
 
-The earlier persisted one-shot `TransientSession` / capability-account tier (a cross-instruction
-handoff account with same-transaction creation proof) was **removed** (zama-ai/fhevm#2834): it was
-real rent-bearing state that added a permission leak surface for no path the port needed. A Store
-output derived from transient inputs still passes its authority check and declares its own allows;
-nothing is public unless the output says so.
+A Store output derived from transient inputs still passes its authority check and declares its own
+allows; nothing is public unless the output says so.
 
 ## DD-012: Solana User Decrypt Reuses The Gateway Stack
 
@@ -808,9 +801,9 @@ second source of truth for no benefit.
 
 Consequences:
 
-KMS public-decrypt admission no longer checks a sealed material commitment on-chain; it relies on the
-gateway's `CiphertextCommits` for materiality and on the Store MMR (DD-049) for
-authorization. `HandleMaterialCommitmentWitness` is deleted from the KMS connector SDK.
+KMS public-decrypt admission checks no material commitment on chain: it relies on the gateway's
+`CiphertextCommits` for materiality and on the Store MMR (DD-049) for authorization, and the KMS
+connector carries no material witness.
 
 ## DD-033: No ACL-Lifecycle Events — Self-Describing Args + Instruction-Replay Indexing
 
@@ -1142,9 +1135,10 @@ symmetric too: `quit` returns the exact encrypted share amount while pending; th
 between dispatch and settle in either direction — the deadline-cancel path stays out of demo scope
 (fhevm-internal#1773). Operational assumption, both directions (fhevm-internal#1774 item 2): every
 token/host CPI passes HCU accounts (`hcu_block_meter`, `hcu_trusted_app_record`) as hardcoded `None`.
-`join` forwards its remaining accounts as deny records; every other batcher CPI passes no deny
-record. The batcher as a whole therefore assumes `grant_deny_list_enabled = false` and no binding HCU
-cap, which is how the host test fixtures run.
+`join`, `quit` and `claim` forward their remaining accounts as the execution's deny records, and
+`cancel_dispatch` forwards them to the token's restore. `dispatch`, `open_batch` and `settle` pass
+none, so they assume `grant_deny_list_enabled = false`. Every path assumes no binding HCU cap, which
+is how the host test fixtures run.
 
 ## DD-043: Two Derivation Regimes — Content-Addressed Deterministic Handles, Persistent-Write-Anchored Rand Seeds (`context_id` deleted)
 
@@ -1358,12 +1352,13 @@ create instruction or `null` for an already initialized account. This remains de
 not a claim that the protocol SDK owns the confidential-token program.
 
 Disclosure publishes the certified handle and cleartext and reads no token state (DD-040). The
-binding is checked when the handle is made public: `make_token_account_handle_public` and
-`make_total_supply_handle_public` name a token state kind and validate its mint scope, canonical
-Store and slot key, then sign the host CPI as the Store authority. Scope-only validation was rejected
+binding is checked when the handle is made public: `make_token_account_handle_public` names a
+token-account state kind, and `make_total_supply_handle_public` is fixed to the total supply and
+authorized by the mint authority. Both validate the mint scope, canonical Store and slot key, then
+sign the host CPI as the Store authority. Scope-only validation was rejected
 because two fields within the same mint would remain interchangeable.
 
-## DD-046: The Program Heap Is Fixed At 32 KB — No Custom Allocator (`raised-heap` deleted)
+## DD-046: The Program Heap Is Fixed At 32 KB — No Custom Allocator
 
 Status: adopted
 
@@ -1388,18 +1383,17 @@ Why not ship an allocator:
    (`ExceedsBuildHeapBudget`). Counting-allocator tests cover build, packet and invoke tables.
    These limits do not model live Store size or prevent the host from exhausting its separate
    heap; a runtime failure still rolls back the transaction. See INVARIANTS #54 and #61.
-3. Store outputs no longer create an account per result, so the old create cap and
-   per-result system-CPI trace argument no longer apply. The runtime snapshots now show
+3. A Store output creates no account per result, so no per-result system CPI bounds an
+   execution. The runtime snapshots show
    32-step dependent chains and 32 public outputs with eight viewers each reaching the step
    cap, and updates across Stores with 8, 32 and 55 MMR peaks reaching 16, 7 and 4 steps.
    These are shape limits; the allocator decision does not make
    a host heap failure acceptable for an application we intend to support. A failing application
    benchmark is grounds to reopen fhevm-internal#1872.
 
-The `raised-heap` Cargo feature was half a mechanism — it lifted the SDK's on-chain step ceiling
-back to the host's maximum but shipped no allocator, so a program enabling it would keep the 32 KB
-allocator and land in exactly the silent abort the ceiling exists to prevent. Nothing ever enabled
-it. Deleted.
+No feature lifts the SDK's on-chain step ceiling to the host's maximum: without an allocator, a
+program doing so would keep the 32 KB allocator and land in exactly the silent abort the ceiling
+exists to prevent.
 
 Reopening condition: a benchmark showing a real application blocked by the measured shape
 boundaries after the copy-reduction work (argument clone, decode-once, packet pre-sizing) landed.
@@ -1606,17 +1600,17 @@ records its producing Store and depth. No resizing, initiating-Store credential 
 Each `fhe_execute` explicitly names its producing Store. That Store implicitly may use every result from its execution,
 including unstored intermediates, across calls in this transaction. Foreign Stores need an explicit grant and must
 sign consumption. Ordered arithmetic and ordered effects are separate; typed Rust expressions select effects with
-`fhe.output(result, state.set(key)...)`. Initial slot snapshots, duplicate-write rejection and ordered MMR cursors remain.
+`fhe.output(result, state.set(key)...)`. Executions keep initial slot snapshots, duplicate-write rejection and ordered
+MMR cursors.
 
 Production membership determines operand origin independently of the supplied witness. The 256-bit big-endian mask
 enters operand-bearing handle preimages; bit 0 marks input position 0. The listener reconstructs membership per
 transaction. HCU total and depth use the same journal, while each application's block meter receives only that call's
 cost. Return data remains immediate CPI transport, independent of permissions and result storage.
 
-This removes per-call transient store opening, token result-scratch/result-authority account bundles, duplicate host metering
-and redundant add-zero balance copies. All affected clients must migrate together; no compatibility path is kept
-for the retired wire layout. Resource snapshots include lifecycle CU overhead and separate whole-transaction packet
-checks. The branch retains current slot publication and PendingBurn semantics; historical re-sharing is still #2007.
+A transaction opens one transient store, apps pass no result-scratch or result-authority accounts, the host meters each
+execution once, and balances need no add-zero copy. Resource snapshots include lifecycle CU overhead and separate
+whole-transaction packet checks. Granting decrypt permission on historical handles is fhevm-internal#2007.
 
 ## DD-051: A Zama Is One Host Program ID
 
@@ -2049,8 +2043,8 @@ takes hours and needs an archive provider whose rate limits allow it; it fetches
 time, each with up to eight `getTransaction` calls in flight. The listener's Solana crates decode legacy and v0
 transactions only, so `getBlock` asks for version 0, and the RPC refuses a block holding a v1
 transaction. Catch-up then retries that block until fhevm-internal#2080 moves the listener to crates
-that decode v1. A slot rewound for repair (DD-056) no longer has to be inside the replay window, only
-in the archive's history.
+that decode v1. A slot rewound for repair (DD-056) need not be inside the replay window, only in the
+archive's history.
 
 ## DD-060: A public decrypt names its stores beside the KMS routing
 
