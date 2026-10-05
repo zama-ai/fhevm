@@ -1,5 +1,6 @@
 import { assertOneWorkerPerQueue } from "./queue-ownership";
 export { assertOneWorkerPerQueue, classifyStray, parseWorkerDatabase, strayWorkerPids } from "./queue-ownership";
+import { consumerOnlyHostListeners, isLegacyHostListener } from "../host-listener-mode";
 import {
   bootstrapUsesHostKmsGeneration,
   kmsConnectorUsesHostKmsGeneration,
@@ -217,6 +218,7 @@ export const coprocessorHealthContainers = (state: Pick<State, "scenario" | "ver
   }
   const suffixes = GROUP_SERVICE_SUFFIXES.coprocessor.filter(
     (suffix) =>
+      (!consumerOnlyHostListeners(state.scenario) || !isLegacyHostListener(suffix)) &&
       !suffix.includes("migration") &&
       (suffix !== "host-listener-consumer" || supportsHostListenerConsumer(state)) &&
       (suffix !== "consensus-detector" || supportsConsensusDetector(state)) &&
@@ -297,8 +299,10 @@ export const waitForCoprocessorServices = async (state: State, skipMigration: bo
     if (withMigration && !skipMigration) {
       await waitForContainer(`${prefix}db-migration`, "complete");
     }
-    await waitForContainer(`${prefix}host-listener`, "running");
-    await waitForContainer(`${prefix}host-listener-poller`, "running");
+    if (!consumerOnlyHostListeners(state.scenario)) {
+      await waitForContainer(`${prefix}host-listener`, "running");
+      await waitForContainer(`${prefix}host-listener-poller`, "running");
+    }
     if (supportsHostListenerConsumer(state)) {
       await waitForContainer(`${prefix}host-listener-consumer`, "running");
     }
@@ -341,8 +345,12 @@ const waitForExtraChainCoprocessorListeners = async (state: Pick<State, "scenari
   const topology = topologyForState(state);
   for (let index = 0; index < topology.count; index += 1) {
     const prefix = index === 0 ? "coprocessor-" : `coprocessor${index}-`;
-    await waitForContainer(`${prefix}host-listener${suffix}`, "running");
-    await waitForContainer(`${prefix}host-listener-poller${suffix}`, "running");
+    if (consumerOnlyHostListeners(state.scenario)) {
+      await waitForContainer(`${prefix}host-listener-consumer${suffix}`, "running");
+    } else {
+      await waitForContainer(`${prefix}host-listener${suffix}`, "running");
+      await waitForContainer(`${prefix}host-listener-poller${suffix}`, "running");
+    }
   }
 };
 
@@ -352,7 +360,9 @@ export const listenerContainersForChain = (state: Pick<State, "scenario">, chain
   const topology = topologyForState(state);
   return Array.from({ length: topology.count }, (_, index) => {
     const prefix = index === 0 ? "coprocessor-" : `coprocessor${index}-`;
-    return [`${prefix}host-listener${suffix}`, `${prefix}host-listener-poller${suffix}`];
+    return consumerOnlyHostListeners(state.scenario)
+      ? [`${prefix}host-listener-consumer${suffix}`]
+      : [`${prefix}host-listener${suffix}`, `${prefix}host-listener-poller${suffix}`];
   }).flat();
 };
 
