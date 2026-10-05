@@ -133,7 +133,7 @@ export function DeveloperEvidence({ controller }: { readonly controller: DemoCon
               .getTransaction(signature, {
                 commitment: 'confirmed',
                 encoding: 'jsonParsed',
-                maxSupportedTransactionVersion: 0,
+                maxSupportedTransactionVersion: 1,
               })
               .send();
             return {
