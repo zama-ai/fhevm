@@ -141,10 +141,8 @@ typecheck — a root can be swept and still never compiled.
 
 ## Scenario layer (SDK-driven e2e)
 
-Lives in `test-suite/fhevm/e2e/` — a small harness plus scenario files. Since fhevm-internal#1876
-this layer **is** the live vertical: the bash phase runner (`full-vertical.sh`), its label greps
-and their checker, and the Rust live-client are gone, and every live assertion is a typed
-`bun:test` expectation. The layer owns only what composition can break (proofs vs live state, KMS
+Lives in `test-suite/fhevm/e2e/` — a small harness plus scenario files. This layer **is** the live
+vertical (fhevm-internal#1876): every live assertion is a typed `bun:test` expectation. The layer owns only what composition can break (proofs vs live state, KMS
 round-trips, relayer seams, timing) — never what the Mollusk ladder already proves.
 
 The scenarios run under `bun:test` because they share their runtime with the fhevm-cli demo

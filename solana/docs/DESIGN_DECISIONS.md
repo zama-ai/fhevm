@@ -478,8 +478,8 @@ Status: adopted
 
 Context:
 
-Witnesses and decrypt trust used to anchor to a `VerifierSet` subsystem
-(`create_verifier_set` / `disable_verifier_set` / `migrate_verifier_set`), a Solana-only trust root
+Witnesses and decrypt trust need an anchor. A `VerifierSet` subsystem
+(`create_verifier_set` / `disable_verifier_set` / `migrate_verifier_set`) is a Solana-only trust root
 with its own lifecycle.
 
 Options considered:
@@ -1512,8 +1512,8 @@ Decision:
    `allow_balance_viewers` / `allow_total_supply_viewers` are exactly that: a re-write by the
    authority). A viewer is a viewer: it decrypts, and cannot grant, seal or write.
 2. **One decrypt path.** A user decrypt proves the allow leaf; the current handle and a replaced
-   one authorize the same way, so `authorize_current` is gone. A public decrypt proves the public
-   leaf. Both proofs are fetched by the KMS connector from the coprocessors' leaf record
+   one authorize the same way, with no separate path for the current one. A public decrypt proves
+   the public leaf. Both proofs are fetched by the KMS connector from the coprocessors' leaf record
    (`POST /v1/solana/merkle-proofs`, signed by the KMS context's tx-sender, DD-067) and verified
    against the peaks the connector read on chain. The connector asks the coprocessors one after
    another in a random order: the next one as soon as an answer leaves a proof missing, or after
@@ -1529,8 +1529,8 @@ Decision:
    proof-service clients are deleted (DD-035 superseded).
 4. **The deny list names applications.** `set_deny_scope` writes `DenyScopeRecord` at
    `["deny-scope", program, scope]`; it gates every allow the host would seal — each `fhe_execute`
-   and `make_store_handle_public`, because sealing a public leaf is an allow. A denied key is not a
-   concept any more: an application is denied, or it is not.
+   and `make_store_handle_public`, because sealing a public leaf is an allow. The deny list names no
+   keys: an application is denied, or it is not.
 
 Rationale:
 
@@ -2237,7 +2237,7 @@ row and the path with `mmr_verify` against the Store's recorded peaks before ser
 with a missing or wrong row is answered `inconsistent` (DD-068). Leaves and nodes are never
 rewritten and the Store's row only grows, so the three reads agree without a transaction.
 
-The first matching leaf is served, as before. It sits in the oldest mountain, whose path changes
+The first matching leaf is served. It sits in the oldest mountain, whose path changes
 least as the Store grows.
 
 Rejected alternatives:

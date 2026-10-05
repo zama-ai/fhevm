@@ -56,9 +56,8 @@ Persistent handles occupy slots in `EncryptedStore`; ciphertext material lives o
 
 ## Materiality
 
-Whether ciphertext material is available and bound to the right key is no longer host-chain state on
-Solana. The earlier `HandleMaterialCommitment` subsystem (`commit_handle_material`) was deleted;
-materiality is now the gateway's `CiphertextCommits`, where the coprocessor already registers Solana
+Whether ciphertext material is available and bound to the right key is not host-chain state on
+Solana. Materiality is the gateway's `CiphertextCommits`, where the coprocessor registers Solana
 handles (`docs/DESIGN_DECISIONS.md` DD-031). `EncryptedStore` answers "who may use or decrypt
 this handle" — an MMR-proven allow or public-decrypt leaf.
 
@@ -128,10 +127,9 @@ check lets an observer replay another user's verified input.
 This mirrors the EVM `InputVerification` coprocessor-threshold model; the gateway counterpart is the
 chain-agnostic address RFC's bytes32 path `InputVerification.verifyProofRequestSolana`. The host-listener reconstruct path
 resolves the operand from `attestation.input_handle`. The shared verifier is
-`eip712::verify_coprocessor_input` (via `instructions::input_verification::verify_input_attestation`);
-the earlier standalone `verify_coprocessor_input`/`verify_input_and_bind`/`mock_input_verified_and_bind`
-instructions and the `InputVerifiedEvent` receipt were removed. The former Ed25519 verifier-set path
-is retained only as the replaced-design stub in DD-007.
+`eip712::verify_coprocessor_input`, called through
+`instructions::input_verification::verify_input_attestation`. An input has no instruction of its own
+and emits no receipt event. DD-007 links to the replaced Ed25519 verifier-set design.
 
 ## ACL Model
 
@@ -157,7 +155,6 @@ The host has no test-only verification or handle-creation path. Tests that creat
 deployed program (DD-014). The registered coprocessor signer set and threshold are settled
 (DD-041); syncing that set from the gateway and real proof/transciphering validation are still
 open (FUTURE_DESIGN.md §1).
-Trivial and random handle creation paths (now `fhe_execute` `TrivialEncrypt`/`Rand`/`RandBounded` steps —
-the standalone `trivial_encrypt_and_bind`/`fhe_rand*_and_bind` instructions were removed) include
-output entropy in handle derivation before recording the result in `TransientStore`. An output
-effect can then write it into an `EncryptedStore` slot.
+Trivial and random handle creation paths (the `fhe_execute` `TrivialEncrypt`, `Rand` and
+`RandBounded` steps) include output entropy in handle derivation before recording the result in
+`TransientStore`. An output effect can then write it into an `EncryptedStore` slot.
