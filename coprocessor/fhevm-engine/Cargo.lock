@@ -5474,8 +5474,6 @@ dependencies = [
  "serde_json",
  "serial_test",
  "sha3 0.10.8",
- "solana-client",
- "solana-commitment-config",
  "solana-host-follower",
  "solana-sdk 3.0.0",
  "sqlx",

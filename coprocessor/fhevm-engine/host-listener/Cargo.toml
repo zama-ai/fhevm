@@ -72,8 +72,6 @@ tracing-subscriber = { workspace = true }
 union-find = { workspace = true}
 
 url = "2.5.7"
-solana-client = "3.0"
-solana-commitment-config = "3.1"
 solana-sdk = "3.0"
 # Solana reconstruction (the `solana` feature).
 # no-entrypoint builds the program crate as a host library so we can call its
