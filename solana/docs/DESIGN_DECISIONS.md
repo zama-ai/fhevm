@@ -2154,8 +2154,8 @@ transactions and seals the slot on its block meta. The ancestry check, the inges
 checkpoint are unchanged, and a reconnect starts a new validator that `from_slot` replay refills.
 
 Sealing on block meta requires the provider to send every transaction of a slot before its block
-meta. Yellowstone does, live and on `from_slot` replay (`yellowstone-grpc-geyser/src/grpc.rs`,
-lines 1333-1404 at `243d008`, the pinned `v14.2.2`). A slot's transactions and its block meta are
+meta. Yellowstone does, live and on `from_slot` replay (`yellowstone-grpc-geyser/src/grpc.rs` at
+`bfd1d7e`, the pinned `v16.0.0`: lines 1399-1433 live, 1440-1493 on replay). A slot's transactions and its block meta are
 two separate broadcasts, and a client receives live broadcasts from before its filter and replay
 are set. Two cases follow:
 

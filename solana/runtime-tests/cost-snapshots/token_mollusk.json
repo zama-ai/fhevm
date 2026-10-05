@@ -2,7 +2,7 @@
   "toolchain": {
     "anchor": "anchor-cli 1.2.0",
     "rustc": "rustc 1.91.1 (ed61e7d7e 2025-11-07)",
-    "solana": "solana-cli 4.1.2 (src:182084b8; feat:c763ae0a, client:Agave)"
+    "solana": "solana-cli 4.3.0 (src:825efd18; feat:c9ad34d2, client:Agave)"
   },
   "measurements": {
     "confidential_burn_from_value/direct": {

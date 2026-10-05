@@ -149,11 +149,11 @@ The scenarios run under `bun:test` because they share their runtime with the fhe
 lifecycle and the `src/solana/*` orchestrators, which are bun-native (`Bun.spawn`, `Bun.sleep`,
 `import.meta.dir`).
 
-Every local validator the layer starts, for the full stack and for the cleartext stack, runs Agave
-4.3.0 with Alpenglow consensus active from genesis (`--alpenglow` in `validatorStartArgs`,
-`src/solana/validator.ts`), as Solana devnet does. A block is final as soon as it completes, so
-`confirmed` and `finalized` name the same slot. Both stacks check the Alpenglow feature account
-after startup and stop if it is not active.
+Every local validator the test suite starts, for the full stack, the cleartext stack and the
+deployer test, runs Agave 4.3.0 with Alpenglow consensus active from genesis (`--alpenglow` in
+`validatorStartArgs`, `src/solana/validator.ts`), as Solana devnet does. A block is final as soon
+as it completes, so `confirmed` and `finalized` name the same slot. All three check the Alpenglow
+feature account after startup and stop if it is not active.
 
 Two rules the layer holds itself to:
 

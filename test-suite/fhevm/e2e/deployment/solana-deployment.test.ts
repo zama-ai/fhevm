@@ -10,7 +10,7 @@ import { findHostConfigPda } from '../../../../solana/deploy/src/generated/zamaH
 import { DEFAULT_SOLANA_ENVIRONMENT, programIdsFor } from '../../../../solana/deploy/src/environment';
 import { solanaPubkeyFromKeypairFile } from '../../src/generate/solana';
 import { REPO_ROOT } from '../../src/layout';
-import { validatorStartArgs } from '../../src/solana/validator';
+import { assertAlpenglowActive, validatorStartArgs } from '../../src/solana/validator';
 import { run, runStreaming } from '../../src/utils/process';
 
 const solana = path.join(REPO_ROOT, 'solana');
@@ -123,6 +123,7 @@ beforeAll(async () => {
       await Bun.sleep(1000);
     }
   }
+  await assertAlpenglowActive(rpcUrl);
   await run(['solana', 'airdrop', '100', '-u', rpcUrl, '-k', path.join(directory, 'payer.json')]);
   await run([
     'docker',
