@@ -266,7 +266,7 @@ async function hostInstructions(
   programAddress: Address,
 ): Promise<HostInstruction[] | undefined> {
   const transaction = await rpc
-    .getTransaction(signature, { commitment: 'confirmed', encoding: 'json', maxSupportedTransactionVersion: 0 })
+    .getTransaction(signature, { commitment: 'confirmed', encoding: 'json', maxSupportedTransactionVersion: 1 })
     .send();
   if (transaction === null) return undefined;
   const { message } = transaction.transaction;

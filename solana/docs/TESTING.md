@@ -274,8 +274,7 @@ only just fits the 1232-byte packet, can fail on the cleartext build. Mollusk do
 transaction size, so only the validator stack catches the second. The gap only causes false
 failures: a transaction that fits on the cleartext build always fits in production. v1 transactions
 (SIMD-0385) raise the limit to 4096 bytes for both builds, so they move this wall rather than remove
-it. Our Solana transaction reads do not accept v1 yet, `createSolanaLeafRecord` among them
-(fhevm-internal#2080).
+it.
 
 ### Extending the cleartext target
 

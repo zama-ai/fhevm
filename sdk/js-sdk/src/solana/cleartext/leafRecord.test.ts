@@ -202,7 +202,10 @@ function ledger(initial: readonly Write[]) {
   const signatureOf = (index: number): string => `sig${index}`;
   const indexOf = (signature: string): number => Number(signature.slice('sig'.length));
 
+  // A write that loads no account from a lookup table is sent as v1, as any client may.
+  const versionOf = (write: Write): number => (write.loadedWritable.length > 0 ? 0 : 1);
   const transaction = (write: Write) => ({
+    version: versionOf(write),
     transaction: {
       message: {
         header: { numRequiredSignatures: 1, numReadonlySignedAccounts: 0, numReadonlyUnsignedAccounts: 1 },
@@ -263,12 +266,19 @@ function ledger(initial: readonly Write[]) {
         );
       },
     }),
-    getTransaction: (signature: string) => ({
+    // Refuses, as a node does, a transaction of a later version than the request supports.
+    getTransaction: (
+      signature: string,
+      { maxSupportedTransactionVersion }: { maxSupportedTransactionVersion?: number },
+    ) => ({
       send: () => {
         fetched.push(signature);
         const index = indexOf(signature);
         const write = writes[index];
-        return Promise.resolve(write === undefined || unavailable.has(index) ? null : transaction(write));
+        if (write === undefined || unavailable.has(index)) return Promise.resolve(null);
+        if ((maxSupportedTransactionVersion ?? -1) < versionOf(write))
+          return Promise.reject(new Error(`transaction version (${versionOf(write)}) is not supported`));
+        return Promise.resolve(transaction(write));
       },
     }),
   } as unknown as SolanaRpc;

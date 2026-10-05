@@ -89,9 +89,8 @@ impl Archive for RpcClient {
                 transaction_details: Some(TransactionDetails::Accounts),
                 rewards: Some(false),
                 commitment: Some(CommitmentConfig::finalized()),
-                // The follower's Solana crates decode legacy and v0 transactions only; a block
-                // holding a v1 transaction is refused until fhevm-internal#2080.
-                max_supported_transaction_version: Some(0),
+                // The RPC refuses the whole block when one transaction is of a later version.
+                max_supported_transaction_version: Some(1),
             },
         )
         .await
@@ -106,9 +105,9 @@ impl Archive for RpcClient {
         self.get_transaction_with_config(
             &signature,
             RpcTransactionConfig {
-                encoding: Some(UiTransactionEncoding::Base64),
+                encoding: Some(UiTransactionEncoding::Json),
                 commitment: Some(CommitmentConfig::finalized()),
-                max_supported_transaction_version: Some(0),
+                max_supported_transaction_version: Some(1),
             },
         )
         .await
@@ -159,7 +158,7 @@ pub async fn block_checkpoint(
                 transaction_details: Some(TransactionDetails::None),
                 rewards: Some(false),
                 commitment: Some(CommitmentConfig::confirmed()),
-                max_supported_transaction_version: Some(0),
+                max_supported_transaction_version: Some(1),
             },
         )
         .await
@@ -341,6 +340,14 @@ mod tests {
 
     use anyhow::{anyhow, Result};
     use serde_json::Value;
+    use solana_client::{
+        client_error::{ClientErrorKind, Result as ClientResult},
+        nonblocking::rpc_client::RpcClient,
+        rpc_client::RpcClientConfig,
+        rpc_request::{RpcError, RpcRequest, RpcResponseErrorData},
+        rpc_sender::{RpcSender, RpcTransportStats},
+    };
+    use solana_commitment_config::CommitmentConfig;
     use solana_sdk::{pubkey::Pubkey, signature::Signature};
     use solana_transaction_status_client_types::{
         EncodedConfirmedTransactionWithStatusMeta, UiConfirmedBlock,
@@ -359,10 +366,13 @@ mod tests {
     use super::super::{
         accept_transaction, apply_prepared_block, BlockCheckpoint, BlockSink,
         FatalIngestError, IngestFailure, IngestionProgress, PreparedBlock,
-        StartPosition,
+        PreparedTransaction, StartPosition,
     };
-    use super::{catch_up, extends_checkpoint, first_missing_slot, Archive};
-    use crate::host::host_operations;
+    use super::{
+        block_checkpoint, catch_up, extends_checkpoint, fetch_block,
+        first_missing_slot, Archive,
+    };
+    use crate::host::{host_operations, DecodedInstruction};
     use crate::source::{BlockValidator, SealDecision, SealedBlock};
 
     /// Records every block it is handed, in order: two sinks fed the same chain hold equal
@@ -703,6 +713,146 @@ mod tests {
         assert!(is_fatal(&mismatch), "{mismatch:#}");
         assert_eq!(progress.applied, Some(checkpoint(40)));
         assert!(forking.blocks().is_empty());
+    }
+
+    /// Devnet slot 506183762 as its RPC served it: a block of legacy, v0 and v1 transactions,
+    /// listed with `transactionDetails: "accounts"`, and each of its two v1 calls into
+    /// `DEVNET_PROGRAM` fetched in both `json` and `base64`.
+    const DEVNET_SLOT: &str = include_str!(concat!(
+        env!("CARGO_MANIFEST_DIR"),
+        "/../../../solana/test-fixtures/rpc/devnet_v1_slot_506183762.json"
+    ));
+    const DEVNET_PROGRAM: &str = "BiSoNHVpsVZW2F7rx2eQ59yQwKxzU5NvBcmKshCSUypi";
+
+    /// Serves the captured slot, and refuses what devnet refuses: a response holding a v1
+    /// transaction, to a request that does not support version 1. It also refuses the
+    /// `transactionDetails: "none"` listing below version 1, which a real node answers, so every
+    /// archive read is held to version 1.
+    struct DevnetNode(Value);
+
+    #[async_trait::async_trait]
+    impl RpcSender for DevnetNode {
+        async fn send(
+            &self,
+            request: RpcRequest,
+            params: Value,
+        ) -> ClientResult<Value> {
+            let config = &params[1];
+            let response = match request {
+                RpcRequest::GetBlock if params[0] == self.0["slot"] => {
+                    match config["transactionDetails"].as_str() {
+                        Some("accounts") => Some(self.0["getBlock"].clone()),
+                        Some("none") => {
+                            let mut block = self.0["getBlock"].clone();
+                            block
+                                .as_object_mut()
+                                .unwrap()
+                                .remove("transactions");
+                            Some(block)
+                        }
+                        _ => None,
+                    }
+                }
+                RpcRequest::GetTransaction => params[0]
+                    .as_str()
+                    .and_then(|signature| {
+                        self.0["getTransaction"].get(signature)
+                    })
+                    .and_then(|encodings| {
+                        encodings
+                            .get(config["encoding"].as_str().unwrap_or("json"))
+                    })
+                    .cloned(),
+                _ => None,
+            };
+            let error = |code, message: String| {
+                ClientErrorKind::RpcError(RpcError::RpcResponseError {
+                    code,
+                    message,
+                    data: RpcResponseErrorData::Empty,
+                })
+                .into()
+            };
+            let Some(response) = response else {
+                return Err(error(
+                    -32601,
+                    format!("the capture holds no {request} {params}"),
+                ));
+            };
+            if config["maxSupportedTransactionVersion"]
+                .as_u64()
+                .is_none_or(|version| version < 1)
+            {
+                return Err(error(
+                    -32015,
+                    "Transaction version (1) is not supported by the requesting client".into(),
+                ));
+            }
+            Ok(response)
+        }
+
+        fn get_transport_stats(&self) -> RpcTransportStats {
+            RpcTransportStats::default()
+        }
+
+        fn url(&self) -> String {
+            "devnet capture".into()
+        }
+    }
+
+    /// fhevm-internal#2111: the archive's own reads rebuild a block holding v1 transactions.
+    #[tokio::test]
+    async fn the_archive_rebuilds_a_devnet_block_holding_v1_transactions() {
+        let archive = RpcClient::new_sender(
+            DevnetNode(serde_json::from_str(DEVNET_SLOT).unwrap()),
+            RpcClientConfig::with_commitment(CommitmentConfig::finalized()),
+        );
+        let prepared = fetch_block(
+            &archive,
+            506_183_762,
+            &DEVNET_PROGRAM.parse().unwrap(),
+        )
+        .await
+        .unwrap();
+        assert_eq!(prepared.block.executed_transaction_count, 11);
+        assert_eq!(
+            block_checkpoint(&archive, 506_183_762).await.unwrap(),
+            BlockCheckpoint {
+                slot: 506_183_762,
+                block_hash: prepared.block.block_hash,
+            }
+        );
+        // Payer, a program account and the Clock sysvar.
+        let accounts = [
+            "2dbChKurXcZj4iDQPdEPyYHJGaiAqJno2omaPjHCQ7EN",
+            "AWVYnCT2ZdLsWZf1X9KXatZhC2TyruRM22y8KZqVeupr",
+            "SysvarC1ock11111111111111111111111111111111",
+        ]
+        .map(|key| key.parse::<Pubkey>().unwrap().to_bytes())
+        .to_vec();
+        let call = |signature: &str, index, data| PreparedTransaction {
+            signature: signature.parse().unwrap(),
+            index,
+            instructions: vec![DecodedInstruction {
+                data: hex::decode(data).unwrap(),
+                accounts: accounts.clone(),
+            }],
+        };
+        assert_eq!(
+            prepared.transactions,
+            [
+                call(
+                    "38x9pAHxtWYiuCZ3qVNFszCooj2D6TdWDRdBXdnKAcFcT4Sg8aBjtMHgudoPETr4wDXQ2eZ14MUh13FNwyFMRURH",
+                    5,
+                    "0af09b9211b754da18000000000080cdcb4e5a1f77000000000000000002000200",
+                ),
+                call(
+                    "e4uvnv3G8GtKhwEveT6RhGYBQkSHKim8oh5mN8fgXATnBJ7YdYpL7mUnX1ScnFmWEeeMdXfApvmv27Zam34XAEj",
+                    10,
+                    "0aa9982018b754da180000000000a416b3cda02077000000000000000002000200",
+                ),
+            ]
+        );
     }
 
     fn sealed(

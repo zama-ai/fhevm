@@ -2044,10 +2044,10 @@ Consequences:
 
 Catch-up lists every block after the checkpoint. On mainnet a day is about 216,000 blocks, so it
 takes hours and needs an archive provider whose rate limits allow it; it fetches eight blocks at a
-time, each with up to eight `getTransaction` calls in flight. The listener's Solana crates decode legacy and v0
-transactions only, so `getBlock` asks for version 0, and the RPC refuses a block holding a v1
-transaction. Catch-up then retries that block until fhevm-internal#2080 moves the listener to crates
-that decode v1. A slot rewound for repair (DD-056) need not be inside the replay window, only in the
+time, each with up to eight `getTransaction` calls in flight. Its reads accept every transaction
+version (`maxSupportedTransactionVersion: 1`), because the RPC refuses a whole block that holds a
+later version than the request allows. Each transaction is fetched as JSON, which spells legacy, v0
+and v1 messages alike. A slot rewound for repair (DD-056) need not be inside the replay window, only in the
 archive's history.
 
 ## DD-060: A public decrypt names its stores beside the KMS routing
