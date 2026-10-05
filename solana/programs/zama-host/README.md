@@ -126,7 +126,7 @@ separate explicit choice, exactly like EVM.
 check lets an observer replay another user's verified input.
 
 This mirrors the EVM `InputVerification` coprocessor-threshold model; the gateway counterpart is the
-RFC-021 bytes32 path `InputVerification.verifyProofRequestSolana`. The host-listener reconstruct path
+chain-agnostic address RFC's bytes32 path `InputVerification.verifyProofRequestSolana`. The host-listener reconstruct path
 resolves the operand from `attestation.input_handle`. The shared verifier is
 `eip712::verify_coprocessor_input` (via `instructions::input_verification::verify_input_attestation`);
 the earlier standalone `verify_coprocessor_input`/`verify_input_and_bind`/`mock_input_verified_and_bind`
@@ -154,8 +154,9 @@ decryptability is represented only by `PublicDecryptLeaf`; it never rolls forwar
 
 The host has no test-only verification or handle-creation path. Tests that create handles seed the
 `Clock` and `SlotHashes` sysvars; missing previous-bank entropy fails closed exactly as it does in a
-deployed program (DD-014). Registered-signer threshold policy and real proof/transciphering
-validation are still external/open design items.
+deployed program (DD-014). The registered coprocessor signer set and threshold are settled
+(DD-041); syncing that set from the gateway and real proof/transciphering validation are still
+open (FUTURE_DESIGN.md §1).
 Trivial and random handle creation paths (now `fhe_execute` `TrivialEncrypt`/`Rand`/`RandBounded` steps —
 the standalone `trivial_encrypt_and_bind`/`fhe_rand*_and_bind` instructions were removed) include
 output entropy in handle derivation before recording the result in `TransientStore`. An output

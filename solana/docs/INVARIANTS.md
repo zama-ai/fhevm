@@ -84,7 +84,7 @@ the kms-worker test `a_public_leaf_the_record_serves_authorizes_the_handle` and 
 `every_leaf_verifies_and_tampering_fails`.
 
 **9. [RETIRED]** The instruction that removed a viewer went with the stored list
-(RFC 035, DD-048): allows are sealed on the write and never removed. A handle with no allows and
+(Solana access control RFC, DD-048): allows are sealed on the write and never removed. A handle with no allows and
 no public leaf is undecryptable by everyone, which is its author's choice, not
 a stranding — the next write declares the next handle's allows.
 
@@ -109,7 +109,7 @@ Confidential-token ships owner-gated wrappers that `invoke_signed` as the **toke
 (`allow_balance_viewers`, which re-writes the balance onto a handle allowed to the viewers, and
 `make_token_account_handle_public`); the mint authority has the same pair for the total supply, signed as the
 total-supply authority PDA (`allow_total_supply_viewers`, `make_total_supply_handle_public`). (fhevm-internal#1862 #13;
-RFC 035.) Pinned by `only_the_admin_changes_trust_roots_and_only_an_authority_changes_its_store`, which checks over
+Solana access control RFC.) Pinned by `only_the_admin_changes_trust_roots_and_only_an_authority_changes_its_store`, which checks over
 random instruction sequences that no Store's bytes change unless the authority it records signed; the planted bug
 `runtime-tests/planted-bugs/h2-fhe-execute-accepts-an-unsigned-witness.patch` must make it fail. This covers the default
 build; the preview-only `admin-sweep` build adds `close_owned_accounts`, which lets the upgrade authority close any
@@ -350,10 +350,10 @@ Pinned by `reports_a_wrong_emitted_handle_without_substituting_it` and `rejects_
 **29. [HOLDS]** Every transaction is independently interpretable: its
 instructions and inner instructions, including each execution's event,
 reconstruct its history with zero account reads and no sysvar state (updates
-echo the previous handle and declare the new handle's allows). A block from
-`getBlock` prepares into the same input as one from the stream.
+echo the previous handle and declare the new handle's allows). A block rebuilt
+from `getBlock` and `getTransaction` prepares into the same input as one from the stream.
 Pinned by the reconstruction walks such as `fhe_execute_walk_chains_transient_handles`, which take only transaction
-data, and by `rebuilds_a_slot_from_get_block_alone` and `shared_transaction_decoding_contract`.
+data, and by `rebuilds_a_slot_from_get_block_and_get_transaction` and `shared_transaction_decoding_contract`.
 
 **30. [HOLDS]** The leaf record can stop a decrypt from happening but can
 never be what allows one: the KMS connector verifies every proof against
@@ -619,7 +619,7 @@ Pinned by `rejects_more_than_max_ops`, `cost_snapshot_fhe_execute_max_steps` and
 **34. [OPERATIONAL]** Reconstruction fixtures compile only under
 `--features solana`; coverage exists only where CI passes that flag.
 
-**47. [RETIRED]** The standalone proof service is gone (RFC 035, DD-048). The
+**47. [RETIRED]** The standalone proof service is gone (Solana access control RFC, DD-048). The
 leaf record lives in each coprocessor's Merkle proof service database, written
 by its Merkle indexer and served by its Merkle proof server (DD-066, DD-067); the connector
 asks the next coprocessor as soon as one answers without a proof, fails or refuses, and after

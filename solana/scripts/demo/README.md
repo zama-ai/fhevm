@@ -110,7 +110,7 @@ manifest, passed in an environment variable, or exposed to the browser; the oper
 processes receive only the boot ID, token-file path, and allowed loopback origin. Open
 `http://127.0.0.1:5173/`: the page is static, and the dApp dev server proxies its `/api` calls to
 the operator (`test-suite/fhevm/demo/operator-server.ts`, loopback, the only holder of the keeper
-key, the proof token and the mock-USDC mint authority), adding the capability on the way. The
+key and the mock-USDC mint authority), adding the capability on the way. The
 operator also accepts the identity header `tailscale serve` injects for logins listed in
 `DEMO_OPERATOR_TAILSCALE_LOGINS`. Reloading the page requires no recovery step. `down` removes the
 exact boot's token file.

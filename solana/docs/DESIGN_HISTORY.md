@@ -3,24 +3,28 @@
 Decisions the Solana port no longer follows, kept in their original wording so a reader can see why
 a current decision looks the way it does. Each entry's status line names what replaced it; the
 replacing entry in [`DESIGN_DECISIONS.md`](DESIGN_DECISIONS.md) is the one the code follows. The
-vocabulary here predates [`GLOSSARY.md`](GLOSSARY.md) and is intentionally left as written.
+vocabulary here predates [`GLOSSARY.md`](GLOSSARY.md) and is intentionally left as written. When a
+later decision replaced only part of a live entry, the replaced wording is under
+[Replaced parts of live decisions](#replaced-parts-of-live-decisions).
 
-| Decision                                                                                    | Replaced by                  |
-| ------------------------------------------------------------------------------------------- | ---------------------------- |
-| DD-001 Store Handles In ACL Records, Not PDA Seeds                                          | DD-032, then DD-049          |
-| DD-005 Public Decrypt Is A Post-Creation Release                                            | DD-032, then DD-049          |
-| DD-006 Material Commitment Is Separate From ACL Authorization                               | DD-031                       |
-| DD-009 Operator Transfer Model Removed                                                      | removed; fhevm-internal#1692 |
-| DD-010 Token Disclosure Paths Are Label-Scoped                                              | DD-040                       |
-| DD-011 Transfer-And-Call Removed In Favor Of App-Driven CPI Composition                     | DD-042 composition           |
-| DD-018 Transfer-And-Call Refund Prepare/Finalize (replaced)                                 | DD-011                       |
-| DD-019 Confidential Transfer Persists Only Final Balance And Transferred-Amount ACL Records | DD-049                       |
-| DD-032 `EncryptedValue` + MMR Replaces Keyed-Nonce `AclRecord` (RFC-024)                    | DD-049                       |
-| DD-035 Standalone Untrusted Solana MMR Proof Service                                        | DD-048                       |
-| DD-036 Burn-Redemption Consume Authorizes By MMR Public-Decrypt Proof, Not Live Handle      | DD-045                       |
-| DD-037 `fhe_execute` Events — `emit_cpi!`-Only, No `emit!` Log Fallback (DD-033 addendum)   | DD-038                       |
-| DD-038 One Host-Owned Born-Public Lifecycle Batch Replaces Per-Operation Events             | removed; fhevm-internal#2079 |
-| DD-039 HCU Block Cap Meters The Signed `compute_subject`, Not A Separate Authority          | DD-047                       |
+| Decision                                                                                                   | Replaced by                  |
+| ---------------------------------------------------------------------------------------------------------- | ---------------------------- |
+| DD-001 Store Handles In ACL Records, Not PDA Seeds                                                         | DD-032, then DD-049          |
+| DD-005 Public Decrypt Is A Post-Creation Release                                                           | DD-032, then DD-049          |
+| DD-006 Material Commitment Is Separate From ACL Authorization                                              | DD-031                       |
+| DD-009 Operator Transfer Model Removed                                                                     | removed; fhevm-internal#1692 |
+| DD-010 Token Disclosure Paths Are Label-Scoped                                                             | DD-040                       |
+| DD-011 Transfer-And-Call Removed In Favor Of App-Driven CPI Composition                                    | DD-042 composition           |
+| DD-017 Role-Aware `fhe_execute` And Per-Op Bind Instructions Replace The RFC-024 `execute_frame` Prototype | DD-023                       |
+| DD-018 Transfer-And-Call Refund Prepare/Finalize (replaced)                                                | DD-011                       |
+| DD-019 Confidential Transfer Persists Only Final Balance And Transferred-Amount ACL Records                | DD-049                       |
+| DD-022 Witness PDAs Created Before The secp Consume (request → consume-once)                               | DD-040, DD-045               |
+| DD-032 `EncryptedValue` + MMR Replaces Keyed-Nonce `AclRecord` (RFC-024)                                   | DD-049                       |
+| DD-035 Standalone Untrusted Solana MMR Proof Service                                                       | DD-048                       |
+| DD-036 Burn-Redemption Consume Authorizes By MMR Public-Decrypt Proof, Not Live Handle                     | DD-045                       |
+| DD-037 `fhe_execute` Events — `emit_cpi!`-Only, No `emit!` Log Fallback (DD-033 addendum)                  | DD-038                       |
+| DD-038 One Host-Owned Born-Public Lifecycle Batch Replaces Per-Operation Events                            | removed; fhevm-internal#2079 |
+| DD-039 HCU Block Cap Meters The Signed `compute_subject`, Not A Separate Authority                         | DD-047                       |
 
 ## DD-001: Store Handles In ACL Records, Not PDA Seeds
 
@@ -198,6 +202,58 @@ rejected as a substitute: they are privilege-stripped veto tools, not receiver c
 (FUTURE_DESIGN §4). Some enum/error/event variants from the old flow remain inert to preserve Anchor
 discriminants (FUTURE_DESIGN §6).
 
+## DD-017: Role-Aware `fhe_execute` And Per-Op Bind Instructions Replace The RFC-024 `execute_frame` Prototype
+
+Status: superseded by DD-023.
+
+Context:
+
+RFC-024 sketched one batched `execute_frame(authorized_app_accounts[], steps[], actions[])` entry
+point and recorded removing an earlier `app_account_authority` signer that "was never validated by the
+host." The implementation diverged from that sketch and the reversal was not previously recorded here.
+
+Decision:
+
+The host exposes per-handle-class binding instructions — `fhe_binary_op_and_bind_output`,
+`fhe_ternary_op_and_bind_output`, `trivial_encrypt_and_bind`, `fhe_rand_and_bind`,
+`fhe_rand_bounded_and_bind` — plus one batched eval instruction for composed batches: `fhe_execute`. The
+eval instruction accepts mixed binary/ternary, trivial-encrypt, rand, and verified-input steps with
+instruction-local transients. It is the practical successor to `execute_frame`. (Input creation is not a
+separate instruction: external inputs enter through the `fhe_execute` `VerifiedInput` operand, DD-007.) Every persistent-output path takes a signer witness: either the fixed
+`app_account_authority: Signer` account, or an explicit per-output authority account in
+`remaining_accounts` that must be a signer and match `output_app_account`. The host then validates the
+metadata with `assert_output_acl_metadata` (`instructions/common.rs`). This reinstates and now
+enforces the signer the RFC had removed.
+
+The OpenZeppelin-track `execute_frame` ABI is intentionally not ported as a host instruction. Its
+useful ergonomic idea — symbolic previous results inside one instruction — is represented by
+`FheExecuteOperand::EarlierStep` in the host ABI and by the app-facing `zama-fhe::FheExecutionBuilder`. The SDK
+builder hides raw producer indices and `remaining_accounts` indices from app code, returns typed
+`Encrypted<T>` values for intermediate results, addresses Store slots through `Store.get` and
+`Store.set`, declares allows directly, and returns an opaque `FheExecution`.
+The `cpi` feature can resolve that batch through a pubkey-keyed account resolver, so app code does
+not hand-maintain ordered host accounts. Output authority, allows and public-decrypt policy remain
+enforced by the host ABI.
+
+Event transport is DD-044: every event goes through the event CPI or is not emitted.
+
+Rationale:
+
+A validated `app_account_authority == output_app_account` signer makes the app account that receives
+persistent ACL output prove control via a Solana signature, rather than trusting an unsigned
+`authorized_app_accounts[]` declaration. Per-output signer witnesses extend the same guarantee to
+multi-app evals without making authorization a free-form unsigned list. Per-class instructions remain
+for compatibility and individually testable handle-creation paths; `fhe_execute` provides batched multi-step
+composition with transient/persistent outputs when a single CPI is required.
+
+Consequences:
+
+This replaces the older RFC-024 `execute_frame` sketch and its "app_account_authority removed"
+note. Multi-account atomic effects (e.g. ERC7984 transfer crediting both sender and receiver) are
+expressed as one batch with per-output authority witnesses rather than a batch carrying an
+unsigned `authorized_app_accounts[]`. Future multi-app eval extensions should keep that signer-witness model
+and should not resurrect unsigned `authorized_app_accounts[]`.
+
 ## DD-018: Transfer-And-Call Refund Prepare/Finalize (replaced)
 
 Status: replaced (with DD-011, issue #1593)
@@ -253,6 +309,44 @@ Indexers replay transfer math from the `fhe_execute` batch and Yellowstone-provi
 intentionally no ACL permission record for decrypting the scratch success/debit values after the
 transaction. The burn flow still uses its own persistent scratch records today and should be considered
 separately if its rent profile becomes a product issue.
+
+## DD-022: Witness PDAs Created Before The secp Consume (request → consume-once)
+
+Status: superseded by DD-040 and DD-045.
+
+Historical decision, fully superseded. The disclosure witness was dissolved by DD-040
+(fhevm-internal#1704), and the burn-redemption witness was dissolved by DD-040's deferral closure
+(fhevm-internal#1763). Token disclosure is now the generic `disclose_secp` consumer of the stateless
+host verifier; burn act-once state is the sequential `PendingBurn` described by DD-045.
+
+Context:
+
+Disclosure and burn-redemption decrypt-release flows need a replay-safe, context-pinned, expiring
+request record so a cert can only be consumed once, against the context it was requested under.
+
+Decision:
+
+`confidential-token` creates request-witness PDAs **before** the secp consume:
+
+- `request_disclose_balance` / `request_disclose_amount` → `DisclosureRequest` PDA.
+- `request_burn_redemption` → `BurnRedemptionRequest` PDA.
+
+Each carries `kms_context_id` (pinned at request time — "the response cert must verify against this
+context's signer set, not the current one"), `request_nonce`, `expires_slot`, and `request_hash`
+(plus the handle / ACL record / material commitment + hash + key id it is bound to). The consume
+(`disclose_amount_secp` / balance / `redeem_burned_amount_secp`) verifies the secp cert against the
+pinned context and consumes the request once; `close_consumed_*` and `close_expired_*` reclaim rent.
+Replay / expiry / context-mismatch are rejected (Mollusk + live).
+
+Why / what worked:
+
+Request-before-consume gives a persistent, replay-once witness with explicit expiry and pinned context.
+This replaces the earlier "verify against `host_config.current_kms_context_id`" hazard where a cert for
+context N could be consumed after rotation to N+1.
+
+Open for debate:
+
+Expiry slot policy and request-PDA rent reclamation cadence are not yet designed for production.
 
 ## DD-032: `EncryptedValue` + MMR Replaces Keyed-Nonce `AclRecord` (RFC-024)
 
@@ -634,8 +728,443 @@ finite cap across the several identities a single application may hold, is still
 
 ## Replaced parts of live decisions
 
-Parts of decisions that are still adopted, in their original wording. The live entry in
-[`DESIGN_DECISIONS.md`](DESIGN_DECISIONS.md) states the current rule.
+A live entry in [`DESIGN_DECISIONS.md`](DESIGN_DECISIONS.md) states only its current rule. When a
+later decision replaces part of it, the replaced wording is kept here, under the entry's number.
+
+### DD-003, replaced in part by DD-031 and DD-040
+
+Superseded in part by DD-031 and DD-040: the host keeps no material or replay witnesses, so
+authorization is verified against the host's Store, delegation and KMS context accounts.
+
+Decision, as first written:
+
+Events are discovery and indexing signals. Production authorization must be rebuilt from
+policy-approved transaction/account data and verified against host-owned ACL,
+material, delegation, and replay witnesses.
+
+### DD-007, replaced in part by DD-023
+
+The input path was rebuilt around the `fhe_execute` operand. The change record and the replaced
+design, as first written:
+
+What changed:
+
+- The bespoke input verifier-set and the `verify_input_and_bind` Ed25519 path were REMOVED.
+- Inputs are now the `FheExecuteOperand::VerifiedInput` operand of `fhe_execute`. The earlier standalone
+  `verify_coprocessor_input` instruction and its `InputVerifiedEvent` receipt were **deleted**, along
+  with the short-lived output-taint binding (`VerifiedInputBinding` / output-ACL constraints): derived
+  outputs are unconstrained by the input.
+- The "caller is the attested contract" gate is enforced at input-consumption time
+  (`attestation.contract_address == program`, DD-047).
+- The `verify_input_and_bind` and standalone `mock_input_verified_and_bind` instructions were removed;
+  the shared verifier `zama_host::eip712::verify_coprocessor_input` (via
+  `instructions::input_verification::verify_input_attestation`) is invoked in-execution by `fhe_execute`.
+
+Replaced design (stub): the earlier `verify_input_and_bind` bound inputs with a native Ed25519
+"input verifier set" signing a `SolanaInputBindIntent`. Reversed because it was a Solana-only trust
+root divorced from the EVM coprocessor; the coprocessor attestation is the canonical trust root.
+
+### DD-008, replaced in part by DD-050
+
+DD-050's transaction-wide transient store holds intermediates across calls. Rationale and
+Consequences, as first written:
+
+Solana has no hidden transaction-local map a later instruction can read; temporary permission must be
+explicit. Keeping intermediates instruction-local avoids rent and prevents a temporary compute grant
+from silently becoming persistent ACL or decrypt authority.
+
+The earlier persisted one-shot `TransientSession` / capability-account tier (a cross-instruction
+handoff account with same-transaction creation proof) was **removed** (zama-ai/fhevm#2834): it was
+real rent-bearing state that added a permission leak surface for no path the port needed. A Store
+output derived from transient inputs still passes its authority check and declares its own allows;
+nothing is public unless the output says so.
+
+### DD-015, replaced in part by DD-043 and DD-050
+
+Superseded in part by DD-043: deterministic handle preimages carry neither `context_id` nor
+`op_index`, and `op_index` remains only in the rand seed. DD-050 adds the origin mask. The current
+preimage is DD-043's.
+
+Context, as first written:
+
+outputs — no per-output binding. The former persistent-output binding (the per-value account ID, plus an
+even earlier per-update `output_nonce_sequence` = that account's MMR `leaf_count` read at execution)
+was **removed** entirely — see "Binding removal" below.
+
+Binding removal (persistent-output handle binding deleted entirely):
+
+The persistent-output binding once folded two components into the handle hash: `output_nonce_sequence`
+(that account's MMR `leaf_count` read at execution) and its account ID. Both
+were vestiges of the retired keyed-nonce `AclRecord` (DD-001) and the root of the off-chain
+reconstruction complexity (leaf-count tracking + "hints"). Both are now **deleted**. A persistent output
+handle is now the plain `base_handle = computed_eval_handle(op, operands, scalar, fhe_type, chain_id,
+previous_bank_hash, unix_timestamp, context_id, op_index)` — byte-identical to the transient (local)
+handle. A Fable analysis confirmed the encrypted-value-ID binding was defense-in-depth: strictly _stricter_
+than EVM, never required for collision safety, so removing it makes Solana match EVM's handle shape
+exactly rather than weakening it.
+
+This cannot introduce a new collision between two _distinct_ ciphertexts. A handle collision that
+matters is two different ciphertext materials sharing one handle; material is fully determined by
+`(op / plaintext / rand-seed, operands, fhe_type)`, all of which live in `base_handle`. So two
+outputs with different material already differ in `base_handle` (birthday resistance made
+non-grindable by per-block entropy, unchanged by this deletion). The binding only made _repeated
+identical_ computations produce distinct handles; removing it means an identical recomputation now
+yields the identical handle — which is exactly EVM's behavior (`FHEVMExecutor` binds **no**
+per-output nonce, and **no** per-slot, per-caller or per-account value, for
+binary/ternary/trivial/unary/cast; its only counter is the global `counterRand` folded into the rand
+_seed_), so the deletion **improves** EVM parity. The original account and sequence binding are gone.
+
+The current transaction model supersedes that historical collision analysis: all
+result occurrences are recorded, including identical recomputations. Operand-bearing
+preimages include the transaction-origin mask; the journal determines that mask before
+recording the result. Equal handles refer to the same encrypted computation, while
+Store identity and explicit grants independently determine who may use it. Store slot
+writes use the initial snapshot and ordered effects, rather than a duplicate-handle
+rejection. Random outputs retain their nonce-derived seed. See the canonical preimage
+helpers in `state/mod.rs` and the current execution invariants.
+
+### DD-020, replaced in part by DD-040
+
+Superseded in part by DD-040: no witness or request pins a context any more. A certificate is
+accepted from any live context it names, and `destroy_kms_context` is the revocation lever.
+
+Decision, as first written:
+
+The VerifierSet subsystem was REMOVED. Witnesses and decrypt trust anchor to a `define_kms_context`
+singleton keyed by `kms_context_id` (`zama_host::kms_context_address(context_id)`, seed
+`[KMS_CONTEXT_SEED, context_id]` with a 32-byte id; `destroy_kms_context` exists for lifecycle). Decrypt
+and disclosure witnesses pin the `kms_context_id` they were minted under.
+
+Single source of truth, less divergence between a Solana-only set and the EVM KMS context. Invariant-
+tested. A request pins its context id so a cert minted under context N cannot be replayed after rotation
+to N+1.
+
+### DD-021, replaced in part by DD-040 and DD-065
+
+Superseded in part by DD-040 and DD-065: there is no witness or request context. `verify_public_decrypt`
+verifies the certificate against the live `KmsContext` that its `extra_data` names and returns that
+context id, so a caller can demand the current one.
+
+Decision, as first written:
+
+`zama_host::eip712::verify_kms_public_decrypt` recovers secp256k1 EVM signers from the cert
+(`recover_evm_address`), requires a **distinct-signer threshold** (`verify_threshold`) against the
+**witness-pinned `kms_context`'s** signer set / threshold (not the current context), **rejects high-s
+(malleable) signatures** (`signature[32..64] > SECP256K1_HALF_ORDER`), and requires
+`extract_kms_context_id(extra_data, current) == request kms_context_id`. `extract_kms_context_id` …
+
+### DD-026, replaced in part by DD-052
+
+The user-decrypt `extraData` debate is resolved by typed gateway fields. The chain-type marker is superseded by DD-052.
+
+Earlier text of the decision:
+
+- The input's `extraData` is the **coprocessor cert's EIP-712 `CiphertextVerification` extraData** — it
+  is NOT, and never was, the `0x03` Solana user-decrypt blob. The input identity itself is a plain
+  bytes32 host address (no version-byte blob).
+
+- PREVIOUSLY a Solana user-decrypt packed its ed25519 auth into an `extraData` blob with version byte
+  `0x03` (`0x03 ‖ context_id(32) ‖ ed25519(32) ‖ nonce(32) ‖ key_count(4) ‖ keys`), forwarded opaquely
+  through relayer/gateway and decoded by the KMS connector.
+
+Decision history:
+
+The 2026/06/12 Solana guild weekly (Manoranjith + Jad) objected that identity and authorization scope
+were being smuggled through `extraData` and should be a proper request type. A dedicated typed
+entrypoint (`userDecryptionRequestSolana`) resolved that first. `solanaUserDecryptionRequest` and
+its versioned blob replaced it, and `extraData` carries no Solana identity, scope or proof data. It
+is a named entry rather than an overload of `userDecryptionRequest`, so the EVM entries keep their
+generated binding names.
+
+### DD-027, replaced in part by DD-052
+
+The chain-type detector is superseded by DD-052.
+
+What didn't work:
+
+The reconciliation first relaxed this **unconditionally**, which weakened EVM — a CI integration test
+caught empty-contracts / wrong-sig being accepted on the EVM path.
+
+Branching on the chain type keeps EVM strictness intact while admitting Solana. The CI integration
+test that caught the regression now passes for both. This entry only keeps that split.
+
+### DD-040, replaced in part by DD-045 and DD-065
+
+Superseded in part by DD-065: the verifier takes no MMR inclusion proof and no Store; it reads only
+`host_config` and `kms_context`.
+
+Decision, as first written:
+
+A new host instruction `verify_public_decrypt` is a CPI-able, stateless verifier. It verifies a KMS
+`PublicDecryptVerification` secp256k1 threshold certificate plus an MMR public-leaf inclusion proof
+(`zama_solana_acl::authorize_public`, exact-handle, no roll-forward) and returns the proven
+`(handle, cleartext, context_id)` via `set_return_data` (96 bytes: `handle ++ cleartext ++
+context_id`, the last 32 bytes the verified context id, well under the 1024-byte limit). It creates nothing, mutates nothing, emits nothing, and takes no signer — all three accounts
+(`host_config`, `kms_context`, `encrypted_value`) are read-only. An app CPIs it, asserts the returned
+handle equals the handle it pinned at request time, then applies its own state transition; act-once
+and timeout live in the app's own state machine (a settled flag + deadline), which it needs anyway.
+This generalizes the DD-036 precedent (burn-redemption authorizes by MMR public-decrypt proof
+
+- cert) instead of the token's witness pattern. Note that DD-036's "rather than live state" half no
+  longer holds for redemption: DD-045 restored `current_handle == burned_handle` there, because one
+  `PendingBurn` per token account keeps the burned handle current. This verifier is the path where
+  authorizing a handle the account has since replaced still works, since it reads no live handle at
+  all.
+
+Earlier revisions of this DD verified against the CURRENT context
+only and framed a cert-after-rotation as a hazard to fail closed on; that framing is replaced here —
+rotation is no longer the revocation boundary, `destroy` is.
+
+Return-data-only to start: today's KMS cleartexts are ≤32 bytes; if larger types are ever revealed the
+fallback is a caller-provided scratch account. The proof-freshness (stale-proof) retry race is the
+known bounded-retry surface (#1687): an update between proof generation and consume moves the MMR
+peaks and fails the inclusion proof; the victim regenerates the proof and retries. The one wrong app
+pattern is binding consume logic to the live `current_handle` instead of the sealed handle — the
+sealed leaf is append-only, so the OLD sealed handle stays verifiable after an update (covered
+today by `mollusk_historical_proof_round_trip_after_two_updates`).
+
+Scope: this PR added the host verifier additively. Dissolving the confidential-token `DisclosureRequest`
+lifecycle (`request_disclose_*`, `disclose_*_secp`, `close_*_disclosure_request`,
+`state/disclosure_request.rs`) and re-expressing token disclosure as a thin consumer of this verifier
+landed in fhevm-internal#1704 (PR 2); the net code deletion is recorded in the Dissolution completed
+note below.
+
+Dissolution completed (fhevm-internal#1704, PR 2):
+
+PR 2 has landed. The confidential-token disclosure request lifecycle is deleted and re-expressed as a
+thin consumer of this verifier.
+
+Deleted from `confidential-token`: instructions `request_disclose_balance`, `request_disclose_amount`,
+`disclose_balance_secp`, `disclose_amount_secp`, `close_consumed_disclosure_request`,
+`close_expired_disclosure_request`; the `state/disclosure_request.rs` account (`DisclosureRequest`);
+the events `BalanceDisclosureRequestedEvent`, `AmountDisclosureRequestedEvent`, `BalanceDisclosedEvent`,
+`AmountDisclosedEvent`; and the helpers `assert_disclosure_request_witness`, `authorize_disclosed_handle`,
+`assert_current_balance_encrypted_value`, plus the now-orphaned `allow_public_decrypt` /
+`assert_token_amount_encrypted_value`.
+
+Added: ONE generic thin instruction `disclose_secp(kind, handle, cleartext, signatures, extra_data, proof)`
+(`instructions/disclose_secp.rs`) that CPIs `zama_host::verify_public_decrypt`, reads its return_data
+via `get_return_data` (asserting the program id is `zama_host` and the returned handle equals the
+caller-pinned `handle`), binds the disclosed Store to the named token state field's mint scope,
+canonical address, Store authority and slot key, and emits one event carrying that complete binding.
+
+Request side has no request account: a token owner or mint authority calls a confidential-token
+wrapper that validates one exact token state field, then signs the host `make_store_handle_public`
+CPI as the Store authority. There is no per-request PDA, no `kms_context_id` pin, and no
+`expires_slot`.
+
+Verify against the cert-named context: the cert is verified by the host against the `KmsContext` the
+cert names, for any live context (see "Any live context" above), not a request-time pin. (Originally
+this read "against the CURRENT context, context rotation fails closed"; replaced by
+fhevm-internal#1765 — `destroy` is now the revocation boundary, not rotation.)
+
+Idempotent by design: act-once is intentionally NOT enforced on-chain. Disclosure is idempotent
+information release with no replay marker; an app needing consume-once tracks it in its own state
+(the EVM-callback analogy).
+
+Burn-redemption was subsequently dissolved onto the stateless verifier. Its act-once state is the
+single `PendingBurn` account per token account described by DD-045.
+
+Deferral closed (fhevm-internal#1763):
+
+The burn-redemption witness has now been dissolved onto the same stateless verifier, closing the
+deferral above. Deleted: `request_burn_redemption`, both `close_*_burn_redemption_request`
+instructions, the `BurnRedemptionRequest` account (and its address / request-hash helpers), the
+`assert_burn_redemption_request_witness` + `assert_kms_public_decrypt_cert_for_request` helpers, and
+the `BurnRedemptionRequestedEvent`. Added: ONE thin `redeem_burned_amount(burned_handle,
+cleartext_amount, signatures, extra_data)`. It CPIs `zama_host::verify_public_decrypt`, asserts the
+certified handle equals the `burned_handle` pinned in `PendingBurn` and the certified cleartext
+equals `cleartext_amount`, requires the burned Store's current handle to be that handle, then pays
+out and closes `PendingBurn` (DD-045, DD-065). Every field the witness pinned is carried elsewhere
+(destination integrity by the redeem-time signer check, handle binding by `PendingBurn`, owner and
+mint by the Store), so the witness was pure scaffolding.
+
+The stateless verifier replaces the request-time KMS pin: the cert is verified against the context it
+names inside the verifier, not the witness's pinned `kms_context_id`. (This note originally said the
+verifier used `host_config.current_kms_context_id` and failed closed on rotation; replaced by
+fhevm-internal#1765, which accepts any live context and makes `destroy_kms_context` the revocation
+lever — see "Any live context" above.)
+
+### DD-041, replaced in part by DD-065
+
+Status: adopted
+
+Superseded in part by DD-065: public-decrypt consume transactions carry no MMR proof; their sizes
+are in `runtime-tests/tests/disclose_packet_fit.rs`.
+
+Input `CiphertextVerification` attestations are now verified against a **registered coprocessor
+signer set + configurable threshold**, matching EVM `InputVerifier`'s trust model, instead of the
+prior single hardcoded `coprocessor_signer` at threshold 1. The n-of-m recovery machinery already
+existed (`eip712::verify_threshold`, distinct-signer counting + high-s rejection, shared with the KMS
+cert path); this wires it into input verification.
+
+The set lives **inline in `HostConfig`**, not in a dedicated PDA (the `KmsContext` shape was the other
+option). `HostConfig` gains `coprocessor_signers: [[u8; 20]; MAX_COPROCESSOR_SIGNERS]` (cap 8) +
+`coprocessor_signer_count: u8` + `coprocessor_threshold: u8`, replacing the single `[u8; 20]`. A
+fixed-capacity array keeps the singleton's byte layout **pinned** (the account serializes to the same
+size regardless of how many signers are active), and avoids threading a second account through
+`fhe_execute`, which is byte-tight. The cap is 8: comfortably above realistic coprocessor-quorum sizes
+while bounding both the account size (+142 bytes vs the single-signer layout; current
+`HostConfig::SPACE` is 320, after the 32-byte KMS context id and the DD-058 pause flags) and
+the worst-case per-attestation recovery cost. Rotation is admin-driven today via the
+admin-gated `set_coprocessor_signers` instruction (same admin/pause-neutral pattern as the other
+`set_*` config setters); a gateway-sync authority would drive it from the EVM `GatewayConfig`
+coprocessor registry in production.
+
+Registration invariants (mirroring the KMS-context rules): non-empty set, within the cap,
+`1 <= threshold <= len`, no duplicate signer (distinct-signer counting would otherwise silently raise
+the effective quorum), no zero-address signer. Enforced identically by `initialize_host_config` and
+`set_coprocessor_signers` via one shared validator. `InitializeHostConfigArgs` now carries
+`coprocessor_signers: Vec<[u8; 20]>` + `coprocessor_threshold` (no legacy single-signer field — this
+is a no-compat branch); the pinned `HostConfig` layout change is resynced across the IDL, the ABI
+golden manifest, and every mirrored fixture.
+
+**Signatures carried equal the threshold, not the party count.** A verifier needs `t` valid distinct
+signatures over the attestation; the coprocessor sends `t`, not `n`. This holds for **both** EIP-712
+attestation families — coprocessor `CiphertextVerification` inputs and KMS `PublicDecryptVerification`
+certs — so the carried EIP-712 signature payload scales with `t` (t x 65 bytes), independent of how
+many signers are registered. A threshold-4 `confidential_transfer` transaction (4 x 65B sigs over the
+real token account list) serializes to **989 bytes**, well inside the 1232-byte
+(`solana_packet::PACKET_DATA_SIZE`) single-packet limit.
+
+Public-decrypt **consume** transactions additionally carry an MMR inclusion proof whose size scales
+with MMR depth (depth x 32B), so high threshold x deep MMR is the binding corner. After
+fhevm-internal#1704 the consume path is the thin `disclose_secp` (CPIing the stateless
+`verify_public_decrypt`); its transaction is ~24B **larger** than the retired `disclose_amount_secp`
+(dropping the DisclosureRequest witness account is offset by the added `zama_program` account, and the
+cleartext widened from a `u64` to the raw 32-byte `uint256` the verifier signs over), so the envelope
+narrowed. Measured `disclose_secp` wire sizes: `t=7`/depth-0 = 917B (fits), while `t=7`/depth-10 =
+1237B, `t=9`/depth-10 = 1367B, and `t=7`/depth-20 = 1557B all **overflow** one packet. The
+single-packet envelope for consumes is therefore effectively `t=7` at depth 0 — any nonzero proof
+depth (or `t>=9`) needs the scratch-account two-transaction fallback reserved in fhevm-internal#1704.
+
+Relates to DD-007 (input verification model) and closes the FUTURE_DESIGN §1 / EVM_PARITY "single
+coprocessor signer at threshold 1" fragile item.
+
+### DD-044, replaced in part by DD-048, DD-056, DD-058 and DD-061
+
+Status: adopted
+
+Revised by DD-056: `fhe_execute` also emits, one event per execution carrying what the host decided.
+The rule below, that only administration emits, no longer covers that event.
+DD-058 adds `pause`, `unpause` and `set_pauser`, so the instruction and event counts below are out of
+date, and zama-host has build features again (`admin-sweep`, `cleartext`). The delegation facts
+recorded under Decision no longer hold: the connector fetches and checks the delegation record on a
+delegated decrypt (DD-048, DD-061; INVARIANTS #27).
+
+Context:
+
+DD-037 deleted the `emit!` log fallback for `fhe_execute` events, on the grounds that no consumer read
+logs and the fallback hid a stranding case. The admin and config events were left as they were: emitted
+with `emit!`, behind a default-on `emit-events` cargo feature, described in the code as "indexing
+hints". That left three problems.
+
+The feature made the shipped IDL misleading. The event structs were declared unconditionally, so the
+IDL advertised all nine of them under any feature set; what `anchor build -p zama_host --
+--no-default-features` removed — the build the e2e deploys — was the code that emits seven of them. An
+reader of the IDL would wait forever for an event the deployed program never sends.
+
+The transport did not match the claim. A log can be truncated by whichever RPC provider a reader goes
+through, so a logged event is a hint rather than a delivery. That is fine for something you can
+reconstruct and not fine for something you cannot, and "indexing hint" did not distinguish the two.
+
+And the grouping was wrong. `UserDecryptionDelegationUpdatedEvent` sat with the admin events, but
+`delegate_for_user_decryption` takes a `delegator: Signer` and no admin: any user may delegate their
+own decrypt rights. It is a user action, not administration.
+
+Decision:
+
+There are two options for an event and no third. Either it is emitted unconditionally through the event
+CPI, or it is not emitted at all and off-chain readers reconstruct it from instruction data over
+Yellowstone, which is the normal path. `emit!` is not used anywhere in `zama-host`, and the
+`emit-events` feature is deleted.
+
+Which option an event gets is decided by whether the instruction is administration, and by nothing
+else. An admin instruction changes a protocol-level setting that off-chain components have to be able
+to query directly, so it emits. Everything else is reconstructed on demand.
+
+The five admin and config events — `HostConfigUpdatedEvent`,
+`DenyScopeUpdatedEvent`, `HcuAppTrustUpdatedEvent`, `NewKmsContextEvent`, `KmsContextDestroyedEvent` —
+take the first option. Their eleven instructions gain Anchor's `#[event_cpi]` accounts
+(`event_authority`, `program`), which is a visible ABI change: `initialize_host_config` and
+`define_kms_context` go from four accounts to six, `destroy_kms_context` from three to five,
+`set_deny_scope` and `set_hcu_app_trusted` from five to seven, and the six `HostAdmin` config setters
+from two to four.
+
+Note that no in-tree component reads any of the five today; the only off-chain reader of host config
+state reads the account, not an event (`host-listener`'s `parse_host_config`). That is deliberate and is
+not an argument against emitting them: the transport exists because the category calls for it, so that
+a component which needs an admin change does not have to replay instruction data to find one. The test
+is the category, not the current existence of a reader — otherwise the rule would flip every time
+somebody wrote or deleted a reader.
+
+`UserDecryptionDelegationUpdatedEvent` takes the second option and is deleted, for the categorical
+reason above: delegating is a user ability, so it is reconstructed from `delegate_for_user_decryption`
+instruction data like every other user action. Two facts about delegation that are true but are _not_
+the reason, recorded so they are not mistaken for it: nothing in the request path consumes delegation
+at all (INVARIANTS #27 records the gap — the KMS connector's `verify_delegation` checks an
+already-decoded record against its canonical PDA and fetches nothing, its only callers are its own unit
+tests, and the signed user-decrypt payload has no delegation field), and a reader, when it arrives,
+will have to fetch the record and hand it to that checker.
+
+`fhe_execute`'s event shares one emitter with the admin events (`event_cpi.rs`), instead of keeping
+its own copy of the expansion.
+
+Rationale:
+
+Reliable delivery costs an account pair on the instruction and a self-CPI per emission. That is nothing
+on an admin instruction, which runs when an operator changes configuration, and would be real weight on
+one event per compute step — which is why the per-step shapes are still not emitted. DD-003 said the
+same thing in weaker terms ("events are indexing hints"); this entry replaces that framing for
+`zama-host` but not its other half, which is that authorization never rests on an event. An execution
+emits one event with what the host decided (DD-056); its steps stay in instruction data.
+
+Anchor's `emit_cpi!` macro is not used, though the bytes it produces are. It reads a binding named
+`ctx`, and six of the eleven instructions emit through a shared `emit_config_updated` helper that has
+no `ctx`; using the macro would mean copying a nine-field event literal into each of them. One
+hand-written emitter takes the event authority as an argument and serves every call site.
+
+The tag and the payload encoding come from anchor-lang, so they track upstream; only the assembly is
+ours. What happens if the assembly itself drifts is worth stating precisely, because it is less than it
+looks. A wrong tag fails the transaction: `dispatch` routes on the tag, and an unrouted instruction hits
+the fallback. Past that, Anchor's generated `__event_dispatch` checks that the _first_ account is a
+signer and is the canonical event authority — and nothing else. It never reads the event data, and it
+ignores any account after the first. So an extra account or a changed payload encoding would not be
+caught by the runtime at all. What catches those is two tests, and they are the reason the emitter
+returns an `Instruction` as a value: `event_transport.rs`'s unit test asserts the built instruction's
+program, account count, signer and writable flags, data length, and that its data is the bytes
+`emit_cpi!` would send, and `host_mollusk.rs`'s
+`sole_emitted_event` reads an event back out of the inner instructions and asserts one account, the
+canonical authority, and every payload field. Those two cover `FheExecutedEvent` and
+`NewKmsContextEvent`. Keep it that way: if they ever stop being covered, this becomes an unchecked copy
+of an upstream wire format.
+
+Consequences:
+
+The `--no-default-features` build in the (since retired) `setup-solana-side.sh` is gone, since
+zama-host has no features left to vary. Callers of the eleven instructions pass two more accounts:
+the Mollusk fixtures and the (since retired) e2e live client were updated here, and there were no
+TypeScript callers yet. `dead-surface-check.sh`'s
+never-emitted-event check learned the shared emitter, without which it would have reported all eight
+surviving events as dead.
+
+### DD-045, replaced in part by DD-048, DD-049 and DD-065
+
+Superseded in part by DD-065: settlement and disclosure take no proof, and disclosure reads no token
+state.
+
+Superseded in part by DD-048 and DD-049: allows are sealed on the write and the Store model replaces per-value accounts.
+
+Earlier text:
+
+`ConfidentialBurnEvent` intentionally does not duplicate the MMR `leaf_index`. Settlement binds the
+pending account to the burned Store and handle; the supplied proof carries its own leaf index and
+is checked against live peaks. The connector obtains that proof by handle from the coprocessors'
+leaf record, so an event index would be redundant rather than an authorization input.
+
+Disclosure names a token state kind and validates its entire binding before emitting: mint scope,
+canonical Store, Store authority, slot key and handle proof. Scope-only validation was rejected
+because two fields within the same mint would remain interchangeable in downstream events.
 
 ### DD-048, replaced in part by DD-049
 
@@ -681,6 +1210,20 @@ DD-066 moved the leaf record out of the host listener, into the Merkle proof ser
 > […] and lets the coprocessors, which already hold every instruction, own the record instead of
 > a fourth service replaying the chain.
 
+### DD-049, replaced in part by DD-065
+
+Superseded in part by DD-065: generic disclosure emits the certified handle and cleartext and reads
+no Store; only the KMS connectors check exact-handle MMR proofs.
+
+Earlier text:
+
+Adopted with RFC 035 (fhevm PR #3883). No compatibility with the retired per-value account model.
+
+Decryption names each handle's Store beside the KMS routing (DD-060) and uses exact-handle MMR proofs. Current-slot publication …
+
+This supersedes older per-value PDA seeds, StoredValue/PersistentOutput APIs, standalone
+`make_handle_public`, v3 account extraData, and receipt-based transfer composition in this log.
+
 ### DD-056, replaced in part by DD-066
 
 DD-066 moved the leaves to the Merkle indexer, which records them with the emitted handles. The
@@ -695,6 +1238,28 @@ listener's replay repair leaves the record alone.
 
 > Leaves are not reverted: a replayed write must reproduce the leaves recorded for it, or the
 > listener stops. So a replay repairs computation rows, not a bug that recorded wrong leaves.
+
+### DD-060, replaced in part by DD-065
+
+Superseded in part by DD-065: the host verifier no longer checks the public leaf; the KMS connectors
+do.
+
+Recorded in zama-ai/fhevm#4120. Supersedes the v4 `extraData` carrier of DD-049.
+
+Earlier text:
+
+A Solana public decrypt used to carry its Store inside `extraData` as version 4:
+`0x04 ‖ contextId ‖ encryptedStore`. `extraData` is the KMS routing field on EVM, and the KMS signs
+it, so the Store became part of a signed field whose version space EVM owns. A request could name
+only one Store, and every layer (relayer, Gateway, connector, host verifier, SDK) had to parse a
+Solana-only version.
+
+connector keeps them in `handle_encrypted_stores` and proves each handle against its own Store in
+one snapshot. The host verifier reads the context from v1 or v2 exactly as EVM `KMSVerifier`
+does.
+
+The KMS certificate no longer commits to the Store. It never bound it: the host verifier checks
+the public leaf against the Store it is given (INVARIANTS #22). The Solana entry …
 
 ### DD-062, replaced in part by DD-066
 

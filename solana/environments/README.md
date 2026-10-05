@@ -13,7 +13,7 @@ so no program keypair exists in the repository and localnet is not an environmen
 
 | File | Cluster | Use |
 | --- | --- | --- |
-| `preview-env.json` | Solana devnet, and the test validator | the ids every client compiles in; `zama_host` gets `admin-sweep`, which enables `host wipe` |
+| `preview-env.json` | Solana devnet, and the test validator | the ids every client compiles in; every program gets `admin-sweep`, which adds the preview-only `close_owned_accounts` that `host wipe` and the preview recovery use |
 
 A durable Zama (zama-devnet, zama-testnet, mainnet) is a further file with its own ids (DD-051).
 Chain id, RPC URLs and keypairs are runtime config and live in `ci/preview-env` and Helm

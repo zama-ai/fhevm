@@ -54,10 +54,12 @@ trusted for authorization.
 
 ## Design choices that shape everything
 
-- **Instruction data is the reconstruction source.** The ACL lifecycle is
-  event-free (DD-033): the listener re-derives every output handle from raw
-  transaction bytes with the program's own derivation functions, so replay
-  from bytes alone reconstructs full history (INVARIANTS #28, #29).
+- **The transaction is the reconstruction source.** Store changes emit no ACL
+  events (DD-033): instruction data describes each execution and its Store
+  effects, and the execution's one `FheExecutedEvent` carries the result
+  handles the host derived. The listener stores those handles and re-derives
+  them only as a check (DD-056), so replaying transactions alone
+  reconstructs full history (INVARIANTS #28, #29).
 - **Shared encrypted store.** One host-owned PDA per `(program, authority, scope)`
   contains bounded named slots and a shared append-only MMR. Slots hold current
   handles; permission leaves authorize exact handles even after slot replacement.
