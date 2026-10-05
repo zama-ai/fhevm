@@ -1,8 +1,13 @@
-use std::time::Duration;
+use std::{path::PathBuf, str::FromStr, sync::Arc, time::Duration};
 
 use alloy::primitives::Address;
 use alloy::providers::{ProviderBuilder, WsConnect};
+use alloy::signers::{
+    aws::{aws_sdk_kms, AwsSigner},
+    local::PrivateKeySigner,
+};
 use alloy::transports::http::reqwest::Url;
+use anyhow::Context;
 use clap::Parser;
 use consensus_detector::Config;
 use fhevm_engine_common::{
@@ -10,6 +15,7 @@ use fhevm_engine_common::{
         apply_gcs_mode_search_path, connect_pool_with_options_and_connect_options,
         resolve_database_url_from_option,
     },
+    types::{CoproSigner, SignerType},
     utils::DatabaseURL,
 };
 use humantime::parse_duration;
@@ -29,8 +35,11 @@ struct Args {
     #[arg(long)]
     database_url: Option<DatabaseURL>,
 
-    /// Postgres pool size.
-    #[arg(long, default_value_t = 4)]
+    /// Postgres pool size. The detector runs ~11 concurrent tasks (state-hash
+    /// uploader, manifest publisher, peer downloader, healer, metrics, consensus
+    /// pass) and `PgListener` parks one connection for the process lifetime, so a
+    /// small pool starves under load and the acquire timeout kills the service.
+    #[arg(long, default_value_t = 16)]
     database_pool_size: u32,
 
     /// Gateway RPC URL (websocket).
@@ -62,9 +71,15 @@ struct Args {
     #[arg(long, default_value = "60s", value_parser = parse_duration)]
     commitment_timeout: Duration,
 
-    /// This operator's S3 bucket. Omit to disable GCS uploads.
+    /// This operator's S3 bucket, or `none` to explicitly disable uploads.
     #[arg(long)]
-    my_bucket: Option<String>,
+    my_bucket: String,
+
+    /// Read per-handle manifest faults and an optional healing pause once at startup.
+    /// An absent file disables injection; invalid or unreadable files fail startup.
+    /// Intended for controlled E2E/devnet/testnet exercises.
+    #[arg(long, value_name = "CONFIG_FILE")]
+    dangerous_drift_injection: Option<PathBuf>,
 
     /// S3 endpoint override (e.g. `http://object-store:9000`).
     #[arg(long)]
@@ -74,6 +89,90 @@ struct Args {
     #[arg(long, default_value_t = 256)]
     state_hash_batch_limit: i64,
 
+    /// Interval between host-block discovery ticks. The same tick also seals
+    /// and publishes already-tracked blocks. After bootstrap, new heights
+    /// arrive via parent→child discovery, with a 5-block lookback for late
+    /// producer rows. A longer interval delays those steps by up to one
+    /// period; host-row pruning (`host_chain_blocks_valid` retention: 10,000
+    /// finalized blocks and one week since ingestion) can drop a parent before
+    /// its child is seen.
+    #[arg(long, default_value = "10s", value_parser = parse_duration)]
+    manifest_discovery_interval: Duration,
+
+    /// Override the default publication cadence for one host chain
+    /// (`CHAIN_ID:CADENCE`). Repeatable. Defaults remain Ethereum mainnet,
+    /// Sepolia, and Hoodi `5`, and Polygon, Amoy, and unknown chains `30`.
+    /// Applied only to newly inserted rows; every coprocessor in the fleet
+    /// must use the same mapping.
+    #[arg(
+        long,
+        value_name = "CHAIN_ID:CADENCE",
+        action = clap::ArgAction::Append,
+        value_parser = parse_manifest_publication_cadence
+    )]
+    manifest_publication_cadence: Vec<(i64, i64)>,
+
+    /// Delay between local manifest publication retries.
+    #[arg(long, default_value = "1m", value_parser = parse_duration)]
+    manifest_publication_retry_delay: Duration,
+
+    /// Additional publication attempts after the initial attempt, including
+    /// transient S3 failures. Exhausting this budget skips that publication
+    /// identity and does not stall descendants. The next due object is still
+    /// the next `block_number mod K == 0`. After a later object publishes, the
+    /// nearest skipped ancestor is retried once (`retry_count + 1` total). If
+    /// that retry succeeds, the next older skip can be peeled the same way.
+    #[arg(long, default_value_t = 30)]
+    manifest_publication_retry_count: u32,
+
+    /// Delay after publication before the first peer verification attempt.
+    #[arg(long, default_value = "10s", value_parser = parse_duration)]
+    manifest_verification_delay: Duration,
+
+    /// Delay between peer verification retries.
+    #[arg(long, default_value = "10s", value_parser = parse_duration)]
+    manifest_verification_retry_delay: Duration,
+
+    /// Additional peer verification attempts after the initial attempt.
+    #[arg(long, default_value_t = 59)]
+    manifest_verification_retry_count: u32,
+
+    /// Concurrent ct64 downloads per healing pass.
+    #[arg(long, default_value_t = 8, value_parser = clap::value_parser!(i64).range(1..))]
+    manifest_healing_batch_size: i64,
+
+    /// Fallback poll while waiting for `event_healing_work`.
+    #[arg(long, default_value = "30s", value_parser = parse_duration)]
+    manifest_healing_poll_interval: Duration,
+
+    /// Delay after detection before an uncontained ct64 drift is healed anyway.
+    /// Containment reduces propagation; verification detects what it misses.
+    #[arg(long, default_value = "5m", value_parser = parse_duration)]
+    manifest_healing_containment_timeout: Duration,
+
+    /// Failed ct64 healing attempts before a finding is abandoned, one every
+    /// 30s. A finding that can never heal is abandoned at once.
+    #[arg(long, default_value_t = 120, value_parser = clap::value_parser!(i32).range(1..))]
+    manifest_healing_max_attempts: i32,
+
+    /// Wall-clock stall with no newly computed handle before missing
+    /// ciphertext may be sealed as uncomputed. A computed handle resets it.
+    #[arg(long, default_value = "5m", value_parser = parse_duration)]
+    incomplete_block_timeout: Duration,
+
+    /// Host-chain lag, in due manifests (publication periods), before missing
+    /// ciphertext may be sealed as uncomputed.
+    #[arg(long, default_value_t = 3)]
+    incomplete_manifest_max_lag: u32,
+
+    /// Manifest signer implementation.
+    #[arg(long, value_enum, default_value = "private-key")]
+    signer_type: SignerType,
+
+    /// Manifest signing key when `--signer-type private-key` is selected.
+    #[arg(long)]
+    private_key: Option<String>,
+
     #[arg(
         long,
         value_parser = clap::value_parser!(Level),
@@ -81,9 +180,21 @@ struct Args {
     )]
     log_level: Level,
 
+    /// Address for the Prometheus metrics server.
+    #[arg(long)]
+    metrics_addr: Option<String>,
+
+    /// Manifest gauge refresh interval in seconds.
+    #[arg(long, value_parser = clap::value_parser!(u32).range(1..))]
+    gauge_update_interval_secs: Option<u32>,
+
     /// Print the compiled-in coprocessor stack version and exit.
     #[arg(long)]
     stack_version: bool,
+}
+
+fn parse_manifest_publication_cadence(value: &str) -> Result<(i64, i64), String> {
+    consensus_detector::manifest_consensus::parse_publication_cadence_override(value)
 }
 
 fn install_signal_handlers(cancel: CancellationToken) -> anyhow::Result<()> {
@@ -116,18 +227,77 @@ async fn main() -> anyhow::Result<()> {
         .with_max_level(args.log_level)
         .init();
 
+    let dangerous_drift_injection = args
+        .dangerous_drift_injection
+        .as_deref()
+        .map(consensus_detector::manifest_consensus::drift_injection::DriftInjection::load)
+        .transpose()?
+        .flatten();
+
+    let my_bucket = match args.my_bucket.as_str() {
+        "none" => None,
+        "" => anyhow::bail!("--my-bucket must name a bucket or be the literal `none`"),
+        bucket => Some(bucket.to_owned()),
+    };
+    let manifest_signer: Option<CoproSigner> = match my_bucket.as_ref() {
+        Some(_) => Some(match args.signer_type {
+            SignerType::PrivateKey => {
+                let private_key = args.private_key.as_deref().context(
+                    "--private-key is required when manifest publication uses private-key signing",
+                )?;
+                Arc::new(PrivateKeySigner::from_str(private_key.trim())?)
+            }
+            SignerType::AwsKms => {
+                let key_id = std::env::var("AWS_KEY_ID")
+                    .context("AWS_KEY_ID is required when manifest publication uses AWS KMS")?;
+                let aws_config =
+                    aws_config::load_defaults(aws_config::BehaviorVersion::latest()).await;
+                let client = aws_sdk_kms::Client::new(&aws_config);
+                Arc::new(AwsSigner::new(client, key_id, None).await?)
+            }
+        }),
+        None => None,
+    };
+
+    let database_url = resolve_database_url_from_option(args.database_url.clone())?;
+    let gcs_mode = fhevm_engine_common::versioning::resolve_gcs_mode(database_url.as_str()).await?;
+
     let config = Config {
         service_name: args.service_name.clone(),
-        database_url: resolve_database_url_from_option(args.database_url.clone())?,
+        database_url,
         database_pool_size: args.database_pool_size,
+        gcs_mode,
         gateway_config_address: args.gateway_config_address,
         log_level: args.log_level,
+        metrics_addr: args.metrics_addr,
+        gauge_update_interval_secs: args.gauge_update_interval_secs,
         poll_interval: Duration::from_secs(args.poll_interval_secs),
         commitment_poll_interval: args.commitment_poll_interval,
         commitment_timeout: args.commitment_timeout,
-        my_bucket: args.my_bucket.clone(),
+        my_bucket,
         s3_endpoint: args.s3_endpoint.clone(),
         state_hash_batch_limit: args.state_hash_batch_limit,
+        manifest_consensus: consensus_detector::manifest_consensus::Config {
+            dangerous_drift_injection,
+            discovery_interval: args.manifest_discovery_interval,
+            publication_retry_delay: args.manifest_publication_retry_delay,
+            publication_retry_count: args.manifest_publication_retry_count,
+            verification_delay: args.manifest_verification_delay,
+            verification_retry_delay: args.manifest_verification_retry_delay,
+            verification_retry_count: args.manifest_verification_retry_count,
+            healing_batch_size: args.manifest_healing_batch_size,
+            healing_poll_interval: args.manifest_healing_poll_interval,
+            healing_containment_timeout: args.manifest_healing_containment_timeout,
+            healing_max_attempts: args.manifest_healing_max_attempts,
+            incomplete_block_timeout: args.incomplete_block_timeout,
+            incomplete_manifest_max_lag: args.incomplete_manifest_max_lag,
+            publication_cadence_overrides:
+                consensus_detector::manifest_consensus::publication_cadence_overrides(
+                    args.manifest_publication_cadence,
+                )
+                .map_err(anyhow::Error::msg)?,
+        },
+        manifest_signer,
     };
 
     info!(
@@ -166,16 +336,13 @@ async fn main() -> anyhow::Result<()> {
         }
     };
 
-    // consensus-detector's data plane lives in the versioned GCS schema
-    // (`"gcs-<stack version>"`, from the hard-coded `STACK_VERSION`). Pin every
-    // pooled connection's search_path to `"gcs-<version>",public` so unqualified
-    // table references resolve to the GCS copies first, falling back to public
-    // for shared tables (e.g. `upgrade_state`, not duplicated into the GCS schema).
+    // Each Blue/Green instance uses the schema selected from its compiled stack
+    // version. Green resolves GCS copies first; Blue stays in public.
     let (pool, _refresh) = connect_pool_with_options_and_connect_options(
         &config.database_url,
         PgPoolOptions::new().max_connections(config.database_pool_size),
         Some(&cancel),
-        apply_gcs_mode_search_path(true),
+        apply_gcs_mode_search_path(config.gcs_mode),
     )
     .await?;
 

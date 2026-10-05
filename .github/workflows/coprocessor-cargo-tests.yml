@@ -33,6 +33,9 @@ jobs:
               - coprocessor/fhevm-engine/**
               - coprocessor/proto/**
               - host-contracts/rust_bindings/**
+              # consensus-detector depends on these crates by path.
+              - shared/block-manifest/**
+              - shared/ciphertext-attestation/**
   cargo-tests:
     name: coprocessor-cargo-test/${{ matrix.service }}
     needs: check-changes
@@ -105,6 +108,11 @@ jobs:
             runner: runs-on=${{ github.run_id }}/runner=16cpu-linux-x64/spot=false/volume=80gb
           - service: common
             package: fhevm-engine-common
+            needs_localstack: false
+            needs_foundry: false
+            runner: runs-on=${{ github.run_id }}/runner=4cpu-linux-x64/spot=false
+          - service: scheduler
+            package: scheduler
             needs_localstack: false
             needs_foundry: false
             runner: runs-on=${{ github.run_id }}/runner=4cpu-linux-x64/spot=false

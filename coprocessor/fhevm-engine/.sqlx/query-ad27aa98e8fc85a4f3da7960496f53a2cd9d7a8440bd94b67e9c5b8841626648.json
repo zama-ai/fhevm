@@ -1,0 +1,17 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n                UPDATE block_manifest_state\n                   SET publication_error_count = $4,\n                       publication_last_error = 'host block orphaned; extra attempt not granted',\n                       updated_at = NOW()\n                 WHERE consensus_epoch = $1\n                   AND host_chain_id = $2\n                   AND block_hash = $3\n                ",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Text",
+        "Int8",
+        "Bytea",
+        "Int8"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "ad27aa98e8fc85a4f3da7960496f53a2cd9d7a8440bd94b67e9c5b8841626648"
+}

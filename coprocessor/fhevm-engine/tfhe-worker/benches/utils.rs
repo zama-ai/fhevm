@@ -1092,6 +1092,8 @@ pub async fn insert_tfhe_event_with_dependence_chain(
         log_index: log.log_index,
         operand_boundary_mask: Some(operand_boundary_mask),
         is_executor_minted: true,
+        is_fallback_grant: false,
+        is_synthetic: false,
     };
     db.insert_tfhe_event(tx, &event).await
 }

@@ -1,0 +1,22 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n        SELECT CEIL(EXTRACT(EPOCH FROM (\n            MIN(CASE WHEN state = 'claimed'\n                THEN GREATEST(next_attempt_at, claim_expires_at)\n                ELSE next_attempt_at END) - NOW()\n        )) * 1000)::BIGINT AS \"millis\"\n          FROM block_manifest_verification_task\n         WHERE consensus_epoch = $1\n           AND state IN ('pending', 'claimed')\n           AND next_attempt_at IS NOT NULL\n        ",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "millis",
+        "type_info": "Int8"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Text"
+      ]
+    },
+    "nullable": [
+      null
+    ]
+  },
+  "hash": "aa2d0d4bc270527b50ab855666c14dec10aff39054eb39ed7c049367bac9e923"
+}

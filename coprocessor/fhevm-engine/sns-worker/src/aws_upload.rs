@@ -11,6 +11,7 @@ use aws_sdk_s3::primitives::ByteStream;
 use aws_sdk_s3::types::ChecksumMode;
 use aws_sdk_s3::Client;
 use base64::Engine;
+use block_manifest::S3_METADATA_CONSENSUS_EPOCH_KEY;
 use bytesize::ByteSize;
 use ciphertext_attestation::{
     s3_ct128_key, s3_ct64_key, CiphertextAttestation, CiphertextAttestationPayload,
@@ -25,8 +26,7 @@ use fhevm_engine_common::utils::to_hex;
 use fhevm_engine_common::versioning::{begin_write_guarded, GcsRollbackPolicy, WriteGuard};
 use futures::future::join_all;
 use opentelemetry::trace::{Status, TraceContextExt};
-use sha2::Sha256;
-use sha3::{Digest, Keccak256};
+use sha2::{Digest, Sha256};
 use sqlx::{PgPool, Pool, Postgres, Transaction};
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
@@ -167,17 +167,22 @@ async fn run_uploader_loop(
                             FROM ciphertext_digest d
                             WHERE d.handle = $1
                               AND (
-                                d.ciphertext IS NULL
+                                d.s3_publication_verified_at IS NULL
+                                OR d.s3_publication_verified_digest IS DISTINCT FROM d.ciphertext
+                                OR d.ciphertext IS NULL
                                 OR (
-                                  d.ciphertext128 IS NULL
-                                  AND EXISTS (
+                                  EXISTS (
                                     SELECT 1
                                     FROM ciphertexts128 c
                                     WHERE c.handle = d.handle
                                       AND c.ciphertext IS NOT NULL
                                   )
+                                  AND (
+                                    d.ciphertext128 IS NULL
+                                    OR d.ciphertext128_format IS NULL
+                                  )
                                 )
-                            )
+                              )
                             FOR UPDATE SKIP LOCKED
                             ",
                             &item.handle,
@@ -443,6 +448,8 @@ struct S3ObjectMetadata {
     key_id: String,
     transaction_id: String,
     signer: String,
+    /// The uploading stack's epoch; see [`S3_METADATA_CONSENSUS_EPOCH_KEY`].
+    consensus_epoch: Option<String>,
 }
 
 struct UploadMaterial {
@@ -503,18 +510,27 @@ fn validate_existing_attestation(
             expected.format, actual.format
         ));
     }
-    if actual.signer != expected_signer {
-        return Err(format!(
-            "signer mismatch: expected {}, got {}",
-            expected_signer, actual.signer
-        ));
-    }
-
     actual
-        .verify(expected.handle, expected.coprocessor_context_id)
-        .map_err(|err| format!("handle/context/signature mismatch: {err}"))?;
+        .verify(
+            expected.handle,
+            expected.coprocessor_context_id,
+            expected_signer,
+        )
+        .map_err(|err| format!("attestation verification failed: {err}"))?;
 
     Ok(())
+}
+
+/// This stack's epoch: `search_path` resolves the selector to its own schema,
+/// and a cutover updates it in the same transaction that makes the stack live.
+async fn uploading_consensus_epoch(
+    trx: &mut Transaction<'_, Postgres>,
+) -> anyhow::Result<Option<String>> {
+    Ok(sqlx::query_scalar!(
+        "SELECT consensus_epoch FROM blue_green_consensus_epoch WHERE singleton = TRUE"
+    )
+    .fetch_optional(trx.as_mut())
+    .await?)
 }
 
 #[allow(clippy::too_many_arguments)]
@@ -539,6 +555,9 @@ async fn upload_ct(
         .metadata("Signer", metadata.signer)
         .key(&key)
         .body(ByteStream::from(ct_bytes));
+    if let Some(consensus_epoch) = metadata.consensus_epoch {
+        upload = upload.metadata(S3_METADATA_CONSENSUS_EPOCH_KEY, consensus_epoch);
+    }
     if let Some(checksum_sha256) = checksum_sha256 {
         upload = upload.checksum_sha256(checksum_sha256);
     }
@@ -702,6 +721,7 @@ async fn upload_ciphertexts(
         key_id: hex::encode(&task.key_id_gw),
         transaction_id: hex::encode(task.transaction_id.as_deref().unwrap_or_default()),
         signer: expected_signer.to_string(),
+        consensus_epoch: uploading_consensus_epoch(trx).await?,
     };
 
     if *ct128_digest != NO_SNS_CIPHERTEXT_DIGEST.to_vec() {
@@ -916,9 +936,7 @@ async fn upload_ciphertexts(
 }
 
 pub fn compute_digest(ct: &[u8]) -> Vec<u8> {
-    let mut hasher = Keccak256::new();
-    hasher.update(ct);
-    hasher.finalize().to_vec()
+    crate::compute_ciphertext_digest(ct)
 }
 
 fn sha256_checksum_header(ct: &[u8]) -> String {
@@ -927,8 +945,8 @@ fn sha256_checksum_header(ct: &[u8]) -> String {
 
 /// Fetches incomplete upload tasks from the database.
 ///
-/// An incomplete upload task is defined as a task missing its ct64 digest, or
-/// missing its ct128 digest while ct128 ciphertext material exists.
+/// A pending upload lacks a current S3 postflight witness or has incomplete
+/// local digest metadata.
 async fn fetch_pending_uploads(
     db_pool: &Pool<Postgres>,
     limit: i64,
@@ -950,14 +968,19 @@ async fn fetch_pending_uploads(
                    AND c.ciphertext IS NOT NULL
                ) AS \"has_ct128_ciphertext!\"
         FROM ciphertext_digest d
-        WHERE d.ciphertext IS NULL
+        WHERE d.s3_publication_verified_at IS NULL
+           OR d.s3_publication_verified_digest IS DISTINCT FROM d.ciphertext
+           OR d.ciphertext IS NULL
            OR (
-             d.ciphertext128 IS NULL
-             AND EXISTS (
+             EXISTS (
                SELECT 1
                FROM ciphertexts128 c
                WHERE c.handle = d.handle
                  AND c.ciphertext IS NOT NULL
+             )
+             AND (
+               d.ciphertext128 IS NULL
+               OR d.ciphertext128_format IS NULL
              )
            )
         FOR UPDATE SKIP LOCKED
@@ -976,18 +999,14 @@ async fn fetch_pending_uploads(
         let ciphertext_digest = row.ciphertext;
         let ciphertext128_digest = row.ciphertext128;
         let s3_format_version = row.s3_format_version;
-        let should_verify_existing_s3 = s3_format_version != Some(CURRENT_S3_FORMAT_VERSION);
         let handle = row.handle;
         let transaction_id = row.transaction_id;
         let has_ct128_ciphertext = row.has_ct128_ciphertext;
-        let row_incomplete =
-            ciphertext_digest.is_none() || (has_ct128_ciphertext && ciphertext128_digest.is_none());
 
-        // Fetch the ciphertext whenever the row is not fully committed. This
-        // lets recovery revalidate both S3 objects before the single DB update.
-        // Also fetch already-uploaded ciphertext for pre-v1 rows so the retry
-        // can validate/rewrite old S3 objects.
-        if row_incomplete || should_verify_existing_s3 {
+        // Every selected row either lacks a current S3 verification witness or
+        // has incomplete local metadata. Fetch the bytes even when computed
+        // digests and the current format are present: they do not prove upload.
+        {
             if let Ok(row) = sqlx::query!(
                 "SELECT ciphertext FROM ciphertexts WHERE handle = $1;",
                 handle,
@@ -1005,11 +1024,8 @@ async fn fetch_pending_uploads(
             }
         }
 
-        // Fetch ciphertext128 under the same rule: incomplete rows are retried
-        // as a whole handle, and pre-v1 rows need the bytes for validation.
-        // Ct64-only rows have no ciphertext128 material, so they are completed
-        // by writing the zero ct128 digest after ct64 is verified/uploaded.
-        if has_ct128_ciphertext && (row_incomplete || should_verify_existing_s3) {
+        // SNS rows have ct128 material; retain it through postflight retry.
+        if has_ct128_ciphertext {
             if let Ok(row) = sqlx::query!(
                 "SELECT ciphertext FROM ciphertexts128 WHERE handle = $1;",
                 handle,
@@ -1060,7 +1076,7 @@ async fn fetch_pending_uploads(
             );
             ct
         } else {
-            // Already uploaded; retain the stored format for attestation.
+            // No local ct128 bytes; retain the stored format for attestation.
             BigCiphertext::new(Vec::new(), ct128_format)
         };
 
@@ -1098,7 +1114,7 @@ async fn fetch_pending_uploads(
                 "No ciphertext material to resubmit"
             );
         } else {
-            // This should not happen as we are fetching rows with NULL ct64 or ct128
+            // The row needs S3 verification but no local bytes are recoverable.
             error!(
                 handle = hex::encode(&handle),
                 "Both ciphertext and ciphertext128 are empty, skipping"
@@ -1443,7 +1459,7 @@ mod tests {
 
         let err =
             validate_existing_attestation(&expected, expected_signer, &attestation).unwrap_err();
-        assert!(err.contains("handle/context/signature mismatch"));
+        assert!(err.contains("signer mismatch: recovered"), "{err}");
     }
 
     #[tokio::test]
@@ -1454,7 +1470,7 @@ mod tests {
 
         let err =
             validate_existing_attestation(&expected, expected_signer, &attestation).unwrap_err();
-        assert!(err.contains("signer mismatch"));
+        assert!(err.contains("unexpected signer"), "{err}");
     }
 
     #[test]

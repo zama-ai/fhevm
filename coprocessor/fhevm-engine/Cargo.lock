@@ -2309,6 +2309,19 @@ dependencies = [
 ]
 
 [[package]]
+name = "block-manifest"
+version = "0.14.0"
+dependencies = [
+ "alloy-primitives",
+ "alloy-signer",
+ "ciphertext-attestation",
+ "hex",
+ "serde",
+ "sha3 0.10.8",
+ "thiserror 2.0.16",
+]
+
+[[package]]
 name = "block-padding"
 version = "0.3.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -2678,7 +2691,7 @@ dependencies = [
 
 [[package]]
 name = "ciphertext-attestation"
-version = "0.14.0"
+version = "0.15.0"
 dependencies = [
  "alloy-primitives",
  "alloy-signer",
@@ -2796,9 +2809,12 @@ name = "consensus-detector"
 version = "0.7.0"
 dependencies = [
  "alloy",
+ "alloy-primitives",
  "anyhow",
  "aws-config",
  "aws-sdk-s3",
+ "block-manifest",
+ "ciphertext-attestation",
  "clap",
  "dashmap",
  "fhevm-engine-common",
@@ -2806,16 +2822,20 @@ dependencies = [
  "futures",
  "hex",
  "humantime",
+ "prometheus",
  "reqwest 0.12.23",
  "rustls",
  "serde",
  "serde_json",
+ "serial_test",
  "sqlx",
+ "test-harness",
  "thiserror 2.0.16",
  "tokio",
  "tokio-util",
  "tracing",
  "tracing-subscriber",
+ "url",
 ]
 
 [[package]]
@@ -7514,6 +7534,7 @@ dependencies = [
  "aws-config",
  "aws-sdk-s3",
  "base64 0.22.1",
+ "block-manifest",
  "bytesize",
  "ciphertext-attestation",
  "clap",

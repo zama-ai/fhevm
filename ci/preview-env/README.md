@@ -114,8 +114,10 @@ CI path reuses `zama-ai/kms`'s own deploy pipeline as-is (see `preview-env-deplo
 ### Dedicated KMS version pins
 
 Preview-env **never builds** kms-core. It sparse-checkouts `zama-ai/kms` at
-`kms_repo_ref`, pulls `core-service-enclave:<kms_core_version>` for PCR
-attestation, and runs kms's `deploy.sh --tag … --num-parties "${NB_KMS_CORE}"`.
+`kms_repo_ref`, pulls the enclave image that checkout's `deploy.sh` will
+install (`core-service-enclave-insecure` on current kms main,
+`core-service-enclave` on `v0.14.1`) at `<kms_core_version>` for PCR
+attestation, and runs `deploy.sh --tag … --num-parties "${NB_KMS_CORE}"`.
 
 | Input | Override key | Meaning |
 | --- | --- | --- |
@@ -292,7 +294,7 @@ The two host chains are the real public testnets, so this is the only preview sh
 - **Ceremony timing.** The kms-connector's Ethereum listener pins its reads to the
   *finalized* block, ~14 min behind head on Sepolia, and that is hardcoded in the
   connector. CPU launches keep **Test** FHE parameters (`params-type=1`). GPU
-  launches (`preview-env-gpu` + tests, or dispatch `enable_gpu` / `--gpu`) switch
+  launches (dispatch `enable_gpu` / `--gpu`, including Anvil) switch
   to production-size **Default** parameters (`params-type=0`) because Test
   parameters use drift noise reduction, which TFHE 1.6.3's GPU conversion rejects.
   A four-party Default-parameter DKG is multi-hour work, so GPU launches allow 4 h
@@ -508,9 +510,10 @@ deployed. Every Polygon step in the workflow is gated on `deploy_polygon == 'tru
   whatever kms `deploy.sh` picks for `aws-ci`.
 - ~~Add support for changing the coprocessor's FHE worker instance type~~ —
   `preview-env-gpu` + `preview-env-e2e-tests`, or dispatch `enable_gpu` /
-  `preview-env --gpu`, applies `values-coprocessor-gpu-e2e.yaml` to `tfhe` /
-  `sns` / `zkproof`, selects the pinned `b358436-cuda12.8-sm70` GPU images, and
-  generates Default FHE params. With `preview-env-blue-green` / `--blue-green`
+  `preview-env --gpu --workers-tag <tag>`, applies `values-coprocessor-gpu-e2e.yaml`
+  to `tfhe` / `sns` / `zkproof`, and uses that tag for those workers. The
+  `preview-env-gpu` label cannot carry a tag, so GPU deploys are dispatch-only.
+  GPU launches generate Default FHE params. With `preview-env-blue-green` / `--blue-green`
   as well, that overlay lands on Green (GCS) only; Blue (BCS) stays on the CPU
   `coprocessor` pool. CPU launches keep Test params.
 - ~~Add multichain support~~ — done, see "Multichain: second Polygon host chain

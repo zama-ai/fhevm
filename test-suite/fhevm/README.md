@@ -781,3 +781,192 @@ The CLI owns:
 - `.fhevm/runtime/addresses/`
 
 `status` shows the active stack state, the active scenario origin when present, and any CLI-owned local build images.
+
+
+### Manifest publication and containment
+
+Build a fresh local three-coprocessor stack and run the opt-in profile:
+
+```sh
+./fhevm-cli up --target latest-main --scenario manifest-lifecycle --build
+./fhevm-cli test manifest-lifecycle
+```
+
+The manifest scenario starts consensus detectors 15 seconds after all host listeners
+are running, giving them time to catch up. This delay is not a catch-up completion guarantee.
+Verification records `quorum_from_block` and `quorum_through_block`, plus any older
+unverified prefix. The profiles require quorum coverage of the fixture blocks;
+they do not require consensus from the start of history. Known historical drift
+still reports `differs_from_quorum`.
+
+For a healthy baseline on a fresh stack, run `./fhevm-cli test manifest-lifecycle-no-drift`.
+It keeps all detectors running, creates a root and descendant, then submits dependent
+and independent consumers. For every fixture handle on all three nodes it checks
+completed computation, verified upload, matching ct64 digests, actual S3 manifest
+bytes with a computed descriptor, and authenticated consensus with no drift.
+Drift tables must remain empty. Final tables and checkpoints are saved in
+`manifest-drift/2/no-drift-report.json`, including diagnostics on failure.
+In CI select scenario `manifest-lifecycle`, test-profile `manifest-lifecycle-no-drift`,
+and enable the build. This profile does not exercise healing or decryption.
+
+The scenario gives each coprocessor its own read-only directory mount and
+`--dangerous-drift-injection=/manifest-drift/injection.json`. The directory starts
+empty. The containment profile uses only node 2. It waits for publication readiness, stops that detector, submits
+a fresh `root -> child` fixture, writes the selected root handle and `pause_healing: true` to the file,
+and starts the same container. No ciphertext/digest/finding database rows are
+modified by the test.
+
+The profile checks actual S3 manifest bytes, the injected descriptor versus the
+two matching publishers, authenticated quorum verification, direct/inferred
+containment, unchanged local ciphertext material, and continued independent work
+in a transaction whose dependent computation remains frozen on coprocessor 2.
+It does not assume that healthy observers cannot record non-quorum differences:
+current drift inventory conservatively records observed disagreements.
+
+On normal success or failure, cleanup stops the detector, removes the injection
+file, and starts it normally. Reports and failure logs are written beneath
+`$FHEVM_STATE_DIR/runtime/config/manifest-drift/2/` (default `.fhevm` at the repo
+root). Cleanup preserves signed manifests and drift findings; use a disposable
+stack for this exercise. If the runner is forcibly killed, stop the target,
+remove `injection.json` from that directory, then restart it before other tests.
+
+The containment profile requires healing to remain paused until its frozen-state
+assertions finish; it fails explicitly if healing wins that race.
+
+### Manifest healing, case matrix, and computation recovery
+
+Rebuild a fresh stack with scenario `manifest-lifecycle`, then run
+`./fhevm-cli test manifest-healing`. CI uses scenario `manifest-lifecycle`,
+test-profile `manifest-healing`, with the build enabled.
+
+The profile creates seven roots. Only node 2 publishes faults, so it is the
+only coprocessor out of quorum. Two ct64 roots feed separate computed children,
+a shared join, and a further descendant. Each other root has a computed child
+that must remain outside inferred drift. `unknown_on_peer`, `error_on_peer`,
+and `uncomputed_on_peer` are not in this profile: those reasons require the
+other two publishers to agree on the anomaly.
+
+| Reason on node 2 | Injection location | Expected ct64 recovery |
+| --- | --- | --- |
+| `ct64_mismatch` (two roots) | Node 2 ct64 digest | Healed; descendants inferred and contained |
+| `missing_here` | Node 2 omits descriptor | Healed; no inferred descendants |
+| `error_here` | Node 2 error descriptor | Healed; no inferred descendants |
+| `uncomputed_here` | Node 2 uncomputed descriptor | Healed; no inferred descendants |
+| `ct128_mismatch` | Node 2 ct128 digest | Not healed; ct64 consumers continue |
+| `metadata_mismatch` | Node 2 keyset ID | Not healed; ct64 consumers continue |
+
+The test stops all detectors before creating the fixture. It waits for completed
+computations and verified uploads, then flips one bit in node 2's local ct64
+bytes. All three injection files start with `pause_healing: true`. Nodes 0 and 1
+have an empty fault list. Node 2 carries every fault. Publication and
+verification stay active while healing is suppressed. Findings are created only
+by normal verification and propagation, never by the test.
+
+The runner checks actual signed/S3 descriptors, authenticated quorum verification,
+and the exact direct/inferred inventory. It submits more work while healing is
+paused: consumers of the ct64 branches must remain pending, while independent
+work and the other branches complete. It then restarts the detectors with
+`pause_healing: false`. Node 2 keeps the same faults, so its persisted seals
+stay reproducible. Nodes 0 and 1 keep an empty fault list.
+
+Recovery requires `healed_at` on every healable root and inferred descendant,
+the correct target digests, exact restored bytes, completed queued computations,
+and correct decrypted results. A final transaction reuses the repaired chain and
+an original drift root, then decrypts again. Non-healable rows must remain
+unhealed throughout these checkpoints; they do not block valid ct64 work.
+
+`report.json` records the fixture, case matrix, manifests, containment/healing
+snapshots, corruption offset, and recovery/decryption checkpoints. Logs from all
+three detectors are collected on success and failure. Cleanup removes all three
+injection files and restarts all detectors. It does not undo failed repairs or
+remove durable findings: use a disposable stack. This scenario does not cover
+peer outages, quorum loss, cross-epoch recovery, or publication-history repair.
+
+### Manifest healing under mixing traffic
+
+On a fresh `manifest-lifecycle` deployment, run:
+
+```sh
+./fhevm-cli test manifest-healing-stress
+```
+
+CI: scenario `manifest-lifecycle`, test-profile `manifest-healing-stress`, build enabled.
+Four uint64 chains mix adjacent heads. Each `advance` is its own transaction, so
+it reuses the previous heads in a new host block and also produces independent work.
+
+After a healthy baseline, node 2's consensus detector is stopped and an
+`AFTER INSERT` trigger is installed on that database only. Three `advance`
+transactions are then mined. Each one reuses the previous heads, so the chain
+spans three host blocks, and the worker finishes them before publication
+restarts. The trigger flips bit 7 of the middle byte when the first handle byte
+is divisible by 4. The trailing bytes are the computed-handle marker, the
+chain id, the FHE type, and handle version 0, so they are not a coin flip. Input ciphertexts, non-uint64 ciphertexts, nonzero versions,
+and blobs of at most 64 bytes are excluded. The test applies the same rule to
+the handle, so it knows the corrupted set without reading a random draw. Every
+eligible insertion is recorded, and each row's `injected` flag must match the
+selector.
+
+The detector then restarts. Recovery has a 15-minute deadline and requires at
+least three stable rounds spanning 30 seconds. Each selected handle with honest
+inputs must be a healed verified `ct64_mismatch`. Each later result that read a
+corrupted ciphertext must have its own healed row, verified or inferred. A
+handle that was neither selected nor computed from one must be absent. Rows
+from different rounds must not share a host block. Nodes 0 and 1 must store
+none. All submitted handles must complete on every
+peer and their stored ct64 SHA-256 fingerprints must match. Current heads and
+independent work must decrypt to the expected uint64 values.
+
+`manifest-drift/2/stress-report.json` contains the checkpoints, the selected
+handles, and the final drift rows. Cleanup removes the trigger and starts the
+detector again if it was still stopped. Run this profile only on the isolated
+scenario; it intentionally corrupts node 2's stored ciphertexts.
+
+### Manifests across a v0.14 Blue-Green upgrade
+
+The next real upgrade goes from v0.14, which has no consensus-detector, to a
+Green stack that has one. Scenario `blue-green-manifest` is
+`blue-green-two-of-three` with Green detectors tuned for manifest checks:
+
+```sh
+./fhevm-cli up --scenario blue-green-manifest --build
+BLUE_GREEN_MANIFESTS=1 ./fhevm-cli test blue-green
+```
+
+`BLUE_GREEN_MANIFESTS=1` adds these checks to the ordinary `blue-green` flow on
+every operator, with no drift allowed at any point:
+
+- before any proposal, no manifest exists: Blue has no detector and Green is
+  parked until `DryRunStarted`;
+- after the failed upgrade rolls back, its epoch stops publishing;
+- during the dry run, Green publishes the proposal's consensus epoch, and a
+  dry-run manifest carrying the computed synthetic probe (the handle Green
+  injects into its window) reaches `matches_quorum`, whether its block sealed
+  before or after cutover; its S3 bytes match the archive and its key carries
+  the epoch;
+- after cutover, the epoch is the active one and `succeeded`, a manifest past
+  the cutover block reaches quorum, the detailed ranges leave no gap, no task is
+  `retry_exhausted`, and no `legacy` manifest exists.
+
+The report is written to `$FHEVM_STATE_DIR/blue-green-manifests-report.json`.
+Test profile `blue-green-manifests` is the same run without the environment
+variable. In CI, dispatch `test-suite-e2e-tests.yml` with scenario
+`blue-green-manifest`, test-profile `blue-green-manifests`, and the build enabled.
+
+`BLUE_GREEN_DRY_RUN_DRIFT=1` (test profile `blue-green-dry-run-drift`, same
+scenario) adds a drift that the upgrade must survive. One state-hash agreement
+per chain is enough for cutover, so a Green ct64 that diverges on a later
+dry-run block does not roll the upgrade back. After the rollback, a trigger on
+operator 1's Green schema corrupts the first allowed handle its dry run
+computes past the probe block; ERC-20 traffic from the proposal to
+`DryRunStarted` provides that handle. The checks then require:
+
+- the upgrade cuts over, and the probe's dry-run manifest still reaches
+  consensus everywhere;
+- the healthy operators never leave the quorum and record no drifted handle;
+  their verification still reports the divergence they observe;
+- the faulty operator records the drift in the upgrade epoch, on a block of the
+  dry run, heals it, and ends with no pending healable finding; the healed
+  ct64 matches every peer's.
+
+The faulty operator's later manifests keep the drifted block in their signed
+history, so only an attempt, not consensus, is required of them.

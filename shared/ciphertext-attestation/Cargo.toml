@@ -1,7 +1,7 @@
 [package]
 authors = ["Zama"]
 name = "ciphertext-attestation"
-version = "0.14.0"
+version = "0.15.0"
 edition = "2024"
 license = "BSD-3-Clause-Clear"
 
