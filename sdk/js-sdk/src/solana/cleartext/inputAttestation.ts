@@ -16,7 +16,7 @@ import { solanaHostProgram } from '../clients/createFhevmBaseClient.js';
 import { findHostConfigPda } from '../internal/generated/zamaHost/pdas/hostConfig.js';
 import { fetchHostConfig } from '../internal/generated/zamaHost/accounts/hostConfig.js';
 import { signAsCleartextParty } from './parties.js';
-import { CIPHERTEXT_VERIFICATION_TYPE, INPUT_VALUE_LEN } from './hostConstants.js';
+import { CIPHERTEXT_VERIFICATION_TYPE, INPUT_VALUE_LEN } from '../internal/hostConstants.js';
 import { uint256ToBytes32 } from '../../core/base/uint.js';
 import { eip712Digest, keccakUtf8 } from '../internal/eip712.js';
 

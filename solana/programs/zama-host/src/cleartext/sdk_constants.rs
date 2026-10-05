@@ -17,7 +17,7 @@ use crate::EVENT_VERSION;
 
 const SDK_FILE: &str = concat!(
     env!("CARGO_MANIFEST_DIR"),
-    "/../../../sdk/js-sdk/src/solana/cleartext/hostConstants.ts"
+    "/../../../sdk/js-sdk/src/solana/internal/hostConstants.ts"
 );
 const UPDATE_ENV: &str = "ZAMA_UPDATE_SDK_CONSTANTS";
 

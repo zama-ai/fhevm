@@ -1,7 +1,7 @@
 import { keccak_256 } from '@noble/hashes/sha3.js';
 import { concatBytes, hexToBytes } from '../../core/base/bytes.js';
 import { uint256ToBytes32 } from '../../core/base/uint.js';
-import { EIP712_DOMAIN_TYPE } from '../cleartext/hostConstants.js';
+import { EIP712_DOMAIN_TYPE } from './hostConstants.js';
 
 ////////////////////////////////////////////////////////////////////////////////
 // The EIP-712 v4 digests the Solana host verifies (`zama_host::eip712`), for the certificates of

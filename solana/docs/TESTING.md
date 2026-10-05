@@ -295,7 +295,7 @@ it. Our Solana transaction reads do not accept v1 yet, `createSolanaLeafRecord` 
 - **A change to the store or transient layout, the input value widths or the input-attestation
   type strings** fails `the_sdk_cleartext_constants_match_the_host` until the SDK's copy is
   rewritten: `ZAMA_UPDATE_SDK_CONSTANTS=1 cargo test -p zama-host --features cleartext --lib
-  sdk_constants`, then commit `sdk/js-sdk/src/solana/cleartext/hostConstants.ts`.
+  sdk_constants`, then commit `sdk/js-sdk/src/solana/internal/hostConstants.ts`.
 - **A change to the KMS Connector's Solana authorization** fails
   `the_committed_cases_are_the_connectors_verdicts` until the cases are rewritten:
   `ZAMA_UPDATE_AUTHORIZATION_CASES=1 cargo test -p kms-worker --test solana_authorization_cases`

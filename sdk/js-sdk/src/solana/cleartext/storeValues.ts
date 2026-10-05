@@ -16,7 +16,7 @@ import {
   STORE_HISTORY_OFFSET,
   STORE_SECTION_OFFSET,
   STORE_SLOTS_OFFSET,
-} from './hostConstants.js';
+} from '../internal/hostConstants.js';
 
 ////////////////////////////////////////////////////////////////////////////////
 

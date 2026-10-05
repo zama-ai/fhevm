@@ -26,7 +26,7 @@ import {
   parseMakeStoreHandlePublicInstruction,
 } from '../internal/generated/zamaHost/instructions/makeStoreHandlePublic.js';
 import { getFheExecutedEventDecoder } from '../internal/generated/zamaHost/types/fheExecutedEvent.js';
-import { EVENT_IX_TAG, EVENT_VERSION, FHE_EXECUTED_EVENT_DISCRIMINATOR } from './hostConstants.js';
+import { EVENT_IX_TAG, EVENT_VERSION, FHE_EXECUTED_EVENT_DISCRIMINATOR } from '../internal/hostConstants.js';
 
 ////////////////////////////////////////////////////////////////////////////////
 
