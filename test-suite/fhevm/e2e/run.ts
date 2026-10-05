@@ -17,7 +17,8 @@ const cleartextStack = env.source === 'cleartext' ? await (await import('../src/
 let status = 1;
 try {
   status = await Bun.spawn(['bun', 'test', ...(process.argv.length > 2 ? process.argv.slice(2) : ['e2e/scenarios'])], { stdin: 'inherit', stdout: 'inherit', stderr: 'inherit' }).exited;
-  if (status === 0) await assertMerkleRecordMatchesChain(env);
+  // The cleartext target runs no coprocessor, so it has no Merkle record to check.
+  if (status === 0 && env.capabilities.protocolServices) await assertMerkleRecordMatchesChain(env);
 } finally {
   await cleartextStack?.stop();
   if (env.network === 'devnet') {
