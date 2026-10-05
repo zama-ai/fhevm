@@ -18,6 +18,7 @@ if tool=='helm':
  elif a[:2]==['get','values']: print('scDeploy: {image: {tag: pinned}}')
  elif a[0]=='upgrade':
   assert s.get('locked')
+  if a[1]=='solana-host': s['host_redeployed']=True
   assert 'pinned' in pathlib.Path(a[a.index('-f')+1]).read_text()
  else: raise Exception(a)
 elif tool=='curl':
@@ -35,13 +36,18 @@ elif tool=='kubectl':
   assert not s.get('locked'); s['locked']=True
  elif a[:2]==['delete','configmap']: s['locked']=False
  elif a[:2]==['delete','job']: assert s.get('recovered') and s.get('locked')
- elif a[:2]==['get','deployment/coprocessor-1-solana-merkle-indexer']: print(a[1])
+ elif a[:2]==['get','deployment/coprocessor-1-solana-merkle-indexer']:
+  if not s.get('no_indexer'): print(a[1])
+  elif '--ignore-not-found' not in a: sys.exit(1)
  elif a[:2]==['get','pods']: pass
  elif a[:2]==['get','secret']: print('aHR0cDovL3JwYw==')
- elif a[0]=='scale': s.setdefault('scaled',[]).append(a[-1])
+ elif a[0]=='scale':
+  # An indexer reads HostConfig first, so it must not start before solana-host recreates it.
+  assert a[-1]=='--replicas=0' or s.get('host_redeployed')
+  s.setdefault('scaled',[]).append(a[-1])
  elif a[:2]==['set','env']:
-  assert s.get('recovered'); s['start_slot']=a[-1]
- elif a[:2]==['rollout','status']: pass
+  assert s.get('host_redeployed'); s['start_slot']=a[-1]
+ elif a[:2]==['rollout','status']: assert s.get('host_redeployed')
  elif a[0]=='exec':
   sql=a[-1]
   if sql.startswith('DROP') and s.get('drop_fails'): sys.exit(1)
@@ -55,7 +61,7 @@ p.write_text(json.dumps(s))
 
 
 class ResetPreview(unittest.TestCase):
-    def run_reset(self, active=False, missing=False, drop_fails=False):
+    def run_reset(self, active=False, missing=False, drop_fails=False, no_indexer=False):
         with tempfile.TemporaryDirectory() as directory:
             work = pathlib.Path(directory)
             for name in ('helm', 'kubectl', 'bash', 'curl'):
@@ -64,6 +70,7 @@ class ResetPreview(unittest.TestCase):
                 command.chmod(0o700)
             state = work / 'state.json'
             state.write_text(json.dumps({'calls': [], 'active': active, 'missing': missing, 'drop_fails': drop_fails,
+                'no_indexer': no_indexer,
                 'releases': ['solana-demos', 'relayer', 'solana-register-coprocessor-1', 'solana-host']}))
             result = subprocess.run(['/bin/bash', str(ROOT / 'reset-preview.sh')],
                 env={**os.environ, 'PATH': f'{work}:{os.environ["PATH"]}',
@@ -90,6 +97,11 @@ class ResetPreview(unittest.TestCase):
         self.assertNotEqual(result.returncode, 0)
         self.assertNotIn('start_slot', state)
         self.assertFalse(any(c[:2] == ['helm', 'upgrade'] for c in state['calls']))
+
+    def test_a_preview_without_an_indexer_stops_before_recovery(self):
+        result, state = self.run_reset(no_indexer=True)
+        self.assertNotEqual(result.returncode, 0)
+        self.assertFalse(state.get('recovered'))
 
     def test_active_bootstrap_stops_before_recovery(self):
         result, state = self.run_reset(active=True)
