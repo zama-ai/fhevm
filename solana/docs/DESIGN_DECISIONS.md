@@ -2523,9 +2523,9 @@ Decision:
 
 `solana_merkle_proof_server` serves `POST /v1/solana/merkle-proofs` and the health routes as its
 own Deployment and ClusterIP Service, `<release>-solana-merkle-proof-server`, from the
-host-listener image and with its own pool (`--database-pool-size`, 8 by default). It only reads
-the Merkle proof service's database (DD-066), so it can run several replicas and roll without
-downtime. The Merkle indexer, which writes that database, stays one replica with `Recreate`, as
+host-listener image and with its own pool (`--database-pool-size`, 8 by default). It answers only
+requests signed by the tx-sender of a live KMS context (DD-067). It only reads the Merkle proof
+service's database (DD-066), so it can run several replicas and roll without downtime. The Merkle indexer, which writes that database, stays one replica with `Recreate`, as
 does the listener, which serves only `/healthz` and `/liveness`. The connector's proof routes name
 the proof server's Service.
 
@@ -2546,13 +2546,13 @@ The Merkle database has the server as a second client, with 8 connections by def
 being served while the Merkle indexer is down, for the leaves it recorded before it stopped. Such a
 proof verifies until a later append to its Store merges its mountain, and the connector's check
 fails from then until the indexer catches up. The newest leaf sits in the smallest mountain, so it
-goes stale first, and anyone can append to a Store with a zero-value transfer. The connector takes
-the first proof that verifies from any coprocessor, so this costs nothing while one indexer runs;
-while every coprocessor's indexer is stopped, a Store someone keeps appending to cannot be decrypted
-until one catches up. The connector retries a Gateway request up to its `max_decryption_attempts`
-before marking it failed, and an HTTP caller gets `acl_denied` and resubmits. A grant made after the
-stop has no proof until the indexer catches up. `ci/preview-env/solana-host/test_charts.py` pins the
-two Deployments.
+goes stale first, and anyone can append to a Store with a zero-value transfer. The connector asks
+the next coprocessor as soon as an answer leaves a proof unverified (DD-067), so this costs one
+more request while one indexer runs; while every coprocessor's indexer is stopped, a Store someone
+keeps appending to cannot be decrypted until one catches up. The connector retries a Gateway
+request up to its `max_decryption_attempts` before marking it failed, and an HTTP caller gets
+`acl_denied` and resubmits. A grant made after the stop has no proof until the indexer catches up.
+`ci/preview-env/solana-host/test_charts.py` pins the two Deployments.
 
 ## DD-065: A public decryption is accepted on-chain by its certificate alone
 
