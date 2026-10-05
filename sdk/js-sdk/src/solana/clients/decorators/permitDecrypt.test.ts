@@ -21,6 +21,8 @@ import { compileSolanaPermitEnvelope } from '../../permit/envelope.js';
 import { createFhevmDecryptClient } from '../createFhevmDecryptClient.js';
 import * as responseVerification from '../../userDecrypt/response.js';
 import { setFhevmRuntimeConfig } from '../../internal/config.js';
+import { getSolanaRuntime } from '../../internal/runtime.js';
+import { initTkmsModule } from '../../../core/modules/decrypt/module/init-p.js';
 
 ////////////////////////////////////////////////////////////////////////////////
 
@@ -151,6 +153,12 @@ describe('signing a permit through the client', () => {
     // The permit commits to the real TKMS module's transport key, generated for this session.
     expect(fields.transportKey).toEqual(session.keyPair.publicKeyBytes);
     expect(fields.transportKey).toHaveLength(PERMIT_TRANSPORT_KEY_LEN);
+    // Both halves are WASM keys of that same pair: a key with no WASM behind it throws here.
+    const kmsLib = await initTkmsModule(getSolanaRuntime());
+    expect(kmsLib.ml_kem_pke_pk_to_u8vec(session.keyPair.publicKey)).toEqual(fields.transportKey);
+    expect(kmsLib.ml_kem_pke_pk_to_u8vec(kmsLib.ml_kem_pke_get_pk(session.keyPair.secretKey))).toEqual(
+      fields.transportKey,
+    );
 
     expect(signOffchainMessage).toHaveBeenCalledTimes(1);
     expect(session.warnings).toEqual([]);
