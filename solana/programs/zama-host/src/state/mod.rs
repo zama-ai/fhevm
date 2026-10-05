@@ -316,7 +316,8 @@ pub struct CoprocessorInputAttestation {
     pub user_address: [u8; 32],
     /// Attested contract identity — the application program the input is bound to (bytes32).
     pub contract_address: [u8; 32],
-    /// Gateway-side contract chain id the attestation binds.
+    /// Host chain id the attestation binds (EVM `contractChainId`); the gateway chain id only
+    /// enters through the EIP-712 domain.
     pub contract_chain_id: u64,
     /// Opaque extra data covered by the attestation.
     pub extra_data: Vec<u8>,

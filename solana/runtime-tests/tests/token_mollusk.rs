@@ -2298,6 +2298,58 @@ fn mollusk_confidential_transfer_rejects_balance_in_another_mints_scope() {
     );
 }
 
+/// Mint A's token accounts with mint B's balance stores, so the write would land in B's scope. B is
+/// a real `ConfidentialMint` owned by the token program, and the stores sit at the addresses B
+/// derives, so the token's mint binding refuses the pair with `MintMismatch` before the
+/// token-account address check (`TokenAccountMismatch`) would (fhevm-internal#1994).
+#[test]
+fn mollusk_confidential_transfer_rejects_another_confidential_mint() {
+    let fixture = TokenFixture::new();
+    let other = TokenFixture::new();
+    let mut accounts = fixture.base_accounts();
+    accounts.insert(other.mint, other.confidential_mint_account());
+    let mut other_store = |token_account: Pubkey, handle: [u8; 32]| {
+        let (address, store) =
+            new_test_state(other.app(), token_account, token::balance_key(), handle);
+        assert_eq!(
+            address,
+            token::encrypted_store_address(other.mint, token_account).0
+        );
+        accounts.insert(address, encrypted_store_account(&store));
+        address
+    };
+    let alice_store = other_store(fixture.alice_token, fixture.alice_initial);
+    let bob_store = other_store(fixture.bob_token, fixture.bob_initial);
+    let context = fixture_context(mollusk(), accounts);
+    let mut ix = confidential_transfer_ix(
+        &fixture,
+        fixture.alice_token,
+        fixture.bob_token,
+        alice_store,
+        bob_store,
+        sender_attestation(&fixture, 36, 0),
+    );
+    let mint = ix
+        .accounts
+        .iter_mut()
+        .find(|meta| meta.pubkey == fixture.mint)
+        .expect("mint account");
+    mint.pubkey = other.mint;
+    check_token_instruction(
+        &context,
+        &ix,
+        &[token_error(token::ConfidentialTokenError::MintMismatch)],
+    );
+    assert_eq!(
+        read_store_handle(&context, alice_store, token::balance_key()),
+        fixture.alice_initial,
+    );
+    assert_eq!(
+        read_store_handle(&context, bob_store, token::balance_key()),
+        fixture.bob_initial,
+    );
+}
+
 /// A balance stored under another token account names an authority this transfer does not sign
 /// for; account resolution reports the missing authority before any host CPI.
 #[test]

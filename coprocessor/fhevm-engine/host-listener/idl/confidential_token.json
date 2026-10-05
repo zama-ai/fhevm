@@ -2829,7 +2829,8 @@
           {
             "name": "contract_chain_id",
             "docs": [
-              "Gateway-side contract chain id the attestation binds."
+              "Host chain id the attestation binds (EVM `contractChainId`); the gateway chain id only",
+              "enters through the EIP-712 domain."
             ],
             "type": "u64"
           },
