@@ -409,6 +409,9 @@ export const parseCoprocessorScenario = (text: string, sourceLabel = "scenario")
     };
   });
 
+  if (parsed.hostListenerMode !== undefined && parsed.hostListenerMode !== "consumer") {
+    throw new PreflightError(`${sourceLabel}: hostListenerMode must be consumer when specified`);
+  }
   const hostChains = parseHostChains(parsed, sourceLabel);
 
   return {
@@ -417,6 +420,7 @@ export const parseCoprocessorScenario = (text: string, sourceLabel = "scenario")
     name: normalizeOptionalText(parsed.name, `${sourceLabel}: name`),
     description: normalizeOptionalText(parsed.description, `${sourceLabel}: description`),
     hostChains,
+    ...(parsed.hostListenerMode ? { hostListenerMode: parsed.hostListenerMode as "consumer" } : {}),
     topology: { count, threshold },
     instances,
     kms: parsed.kms as KmsScenarioBlock | undefined,
@@ -466,6 +470,7 @@ export const resolveScenarioFile = (filePath: string, input: CoprocessorScenario
     name: input.name,
     description: input.description,
     hostChains: resolveHostChains(input.hostChains),
+    ...(input.hostListenerMode ? { hostListenerMode: input.hostListenerMode } : {}),
     sourcePath: path.resolve(filePath),
     topology: { ...input.topology },
     kms: resolveKmsTopology(input.kms),
@@ -661,6 +666,9 @@ export const parseBlueGreenScenario = (text: string, sourceLabel = "scenario"): 
     throw new Error(`${sourceLabel}: expected kind ${BLUE_GREEN_SCENARIO_KIND}`);
   }
 
+  if (parsed.hostListenerMode !== undefined && parsed.hostListenerMode !== "consumer") {
+    throw new PreflightError(`${sourceLabel}: hostListenerMode must be consumer when specified`);
+  }
   const hostChains = parseHostChains(parsed, sourceLabel);
 
   let topology: { count: number; threshold: number } | undefined;

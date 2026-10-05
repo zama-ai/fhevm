@@ -1,0 +1,15 @@
+version: 1
+kind: coprocessor-consensus
+hostListenerMode: consumer
+name: Two Of Three Multi Chain Consumer
+description: 3 coprocessors with threshold 2 across two host chains, with host ingestion by listener-core and host-consumers only — no legacy host listener or poller.
+hostChains:
+  - key: host
+    chainId: "12345"
+    rpcPort: 8545
+  - key: chain-b
+    chainId: "67890"
+    rpcPort: 8547
+topology:
+  count: 3
+  threshold: 2

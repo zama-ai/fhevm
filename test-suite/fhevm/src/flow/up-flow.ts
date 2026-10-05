@@ -1,6 +1,7 @@
 /**
  * Orchestrates fhevm stack lifecycle commands such as up, down, resume, clean, upgrade, status, and logs.
  */
+import { consumerOnlyHostListeners, listenerCoreServices } from "../host-listener-mode";
 
 import { createHash } from "node:crypto";
 import { existsSync } from "node:fs";
@@ -439,6 +440,9 @@ const printPlan = (state: Pick<State, "target" | "overrides" | "e2ePublicRuntime
     for (const warning of overrideWarnings(overrides, state.target)) {
       console.log(`[warn] ${warning}`);
     }
+  }
+  if (consumerOnlyHostListeners(state.scenario)) {
+    console.log("[plan] host-ingestion=consumer only; legacy listeners and pollers disabled");
   }
   console.log(`[plan] test-suite=${localTestSuite ? "local workspace image" : "published image"}`);
   if (!localTestSuite) {
@@ -1109,15 +1113,19 @@ export const runStep = async (state: State, step: StepName) => {
       if (!supportsHostListenerConsumer(state)) {
         break;
       }
-      await postgresExec("", ["-c", "CREATE DATABASE listener;"]);
+      const listenerDatabases = consumerOnlyHostListeners(state.scenario)
+        ? state.scenario.hostChains.map((chain) => `listener_${chain.chainId}`) : ["listener"];
+      for (const database of listenerDatabases) {
+        await postgresExec("", ["-c", `CREATE DATABASE ${database};`]);
+      }
       await stepComposeUp("listener-core", state,
         ["listener-redis"]
       );
       await waitForContainer("listener-redis", "running");
       await stepComposeUp("listener-core", state,
-        ["listener-publisher-for-anvil"]
+        listenerCoreServices(state.scenario)
       );
-      await waitForContainer("listener-publisher-for-anvil", "running");
+      for (const service of listenerCoreServices(state.scenario)) await waitForContainer(service, "running");
       break;
     case "coprocessor": {
       // Before the coprocessors, so the instance routed to the fork finds a
@@ -2068,7 +2076,7 @@ const waitForUpgrade = async (state: State, group: UpgradeGroup, runtimeServices
   }
   if (group === "listener-core") {
     await waitForContainer("listener-redis", "running");
-    await waitForContainer("listener-publisher-for-anvil", "running");
+    for (const service of listenerCoreServices(state.scenario)) await waitForContainer(service, "running");
     return;
   }
   if (group === "relayer") {
