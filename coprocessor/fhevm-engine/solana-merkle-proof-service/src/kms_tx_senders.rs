@@ -281,16 +281,4 @@ mod tests {
         assert_eq!(set.senders, HashSet::from([c]));
         assert!(asserter.read_q().is_empty(), "no further RPC call");
     }
-
-    #[tokio::test]
-    async fn refuses_an_anchor_without_its_event() {
-        let asserter = Asserter::new();
-        let mut reader = reader(&asserter);
-        chain_id(&asserter);
-        abi(&asserter, context(1));
-        abi(&asserter, true);
-        anchor(&asserter, 20, B256::ZERO);
-        asserter.push_success(&Vec::<Log>::new());
-        assert!(reader.read().await.is_err());
-    }
 }

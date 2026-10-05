@@ -2338,6 +2338,7 @@ name = "kms-context"
 version = "0.15.0"
 dependencies = [
  "alloy",
+ "async-trait",
  "fhevm_host_bindings",
  "thiserror",
  "tokio",
