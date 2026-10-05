@@ -402,7 +402,7 @@ moves the current context). The event always goes out through the event CPI, so 
 instructions, which an RPC provider cannot truncate the way it can truncate logs. A reader therefore sees an admin
 change without replaying instruction data to find one (DD-044). The event only makes the change visible: readers and
 authorization take the current values from account state, never from event bytes. HostConfig records no
-last-modified slot; a client detects a new KMS context by reading `current_kms_context_id`.
+last-modified slot. A client detects a new KMS context by reading `current_kms_context_id`.
 Pinned by `only_the_admin_changes_trust_roots_and_only_an_authority_changes_its_store`, which checks over random
 instruction sequences that `HostConfig`, the KMS contexts and the deny, HCU trust and pauser records change only in a
 transaction the admin signed, apart from a signer holding an enabled pauser record adding pause flags,
