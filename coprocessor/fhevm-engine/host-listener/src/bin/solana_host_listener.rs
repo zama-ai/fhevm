@@ -1,13 +1,10 @@
 //! Solana host listener: reconstructs coprocessor work from confirmed Yellowstone
 //! transactions and block metas and ingests it into the coprocessor database.
 
-use std::{str::FromStr, sync::Arc};
+use std::sync::Arc;
 
 use anyhow::{Context, Result};
 use clap::Parser;
-use solana_client::nonblocking::rpc_client::RpcClient;
-use solana_commitment_config::CommitmentConfig;
-use solana_sdk::pubkey::Pubkey;
 use sqlx::PgPool;
 use tokio_util::sync::CancellationToken;
 use tracing::{info, Level};
@@ -29,8 +26,8 @@ use host_listener::{
     solana_listener::{SolanaListenerConfig, SolanaListenerSink},
 };
 use solana_host_follower::{
-    block_checkpoint, host::host_chain_id, run, track_confirmed_slot,
-    FollowerConfig, StartPosition, SOLANA_RPC_REQUEST_TIMEOUT,
+    block_checkpoint, run, track_confirmed_slot, Follower, FollowerArgs,
+    StartPosition,
 };
 
 /// Healthy while the coprocessor database answers.
@@ -59,33 +56,14 @@ struct Args {
     #[arg(long)]
     database_url: DatabaseURL,
 
-    /// Solana JSON-RPC endpoint used for HostConfig and block-time reads.
-    #[arg(long, default_value = "http://127.0.0.1:8899")]
-    url: String,
-
-    /// Yellowstone gRPC endpoint.
-    #[arg(long, default_value = "http://127.0.0.1:10000")]
-    grpc_url: String,
-
-    /// Solana JSON-RPC endpoint whose ledger history rebuilds, with `getBlock` and
-    /// `getTransaction`, the slots Yellowstone can no longer replay, and reads the start block's
-    /// hash. It may be another provider's. Defaults to `--url`.
-    #[arg(long, env = "SOLANA_ARCHIVE_URL")]
-    archive_url: Option<String>,
+    #[command(flatten)]
+    follower: FollowerArgs,
 
     /// Existing confirmed block to replay inclusively on an empty database. Must precede the host
     /// activity to reconstruct; if Yellowstone no longer retains it, the archive serves it.
     /// A saved checkpoint wins.
     #[arg(long)]
     start_slot: Option<u64>,
-
-    /// Optional `x-token` auth metadata for the gRPC endpoint.
-    #[arg(long, env = "SOLANA_GRPC_X_TOKEN")]
-    grpc_x_token: Option<String>,
-
-    /// `zama-host` program id whose instructions are reconstructed.
-    #[arg(long = "program-id", alias = "acl-program-id")]
-    program_id: String,
 
     /// Dependence-chain cache size.
     #[arg(long, default_value_t = DEFAULT_DEPENDENCE_CACHE_SIZE)]
@@ -129,29 +107,16 @@ async fn main() -> Result<()> {
         None
     };
 
-    let program_id = Pubkey::from_str(&args.program_id)
-        .with_context(|| format!("invalid program id {}", args.program_id))?;
-
-    // The deployment's HostConfig is the one source of the chain id: it derives handles and
-    // names the database partition they are filed under, so the two can never disagree.
-    let rpc = RpcClient::new_with_timeout_and_commitment(
-        args.url.clone(),
-        SOLANA_RPC_REQUEST_TIMEOUT,
-        CommitmentConfig::confirmed(),
-    );
-    let host_config_chain_id = host_chain_id(&rpc, &program_id).await?;
-    let archive = RpcClient::new_with_timeout(
-        args.archive_url.unwrap_or_else(|| args.url.clone()),
-        SOLANA_RPC_REQUEST_TIMEOUT,
-    );
-    info!(
-        chain_id = host_config_chain_id,
-        "auto-detected handle-derivation params from confirmed HostConfig"
-    );
+    // The chain id names the database partition the handles are filed under.
+    let Follower {
+        config,
+        live,
+        archive,
+    } = args.follower.connect().await?;
 
     let db = Database::new(
         &args.database_url,
-        ChainId::from_canonical_u64(host_config_chain_id),
+        ChainId::from_canonical_u64(config.chain_id),
         args.dependence_cache_size,
     )
     .await
@@ -200,8 +165,8 @@ async fn main() -> Result<()> {
     if args.metrics_addr.is_some() {
         metrics_server::spawn(args.metrics_addr, cancel.child_token());
         tokio::spawn(track_confirmed_slot(
-            rpc,
-            host_config_chain_id,
+            live,
+            config.chain_id,
             cancel.child_token(),
         ));
     }
@@ -222,24 +187,13 @@ async fn main() -> Result<()> {
     let sink = SolanaListenerSink::new(
         &db,
         SolanaListenerConfig {
-            program_id,
-            chain_id: host_config_chain_id,
+            program_id: config.program_id,
+            chain_id: config.chain_id,
             dependent_ops_max_per_chain: args.dependent_ops_max_per_chain,
         },
     );
-    let listener_result = run(
-        &sink,
-        &archive,
-        &FollowerConfig {
-            grpc_url: args.grpc_url,
-            x_token: args.grpc_x_token,
-            program_id,
-            chain_id: host_config_chain_id,
-        },
-        start,
-        cancel.clone(),
-    )
-    .await;
+    let listener_result =
+        run(&sink, &archive, &config, start, cancel.clone()).await;
     cancel.cancel();
     http_task.await.context("join HTTP server")??;
     listener_result

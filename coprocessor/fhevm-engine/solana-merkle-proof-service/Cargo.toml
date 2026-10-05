@@ -32,10 +32,6 @@ tracing = { workspace = true }
 # The Merkle proof route's committed OpenAPI document.
 utoipa = { workspace = true }
 
-solana-client = "3.0"
-solana-commitment-config = "3.1"
-solana-sdk = "3.0"
-
 fhevm-engine-common = { path = "../fhevm-engine-common" }
 solana-host-follower = { path = "../solana-host-follower" }
 # Leaf commitments and MMR of the RFC 035 leaf record, shared with the on-chain host.
@@ -48,6 +44,7 @@ zama-host = { path = "../../../solana/programs/zama-host", default-features = fa
 reqwest = { workspace = true, features = ["json"] }
 serde_json = { workspace = true }
 serial_test = { workspace = true }
+solana-sdk = "3.0"
 test-harness = { path = "../test-harness" }
 
 [lints]
