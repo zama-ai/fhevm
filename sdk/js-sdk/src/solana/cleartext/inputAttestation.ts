@@ -16,15 +16,11 @@ import { solanaHostProgram } from '../clients/createFhevmBaseClient.js';
 import { findHostConfigPda } from '../internal/generated/zamaHost/pdas/hostConfig.js';
 import { fetchHostConfig } from '../internal/generated/zamaHost/accounts/hostConfig.js';
 import { signAsCleartextParty } from './parties.js';
-import { CIPHERTEXT_VERIFICATION_TYPE, EIP712_DOMAIN_TYPE, INPUT_VALUE_LEN } from './hostConstants.js';
+import { CIPHERTEXT_VERIFICATION_TYPE, INPUT_VALUE_LEN } from './hostConstants.js';
+import { uint256ToBytes32 } from '../../core/base/uint.js';
+import { eip712Digest, keccakUtf8 } from '../internal/eip712.js';
 
 ////////////////////////////////////////////////////////////////////////////////
-
-const utf8 = (text: string): Uint8Array => new TextEncoder().encode(text);
-
-function word(value: bigint): Uint8Array {
-  return hexToBytes(`0x${value.toString(16).padStart(64, '0')}`);
-}
 
 /** The coprocessor `CiphertextVerification` digest the Solana host verifies (`zama_host::eip712`). */
 export function ciphertextVerificationDigest(parameters: {
@@ -36,30 +32,21 @@ export function ciphertextVerificationDigest(parameters: {
   readonly contractChainId: bigint;
   readonly extraData: Uint8Array;
 }): BytesHex {
-  const { name, version, chainId, verifyingContract } = createCoprocessorEip712Domain({
+  const domain = createCoprocessorEip712Domain({
     gatewayChainId: parameters.gatewayChainId,
     verifyingContractAddressInputVerification: bytesToHex(parameters.inputVerificationContract),
   });
-  const domain = keccak_256(
-    concatBytes(
-      keccak_256(utf8(EIP712_DOMAIN_TYPE)),
-      keccak_256(utf8(name)),
-      keccak_256(utf8(version)),
-      word(chainId),
-      word(BigInt(verifyingContract)),
-    ),
-  );
   const struct = keccak_256(
     concatBytes(
-      keccak_256(utf8(CIPHERTEXT_VERIFICATION_TYPE)),
+      keccakUtf8(CIPHERTEXT_VERIFICATION_TYPE),
       keccak_256(concatBytes(...parameters.ctHandles)),
       parameters.userAddress,
       parameters.contractAddress,
-      word(parameters.contractChainId),
+      uint256ToBytes32(parameters.contractChainId),
       keccak_256(parameters.extraData),
     ),
   );
-  return bytesToHex(keccak_256(concatBytes(Uint8Array.of(0x19, 0x01), domain, struct)));
+  return bytesToHex(eip712Digest(domain, struct));
 }
 
 /** The attestation `extraData` carrying the plaintexts of a cleartext input proof, in handle order. */

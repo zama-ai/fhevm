@@ -23,7 +23,8 @@ import type {
 import type { SolanaPublicDecryptCertifier } from '../actions/publicDecryptCertificate.js';
 import { asBytes32, bytesToHex, bytesToHexNo0x, concatBytes, hexToBytes } from '../../core/base/bytes.js';
 import { bytes32ToHandle, toFhevmHandle } from '../../core/handle/FhevmHandle.js';
-import { createKmsPublicDecryptEip712, publicDecryptDigest } from '../../core/kms/createKmsPublicDecryptEip712.js';
+import { createKmsPublicDecryptEip712 } from '../../core/kms/createKmsPublicDecryptEip712.js';
+import { publicDecryptDigest } from '../actions/decryptPublicValue.js';
 import { runSolanaUserDecrypt } from '../userDecrypt/index.js';
 import { abortableSleep } from '../../core/base/timeout.js';
 import { createSolanaUserDecryptDeadline } from '../userDecrypt/deadline.js';
