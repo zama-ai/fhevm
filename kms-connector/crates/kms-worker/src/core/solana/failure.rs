@@ -64,8 +64,9 @@ pub enum AuthorizationFailure {
 /// whether a later attempt may succeed. The codes are the ones EVM uses for the same outcomes: a
 /// bad, expired or revoked permit is a rejected signature, a host or coprocessor that cannot be
 /// read now is transient, and host state that grants no access is an ACL denial. A host record the
-/// host program could not have written, or a broken proof record, is not the user's permission
-/// state, so it is unprocessable.
+/// host program could not have written is not the user's permission state, so it is
+/// unprocessable. A proof record its coprocessor knows is wrong is the coprocessors' failure, so it
+/// is transient.
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
 pub struct FailureClass {
     pub check: RequestCheckKind,

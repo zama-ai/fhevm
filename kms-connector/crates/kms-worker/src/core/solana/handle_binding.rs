@@ -27,9 +27,11 @@ pub const HEDGE_DELAY: Duration = Duration::from_millis(250);
 /// passes without one, so a lagging, failing or stalled coprocessor costs at most that delay. Only
 /// a found proof that verifies against the observed peaks resolves a query; once every query is
 /// resolved the reads still running are dropped. Otherwise a query keeps the last failure a
-/// coprocessor answered; a failed read or an answer of the wrong length says nothing about any
-/// leaf. A query no coprocessor answered is a [`ProofReadError`]. Every coprocessor receives the
-/// same prepared batch. The worker loop is the only retry layer.
+/// coprocessor answered about the leaf. A coprocessor that answers `inconsistent` knows its own
+/// record is wrong, so that failure is kept only until another coprocessor answers about the leaf;
+/// a failed read or an answer of the wrong length says nothing about any leaf. A query no
+/// coprocessor answered is a [`ProofReadError`]. Every coprocessor receives the same prepared
+/// batch. The worker loop is the only retry layer.
 pub async fn verify_proofs<P: HostProofReader, T: Sync>(
     reader: &P,
     batch: &[(LeafQuery, T)],
@@ -66,7 +68,15 @@ pub async fn verify_proofs<P: HostProofReader, T: Sync>(
                     SOLANA_PROOF_ANSWER_COUNTER
                         .with_label_values(&[&source_name, answer_outcome(&verified)])
                         .inc();
-                    if *kept != Some(Ok(())) {
+                    let replaces = !matches!(
+                        (&*kept, &verified),
+                        (Some(Ok(())), _)
+                            | (
+                                Some(Err(_)),
+                                Err(HandleBindingFailure::ProofRecordInconsistent)
+                            )
+                    );
+                    if replaces {
                         *kept = Some(verified);
                     }
                 }
