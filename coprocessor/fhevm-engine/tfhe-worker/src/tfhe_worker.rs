@@ -289,41 +289,45 @@ mod operand_boundary_mask_tests {
 
     #[test]
     fn errored_local_producer_drains_consumer_and_is_not_reexecuted() {
-        let dcid = Some(vec![0xD1; 32]);
         // Producer already stamped is_error in the database: it must never
         // re-enter the ops (re-execution fails identically), and its
         // transaction-local consumer can never obtain the obligated raw
-        // bytes, so it drains terminally instead of deferring forever.
-        let producer = WorkItem {
-            is_error: true,
-            ..work_item(
-                handle(1),
-                vec![],
-                Some(mask_with_bits(&[])),
+        // bytes, so it drains terminally instead of deferring forever. A
+        // producer that is not allowed drains its consumer the same way: the
+        // Solana listener holds back such intermediates.
+        for producer_allowed in [true, false] {
+            let dcid = Some(vec![0xD1; 32]);
+            let producer = WorkItem {
+                is_error: true,
+                ..work_item(
+                    handle(1),
+                    vec![],
+                    Some(mask_with_bits(&[])),
+                    dcid.clone(),
+                    producer_allowed,
+                )
+            };
+            // operand 0 = handle(1): transaction-local (bit clear);
+            // operand 1 = handle(9): boundary (bit set), sourced from DB.
+            let consumer = work_item(
+                handle(2),
+                vec![handle(1), handle(9)],
+                Some(mask_with_bits(&[1])),
                 dcid.clone(),
                 true,
-            )
-        };
-        // operand 0 = handle(1): transaction-local (bit clear);
-        // operand 1 = handle(9): boundary (bit set), sourced from DB.
-        let consumer = work_item(
-            handle(2),
-            vec![handle(1), handle(9)],
-            Some(mask_with_bits(&[1])),
-            dcid.clone(),
-            true,
-        );
-        let txwork = vec![producer, consumer];
-        let prepared =
-            prepare_transaction_ops(&txwork, dcid.map(|d| vec![d]).as_deref(), &HashSet::new())
-                .unwrap();
-        assert!(
-            prepared.ops.is_empty(),
-            "neither the errored producer nor its drained consumer may execute"
-        );
-        assert_eq!(prepared.invalid_rows.len(), 1);
-        assert_eq!(prepared.invalid_rows[0].0, handle(2));
-        assert!(prepared.invalid_rows[0].1.contains("terminally errored"));
+            );
+            let txwork = vec![producer, consumer];
+            let prepared =
+                prepare_transaction_ops(&txwork, dcid.map(|d| vec![d]).as_deref(), &HashSet::new())
+                    .unwrap();
+            assert!(
+                prepared.ops.is_empty(),
+                "neither the errored producer nor its drained consumer may execute"
+            );
+            assert_eq!(prepared.invalid_rows.len(), 1);
+            assert_eq!(prepared.invalid_rows[0].0, handle(2));
+            assert!(prepared.invalid_rows[0].1.contains("terminally errored"));
+        }
     }
 
     #[test]

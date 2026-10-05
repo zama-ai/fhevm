@@ -61,7 +61,7 @@ are written as one narrative instead.
 | [DD-031](#dd-031-materiality-moves-to-the-gateways-ciphertextcommits-dd-006-revision)                                                     | adopted                                  | Materiality Moves To The Gateway's `CiphertextCommits` (DD-006 revision)                                                        |
 | DD-032                                                                                                                                    | replaced by DD-049                       | `EncryptedValue` + MMR Replaces Keyed-Nonce `AclRecord` (RFC-024), in [DESIGN_HISTORY.md](DESIGN_HISTORY.md)                    |
 | [DD-033](#dd-033-no-acl-lifecycle-events--self-describing-args--instruction-replay-indexing)                                              | adopted                                  | No ACL-Lifecycle Events — Self-Describing Args + Instruction-Replay Indexing                                                    |
-| [DD-034](#dd-034-eager-compute-scheduling-for-solana-q11-option-a)                                                                        | adopted                                  | Eager Compute Scheduling For Solana (Q11 Option A)                                                                              |
+| DD-034                                                                                                                                    | replaced by DD-069                       | Eager Compute Scheduling For Solana (Q11 Option A), in [DESIGN_HISTORY.md](DESIGN_HISTORY.md)                                  |
 | DD-035                                                                                                                                    | replaced by DD-048                       | Standalone Untrusted Solana MMR Proof Service, in [DESIGN_HISTORY.md](DESIGN_HISTORY.md)                                        |
 | DD-036                                                                                                                                    | replaced by DD-045                       | Burn-Redemption Consume Authorizes By MMR Public-Decrypt Proof, Not Live Handle, in [DESIGN_HISTORY.md](DESIGN_HISTORY.md)      |
 | DD-037                                                                                                                                    | replaced by DD-038                       | `fhe_execute` Events — `emit_cpi!`-Only, No `emit!` Log Fallback (DD-033 addendum), in [DESIGN_HISTORY.md](DESIGN_HISTORY.md)   |
@@ -96,6 +96,7 @@ are written as one narrative instead.
 | [DD-066](#dd-066-the-leaf-record-has-its-own-indexer-and-database)                                                                        | adopted                                  | The leaf record has its own indexer and database                                                                               |
 | [DD-067](#dd-067-a-merkle-proof-request-is-signed-by-a-kms-contexts-tx-sender)                                                             | adopted                                  | A Merkle proof request is signed by a KMS context's tx-sender                                                                  |
 | [DD-068](#dd-068-the-merkle-indexer-checks-its-record-against-the-chain-and-quarantines-a-store-that-disagrees)                            | adopted                                  | The Merkle indexer checks its record against the chain and quarantines a store that disagrees                                  |
+| [DD-069](#dd-069-only-an-output-its-transaction-stores-is-computed-and-recorded-as-a-block-producer)                                      | adopted                                  | Only an output its transaction stores is computed and recorded as a block producer                                             |
 
 ## DD-002: Keep App Store And Host ACL Store Separate
 
@@ -411,8 +412,8 @@ What this means plainly (state it in the debate):
 
 Handles are **block-bound and therefore reorg-unstable on EVERY chain** (EVM and Solana alike): a
 resubmitted or reorged transaction over the same inputs yields a _different_ handle. This is reconciled
-by the listener's reorg handling on EVM (block-status machine, DD-025). Solana accepts confirmed
-eager scheduling and leaves reorg unwind as optional resource recovery (DD-025, Boundaries).
+by the listener's reorg handling on EVM (block-status machine, DD-025). Solana accepts scheduling
+at confirmed and leaves reorg unwind as optional resource recovery (DD-025, Boundaries).
 
 Consequences:
 
@@ -844,33 +845,6 @@ The coprocessor produces handle-only material requests and inserts them directly
 `pbs_computations`; it does not derive authorization from instruction names or maintain allow reasons.
 The Solana host follower's decoder (`solana-host-follower/src/host.rs`) parses raw instruction data
 (Anchor discriminators + borsh args) instead of dispatching on ACL events.
-
-## DD-034: Eager Compute Scheduling For Solana (Q11 Option A)
-
-Status: adopted
-
-Context:
-
-Under the old model, ACL "allow" signals gated whether the coprocessor would schedule an FHE
-computation at all. With handles living in Store slots, that gate no
-longer maps cleanly onto MMR-based historical authorization.
-
-Decision:
-
-Solana computations are inserted eager/schedulable immediately. Concrete persistent handles are also
-inserted directly into `pbs_computations` for SnS preparation. The coprocessor does not decide decrypt
-availability; the KMS connector reads the Store and verifies the leaf proof.
-
-Rationale:
-
-Reorg unwind stays unimplemented on the Solana listener path (DD-025/DD-028). A minority-fork
-computation can waste work, but KMS authorization is independent of coprocessor scheduling and material
-preparation.
-
-Consequences:
-
-Coprocessor scheduling and decrypt authorization are decoupled for Solana. Material can be prepared
-before a decrypt request; plaintext is released only after KMS authorization succeeds.
 
 ## DD-040: App Public-Decrypt Is A Stateless Pull-Oracle Verifier, Not A Request Lifecycle
 
@@ -2593,14 +2567,69 @@ once the new store holds a leaf, until the record is rebuilt, as DD-066 already 
 node that answers no account for a store it has not seen yet lifts that store's quarantine until
 the next check; the connector still verifies every proof against its own read of the chain.
 
+## DD-069: Only an output its transaction stores is computed and recorded as a block producer
+
+Status: adopted
+
+Context:
+
+Every coprocessor publishes, per host block, a signed manifest of the handles the block produced and
+their ciphertext digests, and compares it with its peers' manifests (the consensus detector). On
+EVM a handle is a block's product only when its producing transaction persists it with an
+`Allowed` or `AllowedForDecryption` event. The host listener marks that output `is_allowed` and
+writes its `handle_producer_block` row. Any other output is a transient value: its computation row
+is stored `is_allowed = false, is_completed = true`, and the tfhe-worker computes it only for an
+allowed consumer in the same transaction.
+
+On Solana the TransientStore lives for one transaction. A handle outlives the transaction only when
+the transaction writes it into an EncryptedStore: a slot write, an allow leaf or a public leaf of an
+`fhe_execute` effect. An effect names a result of its own execution. `make_store_handle_public`
+writes a handle that an earlier transaction produced.
+
+Decision:
+
+`normalize_solana_records_for_db` allows a step output when the same transaction requests the
+output's material. The listener requests it for each store write (`HostOperation::store_writes`).
+An allowed output gets `is_allowed = true` and a `handle_producer_block` row. Every other output is
+inserted as EVM inserts a transient value.
+
+The set is per transaction, not per execution. A trivial-encrypt handle depends on its plaintext
+alone, so two executions of one transaction can produce the same handle, and `computations` keeps
+only the first row of a handle in a transaction. That row must be allowed when a later execution
+stores the handle.
+
+Rationale:
+
+Every producer handle has a material request, so it gets a ct128 and a digest: its block's manifest
+seals as soon as the handles are computed, and healing has bytes to fetch from peers. An
+intermediate has no material request, so a manifest listing it could seal only as `uncomputed`,
+after the timeout. Using EVM's transient model keeps one tfhe-worker scheduling path for both
+host types.
+
+Rejected alternative: compute every output and add a separate producer list to `LogTfhe`. It
+computes values no one can read, and EVM ingest would carry a field it never sets.
+
+Consequences:
+
+A held-back step whose output is not stored is a terminal error row that is not allowed. The
+tfhe-worker drains its consumers as it does for any dead producer
+(`errored_local_producer_drains_consumer_and_is_not_reexecuted`). Scheduling stays decoupled from
+authorization: the KMS validates the live EncryptedStore and any leaf proof before it releases
+plaintext, so work on a block that later rolls back is wasted, never released (INVARIANTS #31).
+
+Pinned by `only_an_output_its_transaction_stores_is_allowed`,
+`a_handle_produced_twice_is_allowed_when_a_later_execution_stores_it`,
+`storing_an_older_handle_allows_no_output` and
+`solana_records_reach_the_shared_sql_and_scheduler_path`.
+
 ## Open product decisions
 
 Not settled by the decisions above. Forward requirements are detailed in
 [`FUTURE_DESIGN.md`](./FUTURE_DESIGN.md); this list is the short index.
 
-- Whether resource-recovery reorg unwind should be added after confirmed eager scheduling
-  (DD-024, DD-025, DD-028). Reorg unwind is unimplemented on the listener path (DD-034); live KMS
-  authorization remains the plaintext-release boundary.
+- Whether resource-recovery reorg unwind should be added after scheduling at confirmed
+  (DD-024, DD-025, DD-028). Reorg unwind is unimplemented on the listener path (INVARIANTS #32);
+  live KMS authorization remains the plaintext-release boundary.
 - Whether confidential balances move to the staged inbound-credit profile (DD-016).
 - Rent and archival policy for the Store MMR (DD-049): one stable PDA serves a Store for its whole
   life and its size is bounded at `121 + 64·slots + 32·peaks` bytes, so compaction is a rent question,
