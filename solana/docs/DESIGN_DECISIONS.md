@@ -107,8 +107,8 @@ decrypt or compute permission.
 Decision:
 
 `confidential-token` stores token-local pointers such as current balance handles and emits
-app-local indexing events. `zama-host` stores canonical ACL, delegation, and transient authorization state. Ciphertext
-material is not host state (DD-031).
+app-local indexing events. `zama-host` stores canonical ACL, delegation, and transient
+authorization state. Ciphertext material is not host state (DD-031).
 
 Rationale:
 
@@ -395,8 +395,9 @@ compile-gated receiver helpers; those do not alter host verification or handle d
 
 Status: adopted
 
-Superseded in part by DD-043: `context_id` and `op_index` are no longer in the handle preimage. DD-050
-adds the origin mask. The current preimage is DD-043's.
+Superseded in part by DD-043: deterministic handle preimages carry neither `context_id` nor
+`op_index`, and `op_index` remains only in the rand seed. DD-050 adds the origin mask. The current
+preimage is DD-043's.
 
 Resolved in the June 2026 reconciliation; it was product-open before.
 
@@ -1166,12 +1167,12 @@ deferral above. Deleted: `request_burn_redemption`, both `close_*_burn_redemptio
 instructions, the `BurnRedemptionRequest` account (and its address / request-hash helpers), the
 `assert_burn_redemption_request_witness` + `assert_kms_public_decrypt_cert_for_request` helpers, and
 the `BurnRedemptionRequestedEvent`. Added: ONE thin `redeem_burned_amount(burned_handle,
-cleartext_amount, signatures, extra_data, proof)` that binds the burned Store, CPIs
-`zama_host::verify_public_decrypt`, asserts the
-proven handle equals `burned_handle` and the certified cleartext equals `cleartext_amount`, then
-pays out and closes `PendingBurn` (DD-045). Every field the witness pinned is carried elsewhere (destination
-integrity by the redeem-time signer check, handle binding by the created-public MMR leaf sealed in the
-burn, owner and mint by the Store), so the witness was pure scaffolding.
+cleartext_amount, signatures, extra_data)`. It CPIs `zama_host::verify_public_decrypt`, asserts the
+certified handle equals the `burned_handle` pinned in `PendingBurn` and the certified cleartext
+equals `cleartext_amount`, requires the burned Store's current handle to be that handle, then pays
+out and closes `PendingBurn` (DD-045, DD-065). Every field the witness pinned is carried elsewhere
+(destination integrity by the redeem-time signer check, handle binding by `PendingBurn`, owner and
+mint by the Store), so the witness was pure scaffolding.
 
 The stateless verifier replaces the request-time KMS pin: the cert is verified against the context it
 names inside the verifier, not the witness's pinned `kms_context_id`. (This note originally said the
@@ -1273,8 +1274,8 @@ The mechanics this relies on: the token returns the transferred handle and grant
 participant's contribution Store through the transient store (DD-049), so the batcher adds each
 deposit into that Store in the same join transaction. Each batch gets its **own token
 account**, so the burned/revealed total is exactly that batch's sum (the EVM code documents the
-inter-batch dust leak this prevents). Lifecycle is Pending -> Dispatched -> Settled/Canceled, or Refunding after a cancelled dispatch, with
-permissionless dispatch/settle/claim and an exact-refund `quit` — no operator custody of principal.
+inter-batch dust leak this prevents). Lifecycle is Pending -> Dispatched -> Settled/Canceled, or
+Refunding after a cancelled dispatch, with permissionless dispatch/settle/claim and an exact-refund `quit` — no operator custody of principal.
 
 Deliberate non-goals, carrying the EVM team's recorded lessons: **no participant-count gates**
 (trivially defeated by one actor joining N times with encrypted zeros; a single-participant batch
@@ -1845,8 +1846,9 @@ register or token-owned accumulator API. Burn retains its result slot and Pendin
 
 Decryption names each handle's Store beside the KMS routing (DD-060) and uses exact-handle MMR proofs. Current-slot publication
 and fresh slotless permissions are supported. Adding new private/public permissions to a
-history-only handle is deferred to fhevm-internal#2007. Generic disclosure authenticates
-Store/handle/cleartext, not a token-kind label. Original token events establish provenance.
+history-only handle is deferred to fhevm-internal#2007. Generic disclosure verifies the KMS
+certificate and emits the certified handle and cleartext; it reads no Store and no token-kind
+label. Original token events establish provenance.
 
 This supersedes older per-value PDA seeds, StoredValue/PersistentOutput APIs, standalone
 `make_handle_public`, v3 account extraData, and receipt-based transfer composition in this log.
@@ -1884,8 +1886,6 @@ checks. The branch retains current slot publication and PendingBurn semantics; h
 Status: adopted
 
 Adopted for identity. zama-host closes its accounts through `close_owned_accounts` (`admin-sweep` builds only) and the deployer's `host wipe`.
-
-The preview cleanup below is replaced by the preview recovery (`ci/preview-env/solana-host/recover.sh reset`). Preview deploy and destroy both run it. It closes application accounts, token accounts and lookup tables, then wipes host state.
 
 HostConfig is that program's singleton `PDA("host-config")`. Four public `zama-host` program IDs:
 
@@ -1993,8 +1993,8 @@ the connector. Nothing invents a second integer.
 `initialize_host_config` requires type byte `0x01` on the host `chain_id` and `0x00` on
 `gateway_chain_id`.
 HostConfig then holds the chosen row. The listener, connector and relayer must use that
-same value. The listener reads `chain_id` from HostConfig rather than from its own config. A deployment on a named public row may also compare RPC `getGenesisHash`
-with the hash above to confirm it is on the intended cluster, without that comparison defining
+same value. The listener reads `chain_id` from HostConfig rather than from its own config. A
+deployment on a named public row may also compare RPC `getGenesisHash` with the hash above to confirm it is on the intended cluster, without that comparison defining
 the id.
 
 #1880 proposed this type byte and the genesis recipe. This entry accepts both and writes

@@ -350,8 +350,8 @@ Pinned by `reports_a_wrong_emitted_handle_without_substituting_it` and `rejects_
 **29. [HOLDS]** Every transaction is independently interpretable: its
 instructions and inner instructions, including each execution's event,
 reconstruct its history with zero account reads and no sysvar state (updates
-echo the previous handle and declare the new handle's allows). A block from
-`getBlock` prepares into the same input as one from the stream.
+echo the previous handle and declare the new handle's allows). A block rebuilt
+from `getBlock` and `getTransaction` prepares into the same input as one from the stream.
 Pinned by the reconstruction walks such as `fhe_execute_walk_chains_transient_handles`, which take only transaction
 data, and by `rebuilds_a_slot_from_get_block_and_get_transaction` and `shared_transaction_decoding_contract`.
 

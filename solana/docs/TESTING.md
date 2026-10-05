@@ -341,7 +341,8 @@ shows and holds no such leaf is a terminal refusal, and a record that is behind 
   [cleartext host build](#the-cleartext-host-build). No program has a test-only entropy path. The
   host suites and cost snapshots run the default build that ships; the token, batcher, counter,
   dep-chain and Mollusk operator suites run the cleartext host build, which adds plaintext tracking
-  to the same instructions.
+  to the same instructions. `capability_invariants`, `fhe_execute_boundary` and `transient_mollusk`
+  run both builds as parity checks.
 - **A small CU delta after an incremental SBF build is not a code change.** The committed
   baselines are minted by `scripts/update-cost-snapshots.sh`, which runs `cargo clean` first. An
   incremental rebuild of the same source can differ by a few CU: a doc-comment-only edit to
@@ -375,9 +376,10 @@ shows and holds no such leaf is a terminal refusal, and a record that is behind 
   crate `zama-host` compiles, so a layout change breaks the build. The vendored coprocessor IDL and
   the TypeScript seed literals are still hand-mirrored: change a seed or an instruction shape in the
   host and run `check-zama-host-idl.sh` / `check-pda-seeds.py`, or the Codama clients drift.
-  The user-decrypt side of the mirror — the permit's canonical text and offchain-message envelope,
-  and the relayer envelope, hand-mirrored between the Rust crates (`zama-solana-permit`, used by the
-  connector and relayer) and the SDK's TypeScript — is pinned by the committed vectors in
-  `solana/test-fixtures/permit/permit_v1.json` and
-  `solana/test-fixtures/user-decrypt/relayer_envelope_v1.json`, which both sides assert against;
-  moving those bytes is a protocol change (new domain tag / version byte), not a fixture refresh.
+  The user-decrypt side of the mirror is pinned by committed vectors that both sides assert
+  against. The permit's canonical text and offchain-message envelope come from `zama-solana-permit`
+  (used by the connector and the relayer) and the SDK's TypeScript, pinned by
+  `solana/test-fixtures/permit/permit_v1.json`. The relayer envelope is mirrored by the relayer's
+  wire types (`UserDecryptV3RequestJson`) and the SDK, pinned by
+  `solana/test-fixtures/user-decrypt/relayer_envelope_v1.json`. Moving those bytes is a protocol
+  change (new domain tag / version byte), not a fixture refresh.
