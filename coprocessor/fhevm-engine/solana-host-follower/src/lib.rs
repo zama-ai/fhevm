@@ -3,10 +3,12 @@
 
 use std::time::Duration;
 
+mod args;
 mod follower;
 pub mod host;
 mod source;
 
+pub use args::{Follower, FollowerArgs};
 pub use follower::{
     block_checkpoint, run, track_confirmed_slot, BlockCheckpoint, BlockSink,
     FollowerConfig, IngestFailure, PreparedBlock, PreparedTransaction,

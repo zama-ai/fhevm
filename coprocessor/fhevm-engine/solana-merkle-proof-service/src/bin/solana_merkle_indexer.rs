@@ -2,13 +2,10 @@
 //! Yellowstone blocks into its own database. `solana_merkle_proof_server` serves the inclusion
 //! proofs from that database.
 
-use std::{str::FromStr, time::Duration};
+use std::time::Duration;
 
 use anyhow::{Context, Result};
 use clap::Parser;
-use solana_client::nonblocking::rpc_client::RpcClient;
-use solana_commitment_config::CommitmentConfig;
-use solana_sdk::pubkey::Pubkey;
 use sqlx::postgres::PgPoolOptions;
 use tokio_util::sync::CancellationToken;
 use tracing::{info, Level};
@@ -18,8 +15,8 @@ use fhevm_engine_common::{
     utils::DatabaseURL,
 };
 use solana_host_follower::{
-    block_checkpoint, host::host_chain_id, run, track_confirmed_slot,
-    FollowerConfig, StartPosition, SOLANA_RPC_REQUEST_TIMEOUT,
+    block_checkpoint, run, track_confirmed_slot, Follower, FollowerArgs,
+    StartPosition,
 };
 use solana_merkle_proof_service::{
     indexer::{IndexerStart, MerkleIndexerSink},
@@ -35,33 +32,14 @@ struct Args {
     #[arg(long)]
     database_url: DatabaseURL,
 
-    /// Solana JSON-RPC endpoint used for HostConfig reads.
-    #[arg(long, default_value = "http://127.0.0.1:8899")]
-    url: String,
-
-    /// Yellowstone gRPC endpoint.
-    #[arg(long, default_value = "http://127.0.0.1:10000")]
-    grpc_url: String,
-
-    /// Solana JSON-RPC endpoint whose ledger history rebuilds, with `getBlock` and
-    /// `getTransaction`, the slots Yellowstone can no longer replay, and reads the start block's
-    /// hash. It may be another provider's. Defaults to `--url`.
-    #[arg(long, env = "SOLANA_ARCHIVE_URL")]
-    archive_url: Option<String>,
+    #[command(flatten)]
+    follower: FollowerArgs,
 
     /// Confirmed block to replay inclusively on an empty record: a slot before the first
     /// encrypted store was created, such as the zama-host deployment slot. Required on an empty
     /// record; a saved checkpoint wins.
     #[arg(long, env = "SOLANA_MERKLE_START_SLOT")]
     start_slot: Option<u64>,
-
-    /// Optional `x-token` auth metadata for the gRPC endpoint.
-    #[arg(long, env = "SOLANA_GRPC_X_TOKEN")]
-    grpc_x_token: Option<String>,
-
-    /// `zama-host` program id whose store writes are recorded.
-    #[arg(long)]
-    program_id: String,
 
     /// Port of the HTTP health routes.
     #[arg(long, default_value_t = 8080)]
@@ -93,18 +71,11 @@ async fn main() -> Result<()> {
         None
     };
 
-    let program_id = Pubkey::from_str(&args.program_id)
-        .with_context(|| format!("invalid program id {}", args.program_id))?;
-    let rpc = RpcClient::new_with_timeout_and_commitment(
-        args.url.clone(),
-        SOLANA_RPC_REQUEST_TIMEOUT,
-        CommitmentConfig::confirmed(),
-    );
-    let chain_id = host_chain_id(&rpc, &program_id).await?;
-    let archive = RpcClient::new_with_timeout(
-        args.archive_url.unwrap_or_else(|| args.url.clone()),
-        SOLANA_RPC_REQUEST_TIMEOUT,
-    );
+    let Follower {
+        config,
+        live,
+        archive,
+    } = args.follower.connect().await?;
 
     let cancel = CancellationToken::new();
     let (pool, _refresh) = connect_pool_with_options(
@@ -151,7 +122,11 @@ async fn main() -> Result<()> {
 
     if args.metrics_addr.is_some() {
         metrics_server::spawn(args.metrics_addr, cancel.child_token());
-        tokio::spawn(track_confirmed_slot(rpc, chain_id, cancel.child_token()));
+        tokio::spawn(track_confirmed_slot(
+            live,
+            config.chain_id,
+            cancel.child_token(),
+        ));
     }
 
     let http_server =
@@ -167,12 +142,7 @@ async fn main() -> Result<()> {
     let indexer_result = run(
         &MerkleIndexerSink::new(pool),
         &archive,
-        &FollowerConfig {
-            grpc_url: args.grpc_url,
-            x_token: args.grpc_x_token,
-            program_id,
-            chain_id,
-        },
+        &config,
         start,
         cancel.clone(),
     )

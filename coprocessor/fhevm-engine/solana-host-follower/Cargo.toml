@@ -8,6 +8,7 @@ license.workspace = true
 [dependencies]
 anyhow = { workspace = true }
 bs58 = "0.5.1"
+clap = { workspace = true }
 futures-util = { workspace = true }
 prometheus = { workspace = true }
 tokio = { workspace = true }
