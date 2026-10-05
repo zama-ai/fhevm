@@ -74,7 +74,7 @@ describe("RFC 029 rollout gates", () => {
 
   test("selects Default parameters at baseline creation for GPU continuation", () => {
     const scenario = parseBlueGreenScenario(migrationScenario("v0.14.1", true), "GPU migration");
-    expect(resolveBlueGreenScenario("gpu-migration.yaml", scenario).kms).toEqual({ mode: "threshold", parties: 4, threshold: 1, committeeSize: 4, fheParams: "Default", insecureTestKeygen: true });
+    expect(resolveBlueGreenScenario("gpu-migration.yaml", scenario).kms).toEqual({ parties: 4, threshold: 1, committeeSize: 4, fheParams: "Default", insecureTestKeygen: true });
     expect(scenario.bcs?.source).toEqual({ mode: "registry", tag: "v0.14.1" });
     expect(scenario.gcs.env?.FORCE_LEGACY_SERVER_KEY).toBe("true");
     expect(scenario.gcs.deferredStart).toBe(true);

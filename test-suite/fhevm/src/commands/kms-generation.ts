@@ -152,11 +152,6 @@ export const waitForPartiesRunning = async (parties: number[]) => {
  * confirming it cannot decrypt below quorum, and confirming it recovers once the parties return.
  */
 export const runKmsGenerationProfile = async (state: State, runDecryption: DecryptionRunner) => {
-  if (state.scenario.kms.mode !== "threshold") {
-    throw new PreflightError(
-      "kms-generation requires a threshold-mode KMS cluster; rerun `fhevm-cli up --scenario four-party-threshold-kms`",
-    );
-  }
   const { parties, reconstruct } = await auditKmsGeneration(state);
   const { stopForTolerance, stopForFloor } = quorumPlan(parties, state.scenario.kms.threshold);
 

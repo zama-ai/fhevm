@@ -5,7 +5,6 @@ import { consumerOnlyHostListeners, listenerCoreServices } from "../host-listene
 
 import { delaysManifestDetectors, startManifestRuntime } from "./manifest-startup";
 
-import { createHash } from "node:crypto";
 import { existsSync } from "node:fs";
 import path from "node:path";
 
@@ -15,6 +14,7 @@ import {
   assertSupportedBundleScenario,
   bootstrapUsesHostKmsGeneration,
   canonicalProtocolConfigSeedingUsesEnv,
+  kmsCoreUpgradeCrossesMaterialBreak,
   requiresGatewayKmsGenerationAddress,
   requiresLegacyHostChainSeedShim,
   requiresLegacyKmsBootstrapBudget,
@@ -22,6 +22,7 @@ import {
   requiresModernHostAddressArtifacts,
   replaceRegistrySourceTag,
   supportsCanonicalProtocolConfigSeeding,
+  supportsConnectorHttp,
   supportsHostListenerConsumer,
   validateBundleCompatibility,
 } from "../compat/compat";
@@ -65,6 +66,7 @@ import {
   GROUP_BUILD_COMPONENTS,
   GROUP_BUILD_SERVICES,
   KEYGEN_ID_SELECTOR,
+  KMS_CONNECTOR_HTTP_SERVICES,
   KMS_CORE_CONTAINER,
   LOCK_DIR,
   LOG_TARGETS,
@@ -108,16 +110,19 @@ import {
   readEnvFile,
   remove,
   toServiceName,
+  uint256ToId,
   withHexPrefix,
   writeEnvFile,
   writeJson,
 } from "../utils/fs";
 import { ensureDiscovery, createDiscovery, defaultEndpoints, discoverContracts, objectStorePublishedEndpoint, validateDiscovery } from "./discovery";
-import { kmsConnectorEnvName, kmsConnectorPrefix, kmsCoreName, reconstructionThreshold } from "../kms-party";
+import { kmsConnectorEnvName, kmsConnectorPrefix, kmsCoreName, kmsPartyIds, reconstructionThreshold } from "../kms-party";
+import { parseContextAndEpoch } from "../commands/kms-context-switch";
 import { defaultHostChain, extraHostChains, hostChainsForState } from "./topology";
 import {
   kmsConnectorHealthContainers,
   castBool,
+  castCall,
   coprocessorHealthContainers,
   waitForCoprocessorDbMigrations,
   discoverKmsSigners,
@@ -126,6 +131,7 @@ import {
   listenerContainersForChain,
   postBootHealthGate,
   probeBootstrap,
+  resolveKmsGenerationTarget,
   waitForCoprocessorKeyMaterial,
   waitForBootstrap,
   waitForContainer,
@@ -617,99 +623,6 @@ const assertSchemaCompatibility = async (
   }
 };
 
-/**
- * This is the sole schema-superset exception for the local, public-runtime
- * KMS connector adoption below. The resolved 72af12a bundle has this one
- * additive enum-value migration while this checkout intentionally predates
- * it. An old connector can read a database containing an extra enum
- * value; it neither writes nor relies on `CompressedKeySet` in the CPU gate.
- *
- * Do not broaden this list. The normal schema guard remains authoritative for
- * every other local override and every other migration difference. In
- * particular, this exception does not make a local migration run: it only
- * permits the three long-lived connector processes to attach to a database
- * that has already been migrated by the resolved image.
- */
-const E2E_PUBLIC_KMS_CONNECTOR_SUPERSET = {
-  commit: "72af12a184c2304008a06e7ecdf97d2da2e0f532",
-  path: "kms-connector/connector-db/migrations/20260804000000_add_compressed_key_set.sql",
-  version: "20260804000000",
-  // SHA-384 of the exact approved baseline SQL blob. The SQL is only:
-  // `ALTER TYPE key_type ADD VALUE IF NOT EXISTS 'CompressedKeySet';`.
-  sha384: "e3c67db173c72841bb23f81937e1b0a1f49dc4a1ac0dd8711e77e2ced145c05909cd783f89642acefa4967578ed8611d",
-} as const;
-
-export type E2ePublicKmsConnectorSupersetOperations = {
-  run: typeof run;
-  postgresExec: typeof postgresExec;
-};
-
-const e2ePublicKmsConnectorSupersetOperations: E2ePublicKmsConnectorSupersetOperations = { run, postgresExec };
-
-/**
- * Proves the only migration mismatch permitted by the E2E-only KMS runtime
- * adoption. We pin all three sides: the resolved migration commit, the exact
- * source-tree diff/blob, and the already-applied SQLx checksum in the live
- * connector database. A false result is deliberately indistinguishable from
- * any other schema mismatch so callers fail closed through the normal guard.
- */
-export const isVerifiedE2ePublicKmsConnectorSchemaSuperset = async (
-  state: Pick<State, "versions" | "scenario">,
-  operations: E2ePublicKmsConnectorSupersetOperations = e2ePublicKmsConnectorSupersetOperations,
-) => {
-  const guard = SCHEMA_GUARDS["kms-connector"];
-  // Threshold connectors use separate databases. Do not claim this
-  // single-database proof covers them until each party is checked explicitly.
-  if (state.scenario.kms.mode !== "centralized" || state.scenario.kms.parties !== 1) {
-    return false;
-  }
-  const resolvedRef = state.versions.env[guard.versionKey];
-  if (!resolvedRef) {
-    return false;
-  }
-
-  const verified = await operations.run(
-    ["git", "rev-parse", "-q", "--verify", `${resolvedRef}^{commit}`],
-    { cwd: REPO_ROOT, allowFailure: true },
-  );
-  if (verified.code !== 0 || verified.stdout.trim() !== E2E_PUBLIC_KMS_CONNECTOR_SUPERSET.commit) {
-    return false;
-  }
-
-  const untracked = await operations.run(
-    ["git", "ls-files", "--others", "--exclude-standard", "--", guard.repoPath],
-    { cwd: REPO_ROOT, allowFailure: true },
-  );
-  if (untracked.code !== 0 || untracked.stdout.trim()) {
-    return false;
-  }
-
-  const diff = await operations.run(
-    ["git", "diff", "--no-ext-diff", "--exit-code", "--name-status", E2E_PUBLIC_KMS_CONNECTOR_SUPERSET.commit, "--", guard.repoPath],
-    { cwd: REPO_ROOT, allowFailure: true },
-  );
-  if (diff.code !== 1 || diff.stdout.trim() !== `D\t${E2E_PUBLIC_KMS_CONNECTOR_SUPERSET.path}`) {
-    return false;
-  }
-
-  const source = await operations.run(
-    ["git", "show", `${E2E_PUBLIC_KMS_CONNECTOR_SUPERSET.commit}:${E2E_PUBLIC_KMS_CONNECTOR_SUPERSET.path}`],
-    { cwd: REPO_ROOT, allowFailure: true },
-  );
-  if (
-    source.code !== 0 ||
-    createHash("sha384").update(source.stdout).digest("hex") !== E2E_PUBLIC_KMS_CONNECTOR_SUPERSET.sha384
-  ) {
-    return false;
-  }
-
-  const applied = await operations.postgresExec("kms-connector", [
-    "-tAc",
-    `SELECT encode(checksum, 'hex') || '|' || EXISTS (SELECT 1 FROM pg_type kt JOIN pg_enum ke ON ke.enumtypid = kt.oid WHERE kt.typname = 'key_type' AND ke.enumlabel = 'CompressedKeySet') FROM _sqlx_migrations WHERE version = ${E2E_PUBLIC_KMS_CONNECTOR_SUPERSET.version} AND success = TRUE`,
-  ]);
-  return applied.code === 0 && applied.stdout.trim() === `${E2E_PUBLIC_KMS_CONNECTOR_SUPERSET.sha384}|true`;
-};
-
 /** Checks whether the coprocessor database already contains seeded runtime data. */
 const coprocessorDbSeeded = async (database: string) => {
   const result = await postgresExec(database, ["-tAc", "select 1 from host_chains limit 1"]);
@@ -871,18 +784,14 @@ export const runStep = async (state: State, step: StepName) => {
       await stepComposeUp("object-store", state);
       await waitForContainer("fhevm-object-store", "healthy");
       await waitForContainer("fhevm-object-store-setup", "complete");
-      // Threshold mode boots the dedicated N-node cluster component instead of
-      // the single centralized core. Party 1 keeps the `kms-core` name, so the
-      // readiness wait below is unchanged.
-      await stepComposeUp(state.scenario.kms.mode === "threshold" ? "core-threshold" : "core", state);
+      // Party 1 of the threshold cluster keeps the `kms-core` name.
+      await stepComposeUp("core-threshold", state);
       await waitForLog(KMS_CORE_CONTAINER, /KMS Server service socket address/);
-      if (state.scenario.kms.mode === "threshold") {
-        // The party-1 socket log only proves one core is up. The cluster cannot
-        // serve keygen/decryption until kms-core-init has run the cross-party MPC
-        // context/PRSS setup, so gate on its completion before signer discovery /
-        // bootstrap — otherwise we proceed against an uninitialized cluster.
-        await waitForContainer("kms-core-init", "complete");
-      }
+      // The party-1 socket log only proves one core is up. The cluster cannot
+      // serve keygen/decryption until kms-core-init has run the cross-party MPC
+      // context/PRSS setup, so gate on its completion before signer discovery /
+      // bootstrap — otherwise we proceed against an uninitialized cluster.
+      await waitForContainer("kms-core-init", "complete");
       await stepComposeUp("database", state);
       await waitForContainer(COPROCESSOR_DB_CONTAINER, "healthy");
       const defaultChain = defaultHostChain(state);
@@ -896,7 +805,6 @@ export const runStep = async (state: State, step: StepName) => {
       // host chain (different mnemonic). A threshold-mode KMS runs one connector (and tx-sender)
       // per party, and EVERY party must be funded — otherwise only the funded party can
       // submit keygen/crsgen responses and on-chain consensus never completes.
-      // `kms.parties` is 1 for centralized and N for threshold.
       for (let party = 1; party <= state.scenario.kms.parties; party += 1) {
         const connectorEnv = await readEnvFile(envPath(kmsConnectorEnvName(party)));
         const txSenderKey = connectorEnv.KMS_CONNECTOR_PRIVATE_KEY;
@@ -932,7 +840,6 @@ export const runStep = async (state: State, step: StepName) => {
       break;
     }
     case "kms-signer": {
-      // `kms.parties` is 1 for centralized and N for threshold, so one call covers both.
       const discovery = await ensureDiscovery(state);
       const { signers, caCerts, objectStoreKeyPrefix } = await discoverKmsSigners(state.scenario.kms.parties);
       discovery.kmsSigners = signers;
@@ -1274,18 +1181,15 @@ export const runStep = async (state: State, step: StepName) => {
         );
         await waitForContainer("gateway-sc-trigger-crsgen", "complete");
       }
-      // wait-for-materials polls every two seconds. Centralized keygen is quick; a threshold-mode
-      // cluster runs a real multi-party DKG. Legacy cores can take more than 20 minutes to finish
-      // two preprocessing sessions, so only they get the larger budget — a global raise would make
-      // every threshold CI job wait that long before reporting a genuinely hung DKG.
-      const CENTRALIZED_BOOTSTRAP_ATTEMPTS = 120;
+      // wait-for-materials polls every two seconds; a secure keygen runs a real multi-party DKG.
+      // Legacy cores can take more than 20 minutes to finish two preprocessing sessions, so only
+      // they get the larger budget — a global raise would make every CI job wait that long before
+      // reporting a genuinely hung DKG.
       const THRESHOLD_BOOTSTRAP_ATTEMPTS = 450;
       const LEGACY_THRESHOLD_BOOTSTRAP_ATTEMPTS = 1200;
-      const thresholdAttempts = requiresLegacyKmsBootstrapBudget(state.versions.env.CORE_VERSION ?? "")
+      const bootstrapAttempts = requiresLegacyKmsBootstrapBudget(state.versions.env.CORE_VERSION ?? "")
         ? LEGACY_THRESHOLD_BOOTSTRAP_ATTEMPTS
         : THRESHOLD_BOOTSTRAP_ATTEMPTS;
-      const bootstrapAttempts =
-        state.scenario.kms.mode === "threshold" ? thresholdAttempts : CENTRALIZED_BOOTSTRAP_ATTEMPTS;
       await timed("[bootstrap] wait-for-materials", () => waitForBootstrap(state, bootstrapAttempts));
       // Bootstrap proves the KMS produced the material; this proves the operators
       // ingested it. Without the second wait `up` reports ready while operators
@@ -1485,15 +1389,14 @@ export const up = async (options: UpOptions) => {
   }
   if (
     (options.resume || options.fromStep) &&
-    state.scenario.kms.mode === "threshold" &&
     !state.e2eKmsConnectorRuntimeAdoptionPending
   ) {
     // The resume/from-step lifecycle map (COMPONENT_BY_STEP, resumeSteadyStateServices) models a
-    // single `kms-core` + one connector tier. A threshold-mode cluster has kms-core-2..N, kms-core-init
+    // single `kms-core` + one connector tier. The threshold cluster has kms-core-2..N, kms-core-init
     // and per-party connectors that the map does not know about, so a partial restart would leave
-    // them stale. Block it like the threshold upgrade guard until the map is made scenario-aware.
+    // them stale. Blocked until the map is made cluster-aware.
     throw new ResumeError(
-      "--resume / --from-step is not supported for a threshold-mode KMS cluster (the lifecycle map models a single kms-core/connector and would leave kms-core-2..N, kms-core-init, and per-party connectors stale); recreate the stack with a fresh `up`",
+      "--resume / --from-step is not supported with the threshold KMS cluster (the lifecycle map models a single kms-core/connector and would leave kms-core-2..N, kms-core-init, and per-party connectors stale); recreate the stack with a fresh `up`",
     );
   }
   if (options.resume) {
@@ -1506,7 +1409,7 @@ export const up = async (options: UpOptions) => {
     if (state.e2eKmsConnectorRuntimeAdoptionPending) {
       resumedPendingKmsAdoption = await resumePendingE2eKmsConnectorRuntimeAdoption(state, fromStep);
     }
-    if (resumedPendingKmsAdoption && state.scenario.kms.mode === "threshold") {
+    if (resumedPendingKmsAdoption) {
       // Generic resume intentionally has no threshold-KMS lifecycle map. The
       // exact pending-adoption helper above has completed the only safe work;
       // do not fall through and accidentally attempt a broader partial resume.
@@ -2109,7 +2012,6 @@ const waitForUpgrade = async (state: State, group: UpgradeGroup, runtimeServices
  */
 export type E2eKmsConnectorAdoptionOperations = {
   assertSchemaCompatibility: typeof assertSchemaCompatibility;
-  isVerifiedE2ePublicKmsConnectorSchemaSuperset?: typeof isVerifiedE2ePublicKmsConnectorSchemaSuperset;
   saveState: typeof saveState;
   generateRuntime: typeof generateRuntime;
   maybeBuild: typeof maybeBuild;
@@ -2136,8 +2038,7 @@ export const adoptRunningE2eKmsConnectorOverride = async (
 
   // The persisted override is intentionally per-service so this adoption
   // cannot start the migration container. Keep the normal schema guard in
-  // force. The only exception is the separately proven, exact one-migration
-  // DB-superset case above; no other mismatch can reach the live replacement.
+  // force: no migration mismatch can reach the live replacement.
   // Network targets deliberately have no local migration-reference guard, so
   // they cannot use this source-attaching recovery path at all. Likewise, a
   // missing connector migration reference is not evidence of compatibility.
@@ -2149,20 +2050,7 @@ export const adoptRunningE2eKmsConnectorOverride = async (
       "KMS connector E2E runtime adoption requires a schema-guarded bundle with CONNECTOR_DB_MIGRATION_VERSION",
     );
   }
-  try {
-    await operations.assertSchemaCompatibility(nextState.versions, nextState.overrides, nextState.scenario, false);
-  } catch (error) {
-    const permitted =
-      error instanceof SchemaGuardError &&
-      error.group === "kms-connector" &&
-      (await (operations.isVerifiedE2ePublicKmsConnectorSchemaSuperset ?? isVerifiedE2ePublicKmsConnectorSchemaSuperset)(
-        nextState,
-      ));
-    if (!permitted) {
-      throw error;
-    }
-    console.log("[e2e] accepting the verified additive KMS connector DB-superset migration");
-  }
+  await operations.assertSchemaCompatibility(nextState.versions, nextState.overrides, nextState.scenario, false);
   await operations.saveState(nextState);
   await operations.generateRuntime(nextState, stackSpecForState(nextState));
 
@@ -2243,6 +2131,10 @@ export const upgradeRuntimeGroup = async (groupValue: string | undefined, option
       "Stack is not running; start one with `fhevm-cli up --override ...` or `fhevm-cli up --scenario ...` first",
     );
   }
+  if (groupValue === "kms" || groupValue === "kms-core") {
+    await upgradeKmsCluster(state, groupValue, options.lockFile);
+    return;
+  }
   await ensureRuntimeArtifacts(state, "upgrade");
   const initialPlan = resolveUpgradePlan(state, groupValue, { lockFile: !!options.lockFile });
   for (const step of initialPlan.steps) {
@@ -2304,6 +2196,72 @@ const executeUpgradePlan = async (nextState: State, plan: ReturnType<typeof reso
   await waitForUpgrade(nextState, plan.group, plan.runtimeServices);
 };
 
+/** Retries the operator-upgrade quorum gate until the other operators are ready again. */
+const waitForKmsOperatorUpgradeQuorum = async (state: State, operatorId: number, attempts = 36) => {
+  for (let attempt = 1; ; attempt += 1) {
+    try {
+      return await assertKmsOperatorUpgradeQuorum(state, operatorId);
+    } catch (error) {
+      if (!(error instanceof PreflightError) || attempt >= attempts) {
+        throw error;
+      }
+      await Bun.sleep(5_000);
+    }
+  }
+};
+
+/**
+ * The active KMS context and its epoch, which a 0.15+ core must be told own pre-0.15 material;
+ * undefined when the core upgrade does not cross that break.
+ */
+const kmsEpochMigrationFor = async (state: State, targetCoreVersion: string) => {
+  if (!kmsCoreUpgradeCrossesMaterialBreak(state.versions.env.CORE_VERSION ?? "", targetCoreVersion)) {
+    return undefined;
+  }
+  const target = resolveKmsGenerationTarget(state);
+  if (!target.configAddress) {
+    throw new PreflightError("KMS migration requires ProtocolConfig discovery");
+  }
+  const active = parseContextAndEpoch(
+    await castCall(target.rpcUrl, target.configAddress, "getCurrentKmsContextAndEpoch()(uint256,uint256)"),
+  );
+  return [{ contextId: uint256ToId(active.contextId), epochIds: [uint256ToId(active.epochId)] }];
+};
+
+/** Upgrades one serving operator once the rest of the cluster can still reach quorum without it. */
+const upgradeKmsOperatorWhenQuorate = async (
+  state: State,
+  operatorId: number,
+  options: Parameters<typeof upgradeThresholdKmsOperator>[1],
+) => {
+  // The previous operator only waited for running containers; let its connector settle
+  // before the next one goes down, or the quorum gate sees it as unavailable.
+  await waitForKmsOperatorUpgradeQuorum(state, operatorId);
+  await upgradeThresholdKmsOperator(operatorId, options);
+};
+
+/**
+ * `upgrade kms` / `upgrade kms-core`: moves every serving operator (core + connector) or core to
+ * the lock file's versions, one at a time, so the cluster keeps its quorum throughout.
+ */
+const upgradeKmsCluster = async (state: State, group: "kms" | "kms-core", lockFile: string | undefined) => {
+  if (!lockFile) {
+    throw new PreflightError(`upgrade ${group} requires --lock-file`);
+  }
+  const targetCoreVersion = (await readJson<VersionBundle>(lockFile)).env.CORE_VERSION ?? "";
+  const migration = await kmsEpochMigrationFor(state, targetCoreVersion);
+  if (group === "kms-core" && migration) {
+    throw new PreflightError("upgrade kms-core cannot cross the 0.15 KMS material break; use upgrade kms");
+  }
+  for (const id of kmsPartyIds(state.scenario.kms.committeeSize)) {
+    if (group === "kms") {
+      await upgradeKmsOperatorWhenQuorate((await loadState()) ?? state, id, { lockFile, migration });
+    } else {
+      await upgradeThresholdKmsNode(id, { lockFile });
+    }
+  }
+};
+
 /**
  * Ends the bootstrap step: regenerates the runtime and, when the stack booted at the scenario's
  * `bootstrap` release, upgrades it to the bundle now that the key material is ingested, in
@@ -2317,8 +2275,8 @@ const completeBootstrap = async (state: State) => {
     return;
   }
   const completed = new Set(pending.completed ?? []);
-  // Every unit is recorded once it succeeds, so `up --resume` after a failure skips it instead
-  // of repeating an upgrade task that reverts on an already upgraded proxy.
+  // Every unit is recorded once it succeeds, so a later call skips it instead of repeating an
+  // upgrade task that reverts on an already upgraded proxy.
   const once = async (unit: string, action: () => Promise<void>) => {
     if (completed.has(unit)) {
       return;
@@ -2369,15 +2327,31 @@ const completeBootstrap = async (state: State) => {
       }
     }
   });
-  await once("kms-core", async () => {
-    advance("the KMS core", ["CORE_VERSION"], []);
-    await executeUpgradePlan(state, resolveUpgradePlan(state, "kms-core", { lockFile: true }));
-    // The core has no healthcheck; let it serve before the connector reconnects to it.
-    await waitForLog(KMS_CORE_CONTAINER, /KMS Server service socket address/);
+  // A KMS core and its connector are one rollout unit: upgrade them operator by operator,
+  // like production and the rollouts, through the paired primitive.
+  const migration = await kmsEpochMigrationFor(state, pending.target.env.CORE_VERSION ?? "");
+  const lockFile = path.join(STATE_DIR, "bootstrap-kms-operator-lock.json");
+  await writeJson(lockFile, {
+    ...state.versions,
+    env: bootstrapPhaseEnv(state.versions.env, pending.target.env, ["CORE_VERSION", ...CONNECTOR_VERSION_KEYS]),
   });
-  await once("kms-connector", async () => {
-    advance("the KMS connector", [...CONNECTOR_VERSION_KEYS, ...CONNECTOR_OPTIONAL_VERSION_KEYS], ["kms-connector"]);
-    await executeUpgradePlan(state, resolveUpgradePlan(state, "kms-connector", { lockFile: true }));
+  const { target, lockPath, requiresGitHub } = state;
+  const overrides = pending.overrides.filter((override) => override.group === "kms-connector");
+  for (const operatorId of kmsPartyIds(state.scenario.kms.parties)) {
+    await once(`kms-operator:${operatorId}`, async () => {
+      console.log(`[bootstrap] key material ingested; upgrading KMS operator ${operatorId} to the bundle`);
+      await upgradeKmsOperatorWhenQuorate(state, operatorId, { lockFile, overrides, migration });
+      // Keep this `pending`, which `once` records progress on, and the bundle's own lock.
+      Object.assign(state, await loadState(), { bootstrapPending: pending, target, lockPath, requiresGitHub });
+    });
+  }
+  // The paired primitive recreates only each operator's core and connector runtime; start the
+  // connector services the bootstrap release did not ship (HTTP endpoint and proxy).
+  await once("kms-connector-http", async () => {
+    advance("the KMS connector HTTP path", CONNECTOR_OPTIONAL_VERSION_KEYS, ["kms-connector"]);
+    await generateRuntime(state, stackSpecForState(state));
+    await stepComposeUp("kms-connector", state, serviceNameList(state, "kms-connector"));
+    await waitForKmsConnector(state);
   });
   await once("listener-core", async () => {
     advance("listener-core", LISTENER_CORE_VERSION_KEYS, ["listener-core"]);
@@ -2528,6 +2502,7 @@ const kmsOperatorConnectorServices = (operatorId: number) => {
   return {
     migration: `${prefix}-db-migration`,
     runtime: [`${prefix}-gw-listener`, `${prefix}-kms-worker`, `${prefix}-tx-sender`],
+    http: KMS_CONNECTOR_HTTP_SERVICES.map((service) => `${prefix}-${service.slice("kms-connector-".length)}`),
   };
 };
 
@@ -2602,9 +2577,6 @@ export const upgradeThresholdKmsNode = async (
   const state = await operations.loadState();
   if (!state || !(await operations.projectContainers()).length) {
     throw new PreflightError("Stack is not running; start a threshold KMS scenario first");
-  }
-  if (state.scenario.kms.mode !== "threshold") {
-    throw new PreflightError("upgradeKmsNode requires a threshold-mode KMS cluster");
   }
   if (!Number.isInteger(nodeId) || nodeId < 1 || nodeId > state.scenario.kms.committeeSize) {
     throw new PreflightError(
@@ -2695,9 +2667,6 @@ export const upgradeThresholdKmsOperator = async (
   const state = await operations.loadState();
   if (!state || !(await operations.projectContainers()).length) {
     throw new PreflightError("Stack is not running; start a threshold KMS scenario first");
-  }
-  if (state.scenario.kms.mode !== "threshold") {
-    throw new PreflightError("upgradeKmsOperator requires a threshold-mode KMS cluster");
   }
   if (state.scenario.kms.parties !== state.scenario.kms.committeeSize) {
     throw new PreflightError("upgradeKmsOperator does not support spare KMS parties");
@@ -2810,9 +2779,12 @@ export const upgradeThresholdKmsOperator = async (
   await operations.waitForContainer(core, "healthy");
   await operations.composeUp("kms-connector", [connector.migration], { noDeps: true, forceRecreate: true });
   await operations.waitForContainer(connector.migration, "complete");
-  await operations.composeUp("kms-connector", connector.runtime, { noDeps: true, forceRecreate: true });
+  // The HTTP endpoint and proxy are part of the operator once the bundle ships them; recreate them
+  // too, or the readiness wait below targets containers that were never started.
+  const runtime = supportsConnectorHttp(nextState) ? [...connector.runtime, ...connector.http] : connector.runtime;
+  await operations.composeUp("kms-connector", runtime, { noDeps: true, forceRecreate: true });
   await operations.waitForKmsConnectorParty(nextState, operatorId);
-  await operations.postBootHealthGate(connector.runtime);
+  await operations.postBootHealthGate(runtime);
   await operations.saveState(nextState);
 };
 
@@ -2843,7 +2815,8 @@ export const showResumeHint = async (rawArgs: string[]) => {
     return;
   }
   const state = await loadState();
-  if (state?.completedSteps.length) {
-    console.error("Hint: run with --resume to continue, or without to start fresh.");
+  // A pending KMS connector runtime adoption is the only failure `--resume` can still pick up.
+  if (state?.e2eKmsConnectorRuntimeAdoptionPending && state.completedSteps.length) {
+    console.error("Hint: run with --resume to finish the pending KMS connector runtime adoption, or without to start fresh.");
   }
 };

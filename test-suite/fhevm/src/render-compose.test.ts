@@ -224,7 +224,7 @@ describe("render-compose", () => {
     });
   });
 
-  test("selects the published centralized core repository for an older release", async () => {
+  test("selects the published pre-0.15 core repository for an older release", async () => {
     await withTempStateDir(async () => {
       await mkdir(path.dirname(envPath("coprocessor")), { recursive: true });
       await writeFile(envPath("coprocessor"), "\n");
@@ -232,16 +232,11 @@ describe("render-compose", () => {
       const pinned = structuredClone(state);
       pinned.versions.env.CORE_VERSION = "v0.14.0-1";
       await generateComposeOverrides(pinned, stackSpecForState(pinned));
-      const doc = YAML.parse(await readFile(composePath("core"), "utf8"));
-      expect(doc.services["kms-core"].image).toBe("ghcr.io/zama-ai/kms/core-service:v0.14.0-1");
+      const doc = YAML.parse(await readFile(composePath("core-threshold"), "utf8"));
+      for (const core of ["kms-core", "kms-core-2", "kms-core-3", "kms-core-4"]) {
+        expect(doc.services[core].image).toBe("ghcr.io/zama-ai/kms/core-service:v0.14.0-1");
+      }
     });
-  });
-
-  test("persists kms-core private vault across container recreates", async () => {
-    const doc = await loadMergedComposeDoc("core");
-    const volumes = doc.services["kms-core"]?.volumes as string[] | undefined;
-    expect(doc.services["kms-core"]?.user).toBe("root");
-    expect(volumes).toContain("fhevm_kms_core_keys:/app/kms/core/service/keys");
   });
 
   test("keeps localhost object-store URLs reachable from the e2e container", async () => {
@@ -434,12 +429,14 @@ describe("render-compose", () => {
         ),
       },
     };
-    expect(serviceNameList(withoutEndpoint, "kms-connector")).toEqual([
-      "kms-connector-db-migration",
-      "kms-connector-gw-listener",
-      "kms-connector-kms-worker",
-      "kms-connector-tx-sender",
-    ]);
+    expect(serviceNameList(withoutEndpoint, "kms-connector")).toEqual(
+      ["kms-connector", "kms-connector-2", "kms-connector-3", "kms-connector-4"].flatMap((prefix) => [
+        `${prefix}-db-migration`,
+        `${prefix}-gw-listener`,
+        `${prefix}-kms-worker`,
+        `${prefix}-tx-sender`,
+      ]),
+    );
 
     const withEndpoint: State = {
       ...state,
@@ -453,7 +450,7 @@ describe("render-compose", () => {
 
     const threshold: State = {
       ...withEndpoint,
-      scenario: testDefaultScenario({ kms: { mode: "threshold", parties: 4, threshold: 1, committeeSize: 4, fheParams: "Test" } }),
+      scenario: testDefaultScenario({ kms: { parties: 4, threshold: 1, committeeSize: 4, fheParams: "Test" } }),
     };
     const services = serviceNameList(threshold, "kms-connector");
     expect(services).toContain("kms-connector-endpoint");
@@ -559,7 +556,7 @@ describe("render-compose", () => {
         const overridden: State = {
           ...state,
           overrides: [{ group: "coprocessor" }, { group: "kms-connector" }],
-          scenario: testDefaultScenario({ kms: { mode: "threshold", parties: 4, threshold: 1, committeeSize: 4, fheParams: "Test" } }),
+          scenario: testDefaultScenario({ kms: { parties: 4, threshold: 1, committeeSize: 4, fheParams: "Test" } }),
         };
         await generateComposeOverrides(overridden, stackSpecForState(overridden));
         expect(await platformOf("kms-connector", "kms-connector-endpoint")).toBe("linux/arm64");

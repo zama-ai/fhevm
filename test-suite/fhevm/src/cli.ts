@@ -258,7 +258,7 @@ const root = defineCommand({
     upgrade: defineCommand({
       meta: { name: "upgrade", description: "Upgrade one runtime group in place, including migrations." },
       args: {
-        group: { type: "positional", description: "Local override group to rebuild in-place." },
+        group: { type: "positional", description: "Group to upgrade in place (kms and kms-core require --lock-file and go operator by operator)." },
         "lock-file": {
           type: "string",
           description: "Move this group to the versions from a lock file before restarting.",

@@ -22,7 +22,7 @@ import {
   KMS_THRESHOLD_SPARE_CONFIG_NAME,
   kmsThresholdGenKeysConfigName,
 } from "./generate/kms-core";
-import { GENERATED_CONFIG_DIR, envPath, hostChainAddressesPath, kmsCoreConfigPath } from "./layout";
+import { GENERATED_CONFIG_DIR, envPath, hostChainAddressesPath } from "./layout";
 import { loadBlueGreenScenario } from "./scenario/resolve";
 import {
   type Discovery,
@@ -67,7 +67,7 @@ const completeState = (): State & { scenario: ResolvedCoprocessorScenario } => (
     hostChains: [{ key: "host", chainId: "12345", rpcPort: 8545 }],
     topology: { count: 1, threshold: 1 },
     instances: [{ index: 0, source: { mode: "inherit" }, env: {}, args: {} }],
-    kms: { mode: "centralized", parties: 1, threshold: 1, committeeSize: 1, fheParams: "Default" },
+    kms: { parties: 4, threshold: 1, committeeSize: 4, fheParams: "Default", insecureTestKeygen: true },
   },
   completedSteps: [
     "preflight",
@@ -464,13 +464,9 @@ describe("runtime helpers", () => {
     expect(paths).toContain(envPath("host-sc-chain-b"));
   });
 
-  test("runtime artifacts include the generated kms-core config", () => {
-    expect(runtimeArtifactPaths(completeState())).toContain(kmsCoreConfigPath);
-  });
-
   test("runtime artifacts include every threshold keygen config", () => {
     const state = completeState();
-    state.scenario.kms = { mode: "threshold", parties: 4, threshold: 1, committeeSize: 4, fheParams: "Test" };
+    state.scenario.kms = { parties: 4, threshold: 1, committeeSize: 4, fheParams: "Test" };
     const paths = runtimeArtifactPaths(state);
     expect(paths).toContain(path.join(GENERATED_CONFIG_DIR, KMS_THRESHOLD_CONFIG_NAME));
     for (let partyId = 1; partyId <= 4; partyId += 1) {
@@ -480,7 +476,7 @@ describe("runtime helpers", () => {
 
   test("runtime artifacts include the spare config when the cluster has a spare party", () => {
     const state = completeState();
-    state.scenario.kms = { mode: "threshold", parties: 5, threshold: 1, committeeSize: 4, fheParams: "Test" };
+    state.scenario.kms = { parties: 5, threshold: 1, committeeSize: 4, fheParams: "Test" };
     expect(runtimeArtifactPaths(state)).toContain(path.join(GENERATED_CONFIG_DIR, KMS_THRESHOLD_SPARE_CONFIG_NAME));
   });
 

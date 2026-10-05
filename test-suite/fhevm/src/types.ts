@@ -53,15 +53,13 @@ export type HostChainScenario = {
   name?: string;
 };
 
-/** KMS deployment mode for a scenario. */
-export type KmsMode = "centralized" | "threshold";
-
 /** FHE parameter set: Test = small/fast for CI, Default = prod-size. */
 export type KmsFheParams = "Test" | "Default";
 
 /** Raw `kms` block as written in a scenario YAML. */
 export type KmsScenarioBlock = {
-  mode?: KmsMode;
+  /** Only `threshold` is supported; kept so existing scenario files stay valid. */
+  mode?: "threshold";
   parties?: number;
   threshold?: number;
   /** Initial on-chain committee size; defaults to `parties`. When `< parties` the extra cores boot
@@ -74,7 +72,6 @@ export type KmsScenarioBlock = {
 
 /** Fully-resolved KMS topology carried on the resolved scenario / StackSpec. */
 export type ResolvedKmsTopology = {
-  mode: KmsMode;
   /** Total cores provisioned in the cluster. */
   parties: number;
   threshold: number;

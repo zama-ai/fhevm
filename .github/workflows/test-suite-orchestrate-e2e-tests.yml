@@ -9,7 +9,7 @@ on:
   workflow_dispatch:
     inputs:
       run-threshold-legs:
-        description: "Also run the non-gating threshold-KMS legs (keygen, context-switch, node-swap)"
+        description: "Also run the non-gating secure-keygen KMS legs (keygen and 2t+1 quorum, context-switch, node-swap)"
         type: boolean
         default: false
       run-blue-green-leg:
@@ -235,8 +235,10 @@ jobs:
 
   # The standard suite is sharded into three parallel legs (compute / decryption /
   # stateful), each booting its own stack — wall-clock is bounded by the slowest
-  # shard instead of the full sequential suite. Together the shards run exactly
-  # the standard-suite profiles (enforced by a unit test in the fhevm CLI). All
+  # shard instead of the full sequential suite. Every leg runs a threshold KMS: the
+  # shards use a 4-party cluster with insecure (fast) keygen, while the threshold,
+  # abort and context-switch legs below run the secure MPC keygen. Together the
+  # shards run exactly the standard-suite profiles (enforced by a unit test in the fhevm CLI). All
   # three are merge-queue gates in .mergify.yml. This job keeps the historical
   # `run-e2e-tests` id so the `run-e2e-tests / fhevm-e2e-test` check name stays
   # valid while the mergify config transition lands.

@@ -22,7 +22,6 @@ import type {
   CoprocessorInstanceSource,
   CoprocessorScenario,
   HostChainScenario,
-  KmsMode,
   KmsScenarioBlock,
   LocalOverride,
   OverrideGroup,
@@ -57,20 +56,20 @@ export const assertCoprocessorConsensus = (
   return scenario;
 };
 
-/** Centralized single-node KMS — today's behaviour when a scenario omits `kms`. */
+/** The KMS a scenario gets when it omits `kms`. */
 export const DEFAULT_KMS_TOPOLOGY: ResolvedKmsTopology = {
-  mode: "centralized",
-  parties: 1,
+  parties: 4,
   threshold: 1,
-  committeeSize: 1,
+  committeeSize: 4,
   fheParams: "Default",
+  insecureTestKeygen: true,
 };
 
 const MAX_KMS_PARTIES = 7;
 
 /**
  * Parses + validates the optional `kms` block from a scenario.
- * Returns the centralized default when the block is absent.
+ * Returns DEFAULT_KMS_TOPOLOGY when the block is absent.
  */
 export const resolveKmsTopology = (
   block: KmsScenarioBlock | undefined,
@@ -81,37 +80,15 @@ export const resolveKmsTopology = (
   }
   // YAML parses an empty `kms:` key to null, and `typeof null === "object"`.
   if (block === null || typeof block !== "object" || Array.isArray(block)) {
-    throw new Error(`${sourceLabel}: must be a map (omit the key entirely for the centralized default)`);
+    throw new Error(`${sourceLabel}: must be a map (omit the key entirely for the default threshold cluster)`);
   }
-  const mode: KmsMode = block.mode ?? "centralized";
-  if (mode !== "centralized" && mode !== "threshold") {
-    throw new Error(`${sourceLabel}.mode must be "centralized" or "threshold"`);
+  if (block.mode !== undefined && block.mode !== "threshold") {
+    throw new Error(
+      `${sourceLabel}.mode must be "threshold" (the centralized KMS is no longer supported; use a release tag that predates its removal)`,
+    );
   }
   if (block.insecureTestKeygen !== undefined && typeof block.insecureTestKeygen !== "boolean") {
     throw new Error(`${sourceLabel}.insecureTestKeygen must be a boolean`);
-  }
-  if (block.insecureTestKeygen && mode !== "threshold") {
-    throw new Error(`${sourceLabel}.insecureTestKeygen requires threshold mode`);
-  }
-  if (mode === "centralized") {
-    // Single node: ignore parties/threshold. Only `KEYGEN_PARAMS_TYPE=1` (Test) is wired for the
-    // threshold path; centralized never emits it, so accepting `fheParams: Test` here would be a
-    // silent no-op (the stack would still run Default params). Reject it instead of lying.
-    if (block.fheParams === "Test") {
-      throw new Error(
-        `${sourceLabel}.fheParams "Test" is only supported for threshold mode; centralized KMS runs Default params`,
-      );
-    }
-    if (block.fheParams !== undefined && block.fheParams !== "Default") {
-      throw new Error(`${sourceLabel}.fheParams must be "Test" or "Default", got "${block.fheParams}"`);
-    }
-    return {
-      mode,
-      parties: 1,
-      threshold: 1,
-      committeeSize: 1,
-      fheParams: "Default",
-    };
   }
   const parties = block.parties ?? 4;
   const threshold = block.threshold ?? 1;
@@ -146,7 +123,7 @@ export const resolveKmsTopology = (
     throw new Error(`${sourceLabel}.fheParams must be "Test" for secure threshold keygen; Default requires explicit insecureTestKeygen for isolated tests`);
   }
   return {
-    mode, parties, threshold, committeeSize, fheParams,
+    parties, threshold, committeeSize, fheParams,
     ...(block.insecureTestKeygen ? { insecureTestKeygen: true } : {}),
   };
 };
@@ -765,8 +742,8 @@ export const resolveBlueGreenScenario = (
   };
   const kms = resolveKmsTopology(input.kms, "scenario.kms");
   const bootstrap = input.bootstrap;
-  if (bootstrap && kms.mode !== "centralized") {
-    throw new Error("bootstrap is only supported with a centralized KMS; threshold clusters upgrade per operator");
+  if (bootstrap && kms.parties !== kms.committeeSize) {
+    throw new Error("bootstrap does not support spare KMS parties; threshold clusters upgrade per serving operator");
   }
   const gcs = {
     source: normalizeSource(input.gcs.source ?? { mode: "local" as const }),

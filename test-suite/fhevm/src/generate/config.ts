@@ -5,7 +5,6 @@ import YAML from "yaml";
 
 import {
   requiresLegacyRelayerKeyUrlConfig,
-  requiresLegacyKmsCoreConfig,
   requiresLegacyRelayerReadinessConfig,
 } from "../compat/compat";
 import { hostChainRuntimes, OBJECT_STORE_INTERNAL_URL } from "../layout";
@@ -127,10 +126,3 @@ export const renderRelayerConfig = (
   }
   return YAML.stringify(config);
 };
-
-/** Selects the kms-core config template that matches the requested core image schema. */
-export const renderKmsCoreConfig = (
-  state: Pick<State, "versions">,
-  legacyTemplateText: string,
-  modernTemplateText: string,
-) => (requiresLegacyKmsCoreConfig(state) ? legacyTemplateText : modernTemplateText);
