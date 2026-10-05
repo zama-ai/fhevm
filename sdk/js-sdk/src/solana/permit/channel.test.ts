@@ -21,9 +21,6 @@ import { base58 } from '@scure/base';
 import { ed25519 } from '@noble/curves/ed25519.js';
 import { describe, expect, it, vi } from 'vitest';
 import {
-  PERMIT_ENVELOPE_PREAMBLE,
-  PERMIT_ENVELOPE_SIGNER_COUNT,
-  PERMIT_ENVELOPE_VERSION,
   PERMIT_IDENTITY_LEN,
   PERMIT_KMS_ROUTING_LEN,
   PERMIT_KMS_ROUTING_VERSION,
@@ -37,6 +34,7 @@ import {
   renderSolanaPermitText,
   signSolanaPermit,
 } from './index.js';
+import { compileSolanaPermitEnvelope } from './envelope.js';
 
 ////////////////////////////////////////////////////////////////////////////////
 // A wallet, and the permit it is asked to sign
@@ -80,21 +78,6 @@ const WIRE: SolanaPermitWireFields = {
 const permitFields = (): SolanaPermitFields => decodeSolanaPermitFields(WIRE);
 
 /**
- * The envelope a conforming wallet builds around the text it is handed, before signing: preamble,
- * version, one signer, the wallet's own key, then the UTF-8 text to the end.
- */
-function walletBuiltEnvelope(signer: Uint8Array, message: string): Uint8Array {
-  const text = new TextEncoder().encode(message);
-  const envelope = new Uint8Array(PERMIT_ENVELOPE_PREAMBLE.length + 2 + signer.length + text.length);
-  envelope.set(PERMIT_ENVELOPE_PREAMBLE, 0);
-  envelope[PERMIT_ENVELOPE_PREAMBLE.length] = PERMIT_ENVELOPE_VERSION;
-  envelope[PERMIT_ENVELOPE_PREAMBLE.length + 1] = PERMIT_ENVELOPE_SIGNER_COUNT;
-  envelope.set(signer, PERMIT_ENVELOPE_PREAMBLE.length + 2);
-  envelope.set(text, PERMIT_ENVELOPE_PREAMBLE.length + 2 + signer.length);
-  return envelope;
-}
-
-/**
  * A wallet whose channel answers every message it is handed through the official feature shape,
  * recording each call. By default it does what the feature's contract says — wraps each text in
  * its own envelope, signs it, and returns one result per input carrying the signed bytes verbatim;
@@ -107,7 +90,7 @@ function walletSigningWith(
     readonly signature: Uint8Array;
     readonly signatureType?: 'ed25519';
   } = (message) => {
-    const envelope = walletBuiltEnvelope(ed25519.getPublicKey(seed), message);
+    const envelope = compileSolanaPermitEnvelope(ed25519.getPublicKey(seed), message);
     return { signedOffchainMessage: envelope, signature: ed25519.sign(envelope, seed), signatureType: 'ed25519' };
   },
   reshapeResults: (results: readonly unknown[]) => readonly unknown[] = (results) => results,
@@ -253,7 +236,7 @@ describe('the conforming wallet', () => {
 describe('a wallet that answers with something else', () => {
   it('is caught when it signs with a different key', async () => {
     const { wallet } = walletSigningWith(USER_SEED, (message) => {
-      const envelope = walletBuiltEnvelope(USER_PUBKEY, message);
+      const envelope = compileSolanaPermitEnvelope(USER_PUBKEY, message);
       return { signedOffchainMessage: envelope, signature: ed25519.sign(envelope, OTHER_SEED) };
     });
     await expect(rejectionOf(() => signSolanaPermit(wallet, permitFields()))).resolves.toEqual({
@@ -279,7 +262,7 @@ describe('a wallet that answers with something else', () => {
   // to have signed something else — the report and the reconstruction must agree first.
   it('is caught when its reported signed bytes are not the reconstructed envelope', async () => {
     const { wallet } = walletSigningWith(USER_SEED, (message) => {
-      const envelope = walletBuiltEnvelope(USER_PUBKEY, message);
+      const envelope = compileSolanaPermitEnvelope(USER_PUBKEY, message);
       const reported = Uint8Array.from(envelope);
       reported[reported.length - 1]! ^= 0x01;
       return { signedOffchainMessage: reported, signature: ed25519.sign(envelope, USER_SEED) };
@@ -291,7 +274,7 @@ describe('a wallet that answers with something else', () => {
 
   it('is caught when it returns a signature of the wrong width', async () => {
     const { wallet } = walletSigningWith(USER_SEED, (message) => {
-      const envelope = walletBuiltEnvelope(USER_PUBKEY, message);
+      const envelope = compileSolanaPermitEnvelope(USER_PUBKEY, message);
       return { signedOffchainMessage: envelope, signature: ed25519.sign(envelope, USER_SEED).slice(1) };
     });
     await expect(rejectionOf(() => signSolanaPermit(wallet, permitFields()))).resolves.toEqual({
@@ -301,7 +284,7 @@ describe('a wallet that answers with something else', () => {
 
   it('is caught when it declares a signature kind that is not Ed25519', async () => {
     const { wallet } = walletSigningWith(USER_SEED, (message) => {
-      const envelope = walletBuiltEnvelope(USER_PUBKEY, message);
+      const envelope = compileSolanaPermitEnvelope(USER_PUBKEY, message);
       return {
         signedOffchainMessage: envelope,
         signature: ed25519.sign(envelope, USER_SEED),

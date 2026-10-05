@@ -7,16 +7,15 @@
 // can tell it from a real wallet, which is the point: the permit it signs verifies under the same
 // reconstruction, and code exercised against it exercises the one real signing channel.
 //
-// The envelope built here is the wallet's half of the contract; the verifier's half — the
-// reconstruction — lives in `envelope.ts`, and the channel's own post-signing verification is what
-// keeps the two from drifting apart.
+// The envelope built here is the wallet's half of the contract, compiled by the same Kit encoder as
+// the verifier's reconstruction in `envelope.ts`; the shared permit vectors pin those bytes.
 
 import type { SolanaPermitWallet } from './channel.js';
 import type { WalletAccount } from '@wallet-standard/base';
 import type { SolanaSignOffchainMessageInput, SolanaSignOffchainMessageOutput } from '@solana/wallet-standard-features';
 import { base58 } from '@scure/base';
 import { ed25519 } from '@noble/curves/ed25519.js';
-import { PERMIT_ENVELOPE_PREAMBLE, PERMIT_ENVELOPE_SIGNER_COUNT, PERMIT_ENVELOPE_VERSION } from './envelope.js';
+import { compileSolanaPermitEnvelope } from './envelope.js';
 import { SOLANA_OFFCHAIN_MESSAGE_VERSION, SOLANA_SIGN_OFFCHAIN_MESSAGE_FEATURE } from './channel.js';
 
 /**
@@ -68,13 +67,7 @@ export function solanaPermitWalletFromSecretKey(secretKey: Uint8Array): SolanaPe
     if (requiredSigners.length !== 1 || soleSigner === undefined || !bytesEqual(soleSigner, publicKey)) {
       throw new Error('this wallet signs single-signer envelopes over its own key only');
     }
-    const text = new TextEncoder().encode(message);
-    const envelope = new Uint8Array(PERMIT_ENVELOPE_PREAMBLE.length + 2 + publicKey.length + text.length);
-    envelope.set(PERMIT_ENVELOPE_PREAMBLE, 0);
-    envelope[PERMIT_ENVELOPE_PREAMBLE.length] = PERMIT_ENVELOPE_VERSION;
-    envelope[PERMIT_ENVELOPE_PREAMBLE.length + 1] = PERMIT_ENVELOPE_SIGNER_COUNT;
-    envelope.set(publicKey, PERMIT_ENVELOPE_PREAMBLE.length + 2);
-    envelope.set(text, PERMIT_ENVELOPE_PREAMBLE.length + 2 + publicKey.length);
+    const envelope = compileSolanaPermitEnvelope(publicKey, message);
     return {
       signedOffchainMessage: envelope,
       signature: ed25519.sign(envelope, seed),
