@@ -1,0 +1,21 @@
+# The Merkle proof service's own Postgres. Its data lives in tmpfs and every Solana provision
+# recreates the container, so the record starts empty with the validator's fresh ledger.
+services:
+  solana-merkle-db:
+    container_name: solana-merkle-db
+    image: postgres:15.7
+    env_file:
+      - ${FHEVM_STATE_DIR:-../../../.fhevm}/runtime/env/database.env
+    environment:
+      POSTGRES_DB: solana_merkle
+    ports:
+      - '${SOLANA_MERKLE_POSTGRES_PORT:?}:5432'
+    tmpfs:
+      - /var/lib/postgresql/data
+    healthcheck:
+      # Over TCP: the image's init server listens only on the socket, so this passes once the
+      # database exists and the real server is up.
+      test: ["CMD-SHELL", "pg_isready -h 127.0.0.1 -U postgres -d solana_merkle"]
+      interval: 1s
+      timeout: 5s
+      retries: 30

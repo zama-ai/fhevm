@@ -168,8 +168,22 @@ export const POSTGRES_PORT = 5432;
 export const DEFAULT_POSTGRES_USER = "postgres";
 export const DEFAULT_POSTGRES_PASSWORD = "postgres";
 export const DEFAULT_POSTGRES_DB = "coprocessor";
-/** The Merkle proof service's own database, on the coprocessor's Postgres server. */
+/** The Merkle proof service's own Postgres (`docker-compose/solana-merkle-db-docker-compose.yml`). */
+export const SOLANA_MERKLE_DB_COMPONENT = "solana-merkle-db";
+export const SOLANA_MERKLE_DB_CONTAINER = "solana-merkle-db";
 export const SOLANA_MERKLE_DATABASE = "solana_merkle";
+export const SOLANA_MERKLE_POSTGRES_PORT = 5434;
+/** Command prefix that opens `psql` on the local Merkle record. */
+export const solanaMerkleDbPsql = (): readonly string[] => [
+  "docker",
+  "exec",
+  SOLANA_MERKLE_DB_CONTAINER,
+  "psql",
+  "-U",
+  "postgres",
+  "-d",
+  SOLANA_MERKLE_DATABASE,
+];
 // Solana side of the local stack: the test validator, the native host listener (health HTTP and
 // gRPC), the Merkle indexer's health HTTP, the Merkle proof server, and the demo's own processes.
 // `src/solana/endpoints.ts` turns these into loopback URLs.

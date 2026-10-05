@@ -13,6 +13,7 @@ describe("loadEnv", () => {
     expect(env.capabilities).toEqual({ faucet: true, freshMints: true, fastSlots: true, protocolServices: true });
     expect(env.roots.deployerKeypairPath).toContain(".config/solana/id.json");
     expect(env.coprocessorDbPsql).toEqual(["docker", "exec", "coprocessor-and-kms-db", "psql", "-U", "postgres", "-d", "coprocessor"]);
+    expect(env.merkleDbPsql).toEqual(["docker", "exec", "solana-merkle-db", "psql", "-U", "postgres", "-d", "solana_merkle"]);
   });
 
   test("environment variables override defaults", () => {
@@ -40,12 +41,14 @@ describe("loadEnv", () => {
     const env = loadEnv({
       SOLANA_E2E_SOURCE: "devnet",
       COPROCESSOR_DB_PSQL: "kubectl exec -n ns db-0 -- psql -U zama -d e2e",
+      MERKLE_DB_PSQL: "kubectl exec -n ns db-0 -- psql -U zama -d solana_merkle",
     });
     expect(env.source).toBe("devnet");
     expect(env.network).toBe("devnet");
     expect(env.capabilities).toEqual({ faucet: false, freshMints: true, fastSlots: false, protocolServices: true });
     expect(env.funding.primarySol).toBeLessThan(1);
     expect(env.coprocessorDbPsql).toEqual(["kubectl", "exec", "-n", "ns", "db-0", "--", "psql", "-U", "zama", "-d", "e2e"]);
+    expect(env.merkleDbPsql).toEqual(["kubectl", "exec", "-n", "ns", "db-0", "--", "psql", "-U", "zama", "-d", "solana_merkle"]);
     expect(() => loadEnv({ SOLANA_E2E_SOURCE: "mainnet" })).toThrow(/SOLANA_E2E_SOURCE/);
   });
 

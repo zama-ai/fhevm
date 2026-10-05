@@ -14,6 +14,7 @@ import {
   SOLANA_LISTENER_GRPC_PORT,
   SOLANA_LISTENER_HEALTH_PORT,
   SOLANA_MERKLE_INDEXER_HEALTH_PORT,
+  SOLANA_MERKLE_POSTGRES_PORT,
   SOLANA_VALIDATOR_RPC_PORT,
 } from "../src/layout";
 import { solanaImages } from "../src/solana/images";
@@ -119,6 +120,7 @@ export const demoReservedPorts = (observability = false): readonly number[] => [
     SOLANA_LISTENER_HEALTH_PORT,
     SOLANA_MERKLE_INDEXER_HEALTH_PORT,
     SOLANA_MERKLE_PROOF_PORT,
+    SOLANA_MERKLE_POSTGRES_PORT,
     ...(observability ? OBSERVABILITY_PORTS : []),
   ]),
 ];

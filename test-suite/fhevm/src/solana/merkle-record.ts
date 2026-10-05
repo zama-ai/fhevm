@@ -6,7 +6,6 @@ import { createHash } from "node:crypto";
 
 import { type Base58EncodedBytes, createSolanaRpc, getAddressDecoder, getBase58Decoder } from "@solana/kit";
 
-import { SOLANA_MERKLE_DATABASE } from "../layout";
 import { run } from "../utils/process";
 import { until } from "../utils/until";
 import { sdkVerifyModule } from "./lazy-modules";
@@ -58,19 +57,17 @@ FROM encrypted_stores`;
 /**
  * Lists the zama-host program's EncryptedStores, waits for the indexer's checkpoint to reach the
  * slot of that listing, and compares the two, retrying until they agree or the deadline passes.
- * `psql` is the command prefix that opens the coprocessor database; the Merkle database is on the
- * same server, and psql takes the last `-d`.
  */
 export const assertMerkleRecordMatchesChain = async (input: {
   readonly rpcUrl: string;
   readonly aclProgram: `0x${string}`;
-  readonly coprocessorDbPsql: readonly string[];
+  readonly merkleDbPsql: readonly string[];
 }): Promise<void> => {
   const { decodeSolanaEncryptedStore } = await sdkVerifyModule();
   const rpc = createSolanaRpc(input.rpcUrl);
   const addressDecoder = getAddressDecoder();
   const program = addressDecoder.decode(Buffer.from(input.aclProgram.slice(2), "hex"));
-  const psql = [...input.coprocessorDbPsql, "-d", SOLANA_MERKLE_DATABASE, "-tAc"];
+  const psql = [...input.merkleDbPsql, "-tAc"];
   const discriminator = getBase58Decoder().decode(encryptedStoreDiscriminator()) as Base58EncodedBytes;
 
   const compared = await until(

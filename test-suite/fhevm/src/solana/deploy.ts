@@ -22,10 +22,15 @@ import {
   SOLANA_MERKLE_PROOF_PORT,
   SOLANA_LISTENER_HEALTH_PORT,
   SOLANA_MERKLE_DATABASE,
+  SOLANA_MERKLE_DB_COMPONENT,
+  SOLANA_MERKLE_DB_CONTAINER,
   SOLANA_MERKLE_INDEXER_HEALTH_PORT,
+  SOLANA_MERKLE_POSTGRES_PORT,
   STATE_DIR,
   envPath,
 } from '../layout';
+import { waitForContainer } from '../flow/readiness';
+import { composeUp } from '../flow/runtime-compose';
 import { LOCAL_SOLANA_ENDPOINTS } from './endpoints';
 import { readEnvFile } from '../utils/fs';
 import { run, runStreaming } from '../utils/process';
@@ -90,20 +95,25 @@ export const readCoprocessorDatabaseUrl = async (): Promise<string> => {
   return url.replace('@db:', '@127.0.0.1:');
 };
 
+/** Both Postgres containers read their credentials from the generated `database.env`. */
 const merkleDatabaseUrl = (coprocessorDatabaseUrl: string): string => {
   const url = new URL(coprocessorDatabaseUrl);
+  url.port = String(SOLANA_MERKLE_POSTGRES_PORT);
   url.pathname = `/${SOLANA_MERKLE_DATABASE}`;
   return url.toString();
 };
 
 /**
- * Recreates the Merkle record's database empty. The record follows this validator's ledger, which
- * every provision starts fresh, so a record left from an earlier ledger would fail its resume.
+ * Starts the Merkle record's Postgres in a new container. The record follows this validator's
+ * ledger, which every provision starts fresh, so a record left from an earlier ledger would fail
+ * its resume.
  */
-const recreateMerkleDatabase = async (): Promise<void> => {
-  for (const statement of [`DROP DATABASE IF EXISTS ${SOLANA_MERKLE_DATABASE} WITH (FORCE)`, `CREATE DATABASE ${SOLANA_MERKLE_DATABASE}`]) {
-    await run(['docker', 'exec', 'coprocessor-and-kms-db', 'psql', '-U', 'postgres', '-c', statement]);
-  }
+const startMerkleDatabase = async (): Promise<void> => {
+  await composeUp(SOLANA_MERKLE_DB_COMPONENT, [], {
+    forceRecreate: true,
+    env: { SOLANA_MERKLE_POSTGRES_PORT: String(SOLANA_MERKLE_POSTGRES_PORT) },
+  });
+  await waitForContainer(SOLANA_MERKLE_DB_CONTAINER, 'healthy');
 };
 
 /** The validator's confirmed slot: an existing block the Merkle indexer can start from. */
@@ -432,7 +442,7 @@ export const provisionSolanaHostNode = async (): Promise<{ zamaHostId: string }>
   const databaseUrl = await readCoprocessorDatabaseUrl();
   const grpcUrl = process.env.GRPC_URL ?? LOCAL_SOLANA_ENDPOINTS.listenerGrpc;
   await startHostListener({ zamaHostId, databaseUrl, grpcUrl, logDir, lifecycleDir });
-  await recreateMerkleDatabase();
+  await startMerkleDatabase();
   const merkleUrl = merkleDatabaseUrl(databaseUrl);
   await startMerkleIndexer({
     zamaHostId,
