@@ -1,6 +1,6 @@
 # Solana Merkle record runbook
 
-The Merkle indexer (`solana_merkle_indexer`) rebuilds every encrypted store's RFC 035 leaf record
+The Merkle indexer (`solana_merkle_indexer`) rebuilds every encrypted store's leaf record
 into the `solana_merkle` database, and the Merkle proof server (`solana_merkle_proof_server`)
 serves inclusion proofs from it to the KMS connectors. The record is never trusted: each KMS
 connector verifies every proof against the peaks it reads on chain, and asks the next
