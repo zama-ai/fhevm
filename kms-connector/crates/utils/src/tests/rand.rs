@@ -10,7 +10,7 @@ use fhevm_host_bindings::protocol_config::{
     ProtocolConfig::{KmsNodeParams, PcrValues},
 };
 use rand::Rng;
-use zama_solana_request::host_chain::solana_host_chain_id;
+use zama_solana_request::host_chain::{EVM_CHAIN_TYPE, solana_host_chain_id};
 
 pub fn rand_u256() -> U256 {
     U256::from_le_bytes(rand::rng().random::<[u8; 32]>())
@@ -32,8 +32,11 @@ pub fn rand_digest() -> FixedBytes<32> {
     rand::rng().random::<[u8; 32]>().into()
 }
 
+/// A random handle of an EVM host chain: its chain id's type byte (byte 22) is zero.
 pub fn rand_handle() -> FixedBytes<32> {
-    rand::rng().random::<[u8; 32]>().into()
+    let mut handle = rand::rng().random::<[u8; 32]>();
+    handle[22] = EVM_CHAIN_TYPE;
+    handle.into()
 }
 
 /// A random handle of the Solana localnet host chain.

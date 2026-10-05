@@ -33,6 +33,7 @@ use sqlx::types::chrono::Utc;
 use std::collections::HashMap;
 use tracing::info;
 use user_decryption_signature::compute_user_decrypt_digest;
+use zama_solana_request::host_chain::is_solana_host_chain_id;
 
 #[derive(Clone)]
 /// The struct responsible of processing incoming decryption requests.
@@ -83,6 +84,28 @@ where
         }
     }
 
+    /// The ACL of the EVM host chain `chain_id`. A Solana chain id is refused at once (DD-013): its
+    /// requests arrive as Solana Gateway events, so one on this path can never be authorized. An
+    /// EVM chain missing from the map is retried, as on main.
+    fn evm_host_client(&self, chain_id: u64) -> Result<&HostRpcClient<HP>, RequestCheckError> {
+        if is_solana_host_chain_id(chain_id) {
+            return Err(RequestCheckError::irrecoverable(
+                RequestCheckKind::Acl,
+                ErrorCode::Unprocessable,
+                anyhow!(
+                    "chain id {chain_id} is a Solana host chain, which an EVM request cannot name"
+                ),
+            ));
+        }
+        self.host_clients.get(&chain_id).ok_or_else(|| {
+            RequestCheckError::recoverable(
+                RequestCheckKind::Acl,
+                ErrorCode::UpstreamTransient,
+                anyhow!("No ACL contract config found for chain id {chain_id}"),
+            )
+        })
+    }
+
     #[tracing::instrument(skip_all)]
     pub async fn check_ciphertexts_allowed_for_public_decryption(
         &self,
@@ -94,13 +117,7 @@ where
             let ct_chain_id = extract_chain_id_from_handle(handle).map_err(|e| {
                 RequestCheckError::irrecoverable(RequestCheckKind::Acl, ErrorCode::Unprocessable, e)
             })?;
-            let host_client = self.host_clients.get(&ct_chain_id).ok_or_else(|| {
-                RequestCheckError::recoverable(
-                    RequestCheckKind::Acl,
-                    ErrorCode::UpstreamTransient,
-                    anyhow!("No ACL contract config found for chain id {ct_chain_id}"),
-                )
-            })?;
+            let host_client = self.evm_host_client(ct_chain_id)?;
 
             if !host_client.is_allowed_for_decryption(*handle).await? {
                 return Err(RequestCheckError::recoverable(
@@ -161,13 +178,7 @@ where
             let ct_chain_id = extract_chain_id_from_handle(handle).map_err(|e| {
                 RequestCheckError::irrecoverable(RequestCheckKind::Acl, ErrorCode::Unprocessable, e)
             })?;
-            let host_client = self.host_clients.get(&ct_chain_id).ok_or_else(|| {
-                RequestCheckError::recoverable(
-                    RequestCheckKind::Acl,
-                    ErrorCode::UpstreamTransient,
-                    anyhow!("No ACL contract config found for chain id {ct_chain_id}"),
-                )
-            })?;
+            let host_client = self.evm_host_client(ct_chain_id)?;
             let contract_address = contracts_map_ref.get(handle.as_slice()).ok_or_else(|| {
                 RequestCheckError::irrecoverable(
                     RequestCheckKind::Acl,
@@ -341,13 +352,7 @@ where
             ));
         }
 
-        let host_client = self.host_clients.get(&chain_id).ok_or_else(|| {
-            RequestCheckError::recoverable(
-                RequestCheckKind::Acl,
-                ErrorCode::UpstreamTransient,
-                anyhow!("No ACL contract config found for chain id {chain_id}"),
-            )
-        })?;
+        let host_client = self.evm_host_client(chain_id)?;
 
         // RFC-012: EIP-712 signature verification with ecrecover → ERC-1271 fallback.
         // The domain takes name/version/verifyingContract from `self.domain` (already validated
@@ -673,7 +678,7 @@ mod tests {
         sol_types::SolValue,
     };
     use connector_utils::tests::rand::{
-        rand_address, rand_digest, rand_handle, rand_public_key, rand_u256,
+        rand_address, rand_digest, rand_handle, rand_public_key, rand_solana_handle, rand_u256,
     };
     use fhevm_gateway_bindings::decryption::{
         Decryption::CtHandleContractPair,
@@ -814,6 +819,55 @@ mod tests {
             "{msg}"
         );
         assert!(msg.contains("connection refused"), "{msg}");
+    }
+
+    /// A Solana handle on an EVM request is refused once, whichever EVM check it reaches, instead
+    /// of being retried as a chain the ACL map lacks.
+    #[tokio::test]
+    async fn an_evm_request_naming_a_solana_handle_is_refused_once() {
+        let processor = setup_test_processor(Asserter::new(), rand_handle());
+        let handle = rand_solana_handle();
+        let user_signer = PrivateKeySigner::random();
+        let user_address = user_signer.address();
+        let user_calldata = userDecryptionRequestCall {
+            ctHandleContractPairs: vec![CtHandleContractPair {
+                ctHandle: handle,
+                contractAddress: rand_address(),
+            }],
+            ..Default::default()
+        }
+        .abi_encode();
+        let v2_request = make_v2_request(
+            handle,
+            user_address,
+            user_address,
+            &user_signer,
+            vec![],
+            -60,
+            3600,
+        );
+
+        let results = [
+            processor
+                .check_ciphertexts_allowed_for_public_decryption(&[handle])
+                .await,
+            processor
+                .check_ciphertexts_allowed_for_user_decryption(
+                    user_calldata,
+                    &[handle],
+                    user_address,
+                )
+                .await,
+            processor
+                .check_user_decryption_request_v2(&v2_request)
+                .await,
+        ];
+        for result in results {
+            let result = result.map_err(RequestCheckError::record);
+            assert_kind(&result, &ExpectedOutcome::Irrecoverable);
+            let msg = format!("{:#}", result.unwrap_err().source);
+            assert!(msg.contains("is a Solana host chain"), "{msg}");
+        }
     }
 
     enum UserDecryptACLMock {
