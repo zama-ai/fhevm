@@ -29,14 +29,15 @@ export type PublicDecryptCertificate = SolanaPublicDecryptCertificateClaim;
 export const certificateCleartext = (certificate: Pick<PublicDecryptCertificate, 'abiEncodedCleartext'>): bigint =>
   BigInt(`0x${certificate.abiEncodedCleartext.replace(/^0x/, '')}`);
 
-type PublicDecryptSdkInput = {
+/** The facts a public-decrypt client binds to. */
+export type PublicDecryptClientInput = {
   rpcUrl: string;
   chainId: bigint;
   relayerUrl: string;
   verifyingProgramId: Bytes32Hex;
   apiKey: string;
-  request: PublicDecryptRequest;
 };
+type PublicDecryptSdkInput = PublicDecryptClientInput & { request: PublicDecryptRequest };
 type PublicDecryptSdkCall = (input: PublicDecryptSdkInput) => Promise<PublicDecryptCertificate>;
 
 export type PublicDecryptDependencies = { publicDecryptCertificate?: PublicDecryptSdkCall };
@@ -60,7 +61,8 @@ const bytes32Hex = (environment: Environment, name: string): Bytes32Hex => {
 
 // Keep the dynamic import seam narrow: clean CLI checkouts do not contain the SDK's generated
 // `_types`, while the full vertical exercises this public package entry at runtime.
-const runPublicSdkPublicDecrypt: PublicDecryptSdkCall = async (input) => {
+/** The target's public-decrypt client: the relayer's, or the cleartext stack's. */
+export const createPublicDecryptClient = async (input: PublicDecryptClientInput) => {
   const solana = await loadSolanaSdk();
   const { createSolanaRpc } = await import('@solana/kit');
   const rpc = createSolanaRpc(input.rpcUrl);
@@ -70,8 +72,11 @@ const runPublicSdkPublicDecrypt: PublicDecryptSdkCall = async (input) => {
     },
   });
   solana.setFhevmRuntimeConfig({ auth: { type: 'ApiKeyHeader', value: input.apiKey } });
-  return solana.createFhevmPublicDecryptClient({ chain, rpc }).publicDecryptCertificate(input.request);
+  return solana.createFhevmPublicDecryptClient({ chain, rpc });
 };
+
+const runPublicSdkPublicDecrypt: PublicDecryptSdkCall = async (input) =>
+  (await createPublicDecryptClient(input)).publicDecryptCertificate(input.request);
 
 /** Runs the public-decrypt SDK action and prints the legacy JSON envelope used by consume steps. */
 export const runSolanaPublicDecrypt = async (

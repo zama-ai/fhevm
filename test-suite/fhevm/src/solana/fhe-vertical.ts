@@ -6,6 +6,7 @@
 
 import { getAddressEncoder, type Address } from '@solana/kit';
 
+import { asBytes32Hex, hexToBytes } from '@fhevm/sdk/base';
 import {
   fetchSolanaEncryptedStore,
   encryptedStoreHandle,
@@ -13,7 +14,12 @@ import {
 
 import { runSolanaCurrentUserDecrypt } from './current-user-decrypt';
 import { ZAMA_HOST_PROGRAM_ADDRESS } from '../../../../solana/deploy/src/generated/zamaHost/programAddress.js';
-import { certificateCleartext, runSolanaPublicDecrypt, type PublicDecryptCertificate } from './public-decrypt';
+import {
+  certificateCleartext,
+  createPublicDecryptClient,
+  runSolanaPublicDecrypt,
+  type PublicDecryptCertificate,
+} from './public-decrypt';
 import type { SolanaProvisioningContext } from './provision';
 
 const hex = (bytes: Uint8Array): string => `0x${Buffer.from(bytes).toString('hex')}`;
@@ -86,6 +92,31 @@ export const certifiedPublicDecrypt = async (
     PD_ENCRYPTED_STORE: addressHex(params.encryptedStore),
   });
   return { cleartext: certificateCleartext(certificate), certificate };
+};
+
+/**
+ * Decrypts several public handles, each made public in its own store, from one KMS certificate
+ * through the SDK's batch action. Returns the values in entry order.
+ */
+export const publicDecryptValues = async (
+  config: FheVerticalConfig,
+  entries: readonly { readonly encryptedStore: Address; readonly handle: Uint8Array }[],
+): Promise<unknown[]> => {
+  const client = await createPublicDecryptClient({
+    rpcUrl: config.rpcUrl,
+    chainId: config.chainId,
+    relayerUrl: config.relayerUrl,
+    verifyingProgramId: asBytes32Hex(config.verifyingProgramId),
+    apiKey: process.env.ZAMA_FHEVM_API_KEY ?? 'local',
+  });
+  const values = await client.decryptPublicValues({
+    contextId: hexToBytes(config.publicDecryptContextId),
+    entries: entries.map(({ encryptedStore, handle }) => ({
+      handle: hex(handle),
+      encryptedStore: addressBytes(encryptedStore),
+    })),
+  });
+  return values.map(({ value }) => value);
 };
 
 /**
