@@ -2093,6 +2093,10 @@ reconnects (fhevm-internal#2079), and a self-describing execution makes archive 
 
 Status: adopted
 
+Superseded in part by DD-066: the Merkle indexer records the leaves, with the handles the event
+emitted, and the listener stores only computation rows. A replay that does not reproduce the
+recorded leaves stops the indexer; the listener's rewind leaves the leaf record alone.
+
 Recorded in fhevm-internal#2081. Revises DD-033 and DD-044.
 
 Context:
