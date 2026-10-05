@@ -168,6 +168,7 @@ sequenceDiagram
     participant Token as Confidential token
     participant Host as Encrypted-state program
     participant Listener as Chain listener
+    participant Proofs as Proof server
     participant Relayer as Request service
     participant Keys as Key service
     participant Vault
@@ -180,7 +181,7 @@ sequenceDiagram
     Listener-->>Listener: Rebuild recorded history
     Keeper->>Relayer: Request clear batch total
     Relayer->>Keys: Decrypt and sign total
-    Keys->>Listener: Get proof that this value was made public
+    Keys->>Proofs: Get proof that this value was made public
     Keys-->>Relayer: Return clear total and signature
     Keeper->>Batch: Submit signed total
     Batch->>Vault: Deposit public batch total
@@ -189,7 +190,7 @@ sequenceDiagram
     Batch-->>User: Add encrypted cShares
 ```
 
-Before decrypting, the key service checks the listener's proof that the batch total was made public.
+Before decrypting, the key service checks the coprocessors' proof that the batch total was made public.
 Solana checks the key service's signed result, and that it covers the batch's own total, before
 settlement. Anyone
 may close, settle, or claim a ready batch. A claim can only credit the confidential token account
@@ -281,7 +282,7 @@ No component in the confidential deposit and redemption path is mocked or skippe
 | Solana transactions; vault, batcher, token, and host programs | Local validator, test USDC, and toy vault |
 | Encrypted inputs, balances, math, and stored encrypted data | Test keys and local workers |
 | Chain listener and confirmed-state reconstruction | Local event stream |
-| History proof generation and verification | Listener proof checked by the key service against the current shared-state MMR |
+| History proof generation and verification | Coprocessor proof checked by the key service against the current shared-state MMR |
 | Request service, decryption worker, key service, and signed results | One centralized key service |
 | Wallet signing and authorized balance reveals | Built-in or external wallet; one signature per reveal |
 | Closing, settlement, and claims | Local keeper |

@@ -116,7 +116,8 @@ error codes pass through unchanged. If the exact delegation is dead but its wild
 is missing, both reasons are retained and the request remains recoverable.
 
 Coprocessor proofs are verified against the account snapshot; a valid candidate can carry
-a request despite another peer's failure. Unresolved proofs receive one selective refresh.
+a request despite another peer's failure. An attempt reads each coprocessor's proofs once;
+a query still unresolved is retried only by the next attempt of the worker loop.
 Source controls response handling: Gateway requests use the worker's retry budget; HTTP
 requests receive the stored error response and can be retried by the caller. The relayer's
 end-to-end Solana path still enters through the Gateway event.

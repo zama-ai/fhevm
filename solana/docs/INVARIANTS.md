@@ -353,7 +353,7 @@ reconstruct its history with zero account reads and no sysvar state (updates
 echo the previous handle and declare the new handle's allows). A block from
 `getBlock` prepares into the same input as one from the stream.
 Pinned by the reconstruction walks such as `fhe_execute_walk_chains_transient_handles`, which take only transaction
-data, and by `rebuilds_a_slot_from_get_block_alone` and `shared_transaction_decoding_contract`.
+data, and by `rebuilds_a_slot_from_get_block_and_get_transaction` and `shared_transaction_decoding_contract`.
 
 **30. [HOLDS]** The leaf record can stop a decrypt from happening but can
 never be what allows one: the KMS connector verifies every proof against

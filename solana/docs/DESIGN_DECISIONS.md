@@ -29,7 +29,7 @@ are written as one narrative instead.
 | ----------------------------------------------------------------------------------------------------------------------------------------- | ---------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------- |
 | DD-001                                                                                                                                    | replaced by DD-032, then DD-049          | Store Handles In ACL Records, Not PDA Seeds, in [DESIGN_HISTORY.md](DESIGN_HISTORY.md)                                          |
 | [DD-002](#dd-002-keep-app-store-and-host-acl-store-separate)                                                                              | adopted                                  | Keep App Store And Host ACL Store Separate                                                                                      |
-| [DD-003](#dd-003-treat-events-as-indexing-hints-not-authorization)                                                                        | adopted                                  | Treat Events As Indexing Hints, Not Authorization                                                                               |
+| [DD-003](#dd-003-treat-events-as-indexing-hints-not-authorization)                                                                        | adopted; see the note under its status   | Treat Events As Indexing Hints, Not Authorization                                                                               |
 | [DD-004](#dd-004-account-metas-and-witness-layouts-are-abi)                                                                               | adopted                                  | Account Metas And Witness Layouts Are ABI                                                                                       |
 | DD-005                                                                                                                                    | replaced by DD-032, then DD-049          | Public Decrypt Is A Post-Creation Release, in [DESIGN_HISTORY.md](DESIGN_HISTORY.md)                                            |
 | DD-006                                                                                                                                    | replaced by DD-031                       | Material Commitment Is Separate From ACL Authorization, in [DESIGN_HISTORY.md](DESIGN_HISTORY.md)                               |
@@ -41,13 +41,13 @@ are written as one narrative instead.
 | [DD-012](#dd-012-solana-user-decrypt-reuses-the-gateway-stack)                                                                            | adopted                                  | Solana User Decrypt Reuses The Gateway Stack                                                                                    |
 | [DD-013](#dd-013-prefer-fail-closed-chain-boundaries)                                                                                     | adopted                                  | Prefer Fail-Closed Chain Boundaries                                                                                             |
 | [DD-014](#dd-014-host-handle-creation-has-no-local-test-relaxation)                                                                       | adopted                                  | Host Handle Creation Has No Local Test Relaxation                                                                               |
-| [DD-015](#dd-015-handle-creation-keeps-per-block-entropy)                                                                                 | adopted                                  | Handle Creation Keeps Per-Block Entropy                                                                                         |
+| [DD-015](#dd-015-handle-creation-keeps-per-block-entropy)                                                                                 | adopted; see the note under its status   | Handle Creation Keeps Per-Block Entropy                                                                                         |
 | [DD-016](#dd-016-confidential-balances-use-the-immediate-available-balance-profile)                                                       | product-open                             | Confidential Balances Use The Immediate-Available-Balance Profile                                                               |
 | [DD-017](#dd-017-role-aware-fhe_execute-and-per-op-bind-instructions-replace-the-rfc-024-execute_frame-prototype)                         | adopted                                  | Role-Aware `fhe_execute` And Per-Op Bind Instructions Replace The RFC-024 `execute_frame` Prototype                             |
 | DD-018                                                                                                                                    | replaced by DD-011                       | Transfer-And-Call Refund Prepare/Finalize (replaced), in [DESIGN_HISTORY.md](DESIGN_HISTORY.md)                                 |
 | DD-019                                                                                                                                    | replaced by DD-049                       | Confidential Transfer Persists Only Final Balance And Transferred-Amount ACL Records, in [DESIGN_HISTORY.md](DESIGN_HISTORY.md) |
-| [DD-020](#dd-020-verifierset-removed--canonical-kms-context-singleton)                                                                    | adopted                                  | VerifierSet Removed → Canonical KMS Context Singleton                                                                           |
-| [DD-021](#dd-021-on-chain-secp256k1-kms-public-decrypt-cert-verification)                                                                 | adopted                                  | On-Chain secp256k1 KMS Public-Decrypt Cert Verification                                                                         |
+| [DD-020](#dd-020-verifierset-removed--canonical-kms-context-singleton)                                                                    | adopted; see the note under its status   | VerifierSet Removed → Canonical KMS Context Singleton                                                                           |
+| [DD-021](#dd-021-on-chain-secp256k1-kms-public-decrypt-cert-verification)                                                                 | adopted; see the note under its status   | On-Chain secp256k1 KMS Public-Decrypt Cert Verification                                                                         |
 | [DD-022](#dd-022-witness-pdas-created-before-the-secp-consume-request--consume-once)                                                      | adopted                                  | Witness PDAs Created Before The secp Consume (request → consume-once)                                                           |
 | [DD-023](#dd-023-fhe_execute-composed-executor--typed-fheexecutionbuilder-dsl-dd-017-realized)                                            | adopted                                  | `fhe_execute` Composed Executor + Typed `FheExecutionBuilder` DSL (DD-017 realized)                                             |
 | [DD-024](#dd-024-eager-ciphertext-material-preparation-coprocessor-side)                                                                  | adopted                                  | Eager Ciphertext-Material Preparation (coprocessor side)                                                                        |
@@ -77,7 +77,7 @@ are written as one narrative instead.
 | [DD-048](#dd-048-allows-are-sealed-on-the-write-the-deny-list-names-applications-one-connector-path)                                      | adopted                                  | Allows Are Sealed On The Write; The Deny List Names Applications; One Connector Path                                            |
 | [DD-049](#dd-049-shared-encrypted-store-and-transaction-local-result-grants)                                                              | adopted                                  | Shared Encrypted Store And Transaction-Local Result Grants                                                                      |
 | [DD-050](#dd-050-transient-storage-shared-across-the-transaction)                                                                         | adopted                                  | Transient Storage Shared Across The Transaction                                                                                 |
-| [DD-051](#dd-051-a-zama-is-one-host-program-id)                                                                                           | adopted                                  | A Zama Is One Host Program ID                                                                                                   |
+| [DD-051](#dd-051-a-zama-is-one-host-program-id)                                                                                           | adopted; see the note under its status   | A Zama Is One Host Program ID                                                                                                   |
 | [DD-052](#dd-052-a-solana-chain-id-is-type-byte-0x01-plus-a-published-cluster-tag)                                                        | adopted                                  | A Solana chain id is type byte `0x01` plus a published cluster tag                                                              |
 | [DD-053](#dd-053-a-program-id-is-environment-config-not-a-cargo-feature)                                                                  | adopted                                  | A program id is environment config, not a cargo feature                                                                        |
 | [DD-054](#dd-054-the-programs-stay-on-anchor-v1)                                                                                          | adopted                                  | The programs stay on Anchor v1                                                                                                 |
@@ -107,8 +107,8 @@ decrypt or compute permission.
 Decision:
 
 `confidential-token` stores token-local pointers such as current balance handles and emits
-app-local indexing events. `zama-host` stores canonical ACL, material, delegation, and transient
-authorization state.
+app-local indexing events. `zama-host` stores canonical ACL, delegation, and transient authorization state. Ciphertext
+material is not host state (DD-031).
 
 Rationale:
 
@@ -125,6 +125,9 @@ and its leaf proofs.
 ## DD-003: Treat Events As Indexing Hints, Not Authorization
 
 Status: adopted
+
+Superseded in part by DD-031 and DD-040: the host keeps no material or replay witnesses, so
+authorization is verified against the host's Store, delegation and KMS context accounts.
 
 Context:
 
@@ -148,10 +151,9 @@ The port keeps Anchor CPI events for tests and local listener compatibility, but
 transport should use a Yellowstone/Geyser transaction and account stream with explicit commitment,
 reconnect, replay, and account-witness verification policy.
 
-The current listener is built from source by the side-stack setup (`test-suite/fhevm/src/solana/deploy.ts`); the shared
-host-listener container remains EVM-only and intentionally does not package the feature-gated Solana
-binary. A production Solana image and deployment topology remain packaging work, not an implicit
-fallback to the deleted RPC listener.
+The local side stack builds the listener from source (`test-suite/fhevm/src/solana/deploy.ts`). The
+shared host-listener image also packages the Solana binaries. There is no fallback to the deleted
+RPC listener.
 
 ## DD-004: Account Metas And Witness Layouts Are ABI
 
@@ -393,6 +395,9 @@ compile-gated receiver helpers; those do not alter host verification or handle d
 
 Status: adopted
 
+Superseded in part by DD-043: `context_id` and `op_index` are no longer in the handle preimage. DD-050
+adds the origin mask. The current preimage is DD-043's.
+
 Resolved in the June 2026 reconciliation; it was product-open before.
 
 Context:
@@ -551,6 +556,9 @@ and should not resurrect unsigned `authorized_app_accounts[]`.
 
 Status: adopted
 
+Superseded in part by DD-040: no witness or request pins a context any more. A certificate is
+accepted from any live context it names, and `destroy_kms_context` is the revocation lever.
+
 Context:
 
 Witnesses and decrypt trust used to anchor to a `VerifierSet` subsystem
@@ -583,6 +591,10 @@ yet designed for production (fhevm-internal#1634).
 ## DD-021: On-Chain secp256k1 KMS Public-Decrypt Cert Verification
 
 Status: adopted
+
+Superseded in part by DD-040 and DD-065: there is no witness or request context. `verify_public_decrypt`
+verifies the certificate against the live `KmsContext` that its `extra_data` names and returns that
+context id, so a caller can demand the current one.
 
 Context:
 
@@ -1157,7 +1169,7 @@ the `BurnRedemptionRequestedEvent`. Added: ONE thin `redeem_burned_amount(burned
 cleartext_amount, signatures, extra_data, proof)` that binds the burned Store, CPIs
 `zama_host::verify_public_decrypt`, asserts the
 proven handle equals `burned_handle` and the certified cleartext equals `cleartext_amount`, then
-pays out and writes the marker. Every field the witness pinned is carried elsewhere (destination
+pays out and closes `PendingBurn` (DD-045). Every field the witness pinned is carried elsewhere (destination
 integrity by the redeem-time signer check, handle binding by the created-public MMR leaf sealed in the
 burn, owner and mint by the Store), so the witness was pure scaffolding.
 
@@ -1261,7 +1273,7 @@ The mechanics this relies on: the token returns the transferred handle and grant
 participant's contribution Store through the transient store (DD-049), so the batcher adds each
 deposit into that Store in the same join transaction. Each batch gets its **own token
 account**, so the burned/revealed total is exactly that batch's sum (the EVM code documents the
-inter-batch dust leak this prevents). Lifecycle is Pending -> Dispatched -> Finalized/Canceled with
+inter-batch dust leak this prevents). Lifecycle is Pending -> Dispatched -> Settled/Canceled, or Refunding after a cancelled dispatch, with
 permissionless dispatch/settle/claim and an exact-refund `quit` — no operator custody of principal.
 
 Deliberate non-goals, carrying the EVM team's recorded lessons: **no participant-count gates**
@@ -1393,8 +1405,8 @@ Properties that must survive any refactor:
   execution does not advance it or emit a usable seed.
 - No seed-steering: the preimage is the host's own counter plus slot context plus the verified
   application; nothing in it is chosen by the caller.
-- Duplicate persistent-output accounts within an execution are still rejected
-  (`ExecutionAccountTable::claim_persistent_output`), for the decode cache and the
+- Duplicate accounts and second writes to one slot within an execution are still rejected
+  (`ExecutionAccountTable::new` and effect preflight), for the decode cache and the
   read-after-write rule, not for seed freshness any more.
 
 The nonce stays global (fhevm-internal#2081). Every execution with a rand step write-locks it, so
@@ -1409,6 +1421,10 @@ Status: adopted
 
 Revised by DD-056: `fhe_execute` also emits, one event per execution carrying what the host decided.
 The rule below, that only administration emits, no longer covers that event.
+DD-058 adds `pause`, `unpause` and `set_pauser`, so the instruction and event counts below are out of
+date, and zama-host has build features again (`admin-sweep`, `cleartext`). The delegation facts
+recorded under Decision no longer hold: the connector fetches and checks the delegation record on a
+delegated decrypt (DD-048, DD-061; INVARIANTS #27).
 
 Context:
 
@@ -1867,7 +1883,9 @@ checks. The branch retains current slot publication and PendingBurn semantics; h
 
 Status: adopted
 
-Adopted for identity. zama-host closes its accounts through `close_owned_accounts` (`admin-sweep` builds only) and the deployer's `host wipe`. The preview deploy runs `host wipe` before `host deploy --allow-upgrade`; wiping from the destroy workflow is follow-up.
+Adopted for identity. zama-host closes its accounts through `close_owned_accounts` (`admin-sweep` builds only) and the deployer's `host wipe`.
+
+The preview cleanup below is replaced by the preview recovery (`ci/preview-env/solana-host/recover.sh reset`). Preview deploy and destroy both run it. It closes application accounts, token accounts and lookup tables, then wipes host state.
 
 HostConfig is that program's singleton `PDA("host-config")`. Four public `zama-host` program IDs:
 
@@ -1918,13 +1936,14 @@ leftover is what the wipe must delete. Solana has no parent account: closing Hos
 EncryptedStores, KMS contexts and the rand nonce in place until the same instruction closes each
 of them, so the deployer's `host wipe` closes everything `getProgramAccounts` lists and fails if
 anything remains. `initialize_host_config` also creates the rand nonce, so both addresses must be
-empty or the next init fails. Accounts owned by the shared demo programs are not covered.
+empty or the next init fails. The demo programs carry the same preview-only instruction, and the
+preview recovery closes their accounts before it wipes the host.
 
-`preview-env-deploy.yml` runs `host wipe`, then `host deploy --allow-upgrade`, which uploads this
+`deploy-preview.sh` runs the preview recovery, then `host deploy --allow-upgrade`, which uploads this
 `.so` when the bytecode differs and runs `initialize_host_config` and `define_kms_context` for this
-Gateway; a plain `host deploy` refuses differing bytecode. `preview-env-destroy.yml` will
-close those accounts again before it deletes the namespace and will not initialize. If that
-namespace uploaded a different `.so`, destroy will write the pinned baseline `.so` back.
+Gateway; a plain `host deploy` refuses differing bytecode. `preview-env-destroy.yml` runs the same
+recovery before it deletes the namespace and does not initialize. Before a reset, the recovery
+upgrades each deployed program to the recovery image's build, so `close_owned_accounts` is present.
 Pull-request CI runs on the test validator and does not touch the `DPq5y89…` on Solana devnet.
 Durable GitOps environments will upgrade bytecode in place on their own program IDs.
 
@@ -1974,8 +1993,7 @@ the connector. Nothing invents a second integer.
 `initialize_host_config` requires type byte `0x01` on the host `chain_id` and `0x00` on
 `gateway_chain_id`.
 HostConfig then holds the chosen row. The listener, connector and relayer must use that
-same value. The listener today takes `chain_id` from its config and does not compare it to
-HostConfig (#1972). A deployment on a named public row may also compare RPC `getGenesisHash`
+same value. The listener reads `chain_id` from HostConfig rather than from its own config. A deployment on a named public row may also compare RPC `getGenesisHash`
 with the hash above to confirm it is on the intended cluster, without that comparison defining
 the id.
 

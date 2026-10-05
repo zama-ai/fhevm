@@ -61,7 +61,6 @@ stack where one exists.
 | **update** | Replace a Store slot using an expected previous handle and previous shared leaf count. Failure reverts the transaction. Previously sealed permissions remain valid. | supersede, rotation | storage update |
 | **rand nonce** | The host's `RandNonce` singleton (`["rand-nonce"]`), a counter every execution with a rand step must pass and advance; its value is bound into every rand seed, so two executions can never derive the same seed. | persistent-write anchor | `counterRand` |
 | **HCU** | Homomorphic compute unit: the metering unit of FHE work. | — | HCU |
-
 | **result grant** | Transaction-local compute permission for an exact produced handle and consumer Store. Held in shared host-owned transient store; the consumer authority must sign consumption, not grant creation. Never a decrypt leaf. | — | `allowTransient` composition |
 | **transient store** (transaction journal) | Host-owned PDA `["transient", payer]`, opened once by a top-level payer signature and closed by the exact final top-level instruction. All FHE calls share its result occurrences, grants and HCU. Payer funds/refunds only; Store authorities control use. Failed finalization rolls back all writes. | — | transient ACL storage |
 | **returned result** | An explicitly selected `(step_index, output_index)` in `FheExecuteArgs.returned_results`. At most 32 entries in requested order, including duplicates; current operators require output index zero. Empty selection returns no handles. `build_returning` selects one typed result. | — | function return value |

@@ -58,7 +58,8 @@ afterthought.
 
 The `operator_mollusk_conformance`, `host_mollusk`, `fhe_execute_boundary`, `token_mollusk`,
 `batcher_mollusk`, `vault_mollusk`, `permit_invalidation_mollusk`, `disclose_packet_fit`,
-`host_admin_mollusk`, `user_decryption_delegation_mollusk`, `capability_invariants`, and specimen (`counter_mollusk`,
+`host_admin_mollusk`, `user_decryption_delegation_mollusk`, `transient_mollusk`, `preview_cleanup_mollusk`,
+`capability_invariants`, and specimen (`counter_mollusk`,
 `dep_chain_mollusk`) suites execute real SBF under Mollusk, booted and
 asserted through the shared `zama-solana-test-kit` crate. Mollusk surfaces resulting **account state**, **inner instructions (CPIs)**, and **return
 data**, which are the stable artifacts these suites assert on. Plain `emit!` program-data logs are
@@ -113,7 +114,7 @@ repository has more than a dozen, so the number is not the useful fact — what
 matters is which ones can see a Solana change, and the criterion is a path
 dependency on a crate under `solana/`. Three do: `coprocessor/fhevm-engine`
 (host-listener, tfhe-worker), `kms-connector`, and `relayer` (the delegation
-pre-check reads records through `zama-solana-acl`). Everything else in the repo — `sdk/rust-sdk`, `shared/*`,
+pre-check reads records through `zama-solana-acl`). Everything else in the repo — `shared/*`,
 `test-suite/gateway-stress`, the generated `*_bindings` — depends on no Solana
 crate and cannot break from one.
 
@@ -336,8 +337,11 @@ shows and holds no such leaf is a terminal refusal, and a record that is behind 
 - **Stale or wrong-feature SBF artifacts.** After changing an Anchor program, **rebuild** before
   running runtime tests — a stale `.so` will make tests pass or fail against old code. Prefer
   `bash scripts/check-zama-host-idl.sh`: it checks the default production IDL/ABI surface and
-  rebuilds both artifacts on the default feature set. Neither program has an alternate test feature
-  or entropy path, so Mollusk runs the same artifact that ships.
+  rebuilds every program on the default feature set, plus the `admin-sweep` builds and the
+  [cleartext host build](#the-cleartext-host-build). No program has a test-only entropy path. The
+  host suites and cost snapshots run the default build that ships; the token, batcher, counter,
+  dep-chain and Mollusk operator suites run the cleartext host build, which adds plaintext tracking
+  to the same instructions.
 - **A small CU delta after an incremental SBF build is not a code change.** The committed
   baselines are minted by `scripts/update-cost-snapshots.sh`, which runs `cargo clean` first. An
   incremental rebuild of the same source can differ by a few CU: a doc-comment-only edit to
@@ -371,7 +375,9 @@ shows and holds no such leaf is a terminal refusal, and a record that is behind 
   crate `zama-host` compiles, so a layout change breaks the build. The vendored coprocessor IDL and
   the TypeScript seed literals are still hand-mirrored: change a seed or an instruction shape in the
   host and run `check-zama-host-idl.sh` / `check-pda-seeds.py`, or the Codama clients drift.
-  The user-decrypt side of the mirror — the ed25519 signing message and the `extraData` blob,
-  hand-mirrored between the connector's Rust and the SDK's TypeScript — is pinned by the committed
-  byte vectors in `solana/test-fixtures/user-decrypt/`, which both sides assert against; moving
-  those bytes is a protocol change (new domain tag / version byte), not a fixture refresh.
+  The user-decrypt side of the mirror — the permit's canonical text and offchain-message envelope,
+  and the relayer envelope, hand-mirrored between the Rust crates (`zama-solana-permit`, used by the
+  connector and relayer) and the SDK's TypeScript — is pinned by the committed vectors in
+  `solana/test-fixtures/permit/permit_v1.json` and
+  `solana/test-fixtures/user-decrypt/relayer_envelope_v1.json`, which both sides assert against;
+  moving those bytes is a protocol change (new domain tag / version byte), not a fixture refresh.
