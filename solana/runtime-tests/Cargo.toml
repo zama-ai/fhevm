@@ -14,7 +14,7 @@ delegator-vault = { path = "../programs/delegator-vault", features = ["no-entryp
 demo-vault = { path = "../programs/demo-vault", features = ["no-entrypoint"] }
 dep-chain = { path = "../programs/dep-chain", features = ["no-entrypoint"] }
 encrypted-counter = { path = "../programs/encrypted-counter", features = ["no-entrypoint"] }
-# Held on the agave-4.0 line while the rest of the toolchain moved to agave 4.1. mollusk-svm 0.14.0
+# Held on the agave-4.0 line while the rest of the toolchain moved to agave 4.3. mollusk-svm 0.14.0
 # cannot resolve here: it needs solana-account >=4.3 (which has moved to wincode 0.6) and
 # solana-transaction-status-client-types (still on wincode 0.5), and the two cannot coexist — the
 # build fails in solana-instruction and solana-nonce. 0.13.4 requires the same

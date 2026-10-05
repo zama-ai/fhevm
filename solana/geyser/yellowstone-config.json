@@ -21,6 +21,7 @@
       "transactions_status": { "max": 1, "any": false, "account_include_max": 10, "account_include_reject": ["TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA"], "account_exclude_max": 10, "account_required_max": 10 },
       "blocks": { "max": 1, "account_include_max": 10, "account_include_any": false, "account_include_reject": ["TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA"], "include_transactions": true, "include_accounts": false, "include_entries": false },
       "blocks_meta": { "max": 1 },
+      "block_footer": { "max": 1 },
       "entries": { "max": 1 }
     }
   },

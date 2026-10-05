@@ -873,6 +873,7 @@ mod slot_size_tests {
                 SubscribeUpdateTransaction {
                     transaction: Some(junk_info(0)),
                     slot: 5,
+                    ..Default::default()
                 },
             )),
             ..Default::default()

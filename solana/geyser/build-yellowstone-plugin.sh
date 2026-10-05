@@ -3,10 +3,8 @@
 # multi-arch. The validator dlopen's this external plugin via `--geyser-plugin-config`.
 #
 # The geyser plugin interface is a Rust trait with no stable ABI, so the `+solana.<version>` suffix
-# on YELLOWSTONE_REF must track the agave major.minor the side-stack setup runs — 4.1 today
-# (see the toolchain pins in solana-e2e.yml and solana-tests.yml). The patch versions need not
-# match, and here they do not: upstream's newest build is against 4.1.0 while we run 4.1.2, and
-# agave's geyser-plugin-interface is byte-identical between those two.
+# on YELLOWSTONE_REF must match the agave version the side-stack setup runs — 4.3.0 (see the
+# toolchain pins in solana-e2e.yml and solana-tests.yml).
 # On x86_64 Linux (CI) we download the prebuilt release artifact; on every other host (native Apple
 # Silicon) we build from source. Upstream gates the Linux-only `affinity` crate off macOS itself as
 # of v14, so the local patch that used to do it is gone.
@@ -15,7 +13,7 @@
 # under solana/target so repeated runs are instant. Override the tag with YELLOWSTONE_REF.
 set -euo pipefail
 
-YELLOWSTONE_REF="${YELLOWSTONE_REF:-v14.2.2+solana.4.1.0}"
+YELLOWSTONE_REF="${YELLOWSTONE_REF:-v16.0.0+solana.4.3.0}"
 SOLANA="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 CACHE="$SOLANA/target/yellowstone/$YELLOWSTONE_REF"
 LIB_LINUX="libyellowstone_grpc_geyser.so"

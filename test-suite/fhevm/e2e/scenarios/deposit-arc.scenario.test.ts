@@ -249,8 +249,8 @@ describe.skipIf(!runsDemoScenarios)("solana deposit-arc scenario", () => {
       // back and assert it now exists and is owned by the confidential-token program — the concrete
       // state the join phase consumes next. This is the wrap phase's real state check, beyond "did not
       // revert".
-      // Read at the same commitment `send` confirmed at: the RPC default is `finalized`, which lags
-      // `confirmed` by ~31 slots on the test validator and would race a just-confirmed wrap.
+      // Read at the same commitment `send` confirmed at. The local validator runs Alpenglow, so
+      // `finalized` names the same slot as `confirmed` there.
       const aliceCusdc = await vault.tokenAccountAddress(config.mints.joinConfidential, alice.address);
       const account = await rpc.getAccountInfo(aliceCusdc, { encoding: "base64", commitment: "confirmed" }).send();
       expect(account.value).not.toBeNull();
@@ -353,8 +353,8 @@ describe.skipIf(!runsDemoScenarios)("solana deposit-arc scenario", () => {
         // join record, so its existence under the batcher program proves THIS join executed — not
         // merely that a transaction landed; the join-count increment pins it to the same batch.
         console.log("deposit-arc join: asserting join record + join count on-chain...");
-        // joinBatch confirms at `confirmed`; read the record at that same commitment (the RPC
-        // default `finalized` lags ~31 slots and would near-deterministically miss a fresh join).
+        // joinBatch confirms at `confirmed`; read the record at that same commitment (on the local
+        // Alpenglow validator `finalized` names the same slot).
         const joinRecord = await vault.deriveJoinRecordAddress(batch, alice.address);
         const joinRecordAccount = await rpc
           .getAccountInfo(joinRecord, { encoding: "base64", commitment: "confirmed" })
@@ -565,8 +565,8 @@ describe.skipIf(!runsDemoScenarios)("solana deposit-arc scenario", () => {
 
       // The claimed flag and credited payout balance must both be committed.
       console.log("deposit-arc claim: asserting claimed flag + claim encrypted value account on-chain...");
-      // `send` confirmed at `confirmed`; read the record at the same commitment (the RPC default
-      // `finalized` lags ~31 slots and would race the fresh claim).
+      // `send` confirmed at `confirmed`; read the record at the same commitment (on the local
+      // Alpenglow validator `finalized` names the same slot).
       const joinRecordAfterClaim = await vault.getJoinRecord(
         rpc,
         await vault.deriveJoinRecordAddress(batch, alice.address),

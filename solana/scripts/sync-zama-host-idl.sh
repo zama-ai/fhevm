@@ -17,7 +17,7 @@ cd "$ROOT"
 # The goldens this writes are compared byte for byte against a fresh `anchor build` in CI, so
 # minting them under a different Anchor than CI runs produces a diff that looks like a real
 # IDL change and fails the next unrelated PR. Keep in lockstep with solana-tests.yml.
-EXPECTED_SOLANA="${EXPECTED_SOLANA:-4.1.2}"
+EXPECTED_SOLANA="${EXPECTED_SOLANA:-4.3.0}"
 . "$ROOT/scripts/lib/require-pinned-toolchain.sh"
 
 bash "$ROOT/scripts/install-sbf-tools.sh"

@@ -7,7 +7,7 @@
 #   docker build --platform=linux/amd64 -f solana/deploy/Dockerfile -t ghcr.io/zama-ai/fhevm/solana-programs:local .
 
 ARG PROGRAM_ENVIRONMENT=preview-env
-ARG SOLANA_VERSION=4.1.2
+ARG SOLANA_VERSION=4.3.0
 ARG ANCHOR_VERSION=1.2.0
 ARG KUBECTL_VERSION=v1.32.3
 

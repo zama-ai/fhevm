@@ -293,6 +293,7 @@ pub(crate) fn build_subscribe_request(
             account_include: vec![program_id.to_string()],
             account_exclude: vec![],
             account_required: vec![],
+            cuckoo_account_include: None,
             token_accounts: None,
         },
     )]);
@@ -307,6 +308,7 @@ pub(crate) fn build_subscribe_request(
         transactions_status: HashMap::new(),
         blocks: HashMap::new(),
         blocks_meta,
+        block_footer: HashMap::new(),
         entry: HashMap::new(),
         commitment: Some(
             yellowstone_grpc_proto::prelude::CommitmentLevel::Confirmed as i32,

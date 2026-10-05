@@ -1,11 +1,11 @@
 // validator — the host-native Solana test validator the e2e side-stack runs on, absorbed from
 // `setup-solana-side.sh` "[1/4] fresh validator (Yellowstone geyser) + program deploy".
 //
-// Host = native solana-test-validator (agave 4.1.2, pinned in solana-e2e.yml) with the Yellowstone
-// geyser plugin (gRPC :10000) loaded via --geyser-plugin-config. The real validator runs on the
-// host arch directly (multi-arch incl. Apple Silicon), fills the SlotHashes sysvar every result
-// handle is derived from, and streams its blocks over Yellowstone. The RPC
-// listener binds 0.0.0.0 on its own, so the dockerized KMS worker reaches it over
+// Host = native solana-test-validator (agave 4.3.0, pinned in solana-e2e.yml) running Alpenglow
+// consensus, with the Yellowstone geyser plugin (gRPC :10000) loaded via --geyser-plugin-config.
+// The real validator runs on the host arch directly (multi-arch incl. Apple Silicon), fills the
+// SlotHashes sysvar every result handle is derived from, and streams its blocks over Yellowstone.
+// The RPC listener binds 0.0.0.0 on its own, so the dockerized KMS worker reaches it over
 // host.docker.internal:8899. Local only — no mainnet exposure: the RPC URL is pinned to
 // 127.0.0.1:8899 by the callers.
 
@@ -66,8 +66,16 @@ export const genesisDeployedPrograms = (
 export const renderGeyserConfig = (template: string, pluginLibPath: string): string =>
   template.replaceAll("@LIBPATH@", pluginLibPath);
 
+/** SIMD-0326, Alpenglow consensus: active on devnet, and at genesis on the test validator. */
+const ALPENGLOW_FEATURE_ID = "A1pengvuM6JEcyNuTnMqepBKhwHE3N6PmUrdATGawhJS";
+const FEATURE_PROGRAM_ID = "Feature111111111111111111111111111111111111";
+
 /**
  * The validator start arguments.
+ *
+ * --alpenglow activates Alpenglow at genesis, so a block is final once it completes and
+ * `confirmed` and `finalized` name the same slot, as on devnet. Without it the test validator runs
+ * TowerBFT and `finalized` trails `confirmed` by about 15 seconds.
  *
  * --bind-address must not be 0.0.0.0 on agave 4.x: TestValidator::start passes bind_ip_addr
  * straight through as the gossip advertised IP (test-validator/src/lib.rs:1045), discarding the
@@ -93,6 +101,7 @@ export const validatorStartArgs = (parameters: {
   readonly genesisAccounts?: readonly { readonly address: string; readonly jsonPath: string }[];
 }): string[] => [
   "solana-test-validator",
+  "--alpenglow",
   "--reset",
   "--rpc-port",
   String(parameters.rpcPort ?? 8899),
@@ -113,6 +122,33 @@ export const validatorStartArgs = (parameters: {
   ]),
   ...(parameters.genesisAccounts ?? []).flatMap((account) => ["--account", account.address, account.jsonPath]),
 ];
+
+/**
+ * Fails unless the validator at `rpcUrl` runs Alpenglow: the feature account must belong to the
+ * feature program and record an activation slot (bincode `Option<u64>`, so a first byte of 1).
+ */
+export const assertAlpenglowActive = async (rpcUrl: string): Promise<void> => {
+  const response = await fetch(rpcUrl, {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({
+      jsonrpc: "2.0",
+      id: 1,
+      method: "getAccountInfo",
+      params: [ALPENGLOW_FEATURE_ID, { encoding: "base64" }],
+    }),
+  });
+  const body = (await response.json()) as {
+    result?: { value: { owner: string; data: [string, string] } | null };
+  };
+  const account = body.result?.value;
+  if (account?.owner !== FEATURE_PROGRAM_ID || Buffer.from(account.data[0], "base64")[0] !== 1) {
+    throw new Error(
+      `the validator at ${rpcUrl} does not run Alpenglow: feature ${ALPENGLOW_FEATURE_ID} is not active. ` +
+        "Start it through validatorStartArgs, which passes --alpenglow.",
+    );
+  }
+};
 
 /** Matches the lifecycle-owned ledger path shape `demo/lifecycle.ts` allocates. */
 export const isLifecycleLedgerPath = (ledgerDir: string, uid: number): boolean =>
@@ -277,6 +313,7 @@ export const startGeyserValidator = async (options: ValidatorStartOptions): Prom
     }
     await Bun.sleep(1_000);
   }
+  await assertAlpenglowActive(VALIDATOR_RPC_URL);
 };
 
 const isProcessAlive = (pid: number): boolean => {

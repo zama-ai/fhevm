@@ -50,7 +50,7 @@ for arg in "$@"; do
 done
 
 # Keep in lockstep with .github/workflows/solana-tests.yml SOLANA_VERSION.
-EXPECTED_SOLANA="${EXPECTED_SOLANA:-4.1.2}"
+EXPECTED_SOLANA="${EXPECTED_SOLANA:-4.3.0}"
 . "$ROOT/scripts/lib/require-pinned-toolchain.sh"
 
 if [[ "$CLEAN" -eq 1 ]]; then
