@@ -30,14 +30,14 @@ export function createFhevmDecryptClient<C extends FhevmSolanaChain>(
   return withPermitDecrypt(createFhevmPublicDecryptClient(parameters), parameters.trust, getSolanaRuntime());
 }
 
-/** Adds the permit-path actions to a public decrypt client; the cleartext client supplies `execute`. */
+/** Adds the permit-path actions to a public decrypt client; the cleartext client supplies `execution`. */
 export function withPermitDecrypt<C extends FhevmSolanaChain>(
   base: FhevmSolanaPublicDecryptClient<C>,
   trust: SolanaDecryptTrust,
   runtime: FhevmRuntime,
-  execute?: SolanaUserDecryptExecution,
+  execution?: SolanaUserDecryptExecution,
 ): FhevmSolanaDecryptClient<C> {
-  const actions = solanaPermitDecryptActions(base.chain, trust, runtime, base.fetchPermitInvalidation, execute);
+  const actions = solanaPermitDecryptActions(base.chain, trust, runtime, base.fetchPermitInvalidation, execution);
   return Object.assign(base, actions, {
     decryptValue: async ({ entry, ...request }: SolanaDecryptValueParameters) => {
       const values = await actions.decryptValues({ ...request, entries: [entry] });

@@ -201,7 +201,7 @@ describe('cleartextUserDecryptExecution', () => {
         }),
         signature: new Uint8Array(PERMIT_SIGNATURE_LEN),
       },
-    }) as unknown as Parameters<ReturnType<typeof cleartextUserDecryptExecution>>[0]['session'];
+    }) as unknown as Parameters<ReturnType<typeof cleartextUserDecryptExecution>['execute']>[0]['session'];
   const entries = [{ handle: permitHandle, ownerAddress: bytes(signer), encryptedStore: identity(0xea) }];
   const kmsContext = (destroyed: boolean) =>
     ({ data: { destroyed, signers: [kmsSigner] } }) as unknown as Awaited<
@@ -211,12 +211,12 @@ describe('cleartextUserDecryptExecution', () => {
     options?: RelayerUserDecryptOptions,
     { attempts, start = now - 10n }: { attempts?: number; start?: bigint } = {},
   ) =>
-    cleartextUserDecryptExecution(
-      rpc,
-      chain,
-      trust,
-      readLeafProofs,
-    )({ session: sessionStarting(start), entries, attempts, options });
+    cleartextUserDecryptExecution(rpc, chain, trust, readLeafProofs).execute({
+      session: sessionStarting(start),
+      entries,
+      attempts,
+      options,
+    });
   /** The rejection a run of one attempt ends on. */
   const firstRejection = async (start?: bigint) => {
     const error = await execute(undefined, { attempts: 1, ...(start === undefined ? {} : { start }) }).catch(
