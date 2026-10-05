@@ -432,7 +432,6 @@ pub fn host_config_account(params: &HostConfigParams) -> (Pubkey, Account) {
                 max_hcu_per_tx: u64::MAX,
                 max_hcu_depth_per_tx: u64::MAX,
                 hcu_block_cap_per_app: u64::MAX,
-                updated_slot: 0,
                 bump,
             }),
             owner: host::id(),

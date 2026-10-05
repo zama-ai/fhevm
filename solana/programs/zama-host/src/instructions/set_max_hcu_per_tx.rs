@@ -21,7 +21,7 @@ use super::host_admin::HostAdmin;
 ///   `hcu_block_cap_per_app` must stay at or above the new total, so raising the per-execution
 ///   limit cannot silently make a single legal execution exceed the block cap
 ///   (`check_block_cap_ordering`).
-/// - Advances `updated_slot` and emits the config-updated event carrying the new limits.
+/// - Emits the config-updated event carrying the new limits.
 pub fn set_max_hcu_per_tx(ctx: Context<HostAdmin>, value: u64) -> Result<()> {
     assert_no_remaining_accounts(ctx.remaining_accounts)?;
     assert_admin(&ctx.accounts.host_config, &ctx.accounts.admin)?;
@@ -39,7 +39,6 @@ pub fn set_max_hcu_per_tx(ctx: Context<HostAdmin>, value: u64) -> Result<()> {
     // And a metering-band block cap must not fall below the new total (sentinels exempt).
     check_block_cap_ordering(config.hcu_block_cap_per_app, value)?;
     config.max_hcu_per_tx = value;
-    config.updated_slot = Clock::get()?.slot;
     emit_config_updated(
         &ctx.accounts.host_config,
         admin,

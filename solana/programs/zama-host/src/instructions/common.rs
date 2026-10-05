@@ -164,7 +164,6 @@ pub(super) fn emit_config_updated(
             max_hcu_per_tx: config.max_hcu_per_tx,
             max_hcu_depth_per_tx: config.max_hcu_depth_per_tx,
             hcu_block_cap_per_app: config.hcu_block_cap_per_app,
-            updated_slot: config.updated_slot,
         },
     )
 }
@@ -553,7 +552,6 @@ mod tests {
             max_hcu_per_tx: 20_000_000,
             max_hcu_depth_per_tx: 5_000_000,
             hcu_block_cap_per_app: u64::MAX,
-            updated_slot: 42,
         };
     }
 

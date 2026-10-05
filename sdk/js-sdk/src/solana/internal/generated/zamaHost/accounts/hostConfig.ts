@@ -108,8 +108,6 @@ export type HostConfig = {
    * (must be `>= max_hcu_per_tx` unless that is unlimited).
    */
   hcuBlockCapPerApp: bigint;
-  /** Slot in which the config was initialized or last changed. */
-  updatedSlot: bigint;
   /** PDA bump for `PDA("host-config")`. */
   bump: number;
 };
@@ -171,8 +169,6 @@ export type HostConfigArgs = {
    * (must be `>= max_hcu_per_tx` unless that is unlimited).
    */
   hcuBlockCapPerApp: number | bigint;
-  /** Slot in which the config was initialized or last changed. */
-  updatedSlot: number | bigint;
   /** PDA bump for `PDA("host-config")`. */
   bump: number;
 };
@@ -196,7 +192,6 @@ export function getHostConfigEncoder(): FixedSizeEncoder<HostConfigArgs> {
       ['maxHcuPerTx', getU64Encoder()],
       ['maxHcuDepthPerTx', getU64Encoder()],
       ['hcuBlockCapPerApp', getU64Encoder()],
-      ['updatedSlot', getU64Encoder()],
       ['bump', getU8Encoder()],
     ]),
     (value) => ({ ...value, discriminator: HOST_CONFIG_DISCRIMINATOR }),
@@ -221,7 +216,6 @@ export function getHostConfigDecoder(): FixedSizeDecoder<HostConfig> {
     ['maxHcuPerTx', getU64Decoder()],
     ['maxHcuDepthPerTx', getU64Decoder()],
     ['hcuBlockCapPerApp', getU64Decoder()],
-    ['updatedSlot', getU64Decoder()],
     ['bump', getU8Decoder()],
   ]);
 }
@@ -282,5 +276,5 @@ export async function fetchAllMaybeHostConfig(
 }
 
 export function getHostConfigSize(): number {
-  return 327;
+  return 319;
 }

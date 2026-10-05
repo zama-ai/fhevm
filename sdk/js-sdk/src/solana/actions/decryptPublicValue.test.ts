@@ -124,7 +124,6 @@ async function accountFixture() {
     maxHcuPerTx: 1n,
     maxHcuDepthPerTx: 1n,
     hcuBlockCapPerApp: 1n,
-    updatedSlot: 1n,
     bump: configBump,
   };
   const kms: KmsContextArgs = {

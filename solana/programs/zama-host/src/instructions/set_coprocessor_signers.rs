@@ -18,7 +18,7 @@ use super::host_admin::HostAdmin;
 /// - Rejects any trailing accounts (`assert_no_remaining_accounts`).
 /// - Non-empty set, within `HostConfig::MAX_COPROCESSOR_SIGNERS`, `1 <= threshold <= set.len()`,
 ///   no zero-address signer, no duplicate signer.
-/// - Advances `updated_slot` and emits the config-updated event.
+/// - Emits the config-updated event.
 pub fn set_coprocessor_signers(
     ctx: Context<HostAdmin>,
     signers: Vec<[u8; 20]>,
@@ -39,7 +39,6 @@ pub fn set_coprocessor_signers(
     config.coprocessor_signers = packed;
     config.coprocessor_signer_count = count;
     config.coprocessor_threshold = threshold;
-    config.updated_slot = Clock::get()?.slot;
     emit_config_updated(
         &ctx.accounts.host_config,
         admin,

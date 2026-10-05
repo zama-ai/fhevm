@@ -66,8 +66,6 @@ pub struct HostConfigUpdatedEvent {
     pub max_hcu_depth_per_tx: u64,
     /// Current per-app HCU block cap (`u64::MAX` = unrestricted, `0` = ban untrusted apps).
     pub hcu_block_cap_per_app: u64,
-    /// Slot in which this update was applied.
-    pub updated_slot: u64,
 }
 
 /// Emitted when a KMS context is defined (mirrors `ProtocolConfig.NewKmsContext`).

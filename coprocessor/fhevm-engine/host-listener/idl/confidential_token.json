@@ -3143,13 +3143,6 @@
             "type": "u64"
           },
           {
-            "name": "updated_slot",
-            "docs": [
-              "Slot in which the config was initialized or last changed."
-            ],
-            "type": "u64"
-          },
-          {
             "name": "bump",
             "docs": [
               "PDA bump for `PDA(\"host-config\")`."

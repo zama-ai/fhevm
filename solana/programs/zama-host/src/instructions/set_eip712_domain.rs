@@ -33,7 +33,6 @@ pub fn set_eip712_domain(
     config.gateway_chain_id = gateway_chain_id;
     config.input_verification_contract = input_verification_contract;
     config.decryption_contract = decryption_contract;
-    config.updated_slot = Clock::get()?.slot;
     emit_config_updated(
         &ctx.accounts.host_config,
         admin,

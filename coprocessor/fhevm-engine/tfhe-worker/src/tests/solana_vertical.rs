@@ -386,7 +386,6 @@ fn seed_host_config(svm: &mut LiteSVM, program_id: Pubkey, admin: Pubkey) -> Pub
                 // Unrestricted (the ship default): the block cap short-circuits without
                 // requiring the optional meter/trust accounts.
                 hcu_block_cap_per_app: u64::MAX,
-                updated_slot: 0,
                 bump,
             }),
             owner: program_id,

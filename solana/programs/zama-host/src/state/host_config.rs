@@ -51,8 +51,6 @@ pub struct HostConfig {
     /// bypass) — the one knob where `0` is a real semantic; any other value is the metering band
     /// (must be `>= max_hcu_per_tx` unless that is unlimited).
     pub hcu_block_cap_per_app: u64,
-    /// Slot in which the config was initialized or last changed.
-    pub updated_slot: u64,
     /// PDA bump for `PDA("host-config")`.
     pub bump: u8,
 }
@@ -73,7 +71,6 @@ impl HostConfig {
         + 32
         + PauseFlags::SPACE
         + 1
-        + 8
         + 8
         + 8
         + 8
@@ -183,7 +180,7 @@ mod tests {
     // many signers are registered.
     #[test]
     fn host_config_space_matches_serialized_len() {
-        assert_eq!(HostConfig::SPACE, 319);
+        assert_eq!(HostConfig::SPACE, 311);
 
         let cfg = HostConfig {
             admin: Pubkey::new_unique(),
@@ -202,7 +199,6 @@ mod tests {
             // Ships unrestricted (u64::MAX). A `0` default would instead ban every untrusted app
             // on deploy — the strictest state, not a neutral one.
             hcu_block_cap_per_app: u64::MAX,
-            updated_slot: 0,
             bump: 0,
         };
         let mut buf = Vec::new();

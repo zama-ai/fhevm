@@ -60,7 +60,6 @@ const fakeContext = async (hostConfigExists: boolean, payer: Address, kmsContext
                             maxHcuPerTx: 1n,
                             maxHcuDepthPerTx: 1n,
                             hcuBlockCapPerApp: 1n,
-                            updatedSlot: 0n,
                             bump: 0,
                           }),
                         ).toString('base64')

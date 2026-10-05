@@ -994,7 +994,7 @@ option). `HostConfig` holds `coprocessor_signers: [[u8; 20]; MAX_COPROCESSOR_SIG
 singleton's byte layout **pinned** (the account serializes to the same size regardless of how many
 signers are active), and avoids threading a second account through `fhe_execute`, which is
 byte-tight. The cap is 8: comfortably above realistic coprocessor-quorum sizes while bounding both
-the account size (`HostConfig::SPACE` is 319) and the worst-case per-attestation recovery cost.
+the account size (`HostConfig::SPACE` is 311) and the worst-case per-attestation recovery cost.
 Rotation is admin-driven today via the admin-gated `set_coprocessor_signers` instruction (same
 admin/pause-neutral pattern as the other `set_*` config setters); a gateway-sync authority would
 drive it from the EVM `GatewayConfig` coprocessor registry in production.
@@ -1973,8 +1973,8 @@ every program of the transaction it signed, while EVM's `msg.sender` check keeps
 from pausing with a pauser's right. A PDA pauser, such as a Squads vault, pauses through CPI, as only
 its own program can sign for it. `unpause` takes the admin and clears them. As on
 EVM, the admin pauses only if it also holds a pauser record. Pausing an area already paused
-changes nothing and emits nothing. A change stamps `updated_slot` and emits `HostConfigUpdatedEvent`,
-whose `signer` names the pauser or the admin. `set_pauser` emits `PauserUpdatedEvent`.
+changes nothing and emits nothing. A change emits `HostConfigUpdatedEvent`, whose `signer` names the
+pauser or the admin. `set_pauser` emits `PauserUpdatedEvent`.
 
 Programs act on KMS results only through `verify_public_decrypt`. The token reads no pause flag and
 passes the config through to the host.
@@ -1998,7 +1998,7 @@ Rejected alternatives:
 | A flag that stops `verify_public_decrypt` | EVM's `KMSVerifier` has no pause. It would also strand redeems and disclosures that hold valid certificates; `destroy_kms_context` revokes a compromised context's certificates instead. |
 | Let the admin pause without a record | EVM requires `PauserSet` membership for `pause()` even from the owner. Keeping that rule makes the pauser set the one list of who can pause. |
 
-Consequences: `PauseFlags` is three bytes of `HostConfig` (`HostConfig::SPACE` 319). The host
+Consequences: `PauseFlags` is three bytes of `HostConfig` (`HostConfig::SPACE` 311). The host
 listener decodes `HostConfig` with the program's type. The KMS connector reads no pause flag, so user
 decryption pauses at the gateway alone, as on EVM. The pause errors are `ExecutionPaused`,
 `VerifiedInputsPaused`, `AclWritesPaused`, `NotPauser`, `PauserRecordMismatch` and
