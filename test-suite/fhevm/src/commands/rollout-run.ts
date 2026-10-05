@@ -11,6 +11,7 @@ import { composeUp } from "../flow/runtime-compose";
 import {
   applyVersionLock as applyStackVersionLock,
   refreshDiscovery as refreshStackDiscovery,
+  restagePromotedGreen as restageStackPromotedGreen,
   up,
   startDeferredGreen as startStackDeferredGreen,
   upgradeThresholdKmsOperator,
@@ -96,6 +97,12 @@ export type RolloutRunContext = {
   upgradeRuntimeGroup(group: string, options?: RolloutRuntimeUpgradeOptions): Promise<void>;
   /** Starts a Green fleet after prerequisite material has converged on Blue. */
   startDeferredGreen(): Promise<void>;
+  /** Re-homes promoted Green as Blue and prepares a newer deferred Green fleet. */
+  restagePromotedGreen(options: {
+    source?: Extract<State["scenario"], { kind: "blue-green" }>["gcs"]["source"];
+    env?: Record<string, string>;
+    args?: Record<string, string[]>;
+  }): Promise<void>;
   resolveVersionLock(name: string, options: RolloutLockOptions): Promise<string>;
   writeVersionLock(name: string, options: RolloutLockOptions): Promise<string>;
 };
@@ -433,8 +440,19 @@ export const createRolloutContext = (
       await receipt.record("upgrade-runtime", group, { lockFile: options.lockFile });
     },
     async startDeferredGreen() {
-      await startStackDeferredGreen();
+      await startStackDeferredGreen(undefined, {
+        onStartupFailure: async (error) => {
+          await receipt.record("failed-start-green", "Green startup failed before cleanup", {
+            details: { error: error instanceof Error ? error.message : String(error) },
+            diagnostics: true,
+          });
+        },
+      });
       await receipt.record("start-green", "started deferred Green fleet", { docker: true });
+    },
+    async restagePromotedGreen(options) {
+      await restageStackPromotedGreen(options);
+      await receipt.record("restage-green", "restaged promoted fleet before the next compiled release", { docker: true });
     },
     async resolveVersionLock(name, options) {
       const target = options.target ?? ROLLOUT_TARGET;

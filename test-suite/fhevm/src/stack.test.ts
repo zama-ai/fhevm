@@ -11,6 +11,7 @@ import {
   previewStateFromBundle,
   removeRuntimeUpgradeOverrides,
   resumePendingE2eKmsConnectorRuntimeAdoption,
+  restagePromotedGreen,
   resolveUpgradePlan,
   startDeferredGreen,
 } from "./flow/up-flow";
@@ -337,6 +338,7 @@ describe("stack", () => {
     let buildPersistedState = true;
     const generatedDeferredStates: boolean[] = [];
     let removedContainers: string[] = [];
+    const failureEvents: string[] = [];
     const operations = {
       async loadState() { return state; },
       async generateRuntime(next: State) {
@@ -352,15 +354,30 @@ describe("stack", () => {
       async waitForCoprocessorServices() {},
       async multiChainComposeUp() {},
       async postBootHealthGate() { throw new Error("Green unhealthy"); },
-      async removeContainers(containers: string[]) { removedContainers = containers; },
+      async removeContainers(containers: string[]) {
+        failureEvents.push("cleanup");
+        removedContainers = containers;
+      },
       async saveState(next: State) { saved = next; },
     };
 
-    await expect(startDeferredGreen(operations)).rejects.toThrow("Green unhealthy");
+    await expect(startDeferredGreen(operations, {
+      async onStartupFailure(error) {
+        expect((error as Error).message).toBe("Green unhealthy");
+        failureEvents.push("diagnostics");
+      },
+    })).rejects.toThrow("Green unhealthy");
+    expect(failureEvents).toEqual(["diagnostics", "cleanup"]);
     expect(buildPersistedState).toBe(false);
     expect(saved).toBeUndefined();
     expect(generatedDeferredStates).toEqual([false, true]);
     expect(removedContainers.length).toBeGreaterThan(0);
+
+    failureEvents.length = 0;
+    await expect(startDeferredGreen(operations, {
+      async onStartupFailure() { throw new Error("receipt unavailable"); },
+    })).rejects.toThrow("Green unhealthy");
+    expect(failureEvents).toEqual(["cleanup"]);
 
     await startDeferredGreen({ ...operations, async postBootHealthGate() {} });
     expect(saved?.scenario.kind).toBe("blue-green");
@@ -698,5 +715,52 @@ describe("stack", () => {
       "kms-connector-3-endpoint",
       "kms-connector-3-proxy",
     ]);
+  });
+
+  test.each([undefined, { mode: "registry" as const, tag: "c9a9e92", compatTag: "v0.15.1" }])("re-homes promoted Green before staging the next source %j", async (source) => {
+    const state: State = {
+      target: "latest-main",
+      lockPath: "/tmp/lock.json",
+      versions: presetBundle("latest-main", "abcdef0", "lock.json"),
+      overrides: [],
+      scenario: {
+        ...blueGreenScenario,
+        gcs: {
+          source: { mode: "registry", tag: "04fb072", compatTag: "v0.15.0" },
+          deferredStart: false,
+          env: { FORCE_LEGACY_SERVER_KEY: "true" },
+          args: {},
+        },
+      },
+      completedSteps: ["base", "coprocessor"],
+      updatedAt: "2026-07-14T00:00:00.000Z",
+    };
+    const saved: State[] = [];
+    const removed: string[][] = [];
+    const operations = {
+      async loadState() { return state; },
+      async generateRuntime() {},
+      async maybeBuild() {},
+      async composeUp() {},
+      async waitForContainer() {},
+      async waitForCoprocessorServices() {},
+      async multiChainComposeUp() {},
+      async postBootHealthGate() {},
+      async removeContainers(containers: string[]) { removed.push(containers); },
+      async saveState(next: State) { saved.push(next); },
+    };
+
+    await restagePromotedGreen({ source }, operations);
+
+    const next = saved[0]?.scenario;
+    expect(next?.kind).toBe("blue-green");
+    if (next?.kind === "blue-green") {
+      expect(next.bcs.source).toEqual({ mode: "registry", tag: "04fb072", compatTag: "v0.15.0" });
+      expect(next.bcs.env.FORCE_LEGACY_SERVER_KEY).toBe("true");
+      expect(next.gcs.source).toEqual(source ?? { mode: "local" });
+      expect(next.gcs.deferredStart).toBe(true);
+      expect(next.gcs.env.FORCE_LEGACY_SERVER_KEY).toBeUndefined();
+    }
+    expect(removed.flat()).toContain("coprocessor-gcs-tfhe-worker");
   });
 });
