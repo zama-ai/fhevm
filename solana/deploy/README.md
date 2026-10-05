@@ -17,7 +17,8 @@ This creates the usual preview namespace, Gateway, KMS and coprocessors, then ad
 
 1. The Solana host, using the existing `contracts` chart and the `host deploy` command.
 2. Gateway registration and coprocessor host/key registration.
-3. One Yellowstone listener per coprocessor database, with an internal proof Service.
+3. Per coprocessor, one Yellowstone listener, and a Merkle proof service: an indexer and a proof
+   server with their own `solana_merkle` database, the server behind an internal Service.
 4. Solana configuration for the existing KMS connectors and relayer.
 
 Set `deploy_example_programs=true` to also deploy confidential-token, demo-vault and
