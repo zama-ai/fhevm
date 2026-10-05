@@ -2199,7 +2199,7 @@ Decision: `HostConfig.paused` is `PauseFlags`, one flag per area.
 
 | Flag | Stops | EVM counterpart |
 |---|---|---|
-| `execution` | `fhe_execute`, with the allows, transient grants and public releases it writes, so every token instruction that computes (account setup, transfer, wrap, burn, cancel) and the batcher's settle through its wrap | ACL pause |
+| `execution` | `fhe_execute`, with the allows, transient grants and public releases it writes, so every token instruction that computes (account setup, transfer, viewer grants, wrap, burn, cancel) and the batcher's settle through its wrap | ACL pause |
 | `verified_inputs` | `fhe_execute` steps that consume a `VerifiedInput` | None: `InputVerifier` cannot be paused; the gateway pause stops only new proofs |
 | `acl_writes` | `create_encrypted_store`, `make_store_handle_public`, `delegate_for_user_decryption`, `revoke_delegation_for_user_decryption` | ACL pause |
 

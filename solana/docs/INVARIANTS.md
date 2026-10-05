@@ -411,12 +411,12 @@ only the admin clears them, and only the admin creates, enables or disables paus
 program the pauser calls could pause the host. A PDA pauser, such as a Squads vault, may pause through CPI. Admin
 setters are never paused, and `revoke_permits` takes no config account, so it runs under every flag. Pinned by
 `mollusk_each_pause_flag_stops_only_its_area`, `mollusk_no_pause_flag_stops_verify_public_decrypt`, the token tests of
-11f, `mollusk_settle_stops_only_under_the_execution_pause`, `mollusk_a_pauser_pauses_and_only_the_admin_unpauses`, `mollusk_only_an_enabled_pauser_pauses`,
-`mollusk_a_wallet_pause_forwarded_through_another_program_is_rejected`, `mollusk_a_vault_pda_pauses_through_cpi`,
-`mollusk_only_the_admin_sets_pausers`, `a_revocation_while_paused_is_rejected` and, over random sequences, the H1
-property of #35. The flags do not reach decryption, and the KMS connector does not read `HostConfig`. Gateway ingress
-has its own pause: `Decryption.sol` `whenNotPaused` covers every request entry point, the Solana entries included. HTTP
-decryption has no pause on either chain, as on EVM.
+11f, `mollusk_settle_stops_only_under_the_execution_pause`, `mollusk_a_pauser_pauses_and_only_the_admin_unpauses`,
+`mollusk_only_an_enabled_pauser_pauses`, `mollusk_a_wallet_pause_forwarded_through_another_program_is_rejected`,
+`mollusk_a_vault_pda_pauses_through_cpi`, `mollusk_only_the_admin_sets_pausers`, `a_revocation_while_paused_is_rejected`
+and, over random sequences, the H1 property of #35. The flags do not reach decryption, and the KMS connector does not
+read `HostConfig`. Gateway ingress has its own pause: `Decryption.sol` `whenNotPaused` covers every request entry point,
+the Solana entries included. HTTP decryption has no pause on either chain, as on EVM.
 
 **37. [HOLDS]** HCU enforcement ships disabled (unrestricted defaults) and is opt-in per knob. `u64::MAX` means
 unlimited; `0` is rejected for per-tx limits and means ban untrusted applications only for the block cap. When both
