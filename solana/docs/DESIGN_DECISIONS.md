@@ -1090,9 +1090,11 @@ returned id against `host_config.current_kms_context_id` and demand current-only
 `disclose_secp` and `redeem_burned_amount` both take the default (accept any live context), matching
 EVM.
 
-The verifier stops only under the `public_decrypt` pause flag (DD-058). An already-sealed leaf is
-already-public information, so re-proving it reveals nothing new; the flag exists to stop programs
-acting on forged certificates while a compromised KMS context is destroyed.
+The verifier never pauses, as EVM's `KMSVerifier` (DD-058). A certificate certifies a value the
+KMS has already made public, so verifying it again reveals nothing new. Against a compromised KMS
+context, the admin makes a new context current, then `destroy_kms_context` revokes every
+certificate the old one signed, as EVM's owner-only `destroyKmsContext`, which also refuses the
+active context.
 
 Return-data-only to start: today's KMS cleartexts are ≤32 bytes; if larger types are ever revealed the
 fallback is a caller-provided scratch account. The proof-freshness (stale-proof) retry race is the
@@ -1191,8 +1193,8 @@ option). `HostConfig` gains `coprocessor_signers: [[u8; 20]; MAX_COPROCESSOR_SIG
 fixed-capacity array keeps the singleton's byte layout **pinned** (the account serializes to the same
 size regardless of how many signers are active), and avoids threading a second account through
 `fhe_execute`, which is byte-tight. The cap is 8: comfortably above realistic coprocessor-quorum sizes
-while bounding both the account size (+142 bytes vs the single-signer layout; current
-`HostConfig::SPACE` is 317 after the 32-byte KMS context id) and
+while bounding both the account size (+142 bytes vs the single-signer layout; `HostConfig::SPACE`
+is 319) and
 the worst-case per-attestation recovery cost. Rotation is admin-driven today via the
 admin-gated `set_coprocessor_signers` instruction (same admin/pause-neutral pattern as the other
 `set_*` config setters); a gateway-sync authority would drive it from the EVM `GatewayConfig`
@@ -2197,14 +2199,16 @@ Decision: `HostConfig.paused` is `PauseFlags`, one flag per area.
 
 | Flag | Stops | EVM counterpart |
 |---|---|---|
-| `execution` | `fhe_execute`, with the allows, transient grants and public releases it writes; the token's burn and cancel through it | ACL pause |
+| `execution` | `fhe_execute`, with the allows, transient grants and public releases it writes, so every token instruction that computes (account setup, transfer, viewer grants, wrap, burn, cancel) and the batcher's settle through its wrap | ACL pause |
 | `verified_inputs` | `fhe_execute` steps that consume a `VerifiedInput` | None: `InputVerifier` cannot be paused; the gateway pause stops only new proofs |
 | `acl_writes` | `create_encrypted_store`, `make_store_handle_public`, `delegate_for_user_decryption`, `revoke_delegation_for_user_decryption` | ACL pause |
-| `public_decrypt` | `verify_public_decrypt`, and so the token's redeem and disclose | None: `KMSVerifier` cannot be paused; the gateway pause stops only new certificates |
 
-`verified_inputs` and `public_decrypt` act when a signed result is used, not when it is requested.
-They are the levers against compromised coprocessor or KMS signers, whose results the gateway pause
-cannot recall.
+`verified_inputs` acts when a signed input is used, not when it is requested. It is the lever
+against compromised coprocessor signers, whose results the gateway pause cannot recall.
+`verify_public_decrypt` never pauses, as EVM's `KMSVerifier` (fhevm-internal#2096). The gateway
+pause stops an honest KMS from signing new certificates. Against a compromised KMS context, the
+admin makes a new context current, then `destroy_kms_context` revokes every certificate the old one
+signed, as EVM's owner-only `destroyKmsContext`, which also refuses the active context.
 
 A pauser is a `PauserRecord` PDA `("pauser", key)`, which the admin creates, enables or disables
 with `set_pauser`, as it does deny and HCU-trusted records. `pause` takes the pauser's signature and
@@ -2217,10 +2221,8 @@ EVM, the admin pauses only if it also holds a pauser record. Pausing an area alr
 changes nothing and emits nothing. A change stamps `updated_slot` and emits `HostConfigUpdatedEvent`,
 whose `signer` names the pauser or the admin. `set_pauser` emits `PauserUpdatedEvent`.
 
-Programs act on KMS results only through `verify_public_decrypt`, so `public_decrypt` stops forged
-redemptions while a compromised KMS context is destroyed (fhevm-internal#2082). It replaces the
-token's own pause check, which read the single flag; the token now reads no pause flag and passes
-the config through to the host.
+Programs act on KMS results only through `verify_public_decrypt`. The token reads no pause flag and
+passes the config through to the host.
 
 Admin setters are never paused. `revoke_permits` takes no config account, so it runs under every
 flag, as EVM's `invalidateDecryptionSignaturesBefore` runs under the ACL pause.
@@ -2237,14 +2239,15 @@ Rejected alternatives:
 | Alternative | Why not |
 |---|---|
 | Pausers as a list in `HostConfig` | A fixed maximum and a realloc for every change. One record per pauser matches the deny and HCU-trusted records and keeps `HostConfig` fixed-size. |
-| Keep one flag and add pausers | An operator could not stop forged redemptions without also stopping every application's execution. |
+| Keep one flag and add pausers | An operator could not stop compromised coprocessor inputs without also stopping every application's execution. |
+| A flag that stops `verify_public_decrypt` | EVM's `KMSVerifier` has no pause. It would also strand redeems and disclosures that hold valid certificates; `destroy_kms_context` revokes a compromised context's certificates instead. |
 | Let the admin pause without a record | EVM requires `PauserSet` membership for `pause()` even from the owner. Keeping that rule makes the pauser set the one list of who can pause. |
 
-Consequences: `set_host_pause` is gone. `HostConfig` grows by three bytes, so every reader of its
-layout changes with it: the host listener decodes it with the program's type; the KMS connector's
-host-pause check and the `zama-solana-acl` decoder it used are deleted, so user decryption pauses at
-the gateway alone, as on EVM. New errors: `VerifiedInputsPaused`, `AclWritesPaused`, `PublicDecryptPaused`,
-`NotPauser`, `PauserRecordMismatch`; `HostConfigPaused` is now `ExecutionPaused`.
+Consequences: `PauseFlags` is three bytes of `HostConfig` (`HostConfig::SPACE` 319). The host
+listener decodes `HostConfig` with the program's type. The KMS connector reads no pause flag, so user
+decryption pauses at the gateway alone, as on EVM. The pause errors are `ExecutionPaused`,
+`VerifiedInputsPaused`, `AclWritesPaused`, `NotPauser`, `PauserRecordMismatch` and
+`WalletPauseThroughCpi`.
 
 ## DD-059: The listener catches up from an archive when the stream cannot replay
 

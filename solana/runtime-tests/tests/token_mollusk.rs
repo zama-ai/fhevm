@@ -47,10 +47,10 @@ use zama_solana_test_kit::signing::{
 use zama_solana_test_kit::{
     anchor_error_check, anchor_framework_error_check, anchor_ix, canonical_test_context_id,
     cost_snapshot, decode_anchor_event, deny_scope_record_account, encrypted_store_account,
-    event_authority, handle_for_chain, new_encrypted_store, read_account, read_encrypted_store,
-    read_spl_amount, read_store_handle, serialized_account, spl_mint_account, spl_token_account,
-    system_account, u256_be, Ctx, HostConfigParams, BALANCE_FHE_TYPE, DECRYPTION_CONTRACT,
-    GATEWAY_CHAIN_ID,
+    event_authority, handle_for_chain, new_encrypted_store, paused_host_config, read_account,
+    read_encrypted_store, read_spl_amount, read_store_handle, serialized_account, spl_mint_account,
+    spl_token_account, system_account, u256_be, Ctx, HostConfigParams, BALANCE_FHE_TYPE,
+    DECRYPTION_CONTRACT, GATEWAY_CHAIN_ID,
 };
 
 // ---------------------------------------------------------------------------
@@ -3606,44 +3606,24 @@ const EXECUTION: host::PauseFlags = host::PauseFlags {
     execution: true,
     verified_inputs: false,
     acl_writes: false,
-    public_decrypt: false,
 };
 
 const VERIFIED_INPUTS: host::PauseFlags = host::PauseFlags {
     execution: false,
     verified_inputs: true,
     acl_writes: false,
-    public_decrypt: false,
 };
 
-const PUBLIC_DECRYPT: host::PauseFlags = host::PauseFlags {
-    execution: false,
-    verified_inputs: false,
-    acl_writes: false,
-    public_decrypt: true,
-};
-
-/// The same host config account with the areas `areas` names paused.
-fn paused_host_config(account: &Account, areas: host::PauseFlags) -> Account {
-    let mut config = host::HostConfig::try_deserialize(&mut account.data.as_slice())
-        .expect("host config deserializes");
-    config.paused = areas;
-    Account {
-        data: serialized_account(config),
-        ..account.clone()
-    }
-}
-
-/// With public decryption paused, the host's certificate check refuses the redeem before any vault
-/// movement.
+/// As on EVM, a host pause never stops a certificate already issued: redeem verifies and pays
+/// out with every host area paused.
 #[test]
-fn mollusk_redeem_rejected_when_host_paused() {
+fn mollusk_redeem_succeeds_while_host_paused() {
     let fixture = BurnRedeemFixture::new();
     let first_handle = handle_for_chain(41, BALANCE_FHE_TYPE);
 
     let mut accounts = fixture.accounts(1_000);
     seed_single_burn_value_account(&fixture, &mut accounts, first_handle);
-    let paused = paused_host_config(&accounts[&fixture.host_config], PUBLIC_DECRYPT);
+    let paused = paused_host_config(&accounts[&fixture.host_config], host::PauseFlags::ALL);
     accounts.insert(fixture.host_config, paused);
     let context = fixture_context(burn_redeem_mollusk(), accounts);
 
@@ -3659,10 +3639,10 @@ fn mollusk_redeem_rejected_when_host_paused() {
             extra_data,
             pending_burn,
         ),
-        &[host_error(host::errors::ZamaHostError::PublicDecryptPaused)],
+        &[Check::success()],
     );
-    assert_eq!(read_spl_amount(&context, fixture.vault_usdc), 1_000);
-    assert_eq!(read_spl_amount(&context, fixture.destination_usdc), 0);
+    assert_eq!(read_spl_amount(&context, fixture.vault_usdc), 500);
+    assert_eq!(read_spl_amount(&context, fixture.destination_usdc), 500);
 }
 
 /// The token program has no pause of its own: burn and cancellation stop at the host's pause
@@ -4628,20 +4608,21 @@ fn mollusk_disclose_secp_emits_certified_handle_and_cleartext() {
 }
 
 #[test]
-fn mollusk_disclose_secp_rejected_when_host_paused() {
+fn mollusk_disclose_secp_succeeds_while_host_paused() {
     let fixture = DiscloseFixture::new();
     let handle = handle_for_chain(43, BALANCE_FHE_TYPE);
     let mut accounts = fixture.base();
-    let paused = paused_host_config(&accounts[&fixture.host_config], PUBLIC_DECRYPT);
+    let paused = paused_host_config(&accounts[&fixture.host_config], host::PauseFlags::ALL);
     accounts.insert(fixture.host_config, paused);
     let context = fixture_context(mollusk(), accounts);
 
     let (signatures, extra_data) = amount_public_decrypt_cert(handle, 500);
-    check_token_instruction(
+    let result = check_token_instruction(
         &context,
         &disclose_secp_ix(&fixture, handle, u256_be(500), signatures, extra_data),
-        &[host_error(host::errors::ZamaHostError::PublicDecryptPaused)],
+        &[Check::success()],
     );
+    assert_disclosed(&result, handle, 500);
 }
 
 #[test]

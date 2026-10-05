@@ -32,10 +32,10 @@ use zama_solana_test_kit::{
     cost_snapshot, deny_scope_record_account, empty_system_account, encrypted_store_account,
     event_authority, funded_system_account, handle_for_chain, host_svm as mollusk,
     host_svm_without_previous_bank_hash as mollusk_without_previous_bank_hash, label,
-    new_encrypted_store, new_encrypted_store_with_slot, program_owned_account, rand_nonce_account,
-    read_encrypted_store, readonly, readonly_signer, serialized_account, signing, system_account,
-    system_program_account, writable, DECRYPTION_CONTRACT, GATEWAY_CHAIN_ID,
-    INPUT_VERIFICATION_CONTRACT,
+    new_encrypted_store, new_encrypted_store_with_slot, paused_host_config, program_owned_account,
+    rand_nonce_account, read_encrypted_store, readonly, readonly_signer, serialized_account,
+    signing, system_account, system_program_account, writable, DECRYPTION_CONTRACT,
+    GATEWAY_CHAIN_ID, INPUT_VERIFICATION_CONTRACT,
 };
 
 mod host_fixtures;
@@ -1527,7 +1527,6 @@ fn mollusk_each_pause_flag_stops_only_its_area() {
         (flag(|f| f.execution = true), None, Some(ExecutionPaused)),
         (flag(|f| f.acl_writes = true), Some(AclWritesPaused), None),
         (flag(|f| f.verified_inputs = true), None, None),
-        (flag(|f| f.public_decrypt = true), None, None),
     ];
     for (paused, acl_write_error, execute_error) in cases {
         let payer = Pubkey::new_unique();
@@ -4569,8 +4568,10 @@ fn mollusk_verify_public_decrypt_returns_handle_and_cleartext() {
     assert_eq!(result.return_data, expected);
 }
 
+/// As EVM's `KMSVerifier`, the certificate check never pauses: the gateway pause stops new requests,
+/// and no host pause stops the verification of certificates already issued.
 #[test]
-fn mollusk_only_the_public_decrypt_flag_stops_verify_public_decrypt() {
+fn mollusk_no_pause_flag_stops_verify_public_decrypt() {
     let admin = Pubkey::new_unique();
     let (host_config, live_config) = host_config_with_context(admin, KMS_CONTEXT_ID);
     let (kms_context, kms_context_acct) = kms_context_account(KMS_CONTEXT_ID);
@@ -4586,53 +4587,14 @@ fn mollusk_only_the_public_decrypt_flag_stops_verify_public_decrypt() {
         extra_data,
     );
 
-    let none = host::PauseFlags::default();
-    let cases = [
+    let accounts = vec![
         (
-            host::PauseFlags {
-                execution: true,
-                ..none
-            },
-            None,
+            host_config,
+            paused_host_config(&live_config, host::PauseFlags::ALL),
         ),
-        (
-            host::PauseFlags {
-                verified_inputs: true,
-                ..none
-            },
-            None,
-        ),
-        (
-            host::PauseFlags {
-                acl_writes: true,
-                ..none
-            },
-            None,
-        ),
-        (
-            host::PauseFlags {
-                public_decrypt: true,
-                ..none
-            },
-            Some(host::errors::ZamaHostError::PublicDecryptPaused),
-        ),
+        (kms_context, kms_context_acct),
     ];
-    for (paused, error) in cases {
-        let mut config = HostConfig::try_deserialize(&mut live_config.data.as_slice()).unwrap();
-        config.paused = paused;
-        let accounts = vec![
-            (
-                host_config,
-                Account {
-                    data: serialized_account(config),
-                    ..live_config.clone()
-                },
-            ),
-            (kms_context, kms_context_acct.clone()),
-        ];
-        let check = error.map_or_else(Check::success, custom_error);
-        check_host_instruction(&mollusk(), &ix, &accounts, &[check]);
-    }
+    check_host_instruction(&mollusk(), &ix, &accounts, &[Check::success()]);
 }
 
 #[test]

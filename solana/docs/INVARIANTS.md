@@ -139,10 +139,10 @@ Related token/Host lifecycle guardrails are:
   `mollusk_redeem_current_pending_burn_then_rejects_double_settlement`, which checks that redeem leaves the supply Store
   untouched.
 - **11f [HOLDS].** The host's pause flags (#36) stop the token; there is no separate token-level pause. Redeem and
-  disclose stop with `public_decrypt`, through the host's `verify_public_decrypt`. Opening a burn and cancelling one
-  stop with `execution`, through `fhe_execute`, and opening a burn also with `verified_inputs`, since its amount is a
-  verified input. No registry / observer / on-chain gov surface yet (zama-ai/fhevm-internal#1634). Pinned by
-  `mollusk_redeem_rejected_when_host_paused`, `mollusk_disclose_secp_rejected_when_host_paused`,
+  disclose run under every flag, because the host's `verify_public_decrypt` never pauses. Opening a burn and cancelling
+  one stop with `execution`, through `fhe_execute`, and opening a burn also with `verified_inputs`, since its amount is
+  a verified input. No registry / observer / on-chain gov surface yet (zama-ai/fhevm-internal#1634). Pinned by
+  `mollusk_redeem_succeeds_while_host_paused`, `mollusk_disclose_secp_succeeds_while_host_paused`,
   `mollusk_burn_and_cancel_are_refused_by_a_paused_host` and `mollusk_burn_is_refused_while_verified_inputs_are_paused`.
 
 **68. [ASSUMPTION]** A program never passes a PDA it signs with, a Store authority or a delegator, as a signer to a
@@ -403,20 +403,20 @@ build lets the upgrade authority close `HostConfig` and the KMS contexts (`AUTHO
 
 **36. [HOLDS]** `HostConfig.paused` holds one flag per host area (DD-058). `execution` stops `fhe_execute`;
 `verified_inputs` stops `fhe_execute` steps that consume a `VerifiedInput`; `acl_writes` stops `create_encrypted_store`,
-`make_store_handle_public`, `delegate_for_user_decryption` and `revoke_delegation_for_user_decryption`, as EVM's
-ACL pause stops `revokeDelegationForUserDecryption`; `public_decrypt` stops `verify_public_decrypt`. A flag
-stops only its own area. Any signer with an enabled `PauserRecord` sets flags; only the admin clears them, and only the
-admin creates, enables or disables pauser records. A wallet pauser must call `pause` as a top-level instruction
-(`WalletPauseThroughCpi`), as a wallet delegator must delegate (#27): otherwise any program the pauser calls could pause
-the host. A PDA pauser, such as a Squads vault, may pause through CPI. Admin setters are never paused, and `revoke_permits` takes no config
-account, so it runs under every flag.
-Pinned by `mollusk_each_pause_flag_stops_only_its_area`, `mollusk_only_the_public_decrypt_flag_stops_verify_public_decrypt`,
-the token tests of 11f, `mollusk_a_pauser_pauses_and_only_the_admin_unpauses`, `mollusk_only_an_enabled_pauser_pauses`,
-`mollusk_a_wallet_pause_forwarded_through_another_program_is_rejected`, `mollusk_a_vault_pda_pauses_through_cpi`,
-`mollusk_only_the_admin_sets_pausers`, `a_revocation_while_paused_is_rejected` and, over random sequences, the H1 property
-of #35. The flags do not reach decryption, and the KMS connector does not read `HostConfig`. Gateway ingress has
-its own pause: `Decryption.sol` `whenNotPaused` covers every request entry point, the Solana entries
-included. HTTP decryption has no pause on either chain, as on EVM.
+`make_store_handle_public`, `delegate_for_user_decryption` and `revoke_delegation_for_user_decryption`, as EVM's ACL
+pause stops `revokeDelegationForUserDecryption`. A flag stops only its own area, and no flag stops
+`verify_public_decrypt`, as no pause stops EVM's `KMSVerifier`. Any signer with an enabled `PauserRecord` sets flags;
+only the admin clears them, and only the admin creates, enables or disables pauser records. A wallet pauser must call
+`pause` as a top-level instruction (`WalletPauseThroughCpi`), as a wallet delegator must delegate (#27): otherwise any
+program the pauser calls could pause the host. A PDA pauser, such as a Squads vault, may pause through CPI. Admin
+setters are never paused, and `revoke_permits` takes no config account, so it runs under every flag. Pinned by
+`mollusk_each_pause_flag_stops_only_its_area`, `mollusk_no_pause_flag_stops_verify_public_decrypt`, the token tests of
+11f, `mollusk_settle_stops_only_under_the_execution_pause`, `mollusk_a_pauser_pauses_and_only_the_admin_unpauses`,
+`mollusk_only_an_enabled_pauser_pauses`, `mollusk_a_wallet_pause_forwarded_through_another_program_is_rejected`,
+`mollusk_a_vault_pda_pauses_through_cpi`, `mollusk_only_the_admin_sets_pausers`, `a_revocation_while_paused_is_rejected`
+and, over random sequences, the H1 property of #35. The flags do not reach decryption, and the KMS connector does not
+read `HostConfig`. Gateway ingress has its own pause: `Decryption.sol` `whenNotPaused` covers every request entry point,
+the Solana entries included. HTTP decryption has no pause on either chain, as on EVM.
 
 **37. [HOLDS]** HCU enforcement ships disabled (unrestricted defaults) and is opt-in per knob. `u64::MAX` means
 unlimited; `0` is rejected for per-tx limits and means ban untrusted applications only for the block cap. When both

@@ -294,9 +294,6 @@ pub enum ZamaHostError {
     /// An ACL write outside an execution was attempted while ACL writes are paused.
     #[msg("ACL writes are paused")]
     AclWritesPaused,
-    /// `verify_public_decrypt` was attempted while public-decrypt verification is paused.
-    #[msg("public-decrypt verification is paused")]
-    PublicDecryptPaused,
     /// The signer's pauser record is disabled.
     #[msg("signer is not an enabled pauser")]
     NotPauser,

@@ -77,7 +77,7 @@
       "first_fail": 33,
       "limited_by": "MAX_FHE_EXECUTION_STEPS",
       "cost_at_max_ok": {
-        "compute_units": 139050,
+        "compute_units": 139120,
         "unique_accounts": 9,
         "instruction_data_bytes": 2938,
         "cpi_instructions": 1,
@@ -90,7 +90,7 @@
       "first_fail": 33,
       "limited_by": "MAX_FHE_EXECUTION_STEPS",
       "cost_at_max_ok": {
-        "compute_units": 125230,
+        "compute_units": 125300,
         "unique_accounts": 9,
         "instruction_data_bytes": 2938,
         "cpi_instructions": 1,
@@ -103,7 +103,7 @@
       "first_fail": 33,
       "limited_by": "MAX_FHE_EXECUTION_STEPS",
       "cost_at_max_ok": {
-        "compute_units": 299492,
+        "compute_units": 299562,
         "unique_accounts": 9,
         "instruction_data_bytes": 3386,
         "cpi_instructions": 1,
@@ -116,7 +116,7 @@
       "first_fail": 33,
       "limited_by": "MAX_FHE_EXECUTION_STEPS",
       "cost_at_max_ok": {
-        "compute_units": 326670,
+        "compute_units": 326740,
         "unique_accounts": 9,
         "instruction_data_bytes": 3386,
         "cpi_instructions": 1,
@@ -129,7 +129,7 @@
       "first_fail": 17,
       "limited_by": "heap",
       "cost_at_max_ok": {
-        "compute_units": 525749,
+        "compute_units": 525770,
         "unique_accounts": 9,
         "instruction_data_bytes": 15420,
         "cpi_instructions": 1,
@@ -142,7 +142,7 @@
       "first_fail": 33,
       "limited_by": "MAX_FHE_EXECUTION_STEPS",
       "cost_at_max_ok": {
-        "compute_units": 72198,
+        "compute_units": 72237,
         "unique_accounts": 9,
         "instruction_data_bytes": 436,
         "cpi_instructions": 1,
@@ -155,7 +155,7 @@
       "first_fail": 5,
       "limited_by": "heap",
       "cost_at_max_ok": {
-        "compute_units": 98282,
+        "compute_units": 98296,
         "unique_accounts": 15,
         "instruction_data_bytes": 802,
         "cpi_instructions": 1,
@@ -168,7 +168,7 @@
       "first_fail": 8,
       "limited_by": "heap",
       "cost_at_max_ok": {
-        "compute_units": 145258,
+        "compute_units": 145278,
         "unique_accounts": 21,
         "instruction_data_bytes": 1192,
         "cpi_instructions": 1,
@@ -181,7 +181,7 @@
       "first_fail": 16,
       "limited_by": "heap",
       "cost_at_max_ok": {
-        "compute_units": 240102,
+        "compute_units": 240138,
         "unique_accounts": 37,
         "instruction_data_bytes": 2232,
         "cpi_instructions": 1,
@@ -194,7 +194,7 @@
       "first_fail": 33,
       "limited_by": "MAX_FHE_EXECUTION_STEPS",
       "cost_at_max_ok": {
-        "compute_units": 69471,
+        "compute_units": 69517,
         "unique_accounts": 9,
         "instruction_data_bytes": 1594,
         "cpi_instructions": 1,
@@ -207,7 +207,7 @@
       "first_fail": 7,
       "limited_by": "heap",
       "cost_at_max_ok": {
-        "compute_units": 104421,
+        "compute_units": 104432,
         "unique_accounts": 9,
         "instruction_data_bytes": 690,
         "cpi_instructions": 1,
