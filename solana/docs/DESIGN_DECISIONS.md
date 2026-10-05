@@ -2806,11 +2806,16 @@ confirmed commitment, judges each account as the KMS connector does (`validate_s
 Leaves are only appended, so the peaks of the first `n` leaves never change once recorded, and the
 comparison holds whichever slot the chain was read at. A `mismatch` writes the store into
 `quarantined_stores`, and a later `match` removes it. `solana_merkle_proof_server` answers every
-query for a quarantined store with `upstream_transient` "leaf record inconsistent" (502,
-retryable), so the connector takes the proof from another coprocessor.
+leaf of a quarantined store `inconsistent`, in a 200 that still proves the request's other
+leaves, and the connector takes that leaf's proof from another coprocessor. A connector that gets
+`inconsistent` from every coprocessor fails the request `upstream_transient`, retryable: the
+user's access is unknown, not denied. Only a failed database read refuses the whole request
+(`upstream_transient`, 502).
 
-The check compares the peaks only. A wrong path below correct peaks is caught when it is served:
-the proof server verifies each path against the recorded peaks before answering (DD-063).
+The check compares the peaks only. A wrong row below correct peaks is caught when it is served:
+before answering, the proof server recomputes the leaf's commitment from the row's store, index,
+handle and key, and verifies its path against the recorded peaks (DD-063). A row that fails
+either is answered `inconsistent`.
 
 `solana_merkle_indexer_quarantined_stores` above 0, any `inconsistent` leaf the proof server
 counts, and any `invalid` answer a KMS connector counts by coprocessor

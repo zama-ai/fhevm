@@ -321,6 +321,22 @@ fn peak_positions(leaf_count: u64) -> Vec<(u8, u64)> {
         .collect()
 }
 
+/// The commitment of a historical-access leaf for `key`, or of the public-decrypt leaf
+/// when `key` is `None`.
+pub fn leaf_commitment(
+    account: [u8; 32],
+    leaf_index: u64,
+    handle: [u8; 32],
+    key: Option<[u8; 32]>,
+) -> [u8; 32] {
+    match key {
+        Some(key) => {
+            historical_access_leaf_commitment(account, leaf_index, handle, key)
+        }
+        None => public_decrypt_leaf_commitment(account, leaf_index, handle),
+    }
+}
+
 /// A historical-access leaf for `key`, or the public-decrypt leaf when `key` is `None`.
 fn staged(
     account: [u8; 32],
@@ -329,20 +345,14 @@ fn staged(
     key: Option<[u8; 32]>,
     transaction_index: u64,
 ) -> StagedLeaf {
-    let (kind, commitment) = match key {
-        Some(key) => (
-            LeafKind::HistoricalAccess,
-            historical_access_leaf_commitment(account, leaf_index, handle, key),
-        ),
-        None => (
-            LeafKind::PublicDecrypt,
-            public_decrypt_leaf_commitment(account, leaf_index, handle),
-        ),
+    let kind = match key {
+        Some(_) => LeafKind::HistoricalAccess,
+        None => LeafKind::PublicDecrypt,
     };
     StagedLeaf {
         encrypted_store: account,
         leaf_index,
-        commitment,
+        commitment: leaf_commitment(account, leaf_index, handle, key),
         kind,
         handle,
         key,

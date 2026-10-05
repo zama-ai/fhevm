@@ -197,9 +197,17 @@ impl EncryptedStoreFailure {
 
 impl HandleBindingFailure {
     /// A proof record behind the chain may catch up, and so may the node this connector reads:
-    /// every binding failure is recoverable, as an EVM ACL denial is.
+    /// every binding failure is recoverable, as an EVM ACL denial is. A record its coprocessor
+    /// knows is wrong says nothing about the user's access, so it is the coprocessors' failure.
     pub fn class(&self) -> FailureClass {
-        ACL_DENIED
+        match self {
+            Self::ProofRecordInconsistent => UPSTREAM_TRANSIENT,
+            Self::NoLeaf { .. }
+            | Self::ProofRecordBehind { .. }
+            | Self::AccountUnknownToProofRecord
+            | Self::ProofDoesNotVerify { .. }
+            | Self::LeafIndexOutOfRange { .. } => ACL_DENIED,
+        }
     }
 }
 
@@ -431,6 +439,11 @@ mod tests {
             (
                 binding(HandleBindingFailure::AccountUnknownToProofRecord),
                 DENIED,
+                RETRY,
+            ),
+            (
+                binding(HandleBindingFailure::ProofRecordInconsistent),
+                NETWORK,
                 RETRY,
             ),
             (

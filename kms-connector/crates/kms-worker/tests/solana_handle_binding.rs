@@ -822,6 +822,38 @@ async fn a_failed_or_short_read_leaves_the_batch_to_another_coprocessor() {
     );
 }
 
+/// A coprocessor that knows its record is wrong for one leaf still proves the others: the next
+/// coprocessor is asked at once, and the leaf it proves resolves. When every coprocessor answers
+/// `inconsistent`, the entry keeps that failure.
+#[tokio::test(start_paused = true)]
+async fn an_inconsistent_leaf_is_left_to_another_coprocessor() {
+    let (fixture, account, batch) = two_allowed_queries();
+    let [(inconsistent, _), (proven, _)] = batch;
+    let partly_inconsistent = ProofRecord::answering([
+        (inconsistent, MerkleProofOutcome::Inconsistent),
+        (proven, fixture.outcome(&proven)),
+    ]);
+    let reader = ScriptedProofReader::in_order(vec![
+        partly_inconsistent.clone(),
+        ProofRecord::of(&[&fixture]),
+    ]);
+
+    let started = tokio::time::Instant::now();
+    let results = verify_with(&reader, &account, &batch).await.unwrap();
+
+    assert!(started.elapsed() < HEDGE_DELAY);
+    assert_eq!(results, vec![Ok(()), Ok(())]);
+    assert_eq!(reader.call_count(), 2);
+
+    let reader =
+        ScriptedProofReader::in_order(vec![partly_inconsistent.clone(), partly_inconsistent]);
+    let results = verify_with(&reader, &account, &batch).await.unwrap();
+    assert_eq!(
+        results,
+        vec![Err(HandleBindingFailure::ProofRecordInconsistent), Ok(())]
+    );
+}
+
 /// A query no coprocessor answered is a failed proof read, naming every coprocessor's failure.
 #[tokio::test]
 async fn no_answer_from_any_coprocessor_is_a_proof_read_error() {

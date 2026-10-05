@@ -38,8 +38,8 @@ leaf count. A store whose peaks differ is a mismatch:
   address, the chain's leaf count and the record's leaf count, or `encrypted store account is not
   a valid store` with the reason;
 - it writes the store into `quarantined_stores`;
-- the proof server answers every query for that store with `upstream_transient` "leaf record
-  inconsistent", which is retryable, so the connectors take the proof from another coprocessor.
+- the proof server answers every leaf of that store `inconsistent`, so the connectors take the
+  proof from another coprocessor. Leaves of other stores in the same request are still proved.
 
 Decryptions keep working while at least one other coprocessor serves the store. Decryptions of a
 store fail only when every coprocessor has it quarantined: then open an incident at once.

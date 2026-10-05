@@ -61,7 +61,9 @@ use zama_solana_acl::mmr_verify;
 use crate::{
     answer_cache::{Admission, AnswerCache},
     kms_tx_senders::KmsTxSenders,
-    store::{find_leaf, load_proof, load_served_store, LeafKind},
+    store::{
+        find_leaf, leaf_commitment, load_proof, load_served_store, LeafKind,
+    },
     unix_now_secs,
 };
 
@@ -330,6 +332,10 @@ pub enum MerkleProofOutcome {
     NotFound { leaf_count: u64 },
     /// The record never saw this account.
     UnknownAccount,
+    /// This record is known to disagree with the chain for this leaf: the store
+    /// check quarantined the store, or the leaf's commitment or path does not
+    /// match the recorded peaks. The caller asks another coprocessor.
+    Inconsistent,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize, ToSchema)]
@@ -607,7 +613,13 @@ async fn answer_request(state: &AppState, queries: Vec<ParsedQuery>) -> Answer {
     };
     let mut proofs = Vec::with_capacity(queries.len());
     for query in queries {
-        proofs.push(prove(&state.pool, &query).await?);
+        let Ok(proof) = prove(&state.pool, &query).await else {
+            return Err(HttpError::new(
+                ErrorCode::UpstreamTransient,
+                "leaf record read failed",
+            ));
+        };
+        proofs.push(proof);
     }
     let mut answer = encode_cbor(&MerkleProofResponse { proofs });
     // The cache counts the length; `Bytes` would keep the spare capacity too.
@@ -692,35 +704,32 @@ impl ParsedQuery {
 async fn prove(
     pool: &PgPool,
     query: &ParsedQuery,
-) -> Result<MerkleProofOutcome, HttpError> {
+) -> Result<MerkleProofOutcome, ReadFailed> {
     let outcome = prove_leaf(pool, query).await;
     let label = match &outcome {
         Ok(MerkleProofOutcome::Found { .. }) => "found",
         Ok(MerkleProofOutcome::NotFound { .. }) => "not_found",
         Ok(MerkleProofOutcome::UnknownAccount) => "unknown_store",
+        Ok(MerkleProofOutcome::Inconsistent) => "inconsistent",
         Err(LeafError::Quarantined) => "quarantined",
-        Err(LeafError::Inconsistent) => "inconsistent",
         Err(LeafError::ReadFailed) => "read_failed",
     };
     LEAVES.with_label_values(&[label]).inc();
-    outcome.map_err(|err| {
-        let message = match err {
-            LeafError::ReadFailed => "leaf record read failed",
-            LeafError::Quarantined | LeafError::Inconsistent => {
-                "leaf record inconsistent"
-            }
-        };
-        HttpError::new(ErrorCode::UpstreamTransient, message)
-    })
+    match outcome {
+        Ok(outcome) => Ok(outcome),
+        Err(LeafError::Quarantined) => Ok(MerkleProofOutcome::Inconsistent),
+        Err(LeafError::ReadFailed) => Err(ReadFailed),
+    }
 }
 
-/// Why a leaf has no answer. All are `upstream_transient`, which the connector retries on
-/// another coprocessor.
+/// A database read failed: the whole request is refused `upstream_transient`.
+struct ReadFailed;
+
+/// A leaf whose answer is counted apart from it. A quarantined store answers
+/// [`MerkleProofOutcome::Inconsistent`], but pages once, through the store check.
 enum LeafError {
     /// The store check found this store's record disagrees with the chain.
     Quarantined,
-    /// A path that is missing or does not reach the recorded peaks.
-    Inconsistent,
     ReadFailed,
 }
 
@@ -757,6 +766,22 @@ async fn prove_leaf(
     else {
         return Ok(MerkleProofOutcome::NotFound { leaf_count });
     };
+    let inconsistent = || {
+        error!(
+            encrypted_store = %bs58::encode(account).into_string(),
+            leaf_index,
+            leaf_count,
+            "leaf record inconsistent"
+        );
+        Ok(MerkleProofOutcome::Inconsistent)
+    };
+    // The row is found by its handle and key, but only its commitment is proven: a row
+    // whose columns disagree with it would get a valid path for another grant.
+    if commitment
+        != leaf_commitment(account, leaf_index, query.handle, query.key)
+    {
+        return inconsistent();
+    }
     let proof = load_proof(pool, account, leaf_index, leaf_count)
         .await
         .map_err(read_failed)?;
@@ -765,13 +790,7 @@ async fn prove_leaf(
     let Some(proof) = proof.filter(|proof| {
         mmr_verify(&cursor.peaks, leaf_count, commitment, proof)
     }) else {
-        error!(
-            encrypted_store = %bs58::encode(account).into_string(),
-            leaf_index,
-            leaf_count,
-            "leaf record inconsistent"
-        );
-        return Err(LeafError::Inconsistent);
+        return inconsistent();
     };
     Ok(MerkleProofOutcome::Found {
         leaf_index: proof.leaf_index,
@@ -897,6 +916,7 @@ mod tests {
                 },
                 MerkleProofOutcome::NotFound { leaf_count: 3 },
                 MerkleProofOutcome::UnknownAccount,
+                MerkleProofOutcome::Inconsistent,
             ],
         };
         assert_eq!(

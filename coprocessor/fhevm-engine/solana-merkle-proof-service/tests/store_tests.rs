@@ -333,27 +333,58 @@ async fn leaf_record_round_trips_and_serves_verifiable_proofs(
         vec![MerkleProofOutcome::NotFound { leaf_count: 3 }]
     );
 
-    // A record missing a path row, or holding a wrong one, cannot serve a proof: the
-    // route answers a retryable 502 rather than a path that misses the peaks. Leaf 0's
-    // path is leaf 1.
-    let owner_of_0x10 = MerkleProofRequest {
-        leaves: vec![LeafQuery {
-            encrypted_store: ACCOUNT,
-            handle: [0x10; 32],
-            kind: LeafQueryKind::Allowed,
-            key: Some(OWNER),
-        }],
+    // A wrong leaf is answered `inconsistent` rather than with a path that misses the peaks
+    // or proves another grant, and the other leaves of the request are still proved. Leaf 2,
+    // the public leaf of 0x11, is its own peak; leaf 0's path is leaf 1.
+    let leaf_0_and_leaf_2 = |key| MerkleProofRequest {
+        leaves: vec![
+            LeafQuery {
+                encrypted_store: ACCOUNT,
+                handle: [0x10; 32],
+                kind: LeafQueryKind::Allowed,
+                key: Some(key),
+            },
+            LeafQuery {
+                encrypted_store: ACCOUNT,
+                handle: [0x11; 32],
+                kind: LeafQueryKind::Public,
+                key: None,
+            },
+        ],
     };
-    for corruption in [
-        "UPDATE leaves SET commitment = decode(repeat('00', 32), 'hex') WHERE leaf_index = 1",
-        "DELETE FROM leaves WHERE leaf_index = 1",
+    let set_leaf_0_key = |key: &str| {
+        format!(
+            "UPDATE leaves SET allowed_key = decode(repeat('{key}', 32), 'hex') \
+             WHERE leaf_index = 0"
+        )
+    };
+    for (corruption, key) in [
+        // Leaf 0's commitment allows OWNER: its row now names a key it never allowed.
+        (vec![set_leaf_0_key("5e")], [0x5E; 32]),
+        (
+            vec![
+                set_leaf_0_key("a1"),
+                "UPDATE leaves SET commitment = decode(repeat('00', 32), 'hex') \
+                 WHERE leaf_index = 1"
+                    .to_owned(),
+            ],
+            OWNER,
+        ),
+        (vec!["DELETE FROM leaves WHERE leaf_index = 1".to_owned()], OWNER),
     ] {
-        sqlx::query(corruption).execute(&pool).await?;
-        let response = proofs.post(&owner_of_0x10).await?;
-        assert_eq!(response.status(), 502, "{corruption}");
-        let error: ErrorResponse = decode(response).await?;
-        assert_eq!(error.code, ErrorCode::UpstreamTransient);
-        assert!(error.retryable);
+        for statement in &corruption {
+            sqlx::query(statement).execute(&pool).await?;
+        }
+        let corruption = corruption.join("; ");
+        let response = proofs.post(&leaf_0_and_leaf_2(key)).await?;
+        assert_eq!(response.status(), 200, "{corruption}");
+        let body: MerkleProofResponse = decode(response).await?;
+        assert_eq!(body.proofs[0], MerkleProofOutcome::Inconsistent, "{corruption}");
+        assert_eq!(
+            verify(&body.proofs[1], second.leaves[1].commitment),
+            2,
+            "{corruption}"
+        );
     }
 
     cancel.cancel();
@@ -655,7 +686,7 @@ async fn record(
 }
 
 /// The store check quarantines a store whose recorded peaks differ from the chain's, the proof
-/// server then refuses its proofs as inconsistent, and a later check that matches lifts it. A
+/// server then answers its leaves `inconsistent`, and a later check that matches lifts it. A
 /// record behind the chain leaves the quarantine as it is; a closed store lifts it.
 #[tokio::test]
 #[serial(db)]
@@ -723,12 +754,9 @@ async fn a_store_that_disagrees_with_the_chain_is_quarantined_until_it_matches(
     check().await?;
     assert!(quarantined().await?);
     let refused = proofs.post(&public_leaf(2)).await?;
-    assert_eq!(refused.status(), 502);
-    let error: ErrorResponse = decode(refused).await?;
-    assert_eq!(
-        (error.code, error.message.as_str()),
-        (ErrorCode::UpstreamTransient, "leaf record inconsistent")
-    );
+    assert_eq!(refused.status(), 200);
+    let body: MerkleProofResponse = decode(refused).await?;
+    assert_eq!(body.proofs, vec![MerkleProofOutcome::Inconsistent; 2]);
 
     chain.set(address, Some(&chain_grew));
     check().await?;

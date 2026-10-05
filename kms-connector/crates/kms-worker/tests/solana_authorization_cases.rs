@@ -39,7 +39,7 @@ const UPDATE_ENV: &str = "ZAMA_UPDATE_AUTHORIZATION_CASES";
 const SLOT: u64 = 100;
 
 /// Every failure [`failure_name`] can return.
-const FAILURES: [&str; 25] = [
+const FAILURES: [&str; 26] = [
     "Signature",
     "Window::NotYetValid",
     "Window::Expired",
@@ -61,6 +61,7 @@ const FAILURES: [&str; 25] = [
     "HandleBinding::NoLeaf",
     "HandleBinding::ProofRecordBehind",
     "HandleBinding::AccountUnknownToProofRecord",
+    "HandleBinding::ProofRecordInconsistent",
     "HandleBinding::ProofDoesNotVerify",
     "HandleBinding::LeafIndexOutOfRange",
     "Delegation::NoLiveDelegation",
@@ -71,15 +72,18 @@ const NODE: &str = "The cleartext client throws when an account read fails, lags
                     wrong number of accounts, instead of judging the request.";
 const LEAF_RECORD: &str = "The cleartext client throws when a Merkle proof read fails or answers the \
                            wrong number of proofs, instead of judging the request.";
+const OWN_RECORD: &str = "The cleartext client builds its proofs from its own leaf record, which is \
+                          never checked against the chain.";
 
 /// The failures no cleartext case can produce, with the reason.
-const RUST_ONLY: [(&str, &str); 6] = [
+const RUST_ONLY: [(&str, &str); 7] = [
     ("Snapshot::Unavailable", NODE),
     ("Snapshot::ResponseLengthMismatch", NODE),
     ("Snapshot::MalformedClock", NODE),
     ("Snapshot::NodeBehind", NODE),
     ("ProofRead::Unavailable", LEAF_RECORD),
     ("ProofRead::ResponseLengthMismatch", LEAF_RECORD),
+    ("HandleBinding::ProofRecordInconsistent", OWN_RECORD),
 ];
 
 fn snapshot_name(source: &SnapshotError) -> &'static str {
@@ -115,6 +119,7 @@ fn handle_binding_name(source: &HandleBindingFailure) -> &'static str {
         HandleBindingFailure::AccountUnknownToProofRecord => {
             "HandleBinding::AccountUnknownToProofRecord"
         }
+        HandleBindingFailure::ProofRecordInconsistent => "HandleBinding::ProofRecordInconsistent",
         HandleBindingFailure::ProofDoesNotVerify { .. } => "HandleBinding::ProofDoesNotVerify",
         HandleBindingFailure::LeafIndexOutOfRange { .. } => "HandleBinding::LeafIndexOutOfRange",
     }
@@ -778,6 +783,7 @@ fn render_outcome(outcome: &MerkleProofOutcome) -> Value {
             json!({ "status": "notFound", "leafCount": leaf_count })
         }
         MerkleProofOutcome::UnknownAccount => json!({ "status": "unknownAccount" }),
+        MerkleProofOutcome::Inconsistent => json!({ "status": "inconsistent" }),
     }
 }
 

@@ -219,7 +219,7 @@ The store check compares every recorded store with its account on chain, once at
 
 #### Metric Name: `solana_merkle_proof_server_leaves_total`
  - **Type**: Counter (labeled by `outcome`)
- - **Description**: Queried leaves read from the record, by `outcome`: `found`, `not_found`, `unknown_store`, `quarantined` (the store check quarantined the store), `inconsistent` (a recorded path is missing or does not reach the recorded peaks) or `read_failed`. Cached answers are not counted again. The `inconsistent` and `quarantined` series exist at 0 from startup.
+ - **Description**: Queried leaves read from the record, by `outcome`: `found`, `not_found`, `unknown_store`, `quarantined` (the store check quarantined the store), `inconsistent` (the row's fields do not match its commitment, or its path is missing or does not reach the recorded peaks) or `read_failed`. Both `quarantined` and `inconsistent` leaves are answered `inconsistent`. Cached answers are not counted again. The `inconsistent` and `quarantined` series exist at 0 from startup.
  - **Alarm**: Any `inconsistent`. `quarantined` does not page: `solana_merkle_indexer_quarantined_stores` already does.
     - **Recommendation**: critical, `increase(counter{outcome="inconsistent"}[5m]) > 0`, with the runbook as `runbook_url`.
 
@@ -414,8 +414,8 @@ Metrics for zkproof-worker are to be added in future releases, if/when needed. C
  - **Type**: Counter
  - **Labels**:
    - `source`: the coprocessor's Merkle proof server, as host and port.
-   - `outcome`: its answer for one queried leaf: `verified`, `no_leaf`, `unknown_store`, `behind` (its record holds fewer leaves than the chain), `ahead` (a leaf past the count the connector observed), `invalid` (built against as many leaves as the chain or more, yet the proof does not verify) or `read_failed` (the read failed, was refused, or answered a different number of leaves than asked).
- - **Description**: Counts each coprocessor's Merkle proof answers on Solana decryptions. The connector verifies every proof against the chain and asks the next coprocessor when one fails, so a coprocessor counting `invalid` costs no wrong decryption, only its share of the reads. `behind` and `read_failed` from one `source` mean it lags or is down; a store that coprocessor quarantined also shows as `read_failed`. The `invalid` series of every configured coprocessor exists at 0 from startup.
+   - `outcome`: its answer for one queried leaf: `verified`, `no_leaf`, `unknown_store`, `inconsistent` (the coprocessor knows its record is wrong for this leaf, and pages on its own), `behind` (its record holds fewer leaves than the chain), `ahead` (a leaf past the count the connector observed), `invalid` (built against as many leaves as the chain or more, yet the proof does not verify) or `read_failed` (the read failed, was refused, or answered a different number of leaves than asked).
+ - **Description**: Counts each coprocessor's Merkle proof answers on Solana decryptions. The connector verifies every proof against the chain and asks the next coprocessor when one fails, so a coprocessor counting `invalid` costs no wrong decryption, only its share of the reads. `behind` and `read_failed` from one `source` mean it lags or is down; `inconsistent` means its record is wrong for that store, which it reports itself. The `invalid` series of every configured coprocessor exists at 0 from startup.
  - **Alarm**: Any `invalid`: that coprocessor's leaf record disagrees with the chain. Page and tell the coprocessor's operator; [the Merkle record runbook](../../coprocessor/fhevm-engine/solana-merkle-proof-service/RUNBOOK.md) is the repair.
    - **Recommendation**: critical, `increase(counter{outcome="invalid"}[5m]) > 0`, by `source`.
 

@@ -60,6 +60,8 @@ pub enum MerkleProofOutcome {
     NotFound { leaf_count: u64 },
     /// The record has never seen this account.
     UnknownAccount,
+    /// The coprocessor knows its record disagrees with the chain for this leaf.
+    Inconsistent,
 }
 
 /// Implemented by [`CoprocessorProofClient`]; tests drive authorization with canned proofs.
@@ -432,6 +434,7 @@ mod tests {
                 },
                 MerkleProofOutcome::NotFound { leaf_count: 3 },
                 MerkleProofOutcome::UnknownAccount,
+                MerkleProofOutcome::Inconsistent,
             ]
         );
     }

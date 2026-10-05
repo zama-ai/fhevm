@@ -1216,6 +1216,7 @@ fn wire_outcome(outcome: &MerkleProofOutcome) -> ciborium::Value {
             cbor!({ "status" => "notFound", "leafCount" => leaf_count })
         }
         MerkleProofOutcome::UnknownAccount => cbor!({ "status" => "unknownAccount" }),
+        MerkleProofOutcome::Inconsistent => cbor!({ "status" => "inconsistent" }),
     }
     .unwrap()
 }

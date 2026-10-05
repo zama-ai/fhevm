@@ -94,8 +94,9 @@ pub async fn verify_proofs<P: HostProofReader, T: Sync>(
 }
 
 /// The `outcome` label of a coprocessor's answer for one leaf: `verified`, `no_leaf`,
-/// `unknown_store`, `behind` (its record holds fewer leaves than the chain), `ahead` (a leaf past
-/// the count this connector observed) or `invalid`. A proof built against fewer leaves than the
+/// `unknown_store`, `inconsistent` (the coprocessor knows its record is wrong, and pages on its
+/// own), `behind` (its record holds fewer leaves than the chain), `ahead` (a leaf past the count
+/// this connector observed) or `invalid`. A proof built against fewer leaves than the
 /// chain holds may fail only because it is stale. One built against as many or more is wrong: a
 /// correct proof from a longer record is cut to the chain's count and verifies.
 fn answer_outcome(verified: &Result<(), HandleBindingFailure>) -> &'static str {
@@ -103,6 +104,7 @@ fn answer_outcome(verified: &Result<(), HandleBindingFailure>) -> &'static str {
         Ok(()) => "verified",
         Err(HandleBindingFailure::NoLeaf { .. }) => "no_leaf",
         Err(HandleBindingFailure::AccountUnknownToProofRecord) => "unknown_store",
+        Err(HandleBindingFailure::ProofRecordInconsistent) => "inconsistent",
         Err(HandleBindingFailure::ProofRecordBehind { .. }) => "behind",
         Err(HandleBindingFailure::LeafIndexOutOfRange { .. }) => "ahead",
         Err(HandleBindingFailure::ProofDoesNotVerify {
@@ -179,6 +181,9 @@ fn check_leaf(
         MerkleProofOutcome::UnknownAccount => {
             return Err(HandleBindingFailure::AccountUnknownToProofRecord);
         }
+        MerkleProofOutcome::Inconsistent => {
+            return Err(HandleBindingFailure::ProofRecordInconsistent);
+        }
     };
 
     // A leaf past the observed count means the record is ahead of this observation.
@@ -212,6 +217,8 @@ pub enum HandleBindingFailure {
     },
     #[error("the leaf record does not know this encrypted store")]
     AccountUnknownToProofRecord,
+    #[error("the coprocessor's leaf record disagrees with the chain for this leaf")]
+    ProofRecordInconsistent,
     #[error(
         "Merkle proof does not verify against the observed peaks (record {record_leaf_count} \
          leaves, chain {live_leaf_count})"
@@ -242,6 +249,11 @@ mod tests {
         assert_eq!(does_not_verify(7), "behind");
         assert_eq!(does_not_verify(8), "invalid");
         assert_eq!(does_not_verify(9), "invalid");
+        // The coprocessor pages on its own record; the connector does not page again.
+        assert_eq!(
+            answer_outcome(&Err(HandleBindingFailure::ProofRecordInconsistent)),
+            "inconsistent"
+        );
         assert_eq!(answer_outcome(&Ok(())), "verified");
         assert_eq!(
             answer_outcome(&Err(HandleBindingFailure::ProofRecordBehind {

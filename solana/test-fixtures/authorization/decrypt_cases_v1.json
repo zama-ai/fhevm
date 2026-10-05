@@ -279,6 +279,10 @@
     {
       "failure": "ProofRead::ResponseLengthMismatch",
       "reason": "The cleartext client throws when a Merkle proof read fails or answers the wrong number of proofs, instead of judging the request."
+    },
+    {
+      "failure": "HandleBinding::ProofRecordInconsistent",
+      "reason": "The cleartext client builds its proofs from its own leaf record, which is never checked against the chain."
     }
   ],
   "schema": "zama-solana-decrypt-authorization-cases/v1",
