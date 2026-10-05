@@ -227,6 +227,7 @@ impl Transaction {
         SubscribeUpdateTransaction {
             transaction: Some(self.grpc_info(index)),
             slot,
+            ..Default::default()
         }
     }
 

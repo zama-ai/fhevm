@@ -14967,8 +14967,8 @@ checksum = "cfe53a6657fd280eaa890a3bc59152892ffa3e30101319d168b781ed6529b049"
 
 [[package]]
 name = "yellowstone-grpc-proto"
-version = "12.5.0"
-source = "git+https://github.com/rpcpool/yellowstone-grpc?tag=v14.2.2%2Bsolana.4.1.0#243d0086927b8d3e773b08ecf7a187b21ea10477"
+version = "14.0.0"
+source = "git+https://github.com/rpcpool/yellowstone-grpc?tag=v16.0.0%2Bsolana.4.3.0#bfd1d7ee548081b6e36d4238d5ce8f34c94c4fb6"
 dependencies = [
  "anyhow",
  "prost 0.14.4",
