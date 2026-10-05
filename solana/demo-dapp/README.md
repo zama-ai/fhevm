@@ -168,7 +168,7 @@ sequenceDiagram
     participant Token as Confidential token
     participant Host as Encrypted-state program
     participant Listener as Chain listener
-    participant Proofs as Proof server
+    participant Proofs as Proof service
     participant Relayer as Request service
     participant Keys as Key service
     participant Vault
@@ -178,7 +178,8 @@ sequenceDiagram
     Batch->>Token: Burn encrypted total
     Token->>Host: Record value in Solana history
     Host-->>Listener: Emit confirmed record
-    Listener-->>Listener: Rebuild recorded history
+    Host-->>Proofs: Emit confirmed record
+    Proofs-->>Proofs: Rebuild recorded history
     Keeper->>Relayer: Request clear batch total
     Relayer->>Keys: Decrypt and sign total
     Keys->>Proofs: Get proof that this value was made public

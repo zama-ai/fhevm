@@ -61,8 +61,8 @@ address/owner/shape. Delegation uses a PDA that expires on the host's Unix clock
 deciding snapshot. The Store's app `(program, scope)` scopes both the delegation, as EVM's
 `contractAddress` does, and the permit.
 
-The listener reconstructs all executed operations and permission leaves from transaction bytes,
-independently of return selection. Compute records and the listener's checkpoint commit atomically.
+The listener reconstructs all executed operations from transaction bytes, independently of return
+selection. Compute records and the listener's checkpoint commit atomically.
 The Merkle indexer records the leaves from the same stream into its own database, from a block
 before the first Store, and `solana_merkle_proof_server` serves their inclusion proofs via
 `/v1/solana/merkle-proofs`; the connector verifies them against its own chain snapshot (DD-066). A
