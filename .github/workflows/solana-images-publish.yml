@@ -151,6 +151,20 @@ jobs:
             rust_toolchain: kms-connector/rust-toolchain.toml
             context: .
             target: prod
+          # Published for preview pins (ci/preview-env/scripts/resolve/resolve-tags.cjs);
+          # solana-e2e gates these services on its lock and does not pull them.
+          - name: kms-connector-endpoint
+            image: fhevm/kms-connector/endpoint
+            dockerfile: kms-connector/crates/endpoint/Dockerfile
+            rust_toolchain: kms-connector/rust-toolchain.toml
+            context: .
+            target: prod
+          - name: kms-connector-proxy
+            image: fhevm/kms-connector/proxy
+            dockerfile: kms-connector/crates/proxy/Dockerfile
+            rust_toolchain: kms-connector/rust-toolchain.toml
+            context: .
+            target: prod
     steps:
       - name: Checkout
         uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2

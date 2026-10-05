@@ -54,7 +54,8 @@ lock_keys_for() {
   esac
 }
 
-# ghcr.io/zama-ai/<image> repositories per group; must stay in sync with solana-images-publish.yml.
+# ghcr.io/zama-ai/<image> repositories per group; each must be published by solana-images-publish.yml,
+# which also publishes kms-connector/endpoint and /proxy for previews only.
 images_for() {
   case "$1" in
     gateway-contracts) echo "fhevm/gateway-contracts" ;;
