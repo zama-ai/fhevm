@@ -29,8 +29,8 @@ use connector_utils::{
 use fhevm_gateway_bindings::decryption::Decryption::SolanaUserDecryptionRequest;
 use kms_connector_api::ErrorCode;
 use kms_grpc::kms::v1::{
-    Empty, SigningMetadata, SigningSchemeType, TypedSignature, UserDecryptionRequest,
-    UserDecryptionResponse, UserDecryptionResponsePayload,
+    Empty, SigningSchemeType, TypedSignature, UserDecryptionRequest, UserDecryptionResponse,
+    UserDecryptionResponsePayload,
 };
 use kms_worker::core::{
     Config,
@@ -349,8 +349,8 @@ async fn a_solana_request_checks_its_signed_kms_context() {
 /// The identity a `UserDecrypt` call must carry for a Solana user.
 #[derive(Debug, PartialEq, PartialOrd)]
 struct SolanaIdentity {
-    user_address: Vec<u8>,
-    verifying_program_id: Vec<u8>,
+    /// Base58 of the signer's public key.
+    client_address: String,
     transport_key: Vec<u8>,
 }
 
@@ -365,18 +365,12 @@ impl Matcher for SolanaIdentity {
         let Some(Ok(request)) = body.get(5..).map(UserDecryptionRequest::decode) else {
             return false;
         };
-        request.client_address.is_empty()
-            && request.enc_key == self.transport_key
-            && request.signing_metadata
-                == [SigningMetadata::solana(
-                    self.user_address.clone(),
-                    self.verifying_program_id.clone(),
-                )]
+        request.client_address == self.client_address && request.enc_key == self.transport_key
     }
 }
 
-/// An authorized request reaches the KMS as its Solana signer: no EVM address, the signer and the
-/// host program in the signing metadata, and the transport key the Gateway emitted. A poll of a
+/// An authorized request reaches the KMS as its Solana signer: the signer's base58 public key as
+/// `client_address`, and the transport key the Gateway emitted. A poll of a
 /// request already sent authorizes it again and fetches the result without sending it twice.
 #[rstest]
 #[case::send(false)]
@@ -387,8 +381,7 @@ async fn an_authorized_request_reaches_the_kms_as_its_signer(#[case] already_sen
     let bucket = S3Instance::setup().await.unwrap();
     let scenario = Scenario::naming(B256::from_hex(S3_SOLANA_CT_HANDLE).unwrap().0).await;
     let identity = SolanaIdentity {
-        user_address: scenario.victim.pubkey().to_bytes().to_vec(),
-        verifying_program_id: PROGRAM_ID.to_bytes().to_vec(),
+        client_address: scenario.victim.pubkey().to_string(),
         transport_key: scenario.event.publicKey.to_vec(),
     };
     let mut kms = MockServer::new_grpc("kms_service.v1.CoreServiceEndpoint");

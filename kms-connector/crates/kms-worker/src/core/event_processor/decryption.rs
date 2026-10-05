@@ -27,10 +27,8 @@ use futures::{
 };
 use kms_connector_api::ErrorCode;
 use kms_grpc::kms::v1::{
-    Eip712DomainMsg, PublicDecryptionRequest, SigningMetadata, SigningSchemeType,
-    UserDecryptionRequest,
+    Eip712DomainMsg, PublicDecryptionRequest, SigningSchemeType, UserDecryptionRequest,
 };
-use solana_pubkey::Pubkey;
 use sqlx::types::chrono::Utc;
 use std::collections::HashMap;
 use tracing::info;
@@ -569,11 +567,10 @@ where
         let kms_extra_data = kms_decryption_extra_data(extra_data);
 
         if let Some(recipient) = recipient {
-            let (client_address, signing_metadata) = recipient.identity.into_kms_request_fields();
             let enc_key = recipient.transport_key.to_vec();
             let user_decryption_request = UserDecryptionRequest {
                 request_id,
-                client_address,
+                client_address: recipient.client_address,
                 key_id: Some(u256_to_request_id(key_id)),
                 domain: Some(self.domain.clone()),
                 enc_key,
@@ -581,7 +578,6 @@ where
                 extra_data: kms_extra_data,
                 epoch_id: parsed_extra_data.epoch_id.map(u256_to_request_id),
                 context_id: parsed_extra_data.context_id.map(u256_to_request_id),
-                signing_metadata,
                 // Currently hardcoded to Ecdsa256k1 as it is the only scheme used for Ethereum.
                 // Solana responses are EIP-712 signed under the Gateway domain too.
                 signing_schemes: vec![SigningSchemeType::Ecdsa256k1 as i32],
@@ -650,44 +646,17 @@ fn kms_decryption_extra_data(extra_data: &Bytes) -> Vec<u8> {
 
 /// Who a user decryption answers and the key its shares are encrypted to.
 pub struct UserDecryptionRecipient {
-    pub identity: UserIdentity,
+    /// The KMS request's `client_address`. Its format tells the KMS which kind of user this is and
+    /// which link binds the response, so it must match the host chain the handles come from.
+    pub client_address: String,
     pub transport_key: Bytes,
 }
 
-/// The user a KMS user decryption answers, as the host chain names it.
-pub enum UserIdentity {
-    Evm(Address),
-    Solana {
-        user: Pubkey,
-        verifying_program: Pubkey,
-    },
-}
-
-impl UserIdentity {
-    /// The KMS request's `client_address` and `signing_metadata`. RFC-021: the KMS identifies a
-    /// Solana user by its ed25519 pubkey, so `client_address` stays empty and the identity
-    /// travels in the signing metadata.
-    pub fn into_kms_request_fields(self) -> (String, Vec<SigningMetadata>) {
-        match self {
-            Self::Evm(address) => (address.to_checksum(None), vec![]),
-            Self::Solana {
-                user,
-                verifying_program,
-            } => (
-                String::new(),
-                vec![SigningMetadata::solana(
-                    user.to_bytes().to_vec(),
-                    verifying_program.to_bytes().to_vec(),
-                )],
-            ),
-        }
-    }
-}
-
 impl UserDecryptionRecipient {
+    /// An EVM user, as EIP-55 hex.
     pub fn new(user_address: Address, transport_key: Bytes) -> Self {
         Self {
-            identity: UserIdentity::Evm(user_address),
+            client_address: user_address.to_checksum(None),
             transport_key,
         }
     }
@@ -1459,12 +1428,9 @@ mod tests {
 
     #[test]
     fn evm_user_decryption_keeps_the_checksummed_address() {
-        let address = Address::repeat_byte(0x11);
+        let address = Address::repeat_byte(0xab);
         let recipient = UserDecryptionRecipient::new(address, Bytes::from_static(&[0x22]));
 
-        assert_eq!(
-            recipient.identity.into_kms_request_fields(),
-            (address.to_checksum(None), vec![])
-        );
+        assert_eq!(recipient.client_address, address.to_checksum(None));
     }
 }

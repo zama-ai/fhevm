@@ -98,10 +98,6 @@ export class TypedCiphertext {
    */
   ciphertext_format: number;
   /**
-   * The actual ciphertext to decrypt, taken directly from fhevm.
-   */
-  ciphertext: Uint8Array;
-  /**
    * The external handle of the ciphertext (the handle used in the copro).
    */
   external_handle: Uint8Array;
@@ -110,6 +106,10 @@ export class TypedCiphertext {
    * <https://github.com/zama-ai/tfhe-rs/blob/main/tfhe/src/high_level_api/mod.rs>
    */
   fhe_type: number;
+  /**
+   * The actual ciphertext to decrypt, taken directly from fhevm.
+   */
+  ciphertext: Uint8Array;
 }
 
 export class TypedPlaintext {
@@ -178,7 +178,9 @@ export class UserDecryptionRequest {
   free(): void;
   [Symbol.dispose](): void;
   /**
-   * The client's (blockchain wallet) address, encoded using EIP-55. I.e. including `0x`.
+   * The client's (blockchain wallet) address: EIP-55 with the `0x` prefix for an EVM user, or
+   * base58 of the 32-byte public key for a Solana user. Its format picks the linker. The KMS does
+   * not check that the handles come from the same kind of host chain as the user; the caller does.
    */
   client_address: string;
   /**
@@ -192,11 +194,11 @@ export class UserDecryptionRequest {
    */
   set context_id(value: RequestId | null | undefined);
   /**
-   * The user's EIP712 domain. This MUST be present. Furthermore, the `verifying_contract` MUST be set and be distinct from `client_address`.
+   * The user's EIP712 domain. This MUST be present. Furthermore, the `verifying_contract` MUST be set and, for an EVM user, be distinct from `client_address`.
    */
   get domain(): Eip712DomainMsg | undefined;
   /**
-   * The user's EIP712 domain. This MUST be present. Furthermore, the `verifying_contract` MUST be set and be distinct from `client_address`.
+   * The user's EIP712 domain. This MUST be present. Furthermore, the `verifying_contract` MUST be set and, for an EVM user, be distinct from `client_address`.
    */
   set domain(value: Eip712DomainMsg | null | undefined);
   /**
@@ -363,13 +365,13 @@ export function ml_kem_pke_sk_to_u8vec(sk: PrivateEncKeyMlKem512): Uint8Array;
  * * `server_addrs` - a list of KMS server ID with EIP-55 addresses,
  * the elements in the list can be created using [new_server_id_addr].
  *
- * * `client_address_hex` - the client (wallet) address in hex,
- * must be prefixed with "0x".
+ * * `client_address` - the client (wallet) address: an EVM address in EIP-55 hex prefixed
+ * with "0x", or a Solana public key in base58.
  *
  * * `fhe_parameter` - the parameter choice, which can be either `"test"` or `"default"`.
  * The "default" parameter choice is selected if no matching string is found.
  */
-export function new_client(server_addrs: ServerIdAddr[], client_address_hex: string, fhe_parameter: string): Client;
+export function new_client(server_addrs: ServerIdAddr[], client_address: string, fhe_parameter: string): Client;
 
 /**
  * Create a new [ServerIdAddr] structure that holds an ID and an address
@@ -389,7 +391,8 @@ export function private_sig_key_to_u8vec(sk: PrivateSigKey): Uint8Array;
  * * `request` - the initial user_decryption request JS object.
  * It can be set to null if `verify` is false.
  * Otherwise the caller needs to give the following JS object.
- * Note that `client_address` and `eip712_verifying_contract` follow EIP-55.
+ * Note that `eip712_verifying_contract` follows EIP-55, and so does `client_address` for an EVM
+ * user. For a Solana user, `client_address` is the user's base58 public key.
  * The signature field is not needed.
  * ```
  * {
@@ -470,9 +473,6 @@ export type InitInput = RequestInfo | URL | Response | BufferSource | WebAssembl
 
 export interface InitOutput {
   readonly memory: WebAssembly.Memory;
-  readonly __wbg_ciphertexthandle_free: (a: number, b: number) => void;
-  readonly __wbg_parseduserdecryptionrequest_free: (a: number, b: number) => void;
-  readonly __wbg_client_free: (a: number, b: number) => void;
   readonly __wbg_privateenckeymlkem512_free: (a: number, b: number) => void;
   readonly __wbg_publicenckeymlkem512_free: (a: number, b: number) => void;
   readonly __wbg_serveridaddr_free: (a: number, b: number) => void;
@@ -505,19 +505,23 @@ export interface InitOutput {
   readonly u8vec_to_ml_kem_pke_sk: (a: number, b: number) => [number, number, number];
   readonly u8vec_to_private_sig_key: (a: number, b: number) => [number, number, number];
   readonly u8vec_to_public_sig_key: (a: number, b: number) => [number, number, number];
+  readonly __wbg_ciphertexthandle_free: (a: number, b: number) => void;
+  readonly __wbg_parseduserdecryptionrequest_free: (a: number, b: number) => void;
   readonly __wbg_privatesigkey_free: (a: number, b: number) => void;
   readonly __wbg_publicsigkey_free: (a: number, b: number) => void;
+  readonly __wbg_client_free: (a: number, b: number) => void;
   readonly __wbg_eip712domainmsg_free: (a: number, b: number) => void;
   readonly __wbg_get_eip712domainmsg_chain_id: (a: number) => [number, number];
   readonly __wbg_get_eip712domainmsg_name: (a: number) => [number, number];
   readonly __wbg_get_eip712domainmsg_salt: (a: number) => [number, number];
   readonly __wbg_get_eip712domainmsg_verifying_contract: (a: number) => [number, number];
   readonly __wbg_get_eip712domainmsg_version: (a: number) => [number, number];
-  readonly __wbg_get_typedciphertext_ciphertext: (a: number) => [number, number];
   readonly __wbg_get_typedciphertext_ciphertext_format: (a: number) => number;
   readonly __wbg_get_typedciphertext_external_handle: (a: number) => [number, number];
   readonly __wbg_get_typedciphertext_fhe_type: (a: number) => number;
   readonly __wbg_get_typedplaintext_fhe_type: (a: number) => number;
+  readonly __wbg_get_typedsigncryptedciphertext_external_handle: (a: number) => [number, number];
+  readonly __wbg_get_typedsigncryptedciphertext_fhe_type: (a: number) => number;
   readonly __wbg_get_userdecryptionrequest_context_id: (a: number) => number;
   readonly __wbg_get_userdecryptionrequest_domain: (a: number) => number;
   readonly __wbg_get_userdecryptionrequest_epoch_id: (a: number) => number;
@@ -540,6 +544,7 @@ export interface InitOutput {
   readonly __wbg_set_typedciphertext_ciphertext_format: (a: number, b: number) => void;
   readonly __wbg_set_typedciphertext_fhe_type: (a: number, b: number) => void;
   readonly __wbg_set_typedplaintext_fhe_type: (a: number, b: number) => void;
+  readonly __wbg_set_typedsigncryptedciphertext_fhe_type: (a: number, b: number) => void;
   readonly __wbg_set_userdecryptionrequest_context_id: (a: number, b: number) => void;
   readonly __wbg_set_userdecryptionrequest_domain: (a: number, b: number) => void;
   readonly __wbg_set_userdecryptionrequest_epoch_id: (a: number, b: number) => void;
@@ -562,13 +567,10 @@ export interface InitOutput {
   readonly __wbg_get_requestid_request_id: (a: number) => [number, number];
   readonly __wbg_get_userdecryptionrequest_client_address: (a: number) => [number, number];
   readonly __wbg_get_typedsignature_scheme: (a: number) => number;
-  readonly __wbg_get_typedsigncryptedciphertext_fhe_type: (a: number) => number;
   readonly __wbg_get_typedsigncryptedciphertext_packing_factor: (a: number) => number;
   readonly __wbg_set_typedsignature_scheme: (a: number, b: number) => void;
-  readonly __wbg_set_typedsigncryptedciphertext_fhe_type: (a: number, b: number) => void;
   readonly __wbg_set_typedsigncryptedciphertext_packing_factor: (a: number, b: number) => void;
   readonly __wbg_set_requestid_request_id: (a: number, b: number, c: number) => void;
-  readonly __wbg_set_typedciphertext_ciphertext: (a: number, b: number, c: number) => void;
   readonly __wbg_set_typedciphertext_external_handle: (a: number, b: number, c: number) => void;
   readonly __wbg_set_typedplaintext_bytes: (a: number, b: number, c: number) => void;
   readonly __wbg_set_typedsignature_signature: (a: number, b: number, c: number) => void;
@@ -584,7 +586,6 @@ export interface InitOutput {
   readonly __wbg_set_userdecryptionresponsepayload_verification_key: (a: number, b: number, c: number) => void;
   readonly __wbg_get_typedplaintext_bytes: (a: number) => [number, number];
   readonly __wbg_get_typedsignature_signature: (a: number) => [number, number];
-  readonly __wbg_get_typedsigncryptedciphertext_external_handle: (a: number) => [number, number];
   readonly __wbg_get_typedsigncryptedciphertext_signcrypted_ciphertext: (a: number) => [number, number];
   readonly __wbg_get_userdecryptionrequest_enc_key: (a: number) => [number, number];
   readonly __wbg_get_userdecryptionresponse_external_signature: (a: number) => [number, number];
@@ -592,6 +593,8 @@ export interface InitOutput {
   readonly __wbg_get_userdecryptionresponse_signature: (a: number) => [number, number];
   readonly __wbg_get_userdecryptionresponsepayload_digest: (a: number) => [number, number];
   readonly __wbg_get_userdecryptionresponsepayload_verification_key: (a: number) => [number, number];
+  readonly typedciphertext_ciphertext: (a: number) => [number, number];
+  readonly typedciphertext_set_ciphertext: (a: number, b: number, c: number) => void;
   readonly __wbindgen_malloc: (a: number, b: number) => number;
   readonly __wbindgen_realloc: (a: number, b: number, c: number, d: number) => number;
   readonly __wbindgen_exn_store: (a: number) => void;

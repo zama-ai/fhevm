@@ -13,7 +13,7 @@ pub mod watermark;
 
 pub use verifier::SolanaDecryptionVerifier;
 
-use crate::core::event_processor::{UserDecryptionRecipient, UserIdentity};
+use crate::core::event_processor::UserDecryptionRecipient;
 use alloy::primitives::Bytes;
 use proof::CoprocessorProofClient;
 use snapshot::SolanaRpcClient;
@@ -63,15 +63,10 @@ pub fn wildcard_delegation_address(
 }
 
 impl UserDecryptionRecipient {
-    /// The permit's signer, answered for the program it signed for, and the key it signed.
+    /// The permit's signer, as base58 of its public key, and the transport key it signed.
     pub fn new_solana(permit: &PermitFields) -> Self {
         Self {
-            identity: UserIdentity::Solana {
-                user: Pubkey::new_from_array(*permit.user_address().as_bytes()),
-                verifying_program: Pubkey::new_from_array(
-                    *permit.verifying_program_id().as_bytes(),
-                ),
-            },
+            client_address: Pubkey::new_from_array(*permit.user_address().as_bytes()).to_string(),
             transport_key: Bytes::copy_from_slice(permit.transport_key().as_bytes()),
         }
     }
@@ -81,11 +76,10 @@ impl UserDecryptionRecipient {
 mod tests {
     use super::*;
     use alloy::primitives::U256;
-    use kms_grpc::kms::v1::SigningMetadata;
 
     #[test]
-    fn a_solana_recipient_travels_in_signing_metadata() {
-        // The fixture permit is signed by `[1; 32]` for program `[7; 32]`.
+    fn a_solana_recipient_is_the_base58_permit_signer() {
+        // The fixture permit is signed by `[1; 32]`.
         let request = connector_utils::tests::rand::solana_user_decryption_request(
             U256::from(1),
             connector_utils::tests::rand::rand_solana_handle(),
@@ -93,11 +87,8 @@ mod tests {
         let recipient = UserDecryptionRecipient::new_solana(request.request.permit());
 
         assert_eq!(
-            recipient.identity.into_kms_request_fields(),
-            (
-                String::new(),
-                vec![SigningMetadata::solana(vec![1; 32], vec![7; 32])]
-            )
+            recipient.client_address,
+            Pubkey::new_from_array([1; 32]).to_string()
         );
     }
 

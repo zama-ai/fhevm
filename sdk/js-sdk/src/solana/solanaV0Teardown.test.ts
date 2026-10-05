@@ -25,7 +25,14 @@ const FORBIDDEN: ReadonlyArray<readonly [string, string]> = [
   ['buildSolanaUserDecryptMmrProofExtraData', 'the v0 extraData carrier for user decrypt; routing is 0x02 now'],
   ['solana-ed25519-user-decrypt', 'the retired v0 attestation type, in any of its versions'],
   ['deSigncryptSolanaUserDecrypt', 'the v0 de-signcryption entry point; response verification replaced it'],
-  ['68ba21ba', 'the retired vendored TKMS blob; the Solana path uses the newer one'],
+  ['68ba21ba', 'a retired Solana-only TKMS blob; Solana and EVM share one TKMS module'],
+  ['294802eb', 'a retired Solana-only TKMS blob; Solana and EVM share one TKMS module'],
+  ['e521f478', 'the last Solana-only TKMS blob; Solana and EVM share one TKMS module'],
+  ['process_user_decryption_resp_solana', 'the Solana-only KMS client path; the shared one serves Solana'],
+  ['new_solana_client', 'the Solana-only KMS client path; the shared one serves Solana'],
+  ['compute_solana_user_decrypt_link_from_js', 'the Solana-only KMS client path; the shared one serves Solana'],
+  ['solanaUserDecryptLink', 'the SDK-side Solana link; the shared KMS client computes the link'],
+  ['solanaUserDecryptRequestHalf', 'the SDK-side Solana link; the shared KMS client computes the link'],
   ['signing_message_v1.json', 'the v0 signing-message fixture; the permit and envelope sets replaced it'],
   // RFC 035: the client fetches no proof and names nothing beyond the store and the owner address;
   // the Connector reads the store and asks the coprocessors for the allow leaf.
