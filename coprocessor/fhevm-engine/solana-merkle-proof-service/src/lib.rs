@@ -1,4 +1,4 @@
-//! The Solana Merkle proof service: `solana_merkle_indexer` rebuilds the RFC 035 leaf record of
+//! The Solana Merkle proof service: `solana_merkle_indexer` rebuilds the leaf record of
 //! every encrypted store from confirmed blocks into its own database, and
 //! `solana_merkle_proof_server` answers the KMS connector's inclusion proofs from it.
 

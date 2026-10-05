@@ -155,7 +155,8 @@ struct MerkleProofResponse {
     proofs: Vec<MerkleProofOutcome>,
 }
 
-/// The coprocessor's error body (RFC 033), read only to report it.
+/// The coprocessor's error body, shaped as the Direct HTTP Decryption Endpoint RFC defines it,
+/// read only to report it.
 #[derive(Deserialize)]
 struct ErrorResponse {
     code: String,

@@ -22,7 +22,8 @@
 //!
 //! Bodies are CBOR (RFC 8949), served over HTTP/1.1 or HTTP/2 without TLS. The
 //! wire contract is the committed OpenAPI document in `openapi/`; a test keeps
-//! it in sync with the code. Errors use the RFC 033 body shape.
+//! it in sync with the code. Errors use the body shape of the Direct HTTP Decryption
+//! Endpoint RFC.
 
 use std::{
     net::SocketAddr,
@@ -291,7 +292,7 @@ pub struct MerkleProofResponse {
     pub proofs: Vec<MerkleProofOutcome>,
 }
 
-/// Error codes, in the RFC 033 vocabulary.
+/// Error codes, in the vocabulary of the Direct HTTP Decryption Endpoint RFC.
 #[derive(
     Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize, ToSchema,
 )]
@@ -689,7 +690,7 @@ impl Modify for RequestAuthorizationScheme {
 #[openapi(
     info(
         title = "Solana Merkle proofs",
-        description = "Inclusion proofs from the RFC 035 leaf record of Solana encrypted stores, for the KMS connector.",
+        description = "Inclusion proofs from the leaf record of Solana encrypted stores, for the KMS connector.",
         version = "1.0.0",
     ),
     paths(merkle_proofs),

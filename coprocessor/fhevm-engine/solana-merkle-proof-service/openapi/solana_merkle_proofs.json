@@ -2,7 +2,7 @@
   "openapi": "3.1.0",
   "info": {
     "title": "Solana Merkle proofs",
-    "description": "Inclusion proofs from the RFC 035 leaf record of Solana encrypted stores, for the KMS connector.",
+    "description": "Inclusion proofs from the leaf record of Solana encrypted stores, for the KMS connector.",
     "contact": {
       "name": "Zama"
     },
@@ -94,7 +94,7 @@
     "schemas": {
       "ErrorCode": {
         "type": "string",
-        "description": "Error codes, in the RFC 033 vocabulary.",
+        "description": "Error codes, in the vocabulary of the Direct HTTP Decryption Endpoint RFC.",
         "enum": [
           "malformed",
           "sender_authentication_failed",

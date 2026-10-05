@@ -1,4 +1,4 @@
-//! Solana Merkle indexer: rebuilds the RFC 035 leaf record of every encrypted store from confirmed
+//! Solana Merkle indexer: rebuilds the leaf record of every encrypted store from confirmed
 //! Yellowstone blocks into its own database. `solana_merkle_proof_server` serves the inclusion
 //! proofs from that database.
 

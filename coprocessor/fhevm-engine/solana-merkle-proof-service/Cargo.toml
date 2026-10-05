@@ -42,7 +42,7 @@ fhevm_host_bindings = { path = "../../../host-contracts/rust_bindings", default-
 kms-context = { path = "../../../shared/kms-context" }
 request-authorization = { path = "../../../shared/request-authorization" }
 solana-host-follower = { path = "../solana-host-follower" }
-# Leaf commitments and MMR of the RFC 035 leaf record, shared with the on-chain host.
+# Leaf commitments and MMR of the leaf record, shared with the on-chain host.
 zama-solana-acl = { path = "../../../solana/crates/zama-solana-acl" }
 
 [dev-dependencies]

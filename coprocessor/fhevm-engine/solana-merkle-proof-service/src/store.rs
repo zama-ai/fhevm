@@ -1,4 +1,4 @@
-//! The RFC 035 leaf record of Solana encrypted stores.
+//! The leaf record of Solana encrypted stores, as the Solana access control RFC defines it.
 //!
 //! Every store write the host accepts may seal leaves: one historical-access leaf per allowed
 //! key on the handle it installs, then one public-decrypt leaf when the handle is made public.
