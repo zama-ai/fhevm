@@ -2521,13 +2521,13 @@ An ingestion stop therefore also stopped decryptions the record could still serv
 
 Decision:
 
-`solana_merkle_proof_server` serves `POST /v1/solana/merkle-proofs` and the health routes as its
-own Deployment and ClusterIP Service, `<release>-solana-merkle-proof-server`, from the
-host-listener image and with its own pool (`--database-pool-size`, 8 by default). It answers only
-requests signed by the tx-sender of a live KMS context (DD-067). It only reads the Merkle proof
-service's database (DD-066), so it can run several replicas and roll without downtime. The Merkle indexer, which writes that database, stays one replica with `Recreate`, as
-does the listener, which serves only `/healthz` and `/liveness`. The connector's proof routes name
-the proof server's Service.
+`solana_merkle_proof_server` serves `POST /v1/solana/merkle-proofs` and the health routes as its own
+Deployment and ClusterIP Service, `<release>-solana-merkle-proof-server`, from the host-listener
+image and with its own pool (`--database-pool-size`, 8 by default). It answers only requests signed
+by the tx-sender of a live KMS context (DD-067). It only reads the Merkle proof service's database
+(DD-066), so it can run several replicas and roll without downtime. The Merkle indexer, which writes
+that database, stays one replica with `Recreate`, as does the listener, which serves only `/healthz`
+and `/liveness`. The connector's proof routes name the proof server's Service.
 
 On EVM the connector reads the ACL from the host chain, and no coprocessor serves proofs. The split
 follows the coprocessor's one Deployment per role: `host_listener`, `host_listener_poller` and
@@ -2697,12 +2697,12 @@ as soon as an answer leaves a query without a verified proof, or after `HEDGE_DE
 without an answer.
 
 `solana_merkle_proof_server` recovers the signer and answers only the tx-senders of the live KMS
-contexts. It reads them from the canonical `ProtocolConfig` at the finalized block every 60
-seconds: the live context ids, then each context's nodes from its `NewKmsContext` event at the
-context's anchor block, checked against the anchor's `contextInfoHash`. kms-worker reads a
-previous context the same way, through `shared/kms-context`. A refresh that fails, or takes more than 30 seconds, keeps the last set.
-Until the first read succeeds, every request gets `upstream_transient` (502, retryable) and
-`/healthz` answers 503. A missing, expired, malformed or unknown signature gets
+contexts. It reads them from the canonical `ProtocolConfig` at the finalized block every 60 seconds:
+the live context ids, then each context's nodes from its `NewKmsContext` event at the context's
+anchor block, checked against the anchor's `contextInfoHash`. kms-worker reads a previous context
+the same way, through `shared/kms-context`. A refresh that fails, or takes more than 30 seconds,
+keeps the last set. Until the first read succeeds, every request gets `upstream_transient` (502,
+retryable) and `/healthz` answers 503. A missing, expired, malformed or unknown signature gets
 `sender_authentication_failed` (401) before the database is read.
 
 The bodies are CBOR (RFC 8949) over HTTP/2 without TLS negotiation (prior knowledge). Hashes and
@@ -2713,18 +2713,18 @@ response bytes for both sides.
 No recipient is signed. A coprocessor that received a batch, or anyone who reads the plain-HTTP
 traffic inside the cluster, can resend it to the other coprocessors until it expires. The answers
 are public proofs, so a replay learns nothing, and it must not cost anything either. Each server
-remembers every signed request it admitted until its signature expires (`AnswerCache`, keyed by
-the EIP-712 signing hash). A request whose body does not decode is refused before the cache.
-A request is admitted once its signer's rate accepts it, charged under the cache's lock, so two
-copies arriving together are charged once; an over-rate request is refused and never remembered.
-The first copy to arrive is answered once, in a task of its own, so a caller that disconnects
-does not cancel it. Every other copy, sent at the same time or later, waits for that answer and
-gets the same bytes, including a refusal the answer ended in. A server therefore charges and reads
-at most once per signed request. A copy that arrives after its request was forgotten at expiry is
-refused as expired rather than charged again. The signing hash names no signer, so KMS nodes that
-sign the same body in the same second share one answer. A worker retry signed within the same second as the batch it retries
-has the same signing hash, and gets the earlier answer; the worker loop retries it again later.
-The relayer does not call the Merkle proof server.
+remembers every signed request it admitted until its signature expires (`AnswerCache`, keyed by the
+EIP-712 signing hash). A request whose body does not decode is refused before the cache. A request
+is admitted once its signer's rate accepts it, charged under the cache's lock, so two copies
+arriving together are charged once; an over-rate request is refused and never remembered. The first
+copy to arrive is answered once, in a task of its own, so a caller that disconnects does not cancel
+it. Every other copy, sent at the same time or later, waits for that answer and gets the same bytes,
+including a refusal the answer ended in. A server therefore charges and reads at most once per
+signed request. A copy that arrives after its request was forgotten at expiry is refused as expired
+rather than charged again. The signing hash names no signer, so KMS nodes that sign the same body in
+the same second share one answer. A worker retry signed within the same second as the batch it
+retries has the same signing hash, and gets the earlier answer; the worker loop retries it again
+later. The relayer does not call the Merkle proof server.
 
 Each KMS tx-sender may ask one server for `--kms-tx-sender-leaves-per-second` (4000) queried
 leaves per second, in bursts of as many and at least `MAX_LEAVES_PER_REQUEST` (64). The rate is a
