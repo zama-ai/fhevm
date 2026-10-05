@@ -5,7 +5,8 @@
 mod support;
 
 use std::{
-    collections::{BTreeMap, HashSet},
+    collections::{BTreeMap, HashMap, HashSet, VecDeque},
+    sync::Mutex,
     time::{SystemTime, UNIX_EPOCH},
 };
 
@@ -24,15 +25,22 @@ use solana_merkle_proof_service::server::{
     MERKLE_PROOFS_PATH,
 };
 use solana_merkle_proof_service::store::{
-    load_block_leaves, load_checkpoint, load_store_cursor, load_store_cursors,
-    reduce_block_leaves, store_block_leaves, store_checkpoint,
-    TransactionStoreWrites,
+    leaf_commitment, load_block_leaves, load_checkpoint, load_served_store,
+    load_store_cursors, reduce_block_leaves, store_block_leaves,
+    store_checkpoint, EncryptedStoreCursor, TransactionStoreWrites,
 };
+use solana_merkle_proof_service::store_check::{check_stores, StoreAccounts};
+use solana_sdk::{account::Account, pubkey::Pubkey};
 use tokio_util::sync::CancellationToken;
-use zama_solana_acl::{mmr_verify, MmrProof};
+use zama_solana_acl::{
+    encrypted_store_discriminator, mmr_append, mmr_verify, EncryptedStore,
+    MmrProof,
+};
 
 const ACCOUNT: [u8; 32] = [0xAC; 32];
 const OWNER: [u8; 32] = [0xA1; 32];
+/// The host program the store check's fake chain owns its stores by.
+const HOST_PROGRAM: [u8; 32] = [0x40; 32];
 
 fn write(
     previous_leaf_count: u64,
@@ -215,10 +223,11 @@ async fn leaf_record_round_trips_and_serves_verifiable_proofs(
             block_hash: [0x1B; 32],
         })
     );
-    let state = load_store_cursor(&pool, ACCOUNT)
+    let served = load_served_store(&pool, ACCOUNT)
         .await?
         .expect("account recorded");
-    assert_eq!(state, second.stores[&ACCOUNT]);
+    assert_eq!(served.cursor, second.stores[&ACCOUNT]);
+    assert!(!served.quarantined);
     let mut tx = pool.begin().await?;
     assert_eq!(
         load_block_leaves(&mut tx, 11).await?,
@@ -226,7 +235,7 @@ async fn leaf_record_round_trips_and_serves_verifiable_proofs(
         "leaves persist with their semantics and block position"
     );
     tx.rollback().await?;
-    assert_eq!(load_store_cursor(&pool, [0xFF; 32]).await?, None);
+    assert_eq!(load_served_store(&pool, [0xFF; 32]).await?, None);
 
     // The HTTP route builds proofs from the same rows.
     let cancel = CancellationToken::new();
@@ -265,7 +274,7 @@ async fn leaf_record_round_trips_and_serves_verifiable_proofs(
     let body: MerkleProofResponse = decode(response).await?;
     assert_eq!(body.proofs.len(), 4);
 
-    let recorded_peaks = state.peaks.clone();
+    let recorded_peaks = served.cursor.peaks.clone();
     let verify = |proof: &MerkleProofOutcome, commitment: [u8; 32]| match proof
     {
         MerkleProofOutcome::Found {
@@ -325,27 +334,60 @@ async fn leaf_record_round_trips_and_serves_verifiable_proofs(
         vec![MerkleProofOutcome::NotFound { leaf_count: 3 }]
     );
 
-    // A record missing a path row, or holding a wrong one, cannot serve a proof: the
-    // route answers a retryable 502 rather than a path that misses the peaks. Leaf 0's
-    // path is leaf 1.
-    let owner_of_0x10 = MerkleProofRequest {
-        leaves: vec![LeafQuery {
+    // A wrong leaf is answered `inconsistent` rather than with a path that misses the peaks
+    // or proves another grant, and the other leaves of the request are still proved. Leaf 2,
+    // the public leaf of 0x11, is its own peak; leaf 0's path is leaf 1. Leaf 2 is asked
+    // `times` times: each request has its own body, so none is a copy of an earlier one that
+    // the server answers from its cache.
+    let leaf_0_and_leaf_2 = |key, times| {
+        let leaf_2 = LeafQuery {
+            encrypted_store: ACCOUNT,
+            handle: [0x11; 32],
+            kind: LeafQueryKind::Public,
+            key: None,
+        };
+        let leaf_0 = LeafQuery {
             encrypted_store: ACCOUNT,
             handle: [0x10; 32],
             kind: LeafQueryKind::Allowed,
-            key: Some(OWNER),
-        }],
+            key: Some(key),
+        };
+        MerkleProofRequest {
+            leaves: [vec![leaf_0], vec![leaf_2; times]].concat(),
+        }
     };
-    for corruption in [
-        "UPDATE leaves SET commitment = decode(repeat('00', 32), 'hex') WHERE leaf_index = 1",
-        "DELETE FROM leaves WHERE leaf_index = 1",
-    ] {
-        sqlx::query(corruption).execute(&pool).await?;
-        let response = proofs.post(&owner_of_0x10).await?;
-        assert_eq!(response.status(), 502, "{corruption}");
-        let error: ErrorResponse = decode(response).await?;
-        assert_eq!(error.code, ErrorCode::UpstreamTransient);
-        assert!(error.retryable);
+    let set_leaf_0_key = |key: &str| {
+        format!(
+            "UPDATE leaves SET allowed_key = decode(repeat('{key}', 32), 'hex') \
+             WHERE leaf_index = 0"
+        )
+    };
+    for (times, (corruption, key)) in (1..).zip([
+        // Leaf 0's commitment allows OWNER: its row now names a key it never allowed.
+        (vec![set_leaf_0_key("5e")], [0x5E; 32]),
+        (
+            vec![
+                set_leaf_0_key("a1"),
+                "UPDATE leaves SET commitment = decode(repeat('00', 32), 'hex') \
+                 WHERE leaf_index = 1"
+                    .to_owned(),
+            ],
+            OWNER,
+        ),
+        (vec!["DELETE FROM leaves WHERE leaf_index = 1".to_owned()], OWNER),
+    ]) {
+        for statement in &corruption {
+            sqlx::query(statement).execute(&pool).await?;
+        }
+        let corruption = corruption.join("; ");
+        let response = proofs.post(&leaf_0_and_leaf_2(key, times)).await?;
+        assert_eq!(response.status(), 200, "{corruption}");
+        let body: MerkleProofResponse = decode(response).await?;
+        assert_eq!(body.proofs.len(), 1 + times, "{corruption}");
+        assert_eq!(body.proofs[0], MerkleProofOutcome::Inconsistent, "{corruption}");
+        for proof in &body.proofs[1..] {
+            assert_eq!(verify(proof, second.leaves[1].commitment), 2, "{corruption}");
+        }
     }
 
     cancel.cancel();
@@ -540,5 +582,481 @@ async fn a_repeated_request_gets_its_first_answer_at_no_cost(
 
     cancel.cancel();
     server_task.await??;
+    Ok(())
+}
+
+/// The accounts a test sets, as `getMultipleAccounts` would return them.
+#[derive(Default)]
+struct Chain(Mutex<HashMap<[u8; 32], Account>>);
+
+impl Chain {
+    fn set(&self, address: [u8; 32], store: Option<&EncryptedStore>) {
+        let mut accounts = self.0.lock().unwrap();
+        match store {
+            Some(store) => accounts.insert(address, store_account(store)),
+            None => accounts.remove(&address),
+        };
+    }
+}
+
+/// `store` as the host program's account.
+fn store_account(store: &EncryptedStore) -> Account {
+    let mut data = encrypted_store_discriminator().to_vec();
+    borsh::to_writer(&mut data, store).expect("encode");
+    Account {
+        lamports: 1,
+        data,
+        owner: Pubkey::new_from_array(HOST_PROGRAM),
+        executable: false,
+        rent_epoch: 0,
+    }
+}
+
+/// A chain whose store gains a leaf while the check reads it: the indexer records the leaf before
+/// the account read answers, as it can while a check runs.
+struct ChainWritingDuringTheRead<'a> {
+    pool: &'a sqlx::PgPool,
+    store: EncryptedStore,
+    write: Mutex<Option<EncryptedStoreWrite>>,
+}
+
+impl StoreAccounts for ChainWritingDuringTheRead<'_> {
+    async fn accounts(
+        &self,
+        stores: &[[u8; 32]],
+    ) -> anyhow::Result<Vec<Option<Account>>> {
+        let write = self.write.lock().unwrap().take().expect("read once");
+        let cursor = record(self.pool, 11, vec![write])
+            .await
+            .map_err(|err| anyhow::anyhow!("{err}"))?;
+        let store = EncryptedStore {
+            leaf_count: cursor.leaf_count,
+            peaks: cursor.peaks,
+            ..self.store.clone()
+        };
+        Ok(stores.iter().map(|_| Some(store_account(&store))).collect())
+    }
+}
+
+/// What a [`ChainByPage`] does before it answers a page of the check.
+enum BeforePage {
+    Nothing,
+    /// The indexer records this write, as it can between two pages.
+    Record(EncryptedStoreWrite),
+    Fail,
+}
+
+/// [`Chain`]'s accounts, each page answered after its scripted step.
+struct ChainByPage<'a> {
+    pool: &'a sqlx::PgPool,
+    chain: Chain,
+    pages: Mutex<VecDeque<BeforePage>>,
+}
+
+impl StoreAccounts for ChainByPage<'_> {
+    async fn accounts(
+        &self,
+        stores: &[[u8; 32]],
+    ) -> anyhow::Result<Vec<Option<Account>>> {
+        let step = self.pages.lock().unwrap().pop_front();
+        match step.expect("a scripted page") {
+            BeforePage::Nothing => {}
+            BeforePage::Record(write) => {
+                record(self.pool, 11, vec![write])
+                    .await
+                    .map_err(|err| anyhow::anyhow!("{err}"))?;
+            }
+            BeforePage::Fail => anyhow::bail!("account read failed"),
+        }
+        self.chain.accounts(stores).await
+    }
+}
+
+/// Records 100 stores after `address`, so a check reads `address` on its first page of 100 and
+/// then a second page. Nothing is on chain at their addresses.
+async fn record_a_second_page(
+    pool: &sqlx::PgPool,
+    address: [u8; 32],
+) -> Result<(), Box<dyn std::error::Error>> {
+    for filler in 0..100u8 {
+        let mut store = [0xFF; 32];
+        store[31] = filler;
+        assert!(address < store, "the store under test sorts first");
+        record(
+            pool,
+            10,
+            vec![EncryptedStoreWrite {
+                encrypted_store: store,
+                previous_leaf_count: 0,
+                handle: [0x10; 32],
+                allowed_keys: vec![OWNER],
+                make_public: false,
+            }],
+        )
+        .await?;
+    }
+    Ok(())
+}
+
+impl StoreAccounts for Chain {
+    async fn accounts(
+        &self,
+        stores: &[[u8; 32]],
+    ) -> anyhow::Result<Vec<Option<Account>>> {
+        let accounts = self.0.lock().unwrap();
+        Ok(stores
+            .iter()
+            .map(|store| accounts.get(store).cloned())
+            .collect())
+    }
+}
+
+/// An encrypted store of [`HOST_PROGRAM`] at its derived address, with no leaves yet.
+fn host_store() -> ([u8; 32], EncryptedStore) {
+    let mut store = EncryptedStore {
+        program: [1; 32],
+        authority: [2; 32],
+        scope: [3; 32],
+        ..EncryptedStore::default()
+    };
+    let (address, bump) = Pubkey::find_program_address(
+        &store.seeds(),
+        &Pubkey::new_from_array(HOST_PROGRAM),
+    );
+    store.bump = bump;
+    (address.to_bytes(), store)
+}
+
+/// Records `writes` at `slot` and returns the store's cursor after them.
+async fn record(
+    pool: &sqlx::PgPool,
+    slot: u64,
+    writes: Vec<EncryptedStoreWrite>,
+) -> Result<EncryptedStoreCursor, Box<dyn std::error::Error>> {
+    let address = writes[0].encrypted_store;
+    let mut tx = pool.begin().await?;
+    let existing = load_store_cursors(&mut tx, &[address]).await?;
+    let block = reduce_block_leaves(
+        &[TransactionStoreWrites {
+            transaction_index: 0,
+            sources: writes,
+        }],
+        existing,
+    )?;
+    store_block_leaves(&mut tx, slot, &block).await?;
+    tx.commit().await?;
+    Ok(block.stores[&address].clone())
+}
+
+/// The store check quarantines a store whose recorded peaks differ from the chain's, the proof
+/// server then answers its leaves `inconsistent`, and a later check that matches lifts it. A
+/// record behind the chain leaves the quarantine as it is; a closed store lifts it.
+#[tokio::test]
+#[serial(db)]
+async fn a_store_that_disagrees_with_the_chain_is_quarantined_until_it_matches(
+) -> Result<(), Box<dyn std::error::Error>> {
+    let (_db, pool) = support::record_db().await;
+    let (address, mut chain_store) = host_store();
+    let recorded = record(
+        &pool,
+        10,
+        vec![EncryptedStoreWrite {
+            encrypted_store: address,
+            previous_leaf_count: 0,
+            handle: [0x10; 32],
+            allowed_keys: vec![OWNER],
+            make_public: true,
+        }],
+    )
+    .await?;
+    assert_eq!(recorded.leaf_count, 2);
+    chain_store.leaf_count = recorded.leaf_count;
+    chain_store.peaks = recorded.peaks.clone();
+
+    let chain = Chain::default();
+    let host_program = Pubkey::new_from_array(HOST_PROGRAM);
+    let check = || check_stores(&pool, &chain, &host_program, "1");
+    let quarantined = || async {
+        load_served_store(&pool, address)
+            .await
+            .map(|store| store.expect("recorded").quarantined)
+    };
+    let cancel = CancellationToken::new();
+    let (proofs, server_task) = serve_proofs(&pool, UNLIMITED, &cancel).await;
+    // The public leaf asked `times` times: each request has its own body, so none is a copy
+    // of an earlier one that the server answers from its cache.
+    let public_leaf = |times| MerkleProofRequest {
+        leaves: vec![
+            LeafQuery {
+                encrypted_store: address,
+                handle: [0x10; 32],
+                kind: LeafQueryKind::Public,
+                key: None,
+            };
+            times
+        ],
+    };
+
+    chain.set(address, Some(&chain_store));
+    check().await?;
+    assert!(!quarantined().await?);
+    assert_eq!(proofs.post(&public_leaf(1)).await?.status(), 200);
+
+    // A third leaf on chain the record does not hold yet is behind: no peaks are compared, and
+    // the store neither enters nor leaves the quarantine.
+    let mut chain_grew = chain_store.clone();
+    chain_grew.leaf_count = 3;
+    chain_grew.peaks.push([0x33; 32]);
+    chain.set(address, Some(&chain_grew));
+    check().await?;
+    assert!(!quarantined().await?);
+
+    let mut diverged = chain_store.clone();
+    diverged.peaks[0][0] ^= 1;
+    chain.set(address, Some(&diverged));
+    check().await?;
+    assert!(quarantined().await?);
+    let refused = proofs.post(&public_leaf(2)).await?;
+    assert_eq!(refused.status(), 200);
+    let body: MerkleProofResponse = decode(refused).await?;
+    assert_eq!(body.proofs, vec![MerkleProofOutcome::Inconsistent; 2]);
+
+    chain.set(address, Some(&chain_grew));
+    check().await?;
+    assert!(quarantined().await?);
+
+    chain.set(address, Some(&chain_store));
+    check().await?;
+    assert!(!quarantined().await?);
+    assert_eq!(proofs.post(&public_leaf(3)).await?.status(), 200);
+
+    chain.set(address, Some(&diverged));
+    check().await?;
+    assert!(quarantined().await?);
+    chain.set(address, None);
+    check().await?;
+    assert!(!quarantined().await?);
+
+    cancel.cancel();
+    server_task.await??;
+    Ok(())
+}
+
+/// The store check compares the record at the chain's leaf count, whatever the record holds past
+/// it: a record of 3 leaves matches a chain of 1, 2 or 3 leaves.
+#[tokio::test]
+#[serial(db)]
+async fn the_store_check_compares_the_record_at_the_chain_leaf_count(
+) -> Result<(), Box<dyn std::error::Error>> {
+    let (_db, pool) = support::record_db().await;
+    let (address, chain_store) = host_store();
+    let mut cursors = Vec::new();
+    for (slot, handle) in [(10, 0x10), (11, 0x11), (12, 0x12)] {
+        let write = EncryptedStoreWrite {
+            encrypted_store: address,
+            previous_leaf_count: cursors.len() as u64,
+            handle: [handle; 32],
+            allowed_keys: vec![OWNER],
+            make_public: false,
+        };
+        cursors.push(record(&pool, slot, vec![write]).await?);
+    }
+    let chain = Chain::default();
+    let host_program = Pubkey::new_from_array(HOST_PROGRAM);
+    let quarantined = || async {
+        load_served_store(&pool, address)
+            .await
+            .map(|store| store.expect("recorded").quarantined)
+    };
+    for cursor in &cursors {
+        let at_count = EncryptedStore {
+            leaf_count: cursor.leaf_count,
+            peaks: cursor.peaks.clone(),
+            ..chain_store.clone()
+        };
+        chain.set(address, Some(&at_count));
+        check_stores(&pool, &chain, &host_program, "1").await?;
+        assert!(!quarantined().await?, "at {} leaves", cursor.leaf_count);
+    }
+    let mut diverged = EncryptedStore {
+        leaf_count: 3,
+        peaks: cursors[2].peaks.clone(),
+        ..chain_store
+    };
+    diverged.peaks[0][0] ^= 1;
+    chain.set(address, Some(&diverged));
+    check_stores(&pool, &chain, &host_program, "1").await?;
+    assert!(quarantined().await?);
+    Ok(())
+}
+
+/// A store the indexer writes while the check reads the chain is compared at the chain's new
+/// count, not left behind: here its matching peaks lift an earlier quarantine.
+#[tokio::test]
+#[serial(db)]
+async fn a_store_written_during_the_check_is_compared(
+) -> Result<(), Box<dyn std::error::Error>> {
+    let (_db, pool) = support::record_db().await;
+    let (address, chain_store) = host_store();
+    let key_write = |previous_leaf_count, handle| EncryptedStoreWrite {
+        encrypted_store: address,
+        previous_leaf_count,
+        handle: [handle; 32],
+        allowed_keys: vec![OWNER],
+        make_public: false,
+    };
+    let first = record(&pool, 10, vec![key_write(0, 0x10)]).await?;
+    let host_program = Pubkey::new_from_array(HOST_PROGRAM);
+    let quarantined = || async {
+        load_served_store(&pool, address)
+            .await
+            .map(|store| store.expect("recorded").quarantined)
+    };
+
+    let mut diverged = EncryptedStore {
+        leaf_count: first.leaf_count,
+        peaks: first.peaks,
+        ..chain_store.clone()
+    };
+    diverged.peaks[0][0] ^= 1;
+    let chain = Chain::default();
+    chain.set(address, Some(&diverged));
+    check_stores(&pool, &chain, &host_program, "1").await?;
+    assert!(quarantined().await?);
+
+    let growing = ChainWritingDuringTheRead {
+        pool: &pool,
+        store: chain_store,
+        write: Mutex::new(Some(key_write(1, 0x11))),
+    };
+    check_stores(&pool, &growing, &host_program, "1").await?;
+    assert!(!quarantined().await?);
+    Ok(())
+}
+
+/// A store the record is behind on until after its page is read is compared once more at the end
+/// of the check: here the indexer records its missing leaf while the check reads the next page,
+/// and the comparison at the end lifts an earlier quarantine.
+#[tokio::test]
+#[serial(db)]
+async fn a_store_written_after_its_page_is_compared_at_the_end_of_the_check(
+) -> Result<(), Box<dyn std::error::Error>> {
+    let (_db, pool) = support::record_db().await;
+    let (address, chain_store) = host_store();
+    let key_write = |previous_leaf_count, handle| EncryptedStoreWrite {
+        encrypted_store: address,
+        previous_leaf_count,
+        handle: [handle; 32],
+        allowed_keys: vec![OWNER],
+        make_public: false,
+    };
+    let first = record(&pool, 10, vec![key_write(0, 0x10)]).await?;
+    record_a_second_page(&pool, address).await?;
+    let host_program = Pubkey::new_from_array(HOST_PROGRAM);
+    let quarantined = || async {
+        load_served_store(&pool, address)
+            .await
+            .map(|store| store.expect("recorded").quarantined)
+    };
+
+    let mut diverged = EncryptedStore {
+        leaf_count: first.leaf_count,
+        peaks: first.peaks.clone(),
+        ..chain_store.clone()
+    };
+    diverged.peaks[0][0] ^= 1;
+    let chain = Chain::default();
+    chain.set(address, Some(&diverged));
+    check_stores(&pool, &chain, &host_program, "1").await?;
+    assert!(quarantined().await?);
+
+    // The chain holds the store's second leaf; the record gets it only while the check reads
+    // the second page.
+    let mut grown = EncryptedStore {
+        leaf_count: first.leaf_count,
+        peaks: first.peaks,
+        ..chain_store
+    };
+    mmr_append(
+        &mut grown.peaks,
+        &mut grown.leaf_count,
+        leaf_commitment(address, 1, [0x11; 32], Some(OWNER)),
+    )
+    .expect("append");
+    let chain = ChainByPage {
+        pool: &pool,
+        chain: Chain::default(),
+        pages: Mutex::new(VecDeque::from([
+            BeforePage::Nothing,
+            BeforePage::Record(key_write(1, 0x11)),
+        ])),
+    };
+    chain.chain.set(address, Some(&grown));
+    check_stores(&pool, &chain, &host_program, "1").await?;
+    assert!(!quarantined().await?);
+    Ok(())
+}
+
+/// A check that stops partway keeps what it found: a store quarantined on the first page stays in
+/// the table and in the gauge when the second page's account read fails.
+#[tokio::test]
+#[serial(db)]
+async fn a_check_that_fails_partway_keeps_the_quarantine_it_found(
+) -> Result<(), Box<dyn std::error::Error>> {
+    let (_db, pool) = support::record_db().await;
+    let (address, chain_store) = host_store();
+    let recorded = record(
+        &pool,
+        10,
+        vec![EncryptedStoreWrite {
+            encrypted_store: address,
+            previous_leaf_count: 0,
+            handle: [0x10; 32],
+            allowed_keys: vec![OWNER],
+            make_public: false,
+        }],
+    )
+    .await?;
+    record_a_second_page(&pool, address).await?;
+    let mut diverged = EncryptedStore {
+        leaf_count: recorded.leaf_count,
+        peaks: recorded.peaks,
+        ..chain_store
+    };
+    diverged.peaks[0][0] ^= 1;
+    let chain = ChainByPage {
+        pool: &pool,
+        chain: Chain::default(),
+        pages: Mutex::new(VecDeque::from([
+            BeforePage::Nothing,
+            BeforePage::Fail,
+        ])),
+    };
+    chain.chain.set(address, Some(&diverged));
+    // A label of its own, so no other test's check moves this gauge.
+    let host_chain_id = "fails-partway";
+
+    let host_program = Pubkey::new_from_array(HOST_PROGRAM);
+    assert!(check_stores(&pool, &chain, &host_program, host_chain_id)
+        .await
+        .is_err());
+
+    let served = load_served_store(&pool, address).await?.expect("recorded");
+    assert!(served.quarantined);
+    let gauge = prometheus::gather()
+        .into_iter()
+        .find(|family| {
+            family.name() == "solana_merkle_indexer_quarantined_stores"
+        })
+        .and_then(|family| {
+            family.get_metric().iter().find_map(|metric| {
+                metric
+                    .get_label()
+                    .iter()
+                    .any(|label| label.value() == host_chain_id)
+                    .then(|| metric.get_gauge().value())
+            })
+        });
+    assert_eq!(gauge, Some(1.0));
     Ok(())
 }

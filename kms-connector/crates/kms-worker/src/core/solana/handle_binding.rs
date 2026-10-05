@@ -8,10 +8,11 @@
 
 use super::encrypted_store::ResolvedEncryptedStore;
 use super::proof::{HostProofReader, LeafQuery, MerkleProofOutcome, ProofReadError, check_length};
+use crate::monitoring::metrics::SOLANA_PROOF_ANSWER_COUNTER;
 use alloy::primitives::B256;
 use futures::stream::{FuturesUnordered, StreamExt};
 use solana_pubkey::Pubkey;
-use std::time::Duration;
+use std::{cmp::Ordering, time::Duration};
 use zama_solana_acl::{
     AclError, EncryptedStore, MmrProof, authorize_state_historical, authorize_state_public,
 };
@@ -26,9 +27,11 @@ pub const HEDGE_DELAY: Duration = Duration::from_millis(250);
 /// passes without one, so a lagging, failing or stalled coprocessor costs at most that delay. Only
 /// a found proof that verifies against the observed peaks resolves a query; once every query is
 /// resolved the reads still running are dropped. Otherwise a query keeps the last failure a
-/// coprocessor answered; a failed read or an answer of the wrong length says nothing about any
-/// leaf. A query no coprocessor answered is a [`ProofReadError`]. Every coprocessor receives the
-/// same prepared batch. The worker loop is the only retry layer.
+/// coprocessor answered about the leaf. A coprocessor that answers `inconsistent` knows its own
+/// record is wrong, so that failure is kept only until another coprocessor answers about the leaf;
+/// a failed read or an answer of the wrong length says nothing about any leaf. A query no
+/// coprocessor answered is a [`ProofReadError`]. Every coprocessor receives the same prepared
+/// batch. The worker loop is the only retry layer.
 pub async fn verify_proofs<P: HostProofReader, T: Sync>(
     reader: &P,
     batch: &[(LeafQuery, T)],
@@ -54,18 +57,36 @@ pub async fn verify_proofs<P: HostProofReader, T: Sync>(
             }
             else => break,
         };
+        let source_name = reader.source_name(source);
         match answer.and_then(|outcomes| {
             check_length(queries.len(), outcomes.len())?;
             Ok(outcomes)
         }) {
             Ok(outcomes) => {
                 for ((kept, (_, item)), outcome) in results.iter_mut().zip(batch).zip(&outcomes) {
-                    if *kept != Some(Ok(())) {
-                        *kept = Some(verify(item, outcome));
+                    let verified = verify(item, outcome);
+                    SOLANA_PROOF_ANSWER_COUNTER
+                        .with_label_values(&[&source_name, answer_outcome(&verified)])
+                        .inc();
+                    let replaces = !matches!(
+                        (&*kept, &verified),
+                        (Some(Ok(())), _)
+                            | (
+                                Some(Err(_)),
+                                Err(HandleBindingFailure::ProofRecordInconsistent)
+                            )
+                    );
+                    if replaces {
+                        *kept = Some(verified);
                     }
                 }
             }
-            Err(error) => read_failures.push(format!("coprocessor {source}: {error}")),
+            Err(error) => {
+                SOLANA_PROOF_ANSWER_COUNTER
+                    .with_label_values(&[&source_name, "read_failed"])
+                    .inc_by(queries.len() as u64);
+                read_failures.push(format!("coprocessor {source_name}: {error}"));
+            }
         }
         if results.iter().all(|result| *result == Some(Ok(()))) {
             break;
@@ -80,6 +101,30 @@ pub async fn verify_proofs<P: HostProofReader, T: Sync>(
             })
         })
         .collect()
+}
+
+/// The `outcome` label of a coprocessor's answer for one leaf: `verified`, `no_leaf`,
+/// `unknown_store`, `inconsistent` (the coprocessor knows its record is wrong, and pages on its
+/// own), `behind` (its record holds fewer leaves than the chain), `ahead` (a leaf past the count
+/// this connector observed) or `invalid`. A proof built against fewer leaves than the
+/// chain holds may fail only because it is stale. One built against as many or more is wrong: a
+/// correct proof from a longer record is cut to the chain's count and verifies.
+fn answer_outcome(verified: &Result<(), HandleBindingFailure>) -> &'static str {
+    match verified {
+        Ok(()) => "verified",
+        Err(HandleBindingFailure::NoLeaf { .. }) => "no_leaf",
+        Err(HandleBindingFailure::AccountUnknownToProofRecord) => "unknown_store",
+        Err(HandleBindingFailure::ProofRecordInconsistent) => "inconsistent",
+        Err(HandleBindingFailure::ProofRecordBehind { .. }) => "behind",
+        Err(HandleBindingFailure::LeafIndexOutOfRange { .. }) => "ahead",
+        Err(HandleBindingFailure::ProofDoesNotVerify {
+            record_leaf_count,
+            live_leaf_count,
+        }) => match record_leaf_count.cmp(live_leaf_count) {
+            Ordering::Less => "behind",
+            Ordering::Equal | Ordering::Greater => "invalid",
+        },
+    }
 }
 
 /// Establishes that `owner_address` may decrypt `handle` under this encrypted store. Taking the
@@ -146,6 +191,9 @@ fn check_leaf(
         MerkleProofOutcome::UnknownAccount => {
             return Err(HandleBindingFailure::AccountUnknownToProofRecord);
         }
+        MerkleProofOutcome::Inconsistent => {
+            return Err(HandleBindingFailure::ProofRecordInconsistent);
+        }
     };
 
     // A leaf past the observed count means the record is ahead of this observation.
@@ -179,6 +227,8 @@ pub enum HandleBindingFailure {
     },
     #[error("the leaf record does not know this encrypted store")]
     AccountUnknownToProofRecord,
+    #[error("the coprocessor's leaf record disagrees with the chain for this leaf")]
+    ProofRecordInconsistent,
     #[error(
         "Merkle proof does not verify against the observed peaks (record {record_leaf_count} \
          leaves, chain {live_leaf_count})"
@@ -189,4 +239,38 @@ pub enum HandleBindingFailure {
     },
     #[error("leaf index {leaf_index} is not below the observed leaf count {leaf_count}")]
     LeafIndexOutOfRange { leaf_index: u64, leaf_count: u64 },
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// A failing proof from a record holding as many leaves as the chain or more is `invalid`,
+    /// the outcome that pages: a correct one is cut to the chain's count and verifies. A shorter
+    /// record may only be stale.
+    #[test]
+    fn a_failing_proof_from_a_record_at_or_past_the_chain_leaf_count_is_invalid() {
+        let does_not_verify = |record_leaf_count| {
+            answer_outcome(&Err(HandleBindingFailure::ProofDoesNotVerify {
+                record_leaf_count,
+                live_leaf_count: 8,
+            }))
+        };
+        assert_eq!(does_not_verify(7), "behind");
+        assert_eq!(does_not_verify(8), "invalid");
+        assert_eq!(does_not_verify(9), "invalid");
+        // The coprocessor pages on its own record; the connector does not page again.
+        assert_eq!(
+            answer_outcome(&Err(HandleBindingFailure::ProofRecordInconsistent)),
+            "inconsistent"
+        );
+        assert_eq!(answer_outcome(&Ok(())), "verified");
+        assert_eq!(
+            answer_outcome(&Err(HandleBindingFailure::ProofRecordBehind {
+                record_leaf_count: 7,
+                live_leaf_count: 8,
+            })),
+            "behind"
+        );
+    }
 }

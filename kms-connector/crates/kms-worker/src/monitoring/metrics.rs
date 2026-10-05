@@ -85,6 +85,16 @@ pub static REQUEST_CHECK_ERRORS: LazyLock<IntCounterVec> = LazyLock::new(|| {
     .expect("Failed to register kms_connector_worker_request_check_errors metric")
 });
 
+/// Each coprocessor's Merkle proof answer for each queried leaf of a Solana decryption.
+pub static SOLANA_PROOF_ANSWER_COUNTER: LazyLock<IntCounterVec> = LazyLock::new(|| {
+    register_int_counter_vec!(
+        "kms_connector_worker_solana_proof_answers_counter",
+        "Merkle proof answers per queried leaf, by coprocessor and outcome",
+        &["source", "outcome"]
+    )
+    .expect("Failed to register kms_connector_worker_solana_proof_answers_counter metric")
+});
+
 /// Histogram bucket boundaries (in seconds) for decryption latency measurements.
 /// Ranges from 10ms to 30s to capture both fast and slow decryption.
 const DECRYPTION_LATENCY_BUCKETS: &[f64] = &[0.01, 0.05, 0.1, 0.25, 0.5, 1.0, 2.5, 5.0, 10.0, 30.0];

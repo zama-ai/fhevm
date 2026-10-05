@@ -94,6 +94,7 @@ are written as one narrative instead.
 | [DD-065](#dd-065-a-public-decryption-is-accepted-on-chain-by-its-certificate-alone)                                                       | adopted                                  | A public decryption is accepted on-chain by its certificate alone                                                              |
 | [DD-066](#dd-066-the-leaf-record-has-its-own-indexer-and-database)                                                                        | adopted                                  | The leaf record has its own indexer and database                                                                               |
 | [DD-067](#dd-067-a-merkle-proof-request-is-signed-by-a-kms-contexts-tx-sender)                                                             | adopted                                  | A Merkle proof request is signed by a KMS context's tx-sender                                                                  |
+| [DD-068](#dd-068-the-merkle-indexer-checks-its-record-against-the-chain-and-quarantines-a-store-that-disagrees)                            | adopted                                  | The Merkle indexer checks its record against the chain and quarantines a store that disagrees                                  |
 
 ## DD-002: Keep App Store And Host ACL Store Separate
 
@@ -2486,10 +2487,10 @@ count. At 6 leaves, leaf 4's path is `[leaf 5]`; at 8 leaves it is
 
 A proof takes three indexed reads: the Store's row, the first leaf below its `leaf_count` that
 matches the query, and the path. The path's height-0 sibling is the neighboring leaf row, so the
-node table does not store leaf nodes again. The route checks the path with `mmr_verify` against
-the Store's recorded peaks before serving it; a missing or wrong row answers a retryable
-`upstream_transient`. Leaves and nodes are never rewritten and the Store's row only grows, so the
-three reads agree without a transaction.
+node table does not store leaf nodes again. The route checks the leaf's commitment against its
+row and the path with `mmr_verify` against the Store's recorded peaks before serving it; a leaf
+with a missing or wrong row is answered `inconsistent` (DD-068). Leaves and nodes are never
+rewritten and the Store's row only grows, so the three reads agree without a transaction.
 
 The first matching leaf is served, as before. It sits in the oldest mountain, whose path changes
 least as the Store grows.
@@ -2776,6 +2777,75 @@ reaches every coprocessor. A tx-sender past its budget is refused until older re
 and the connector asks another coprocessor. 13 KMS nodes in two live contexts hold at most
 416 MiB, inside the chart's 512 MiB limit. The cache and the rate are per replica, so a copy that
 reaches another replica of the same server is charged there again.
+
+## DD-068: The Merkle indexer checks its record against the chain and quarantines a store that disagrees
+
+Status: adopted
+
+Recorded in zama-ai/fhevm#4221.
+
+The indexer refuses a replayed block that changes the record (DD-066), but nothing compared the
+record with the chain. A record restored from a diverged dump, edited by hand, damaged on disk or
+built by an indexer bug served proofs that the KMS connector rejected one by one. Nobody was told,
+and the connector paid a failed read per request until someone looked.
+
+Decision:
+
+`solana_merkle_indexer` checks every recorded store once at start and then every
+`--store-check-interval-secs` (600). It reads the stores 100 at a time with `getMultipleAccounts` at
+confirmed commitment, judges each account as the KMS connector does (`validate_store`, from
+`zama_solana_acl`), and compares at the chain's leaf count `n`:
+
+- no account: `absent`, the store was closed, and its quarantine lifts;
+- an account that is not a valid store: `mismatch`;
+- a record holding fewer than `n` leaves, read after the account: `behind`, compared once more
+  at the end of the check;
+- otherwise the record's peaks at `n`, read from its `nodes` rows, must equal the account's peaks:
+  `match` or `mismatch`.
+
+Leaves are only appended, so the peaks of the first `n` leaves never change once recorded, and the
+comparison holds whichever slot the chain was read at. A `mismatch` writes the store into
+`quarantined_stores`, and a later `match` removes it. `solana_merkle_proof_server` answers every
+leaf of a quarantined store `inconsistent`, in a 200 that still proves the request's other
+leaves, and the connector takes that leaf's proof from another coprocessor. Any other
+coprocessor's answer about the leaf decides the entry, whichever arrives first. A connector that
+gets `inconsistent` from every coprocessor fails the request `upstream_transient`, retryable: the
+user's access is unknown, not denied. Only a failed database read refuses the whole request
+(`upstream_transient`, 502).
+
+The check compares the peaks only. A wrong row below correct peaks is caught when it is served:
+before answering, the proof server recomputes the leaf's commitment from the row's store, index,
+handle and key, and verifies its path against the recorded peaks (DD-063). A row that fails
+either is answered `inconsistent`.
+
+`solana_merkle_indexer_quarantined_stores` above 0, any `inconsistent` leaf the proof server
+counts, and any `invalid` answer a KMS connector counts by coprocessor
+(`kms_connector_worker_solana_proof_answers_counter`), page the protocol on-call. The connector
+counts a proof `invalid` when it was built against as many leaves as the chain holds or more: a
+correct proof from a longer record is cut to the chain's count and verifies, so only a proof from
+a shorter record can fail by being stale. The connector's count names the coprocessor, so a
+partner's wrong record is seen from the connectors too. `RUNBOOK.md` in the crate describes the
+repair: replace the database with a `pg_dump` from before the divergence, or rebuild it from the
+chain, and wait for a clean check after the indexer catches up. `/healthz` does not look at the
+record: a record behind the chain is a lag alarm, and a record that disagrees is a quarantine.
+
+Rejected alternatives:
+
+| Alternative | Why not |
+|---|---|
+| Recompute every store's peaks from all its leaves | Reads every leaf of every store each interval; the peaks at `n` are already rows. |
+| Repair a mismatching store in place | The record has no partial repair: a store's later leaves depend on its earlier ones. A whole-database restore is the one path that is tested (`a_restored_dump_resumes_and_catches_up`). |
+| Stop the indexer on a mismatch | Every other store keeps serving from a stopped indexer's record, but it goes stale; the quarantine stops only the wrong store. |
+| Fail `/healthz` on a mismatch or on lag | Kubernetes would restart a server whose other stores serve correctly, and a restart fixes neither. |
+
+Consequences:
+
+A quarantined store has no proofs from that coprocessor until a check after the restored or rebuilt
+record catches up matches. One `getMultipleAccounts` per 100 stores per interval reaches the
+indexer's RPC provider. A store closed and recreated at the same address is reported `mismatch`
+once the new store holds a leaf, until the record is rebuilt, as DD-066 already requires. An RPC
+node that answers no account for a store it has not seen yet lifts that store's quarantine until
+the next check; the connector still verifies every proof against its own read of the chain.
 
 ## Open product decisions
 

@@ -1957,6 +1957,7 @@ solanaHostListener:
   proofServer:
     replicas: 1
     httpPort: 8080
+    metricsPort: 9100
     databasePoolSize: 8
     env: []
     podLabels: {}

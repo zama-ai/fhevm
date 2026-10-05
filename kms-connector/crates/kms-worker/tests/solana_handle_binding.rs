@@ -24,6 +24,7 @@
 mod solana_support;
 
 use alloy::primitives::B256;
+use kms_connector_api::ErrorCode;
 use kms_worker::core::solana::{
     encrypted_store::{ResolvedEncryptedStore, resolve_encrypted_store},
     failure::AuthorizationFailure,
@@ -819,6 +820,65 @@ async fn a_failed_or_short_read_leaves_the_batch_to_another_coprocessor() {
     assert_eq!(
         reader.calls(),
         vec![(0, queries.clone()), (1, queries.clone()), (2, queries)]
+    );
+}
+
+/// An `inconsistent` answer says nothing about the leaf, so it never replaces one that does: a
+/// coprocessor whose record holds the history without the grant decides the entry, whichever
+/// answer arrives first, and the entry is the recoverable ACL denial.
+#[rstest]
+#[case::inconsistent_last(false)]
+#[case::inconsistent_first(true)]
+#[tokio::test]
+async fn an_inconsistent_answer_does_not_replace_a_denial(#[case] inconsistent_first: bool) {
+    let (fixture, account, [entry, _]) = two_allowed_queries();
+    let mut records = vec![
+        ProofRecord::answering([(entry.0, not_found(&fixture))]),
+        ProofRecord::answering([(entry.0, MerkleProofOutcome::Inconsistent)]),
+    ];
+    if inconsistent_first {
+        records.reverse();
+    }
+    let reader = ScriptedProofReader::in_order(records);
+
+    let results = verify_with(&reader, &account, &[entry]).await.unwrap();
+
+    let [Err(failure @ HandleBindingFailure::NoLeaf { .. })] = &results[..] else {
+        panic!("expected the denial, got {results:?}");
+    };
+    assert_eq!(failure.class().code, ErrorCode::AclDenied);
+    assert_eq!(reader.call_count(), 2);
+}
+
+/// A coprocessor that knows its record is wrong for one leaf still proves the others: the next
+/// coprocessor is asked at once, and the leaf it proves resolves. When every coprocessor answers
+/// `inconsistent`, the entry keeps that failure.
+#[tokio::test(start_paused = true)]
+async fn an_inconsistent_leaf_is_left_to_another_coprocessor() {
+    let (fixture, account, batch) = two_allowed_queries();
+    let [(inconsistent, _), (proven, _)] = batch;
+    let partly_inconsistent = ProofRecord::answering([
+        (inconsistent, MerkleProofOutcome::Inconsistent),
+        (proven, fixture.outcome(&proven)),
+    ]);
+    let reader = ScriptedProofReader::in_order(vec![
+        partly_inconsistent.clone(),
+        ProofRecord::of(&[&fixture]),
+    ]);
+
+    let started = tokio::time::Instant::now();
+    let results = verify_with(&reader, &account, &batch).await.unwrap();
+
+    assert!(started.elapsed() < HEDGE_DELAY);
+    assert_eq!(results, vec![Ok(()), Ok(())]);
+    assert_eq!(reader.call_count(), 2);
+
+    let reader =
+        ScriptedProofReader::in_order(vec![partly_inconsistent.clone(), partly_inconsistent]);
+    let results = verify_with(&reader, &account, &batch).await.unwrap();
+    assert_eq!(
+        results,
+        vec![Err(HandleBindingFailure::ProofRecordInconsistent), Ok(())]
     );
 }
 

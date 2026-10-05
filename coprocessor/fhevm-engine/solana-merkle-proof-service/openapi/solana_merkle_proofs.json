@@ -232,6 +232,21 @@
                 ]
               }
             }
+          },
+          {
+            "type": "object",
+            "description": "This record is known to disagree with the chain for this leaf: the store\ncheck quarantined the store, or the leaf's commitment or path does not\nmatch the recorded peaks. The caller asks another coprocessor.",
+            "required": [
+              "status"
+            ],
+            "properties": {
+              "status": {
+                "type": "string",
+                "enum": [
+                  "inconsistent"
+                ]
+              }
+            }
           }
         ],
         "description": "The answer for one queried leaf, in request order."

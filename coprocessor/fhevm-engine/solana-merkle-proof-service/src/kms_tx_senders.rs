@@ -8,7 +8,7 @@
 
 use std::{
     collections::{HashMap, HashSet},
-    sync::Arc,
+    sync::{Arc, LazyLock},
     time::Duration,
 };
 
@@ -20,10 +20,13 @@ use alloy::{
 use anyhow::{anyhow, Context};
 use fhevm_host_bindings::protocol_config::ProtocolConfig::ProtocolConfigInstance;
 use kms_context::read_kms_context;
+use prometheus::{register_int_gauge, IntGauge};
 use request_authorization::KeyRegistry;
 use tokio::sync::watch;
 use tokio_util::sync::CancellationToken;
 use tracing::{info, warn};
+
+use crate::{gauge_value, unix_now_secs};
 
 const REFRESH_INTERVAL: Duration = Duration::from_secs(60);
 const RETRY_INTERVAL: Duration = Duration::from_secs(5);
@@ -40,6 +43,24 @@ pub struct KmsTxSenderSet {
     pub registry: KeyRegistry,
     pub senders: HashSet<Address>,
 }
+
+static KMS_TX_SENDERS: LazyLock<IntGauge> = LazyLock::new(|| {
+    register_int_gauge!(
+        "solana_merkle_proof_server_kms_tx_senders",
+        "KMS tx-senders the last successful read of ProtocolConfig allows"
+    )
+    .unwrap()
+});
+
+static KMS_TX_SENDERS_READ_TIMESTAMP: LazyLock<IntGauge> = LazyLock::new(
+    || {
+        register_int_gauge!(
+        "solana_merkle_proof_server_kms_tx_senders_read_timestamp_seconds",
+        "Unix time of the last successful read of the KMS tx-senders from ProtocolConfig"
+    )
+    .unwrap()
+    },
+);
 
 /// The latest [`KmsTxSenderSet`]; `None` until the first read succeeds.
 #[derive(Clone)]
@@ -72,6 +93,8 @@ pub fn follow<P: Provider + 'static>(
     cancel: CancellationToken,
 ) -> KmsTxSenders {
     let (publish, senders) = watch::channel(None);
+    // An allowlist never read shows as no tx-senders, not as a missing series.
+    KMS_TX_SENDERS.set(0);
     tokio::spawn(async move {
         let mut reader = KmsTxSenderReader::new(protocol_config);
         loop {
@@ -88,6 +111,9 @@ pub fn follow<P: Provider + 'static>(
                             "KMS tx-sender set updated"
                         );
                     }
+                    KMS_TX_SENDERS.set(gauge_value(set.senders.len() as u64));
+                    KMS_TX_SENDERS_READ_TIMESTAMP
+                        .set(gauge_value(unix_now_secs()));
                     publish.send_replace(Some(Arc::new(set)));
                     REFRESH_INTERVAL
                 }
