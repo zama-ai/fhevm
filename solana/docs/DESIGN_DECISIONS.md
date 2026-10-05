@@ -2699,7 +2699,8 @@ without an answer.
 `solana_merkle_proof_server` recovers the signer and answers only the tx-senders of the live KMS
 contexts. It reads them from the canonical `ProtocolConfig` at the finalized block every 60
 seconds: the live context ids, then each context's nodes from its `NewKmsContext` event at the
-context's anchor block. A refresh that fails, or takes more than 30 seconds, keeps the last set.
+context's anchor block, checked against the anchor's `contextInfoHash`. kms-worker reads a
+previous context the same way, through `shared/kms-context`. A refresh that fails, or takes more than 30 seconds, keeps the last set.
 Until the first read succeeds, every request gets `upstream_transient` (502, retryable) and
 `/healthz` answers 503. A missing, expired, malformed or unknown signature gets
 `sender_authentication_failed` (401) before the database is read.

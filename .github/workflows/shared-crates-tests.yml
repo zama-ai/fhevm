@@ -27,6 +27,7 @@ jobs:
       changes-block-manifest: ${{ steps.filter.outputs.block-manifest }}
       changes-user-decryption-signature: ${{ steps.filter.outputs.user-decryption-signature }}
       changes-request-authorization: ${{ steps.filter.outputs.request-authorization }}
+      changes-kms-context: ${{ steps.filter.outputs.kms-context }}
       changes-gateway-contracts-bindings: ${{ steps.filter.outputs.gateway-contracts-bindings }}
       changes-host-contracts-bindings: ${{ steps.filter.outputs.host-contracts-bindings }}
     steps:
@@ -51,6 +52,10 @@ jobs:
             - shared/user-decryption-signature/**
           request-authorization:
             - shared/request-authorization/**
+          kms-context:
+            # Path dependency. A change there can break this crate's tests.
+            - shared/kms-context/**
+            - host-contracts/rust_bindings/**
           gateway-contracts-bindings:
             - gateway-contracts/rust_bindings/**
           host-contracts-bindings:
@@ -99,6 +104,17 @@ jobs:
     defaults:
       run:
         working-directory: shared/request-authorization
+    steps: *shared-crate-test-steps
+
+  test-kms-context:
+    name: test-kms-context
+    needs: check-changes
+    if: ${{ needs.check-changes.outputs.changes-kms-context == 'true' }}
+    permissions: *shared-crate-test-permissions
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: shared/kms-context
     steps: *shared-crate-test-steps
 
   test-block-manifest:

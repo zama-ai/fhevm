@@ -1,0 +1,20 @@
+[package]
+authors = ["Zama"]
+name = "kms-context"
+version = "0.15.0"
+edition = "2024"
+license = "BSD-3-Clause-Clear"
+
+[dependencies]
+alloy = { version = "2", default-features = false, features = [
+    "contract",
+    "providers",
+    "rpc-types",
+    "sol-types",
+    "std",
+] }
+fhevm_host_bindings = { path = "../../host-contracts/rust_bindings", default-features = false }
+thiserror = { version = "2", default-features = false }
+
+[dev-dependencies]
+tokio = { version = "1", features = ["macros", "rt"] }

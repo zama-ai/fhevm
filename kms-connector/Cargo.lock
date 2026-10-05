@@ -4766,6 +4766,15 @@ dependencies = [
 ]
 
 [[package]]
+name = "kms-context"
+version = "0.15.0"
+dependencies = [
+ "alloy",
+ "fhevm_host_bindings",
+ "thiserror 2.0.20",
+]
+
+[[package]]
 name = "kms-grpc"
 version = "0.15.0-1"
 source = "git+https://github.com/zama-ai/kms.git?rev=97e46335036e237b00524a2c2c000034306f1833#97e46335036e237b00524a2c2c000034306f1833"
@@ -4816,6 +4825,7 @@ dependencies = [
  "futures",
  "humantime-serde",
  "kms-connector-api",
+ "kms-context",
  "kms-grpc",
  "mocktail",
  "prometheus",

@@ -14,15 +14,12 @@ use std::{
 
 use alloy::{
     eips::BlockId,
-    primitives::{Address, B256, U256},
+    primitives::{Address, U256},
     providers::Provider,
-    rpc::types::Filter,
-    sol_types::SolEvent,
 };
 use anyhow::{anyhow, Context};
-use fhevm_host_bindings::protocol_config::ProtocolConfig::{
-    NewKmsContext, ProtocolConfigInstance,
-};
+use fhevm_host_bindings::protocol_config::ProtocolConfig::ProtocolConfigInstance;
+use kms_context::read_kms_context;
 use request_authorization::KeyRegistry;
 use tokio::sync::watch;
 use tokio_util::sync::CancellationToken;
@@ -148,7 +145,14 @@ impl<P: Provider> KmsTxSenderReader<P> {
                 .with_context(|| format!("isLiveKmsContext({context_id})"))?;
             if live {
                 if !self.nodes_by_context.contains_key(&context_id) {
-                    let nodes = self.read_tx_senders(context_id).await?;
+                    let context =
+                        read_kms_context(&self.protocol_config, context_id)
+                            .await?;
+                    let nodes = context
+                        .kmsNodeParams
+                        .iter()
+                        .map(|node| node.txSenderAddress)
+                        .collect();
                     self.nodes_by_context.insert(context_id, nodes);
                 }
                 senders.extend(&self.nodes_by_context[&context_id]);
@@ -163,63 +167,22 @@ impl<P: Provider> KmsTxSenderReader<P> {
             senders,
         })
     }
-
-    /// Reads the context's nodes from its `NewKmsContext` event, which also covers a Pending or
-    /// Created context that `getKmsNodesForContext` refuses.
-    async fn read_tx_senders(
-        &self,
-        context_id: U256,
-    ) -> anyhow::Result<Vec<Address>> {
-        let anchor = self
-            .protocol_config
-            .getKmsContextAnchor(context_id)
-            .block(BlockId::finalized())
-            .call()
-            .await
-            .with_context(|| format!("getKmsContextAnchor({context_id})"))?;
-        let block: u64 = anchor.emissionBlockNumber.saturating_to();
-        let filter = Filter::new()
-            .address(*self.protocol_config.address())
-            .event_signature(NewKmsContext::SIGNATURE_HASH)
-            .topic1(B256::from(context_id))
-            .from_block(block)
-            .to_block(block);
-        let logs = self
-            .protocol_config
-            .provider()
-            .get_logs(&filter)
-            .await
-            .with_context(|| format!("NewKmsContext({context_id}) logs"))?;
-        let [log] = logs.as_slice() else {
-            return Err(anyhow!(
-                "{} NewKmsContext({context_id}) events at its anchor block {block}",
-                logs.len()
-            ));
-        };
-        let event = NewKmsContext::decode_log(&log.inner)
-            .with_context(|| format!("decode NewKmsContext({context_id})"))?;
-        Ok(event
-            .data
-            .kmsNodeParams
-            .iter()
-            .map(|node| node.txSenderAddress)
-            .collect())
-    }
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
     use alloy::{
-        primitives::{Bytes, Log as PrimitiveLog},
+        primitives::{Bytes, Log as PrimitiveLog, B256},
         providers::{mock::Asserter, ProviderBuilder},
         rpc::types::Log,
-        sol_types::SolValue,
+        sol_types::{SolEvent, SolValue},
     };
     use fhevm_host_bindings::protocol_config::{
         IProtocolConfig::KmsThresholds,
-        ProtocolConfig::{self, KmsNodeParams},
+        ProtocolConfig::{self, KmsNodeParams, NewKmsContext},
     };
+    use kms_context::context_info_hash;
 
     const CONTRACT: Address = Address::repeat_byte(0xC0);
 
@@ -235,7 +198,13 @@ mod tests {
         }
     }
 
-    fn new_context_log(context_id: U256, tx_senders: &[Address]) -> Log {
+    /// Answers the anchor read and the log read of a context created at `block`.
+    fn created(
+        asserter: &Asserter,
+        context_id: U256,
+        block: u64,
+        tx_senders: &[Address],
+    ) {
         let event = NewKmsContext {
             contextId: context_id,
             previousContextId: context_id - U256::from(1),
@@ -244,13 +213,14 @@ mod tests {
             softwareVersion: String::new(),
             pcrValues: vec![],
         };
-        Log {
+        anchor(asserter, block, context_info_hash(&event));
+        asserter.push_success(&vec![Log {
             inner: PrimitiveLog {
                 address: CONTRACT,
                 data: event.encode_log_data(),
             },
             ..Default::default()
-        }
+        }]);
     }
 
     fn reader(asserter: &Asserter) -> KmsTxSenderReader<impl Provider> {
@@ -263,9 +233,9 @@ mod tests {
         asserter.push_success(&"0x3039");
     }
 
-    fn anchor(asserter: &Asserter, block: u64) {
+    fn anchor(asserter: &Asserter, block: u64, hash: B256) {
         asserter.push_success(&Bytes::from(
-            (U256::from(block), B256::ZERO).abi_encode_sequence(),
+            (U256::from(block), hash).abi_encode_sequence(),
         ));
     }
 
@@ -289,11 +259,9 @@ mod tests {
         abi(&asserter, context(3));
         abi(&asserter, false);
         abi(&asserter, true);
-        anchor(&asserter, 20);
-        asserter.push_success(&vec![new_context_log(context(2), &[a, b])]);
+        created(&asserter, context(2), 20, &[a, b]);
         abi(&asserter, true);
-        anchor(&asserter, 30);
-        asserter.push_success(&vec![new_context_log(context(3), &[c])]);
+        created(&asserter, context(3), 30, &[c]);
         let set = reader.read().await.expect("first read");
         assert_eq!(
             set.registry,
@@ -321,7 +289,7 @@ mod tests {
         chain_id(&asserter);
         abi(&asserter, context(1));
         abi(&asserter, true);
-        anchor(&asserter, 20);
+        anchor(&asserter, 20, B256::ZERO);
         asserter.push_success(&Vec::<Log>::new());
         assert!(reader.read().await.is_err());
     }

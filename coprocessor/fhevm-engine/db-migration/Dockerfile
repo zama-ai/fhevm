@@ -80,6 +80,7 @@ COPY host-contracts/rust_bindings ./host-contracts/rust_bindings
 COPY shared/ciphertext-attestation ./shared/ciphertext-attestation
 COPY shared/block-manifest ./shared/block-manifest
 COPY shared/request-authorization ./shared/request-authorization
+COPY shared/kms-context ./shared/kms-context
 COPY solana/Cargo.toml ./solana/Cargo.toml
 COPY solana/crates ./solana/crates
 COPY solana/programs ./solana/programs
