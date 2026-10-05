@@ -2047,8 +2047,8 @@ takes hours and needs an archive provider whose rate limits allow it; it fetches
 time, each with up to eight `getTransaction` calls in flight. Its reads accept every transaction
 version (`maxSupportedTransactionVersion: 1`), because the RPC refuses a whole block that holds a
 later version than the request allows. Each transaction is fetched as JSON, which spells legacy, v0
-and v1 messages alike. A slot rewound for repair (DD-056) need not be inside the replay window, only in the
-archive's history.
+and v1 messages alike. A slot rewound for repair (DD-056) need not be inside the replay window,
+only in the archive's history.
 
 ## DD-060: A public decrypt names its stores beside the KMS routing
 
