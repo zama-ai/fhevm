@@ -232,4 +232,10 @@ interface IProtocolConfigBase {
      * @return The MPC threshold for the context.
      */
     function getMpcThresholdForContext(uint256 kmsContextId) external view returns (uint256);
+
+    /**
+     * @notice Returns the contract version.
+     * @return The version string.
+     */
+    function getVersion() external pure returns (string memory);
 }

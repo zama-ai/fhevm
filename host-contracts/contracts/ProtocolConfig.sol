@@ -3,6 +3,7 @@ pragma solidity ^0.8.24;
 
 import {ProtocolConfigBase} from "./ProtocolConfigBase.sol";
 import {IProtocolConfig} from "./interfaces/IProtocolConfig.sol";
+import {IProtocolConfigBase} from "./interfaces/IProtocolConfigBase.sol";
 import {IKMSGeneration} from "./interfaces/IKMSGeneration.sol";
 import {KmsContextAnchor, KmsThresholds, KmsNode, KmsNodeParams, PcrValues, ChainUpgradeWindow} from "./shared/Structs.sol";
 import {EPOCH_COUNTER_BASE, EXTRA_DATA_V2, KMS_CONTEXT_COUNTER_BASE} from "./shared/Constants.sol";
@@ -507,7 +508,7 @@ contract ProtocolConfig is IProtocolConfig, ProtocolConfigBase, UUPSUpgradeableE
         emit MirrorKmsEpoch(contextId, epochId);
     }
 
-    /// @inheritdoc IProtocolConfig
+    /// @inheritdoc IProtocolConfigBase
     function getVersion() external pure virtual returns (string memory) {
         return
             string(

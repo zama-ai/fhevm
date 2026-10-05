@@ -373,10 +373,4 @@ interface IProtocolConfig is IProtocolConfigBase {
      * @param epochId The canonical epoch ID to mirror; must exceed the latest known epoch ID.
      */
     function mirrorKmsEpoch(uint256 contextId, uint256 epochId) external;
-
-    /**
-     * @notice Returns the contract version.
-     * @return The version string.
-     */
-    function getVersion() external pure returns (string memory);
 }
