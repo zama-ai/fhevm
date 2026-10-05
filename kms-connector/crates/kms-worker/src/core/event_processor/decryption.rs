@@ -84,28 +84,6 @@ where
         }
     }
 
-    /// The ACL of the EVM host chain `chain_id`. A Solana chain id is refused at once (DD-013): its
-    /// requests arrive as Solana Gateway events, so one on this path can never be authorized. An
-    /// EVM chain missing from the map is retried, as on main.
-    fn evm_host_client(&self, chain_id: u64) -> Result<&HostRpcClient<HP>, RequestCheckError> {
-        if is_solana_host_chain_id(chain_id) {
-            return Err(RequestCheckError::irrecoverable(
-                RequestCheckKind::Acl,
-                ErrorCode::Unprocessable,
-                anyhow!(
-                    "chain id {chain_id} is a Solana host chain, which an EVM request cannot name"
-                ),
-            ));
-        }
-        self.host_clients.get(&chain_id).ok_or_else(|| {
-            RequestCheckError::recoverable(
-                RequestCheckKind::Acl,
-                ErrorCode::UpstreamTransient,
-                anyhow!("No ACL contract config found for chain id {chain_id}"),
-            )
-        })
-    }
-
     #[tracing::instrument(skip_all)]
     pub async fn check_ciphertexts_allowed_for_public_decryption(
         &self,
@@ -117,7 +95,14 @@ where
             let ct_chain_id = extract_chain_id_from_handle(handle).map_err(|e| {
                 RequestCheckError::irrecoverable(RequestCheckKind::Acl, ErrorCode::Unprocessable, e)
             })?;
-            let host_client = self.evm_host_client(ct_chain_id)?;
+            refuse_solana_host_chain(ct_chain_id)?;
+            let host_client = self.host_clients.get(&ct_chain_id).ok_or_else(|| {
+                RequestCheckError::recoverable(
+                    RequestCheckKind::Acl,
+                    ErrorCode::UpstreamTransient,
+                    anyhow!("No ACL contract config found for chain id {ct_chain_id}"),
+                )
+            })?;
 
             if !host_client.is_allowed_for_decryption(*handle).await? {
                 return Err(RequestCheckError::recoverable(
@@ -178,7 +163,14 @@ where
             let ct_chain_id = extract_chain_id_from_handle(handle).map_err(|e| {
                 RequestCheckError::irrecoverable(RequestCheckKind::Acl, ErrorCode::Unprocessable, e)
             })?;
-            let host_client = self.evm_host_client(ct_chain_id)?;
+            refuse_solana_host_chain(ct_chain_id)?;
+            let host_client = self.host_clients.get(&ct_chain_id).ok_or_else(|| {
+                RequestCheckError::recoverable(
+                    RequestCheckKind::Acl,
+                    ErrorCode::UpstreamTransient,
+                    anyhow!("No ACL contract config found for chain id {ct_chain_id}"),
+                )
+            })?;
             let contract_address = contracts_map_ref.get(handle.as_slice()).ok_or_else(|| {
                 RequestCheckError::irrecoverable(
                     RequestCheckKind::Acl,
@@ -352,7 +344,14 @@ where
             ));
         }
 
-        let host_client = self.evm_host_client(chain_id)?;
+        refuse_solana_host_chain(chain_id)?;
+        let host_client = self.host_clients.get(&chain_id).ok_or_else(|| {
+            RequestCheckError::recoverable(
+                RequestCheckKind::Acl,
+                ErrorCode::UpstreamTransient,
+                anyhow!("No ACL contract config found for chain id {chain_id}"),
+            )
+        })?;
 
         // RFC-012: EIP-712 signature verification with ecrecover → ERC-1271 fallback.
         // The domain takes name/version/verifyingContract from `self.domain` (already validated
@@ -638,6 +637,20 @@ where
 
         Ok(tx.input().to_vec())
     }
+}
+
+/// Refuses a Solana chain id on the EVM request path at once (DD-013): Solana requests arrive as
+/// Solana Gateway events, so one here can never be authorized and must not be retried as a chain
+/// the ACL map lacks.
+fn refuse_solana_host_chain(chain_id: u64) -> Result<(), RequestCheckError> {
+    if is_solana_host_chain_id(chain_id) {
+        return Err(RequestCheckError::irrecoverable(
+            RequestCheckKind::Acl,
+            ErrorCode::Unprocessable,
+            anyhow!("chain id {chain_id} is a Solana host chain, which an EVM request cannot name"),
+        ));
+    }
+    Ok(())
 }
 
 fn kms_decryption_extra_data(extra_data: &Bytes) -> Vec<u8> {
