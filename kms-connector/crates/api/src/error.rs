@@ -17,6 +17,8 @@ pub enum ErrorCode {
     UnsupportedAttestationType,
     /// Sender authentication failure (connector proxy).
     SenderAuthenticationFailed,
+    /// The sender's `FhevmSig` has expired: re-sign and retry (connector proxy).
+    AuthExpired,
     /// Per-sender rate limit exceeded (connector proxy).
     RateLimited,
     /// Endpoint is overloaded.
@@ -50,7 +52,7 @@ impl ErrorCode {
     pub fn http_status(self) -> u16 {
         match self {
             Self::Malformed | Self::UnsupportedAttestationType => 400,
-            Self::SenderAuthenticationFailed => 401,
+            Self::SenderAuthenticationFailed | Self::AuthExpired => 401,
             Self::AclDenied | Self::UserSignatureRejected => 403,
             Self::CiphertextNotFound => 404,
             Self::KmsContextDestroyed => 410,
@@ -77,7 +79,8 @@ impl ErrorCode {
             | Self::SenderAuthenticationFailed
             | Self::KmsContextDestroyed
             | Self::Unprocessable => false,
-            Self::RateLimited
+            Self::AuthExpired
+            | Self::RateLimited
             | Self::Overloaded
             | Self::AclDenied
             | Self::UserSignatureRejected
@@ -154,6 +157,14 @@ mod tests {
             assert_eq!(code.as_str().parse::<ErrorCode>().unwrap(), code);
         }
         assert!("not_a_code".parse::<ErrorCode>().is_err());
+    }
+
+    #[test]
+    fn auth_expired_is_a_retryable_401() {
+        assert_eq!(ErrorCode::AuthExpired.as_str(), "auth_expired");
+        assert_eq!(ErrorCode::AuthExpired.http_status(), 401);
+        assert!(ErrorCode::AuthExpired.retryable());
+        assert!(!ErrorCode::SenderAuthenticationFailed.retryable());
     }
 
     #[test]

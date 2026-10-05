@@ -2,8 +2,12 @@
 
 mod common;
 
+use alloy::signers::local::PrivateKeySigner;
 use alloy::transports::http::reqwest::StatusCode;
-use common::{API_KEY, MAX_BODY_BYTES, StubEndpoint, TestProxy, free_addr};
+use common::{
+    MAX_BODY_BYTES, StubEndpoint, TestProxy, auth_header, auth_header_expiring, free_addr, now,
+    sender,
+};
 use kms_connector_api::{
     ErrorCode, ErrorResponse, PUBLIC_DECRYPTION_ROUTE, USER_DECRYPTION_ROUTE, VERSION_ROUTE,
     VersionResponse,
@@ -14,13 +18,7 @@ use std::time::Duration;
 async fn test_forwards_authenticated_requests_untouched() {
     let t = TestProxy::start(vec![StubEndpoint::start().await]).await;
 
-    let response = t
-        .client
-        .get(t.url(VERSION_ROUTE))
-        .bearer_auth(API_KEY)
-        .send()
-        .await
-        .unwrap();
+    let response = t.get(VERSION_ROUTE).await.send().await.unwrap();
     assert_eq!(response.status(), StatusCode::OK);
     assert_eq!(
         response.json::<VersionResponse>().await.unwrap(),
@@ -30,12 +28,10 @@ async fn test_forwards_authenticated_requests_untouched() {
     // Deliberately non-canonical JSON: the proxy must forward it byte-for-byte.
     let body = r#"{ "ctHandles":["0x01"] ,  "extraData":"0x00"}"#;
     let response = t
-        .client
-        .post(t.url(PUBLIC_DECRYPTION_ROUTE))
-        .bearer_auth(API_KEY)
+        .post(PUBLIC_DECRYPTION_ROUTE, body)
+        .await
         .header("content-type", "application/json")
         .header("x-forwarded-for", "9.9.9.9")
-        .body(body)
         .send()
         .await
         .unwrap();
@@ -47,10 +43,8 @@ async fn test_forwards_authenticated_requests_untouched() {
     assert_eq!(echo["x-forwarded-proto"], "https");
 
     let response = t
-        .client
-        .post(t.url(USER_DECRYPTION_ROUTE))
-        .bearer_auth(API_KEY)
-        .body("{}")
+        .post(USER_DECRYPTION_ROUTE, "{}")
+        .await
         .send()
         .await
         .unwrap();
@@ -60,24 +54,52 @@ async fn test_forwards_authenticated_requests_untouched() {
 #[tokio::test]
 async fn test_rejects_unauthenticated_requests() {
     let t = TestProxy::start(vec![StubEndpoint::start().await]).await;
+    let route = PUBLIC_DECRYPTION_ROUTE;
+    let stranger = PrivateKeySigner::random();
 
-    for request in [
-        t.client.post(t.url(PUBLIC_DECRYPTION_ROUTE)).body("{}"),
-        t.client
-            .post(t.url(PUBLIC_DECRYPTION_ROUTE))
-            .bearer_auth("wrong")
-            .body("{}"),
-        t.client
-            .post(t.url(USER_DECRYPTION_ROUTE))
-            .header("authorization", format!("Basic {API_KEY}"))
-            .body("{}"),
-        t.client.get(t.url(VERSION_ROUTE)),
+    for (request, auth_code) in [
+        (t.client.post(t.url(route)).body("{}"), "auth_missing"),
+        (
+            t.client.post(t.url(route)).bearer_auth("test").body("{}"),
+            "auth_malformed",
+        ),
+        (
+            t.client
+                .post(t.url(route))
+                .header("authorization", auth_header(&stranger, route, b"{}").await)
+                .body("{}"),
+            "auth_unknown_signer",
+        ),
+        (
+            // Signed for another body: the endpoint gets a truncated request, never handled.
+            t.client
+                .post(t.url(route))
+                .header("authorization", auth_header(&sender(), route, b"{}").await)
+                .body("{ }"),
+            "auth_body_mismatch",
+        ),
+        (
+            // Signed for another route.
+            t.client
+                .post(t.url(USER_DECRYPTION_ROUTE))
+                .header("authorization", auth_header(&sender(), route, b"{}").await)
+                .body("{}"),
+            "auth_unknown_signer",
+        ),
+        (
+            t.client
+                .post(format!("{}?a=1", t.url(route)))
+                .header("authorization", auth_header(&sender(), route, b"{}").await)
+                .body("{}"),
+            "auth_query_string",
+        ),
+        (t.client.get(t.url(VERSION_ROUTE)), "auth_missing"),
     ] {
         let response = request.send().await.unwrap();
         assert_eq!(response.status(), StatusCode::UNAUTHORIZED);
         assert_eq!(
             response.headers()["www-authenticate"].to_str().unwrap(),
-            "Bearer"
+            "FhevmSig"
         );
         assert_eq!(
             response.headers()["content-type"].to_str().unwrap(),
@@ -85,9 +107,71 @@ async fn test_rejects_unauthenticated_requests() {
         );
         let error: ErrorResponse = response.json().await.unwrap();
         assert_eq!(error.code, ErrorCode::SenderAuthenticationFailed);
+        assert!(error.message.starts_with(auth_code), "{}", error.message);
         assert!(!error.retryable);
         assert_eq!(error.decryption_id, None);
     }
+    assert_eq!(t.endpoints[0].hits(), 0, "nothing must reach the endpoint");
+}
+
+#[tokio::test]
+async fn test_rejects_targets_the_uri_does_not_reproduce() {
+    let t = TestProxy::start(vec![StubEndpoint::start().await]).await;
+    let route = PUBLIC_DECRYPTION_ROUTE;
+    let addr = t.addr;
+    let auth = auth_header(&sender(), route, b"{}").await;
+    let request = |target: &[u8]| {
+        let mut request = b"POST ".to_vec();
+        request.extend_from_slice(target);
+        request.extend_from_slice(
+            format!(
+                " HTTP/1.1\r\nHost: {addr}\r\nAuthorization: {auth}\r\n\
+                 Content-Length: 2\r\nConnection: close\r\n\r\n{{}}"
+            )
+            .as_bytes(),
+        );
+        request
+    };
+
+    // The signed route, but absolute-form: the URI keeps only its path.
+    let absolute = format!("https://{addr}{route}");
+    assert_eq!(
+        send_raw(&t, &request(absolute.as_bytes())).await,
+        StatusCode::BAD_REQUEST
+    );
+    // Not UTF-8: the URI holds a lossy rendering.
+    let lossy = [route.as_bytes(), b"\xff"].concat();
+    assert_eq!(
+        send_raw(&t, &request(&lossy)).await,
+        StatusCode::BAD_REQUEST
+    );
+    assert_eq!(t.endpoints[0].hits(), 0, "nothing must reach the endpoint");
+
+    // The same request in origin-form goes through.
+    assert_eq!(
+        send_raw(&t, &request(route.as_bytes())).await,
+        StatusCode::OK
+    );
+}
+
+#[tokio::test]
+async fn test_rejects_expired_headers_as_retryable() {
+    let t = TestProxy::start(vec![StubEndpoint::start().await]).await;
+    let route = PUBLIC_DECRYPTION_ROUTE;
+    let expired = auth_header_expiring(&sender(), route, b"{}", now() - 120).await;
+
+    let response = t
+        .client
+        .post(t.url(route))
+        .header("authorization", expired)
+        .body("{}")
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(response.status(), StatusCode::UNAUTHORIZED);
+    let error: ErrorResponse = response.json().await.unwrap();
+    assert_eq!(error.code, ErrorCode::AuthExpired);
+    assert!(error.retryable);
     assert_eq!(t.endpoints[0].hits(), 0, "nothing must reach the endpoint");
 }
 
@@ -119,8 +203,9 @@ async fn test_default_deny_routing() {
             Some("GET"),
         ),
     ] {
-        // Even with valid credentials.
-        let response = request.bearer_auth(API_KEY).send().await.unwrap();
+        // Even with credentials valid for the route.
+        let auth = auth_header(&sender(), PUBLIC_DECRYPTION_ROUTE, b"").await;
+        let response = request.header("authorization", auth).send().await.unwrap();
         assert_eq!(response.status(), expected);
         assert_eq!(
             response
@@ -138,10 +223,8 @@ async fn test_rejects_oversized_bodies() {
     let t = TestProxy::start(vec![StubEndpoint::start().await]).await;
 
     let response = t
-        .client
-        .post(t.url(PUBLIC_DECRYPTION_ROUTE))
-        .bearer_auth(API_KEY)
-        .body(vec![b' '; MAX_BODY_BYTES + 1])
+        .post(PUBLIC_DECRYPTION_ROUTE, vec![b' '; MAX_BODY_BYTES + 1])
+        .await
         .send()
         .await
         .unwrap();
@@ -155,13 +238,16 @@ async fn test_rejects_oversized_bodies() {
     assert_eq!(status, StatusCode::BAD_REQUEST);
     let status = send_chunked(&t, &[MAX_BODY_BYTES / 2, MAX_BODY_BYTES / 2]).await;
     assert_eq!(status, StatusCode::OK);
+    let hits = t.endpoints[0].hits();
+    // A chunked body that does not match its signature is never handled.
+    let status = send_chunked_signed_for(&t, &[2, 2], b"{}").await;
+    assert_eq!(status, StatusCode::UNAUTHORIZED);
+    assert_eq!(t.endpoints[0].hits(), hits);
 
     // Exactly at the limit is fine.
     let response = t
-        .client
-        .post(t.url(PUBLIC_DECRYPTION_ROUTE))
-        .bearer_auth(API_KEY)
-        .body(vec![b' '; MAX_BODY_BYTES])
+        .post(PUBLIC_DECRYPTION_ROUTE, vec![b' '; MAX_BODY_BYTES])
+        .await
         .send()
         .await
         .unwrap();
@@ -173,11 +259,9 @@ async fn test_passes_endpoint_errors_through() {
     let t = TestProxy::start(vec![StubEndpoint::start().await]).await;
 
     let response = t
-        .client
-        .post(t.url(PUBLIC_DECRYPTION_ROUTE))
-        .bearer_auth(API_KEY)
+        .post(PUBLIC_DECRYPTION_ROUTE, "{}")
+        .await
         .header("x-stub-overloaded", "1")
-        .body("{}")
         .send()
         .await
         .unwrap();
@@ -195,10 +279,8 @@ async fn test_load_balances_across_endpoints() {
 
     for _ in 0..10 {
         let response = t
-            .client
-            .post(t.url(PUBLIC_DECRYPTION_ROUTE))
-            .bearer_auth(API_KEY)
-            .body("{}")
+            .post(PUBLIC_DECRYPTION_ROUTE, "{}")
+            .await
             .send()
             .await
             .unwrap();
@@ -214,16 +296,14 @@ async fn test_upstream_timeout() {
     let t = TestProxy::start_with_config(
         vec![endpoint.addr.to_string().parse().unwrap()],
         vec![endpoint],
-        Duration::from_millis(100),
+        |config| config.endpoint_response_timeout = Duration::from_millis(100),
     )
     .await;
 
     let response = t
-        .client
-        .post(t.url(PUBLIC_DECRYPTION_ROUTE))
-        .bearer_auth(API_KEY)
+        .post(PUBLIC_DECRYPTION_ROUTE, "{}")
+        .await
         .header("x-stub-delay-ms", "500")
-        .body("{}")
         .send()
         .await
         .unwrap();
@@ -241,10 +321,8 @@ async fn test_unreachable_endpoint() {
         TestProxy::start_with_addresses(vec![dead_addr.to_string().parse().unwrap()], vec![]).await;
 
     let response = t
-        .client
-        .post(t.url(PUBLIC_DECRYPTION_ROUTE))
-        .bearer_auth(API_KEY)
-        .body("{}")
+        .post(PUBLIC_DECRYPTION_ROUTE, "{}")
+        .await
         .send()
         .await
         .unwrap();
@@ -261,12 +339,20 @@ async fn test_unreachable_endpoint() {
 /// Sends a `Transfer-Encoding: chunked` request made of whitespace chunks of the given sizes to
 /// the public decryption route, and returns the response status.
 async fn send_chunked(t: &TestProxy, chunk_sizes: &[usize]) -> StatusCode {
-    use tokio::io::{AsyncReadExt, AsyncWriteExt};
+    let body = vec![b' '; chunk_sizes.iter().sum()];
+    send_chunked_signed_for(t, chunk_sizes, &body).await
+}
 
+/// [`send_chunked`] with a header signed for `signed_body`.
+async fn send_chunked_signed_for(
+    t: &TestProxy,
+    chunk_sizes: &[usize],
+    signed_body: &[u8],
+) -> StatusCode {
     let addr = t.addr;
-    let mut stream = t.tls.connect(addr).await;
+    let auth = auth_header(&sender(), PUBLIC_DECRYPTION_ROUTE, signed_body).await;
     let mut request = format!(
-        "POST {PUBLIC_DECRYPTION_ROUTE} HTTP/1.1\r\nHost: {addr}\r\nAuthorization: Bearer {API_KEY}\r\n\
+        "POST {PUBLIC_DECRYPTION_ROUTE} HTTP/1.1\r\nHost: {addr}\r\nAuthorization: {auth}\r\n\
          Content-Type: application/json\r\nTransfer-Encoding: chunked\r\nConnection: close\r\n\r\n"
     )
     .into_bytes();
@@ -276,7 +362,15 @@ async fn send_chunked(t: &TestProxy, chunk_sizes: &[usize]) -> StatusCode {
         request.extend_from_slice(b"\r\n");
     }
     request.extend_from_slice(b"0\r\n\r\n");
-    stream.write_all(&request).await.unwrap();
+    send_raw(t, &request).await
+}
+
+/// Sends raw request bytes over TLS and returns the response status.
+async fn send_raw(t: &TestProxy, request: &[u8]) -> StatusCode {
+    use tokio::io::{AsyncReadExt, AsyncWriteExt};
+
+    let mut stream = t.tls.connect(t.addr).await;
+    stream.write_all(request).await.unwrap();
 
     let mut response = Vec::new();
     // The server may close without a TLS `close_notify`, which surfaces as an EOF error.
