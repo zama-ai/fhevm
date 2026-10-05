@@ -1,6 +1,7 @@
+use primitives::event::BlockFlow;
 use prometheus::{
-    register_histogram_vec, register_int_counter_vec, HistogramVec,
-    IntCounterVec,
+    register_histogram_vec, register_int_counter_vec, register_int_gauge_vec,
+    HistogramVec, IntCounterVec, IntGaugeVec,
 };
 use std::sync::LazyLock;
 
@@ -83,4 +84,35 @@ pub(crate) fn observe_legacy_insert_delay_seconds(
     LEGACY_INSERT_DELAY_SECONDS
         .with_label_values(&[chain_id])
         .observe(delay_seconds);
+}
+
+pub(crate) static RECEIVED_BLOCK: LazyLock<IntGaugeVec> = LazyLock::new(|| {
+    register_int_gauge_vec!(
+        "host_consumer_received_block_number",
+        "Block number of the most recent block delivered to the host-listener consumer by the broker, per block flow, recorded before ingest is attempted",
+        &["chain_id", "flow"]
+    )
+    .expect("host_consumer_received_block_number metric must register")
+});
+
+pub(crate) fn set_received_block(
+    chain_id: &str,
+    flow: BlockFlow,
+    block_number: u64,
+) {
+    RECEIVED_BLOCK
+        .with_label_values(&[chain_id, flow_label(flow)])
+        .set(block_number as i64);
+}
+
+/// Stable label value for a block flow, so the gauge keeps one series per
+/// queue the consumer reads from.
+fn flow_label(flow: BlockFlow) -> &'static str {
+    match flow {
+        BlockFlow::Live => "live",
+        BlockFlow::Reorged => "reorged",
+        BlockFlow::Catchup => "catchup",
+        BlockFlow::Final => "final",
+        BlockFlow::FinalCatchup => "final_catchup",
+    }
 }
