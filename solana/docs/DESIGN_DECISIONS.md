@@ -2386,7 +2386,8 @@ binaries:
   `POST /v1/solana/merkle-proofs` (DD-063, DD-064).
 
 A record holds every Store from leaf zero or has not seen it, so a proof answer is `found`,
-`notFound` or `unknownAccount`; there is no incomplete history. The host listener writes only
+`notFound`, `unknownAccount`, or `inconsistent` for a leaf the record is known to hold wrong
+(DD-068); there is no incomplete history. The host listener writes only
 compute rows and its own checkpoint.
 
 A lost or broken record is rebuilt in one of two ways. A `pg_dump` of a healthy record restored
@@ -2616,8 +2617,10 @@ Not settled by the decisions above. Forward requirements are detailed in
 - Leaf-record availability (DD-048): the connector asks the next coprocessor when one answers
   without a proof, fails, or takes longer than `HEDGE_DELAY` (250 ms), so one behind, stalled or
   unreachable cannot sink a request another can serve, or hold it longer than that delay. A record
-  rebuilt by replay from the start slot catches up at the archive's speed; how a coprocessor heals
-  faster, for instance from another coprocessor's `pg_dump`, is not yet a runbook (DD-066).
+  rebuilt by replay from the start slot catches up at the archive's speed. A faster heal restores a
+  `pg_dump` of Zama's record, as `RUNBOOK.md` in the `solana-merkle-proof-service` crate describes
+  (DD-068). The dump schedule, and a data-only export a partner could import without running
+  another operator's SQL, are open.
 - A Solana-native composition pattern for contract-to-contract confidential calls has not been
   designed since the receiver-callback flow was deleted (DD-011, in DESIGN_HISTORY.md).
 - There is no per-Store cap on allows (Solana access control RFC): allows are leaves, and the app-side wall is the

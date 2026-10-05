@@ -1291,6 +1291,14 @@ DD-066 moved the nodes into the Merkle indexer's `nodes` table, created with the
 > A database written before `solana_encrypted_state_nodes` existed has leaves without nodes, and its
 > proofs fail verification: nothing is deployed, so no backfill exists.
 
+### DD-063, replaced in part by DD-068
+
+DD-068 answers a wrong leaf `inconsistent` in a 200, and the route also checks the leaf's
+commitment against its row.
+
+> The route checks the path with `mmr_verify` against the Store's recorded peaks before serving it;
+> a missing or wrong row answers a retryable `upstream_transient`.
+
 ### DD-064, replaced in part by DD-066
 
 DD-066 renamed the server and pointed it at the Merkle proof service's database, which the Merkle
@@ -1319,3 +1327,11 @@ after another.
 > appending to cannot be decrypted until one catches up.
 
 > The connector's proof routes name the proof server's Service.
+
+### DD-066, replaced in part by DD-068
+
+DD-068 added the `inconsistent` answer for a leaf of a quarantined store, or a leaf whose row fails
+its checks.
+
+> A record holds every Store from leaf zero or has not seen it, so a proof answer is `found`,
+> `notFound` or `unknownAccount`; there is no incomplete history.
