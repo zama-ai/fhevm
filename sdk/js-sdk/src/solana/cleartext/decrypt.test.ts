@@ -8,7 +8,7 @@ import { address, getAddressEncoder, type Address } from '@solana/kit';
 import type { FhevmSolanaChain } from '../../core/types/fhevmSolanaChain.js';
 import type { SolanaDecryptTrust } from '../clients/decorators/permitDecrypt.js';
 import type { SolanaRpc } from '../encryptedStore.js';
-import type { SolanaLeafProofReader } from './leafProofs.js';
+import type { SolanaMerkleProofReader } from './merkleProofs.js';
 import { bytesToHex, bytesToHexNo0x, concatBytes, hexToBytes } from '../../core/base/bytes.js';
 import { buildHandle, toFhevmHandle } from '../../core/handle/FhevmHandle.js';
 import { createKmsPublicDecryptEip712, publicDecryptDigest } from '../../core/kms/createKmsPublicDecryptEip712.js';
@@ -38,7 +38,7 @@ const bytes = (value: Address): Uint8Array => new Uint8Array(getAddressEncoder()
 const now = BigInt(Math.floor(Date.now() / 1000));
 const rpc = {} as SolanaRpc;
 // The Connector's judgment is stubbed in these tests, so the leaf record is never read.
-const readLeafProofs: SolanaLeafProofReader = () => Promise.reject(new Error('the leaf record is not read here'));
+const readMerkleProofs: SolanaMerkleProofReader = () => Promise.reject(new Error('the leaf record is not read here'));
 const chain = { fhevm: { programs: { host: { address: bytesToHex(bytes(host)) } } } } as unknown as FhevmSolanaChain;
 
 const refusal = (failure: authorization.ConnectorFailure): authorization.ConnectorVerdict => ({
@@ -74,7 +74,7 @@ describe('cleartextUserDecryptRejection', () => {
 
 // The Connector retries a public decryption it may authorize later, and stops on one it never will.
 describe('cleartextPublicDecryptCertifier', () => {
-  const certify = cleartextPublicDecryptCertifier(rpc, chain, readLeafProofs);
+  const certify = cleartextPublicDecryptCertifier(rpc, chain, readMerkleProofs);
   const parameters = {
     entries: [
       {
@@ -215,7 +215,7 @@ describe('cleartextUserDecryptExecution', () => {
       rpc,
       chain,
       trust,
-      readLeafProofs,
+      readMerkleProofs,
     )({ session: sessionStarting(start), entries, attempts, options });
   /** The rejection a run of one attempt ends on. */
   const firstRejection = async (start?: bigint) => {

@@ -3,7 +3,7 @@
 // the same actions, stand in for the relayer, coprocessors and KMS, and the trust a decrypt binds to
 // is the cleartext parties'. Everything else a scenario does is the same on both targets.
 import type * as SolanaSdk from '@fhevm/sdk/solana';
-import type { SolanaLeafProofReader } from '@fhevm/sdk/solana/cleartext';
+import type { SolanaMerkleProofReader } from '@fhevm/sdk/solana/cleartext';
 
 import { BRINGUP_KMS_CONTEXT_ID } from '../../../../solana/deploy/src/constants';
 import { ZAMA_HOST_PROGRAM_ADDRESS } from '../../../../solana/deploy/src/generated/zamaHost/programAddress.js';
@@ -22,22 +22,22 @@ export const targetsCleartext = (): boolean => solanaE2eSource() === 'cleartext'
 
 // The cleartext stack's leaf record, kept for the test process as coprocessors keep theirs, so a
 // decrypt reads only the store writes since the last one.
-let cleartextLeafRecord: SolanaLeafProofReader | undefined;
+let cleartextLeafRecord: SolanaMerkleProofReader | undefined;
 
 /** `@fhevm/sdk/solana`, with the cleartext client factories on a cleartext target. */
 export const loadSolanaSdk = async (): Promise<typeof SolanaSdk> => {
   const solana = await import('@fhevm/sdk/solana');
   if (!targetsCleartext()) return solana;
   const cleartext = await import('@fhevm/sdk/solana/cleartext');
-  const readLeafProofs = ({ rpc }: { readonly rpc: SolanaSdk.SolanaRpc }) =>
+  const readMerkleProofs = ({ rpc }: { readonly rpc: SolanaSdk.SolanaRpc }) =>
     (cleartextLeafRecord ??= cleartext.createSolanaLeafRecord(rpc, ZAMA_HOST_PROGRAM_ADDRESS));
   return {
     ...solana,
     createFhevmEncryptClient: cleartext.createFhevmCleartextEncryptClient,
     createFhevmDecryptClient: (parameters) =>
-      cleartext.createFhevmCleartextDecryptClient({ ...parameters, readLeafProofs: readLeafProofs(parameters) }),
+      cleartext.createFhevmCleartextDecryptClient({ ...parameters, readMerkleProofs: readMerkleProofs(parameters) }),
     createFhevmPublicDecryptClient: (parameters) =>
-      cleartext.createFhevmCleartextPublicDecryptClient({ ...parameters, readLeafProofs: readLeafProofs(parameters) }),
+      cleartext.createFhevmCleartextPublicDecryptClient({ ...parameters, readMerkleProofs: readMerkleProofs(parameters) }),
   };
 };
 
