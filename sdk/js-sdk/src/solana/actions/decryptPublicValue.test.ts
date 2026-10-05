@@ -2,10 +2,10 @@ import { RelayerAbortError } from '../../core/errors/RelayerAbortError.js';
 import { describe, expect, it } from 'vitest';
 import { hashTypedData } from 'viem';
 import { privateKeyToAccount } from 'viem/accounts';
-import { createKmsPublicDecryptEip712, publicDecryptDigest } from '../../core/kms/createKmsPublicDecryptEip712.js';
+import { createKmsPublicDecryptEip712 } from '../../core/kms/createKmsPublicDecryptEip712.js';
 import { bytesToHex, hexToBytes } from '../../core/base/bytes.js';
 import { toFhevmHandle } from '../../core/handle/FhevmHandle.js';
-import { verifyPublicDecryptSignatures } from './decryptPublicValue.js';
+import { publicDecryptDigest, verifyPublicDecryptSignatures } from './decryptPublicValue.js';
 
 const alice = privateKeyToAccount(`0x${'11'.repeat(32)}`);
 const bob = privateKeyToAccount(`0x${'22'.repeat(32)}`);
