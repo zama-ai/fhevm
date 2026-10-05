@@ -29,6 +29,11 @@ COPY gateway-contracts/rust_bindings ./gateway-contracts/rust_bindings
 COPY host-contracts/rust_bindings ./host-contracts/rust_bindings
 COPY shared ./shared
 COPY kms-connector ./kms-connector
+# The proxy needs none of the Solana crates, but cargo loads every workspace member's path
+# dependencies (`../solana/crates/*`, see kms-connector/Cargo.toml) even for `-p proxy`.
+COPY solana/crates/zama-solana-acl ./solana/crates/zama-solana-acl
+COPY solana/crates/zama-solana-permit ./solana/crates/zama-solana-permit
+COPY solana/crates/zama-solana-request ./solana/crates/zama-solana-request
 
 # Build with improved caching
 WORKDIR /app/kms-connector
