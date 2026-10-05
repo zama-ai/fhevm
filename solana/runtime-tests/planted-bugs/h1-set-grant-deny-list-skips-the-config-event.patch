@@ -1,0 +1,15 @@
+Expect: H1: set_grant_deny_list_enabled changed the config without a HostConfigUpdatedEvent CPI
+
+--- a/solana/programs/zama-host/src/instructions/set_grant_deny_list_enabled.rs
++++ b/solana/programs/zama-host/src/instructions/set_grant_deny_list_enabled.rs
+@@ -14,10 +14,5 @@ pub fn set_grant_deny_list_enabled(ctx: Context<HostAdmin>, enabled: bool) -> Re
+         return Ok(());
+     }
+     ctx.accounts.host_config.grant_deny_list_enabled = enabled;
+-    emit_config_updated(
+-        &ctx.accounts.host_config,
+-        ctx.accounts.admin.key(),
+-        &ctx.accounts.event_authority,
+-    )?;
+     Ok(())
+ }

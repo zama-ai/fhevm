@@ -787,7 +787,6 @@ fn run_walk(
         max_hcu_per_tx: total,
         max_hcu_depth_per_tx: depth,
         hcu_block_cap_per_app: u64::MAX,
-        updated_slot: 0,
         bump: 0,
     };
     let context = super::super::walk::ExecutionHandleContext {

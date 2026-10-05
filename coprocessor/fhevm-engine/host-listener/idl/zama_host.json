@@ -3741,13 +3741,6 @@
             "type": "u64"
           },
           {
-            "name": "updated_slot",
-            "docs": [
-              "Slot in which the config was initialized or last changed."
-            ],
-            "type": "u64"
-          },
-          {
             "name": "bump",
             "docs": [
               "PDA bump for `PDA(\"host-config\")`."
@@ -3822,13 +3815,6 @@
             "name": "hcu_block_cap_per_app",
             "docs": [
               "Current per-app HCU block cap (`u64::MAX` = unrestricted, `0` = ban untrusted apps)."
-            ],
-            "type": "u64"
-          },
-          {
-            "name": "updated_slot",
-            "docs": [
-              "Slot in which this update was applied."
             ],
             "type": "u64"
           }

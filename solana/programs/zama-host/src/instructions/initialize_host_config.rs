@@ -56,7 +56,6 @@ pub fn initialize_host_config(
         &args.coprocessor_signers,
         args.coprocessor_threshold,
     )?;
-    let updated_slot = Clock::get()?.slot;
     let config = &mut ctx.accounts.host_config;
     config.admin = ctx.accounts.admin.key();
     config.chain_id = args.chain_id;
@@ -75,7 +74,6 @@ pub fn initialize_host_config(
     // Ship the per-app block cap unrestricted (u64::MAX): the neutral state that short-circuits
     // the cap and touches no meter. A `0` default would instead ban every untrusted app on deploy.
     config.hcu_block_cap_per_app = u64::MAX;
-    config.updated_slot = updated_slot;
     config.bump = ctx.bumps.host_config;
     ctx.accounts.rand_nonce.nonce = 0;
     ctx.accounts.rand_nonce.bump = ctx.bumps.rand_nonce;

@@ -45,7 +45,6 @@ pub fn set_admin(ctx: Context<SetAdmin>, new_admin: Pubkey) -> Result<()> {
     }
     let signer = ctx.accounts.admin.key();
     ctx.accounts.host_config.admin = new_admin;
-    ctx.accounts.host_config.updated_slot = Clock::get()?.slot;
     emit_config_updated(
         &ctx.accounts.host_config,
         signer,

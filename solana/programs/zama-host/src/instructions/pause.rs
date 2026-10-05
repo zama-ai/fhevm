@@ -38,7 +38,6 @@ pub fn pause(ctx: Context<Pause>, areas: PauseFlags) -> Result<()> {
         return Ok(());
     }
     config.paused = paused;
-    config.updated_slot = Clock::get()?.slot;
     emit_config_updated(
         config,
         ctx.accounts.pauser.key(),

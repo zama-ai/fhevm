@@ -16,7 +16,6 @@ pub fn unpause(ctx: Context<HostAdmin>, areas: PauseFlags) -> Result<()> {
         return Ok(());
     }
     config.paused = paused;
-    config.updated_slot = Clock::get()?.slot;
     emit_config_updated(
         config,
         ctx.accounts.admin.key(),

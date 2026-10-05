@@ -5,18 +5,17 @@
 //!   The trust roots are `HostConfig` (admin, coprocessor signers, EIP-712 domain, pause flags,
 //!   deny-list switch, HCU limits), every KMS context, the deny and HCU trust records, and the
 //!   pauser records. The one exception is a pause: a key whose pauser record was enabled may set
-//!   pause flags and nothing else. A `HostConfig` change also stamps the current slot and emits an
-//!   event CPI.
+//!   pause flags and nothing else. A `HostConfig` change also emits its event CPI:
+//!   `NewKmsContextEvent` from `define_kms_context`, `HostConfigUpdatedEvent` from the rest.
 //! - **H2** (INVARIANTS #11): a Store changes only in a transaction its authority signed.
 //!
 //! The oracles compare raw account bytes before and after each transaction against the
 //! transaction's signer flags. They find the guarded accounts by discriminator among every
 //! host-owned account, and fail on a host account type nobody classified. They read program
-//! layouts only for a Store's authority, a pauser record's grant, and `HostConfig`'s pause flags
-//! and `updated_slot`. The only state they carry
-//! is who the admin is, which moves when a `set_admin` succeeds. Every instruction of the host
-//! IDL has a generator, and every admin and Store-authority role is also filled by keys that lack
-//! it, signing or not.
+//! layouts only for a Store's authority, a pauser record's grant, and `HostConfig`'s pause flags.
+//! The only state they carry is who the admin is, which moves when a `set_admin` succeeds. Every
+//! instruction of the host IDL has a generator, and every admin and Store-authority role is also
+//! filled by keys that lack it, signing or not.
 //! `scripts/check-planted-bugs.sh` rebuilds the host with each patch in `planted-bugs/` and
 //! requires this suite to fail.
 //!
@@ -1143,13 +1142,17 @@ impl World {
                 .any(|data| data.starts_with(host::HostConfig::DISCRIMINATOR));
         }
         if config_changed {
-            // #35: a config change stamps its slot and is announced through the event CPI.
-            prop_assert_eq!(
-                self.config().updated_slot,
-                slot,
-                "{:?} left updated_slot stale",
-                action
-            );
+            // #35: a config change is announced through its event CPI.
+            let (event, discriminator) = match action {
+                Action::DefineKmsContext { .. } => (
+                    "NewKmsContextEvent",
+                    host::NewKmsContextEvent::DISCRIMINATOR,
+                ),
+                _ => (
+                    "HostConfigUpdatedEvent",
+                    host::HostConfigUpdatedEvent::DISCRIMINATOR,
+                ),
+            };
             let message = result.message.as_ref().expect("compiled message");
             let keys = message.account_keys();
             prop_assert!(
@@ -1158,10 +1161,11 @@ impl World {
                         && inner
                             .instruction
                             .data
-                            .starts_with(anchor_lang::event::EVENT_IX_TAG_LE)
+                            .strip_prefix(anchor_lang::event::EVENT_IX_TAG_LE)
+                            .is_some_and(|payload| payload.starts_with(discriminator))
                 }),
-                "{:?} changed the config without an event CPI",
-                action
+                "H1: {} changed the config without a {event} CPI ({action:?})",
+                action.instruction_name()
             );
         }
         for (store, versions) in changed(&before.stores, &after.stores) {
@@ -1223,7 +1227,6 @@ fn pauser_added_flags(
     };
     let only_adds = new.paused == old.paused.with(new.paused);
     new.paused = old.paused;
-    new.updated_slot = old.updated_slot;
     let serialize = |config: &host::HostConfig| {
         let mut data = Vec::new();
         config

@@ -2702,21 +2702,23 @@ fn mollusk_destroy_kms_context_rejects_already_destroyed() {
 // ---- set_hcu_block_cap_per_app (admin cap setter) ----
 
 #[test]
-fn mollusk_set_hcu_block_cap_metering_band_persists_and_advances_slot() {
+fn mollusk_set_hcu_block_cap_metering_band_persists_and_emits_event() {
     // With the per-execution cap disabled, any positive band value is accepted, persisted, and
-    // stamps updated_slot.
+    // announced through the config-updated event.
     let admin = Pubkey::new_unique();
     let (host_config, account) = host_config_account(admin);
     let context = mollusk_execute_context(admin, vec![(host_config, account)]);
 
-    check_host_context(
+    let result = check_host_context(
         &context,
         &set_hcu_block_cap_per_app_ix(admin, host_config, 500_000),
         &[Check::success()],
     );
     let config = read_host_config(&context, host_config).expect("config");
     assert_eq!(config.hcu_block_cap_per_app, 500_000);
-    assert_eq!(config.updated_slot, context.mollusk.sysvars.clock.slot);
+    let event = sole_emitted_event::<host::HostConfigUpdatedEvent>(&result);
+    assert_eq!(event.signer, admin);
+    assert_eq!(event.hcu_block_cap_per_app, 500_000);
 }
 
 #[test]
@@ -2819,20 +2821,20 @@ fn mollusk_set_hcu_block_cap_ban_and_unrestricted_sentinels_bypass_ordering() {
 
 #[test]
 fn mollusk_set_hcu_block_cap_is_idempotent() {
-    // Setting the current value is a no-op: it does not advance updated_slot (mirrors the
-    // other admin setters).
+    // Setting the current value is a no-op: it changes no config byte and emits nothing (mirrors
+    // the other admin setters).
     let admin = Pubkey::new_unique();
     let (host_config, account) = host_config_account_with_block_cap(admin, 750_000);
+    let before = account.data.clone();
     let context = mollusk_execute_context(admin, vec![(host_config, account)]);
 
-    check_host_context(
+    let result = check_host_context(
         &context,
         &set_hcu_block_cap_per_app_ix(admin, host_config, 750_000),
         &[Check::success()],
     );
-    let config = read_host_config(&context, host_config).expect("config");
-    assert_eq!(config.hcu_block_cap_per_app, 750_000);
-    assert_eq!(config.updated_slot, 0);
+    assert!(result.inner_instructions.is_empty());
+    assert_eq!(context.account_store.borrow()[&host_config].data, before);
 }
 
 #[test]
@@ -4578,7 +4580,6 @@ fn host_config_with_context(admin: Pubkey, context_id: [u8; 32]) -> (Pubkey, Acc
                 max_hcu_per_tx: u64::MAX,
                 max_hcu_depth_per_tx: u64::MAX,
                 hcu_block_cap_per_app: u64::MAX,
-                updated_slot: 0,
                 bump,
             }),
             owner: host::id(),

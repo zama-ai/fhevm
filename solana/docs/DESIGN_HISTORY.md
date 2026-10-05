@@ -1247,6 +1247,14 @@ listener's replay repair leaves the record alone.
 > Leaves are not reverted: a replayed write must reproduce the leaves recorded for it, or the
 > listener stops. So a replay repairs computation rows, not a bug that recorded wrong leaves.
 
+### DD-058, replaced in part by fhevm-internal#1909
+
+fhevm-internal#1909 deleted `HostConfig.updated_slot` and its copy on `HostConfigUpdatedEvent`. Readers
+take the current values from account state and see each change through the event CPI.
+
+> A change stamps `updated_slot` and emits `HostConfigUpdatedEvent`, whose `signer` names the pauser
+> or the admin.
+
 ### DD-060, replaced in part by DD-065
 
 Superseded in part by DD-065: the host verifier no longer checks the public leaf; the KMS connectors

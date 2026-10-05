@@ -18,7 +18,7 @@ use super::host_admin::HostAdmin;
 /// - Rejects any trailing accounts (`assert_no_remaining_accounts`).
 /// - Preserves the `max_hcu_per_tx >= max_hcu_depth_per_tx` ordering, with `u64::MAX` = unlimited
 ///   (`check_hcu_ordering`).
-/// - Advances `updated_slot` and emits the config-updated event carrying the new limits.
+/// - Emits the config-updated event carrying the new limits.
 pub fn set_max_hcu_depth_per_tx(ctx: Context<HostAdmin>, value: u64) -> Result<()> {
     assert_no_remaining_accounts(ctx.remaining_accounts)?;
     assert_admin(&ctx.accounts.host_config, &ctx.accounts.admin)?;
@@ -34,7 +34,6 @@ pub fn set_max_hcu_depth_per_tx(ctx: Context<HostAdmin>, value: u64) -> Result<(
     // The new depth must not exceed the current total limit (u64::MAX = unlimited).
     check_hcu_ordering(config.max_hcu_per_tx, value)?;
     config.max_hcu_depth_per_tx = value;
-    config.updated_slot = Clock::get()?.slot;
     emit_config_updated(
         &ctx.accounts.host_config,
         admin,
