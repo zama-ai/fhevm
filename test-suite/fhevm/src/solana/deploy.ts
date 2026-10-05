@@ -109,10 +109,7 @@ const merkleDatabaseUrl = (coprocessorDatabaseUrl: string): string => {
  * its resume.
  */
 const startMerkleDatabase = async (): Promise<void> => {
-  await composeUp(SOLANA_MERKLE_DB_COMPONENT, [], {
-    forceRecreate: true,
-    env: { SOLANA_MERKLE_POSTGRES_PORT: String(SOLANA_MERKLE_POSTGRES_PORT) },
-  });
+  await composeUp(SOLANA_MERKLE_DB_COMPONENT, [], { forceRecreate: true });
   await waitForContainer(SOLANA_MERKLE_DB_CONTAINER, 'healthy');
 };
 

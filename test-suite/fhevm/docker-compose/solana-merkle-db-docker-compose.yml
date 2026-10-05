@@ -9,7 +9,7 @@ services:
     environment:
       POSTGRES_DB: solana_merkle
     ports:
-      - '${SOLANA_MERKLE_POSTGRES_PORT:?}:5432'
+      - '5434:5432'
     tmpfs:
       - /var/lib/postgresql/data
     healthcheck:

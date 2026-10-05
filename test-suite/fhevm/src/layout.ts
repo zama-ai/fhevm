@@ -168,7 +168,7 @@ export const POSTGRES_PORT = 5432;
 export const DEFAULT_POSTGRES_USER = "postgres";
 export const DEFAULT_POSTGRES_PASSWORD = "postgres";
 export const DEFAULT_POSTGRES_DB = "coprocessor";
-/** The Merkle proof service's own Postgres (`docker-compose/solana-merkle-db-docker-compose.yml`). */
+/** The Merkle proof service's own Postgres; the names and port are those of `docker-compose/solana-merkle-db-docker-compose.yml`. */
 export const SOLANA_MERKLE_DB_COMPONENT = "solana-merkle-db";
 export const SOLANA_MERKLE_DB_CONTAINER = "solana-merkle-db";
 export const SOLANA_MERKLE_DATABASE = "solana_merkle";
@@ -291,7 +291,8 @@ export const COMPONENT_BY_STEP: Record<StepName, string[]> = {
   "kms-connector": ["kms-connector"],
   "bootstrap": ["gateway-sc", "host-sc"],
   "relayer": ["relayer"],
-  // No compose components by design: this step runs host-process nodes outside compose.
+  // Its nodes run outside compose. The one compose service it starts, the Merkle record's
+  // database, is recreated by every Solana provision, so no step owns it.
   "host-process": [],
   "test-suite": ["test-suite"],
 };
