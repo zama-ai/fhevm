@@ -178,6 +178,29 @@ describe('the response verification', () => {
     ).rejects.toThrow(NODE_SIGNATURE);
   });
 
+  // The client derives t from the signer count, n = 3t + 1, and needs 2t + 1 authenticated shares
+  // from distinct parties. The rule lives in the KMS WASM, so this boundary pair is its evidence.
+  it('passes 2t + 1 shares and refuses 2t', async () => {
+    const t = (signers.length - 1) / 3;
+    await expect(verify({ shares: shares.slice(0, 2 * t + 1) })).rejects.toThrow(PASSED_THE_CLIENT);
+    await expect(verify({ shares: shares.slice(0, 2 * t) })).rejects.toThrow(NODE_SIGNATURE);
+  });
+
+  // A share authenticates only under its party's trusted address: a signer set that gives one
+  // included share's party an address that signed nothing leaves 2t, which is too few.
+  it('refuses 2t + 1 shares once one of their parties has a foreign address', async () => {
+    // Share order is not party order. Shares 0-2 are parties 3, 4 and 2; share 3 is party 1.
+    const threeShares = shares.slice(0, 3);
+    const foreign = (partyId: number) =>
+      signers.map((signer) =>
+        signer.partyId === partyId ? { ...signer, address: '0x1111111111111111111111111111111111111111' } : signer,
+      );
+    await expect(verify({ shares: threeShares })).rejects.toThrow(PASSED_THE_CLIENT);
+    await expect(verify({ shares: threeShares, signers: foreign(3) })).rejects.toThrow(NODE_SIGNATURE);
+    // The control: changing the address of the one party with no share here refuses nothing.
+    await expect(verify({ shares: threeShares, signers: foreign(1) })).rejects.toThrow(PASSED_THE_CLIENT);
+  });
+
   it('refuses shares whose node signatures do not verify', async () => {
     await expect(verify({ shares: shares.map((share) => ({ ...share, signature: '00'.repeat(65) })) })).rejects.toThrow(
       NODE_SIGNATURE,
