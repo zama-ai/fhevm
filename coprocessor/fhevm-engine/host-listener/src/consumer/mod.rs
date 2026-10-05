@@ -22,7 +22,7 @@ use primitives::event::BlockFlow;
 use crate::cmd::block_history::BlockSummary;
 use crate::consumer::metrics::{
     inc_blocks_duplicated, inc_blocks_missing, inc_blocks_processed,
-    inc_db_errors, observe_legacy_insert_delay_seconds,
+    inc_db_errors, observe_legacy_insert_delay_seconds, set_received_block,
 };
 use crate::database::ingest::{ingest_block_logs, BlockLogs, IngestOptions};
 use crate::database::tfhe_event_propagate::{
@@ -402,6 +402,7 @@ pub async fn run_consumer(config: ConsumerConfig) -> Result<()> {
     ));
     let consumer_task = client.consume(move |payload, _cancel| {
         blockchain_tick.update();
+        set_received_block(&chain_id_str, payload.flow, payload.block_number);
         let mut db = db.clone();
         let chain_id_str = chain_id_str.clone();
         let last_known_drift = last_known_drift.clone();
