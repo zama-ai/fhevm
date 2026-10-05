@@ -127,6 +127,10 @@ DD-062 lists the slots the listener skips, the order breaks that stop it, and
 the repair after a transaction arrives for a slot already applied. Each
 `fhe_execute` is paired with the `FheExecutedEvent` it emits: the listener
 stores the result handles in the event and re-derives each one as a check.
+Each applied block also gets its `host_chain_blocks_valid` row for manifest
+consensus, finalized and numbered by block height rather than slot, as are the
+block's computation rows (DD-071). A block without a height or a block time, or
+whose parent row is not at the height below, stops the listener.
 
 On an empty database, `--start-slot <slot>` selects an existing
 finalized block to replay **inclusively**. Choose one before the host activity
@@ -179,18 +183,21 @@ be in `--archive-url`'s history. Check that first: once the rows are deleted, a
 slot neither serves cannot be re-ingested. Take a database backup before step 2.
 
 1. Stop all coprocessor services, as for any revert. Pick `S`, a slot that
-   produced a block before the first failing slot, and take its `blockhash` from
-   `getBlock S`, decoded from base58 to hex.
+   produced a block before the first failing slot, and take its `blockHeight`
+   `H` and its `blockhash` from `getBlock S`, the hash decoded from base58 to
+   hex. The listener numbers rows by block height, not by slot.
 2. Run `db-migration/revert_coprocessor_db_state.sh` with `CHAIN_ID`,
-   `TO_BLOCK_NUMBER=S` and `SOLANA_BLOCK_HASH=<hex>`. It first moves the
-   listener checkpoint back to `S` (`rewind_solana_listener_checkpoint.sql`),
-   then deletes the computation rows after `S`, including the held steps and
-   their errored dependents. The two run in separate transactions: if the
+   `TO_BLOCK_NUMBER=H`, `SOLANA_SLOT=S` and `SOLANA_BLOCK_HASH=<hex>`. It first
+   moves the listener checkpoint back to `S`
+   (`rewind_solana_listener_checkpoint.sql`), then deletes the computation and
+   block rows above `H`, including the held steps and their errored
+   dependents. The two run in separate transactions: if the
    revert fails after the rewind, fix the cause and run the script again before
    restarting anything. The rewind is safe to repeat, and a listener started in
    between only re-ingests rows it already has. The revert alone refuses a
-   Solana chain whose checkpoint is still after `S`, since the listener would
-   never re-ingest the deleted rows.
+   Solana chain whose checkpoint is not the block at `H`, and names both
+   heights: from a checkpoint above `H`, the listener would never re-ingest the
+   deleted rows.
 3. Restart the services with the fixed listener. It replays every slot after `S`
    and inserts the rows again as new work.
 

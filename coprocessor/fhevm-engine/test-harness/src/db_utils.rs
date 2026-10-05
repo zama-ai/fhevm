@@ -408,6 +408,17 @@ pub fn revert_coprocessor_db_state_sql(chain_id: i64, to_block_number: i64) -> S
     sql
 }
 
+/// Returns the rewind_solana_listener_checkpoint SQL script with psql variables substituted.
+pub fn rewind_solana_listener_checkpoint_sql(slot: u64, block_hash: [u8; 32]) -> String {
+    let raw = include_str!("../../db-migration/db-scripts/rewind_solana_listener_checkpoint.sql");
+    raw.lines()
+        .filter(|line| !line.starts_with("\\set "))
+        .collect::<Vec<_>>()
+        .join("\n")
+        .replace(":'slot'", &slot.to_string())
+        .replace(":'block_hash'", &format!("'{}'", hex::encode(block_hash)))
+}
+
 pub async fn truncate_tables(db_pool: &sqlx::PgPool, tables: Vec<&str>) -> Result<(), sqlx::Error> {
     for table in tables {
         let query = format!("TRUNCATE {}", table);

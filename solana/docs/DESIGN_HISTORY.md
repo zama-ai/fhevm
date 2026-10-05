@@ -925,6 +925,15 @@ confirmed-commitment rule and its accepted risk.
 >
 > Reorg unwind may still be added for resource recovery, but is not an authorization dependency.
 
+### DD-025, replaced in part by DD-071
+
+DD-071 records each Solana block in `host_chain_blocks_valid` as finalized when the listener
+ingests it.
+
+> The Solana listener (`bin/solana_host_listener.rs`) reconstructs from a Yellowstone stream at
+> `finalized` and inserts directly, without this substrate: a finalized block is never orphaned
+> (DD-070).
+
 ### DD-026, replaced in part by DD-052
 
 The user-decrypt `extraData` debate is resolved by typed gateway fields. The chain-type marker is superseded by DD-052.
@@ -968,6 +977,16 @@ DD-070 moved the listener's ingest to `finalized`, where no block is orphaned.
 >   Yellowstone listener reconstructs at `confirmed` and inserts directly, bypassing the EVM
 >   `host_chain_blocks_valid` / `block_history.rs` substrate. KMS authorization remains independent;
 >   reorg unwind would recover wasted work (DD-025).
+
+### DD-028, replaced in part by DD-071
+
+DD-071 records each Solana block in `host_chain_blocks_valid` as finalized when the listener
+ingests it.
+
+> - **The listener's block-status machine is not used**: the Solana Yellowstone listener
+>   reconstructs at `finalized` and inserts directly, bypassing the EVM `host_chain_blocks_valid` /
+>   `block_history.rs` substrate. A finalized block is never orphaned, so there is nothing to unwind
+>   (DD-070).
 
 ### DD-033, replaced in part by DD-066
 

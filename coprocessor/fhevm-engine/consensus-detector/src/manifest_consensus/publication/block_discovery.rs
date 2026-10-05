@@ -2,6 +2,7 @@ use std::collections::{BTreeMap, HashMap};
 use std::time::Duration;
 
 use block_manifest::LEGACY_CONSENSUS_EPOCH;
+use fhevm_engine_common::chain_id::is_solana_host_chain_id;
 use sqlx::{PgPool, Postgres, Transaction};
 
 use crate::manifest_consensus::ExecutionError;
@@ -109,6 +110,8 @@ fn default_publication_cadence(chain_id: i64) -> i64 {
     match chain_id {
         1 | 11155111 | 560048 => 5, // Ethereum mainnet, Sepolia, Hoodi
         137 | 80002 => 30,          // Polygon mainnet, Amoy
+        // About one minute: 400 ms slots, a few percent skipped.
+        _ if is_solana_host_chain_id(chain_id as u64) => 150,
         _ => 30,
     }
 }
@@ -841,6 +844,8 @@ mod discovery_bound_tests {
         assert_eq!(publication_cadence(8453, &none()), 30);
         assert_eq!(publication_cadence(84532, &none()), 30);
         assert_eq!(publication_cadence(31337, &none()), 30);
+        let solana = fhevm_engine_common::chain_id::solana_host_chain_id(12345) as i64;
+        assert_eq!(publication_cadence(solana, &none()), 150);
     }
 
     #[test]

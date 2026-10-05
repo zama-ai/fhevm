@@ -67,6 +67,8 @@ const CURRENT_BANK_HASH: [u8; 32] = [0x43; 32];
 /// Slot and wall-clock the fixture pins its `Clock` to. The block metadata handed to the listener
 /// is read back off that sysvar rather than invented next to it.
 const FIXTURE_SLOT: u64 = 100;
+/// LiteSVM keeps no block height, so the fixture supplies the one the listener numbers rows by.
+const FIXTURE_BLOCK_HEIGHT: u64 = 90;
 /// 2026-05-11T00:00:00Z.
 const FIXTURE_UNIX_TIMESTAMP: i64 = 1_778_457_600;
 /// Balance both token accounts share before the diverging transfer.
@@ -301,7 +303,7 @@ fn block_meta(svm: &LiteSVM) -> Result<SolanaBlockMeta, Box<dyn std::error::Erro
     let clock = svm.get_sysvar::<Clock>();
     let timestamp = OffsetDateTime::from_unix_timestamp(clock.unix_timestamp)?;
     Ok(SolanaBlockMeta {
-        block_number: clock.slot,
+        block_number: FIXTURE_BLOCK_HEIGHT,
         block_hash: CURRENT_BANK_HASH,
         parent_hash: PREVIOUS_BANK_HASH,
         block_timestamp: PrimitiveDateTime::new(timestamp.date(), timestamp.time()),

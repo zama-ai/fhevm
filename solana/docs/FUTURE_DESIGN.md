@@ -48,8 +48,9 @@ The Solana input path uses the gateway `InputVerification.verifyProofRequestSola
 `solanaUserDecryptionRequest` with the `solana-srfc38-user-decrypt-v1` payload (DD-026).
 
 **Requirement:** keep the port and the chain-agnostic address RFC (zama-ai/tech-spec#419) in sync as the gateway evolves. The Solana
-host-listener reconstructs from finalized Yellowstone instructions and inserts directly, while KMS
-revalidates live authorization at finalized before plaintext release (DD-024, DD-025, DD-070).
+host-listener reconstructs from finalized Yellowstone instructions and records each block in
+`host_chain_blocks_valid` for manifest consensus (DD-071), while KMS revalidates live authorization
+at finalized before plaintext release (DD-024, DD-025, DD-070).
 
 ## Standing open decisions
 
