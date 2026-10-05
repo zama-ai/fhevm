@@ -82,6 +82,8 @@ const chainIds = {
   mainnet: 1,
   polygon: 137,
   polygonAmoy: 80002,
+  bnbTestnet: 97,
+  hoodi: 560048,
   localCoprocessorL1: 123456,
   localCoprocessorL2: 654321,
   composeCoprocessorL1: 123456,
@@ -144,6 +146,24 @@ function getChainConfig(chain: keyof typeof chainIds): NetworkUserConfig {
           throw new Error('POLYGON_AMOY_RPC_URL (or RPC_URL) is required for polygonAmoy network');
         }
         jsonRpcUrl = 'https://rpc-amoy.polygon.technology'; // placeholder for config validation
+      }
+      break;
+    case 'bnbTestnet':
+      jsonRpcUrl = process.env.BNB_TESTNET_RPC_URL || vars.get('BNB_TESTNET_RPC_URL', '') || process.env.RPC_URL;
+      if (!jsonRpcUrl) {
+        if (shouldWarn) {
+          throw new Error('BNB_TESTNET_RPC_URL (or RPC_URL) is required for bnbTestnet network');
+        }
+        jsonRpcUrl = 'https://data-seed-prebsc-1-s1.bnbchain.org:8545'; // placeholder for config validation
+      }
+      break;
+    case 'hoodi':
+      jsonRpcUrl = process.env.HOODI_RPC_URL || vars.get('HOODI_RPC_URL', '') || process.env.RPC_URL;
+      if (!jsonRpcUrl) {
+        if (shouldWarn) {
+          throw new Error('HOODI_RPC_URL (or RPC_URL) is required for hoodi network');
+        }
+        jsonRpcUrl = 'https://ethereum-hoodi-rpc.publicnode.com'; // placeholder for config validation
       }
       break;
     case 'localCoprocessor':
@@ -217,6 +237,8 @@ const config: HardhatUserConfig = {
     mainnet: getChainConfig('mainnet'),
     polygon: getChainConfig('polygon'),
     polygonAmoy: getChainConfig('polygonAmoy'),
+    bnbTestnet: getChainConfig('bnbTestnet'),
+    hoodi: getChainConfig('hoodi'),
     localNative: getChainConfig('localNative'),
     localCoprocessor: getChainConfig('localCoprocessor'),
     localCoprocessorL1: getChainConfig('localCoprocessorL1'),

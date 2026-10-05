@@ -20,7 +20,7 @@ show_help() {
   echo -e "${YELLOW}Options:${RESET}"
   echo -e "  -h, --help          Show this help message"
   echo -e "  -g, --grep PATTERN  Specify test grep pattern (default: ${DEFAULT_GREP})"
-  echo -e "  -n, --network NAME  Specify network (default: ${DEFAULT_NETWORK})"
+  echo -e "  -n, --network NAME  Specify network (default: \$NETWORK, then \$HARDHAT_NETWORK, then ${DEFAULT_NETWORK})"
   echo -e "  -v, --verbose       Enable verbose output"
   echo -e "  --no-hardhat-compile        Skip Hardhat compilation step"
   echo -e ""
@@ -82,7 +82,7 @@ done
 eval set -- "$PARAMS"
 # Priority: explicit grep parameter > positional argument > default
 GREP_TEXT=${GREP_PARAM:-${1:-"$DEFAULT_GREP"}}
-NETWORK=${NETWORK:-"$DEFAULT_NETWORK"}
+NETWORK=${NETWORK:-${HARDHAT_NETWORK:-"$DEFAULT_NETWORK"}}
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 cd "$SCRIPT_DIR" || {
   echo -e "${RED}Failed to navigate to script directory${RESET}" >&2
@@ -103,6 +103,28 @@ fi
 echo -e "${BLUE}============================================================${RESET}"
 
 trap cleanup SIGINT SIGTERM
+
+# Regenerate the coprocessor config from env vars before compilation (opt-in via
+# E2E_COPROCESSOR_CONFIG_FROM_ENV=true; a no-op otherwise)
+COPROCESSOR_CONFIG_SOL="contracts/E2ECoprocessorConfigLocal.sol"
+COPROCESSOR_CONFIG_BEFORE=$(cksum "$COPROCESSOR_CONFIG_SOL")
+GEN_CONFIG_OPTS=""
+if [ "$NO_COMPILE" = true ]; then
+  GEN_CONFIG_OPTS="--no-compile"
+fi
+if ! npx ts-node --transpile-only scripts/generate-coprocessor-config.ts ${GEN_CONFIG_OPTS}; then
+  echo -e "${RED}Error: failed to generate the coprocessor config${RESET}" >&2
+  exit 1
+fi
+# The custom `test` task in hardhat.config.ts narrows the compile sources, so `hardhat test`
+# does not recompile contracts/. Compile explicitly when the config file changed.
+if [ "$(cksum "$COPROCESSOR_CONFIG_SOL")" != "$COPROCESSOR_CONFIG_BEFORE" ]; then
+  echo -e "${GREEN}Coprocessor config changed, compiling contracts...${RESET}"
+  if ! npx hardhat compile; then
+    echo -e "${RED}Error: failed to compile the contracts${RESET}" >&2
+    exit 1
+  fi
+fi
 
 echo -e "\n${GREEN}Running tests...${RESET}"
 

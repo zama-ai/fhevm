@@ -2,7 +2,16 @@ import hardhat from 'hardhat';
 
 const { network } = hardhat;
 
-const LIVE_NETWORKS = new Set(['devnet', 'devnetNative', 'zwsDev', 'sepolia', 'mainnet', 'polygonAmoy']);
+const LIVE_NETWORKS = new Set([
+  'devnet',
+  'devnetNative',
+  'zwsDev',
+  'sepolia',
+  'mainnet',
+  'polygonAmoy',
+  'bnbTestnet',
+  'hoodi',
+]);
 
 export const activeNetworkName = () => network.name;
 
