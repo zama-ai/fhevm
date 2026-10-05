@@ -73,7 +73,7 @@ are written as one narrative instead.
 | [DD-043](#dd-043-two-derivation-regimes--content-addressed-deterministic-handles-persistent-write-anchored-rand-seeds-context_id-deleted) | adopted                                  | Two Derivation Regimes — Content-Addressed Deterministic Handles, Persistent-Write-Anchored Rand Seeds (`context_id` deleted)   |
 | [DD-044](#dd-044-every-event-goes-through-the-event-cpi-or-is-not-emitted-at-all)                                                         | adopted                                  | Every Event Goes Through The Event CPI, Or Is Not Emitted At All                                                                |
 | [DD-045](#dd-045-keep-burn-settlement-sequential-and-keep-wrapper-policy-separate-from-host-governance)                                   | adopted                                  | Keep Burn Settlement Sequential and Keep Wrapper Policy Separate From Host Governance                                           |
-| [DD-046](#dd-046-the-program-heap-is-fixed-at-32-kb--no-custom-allocator)                                             | adopted                                  | The Program Heap Is Fixed At 32 KB — No Custom Allocator (`raised-heap` deleted)                                                |
+| [DD-046](#dd-046-the-program-heap-is-fixed-at-32-kb--no-custom-allocator)                                                                 | adopted                                  | The Program Heap Is Fixed At 32 KB — No Custom Allocator                                                                        |
 | [DD-047](#dd-047-the-application-is-program-scope--program-verified-scope-owned-by-program)                                               | adopted                                  | The Application Is `(program, scope)` — Program Verified, Scope Owned By Program                                                |
 | [DD-048](#dd-048-allows-are-sealed-on-the-write-the-deny-list-names-applications-one-connector-path)                                      | adopted                                  | Allows Are Sealed On The Write; The Deny List Names Applications; One Connector Path                                            |
 | [DD-049](#dd-049-shared-encrypted-store-and-transaction-local-result-grants)                                                              | adopted                                  | Shared Encrypted Store And Transaction-Local Result Grants                                                                      |
@@ -187,9 +187,10 @@ the verify-only refinement below replaces the earlier "and-bind" shape that crea
 
 Context:
 
-The port needs a production-shaped encrypted input path. The earlier design (below) bound inputs
-through a bespoke native Ed25519 "input verifier set" signing a `SolanaInputBindIntent`. That set
-was a Solana-only trust root divorced from the EVM coprocessor trust model.
+The port needs a production-shaped encrypted input path. The earlier design bound inputs through a
+bespoke native Ed25519 "input verifier set" signing a `SolanaInputBindIntent`
+([DESIGN_HISTORY](DESIGN_HISTORY.md#dd-007-replaced-in-part-by-dd-023)). That set was a Solana-only
+trust root divorced from the EVM coprocessor trust model.
 
 Decision:
 
