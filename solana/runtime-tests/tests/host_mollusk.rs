@@ -32,10 +32,10 @@ use zama_solana_test_kit::{
     cost_snapshot, deny_scope_record_account, empty_system_account, encrypted_store_account,
     event_authority, funded_system_account, handle_for_chain, host_svm as mollusk,
     host_svm_without_previous_bank_hash as mollusk_without_previous_bank_hash, label,
-    new_encrypted_store, new_encrypted_store_with_slot, program_owned_account, rand_nonce_account,
-    read_encrypted_store, readonly, readonly_signer, serialized_account, signing, system_account,
-    system_program_account, writable, DECRYPTION_CONTRACT, GATEWAY_CHAIN_ID,
-    INPUT_VERIFICATION_CONTRACT,
+    new_encrypted_store, new_encrypted_store_with_slot, paused_host_config, program_owned_account,
+    rand_nonce_account, read_encrypted_store, readonly, readonly_signer, serialized_account,
+    signing, system_account, system_program_account, writable, DECRYPTION_CONTRACT,
+    GATEWAY_CHAIN_ID, INPUT_VERIFICATION_CONTRACT,
 };
 
 mod host_fixtures;
@@ -4587,15 +4587,10 @@ fn mollusk_no_pause_flag_stops_verify_public_decrypt() {
         extra_data,
     );
 
-    let mut config = HostConfig::try_deserialize(&mut live_config.data.as_slice()).unwrap();
-    config.paused = host::PauseFlags::ALL;
     let accounts = vec![
         (
             host_config,
-            Account {
-                data: serialized_account(config),
-                ..live_config
-            },
+            paused_host_config(&live_config, host::PauseFlags::ALL),
         ),
         (kms_context, kms_context_acct),
     ];

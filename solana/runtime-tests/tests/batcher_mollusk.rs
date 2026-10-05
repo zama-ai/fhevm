@@ -1729,8 +1729,8 @@ fn mollusk_zero_total_batch_cancels_at_settle() {
     assert_eq!(read_batch(&context, next.batch).index, 1);
 }
 
-/// Settle redeems through `verify_public_decrypt`, which never pauses, and wraps the payout through
-/// `fhe_execute`, so only the `execution` pause stops it. The revert is atomic, so the batch stays
+/// Settle redeems through `verify_public_decrypt`, which never pauses, and wraps a nonzero payout
+/// through `fhe_execute`, so no other pause stops it. The revert is atomic, so the batch stays
 /// dispatched and settles once execution resumes.
 #[test]
 fn mollusk_settle_stops_only_under_the_execution_pause() {

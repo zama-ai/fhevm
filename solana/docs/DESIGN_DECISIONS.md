@@ -1193,8 +1193,8 @@ option). `HostConfig` gains `coprocessor_signers: [[u8; 20]; MAX_COPROCESSOR_SIG
 fixed-capacity array keeps the singleton's byte layout **pinned** (the account serializes to the same
 size regardless of how many signers are active), and avoids threading a second account through
 `fhe_execute`, which is byte-tight. The cap is 8: comfortably above realistic coprocessor-quorum sizes
-while bounding both the account size (+142 bytes vs the single-signer layout; current
-`HostConfig::SPACE` is 317 after the 32-byte KMS context id) and
+while bounding both the account size (+142 bytes vs the single-signer layout; `HostConfig::SPACE`
+is 319) and
 the worst-case per-attestation recovery cost. Rotation is admin-driven today via the
 admin-gated `set_coprocessor_signers` instruction (same admin/pause-neutral pattern as the other
 `set_*` config setters); a gateway-sync authority would drive it from the EVM `GatewayConfig`
@@ -2199,7 +2199,7 @@ Decision: `HostConfig.paused` is `PauseFlags`, one flag per area.
 
 | Flag | Stops | EVM counterpart |
 |---|---|---|
-| `execution` | `fhe_execute`, with the allows, transient grants and public releases it writes; the token's burn and cancel, and the batcher's settle through its wrap | ACL pause |
+| `execution` | `fhe_execute`, with the allows, transient grants and public releases it writes, so every token instruction that computes (account setup, transfer, wrap, burn, cancel) and the batcher's settle through its wrap | ACL pause |
 | `verified_inputs` | `fhe_execute` steps that consume a `VerifiedInput` | None: `InputVerifier` cannot be paused; the gateway pause stops only new proofs |
 | `acl_writes` | `create_encrypted_store`, `make_store_handle_public`, `delegate_for_user_decryption`, `revoke_delegation_for_user_decryption` | ACL pause |
 
@@ -2246,7 +2246,8 @@ Rejected alternatives:
 Consequences: `PauseFlags` is three bytes of `HostConfig` (`HostConfig::SPACE` 319). The host
 listener decodes `HostConfig` with the program's type. The KMS connector reads no pause flag, so user
 decryption pauses at the gateway alone, as on EVM. The pause errors are `ExecutionPaused`,
-`VerifiedInputsPaused`, `AclWritesPaused`, `NotPauser` and `PauserRecordMismatch`.
+`VerifiedInputsPaused`, `AclWritesPaused`, `NotPauser`, `PauserRecordMismatch` and
+`WalletPauseThroughCpi`.
 
 ## DD-059: The listener catches up from an archive when the stream cannot replay
 
