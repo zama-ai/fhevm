@@ -418,10 +418,13 @@ setters are never paused, and `revoke_permits` takes no config account, so it ru
 `mollusk_each_pause_flag_stops_only_its_area`, `mollusk_no_pause_flag_stops_verify_public_decrypt`, the token tests of
 11f, `mollusk_settle_stops_only_under_the_execution_pause`, `mollusk_a_pauser_pauses_and_only_the_admin_unpauses`,
 `mollusk_only_an_enabled_pauser_pauses`, `mollusk_a_wallet_pause_forwarded_through_another_program_is_rejected`,
-`mollusk_a_vault_pda_pauses_through_cpi`, `mollusk_only_the_admin_sets_pausers`, `a_revocation_while_paused_is_rejected`
-and, over random sequences, the H1 property of #35. The flags do not reach decryption, and the KMS connector does not
-read `HostConfig`. Gateway ingress has its own pause: `Decryption.sol` `whenNotPaused` covers every request entry point,
-the Solana entries included. HTTP decryption has no pause on either chain, as on EVM.
+`mollusk_a_vault_pda_pauses_through_cpi`, `mollusk_a_pauser_pauses_an_area_while_the_others_are_paused`,
+`mollusk_only_the_admin_sets_pausers`, `a_grant_while_paused_is_rejected`, `a_revocation_while_paused_is_rejected`,
+`a_grant_and_a_revocation_run_while_the_other_areas_are_paused`, `mollusk_admin_setters_run_while_every_area_is_paused`,
+`mollusk_the_admin_sets_pausers_and_hands_over_while_every_area_is_paused` and, over random sequences, the H1
+property of #35. The flags do not reach decryption, and the KMS connector does not read `HostConfig`. Gateway ingress
+has its own pause: `Decryption.sol` `whenNotPaused` covers every request entry point, the Solana entries included.
+HTTP decryption has no pause on either chain, as on EVM.
 
 **37. [HOLDS]** HCU enforcement ships disabled (unrestricted defaults) and is opt-in per knob. `u64::MAX` means
 unlimited; `0` is rejected for per-tx limits and means ban untrusted applications only for the block cap. When both

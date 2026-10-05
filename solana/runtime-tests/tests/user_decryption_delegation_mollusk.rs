@@ -37,8 +37,8 @@ use zama_host::{self as host, AppScope, UserDecryptionDelegation};
 use zama_solana_test_kit::{
     anchor_framework_error_check, cost_snapshot, empty_system_account,
     funded_system_account as funded_wallet, host_config_account as host_config_account_from,
-    program_owned_account, serialized_account as serialized, system_program_account,
-    HostConfigParams,
+    paused_host_config, program_owned_account, serialized_account as serialized,
+    system_program_account, HostConfigParams,
 };
 
 mod host_fixtures;
@@ -1123,6 +1123,45 @@ fn a_revocation_while_paused_is_rejected() {
         &revoke_ix(actors.delegator, actors.record_key),
         &accounts,
         &[custom_error(host::errors::ZamaHostError::AclWritesPaused)],
+    );
+}
+
+/// Delegation is paused only with the ACL writes: pausing execution and verified inputs leaves
+/// both grant and revocation running.
+#[test]
+fn a_grant_and_a_revocation_run_while_the_other_areas_are_paused() {
+    let actors = actors();
+    let other_areas = host::PauseFlags {
+        acl_writes: false,
+        ..host::PauseFlags::ALL
+    };
+    let pause_other_areas = |mut accounts: Vec<(Pubkey, Account)>| {
+        let host_config = host::host_config_address().0;
+        let (_, config) = accounts
+            .iter_mut()
+            .find(|(key, _)| *key == host_config)
+            .expect("host config");
+        *config = paused_host_config(config, other_areas);
+        accounts
+    };
+
+    mollusk().process_and_validate_instruction(
+        &grant_ix(
+            actors.payer,
+            actors.delegator,
+            actors.record_key,
+            actors.delegate,
+            actors.app,
+            EXPIRES_AT,
+        ),
+        &pause_other_areas(grant_accounts(&actors, empty_system_account(), false)),
+        &[Check::success()],
+    );
+    let existing = live_record(&actors);
+    mollusk().process_and_validate_instruction(
+        &revoke_ix(actors.delegator, actors.record_key),
+        &pause_other_areas(revoke_accounts(&actors, record_account(&existing), false)),
+        &[Check::success()],
     );
 }
 
