@@ -10,9 +10,10 @@ describe("renderGeyserConfig", () => {
 });
 
 describe("validatorStartArgs", () => {
-  test("pins loopback bind and the geyser config", () => {
+  test("pins Alpenglow consensus, loopback bind and the geyser config", () => {
     const args = validatorStartArgs({ ledgerDir: "/tmp/ledger", geyserConfigPath: "/tmp/geyser.json" });
     expect(args[0]).toBe("solana-test-validator");
+    expect(args).toContain("--alpenglow");
     // agave 4.x advertises --bind-address as the gossip IP and rejects 0.0.0.0; loopback is safe
     // because the RPC/pubsub listeners bind 0.0.0.0 regardless.
     expect(args).toContain("--bind-address");

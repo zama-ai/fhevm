@@ -182,8 +182,8 @@ intentional Mollusk CU change, regenerate baselines with
 `bash scripts/update-cost-snapshots.sh`. [`docs/TESTING.md`](docs/TESTING.md)
 lists focused commands, what each test layer proves, and build traps.
 
-Live end-to-end run against a local validator (mainnet-safe, validator pinned
-to `127.0.0.1:8899`):
+Live end-to-end run against a local Alpenglow validator (mainnet-safe, validator
+pinned to `127.0.0.1:8899`):
 
 ```bash
 bash scripts/e2e/clean-e2e.sh              # bring up fhevm-cli + Solana side-stack

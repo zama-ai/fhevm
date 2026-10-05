@@ -32,7 +32,13 @@ import { runStreaming } from '../utils/process';
 import { until } from '../utils/until';
 import { CLEARTEXT_SOLANA_ENDPOINTS } from './endpoints';
 import { createProvisioningContext, generateSolanaKeypair, loadKeypairSigner } from './provision';
-import { SOLANA_E2E_PROGRAMS, SOLANA_SPECIMEN_PROGRAMS, genesisDeployedPrograms, validatorStartArgs } from './validator';
+import {
+  SOLANA_E2E_PROGRAMS,
+  SOLANA_SPECIMEN_PROGRAMS,
+  assertAlpenglowActive,
+  genesisDeployedPrograms,
+  validatorStartArgs,
+} from './validator';
 
 const SOLANA_DIR = path.join(REPO_ROOT, 'solana');
 const SDK_DIR = path.join(REPO_ROOT, 'sdk', 'js-sdk');
@@ -106,6 +112,7 @@ export const startCleartextStack = async (): Promise<CleartextStack> => {
       { timeoutMs: 60_000, intervalMs: 1_000, description: `cleartext validator health; see ${logPath}` },
     );
     if (health === 'exited') throw new Error(`cleartext validator exited; see ${logPath}`);
+    await assertAlpenglowActive(rpcUrl);
 
     const payer = await loadKeypairSigner(deployerKeypairPath);
     await createProvisioningContext(rpcUrl, CLEARTEXT_SOLANA_ENDPOINTS.validatorWs).fundSol(payer.address, 1_000);
