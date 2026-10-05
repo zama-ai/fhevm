@@ -117,21 +117,17 @@ pub struct PauseFlags {
     /// ACL writes outside an execution: Store creation, `make_store_handle_public` and
     /// user-decryption delegation (EVM ACL pause).
     pub acl_writes: bool,
-    /// `verify_public_decrypt` and the token instructions that accept a KMS certificate (Gateway
-    /// `Decryption` pause).
-    pub public_decrypt: bool,
 }
 
 impl PauseFlags {
     /// Serialized size.
-    pub const SPACE: usize = 4;
+    pub const SPACE: usize = 3;
 
     /// Every area.
     pub const ALL: Self = Self {
         execution: true,
         verified_inputs: true,
         acl_writes: true,
-        public_decrypt: true,
     };
 
     /// These flags with every area `areas` names set.
@@ -140,7 +136,6 @@ impl PauseFlags {
             execution: self.execution || areas.execution,
             verified_inputs: self.verified_inputs || areas.verified_inputs,
             acl_writes: self.acl_writes || areas.acl_writes,
-            public_decrypt: self.public_decrypt || areas.public_decrypt,
         }
     }
 
@@ -150,7 +145,6 @@ impl PauseFlags {
             execution: self.execution && !areas.execution,
             verified_inputs: self.verified_inputs && !areas.verified_inputs,
             acl_writes: self.acl_writes && !areas.acl_writes,
-            public_decrypt: self.public_decrypt && !areas.public_decrypt,
         }
     }
 
@@ -162,7 +156,6 @@ impl PauseFlags {
                 (self.verified_inputs, ZamaHostError::VerifiedInputsPaused)
             }
             PauseArea::AclWrites => (self.acl_writes, ZamaHostError::AclWritesPaused),
-            PauseArea::PublicDecrypt => (self.public_decrypt, ZamaHostError::PublicDecryptPaused),
         };
         if paused {
             return Err(error.into());
@@ -177,7 +170,6 @@ pub enum PauseArea {
     Execution,
     VerifiedInputs,
     AclWrites,
-    PublicDecrypt,
 }
 
 #[cfg(test)]
@@ -191,7 +183,7 @@ mod tests {
     // many signers are registered.
     #[test]
     fn host_config_space_matches_serialized_len() {
-        assert_eq!(HostConfig::SPACE, 320);
+        assert_eq!(HostConfig::SPACE, 319);
 
         let cfg = HostConfig {
             admin: Pubkey::new_unique(),

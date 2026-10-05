@@ -2500,31 +2500,26 @@
     },
     {
       "code": 6083,
-      "name": "PublicDecryptPaused",
-      "msg": "public-decrypt verification is paused"
-    },
-    {
-      "code": 6084,
       "name": "NotPauser",
       "msg": "signer is not an enabled pauser"
     },
     {
-      "code": 6085,
+      "code": 6084,
       "name": "PauserRecordMismatch",
       "msg": "pauser record mismatch"
     },
     {
-      "code": 6086,
+      "code": 6085,
       "name": "WalletPauseThroughCpi",
       "msg": "a wallet pauser must pause in a top-level instruction"
     },
     {
-      "code": 6087,
+      "code": 6086,
       "name": "EncryptedStoreScopeNotProgramAccount",
       "msg": "encrypted store scope is not an account of the store's program"
     },
     {
-      "code": 6088,
+      "code": 6087,
       "name": "DelegationScopeNotProgramAccount",
       "msg": "delegation scope is not an account of the delegated program"
     }
@@ -4138,14 +4133,6 @@
             "docs": [
               "ACL writes outside an execution: Store creation, `make_store_handle_public` and",
               "user-decryption delegation (EVM ACL pause)."
-            ],
-            "type": "bool"
-          },
-          {
-            "name": "public_decrypt",
-            "docs": [
-              "`verify_public_decrypt` and the token instructions that accept a KMS certificate (Gateway",
-              "`Decryption` pause)."
             ],
             "type": "bool"
           }

@@ -95,9 +95,6 @@ pub fn verify_public_decrypt(
     let kms_context = &ctx.accounts.kms_context;
     let current_context_id = host_config.current_kms_context_id;
 
-    host_config
-        .paused
-        .require_running(PauseArea::PublicDecrypt)?;
     require!(
         host_config.decryption_contract != [0u8; 20] && current_context_id != [0u8; 32],
         ZamaHostError::GatewayVerifierConfigUnset

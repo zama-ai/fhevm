@@ -282,5 +282,5 @@ export async function fetchAllMaybeHostConfig(
 }
 
 export function getHostConfigSize(): number {
-  return 328;
+  return 327;
 }

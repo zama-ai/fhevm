@@ -180,18 +180,16 @@ export const ZAMA_HOST_ERROR__WALLET_DELEGATION_THROUGH_CPI = 0x17c0; // 6080
 export const ZAMA_HOST_ERROR__VERIFIED_INPUTS_PAUSED = 0x17c1; // 6081
 /** AclWritesPaused: ACL writes are paused */
 export const ZAMA_HOST_ERROR__ACL_WRITES_PAUSED = 0x17c2; // 6082
-/** PublicDecryptPaused: public-decrypt verification is paused */
-export const ZAMA_HOST_ERROR__PUBLIC_DECRYPT_PAUSED = 0x17c3; // 6083
 /** NotPauser: signer is not an enabled pauser */
-export const ZAMA_HOST_ERROR__NOT_PAUSER = 0x17c4; // 6084
+export const ZAMA_HOST_ERROR__NOT_PAUSER = 0x17c3; // 6083
 /** PauserRecordMismatch: pauser record mismatch */
-export const ZAMA_HOST_ERROR__PAUSER_RECORD_MISMATCH = 0x17c5; // 6085
+export const ZAMA_HOST_ERROR__PAUSER_RECORD_MISMATCH = 0x17c4; // 6084
 /** WalletPauseThroughCpi: a wallet pauser must pause in a top-level instruction */
-export const ZAMA_HOST_ERROR__WALLET_PAUSE_THROUGH_CPI = 0x17c6; // 6086
+export const ZAMA_HOST_ERROR__WALLET_PAUSE_THROUGH_CPI = 0x17c5; // 6085
 /** EncryptedStoreScopeNotProgramAccount: encrypted store scope is not an account of the store's program */
-export const ZAMA_HOST_ERROR__ENCRYPTED_STORE_SCOPE_NOT_PROGRAM_ACCOUNT = 0x17c7; // 6087
+export const ZAMA_HOST_ERROR__ENCRYPTED_STORE_SCOPE_NOT_PROGRAM_ACCOUNT = 0x17c6; // 6086
 /** DelegationScopeNotProgramAccount: delegation scope is not an account of the delegated program */
-export const ZAMA_HOST_ERROR__DELEGATION_SCOPE_NOT_PROGRAM_ACCOUNT = 0x17c8; // 6088
+export const ZAMA_HOST_ERROR__DELEGATION_SCOPE_NOT_PROGRAM_ACCOUNT = 0x17c7; // 6087
 
 export type ZamaHostError =
   | typeof ZAMA_HOST_ERROR__ACL_WRITES_PAUSED
@@ -268,7 +266,6 @@ export type ZamaHostError =
   | typeof ZAMA_HOST_ERROR__PERMIT_INVALIDATION_PDA_MISMATCH
   | typeof ZAMA_HOST_ERROR__PREVIOUS_BANK_HASH_UNAVAILABLE
   | typeof ZAMA_HOST_ERROR__PREVIOUS_STORE_MISMATCH
-  | typeof ZAMA_HOST_ERROR__PUBLIC_DECRYPT_PAUSED
   | typeof ZAMA_HOST_ERROR__SCOPE_DENIED
   | typeof ZAMA_HOST_ERROR__TOO_MANY_COPROCESSOR_SIGNERS
   | typeof ZAMA_HOST_ERROR__TOO_MANY_KMS_SIGNERS
@@ -361,7 +358,6 @@ if (process.env['NODE_ENV'] !== 'production') {
     [ZAMA_HOST_ERROR__PERMIT_INVALIDATION_PDA_MISMATCH]: `permit invalidation account is not the canonical account for the signer`,
     [ZAMA_HOST_ERROR__PREVIOUS_BANK_HASH_UNAVAILABLE]: `previous bank hash is not available`,
     [ZAMA_HOST_ERROR__PREVIOUS_STORE_MISMATCH]: `encrypted value previous handle does not match the account`,
-    [ZAMA_HOST_ERROR__PUBLIC_DECRYPT_PAUSED]: `public-decrypt verification is paused`,
     [ZAMA_HOST_ERROR__SCOPE_DENIED]: `application scope is deny-listed`,
     [ZAMA_HOST_ERROR__TOO_MANY_COPROCESSOR_SIGNERS]: `coprocessor signer set exceeds the maximum size`,
     [ZAMA_HOST_ERROR__TOO_MANY_KMS_SIGNERS]: `KMS context exceeds the maximum signer count`,

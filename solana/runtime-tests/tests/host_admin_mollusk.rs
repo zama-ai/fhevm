@@ -334,7 +334,6 @@ const EXECUTION: host::PauseFlags = host::PauseFlags {
     execution: true,
     verified_inputs: false,
     acl_writes: false,
-    public_decrypt: false,
 };
 
 #[test]

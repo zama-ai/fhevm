@@ -3291,14 +3291,6 @@
               "user-decryption delegation (EVM ACL pause)."
             ],
             "type": "bool"
-          },
-          {
-            "name": "public_decrypt",
-            "docs": [
-              "`verify_public_decrypt` and the token instructions that accept a KMS certificate (Gateway",
-              "`Decryption` pause)."
-            ],
-            "type": "bool"
           }
         ]
       }

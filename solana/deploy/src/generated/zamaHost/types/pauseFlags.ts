@@ -37,11 +37,6 @@ export type PauseFlags = {
    * user-decryption delegation (EVM ACL pause).
    */
   aclWrites: boolean;
-  /**
-   * `verify_public_decrypt` and the token instructions that accept a KMS certificate (Gateway
-   * `Decryption` pause).
-   */
-  publicDecrypt: boolean;
 };
 
 export type PauseFlagsArgs = PauseFlags;
@@ -51,7 +46,6 @@ export function getPauseFlagsEncoder(): FixedSizeEncoder<PauseFlagsArgs> {
     ['execution', getBooleanEncoder()],
     ['verifiedInputs', getBooleanEncoder()],
     ['aclWrites', getBooleanEncoder()],
-    ['publicDecrypt', getBooleanEncoder()],
   ]);
 }
 
@@ -60,7 +54,6 @@ export function getPauseFlagsDecoder(): FixedSizeDecoder<PauseFlags> {
     ['execution', getBooleanDecoder()],
     ['verifiedInputs', getBooleanDecoder()],
     ['aclWrites', getBooleanDecoder()],
-    ['publicDecrypt', getBooleanDecoder()],
   ]);
 }
 
