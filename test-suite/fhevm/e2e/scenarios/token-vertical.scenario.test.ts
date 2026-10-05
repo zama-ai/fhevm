@@ -5,7 +5,7 @@ import { describe, expect, test } from "bun:test";
 
 import { getAddressEncoder, isSolanaError, SOLANA_ERROR__INSTRUCTION_ERROR__CUSTOM, type Address } from "@solana/kit";
 
-import { certifiedPublicDecrypt, currentHandle } from "../../src/solana/fhe-vertical";
+import { certifiedPublicDecrypt, currentHandle, publicDecryptValues } from "../../src/solana/fhe-vertical";
 import {
   createConfidentialMint,
   createSplMint,
@@ -19,6 +19,8 @@ import {
   discloseCertifiedHandle,
   redeemBurnedAmount,
   sealBurnedAmountHandle,
+  sealTotalSupplyHandle,
+  totalSupplyStore,
 } from "../../src/solana/token-vertical";
 import { CONFIDENTIAL_TOKEN_PROGRAM_ADDRESS } from "@demo-dapp/vault/index.js";
 import { timed } from "../../src/utils/timing";
@@ -53,7 +55,7 @@ const customProgramErrorCode = (error: unknown): number | undefined => {
 
 describe("solana confidential-token consume vertical", () => {
   test(
-    "wrap 1000 -> burn attested 7 -> seal -> public-decrypt == 7 -> redeem releases 7 (leaf 1 of 3) -> disclose",
+    "wrap 1000 -> burn attested 7 -> seal -> public-decrypt == 7, batch with supply == [7, 993] -> redeem releases 7 (leaf 1 of 3) -> disclose",
     async () => {
       const { env, stack, context, wallets, wallet, config, walletHex } = await verticalSetup();
 
@@ -124,6 +126,21 @@ describe("solana confidential-token consume vertical", () => {
         }),
       );
       expect(cleartext).toBe(BURN_AMOUNT);
+
+      // The burn also wrote the total supply, in the mint's own store. Sealed public, it is
+      // decrypted together with the burned amount from one certificate: the KMS returns one word
+      // per handle in request order, and each handle is proven against its own store.
+      const supplyStore = await totalSupplyStore(mint);
+      const supplyHandle = await currentHandle(context, supplyStore, new TextEncoder().encode("total_supply____________________"));
+      await stack.waitForSnsCommit(hex(supplyHandle));
+      await sealTotalSupplyHandle(context, { authority: wallet.signer, mint, handle: supplyHandle });
+      const batch = await timed("batch public decrypt of two stores (KMS)", () =>
+        publicDecryptValues(config, [
+          { encryptedStore: target.burnedAmountStore, handle: burnedHandle },
+          { encryptedStore: supplyStore, handle: supplyHandle },
+        ]),
+      );
+      expect(batch).toEqual([BURN_AMOUNT, WRAP_AMOUNT - BURN_AMOUNT]);
 
       // Redeem: the host verifier CPI checks the KMS certificate against the live context it
       // names, the token program requires the burned handle pinned in PendingBurn, the PendingBurn

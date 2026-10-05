@@ -15,16 +15,25 @@ export type SolanaPublicDecryptCertificateContext = {
   readonly runtime: FhevmRuntime;
 };
 
-export type SolanaPublicDecryptCertificateParameters = {
-  /** The single ciphertext handle covered by the public-decrypt certificate. */
+/** A handle made public in an encrypted store. */
+export type SolanaPublicHandleEntry = {
   readonly handle: EncryptedValueLike;
-  /** The 32-byte KMS context id the certificate commits to. */
-  readonly contextId: Uint8Array;
   /** The 32-byte EncryptedStore address whose history authorizes public decryption. */
   readonly encryptedStore: Uint8Array;
+};
+
+/** Handles certified together: one request, one KMS context, one signature set. */
+export type SolanaPublicDecryptBatch = {
+  readonly entries: readonly SolanaPublicHandleEntry[];
+  /** The 32-byte KMS context id the certificate commits to. */
+  readonly contextId: Uint8Array;
   /** Relayer HTTP/polling budget; RPC calls use the supplied signal and the RPC transport policy. */
   readonly options?: RelayerPublicDecryptOptions | undefined;
 };
+
+/** A request to certify one handle, as an on-chain consumer submits it. */
+export type SolanaPublicDecryptCertificateParameters = SolanaPublicHandleEntry &
+  Omit<SolanaPublicDecryptBatch, 'entries'>;
 
 /**
  * An untrusted public-decrypt certificate claim returned by the relayer. Authority exists only
@@ -40,10 +49,30 @@ export type SolanaPublicDecryptCertificateClaim = {
   readonly extraData: string;
 };
 
-/** Obtains the certificate of one public handle; the relayer unless a cleartext client signs it. */
-export type SolanaPublicDecryptCertifier = (
-  parameters: SolanaPublicDecryptCertificateParameters,
-) => Promise<SolanaPublicDecryptCertificateClaim>;
+/** A certificate over every handle of a batch; `abiEncodedCleartext` holds one 32-byte word per handle. */
+export type SolanaPublicDecryptBatchClaim = Omit<SolanaPublicDecryptCertificateClaim, 'handle'> & {
+  readonly handles: readonly string[];
+};
+
+/** Obtains the certificate of a batch of public handles; the relayer unless a cleartext client signs it. */
+export type SolanaPublicDecryptCertifier = (batch: SolanaPublicDecryptBatch) => Promise<SolanaPublicDecryptBatchClaim>;
+
+/**
+ * The single-handle certificate an on-chain consumer submits: the host verifier checks one handle.
+ *
+ * @param certify - The batch certifier.
+ */
+export function singlePublicDecryptCertificate(
+  certify: SolanaPublicDecryptCertifier,
+): (parameters: SolanaPublicDecryptCertificateParameters) => Promise<SolanaPublicDecryptCertificateClaim> {
+  return async ({ handle, encryptedStore, ...shared }) => {
+    const requested = toFhevmHandle(handle).bytes32Hex;
+    const { handles, ...claim } = await certify({ ...shared, entries: [{ handle, encryptedStore }] });
+    if (handles.length !== 1 || handles[0]?.toLowerCase() !== requested.toLowerCase())
+      throw new Error('public-decrypt certificate must cover exactly the requested handle');
+    return { ...claim, handle: requested };
+  };
+}
 
 /**
  * The KMS routing a Solana public decrypt carries in `extraData`: version 1, `0x01 ‖ contextId`.
@@ -63,24 +92,24 @@ function assertFieldLen(name: string, bytes: Uint8Array, len: number): void {
   }
 }
 
-/** Requests a public-decrypt certificate for a handle made public in an encrypted store. */
+/** Requests one public-decrypt certificate for handles made public in their encrypted stores. */
 export async function publicDecryptCertificate(
   context: SolanaPublicDecryptCertificateContext,
-  parameters: SolanaPublicDecryptCertificateParameters,
-): Promise<SolanaPublicDecryptCertificateClaim> {
-  const handle = toFhevmHandle(parameters.handle);
+  parameters: SolanaPublicDecryptBatch,
+): Promise<SolanaPublicDecryptBatchClaim> {
+  const handles = parameters.entries.map((entry) => toFhevmHandle(entry.handle).bytes32Hex);
 
   const requestExtraDataHex = solanaPublicDecryptExtraData(parameters.contextId);
-  assertFieldLen('encryptedStore', parameters.encryptedStore, 32);
+  for (const entry of parameters.entries) assertFieldLen('encryptedStore', entry.encryptedStore, 32);
   const options = { auth: context.runtime.config.auth, ...parameters.options };
   const baseUrl = validateRelayerBaseUrl(context.chain.fhevm.relayerUrl, options.auth !== undefined);
   const request = new RelayerAsyncRequest({
     relayerOperation: 'PUBLIC_DECRYPT',
     url: buildRelayerUrlString(baseUrl, 'v2/public-decrypt'),
     payload: {
-      ciphertextHandles: [handle.bytes32Hex],
+      ciphertextHandles: handles,
       extraData: requestExtraDataHex,
-      encryptedStores: [bytesToHex(parameters.encryptedStore)],
+      encryptedStores: parameters.entries.map((entry) => bytesToHex(entry.encryptedStore)),
     },
     options,
     logger: context.runtime.config.logger,
@@ -114,7 +143,7 @@ export async function publicDecryptCertificate(
   }
 
   return {
-    handle: handle.bytes32Hex,
+    handles,
     abiEncodedCleartext: result.decryptedValue,
     signatures: result.signatures,
     extraData: result.extraData ?? requestExtraDataHex,

@@ -18,6 +18,7 @@ import {
   getConfidentialBurnInstructionAsync,
   getRedeemBurnedAmountInstructionAsync,
   getMakeTokenAccountHandlePublicInstructionAsync,
+  getMakeTotalSupplyHandlePublicInstructionAsync,
   findTotalSupplyAuthorityPda,
   findVaultAuthorityPda,
   CONFIDENTIAL_TOKEN_PROGRAM_ADDRESS,
@@ -61,6 +62,13 @@ export const confidentialBurnTarget = async (mint: Address, owner: Address): Pro
   };
 };
 
+/** The mint's encrypted total-supply store, held by its total-supply authority PDA. */
+export const totalSupplyStore = async (mint: Address): Promise<Address> => {
+  const vault = await vaultModule();
+  const [totalSupplyAuthority] = await findTotalSupplyAuthorityPda({ mint });
+  return vault.tokenStateAddress(mint, totalSupplyAuthority);
+};
+
 /**
  * Burns an attested external amount from `owner`'s confidential balance (`confidential_burn`).
  * The attestation binds (user = owner, contract = the confidential-token program) — the token
@@ -79,7 +87,6 @@ export const confidentialBurn = async (
 ): Promise<void> => {
   const vault = await vaultModule();
   const target = await confidentialBurnTarget(params.mint, params.owner.address);
-  const [totalSupplyAuthority] = await findTotalSupplyAuthorityPda({ mint: params.mint });
   const transientStore = await prepareTransientStore({ payer: params.owner, host: ZAMA_HOST_PROGRAM_ADDRESS });
   const instruction = await getConfidentialBurnInstructionAsync({
     transientStore: transientStore.address,
@@ -94,7 +101,7 @@ export const confidentialBurn = async (
     ),
     tokenAccount: target.tokenAccount,
     balanceStore: await vault.tokenStateAddress(params.mint, target.tokenAccount),
-    totalSupplyStore: await vault.tokenStateAddress(params.mint, totalSupplyAuthority),
+    totalSupplyStore: await totalSupplyStore(params.mint),
     pendingBurn: target.pendingBurn,
     zamaEventAuthority: await eventAuthority(ZAMA_HOST_PROGRAM_ADDRESS),
     hostConfig: await hostConfigAddress(),
@@ -173,6 +180,23 @@ export const sealBurnedAmountHandle = async (
       encryptedStore: target.burnedAmountStore,
       hostConfig: await hostConfigAddress(),
       kind: DisclosedValueKind.BurnedAmount,
+      handle: params.handle,
+    }),
+  ]);
+};
+
+/** Seals the mint's current total-supply handle publicly decryptable; the mint authority signs. */
+export const sealTotalSupplyHandle = async (
+  context: SolanaProvisioningContext,
+  params: { readonly authority: TransactionSigner; readonly mint: Address; readonly handle: Uint8Array },
+): Promise<void> => {
+  await context.sendTransaction(params.authority, [
+    await getMakeTotalSupplyHandlePublicInstructionAsync({
+      payer: params.authority,
+      authority: params.authority,
+      mint: params.mint,
+      totalSupplyStore: await totalSupplyStore(params.mint),
+      hostConfig: await hostConfigAddress(),
       handle: params.handle,
     }),
   ]);
