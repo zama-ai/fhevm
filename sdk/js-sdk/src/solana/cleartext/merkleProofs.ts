@@ -1,5 +1,5 @@
 // What the cleartext client asks of a leaf record (`createSolanaLeafRecord`), and what the record
-// answers: the outcomes the coprocessors' leaf-proof endpoint gives the KMS Connector.
+// answers: the outcomes the coprocessors' Merkle proof route gives the KMS Connector.
 import type { Address } from '@solana/kit';
 
 /** A leaf the record is asked for: `key` allowed on `handle`, or `handle` made public without one. */
@@ -10,7 +10,7 @@ export type SolanaLeafQuery = {
 };
 
 /** What the record says about one query. No answer is trusted: a proof is verified against the chain. */
-export type SolanaLeafProofOutcome =
+export type SolanaMerkleProofOutcome =
   /** `leafCount` is how many leaves the record had sealed when it built the proof. */
   | {
       readonly status: 'found';
@@ -24,4 +24,6 @@ export type SolanaLeafProofOutcome =
   | { readonly status: 'unknownAccount' };
 
 /** One read of the leaf record: an outcome per query, in query order. */
-export type SolanaLeafProofReader = (queries: readonly SolanaLeafQuery[]) => Promise<readonly SolanaLeafProofOutcome[]>;
+export type SolanaMerkleProofReader = (
+  queries: readonly SolanaLeafQuery[],
+) => Promise<readonly SolanaMerkleProofOutcome[]>;

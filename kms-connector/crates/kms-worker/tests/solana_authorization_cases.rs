@@ -1,7 +1,7 @@
 //! The Connector's verdict on user and public decryptions, written to a fixture the SDK's cleartext
 //! client is held to (`sdk/js-sdk/src/solana/cleartext/authorization.test.ts`). Each case runs the
 //! real [`authorize_request`] or [`check_public_decrypt`] over one world and one leaf record, and
-//! the committed file must be what this run renders: the host accounts, the leaf-proof batch the
+//! the committed file must be what this run renders: the host accounts, the Merkle proof batch the
 //! Connector asked for with the record's answers, and the verdict.
 //! `ZAMA_UPDATE_AUTHORIZATION_CASES=1` rewrites it.
 //!
@@ -69,7 +69,7 @@ const FAILURES: [&str; 25] = [
 
 const NODE: &str = "The cleartext client throws when an account read fails, lags or answers the \
                     wrong number of accounts, instead of judging the request.";
-const LEAF_RECORD: &str = "The cleartext client throws when a leaf-proof read fails or answers the \
+const LEAF_RECORD: &str = "The cleartext client throws when a Merkle proof read fails or answers the \
                            wrong number of proofs, instead of judging the request.";
 
 /// The failures no cleartext case can produce, with the reason.
@@ -825,7 +825,7 @@ async fn the_committed_cases_are_the_connectors_verdicts() {
         let calls = proofs.calls();
         assert!(
             calls.len() <= 1,
-            "{}: one leaf-proof batch at most",
+            "{}: one Merkle proof batch at most",
             case.name
         );
         let batch = calls

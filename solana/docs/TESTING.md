@@ -241,7 +241,7 @@ returns `@fhevm/sdk/solana` with the three client factories replaced by those of
   where the real stack leaves the request to time out. Otherwise the answer is the plaintext the
   host recorded in the store. The Connector part (`cleartext/authorization.ts`) is held to the
   Connector itself: the kms-worker test `solana_authorization_cases` runs the Connector on a set of
-  user and public decryptions and writes each one's accounts, leaf-proof batch with the record's
+  user and public decryptions and writes each one's accounts, Merkle proof batch with the record's
   answers, and verdict to `solana/test-fixtures/authorization/decrypt_cases_v1.json`, and the SDK
   test requires the client to match. The relayer and gateway part is copied from their code
   (`relayer/src/host/solana_delegation_precheck.rs`, the relayer's user-decrypt admission,
@@ -252,7 +252,7 @@ returns `@fhevm/sdk/solana` with the three client factories replaced by those of
 
 Leaf proofs come from an in-memory leaf record of the validator (`createSolanaLeafRecord`, whose
 header gives its catch-up rules). The e2e's decrypt clients share one record for the test process
-(`readLeafProofs` in `test-suite/fhevm/src/solana/target.ts`), as coprocessors keep theirs, so a
+(`readMerkleProofs` in `test-suite/fhevm/src/solana/target.ts`), as coprocessors keep theirs, so a
 decrypt reads only the store writes since the last one.
 
 What the cleartext target does not prove, so these parts skip there
