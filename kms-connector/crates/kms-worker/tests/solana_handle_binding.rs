@@ -27,9 +27,9 @@ use alloy::primitives::B256;
 use kms_worker::core::solana::{
     encrypted_store::{ResolvedEncryptedStore, resolve_encrypted_store},
     failure::AuthorizationFailure,
-    handle_binding::{HandleBindingFailure, check_handle_binding, verify_proofs},
+    handle_binding::{HEDGE_DELAY, HandleBindingFailure, check_handle_binding, verify_proofs},
     pipeline::authorize_request,
-    proof::{LeafKind, LeafQuery, MerkleProofOutcome, ProofReadError},
+    proof::{LeafKind, LeafQuery, MerkleProofOutcome, ProofReadError, proof_http_client},
 };
 use rstest::rstest;
 use solana_pubkey::Pubkey;
@@ -698,8 +698,8 @@ async fn verify_with(
     .await
 }
 
-/// Coprocessor A holds only the first leaf and B holds both: both queries resolve. Every
-/// coprocessor is asked for the whole batch.
+/// Coprocessor A holds only the first leaf and B holds both: both queries resolve. B is asked for
+/// the whole batch once A leaves a query unresolved.
 #[tokio::test]
 async fn a_query_any_coprocessor_proves_is_resolved() {
     let (fixture, account, batch) = two_allowed_queries();
@@ -717,6 +717,39 @@ async fn a_query_any_coprocessor_proves_is_resolved() {
         reader.calls(),
         vec![(0, vec![first, second]), (1, vec![first, second])]
     );
+}
+
+/// A coprocessor that serves the whole batch is the only one asked.
+#[tokio::test]
+async fn a_coprocessor_serving_the_batch_is_the_only_one_asked() {
+    let (fixture, account, batch) = two_allowed_queries();
+    let record = ProofRecord::of(&[&fixture]);
+    let reader = ScriptedProofReader::in_order(vec![record.clone(), record]);
+
+    let results = verify_with(&reader, &account, &batch).await.unwrap();
+
+    assert_eq!(results, vec![Ok(()), Ok(())]);
+    assert_eq!(reader.call_count(), 1);
+}
+
+/// A coprocessor slower than the hedge delay has the next one asked as well; one that answers
+/// within it is the only one asked.
+#[rstest]
+#[case::within_the_delay(HEDGE_DELAY / 2, 1)]
+#[case::beyond_the_delay(HEDGE_DELAY * 2, 2)]
+#[tokio::test(start_paused = true)]
+async fn a_slow_coprocessor_is_hedged(#[case] delay: Duration, #[case] reads: usize) {
+    let (fixture, account, batch) = two_allowed_queries();
+    let record = ProofRecord::of(&[&fixture]);
+    let reader = ScriptedProofReader::coprocessors(vec![
+        ProofSource::Delayed(delay, record.clone()),
+        ProofSource::Serving(record),
+    ]);
+
+    let results = verify_with(&reader, &account, &batch).await.unwrap();
+
+    assert_eq!(results, vec![Ok(()), Ok(())]);
+    assert_eq!(reader.call_count(), reads);
 }
 
 /// A coprocessor that never answers does not hold the request: the batch resolves on the one that
@@ -765,8 +798,9 @@ async fn every_coprocessor_missing_the_leaf_is_a_recoverable_denial() {
 }
 
 /// A coprocessor that fails the read, or answers the wrong number of outcomes, says nothing about
-/// any leaf: another coprocessor's answer decides.
-#[tokio::test]
+/// any leaf: another coprocessor's answer decides, asked at once rather than after the hedge
+/// delay.
+#[tokio::test(start_paused = true)]
 async fn a_failed_or_short_read_leaves_the_batch_to_another_coprocessor() {
     let (fixture, account, batch) = two_allowed_queries();
     let record = ProofRecord::of(&[&fixture]);
@@ -776,8 +810,10 @@ async fn a_failed_or_short_read_leaves_the_batch_to_another_coprocessor() {
         ProofSource::Serving(record),
     ]);
 
+    let started = tokio::time::Instant::now();
     let results = verify_with(&reader, &account, &batch).await.unwrap();
 
+    assert!(started.elapsed() < HEDGE_DELAY);
     assert_eq!(results, vec![Ok(()), Ok(())]);
     let queries: Vec<_> = batch.iter().map(|(query, _)| *query).collect();
     assert_eq!(
@@ -803,7 +839,6 @@ async fn no_answer_from_any_coprocessor_is_a_proof_read_error() {
 /// Through the production client: an unavailable coprocessor leaves the batch to one that serves.
 #[tokio::test]
 async fn an_unavailable_coprocessor_leaves_the_batch_to_one_that_serves() {
-    use kms_worker::core::solana::proof::CoprocessorProofClient;
     use mocktail::{StatusCode, server::MockServer};
     let (fixture, account, [entry, _]) = two_allowed_queries();
     let mut unavailable = MockServer::new_http("unavailable-coprocessor");
@@ -815,12 +850,12 @@ async fn an_unavailable_coprocessor_leaves_the_batch_to_one_that_serves() {
     let mut serving = MockServer::new_http("serving-coprocessor");
     serve_proofs(&mut serving, &[(entry.0, fixture.outcome(&entry.0))]);
     serving.start().await.unwrap();
-    let client = CoprocessorProofClient::new(
+    let client = proof_client(
         &[
-            proof_route(unavailable.base_url().unwrap()),
-            proof_route(serving.base_url().unwrap()),
+            unavailable.base_url().unwrap().clone(),
+            serving.base_url().unwrap().clone(),
         ],
-        reqwest::Client::new(),
+        proof_http_client(Duration::from_secs(10)).unwrap(),
     );
     let key = Wallet::new(1).pubkey();
 

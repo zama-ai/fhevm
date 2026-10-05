@@ -5,7 +5,7 @@
 //! resolves the encrypted-store writes of a transaction: every store an execution writes, and
 //! every `make_store_handle_public`. A write names the store, its leaf count before the write,
 //! the handle it installs, the keys it allows and whether it makes the handle public: the
-//! input of the RFC 035 leaf record.
+//! input of the leaf record of the Solana access control RFC.
 
 use anchor_lang::prelude::Pubkey;
 use anyhow::{bail, Context, Result};

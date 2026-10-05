@@ -80,19 +80,7 @@ spec:
               value: {{ $ethereum.chainId | quote }}
             - name: KMS_CONNECTOR_PROTOCOL_CONFIG_CONTRACT__ADDRESS
               value: {{ $contracts.ethereumProtocolConfig | quote }}
-            {{- if .Values.kmsConnectorTxSender.wallet.awsKms.enabled }}
-            - name: KMS_CONNECTOR_AWS_KMS_CONFIG__KEY_ID
-              valueFrom:
-                configMapKeyRef:
-                  name: {{ .Values.kmsConnectorTxSender.wallet.awsKms.configmap.name | quote }}
-                  key: {{ .Values.kmsConnectorTxSender.wallet.awsKms.configmap.key | quote }}
-            {{- else }}
-            - name: KMS_CONNECTOR_PRIVATE_KEY
-              valueFrom:
-                secretKeyRef:
-                  name: {{ .Values.kmsConnectorTxSender.wallet.secret.name | quote }}
-                  key: {{ .Values.kmsConnectorTxSender.wallet.secret.key | quote }}
-            {{- end }}
+            {{- include "kmsConnector.txSenderWalletEnv" . | nindent 12 }}
           {{- if default .Values.commonConfig.tracing.enabled .Values.kmsConnectorTxSender.tracing.enabled }}
             - name: OTEL_EXPORTER_OTLP_ENDPOINT
               value: {{ .Values.commonConfig.tracing.endpoint }}

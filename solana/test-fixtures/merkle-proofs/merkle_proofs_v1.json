@@ -1,36 +1,7 @@
 {
-  "_comment": "The Merkle proof wire between the Merkle proof server (`POST /v1/solana/merkle-proofs`, coprocessor/fhevm-engine/solana-merkle-proof-service/src/server.rs) and the KMS connector (kms-connector/crates/kms-worker/src/core/solana/proof.rs). Both sides pin their spelling against this file: the server deserializes `request` and serializes every `proofs` variant; the connector serializes `request` and deserializes `proofs`. Byte fields are 32 bytes as lowercase hex without a prefix.",
+  "_comment": "The Merkle proof wire between the Merkle proof server (`POST /v1/solana/merkle-proofs`, coprocessor/fhevm-engine/solana-merkle-proof-service/src/server.rs) and the KMS connector (kms-connector/crates/kms-worker/src/core/solana/proof.rs), as CBOR (RFC 8949) bodies in hex. `request` asks for two leaves of store ac..ac: handle 10..10 allowed to key a1..a1, and handle 11..11 made public. `response` answers found (leafIndex 1, leafCount 3, one sibling 5b..5b), notFound (leafCount 3) and unknownAccount. Byte fields are 32-byte byte strings; maps and arrays have definite lengths. The connector encodes `request` and decodes `response` byte for byte; the server decodes `request` and encodes `response`.",
+  "path": "/v1/solana/merkle-proofs",
   "maxLeavesPerRequest": 64,
-  "request": {
-    "leaves": [
-      {
-        "encryptedStore": "acacacacacacacacacacacacacacacacacacacacacacacacacacacacacacacac",
-        "handle": "1010101010101010101010101010101010101010101010101010101010101010",
-        "kind": "allowed",
-        "key": "a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1"
-      },
-      {
-        "encryptedStore": "acacacacacacacacacacacacacacacacacacacacacacacacacacacacacacacac",
-        "handle": "1111111111111111111111111111111111111111111111111111111111111111",
-        "kind": "public"
-      }
-    ]
-  },
-  "proofs": [
-    {
-      "status": "found",
-      "leafIndex": 1,
-      "leafCount": 3,
-      "siblings": [
-        "5b5b5b5b5b5b5b5b5b5b5b5b5b5b5b5b5b5b5b5b5b5b5b5b5b5b5b5b5b5b5b5b"
-      ]
-    },
-    {
-      "status": "notFound",
-      "leafCount": 3
-    },
-    {
-      "status": "unknownAccount"
-    }
-  ]
+  "request": "a1666c656176657382a46e656e6372797074656453746f72655820acacacacacacacacacacacacacacacacacacacacacacacacacacacacacacacac6668616e646c6558201010101010101010101010101010101010101010101010101010101010101010646b696e6467616c6c6f776564636b65795820a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a36e656e6372797074656453746f72655820acacacacacacacacacacacacacacacacacacacacacacacacacacacacacacacac6668616e646c6558201111111111111111111111111111111111111111111111111111111111111111646b696e64667075626c6963",
+  "response": "a16670726f6f667383a46673746174757365666f756e64696c656166496e64657801696c656166436f756e7403687369626c696e67738158205b5b5b5b5b5b5b5b5b5b5b5b5b5b5b5b5b5b5b5b5b5b5b5b5b5b5b5b5b5b5b5ba266737461747573686e6f74466f756e64696c656166436f756e7403a1667374617475736e756e6b6e6f776e4163636f756e74"
 }

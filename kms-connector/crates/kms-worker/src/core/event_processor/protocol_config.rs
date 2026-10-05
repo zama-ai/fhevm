@@ -1,11 +1,5 @@
 use crate::core::{config::Config, event_processor::ProcessingError};
-use alloy::{
-    eips::BlockId,
-    primitives::{FixedBytes, Keccak256, U256},
-    providers::Provider,
-    rpc::types::Filter,
-    sol_types::{SolEvent, SolValue},
-};
+use alloy::{primitives::U256, providers::Provider};
 use anyhow::anyhow;
 use connector_utils::types::{
     KmsGrpcRequest, db::KeyType, extra_data::extra_data_v2_payload, u256_to_request_id,
@@ -15,6 +9,7 @@ use fhevm_host_bindings::{
     protocol_config::ProtocolConfig::{NewKmsContext, NewKmsEpoch, ProtocolConfigInstance},
 };
 use kms_connector_api::ErrorCode;
+use kms_context::read_kms_context;
 use kms_grpc::kms::v1::{
     CrsInfo, Eip712DomainMsg, FheParameter, KeyDigest, KeyInfo, MpcContext, MpcNode,
     NewMpcContextRequest, NewMpcEpochRequest, PcrValues, PreviousEpochInfo, SchemeDigest,
@@ -66,10 +61,10 @@ impl<P: Provider> ProtocolConfigProcessor<P> {
         event: &NewKmsContext,
     ) -> Result<KmsGrpcRequest, ProcessingError> {
         let new = build_new_kms_context_grpc_from_event(event)?;
-        let previous_context_event = self
-            .fetch_previous_context_creation_event(event)
-            .await
-            .map_err(ProcessingError::transient)?;
+        let previous_context_event =
+            read_kms_context(&self.protocol_config_contract, event.previousContextId)
+                .await
+                .map_err(ProcessingError::transient)?;
         let old = build_new_kms_context_grpc_from_event(&previous_context_event)?;
         Ok(KmsGrpcRequest::NewMpcContext { new, old })
     }
@@ -95,58 +90,6 @@ impl<P: Provider> ProtocolConfigProcessor<P> {
             // Currently hardcoded to Ecdsa256k1 as it is the only scheme used for Ethereum.
             signing_schemes: vec![SigningSchemeType::Ecdsa256k1 as i32],
         }))
-    }
-
-    /// Fetch the previous context creation event for the given `NewKmsContext` event.
-    ///
-    /// Uses the `previousContextId` field to fetch the anchor via `getKmsContextAnchor`, then
-    /// uses the block number to filter for the event.
-    async fn fetch_previous_context_creation_event(
-        &self,
-        new_context_event: &NewKmsContext,
-    ) -> anyhow::Result<NewKmsContext> {
-        let previous_context_anchor = self
-            .protocol_config_contract
-            .getKmsContextAnchor(new_context_event.previousContextId)
-            .block(BlockId::finalized())
-            .call()
-            .await?;
-        let previous_context_block: u64 =
-            previous_context_anchor.emissionBlockNumber.saturating_to();
-
-        let filter = Filter::new()
-            .address(*self.protocol_config_contract.address())
-            .event_signature(NewKmsContext::SIGNATURE_HASH)
-            .from_block(previous_context_block)
-            .to_block(previous_context_block);
-        let anchor_logs = self
-            .protocol_config_contract
-            .provider()
-            .get_logs(&filter)
-            .await?;
-
-        match anchor_logs.as_slice() {
-            [] => Err(anyhow!(
-                "No event found at anchor {} for previous context {}",
-                previous_context_anchor.emissionBlockNumber,
-                new_context_event.previousContextId
-            )),
-            [anchor_log] => {
-                let previous_context_event = NewKmsContext::decode_log(&anchor_log.inner)?.data;
-                let event_hash = compute_anchor_event_hash(&previous_context_event);
-                if event_hash != previous_context_anchor.contextInfoHash {
-                    return Err(anyhow!(
-                        "Previous context hash verification failed: computed={:?}, on-chain={:?}",
-                        event_hash,
-                        previous_context_anchor.contextInfoHash,
-                    ));
-                }
-                Ok(previous_context_event)
-            }
-            logs => Err(anyhow!(
-                "Too many events found at anchor {previous_context_anchor:?}: {logs:?}"
-            )),
-        }
     }
 
     /// Fetch the material of the previous epoch from `KMSGeneration` contract.
@@ -307,22 +250,4 @@ fn key_type_to_string(key_type: u8) -> anyhow::Result<String> {
         KeyType::Public => Ok("PublicKey".to_string()),
         KeyType::CompressedKeySet => Ok("CompressedXofKeySet".to_string()),
     }
-}
-
-/// Computes the hash of a `NewKmsContext` event.
-///
-/// Used to be compared with the `contextInfoHash` field in the acnhor.
-pub fn compute_anchor_event_hash(event: &NewKmsContext) -> FixedBytes<32> {
-    // keccak256(abi.encode(initialKmsNodeParams, initialThresholds, softwareVersion, pcrValues))
-    let encoded_data = (
-        event.kmsNodeParams.as_slice(),
-        event.thresholds.clone(),
-        &event.softwareVersion,
-        event.pcrValues.as_slice(),
-    )
-        .abi_encode_sequence();
-
-    let mut hasher = Keccak256::new();
-    hasher.update(encoded_data);
-    hasher.finalize()
 }

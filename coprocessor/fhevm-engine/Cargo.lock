@@ -6169,6 +6169,15 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "57d8d8ce877200136358e0bbff3a77965875db3af755a11e1fa6b1b3e2df13ea"
 
 [[package]]
+name = "kms-context"
+version = "0.15.0"
+dependencies = [
+ "alloy",
+ "fhevm_host_bindings",
+ "thiserror 2.0.20",
+]
+
+[[package]]
 name = "lapin"
 version = "4.4.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -8147,6 +8156,16 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "ba39f3699c378cd8970968dcbff9c43159ea4cfbd88d43c00b22f2ef10a435d2"
 
 [[package]]
+name = "request-authorization"
+version = "0.15.0"
+dependencies = [
+ "alloy-primitives",
+ "alloy-signer",
+ "alloy-sol-types",
+ "thiserror 2.0.20",
+]
+
+[[package]]
 name = "reqwest"
 version = "0.12.28"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -8157,6 +8176,7 @@ dependencies = [
  "futures-channel",
  "futures-core",
  "futures-util",
+ "h2",
  "http 1.3.1",
  "http-body 1.0.1",
  "http-body-util",
@@ -10240,15 +10260,22 @@ checksum = "2b0eef68497ca818f50da3de449c64dc406d28170e395fd2ec40b64b6798afec"
 name = "solana-merkle-proof-service"
 version = "0.7.0"
 dependencies = [
+ "alloy",
  "anchor-lang",
  "anyhow",
  "axum 0.7.9",
  "bs58",
+ "ciborium",
  "clap",
  "fhevm-engine-common",
+ "fhevm_host_bindings",
+ "governor",
  "hex",
+ "kms-context",
+ "request-authorization",
  "reqwest 0.12.28",
  "serde",
+ "serde_bytes",
  "serde_json",
  "serial_test",
  "solana-host-follower",

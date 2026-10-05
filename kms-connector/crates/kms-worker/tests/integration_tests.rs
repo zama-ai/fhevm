@@ -29,12 +29,13 @@ use connector_utils::{
     },
 };
 use fhevm_host_bindings::protocol_config::ProtocolConfig::NewKmsContext;
+use kms_context::context_info_hash;
 use kms_grpc::kms::v1::{
     CrsGenResult, Empty, EpochResultResponse as GrpcEpochResultResponse, KeyGenPreprocResult,
     KeyGenResult, PublicDecryptionResponse, PublicDecryptionResponsePayload, SigningSchemeType,
     TypedSignature, UserDecryptionResponse, UserDecryptionResponsePayload,
 };
-use kms_worker::core::{Config, event_processor::compute_anchor_event_hash};
+use kms_worker::core::Config;
 use mocktail::{MockSet, StatusCode, server::MockServer};
 use rstest::rstest;
 use sqlx::{Pool, Postgres};
@@ -104,7 +105,7 @@ async fn test_processing_request(
         // belong to request preparation, so they are skipped on `already_sent` retries.
         TestEventType::NewKmsContext if !already_sent => {
             let previous_event = NewKmsContext::default();
-            let anchor_hash = compute_anchor_event_hash(&previous_event);
+            let anchor_hash = context_info_hash(&previous_event);
             asserter.push_success(&(U256::ZERO, anchor_hash).abi_encode_sequence());
             let rpc_log = RpcLog {
                 inner: Log {

@@ -23,11 +23,6 @@ for name in solana-rpc solana-deployer; do
     -n "$NAMESPACE" -f "$values/values-$name.yaml"
   wait_external_secret "$name"
 done
-# The proof bearer token is only ever read inside this namespace, by the Merkle proof
-# servers and the connectors, so each preview mints its own.
-openssl rand -base64 32 | tr -d '\n' > "$work/proof-api-key"
-kubectl create secret generic solana-proof-api -n "$NAMESPACE" \
-  --from-file=api-key="$work/proof-api-key" --dry-run=client -o yaml | kubectl apply -f - >/dev/null
 
 # Old public actors are imported only for recovery, never for new funding.
 if [[ -z $(kubectl get secret solana-recovery -n "$NAMESPACE" --ignore-not-found -o name) ]]; then
@@ -86,12 +81,12 @@ for i in $(seq 1 "$NB_COPROCESSOR"); do
   kubectl rollout status "deployment/coprocessor-$i-zkproof-worker" -n "$NAMESPACE" --timeout=10m
 done
 
-routes=$(seq 1 "$NB_COPROCESSOR" | jq -Rsc 'split("\n")[:-1] | map({url: ("http://coprocessor-" + . + "-solana-merkle-proof-server:8080"), apiKey: "$(SOLANA_PROOF_API_KEY)"})')
+proof_urls=$(seq 1 "$NB_COPROCESSOR" | jq -Rsc 'split("\n")[:-1] | map("http://coprocessor-" + . + "-solana-merkle-proof-server:8080")')
 for i in $(seq 1 "$NB_KMS_CORE"); do
   helm get values "kms-connector-$i" -n "$NAMESPACE" -o yaml > "$work/connector.yaml"
   helm upgrade "kms-connector-$i" "$KMS_CONNECTOR_CHART" -n "$NAMESPACE" \
     -f "$work/connector.yaml" -f "$values/values-solana-connector-e2e.yaml" \
-    --set-json "commonConfig.hostChains.solana.solanaProofRoutes=$routes" \
+    --set-json "commonConfig.hostChains.solana.solanaProofUrls=$proof_urls" \
     --wait --wait-for-jobs --timeout=10m
 done
 # Relayer host dispatch also needs the Solana RPC/program identity; preserve its EVM entry.

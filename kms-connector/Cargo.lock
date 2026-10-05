@@ -2560,6 +2560,33 @@ dependencies = [
 ]
 
 [[package]]
+name = "ciborium"
+version = "0.2.2"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "42e69ffd6f0917f5c029256a24d0161db17cea3997d185db0d35926308770f0e"
+dependencies = [
+ "ciborium-io",
+ "ciborium-ll",
+ "serde",
+]
+
+[[package]]
+name = "ciborium-io"
+version = "0.2.2"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "05afea1e0a06c9be33d539b876f1ce3692f4afea2cb41f740e7743225ed1c757"
+
+[[package]]
+name = "ciborium-ll"
+version = "0.2.2"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "57663b653d948a338bfb3eeba9bb2fd5fcfaecb9e199e87e1eda4d9e8b240fd9"
+dependencies = [
+ "ciborium-io",
+ "half",
+]
+
+[[package]]
 name = "cipher"
 version = "0.4.4"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -3994,6 +4021,17 @@ dependencies = [
 ]
 
 [[package]]
+name = "half"
+version = "2.7.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "6ea2d84b969582b4b1864a92dc5d27cd2b77b622a8d79306834f1be5ba20d84b"
+dependencies = [
+ "cfg-if",
+ "crunchy",
+ "zerocopy",
+]
+
+[[package]]
 name = "hash32"
 version = "0.3.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -4728,6 +4766,15 @@ dependencies = [
 ]
 
 [[package]]
+name = "kms-context"
+version = "0.15.0"
+dependencies = [
+ "alloy",
+ "fhevm_host_bindings",
+ "thiserror 2.0.20",
+]
+
+[[package]]
 name = "kms-grpc"
 version = "0.15.0-1"
 source = "git+https://github.com/zama-ai/kms.git?rev=97e46335036e237b00524a2c2c000034306f1833#97e46335036e237b00524a2c2c000034306f1833"
@@ -4769,6 +4816,7 @@ dependencies = [
  "base64 0.22.1",
  "bc2wrap",
  "borsh",
+ "ciborium",
  "ciphertext-attestation",
  "connector-utils",
  "dashmap 6.1.0",
@@ -4777,14 +4825,18 @@ dependencies = [
  "futures",
  "humantime-serde",
  "kms-connector-api",
+ "kms-context",
  "kms-grpc",
  "mocktail",
  "prometheus",
  "prost 0.14.4",
+ "rand 0.9.2",
+ "request-authorization",
  "reqwest 0.12.24",
  "ring",
  "rstest",
  "serde",
+ "serde_bytes",
  "serde_json",
  "serial_test",
  "sha2 0.11.0",
@@ -6572,6 +6624,16 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "ba39f3699c378cd8970968dcbff9c43159ea4cfbd88d43c00b22f2ef10a435d2"
 
 [[package]]
+name = "request-authorization"
+version = "0.15.0"
+dependencies = [
+ "alloy-primitives",
+ "alloy-signer",
+ "alloy-sol-types",
+ "thiserror 2.0.20",
+]
+
+[[package]]
 name = "reqwest"
 version = "0.12.24"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -6583,6 +6645,7 @@ dependencies = [
  "futures-channel",
  "futures-core",
  "futures-util",
+ "h2 0.4.16",
  "http 1.4.0",
  "http-body 1.0.1",
  "http-body-util",

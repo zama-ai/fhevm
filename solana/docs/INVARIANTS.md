@@ -357,11 +357,13 @@ data, and by `rebuilds_a_slot_from_get_block_alone` and `shared_transaction_deco
 
 **30. [HOLDS]** The leaf record can stop a decrypt from happening but can
 never be what allows one: the KMS connector verifies every proof against
-the peaks it read on chain itself, asks every configured coprocessor at
-once and takes the first proof that verifies for each query, and rejects a client-supplied proof outright. A compromised or lagging
+the peaks it read on chain itself, asks the configured coprocessors one after another
+until a proof verifies for each query, and rejects a client-supplied proof outright. A compromised or lagging
 record fails or delays decrypts; it cannot authorize one (DD-048).
 Pinned by `matches_on_chain_append_and_authorizes`, `one_serving_coprocessor_carries_a_request_the_others_cannot`,
-`a_record_behind_the_chain_is_retried_not_refused`. A client cannot supply a proof: the request
+`a_record_behind_the_chain_is_retried_not_refused`, `a_slow_coprocessor_is_hedged`,
+`a_stalled_coprocessor_does_not_hold_a_served_batch` and
+`a_failed_or_short_read_leaves_the_batch_to_another_coprocessor`. A client cannot supply a proof: the request
 (`SolanaUserDecryptRequest`) has no proof field, and `the_decoder_is_strict` rejects trailing bytes.
 
 **31. [HOLDS]** Coprocessor scheduling is decoupled from authorization: eager
@@ -513,7 +515,7 @@ with `InvalidationTimestampInTheFuture`. Pinned by the permit vector
 using the same compiled `zama_solana_acl` code the on-chain program runs
 (decode, seeds, MMR verification, both authorize functions). The Merkle proof
 comes from the coprocessors' leaf record (`POST /v1/solana/merkle-proofs`,
-API key), never from the client, and is verified against the peaks of the
+signed by the party's tx-sender, DD-067), never from the client, and is verified against the peaks of the
 account the connector read itself (`kms-worker/src/core/solana/`).
 Pinned by `an_encrypted_store_whose_fields_derive_another_address_is_rejected`,
 `an_encrypted_store_with_an_altered_bump_is_rejected` and `on_chain_account_decoder_reads_layout`.
@@ -611,9 +613,10 @@ Pinned by `rejects_more_than_max_ops`, `cost_snapshot_fhe_execute_max_steps` and
 
 **47. [RETIRED]** The standalone proof service is gone (RFC 035, DD-048). The
 leaf record lives in each coprocessor's Merkle proof service database, written
-by its Merkle indexer and served by its Merkle proof server behind an API key (DD-066); the connector
-asks every configured coprocessor at once, so one behind, stalled or
-unreachable cannot sink or hold a request another can serve. Authorization was
+by its Merkle indexer and served by its Merkle proof server (DD-066, DD-067); the connector
+asks the next coprocessor as soon as one answers without a proof, fails or refuses, and after
+`HEDGE_DELAY` without an answer, so one behind, stalled, overloaded or unreachable cannot sink a
+request another can serve, or hold it longer than that delay. Authorization was
 never its to give (#30).
 
 **48. [HOLDS]** Settle transactions at production KMS thresholds fit one packet

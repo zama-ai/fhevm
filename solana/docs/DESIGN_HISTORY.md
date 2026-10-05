@@ -734,3 +734,12 @@ indexer writes.
 > served while the listener is down, for the leaves it recorded before it stopped. […] this costs
 > nothing while one of them ingests; while every coprocessor's ingestion is stopped, a Store someone
 > keeps appending to cannot be decrypted until one catches up.
+
+### DD-064, replaced in part by DD-067
+
+DD-067 made the server answer only signed requests and the connector ask the coprocessors one after
+another.
+
+> The connector takes the first proof that verifies from any coprocessor, so this costs nothing
+> while one indexer runs; while every coprocessor's indexer is stopped, a Store someone keeps
+> appending to cannot be decrypted until one catches up.

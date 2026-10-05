@@ -15,5 +15,5 @@ pub use error::{ProcessingError, ProcessingErrorKind, RequestCheckError, Request
 pub use kms::KMSGenerationProcessor;
 pub use kms_client::{KmsClient, KmsPollTarget};
 pub use processor::{DbEventProcessor, EventProcessor};
-pub use protocol_config::{ProtocolConfigProcessor, compute_anchor_event_hash};
+pub use protocol_config::ProtocolConfigProcessor;
 pub use rpc::HostRpcClient;

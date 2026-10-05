@@ -1,13 +1,9 @@
 import { describe, expect, test } from "bun:test";
 
-import {
-  serializeKmsHostChains,
-  solanaMerkleProofUrl,
-  SOLANA_LEAF_PROOF_API_KEY,
-} from "./generate/solana";
+import { serializeKmsHostChains, solanaMerkleProofUrl } from "./generate/solana";
 
 describe("solana", () => {
-  test("gives a Solana host chain the Merkle proof route the connector requires", () => {
+  test("gives a Solana host chain the Merkle proof URL the connector requires", () => {
     const parsed = JSON.parse(
       serializeKmsHostChains([
         {
@@ -19,11 +15,9 @@ describe("solana", () => {
       ]),
     ) as Array<Record<string, unknown>>;
 
-    // The kms-worker refuses to load a Solana chain without a proof route, and exits before
+    // The kms-worker refuses to load a Solana chain without a proof URL, and exits before
     // serving anything.
-    expect(parsed[0]?.solana_proof_routes).toEqual([
-      { url: solanaMerkleProofUrl(), api_key: SOLANA_LEAF_PROOF_API_KEY },
-    ]);
+    expect(parsed[0]?.solana_proof_urls).toEqual([solanaMerkleProofUrl()]);
     expect(parsed[0]?.solana_host_program_id).toBe("SoLaNaProgram111");
     expect(parsed[0]?.acl_address).toBeUndefined();
   });
@@ -36,7 +30,7 @@ describe("solana", () => {
     ) as Array<Record<string, unknown>>;
 
     // The same check refuses an EVM chain that sets a Solana field.
-    expect(parsed[0]?.solana_proof_routes).toBeUndefined();
+    expect(parsed[0]?.solana_proof_urls).toBeUndefined();
     expect(parsed[0]?.acl_address).toBe("0xalpha");
   });
 

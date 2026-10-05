@@ -92,6 +92,9 @@ spec:
               value: {{ .Values.kmsConnectorKmsWorker.config.kmsCoreEndpoints | quote }}
             - name: KMS_CONNECTOR_HOST_CHAINS
               value: {{ include "kmsConnector.hostChainsJson" . | quote }}
+            {{- if include "kmsConnector.hasSolanaHostChain" . }}
+            {{- include "kmsConnector.txSenderWalletEnv" . | nindent 12 }}
+            {{- end }}
           ports:
             {{- range $portName, $portValue := .Values.kmsConnectorKmsWorker.ports }}
             - name: {{ $portName }}

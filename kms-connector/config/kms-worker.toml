@@ -117,6 +117,22 @@ database_url = "postgres://postgres:postgres@localhost/kms-connector"
 # ENV: KMS_CONNECTOR_TASK_LIMIT
 # task_limit = 1000
 
+# The connector's tx-sender wallet, which signs the Solana Merkle proof requests (required with a
+# Solana host chain). Configure the same key as the tx-sender's.
+# Private key as a hex string, with or without 0x prefix.
+# WARNING: Using a raw private key is intended for TESTING PURPOSES ONLY.
+#          Production deployments MUST use `aws_kms_config` instead (see below).
+# ENV: KMS_CONNECTOR_PRIVATE_KEY
+private_key = "0x3f45b129a7fd099146e9fe63851a71646231f7743c712695f3b2d2bf0e41c774"
+# AWS KMS key of the wallet (used when `private_key` is not set):
+# [aws_kms_config]
+# ENV: KMS_CONNECTOR_AWS_KMS_CONFIG__KEY_ID
+# key_id = "12345678-1234-1234-1234-123456789012"
+# ENV: KMS_CONNECTOR_AWS_KMS_CONFIG__REGION
+# region = "us-east-1"
+# ENV: KMS_CONNECTOR_AWS_KMS_CONFIG__ENDPOINT
+# endpoint = "http://localhost:4566"
+
 # Configuration of the Decryption contract (required)
 [decryption_contract]
 # Address of the Decryption contract (required)
@@ -191,9 +207,10 @@ acl_address = "0x0000000000000000000000000000000000000000"
 # beside its extraData; a user decrypt names the owner address and the store per entry.
 # Solana chains only, required: the base58 zama-host program id.
 # solana_host_program_id = "11111111111111111111111111111111"
-# Solana chains only, at least one: each coprocessor's Merkle proof endpoint
-# (`POST /v1/solana/merkle-proofs`) and the bearer key that coprocessor issued. Every route is asked
-# at once and the first proof that verifies is taken, so a lagging or stalled coprocessor neither
-# fails nor delays a request another one serves; each route therefore sees every proof read. A
-# route's key is sent only to it.
-# solana_proof_routes = [{ url = "http://localhost:8080", api_key = "change-me" }]
+# Solana chains only, at least one: each coprocessor's Merkle proof server
+# (`POST /v1/solana/merkle-proofs`). The servers are asked one after another in a random order:
+# the next one as soon as an answer leaves a query unproven, or after `HEDGE_DELAY` (250 ms)
+# without an answer, so a lagging or stalled coprocessor neither fails a request another one serves
+# nor delays it by more than that. Each request is signed by the tx-sender wallet configured above
+# (`private_key` or `aws_kms_config`).
+# solana_proof_urls = ["http://localhost:8080"]

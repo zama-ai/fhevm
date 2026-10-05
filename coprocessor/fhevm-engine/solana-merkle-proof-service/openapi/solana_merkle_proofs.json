@@ -2,7 +2,7 @@
   "openapi": "3.1.0",
   "info": {
     "title": "Solana Merkle proofs",
-    "description": "Inclusion proofs from the RFC 035 leaf record of Solana encrypted stores, for the KMS connector.",
+    "description": "Inclusion proofs from the leaf record of Solana encrypted stores, for the KMS connector.",
     "contact": {
       "name": "Zama"
     },
@@ -22,7 +22,7 @@
         "operationId": "merkle_proofs",
         "requestBody": {
           "content": {
-            "application/json": {
+            "application/cbor": {
               "schema": {
                 "$ref": "#/components/schemas/MerkleProofRequest"
               }
@@ -34,7 +34,7 @@
           "200": {
             "description": "One answer per queried leaf, in request order",
             "content": {
-              "application/json": {
+              "application/cbor": {
                 "schema": {
                   "$ref": "#/components/schemas/MerkleProofResponse"
                 }
@@ -44,7 +44,7 @@
           "400": {
             "description": "Malformed request",
             "content": {
-              "application/json": {
+              "application/cbor": {
                 "schema": {
                   "$ref": "#/components/schemas/ErrorResponse"
                 }
@@ -52,9 +52,19 @@
             }
           },
           "401": {
-            "description": "Missing or wrong API key",
+            "description": "Request signature refused",
             "content": {
-              "application/json": {
+              "application/cbor": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "Signer over its rate or holding as many signed requests as it may, or no database connection free in time",
+            "content": {
+              "application/cbor": {
                 "schema": {
                   "$ref": "#/components/schemas/ErrorResponse"
                 }
@@ -62,9 +72,9 @@
             }
           },
           "502": {
-            "description": "Leaf record unavailable",
+            "description": "Leaf record or KMS tx-sender set unavailable",
             "content": {
-              "application/json": {
+              "application/cbor": {
                 "schema": {
                   "$ref": "#/components/schemas/ErrorResponse"
                 }
@@ -74,7 +84,7 @@
         },
         "security": [
           {
-            "bearer": []
+            "request_authorization": []
           }
         ]
       }
@@ -84,11 +94,12 @@
     "schemas": {
       "ErrorCode": {
         "type": "string",
-        "description": "Error codes, in the RFC 033 vocabulary.",
+        "description": "Error codes, in the vocabulary of the Direct HTTP Decryption Endpoint RFC.",
         "enum": [
           "malformed",
           "sender_authentication_failed",
-          "upstream_transient"
+          "upstream_transient",
+          "rate_limited"
         ]
       },
       "ErrorResponse": {
@@ -112,7 +123,7 @@
       },
       "LeafQuery": {
         "type": "object",
-        "description": "One leaf to prove. Byte fields are 32 bytes as lowercase hex, `0x` optional.",
+        "description": "One leaf to prove. Byte fields are 32-byte CBOR byte strings.",
         "required": [
           "encryptedStore",
           "handle",
@@ -121,16 +132,19 @@
         "properties": {
           "encryptedStore": {
             "type": "string",
+            "format": "binary",
             "description": "The encrypted store account whose MMR holds the leaf."
           },
           "handle": {
-            "type": "string"
+            "type": "string",
+            "format": "binary"
           },
           "key": {
             "type": [
               "string",
               "null"
             ],
+            "format": "binary",
             "description": "The allowed key; required for `allowed`, absent for `public`."
           },
           "kind": {
@@ -173,7 +187,7 @@
                 "items": {
                   "type": "string"
                 },
-                "description": "Authentication path from the leaf to its peak."
+                "description": "Authentication path from the leaf to its peak, 32-byte byte strings."
               },
               "status": {
                 "type": "string",
@@ -253,9 +267,11 @@
       }
     },
     "securitySchemes": {
-      "bearer": {
-        "type": "http",
-        "scheme": "bearer"
+      "request_authorization": {
+        "type": "apiKey",
+        "in": "header",
+        "name": "Authorization",
+        "description": "`Zama-EIP712 expires=<unix seconds>, signature=0x<65 bytes>`: an EIP-712 signature over this path and the exact body, by the tx-sender of a node in a live KMS context of the canonical ProtocolConfig, valid for at most 60 s. The `shared/request-authorization` crate defines the typed data."
       }
     }
   }

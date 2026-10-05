@@ -11,49 +11,66 @@ use super::proof::{HostProofReader, LeafQuery, MerkleProofOutcome, ProofReadErro
 use alloy::primitives::B256;
 use futures::stream::{FuturesUnordered, StreamExt};
 use solana_pubkey::Pubkey;
+use std::time::Duration;
 use zama_solana_acl::{
     AclError, EncryptedStore, MmrProof, authorize_state_historical, authorize_state_public,
 };
 
-/// Asks every coprocessor for the whole batch at once, and returns one result per query in batch
-/// order. Only a found proof that verifies against the observed peaks resolves a query; as soon as
-/// every query is resolved the reads still running are dropped, so one slow coprocessor does not
-/// hold a request another one can serve. Otherwise a query keeps the last failure a coprocessor
-/// answered; a failed read or an answer of the wrong length says nothing about any leaf. A query
-/// no coprocessor answered is a [`ProofReadError`]. The worker loop is the only retry layer.
+/// How long a proof read may run before the next coprocessor is asked as well. A proof read takes
+/// tens of milliseconds, so a coprocessor slower than this is most likely stalled or overloaded.
+pub const HEDGE_DELAY: Duration = Duration::from_millis(250);
+
+/// Asks the coprocessors for the whole batch one after another, in the reader's
+/// [`HostProofReader::hedge_order`], and returns one result per query in batch order. The next
+/// coprocessor is asked as soon as an answer leaves a query unresolved, or once [`HEDGE_DELAY`]
+/// passes without one, so a lagging, failing or stalled coprocessor costs at most that delay. Only
+/// a found proof that verifies against the observed peaks resolves a query; once every query is
+/// resolved the reads still running are dropped. Otherwise a query keeps the last failure a
+/// coprocessor answered; a failed read or an answer of the wrong length says nothing about any
+/// leaf. A query no coprocessor answered is a [`ProofReadError`]. Every coprocessor receives the
+/// same prepared batch. The worker loop is the only retry layer.
 pub async fn verify_proofs<P: HostProofReader, T: Sync>(
     reader: &P,
     batch: &[(LeafQuery, T)],
     verify: impl Fn(&T, &MerkleProofOutcome) -> Result<(), HandleBindingFailure>,
 ) -> Result<Vec<Result<(), HandleBindingFailure>>, ProofReadError> {
     let queries: Vec<LeafQuery> = batch.iter().map(|(query, _)| *query).collect();
-    let mut answers: FuturesUnordered<_> = (0..reader.source_count())
-        .map(|source| {
-            let queries = &queries;
-            async move { (source, reader.read_proofs(source, queries).await) }
-        })
-        .collect();
+    let prepared = reader.prepare(&queries).await?;
+    let read = |source: usize| {
+        let prepared = &prepared;
+        async move { (source, reader.read_proofs(source, prepared).await) }
+    };
+    let mut unasked = reader.hedge_order().into_iter();
+    let mut answers = FuturesUnordered::new();
+    answers.extend(unasked.next().map(read));
     let mut results: Vec<Option<Result<(), HandleBindingFailure>>> = vec![None; batch.len()];
     let mut read_failures = Vec::new();
-    while let Some((source, answer)) = answers.next().await {
-        let outcomes = match answer.and_then(|outcomes| {
+    loop {
+        let (source, answer) = tokio::select! {
+            Some(answer) = answers.next() => answer,
+            () = tokio::time::sleep(HEDGE_DELAY), if !unasked.as_slice().is_empty() => {
+                answers.extend(unasked.next().map(read));
+                continue;
+            }
+            else => break,
+        };
+        match answer.and_then(|outcomes| {
             check_length(queries.len(), outcomes.len())?;
             Ok(outcomes)
         }) {
-            Ok(outcomes) => outcomes,
-            Err(error) => {
-                read_failures.push(format!("coprocessor {source}: {error}"));
-                continue;
+            Ok(outcomes) => {
+                for ((kept, (_, item)), outcome) in results.iter_mut().zip(batch).zip(&outcomes) {
+                    if *kept != Some(Ok(())) {
+                        *kept = Some(verify(item, outcome));
+                    }
+                }
             }
-        };
-        for ((kept, (_, item)), outcome) in results.iter_mut().zip(batch).zip(&outcomes) {
-            if *kept != Some(Ok(())) {
-                *kept = Some(verify(item, outcome));
-            }
+            Err(error) => read_failures.push(format!("coprocessor {source}: {error}")),
         }
         if results.iter().all(|result| *result == Some(Ok(()))) {
             break;
         }
+        answers.extend(unasked.next().map(read));
     }
     results
         .into_iter()

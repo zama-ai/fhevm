@@ -93,6 +93,7 @@ are written as one narrative instead.
 | [DD-064](#dd-064-leaf-proofs-are-served-apart-from-ingestion)                                                                             | adopted                                  | Leaf proofs are served apart from ingestion                                                                                    |
 | [DD-065](#dd-065-a-public-decryption-is-accepted-on-chain-by-its-certificate-alone)                                                       | adopted                                  | A public decryption is accepted on-chain by its certificate alone                                                              |
 | [DD-066](#dd-066-the-leaf-record-has-its-own-indexer-and-database)                                                                        | adopted                                  | The leaf record has its own indexer and database                                                                               |
+| [DD-067](#dd-067-a-merkle-proof-request-is-signed-by-a-kms-contexts-tx-sender)                                                             | adopted                                  | A Merkle proof request is signed by a KMS context's tx-sender                                                                  |
 
 ## DD-002: Keep App Store And Host ACL Store Separate
 
@@ -1759,11 +1760,12 @@ Decision:
 2. **One decrypt path.** A user decrypt proves the allow leaf; the current handle and a replaced
    one authorize the same way, so `authorize_current` is gone. A public decrypt proves the public
    leaf. Both proofs are fetched by the KMS connector from the coprocessors' leaf record
-   (`POST /v1/solana/merkle-proofs`, API key; every configured coprocessor asked at once, the first
-   proof that verifies taken, with no retry inside an attempt) and verified against the peaks the
-   connector read on chain. Each coprocessor therefore serves every proof read: the load grows with
-   their number, and in exchange one stalled or unreachable coprocessor cannot delay a batch
-   another one serves (fhevm-internal#2104).
+   (`POST /v1/solana/merkle-proofs`, signed by the KMS context's tx-sender, DD-067) and verified
+   against the peaks the connector read on chain. The connector asks the coprocessors one after
+   another in a random order: the next one as soon as an answer leaves a proof missing, or after
+   `HEDGE_DELAY` (250 ms) without an answer. There is no retry inside an attempt. One stalled or
+   unreachable coprocessor therefore delays a batch another one serves by at most that delay, and a
+   coprocessor that serves the whole batch is the only one asked (fhevm-internal#2104).
    A request names only the Store and, for a delegated entry, the delegator as owner address; a
    client-supplied proof is rejected. A public decrypt names each handle's Store beside `extraData` (DD-060).
 3. **Each coprocessor keeps the leaf record.** Its Merkle indexer recomputes the leaves from the
@@ -2519,13 +2521,13 @@ An ingestion stop therefore also stopped decryptions the record could still serv
 
 Decision:
 
-`solana_merkle_proof_server` serves `POST /v1/solana/merkle-proofs` and the health routes as its
-own Deployment and ClusterIP Service, `<release>-solana-merkle-proof-server`, from the
-host-listener image and with its own pool (`--database-pool-size`, 8 by default). It only reads
-the Merkle proof service's database (DD-066), so it can run several replicas and roll without
-downtime. The Merkle indexer, which writes that database, stays one replica with `Recreate`, as
-does the listener, which serves only `/healthz` and `/liveness`. The connector's proof routes name
-the proof server's Service.
+`solana_merkle_proof_server` serves `POST /v1/solana/merkle-proofs` and the health routes as its own
+Deployment and ClusterIP Service, `<release>-solana-merkle-proof-server`, from the host-listener
+image and with its own pool (`--database-pool-size`, 8 by default). It answers only requests signed
+by the tx-sender of a live KMS context (DD-067). It only reads the Merkle proof service's database
+(DD-066), so it can run several replicas and roll without downtime. The Merkle indexer, which writes
+that database, stays one replica with `Recreate`, as does the listener, which serves only `/healthz`
+and `/liveness`. The connector's proof routes name the proof server's Service.
 
 On EVM the connector reads the ACL from the host chain, and no coprocessor serves proofs. The split
 follows the coprocessor's one Deployment per role: `host_listener`, `host_listener_poller` and
@@ -2544,13 +2546,13 @@ The Merkle database has the server as a second client, with 8 connections by def
 being served while the Merkle indexer is down, for the leaves it recorded before it stopped. Such a
 proof verifies until a later append to its Store merges its mountain, and the connector's check
 fails from then until the indexer catches up. The newest leaf sits in the smallest mountain, so it
-goes stale first, and anyone can append to a Store with a zero-value transfer. The connector takes
-the first proof that verifies from any coprocessor, so this costs nothing while one indexer runs;
-while every coprocessor's indexer is stopped, a Store someone keeps appending to cannot be decrypted
-until one catches up. The connector retries a Gateway request up to its `max_decryption_attempts`
-before marking it failed, and an HTTP caller gets `acl_denied` and resubmits. A grant made after the
-stop has no proof until the indexer catches up. `ci/preview-env/solana-host/test_charts.py` pins the
-two Deployments.
+goes stale first, and anyone can append to a Store with a zero-value transfer. The connector asks
+the next coprocessor as soon as an answer leaves a proof unverified (DD-067), so this costs one
+more request while one indexer runs; while every coprocessor's indexer is stopped, a Store someone
+keeps appending to cannot be decrypted until one catches up. The connector retries a Gateway
+request up to its `max_decryption_attempts` before marking it failed, and an HTTP caller gets
+`acl_denied` and resubmits. A grant made after the stop has no proof until the indexer catches up.
+`ci/preview-env/solana-host/test_charts.py` pins the two Deployments.
 
 ## DD-065: A public decryption is accepted on-chain by its certificate alone
 
@@ -2667,6 +2669,114 @@ again at leaf zero, which the record reads as a skipped count. The preview rollo
 recreates the Merkle database and takes a new start slot on every run. The coprocessor database
 has no leaf tables.
 
+## DD-067: A Merkle proof request is signed by a KMS context's tx-sender
+
+Status: adopted
+
+Recorded in zama-ai/fhevm#4219.
+
+The Merkle proof server took one bearer key, shared by every KMS connector that asked it. Each
+coprocessor had to hand that key to every KMS party and rotate it with them, and the server could
+not tell one connector from another, so it could not limit or attribute what a connector asked.
+
+Decision:
+
+kms-worker signs each request with its party's tx-sender wallet, the key its tx-sender submits
+Gateway transactions with: a local private key or an AWS KMS key, never a session key. The
+signature is EIP-712 over `RequestAuthorization(string path, bytes32 bodyDigest, uint64 expires)`,
+with the domain `{name: "zama-request-authorization", version: "1", chainId, verifyingContract}`
+naming the canonical `ProtocolConfig` and its chain, so two networks on one chain do not accept
+each other's requests. It travels as `Authorization: Zama-EIP712 expires=<unix seconds>,
+signature=0x<65 bytes>`. The `shared/request-authorization` crate builds and checks it for both
+sides. A signature is valid for at most `MAX_VALIDITY_SECS` (60) seconds after the server's clock;
+kms-worker signs for 30 seconds, waits at most `host_rpc_call_timeout` for the signature, and sends
+the same signed batch to each coprocessor it asks. A server checks the expiry when a request
+arrives, and kms-worker asks every coprocessor within a few hedge delays, so 30 seconds leaves room
+for clock skew. It asks them one after another in a random order: the next one
+as soon as an answer leaves a query without a verified proof, or after `HEDGE_DELAY` (250 ms)
+without an answer.
+
+`solana_merkle_proof_server` recovers the signer and answers only the tx-senders of the live KMS
+contexts. It reads them from the canonical `ProtocolConfig` at the finalized block every 60 seconds:
+the live context ids, then each context's nodes from its `NewKmsContext` event at the context's
+anchor block, checked against the anchor's `contextInfoHash`. kms-worker reads a previous context
+the same way, through `shared/kms-context`. A refresh that fails, or takes more than 30 seconds,
+keeps the last set. Until the first read succeeds, every request gets `upstream_transient` (502,
+retryable) and `/healthz` answers 503. A missing, expired, malformed or unknown signature gets
+`sender_authentication_failed` (401) before the database is read.
+
+The bodies are CBOR (RFC 8949) over HTTP/2 without TLS negotiation (prior knowledge). Hashes and
+keys travel as 32-byte byte strings, and the requests kms-worker sends one coprocessor share one
+connection. `solana/test-fixtures/merkle-proofs/merkle_proofs_v1.json` pins the request and
+response bytes for both sides.
+
+No recipient is signed. A coprocessor that received a batch, or anyone who reads the plain-HTTP
+traffic inside the cluster, can resend it to the other coprocessors until it expires. The answers
+are public proofs, so a replay learns nothing, and it must not cost anything either. Each server
+remembers every signed request it admitted until its signature expires (`AnswerCache`, keyed by the
+EIP-712 signing hash). A request whose body does not decode is refused before the cache. A request
+is admitted once its signer's rate accepts it, charged under the cache's lock, so two copies
+arriving together are charged once; an over-rate request is refused and never remembered. The first
+copy to arrive is answered once, in a task of its own, so a caller that disconnects does not cancel
+it. Every other copy, sent at the same time or later, waits for that answer and gets the same bytes,
+including a refusal the answer ended in. A server therefore charges and reads at most once per
+signed request. A copy that arrives after its request was forgotten at expiry is refused as expired
+rather than charged again. The signing hash names no signer, so KMS nodes that sign the same body in
+the same second share one answer. A worker retry signed within the same second as the batch it
+retries has the same signing hash, and gets the earlier answer; the worker loop retries it again
+later. The relayer does not call the Merkle proof server.
+
+Each KMS tx-sender may ask one server for `--kms-tx-sender-leaves-per-second` (4000) queried
+leaves per second, in bursts of as many and at least `MAX_LEAVES_PER_REQUEST` (64). The rate is a
+backstop against a faulty or compromised connector, not sized from load data; a sustained load
+meets the cache budget below first. All but one
+connection of the pool (`--database-pool-size`, 8, at least 2) serve proof reads, one request each
+at a time, so `/healthz` always has one. A request waits up to `PROOF_READ_WAIT` (200 ms) for its
+turn. That is below the connector's `HEDGE_DELAY`, so a refusal sends the connector to the next
+coprocessor no later than its hedge would have. A server remembers at most
+`--answer-cache-mib-per-kms-tx-sender` (16) MiB of each tx-sender's requests with their answers,
+counting `ENTRY_OVERHEAD_BYTES` (768) per request beside its answer. A new request past that is
+refused rather than admitted unremembered, since a replay of it would then cost work again. The
+budget is per tx-sender, so a faulty or compromised connector refuses only its own requests. These
+refusals are `rate_limited` (429, retryable), and the connector treats them as a failed read and
+asks the next coprocessor at once.
+
+Rejected alternatives:
+
+| Alternative | Why not |
+|---|---|
+| A bearer key per coprocessor | Every KMS party holds every coprocessor's key, and the server still cannot tell connectors apart. |
+| A key per connector, listed in each coprocessor's config | Each coprocessor edits its config when a KMS context changes; `ProtocolConfig` already lists the tx-senders. |
+| mTLS | Each coprocessor runs a certificate authority for the KMS parties, and the identity is not the on-chain one. |
+| Every coprocessor asked at once | Each coprocessor serves every proof read, so the load grows with the number of coprocessors, for an answer one coprocessor usually gives alone. |
+| Sign the recipient coprocessor | The coprocessors share no identity the connector signs for, and the connector would sign once per coprocessor instead of once per batch. |
+| Refuse a signature a server has already seen | The first coprocessor asked could replay the batch to the others before the connector reaches them, and the connector's own read would then be refused. |
+| JSON bodies | Hex doubles every hash: a full answer of 64 proofs with 64 siblings is about 280 KB instead of 150 KB, and both sides parse hex by hand. |
+| Protobuf or gRPC | A schema compiler and generated code in two workspaces, for four message types. |
+| A session key kms-worker registers with its tx-sender key | A second key to rotate and a registration round, for a signature per batch that AWS KMS already serves. |
+
+Consequences:
+
+kms-worker needs signing access to the tx-sender key: the same `KMS_CONNECTOR_PRIVATE_KEY` or
+`KMS_CONNECTOR_AWS_KMS_CONFIG__KEY_ID`, which the chart passes to kms-worker only when a Solana host
+chain is configured. With AWS KMS, kms-worker's own service account needs `kms:GetPublicKey` and
+`kms:Sign` on that key, or kms-worker exits at startup. A compromised kms-worker can then sign as
+the party's tx-sender, which submits its Gateway transactions. Each signed batch costs one AWS KMS
+signature from the quota the tx-sender also uses. A new KMS context is answered
+once its creation is finalized, up to 60 seconds later. The proof server reads the canonical
+`ProtocolConfig` over the RPC of the coprocessor's `chains[]` entry named by
+`commonConfig.canonicalProtocolConfigChainId`, and the chart refuses to render without it. The
+preview mints no proof secret. A 64-leaf answer with 20-hash paths (a store of a million leaves)
+holds under 48 KiB, so a tx-sender's 16 MiB holds about 22,000 leaves: 730 per second for
+30 seconds each, and about 450 in 1-leaf requests. This budget, not the rate, bounds a
+connector's sustained reads from one server. kms-worker shuffles the coprocessors for each
+batch, so one server sees about its share of the batches that the first coprocessor asked
+resolves; a batch with a query left unresolved, such as one whose leaf is not recorded yet,
+reaches every coprocessor. A tx-sender past its budget is refused until older requests expire,
+and the connector asks another coprocessor. 13 KMS nodes in two live contexts hold at most
+416 MiB, inside the chart's 512 MiB limit. The cache and the rate are per replica, so a copy that
+reaches another replica of the same server is charged there again.
+
 ## Open product decisions
 
 Not settled by the decisions above. Forward requirements are detailed in
@@ -2688,8 +2798,9 @@ Not settled by the decisions above. Forward requirements are detailed in
   (DD-003, DD-059, fhevm-internal#2087).
 - Historical handle discovery conventions for apps.
 - Production role and governance names for public-decrypt and grant authority.
-- Leaf-record availability (DD-048): the connector asks every configured coprocessor at once, so
-  one behind, stalled or unreachable cannot sink or hold a request another can serve. A record
+- Leaf-record availability (DD-048): the connector asks the next coprocessor when one answers
+  without a proof, fails, or takes longer than `HEDGE_DELAY` (250 ms), so one behind, stalled or
+  unreachable cannot sink a request another can serve, or hold it longer than that delay. A record
   rebuilt by replay from the start slot catches up at the archive's speed; how a coprocessor heals
   faster, for instance from another coprocessor's `pg_dump`, is not yet a runbook (DD-066).
 - A Solana-native composition pattern for contract-to-contract confidential calls has not been

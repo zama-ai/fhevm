@@ -18,12 +18,17 @@ test = false
 bench = false
 
 [dependencies]
+alloy = { workspace = true }
 anyhow = { workspace = true }
-axum = { workspace = true }
+# HTTP/2 without TLS (prior knowledge), as the KMS connector sends it.
+axum = { workspace = true, features = ["http2"] }
 bs58 = "0.5.1"
+ciborium = "0.2.2"
 clap = { workspace = true }
-hex = { workspace = true }
+# Already in the tree through solana-streamer.
+governor = "0.6.3"
 serde = { workspace = true, features = ["derive"] }
+serde_bytes = "0.11.19"
 sqlx = { workspace = true }
 thiserror = { workspace = true }
 tokio = { workspace = true }
@@ -33,15 +38,19 @@ tracing = { workspace = true }
 utoipa = { workspace = true }
 
 fhevm-engine-common = { path = "../fhevm-engine-common" }
+fhevm_host_bindings = { path = "../../../host-contracts/rust_bindings", default-features = false }
+kms-context = { path = "../../../shared/kms-context" }
+request-authorization = { path = "../../../shared/request-authorization" }
 solana-host-follower = { path = "../solana-host-follower" }
-# Leaf commitments and MMR of the RFC 035 leaf record, shared with the on-chain host.
+# Leaf commitments and MMR of the leaf record, shared with the on-chain host.
 zama-solana-acl = { path = "../../../solana/crates/zama-solana-acl" }
 
 [dev-dependencies]
 # Encodes host instructions for the indexer tests' blocks.
 anchor-lang = "1.2.0"
 zama-host = { path = "../../../solana/programs/zama-host", default-features = false, features = ["no-entrypoint", "decode"] }
-reqwest = { workspace = true, features = ["json"] }
+hex = { workspace = true }
+reqwest = { workspace = true, features = ["http2"] }
 serde_json = { workspace = true }
 serial_test = { workspace = true }
 solana-sdk = "3.0"
