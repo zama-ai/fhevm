@@ -5,7 +5,7 @@
 mod support;
 
 use std::{
-    collections::{BTreeMap, HashMap, HashSet},
+    collections::{BTreeMap, HashMap, HashSet, VecDeque},
     sync::Mutex,
     time::{SystemTime, UNIX_EPOCH},
 };
@@ -25,15 +25,16 @@ use solana_merkle_proof_service::server::{
     MERKLE_PROOFS_PATH,
 };
 use solana_merkle_proof_service::store::{
-    load_block_leaves, load_checkpoint, load_served_store, load_store_cursors,
-    reduce_block_leaves, store_block_leaves, store_checkpoint,
-    EncryptedStoreCursor, TransactionStoreWrites,
+    leaf_commitment, load_block_leaves, load_checkpoint, load_served_store,
+    load_store_cursors, reduce_block_leaves, store_block_leaves,
+    store_checkpoint, EncryptedStoreCursor, TransactionStoreWrites,
 };
 use solana_merkle_proof_service::store_check::{check_stores, StoreAccounts};
 use solana_sdk::{account::Account, pubkey::Pubkey};
 use tokio_util::sync::CancellationToken;
 use zama_solana_acl::{
-    encrypted_store_discriminator, mmr_verify, EncryptedStore, MmrProof,
+    encrypted_store_discriminator, mmr_append, mmr_verify, EncryptedStore,
+    MmrProof,
 };
 
 const ACCOUNT: [u8; 32] = [0xAC; 32];
@@ -635,6 +636,66 @@ impl StoreAccounts for ChainWritingDuringTheRead<'_> {
     }
 }
 
+/// What a [`ChainByPage`] does before it answers a page of the check.
+enum BeforePage {
+    Nothing,
+    /// The indexer records this write, as it can between two pages.
+    Record(EncryptedStoreWrite),
+    Fail,
+}
+
+/// [`Chain`]'s accounts, each page answered after its scripted step.
+struct ChainByPage<'a> {
+    pool: &'a sqlx::PgPool,
+    chain: Chain,
+    pages: Mutex<VecDeque<BeforePage>>,
+}
+
+impl StoreAccounts for ChainByPage<'_> {
+    async fn accounts(
+        &self,
+        stores: &[[u8; 32]],
+    ) -> anyhow::Result<Vec<Option<Account>>> {
+        let step = self.pages.lock().unwrap().pop_front();
+        match step.expect("a scripted page") {
+            BeforePage::Nothing => {}
+            BeforePage::Record(write) => {
+                record(self.pool, 11, vec![write])
+                    .await
+                    .map_err(|err| anyhow::anyhow!("{err}"))?;
+            }
+            BeforePage::Fail => anyhow::bail!("account read failed"),
+        }
+        self.chain.accounts(stores).await
+    }
+}
+
+/// Records 100 stores after `address`, so a check reads `address` on its first page of 100 and
+/// then a second page. Nothing is on chain at their addresses.
+async fn record_a_second_page(
+    pool: &sqlx::PgPool,
+    address: [u8; 32],
+) -> Result<(), Box<dyn std::error::Error>> {
+    for filler in 0..100u8 {
+        let mut store = [0xFF; 32];
+        store[31] = filler;
+        assert!(address < store, "the store under test sorts first");
+        record(
+            pool,
+            10,
+            vec![EncryptedStoreWrite {
+                encrypted_store: store,
+                previous_leaf_count: 0,
+                handle: [0x10; 32],
+                allowed_keys: vec![OWNER],
+                make_public: false,
+            }],
+        )
+        .await?;
+    }
+    Ok(())
+}
+
 impl StoreAccounts for Chain {
     async fn accounts(
         &self,
@@ -868,5 +929,132 @@ async fn a_store_written_during_the_check_is_compared(
     };
     check_stores(&pool, &growing, &host_program, "1").await?;
     assert!(!quarantined().await?);
+    Ok(())
+}
+
+/// A store the record is behind on until after its page is read is compared once more at the end
+/// of the check: here the indexer records its missing leaf while the check reads the next page,
+/// and the comparison at the end lifts an earlier quarantine.
+#[tokio::test]
+#[serial(db)]
+async fn a_store_written_after_its_page_is_compared_at_the_end_of_the_check(
+) -> Result<(), Box<dyn std::error::Error>> {
+    let (_db, pool) = support::record_db().await;
+    let (address, chain_store) = host_store();
+    let key_write = |previous_leaf_count, handle| EncryptedStoreWrite {
+        encrypted_store: address,
+        previous_leaf_count,
+        handle: [handle; 32],
+        allowed_keys: vec![OWNER],
+        make_public: false,
+    };
+    let first = record(&pool, 10, vec![key_write(0, 0x10)]).await?;
+    record_a_second_page(&pool, address).await?;
+    let host_program = Pubkey::new_from_array(HOST_PROGRAM);
+    let quarantined = || async {
+        load_served_store(&pool, address)
+            .await
+            .map(|store| store.expect("recorded").quarantined)
+    };
+
+    let mut diverged = EncryptedStore {
+        leaf_count: first.leaf_count,
+        peaks: first.peaks.clone(),
+        ..chain_store.clone()
+    };
+    diverged.peaks[0][0] ^= 1;
+    let chain = Chain::default();
+    chain.set(address, Some(&diverged));
+    check_stores(&pool, &chain, &host_program, "1").await?;
+    assert!(quarantined().await?);
+
+    // The chain holds the store's second leaf; the record gets it only while the check reads
+    // the second page.
+    let mut grown = EncryptedStore {
+        leaf_count: first.leaf_count,
+        peaks: first.peaks,
+        ..chain_store
+    };
+    mmr_append(
+        &mut grown.peaks,
+        &mut grown.leaf_count,
+        leaf_commitment(address, 1, [0x11; 32], Some(OWNER)),
+    )
+    .expect("append");
+    let chain = ChainByPage {
+        pool: &pool,
+        chain: Chain::default(),
+        pages: Mutex::new(VecDeque::from([
+            BeforePage::Nothing,
+            BeforePage::Record(key_write(1, 0x11)),
+        ])),
+    };
+    chain.chain.set(address, Some(&grown));
+    check_stores(&pool, &chain, &host_program, "1").await?;
+    assert!(!quarantined().await?);
+    Ok(())
+}
+
+/// A check that stops partway keeps what it found: a store quarantined on the first page stays in
+/// the table and in the gauge when the second page's account read fails.
+#[tokio::test]
+#[serial(db)]
+async fn a_check_that_fails_partway_keeps_the_quarantine_it_found(
+) -> Result<(), Box<dyn std::error::Error>> {
+    let (_db, pool) = support::record_db().await;
+    let (address, chain_store) = host_store();
+    let recorded = record(
+        &pool,
+        10,
+        vec![EncryptedStoreWrite {
+            encrypted_store: address,
+            previous_leaf_count: 0,
+            handle: [0x10; 32],
+            allowed_keys: vec![OWNER],
+            make_public: false,
+        }],
+    )
+    .await?;
+    record_a_second_page(&pool, address).await?;
+    let mut diverged = EncryptedStore {
+        leaf_count: recorded.leaf_count,
+        peaks: recorded.peaks,
+        ..chain_store
+    };
+    diverged.peaks[0][0] ^= 1;
+    let chain = ChainByPage {
+        pool: &pool,
+        chain: Chain::default(),
+        pages: Mutex::new(VecDeque::from([
+            BeforePage::Nothing,
+            BeforePage::Fail,
+        ])),
+    };
+    chain.chain.set(address, Some(&diverged));
+    // A label of its own, so no other test's check moves this gauge.
+    let host_chain_id = "fails-partway";
+
+    let host_program = Pubkey::new_from_array(HOST_PROGRAM);
+    assert!(check_stores(&pool, &chain, &host_program, host_chain_id)
+        .await
+        .is_err());
+
+    let served = load_served_store(&pool, address).await?.expect("recorded");
+    assert!(served.quarantined);
+    let gauge = prometheus::gather()
+        .into_iter()
+        .find(|family| {
+            family.name() == "solana_merkle_indexer_quarantined_stores"
+        })
+        .and_then(|family| {
+            family.get_metric().iter().find_map(|metric| {
+                metric
+                    .get_label()
+                    .iter()
+                    .any(|label| label.value() == host_chain_id)
+                    .then(|| metric.get_gauge().value())
+            })
+        });
+    assert_eq!(gauge, Some(1.0));
     Ok(())
 }
