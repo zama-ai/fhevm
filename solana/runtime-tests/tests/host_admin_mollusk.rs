@@ -428,6 +428,50 @@ fn mollusk_a_pauser_pauses_and_only_the_admin_unpauses() {
     );
 }
 
+/// A pause already in force does not stop a pauser from pausing the remaining area, so only
+/// resuming needs the admin.
+#[test]
+fn mollusk_a_pauser_pauses_an_area_while_the_others_are_paused() {
+    let areas = [
+        host::PauseFlags {
+            execution: true,
+            ..host::PauseFlags::default()
+        },
+        host::PauseFlags {
+            verified_inputs: true,
+            ..host::PauseFlags::default()
+        },
+        host::PauseFlags {
+            acl_writes: true,
+            ..host::PauseFlags::default()
+        },
+    ];
+    for area in areas {
+        let others = host::PauseFlags {
+            execution: !area.execution,
+            verified_inputs: !area.verified_inputs,
+            acl_writes: !area.acl_writes,
+        };
+        let admin = Pubkey::new_unique();
+        let pauser = Keypair::new().pubkey();
+        let (host_config, account) = host_config_account(admin);
+        let context = mollusk_execute_context(
+            admin,
+            vec![
+                (host_config, paused_host_config(&account, others)),
+                (pauser, funded_system_account()),
+                zama_solana_test_kit::pauser_record_account(pauser, true),
+            ],
+        );
+
+        context.process_and_validate_instruction(
+            &pause_ix(pauser, host_config, area),
+            &[Check::success()],
+        );
+        assert_eq!(paused(&context, host_config), host::PauseFlags::ALL);
+    }
+}
+
 /// Admin setters are never paused (DD-058): with every area paused, the admin still withdraws a
 /// pauser and hands the admin role over.
 #[test]

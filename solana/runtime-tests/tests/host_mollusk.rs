@@ -1658,7 +1658,7 @@ fn mollusk_each_pause_flag_stops_only_its_area() {
 }
 
 /// Admin setters are never paused (DD-058): with every area paused, the admin still replaces a
-/// compromised KMS context, denies an application and resets the rest of the configuration.
+/// compromised KMS context, denies an application and updates the rest of the configuration.
 #[test]
 fn mollusk_admin_setters_run_while_every_area_is_paused() {
     let admin = Pubkey::new_unique();
