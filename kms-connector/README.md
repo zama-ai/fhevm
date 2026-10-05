@@ -116,11 +116,11 @@ error codes pass through unchanged. If the exact delegation is dead but its wild
 is missing, both reasons are retained and the request remains recoverable.
 
 Coprocessor proofs are verified against the account snapshot; a valid candidate can carry
-a request despite another peer's failure. An attempt asks the coprocessors one at a time, in
-a random order, and each at most once: the next one as soon as an answer leaves a query
-unresolved, or after `HEDGE_DELAY` (250 ms) without an answer. It stops asking once every
-query is resolved. A query still unresolved is retried only by the next attempt of the worker
-loop.
+a request despite another peer's failure. An attempt starts a read at one coprocessor after
+another, in a random order, and at each at most once: the next one as soon as an answer leaves
+a query unresolved, or after `HEDGE_DELAY` (250 ms) without an answer, while earlier reads keep
+running. Once every query is resolved, the reads still running are dropped. A query still
+unresolved is retried only by the next attempt of the worker loop.
 Source controls response handling: Gateway requests use the worker's retry budget; HTTP
 requests receive the stored error response and can be retried by the caller. The relayer's
 end-to-end Solana path still enters through the Gateway event.

@@ -384,7 +384,7 @@ leaves the leaf record alone. A block the Merkle indexer replays must reproduce
 the leaves it recorded for it, or the indexer stops (DD-066).
 
 **33. [RISK]** Nothing pins a deployed program build to the listener and
-Merkle indexer builds. #28 now takes the followed program id as an input, so a
+Merkle indexer builds. #28 takes the followed program id as an input, so a
 listener compiled for one `declare_id!` can still derive another deployment's
 handles. Instruction layout and decoder types still assume matching crate
 revisions. #28's check catches a decoder drift in the steps, since every

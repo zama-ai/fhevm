@@ -324,9 +324,8 @@ cross-field validator (DD-027).
 
 Replaced design (stub): the earlier decision kept a Solana-native KMS request/response subsystem
 (`native-v0`) out of EVM Gateway routing, on the theory the data models were too different to share.
-Reversed to reuse one decrypt trust model and routing path. The connector subsystem that read the
-native-v0 tables was deleted earlier; the tables and the typed-column detour had no reader left, no
-shared database ever applied them, and they are now gone from this branch.
+Reversed to reuse one decrypt trust model and routing path. The branch has no native-v0 tables, no
+typed-column detour and no connector subsystem that reads them.
 
 Open for debate: is unifying on the EVM/Gateway stack the right long-term call, or does a second
 non-EVM chain eventually justify a native path? The KMS-connector decrypt is exercised in the harness,
@@ -478,13 +477,13 @@ Status: adopted
 
 Context:
 
-Witnesses and decrypt trust need an anchor. A `VerifierSet` subsystem
-(`create_verifier_set` / `disable_verifier_set` / `migrate_verifier_set`) is a Solana-only trust root
-with its own lifecycle.
+Witnesses and decrypt trust need an anchor. A Solana-only `VerifierSet` subsystem
+(`create_verifier_set` / `disable_verifier_set` / `migrate_verifier_set`) would be a second trust
+root beside the EVM KMS context, with its own lifecycle.
 
 Options considered:
 
-- (A) Keep the VerifierSet subsystem and its migration lifecycle.
+- (A) A VerifierSet subsystem with its migration lifecycle.
 - (B) Collapse trust to a single on-chain KMS context keyed by `kms_context_id`. **Chosen.**
 
 Decision:
@@ -510,9 +509,8 @@ Status: adopted
 
 Context:
 
-Public-decrypt release needs the KMS threshold certificate verified somewhere. The earlier Solana path
-verified an Ed25519 cert against a Solana verifier set; the reconciliation moves to the EVM KMS trust
-model.
+Public-decrypt release needs the KMS threshold certificate verified somewhere. An Ed25519 cert checked
+against a Solana-only verifier set would be a second trust model beside the EVM KMS one.
 
 Decision:
 
@@ -820,9 +818,10 @@ do, or stay event-free and let consumers decode instruction data instead.
 Decision:
 
 Store-changing paths (`fhe_execute` Store outputs and `make_store_handle_public`) emit no ACL
-lifecycle Anchor events by design. The host listener reconstructs compute requests, and the Merkle
-indexer MMR leaves (DD-066), from confirmed Yellowstone transaction instructions, including
-inner CPI instructions, since confidential-token and other app programs invoke the host via CPI.
+lifecycle Anchor events by design. The host listener reconstructs compute requests from confirmed
+Yellowstone transaction instructions, including inner CPI instructions, since confidential-token
+and other app programs invoke the host via CPI. The Merkle indexer reconstructs the MMR leaves from
+the same instructions (DD-066).
 Store outputs carry the expected previous handle and leaf count, so every transaction is
 independently interpretable off-chain and the Merkle indexer reconstructs leaves from instruction
 data alone, in replay order, without reading account state first. Compute facts, including which
@@ -1113,11 +1112,11 @@ alternative (a duplicated instruction set) was rejected because the two flows di
 CPI: duplicating fourteen account structs to encode one branch would double the review surface for
 zero clarity.
 
-Claim math changed for BOTH directions (fixes fhevm-internal#1774 item 1): a claim is the exact
-proportional floor `encrypted(joined) x payout_received / total_joined` in one MulDiv — same FHE op
-count as before — instead of `encrypted(joined) x rate / RATE_SCALE` on a pre-floored rate. The
-double rounding stranded up to RATE_SCALE-scale dust per batch (6,148,914,726 raw units measured at
-a u64-scale two-user batch, vs at most one unit per claim now; pinned by
+In both directions a claim is the exact proportional floor
+`encrypted(joined) x payout_received / total_joined` in one MulDiv (fhevm-internal#1774 item 1).
+`encrypted(joined) x rate / RATE_SCALE` on a pre-floored rate costs the same FHE ops but rounds
+twice, and strands up to RATE_SCALE-scale dust per batch (6,148,914,726 raw units measured at a
+u64-scale two-user batch). The exact floor strands at most one unit per claim (pinned by
 `exact_division_strands_less_than_the_rate_would`). Sum-of-claims <= payout still holds:
 `sum(floor(j_i * P / T)) <= floor(sum(j_i) * P / T) = P`. The MulDiv intermediate
 `joined * payout_received < 2^128` stays inside the coprocessor's widened MulDiv and the result is
@@ -1183,9 +1182,9 @@ Properties that must survive any refactor:
   execution does not advance it or emit a usable seed.
 - No seed-steering: the preimage is the host's own counter plus slot context plus the verified
   application; nothing in it is chosen by the caller.
-- Duplicate accounts and second writes to one slot within an execution are still rejected
+- Duplicate accounts and second writes to one slot within an execution are rejected
   (`ExecutionAccountTable::new` and effect preflight), for the decode cache and the
-  read-after-write rule, not for seed freshness any more.
+  read-after-write rule. Seed freshness does not rely on it.
 
 The nonce stays global (fhevm-internal#2081). Every execution with a rand step write-locks it, so
 rand executions of all applications run one at a time; an execution without a rand step does not
@@ -1519,14 +1518,15 @@ Decision:
    another in a random order: the next one as soon as an answer leaves a proof missing, or after
    `HEDGE_DELAY` (250 ms) without an answer. There is no retry inside an attempt. One stalled or
    unreachable coprocessor therefore delays a batch another one serves by at most that delay, and a
-   coprocessor that serves the whole batch is the only one asked (fhevm-internal#2104).
+   coprocessor that serves the whole batch within that delay is the only one asked
+   (fhevm-internal#2104).
    A request names only the Store and, for a delegated entry, the delegator as owner address; a
    client-supplied proof is rejected. A public decrypt names each handle's Store beside `extraData` (DD-060).
 3. **Each coprocessor keeps the leaf record.** Its Merkle indexer recomputes the leaves from the
    confirmed instruction stream into the Merkle proof service's own database (DD-066), and
-   `solana_merkle_proof_server` serves them apart from ingestion (DD-064). The standalone
-   `solana-proof-service`, the relayer's proof passthrough, and the SDK's RPC evidence and
-   proof-service clients are deleted (DD-035 superseded).
+   `solana_merkle_proof_server` serves them apart from ingestion (DD-064). There is no standalone
+   proof service: the relayer passes no proofs through, and the SDK has no RPC evidence or
+   proof-service client (DD-035 superseded).
 4. **The deny list names applications.** `set_deny_scope` writes `DenyScopeRecord` at
    `["deny-scope", program, scope]`; it gates every allow the host would seal — each `fhe_execute`
    and `make_store_handle_public`, because sealing a public leaf is an allow. The deny list names no
@@ -1548,8 +1548,8 @@ Consequences:
 
 - Account layout: `121 + 64·slots + 32·peaks`, at most 4,217 bytes (`EncryptedStore::account_size`,
   INVARIANTS Part II).
-- `fhe_execute` wire: `previous_subjects` and `output_subjects` gone; `allow_indexes` per Store
-  effect; the deny record an execution passes is its application's.
+- `fhe_execute` wire: `allow_indexes` per Store effect and no subject lists; the deny record an
+  execution passes is its application's.
 - The connector pipeline is one explicit sequence with one observation point
   (`kms-worker/src/core/solana/pipeline.rs`); the relayer pre-checks dead delegation rows
   advisorily and nothing else (INVARIANTS #50).
