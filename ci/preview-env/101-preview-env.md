@@ -85,6 +85,12 @@ Key inputs (all have sensible defaults — you rarely set more than a couple):
   `enable_gpu=true` on a dispatch (CLI `--workers-tag`). Must be empty when
   GPU is off. The `preview-env-gpu` label cannot carry a tag, so a GPU
   preview is dispatch-only.
+- `listener_v2_only` — run the host side on the **listener v2 stack only**
+  (`listener-<i>` → Redis → host-listener-consumer): the host-listener pollers
+  (`coprocessor-poller-<i>`, `coprocessor-poller-polygon-<i>`) are not
+  deployed (default `false`, a checkbox in the Actions UI). CLI
+  `--listener-v2-only`. Pair with `automated_tests` to run e2e against it.
+  Dispatch-only.
 - `deploy_polygon` — also add a second Polygon Amoy (`80002`) host chain (default
   `false`). Fresh local anvil, reuses the ETH KMS key; roughly doubles the
   host-side stack. With `automated_tests` on it also runs a Polygon e2e suite.
@@ -124,8 +130,8 @@ keys (keep them aligned to the same kms release):
 
 | Key | Becomes | Role |
 | --- | --- | --- |
-| `kms_core_version` | `KMS_CORE_TAG` | GHCR tag for `core-service-enclave` → `deploy.sh --tag`. CI reads PCR labels from this image before install. |
-| `kms_repo_ref` | `KMS_REPO_REF` | Full 40-character SHA, branch, or tag sparse-checked out of `zama-ai/kms`. A short SHA fails `actions/checkout`. |
+| `kms_core_version` | `KMS_CORE_TAG` | GHCR tag passed to `deploy.sh --tag`. CI reads PCR labels from the enclave image that `deploy.sh` installs (`core-service-enclave-insecure` on current kms main, `core-service-enclave` on `v0.14.1`). |
+| `kms_repo_ref` | `KMS_REPO_REF` | Full 40-character SHA, branch, or tag sparse-checked out of `zama-ai/kms` (`deploy.sh`, charts, threshold wiring). A short SHA fails `actions/checkout`. |
 
 Current defaults (also in `parse-overrides.cjs`): `kms_core_version=v0.14.1`,
 `kms_repo_ref=v0.14.1` (`zama-ai/kms` release `v0.14.1`).
@@ -185,6 +191,7 @@ ci/preview-env/preview-env launch --ref <your-branch> --gpu --workers-tag fd282b
 ci/preview-env/preview-env launch --ref <your-branch> --blockchain-dev
 ci/preview-env/preview-env launch --ref <your-branch> --testnets --tests
 ci/preview-env/preview-env launch --ref <your-branch> --blue-green --blockchain-dev --tests
+ci/preview-env/preview-env launch --ref <your-branch> --listener-v2-only --tests
 ci/preview-env/preview-env launch --ref <your-branch> --set coprocessor_version=abc1234
 ci/preview-env/preview-env launch --ref <your-branch> --tests \
   --set kms_core_version=v0.14.1 --set kms_repo_ref=v0.14.1

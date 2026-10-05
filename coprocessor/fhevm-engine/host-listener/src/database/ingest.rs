@@ -456,7 +456,9 @@ pub async fn ingest_block_logs(
         );
     }
 
-    for log in block_logs.logs.iter().chain(synthetic.iter()) {
+    let chain_logs = block_logs.logs.iter().map(|log| (log, false));
+    let synthetic_logs = synthetic.iter().map(|log| (log, true));
+    for (log, is_synthetic) in chain_logs.chain(synthetic_logs) {
         let current_address = Some(log.inner.address);
         let is_acl_address = &current_address == acl_contract_address;
         if acl_contract_address.is_none() || is_acl_address {
@@ -503,6 +505,7 @@ pub async fn ingest_block_logs(
                     operand_boundary_mask: None,
                     is_executor_minted: true,
                     is_fallback_grant: false,
+                    is_synthetic,
                 };
                 tfhe_event_log.push(log);
                 continue;
@@ -654,6 +657,7 @@ pub async fn ingest_block_logs(
                         // `_markMinted` for it.
                         is_executor_minted: false,
                         is_fallback_grant: true,
+                        is_synthetic: false,
                     });
                     at_least_one_insertion |= db
                         .insert_pbs_computations(
@@ -1598,6 +1602,7 @@ pub async fn synthesize_finalized_fallback_grants(
             // operand for a later real executor operation.
             is_executor_minted: false,
             is_fallback_grant: true,
+            is_synthetic: false,
         });
     }
     if logs.is_empty() {
@@ -1904,6 +1909,7 @@ mod tests {
             operand_boundary_mask: None,
             is_executor_minted,
             is_fallback_grant: false,
+            is_synthetic: false,
         }
     }
 

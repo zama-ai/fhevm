@@ -125,6 +125,7 @@ async fn grouped_outputs_preserve_order_permissions_and_replay_counts(
         log_index: Some(0),
         is_executor_minted: true,
         is_fallback_grant: false,
+        is_synthetic: false,
     };
     let mut tx = pool.begin().await?;
     assert!(db.insert_tfhe_event(&mut tx, &log).await?);

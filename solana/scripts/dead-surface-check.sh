@@ -467,7 +467,8 @@ if run_check 3; then
       "${EXCLUDES[@]}" "$@" "${roots[@]}" 2>/dev/null || true) )
     # Anchored to the record's path field, for the reason spelled out for the `exceptions` filter
     # below: matching the whole record let any *line* that merely names one of these files go unswept
-    # by every entry below. The last two filters drop main's consensus harness, which shares
+    # by every entry below. The last three filters drop main's consensus harness (its tree, and the
+    # block-manifest and Blue/Green commands it keeps beside ours in src/), which shares
     # test-suite/fhevm with the Solana seeder and scenarios but not our glossary; a script under
     # test-suite/fhevm/scripts/ whose name says `solana` is ours and stays swept.
     hits=$(echo "$hits" \
@@ -476,6 +477,7 @@ if run_check 3; then
       | (grep -v '^solana/docs/DESIGN_HISTORY\.md:' || true) \
       | (grep -v '^solana/scripts/dead-surface-check\.sh:' || true) \
       | (grep -vE '^test-suite/fhevm/(consensus|src/consensus)/' || true) \
+      | (grep -vE '^test-suite/fhevm/src/(commands/|flow/)?(manifest|blue-green)-' || true) \
       | awk '!/^test-suite\/fhevm\/scripts\// || /^test-suite\/fhevm\/scripts\/[^\/:]*solana[^\/:]*:/' )
     if [ -n "$exceptions" ]; then
       # Applied to each hit's CONTENT, never to the `path:line:` prefix. Matching the whole record
@@ -620,9 +622,9 @@ if run_check 3; then
   # a different axis from value persistence. Database commits and lifecycle markers use that
   # durability sense too; Solana's durable nonce is a protocol term.
   # The consensus tooling from main uses the word in the same written-to-disk sense for its canary
-  # journal.
+  # journal and, in the test-suite README, for drift findings a scenario cannot remove.
   check_alias 'durable — a persistent value is persistent' all \
-    'durable ingest|durable checkpoint|durable tip|durable history_start|durable nonce|durably ingest|observation durably|durably, keyed|durable state|durable, waits|marker durable|halves are already durable|journaled durably|durable canary|durable raw-byte journal' \
+    'durable ingest|durable checkpoint|durable tip|durable history_start|durable nonce|durably ingest|observation durably|durably, keyed|durable state|durable, waits|marker durable|halves are already durable|journaled durably|durable canary|durable raw-byte journal|remove durable findings' \
     -iE '\bdurable\b|\bdurably\b'
   # update <- supersede, rotation. The noun and the participle are swept too: the verb forms were
   # the only ones matched, and "supersession" went on naming the thing in about thirty places —

@@ -354,14 +354,16 @@ async fn test_allowed_computation_records_its_producer_block(
 
     let handle = FixedBytes::<32>::repeat_byte(0x42);
     let unallowed_handle = FixedBytes::<32>::repeat_byte(0x43);
+    let probe_handle = FixedBytes::<32>::repeat_byte(0x44);
     let first_block_hash = FixedBytes::<32>::repeat_byte(0x33);
     let competing_block_hash = FixedBytes::<32>::repeat_byte(0x34);
 
-    let event = |handle,
-                 transaction_hash: [u8; 32],
-                 block_hash,
-                 is_allowed: bool,
-                 clear| {
+    let synthetic_event = |handle,
+                           transaction_hash: [u8; 32],
+                           block_hash,
+                           is_allowed: bool,
+                           clear,
+                           is_synthetic| {
         let transaction_hash = TransactionId::from(transaction_hash);
         let mut plaintext = [0; 32];
         plaintext[31] = clear;
@@ -382,7 +384,18 @@ async fn test_allowed_computation_records_its_producer_block(
             operand_boundary_mask: Some(Default::default()),
             is_executor_minted: true,
             is_fallback_grant: false,
+            is_synthetic,
         }
+    };
+    let event = |handle, transaction_hash, block_hash, is_allowed, clear| {
+        synthetic_event(
+            handle,
+            transaction_hash,
+            block_hash,
+            is_allowed,
+            clear,
+            false,
+        )
     };
 
     let mut tx = db
@@ -404,15 +417,29 @@ async fn test_allowed_computation_records_its_producer_block(
         &event(handle, [0x73; 32], competing_block_hash, true, 9),
     )
     .await?;
+    // The dry-run probe the GCS listener injects is recorded, flagged.
+    db.insert_tfhe_event(
+        &mut tx,
+        &synthetic_event(
+            probe_handle,
+            [0x74; 32],
+            first_block_hash,
+            true,
+            10,
+            true,
+        ),
+    )
+    .await?;
     tx.commit().await?;
 
     let rows = sqlx::query(
         "SELECT handle, producer_block_number, producer_block_hash
            FROM handle_producer_block
-          WHERE host_chain_id = $1
+          WHERE host_chain_id = $1 AND handle = $2
           ORDER BY producer_block_hash",
     )
     .bind(chain_id.as_i64())
+    .bind(handle.as_slice())
     .fetch_all(&pool)
     .await?;
 
@@ -428,6 +455,20 @@ async fn test_allowed_computation_records_its_producer_block(
             .map(|row| row.get::<Vec<u8>, _>("producer_block_hash"))
             .collect::<Vec<_>>(),
         vec![first_block_hash.to_vec(), competing_block_hash.to_vec()]
+    );
+
+    let flags = sqlx::query_as::<_, (Vec<u8>, bool)>(
+        "SELECT handle, synthetic FROM handle_producer_block
+          WHERE host_chain_id = $1 AND producer_block_hash = $2
+          ORDER BY handle",
+    )
+    .bind(chain_id.as_i64())
+    .bind(first_block_hash.as_slice())
+    .fetch_all(&pool)
+    .await?;
+    assert_eq!(
+        flags,
+        vec![(handle.to_vec(), false), (probe_handle.to_vec(), true)]
     );
 
     Ok(())

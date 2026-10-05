@@ -295,6 +295,7 @@ fn to_log_tfhe(
         operand_boundary_mask: None,
         is_executor_minted: true,
         is_fallback_grant: false,
+        is_synthetic: false,
     }
 }
 

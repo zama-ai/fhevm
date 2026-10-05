@@ -188,6 +188,7 @@ async fn insert_handle_producer_block(
     handle: &[u8],
     producer_block_number: i64,
     producer_block_hash: &[u8],
+    synthetic: bool,
 ) -> Result<bool, SqlxError> {
     let done = sqlx::query!(
         r#"
@@ -195,15 +196,17 @@ async fn insert_handle_producer_block(
             host_chain_id,
             handle,
             producer_block_number,
-            producer_block_hash
+            producer_block_hash,
+            synthetic
         )
-        VALUES ($1, $2, $3, $4)
+        VALUES ($1, $2, $3, $4, $5)
         ON CONFLICT (host_chain_id, handle, producer_block_hash) DO NOTHING
         "#,
         chain_id,
         handle,
         producer_block_number,
         producer_block_hash,
+        synthetic,
     )
     .execute(tx.deref_mut())
     .await?;
@@ -312,6 +315,10 @@ pub struct LogTfhe {
     /// `record_fallback_grant_producer`), not when it is synthesized, so this
     /// computation writes no `handle_producer_block` row.
     pub is_fallback_grant: bool,
+    /// Whether this event is the dry-run consensus probe the GCS listener
+    /// injects (see `database::synthetic_ops`). Its producer row is flagged so
+    /// the manifest marks the handle synthetic.
+    pub is_synthetic: bool,
 }
 
 pub type Transaction<'l> = sqlx::Transaction<'l, Postgres>;
@@ -840,6 +847,7 @@ impl Database {
                     output_handle,
                     log.block_number as i64,
                     log.block_hash.as_slice(),
+                    log.is_synthetic,
                 )
                 .await?
             } else {
@@ -1892,6 +1900,7 @@ impl Database {
                     e.dstHandle.as_slice(),
                     block_number as i64,
                     block_hash.as_slice(),
+                    false,
                 )
                 .await?;
                 let event_recorded = sqlx::query!(

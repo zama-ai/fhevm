@@ -231,7 +231,9 @@ start)
       >/dev/null
     # Green pollers: twins of the Blue poller releases (HEAD image, Green fleet). They inject the
     # synthetic host anchors and, in gcs mode, wait for the Green schema the controller creates.
+    # No live Blue poller (listener_v2_only) means no Green twin.
     for rel in "coprocessor-poller-${i}${LIVE_RELEASE_SUFFIX}" $([[ "${DEPLOY_POLYGON}" == "true" ]] && echo "coprocessor-poller-polygon-${i}${LIVE_RELEASE_SUFFIX}"); do
+      helm status "${rel}" -n "${NAMESPACE}" >/dev/null 2>&1 || continue
       helm get values "${rel}" -n "${NAMESPACE}" -o yaml > "${work}/${rel}.yaml"
       green_rel="${rel%"${LIVE_RELEASE_SUFFIX}"}${GREEN_SLOT}"
       echo "party ${i}: installing ${green_rel}"

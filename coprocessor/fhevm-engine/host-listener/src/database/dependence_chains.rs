@@ -594,6 +594,7 @@ mod tests {
             operand_boundary_mask: None,
             is_executor_minted: true,
             is_fallback_grant: false,
+            is_synthetic: false,
         })
     }
 
@@ -851,6 +852,7 @@ mod tests {
             operand_boundary_mask: log.operand_boundary_mask,
             is_executor_minted: log.is_executor_minted,
             is_fallback_grant: log.is_fallback_grant,
+            is_synthetic: log.is_synthetic,
         }
     }
 

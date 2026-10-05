@@ -39,7 +39,6 @@ import {
   TEMPLATE_KMS_CORE_CONFIG_LEGACY,
   TEMPLATE_KMS_CORE_CONFIG_MODERN,
   TEMPLATE_KMS_CORE_CONFIG_THRESHOLD,
-  TEMPLATE_KMS_GEN_KEYS_CONFIG,
   TEMPLATE_ENV_DIR,
   TEMPLATE_RELAYER_CONFIG,
   envPath,
@@ -48,7 +47,6 @@ import {
   hostChainAddressesPath,
   hostChainAddressesSolidityPath,
   kmsCoreConfigPath,
-  kmsGenKeysConfigPath,
   paymentBridgingAddressesSolidityPath,
   relayerConfigPath,
   versionsEnvPath,
@@ -137,7 +135,6 @@ export const generateRuntime = async (state: State, plan: StackSpec) => {
       await fs.readFile(TEMPLATE_KMS_CORE_CONFIG_MODERN, "utf8"),
     ),
   );
-  await fs.copyFile(TEMPLATE_KMS_GEN_KEYS_CONFIG, kmsGenKeysConfigPath);
   // Threshold mode: emit the single cluster-shared core config (checked-in template
   // with the peer roster injected). Per-party values come from KMS_CORE__* env, so one
   // file is mounted into every kms-core-{i}. Centralized mode ignores it.

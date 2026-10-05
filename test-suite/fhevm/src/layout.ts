@@ -40,7 +40,6 @@ const statePaths = (root: string) => {
     versionsEnvPath: path.join(envDir, "versions.env"),
     relayerConfigPath: path.join(generatedConfigDir, "relayer.yaml"),
     kmsCoreConfigPath: path.join(generatedConfigDir, "kms-core.toml"),
-    kmsGenKeysConfigPath: path.join(generatedConfigDir, "kms-gen-keys.toml"),
     gatewayAddressesPath: path.join(addressDir, "gateway", ".env.gateway"),
     SOLANA_RUNTIME_DIR: solanaRuntimeDir,
     /** The seeded demo config (`demo:seed` writes it; the operator, dapp and smoke read it). */
@@ -69,7 +68,6 @@ export let STATE_FILE = currentStatePaths.STATE_FILE;
 export let versionsEnvPath = currentStatePaths.versionsEnvPath;
 export let relayerConfigPath = currentStatePaths.relayerConfigPath;
 export let kmsCoreConfigPath = currentStatePaths.kmsCoreConfigPath;
-export let kmsGenKeysConfigPath = currentStatePaths.kmsGenKeysConfigPath;
 export let gatewayAddressesPath = currentStatePaths.gatewayAddressesPath;
 export let SOLANA_RUNTIME_DIR = currentStatePaths.SOLANA_RUNTIME_DIR;
 export let solanaDemoConfigPath = currentStatePaths.solanaDemoConfigPath;
@@ -98,7 +96,6 @@ export const setStateDir = (root = process.env.FHEVM_STATE_DIR ?? DEFAULT_STATE_
   versionsEnvPath = currentStatePaths.versionsEnvPath;
   relayerConfigPath = currentStatePaths.relayerConfigPath;
   kmsCoreConfigPath = currentStatePaths.kmsCoreConfigPath;
-  kmsGenKeysConfigPath = currentStatePaths.kmsGenKeysConfigPath;
   gatewayAddressesPath = currentStatePaths.gatewayAddressesPath;
   SOLANA_RUNTIME_DIR = currentStatePaths.SOLANA_RUNTIME_DIR;
   solanaDemoConfigPath = currentStatePaths.solanaDemoConfigPath;
@@ -133,9 +130,6 @@ export const TEMPLATE_KMS_CORE_CONFIG_THRESHOLD = path.join(
   TEMPLATE_CONFIG_DIR,
   "kms-core-threshold.toml",
 );
-/** Template for the centralized core's `kms-gen-keys` config, used by core images whose
- *  `kms-gen-keys` accepts only `--config-file` (the Solana vertical pins such an image). */
-export const TEMPLATE_KMS_GEN_KEYS_CONFIG = path.join(TEMPLATE_CONFIG_DIR, "kms-gen-keys.toml");
 export const LATEST_SUPPORTED_PROFILE = path.join(PROFILE_DIR, "latest-supported.json");
 export const FHEVM_COMPOSE_PROJECT_ENV = "FHEVM_COMPOSE_PROJECT";
 const configuredComposeProject = process.env[FHEVM_COMPOSE_PROJECT_ENV];
