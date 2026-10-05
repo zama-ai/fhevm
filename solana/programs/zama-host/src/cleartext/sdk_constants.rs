@@ -1,5 +1,6 @@
-//! The host constants the SDK's cleartext client reads, rendered into its `hostConstants.ts`. The
-//! test fails when the committed file differs, so a change here reaches the SDK or fails CI.
+//! The host constants the SDK reads, rendered into its `hostConstants.ts`: the cleartext client's,
+//! and the EIP-712 domain type its production digests also hash. The test fails when the committed
+//! file differs, so a change here reaches the SDK or fails CI.
 //! `ZAMA_UPDATE_SDK_CONSTANTS=1` rewrites the file.
 
 use anchor_lang::Discriminator;
@@ -59,7 +60,7 @@ export const EVENT_IX_TAG = {event_ix_tag};
 export const FHE_EXECUTED_EVENT_DISCRIMINATOR = {fhe_executed};
 export const EVENT_VERSION = {EVENT_VERSION};
 
-/** `eip712`: the type strings of the coprocessor input attestation the host verifies. */
+/** `eip712`: the domain type of every certificate the host verifies, and the input attestation's type. */
 export const EIP712_DOMAIN_TYPE = '{domain_type}';
 export const CIPHERTEXT_VERIFICATION_TYPE =
   '{ciphertext_verification_type}';
