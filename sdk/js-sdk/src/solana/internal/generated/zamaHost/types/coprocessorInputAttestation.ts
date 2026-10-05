@@ -45,7 +45,10 @@ export type CoprocessorInputAttestation = {
   userAddress: ReadonlyUint8Array;
   /** Attested contract identity — the application program the input is bound to (bytes32). */
   contractAddress: ReadonlyUint8Array;
-  /** Gateway-side contract chain id the attestation binds. */
+  /**
+   * Host chain id the attestation binds (EVM `contractChainId`); the gateway chain id only
+   * enters through the EIP-712 domain.
+   */
   contractChainId: bigint;
   /** Opaque extra data covered by the attestation. */
   extraData: ReadonlyUint8Array;
@@ -64,7 +67,10 @@ export type CoprocessorInputAttestationArgs = {
   userAddress: ReadonlyUint8Array;
   /** Attested contract identity — the application program the input is bound to (bytes32). */
   contractAddress: ReadonlyUint8Array;
-  /** Gateway-side contract chain id the attestation binds. */
+  /**
+   * Host chain id the attestation binds (EVM `contractChainId`); the gateway chain id only
+   * enters through the EIP-712 domain.
+   */
   contractChainId: number | bigint;
   /** Opaque extra data covered by the attestation. */
   extraData: ReadonlyUint8Array;
