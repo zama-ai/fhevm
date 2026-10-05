@@ -319,10 +319,11 @@ forged proof, and a leaf record that is behind all fail closed (the `zama-solana
 kms-worker `solana_` tests and the connector's `ProofRecordBehind` and `NoLeaf` classification).
 
 The central correctness bet is that off-chain consumers reproduce on-chain MMR state exactly. The
-solana-e2e scenarios exercise host-listener reconstruction against the full stack, and every proof
-the connector fetches is verified against the peaks it read on chain. A divergence fails closed
-rather than yielding a wrong proof: a record that has sealed at least as much history as the chain
-shows and holds no such leaf is a terminal refusal, and a record that is behind is a retry.
+solana-e2e scenarios exercise host-listener reconstruction and the Merkle indexer's leaf record
+against the full stack, and every proof the connector fetches is verified against the peaks it
+read on chain. A divergence fails closed rather than yielding a wrong proof: a record that has
+sealed at least as much history as the chain shows and holds no such leaf is a terminal refusal,
+and a record that is behind is a retry.
 
 ## Deferred
 
@@ -371,8 +372,8 @@ shows and holds no such leaf is a terminal refusal, and a record that is behind 
   semantic compute facts from instruction data and takes each execution's result handles from its
   `FheExecutedEvent`, decoded with `zama-host`'s own type. If a generated record type changes,
   regenerate the vendored IDL and validate reconstruction explicitly.
-- **The connector and listener compile the ACL crate; the IDL and the TypeScript seeds are
-  mirrors.** Account layout, PDA seeds and leaf commitments come from `zama-solana-acl`, the same
+- **The connector and the Merkle proof service compile the ACL crate; the IDL and the TypeScript
+  seeds are mirrors.** Account layout, PDA seeds and leaf commitments come from `zama-solana-acl`, the same
   crate `zama-host` compiles, so a layout change breaks the build. The vendored IDLs are build
   output: after a host instruction shape changes, `sync-zama-host-idl.sh` rewrites them and
   `npm run codegen:solana` the Codama clients; CI's `check-zama-host-idl.sh` and

@@ -215,7 +215,7 @@ execution.
 Pinned by `mollusk_fhe_execute_rejects_a_dictionary_index_past_the_dictionary`,
 `mollusk_fhe_execute_rejects_an_unreferenced_dictionary_entry`, the SDK tests
 `finish_rejects_dictionary_index_past_dictionary_end` and `finish_rejects_dictionary_entry_no_step_references`, and
-the listener test `rejects_store_output_dictionary_overflow`.
+the Solana host follower test `a_store_output_must_resolve_its_keys_and_account`.
 
 **15. [HOLDS]** Every op/type combination that validation accepts also has a
 metering cost row, so a step that passed validation can never abort because

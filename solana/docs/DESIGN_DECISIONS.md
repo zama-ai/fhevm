@@ -820,12 +820,12 @@ do, or stay event-free and let consumers decode instruction data instead.
 Decision:
 
 Store-changing paths (`fhe_execute` Store outputs and `make_store_handle_public`) emit no ACL
-lifecycle Anchor events by design. The host listener reconstructs compute requests and MMR leaves
-from confirmed Yellowstone transaction instructions, including
+lifecycle Anchor events by design. The host listener reconstructs compute requests, and the Merkle
+indexer MMR leaves (DD-066), from confirmed Yellowstone transaction instructions, including
 inner CPI instructions, since confidential-token and other app programs invoke the host via CPI.
 Store outputs carry the expected previous handle and leaf count, so every transaction is
-independently interpretable off-chain and the listener reconstructs leaves from instruction data
-alone, in replay order, without reading account state first. Compute facts, including which
+independently interpretable off-chain and the Merkle indexer reconstructs leaves from instruction
+data alone, in replay order, without reading account state first. Compute facts, including which
 outputs are made public, are reconstructed from the execution; what the host decided (the result
 handles, their block context and the random seeds) travels in its one `FheExecutedEvent` (DD-056).
 

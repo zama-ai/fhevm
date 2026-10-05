@@ -888,6 +888,14 @@ caught empty-contracts / wrong-sig being accepted on the EVM path.
 Branching on the chain type keeps EVM strictness intact while admitting Solana. The CI integration
 test that caught the regression now passes for both. This entry only keeps that split.
 
+### DD-033, replaced in part by DD-066
+
+DD-066 moved the leaf reconstruction from the host listener to the Merkle indexer.
+
+> The host listener reconstructs compute requests and MMR leaves from confirmed Yellowstone
+> transaction instructions, […] and the listener reconstructs leaves from instruction data alone, in
+> replay order, without reading account state first.
+
 ### DD-040, replaced in part by DD-045 and DD-065
 
 Superseded in part by DD-065: the verifier takes no MMR inclusion proof and no Store; it reads only
