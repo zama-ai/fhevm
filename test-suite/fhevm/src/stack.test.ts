@@ -6,7 +6,6 @@ import {
   adoptRunningE2eKmsConnectorOverride,
   assertVersionLockChanges,
   changedVersionKeys,
-  isVerifiedE2ePublicKmsConnectorSchemaSuperset,
   kmsConnectorRuntimeReplacementServices,
   previewStateFromBundle,
   removeRuntimeUpgradeOverrides,
@@ -31,8 +30,13 @@ const blueGreenScenario: State["scenario"] = {
 };
 const thresholdBlueGreenScenario: State["scenario"] = {
   ...blueGreenScenario,
-  kms: { mode: "threshold", parties: 4, threshold: 1, committeeSize: 4, fheParams: "Test" },
+  kms: { parties: 4, threshold: 1, committeeSize: 4, fheParams: "Test" },
 };
+
+// The adoption recreates every KMS party's connector runtime, not just party 1's.
+const allPartyConnectorRuntime = ["kms-connector", "kms-connector-2", "kms-connector-3", "kms-connector-4"]
+  .flatMap((prefix) => ["gw-listener", "kms-worker", "tx-sender", "endpoint", "proxy"].map((service) => `${prefix}-${service}`))
+  .join(",");
 
 const kmsAdoptionState = (): State => ({
   target: "latest-main",
@@ -45,38 +49,6 @@ const kmsAdoptionState = (): State => ({
   updatedAt: "2026-08-07T00:00:00.000Z",
 });
 
-const approvedKmsConnectorSupersetSql = `-- The GPU key-generation path stores compressed keysets in the connector
--- response tables. Keep the database enum in sync with KeyType::CompressedKeySet.
-ALTER TYPE key_type ADD VALUE IF NOT EXISTS 'CompressedKeySet';
-`;
-const approvedKmsConnectorSupersetChecksum =
-  "e3c67db173c72841bb23f81937e1b0a1f49dc4a1ac0dd8711e77e2ced145c05909cd783f89642acefa4967578ed8611d";
-const approvedKmsConnectorSupersetPath = "kms-connector/connector-db/migrations/20260804000000_add_compressed_key_set.sql";
-
-const approvedKmsConnectorSupersetOperations = () => ({
-  async run(argv: string[]) {
-    if (argv[1] === "rev-parse") {
-      return {
-        code: 0,
-        stdout: argv.at(-1) === "72af12a^{commit}" ? "72af12a184c2304008a06e7ecdf97d2da2e0f532\n" : "different\n",
-        stderr: "",
-      };
-    }
-    if (argv[1] === "ls-files") {
-      return { code: 0, stdout: "", stderr: "" };
-    }
-    if (argv[1] === "diff") {
-      return { code: 1, stdout: `D\t${approvedKmsConnectorSupersetPath}\n`, stderr: "" };
-    }
-    if (argv[1] === "show") {
-      return { code: 0, stdout: approvedKmsConnectorSupersetSql, stderr: "" };
-    }
-    throw new Error(`unexpected command: ${argv.join(" ")}`);
-  },
-  async postgresExec() {
-    return { code: 0, stdout: `${approvedKmsConnectorSupersetChecksum}|true\n`, stderr: "" };
-  },
-});
 
 describe("stack", () => {
   test("dry-run preview state uses the resolved lock target", () => {
@@ -132,79 +104,11 @@ describe("stack", () => {
     );
   });
 
-  test("upgrade plan restarts runtime services for a full kms-connector override", () => {
-    const plan = resolveUpgradePlan({ overrides: [{ group: "kms-connector" }], scenario: defaultScenario }, "kms-connector");
-    expect(plan.migrationServices).toEqual(["kms-connector-db-migration"]);
-    expect(plan.runtimeServices).toEqual([
-      "kms-connector-gw-listener",
-      "kms-connector-kms-worker",
-      "kms-connector-tx-sender",
-      "kms-connector-endpoint",
-      "kms-connector-proxy",
-    ]);
-  });
-
-  test("upgrade plan supports schema-coupled partial runtime overrides when runtime services exist", () => {
-    const plan = resolveUpgradePlan(
-      {
-        overrides: [{ group: "kms-connector", services: ["kms-connector-gw-listener"] }],
-        scenario: defaultScenario,
-      },
-      "kms-connector",
-    );
-    expect(plan.migrationServices).toEqual([]);
-    expect(plan.runtimeServices).toEqual(["kms-connector-gw-listener"]);
-  });
-
   test("upgrade plan supports relayer version locks without a local override", () => {
     const plan = resolveUpgradePlan({ overrides: [], scenario: defaultScenario }, "relayer", { lockFile: true });
     expect(plan.versionKeys).toEqual(["RELAYER_VERSION", "RELAYER_MIGRATE_VERSION"]);
     expect(plan.migrationServices).toEqual(["relayer-db-migration"]);
     expect(plan.runtimeServices).toEqual(["relayer"]);
-  });
-
-  test("upgrade plan links kms-core and connector for version-lock upgrades", () => {
-    const plan = resolveUpgradePlan({ overrides: [], scenario: defaultScenario }, "kms", { lockFile: true });
-    expect(plan.versionKeys).toEqual([
-      "CORE_VERSION",
-      "CONNECTOR_DB_MIGRATION_VERSION",
-      "CONNECTOR_GW_LISTENER_VERSION",
-      "CONNECTOR_KMS_WORKER_VERSION",
-      "CONNECTOR_TX_SENDER_VERSION",
-      "CONNECTOR_ENDPOINT_VERSION",
-      "CONNECTOR_PROXY_VERSION",
-    ]);
-    expect(plan.migrationServices).toEqual(["kms-connector-db-migration"]);
-    expect(plan.runtimeServices).toEqual([
-      "kms-core",
-      "kms-connector-gw-listener",
-      "kms-connector-kms-worker",
-      "kms-connector-tx-sender",
-      "kms-connector-endpoint",
-      "kms-connector-proxy",
-    ]);
-  });
-
-  test("version-lock upgrade plans leave the kms-connector endpoint and proxy out when the bundle predates them", () => {
-    const versions = {
-      target: "latest-supported" as const,
-      lockName: "latest-supported.json",
-      sources: [],
-      env: { CONNECTOR_GW_LISTENER_VERSION: "v0.11.0" } as Record<string, string>,
-    };
-    const plan = resolveUpgradePlan({ overrides: [], scenario: defaultScenario, versions }, "kms-connector", { lockFile: true });
-    expect(plan.runtimeServices).toEqual([
-      "kms-connector-gw-listener",
-      "kms-connector-kms-worker",
-      "kms-connector-tx-sender",
-    ]);
-    const modern = resolveUpgradePlan(
-      { overrides: [], scenario: defaultScenario, versions: { ...versions, env: { ...versions.env, CONNECTOR_ENDPOINT_VERSION: "02f6cc0", CONNECTOR_PROXY_VERSION: "02f6cc0" } } },
-      "kms",
-      { lockFile: true },
-    );
-    expect(modern.runtimeServices).toContain("kms-connector-endpoint");
-    expect(modern.runtimeServices).toContain("kms-connector-proxy");
   });
 
   test("upgrade plan supports listener-core version-lock upgrades", () => {
@@ -313,14 +217,14 @@ describe("stack", () => {
     expect(plan.versionKeys).toContain("COPROCESSOR_UPGRADE_CONTROLLER_VERSION");
   });
 
-  test("Blue-Green connector upgrades require the operator-paired threshold rollout", () => {
+  test("upgrade kms-connector is rejected", () => {
     expect(() =>
       resolveUpgradePlan(
         { overrides: [{ group: "test-suite" }], scenario: thresholdBlueGreenScenario },
         "kms-connector",
         { lockFile: true },
       ),
-    ).toThrow(/operator-paired rollout primitive/);
+    ).toThrow(/not supported yet/);
   });
 
   test("commits deferred Green state only after startup health succeeds", async () => {
@@ -400,39 +304,6 @@ describe("stack", () => {
     expect(state.overrides).toEqual([{ group: "coprocessor" }, { group: "test-suite" }]);
   });
 
-  test("recognizes only the verified additive KMS connector database superset", async () => {
-    const state = {
-      ...kmsAdoptionState(),
-      versions: {
-        ...kmsAdoptionState().versions,
-        env: { ...kmsAdoptionState().versions.env, CONNECTOR_DB_MIGRATION_VERSION: "72af12a" },
-      },
-    };
-    expect(await isVerifiedE2ePublicKmsConnectorSchemaSuperset(state, approvedKmsConnectorSupersetOperations())).toBe(true);
-
-    const additionalDiff = approvedKmsConnectorSupersetOperations();
-    const run = additionalDiff.run;
-    additionalDiff.run = async (argv: string[]) =>
-      argv[1] === "diff"
-        ? { code: 1, stdout: `D\t${approvedKmsConnectorSupersetPath}\nA\tkms-connector/connector-db/migrations/unapproved.sql\n`, stderr: "" }
-        : run(argv);
-    expect(await isVerifiedE2ePublicKmsConnectorSchemaSuperset(state, additionalDiff)).toBe(false);
-
-    const wrongRef = {
-      ...state,
-      versions: { ...state.versions, env: { ...state.versions.env, CONNECTOR_DB_MIGRATION_VERSION: "different" } },
-    };
-    expect(await isVerifiedE2ePublicKmsConnectorSchemaSuperset(wrongRef, approvedKmsConnectorSupersetOperations())).toBe(false);
-
-    const threshold = {
-      ...state,
-      scenario: testDefaultScenario({
-        kms: { mode: "threshold", parties: 3, threshold: 2, committeeSize: 3, fheParams: "Test" },
-      }),
-    };
-    expect(await isVerifiedE2ePublicKmsConnectorSchemaSuperset(threshold, approvedKmsConnectorSupersetOperations())).toBe(false);
-  });
-
   test("KMS connector E2E adoption fails closed without the expected local E2E stack", () => {
     const noCoprocessor = kmsAdoptionState();
     noCoprocessor.overrides = [{ group: "test-suite" }];
@@ -486,9 +357,9 @@ describe("stack", () => {
       "save:true",
       "generate:true",
       "build:kms-connector:true:kms-connector-gw-listener,kms-connector-kms-worker,kms-connector-tx-sender,kms-connector-endpoint,kms-connector-proxy",
-      "up:kms-connector:kms-connector-gw-listener,kms-connector-kms-worker,kms-connector-tx-sender,kms-connector-endpoint,kms-connector-proxy:true:true",
+      `up:kms-connector:${allPartyConnectorRuntime}:true:true`,
       "ready:true",
-      "health:kms-connector-gw-listener,kms-connector-kms-worker,kms-connector-tx-sender,kms-connector-endpoint,kms-connector-proxy",
+      `health:${allPartyConnectorRuntime}`,
       "save:undefined",
     ]);
     expect(persisted?.overrides.at(-1)).toEqual({
@@ -504,57 +375,12 @@ describe("stack", () => {
     expect(persisted?.e2eKmsConnectorRuntimeAdoptionPending).toBeUndefined();
   });
 
-  test("KMS connector E2E adoption permits only the verified additive DB-superset after the ordinary guard rejects it", async () => {
-    const calls: string[] = [];
-    await adoptRunningE2eKmsConnectorOverride(kmsAdoptionState(), {
-      async assertSchemaCompatibility() {
-        throw new SchemaGuardError("kms-connector", "expected migration mismatch");
-      },
-      async isVerifiedE2ePublicKmsConnectorSchemaSuperset() {
-        calls.push("verified-superset");
-        return true;
-      },
-      async saveState(next) {
-        calls.push(`save:${next.e2eKmsConnectorRuntimeAdoptionPending}`);
-      },
-      async generateRuntime() {
-        calls.push("generate");
-      },
-      async maybeBuild() {
-        calls.push("build");
-      },
-      async composeUp(_component, _services, options = {}) {
-        calls.push(`up:${options.noDeps}:${options.forceRecreate}`);
-      },
-      async waitForKmsConnector() {
-        calls.push("ready");
-      },
-      async postBootHealthGate() {
-        calls.push("health");
-      },
-    });
-    expect(calls).toEqual([
-      "verified-superset",
-      "save:true",
-      "generate",
-      "build",
-      "up:true:true",
-      "ready",
-      "health",
-      "save:undefined",
-    ]);
-  });
-
-  test("KMS connector E2E adoption keeps all other schema mismatches closed", async () => {
+  test("KMS connector E2E adoption keeps schema mismatches closed", async () => {
     const calls: string[] = [];
     await expect(
       adoptRunningE2eKmsConnectorOverride(kmsAdoptionState(), {
         async assertSchemaCompatibility() {
           throw new SchemaGuardError("kms-connector", "unexpected migration mismatch");
-        },
-        async isVerifiedE2ePublicKmsConnectorSchemaSuperset() {
-          calls.push("verified-superset");
-          return false;
         },
         async saveState() {
           calls.push("save");
@@ -566,7 +392,7 @@ describe("stack", () => {
         async postBootHealthGate() {},
       }),
     ).rejects.toThrow("unexpected migration mismatch");
-    expect(calls).toEqual(["verified-superset"]);
+    expect(calls).toEqual([]);
   });
 
   test("KMS connector E2E adoption rejects bundles without a local migration guard", async () => {
@@ -648,7 +474,7 @@ describe("stack", () => {
       "save:true",
       "generate",
       "build:kms-connector:true:kms-connector-gw-listener,kms-connector-kms-worker,kms-connector-tx-sender,kms-connector-endpoint,kms-connector-proxy",
-      "up:kms-connector:kms-connector-gw-listener,kms-connector-kms-worker,kms-connector-tx-sender,kms-connector-endpoint,kms-connector-proxy:true:true",
+      `up:kms-connector:${allPartyConnectorRuntime}:true:true`,
       "ready",
       "health",
       "save:undefined",
@@ -678,7 +504,7 @@ describe("stack", () => {
   test("KMS connector E2E adoption recreates every threshold party runtime but no migration service", () => {
     const state = kmsAdoptionState();
     state.scenario = testDefaultScenario({
-      kms: { mode: "threshold", parties: 3, threshold: 1, committeeSize: 3, fheParams: "Test" },
+      kms: { parties: 3, threshold: 1, committeeSize: 3, fheParams: "Test" },
     });
 
     expect(kmsConnectorRuntimeReplacementServices(state)).toEqual([

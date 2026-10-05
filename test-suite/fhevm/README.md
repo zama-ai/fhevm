@@ -104,7 +104,7 @@ There are four kinds of inputs/runtime artifacts:
 - tracked env templates: `templates/env/.env.*`
 - tracked config:
   - relayer template input: `templates/config/relayer.yaml`
-  - template/static config: `templates/config/kms-core-*.toml`, `static/config/prometheus/prometheus.yml`
+  - template/static config: `templates/config/kms-core-threshold.toml`, `static/config/prometheus/prometheus.yml`
 - checked-in scenario inputs under `scenarios/` (`two-of-two.yaml`, `two-of-two-multi-chain.yaml`, `multi-chain.yaml`)
 
 Generated runtime artifacts always live under `.fhevm/`:
@@ -112,7 +112,7 @@ Generated runtime artifacts always live under `.fhevm/`:
 - `.fhevm/runtime/env/*.env`
 - `.fhevm/runtime/compose/*.yml` for generated runtime overrides only
 - `.fhevm/runtime/config/relayer.yaml`
-- `.fhevm/runtime/config/kms-core.toml`
+- `.fhevm/runtime/config/kms-core-threshold*.toml`, `.fhevm/runtime/config/kms-gen-keys-threshold-*.toml`
 - `.fhevm/runtime/addresses/*`
 - `.fhevm/state/locks/*`
 - `.fhevm/state/state.json`
@@ -195,7 +195,7 @@ The lock file replaces only the version resolution step — preflight, boot pipe
 Release rollouts are executable TypeScript runbooks under `rollouts/`. A runbook boots one baseline stack, performs each upgrade step in order, preserves chain/database/container state, and runs rollout-safe e2e coverage after each step:
 
 ```sh
-./fhevm-cli rollout run ./rollouts/v0.12-to-v0.13-protocol-upgrade/run.ts
+./fhevm-cli rollout run ./rollouts/v0.13.21-to-v0.13.22-kms-node-by-node/run.ts
 ```
 
 Use `./fhevm-cli rollout receipt` to print the markdown receipt of the most recent rollout run.
@@ -332,13 +332,13 @@ When changing runtime flags, env contracts, target semantics, or external compan
 ./fhevm-cli up --target latest-supported
 ./fhevm-cli deploy --target latest-supported
 ./fhevm-cli up --target sha --sha 9587546
-./fhevm-cli up --resume --from-step relayer
 ./fhevm-cli up --target latest-main --build
 ./fhevm-cli up --target latest-main --scenario two-of-two --build
 ./fhevm-cli up --target latest-supported --override coprocessor
 ./fhevm-cli up --target latest-supported --scenario two-of-two
 ./fhevm-cli scenario list
 ./fhevm-cli upgrade coprocessor
+./fhevm-cli upgrade kms --lock-file <lock.json>   # one operator (core + connector) at a time
 
 ./fhevm-cli status
 ./fhevm-cli logs relayer
@@ -421,7 +421,7 @@ Rust HTTPS clients can load system roots:
 
 This option affects only locally built coprocessor and KMS connector runtime
 images (not the connector DB migration) and is persisted in the generated E2E
-state, so a later `./fhevm-cli up --resume` uses the same bases. It is not a
+state, so a later rebuild or pending-adoption retry uses the same bases. It is not a
 production or certification build mode.
 
 Add `--override kms-connector` when the E2E stack also needs the connector from
@@ -537,6 +537,9 @@ Use `--scenario <name-or-file>` for consensus and stateful rollout runs. Bundled
 - per-instance env overrides
 - per-instance runtime args
 - optional `localServices` for local instances when only part of one coprocessor instance should be built from the workspace
+- the KMS cluster, through an optional `kms` block
+
+The KMS always runs as a threshold cluster. Without a `kms` block a scenario gets 4 parties (t=1) with fast insecure keygen and Default FHE params (`insecureTestKeygen: true`, `fheParams: Default`). A `kms` block sets `parties`, `threshold`, `committeeSize` (spare cores beyond it) and the keygen: omit `insecureTestKeygen` for a secure MPC keygen, which requires `fheParams: Test` (see `four-party-threshold-kms.yaml`). Insecure keygen with Test params is accepted but yields a key under which `Rand` decrypts the same value on every draw. The `v0.11.0-mainnet` and `v0.12.0-testnet` profiles are kept but untested since threshold-only mode; boot them from their release tag if they fail.
 
 Examples:
 
@@ -563,7 +566,7 @@ instances:
 
 That keeps the scenario explicit while limiting the local build to `host-listener` and its required sibling services for that one instance.
 
-Blue-green scenarios pin a previous-release Blue whose tfhe-rs cannot read key material from a newer KMS core. `bootstrap.tag` boots the contracts, the KMS core and connector and listener-core at that release (Green stays deferred), waits for the operators to ingest the generated keys, then upgrades them to the resolved bundle in place in production order: the changed contracts through their `task:upgrade*` tasks, the KMS core over the existing keys, the connector, listener-core, and finally the Green fleet. Local overrides for the bootstrapped components apply from the upgrade on; the relayer and test-suite start on the bundle. Centralized KMS only:
+Blue-green scenarios pin a previous-release Blue whose tfhe-rs cannot read key material from a newer KMS core. `bootstrap.tag` boots the contracts, the KMS core and connector and listener-core at that release (Green stays deferred), waits for the operators to ingest the generated keys, then upgrades them to the resolved bundle in place in production order: the changed contracts through their `task:upgrade*` tasks, each KMS operator's core and connector in turn over the existing keys (with the epoch/context migration when the core crosses 0.15), listener-core, and finally the Green fleet. Local overrides for the bootstrapped components apply from the upgrade on; the relayer and test-suite start on the bundle. The KMS cluster must have no spare parties:
 
 ```yaml
 bootstrap:

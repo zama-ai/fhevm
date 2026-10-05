@@ -129,7 +129,7 @@ Non-release orchestrate keeps the `two-of-two-multi-chain` scenario. If a requir
 - Tracked inputs are split by role:
   - compose templates: `docker-compose/*.yml`
   - env templates: `templates/env/.env.*`
-  - generated config templates: `templates/config/relayer.yaml`, `templates/config/kms-core-*.toml`
+  - generated config templates: `templates/config/relayer.yaml`, `templates/config/kms-core-threshold.toml`
   - static config: `static/config/prometheus/prometheus.yml`
   - checked-in scenario inputs under `scenarios/` (`two-of-two.yaml`, `two-of-two-multi-chain.yaml`, `multi-chain.yaml`)
 - `src/stack-spec/stack-spec.ts` resolves the final stack spec consumed by generation.

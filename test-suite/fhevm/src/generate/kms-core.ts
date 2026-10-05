@@ -3,20 +3,16 @@
  * (gen-keys + N cores + kms-init) wired to the checked-in
  * `templates/config/kms-core-threshold.toml`.
  *
- * Used only when a scenario's `kms` block is `mode: threshold`. The centralized
- * path is untouched (single `kms-core` from `core-docker-compose.yml`).
- *
- * Config strategy (mirrors how the centralized core is configured — a checked-in
- * template plus `KMS_CORE__*` env overrides — instead of rendering a TOML blob in TS):
+ * Config strategy (a checked-in template plus `KMS_CORE__*` env overrides, instead of
+ * rendering a TOML blob in TS):
  *   - the static tuning + structure lives in the checked-in template;
  *   - the only generated part is the `[[threshold.peers]]` roster, injected at the
  *     template's marker because it depends on the party count (it is identical for
  *     every party, so the rendered file is shared by the whole cluster);
  *   - per-party values (my_id, listen ports, vault prefixes) are supplied as
- *     `KMS_CORE__*` env overrides in `thresholdCoreEnv` — the same env layering the
- *     centralized core relies on. The template's per-party placeholders are invalid
- *     on purpose (my_id = 0), so a dropped override fails loudly rather than silently
- *     misconfiguring the cluster.
+ *     `KMS_CORE__*` env overrides in `thresholdCoreEnv`. The template's per-party
+ *     placeholders are invalid on purpose (my_id = 0), so a dropped override fails
+ *     loudly rather than silently misconfiguring the cluster.
  *
  * Design notes (kept deliberately close to how zama-ai/kms's own CI stands up a
  * threshold-mode cluster — see ci/kube-testing + core/service/config/compose_1.toml):
@@ -98,9 +94,7 @@ export const KMS_THRESHOLD_SPARE_CONFIG_NAME = "kms-core-threshold-spare.toml";
 /** Per-party `kms-gen-keys` config, mounted into the gen-keys job for config-based cores. */
 export const kmsThresholdGenKeysConfigName = (partyId: number): string =>
   `kms-gen-keys-threshold-${partyId}.toml`;
-/** The `kms-gen-keys --help` substring that marks a config-based CLI (v0.14.1+). The centralized
- *  template (core-docker-compose.yml) probes for the same string, so both paths pick the CLI form
- *  the same way. */
+/** The `kms-gen-keys --help` substring that marks a config-based CLI (v0.14.1+). */
 export const KMS_GEN_KEYS_CONFIG_PROBE = "--config-file";
 /** Marker in the checked-in template where the per-cluster peer roster is injected. */
 export const THRESHOLD_PEERS_MARKER = "# __THRESHOLD_PEERS__";
@@ -165,8 +159,7 @@ export const renderThresholdSpareConfig = (templateText: string): string => {
 
 /**
  * Per-party `KMS_CORE__*` overrides for the shared template's placeholders. The `__`
- * separator nests into the TOML tables (e.g. KMS_CORE__THRESHOLD__MY_ID -> [threshold].my_id),
- * the same layering the centralized core uses for its vault config.
+ * separator nests into the TOML tables (e.g. KMS_CORE__THRESHOLD__MY_ID -> [threshold].my_id).
  */
 export const thresholdCoreEnv = (
   partyId: number,
@@ -230,12 +223,10 @@ const genKeysCommand = (topology: ResolvedKmsTopology, opts: KmsRenderOptions) =
 
 /**
  * Builds the threshold-mode cluster compose doc: 1 gen-keys container + N cores +
- * kms-init. This is the generated override for the `core-threshold` component
- * (a dedicated component, so it never merges with the centralized `core`
- * template — no env/healthcheck conflicts to work around).
+ * kms-init. This is the generated override for the `core-threshold` component.
  */
 // The KMS core image is published amd64-only at every tag; pin the platform so the generated cores
-// run (emulated) on arm64 hosts, matching the hardcoded pin in core-docker-compose.yml.
+// run (emulated) on arm64 hosts.
 const CORE_PLATFORM = "linux/amd64";
 
 export const buildKmsThresholdOverride = (
@@ -244,9 +235,6 @@ export const buildKmsThresholdOverride = (
   coreVersionByNodeId: Readonly<Record<string, string>> = {},
   migrationByNodeId: Readonly<Record<string, KmsEpochAssociation[]>> = {},
 ): ComposeDoc => {
-  if (topology.mode !== "threshold") {
-    throw new Error("buildKmsThresholdOverride called for a non-threshold topology");
-  }
   const services: Record<string, Record<string, unknown>> = {};
 
   services["kms-core-gen-keys"] = {
