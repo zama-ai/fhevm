@@ -151,6 +151,8 @@ jobs:
             rust_toolchain: kms-connector/rust-toolchain.toml
             context: .
             target: prod
+          # Published for preview pins (ci/preview-env/scripts/resolve/resolve-tags.cjs);
+          # solana-e2e gates these services on its lock and does not pull them.
           - name: kms-connector-endpoint
             image: fhevm/kms-connector/endpoint
             dockerfile: kms-connector/crates/endpoint/Dockerfile
