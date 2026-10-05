@@ -149,6 +149,11 @@ jobs:
           command: cd sdk/js-sdk && npm ci
       - run: npm run build
       - run: npx playwright install --with-deps
+      # jsdelivr serves only published npm packages. feature/solana bundles a tkms build from the kms
+      # `solana` branch (scripts/regen-tkms-wasm.sh), so the CDN smoke test cannot pass there.
+      - name: Skip the CDN smoke test on feature/solana
+        if: ${{ github.base_ref == 'feature/solana' || github.ref_name == 'feature/solana' }}
+        run: rm test/browser-smoke/specs/smoke-cdn.spec.ts
       - run: npm run test:browser-smoke
 
   # --- Localstack (full FHE stack) suites: one job per protocol version ---
