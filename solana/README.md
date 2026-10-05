@@ -8,7 +8,7 @@ propagation) instead of transliterating Solidity.
 It covers one production-shaped vertical end to end against the real coprocessor,
 gateway and a threshold KMS: encrypt an input, execute FHE ops as one atomic
 execution, and decrypt the result publicly or per user. The proof of concept was
-validated on localnet; the port is now being hardened for production. The product
+validated on localnet. The port is not deployed in production. The product
 decisions still open are in [`docs/FUTURE_DESIGN.md`](docs/FUTURE_DESIGN.md).
 
 Vocabulary in this file and everywhere else follows

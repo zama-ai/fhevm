@@ -1,19 +1,8 @@
 //! Transactions written once and rendered both as `getBlock` JSON and as Yellowstone messages,
 //! so the two transports can be held to the same result.
 
-use base64::{prelude::BASE64_STANDARD, Engine};
 use serde_json::{json, Value};
-use solana_sdk::{
-    hash::Hash,
-    message::{
-        compiled_instruction::CompiledInstruction as SdkCompiledInstruction,
-        v0::{self, MessageAddressTableLookup},
-        MessageHeader, VersionedMessage,
-    },
-    pubkey::Pubkey,
-    signature::Signature,
-    transaction::VersionedTransaction,
-};
+use solana_sdk::pubkey::Pubkey;
 use yellowstone_grpc_proto::prelude::{
     CompiledInstruction as GrpcCompiledInstruction, InnerInstruction,
     InnerInstructions, Message as GrpcMessage, SubscribeUpdateTransaction,
@@ -53,76 +42,65 @@ pub(crate) struct Transaction {
 }
 
 impl Transaction {
-    /// `getBlock`'s JSON for the transaction, spelled as the RPC wire format.
+    /// `getBlock`'s JSON for the transaction, spelled as the RPC wire format with `encoding:
+    /// "json"`: a legacy transaction, or a v0 one when it loads accounts from a lookup table.
     pub(crate) fn rpc_json(&self, err: Value) -> Value {
         let has_lookups = !self.loaded_writable.is_empty()
             || !self.loaded_readonly.is_empty();
-        let message = v0::Message {
-            header: MessageHeader {
-                num_required_signatures: 1,
-                num_readonly_signed_accounts: 0,
-                num_readonly_unsigned_accounts: 0,
-            },
-            account_keys: self
-                .static_keys
-                .iter()
-                .map(|key| Pubkey::new_from_array(*key))
-                .collect(),
-            recent_blockhash: Hash::new_from_array([9; 32]),
-            instructions: self
-                .top_level
-                .iter()
-                .map(|instruction| SdkCompiledInstruction {
-                    program_id_index: instruction.program_id_index,
-                    accounts: instruction.accounts.clone(),
-                    data: instruction.data.clone(),
-                })
-                .collect(),
-            address_table_lookups: if has_lookups {
-                vec![MessageAddressTableLookup {
-                    account_key: Pubkey::new_from_array([0xAA; 32]),
-                    writable_indexes: (0..self.loaded_writable.len() as u8)
-                        .collect(),
-                    readonly_indexes: (0..self.loaded_readonly.len() as u8)
-                        .collect(),
-                }]
-            } else {
-                vec![]
-            },
-        };
-        let transaction = VersionedTransaction {
-            signatures: vec![Signature::from(self.signature)],
-            message: VersionedMessage::V0(message),
-        };
         let keys = |keys: &[[u8; 32]]| {
             keys.iter()
                 .map(|key| bs58::encode(key).into_string())
                 .collect::<Vec<_>>()
         };
+        let instructions = |instructions: &[Compiled]| {
+            instructions
+                .iter()
+                .map(|instruction| {
+                    json!({
+                        "programIdIndex": instruction.program_id_index,
+                        "accounts": instruction.accounts,
+                        "data": bs58::encode(&instruction.data).into_string(),
+                        "stackHeight": instruction.stack_height,
+                    })
+                })
+                .collect::<Vec<_>>()
+        };
+        let mut message = json!({
+            "header": {
+                "numRequiredSignatures": 1,
+                "numReadonlySignedAccounts": 0,
+                "numReadonlyUnsignedAccounts": 0,
+            },
+            "accountKeys": keys(&self.static_keys),
+            "recentBlockhash": bs58::encode([9; 32]).into_string(),
+            "instructions": instructions(&self.top_level),
+        });
+        if has_lookups {
+            message["addressTableLookups"] = json!([{
+                "accountKey": bs58::encode([0xAA; 32]).into_string(),
+                "writableIndexes": (0..self.loaded_writable.len() as u8).collect::<Vec<_>>(),
+                "readonlyIndexes": (0..self.loaded_readonly.len() as u8).collect::<Vec<_>>(),
+            }]);
+        }
         let status = if err.is_null() {
             json!({ "Ok": null })
         } else {
             json!({ "Err": err })
         };
         json!({
-            "transaction": [
-                BASE64_STANDARD.encode(bincode::serialize(&transaction).unwrap()),
-                "base64"
-            ],
+            "transaction": {
+                "signatures": [bs58::encode(self.signature).into_string()],
+                "message": message,
+            },
             "meta": {
                 "err": err,
                 "status": status,
                 "fee": 5000,
                 "preBalances": [],
                 "postBalances": [],
-                "innerInstructions": self.inner_groups.iter().map(|(index, instructions)| json!({
+                "innerInstructions": self.inner_groups.iter().map(|(index, group)| json!({
                     "index": index,
-                    "instructions": instructions.iter().map(|instruction| json!({
-                        "programIdIndex": instruction.program_id_index,
-                        "accounts": instruction.accounts,
-                        "data": bs58::encode(&instruction.data).into_string(),
-                        "stackHeight": instruction.stack_height,
-                    })).collect::<Vec<_>>(),
+                    "instructions": instructions(group),
                 })).collect::<Vec<_>>(),
                 "logMessages": [],
                 "preTokenBalances": [],
@@ -134,7 +112,7 @@ impl Transaction {
                 },
                 "computeUnitsConsumed": 1000,
             },
-            "version": 0,
+            "version": if has_lookups { json!(0) } else { json!("legacy") },
         })
     }
 
@@ -172,7 +150,7 @@ impl Transaction {
                 "preBalances": [],
                 "postBalances": [],
             },
-            "version": 0,
+            "version": full["version"],
         })
     }
 

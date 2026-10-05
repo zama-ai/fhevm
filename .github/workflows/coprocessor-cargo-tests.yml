@@ -46,6 +46,8 @@ jobs:
               - solana/crates/solana-ed25519-instruction/**
               # The Merkle proof server's wire tests read the fixture the connector parses.
               - solana/test-fixtures/merkle-proofs/**
+              # The follower's archive test replays a captured devnet slot.
+              - solana/test-fixtures/rpc/**
               # consensus-detector depends on these crates by path.
               - shared/block-manifest/**
               - shared/ciphertext-attestation/**

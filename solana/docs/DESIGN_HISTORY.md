@@ -888,6 +888,14 @@ caught empty-contracts / wrong-sig being accepted on the EVM path.
 Branching on the chain type keeps EVM strictness intact while admitting Solana. The CI integration
 test that caught the regression now passes for both. This entry only keeps that split.
 
+### DD-033, replaced in part by DD-066
+
+DD-066 moved the leaf reconstruction from the host listener to the Merkle indexer.
+
+> The host listener reconstructs compute requests and MMR leaves from confirmed Yellowstone
+> transaction instructions, […] and the listener reconstructs leaves from instruction data alone, in
+> replay order, without reading account state first.
+
 ### DD-040, replaced in part by DD-045 and DD-065
 
 Superseded in part by DD-065: the verifier takes no MMR inclusion proof and no Store; it reads only
@@ -1283,6 +1291,14 @@ DD-066 moved the nodes into the Merkle indexer's `nodes` table, created with the
 > A database written before `solana_encrypted_state_nodes` existed has leaves without nodes, and its
 > proofs fail verification: nothing is deployed, so no backfill exists.
 
+### DD-063, replaced in part by DD-068
+
+DD-068 answers a wrong leaf `inconsistent` in a 200, and the route also checks the leaf's
+commitment against its row.
+
+> The route checks the path with `mmr_verify` against the Store's recorded peaks before serving it;
+> a missing or wrong row answers a retryable `upstream_transient`.
+
 ### DD-064, replaced in part by DD-066
 
 DD-066 renamed the server and pointed it at the Merkle proof service's database, which the Merkle
@@ -1302,9 +1318,20 @@ indexer writes.
 
 ### DD-064, replaced in part by DD-067
 
-DD-067 made the server answer only signed requests and the connector ask the coprocessors one after
-another.
+DD-067 made the server answer only signed requests, replaced the connector's proof routes (a URL
+and an API key each) with `solana_proof_urls`, and made the connector ask the coprocessors one
+after another.
 
 > The connector takes the first proof that verifies from any coprocessor, so this costs nothing
 > while one indexer runs; while every coprocessor's indexer is stopped, a Store someone keeps
 > appending to cannot be decrypted until one catches up.
+
+> The connector's proof routes name the proof server's Service.
+
+### DD-066, replaced in part by DD-068
+
+DD-068 added the `inconsistent` answer for a leaf of a quarantined store, or a leaf whose row fails
+its checks.
+
+> A record holds every Store from leaf zero or has not seen it, so a proof answer is `found`,
+> `notFound` or `unknownAccount`; there is no incomplete history.

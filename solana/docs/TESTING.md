@@ -141,10 +141,8 @@ typecheck — a root can be swept and still never compiled.
 
 ## Scenario layer (SDK-driven e2e)
 
-Lives in `test-suite/fhevm/e2e/` — a small harness plus scenario files. Since fhevm-internal#1876
-this layer **is** the live vertical: the bash phase runner (`full-vertical.sh`), its label greps
-and their checker, and the Rust live-client are gone, and every live assertion is a typed
-`bun:test` expectation. The layer owns only what composition can break (proofs vs live state, KMS
+Lives in `test-suite/fhevm/e2e/` — a small harness plus scenario files. This layer **is** the live
+vertical (fhevm-internal#1876): every live assertion is a typed `bun:test` expectation. The layer owns only what composition can break (proofs vs live state, KMS
 round-trips, relayer seams, timing) — never what the Mollusk ladder already proves.
 
 The scenarios run under `bun:test` because they share their runtime with the fhevm-cli demo
@@ -234,9 +232,12 @@ returns `@fhevm/sdk/solana` with the three client factories replaced by those of
 - **Encrypt.** A mock input proof. The client signs its attestation with the test coprocessor
   key, and the attestation's `extra_data` is the plaintexts, one big-endian value per handle, at
   least two bytes each so that production's one-byte `0x00` never decodes as a value.
-- **User decrypt.** The permit and request are built as in production. Each attempt then runs the
-  relayer's submission checks and delegation pre-check, the gateway's validity window, and the KMS
-  Connector's authorization, in the real stack's order and with its labels (the header of
+- **User decrypt.** The permit and request are built as in production, except the transport key:
+  no share is signcrypted to it, so the permit commits to random bytes of its length
+  (`PERMIT_TRANSPORT_KEY_LEN`) and no KMS WASM loads, as in EVM's cleartext decrypt module.
+  Each attempt then runs the relayer's submission checks and delegation pre-check, the gateway's
+  validity window, and the KMS Connector's authorization, in the real stack's order and with its
+  labels (the header of
   `sdk/js-sdk/src/solana/cleartext/decrypt.ts` lists them). A failure the Connector would retry
   leaves the attempt unanswered for the retry loop; any other throws at once and names the failure,
   where the real stack leaves the request to time out. Otherwise the answer is the plaintext the
@@ -274,8 +275,7 @@ only just fits the 1232-byte packet, can fail on the cleartext build. Mollusk do
 transaction size, so only the validator stack catches the second. The gap only causes false
 failures: a transaction that fits on the cleartext build always fits in production. v1 transactions
 (SIMD-0385) raise the limit to 4096 bytes for both builds, so they move this wall rather than remove
-it. Our Solana transaction reads do not accept v1 yet, `createSolanaLeafRecord` among them
-(fhevm-internal#2080).
+it.
 
 ### Extending the cleartext target
 
@@ -319,10 +319,11 @@ forged proof, and a leaf record that is behind all fail closed (the `zama-solana
 kms-worker `solana_` tests and the connector's `ProofRecordBehind` and `NoLeaf` classification).
 
 The central correctness bet is that off-chain consumers reproduce on-chain MMR state exactly. The
-solana-e2e scenarios exercise host-listener reconstruction against the full stack, and every proof
-the connector fetches is verified against the peaks it read on chain. A divergence fails closed
-rather than yielding a wrong proof: a record that has sealed at least as much history as the chain
-shows and holds no such leaf is a terminal refusal, and a record that is behind is a retry.
+solana-e2e scenarios exercise host-listener reconstruction and the Merkle indexer's leaf record
+against the full stack, and every proof the connector fetches is verified against the peaks it
+read on chain. A divergence fails closed rather than yielding a wrong proof: a record that has
+sealed at least as much history as the chain shows and holds no such leaf is a terminal refusal,
+and a record that is behind is a retry.
 
 ## Deferred
 
@@ -371,8 +372,8 @@ shows and holds no such leaf is a terminal refusal, and a record that is behind 
   semantic compute facts from instruction data and takes each execution's result handles from its
   `FheExecutedEvent`, decoded with `zama-host`'s own type. If a generated record type changes,
   regenerate the vendored IDL and validate reconstruction explicitly.
-- **The connector and listener compile the ACL crate; the IDL and the TypeScript seeds are
-  mirrors.** Account layout, PDA seeds and leaf commitments come from `zama-solana-acl`, the same
+- **The connector and the Merkle proof service compile the ACL crate; the IDL and the TypeScript
+  seeds are mirrors.** Account layout, PDA seeds and leaf commitments come from `zama-solana-acl`, the same
   crate `zama-host` compiles, so a layout change breaks the build. The vendored IDLs are build
   output: after a host instruction shape changes, `sync-zama-host-idl.sh` rewrites them and
   `npm run codegen:solana` the Codama clients; CI's `check-zama-host-idl.sh` and

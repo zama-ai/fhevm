@@ -85,7 +85,7 @@ stack where one exists.
 | Term | Definition | Replaces | EVM equivalent |
 |---|---|---|---|
 | **decoded op records** | The typed structs the listener decodes from an execution's instruction data, one per step, fed to the coprocessor. They are not on-chain events. | `Fhe*Event` structs | `FheAdd`… events |
-| **reconstruction** | The listener's re-derivation of output handles and leaves from raw transaction bytes, using the program's own derivation functions. | — | — |
+| **reconstruction** | The listener's re-derivation of output handles, and the Merkle indexer's of leaves, from raw transaction bytes, using the program's own derivation functions. | — | — |
 | **crank** | A call anyone may make that advances work an earlier transaction could not finish — the demo's address-lookup-table lifecycle is driven this way, since deactivation has to wait out a cooldown. Retrying is the point: a crank that throws leaves the work for the next one rather than recording it as done. | — | — |
 
 ## Environments
