@@ -177,6 +177,12 @@ jobs:
               exit 1
             fi
 
+            if [ "$old_ver" = "$new_ver" ]; then
+              echo "Skipping prepare-only check for $name (reinitializer unchanged: $old_ver)"
+              SKIPPED=$((SKIPPED + 1))
+              continue
+            fi
+
             case "$name" in
               ACL) proxy_address="$ACL_CONTRACT_ADDRESS" ;;
               FHEVMExecutor) proxy_address="$FHEVM_EXECUTOR_CONTRACT_ADDRESS" ;;
