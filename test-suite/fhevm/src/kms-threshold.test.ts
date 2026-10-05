@@ -12,6 +12,7 @@ import {
 import { buildKmsConnectorOverride } from "./generate/compose";
 import { buildGatewayScSwapEnv, buildHostScSwapEnv, renderEnvMaps } from "./generate/env";
 import {
+  KMS_GEN_KEYS_CONFIG_PROBE,
   KMS_THRESHOLD_CONFIG_NAME,
   KMS_THRESHOLD_SPARE_CONFIG_NAME,
   THRESHOLD_PEERS_MARKER,
@@ -190,16 +191,24 @@ describe("buildKmsThresholdOverride", () => {
 
   test("gen-keys generates ONLY signing keys, sized to exactly N parties", () => {
     const entrypoint = JSON.stringify(buildKmsThresholdOverride(fourParty, RENDER_OPTS).services["kms-core-gen-keys"].entrypoint);
-    // `--cmd signing-keys` and `--num-parties` are gated by `--help` probes (newer cores dropped both);
-    // keep the probes so a pinned newer CORE_VERSION still boots.
-    expect(entrypoint).toContain("if kms-gen-keys --help");
+    // Config-based cores (v0.14.1+) are detected by the shared probe and get one config per party.
+    expect(entrypoint).toContain(`grep -q -- '${KMS_GEN_KEYS_CONFIG_PROBE}'`);
+    expect(entrypoint).toContain(`--config-file config/${kmsThresholdGenKeysConfigName(4)}`);
+    // Flag-based cores (v0.13.x) take the other branch; `--cmd signing-keys` and `--num-parties` are
+    // gated by their own `--help` probes there, since the oldest images need them and later ones dropped them.
     expect(entrypoint).toContain("if kms-gen-keys threshold --help");
     expect(entrypoint).toContain("--cmd signing-keys");
     expect(entrypoint).toContain("--num-parties 4");
-    expect(entrypoint).toContain(`--config-file config/${kmsThresholdGenKeysConfigName(4)}`);
     const composeYaml = YAML.stringify(buildKmsThresholdOverride(fourParty, RENDER_OPTS));
     expect(composeYaml).toContain("$$CMD");
     expect(composeYaml).toContain("$$NP");
+  });
+
+  test("threshold gen-keys probes the CLI form with a single string", () => {
+    const entrypoint = JSON.stringify(buildKmsThresholdOverride(fourParty, RENDER_OPTS).services["kms-core-gen-keys"].entrypoint);
+    expect(entrypoint).toContain(`kms-gen-keys --help 2>&1 | grep -q -- '${KMS_GEN_KEYS_CONFIG_PROBE}'`);
+    // No second, differently-worded probe (e.g. `--public-storage`).
+    expect(entrypoint).not.toContain("grep -q -- '--public-storage'");
   });
 
   test("config-based keygen keeps each party's storage and identity separate", () => {
