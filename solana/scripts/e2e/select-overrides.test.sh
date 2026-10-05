@@ -68,16 +68,22 @@ check "test framework src only -> nothing" \
   "$PINS_GATEWAY $PINS_HOST $PINS_COPRO $PINS_RELAYER $PINS_CONNECTOR"
 
 # zama-host is compiled into the coprocessor and relayer binaries, but NOT the kms-connector's
-# (its image copies only solana/crates/zama-solana-acl).
+# (its images copy only the three solana crates kms-connector/Cargo.toml path-depends on).
 check "solana program change -> coprocessor + relayer" \
   "solana/programs/zama-host/src/lib.rs" \
   "true" \
   "coprocessor relayer" \
   "$PINS_GATEWAY $PINS_HOST $PINS_CONNECTOR"
 
-# These shared crates are copied into the kms-worker image as well as the other Rust consumers.
+# These shared crates are copied into every kms-connector image as well as the other Rust consumers.
 check "zama-solana-acl change -> all rust consumers" \
   "solana/crates/zama-solana-acl/src/lib.rs" \
+  "true" \
+  "coprocessor kms-connector relayer" \
+  "$PINS_GATEWAY $PINS_HOST"
+
+check "zama-solana-permit change -> all rust consumers" \
+  "solana/crates/zama-solana-permit/src/envelope.rs" \
   "true" \
   "coprocessor kms-connector relayer" \
   "$PINS_GATEWAY $PINS_HOST"
