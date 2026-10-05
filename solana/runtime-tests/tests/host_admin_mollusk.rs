@@ -18,7 +18,8 @@ use solana_sdk::{
 use zama_host::{self as host, errors::ZamaHostError};
 use zama_solana_test_kit::{
     account_is_system_owned_and_empty, anchor_error_check, anchor_framework_error_check, anchor_ix,
-    event_authority, funded_system_account, program_data_account, system_account, writable, Ctx,
+    event_authority, funded_system_account, paused_host_config, program_data_account,
+    system_account, writable, Ctx,
 };
 
 mod host_fixtures;
@@ -425,6 +426,37 @@ fn mollusk_a_pauser_pauses_and_only_the_admin_unpauses() {
             ..host::PauseFlags::ALL
         }
     );
+}
+
+/// Admin setters are never paused (DD-058): with every area paused, the admin still withdraws a
+/// pauser and hands the admin role over.
+#[test]
+fn mollusk_the_admin_sets_pausers_and_hands_over_while_every_area_is_paused() {
+    let admin = Pubkey::new_unique();
+    let pauser = Pubkey::new_unique();
+    let (new_admin, _) = Pubkey::find_program_address(&[b"new-admin"], &host::id());
+    let (host_config, account) = host_config_account(admin);
+    let context = mollusk_execute_context(
+        admin,
+        vec![
+            (
+                host_config,
+                paused_host_config(&account, host::PauseFlags::ALL),
+            ),
+            (new_admin, program_owned_account()),
+        ],
+    );
+
+    for setter in [
+        set_pauser_ix(admin, host_config, pauser, true),
+        set_pauser_ix(admin, host_config, pauser, false),
+        set_admin_ix(admin, host_config, new_admin),
+    ] {
+        context.process_and_validate_instruction(&setter, &[Check::success()]);
+    }
+    let config = read_host_config(&context, host_config).expect("config");
+    assert_eq!(config.admin, new_admin);
+    assert_eq!(config.paused, host::PauseFlags::ALL);
 }
 
 fn vault_context(accounts: Vec<(Pubkey, Account)>) -> Ctx {

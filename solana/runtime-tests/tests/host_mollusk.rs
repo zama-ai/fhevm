@@ -24,18 +24,18 @@ use std::collections::HashMap;
 use zama_host::encode::ExecutionDictionary;
 use zama_host::{
     self as host, AppScope, EncryptedStore, FheBinaryOpCode, FheExecuteArgs, FheExecuteEffect,
-    FheExecuteOperand, FheExecuteStep, FheTernaryOpCode, HostConfig,
+    FheExecuteOperand, FheExecuteStep, FheTernaryOpCode, FheUnaryOpCode, HostConfig,
 };
 use zama_solana_acl::StoreHistoryEvent;
 use zama_solana_test_kit::{
     anchor_error_check, anchor_framework_error_check, anchor_ix, canonical_test_context_id,
-    cost_snapshot, deny_scope_record_account, empty_system_account, encrypted_store_account,
-    event_authority, funded_system_account, handle_for_chain, host_svm as mollusk,
-    host_svm_without_previous_bank_hash as mollusk_without_previous_bank_hash, label,
-    new_encrypted_store, new_encrypted_store_with_slot, paused_host_config, program_owned_account,
-    rand_nonce_account, read_encrypted_store, readonly, readonly_signer, serialized_account,
-    signing, system_account, system_program_account, writable, DECRYPTION_CONTRACT,
-    GATEWAY_CHAIN_ID, INPUT_VERIFICATION_CONTRACT,
+    coprocessor_signer_address, cost_snapshot, deny_scope_record_account, empty_system_account,
+    encrypted_store_account, event_authority, funded_system_account, handle_for_chain,
+    host_svm as mollusk, host_svm_without_previous_bank_hash as mollusk_without_previous_bank_hash,
+    label, new_encrypted_store, new_encrypted_store_with_slot, paused_host_config,
+    program_owned_account, rand_nonce_account, read_encrypted_store, readonly, readonly_signer,
+    serialized_account, signing, system_account, system_program_account, writable,
+    HostConfigParams, DECRYPTION_CONTRACT, GATEWAY_CHAIN_ID, INPUT_VERIFICATION_CONTRACT,
 };
 
 mod host_fixtures;
@@ -360,12 +360,37 @@ fn create_case(
     allows: &[Pubkey],
     extras: FheExecuteExtras,
 ) -> (Pubkey, Instruction, Vec<(Pubkey, Account)>) {
-    let output = app.address(name);
-    let mut dictionary = ExecutionDictionary::default();
-    let steps = vec![FheExecuteStep::TrivialEncrypt {
+    let step = FheExecuteStep::TrivialEncrypt {
         plaintext: [1; 32],
         fhe_type: 5,
-    }];
+    };
+    create_case_with_step(
+        payer,
+        app,
+        host_config,
+        host_config_account,
+        name,
+        allows,
+        extras,
+        step,
+    )
+}
+
+/// [`create_case`] whose one step is `step`.
+#[allow(clippy::too_many_arguments)]
+fn create_case_with_step(
+    payer: Pubkey,
+    app: &App,
+    host_config: Pubkey,
+    host_config_account: Account,
+    name: &str,
+    allows: &[Pubkey],
+    extras: FheExecuteExtras,
+    step: FheExecuteStep,
+) -> (Pubkey, Instruction, Vec<(Pubkey, Account)>) {
+    let output = app.address(name);
+    let mut dictionary = ExecutionDictionary::default();
+    let steps = vec![step];
     let ix = fhe_execute_ix_with_extras(
         payer,
         app.key(),
@@ -1517,22 +1542,42 @@ fn mollusk_fhe_execute_denies_a_write_under_an_additional_authority_into_a_denie
 
 #[test]
 fn mollusk_each_pause_flag_stops_only_its_area() {
-    use host::errors::ZamaHostError::{AclWritesPaused, ExecutionPaused};
+    use host::errors::ZamaHostError::{AclWritesPaused, ExecutionPaused, VerifiedInputsPaused};
     let flag = |set: fn(&mut host::PauseFlags)| {
         let mut flags = host::PauseFlags::default();
         set(&mut flags);
         flags
     };
+    // (paused, ACL write, execution without an input, execution consuming a verified input)
     let cases = [
-        (flag(|f| f.execution = true), None, Some(ExecutionPaused)),
-        (flag(|f| f.acl_writes = true), Some(AclWritesPaused), None),
-        (flag(|f| f.verified_inputs = true), None, None),
+        (
+            flag(|f| f.execution = true),
+            None,
+            Some(ExecutionPaused),
+            Some(ExecutionPaused),
+        ),
+        (
+            flag(|f| f.acl_writes = true),
+            Some(AclWritesPaused),
+            None,
+            None,
+        ),
+        (
+            flag(|f| f.verified_inputs = true),
+            None,
+            None,
+            Some(VerifiedInputsPaused),
+        ),
     ];
-    for (paused, acl_write_error, execute_error) in cases {
+    for (paused, acl_write_error, execute_error, input_error) in cases {
         let payer = Pubkey::new_unique();
         let app = App::new();
         let (host_config, host_config_account) =
-            host_config_account_with_flags(payer, paused, false);
+            zama_solana_test_kit::host_config_account(&HostConfigParams {
+                paused,
+                coprocessor_signers: vec![coprocessor_signer_address()],
+                ..HostConfigParams::new(payer)
+            });
         let acl_write_check = || acl_write_error.map_or_else(Check::success, custom_error);
 
         let address = app.address("pause-create");
@@ -1573,14 +1618,102 @@ fn mollusk_each_pause_flag_stops_only_its_area() {
             payer,
             &app,
             host_config,
-            host_config_account,
+            host_config_account.clone(),
             "pause-execution",
             &[payer],
             FheExecuteExtras::default(),
         );
         let execute_check = execute_error.map_or_else(Check::success, custom_error);
         check_host_instruction(&mollusk(), &execute_ix, &accounts, &[execute_check]);
+
+        let input = handle_for_chain(56, 5);
+        let attestation = signing::attestation_signed_by(
+            input,
+            vec![input],
+            0,
+            payer,
+            app.program(),
+            vec![],
+            &[signing::coprocessor_signing_key()],
+        );
+        let (_, input_ix, accounts) = create_case_with_step(
+            payer,
+            &app,
+            host_config,
+            host_config_account,
+            "pause-input",
+            &[payer],
+            FheExecuteExtras::default(),
+            FheExecuteStep::Unary {
+                op: FheUnaryOpCode::Not,
+                operand: FheExecuteOperand::VerifiedInput {
+                    attestation: Box::new(attestation),
+                },
+                output_fhe_type: 5,
+            },
+        );
+        let input_check = input_error.map_or_else(Check::success, custom_error);
+        check_host_instruction(&mollusk(), &input_ix, &accounts, &[input_check]);
     }
+}
+
+/// Admin setters are never paused (DD-058): with every area paused, the admin still replaces a
+/// compromised KMS context, denies an application and resets the rest of the configuration.
+#[test]
+fn mollusk_admin_setters_run_while_every_area_is_paused() {
+    let admin = Pubkey::new_unique();
+    let (host_config, live) = host_config_with_context(admin, KMS_CONTEXT_ID);
+    let next_context = canonical_test_context_id(2);
+    let app = unique_app();
+    let context = mollusk_execute_context(
+        admin,
+        vec![
+            (
+                host_config,
+                paused_host_config(&live, host::PauseFlags::ALL),
+            ),
+            kms_context_account(KMS_CONTEXT_ID),
+            (host::kms_context_address(next_context).0, system_account(0)),
+            (host::deny_scope_address(app).0, system_account(0)),
+            (host::hcu_trusted_app_address(app).0, system_account(0)),
+        ],
+    );
+    let setters = [
+        define_kms_context_ix(
+            admin,
+            host_config,
+            next_context,
+            kms_context_signers(),
+            default_kms_thresholds(),
+        ),
+        destroy_kms_context_ix(admin, host_config, KMS_CONTEXT_ID),
+        set_deny_scope_ix(admin, admin, host_config, app, true),
+        set_hcu_app_trusted_ix(admin, admin, host_config, app, true),
+        set_coprocessor_signers_ix(admin, host_config, vec![[0x22; 20]], 1),
+        set_max_hcu_per_tx_ix(admin, host_config, 20_000_000),
+        set_max_hcu_depth_per_tx_ix(admin, host_config, 20_000_000),
+        set_hcu_block_cap_per_app_ix(admin, host_config, 20_000_000),
+        host_admin_ix(
+            admin,
+            host_config,
+            host::instruction::SetGrantDenyListEnabled { enabled: true },
+        ),
+        host_admin_ix(
+            admin,
+            host_config,
+            host::instruction::SetEip712Domain {
+                gateway_chain_id: GATEWAY_CHAIN_ID,
+                input_verification_contract: INPUT_VERIFICATION_CONTRACT,
+                decryption_contract: DECRYPTION_CONTRACT,
+            },
+        ),
+    ];
+    for setter in &setters {
+        check_host_context(&context, setter, &[Check::success()]);
+    }
+    let config = read_host_config(&context, host_config).expect("config");
+    assert_eq!(config.paused, host::PauseFlags::ALL);
+    assert_eq!(config.current_kms_context_id, next_context);
 }
 
 // ---------------------------------------------------------------------------
