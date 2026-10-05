@@ -72,8 +72,8 @@ const NODE: &str = "The cleartext client throws when an account read fails, lags
                     wrong number of accounts, instead of judging the request.";
 const LEAF_RECORD: &str = "The cleartext client throws when a Merkle proof read fails or answers the \
                            wrong number of proofs, instead of judging the request.";
-const OWN_RECORD: &str = "The cleartext client builds its proofs from its own leaf record, which is \
-                          never checked against the chain.";
+const OWN_RECORD: &str = "The cleartext client builds its proofs from its own leaf record, which \
+                          has no store check, so it never answers inconsistent.";
 
 /// The failures no cleartext case can produce, with the reason.
 const RUST_ONLY: [(&str, &str); 7] = [

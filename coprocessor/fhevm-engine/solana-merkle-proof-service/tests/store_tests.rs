@@ -336,22 +336,25 @@ async fn leaf_record_round_trips_and_serves_verifiable_proofs(
 
     // A wrong leaf is answered `inconsistent` rather than with a path that misses the peaks
     // or proves another grant, and the other leaves of the request are still proved. Leaf 2,
-    // the public leaf of 0x11, is its own peak; leaf 0's path is leaf 1.
-    let leaf_0_and_leaf_2 = |key| MerkleProofRequest {
-        leaves: vec![
-            LeafQuery {
-                encrypted_store: ACCOUNT,
-                handle: [0x10; 32],
-                kind: LeafQueryKind::Allowed,
-                key: Some(key),
-            },
-            LeafQuery {
-                encrypted_store: ACCOUNT,
-                handle: [0x11; 32],
-                kind: LeafQueryKind::Public,
-                key: None,
-            },
-        ],
+    // the public leaf of 0x11, is its own peak; leaf 0's path is leaf 1. Leaf 2 is asked
+    // `times` times: each request has its own body, so none is a copy of an earlier one that
+    // the server answers from its cache.
+    let leaf_0_and_leaf_2 = |key, times| {
+        let leaf_2 = LeafQuery {
+            encrypted_store: ACCOUNT,
+            handle: [0x11; 32],
+            kind: LeafQueryKind::Public,
+            key: None,
+        };
+        let leaf_0 = LeafQuery {
+            encrypted_store: ACCOUNT,
+            handle: [0x10; 32],
+            kind: LeafQueryKind::Allowed,
+            key: Some(key),
+        };
+        MerkleProofRequest {
+            leaves: [vec![leaf_0], vec![leaf_2; times]].concat(),
+        }
     };
     let set_leaf_0_key = |key: &str| {
         format!(
@@ -359,7 +362,7 @@ async fn leaf_record_round_trips_and_serves_verifiable_proofs(
              WHERE leaf_index = 0"
         )
     };
-    for (corruption, key) in [
+    for (times, (corruption, key)) in (1..).zip([
         // Leaf 0's commitment allows OWNER: its row now names a key it never allowed.
         (vec![set_leaf_0_key("5e")], [0x5E; 32]),
         (
@@ -372,20 +375,19 @@ async fn leaf_record_round_trips_and_serves_verifiable_proofs(
             OWNER,
         ),
         (vec!["DELETE FROM leaves WHERE leaf_index = 1".to_owned()], OWNER),
-    ] {
+    ]) {
         for statement in &corruption {
             sqlx::query(statement).execute(&pool).await?;
         }
         let corruption = corruption.join("; ");
-        let response = proofs.post(&leaf_0_and_leaf_2(key)).await?;
+        let response = proofs.post(&leaf_0_and_leaf_2(key, times)).await?;
         assert_eq!(response.status(), 200, "{corruption}");
         let body: MerkleProofResponse = decode(response).await?;
+        assert_eq!(body.proofs.len(), 1 + times, "{corruption}");
         assert_eq!(body.proofs[0], MerkleProofOutcome::Inconsistent, "{corruption}");
-        assert_eq!(
-            verify(&body.proofs[1], second.leaves[1].commitment),
-            2,
-            "{corruption}"
-        );
+        for proof in &body.proofs[1..] {
+            assert_eq!(verify(proof, second.leaves[1].commitment), 2, "{corruption}");
+        }
     }
 
     cancel.cancel();

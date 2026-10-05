@@ -14,12 +14,13 @@ This runbook covers one fault: the record disagrees with the chain.
 | Alert | Severity | Query |
 |---|---|---|
 | Merkle record disagrees with the chain | critical, pages on-call | `max(solana_merkle_indexer_quarantined_stores) > 0` |
-| Merkle proof path does not reach the recorded peaks | critical, pages on-call | `increase(solana_merkle_proof_server_leaves_total{outcome="inconsistent"}[5m]) > 0` |
+| A recorded leaf does not match its commitment or the recorded peaks | critical, pages on-call | `increase(solana_merkle_proof_server_leaves_total{outcome="inconsistent"}[5m]) > 0` |
 | A coprocessor served a proof that does not verify | critical, pages on-call | `increase(kms_connector_worker_solana_proof_answers_counter{outcome="invalid"}[5m]) > 0` |
 
-- The first two fire at the coprocessor whose record is wrong. The second covers a wrong path
-  below correct peaks, which the store check does not compare. Leaves refused because their store
-  is quarantined count as `quarantined` and do not page a second time.
+- The first two fire at the coprocessor whose record is wrong. The second covers a leaf row that
+  does not match its commitment, or a wrong path below correct peaks, which the store check does
+  not compare. Leaves of a quarantined store are answered `inconsistent` but count as
+  `quarantined`, and do not page a second time.
 - The third fires at a KMS connector. Its `source` label names the coprocessor that served the
   proof. When that coprocessor is a partner, tell the partner.
 

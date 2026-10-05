@@ -282,7 +282,7 @@
     },
     {
       "failure": "HandleBinding::ProofRecordInconsistent",
-      "reason": "The cleartext client builds its proofs from its own leaf record, which is never checked against the chain."
+      "reason": "The cleartext client builds its proofs from its own leaf record, which has no store check, so it never answers inconsistent."
     }
   ],
   "schema": "zama-solana-decrypt-authorization-cases/v1",

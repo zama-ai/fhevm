@@ -2487,10 +2487,10 @@ count. At 6 leaves, leaf 4's path is `[leaf 5]`; at 8 leaves it is
 
 A proof takes three indexed reads: the Store's row, the first leaf below its `leaf_count` that
 matches the query, and the path. The path's height-0 sibling is the neighboring leaf row, so the
-node table does not store leaf nodes again. The route checks the path with `mmr_verify` against
-the Store's recorded peaks before serving it; a missing or wrong row answers a retryable
-`upstream_transient`. Leaves and nodes are never rewritten and the Store's row only grows, so the
-three reads agree without a transaction.
+node table does not store leaf nodes again. The route checks the leaf's commitment against its
+row and the path with `mmr_verify` against the Store's recorded peaks before serving it; a leaf
+with a missing or wrong row is answered `inconsistent` (DD-068). Leaves and nodes are never
+rewritten and the Store's row only grows, so the three reads agree without a transaction.
 
 The first matching leaf is served, as before. It sits in the oldest mountain, whose path changes
 least as the Store grows.
@@ -2807,8 +2807,9 @@ Leaves are only appended, so the peaks of the first `n` leaves never change once
 comparison holds whichever slot the chain was read at. A `mismatch` writes the store into
 `quarantined_stores`, and a later `match` removes it. `solana_merkle_proof_server` answers every
 leaf of a quarantined store `inconsistent`, in a 200 that still proves the request's other
-leaves, and the connector takes that leaf's proof from another coprocessor. A connector that gets
-`inconsistent` from every coprocessor fails the request `upstream_transient`, retryable: the
+leaves, and the connector takes that leaf's proof from another coprocessor. Any other
+coprocessor's answer about the leaf decides the entry, whichever arrives first. A connector that
+gets `inconsistent` from every coprocessor fails the request `upstream_transient`, retryable: the
 user's access is unknown, not denied. Only a failed database read refuses the whole request
 (`upstream_transient`, 502).
 

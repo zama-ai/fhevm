@@ -725,8 +725,9 @@ async fn prove(
 /// A database read failed: the whole request is refused `upstream_transient`.
 struct ReadFailed;
 
-/// A leaf whose answer is counted apart from it. A quarantined store answers
-/// [`MerkleProofOutcome::Inconsistent`], but pages once, through the store check.
+/// Why [`prove_leaf`] has no outcome to count. A leaf of a quarantined store is answered
+/// [`MerkleProofOutcome::Inconsistent`] but counted `quarantined`, so it pages once, through the
+/// store check.
 enum LeafError {
     /// The store check found this store's record disagrees with the chain.
     Quarantined,
@@ -766,11 +767,12 @@ async fn prove_leaf(
     else {
         return Ok(MerkleProofOutcome::NotFound { leaf_count });
     };
-    let inconsistent = || {
+    let inconsistent = |reason: &str| {
         error!(
             encrypted_store = %bs58::encode(account).into_string(),
             leaf_index,
             leaf_count,
+            reason,
             "leaf record inconsistent"
         );
         Ok(MerkleProofOutcome::Inconsistent)
@@ -780,7 +782,7 @@ async fn prove_leaf(
     if commitment
         != leaf_commitment(account, leaf_index, query.handle, query.key)
     {
-        return inconsistent();
+        return inconsistent("the row does not match its commitment");
     }
     let proof = load_proof(pool, account, leaf_index, leaf_count)
         .await
@@ -790,7 +792,9 @@ async fn prove_leaf(
     let Some(proof) = proof.filter(|proof| {
         mmr_verify(&cursor.peaks, leaf_count, commitment, proof)
     }) else {
-        return inconsistent();
+        return inconsistent(
+            "the path is missing or misses the recorded peaks",
+        );
     };
     Ok(MerkleProofOutcome::Found {
         leaf_index: proof.leaf_index,
