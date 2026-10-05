@@ -1310,9 +1310,12 @@ indexer writes.
 
 ### DD-064, replaced in part by DD-067
 
-DD-067 made the server answer only signed requests and the connector ask the coprocessors one after
-another.
+DD-067 made the server answer only signed requests, replaced the connector's proof routes (a URL
+and an API key each) with `solana_proof_urls`, and made the connector ask the coprocessors one
+after another.
 
 > The connector takes the first proof that verifies from any coprocessor, so this costs nothing
 > while one indexer runs; while every coprocessor's indexer is stopped, a Store someone keeps
 > appending to cannot be decrypted until one catches up.
+
+> The connector's proof routes name the proof server's Service.

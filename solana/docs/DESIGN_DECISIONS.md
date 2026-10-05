@@ -2273,7 +2273,7 @@ image and with its own pool (`--database-pool-size`, 8 by default). It answers o
 by the tx-sender of a live KMS context (DD-067). It only reads the Merkle proof service's database
 (DD-066), so it can run several replicas and roll without downtime. The Merkle indexer, which writes
 that database, stays one replica with `Recreate`, as does the listener, which serves only `/healthz`
-and `/liveness`. The connector's proof routes name the proof server's Service.
+and `/liveness`. The connector's `solana_proof_urls` name the proof server's Service.
 
 On EVM the connector reads the ACL from the host chain, and no coprocessor serves proofs. The split
 follows the coprocessor's one Deployment per role: `host_listener`, `host_listener_poller` and
@@ -2406,7 +2406,7 @@ Rejected alternatives:
 Consequences:
 
 Each coprocessor runs one more Deployment and one more database on its Postgres server, and opens a
-second Yellowstone subscription. The record and the compute rows no longer commit together, so they
+second Yellowstone subscription. The record and the compute rows commit separately, so they
 can disagree about which blocks were applied. Nothing reads both: the connector checks each proof
 against the peaks it reads on chain. A deployment must know a start slot before its first Store:
 the chart requires `solanaHostListener.merkleIndexer.startSlot` and the Merkle database's URL.
