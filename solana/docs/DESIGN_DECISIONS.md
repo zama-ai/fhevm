@@ -560,8 +560,8 @@ Open for debate:
 
 The step cap `MAX_FHE_EXECUTION_STEPS` is derived from measured instruction-data and compute-unit budgets
 on the interned wire format (fhevm-internal#1853 W8; see the constant's doc in
-`programs/zama-host/src/constants.rs`). The per-operation replay-event transport and the
-created-public batch that replaced it are gone (DD-038, in DESIGN_HISTORY.md).
+`programs/zama-host/src/constants.rs`). There is no per-operation replay event and no
+created-public batch (DD-038, in DESIGN_HISTORY.md).
 
 ## DD-024: Eager Ciphertext-Material Preparation (coprocessor side)
 
@@ -1871,8 +1871,8 @@ the next host `fhe_execute`. Only the host can sign its event authority, so an a
 event inside the host's instruction trace. The listener stores the emitted handles: computation
 rows, operands that name an earlier step and allowed handles all use them. The Merkle indexer
 records the leaves with them too (DD-066). The listener then re-derives each handle from the decoded
-step, the emitted context, the followed program id and the chain id, and compares. The sysvar
-subscription and the per-slot join are deleted, and the block time the listener records is the one
+step, the emitted context, the followed program id and the chain id, and compares. The listener
+subscribes to no sysvar and joins nothing per slot, and the block time it records is the one
 Yellowstone sends with the block.
 
 What the listener does when something does not line up:
@@ -1928,12 +1928,13 @@ programs between it and the host. The batcher's path (batcher, token, host, even
 
 Consequences:
 
-`FheExecuteRandomSeedsEvent` is replaced. The listener no longer needs historical sysvar state from
-its provider, only blocks. A held step still gets its material request, since the Store write is
-real on chain. The automated drift revert, which runs the same revert SQL, now fails on a Solana
-chain whose checkpoint is ahead, which is always the case when drift is detected; before, it deleted
-rows the listener would never re-ingest. A failed revert signal stops every coprocessor service on
-that database from starting, including those of EVM chains, until an operator repairs by hand.
+The host emits no `FheExecuteRandomSeedsEvent`: `FheExecutedEvent` carries the seeds. The listener
+needs no historical sysvar state from its provider, only blocks. A held step still gets its material
+request, since the Store write is real on chain. The automated drift revert, which runs the same
+revert SQL, fails on a Solana chain whose checkpoint is ahead, which is always the case when drift
+is detected, so it never deletes rows the listener would not re-ingest. A failed revert signal stops
+every coprocessor service on that database from starting, including those of EVM chains, until an
+operator repairs by hand.
 
 ## DD-058: Pausers stop one area at a time; only the admin resumes
 
@@ -2010,18 +2011,17 @@ Status: adopted
 
 Recorded in fhevm-internal#2085.
 
-A listener that was down longer than the provider's replay window, about a day on a hosted
-provider, used to exit and need manual recovery. It now catches up from an archive RPC and then
-returns to the stream. When Yellowstone refuses the checkpoint as outside its window, the listener
-lists the produced slots after it with `getBlocks` and fetches each block's transactions with
-`getBlock` and `getTransaction` (DD-062), all at `finalized`. Each fetched transaction is
-reduced to its host instructions as a streamed one is (`prepare_rpc_transaction`). The block must
-extend the checkpoint as the stream's validator requires: an unapplied checkpoint first and unchanged, then
-each block naming the last applied one as its parent. It is applied through the same path as a
-streamed block. Catch-up stops at the slot the archive had finalized when it started, so it ends
-however fast the chain moves. There the listener subscribes again from its checkpoint, and the
-stream's own replay check takes over; if that catch-up outlasted the window, the next pass is
-shorter.
+A listener that was down longer than the provider's replay window, about a day on a hosted provider,
+catches up from an archive RPC and then returns to the stream. When Yellowstone refuses the
+checkpoint as outside its window, the listener lists the produced slots after it with `getBlocks`
+and fetches each block's transactions with `getBlock` and `getTransaction` (DD-062), all at
+`finalized`. Each fetched transaction is reduced to its host instructions as a streamed one is
+(`prepare_rpc_transaction`). The block must extend the checkpoint as the stream's validator
+requires: an unapplied checkpoint first and unchanged, then each block naming the last applied one
+as its parent. It is applied through the same path as a streamed block. Catch-up stops at the slot
+the archive had finalized when it started, so it ends however fast the chain moves. There the
+listener subscribes again from its checkpoint, and the stream's own replay check takes over; if that
+catch-up outlasted the window, the next pass is shorter.
 
 The archive is `--archive-url`, which defaults to `--url` and may be another provider's. A provider
 that cannot replay from a slot at all (`from_slot is not supported`) still stops the listener: after
@@ -2621,8 +2621,8 @@ Not settled by the decisions above. Forward requirements are detailed in
   `pg_dump` of Zama's record, as `RUNBOOK.md` in the `solana-merkle-proof-service` crate describes
   (DD-068). The dump schedule, and a data-only export a partner could import without running
   another operator's SQL, are open.
-- A Solana-native composition pattern for contract-to-contract confidential calls has not been
-  designed since the receiver-callback flow was deleted (DD-011, in DESIGN_HISTORY.md).
+- No Solana-native composition pattern for contract-to-contract confidential calls is designed.
+  The receiver-callback flow is in DESIGN_HISTORY.md (DD-011).
 - There is no per-Store cap on allows (Solana access control RFC): allows are leaves, and the app-side wall is the
   builder's heap budget (INVARIANTS #54). Whether a policy cap on allows per write is wanted for the
   leaf record is open.
