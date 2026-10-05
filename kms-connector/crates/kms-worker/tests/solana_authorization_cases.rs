@@ -1,7 +1,7 @@
 //! The Connector's verdict on user and public decryptions, written to a fixture the SDK's cleartext
 //! client is held to (`sdk/js-sdk/src/solana/cleartext/authorization.test.ts`). Each case runs the
 //! real [`authorize_request`] or [`check_public_decrypt`] over one world and one leaf record, and
-//! the committed file must be what this run renders: the host accounts, the leaf-proof batch the
+//! the committed file must be what this run renders: the host accounts, the Merkle proof batch the
 //! Connector asked for with the record's answers, and the verdict.
 //! `ZAMA_UPDATE_AUTHORIZATION_CASES=1` rewrites it.
 //!
@@ -21,7 +21,7 @@ use kms_worker::core::solana::{
     failure::AuthorizationFailure,
     handle_binding::HandleBindingFailure,
     pipeline::authorize_request,
-    proof::{LeafKind, LeafProofOutcome, LeafQuery, ProofReadError},
+    proof::{LeafKind, LeafQuery, ProofReadError},
     public_decrypt::{PublicDecryptFailure, check_public_decrypt},
     snapshot::{SnapshotAccount, SnapshotError},
     watermark::{WatermarkFailure, WindowFailure},
@@ -39,7 +39,7 @@ const UPDATE_ENV: &str = "ZAMA_UPDATE_AUTHORIZATION_CASES";
 const SLOT: u64 = 100;
 
 /// Every failure [`failure_name`] can return.
-const FAILURES: [&str; 26] = [
+const FAILURES: [&str; 25] = [
     "Signature",
     "Window::NotYetValid",
     "Window::Expired",
@@ -61,7 +61,6 @@ const FAILURES: [&str; 26] = [
     "HandleBinding::NoLeaf",
     "HandleBinding::ProofRecordBehind",
     "HandleBinding::AccountUnknownToProofRecord",
-    "HandleBinding::HistoryIncomplete",
     "HandleBinding::ProofDoesNotVerify",
     "HandleBinding::LeafIndexOutOfRange",
     "Delegation::NoLiveDelegation",
@@ -70,7 +69,7 @@ const FAILURES: [&str; 26] = [
 
 const NODE: &str = "The cleartext client throws when an account read fails, lags or answers the \
                     wrong number of accounts, instead of judging the request.";
-const LEAF_RECORD: &str = "The cleartext client throws when a leaf-proof read fails or answers the \
+const LEAF_RECORD: &str = "The cleartext client throws when a Merkle proof read fails or answers the \
                            wrong number of proofs, instead of judging the request.";
 
 /// The failures no cleartext case can produce, with the reason.
@@ -116,7 +115,6 @@ fn handle_binding_name(source: &HandleBindingFailure) -> &'static str {
         HandleBindingFailure::AccountUnknownToProofRecord => {
             "HandleBinding::AccountUnknownToProofRecord"
         }
-        HandleBindingFailure::HistoryIncomplete => "HandleBinding::HistoryIncomplete",
         HandleBindingFailure::ProofDoesNotVerify { .. } => "HandleBinding::ProofDoesNotVerify",
         HandleBindingFailure::LeafIndexOutOfRange { .. } => "HandleBinding::LeafIndexOutOfRange",
     }
@@ -549,16 +547,6 @@ fn cases() -> Vec<Case> {
         )
         .record(ProofRecord::default()),
         case(
-            "a leaf record with a gap in the store's history",
-            request().direct(&mine, h1),
-            world().with_encrypted_store(&mine),
-            Some(("HandleBinding::HistoryIncomplete", Some(0))),
-        )
-        .record(ProofRecord::answering([(
-            mine.allowed_query(h1, signer),
-            LeafProofOutcome::HistoryIncomplete,
-        )])),
-        case(
             "a leaf record ahead of the store, whose leaf the store has not sealed yet",
             request().direct(&strangers, h1),
             world().with_encrypted_store(&strangers),
@@ -743,7 +731,7 @@ fn render_accounts(world: &World) -> Vec<Value> {
 }
 
 /// The batch the Connector asked for, each query with the record's answer, in the wire spelling of
-/// `POST /v1/solana/leaf-proofs`; `null` when it asked for none.
+/// `POST /v1/solana/merkle-proofs`; `null` when it asked for none.
 fn render_leaf_read(batch: &[LeafQuery], record: &ProofRecord) -> Value {
     if batch.is_empty() {
         return Value::Null;
@@ -837,7 +825,7 @@ async fn the_committed_cases_are_the_connectors_verdicts() {
         let calls = proofs.calls();
         assert!(
             calls.len() <= 1,
-            "{}: one leaf-proof batch at most",
+            "{}: one Merkle proof batch at most",
             case.name
         );
         let batch = calls
@@ -869,7 +857,7 @@ async fn the_committed_cases_are_the_connectors_verdicts() {
 
     let file = json!({
         "schema": "zama-solana-decrypt-authorization-cases/v1",
-        "description": "The KMS Connector's verdicts on user and public decryptions, each over one host state and one leaf record. `leaf_read` is the leaf-proof batch the Connector asked for, with the record's answers, in the wire format of POST /v1/solana/leaf-proofs; null when it asked for none. Bytes are hex, 64-bit numbers decimal strings, addresses base58, account data base64. A missing account is absent. Every read of a case's accounts reports `slot`. The SDK's cleartext client must reach the same verdicts.",
+        "description": "The KMS Connector's verdicts on user and public decryptions, each over one host state and one leaf record. `leaf_read` is the Merkle proof batch the Connector asked for, with the record's answers, in the wire format of POST /v1/solana/merkle-proofs; null when it asked for none. Bytes are hex, 64-bit numbers decimal strings, addresses base58, account data base64. A missing account is absent. Every read of a case's accounts reports `slot`. The SDK's cleartext client must reach the same verdicts.",
         "generator": "ZAMA_UPDATE_AUTHORIZATION_CASES=1 cargo test -p kms-worker --test solana_authorization_cases",
         "host_program": PROGRAM_ID.to_string(),
         "slot": SLOT.to_string(),

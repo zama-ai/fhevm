@@ -12,7 +12,10 @@ import yaml
 ROOT = pathlib.Path(__file__).resolve().parents[3]
 VALUES = ROOT / "ci/preview-env/solana-host"
 LISTENER = "coprocessor-1-solana-host-listener"
-PROOF_SERVER = "coprocessor-1-solana-leaf-proof-server"
+INDEXER = "coprocessor-1-solana-merkle-indexer"
+PROOF_SERVER = "coprocessor-1-solana-merkle-proof-server"
+# deploy-preview.sh sets it on every rollout.
+START_SLOT = ["--set-string", "solanaHostListener.merkleIndexer.startSlot=4242"]
 ROUTES = [{"url": f"http://{PROOF_SERVER}:8080", "apiKey": "$(SOLANA_PROOF_API_KEY)"}]
 
 
@@ -21,6 +24,15 @@ def render(release, chart, values, *options):
     for value in values:
         command += ["-f", str(value)]
     return list(yaml.safe_load_all(subprocess.check_output(command + list(options), text=True)))
+
+
+def render_error(*options):
+    """Renders the Solana coprocessor values with `options` and returns why Helm refused."""
+    result = subprocess.run(["helm", "template", "coprocessor-1", str(ROOT / "charts/coprocessor"),
+                             "-f", str(VALUES / "values-solana-coprocessor-e2e.yaml"), *options],
+                            capture_output=True, text=True)
+    assert result.returncode != 0, "the chart rendered"
+    return result.stderr
 
 
 class SolanaCharts(unittest.TestCase):
@@ -41,38 +53,63 @@ class SolanaCharts(unittest.TestCase):
             if release == "solana-host":
                 self.assertFalse(any("TOKEN_KEYPAIR" in e["name"] for e in container["env"]))
 
-    def test_listener_and_proof_server_share_the_database_and_keep_proofs_private(self):
+    def test_the_merkle_service_has_its_own_database_and_keeps_proofs_private(self):
         documents = render("coprocessor-1", "coprocessor", [ROOT / "ci/preview-env/coprocessor/values-coprocessor-e2e.yaml",
-                            VALUES / "values-solana-coprocessor-e2e.yaml"])
+                            VALUES / "values-solana-coprocessor-e2e.yaml"], *START_SLOT)
         deployments = {}
-        for name in [LISTENER, PROOF_SERVER]:
+        for name, database in [(LISTENER, "fhevm_e2e"), (INDEXER, "solana_merkle"), (PROOF_SERVER, "solana_merkle")]:
             deployment = next(d for d in documents if d and d["kind"] == "Deployment" and d["metadata"]["name"] == name)
             container = deployment["spec"]["template"]["spec"]["containers"][0]
             env = {e["name"]: e for e in container["env"]}
             self.assertEqual(env["DATABASE_URL"]["value"],
-                             "postgresql://$(DATABASE_USER):$(DATABASE_PASSWORD)@$(DATABASE_ENDPOINT)/fhevm_e2e")
+                             f"postgresql://$(DATABASE_USER):$(DATABASE_PASSWORD)@$(DATABASE_ENDPOINT)/{database}")
             names = [e["name"] for e in container["env"]]
             for variable in ["DATABASE_USER", "DATABASE_PASSWORD", "DATABASE_ENDPOINT"]:
                 self.assertLess(names.index(variable), names.index("DATABASE_URL"))
             deployments[name] = (deployment, env)
-        listener, listener_env = deployments[LISTENER]
-        self.assertEqual(listener["spec"]["replicas"], 1)
-        self.assertEqual(listener["spec"]["strategy"]["type"], "Recreate")
-        self.assertNotIn("SOLANA_PROOF_API_KEY", listener_env)
+        for name in [LISTENER, INDEXER]:
+            writer, writer_env = deployments[name]
+            self.assertEqual(writer["spec"]["replicas"], 1)
+            self.assertEqual(writer["spec"]["strategy"]["type"], "Recreate")
+            self.assertNotIn("SOLANA_PROOF_API_KEY", writer_env)
+        indexer, indexer_env = deployments[INDEXER]
+        indexer_container = indexer["spec"]["template"]["spec"]["containers"][0]
+        self.assertEqual(indexer_container["command"], ["solana_merkle_indexer"])
+        self.assertEqual(indexer_env["SOLANA_MERKLE_START_SLOT"]["value"], "4242")
+        self.assertEqual(indexer_env["SOLANA_GRPC_URL"]["valueFrom"]["secretKeyRef"]["name"], "solana-rpc")
         server, server_env = deployments[PROOF_SERVER]
-        self.assertEqual(server["spec"]["template"]["spec"]["containers"][0]["command"], ["solana_leaf_proof_server"])
+        self.assertEqual(server["spec"]["template"]["spec"]["containers"][0]["command"], ["solana_merkle_proof_server"])
         self.assertEqual(server_env["SOLANA_PROOF_API_KEY"]["valueFrom"]["secretKeyRef"]["name"], "solana-proof-api")
         service = next(d for d in documents if d and d["kind"] == "Service" and d["metadata"]["name"] == PROOF_SERVER)
         self.assertEqual(service["spec"]["type"], "ClusterIP")
         self.assertEqual(service["spec"]["selector"], server["spec"]["selector"]["matchLabels"])
-        listener_service = next(d for d in documents if d and d["kind"] == "Service" and d["metadata"]["name"] == LISTENER)
-        self.assertEqual([p["name"] for p in listener_service["spec"]["ports"]], ["metrics"])
+        for name in [LISTENER, INDEXER]:
+            writer_service = next(d for d in documents if d and d["kind"] == "Service" and d["metadata"]["name"] == name)
+            self.assertEqual([p["name"] for p in writer_service["spec"]["ports"]], ["metrics"])
+
+    def test_the_indexer_requires_a_start_slot(self):
+        self.assertIn("solanaHostListener.merkleIndexer.startSlot is required", render_error())
+
+    def test_a_numeric_start_slot_renders_as_an_integer(self):
+        documents = render("coprocessor-1", "coprocessor", [VALUES / "values-solana-coprocessor-e2e.yaml"],
+                           "--set-json", "solanaHostListener.merkleIndexer.startSlot=312000000")
+        indexer = next(d for d in documents if d and d["kind"] == "Deployment" and d["metadata"]["name"] == INDEXER)
+        env = {e["name"]: e for e in indexer["spec"]["template"]["spec"]["containers"][0]["env"]}
+        self.assertEqual(env["SOLANA_MERKLE_START_SLOT"]["value"], "312000000")
+
+    def test_a_start_slot_that_is_not_a_number_is_refused(self):
+        self.assertIn("startSlot must be a slot number",
+                      render_error("--set-string", "solanaHostListener.merkleIndexer.startSlot=$(START_SLOT)"))
+
+    def test_the_merkle_service_requires_its_database(self):
+        self.assertIn("solanaHostListener.merkleDatabaseUrl is required",
+                      render_error(*START_SLOT, "--set", "solanaHostListener.merkleDatabaseUrl="))
 
     def test_iam_certificate_is_a_volume_list(self):
         documents = render("coprocessor-1", "coprocessor", [VALUES / "values-solana-coprocessor-e2e.yaml"],
                            "--set", "commonConfig.databaseAuthMode=iam",
-                           "--set", "commonConfig.databaseSslRootCert.enabled=true")
-        for name in [LISTENER, PROOF_SERVER]:
+                           "--set", "commonConfig.databaseSslRootCert.enabled=true", *START_SLOT)
+        for name in [LISTENER, INDEXER, PROOF_SERVER]:
             deployment = next(d for d in documents if d and d["kind"] == "Deployment" and d["metadata"]["name"] == name)
             pod = deployment["spec"]["template"]["spec"]
             container = pod["containers"][0]
@@ -237,7 +274,7 @@ class SolanaCharts(unittest.TestCase):
             self.assertTrue(keys, name)
             self.assertLessEqual(keys, synced[name], name)
 
-    def test_preview_routes_name_the_leaf_proof_servers(self):
+    def test_preview_routes_name_the_merkle_proof_servers(self):
         # The connector tests pass ROUTES in themselves: this pins it to what deploy-preview.sh sets.
         script = (VALUES / "deploy-preview.sh").read_text()
         program = re.search(r"^routes=\$\(seq 1 \"\$NB_COPROCESSOR\" \| jq -Rsc '(.*)'\)$", script, re.M).group(1)

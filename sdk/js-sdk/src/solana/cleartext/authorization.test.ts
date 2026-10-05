@@ -3,7 +3,7 @@ import { address, getAddressDecoder, lamports, type Address, type MaybeEncodedAc
 import { describe, expect, it, vi } from 'vitest';
 import { hexToBytes } from '../../core/base/bytes.js';
 import { decodeSolanaPermitFields } from '../permit/validate.js';
-import type { SolanaLeafProofOutcome, SolanaLeafProofReader, SolanaLeafQuery } from './leafProofs.js';
+import type { SolanaMerkleProofOutcome, SolanaMerkleProofReader, SolanaLeafQuery } from './merkleProofs.js';
 import {
   CONNECTOR_FAILURE_RECOVERABLE,
   judgeSolanaPublicDecryption,
@@ -106,7 +106,7 @@ function queryOf(wire: unknown): SolanaLeafQuery {
 }
 
 /** A recorded answer as the outcome it is. */
-function outcomeOf(wire: unknown): SolanaLeafProofOutcome {
+function outcomeOf(wire: unknown): SolanaMerkleProofOutcome {
   const { status, leafIndex, leafCount, siblings } = wire as Record<string, unknown>;
   return (
     status === 'found'
@@ -119,17 +119,17 @@ function outcomeOf(wire: unknown): SolanaLeafProofOutcome {
       : status === 'notFound'
         ? { status, leafCount: BigInt(leafCount as number) }
         : { status }
-  ) as SolanaLeafProofOutcome;
+  ) as SolanaMerkleProofOutcome;
 }
 
 /**
  * The leaf record of a case: it answers the batch the Connector asked for, and only that batch, in
  * the Connector's order. `asked` counts the reads.
  */
-function leafRecord(leafRead: LeafRead): { readLeafProofs: SolanaLeafProofReader; asked: () => number } {
+function leafRecord(leafRead: LeafRead): { readMerkleProofs: SolanaMerkleProofReader; asked: () => number } {
   let reads = 0;
   return {
-    readLeafProofs: (queries) => {
+    readMerkleProofs: (queries) => {
       reads += 1;
       if (leafRead === null) throw new Error('the Connector reads no leaf proof in this case');
       expect(queries).toEqual(leafRead.map(({ query }) => queryOf(query)));
@@ -185,7 +185,7 @@ describe('the cleartext client judges a user decryption as the KMS Connector doe
         now: BigInt(testCase.now),
         ...requestOf(testCase),
         readAccounts: accountsReader(testCase.accounts),
-        readLeafProofs: record.readLeafProofs,
+        readMerkleProofs: record.readMerkleProofs,
       });
       expectVerdict(verdict, testCase.verdict);
       expect(record.asked()).toBe(testCase.leaf_read === null ? 0 : 1);
@@ -216,7 +216,7 @@ describe('the cleartext client judges a user decryption as the KMS Connector doe
       now: BigInt(revoked.now),
       ...requestOf(revoked),
       readAccounts,
-      readLeafProofs: leafRecord(revoked.leaf_read).readLeafProofs,
+      readMerkleProofs: leafRecord(revoked.leaf_read).readMerkleProofs,
     });
     expect(verdict).toMatchObject({ failure: 'Delegation::NoLiveDelegation', entry: 0 });
     expect(readAccounts.mock.calls.map(([, minContextSlot]) => minContextSlot)).toEqual([undefined, SLOT]);
@@ -234,7 +234,7 @@ describe('the cleartext client judges a public decryption as the KMS Connector d
           encryptedStore: addressOf(encrypted_store),
         })),
         readAccounts: accountsReader(testCase.accounts),
-        readLeafProofs: record.readLeafProofs,
+        readMerkleProofs: record.readMerkleProofs,
       });
       expectVerdict(verdict, testCase.verdict);
       expect(record.asked()).toBe(testCase.leaf_read === null ? 0 : 1);

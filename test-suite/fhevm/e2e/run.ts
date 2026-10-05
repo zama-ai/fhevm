@@ -3,6 +3,7 @@ import { randomUUID } from 'node:crypto';
 import { loadEnv } from './harness/loadEnv';
 import { recoverPreview } from '../../../solana/deploy/src/recover';
 import { createHostDeployContext } from '../../../solana/deploy/src/send';
+import { assertMerkleRecordMatchesChain } from '../src/solana/merkle-record';
 import { loadKeypairSigner } from '../src/solana/provision';
 import { recoveryDirectory } from '../src/solana/recovery';
 import { DEFAULT_SOLANA_ENVIRONMENT } from '../../../solana/deploy/src/environment';
@@ -16,6 +17,8 @@ const cleartextStack = env.source === 'cleartext' ? await (await import('../src/
 let status = 1;
 try {
   status = await Bun.spawn(['bun', 'test', ...(process.argv.length > 2 ? process.argv.slice(2) : ['e2e/scenarios'])], { stdin: 'inherit', stdout: 'inherit', stderr: 'inherit' }).exited;
+  // The cleartext target runs no coprocessor, so it has no Merkle record to check.
+  if (status === 0 && env.capabilities.protocolServices) await assertMerkleRecordMatchesChain(env);
 } finally {
   await cleartextStack?.stop();
   if (env.network === 'devnet') {

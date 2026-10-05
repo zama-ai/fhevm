@@ -19,7 +19,7 @@ import { getSysvarClockDecoder, SYSVAR_CLOCK_ADDRESS } from '@solana/sysvars';
 import { sha256 } from '@noble/hashes/sha2.js';
 import type { SolanaPermitFields } from '../permit/types.js';
 import type { SolanaUserDecryptHandleEntry } from '../userDecrypt/index.js';
-import type { SolanaLeafProofOutcome, SolanaLeafProofReader, SolanaLeafQuery } from './leafProofs.js';
+import type { SolanaMerkleProofOutcome, SolanaMerkleProofReader, SolanaLeafQuery } from './merkleProofs.js';
 import { bytesToHex, concatBytes } from '../../core/base/bytes.js';
 import { verifySolanaPermitSignature } from '../permit/envelope.js';
 import {
@@ -48,7 +48,7 @@ export type SolanaHostAccountsReader = (
 
 /**
  * Whether the Connector may clear each failure on a later attempt (`failure.rs`). A failed account
- * or leaf-proof read is not listed: the cleartext client throws on one instead of judging.
+ * or Merkle proof read is not listed: the cleartext client throws on one instead of judging.
  */
 export const CONNECTOR_FAILURE_RECOVERABLE = {
   Signature: false,
@@ -66,7 +66,6 @@ export const CONNECTOR_FAILURE_RECOVERABLE = {
   'HandleBinding::NoLeaf': true,
   'HandleBinding::ProofRecordBehind': true,
   'HandleBinding::AccountUnknownToProofRecord': true,
-  'HandleBinding::HistoryIncomplete': false,
   'HandleBinding::ProofDoesNotVerify': true,
   'HandleBinding::LeafIndexOutOfRange': true,
   'Delegation::NoLiveDelegation': true,
@@ -233,10 +232,10 @@ function cursor<T>(answers: readonly T[], source: string): () => T {
  * first entry whose leaf is not proven is the one refused.
  */
 async function proveLeaves(
-  readLeafProofs: SolanaLeafProofReader,
+  readMerkleProofs: SolanaMerkleProofReader,
   leaves: ReadonlyArray<{ readonly store: SolanaEncryptedStore; readonly query: SolanaLeafQuery }>,
 ): Promise<void> {
-  const outcomes = await readLeafProofs(leaves.map(({ query }) => query));
+  const outcomes = await readMerkleProofs(leaves.map(({ query }) => query));
   if (outcomes.length !== leaves.length) {
     throw new Error(`the leaf record answered ${outcomes.length} proofs for ${leaves.length} queries`);
   }
@@ -255,7 +254,7 @@ async function proveLeaves(
 function checkLeaf(
   store: SolanaEncryptedStore,
   { encryptedStore, handle, key }: SolanaLeafQuery,
-  outcome: SolanaLeafProofOutcome,
+  outcome: SolanaMerkleProofOutcome,
   index: number,
 ): void {
   const live = store.leafCount;
@@ -277,12 +276,6 @@ function checkLeaf(
       return refuse(
         'HandleBinding::AccountUnknownToProofRecord',
         `the leaf record does not know ${encryptedStore}`,
-        index,
-      );
-    case 'historyIncomplete':
-      return refuse(
-        'HandleBinding::HistoryIncomplete',
-        `the leaf record's history of ${encryptedStore} is incomplete`,
         index,
       );
     case 'found':
@@ -391,12 +384,12 @@ export async function judgeSolanaPublicDecryption({
   programAddress,
   handles,
   readAccounts,
-  readLeafProofs,
+  readMerkleProofs,
 }: {
   readonly programAddress: Address;
   readonly handles: ReadonlyArray<{ readonly handle: Uint8Array; readonly encryptedStore: Address }>;
   readonly readAccounts: SolanaHostAccountsReader;
-  readonly readLeafProofs: SolanaLeafProofReader;
+  readonly readMerkleProofs: SolanaMerkleProofReader;
 }): Promise<ConnectorVerdict> {
   try {
     const { accounts } = await readAccounts(handles.map(({ encryptedStore }) => encryptedStore));
@@ -405,7 +398,7 @@ export async function judgeSolanaPublicDecryption({
       store: resolveStore(next(), programAddress, encryptedStore, index),
       query: { encryptedStore, handle },
     }));
-    await proveLeaves(readLeafProofs, leaves);
+    await proveLeaves(readMerkleProofs, leaves);
     return { authorized: true };
   } catch (error) {
     return verdictOf(error);
@@ -424,7 +417,7 @@ export async function judgeSolanaUserDecryption({
   signature,
   entries,
   readAccounts,
-  readLeafProofs,
+  readMerkleProofs,
 }: {
   readonly programAddress: Address;
   readonly now: bigint;
@@ -432,7 +425,7 @@ export async function judgeSolanaUserDecryption({
   readonly signature: Uint8Array;
   readonly entries: readonly SolanaUserDecryptHandleEntry[];
   readonly readAccounts: SolanaHostAccountsReader;
-  readonly readLeafProofs: SolanaLeafProofReader;
+  readonly readMerkleProofs: SolanaMerkleProofReader;
 }): Promise<ConnectorVerdict> {
   try {
     try {
@@ -546,7 +539,7 @@ export async function judgeSolanaUserDecryption({
       // delegated one.
       return { store, query: { encryptedStore: storeKey, handle, key: owner } };
     });
-    await proveLeaves(readLeafProofs, resolved);
+    await proveLeaves(readMerkleProofs, resolved);
     return { authorized: true };
   } catch (error) {
     return verdictOf(error);

@@ -1,0 +1,51 @@
+[package]
+name = "solana-merkle-proof-service"
+version = "0.7.0"
+authors.workspace = true
+edition.workspace = true
+license.workspace = true
+
+[[bin]]
+path = "src/bin/solana_merkle_indexer.rs"
+name = "solana_merkle_indexer"
+test = false
+bench = false
+
+[[bin]]
+path = "src/bin/solana_merkle_proof_server.rs"
+name = "solana_merkle_proof_server"
+test = false
+bench = false
+
+[dependencies]
+anyhow = { workspace = true }
+axum = { workspace = true }
+bs58 = "0.5.1"
+clap = { workspace = true }
+hex = { workspace = true }
+serde = { workspace = true, features = ["derive"] }
+sqlx = { workspace = true }
+thiserror = { workspace = true }
+tokio = { workspace = true }
+tokio-util = { workspace = true }
+tracing = { workspace = true }
+# The Merkle proof route's committed OpenAPI document.
+utoipa = { workspace = true }
+
+fhevm-engine-common = { path = "../fhevm-engine-common" }
+solana-host-follower = { path = "../solana-host-follower" }
+# Leaf commitments and MMR of the RFC 035 leaf record, shared with the on-chain host.
+zama-solana-acl = { path = "../../../solana/crates/zama-solana-acl" }
+
+[dev-dependencies]
+# Encodes host instructions for the indexer tests' blocks.
+anchor-lang = "1.2.0"
+zama-host = { path = "../../../solana/programs/zama-host", default-features = false, features = ["no-entrypoint", "decode"] }
+reqwest = { workspace = true, features = ["json"] }
+serde_json = { workspace = true }
+serial_test = { workspace = true }
+solana-sdk = "3.0"
+test-harness = { path = "../test-harness" }
+
+[lints]
+workspace = true

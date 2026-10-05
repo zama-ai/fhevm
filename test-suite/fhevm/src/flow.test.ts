@@ -498,6 +498,15 @@ describe("runtime helpers", () => {
     expect(preflightPorts(state)).toContain(9666);
   });
 
+  test("preflight checks the Merkle record's port only for a Solana host, and never the validator's", async () => {
+    const { SOLANA_MERKLE_POSTGRES_PORT } = await import("./layout");
+    const state = completeState();
+    expect(preflightPorts(state)).not.toContain(SOLANA_MERKLE_POSTGRES_PORT);
+    state.scenario.hostChains.push({ key: "solana", type: "solana", chainId: "72057594037940281", rpcPort: 8899 });
+    expect(preflightPorts(state)).toContain(SOLANA_MERKLE_POSTGRES_PORT);
+    expect(preflightPorts(state)).not.toContain(8899);
+  });
+
   test("runtime artifacts include extra-chain host env files", () => {
     const state = completeState();
     state.scenario.hostChains = [

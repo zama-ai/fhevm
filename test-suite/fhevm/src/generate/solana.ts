@@ -1,4 +1,4 @@
-import { SOLANA_LEAF_PROOF_PORT } from "../layout";
+import { SOLANA_MERKLE_PROOF_PORT } from "../layout";
 import fs from "node:fs";
 
 import type { Discovery } from "../types";
@@ -56,24 +56,24 @@ export const solanaValidatorUrl = (chain: { readonly rpcPort: number }): string 
   `http://host.docker.internal:${chain.rpcPort}`;
 
 /**
- * Bearer key the Solana leaf-proof server requires (its port is `SOLANA_LEAF_PROOF_PORT` in the
- * layout). Both sides of the same connection read these: `startLeafProofServer` passes them to
- * `solana_leaf_proof_server` as `--http-port` / `--proof-api-key`,
+ * Bearer key the Solana Merkle proof server requires (its port is `SOLANA_MERKLE_PROOF_PORT` in the
+ * layout). Both sides of the same connection read these: `startMerkleProofServer` passes them to
+ * `solana_merkle_proof_server` as `--http-port` / `--proof-api-key`,
  * and `serializeKmsHostChains` puts them in the connector's host-chain entry. Passed explicitly
  * rather than relying on the binary's own default, so the two cannot drift apart silently.
  */
 export const SOLANA_LEAF_PROOF_API_KEY = "00000000-0000-0000-0000-000000000000";
 
 /**
- * The leaf-proof endpoint as reached from INSIDE the docker network — same host-process problem
+ * The Merkle proof endpoint as reached from INSIDE the docker network — same host-process problem
  * as {@link solanaValidatorUrl}: the proof server runs natively next to the validator, the
  * connector runs in a container.
  *
- * One route, because the demo runs one `solana_leaf_proof_server`. The connector asks every route
- * at once, so a topology with several coprocessors would list one route per leaf-proof server,
+ * One route, because the demo runs one `solana_merkle_proof_server`. The connector asks every route
+ * at once, so a topology with several coprocessors would list one route per Merkle proof server,
  * each with the key that server requires.
  */
-export const solanaLeafProofUrl = (): string => `http://host.docker.internal:${SOLANA_LEAF_PROOF_PORT}`;
+export const solanaMerkleProofUrl = (): string => `http://host.docker.internal:${SOLANA_MERKLE_PROOF_PORT}`;
 
 /** A kms-connector `KMS_CONNECTOR_HOST_CHAINS` entry. `aclAddress` is EVM-only. */
 export type KmsHostChainEntry = {
@@ -88,12 +88,12 @@ export type KmsHostChainEntry = {
  * Serializes `KMS_CONNECTOR_HOST_CHAINS`. EVM entries carry a numeric `chain_id` + `acl_address`.
  * Solana entries emit `chain_id` as a raw integer literal (RFC-021 ids exceed
  * Number.MAX_SAFE_INTEGER, so `JSON.stringify(Number(id))` would corrupt it),
- * `solana_host_program_id` and the leaf-proof routes the connector requires for a Solana chain,
+ * `solana_host_program_id` and the Merkle proof routes the connector requires for a Solana chain,
  * and no `acl_address`. The connector takes the kind from the chain id's type byte and refuses an
  * entry carrying the other kind's settings.
  */
 export const serializeKmsHostChains = (entries: readonly KmsHostChainEntry[]): string => {
-  const proofRoute = { url: solanaLeafProofUrl(), api_key: SOLANA_LEAF_PROOF_API_KEY };
+  const proofRoute = { url: solanaMerkleProofUrl(), api_key: SOLANA_LEAF_PROOF_API_KEY };
   const parts = entries.map((e) => {
     if (e.kind === "solana") {
       return (

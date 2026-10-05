@@ -19,6 +19,11 @@ impl DBInstance {
     pub fn db_url(&self) -> &str {
         self.db_url.as_str()
     }
+
+    /// The Docker container running the database; `None` with `COPROCESSOR_TEST_LOCALHOST`.
+    pub fn container_id(&self) -> Option<&str> {
+        self._container.as_ref().map(|container| container.id())
+    }
 }
 
 /// Sets up a test database instance.

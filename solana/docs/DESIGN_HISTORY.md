@@ -631,3 +631,106 @@ meter and is rejected (`FheExecuteUnanchoredUnderBlockCap`). The "registry Optio
 deferred had two halves, and the verified program answers one of them: an application identity a
 caller cannot forge, with the program as its own registry entry. The other half, aggregating one
 finite cap across the several identities a single application may hold, is still not built.
+
+## Replaced parts of live decisions
+
+Parts of decisions that are still adopted, in their original wording. The live entry in
+[`DESIGN_DECISIONS.md`](DESIGN_DECISIONS.md) states the current rule.
+
+### DD-048, replaced in part by DD-049
+
+DD-049 replaced the per-value account and its `PersistentOutput` API with the shared
+`EncryptedStore` and its Store effects.
+
+> 1. **Allows are sealed on the write.** A persistent output declares the keys allowed on the handle
+>    it installs (`PersistentOutput::allow`); the host seals one `HistoricalAccessLeaf` per key in
+>    list order, then the `PublicDecryptLeaf` when the output is `make_public`. The account stores no
+>    list.
+
+>    A request names only the encrypted value account and, for a delegated entry, the delegator as
+>    allowed key; a client-supplied proof is rejected. Public-decrypt `extraData` v3 is exactly
+>    `0x03 ‖ context id ‖ encrypted value account` (65 bytes).
+
+> 4. **The deny list names applications.** `set_deny_scope` writes `DenyScopeRecord` at
+>    `["deny-scope", program, scope]`; it gates every allow the host would seal — each persistent
+>    write and `make_handle_public`, because sealing a public leaf is an allow.
+
+> - Account layout: `181 + 32·peaks`, at most 2229 bytes (INVARIANTS Part II, MMR_ACL_MVP.md).
+> - `fhe_execute` wire: `previous_subjects` and `output_subjects` gone; `allows` per persistent
+>   output; the deny record an execution passes is its application's.
+
+### DD-048, replaced in part by DD-060
+
+DD-060 moved the public-decrypt Store out of `extraData`, beside the KMS routing.
+
+>    client-supplied proof is rejected. Public-decrypt `extraData` names the Store (DD-049).
+
+### DD-048, replaced in part by DD-066
+
+DD-066 moved the leaf record out of the host listener, into the Merkle proof service's own database.
+
+>    Both proofs are fetched by the KMS connector from the coprocessors' leaf record
+>    (`POST /v1/solana/leaf-proofs`, API key; […])
+
+> 3. **The leaf record lives in the host listener.** Leaves are recomputed from the confirmed
+>    instruction stream and stored in the same database transaction as the compute rows, so the two
+>    cannot disagree about which blocks were applied. The standalone `solana-proof-service`, the
+>    relayer's proof passthrough, and the SDK's RPC evidence and proof-service clients are deleted
+>    (DD-035 superseded). `solana_leaf_proof_server` serves the record apart from ingestion (DD-064).
+
+> […] and lets the coprocessors, which already hold every instruction, own the record instead of
+> a fourth service replaying the chain.
+
+### DD-056, replaced in part by DD-066
+
+DD-066 moved the leaves to the Merkle indexer, which records them with the emitted handles. The
+listener's replay repair leaves the record alone.
+
+> The listener pairs each host `fhe_execute` with the one `FheExecutedEvent` from the host program
+> that follows it before the next host `fhe_execute`. Only the host can sign its event authority, so
+> an app cannot forge the event inside the host's instruction trace. It stores the emitted handles:
+> computation rows, operands that name an earlier step, ACL leaves and allowed handles all use them.
+
+> | A step whose emitted handle does not re-derive | […] Leaves and allowed handles keep the emitted handle. […] |
+
+> Leaves are not reverted: a replayed write must reproduce the leaves recorded for it, or the
+> listener stops. So a replay repairs computation rows, not a bug that recorded wrong leaves.
+
+### DD-062, replaced in part by DD-066
+
+DD-066 moved the stop at a Store write that does not continue the record from the listener to the
+Merkle indexer.
+
+> If the transaction wrote a Store, the next write to that Store does not continue its recorded leaf
+> count, and the listener stops there until the leaf record, `solana_encrypted_state_nodes`
+> included, is rewritten by hand: a replay computes leaves the record does not hold and stops too.
+> If it wrote no Store, ingestion continues without its computation rows.
+
+### DD-063, replaced in part by DD-066
+
+DD-066 moved the nodes into the Merkle indexer's `nodes` table, created with the record.
+
+> Ingestion records every MMR node of height 1 and above in `solana_encrypted_state_nodes`, in the
+> transaction that appends the leaves completing it. `mmr_append` merges the new leaf node with one
+> peak per trailing one bit of the leaf index, and each merge is a node; the listener records those
+> merges as it appends.
+
+> A database written before `solana_encrypted_state_nodes` existed has leaves without nodes, and its
+> proofs fail verification: nothing is deployed, so no backfill exists.
+
+### DD-064, replaced in part by DD-066
+
+DD-066 renamed the server and pointed it at the Merkle proof service's database, which the Merkle
+indexer writes.
+
+> `solana_leaf_proof_server` serves `POST /v1/solana/leaf-proofs` and the health routes as its own
+> Deployment and ClusterIP Service, `<release>-solana-leaf-proof-server`, from the listener's image
+> and with its own pool (`--database-pool-size`, 8 by default). It only reads the leaf record, so it
+> can run several replicas and roll without downtime; the listener stays one replica with `Recreate`.
+
+> | A separate image | The server is one small binary of the listener's crate; a second image adds a CI build and a tag to keep in step. |
+
+> Each coprocessor database has one more client, with 8 connections by default. Proofs keep being
+> served while the listener is down, for the leaves it recorded before it stopped. […] this costs
+> nothing while one of them ingests; while every coprocessor's ingestion is stopped, a Store someone
+> keeps appending to cannot be decrypted until one catches up.

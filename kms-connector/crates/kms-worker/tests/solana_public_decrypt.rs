@@ -9,8 +9,8 @@
 //! without verifying.
 //!
 //! These assertions run the public entry point over two real HTTP round-trips — a mock
-//! `getMultipleAccounts` endpoint serving the account bytes and a mock leaf-proof route serving
-//! the record's answer — so the transport and the rule are exercised together. The leaf-proof
+//! `getMultipleAccounts` endpoint serving the account bytes and a mock Merkle proof route serving
+//! the record's answer — so the transport and the rule are exercised together. The Merkle proof
 //! route is pinned as a literal, not as an import of the constant that produces it: if it moves,
 //! these tests fail by construction rather than following the rename.
 
@@ -21,7 +21,7 @@ use connector_utils::types::solana_request::SolanaPublicDecryptionRequest;
 use kms_worker::core::event_processor::{ProcessingError, ProcessingErrorKind, RequestCheckError};
 use kms_worker::core::solana::{
     SolanaHost,
-    proof::{CoprocessorProofClient, LeafProofOutcome, LeafQuery},
+    proof::{CoprocessorProofClient, LeafQuery, MerkleProofOutcome},
     public_decrypt::check_public_decrypt,
     snapshot::SolanaRpcClient,
 };
@@ -29,7 +29,7 @@ use mocktail::{StatusCode, server::MockServer};
 use solana_pubkey::Pubkey;
 use solana_support::{
     APP_PROGRAM, AUTHORITY, EncryptedStoreFixture, FHE_TYPE_UINT64, HttpHost, LABEL,
-    LEAF_PROOFS_ROUTE, PROGRAM_ID, handle, proof_route, pubkey, serve_proofs, solana_host,
+    MERKLE_PROOFS_ROUTE, PROGRAM_ID, handle, proof_route, pubkey, serve_proofs, solana_host,
 };
 
 /// An account whose current handle was made public, then replaced: the public leaf survives
@@ -45,7 +45,7 @@ fn public_then_updated(public: [u8; 32], replacement: [u8; 32]) -> EncryptedStor
 async fn host_answering(
     fixture: &EncryptedStoreFixture,
     query: LeafQuery,
-    outcome: LeafProofOutcome,
+    outcome: MerkleProofOutcome,
 ) -> HttpHost {
     let mut host = HttpHost::start().await;
     host.serve_accounts(&[(fixture.account_key, Some(fixture.account()))]);
@@ -154,14 +154,14 @@ async fn one_serving_coprocessor_carries_a_request_the_others_cannot() {
 
     let mut failing = MockServer::new_http("coprocessor-failing");
     failing.mock(|when, then| {
-        when.post().path(LEAF_PROOFS_ROUTE);
+        when.post().path(MERKLE_PROOFS_ROUTE);
         then.error(StatusCode::INTERNAL_SERVER_ERROR, "leaf record unavailable");
     });
     failing.start().await.expect("the failing mock starts");
     let mut behind = MockServer::new_http("coprocessor-behind");
     serve_proofs(
         &mut behind,
-        &[(query, LeafProofOutcome::NotFound { leaf_count: 0 })],
+        &[(query, MerkleProofOutcome::NotFound { leaf_count: 0 })],
     );
     behind.start().await.expect("the behind mock starts");
     let host = solana_host(&serving.rpc, &[&failing, &behind, &serving.coprocessor]);
@@ -181,7 +181,7 @@ async fn a_record_behind_the_chain_is_retried_not_refused() {
     let host = host_answering(
         &fixture,
         query,
-        LeafProofOutcome::NotFound { leaf_count: 0 },
+        MerkleProofOutcome::NotFound { leaf_count: 0 },
     )
     .await;
 

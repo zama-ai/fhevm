@@ -119,6 +119,7 @@ up)
     # The seeded demo config, boots and batch tables land under FHEVM_STATE_DIR (src/layout.ts).
     env_line FHEVM_STATE_DIR "$state"
     env_line COPROCESSOR_DB_PSQL "kubectl exec -n $namespace postgres-coprocessor-1-0 -- psql -U zama -d fhevm_e2e"
+    env_line MERKLE_DB_PSQL "kubectl exec -n $namespace postgres-coprocessor-1-0 -- psql -U zama -d solana_merkle"
     env_line SOLANA_DEPLOYER_KEYPAIR "$deployer"
     env_line DEMO_BOOT_ID "$demo_boot_id"
     env_line DEMO_AUTH_TOKEN_FILE "$state/demo-authorization-token"

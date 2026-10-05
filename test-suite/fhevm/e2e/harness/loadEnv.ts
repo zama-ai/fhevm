@@ -9,7 +9,8 @@
 //   - urls/ids: the clean-e2e bring-up (validator RPC/WS, relayer, the
 //     RFC-021 host chain id, ACL program, KMS context ids) and
 //     `test-suite/fhevm/src/solana/two-holder-transfer.ts` (RPC/WS/relayer/ACL constants).
-//   - coprocessor DB container: `test-suite/fhevm/src/layout.ts` (COPROCESSOR_DB_CONTAINER).
+//   - coprocessor DB and Merkle record containers: `test-suite/fhevm/src/layout.ts`
+//     (COPROCESSOR_DB_CONTAINER, SOLANA_MERKLE_DB_CONTAINER).
 //   - deployer keypair: `~/.config/solana/id.json`, the wallet the side-stack setup deploys with.
 //   - gateway addresses (optional, for future phases): generated at `fhevm-cli up` time into
 //     `.fhevm/runtime/addresses/gateway/.env.gateway`.
@@ -20,7 +21,8 @@
 // wallets by transfer from the deployer wallet, with the small amounts in `FUNDING_BY_SOURCE`
 // (and sweep them back at the end, see `wallets.ts`), and
 // the SNS probe reaches the coprocessor Postgres through whatever command `COPROCESSOR_DB_PSQL`
-// names (a `kubectl exec ... psql` prefix) instead of the local `docker exec`.
+// names (a `kubectl exec ... psql` prefix) instead of the local `docker exec`, and the Merkle record
+// check reaches the record through `MERKLE_DB_PSQL`.
 //
 // Source "cleartext": the cleartext stack (`src/solana/cleartext-stack.ts`), a local validator
 // whose zama-host keeps every plaintext in its accounts. Selected with `SOLANA_E2E_SOURCE=cleartext`.
@@ -35,7 +37,7 @@
 import os from "node:os";
 import path from "node:path";
 
-import { coprocessorDbPsql, SOLANA_ACL_PROGRAM, solanaCleartextDeployerPath } from "../../src/layout";
+import { coprocessorDbPsql, SOLANA_ACL_PROGRAM, solanaCleartextDeployerPath, solanaMerkleDbPsql } from "../../src/layout";
 import { CLEARTEXT_SOLANA_ENDPOINTS, LOCAL_SOLANA_ENDPOINTS } from "../../src/solana/endpoints";
 import { solanaE2eSource } from "../../src/solana/target";
 
@@ -73,6 +75,8 @@ export type TestEnv = {
   readonly userDecryptContextId: string | undefined;
   /** Command prefix that runs `psql` against the coprocessor DB (for ciphertext-materialization waits). */
   readonly coprocessorDbPsql: readonly string[];
+  /** Command prefix that runs `psql` against the Merkle proof service's database. */
+  readonly merkleDbPsql: readonly string[];
   readonly roots: { readonly deployerKeypairPath: string };
   readonly capabilities: Capabilities;
   readonly funding: Funding;
@@ -103,6 +107,7 @@ type TestEnvOverrides = {
   aclProgram: string;
   userDecryptContextId: string;
   coprocessorDbPsql: readonly string[];
+  merkleDbPsql: readonly string[];
   deployerKeypairPath: string;
 };
 
@@ -118,6 +123,7 @@ const LOCAL_DEFAULTS = {
   chainId: "72057594037940281",
   aclProgram: SOLANA_ACL_PROGRAM,
   coprocessorDbPsql: coprocessorDbPsql(),
+  merkleDbPsql: solanaMerkleDbPsql(),
 } as const;
 
 // A local validator airdrops and advances slots on demand; devnet does neither. The demo-config
@@ -174,13 +180,17 @@ export const envOverrides = (env: NodeJS.ProcessEnv): Partial<TestEnvOverrides> 
   };
 };
 
-// `COPROCESSOR_DB_PSQL` is a whole command prefix, split on whitespace (its arguments are pod and
-// role names, never paths with spaces); `COPROCESSOR_DB_CONTAINER` keeps naming a local container.
-const psqlOverride = (env: NodeJS.ProcessEnv): Partial<Pick<TestEnvOverrides, "coprocessorDbPsql">> => {
-  if (env.COPROCESSOR_DB_PSQL) return { coprocessorDbPsql: env.COPROCESSOR_DB_PSQL.trim().split(/\s+/) };
-  if (env.COPROCESSOR_DB_CONTAINER) return { coprocessorDbPsql: coprocessorDbPsql(env.COPROCESSOR_DB_CONTAINER) };
-  return {};
-};
+// `COPROCESSOR_DB_PSQL` and `MERKLE_DB_PSQL` are whole command prefixes, split on whitespace (their
+// arguments are pod and role names, never paths with spaces); `COPROCESSOR_DB_CONTAINER` keeps
+// naming a local container.
+const psqlOverride = (env: NodeJS.ProcessEnv): Partial<Pick<TestEnvOverrides, "coprocessorDbPsql" | "merkleDbPsql">> => ({
+  ...(env.COPROCESSOR_DB_PSQL
+    ? { coprocessorDbPsql: env.COPROCESSOR_DB_PSQL.trim().split(/\s+/) }
+    : env.COPROCESSOR_DB_CONTAINER
+      ? { coprocessorDbPsql: coprocessorDbPsql(env.COPROCESSOR_DB_CONTAINER) }
+      : {}),
+  ...(env.MERKLE_DB_PSQL ? { merkleDbPsql: env.MERKLE_DB_PSQL.trim().split(/\s+/) } : {}),
+});
 
 const CLEARTEXT_DEFAULTS = {
   rpcUrl: CLEARTEXT_SOLANA_ENDPOINTS.validatorRpc,
@@ -217,6 +227,7 @@ export const resolveEnv = (
         ? undefined
         : decimalString(merged.userDecryptContextId, "userDecryptContextId"),
     coprocessorDbPsql: merged.coprocessorDbPsql,
+    merkleDbPsql: merged.merkleDbPsql,
     roots: { deployerKeypairPath: merged.deployerKeypairPath },
     capabilities: capabilitiesFor(source, network),
     funding: FUNDING_BY_NETWORK[network],

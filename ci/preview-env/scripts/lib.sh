@@ -27,7 +27,52 @@ wait_external_secret() {
 
 # The per-party preview Postgres instances use the shared ephemeral credentials.
 psql_party() {
-  local party="$1" sql="$2"
+  local party="$1" sql="$2" database="${3:-fhevm_e2e}"
   kubectl exec -n "${NAMESPACE}" "postgres-coprocessor-${party}-0" -- \
-    env PGPASSWORD=zama psql -U zama -d fhevm_e2e -tAqc "${sql}"
+    env PGPASSWORD=zama psql -U zama -d "${database}" -tAqc "${sql}"
+}
+
+# A Solana reset closes every zama-host account, and a store created again at the same address
+# restarts at leaf zero. So after a reset, party $1's Merkle record restarts from an empty
+# database: this stops its indexer, if deployed, and recreates the database. Call it as a
+# statement, not inside $(...), where bash ignores `set -e`.
+recreate_solana_merkle_record() {
+  local party="$1" indexer pods attempt
+  indexer=$(kubectl get "deployment/coprocessor-${party}-solana-merkle-indexer" -n "${NAMESPACE}" \
+    --ignore-not-found -o name)
+  if [[ -n "${indexer}" ]]; then
+    kubectl scale "${indexer}" -n "${NAMESPACE}" --replicas=0 >/dev/null
+    for ((attempt=0; attempt<60; attempt++)); do
+      pods=$(kubectl get pods -n "${NAMESPACE}" -o name \
+        -l "app.kubernetes.io/name=coprocessor-${party}-solana-merkle-indexer")
+      [[ -z "${pods}" ]] && break
+      sleep 2
+    done
+    [[ -z "${pods}" ]] || { echo "::error::Solana Merkle indexer ${party} did not stop"; exit 1; }
+  fi
+  psql_party "${party}" 'DROP DATABASE IF EXISTS solana_merkle WITH (FORCE)' >/dev/null
+  psql_party "${party}" 'CREATE DATABASE solana_merkle' >/dev/null
+}
+
+# The preview Solana RPC's confirmed slot. Taken after a reset, it precedes every store the
+# reset's redeploy creates, so it is the Merkle indexers' start slot.
+confirmed_solana_slot() {
+  local rpc_url
+  rpc_url=$(kubectl get secret solana-rpc -n "${NAMESPACE}" -o jsonpath='{.data.rpc-url}' | base64 -d)
+  curl -fsS "${rpc_url}" -H 'content-type: application/json' \
+    -d '{"jsonrpc":"2.0","id":1,"method":"getSlot","params":[{"commitment":"confirmed"}]}' | jq -er .result
+}
+
+# Waits until party $1's Merkle indexer has recorded past start slot $2, which proves its replay
+# from that slot ran. The checkpoint table appears only once the indexer has migrated.
+wait_solana_merkle_recorded() {
+  local party="$1" start_slot="$2" current attempt
+  for ((attempt=0; attempt<60; attempt++)); do
+    current=$(psql_party "${party}" 'SELECT COALESCE(MAX(slot),0) FROM checkpoint' solana_merkle 2>/dev/null) \
+      || current=0
+    (( current > start_slot )) && return 0
+    sleep 5
+  done
+  echo "::error::Solana Merkle indexer ${party} has not recorded past start slot ${start_slot}; check its logs"
+  exit 1
 }

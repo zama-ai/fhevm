@@ -28,7 +28,7 @@ assuming the opposite. Numbers are stable across both parts and never reused, so
 entry that moves between them keeps its number.
 
 Scope note: this register covers the Solana feature branch: `zama-host`, the `zama-fhe` SDK, the host-listener
-reconstruction path and its leaf record, the KMS connector's Solana pipeline, and the reference confidential-token and
+reconstruction path, the Merkle proof service's leaf record, the KMS connector's Solana pipeline, and the reference confidential-token and
 confidential-batcher applications. Vocabulary follows GLOSSARY.md: execution, dictionary, Store, slot, allow, result
 grant, transient store, application.
 
@@ -336,8 +336,9 @@ and `a_vault_pda_grants_a_delegation_via_cpi` (fhevm-internal#2084); the connect
 ## E. Reconstruction & off-chain services
 
 **28. [HOLDS]** The handles the listener stores are the ones the host
-emitted in each execution's `FheExecutedEvent`, so its computation rows, leaves
-and allowed handles match the chain even if its own derivation drifts. It
+emitted in each execution's `FheExecutedEvent`, so its computation rows match
+the chain even if its own derivation drifts. The Merkle indexer records each
+store write's leaf with the same emitted handle (DD-066). The listener
 re-derives every handle as a check, with the program's own derivation functions
 and argument types and the followed program id (`--program-id`) rather than the
 crate's compiled `declare_id!`. A step that does not re-derive is held back as a
@@ -371,16 +372,18 @@ Pinned by `compute_is_eager_regardless_of_same_tx_allow_signal` and
 
 **32. [GAP]** No reorg unwind on the listener path; minority-fork work is never
 rolled back (safe only because of #31). The operator repair of DD-056 does not
-unwind a fork either: it replays the same slots, and a replayed write must
-reproduce the leaves recorded for it or the listener stops.
+unwind a fork either: it replays the same slots into computation rows and
+leaves the leaf record alone. A block the Merkle indexer replays must reproduce
+the leaves it recorded for it, or the indexer stops (DD-066).
 
-**33. [RISK]** Nothing pins a deployed program build to the listener build.
-#28 now takes the followed program id as an input, so a listener compiled
-for one `declare_id!` can still derive another deployment's handles.
-Instruction layout and decoder types still assume matching crate revisions.
-#28's check catches a decoder drift in the steps, since every decoded step
-field feeds its handle. Two drifts stay silent: one in the effects (allows,
-Store slots, make public), which shape leaves rather than handles, and one in
+**33. [RISK]** Nothing pins a deployed program build to the listener and
+Merkle indexer builds. #28 now takes the followed program id as an input, so a
+listener compiled for one `declare_id!` can still derive another deployment's
+handles. Instruction layout and decoder types still assume matching crate
+revisions. #28's check catches a decoder drift in the steps, since every
+decoded step field feeds its handle. Two drifts stay silent: one in the effects
+(allows, Store slots, make public), which the indexer turns into leaves rather
+than handles, and one in
 the adapter that maps a checked step to the tfhe-worker's operation, which runs
 after the check (its own unit tests pin that mapping).
 
@@ -508,8 +511,8 @@ with `InvalidationTimestampInTheFuture`. Pinned by the permit vector
 
 **45. [HOLDS]** The connector authorizes against the canonical EncryptedStore PDA, program-owned, rederived from the seeds the account carries,
 using the same compiled `zama_solana_acl` code the on-chain program runs
-(decode, seeds, MMR verification, both authorize functions). The leaf proof
-comes from the coprocessors' leaf record (`POST /v1/solana/leaf-proofs`,
+(decode, seeds, MMR verification, both authorize functions). The Merkle proof
+comes from the coprocessors' leaf record (`POST /v1/solana/merkle-proofs`,
 API key), never from the client, and is verified against the peaks of the
 account the connector read itself (`kms-worker/src/core/solana/`).
 Pinned by `an_encrypted_store_whose_fields_derive_another_address_is_rejected`,
@@ -604,12 +607,11 @@ overhead and application CPIs.
 Pinned by `rejects_more_than_max_ops`, `cost_snapshot_fhe_execute_max_steps` and `cost_snapshot_boundary_sweeps`.
 
 **34. [OPERATIONAL]** Reconstruction fixtures compile only under
-`--features solana-grpc,solana-reconstruct`; coverage exists only where CI
-passes those flags.
+`--features solana`; coverage exists only where CI passes that flag.
 
 **47. [RETIRED]** The standalone proof service is gone (RFC 035, DD-048). The
-leaf record lives in each coprocessor's database, written by its host
-listener and served by its leaf-proof server behind an API key; the connector
+leaf record lives in each coprocessor's Merkle proof service database, written
+by its Merkle indexer and served by its Merkle proof server behind an API key (DD-066); the connector
 asks every configured coprocessor at once, so one behind, stalled or
 unreachable cannot sink or hold a request another can serve. Authorization was
 never its to give (#30).

@@ -25,11 +25,12 @@ flowchart LR
     end
     LISTENER[coprocessor listener] -.->|reads tx bytes| HOST
     LISTENER --> WORKERS[FHE workers]
-    LISTENER --> LEAVES[leaf record]
+    INDEXER[Merkle indexer] -.->|reads tx bytes| HOST
+    INDEXER --> LEAVES[leaf record]
     CLIENT[client / js-sdk] --> RELAYER[relayer] --> GATEWAY[gateway contracts]
     GATEWAY --> CONNECTOR[KMS connectors, one per party]
     CONNECTOR -.->|reads encrypted stores| HOST
-    CONNECTOR -.->|fetches leaf proofs| LEAVES
+    CONNECTOR -.->|fetches Merkle proofs| LEAVES
     CONNECTOR --> KMS[KMS core]
 ```
 
@@ -41,7 +42,7 @@ Each component owns exactly one kind of trust decision:
 | Component                      | Where                            | Decides                                                                                                                                                                                                                                                                                                              |
 | ------------------------------ | -------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | `zama-host` program            | `solana/programs/zama-host`      | All on-chain authorization: who may execute on which values, input attestations (threshold secp256k1, verified on-chain), public-decrypt certificates, HCU caps.                                                                                                                                                     |
-| Coprocessor listener + workers | `coprocessor/fhevm-engine`       | Nothing. It reconstructs executions and MMR leaves from transaction bytes, schedules FHE compute eagerly, and serves leaf proofs from its record; a wrong fork wastes compute but cannot release plaintext, and every proof is verified against live on-chain peaks by the connector (INVARIANTS #30, #31).          |
+| Coprocessor listener + workers | `coprocessor/fhevm-engine`       | Nothing. The listener reconstructs executions from transaction bytes and schedules FHE compute eagerly; the Merkle proof service records the MMR leaves from the same bytes and serves their proofs; a wrong fork wastes compute but cannot release plaintext, and every proof is verified against live on-chain peaks by the connector (INVARIANTS #30, #31).          |
 | Gateway + relayer              | `gateway-contracts/`, `relayer/` | Routing, fees, and request-shape conformance only. User requests are signed; neither can alter who asks or for what (INVARIANTS #42).                                                                                                                                                                                |
 | KMS connector                  | `kms-connector/`                 | Decrypt authorization. Each KMS party's connector independently re-verifies the user's ed25519 signature, reads the encrypted store from the host chain, fetches the allow leaf's proof from the coprocessors, and verifies it with the same compiled `zama_solana_acl` code the program runs (INVARIANTS #42, #45). |
 | KMS core                       | `zama-ai/kms` repo               | Chain-blind threshold decryption; binds each response to the requester's typed pubkey and encryption key.                                                                                                                                                                                                            |
@@ -132,11 +133,15 @@ geyser                          Yellowstone plugin build helpers for the event s
 The rest of the vertical lives elsewhere in this repository:
 
 ```text
-coprocessor/fhevm-engine/host-listener   Solana ingestion: solana_adapter.rs (mapping into the
-                                         coprocessor schema), solana_reconstruct.rs (handle
-                                         re-derivation), solana_grpc_listener.rs (Yellowstone),
-                                         database/solana_leaves.rs + http_server.rs (the leaf
-                                         record and its proof route).
+coprocessor/fhevm-engine/solana-host-follower
+                                         Follows zama-host over Yellowstone gRPC: block sealing,
+                                         archive catch-up, host-instruction decoding.
+coprocessor/fhevm-engine/host-listener   Solana ingestion: solana_listener.rs (the follower's
+                                         sink), solana_adapter.rs (mapping into the coprocessor
+                                         schema), solana_reconstruct.rs (handle re-derivation).
+coprocessor/fhevm-engine/solana-merkle-proof-service
+                                         The leaf record in its own database: the Merkle indexer
+                                         (indexer.rs, store.rs) and the proof server (server.rs).
 gateway-contracts/                       Gateway (EVM) contracts, incl. the typed Solana
                                          decryption entrypoint.
 relayer/                                 HTTP relayer: v3 typed Solana requests, chain-aware

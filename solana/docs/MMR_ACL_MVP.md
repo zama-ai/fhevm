@@ -10,7 +10,7 @@ The host owns `EncryptedStore` at `["encrypted-state", program, authority, scope
 
 ## Decrypt history
 
-An output may update a slot, append allowed-key leaves, append a public leaf, or combine those actions. A fresh result can acquire decrypt history without occupying a slot. Leaves bind the exact Store and handle, plus allowed key for private access. Allows append in declaration order, then public permission. Store contains peaks and count; the listener records leaves and returns untrusted inclusion proofs.
+An output may update a slot, append allowed-key leaves, append a public leaf, or combine those actions. A fresh result can acquire decrypt history without occupying a slot. Leaves bind the exact Store and handle, plus allowed key for private access. Allows append in declaration order, then public permission. Store contains peaks and count; each coprocessor's Merkle proof service records the leaves and returns untrusted inclusion proofs (DD-066).
 
 Historical private decryption remains valid after a slot changes. Current-slot publication additionally checks the slot key and expected handle. Adding new permissions to a history-only handle is deferred to [#2007](https://github.com/zama-ai/fhevm-internal/issues/2007); no current API silently re-registers arbitrary handles.
 
@@ -24,9 +24,9 @@ The token returns the transferred result; the batcher adds it to its own contrib
 
 ## Off-chain trust and recovery
 
-The listener reconstructs every executed operation and leaf from the same transaction, regardless of return selection. Compute records, leaves and checkpoint commit atomically. KMS validates proofs against its deciding on-chain Store snapshot, not listener-proof-endpoint assertions. On-chain public consumers verify only the certificate and compare its handle with one they pinned (DD-065). Generic disclosure carries no authenticated token-kind label.
+The host listener reconstructs every executed operation, and the Merkle indexer every leaf, from the same confirmed transactions, regardless of return selection. Each commits its rows with its own checkpoint, in its own database (DD-066). KMS validates proofs against its deciding on-chain Store snapshot, not listener-proof-endpoint assertions. On-chain public consumers verify only the certificate and compare its handle with one they pinned (DD-065). Generic disclosure carries no authenticated token-kind label.
 
-An incomplete local history refuses proofs. Advancing its cursor does not repair it; retention recovery and coverage must be checked separately. A fetched proof can become stale before the connector checks it; the connector rejects it and a retry must fetch fresh evidence. Old acceptance does not prove current freshness.
+The record follows every Store from leaf zero: the indexer starts at a block before the host deployment and stops at a Store first seen above leaf zero. A wrong record is rebuilt from that block or restored from another record's `pg_dump`. A fetched proof can become stale before the connector checks it; the connector rejects it and a retry must fetch fresh evidence. Old acceptance does not prove current freshness.
 
 ## Resources and verification
 

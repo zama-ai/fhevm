@@ -74,7 +74,7 @@ are written as one narrative instead.
 | [DD-045](#dd-045-keep-burn-settlement-sequential-and-keep-wrapper-policy-separate-from-host-governance)                                   | adopted; see the note under its status   | Keep Burn Settlement Sequential and Keep Wrapper Policy Separate From Host Governance                                           |
 | [DD-046](#dd-046-the-program-heap-is-fixed-at-32-kb--no-custom-allocator-raised-heap-deleted)                                             | adopted                                  | The Program Heap Is Fixed At 32 KB — No Custom Allocator (`raised-heap` deleted)                                                |
 | [DD-047](#dd-047-the-application-is-program-scope--program-verified-scope-owned-by-program-rfc-035)                                       | adopted; see the note under its status   | The Application Is `(program, scope)` — Program Verified, Scope Owned By Program (RFC 035)                                      |
-| [DD-048](#dd-048-allows-are-sealed-on-the-write-the-deny-list-names-applications-one-connector-path-rfc-035)                              | adopted; see the note under its status   | Allows Are Sealed On The Write; The Deny List Names Applications; One Connector Path (RFC 035)                                  |
+| [DD-048](#dd-048-allows-are-sealed-on-the-write-the-deny-list-names-applications-one-connector-path)                                      | adopted                                  | Allows Are Sealed On The Write; The Deny List Names Applications; One Connector Path                                            |
 | [DD-049](#dd-049-shared-encrypted-store-and-transaction-local-result-grants)                                                              | adopted                                  | Shared Encrypted Store And Transaction-Local Result Grants                                                                      |
 | [DD-050](#dd-050-transient-storage-shared-across-the-transaction)                                                                         | adopted                                  | Transient Storage Shared Across The Transaction                                                                                 |
 | [DD-051](#dd-051-a-zama-is-one-host-program-id)                                                                                           | adopted                                  | A Zama Is One Host Program ID                                                                                                   |
@@ -92,6 +92,7 @@ are written as one narrative instead.
 | [DD-063](#dd-063-a-leaf-proof-reads-its-path-by-position)                                                                                 | adopted                                  | A leaf proof reads its path by position                                                                                        |
 | [DD-064](#dd-064-leaf-proofs-are-served-apart-from-ingestion)                                                                             | adopted                                  | Leaf proofs are served apart from ingestion                                                                                    |
 | [DD-065](#dd-065-a-public-decryption-is-accepted-on-chain-by-its-certificate-alone)                                                       | adopted                                  | A public decryption is accepted on-chain by its certificate alone                                                              |
+| [DD-066](#dd-066-the-leaf-record-has-its-own-indexer-and-database)                                                                        | adopted                                  | The leaf record has its own indexer and database                                                                               |
 
 ## DD-002: Keep App Store And Host ACL Store Separate
 
@@ -981,8 +982,8 @@ Consequences:
 
 The coprocessor produces handle-only material requests and inserts them directly into
 `pbs_computations`; it does not derive authorization from instruction names or maintain allow reasons.
-The host listener's `solana_reconstruct.rs` decode arms parse raw instruction data (Anchor
-discriminators + borsh args) instead of dispatching on ACL events.
+The Solana host follower's decoder (`solana-host-follower/src/host.rs`) parses raw instruction data
+(Anchor discriminators + borsh args) instead of dispatching on ACL events.
 
 ## DD-034: Eager Compute Scheduling For Solana (Q11 Option A)
 
@@ -1448,8 +1449,8 @@ take the first option. Their eleven instructions gain Anchor's `#[event_cpi]` ac
 `set_deny_scope` and `set_hcu_app_trusted` from five to seven, and the six `HostAdmin` config setters
 from two to four.
 
-Note that no in-tree component reads any of the five today; the only off-chain reader of host config
-state reads the account, not an event (`host-listener`'s `parse_host_config`). That is deliberate and is
+Note that no in-tree component reads any of the six today; the only off-chain reader of host config
+state reads the account, not an event (`solana-host-follower`'s `host_chain_id`). That is deliberate and is
 not an argument against emitting them: the transport exists because the category calls for it, so that
 a component which needs an admin change does not have to replay instruction data to find one. The test
 is the category, not the current existence of a reader — otherwise the rule would flip every time
@@ -1732,13 +1733,11 @@ Consequences:
   until they expire or are revoked, but no new application-specific row can be granted for those
   Stores, only the wildcard row (DD-061).
 
-## DD-048: Allows Are Sealed On The Write; The Deny List Names Applications; One Connector Path (RFC 035)
+## DD-048: Allows Are Sealed On The Write; The Deny List Names Applications; One Connector Path
 
 Status: adopted
 
-Superseded in part by DD-049: the `EncryptedStore` layout. DD-060 moves the public-decrypt Store out of `extraData`.
-
-Recorded as fhevm-internal RFC 035.
+Recorded in the Solana access control RFC (zama-ai/tech-spec#448).
 
 Context:
 
@@ -1750,31 +1749,31 @@ named keys, and was consulted wherever a key joined the list.
 
 Decision:
 
-1. **Allows are sealed on the write.** A persistent output declares the keys allowed on the handle
-   it installs (`PersistentOutput::allow`); the host seals one `HistoricalAccessLeaf` per key in
-   list order, then the `PublicDecryptLeaf` when the output is `make_public`. The account stores no
-   list. There is no instruction to add or remove an allow afterwards — the next write declares
-   the next handle's allows (the token program's `allow_balance_viewers` /
-   `allow_total_supply_viewers` are exactly that: a re-write by the authority). A viewer is a
-   viewer: it decrypts, and cannot grant, seal or write.
+1. **Allows are sealed on the write.** A Store effect of `fhe_execute` (`FheExecuteEffect`) names
+   the keys allowed on the result it records (`allow_indexes`). The host seals one
+   `HistoricalAccessLeaf` per key in that order, then the `PublicDecryptLeaf` when the effect sets
+   `make_public`. The Store keeps no allow list. There is no instruction to add or remove an allow
+   afterwards — the next write declares the next handle's allows (the token program's
+   `allow_balance_viewers` / `allow_total_supply_viewers` are exactly that: a re-write by the
+   authority). A viewer is a viewer: it decrypts, and cannot grant, seal or write.
 2. **One decrypt path.** A user decrypt proves the allow leaf; the current handle and a replaced
    one authorize the same way, so `authorize_current` is gone. A public decrypt proves the public
    leaf. Both proofs are fetched by the KMS connector from the coprocessors' leaf record
-   (`POST /v1/solana/leaf-proofs`, API key; every configured coprocessor asked at once, the first
+   (`POST /v1/solana/merkle-proofs`, API key; every configured coprocessor asked at once, the first
    proof that verifies taken, with no retry inside an attempt) and verified against the peaks the
    connector read on chain. Each coprocessor therefore serves every proof read: the load grows with
    their number, and in exchange one stalled or unreachable coprocessor cannot delay a batch
    another one serves (fhevm-internal#2104).
    A request names only the Store and, for a delegated entry, the delegator as owner address; a
    client-supplied proof is rejected. A public decrypt names each handle's Store beside `extraData` (DD-060).
-3. **The leaf record lives in the host listener.** Leaves are recomputed from the confirmed
-   instruction stream and stored in the same database transaction as the compute rows, so the two
-   cannot disagree about which blocks were applied. The standalone `solana-proof-service`, the
-   relayer's proof passthrough, and the SDK's RPC evidence and proof-service clients are deleted
-   (DD-035 superseded). `solana_leaf_proof_server` serves the record apart from ingestion (DD-064).
+3. **Each coprocessor keeps the leaf record.** Its Merkle indexer recomputes the leaves from the
+   confirmed instruction stream into the Merkle proof service's own database (DD-066), and
+   `solana_merkle_proof_server` serves them apart from ingestion (DD-064). The standalone
+   `solana-proof-service`, the relayer's proof passthrough, and the SDK's RPC evidence and
+   proof-service clients are deleted (DD-035 superseded).
 4. **The deny list names applications.** `set_deny_scope` writes `DenyScopeRecord` at
-   `["deny-scope", program, scope]`; it gates every allow the host would seal — each persistent
-   write and `make_handle_public`, because sealing a public leaf is an allow. A denied key is not a
+   `["deny-scope", program, scope]`; it gates every allow the host would seal — each `fhe_execute`
+   and `make_store_handle_public`, because sealing a public leaf is an allow. A denied key is not a
    concept any more: an application is denied, or it is not.
 
 Rationale:
@@ -1784,8 +1783,8 @@ instructions, and made "current" a special case the connector had to read live. 
 allow as a leaf leaves one authorization fact per (handle, key), permanent, proven the same way
 whether the handle is current or replaced. Fetching proofs connector-side removes the client from
 the trust path entirely — the client could never authorize anything, but it could carry stale or
-malformed evidence into a signed request — and lets the coprocessors, which already hold every
-instruction, own the record instead of a fourth service replaying the chain. Denying an application
+malformed evidence into a signed request — and lets each coprocessor, which already follows the
+host's instructions, keep the record instead of a standalone service. Denying an application
 rather than a key matches what a host operator can actually judge (a program and its scope) and
 what the EVM `blockAccount` denies in practice (a contract).
 
@@ -1793,8 +1792,8 @@ Consequences:
 
 - Account layout: `121 + 64·slots + 32·peaks`, at most 4,217 bytes (`EncryptedStore::account_size`,
   INVARIANTS Part II).
-- `fhe_execute` wire: `previous_subjects` and `output_subjects` gone; `allows` per persistent
-  output; the deny record an execution passes is its application's.
+- `fhe_execute` wire: `previous_subjects` and `output_subjects` gone; `allow_indexes` per Store
+  effect; the deny record an execution passes is its application's.
 - The connector pipeline is one explicit sequence with one observation point
   (`kms-worker/src/core/solana/pipeline.rs`); the relayer pre-checks dead delegation rows
   advisorily and nothing else (INVARIANTS #50).
@@ -2113,20 +2112,22 @@ order, and the seeds of the random steps. The program id and the chain id are fi
 and stay out. The instruction carries what the caller asked for; the event carries what the host
 decided.
 
-The listener pairs each host `fhe_execute` with the one `FheExecutedEvent` from the host program
-that follows it before the next host `fhe_execute`. Only the host can sign its event authority, so
-an app cannot forge the event inside the host's instruction trace. It stores the emitted handles:
-computation rows, operands that name an earlier step, ACL leaves and allowed handles all use them.
-It then re-derives each handle from the decoded step, the emitted context, the followed program id
-and the chain id, and compares. The sysvar subscription and the per-slot join are deleted, and the
-block time the listener records is the one Yellowstone sends with the block.
+The listener and the Merkle indexer both follow the host through `solana-host-follower`, which pairs
+each host `fhe_execute` with the one `FheExecutedEvent` from the host program that follows it before
+the next host `fhe_execute`. Only the host can sign its event authority, so an app cannot forge the
+event inside the host's instruction trace. The listener stores the emitted handles: computation
+rows, operands that name an earlier step and allowed handles all use them. The Merkle indexer
+records the leaves with them too (DD-066). The listener then re-derives each handle from the decoded
+step, the emitted context, the followed program id and the chain id, and compares. The sysvar
+subscription and the per-slot join are deleted, and the block time the listener records is the one
+Yellowstone sends with the block.
 
 What the listener does when something does not line up:
 
 | Case | Response |
 |---|---|
 | A host `fhe_execute` without exactly one event of the current version, or an event whose results do not match the execution's steps | Fatal: the block is not applied and the checkpoint does not move. The listener and the program disagree on the wire format. |
-| A step whose emitted handle does not re-derive | The block is applied. That step is held back: its computation row is inserted as a terminal error, so the tfhe-worker never computes it and ends its dependents as errors. Leaves and allowed handles keep the emitted handle. After the commit the listener logs the slot, signature, execution, step and both handles, and counts `coprocessor_solana_host_listener_handle_check_failures_total`. |
+| A step whose emitted handle does not re-derive | The block is applied. That step is held back: its computation row is inserted as a terminal error, so the tfhe-worker never computes it and ends its dependents as errors. Allowed handles keep the emitted handle, and so do the leaves the Merkle indexer records. After the commit the listener logs the slot, signature, execution, step and both handles, and counts `coprocessor_solana_host_listener_handle_check_failures_total`. |
 
 A mismatch means our software is wrong, and the listener cannot tell which part. If the derivation
 drifted, the ciphertext it would compute is still right. If it misdecoded the step, the ciphertext
@@ -2139,16 +2140,17 @@ The check finds our bugs, not a hostile provider: a provider that lies can forge
 transaction consistently.
 
 Repair is a replay of the affected slots with the fixed listener. The operator rewinds the listener
-checkpoint to a slot `S` before the failure (`rewind_solana_listener_checkpoint.sql`) and reverts the
-computation rows after `S` with the existing `revert_coprocessor_db_state.sql`, which deletes the held
-rows and their errored dependents. The revert refuses a Solana chain whose checkpoint is still after
-`S`, since the listener would never re-ingest what it deleted; `revert_coprocessor_db_state.sh` runs
-both when given `SOLANA_BLOCK_HASH`. On restart the listener replays from `S` and inserts the rows
-again as new work. Leaves are not reverted: a replayed write must reproduce the leaves recorded for
-it, or the listener stops. So a replay repairs computation rows, not a bug that recorded wrong
-leaves. A replay older than the provider's replay window comes from the archive RPC (DD-059), so
-`S` must be in the archive's history, and nothing checks that before the rows are deleted. The
-runbook is in the host-listener README.
+checkpoint to a slot `S` before the failure (`rewind_solana_listener_checkpoint.sql`) and reverts
+the computation rows after `S` with the existing `revert_coprocessor_db_state.sql`, which deletes
+the held rows and their errored dependents. The revert refuses a Solana chain whose checkpoint is
+still after `S`, since the listener would never re-ingest what it deleted;
+`revert_coprocessor_db_state.sh` runs both when given `SOLANA_BLOCK_HASH`. On restart the listener
+replays from `S` and inserts the rows again as new work. The replay leaves the leaf record alone:
+the Merkle indexer keeps it in its own database, and a block the indexer replays must reproduce the
+leaves it recorded, or the indexer stops (DD-066). So a replay repairs computation rows, not a bug
+that recorded wrong leaves. A replay older than the provider's replay window comes from the archive
+RPC (DD-059), so `S` must be in the archive's history, and nothing checks that before the rows are
+deleted. The runbook is in the host-listener README.
 
 An archive transaction prepares into the same host instructions as a streamed one
 (`prepare_rpc_transaction`), so archive catch-up (DD-059) reuses one decoder. It requires inner
@@ -2382,7 +2384,7 @@ Consequences:
 
 Status: adopted
 
-Recorded in fhevm-internal#2104 (RFC 035 review, finding 1, fixes A and B).
+Recorded in fhevm-internal#2104 (Solana access control RFC review, finding 1, fixes A and B).
 
 The listener used to subscribe to whole blocks with `account_include: [host]`. Yellowstone keeps every
 transaction that lists the host program, including one that never calls it, and sends the block as
@@ -2424,9 +2426,9 @@ validator never sealed, or a slot that does not extend the last applied one stop
 without applying the slot. A transaction that a recent slot did not hold stops it too, but that slot is already
 recorded without it, and the restart resumes from the checkpoint, past that slot. If the
 transaction wrote a Store, the next write to that Store does not continue its recorded leaf count,
-and the listener stops there until the leaf record, `solana_encrypted_state_nodes` included, is
-rewritten by hand: a replay computes leaves the record does not hold and stops too. If it wrote no
-Store, ingestion continues without its computation rows. The error, which names the slot and the
+and the Merkle indexer, which follows the same stream, stops there until its record is rebuilt
+(DD-066): a replay computes leaves the record does not hold and stops too. The listener continues
+without the transaction's computation rows. The error, which names the slot and the
 transaction, and the restart alarm are then the only trace, and the replay repair in the
 host-listener README restores the rows. Whether other providers keep this order is
 fhevm-internal#2087.
@@ -2463,7 +2465,7 @@ which is sent for every slot. Yellowstone's pings, sent whatever its feed does, 
 
 Status: adopted
 
-Recorded in fhevm-internal#2104 (RFC 035 review, findings 2 and 4, fix C).
+Recorded in fhevm-internal#2104 (Solana access control RFC review, findings 2 and 4, fix C).
 
 The proof route loaded every leaf of the Store, recomputed its peaks and rebuilt the path from all
 of them, for each requested entry. The review measured 30 to 40 seconds for 8 entries of a
@@ -2472,13 +2474,13 @@ decrypted.
 
 Decision:
 
-Ingestion records every MMR node of height 1 and above in `solana_encrypted_state_nodes`, in the
-transaction that appends the leaves completing it. `mmr_append` merges the new leaf node with one
-peak per trailing one bit of the leaf index, and each merge is a node; the listener records those
-merges as it appends. zama-host's `mmr_append` is unchanged. Mountains are aligned to their size,
-so node `(height, index)` covers leaves `[index << height, (index + 1) << height)` whatever the
-leaf count. At 6 leaves, leaf 4's path is `[leaf 5]`; at 8 leaves it is `[leaf 5, node (1, 3),
-node (2, 0)]`, and those nodes never change.
+The Merkle indexer records every MMR node of height 1 and above in its `nodes` table (DD-066), in
+the transaction that appends the leaves completing it. `mmr_append` merges the new leaf node with
+one peak per trailing one bit of the leaf index, and each merge is a node; the indexer records those
+merges as it appends. zama-host's `mmr_append` is unchanged. Mountains are aligned to their size, so
+node `(height, index)` covers leaves `[index << height, (index + 1) << height)` whatever the leaf
+count. At 6 leaves, leaf 4's path is `[leaf 5]`; at 8 leaves it is
+`[leaf 5, node (1, 3), node (2, 0)]`, and those nodes never change.
 
 A proof takes three indexed reads: the Store's row, the first leaf below its `leaf_count` that
 matches the query, and the path. The path's height-0 sibling is the neighboring leaf row, so the
@@ -2501,15 +2503,13 @@ Consequences:
 
 8 proofs of a 1,000,000-leaf Store answer in about 11 ms in a debug build, request included
 (`eight_proofs_of_a_million_leaf_store_answer_well_within_the_connector_timeout`, run on request). A
-path has at most 64 entries. The leaf record grows by about one node row per leaf. A database
-written before `solana_encrypted_state_nodes` existed has leaves without nodes, and its proofs fail
-verification: nothing is deployed, so no backfill exists.
+path has at most 64 entries. The leaf record grows by about one node row per leaf.
 
 ## DD-064: Leaf proofs are served apart from ingestion
 
 Status: adopted
 
-Recorded in fhevm-internal#2104 (RFC 035 review, findings 2 and 3, fix D).
+Recorded in fhevm-internal#2104 (Solana access control RFC review, findings 2 and 3, fix D).
 
 The proof route ran inside `solana_host_listener`, on the 8-connection pool ingestion writes
 through, and stopped whenever ingestion stopped: a fatal ingestion error or a restart took the route
@@ -2519,12 +2519,13 @@ An ingestion stop therefore also stopped decryptions the record could still serv
 
 Decision:
 
-`solana_leaf_proof_server` serves `POST /v1/solana/leaf-proofs` and the health routes as its own
-Deployment and ClusterIP Service, `<release>-solana-leaf-proof-server`, from the listener's image
-and with its own pool (`--database-pool-size`, 8 by default). It only reads the leaf record, so it
-can run several replicas and roll without downtime; the listener stays one replica with `Recreate`.
-The listener serves only `/healthz` and `/liveness`. The connector's proof routes name the proof
-server's Service.
+`solana_merkle_proof_server` serves `POST /v1/solana/merkle-proofs` and the health routes as its
+own Deployment and ClusterIP Service, `<release>-solana-merkle-proof-server`, from the
+host-listener image and with its own pool (`--database-pool-size`, 8 by default). It only reads
+the Merkle proof service's database (DD-066), so it can run several replicas and roll without
+downtime. The Merkle indexer, which writes that database, stays one replica with `Recreate`, as
+does the listener, which serves only `/healthz` and `/liveness`. The connector's proof routes name
+the proof server's Service.
 
 On EVM the connector reads the ACL from the host chain, and no coprocessor serves proofs. The split
 follows the coprocessor's one Deployment per role: `host_listener`, `host_listener_poller` and
@@ -2535,21 +2536,21 @@ Rejected alternatives:
 | Alternative | Why not |
 |---|---|
 | Keep the route in the listener with a second pool | Slow proof reads could no longer starve ingestion, but the route would still stop with every ingestion stop and restart. |
-| A separate image | The server is one small binary of the listener's crate; a second image adds a CI build and a tag to keep in step. |
+| A separate image | The server is one small binary, shipped with the Merkle indexer in the host-listener image; a second image adds a CI build and a tag to keep in step. |
 
 Consequences:
 
-Each coprocessor database has one more client, with 8 connections by default. Proofs keep being
-served while the listener is down, for the leaves it recorded before it stopped. Such a proof
-verifies until a later append to its Store merges its mountain, and the connector's check fails
-from then until ingestion catches up. The newest leaf sits in the smallest mountain, so it goes
-stale first, and anyone can append to a Store with a zero-value transfer. The connector takes the
-first proof that verifies from any coprocessor, so this costs nothing while one of them ingests;
-while every coprocessor's ingestion is stopped, a Store someone keeps appending to cannot be
-decrypted until one catches up. The connector retries a Gateway request up to its
-`max_decryption_attempts` before marking it failed, and an HTTP caller gets `acl_denied` and
-resubmits. A grant made after the stop has no proof until ingestion catches up.
-`ci/preview-env/solana-host/test_charts.py` pins the two Deployments.
+The Merkle database has the server as a second client, with 8 connections by default. Proofs keep
+being served while the Merkle indexer is down, for the leaves it recorded before it stopped. Such a
+proof verifies until a later append to its Store merges its mountain, and the connector's check
+fails from then until the indexer catches up. The newest leaf sits in the smallest mountain, so it
+goes stale first, and anyone can append to a Store with a zero-value transfer. The connector takes
+the first proof that verifies from any coprocessor, so this costs nothing while one indexer runs;
+while every coprocessor's indexer is stopped, a Store someone keeps appending to cannot be decrypted
+until one catches up. The connector retries a Gateway request up to its `max_decryption_attempts`
+before marking it failed, and an HTTP caller gets `acl_denied` and resubmits. A grant made after the
+stop has no proof until the indexer catches up. `ci/preview-env/solana-host/test_charts.py` pins the
+two Deployments.
 
 ## DD-065: A public decryption is accepted on-chain by its certificate alone
 
@@ -2600,6 +2601,72 @@ packet up to 12 signatures (`runtime-tests/tests/disclose_packet_fit.rs`). Remov
 `PublicDecryptProofInvalid` renumbered the later Anchor error codes of zama-host and
 confidential-token.
 
+## DD-066: The leaf record has its own indexer and database
+
+Status: adopted
+
+Recorded in zama-ai/fhevm#4215.
+
+The host listener wrote the leaf record into the coprocessor database, in the transaction that
+wrote the compute rows (DD-048). The record could only start where the listener started. A
+listener started at the tip, or on a database restored without the record, met Stores whose
+earlier leaves it never saw. It marked them `history_complete = false` and answered
+`historyIncomplete` for them until someone replayed it from before their creation. A fault in the
+record, such as a leaf count that skips, also stopped compute ingestion, and the only repair was
+editing the coprocessor database by hand.
+
+Decision:
+
+The leaf record belongs to the `solana-merkle-proof-service` crate, in its own Postgres database
+with its own migrations: `encrypted_stores`, `leaves`, `nodes` and `checkpoint`. The crate has two
+binaries:
+
+- `solana_merkle_indexer` follows the confirmed stream through `solana-host-follower`, the crate
+  the host listener follows it with. It writes each block's leaves, nodes, Store rows and
+  checkpoint in one transaction. It resumes from its checkpoint. On an empty database it replays
+  from `--start-slot`, a confirmed block before the first Store was created, such as the zama-host
+  deployment slot, whose hash it reads from the archive endpoint. It never starts at the tip. It
+  stops on a Store first seen above leaf zero (`UnrecordedHistory`) and on a leaf count that
+  skips.
+- The checkpoint also keeps `recorded_through`, the highest slot ever applied. A block at or below
+  it is a replay. Its writes must reproduce every leaf recorded at its slot, across all Stores, or
+  the indexer stops and writes nothing. A replay that changes, adds or drops a leaf therefore
+  stops it. Moving the checkpoint back re-verifies the record: the indexer checks each block up
+  to `recorded_through` and appends only after it. It cannot repair a wrong record, which is
+  rebuilt from the start slot into an empty database or restored from another record's dump.
+- `solana_merkle_proof_server` serves the proofs from that database over
+  `POST /v1/solana/merkle-proofs` (DD-063, DD-064).
+
+A record holds every Store from leaf zero or has not seen it, so a proof answer is `found`,
+`notFound` or `unknownAccount`; there is no incomplete history. The host listener writes only
+compute rows and its own checkpoint.
+
+A lost or broken record is rebuilt in one of two ways. A `pg_dump` of a healthy record restored
+into an empty database resumes from the checkpoint inside it and catches up
+(`a_restored_dump_resumes_and_catches_up`). An empty database replays from the start slot.
+
+Rejected alternatives:
+
+| Alternative | Why not |
+|---|---|
+| Keep the record in the listener and mark incomplete histories | A Store the record missed has no proofs from that coprocessor until a manual replay, and a record fault stops compute ingestion. |
+| Start an empty record at the tip and backfill the missed history | The backfill is a second ingestion path, with its own ordering and checkpoint, racing the live one. |
+| A custom export and import of the record | `pg_dump` and `pg_restore` already move a consistent snapshot with its checkpoint, and operators know them. |
+| A separate image | As in DD-064: one more CI build and tag to keep in step. Both binaries ship in the host-listener image. |
+| One follower feeding both the compute rows and the record | The two start differently: the listener may start at the tip, the record only before the first Store. One process would also couple their failures again, so a record fault would stop compute ingestion. |
+
+Consequences:
+
+Each coprocessor runs one more Deployment and one more database on its Postgres server, and opens a
+second Yellowstone subscription. The record and the compute rows no longer commit together, so they
+can disagree about which blocks were applied. Nothing reads both: the connector checks each proof
+against the peaks it reads on chain. A deployment must know a start slot before its first Store:
+the chart requires `solanaHostListener.merkleIndexer.startSlot` and the Merkle database's URL.
+The preview wipe (DD-051) closes Stores, and a Store created again at the same address starts
+again at leaf zero, which the record reads as a skipped count. The preview rollout therefore
+recreates the Merkle database and takes a new start slot on every run. The coprocessor database
+has no leaf tables.
+
 ## Open product decisions
 
 Not settled by the decisions above. Forward requirements are detailed in
@@ -2611,7 +2678,7 @@ Not settled by the decisions above. Forward requirements are detailed in
 - Whether confidential balances move to the staged inbound-credit profile (DD-016).
 - Rent and archival policy for the Store MMR (DD-049): one stable PDA serves a Store for its whole
   life and its size is bounded at `121 + 64·slots + 32·peaks` bytes, so compaction is a rent question,
-  not a liveness one. The off-chain leaf history the listener keeps for proofs is not bounded
+  not a liveness one. The off-chain leaf history the Merkle indexer keeps for proofs is not bounded
   (about 540 bytes per leaf per coprocessor with its MMR node, estimate, never pruned); fhevm-internal#2060 tracks row
   shrinking and per-Store cold archival.
 - General `HostConfig` config-version rotation semantics beyond the KMS-context pointer.
@@ -2622,10 +2689,9 @@ Not settled by the decisions above. Forward requirements are detailed in
 - Historical handle discovery conventions for apps.
 - Production role and governance names for public-decrypt and grant authority.
 - Leaf-record availability (DD-048): the connector asks every configured coprocessor at once, so
-  one behind, stalled or unreachable cannot sink or hold a request another can serve. A Store first
-  seen by a coprocessor through an update still has no served proofs until that listener is
-  replayed from before the Store's creation (`history_complete`). The replay and bootstrap policy is operational and
-  undocumented beyond the listener's own flags.
+  one behind, stalled or unreachable cannot sink or hold a request another can serve. A record
+  rebuilt by replay from the start slot catches up at the archive's speed; how a coprocessor heals
+  faster, for instance from another coprocessor's `pg_dump`, is not yet a runbook (DD-066).
 - A Solana-native composition pattern for contract-to-contract confidential calls has not been
   designed since the receiver-callback flow was deleted (DD-011, in DESIGN_HISTORY.md).
 - There is no per-Store cap on allows (RFC 035): allows are leaves, and the app-side wall is the

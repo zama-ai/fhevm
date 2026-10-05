@@ -13,7 +13,7 @@ import {
   type Signature,
 } from '@solana/kit';
 import type { SolanaRpc } from '../encryptedStore.js';
-import type { SolanaLeafProofOutcome, SolanaLeafProofReader } from './leafProofs.js';
+import type { SolanaMerkleProofOutcome, SolanaMerkleProofReader } from './merkleProofs.js';
 import { bytesToHex } from '../../core/base/bytes.js';
 import { decodeSolanaEncryptedStore, isSolanaEncryptedStoreData } from '../encryptedStore.js';
 import { createRetainedMmr, storeLeafCommitment, type RetainedMmr, type SolanaStoreHistoryEvent } from './mmr.js';
@@ -80,7 +80,7 @@ const leafKey = (handle: Uint8Array, key?: Uint8Array): string =>
  * Catch-ups of one store run in turn; different stores catch up independently. A read answers from
  * the leaf count its own catch-up checked.
  */
-export function createSolanaLeafRecord(rpc: SolanaRpc, programAddress: Address): SolanaLeafProofReader {
+export function createSolanaLeafRecord(rpc: SolanaRpc, programAddress: Address): SolanaMerkleProofReader {
   const records = new Map<Address, StoreRecord>();
   const catchUps = new Map<Address, Promise<CaughtUp | undefined>>();
 
@@ -169,7 +169,7 @@ export function createSolanaLeafRecord(rpc: SolanaRpc, programAddress: Address):
     const caught = new Map(
       await Promise.all(stores.map(async (store) => [store, await catchUpInTurn(store)] as const)),
     );
-    return queries.map(({ encryptedStore, handle, key }): SolanaLeafProofOutcome => {
+    return queries.map(({ encryptedStore, handle, key }): SolanaMerkleProofOutcome => {
       const store = caught.get(encryptedStore);
       if (store === undefined) return { status: 'unknownAccount' };
       const { record, leafCount } = store;

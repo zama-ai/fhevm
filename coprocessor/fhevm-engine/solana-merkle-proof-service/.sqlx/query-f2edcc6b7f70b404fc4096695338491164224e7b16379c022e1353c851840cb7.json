@@ -1,0 +1,31 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n            SELECT leaf_index, commitment\n            FROM leaves\n            WHERE encrypted_store = $1 AND leaf_kind = $2 AND handle = $3\n              AND allowed_key IS NULL AND leaf_index < $4\n            ORDER BY leaf_index\n            LIMIT 1\n            ",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "leaf_index",
+        "type_info": "Int8"
+      },
+      {
+        "ordinal": 1,
+        "name": "commitment",
+        "type_info": "Bytea"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Bytea",
+        "Int2",
+        "Bytea",
+        "Int8"
+      ]
+    },
+    "nullable": [
+      false,
+      false
+    ]
+  },
+  "hash": "f2edcc6b7f70b404fc4096695338491164224e7b16379c022e1353c851840cb7"
+}

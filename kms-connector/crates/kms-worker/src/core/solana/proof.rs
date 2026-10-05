@@ -1,4 +1,4 @@
-//! The leaf-proof reader. A store's MMR leaves live in the coprocessors' record of host program
+//! The Merkle proof reader. A store's MMR leaves live in the coprocessors' record of host program
 //! events; the account holds only the peaks. Each coprocessor is a source of proofs, never of
 //! decisions: every answer is verified against the observed peaks.
 
@@ -9,9 +9,9 @@ use solana_pubkey::Pubkey;
 use std::future::Future;
 use url::Url;
 
-/// The coprocessor route that answers leaf-proof queries. The same literal as the coprocessor's
-/// `LEAF_PROOFS_PATH`; the shared vectors pin the request and response shapes.
-pub const LEAF_PROOFS_PATH: &str = "/v1/solana/leaf-proofs";
+/// The coprocessor route that answers Merkle proof queries. The same literal as the coprocessor's
+/// `MERKLE_PROOFS_PATH`; the shared vectors pin the request and response shapes.
+pub const MERKLE_PROOFS_PATH: &str = "/v1/solana/merkle-proofs";
 
 /// The coprocessor's cap on queries per read. A validated request stays below it: it has at most
 /// `MAX_REQUEST_HANDLES` entries.
@@ -47,7 +47,7 @@ pub struct LeafQuery {
     tag = "status",
     rename_all_fields = "camelCase"
 )]
-pub enum LeafProofOutcome {
+pub enum MerkleProofOutcome {
     /// `leaf_count` is how many leaves the record had sealed when it built the proof. The
     /// verifier checks the siblings against the on-chain peaks, not this number.
     Found {
@@ -60,8 +60,6 @@ pub enum LeafProofOutcome {
     NotFound { leaf_count: u64 },
     /// The record has never seen this account.
     UnknownAccount,
-    /// The record's history for this account has a gap it cannot close until it is rebuilt.
-    HistoryIncomplete,
 }
 
 /// Implemented by [`CoprocessorProofClient`]; tests drive authorization with canned proofs.
@@ -75,7 +73,7 @@ pub trait HostProofReader: Send + Sync {
         &self,
         source: usize,
         queries: &[LeafQuery],
-    ) -> impl Future<Output = Result<Vec<LeafProofOutcome>, ProofReadError>> + Send;
+    ) -> impl Future<Output = Result<Vec<MerkleProofOutcome>, ProofReadError>> + Send;
 }
 
 pub(super) fn check_length(requested: usize, returned: usize) -> Result<(), ProofReadError> {
@@ -97,27 +95,27 @@ pub enum ProofReadError {
     /// decides it.
     ///
     /// [`verify_proofs`]: super::handle_binding::verify_proofs
-    #[error("leaf proof read failed: {reason}")]
+    #[error("Merkle proof read failed: {reason}")]
     Unavailable { reason: String },
-    #[error("leaf proof read returned {returned} outcomes for {requested} queries")]
+    #[error("Merkle proof read returned {returned} outcomes for {requested} queries")]
     ResponseLengthMismatch { requested: usize, returned: usize },
 }
 
 // ------------------------------------------------------------------------------------------
-// The HTTP transport. Field names mirror the coprocessor's `http_server.rs`.
+// The HTTP transport. Field names mirror `coprocessor/fhevm-engine/solana-merkle-proof-service/src/server.rs`.
 
 #[derive(Serialize)]
-struct LeafProofRequest<'a> {
+struct MerkleProofRequest<'a> {
     leaves: &'a [LeafQuery],
 }
 
 #[derive(Deserialize)]
-struct LeafProofResponse {
-    proofs: Vec<LeafProofOutcome>,
+struct MerkleProofResponse {
+    proofs: Vec<MerkleProofOutcome>,
 }
 
-pub fn leaf_proof_request_body(queries: &[LeafQuery]) -> impl Serialize + '_ {
-    LeafProofRequest { leaves: queries }
+pub fn merkle_proof_request_body(queries: &[LeafQuery]) -> impl Serialize + '_ {
+    MerkleProofRequest { leaves: queries }
 }
 
 fn decode_siblings<'de, D: serde::Deserializer<'de>>(
@@ -133,8 +131,8 @@ fn decode_siblings<'de, D: serde::Deserializer<'de>>(
         .collect()
 }
 
-pub fn parse_leaf_proof_response(body: &str) -> Result<Vec<LeafProofOutcome>, ProofReadError> {
-    let response: LeafProofResponse = serde_json::from_str(body)
+pub fn parse_merkle_proof_response(body: &str) -> Result<Vec<MerkleProofOutcome>, ProofReadError> {
+    let response: MerkleProofResponse = serde_json::from_str(body)
         .map_err(|error| unavailable(format!("response does not decode: {error}")))?;
     Ok(response.proofs)
 }
@@ -157,7 +155,7 @@ impl CoprocessorProofClient {
             .iter()
             .map(|route| {
                 let mut url = route.url.clone();
-                url.set_path(LEAF_PROOFS_PATH);
+                url.set_path(MERKLE_PROOFS_PATH);
                 (url, route.api_key.clone())
             })
             .collect();
@@ -168,7 +166,7 @@ impl CoprocessorProofClient {
         &self,
         (route, api_key): &(Url, ApiKey),
         body: &[u8],
-    ) -> Result<Vec<LeafProofOutcome>, ProofReadError> {
+    ) -> Result<Vec<MerkleProofOutcome>, ProofReadError> {
         let response = self
             .client
             .post(route.clone())
@@ -200,7 +198,7 @@ impl CoprocessorProofClient {
             body.extend_from_slice(&chunk);
         }
         let text = std::str::from_utf8(&body).map_err(|e| unavailable(format!("{route}: {e}")))?;
-        parse_leaf_proof_response(text)
+        parse_merkle_proof_response(text)
     }
 }
 
@@ -213,9 +211,9 @@ impl HostProofReader for CoprocessorProofClient {
         &self,
         source: usize,
         queries: &[LeafQuery],
-    ) -> Result<Vec<LeafProofOutcome>, ProofReadError> {
-        let body = serde_json::to_vec(&leaf_proof_request_body(queries))
-            .expect("a leaf proof request has no map keys or fallible fields");
+    ) -> Result<Vec<MerkleProofOutcome>, ProofReadError> {
+        let body = serde_json::to_vec(&merkle_proof_request_body(queries))
+            .expect("a Merkle proof request has no map keys or fallible fields");
         self.read_from(&self.routes[source], &body).await
     }
 }
@@ -225,13 +223,13 @@ mod tests {
     use super::*;
 
     /// The shared spelling of the wire; the coprocessor pins its own against the same file.
-    const LEAF_PROOFS_FIXTURE: &str = concat!(
+    const MERKLE_PROOFS_FIXTURE: &str = concat!(
         env!("CARGO_MANIFEST_DIR"),
-        "/../../../solana/test-fixtures/leaf-proofs/leaf_proofs_v1.json"
+        "/../../../solana/test-fixtures/merkle-proofs/merkle_proofs_v1.json"
     );
 
     fn fixture() -> serde_json::Value {
-        serde_json::from_str(&std::fs::read_to_string(LEAF_PROOFS_FIXTURE).expect("read fixture"))
+        serde_json::from_str(&std::fs::read_to_string(MERKLE_PROOFS_FIXTURE).expect("read fixture"))
             .expect("fixture is json")
     }
 
@@ -257,7 +255,7 @@ mod tests {
             },
         ];
         assert_eq!(
-            serde_json::to_value(leaf_proof_request_body(&queries)).unwrap(),
+            serde_json::to_value(merkle_proof_request_body(&queries)).unwrap(),
             fixture["request"]
         );
     }
@@ -267,16 +265,15 @@ mod tests {
         let fixture = fixture();
         let body = serde_json::json!({ "proofs": fixture["proofs"] }).to_string();
         assert_eq!(
-            parse_leaf_proof_response(&body).expect("the fixture answers decode"),
+            parse_merkle_proof_response(&body).expect("the fixture answers decode"),
             vec![
-                LeafProofOutcome::Found {
+                MerkleProofOutcome::Found {
                     leaf_index: 1,
                     leaf_count: 3,
                     siblings: vec![[0x5B; 32]],
                 },
-                LeafProofOutcome::NotFound { leaf_count: 3 },
-                LeafProofOutcome::UnknownAccount,
-                LeafProofOutcome::HistoryIncomplete,
+                MerkleProofOutcome::NotFound { leaf_count: 3 },
+                MerkleProofOutcome::UnknownAccount,
             ]
         );
     }
@@ -301,7 +298,7 @@ mod tests {
             let mut server = MockServer::new_http("proof-response");
             server.mock(move |when, then| {
                 when.post()
-                    .path(LEAF_PROOFS_PATH)
+                    .path(MERKLE_PROOFS_PATH)
                     .header("authorization", "Bearer secret");
                 then.text(body.clone());
             });
@@ -341,7 +338,7 @@ mod tests {
             let mut server = MockServer::new_http(key);
             server.mock(move |when, then| {
                 when.post()
-                    .path(LEAF_PROOFS_PATH)
+                    .path(MERKLE_PROOFS_PATH)
                     .header("authorization", format!("Bearer {key}"));
                 then.text(r#"{"proofs":[{"status":"notFound","leafCount":0}]}"#);
             });

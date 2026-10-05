@@ -7,7 +7,7 @@
 //! holds no grant, a shorter one may still catch up.
 
 use super::encrypted_store::ResolvedEncryptedStore;
-use super::proof::{HostProofReader, LeafProofOutcome, LeafQuery, ProofReadError, check_length};
+use super::proof::{HostProofReader, LeafQuery, MerkleProofOutcome, ProofReadError, check_length};
 use alloy::primitives::B256;
 use futures::stream::{FuturesUnordered, StreamExt};
 use solana_pubkey::Pubkey;
@@ -18,16 +18,13 @@ use zama_solana_acl::{
 /// Asks every coprocessor for the whole batch at once, and returns one result per query in batch
 /// order. Only a found proof that verifies against the observed peaks resolves a query; as soon as
 /// every query is resolved the reads still running are dropped, so one slow coprocessor does not
-/// hold a request another one can serve. Otherwise every coprocessor's answer is merged as it
-/// arrives: a failed read or an answer of the wrong length says nothing about any leaf, and one
-/// coprocessor's terminal failure does not replace another's recoverable one. A terminal failure
-/// stands only if every coprocessor answered: a query that one of them could not answer, and no
-/// other answered with a recoverable failure, is a [`ProofReadError`]. The worker loop is the only
-/// retry layer.
+/// hold a request another one can serve. Otherwise a query keeps the last failure a coprocessor
+/// answered; a failed read or an answer of the wrong length says nothing about any leaf. A query
+/// no coprocessor answered is a [`ProofReadError`]. The worker loop is the only retry layer.
 pub async fn verify_proofs<P: HostProofReader, T: Sync>(
     reader: &P,
     batch: &[(LeafQuery, T)],
-    verify: impl Fn(&T, &LeafProofOutcome) -> Result<(), HandleBindingFailure>,
+    verify: impl Fn(&T, &MerkleProofOutcome) -> Result<(), HandleBindingFailure>,
 ) -> Result<Vec<Result<(), HandleBindingFailure>>, ProofReadError> {
     let queries: Vec<LeafQuery> = batch.iter().map(|(query, _)| *query).collect();
     let mut answers: FuturesUnordered<_> = (0..reader.source_count())
@@ -50,36 +47,20 @@ pub async fn verify_proofs<P: HostProofReader, T: Sync>(
             }
         };
         for ((kept, (_, item)), outcome) in results.iter_mut().zip(batch).zip(&outcomes) {
-            if *kept == Some(Ok(())) {
-                continue;
-            }
-            let result = verify(item, outcome);
-            let keeps_recoverable = matches!(kept, Some(Err(earlier)) if earlier.is_recoverable())
-                && matches!(&result, Err(later) if !later.is_recoverable());
-            if !keeps_recoverable {
-                *kept = Some(result);
+            if *kept != Some(Ok(())) {
+                *kept = Some(verify(item, outcome));
             }
         }
         if results.iter().all(|result| *result == Some(Ok(()))) {
             break;
         }
     }
-    let unanswered = !read_failures.is_empty();
     results
         .into_iter()
-        .map(|result| match result {
-            Some(Err(failure)) if unanswered && !failure.is_recoverable() => {
-                Err(ProofReadError::Unavailable {
-                    reason: format!(
-                        "{failure}, and not every coprocessor answered: {}",
-                        read_failures.join("; ")
-                    ),
-                })
-            }
-            Some(result) => Ok(result),
-            None => Err(ProofReadError::Unavailable {
+        .map(|result| {
+            result.ok_or_else(|| ProofReadError::Unavailable {
                 reason: format!("no coprocessor answered: {}", read_failures.join("; ")),
-            }),
+            })
         })
         .collect()
 }
@@ -90,7 +71,7 @@ pub fn check_handle_binding(
     encrypted_store: &ResolvedEncryptedStore,
     handle: B256,
     owner_address: Pubkey,
-    outcome: &LeafProofOutcome,
+    outcome: &MerkleProofOutcome,
 ) -> Result<(), HandleBindingFailure> {
     check_leaf(encrypted_store, outcome, |state, proof| {
         authorize_state_historical(
@@ -107,7 +88,7 @@ pub fn check_handle_binding(
 pub fn check_public_binding(
     encrypted_store: &ResolvedEncryptedStore,
     handle: B256,
-    outcome: &LeafProofOutcome,
+    outcome: &MerkleProofOutcome,
 ) -> Result<(), HandleBindingFailure> {
     check_leaf(encrypted_store, outcome, |state, proof| {
         authorize_state_public(
@@ -121,34 +102,33 @@ pub fn check_public_binding(
 
 fn check_leaf(
     encrypted_store: &ResolvedEncryptedStore,
-    outcome: &LeafProofOutcome,
+    outcome: &MerkleProofOutcome,
     verify: impl Fn(&EncryptedStore, &MmrProof) -> Result<(), AclError>,
 ) -> Result<(), HandleBindingFailure> {
     let state = encrypted_store.encrypted_store();
     let live_leaf_count = state.leaf_count;
 
     let (leaf_index, siblings, record_leaf_count) = match outcome {
-        LeafProofOutcome::Found {
+        MerkleProofOutcome::Found {
             leaf_index,
             leaf_count,
             siblings,
         } => (*leaf_index, siblings, *leaf_count),
-        LeafProofOutcome::NotFound { leaf_count } if *leaf_count >= live_leaf_count => {
+        MerkleProofOutcome::NotFound { leaf_count } if *leaf_count >= live_leaf_count => {
             return Err(HandleBindingFailure::NoLeaf {
                 record_leaf_count: *leaf_count,
                 live_leaf_count,
             });
         }
-        LeafProofOutcome::NotFound { leaf_count } => {
+        MerkleProofOutcome::NotFound { leaf_count } => {
             return Err(HandleBindingFailure::ProofRecordBehind {
                 record_leaf_count: *leaf_count,
                 live_leaf_count,
             });
         }
-        LeafProofOutcome::UnknownAccount => {
+        MerkleProofOutcome::UnknownAccount => {
             return Err(HandleBindingFailure::AccountUnknownToProofRecord);
         }
-        LeafProofOutcome::HistoryIncomplete => return Err(HandleBindingFailure::HistoryIncomplete),
     };
 
     // A leaf past the observed count means the record is ahead of this observation.
@@ -182,10 +162,8 @@ pub enum HandleBindingFailure {
     },
     #[error("the leaf record does not know this encrypted store")]
     AccountUnknownToProofRecord,
-    #[error("the leaf record's history for this encrypted store is incomplete")]
-    HistoryIncomplete,
     #[error(
-        "leaf proof does not verify against the observed peaks (record {record_leaf_count} \
+        "Merkle proof does not verify against the observed peaks (record {record_leaf_count} \
          leaves, chain {live_leaf_count})"
     )]
     ProofDoesNotVerify {

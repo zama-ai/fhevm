@@ -9,8 +9,9 @@ name: solana-e2e
 # retired full-vertical.sh label greps (and the checker that policed them) have no successor
 # because the failure mode is structurally gone.
 #
-# Computation ingestion is Yellowstone off-chain reconstruction: the coprocessor is fed by gRPC,
-# and the host listener recomputes every allow leaf from the confirmed instruction stream.
+# Computation ingestion is Yellowstone off-chain reconstruction: the host listener feeds the
+# coprocessor from gRPC, and the Merkle indexer recomputes every allow leaf from the same
+# confirmed instruction stream. A green suite ends by checking that record against the chain.
 #
 # The lifecycle bring-up also deploys and seeds the confidential-vault demo (#1760). After the e2e
 # phases, the same job refreshes that still-owned boot:

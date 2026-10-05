@@ -17,7 +17,20 @@ import { deployHostProgram } from '../../../../solana/deploy/src/deploy-host';
 import { deployProgramArtifacts } from '../../../../solana/deploy/src/deploy-programs';
 import { integerEnv } from '../../../../solana/deploy/src/gateway';
 import { SOLANA_LEAF_PROOF_API_KEY } from '../generate/solana';
-import { REPO_ROOT, SOLANA_LEAF_PROOF_PORT, SOLANA_LISTENER_HEALTH_PORT, STATE_DIR, envPath } from '../layout';
+import {
+  REPO_ROOT,
+  SOLANA_MERKLE_PROOF_PORT,
+  SOLANA_LISTENER_HEALTH_PORT,
+  SOLANA_MERKLE_DATABASE,
+  SOLANA_MERKLE_DB_COMPONENT,
+  SOLANA_MERKLE_DB_CONTAINER,
+  SOLANA_MERKLE_INDEXER_HEALTH_PORT,
+  SOLANA_MERKLE_POSTGRES_PORT,
+  STATE_DIR,
+  envPath,
+} from '../layout';
+import { waitForContainer } from '../flow/readiness';
+import { composeUp } from '../flow/runtime-compose';
 import { LOCAL_SOLANA_ENDPOINTS } from './endpoints';
 import { readEnvFile } from '../utils/fs';
 import { run, runStreaming } from '../utils/process';
@@ -80,6 +93,30 @@ export const readCoprocessorDatabaseUrl = async (): Promise<string> => {
   const url = environment.DATABASE_URL;
   if (!url) throw new Error('missing DATABASE_URL in the generated coprocessor env');
   return url.replace('@db:', '@127.0.0.1:');
+};
+
+/** Both Postgres containers read their credentials from the generated `database.env`. */
+const merkleDatabaseUrl = (coprocessorDatabaseUrl: string): string => {
+  const url = new URL(coprocessorDatabaseUrl);
+  url.port = String(SOLANA_MERKLE_POSTGRES_PORT);
+  url.pathname = `/${SOLANA_MERKLE_DATABASE}`;
+  return url.toString();
+};
+
+/**
+ * Starts the Merkle record's Postgres in a new container. The record follows this validator's
+ * ledger, which every provision starts fresh, so a record left from an earlier ledger would fail
+ * its resume.
+ */
+const startMerkleDatabase = async (): Promise<void> => {
+  await composeUp(SOLANA_MERKLE_DB_COMPONENT, [], { forceRecreate: true });
+  await waitForContainer(SOLANA_MERKLE_DB_CONTAINER, 'healthy');
+};
+
+/** The validator's confirmed slot: an existing block the Merkle indexer can start from. */
+const confirmedSlot = async (): Promise<bigint> => {
+  const { createSolanaRpc } = await import('@solana/kit');
+  return createSolanaRpc(VALIDATOR_RPC_URL).getSlot({ commitment: 'confirmed' }).send();
 };
 
 /**
@@ -197,7 +234,7 @@ export const startHostListener = async (parameters: {
   readonly lifecycleDir?: string;
 }): Promise<void> => {
   await replaceSolanaProcess('solana_host_listener', parameters.lifecycleDir);
-  await buildSolanaBinary('solana_host_listener');
+  await buildSolanaBinary('solana_host_listener', HOST_LISTENER_PACKAGE);
   await spawnSolanaProcess(
     'solana_host_listener',
     [
@@ -218,29 +255,64 @@ export const startHostListener = async (parameters: {
 };
 
 /**
- * Builds and runs the leaf-proof server the KMS connector reads, apart from the listener, as the
+ * Builds and runs the Merkle indexer, which records every encrypted store's leaves into its own
+ * database from `startSlot`, a block before any store exists.
+ */
+export const startMerkleIndexer = async (parameters: {
+  readonly zamaHostId: string;
+  readonly databaseUrl: string;
+  readonly startSlot: bigint;
+  readonly grpcUrl: string;
+  readonly logDir: string;
+  readonly lifecycleDir?: string;
+}): Promise<void> => {
+  await replaceSolanaProcess('solana_merkle_indexer', parameters.lifecycleDir);
+  await buildSolanaBinary('solana_merkle_indexer', MERKLE_PROOF_SERVICE_PACKAGE);
+  await spawnSolanaProcess(
+    'solana_merkle_indexer',
+    [
+      '--grpc-url',
+      parameters.grpcUrl,
+      '--database-url',
+      parameters.databaseUrl,
+      '--url',
+      VALIDATOR_RPC_URL,
+      '--program-id',
+      parameters.zamaHostId,
+      '--start-slot',
+      String(parameters.startSlot),
+      '--http-port',
+      String(SOLANA_MERKLE_INDEXER_HEALTH_PORT),
+    ],
+    path.join(parameters.logDir, 'merkle-indexer.log'),
+    parameters.lifecycleDir && path.join(parameters.lifecycleDir, 'merkle-indexer.pid'),
+  );
+};
+
+/**
+ * Builds and runs the Merkle proof server the KMS connector reads, apart from the indexer, as the
  * coprocessor chart deploys it. `--proof-api-key` has no default and the binary refuses to start
  * without it.
  */
-export const startLeafProofServer = async (parameters: {
+export const startMerkleProofServer = async (parameters: {
   readonly databaseUrl: string;
   readonly logDir: string;
   readonly lifecycleDir?: string;
 }): Promise<void> => {
-  await replaceSolanaProcess('solana_leaf_proof_server', parameters.lifecycleDir);
-  await buildSolanaBinary('solana_leaf_proof_server');
+  await replaceSolanaProcess('solana_merkle_proof_server', parameters.lifecycleDir);
+  await buildSolanaBinary('solana_merkle_proof_server', MERKLE_PROOF_SERVICE_PACKAGE);
   await spawnSolanaProcess(
-    'solana_leaf_proof_server',
+    'solana_merkle_proof_server',
     [
       '--database-url',
       parameters.databaseUrl,
       '--http-port',
-      String(SOLANA_LEAF_PROOF_PORT),
+      String(SOLANA_MERKLE_PROOF_PORT),
       '--proof-api-key',
       SOLANA_LEAF_PROOF_API_KEY,
     ],
-    path.join(parameters.logDir, 'leaf-proof-server.log'),
-    parameters.lifecycleDir && path.join(parameters.lifecycleDir, 'leaf-proof-server.pid'),
+    path.join(parameters.logDir, 'merkle-proof-server.log'),
+    parameters.lifecycleDir && path.join(parameters.lifecycleDir, 'merkle-proof-server.pid'),
   );
 };
 
@@ -261,13 +333,12 @@ const replaceSolanaProcess = async (binary: string, lifecycleDir: string | undef
   });
 };
 
-// Both binaries build with the listener's features, like the Dockerfile, so cargo reuses one
-// build of host-listener.
-const HOST_LISTENER_FEATURES = 'solana-grpc,solana-reconstruct';
+const HOST_LISTENER_PACKAGE = ['-p', 'host-listener', '--features', 'solana'] as const;
+const MERKLE_PROOF_SERVICE_PACKAGE = ['-p', 'solana-merkle-proof-service'] as const;
 
-const buildSolanaBinary = async (binary: string): Promise<void> => {
+const buildSolanaBinary = async (binary: string, cargoPackage: readonly string[]): Promise<void> => {
   const buildLog = `/tmp/${binary}-build.log`;
-  const build = await run(['cargo', 'build', '-p', 'host-listener', '--features', HOST_LISTENER_FEATURES, '--bin', binary], {
+  const build = await run(['cargo', 'build', ...cargoPackage, '--bin', binary], {
     cwd: ENGINE_DIR,
     allowFailure: true,
   });
@@ -358,20 +429,27 @@ export const provisionSolanaHostNode = async (): Promise<{ zamaHostId: string }>
   });
   await airdropDeployFees(deployerKeypairPath);
   const zamaHostId = await deployPrograms(deployerKeypairPath, gateway);
+  // Before any app creates an encrypted store, so the Merkle record holds every store from leaf 0.
+  const merkleStartSlot = await confirmedSlot();
 
   console.log('==> [3/4] register Solana host chain (coprocessor DB + gateway)');
   await registerSolanaHostChain({ zamaHostId, composeProject });
 
-  console.log('==> [4/4] run Solana host-listener and leaf-proof server');
+  console.log('==> [4/4] run Solana host-listener, Merkle indexer and Merkle proof server');
   const databaseUrl = await readCoprocessorDatabaseUrl();
-  await startHostListener({
+  const grpcUrl = process.env.GRPC_URL ?? LOCAL_SOLANA_ENDPOINTS.listenerGrpc;
+  await startHostListener({ zamaHostId, databaseUrl, grpcUrl, logDir, lifecycleDir });
+  await startMerkleDatabase();
+  const merkleUrl = merkleDatabaseUrl(databaseUrl);
+  await startMerkleIndexer({
     zamaHostId,
-    databaseUrl,
-    grpcUrl: process.env.GRPC_URL ?? LOCAL_SOLANA_ENDPOINTS.listenerGrpc,
+    databaseUrl: merkleUrl,
+    startSlot: merkleStartSlot,
+    grpcUrl,
     logDir,
     lifecycleDir,
   });
-  await startLeafProofServer({ databaseUrl, logDir, lifecycleDir });
+  await startMerkleProofServer({ databaseUrl: merkleUrl, logDir, lifecycleDir });
 
   console.log(
     `==> Solana side-stack ready. zama_host=${zamaHostId} host_chain_id=${SOLANA_HOST_CHAIN_ID}`,

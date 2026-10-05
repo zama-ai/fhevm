@@ -43,7 +43,7 @@ import {
   type ConnectorVerdict,
   type SolanaHostAccountsReader,
 } from './authorization.js';
-import type { SolanaLeafProofReader } from './leafProofs.js';
+import type { SolanaMerkleProofReader } from './merkleProofs.js';
 import { fetchCleartextStoreValue } from './storeValues.js';
 
 ////////////////////////////////////////////////////////////////////////////////
@@ -56,13 +56,13 @@ const PUBLIC_DECRYPT_RETRY_MS = 250;
 /**
  * Answers a user decryption with the plaintexts the host recorded for its handles, once the request
  * passes the Connector's authorization, through the production retry loop. The leaf proofs come
- * from `readLeafProofs`.
+ * from `readMerkleProofs`.
  */
 export function cleartextUserDecryptExecution(
   rpc: SolanaRpc,
   chain: FhevmSolanaChain,
   trust: SolanaDecryptTrust,
-  readLeafProofs: SolanaLeafProofReader,
+  readMerkleProofs: SolanaMerkleProofReader,
 ): SolanaUserDecryptExecution {
   const programAddress = solanaHostProgram(chain);
   return async ({ session, entries, attempts, options }) => {
@@ -126,7 +126,7 @@ export function cleartextUserDecryptExecution(
             signature,
             entries,
             readAccounts,
-            readLeafProofs,
+            readMerkleProofs,
           });
           const rejection = cleartextUserDecryptRejection(verdict);
           if (rejection !== undefined) return { ok: false, rejection };
@@ -247,7 +247,7 @@ export function cleartextUserDecryptRejection(verdict: ConnectorVerdict): Solana
 export function cleartextPublicDecryptCertifier(
   rpc: SolanaRpc,
   chain: FhevmSolanaChain,
-  readLeafProofs: SolanaLeafProofReader,
+  readMerkleProofs: SolanaMerkleProofReader,
 ): SolanaPublicDecryptCertifier {
   const programAddress = solanaHostProgram(chain);
   return async (parameters) => {
@@ -267,7 +267,7 @@ export function cleartextPublicDecryptCertifier(
           encryptedStore: getAddressDecoder().decode(encryptedStore),
         })),
         readAccounts,
-        readLeafProofs,
+        readMerkleProofs,
       });
       if (verdict.authorized) break;
       if (!CONNECTOR_FAILURE_RECOVERABLE[verdict.failure] || attempt === PUBLIC_DECRYPT_ATTEMPTS) {

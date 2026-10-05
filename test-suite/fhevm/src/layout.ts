@@ -168,13 +168,30 @@ export const POSTGRES_PORT = 5432;
 export const DEFAULT_POSTGRES_USER = "postgres";
 export const DEFAULT_POSTGRES_PASSWORD = "postgres";
 export const DEFAULT_POSTGRES_DB = "coprocessor";
+/** The Merkle proof service's own Postgres; the names and port are those of `docker-compose/solana-merkle-db-docker-compose.yml`. */
+export const SOLANA_MERKLE_DB_COMPONENT = "solana-merkle-db";
+export const SOLANA_MERKLE_DB_CONTAINER = "solana-merkle-db";
+export const SOLANA_MERKLE_DATABASE = "solana_merkle";
+export const SOLANA_MERKLE_POSTGRES_PORT = 5434;
+/** Command prefix that opens `psql` on the local Merkle record. */
+export const solanaMerkleDbPsql = (): readonly string[] => [
+  "docker",
+  "exec",
+  SOLANA_MERKLE_DB_CONTAINER,
+  "psql",
+  "-U",
+  "postgres",
+  "-d",
+  SOLANA_MERKLE_DATABASE,
+];
 // Solana side of the local stack: the test validator, the native host listener (health HTTP and
-// gRPC), the leaf-proof server, and the demo's own processes. `src/solana/endpoints.ts` turns these
-// into loopback URLs.
+// gRPC), the Merkle indexer's health HTTP, the Merkle proof server, and the demo's own processes.
+// `src/solana/endpoints.ts` turns these into loopback URLs.
 export const SOLANA_VALIDATOR_RPC_PORT = 8899;
 export const SOLANA_VALIDATOR_WS_PORT = 8900;
-export const SOLANA_LEAF_PROOF_PORT = 8080;
+export const SOLANA_MERKLE_PROOF_PORT = 8080;
 export const SOLANA_LISTENER_HEALTH_PORT = 8081;
+export const SOLANA_MERKLE_INDEXER_HEALTH_PORT = 8082;
 export const SOLANA_LISTENER_GRPC_PORT = 10000;
 // The cleartext stack's own validator (`src/solana/cleartext-stack.ts`), clear of the real stack's.
 export const SOLANA_CLEARTEXT_RPC_PORT = 28899;
@@ -274,7 +291,8 @@ export const COMPONENT_BY_STEP: Record<StepName, string[]> = {
   "kms-connector": ["kms-connector"],
   "bootstrap": ["gateway-sc", "host-sc"],
   "relayer": ["relayer"],
-  // No compose components by design: this step runs host-process nodes outside compose.
+  // Its nodes run outside compose. The one compose service it starts, the Merkle record's
+  // database, is recreated by every Solana provision, so no step owns it.
   "host-process": [],
   "test-suite": ["test-suite"],
 };

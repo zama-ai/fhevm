@@ -1,0 +1,57 @@
+[package]
+name = "solana-host-follower"
+version = "0.7.0"
+authors.workspace = true
+edition.workspace = true
+license.workspace = true
+
+[dependencies]
+anyhow = { workspace = true }
+bs58 = "0.5.1"
+clap = { workspace = true }
+futures-util = { workspace = true }
+prometheus = { workspace = true }
+tokio = { workspace = true }
+tokio-util = { workspace = true }
+tracing = { workspace = true }
+
+solana-client = "3.0"
+solana-commitment-config = "3.1"
+solana-sdk = "3.0"
+# `getBlock` and `getTransaction` response types, for rebuilding a slot from an archive.
+solana-transaction-status-client-types = "3.1"
+
+# TLS is needed for hosted Yellowstone endpoints (https://); the local plugin in e2e is plaintext.
+# aws-lc is the rustls provider the rest of the workspace uses (rustls, reqwest, sqlx).
+tonic = { workspace = true, features = ["tls-aws-lc", "tls-webpki-roots"] }
+# Pinned to the SAME tag as the plugin solana/geyser/build-yellowstone-plugin.sh fetches, so the
+# client proto and the server proto are generated from the same file. The geyser plugin has no
+# stable ABI, so that tag also tracks the agave line the validator runs — 4.1 today.
+#
+# The tag and the workspace tonic version move together and cannot be split: this crate's proto is
+# generated against whatever tonic the tag was cut with, and mixing that with a different tonic in
+# our own code gives two incompatible `Body`/`Interceptor` types with the same name.
+#
+# This crate also brings its own solana-pubkey (4.3.0) alongside the 3.0.0 one solana-sdk pulls in.
+# Harmless because nothing crosses the boundary as a Pubkey: the wire carries base58 strings and raw
+# bytes, and we parse those into our own types. Keep it that way — handing one crate's Pubkey to the
+# other does not compile, and the error names the type, not the version skew behind it.
+#
+# We drive the tonic GeyserClient directly rather than through yellowstone-grpc-client.
+yellowstone-grpc-proto = { git = "https://github.com/rpcpool/yellowstone-grpc", tag = "v14.2.2+solana.4.1.0", default-features = false, features = ["tonic", "tonic-compression"] }
+
+# no-entrypoint builds the program crate as a host library, so its own decoders and types read
+# the instructions (parity, not a copy).
+zama-host = { path = "../../../solana/programs/zama-host", default-features = false, features = ["no-entrypoint", "decode"] }
+# AnchorDeserialize for zama-host's instruction arguments.
+anchor-lang = "1.2.0"
+zama-solana-transaction = { path = "../../../solana/crates/zama-solana-transaction" }
+
+[dev-dependencies]
+base64 = "0.22.1"
+bincode = "1.3"
+serde = { workspace = true, features = ["derive"] }
+serde_json = { workspace = true }
+
+[lints]
+workspace = true

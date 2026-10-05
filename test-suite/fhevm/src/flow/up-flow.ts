@@ -72,6 +72,8 @@ import {
   PROJECT,
   REPO_ROOT,
   SCHEMA_COUPLED_GROUPS,
+  SOLANA_MERKLE_DB_COMPONENT,
+  SOLANA_MERKLE_POSTGRES_PORT,
   STATE_DIR,
   TEST_SUITE_CONTAINER,
   coprocessorDatabaseName,
@@ -322,6 +324,7 @@ export const preflightPorts = (state: Pick<State, "scenario">) =>
       ...PORTS,
       ...(scenarioUsesForkAnvil(state.scenario) ? [DEFAULT_FORK_RPC_PORT] : []),
       ...state.scenario.hostChains.filter((c) => isEvmHost(c)).map((c) => c.rpcPort),
+      ...(state.scenario.hostChains.some((c) => !isEvmHost(c)) ? [SOLANA_MERKLE_POSTGRES_PORT] : []),
     ]),
   ];
 
@@ -1305,8 +1308,8 @@ export const runStep = async (state: State, step: StepName) => {
       await waitForLog("fhevm-relayer", /All servers are ready and responding/);
       break;
     case "host-process": {
-      // The nodes fhevm-cli spawns itself rather than handing to compose. Imported lazily so an
-      // EVM-only `up` never loads the Solana client stack.
+      // The Solana nodes fhevm-cli spawns itself, beside the Merkle record's database container.
+      // Imported lazily so an EVM-only `up` never loads the Solana client stack.
       for (const chain of hostChainsForState(state).filter((c) => c.type === "solana")) {
         const { provisionSolanaHostNode } = await import("../solana/deploy");
         const { zamaHostId } = await provisionSolanaHostNode();
@@ -1665,7 +1668,7 @@ export const down = async () => {
       if (!ok) failed.push(name);
     }
   }
-  for (const component of [...COMPONENTS].reverse()) {
+  for (const component of [SOLANA_MERKLE_DB_COMPONENT, ...[...COMPONENTS].reverse()]) {
     console.log(`[down] ${component}`);
     const ok = await composeDown(component);
     if (!ok) {
