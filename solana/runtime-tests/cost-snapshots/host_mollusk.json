@@ -6,7 +6,7 @@
   },
   "measurements": {
     "fhe_execute/max_steps": {
-      "compute_units": 115151,
+      "compute_units": 115190,
       "unique_accounts": 9,
       "instruction_data_bytes": 536,
       "cpi_instructions": 1,
@@ -14,7 +14,7 @@
       "max_cpi_instruction_data_bytes": 1089
     },
     "fhe_execute/three_steps": {
-      "compute_units": 62859,
+      "compute_units": 62869,
       "unique_accounts": 9,
       "instruction_data_bytes": 275,
       "cpi_instructions": 1,
@@ -22,7 +22,7 @@
       "max_cpi_instruction_data_bytes": 161
     },
     "verify_public_decrypt/happy": {
-      "compute_units": 34012,
+      "compute_units": 33990,
       "unique_accounts": 3,
       "instruction_data_bytes": 146,
       "cpi_instructions": 0,
