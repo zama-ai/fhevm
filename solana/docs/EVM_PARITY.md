@@ -1,7 +1,7 @@
 # EVM → Solana parity
 
 This maps the Solana port to EVM FHEVM outcomes. It does not claim identical ACL
-semantics. The current account and composition model is RFC35 / PR3883; DD-049 in
+semantics. The current account and composition model is the Solana access control RFC / PR3883; DD-049 in
 [DESIGN_DECISIONS.md](DESIGN_DECISIONS.md) replaces older account interfaces.
 
 ## Encrypted computation and permissions

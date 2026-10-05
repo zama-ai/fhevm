@@ -41,13 +41,13 @@ atomic join/deposit that CPIs `confidential_transfer` (see `confidential-batcher
 Token-2022-style transfer hook, which is a **veto-only** primitive (it can reject a transfer, not run
 privileged receiver logic). It is not a receiver callback and must not be documented as one.
 
-## 5. Gateway RFC-021 reconciliation and host-listener event surface
+## 5. Gateway chain-agnostic address RFC reconciliation and host-listener event surface
 
 The Solana input path uses the gateway `InputVerification.verifyProofRequestSolana` +
 `VerifyProofRequestSolana` bytes32 entrypoint (kept, not renamed to V2 — DD-030). User-decrypt uses
 `solanaUserDecryptionRequest` with the `solana-srfc38-user-decrypt-v1` payload (DD-026).
 
-**Requirement:** keep the port and RFC-021 in sync as the gateway evolves. The Solana
+**Requirement:** keep the port and the chain-agnostic address RFC (zama-ai/tech-spec#419) in sync as the gateway evolves. The Solana
 host-listener reconstructs from confirmed Yellowstone instructions and inserts directly, while KMS
 revalidates confirmed live authorization before plaintext release (DD-024, DD-025, DD-028). Wiring
 the listener into the EVM block-status substrate (`host_chain_blocks_valid` +

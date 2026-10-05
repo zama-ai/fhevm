@@ -126,7 +126,7 @@ separate explicit choice, exactly like EVM.
 check lets an observer replay another user's verified input.
 
 This mirrors the EVM `InputVerification` coprocessor-threshold model; the gateway counterpart is the
-RFC-021 bytes32 path `InputVerification.verifyProofRequestSolana`. The host-listener reconstruct path
+chain-agnostic address RFC's bytes32 path `InputVerification.verifyProofRequestSolana`. The host-listener reconstruct path
 resolves the operand from `attestation.input_handle`. The shared verifier is
 `eip712::verify_coprocessor_input` (via `instructions::input_verification::verify_input_attestation`);
 the earlier standalone `verify_coprocessor_input`/`verify_input_and_bind`/`mock_input_verified_and_bind`
