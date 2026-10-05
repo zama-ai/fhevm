@@ -289,7 +289,7 @@ produced a large, separately-maintained native-v0 admission/store/response subsy
 Decision:
 
 Treat Solana as a **gateway-compatible host chain** and route its decrypt flows through the unified
-Gateway V2 path (RFC-016) rather than a parallel native stack:
+Gateway V2 path (the Unified EIP-712 Decryption Request RFC) rather than a parallel native stack:
 
 - **User-decrypt** flows through the unified Gateway V2 path, through the Gateway's
   `solanaUserDecryptionRequest` entry, which types the handles, validity, transport key and
