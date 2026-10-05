@@ -755,7 +755,7 @@ mod tests {
     use super::*;
     use zama_solana_acl::mmr_build_proof;
 
-    const STATE: [u8; 32] = [0xAC; 32];
+    const STORE: [u8; 32] = [0xAC; 32];
     const OWNER: [u8; 32] = [0xA1; 32];
 
     fn write(
@@ -765,7 +765,7 @@ mod tests {
         make_public: bool,
     ) -> EncryptedStoreWrite {
         EncryptedStoreWrite {
-            encrypted_store: STATE,
+            encrypted_store: STORE,
             previous_leaf_count,
             handle,
             allowed_keys,
@@ -792,7 +792,7 @@ mod tests {
             BTreeMap::new(),
         )
         .unwrap();
-        let cursor = &reduction.stores[&STATE];
+        let cursor = &reduction.stores[&STORE];
         assert_eq!(cursor.leaf_count, 3);
         assert_eq!(cursor.peaks.len(), 2);
         assert_eq!(reduction.leaves.len(), 3);
@@ -814,7 +814,7 @@ mod tests {
         assert_eq!(
             error,
             LeafReduceError::UnrecordedHistory {
-                encrypted_store: STATE,
+                encrypted_store: STORE,
                 previous_leaf_count: 7,
             }
         );
@@ -826,7 +826,7 @@ mod tests {
         let error = reduce_block_leaves(
             &[transaction(vec![write(3, [2; 32], vec![], false)])],
             BTreeMap::from([(
-                STATE,
+                STORE,
                 EncryptedStoreCursor {
                     leaf_count: 4,
                     peaks: vec![[1; 32]],
@@ -837,7 +837,7 @@ mod tests {
         assert_eq!(
             error,
             LeafReduceError::PreviousLeafCountMismatch {
-                encrypted_store: STATE,
+                encrypted_store: STORE,
                 declared: 3,
                 recorded: 4,
             }
@@ -851,7 +851,7 @@ mod tests {
             BTreeMap::new(),
         )
         .unwrap();
-        assert_eq!(reduction.stores[&STATE].leaf_count, 0);
+        assert_eq!(reduction.stores[&STORE].leaf_count, 0);
         assert!(reduction.leaves.is_empty());
     }
 
@@ -860,7 +860,7 @@ mod tests {
         let error = reduce_block_leaves(
             &[transaction(vec![write(0, [1; 32], vec![], false)])],
             BTreeMap::from([(
-                STATE,
+                STORE,
                 EncryptedStoreCursor {
                     leaf_count: 0,
                     peaks: vec![[1; 32]],
@@ -871,7 +871,7 @@ mod tests {
         assert_eq!(
             error,
             LeafReduceError::Mmr {
-                encrypted_store: STATE,
+                encrypted_store: STORE,
                 error: AclError::MmrInconsistent,
             }
         );
@@ -887,7 +887,7 @@ mod tests {
         let first = reduce_block_leaves(&block, BTreeMap::new()).unwrap();
         assert_eq!(
             replay_block_leaves(&block).unwrap(),
-            BTreeMap::from([(STATE, first.leaves)])
+            BTreeMap::from([(STORE, first.leaves)])
         );
     }
 
@@ -961,7 +961,7 @@ mod tests {
         assert_eq!(
             replay_block_leaves(&[transaction(writes)]),
             Err(LeafReduceError::PreviousLeafCountMismatch {
-                encrypted_store: STATE,
+                encrypted_store: STORE,
                 declared: 2,
                 recorded: 1,
             })

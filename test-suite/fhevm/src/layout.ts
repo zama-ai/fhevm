@@ -171,8 +171,8 @@ export const DEFAULT_POSTGRES_DB = "coprocessor";
 /** The Merkle proof service's own database, on the coprocessor's Postgres server. */
 export const SOLANA_MERKLE_DATABASE = "solana_merkle";
 // Solana side of the local stack: the test validator, the native host listener (health HTTP and
-// gRPC), the Merkle indexer's health HTTP, the Merkle proof server, and the demo's own processes. `src/solana/endpoints.ts` turns these
-// into loopback URLs.
+// gRPC), the Merkle indexer's health HTTP, the Merkle proof server, and the demo's own processes.
+// `src/solana/endpoints.ts` turns these into loopback URLs.
 export const SOLANA_VALIDATOR_RPC_PORT = 8899;
 export const SOLANA_VALIDATOR_WS_PORT = 8900;
 export const SOLANA_MERKLE_PROOF_PORT = 8080;
