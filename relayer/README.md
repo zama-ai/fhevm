@@ -140,7 +140,7 @@ make health              # Verify health endpoints
 ## Development
 
 For build, test, lint, local stack, and CI instructions, see [docs/DEVELOPMENT.md](docs/DEVELOPMENT.md).
-For contribution guidelines, see [CONTRIBUTING.md](../../CONTRIBUTING.md).
+For contribution guidelines, see [../CONTRIBUTING.md](../CONTRIBUTING.md).
 
 `make setup` is the dev-oriented shortcut (db-start + db-migrate + copies local mock config).
 
