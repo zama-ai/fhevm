@@ -9,8 +9,10 @@ import type { FhevmSolanaChain } from '../../core/types/fhevmSolanaChain.js';
 import type { SolanaDecryptTrust } from '../clients/decorators/permitDecrypt.js';
 import type { SolanaRpc } from '../encryptedStore.js';
 import type { SolanaLeafProofReader } from './leafProofs.js';
-import { bytesToHex } from '../../core/base/bytes.js';
-import { buildHandle } from '../../core/handle/FhevmHandle.js';
+import { bytesToHex, bytesToHexNo0x, concatBytes, hexToBytes } from '../../core/base/bytes.js';
+import { buildHandle, toFhevmHandle } from '../../core/handle/FhevmHandle.js';
+import { createKmsPublicDecryptEip712, publicDecryptDigest } from '../../core/kms/createKmsPublicDecryptEip712.js';
+import { verifyPublicDecryptSignatures } from '../actions/decryptPublicValue.js';
 import { RelayerAbortError } from '../../core/errors/RelayerAbortError.js';
 import { RelayerTimeoutError } from '../../core/errors/RelayerTimeoutError.js';
 import type { RelayerUserDecryptOptions } from '../../core/types/relayer.js';
@@ -28,6 +30,7 @@ import {
   cleartextUserDecryptExecution,
   cleartextUserDecryptRejection,
 } from './decrypt.js';
+import { SOLANA_CLEARTEXT_SIGNER_ADDRESSES } from './parties.js';
 
 const host = address('11111111111111111111111111111112');
 const signer = address('SysvarRent111111111111111111111111111111111');
@@ -84,6 +87,57 @@ describe('cleartextPublicDecryptCertifier', () => {
 
   beforeEach(() => vi.useFakeTimers());
   afterEach(() => vi.useRealTimers());
+
+  it('certifies a batch in request order, one word per handle, as the SDK verifies it', async () => {
+    const second = {
+      handle: buildHandle({ chainId: 5n, hash21: `0x${'b2'.repeat(21)}`, fheTypeId: 5 }).bytes32,
+      encryptedStore: new Uint8Array(32).fill(0xeb),
+    };
+    const batch = { entries: [...parameters.entries, second], contextId: new Uint8Array(32).fill(0x44) };
+    const word = (value: number) => Uint8Array.from({ length: 32 }, (_, index) => (index === 31 ? value : 0));
+    const valueOf = new Map([
+      [0xea, word(1)],
+      [0xeb, word(7)],
+    ]);
+    const kmsSigners = SOLANA_CLEARTEXT_SIGNER_ADDRESSES.kms.map((signer) => hexToBytes(signer));
+    const decryptionContract = new Uint8Array(20).fill(0xdc);
+    vi.spyOn(authorization, 'judgeSolanaPublicDecryption').mockResolvedValue({ authorized: true });
+    vi.spyOn(storeValues, 'fetchCleartextStoreValue').mockImplementation(async (_rpc, _program, store) => {
+      const value = valueOf.get(store[0] ?? -1);
+      if (value === undefined) throw new Error('unknown store');
+      return value;
+    });
+    vi.spyOn(hostConfigAccount, 'fetchHostConfig').mockResolvedValue({
+      data: { gatewayChainId: 7n, decryptionContract },
+    } as unknown as Awaited<ReturnType<typeof hostConfigAccount.fetchHostConfig>>);
+    vi.spyOn(kmsContextAccount, 'fetchKmsContext').mockResolvedValue({
+      data: { signers: kmsSigners, thresholds: { publicDecryption: 1 } },
+    } as unknown as Awaited<ReturnType<typeof kmsContextAccount.fetchKmsContext>>);
+
+    const claim = await certify(batch);
+
+    const handles = batch.entries.map(({ handle }) => toFhevmHandle(handle));
+    expect(claim.handles).toEqual(handles.map((handle) => handle.bytes32Hex));
+    expect(claim.abiEncodedCleartext).toBe(bytesToHexNo0x(concatBytes(word(1), word(7))));
+    expect(authorization.judgeSolanaPublicDecryption).toHaveBeenCalledTimes(1);
+    const digest = publicDecryptDigest(
+      createKmsPublicDecryptEip712({
+        verifyingContractAddressDecryption: bytesToHex(decryptionContract),
+        chainId: 7n,
+        handles,
+        decryptedResult: `0x${claim.abiEncodedCleartext}`,
+        extraData: claim.extraData,
+      }),
+    );
+    expect(() =>
+      verifyPublicDecryptSignatures(
+        digest,
+        claim.signatures.map((signature) => `0x${signature}`),
+        kmsSigners,
+        1,
+      ),
+    ).not.toThrow();
+  });
 
   it('fails at once on a failure the Connector never clears', async () => {
     vi.spyOn(authorization, 'judgeSolanaPublicDecryption').mockResolvedValue(
