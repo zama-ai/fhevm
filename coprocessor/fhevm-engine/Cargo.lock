@@ -10046,11 +10046,11 @@ version = "0.7.0"
 dependencies = [
  "anchor-lang",
  "anyhow",
- "base64 0.22.1",
- "bincode",
+ "async-trait",
  "bs58",
  "clap",
  "futures-util",
+ "hex",
  "prometheus",
  "serde",
  "serde_json",

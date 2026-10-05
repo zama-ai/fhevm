@@ -6,17 +6,17 @@
 //! "accounts"` lists each transaction's signature, account keys and error, without instruction
 //! data or logs ([`list_rpc_block`]): its size grows with the block's transaction count and
 //! account keys. Each successful transaction naming the host is then fetched alone with
-//! `getTransaction`, `encoding: "base64"` and `maxSupportedTransactionVersion: 0`, and reduced to
-//! the host's instructions as it arrives ([`prepare_rpc_transaction`]).
+//! `getTransaction`, `encoding: "json"` and `maxSupportedTransactionVersion: 1`, and reduced to
+//! the host's instructions as it arrives ([`prepare_rpc_transaction`]). JSON spells legacy, v0
+//! and v1 messages alike, so no SDK message type has to know the version.
 
 use anyhow::{anyhow, bail, ensure, Context, Result};
-use solana_sdk::{
-    message::VersionedMessage, pubkey::Pubkey, signature::Signature,
-};
+use solana_sdk::{pubkey::Pubkey, signature::Signature};
 use solana_transaction_status_client_types::{
     option_serializer::OptionSerializer,
     EncodedConfirmedTransactionWithStatusMeta, EncodedTransaction,
-    UiConfirmedBlock, UiInstruction, UiTransactionStatusMeta,
+    UiCompiledInstruction, UiConfirmedBlock, UiInstruction, UiMessage,
+    UiRawMessage, UiTransaction, UiTransactionStatusMeta,
 };
 use zama_solana_transaction::{
     CompiledInstruction, InnerInstructionGroup, ResolvedInstruction,
@@ -108,17 +108,18 @@ pub(super) fn prepare_rpc_transaction(
         .meta
         .ok_or_else(|| anyhow!("transaction {signature} has no status meta"))?;
     ensure!(meta.err.is_none(), "transaction {signature} failed");
-    let transaction =
-        fetched.transaction.transaction.decode().ok_or_else(|| {
-            anyhow!(
-                "transaction {signature} is not a sanitized base64 transaction"
-            )
-        })?;
+    let EncodedTransaction::Json(UiTransaction {
+        signatures,
+        message: UiMessage::Raw(message),
+    }) = fetched.transaction.transaction
+    else {
+        bail!("transaction {signature} is not a raw JSON transaction; request encoding \"json\"")
+    };
     ensure!(
-        transaction.signatures.first() == Some(&signature),
+        signatures.first() == Some(&signature.to_string()),
         "getTransaction for {signature} returned another transaction"
     );
-    let instructions = resolve_rpc_transaction(&transaction.message, &meta)
+    let instructions = resolve_rpc_transaction(&message, &meta)
         .with_context(|| format!("transaction {index} in slot {slot}"))?;
     Ok(PreparedTransaction {
         signature,
@@ -128,14 +129,10 @@ pub(super) fn prepare_rpc_transaction(
 }
 
 fn resolve_rpc_transaction(
-    message: &VersionedMessage,
+    message: &UiRawMessage,
     meta: &UiTransactionStatusMeta,
 ) -> Result<Vec<ResolvedInstruction>> {
-    let static_keys = message
-        .static_account_keys()
-        .iter()
-        .map(|key| key.to_bytes())
-        .collect::<Vec<_>>();
+    let static_keys = decode_keys(&message.account_keys)?;
     let (loaded_writable_keys, loaded_readonly_keys) = match &meta
         .loaded_addresses
     {
@@ -144,7 +141,8 @@ fn resolve_rpc_transaction(
             decode_keys(&loaded.readonly)?,
         ),
         _ if message
-            .address_table_lookups()
+            .address_table_lookups
+            .as_ref()
             .is_some_and(|lookups| !lookups.is_empty()) =>
         {
             bail!("transaction uses address lookup tables but its meta has no loaded addresses")
@@ -152,19 +150,10 @@ fn resolve_rpc_transaction(
         _ => (Vec::new(), Vec::new()),
     };
     let top_level = message
-        .instructions()
+        .instructions
         .iter()
-        .map(|instruction| CompiledInstruction {
-            program_id_index: usize::from(instruction.program_id_index),
-            account_indices: instruction
-                .accounts
-                .iter()
-                .map(|index| usize::from(*index))
-                .collect(),
-            data: instruction.data.clone(),
-            stack_height: None,
-        })
-        .collect();
+        .map(compiled_instruction)
+        .collect::<Result<_>>()?;
     // A node that did not record inner instructions would hide every CPI into the host.
     let OptionSerializer::Some(inner) = &meta.inner_instructions else {
         bail!("transaction meta has no inner instructions")
@@ -179,20 +168,9 @@ fn resolve_rpc_transaction(
                     .iter()
                     .map(|instruction| {
                         let UiInstruction::Compiled(instruction) = instruction else {
-                            bail!("inner instruction is parsed; request base64 encoding")
+                            bail!("inner instruction is parsed; request encoding \"json\"")
                         };
-                        Ok(CompiledInstruction {
-                            program_id_index: usize::from(instruction.program_id_index),
-                            account_indices: instruction
-                                .accounts
-                                .iter()
-                                .map(|index| usize::from(*index))
-                                .collect(),
-                            data: bs58::decode(&instruction.data)
-                                .into_vec()
-                                .context("inner instruction data is not base58")?,
-                            stack_height: instruction.stack_height,
-                        })
+                        compiled_instruction(instruction)
                     })
                     .collect::<Result<_>>()?,
             })
@@ -206,6 +184,23 @@ fn resolve_rpc_transaction(
         inner_groups,
     )
     .map_err(anyhow::Error::from)
+}
+
+fn compiled_instruction(
+    instruction: &UiCompiledInstruction,
+) -> Result<CompiledInstruction> {
+    Ok(CompiledInstruction {
+        program_id_index: usize::from(instruction.program_id_index),
+        account_indices: instruction
+            .accounts
+            .iter()
+            .map(|index| usize::from(*index))
+            .collect(),
+        data: bs58::decode(&instruction.data)
+            .into_vec()
+            .context("instruction data is not base58")?,
+        stack_height: instruction.stack_height,
+    })
 }
 
 fn decode_keys(keys: &[String]) -> Result<Vec<[u8; 32]>> {
@@ -222,13 +217,10 @@ fn decode_hash(value: &str) -> Result<[u8; 32]> {
 
 #[cfg(test)]
 mod tests {
-    use base64::{prelude::BASE64_STANDARD, Engine};
     use serde_json::{json, Value};
-    use solana_sdk::{
-        pubkey::Pubkey, signature::Signature, transaction::VersionedTransaction,
-    };
+    use solana_sdk::{pubkey::Pubkey, signature::Signature};
     use solana_transaction_status_client_types::{
-        EncodedTransaction, TransactionBinaryEncoding, UiConfirmedBlock,
+        EncodedTransaction, UiConfirmedBlock, UiMessage, UiTransaction,
     };
 
     use super::super::wire_fixtures::{
@@ -262,22 +254,19 @@ mod tests {
         block_json(slot, slot - 1, hash, transactions)
     }
 
-    /// Resolves `transaction` from its `getTransaction` response. The bytes are decoded without
-    /// sanitizing, as the fixtures include shapes no ledger holds; production decoding
-    /// sanitizes first (`rebuilds_a_slot_from_get_block_and_get_transaction`).
+    /// Resolves `transaction` from its `getTransaction` response, before the host filter.
     fn rpc_resolution(
         transaction: &Transaction,
     ) -> anyhow::Result<Vec<zama_solana_transaction::ResolvedInstruction>> {
         let encoded = transaction.rpc_transaction(9).transaction;
-        let EncodedTransaction::Binary(blob, TransactionBinaryEncoding::Base64) =
-            &encoded.transaction
+        let EncodedTransaction::Json(UiTransaction {
+            message: UiMessage::Raw(message),
+            ..
+        }) = &encoded.transaction
         else {
-            panic!("base64 transaction")
+            panic!("raw JSON transaction")
         };
-        let decoded: VersionedTransaction =
-            bincode::deserialize(&BASE64_STANDARD.decode(blob).unwrap())
-                .unwrap();
-        resolve_rpc_transaction(&decoded.message, &encoded.meta.unwrap())
+        resolve_rpc_transaction(message, &encoded.meta.unwrap())
     }
 
     /// Both wire formats resolve every shared fixture as it expects.

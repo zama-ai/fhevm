@@ -48,8 +48,8 @@ anchor-lang = "1.2.0"
 zama-solana-transaction = { path = "../../../solana/crates/zama-solana-transaction" }
 
 [dev-dependencies]
-base64 = "0.22.1"
-bincode = "1.3"
+async-trait = { workspace = true }
+hex = { workspace = true }
 serde = { workspace = true, features = ["derive"] }
 serde_json = { workspace = true }
 

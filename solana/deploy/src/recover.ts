@@ -440,12 +440,12 @@ export async function recoverPreview(
   let netRecovered = 0n;
   for (const { signature, lastValidBlockHeight } of await journal.receipts()) {
     let transaction = await context.rpc
-      .getTransaction(signature, { commitment: 'confirmed', encoding: 'json', maxSupportedTransactionVersion: 0 })
+      .getTransaction(signature, { commitment: 'confirmed', encoding: 'json', maxSupportedTransactionVersion: 1 })
       .send();
     for (let attempt = 0; transaction === null && attempt < 20; attempt++) {
       await sleep(1_000);
       transaction = await context.rpc
-        .getTransaction(signature, { commitment: 'confirmed', encoding: 'json', maxSupportedTransactionVersion: 0 })
+        .getTransaction(signature, { commitment: 'confirmed', encoding: 'json', maxSupportedTransactionVersion: 1 })
         .send();
     }
     if (

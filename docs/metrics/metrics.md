@@ -149,7 +149,7 @@ On an empty database the indexer starts from the zama-host deployment slot, not 
 
 #### Metric Name: `solana_host_follower_archive_catch_up_active`
  - **Type**: Gauge (labeled by `host_chain_id`)
- - **Description**: 1 while the listener rebuilds, from the archive RPC, slots the stream can no longer replay, else 0. The lag gauges above show its progress. A catch-up that keeps failing, such as on an archive missing the slots or on a v1 transaction until fhevm-internal#2080, shows as the gauge returning to 1 while reconnects rise and the lag stays flat.
+ - **Description**: 1 while the listener rebuilds, from the archive RPC, slots the stream can no longer replay, else 0. The lag gauges above show its progress. A catch-up that keeps failing, such as on an archive missing the slots, shows as the gauge returning to 1 while reconnects rise and the lag stays flat.
  - **Alarm**: None of its own; the time lag pages.
 
 #### Metric Name: `solana_host_follower_reconnects_total`
