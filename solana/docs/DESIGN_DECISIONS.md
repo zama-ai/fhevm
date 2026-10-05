@@ -74,7 +74,7 @@ are written as one narrative instead.
 | [DD-045](#dd-045-keep-burn-settlement-sequential-and-keep-wrapper-policy-separate-from-host-governance)                                   | adopted; see the note under its status   | Keep Burn Settlement Sequential and Keep Wrapper Policy Separate From Host Governance                                           |
 | [DD-046](#dd-046-the-program-heap-is-fixed-at-32-kb--no-custom-allocator-raised-heap-deleted)                                             | adopted                                  | The Program Heap Is Fixed At 32 KB — No Custom Allocator (`raised-heap` deleted)                                                |
 | [DD-047](#dd-047-the-application-is-program-scope--program-verified-scope-owned-by-program-rfc-035)                                       | adopted; see the note under its status   | The Application Is `(program, scope)` — Program Verified, Scope Owned By Program (RFC 035)                                      |
-| [DD-048](#dd-048-allows-are-sealed-on-the-write-the-deny-list-names-applications-one-connector-path-rfc-035)                              | adopted                                  | Allows Are Sealed On The Write; The Deny List Names Applications; One Connector Path (RFC 035)                                  |
+| [DD-048](#dd-048-allows-are-sealed-on-the-write-the-deny-list-names-applications-one-connector-path)                                      | adopted                                  | Allows Are Sealed On The Write; The Deny List Names Applications; One Connector Path                                            |
 | [DD-049](#dd-049-shared-encrypted-store-and-transaction-local-result-grants)                                                              | adopted                                  | Shared Encrypted Store And Transaction-Local Result Grants                                                                      |
 | [DD-050](#dd-050-transient-storage-shared-across-the-transaction)                                                                         | adopted                                  | Transient Storage Shared Across The Transaction                                                                                 |
 | [DD-051](#dd-051-a-zama-is-one-host-program-id)                                                                                           | adopted                                  | A Zama Is One Host Program ID                                                                                                   |
@@ -1447,7 +1447,7 @@ take the first option. Their eleven instructions gain Anchor's `#[event_cpi]` ac
 `set_deny_scope` and `set_hcu_app_trusted` from five to seven, and the six `HostAdmin` config setters
 from two to four.
 
-Note that no in-tree component reads any of the five today; the only off-chain reader of host config
+Note that no in-tree component reads any of the six today; the only off-chain reader of host config
 state reads the account, not an event (`solana-host-follower`'s `host_chain_id`). That is deliberate and is
 not an argument against emitting them: the transport exists because the category calls for it, so that
 a component which needs an admin change does not have to replay instruction data to find one. The test
@@ -1731,11 +1731,11 @@ Consequences:
   until they expire or are revoked, but no new application-specific row can be granted for those
   Stores, only the wildcard row (DD-061).
 
-## DD-048: Allows Are Sealed On The Write; The Deny List Names Applications; One Connector Path (RFC 035)
+## DD-048: Allows Are Sealed On The Write; The Deny List Names Applications; One Connector Path
 
 Status: adopted
 
-Recorded as fhevm-internal RFC 035.
+Recorded in the Solana access control RFC (zama-ai/tech-spec#448).
 
 Context:
 
