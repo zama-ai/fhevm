@@ -33,6 +33,7 @@ use sqlx::types::chrono::Utc;
 use std::collections::HashMap;
 use tracing::info;
 use user_decryption_signature::compute_user_decrypt_digest;
+use zama_solana_request::host_chain::is_solana_host_chain_id;
 
 #[derive(Clone)]
 /// The struct responsible of processing incoming decryption requests.
@@ -94,6 +95,7 @@ where
             let ct_chain_id = extract_chain_id_from_handle(handle).map_err(|e| {
                 RequestCheckError::irrecoverable(RequestCheckKind::Acl, ErrorCode::Unprocessable, e)
             })?;
+            refuse_solana_host_chain(ct_chain_id)?;
             let host_client = self.host_clients.get(&ct_chain_id).ok_or_else(|| {
                 RequestCheckError::recoverable(
                     RequestCheckKind::Acl,
@@ -161,6 +163,7 @@ where
             let ct_chain_id = extract_chain_id_from_handle(handle).map_err(|e| {
                 RequestCheckError::irrecoverable(RequestCheckKind::Acl, ErrorCode::Unprocessable, e)
             })?;
+            refuse_solana_host_chain(ct_chain_id)?;
             let host_client = self.host_clients.get(&ct_chain_id).ok_or_else(|| {
                 RequestCheckError::recoverable(
                     RequestCheckKind::Acl,
@@ -341,6 +344,7 @@ where
             ));
         }
 
+        refuse_solana_host_chain(chain_id)?;
         let host_client = self.host_clients.get(&chain_id).ok_or_else(|| {
             RequestCheckError::recoverable(
                 RequestCheckKind::Acl,
@@ -635,6 +639,20 @@ where
     }
 }
 
+/// Refuses a Solana chain id on the EVM request path at once (DD-013): Solana requests arrive as
+/// Solana Gateway events, so one here can never be authorized and must not be retried as a chain
+/// the ACL map lacks.
+fn refuse_solana_host_chain(chain_id: u64) -> Result<(), RequestCheckError> {
+    if is_solana_host_chain_id(chain_id) {
+        return Err(RequestCheckError::irrecoverable(
+            RequestCheckKind::Acl,
+            ErrorCode::Unprocessable,
+            anyhow!("chain id {chain_id} is a Solana host chain, which an EVM request cannot name"),
+        ));
+    }
+    Ok(())
+}
+
 fn kms_decryption_extra_data(extra_data: &Bytes) -> Vec<u8> {
     // relayer-sdk <=0.4.2 sends 0x00 but verifies the KMS signature against empty extraData.
     if extra_data.as_ref() == [0x00] {
@@ -673,7 +691,7 @@ mod tests {
         sol_types::SolValue,
     };
     use connector_utils::tests::rand::{
-        rand_address, rand_digest, rand_handle, rand_public_key, rand_u256,
+        rand_address, rand_digest, rand_handle, rand_public_key, rand_solana_handle, rand_u256,
     };
     use fhevm_gateway_bindings::decryption::{
         Decryption::CtHandleContractPair,
@@ -814,6 +832,55 @@ mod tests {
             "{msg}"
         );
         assert!(msg.contains("connection refused"), "{msg}");
+    }
+
+    /// A Solana handle on an EVM request is refused once, whichever EVM check it reaches, instead
+    /// of being retried as a chain the ACL map lacks.
+    #[tokio::test]
+    async fn an_evm_request_naming_a_solana_handle_is_refused_once() {
+        let processor = setup_test_processor(Asserter::new(), rand_handle());
+        let handle = rand_solana_handle();
+        let user_signer = PrivateKeySigner::random();
+        let user_address = user_signer.address();
+        let user_calldata = userDecryptionRequestCall {
+            ctHandleContractPairs: vec![CtHandleContractPair {
+                ctHandle: handle,
+                contractAddress: rand_address(),
+            }],
+            ..Default::default()
+        }
+        .abi_encode();
+        let v2_request = make_v2_request(
+            handle,
+            user_address,
+            user_address,
+            &user_signer,
+            vec![],
+            -60,
+            3600,
+        );
+
+        let results = [
+            processor
+                .check_ciphertexts_allowed_for_public_decryption(&[handle])
+                .await,
+            processor
+                .check_ciphertexts_allowed_for_user_decryption(
+                    user_calldata,
+                    &[handle],
+                    user_address,
+                )
+                .await,
+            processor
+                .check_user_decryption_request_v2(&v2_request)
+                .await,
+        ];
+        for result in results {
+            let result = result.map_err(RequestCheckError::record);
+            assert_kind(&result, &ExpectedOutcome::Irrecoverable);
+            let msg = format!("{:#}", result.unwrap_err().source);
+            assert!(msg.contains("is a Solana host chain"), "{msg}");
+        }
     }
 
     enum UserDecryptACLMock {
