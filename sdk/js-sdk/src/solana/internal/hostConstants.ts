@@ -22,7 +22,7 @@ export const EVENT_IX_TAG = Uint8Array.of(228, 69, 165, 46, 81, 203, 154, 29);
 export const FHE_EXECUTED_EVENT_DISCRIMINATOR = Uint8Array.of(234, 26, 200, 201, 187, 114, 93, 208);
 export const EVENT_VERSION = 1;
 
-/** `eip712`: the type strings of the coprocessor input attestation the host verifies. */
+/** `eip712`: the domain type of every certificate the host verifies, and the input attestation's type. */
 export const EIP712_DOMAIN_TYPE = 'EIP712Domain(string name,string version,uint256 chainId,address verifyingContract)';
 export const CIPHERTEXT_VERIFICATION_TYPE =
   'CiphertextVerification(bytes32[] ctHandles,bytes32 userAddress,bytes32 contractAddress,uint256 contractChainId,bytes extraData)';

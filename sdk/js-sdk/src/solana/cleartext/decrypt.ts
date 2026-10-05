@@ -15,6 +15,7 @@ import type { FhevmSolanaChain } from '../../core/types/fhevmSolanaChain.js';
 import type { SolanaRpc } from '../encryptedStore.js';
 import type { SolanaDecryptTrust, SolanaUserDecryptExecution } from '../clients/decorators/permitDecrypt.js';
 import type {
+  SolanaTransportKeyPair,
   SolanaUserDecryptPlaintext,
   SolanaUserDecryptRejection,
   SolanaUserDecryptTransport,
@@ -22,7 +23,8 @@ import type {
 import type { SolanaPublicDecryptCertifier } from '../actions/publicDecryptCertificate.js';
 import { asBytes32, bytesToHex, bytesToHexNo0x, concatBytes, hexToBytes } from '../../core/base/bytes.js';
 import { bytes32ToHandle, toFhevmHandle } from '../../core/handle/FhevmHandle.js';
-import { createKmsPublicDecryptEip712, publicDecryptDigest } from '../../core/kms/createKmsPublicDecryptEip712.js';
+import { createKmsPublicDecryptEip712 } from '../../core/kms/createKmsPublicDecryptEip712.js';
+import { publicDecryptDigest } from '../actions/decryptPublicValue.js';
 import { runSolanaUserDecrypt } from '../userDecrypt/index.js';
 import { abortableSleep } from '../../core/base/timeout.js';
 import { createSolanaUserDecryptDeadline } from '../userDecrypt/deadline.js';
@@ -35,6 +37,7 @@ import { fetchKmsContext, type KmsContext } from '../internal/generated/zamaHost
 import { solanaHostProgram } from '../clients/createFhevmBaseClient.js';
 import { signAsCleartextParty } from './parties.js';
 import { verifySolanaPermitSignature } from '../permit/envelope.js';
+import { PERMIT_TRANSPORT_KEY_LEN } from '../permit/index.js';
 import {
   CONNECTOR_FAILURE_RECOVERABLE,
   judgeSolanaPublicDecryption,
@@ -65,7 +68,7 @@ export function cleartextUserDecryptExecution(
   readMerkleProofs: SolanaMerkleProofReader,
 ): SolanaUserDecryptExecution {
   const programAddress = solanaHostProgram(chain);
-  return async ({ session, entries, attempts, options }) => {
+  const execute: SolanaUserDecryptExecution['execute'] = async ({ session, entries, attempts, options }) => {
     const { fields, signature } = session.signedPermit;
     // The caller's timeout and abort signal bound the whole run, as on the relayer path.
     const deadline = createSolanaUserDecryptDeadline({ url: `cleartext host ${programAddress}`, options });
@@ -153,6 +156,21 @@ export function cleartextUserDecryptExecution(
     );
     return response;
   };
+  return { transportKeyPair: cleartextTransportKeyPair, execute };
+}
+
+/**
+ * A transport keypair with no KMS WASM behind it, as EVM's cleartext decrypt module has none: no
+ * share is signcrypted to it, so only the bytes the permit commits to matter, at the length the
+ * permit requires. Random, so each permit still commits to its own key.
+ */
+function cleartextTransportKeyPair(): Promise<SolanaTransportKeyPair> {
+  const noWasmKey = { free: () => undefined, [Symbol.dispose]: () => undefined };
+  return Promise.resolve({
+    secretKey: noWasmKey,
+    publicKey: noWasmKey,
+    publicKeyBytes: crypto.getRandomValues(new Uint8Array(PERMIT_TRANSPORT_KEY_LEN)),
+  });
 }
 
 /** The host records a user decryption is judged against: its HostConfig and the permit's KMS context. */

@@ -4,8 +4,10 @@
 // and entry points as the EVM decrypt module. The user address is base58 of the permit's 32-byte
 // user key, and that format is what makes the client hold the response to the Solana link: the
 // EIP-712 `SolanaUserDecryptionLinker(publicKey, handles, userAddress)` struct hashed under the
-// gateway's `Decryption` domain. The client checks each share's node signature, the link, and the
-// 2t+1 agreement; a set that fails any of them yields nothing rather than a partial answer.
+// gateway's `Decryption` domain. The client checks each share's node signature and the link, and
+// needs at least 2t+1 authenticated shares from distinct parties, of which t+1 agree on the
+// response, with t = (n - 1)/3 from the signer count. A set that fails any of them yields nothing
+// rather than a partial answer.
 //
 // Every input passed to the client is the client's own: the permit's fields, the requested handles
 // and the trust configuration. None comes from the response, which is why this module's parameters
@@ -25,6 +27,7 @@ import { bytesToHexNo0x, isBytes32 } from '../../core/base/bytes.js';
 import { remove0x } from '../../core/base/string.js';
 import { WasmScope } from '../../core/base/wasmScope.js';
 import { toChecksummedAddress } from '../../core/base/address.js';
+import { uint256ToBytes32 } from '../../core/base/uint.js';
 
 /**
  * The EIP-55 form of a configured EVM address, for the client's checksum-validating parser.
@@ -263,16 +266,10 @@ function gatewayDomainWasmArg(domain: SolanaGatewayEip712Domain): {
   readonly verifying_contract: string;
   readonly salt: null;
 } {
-  const chainId = new Uint8Array(32);
-  let value = domain.chainId;
-  for (let index = 31; index >= 0 && value > 0n; index -= 1) {
-    chainId[index] = Number(value & 0xffn);
-    value >>= 8n;
-  }
   return {
     name: domain.name,
     version: domain.version,
-    chain_id: chainId,
+    chain_id: uint256ToBytes32(domain.chainId),
     // EIP-55-normalized at this crossing, like the signer set: the client's domain parser refuses a
     // lowercase spelling of a valid contract address as a bad checksum.
     verifying_contract: eip55Normalized(domain.verifyingContract),

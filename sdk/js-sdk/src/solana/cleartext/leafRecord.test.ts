@@ -14,7 +14,7 @@ import { getFheExecuteInstructionDataEncoder } from '../internal/generated/zamaH
 import { getMakeStoreHandlePublicInstructionDataEncoder } from '../internal/generated/zamaHost/instructions/makeStoreHandlePublic.js';
 import { getFheExecutedEventEncoder } from '../internal/generated/zamaHost/types/fheExecutedEvent.js';
 import { createRetainedMmr, storeLeafCommitment, type SolanaStoreHistoryEvent } from './mmr.js';
-import { EVENT_IX_TAG, EVENT_VERSION } from './hostConstants.js';
+import { EVENT_IX_TAG, EVENT_VERSION } from '../internal/hostConstants.js';
 import { createSolanaLeafRecord } from './leafRecord.js';
 
 const host = address('11111111111111111111111111111112');

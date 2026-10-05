@@ -549,10 +549,11 @@ if run_check 3; then
   # The ACL "domain" became the application `(program, scope)`. Swept as the ACL sense only:
   # "ACL domain", "mint domain", the `Domain` type, `.domain` fields and `domain_index` wire names.
   # EIP-712 signing domains and hash domain separation are other senses and never matched; the
-  # connector's `self.domain` is its EIP-712 domain and is the one `.domain` field excepted. The
-  # permit now signs `allowed_scopes`; nothing in its crate carries the old name.
+  # connector's `self.domain` and the SDK's `eip712.domain` are EIP-712 domains and are the
+  # `.domain` fields excepted. The permit now signs `allowed_scopes`; nothing in its crate carries
+  # the old name.
   check_alias 'domain — say application (program, scope)' kms \
-    'self\.domain|url\.domain\(\)' \
+    'self\.domain|eip712\.domain|url\.domain\(\)' \
     -iE '\bacl[ _-]domains?\b|mint[ _-]domain|self[ _-]domain|Domain::new|zama_fhe::Domain|\bDomain<|domain_index|\.domain\b|domain: Pubkey|\bdomain key'
   # The encrypted-value ID components are domain / encrypted_value_account_authority /
   # encrypted_value_label. `acl_domain_key` is NOT swept: it is the normative field name of the signed

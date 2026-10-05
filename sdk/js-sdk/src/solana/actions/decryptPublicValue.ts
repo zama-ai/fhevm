@@ -22,15 +22,36 @@ import {
   getKmsContextEncoder,
   KMS_CONTEXT_DISCRIMINATOR,
 } from '../internal/generated/zamaHost/accounts/kmsContext.js';
-import { bytesToHex, hexToBytes, unsafeBytesEquals } from '../../core/base/bytes.js';
+import { keccak_256 } from '@noble/hashes/sha3.js';
+import { bytesToHex, concatBytes, hexToBytes, unsafeBytesEquals } from '../../core/base/bytes.js';
 import { recoverAddress } from '../../core/base/sign.js';
-import { createKmsPublicDecryptEip712, publicDecryptDigest } from '../../core/kms/createKmsPublicDecryptEip712.js';
+import { createKmsPublicDecryptEip712 } from '../../core/kms/createKmsPublicDecryptEip712.js';
+import type { KmsPublicDecryptEip712 } from '../../core/types/kms.js';
 import type { Bytes65Hex, TypedValue } from '../../core/types/primitives.js';
 import { toFhevmHandle } from '../../core/handle/FhevmHandle.js';
 import { bytesToClearValueType } from '../../core/handle/FheType.js';
 import { createClearValue, clearValueToTypedValue } from '../../core/handle/ClearValue.js';
+import { eip712Digest, keccakUtf8 } from '../internal/eip712.js';
 
 const PUBLIC_DECRYPT_TOKEN = Symbol('fhevm.solana.public-decrypt');
+
+/**
+ * The `PublicDecryptVerification` digest the host verifies a KMS certificate against. The schema is
+ * shared with EVM, so its type string derives from the canonical field list.
+ */
+export function publicDecryptDigest(eip712: KmsPublicDecryptEip712): Uint8Array {
+  const fields = eip712.types.PublicDecryptVerification;
+  const struct = keccak_256(
+    concatBytes(
+      keccakUtf8(`PublicDecryptVerification(${fields.map(({ name, type }) => `${type} ${name}`).join(',')})`),
+      keccak_256(concatBytes(...eip712.message.ctHandles.map(hexToBytes))),
+      keccak_256(hexToBytes(eip712.message.decryptedResult)),
+      keccak_256(hexToBytes(eip712.message.extraData)),
+    ),
+  );
+  return eip712Digest(eip712.domain, struct);
+}
+
 /** Counts distinct registered signers using the host's recoverable-signature rules. */
 export function verifyPublicDecryptSignatures(
   hash: Uint8Array,

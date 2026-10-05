@@ -23,6 +23,7 @@ import type {
   SolanaGatewayEip712Domain,
   SolanaKmsSigner,
   SolanaPermitSession,
+  SolanaTransportKeyPair,
   SolanaUserDecryptHandleEntry,
   SolanaUserDecryptPlaintext,
 } from '../../userDecrypt/index.js';
@@ -110,15 +111,20 @@ export interface SolanaUserDecryptParameters {
 }
 
 /**
- * Answers a user decryption under a signed permit with plaintexts verified against the handles:
- * through the relayer and the KMS response verification, unless a cleartext client reads them.
+ * How user decryptions under a permit are answered: through the relayer and the KMS response
+ * verification, unless a cleartext client reads the plaintexts.
  */
-export type SolanaUserDecryptExecution = (run: {
-  readonly session: SolanaPermitSession;
-  readonly entries: readonly SolanaUserDecryptHandleEntry[];
-  readonly attempts: number | undefined;
-  readonly options: RelayerUserDecryptOptions | undefined;
-}) => Promise<readonly SolanaUserDecryptPlaintext[]>;
+export interface SolanaUserDecryptExecution {
+  /** The transport keypair a new permit commits to; called once per permit. */
+  readonly transportKeyPair: () => Promise<SolanaTransportKeyPair>;
+  /** Answers one request with plaintexts verified against the handles. */
+  readonly execute: (run: {
+    readonly session: SolanaPermitSession;
+    readonly entries: readonly SolanaUserDecryptHandleEntry[];
+    readonly attempts: number | undefined;
+    readonly options: RelayerUserDecryptOptions | undefined;
+  }) => Promise<readonly SolanaUserDecryptPlaintext[]>;
+}
 
 export type SolanaPermitDecryptActions = {
   /** Creates a permit and takes it to the wallet once; the session it returns is reusable. */
@@ -134,7 +140,7 @@ export type SolanaPermitDecryptActions = {
  * @param trust - Whom to believe; see {@link SolanaDecryptTrust}.
  * @param runtime - The client runtime; its configured auth reaches every relayer submission,
  * with per-call options taking precedence — the same merge the public-decrypt action runs.
- * @param execute - How an admitted request is answered; the relayer and KMS when absent.
+ * @param execution - How requests under a permit are answered; the relayer and KMS when absent.
  * @throws If the trust configuration lacks the gateway domain the permit path stands on.
  */
 export function solanaPermitDecryptActions(
@@ -142,33 +148,36 @@ export function solanaPermitDecryptActions(
   trust: SolanaDecryptTrust,
   runtime: FhevmRuntime,
   fetchPermitInvalidation: (user: Address) => Promise<bigint>,
-  execute?: SolanaUserDecryptExecution,
+  execution?: SolanaUserDecryptExecution,
 ): SolanaPermitDecryptActions {
   // Fail at construction, not mid-session: a trust configuration missing the domain would otherwise
   // surface as a failure of whichever request first needed it.
   const gatewayEip712Domain = requiredField(trust.gatewayEip712Domain, 'trust.gatewayEip712Domain');
 
-  const executeThroughRelayer: SolanaUserDecryptExecution = async ({ session, entries, attempts, options }) => {
-    const transport = createSolanaUserDecryptRelayerTransport({
-      relayerUrl: chain.fhevm.relayerUrl,
-      logger: runtime.config.logger,
-      options: { auth: runtime.config.auth, ...options },
-    });
-    const plaintexts = await executeSolanaUserDecrypt({
-      runtime,
-      session,
-      entries,
-      transport,
-      clock: transport,
-      attempts,
-      verification: {
-        signers: trust.kmsSigners,
-        fheParameter: trust.fheParameter,
-        gatewayEip712Domain,
-      },
-    });
-    transport.throwIfAbortedOrExpired();
-    return plaintexts;
+  const { transportKeyPair, execute }: SolanaUserDecryptExecution = execution ?? {
+    transportKeyPair: () => generateSolanaTransportKeyPair(runtime),
+    execute: async ({ session, entries, attempts, options }) => {
+      const transport = createSolanaUserDecryptRelayerTransport({
+        relayerUrl: chain.fhevm.relayerUrl,
+        logger: runtime.config.logger,
+        options: { auth: runtime.config.auth, ...options },
+      });
+      const plaintexts = await executeSolanaUserDecrypt({
+        runtime,
+        session,
+        entries,
+        transport,
+        clock: transport,
+        attempts,
+        verification: {
+          signers: trust.kmsSigners,
+          fheParameter: trust.fheParameter,
+          gatewayEip712Domain,
+        },
+      });
+      transport.throwIfAbortedOrExpired();
+      return plaintexts;
+    },
   };
 
   return {
@@ -176,7 +185,7 @@ export function solanaPermitDecryptActions(
       const invalidationWatermark = await fetchPermitInvalidation(
         getAddressDecoder().decode(parameters.wallet.account.publicKey),
       );
-      const keyPair = await generateSolanaTransportKeyPair(runtime);
+      const keyPair = await transportKeyPair();
       const now = BigInt(Math.floor(Date.now() / 1000));
       const startTimestamp = normalizeSolanaPermitStart({
         now,
@@ -209,7 +218,7 @@ export function solanaPermitDecryptActions(
         encryptedStore: entry.encryptedStore,
       }));
 
-      const plaintexts = await (execute ?? executeThroughRelayer)({
+      const plaintexts = await execute({
         session: parameters.session,
         entries,
         attempts: parameters.attempts,

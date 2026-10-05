@@ -11,8 +11,8 @@ import type { SolanaRpc } from '../encryptedStore.js';
 import type { SolanaMerkleProofReader } from './merkleProofs.js';
 import { bytesToHex, bytesToHexNo0x, concatBytes, hexToBytes } from '../../core/base/bytes.js';
 import { buildHandle, toFhevmHandle } from '../../core/handle/FhevmHandle.js';
-import { createKmsPublicDecryptEip712, publicDecryptDigest } from '../../core/kms/createKmsPublicDecryptEip712.js';
-import { verifyPublicDecryptSignatures } from '../actions/decryptPublicValue.js';
+import { createKmsPublicDecryptEip712 } from '../../core/kms/createKmsPublicDecryptEip712.js';
+import { publicDecryptDigest, verifyPublicDecryptSignatures } from '../actions/decryptPublicValue.js';
 import { RelayerAbortError } from '../../core/errors/RelayerAbortError.js';
 import { RelayerTimeoutError } from '../../core/errors/RelayerTimeoutError.js';
 import type { RelayerUserDecryptOptions } from '../../core/types/relayer.js';
@@ -201,7 +201,7 @@ describe('cleartextUserDecryptExecution', () => {
         }),
         signature: new Uint8Array(PERMIT_SIGNATURE_LEN),
       },
-    }) as unknown as Parameters<ReturnType<typeof cleartextUserDecryptExecution>>[0]['session'];
+    }) as unknown as Parameters<ReturnType<typeof cleartextUserDecryptExecution>['execute']>[0]['session'];
   const entries = [{ handle: permitHandle, ownerAddress: bytes(signer), encryptedStore: identity(0xea) }];
   const kmsContext = (destroyed: boolean) =>
     ({ data: { destroyed, signers: [kmsSigner] } }) as unknown as Awaited<
@@ -211,12 +211,12 @@ describe('cleartextUserDecryptExecution', () => {
     options?: RelayerUserDecryptOptions,
     { attempts, start = now - 10n }: { attempts?: number; start?: bigint } = {},
   ) =>
-    cleartextUserDecryptExecution(
-      rpc,
-      chain,
-      trust,
-      readMerkleProofs,
-    )({ session: sessionStarting(start), entries, attempts, options });
+    cleartextUserDecryptExecution(rpc, chain, trust, readMerkleProofs).execute({
+      session: sessionStarting(start),
+      entries,
+      attempts,
+      options,
+    });
   /** The rejection a run of one attempt ends on. */
   const firstRejection = async (start?: bigint) => {
     const error = await execute(undefined, { attempts: 1, ...(start === undefined ? {} : { start }) }).catch(
