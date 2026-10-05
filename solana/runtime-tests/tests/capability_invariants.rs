@@ -241,11 +241,13 @@ fn hcu_limit() -> impl Strategy<Value = u64> {
 }
 
 fn areas() -> impl Strategy<Value = host::PauseFlags> {
-    any::<[bool; 3]>().prop_map(|[execution, verified_inputs, acl_writes]| host::PauseFlags {
-        execution,
-        verified_inputs,
-        acl_writes,
-    })
+    any::<[bool; 3]>().prop_map(
+        |[execution, verified_inputs, acl_writes]| host::PauseFlags {
+            execution,
+            verified_inputs,
+            acl_writes,
+        },
+    )
 }
 
 fn wallet() -> impl Strategy<Value = usize> {

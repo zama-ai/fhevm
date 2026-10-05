@@ -4568,8 +4568,8 @@ fn mollusk_verify_public_decrypt_returns_handle_and_cleartext() {
     assert_eq!(result.return_data, expected);
 }
 
-/// As EVM's `KMSVerifier`, the certificate check never pauses: a pause stops new requests, not the
-/// verification of certificates already issued.
+/// As EVM's `KMSVerifier`, the certificate check never pauses: the gateway pause stops new requests,
+/// and no host pause stops the verification of certificates already issued.
 #[test]
 fn mollusk_no_pause_flag_stops_verify_public_decrypt() {
     let admin = Pubkey::new_unique();

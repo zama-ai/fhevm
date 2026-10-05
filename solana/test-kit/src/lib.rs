@@ -442,6 +442,17 @@ pub fn host_config_account(params: &HostConfigParams) -> (Pubkey, Account) {
     )
 }
 
+/// The same `HostConfig` account with the areas `areas` names paused.
+pub fn paused_host_config(account: &Account, areas: host::PauseFlags) -> Account {
+    let mut config = host::HostConfig::try_deserialize(&mut account.data.as_slice())
+        .expect("host config deserializes");
+    config.paused = areas;
+    Account {
+        data: serialized_account(config),
+        ..account.clone()
+    }
+}
+
 /// Test KMS context id: 31 zero bytes and last byte `n`. `n = 0` is the reserved all-zero id.
 pub fn canonical_test_context_id(n: u8) -> [u8; 32] {
     let mut id = [0u8; 32];

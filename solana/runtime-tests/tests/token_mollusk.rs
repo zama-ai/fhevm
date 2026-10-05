@@ -47,10 +47,10 @@ use zama_solana_test_kit::signing::{
 use zama_solana_test_kit::{
     anchor_error_check, anchor_framework_error_check, anchor_ix, canonical_test_context_id,
     cost_snapshot, decode_anchor_event, deny_scope_record_account, encrypted_store_account,
-    event_authority, handle_for_chain, new_encrypted_store, read_account, read_encrypted_store,
-    read_spl_amount, read_store_handle, serialized_account, spl_mint_account, spl_token_account,
-    system_account, u256_be, Ctx, HostConfigParams, BALANCE_FHE_TYPE, DECRYPTION_CONTRACT,
-    GATEWAY_CHAIN_ID,
+    event_authority, handle_for_chain, new_encrypted_store, paused_host_config, read_account,
+    read_encrypted_store, read_spl_amount, read_store_handle, serialized_account, spl_mint_account,
+    spl_token_account, system_account, u256_be, Ctx, HostConfigParams, BALANCE_FHE_TYPE,
+    DECRYPTION_CONTRACT, GATEWAY_CHAIN_ID,
 };
 
 // ---------------------------------------------------------------------------
@@ -3613,17 +3613,6 @@ const VERIFIED_INPUTS: host::PauseFlags = host::PauseFlags {
     verified_inputs: true,
     acl_writes: false,
 };
-
-/// The same host config account with the areas `areas` names paused.
-fn paused_host_config(account: &Account, areas: host::PauseFlags) -> Account {
-    let mut config = host::HostConfig::try_deserialize(&mut account.data.as_slice())
-        .expect("host config deserializes");
-    config.paused = areas;
-    Account {
-        data: serialized_account(config),
-        ..account.clone()
-    }
-}
 
 /// As on EVM, a host pause never stops a certificate already issued: redeem verifies and pays
 /// out with every host area paused.

@@ -49,9 +49,10 @@ use zama_solana_test_kit::signing::{
 use zama_solana_test_kit::{
     anchor_error_check, anchor_ix, coprocessor_signer_address, cost_snapshot,
     deny_scope_record_account, encrypted_store_account, ensure_system_accounts, event_authority,
-    handle_for_chain, host_config_account, kms_context_account, new_encrypted_store, read_account,
-    read_spl_amount, readonly, serialized_account, spl_mint_account, spl_token_account,
-    system_account, Ctx, HostConfigParams, BALANCE_FHE_TYPE, DECIMALS,
+    handle_for_chain, host_config_account, kms_context_account, new_encrypted_store,
+    paused_host_config, read_account, read_spl_amount, readonly, serialized_account,
+    spl_mint_account, spl_token_account, system_account, Ctx, HostConfigParams, BALANCE_FHE_TYPE,
+    DECIMALS,
 };
 
 const KMS_CONTEXT_ID: [u8; 32] = {
@@ -1726,6 +1727,63 @@ fn mollusk_zero_total_batch_cancels_at_settle() {
         &[Check::success()],
     );
     assert_eq!(read_batch(&context, next.batch).index, 1);
+}
+
+/// Settle redeems through `verify_public_decrypt`, which never pauses, and wraps the payout through
+/// `fhe_execute`, so only the `execution` pause stops it. The revert is atomic, so the batch stays
+/// dispatched and settles once execution resumes.
+#[test]
+fn mollusk_settle_stops_only_under_the_execution_pause() {
+    let fixture = BatcherFixture::new(batcher::BatchDirection::Deposit);
+    let context = fixture_context(mollusk(), fixture.accounts(0, 0));
+    fixture.seed_values(&context, (1_000, 0), (2_000, 0), (1_000_000, 0));
+    let keys = initialize_and_open_first_batch(&context, &fixture, 0);
+    run_join(
+        &context,
+        &fixture,
+        &keys,
+        &fixture.alice,
+        handle_for_chain(41, BALANCE_FHE_TYPE),
+        100,
+    );
+    let burned_handle = run_dispatch(&context, &fixture, &keys);
+
+    let live = context.account_store.borrow()[&fixture.host_config].clone();
+    let pause = |areas| {
+        context
+            .account_store
+            .borrow_mut()
+            .insert(fixture.host_config, paused_host_config(&live, areas));
+    };
+    pause(host::PauseFlags {
+        execution: true,
+        verified_inputs: false,
+        acl_writes: false,
+    });
+    let (signatures, extra_data) = amount_public_decrypt_cert(burned_handle, 100);
+    let pending_burn = keys.pending_burn(fixture.join_mint().mint);
+    check_batcher_instruction(
+        &context,
+        &settle_ix(&fixture, &keys, 100, signatures, extra_data, pending_burn),
+        &[anchor_error_check(
+            host::errors::ZamaHostError::ExecutionPaused as u32,
+        )],
+    );
+    assert_eq!(
+        read_batch(&context, keys.batch).status,
+        batcher::BatchStatus::Dispatched
+    );
+
+    pause(host::PauseFlags {
+        execution: false,
+        verified_inputs: true,
+        acl_writes: true,
+    });
+    run_settle(&context, &fixture, &keys, burned_handle, 100);
+    assert_eq!(
+        read_batch(&context, keys.batch).status,
+        batcher::BatchStatus::Settled
+    );
 }
 
 // ---------------------------------------------------------------------------
