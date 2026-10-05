@@ -232,9 +232,12 @@ returns `@fhevm/sdk/solana` with the three client factories replaced by those of
 - **Encrypt.** A mock input proof. The client signs its attestation with the test coprocessor
   key, and the attestation's `extra_data` is the plaintexts, one big-endian value per handle, at
   least two bytes each so that production's one-byte `0x00` never decodes as a value.
-- **User decrypt.** The permit and request are built as in production. Each attempt then runs the
-  relayer's submission checks and delegation pre-check, the gateway's validity window, and the KMS
-  Connector's authorization, in the real stack's order and with its labels (the header of
+- **User decrypt.** The permit and request are built as in production, except the transport key:
+  no share is signcrypted to it, so the permit commits to random bytes of its length
+  (`PERMIT_TRANSPORT_KEY_LEN`) and no KMS WASM loads, as in EVM's cleartext decrypt module.
+  Each attempt then runs the relayer's submission checks and delegation pre-check, the gateway's
+  validity window, and the KMS Connector's authorization, in the real stack's order and with its
+  labels (the header of
   `sdk/js-sdk/src/solana/cleartext/decrypt.ts` lists them). A failure the Connector would retry
   leaves the attempt unanswered for the retry loop; any other throws at once and names the failure,
   where the real stack leaves the request to time out. Otherwise the answer is the plaintext the
