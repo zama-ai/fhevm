@@ -19,6 +19,7 @@ import {
   requiresModernHostAddressArtifacts,
   replaceRegistrySourceTag,
   supportsCanonicalProtocolConfigSeeding,
+  supportsConnectorHttp,
   supportsHostListenerConsumer,
   validateBundleCompatibility,
 } from "../compat/compat";
@@ -62,6 +63,7 @@ import {
   GROUP_BUILD_COMPONENTS,
   GROUP_BUILD_SERVICES,
   KEYGEN_ID_SELECTOR,
+  KMS_CONNECTOR_HTTP_SERVICES,
   KMS_CORE_CONTAINER,
   LOCK_DIR,
   LOG_TARGETS,
@@ -2255,8 +2257,8 @@ const completeBootstrap = async (state: State) => {
     return;
   }
   const completed = new Set(pending.completed ?? []);
-  // Every unit is recorded once it succeeds, so `up --resume` after a failure skips it instead
-  // of repeating an upgrade task that reverts on an already upgraded proxy.
+  // Every unit is recorded once it succeeds, so a later call skips it instead of repeating an
+  // upgrade task that reverts on an already upgraded proxy.
   const once = async (unit: string, action: () => Promise<void>) => {
     if (completed.has(unit)) {
       return;
@@ -2482,6 +2484,7 @@ const kmsOperatorConnectorServices = (operatorId: number) => {
   return {
     migration: `${prefix}-db-migration`,
     runtime: [`${prefix}-gw-listener`, `${prefix}-kms-worker`, `${prefix}-tx-sender`],
+    http: KMS_CONNECTOR_HTTP_SERVICES.map((service) => `${prefix}-${service.slice("kms-connector-".length)}`),
   };
 };
 
@@ -2758,9 +2761,12 @@ export const upgradeThresholdKmsOperator = async (
   await operations.waitForContainer(core, "healthy");
   await operations.composeUp("kms-connector", [connector.migration], { noDeps: true, forceRecreate: true });
   await operations.waitForContainer(connector.migration, "complete");
-  await operations.composeUp("kms-connector", connector.runtime, { noDeps: true, forceRecreate: true });
+  // The HTTP endpoint and proxy are part of the operator once the bundle ships them; recreate them
+  // too, or the readiness wait below targets containers that were never started.
+  const runtime = supportsConnectorHttp(nextState) ? [...connector.runtime, ...connector.http] : connector.runtime;
+  await operations.composeUp("kms-connector", runtime, { noDeps: true, forceRecreate: true });
   await operations.waitForKmsConnectorParty(nextState, operatorId);
-  await operations.postBootHealthGate(connector.runtime);
+  await operations.postBootHealthGate(runtime);
   await operations.saveState(nextState);
 };
 
@@ -2791,7 +2797,8 @@ export const showResumeHint = async (rawArgs: string[]) => {
     return;
   }
   const state = await loadState();
-  if (state?.completedSteps.length) {
-    console.error("Hint: run with --resume to continue, or without to start fresh.");
+  // A pending KMS connector runtime adoption is the only failure `--resume` can still pick up.
+  if (state?.e2eKmsConnectorRuntimeAdoptionPending && state.completedSteps.length) {
+    console.error("Hint: run with --resume to finish the pending KMS connector runtime adoption, or without to start fresh.");
   }
 };

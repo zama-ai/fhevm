@@ -822,9 +822,9 @@ describe("upgradeThresholdKmsOperator", () => {
         "wait:kms-core-2:healthy",
         "up:kms-connector:kms-connector-2-db-migration:true",
         "wait:kms-connector-2-db-migration:complete",
-        "up:kms-connector:kms-connector-2-gw-listener,kms-connector-2-kms-worker,kms-connector-2-tx-sender:true",
+        "up:kms-connector:kms-connector-2-gw-listener,kms-connector-2-kms-worker,kms-connector-2-tx-sender,kms-connector-2-endpoint,kms-connector-2-proxy:true",
         "connector-ready:2:running",
-        "health:kms-connector-2-gw-listener,kms-connector-2-kms-worker,kms-connector-2-tx-sender",
+        "health:kms-connector-2-gw-listener,kms-connector-2-kms-worker,kms-connector-2-tx-sender,kms-connector-2-endpoint,kms-connector-2-proxy",
         "save",
       ]);
       expect(persisted.versions.env.CORE_VERSION).toBe(versions.env.CORE_VERSION);
@@ -919,6 +919,66 @@ describe("upgradeThresholdKmsOperator", () => {
       expect(persisted.kmsCoreVersionByNodeId).toBeUndefined();
       expect(persisted.kmsConnectorDeploymentByNodeId).toBeUndefined();
       expect(persisted.overrides).toContainEqual({ group: "kms-connector" });
+    });
+  });
+
+  test("starts the connector HTTP services with the operator that brings them in", async () => {
+    await withTempStateDir(async (stateDir) => {
+      const preset = presetBundle("latest-main", "abcdef0", "baseline.json");
+      // A bootstrap release without the endpoint/proxy images; a full override brings them in.
+      const { CONNECTOR_ENDPOINT_VERSION: _endpoint, CONNECTOR_PROXY_VERSION: _proxy, ...env } = preset.env;
+      const versions = { ...preset, env };
+      let persisted: State = {
+        target: "latest-main",
+        lockPath: "/tmp/baseline.json",
+        requiresGitHub: true,
+        versions,
+        overrides: [],
+        scenario: testDefaultScenario({
+          kms: { parties: 4, threshold: 1, committeeSize: 4, fheParams: "Test" },
+        }),
+        completedSteps: ["base"],
+        updatedAt: "2026-07-14T00:00:00.000Z",
+      };
+      const lockFile = path.join(stateDir, "target.json");
+      await writeJson(lockFile, { ...versions, lockName: "target.json", env: { ...env, CORE_VERSION: "target-core" } });
+      const recreated: Record<number, string[]> = {};
+      let operator = 0;
+      const operations = {
+        async loadState() { return persisted; },
+        async projectContainers() { return ["kms-core"]; },
+        async ensureRuntimeArtifacts() {},
+        async assertQuorum() {},
+        async saveState(next: State) { persisted = next; },
+        async generateRuntime() {},
+        async maybeBuild() {},
+        async stopContainers() {},
+        async composeUp(component: string, services: string[] = []) {
+          if (component === "kms-connector" && !services.some((service) => service.endsWith("db-migration"))) {
+            recreated[operator] = services;
+          }
+        },
+        async waitForContainer() {},
+        async waitForKmsConnectorParty() {},
+        async postBootHealthGate() {},
+      };
+
+      for (operator = 1; operator <= 4; operator += 1) {
+        await upgradeThresholdKmsOperator(operator, { lockFile, overrides: [{ group: "kms-connector" }] }, operations);
+      }
+
+      expect(recreated[3]).toEqual([
+        "kms-connector-3-gw-listener",
+        "kms-connector-3-kms-worker",
+        "kms-connector-3-tx-sender",
+      ]);
+      expect(recreated[4]).toEqual([
+        "kms-connector-4-gw-listener",
+        "kms-connector-4-kms-worker",
+        "kms-connector-4-tx-sender",
+        "kms-connector-4-endpoint",
+        "kms-connector-4-proxy",
+      ]);
     });
   });
 

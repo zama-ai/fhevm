@@ -421,7 +421,7 @@ Rust HTTPS clients can load system roots:
 
 This option affects only locally built coprocessor and KMS connector runtime
 images (not the connector DB migration) and is persisted in the generated E2E
-state, so a later `./fhevm-cli up --resume` uses the same bases. It is not a
+state, so a later rebuild or pending-adoption retry uses the same bases. It is not a
 production or certification build mode.
 
 Add `--override kms-connector` when the E2E stack also needs the connector from

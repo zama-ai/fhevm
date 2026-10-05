@@ -51,9 +51,6 @@ cd test-suite/fhevm
 # Deploy with multi-chain + multi-coprocessor
 ./fhevm-cli up --target latest-main --scenario two-of-two-multi-chain
 
-# Resume a failed deploy from a specific step (keeps existing containers/volumes)
-./fhevm-cli up --resume --from-step kms-connector
-
 # Run specific tests (works for both 1/1 and n/t topologies)
 ./fhevm-cli test input-proof
 ./fhevm-cli test user-decryption
