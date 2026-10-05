@@ -1,3 +1,10 @@
+import { runManifestHealingStressProfile } from "./manifest-healing-stress";
+import path from "node:path";
+import { createBlueGreenManifestChecks } from "./blue-green-manifests";
+import { DRY_RUN_DRIFT_CLEANUP_SQL, GCS_SCHEMA_SQL, dryRunDriftInstallSql } from "./blue-green-dry-run-drift";
+import { runManifestLifecycleNoDriftProfile } from "./manifest-lifecycle-no-drift";
+import { runManifestLifecycleProfile } from "./manifest-lifecycle";
+import { runManifestHealingProfile } from "./manifest-healing";
 import { runRetainedMaterial } from "../consensus/retained-material-run";
 import { withRolloutSupervisor } from "../consensus/rollout-supervision";
 import { syntheticTrackReadinessSql, syntheticEvidenceAuditSql, SYNTHETIC_EVIDENCE_CLEANUP_SQL, DRY_RUN_EVIDENCE_INSTALL_SQL, DRY_RUN_EVIDENCE_CLEANUP_SQL, dryRunEvidenceReadinessSql } from "../../../e2e/test/consensus/upgradeEvidenceSql";
@@ -77,7 +84,13 @@ const timedLabel = (label: string, started: number) =>
 
 const TEST_PROFILE_NAMES = [
   ...Object.keys(TEST_GREP),
+  "manifest-lifecycle",
+  "manifest-lifecycle-no-drift",
+  "manifest-healing",
+  "manifest-healing-stress",
   "blue-green",
+  "blue-green-manifests",
+  "blue-green-dry-run-drift",
   "ciphertext-drift",
   "ciphertext-drift-auto-recovery",
   "coprocessor-db-state-revert",
@@ -112,6 +125,10 @@ const PAUSE_PROFILE_SCOPE: Record<string, string> = {
   "paused-gateway-contracts": "gateway",
 };
 const TEST_PROFILE_DESCRIPTIONS: Partial<Record<(typeof TEST_PROFILE_NAMES)[number], string>> = {
+  "manifest-lifecycle-no-drift": "Check healthy manifest publication, quorum, and continued computation without fault injection (requires --scenario manifest-lifecycle).",
+  "manifest-healing-stress": "Corrupt selected uint64 handles on one node across several reused blocks, then require those drifts to heal (requires --scenario manifest-lifecycle).",
+  "manifest-healing": "Exercise node 2's out-of-quorum fault matrix, inferred containment, ct64 restoration, and computation recovery (requires --scenario manifest-lifecycle).",
+  "manifest-lifecycle": "Publish a signed manifest fault and verify containment and independent progress (requires --scenario manifest-lifecycle).",
   light: "Run the lightweight smoke suite.",
   "rollout-standard": "Run rollout-safe write-path coverage without pause, DB revert, or drift recovery.",
   standard: "Run the default CI suite for the active topology.",
@@ -147,6 +164,13 @@ const TEST_PROFILE_DESCRIPTIONS: Partial<Record<(typeof TEST_PROFILE_NAMES)[numb
   "blue-green":
     "Run the Blue-Green upgrade end-to-end (fires proposeCoprocessorUpgrade on-chain, waits for cutover, " +
     "asserts final state). Requires `--scenario blue-green*`.",
+  "blue-green-manifests":
+    "Run the blue-green profile plus Green manifest publication/verification checks across the v0.14 upgrade " +
+    "(same as BLUE_GREEN_MANIFESTS=1; use --scenario blue-green-manifest).",
+  "blue-green-dry-run-drift":
+    "Run blue-green-manifests with one operator's Green corrupting a dry-run ct64: the upgrade still cuts over on " +
+    "the probe's agreement, then the faulty operator detects and heals the drift (same as BLUE_GREEN_DRY_RUN_DRIFT=1; " +
+    "use --scenario blue-green-manifest).",
   "ciphertext-drift": "Run ciphertext drift detection checks (requires 2+ coprocessors).",
   "ciphertext-drift-auto-recovery":
     "Run ciphertext drift auto-recovery checks — services self-recover (requires 2+ coprocessors).",
@@ -1056,6 +1080,8 @@ const startContinuousErc20Traffic = (targets: TrafficTarget[], streams: number):
 const runBlueGreenProfile = async (
   state: State,
   options: Pick<TestOptions, "network" | "noHardhatCompile">,
+  withManifests = process.env.BLUE_GREEN_MANIFESTS === "1",
+  dryRunDrift = process.env.BLUE_GREEN_DRY_RUN_DRIFT === "1",
 ): Promise<boolean> => {
   if (state.scenario.kind !== "blue-green") {
     throw new PreflightError(
@@ -1063,7 +1089,26 @@ const runBlueGreenProfile = async (
         `(active scenario kind: "${state.scenario.kind}").`,
     );
   }
+  // The shared Gateway (Nitro) mints blocks only on transactions. Run the local anvil the same
+  // way for the whole profile so a gw_start_block the chain never reaches fails here, not only on
+  // preview environments. Anvil mining modes are exclusive: automine replaces interval mining.
+  const gatewayRpcUrl = hostReachableRpcUrl(state.discovery!.endpoints.gateway.http);
+  await run(["cast", "rpc", "--rpc-url", gatewayRpcUrl, "evm_setAutomine", "true"]);
+  console.log("OK:   Gateway anvil mines on demand for this profile");
+  try {
+    return await runBlueGreenSteps(state, options, gatewayRpcUrl, withManifests || dryRunDrift, dryRunDrift);
+  } finally {
+    await run(["cast", "rpc", "--rpc-url", gatewayRpcUrl, "evm_setIntervalMining", "1"]);
+  }
+};
 
+const runBlueGreenSteps = async (
+  state: State,
+  options: Pick<TestOptions, "network" | "noHardhatCompile">,
+  gatewayRpcUrl: string,
+  withManifests: boolean,
+  dryRunDrift: boolean,
+): Promise<boolean> => {
   // The E2E image already contains compiled contracts. Multiple traffic
   // streams share its artifacts directory, so none may compile or prune it.
   const precompiledOptions = { ...options, noHardhatCompile: true };
@@ -1106,6 +1151,12 @@ const runBlueGreenProfile = async (
     if (hooks.stdout.trim() !== "true") throw new PreflightError("host-report faults require consensus-detector/test-failpoints binaries");
   }
   if (!["none", "dry-run-started", "before-cutover-commit", "after-cutover-commit"].includes(interrupt)) throw new PreflightError("unknown BLUE_GREEN_INTERRUPT boundary");
+  if (dryRunDrift && (state.scenario.topology.count !== 3 || state.scenario.topology.threshold !== 2)) {
+    throw new PreflightError("dry-run drift needs three operators and threshold two, so two healthy peers form the quorum");
+  }
+  if (dryRunDrift && (quietSynthetic || faultHost || interruptDetector || interrupt !== "none")) {
+    throw new PreflightError("run dry-run drift separately from the other upgrade fault modes");
+  }
   if (interrupt !== "none") {
     if (state.scenario.topology.count !== 3 || state.scenario.topology.threshold !== 2 || state.scenario.hostChains.length !== 2) {
       throw new PreflightError("upgrade interruption requires the three-operator, two-chain topology");
@@ -1116,6 +1167,29 @@ const runBlueGreenProfile = async (
 
   const MIN_BLUE_GREEN_TRAFFIC_STREAMS = 2;
   const CROSS_CUTOVER_CHAIN_DEPTH = 5;
+  // Opt-in manifest publication/verification checks on the Green detectors.
+  const manifests = withManifests
+    ? createBlueGreenManifestChecks({
+        databases: operatorDatabases,
+        hostChainIds: state.scenario.hostChains.map(chain => Number(chain.chainId)),
+        query: psqlQuery,
+        reportPath: path.join(STATE_DIR, "blue-green-manifests-report.json"),
+        driftDatabase: dryRunDrift ? operatorDatabases[1] : undefined,
+      })
+    : undefined;
+  const driftDatabase = dryRunDrift ? operatorDatabases[1]! : undefined;
+  let dryRunDriftInstalled = false;
+  // Hosts switched to mine only on transactions for the dry-run drift; restored on every exit.
+  const automineHosts = new Set<string>();
+  const hostRpcUrl = (key: string) => hostReachableRpcUrl(state.discovery!.endpoints.hosts[key]!.http);
+  const restoreHostMining = async () => {
+    for (const key of [...automineHosts]) {
+      await run(["cast", "rpc", "--rpc-url", hostRpcUrl(key), "evm_setIntervalMining", "1"]);
+      automineHosts.delete(key);
+      console.log(`OK:   host ${key} mines every second again`);
+    }
+  };
+  await manifests?.preflight();
 
   console.log(`\n==== blue-green E2E: ${opCount} operator(s) ====`);
 
@@ -1138,8 +1212,33 @@ const runBlueGreenProfile = async (
     }
   }
   console.log(`OK:   ${opCount} DB(s) at v0.14, empty upgrade_state, gcs-${gcsStackVersion} schema present`);
+  await manifests?.beforeProposals();
 
-  const gatewayRpcUrl = hostReachableRpcUrl(state.discovery!.endpoints.gateway.http);
+  const gatewayTip = async () =>
+    Number((await run(["cast", "block-number", "--rpc-url", gatewayRpcUrl])).stdout.trim());
+  // gw_start_block is pinned to the Gateway tip at proposal time, so the Gateway gate opens
+  // without any Gateway transaction.
+  const assertGatewayGateOpens = async (tipBeforeProposal: number, tipAfterProposal: number) => {
+    for (const db of operatorDatabases) {
+      const gwStartBlock = Number(
+        await psqlQuery(db, "SELECT MIN(gw_start_block) FROM upgrade_state WHERE stack_role='GCS';"),
+      );
+      if (gwStartBlock < tipBeforeProposal || gwStartBlock > tipAfterProposal) {
+        throw new Error(
+          `${db} gw_start_block=${gwStartBlock} is not the Gateway tip at proposal time (${tipBeforeProposal}..${tipAfterProposal})`,
+        );
+      }
+      await waitUntil({
+        label: `${db}  gw_dry_run_started without a Gateway tx (gw_start_block=${gwStartBlock}, tip=${tipAfterProposal})`,
+        timeoutSecs: 60,
+        check: async () =>
+          (await psqlQuery(
+            db,
+            "SELECT CASE WHEN BOOL_AND(gw_dry_run_started) THEN 'started' ELSE 'waiting' END FROM upgrade_state WHERE stack_role='GCS';",
+          )) === "started",
+      });
+    }
+  };
 
   const hostChains = state.scenario.hostChains;
   const testSuiteEnv = await readEnvFile(envPath("test-suite"));
@@ -1207,6 +1306,7 @@ const runBlueGreenProfile = async (
   const disabled = await setSyntheticOps(faultHost);
   console.log(`OK:   recreated ${disabled.length} GCS host-listener service(s); synthetic ops ${faultHost ? "enabled" : "disabled"}`);
   const failStartTime = new Date(Date.now() + 30_000).toISOString();
+  const failTipBefore = await gatewayTip();
   await runContractTask(
     "host-sc",
     "host-sc-deploy",
@@ -1222,6 +1322,7 @@ const runBlueGreenProfile = async (
       },
     },
   );
+  const failTipAfter = await gatewayTip();
   console.log(`OK:   activation emitted via task (proposalId=1, version=${gcsVersionLive}, start=${failStartTime})`);
 
   console.log(`\n[3/11] failed upgrade: wait for GCS DryRunStarted, then submit a Gateway-only input proof`);
@@ -1241,17 +1342,7 @@ const runBlueGreenProfile = async (
         )) === "ready",
     });
   }
-  // Wait for the Gateway tip to reach gw_start_block so the input lands in the window
-  // and anchors the GW track.
-  const failGwStartBlock = Number(
-    await psqlQuery(operatorDatabases[0]!, "SELECT gw_start_block FROM upgrade_state WHERE stack_role='GCS' LIMIT 1;"),
-  );
-  await waitUntil({
-    label: `gateway tip reaches window start ${failGwStartBlock}`,
-    timeoutSecs: 120,
-    check: async () =>
-      Number((await run(["cast", "block-number", "--rpc-url", gatewayRpcUrl])).stdout.trim()) >= failGwStartBlock,
-  });
+  await assertGatewayGateOpens(failTipBefore, failTipAfter);
   // Keep the Gateway track healthy in every arm. The deliberately quiet or
   // perturbed host track must prevent upgrade unanimity (asserted in [4/11]).
   await run(gatewayInputProbeArgv);
@@ -1312,6 +1403,7 @@ const runBlueGreenProfile = async (
     }
     console.log(`OK:   ${db}  PAUSED/failed, latches cleared, v0.14 kept, gcs schema recreated empty`);
   }
+  await manifests?.afterRollback();
   };
   if (faultHost) {
     await withRolloutSupervisor(STATE_DIR, "hold-host-report.sh", [], {
@@ -1358,9 +1450,18 @@ const runBlueGreenProfile = async (
   }
 
   const completeUpgrade = async () => {
+  if (driftDatabase) {
+    // The rollback recreated the Green schema empty; the trigger rides on it into the dry run.
+    const schemas = (await psqlQuery(driftDatabase, GCS_SCHEMA_SQL)).split("\n").filter(Boolean);
+    if (schemas.length !== 1) throw new Error(`${driftDatabase} has Green schemas ${JSON.stringify(schemas)}, expected one`);
+    dryRunDriftInstalled = true;
+    await psqlQuery(driftDatabase, dryRunDriftInstallSql(schemas[0]!));
+    console.log(`OK:   ${driftDatabase}  Green ${schemas[0]} corrupts one dry-run ct64`);
+  }
   console.log(`\n[6/11] propose upgrade via task:proposeCoprocessorUpgrade`);
   // Exercise the EOA task on the success path (a longer window with real traffic).
   const proposeStartTime = new Date(Date.now() + 30_000).toISOString();
+  const proposeTipBefore = await gatewayTip();
   await runContractTask(
     "host-sc",
     "host-sc-deploy",
@@ -1376,17 +1477,62 @@ const runBlueGreenProfile = async (
       },
     },
   );
+  const proposeTipAfter = await gatewayTip();
   console.log(`OK:   activation emitted via task (proposalId=2, version=${gcsVersionLive}, start=${proposeStartTime})`);
-
-  console.log(`\n[7/11] verify committed GCS DryRunStarted transitions per operator`);
-  for (const db of operatorDatabases) {
-    await waitUntil({
-      label: `${db}  proposal 2 entered GCS DryRunStarted`,
-      timeoutSecs: 120,
-      check: async () => (await psqlQuery(db,
-        dryRunEvidenceReadinessSql(gcsStackVersion, hostChains.map(chain => chain.chainId), 2))) === "ready",
-    });
+  // The dry run must compute real application handles for the trigger to pick
+  // one: run traffic from the proposal until DryRunStarted, while Green queues
+  // every block from start_block for the dry run to compute.
+  const dryRunTraffic = driftDatabase ? startContinuousErc20Traffic(trafficTargets, trafficTargets.length) : undefined;
+  if (dryRunTraffic) {
+    // Cutover needs the probe block (start_block + 1) final, five blocks later, and can follow
+    // DryRunStarted within seconds. From the probe on, each host mines only on transactions, so
+    // every block the dry run computes after the probe carries traffic for the trigger to hit.
+    for (const chain of hostChains) {
+      let startBlock = Number.NaN;
+      await waitUntil({
+        label: `${chain.key} proposal window known`,
+        timeoutSecs: 120,
+        check: async () => {
+          startBlock = Number(await psqlQuery(operatorDatabases[0]!,
+            `SELECT COALESCE(max(w.start_block), -1) FROM consensus_epoch_block_window w
+               JOIN consensus_epoch_history h USING (consensus_epoch)
+              WHERE h.outcome = 'pending' AND w.host_chain_id = ${chain.chainId};`));
+          return startBlock >= 0;
+        },
+      });
+      await waitUntil({
+        label: `${chain.key} reached the probe block ${startBlock + 1}`,
+        timeoutSecs: 180,
+        intervalMs: 250,
+        check: async () =>
+          Number((await run(["cast", "block-number", "--rpc-url", hostRpcUrl(chain.key)])).stdout.trim()) >= startBlock + 1,
+      });
+      automineHosts.add(chain.key);
+      await run(["cast", "rpc", "--rpc-url", hostRpcUrl(chain.key), "evm_setAutomine", "true"]);
+      console.log(`OK:   host ${chain.key} mines only on transactions from the probe block on`);
+    }
   }
+
+  let dryRunTrafficFailures = 0;
+  try {
+    console.log(`\n[7/11] verify committed GCS DryRunStarted transitions per operator`);
+    for (const db of operatorDatabases) {
+      await waitUntil({
+        label: `${db}  proposal 2 entered GCS DryRunStarted`,
+        timeoutSecs: 120,
+        check: async () => (await psqlQuery(db,
+          dryRunEvidenceReadinessSql(gcsStackVersion, hostChains.map(chain => chain.chainId), 2))) === "ready",
+      });
+    }
+    await assertGatewayGateOpens(proposeTipBefore, proposeTipAfter);
+  } finally {
+    if (dryRunTraffic) {
+      const stats = await dryRunTraffic.stop();
+      dryRunTrafficFailures = stats.failures;
+      console.log(`  dry-run traffic: ${stats.iterations} iteration(s), ${stats.retries} retried, ${stats.failures} failed after retry`);
+    }
+  }
+  if (dryRunTrafficFailures > 0) throw new Error(`${dryRunTrafficFailures} erc20 iteration(s) failed during the dry run`);
 
   console.log(
     `\n[8/11] start ${blueGreenTrafficStreams} background stream(s) across ` +
@@ -1459,6 +1605,7 @@ const runBlueGreenProfile = async (
         traffic.errored,
       ]);
     }
+    await restoreHostMining();
 
     // Cutover takes the consensus version from the binary, so it must have moved too.
     for (const db of operatorDatabases) {
@@ -1471,6 +1618,10 @@ const runBlueGreenProfile = async (
       }
     }
     console.log(`OK:   consensus ${gcsConsensusVersion} active on every operator`);
+    await manifests?.markCutover();
+    // Cutover can follow DryRunStarted within seconds, so the dry-run evidence is
+    // checked against the blocks the dry run computed, not against the clock.
+    await manifests?.duringDryRun();
 
     // BCS has no upgrade_state row — retires implicitly via `resolve_gcs_mode`.
     console.log(`\n[10/11] verify FSM final state`);
@@ -1559,6 +1710,10 @@ const runBlueGreenProfile = async (
     console.log(`OK: ${db} retained every identified pre-cutover value; ciphertexts ${preCt} -> ${finalCt}`);
   }
 
+  if (manifests) {
+    await manifests.afterCutover();
+    console.log("OK:   Green published and verified the upgrade epoch across cutover without drift");
+  }
   if (quietSynthetic) console.log("[UPG-01] quiet synthetic promotion and post-promotion application checks passed on both host chains");
   console.log(`\n==== ✓ Blue-Green E2E PASSED (${opCount} operator(s)) ====`);
   return true;
@@ -1592,10 +1747,13 @@ const runBlueGreenProfile = async (
     profileFailure = error;
     throw error;
   } finally {
+    await manifests?.writeReport(profileFailure === undefined ? "passed" : "failed", profileFailure);
     // Attempt every installed object's cleanup, including after partial setup.
     const cleanup = await Promise.allSettled([
       ...syntheticInstalled.map(db => psqlQuery(db, SYNTHETIC_EVIDENCE_CLEANUP_SQL)),
       ...dryRunInstalled.map(db => psqlQuery(db, DRY_RUN_EVIDENCE_CLEANUP_SQL)),
+      ...(driftDatabase && dryRunDriftInstalled ? [psqlQuery(driftDatabase, DRY_RUN_DRIFT_CLEANUP_SQL)] : []),
+      restoreHostMining(),
     ]);
     const failures = cleanup.filter((result): result is PromiseRejectedResult => result.status === "rejected");
     if (failures.length) {
@@ -1858,6 +2016,46 @@ export const test = async (testName: string | undefined, options: TestOptions) =
   };
 
   const runProfile = async (name: string) => {
+    if (name === "manifest-healing-stress") {
+      return runLogged(name, Date.now(), () => runManifestHealingStressProfile(
+        state,
+        (database, sql) => scalarQuery(database, sql, postgresRuntime()),
+        async (phase) => {
+          const result = await runWithHeartbeat(buildTestContainerArgs(
+            runTestsArgs({ ...options, parallel: false, grep: `manifest healing stress fixture ${phase}` }),
+            ["-e", "RUN_MANIFEST_LIFECYCLE=1"],
+          ), `manifest healing stress ${phase}`);
+          assertMatchedTests(result.stdout + result.stderr, `manifest healing stress ${phase}`);
+        },
+      ));
+    }
+    if (name === "manifest-healing") {
+      return runLogged(name, Date.now(), () => runManifestHealingProfile(
+        state,
+        (database, sql) => scalarQuery(database, sql, postgresRuntime()),
+        async (phase) => {
+          const result = await runWithHeartbeat(buildTestContainerArgs(
+            runTestsArgs({ ...options, parallel: false, grep: `manifest healing fixture ${phase}` }),
+            ["-e", "RUN_MANIFEST_LIFECYCLE=1"],
+          ), `manifest healing ${phase}`);
+          assertMatchedTests(result.stdout + result.stderr, `manifest healing ${phase}`);
+        },
+      ));
+    }
+    if (name === "manifest-lifecycle" || name === "manifest-lifecycle-no-drift") {
+      const runManifestProfile = name === "manifest-lifecycle" ? runManifestLifecycleProfile : runManifestLifecycleNoDriftProfile;
+      return runLogged(name, Date.now(), () => runManifestProfile(
+        state,
+        (database, sql) => scalarQuery(database, sql, postgresRuntime()),
+        async (phase) => {
+          const result = await runWithHeartbeat(buildTestContainerArgs(
+            runTestsArgs({ ...options, parallel: false, grep: `manifest lifecycle fixture ${phase}` }),
+            ["-e", "RUN_MANIFEST_LIFECYCLE=1"],
+          ), `manifest lifecycle ${phase}`);
+          assertMatchedTests(result.stdout + result.stderr, `manifest lifecycle ${phase}`);
+        },
+      ));
+    }
     if (name === "kms-generation") {
       return runKmsGenerationProfile(state, runUserDecryption);
     }
@@ -1869,6 +2067,12 @@ export const test = async (testName: string | undefined, options: TestOptions) =
     }
     if (name === "blue-green") {
       return runBlueGreenProfile(state, options);
+    }
+    if (name === "blue-green-manifests") {
+      return runBlueGreenProfile(state, options, true);
+    }
+    if (name === "blue-green-dry-run-drift") {
+      return runBlueGreenProfile(state, options, true, true);
     }
     if (name === "coprocessor-db-state-revert") {
       return runDbStateRevert(state, options);

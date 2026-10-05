@@ -1,0 +1,31 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n            SELECT skipped.block_hash,\n                   EXISTS (\n                       SELECT 1\n                         FROM host_chain_blocks_valid host\n                        WHERE host.chain_id = skipped.host_chain_id\n                          AND host.block_hash = skipped.block_hash\n                          AND host.block_status = 'orphaned'\n                   ) AS \"orphaned!\"\n              FROM block_manifest_state skipped\n             WHERE skipped.consensus_epoch = $1\n               AND skipped.host_chain_id = $2\n               AND skipped.block_number < $3\n               AND skipped.manifest_required\n               AND NOT skipped.manifest_published\n               AND skipped.publication_error_count > 0\n               AND skipped.publication_error_count <= $4\n               AND skipped.publication_next_retry_at IS NULL\n               AND skipped.block_content_digest IS NOT NULL\n             ORDER BY skipped.block_number DESC\n             LIMIT 1\n               FOR UPDATE OF skipped SKIP LOCKED\n            ",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "block_hash",
+        "type_info": "Bytea"
+      },
+      {
+        "ordinal": 1,
+        "name": "orphaned!",
+        "type_info": "Bool"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Text",
+        "Int8",
+        "Int8",
+        "Int8"
+      ]
+    },
+    "nullable": [
+      false,
+      null
+    ]
+  },
+  "hash": "651292fb121d6def78e89fffefa7aee38553125404a619e8aed897d0dc05f8fd"
+}

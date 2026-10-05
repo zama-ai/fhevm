@@ -16,7 +16,7 @@ import { resumeOptionConflicts, shouldShowResumeHint } from "./flow/up-flow";
 import {
   DEFAULT_GATEWAY_RPC_PORT,
   DEFAULT_HOST_RPC_PORT,
-  MINIO_PORT,
+  OBJECT_STORE_PORT,
   ROLLOUT_STANDARD_TEST_PROFILES,
   STANDARD_SHARD_COMPUTE_TEST_PROFILES,
   STANDARD_SHARD_DECRYPTION_TEST_PROFILES,
@@ -93,8 +93,8 @@ const bootstrappedState = (
       hosts: {
         host: { http: `http://127.0.0.1:${DEFAULT_HOST_RPC_PORT}`, ws: `ws://127.0.0.1:${DEFAULT_HOST_RPC_PORT}` },
       },
-      minioExternal: `http://127.0.0.1:${MINIO_PORT}`,
-      minioInternal: `http://minio:${MINIO_PORT}`,
+      objectStoreExternal: `http://127.0.0.1:${OBJECT_STORE_PORT}`,
+      objectStoreInternal: `http://object-store:${OBJECT_STORE_PORT}`,
     },
     kmsSigners: ["0x0000000000000000000000000000000000000014"],
     fheKeyId: "a".repeat(64),

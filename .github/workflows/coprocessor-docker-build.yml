@@ -210,6 +210,7 @@ jobs:
           - coprocessor/fhevm-engine/fhevm-engine-common/**
           - coprocessor/fhevm-engine/Cargo.*
           - host-contracts/rust_bindings/**
+          - shared/block-manifest/**
           - shared/ciphertext-attestation/**
 
   check-changes-tfhe-worker:
@@ -288,6 +289,8 @@ jobs:
           - coprocessor/fhevm-engine/Cargo.*
           - host-contracts/rust_bindings/**
           - gateway-contracts/rust_bindings/**
+          - shared/block-manifest/**
+          - shared/ciphertext-attestation/**
 
   check-changes-upgrade-controller:
     uses: ./.github/workflows/check-changes-for-docker-build.yml

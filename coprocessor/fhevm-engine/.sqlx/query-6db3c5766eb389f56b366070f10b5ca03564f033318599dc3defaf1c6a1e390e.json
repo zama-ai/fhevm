@@ -1,0 +1,14 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n        WITH active AS (\n            SELECT id, consensus_epoch, coprocessor_context_id, host_chain_id, handle,\n                   block_number, quorum_ct64_digest, target_evidence, peer_sources\n              FROM drifted_handle\n             WHERE consensus_epoch = ANY($1)\n               AND healed_at IS NULL\n               AND heal_abandoned_at IS NULL\n               AND superseded_at IS NULL\n               AND reason IN ('ct64_mismatch', 'missing_here', 'error_here', 'uncomputed_here')\n               AND quorum_ct64_digest IS NOT NULL\n        ),\n        single_target AS (\n            SELECT consensus_epoch, coprocessor_context_id, host_chain_id, handle\n              FROM active\n             GROUP BY consensus_epoch, coprocessor_context_id, host_chain_id, handle\n            HAVING COUNT(DISTINCT quorum_ct64_digest) = 1\n        ),\n        pinned AS (\n            SELECT DISTINCT ON (a.consensus_epoch, a.coprocessor_context_id, a.host_chain_id, a.handle)\n                   a.consensus_epoch, a.coprocessor_context_id, a.host_chain_id, a.handle,\n                   a.quorum_ct64_digest, a.target_evidence, a.peer_sources\n              FROM active a\n              JOIN single_target t\n                ON t.consensus_epoch = a.consensus_epoch\n               AND t.coprocessor_context_id = a.coprocessor_context_id\n               AND t.host_chain_id = a.host_chain_id\n               AND t.handle = a.handle\n             ORDER BY a.consensus_epoch, a.coprocessor_context_id, a.host_chain_id, a.handle,\n                      a.block_number ASC, a.id ASC\n        )\n        UPDATE drifted_handle dh\n           SET quorum_ct64_digest = pinned.quorum_ct64_digest,\n               target_evidence = COALESCE(dh.target_evidence, pinned.target_evidence),\n               peer_sources = CASE\n                 WHEN dh.peer_sources = '[]'::jsonb THEN pinned.peer_sources\n                 ELSE dh.peer_sources\n               END\n          FROM pinned\n         WHERE dh.consensus_epoch = pinned.consensus_epoch\n           AND dh.coprocessor_context_id = pinned.coprocessor_context_id\n           AND dh.host_chain_id = pinned.host_chain_id\n           AND dh.handle = pinned.handle\n           AND dh.healed_at IS NULL\n           AND dh.superseded_at IS NULL\n           AND dh.reason IN ('ct64_mismatch', 'missing_here', 'error_here', 'uncomputed_here')\n           AND dh.quorum_ct64_digest IS NULL\n        ",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "TextArray"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "6db3c5766eb389f56b366070f10b5ca03564f033318599dc3defaf1c6a1e390e"
+}

@@ -178,6 +178,7 @@ jobs:
             -p tfhe-worker \
             -p sns-worker \
             -p zkproof-worker \
+            -p scheduler \
             --release \
             --features=gpu \
             -- \

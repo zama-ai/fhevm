@@ -1,0 +1,84 @@
+services:
+  # S3-compatible object store, backed by RustFS.
+  object-store:
+    container_name: fhevm-object-store
+    image: cgr.dev/zama.ai/rustfs:1.0.0-dev
+    env_file:
+      - ${FHEVM_STATE_DIR:-../../../.fhevm}/runtime/env/object-store.env
+    environment:
+      # Log to stdout rather than to files under /logs.
+      RUSTFS_OBS_LOG_DIRECTORY: ""
+      # Skip the startup update check, which calls out to version.rustfs.com.
+      RUSTFS_CHECK_UPDATE: "false"
+    networks:
+      default:
+        aliases:
+          # KMS storage URLs are published on-chain as `http://minio:9000`, thus this alias.
+          - minio
+    ports:
+      - "9000:9000"
+      - "9001:9001"
+    healthcheck:
+      # `/health/ready` only succeeds once storage and IAM are initialized.
+      test: [ "CMD", "curl", "-fsS", "-o", "/dev/null", "http://127.0.0.1:9000/health/ready" ]
+      interval: 1s
+      timeout: 10s
+      retries: 30
+
+  object-store-setup:
+    container_name: fhevm-object-store-setup
+    image: cgr.dev/zama.ai/rustfs:1.0.0-dev
+    # The image runs as an unprivileged user, which can't write to the root-owned secrets volume.
+    user: root
+    env_file:
+      - ${FHEVM_STATE_DIR:-../../../.fhevm}/runtime/env/object-store.env
+    entrypoint:
+      - /bin/sh
+      - -c
+      - |
+        set -e
+        # SigV4-signed requests with the root credentials.
+        s3() { curl -fsS --aws-sigv4 aws:amz:us-east-1:s3 --user "$${OBJECT_STORE_ROOT_USER}:$${OBJECT_STORE_ROOT_PASSWORD}" "$$@"; }
+        # Object Lock can only be enabled at bucket creation.
+        mb() {
+          s3 -o /dev/null -I "$${OBJECT_STORE_ENDPOINT}/$$1" 2>/dev/null ||
+            s3 -X PUT -H "x-amz-bucket-object-lock-enabled: true" "$${OBJECT_STORE_ENDPOINT}/$$1"
+        }
+        # Public read and write access for anonymous requests.
+        public() {
+          s3 -X PUT "$${OBJECT_STORE_ENDPOINT}/$$1?policy" -d '{
+            "Version": "2012-10-17",
+            "Statement": [
+              { "Effect": "Allow", "Principal": { "AWS": ["*"] }, "Resource": ["arn:aws:s3:::'"$$1"'"],
+                "Action": ["s3:GetBucketLocation", "s3:ListBucket", "s3:ListBucketMultipartUploads"] },
+              { "Effect": "Allow", "Principal": { "AWS": ["*"] }, "Resource": ["arn:aws:s3:::'"$$1"'/*"],
+                "Action": ["s3:AbortMultipartUpload", "s3:DeleteObject", "s3:GetObject", "s3:ListMultipartUploadParts", "s3:PutObject"] }
+            ]
+          }'
+        }
+        s3 -X PUT "$${OBJECT_STORE_ENDPOINT}/rustfs/admin/v3/add-user?accessKey=$${ACCESS_KEY}" \
+          -d '{"secretKey":"'"$${SECRET_KEY}"'","status":"enabled"}'
+        s3 -X PUT "$${OBJECT_STORE_ENDPOINT}/rustfs/admin/v3/set-user-or-group-policy?policyName=readwrite&userOrGroup=$${ACCESS_KEY}&isGroup=false"
+        echo $${ACCESS_KEY}
+        echo $${SECRET_KEY}
+        echo $${ACCESS_KEY} > /object_store_secrets/access_key
+        echo $${SECRET_KEY} > /object_store_secrets/secret_key
+        cat /object_store_secrets/access_key
+        cat /object_store_secrets/secret_key
+        mb kms-public
+        # Per-coprocessor buckets, holding both ct128 and ct64 under their key
+        # prefixes, as deployed in production.
+        # See test-suite/fhevm/src/generate/env.ts:buildInstanceEnvs.
+        for i in 0 1 2 3 4; do
+          mb coproc-$$i
+          public coproc-$$i
+        done
+        public kms-public
+    volumes:
+      - object_store_secrets:/object_store_secrets
+    depends_on:
+      object-store:
+        condition: service_healthy
+
+volumes:
+  object_store_secrets:

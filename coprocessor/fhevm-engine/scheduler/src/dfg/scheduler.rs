@@ -23,9 +23,12 @@ use std::collections::HashMap;
 use std::time::Duration;
 use tfhe::ReRandomizationContext;
 use tokio::task::JoinSet;
-use tracing::{error, info, warn};
+use tracing::{error, info};
 
 use super::{DFComponentGraph, DFGOutput, DFGraph, OpNode};
+
+mod parallel;
+use parallel::{execute_partition, CanonicalInputs};
 
 const OPERATION_RERANDOMISATION_DOMAIN_SEPARATOR: [u8; 8] = *b"TFHE_Rrd";
 const COMPACT_PUBLIC_ENCRYPTION_DOMAIN_SEPARATOR: [u8; 8] = *b"TFHE_Enc";
@@ -223,21 +226,15 @@ impl<'a> Scheduler<'a> {
                     ));
                 }
                 let (sks, cpk, gpu_idx) = self.get_keys(DeviceSelection::RoundRobin)?;
-                // Bound concurrent partitions per device. Permits are
-                // released by the blocking task itself, never by this
-                // coordinator, so waiting here cannot deadlock; it only
-                // paces dispatch to the configured stream capacity.
                 #[cfg(feature = "gpu")]
-                let gpu_permit = self.gpu_execution_limiter.acquire(gpu_idx).await?;
+                let limiter = self.gpu_execution_limiter.clone();
                 let gpu_reservation_timeout = self.gpu_reservation_timeout;
                 let parent_span = tracing::Span::current();
                 let heartbeat = self.activity_heartbeat.clone();
                 let dispatched_at = std::time::Instant::now();
-                set.spawn_blocking(move || {
-                    #[cfg(feature = "gpu")]
-                    let _gpu_permit = gpu_permit;
-                    let span_guard = parent_span.enter();
-                    let result = execute_partition(
+                set.spawn(async move {
+                    use tracing::Instrument;
+                    execute_partition(
                         args,
                         index,
                         dispatched_at,
@@ -246,9 +243,11 @@ impl<'a> Scheduler<'a> {
                         cpk,
                         gpu_reservation_timeout,
                         heartbeat,
-                    );
-                    drop(span_guard);
-                    result
+                        #[cfg(feature = "gpu")]
+                        limiter,
+                    )
+                    .instrument(parent_span)
+                    .await
                 });
             }
         }
@@ -303,16 +302,14 @@ impl<'a> Scheduler<'a> {
                     }
                     let (sks, cpk, gpu_idx) = self.get_keys(DeviceSelection::RoundRobin)?;
                     #[cfg(feature = "gpu")]
-                    let gpu_permit = self.gpu_execution_limiter.acquire(gpu_idx).await?;
+                    let limiter = self.gpu_execution_limiter.clone();
                     let gpu_reservation_timeout = self.gpu_reservation_timeout;
                     let parent_span = tracing::Span::current();
                     let heartbeat = self.activity_heartbeat.clone();
                     let dispatched_at = std::time::Instant::now();
-                    set.spawn_blocking(move || {
-                        #[cfg(feature = "gpu")]
-                        let _gpu_permit = gpu_permit;
-                        let span_guard = parent_span.enter();
-                        let result = execute_partition(
+                    set.spawn(async move {
+                        use tracing::Instrument;
+                        execute_partition(
                             args,
                             dependent_task_index,
                             dispatched_at,
@@ -321,9 +318,11 @@ impl<'a> Scheduler<'a> {
                             cpk,
                             gpu_reservation_timeout,
                             heartbeat,
-                        );
-                        drop(span_guard);
-                        result
+                            #[cfg(feature = "gpu")]
+                            limiter,
+                        )
+                        .instrument(parent_span)
+                        .await
                     });
                 }
             }
@@ -369,323 +368,16 @@ fn re_randomise_operation_inputs(
 }
 
 type ComponentSet = Vec<(DFGraph, HashMap<Handle, Option<DFGTxInput>>, Handle, usize)>;
-/// Executes a partition of whole transactions in topological order.
-///
-/// The transaction is the materialization boundary. Every value produced in
-/// this transaction is forwarded raw to its same-transaction consumers,
-/// including values which are also compressed for persistence. Values which
-/// enter from another transaction are reconstructed from their canonical
-/// persisted representation. The consuming handle commits to that origin, so
-/// the raw and canonical forms cannot alias even when they represent the same
-/// plaintext operation.
-#[allow(clippy::too_many_arguments)]
-fn execute_partition(
-    transactions: ComponentSet,
-    task_id: NodeIndex,
-    dispatched_at: std::time::Instant,
-    gpu_idx: usize,
-    #[cfg(not(feature = "gpu"))] sks: tfhe::ServerKey,
-    #[cfg(feature = "gpu")] sks: tfhe::CudaServerKey,
-    cpk: tfhe::CompactPublicKey,
-    gpu_reservation_timeout: Duration,
-    activity_heartbeat: HeartBeat,
-) -> PartitionResult {
-    let spawned_at = std::time::Instant::now();
-    tfhe::set_server_key(sks);
-    let key_installed_at = std::time::Instant::now();
-    let partition_tx_count = transactions.len();
-    // Per-partition memo of the canonical decompressed form ct(h), permitted
-    // by RFC-020 ("the worker may cache the canonical decompressed form ct(h)
-    // for the duration of the transaction batch"). Without it a boundary
-    // handle consumed by K ops is decompressed K times from identical bytes.
-    //
-    // Scoped to the PARTITION, not the batch, on purpose: a partition runs on
-    // one thread with one server key installed, so entries are created on the
-    // device that consumes them and need no synchronization. A batch-wide
-    // cache would have to be shared across partition threads and would pin
-    // every boundary value to whichever device populated it.
-    //
-    // Memoization is observationally transparent — Decompress(cmp(h)) is
-    // deterministic, so a hit and a miss yield the same value.
-    let mut boundary_cache: HashMap<Handle, SupportedFheCiphertexts> = HashMap::new();
-    // Two channels, because they answer different questions. `outputs` resolves a
-    // later transaction's input from an earlier one's output in this partition,
-    // where the handle IS the identity -- ct(h) is the same value whichever
-    // transaction minted it, which is the same memo argument as
-    // `boundary_cache` above. `reported` is what the graph is told, and there
-    // the transaction matters: the same handle from two transactions is two
-    // rows, two stamps and two verdicts.
-    let mut outputs: HashMap<Handle, TaskResult> = HashMap::with_capacity(transactions.len());
-    let mut reported: Vec<PartitionOutcome> = Vec::with_capacity(transactions.len());
-    // Traverse transactions within the partition. The transactions
-    // are topologically sorted so the order is executable
-    'tx: for (ref mut dfg, ref mut tx_inputs, tid, _cid) in transactions {
-        #[cfg(feature = "test-failpoints")]
-        let _reservation_scope =
-            fhevm_engine_common::reservation_test_control::TransactionScope::enter(&tid);
-        let txn_id_short = telemetry::short_hex_id(&tid);
-
-        // Update the transaction inputs based on allowed handles so
-        // far. If any input is still missing, and we cannot fill it
-        // (e.g., error in the producer transaction) we cannot execute
-        // this transaction and possibly more downstream.
-        for (h, i) in tx_inputs.iter_mut() {
-            if i.is_none() {
-                let Some(ct) = outputs.get(h) else {
-                    warn!(target: "scheduler", {transaction_id = ?hex::encode(&tid) },
-		       "Missing input to compute transaction - skipping");
-                    for nidx in dfg.graph.node_identifiers() {
-                        let Some(node) = dfg.graph.node_weight_mut(nidx) else {
-                            error!(target: "scheduler", {index = ?nidx.index() }, "Wrong dataflow graph index");
-                            continue;
-                        };
-                        // `is_owned`, matching the bubbled-error arm below:
-                        // an internal producer under our lease has a row of
-                        // ours to stamp, and gating on allowance dropped its
-                        // verdict on the floor.
-                        if node.is_owned {
-                            reported.push((
-                                node.handles(),
-                                tid.clone(),
-                                Err(SchedulerError::MissingInputs.into()),
-                            ));
-                        }
-                    }
-                    continue 'tx;
-                };
-                *i = Some(DFGTxInput::Compressed((
-                    ct.compressed_ct.clone(),
-                    ct.is_allowed,
-                )));
-            }
-        }
-
-        // Prime the scheduler with ready ops from the transaction's subgraph
-        let _exec_guard = tracing::info_span!(
-            "execute_transaction",
-            txn_id = %txn_id_short,
-        )
-        .entered();
-        let started_at = std::time::Instant::now();
-
-        let Ok(ts) = daggy::petgraph::algo::toposort(&dfg.graph, None) else {
-            error!(target: "scheduler", {transaction_id = ?tid },
-		       "Cyclical dependence error in transaction");
-            for nidx in dfg.graph.node_identifiers() {
-                let Some(node) = dfg.graph.node_weight_mut(nidx) else {
-                    error!(target: "scheduler", {index = ?nidx.index() }, "Wrong dataflow graph index");
-                    continue;
-                };
-                if node.is_owned {
-                    reported.push((
-                        node.handles(),
-                        tid.clone(),
-                        Err(SchedulerError::CyclicDependence.into()),
-                    ));
-                }
-            }
-            continue 'tx;
-        };
-        let edges = dfg.graph.map(|_, _| (), |_, edge| *edge);
-        for nidx in ts.iter() {
-            let Some(node) = dfg.graph.node_weight_mut(*nidx) else {
-                error!(target: "scheduler", {index = ?nidx.index() }, "Wrong dataflow graph index");
-                continue;
-            };
-            let result = try_execute_node(
-                node,
-                nidx.index(),
-                tx_inputs,
-                gpu_idx,
-                &tid,
-                &cpk,
-                gpu_reservation_timeout,
-                &mut boundary_cache,
-            );
-            // Per-op progress tick: a partition can legitimately run longer
-            // than both the heartbeat freshness window and the in-flight
-            // batch TTL; liveness must track op completions, not partition
-            // completions, so only a genuinely wedged op exhausts the TTL.
-            activity_heartbeat.update();
-            match result {
-                Ok((node_index, op_result)) => {
-                    let nidx = NodeIndex::new(node_index);
-                    let Some(node) = dfg.graph.node_weight(nidx) else {
-                        error!(target: "scheduler", {index = ?nidx.index() }, "Wrong dataflow graph index");
-                        continue;
-                    };
-                    // Named apart from the partition's `outputs` results map.
-                    let node_outputs = node.outputs.clone();
-                    let producer_handles: Vec<Handle> =
-                        node_outputs.iter().map(|o| o.handle.clone()).collect();
-                    let opcode = node.opcode;
-                    let working = match op_result {
-                        Ok(working) => working,
-                        Err(e) => {
-                            reported.push((producer_handles.clone(), tid.clone(), Err(e)));
-                            continue;
-                        }
-                    };
-                    let produced: Vec<i16> = working.iter().map(|v| v.type_num()).collect();
-                    // Nothing is forwarded or published: a wrong count or type
-                    // means the results cannot be matched to the handles, so the
-                    // whole group fails rather than binding to the wrong ones.
-                    if let Err(error) = validate_results(&node_outputs, &produced) {
-                        error!(target: "scheduler", { error = %error },
-                        "Dispatch result does not match the operation's declared outputs");
-                        reported.push((producer_handles.clone(), tid.clone(), Err(error.into())));
-                        continue;
-                    }
-                    // Each consumer's representation of this output
-                    // is pinned on chain: the executor folded a
-                    // boundary bit per operand into the consuming
-                    // handle, zero for operands minted in the
-                    // consuming transaction. Every in-graph edge here
-                    // is by definition that case, so all of them
-                    // forward the raw working value — no
-                    // compress/decompress round-trip for
-                    // same-transaction consumers, and no byte-equality
-                    // obligation against differently-sourced aliases,
-                    // which now mint different handles.
-                    //
-                    // An output is compressed iff it is allowed:
-                    // persistence needs the bytes, and any
-                    // cross-transaction consumer must have been
-                    // granted a persistent allowance first (transient
-                    // allowances are transaction-scoped), so
-                    // cross-transaction consumers need no separate
-                    // tracking.
-                    //
-                    // A multi-output op materializes each output
-                    // separately, so the rule above is applied per
-                    // handle rather than once per operation.
-                    //
-                    // Compress all allowed outputs before recording any: a late
-                    // failure must not leave earlier siblings completed.
-                    let mut compressed: Vec<Option<CompressedCiphertext>> =
-                        Vec::with_capacity(node_outputs.len());
-                    let mut compression_failure: Option<anyhow::Error> = None;
-                    for (output, value) in node_outputs.iter().zip(working.iter()) {
-                        if !output.is_allowed {
-                            compressed.push(None);
-                            continue;
-                        }
-                        match compress_output(value, &tid, opcode) {
-                            Ok(compressed_ct) => compressed.push(Some(compressed_ct)),
-                            Err(e) => {
-                                compression_failure = Some(e);
-                                break;
-                            }
-                        }
-                    }
-                    if let Some(e) = compression_failure {
-                        error!(target: "scheduler", { error = %e },
-                        "Compression failed for an allowed output; failing the whole operation");
-                        reported.push((producer_handles.clone(), tid.clone(), Err(e)));
-                        continue;
-                    }
-                    let mut forwarded: Vec<SupportedFheCiphertexts> =
-                        Vec::with_capacity(working.len());
-                    for ((output, value), compressed_ct) in
-                        node_outputs.iter().zip(working).zip(compressed)
-                    {
-                        if let Some(compressed_ct) = compressed_ct {
-                            let task_result = TaskResult {
-                                compressed_ct,
-                                is_allowed: output.is_allowed,
-                                transaction_id: tid.clone(),
-                            };
-                            outputs.insert(output.handle.clone(), task_result.clone());
-                            reported.push((
-                                vec![output.handle.clone()],
-                                tid.clone(),
-                                Ok(task_result),
-                            ));
-                        }
-                        forwarded.push(value);
-                    }
-                    // Route each output to the consumers that name it:
-                    // an edge carries the consuming input slot, and the
-                    // handle in that slot selects which output feeds it.
-                    for edge in edges.edges_directed(nidx, Direction::Outgoing) {
-                        let child_index = edge.target();
-                        let input_idx = *edge.weight() as usize;
-                        let Some(child_node) = dfg.graph.node_weight_mut(child_index) else {
-                            error!(target: "scheduler", {index = ?child_index.index() }, "Wrong dataflow graph index");
-                            continue;
-                        };
-                        let dep_handle = match child_node.inputs.get(input_idx) {
-                            Some(DFGTaskInput::LocalDependence(dh))
-                            | Some(DFGTaskInput::BoundaryDependence(dh)) => dh.clone(),
-                            // Already resolved; nothing to route.
-                            Some(DFGTaskInput::Value(_)) | Some(DFGTaskInput::Compressed(..)) => {
-                                continue
-                            }
-                            None => {
-                                error!(target: "scheduler", { input_idx },
-                                    "Edge names an input slot the consumer does not have - graph inconsistency");
-                                continue;
-                            }
-                        };
-                        let Some(out_idx) = producer_handles.iter().position(|h| h == &dep_handle)
-                        else {
-                            error!(target: "scheduler",
-                            { handle = ?hex::encode(&dep_handle) },
-                            "Consumer dependence handle not found in producer outputs - graph inconsistency");
-                            continue;
-                        };
-                        child_node.inputs[input_idx] =
-                            DFGTaskInput::Value(forwarded[out_idx].clone());
-                    }
-                }
-                Err(e) => {
-                    let Some(node) = dfg.graph.node_weight(*nidx) else {
-                        error!(target: "scheduler", {index = ?nidx.index() }, "Wrong dataflow graph index");
-                        continue;
-                    };
-                    // Report every producer's error, allowed or not: an unreported
-                    // failure left its consumers waiting forever. The worker decides
-                    // where a foreign row's error is recorded (`is_foreign_producer`).
-                    reported.push((node.handles(), tid.clone(), Err(e)));
-                }
-            }
-        }
-        drop(_exec_guard);
-        let elapsed = started_at.elapsed();
-        FHE_BATCH_LATENCY_HISTOGRAM.observe(elapsed.as_secs_f64());
-    }
-    tracing::info!(
-        target: "scheduler",
-        dispatch_us = spawned_at.duration_since(dispatched_at).as_micros() as u64,
-        key_install_us = key_installed_at.duration_since(spawned_at).as_micros() as u64,
-        exec_us = key_installed_at.elapsed().as_micros() as u64,
-        total_us = dispatched_at.elapsed().as_micros() as u64,
-        tx_count = partition_tx_count,
-        "partition_hop"
-    );
-    // No trailing device synchronization: it would be a DEVICE-WIDE barrier
-    // that couples this partition to every other in-flight partition's
-    // queued kernels — on a dependency-deep workload each link then waits
-    // for all sibling chains before its successor can spawn. It is also not
-    // needed for correctness: (1) every value that escapes the partition is
-    // host bytes produced by compress, which synchronizes the partition's
-    // own streams; (2) raw and canonical forwards are consumed inside the
-    // partition on the same streams, in order; (3) buffer frees are
-    // stream-ordered; (4) the GPU memory reservations already release at op
-    // return, so the sync never extended that accounting.
-    (reported, task_id, gpu_idx)
-}
-
 #[allow(clippy::too_many_arguments)]
 fn try_execute_node(
     node: &mut OpNode,
     node_index: usize,
-    tx_inputs: &mut HashMap<Handle, Option<DFGTxInput>>,
+    tx_inputs: &HashMap<Handle, Option<DFGTxInput>>,
     gpu_idx: usize,
     transaction_id: &Handle,
     cpk: &tfhe::CompactPublicKey,
     gpu_reservation_timeout: Duration,
-    boundary_cache: &mut HashMap<Handle, SupportedFheCiphertexts>,
+    boundary_cache: &CanonicalInputs,
 ) -> Result<(usize, OpResult)> {
     if !node.check_ready_inputs(tx_inputs) {
         return Err(SchedulerError::SchedulerError.into());
@@ -705,9 +397,9 @@ fn try_execute_node(
             DFGTaskInput::Compressed(handle, cct) => {
                 // ct(h) is the same value for every consumer, so a hit and a
                 // miss are indistinguishable to the operation. See the memo's
-                // declaration in execute_partition for the RFC-020 basis.
+                // declaration in parallel::CanonicalInputs for the RFC-020 basis.
                 if let Some(cached) = boundary_cache.get(&handle) {
-                    cts.push(cached.clone());
+                    cts.push(cached.as_ref().clone());
                     continue;
                 }
                 // Decompression is inside catch_unwind for the same reason
@@ -879,8 +571,8 @@ fn validate_results(
 
 /// Materializes an operation output that leaves its transaction: allowed
 /// handles (persisted) and inputs of other transactions both read this
-/// canonical compressed form — as do the producer's own same-transaction
-/// consumers, so an aliased producer elsewhere converges byte-identically.
+/// canonical compressed form. Same-transaction consumers retain the raw
+/// working value, as committed by their operand-origin bits.
 fn compress_output(
     working: &SupportedFheCiphertexts,
     transaction_id: &Handle,

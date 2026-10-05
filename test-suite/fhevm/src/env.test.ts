@@ -212,8 +212,8 @@ describe("env", () => {
         endpoints: {
           gateway: { http: "http://gateway-node:8546", ws: "ws://gateway-node:8546" },
           hosts: { host: { http: "http://host-node:8545", ws: "ws://host-node:8545" } },
-          minioInternal: "http://minio:9000",
-          minioExternal: "http://localhost:9000",
+          objectStoreInternal: "http://object-store:9000",
+          objectStoreExternal: "http://localhost:9000",
         },
       },
       completedSteps: [],
@@ -265,14 +265,14 @@ describe("env", () => {
         hosts: {},
         kmsSigners: ["0x1"],
         kmsCaCerts: ["0xaa"],
-        minioKeyPrefix: "PUB",
+        objectStoreKeyPrefix: "PUB",
         fheKeyId: "f".repeat(64),
         crsKeyId: "c".repeat(64),
         endpoints: {
           gateway: { http: "http://gateway-node:8546", ws: "ws://gateway-node:8546" },
           hosts: { host: { http: "http://host-node:8545", ws: "ws://host-node:8545" } },
-          minioInternal: "http://minio:9000",
-          minioExternal: "http://localhost:9000",
+          objectStoreInternal: "http://object-store:9000",
+          objectStoreExternal: "http://localhost:9000",
         },
       },
       completedSteps: [],
@@ -283,7 +283,7 @@ describe("env", () => {
     const host = rendered.componentEnvs["host-sc"];
 
     // The deploy reads the same per-node params as threshold, here for one node. The centralized
-    // core's public vault prefix is "PUB" (PUB-p{i} is threshold-only) — it tracks minioKeyPrefix.
+    // core's public vault prefix is "PUB" (PUB-p{i} is threshold-only) — it tracks objectStoreKeyPrefix.
     expect(host.KMS_NODE_PARTY_ID_0).toBe("1");
     expect(host.KMS_NODE_MPC_IDENTITY_0).toBe("kms-core");
     expect(host.KMS_NODE_STORAGE_PREFIX_0).toBe("PUB");
@@ -319,8 +319,8 @@ describe("env", () => {
         endpoints: {
           gateway: { http: "http://gateway-node:8546", ws: "ws://gateway-node:8546" },
           hosts: { host: { http: "http://host-node:8545", ws: "ws://host-node:8545" } },
-          minioInternal: "http://minio:9000",
-          minioExternal: "http://localhost:9000",
+          objectStoreInternal: "http://object-store:9000",
+          objectStoreExternal: "http://localhost:9000",
         },
       },
       completedSteps: [],
@@ -372,8 +372,8 @@ describe("env", () => {
         endpoints: {
           gateway: { http: "http://gateway-node:8546", ws: "ws://gateway-node:8546" },
           hosts: { host: { http: "http://host-node:8545", ws: "ws://host-node:8545" } },
-          minioInternal: "http://minio:9000",
-          minioExternal: "http://localhost:9000",
+          objectStoreInternal: "http://object-store:9000",
+          objectStoreExternal: "http://localhost:9000",
         },
       },
       completedSteps: [],
@@ -437,8 +437,8 @@ describe("env", () => {
         endpoints: {
           gateway: { http: "http://gateway-node:8546", ws: "ws://gateway-node:8546" },
           hosts: { host: { http: "http://host-node:8545", ws: "ws://host-node:8545" } },
-          minioInternal: "http://minio:9000",
-          minioExternal: "http://localhost:9000",
+          objectStoreInternal: "http://object-store:9000",
+          objectStoreExternal: "http://localhost:9000",
         },
       },
       completedSteps: [],
@@ -501,8 +501,8 @@ describe("env", () => {
         endpoints: {
           gateway: { http: "http://gateway-node:8546", ws: "ws://gateway-node:8546" },
           hosts: { host: { http: "http://host-node:8545", ws: "ws://host-node:8545" } },
-          minioInternal: "http://minio:9000",
-          minioExternal: "http://localhost:9000",
+          objectStoreInternal: "http://object-store:9000",
+          objectStoreExternal: "http://localhost:9000",
         },
       },
       completedSteps: [],

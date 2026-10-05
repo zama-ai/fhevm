@@ -1,0 +1,17 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n            DELETE FROM host_chain_blocks_valid b\n            WHERE b.ctid IN (\n                SELECT c.ctid\n                FROM host_chain_blocks_valid c\n                WHERE c.chain_id = $1\n                  AND c.block_status = 'finalized'\n                  AND c.block_number < $2\n                  AND c.created_at < NOW() - $4::BIGINT * INTERVAL '1 second'\n                  AND NOT EXISTS (\n                      SELECT 1 FROM bridge_handle_events r\n                      WHERE r.block_hash = c.block_hash\n                  )\n                  AND NOT EXISTS (\n                      SELECT 1 FROM handle_bridged_events r\n                      WHERE r.block_hash = c.block_hash\n                  )\n                  AND NOT EXISTS (\n                      SELECT 1 FROM fallback_granted_events r\n                      WHERE r.block_hash = c.block_hash\n                  )\n                  -- KMS key/CRS activation staging joins the finalized row by\n                  -- (chain_id, block_hash) when a 'ready' event activates;\n                  -- pruning it would strand the activation forever. Small\n                  -- tables, guarded unconditionally.\n                  AND NOT EXISTS (\n                      SELECT 1 FROM kms_key_activation_events r\n                      WHERE r.chain_id = $1 AND r.block_hash = c.block_hash\n                  )\n                  AND NOT EXISTS (\n                      SELECT 1 FROM kms_crs_activation_events r\n                      WHERE r.chain_id = $1 AND r.block_hash = c.block_hash\n                  )\n                ORDER BY c.block_number ASC\n                LIMIT $3\n            )\n            ",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Int8",
+        "Int8",
+        "Int8",
+        "Int8"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "58bb89adf0cef3826da63c52d62b6b676e87eae2eae8b1eec9a664946676997a"
+}

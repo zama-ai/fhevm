@@ -149,6 +149,8 @@ pub async fn insert_event(
         log_index: log.log_index,
         operand_boundary_mask: Some(operand_boundary_mask),
         is_executor_minted: true,
+        is_fallback_grant: false,
+        is_synthetic: false,
     };
     listener_db.insert_tfhe_event(tx, &event).await?;
     Ok(())

@@ -6,6 +6,7 @@ import { readFileSync, statSync } from "node:fs";
 import fs from "node:fs/promises";
 import path from "node:path";
 import YAML from "yaml";
+import { MANIFEST_INJECTION_PATH, manifestInjectionDir, manifestInjectionMount } from "../manifest-drift";
 
 import {
   type CompatPolicy,
@@ -18,6 +19,7 @@ import {
   supportsUpgradeController,
 } from "../compat/compat";
 import {
+  ANVIL_CHAIN_ID,
   COMPONENTS,
   COMPOSE_OUT_DIR,
   DEFAULT_CHAIN_ID,
@@ -421,6 +423,53 @@ const rewriteCoprocessorDependsOn = (
     ]),
   );
 
+const PUBLICATION_CADENCE_FLAG = "--manifest-publication-cadence";
+const LOCAL_PUBLICATION_CADENCE = "1";
+
+/** Host chain ids that should publish every block on local Anvil / E2E. */
+const localPublicationCadenceChainIds = (envVars: Record<string, string>): string[] => {
+  const ids = new Set<string>([ANVIL_CHAIN_ID, DEFAULT_CHAIN_ID]);
+  if (envVars.CHAIN_ID) {
+    ids.add(envVars.CHAIN_ID);
+  }
+  for (const [key, value] of Object.entries(envVars)) {
+    if (/^HOST_CHAIN_\d+_ID$/.test(key) && value) {
+      ids.add(value);
+    }
+  }
+  return [...ids];
+};
+
+/**
+ * Keeps unique `--manifest-publication-cadence=CHAIN_ID:1` overlays for local
+ * Anvil (31337), the docker/preview host (12345), and any extra host chains.
+ * `mergeArgs` would collapse repeatable cadence flags to the last value.
+ */
+const withLocalPublicationCadenceOverlays = (command: string[], envVars: Record<string, string>): string[] => {
+  const seen = new Set<string>();
+  const kept: string[] = [];
+  for (const item of command) {
+    if (!item.startsWith(`${PUBLICATION_CADENCE_FLAG}=`)) {
+      kept.push(item);
+      continue;
+    }
+    const chainId = item.slice(`${PUBLICATION_CADENCE_FLAG}=`.length).split(":")[0] ?? "";
+    if (!chainId || chainId.includes("${") || seen.has(chainId)) {
+      continue;
+    }
+    seen.add(chainId);
+    kept.push(item);
+  }
+  for (const chainId of localPublicationCadenceChainIds(envVars)) {
+    if (seen.has(chainId)) {
+      continue;
+    }
+    kept.push(`${PUBLICATION_CADENCE_FLAG}=${chainId}:${LOCAL_PUBLICATION_CADENCE}`);
+    seen.add(chainId);
+  }
+  return kept;
+};
+
 /** Applies env, compat, and instance-specific command adjustments to a service. */
 const applyInstanceAdjustments = (
   baseServiceName: string,
@@ -472,6 +521,9 @@ const applyInstanceAdjustments = (
   if (next.command) {
     const current = Array.isArray(next.command) ? next.command : [];
     next.command = mergeArgs(current, [...(override.args["*"] ?? []), ...(override.args[serviceKey] ?? [])]);
+  }
+  if (serviceKey === "consensus-detector" && Array.isArray(next.command)) {
+    next.command = withLocalPublicationCadenceOverlays(next.command.map(String), envVars);
   }
   return next;
 };
@@ -726,6 +778,11 @@ const buildCoprocessorOverride = async (plan: StackSpec) => {
         locallyBuilt ? {} : argPolicy.coprocessorDropFlags,
       );
       adjusted.container_name = serviceName;
+      if (name === "coprocessor-consensus-detector" && Array.isArray(adjusted.command)
+          && adjusted.command.includes(`--dangerous-drift-injection=${MANIFEST_INJECTION_PATH}`)) {
+        await ensureDir(manifestInjectionDir(instance.index));
+        adjusted.volumes = [...(Array.isArray(adjusted.volumes) ? adjusted.volumes : []), manifestInjectionMount(instance.index)];
+      }
       if (name === "coprocessor-db-migration") {
         if (isBlueGreen && instance.source.mode === "registry") {
           // The pinned BCS release creates the database so the seeded versions match

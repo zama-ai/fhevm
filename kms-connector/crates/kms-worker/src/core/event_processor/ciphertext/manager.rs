@@ -111,17 +111,18 @@ where
 
         debug!(
             %handle,
-            valid_signers = consensus.signers.len(),
+            winners = ?consensus.winners,
             threshold = registry.threshold.get(),
-            winning_buckets = consensus.winning_buckets.len(),
             "Consensus reached for handle"
         );
 
+        let winning_buckets: Vec<String> =
+            consensus.winners.into_iter().map(|w| w.bucket).collect();
         let ciphertext = s3::retrieve_verified_ciphertext(
             &self.s3_client,
             handle,
             &consensus.material,
-            &consensus.winning_buckets,
+            &winning_buckets,
             self.retrieval_attempts,
         )
         .await?;

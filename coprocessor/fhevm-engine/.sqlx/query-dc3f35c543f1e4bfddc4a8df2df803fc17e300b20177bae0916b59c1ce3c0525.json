@@ -1,0 +1,15 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n        UPDATE drifted_handle dh\n           SET superseded_at = NOW(),\n               claimed_by = NULL,\n               claim_expires_at = NULL,\n               next_retry_at = NULL\n         WHERE dh.consensus_epoch = ANY($1)\n           AND ($2::BYTEA IS NULL OR dh.handle = $2)\n           AND dh.healed_at IS NULL\n           AND dh.superseded_at IS NULL\n           AND EXISTS (\n                SELECT 1\n                  FROM drifted_handle sibling\n                 WHERE sibling.consensus_epoch = dh.consensus_epoch\n                   AND sibling.coprocessor_context_id = dh.coprocessor_context_id\n                   AND sibling.host_chain_id = dh.host_chain_id\n                   AND sibling.handle = dh.handle\n                   AND sibling.healed_at IS NULL\n                   AND public.drift_superseded(\n                        sibling.consensus_epoch, sibling.host_chain_id, sibling.block_number\n                   )\n           )\n        ",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "TextArray",
+        "Bytea"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "dc3f35c543f1e4bfddc4a8df2df803fc17e300b20177bae0916b59c1ce3c0525"
+}

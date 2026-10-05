@@ -30,7 +30,7 @@ new push re-deploys it fresh (an in-flight run is cancelled).
 | --- | --- |
 | `preview-env-e2e` | Deploy the stack, **building fresh images from the PR branch** first (only changed components; the rest resolve to the base commit's images). In-repo charts (`charts/*`) install straight from the checkout. |
 | `preview-env-e2e-tests` | Same, **and** auto-run the e2e test DAG, posting a pass/fail report back to the PR. Deploys the env on its own. |
-| `preview-env-gpu` | With `preview-env-e2e-tests`, schedule FHE workers on the `coprocessor-gpu` nodepool and generate Default FHE parameters. Alone it does nothing. Combines with `preview-env-e2e` (HEAD workers) or `preview-env-blue-green` (Green/GCS GPU; Blue/BCS stays CPU). |
+| `preview-env-gpu` | Does not deploy. A label cannot carry the worker image tag. Launch with `preview-env --gpu --workers-tag <tag>`. |
 | `preview-env-blue-green` | Deploy [RFC-021](https://github.com/zama-ai/tech-spec/pull/443) BCS+GCS on each party (forces `nb_coprocessor=2`) **on shared `blockchain-dev`** (not Anvil). Enough on its own. Combined with `preview-env-e2e-tests`: propose after the relayer is up, hold `consensus-detector` so the first e2e stays on blue (`DryRunStarted`, assert GCS `computations > 0`), then enable the detector, wait for `versioning=v0.15`, and run e2e again on green. With `deploy_polygon` the upgrade spans both host chains. |
 
 On PRs, images are **always** built fresh from the branch - there is no
@@ -77,9 +77,20 @@ Key inputs (all have sensible defaults — you rarely set more than a couple):
   Forces `nb_coprocessor=2` when N=1. The `preview-env-blue-green` PR label
   is the other gate. With `deploy_polygon` (so also with `chain_mode=testnets`)
   the upgrade spans both host chains.
-- `enable_gpu` — GPU workers + Default FHE params (default `false`). CLI
-  `--gpu`. The `preview-env-gpu` + `preview-env-e2e-tests` labels are the
-  other gate. With `enable_blue_green`, Green/GCS is GPU and Blue/BCS stays CPU.
+- `enable_gpu` — GPU workers + Default FHE params (default `false`), including
+  on Anvil. CLI `--gpu`. Dispatch-only: the `preview-env-gpu` label cannot
+  carry a worker tag. With `enable_blue_green`, Green/GCS is GPU and Blue/BCS
+  stays CPU. CPU Anvil stays on Test params.
+- `workers_tag` — image tag for tfhe, sns, and zkproof. Required when
+  `enable_gpu=true` on a dispatch (CLI `--workers-tag`). Must be empty when
+  GPU is off. The `preview-env-gpu` label cannot carry a tag, so a GPU
+  preview is dispatch-only.
+- `listener_v2_only` — run the host side on the **listener v2 stack only**
+  (`listener-<i>` → Redis → host-listener-consumer): the host-listener pollers
+  (`coprocessor-poller-<i>`, `coprocessor-poller-polygon-<i>`) are not
+  deployed (default `false`, a checkbox in the Actions UI). CLI
+  `--listener-v2-only`. Pair with `automated_tests` to run e2e against it.
+  Dispatch-only.
 - `deploy_polygon` — also add a second Polygon Amoy (`80002`) host chain (default
   `false`). Fresh local anvil, reuses the ETH KMS key; roughly doubles the
   host-side stack. With `automated_tests` on it also runs a Polygon e2e suite.
@@ -119,7 +130,7 @@ keys (keep them aligned to the same kms release):
 
 | Key | Becomes | Role |
 | --- | --- | --- |
-| `kms_core_version` | `KMS_CORE_TAG` | GHCR tag for `core-service-enclave` → `deploy.sh --tag`. CI reads PCR labels from this image before install. |
+| `kms_core_version` | `KMS_CORE_TAG` | GHCR tag passed to `deploy.sh --tag`. CI reads PCR labels from the enclave image that `deploy.sh` installs (`core-service-enclave-insecure` on current kms main, `core-service-enclave` on `v0.14.1`). |
 | `kms_repo_ref` | `KMS_REPO_REF` | Git ref sparse-checked out of `zama-ai/kms` (`deploy.sh`, charts, threshold wiring). |
 
 Current defaults (also in `parse-overrides.cjs`): `kms_core_version=v0.14.1`,
@@ -175,18 +186,20 @@ helm-install; Actions stays the write path. `--ref` must already be on origin.
 
 ```bash
 ci/preview-env/preview-env launch --ref <your-branch> --tests
-ci/preview-env/preview-env launch --ref <your-branch> --gpu --tests
-ci/preview-env/preview-env launch --ref <your-branch> --gpu --testnets --tests
+ci/preview-env/preview-env launch --ref <your-branch> --gpu --workers-tag fd282b1-cuda12.8-sm70 --tests
+ci/preview-env/preview-env launch --ref <your-branch> --gpu --workers-tag fd282b1-cuda12.8-sm70 --testnets --tests
 ci/preview-env/preview-env launch --ref <your-branch> --blockchain-dev
 ci/preview-env/preview-env launch --ref <your-branch> --testnets --tests
 ci/preview-env/preview-env launch --ref <your-branch> --blue-green --blockchain-dev --tests
+ci/preview-env/preview-env launch --ref <your-branch> --listener-v2-only --tests
 ci/preview-env/preview-env launch --ref <your-branch> --set coprocessor_version=abc1234
 ci/preview-env/preview-env launch --ref <your-branch> --tests \
   --set kms_core_version=v0.14.1 --set kms_repo_ref=v0.14.1
 ```
 
 `--blue-green` sends `enable_blue_green=true` and `nb_coprocessor=2`.
-`--gpu` sends `enable_gpu=true` (GPU workers and Default FHE params). Combine
+`--gpu` sends `enable_gpu=true` (GPU workers and Default FHE params) and
+requires `--workers-tag`, the image tag for tfhe, sns, and zkproof. Combine
 with `--testnets` for Sepolia/Amoy, or `--blue-green` for Green-only GPU.
 `--parties 2` without `--blue-green` is two-party consensus only.
 

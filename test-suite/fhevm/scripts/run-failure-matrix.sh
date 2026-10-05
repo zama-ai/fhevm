@@ -77,7 +77,7 @@ done
 case "$COLUMN" in crash|stall|data|db|smoke|all) ;; *) echo "unknown column $COLUMN" >&2; exit 2 ;; esac
 
 # Every exit path restores what was faulted. The object-storage cell proved why:
-# the run aborted between stopping MinIO and healing it, and MinIO stayed down
+# the run aborted between stopping the object store and healing it, and it stayed down
 # -- so every later cell, and the next suite, would have been measuring a stack
 # this runner broke. `sc_run_restores` is idempotent and silent when there is
 # nothing registered.
@@ -206,10 +206,10 @@ MATRIX=(
   "FM-HOST-LISTENER-CRASH|crash|%d-host-listener-poller|kill|ingestion"
   "FM-TX-SENDER-CRASH|crash|%d-transaction-sender|kill|submission"
   "FM-CONSENSUS-DETECTOR|crash|%d-transaction-sender|pause|detector-drift"
-  "FM-OBJECT-STORAGE-OUTAGE|data|fhevm-minio|stop|storage"
+  "FM-OBJECT-STORAGE-OUTAGE|data|fhevm-object-store|stop|storage"
   "FM-HOST-LONG-OFFLINE|data|%d-host-listener-poller|stop|ingestion-backlog"
   "FM-DURABLE-BACKLOG|crash|%d-tfhe-worker|kill|compute-backlog"
-  "FM-STORAGE-WORKER-RESTART|data|fhevm-minio|stop|storage"
+  "FM-STORAGE-WORKER-RESTART|data|fhevm-object-store|stop|storage"
   "FM-BROKER-OUTAGE|data|listener-redis|stop|ingestion"
   "FM-RELAYER-CRASH|data|fhevm-relayer|kill|relayer-request"
   "FM-KMS-CONNECTOR-CRASH|data|kms-connector-kms-worker|kill|kms-decryption"
@@ -408,7 +408,7 @@ publish_fault_ack() {
 
 # The container whose network namespace the test container shares, if any.
 #
-# `test-suite-e2e-debug` is composed with `network_mode: container:fhevm-minio`
+# `test-suite-e2e-debug` is composed with `network_mode: container:fhevm-object-store`
 # so that `http://localhost:9000` key URLs resolve inside it. The consequence is
 # structural: stopping that container removes the test container's network
 # entirely -- DNS included -- and it cannot even be recreated until the owner is

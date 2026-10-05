@@ -1,0 +1,23 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n            SELECT EXISTS (\n                SELECT 1\n                  FROM handle_bridged_events dst_event\n                  JOIN ciphertext_digest src_digest\n                    ON src_digest.handle = dst_event.src_handle\n                 WHERE dst_event.dst_handle = $1\n                   AND dst_event.dst_chain_id = $2\n                   AND NOT dst_event.is_associated\n                   AND src_digest.ciphertext IS NOT NULL\n                   AND src_digest.ciphertext128 IS NOT NULL\n                   -- The copy also needs the source approval, which stays\n                   -- possible until its block is orphaned.\n                   AND EXISTS (\n                        SELECT 1 FROM bridge_handle_events src_event\n                         WHERE src_event.src_handle = dst_event.src_handle\n                           AND src_event.dst_chain_id = dst_event.dst_chain_id\n                           AND (\n                                src_event.block_hash = ''::bytea\n                                OR EXISTS (\n                                    SELECT 1 FROM host_chain_blocks_valid src_block\n                                     WHERE src_block.chain_id = src_event.src_chain_id\n                                       AND src_block.block_hash = src_event.block_hash\n                                       AND src_block.block_status <> 'orphaned'\n                                )\n                           )\n                   )\n                   AND (\n                        dst_event.block_hash = ''::bytea\n                        OR EXISTS (\n                            SELECT 1 FROM host_chain_blocks_valid dst_block\n                             WHERE dst_block.chain_id = dst_event.dst_chain_id\n                               AND dst_block.block_hash = dst_event.block_hash\n                               AND dst_block.block_status <> 'orphaned'\n                        )\n                   )\n            ) AS \"pending!\"\n            ",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "pending!",
+        "type_info": "Bool"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Bytea",
+        "Int8"
+      ]
+    },
+    "nullable": [
+      null
+    ]
+  },
+  "hash": "66884c7f43eb85bccb796a050966c137152cc400dc37b267821620f9a1b9279f"
+}

@@ -21,9 +21,9 @@ GCS_VERSION="${GCS_VERSION:-v0.15.0}"
 # Caller-supplied; contract does not enforce uniqueness. Default the Actions
 # run id so a reused namespace can re-propose after a rollback.
 PROPOSAL_ID="${PROPOSAL_ID:-${GITHUB_RUN_ID:-1}}"
-# Window = [now + START_LEAD_SECS, + WINDOW_DURATION]. Anvil only mines on txs, so keep the lead
-# tiny (tip+5 at the 1s fallback) and the historical 80-block window; continuously mining chains
-# get a window that covers the first e2e DAG.
+# Host window = [now + START_LEAD_SECS, + WINDOW_DURATION]. The preview anvil mines every second, so
+# keep the lead tiny (tip+5) and the historical 80-block window; external chains get a window that
+# covers the first e2e DAG. gwStartBlock is pinned to the gateway tip and needs no lead.
 if [[ "${EXTERNAL_CHAINS:-false}" == "true" ]]; then
   START_LEAD_SECS="${START_LEAD_SECS:-60}"
   WINDOW_DURATION="${WINDOW_DURATION:-5h}"
@@ -62,18 +62,25 @@ fi
 expected_chains=1
 [[ "${DEPLOY_POLYGON:-false}" == "true" ]] && expected_chains=2
 
-# Map the preview's chains onto the tool's environment registry (tasks/utils/environments.ts):
-# testnets is exactly `devnet` (Sepolia + Amoy); anvil / blockchain-dev use `local` with the chain list passed as JSON.
+# Map the preview's chains onto the tool's environment registry (tasks/utils/environments.ts).
+# Every mode passes its chain list explicitly through `local` + LOCAL_HOST_CHAINS: a preview runs
+# exactly the chains it deployed, and `ingest.rs` rejects a proposal whose chain set is not exactly
+# equal to `host_chains`. testnets used to inherit `devnet`, which has since grown past Sepolia +
+# Amoy (Hoodi 560048, BSC 97), so every proposal carried chains no operator knew and was rejected.
+# Fallback block times mirror devnet's for the chains we keep; they only apply if sampling fails.
 tool_env_args=()
 case "${CHAIN_MODE}" in
   testnets)
-    tool_env="devnet"
+    tool_env="local"
     hardhat_network="sepolia"
-    : "${POLYGON_HTTP:?}"
+    : "${POLYGON_HTTP:?}" "${POLYGON_CHAIN_ID:?}"
+    local_chains=$(jq -cn --argjson id "${HOST_CHAIN_ID}" --arg url "${HOST_HTTP}" \
+      '[{chainId: $id, rpcUrl: $url, fallbackBlockTimeSeconds: 12}]')
+    local_chains=$(jq -c --argjson id "${POLYGON_CHAIN_ID}" --arg url "${POLYGON_HTTP}" \
+      '. + [{chainId: $id, rpcUrl: $url, fallbackBlockTimeSeconds: 1.5}]' <<<"${local_chains}")
     tool_env_args=(
-      --from-literal=SEPOLIA_RPC_URL="${HOST_HTTP}"
-      --from-literal=POLYGON_AMOY_RPC_URL="${POLYGON_HTTP}"
-      --from-literal=GATEWAY_DEVNET_RPC_URL="${GATEWAY_HTTP}"
+      --from-literal=LOCAL_HOST_CHAINS="${local_chains}"
+      --from-literal=LOCAL_GATEWAY_RPC_URL="${GATEWAY_HTTP}"
     )
     ;;
   anvil|blockchain-dev)

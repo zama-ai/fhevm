@@ -214,18 +214,18 @@ export type Discovery = {
   hosts: Record<string, Record<string, string>>;
   kmsSigners: string[];
   // Per-party serialized CA certificate (hex `0x…`), discovered alongside the signers. Optional
-  // like minioKeyPrefix: seeded to [] by createDiscovery and filled at the `kms-signer` step.
+  // like objectStoreKeyPrefix: seeded to [] by createDiscovery and filled at the `kms-signer` step.
   kmsCaCerts?: string[];
   fheKeyId: string;
   crsKeyId: string;
   actualFheKeyId?: string;
   actualCrsKeyId?: string;
-  minioKeyPrefix?: string;
+  objectStoreKeyPrefix?: string;
   endpoints: {
     gateway: RpcEndpoints;
     hosts: Record<string, RpcEndpoints>;
-    minioInternal: string;
-    minioExternal: string;
+    objectStoreInternal: string;
+    objectStoreExternal: string;
   };
 };
 

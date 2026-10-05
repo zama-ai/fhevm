@@ -9,7 +9,7 @@ import {
   supportsHostListenerConsumer,
   supportsUpgradeController,
 } from "../compat/compat";
-import { BootstrapTimeout, ContainerCrashed, MinioError, PreflightError, ProbeTimeout, RpcError } from "../errors";
+import { BootstrapTimeout, ContainerCrashed, ObjectStoreError, PreflightError, ProbeTimeout, RpcError } from "../errors";
 import {
   COPROCESSOR_DB_CONTAINER,
   CRSGEN_ID_SELECTOR,
@@ -17,7 +17,7 @@ import {
   GROUP_SERVICE_SUFFIXES,
   KEYGEN_ID_SELECTOR,
   KMS_CORE_CONTAINER,
-  MINIO_EXTERNAL_URL,
+  OBJECT_STORE_EXTERNAL_URL,
   TEST_SUITE_CONTAINER,
   coprocessorDatabaseName,
   defaultHostChainKey,
@@ -362,7 +362,7 @@ export const waitForStableChainListeners = async (state: Pick<State, "scenario">
   await postBootHealthGate(listenerContainersForChain(state, chainKey));
 };
 
-/** MinIO prefixes that hold a party's VerfAddress. Centralized stores it under
+/** Object-store prefixes that hold a party's VerfAddress. Centralized stores it under
  * `PUB/PUB` (or legacy `PUB`); a threshold-mode cluster stores party i under its own prefix. */
 const verfAddressPrefixes = (parties: number, party: number): string[] =>
   parties === 1 ? ["PUB/PUB", "PUB"] : [kmsPublicPrefix(party)];
@@ -374,7 +374,7 @@ const fetchVerfAddress = async (
 ): Promise<{ address: string; prefix: string } | null> => {
   for (const prefix of prefixes) {
     try {
-      const response = await fetch(`${MINIO_EXTERNAL_URL}/kms-public/${prefix}/VerfAddress/${handle}`);
+      const response = await fetch(`${OBJECT_STORE_EXTERNAL_URL}/kms-public/${prefix}/VerfAddress/${handle}`);
       if (response.ok) {
         return { address: (await response.text()).trim(), prefix };
       }
@@ -390,7 +390,7 @@ const fetchVerfAddress = async (
  * that ships no TLS material), so discovery can fall back to an empty `0x` cert. */
 const fetchCaCert = async (prefix: string, handle: string): Promise<string> => {
   try {
-    const response = await fetch(`${MINIO_EXTERNAL_URL}/kms-public/${prefix}/CACert/${handle}`);
+    const response = await fetch(`${OBJECT_STORE_EXTERNAL_URL}/kms-public/${prefix}/CACert/${handle}`);
     if (response.ok) {
       return `0x${Buffer.from(await response.arrayBuffer()).toString("hex")}`;
     }
@@ -405,11 +405,11 @@ const fetchCaCert = async (prefix: string, handle: string): Promise<string> => {
  * Discovers the KMS signer addresses after bootstrap: one for a centralized node,
  * one per party for a threshold-mode cluster (`parties` is 1 in the centralized case).
  * The signing-key handle is scraped from the core logs and is shared across parties;
- * each party's address lives at its own MinIO prefix.
+ * each party's address lives at its own object-store prefix.
  */
 export const discoverKmsSigners = async (
   parties: number,
-): Promise<{ signers: string[]; caCerts: string[]; minioKeyPrefix: string }> => {
+): Promise<{ signers: string[]; caCerts: string[]; objectStoreKeyPrefix: string }> => {
   let lastFailure = "no signing-key handle in the kms-core logs yet";
   for (let attempt = 0; attempt <= 60; attempt += 1) {
     const logs = await run(["docker", "logs", KMS_CORE_CONTAINER], { allowFailure: true });
@@ -418,7 +418,7 @@ export const discoverKmsSigners = async (
     if (handle) {
       const signers: string[] = [];
       const caCerts: string[] = [];
-      let minioKeyPrefix = "";
+      let objectStoreKeyPrefix = "";
       for (let party = 1; party <= parties; party += 1) {
         const prefixes = verfAddressPrefixes(parties, party);
         const found = await fetchVerfAddress(prefixes, handle);
@@ -431,21 +431,21 @@ export const discoverKmsSigners = async (
         // `0x` when a build ships no TLS material, so non-TLS stacks still resolve a signer set.
         caCerts.push(await fetchCaCert(found.prefix, handle));
         if (party === 1) {
-          minioKeyPrefix = found.prefix;
+          objectStoreKeyPrefix = found.prefix;
         }
       }
       if (signers.length === parties) {
-        return { signers, caCerts, minioKeyPrefix };
+        return { signers, caCerts, objectStoreKeyPrefix };
       }
     }
     await Bun.sleep(1_000);
   }
-  throw new MinioError(`Could not discover ${parties} KMS signer(s) after 60 attempts (${lastFailure})`);
+  throw new ObjectStoreError(`Could not discover ${parties} KMS signer(s) after 60 attempts (${lastFailure})`);
 };
 
 /**
  * Waits until one of the supplied material artifacts is available through
- * host-reachable MinIO.  Probing alternatives together preserves the normal
+ * host-reachable object store.  Probing alternatives together preserves the normal
  * bootstrap retry budget when a bundle supports more than one wire format.
  */
 export const ensureOneMaterial = async (urls: readonly string[]) => {
@@ -466,13 +466,13 @@ export const ensureOneMaterial = async (urls: readonly string[]) => {
       return;
     }
     if (attempt === 30) {
-      throw new MinioError(`Material not ready: ${urls.join(" or ")}`);
+      throw new ObjectStoreError(`Material not ready: ${urls.join(" or ")}`);
     }
     await Bun.sleep(1_000);
   }
 };
 
-/** Waits until one material artifact becomes available through host-reachable MinIO. */
+/** Waits until one material artifact becomes available through host-reachable object store. */
 export const ensureMaterial = async (url: string) => ensureOneMaterial([url]);
 
 /**
@@ -542,7 +542,7 @@ export const resolveKmsGenerationTarget = (state: State) => {
 /** Probes whether bootstrap produced stable key ids and published materials. */
 export const probeBootstrap = async (state: State) => {
   const discovery = state.discovery!;
-  const keyPrefix = discovery.minioKeyPrefix ?? "PUB";
+  const keyPrefix = discovery.objectStoreKeyPrefix ?? "PUB";
   try {
     const { rpcUrl, kmsGenerationAddress } = resolveKmsGenerationTarget(state);
     const ethCallRaw = async (data: string) => {
@@ -575,9 +575,9 @@ export const probeBootstrap = async (state: State) => {
     const actualFheKeyId = actualKey.toString(16).padStart(64, "0");
     const actualCrsKeyId = actualCrs.toString(16).padStart(64, "0");
     await Promise.all([
-      ensureMaterial(`${discovery.endpoints.minioExternal}/kms-public/${keyPrefix}/PublicKey/${actualFheKeyId}`),
-      ensureServerKeyMaterial(discovery.endpoints.minioExternal, keyPrefix, actualFheKeyId),
-      ensureMaterial(`${discovery.endpoints.minioExternal}/kms-public/${keyPrefix}/CRS/${actualCrsKeyId}`),
+      ensureMaterial(`${discovery.endpoints.objectStoreExternal}/kms-public/${keyPrefix}/PublicKey/${actualFheKeyId}`),
+      ensureServerKeyMaterial(discovery.endpoints.objectStoreExternal, keyPrefix, actualFheKeyId),
+      ensureMaterial(`${discovery.endpoints.objectStoreExternal}/kms-public/${keyPrefix}/CRS/${actualCrsKeyId}`),
     ]);
     if (discovery.fheKeyId !== actualFheKeyId || discovery.crsKeyId !== actualCrsKeyId) {
       throw new PreflightError(
@@ -586,7 +586,7 @@ export const probeBootstrap = async (state: State) => {
     }
     return { actualFheKeyId, actualCrsKeyId };
   } catch (error) {
-    if (error instanceof MinioError || error instanceof PreflightError) {
+    if (error instanceof ObjectStoreError || error instanceof PreflightError) {
       throw error;
     }
     console.log(`[warn] bootstrap probe error (will retry): ${error instanceof Error ? error.message : String(error)}`);

@@ -136,7 +136,7 @@ test("failed early squash freeze prevents matrix arming and records INVALID", ()
   const matrix = source("run-failure-matrix.sh");
   const fragment = section(matrix, "  local armed_early=0", "  local -a extra_down=()");
   const run = shell(`run() {
- local case_id=FM-OBJECT-STORAGE-OUTAGE service=minio workload=materialization started=now
+ local case_id=FM-OBJECT-STORAGE-OUTAGE service=object-store workload=materialization started=now
  arm_depends_on() { return 0; }; hold_back_kind() { echo sns; }; operator_count() { echo 3; }
  operator_prefix() { echo "coprocessor$1"; }; docker() { return 0; }
  sc_pause() { [[ "$1" != coprocessor1-sns-worker ]]; }

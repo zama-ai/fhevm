@@ -1,4 +1,4 @@
-use crate::tests::setup::{MINIO_ACCESS_KEY, MINIO_SECRET_KEY, ROOT_CARGO_TOML};
+use crate::tests::setup::{OBJECT_STORE_ACCESS_KEY, OBJECT_STORE_SECRET_KEY, ROOT_CARGO_TOML};
 use std::{path::PathBuf, str::FromStr, time::Duration};
 use testcontainers::{
     ContainerAsync, GenericImage, ImageExt,
@@ -36,8 +36,8 @@ impl KmsInstance {
             ))
             .with_entrypoint("/bin/sh")
             .with_host("host.docker.internal", Host::HostGateway)
-            .with_env_var("AWS_ACCESS_KEY_ID", MINIO_ACCESS_KEY)
-            .with_env_var("AWS_SECRET_ACCESS_KEY", MINIO_SECRET_KEY)
+            .with_env_var("AWS_ACCESS_KEY_ID", OBJECT_STORE_ACCESS_KEY)
+            .with_env_var("AWS_SECRET_ACCESS_KEY", OBJECT_STORE_SECRET_KEY)
             .with_env_var(
                 "KMS_CORE__PUBLIC_VAULT__STORAGE__S3__BUCKET",
                 KMS_PUBLIC_VAULT_URL,

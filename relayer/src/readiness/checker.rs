@@ -9,7 +9,7 @@ use crate::{
     host::{HostAclChecker, HostAclError},
 };
 use alloy::primitives::{Bytes, FixedBytes};
-use ciphertext_attestation::tracker::Round;
+use ciphertext_attestation::ConsensusRound;
 use std::{fmt, time::Duration};
 use tokio_util::sync::CancellationToken;
 
@@ -51,7 +51,7 @@ pub enum ReadinessCheckError {
     /// Reachable only under the off-chain Coprocessor attestation check
     /// (`source: coprocessor_attestations`).
     #[error("no attestation consensus: {round}")]
-    NoAttestationConsensus { round: Round },
+    NoAttestationConsensus { round: ConsensusRound },
     /// No probe was attempted: the registry reported `RegistryError::Critical`. `reason` is the
     /// registry's message.
     #[error("critical Coprocessor registry error: {reason}")]
@@ -64,7 +64,7 @@ pub enum ReadinessCheckError {
     AttestationsNotReady {
         attempts: u32,
         elapsed: Duration,
-        last_round: Round,
+        last_round: ConsensusRound,
     },
     #[error("not allowed on host ACL: {0}")]
     NotAllowedOnHostAcl(HostAclError),

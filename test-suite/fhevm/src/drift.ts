@@ -28,12 +28,17 @@ BEGIN
     RETURN NEW;
   END IF;
 
+  -- The SNS worker writes the digests on insert and stamps the S3 witness once
+  -- the upload succeeds; the transaction sender only sends a digest equal to
+  -- that witness. Corrupt both at the stamp so the drifted digest is sent.
   IF NEW.txn_is_sent = FALSE
      AND NEW.ciphertext IS NOT NULL
      AND NEW.ciphertext128 IS NOT NULL
-     AND (OLD.ciphertext IS NULL OR OLD.ciphertext128 IS NULL)
+     AND OLD.s3_publication_verified_at IS NULL
+     AND NEW.s3_publication_verified_at IS NOT NULL
      AND EXISTS (SELECT 1 FROM computations WHERE output_handle = NEW.handle) THEN
     NEW.ciphertext := set_byte(NEW.ciphertext, 0, get_byte(NEW.ciphertext, 0) # 1);
+    NEW.s3_publication_verified_digest := NEW.ciphertext;
 
     UPDATE drift_injection_state
     SET consumed = TRUE,
