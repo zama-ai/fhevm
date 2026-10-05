@@ -406,10 +406,11 @@ last-modified slot; a client detects a new KMS context by reading `current_kms_c
 Pinned by `only_the_admin_changes_trust_roots_and_only_an_authority_changes_its_store`, which checks over random
 instruction sequences that `HostConfig`, the KMS contexts and the deny, HCU trust and pauser records change only in a
 transaction the admin signed, apart from a signer holding an enabled pauser record adding pause flags,
-and that every `HostConfig` change emits an event CPI. Every host instruction is drawn,
+and that every `HostConfig` change emits its event CPI (`NewKmsContextEvent` from `define_kms_context`,
+`HostConfigUpdatedEvent` from the rest). Every host instruction is drawn,
 with its admin or Store-authority role also filled by keys that lack it, signing or not, and a host account type the
-property does not classify fails it. The planted bugs `runtime-tests/planted-bugs/h1-unpause-skips-assert-admin.patch`
-and `h1-pause-accepts-a-withdrawn-pauser.patch` must make it fail (`scripts/check-planted-bugs.sh`). This covers the default build; the preview-only `admin-sweep`
+property does not classify fails it. The planted bugs `runtime-tests/planted-bugs/h1-unpause-skips-assert-admin.patch`,
+`h1-pause-accepts-a-withdrawn-pauser.patch` and `h1-set-grant-deny-list-skips-the-config-event.patch` must make it fail (`scripts/check-planted-bugs.sh`). This covers the default build; the preview-only `admin-sweep`
 build lets the upgrade authority close `HostConfig` and the KMS contexts (`AUTHORITY.md`).
 
 **36. [HOLDS]** `HostConfig.paused` holds one flag per host area (DD-058). `execution` stops `fhe_execute`;

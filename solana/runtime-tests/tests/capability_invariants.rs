@@ -5,7 +5,8 @@
 //!   The trust roots are `HostConfig` (admin, coprocessor signers, EIP-712 domain, pause flags,
 //!   deny-list switch, HCU limits), every KMS context, the deny and HCU trust records, and the
 //!   pauser records. The one exception is a pause: a key whose pauser record was enabled may set
-//!   pause flags and nothing else. A `HostConfig` change also emits an event CPI.
+//!   pause flags and nothing else. A `HostConfig` change also emits its event CPI:
+//!   `NewKmsContextEvent` from `define_kms_context`, `HostConfigUpdatedEvent` from the rest.
 //! - **H2** (INVARIANTS #11): a Store changes only in a transaction its authority signed.
 //!
 //! The oracles compare raw account bytes before and after each transaction against the
@@ -1141,7 +1142,17 @@ impl World {
                 .any(|data| data.starts_with(host::HostConfig::DISCRIMINATOR));
         }
         if config_changed {
-            // #35: a config change is announced through the event CPI.
+            // #35: a config change is announced through its event CPI.
+            let (event, discriminator) = match action {
+                Action::DefineKmsContext { .. } => (
+                    "NewKmsContextEvent",
+                    host::NewKmsContextEvent::DISCRIMINATOR,
+                ),
+                _ => (
+                    "HostConfigUpdatedEvent",
+                    host::HostConfigUpdatedEvent::DISCRIMINATOR,
+                ),
+            };
             let message = result.message.as_ref().expect("compiled message");
             let keys = message.account_keys();
             prop_assert!(
@@ -1150,10 +1161,11 @@ impl World {
                         && inner
                             .instruction
                             .data
-                            .starts_with(anchor_lang::event::EVENT_IX_TAG_LE)
+                            .strip_prefix(anchor_lang::event::EVENT_IX_TAG_LE)
+                            .is_some_and(|payload| payload.starts_with(discriminator))
                 }),
-                "{:?} changed the config without an event CPI",
-                action
+                "H1: {} changed the config without a {event} CPI ({action:?})",
+                action.instruction_name()
             );
         }
         for (store, versions) in changed(&before.stores, &after.stores) {
