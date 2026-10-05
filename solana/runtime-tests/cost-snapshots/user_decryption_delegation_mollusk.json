@@ -6,7 +6,7 @@
   },
   "measurements": {
     "delegate_for_user_decryption/first_grant": {
-      "compute_units": 12613,
+      "compute_units": 12608,
       "unique_accounts": 7,
       "instruction_data_bytes": 80,
       "cpi_instructions": 1,
