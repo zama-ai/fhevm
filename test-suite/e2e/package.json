@@ -30,6 +30,7 @@
     "codegen:overloads": "../../library-solidity/codegen/codegen.mjs overloads --config ./codegen.config.json --verbose --force",
     "prettier": "prettier --write \"**/*.{js,json,md,sol,ts,yml}\"",
     "tsc": "tsc --noEmit -p tsconfig.json",
+    "test:localcleartext": "env -u MNEMONIC DOTENV_CONFIG_PATH=./.env.localcleartext hardhat test --network localcleartext",
     "sdk:local": "./scripts/install-sdk.sh local",
     "sdk:registry": "./scripts/install-sdk.sh registry"
   },

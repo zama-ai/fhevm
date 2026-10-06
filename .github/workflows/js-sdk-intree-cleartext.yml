@@ -62,7 +62,7 @@ jobs:
         working-directory: sdk/js-sdk/contracts
         run: forge soldeer install
 
-      # Not --silent: the linter and compiler output must surface here.
+      # Not --silent: the compiler output must surface here.
       - name: Build the intree slot
         working-directory: sdk/js-sdk/contracts
         run: FOUNDRY_PROFILE=intree forge build
@@ -90,6 +90,4 @@ jobs:
 
       - name: Run EncryptedERC20 on the cleartext host
         working-directory: test-suite/e2e
-        env:
-          DOTENV_CONFIG_PATH: ./.env.localcleartext
-        run: npx hardhat test --network localcleartext test/encryptedERC20/EncryptedERC20.ts
+        run: npm run test:localcleartext -- test/encryptedERC20/EncryptedERC20.ts
