@@ -8,6 +8,8 @@ import hre from 'hardhat';
 import type { Counter } from '../typechain-types';
 import { TypedContractMethod } from '../typechain-types/common';
 import { getSigners } from './signers';
+import type { ClearValues, FhevmInstance } from './legacyRelayerSdk/types';
+import { isEuintFheTypeId } from './legacyRelayerSdk/types';
 
 export async function sleep(ms: number): Promise<void> {
   return new Promise((resolve) => setTimeout(resolve, ms));
@@ -127,17 +129,31 @@ export const bigIntToBytes256 = (value: bigint) => {
   return new Uint8Array(toBufferBE(value, 256));
 };
 
-export const userDecryptSingleHandle = async (
-  handle: string,
+// Throws if handle is not a 32-byte handle (hex string or bytes) whose FheTypeId is a euintxxx
+export const assertIsEuintHandle = (handle: string | Uint8Array): void => {
+  if (typeof handle === 'string' ? !ethers.isHexString(handle, 32) : handle.length !== 32) {
+    const shown = typeof handle === 'string' ? handle : ethers.hexlify(handle);
+    throw new Error(`Invalid handle ${shown}, expected 32 bytes`);
+  }
+  const fheTypeId = ethers.getBytes(handle)[30];
+  if (!isEuintFheTypeId(fheTypeId)) {
+    throw new Error(`Handle ${ethers.hexlify(handle)} is not a euint (FheTypeId=${fheTypeId})`);
+  }
+};
+
+export const userDecryptSingleEuint = async (
+  handle: string | Uint8Array,
   contractAddress: string,
-  instance: any,
+  instance: FhevmInstance,
   signer: Signer,
   privateKey: string,
   publicKey: string,
 ): Promise<bigint> => {
+  assertIsEuintHandle(handle);
+
   const ctHandleContractPairs = [
     {
-      ctHandle: handle,
+      handle: handle,
       contractAddress: contractAddress,
     },
   ];
@@ -157,83 +173,97 @@ export const userDecryptSingleHandle = async (
 
   const signerAddress = await signer.getAddress();
 
-  const decryptedValue = (
-    await instance.userDecrypt(
-      ctHandleContractPairs,
-      privateKey,
-      publicKey,
-      signature.replace('0x', ''),
-      contractAddresses,
-      signerAddress,
-      startTimeStamp,
-      durationDays,
-    )
-  )[0];
-  return decryptedValue;
-};
-
-// `delegate` performs a user decrypt on behalf of `delegator`
-export const delegatedUserDecryptSingleHandle = async (params: {
-  instance: any;
-  handle: string;
-  signer: Signer;
-  contractAddress: string;
-  delegatorAddress: string;
-  kmsPrivateKey: string;
-  kmsPublicKey: string;
-}): Promise<bigint | boolean | string> => {
-  const HandleContractPairs = [
-    {
-      ctHandle: params.handle,
-      contractAddress: params.contractAddress,
-    },
-  ];
-  const startTimeStamp = Math.floor(Date.now() / 1000).toString();
-  const durationDays = '10'; // String for consistency
-  const contractAddresses = [params.contractAddress];
-  const instance = params.instance;
-  const signer = params.signer;
-  const userAddress = await signer.getAddress();
-
-  // Use the new createEIP712 function
-  const eip712 = instance.createEIP712(
-    params.kmsPublicKey,
-    contractAddresses,
-    startTimeStamp,
-    durationDays,
-    params.delegatorAddress,
-  );
-
-  // Update the signing to match the new primaryType
-  const signature = await signer.signTypedData(
-    eip712.domain,
-    {
-      DelegatedUserDecryptRequestVerification: eip712.types.DelegatedUserDecryptRequestVerification,
-    },
-    eip712.message,
-  );
-
-  if (!instance.delegatedUserDecrypt) {
-    throw new Error(`instance.delegatedUserDecrypt not yet implemented`);
-  }
-
-  // ========================================================
-  //
-  // Todo: Call the delegate user decrypt function instead!
-  //
-  // ========================================================
-  const result = await instance.delegatedUserDecrypt(
-    HandleContractPairs,
-    params.kmsPrivateKey,
-    params.kmsPublicKey,
+  const decryptedValues: ClearValues = await instance.userDecrypt(
+    ctHandleContractPairs,
+    privateKey,
+    publicKey,
     signature.replace('0x', ''),
     contractAddresses,
-    userAddress,
+    signerAddress,
     startTimeStamp,
     durationDays,
-    params.delegatorAddress,
   );
 
-  const decryptedValue = result[params.handle];
+  const entries = Object.entries(decryptedValues);
+  if (entries.length !== 1) {
+    throw new Error(`Expected a single decrypted value, got ${entries.length}`);
+  }
+
+  const [decryptedHandle, decryptedValue] = entries[0];
+  // ethers.hexlify returns lowercase 0x-prefixed hex for both strings and bytes
+  const handleHex = ethers.hexlify(handle);
+  if (ethers.hexlify(decryptedHandle) !== handleHex) {
+    throw new Error(`Expected decrypted value for handle ${handleHex}, got ${decryptedHandle}`);
+  }
+  if (typeof decryptedValue !== 'bigint') {
+    throw new Error(`Expected a bigint decrypted value, got ${typeof decryptedValue}`);
+  }
+
   return decryptedValue;
 };
+
+// // `delegate` performs a user decrypt on behalf of `delegator`
+// export const delegatedUserDecryptSingleHandle = async (params: {
+//   instance: any;
+//   handle: string;
+//   signer: Signer;
+//   contractAddress: string;
+//   delegatorAddress: string;
+//   kmsPrivateKey: string;
+//   kmsPublicKey: string;
+// }): Promise<bigint | boolean | string> => {
+//   const HandleContractPairs = [
+//     {
+//       handle: params.handle,
+//       contractAddress: params.contractAddress,
+//     },
+//   ];
+//   const startTimeStamp = Math.floor(Date.now() / 1000).toString();
+//   const durationDays = '10'; // String for consistency
+//   const contractAddresses = [params.contractAddress];
+//   const instance = params.instance;
+//   const signer = params.signer;
+//   const userAddress = await signer.getAddress();
+
+//   // Use the new createEIP712 function
+//   const eip712 = instance.createEIP712(
+//     params.kmsPublicKey,
+//     contractAddresses,
+//     startTimeStamp,
+//     durationDays,
+//     params.delegatorAddress
+//   );
+
+//   // Update the signing to match the new primaryType
+//   const signature = await signer.signTypedData(
+//     eip712.domain,
+//     {
+//       DelegatedUserDecryptRequestVerification: eip712.types.DelegatedUserDecryptRequestVerification,
+//     },
+//     eip712.message
+//   );
+
+//   if (!instance.delegatedUserDecrypt) {
+//     throw new Error(`instance.delegatedUserDecrypt not yet implemented`);
+//   }
+
+//   // ========================================================
+//   //
+//   // Todo: Call the delegate user decrypt function instead!
+//   //
+//   // ========================================================
+//   const result = await instance.delegatedUserDecrypt(
+//     HandleContractPairs,
+//     params.kmsPrivateKey,
+//     params.kmsPublicKey,
+//     signature.replace('0x', ''),
+//     contractAddresses,
+//     userAddress,
+//     startTimeStamp,
+//     durationDays,
+//     params.delegatorAddress
+//   );
+
+//   const decryptedValue = result[params.handle];
+//   return decryptedValue;
+// };
