@@ -98,6 +98,7 @@ are written as one narrative instead.
 | [DD-068](#dd-068-the-merkle-indexer-checks-its-record-against-the-chain-and-quarantines-a-store-that-disagrees)                            | adopted                                  | The Merkle indexer checks its record against the chain and quarantines a store that disagrees                                  |
 | [DD-069](#dd-069-only-an-output-its-transaction-stores-is-computed-and-recorded-as-a-block-producer)                                      | adopted                                  | Only an output its transaction stores is computed and recorded as a block producer                                             |
 | [DD-070](#dd-070-solana-is-read-at-finalized-commitment)                                                                                  | adopted                                  | Solana is read at finalized commitment                                                                                         |
+| [DD-071](#dd-071-the-listener-records-each-solana-block-as-a-finalized-host-block-numbered-by-height)                                     | adopted                                  | The listener records each Solana block as a finalized host block, numbered by height                                           |
 
 ## DD-002: Keep App Store And Host ACL Store Separate
 
@@ -606,8 +607,9 @@ not activate the graph that produced the released handle.
 Separately, the EVM reorg substrate already implements the recommended shape: a block-status machine
 (`pending → finalized / orphaned` in the `host_chain_blocks_valid` table) plus ancestor catch-up in
 `cmd/block_history.rs`. The Solana listener (`bin/solana_host_listener.rs`) reconstructs from a
-Yellowstone stream at `finalized` and inserts directly, without this substrate: a finalized block
-is never orphaned (DD-070).
+Yellowstone stream at `finalized` and records each block in `host_chain_blocks_valid` as finalized
+when it ingests it (DD-071). A finalized block is never orphaned (DD-070), so the reorg path of that
+substrate does not run for Solana.
 
 Options considered:
 
@@ -700,10 +702,9 @@ once the input-identity encoding (DD-026) is frozen.
 Status: adopted
 
 - **KMS connector decrypt** is exercised in the harness, **not** full production KMS-connector wiring.
-- **The listener's block-status machine is not used**: the Solana Yellowstone listener reconstructs
-  at `finalized` and inserts directly, bypassing the EVM `host_chain_blocks_valid` /
-  `block_history.rs` substrate. A finalized block is never orphaned, so there is nothing to unwind
-  (DD-070).
+- **Solana reorg unwind is not wired**: the listener records each block finalized at ingest
+  (DD-071), and the `block_history.rs` reorg path never runs for it. A finalized block is never
+  orphaned, so there is nothing to unwind (DD-070).
 - **Single local validator** in the harness — real reorgs / finality lag are not exercised end-to-end.
 - **Input proof / transciphering** behind the coprocessor attestation is a shortcut today; real ZKPoK +
   transciphering is production work (DD-007).
@@ -1857,11 +1858,12 @@ transaction consistently.
 
 Repair is a replay of the affected slots with the fixed listener. The operator rewinds the listener
 checkpoint to a slot `S` before the failure (`rewind_solana_listener_checkpoint.sql`) and reverts
-the computation rows after `S` with the existing `revert_coprocessor_db_state.sql`, which deletes
-the held rows and their errored dependents. The revert refuses a Solana chain whose checkpoint is
-still after `S`, since the listener would never re-ingest what it deleted;
-`revert_coprocessor_db_state.sh` runs both when given `SOLANA_BLOCK_HASH`. On restart the listener
-replays from `S` and inserts the rows again as new work. The replay leaves the leaf record alone:
+the rows above that block's height `H` with the existing `revert_coprocessor_db_state.sql`, which
+deletes the held rows and their errored dependents. Rows are numbered by height (DD-071). The revert
+refuses a Solana chain whose checkpoint is not the block at `H`: from a checkpoint above `H`, the
+listener would never re-ingest what it deleted. `revert_coprocessor_db_state.sh` runs both when
+given `SOLANA_SLOT` and `SOLANA_BLOCK_HASH`. On restart the listener replays from `S` and inserts
+the rows again as new work. The replay leaves the leaf record alone:
 the Merkle indexer keeps it in its own database, and a block the indexer replays must reproduce the
 leaves it recorded, or the indexer stops (DD-066). So a replay repairs computation rows, not a bug
 that recorded wrong leaves. A replay older than the provider's replay window comes from the archive
@@ -2713,6 +2715,77 @@ delivers one bank per slot at `finalized`, and what the follower guarantees from
 Pinned by `request_subscribes_to_host_transactions_and_block_meta` (the subscription),
 `finalized_rpc_preserves_order_null_accounts_and_context_slot` (the KMS snapshot) and
 `row_read_requires_the_first_read_slot` (the relayer pre-check's row read).
+
+## DD-071: The listener records each Solana block as a finalized host block, numbered by height
+
+Status: adopted
+
+Context:
+
+Every coprocessor publishes a signed manifest of each host block's produced handles and compares it
+with its peers' (the consensus detector). The detector finds a chain, seeds it and walks it only
+through `host_chain_blocks_valid`. The shared `block-manifest` crate requires a manifest's range to
+be numbered `n, n+1, …` with matching parent hashes, history windows are aligned power-of-two
+ranges of numbers, and a manifest is due when `number mod cadence == 0`.
+
+A Solana slot can be empty: a leader that produces no block leaves its slot skipped. The block
+height counts the blocks of a fork, so a child is always its parent plus one. Yellowstone's
+`BlockMeta` and `getBlock` both carry it.
+
+Decision:
+
+`apply_block` (`host-listener/src/solana_listener.rs`) writes the block's `host_chain_blocks_valid`
+row through `mark_block_as_valid`, in the transaction that holds the block's computation rows and
+the checkpoint. Every Solana row uses the block height as `block_number`: `computations`,
+`pbs_computations`, `handle_producer_block` and the host row. The slot stays in the checkpoint, the
+Merkle record and the logs. Example: slots 100, 102 and 103, with 101 skipped, are heights 5000,
+5001 and 5002.
+
+- A block without a height or a block time is fatal, and so is a parent row that is not at the
+  height below. Only the chain's first row may have no parent row. These checks run before anything
+  is written. `mark_block_as_valid` records an ingested finalized block without refusing a parent
+  that disagrees, so the listener checks the parent first.
+- The row is `finalized` when it is recorded, since the listener reads at `finalized` (DD-070) and
+  never unwinds a block (INVARIANTS #32). Every reader of `host_chain_blocks_valid` sees Solana rows
+  as it sees EVM rows: manifest discovery, pruning, the upgrade controller's `check_dry_run_ready`,
+  and the consensus detector's state-hash writer and GCS watermark. A Solana chain's
+  `consensus_epoch_block_window.start_block` is therefore a block height.
+- Every 100 heights, after the commit, the listener prunes old finalized rows with
+  `prune_finalized_block_history`, as EVM ingest does after a finalization pass.
+- The detector's default cadence for a Solana chain id is 150 heights, about one minute at 400 ms
+  slots with a few percent skipped. EVM chains publish about once a minute too.
+
+Rejected alternative: number rows by slot. A skipped slot breaks the contiguity checks every
+coprocessor runs on its peers' manifests (`shared/block-manifest/src/lib.rs`), the aligned history
+windows, the n−1 parent check of `update_block_as_finalized`, and the `mod cadence` trigger, since
+a skipped multiple never comes due. Fixing them is a wire change across the EVM network, and the
+parent hashes already prove that no block is missing.
+
+Consequences:
+
+Apart from pruning, only the operator repair of DD-056 removes a recorded Solana block.
+`revert_coprocessor_db_state.sql` reads the height of the checkpoint block from its row. It refuses
+a Solana chain whose listener has no checkpoint, whose checkpoint names no recorded block, or whose
+checkpoint is not the block at `to_block_number`, and names both heights.
+`revert_coprocessor_db_state.sh` takes the rewind slot as `SOLANA_SLOT`, apart from the height in
+`TO_BLOCK_NUMBER`. The gw-listener's automatic drift revert runs the same script, so on a Solana
+chain it refuses until an operator rewinds the checkpoint.
+
+A repair reaches back only as far as the host rows. `prune_finalized_block_history` deletes
+finalized rows more than 10,000 heights below the tip and older than 7 days, so the rewind slot must
+be newer than the 7-day retention. The revert refuses a checkpoint at a pruned block, and a replay
+from one would stop at the parent check. A deeper replay is out of scope.
+
+A revert deletes the host rows above `to_block_number` but not their `block_manifest_state` rows, as
+on EVM. The replay records the same blocks at the same heights, so those rows close again, and a
+sealed but unpublished one is resealed. A manifest already published for a block above
+`to_block_number` keeps its pre-revert content. No chain prunes `block_manifest_state`: Solana adds
+about 216,000 rows a day per coprocessor, against about 7,200 for Ethereum. Both are tracked in
+fhevm-internal#2123.
+
+Pinned by `rows_are_numbered_by_height_across_a_skipped_slot`,
+`an_incomplete_block_or_a_wrong_parent_writes_nothing`,
+`a_reverted_slot_replays_with_fresh_rows` and `publication_cadence_matches_known_chains`.
 
 ## Open product decisions
 

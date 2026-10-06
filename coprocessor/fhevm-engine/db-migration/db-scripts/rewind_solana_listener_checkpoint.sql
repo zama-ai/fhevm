@@ -1,8 +1,9 @@
 -- rewind_solana_listener_checkpoint.sql
 -- Moves the Solana host listener's checkpoint back to a slot it already applied, so the
 -- listener replays every later slot when it restarts. Pair it with
--- revert_coprocessor_db_state.sql at the same slot, which refuses to revert a Solana chain
--- whose checkpoint is still ahead: the listener would never re-ingest the deleted rows.
+-- revert_coprocessor_db_state.sql at that block's height (`blockHeight` of `getBlock <slot>`),
+-- which refuses to revert a Solana chain whose checkpoint is not that block: from a checkpoint
+-- still ahead, the listener would never re-ingest the deleted rows.
 --
 -- `slot` must be a slot that produced a block, and `block_hash` that block's hash in hex
 -- (the base58 `blockhash` of `getBlock <slot>`, decoded). The listener checks the first

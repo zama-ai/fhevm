@@ -48,6 +48,7 @@ pub enum SolanaHostRecord {
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct SolanaBlockMeta {
+    /// The block height, not the slot.
     pub block_number: u64,
     pub block_timestamp: time::PrimitiveDateTime,
     pub block_hash: [u8; 32],
@@ -140,7 +141,7 @@ pub fn normalize_solana_records_for_db(
                 continue;
             }
         }.map_err(|reason| format!(
-            "Solana computation in slot {}, transaction ID {transaction_id}, record {record_index}: {reason}",
+            "Solana computation at block height {}, transaction ID {transaction_id}, record {record_index}: {reason}",
             block.block_number,
         ))?;
         tfhe_logs.push(to_log_tfhe(
@@ -438,7 +439,7 @@ mod tests {
         );
         let error = result.unwrap_err();
         assert!(error.contains(&format!(
-            "slot 1, transaction ID {transaction_id}, record 0",
+            "block height 1, transaction ID {transaction_id}, record 0",
         )));
         assert!(error.contains("FheSum: expected 0..=256 encrypted operands"));
         assert!(error.contains("received 257 operands"));

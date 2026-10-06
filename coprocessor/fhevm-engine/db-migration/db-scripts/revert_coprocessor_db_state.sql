@@ -31,8 +31,9 @@
 -- Flow:
 --   1. Stop ALL coprocessor services.
 --   2. Optionally, take a database backup, in case something goes wrong.
---   3. Solana host chains only: rewind the listener checkpoint to to_block_number with
---      rewind_solana_listener_checkpoint.sql.
+--   3. Solana host chains only: rewind the listener checkpoint with
+--      rewind_solana_listener_checkpoint.sql to the block whose height is to_block_number.
+--      Solana rows are numbered by block height, not by slot.
 --   4. Run this script.
 --   5. Restart coprocessor services (host-listener must run in catchup/poller mode).
 
@@ -51,6 +52,8 @@ DO $$
 DECLARE
   _chain_id bigint;
   _to_block_number bigint;
+  _checkpoint_slot bigint;
+  _checkpoint_height bigint;
 BEGIN
   SELECT chain_id, to_block_number INTO _chain_id, _to_block_number FROM _param_check;
 
@@ -64,11 +67,25 @@ BEGIN
 
   -- A Solana host chain id carries chain type 0x01 in its top byte (RFC-021). Its listener
   -- resumes from solana_listener_checkpoint, not host_listener_poller_state: left ahead, it
-  -- would never re-ingest the rows deleted below.
-  IF (_chain_id >> 56) = 1 AND EXISTS (
-    SELECT 1 FROM solana_listener_checkpoint WHERE slot > _to_block_number
-  ) THEN
-    RAISE EXCEPTION 'the Solana listener checkpoint is past slot %; run rewind_solana_listener_checkpoint.sql first', _to_block_number;
+  -- would never re-ingest the rows deleted below, so the checkpoint must be the block at
+  -- to_block_number that the operator rewound to. The checkpoint names a slot, and the rows
+  -- a block height, so the checkpoint block's height is read from its recorded row.
+  IF (_chain_id >> 56) = 1 THEN
+    SELECT checkpoint.slot, host.block_number
+      INTO _checkpoint_slot, _checkpoint_height
+      FROM solana_listener_checkpoint checkpoint
+      LEFT JOIN host_chain_blocks_valid host
+        ON host.chain_id = _chain_id AND host.block_hash = checkpoint.block_hash
+     WHERE checkpoint.singleton = 1;
+    IF NOT FOUND THEN
+      RAISE EXCEPTION 'the Solana listener has no checkpoint; it has applied no block to revert';
+    END IF;
+    IF _checkpoint_height IS NULL THEN
+      RAISE EXCEPTION 'the Solana listener checkpoint at slot % names no recorded block; it was never recorded or its row was pruned (finalized rows 10000 heights below the tip and older than 7 days); run rewind_solana_listener_checkpoint.sql to a recorded block first', _checkpoint_slot;
+    END IF;
+    IF _checkpoint_height <> _to_block_number THEN
+      RAISE EXCEPTION 'the Solana listener checkpoint is at block height %, not %; run rewind_solana_listener_checkpoint.sql to the block at height % first', _checkpoint_height, _to_block_number, _to_block_number;
+    END IF;
   END IF;
 END $$;
 

@@ -6,9 +6,12 @@
 //!   `declare_id!`. Instruction layout still has no runtime handshake: deploy the listener from
 //!   the same rev as the program (INVARIANTS #33).
 //!
-//! Each sealed block is applied in one database transaction: its compute rows and the
-//! resume checkpoint. Compute rows carry the result handles each `FheExecutedEvent`
-//! emitted, so they name the chain's handles even where re-derivation disagrees.
+//! Each sealed block is applied in one database transaction: its compute rows, its
+//! `host_chain_blocks_valid` row and the resume checkpoint. Rows are numbered by block height,
+//! which steps by one along a fork, as the manifest ranges of the consensus detector require;
+//! the slot stays in the checkpoint and the logs. Compute rows carry the result handles each
+//! `FheExecutedEvent` emitted, so they name the chain's handles even where re-derivation
+//! disagrees.
 //! A step whose handle this listener does not re-derive is held back: its row is
 //! inserted as a terminal error, and the tfhe-worker drains everything that depends
 //! on it. The rest of the block is ingested normally.
@@ -27,8 +30,11 @@ use solana_host_follower::{
 use time::{OffsetDateTime, PrimitiveDateTime};
 use tracing::{error, info};
 
+use crate::cmd::block_history::BlockSummary;
 use crate::database::solana_checkpoint::store_checkpoint;
-use crate::database::tfhe_event_propagate::{Database, TransactionId};
+use crate::database::tfhe_event_propagate::{
+    Database, Transaction, TransactionId,
+};
 use crate::solana_adapter::{
     hold_back_computations, insert_solana_block_records, material_request,
     HeldBackComputation, SolanaBlockMeta, SolanaHostRecord, SolanaIngestStats,
@@ -43,6 +49,10 @@ static HANDLE_CHECK_FAILURES: LazyLock<IntCounterVec> = LazyLock::new(|| {
     )
     .unwrap()
 });
+
+/// Old finalized block rows are pruned once every this many heights, after the block commits.
+/// Each pass deletes at most `BLOCKS_VALID_PRUNE_BATCH` rows.
+const PRUNE_EVERY_HEIGHTS: u64 = 100;
 
 #[derive(Clone, Debug)]
 pub struct SolanaListenerConfig {
@@ -80,13 +90,27 @@ impl BlockSink for SolanaListenerSink<'_> {
 }
 
 /// Applies one sealed block in one database transaction: every covered
-/// transaction's compute rows and the checkpoint.
+/// transaction's compute rows, the block's `host_chain_blocks_valid` row and
+/// the checkpoint.
 async fn apply_block(
     db: &Database,
     config: &SolanaListenerConfig,
     prepared: &PreparedBlock,
 ) -> std::result::Result<(), IngestFailure> {
     let sealed_block = &prepared.block;
+    let block_height = sealed_block.block_height.ok_or_else(|| {
+        IngestFailure::fatal(anyhow!(
+            "slot {} has no block height",
+            sealed_block.slot
+        ))
+    })?;
+    let block_timestamp =
+        sealed_block_timestamp(sealed_block).ok_or_else(|| {
+            IngestFailure::fatal(anyhow!(
+                "missing or invalid block time for slot {}",
+                sealed_block.slot
+            ))
+        })?;
     let mut reconstructed = Vec::new();
     for transaction in &prepared.transactions {
         let outcome = reconstruct_records_for_insert(
@@ -115,6 +139,13 @@ async fn apply_block(
         );
         return Ok(());
     };
+    let summary = BlockSummary {
+        number: block_height,
+        hash: sealed_block.block_hash.into(),
+        parent_hash: sealed_block.parent_block_hash.into(),
+        timestamp: block_timestamp.assume_utc().unix_timestamp() as u64,
+    };
+    require_parent_height(&mut db_tx, db.chain_id.as_i64(), &summary).await?;
 
     let mut records_by_transaction = Vec::new();
     let mut held_back = Vec::new();
@@ -134,15 +165,8 @@ async fn apply_block(
     let stats = if records_by_transaction.is_empty() {
         SolanaIngestStats::default()
     } else {
-        let block_timestamp =
-            sealed_block_timestamp(sealed_block).ok_or_else(|| {
-                IngestFailure::fatal(anyhow!(
-                    "missing or invalid block time for slot {}",
-                    sealed_block.slot
-                ))
-            })?;
         let block = SolanaBlockMeta {
-            block_number: sealed_block.slot,
+            block_number: block_height,
             block_timestamp,
             block_hash: sealed_block.block_hash,
             parent_hash: sealed_block.parent_block_hash,
@@ -172,6 +196,18 @@ async fn apply_block(
         )));
     }
 
+    // The listener reads at finalized (DD-070), so every block is final when it is recorded.
+    db.mark_block_as_valid(
+        &mut db_tx,
+        &summary,
+        true,
+        stats.tfhe_events as i32,
+        stats.material_requests as i32,
+    )
+    .await
+    .map_err(|err| {
+        IngestFailure::retryable(err).context("record the host block")
+    })?;
     store_checkpoint(&mut db_tx, &sealed_block.checkpoint())
         .await
         .map_err(|err| {
@@ -198,13 +234,65 @@ async fn apply_block(
     if stats.inserted_records > 0 {
         info!(
             slot = sealed_block.slot,
+            block_height,
             tfhe_events = stats.tfhe_events,
             material_requests = stats.material_requests,
             inserted_records = stats.inserted_records,
             "ingested Solana host records (gRPC)"
         );
     }
+    // Best effort, as on EVM: a failure only delays pruning.
+    if block_height % PRUNE_EVERY_HEIGHTS == 0 {
+        match db.prune_finalized_block_history(block_height as i64).await {
+            Ok(0) => {}
+            Ok(pruned) => info!(pruned, "pruned finalized block history"),
+            Err(err) => {
+                error!(?err, "failed to prune finalized block history")
+            }
+        }
+    }
     Ok(())
+}
+
+/// The block's parent row must be at the height below it. The consensus detector numbers manifest
+/// ranges by height, and `mark_block_as_valid` records an ingested block as finalized without
+/// refusing a parent that disagrees. Only the chain's first row has no parent row.
+async fn require_parent_height(
+    db_tx: &mut Transaction<'_>,
+    chain_id: i64,
+    block: &BlockSummary,
+) -> std::result::Result<(), IngestFailure> {
+    let parent = sqlx::query!(
+        r#"
+        SELECT
+            (SELECT block_number FROM host_chain_blocks_valid
+              WHERE chain_id = $1 AND block_hash = $2) AS parent_height,
+            EXISTS (SELECT 1 FROM host_chain_blocks_valid WHERE chain_id = $1)
+                AS "chain_has_rows!"
+        "#,
+        chain_id,
+        block.parent_hash.as_slice(),
+    )
+    .fetch_one(db_tx.as_mut())
+    .await
+    .map_err(|err| {
+        IngestFailure::retryable(err).context("read the parent block row")
+    })?;
+    match parent.parent_height {
+        Some(height) if height as u64 + 1 == block.number => Ok(()),
+        Some(height) => Err(IngestFailure::fatal(anyhow!(
+            "block {} at height {} has its parent at height {height}",
+            block.hash,
+            block.number
+        ))),
+        None if parent.chain_has_rows => Err(IngestFailure::fatal(anyhow!(
+            "block {} at height {} has no recorded parent {}",
+            block.hash,
+            block.number,
+            block.parent_hash
+        ))),
+        None => Ok(()),
+    }
 }
 
 fn unix_to_pdt(ts: i64) -> Option<PrimitiveDateTime> {
@@ -627,6 +715,7 @@ mod apply_block_tests {
     use super::apply_block;
     use super::test_support::{
         config, context, encoded_execution, event_instruction, with_events,
+        STATE,
     };
     use crate::database::solana_checkpoint::load_checkpoint;
     use crate::database::tfhe_event_propagate::Database;
@@ -642,7 +731,8 @@ mod apply_block_tests {
     use sqlx::Row;
     use test_harness::instance::{setup_test_db, ImportMode};
     use zama_host::state::{
-        FheBinaryOpCode, FheExecuteArgs, FheExecuteOperand, FheExecuteStep,
+        ExecutionResultRef, FheBinaryOpCode, FheExecuteArgs, FheExecuteEffect,
+        FheExecuteOperand, FheExecuteStep,
     };
 
     /// The value added to [`two_steps`]'s first result.
@@ -750,8 +840,173 @@ mod apply_block_tests {
         }
     }
 
-    /// The repair: rewind the checkpoint and revert the rows past a slot with the operator
-    /// scripts, then replay. The consumer the worker drained comes back as a fresh row and
+    /// A block without transactions at `slot` and `height`.
+    fn empty(
+        slot: u64,
+        height: u64,
+        block_hash: [u8; 32],
+        parent_block_hash: [u8; 32],
+    ) -> PreparedBlock {
+        PreparedBlock {
+            block: SealedBlock {
+                block_height: Some(height),
+                executed_transaction_count: 0,
+                ..sealed(slot, block_hash, parent_block_hash)
+            },
+            transactions: vec![],
+        }
+    }
+
+    async fn host_rows(
+        pool: &sqlx::PgPool,
+    ) -> Vec<(i64, Vec<u8>, Vec<u8>, String)> {
+        sqlx::query_as(
+            "SELECT block_number, block_hash, parent_hash, block_status FROM host_chain_blocks_valid ORDER BY block_number",
+        )
+        .fetch_all(pool)
+        .await
+        .unwrap()
+    }
+
+    /// The host row a finalized block at `height` writes.
+    fn finalized(
+        height: i64,
+        hash: u8,
+        parent: u8,
+    ) -> (i64, Vec<u8>, Vec<u8>, String) {
+        (
+            height,
+            vec![hash; 32],
+            vec![parent; 32],
+            "finalized".to_owned(),
+        )
+    }
+
+    async fn new_db() -> (test_harness::instance::DBInstance, Database) {
+        let instance = setup_test_db(ImportMode::None).await.expect("test db");
+        let db = Database::new(
+            &instance.db_url,
+            ChainId::from_canonical_u64(config().chain_id),
+            100,
+        )
+        .await
+        .unwrap();
+        (instance, db)
+    }
+
+    /// Slots 40, 41, 43 and 44, with slot 42 skipped, are heights 38 to 41: the rows step by
+    /// one and each names its parent, as the manifest ranges require. The output stored at
+    /// slot 43 is produced at height 40, the block number the detector joins on.
+    #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+    async fn rows_are_numbered_by_height_across_a_skipped_slot() {
+        let (_instance, db) = new_db().await;
+        let mut accounts = vec![[0; 32]; zama_host::FHE_EXECUTE_FIXED_ACCOUNTS];
+        accounts.push(STATE);
+        let stored = DecodedInstruction {
+            accounts,
+            data: encoded_execution(FheExecuteArgs {
+                execution_store_index: 0,
+                account_count: 1,
+                dictionary: vec![[0x33; 32]],
+                steps: vec![FheExecuteStep::TrivialEncrypt {
+                    plaintext: [1; 32],
+                    fhe_type: 5,
+                }],
+                effects: vec![FheExecuteEffect {
+                    result: ExecutionResultRef {
+                        step_index: 0,
+                        output_index: 0,
+                    },
+                    store_index: 0,
+                    previous_leaf_count: 0,
+                    slot: None,
+                    allow_indexes: vec![0],
+                    make_public: false,
+                    grants: vec![],
+                }],
+                returned_results: vec![],
+            }),
+        };
+        let mut slot_43 = empty(43, 40, [0x43; 32], [0x41; 32]);
+        slot_43.transactions = vec![PreparedTransaction {
+            signature: Signature::from([1; 64]),
+            index: 0,
+            instructions: with_events([stored]),
+        }];
+        for block in [
+            empty(40, 38, [0x40; 32], [0x39; 32]),
+            empty(41, 39, [0x41; 32], [0x40; 32]),
+            slot_43,
+            empty(44, 41, [0x44; 32], [0x43; 32]),
+        ] {
+            apply_block(&db, &config(), &block).await.unwrap();
+        }
+
+        let pool = db.pool().await;
+        assert_eq!(
+            host_rows(&pool).await,
+            vec![
+                finalized(38, 0x40, 0x39),
+                finalized(39, 0x41, 0x40),
+                finalized(40, 0x43, 0x41),
+                finalized(41, 0x44, 0x43),
+            ]
+        );
+        let computed_at: Vec<i64> =
+            sqlx::query_scalar("SELECT block_number FROM computations")
+                .fetch_all(&pool)
+                .await
+                .unwrap();
+        assert_eq!(computed_at, vec![40]);
+        let produced_at: Vec<i64> = sqlx::query_scalar(
+            "SELECT producer_block_number FROM handle_producer_block",
+        )
+        .fetch_all(&pool)
+        .await
+        .unwrap();
+        assert_eq!(produced_at, vec![40]);
+        assert_eq!(load_checkpoint(&pool).await.unwrap().unwrap().slot, 44);
+    }
+
+    /// A block without a height or a block time, or whose parent row is not at the height below
+    /// it, stops the listener and writes nothing. Only the chain's first row may have no parent
+    /// row.
+    #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+    async fn an_incomplete_block_or_a_wrong_parent_writes_nothing() {
+        let (_instance, db) = new_db().await;
+        let pool = db.pool().await;
+        let mut no_height = empty(10, 8, [0x10; 32], [0x09; 32]);
+        no_height.block.block_height = None;
+        let mut no_time = empty(10, 8, [0x10; 32], [0x09; 32]);
+        no_time.block.block_time = None;
+        for incomplete in [no_height, no_time] {
+            assert!(apply_block(&db, &config(), &incomplete)
+                .await
+                .unwrap_err()
+                .is_fatal());
+        }
+        assert!(host_rows(&pool).await.is_empty());
+        assert!(load_checkpoint(&pool).await.unwrap().is_none());
+
+        apply_block(&db, &config(), &empty(10, 8, [0x10; 32], [0x09; 32]))
+            .await
+            .unwrap();
+        for wrong in [
+            empty(11, 10, [0x11; 32], [0x10; 32]),
+            empty(11, 9, [0x11; 32], [0xAA; 32]),
+        ] {
+            assert!(apply_block(&db, &config(), &wrong)
+                .await
+                .unwrap_err()
+                .is_fatal());
+        }
+        assert_eq!(host_rows(&pool).await.len(), 1);
+        assert_eq!(load_checkpoint(&pool).await.unwrap().unwrap().slot, 10);
+    }
+
+    /// The repair: rewind the checkpoint and revert the rows above a block's height with the
+    /// operator scripts, then replay. The revert refuses unless the checkpoint is at its height.
+    /// The consumer the worker drained comes back as a fresh row, the block rows return, and
     /// the checkpoint returns to the tip.
     #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
     #[serial(handle_check_failures)]
@@ -781,12 +1036,35 @@ mod apply_block_tests {
             }],
         };
 
-        let instance = setup_test_db(ImportMode::None).await.expect("test db");
+        let (instance, db) = new_db().await;
         let chain_id = ChainId::from_canonical_u64(config().chain_id);
-        let db = Database::new(&instance.db_url, chain_id, 100)
+        let pool = db.pool().await;
+        sqlx::query("INSERT INTO host_chains (chain_id, name, acl_contract_address) VALUES ($1, 'solana', '') ON CONFLICT DO NOTHING")
+            .bind(chain_id.as_i64())
+            .execute(&pool)
             .await
             .unwrap();
-        let pool = db.pool().await;
+
+        // A refused script leaves its session in the aborted transaction, as psql would
+        // before exiting, so it runs on a connection of its own.
+        let db_url = instance.db_url();
+        let refused_revert = |height| async move {
+            let mut session: sqlx::PgConnection =
+                sqlx::Connection::connect(db_url).await.unwrap();
+            sqlx::raw_sql(
+                &test_harness::db_utils::revert_coprocessor_db_state_sql(
+                    chain_id.as_i64(),
+                    height,
+                ),
+            )
+            .execute(&mut session)
+            .await
+            .unwrap_err()
+            .to_string()
+        };
+        let unstarted = refused_revert(39).await;
+        assert!(unstarted.contains("has no checkpoint"), "{unstarted}");
+
         for block in [&slot_41, &slot_42] {
             apply_block(&db, &config(), block).await.unwrap();
         }
@@ -797,50 +1075,40 @@ mod apply_block_tests {
             .await
             .unwrap();
 
-        sqlx::query("INSERT INTO host_chains (chain_id, name, acl_contract_address) VALUES ($1, 'solana', '') ON CONFLICT DO NOTHING")
-            .bind(chain_id.as_i64())
-            .execute(&pool)
-            .await
-            .unwrap();
-        let revert = test_harness::db_utils::revert_coprocessor_db_state_sql(
-            chain_id.as_i64(),
-            41,
-        );
-        // A refused script leaves its session in the aborted transaction, as psql would
-        // before exiting, so it gets a connection of its own.
-        let mut session: sqlx::PgConnection =
-            sqlx::Connection::connect(instance.db_url()).await.unwrap();
-        let refused = sqlx::raw_sql(&revert)
-            .execute(&mut session)
-            .await
-            .unwrap_err();
-        drop(session);
-        assert!(
-            refused
-                .to_string()
-                .contains("rewind_solana_listener_checkpoint.sql"),
-            "{refused}"
-        );
-        let rewind = include_str!(
-            "../../db-migration/db-scripts/rewind_solana_listener_checkpoint.sql"
-        )
-        .lines()
-        .filter(|line| !line.starts_with("\\set "))
-        .collect::<Vec<_>>()
-        .join("\n")
-        .replace(":'slot'", "41")
-        .replace(":'block_hash'", &format!("'{}'", hex::encode([0x41; 32])));
+        let both_rows =
+            vec![finalized(39, 0x41, 0x40), finalized(40, 0x42, 0x41)];
+        assert_eq!(host_rows(&pool).await, both_rows);
+
+        // Slot 41 is height 39; the checkpoint is still at slot 42, height 40.
+        let ahead = refused_revert(39).await;
+        assert!(ahead.contains("at block height 40, not 39"), "{ahead}");
+        let rewind =
+            test_harness::db_utils::rewind_solana_listener_checkpoint_sql(
+                41, [0x41; 32],
+            );
         sqlx::raw_sql(&rewind).execute(&pool).await.unwrap();
-        sqlx::raw_sql(&revert).execute(&pool).await.unwrap();
+        let behind = refused_revert(40).await;
+        assert!(behind.contains("at block height 39, not 40"), "{behind}");
+
+        sqlx::raw_sql(
+            &test_harness::db_utils::revert_coprocessor_db_state_sql(
+                chain_id.as_i64(),
+                39,
+            ),
+        )
+        .execute(&pool)
+        .await
+        .unwrap();
         let checkpoint = load_checkpoint(&pool).await.unwrap().unwrap();
         assert_eq!((checkpoint.slot, checkpoint.block_hash), (41, [0x41; 32]));
         let reverted: i64 = sqlx::query_scalar(
-            "SELECT count(*) FROM computations WHERE block_number = 42",
+            "SELECT count(*) FROM computations WHERE block_number = 40",
         )
         .fetch_one(&pool)
         .await
         .unwrap();
         assert_eq!(reverted, 0);
+        assert_eq!(host_rows(&pool).await, both_rows[..1]);
 
         apply_block(&db, &config(), &slot_42).await.unwrap();
         let consumer_errored: bool = sqlx::query_scalar(
@@ -854,7 +1122,16 @@ mod apply_block_tests {
             !consumer_errored,
             "the replay re-inserts the drained consumer fresh"
         );
+        assert_eq!(host_rows(&pool).await, both_rows);
         assert_eq!(load_checkpoint(&pool).await.unwrap().unwrap().slot, 42);
+
+        let unrecorded =
+            test_harness::db_utils::rewind_solana_listener_checkpoint_sql(
+                30, [0x30; 32],
+            );
+        sqlx::raw_sql(&unrecorded).execute(&pool).await.unwrap();
+        let pruned = refused_revert(39).await;
+        assert!(pruned.contains("names no recorded block"), "{pruned}");
     }
 
     /// A block whose second transaction emits a wrong handle for its first step: that step
@@ -891,14 +1168,7 @@ mod apply_block_tests {
                 },
             ],
         };
-        let instance = setup_test_db(ImportMode::None).await.expect("test db");
-        let db = Database::new(
-            &instance.db_url,
-            ChainId::from_canonical_u64(config().chain_id),
-            100,
-        )
-        .await
-        .unwrap();
+        let (_instance, db) = new_db().await;
         let failures_before = handle_check_failures();
 
         apply_block(&db, &config(), &block).await.unwrap();
