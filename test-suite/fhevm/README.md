@@ -806,6 +806,13 @@ Drift tables must remain empty. Final tables and checkpoints are saved in
 In CI select scenario `manifest-lifecycle`, test-profile `manifest-lifecycle-no-drift`,
 and enable the build. This profile does not exercise healing or decryption.
 
+The same profile runs against Solana handles on scenario `solana-manifest-lifecycle`, which
+starts one Solana host listener per coprocessor. The fixture is the `encrypted-counter`
+program instead of the hardhat contracts, and `rootBlock` is the root's Solana block height,
+not its slot. Bring the stack up with `solana/scripts/e2e/clean-e2e.sh` and
+`SOLANA_E2E_SCENARIO=solana-manifest-lifecycle`; in CI, dispatch `solana-e2e.yml` with the same
+scenario and test-profile. `solana/docs/TESTING.md` lists what that run does not cover.
+
 The scenario gives each coprocessor its own read-only directory mount and
 `--dangerous-drift-injection=/manifest-drift/injection.json`. The directory starts
 empty. The containment profile uses only node 2. It waits for publication readiness, stops that detector, submits

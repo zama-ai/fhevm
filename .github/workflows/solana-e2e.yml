@@ -22,6 +22,12 @@ name: solana-e2e
 #     the operator reachable from the dApp origin with the current boot capability
 # The two demo programs (demo_vault, confidential_batcher) deploy from committed keypairs under
 # solana/scripts/demo/demo-keypairs/ (see its README).
+#
+# A dispatch with `test-profile` instead brings up `scenario` with clean-e2e.sh, outside the demo
+# lifecycle, and runs that fhevm-cli test profile, as test-suite-e2e-tests.yml does for EVM. The
+# demo and the scenario suite do not run. Example:
+#   gh workflow run solana-e2e.yml --ref <branch> \
+#     -f scenario=solana-manifest-lifecycle -f test-profile=manifest-lifecycle-no-drift
 on:
   # Auto-run on PRs targeting the Solana feature branch. workflow_dispatch remains for
   # manual re-runs / demo rehearsals with custom values at an arbitrary head.
@@ -41,6 +47,14 @@ on:
         options:
           - centralized
           - threshold
+      scenario:
+        description: "fhevm-cli scenario a `test-profile` run brings up (e.g. solana-manifest-lifecycle)."
+        default: ""
+        type: string
+      test-profile:
+        description: "fhevm-cli test profile to run instead of the demo and the scenario suite (e.g. manifest-lifecycle-no-drift)."
+        default: ""
+        type: string
 
 permissions: {}
 
@@ -74,9 +88,17 @@ jobs:
       # declared inputs differ from the deployed KMS context. Empty (PR runs) keeps the
       # centralized defaults on both sides.
       KMS_THRESHOLD: ${{ inputs.kms-mode == 'threshold' && '1' || '' }}
+      # Empty except on a dispatched profile run; PR runs keep the demo lane.
+      TEST_PROFILE: ${{ inputs.test-profile || '' }}
       # Every producer/consumer derives the demo config path from the fhevm layout under
       # FHEVM_STATE_DIR (default <repo>/.fhevm), regardless of the step's working directory.
     steps:
+      - name: Require a scenario for a test profile
+        if: ${{ env.TEST_PROFILE != '' && inputs.scenario == '' }}
+        run: |
+          echo "::error::test-profile '$TEST_PROFILE' needs a scenario input"
+          exit 1
+
       - name: Checkout
         uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
         with:
@@ -158,6 +180,7 @@ jobs:
         run: bash solana/scripts/e2e/select-overrides.sh "$(git rev-parse HEAD^1)"
 
       - name: Bring up fresh lifecycle-owned stack + demo
+        if: ${{ env.TEST_PROFILE == '' }}
         env:
           # Override selection computed above (empty on workflow_dispatch or if the step was
           # skipped, in which case clean-e2e.sh keeps its build-everything default).
@@ -173,6 +196,29 @@ jobs:
           SOLANA_E2E_REQUIRE_SQUADS: "1"
         run: bun run demo up
 
+      - name: Bring up the profile's scenario
+        if: ${{ env.TEST_PROFILE != '' }}
+        env:
+          # The demo lifecycle runs a single coprocessor, so a profile scenario comes up through
+          # clean-e2e.sh directly. The runner is ephemeral, so no teardown follows.
+          SOLANA_E2E_SCENARIO: ${{ inputs.scenario }}
+        run: bash solana/scripts/e2e/clean-e2e.sh
+
+      - name: Run the test profile
+        if: ${{ env.TEST_PROFILE != '' }}
+        working-directory: test-suite/fhevm
+        run: ./fhevm-cli test "$TEST_PROFILE"
+
+      - name: Upload the profile report
+        # The no-drift profile writes its per-node quorum coverage and fixture here, pass or fail.
+        if: ${{ !cancelled() && env.TEST_PROFILE != '' }}
+        uses: actions/upload-artifact@65c4c4a1ddee5b72f698fdd19549f0f0fb45cf08 # v4.6.0
+        with:
+          name: solana-e2e-profile-report
+          path: .fhevm/runtime/config/manifest-drift/*/no-drift-report.json
+          if-no-files-found: ignore
+          retention-days: 30
+
       # The deposit-arc scenario drives the demo dapp's vault module from bun, and the vault reaches
       # into SDK *sources* (`@sdk-src`) for internals the published package deliberately does not
       # export (fhevm-internal#1859 §6d). Source resolution starts at sdk/js-sdk/, so the SDK's own
@@ -185,13 +231,16 @@ jobs:
       # this position broke `bun run demo up` on `Cannot find module '@solana/kit'`. The lifecycle's
       # consumer graphs live in their own directories and are not touched by this root install.
       - name: Install the SDK's own dependency graph (SDK sources resolve their deps here)
+        if: ${{ env.TEST_PROFILE == '' }}
         run: npm ci --prefix sdk/js-sdk
 
       - name: Install the confidential-token client's frozen dependency graph
+        if: ${{ env.TEST_PROFILE == '' }}
         working-directory: solana/clients/confidential-token
         run: bun install --frozen-lockfile
 
       - name: Verify @fhevm/sdk runtime deps and demo consumer build
+        if: ${{ env.TEST_PROFILE == '' }}
         # Lifecycle bring-up builds the SDK, then links each consumer graph to it. Assert the
         # public Solana entrypoint before spending the remainder of the job on the vertical. The
         # vault module is no longer an SDK subpath (it lives in the demo dapp), so the dapp build
@@ -203,6 +252,7 @@ jobs:
           bun run build
 
       - name: Run the Solana e2e scenario suite (SDK-driven, against the up stack)
+        if: ${{ env.TEST_PROFILE == '' }}
         # The lifecycle-owned stack is still up. These bun:test scenarios drive product arcs through
         # @fhevm/sdk Solana actions only; the confidential-transfer arc (encrypt input ->
         # submitInputProof -> confidentialTransfer -> current user-decrypt) was moved here from
@@ -215,13 +265,16 @@ jobs:
         run: bun run test:e2e
 
       - name: Require a healthy owned boot before the demo phase
+        if: ${{ env.TEST_PROFILE == '' }}
         run: bun run demo status
 
       - name: Refresh demo programs, state, and authorization
+        if: ${{ env.TEST_PROFILE == '' }}
         id: demo-reseed
         run: bun run demo reseed --direct
 
       - name: Deposit-arc smoke (bun run demo:smoke) — full arc live via the SDK, hard gate
+        if: ${{ env.TEST_PROFILE == '' }}
         # demo:smoke sets RUN_DEMO_SCENARIOS=1 itself, so the deposit-arc scenario only runs here
         # (the earlier test:e2e pass leaves it gated off). No continue-on-error: a broken arc
         # fails the job.
@@ -246,6 +299,8 @@ jobs:
           # Capture every lifecycle-owned native and container log before exact teardown.
           bun run demo logs --no-follow > /tmp/solana-e2e-logs/lifecycle.log 2>&1 || true
           cp /tmp/solana-*.log /tmp/solana-e2e-logs/ 2>/dev/null || true
+          # A profile run's Solana host processes log to /tmp, one listener per coprocessor.
+          cp /tmp/host-listener*.log /tmp/merkle-*.log /tmp/solana_*-build.log /tmp/solana-e2e-logs/ 2>/dev/null || true
           # The validator's own log lives inside the ledger dir, not next to the other /tmp logs,
           # and it is the only place a geyser plugin load failure is explained.
           # Name each copy after its ledger dir: a reseed can leave more than one ledger under
@@ -272,5 +327,5 @@ jobs:
           retention-days: 7
 
       - name: Tear down the stack
-        if: ${{ always() }}
+        if: ${{ always() && env.TEST_PROFILE == '' }}
         run: bun run demo down
