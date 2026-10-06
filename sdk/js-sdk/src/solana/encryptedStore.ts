@@ -143,7 +143,7 @@ export function decodeSolanaEncryptedStore(data: Uint8Array, accountName: string
  *
  * @param rpc - The Solana RPC to read through.
  * @param address - The account's address.
- * @param config - Standard fetch passthrough, e.g. `{ commitment: 'confirmed' }`.
+ * @param config - Standard fetch passthrough, e.g. `{ commitment: 'finalized' }`.
  * @param expectedOwner - The host program expected to own the account. When given, an account
  * owned by anyone else — e.g. a system account somebody created by transferring lamports to the
  * PDA — is reported as such instead of failing deeper in the decoder as a phantom layout drift.

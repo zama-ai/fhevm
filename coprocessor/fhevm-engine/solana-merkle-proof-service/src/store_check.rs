@@ -156,7 +156,7 @@ pub trait StoreAccounts {
     ) -> impl Future<Output = anyhow::Result<Vec<Option<Account>>>> + Send;
 }
 
-/// At the client's commitment, confirmed for the indexer.
+/// At the client's commitment, finalized for the indexer.
 impl StoreAccounts for RpcClient {
     async fn accounts(
         &self,

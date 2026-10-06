@@ -35,7 +35,7 @@ fi
 SOLANA_RECOVERY_IMAGE="hub.zama.org/ghcr/zama-ai/fhevm/solana-programs:$tag" \
   bash "$script_dir/recover.sh" reset
 for i in $(seq 1 "$NB_COPROCESSOR"); do recreate_solana_merkle_record "$i"; done
-merkle_start_slot=$(confirmed_solana_slot)
+merkle_start_slot=$(finalized_solana_slot)
 
 # Keygen completion precedes asynchronous key download into each coprocessor DB.
 for i in $(seq 1 "$NB_COPROCESSOR"); do

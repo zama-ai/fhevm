@@ -1,7 +1,7 @@
 //! Concrete Yellowstone source validation for sealed Solana blocks.
 //!
 //! The follower subscribes to the successful transactions naming the host program, one per
-//! message, and to every slot's block meta. At `confirmed`, Yellowstone sends a slot's
+//! message, and to every slot's block meta. At `finalized`, Yellowstone sends a slot's
 //! transactions before its block meta, live and on `from_slot` replay, so [`BlockValidator`] seals
 //! a slot when its block meta arrives. One transaction is bounded by Solana's limits, where a
 //! whole block is bounded by compute units only: a block of transactions that merely list the host
@@ -311,7 +311,7 @@ pub(crate) fn build_subscribe_request(
         block_footer: HashMap::new(),
         entry: HashMap::new(),
         commitment: Some(
-            yellowstone_grpc_proto::prelude::CommitmentLevel::Confirmed as i32,
+            yellowstone_grpc_proto::prelude::CommitmentLevel::Finalized as i32,
         ),
         accounts_data_slice: vec![],
         ping: None,
@@ -664,5 +664,12 @@ mod tests {
         assert!(request.blocks.is_empty());
         assert!(request.accounts.is_empty());
         assert_eq!(request.from_slot, Some(9));
+        assert_eq!(
+            request.commitment,
+            Some(
+                yellowstone_grpc_proto::prelude::CommitmentLevel::Finalized
+                    as i32
+            )
+        );
     }
 }

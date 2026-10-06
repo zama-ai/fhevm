@@ -210,12 +210,12 @@ describe('confidentialTransfer attestation binding', () => {
 
     await expect(confidentialTransfer(context, params)).resolves.toEqual(expect.any(String));
     expect(simulate).toHaveBeenCalledWith(expect.any(String), {
-      commitment: 'confirmed',
+      commitment: 'finalized',
       encoding: 'base64',
       sigVerify: true,
     });
     expect(sendAndConfirm).toHaveBeenCalledWith(expect.any(Object), {
-      commitment: 'confirmed',
+      commitment: 'finalized',
       skipPreflight: true,
     });
     const wire = simulate.mock.calls[0]![0] as string;

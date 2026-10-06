@@ -37,7 +37,7 @@ export const createHostDeployContext = (rpcUrl: string, signal?: AbortSignal): H
     confirmedSignatures,
     async sendTransaction(payer, instructions) {
       signal?.throwIfAborted();
-      const { value: latestBlockhash } = await rpc.getLatestBlockhash({ commitment: 'confirmed' }).send();
+      const { value: latestBlockhash } = await rpc.getLatestBlockhash({ commitment: 'finalized' }).send();
       const base = setTransactionMessageFeePayerSigner(payer, createTransactionMessage({ version: 0 }));
       const withLifetime = setTransactionMessageLifetimeUsingBlockhash(latestBlockhash, base);
       const message = appendTransactionMessageInstructions([...instructions], withLifetime);
@@ -49,7 +49,7 @@ export const createHostDeployContext = (rpcUrl: string, signal?: AbortSignal): H
       await rpc
         .sendTransaction(getBase64EncodedWireTransaction(signedTransaction), {
           encoding: 'base64',
-          preflightCommitment: 'confirmed',
+          preflightCommitment: 'finalized',
         })
         .send();
       const deadline = Date.now() + CONFIRM_TIMEOUT_MS;
@@ -60,7 +60,7 @@ export const createHostDeployContext = (rpcUrl: string, signal?: AbortSignal): H
           throw new Error(`transaction ${signature} failed: ${JSON.stringify(status.err)}`);
         }
         const level = status?.confirmationStatus;
-        if (level === 'confirmed' || level === 'finalized') {
+        if (level === 'finalized') {
           confirmedSignatures.push(signature);
           return;
         }

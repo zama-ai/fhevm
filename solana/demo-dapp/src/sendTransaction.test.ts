@@ -87,7 +87,7 @@ describe('sendTransaction simulation boundary', () => {
     await sendTransaction(config, payer, [], 100_000);
 
     expect(mocks.sendAndConfirm).toHaveBeenCalledWith('signed-transaction', {
-      commitment: 'confirmed',
+      commitment: 'finalized',
       skipPreflight: true,
     });
     expect(mocks.simulateSigned.mock.invocationCallOrder[0]).toBeLessThan(mocks.sendAndConfirm.mock.invocationCallOrder[0]);

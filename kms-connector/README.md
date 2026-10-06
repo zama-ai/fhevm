@@ -105,7 +105,7 @@ the worker authorizes exactly what the user signed.
 ## Solana decryption and the shared worker lifecycle
 
 Every processing attempt, including an already-sent poll, checks the permit signature,
-window, deployment, KMS context, confirmed account snapshot, invalidation watermark,
+window, deployment, KMS context, finalized account snapshot, invalidation watermark,
 scope, allow leaf named by `owner_address`, and any required delegation. A poll does not
 prepare or resend the KMS request. KMS preparation, response publishing and retry limits
 use the existing user-decrypt flow.

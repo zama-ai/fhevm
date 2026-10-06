@@ -123,7 +123,7 @@ export async function settleBatch(
     authorityFundingLamports: options.authorityFundingLamports,
   });
 
-  const { value: latestBlockhash } = await rpc.getLatestBlockhash({ commitment: 'confirmed' }).send();
+  const { value: latestBlockhash } = await rpc.getLatestBlockhash({ commitment: 'finalized' }).send();
   const transaction = await buildAndSignSettleTransaction({
     instructions: appendTransientStoreInstructions(transientStore, [settleInstruction]),
     feePayer: keeper,
@@ -135,7 +135,7 @@ export async function settleBatch(
 
   const wireTransaction = getBase64EncodedWireTransaction(transaction);
   const simulation = await rpc
-    .simulateTransaction(wireTransaction, { commitment: 'confirmed', encoding: 'base64', sigVerify: true })
+    .simulateTransaction(wireTransaction, { commitment: 'finalized', encoding: 'base64', sigVerify: true })
     .send();
   if (simulation.value.err !== null) {
     const err = JSON.stringify(simulation.value.err, (_key, value: unknown) =>
@@ -145,7 +145,7 @@ export async function settleBatch(
     throw new Error(logs.length > 0 ? `settle simulation failed: ${err}\n${logs}` : `settle simulation failed: ${err}`);
   }
   await sendAndConfirmTransactionFactory({ rpc, rpcSubscriptions: options.rpcSubscriptions })(transaction, {
-    commitment: 'confirmed',
+    commitment: 'finalized',
     skipPreflight: true,
   });
   return getSignatureFromTransaction(transaction);

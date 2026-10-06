@@ -156,7 +156,7 @@ export async function confidentialTransfer(
           ],
         }
       : transferInstruction;
-  const { value: latestBlockhash } = await parameters.rpc.getLatestBlockhash({ commitment: 'confirmed' }).send();
+  const { value: latestBlockhash } = await parameters.rpc.getLatestBlockhash({ commitment: 'finalized' }).send();
   const message = pipe(
     createTransactionMessage({ version: 0 }),
     (m) => setTransactionMessageFeePayerSigner(feePayer, m),
@@ -173,7 +173,7 @@ export async function confidentialTransfer(
   const wireTransaction = getBase64EncodedWireTransaction(transaction);
   const simulation = await parameters.rpc
     .simulateTransaction(wireTransaction, {
-      commitment: 'confirmed',
+      commitment: 'finalized',
       encoding: 'base64',
       sigVerify: true,
     })
@@ -194,7 +194,7 @@ export async function confidentialTransfer(
   await sendAndConfirmTransactionFactory({ rpc: parameters.rpc, rpcSubscriptions: parameters.rpcSubscriptions })(
     transaction,
     {
-      commitment: 'confirmed',
+      commitment: 'finalized',
       skipPreflight: true,
     },
   );

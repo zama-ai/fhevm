@@ -66,7 +66,7 @@ selection. Compute records and the listener's checkpoint commit atomically.
 The Merkle indexer records the leaves from the same stream into its own database, from a block
 before the first Store, and `solana_merkle_proof_server` serves their inclusion proofs via
 `/v1/solana/merkle-proofs`; the connector verifies them against its own chain snapshot (DD-066). A
-record missing a Store's history stops the indexer, and the record is rebuilt. The listener's confirmed-chain scheduling does not itself authorize plaintext release.
+record missing a Store's history stops the indexer, and the record is rebuilt. The listener's scheduling does not itself authorize plaintext release.
 
 Public consumers verify only the KMS certificate on-chain, as EVM `FHE.checkSignatures` does, and compare the
 certified handle with one they pinned (DD-065). The KMS connectors check the public leaf before they decrypt.
@@ -78,14 +78,13 @@ stop posting ciphertext material to the gateway.
 
 The shared gateway retains its cleartext bit budget and Solana request handle cap. KMS core
 performs threshold decryption; each party's connector trusts its configured host RPC, as it
-does for EVM ACL reads. Confirmed rather than finalized authorization is an explicit trust
-choice, not a listener guarantee.
+does for EVM ACL reads. It reads Solana at `finalized` (DD-070), where EVM ACL reads take the
+node's latest block.
 
 ## Remaining delivery and security boundaries
 
 Production provider deployment, key/registry lifecycle, payment and infrastructure operations
-still require their owning teams. Confirmed-chain reorg recovery is distinct from authorization
-and from provider-retention recovery. ABI/account changes require all consumers and generated
+still require their owning teams. ABI/account changes require all consumers and generated
 IDLs to agree; there is no backward-compatibility requirement for the retired per-value account model.
 
 Tests establish the exercised behavior, not a blanket security verdict. The outstanding work

@@ -1,5 +1,5 @@
-//! Confirmed host account reads. Each read is one `getMultipleAccounts` at one slot, answered
-//! in key order.
+//! Finalized host account reads (Solana DD-070). Each read is one `getMultipleAccounts` at one
+//! slot, answered in key order.
 //!
 //! The first read covers the signer's invalidation record and the named encrypted stores. A
 //! delegated request then reads them again with the Clock and the delegation rows the first read
@@ -10,11 +10,6 @@
 //! A refusal from a node behind is recoverable. The worker loop retries a Gateway request; an HTTP
 //! request is not retried internally, so its caller receives `upstream_transient` and resubmits,
 //! as for any transient failure of an EVM request.
-//!
-//! Reads are at confirmed commitment, not finalized. A grant observed on a supermajority-confirmed
-//! fork is sufficient authorization; if that fork is rolled back, a share may already have been
-//! released against state the canonical chain no longer holds. That risk is accepted (INVARIANTS
-//! #46).
 
 use solana_account_decoder_client_types::{UiAccountData, UiAccountEncoding};
 use solana_commitment_config::CommitmentConfig;
@@ -206,7 +201,7 @@ impl SolanaRpcClient {
             client: Arc::new(RpcClient::new_with_timeout_and_commitment(
                 url.to_string(),
                 timeout,
-                CommitmentConfig::confirmed(),
+                CommitmentConfig::finalized(),
             )),
             permits: Arc::new(Semaphore::new(max_concurrent_calls.get())),
             timeout,
@@ -231,7 +226,7 @@ impl HostStateReader for SolanaRpcClient {
             keys,
             RpcAccountInfoConfig {
                 encoding: Some(UiAccountEncoding::Base64),
-                commitment: Some(CommitmentConfig::confirmed()),
+                commitment: Some(CommitmentConfig::finalized()),
                 min_context_slot,
                 ..Default::default()
             },

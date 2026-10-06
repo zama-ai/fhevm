@@ -82,7 +82,7 @@ const buildUsdcMinter = async (options: {
     // The message was given a blockhash lifetime above; narrow the signed tx so the blockhash-based
     // send factory accepts it (kit's signer returns the generic lifetime union).
     assertIsTransactionWithBlockhashLifetime(signedTransaction);
-    await sendAndConfirm(signedTransaction, { commitment: "confirmed" });
+    await sendAndConfirm(signedTransaction, { commitment: "finalized" });
     return getSignatureFromTransaction(signedTransaction);
   };
 };

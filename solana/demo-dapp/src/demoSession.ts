@@ -148,12 +148,12 @@ export const readDemoWalletBalances = async (
 ): Promise<readonly [solLamports: bigint, usdcBaseUnits: bigint]> => {
   const rpc = createSolanaRpc(config.rpcUrl);
   const [sol, tokenAccounts] = await Promise.all([
-    rpc.getBalance(owner, { commitment: 'confirmed' }).send(),
+    rpc.getBalance(owner, { commitment: 'finalized' }).send(),
     rpc
       .getTokenAccountsByOwner(
         owner,
         { mint: config.mints.joinUnderlying },
-        { commitment: 'confirmed', encoding: 'jsonParsed' },
+        { commitment: 'finalized', encoding: 'jsonParsed' },
       )
       .send(),
   ]);

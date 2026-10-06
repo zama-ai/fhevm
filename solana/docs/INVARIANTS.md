@@ -372,16 +372,20 @@ Pinned by `matches_on_chain_append_and_authorizes`, `one_serving_coprocessor_car
 (`SolanaUserDecryptRequest`) has no proof field, and `the_decoder_is_strict` rejects trailing bytes.
 
 **31. [HOLDS]** Coprocessor scheduling is decoupled from authorization: the
-listener schedules every output a confirmed transaction stores (DD-069), which
-can waste compute on a minority fork; it can never release plaintext.
+listener schedules every output a finalized transaction stores (DD-069, DD-070);
+scheduling can never release plaintext.
 Pinned by `only_an_output_its_transaction_stores_is_allowed` and
 `storing_an_older_handle_allows_no_output`.
 
-**32. [GAP]** No reorg unwind on the listener path; minority-fork work is never
-rolled back (safe only because of #31). The operator repair of DD-056 does not
-unwind a fork either: it replays the same slots into computation rows and
-leaves the leaf record alone. A block the Merkle indexer replays must reproduce
+**32. [HOLDS]** The listener and the Merkle indexer apply only finalized
+blocks (DD-070), so they schedule and record no work on a minority fork and
+have no reorg to unwind. Each block must name the last applied one by parent
+slot and parent block hash, or the stream stops (DD-062). The operator repair of
+DD-056 replays the same slots into computation rows and leaves the leaf record
+alone. A block the Merkle indexer replays must reproduce
 the leaves it recorded for it, or the indexer stops (DD-066).
+Pinned by `request_subscribes_to_host_transactions_and_block_meta` and
+`a_slot_that_does_not_extend_the_last_halts`.
 
 **33. [RISK]** Nothing pins a deployed program build to the listener and
 Merkle indexer builds. #28 takes the followed program id as an input, so a
@@ -530,14 +534,9 @@ account the connector read itself (`kms-worker/src/core/solana/`).
 Pinned by `an_encrypted_store_whose_fields_derive_another_address_is_rejected`,
 `an_encrypted_store_with_an_altered_bump_is_rejected` and `on_chain_account_decoder_reads_layout`.
 
-**46. [RISK]** The connector's ACL reads use confirmed (not finalized)
-commitment, and this component is the authorization gate. A grant observed on a
-supermajority-confirmed fork is sufficient authorization. If that fork is rolled back,
-the KMS may already have released a share against a delegation, allow leaf or
-permit state that no longer exists on the canonical chain. This risk is accepted at
-the protocol level; it is documented at the site (`kms-worker/src/core/solana/snapshot.rs`
-module doc). EVM host ACL reads take the same risk: they read at the node's latest block
-(`kms-worker/src/core/event_processor/rpc.rs`).
+**46. [RETIRED]** The connector's ACL reads were at confirmed commitment, with the
+accepted risk of releasing a share against a grant on a fork later rolled back.
+They are at finalized (DD-070).
 
 **49. [ASSUMPTION]** The coprocessor's EVM-shaped event rows carry a zeroed
 `caller` for every Solana transaction (the 32-byte program does not fit

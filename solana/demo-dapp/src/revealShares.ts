@@ -90,7 +90,7 @@ const revealConfidentialBalance = async (
   const trust = demoTrust(session.config);
   const client = createFhevmDecryptClient({ chain, rpc, trust });
   const state = await getEncryptedStore(client, encryptedStore, {
-    commitment: 'confirmed',
+    commitment: 'finalized',
   });
   await client.ready;
   const startedAt = performance.now();
@@ -157,7 +157,7 @@ export const readClaimedSharesHandle = async (session: DemoSession): Promise<str
   const state = await getEncryptedStore(
     createReadClient(session),
     await tokenStateAddress(mint, tokenAccount),
-    { commitment: 'confirmed' },
+    { commitment: 'finalized' },
   );
   return handleHex(encryptedStoreHandle(state, BALANCE_KEY));
 };
@@ -168,7 +168,7 @@ export const readClaimedUsdcHandle = async (session: DemoSession): Promise<strin
   const state = await getEncryptedStore(
     createReadClient(session),
     await tokenStateAddress(mint, tokenAccount),
-    { commitment: 'confirmed' },
+    { commitment: 'finalized' },
   );
   return handleHex(encryptedStoreHandle(state, BALANCE_KEY));
 };
@@ -180,7 +180,7 @@ export const readConfidentialBalanceEvidence = async (
   const tokenAccount = await tokenAccountAddress(mint, session.signer.address);
   const encryptedStore = await tokenStateAddress(mint, tokenAccount);
   const state = await getEncryptedStore(createReadClient(session), encryptedStore, {
-    commitment: 'confirmed',
+    commitment: 'finalized',
   });
   return {
     encryptedStore,
@@ -192,7 +192,7 @@ export const readConfidentialBalanceEvidence = async (
 export const hasConfidentialBalanceAccount = async (session: DemoSession, mint: Address): Promise<boolean> => {
   const tokenAccount = await tokenAccountAddress(mint, session.signer.address);
   const account = await createSolanaRpc(session.config.rpcUrl)
-    .getAccountInfo(tokenAccount, { commitment: 'confirmed', encoding: 'base64' })
+    .getAccountInfo(tokenAccount, { commitment: 'finalized', encoding: 'base64' })
     .send();
   if (account.value === null || account.value.owner === '11111111111111111111111111111111') return false;
   if (account.value.owner !== session.config.programs.token) {

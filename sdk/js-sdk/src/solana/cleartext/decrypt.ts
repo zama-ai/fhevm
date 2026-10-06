@@ -51,7 +51,7 @@ import { fetchCleartextStoreValue } from './storeValues.js';
 
 ////////////////////////////////////////////////////////////////////////////////
 
-const CONFIRMED = { commitment: 'confirmed' } as const;
+const FINALIZED = { commitment: 'finalized' } as const;
 /** How often a public decryption is judged before a failure the Connector would retry stands. */
 const PUBLIC_DECRYPT_ATTEMPTS = 20;
 const PUBLIC_DECRYPT_RETRY_MS = 250;
@@ -185,7 +185,7 @@ async function fetchHostDecryptionState(
   contextId: Uint8Array,
   abortSignal?: AbortSignal,
 ): Promise<HostDecryptionState> {
-  const fetchConfig = { ...CONFIRMED, ...(abortSignal === undefined ? {} : { abortSignal }) };
+  const fetchConfig = { ...FINALIZED, ...(abortSignal === undefined ? {} : { abortSignal }) };
   const [{ data: config }, { data: context }] = await Promise.all([
     fetchHostConfig(rpc, (await findHostConfigPda({ programAddress }))[0], fetchConfig),
     fetchKmsContext(rpc, (await findKmsContextPda({ contextId }, { programAddress }))[0], fetchConfig),
@@ -225,7 +225,7 @@ const hostAccountsReader =
   async (keys, minContextSlot) => {
     const { context, value } = await rpc
       .getMultipleAccounts(keys, {
-        ...CONFIRMED,
+        ...FINALIZED,
         encoding: 'base64',
         ...(minContextSlot === undefined ? {} : { minContextSlot }),
       })

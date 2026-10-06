@@ -50,7 +50,7 @@ export type FheVerticalConfig = {
   readonly gatewayDecryptionContract: `0x${string}`;
 };
 
-/** The current handle bytes of an encrypted value at `confirmed`. */
+/** The current handle bytes of an encrypted value at `finalized`. */
 export const currentHandle = async (
   context: SolanaProvisioningContext,
   encryptedStore: Address,
@@ -60,7 +60,7 @@ export const currentHandle = async (
     await fetchSolanaEncryptedStore(
       context.rpc,
       encryptedStore,
-      { commitment: 'confirmed' },
+      { commitment: 'finalized' },
       ZAMA_HOST_PROGRAM_ADDRESS,
     ),
     key,

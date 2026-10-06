@@ -2,7 +2,7 @@
 //!
 //! Every store write the host accepts may seal leaves: one historical-access leaf per allowed
 //! key on the handle it installs, then one public-decrypt leaf when the handle is made public.
-//! The indexer recomputes those leaves from the confirmed instruction stream, from a block
+//! The indexer recomputes those leaves from the finalized instruction stream, from a block
 //! before any store existed, so every store's record starts at leaf zero.
 //!
 //! The reduce rule ([`reduce_block_leaves`]) is a pure function over one block; the SQL steps
@@ -36,7 +36,7 @@ use solana_host_follower::BlockCheckpoint;
 
 type Transaction<'c> = sqlx::Transaction<'c, sqlx::Postgres>;
 
-/// The leaf sources of one confirmed transaction.
+/// The leaf sources of one finalized transaction.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct TransactionStoreWrites {
     pub transaction_index: u64,
@@ -105,7 +105,7 @@ pub struct BlockLeafReduction {
     pub nodes: Vec<StagedNode>,
 }
 
-/// The confirmed chain performed a write this record cannot follow: the record
+/// The finalized chain performed a write this record cannot follow: the record
 /// diverged from chain state, and continuing would seal wrong leaves.
 #[derive(Debug, Clone, PartialEq, Eq, thiserror::Error)]
 pub enum LeafReduceError {

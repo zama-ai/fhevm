@@ -21,7 +21,7 @@ export const donationForOneYear = (metrics: VaultMetrics): bigint => {
 
 export const readDemoVaultMetrics = async (config: DemoConfig): Promise<VaultMetrics> => {
   const metrics = await getVaultMetrics(createSolanaRpc(config.rpcUrl), config.vault, {
-    commitment: "confirmed",
+    commitment: "finalized",
   });
   return { totalAssets: metrics.totalAssets, totalShares: metrics.totalShares };
 };

@@ -575,7 +575,7 @@ fn rpc_account() -> serde_json::Value {
 }
 
 #[tokio::test]
-async fn confirmed_rpc_preserves_order_null_accounts_and_context_slot() {
+async fn finalized_rpc_preserves_order_null_accounts_and_context_slot() {
     let read = rpc_read(
         &[pubkey(5), pubkey(6)],
         serde_json::json!([rpc_account(), null]),

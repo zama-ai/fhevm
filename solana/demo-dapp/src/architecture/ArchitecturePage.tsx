@@ -25,7 +25,7 @@ sequenceDiagram
     end
 
     Client->>Host: Encrypted transaction
-    Host-->>Copro: Confirmed operation
+    Host-->>Copro: Finalized operation
     Copro->>Copro: FHE computation
     Copro-->>KMS: Encrypted result available
     Client->>KMS: Authorized decryption request
@@ -64,7 +64,7 @@ sequenceDiagram
     Note over Client,Gateway: On-chain encrypted computation
     Client->>Host: Encrypted action and attestation
     Host->>Host: Verify coprocessor attestation and record operation
-    Host-->>Copro: Confirmed operation
+    Host-->>Copro: Finalized operation
     Copro-->>Gateway: FHE result
 
     Note over Client,KMS: Authorized decryption
@@ -132,7 +132,7 @@ sequenceDiagram
 flowchart TB
     subgraph solana["Solana"]
         direction LR
-        Tx["Confirmed host instruction"]
+        Tx["Finalized host instruction"]
         Value["EncryptedStore PDA<br/>slots and permission history"]
         Handle["Current handle"]
         Tx --> Value --> Handle

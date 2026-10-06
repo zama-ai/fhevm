@@ -314,7 +314,7 @@ pub struct HostAclCheckConfig {
     pub request_timeout_ms: u64,
 }
 
-/// Ten seconds: a batched `getMultipleAccounts` at `confirmed` answers in well under a second,
+/// Ten seconds: a batched `getMultipleAccounts` at `finalized` answers in well under a second,
 /// so this bounds a stalled read without cutting a merely slow one short.
 fn default_host_acl_request_timeout_ms() -> u64 {
     10_000

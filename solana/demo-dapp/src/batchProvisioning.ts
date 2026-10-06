@@ -39,7 +39,7 @@ const lookupTablePrefixLength = async (
   expectedAddresses: readonly Address[],
 ): Promise<number | null> => {
   const account = await createSolanaRpc(config.rpcUrl)
-    .getAccountInfo(lookupTable, { commitment: 'confirmed', encoding: 'base64' })
+    .getAccountInfo(lookupTable, { commitment: 'finalized', encoding: 'base64' })
     .send();
   if (account.value === null || account.value.owner !== LOOKUP_TABLE_PROGRAM) return null;
   const encoded = account.value.data as readonly [string, 'base64'];
@@ -195,7 +195,7 @@ const retireFinishedLookupTables = async (
     if (memoized !== undefined) return memoized;
     let finished = false;
     try {
-      const batch = await getBatchByIndex(rpc, roots, batchIndex, { commitment: 'confirmed' });
+      const batch = await getBatchByIndex(rpc, roots, batchIndex, { commitment: 'finalized' });
       finished = isBatchFinished(batch.state.status);
     } catch {
       // An unreadable batch account is not evidence that settlement is over, so the table stays.
@@ -207,7 +207,7 @@ const retireFinishedLookupTables = async (
   for (const [table, batchIndex] of candidates) {
     try {
       const account = await rpc
-        .getAccountInfo(table as Address, { commitment: 'confirmed', encoding: 'base64' })
+        .getAccountInfo(table as Address, { commitment: 'finalized', encoding: 'base64' })
         .send();
       if (account.value === null || account.value.owner !== LOOKUP_TABLE_PROGRAM) {
         closed.add(table);
@@ -285,15 +285,15 @@ export const reclaimFinishedBatchAuthorities = async (
 ): Promise<number> => {
   const rpc = createSolanaRpc(config.rpcUrl);
   const roots = vaultRoots(config, direction);
-  const batcher = await getBatcher(rpc, roots.batcher, { commitment: 'confirmed' });
+  const batcher = await getBatcher(rpc, roots.batcher, { commitment: 'finalized' });
   let reclaimed = 0;
   const first = batcher.nextBatchIndex > RECLAIM_SCAN_WINDOW ? batcher.nextBatchIndex - RECLAIM_SCAN_WINDOW : 0n;
   for (let index = first; index < batcher.nextBatchIndex; index += 1n) {
     try {
-      const batch = await getBatchByIndex(rpc, roots, index, { commitment: 'confirmed' });
+      const batch = await getBatchByIndex(rpc, roots, index, { commitment: 'finalized' });
       if (!isBatchFinished(batch.state.status)) continue;
       const { value: lamports } = await rpc
-        .getBalance(batch.addresses.batchAuthority, { commitment: 'confirmed' })
+        .getBalance(batch.addresses.batchAuthority, { commitment: 'finalized' })
         .send();
       if (lamports === 0n) continue;
       await sendTransaction(
@@ -334,7 +334,7 @@ export const prepareNextBatch = async (
 ): Promise<PreparedBatch> => {
   const rpc = createSolanaRpc(config.rpcUrl);
   const roots = vaultRoots(config, direction);
-  const current = await getCurrentBatch(rpc, roots, { commitment: 'confirmed' });
+  const current = await getCurrentBatch(rpc, roots, { commitment: 'finalized' });
   if (current.state.status === BatchStatus.Dispatched) {
     throw new Error(`The current ${direction} batch is still settling`);
   }

@@ -144,8 +144,8 @@ async fn fetch_block(
     })
 }
 
-/// The confirmed block at `slot`, as an inclusive start for [`run`](super::run). Fails when
-/// `slot` holds no confirmed block, so a start slot can never quietly become the tip.
+/// The finalized block at `slot`, as an inclusive start for [`run`](super::run). Fails when
+/// `slot` holds no finalized block, so a start slot can never quietly become the tip.
 pub async fn block_checkpoint(
     archive: &RpcClient,
     slot: u64,
@@ -157,7 +157,7 @@ pub async fn block_checkpoint(
                 encoding: None,
                 transaction_details: Some(TransactionDetails::None),
                 rewards: Some(false),
-                commitment: Some(CommitmentConfig::confirmed()),
+                commitment: Some(CommitmentConfig::finalized()),
                 max_supported_transaction_version: Some(1),
             },
         )

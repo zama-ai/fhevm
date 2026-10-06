@@ -29,14 +29,13 @@ describe('getJoinRecord', () => {
     });
     fetchEncodedAccount.mockResolvedValue({ exists: true, address: addr(9), data });
 
-    const record = await getJoinRecord({} as never, addr(9), { commitment: 'confirmed' });
+    const record = await getJoinRecord({} as never, addr(9), { commitment: 'finalized' });
     expect(record.batch).toBe(addr(4));
     expect(record.user).toBe(addr(100));
     expect('joinedEncryptedValue' in record).toBe(false);
     expect(record.claimed).toBe(true);
-    // The commitment rides through to the underlying account fetch — the demo reads a fresh claim
-    // at 'confirmed' because finalization lags it by ~31 slots.
-    expect(fetchEncodedAccount).toHaveBeenLastCalledWith({}, addr(9), { commitment: 'confirmed' });
+    // The commitment rides through to the underlying account fetch.
+    expect(fetchEncodedAccount).toHaveBeenLastCalledWith({}, addr(9), { commitment: 'finalized' });
   });
 
   it('throws when the user never joined the batch (no record)', async () => {

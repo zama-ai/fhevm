@@ -120,16 +120,16 @@ export const findCompletedRedeem = async (session: DemoSession): Promise<BatchPo
   }
   const rpc = createSolanaRpc(session.config.rpcUrl);
   const joinRecord = await deriveJoinRecordAddress(position.batch, session.signer.address);
-  const account = await rpc.getAccountInfo(joinRecord, { commitment: 'confirmed', encoding: 'base64' }).send();
+  const account = await rpc.getAccountInfo(joinRecord, { commitment: 'finalized', encoding: 'base64' }).send();
   if (account.value === null) {
     // A claimed join may have returned its rent. Keep the local completion record only
     // while its original batch still exists and is settled.
-    const batch = await getBatchByIndex(rpc, vaultRoots(session.config, 'redeem'), position.batchIndex, { commitment: 'confirmed' });
+    const batch = await getBatchByIndex(rpc, vaultRoots(session.config, 'redeem'), position.batchIndex, { commitment: 'finalized' });
     if (batch.state.status === BatchStatus.Settled) return position;
     localStorage.removeItem(completedRedeemKey(session));
     return null;
   }
-  const join = await getJoinRecord(rpc, joinRecord, { commitment: 'confirmed' });
+  const join = await getJoinRecord(rpc, joinRecord, { commitment: 'finalized' });
   if (!join.claimed) {
     localStorage.removeItem(completedRedeemKey(session));
     return null;
@@ -190,7 +190,7 @@ const reconcileSubmittedIntent = async (
     return;
   }
   if (status === null) {
-    const currentBlockHeight = await rpc.getBlockHeight({ commitment: 'confirmed' }).send();
+    const currentBlockHeight = await rpc.getBlockHeight({ commitment: 'finalized' }).send();
     if (currentBlockHeight > BigInt(intent.transaction.lastValidBlockHeight)) {
       clearActiveRedeem(session);
       return;
@@ -210,7 +210,7 @@ const recoverHandleChange = async (
     assertBalanceHandleIsCurrent(intent.sourceHandle, currentHandle);
     return null;
   } catch (handleError) {
-    const account = await rpc.getAccountInfo(joinRecord, { commitment: 'confirmed', encoding: 'base64' }).send();
+    const account = await rpc.getAccountInfo(joinRecord, { commitment: 'finalized', encoding: 'base64' }).send();
     if (account.value !== null) {
       const saved = readActiveRedeem(session);
       const position =
@@ -234,7 +234,7 @@ export const findExistingRedeem = async (session: DemoSession): Promise<BatchPos
   const rpc = createSolanaRpc(session.config.rpcUrl);
   const roots = vaultRoots(session.config, 'redeem');
   let saved = readActiveRedeem(session);
-  const current = await getCurrentBatch(rpc, roots, { commitment: 'confirmed' });
+  const current = await getCurrentBatch(rpc, roots, { commitment: 'finalized' });
   const candidates: Array<{ readonly batchIndex: bigint; readonly batch: Address }> = [];
   if (saved !== null) {
     const savedAddresses = await deriveBatchAddresses(roots, saved.batchIndex);
@@ -251,9 +251,9 @@ export const findExistingRedeem = async (session: DemoSession): Promise<BatchPos
   }
   for (const candidate of candidates) {
     const joinRecord = await deriveJoinRecordAddress(candidate.batch, session.signer.address);
-    const account = await rpc.getAccountInfo(joinRecord, { commitment: 'confirmed', encoding: 'base64' }).send();
+    const account = await rpc.getAccountInfo(joinRecord, { commitment: 'finalized', encoding: 'base64' }).send();
     if (account.value === null) continue;
-    const join = await getJoinRecord(rpc, joinRecord, { commitment: 'confirmed' });
+    const join = await getJoinRecord(rpc, joinRecord, { commitment: 'finalized' });
     if (join.claimed) {
       if (saved?.batch === candidate.batch && saved.transaction !== undefined) {
         recordTransactionEvidence(session, { label: 'Redeem', signature: saved.transaction.signature as Signature });
@@ -294,10 +294,10 @@ export const joinRedeemBatch = async (
     if (savedAddresses.batch === saved.batch) {
       const savedJoinRecord = await deriveJoinRecordAddress(saved.batch, signer.address);
       const savedJoin = await rpc
-        .getAccountInfo(savedJoinRecord, { commitment: 'confirmed', encoding: 'base64' })
+        .getAccountInfo(savedJoinRecord, { commitment: 'finalized', encoding: 'base64' })
         .send();
       if (savedJoin.value !== null) {
-        const join = await getJoinRecord(rpc, savedJoinRecord, { commitment: 'confirmed' });
+        const join = await getJoinRecord(rpc, savedJoinRecord, { commitment: 'finalized' });
         if (!join.claimed) {
           if (saved.transaction !== undefined) {
             recordTransactionEvidence(session, {
@@ -321,11 +321,11 @@ export const joinRedeemBatch = async (
       else clearActiveRedeem(session);
     }
   }
-  const batch = await getCurrentBatch(rpc, roots, { commitment: 'confirmed' });
+  const batch = await getCurrentBatch(rpc, roots, { commitment: 'finalized' });
   const joinRecord = await deriveJoinRecordAddress(batch.addresses.batch, signer.address);
-  const existing = await rpc.getAccountInfo(joinRecord, { commitment: 'confirmed', encoding: 'base64' }).send();
+  const existing = await rpc.getAccountInfo(joinRecord, { commitment: 'finalized', encoding: 'base64' }).send();
   if (existing.value !== null) {
-    const join = await getJoinRecord(rpc, joinRecord, { commitment: 'confirmed' });
+    const join = await getJoinRecord(rpc, joinRecord, { commitment: 'finalized' });
     if (!join.claimed) {
       const position = redactRedeemPosition({ batchIndex: batch.index, batch: batch.addresses.batch });
       writeActiveRedeem(session, position);

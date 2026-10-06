@@ -10,7 +10,8 @@ import { run } from "../utils/process";
 import { until } from "../utils/until";
 import { sdkVerifyModule } from "./lazy-modules";
 
-// The indexer follows the same confirmed stream the scenarios just wrote to; it is seconds behind.
+// The scenarios' writes and the indexer are both at `finalized`, so the record trails a write only
+// by the indexer's own lag.
 const RECORD_CATCH_UP_TIMEOUT_MS = 60_000;
 
 export type StoreCursor = { readonly leafCount: bigint; readonly peaks: readonly string[] };
@@ -74,7 +75,7 @@ export const assertMerkleRecordMatchesChain = async (input: {
     async () => {
       const { context, value: accounts } = await rpc
         .getProgramAccounts(program, {
-          commitment: "confirmed",
+          commitment: "finalized",
           encoding: "base64",
           withContext: true,
           filters: [{ memcmp: { offset: 0n, bytes: discriminator, encoding: "base58" } }],

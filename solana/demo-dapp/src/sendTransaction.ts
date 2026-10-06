@@ -33,7 +33,7 @@ export const sendTransaction = async (
   const rpc = createSolanaRpc(config.rpcUrl);
   const rpcSubscriptions = createSolanaRpcSubscriptions(config.wsUrl);
   const sendAndConfirm = sendAndConfirmTransactionFactory({ rpc, rpcSubscriptions });
-  const { value: latestBlockhash } = await rpc.getLatestBlockhash({ commitment: "confirmed" }).send();
+  const { value: latestBlockhash } = await rpc.getLatestBlockhash({ commitment: "finalized" }).send();
   const base = setTransactionMessageFeePayerSigner(payer, createTransactionMessage({ version: 0 }));
   const withLifetime = setTransactionMessageLifetimeUsingBlockhash(latestBlockhash, base);
   const withComputeLimit = setTransactionMessageComputeUnitLimit(computeUnitLimit, withLifetime);
@@ -44,6 +44,6 @@ export const sendTransaction = async (
   assertIsTransactionWithBlockhashLifetime(transaction);
   assertIsTransactionWithinSizeLimit(transaction);
   await simulateSignedTransactionLocally(rpc, transaction, "Signed transaction");
-  await sendAndConfirm(transaction, { commitment: "confirmed", skipPreflight: true });
+  await sendAndConfirm(transaction, { commitment: "finalized", skipPreflight: true });
   return getSignatureFromTransaction(transaction);
 };

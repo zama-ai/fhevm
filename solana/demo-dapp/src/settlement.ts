@@ -67,7 +67,7 @@ const currentPinnedBatch = async (
 ) => {
   const rpc = createSolanaRpc(session.config.rpcUrl);
   const batch = await getBatchByIndex(rpc, vaultRoots(session.config, direction), position.batchIndex, {
-    commitment: 'confirmed',
+    commitment: 'finalized',
   });
   if (batch.index !== position.batchIndex || batch.addresses.batch !== position.batch) {
     throw new Error(`Batch reference ${position.batch} does not match index ${position.batchIndex}`);
@@ -82,8 +82,8 @@ export const readVaultLifecycle = async (
 ): Promise<BatchLifecycle> => {
   const { rpc, batch } = await currentPinnedBatch(session, position, direction);
   if (batch.state.status === BatchStatus.Pending) {
-    const batcher = await getBatcher(rpc, vaultRoots(session.config, direction).batcher, { commitment: 'confirmed' });
-    const currentSlot = await rpc.getSlot({ commitment: 'confirmed' }).send();
+    const batcher = await getBatcher(rpc, vaultRoots(session.config, direction).batcher, { commitment: 'finalized' });
+    const currentSlot = await rpc.getSlot({ commitment: 'finalized' }).send();
     const dispatchableAt = batch.state.openedSlot + batcher.minBatchAgeSlots;
     return {
       kind: 'awaiting-dispatch',
@@ -95,9 +95,9 @@ export const readVaultLifecycle = async (
   }
   if (batch.state.status === BatchStatus.Settled) {
     const recordAddress = await deriveJoinRecordAddress(position.batch, session.signer.address);
-    const exists = (await rpc.getAccountInfo(recordAddress, { encoding: "base64", commitment: "confirmed" }).send()).value !== null;
+    const exists = (await rpc.getAccountInfo(recordAddress, { encoding: "base64", commitment: "finalized" }).send()).value !== null;
     const joinRecord = exists ? await getJoinRecord(rpc, recordAddress, {
-      commitment: 'confirmed',
+      commitment: 'finalized',
     }) : null;
     return {
       kind: 'settled',
@@ -119,8 +119,8 @@ export const dispatchVaultBatch = async (
   const roots = vaultRoots(session.config, direction);
   const { rpc, batch } = await currentPinnedBatch(session, position, direction);
   if (batch.state.status >= BatchStatus.Dispatched) return null;
-  const batcher = await getBatcher(rpc, roots.batcher, { commitment: 'confirmed' });
-  const currentSlot = await rpc.getSlot({ commitment: 'confirmed' }).send();
+  const batcher = await getBatcher(rpc, roots.batcher, { commitment: 'finalized' });
+  const currentSlot = await rpc.getSlot({ commitment: 'finalized' }).send();
   if (currentSlot < batch.state.openedSlot + batcher.minBatchAgeSlots) {
     throw new Error('The batch is not old enough to dispatch yet');
   }
@@ -214,6 +214,6 @@ export const settleVaultBatch = async (
 export const closeSpentJoinRecord = async (session: DemoUserSession, position: BatchTarget): Promise<void> => {
   const rpc = createSolanaRpc(session.config.rpcUrl);
   const record = await deriveJoinRecordAddress(position.batch, session.signer.address);
-  if ((await rpc.getAccountInfo(record, { encoding: 'base64', commitment: 'confirmed' }).send()).value === null) return;
+  if ((await rpc.getAccountInfo(record, { encoding: 'base64', commitment: 'finalized' }).send()).value === null) return;
   await sendTransaction(session.config, session.signer, [await buildCloseJoinRecordInstruction({ user: session.signer, batch: position.batch, joinRecord: record })], 100_000);
 };

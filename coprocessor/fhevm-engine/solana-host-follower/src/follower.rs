@@ -1,9 +1,9 @@
 //! Follows the zama-host program on a Solana cluster through Yellowstone gRPC, and hands each
 //! sealed block, reduced to the host's instructions, to a [`BlockSink`].
 //!
-//! - **No reorg unwind.** Blocks are followed at confirmed commitment and never rolled back. A
-//!   sink must therefore not authorize anything from them: the KMS re-checks live on-chain state
-//!   before releasing any plaintext (INVARIANTS #31/#32).
+//! - **Finalized only.** Blocks are followed at finalized commitment, so none is rolled back and
+//!   nothing is unwound (INVARIANTS #32). A sink still authorizes nothing from them: the KMS
+//!   re-checks live on-chain state before releasing any plaintext (INVARIANTS #31).
 //! - **Resume.** The sink commits each block together with its checkpoint. A restart resumes
 //!   from that checkpoint, and Yellowstone replays inclusively from it. A checkpoint older than
 //!   the provider's replay window is caught up from an archive RPC with `getBlock` and
@@ -48,7 +48,7 @@ mod rpc_block;
 pub(crate) mod wire_fixtures;
 
 pub use archive::block_checkpoint;
-pub use metrics::track_confirmed_slot;
+pub use metrics::track_finalized_slot;
 
 const MAX_DECODING_MESSAGE_SIZE: usize = 64 * 1024 * 1024;
 const SOLANA_GRPC_INGEST_TIMEOUT: Duration = Duration::from_secs(60);

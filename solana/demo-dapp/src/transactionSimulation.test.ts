@@ -58,7 +58,7 @@ describe("local transaction simulation", () => {
 
     expect(mocks.encode).toHaveBeenCalledWith(transaction);
     expect(simulateTransaction).toHaveBeenCalledWith("wire-transaction", {
-      commitment: "confirmed",
+      commitment: "finalized",
       encoding: "base64",
       sigVerify,
     });

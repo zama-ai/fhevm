@@ -28,7 +28,7 @@ const simulateTransactionLocally = async (
   const wireTransaction = getBase64EncodedWireTransaction(transaction);
   const simulation = await rpc
     .simulateTransaction(wireTransaction, {
-      commitment: 'confirmed',
+      commitment: 'finalized',
       encoding: 'base64',
       sigVerify,
     })

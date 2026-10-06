@@ -1126,7 +1126,7 @@ impl HttpHost {
     }
 }
 
-/// The `getMultipleAccounts` body the connector sends for `keys`, at confirmed commitment.
+/// The `getMultipleAccounts` body the connector sends for `keys`, at finalized commitment.
 pub fn multiple_accounts_request(
     keys: &[Pubkey],
     min_context_slot: Option<u64>,
@@ -1139,7 +1139,7 @@ pub fn multiple_accounts_request(
             keys.iter()
                 .map(Pubkey::to_string)
                 .collect::<Vec<_>>(),
-            {"encoding": "base64", "commitment": "confirmed", "dataSlice": null, "minContextSlot": min_context_slot},
+            {"encoding": "base64", "commitment": "finalized", "dataSlice": null, "minContextSlot": min_context_slot},
         ],
     })
 }

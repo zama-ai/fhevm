@@ -112,10 +112,10 @@ const startMerkleDatabase = async (): Promise<void> => {
   await waitForContainer(SOLANA_MERKLE_DB_CONTAINER, 'healthy');
 };
 
-/** The validator's confirmed slot: an existing block the Merkle indexer can start from. */
-const confirmedSlot = async (): Promise<bigint> => {
+/** The validator's finalized slot: an existing block the Merkle indexer can start from. */
+const finalizedSlot = async (): Promise<bigint> => {
   const { createSolanaRpc } = await import('@solana/kit');
-  return createSolanaRpc(VALIDATOR_RPC_URL).getSlot({ commitment: 'confirmed' }).send();
+  return createSolanaRpc(VALIDATOR_RPC_URL).getSlot({ commitment: 'finalized' }).send();
 };
 
 /**
@@ -433,7 +433,7 @@ export const provisionSolanaHostNode = async (): Promise<{ zamaHostId: string }>
   await airdropDeployFees(deployerKeypairPath);
   const zamaHostId = await deployPrograms(deployerKeypairPath, gateway);
   // Before any app creates an encrypted store, so the Merkle record holds every store from leaf 0.
-  const merkleStartSlot = await confirmedSlot();
+  const merkleStartSlot = await finalizedSlot();
 
   console.log('==> [3/4] register Solana host chain (coprocessor DB + gateway)');
   await registerSolanaHostChain({ zamaHostId, composeProject });
