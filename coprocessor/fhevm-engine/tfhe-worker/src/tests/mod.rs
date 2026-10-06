@@ -13,7 +13,6 @@ mod random;
 mod revert_coprocessor_db_state;
 mod scheduling_bench;
 mod shared_db;
-mod solana_vertical;
 mod test_cases;
 mod utils;
 mod versioning;

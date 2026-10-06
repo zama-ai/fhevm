@@ -46,11 +46,10 @@ COPY --from=contract_builder /app/gateway-contracts/artifacts/contracts /app/gat
 # Solana path-dependencies. `cargo build -p <crate>` still loads EVERY
 # fhevm-engine workspace member manifest, so the solana path-deps of ALL
 # members must be present, not just this image's own:
-#   host-listener/Cargo.toml -> solana/programs/zama-host,
-#     solana/crates/zama-solana-acl, solana/crates/zama-solana-transaction
-#   tfhe-worker/Cargo.toml (dev-deps) -> solana/programs/confidential-token,
-#     solana/programs/zama-host
-# zama-host and confidential-token inherit package fields from solana/Cargo.toml,
+#   host-listener, solana-host-follower, solana-merkle-proof-service -> solana/programs/zama-host
+#   solana-host-follower -> solana/crates/zama-solana-transaction
+#   solana-merkle-proof-service -> solana/crates/zama-solana-acl
+# zama-host inherits package fields from solana/Cargo.toml,
 # and loading that workspace root requires every member it lists, hence the full
 # crates/ + programs/ + runtime-tests/ member set. Non-Rust solana trees (docs,
 # scripts, geyser, test-fixtures) are deliberately NOT copied so their churn

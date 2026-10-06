@@ -34,14 +34,10 @@ jobs:
               - coprocessor/proto/**
               - host-contracts/rust_bindings/**
               # Path dependencies of this workspace, direct or transitive. A Solana-only change can
-              # therefore break these crates while matching no path above — renaming a label helper
-              # broke a `#[cfg(test)]` call in tfhe-worker's solana_vertical tests, and this workflow
-              # ran only because the same PR also touched coprocessor/.
+              # therefore break these crates while matching no path above.
               - solana/programs/zama-host/**
-              - solana/programs/confidential-token/**
               - solana/environments/**
               - solana/crates/program-environment/**
-              - solana/crates/zama-fhe/**
               - solana/crates/zama-solana-acl/**
               - solana/crates/zama-solana-transaction/**
               - solana/crates/solana-ed25519-instruction/**

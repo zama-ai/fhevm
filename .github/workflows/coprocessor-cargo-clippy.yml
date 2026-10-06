@@ -35,10 +35,8 @@ jobs:
               # Path dependencies of this workspace, direct or transitive, so editing them can break
               # a clippy lane that no other filter watches.
               - solana/programs/zama-host/**
-              - solana/programs/confidential-token/**
               - solana/environments/**
               - solana/crates/program-environment/**
-              - solana/crates/zama-fhe/**
               - solana/crates/zama-solana-acl/**
               - solana/crates/zama-solana-transaction/**
               - solana/crates/solana-ed25519-instruction/**
