@@ -15,6 +15,7 @@ import {
   serviceNameList,
 } from "./generate/compose";
 import { ANVIL_CHAIN_ID, DEFAULT_CHAIN_ID, COMPOSE_OUT_DIR, TEMPLATE_COMPOSE_DIR, composePath, envPath } from "./layout";
+import { listenerBrokerUrl } from "./generate/listener-core";
 import { presetBundle } from "./resolve/target";
 import {
   loadCoprocessorScenario,
@@ -258,6 +259,27 @@ describe("render-compose", () => {
     });
   });
 
+  test("gives every operator its own publisher, database and Redis keyspace", async () => {
+    const multiOperator: State = { ...state, overrides: [{ group: "listener-core" }] };
+    await withTempStateDir(async () => {
+      await mkdir(path.dirname(envPath("coprocessor")), { recursive: true });
+      await writeFile(envPath("coprocessor"), "\n");
+      await writeFile(envPath("coprocessor.1"), "\n");
+      await generateComposeOverrides(multiOperator, stackSpecForState(multiOperator));
+      const doc = YAML.parse(await readFile(composePath("listener-core"), "utf8")) as {
+        services: Record<string, { image?: string; build?: unknown; environment?: Record<string, string> }>;
+      };
+      const clone = doc.services["listener1-publisher-for-anvil"];
+      // The image is built once under the template name; the clone rides along.
+      expect(clone?.build).toBeUndefined();
+      expect(clone?.image).toBe(doc.services["listener-publisher-for-anvil"]?.image);
+      // Separate database and separate Redis keyspace: operator 1's blocks are
+      // its own, not a share of operator 0's.
+      expect(clone?.environment?.APP_DATABASE__DB_URL).toContain("/listener1");
+      expect(clone?.environment?.APP_BROKER__BROKER_URL).toBe("redis://listener-redis:6379/1");
+    });
+  });
+
   test("renders multi-instance coprocessor overrides with local poller siblings", async () => {
     await withTempStateDir(async () => {
       await mkdir(path.dirname(envPath("coprocessor")), { recursive: true });
@@ -472,8 +494,13 @@ describe("render-compose", () => {
       expect(doc.services["coprocessor1-host-listener"]?.image).toContain(":fhevm-local-i1");
       expect(doc.services["coprocessor-host-listener"]?.build).toBeTruthy();
       expect(doc.services["coprocessor1-host-listener"]?.build).toBeTruthy();
-      expect(doc.services["coprocessor-host-listener-consumer"]?.command).toContain("--service-name=host-listener-consumer");
-      expect(doc.services["coprocessor1-host-listener-consumer"]?.command).toContain("--service-name=coprocessor1-host-listener-consumer");
+      // Operators are separated by the stream they read, not by a name they
+      // are told to use: the consumer's broker identity is compiled in.
+      expect(doc.services["coprocessor-host-listener-consumer"]?.command).toContain("--url=redis://listener-redis:6379");
+      expect(doc.services["coprocessor1-host-listener-consumer"]?.command).toContain("--url=redis://listener-redis:6379/1");
+      expect(
+        doc.services["coprocessor1-host-listener-consumer"]?.command?.some((arg) => arg.startsWith("--service-name")),
+      ).toBe(false);
       const args = (doc.services["coprocessor-host-listener"]?.build as { args?: Record<string, string> })?.args;
       expect(args?.COPROCESSOR_RUNTIME_BASE_IMAGE).toBeUndefined();
       expect(args?.COPROCESSOR_DB_MIGRATION_RUNTIME_BASE_IMAGE).toBeUndefined();
@@ -978,13 +1005,17 @@ gcs:
       const doc = YAML.parse(await readFile(composePath("coprocessor"), "utf8")) as {
         services: Record<string, { container_name?: string; command?: string[] }>;
       };
-      const consumerNames = ["coprocessor", "coprocessor1", "coprocessor-gcs", "coprocessor1-gcs"].map(
-        (prefix) => doc.services[`${prefix}-host-listener-consumer`]?.command?.find(
-          (argument) => argument.startsWith("--service-name="),
-        ),
-      );
-      expect(consumerNames.every(Boolean)).toBe(true);
-      expect(new Set(consumerNames).size).toBe(4);
+      const consumerUrl = (prefix: string) =>
+        doc.services[`${prefix}-host-listener-consumer`]?.command?.find((argument) =>
+          argument.startsWith("--url="),
+        );
+      // Blue and Green of one operator share a coprocessor database, so they
+      // share a stream and each block is handled once. Operators do not: they
+      // have a database each and all need every block.
+      expect(consumerUrl("coprocessor")).toBe("--url=redis://listener-redis:6379");
+      expect(consumerUrl("coprocessor-gcs")).toBe("--url=redis://listener-redis:6379");
+      expect(consumerUrl("coprocessor1")).toBe("--url=redis://listener-redis:6379/1");
+      expect(consumerUrl("coprocessor1-gcs")).toBe("--url=redis://listener-redis:6379/1");
       // Operator 0: BCS as `coprocessor-*`, GCS as `coprocessor-gcs-*`.
       expect(doc.services["coprocessor-host-listener"]?.container_name).toBe("coprocessor-host-listener");
       expect(doc.services["coprocessor-gcs-host-listener"]?.container_name).toBe(
@@ -1664,8 +1695,9 @@ describe("consumer-only host ingestion", () => {
       expect(Object.keys(extraConsumers)).toHaveLength(3);
       for (const [name, service] of Object.entries(extraConsumers)) {
         expect(service.command[0]).toBe("host_listener_consumer");
-        // A shared service name would load-balance blocks between operators.
-        expect(service.command).toContain(`--service-name=${name}`);
+        // A shared Redis keyspace would load-balance blocks between operators:
+        // the consumer identity is compiled in, so only the keyspace separates them.
+        expect(service.command).toContain(`--url=${listenerBrokerUrl(Number(/^coprocessor(\d*)-/.exec(name)![1] || 0))}`);
       }
       expect(Object.values(extra.services).filter(legacy)).toHaveLength(6);
 
@@ -1680,18 +1712,32 @@ describe("consumer-only host ingestion", () => {
       expect(multiChainCoprocessorUpgradeTargets(consumerState, runtime)[0].services).toEqual(secondary);
       const resumed = resumeSteadyStateServices(consumerState);
       expect(resumed.coprocessor?.filter((name) => name.includes("host-listener"))).toEqual([...startup, ...secondary]);
-      expect(resumed["listener-core"]).toEqual(["listener-redis", "listener-publisher-for-anvil", "listener-publisher-chain-b"]);
+      // The cross product: every operator reads every chain.
+      expect(resumed["listener-core"]).toEqual([
+        "listener-redis",
+        "listener-publisher-for-anvil", "listener-publisher-chain-b",
+        "listener1-publisher-for-anvil", "listener1-publisher-chain-b",
+        "listener2-publisher-for-anvil", "listener2-publisher-chain-b",
+      ]);
 
       const core = await loadMergedComposeDoc("listener-core");
-      for (const [name, chain, rpc] of [
-        ["listener-publisher-for-anvil", 12345, "http://host-node:8545"],
-        ["listener-publisher-chain-b", 67890, "http://host-node-chain-b:8547"],
+      // The chain travels in the mounted config; one file per chain, shared by its operators.
+      for (const [suffix, chain, rpc] of [
+        ["for-anvil", 12345, "http://host-node:8545"],
+        ["chain-b", 67890, "http://host-node-chain-b:8547"],
       ] as const) {
-        const file = (core.services[name].volumes as string[])[0].replace(":/config.yaml:ro", "");
-        const config = YAML.parse(await readFile(file, "utf8"));
-        expect(config.blockchain.chain_id).toBe(chain);
-        expect(config.blockchain.rpc_url).toBe(rpc);
-        expect(config.database.db_url).toEndWith(`/listener_${chain}`);
+        for (const operator of [0, 1, 2]) {
+          const name = `${operator === 0 ? "listener" : `listener${operator}`}-publisher-${suffix}`;
+          const file = (core.services[name].volumes as string[])[0].replace(":/config.yaml:ro", "");
+          const config = YAML.parse(await readFile(file, "utf8"));
+          expect(config.blockchain.chain_id).toBe(chain);
+          expect(config.blockchain.rpc_url).toBe(rpc);
+          // The operator travels in the environment: its database and Redis keyspace
+          // are shared by its chains, because every listener table is keyed by chain_id.
+          const environment = core.services[name].environment as Record<string, string> | undefined;
+          expect(environment?.APP_DATABASE__DB_URL ?? config.database.db_url).toEndWith(`/listener${operator || ""}`);
+          expect(environment?.APP_BROKER__BROKER_URL ?? config.broker.broker_url).toBe(listenerBrokerUrl(operator));
+        }
       }
     });
   });

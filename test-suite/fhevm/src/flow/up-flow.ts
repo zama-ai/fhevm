@@ -1,7 +1,7 @@
 /**
  * Orchestrates fhevm stack lifecycle commands such as up, down, resume, clean, upgrade, status, and logs.
  */
-import { consumerOnlyHostListeners, listenerCoreServices } from "../host-listener-mode";
+import { consumerOnlyHostListeners } from "../host-listener-mode";
 
 import { delaysManifestDetectors, startManifestRuntime } from "./manifest-startup";
 
@@ -27,6 +27,12 @@ import {
   validateBundleCompatibility,
 } from "../compat/compat";
 import { blueGreenServiceNames, serviceNameList } from "../generate/compose";
+import {
+  listenerCoreServicesForState,
+  listenerDatabaseName,
+  listenerOperatorsForState,
+  listenerPublishersForState,
+} from "../generate/listener-core";
 import { generateRuntime } from "../generate";
 import { resolveScenarioForOptions, stackSpecForState, topologyForState } from "../stack-spec/stack-spec";
 import { effectiveOverrides, listScenarioSummaries } from "../scenario/resolve";
@@ -1022,19 +1028,19 @@ export const runStep = async (state: State, step: StepName) => {
       if (!supportsHostListenerConsumer(state)) {
         break;
       }
-      const listenerDatabases = consumerOnlyHostListeners(state.scenario)
-        ? state.scenario.hostChains.map((chain) => `listener_${chain.chainId}`) : ["listener"];
-      for (const database of listenerDatabases) {
-        await postgresExec("", ["-c", `CREATE DATABASE ${database};`]);
+      // One database per operator, shared by that operator's chains: every
+      // listener table is keyed by chain_id. See src/generate/listener-core.ts.
+      for (const operator of listenerOperatorsForState(state)) {
+        await postgresExec("", ["-c", `CREATE DATABASE ${listenerDatabaseName(operator)};`]);
       }
       await stepComposeUp("listener-core", state,
         ["listener-redis"]
       );
       await waitForContainer("listener-redis", "running");
-      await stepComposeUp("listener-core", state,
-        listenerCoreServices(state.scenario)
-      );
-      for (const service of listenerCoreServices(state.scenario)) await waitForContainer(service, "running");
+      // One publisher per operator per chain, all on that one Redis.
+      const listenerPublishers = listenerPublishersForState(state);
+      await stepComposeUp("listener-core", state, listenerPublishers);
+      for (const service of listenerPublishers) await waitForContainer(service, "running");
       break;
     case "coprocessor": {
       // Before the coprocessors, so the instance routed to the fork finds a
@@ -1988,8 +1994,9 @@ const waitForUpgrade = async (state: State, group: UpgradeGroup, runtimeServices
     return;
   }
   if (group === "listener-core") {
-    await waitForContainer("listener-redis", "running");
-    for (const service of listenerCoreServices(state.scenario)) await waitForContainer(service, "running");
+    for (const service of listenerCoreServicesForState(state)) {
+      await waitForContainer(service, "running");
+    }
     return;
   }
   if (group === "relayer") {
@@ -2176,7 +2183,9 @@ const executeUpgradePlan = async (nextState: State, plan: ReturnType<typeof reso
   await saveState(nextState);
   await generateRuntime(nextState, stackSpecForState(nextState));
   if (plan.group === "listener-core") {
-    await postgresExec("", ["-c", "CREATE DATABASE listener;"]);
+    for (const operator of listenerOperatorsForState(nextState)) {
+      await postgresExec("", ["-c", `CREATE DATABASE ${listenerDatabaseName(operator)};`]);
+    }
   }
   for (const component of plan.components) {
     await maybeBuild(component.component, nextState, { force: true });
