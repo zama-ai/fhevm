@@ -20,6 +20,8 @@ env:
   # upstream split resolves, not when this pin changes.
   ANCHOR_VERSION: "1.2.0"
   SOLANA_VERSION: "4.3.0"
+  # bun 1.3.14 streaming tarball extraction races on large tarballs (oven-sh/bun#34861); remove when bun >= 1.4.0.
+  BUN_FEATURE_FLAG_DISABLE_STREAMING_INSTALL: "1"
 
 jobs:
   check-changes:
