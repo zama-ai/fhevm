@@ -15,6 +15,9 @@ use std::{fmt::Display, time::Duration};
 use tokio::time::Instant;
 use tracing::{debug, trace, warn};
 
+/// Timeout used for connection establishment and health checks.
+const CONNECTION_TIMEOUT: Duration = Duration::from_secs(10);
+
 /// HTTP client of one KMS party's connector, reached through its proxy (or endpoint).
 #[derive(Clone)]
 pub struct HttpConnector {
@@ -38,7 +41,7 @@ impl HttpConnector {
             .use_rustls_tls()
             .default_headers(headers)
             .timeout(http_config.request_timeout)
-            .connect_timeout(Duration::from_secs(10))
+            .connect_timeout(CONNECTION_TIMEOUT)
             .danger_accept_invalid_certs(http_config.danger_accept_invalid_certs);
 
         if let Some(path) = &http_config.tls_ca_cert {
@@ -67,7 +70,7 @@ impl HttpConnector {
         let resp = self
             .client
             .get(self.route(VERSION_ROUTE)?)
-            .timeout(Duration::from_secs(10))
+            .timeout(CONNECTION_TIMEOUT)
             .send()
             .await
             .with_context(|| format!("{}: version request failed", self.base_url))?;
