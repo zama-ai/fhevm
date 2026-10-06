@@ -534,7 +534,7 @@ if run_check 3; then
   # keyed (RFC 035 — the connector reads the encrypted value account and fetches the proof itself).
   check_alias 'value_key identifier — renamed to encrypted_value_id' kms \
     '' -iE 'value_key'
-  # Deliberate records of the retirement (the teardown gates, INVARIANTS #47, DD-035) say the
+  # Deliberate records of the retirement (INVARIANTS #47, DD-035) say the
   # trusted service is gone; the EVM input-proof service is another thing. The Merkle proof
   # service is its own name: an untrusted source of proofs the connector verifies on chain.
   check_alias 'proof service — say Merkle proof service, whose proofs the connector verifies' kms \
