@@ -313,7 +313,7 @@ it.
 
 ## Where the two decrypt leaves are tested
 
-Every decrypt authorizes through exactly one Merkle proof against the Store's confirmed peaks.
+Every decrypt authorizes through exactly one Merkle proof against the Store's finalized peaks.
 
 | Leaf                               | Check                                                                         | Where tested                                                                                                                                                                                                       |
 | ---------------------------------- | ----------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |

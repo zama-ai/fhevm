@@ -10,7 +10,7 @@ mod source;
 
 pub use args::{Follower, FollowerArgs};
 pub use follower::{
-    block_checkpoint, run, track_confirmed_slot, BlockCheckpoint, BlockSink,
+    block_checkpoint, run, track_finalized_slot, BlockCheckpoint, BlockSink,
     FollowerConfig, IngestFailure, PreparedBlock, PreparedTransaction,
     StartPosition,
 };

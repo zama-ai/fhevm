@@ -133,7 +133,7 @@ On an empty database the indexer starts at `solanaHostListener.merkleIndexer.sta
 
 #### Metric Name: `solana_host_follower_applied_block_timestamp_seconds`
  - **Type**: Gauge (labeled by `host_chain_id`)
- - **Description**: Unix time the cluster assigned to the last block the listener committed. `time()` minus this value is the ingestion lag in seconds. It grows both when the stream stalls and when the listener applies blocks slower than the cluster produces them. After a restart the series is missing until the listener commits a block.
+ - **Description**: Unix time the cluster assigned to the last block the listener committed. `time()` minus this value is the ingestion lag in seconds. It includes the cluster's finality delay, since the listener reads at finalized commitment: under a second on Alpenglow, about 13 seconds on TowerBFT. It grows both when the stream stalls and when the listener applies blocks slower than the cluster produces them. After a restart the series is missing until the listener commits a block.
  - **Alarm**: If the lag stays high, or the series is missing (the listener is down or not applying blocks).
     - **Recommendation**: more than 2 minutes behind for 2 minutes, i.e. `min_over_time((time() - gauge)[2m:]) > 120`, and `absent_over_time(gauge[5m])`.
 
@@ -141,11 +141,11 @@ On an empty database the indexer starts at `solanaHostListener.merkleIndexer.sta
  - **Type**: Gauge (labeled by `host_chain_id`)
  - **Description**: Slot of the last block the follower committed with its checkpoint. On a restart it starts at the resumed checkpoint.
 
-#### Metric Name: `solana_host_follower_confirmed_slot`
+#### Metric Name: `solana_host_follower_finalized_slot`
  - **Type**: Gauge (labeled by `host_chain_id`)
- - **Description**: The cluster's confirmed slot, polled over RPC every 10 seconds. Minus `applied_slot`, it is the lag in slots, which compares directly with the provider's replay window, including while a restarted listener has not yet applied a block. Between polls it reads up to about 25 slots low, so a healthy lag hovers around zero and can dip below it.
+ - **Description**: The cluster's finalized slot, polled over RPC every 10 seconds. Minus `applied_slot`, it is the lag in slots, which compares directly with the provider's replay window, including while a restarted listener has not yet applied a block. Between polls it reads up to about 25 slots low, so a healthy lag hovers around zero and can dip below it.
  - **Alarm**: If the RPC poll stops updating the gauge. Chart the slot lag against the provider's window rather than paging on it; the time lag above pages first.
-    - **Recommendation**: `changes(confirmed_slot[5m]) == 0`.
+    - **Recommendation**: `changes(finalized_slot[5m]) == 0`.
 
 #### Metric Name: `solana_host_follower_archive_catch_up_active`
  - **Type**: Gauge (labeled by `host_chain_id`)

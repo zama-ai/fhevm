@@ -99,7 +99,7 @@ describe('Solana demo vault harvest', () => {
     }));
 
     const metrics = await getVaultMetrics({ getTokenAccountBalance, getTokenSupply } as never, vault, {
-      commitment: 'confirmed',
+      commitment: 'finalized',
     });
 
     expect(metrics).toEqual({
@@ -109,7 +109,7 @@ describe('Solana demo vault harvest', () => {
       totalAssets: 125_000_000n,
       totalShares: 100_000_000n,
     });
-    expect(getTokenAccountBalance).toHaveBeenCalledWith(vaultTokenAccount, { commitment: 'confirmed' });
-    expect(getTokenSupply).toHaveBeenCalledWith(shareMint, { commitment: 'confirmed' });
+    expect(getTokenAccountBalance).toHaveBeenCalledWith(vaultTokenAccount, { commitment: 'finalized' });
+    expect(getTokenSupply).toHaveBeenCalledWith(shareMint, { commitment: 'finalized' });
   });
 });

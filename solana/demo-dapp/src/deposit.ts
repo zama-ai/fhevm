@@ -196,7 +196,7 @@ export const reconcileDepositTransaction = async (
   ).value[0];
   if (status !== null && status.err !== null) return 'retry';
   if (status === null) {
-    const currentBlockHeight = await rpc.getBlockHeight({ commitment: 'confirmed' }).send();
+    const currentBlockHeight = await rpc.getBlockHeight({ commitment: 'finalized' }).send();
     if (currentBlockHeight > BigInt(transaction.lastValidBlockHeight)) return 'retry';
   }
   return 'pending';
@@ -214,7 +214,7 @@ export const reconcileSavedDeposit = async (
     return null;
   }
   const joinRecord = await deriveJoinRecordAddress(saved.batch, session.signer.address);
-  const account = await rpc.getAccountInfo(joinRecord, { commitment: 'confirmed', encoding: 'base64' }).send();
+  const account = await rpc.getAccountInfo(joinRecord, { commitment: 'finalized', encoding: 'base64' }).send();
   if (account.value !== null) {
     if (saved.transaction !== undefined) {
       recordTransactionEvidence(session, { label: 'Deposit', signature: saved.transaction.signature as Signature });
@@ -245,9 +245,9 @@ export async function findExistingDeposit(session: DemoSession): Promise<BatchPo
     const reconciled = await reconcileSavedDeposit(rpc, session, saved);
     if (reconciled !== null) return reconciled;
   }
-  const batch = await getCurrentBatch(rpc, depositRoots(session), { commitment: 'confirmed' });
+  const batch = await getCurrentBatch(rpc, depositRoots(session), { commitment: 'finalized' });
   const joinRecord = await deriveJoinRecordAddress(batch.addresses.batch, session.signer.address);
-  const account = await rpc.getAccountInfo(joinRecord, { commitment: 'confirmed', encoding: 'base64' }).send();
+  const account = await rpc.getAccountInfo(joinRecord, { commitment: 'finalized', encoding: 'base64' }).send();
   if (account.value === null) return null;
   clearShieldJournal(session);
   const result = { batchIndex: batch.index, batch: batch.addresses.batch, amountBaseUnits: 0n };
@@ -287,14 +287,14 @@ export async function depositToVault(
   }
   const batch =
     target === undefined
-      ? await getCurrentBatch(rpc, roots, { commitment: 'confirmed' })
-      : await getBatchByIndex(rpc, roots, target.batchIndex, { commitment: 'confirmed' });
+      ? await getCurrentBatch(rpc, roots, { commitment: 'finalized' })
+      : await getBatchByIndex(rpc, roots, target.batchIndex, { commitment: 'finalized' });
   if (target !== undefined && (batch.index !== target.batchIndex || batch.addresses.batch !== target.batch)) {
     throw new Error('The prepared deposit batch no longer matches the requested batch');
   }
   const joinRecord = await deriveJoinRecordAddress(batch.addresses.batch, signer.address);
   const joinRecordAccount = await rpc
-    .getAccountInfo(joinRecord, { commitment: 'confirmed', encoding: 'base64' })
+    .getAccountInfo(joinRecord, { commitment: 'finalized', encoding: 'base64' })
     .send();
   if (joinRecordAccount.value !== null) {
     clearShieldJournal(session);
@@ -311,7 +311,7 @@ export async function depositToVault(
     computeUnitLimit: number,
     beforeSend?: (journal: Omit<ShieldJournal, 'amountBaseUnits' | 'state'>) => void,
   ): Promise<Signature> => {
-    const { value: latestBlockhash } = await rpc.getLatestBlockhash({ commitment: 'confirmed' }).send();
+    const { value: latestBlockhash } = await rpc.getLatestBlockhash({ commitment: 'finalized' }).send();
     const base = setTransactionMessageFeePayerSigner(signer, createTransactionMessage({ version: 0 }));
     const withLifetime = setTransactionMessageLifetimeUsingBlockhash(latestBlockhash, base);
     const withComputeLimit = setTransactionMessageComputeUnitLimit(computeUnitLimit, withLifetime);
@@ -332,7 +332,7 @@ export async function depositToVault(
       blockhash: latestBlockhash.blockhash,
       lastValidBlockHeight: latestBlockhash.lastValidBlockHeight.toString(),
     });
-    await sendAndConfirm(transaction, { commitment: 'confirmed', skipPreflight: true });
+    await sendAndConfirm(transaction, { commitment: 'finalized', skipPreflight: true });
     return signature;
   };
 
@@ -347,16 +347,18 @@ export async function depositToVault(
           .getSignatureStatuses([shieldJournal.signature as Signature], { searchTransactionHistory: true })
           .send()
       ).value[0];
-      if (status !== null && status.err === null) {
+      if (status !== null && status.err !== null) {
+        clearShieldJournal(session);
+      } else if (status?.confirmationStatus === 'finalized') {
         writeShieldJournal(session, { ...shieldJournal, state: 'confirmed' });
         shieldAlreadyConfirmed = true;
-      } else if (status !== null) {
-        clearShieldJournal(session);
+      } else if (
+        status !== null ||
+        (await rpc.getBlockHeight({ commitment: 'finalized' }).send()) <= BigInt(shieldJournal.lastValidBlockHeight)
+      ) {
+        // Landed below finalized, or still within its blockhash lifetime.
+        throw new Error('The shield transaction is still being confirmed. Try again shortly.');
       } else {
-        const currentBlockHeight = await rpc.getBlockHeight({ commitment: 'confirmed' }).send();
-        if (currentBlockHeight <= BigInt(shieldJournal.lastValidBlockHeight)) {
-          throw new Error('The shield transaction is still being confirmed. Try again shortly.');
-        }
         clearShieldJournal(session);
       }
     }

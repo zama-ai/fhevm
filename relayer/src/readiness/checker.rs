@@ -166,7 +166,7 @@ impl ReadinessChecker {
                     .await
             }
             // RFC-021 Solana: the authoritative host-chain ACL check stays with the KMS
-            // Connector (an atomic `confirmed` snapshot). What runs here is the advisory,
+            // Connector (an atomic `finalized` snapshot). What runs here is the advisory,
             // negative-only delegation pre-check (`host::solana_delegation_precheck`): without
             // it, a request whose delegation is revoked or expired would cost a gateway
             // transaction and die by timeout — the Decryption contract has no rejection entry

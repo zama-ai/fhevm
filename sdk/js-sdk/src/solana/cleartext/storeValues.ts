@@ -72,7 +72,7 @@ export async function fetchCleartextStoreValue(
 ): Promise<Uint8Array> {
   const address = getAddressDecoder().decode(encryptedStore);
   const account = await fetchEncodedAccount(rpc, address, {
-    commitment: 'confirmed',
+    commitment: 'finalized',
     ...(abortSignal === undefined ? {} : { abortSignal }),
   });
   if (!account.exists || account.programAddress !== programAddress) {

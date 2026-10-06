@@ -123,7 +123,7 @@ export const bootstrapZamaHost = async (context: HostDeployContext, params: Boot
 
   const kmsCorruptionThreshold = params.kmsCorruptionThreshold ?? 0;
   const certificateThreshold = kmsCertificateThreshold(kmsCorruptionThreshold, params.gateway.kmsSigners.length);
-  const existing = await fetchEncodedAccount(context.rpc, hostConfig, { commitment: 'confirmed' });
+  const existing = await fetchEncodedAccount(context.rpc, hostConfig, { commitment: 'finalized' });
 
   if (existing.exists) {
     const equalBytes = (a: ArrayLike<number>, b: ArrayLike<number>) => Buffer.from(a).equals(Buffer.from(b));
@@ -173,7 +173,7 @@ export const bootstrapZamaHost = async (context: HostDeployContext, params: Boot
   }
 
   const [kmsContext] = await findKmsContextPda({ contextId: BRINGUP_KMS_CONTEXT_ID }, { programAddress });
-  const existingContext = await fetchEncodedAccount(context.rpc, kmsContext, { commitment: 'confirmed' });
+  const existingContext = await fetchEncodedAccount(context.rpc, kmsContext, { commitment: 'finalized' });
   if (existingContext.exists) {
     const data = getKmsContextDecoder().decode(existingContext.data);
     const equal = (a: ArrayLike<number>, b: ArrayLike<number>) => Buffer.from(a).equals(Buffer.from(b));

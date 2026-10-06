@@ -74,5 +74,8 @@ it('reads the account fixture produced by the Rust host', async () => {
     programAddress: address(fixture.program.id_base58),
   });
   expect(watermark).toBe(BigInt(fixture.produced_by.clock_unix_timestamp));
-  expect(getAccountInfo).toHaveBeenCalledWith(address(fixture.address.address_base58), expect.anything());
+  expect(getAccountInfo).toHaveBeenCalledWith(
+    address(fixture.address.address_base58),
+    expect.objectContaining({ commitment: 'finalized' }),
+  );
 });

@@ -83,8 +83,8 @@ const describeTransactionError = (err: unknown): string => {
 };
 
 const confirm = async (connection: Connection, signature: string): Promise<void> => {
-  const latest = await connection.getLatestBlockhash("confirmed");
-  const status = await connection.confirmTransaction({ signature, ...latest }, "confirmed").catch((error: unknown) => {
+  const latest = await connection.getLatestBlockhash("finalized");
+  const status = await connection.confirmTransaction({ signature, ...latest }, "finalized").catch((error: unknown) => {
     // web3.js may reject with the RPC transaction error before returning a status value.
     if (typeof error === "object" && error !== null && "InstructionError" in error) {
       throw new Error(`squads transaction ${signature} failed: ${describeTransactionError(error)}`, { cause: error });
@@ -148,7 +148,7 @@ export const proposeThroughSquad = async (
 ): Promise<bigint> => {
   const account = await multisig.accounts.Multisig.fromAccountAddress(connection, squad.multisigPda);
   const transactionIndex = BigInt(account.transactionIndex.toString()) + 1n;
-  const { blockhash } = await connection.getLatestBlockhash("confirmed");
+  const { blockhash } = await connection.getLatestBlockhash("finalized");
 
   const created = await multisig.rpc.vaultTransactionCreate({
     connection,
@@ -216,7 +216,7 @@ export const executeVaultTransaction = async (
     transactionIndex,
     member: member.publicKey,
   });
-  const { blockhash } = await connection.getLatestBlockhash("confirmed");
+  const { blockhash } = await connection.getLatestBlockhash("finalized");
   const message = new TransactionMessage({
     payerKey: member.publicKey,
     recentBlockhash: blockhash,

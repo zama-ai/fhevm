@@ -882,6 +882,49 @@ Decision, as first written:
 (malleable) signatures** (`signature[32..64] > SECP256K1_HALF_ORDER`), and requires
 `extract_kms_context_id(extra_data, current) == request kms_context_id`. `extract_kms_context_id` …
 
+### DD-024, replaced in part by DD-070
+
+DD-070 moved instruction reconstruction to `finalized`, so the rationale lost its finalization delay
+and its rolled-back computation.
+
+> Confirmed instruction reconstruction emits concrete material requests at handle creation and Store
+> update.
+
+> This removes the finalization delay and duplicate Solana RPC read. A rolled-back computation can waste
+> work, but prepared ciphertext material is not authorization and cannot cause plaintext release.
+
+### DD-025, replaced in part by DD-070
+
+DD-070 moved the listener's ingest and the KMS connector's reads to `finalized`. This was the
+confirmed-commitment rule and its accepted risk.
+
+> Confirmed, eager materialization; live KMS authorization at release time.
+
+> - (A) Eager-materialize and gate decrypt release on finality. Rejected: prepared material is not an
+>   authorization, and the accepted confirmed authorization may release plaintext.
+> - (D) Ingest only at finalized (+~13s latency).
+>
+> The accepted design is eager materialization from confirmed instruction reconstruction with no
+> separate finality gate; KMS revalidates confirmed authorization at the plaintext-release boundary.
+>
+> The accepted product rule treats a valid confirmed authorization as sufficient. Coprocessor work is
+> therefore scheduled from confirmed ingestion. The KMS connector's ACL read and the host listener's
+> confirmed Yellowstone ingest use explicit confirmed commitment; KMS remains the only
+> plaintext-release boundary.
+>
+> Decision provenance: accepted by the Solana feature owner during the review of
+> [`zama-ai/fhevm#3122`](https://github.com/zama-ai/fhevm/pull/3122) on 2026-07-13. The accepted trade-off
+> is irreversible plaintext release after a valid authorization observed on an exceptionally rolled-back
+> confirmed fork; subsequent on-chain actions still follow the surviving fork.
+>
+> A finality gate adds latency without strengthening the chosen authorization rule: an allowed
+> key authorized in confirmed state was legitimately allowed to receive that plaintext, even if the fork
+> later rolls back.
+>
+> Open for debate:
+>
+> Reorg unwind may still be added for resource recovery, but is not an authorization dependency.
+
 ### DD-026, replaced in part by DD-052
 
 The user-decrypt `extraData` debate is resolved by typed gateway fields. The chain-type marker is superseded by DD-052.
@@ -916,6 +959,15 @@ caught empty-contracts / wrong-sig being accepted on the EVM path.
 
 Branching on the chain type keeps EVM strictness intact while admitting Solana. The CI integration
 test that caught the regression now passes for both. This entry only keeps that split.
+
+### DD-028, replaced in part by DD-070
+
+DD-070 moved the listener's ingest to `finalized`, where no block is orphaned.
+
+> - **Solana on-chain REORG handling is NOT wired** into the listener's block-status machine: the Solana
+>   Yellowstone listener reconstructs at `confirmed` and inserts directly, bypassing the EVM
+>   `host_chain_blocks_valid` / `block_history.rs` substrate. KMS authorization remains independent;
+>   reorg unwind would recover wasted work (DD-025).
 
 ### DD-033, replaced in part by DD-066
 

@@ -54,13 +54,13 @@ recreate_solana_merkle_record() {
   psql_party "${party}" 'CREATE DATABASE solana_merkle' >/dev/null
 }
 
-# The preview Solana RPC's confirmed slot. Taken after a reset, it precedes every store the
+# The preview Solana RPC's finalized slot. Taken after a reset, it precedes every store the
 # reset's redeploy creates, so it is the Merkle indexers' start slot.
-confirmed_solana_slot() {
+finalized_solana_slot() {
   local rpc_url
   rpc_url=$(kubectl get secret solana-rpc -n "${NAMESPACE}" -o jsonpath='{.data.rpc-url}' | base64 -d)
   curl -fsS "${rpc_url}" -H 'content-type: application/json' \
-    -d '{"jsonrpc":"2.0","id":1,"method":"getSlot","params":[{"commitment":"confirmed"}]}' | jq -er .result
+    -d '{"jsonrpc":"2.0","id":1,"method":"getSlot","params":[{"commitment":"finalized"}]}' | jq -er .result
 }
 
 # Waits until party $1's Merkle indexer has recorded past start slot $2, which proves its replay

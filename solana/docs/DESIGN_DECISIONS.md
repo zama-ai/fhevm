@@ -97,6 +97,7 @@ are written as one narrative instead.
 | [DD-067](#dd-067-a-merkle-proof-request-is-signed-by-a-kms-contexts-tx-sender)                                                             | adopted                                  | A Merkle proof request is signed by a KMS context's tx-sender                                                                  |
 | [DD-068](#dd-068-the-merkle-indexer-checks-its-record-against-the-chain-and-quarantines-a-store-that-disagrees)                            | adopted                                  | The Merkle indexer checks its record against the chain and quarantines a store that disagrees                                  |
 | [DD-069](#dd-069-only-an-output-its-transaction-stores-is-computed-and-recorded-as-a-block-producer)                                      | adopted                                  | Only an output its transaction stores is computed and recorded as a block producer                                             |
+| [DD-070](#dd-070-solana-is-read-at-finalized-commitment)                                                                                  | adopted                                  | Solana is read at finalized commitment                                                                                         |
 
 ## DD-002: Keep App Store And Host ACL Store Separate
 
@@ -412,8 +413,8 @@ What this means plainly (state it in the debate):
 
 Handles are **block-bound and therefore reorg-unstable on EVERY chain** (EVM and Solana alike): a
 resubmitted or reorged transaction over the same inputs yields a _different_ handle. This is reconciled
-by the listener's reorg handling on EVM (block-status machine, DD-025). Solana accepts scheduling
-at confirmed and leaves reorg unwind as optional resource recovery (DD-025, Boundaries).
+by the listener's reorg handling on EVM (block-status machine, DD-025). Solana ingests only
+finalized blocks, which do not reorg (DD-070).
 
 Consequences:
 
@@ -575,15 +576,15 @@ validates the Store and the leaf proof before decrypting.
 
 Decision:
 
-Confirmed instruction reconstruction emits concrete material requests at handle creation and Store
+Instruction reconstruction emits concrete material requests at handle creation and Store
 update. The listener inserts those handles directly into `pbs_computations`. Later allows reuse
 already-prepared material. No account-fetch queue, witness
 store, retry state machine, or coprocessor-owned ACL decision remains.
 
 Why / what worked:
 
-This removes the finalization delay and duplicate Solana RPC read. A rolled-back computation can waste
-work, but prepared ciphertext material is not authorization and cannot cause plaintext release.
+This removes a duplicate Solana RPC read. Prepared ciphertext material is not authorization and
+cannot cause plaintext release.
 
 Open for debate:
 
@@ -593,7 +594,7 @@ None on the coprocessor side. KMS commitment and authorization semantics are doc
 
 Status: adopted
 
-Confirmed, eager materialization; live KMS authorization at release time.
+Eager materialization; live KMS authorization at release time.
 
 Context:
 
@@ -604,39 +605,27 @@ not activate the graph that produced the released handle.
 
 Separately, the EVM reorg substrate already implements the recommended shape: a block-status machine
 (`pending → finalized / orphaned` in the `host_chain_blocks_valid` table) plus ancestor catch-up in
-`cmd/block_history.rs`. The **Solana listener (`bin/solana_host_listener.rs`) reconstructs from a
-Yellowstone stream at `confirmed` and inserts directly** — it is NOT wired into this substrate.
+`cmd/block_history.rs`. The Solana listener (`bin/solana_host_listener.rs`) reconstructs from a
+Yellowstone stream at `finalized` and inserts directly, without this substrate: a finalized block
+is never orphaned (DD-070).
 
 Options considered:
 
-- (A) Eager-materialize and gate decrypt release on finality. Rejected: prepared material is not an
-  authorization, and the accepted confirmed authorization may release plaintext.
+- (A) Eager-materialize and gate decrypt release on a separate finality check. Superseded by
+  DD-070: every reader is at `finalized`, so the gate would check nothing.
 - (B) Keep the two-step dormant model + add transitive subgraph activation via a recursive CTE
-  (activate the whole producing subgraph when the released handle is allowed).
-- (C) Slot-level finality gate.
-- (D) Ingest only at finalized (+~13s latency).
+  (activate the whole producing subgraph when the released handle is allowed). Rejected: the
+  dormant/activate model and transient eval intermediates were designed separately and do not
+  compose.
+- (C) Slot-level finality gate. Superseded by DD-070, as (A).
 
-The accepted design is eager materialization from confirmed instruction reconstruction with no
-separate finality gate; KMS revalidates confirmed authorization at the plaintext-release boundary.
-
-The accepted product rule treats a valid confirmed authorization as sufficient. Coprocessor work is
-therefore scheduled from confirmed ingestion. The KMS connector's ACL read and the host listener's
-confirmed Yellowstone ingest use explicit confirmed commitment; KMS remains the only
-plaintext-release boundary.
-
-Decision provenance: accepted by the Solana feature owner during the review of
-[`zama-ai/fhevm#3122`](https://github.com/zama-ai/fhevm/pull/3122) on 2026-07-13. The accepted trade-off
-is irreversible plaintext release after a valid authorization observed on an exceptionally rolled-back
-confirmed fork; subsequent on-chain actions still follow the surviving fork.
-
-The dormant/activate model and transient eval intermediates were designed separately and do not
-compose. A finality gate adds latency without strengthening the chosen authorization rule: an allowed
-key authorized in confirmed state was legitimately allowed to receive that plaintext, even if the fork
-later rolls back.
+The accepted design is eager materialization from the listener's finalized ingest with no separate
+gate: the KMS connector revalidates authorization at the plaintext-release boundary, reading the
+chain at `finalized` (DD-070). KMS remains the only plaintext-release boundary.
 
 Open for debate:
 
-Reorg unwind may still be added for resource recovery, but is not an authorization dependency.
+None.
 
 ## DD-026: Input And Identity Encoding Is bytes32, User Decrypt Is Typed
 
@@ -711,10 +700,10 @@ once the input-identity encoding (DD-026) is frozen.
 Status: adopted
 
 - **KMS connector decrypt** is exercised in the harness, **not** full production KMS-connector wiring.
-- **Solana on-chain REORG handling is NOT wired** into the listener's block-status machine: the Solana
-  Yellowstone listener reconstructs at `confirmed` and inserts directly, bypassing the EVM
-  `host_chain_blocks_valid` / `block_history.rs` substrate. KMS authorization remains independent;
-  reorg unwind would recover wasted work (DD-025).
+- **The listener's block-status machine is not used**: the Solana Yellowstone listener reconstructs
+  at `finalized` and inserts directly, bypassing the EVM `host_chain_blocks_valid` /
+  `block_history.rs` substrate. A finalized block is never orphaned, so there is nothing to unwind
+  (DD-070).
 - **Single local validator** in the harness — real reorgs / finality lag are not exercised end-to-end.
 - **Input proof / transciphering** behind the coprocessor attestation is a shortcut today; real ZKPoK +
   transciphering is production work (DD-007).
@@ -742,7 +731,7 @@ Store them apart, explicitly:
 The discriminator now in the code comments: "would it fire on a chain that never reorgs?" — yes ⇒
 `drift_revert`; only on an orphaned block ⇒ reorg.
 
-They have different triggers, owners, and remedies; conflating them muddles both the reorg gap (DD-025)
+They have different triggers, owners, and remedies; conflating them muddles both reorg handling (DD-025)
 and the consensus path.
 
 ## DD-030: Keep `verifyProofRequestSolana`, Not A V2 Rename
@@ -819,7 +808,7 @@ do, or stay event-free and let consumers decode instruction data instead.
 Decision:
 
 Store-changing paths (`fhe_execute` Store outputs and `make_store_handle_public`) emit no ACL
-lifecycle Anchor events by design. The host listener reconstructs compute requests from confirmed
+lifecycle Anchor events by design. The host listener reconstructs compute requests from finalized
 Yellowstone transaction instructions, including inner CPI instructions, since confidential-token
 and other app programs invoke the host via CPI. The Merkle indexer reconstructs the MMR leaves from
 the same instructions (DD-066).
@@ -1497,7 +1486,7 @@ Decision:
    A request names only the Store and, for a delegated entry, the delegator as owner address; a
    client-supplied proof is rejected. A public decrypt names each handle's Store beside `extraData` (DD-060).
 3. **Each coprocessor keeps the leaf record.** Its Merkle indexer recomputes the leaves from the
-   confirmed instruction stream into the Merkle proof service's own database (DD-066), and
+   finalized instruction stream into the Merkle proof service's own database (DD-066), and
    `solana_merkle_proof_server` serves them apart from ingestion (DD-064). There is no standalone
    proof service: the relayer passes no proofs through, and the SDK has no RPC evidence or
    proof-service client (DD-035 superseded).
@@ -1561,7 +1550,7 @@ history-only handle is deferred to fhevm-internal#2007. Generic disclosure verif
 certificate and emits the certified handle and cleartext; it reads no Store and no token-kind
 label. Original token events establish provenance.
 
-The input-attestation, threshold-KMS, program-upgrade and confirmed-RPC trust
+The input-attestation, threshold-KMS, program-upgrade and RPC trust
 assumptions apply. Resource limits are shape-dependent; see runtime cost snapshots.
 
 ## DD-050: Transient Storage Shared Across The Transaction
@@ -1798,7 +1787,7 @@ Status: adopted
 
 Recorded in fhevm-internal#2079.
 
-The host listener rebuilds all coprocessor work from sealed Yellowstone blocks at `confirmed`. The
+The host listener rebuilds all coprocessor work from sealed Yellowstone blocks at `finalized`. The
 alternative is a work queue on-chain: each `fhe_execute` writes its payload into a temporary PDA, the
 coprocessor marks it computed, and the user closes it for a rent refund. Work would then stay
 on-chain until handled, so a listener that missed it could find it again. It is rejected:
@@ -2118,7 +2107,7 @@ stops ingesting. `getBlock` with full details returns the same block unfiltered,
 
 Decision:
 
-The listener subscribes at `confirmed` to `transactions { account_include: [host], vote: false,
+The listener subscribes at `finalized` (DD-070) to `transactions { account_include: [host], vote: false,
 failed: false }` and to `blocks_meta`. One message holds one transaction, which Solana bounds at
 under 1 MB: 64 instructions in the trace, 10 KiB of data per CPI and about 10 KB of logs. The
 listener already ignored failed transactions, so leaving them out changes no output.
@@ -2167,6 +2156,29 @@ then restarts at the same slot for as long as catch-up needs that block. Listing
 `transactionDetails: "signatures"` and selecting the host's transactions with
 `getSignaturesForAddress` would cost about 90 bytes per transaction, but it relies on the archive's
 address index being complete, which nothing checks (DD-059).
+
+On a cluster with several validators a slot can have more than one bank: Alpenglow can replace a
+slot's bank and signals it with `EntryUpdateParent`. Yellowstone v16 buffers each bank by `bank_id`
+and drops a replaced or losing bank (`yellowstone-grpc-geyser/src/block_reconstruction_v2.rs` at
+`bfd1d7e`). At `finalized` (DD-070) it sends one frozen bank per slot: the bank a Finalized or
+Confirmed status names, or, when Finalized reaches the slot only from a descendant, the slot's one
+remaining bank. The slot's transactions, its `Block` and `BlockMeta`, and its status all come from
+that bank.
+
+- Safety: the follower applies a block only when it names the last applied block by parent slot
+  and parent block hash (`a_slot_that_does_not_extend_the_last_halts`), so a block built on a
+  replaced bank is never applied. That a block's transactions and its block meta come from the
+  same bank is an assumption on the provider (INVARIANTS #69): the follower does not compare their
+  `bank_id`.
+- Liveness: a block that does not extend the last applied one is a fail-closed error. The host
+  listener or the Merkle indexer exits, and the pod restart replays from the checkpoint. Yellowstone
+  v16 emits a slot's Finalized before the ancestors that only inherit it, so a descendant can arrive
+  first; the replay after the restart delivers both in slot order. A slot left between two banks
+  that no status names is never delivered at `finalized`, so the follower exits at its child on
+  every restart while that slot is inside the provider's replay window. Nothing repairs that case
+  yet (fhevm-internal#2105).
+
+The single local validator never replaces a bank, so no local test exercises this.
 
 Rejected alternatives:
 
@@ -2343,10 +2355,10 @@ The leaf record belongs to the `solana-merkle-proof-service` crate, in its own P
 with its own migrations: `encrypted_stores`, `leaves`, `nodes` and `checkpoint`. The crate has two
 binaries:
 
-- `solana_merkle_indexer` follows the confirmed stream through `solana-host-follower`, the crate
+- `solana_merkle_indexer` follows the finalized stream through `solana-host-follower`, the crate
   the host listener follows it with. It writes each block's leaves, nodes, Store rows and
   checkpoint in one transaction. It resumes from its checkpoint. On an empty database it replays
-  from `--start-slot`, a confirmed block before the first Store was created, such as the zama-host
+  from `--start-slot`, a finalized block before the first Store was created, such as the zama-host
   deployment slot, whose hash it reads from the archive endpoint. It never starts at the tip. It
   stops on a Store first seen above leaf zero (`UnrecordedHistory`) and on a leaf count that
   skips.
@@ -2513,7 +2525,7 @@ Decision:
 
 `solana_merkle_indexer` checks every recorded store once at start and then every
 `--store-check-interval-secs` (600). It reads the stores 100 at a time with `getMultipleAccounts` at
-confirmed commitment, judges each account as the KMS connector does (`validate_store`, from
+finalized commitment, judges each account as the KMS connector does (`validate_store`, from
 `zama_solana_acl`), and compares at the chain's leaf count `n`:
 
 - no account: `absent`, the store was closed, and its quarantine lifts;
@@ -2615,21 +2627,98 @@ A held-back step whose output is not stored is a terminal error row that is not 
 tfhe-worker drains its consumers as it does for any dead producer
 (`errored_local_producer_drains_consumer_and_is_not_reexecuted`). Scheduling stays decoupled from
 authorization: the KMS validates the live EncryptedStore and any leaf proof before it releases
-plaintext, so work on a block that later rolls back is wasted, never released (INVARIANTS #31).
+plaintext (INVARIANTS #31).
 
 Pinned by `only_an_output_its_transaction_stores_is_allowed`,
 `a_handle_produced_twice_is_allowed_when_a_later_execution_stores_it`,
 `storing_an_older_handle_allows_no_output` and
 `solana_records_reach_the_shared_sql_and_scheduler_path`.
 
+## DD-070: Solana is read at finalized commitment
+
+Status: adopted
+
+Context:
+
+Every off-chain component reads the Solana host chain. The host listener and the Merkle indexer
+follow its blocks, the KMS connector reads Stores and delegation rows before it releases plaintext,
+the relayer pre-checks delegations, and clients (the SDK, the demo dapp, `solana/deploy`, the test
+suite) send transactions and read accounts. A reader's commitment level is the point at which it
+treats a block as settled: at `confirmed` a supermajority has voted for the block, at `finalized`
+it can no longer be rolled back.
+
+What `finalized` costs depends on the consensus. Under TowerBFT, which mainnet runs today, a block
+finalizes 32 slots, about 12.8 s, after it is confirmed. Under Alpenglow (SIMD-0326) a block is
+final once its votes certify it, and `confirmed` and `finalized` name the same slot. Devnet runs
+Alpenglow (feature `A1pengvuM6JEcyNuTnMqepBKhwHE3N6PmUrdATGawhJS`, active since epoch 1167), where a
+block was final a median of 408 ms, and at the 90th percentile 585 ms, after it completed. The
+local validator runs Agave 4.3.0 with `--alpenglow` (TESTING.md), where a block is final as it
+completes; the same validator on TowerBFT finalized 14.9 s later.
+
+Decision:
+
+Every Solana read and every confirmation wait in the port uses `finalized` commitment. The port
+assumes Alpenglow on every cluster it runs on. This covers:
+
+- the Yellowstone subscription the host listener and the Merkle indexer share
+  (`solana-host-follower`'s `build_subscribe_request`), their live RPC client, the archive
+  checkpoint read (`block_checkpoint`) and the `solana_host_follower_finalized_slot` metric;
+- the Merkle indexer's store check (DD-068);
+- the KMS connector's account snapshot (`kms-worker/src/core/solana/snapshot.rs`);
+- the relayer's delegation pre-check (`relayer/src/host/acl_checker.rs`);
+- the SDK, the demo dapp, `solana/deploy`, the test suite and the preview scripts: account reads,
+  blockhashes, simulation and confirmation waits.
+
+Rationale:
+
+One commitment makes every component describe the same chain. The listener and the Merkle indexer
+apply only blocks that cannot roll back, so no computation runs on a minority fork and there is
+nothing to unwind (INVARIANTS #32). The KMS connector releases plaintext only against a grant on the
+finalized chain, where EVM host ACL reads take the node's latest block
+(`kms-worker/src/core/event_processor/rpc.rs`).
+
+The leaf record and the Store the connector reads are both at `finalized`, so they differ only by
+the indexer's lag. Mixing commitments would cost retries, never a wrong answer: the connector
+verifies each proof against the Store's live peaks. A proof built at an older leaf count still
+verifies while the appends since then left the leaf's peak intact. A proof built ahead of the
+observed count is cut down to it (`MmrProof::for_leaf_count`). Otherwise the request fails with
+`ProofDoesNotVerify`, `ProofRecordBehind`, `LeafIndexOutOfRange` or `NoLeaf`, all retried.
+
+Rejected alternative: keep `confirmed` and add reorg unwind to the listener and the Merkle indexer.
+It needs a rollback path through computations and the leaf record, and still cannot take back a
+share the KMS released on a rolled-back fork. On Alpenglow it would save about 400 ms.
+
+Consequences:
+
+A client that waits for less than `finalized`, such as a third-party wallet, can ask for a
+decryption before its grant is finalized. Neither service turns that into a terminal refusal:
+
+- the KMS connector records every outcome of such a read as recoverable. An absent Store, a missing
+  leaf (`NoLeaf`), a record behind the chain (`ProofRecordBehind`), a leaf beyond the observed count
+  (`LeafIndexOutOfRange`), a proof that no longer verifies (`ProofDoesNotVerify`) and a delegation
+  that is not live are ACL denials that a later attempt may clear. Pinned by
+  `every_solana_authorization_failure_is_recorded_as_written`,
+  `every_solana_public_decrypt_failure_is_recorded_as_written` and
+  `a_missing_delegation_rejects_its_entry`;
+- the relayer pre-check reads a refused delegation again on its retry policy (`max_attempts`,
+  `retry_interval_ms`) before the refusal stands. Pinned by
+  `a_grant_that_finalizes_after_the_first_row_read_passes` and
+  `rows_still_dead_on_the_last_attempt_refuse`. The example policy, three reads one second apart,
+  covers Alpenglow's finality, not TowerBFT's 12.8 s. A refusal that stands costs at least
+  `(max_attempts - 1) × retry_interval_ms` of waiting: two seconds with that policy.
+
+On a cluster with several validators a slot can have more than one bank. How Yellowstone v16
+delivers one bank per slot at `finalized`, and what the follower guarantees from it, is in DD-062.
+
+Pinned by `request_subscribes_to_host_transactions_and_block_meta` (the subscription),
+`finalized_rpc_preserves_order_null_accounts_and_context_slot` (the KMS snapshot) and
+`row_read_requires_the_first_read_slot` (the relayer pre-check's row read).
+
 ## Open product decisions
 
 Not settled by the decisions above. Forward requirements are detailed in
 [`FUTURE_DESIGN.md`](./FUTURE_DESIGN.md); this list is the short index.
 
-- Whether resource-recovery reorg unwind should be added after scheduling at confirmed
-  (DD-024, DD-025, DD-028). Reorg unwind is unimplemented on the listener path (INVARIANTS #32);
-  live KMS authorization remains the plaintext-release boundary.
 - Whether confidential balances move to the staged inbound-credit profile (DD-016).
 - Rent and archival policy for the Store MMR (DD-049): one stable PDA serves a Store for its whole
   life and its size is bounded at `121 + 64·slots + 32·peaks` bytes, so compaction is a rent question,

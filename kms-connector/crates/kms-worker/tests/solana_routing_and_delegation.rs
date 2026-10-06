@@ -621,7 +621,7 @@ async fn a_missing_delegation_rejects_its_entry() {
         }
     );
     // Transient, and pinned as such: this reader and the relayer read through their own RPCs and
-    // can sit at different confirmed slots, so "not here" can mean "not here yet". Terminal would
+    // can sit at different finalized slots, so "not here" can mean "not here yet". Terminal would
     // fail a valid delegated request permanently over ordinary replica lag.
     assert!(failure.is_recoverable());
 }

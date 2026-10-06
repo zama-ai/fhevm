@@ -109,7 +109,7 @@ describe('deposit source safety', () => {
 
 describe('deposit join recovery', () => {
   test('keeps a successful signature pending until its join record is visible', async () => {
-    const rpc = rpcWith(null, { err: null, confirmationStatus: 'confirmed' });
+    const rpc = rpcWith(null, { err: null, confirmationStatus: 'finalized' });
     await expect(reconcileDepositTransaction(rpc, storedDeposit().transaction!)).resolves.toBe('pending');
     expect(rpc.getBlockHeight).not.toHaveBeenCalled();
   });

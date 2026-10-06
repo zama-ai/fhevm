@@ -1,4 +1,4 @@
-//! Solana host listener: reconstructs coprocessor work from confirmed Yellowstone
+//! Solana host listener: reconstructs coprocessor work from finalized Yellowstone
 //! transactions and block metas and ingests it into the coprocessor database.
 
 use std::sync::Arc;
@@ -26,7 +26,7 @@ use host_listener::{
     solana_listener::{SolanaListenerConfig, SolanaListenerSink},
 };
 use solana_host_follower::{
-    block_checkpoint, run, track_confirmed_slot, Follower, FollowerArgs,
+    block_checkpoint, run, track_finalized_slot, Follower, FollowerArgs,
     StartPosition,
 };
 
@@ -59,7 +59,7 @@ struct Args {
     #[command(flatten)]
     follower: FollowerArgs,
 
-    /// Existing confirmed block to replay inclusively on an empty database. Must precede the host
+    /// Existing finalized block to replay inclusively on an empty database. Must precede the host
     /// activity to reconstruct; if Yellowstone no longer retains it, the archive serves it.
     /// A saved checkpoint wins.
     #[arg(long)]
@@ -164,7 +164,7 @@ async fn main() -> Result<()> {
 
     if args.metrics_addr.is_some() {
         metrics_server::spawn(args.metrics_addr, cancel.child_token());
-        tokio::spawn(track_confirmed_slot(
+        tokio::spawn(track_finalized_slot(
             live,
             config.chain_id,
             cancel.child_token(),

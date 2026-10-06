@@ -84,10 +84,10 @@ trusted for authorization.
   application it runs as is `(program, scope)` — the program proven from the
   authority's seeds, the scope an account that program owns (DD-047). That pair is
   what the HCU meter charges and the deny list names.
-- **Scheduling at confirmed, decoupled authorization.** The coprocessor
-  computes the outputs a transaction stores on confirmed (not finalized) state
-  and never unwinds; safety comes from the KMS re-checking the chain at decrypt
-  time (DD-025, DD-069).
+- **Finalized reads, decoupled authorization.** Every component reads the
+  chain at finalized commitment (DD-070). The coprocessor computes the outputs
+  a transaction stores; safety comes from the KMS re-checking the chain at
+  decrypt time (DD-025, DD-069).
 
 The numbered decision log with rationale and status is
 [`docs/DESIGN_DECISIONS.md`](docs/DESIGN_DECISIONS.md) — read it before

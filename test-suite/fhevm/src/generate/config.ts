@@ -87,7 +87,7 @@ const rewriteHostChains = (
       // quotes a JS string). acl_address = zama-host program (base58): the Solana-host
       // discriminant, and the program the delegation rows are read under. `url` must be a live
       // Solana RPC: the relayer's advisory pre-check of delegated user-decrypt entries reads
-      // delegation state through it (two getMultipleAccounts at confirmed); direct entries never
+      // delegation state through it (two getMultipleAccounts at finalized); direct entries never
       // touch it, and the authoritative ACL check stays with the KMS connector.
       return {
         chain_id: chain.chainId,

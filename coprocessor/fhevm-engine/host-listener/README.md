@@ -118,7 +118,7 @@ cargo test -p host-listener --test host_listener_integration_tests \
 
 ### Solana bootstrap and restart
 
-`solana_host_listener` reconstructs compute rows from confirmed Yellowstone
+`solana_host_listener` reconstructs compute rows from finalized Yellowstone
 blocks. It subscribes to the successful transactions naming the host
 program, one per message, and to every slot's block meta, and seals a slot when
 its block meta arrives. The provider must send every transaction of a slot
@@ -129,10 +129,10 @@ the repair after a transaction arrives for a slot already applied. Each
 stores the result handles in the event and re-derives each one as a check.
 
 On an empty database, `--start-slot <slot>` selects an existing
-confirmed block to replay **inclusively**. Choose a finalized block before the
-host activity that must be reconstructed. `--archive-url` supplies that block's
-hash; its transactions come from Yellowstone, or from the archive below if it is
-older than the replay window. The first block must match the requested slot and hash.
+finalized block to replay **inclusively**. Choose one before the host activity
+that must be reconstructed. `--archive-url` supplies that block's hash; its
+transactions come from Yellowstone, or from the archive below if it is older
+than the replay window. The first block must match the requested slot and hash.
 
 Once a block's compute rows and checkpoint commit together, restarts
 resume from that checkpoint and ignore `--start-slot`. Inclusive replay verifies

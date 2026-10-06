@@ -75,7 +75,7 @@ pub fn decode_fhe_executed_event(
     (event.version == zama_host::EVENT_VERSION).then_some(event)
 }
 
-/// The chain id of `program_id`'s deployment, from its confirmed `HostConfig` account.
+/// The chain id of `program_id`'s deployment, from its finalized `HostConfig` account.
 pub async fn host_chain_id(
     rpc: &RpcClient,
     program_id: &Pubkey,

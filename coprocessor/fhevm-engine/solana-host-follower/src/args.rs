@@ -9,8 +9,8 @@ use crate::{host::host_chain_id, FollowerConfig, SOLANA_RPC_REQUEST_TIMEOUT};
 /// The flags of a binary that follows zama-host on a Solana cluster.
 #[derive(clap::Args, Debug, Clone)]
 pub struct FollowerArgs {
-    /// Solana JSON-RPC endpoint of the live cluster, read at confirmed commitment: HostConfig and
-    /// the confirmed slot.
+    /// Solana JSON-RPC endpoint of the live cluster, read at finalized commitment: HostConfig and
+    /// the finalized slot.
     #[arg(long, default_value = "http://127.0.0.1:8899")]
     url: String,
 
@@ -41,21 +41,21 @@ pub struct Follower {
 }
 
 impl FollowerArgs {
-    /// A client of the live endpoint at confirmed commitment.
+    /// A client of the live endpoint at finalized commitment.
     pub fn live_rpc(&self) -> RpcClient {
         RpcClient::new_with_timeout_and_commitment(
             self.url.clone(),
             SOLANA_RPC_REQUEST_TIMEOUT,
-            CommitmentConfig::confirmed(),
+            CommitmentConfig::finalized(),
         )
     }
 
-    /// Reads the chain id from the deployment's confirmed HostConfig. It is the one source of the
+    /// Reads the chain id from the deployment's finalized HostConfig. It is the one source of the
     /// chain id: handles are derived with it, so nothing derived from the follower can disagree.
     pub async fn connect(&self) -> Result<Follower> {
         let live = self.live_rpc();
         let chain_id = host_chain_id(&live, &self.program_id).await?;
-        info!(chain_id, "read the chain id from the confirmed HostConfig");
+        info!(chain_id, "read the chain id from the finalized HostConfig");
         let archive = RpcClient::new_with_timeout(
             self.archive_url.clone().unwrap_or_else(|| self.url.clone()),
             SOLANA_RPC_REQUEST_TIMEOUT,

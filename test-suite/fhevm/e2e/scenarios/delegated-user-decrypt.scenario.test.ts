@@ -95,7 +95,7 @@ const CLOCK_SYSVAR = address("SysvarC1ock11111111111111111111111111111111");
 
 /** The host Clock's `unix_timestamp` (its last field), which a delegation's `expiresAt` is compared against. */
 const hostUnixTime = async (setup: VerticalTestSetup): Promise<bigint> => {
-  const clock = await fetchEncodedAccount(setup.context.rpc, CLOCK_SYSVAR, { commitment: "confirmed" });
+  const clock = await fetchEncodedAccount(setup.context.rpc, CLOCK_SYSVAR, { commitment: "finalized" });
   assertAccountExists(clock);
   return getI64Decoder().decode(clock.data, 32);
 };
@@ -151,7 +151,7 @@ describe("solana delegated user-decrypt", () => {
         expiresAt: (await hostUnixTime(setup)) + EXPIRY_SECONDS_AHEAD,
       });
       await context.sendTransaction(wallet.signer, [grant]);
-      const grantSlot = await context.rpc.getSlot({ commitment: "confirmed" }).send();
+      const grantSlot = await context.rpc.getSlot({ commitment: "finalized" }).send();
 
       // The rows the connector will read, checked the way a dapp would before paying for a job.
       const rows = await solana.fetchSolanaUserDecryptionDelegation(context.rpc, {
@@ -219,7 +219,7 @@ describe("solana delegated user-decrypt", () => {
       // advisory pre-check (`not_allowed_on_host_acl`) — the connector's own terminal
       // rejection has no channel back (see 09-rejection-path-findings).
       // The host refuses a second update of a delegation in the slot of the first.
-      await until(async () => (await context.rpc.getSlot({ commitment: "confirmed" }).send()) > grantSlot, {
+      await until(async () => (await context.rpc.getSlot({ commitment: "finalized" }).send()) > grantSlot, {
         description: "a slot after the grant",
         timeoutMs: 30_000,
       });
@@ -267,7 +267,7 @@ describe("solana delegated user-decrypt", () => {
           fhevm: { relayerUrl: config.relayerUrl, programs: { host: { address: config.verifyingProgramId as Bytes32Hex } } },
         }),
       );
-      const connection = new Connection(env.rpcUrl, "confirmed");
+      const connection = new Connection(env.rpcUrl, "finalized");
       // The skip condition above proved only that the fixtures are on disk; this proves the
       // RUNNING validator was booted with them, failing legibly instead of deep in createSquad.
       await assertSquadsDeployed(connection);

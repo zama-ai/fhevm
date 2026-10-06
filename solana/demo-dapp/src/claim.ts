@@ -31,14 +31,14 @@ const readClaimStore = async (
 ) => {
   const rpc = createSolanaRpc(session.config.rpcUrl);
   const roots = vaultRoots(session.config, direction);
-  const batch = await getBatchByIndex(rpc, roots, position.batchIndex, { commitment: 'confirmed' });
+  const batch = await getBatchByIndex(rpc, roots, position.batchIndex, { commitment: 'finalized' });
   if (batch.index !== position.batchIndex || batch.addresses.batch !== position.batch) {
     throw new Error(`Batch reference ${position.batch} does not match index ${position.batchIndex}`);
   }
   if (batch.state.status !== BatchStatus.Settled) throw new Error('The batch has not settled yet');
 
   const joinRecord = await getJoinRecord(rpc, await deriveJoinRecordAddress(position.batch, user), {
-    commitment: 'confirmed',
+    commitment: 'finalized',
   });
   if (joinRecord.batch !== position.batch || joinRecord.user !== user) {
     throw new Error('The join record does not match the requested batch and user');
@@ -56,7 +56,7 @@ const buildClaimInstructions = async (
   if (claimed) return null;
 
   const payoutTokenAccount = await tokenAccountAddress(roots.payoutConfidentialMint, user);
-  const account = (await rpc.getAccountInfo(payoutTokenAccount, { commitment: 'confirmed', encoding: 'base64' }).send())
+  const account = (await rpc.getAccountInfo(payoutTokenAccount, { commitment: 'finalized', encoding: 'base64' }).send())
     .value;
   if (account !== null && account.owner !== session.config.programs.token && account.owner !== SYSTEM_PROGRAM_ADDRESS) {
     throw new Error(`Payout account ${payoutTokenAccount} is owned by an unexpected program`);

@@ -135,7 +135,7 @@ sequenceDiagram
 
     Wallet->>Token: Shield public USDC
     Token->>Host: Register encrypted balance change
-    Host-->>Listener: Emit confirmed record
+    Host-->>Listener: Emit finalized record
     App->>Relayer: Send newly encrypted deposit amount
     Relayer->>Compute: Store and check encrypted input
     Compute-->>Relayer: Return signed encrypted-value ID
@@ -146,8 +146,8 @@ sequenceDiagram
     Token-->>Batch: Return transferred handle
     Batch->>Host: Add granted handle to joined amount
     Wallet->>Host: Final instruction closes transient store and refunds rent
-    Host-->>Listener: Emit confirmed records
-    Listener-->>Compute: Rebuild confirmed encrypted store
+    Host-->>Listener: Emit finalized records
+    Listener-->>Compute: Rebuild finalized encrypted store
 ```
 
 The host owns an encrypted store dictionary for each token account and each user’s JoinRecord.
@@ -177,8 +177,8 @@ sequenceDiagram
     Keeper->>Batch: Close the batch
     Batch->>Token: Burn encrypted total
     Token->>Host: Record value in Solana history
-    Host-->>Listener: Emit confirmed record
-    Host-->>Proofs: Emit confirmed record
+    Host-->>Listener: Emit finalized record
+    Host-->>Proofs: Emit finalized record
     Proofs-->>Proofs: Rebuild recorded history
     Keeper->>Relayer: Request clear batch total
     Relayer->>Keys: Decrypt and sign total
@@ -282,7 +282,7 @@ No component in the confidential deposit and redemption path is mocked or skippe
 | --- | --- |
 | Solana transactions; vault, batcher, token, and host programs | Local validator, test USDC, and toy vault |
 | Encrypted inputs, balances, math, and stored encrypted data | Test keys and local workers |
-| Chain listener and confirmed-state reconstruction | Local event stream |
+| Chain listener and finalized-state reconstruction | Local event stream |
 | History proof generation and verification | Coprocessor proof checked by the key service against the current shared-state MMR |
 | Request service, decryption worker, key service, and signed results | One centralized key service |
 | Wallet signing and authorized balance reveals | Built-in or external wallet; one signature per reveal |

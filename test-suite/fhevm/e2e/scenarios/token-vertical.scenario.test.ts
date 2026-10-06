@@ -146,13 +146,13 @@ describe("solana confidential-token consume vertical", () => {
       // names, the token program requires the burned handle pinned in PendingBurn, the PendingBurn
       // closes, and the certified amount of underlying releases to the owner.
       const balanceBefore = BigInt(
-        (await context.rpc.getTokenAccountBalance(ownerUnderlying, { commitment: "confirmed" }).send()).value.amount,
+        (await context.rpc.getTokenAccountBalance(ownerUnderlying, { commitment: "finalized" }).send()).value.amount,
       );
       await timed("redeem with certificate (host verifier CPI)", () =>
         redeemBurnedAmount(context, { owner: wallet.signer, mint, underlyingMint, certificate }),
       );
       const balanceAfter = BigInt(
-        (await context.rpc.getTokenAccountBalance(ownerUnderlying, { commitment: "confirmed" }).send()).value.amount,
+        (await context.rpc.getTokenAccountBalance(ownerUnderlying, { commitment: "finalized" }).send()).value.amount,
       );
       expect(balanceAfter - balanceBefore).toBe(BURN_AMOUNT);
 

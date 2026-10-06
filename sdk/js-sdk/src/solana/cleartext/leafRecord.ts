@@ -1,5 +1,5 @@
 // The cleartext stack's leaf record: the leaves of every `EncryptedStore` the host writes, rebuilt
-// from the validator's confirmed transactions the way the coprocessors' host listener records them
+// from the validator's finalized transactions the way the coprocessors' host listener records them
 // (`solana_grpc_listener.rs`, reconstruct), kept in memory and read directly by the cleartext
 // decrypt clients.
 import {
@@ -61,7 +61,7 @@ const leafKey = (handle: Uint8Array, key?: Uint8Array): string =>
 
 /**
  * The leaf record of the stores the host at `programAddress` writes. Each read first brings every
- * store it names up to the confirmed chain, reading only the transactions newer than the last one
+ * store it names up to the finalized chain, reading only the transactions newer than the last one
  * it kept, then answers from the record.
  *
  * - A catch-up reads the store's account first, then only the transactions of the slots that
@@ -87,7 +87,7 @@ export function createSolanaLeafRecord(rpc: SolanaRpc, programAddress: Address):
   /** The record of `encryptedStore` up to the chain, or `undefined` when no host store lives there. */
   const catchUp = async (encryptedStore: Address): Promise<CaughtUp | undefined> => {
     const { context, value } = await rpc
-      .getAccountInfo(encryptedStore, { commitment: 'confirmed', encoding: 'base64' })
+      .getAccountInfo(encryptedStore, { commitment: 'finalized', encoding: 'base64' })
       .send();
     const account = parseBase64RpcAccount(encryptedStore, value);
     if (!account.exists || account.programAddress !== programAddress) return undefined;
@@ -242,7 +242,7 @@ async function storeSignatures(
   for (let before: Signature | undefined; ; ) {
     const page = await rpc
       .getSignaturesForAddress(address, {
-        commitment: 'confirmed',
+        commitment: 'finalized',
         ...(before ? { before } : {}),
         ...(until ? { until } : {}),
       })
@@ -266,7 +266,7 @@ async function hostInstructions(
   programAddress: Address,
 ): Promise<HostInstruction[] | undefined> {
   const transaction = await rpc
-    .getTransaction(signature, { commitment: 'confirmed', encoding: 'json', maxSupportedTransactionVersion: 1 })
+    .getTransaction(signature, { commitment: 'finalized', encoding: 'json', maxSupportedTransactionVersion: 1 })
     .send();
   if (transaction === null) return undefined;
   const { message } = transaction.transaction;

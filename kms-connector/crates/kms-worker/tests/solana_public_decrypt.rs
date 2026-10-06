@@ -3,7 +3,7 @@
 //! Solana public decrypt has no live on-chain "is public" flag: public-ness is a `PublicDecryptLeaf`
 //! sealed in the encrypted store's MMR, and the account holds only the peaks. The request
 //! supplies one thing per handle — which encrypted store the handle lives in — and the connector
-//! does the rest: it reads every named store at `confirmed` in one snapshot, asks the
+//! does the rest: it reads every named store at `finalized` in one snapshot, asks the
 //! coprocessors' leaf record for the leaves, and verifies each sibling path against the peaks it
 //! observed. Nothing the requester hands in is a proof, and nothing the record says is trusted
 //! without verifying.

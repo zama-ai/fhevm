@@ -1,5 +1,5 @@
 //! Ingestion progress of the follower. `time() - applied_block_timestamp_seconds` is the lag in
-//! seconds, and `confirmed_slot - applied_slot` the lag in slots. Once the checkpoint leaves the
+//! seconds, and `finalized_slot - applied_slot` the lag in slots. Once the checkpoint leaves the
 //! provider's replay window the follower catches up from the archive RPC, one `getBlock` per slot
 //! and one `getTransaction` per host transaction, with `archive_catch_up_active` at 1; the lag then
 //! shows its progress. `failures_since_commit` keeps rising while one slot fails again and again or
@@ -19,7 +19,7 @@ use tracing::warn;
 use super::StartPosition;
 use crate::source::SealedBlock;
 
-const CONFIRMED_SLOT_POLL_INTERVAL: Duration = Duration::from_secs(10);
+const FINALIZED_SLOT_POLL_INTERVAL: Duration = Duration::from_secs(10);
 
 static APPLIED_SLOT: LazyLock<IntGaugeVec> = LazyLock::new(|| {
     register_int_gauge_vec!(
@@ -39,10 +39,10 @@ static APPLIED_BLOCK_TIMESTAMP: LazyLock<IntGaugeVec> = LazyLock::new(|| {
     .unwrap()
 });
 
-static CONFIRMED_SLOT: LazyLock<IntGaugeVec> = LazyLock::new(|| {
+static FINALIZED_SLOT: LazyLock<IntGaugeVec> = LazyLock::new(|| {
     register_int_gauge_vec!(
-        "solana_host_follower_confirmed_slot",
-        "The cluster's confirmed slot, polled over RPC",
+        "solana_host_follower_finalized_slot",
+        "The cluster's finalized slot, polled over RPC",
         &["host_chain_id"]
     )
     .unwrap()
@@ -115,27 +115,27 @@ pub(super) fn record_interruption(host_chain_id: u64) {
     FAILURES_SINCE_COMMIT.with_label_values(&[&label]).inc();
 }
 
-/// Polls the cluster's confirmed slot until `cancel` fires. It reads RPC, not the gRPC
+/// Polls the cluster's finalized slot until `cancel` fires. It reads RPC, not the gRPC
 /// stream, so a stalled or delayed stream cannot hide its own lag.
-pub async fn track_confirmed_slot(
+pub async fn track_finalized_slot(
     rpc: RpcClient,
     host_chain_id: u64,
     cancel: CancellationToken,
 ) {
-    let gauge = CONFIRMED_SLOT.with_label_values(&[&host_chain_id.to_string()]);
-    let mut interval = tokio::time::interval(CONFIRMED_SLOT_POLL_INTERVAL);
+    let gauge = FINALIZED_SLOT.with_label_values(&[&host_chain_id.to_string()]);
+    let mut interval = tokio::time::interval(FINALIZED_SLOT_POLL_INTERVAL);
     loop {
         tokio::select! {
             _ = cancel.cancelled() => return,
             _ = interval.tick() => {}
         }
         match rpc
-            .get_slot_with_commitment(CommitmentConfig::confirmed())
+            .get_slot_with_commitment(CommitmentConfig::finalized())
             .await
         {
             Ok(slot) => gauge.set(slot as i64),
             Err(error) => {
-                warn!(error = %error, "confirmed-slot poll failed")
+                warn!(error = %error, "finalized-slot poll failed")
             }
         }
     }

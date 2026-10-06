@@ -40,7 +40,7 @@ for party in $parties; do
 done
 bash "$script_dir/recover.sh" reset
 for party in $parties; do recreate_solana_merkle_record "$party"; done
-merkle_start_slot=$(confirmed_solana_slot)
+merkle_start_slot=$(finalized_solana_slot)
 while read -r release; do
   kubectl delete job "$release-deploy" -n "$NAMESPACE" --ignore-not-found --wait=true
   helm upgrade "$release" charts/contracts -n "$NAMESPACE" -f "$work/$release.yaml" \

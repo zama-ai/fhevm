@@ -164,7 +164,7 @@ export const createProvisioningContext = (
     instructions: readonly Instruction[],
     options: SendTransactionOptions = {},
   ): Promise<string> => {
-    const { value: latestBlockhash } = await rpc.getLatestBlockhash().send();
+    const { value: latestBlockhash } = await rpc.getLatestBlockhash({ commitment: 'finalized' }).send();
     const base = setTransactionMessageFeePayerSigner(payer, createTransactionMessage({ version: 0 }));
     const withLifetime = setTransactionMessageLifetimeUsingBlockhash(latestBlockhash, base);
     const message = appendTransactionMessageInstructions(
@@ -174,8 +174,8 @@ export const createProvisioningContext = (
     const signedTransaction = await signTransactionMessageWithSigners(message);
     assertIsTransactionWithBlockhashLifetime(signedTransaction);
     await sendAndConfirm(signedTransaction, {
-      commitment: 'confirmed',
-      ...(options.skipPreflight ? { skipPreflight: true } : {}),
+      commitment: 'finalized',
+      ...(options.skipPreflight ? { skipPreflight: true } : { preflightCommitment: 'finalized' }),
     });
     return getSignatureFromTransaction(signedTransaction);
   };
@@ -186,25 +186,25 @@ export const createProvisioningContext = (
     const amount = solToLamports(sol);
     const funder = contextOptions.funder;
     if (funder) {
-      const { value: balance } = await rpc.getBalance(recipient, { commitment: 'confirmed' }).send();
+      const { value: balance } = await rpc.getBalance(recipient, { commitment: 'finalized' }).send();
       if (balance >= amount) return null;
       const shortfall = amount - balance;
       return sendAndConfirmSigned(funder, [transferSolInstruction({ from: funder, to: recipient, lamports: shortfall })]);
     }
-    const signature = await rpc.requestAirdrop(recipient, lamports(amount), { commitment: 'confirmed' }).send();
+    const signature = await rpc.requestAirdrop(recipient, lamports(amount), { commitment: 'finalized' }).send();
     const deadline = Date.now() + 30_000;
     for (;;) {
       const { value } = await rpc.getSignatureStatuses([signature]).send();
       const status = value[0];
       if (status?.err) throw new Error(`airdrop to ${recipient} failed: ${JSON.stringify(status.err)}`);
       const level = status?.confirmationStatus;
-      if (level === 'confirmed' || level === 'finalized') return signature;
+      if (level === 'finalized') return signature;
       if (Date.now() >= deadline) throw new Error(`airdrop to ${recipient} did not confirm within 30s`);
       await Bun.sleep(500);
     }
   };
   const sweepSol: SolanaProvisioningContext['sweepSol'] = async (from, to) => {
-    const { value: balance } = await rpc.getBalance(from.address, { commitment: 'confirmed' }).send();
+    const { value: balance } = await rpc.getBalance(from.address, { commitment: 'finalized' }).send();
     const payer = contextOptions.funder ?? from;
     const amount = payer.address === from.address ? balance - TRANSACTION_FEE_LAMPORTS : balance;
     if (amount <= 0n) return null;
@@ -242,7 +242,7 @@ export const createSplMint = async (
   params: { readonly authority: TransactionSigner; readonly decimals: number },
 ): Promise<Address> => {
   const mint = await generateKeyPairSigner();
-  const rent = await context.rpc.getMinimumBalanceForRentExemption(SPL_MINT_ACCOUNT_SPACE).send();
+  const rent = await context.rpc.getMinimumBalanceForRentExemption(SPL_MINT_ACCOUNT_SPACE, { commitment: 'finalized' }).send();
   await context.sendTransaction(params.authority, [
     createAccountInstruction({
       payer: params.authority,
@@ -367,7 +367,7 @@ export const wrapUnderlying = async (
  */
 export const readHostChainId = async (context: SolanaProvisioningContext): Promise<bigint> => {
   const vault = await vaultModule();
-  const configInfo = await fetchEncodedAccount(context.rpc, await hostConfigAddress(), { commitment: 'confirmed' });
+  const configInfo = await fetchEncodedAccount(context.rpc, await hostConfigAddress(), { commitment: 'finalized' });
   if (
     !configInfo.exists ||
     configInfo.programAddress !== vault.ZAMA_HOST_PROGRAM_ADDRESS ||
@@ -411,7 +411,7 @@ export type BalanceStore = {
  * The retired Rust probe additionally re-read all three accounts in one `getMultipleAccounts` to
  * guard against the token account's balance pointer moving between reads; here every address is
  * derived client-side rather than followed from a pointer, so there is no indirection to race —
- * the reads are simply all taken at `confirmed`.
+ * the reads are simply all taken at `finalized`.
  */
 export const readTokenBalanceStore = async (
   context: SolanaProvisioningContext,
@@ -423,12 +423,12 @@ export const readTokenBalanceStore = async (
   const tokenAccount = await vault.tokenAccountAddress(mint, owner);
   const encryptedStoreAddress = await vault.tokenStateAddress(mint, tokenAccount);
 
-  const tokenAccountInfo = await fetchEncodedAccount(context.rpc, tokenAccount, { commitment: 'confirmed' });
+  const tokenAccountInfo = await fetchEncodedAccount(context.rpc, tokenAccount, { commitment: 'finalized' });
   if (!tokenAccountInfo.exists || tokenAccountInfo.programAddress !== vault.CONFIDENTIAL_TOKEN_PROGRAM_ADDRESS) {
     throw new Error(`confidential token account for (${mint}, ${owner}) is missing or not program-owned`);
   }
 
-  const state = await fetchSolanaEncryptedStore(context.rpc, encryptedStoreAddress, { commitment: 'confirmed' }, ZAMA_HOST_PROGRAM_ADDRESS);
+  const state = await fetchSolanaEncryptedStore(context.rpc, encryptedStoreAddress, { commitment: 'finalized' }, ZAMA_HOST_PROGRAM_ADDRESS);
   if (
     state.program !== vault.CONFIDENTIAL_TOKEN_PROGRAM_ADDRESS ||
     state.authority !== tokenAccount ||

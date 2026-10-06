@@ -96,7 +96,7 @@ export function cleartextSubmitInputProof(rpc: SolanaRpc) {
 
     const programAddress = solanaHostProgram(context.solanaChain);
     const [hostConfigAddress] = await findHostConfigPda({ programAddress });
-    const { data: config } = await fetchHostConfig(rpc, hostConfigAddress, { commitment: 'confirmed' });
+    const { data: config } = await fetchHostConfig(rpc, hostConfigAddress, { commitment: 'finalized' });
     const digest = ciphertextVerificationDigest({
       gatewayChainId: config.gatewayChainId,
       inputVerificationContract: new Uint8Array(config.inputVerificationContract),

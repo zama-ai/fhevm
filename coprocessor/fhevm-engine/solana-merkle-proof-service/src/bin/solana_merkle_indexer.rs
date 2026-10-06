@@ -1,4 +1,4 @@
-//! Solana Merkle indexer: rebuilds the leaf record of every encrypted store from confirmed
+//! Solana Merkle indexer: rebuilds the leaf record of every encrypted store from finalized
 //! Yellowstone blocks into its own database. `solana_merkle_proof_server` serves the inclusion
 //! proofs from that database.
 
@@ -15,7 +15,7 @@ use fhevm_engine_common::{
     utils::DatabaseURL,
 };
 use solana_host_follower::{
-    block_checkpoint, run, track_confirmed_slot, Follower, FollowerArgs,
+    block_checkpoint, run, track_finalized_slot, Follower, FollowerArgs,
     StartPosition,
 };
 use solana_merkle_proof_service::{
@@ -36,7 +36,7 @@ struct Args {
     #[command(flatten)]
     follower: FollowerArgs,
 
-    /// Confirmed block to replay inclusively on an empty record: a slot before the first
+    /// Finalized block to replay inclusively on an empty record: a slot before the first
     /// encrypted store was created, such as the zama-host deployment slot. Required on an empty
     /// record; a saved checkpoint wins.
     #[arg(long, env = "SOLANA_MERKLE_START_SLOT")]
@@ -137,7 +137,7 @@ async fn main() -> Result<()> {
 
     if args.metrics_addr.is_some() {
         metrics_server::spawn(args.metrics_addr, cancel.child_token());
-        tokio::spawn(track_confirmed_slot(
+        tokio::spawn(track_finalized_slot(
             live,
             config.chain_id,
             cancel.child_token(),

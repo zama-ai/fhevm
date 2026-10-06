@@ -114,7 +114,7 @@ export function DeveloperEvidence({ controller }: { readonly controller: DemoCon
         const signatureLists = await Promise.all(
           addresses.map(async ({ address, label }) => ({
             label,
-            signatures: await rpc.getSignaturesForAddress(address, { commitment: 'confirmed', limit: 4 }).send(),
+            signatures: await rpc.getSignaturesForAddress(address, { commitment: 'finalized', limit: 4 }).send(),
           })),
         );
         const discoveredTransactions = signatureLists
@@ -131,7 +131,7 @@ export function DeveloperEvidence({ controller }: { readonly controller: DemoCon
           transactionCandidates.map(async ({ label, signature }): Promise<TransactionEvidence> => {
             const transaction = await rpc
               .getTransaction(signature, {
-                commitment: 'confirmed',
+                commitment: 'finalized',
                 encoding: 'jsonParsed',
                 maxSupportedTransactionVersion: 1,
               })

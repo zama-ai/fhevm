@@ -136,7 +136,7 @@ const main = async (): Promise<void> => {
   // must never create it (it has neither the authority nor the key material to). But the smoke's
   // settle phase consumes it on-chain, so a missing account is a bring-up failure this seed can catch
   // NOW, at provisioning time, instead of ~15 minutes later inside the live settle. Fail loudly.
-  const kmsContextAccount = await rpc.getAccountInfo(kmsContext, { encoding: "base64", commitment: "confirmed" }).send();
+  const kmsContextAccount = await rpc.getAccountInfo(kmsContext, { encoding: "base64", commitment: "finalized" }).send();
   if (kmsContextAccount.value === null) {
     throw new Error(
       `kms-context account ${kmsContext} (context id 0x${Buffer.from(BRINGUP_KMS_CONTEXT_ID).toString("hex")}) does not exist on-chain. ` +
@@ -160,7 +160,7 @@ const main = async (): Promise<void> => {
   }
 
   // 1. Mock-USDC SPL mint (create account + initialize), owned by the classic token program.
-  const mintRent = await rpc.getMinimumBalanceForRentExemption(SPL_MINT_ACCOUNT_SPACE).send();
+  const mintRent = await rpc.getMinimumBalanceForRentExemption(SPL_MINT_ACCOUNT_SPACE, { commitment: "finalized" }).send();
   await send(deployer, [
     createAccountInstruction({
       payer: deployer,

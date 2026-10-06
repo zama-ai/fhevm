@@ -297,27 +297,30 @@ fn delegation_rows(
 }
 
 #[cfg(test)]
-mod tests {
+pub(crate) mod tests {
     use super::*;
     use zama_solana_acl::{
         encode_clock, encode_user_decryption_delegation, encrypted_store_discriminator,
         UserDecryptionDelegationRecord, SYSTEM_PROGRAM_ID, SYSVAR_OWNER_ID,
     };
 
-    const PROGRAM_ID: [u8; 32] = [7; 32];
-    const APP_PROGRAM: [u8; 32] = [1; 32];
-    const SCOPE: [u8; 32] = [4; 32];
+    pub(crate) const PROGRAM_ID: [u8; 32] = [7; 32];
+    pub(crate) const APP_PROGRAM: [u8; 32] = [1; 32];
+    pub(crate) const SCOPE: [u8; 32] = [4; 32];
     const APP: AppScope = AppScope {
         program: APP_PROGRAM,
         scope: SCOPE,
     };
-    const DELEGATOR: [u8; 32] = [0x11; 32];
-    const DELEGATE: [u8; 32] = [0x22; 32];
+    pub(crate) const DELEGATOR: [u8; 32] = [0x11; 32];
+    pub(crate) const DELEGATE: [u8; 32] = [0x22; 32];
     const AUTHORITY: [u8; 32] = [0x33; 32];
-    const NOW: u64 = 1_700_000_000;
+    pub(crate) const NOW: u64 = 1_700_000_000;
 
     /// An encrypted store of `(program, scope)` at the address its fields derive.
-    fn encrypted_store_for(program: [u8; 32], scope: [u8; 32]) -> (RawAccount, [u8; 32]) {
+    pub(crate) fn encrypted_store_for(
+        program: [u8; 32],
+        scope: [u8; 32],
+    ) -> (RawAccount, [u8; 32]) {
         let (address, bump) = solana_pubkey::Pubkey::find_program_address(
             &[
                 zama_solana_acl::ENCRYPTED_STORE_SEED,
@@ -351,14 +354,14 @@ mod tests {
         delegation_rows(&DELEGATOR, &DELEGATE, APP, PROGRAM_ID)
     }
 
-    fn row(record: &UserDecryptionDelegationRecord) -> RawAccount {
+    pub(crate) fn row(record: &UserDecryptionDelegationRecord) -> RawAccount {
         RawAccount {
             owner: PROGRAM_ID,
             data: encode_user_decryption_delegation(record),
         }
     }
 
-    fn clock(unix_timestamp: u64) -> RawAccount {
+    pub(crate) fn clock(unix_timestamp: u64) -> RawAccount {
         RawAccount {
             owner: SYSVAR_OWNER_ID,
             data: encode_clock(unix_timestamp),
@@ -379,7 +382,7 @@ mod tests {
         }
     }
 
-    fn live_exact() -> UserDecryptionDelegationRecord {
+    pub(crate) fn live_exact() -> UserDecryptionDelegationRecord {
         live(rows()[0])
     }
 

@@ -171,7 +171,7 @@ export async function joinBatch(
     signatures,
   });
 
-  const { value: latestBlockhash } = await parameters.rpc.getLatestBlockhash({ commitment: 'confirmed' }).send();
+  const { value: latestBlockhash } = await parameters.rpc.getLatestBlockhash({ commitment: 'finalized' }).send();
   const message = pipe(
     createTransactionMessage({ version: 0 }),
     (m) => setTransactionMessageFeePayerSigner(parameters.payer, m),
@@ -183,7 +183,7 @@ export async function joinBatch(
   assertIsTransactionWithinSizeLimit(unsignedTransaction);
   const unsignedWireTransaction = getBase64EncodedWireTransaction(unsignedTransaction);
   const preflight = await parameters.rpc
-    .simulateTransaction(unsignedWireTransaction, { commitment: 'confirmed', encoding: 'base64', sigVerify: false })
+    .simulateTransaction(unsignedWireTransaction, { commitment: 'finalized', encoding: 'base64', sigVerify: false })
     .send();
   assertJoinSimulationSucceeded(preflight.value);
   const transaction = await signTransactionMessageWithSigners(message);
@@ -192,7 +192,7 @@ export async function joinBatch(
   assertIsTransactionWithinSizeLimit(transaction);
   const wireTransaction = getBase64EncodedWireTransaction(transaction);
   const simulation = await parameters.rpc
-    .simulateTransaction(wireTransaction, { commitment: 'confirmed', encoding: 'base64', sigVerify: true })
+    .simulateTransaction(wireTransaction, { commitment: 'finalized', encoding: 'base64', sigVerify: true })
     .send();
   assertJoinSimulationSucceeded(simulation.value);
   const signature = getSignatureFromTransaction(transaction);
@@ -204,7 +204,7 @@ export async function joinBatch(
   await sendAndConfirmTransactionFactory({ rpc: parameters.rpc, rpcSubscriptions: parameters.rpcSubscriptions })(
     transaction,
     {
-      commitment: 'confirmed',
+      commitment: 'finalized',
       skipPreflight: true,
     },
   );
