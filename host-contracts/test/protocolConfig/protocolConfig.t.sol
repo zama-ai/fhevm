@@ -10,7 +10,8 @@ import {KMSGeneration} from "@fhevm-host-contracts/contracts/KMSGeneration.sol";
 import {IKMSGeneration} from "@fhevm-host-contracts/contracts/interfaces/IKMSGeneration.sol";
 import {ProtocolConfigUpgradedExample} from "@fhevm-host-contracts/examples/ProtocolConfigUpgradedExample.sol";
 import {IProtocolConfig} from "@fhevm-host-contracts/contracts/interfaces/IProtocolConfig.sol";
-import {KmsNode, KmsNodeParams, PcrValues, ChainUpgradeWindow} from "@fhevm-host-contracts/contracts/shared/Structs.sol";
+import {IProtocolConfigBase} from "@fhevm-host-contracts/contracts/interfaces/IProtocolConfigBase.sol";
+import {KmsThresholds, KmsNode, KmsNodeParams, PcrValues, ChainUpgradeWindow} from "@fhevm-host-contracts/contracts/shared/Structs.sol";
 import {EmptyUUPSProxy} from "@fhevm-host-contracts/contracts/emptyProxy/EmptyUUPSProxy.sol";
 import {UUPSUpgradeableEmptyProxy} from "@fhevm-host-contracts/contracts/shared/UUPSUpgradeableEmptyProxy.sol";
 import {ACLOwnable} from "@fhevm-host-contracts/contracts/shared/ACLOwnable.sol";
@@ -47,12 +48,7 @@ contract ProtocolConfigTest is HostContractsDeployerTestUtils {
     function _setupDefault() internal {
         _deployACL(owner);
         /// @dev Distinct per-field values so each getter proves it reads the correct storage slot.
-        IProtocolConfig.KmsThresholds memory thresholds = IProtocolConfig.KmsThresholds({
-            publicDecryption: 1,
-            userDecryption: 2,
-            kmsGen: 3,
-            mpc: 4
-        });
+        KmsThresholds memory thresholds = KmsThresholds({publicDecryption: 1, userDecryption: 2, kmsGen: 3, mpc: 4});
         (ProtocolConfig pc, ) = _deployProtocolConfig(owner, _makeKmsNodeParams(4), thresholds);
         protocolConfig = pc;
         (KMSGeneration kg, ) = _deployKMSGeneration(owner);
@@ -61,7 +57,7 @@ contract ProtocolConfigTest is HostContractsDeployerTestUtils {
 
     function _setupDefaultWithMpcThreshold(uint256 mpcThreshold) internal {
         _deployACL(owner);
-        IProtocolConfig.KmsThresholds memory thresholds = IProtocolConfig.KmsThresholds({
+        KmsThresholds memory thresholds = KmsThresholds({
             publicDecryption: 1,
             userDecryption: 2,
             kmsGen: 3,
@@ -83,7 +79,7 @@ contract ProtocolConfigTest is HostContractsDeployerTestUtils {
 
     function _upgradeProxyExpectRevert(
         KmsNodeParams[] memory nodes,
-        IProtocolConfig.KmsThresholds memory thresholds,
+        KmsThresholds memory thresholds,
         bytes memory expectedRevert
     ) internal {
         address impl = address(new ProtocolConfig());
@@ -95,7 +91,7 @@ contract ProtocolConfigTest is HostContractsDeployerTestUtils {
         );
     }
 
-    function _revertThreshold(IProtocolConfig.KmsThresholds memory t, bytes memory expectedRevert) internal {
+    function _revertThreshold(KmsThresholds memory t, bytes memory expectedRevert) internal {
         _setupEmptyProxy();
         _upgradeProxyExpectRevert(_makeKmsNodeParams(1), t, expectedRevert);
     }
@@ -148,7 +144,7 @@ contract ProtocolConfigTest is HostContractsDeployerTestUtils {
 
     function _defineNewKmsContextAndEpoch(
         KmsNodeParams[] memory nodes,
-        IProtocolConfig.KmsThresholds memory thresholds,
+        KmsThresholds memory thresholds,
         string memory softwareVersion,
         PcrValues[] memory pcrValues
     ) internal {
@@ -453,28 +449,28 @@ contract ProtocolConfigTest is HostContractsDeployerTestUtils {
     /// @dev Asserts the liveness-guarded context view functions revert for the given context ID.
     ///      getKmsNodeForContext is existence-guarded (readable after destroy), so callers assert it separately.
     function _expectContextGuardedViewsRevert(uint256 contextId) internal {
-        vm.expectRevert(abi.encodeWithSelector(IProtocolConfig.InvalidKmsContext.selector, contextId));
+        vm.expectRevert(abi.encodeWithSelector(IProtocolConfigBase.InvalidKmsContext.selector, contextId));
         protocolConfig.getKmsSignersForContext(contextId);
 
-        vm.expectRevert(abi.encodeWithSelector(IProtocolConfig.InvalidKmsContext.selector, contextId));
+        vm.expectRevert(abi.encodeWithSelector(IProtocolConfigBase.InvalidKmsContext.selector, contextId));
         protocolConfig.isKmsSignerForContext(contextId, address(0xDEAD));
 
-        vm.expectRevert(abi.encodeWithSelector(IProtocolConfig.InvalidKmsContext.selector, contextId));
+        vm.expectRevert(abi.encodeWithSelector(IProtocolConfigBase.InvalidKmsContext.selector, contextId));
         protocolConfig.getKmsNodesForContext(contextId);
 
-        vm.expectRevert(abi.encodeWithSelector(IProtocolConfig.InvalidKmsContext.selector, contextId));
+        vm.expectRevert(abi.encodeWithSelector(IProtocolConfigBase.InvalidKmsContext.selector, contextId));
         protocolConfig.isKmsTxSenderForContext(contextId, address(0xDEAD));
 
-        vm.expectRevert(abi.encodeWithSelector(IProtocolConfig.InvalidKmsContext.selector, contextId));
+        vm.expectRevert(abi.encodeWithSelector(IProtocolConfigBase.InvalidKmsContext.selector, contextId));
         protocolConfig.getUserDecryptionThresholdForContext(contextId);
 
-        vm.expectRevert(abi.encodeWithSelector(IProtocolConfig.InvalidKmsContext.selector, contextId));
+        vm.expectRevert(abi.encodeWithSelector(IProtocolConfigBase.InvalidKmsContext.selector, contextId));
         protocolConfig.getPublicDecryptionThresholdForContext(contextId);
 
-        vm.expectRevert(abi.encodeWithSelector(IProtocolConfig.InvalidKmsContext.selector, contextId));
+        vm.expectRevert(abi.encodeWithSelector(IProtocolConfigBase.InvalidKmsContext.selector, contextId));
         protocolConfig.getKmsGenThresholdForContext(contextId);
 
-        vm.expectRevert(abi.encodeWithSelector(IProtocolConfig.InvalidKmsContext.selector, contextId));
+        vm.expectRevert(abi.encodeWithSelector(IProtocolConfigBase.InvalidKmsContext.selector, contextId));
         protocolConfig.getMpcThresholdForContext(contextId);
     }
 
@@ -529,6 +525,18 @@ contract ProtocolConfigTest is HostContractsDeployerTestUtils {
         assertFalse(protocolConfig.isKmsTxSenderForContext(contextId, address(0xDEAD)));
     }
 
+    function test_storageLocationPinned() public {
+        _setupDefault();
+        /// @dev A pending context makes the counter differ from the latest active context ID.
+        vm.prank(owner);
+        _defineNewKmsContextAndEpoch(_makeKmsNodeParams(1), _defaultThresholds());
+
+        bytes32 slot = 0x80f3585af86806c5774303b06c1ee640aa83b6ef3e45df49bb26c8524500c200;
+        uint256 stored = uint256(vm.load(address(protocolConfig), slot));
+        assertEq(stored, protocolConfig.getCurrentKmsContextIdCounter());
+        assertEq(stored, KMS_CONTEXT_COUNTER_BASE + 2);
+    }
+
     // -----------------------------------------------------------------------
     // Validation error tests
     // -----------------------------------------------------------------------
@@ -539,7 +547,7 @@ contract ProtocolConfigTest is HostContractsDeployerTestUtils {
         _upgradeProxyExpectRevert(
             emptyNodes,
             _defaultThresholds(),
-            abi.encodeWithSelector(IProtocolConfig.EmptyKmsNodes.selector)
+            abi.encodeWithSelector(IProtocolConfigBase.EmptyKmsNodes.selector)
         );
     }
 
@@ -550,7 +558,7 @@ contract ProtocolConfigTest is HostContractsDeployerTestUtils {
         _upgradeProxyExpectRevert(
             nodes,
             _defaultThresholds(),
-            abi.encodeWithSelector(IProtocolConfig.KmsNodeNullTxSender.selector)
+            abi.encodeWithSelector(IProtocolConfigBase.KmsNodeNullTxSender.selector)
         );
     }
 
@@ -561,7 +569,7 @@ contract ProtocolConfigTest is HostContractsDeployerTestUtils {
         _upgradeProxyExpectRevert(
             nodes,
             _defaultThresholds(),
-            abi.encodeWithSelector(IProtocolConfig.KmsNodeNullSigner.selector)
+            abi.encodeWithSelector(IProtocolConfigBase.KmsNodeNullSigner.selector)
         );
     }
 
@@ -572,7 +580,7 @@ contract ProtocolConfigTest is HostContractsDeployerTestUtils {
         _upgradeProxyExpectRevert(
             nodes,
             _defaultThresholds(),
-            abi.encodeWithSelector(IProtocolConfig.KmsTxSenderAlreadyRegistered.selector, nodes[0].txSenderAddress)
+            abi.encodeWithSelector(IProtocolConfigBase.KmsTxSenderAlreadyRegistered.selector, nodes[0].txSenderAddress)
         );
     }
 
@@ -583,62 +591,68 @@ contract ProtocolConfigTest is HostContractsDeployerTestUtils {
         _upgradeProxyExpectRevert(
             nodes,
             _defaultThresholds(),
-            abi.encodeWithSelector(IProtocolConfig.KmsSignerAlreadyRegistered.selector, nodes[0].signerAddress)
+            abi.encodeWithSelector(IProtocolConfigBase.KmsSignerAlreadyRegistered.selector, nodes[0].signerAddress)
         );
     }
 
     function test_revertNullPublicDecryptionThreshold() public {
-        IProtocolConfig.KmsThresholds memory t = _defaultThresholds();
+        KmsThresholds memory t = _defaultThresholds();
         t.publicDecryption = 0;
-        _revertThreshold(t, abi.encodeWithSelector(IProtocolConfig.InvalidNullThreshold.selector, "publicDecryption"));
+        _revertThreshold(
+            t,
+            abi.encodeWithSelector(IProtocolConfigBase.InvalidNullThreshold.selector, "publicDecryption")
+        );
     }
 
     function test_revertHighPublicDecryptionThreshold() public {
-        IProtocolConfig.KmsThresholds memory t = _defaultThresholds();
+        KmsThresholds memory t = _defaultThresholds();
         t.publicDecryption = 5;
         _revertThreshold(
             t,
-            abi.encodeWithSelector(IProtocolConfig.InvalidHighThreshold.selector, "publicDecryption", 5, 1)
+            abi.encodeWithSelector(IProtocolConfigBase.InvalidHighThreshold.selector, "publicDecryption", 5, 1)
         );
     }
 
     function test_revertNullUserDecryptionThreshold() public {
-        IProtocolConfig.KmsThresholds memory t = _defaultThresholds();
+        KmsThresholds memory t = _defaultThresholds();
         t.userDecryption = 0;
-        _revertThreshold(t, abi.encodeWithSelector(IProtocolConfig.InvalidNullThreshold.selector, "userDecryption"));
+        _revertThreshold(
+            t,
+            abi.encodeWithSelector(IProtocolConfigBase.InvalidNullThreshold.selector, "userDecryption")
+        );
     }
 
     function test_revertHighUserDecryptionThreshold() public {
-        IProtocolConfig.KmsThresholds memory t = _defaultThresholds();
+        KmsThresholds memory t = _defaultThresholds();
         t.userDecryption = 5;
         _revertThreshold(
             t,
-            abi.encodeWithSelector(IProtocolConfig.InvalidHighThreshold.selector, "userDecryption", 5, 1)
+            abi.encodeWithSelector(IProtocolConfigBase.InvalidHighThreshold.selector, "userDecryption", 5, 1)
         );
     }
 
     function test_revertNullKmsGenThreshold() public {
-        IProtocolConfig.KmsThresholds memory t = _defaultThresholds();
+        KmsThresholds memory t = _defaultThresholds();
         t.kmsGen = 0;
-        _revertThreshold(t, abi.encodeWithSelector(IProtocolConfig.InvalidNullThreshold.selector, "kmsGen"));
+        _revertThreshold(t, abi.encodeWithSelector(IProtocolConfigBase.InvalidNullThreshold.selector, "kmsGen"));
     }
 
     function test_revertHighKmsGenThreshold() public {
-        IProtocolConfig.KmsThresholds memory t = _defaultThresholds();
+        KmsThresholds memory t = _defaultThresholds();
         t.kmsGen = 5;
-        _revertThreshold(t, abi.encodeWithSelector(IProtocolConfig.InvalidHighThreshold.selector, "kmsGen", 5, 1));
+        _revertThreshold(t, abi.encodeWithSelector(IProtocolConfigBase.InvalidHighThreshold.selector, "kmsGen", 5, 1));
     }
 
     function test_revertNullMpcThreshold() public {
-        IProtocolConfig.KmsThresholds memory t = _defaultThresholds();
+        KmsThresholds memory t = _defaultThresholds();
         t.mpc = 0;
-        _revertThreshold(t, abi.encodeWithSelector(IProtocolConfig.InvalidNullThreshold.selector, "mpc"));
+        _revertThreshold(t, abi.encodeWithSelector(IProtocolConfigBase.InvalidNullThreshold.selector, "mpc"));
     }
 
     function test_revertHighMpcThreshold() public {
-        IProtocolConfig.KmsThresholds memory t = _defaultThresholds();
+        KmsThresholds memory t = _defaultThresholds();
         t.mpc = 5;
-        _revertThreshold(t, abi.encodeWithSelector(IProtocolConfig.InvalidHighThreshold.selector, "mpc", 5, 1));
+        _revertThreshold(t, abi.encodeWithSelector(IProtocolConfigBase.InvalidHighThreshold.selector, "mpc", 5, 1));
     }
 
     function test_revertSignerSetExceedsProofFormatLimit() public {
@@ -647,7 +661,7 @@ contract ProtocolConfigTest is HostContractsDeployerTestUtils {
         _upgradeProxyExpectRevert(
             tooManyNodes,
             _defaultThresholds(),
-            abi.encodeWithSelector(IProtocolConfig.KmsSignerSetExceedsProofFormatLimit.selector, 256, 255)
+            abi.encodeWithSelector(IProtocolConfigBase.KmsSignerSetExceedsProofFormatLimit.selector, 256, 255)
         );
     }
 
@@ -661,7 +675,7 @@ contract ProtocolConfigTest is HostContractsDeployerTestUtils {
         KmsNodeParams[] memory newNodeParams = _makeKmsNodeParams(1);
         PcrValues[] memory pcrValues = new PcrValues[](0);
 
-        IProtocolConfig.KmsThresholds memory thresholds = _defaultThresholds();
+        KmsThresholds memory thresholds = _defaultThresholds();
         vm.expectEmit(true, true, false, true, address(protocolConfig));
         emit IProtocolConfig.NewKmsContext(
             KMS_CONTEXT_COUNTER_BASE + 2,
@@ -682,7 +696,7 @@ contract ProtocolConfigTest is HostContractsDeployerTestUtils {
         _setupDefault();
 
         KmsNodeParams[] memory params = _makeKmsNodeParams(2);
-        IProtocolConfig.KmsThresholds memory thresholds = _defaultThresholds();
+        KmsThresholds memory thresholds = _defaultThresholds();
         PcrValues[] memory pcrValues = new PcrValues[](1);
         pcrValues[0] = PcrValues({
             pcr0: abi.encodePacked(uint256(1)),
@@ -761,7 +775,7 @@ contract ProtocolConfigTest is HostContractsDeployerTestUtils {
         _setupDefault();
         vm.assume(invalidContextId != protocolConfig.getCurrentKmsContextId());
         vm.prank(owner);
-        vm.expectRevert(abi.encodeWithSelector(IProtocolConfig.InvalidKmsContext.selector, invalidContextId));
+        vm.expectRevert(abi.encodeWithSelector(IProtocolConfigBase.InvalidKmsContext.selector, invalidContextId));
         protocolConfig.destroyKmsContext(invalidContextId);
     }
 
@@ -780,7 +794,7 @@ contract ProtocolConfigTest is HostContractsDeployerTestUtils {
         protocolConfig.destroyKmsContext(firstContextId);
 
         vm.prank(owner);
-        vm.expectRevert(abi.encodeWithSelector(IProtocolConfig.InvalidKmsContext.selector, firstContextId));
+        vm.expectRevert(abi.encodeWithSelector(IProtocolConfigBase.InvalidKmsContext.selector, firstContextId));
         protocolConfig.destroyKmsContext(firstContextId);
     }
 
@@ -882,7 +896,7 @@ contract ProtocolConfigTest is HostContractsDeployerTestUtils {
         uint256 invalidContextId = KMS_CONTEXT_COUNTER_BASE + 2;
 
         vm.prank(owner);
-        vm.expectRevert(abi.encodeWithSelector(IProtocolConfig.InvalidKmsContext.selector, invalidContextId));
+        vm.expectRevert(abi.encodeWithSelector(IProtocolConfigBase.InvalidKmsContext.selector, invalidContextId));
         protocolConfig.mirrorKmsEpoch(invalidContextId, EPOCH_COUNTER_BASE + 2);
     }
 
@@ -1032,7 +1046,7 @@ contract ProtocolConfigTest is HostContractsDeployerTestUtils {
         (, uint256 currentEpochId) = protocolConfig.getCurrentKmsContextAndEpoch();
         vm.assume(invalidEpochId != currentEpochId);
         vm.prank(owner);
-        vm.expectRevert(abi.encodeWithSelector(IProtocolConfig.InvalidKmsEpoch.selector, invalidEpochId));
+        vm.expectRevert(abi.encodeWithSelector(IProtocolConfigBase.InvalidKmsEpoch.selector, invalidEpochId));
         protocolConfig.destroyKmsEpoch(invalidEpochId);
     }
 
@@ -1113,7 +1127,7 @@ contract ProtocolConfigTest is HostContractsDeployerTestUtils {
         _defineNewKmsContextAndEpoch(_makeKmsNodeParams(2), _defaultThresholds());
 
         vm.prank(owner);
-        vm.expectRevert(abi.encodeWithSelector(IProtocolConfig.InvalidKmsEpoch.selector, pendingEpochId));
+        vm.expectRevert(abi.encodeWithSelector(IProtocolConfigBase.InvalidKmsEpoch.selector, pendingEpochId));
         protocolConfig.destroyKmsEpoch(pendingEpochId);
     }
 
@@ -1162,7 +1176,7 @@ contract ProtocolConfigTest is HostContractsDeployerTestUtils {
         protocolConfig.destroyKmsEpoch(oldEpochId);
 
         vm.prank(owner);
-        vm.expectRevert(abi.encodeWithSelector(IProtocolConfig.InvalidKmsEpoch.selector, oldEpochId));
+        vm.expectRevert(abi.encodeWithSelector(IProtocolConfigBase.InvalidKmsEpoch.selector, oldEpochId));
         protocolConfig.destroyKmsEpoch(oldEpochId);
     }
 
@@ -1273,7 +1287,7 @@ contract ProtocolConfigTest is HostContractsDeployerTestUtils {
         // would-be epoch ID before that reverts as an unknown epoch.
         uint256 newEpochId = EPOCH_COUNTER_BASE + 2;
         vm.prank(kmsTxSender0);
-        vm.expectRevert(abi.encodeWithSelector(IProtocolConfig.InvalidKmsEpoch.selector, newEpochId));
+        vm.expectRevert(abi.encodeWithSelector(IProtocolConfigBase.InvalidKmsEpoch.selector, newEpochId));
         IProtocolConfig.EpochKeyResult[] memory keys = new IProtocolConfig.EpochKeyResult[](0);
         IProtocolConfig.EpochCrsResult[] memory crsList = new IProtocolConfig.EpochCrsResult[](0);
         protocolConfig.confirmEpochActivation(newEpochId, keys, crsList);
@@ -1967,7 +1981,7 @@ contract ProtocolConfigTest is HostContractsDeployerTestUtils {
         uint256 canonicalContextId = KMS_CONTEXT_COUNTER_BASE + 7;
         uint256 canonicalEpochId = EPOCH_COUNTER_BASE + 5;
         KmsNodeParams[] memory nodes = _makeKmsNodeParams(2);
-        IProtocolConfig.KmsThresholds memory thresholds = _defaultThresholds();
+        KmsThresholds memory thresholds = _defaultThresholds();
 
         vm.prank(owner);
         EmptyUUPSProxy(protocolConfigAdd).upgradeToAndCall(
@@ -1997,10 +2011,10 @@ contract ProtocolConfigTest is HostContractsDeployerTestUtils {
         uint256 canonicalContextId = KMS_CONTEXT_COUNTER_BASE + 1;
         uint256 invalidEpochId = EPOCH_COUNTER_BASE;
         KmsNodeParams[] memory nodes = _makeKmsNodeParams(2);
-        IProtocolConfig.KmsThresholds memory thresholds = _defaultThresholds();
+        KmsThresholds memory thresholds = _defaultThresholds();
 
         vm.prank(owner);
-        vm.expectRevert(abi.encodeWithSelector(IProtocolConfig.InvalidKmsEpoch.selector, invalidEpochId));
+        vm.expectRevert(abi.encodeWithSelector(IProtocolConfigBase.InvalidKmsEpoch.selector, invalidEpochId));
         EmptyUUPSProxy(protocolConfigAdd).upgradeToAndCall(
             impl,
             abi.encodeCall(
@@ -2017,10 +2031,10 @@ contract ProtocolConfigTest is HostContractsDeployerTestUtils {
         uint256 invalidContextId = KMS_CONTEXT_COUNTER_BASE;
         uint256 canonicalEpochId = EPOCH_COUNTER_BASE + 1;
         KmsNodeParams[] memory nodes = _makeKmsNodeParams(2);
-        IProtocolConfig.KmsThresholds memory thresholds = _defaultThresholds();
+        KmsThresholds memory thresholds = _defaultThresholds();
 
         vm.prank(owner);
-        vm.expectRevert(abi.encodeWithSelector(IProtocolConfig.InvalidKmsContext.selector, invalidContextId));
+        vm.expectRevert(abi.encodeWithSelector(IProtocolConfigBase.InvalidKmsContext.selector, invalidContextId));
         EmptyUUPSProxy(protocolConfigAdd).upgradeToAndCall(
             impl,
             abi.encodeCall(
@@ -2036,7 +2050,7 @@ contract ProtocolConfigTest is HostContractsDeployerTestUtils {
         address impl = address(new ProtocolConfig());
         KmsNodeParams[] memory nodeParams = _makeKmsNodeParams(2);
         PcrValues[] memory pcrValues = new PcrValues[](0);
-        IProtocolConfig.KmsThresholds memory thresholds = _defaultThresholds();
+        KmsThresholds memory thresholds = _defaultThresholds();
 
         vm.expectEmit(true, true, false, true, protocolConfigAdd);
         emit IProtocolConfig.NewKmsContext(
@@ -2064,7 +2078,7 @@ contract ProtocolConfigTest is HostContractsDeployerTestUtils {
         vm.assume(invalidContextId != protocolConfig.getCurrentKmsContextId());
         _expectContextGuardedViewsRevert(invalidContextId);
         // A never-created context does not exist, so the node lookup reverts too.
-        vm.expectRevert(abi.encodeWithSelector(IProtocolConfig.InvalidKmsContext.selector, invalidContextId));
+        vm.expectRevert(abi.encodeWithSelector(IProtocolConfigBase.InvalidKmsContext.selector, invalidContextId));
         protocolConfig.getKmsNodeForContext(invalidContextId, address(0xDEAD));
     }
 
@@ -2116,12 +2130,7 @@ contract ProtocolConfigTest is HostContractsDeployerTestUtils {
         _seedActiveEpochWithMaterialForFourNodeContext();
 
         // Rotate to a new context with userDecryption = 1
-        IProtocolConfig.KmsThresholds memory newThresholds = IProtocolConfig.KmsThresholds({
-            publicDecryption: 1,
-            userDecryption: 1,
-            kmsGen: 1,
-            mpc: 1
-        });
+        KmsThresholds memory newThresholds = KmsThresholds({publicDecryption: 1, userDecryption: 1, kmsGen: 1, mpc: 1});
         vm.prank(owner);
         _defineNewKmsContextAndEpoch(_makeKmsNodeParams(2), newThresholds);
         uint256 secondContextId = KMS_CONTEXT_COUNTER_BASE + 2;
@@ -2139,12 +2148,7 @@ contract ProtocolConfigTest is HostContractsDeployerTestUtils {
         assertEq(protocolConfig.getKmsGenThresholdForContext(firstContextId), 3);
         _seedActiveEpochWithMaterialForFourNodeContext();
 
-        IProtocolConfig.KmsThresholds memory newThresholds = IProtocolConfig.KmsThresholds({
-            publicDecryption: 1,
-            userDecryption: 1,
-            kmsGen: 2,
-            mpc: 1
-        });
+        KmsThresholds memory newThresholds = KmsThresholds({publicDecryption: 1, userDecryption: 1, kmsGen: 2, mpc: 1});
         vm.prank(owner);
         _defineNewKmsContextAndEpoch(_makeKmsNodeParams(2), newThresholds);
         uint256 secondContextId = KMS_CONTEXT_COUNTER_BASE + 2;
@@ -2154,7 +2158,7 @@ contract ProtocolConfigTest is HostContractsDeployerTestUtils {
         assertEq(protocolConfig.getKmsGenThresholdForContext(firstContextId), 3);
 
         uint256 invalidId = KMS_CONTEXT_COUNTER_BASE + 999;
-        vm.expectRevert(abi.encodeWithSelector(IProtocolConfig.InvalidKmsContext.selector, invalidId));
+        vm.expectRevert(abi.encodeWithSelector(IProtocolConfigBase.InvalidKmsContext.selector, invalidId));
         protocolConfig.getKmsGenThresholdForContext(invalidId);
     }
 
@@ -2164,12 +2168,7 @@ contract ProtocolConfigTest is HostContractsDeployerTestUtils {
         assertEq(protocolConfig.getMpcThresholdForContext(firstContextId), 4);
         _seedActiveEpochWithMaterialForFourNodeContext();
 
-        IProtocolConfig.KmsThresholds memory newThresholds = IProtocolConfig.KmsThresholds({
-            publicDecryption: 1,
-            userDecryption: 1,
-            kmsGen: 1,
-            mpc: 2
-        });
+        KmsThresholds memory newThresholds = KmsThresholds({publicDecryption: 1, userDecryption: 1, kmsGen: 1, mpc: 2});
         vm.prank(owner);
         _defineNewKmsContextAndEpoch(_makeKmsNodeParams(2), newThresholds);
         uint256 secondContextId = KMS_CONTEXT_COUNTER_BASE + 2;
@@ -2179,7 +2178,7 @@ contract ProtocolConfigTest is HostContractsDeployerTestUtils {
         assertEq(protocolConfig.getMpcThresholdForContext(firstContextId), 4);
 
         uint256 invalidId = KMS_CONTEXT_COUNTER_BASE + 999;
-        vm.expectRevert(abi.encodeWithSelector(IProtocolConfig.InvalidKmsContext.selector, invalidId));
+        vm.expectRevert(abi.encodeWithSelector(IProtocolConfigBase.InvalidKmsContext.selector, invalidId));
         protocolConfig.getMpcThresholdForContext(invalidId);
     }
 
@@ -2189,12 +2188,7 @@ contract ProtocolConfigTest is HostContractsDeployerTestUtils {
         assertEq(protocolConfig.getPublicDecryptionThresholdForContext(firstContextId), 1);
         _seedActiveEpochWithMaterialForFourNodeContext();
 
-        IProtocolConfig.KmsThresholds memory newThresholds = IProtocolConfig.KmsThresholds({
-            publicDecryption: 2,
-            userDecryption: 1,
-            kmsGen: 2,
-            mpc: 1
-        });
+        KmsThresholds memory newThresholds = KmsThresholds({publicDecryption: 2, userDecryption: 1, kmsGen: 2, mpc: 1});
         vm.prank(owner);
         _defineNewKmsContextAndEpoch(_makeKmsNodeParams(2), newThresholds);
         uint256 secondContextId = KMS_CONTEXT_COUNTER_BASE + 2;
@@ -2204,7 +2198,7 @@ contract ProtocolConfigTest is HostContractsDeployerTestUtils {
         assertEq(protocolConfig.getPublicDecryptionThresholdForContext(firstContextId), 1);
 
         uint256 invalidId = KMS_CONTEXT_COUNTER_BASE + 999;
-        vm.expectRevert(abi.encodeWithSelector(IProtocolConfig.InvalidKmsContext.selector, invalidId));
+        vm.expectRevert(abi.encodeWithSelector(IProtocolConfigBase.InvalidKmsContext.selector, invalidId));
         protocolConfig.getPublicDecryptionThresholdForContext(invalidId);
     }
 
@@ -2213,12 +2207,7 @@ contract ProtocolConfigTest is HostContractsDeployerTestUtils {
         _seedActiveEpochWithMaterialForFourNodeContext();
         // Initial context uses thresholds {1, 2, 3, 4}.
         // Define a new context with different thresholds.
-        IProtocolConfig.KmsThresholds memory newThresholds = IProtocolConfig.KmsThresholds({
-            publicDecryption: 2,
-            userDecryption: 1,
-            kmsGen: 2,
-            mpc: 1
-        });
+        KmsThresholds memory newThresholds = KmsThresholds({publicDecryption: 2, userDecryption: 1, kmsGen: 2, mpc: 1});
 
         vm.prank(owner);
         _defineNewKmsContextAndEpoch(_makeKmsNodeParams(2), newThresholds);
@@ -2330,7 +2319,7 @@ contract ProtocolConfigTest is HostContractsDeployerTestUtils {
         uint256 contextId = KMS_CONTEXT_COUNTER_BASE + 5;
         uint256 epochId = EPOCH_COUNTER_BASE + 5;
         KmsNodeParams[] memory nodes = _makeKmsNodeParams(2);
-        IProtocolConfig.KmsThresholds memory thresholds = _defaultThresholds();
+        KmsThresholds memory thresholds = _defaultThresholds();
         PcrValues[] memory pcrValues = new PcrValues[](0);
 
         vm.expectEmit(true, true, false, true, address(protocolConfig));
@@ -2357,7 +2346,7 @@ contract ProtocolConfigTest is HostContractsDeployerTestUtils {
         uint256 contextId = KMS_CONTEXT_COUNTER_BASE + 2;
         uint256 epochId = EPOCH_COUNTER_BASE + 2;
         KmsNodeParams[] memory nodes = _makeKmsNodeParams(2);
-        IProtocolConfig.KmsThresholds memory thresholds = _defaultThresholds();
+        KmsThresholds memory thresholds = _defaultThresholds();
 
         vm.expectEmit(true, true, false, true, address(protocolConfig));
         emit IProtocolConfig.MirrorKmsContextAndEpoch(contextId, epochId, nodes, thresholds, "", new PcrValues[](0));
@@ -2376,7 +2365,7 @@ contract ProtocolConfigTest is HostContractsDeployerTestUtils {
         // Bootstrap a mirror replica whose first active context is exactly BASE + 1.
         address impl = address(new ProtocolConfig());
         KmsNodeParams[] memory bootstrapNodes = _makeKmsNodeParams(2);
-        IProtocolConfig.KmsThresholds memory thresholds = _defaultThresholds();
+        KmsThresholds memory thresholds = _defaultThresholds();
         vm.prank(owner);
         EmptyUUPSProxy(protocolConfigAdd).upgradeToAndCall(
             impl,
@@ -2410,7 +2399,7 @@ contract ProtocolConfigTest is HostContractsDeployerTestUtils {
         uint256 gappedContextId = KMS_CONTEXT_COUNTER_BASE + 10;
         uint256 gappedEpochId = EPOCH_COUNTER_BASE + 10;
         KmsNodeParams[] memory nodes = _makeKmsNodeParams(2);
-        IProtocolConfig.KmsThresholds memory thresholds = _defaultThresholds();
+        KmsThresholds memory thresholds = _defaultThresholds();
 
         vm.prank(owner);
         protocolConfig.mirrorKmsContextAndEpoch(
@@ -2432,12 +2421,16 @@ contract ProtocolConfigTest is HostContractsDeployerTestUtils {
         _setupEpochLifecycle();
         uint256 activeContextId = protocolConfig.getCurrentKmsContextId();
         KmsNodeParams[] memory nodes = _makeKmsNodeParams(2);
-        IProtocolConfig.KmsThresholds memory thresholds = _defaultThresholds();
+        KmsThresholds memory thresholds = _defaultThresholds();
 
         // contextId == activeKmsContextId is rejected (not strictly increasing).
         vm.prank(owner);
         vm.expectRevert(
-            abi.encodeWithSelector(IProtocolConfig.NonIncreasingKmsContextId.selector, activeContextId, activeContextId)
+            abi.encodeWithSelector(
+                IProtocolConfigBase.NonIncreasingKmsContextId.selector,
+                activeContextId,
+                activeContextId
+            )
         );
         protocolConfig.mirrorKmsContextAndEpoch(
             activeContextId,
@@ -2454,7 +2447,7 @@ contract ProtocolConfigTest is HostContractsDeployerTestUtils {
         uint256 contextId = KMS_CONTEXT_COUNTER_BASE + 2;
         uint256 activeEpochId = EPOCH_COUNTER_BASE + 1;
         KmsNodeParams[] memory nodes = _makeKmsNodeParams(2);
-        IProtocolConfig.KmsThresholds memory thresholds = _defaultThresholds();
+        KmsThresholds memory thresholds = _defaultThresholds();
 
         vm.prank(owner);
         vm.expectRevert(
@@ -2466,7 +2459,7 @@ contract ProtocolConfigTest is HostContractsDeployerTestUtils {
     function test_revertMirrorKmsContextAndEpochNotOwner() public {
         _setupEpochLifecycle();
         KmsNodeParams[] memory nodes = _makeKmsNodeParams(2);
-        IProtocolConfig.KmsThresholds memory thresholds = _defaultThresholds();
+        KmsThresholds memory thresholds = _defaultThresholds();
 
         vm.prank(address(0x999));
         vm.expectRevert(abi.encodeWithSelector(ACLOwnable.NotHostOwner.selector, address(0x999)));
@@ -2534,7 +2527,7 @@ contract ProtocolConfigTest is HostContractsDeployerTestUtils {
         IProtocolConfig.EpochKeyResult[] memory keys = new IProtocolConfig.EpochKeyResult[](0);
         IProtocolConfig.EpochCrsResult[] memory crsList = new IProtocolConfig.EpochCrsResult[](0);
         vm.prank(kmsTxSender0);
-        vm.expectRevert(abi.encodeWithSelector(IProtocolConfig.InvalidKmsEpoch.selector, thirdEpochId));
+        vm.expectRevert(abi.encodeWithSelector(IProtocolConfigBase.InvalidKmsEpoch.selector, thirdEpochId));
         protocolConfig.confirmEpochActivation(thirdEpochId, keys, crsList);
     }
 
@@ -2563,12 +2556,7 @@ contract ProtocolConfigTest is HostContractsDeployerTestUtils {
         // Deploy a 3-node context directly as the active context (signers kmsPk0/1/2, kmsGen threshold 1).
         _deployACL(owner);
         KmsNodeParams[] memory nodes = _makeKmsNodeParams(3);
-        IProtocolConfig.KmsThresholds memory thresholds = IProtocolConfig.KmsThresholds({
-            publicDecryption: 1,
-            userDecryption: 1,
-            kmsGen: 1,
-            mpc: 1
-        });
+        KmsThresholds memory thresholds = KmsThresholds({publicDecryption: 1, userDecryption: 1, kmsGen: 1, mpc: 1});
         (ProtocolConfig pc, ) = _deployProtocolConfig(owner, nodes, thresholds);
         protocolConfig = pc;
         (KMSGeneration kg, ) = _deployKMSGeneration(owner);
