@@ -1,4 +1,4 @@
-import { createFinalizedRpc } from './demoConfig';
+import { createFinalizedRpc } from '@fhevm/solana-zama-host';
 import { encryptedStoreHandle } from '@fhevm/sdk/solana';
 import { BALANCE_KEY } from './vault/internal/tokenAccounts.js';
 import { getAddressEncoder, type Address } from '@solana/kit';

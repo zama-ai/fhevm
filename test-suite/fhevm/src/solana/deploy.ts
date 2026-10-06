@@ -131,7 +131,7 @@ const startMerkleDatabase = async (): Promise<void> => {
 
 /** The validator's finalized slot: an existing block the Merkle indexer can start from. */
 const finalizedSlot = async (): Promise<bigint> => {
-  const { createFinalizedRpc } = await import('../../../../solana/deploy/src/send');
+  const { createFinalizedRpc } = await import('@fhevm/solana-zama-host');
   return createFinalizedRpc(VALIDATOR_RPC_URL).getSlot().send();
 };
 

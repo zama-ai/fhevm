@@ -2,7 +2,6 @@
 // KMS public-decrypt certificate of a public handle, and user-decrypt a handle through the permit
 // path.
 
-import { createFinalizedRpc } from '../../../../solana/deploy/src/send';
 import { getAddressEncoder, type Address } from '@solana/kit';
 
 import { asBytes32Hex, hexToBytes } from '@fhevm/sdk/base';
@@ -11,7 +10,7 @@ import {
   encryptedStoreHandle,
 } from '@fhevm/sdk/solana';
 
-import { ZAMA_HOST_PROGRAM_ADDRESS } from '@fhevm/solana-zama-host';
+import { createFinalizedRpc, ZAMA_HOST_PROGRAM_ADDRESS } from '@fhevm/solana-zama-host';
 import { solanaUserDecryptContext } from './addresses';
 import { certificateCleartext, type PublicDecryptCertificate } from './public-decrypt';
 import type { SolanaProvisioningContext } from './provision';

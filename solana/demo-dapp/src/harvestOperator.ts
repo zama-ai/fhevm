@@ -1,7 +1,8 @@
 import { type Address, type TransactionSigner } from "@solana/kit";
 import { buildHarvestInstruction, getVaultMetrics } from "./vault/index.js";
 
-import { createFinalizedRpc, type DemoConfig } from "./demoConfig";
+import { createFinalizedRpc } from '@fhevm/solana-zama-host';
+import type { DemoConfig } from "./demoConfig";
 import { sendTransaction } from "./sendTransaction";
 import type { VaultMetrics } from "./batchTypes";
 import {

@@ -12,8 +12,8 @@ const mocks = vi.hoisted(() => ({
   send: vi.fn(),
 }));
 
-vi.mock('./demoConfig', async (importOriginal) => ({
-  ...(await importOriginal<typeof import('./demoConfig')>()),
+vi.mock('@fhevm/solana-zama-host', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('@fhevm/solana-zama-host')>()),
   createFinalizedRpc: () => ({
       getAccountInfo: () => ({ send: mocks.accountInfo }),
     }),

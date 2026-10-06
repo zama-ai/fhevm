@@ -8,10 +8,6 @@ import {
   type TransactionSigner,
   appendTransactionMessageInstructions,
   assertIsTransactionWithBlockhashLifetime,
-  createDefaultRpcTransport,
-  createRpc,
-  createSolanaRpcApi,
-  DEFAULT_RPC_CONFIG,
   createTransactionMessage,
   getBase64EncodedWireTransaction,
   getSignatureFromTransaction,
@@ -19,6 +15,7 @@ import {
   setTransactionMessageLifetimeUsingBlockhash,
   signTransactionMessageWithSigners,
 } from '@solana/kit';
+import { createFinalizedRpc } from '@fhevm/solana-zama-host';
 
 const CONFIRM_TIMEOUT_MS = 60_000;
 const CONFIRM_INTERVAL_MS = 400;
@@ -72,8 +69,3 @@ export const createHostDeployContext = (rpcUrl: string, signal?: AbortSignal): H
   };
   return context;
 };
-
-export const createFinalizedRpc = (url: string) => createRpc({
-  api: createSolanaRpcApi({ ...DEFAULT_RPC_CONFIG, defaultCommitment: 'finalized' }),
-  transport: createDefaultRpcTransport({ url }),
-});

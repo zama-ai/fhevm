@@ -31,7 +31,8 @@ import {
   type BatchTarget,
   type VaultDirection,
 } from './batchTypes';
-import { createFinalizedRpc, type DemoConfig } from './demoConfig';
+import { createFinalizedRpc } from '@fhevm/solana-zama-host';
+import type { DemoConfig } from './demoConfig';
 import { sendTransaction } from './sendTransaction';
 import { vaultRoots } from './vaultRoots';
 

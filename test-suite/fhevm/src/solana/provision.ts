@@ -10,7 +10,6 @@
 
 import fs from 'node:fs/promises';
 
-import { createFinalizedRpc } from '../../../../solana/deploy/src/send';
 import {
   appendTransactionMessageInstructions,
   assertIsTransactionWithBlockhashLifetime,
@@ -38,6 +37,7 @@ import {
 import type { Bytes32Hex } from '@fhevm/sdk/types';
 
 import {
+  createFinalizedRpc,
   decodeHostConfig,
   findHostConfigPda,
   HOST_CONFIG_DISCRIMINATOR,

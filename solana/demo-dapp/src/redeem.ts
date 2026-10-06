@@ -1,4 +1,4 @@
-import { createFinalizedRpc } from './demoConfig';
+import { createFinalizedRpc } from '@fhevm/solana-zama-host';
 import {
   address,
   createSolanaRpcSubscriptions,

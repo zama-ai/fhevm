@@ -1,4 +1,4 @@
-import { createFinalizedRpc } from '../../../../../solana/deploy/src/send';
+import { createFinalizedRpc } from '@fhevm/solana-zama-host';
 // sdkEncrypt — the scenarios' shared seam to the public `@fhevm/sdk/solana` encrypt client.
 //
 // Every input-proof phase does the same dance: load the target's SDK (`loadSolanaSdk()` swaps in the

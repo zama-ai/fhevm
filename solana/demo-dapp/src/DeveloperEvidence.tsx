@@ -1,7 +1,8 @@
 import { type Address, type Signature } from '@solana/kit';
 import { useEffect, useMemo, useState } from 'react';
 
-import { createFinalizedRpc, type DemoNetwork } from './demoConfig';
+import { createFinalizedRpc } from '@fhevm/solana-zama-host';
+import type { DemoNetwork } from './demoConfig';
 import { readDecryptionEvidence, readTransactionEvidence, type DecryptionEvidenceRecord } from './evidenceStore';
 import {
   FHE_BATCH_P95_QUERY,

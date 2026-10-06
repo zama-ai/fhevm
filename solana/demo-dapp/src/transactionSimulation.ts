@@ -1,4 +1,4 @@
-import type { createFinalizedRpc } from './demoConfig';
+import type { createFinalizedRpc } from '@fhevm/solana-zama-host';
 import { getBase64EncodedWireTransaction, type Transaction } from '@solana/kit';
 
 type SimulationValue = {

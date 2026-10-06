@@ -2,7 +2,7 @@
 // leaf count and peaks for every EncryptedStore as the chain. A record that drifted serves proofs
 // the connector rejects against the on-chain peaks, so a green run also proves the record.
 
-import { createFinalizedRpc } from '../../../../solana/deploy/src/send';
+import { createFinalizedRpc } from '@fhevm/solana-zama-host';
 import { createHash } from "node:crypto";
 
 import { type Base58EncodedBytes, getAddressDecoder, getBase58Decoder } from "@solana/kit";

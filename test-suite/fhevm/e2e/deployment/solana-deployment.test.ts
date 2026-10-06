@@ -1,4 +1,3 @@
-import { createFinalizedRpc } from '../../../../solana/deploy/src/send';
 // Real validator + PostgreSQL, with a fixed gateway committee fixture. The full e2e suite
 // separately exercises the real gateway/KMS/coprocessor and confidential decryption.
 import { afterAll, beforeAll, expect, test } from 'bun:test';
@@ -6,7 +5,7 @@ import { cp, mkdir, mkdtemp, readFile, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 
-import { findHostConfigPda } from '@fhevm/solana-zama-host';
+import { createFinalizedRpc, findHostConfigPda } from '@fhevm/solana-zama-host';
 import { DEFAULT_SOLANA_ENVIRONMENT, programIdsFor } from '../../../../solana/deploy/src/environment';
 import { solanaPubkeyFromKeypairFile } from '../../src/generate/solana';
 import { REPO_ROOT } from '../../src/layout';

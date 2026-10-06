@@ -17,7 +17,8 @@ import {
   type TransactionSigner,
 } from "@solana/kit";
 
-import { createFinalizedRpc, type DemoConfig } from "./demoConfig";
+import { createFinalizedRpc } from '@fhevm/solana-zama-host';
+import type { DemoConfig } from "./demoConfig";
 import {
   simulateSignedTransactionLocally,
   simulateUnsignedTransactionLocally,

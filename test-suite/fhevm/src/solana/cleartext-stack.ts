@@ -16,7 +16,8 @@ import path from 'node:path';
 
 import { bootstrapZamaHost } from '../../../../solana/deploy/src/bootstrap';
 import { evmAddressBytes } from '../../../../solana/deploy/src/gateway';
-import { createFinalizedRpc, createHostDeployContext } from '../../../../solana/deploy/src/send';
+import { createFinalizedRpc } from '@fhevm/solana-zama-host';
+import { createHostDeployContext } from '../../../../solana/deploy/src/send';
 import { solanaPubkeyFromKeypairFile } from '../generate/solana';
 import {
   REPO_ROOT,

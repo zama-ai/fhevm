@@ -1,4 +1,4 @@
-import { createFinalizedRpc } from './demoConfig';
+import { createFinalizedRpc } from '@fhevm/solana-zama-host';
 import { appendTransientStoreInstructions, prepareTransientStore } from '@fhevm/sdk/solana';
 import {
   address,

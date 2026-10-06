@@ -1,4 +1,4 @@
-import { createFinalizedRpc } from './send';
+import { createFinalizedRpc } from '@fhevm/solana-zama-host';
 import { address } from '@solana/kit';
 import { createHmac, createPrivateKey, createPublicKey } from 'node:crypto';
 import { writeKeypairJson, parseKeypairBytes } from './keypair';

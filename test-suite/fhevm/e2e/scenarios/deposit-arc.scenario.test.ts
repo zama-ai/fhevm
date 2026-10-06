@@ -1,5 +1,5 @@
 import { asBytes32Hex } from '@fhevm/sdk/base';
-import { createFinalizedRpc } from "../../../../solana/deploy/src/send";
+import { createFinalizedRpc } from '@fhevm/solana-zama-host';
 import { LOCAL_SOLANA_ENDPOINTS } from "../../src/solana/endpoints";
 import {
   appendTransientStoreInstructions,

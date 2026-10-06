@@ -36,7 +36,7 @@ import { harvestDemoVault, readDemoVaultMetrics, type UnderlyingMinter } from "@
 import { dispatchVaultBatch, settleVaultBatch, type DemoOperatorSession } from "@demo-dapp/settlement";
 import { openProvisioning } from "../e2e/harness/solana/provisioning";
 import { DEMO_OPERATOR_PORT, solanaBatchLookupTablesPath } from "../src/layout";
-import { createFinalizedRpc } from "../../../solana/deploy/src/send";
+import { createFinalizedRpc } from '@fhevm/solana-zama-host';
 import { LOCAL_SOLANA_ENDPOINTS } from "../src/solana/endpoints";
 import {
   associatedTokenAddress,

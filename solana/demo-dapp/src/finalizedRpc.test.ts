@@ -1,7 +1,7 @@
 import { expect, test, vi } from 'vitest';
 import { address } from '@solana/kit';
 
-import { createFinalizedRpc } from './demoConfig';
+import { createFinalizedRpc } from '@fhevm/solana-zama-host';
 
 test('defaults reads to finalized through the HTTP transport', async () => {
   const requests: { method: string; params: unknown[] }[] = [];

@@ -14,6 +14,7 @@ import { getWalletAccountFeature } from '@wallet-standard/ui';
 import { getWalletAccountForUiWalletAccount_DO_NOT_USE_OR_YOU_WILL_BE_FIRED } from '@wallet-standard/ui-registry';
 import { solanaPermitWalletFromSecretKey, type SolanaPermitWallet } from '@fhevm/sdk/solana';
 import {
+  createFinalizedRpc,
   getZamaHostErrorMessage,
   ZAMA_HOST_PROGRAM_ADDRESS,
   type ZamaHostError,
@@ -21,7 +22,7 @@ import {
 
 import { loadOrCreateBurnerSecretKey } from './burnerWallet';
 import { demoApiFetch, demoFaucetFetch } from './demoAuthorization';
-import { createFinalizedRpc, parseDemoConfigResponse, type DemoConfig } from './demoConfig';
+import { parseDemoConfigResponse, type DemoConfig } from './demoConfig';
 
 export { parseDemoConfigResponse, type DemoConfig } from './demoConfig';
 

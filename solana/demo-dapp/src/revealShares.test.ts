@@ -10,8 +10,8 @@ const mocks = vi.hoisted(() => ({
   tokenAccountAddress: vi.fn(),
 }));
 
-vi.mock('./demoConfig', async (importOriginal) => ({
-  ...(await importOriginal<typeof import('./demoConfig')>()),
+vi.mock('@fhevm/solana-zama-host', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('@fhevm/solana-zama-host')>()),
   createFinalizedRpc: vi.fn(() => ({ getAccountInfo: mocks.getAccountInfo })),
 }));
 vi.mock('@solana/kit', async (importOriginal) => ({
