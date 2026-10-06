@@ -83,6 +83,11 @@ jobs:
           cat "$log"
           exit 1
 
+      # The e2e test task compiles contracts only on the in-process hardhat network.
+      - name: Compile the e2e contracts
+        working-directory: test-suite/e2e
+        run: npx hardhat compile
+
       - name: Run EncryptedERC20 on the cleartext host
         working-directory: test-suite/e2e
         env:
