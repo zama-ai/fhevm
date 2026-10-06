@@ -1,4 +1,3 @@
-import { appendTransientStoreInstructions, prepareTransientStore } from "@fhevm/sdk/solana";
 // Scenario: delegated user-decrypt — the #1690 evidence pack, live.
 //
 // Two arcs over the same protocol surface:
@@ -34,7 +33,20 @@ import {
   getI64Decoder,
   type Address,
 } from "@solana/kit";
-import type { SolanaDecryptTrust } from "@fhevm/sdk/solana";
+import {
+  appendTransientStoreInstructions,
+  buildDelegateForUserDecryptionInstruction,
+  buildRevokeDelegationForUserDecryptionInstruction,
+  createFhevmDecryptClient,
+  defineFhevmSolanaChain,
+  fetchSolanaUserDecryptionDelegation,
+  isSolanaUserDecryptionDelegationLiveAt,
+  prepareTransientStore,
+  setFhevmRuntimeConfig,
+  solanaHostProgram,
+  solanaPermitWalletFromSecretKey,
+  type SolanaDecryptTrust,
+} from "@fhevm/sdk/solana";
 
 import { currentHandle, userDecryptExpect } from "../../src/solana/fhe-vertical";
 import { generateSolanaKeypair } from "../../src/solana/provision";
@@ -47,7 +59,7 @@ import {
   type SpecimenValue,
 } from "../../src/solana/specimens";
 import { squadsGenesisExtras } from "../../src/solana/squads";
-import { solanaUserDecryptContext } from "../../src/solana/two-holder-transfer";
+import { solanaUserDecryptContext } from "../../src/solana/addresses";
 import {
   approveProposal,
   assertSquadsDeployed,
@@ -71,12 +83,6 @@ const addressBytes = (address: Address): Uint8Array => new Uint8Array(getAddress
 /** How long past the host's current time every grant here lives: well beyond one arc. */
 const EXPIRY_SECONDS_AHEAD = 3_600n;
 type Bytes32Hex = SolanaDecryptTrust["kmsContextId"];
-
-type SdkSolanaModule = typeof import("@fhevm/sdk/solana");
-const sdkSolana = async (): Promise<SdkSolanaModule> => {
-  const solanaModule = "@fhevm/sdk/solana";
-  return (await import(solanaModule)) as SdkSolanaModule;
-};
 
 /** The delegate's decrypt of the delegator's value: the permit is the delegate's, `ownerAddress` names whose allow. */
 const delegatedDecrypt = (
@@ -120,12 +126,11 @@ describe("solana delegated user-decrypt", () => {
     async () => {
       const setup = await verticalSetup();
       const { stack, context, wallet, config } = setup;
-      const solana = await sdkSolana();
-      const chain = solana.defineFhevmSolanaChain({
+      const chain = defineFhevmSolanaChain({
         id: BigInt(config.chainId),
         fhevm: { relayerUrl: config.relayerUrl, programs: { host: { address: config.verifyingProgramId as Bytes32Hex } } },
       });
-      const hostProgram = solana.solanaHostProgram(chain);
+      const hostProgram = solanaHostProgram(chain);
 
       // Two roles: the provisioning wallet is the delegator — it owns the counter, so the counter
       // program allows it on every handle it writes — and the delegate holds no access of its own;
@@ -142,7 +147,7 @@ describe("solana delegated user-decrypt", () => {
       // Grant: delegator -> delegate, scoped to the value's application. The wallet-held path: the
       // builder takes the signer itself, so the kit pipeline signs the instruction as built (the
       // Squads arc below is the bare-address path).
-      const grant = await solana.buildDelegateForUserDecryptionInstruction({
+      const grant = await buildDelegateForUserDecryptionInstruction({
         programAddress: hostProgram,
         payer: wallet.signer,
         delegator: wallet.signer,
@@ -154,13 +159,13 @@ describe("solana delegated user-decrypt", () => {
       const grantSlot = await context.rpc.getSlot({ commitment: "finalized" }).send();
 
       // The rows the connector will read, checked the way a dapp would before paying for a job.
-      const rows = await solana.fetchSolanaUserDecryptionDelegation(context.rpc, {
+      const rows = await fetchSolanaUserDecryptionDelegation(context.rpc, {
         delegator: wallet.signer.address,
         delegate: delegate.signer.address,
         ...value.application,
       }, { programAddress: hostProgram });
       expect(rows.exact).not.toBeNull();
-      expect(solana.isSolanaUserDecryptionDelegationLiveAt(rows.exact!, await hostUnixTime(setup))).toBe(true);
+      expect(isSolanaUserDecryptionDelegationLiveAt(rows.exact!, await hostUnixTime(setup))).toBe(true);
 
       // The delegate decrypts the delegator's value.
       expect(await delegatedDecrypt(setup, { value, handle, delegateSecretKey })).toBe(42n);
@@ -169,7 +174,7 @@ describe("solana delegated user-decrypt", () => {
         // Dedup: the same session, the same bytes, twice — the relayer coalesces them into one
         // job. Asserted at the wire: both POST bodies are byte-identical and both answers carry
         // the same job id. The interception passes everything through untouched.
-        solana.setFhevmRuntimeConfig({ auth: { type: "ApiKeyHeader", value: "local" } });
+        setFhevmRuntimeConfig({ auth: { type: "ApiKeyHeader", value: "local" } });
         const trust: SolanaDecryptTrust = {
           kmsSigners: config.kmsSigners.map((address, index) => ({ partyId: index + 1, address })),
           kmsContextId: solanaUserDecryptContext(config.userDecryptContextId) as SolanaDecryptTrust["kmsContextId"],
@@ -182,9 +187,9 @@ describe("solana delegated user-decrypt", () => {
             verifyingContract: config.gatewayDecryptionContract,
           } as SolanaDecryptTrust["gatewayEip712Domain"],
         };
-        const client = solana.createFhevmDecryptClient({ chain, rpc: context.rpc, trust });
+        const client = createFhevmDecryptClient({ chain, rpc: context.rpc, trust });
         const session = await client.signPermit({
-          wallet: solana.solanaPermitWalletFromSecretKey(delegate.bytes.subarray(0, 32)),
+          wallet: solanaPermitWalletFromSecretKey(delegate.bytes.subarray(0, 32)),
           durationSeconds: 3_600n,
         });
         const submissions: { body: string; jobId: string }[] = [];
@@ -223,14 +228,14 @@ describe("solana delegated user-decrypt", () => {
         description: "a slot after the grant",
         timeoutMs: 30_000,
       });
-      const revoke = await solana.buildRevokeDelegationForUserDecryptionInstruction({
+      const revoke = await buildRevokeDelegationForUserDecryptionInstruction({
         programAddress: hostProgram,
         delegator: wallet.signer,
         delegate: delegate.signer.address,
         ...value.application,
       });
       await context.sendTransaction(wallet.signer, [revoke]);
-      const revokedRows = await solana.fetchSolanaUserDecryptionDelegation(context.rpc, {
+      const revokedRows = await fetchSolanaUserDecryptionDelegation(context.rpc, {
         delegator: wallet.signer.address,
         delegate: delegate.signer.address,
         ...value.application,
@@ -260,9 +265,8 @@ describe("solana delegated user-decrypt", () => {
       }
       const setup = await verticalSetup();
       const { env, stack, context, config } = setup;
-      const solana = await sdkSolana();
-      const hostProgram = solana.solanaHostProgram(
-        solana.defineFhevmSolanaChain({
+      const hostProgram = solanaHostProgram(
+        defineFhevmSolanaChain({
           id: BigInt(config.chainId),
           fhevm: { relayerUrl: config.relayerUrl, programs: { host: { address: config.verifyingProgramId as Bytes32Hex } } },
         }),
@@ -310,7 +314,7 @@ describe("solana delegated user-decrypt", () => {
       await stack.waitForSnsCommit(hex(handle));
 
       // The proposal's inner instruction: vault -> delegate, the vault paying its own rent.
-      const grant = await solana.buildDelegateForUserDecryptionInstruction({
+      const grant = await buildDelegateForUserDecryptionInstruction({
         programAddress: hostProgram,
         payer: vaultAddress,
         delegator: vaultAddress,
@@ -330,7 +334,7 @@ describe("solana delegated user-decrypt", () => {
       await executeVaultTransaction(connection, squad, members[0]!, grantIndex);
 
       // The record the quorum produced is a perfectly ordinary delegation row of the vault's.
-      const rows = await solana.fetchSolanaUserDecryptionDelegation(context.rpc, {
+      const rows = await fetchSolanaUserDecryptionDelegation(context.rpc, {
         delegator: vaultAddress,
         delegate: delegate.signer.address,
         ...value.application,
@@ -341,7 +345,7 @@ describe("solana delegated user-decrypt", () => {
       expect(await delegatedDecrypt(setup, { value, handle, delegateSecretKey })).toBe(42n);
 
       // The DAO takes it back: a second proposal revokes, and the next request is refused.
-      const revoke = await solana.buildRevokeDelegationForUserDecryptionInstruction({
+      const revoke = await buildRevokeDelegationForUserDecryptionInstruction({
         programAddress: hostProgram,
         delegator: vaultAddress,
         delegate: delegate.signer.address,
@@ -351,7 +355,7 @@ describe("solana delegated user-decrypt", () => {
       await approveProposal(connection, squad, members[0]!, revokeIndex);
       await approveProposal(connection, squad, members[1]!, revokeIndex);
       await executeVaultTransaction(connection, squad, members[1]!, revokeIndex);
-      const revokedRows = await solana.fetchSolanaUserDecryptionDelegation(context.rpc, {
+      const revokedRows = await fetchSolanaUserDecryptionDelegation(context.rpc, {
         delegator: vaultAddress,
         delegate: delegate.signer.address,
         ...value.application,

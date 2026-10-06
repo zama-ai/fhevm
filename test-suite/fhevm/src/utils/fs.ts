@@ -180,3 +180,19 @@ export const hostReachableMaterialUrl = (url: string) => {
     return url === OBJECT_STORE_INTERNAL_URL ? OBJECT_STORE_EXTERNAL_URL : url;
   }
 };
+
+/**
+ * Runs `body` with `globalThis.fetch` rewriting docker-internal object-store URLs to the
+ * host-published endpoint. The relayer hands out key-material URLs naming the on-chain KMS storage
+ * host `minio:9000`; a host-side prover has to fetch them through the published port instead.
+ */
+export const withHostReachableFetch = async <T>(body: () => Promise<T>): Promise<T> => {
+  const originalFetch = globalThis.fetch;
+  globalThis.fetch = ((url: string | URL | Request, options?: RequestInit) =>
+    originalFetch(typeof url === "string" ? hostReachableMaterialUrl(url) : url, options)) as typeof fetch;
+  try {
+    return await body();
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+};

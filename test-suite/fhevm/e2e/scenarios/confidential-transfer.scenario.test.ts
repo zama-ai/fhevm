@@ -21,11 +21,7 @@
 
 import { describe, test } from "bun:test";
 
-import {
-  createRealTwoHolderDependencies,
-  runSolanaTwoHolderTransfer,
-  solanaUserDecryptContext,
-} from "../../src/solana/two-holder-transfer";
+import { createRealTwoHolderDependencies, runSolanaTwoHolderTransfer } from "../../src/solana/two-holder-transfer";
 import { loadEnv, loadPersonas } from "../harness";
 import { ensureUp } from "../harness/solana/stack";
 
@@ -62,8 +58,7 @@ describe("solana confidential-transfer scenario", () => {
           waitForHandle: stack.waitForSnsCommit,
           // Explicit env override only; otherwise the decrypts read the active KMS pair live from
           // the deployed ProtocolConfig.
-          userDecryptContext:
-            env.userDecryptContextId === undefined ? undefined : solanaUserDecryptContext(env.userDecryptContextId),
+          userDecryptContextId: env.userDecryptContextId,
         }),
       );
     },

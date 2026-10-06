@@ -14,7 +14,7 @@
 //              `incrementCounter` return the handle they read back from the account.
 //   [compute]  SNS commit -> `stack.waitForSnsCommit(handle)`.
 //   [user-decrypt]  pure-SDK cleartext == expected -> `userDecryptExpect` (ML-KEM keygen, ed25519
-//              permit, in-SDK de-signcryption) with UD_EXPECTED pinned.
+//              permit, in-SDK de-signcryption) against the value the scenario wrote.
 //   [historical-user-decrypt]  a later write replaces the current handle, and the OLD handle still
 //              decrypts to its old value: the Connector proves the old allow leaf from the account's
 //              history, no client-side proof involved. The scenario asserts the update really

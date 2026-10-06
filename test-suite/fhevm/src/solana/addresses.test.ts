@@ -9,6 +9,7 @@ import {
   readActiveKmsPair,
   readGatewayBootstrapInputs,
   SOLANA_HOST_CHAIN_ID,
+  solanaUserDecryptContext,
 } from "./addresses";
 
 const ADDRESS_A = "0x000000000000000000000000000000000000aaaa";
@@ -42,6 +43,15 @@ describe("bytes32HexFromId", () => {
   test("left-pads to 32 bytes and keeps type-tagged high bytes", () => {
     expect(bytes32HexFromId(1n)).toBe(`0x${"0".repeat(63)}1`);
     expect(bytes32HexFromId((8n << 248n) | 1n)).toBe(`0x08${"0".repeat(61)}1`);
+  });
+});
+
+describe("solanaUserDecryptContext", () => {
+  test("encodes a decimal user-decrypt context as bytes32 and rejects any other form", () => {
+    expect(solanaUserDecryptContext("1")).toBe(`0x${"0".repeat(63)}1`);
+    expect(() => solanaUserDecryptContext("0x01")).toThrow("unsigned decimal integer");
+    expect(() => solanaUserDecryptContext("")).toThrow("unsigned decimal integer");
+    expect(() => solanaUserDecryptContext((1n << 256n).toString())).toThrow("fit in 32 bytes");
   });
 });
 
