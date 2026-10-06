@@ -29,6 +29,7 @@ clap = { workspace = true }
 governor = "0.6.3"
 prometheus = { workspace = true }
 serde = { workspace = true, features = ["derive"] }
+serde_json = { workspace = true }
 sqlx = { workspace = true }
 thiserror = { workspace = true }
 tokio = { workspace = true }
@@ -58,7 +59,6 @@ borsh = "1"
 zama-host = { path = "../../../solana/programs/zama-host", default-features = false, features = ["no-entrypoint", "decode"] }
 hex = { workspace = true }
 reqwest = { workspace = true, features = ["http2"] }
-serde_json = { workspace = true }
 serial_test = { workspace = true }
 test-harness = { path = "../test-harness" }
 

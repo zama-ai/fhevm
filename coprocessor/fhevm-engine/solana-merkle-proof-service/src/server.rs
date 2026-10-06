@@ -368,10 +368,15 @@ async fn merkle_proofs(
 ) -> Result<Response, HttpError> {
     let started = Instant::now();
     let answer = answer_merkle_proofs(state, &headers, body).await;
+    let error_code;
     let status = match &answer {
         Ok(Served { repeat: true, .. }) => "cached",
         Ok(Served { repeat: false, .. }) => "ok",
-        Err(error) => error.code.as_str(),
+        Err(error) => {
+            error_code =
+                serde_json::to_value(error.code).expect("serialize error code");
+            error_code.as_str().expect("error code is a string")
+        }
     };
     REQUESTS.with_label_values(&[status]).inc();
     REQUEST_DURATION.observe(started.elapsed().as_secs_f64());
@@ -761,17 +766,6 @@ mod tests {
     /// connector decodes.
     #[test]
     fn wire_matches_the_shared_fixture() {
-        for code in [
-            ErrorCode::Malformed,
-            ErrorCode::SenderAuthenticationFailed,
-            ErrorCode::UpstreamTransient,
-            ErrorCode::RateLimited,
-        ] {
-            assert_eq!(
-                serde_json::to_value(code).expect("serialize error code"),
-                code.as_str()
-            );
-        }
         let fixture: serde_json::Value = serde_json::from_str(
             &std::fs::read_to_string(MERKLE_PROOFS_FIXTURE)
                 .expect("read fixture"),

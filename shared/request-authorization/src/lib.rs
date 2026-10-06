@@ -167,7 +167,7 @@ mod tests {
         chain_id: 12345,
         contract: Address::repeat_byte(0xC0),
     };
-    const PATH: &str = "/v1/solana/merkle-proofs";
+    const PATH: &str = "/v1/example";
     const BODY: &[u8] = b"{\"leaves\":[]}";
     const NOW: u64 = 1_790_950_000;
 
@@ -318,11 +318,11 @@ mod tests {
     fn the_wire_format_is_pinned() {
         assert_eq!(
             REGISTRY.signing_hash(PATH, BODY, NOW + 60).to_string(),
-            "0x4e470f835159e2e36b00c1b761bf3ec15f71d13f87cf44ee9dea7bf0c4e7a02c"
+            "0xf9cf9ce562f03832d1f39ad11f699bf466ab3147e4de7f10664fc0030c0cf51a"
         );
         assert_eq!(
             header(NOW + 60),
-            "Zama-EIP712 expires=1790950060, signature=0x8d81390596a2072fb5f3028e0ed67aec83eaab655969be9422e1b5c371897a896a3abbdad8acb39bc0215c511c506a4f934700ab2cb2de7c73d853188311a2ef1b"
+            "Zama-EIP712 expires=1790950060, signature=0xf80bc18d3fb149436cb11e1b44b237d84a04ff8472a01347d9824c8263eddba171bd7b55741997ec4f757bb63085e0371f42a3513ebead23bde15d5e5ccc8ff51b"
         );
     }
 }

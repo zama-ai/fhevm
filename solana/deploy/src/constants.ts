@@ -2,12 +2,10 @@
 // Fits in PostgreSQL BIGINT as a positive i64.
 export const SOLANA_HOST_CHAIN_ID = 72057594037940281n;
 
-/**
- * Bring-up KMS context id. Same 32-byte tagged gateway uint256 as
- * `SOLANA_DEFAULT_PUBLIC_DECRYPT_CONTEXT` in `src/layout.ts` (duplicated here so the deployer
- * image bundle does not import the fhevm-cli layout module).
- */
-const BRINGUP_KMS_CONTEXT_HEX = '0700000000000000000000000000000000000000000000000000000000000001';
+// Gateway KMS context tag, matching shared/kms-context.
+const KMS_CONTEXT_COUNTER_BASE = 0x07n << 248n;
+// First gateway context, encoded as a 32-byte big-endian uint256.
+export const BRINGUP_KMS_CONTEXT_HEX = (KMS_CONTEXT_COUNTER_BASE + 1n).toString(16).padStart(64, '0');
 
 export const BRINGUP_KMS_CONTEXT_ID = Uint8Array.from(
   BRINGUP_KMS_CONTEXT_HEX.match(/.{2}/g)!.map((byte) => Number.parseInt(byte, 16)),

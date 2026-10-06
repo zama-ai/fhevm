@@ -36,7 +36,8 @@ describe("kms-onchain uint256LeHex", () => {
   });
 
   test("byte-reverses a domain-tagged context id (0x07…) the way the connector stores it", () => {
-    // Context ids are tagged 0x07 << 248; epoch ids 0x08 << 248 (utils/src/types/mod.rs).
+    // Context ids are tagged 0x07 << 248 (shared/kms-context);
+    // epoch ids 0x08 << 248 (kms-connector utils/src/types/mod.rs).
     const contextId = (0x07n << 248n) | 1n;
     expect(uint256LeHex(contextId)).toBe("0100000000000000000000000000000000000000000000000000000000000007");
   });

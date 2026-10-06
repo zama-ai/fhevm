@@ -280,7 +280,7 @@ impl HostProofReader for CoprocessorProofClient {
         if !status.is_success() {
             let error = decode_cbor::<ErrorResponse>(&body).map_or_else(
                 |_| String::new(),
-                |error| format!(" {}: {}", error.code.as_str(), error.message),
+                |error| format!(" {:?}: {}", error.code, error.message),
             );
             return Err(failed(format!("HTTP {status}{error}")));
         }
@@ -476,7 +476,7 @@ mod tests {
             client.read_proofs(0, &batch).await,
             Err(ProofReadError::Unavailable {
                 reason: format!(
-                    "{proofs_url}: HTTP 429 Too Many Requests rate_limited: \
+                    "{proofs_url}: HTTP 429 Too Many Requests RateLimited: \
                      no database connection free within 200ms"
                 ),
             })

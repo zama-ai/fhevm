@@ -114,17 +114,6 @@ pub struct ErrorResponse {
     pub retryable: bool,
 }
 
-impl ErrorCode {
-    pub const fn as_str(self) -> &'static str {
-        match self {
-            Self::Malformed => "malformed",
-            Self::SenderAuthenticationFailed => "sender_authentication_failed",
-            Self::UpstreamTransient => "upstream_transient",
-            Self::RateLimited => "rate_limited",
-        }
-    }
-}
-
 fn encode_siblings<S: serde::Serializer>(
     siblings: &[[u8; 32]],
     serializer: S,

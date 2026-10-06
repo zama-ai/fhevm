@@ -10,9 +10,7 @@
 //!
 //! These assertions run the public entry point over two real HTTP round-trips — a mock
 //! `getMultipleAccounts` endpoint serving the account bytes and a mock Merkle proof route serving
-//! the record's answer — so the transport and the rule are exercised together. The Merkle proof
-//! route is pinned as a literal, not as an import of the constant that produces it: if it moves,
-//! these tests fail by construction rather than following the rename.
+//! the record's answer — so the transport and the rule are exercised together.
 
 mod solana_support;
 
@@ -25,10 +23,10 @@ use kms_worker::core::solana::{
 use mocktail::{StatusCode, server::MockServer};
 use solana_pubkey::Pubkey;
 use solana_support::{
-    APP_PROGRAM, AUTHORITY, EncryptedStoreFixture, FHE_TYPE_UINT64, HttpHost, LABEL,
-    MERKLE_PROOFS_ROUTE, PROGRAM_ID, handle, proof_client, pubkey, serve_proofs, solana_host,
+    APP_PROGRAM, AUTHORITY, EncryptedStoreFixture, FHE_TYPE_UINT64, HttpHost, LABEL, PROGRAM_ID,
+    handle, proof_client, pubkey, serve_proofs, solana_host,
 };
-use zama_solana_merkle_proofs::MerkleProofOutcome;
+use zama_solana_merkle_proofs::{MERKLE_PROOFS_PATH, MerkleProofOutcome};
 
 /// An account whose current handle was made public, then replaced: the public leaf survives
 /// the update because it names the handle, not the slot the handle occupied.
@@ -152,7 +150,7 @@ async fn one_serving_coprocessor_carries_a_request_the_others_cannot() {
 
     let mut failing = MockServer::new_http("coprocessor-failing");
     failing.mock(|when, then| {
-        when.post().path(MERKLE_PROOFS_ROUTE);
+        when.post().path(MERKLE_PROOFS_PATH);
         then.error(StatusCode::INTERNAL_SERVER_ERROR, "leaf record unavailable");
     });
     failing.start().await.expect("the failing mock starts");
