@@ -195,6 +195,10 @@ jobs:
           - host-contracts/rust_bindings/**
           - solana/programs/zama-host/**
           - solana/environments/**
+          - solana/crates/program-environment/**
+          - solana/crates/solana-ed25519-instruction/**
+          - solana/crates/zama-solana-acl/**
+          - solana/crates/zama-solana-transaction/**
           - solana/crates/**
           - solana/Cargo.*
           - listener/crates/consumer/**
