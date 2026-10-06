@@ -24,12 +24,12 @@ import {
     DECRYPTION_ADDRESS_ENV,
     INPUT_VERIFICATION_ADDRESS_ENV,
     KMS_NODE_STORAGE_URL_ENV_PREFIX
-} from "./EnvNames.sol";
+} from "../../libraries/EnvNames.sol";
 
 import {KmsNode} from "../../../src/intree/host-contracts/contracts/shared/Structs.sol";
 
-import {AssertLib} from "./AssertLib.sol";
-import {Signer, SignerLib} from "./SignerLib.sol";
+import {AssertLib} from "../../libraries/AssertLib.sol";
+import {Signer, SignerLib} from "../../libraries/SignerLib.sol";
 
 // Calculated as `address(uint160(uint256(keccak256("fhevm.cheat.address cleartext input verification"))))`.
 address constant INPUT_VERIFICATION_ADDRESS = 0x6189F6c0c3E40B4a3c72ec86262295D78d845297;

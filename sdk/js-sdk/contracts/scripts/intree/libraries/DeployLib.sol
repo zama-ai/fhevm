@@ -28,9 +28,9 @@ import {CleartextHCULimit} from "../../../src/intree/cleartext/CleartextHCULimit
 import {CleartextProtocolConfig} from "../../../src/intree/cleartext/CleartextProtocolConfig.sol";
 import {CleartextKMSGeneration} from "../../../src/intree/cleartext/CleartextKMSGeneration.sol";
 
-import {FhevmAddresses} from "./structs/FhevmAddressesStruct.sol";
-import {AssertLib} from "./AssertLib.sol";
-import {Signer, SignerLib} from "./SignerLib.sol";
+import {FhevmAddresses} from "../../libraries/structs/FhevmAddressesStruct.sol";
+import {AssertLib} from "../../libraries/AssertLib.sol";
+import {Signer, SignerLib} from "../../libraries/SignerLib.sol";
 import {FhevmConfigLib} from "./FhevmConfigLib.sol";
 
 import {
