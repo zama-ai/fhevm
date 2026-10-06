@@ -20,6 +20,7 @@
   ],
   "sideEffects": false,
   "scripts": {
+    "setup": "npm ci && npm run build",
     "build": "rm -rf dist && tsc --declaration --declarationDir dist/types && tsc --module commonjs --moduleResolution node --ignoreDeprecations 6.0 --verbatimModuleSyntax false --outDir dist/cjs && printf '{\"type\":\"commonjs\"}' > dist/cjs/package.json",
     "check": "tsc --noEmit"
   },

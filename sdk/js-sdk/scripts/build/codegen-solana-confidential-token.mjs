@@ -85,8 +85,7 @@ const targets = [
     },
   },
   {
-    // The one zama-host client: `@fhevm/solana-zama-host` (solana/clients/zama-host). The SDK, the
-    // deployment bootstrap, the demo dapp and the test-suite all import it.
+    // The one zama-host client: `@fhevm/solana-zama-host` (solana/clients/zama-host).
     idlPath: idlUrl('zama_host.json'),
     generatedPath: `${sdkRoot}/../../solana/clients/zama-host/src/generated`,
     // Codama's isZamaHostError / getZamaHostErrorMessage / error constants.

@@ -4,7 +4,7 @@ set -euo pipefail
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 ROOT_DIR=$(cd "$SCRIPT_DIR/../.." && pwd)
 # The SDK depends on @fhevm/solana-zama-host by version, so the packed SDK installs only next to
-# a packed zama-host client (built by the SDK's postinstall).
+# a packed zama-host client.
 ZAMA_HOST_DIR=$(cd "$ROOT_DIR/../../solana/clients/zama-host" && pwd)
 MANUAL_PACK_DIRNAME="manual-pack"
 PACK_DIR="$SCRIPT_DIR/../$MANUAL_PACK_DIRNAME"
@@ -39,7 +39,7 @@ fi
 # Pack from src/ which holds the real package.json for distribution
 echo -e "${GREEN}Packing project...${NC}"
 (cd "$ROOT_DIR/src" && npm pack --pack-destination "$PACK_DIR")
-(cd "$ZAMA_HOST_DIR" && npm pack --pack-destination "$PACK_DIR")
+(cd "$ZAMA_HOST_DIR" && npm run build && npm pack --pack-destination "$PACK_DIR")
 
 # Resolve the newly created tarballs
 TARBALL=$(echo "$PACK_DIR"/fhevm-sdk-*.tgz)

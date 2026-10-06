@@ -51,7 +51,7 @@ RUN rustup show && bash scripts/build-programs.sh "$PROGRAM_ENVIRONMENT" \
 FROM --platform=linux/amd64 node:22-bookworm-slim AS zama-host
 WORKDIR /src/solana/clients/zama-host
 COPY solana/clients/zama-host ./
-RUN npm ci && npm run build
+RUN npm run setup
 
 FROM --platform=linux/amd64 oven/bun:1.3.14-debian AS bundle
 COPY --from=zama-host /src/solana/clients/zama-host /src/solana/clients/zama-host
