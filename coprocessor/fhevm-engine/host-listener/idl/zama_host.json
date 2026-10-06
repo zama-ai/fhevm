@@ -29,10 +29,32 @@
         },
         {
           "name": "transient_store",
-          "writable": true
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  116,
+                  114,
+                  97,
+                  110,
+                  115,
+                  105,
+                  101,
+                  110,
+                  116
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "payer"
+              }
+            ]
+          }
         },
         {
-          "name": "refund",
+          "name": "payer",
           "writable": true
         }
       ],
@@ -65,7 +87,43 @@
         },
         {
           "name": "encrypted_store",
-          "writable": true
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  101,
+                  110,
+                  99,
+                  114,
+                  121,
+                  112,
+                  116,
+                  101,
+                  100,
+                  45,
+                  115,
+                  116,
+                  97,
+                  116,
+                  101
+                ]
+              },
+              {
+                "kind": "arg",
+                "path": "program"
+              },
+              {
+                "kind": "account",
+                "path": "authority"
+              },
+              {
+                "kind": "account",
+                "path": "scope"
+              }
+            ]
+          }
         },
         {
           "name": "host_config",
@@ -97,11 +155,13 @@
       ],
       "args": [
         {
-          "name": "args",
+          "name": "program",
+          "type": "pubkey"
+        },
+        {
+          "name": "authority_seeds",
           "type": {
-            "defined": {
-              "name": "CreateEncryptedStoreArgs"
-            }
+            "vec": "bytes"
           }
         }
       ]
@@ -295,7 +355,58 @@
         },
         {
           "name": "delegation_record",
-          "writable": true
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  117,
+                  115,
+                  101,
+                  114,
+                  45,
+                  100,
+                  101,
+                  99,
+                  114,
+                  121,
+                  112,
+                  116,
+                  105,
+                  111,
+                  110,
+                  45,
+                  100,
+                  101,
+                  108,
+                  101,
+                  103,
+                  97,
+                  116,
+                  105,
+                  111,
+                  110
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "delegator"
+              },
+              {
+                "kind": "arg",
+                "path": "delegate"
+              },
+              {
+                "kind": "arg",
+                "path": "program"
+              },
+              {
+                "kind": "account",
+                "path": "scope"
+              }
+            ]
+          }
         },
         {
           "name": "system_program",
@@ -709,7 +820,46 @@
         },
         {
           "name": "encrypted_store",
-          "writable": true
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  101,
+                  110,
+                  99,
+                  114,
+                  121,
+                  112,
+                  116,
+                  101,
+                  100,
+                  45,
+                  115,
+                  116,
+                  97,
+                  116,
+                  101
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "encrypted_store.program",
+                "account": "EncryptedStore"
+              },
+              {
+                "kind": "account",
+                "path": "encrypted_store.authority",
+                "account": "EncryptedStore"
+              },
+              {
+                "kind": "account",
+                "path": "encrypted_store.scope",
+                "account": "EncryptedStore"
+              }
+            ]
+          }
         },
         {
           "name": "host_config",
@@ -788,7 +938,29 @@
         },
         {
           "name": "transient_store",
-          "writable": true
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  116,
+                  114,
+                  97,
+                  110,
+                  115,
+                  105,
+                  101,
+                  110,
+                  116
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "payer"
+              }
+            ]
+          }
         },
         {
           "name": "instructions",
@@ -945,7 +1117,62 @@
           "docs": [
             "Delegation record to revoke."
           ],
-          "writable": true
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  117,
+                  115,
+                  101,
+                  114,
+                  45,
+                  100,
+                  101,
+                  99,
+                  114,
+                  121,
+                  112,
+                  116,
+                  105,
+                  111,
+                  110,
+                  45,
+                  100,
+                  101,
+                  108,
+                  101,
+                  103,
+                  97,
+                  116,
+                  105,
+                  111,
+                  110
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "delegation_record.delegator",
+                "account": "UserDecryptionDelegation"
+              },
+              {
+                "kind": "account",
+                "path": "delegation_record.delegate",
+                "account": "UserDecryptionDelegation"
+              },
+              {
+                "kind": "account",
+                "path": "delegation_record.program",
+                "account": "UserDecryptionDelegation"
+              },
+              {
+                "kind": "account",
+                "path": "delegation_record.scope",
+                "account": "UserDecryptionDelegation"
+              }
+            ]
+          }
         }
       ],
       "args": []
@@ -980,7 +1207,39 @@
           "docs": [
             "then created if absent."
           ],
-          "writable": true
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  112,
+                  101,
+                  114,
+                  109,
+                  105,
+                  116,
+                  45,
+                  105,
+                  110,
+                  118,
+                  97,
+                  108,
+                  105,
+                  100,
+                  97,
+                  116,
+                  105,
+                  111,
+                  110
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "user"
+              }
+            ]
+          }
         },
         {
           "name": "system_program",
@@ -1200,7 +1459,34 @@
         },
         {
           "name": "deny_scope_record",
-          "writable": true
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  100,
+                  101,
+                  110,
+                  121,
+                  45,
+                  115,
+                  99,
+                  111,
+                  112,
+                  101
+                ]
+              },
+              {
+                "kind": "arg",
+                "path": "app_program"
+              },
+              {
+                "kind": "arg",
+                "path": "scope"
+              }
+            ]
+          }
         },
         {
           "name": "system_program",
@@ -1218,7 +1504,7 @@
       ],
       "args": [
         {
-          "name": "program",
+          "name": "app_program",
           "type": "pubkey"
         },
         {
@@ -1434,7 +1720,35 @@
         },
         {
           "name": "hcu_trusted_app_record",
-          "writable": true
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  104,
+                  99,
+                  117,
+                  45,
+                  116,
+                  114,
+                  117,
+                  115,
+                  116,
+                  101,
+                  100
+                ]
+              },
+              {
+                "kind": "arg",
+                "path": "app_program"
+              },
+              {
+                "kind": "arg",
+                "path": "scope"
+              }
+            ]
+          }
         },
         {
           "name": "system_program",
@@ -1452,7 +1766,7 @@
       ],
       "args": [
         {
-          "name": "program",
+          "name": "app_program",
           "type": "pubkey"
         },
         {
@@ -1710,7 +2024,26 @@
         },
         {
           "name": "pauser_record",
-          "writable": true
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  112,
+                  97,
+                  117,
+                  115,
+                  101,
+                  114
+                ]
+              },
+              {
+                "kind": "arg",
+                "path": "pauser"
+              }
+            ]
+          }
         },
         {
           "name": "system_program",
@@ -2618,24 +2951,6 @@
                   65
                 ]
               }
-            }
-          }
-        ]
-      }
-    },
-    {
-      "name": "CreateEncryptedStoreArgs",
-      "type": {
-        "kind": "struct",
-        "fields": [
-          {
-            "name": "program",
-            "type": "pubkey"
-          },
-          {
-            "name": "authority_seeds",
-            "type": {
-              "vec": "bytes"
             }
           }
         ]

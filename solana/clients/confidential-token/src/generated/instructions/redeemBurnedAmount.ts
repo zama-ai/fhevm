@@ -6,6 +6,7 @@
  * @see https://github.com/codama-idl/codama
  */
 
+import { findHostConfigPda } from '@fhevm/solana-zama-host';
 import {
   addDecoderSizePrefix,
   addEncoderSizePrefix,
@@ -16,6 +17,7 @@ import {
   getArrayEncoder,
   getBytesDecoder,
   getBytesEncoder,
+  getProgramDerivedAddress,
   getStructDecoder,
   getStructEncoder,
   getU32Decoder,
@@ -72,7 +74,7 @@ export type RedeemBurnedAmountInstruction<
   TAccountZamaProgram extends string | AccountMeta<string> = 'DPq5y89RDZPq9NcMh9X1NgjBWgYmSXg3QoipSBV3ZMzQ',
   TAccountTokenProgram extends string | AccountMeta<string> = 'TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA',
   TAccountEventAuthority extends string | AccountMeta<string> = string,
-  TAccountProgram extends string | AccountMeta<string> = string,
+  TAccountProgram extends string | AccountMeta<string> = 'FAWs7E52LZmXR5YzFy4aXanfBjNtXV2qooQVtkmBa3cL',
   TRemainingAccounts extends readonly AccountMeta<string>[] = [],
 > = Instruction<TProgram> &
   InstructionWithData<ReadonlyUint8Array> &
@@ -189,7 +191,7 @@ export type RedeemBurnedAmountAsyncInput<
   /** Pending-burn account opened at burn time; closed on successful redemption. */
   pendingBurn?: Address<TAccountPendingBurn>;
   /** Host config carrying the current KMS context id and gateway EIP-712 domain. */
-  hostConfig: Address<TAccountHostConfig>;
+  hostConfig?: Address<TAccountHostConfig>;
   /**
    * KMS context PDA for the id the certificate commits to (any live context; validated by the
    * verifier CPI).
@@ -199,8 +201,8 @@ export type RedeemBurnedAmountAsyncInput<
   zamaProgram?: Address<TAccountZamaProgram>;
   /** Classic Token or Token-2022 program owning the underlying mint and token accounts. */
   tokenProgram?: Address<TAccountTokenProgram>;
-  eventAuthority: Address<TAccountEventAuthority>;
-  program: Address<TAccountProgram>;
+  eventAuthority?: Address<TAccountEventAuthority>;
+  program?: Address<TAccountProgram>;
   burnedHandle: RedeemBurnedAmountInstructionDataArgs['burnedHandle'];
   cleartextAmount: RedeemBurnedAmountInstructionDataArgs['cleartextAmount'];
   signatures: RedeemBurnedAmountInstructionDataArgs['signatures'];
@@ -308,9 +310,28 @@ export async function getRedeemBurnedAmountInstructionAsync<
     accounts.zamaProgram.value =
       'DPq5y89RDZPq9NcMh9X1NgjBWgYmSXg3QoipSBV3ZMzQ' as Address<'DPq5y89RDZPq9NcMh9X1NgjBWgYmSXg3QoipSBV3ZMzQ'>;
   }
+  if (!accounts.hostConfig.value) {
+    accounts.hostConfig.value = await findHostConfigPda({
+      programAddress: getAddressFromResolvedInstructionAccount('zamaProgram', accounts.zamaProgram.value),
+    });
+  }
   if (!accounts.tokenProgram.value) {
     accounts.tokenProgram.value =
       'TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA' as Address<'TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA'>;
+  }
+  if (!accounts.eventAuthority.value) {
+    accounts.eventAuthority.value = await getProgramDerivedAddress({
+      programAddress,
+      seeds: [
+        getBytesEncoder().encode(
+          new Uint8Array([95, 95, 101, 118, 101, 110, 116, 95, 97, 117, 116, 104, 111, 114, 105, 116, 121]),
+        ),
+      ],
+    });
+  }
+  if (!accounts.program.value) {
+    accounts.program.value = programAddress;
+    accounts.program.isWritable = false;
   }
 
   const getAccountMeta = getAccountMetaFactory(programAddress, 'programId');
@@ -407,7 +428,7 @@ export type RedeemBurnedAmountInput<
   /** Classic Token or Token-2022 program owning the underlying mint and token accounts. */
   tokenProgram?: Address<TAccountTokenProgram>;
   eventAuthority: Address<TAccountEventAuthority>;
-  program: Address<TAccountProgram>;
+  program?: Address<TAccountProgram>;
   burnedHandle: RedeemBurnedAmountInstructionDataArgs['burnedHandle'];
   cleartextAmount: RedeemBurnedAmountInstructionDataArgs['cleartextAmount'];
   signatures: RedeemBurnedAmountInstructionDataArgs['signatures'];
@@ -505,6 +526,10 @@ export function getRedeemBurnedAmountInstruction<
   if (!accounts.tokenProgram.value) {
     accounts.tokenProgram.value =
       'TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA' as Address<'TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA'>;
+  }
+  if (!accounts.program.value) {
+    accounts.program.value = programAddress;
+    accounts.program.isWritable = false;
   }
 
   const getAccountMeta = getAccountMetaFactory(programAddress, 'programId');

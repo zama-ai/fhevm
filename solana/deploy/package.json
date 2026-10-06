@@ -10,7 +10,8 @@
     "@fhevm/solana-zama-host": "file:../clients/zama-host",
     "@solana/kit": "6.10.0",
     "@solana/program-client-core": "6.10.0",
-    "viem": "^2.46.3"
+    "viem": "^2.46.3",
+    "@fhevm/confidential-token": "file:../clients/confidential-token"
   },
   "devDependencies": {
     "@types/node": "22.20.1",

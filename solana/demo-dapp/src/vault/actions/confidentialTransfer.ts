@@ -7,7 +7,6 @@ import {
   assertIsTransactionWithinSizeLimit,
   createTransactionMessage,
   getBase64EncodedWireTransaction,
-  getProgramDerivedAddress,
   getSignatureFromTransaction,
   pipe,
   sendAndConfirmTransactionFactory,
@@ -31,9 +30,8 @@ import type { FhevmSolanaChain } from '@fhevm/sdk/solana';
 import type { Bytes32Hex } from '@fhevm/sdk/types';
 import type { SolanaInputProof } from '@fhevm/sdk/solana';
 import { associatedTokenAddress } from '../internal/tokenAccounts.js';
-import { getConfidentialTransferInstruction, CONFIDENTIAL_TOKEN_PROGRAM_ADDRESS, ZAMA_HOST_PROGRAM_ADDRESS } from '@fhevm/confidential-token';
-
-const EVENT_AUTHORITY_SEED = new TextEncoder().encode('__event_authority');
+import { getConfidentialTransferInstruction,
+  findEventAuthorityPda, CONFIDENTIAL_TOKEN_PROGRAM_ADDRESS, ZAMA_HOST_PROGRAM_ADDRESS } from '@fhevm/confidential-token';
 
 export type SolanaConfidentialTransferParameters = {
   readonly rpc: Rpc<SolanaRpcApi>;
@@ -59,10 +57,6 @@ export type SolanaConfidentialTransferParameters = {
   readonly hcuTrustedAppRecord?: Address | undefined;
   readonly denyRecords?: readonly Address[] | undefined;
 };
-
-async function pda(programAddress: Address, seeds: Uint8Array[]): Promise<Address> {
-  return (await getProgramDerivedAddress({ programAddress, seeds }))[0];
-}
 
 /** Builds, simulates, sends, and confirms one confidential-token transfer. */
 export async function confidentialTransfer(
@@ -108,8 +102,8 @@ export async function confidentialTransfer(
     throw new Error('self-transfers cannot include deny records');
   }
 
-  const tokenEventAuthority = await pda(CONFIDENTIAL_TOKEN_PROGRAM_ADDRESS, [EVENT_AUTHORITY_SEED]);
-  const zamaEventAuthority = await pda(zamaHostProgramAddress, [EVENT_AUTHORITY_SEED]);
+  const tokenEventAuthority = (await findEventAuthorityPda())[0];
+  const zamaEventAuthority = (await findEventAuthorityPda({ programAddress: zamaHostProgramAddress }))[0];
   const transientStore = await prepareTransientStore({ payer: feePayer, host: zamaHostProgramAddress });
   const transferInstruction = getConfidentialTransferInstruction({
     transientStore: transientStore.address,

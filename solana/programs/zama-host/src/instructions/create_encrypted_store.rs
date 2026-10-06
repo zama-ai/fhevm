@@ -5,13 +5,8 @@ use super::common::{
 };
 use crate::{errors::ZamaHostError, state::*};
 
-#[derive(AnchorSerialize, AnchorDeserialize, Clone)]
-pub struct CreateEncryptedStoreArgs {
-    pub program: Pubkey,
-    pub authority_seeds: Vec<Vec<u8>>,
-}
-
 #[derive(Accounts)]
+#[instruction(program: Pubkey)]
 pub struct CreateEncryptedStore<'info> {
     #[account(mut)]
     pub payer: Signer<'info>,
@@ -19,7 +14,7 @@ pub struct CreateEncryptedStore<'info> {
     /// CHECK: only its key and owner are read; the owner must be the store's program.
     pub scope: UncheckedAccount<'info>,
     /// CHECK: canonical PDA and uninitialized ownership are checked before creation.
-    #[account(mut)]
+    #[account(mut, seeds = [ENCRYPTED_STORE_SEED, program.as_ref(), authority.key().as_ref(), scope.key().as_ref()], bump)]
     pub encrypted_store: UncheckedAccount<'info>,
     #[account(seeds = [HOST_CONFIG_SEED], bump = host_config.bump)]
     pub host_config: Account<'info, HostConfig>,
@@ -28,13 +23,14 @@ pub struct CreateEncryptedStore<'info> {
 
 pub fn create_encrypted_store(
     ctx: Context<CreateEncryptedStore>,
-    args: CreateEncryptedStoreArgs,
+    program: Pubkey,
+    authority_seeds: Vec<Vec<u8>>,
 ) -> Result<()> {
     assert_not_paused(&ctx.accounts.host_config, PauseArea::AclWrites)?;
     assert_no_remaining_accounts(ctx.remaining_accounts)?;
     let authority = ctx.accounts.authority.key();
-    let seeds: Vec<&[u8]> = args.authority_seeds.iter().map(Vec::as_slice).collect();
-    let derived = Pubkey::create_program_address(&seeds, &args.program)
+    let seeds: Vec<&[u8]> = authority_seeds.iter().map(Vec::as_slice).collect();
+    let derived = Pubkey::create_program_address(&seeds, &program)
         .map_err(|_| error!(ZamaHostError::EncryptedStoreAuthorityNotProgramPda))?;
     require_keys_eq!(
         derived,
@@ -48,16 +44,11 @@ pub fn create_encrypted_store(
     let scope = ctx.accounts.scope.key();
     require_keys_eq!(
         *ctx.accounts.scope.owner,
-        args.program,
+        program,
         ZamaHostError::EncryptedStoreScopeNotProgramAccount
     );
-    let (address, bump) = encrypted_store_address(args.program, authority, scope);
+    let bump = ctx.bumps.encrypted_store;
     let info = ctx.accounts.encrypted_store.to_account_info();
-    require_keys_eq!(
-        address,
-        info.key(),
-        ZamaHostError::EncryptedStorePdaMismatch
-    );
     // The cleartext build allocates the largest shape up front so its plaintext section sits at a
     // fixed offset no later Borsh write reaches.
     #[cfg(not(feature = "cleartext"))]
@@ -71,7 +62,7 @@ pub fn create_encrypted_store(
         space,
         &[
             ENCRYPTED_STORE_SEED,
-            args.program.as_ref(),
+            program.as_ref(),
             authority.as_ref(),
             scope.as_ref(),
             &[bump],
@@ -80,7 +71,7 @@ pub fn create_encrypted_store(
     write_account(
         &info,
         &EncryptedStore {
-            program: args.program,
+            program,
             authority,
             scope,
             slots: Vec::new(),

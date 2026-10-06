@@ -32,7 +32,7 @@ pub fn fhe_transaction(
         zama_host::ID,
         zama_host::accounts::CloseTransientStore {
             transient_store,
-            refund: payer,
+            payer,
             instructions: Instructions::id(),
         },
         zama_host::instruction::CloseTransientStore {},

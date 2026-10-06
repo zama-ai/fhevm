@@ -1,11 +1,8 @@
 import { getAddressEncoder, getProgramDerivedAddress, type Address } from '@solana/kit';
-// The `__event_authority` seed and the canonical token-value derivation are owned by batcherPdas;
-// import them rather than re-declaring the seed / re-implementing the derivation here.
-import { EVENT_AUTHORITY_SEED } from './batcherPdas.js';
-import { CONFIDENTIAL_TOKEN_PROGRAM_ADDRESS, ZAMA_HOST_PROGRAM_ADDRESS, findTotalSupplyAuthorityPda } from '@fhevm/confidential-token';
+import { ZAMA_HOST_PROGRAM_ADDRESS, findTotalSupplyAuthorityPda, findEventAuthorityPda } from '@fhevm/confidential-token';
 
 // Slot key shared with confidential_token::state.
-export const BALANCE_KEY = new TextEncoder().encode('balance_________________________');
+export { BALANCE_KEY } from '@fhevm/confidential-token';
 
 const SPL_TOKEN_PROGRAM_ADDRESS = 'TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA' as Address;
 const ASSOCIATED_TOKEN_PROGRAM_ADDRESS = 'ATokenGPvbdGVxr1b2hvZbsiqW5xWH25efTNsLJA8knL' as Address;
@@ -24,10 +21,10 @@ export const totalSupplyAuthorityAddress = async (mint: Address): Promise<Addres
 
 /** The confidential-token program's own Anchor event-authority PDA (the instruction `eventAuthority`). */
 export const tokenEventAuthorityAddress = (): Promise<Address> =>
-  pda(CONFIDENTIAL_TOKEN_PROGRAM_ADDRESS, [EVENT_AUTHORITY_SEED]);
+  findEventAuthorityPda().then(([address]) => address);
 
 /** The zama-host program's Anchor event-authority PDA (the instruction `zamaEventAuthority`). */
-export const zamaEventAuthorityAddress = (): Promise<Address> => pda(ZAMA_HOST_PROGRAM_ADDRESS, [EVENT_AUTHORITY_SEED]);
+export const zamaEventAuthorityAddress = (): Promise<Address> => findEventAuthorityPda({ programAddress: ZAMA_HOST_PROGRAM_ADDRESS }).then(([address]) => address);
 
 export const TOKEN_PROGRAM_ADDRESS = SPL_TOKEN_PROGRAM_ADDRESS;
 

@@ -3,29 +3,20 @@ import {
   createNoopSigner,
   fetchEncodedAccount,
   getAddressDecoder,
-  type FetchAccountConfig,
-  getAddressEncoder,
-  getProgramDerivedAddress,
   type Address,
   type Instruction,
   type MaybeEncodedAccount,
   type ProgramDerivedAddress,
 } from '@solana/kit';
 
-import { getRevokePermitsInstruction } from '@fhevm/solana-zama-host';
-
-/** Seed of the per-user permit invalidation watermark PDA. */
-export const SOLANA_PERMIT_INVALIDATION_SEED = new TextEncoder().encode('permit-invalidation');
+import { findInvalidationPda, getRevokePermitsInstruction } from '@fhevm/solana-zama-host';
 
 /**
  * The canonical permit invalidation watermark address of a user. A missing account reads as
  * watermark zero: a user who has never revoked anything simply has no account.
  */
 export async function solanaPermitInvalidationAddress(user: Address, programAddress: Address): Promise<Address> {
-  const [derived] = await getProgramDerivedAddress({
-    programAddress,
-    seeds: [SOLANA_PERMIT_INVALIDATION_SEED, getAddressEncoder().encode(user)],
-  });
+  const [derived] = await findInvalidationPda({ user }, { programAddress });
   return derived;
 }
 
@@ -56,22 +47,17 @@ export async function buildRevokePermitsInstruction(params: {
 }
 
 /**
- * Reads the canonical watermark, at `finalized` unless `config` names another commitment. Missing
- * accounts have never invalidated a permit.
+ * Reads the canonical watermark at `finalized`. Missing accounts have never invalidated a permit.
  */
 export async function fetchSolanaPermitInvalidation(
   rpc: SolanaRpc,
   user: Address,
-  config: FetchAccountConfig & { readonly programAddress: Address },
+  config: { readonly programAddress: Address },
 ): Promise<bigint> {
-  const { programAddress, ...passthrough } = config;
-  const fetchConfig = { commitment: 'finalized' as const, ...passthrough };
-  const pda = await getProgramDerivedAddress({
-    programAddress,
-    seeds: [SOLANA_PERMIT_INVALIDATION_SEED, getAddressEncoder().encode(user)],
-  });
+  const { programAddress } = config;
+  const pda = await findInvalidationPda({ user }, { programAddress });
   return solanaPermitInvalidationWatermark(
-    await fetchEncodedAccount(rpc, pda[0], fetchConfig),
+    await fetchEncodedAccount(rpc, pda[0], { commitment: 'finalized' }),
     pda,
     user,
     programAddress,

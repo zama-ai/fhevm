@@ -6,6 +6,7 @@
  * @see https://github.com/codama-idl/codama
  */
 
+import { findHostConfigPda } from '@fhevm/solana-zama-host';
 import {
   addDecoderSizePrefix,
   addEncoderSizePrefix,
@@ -16,6 +17,7 @@ import {
   getArrayEncoder,
   getBytesDecoder,
   getBytesEncoder,
+  getProgramDerivedAddress,
   getStructDecoder,
   getStructEncoder,
   getU32Decoder,
@@ -34,7 +36,11 @@ import {
   type ReadonlyAccount,
   type ReadonlyUint8Array,
 } from '@solana/kit';
-import { getAccountMetaFactory, type ResolvedInstructionAccount } from '@solana/program-client-core';
+import {
+  getAccountMetaFactory,
+  getAddressFromResolvedInstructionAccount,
+  type ResolvedInstructionAccount,
+} from '@solana/program-client-core';
 import { CONFIDENTIAL_TOKEN_PROGRAM_ADDRESS } from '../programAddress.js';
 
 export const DISCLOSE_SECP_DISCRIMINATOR: ReadonlyUint8Array = new Uint8Array([151, 135, 187, 69, 92, 159, 136, 128]);
@@ -49,7 +55,7 @@ export type DiscloseSecpInstruction<
   TAccountKmsContext extends string | AccountMeta<string> = string,
   TAccountZamaProgram extends string | AccountMeta<string> = 'DPq5y89RDZPq9NcMh9X1NgjBWgYmSXg3QoipSBV3ZMzQ',
   TAccountEventAuthority extends string | AccountMeta<string> = string,
-  TAccountProgram extends string | AccountMeta<string> = string,
+  TAccountProgram extends string | AccountMeta<string> = 'FAWs7E52LZmXR5YzFy4aXanfBjNtXV2qooQVtkmBa3cL',
   TRemainingAccounts extends readonly AccountMeta<string>[] = [],
 > = Instruction<TProgram> &
   InstructionWithData<ReadonlyUint8Array> &
@@ -109,6 +115,118 @@ export function getDiscloseSecpInstructionDataCodec(): Codec<
   return combineCodec(getDiscloseSecpInstructionDataEncoder(), getDiscloseSecpInstructionDataDecoder());
 }
 
+export type DiscloseSecpAsyncInput<
+  TAccountHostConfig extends string = string,
+  TAccountKmsContext extends string = string,
+  TAccountZamaProgram extends string = string,
+  TAccountEventAuthority extends string = string,
+  TAccountProgram extends string = string,
+> = {
+  /** Host config carrying the current KMS context id and gateway EIP-712 domain. */
+  hostConfig?: Address<TAccountHostConfig>;
+  /**
+   * KMS context PDA for the id the certificate commits to (any live context; validated by the
+   * verifier CPI).
+   */
+  kmsContext: Address<TAccountKmsContext>;
+  /** ZamaHost program used for the stateless verifier CPI. */
+  zamaProgram?: Address<TAccountZamaProgram>;
+  eventAuthority?: Address<TAccountEventAuthority>;
+  program?: Address<TAccountProgram>;
+  handle: DiscloseSecpInstructionDataArgs['handle'];
+  cleartext: DiscloseSecpInstructionDataArgs['cleartext'];
+  signatures: DiscloseSecpInstructionDataArgs['signatures'];
+  extraData: DiscloseSecpInstructionDataArgs['extraData'];
+};
+
+export async function getDiscloseSecpInstructionAsync<
+  TAccountHostConfig extends string,
+  TAccountKmsContext extends string,
+  TAccountZamaProgram extends string,
+  TAccountEventAuthority extends string,
+  TAccountProgram extends string,
+  TProgramAddress extends Address = typeof CONFIDENTIAL_TOKEN_PROGRAM_ADDRESS,
+>(
+  input: DiscloseSecpAsyncInput<
+    TAccountHostConfig,
+    TAccountKmsContext,
+    TAccountZamaProgram,
+    TAccountEventAuthority,
+    TAccountProgram
+  >,
+  config?: { programAddress?: TProgramAddress },
+): Promise<
+  DiscloseSecpInstruction<
+    TProgramAddress,
+    TAccountHostConfig,
+    TAccountKmsContext,
+    TAccountZamaProgram,
+    TAccountEventAuthority,
+    TAccountProgram
+  >
+> {
+  // Program address.
+  const programAddress = config?.programAddress ?? CONFIDENTIAL_TOKEN_PROGRAM_ADDRESS;
+
+  // Original accounts.
+  const originalAccounts = {
+    hostConfig: { value: input.hostConfig ?? null, isWritable: false },
+    kmsContext: { value: input.kmsContext ?? null, isWritable: false },
+    zamaProgram: { value: input.zamaProgram ?? null, isWritable: false },
+    eventAuthority: { value: input.eventAuthority ?? null, isWritable: false },
+    program: { value: input.program ?? null, isWritable: false },
+  };
+  const accounts = originalAccounts as Record<keyof typeof originalAccounts, ResolvedInstructionAccount>;
+
+  // Original args.
+  const args = { ...input };
+
+  // Resolve default values.
+  if (!accounts.zamaProgram.value) {
+    accounts.zamaProgram.value =
+      'DPq5y89RDZPq9NcMh9X1NgjBWgYmSXg3QoipSBV3ZMzQ' as Address<'DPq5y89RDZPq9NcMh9X1NgjBWgYmSXg3QoipSBV3ZMzQ'>;
+  }
+  if (!accounts.hostConfig.value) {
+    accounts.hostConfig.value = await findHostConfigPda({
+      programAddress: getAddressFromResolvedInstructionAccount('zamaProgram', accounts.zamaProgram.value),
+    });
+  }
+  if (!accounts.eventAuthority.value) {
+    accounts.eventAuthority.value = await getProgramDerivedAddress({
+      programAddress,
+      seeds: [
+        getBytesEncoder().encode(
+          new Uint8Array([95, 95, 101, 118, 101, 110, 116, 95, 97, 117, 116, 104, 111, 114, 105, 116, 121]),
+        ),
+      ],
+    });
+  }
+  if (!accounts.program.value) {
+    accounts.program.value = programAddress;
+    accounts.program.isWritable = false;
+  }
+
+  const getAccountMeta = getAccountMetaFactory(programAddress, 'programId');
+  return Object.freeze({
+    accounts: [
+      getAccountMeta('hostConfig', accounts.hostConfig),
+      getAccountMeta('kmsContext', accounts.kmsContext),
+      getAccountMeta('zamaProgram', accounts.zamaProgram),
+      getAccountMeta('eventAuthority', accounts.eventAuthority),
+      getAccountMeta('program', accounts.program),
+    ],
+    data: getDiscloseSecpInstructionDataEncoder().encode(args as DiscloseSecpInstructionDataArgs),
+    programAddress,
+  } as DiscloseSecpInstruction<
+    TProgramAddress,
+    TAccountHostConfig,
+    TAccountKmsContext,
+    TAccountZamaProgram,
+    TAccountEventAuthority,
+    TAccountProgram
+  >);
+}
+
 export type DiscloseSecpInput<
   TAccountHostConfig extends string = string,
   TAccountKmsContext extends string = string,
@@ -126,7 +244,7 @@ export type DiscloseSecpInput<
   /** ZamaHost program used for the stateless verifier CPI. */
   zamaProgram?: Address<TAccountZamaProgram>;
   eventAuthority: Address<TAccountEventAuthority>;
-  program: Address<TAccountProgram>;
+  program?: Address<TAccountProgram>;
   handle: DiscloseSecpInstructionDataArgs['handle'];
   cleartext: DiscloseSecpInstructionDataArgs['cleartext'];
   signatures: DiscloseSecpInstructionDataArgs['signatures'];
@@ -177,6 +295,10 @@ export function getDiscloseSecpInstruction<
   if (!accounts.zamaProgram.value) {
     accounts.zamaProgram.value =
       'DPq5y89RDZPq9NcMh9X1NgjBWgYmSXg3QoipSBV3ZMzQ' as Address<'DPq5y89RDZPq9NcMh9X1NgjBWgYmSXg3QoipSBV3ZMzQ'>;
+  }
+  if (!accounts.program.value) {
+    accounts.program.value = programAddress;
+    accounts.program.isWritable = false;
   }
 
   const getAccountMeta = getAccountMetaFactory(programAddress, 'programId');

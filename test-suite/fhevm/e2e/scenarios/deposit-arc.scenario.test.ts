@@ -577,8 +577,8 @@ describe.skipIf(!runsDemoScenarios)("solana deposit-arc scenario", () => {
       );
       expect(joinRecordAfterClaim.user).toBe(alice.address);
       expect(joinRecordAfterClaim.claimed).toBe(true);
-      // getEncryptedStore throws while the account is missing and reads at the RPC default
-      // `finalized`; until() swallows probe errors until its deadline, so poll it.
+      // getEncryptedStore reads at `finalized` and throws while the account is missing;
+      // until() swallows probe errors until its deadline, so poll it.
       await until(
         async () => {
           const state = await vault.getEncryptedStore(publicDecryptClient, claimValueAccount);

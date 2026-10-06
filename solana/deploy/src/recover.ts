@@ -1,3 +1,4 @@
+import { findVaultAuthorityPda, findTotalSupplyAuthorityPda, getVaultAuthorityPdaSeeds, getTotalSupplyAuthorityPdaSeeds } from '@fhevm/confidential-token';
 // Exhaustive preview reset. Public account inventory is written before any state is closed.
 import { createHash } from 'node:crypto';
 import { mkdir, readFile, readdir, writeFile } from 'node:fs/promises';
@@ -115,14 +116,23 @@ export async function recoverPreview(
     // Derive all external signing authorities while their discovery accounts still exist.
     for (const item of inventory) {
       const data = Buffer.from(item.data, 'base64');
+      const isTokenMint = item.name === 'confidential_token' && data.subarray(0, 8).equals(discriminator('account:ConfidentialMint'));
       const roots =
-        item.name === 'confidential_token' && data.subarray(0, 8).equals(discriminator('account:ConfidentialMint'))
-          ? ['vault-authority', 'total-supply']
-          : item.name === 'demo_vault' && data.subarray(0, 8).equals(discriminator('account:Vault'))
-            ? ['authority']
-            : item.name === 'confidential_batcher' && data.subarray(0, 8).equals(discriminator('account:Batch'))
-              ? ['batch-authority']
-              : [];
+        item.name === 'demo_vault' && data.subarray(0, 8).equals(discriminator('account:Vault'))
+          ? ['authority']
+          : item.name === 'confidential_batcher' && data.subarray(0, 8).equals(discriminator('account:Batch'))
+            ? ['batch-authority']
+            : [];
+      if (isTokenMint) {
+        for (const [finder, seedEncoder] of [
+          [findVaultAuthorityPda, getVaultAuthorityPdaSeeds],
+          [findTotalSupplyAuthorityPda, getTotalSupplyAuthorityPdaSeeds],
+        ] as const) {
+          const seeds = { mint: item.address };
+          const [derived, bump] = await finder(seeds, { programAddress: item.program });
+          authorities.push({ program: item.program, address: derived, seeds: [...seedEncoder(seeds).map(bytes => Uint8Array.from(bytes)), new Uint8Array([bump])] });
+        }
+      }
       for (const root of roots) {
         const seeds = [new TextEncoder().encode(root), Uint8Array.from(getAddressEncoder().encode(item.address))];
         const [derived, bump] = await getProgramDerivedAddress({ programAddress: item.program, seeds });
@@ -131,7 +141,7 @@ export async function recoverPreview(
       const mint =
         item.name === 'demo_vault' && roots.length
           ? decodeAddress(data, 40)
-          : item.name === 'confidential_token' && roots.length
+          : isTokenMint
             ? decodeAddress(data, 40)
             : undefined;
       if (mint) {

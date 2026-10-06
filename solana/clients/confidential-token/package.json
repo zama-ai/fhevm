@@ -11,6 +11,7 @@
     "src"
   ],
   "dependencies": {
+    "@fhevm/solana-zama-host": "file:../zama-host",
     "@solana/kit": "6.10.0",
     "@solana/program-client-core": "6.10.0"
   }

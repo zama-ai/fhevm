@@ -32,6 +32,7 @@ pub struct RedeemBurnedAmount<'info> {
     /// Confidential mint whose vault backs the redeemed burned amount.
     pub mint: Box<Account<'info, ConfidentialMint>>,
     /// Confidential token account that produced the burned amount.
+    #[account(seeds = [b"token-account", mint.key().as_ref(), token_account.owner.as_ref()], bump = token_account.bump)]
     pub token_account: Box<Account<'info, ConfidentialTokenAccount>>,
     /// Underlying SPL mint.
     pub underlying_mint: Box<InterfaceAccount<'info, SplMint>>,
@@ -69,6 +70,7 @@ pub struct RedeemBurnedAmount<'info> {
     )]
     pub pending_burn: Account<'info, PendingBurn>,
     /// Host config carrying the current KMS context id and gateway EIP-712 domain.
+    #[account(seeds = [zama_host::HOST_CONFIG_SEED], bump = host_config.bump, seeds::program = zama_host::ID)]
     pub host_config: Box<Account<'info, zama_host::HostConfig>>,
     /// KMS context PDA for the id the certificate commits to (any live context; validated by the
     /// verifier CPI).

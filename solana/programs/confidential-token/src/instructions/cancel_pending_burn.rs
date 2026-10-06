@@ -20,16 +20,16 @@ pub struct CancelPendingBurn<'info> {
     /// Confidential mint whose total supply is re-credited.
     pub mint: Box<Account<'info, ConfidentialMint>>,
     /// Token account whose balance is re-credited.
-    #[account(mut)]
+    #[account(mut, seeds = [b"token-account", mint.key().as_ref(), token_account.owner.as_ref()], bump = token_account.bump)]
     pub token_account: Box<Account<'info, ConfidentialTokenAccount>>,
     /// CHECK: Mint-scoped encrypted store authority for total-supply handles.
     #[account(seeds = [b"total-supply", mint.key().as_ref()], bump)]
     pub total_supply_authority: UncheckedAccount<'info>,
     /// Stable balance encrypted store; read for the current handle and replaced by this execution.
-    #[account(mut, address = encrypted_store_address(mint.key(), token_account.key()).0)]
+    #[account(mut)]
     pub balance_store: Box<Account<'info, zama_host::EncryptedStore>>,
     /// Stable total-supply encrypted store; read for the current handle and replaced by this execution.
-    #[account(mut, address = encrypted_store_address(mint.key(), total_supply_authority_address(mint.key()).0).0)]
+    #[account(mut)]
     pub total_supply_store: Box<Account<'info, zama_host::EncryptedStore>>,
     /// Pending-burn account; closed on successful cancellation.
     #[account(
@@ -44,8 +44,10 @@ pub struct CancelPendingBurn<'info> {
     )]
     pub pending_burn: Account<'info, PendingBurn>,
     /// ZamaHost config used for handle derivation.
+    #[account(seeds = [zama_host::HOST_CONFIG_SEED], bump = host_config.bump, seeds::program = zama_host::ID)]
     pub host_config: Box<Account<'info, zama_host::HostConfig>>,
     /// CHECK: Anchor event CPI authority for the Zama host program.
+    #[account(seeds = [b"__event_authority"], bump = zama_host::EVENT_AUTHORITY_AND_BUMP.1, seeds::program = zama_host::ID)]
     pub zama_event_authority: UncheckedAccount<'info>,
     /// CHECK: shared transaction transient store, validated by ZamaHost.
     #[account(mut)]
@@ -114,12 +116,12 @@ pub fn cancel_pending_burn<'info>(ctx: Context<'info, CancelPendingBurn<'info>>)
     let old_balance_handle = fhe::store_handle(&ctx.accounts.balance_store, balance_key())?;
     let old_total_supply_handle =
         fhe::store_handle(&ctx.accounts.total_supply_store, total_supply_key())?;
-    let token_authority = fhe::StoreAuthority::token_account(&ctx.accounts.token_account)?;
+    let token_authority = fhe::StoreAuthority::token_account(&ctx.accounts.token_account);
     let total_supply_authority = fhe::StoreAuthority::total_supply(
         &ctx.accounts.total_supply_authority,
         mint_key,
         ctx.bumps.total_supply_authority,
-    )?;
+    );
     let balance_output = fhe::SlotOutput::new(
         ctx.accounts.balance_store.to_account_info(),
         balance_slot(mint_key, token_account_key),

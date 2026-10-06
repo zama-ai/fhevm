@@ -2,13 +2,10 @@ import {
   createNoopSigner,
   fetchEncodedAccount,
   getAddressDecoder,
-  getAddressEncoder,
-  getProgramDerivedAddress,
   getStructDecoder,
   getU64Decoder,
   getU8Decoder,
   type Address,
-  type FetchAccountConfig,
   type Instruction,
   type MaybeEncodedAccount,
   type ProgramDerivedAddress,
@@ -17,6 +14,8 @@ import {
 
 import type { SolanaRpc } from '../encryptedStore.js';
 import {
+  type DelegationRecordSeeds,
+  findDelegationRecordPda,
   findHostConfigPda,
   getDelegateForUserDecryptionInstructionAsync,
   getRevokeDelegationForUserDecryptionInstructionAsync,
@@ -30,16 +29,8 @@ export type SolanaZamaHostAddressConfig = {
   readonly programAddress: Address;
 };
 
-/** Seed of the user-decryption delegation record PDA. */
-export const SOLANA_USER_DECRYPTION_DELEGATION_SEED = new TextEncoder().encode('user-decryption-delegation');
-
 /** The application a delegation covers: the `(program, scope)` of the encrypted stores it reaches. */
-export type SolanaDelegationApplication = {
-  /** The application program the encrypted stores belong to. */
-  readonly program: Address;
-  /** The scope: an account that program owns, e.g. the mint for the token program. */
-  readonly scope: Address;
-};
+export type SolanaDelegationApplication = Pick<Readonly<DelegationRecordSeeds>, 'program' | 'scope'>;
 
 /** `0xff` × 32, the sentinel address of the wildcard row. */
 const WILDCARD_ADDRESS =
@@ -69,29 +60,14 @@ function isWildcardApp(application: SolanaDelegationApplication): boolean {
  * alike — for as long as the row is live. For the confidential-token program the scope is the mint,
  * so a grant covers one mint's accounts.
  */
-export type SolanaUserDecryptionDelegationTuple = SolanaDelegationApplication & {
-  /** The user granting delegated decrypt rights. */
-  readonly delegator: Address;
-  /** The party allowed to request user decryption of the delegator's values. */
-  readonly delegate: Address;
-};
+export type SolanaUserDecryptionDelegationTuple = Readonly<DelegationRecordSeeds>;
 
 /** The full record PDA of a tuple — address and canonical bump — under one deployment. */
 export async function solanaUserDecryptionDelegationPda(
   tuple: SolanaUserDecryptionDelegationTuple,
   programAddress: Address,
 ): Promise<ProgramDerivedAddress> {
-  const encoder = getAddressEncoder();
-  return await getProgramDerivedAddress({
-    programAddress,
-    seeds: [
-      SOLANA_USER_DECRYPTION_DELEGATION_SEED,
-      encoder.encode(tuple.delegator),
-      encoder.encode(tuple.delegate),
-      encoder.encode(tuple.program),
-      encoder.encode(tuple.scope),
-    ],
-  });
+  return findDelegationRecordPda(tuple, { programAddress });
 }
 
 /** The canonical delegation record address of a tuple — the address the Connector reads. */
@@ -338,7 +314,7 @@ export interface SolanaUserDecryptionDelegationRows {
 
 /**
  * Reads both rows that could authorize the tuple — the application's own and the delegator's
- * wildcard row — exactly the pair the Connector reads. Either being live (see
+ * wildcard row — at `finalized`, exactly the pair the Connector reads. Either being live (see
  * [`isSolanaUserDecryptionDelegationLiveAt`]) is what authorizes a delegated request.
  *
  * A delegation record only ever lives in a zama-host-owned account, so an account at the
@@ -354,27 +330,24 @@ export interface SolanaUserDecryptionDelegationRows {
  *
  * @param rpc - The Solana RPC to read through.
  * @param tuple - The delegation tuple.
- * @param config - Standard fetch passthrough, plus the `programAddress` of the deployment. The
- * reads are at `finalized` unless it names another commitment.
+ * @param config - The `programAddress` of the deployment.
  * @throws If an existing zama-host-owned account does not decode as a delegation record of the
  * queried tuple with the canonical bump.
  */
 export async function fetchSolanaUserDecryptionDelegation(
   rpc: SolanaRpc,
   tuple: SolanaUserDecryptionDelegationTuple,
-  config: FetchAccountConfig & SolanaZamaHostAddressConfig,
+  config: SolanaZamaHostAddressConfig,
 ): Promise<SolanaUserDecryptionDelegationRows> {
-  // Split off before the fetch: `programAddress` is this module's key, not RPC passthrough.
-  const { programAddress, ...passthrough } = config;
-  const fetchConfig = { commitment: 'finalized' as const, ...passthrough };
+  const { programAddress } = config;
   const wildcardTuple: SolanaUserDecryptionDelegationTuple = { ...tuple, ...SOLANA_WILDCARD_APP };
   const [exactPda, wildcardPda] = await Promise.all([
     solanaUserDecryptionDelegationPda(tuple, programAddress),
     solanaUserDecryptionDelegationPda(wildcardTuple, programAddress),
   ]);
   const [exactAccount, wildcardAccount] = await Promise.all([
-    fetchEncodedAccount(rpc, exactPda[0], fetchConfig),
-    fetchEncodedAccount(rpc, wildcardPda[0], fetchConfig),
+    fetchEncodedAccount(rpc, exactPda[0], { commitment: 'finalized' }),
+    fetchEncodedAccount(rpc, wildcardPda[0], { commitment: 'finalized' }),
   ]);
   const rowOrNull = (
     account: MaybeEncodedAccount,

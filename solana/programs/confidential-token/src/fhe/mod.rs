@@ -15,10 +15,7 @@
 use anchor_lang::{prelude::*, AccountDeserialize};
 use zama_host::{program::ZamaHost, HostConfig};
 
-use crate::{
-    token_account_address, token_app, total_supply_authority_address, ConfidentialTokenAccount,
-    ConfidentialTokenError,
-};
+use crate::{token_app, ConfidentialTokenAccount, ConfidentialTokenError};
 
 mod verify_public_decrypt;
 pub(crate) use verify_public_decrypt::*;
@@ -90,7 +87,9 @@ pub(crate) fn read_state(info: &AccountInfo) -> Result<zama_host::EncryptedStore
     );
     let state = zama_host::EncryptedStore::try_deserialize(&mut &info.try_borrow_data()?[..])?;
     require_keys_eq!(
-        state.canonical_address().0,
+        state
+            .address()
+            .map_err(|_| error!(ConfidentialTokenError::CurrentEncryptedStoreMismatch))?,
         info.key(),
         ConfidentialTokenError::CurrentEncryptedStoreMismatch
     );
@@ -271,51 +270,23 @@ impl<'info> StoreAuthority<'info> {
                 },
                 &[seeds.as_slice()],
             ),
-            zama_host::instructions::CreateEncryptedStoreArgs {
-                program: crate::ID,
-                authority_seeds: seeds.as_slice().iter().map(|s| s.to_vec()).collect(),
-            },
+            crate::ID,
+            seeds.as_slice().iter().map(|s| s.to_vec()).collect(),
         )
     }
 
-    pub(crate) fn token_account(
-        account: &Account<'info, ConfidentialTokenAccount>,
-    ) -> Result<Self> {
-        let (expected, expected_bump) = token_account_address(account.mint, account.owner);
-        require_keys_eq!(
-            account.key(),
-            expected,
-            ConfidentialTokenError::TokenAccountMismatch
-        );
-        require!(
-            account.bump == expected_bump,
-            ConfidentialTokenError::TokenAccountMismatch
-        );
-        Ok(Self {
+    pub(crate) fn token_account(account: &Account<'info, ConfidentialTokenAccount>) -> Self {
+        Self {
             account: account.to_account_info(),
             signer: Box::new(StoreAuthoritySigner::token_account(account)),
-        })
+        }
     }
 
-    pub(crate) fn total_supply(
-        account: &UncheckedAccount<'info>,
-        mint: Pubkey,
-        bump: u8,
-    ) -> Result<Self> {
-        let (expected, expected_bump) = total_supply_authority_address(mint);
-        require_keys_eq!(
-            account.key(),
-            expected,
-            ConfidentialTokenError::TotalSupplyAuthorityMismatch
-        );
-        require!(
-            bump == expected_bump,
-            ConfidentialTokenError::TotalSupplyAuthorityMismatch
-        );
-        Ok(Self {
+    pub(crate) fn total_supply(account: &UncheckedAccount<'info>, mint: Pubkey, bump: u8) -> Self {
+        Self {
             account: account.to_account_info(),
             signer: Box::new(StoreAuthoritySigner::total_supply(mint, bump)),
-        })
+        }
     }
 
     /// An authority whose signature the transaction already carries and that never creates a

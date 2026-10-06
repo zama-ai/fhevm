@@ -6,6 +6,14 @@
  * @see https://github.com/codama-idl/codama
  */
 
+export * from './delegationRecord.js';
+export * from './denyScopeRecord.js';
+export * from './encryptedStore.js';
+export * from './eventAuthority.js';
+export * from './hcuTrustedAppRecord.js';
 export * from './hostConfig.js';
+export * from './invalidation.js';
 export * from './kmsContext.js';
+export * from './pauserRecord.js';
 export * from './randNonce.js';
+export * from './transientStore.js';

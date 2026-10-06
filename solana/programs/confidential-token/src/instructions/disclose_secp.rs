@@ -9,6 +9,7 @@ use super::*;
 #[event_cpi]
 pub struct DiscloseSecp<'info> {
     /// Host config carrying the current KMS context id and gateway EIP-712 domain.
+    #[account(seeds = [zama_host::HOST_CONFIG_SEED], bump = host_config.bump, seeds::program = zama_host::ID)]
     pub host_config: Box<Account<'info, zama_host::HostConfig>>,
     /// KMS context PDA for the id the certificate commits to (any live context; validated by the
     /// verifier CPI).

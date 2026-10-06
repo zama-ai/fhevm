@@ -27,11 +27,13 @@ export async function findVaultAuthorityPda(
   } = config;
   return await getProgramDerivedAddress({
     programAddress,
-    seeds: [
-      getBytesEncoder().encode(
-        new Uint8Array([118, 97, 117, 108, 116, 45, 97, 117, 116, 104, 111, 114, 105, 116, 121]),
-      ),
-      getAddressEncoder().encode(seeds.mint),
-    ],
+    seeds: getVaultAuthorityPdaSeeds(seeds),
   });
+}
+
+export function getVaultAuthorityPdaSeeds(seeds: VaultAuthoritySeeds) {
+  return [
+    getBytesEncoder().encode(new Uint8Array([118, 97, 117, 108, 116, 45, 97, 117, 116, 104, 111, 114, 105, 116, 121])),
+    getAddressEncoder().encode(seeds.mint),
+  ];
 }

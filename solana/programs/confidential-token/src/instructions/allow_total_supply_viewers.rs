@@ -23,10 +23,12 @@ pub struct AllowTotalSupplyViewers<'info> {
     #[account(seeds = [b"total-supply", mint.key().as_ref()], bump)]
     pub total_supply_authority: UncheckedAccount<'info>,
     /// Encrypted total-supply value; read for the current handle and replaced.
-    #[account(mut, address = encrypted_store_address(mint.key(), total_supply_authority_address(mint.key()).0).0)]
+    #[account(mut)]
     pub total_supply_store: Box<Account<'info, zama_host::EncryptedStore>>,
+    #[account(seeds = [zama_host::HOST_CONFIG_SEED], bump = host_config.bump, seeds::program = zama_host::ID)]
     pub host_config: Box<Account<'info, zama_host::HostConfig>>,
     /// CHECK: Anchor event CPI authority for the Zama host program.
+    #[account(seeds = [b"__event_authority"], bump = zama_host::EVENT_AUTHORITY_AND_BUMP.1, seeds::program = zama_host::ID)]
     pub zama_event_authority: UncheckedAccount<'info>,
     /// CHECK: shared transaction transient store, validated by ZamaHost.
     #[account(mut)]
@@ -58,8 +60,9 @@ pub struct MakeTotalSupplyHandlePublic<'info> {
     #[account(seeds = [b"total-supply", mint.key().as_ref()], bump)]
     pub total_supply_authority: UncheckedAccount<'info>,
     /// Encrypted total-supply value whose current handle is sealed.
-    #[account(mut, address = encrypted_store_address(mint.key(), total_supply_authority_address(mint.key()).0).0)]
+    #[account(mut)]
     pub total_supply_store: Box<Account<'info, zama_host::EncryptedStore>>,
+    #[account(seeds = [zama_host::HOST_CONFIG_SEED], bump = host_config.bump, seeds::program = zama_host::ID)]
     pub host_config: Box<Account<'info, zama_host::HostConfig>>,
     pub zama_program: Program<'info, ZamaHost>,
     pub system_program: Program<'info, System>,
@@ -111,7 +114,7 @@ pub fn allow_total_supply_viewers<'info>(
             &ctx.accounts.total_supply_authority,
             mint,
             ctx.bumps.total_supply_authority,
-        )?,
+        ),
         viewers,
     )?;
     emit_cpi!(TotalSupplyHandleUpdatedEvent {

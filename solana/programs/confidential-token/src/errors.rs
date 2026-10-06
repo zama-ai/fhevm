@@ -52,9 +52,6 @@ pub enum ConfidentialTokenError {
     /// msg.sender)`: computing on a value is admitted by its authority's signature.
     #[msg("amount value spender does not control the amount")]
     AmountSpendAuthorityMismatch,
-    /// Total-supply authority PDA did not match the mint.
-    #[msg("total supply authority does not match mint")]
-    TotalSupplyAuthorityMismatch,
     /// The KMS EIP-712 public-decrypt certificate failed secp256k1 threshold verification.
     #[msg("KMS public-decrypt certificate is invalid")]
     InvalidKmsCertificate,

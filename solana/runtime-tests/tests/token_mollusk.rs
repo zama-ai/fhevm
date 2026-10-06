@@ -2338,7 +2338,7 @@ fn mollusk_confidential_transfer_rejects_another_confidential_mint() {
     check_token_instruction(
         &context,
         &ix,
-        &[token_error(token::ConfidentialTokenError::MintMismatch)],
+        &[anchor_error(anchor_lang::error::ErrorCode::ConstraintSeeds)],
     );
     assert_eq!(
         read_store_handle(&context, alice_store, token::balance_key()),
@@ -4528,11 +4528,7 @@ fn mollusk_wrap_usdc_rejects_noncanonical_vault() {
     assert_eq!(read_spl_amount(&context, user_usdc), 1_000);
 }
 
-/// `total_supply_authority` is declared `seeds = [b"total-supply", mint.key()], bump`, so Anchor
-/// itself derives and enforces the canonical PDA before the handler's (structurally identical,
-/// defense-in-depth) `TotalSupplyAuthorityMismatch` re-check ever runs: any non-canonical account
-/// is rejected by Anchor's own seeds constraint first. Substituting the canonical PDA for a
-/// *different* mint reaches exactly that: `ConstraintSeeds`, not the token error.
+/// Anchor rejects a total-supply authority for a different mint before the handler runs.
 #[test]
 fn mollusk_wrap_usdc_rejects_wrong_total_supply_authority_pda() {
     let fixture = BurnRedeemFixture::new();

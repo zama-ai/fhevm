@@ -8,3 +8,5 @@ export {
   CONFIDENTIAL_TOKEN_PROGRAM_ADDRESS,
   ZAMA_HOST_PROGRAM_ADDRESS,
 } from './generated/programAddress.js';
+
+export * from './generated/constants.js';

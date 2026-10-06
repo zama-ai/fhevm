@@ -74,6 +74,7 @@ pub struct VerifyPublicDecrypt<'info> {
     pub host_config: Account<'info, HostConfig>,
     /// KMS context PDA; must be the canonical PDA for the id the certificate commits to in its
     /// signed `extra_data`, and must not be destroyed. Verified in the handler.
+    #[account(seeds = [KMS_CONTEXT_SEED, &kms_context.context_id], bump = kms_context.bump)]
     pub kms_context: Account<'info, KmsContext>,
 }
 
@@ -110,8 +111,7 @@ pub fn verify_public_decrypt(
     // different live context's account nor a fake account at a non-canonical address, because the
     // binding chain is signed extra_data -> context id -> canonical PDA -> signer set.
     require!(
-        kms_context.context_id == cert_context_id
-            && kms_context.key() == kms_context_address(cert_context_id).0,
+        kms_context.context_id == cert_context_id,
         ZamaHostError::InvalidKmsContext
     );
     // The named context must still be alive. Rotation alone keeps an old context's certs verifiable

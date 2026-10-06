@@ -10,8 +10,10 @@ import {
   combineCodec,
   fixDecoderSize,
   fixEncoderSize,
+  getAddressEncoder,
   getBytesDecoder,
   getBytesEncoder,
+  getProgramDerivedAddress,
   getStructDecoder,
   getStructEncoder,
   SOLANA_ERROR__PROGRAM_CLIENTS__INSUFFICIENT_ACCOUNT_METAS,
@@ -32,7 +34,11 @@ import {
   type WritableAccount,
   type WritableSignerAccount,
 } from '@solana/kit';
-import { getAccountMetaFactory, type ResolvedInstructionAccount } from '@solana/program-client-core';
+import {
+  getAccountMetaFactory,
+  getAddressFromResolvedInstructionAccount,
+  type ResolvedInstructionAccount,
+} from '@solana/program-client-core';
 import { ZAMA_HOST_PROGRAM_ADDRESS } from '../programAddress.js';
 
 export const REVOKE_PERMITS_DISCRIMINATOR: ReadonlyUint8Array = new Uint8Array([51, 25, 89, 125, 125, 90, 200, 130]);
@@ -82,6 +88,67 @@ export function getRevokePermitsInstructionDataCodec(): FixedSizeCodec<
   RevokePermitsInstructionData
 > {
   return combineCodec(getRevokePermitsInstructionDataEncoder(), getRevokePermitsInstructionDataDecoder());
+}
+
+export type RevokePermitsAsyncInput<
+  TAccountUser extends string = string,
+  TAccountInvalidation extends string = string,
+  TAccountSystemProgram extends string = string,
+> = {
+  /** The user revoking their permits, and the payer for the watermark account. */
+  user: TransactionSigner<TAccountUser>;
+  /** then created if absent. */
+  invalidation?: Address<TAccountInvalidation>;
+  /** System program, used when the watermark account has to be created. */
+  systemProgram?: Address<TAccountSystemProgram>;
+};
+
+export async function getRevokePermitsInstructionAsync<
+  TAccountUser extends string,
+  TAccountInvalidation extends string,
+  TAccountSystemProgram extends string,
+  TProgramAddress extends Address = typeof ZAMA_HOST_PROGRAM_ADDRESS,
+>(
+  input: RevokePermitsAsyncInput<TAccountUser, TAccountInvalidation, TAccountSystemProgram>,
+  config?: { programAddress?: TProgramAddress },
+): Promise<RevokePermitsInstruction<TProgramAddress, TAccountUser, TAccountInvalidation, TAccountSystemProgram>> {
+  // Program address.
+  const programAddress = config?.programAddress ?? ZAMA_HOST_PROGRAM_ADDRESS;
+
+  // Original accounts.
+  const originalAccounts = {
+    user: { value: input.user ?? null, isWritable: true },
+    invalidation: { value: input.invalidation ?? null, isWritable: true },
+    systemProgram: { value: input.systemProgram ?? null, isWritable: false },
+  };
+  const accounts = originalAccounts as Record<keyof typeof originalAccounts, ResolvedInstructionAccount>;
+
+  // Resolve default values.
+  if (!accounts.invalidation.value) {
+    accounts.invalidation.value = await getProgramDerivedAddress({
+      programAddress,
+      seeds: [
+        getBytesEncoder().encode(
+          new Uint8Array([112, 101, 114, 109, 105, 116, 45, 105, 110, 118, 97, 108, 105, 100, 97, 116, 105, 111, 110]),
+        ),
+        getAddressEncoder().encode(getAddressFromResolvedInstructionAccount('user', accounts.user.value)),
+      ],
+    });
+  }
+  if (!accounts.systemProgram.value) {
+    accounts.systemProgram.value = '11111111111111111111111111111111' as Address<'11111111111111111111111111111111'>;
+  }
+
+  const getAccountMeta = getAccountMetaFactory(programAddress, 'programId');
+  return Object.freeze({
+    accounts: [
+      getAccountMeta('user', accounts.user),
+      getAccountMeta('invalidation', accounts.invalidation),
+      getAccountMeta('systemProgram', accounts.systemProgram),
+    ],
+    data: getRevokePermitsInstructionDataEncoder().encode({}),
+    programAddress,
+  } as RevokePermitsInstruction<TProgramAddress, TAccountUser, TAccountInvalidation, TAccountSystemProgram>);
 }
 
 export type RevokePermitsInput<

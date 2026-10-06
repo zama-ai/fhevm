@@ -130,16 +130,6 @@ pub(crate) fn execute_transfer<'info>(
         &accounts.underlying_mint,
         &accounts.to_ata,
     )?;
-    require_keys_eq!(
-        accounts.from_store.key(),
-        encrypted_store_address(mint_key, from.key()).0,
-        ConfidentialTokenError::CurrentEncryptedStoreMismatch
-    );
-    require_keys_eq!(
-        accounts.to_store.key(),
-        encrypted_store_address(mint_key, to.key()).0,
-        ConfidentialTokenError::CurrentEncryptedStoreMismatch
-    );
     let from_key = from.key();
     let to_key = to.key();
     let from_owner = from.owner;
@@ -275,8 +265,8 @@ fn compute_transfer_handles<'info>(
     )?;
     let mut dynamic = vec![accounts.from_store.clone(), accounts.to_store.clone()];
     let mut authorities = vec![
-        fhe::StoreAuthority::token_account(accounts.from_account)?,
-        fhe::StoreAuthority::token_account(accounts.to_account)?,
+        fhe::StoreAuthority::token_account(accounts.from_account),
+        fhe::StoreAuthority::token_account(accounts.to_account),
     ];
     let mut add_account = |info: AccountInfo<'info>| {
         if !dynamic.iter().any(|a| a.key() == info.key()) {
@@ -629,19 +619,6 @@ pub(crate) fn check_underlying_ata_not_frozen(
     Ok(())
 }
 
-pub(crate) fn assert_confidential_token_account_key(
-    token_account: Pubkey,
-    mint: Pubkey,
-    owner: Pubkey,
-) -> Result<()> {
-    require_keys_eq!(
-        token_account,
-        token_account_address(mint, owner).0,
-        ConfidentialTokenError::TokenAccountMismatch
-    );
-    Ok(())
-}
-
 pub(crate) fn assert_confidential_mint_shape(mint: &Account<ConfidentialMint>) -> Result<()> {
     require!(
         mint.to_account_info().data_len() == 8 + ConfidentialMint::SPACE,
@@ -655,14 +632,8 @@ pub(crate) fn assert_confidential_token_account_shape(
     mint: Pubkey,
     owner: Pubkey,
 ) -> Result<()> {
-    let expected_bump = token_account_address(mint, owner).1;
-    assert_confidential_token_account_key(token_account.key(), mint, owner)?;
     require!(
         token_account.to_account_info().data_len() == 8 + ConfidentialTokenAccount::SPACE,
-        ConfidentialTokenError::TokenAccountMismatch
-    );
-    require!(
-        token_account.bump == expected_bump,
         ConfidentialTokenError::TokenAccountMismatch
     );
     require_keys_eq!(

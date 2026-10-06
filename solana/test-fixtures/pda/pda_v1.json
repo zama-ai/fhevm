@@ -1,0 +1,128 @@
+{
+  "inputs": {
+    "authority": "29d2S7vB453rNYFdR5Ycwt7y9haRT5fwVwL9zTmBhfV2",
+    "contextId": [
+      68,
+      68,
+      68,
+      68,
+      68,
+      68,
+      68,
+      68,
+      68,
+      68,
+      68,
+      68,
+      68,
+      68,
+      68,
+      68,
+      68,
+      68,
+      68,
+      68,
+      68,
+      68,
+      68,
+      68,
+      68,
+      68,
+      68,
+      68,
+      68,
+      68,
+      68,
+      68
+    ],
+    "delegate": "AByCTxLPRZPoyK22KdMxa3xkCbcNbeNWzVeEvh6UcJs9",
+    "delegator": "93MB2qRDNVLxbmmPuYpLdAqn3u2x9ZhaVZK5wELHueP8",
+    "mint": "3JF3sEqM796hk5WFqA6EtmEwJQ9quALszsfJyvXNQKy3",
+    "owner": "4Ss5JMkXAD9Z7cktFEdrqeMuT6jGMF1pVozTyPHZ6zT4",
+    "payer": "6k78AbasGMFFrhG95Pj6jQbqkVt7FQMhVgemxJovWKR6",
+    "program": "FAWs7E52LZmXR5YzFy4aXanfBjNtXV2qooQVtkmBa3cL",
+    "scope": "3JF3sEqM796hk5WFqA6EtmEwJQ9quALszsfJyvXNQKy3",
+    "tokenAccount": "BLbDu5FZUdSfLrGejhuaWw5iMJBo3j3TVRyPv9rfJyMA",
+    "user": "7tj9biW3KRJ7EEWmVUGigHiouCTXhV2dzcyvwma7Cyu7"
+  },
+  "programs": {
+    "confidentialToken": {
+      "id": "FAWs7E52LZmXR5YzFy4aXanfBjNtXV2qooQVtkmBa3cL",
+      "pdas": {
+        "eventAuthority": {
+          "address": "FmW1wCB2eZQFwLVuALBH2Y3yh9uscwcExz1i4zFGYZgp",
+          "bump": 255
+        },
+        "pendingBurn": {
+          "address": "5nWqmfyacDDnD8HMepJqni58WvVKHurTjwDyPtc7LAsF",
+          "bump": 254
+        },
+        "tokenAccount": {
+          "address": "Dq4p76ezZUPC96WSyQF4UZVtnCHopTSHs8VcadT5QyCY",
+          "bump": 254
+        },
+        "totalSupplyAuthority": {
+          "address": "8nU2PjnNNeJiUGuE8MB2a7fr41rQXnPUcmKSHfncaEX",
+          "bump": 254
+        },
+        "vaultAuthority": {
+          "address": "27V3d7bXzT46XMei8nT9Rj3eKJMEBVvUxcZuvBeCkbgG",
+          "bump": 246
+        }
+      }
+    },
+    "zamaHost": {
+      "id": "DPq5y89RDZPq9NcMh9X1NgjBWgYmSXg3QoipSBV3ZMzQ",
+      "pdas": {
+        "delegationRecord": {
+          "address": "BqRiPSp2oUHeamKqLGYXAa2w1bT8xLbNzo4tPYVeCPhU",
+          "bump": 255
+        },
+        "denyScopeRecord": {
+          "address": "CeEhUtAifge6hGD3ZMD8uKmThivyHy95w7URh7PWQ5Zb",
+          "bump": 254
+        },
+        "encryptedStore": {
+          "address": "Eq2EbxpdcRzQENuJeARcZk5ubbBSVvz9M8Ksacz8obi1",
+          "bump": 254
+        },
+        "eventAuthority": {
+          "address": "CAspHyipvqeHA78sMa73uD2ThP84Zw4ywXG71dyrNpXp",
+          "bump": 253
+        },
+        "hcuBlockMeter": {
+          "address": "9hjEkDwRgFYzMf493vnK7REYCXBBXxDvryyxCmiX2nY9",
+          "bump": 255
+        },
+        "hcuTrustedAppRecord": {
+          "address": "CwUee5rnsBqLL2BCZQXdnfq7EuXwcStKRhetUnmDcQKY",
+          "bump": 255
+        },
+        "hostConfig": {
+          "address": "8FL98RBTQ8LviLQ6c9F5j6pdtJPFSbnnTJgh3VVcLeKC",
+          "bump": 254
+        },
+        "invalidation": {
+          "address": "14M632xMDVPMSTCQx4qdsPKgNweRHzikZk8W9rZnVbBz",
+          "bump": 255
+        },
+        "kmsContext": {
+          "address": "HDgQktY7E8Tkc7WHXmkweCU9Heo8JpRLRQnca1JYjNz2",
+          "bump": 255
+        },
+        "pauserRecord": {
+          "address": "5Qcu8iVDjUNxufSLX19igQSvxMbdF32tAs87KNhYhTdq",
+          "bump": 255
+        },
+        "randNonce": {
+          "address": "Ec1N8VhX5E44ZgvhEL7RY8hz2B9LG4uGNqd1syZH8Gde",
+          "bump": 255
+        },
+        "transientStore": {
+          "address": "5K2XvRhRoQ6stbZYUir4Jd8PeNgqUbc2se2C7TBWMUes",
+          "bump": 255
+        }
+      }
+    }
+  }
+}

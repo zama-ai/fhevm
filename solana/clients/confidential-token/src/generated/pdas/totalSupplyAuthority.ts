@@ -27,9 +27,13 @@ export async function findTotalSupplyAuthorityPda(
   } = config;
   return await getProgramDerivedAddress({
     programAddress,
-    seeds: [
-      getBytesEncoder().encode(new Uint8Array([116, 111, 116, 97, 108, 45, 115, 117, 112, 112, 108, 121])),
-      getAddressEncoder().encode(seeds.mint),
-    ],
+    seeds: getTotalSupplyAuthorityPdaSeeds(seeds),
   });
+}
+
+export function getTotalSupplyAuthorityPdaSeeds(seeds: TotalSupplyAuthoritySeeds) {
+  return [
+    getBytesEncoder().encode(new Uint8Array([116, 111, 116, 97, 108, 45, 115, 117, 112, 112, 108, 121])),
+    getAddressEncoder().encode(seeds.mint),
+  ];
 }

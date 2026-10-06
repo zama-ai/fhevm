@@ -11,7 +11,7 @@ pub struct OpenTransientStore<'info> {
     #[account(mut)]
     pub payer: Signer<'info>,
     /// CHECK: payer-derived host PDA, strictly created below.
-    #[account(mut)]
+    #[account(mut, seeds = [TRANSIENT_SEED, payer.key().as_ref()], bump)]
     pub transient_store: UncheckedAccount<'info>,
     /// CHECK: only the runtime's Instructions sysvar is accepted.
     #[account(address = solana_instructions_sysvar::ID)]
@@ -24,11 +24,11 @@ pub struct CloseTransientStore<'info> {
     /// CHECK: only the runtime's Instructions sysvar is accepted.
     #[account(address = solana_instructions_sysvar::ID)]
     pub instructions: UncheckedAccount<'info>,
-    #[account(mut, close = refund)]
+    #[account(mut, close = payer, seeds = [TRANSIENT_SEED, payer.key().as_ref()], bump = transient_store.load()?.bump)]
     pub transient_store: AccountLoader<'info, TransientStore>,
     /// CHECK: must match the rent payer recorded by OpenTransientStore.
     #[account(mut)]
-    pub refund: UncheckedAccount<'info>,
+    pub payer: UncheckedAccount<'info>,
 }
 
 pub fn open_transient_store<'info>(ctx: Context<'info, OpenTransientStore<'info>>) -> Result<()> {
@@ -38,12 +38,8 @@ pub fn open_transient_store<'info>(ctx: Context<'info, OpenTransientStore<'info>
         ZamaHostError::TransientCloseMissing
     );
     let payer = ctx.accounts.payer.key();
-    let (address, bump) = transient_store_address(payer);
-    require_keys_eq!(
-        ctx.accounts.transient_store.key(),
-        address,
-        ZamaHostError::TransientAccountInvalid
-    );
+    let address = ctx.accounts.transient_store.key();
+    let bump = ctx.bumps.transient_store;
     assert_final_close(address, payer, &ctx.accounts.instructions)?;
     create_pda_strict(
         &ctx.accounts.payer.to_account_info(),
@@ -89,26 +85,26 @@ pub fn close_transient_store(ctx: Context<CloseTransientStore>) -> Result<()> {
         get_stack_height() == TRANSACTION_LEVEL_STACK_HEIGHT,
         ZamaHostError::TransientCloseMissing
     );
-    let instructions = ctx.accounts.instructions.to_account_info();
-    let (last_index, _) = final_close(&instructions)?;
+    let instructions = ctx.accounts.instructions.as_ref();
+    let (last_index, _) = final_close(instructions)?;
     require!(
-        load_current_index_checked(&instructions)? == last_index,
+        load_current_index_checked(instructions)? == last_index,
         ZamaHostError::TransientCloseMissing
     );
     require!(
-        is_transient_store_len(ctx.accounts.transient_store.to_account_info().data_len()),
+        is_transient_store_len(ctx.accounts.transient_store.as_ref().data_len()),
         ZamaHostError::TransientAccountInvalid
     );
     let transient_store = ctx.accounts.transient_store.load()?;
-    transient_store.validate(ctx.accounts.transient_store.key())?;
+    transient_store.validate_shape()?;
     require_keys_eq!(
-        ctx.accounts.refund.key(),
+        ctx.accounts.payer.key(),
         transient_store.payer,
         ZamaHostError::TransientAccountInvalid
     );
     require_keys_neq!(
         ctx.accounts.transient_store.key(),
-        ctx.accounts.refund.key(),
+        ctx.accounts.payer.key(),
         ZamaHostError::TransientAccountInvalid
     );
     Ok(())

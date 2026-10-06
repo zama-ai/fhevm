@@ -1,4 +1,4 @@
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 import {
   AccountRole,
   address,
@@ -11,7 +11,6 @@ import {
 import { base58 } from '@scure/base';
 
 import {
-  SOLANA_USER_DECRYPTION_DELEGATION_SEED,
   SOLANA_WILDCARD_APP,
   buildDelegateForUserDecryptionInstruction,
   buildRevokeDelegationForUserDecryptionInstruction,
@@ -346,14 +345,16 @@ describe('fetchSolanaUserDecryptionDelegation', () => {
     } as unknown as SolanaRpc;
   }
 
-  it('reads the row of the application', async () => {
-    const rows = await fetchSolanaUserDecryptionDelegation(
-      rpcWith({ [RECORD_ADDRESS]: RECORD_BYTES_HEX }),
-      tuple,
-      HOST,
-    );
+  it('reads both rows at finalized and decodes the row of the application', async () => {
+    const rpc = rpcWith({ [RECORD_ADDRESS]: RECORD_BYTES_HEX });
+    const getAccountInfo = vi.spyOn(rpc, 'getAccountInfo');
+    const rows = await fetchSolanaUserDecryptionDelegation(rpc, tuple, HOST);
     expect(rows.exact?.delegationCounter).toBe(7n);
     expect(rows.wildcard).toBeNull();
+    expect(getAccountInfo).toHaveBeenCalledTimes(2);
+    for (const accountAddress of [RECORD_ADDRESS, WILDCARD_RECORD_ADDRESS]) {
+      expect(getAccountInfo).toHaveBeenCalledWith(accountAddress, expect.objectContaining({ commitment: 'finalized' }));
+    }
   });
 
   // The wildcard row as the host program would write it: the wildcard application in the tuple,
@@ -363,7 +364,7 @@ describe('fetchSolanaUserDecryptionDelegation', () => {
     const [wildcardAddress, bump] = await getProgramDerivedAddress({
       programAddress: ZAMA_HOST_PROGRAM_ADDRESS,
       seeds: [
-        SOLANA_USER_DECRYPTION_DELEGATION_SEED,
+        new TextEncoder().encode('user-decryption-delegation'),
         encoder.encode(delegator),
         encoder.encode(delegate),
         encoder.encode(SOLANA_WILDCARD_APP.program),
@@ -443,7 +444,7 @@ describe('fetchSolanaUserDecryptionDelegation', () => {
     const [overriddenRecord, overriddenBump] = await getProgramDerivedAddress({
       programAddress: OTHER_PROGRAM,
       seeds: [
-        SOLANA_USER_DECRYPTION_DELEGATION_SEED,
+        new TextEncoder().encode('user-decryption-delegation'),
         encoder.encode(delegator),
         encoder.encode(delegate),
         encoder.encode(application.program),

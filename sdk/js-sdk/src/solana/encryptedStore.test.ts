@@ -6,11 +6,10 @@
 // and the MMR invariant (as many peaks as the leaf count has set bits), which is checked
 // independently so a misaligned decode fails loudly instead of returning shifted fields.
 
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 import { getProgramDerivedAddress, type Address } from '@solana/kit';
 import { base58 } from '@scure/base';
 import {
-  SOLANA_ENCRYPTED_STORE_SEED,
   decodeSolanaEncryptedStore,
   fetchSolanaEncryptedStore,
   solanaEncryptedStoreAddress,
@@ -123,10 +122,9 @@ describe('the account address', () => {
     const seeds = { program: address(0x11), authority: address(0x22), scope: address(0x33) };
     const [expected] = await getProgramDerivedAddress({
       programAddress: HOST_PROGRAM,
-      seeds: [SOLANA_ENCRYPTED_STORE_SEED, bytes32(0x11), bytes32(0x22), bytes32(0x33)],
+      seeds: [new TextEncoder().encode('encrypted-state'), bytes32(0x11), bytes32(0x22), bytes32(0x33)],
     });
     expect(await solanaEncryptedStoreAddress(HOST_PROGRAM, seeds)).toBe(expected);
-    expect(new TextDecoder().decode(SOLANA_ENCRYPTED_STORE_SEED)).toBe('encrypted-state');
   });
 });
 
@@ -173,19 +171,23 @@ describe('fetching an EncryptedStore account', () => {
       fetchSolanaEncryptedStore(
         rpcWithAccount(SYSTEM_PROGRAM),
         'Dusted11111111111111111111111111111111111111' as never,
-        undefined,
         HOST_PROGRAM as never,
       ),
     ).rejects.toThrow('not the zama-host program');
   });
 
-  it('decodes a host-owned account when the expected owner is pinned', async () => {
+  it('reads at finalized and decodes a host-owned account when the expected owner is pinned', async () => {
+    const rpc = rpcWithAccount(HOST_PROGRAM);
+    const getAccountInfo = vi.spyOn(rpc, 'getAccountInfo');
     const state = await fetchSolanaEncryptedStore(
-      rpcWithAccount(HOST_PROGRAM),
+      rpc,
       'Dusted11111111111111111111111111111111111111' as never,
-      undefined,
       HOST_PROGRAM as never,
     );
     expect(state.leafCount).toBe(3n);
+    expect(getAccountInfo).toHaveBeenCalledWith(
+      'Dusted11111111111111111111111111111111111111',
+      expect.objectContaining({ commitment: 'finalized' }),
+    );
   });
 });

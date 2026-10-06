@@ -25,18 +25,34 @@ impl EncryptedStore {
     }
 
     pub(crate) fn validate(&self, address: Pubkey) -> Result<()> {
+        self.validate_shape()?;
+        let expected = self.address()?;
+        require_keys_eq!(address, expected, ZamaHostError::EncryptedStorePdaMismatch);
+        Ok(())
+    }
+
+    pub(crate) fn validate_shape(&self) -> Result<()> {
         zama_solana_acl::encrypted_store::validate_store_shape(
             self.slots.iter().map(|slot| slot.key),
             self.leaf_count,
             self.peaks.len(),
         )
-        .map_err(|_| error!(ZamaHostError::InvalidFheExecuteAccount))?;
-        let (expected, bump) = self.canonical_address();
-        require!(
-            address == expected && self.bump == bump,
-            ZamaHostError::EncryptedStorePdaMismatch
-        );
-        Ok(())
+        .map_err(|_| error!(ZamaHostError::InvalidFheExecuteAccount))
+    }
+
+    /// Re-check the identity fixed at creation without searching for the bump again.
+    pub fn address(&self) -> Result<Pubkey> {
+        Pubkey::create_program_address(
+            &[
+                ENCRYPTED_STORE_SEED,
+                self.program.as_ref(),
+                self.authority.as_ref(),
+                self.scope.as_ref(),
+                &[self.bump],
+            ],
+            &crate::ID,
+        )
+        .map_err(|_| error!(ZamaHostError::EncryptedStorePdaMismatch))
     }
 
     pub fn set(

@@ -34,7 +34,6 @@ export type {
 } from './actions/decryptPublicValue.js';
 
 export {
-  SOLANA_ENCRYPTED_STORE_SEED,
   decodeSolanaEncryptedStore,
   encryptedStoreHandle,
   fetchSolanaEncryptedStore,
@@ -60,7 +59,6 @@ export type {
   SolanaVerifyPublicDecryptArgs,
 } from './actions/verifyPublicDecrypt.js';
 export {
-  SOLANA_USER_DECRYPTION_DELEGATION_SEED,
   SOLANA_WILDCARD_APP_WARNING,
   SOLANA_WILDCARD_APP,
   buildDelegateForUserDecryptionInstruction,
@@ -82,11 +80,7 @@ export type {
   SolanaUserDecryptionDelegationTuple,
   SolanaZamaHostAddressConfig,
 } from './actions/userDecryptionDelegation.js';
-export {
-  SOLANA_PERMIT_INVALIDATION_SEED,
-  buildRevokePermitsInstruction,
-  solanaPermitInvalidationAddress,
-} from './actions/revokePermits.js';
+export { buildRevokePermitsInstruction, solanaPermitInvalidationAddress } from './actions/revokePermits.js';
 export type { SolanaPublicDecryptActions } from './clients/decorators/publicDecrypt.js';
 
 export type {

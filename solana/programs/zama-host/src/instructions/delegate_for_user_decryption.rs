@@ -4,9 +4,11 @@ use anchor_lang::prelude::*;
 
 use super::common::*;
 use crate::{errors::ZamaHostError, state::*};
+use zama_solana_acl::DELEGATION_SEED;
 
 /// Accounts for creating or updating a user-decryption delegation.
 #[derive(Accounts)]
+#[instruction(delegate: Pubkey, program: Pubkey)]
 pub struct DelegateForUserDecryption<'info> {
     /// Pays rent if the delegation PDA must be created.
     #[account(mut)]
@@ -20,7 +22,7 @@ pub struct DelegateForUserDecryption<'info> {
     /// CHECK: only its key and owner are read; the owner is checked against `program`.
     pub scope: UncheckedAccount<'info>,
     /// CHECK: created or overwritten after canonical delegation PDA validation.
-    #[account(mut)]
+    #[account(mut, seeds = [DELEGATION_SEED, delegator.key().as_ref(), delegate.as_ref(), program.as_ref(), scope.key().as_ref()], bump)]
     pub delegation_record: UncheckedAccount<'info>,
     /// System program used for account creation.
     pub system_program: Program<'info, System>,
@@ -71,12 +73,7 @@ pub fn delegate_for_user_decryption(
         );
     }
 
-    let (expected, bump) = user_decryption_delegation_address(delegator, delegate, app);
-    require_keys_eq!(
-        expected,
-        ctx.accounts.delegation_record.key(),
-        ZamaHostError::DelegationPdaMismatch
-    );
+    let bump = ctx.bumps.delegation_record;
     let info = ctx.accounts.delegation_record.to_account_info();
     let current = read_existing_delegation(&info, bump)?;
     let (delegator_bytes, delegate_bytes, program_bytes, scope_bytes) = (

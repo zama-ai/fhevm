@@ -10,6 +10,7 @@ use crate::{errors::ZamaHostError, state::*};
 
 /// Accounts for creating or updating a pauser record.
 #[derive(Accounts)]
+#[instruction(pauser: Pubkey)]
 #[event_cpi]
 pub struct SetPauser<'info> {
     /// Pays rent if the pauser PDA must be created.
@@ -21,7 +22,7 @@ pub struct SetPauser<'info> {
     #[account(seeds = [HOST_CONFIG_SEED], bump = host_config.bump)]
     pub host_config: Account<'info, HostConfig>,
     /// CHECK: created or overwritten after canonical pauser PDA validation.
-    #[account(mut)]
+    #[account(mut, seeds = [PAUSER_SEED, pauser.as_ref()], bump)]
     pub pauser_record: UncheckedAccount<'info>,
     /// System program used for account creation.
     pub system_program: Program<'info, System>,
@@ -31,12 +32,7 @@ pub struct SetPauser<'info> {
 pub fn set_pauser(ctx: Context<SetPauser>, pauser: Pubkey, enabled: bool) -> Result<()> {
     assert_no_remaining_accounts(ctx.remaining_accounts)?;
     assert_admin(&ctx.accounts.host_config, &ctx.accounts.admin)?;
-    let (expected, bump) = pauser_address(pauser);
-    require_keys_eq!(
-        expected,
-        ctx.accounts.pauser_record.key(),
-        ZamaHostError::PauserRecordMismatch
-    );
+    let bump = ctx.bumps.pauser_record;
 
     let info = ctx.accounts.pauser_record.to_account_info();
     if current_pauser_status(&info, pauser, bump)?.unwrap_or(false) == enabled {

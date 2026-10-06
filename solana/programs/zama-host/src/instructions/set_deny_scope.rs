@@ -9,6 +9,7 @@ use crate::{errors::ZamaHostError, state::*};
 
 /// Accounts for creating or updating a deny-list record.
 #[derive(Accounts)]
+#[instruction(app_program: Pubkey, scope: Pubkey)]
 #[event_cpi]
 pub struct SetDenyScope<'info> {
     /// Pays rent if the deny-list PDA must be created.
@@ -20,7 +21,7 @@ pub struct SetDenyScope<'info> {
     #[account(seeds = [HOST_CONFIG_SEED], bump = host_config.bump)]
     pub host_config: Account<'info, HostConfig>,
     /// CHECK: created or overwritten after canonical deny-list PDA validation.
-    #[account(mut)]
+    #[account(mut, seeds = [DENY_SCOPE_SEED, app_program.as_ref(), scope.as_ref()], bump)]
     pub deny_scope_record: UncheckedAccount<'info>,
     /// System program used for account creation.
     pub system_program: Program<'info, System>,
@@ -36,12 +37,7 @@ pub fn set_deny_scope(
     assert_no_remaining_accounts(ctx.remaining_accounts)?;
     assert_admin(&ctx.accounts.host_config, &ctx.accounts.admin)?;
     let app = AppScope { program, scope };
-    let (expected, bump) = deny_scope_address(app);
-    require_keys_eq!(
-        expected,
-        ctx.accounts.deny_scope_record.key(),
-        ZamaHostError::DenyRecordMismatch
-    );
+    let bump = ctx.bumps.deny_scope_record;
 
     let info = ctx.accounts.deny_scope_record.to_account_info();
     let current = current_deny_status(&info, app, bump)?;

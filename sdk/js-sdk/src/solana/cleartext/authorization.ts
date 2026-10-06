@@ -9,14 +9,12 @@
 import {
   getAddressDecoder,
   getAddressEncoder,
-  getProgramDerivedAddress,
-  isOffCurveAddress,
   type Address,
   type MaybeEncodedAccount,
   type ProgramDerivedAddress,
 } from '@solana/kit';
+import { findEncryptedStorePda, findInvalidationPda } from '@fhevm/solana-zama-host';
 import { getSysvarClockDecoder, SYSVAR_CLOCK_ADDRESS } from '@solana/sysvars';
-import { sha256 } from '@noble/hashes/sha2.js';
 import type { SolanaPermitFields } from '../permit/types.js';
 import type { SolanaUserDecryptHandleEntry } from '../userDecrypt/index.js';
 import type { SolanaMerkleProofOutcome, SolanaMerkleProofReader, SolanaLeafQuery } from './merkleProofs.js';
@@ -25,10 +23,9 @@ import { verifySolanaPermitSignature } from '../permit/envelope.js';
 import {
   decodeSolanaEncryptedStore,
   isSolanaEncryptedStoreData,
-  SOLANA_ENCRYPTED_STORE_SEED,
   type SolanaEncryptedStore,
 } from '../encryptedStore.js';
-import { SOLANA_PERMIT_INVALIDATION_SEED, solanaPermitInvalidationWatermark } from '../actions/revokePermits.js';
+import { solanaPermitInvalidationWatermark } from '../actions/revokePermits.js';
 import {
   decodeSolanaUserDecryptionDelegation,
   isSolanaUserDecryptionDelegationLiveAt,
@@ -99,7 +96,6 @@ const refuse = (failure: ConnectorFailure, message: string, entry?: number): nev
 };
 
 const SYSTEM_PROGRAM_ADDRESS = '11111111111111111111111111111111' as Address;
-const PDA_MARKER = new TextEncoder().encode('ProgramDerivedAddress');
 
 const decodeAddress = (bytes: Uint8Array): Address => getAddressDecoder().decode(bytes);
 const encodeAddress = (address: Address): Uint8Array => new Uint8Array(getAddressEncoder().encode(address));
@@ -115,25 +111,13 @@ function initialized(account: MaybeEncodedAccount): { owner: Address; data: Uint
   return { owner: account.programAddress, data: account.data };
 }
 
-/** Solana's `create_program_address`: the PDA of `seeds` and `bump`, or `undefined` when they give none. */
-function createProgramAddress(
-  seeds: readonly Uint8Array[],
-  bump: number,
-  programAddress: Address,
-): Address | undefined {
-  const candidate = decodeAddress(
-    sha256(concatBytes(...seeds, Uint8Array.of(bump), encodeAddress(programAddress), PDA_MARKER)),
-  );
-  return isOffCurveAddress(candidate) ? candidate : undefined;
-}
-
 /** `resolve_encrypted_store`: the store an entry names, checked as the host program writes one. */
-function resolveStore(
+async function resolveStore(
   account: MaybeEncodedAccount,
   programAddress: Address,
   key: Address,
   entry: number,
-): SolanaEncryptedStore {
+): Promise<SolanaEncryptedStore> {
   const found = initialized(account);
   if (found === undefined) {
     return refuse('EncryptedStore::Absent', `encrypted store ${key} does not exist`, entry);
@@ -150,15 +134,11 @@ function resolveStore(
   } catch (error) {
     return refuse('EncryptedStore::InvalidHostRecord', String(error), entry);
   }
-  const derived = createProgramAddress(
-    [SOLANA_ENCRYPTED_STORE_SEED, ...[store.program, store.authority, store.scope].map(encodeAddress)],
-    store.bump,
-    programAddress,
-  );
-  if (derived !== key) {
+  const [derived, bump] = await findEncryptedStorePda(store, { programAddress });
+  if (derived !== key || bump !== store.bump) {
     return refuse(
       'EncryptedStore::AddressMismatch',
-      `encrypted store ${key} does not live at the address its fields derive (${derived ?? 'none'})`,
+      `encrypted store ${key} has bump ${store.bump}; its fields derive ${derived} with bump ${bump}`,
       entry,
     );
   }
@@ -348,7 +328,7 @@ export async function solanaRelayerDelegationRefusal({
     const account = nextStore();
     let store: SolanaEncryptedStore;
     try {
-      store = resolveStore(account, programAddress, key, index);
+      store = await resolveStore(account, programAddress, key, index);
     } catch (error) {
       if (error instanceof ConnectorRefusal) continue;
       throw error;
@@ -394,10 +374,13 @@ export async function judgeSolanaPublicDecryption({
   try {
     const { accounts } = await readAccounts(handles.map(({ encryptedStore }) => encryptedStore));
     const next = cursor(accounts, 'the host read');
-    const leaves = handles.map(({ handle, encryptedStore }, index) => ({
-      store: resolveStore(next(), programAddress, encryptedStore, index),
-      query: { encryptedStore, handle },
-    }));
+    const leaves = [];
+    for (const [index, { handle, encryptedStore }] of handles.entries()) {
+      leaves.push({
+        store: await resolveStore(next(), programAddress, encryptedStore, index),
+        query: { encryptedStore, handle },
+      });
+    }
     await proveLeaves(readMerkleProofs, leaves);
     return { authorized: true };
   } catch (error) {
@@ -447,10 +430,7 @@ export async function judgeSolanaUserDecryption({
     // request needs a second read, no older than the first. The first read only locates the rows;
     // every rule that authorizes is judged against the last read.
     const signer = decodeAddress(fields.userAddress);
-    const watermarkPda = await getProgramDerivedAddress({
-      programAddress,
-      seeds: [SOLANA_PERMIT_INVALIDATION_SEED, encodeAddress(signer)],
-    });
+    const watermarkPda = await findInvalidationPda({ user: signer }, { programAddress });
     const claims = entries.map((entry, index) => ({
       index,
       handle: entry.handle,
@@ -471,7 +451,7 @@ export async function judgeSolanaUserDecryption({
           : await delegationRows(
               claim.owner,
               signer,
-              resolveStore(account, programAddress, claim.storeKey, claim.index),
+              await resolveStore(account, programAddress, claim.storeKey, claim.index),
               programAddress,
             );
       located.push({ ...claim, rows });
@@ -512,8 +492,9 @@ export async function judgeSolanaUserDecryption({
 
     // Every host rule is judged before any leaf.
     const allowedScopes = new Set(fields.allowedScopes.map((scope) => bytesToHex(scope)));
-    const resolved = judged.map(({ index, handle, storeKey, owner, account, delegation }) => {
-      const store = resolveStore(account, programAddress, storeKey, index);
+    const resolved = [];
+    for (const { index, handle, storeKey, owner, account, delegation } of judged) {
+      const store = await resolveStore(account, programAddress, storeKey, index);
       const application = bytesToHex(concatBytes(encodeAddress(store.program), encodeAddress(store.scope)));
       if (allowedScopes.size > 0 && !allowedScopes.has(application)) {
         refuse('ScopeNotAllowed', `application (${store.program}, ${store.scope}) is outside the signed scope`, index);
@@ -537,8 +518,8 @@ export async function judgeSolanaUserDecryption({
       }
       // The leaf must name the entry's owner: the signer for a direct entry, the delegator for a
       // delegated one.
-      return { store, query: { encryptedStore: storeKey, handle, key: owner } };
-    });
+      resolved.push({ store, query: { encryptedStore: storeKey, handle, key: owner } });
+    }
     await proveLeaves(readMerkleProofs, resolved);
     return { authorized: true };
   } catch (error) {

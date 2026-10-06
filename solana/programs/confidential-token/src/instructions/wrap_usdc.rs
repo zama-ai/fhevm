@@ -13,7 +13,7 @@ pub struct WrapUsdc<'info> {
     #[account(mut)]
     pub mint: Box<Account<'info, ConfidentialMint>>,
     /// Confidential token account whose balance is increased.
-    #[account(mut)]
+    #[account(mut, seeds = [b"token-account", mint.key().as_ref(), token_account.owner.as_ref()], bump = token_account.bump)]
     pub token_account: Box<Account<'info, ConfidentialTokenAccount>>,
     /// Underlying SPL mint.
     pub underlying_mint: Box<InterfaceAccount<'info, SplMint>>,
@@ -38,12 +38,13 @@ pub struct WrapUsdc<'info> {
     #[account(seeds = [b"total-supply", mint.key().as_ref()], bump)]
     pub total_supply_authority: UncheckedAccount<'info>,
     /// Stable balance encrypted store; read for the current handle and replaced by this execution.
-    #[account(mut, address = encrypted_store_address(mint.key(), token_account.key()).0)]
+    #[account(mut)]
     pub balance_store: Box<Account<'info, zama_host::EncryptedStore>>,
     /// Stable total-supply encrypted store; read for the current handle and replaced by this execution.
-    #[account(mut, address = encrypted_store_address(mint.key(), total_supply_authority_address(mint.key()).0).0)]
+    #[account(mut)]
     pub total_supply_store: Box<Account<'info, zama_host::EncryptedStore>>,
     /// CHECK: Anchor event CPI authority for the Zama host program.
+    #[account(seeds = [b"__event_authority"], bump = zama_host::EVENT_AUTHORITY_AND_BUMP.1, seeds::program = zama_host::ID)]
     pub zama_event_authority: UncheckedAccount<'info>,
     /// CHECK: shared transaction transient store, validated by ZamaHost.
     #[account(mut)]
@@ -53,6 +54,7 @@ pub struct WrapUsdc<'info> {
     /// ZamaHost program used for FHE operations.
     pub zama_program: Program<'info, ZamaHost>,
     /// ZamaHost config used for handle derivation.
+    #[account(seeds = [zama_host::HOST_CONFIG_SEED], bump = host_config.bump, seeds::program = zama_host::ID)]
     pub host_config: Box<Account<'info, zama_host::HostConfig>>,
     /// Classic Token or Token-2022 program owning the underlying mint and token accounts.
     pub token_program: Interface<'info, TokenInterface>,
@@ -110,12 +112,12 @@ pub fn wrap_usdc<'info>(ctx: Context<'info, WrapUsdc<'info>>, amount: u64) -> Re
         ctx.accounts.underlying_mint.key(),
         ctx.accounts.token_program.key(),
     )?;
-    let balance_authority = fhe::StoreAuthority::token_account(&ctx.accounts.token_account)?;
+    let balance_authority = fhe::StoreAuthority::token_account(&ctx.accounts.token_account);
     let total_supply_authority_signer = fhe::StoreAuthority::total_supply(
         &ctx.accounts.total_supply_authority,
         mint_key,
         ctx.bumps.total_supply_authority,
-    )?;
+    );
     let balance_output = fhe::SlotOutput::new(
         ctx.accounts.balance_store.to_account_info(),
         balance_slot(mint_key, token_account.key()),

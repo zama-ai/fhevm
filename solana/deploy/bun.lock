@@ -5,6 +5,7 @@
     "": {
       "name": "@fhevm/solana-programs-deploy",
       "dependencies": {
+        "@fhevm/confidential-token": "file:../clients/confidential-token",
         "@fhevm/solana-zama-host": "file:../clients/zama-host",
         "@solana/kit": "6.10.0",
         "@solana/program-client-core": "6.10.0",
@@ -18,6 +19,8 @@
   },
   "packages": {
     "@adraffy/ens-normalize": ["@adraffy/ens-normalize@1.11.1", "", {}, "sha512-nhCBV3quEgesuf7c7KYfperqSS14T8bYuvJ8PcLJp6znkZpFc0AuW4qBtr8eKVyPPe/8RSr7sglCWPU5eaxwKQ=="],
+
+    "@fhevm/confidential-token": ["@fhevm/confidential-token@file:../clients/confidential-token", { "dependencies": { "@fhevm/solana-zama-host": "file:../zama-host", "@solana/kit": "6.10.0", "@solana/program-client-core": "6.10.0" } }],
 
     "@fhevm/solana-zama-host": ["@fhevm/solana-zama-host@file:../clients/zama-host", { "devDependencies": { "@solana/kit": "6.10.0", "@solana/program-client-core": "6.10.0", "@types/node": "22.20.1", "typescript": "6.0.3" }, "peerDependencies": { "@solana/kit": "6.10.0", "@solana/program-client-core": "6.10.0" } }],
 
@@ -139,7 +142,7 @@
 
     "ws": ["ws@8.21.0", "", { "peerDependencies": { "bufferutil": "^4.0.1", "utf-8-validate": ">=5.0.2" }, "optionalPeers": ["bufferutil", "utf-8-validate"] }, "sha512-Vsp28b7DRcimFQvrqu2Wek3z1iYxDCWqHYB8Qsnk/S4RfaCQzPGPyBNuVjJV3cd6UiKtUtp6sNM77gWvzcCH+g=="],
 
-    "@fhevm/solana-zama-host/typescript": ["typescript@6.0.3", "", { "bin": { "tsc": "bin/tsc", "tsserver": "bin/tsserver" } }, "sha512-y2TvuxSZPDyQakkFRPZHKFm+KKVqIisdg9/CZwm9ftvKXLP8NRWj38/ODjNbr43SsoXqNuAisEf1GdCxqWcdBw=="],
+    "@fhevm/confidential-token/@fhevm/solana-zama-host": ["@fhevm/solana-zama-host@file:../clients/zama-host", { "devDependencies": { "@solana/kit": "6.10.0", "@solana/program-client-core": "6.10.0", "@types/node": "22.20.1", "typescript": "6.0.3" }, "peerDependencies": { "@solana/kit": "6.10.0", "@solana/program-client-core": "6.10.0" } }],
 
     "@solana/rpc-subscriptions-channel-websocket/ws": ["ws@8.21.3", "", { "peerDependencies": { "bufferutil": "^4.0.1", "utf-8-validate": ">=5.0.2" }, "optionalPeers": ["bufferutil", "utf-8-validate"] }, "sha512-201TZ/kPWxoPr/OKWjquZR1SWKXcvxdH+e1xrx89b3YbmzLMFCLfnaG1HFIgWzJOEWZ7MvpK++odZufgYR50Rw=="],
 

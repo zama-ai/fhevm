@@ -715,8 +715,10 @@ fn a_grant_into_a_non_canonical_address_is_rejected() {
             EXPIRES_AT,
         ),
         &accounts,
-        &[custom_error(
-            host::errors::ZamaHostError::DelegationPdaMismatch,
+        &[Check::err(
+            anchor_lang::solana_program::program_error::ProgramError::Custom(
+                anchor_lang::error::ErrorCode::ConstraintSeeds as u32,
+            ),
         )],
     );
 }
@@ -1089,8 +1091,10 @@ fn a_revocation_of_a_record_at_a_non_canonical_address_is_rejected() {
     mollusk().process_and_validate_instruction(
         &revoke_ix(actors.delegator, elsewhere),
         &accounts,
-        &[custom_error(
-            host::errors::ZamaHostError::DelegationPdaMismatch,
+        &[Check::err(
+            anchor_lang::solana_program::program_error::ProgramError::Custom(
+                anchor_lang::error::ErrorCode::ConstraintSeeds as u32,
+            ),
         )],
     );
 }
@@ -1106,8 +1110,10 @@ fn a_record_with_a_non_canonical_bump_is_rejected_on_revocation() {
     mollusk().process_and_validate_instruction(
         &revoke_ix(actors.delegator, actors.record_key),
         &accounts,
-        &[custom_error(
-            host::errors::ZamaHostError::DelegationPdaMismatch,
+        &[Check::err(
+            anchor_lang::solana_program::program_error::ProgramError::Custom(
+                anchor_lang::error::ErrorCode::ConstraintSeeds as u32,
+            ),
         )],
     );
 }

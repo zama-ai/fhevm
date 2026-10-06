@@ -791,7 +791,7 @@ impl World {
                         program: host::id(),
                     },
                     host::instruction::SetHcuAppTrusted {
-                        program: app.program,
+                        app_program: app.program,
                         scope: app.scope,
                         trusted: *trusted,
                     },
@@ -818,7 +818,7 @@ impl World {
                         program: host::id(),
                     },
                     host::instruction::SetDenyScope {
-                        program: app.program,
+                        app_program: app.program,
                         scope: app.scope,
                         denied: *denied,
                     },
@@ -885,14 +885,12 @@ impl World {
                         system_program: system_program::ID,
                     },
                     host::instruction::CreateEncryptedStore {
-                        args: host::instructions::CreateEncryptedStoreArgs {
-                            program: owner.program,
-                            authority_seeds: vec![
-                                host_fixtures::VALUE_AUTHORITY_SEED.to_vec(),
-                                owner.seed_key.to_bytes().to_vec(),
-                                vec![owner.bump],
-                            ],
-                        },
+                        program: owner.program,
+                        authority_seeds: vec![
+                            host_fixtures::VALUE_AUTHORITY_SEED.to_vec(),
+                            owner.seed_key.to_bytes().to_vec(),
+                            vec![owner.bump],
+                        ],
                     },
                 );
                 unsign(ix, authority, role.signs)

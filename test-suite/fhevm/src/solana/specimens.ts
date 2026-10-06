@@ -28,8 +28,8 @@ import { currentHandle } from "./fhe-vertical";
 import { hostConfigAddress, zamaEventAuthorityAddress, type SolanaProvisioningContext } from "./provision";
 
 // Byte-identical to the specimens' `encrypted_*_label` functions.
-const COUNT_LABEL = new TextEncoder().encode("count___________________________");
-const TAIL_LABEL = new TextEncoder().encode("tail____________________________");
+import { COUNT_KEY as COUNT_LABEL } from "./internal/generated/encryptedCounter/constants.js";
+import { ENCRYPTED_TAIL_LABEL as TAIL_LABEL } from "./internal/generated/depChain/constants.js";
 
 /** The host's per-execution step ceiling, which `dep_chain::extend` promises exactly. */
 export const MAX_CHAIN_LINKS = 32;

@@ -6,12 +6,15 @@
  * @see https://github.com/codama-idl/codama
  */
 
+import { findEncryptedStorePda, findEventAuthorityPda, findHostConfigPda } from '@fhevm/solana-zama-host';
 import {
+  address,
   combineCodec,
   fixDecoderSize,
   fixEncoderSize,
   getBytesDecoder,
   getBytesEncoder,
+  getProgramDerivedAddress,
   getStructDecoder,
   getStructEncoder,
   SOLANA_ERROR__PROGRAM_CLIENTS__INSUFFICIENT_ACCOUNT_METAS,
@@ -33,7 +36,11 @@ import {
   type WritableAccount,
   type WritableSignerAccount,
 } from '@solana/kit';
-import { getAccountMetaFactory, type ResolvedInstructionAccount } from '@solana/program-client-core';
+import {
+  getAccountMetaFactory,
+  getAddressFromResolvedInstructionAccount,
+  type ResolvedInstructionAccount,
+} from '@solana/program-client-core';
 import { CONFIDENTIAL_TOKEN_PROGRAM_ADDRESS } from '../programAddress.js';
 import {
   getCoprocessorInputAttestationDecoder,
@@ -72,7 +79,7 @@ export type ConfidentialTransferInstruction<
   TAccountHcuTrustedAppRecord extends string | AccountMeta<string> = string,
   TAccountResultStore extends string | AccountMeta<string> = string,
   TAccountEventAuthority extends string | AccountMeta<string> = string,
-  TAccountProgram extends string | AccountMeta<string> = string,
+  TAccountProgram extends string | AccountMeta<string> = 'FAWs7E52LZmXR5YzFy4aXanfBjNtXV2qooQVtkmBa3cL',
   TRemainingAccounts extends readonly AccountMeta<string>[] = [],
 > = Instruction<TProgram> &
   InstructionWithData<ReadonlyUint8Array> &
@@ -147,6 +154,289 @@ export function getConfidentialTransferInstructionDataCodec(): Codec<
   return combineCodec(getConfidentialTransferInstructionDataEncoder(), getConfidentialTransferInstructionDataDecoder());
 }
 
+export type ConfidentialTransferAsyncInput<
+  TAccountOwner extends string = string,
+  TAccountPayer extends string = string,
+  TAccountMint extends string = string,
+  TAccountUnderlyingMint extends string = string,
+  TAccountFromAta extends string = string,
+  TAccountToAta extends string = string,
+  TAccountFromAccount extends string = string,
+  TAccountToAccount extends string = string,
+  TAccountFromStore extends string = string,
+  TAccountToStore extends string = string,
+  TAccountZamaEventAuthority extends string = string,
+  TAccountTransientStore extends string = string,
+  TAccountInstructions extends string = string,
+  TAccountZamaProgram extends string = string,
+  TAccountHostConfig extends string = string,
+  TAccountSystemProgram extends string = string,
+  TAccountHcuBlockMeter extends string = string,
+  TAccountHcuTrustedAppRecord extends string = string,
+  TAccountResultStore extends string = string,
+  TAccountEventAuthority extends string = string,
+  TAccountProgram extends string = string,
+> = {
+  /** Sender and transfer authority. */
+  owner: TransactionSigner<TAccountOwner>;
+  /** Pays rent for growth of the encrypted stores written by the transfer. */
+  payer: TransactionSigner<TAccountPayer>;
+  /** Confidential mint. */
+  mint: Address<TAccountMint>;
+  underlyingMint: Address<TAccountUnderlyingMint>;
+  fromAta: Address<TAccountFromAta>;
+  toAta: Address<TAccountToAta>;
+  /** Sender token account. */
+  fromAccount: Address<TAccountFromAccount>;
+  toAccount: Address<TAccountToAccount>;
+  /** Sender store: the host reads and updates its balance slot. */
+  fromStore?: Address<TAccountFromStore>;
+  /** Recipient store: the host reads and updates its balance slot. */
+  toStore?: Address<TAccountToStore>;
+  zamaEventAuthority?: Address<TAccountZamaEventAuthority>;
+  transientStore: Address<TAccountTransientStore>;
+  instructions: Address<TAccountInstructions>;
+  /** ZamaHost program used for FHE operations. */
+  zamaProgram?: Address<TAccountZamaProgram>;
+  /** ZamaHost config used for handle derivation. */
+  hostConfig?: Address<TAccountHostConfig>;
+  /** System program used for ACL account creation. */
+  systemProgram?: Address<TAccountSystemProgram>;
+  /**
+   * canonical `["hcu-block-meter", program, mint]` PDA. The per-mint HCU block meter — supplied
+   * by an untrusted mint under a metering-band cap, omitted otherwise.
+   */
+  hcuBlockMeter?: Address<TAccountHcuBlockMeter>;
+  /** trust witness — present + valid bypasses the cap; absent means untrusted (metered). */
+  hcuTrustedAppRecord?: Address<TAccountHcuTrustedAppRecord>;
+  resultStore?: Address<TAccountResultStore>;
+  eventAuthority?: Address<TAccountEventAuthority>;
+  program?: Address<TAccountProgram>;
+  amountAttestation: ConfidentialTransferInstructionDataArgs['amountAttestation'];
+};
+
+export async function getConfidentialTransferInstructionAsync<
+  TAccountOwner extends string,
+  TAccountPayer extends string,
+  TAccountMint extends string,
+  TAccountUnderlyingMint extends string,
+  TAccountFromAta extends string,
+  TAccountToAta extends string,
+  TAccountFromAccount extends string,
+  TAccountToAccount extends string,
+  TAccountFromStore extends string,
+  TAccountToStore extends string,
+  TAccountZamaEventAuthority extends string,
+  TAccountTransientStore extends string,
+  TAccountInstructions extends string,
+  TAccountZamaProgram extends string,
+  TAccountHostConfig extends string,
+  TAccountSystemProgram extends string,
+  TAccountHcuBlockMeter extends string,
+  TAccountHcuTrustedAppRecord extends string,
+  TAccountResultStore extends string,
+  TAccountEventAuthority extends string,
+  TAccountProgram extends string,
+  TProgramAddress extends Address = typeof CONFIDENTIAL_TOKEN_PROGRAM_ADDRESS,
+>(
+  input: ConfidentialTransferAsyncInput<
+    TAccountOwner,
+    TAccountPayer,
+    TAccountMint,
+    TAccountUnderlyingMint,
+    TAccountFromAta,
+    TAccountToAta,
+    TAccountFromAccount,
+    TAccountToAccount,
+    TAccountFromStore,
+    TAccountToStore,
+    TAccountZamaEventAuthority,
+    TAccountTransientStore,
+    TAccountInstructions,
+    TAccountZamaProgram,
+    TAccountHostConfig,
+    TAccountSystemProgram,
+    TAccountHcuBlockMeter,
+    TAccountHcuTrustedAppRecord,
+    TAccountResultStore,
+    TAccountEventAuthority,
+    TAccountProgram
+  >,
+  config?: { programAddress?: TProgramAddress },
+): Promise<
+  ConfidentialTransferInstruction<
+    TProgramAddress,
+    TAccountOwner,
+    TAccountPayer,
+    TAccountMint,
+    TAccountUnderlyingMint,
+    TAccountFromAta,
+    TAccountToAta,
+    TAccountFromAccount,
+    TAccountToAccount,
+    TAccountFromStore,
+    TAccountToStore,
+    TAccountZamaEventAuthority,
+    TAccountTransientStore,
+    TAccountInstructions,
+    TAccountZamaProgram,
+    TAccountHostConfig,
+    TAccountSystemProgram,
+    TAccountHcuBlockMeter,
+    TAccountHcuTrustedAppRecord,
+    TAccountResultStore,
+    TAccountEventAuthority,
+    TAccountProgram
+  >
+> {
+  // Program address.
+  const programAddress = config?.programAddress ?? CONFIDENTIAL_TOKEN_PROGRAM_ADDRESS;
+
+  // Original accounts.
+  const originalAccounts = {
+    owner: { value: input.owner ?? null, isWritable: false },
+    payer: { value: input.payer ?? null, isWritable: true },
+    mint: { value: input.mint ?? null, isWritable: false },
+    underlyingMint: { value: input.underlyingMint ?? null, isWritable: false },
+    fromAta: { value: input.fromAta ?? null, isWritable: false },
+    toAta: { value: input.toAta ?? null, isWritable: false },
+    fromAccount: { value: input.fromAccount ?? null, isWritable: true },
+    toAccount: { value: input.toAccount ?? null, isWritable: true },
+    fromStore: { value: input.fromStore ?? null, isWritable: true },
+    toStore: { value: input.toStore ?? null, isWritable: true },
+    zamaEventAuthority: {
+      value: input.zamaEventAuthority ?? null,
+      isWritable: false,
+    },
+    transientStore: { value: input.transientStore ?? null, isWritable: true },
+    instructions: { value: input.instructions ?? null, isWritable: false },
+    zamaProgram: { value: input.zamaProgram ?? null, isWritable: false },
+    hostConfig: { value: input.hostConfig ?? null, isWritable: false },
+    systemProgram: { value: input.systemProgram ?? null, isWritable: false },
+    hcuBlockMeter: { value: input.hcuBlockMeter ?? null, isWritable: true },
+    hcuTrustedAppRecord: {
+      value: input.hcuTrustedAppRecord ?? null,
+      isWritable: false,
+    },
+    resultStore: { value: input.resultStore ?? null, isWritable: false },
+    eventAuthority: { value: input.eventAuthority ?? null, isWritable: false },
+    program: { value: input.program ?? null, isWritable: false },
+  };
+  const accounts = originalAccounts as Record<keyof typeof originalAccounts, ResolvedInstructionAccount>;
+
+  // Original args.
+  const args = { ...input };
+
+  // Resolve default values.
+  if (!accounts.zamaProgram.value) {
+    accounts.zamaProgram.value =
+      'DPq5y89RDZPq9NcMh9X1NgjBWgYmSXg3QoipSBV3ZMzQ' as Address<'DPq5y89RDZPq9NcMh9X1NgjBWgYmSXg3QoipSBV3ZMzQ'>;
+  }
+  if (!accounts.fromStore.value) {
+    accounts.fromStore.value = await findEncryptedStorePda(
+      {
+        program: address('FAWs7E52LZmXR5YzFy4aXanfBjNtXV2qooQVtkmBa3cL'),
+        authority: getAddressFromResolvedInstructionAccount('fromAccount', accounts.fromAccount.value),
+        scope: getAddressFromResolvedInstructionAccount('mint', accounts.mint.value),
+      },
+      {
+        programAddress: getAddressFromResolvedInstructionAccount('zamaProgram', accounts.zamaProgram.value),
+      },
+    );
+  }
+  if (!accounts.toStore.value) {
+    accounts.toStore.value = await findEncryptedStorePda(
+      {
+        program: address('FAWs7E52LZmXR5YzFy4aXanfBjNtXV2qooQVtkmBa3cL'),
+        authority: getAddressFromResolvedInstructionAccount('toAccount', accounts.toAccount.value),
+        scope: getAddressFromResolvedInstructionAccount('mint', accounts.mint.value),
+      },
+      {
+        programAddress: getAddressFromResolvedInstructionAccount('zamaProgram', accounts.zamaProgram.value),
+      },
+    );
+  }
+  if (!accounts.zamaEventAuthority.value) {
+    accounts.zamaEventAuthority.value = await findEventAuthorityPda({
+      programAddress: getAddressFromResolvedInstructionAccount('zamaProgram', accounts.zamaProgram.value),
+    });
+  }
+  if (!accounts.hostConfig.value) {
+    accounts.hostConfig.value = await findHostConfigPda({
+      programAddress: getAddressFromResolvedInstructionAccount('zamaProgram', accounts.zamaProgram.value),
+    });
+  }
+  if (!accounts.systemProgram.value) {
+    accounts.systemProgram.value = '11111111111111111111111111111111' as Address<'11111111111111111111111111111111'>;
+  }
+  if (!accounts.eventAuthority.value) {
+    accounts.eventAuthority.value = await getProgramDerivedAddress({
+      programAddress,
+      seeds: [
+        getBytesEncoder().encode(
+          new Uint8Array([95, 95, 101, 118, 101, 110, 116, 95, 97, 117, 116, 104, 111, 114, 105, 116, 121]),
+        ),
+      ],
+    });
+  }
+  if (!accounts.program.value) {
+    accounts.program.value = programAddress;
+    accounts.program.isWritable = false;
+  }
+
+  const getAccountMeta = getAccountMetaFactory(programAddress, 'programId');
+  return Object.freeze({
+    accounts: [
+      getAccountMeta('owner', accounts.owner),
+      getAccountMeta('payer', accounts.payer),
+      getAccountMeta('mint', accounts.mint),
+      getAccountMeta('underlyingMint', accounts.underlyingMint),
+      getAccountMeta('fromAta', accounts.fromAta),
+      getAccountMeta('toAta', accounts.toAta),
+      getAccountMeta('fromAccount', accounts.fromAccount),
+      getAccountMeta('toAccount', accounts.toAccount),
+      getAccountMeta('fromStore', accounts.fromStore),
+      getAccountMeta('toStore', accounts.toStore),
+      getAccountMeta('zamaEventAuthority', accounts.zamaEventAuthority),
+      getAccountMeta('transientStore', accounts.transientStore),
+      getAccountMeta('instructions', accounts.instructions),
+      getAccountMeta('zamaProgram', accounts.zamaProgram),
+      getAccountMeta('hostConfig', accounts.hostConfig),
+      getAccountMeta('systemProgram', accounts.systemProgram),
+      getAccountMeta('hcuBlockMeter', accounts.hcuBlockMeter),
+      getAccountMeta('hcuTrustedAppRecord', accounts.hcuTrustedAppRecord),
+      getAccountMeta('resultStore', accounts.resultStore),
+      getAccountMeta('eventAuthority', accounts.eventAuthority),
+      getAccountMeta('program', accounts.program),
+    ],
+    data: getConfidentialTransferInstructionDataEncoder().encode(args as ConfidentialTransferInstructionDataArgs),
+    programAddress,
+  } as ConfidentialTransferInstruction<
+    TProgramAddress,
+    TAccountOwner,
+    TAccountPayer,
+    TAccountMint,
+    TAccountUnderlyingMint,
+    TAccountFromAta,
+    TAccountToAta,
+    TAccountFromAccount,
+    TAccountToAccount,
+    TAccountFromStore,
+    TAccountToStore,
+    TAccountZamaEventAuthority,
+    TAccountTransientStore,
+    TAccountInstructions,
+    TAccountZamaProgram,
+    TAccountHostConfig,
+    TAccountSystemProgram,
+    TAccountHcuBlockMeter,
+    TAccountHcuTrustedAppRecord,
+    TAccountResultStore,
+    TAccountEventAuthority,
+    TAccountProgram
+  >);
+}
+
 export type ConfidentialTransferInput<
   TAccountOwner extends string = string,
   TAccountPayer extends string = string,
@@ -204,7 +494,7 @@ export type ConfidentialTransferInput<
   hcuTrustedAppRecord?: Address<TAccountHcuTrustedAppRecord>;
   resultStore?: Address<TAccountResultStore>;
   eventAuthority: Address<TAccountEventAuthority>;
-  program: Address<TAccountProgram>;
+  program?: Address<TAccountProgram>;
   amountAttestation: ConfidentialTransferInstructionDataArgs['amountAttestation'];
 };
 
@@ -325,6 +615,10 @@ export function getConfidentialTransferInstruction<
   }
   if (!accounts.systemProgram.value) {
     accounts.systemProgram.value = '11111111111111111111111111111111' as Address<'11111111111111111111111111111111'>;
+  }
+  if (!accounts.program.value) {
+    accounts.program.value = programAddress;
+    accounts.program.isWritable = false;
   }
 
   const getAccountMeta = getAccountMetaFactory(programAddress, 'programId');

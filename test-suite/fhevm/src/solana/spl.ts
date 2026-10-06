@@ -1,3 +1,4 @@
+import { findVaultAuthorityPda } from '@fhevm/confidential-token';
 // spl — pure SPL/associated-token/system-program helpers shared by the typed scenario
 // provisioning (`./provision.ts`) and the live demo entrypoints (`demo/seed.ts`,
 // `demo/operator-server.ts`). No top-level side effects, so this module is importable by offline
@@ -34,8 +35,6 @@ const SYSTEM_PROGRAM_ADDRESS = "11111111111111111111111111111111" as Address;
 const COMPUTE_BUDGET_PROGRAM_ADDRESS = "ComputeBudget111111111111111111111111111111" as Address;
 /** SPL Token `Mint` account length — the `space` for `CreateAccount` before `InitializeMint2`. */
 export const SPL_MINT_ACCOUNT_SPACE = 82n;
-// confidential_token's `vault_authority` PDA seed prefix ([b"vault-authority", confidential_mint]).
-const VAULT_AUTHORITY_SEED = "vault-authority";
 
 const addressEncoder = getAddressEncoder();
 const encodeAddress = (value: Address): Uint8Array => new Uint8Array(addressEncoder.encode(value));
@@ -179,10 +178,7 @@ export const setComputeUnitLimitInstruction = (units: number): Instruction => {
 
 /** The confidential_token `vault_authority` PDA for a confidential `mint` ([b"vault-authority", mint]). */
 export const vaultAuthorityAddress = async (tokenProgram: Address, confidentialMint: Address): Promise<Address> => {
-  const [vaultAuthority] = await getProgramDerivedAddress({
-    programAddress: tokenProgram,
-    seeds: [new TextEncoder().encode(VAULT_AUTHORITY_SEED), encodeAddress(confidentialMint)],
-  });
+  const [vaultAuthority] = await findVaultAuthorityPda({ mint: confidentialMint }, { programAddress: tokenProgram });
   return vaultAuthority;
 };
 

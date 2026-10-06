@@ -45,7 +45,7 @@ pub mod delegator_vault {
                 zama_host::cpi::accounts::CloseTransientStore {
                     instructions: ctx.accounts.instructions.to_account_info(),
                     transient_store: ctx.accounts.transient_store.to_account_info(),
-                    refund: ctx.accounts.refund.to_account_info(),
+                    payer: ctx.accounts.refund.to_account_info(),
                 },
             )
             .with_remaining_accounts(ctx.remaining_accounts.to_vec()),

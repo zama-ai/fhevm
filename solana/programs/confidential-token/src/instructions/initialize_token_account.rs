@@ -27,6 +27,7 @@ pub struct InitializeTokenAccount<'info> {
     #[account(mut)]
     pub balance_encrypted_store: UncheckedAccount<'info>,
     /// CHECK: Anchor event CPI authority for the Zama host program.
+    #[account(seeds = [b"__event_authority"], bump = zama_host::EVENT_AUTHORITY_AND_BUMP.1, seeds::program = zama_host::ID)]
     pub zama_event_authority: UncheckedAccount<'info>,
     /// CHECK: shared transaction transient store, validated by ZamaHost.
     #[account(mut)]
@@ -36,6 +37,7 @@ pub struct InitializeTokenAccount<'info> {
     /// ZamaHost program used to create the initial balance handle.
     pub zama_program: Program<'info, ZamaHost>,
     /// ZamaHost config used for handle derivation.
+    #[account(seeds = [zama_host::HOST_CONFIG_SEED], bump = host_config.bump, seeds::program = zama_host::ID)]
     pub host_config: Account<'info, zama_host::HostConfig>,
     /// System program used for account creation.
     pub system_program: Program<'info, System>,
@@ -65,7 +67,7 @@ pub fn initialize_token_account<'info>(
     let owner = ctx.accounts.owner.key();
     let token_account_key = ctx.accounts.token_account.key();
     let balance_encrypted_store = ctx.accounts.balance_encrypted_store.key();
-    let authority = fhe::StoreAuthority::token_account(&ctx.accounts.token_account)?;
+    let authority = fhe::StoreAuthority::token_account(&ctx.accounts.token_account);
     authority.create_state(
         ctx.accounts.mint.to_account_info(),
         ctx.accounts.balance_encrypted_store.to_account_info(),

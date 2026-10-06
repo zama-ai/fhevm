@@ -55,7 +55,6 @@ export const currentHandle = async (
     await fetchSolanaEncryptedStore(
       context.rpc,
       encryptedStore,
-      undefined,
       ZAMA_HOST_PROGRAM_ADDRESS,
     ),
     key,

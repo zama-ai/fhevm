@@ -6,6 +6,7 @@
  * @see https://github.com/codama-idl/codama
  */
 
+export * from './eventAuthority.js';
 export * from './pendingBurn.js';
 export * from './tokenAccount.js';
 export * from './totalSupplyAuthority.js';

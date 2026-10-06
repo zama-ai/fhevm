@@ -73,7 +73,7 @@ export type FheExecuteInstruction<
   TAccountTransientStore extends string | AccountMeta<string> = string,
   TAccountInstructions extends string | AccountMeta<string> = 'Sysvar1nstructions1111111111111111111111111',
   TAccountEventAuthority extends string | AccountMeta<string> = string,
-  TAccountProgram extends string | AccountMeta<string> = string,
+  TAccountProgram extends string | AccountMeta<string> = 'DPq5y89RDZPq9NcMh9X1NgjBWgYmSXg3QoipSBV3ZMzQ',
   TRemainingAccounts extends readonly AccountMeta<string>[] = [],
 > = Instruction<TProgram> &
   InstructionWithData<ReadonlyUint8Array> &
@@ -270,8 +270,8 @@ export type FheExecuteAsyncInput<
    */
   transientStore: Address<TAccountTransientStore>;
   instructions?: Address<TAccountInstructions>;
-  eventAuthority: Address<TAccountEventAuthority>;
-  program: Address<TAccountProgram>;
+  eventAuthority?: Address<TAccountEventAuthority>;
+  program?: Address<TAccountProgram>;
   executionStoreIndex: FheExecuteInstructionDataArgs['executionStoreIndex'];
   accountCount: FheExecuteInstructionDataArgs['accountCount'];
   dictionary: FheExecuteInstructionDataArgs['dictionary'];
@@ -359,15 +359,23 @@ export async function getFheExecuteInstructionAsync<
   if (!accounts.systemProgram.value) {
     accounts.systemProgram.value = '11111111111111111111111111111111' as Address<'11111111111111111111111111111111'>;
   }
-  if (!accounts.randNonce.value) {
-    accounts.randNonce.value = await getProgramDerivedAddress({
-      programAddress,
-      seeds: [getBytesEncoder().encode(new Uint8Array([114, 97, 110, 100, 45, 110, 111, 110, 99, 101]))],
-    });
-  }
   if (!accounts.instructions.value) {
     accounts.instructions.value =
       'Sysvar1nstructions1111111111111111111111111' as Address<'Sysvar1nstructions1111111111111111111111111'>;
+  }
+  if (!accounts.eventAuthority.value) {
+    accounts.eventAuthority.value = await getProgramDerivedAddress({
+      programAddress,
+      seeds: [
+        getBytesEncoder().encode(
+          new Uint8Array([95, 95, 101, 118, 101, 110, 116, 95, 97, 117, 116, 104, 111, 114, 105, 116, 121]),
+        ),
+      ],
+    });
+  }
+  if (!accounts.program.value) {
+    accounts.program.value = programAddress;
+    accounts.program.isWritable = false;
   }
 
   const getAccountMeta = getAccountMetaFactory(programAddress, 'programId');
@@ -462,7 +470,7 @@ export type FheExecuteInput<
   transientStore: Address<TAccountTransientStore>;
   instructions?: Address<TAccountInstructions>;
   eventAuthority: Address<TAccountEventAuthority>;
-  program: Address<TAccountProgram>;
+  program?: Address<TAccountProgram>;
   executionStoreIndex: FheExecuteInstructionDataArgs['executionStoreIndex'];
   accountCount: FheExecuteInstructionDataArgs['accountCount'];
   dictionary: FheExecuteInstructionDataArgs['dictionary'];
@@ -545,6 +553,10 @@ export function getFheExecuteInstruction<
   if (!accounts.instructions.value) {
     accounts.instructions.value =
       'Sysvar1nstructions1111111111111111111111111' as Address<'Sysvar1nstructions1111111111111111111111111'>;
+  }
+  if (!accounts.program.value) {
+    accounts.program.value = programAddress;
+    accounts.program.isWritable = false;
   }
 
   const getAccountMeta = getAccountMetaFactory(programAddress, 'programId');

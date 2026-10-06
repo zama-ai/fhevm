@@ -65,7 +65,7 @@ export async function getBatchByIndex(
   return { index, addresses, state: account.data };
 }
 
-/** Reads the host-owned slot dictionary and shared MMR through the SDK decoder. */
+/** Reads the host-owned slot dictionary and shared MMR at `finalized` through the SDK decoder. */
 export function getEncryptedStore(
   client: Pick<FhevmSolanaBaseClient, 'fetchEncryptedStore'>,
   address: Address,

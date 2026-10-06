@@ -14,6 +14,7 @@ use crate::{errors::ZamaHostError, state::*};
 
 /// Accounts for creating or updating an HCU trust-registry record.
 #[derive(Accounts)]
+#[instruction(app_program: Pubkey, scope: Pubkey)]
 #[event_cpi]
 pub struct SetHcuAppTrusted<'info> {
     /// Pays rent if the trust-registry PDA must be created.
@@ -25,7 +26,7 @@ pub struct SetHcuAppTrusted<'info> {
     #[account(seeds = [HOST_CONFIG_SEED], bump = host_config.bump)]
     pub host_config: Account<'info, HostConfig>,
     /// CHECK: created or overwritten after canonical ("hcu-trusted", program, scope) PDA validation.
-    #[account(mut)]
+    #[account(mut, seeds = [HCU_TRUSTED_APP_SEED, app_program.as_ref(), scope.as_ref()], bump)]
     pub hcu_trusted_app_record: UncheckedAccount<'info>,
     /// System program used for account creation.
     pub system_program: Program<'info, System>,
@@ -41,12 +42,7 @@ pub fn set_hcu_app_trusted(
     assert_no_remaining_accounts(ctx.remaining_accounts)?;
     assert_admin(&ctx.accounts.host_config, &ctx.accounts.admin)?;
     let app = AppScope { program, scope };
-    let (expected, bump) = hcu_trusted_app_address(app);
-    require_keys_eq!(
-        expected,
-        ctx.accounts.hcu_trusted_app_record.key(),
-        ZamaHostError::HcuTrustedAppRecordMismatch
-    );
+    let bump = ctx.bumps.hcu_trusted_app_record;
 
     let info = ctx.accounts.hcu_trusted_app_record.to_account_info();
     let current = current_trusted_status(&info, app, bump)?;
