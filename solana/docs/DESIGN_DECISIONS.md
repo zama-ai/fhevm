@@ -2854,6 +2854,7 @@ Everything that can change has one source. Every consumer imports from it or gen
 Nothing is restated by hand: a handwritten client, or an adapter with its own PDA or
 instruction-building code, is not acceptable. The norm is the program's IDL rendered by Codama, or a
 shared Rust crate. A golden test catches an accidental change; it is not a second source.
+Scope: code from feature/solana and what sits next to it, not unrelated EVM code.
 
 - PDA recipes live in the programs, as Anchor `seeds = [...]` constraints. The bump is stored in the
   account wherever checking the address again would otherwise cost compute. The IDL then declares
@@ -2862,8 +2863,9 @@ shared Rust crate. A golden test catches an accidental change; it is not a secon
   proposal of Codama visitors in the codegen script, which would restate the seeds in JS.
 - Off-chain Rust takes a recipe from the program crate, or from `zama-solana-acl` for the store,
   delegation and permit-invalidation recipes, through one seed-list function per recipe.
-- Pending Elias's decision: behaviour mirrors, such as the SDK's cleartext client, stay pinned to
-  the program by shared fixtures (`solana/test-fixtures`).
+- Logic that cannot be generated, such as the SDK's cleartext client or the TypeScript chain-type
+  checks, may be repeated only when one shared fixture in `solana/test-fixtures` is asserted from
+  both Rust and TypeScript.
 
 `solana/scripts/dead-surface-check.sh` check 8 enforces the PDA part. It fails on
 `getProgramDerivedAddress`, `findProgramAddress` and `createProgramAddress` (including the `Sync`

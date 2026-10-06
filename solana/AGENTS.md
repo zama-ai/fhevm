@@ -17,13 +17,15 @@ deployed, its default flips to no breaking changes, forward and backward compati
 PDA seeds and derivations, instruction building, account and event decoders, types, structs and
 constants each have exactly one source. Every consumer imports from it or generates from it. A
 handwritten client, or an adapter with its own PDA or instruction code, is not acceptable.
+Scope: code from feature/solana and what sits next to it, not unrelated EVM code.
 
 - The norm is the program's IDL rendered by Codama, or a shared Rust crate.
 - PDA recipes are Anchor `seeds = [...]` constraints in the programs. Off-chain Rust takes them from
   the program crate or from `zama-solana-acl`.
 - A golden test catches an accidental change; it is not a second source.
-- Pending Elias's decision: behaviour mirrors, such as the SDK's cleartext client, stay pinned by
-  the shared fixtures in `solana/test-fixtures`.
+- Logic that cannot be generated, such as the SDK's cleartext client or the TypeScript chain-type
+  checks, may be repeated only when one shared fixture in `solana/test-fixtures` is asserted from
+  both Rust and TypeScript.
 
 The decision and its compatibility rule are DD-072 in `docs/DESIGN_DECISIONS.md`. Check 8 of
 `scripts/dead-surface-check.sh` enforces the PDA part. Its `HAND_DERIVATIONS_ALLOWED` list holds
