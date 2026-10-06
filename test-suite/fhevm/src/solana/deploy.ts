@@ -370,7 +370,7 @@ const replaceSolanaProcess = async (binary: string, lifecycleDir: string | undef
   });
 };
 
-const HOST_LISTENER_PACKAGE = ['-p', 'host-listener', '--features', 'solana'] as const;
+const HOST_LISTENER_PACKAGE = ['-p', 'host-listener'] as const;
 const MERKLE_PROOF_SERVICE_PACKAGE = ['-p', 'solana-merkle-proof-service'] as const;
 
 const buildSolanaBinary = async (binary: string, cargoPackage: readonly string[]): Promise<void> => {

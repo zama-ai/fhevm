@@ -663,7 +663,6 @@ mod tests {
         }
     }
 
-    #[cfg(feature = "solana")]
     #[test]
     fn boundary_bits_match_the_host_at_every_position() {
         let computation = Computation::single(
