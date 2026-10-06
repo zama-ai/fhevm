@@ -162,7 +162,15 @@ anvil_setup_vars() {
         # (test-suite/fhevm/docker-compose/host-node-docker-compose.yml): the e2e suites sign
         # with up to 120 accounts of this mnemonic and wait for blocks without sending transactions.
         # --mixed-mining still mines each transaction immediately, which keeps the feedback loop fast.
-        ANVIL_ARGS+=(--block-time 1 --mixed-mining --accounts 120 --mnemonic "${MNEMONIC:-adapt mosquito move limb mobile illegal tree voyage juice mosquito burger raise father hope layer}")
+        # The mnemonic is read from the e2e env file, so anvil funds exactly the accounts the suites sign with.
+        local e2e_env_file="$JS_SDK_DIR/../../test-suite/e2e/.env.localcleartext"
+        local e2e_mnemonic
+        e2e_mnemonic="$(sed -n 's/^MNEMONIC="\(.*\)"$/\1/p' "$e2e_env_file")"
+        if [[ -z "$e2e_mnemonic" ]]; then
+            echo "Error: no MNEMONIC in $e2e_env_file." >&2
+            exit 1
+        fi
+        ANVIL_ARGS+=(--block-time 1 --mixed-mining --accounts 120 --mnemonic "$e2e_mnemonic")
     fi
 }
 
