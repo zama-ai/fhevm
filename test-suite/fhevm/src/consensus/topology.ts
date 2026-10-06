@@ -38,7 +38,9 @@ export function assertListenerRoute(command: string[], running: boolean, operato
 export function assertConsumerRoute(command: string[], running: boolean, operator: number, scenario: string): void {
   if (!running) throw new Error(`operator ${operator} consumer is not running`);
   const urls = command.flatMap((arg, i) => arg.startsWith("--url=") ? [arg.slice(6)] : arg === "--url" ? [command[i + 1]] : []);
-  const expected = scenario === "three-of-three-fork" && operator === 2 ? "/9" : "/0";
+  // Each operator reads its own Redis logical database, written by its own
+  // listener publisher. The fork scenario parks operator 2 on an empty one.
+  const expected = scenario === "three-of-three-fork" && operator === 2 ? "/9" : `/${operator}`;
   if (urls.length !== 1 || !urls[0]) throw new Error("consumer URL missing");
   const url = new URL(urls[0]);
   if (url.hostname !== "listener-redis" || (url.pathname || "/0") !== expected) throw new Error(`operator ${operator} consumer is not on its expected ingestion stream`);
