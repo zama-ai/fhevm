@@ -233,6 +233,8 @@ SEED_SOURCES=(
 # more (a new copy) and when it holds fewer (the entry must shrink, and go at zero), so the list
 # can only get shorter. Nothing in the script stops a new entry from being added; review does.
 # Keyed by path, not line, so an unrelated edit to a listed file does not invalidate the entry.
+# PR 1b and PR 1c are fhevm-internal#2108 task 2: Anchor seeds in zama-host and confidential-token,
+# then in the demo batcher and demo vault.
 HAND_DERIVATIONS_ALLOWED=(
   # zama-host and confidential-token recipes: PR 1b declares every PDA in the IDL, so Codama
   # generates the finders and the builders' account defaults, the event authority included.
@@ -246,24 +248,24 @@ HAND_DERIVATIONS_ALLOWED=(
   "test-suite/fhevm/src/solana/token-vertical.ts|2|PR 1b"
   # The demo's transfer builder goes with the @fhevm/solana-confidential-token package.
   "solana/demo-dapp/src/vault/actions/confidentialTransfer.ts|2|fhevm-internal#2108 task 5"
-  # Mixed: PR 1b removes the zama-host and confidential-token recipes. The rest are PDAs of other
-  # programs, proposed to come from those programs' clients: the BPF loader's programData, the
-  # SPL associated token account, the address lookup table, and the demo batcher's and demo
-  # vault's own seeds.
-  "solana/deploy/src/bootstrap.ts|3|PR 1b (event authority); proposed: a loader-v3 client (programData)"
-  "test-suite/fhevm/src/solana/provision.ts|3|PR 1b (event authority); proposed: a loader-v3 client (programData)"
-  "test-suite/fhevm/src/solana/spl.ts|3|PR 1b (vault authority); proposed: the SPL associated-token client"
-  "solana/demo-dapp/src/vault/internal/tokenAccounts.ts|1|PR 1b (stores); proposed: the SPL associated-token client"
-  "solana/deploy/src/recover.ts|5|PR 1b (confidential-token); proposed: generated batcher and demo-vault clients"
-  "solana/demo-dapp/src/vault/internal/batcherPdas.ts|3|PR 1b (stores, event authority); proposed: a generated batcher client"
-  "solana/demo-dapp/src/vault/internal/addressLookupTable.ts|1|proposed: the address-lookup-table client"
-  "test-suite/fhevm/demo/seed.ts|2|proposed: a generated demo-vault client"
-  # Off-chain Rust: one seed-list function per recipe in zama-solana-acl, which these call.
-  "coprocessor/fhevm-engine/solana-host-follower/src/host.rs|1|off-chain Rust follow-up"
-  "coprocessor/fhevm-engine/solana-merkle-proof-service/src/store_check.rs|1|off-chain Rust follow-up"
-  "kms-connector/crates/kms-worker/src/core/solana/encrypted_store.rs|1|off-chain Rust follow-up"
-  "kms-connector/crates/kms-worker/src/core/solana/mod.rs|2|off-chain Rust follow-up"
-  "relayer/src/host/solana_delegation_precheck.rs|2|off-chain Rust follow-up"
+  # Mixed: PR 1b removes the zama-host and confidential-token recipes, and PR 1c the demo batcher's
+  # and demo vault's, once those programs declare Anchor seeds. Solana infra replaces the PDAs of
+  # other programs with their maintained @solana-program/* finders. The BPF loader's programData has
+  # none: @solana-program/loader-v3 0.7.0 exports no finder.
+  "solana/deploy/src/bootstrap.ts|3|PR 1b (event authority); Solana infra (programData: no maintained finder)"
+  "test-suite/fhevm/src/solana/provision.ts|3|PR 1b (event authority); Solana infra (programData: no maintained finder)"
+  "test-suite/fhevm/src/solana/spl.ts|3|PR 1b (vault authority); Solana infra (@solana-program/token findAssociatedTokenPda)"
+  "solana/demo-dapp/src/vault/internal/tokenAccounts.ts|1|PR 1b (stores); Solana infra (@solana-program/token findAssociatedTokenPda)"
+  "solana/deploy/src/recover.ts|5|PR 1b (confidential-token); PR 1c (batcher, demo vault)"
+  "solana/demo-dapp/src/vault/internal/batcherPdas.ts|3|PR 1b (stores, event authority); PR 1c (batch)"
+  "solana/demo-dapp/src/vault/internal/addressLookupTable.ts|1|Solana infra (@solana-program/address-lookup-table findAddressLookupTablePda)"
+  "test-suite/fhevm/demo/seed.ts|2|PR 1c (demo vault shares)"
+  # Off-chain Rust: copro, through one seed-list function per recipe in zama-solana-acl.
+  "coprocessor/fhevm-engine/solana-host-follower/src/host.rs|1|copro"
+  "coprocessor/fhevm-engine/solana-merkle-proof-service/src/store_check.rs|1|copro"
+  "kms-connector/crates/kms-worker/src/core/solana/encrypted_store.rs|1|copro"
+  "kms-connector/crates/kms-worker/src/core/solana/mod.rs|2|copro"
+  "relayer/src/host/solana_delegation_precheck.rs|2|copro"
 )
 # The self-test drives the allow-list arms through the environment, as checks 4 and 5 do.
 [ -n "${DEAD_SURFACE_EXTRA_HAND_DERIVATION:-}" ] && \

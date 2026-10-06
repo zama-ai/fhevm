@@ -2838,11 +2838,11 @@ Context:
 
 An on-chain data fact is anything a client must agree with byte for byte: PDA seeds and the recipe
 that derives an address from them, how an instruction is built, account and event layouts and their
-decoders, types, structs and constants. Several are restated by hand today. The SDK spells the zama-host seeds and derives
-stores, transient stores, delegations and permit watermarks itself. The deployment, the demo dapp
-and the test suite derive event authorities and other programs' PDAs. The KMS connector, the
-relayer, the host follower and the Merkle proof service rebuild store and delegation addresses in
-Rust.
+decoders, types, structs and constants. Several are restated by hand today. The SDK spells the
+zama-host seeds and derives stores, transient stores, delegations and permit watermarks itself. The
+deployment, the demo dapp and the test suite derive event authorities and other programs' PDAs. The
+KMS connector, the relayer, the host follower and the Merkle proof service rebuild store and
+delegation addresses in Rust.
 
 A restated copy agrees with the program only until one of them changes, and on Solana the mismatch
 is silent. A wrong recipe still yields a valid address: the instruction built on it fails an account
@@ -2894,11 +2894,15 @@ to hold it to the program.
 
 Consequences:
 
-- PR 1b adds the missing `seeds` to zama-host and confidential-token, regenerates the clients, deletes
-  the TypeScript copies and shrinks the allow-list. A golden test pins every PDA address for fixed
-  inputs, so a recipe change is a deliberate edit.
-- The off-chain Rust derivations move behind `zama-solana-acl` seed-list functions in a follow-up.
-- PDAs of other programs (the BPF loader's program data, associated token accounts, address lookup
-  tables) are facts of those programs. They should come from those programs' clients.
+- fhevm-internal#2108 task 2 adds the missing `seeds` to zama-host and confidential-token, then to
+  the demo batcher and demo vault, regenerates the clients, deletes the TypeScript copies and shrinks
+  the allow-list. A golden test pins every PDA address for fixed inputs, so a recipe change is a
+  deliberate edit.
+- The off-chain Rust derivations move behind `zama-solana-acl` seed-list functions (copro).
+- PDAs of other programs are facts of those programs and come from their maintained clients:
+  `findAssociatedTokenPda` from `@solana-program/token` and `findAddressLookupTablePda` from
+  `@solana-program/address-lookup-table`. The BPF loader's program data has no maintained finder
+  (`@solana-program/loader-v3` 0.7.0 exports none), so its two derivations stay listed until one
+  exists.
 
 Pinned by `dead-surface-check.sh` check 8 and its `--self-test` fixtures.
