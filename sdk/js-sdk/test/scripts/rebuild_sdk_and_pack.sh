@@ -28,6 +28,10 @@ rm -f "$PACK_DIR"/fhevm-sdk-*.tgz "$PACK_DIR"/fhevm-solana-zama-host-*.tgz
 mkdir -p "$PACK_DIR"
 PACK_DIR=$(cd "$PACK_DIR" && pwd)
 
+# The SDK compiles against the package's dist, so build the package first.
+echo -e "${GREEN}Building @fhevm/solana-zama-host...${NC}"
+(cd "$ZAMA_HOST_DIR" && npm run build)
+
 # Build
 if [[ "$SKIP_BUILD" -eq 1 ]]; then
   echo -e "${GREEN}Skipping build step.${NC}"
@@ -39,7 +43,7 @@ fi
 # Pack from src/ which holds the real package.json for distribution
 echo -e "${GREEN}Packing project...${NC}"
 (cd "$ROOT_DIR/src" && npm pack --pack-destination "$PACK_DIR")
-(cd "$ZAMA_HOST_DIR" && npm run build && npm pack --pack-destination "$PACK_DIR")
+(cd "$ZAMA_HOST_DIR" && npm pack --pack-destination "$PACK_DIR")
 
 # Resolve the newly created tarballs
 TARBALL=$(echo "$PACK_DIR"/fhevm-sdk-*.tgz)
