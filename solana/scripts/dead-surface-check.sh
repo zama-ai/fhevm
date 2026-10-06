@@ -18,8 +18,10 @@
 #      One that nothing references at all — not a test, not its own module — is simply dead.
 #      This one reads a narrower surface than it counts against: which declarations it collects, and
 #      which trees it deliberately leaves alone, are written out at the check itself.
-#   7. Every tree swept above is a CI trigger for this script: a check that does not run on a change
+#   7. Every swept tree is a CI trigger for this script: a check that does not run on a change
 #      to the tree it protects is the same hole as a check that does not fire.
+#   8. Hand-written PDA derivations and seed literals (DD-072): a recipe the program already declares,
+#      restated in a client, drifts silently. Counts are checked; review rejects new allow-list entries.
 #
 # References are counted against a PRODUCTION INDEX (see `build_index`): test files and
 # `#[cfg(test)]` / `describe(` regions are dropped, and comments are stripped, so neither a
@@ -51,12 +53,12 @@ SELF_TEST=0
 run_check() { [ -z "${DEAD_SURFACE_ONLY_CHECK:-}" ] || [ "${DEAD_SURFACE_ONLY_CHECK}" = "$1" ]; }
 
 # An unrecognised value ran zero checks and printed "clean" with status 0 — a green, entirely vacuous
-# run, and the only tell was the absence of the seven headers, which nothing asserted. A typo, a
+# run, and the only tell was the absence of the eight headers, which nothing asserted. A typo, a
 # leftover repo variable, or an earlier job writing GITHUB_ENV would have silenced the whole gate.
 case "${DEAD_SURFACE_ONLY_CHECK:-}" in
-  '' | 1 | 2 | 3 | 4 | 5 | 6 | 7) ;;
+  '' | 1 | 2 | 3 | 4 | 5 | 6 | 7 | 8) ;;
   *)
-    echo "dead-surface-check: DEAD_SURFACE_ONLY_CHECK must be empty or 1-7, got '${DEAD_SURFACE_ONLY_CHECK}'" >&2
+    echo "dead-surface-check: DEAD_SURFACE_ONLY_CHECK must be empty or 1-8, got '${DEAD_SURFACE_ONLY_CHECK}'" >&2
     exit 2
     ;;
 esac
@@ -218,6 +220,58 @@ for root in "${SENTINEL_ROOTS[@]}"; do
   [ -e "$root" ] || { echo "dead-surface-check: sentinel root does not exist: $root" >&2; exit 2; }
 done
 
+# Check 8's sources of truth for PDA recipes (DD-072): the programs, whose Anchor `seeds` the IDL and
+# the generated clients carry, and zama-solana-acl, the one Rust home of the store and delegation
+# recipes. The seed literals check 8 hunts for are read from here, so a new program seed is covered
+# the day it is declared.
+SEED_SOURCES=(
+  solana/programs
+  solana/crates/zama-solana-acl
+)
+# Check 8 covers every Solana-dependent engine crate (their Cargo.toml dependencies), plus the
+# whole relayer and connector adapter trees. Keep these roots covered by the CI trigger filter.
+HAND_DERIVATION_ROOTS=(
+  relayer/src
+  kms-connector/crates
+  coprocessor/fhevm-engine/host-listener
+  coprocessor/fhevm-engine/solana-host-follower
+  coprocessor/fhevm-engine/solana-merkle-proof-service
+  coprocessor/fhevm-engine/tfhe-worker
+)
+# Today's hand-written derivations, as `path|count|tracking task`. Counts are production lines
+# deriving a PDA or spelling a seed. Over, under, zero and missing files fail. The script checks
+# counts; review rejects new entries. Keyed by path so unrelated edits do not invalidate an entry.
+HAND_DERIVATIONS_ALLOWED=(
+  "sdk/js-sdk/src/solana/actions/revokePermits.ts|4|fhevm-internal#2108 task 2 (Anchor seeds)"
+  "sdk/js-sdk/src/solana/actions/userDecryptionDelegation.ts|3|fhevm-internal#2108 task 2 (Anchor seeds)"
+  "sdk/js-sdk/src/solana/cleartext/authorization.ts|4|fhevm-internal#2108 task 2 (Anchor seeds)"
+  "sdk/js-sdk/src/solana/encryptedStore.ts|3|fhevm-internal#2108 task 2 (Anchor seeds)"
+  "sdk/js-sdk/src/solana/transientStore.ts|3|fhevm-internal#2108 task 2 (Anchor seeds)"
+  "solana/demo-dapp/src/vault/actions/discloseSecp.ts|3|fhevm-internal#2108 task 2 (Anchor seeds)"
+  "solana/demo-dapp/src/vault/joinBatch.ts|2|fhevm-internal#2108 task 2 (Anchor seeds)"
+  "test-suite/fhevm/src/solana/token-vertical.ts|3|fhevm-internal#2108 task 2 (Anchor seeds)"
+  "solana/demo-dapp/src/vault/actions/confidentialTransfer.ts|3|fhevm-internal#2108 task 5"
+  "solana/deploy/src/bootstrap.ts|4|fhevm-internal#2108 task 2 (programData: the one solana/deploy helper)"
+  "test-suite/fhevm/src/solana/provision.ts|4|fhevm-internal#2108 task 2 (programData: the one solana/deploy helper)"
+  "test-suite/fhevm/src/solana/spl.ts|4|fhevm-internal#2108 task 2 (@solana-program/token findAssociatedTokenPda)"
+  "solana/demo-dapp/src/vault/internal/tokenAccounts.ts|2|fhevm-internal#2108 task 2 (@solana-program/token findAssociatedTokenPda)"
+  "solana/deploy/src/recover.ts|6|fhevm-internal#2108 task 2 (Anchor seeds)"
+  "solana/demo-dapp/src/vault/internal/batcherPdas.ts|4|fhevm-internal#2108 task 2 (Anchor seeds)"
+  "solana/demo-dapp/src/vault/internal/addressLookupTable.ts|2|fhevm-internal#2108 task 2 (@solana-program/address-lookup-table findAddressLookupTablePda)"
+  "test-suite/fhevm/demo/seed.ts|3|fhevm-internal#2108 task 2 (Anchor seeds)"
+  "coprocessor/fhevm-engine/solana-host-follower/src/host.rs|1|fhevm-internal#2108 task 2 (zama-solana-acl seed lists)"
+  "coprocessor/fhevm-engine/solana-merkle-proof-service/src/store_check.rs|1|fhevm-internal#2108 task 2 (zama-solana-acl seed lists)"
+  "kms-connector/crates/kms-worker/src/core/solana/encrypted_store.rs|1|fhevm-internal#2108 task 2 (zama-solana-acl seed lists)"
+  "kms-connector/crates/kms-worker/src/core/solana/mod.rs|2|fhevm-internal#2108 task 2 (zama-solana-acl seed lists)"
+  "relayer/src/host/solana_delegation_precheck.rs|2|fhevm-internal#2108 task 2 (zama-solana-acl seed lists)"
+)
+# The self-test drives the allow-list arms through the environment, as checks 4 and 5 do.
+[ -n "${DEAD_SURFACE_EXTRA_HAND_DERIVATION:-}" ] && \
+  HAND_DERIVATIONS_ALLOWED+=("${DEAD_SURFACE_EXTRA_HAND_DERIVATION}")
+for root in "${SEED_SOURCES[@]}" "${HAND_DERIVATION_ROOTS[@]}"; do
+  [ -e "$root" ] || { echo "dead-surface-check: check 8 root does not exist: $root" >&2; exit 2; }
+done
+
 # `target/` holds generated crates (mime_guess ships a word list containing half the dictionary);
 # node_modules and build outputs are other people's vocabulary.
 EXCLUDES=(
@@ -241,7 +295,10 @@ SELFTEST_FIXTURES=(
   solana/crates/zama-fhe/src/dead_surface_selftest.rs
   solana/crates/zama-fhe/src/dead_surface_selftest_caller.rs
   solana/programs/zama-host/src/dead_surface_selftest.rs
+  solana/programs/confidential-token/src/dead_surface_selftest.rs
   solana/demo-dapp/src/deadSurfaceSelftest.ts
+  relayer/src/core/dead_surface_selftest.rs
+  coprocessor/fhevm-engine/tfhe-worker/dead_surface_selftest.rs
 )
 # A fixture left behind by an interrupted `--self-test` is indistinguishable from a real violation,
 # so every later run reports a bogus finding — observed once as a phantom `app_account` hit printed
@@ -263,7 +320,7 @@ trap 'rm -f "$INDEX" "$ALIAS_LABELS"' EXIT
 build_index() {
   local files
   files=$(grep -rl '' --include='*.rs' --include='*.ts' --include='*.tsx' "${EXCLUDES[@]}" \
-    "${RUST_ROOTS[@]}" "${TS_ROOTS[@]}" kms-connector/crates 2>/dev/null | sort -u)
+    "${RUST_ROOTS[@]}" "${TS_ROOTS[@]}" "${HAND_DERIVATION_ROOTS[@]}" 2>/dev/null | sort -u)
   local file
   for file in $files; do
     case "$file" in
@@ -333,9 +390,9 @@ build_index() {
     ' "$file"
   done
 }
-# Checks 1, 2 and 6 are the only ones that read the index, so a child running just one of the
+# Checks 1, 2, 6 and 8 are the only ones that read the index, so a child running just one of the
 # others does not pay for building it.
-if run_check 1 || run_check 2 || run_check 6; then
+if run_check 1 || run_check 2 || run_check 6 || run_check 8; then
   build_index > "$INDEX"
 fi
 
@@ -363,7 +420,7 @@ if run_check 1; then
     for variant in $variants; do
       # Deliberate tombstones keep their positional error code; their doc comment says so.
       context=$(grep -B3 -E "^    ${variant},\$" "$file" || true)
-      if echo "$context" | grep -qiE 'ordinals stay stable|code stability|stability\)|retired|legacy \(unused'; then
+      if grep -qiE 'ordinals stay stable|code stability|stability\)|retired|legacy \(unused' <<< "$context"; then
         continue
       fi
       # Boundary-anchored, not a substring match: `::InvalidKmsContext` must not be kept alive by
@@ -407,7 +464,7 @@ if run_check 2; then
         # exactly what the header promises cannot happen. The `emit!`/`emit_cpi!` arm above was
         # already index-based; this arm was not.
         if (grep -F "${constructing_file}:" "$INDEX" | grep -A4 'emit_event_cpi(' || true) \
-          | grep -qE "\b${event}\b"; then
+          | grep -E "\b${event}\b" >/dev/null; then
           manual=1
         fi
       done
@@ -487,7 +544,7 @@ if run_check 3; then
         [ -n "$record" ] || continue
         content=${record#*:}
         content=${content#*:}
-        printf '%s\n' "$content" | grep -qiE "$exceptions" || printf '%s\n' "$record"
+        grep -qiE "$exceptions" <<< "$content" || printf '%s\n' "$record"
       done)
     fi
     if [ -n "$hits" ]; then
@@ -731,14 +788,14 @@ if run_check 4; then
     context=$(sed -n "${start},${line}p" "$file" \
       | sed -E -e 's#^[[:space:]]*//+!?[[:space:]]*##' -e 's#^[[:space:]]*\*[[:space:]]*##' \
       | tr '\n' ' ' | tr -s ' ')
-    if ! echo "$context" | grep -qiE "$JUSTIFICATION"; then
+    if ! grep -qiE "$JUSTIFICATION" <<< "$context"; then
       echo "UNJUSTIFIED RETROFIT SENTINEL: ${hit}"
       fail=1
     fi
   done <<< "$retrofit_hits"
   for file in "${SENTINEL_FILES[@]}"; do
     [ -f "$file" ] || { echo "MISSING SENTINEL FILE: ${file} (update SENTINEL_FILES)"; fail=1; continue; }
-    if ! echo "$sentinel_seen" | grep -qF " ${file}"; then
+    if ! grep -qF " ${file}" <<< "$sentinel_seen"; then
       echo "STALE SENTINEL ENTRY: ${file} has no production retrofit left (drop it from SENTINEL_FILES)"
       fail=1
     fi
@@ -851,7 +908,7 @@ if run_check 6; then
         return
       fi
     fi
-    if ! head -40 "$file" | grep -qF "$API_SURFACE_MARKER"; then
+    if ! head -40 "$file" | grep -F "$API_SURFACE_MARKER" >/dev/null; then
       echo "UNDECLARED EXPORT: ${file}: ${kind} ${name} (no production caller outside its file, and the file does not state an audience — add a '${API_SURFACE_MARKER} ...' line, drop the export, or remove it)"
       fail=1
     fi
@@ -949,13 +1006,82 @@ if run_check 7; then
     return 1
   }
 
-  # SENTINEL_ROOTS, SENTINEL_FILES and the retrofit-justification files are included: checks 4 and 5
-  # read them, so a path of theirs outside the trigger filter is the same hole as an untriggered sweep
+  # SENTINEL_ROOTS, SENTINEL_FILES, the retrofit-justification files, check 8's seed sources and its
+  # allow-listed files are included: checks 4, 5 and 8 read them, so a path of theirs outside the trigger filter is the same hole as an untriggered sweep
   # root. Both `relayer/` files were exactly that until the filter above learned them.
   for root in "${ALL_ROOTS[@]}" "${FHE_ROOTS[@]}" "${SENTINEL_ROOTS[@]}" "${SENTINEL_FILES[@]}" \
-    "${RETROFIT_JUSTIFICATIONS[@]%%|*}" "${KMS_EXTRA_ROOTS[@]}" ${DEAD_SURFACE_EXTRA_ROOT:-}; do
+    "${RETROFIT_JUSTIFICATIONS[@]%%|*}" "${KMS_EXTRA_ROOTS[@]}" "${SEED_SOURCES[@]}" \
+    "${HAND_DERIVATION_ROOTS[@]}" "${HAND_DERIVATIONS_ALLOWED[@]%%|*}" ${DEAD_SURFACE_EXTRA_ROOT:-}; do
     if ! root_is_triggered "$root"; then
       echo "UNTRIGGERED ROOT: ${root} is swept by this script but no path in ${TRIGGER_WORKFLOW}'s dead-surface filter matches it — a change there would not run this check"
+      fail=1
+    fi
+  done
+fi
+
+if run_check 8; then
+  echo "== 8. hand-written PDA derivations and seed literals =="
+  # DD-072: every PDA recipe has one source, the program's Anchor `seeds` (or zama-solana-acl for the
+  # off-chain Rust recipes), and clients generate or import it. A second copy drifts silently, and a
+  # third-party dapp never regenerates. Reads the production index, so tests are not swept: a test
+  # that restates a recipe is a pin, and fails loudly when the recipe moves. Generated clients,
+  # the seed sources and solana/test-kit (test support) are the other exemptions.
+  #
+  # Seed sources are exempt from the client sweep, so check PendingBurn's one raw literal here.
+  # Runtime ConstraintSeeds tests cover which seed each derivation site uses.
+  raw_sites=$( (grep -rHo --include='*.rs' 'b"pending-burn"' solana/programs/confidential-token/src || true) \
+    | cut -d: -f1)
+  if [ "$raw_sites" != 'solana/programs/confidential-token/src/constants.rs' ]; then
+    echo "PENDING-BURN SEED COPY: expected one raw literal, in confidential-token/src/constants.rs"
+    fail=1
+  fi
+
+  # The seeds are read from the sources, plus Anchor's event-CPI seed, which no program declares.
+  # A seed literal is a byte string naming one, a quoted multi-word seed anywhere in code, or any
+  # seed string handed to `.encode(`, `Buffer.from(` or `utf8ToBytes(`. A one-word seed
+  # (`batch`, `vault`) is ordinary vocabulary outside these forms; its derivation is still caught.
+  seed_names=$( (grep -rhoE '_SEED: &\[u8\] = b"[^"]+"|seeds = \[b"[^"]+"' --include='*.rs' \
+    "${SEED_SOURCES[@]}" || true) | sed -E 's/.*b"([^"]+)"$/\1/' | sort -u)
+  seed_names="${seed_names}
+__event_authority"
+  # An empty or truncated set would leave the literal arm matching nothing while the check stays
+  # green, which is the failure this script exists to prevent.
+  if ! grep -qx 'host-config' <<< "$seed_names"; then
+    echo "SEED SET VACUOUS: no 'host-config' among the seeds read from ${SEED_SOURCES[*]}"
+    fail=1
+  fi
+  all_seeds=$(printf '%s\n' "$seed_names" | sed '/^$/d' | paste -sd '|' -)
+  multi_word_seeds=$(printf '%s\n' "$seed_names" | grep -E -- '-|^__' | paste -sd '|' -)
+  quote="[\"'\`]"
+  derivation="\b(getProgramDerivedAddress|findProgramAddress(Sync)?|createProgramAddress(Sync)?)\b|(try_)?find_program_address\(|create_program_address\("
+  seed_literal="b\"(${all_seeds})\"|${quote}(${multi_word_seeds})${quote}|(\.encode|Buffer\.from|utf8ToBytes)\([[:space:]]*${quote}(${all_seeds})${quote}"
+  seed_exclusions=$(printf '%s\n' "${SEED_SOURCES[@]}" solana/test-kit \
+    | sed 's|^|^|; s|$|/|' | paste -sd '|' -)
+  hand_hits=$( (grep -E "^[^:]+:[0-9]+:.*(${derivation}|${seed_literal})" "$INDEX" || true) \
+    | (grep -vE "^[^:]*/generated/|${seed_exclusions}" || true) )
+  hand_counts=$(printf '%s\n' "$hand_hits" | sed '/^$/d' | cut -d: -f1 | sort | uniq -c)
+  while read -r count file; do
+    [ -n "$file" ] || continue
+    entry=$(printf '%s\n' ${HAND_DERIVATIONS_ALLOWED[@]+"${HAND_DERIVATIONS_ALLOWED[@]}"} \
+      | awk -F'|' -v f="$file" '$1 == f && !found { print; found=1 }')
+    allowed=0
+    [ -n "$entry" ] && { allowed=${entry#*|}; allowed=${allowed%%|*}; }
+    if [ "$count" -gt "$allowed" ]; then
+      echo "HAND-WRITTEN PDA DERIVATION: ${file} has ${count} production line(s) deriving a PDA or spelling a seed, ${allowed} allowed — generate or import the recipe (DD-072):"
+      printf '%s\n' "$hand_hits" | (grep -F "${file}:" || true) | sed 's/^/    /'
+      fail=1
+    elif [ "$count" -lt "$allowed" ]; then
+      echo "STALE HAND-DERIVATION ENTRY: ${file} has ${count}, the allow-list says ${allowed} — lower the count"
+      fail=1
+    fi
+  done <<< "$hand_counts"
+  for entry in ${HAND_DERIVATIONS_ALLOWED[@]+"${HAND_DERIVATIONS_ALLOWED[@]}"}; do
+    file=${entry%%|*}
+    if [ ! -f "$file" ]; then
+      echo "MISSING HAND-DERIVATION FILE: ${file} (drop it from HAND_DERIVATIONS_ALLOWED)"
+      fail=1
+    elif ! grep -qE "^[[:space:]]*[0-9]+ ${file}$" <<< "$hand_counts"; then
+      echo "STALE HAND-DERIVATION ENTRY: ${file} has 0 — drop it from HAND_DERIVATIONS_ALLOWED"
       fail=1
     fi
   done
@@ -977,17 +1103,19 @@ if [ "$SELF_TEST" -eq 1 ]; then
   # satisfiable by planting one real violation elsewhere. The expected report text is required too,
   # which ties each fixture to the specific check it is meant to exercise.
   # `only` is the check number the fixture violates, passed to the child so it runs that check
-  # alone. Every assertion below sets it; a child that ran all seven would still pass, just
+  # alone. Every assertion below sets it; a child that ran all of them would still pass, just
   # twenty times slower, which is the state this replaced.
   expect_fires() {
     local what="$1" expect="$2" label="$3" only="$4"; shift 4
     local out status
     out=$(DEAD_SURFACE_ONLY_CHECK="$only" "$@" </dev/null 2>&1) && status=0 || status=$?
     if [ "$status" -eq 0 ]; then
-      echo "SELF-TEST HOLE: ${what} did not fire on a violating fixture"
+      echo "SELF-TEST HOLE: ${what} exited ${status}, did not fire on a violating fixture"
+      printf '%s\n' "$out" | sed 's/^/    /'
       self_test_fail=1
-    elif ! printf '%s\n' "$out" | grep -qF "$expect"; then
+    elif ! grep -qF "$expect" <<< "$out"; then
       echo "SELF-TEST HOLE: ${what} exited ${status} without reporting: ${expect}"
+      printf '%s\n' "$out" | sed 's/^/    /'
       self_test_fail=1
     else
       echo "  ok: ${what} fires"
@@ -1044,7 +1172,7 @@ FIXTURES
   # itself as exercised by another entry's fixture.
   while IFS= read -r label; do
     [ -n "$label" ] || continue
-    if ! printf '%s\n' "$covered_labels" | grep -qxF "$label"; then
+    if ! grep -qxF "$label" <<< "$covered_labels"; then
       echo "SELF-TEST HOLE: alias entry '${label}' has no fixture in this block"
       self_test_fail=1
     fi
@@ -1137,8 +1265,51 @@ FIXTURES
   # Check 7: a swept root outside every triggering path. Driven through the environment rather than
   # a fixture file, since the thing under test is the root list itself.
   expect_fires "untriggered-root sweep" \
-    "UNTRIGGERED ROOT: coprocessor/fhevm-engine/tfhe-worker" "" 7 \
-    env DEAD_SURFACE_EXTRA_ROOT=coprocessor/fhevm-engine/tfhe-worker bash "$SELF"
+    "UNTRIGGERED ROOT: dead-surface-selftest-untriggered" "" 7 \
+    env DEAD_SURFACE_EXTRA_ROOT=dead-surface-selftest-untriggered bash "$SELF"
+  # Check 8: one fixture per form a hand-written recipe takes, each in a file the allow-list does not
+  # name, so the expected text is the new-copy report.
+  fixture="solana/crates/zama-fhe/src/dead_surface_selftest.rs"
+  ts_fixture="solana/demo-dapp/src/deadSurfaceSelftest.ts"
+  while IFS='|' read -r form path content; do
+    [ -n "$form" ] || continue
+    printf '%s\n' "$content" > "$path"
+    expect_fires "hand-derivation sweep (${form})" "HAND-WRITTEN PDA DERIVATION: ${path} has 1" "" 8 bash "$SELF"
+    rm -f "$path"
+  done <<FIXTURES
+TypeScript call|${ts_fixture}|export const f = async (p: Address) => getProgramDerivedAddress({ programAddress: p, seeds: [] });
+TypeScript alias import|${ts_fixture}|import { getProgramDerivedAddress as derive } from '@solana/kit';
+TypeScript by-reference assignment|${ts_fixture}|const d = getProgramDerivedAddress;
+TypeScript createProgramAddress|${ts_fixture}|const p = createProgramAddress(seeds, program);
+TypeScript Buffer seed|${ts_fixture}|const s = Buffer.from('vault');
+TypeScript utf8 seed|${ts_fixture}|const s = utf8ToBytes('transient');
+TypeScript encoded seed|${ts_fixture}|export const s = new TextEncoder().encode('transient');
+TypeScript quoted seed|${ts_fixture}|export const s = 'host-config';
+Rust call|${fixture}|pub fn f(p: &Pubkey) -> Pubkey { Pubkey::find_program_address(&[], p).0 }
+Rust seed literal|${fixture}|pub const S: &[u8] = b"rand-nonce";
+Relayer outside host|relayer/src/core/dead_surface_selftest.rs|pub const S: &[u8] = b"rand-nonce";
+Engine crate outside src|coprocessor/fhevm-engine/tfhe-worker/dead_surface_selftest.rs|pub const S: &[u8] = b"rand-nonce";
+FIXTURES
+  pending_burn_fixture="solana/programs/confidential-token/src/dead_surface_selftest.rs"
+  printf 'pub const S: &[u8] = b"pending-burn";\n' > "$pending_burn_fixture"
+  expect_fires "PendingBurn raw seed copy" "PENDING-BURN SEED COPY:" "" 8 bash "$SELF"
+  rm -f "$pending_burn_fixture"
+  # The allow-list arms, through the environment: a file over its count, under it, at zero, and gone.
+  printf "export const a = 'host-config';\nexport const b = 'kms-context';\n" > "$ts_fixture"
+  expect_fires "hand-derivation allow-list (over its count)" \
+    "HAND-WRITTEN PDA DERIVATION: ${ts_fixture} has 2 production line(s) deriving a PDA or spelling a seed, 1 allowed" "" 8 \
+    env "DEAD_SURFACE_EXTRA_HAND_DERIVATION=${ts_fixture}|1|self-test" bash "$SELF"
+  expect_fires "hand-derivation allow-list (under its count)" \
+    "STALE HAND-DERIVATION ENTRY: ${ts_fixture} has 2, the allow-list says 3" "" 8 \
+    env "DEAD_SURFACE_EXTRA_HAND_DERIVATION=${ts_fixture}|3|self-test" bash "$SELF"
+  printf 'export const deadSurfaceSelftestDerivesNothing = 1;\n' > "$ts_fixture"
+  expect_fires "hand-derivation allow-list (at zero)" \
+    "STALE HAND-DERIVATION ENTRY: ${ts_fixture} has 0" "" 8 \
+    env "DEAD_SURFACE_EXTRA_HAND_DERIVATION=${ts_fixture}|1|self-test" bash "$SELF"
+  rm -f "$ts_fixture"
+  expect_fires "hand-derivation allow-list (missing file)" \
+    "MISSING HAND-DERIVATION FILE: solana/does-not-exist.ts" "" 8 \
+    env "DEAD_SURFACE_EXTRA_HAND_DERIVATION=solana/does-not-exist.ts|1|self-test" bash "$SELF"
   if [ "$self_test_fail" -ne 0 ]; then
     echo "dead-surface-check: SELF-TEST FAILED (a check is vacuous)"
     exit 1

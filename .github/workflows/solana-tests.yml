@@ -70,25 +70,19 @@ jobs:
             # build-and-test, which is gated on `solana`, so an edit to the listener, the
             # kms-connector, the SDK, or the test suite could introduce a retired name
             # or a dead export without it ever running. Keep this list and the script's own
-            # RUST_ROOTS/TS_ROOTS/SCRIPT_ROOTS in step.
+            # sweep roots in step.
             dead-surface:
               - .github/workflows/solana-tests.yml
               - .github/workflows/solana-e2e.yml
               - solana/**
-              - coprocessor/fhevm-engine/host-listener/src/**
-              - coprocessor/fhevm-engine/solana-host-follower/src/**
-              - coprocessor/fhevm-engine/solana-merkle-proof-service/src/**
+              - coprocessor/fhevm-engine/host-listener/**
+              - coprocessor/fhevm-engine/solana-host-follower/**
+              - coprocessor/fhevm-engine/solana-merkle-proof-service/**
+              - coprocessor/fhevm-engine/tfhe-worker/**
               - kms-connector/crates/**
               - sdk/js-sdk/src/solana/**
               - test-suite/fhevm/**
-              # The relayer's Solana adapter is an alias-sweep root; checks 4 and 5 pin a retrofit
-              # and its written justification in the two other relayer files. None matched any path
-              # above, so an edit there did not run this job at all — the staleness guards could not
-              # fire on the change that invalidated them. Named individually rather than
-              # `relayer/**`: only these are inputs to the sweep.
-              - relayer/src/host/**
-              - relayer/src/core/event.rs
-              - relayer/src/gateway/arbitrum/transaction_calldata.rs
+              - relayer/src/**
             demo-dapp:
               - .github/workflows/solana-tests.yml
               - solana/demo-dapp/**
@@ -144,7 +138,7 @@ jobs:
 
       # DEAD_SURFACE_ONLY_CHECK narrows the script to a single check; the self-test sets it per
       # assertion. Cleared here so no repository variable, no earlier step writing GITHUB_ENV, and no
-      # copy of this job in another workflow can leave the gate running one check out of seven. The
+      # copy of this job in another workflow can leave the gate running one check out of eight. The
       # script also rejects values it does not recognize, but an inherited "6" is a value it does.
       - name: Check for dead surface and rejected vocabulary
         env:
@@ -160,13 +154,6 @@ jobs:
         env:
           DEAD_SURFACE_ONLY_CHECK: ''
         run: bash scripts/dead-surface-check.sh --self-test
-
-      # PendingBurn is derived by handwritten Rust and TypeScript code. A rename on only one side
-      # leaves unit tests green until a live transaction fails with ConstraintSeeds.
-      - name: Check handwritten PendingBurn seed matches Rust
-        run: |
-          python3 scripts/check-pda-seeds.py
-          python3 scripts/check-pda-seeds.py --self-test
 
   # The vault module (batch provisioning, settle composition, the address-lookup-table lifecycle)
   # lives in the demo dapp, and its unit tests run nowhere else: js-sdk-tests is scoped to PRs

@@ -99,6 +99,7 @@ are written as one narrative instead.
 | [DD-069](#dd-069-only-an-output-its-transaction-stores-is-computed-and-recorded-as-a-block-producer)                                      | adopted                                  | Only an output its transaction stores is computed and recorded as a block producer                                             |
 | [DD-070](#dd-070-solana-is-read-at-finalized-commitment)                                                                                  | adopted                                  | Solana is read at finalized commitment                                                                                         |
 | [DD-071](#dd-071-the-listener-records-each-solana-block-as-a-finalized-host-block-numbered-by-height)                                     | adopted                                  | The listener records each Solana block as a finalized host block, numbered by height                                           |
+| [DD-072](#dd-072-one-source-for-everything-that-can-change)                                                                               | adopted                                  | One source for everything that can change                                                                                      |
 
 ## DD-002: Keep App Store And Host ACL Store Separate
 
@@ -2827,3 +2828,81 @@ Not settled by the decisions above. Forward requirements are detailed in
   token account through `check_underlying_ata_not_frozen`, treating an uninitialized address as not
   frozen; `cancel_pending_burn` is not freeze-gated. What these checks do not reach is
   fhevm-internal#1981.
+
+## DD-072: One source for everything that can change
+
+Status: adopted
+
+Context:
+
+Anything that can change needs one source: PDA seeds and derivations, instruction building, account
+and event decoders, types, structs and constants. Several are restated by hand today. The SDK spells
+the zama-host seeds and derives stores, transient stores, delegations and permit watermarks itself.
+The deployment, the demo dapp and the test suite derive event authorities and other programs' PDAs.
+The KMS connector, the relayer, the host follower and the Merkle proof service rebuild store and
+delegation addresses in Rust.
+
+A restated copy agrees with the program only until one of them changes, and on Solana the mismatch
+is silent. A wrong recipe still yields a valid address: the instruction built on it fails an account
+constraint, or the read finds no account. Third-party dapps make it worse: they generate or vendor a
+client once and do not regenerate it.
+
+Decision:
+
+Everything that can change has one source. Every consumer imports from it or generates from it.
+Nothing is restated by hand: a handwritten client, or an adapter with its own PDA or
+instruction-building code, is not acceptable. The norm is the program's IDL rendered by Codama, or a
+shared Rust crate. A golden test catches an accidental change; it is not a second source.
+Scope: code from feature/solana and what sits next to it, not unrelated EVM code.
+
+- PDA recipes live in the programs, as Anchor `seeds = [...]` constraints. The bump is stored in the
+  account wherever checking the address again would otherwise cost compute. The IDL then declares
+  every PDA, and Codama generates the `find*Pda` helpers and the builders' account defaults from it.
+  This settles fhevm-internal#2108 open question 5 for Anchor seeds and reverses its earlier
+  proposal of Codama visitors in the codegen script, which would restate the seeds in JS.
+- Off-chain Rust takes a recipe from the program crate, or from `zama-solana-acl` for the store,
+  delegation and permit-invalidation recipes, through one seed-list function per recipe.
+- Logic that cannot be generated, such as the SDK's cleartext client or the TypeScript chain-type
+  checks, may be repeated only when one shared fixture in `solana/test-fixtures` is asserted from
+  both Rust and TypeScript.
+
+`solana/scripts/dead-surface-check.sh` check 8 enforces the PDA part. It fails on
+`getProgramDerivedAddress`, `findProgramAddress` and `createProgramAddress` (including the `Sync`
+forms) in TypeScript, on `find_program_address` and `create_program_address` in Rust, and on seed
+literals, in production code outside generated clients, the programs, `zama-solana-acl` and
+`solana/test-kit`. It reads the seed literals from those sources. Tests are not swept: a test that
+restates a recipe is a pin and fails loudly when the recipe moves. Today's copies are listed in
+`HAND_DERIVATIONS_ALLOWED`, each with its count of lines and its tracking task. The script checks
+counts; review rejects new entries. Check 8 also keeps the PendingBurn seed to one raw literal
+in the program, in `constants.rs`.
+
+Compatibility:
+
+Nothing on Solana is deployed, the dapps included. Until it is, Solana code keeps no backward
+compatibility: a recipe, a layout or a discriminator changes in place, the old path is deleted, and
+no fallback or compatibility branch is written for it. EVM paths keep their compatibility, because
+they have consumers and a release policy. Once Solana is deployed, its default flips to no breaking
+changes, forward and backward compatible.
+
+Rationale:
+
+The program is where a recipe is enforced, so it is the only place a copy cannot drift from. Anchor
+`seeds` put the recipe in the IDL, where every generator can read it: the JS clients today, and Rust
+or other clients later. A Codama visitor would keep a JS-only copy, and a test per PDA would be
+needed to hold it to the program.
+
+Consequences:
+
+- fhevm-internal#2108 task 2 adds the missing `seeds` to zama-host and confidential-token, then to
+  the demo batcher and demo vault, regenerates the clients, deletes the TypeScript copies and
+  shrinks the allow-list. A golden test pins every PDA address for fixed inputs, so a recipe change
+  is a deliberate edit.
+- fhevm-internal#2108 task 2 moves the off-chain Rust derivations behind `zama-solana-acl` seed-list
+  functions. It also replaces other programs' PDAs with their maintained clients:
+  `findAssociatedTokenPda` from `@solana-program/token` and `findAddressLookupTablePda` from
+  `@solana-program/address-lookup-table`. The BPF loader's program data address is stored in the
+  program account, so the chain is its source and a client reads it rather than derives it.
+  `@solana-program/loader-v3` 0.7.0 ships no decoder for that account, so until one does, a single
+  helper in `solana/deploy` derives it and the test suite imports that helper.
+
+Pinned by `dead-surface-check.sh` check 8 and its `--self-test` fixtures.
