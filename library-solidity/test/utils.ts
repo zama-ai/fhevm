@@ -15,14 +15,26 @@ export async function sleep(ms: number): Promise<void> {
   return new Promise((resolve) => setTimeout(resolve, ms));
 }
 
-export async function checkIsHardhatSigner(signer: HardhatEthersSigner) {
+// Throws if `signer` is not an object whose `address` is one of the hardhat signers.
+// Returns the matching HardhatEthersSigner (an async function cannot be an `asserts` type guard).
+export async function checkIsHardhatSigner(signer: unknown): Promise<HardhatEthersSigner> {
+  const address =
+    typeof signer === 'object' && signer !== null && 'address' in signer && typeof signer.address === 'string'
+      ? signer.address
+      : undefined;
+  if (address === undefined || !ethers.isAddress(address)) {
+    throw new Error(`Expected a signer with a valid address, got ${String(signer)}`);
+  }
+
   const signers: HardhatEthersSigner[] = await hre.ethers.getSigners();
-  if (signers.findIndex((s) => s.address === signer.address) === -1) {
+  const hardhatSigner = signers.find((s) => s.address.toLowerCase() === address.toLowerCase());
+  if (hardhatSigner === undefined) {
     throw new Error(
-      `The provided address (${signer.address}) is not the address of a valid hardhat signer.
+      `The provided address (${address}) is not the address of a valid hardhat signer.
       Please use addresses listed via the 'npx hardhat get-accounts --network hardhat' command.`,
     );
   }
+  return hardhatSigner;
 }
 
 export const waitForBlock = (blockNumber: bigint | number) => {
