@@ -49,12 +49,14 @@ ci/preview-env/
 │   ├── values-anvil-host-polygon-e2e.yaml   # anvil-node overlay, Polygon host chain (deploy_polygon)
 │   ├── values-host-contracts-e2e.yaml   # contracts overlay, host-contracts
 │   ├── values-host-contracts-polygon-e2e.yaml # contracts overlay, Polygon host-contracts (mirrors ETH ProtocolConfig)
-│   └── values-host-trigger-keygen-e2e.yaml # contracts overlay, real FHE key/CRS gen ceremony
+│   ├── values-host-trigger-keygen-e2e.yaml # contracts overlay, real FHE key/CRS gen ceremony
+│   └── values-host-define-new-kms-context-e2e.yaml # contracts overlay, same-committee context switch (manual)
 ├── gateway-chain/
 │   ├── values-anvil-gateway-e2e.yaml         # anvil-node overlay, gateway chain
 │   ├── values-gateway-contracts-e2e.yaml     # contracts overlay, gateway-contracts
 │   ├── values-gateway-add-host-chains-e2e.yaml # contracts overlay, deferred addHostChains step
-│   └── values-gateway-add-host-chains-polygon-e2e.yaml # contracts overlay, register Polygon (80002) (deploy_polygon)
+│   ├── values-gateway-add-host-chains-polygon-e2e.yaml # contracts overlay, register Polygon (80002) (deploy_polygon)
+│   └── values-gateway-update-kms-context-e2e.yaml # contracts overlay, gateway context id bump (manual)
 ├── coprocessor/
 │   ├── values-coprocessor-e2e.yaml        # coprocessor overlay (one release per party: coprocessor-<i>)
 │   ├── values-coprocessor-bcs-e2e.yaml    # RFC-021 BCS overlay (pinned 0.14.0, extraSelectorLabels)
@@ -496,6 +498,51 @@ deployed. Every Polygon step in the workflow is gated on `deploy_polygon == 'tru
 > `true` and it takes the **reduced / read-only** path (the `hcu-block-cap` owner-only
 > and `evm_*` deterministic subtests `this.skip()`). The Polygon run is a multichain
 > routing smoke test; the ETH `staging` run remains the full-coverage one.
+
+## KMS context switch (manual)
+
+A same-committee switch on a namespace that already finished keygen. The two
+overlays carry the Anvil network, RPC, chain id, and deployer. The script
+overwrites those from the live releases when a testnet preview changed them,
+and appends the committee gitops pins in
+`eth-sc-define-new-kms-context` / `gw-sc-update-kms-context`: party addresses
+and thresholds. It then replaces each `KMS_NODE_CA_CERT_<i>` with the PEM in
+that party's public vault, sets the node URL to `http://kms-core-<i>-core-<i>:50001`
+and the MPC identity to that same host (the TLS certificate CN), and replaces
+`KMS_SOFTWARE_VERSION` and `KMS_PCR_VALUES` from the running `kms-core-1` image
+and its trusted-release PCRs. It then broadcasts
+`defineNewKmsContextAndEpoch`, then `updateKmsContext` with the next id that
+task prints (the ProtocolConfig allocation counter + 1). The cores keep the
+key shares they already have; this does not wipe KMS storage.
+
+From a checkout of this repo, with the preview namespace on the current kube context:
+
+```bash
+NAMESPACE=fhevm-ci-<actor>-<id> \
+  bash ci/preview-env/scripts/deploy/kms-context-switch.sh
+```
+
+`CONTRACTS_CHART` defaults to `charts/contracts`. When the preview was launched
+with `contracts_chart_version` set, pull that chart and point the variable at
+the untarred directory:
+
+```bash
+helm pull oci://hub.zama.org/ghcr/zama-ai/fhevm/charts/contracts --version 0.8.2 --untar
+CONTRACTS_CHART="$PWD/contracts" NAMESPACE=fhevm-ci-<actor>-<id> \
+  bash ci/preview-env/scripts/deploy/kms-context-switch.sh
+```
+
+The first host deploy registers that same material. `wire-contracts-values.sh`
+reads each party's CA cert from the public vault, the software version from
+`KMS_CORE_TAG`, and the PCR triple from the enclave image labels, and writes
+the node URL and MPC identity as `http://kms-core-<i>-core-<i>:50001` and
+`kms-core-<i>-core-<i>`. A later switch replays that first context, so a
+namespace whose first context was registered with the placeholder certificate
+cannot be repaired by this command. Launch a new preview after this change.
+
+The two Helm jobs return once the transactions are mined. Creation
+confirmations and epoch activation continue on the cores after that. The
+gateway update rejects an id that is not strictly greater than the current one.
 
 ## TODO / remaining work
 

@@ -1,0 +1,58 @@
+# charts/contracts overlay for the gateway half of a same-committee KMS context switch.
+#
+# Preview counterpart of zama-zws/gitops
+# values/gw-blockchain/gw-sc-update-kms-context/values-zws-dev.yaml.
+# Not part of preview-env-deploy. Run only after host-define-new-kms-context.
+#
+# The network, RPC, chain id, and deployer below are the Anvil defaults from
+# values-gateway-contracts-e2e.yaml. kms-context-switch.sh overwrites any of
+# them the live gateway-contracts release already set (a testnet preview's
+# rewritten RPC and deployer win) and appends the committee the update task
+# reads. Those indexed keys are the same set as the gitops file; a preview
+# cannot pin them here because party count and addresses are per namespace:
+#   NUM_KMS_NODES
+#   MPC_THRESHOLD PUBLIC_DECRYPTION_THRESHOLD USER_DECRYPTION_THRESHOLD
+#   KMS_GENERATION_THRESHOLD
+#   KMS_TX_SENDER_ADDRESS_<i> KMS_SIGNER_ADDRESS_<i>
+#   KMS_NODE_IP_ADDRESS_<i> KMS_NODE_STORAGE_URL_<i>
+# The script then sets KMS_CONTEXT_ID to the id the host job printed
+# (allocation counter + 1). Gitops pins that decimal in this file instead.
+#
+# GatewayConfig is not an env var here. --use-internal-proxy-address reads it
+# from the reused gateway-contracts PVC (addresses/.env.gateway). Gitops sets
+# GATEWAY_CONFIG_ADDRESS from the gw-sc-addresses ConfigMap.
+# updateKmsContext rejects an id that is not strictly greater than the current one.
+scDeploy:
+  enabled: true
+  preventRedeployment: false
+  image:
+    name: hub.zama.org/ghcr/zama-ai/fhevm/gateway-contracts
+    tag: latest
+  resources:
+    requests:
+      cpu: 500m
+      memory: 1Gi
+    limits:
+      cpu: "2"
+      memory: 4Gi
+  configmap:
+    name: gw-sc-addresses
+  env:
+    - {name: HARDHAT_NETWORK, value: "staging"}
+    - {name: MNEMONIC, value: "test test test test test test test test test test test junk"}
+    - {name: RPC_URL, value: "http://anvil-gateway-anvil-node:8546"}
+    - {name: CHAIN_ID_GATEWAY, value: "54321"}
+    # Anvil account #0. Same key as values-gateway-contracts-e2e.yaml.
+    - {name: DEPLOYER_PRIVATE_KEY, value: "0xac0974bec39a17e36ba4a6b4d238ff944bacb478cbed5efcae784d7bf4f2ff80"}
+  deployCommands:
+    - npx hardhat task:buildUpdateKmsContextProposal --use-internal-proxy-address true --verify-context-id true
+    - npx hardhat task:updateKmsContext --use-internal-proxy-address true
+  verifyContracts: false
+persistence:
+  enabled: true
+  mountPath: /app/addresses
+  volumeClaim:
+    name: gateway-sc-deploy-workdir
+    create: false
+scUpgrade:
+  enabled: false

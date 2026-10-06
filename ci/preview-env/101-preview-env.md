@@ -276,6 +276,30 @@ kubectl port-forward -n <namespace> svc/kms-connector-1-kms-connector-proxy 8443
 curl -sk -H "Authorization: Bearer fhevm-e2e-kms-connector-api-key" https://localhost:8443/v1/version
 ```
 
+## KMS context switch
+
+On a preview that already finished keygen, broadcast a same-committee context
+switch. The overlays set network, RPC, chain id, and deployer. The command
+fills the party env (the same keys as gitops `eth-sc-define-new-kms-context`
+and `gw-sc-update-kms-context`) from the live contract releases, replaces each
+CA certificate with the PEM in that party's public vault, sets the node URL and
+MPC identity to the peer service the TLS certificate names, and sets the software
+version and PCRs from the running `kms-core-1`. It then bumps the gateway context id to the next
+ProtocolConfig allocation id. It does not wipe KMS key storage.
+
+The first host deploy (`wire-contracts-values.sh`) registers that same material
+from the public vault and the enclave image. A switch replays the previous
+context, so a preview whose first context used the placeholder certificate
+needs a new preview rather than another switch.
+
+```bash
+NAMESPACE=<namespace> bash ci/preview-env/scripts/deploy/kms-context-switch.sh
+```
+
+Run it from a checkout of the ref that deployed the namespace. The jobs return
+when the host and gateway transactions are mined; the cores then confirm the
+new context and activate its epoch.
+
 ## Destroy an environment
 
 Teardown means: `helm uninstall` every release in the namespace (so Crossplane

@@ -89,6 +89,8 @@ scDeploy:
     # KMS_NODE_STORAGE_URL_x / KMS_NODE_PARTY_ID_x / KMS_NODE_MPC_IDENTITY_x /
     # KMS_NODE_CA_CERT_x / KMS_NODE_STORAGE_PREFIX_x / the 4 threshold fields are
     # appended dynamically for NB_KMS_CORE parties - see header note.
+    # Placeholders. wire-contracts-values.sh overwrites both from KMS_CORE_TAG
+    # and the enclave PCR0/PCR1/PCR2 before this file is installed.
     - {name: KMS_SOFTWARE_VERSION, value: "0.1.0"}
     - {name: KMS_PCR_VALUES, value: '[{"pcr0":"0x00","pcr1":"0x00","pcr2":"0x00"}]'}
   deployCommands:
