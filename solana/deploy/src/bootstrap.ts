@@ -13,14 +13,18 @@ import {
 
 import { BRINGUP_KMS_CONTEXT_ID, SOLANA_HOST_CHAIN_ID } from './constants';
 import type { GatewayBootstrapInputs } from './gateway';
-import { HOST_CONFIG_DISCRIMINATOR, getHostConfigDecoder } from './generated/zamaHost/accounts/hostConfig.js';
-import { KMS_CONTEXT_DISCRIMINATOR, getKmsContextDecoder } from './generated/zamaHost/accounts/kmsContext.js';
 import {
+  findHostConfigPda,
+  findKmsContextPda,
+  findRandNoncePda,
   getDefineKmsContextInstructionAsync,
+  getHostConfigDecoder,
   getInitializeHostConfigInstructionAsync,
-} from './generated/zamaHost/instructions/index.js';
-import { findHostConfigPda, findKmsContextPda, findRandNoncePda } from './generated/zamaHost/pdas/index.js';
-import { ZAMA_HOST_PROGRAM_ADDRESS } from './generated/zamaHost/programAddress.js';
+  getKmsContextDecoder,
+  HOST_CONFIG_DISCRIMINATOR,
+  KMS_CONTEXT_DISCRIMINATOR,
+  ZAMA_HOST_PROGRAM_ADDRESS,
+} from '@fhevm/solana-zama-host';
 import type { HostDeployContext } from './send';
 
 const BPF_UPGRADEABLE_LOADER = 'BPFLoaderUpgradeab1e11111111111111111111111' as Address;

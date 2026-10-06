@@ -58,7 +58,7 @@ vi.mock('node:fs/promises', () => ({
 }));
 
 import { RECLAIM_SCAN_WINDOW, prepareNextBatch, reclaimFinishedBatchAuthorities } from './batchProvisioning';
-import { ZAMA_HOST_PROGRAM_ADDRESS } from '@fhevm/sdk/solana/host';
+import { ZAMA_HOST_PROGRAM_ADDRESS } from '@fhevm/solana-zama-host';
 import { BatchStatus } from './batchTypes';
 
 const REGISTRY_PATH = '/tmp/registry.json';

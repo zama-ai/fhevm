@@ -37,7 +37,12 @@ import {
 
 import type { Bytes32Hex } from '@fhevm/sdk/types';
 
-import { decodeHostConfig, HOST_CONFIG_DISCRIMINATOR } from '../../../../solana/deploy/src/generated/zamaHost/accounts/index.js';
+import {
+  decodeHostConfig,
+  findHostConfigPda,
+  HOST_CONFIG_DISCRIMINATOR,
+  ZAMA_HOST_PROGRAM_ADDRESS,
+} from '@fhevm/solana-zama-host';
 
 import {
   SPL_MINT_ACCOUNT_SPACE,
@@ -52,8 +57,6 @@ import {
   transferSolInstruction,
 } from './spl';
 
-import { findHostConfigPda } from '../../../../solana/deploy/src/generated/zamaHost/pdas/index.js';
-import { ZAMA_HOST_PROGRAM_ADDRESS } from '../../../../solana/deploy/src/generated/zamaHost/programAddress.js';
 import { vaultModule, sdkVerifyModule } from './lazy-modules';
 
 // The vault/SDK loaders live in lazy-modules.ts — see there for why they must stay dynamic

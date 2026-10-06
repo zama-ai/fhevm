@@ -6,7 +6,7 @@ import type * as SolanaSdk from '@fhevm/sdk/solana';
 import type { SolanaMerkleProofReader } from '@fhevm/sdk/solana/cleartext';
 
 import { BRINGUP_KMS_CONTEXT_ID } from '../../../../solana/deploy/src/constants';
-import { ZAMA_HOST_PROGRAM_ADDRESS } from '../../../../solana/deploy/src/generated/zamaHost/programAddress.js';
+import { ZAMA_HOST_PROGRAM_ADDRESS } from '@fhevm/solana-zama-host';
 import { readActiveKmsPair, readGatewayBootstrapInputs } from './addresses';
 
 /** The protocol `SOLANA_E2E_SOURCE` names: the local stack, devnet, or the cleartext stack. */

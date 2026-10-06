@@ -22,8 +22,7 @@ import {
   solanaUserDecryptionDelegationAddress,
 } from './userDecryptionDelegation.js';
 import type { SolanaRpc } from '../encryptedStore.js';
-import { findHostConfigPda } from '../internal/generated/zamaHost/pdas/index.js';
-import { ZAMA_HOST_PROGRAM_ADDRESS } from '../internal/generated/zamaHost/programAddress.js';
+import { findHostConfigPda, ZAMA_HOST_PROGRAM_ADDRESS } from '@fhevm/solana-zama-host';
 
 function addr(fill: number): Address {
   return address(base58.encode(new Uint8Array(32).fill(fill)));

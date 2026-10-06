@@ -7,6 +7,7 @@
       "dependencies": {
         "@fhevm/confidential-token": "file:../../solana/clients/confidential-token",
         "@fhevm/sdk": "file:../../sdk/js-sdk/src",
+        "@fhevm/solana-zama-host": "file:../../solana/clients/zama-host",
         "@solana/kit": "6.10.0",
         "@solana/program-client-core": "6.10.0",
         "citty": "^0.1.6",
@@ -20,6 +21,9 @@
       },
     },
   },
+  "overrides": {
+    "@fhevm/solana-zama-host": "file:../../solana/clients/zama-host",
+  },
   "packages": {
     "@adraffy/ens-normalize": ["@adraffy/ens-normalize@1.11.1", "", {}, "sha512-nhCBV3quEgesuf7c7KYfperqSS14T8bYuvJ8PcLJp6znkZpFc0AuW4qBtr8eKVyPPe/8RSr7sglCWPU5eaxwKQ=="],
 
@@ -28,6 +32,8 @@
     "@fhevm/confidential-token": ["@fhevm/confidential-token@file:../../solana/clients/confidential-token", { "dependencies": { "@solana/kit": "6.10.0", "@solana/program-client-core": "6.10.0" } }],
 
     "@fhevm/sdk": ["@fhevm/sdk@file:../../sdk/js-sdk/src", { "dependencies": { "@noble/curves": "2.0.1", "@noble/hashes": "2.0.1", "@scure/base": "1.2.6", "@solana/kit": "6.10.0", "@solana/program-client-core": "6.10.0", "wasm-feature-detect": "^1.8.0" }, "peerDependencies": { "ethers": ">=6.8.0", "typescript": ">=5.0.4", "viem": ">=2" }, "optionalPeers": ["ethers", "typescript", "viem"] }],
+
+    "@fhevm/solana-zama-host": ["@fhevm/solana-zama-host@file:../../solana/clients/zama-host", { "devDependencies": { "@solana/kit": "6.10.0", "@solana/program-client-core": "6.10.0", "@types/node": "22.20.1", "typescript": "6.0.3" }, "peerDependencies": { "@solana/kit": "6.10.0", "@solana/program-client-core": "6.10.0" } }],
 
     "@metaplex-foundation/beet": ["@metaplex-foundation/beet@0.7.1", "", { "dependencies": { "ansicolors": "^0.3.2", "bn.js": "^5.2.0", "debug": "^4.3.3" } }, "sha512-hNCEnS2WyCiYyko82rwuISsBY3KYpe828ubsd2ckeqZr7tl0WVLivGkoyA/qdiaaHEBGdGl71OpfWa2rqL3DiA=="],
 
@@ -343,6 +349,10 @@
 
     "yaml": ["yaml@2.8.2", "", { "bin": { "yaml": "bin.mjs" } }, "sha512-mplynKqc1C2hTVYxd0PU2xQAc22TI1vShAYGksCCfxbn/dFwnHTNi1bvYsBTkhdUNtGIf5xNOg938rrSSYvS9A=="],
 
+    "@fhevm/solana-zama-host/@types/node": ["@types/node@22.20.1", "", { "dependencies": { "undici-types": "~6.21.0" } }, "sha512-EANqOCF9QFyra+4pfxUcX9STKJpCLjMbObVzljIJomAWSnuSIEAvyzEU53GaajbXJEgdh0iEcPL+DGvpUd4k1Q=="],
+
+    "@fhevm/solana-zama-host/typescript": ["typescript@6.0.3", "", { "bin": { "tsc": "bin/tsc", "tsserver": "bin/tsserver" } }, "sha512-y2TvuxSZPDyQakkFRPZHKFm+KKVqIisdg9/CZwm9ftvKXLP8NRWj38/ODjNbr43SsoXqNuAisEf1GdCxqWcdBw=="],
+
     "@scure/bip32/@noble/curves": ["@noble/curves@1.9.1", "", { "dependencies": { "@noble/hashes": "1.8.0" } }, "sha512-k11yZxZg+t+gWvBbIswW0yoJlu8cHOC7dhunwOzoWH/mXGBiYyR4YY6hAEK/3EUs4UpB8la1RfdRpeGsFHkWsA=="],
 
     "@scure/bip32/@noble/hashes": ["@noble/hashes@1.8.0", "", {}, "sha512-jCs9ldd7NwzpgXDIf6P3+NrHh9/sD6CQdxHyjQI+h/6rDNo88ypBxxz45UDuZHz9r3tNz7N/VInSVoVdtXEI4A=="],
@@ -398,6 +408,8 @@
     "viem/@noble/curves": ["@noble/curves@1.9.1", "", { "dependencies": { "@noble/hashes": "1.8.0" } }, "sha512-k11yZxZg+t+gWvBbIswW0yoJlu8cHOC7dhunwOzoWH/mXGBiYyR4YY6hAEK/3EUs4UpB8la1RfdRpeGsFHkWsA=="],
 
     "viem/@noble/hashes": ["@noble/hashes@1.8.0", "", {}, "sha512-jCs9ldd7NwzpgXDIf6P3+NrHh9/sD6CQdxHyjQI+h/6rDNo88ypBxxz45UDuZHz9r3tNz7N/VInSVoVdtXEI4A=="],
+
+    "@fhevm/solana-zama-host/@types/node/undici-types": ["undici-types@6.21.0", "", {}, "sha512-iwDZqg0QAGrg9Rav5H4n0M64c3mkR59cJ6wQp+7C4nI0gsmExaedaYLNO44eT4AtBBwjbTiGPMlt2Md0T9H9JQ=="],
 
     "@solana/codecs-numbers/@solana/errors/commander": ["commander@14.0.3", "", {}, "sha512-H+y0Jo/T1RZ9qPP4Eh1pkcQcLRglraJaSLoyOtHxu6AapkjWVCy2Sit1QQ4x3Dng8qDlSsZEet7g5Pq06MvTgw=="],
 

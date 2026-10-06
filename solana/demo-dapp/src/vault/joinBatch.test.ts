@@ -30,8 +30,8 @@ import { getJoinInstructionDataDecoder } from './internal/generated/confidential
 import {
   CLOSE_TRANSIENT_STORE_DISCRIMINATOR,
   getCloseTransientStoreInstructionDataDecoder,
-} from '@fhevm/sdk/solana/host';
-import { ZAMA_HOST_PROGRAM_ADDRESS } from '@fhevm/sdk/solana/host';
+  ZAMA_HOST_PROGRAM_ADDRESS,
+} from '@fhevm/solana-zama-host';
 import { TOKEN_PROGRAM_ADDRESS } from './internal/tokenAccounts.js';
 import { CONFIDENTIAL_TOKEN_PROGRAM_ADDRESS } from '@fhevm/confidential-token';
 

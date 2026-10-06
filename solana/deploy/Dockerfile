@@ -47,7 +47,14 @@ COPY solana/scripts/build-programs.sh solana/scripts/install-sbf-tools.sh script
 RUN rustup show && bash scripts/build-programs.sh "$PROGRAM_ENVIRONMENT" \
       zama_host confidential_token demo_vault confidential_batcher
 
+# The deployment imports @fhevm/solana-zama-host, a package with a tsc build.
+FROM --platform=linux/amd64 node:22-bookworm-slim AS zama-host
+WORKDIR /src/solana/clients/zama-host
+COPY solana/clients/zama-host ./
+RUN npm ci && npm run build
+
 FROM --platform=linux/amd64 oven/bun:1.3.14-debian AS bundle
+COPY --from=zama-host /src/solana/clients/zama-host /src/solana/clients/zama-host
 WORKDIR /src/solana/deploy
 COPY solana/deploy/package.json solana/deploy/bun.lock ./
 RUN bun install --frozen-lockfile --production \

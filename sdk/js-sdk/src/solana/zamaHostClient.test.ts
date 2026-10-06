@@ -5,8 +5,9 @@ import {
   isZamaHostError,
   ZAMA_HOST_ERROR__TRANSIENT_STORE_NOT_OPENED,
   ZAMA_HOST_PROGRAM_ADDRESS,
-} from './host.js';
+} from '@fhevm/solana-zama-host';
 
+// Pins what scripts/build/codegen-solana-confidential-token.mjs renders into @fhevm/solana-zama-host.
 describe('generated host instruction defaults', () => {
   it.each([ZAMA_HOST_PROGRAM_ADDRESS, address('11111111111111111111111111111111')])(
     'derives hostConfig under the selected program %s',

@@ -9,6 +9,8 @@ on:
     paths:
       - ".github/workflows/js-sdk-*.yml"
       - "sdk/js-sdk/**"
+      # The zama-host client the SDK depends on, built by the SDK's postinstall.
+      - "solana/clients/zama-host/**"
       # The committed cross-implementation byte vectors the SDK's Solana user-decrypt
       # tests assert against: an edit to a vector alone must run its TS consumer.
       - "solana/test-fixtures/user-decrypt/**"

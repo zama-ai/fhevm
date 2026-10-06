@@ -11,11 +11,9 @@ import {
 import {
   CLOSE_TRANSIENT_STORE_DISCRIMINATOR,
   getCloseTransientStoreInstruction,
-} from './internal/generated/zamaHost/instructions/closeTransientStore.js';
-import {
-  OPEN_TRANSIENT_STORE_DISCRIMINATOR,
   getOpenTransientStoreInstruction,
-} from './internal/generated/zamaHost/instructions/openTransientStore.js';
+  OPEN_TRANSIENT_STORE_DISCRIMINATOR,
+} from '@fhevm/solana-zama-host';
 
 /** Public API surface: Solana app authors composing FHE transactions. */
 

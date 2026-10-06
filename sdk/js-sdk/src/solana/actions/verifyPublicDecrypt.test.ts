@@ -4,7 +4,7 @@ import { base58 } from '@scure/base';
 
 import type { SolanaPublicDecryptCertificateClaim } from './publicDecryptCertificate.js';
 import { buildVerifyPublicDecryptInstruction, verifyPublicDecryptArgsFromClaim } from './verifyPublicDecrypt.js';
-import { getVerifyPublicDecryptInstructionDataDecoder } from '../internal/generated/zamaHost/instructions/verifyPublicDecrypt.js';
+import { getVerifyPublicDecryptInstructionDataDecoder } from '@fhevm/solana-zama-host';
 
 function addr(fill: number): Address {
   return address(base58.encode(new Uint8Array(32).fill(fill)));

@@ -15,10 +15,10 @@ import { getWalletAccountFeature } from '@wallet-standard/ui';
 import { getWalletAccountForUiWalletAccount_DO_NOT_USE_OR_YOU_WILL_BE_FIRED } from '@wallet-standard/ui-registry';
 import { solanaPermitWalletFromSecretKey, type SolanaPermitWallet } from '@fhevm/sdk/solana';
 import {
-  ZAMA_HOST_PROGRAM_ADDRESS,
   getZamaHostErrorMessage,
+  ZAMA_HOST_PROGRAM_ADDRESS,
   type ZamaHostError,
-} from '@fhevm/sdk/solana/host';
+} from '@fhevm/solana-zama-host';
 
 import { loadOrCreateBurnerSecretKey } from './burnerWallet';
 import { demoApiFetch, demoFaucetFetch } from './demoAuthorization';

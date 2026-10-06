@@ -81,12 +81,16 @@ describe('Solana public decryption authentication', () => {
 
 import { vi, afterEach } from 'vitest';
 import type { SolanaRpc } from '../encryptedStore.js';
-import { getHostConfigEncoder, type HostConfigArgs } from '../internal/generated/zamaHost/accounts/hostConfig.js';
-import { getKmsContextEncoder, type KmsContextArgs } from '../internal/generated/zamaHost/accounts/kmsContext.js';
-import { findHostConfigPda } from '../internal/generated/zamaHost/pdas/hostConfig.js';
-import { findKmsContextPda } from '../internal/generated/zamaHost/pdas/kmsContext.js';
+import {
+  findHostConfigPda,
+  findKmsContextPda,
+  getHostConfigEncoder,
+  getKmsContextEncoder,
+  ZAMA_HOST_PROGRAM_ADDRESS,
+  type HostConfigArgs,
+  type KmsContextArgs,
+} from '@fhevm/solana-zama-host';
 import { getAddressEncoder } from '@solana/kit';
-import { ZAMA_HOST_PROGRAM_ADDRESS } from '../internal/generated/zamaHost/programAddress.js';
 import { createFhevmPublicDecryptClient } from '../clients/createFhevmPublicDecryptClient.js';
 import { setFhevmRuntimeConfig } from '../internal/config.js';
 import * as certificateModule from './publicDecryptCertificate.js';

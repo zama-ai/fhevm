@@ -4,7 +4,7 @@
   "version": "0.0.0",
   "type": "module",
   "scripts": {
-    "postinstall": "rm -rf node_modules/@fhevm/sdk && ln -s ../../../../sdk/js-sdk/src node_modules/@fhevm/sdk && rm -rf node_modules/@fhevm/confidential-token && ln -s ../../../clients/confidential-token node_modules/@fhevm/confidential-token",
+    "postinstall": "rm -rf node_modules/@fhevm/sdk && ln -s ../../../../sdk/js-sdk/src node_modules/@fhevm/sdk && rm -rf node_modules/@fhevm/confidential-token && ln -s ../../../clients/confidential-token node_modules/@fhevm/confidential-token && rm -rf node_modules/@fhevm/solana-zama-host && ln -s ../../../clients/zama-host node_modules/@fhevm/solana-zama-host",
     "dev": "vite",
     "build": "tsc -b && vite build",
     "check": "tsc -b",
@@ -14,6 +14,7 @@
   "dependencies": {
     "@fhevm/confidential-token": "file:../clients/confidential-token",
     "@fhevm/sdk": "file:../../sdk/js-sdk/src",
+    "@fhevm/solana-zama-host": "file:../clients/zama-host",
     "@noble/curves": "^2.0.1",
     "@noble/hashes": "^2.0.1",
     "@scure/base": "^1.2.6",
@@ -39,5 +40,8 @@
     "typescript": "6.0.2",
     "vite": "7.3.1",
     "vitest": "4.1.5"
+  },
+  "overrides": {
+    "@fhevm/solana-zama-host": "file:../clients/zama-host"
   }
 }

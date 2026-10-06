@@ -12,7 +12,7 @@ import {
   type ProgramDerivedAddress,
 } from '@solana/kit';
 
-import { getRevokePermitsInstruction } from '../internal/generated/zamaHost/instructions/revokePermits.js';
+import { getRevokePermitsInstruction } from '@fhevm/solana-zama-host';
 
 /** Seed of the per-user permit invalidation watermark PDA. */
 export const SOLANA_PERMIT_INVALIDATION_SEED = new TextEncoder().encode('permit-invalidation');

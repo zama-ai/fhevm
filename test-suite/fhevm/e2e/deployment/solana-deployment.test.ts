@@ -6,7 +6,7 @@ import { cp, mkdir, mkdtemp, readFile, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 
-import { findHostConfigPda } from '../../../../solana/deploy/src/generated/zamaHost/pdas/hostConfig';
+import { findHostConfigPda } from '@fhevm/solana-zama-host';
 import { DEFAULT_SOLANA_ENVIRONMENT, programIdsFor } from '../../../../solana/deploy/src/environment';
 import { solanaPubkeyFromKeypairFile } from '../../src/generate/solana';
 import { REPO_ROOT } from '../../src/layout';

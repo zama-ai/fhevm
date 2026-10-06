@@ -16,9 +16,11 @@ import {
 } from '@solana/kit';
 
 import type { SolanaRpc } from '../encryptedStore.js';
-import { getDelegateForUserDecryptionInstructionAsync } from '../internal/generated/zamaHost/instructions/delegateForUserDecryption.js';
-import { getRevokeDelegationForUserDecryptionInstructionAsync } from '../internal/generated/zamaHost/instructions/revokeDelegationForUserDecryption.js';
-import { findHostConfigPda } from '../internal/generated/zamaHost/pdas/hostConfig.js';
+import {
+  findHostConfigPda,
+  getDelegateForUserDecryptionInstructionAsync,
+  getRevokeDelegationForUserDecryptionInstructionAsync,
+} from '@fhevm/solana-zama-host';
 
 /**
  * Which zama-host deployment to address: the program id the chain definition names as

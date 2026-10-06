@@ -1,5 +1,5 @@
 import { prepareTransientStore } from '@fhevm/sdk/solana';
-import { ZAMA_HOST_PROGRAM_ADDRESS } from '@fhevm/sdk/solana/host';
+import { ZAMA_HOST_PROGRAM_ADDRESS } from '@fhevm/solana-zama-host';
 import { describe, expect, it } from 'vitest';
 import { address, type Address, type TransactionSigner } from '@solana/kit';
 import { base58 } from '@scure/base';

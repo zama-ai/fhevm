@@ -208,6 +208,9 @@ jobs:
           NODE_OPTIONS: --no-experimental-strip-types
         run: npx --no-install mocha --require ts-node/register test/consensus/faultAuditDatabase.test.ts test/consensus/bridgeEvidence.test.ts test/consensus/inputEvidenceDatabase.test.ts test/consensus/upgradeEvidenceSql.test.ts test/consensus/keyApplicationGate.test.ts test/consensus/hostReportGateDatabase.test.ts
 
+      - name: Build the zama-host client the CLI imports
+        run: npm ci --prefix solana/clients/zama-host && npm run build --prefix solana/clients/zama-host
+
       - name: Typecheck and unit test the CLI
         working-directory: test-suite/fhevm
         run: |

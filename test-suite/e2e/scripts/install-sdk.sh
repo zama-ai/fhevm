@@ -21,13 +21,16 @@ case "$MODE" in
     "$SDK_DIR/test/scripts/rebuild_sdk_and_pack.sh"
 
     TARBALL=$(echo "$SDK_DIR"/test/manual-pack/fhevm-sdk-*.tgz)
-    [[ -f "$TARBALL" ]] || {
+    ZAMA_HOST_TARBALL=$(echo "$SDK_DIR"/test/manual-pack/fhevm-solana-zama-host-*.tgz)
+    [[ -f "$TARBALL" && -f "$ZAMA_HOST_TARBALL" ]] || {
       echo -e "${RED}install-sdk: no tarball found in $SDK_DIR/test/manual-pack${NC}" >&2
       exit 1
     }
 
     echo -e "${GREEN}install-sdk: installing $(basename "$TARBALL") into test-suite/e2e...${NC}"
     rm -rf "$E2E_DIR/node_modules/@fhevm/sdk" "$ROOT_DIR/node_modules/@fhevm/sdk"
+    # The SDK depends on @fhevm/solana-zama-host by version; installing the packed client in the
+    # same command satisfies that dependency without the registry.
     # --no-workspaces: without it, npm hoists @fhevm/sdk to the repo root node_modules
     # since nothing there conflicts with it, but ethers (its optional peer dep) stays
     # nested under test-suite/e2e/node_modules (pinned there by other workspace members'
@@ -35,7 +38,7 @@ case "$MODE" in
     # --legacy-peer-deps: this install resolves the tree from scratch (unlike the
     # root's `npm ci`, which trusts the checked-in lockfile), and @safe-global/safe-contracts'
     # peer dep on ethers@5.4.0 conflicts with the rest of the project's ethers@^6.15.0.
-    (cd "$E2E_DIR" && npm install --no-save --no-workspaces --legacy-peer-deps "$TARBALL")
+    (cd "$E2E_DIR" && npm install --no-save --no-workspaces --legacy-peer-deps "$TARBALL" "$ZAMA_HOST_TARBALL")
     ;;
 
   registry)

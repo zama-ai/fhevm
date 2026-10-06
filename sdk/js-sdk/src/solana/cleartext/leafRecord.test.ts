@@ -10,9 +10,11 @@ import {
   type ReadonlyUint8Array,
 } from '@solana/kit';
 import type { SolanaRpc } from '../encryptedStore.js';
-import { getFheExecuteInstructionDataEncoder } from '../internal/generated/zamaHost/instructions/fheExecute.js';
-import { getMakeStoreHandlePublicInstructionDataEncoder } from '../internal/generated/zamaHost/instructions/makeStoreHandlePublic.js';
-import { getFheExecutedEventEncoder } from '../internal/generated/zamaHost/types/fheExecutedEvent.js';
+import {
+  getFheExecutedEventEncoder,
+  getFheExecuteInstructionDataEncoder,
+  getMakeStoreHandlePublicInstructionDataEncoder,
+} from '@fhevm/solana-zama-host';
 import { createRetainedMmr, storeLeafCommitment, type SolanaStoreHistoryEvent } from './mmr.js';
 import { EVENT_IX_TAG, EVENT_VERSION } from '../internal/hostConstants.js';
 import { createSolanaLeafRecord } from './leafRecord.js';

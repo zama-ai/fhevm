@@ -9,12 +9,12 @@ import {
   getClaimInstructionDataDecoder,
 } from './internal/generated/confidentialBatcher/instructions/claim.js';
 import { CONFIDENTIAL_BATCHER_PROGRAM_ADDRESS } from './internal/generated/confidentialBatcher/programAddress.js';
-import { ZAMA_HOST_PROGRAM_ADDRESS } from '@fhevm/sdk/solana/host';
-import { CONFIDENTIAL_TOKEN_PROGRAM_ADDRESS } from '@fhevm/confidential-token';
 import {
   CLOSE_TRANSIENT_STORE_DISCRIMINATOR,
   getCloseTransientStoreInstructionDataDecoder,
-} from '@fhevm/sdk/solana/host';
+  ZAMA_HOST_PROGRAM_ADDRESS,
+} from '@fhevm/solana-zama-host';
+import { CONFIDENTIAL_TOKEN_PROGRAM_ADDRESS } from '@fhevm/confidential-token';
 
 function addr(fill: number): Address {
   return address(base58.encode(new Uint8Array(32).fill(fill)));

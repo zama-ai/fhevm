@@ -30,8 +30,10 @@ import {
   type VaultDemoRoots,
 } from './derive.js';
 import { getSettleInstructionDataDecoder, parseSettleInstruction } from './internal/generated/confidentialBatcher/instructions/settle.js';
-import { CLOSE_TRANSIENT_STORE_DISCRIMINATOR } from '@fhevm/sdk/solana/host';
-import { ZAMA_HOST_PROGRAM_ADDRESS } from '@fhevm/sdk/solana/host';
+import {
+  CLOSE_TRANSIENT_STORE_DISCRIMINATOR,
+  ZAMA_HOST_PROGRAM_ADDRESS,
+} from '@fhevm/solana-zama-host';
 
 function addr(fill: number): Address {
   return address(base58.encode(new Uint8Array(32).fill(fill)));

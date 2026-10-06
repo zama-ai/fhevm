@@ -14,7 +14,7 @@ import {
   appendTransientStoreInstructions,
   prepareTransientStore,
 } from './transientStore.js';
-import { ZAMA_HOST_PROGRAM_ADDRESS } from './internal/generated/zamaHost/programAddress.js';
+import { ZAMA_HOST_PROGRAM_ADDRESS } from '@fhevm/solana-zama-host';
 
 // Pinned against the host Rust codec and derivation in transient_mollusk.rs.
 const payer = createNoopSigner(address('5bV6jUfhDHCQVA1WfKBUnXUsboJgoKgkzkKcxr3joew5'));

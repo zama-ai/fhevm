@@ -10,7 +10,7 @@ import {
   encryptedStoreHandle,
 } from '@fhevm/sdk/solana';
 
-import { ZAMA_HOST_PROGRAM_ADDRESS } from '../../../../solana/deploy/src/generated/zamaHost/programAddress.js';
+import { ZAMA_HOST_PROGRAM_ADDRESS } from '@fhevm/solana-zama-host';
 import { solanaUserDecryptContext } from './addresses';
 import { certificateCleartext, type PublicDecryptCertificate } from './public-decrypt';
 import type { SolanaProvisioningContext } from './provision';
