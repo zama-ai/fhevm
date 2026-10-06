@@ -63,13 +63,6 @@ export type TwoHolderDependencies = {
   cleanup(scenario: TwoHolderScenario | undefined): Promise<void>;
 };
 
-export const solanaUserDecryptContext = (decimal: string): string => {
-  if (!/^\d+$/.test(decimal)) throw new Error("user-decrypt context id must be an unsigned decimal integer");
-  const value = BigInt(decimal);
-  if (value >= 1n << 256n) throw new Error("user-decrypt context id must fit in 32 bytes");
-  return `0x${value.toString(16).padStart(64, "0")}`;
-};
-
 const addressHex = (value: string): `0x${string}` =>
   `0x${Buffer.from(getAddressEncoder().encode(address(value))).toString("hex")}`;
 

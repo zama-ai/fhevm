@@ -7,8 +7,8 @@
 // Source for NOW: the local clean-e2e stack. Every value below is exactly what the current e2e
 // runtime provides, traced to where it lands:
 //   - urls/ids: the clean-e2e bring-up (validator RPC/WS, relayer, the
-//     RFC-021 host chain id, ACL program, KMS context ids) and
-//     `test-suite/fhevm/src/solana/two-holder-transfer.ts` (RPC/WS/relayer/ACL constants).
+//     RFC-021 host chain id, ACL program, KMS context ids), as named by
+//     `src/solana/endpoints.ts` (LOCAL_SOLANA_ENDPOINTS) and `src/layout.ts` (SOLANA_ACL_PROGRAM).
 //   - coprocessor DB and Merkle record containers: `test-suite/fhevm/src/layout.ts`
 //     (COPROCESSOR_DB_CONTAINER, SOLANA_MERKLE_DB_CONTAINER).
 //   - deployer keypair: `~/.config/solana/id.json`, the wallet the side-stack setup deploys with.

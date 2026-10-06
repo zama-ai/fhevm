@@ -1,7 +1,4 @@
 import type { SolanaPublicDecryptCertificateClaim } from '@fhevm/sdk/solana';
-import type { Bytes32Hex } from '@fhevm/sdk/types';
-
-import { loadSolanaSdk } from './target';
 
 /**
  * The KMS public-decrypt certificate the SDK action returns — the glossary term is "certificate"
@@ -16,28 +13,3 @@ export type PublicDecryptCertificate = SolanaPublicDecryptCertificateClaim;
  */
 export const certificateCleartext = (certificate: Pick<PublicDecryptCertificate, 'abiEncodedCleartext'>): bigint =>
   BigInt(`0x${certificate.abiEncodedCleartext.replace(/^0x/, '')}`);
-
-/** The facts a public-decrypt client binds to. */
-export type PublicDecryptClientInput = {
-  rpcUrl: string;
-  chainId: bigint;
-  relayerUrl: string;
-  verifyingProgramId: Bytes32Hex;
-  apiKey: string;
-};
-
-// Keep the dynamic import seam narrow: clean CLI checkouts do not contain the SDK's generated
-// `_types`, while the full vertical exercises this public package entry at runtime.
-/** The target's public-decrypt client: the relayer's, or the cleartext stack's. */
-export const createPublicDecryptClient = async (input: PublicDecryptClientInput) => {
-  const solana = await loadSolanaSdk();
-  const { createSolanaRpc } = await import('@solana/kit');
-  const rpc = createSolanaRpc(input.rpcUrl);
-  const chain = solana.defineFhevmSolanaChain({ id: input.chainId, fhevm: {
-      relayerUrl: input.relayerUrl,
-      programs: { host: { address: input.verifyingProgramId } },
-    },
-  });
-  solana.setFhevmRuntimeConfig({ auth: { type: 'ApiKeyHeader', value: input.apiKey } });
-  return solana.createFhevmPublicDecryptClient({ chain, rpc });
-};

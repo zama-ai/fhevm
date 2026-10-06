@@ -1,11 +1,10 @@
-import { createSolanaRpc } from "@solana/kit";
 // sdkEncrypt — the scenarios' shared seam to the public `@fhevm/sdk/solana` encrypt client.
 //
-// Every input-proof phase does the same dance: dynamically import the SDK (kept out of the static
-// module graph so `bun test src` stays runnable before the SDK workspace is materialized),
-// configure the relayer auth, define the chain, and submit one uint64 input proof — with the
-// relayer's docker-internal object-store URLs rewritten to the host-published endpoint while the
-// prover fetches key material.
+// Every input-proof phase does the same dance: load the target's SDK (`loadSolanaSdk()` swaps in the
+// cleartext stack's encrypt client when that is the target), configure the relayer auth, define the
+// chain, and submit one uint64 input proof — with the relayer's docker-internal object-store URLs
+// rewritten to the host-published endpoint while the prover fetches key material.
+import { createSolanaRpc } from "@solana/kit";
 import { asBytes32Hex } from "@fhevm/sdk/base";
 import type { SolanaSubmitInputProofResult } from "@fhevm/sdk/solana";
 
