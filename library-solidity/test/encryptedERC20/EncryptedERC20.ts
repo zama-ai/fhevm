@@ -3,7 +3,7 @@ import hre from 'hardhat';
 
 import { createInstances } from '../instance';
 import { getSigners, initSigners } from '../signers';
-import { userDecryptSingleHandle } from '../utils';
+import { userDecryptSingleEuint } from '../utils';
 import { deployEncryptedERC20Fixture } from './EncryptedERC20.fixture';
 
 describe('EncryptedERC20', function () {
@@ -40,7 +40,7 @@ describe('EncryptedERC20', function () {
 
     const { publicKey: publicKeyAlice, privateKey: privateKeyAlice } = this.instances.alice.generateKeypair();
 
-    const balanceAlice = await userDecryptSingleHandle(
+    const balanceAlice = await userDecryptSingleEuint(
       balanceHandleAlice,
       this.contractAddress,
       this.instances.alice,
@@ -109,7 +109,7 @@ describe('EncryptedERC20', function () {
     // Reencrypt Alice's balance
     const balanceHandleAlice = await this.erc20.balanceOf(this.signers.alice);
     const { publicKey: publicKeyAlice, privateKey: privateKeyAlice } = this.instances.alice.generateKeypair();
-    const balanceAlice = await userDecryptSingleHandle(
+    const balanceAlice = await userDecryptSingleEuint(
       balanceHandleAlice,
       this.contractAddress,
       this.instances.alice,
@@ -124,7 +124,7 @@ describe('EncryptedERC20', function () {
     const balanceHandleBob = await this.erc20.balanceOf(this.signers.bob);
 
     const { publicKey: publicKeyBob, privateKey: privateKeyBob } = this.instances.bob.generateKeypair();
-    const balanceBob = await userDecryptSingleHandle(
+    const balanceBob = await userDecryptSingleEuint(
       balanceHandleBob,
       this.contractAddress,
       this.instances.bob,
@@ -137,7 +137,7 @@ describe('EncryptedERC20', function () {
 
     // on the other hand, Bob should be unable to read Alice's balance
     try {
-      await userDecryptSingleHandle(
+      await userDecryptSingleEuint(
         balanceHandleAlice,
         this.contractAddress,
         this.instances.bob,
@@ -168,7 +168,7 @@ describe('EncryptedERC20', function () {
     const balanceHandleAlice = await this.erc20.balanceOf(this.signers.alice);
     const { publicKey: publicKeyAlice, privateKey: privateKeyAlice } = this.instances.alice.generateKeypair();
 
-    const balanceAlice = await userDecryptSingleHandle(
+    const balanceAlice = await userDecryptSingleEuint(
       balanceHandleAlice,
       this.contractAddress,
       this.instances.alice,
@@ -183,7 +183,7 @@ describe('EncryptedERC20', function () {
     const balanceHandleBob = await this.erc20.balanceOf(this.signers.bob);
 
     const { publicKey: publicKeyBob, privateKey: privateKeyBob } = this.instances.bob.generateKeypair();
-    const balanceBob = await userDecryptSingleHandle(
+    const balanceBob = await userDecryptSingleEuint(
       balanceHandleBob,
       this.contractAddress,
       this.instances.bob,
@@ -224,7 +224,7 @@ describe('EncryptedERC20', function () {
     // Decrypt Alice's balance
     const balanceHandleAlice = await this.erc20.balanceOf(this.signers.alice);
     const { publicKey: publicKeyAlice, privateKey: privateKeyAlice } = this.instances.alice.generateKeypair();
-    const balanceAlice = await userDecryptSingleHandle(
+    const balanceAlice = await userDecryptSingleEuint(
       balanceHandleAlice,
       this.contractAddress,
       this.instances.alice,
@@ -237,7 +237,7 @@ describe('EncryptedERC20', function () {
     // Decrypt Bob's balance
     const balanceHandleBob = await this.erc20.balanceOf(this.signers.bob);
     const { publicKey: publicKeyBob, privateKey: privateKeyBob } = this.instances.bob.generateKeypair();
-    const balanceBob = await userDecryptSingleHandle(
+    const balanceBob = await userDecryptSingleEuint(
       balanceHandleBob,
       this.contractAddress,
       this.instances.bob,
@@ -260,7 +260,7 @@ describe('EncryptedERC20', function () {
 
     // Decrypt Alice's balance
     const balanceHandleAlice2 = await this.erc20.balanceOf(this.signers.alice);
-    const balanceAlice2 = await userDecryptSingleHandle(
+    const balanceAlice2 = await userDecryptSingleEuint(
       balanceHandleAlice2,
       this.contractAddress,
       this.instances.alice,
@@ -272,7 +272,7 @@ describe('EncryptedERC20', function () {
 
     // Decrypt Bob's balance
     const balanceHandleBob2 = await this.erc20.balanceOf(this.signers.bob);
-    const balanceBob2 = await userDecryptSingleHandle(
+    const balanceBob2 = await userDecryptSingleEuint(
       balanceHandleBob2,
       this.contractAddress,
       this.instances.bob,
