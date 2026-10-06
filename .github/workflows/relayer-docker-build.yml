@@ -102,6 +102,9 @@ jobs:
           # Path dependency bind-mounted into the build, so a change here produces a different
           # image.
           - shared/ciphertext-attestation/**
+          - solana/crates/zama-solana-acl/**
+          - solana/crates/zama-solana-permit/**
+          - solana/crates/zama-solana-request/**
 
   ########################################################################
   #                        BUILD DECISIONS                               #

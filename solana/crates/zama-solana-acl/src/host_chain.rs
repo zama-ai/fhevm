@@ -4,27 +4,32 @@
 
 pub const EVM_CHAIN_TYPE: u8 = 0x00;
 pub const SOLANA_CHAIN_TYPE: u8 = 0x01;
-const CHAIN_TYPE_SHIFT: u32 = 56;
-const CLUSTER_TAG_MASK: u64 = 0x00ff_ffff_ffff_ffff;
+pub const CHAIN_TYPE_SHIFT: u32 = 56;
+pub const CLUSTER_TAG_MASK: u64 = 0x00ff_ffff_ffff_ffff;
 
+#[inline]
 pub const fn chain_type_byte(chain_id: u64) -> u8 {
     (chain_id >> CHAIN_TYPE_SHIFT) as u8
 }
 
+#[inline]
 pub const fn is_evm_host_chain_id(chain_id: u64) -> bool {
     chain_type_byte(chain_id) == EVM_CHAIN_TYPE
 }
 
+#[inline]
 pub const fn is_solana_host_chain_id(chain_id: u64) -> bool {
     chain_type_byte(chain_id) == SOLANA_CHAIN_TYPE
 }
 
 /// A Solana host chain id: type byte `0x01` plus a 56-bit cluster tag.
+#[inline]
 pub const fn solana_host_chain_id(cluster_tag: u64) -> u64 {
     ((SOLANA_CHAIN_TYPE as u64) << CHAIN_TYPE_SHIFT) | (cluster_tag & CLUSTER_TAG_MASK)
 }
 
 /// The chain id a handle embeds, big-endian in bytes 22..30 (`HandleOps.sol`).
+#[inline]
 pub fn handle_chain_id(handle: &[u8; 32]) -> u64 {
     let mut chain = [0u8; 8];
     chain.copy_from_slice(&handle[22..30]);

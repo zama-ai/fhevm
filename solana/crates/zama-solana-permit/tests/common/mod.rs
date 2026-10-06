@@ -17,6 +17,7 @@
 // Each integration binary compiles this module and uses a different subset of it.
 #![allow(dead_code)]
 
+use zama_solana_acl::host_chain::solana_host_chain_id;
 use zama_solana_permit::{
     Identity, KmsRouting, PermitFields, PermitWireFields, Signature, TransportKey,
     KMS_ROUTING_VERSION_BYTE, MAX_ALLOWED_SCOPES, MAX_DURATION_SECONDS, MAX_START_TIMESTAMP,
@@ -50,9 +51,8 @@ pub const CHAIN_ID: u64 = 0x0145_39cf_79f6_6704;
 /// chain id from configuration and checks only the type byte.
 pub fn derive_chain_id(genesis_hash: &[u8; 32]) -> u64 {
     let mut bytes = [0u8; 8];
-    bytes[0] = 0x01;
     bytes[1..].copy_from_slice(&genesis_hash[..7]);
-    u64::from_be_bytes(bytes)
+    solana_host_chain_id(u64::from_be_bytes(bytes))
 }
 /// Fixture KMS context id.
 pub const KMS_CONTEXT_ID_HEX: &str =

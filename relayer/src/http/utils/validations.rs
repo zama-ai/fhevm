@@ -8,7 +8,7 @@ use serde_json::Value;
 use std::str::FromStr;
 use std::time::{SystemTime, UNIX_EPOCH};
 use validator::ValidationError;
-use zama_solana_request::host_chain::is_solana_host_chain_id;
+use zama_solana_acl::host_chain::is_solana_host_chain_id;
 
 // Generic validation error messages (reusable across fields)
 pub mod validation_messages {

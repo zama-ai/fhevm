@@ -13,6 +13,7 @@ kms-grpc.workspace = true
 bc2wrap.workspace = true
 tfhe.workspace = true
 zama-solana-permit.workspace = true
+zama-solana-acl.workspace = true
 zama-solana-request.workspace = true
 solana-pubkey.workspace = true
 

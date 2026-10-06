@@ -1,0 +1,100 @@
+{
+  "chain_ids": [
+    {
+      "chain_id": "1",
+      "chain_type_byte": 0,
+      "is_evm": true,
+      "is_solana": false
+    },
+    {
+      "chain_id": "31337",
+      "chain_type_byte": 0,
+      "is_evm": true,
+      "is_solana": false
+    },
+    {
+      "chain_id": "11155111",
+      "chain_type_byte": 0,
+      "is_evm": true,
+      "is_solana": false
+    },
+    {
+      "chain_id": "72057594037927935",
+      "chain_type_byte": 0,
+      "is_evm": true,
+      "is_solana": false
+    },
+    {
+      "chain_id": "72057594037927937",
+      "chain_type_byte": 1,
+      "is_evm": false,
+      "is_solana": true
+    },
+    {
+      "chain_id": "72057594037940281",
+      "chain_type_byte": 1,
+      "is_evm": false,
+      "is_solana": true
+    },
+    {
+      "chain_id": "144115188075855873",
+      "chain_type_byte": 2,
+      "is_evm": false,
+      "is_solana": false
+    },
+    {
+      "chain_id": "18446744073709551615",
+      "chain_type_byte": 255,
+      "is_evm": false,
+      "is_solana": false
+    }
+  ],
+  "constants": {
+    "chain_type_shift": "56",
+    "cluster_tag_mask": "72057594037927935",
+    "evm_chain_type": "0",
+    "solana_chain_type": "1"
+  },
+  "handles": [
+    {
+      "chain_id": "31337",
+      "handle": "0xabababababababababababababababababababababab0000000000007a69abab"
+    },
+    {
+      "chain_id": "72057594037940281",
+      "handle": "0xabababababababababababababababababababababab0100000000003039abab"
+    },
+    {
+      "chain_id": "144115188075855873",
+      "handle": "0xabababababababababababababababababababababab0200000000000001abab"
+    }
+  ],
+  "regenerate_with": "ZAMA_UPDATE_HOST_CHAIN_VECTORS=1 cargo test -p zama-solana-acl --test host_chain_vectors",
+  "schema": "zama-host-chain-vectors/v1",
+  "solana_host_chain_ids": [
+    {
+      "chain_id": "72057594037927936",
+      "cluster_tag": "0"
+    },
+    {
+      "chain_id": "72057594037927937",
+      "cluster_tag": "1"
+    },
+    {
+      "chain_id": "72057594037940281",
+      "cluster_tag": "12345"
+    },
+    {
+      "chain_id": "144115188075855871",
+      "cluster_tag": "72057594037927935"
+    },
+    {
+      "chain_id": "72057594037927936",
+      "cluster_tag": "72057594037927936"
+    },
+    {
+      "chain_id": "144115188075855871",
+      "cluster_tag": "18446744073709551615"
+    }
+  ]
+}

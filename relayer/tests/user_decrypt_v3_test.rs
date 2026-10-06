@@ -29,7 +29,7 @@ use rand::{rng, RngExt};
 use serde_json::json;
 use std::str::FromStr;
 use std::time::{SystemTime, UNIX_EPOCH};
-use zama_solana_request::host_chain::solana_host_chain_id;
+use zama_solana_acl::host_chain::solana_host_chain_id;
 
 mod helpers {
     use super::*;

@@ -30,6 +30,11 @@ jobs:
             rust-files:
               - .github/workflows/coprocessor-dependency-analysis.yml
               - coprocessor/fhevm-engine/**
+              - solana/programs/zama-host/**
+              - solana/crates/zama-solana-acl/**
+              - solana/crates/zama-solana-transaction/**
+              - solana/crates/solana-ed25519-instruction/**
+              - solana/crates/program-environment/**
   dependencies-check:
     name: coprocessor-dependency-analysis/dependencies-check (bpr)
     needs: check-changes

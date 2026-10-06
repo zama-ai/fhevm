@@ -17,7 +17,7 @@ use connector_utils::{
 use serde::{Deserialize, Deserializer};
 use solana_pubkey::Pubkey;
 use std::{net::SocketAddr, num::NonZeroUsize, str::FromStr, time::Duration};
-use zama_solana_request::host_chain::{EVM_CHAIN_TYPE, SOLANA_CHAIN_TYPE, chain_type_byte};
+use zama_solana_acl::host_chain::{EVM_CHAIN_TYPE, SOLANA_CHAIN_TYPE, chain_type_byte};
 
 /// Configuration of the `KmsWorker`.
 #[derive(Clone, Debug, Deserialize, PartialEq)]
@@ -450,7 +450,7 @@ mod tests {
     use alloy::primitives::Address;
     use serial_test::serial;
     use std::{env, str::FromStr};
-    use zama_solana_request::host_chain::solana_host_chain_id;
+    use zama_solana_acl::host_chain::solana_host_chain_id;
 
     fn cleanup_env_vars() {
         unsafe {

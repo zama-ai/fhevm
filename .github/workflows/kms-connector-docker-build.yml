@@ -130,6 +130,9 @@ jobs:
           - host-contracts/rust_bindings/**
           - kms-connector/crates/utils/**
           - kms-connector/Cargo.*
+          - solana/crates/zama-solana-acl/**
+          - solana/crates/zama-solana-permit/**
+          - solana/crates/zama-solana-request/**
           - gateway-contracts/rust_bindings/**
 
   check-changes-kms-worker:
@@ -151,6 +154,8 @@ jobs:
           - solana/crates/zama-solana-acl/**
           - kms-connector/crates/utils/**
           - kms-connector/Cargo.*
+          - solana/crates/zama-solana-permit/**
+          - solana/crates/zama-solana-request/**
           - gateway-contracts/rust_bindings/**
           - host-contracts/rust_bindings/**
           - shared/request-authorization/**
@@ -172,6 +177,9 @@ jobs:
           - kms-connector/crates/tx-sender/**
           - kms-connector/crates/utils/**
           - kms-connector/Cargo.*
+          - solana/crates/zama-solana-acl/**
+          - solana/crates/zama-solana-permit/**
+          - solana/crates/zama-solana-request/**
           - gateway-contracts/rust_bindings/**
 
   check-changes-endpoint:
@@ -191,6 +199,9 @@ jobs:
           - kms-connector/crates/api/**
           - kms-connector/crates/utils/**
           - kms-connector/Cargo.*
+          - solana/crates/zama-solana-acl/**
+          - solana/crates/zama-solana-permit/**
+          - solana/crates/zama-solana-request/**
           - gateway-contracts/rust_bindings/**
           - host-contracts/rust_bindings/**
 
@@ -211,6 +222,9 @@ jobs:
           - kms-connector/crates/api/**
           - kms-connector/crates/utils/**
           - kms-connector/Cargo.*
+          - solana/crates/zama-solana-acl/**
+          - solana/crates/zama-solana-permit/**
+          - solana/crates/zama-solana-request/**
 
   ########################################################################
   #                        BUILD DECISIONS                               #

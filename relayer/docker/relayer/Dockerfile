@@ -23,7 +23,7 @@ RUN --mount=type=bind,source=relayer/Cargo.toml,target=Cargo.toml \
     --mount=type=bind,source=relayer/test-support,target=test-support \
     # Out-of-tree crates the relayer depends on; bound at absolute paths so Cargo
     # can resolve the `../` path dependencies declared in relayer/Cargo.toml.
-    # The solana crates carry no path dependencies of their own and are deliberately
+    # The solana crates depend on each other only by `../` path, and are deliberately
     # standalone (no workspace inheritance), so the solana workspace root is not needed
     # here — see the note at the top of each of their manifests.
     --mount=type=bind,source=gateway-contracts/rust_bindings,target=/gateway-contracts/rust_bindings \

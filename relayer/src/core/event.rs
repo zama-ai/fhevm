@@ -8,10 +8,8 @@ use crate::http::endpoints::v3::types::{
     AttestedUserDecryptRequestJson, Eip712UnifiedUserDecryptPayloadJson,
     SolanaUserDecryptRequestJson,
 };
+use zama_solana_acl::host_chain::{chain_type_byte, is_evm_host_chain_id, is_solana_host_chain_id};
 use zama_solana_permit::{verify_signature, IdentityField, PermitError};
-use zama_solana_request::host_chain::{
-    chain_type_byte, is_evm_host_chain_id, is_solana_host_chain_id,
-};
 use zama_solana_request::{
     decode_solana_request, encode_solana_request, SolanaEntryClaims, SolanaRequestBlob,
     SolanaRequestEncodeError, SolanaRequestError, SolanaUserDecryptFields,
@@ -1367,7 +1365,7 @@ fn parse_chain_id(chain_id: &str) -> Result<u64, ParseIntError> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use zama_solana_request::host_chain::solana_host_chain_id;
+    use zama_solana_acl::host_chain::solana_host_chain_id;
 
     // Constants for the test strings.
     const CHAIN_ID: &str = "123456";
