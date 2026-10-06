@@ -5,9 +5,9 @@
 //! ([`SolanaRequestBlob`]). The HTTP paths carry the same fields in the same roles. Every
 //! consumer joins the two here, so no fact is carried twice and no copy can disagree with another.
 
-use crate::host_chain::{handle_chain_id, is_solana_host_chain_id};
 use crate::request::{HandleEntry, SolanaUserDecryptRequest, MAX_REQUEST_HANDLES};
 use borsh::{BorshDeserialize, BorshSerialize};
+use zama_solana_acl::host_chain::{handle_chain_id, is_solana_host_chain_id};
 use zama_solana_permit::{PermitError, PermitFields, PermitWireFields, Signature, SIGNATURE_LEN};
 
 /// The request fields the Gateway entry types itself: the handles it budgets, the transport key
@@ -171,7 +171,7 @@ fn solana_chain_id(handles: &[[u8; 32]]) -> Result<u64, SolanaRequestError> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::host_chain::solana_host_chain_id;
+    use zama_solana_acl::host_chain::solana_host_chain_id;
     use zama_solana_permit::{
         KMS_ROUTING_EXTRA_DATA_LEN, KMS_ROUTING_VERSION_BYTE, TRANSPORT_KEY_LEN,
     };

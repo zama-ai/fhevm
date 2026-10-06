@@ -147,7 +147,7 @@ mod tests {
     use solana_pubkey::Pubkey;
     use std::time::Duration;
     use tokio::{net::TcpListener, time::timeout};
-    use zama_solana_request::host_chain::solana_host_chain_id;
+    use zama_solana_acl::host_chain::solana_host_chain_id;
 
     fn solana_chain(cluster_tag: u64, endpoint: &str) -> HostChainConfig {
         HostChainConfig {

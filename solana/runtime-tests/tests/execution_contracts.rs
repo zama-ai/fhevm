@@ -381,9 +381,9 @@ fn no_program_ships_non_production_shims_or_a_poc_feature() {
 
 #[test]
 fn handle_byte_layout_is_preserved_while_entropy_policy_is_deferred() {
+    // The chain id field (bytes 22..30) is read by `zama_solana_acl::host_chain`, whose
+    // vectors pin it.
     for required in [
-        "handle_chain_id(handle: [u8; 32])",
-        "handle[22..30]",
         "handle_fhe_type(handle: [u8; 32])",
         "handle[30]",
         "handle[31] == HANDLE_VERSION",

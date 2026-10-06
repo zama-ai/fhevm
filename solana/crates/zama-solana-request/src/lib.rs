@@ -16,8 +16,6 @@
 pub mod assemble;
 /// The canonical byte layout of the blob: version byte and borsh body.
 pub mod codec;
-/// The kind of host chain a chain id names.
-pub mod host_chain;
 /// The typed request.
 pub mod request;
 

@@ -5,6 +5,7 @@ use anchor_lang::solana_program::bpf_loader_upgradeable;
 
 use super::common::*;
 use crate::{errors::ZamaHostError, state::*};
+use zama_solana_acl::host_chain::{is_evm_host_chain_id, is_solana_host_chain_id};
 
 /// Accounts for initializing the singleton [`HostConfig`].
 #[derive(Accounts)]
@@ -94,6 +95,7 @@ fn assert_valid_host_config_args(args: &InitializeHostConfigArgs) -> Result<()> 
 #[cfg(test)]
 mod tests {
     use super::*;
+    use zama_solana_acl::host_chain::solana_host_chain_id;
 
     fn valid_args() -> InitializeHostConfigArgs {
         InitializeHostConfigArgs {

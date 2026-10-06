@@ -19,3 +19,5 @@ borsh = { version = "1", default-features = false, features = ["derive"] }
 thiserror = { version = "2", default-features = false }
 # The eight signed permit fields the request carries verbatim.
 zama-solana-permit = { path = "../zama-solana-permit" }
+# The DD-052 chain-type helpers.
+zama-solana-acl = { path = "../zama-solana-acl" }

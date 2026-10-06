@@ -4,8 +4,8 @@
 
 pub const EVM_CHAIN_TYPE: u8 = 0x00;
 pub const SOLANA_CHAIN_TYPE: u8 = 0x01;
-const CHAIN_TYPE_SHIFT: u32 = 56;
-const CLUSTER_TAG_MASK: u64 = 0x00ff_ffff_ffff_ffff;
+pub const CHAIN_TYPE_SHIFT: u32 = 56;
+pub const CLUSTER_TAG_MASK: u64 = 0x00ff_ffff_ffff_ffff;
 
 pub const fn chain_type_byte(chain_id: u64) -> u8 {
     (chain_id >> CHAIN_TYPE_SHIFT) as u8

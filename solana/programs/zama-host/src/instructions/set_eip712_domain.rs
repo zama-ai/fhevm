@@ -5,7 +5,7 @@ use anchor_lang::prelude::*;
 use super::common::*;
 use super::host_admin::HostAdmin;
 use crate::errors::ZamaHostError;
-use crate::state::is_evm_host_chain_id;
+use zama_solana_acl::host_chain::is_evm_host_chain_id;
 
 /// Sets `gateway_chain_id`, `input_verification_contract`, and `decryption_contract`
 /// together. Zeros are legal. The gateway chain id must be a uint64-padded EVM id.

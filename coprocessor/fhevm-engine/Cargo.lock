@@ -4429,6 +4429,7 @@ dependencies = [
  "tracing-opentelemetry",
  "tracing-subscriber",
  "url",
+ "zama-solana-acl",
 ]
 
 [[package]]

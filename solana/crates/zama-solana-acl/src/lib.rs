@@ -47,6 +47,8 @@ pub use permit_invalidation::{
     decode_permit_invalidation, encode_permit_invalidation, PermitInvalidationRecord,
     PERMIT_INVALIDATION_DISCRIMINATOR, PERMIT_INVALIDATION_SEED,
 };
+pub mod host_chain;
+
 pub mod history;
 pub use history::{
     build_proof_from_events, build_verified_proof_from_events, reconstruct,

@@ -33,7 +33,7 @@ use sqlx::types::chrono::Utc;
 use std::collections::HashMap;
 use tracing::info;
 use user_decryption_signature::compute_user_decrypt_digest;
-use zama_solana_request::host_chain::is_solana_host_chain_id;
+use zama_solana_acl::host_chain::is_solana_host_chain_id;
 
 #[derive(Clone)]
 /// The struct responsible of processing incoming decryption requests.

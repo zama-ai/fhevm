@@ -10,7 +10,7 @@ use fhevm_host_bindings::protocol_config::{
     ProtocolConfig::{KmsNodeParams, PcrValues},
 };
 use rand::Rng;
-use zama_solana_request::host_chain::{EVM_CHAIN_TYPE, solana_host_chain_id};
+use zama_solana_acl::host_chain::{EVM_CHAIN_TYPE, solana_host_chain_id};
 
 pub fn rand_u256() -> U256 {
     U256::from_le_bytes(rand::rng().random::<[u8; 32]>())

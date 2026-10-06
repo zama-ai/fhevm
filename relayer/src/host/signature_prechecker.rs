@@ -22,8 +22,8 @@ use tracing::warn;
 use user_decryption_signature::{
     compute_user_decrypt_digest, default_user_decrypt_domain, verify_signature, Erc1271Error,
 };
+use zama_solana_acl::host_chain::is_solana_host_chain_id;
 use zama_solana_request::decode_solana_request;
-use zama_solana_request::host_chain::is_solana_host_chain_id;
 
 /// Outcome of a failed pre-check.
 #[derive(Debug, thiserror::Error)]

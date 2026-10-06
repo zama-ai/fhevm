@@ -6,6 +6,8 @@ edition.workspace = true
 license.workspace = true
 
 [dependencies]
+# The DD-052 chain-type helpers.
+zama-solana-acl = { path = "../../../solana/crates/zama-solana-acl" }
 # workspace dependencies
 anyhow = { workspace = true }
 alloy = { workspace = true, features = ["providers", "provider-ws"] }

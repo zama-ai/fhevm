@@ -6,7 +6,7 @@ use derivative::Derivative;
 use serde::{Deserialize, Serialize};
 use utoipa::ToSchema;
 use validator::{Validate, ValidationError, ValidationErrors};
-use zama_solana_request::host_chain::is_solana_host_chain_id;
+use zama_solana_acl::host_chain::is_solana_host_chain_id;
 use zama_solana_request::public_request_chain_id;
 
 #[derive(Debug, Deserialize, Validate, Clone, ToSchema)]
@@ -160,7 +160,7 @@ impl From<crate::core::event::PublicDecryptResponse> for PublicDecryptResponseJs
 #[cfg(test)]
 mod tests {
     use super::*;
-    use zama_solana_request::host_chain::solana_host_chain_id;
+    use zama_solana_acl::host_chain::solana_host_chain_id;
     use zama_solana_request::MAX_REQUEST_HANDLES;
 
     fn request(

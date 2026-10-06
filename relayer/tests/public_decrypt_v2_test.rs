@@ -1517,7 +1517,7 @@ async fn test_cross_chain_acl_partial_deny() {
 mod solana {
     use super::*;
     use fhevm_relayer::config::settings::HostChainConfig;
-    use zama_solana_request::host_chain::solana_host_chain_id;
+    use zama_solana_acl::host_chain::solana_host_chain_id;
 
     fn solana_handle(tag: u8) -> B256 {
         let mut handle = [tag; 32];

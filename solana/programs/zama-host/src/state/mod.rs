@@ -14,6 +14,7 @@ use solana_sysvar::get_sysvar;
 
 use crate::constants::{COMPUTATION_DOMAIN_SEPARATOR, COMPUTED_HANDLE_MARKER};
 use crate::errors::ZamaHostError;
+use zama_solana_acl::host_chain::handle_chain_id;
 
 pub mod deny_scope_record;
 pub mod encrypted_store;
@@ -427,13 +428,6 @@ impl FheTernaryOpCode {
     }
 }
 
-/// Returns the chain id embedded in a handle.
-pub fn handle_chain_id(handle: [u8; 32]) -> u64 {
-    let mut chain_id = [0u8; 8];
-    chain_id.copy_from_slice(&handle[22..30]);
-    u64::from_be_bytes(chain_id)
-}
-
 /// Returns the FHE type id embedded in a handle.
 pub fn handle_fhe_type(handle: [u8; 32]) -> u8 {
     handle[30]
@@ -442,7 +436,7 @@ pub fn handle_fhe_type(handle: [u8; 32]) -> u8 {
 /// Checks that a handle targets this host chain and uses supported metadata.
 pub fn assert_handle_for_chain(handle: [u8; 32], chain_id: u64) -> Result<()> {
     require!(
-        handle_chain_id(handle) == chain_id,
+        handle_chain_id(&handle) == chain_id,
         ZamaHostError::InvalidInputHandleChain
     );
     require!(

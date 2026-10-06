@@ -19,7 +19,7 @@ use serde::de::DeserializeOwned;
 use serde_json::Value;
 use tfhe::FheTypes;
 use thiserror::Error;
-use zama_solana_request::host_chain::is_solana_host_chain_id;
+use zama_solana_acl::host_chain::is_solana_host_chain_id;
 
 /// The maximum total bit size of the handles of a single decryption request. Mirrors
 /// `MAX_DECRYPTION_REQUEST_BITS` of the `Decryption` gateway contract.
@@ -506,7 +506,7 @@ pub(crate) mod tests {
 
     #[test]
     fn a_request_on_a_host_of_the_other_kind_is_malformed() {
-        let solana_chain = zama_solana_request::host_chain::solana_host_chain_id(12345);
+        let solana_chain = zama_solana_acl::host_chain::solana_host_chain_id(12345);
         let cfg = Config {
             supported_chain_ids: vec![1, solana_chain],
             ..config()

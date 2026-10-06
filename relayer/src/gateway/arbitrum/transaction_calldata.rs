@@ -254,7 +254,7 @@ mod solana_calldata_tests {
         let contract = FixedBytes::<32>::from([0x11u8; 32]);
         let user = FixedBytes::<32>::from([0x22u8; 32]);
         // RFC-021 Solana host chain id (type byte 0x01).
-        let chain_id = zama_solana_request::host_chain::solana_host_chain_id(12345);
+        let chain_id = zama_solana_acl::host_chain::solana_host_chain_id(12345);
 
         let calldata = ComputeCalldata::verify_proof_req_solana(
             chain_id,

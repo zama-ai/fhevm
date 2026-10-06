@@ -26,9 +26,7 @@ use std::str::FromStr;
 use std::sync::Arc;
 use std::time::Duration;
 use tracing::{error, warn};
-use zama_solana_request::host_chain::{
-    chain_type_byte, is_evm_host_chain_id, is_solana_host_chain_id,
-};
+use zama_solana_acl::host_chain::{chain_type_byte, is_evm_host_chain_id, is_solana_host_chain_id};
 use zama_solana_request::SolanaUserDecryptRequest;
 
 type Provider = FillProvider<
@@ -1078,7 +1076,7 @@ mod tests {
         use crate::config::settings::HostChainConfig;
 
         // RFC-021 Solana host: type byte 0x01 + base58 acl_address (zama-host program).
-        let solana_chain_id = zama_solana_request::host_chain::solana_host_chain_id(12345);
+        let solana_chain_id = zama_solana_acl::host_chain::solana_host_chain_id(12345);
         let host_chains = vec![HostChainConfig {
             chain_id: solana_chain_id,
             url: "http://127.0.0.1:8899".to_string(),
@@ -1115,7 +1113,7 @@ mod tests {
 
         for (chain_id, acl_address) in [
             (
-                zama_solana_request::host_chain::solana_host_chain_id(12345),
+                zama_solana_acl::host_chain::solana_host_chain_id(12345),
                 evm_address,
             ),
             (12345, solana_address),
@@ -1151,7 +1149,7 @@ mod tests {
 
         let checker = HostAclChecker::new(
             &[HostChainConfig {
-                chain_id: zama_solana_request::host_chain::solana_host_chain_id(12345),
+                chain_id: zama_solana_acl::host_chain::solana_host_chain_id(12345),
                 url: format!("http://{addr}"),
                 acl_address: "TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA".to_string(),
             }],
@@ -1296,7 +1294,7 @@ mod tests {
             .map(|(read, accounts)| (100 + read as u64, accounts))
             .collect();
         let (url, required_slots) = scripted_rpc(answers).await;
-        let chain_id = zama_solana_request::host_chain::solana_host_chain_id(12345);
+        let chain_id = zama_solana_acl::host_chain::solana_host_chain_id(12345);
         let checker = HostAclChecker::new(
             &[HostChainConfig {
                 chain_id,

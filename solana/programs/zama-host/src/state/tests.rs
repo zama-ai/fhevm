@@ -3,6 +3,7 @@
 //! Split out of `mod.rs` to keep that module within its form-gate size cap.
 
 use super::*;
+use zama_solana_acl::host_chain::is_solana_host_chain_id;
 
 #[test]
 fn repeated_results_keep_maximum_depth_for_every_authorized_state() {
@@ -95,12 +96,12 @@ fn eval_handle_derivation_preserves_solana_chain_type_byte() {
     );
     assert_canonical_metadata(handle, 3, chain_id);
     assert_eq!(
-        handle_chain_id(handle),
+        handle_chain_id(&handle),
         chain_id,
         "the chain id reader must recover the type byte"
     );
     assert!(
-        is_solana_host_chain_id(handle_chain_id(handle)),
+        is_solana_host_chain_id(handle_chain_id(&handle)),
         "the Solana type byte must survive derivation"
     );
 }

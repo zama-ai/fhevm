@@ -5144,6 +5144,7 @@ version = "0.1.0"
 dependencies = [
  "borsh",
  "thiserror 2.0.18",
+ "zama-solana-acl",
  "zama-solana-permit",
 ]
 
