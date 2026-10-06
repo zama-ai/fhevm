@@ -7,22 +7,28 @@ import {console} from "forge-std/console.sol";
 import {ERC1967Proxy} from "@openzeppelin/contracts/proxy/ERC1967/ERC1967Proxy.sol";
 import {UUPSUpgradeable} from "@openzeppelin/contracts-upgradeable/proxy/utils/UUPSUpgradeable.sol";
 
-import {EmptyUUPSProxyACL} from "../../../src/v0.12.0/host-contracts/contracts/emptyProxyACL/EmptyUUPSProxyACL.sol";
-import {EmptyUUPSProxy} from "../../../src/v0.12.0/host-contracts/contracts/emptyProxy/EmptyUUPSProxy.sol";
-import {ACL} from "../../../src/v0.12.0/host-contracts/contracts/ACL.sol";
-import {FHEVMExecutor} from "../../../src/v0.12.0/host-contracts/contracts/FHEVMExecutor.sol";
-import {InputVerifier} from "../../../src/v0.12.0/host-contracts/contracts/InputVerifier.sol";
-import {KMSVerifier} from "../../../src/v0.12.0/host-contracts/contracts/KMSVerifier.sol";
-import {HCULimit} from "../../../src/v0.12.0/host-contracts/contracts/HCULimit.sol";
-import {PauserSet} from "../../../src/v0.12.0/host-contracts/contracts/immutable/PauserSet.sol";
+import {EmptyUUPSProxyACL} from "../../../src/intree/host-contracts/contracts/emptyProxyACL/EmptyUUPSProxyACL.sol";
+import {EmptyUUPSProxy} from "../../../src/intree/host-contracts/contracts/emptyProxy/EmptyUUPSProxy.sol";
+import {ACL} from "../../../src/intree/host-contracts/contracts/ACL.sol";
+import {FHEVMExecutor} from "../../../src/intree/host-contracts/contracts/FHEVMExecutor.sol";
+import {InputVerifier} from "../../../src/intree/host-contracts/contracts/InputVerifier.sol";
+import {KMSVerifier} from "../../../src/intree/host-contracts/contracts/KMSVerifier.sol";
+import {HCULimit} from "../../../src/intree/host-contracts/contracts/HCULimit.sol";
+import {PauserSet} from "../../../src/intree/host-contracts/contracts/immutable/PauserSet.sol";
+import {ProtocolConfig} from "../../../src/intree/host-contracts/contracts/ProtocolConfig.sol";
+import {KMSGeneration} from "../../../src/intree/host-contracts/contracts/KMSGeneration.sol";
+import {KmsNode, KmsNodeParams, PcrValues} from "../../../src/intree/host-contracts/contracts/shared/Structs.sol";
+import {IProtocolConfig} from "../../../src/intree/host-contracts/contracts/interfaces/IProtocolConfig.sol";
 
-import {CleartextACL} from "../../../src/v0.12.0/cleartext/CleartextACL.sol";
-import {CleartextKMSVerifier} from "../../../src/v0.12.0/cleartext/CleartextKMSVerifier.sol";
-import {CleartextFHEVMExecutor} from "../../../src/v0.12.0/cleartext/CleartextFHEVMExecutor.sol";
-import {CleartextInputVerifier} from "../../../src/v0.12.0/cleartext/CleartextInputVerifier.sol";
-import {CleartextHCULimit} from "../../../src/v0.12.0/cleartext/CleartextHCULimit.sol";
+import {CleartextACL} from "../../../src/intree/cleartext/CleartextACL.sol";
+import {CleartextKMSVerifier} from "../../../src/intree/cleartext/CleartextKMSVerifier.sol";
+import {CleartextFHEVMExecutor} from "../../../src/intree/cleartext/CleartextFHEVMExecutor.sol";
+import {CleartextInputVerifier} from "../../../src/intree/cleartext/CleartextInputVerifier.sol";
+import {CleartextHCULimit} from "../../../src/intree/cleartext/CleartextHCULimit.sol";
+import {CleartextProtocolConfig} from "../../../src/intree/cleartext/CleartextProtocolConfig.sol";
+import {CleartextKMSGeneration} from "../../../src/intree/cleartext/CleartextKMSGeneration.sol";
 
-import {FhevmAddresses} from "./structs/FhevmAddressesStruct.sol";
+import {FhevmAddresses} from "../../libraries/structs/FhevmAddressesStruct.sol";
 import {AssertLib} from "../../libraries/AssertLib.sol";
 import {Signer, SignerLib} from "../../libraries/SignerLib.sol";
 import {FhevmConfigLib} from "./FhevmConfigLib.sol";
@@ -33,58 +39,65 @@ import {
     kmsVerifierAdd,
     inputVerifierAdd,
     hcuLimitAdd,
-    pauserSetAdd
-} from "../../../src/v0.12.0/host-contracts/addresses/FHEVMHostAddresses.sol";
+    pauserSetAdd,
+    kmsGenerationAdd,
+    protocolConfigAdd
+} from "../../../src/intree/host-contracts/addresses/FHEVMHostAddresses.sol";
 
 library DeployLib {
     
-    function preComputeAddressesAuto(VmSafe vm, bool verify) internal view returns (FhevmAddresses memory expectedAddresses) {
+    function preComputeAddresses(VmSafe vm, bool verify) internal view returns (FhevmAddresses memory expectedAddresses) {
         Signer memory deployer = FhevmConfigLib.resolveDeployerFromEnv(vm);
+        expectedAddresses = _preComputeAddresses(vm, deployer.privateKey, verify);
+    }
 
-        if (FhevmConfigLib.canResolveEmptyUupsDeployerFromEnv(vm)) {
-            expectedAddresses = preComputeAddressesTwoKeys(vm, deployer.privateKey, verify);
-        } else {
-            expectedAddresses =
-                preComputeAddressesSingleKey(vm, deployer.privateKey, vm.getNonce(deployer.addr), verify);
+    function _preComputeAddresses(VmSafe vm, uint256 deployerPrivateKey, bool verify)
+        private view
+        returns (FhevmAddresses memory a)
+    {
+        require(deployerPrivateKey != 0, AssertLib.boxMessage("Missing deployer private key"));
+
+        address deployer = vm.addr(deployerPrivateKey);
+
+        a.acl = vm.computeCreateAddress(deployer, 1);
+        a.fhevmExecutor = vm.computeCreateAddress(deployer, 3);
+        a.kmsVerifier = vm.computeCreateAddress(deployer, 4);
+        a.inputVerifier = vm.computeCreateAddress(deployer, 5);
+        a.hcuLimit = vm.computeCreateAddress(deployer, 6);
+        a.protocolConfig = vm.computeCreateAddress(deployer, 7);
+        a.kmsGeneration = vm.computeCreateAddress(deployer, 8);
+        a.pauserSet = vm.computeCreateAddress(deployer, 9);
+
+        a.verifyingContractAddressDecryption = FhevmConfigLib.resolveDecryptionAddressFromEnv(vm);
+        a.verifyingContractAddressInputVerification = FhevmConfigLib.resolveInputVerificationAddressFromEnv(vm);
+        a.pausers = FhevmConfigLib.resolvePausersFromEnv(vm);
+
+        if (verify) {
+            verifyAgainstFHEVMHostAddresses(a);
         }
     }
 
     function deployAuto(VmSafe vm) internal {
         Signer memory deployer = FhevmConfigLib.resolveDeployerFromEnv(vm);
         
-        FhevmAddresses memory expectedAddresses;
-        
-        if (FhevmConfigLib.canResolveEmptyUupsDeployerFromEnv(vm)) {
-            Signer memory emptyUupsDeployer = FhevmConfigLib.resolveEmptyUupsDeployerFromEnv(vm);
-            expectedAddresses = preComputeAddressesTwoKeys(vm, deployer.privateKey, true);
-            deployTwoKeys(vm, deployer.privateKey, emptyUupsDeployer.privateKey, expectedAddresses);
-        } else {
-            expectedAddresses =
-                preComputeAddressesSingleKey(vm, deployer.privateKey, vm.getNonce(deployer.addr), true);
-            deploySingleKey(vm, deployer.privateKey, expectedAddresses);
-        }
+        FhevmAddresses memory expectedAddresses = _preComputeAddresses(vm, deployer.privateKey, true);
 
+        _deployEmptyProxies(vm, deployer.privateKey, expectedAddresses);
+        _passe2ApplyCleartextImplementations(vm, deployer.privateKey, expectedAddresses);
+        
         verifyDeploy(expectedAddresses);
     }
 
     /// Two-key flow. Caller must ensure the deployer is at nonce 0;
     /// produces addresses at 0..6
-    function deployTwoKeys(
-        VmSafe vm,
-        uint256 deployerPrivateKey,
-        uint256 emptyUupsDeployerPrivateKey,
-        FhevmAddresses memory expectedAddresses
-    ) internal {
-        _pass1AsHostContracts(vm, deployerPrivateKey, emptyUupsDeployerPrivateKey, expectedAddresses);
-        _passe2ApplyCleartextImplementations(vm, deployerPrivateKey, expectedAddresses);
-    }
-
-    /// Single-key linear flow. Adapts to the deployer's current nonce N;
-    /// produces addresses at N+0..N+10
-    function deploySingleKey(VmSafe vm, uint256 deployerPrivateKey, FhevmAddresses memory expectedAddresses) internal {
-        _pass1Linear(vm, deployerPrivateKey, expectedAddresses);
-        _passe2ApplyCleartextImplementations(vm, deployerPrivateKey, expectedAddresses);
-    }
+    // function deployTwoKeys(
+    //     VmSafe vm,
+    //     uint256 deployerPrivateKey,
+    //     FhevmAddresses memory expectedAddresses
+    // ) internal {
+    //     _pass1AsHostContracts(vm, deployerPrivateKey, expectedAddresses);
+    //     _passe2ApplyCleartextImplementations(vm, deployerPrivateKey, expectedAddresses);
+    // }
 
     /// Verifies that the contracts deployed at the addresses in `a` reference
     /// each other consistently — i.e. on-chain getters return the addresses
@@ -133,7 +146,7 @@ library DeployLib {
     /// committed in `FHEVMHostAddresses.sol`. Reverts with a banner-formatted
     /// message naming the first field that doesn't match.
     ///
-    /// Use after `preComputeAddressesTwoKeys` (or any flow expected to land
+    /// Use after `preComputeAddresses1` (or any flow expected to land
     /// on the canonical host-contracts addresses) to catch drift between the
     /// computed layout and the hardcoded constants — e.g. when the deployer
     /// mnemonic / index changed but `FHEVMHostAddresses.sol` wasn't regenerated.
@@ -159,96 +172,40 @@ library DeployLib {
             a.pauserSet == pauserSetAdd,
             AssertLib.boxMessage("FhevmAddresses.pauserSet != FHEVMHostAddresses.pauserSetAdd")
         );
-    }
-
-    function preComputeAddressesSingleKey(VmSafe vm, uint256 deployerPrivateKey, uint256 startNonce, bool verify)
-        internal
-        view
-        returns (FhevmAddresses memory a)
-    {
-        require(deployerPrivateKey != 0, AssertLib.boxMessage("Missing deployer private key"));
-
-        address deployer = vm.addr(deployerPrivateKey);
-
-        a.acl = vm.computeCreateAddress(deployer, startNonce + 1);
-        a.fhevmExecutor = vm.computeCreateAddress(deployer, startNonce + 3);
-        a.kmsVerifier = vm.computeCreateAddress(deployer, startNonce + 5);
-        a.inputVerifier = vm.computeCreateAddress(deployer, startNonce + 7);
-        a.hcuLimit = vm.computeCreateAddress(deployer, startNonce + 9);
-        a.pauserSet = vm.computeCreateAddress(deployer, startNonce + 10);
-
-        a.verifyingContractAddressDecryption = FhevmConfigLib.resolveDecryptionAddressFromEnv(vm);
-        a.verifyingContractAddressInputVerification = FhevmConfigLib.resolveInputVerificationAddressFromEnv(vm);
-        a.pausers = FhevmConfigLib.resolvePausersFromEnv(vm);
-
-        if (verify) {
-            verifyAgainstFHEVMHostAddresses(a);
-        }
-    }
-
-    function preComputeAddressesTwoKeys(VmSafe vm, uint256 deployerPrivateKey, bool verify)
-        internal
-        view
-        returns (FhevmAddresses memory a)
-    {
-        require(deployerPrivateKey != 0, AssertLib.boxMessage("Missing deployer private key"));
-
-        address deployer = vm.addr(deployerPrivateKey);
-
-        a.pauserSet = vm.computeCreateAddress(deployer, 0);
-        a.acl = vm.computeCreateAddress(deployer, 1);
-        a.fhevmExecutor = vm.computeCreateAddress(deployer, 3);
-        a.kmsVerifier = vm.computeCreateAddress(deployer, 4);
-        a.inputVerifier = vm.computeCreateAddress(deployer, 5);
-        a.hcuLimit = vm.computeCreateAddress(deployer, 6);
-
-        a.verifyingContractAddressDecryption = FhevmConfigLib.resolveDecryptionAddressFromEnv(vm);
-        a.verifyingContractAddressInputVerification = FhevmConfigLib.resolveInputVerificationAddressFromEnv(vm);
-        a.pausers = FhevmConfigLib.resolvePausersFromEnv(vm);
-
-        if (verify) {
-            verifyAgainstFHEVMHostAddresses(a);
-        }
+        require(
+            a.protocolConfig == protocolConfigAdd,
+            AssertLib.boxMessage("FhevmAddresses.protocolConfig != FHEVMHostAddresses.protocolConfigAdd")
+        );
+        require(
+            a.kmsGeneration == kmsGenerationAdd,
+            AssertLib.boxMessage("FhevmAddresses.kmsGeneration != FHEVMHostAddresses.kmsGenerationAdd")
+        );
     }
 
     /// Two-key flow (matches the FHEVM host-contracts repo layout):
     ///   - `emptyUupsDeployer` deploys a single shared `EmptyUUPSProxyACL` impl.
     ///   - `deployer` (linear nonces) deploys, in order:
-    ///       0. PauserSet
     ///       1. ACL proxy
     ///       2. shared EmptyUUPSProxy impl
     ///       3. FHEVMExecutor proxy
     ///       4. KMSVerifier proxy
     ///       5. InputVerifier proxy
     ///       6. HCULimit proxy
+    ///       7. ProtocolConfig proxy
+    ///       8. KmsGeneration proxy
+    ///       9. PauserSet
     /// Requires the `deployer` to start at nonce 0 so CREATE addresses match
     /// the constants committed in `FHEVMHostAddresses.sol`.
-    function _pass1AsHostContracts(
+    function _deployEmptyProxies(
         VmSafe vm,
         uint256 deployerPrivateKey,
-        uint256 emptyUupsDeployerPrivateKey,
         FhevmAddresses memory expectedAddresses
     ) private {
-        require(
-            deployerPrivateKey != emptyUupsDeployerPrivateKey,
-            AssertLib.boxMessage("DeployLib: deployer and emptyUupsDeployer must be different keys")
-        );
-
-        EmptyUUPSProxyACL emptyUupsProxyACL;
-
-        vm.startBroadcast(emptyUupsDeployerPrivateKey);
-        {
-            emptyUupsProxyACL = new EmptyUUPSProxyACL();
-        }
-        vm.stopBroadcast();
-
         vm.startBroadcast(deployerPrivateKey);
         {
             address deployer = vm.addr(deployerPrivateKey);
 
-            // 0. PauserSet (nonce 0)
-            require(vm.getNonce(deployer) == 0, AssertLib.boxMessage("Expecting nonce=0"));
-            deployPauserSetAt(expectedAddresses.pauserSet);
+            EmptyUUPSProxyACL emptyUupsProxyACL = new EmptyUUPSProxyACL();
 
             // 1. ACL proxy (nonce 1) — uses the EmptyUUPSProxyACL impl from the secondary key.
             require(vm.getNonce(deployer) == 1, AssertLib.boxMessage("Expecting nonce=1"));
@@ -273,70 +230,17 @@ library DeployLib {
             // 6. HCULimit proxy (nonce 6)
             require(vm.getNonce(deployer) == 6, AssertLib.boxMessage("Expecting nonce=6"));
             deployERC1967ProxyAt("HCULimit", emptyUupsProxy, expectedAddresses.hcuLimit);
-        }
-        vm.stopBroadcast();
-    }
 
-    /// Single-key linear flow. Per-slot `EmptyUUPSProxy` CREATEs — produces
-    /// 11 sequential nonces starting at the deployer's current nonce N:
-    ///   N+0  EmptyUUPSProxyACL impl
-    ///   N+1  ACL proxy
-    ///   N+2  EmptyUUPSProxy (FHEVMExecutor slot)
-    ///   N+3  FHEVMExecutor proxy
-    ///   N+4  EmptyUUPSProxy (KMSVerifier slot)
-    ///   N+5  KMSVerifier proxy
-    ///   N+6  EmptyUUPSProxy (InputVerifier slot)
-    ///   N+7  InputVerifier proxy
-    ///   N+8  EmptyUUPSProxy (HCULimit slot)
-    ///   N+9  HCULimit proxy
-    ///   N+10 PauserSet
-    function _pass1Linear(VmSafe vm, uint256 deployerPrivateKey, FhevmAddresses memory expectedAddresses) private {
-        vm.startBroadcast(deployerPrivateKey);
-        {
-            address deployer = vm.addr(deployerPrivateKey);
-            uint64 startNonce = vm.getNonce(deployer);
+            // 7. ProtocolConfig proxy (nonce 7)
+            require(vm.getNonce(deployer) == 7, AssertLib.boxMessage("Expecting nonce=7"));
+            deployERC1967ProxyAt("ProtocolConfig", emptyUupsProxy, expectedAddresses.protocolConfig);
 
-            // N+0. EmptyUUPSProxyACL impl
-            EmptyUUPSProxyACL emptyUupsProxyACL = new EmptyUUPSProxyACL();
+            // 8. KmsGeneration proxy (nonce 8)
+            require(vm.getNonce(deployer) == 8, AssertLib.boxMessage("Expecting nonce=8"));
+            deployERC1967ProxyAt("KmsGeneration", emptyUupsProxy, expectedAddresses.kmsGeneration);
 
-            // N+1. ACL proxy
-            require(vm.getNonce(deployer) == startNonce + 1, AssertLib.boxMessage("Expecting startNonce+1"));
-            deployERC1967ProxyAt("ACL", deployer, emptyUupsProxyACL, expectedAddresses.acl);
-
-            // N+2. EmptyUUPSProxy (FHEVMExecutor slot)
-            require(vm.getNonce(deployer) == startNonce + 2, AssertLib.boxMessage("Expecting startNonce+2"));
-            EmptyUUPSProxy emptyUupsProxy = new EmptyUUPSProxy();
-
-            // N+3. FHEVMExecutor proxy
-            require(vm.getNonce(deployer) == startNonce + 3, AssertLib.boxMessage("Expecting startNonce+3"));
-            deployERC1967ProxyAt("FHEVMExecutor", emptyUupsProxy, expectedAddresses.fhevmExecutor);
-
-            // N+4. EmptyUUPSProxy (KMSVerifier slot) — reassign, do not redeclare.
-            require(vm.getNonce(deployer) == startNonce + 4, AssertLib.boxMessage("Expecting startNonce+4"));
-            emptyUupsProxy = new EmptyUUPSProxy();
-
-            // N+5. KMSVerifier proxy
-            require(vm.getNonce(deployer) == startNonce + 5, AssertLib.boxMessage("Expecting startNonce+5"));
-            deployERC1967ProxyAt("KMSVerifier", emptyUupsProxy, expectedAddresses.kmsVerifier);
-
-            // N+6. EmptyUUPSProxy (InputVerifier slot)
-            require(vm.getNonce(deployer) == startNonce + 6, AssertLib.boxMessage("Expecting startNonce+6"));
-            emptyUupsProxy = new EmptyUUPSProxy();
-
-            // N+7. InputVerifier proxy
-            require(vm.getNonce(deployer) == startNonce + 7, AssertLib.boxMessage("Expecting startNonce+7"));
-            deployERC1967ProxyAt("InputVerifier", emptyUupsProxy, expectedAddresses.inputVerifier);
-
-            // N+8. EmptyUUPSProxy (HCULimit slot)
-            require(vm.getNonce(deployer) == startNonce + 8, AssertLib.boxMessage("Expecting startNonce+8"));
-            emptyUupsProxy = new EmptyUUPSProxy();
-
-            // N+9. HCULimit proxy
-            require(vm.getNonce(deployer) == startNonce + 9, AssertLib.boxMessage("Expecting startNonce+9"));
-            deployERC1967ProxyAt("HCULimit", emptyUupsProxy, expectedAddresses.hcuLimit);
-
-            // N+10. PauserSet
-            require(vm.getNonce(deployer) == startNonce + 10, AssertLib.boxMessage("Expecting startNonce+10"));
+            // 9. PauserSet proxy (nonce 9)
+            require(vm.getNonce(deployer) == 9, AssertLib.boxMessage("Expecting nonce=9"));
             deployPauserSetAt(expectedAddresses.pauserSet);
         }
         vm.stopBroadcast();
@@ -399,17 +303,13 @@ library DeployLib {
         internal
     {
         uint64 chainIdGateway = FhevmConfigLib.resolveGatewayChainIdFromEnv(vm);
-        Signer[] memory kmsSigners = FhevmConfigLib.resolveKmsSignersFromEnv(vm);
-        uint256 kmsThreshold = FhevmConfigLib.resolveKmsThresholdFromEnv(vm);
         address decryptionAddr = FhevmConfigLib.resolveDecryptionAddressFromEnv(vm);
-
-        address[] memory signersAddr = SignerLib.addressesOf(kmsSigners);
 
         UUPSUpgradeable(kmsVerifierAddress)
             .upgradeToAndCall(
                 address(kmsImplementation),
                 abi.encodeCall(
-                    KMSVerifier.initializeFromEmptyProxy, (decryptionAddr, chainIdGateway, signersAddr, kmsThreshold)
+                    KMSVerifier.initializeFromEmptyProxy, (decryptionAddr, chainIdGateway)
                 )
             );
     }
@@ -444,6 +344,47 @@ library DeployLib {
             );
     }
 
+    function setProtocolConfigImplementation(VmSafe vm, address protocolConfigAddress, ProtocolConfig protocolConfigImplementation) internal {
+        KmsNode[] memory initialKmsNodes = FhevmConfigLib.resolveKmsNodesFromEnv(vm);
+        uint256 kmsThreshold = FhevmConfigLib.resolveKmsThresholdFromEnv(vm);
+
+        IProtocolConfig.KmsThresholds memory initialThresholds;
+        initialThresholds.kmsGen = kmsThreshold;
+        initialThresholds.mpc = kmsThreshold;
+        initialThresholds.userDecryption = kmsThreshold;
+        initialThresholds.publicDecryption = kmsThreshold;
+
+        // Same defaults as host-contracts' HostContractsDeployerTestUtils: a cleartext host has no MPC parties.
+        KmsNodeParams[] memory initialKmsNodeParams = new KmsNodeParams[](initialKmsNodes.length);
+        for (uint256 i = 0; i < initialKmsNodes.length; i++) {
+            initialKmsNodeParams[i] = KmsNodeParams({
+                txSenderAddress: initialKmsNodes[i].txSenderAddress,
+                signerAddress: initialKmsNodes[i].signerAddress,
+                ipAddress: initialKmsNodes[i].ipAddress,
+                storageUrl: initialKmsNodes[i].storageUrl,
+                partyId: int32(uint32(i)),
+                mpcIdentity: initialKmsNodes[i].ipAddress,
+                caCert: "",
+                storagePrefix: ""
+            });
+        }
+
+        UUPSUpgradeable(protocolConfigAddress)
+            .upgradeToAndCall(
+                address(protocolConfigImplementation),
+                abi.encodeCall(
+                    ProtocolConfig.initializeFromEmptyProxy,
+                    (initialKmsNodeParams, initialThresholds, "", new PcrValues[](0))
+                )
+            );
+    }
+
+    function setKmsGenerationImplementation(VmSafe, address kmsGenerationAddress, KMSGeneration kmsGenerationImplementation) internal {
+        UUPSUpgradeable(kmsGenerationAddress)
+            .upgradeToAndCall(address(kmsGenerationImplementation), abi.encodeCall(KMSGeneration.initializeFromEmptyProxy, ()));
+    }
+
+
     /// Upgrades all six FHEVM proxies to their cleartext implementations and
     /// registers pausers, all under one `vm.startBroadcast(deployerKey)` block.
     ///
@@ -464,6 +405,8 @@ library DeployLib {
             setKMSVerifierImplementation(vm, fhevmAddresses.kmsVerifier, new CleartextKMSVerifier());
             setInputVerifierImplementation(vm, fhevmAddresses.inputVerifier, new CleartextInputVerifier());
             setHCULimitImplementation(vm, fhevmAddresses.hcuLimit, new CleartextHCULimit());
+            setProtocolConfigImplementation(vm, fhevmAddresses.protocolConfig, new CleartextProtocolConfig());
+            setKmsGenerationImplementation(vm, fhevmAddresses.kmsGeneration, new CleartextKMSGeneration());
 
             addPausers(vm, fhevmAddresses.pauserSet, fhevmAddresses.pausers);
         }
@@ -511,9 +454,20 @@ library DeployLib {
             vm.toString(a.hcuLimit),
             ");\n",
             "\n",
+            "address constant protocolConfigAdd = address(",
+            vm.toString(a.protocolConfig),
+            ");\n",
+            "\n",
+            "address constant kmsGenerationAdd = address(",
+            vm.toString(a.kmsGeneration),
+            ");\n",
+            "\n",
             "address constant pauserSetAdd = address(",
             vm.toString(a.pauserSet),
-            ");\n"
+            ");\n",
+            "\n",
+            "// No ConfidentialBridge on a cleartext host: ACL treats the zero address as no bridge.\n",
+            "address constant confidentialBridgeAdd = address(0);\n"
         );
         // forge-lint: disable-next-line(unsafe-cheatcode)
         vm.writeFile(path, content);

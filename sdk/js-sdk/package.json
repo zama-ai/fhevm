@@ -53,6 +53,7 @@
     "version": "node ./scripts/generate-version.cjs",
     "start:localcleartext:v12": "./test/scripts/fhevm-anvil.sh --ethlib none --foundry-profile=v12",
     "start:localcleartext:v13": "./test/scripts/fhevm-anvil.sh --ethlib none --foundry-profile=v13",
+    "start:localcleartext:intree": "./test/scripts/fhevm-anvil.sh --ethlib none --foundry-profile=intree --skip-fhetest",
     "pack": "./test/scripts/rebuild_sdk_and_pack.sh"
   },
   "devDependencies": {

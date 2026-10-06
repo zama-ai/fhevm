@@ -2,10 +2,10 @@
 pragma solidity ^0.8.24;
 
 import {Script, console, console2} from "forge-std/Script.sol";
-import {AssertLib} from "./libraries/AssertLib.sol";
+import {AssertLib} from "../libraries/AssertLib.sol";
 import {DeployLib} from "./libraries/DeployLib.sol";
 import {FhevmConfigLib} from "./libraries/FhevmConfigLib.sol";
-import {FhevmAddresses} from "./libraries/structs/FhevmAddressesStruct.sol";
+import {FhevmAddresses} from "../libraries/structs/FhevmAddressesStruct.sol";
 // import {
 //     aclAdd,
 //     fhevmExecutorAdd,

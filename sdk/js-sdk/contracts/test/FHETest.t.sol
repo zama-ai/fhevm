@@ -1,8 +1,8 @@
 // SPDX-License-Identifier: MIT
 pragma solidity ^0.8.24;
 
-import {console} from "forge-std-1.11.0/Script.sol";
-import {Test} from "forge-std-1.11.0/Test.sol";
+import {console} from "forge-std/Script.sol";
+import {Test} from "forge-std/Test.sol";
 import {FHETest} from "../src/FHETest.sol";
 import {LocalConfig} from "../src/LocalConfig.sol";
 import {CoprocessorConfig} from "@fhevm/solidity/lib/Impl.sol";

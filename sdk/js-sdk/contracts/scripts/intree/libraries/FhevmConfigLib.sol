@@ -12,6 +12,7 @@ import {
     COPROCESSORS_MNEMONIC_ENV,
     NUM_KMS_NODES_ENV,
     KMS_NODES_MNEMONIC_ENV,
+    KMS_NODES_TX_SENDER_MNEMONIC_ENV,
     HCU_CAP_PER_BLOCK_ENV,
     NUM_PAUSERS_ENV,
     PAUSERS_MNEMONIC_ENV,
@@ -21,8 +22,11 @@ import {
     MAX_HCU_DEPTH_PER_TX_ENV,
     CHAIN_ID_GATEWAY_ENV,
     DECRYPTION_ADDRESS_ENV,
-    INPUT_VERIFICATION_ADDRESS_ENV
-} from "./EnvNames.sol";
+    INPUT_VERIFICATION_ADDRESS_ENV,
+    KMS_NODE_STORAGE_URL_ENV_PREFIX
+} from "../../libraries/EnvNames.sol";
+
+import {KmsNode} from "../../../src/intree/host-contracts/contracts/shared/Structs.sol";
 
 import {AssertLib} from "../../libraries/AssertLib.sol";
 import {Signer, SignerLib} from "../../libraries/SignerLib.sol";
@@ -118,8 +122,7 @@ library FhevmConfigLib {
     }
 
     function resolveHcuConfigFromEnv(VmSafe vm)
-        internal
-        view
+        internal view
         returns (uint48 hcuCapPerBlock, uint48 maxHCUDepthPerTx, uint48 maxHCUPerTx)
     {
         hcuCapPerBlock = _resolveUint48FromEnv(vm, HCU_CAP_PER_BLOCK_ENV);
@@ -133,6 +136,10 @@ library FhevmConfigLib {
 
     function resolveKmsSignersFromEnv(VmSafe vm) internal view returns (Signer[] memory) {
         return SignerLib.resolveListFromEnv(vm, NUM_KMS_NODES_ENV, KMS_NODES_MNEMONIC_ENV, 0);
+    }
+
+    function resolveKmsTxSendersFromEnv(VmSafe vm) internal view returns (Signer[] memory) {
+        return SignerLib.resolveListFromEnv(vm, NUM_KMS_NODES_ENV, KMS_NODES_TX_SENDER_MNEMONIC_ENV, 0);
     }
 
     function resolvePausersFromEnv(VmSafe vm) internal view returns (Signer[] memory) {
@@ -161,5 +168,31 @@ library FhevmConfigLib {
         AssertLib.assertEnvExists(vm, envName);
 
         return vm.envAddress(envName);
+    }
+
+
+    /// Resolves the full `KmsNode[]` from env, one entry per index 0..NUM_KMS_NODES-1:
+    ///   - txSenderAddress  ← kmsTxSenders[i].addr           (derived from KMS_NODES_TX_SENDER_MNEMONIC)
+    ///   - signerAddress    ← kmsSigners[i].addr             (derived from KMS_NODES_MNEMONIC)
+    ///   - storageUrl       ← KMS_NODE_STORAGE_URL_<i>       (optional, "" if unset)
+    ///   - ipAddress        ← ""                             (no env name defined)
+    function resolveKmsNodesFromEnv(VmSafe vm) internal view returns (KmsNode[] memory kmsNodes) {
+        Signer[] memory kmsSigners = resolveKmsSignersFromEnv(vm);
+        Signer[] memory kmsTxSenders = resolveKmsTxSendersFromEnv(vm);
+        require(
+            kmsSigners.length == kmsTxSenders.length,
+            AssertLib.boxMessage("resolveKmsNodesFromEnv: KMS signers count does not match KMS tx-senders count")
+        );
+
+        uint256 n = kmsSigners.length;
+        kmsNodes = new KmsNode[](n);
+        for (uint256 i = 0; i < n; ++i) {
+            kmsNodes[i] = KmsNode({
+                txSenderAddress: kmsTxSenders[i].addr,
+                signerAddress: kmsSigners[i].addr,
+                ipAddress: "",
+                storageUrl: vm.envOr(string.concat(KMS_NODE_STORAGE_URL_ENV_PREFIX, vm.toString(i)), string(""))
+            });
+        }
     }
 }
