@@ -1,4 +1,4 @@
-import type { Address, FetchAccountConfig, Instruction, Rpc, SolanaRpcApi, TransactionSigner } from '@solana/kit';
+import type { Address, Instruction, Rpc, SolanaRpcApi, TransactionSigner } from '@solana/kit';
 
 import { fetchVault } from './internal/generated/demoVault/accounts/vault.js';
 import { getHarvestInstruction } from './internal/generated/demoVault/instructions/harvest.js';
@@ -32,9 +32,8 @@ export type SolanaVaultMetrics = {
 export async function buildHarvestInstruction(
   rpc: SolanaRpc,
   parameters: SolanaVaultHarvestParameters,
-  config?: FetchAccountConfig,
 ): Promise<Instruction> {
-  const vault = await fetchVault(rpc, parameters.vault, config);
+  const vault = await fetchVault(rpc, parameters.vault);
   return getHarvestInstruction({
     donor: parameters.donor,
     vault: parameters.vault,
@@ -53,13 +52,11 @@ export async function buildHarvestInstruction(
 export async function getVaultMetrics(
   rpc: SolanaRpc,
   vaultAddress: Address,
-  config?: FetchAccountConfig,
 ): Promise<SolanaVaultMetrics> {
-  const rpcConfig = config?.commitment === undefined ? undefined : { commitment: config.commitment };
-  const vault = await fetchVault(rpc, vaultAddress, config);
+  const vault = await fetchVault(rpc, vaultAddress);
   const [assets, shares] = await Promise.all([
-    rpc.getTokenAccountBalance(vault.data.vaultTokenAccount, rpcConfig).send(),
-    rpc.getTokenSupply(vault.data.shareMint, rpcConfig).send(),
+    rpc.getTokenAccountBalance(vault.data.vaultTokenAccount).send(),
+    rpc.getTokenSupply(vault.data.shareMint).send(),
   ]);
   return {
     underlyingMint: vault.data.underlyingMint,

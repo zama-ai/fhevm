@@ -1,4 +1,4 @@
-import type { Address, FetchAccountConfig, Rpc, SolanaRpcApi } from '@solana/kit';
+import type { Address, Rpc, SolanaRpcApi } from '@solana/kit';
 
 import {
   type FhevmSolanaBaseClient,
@@ -19,22 +19,21 @@ export type JoinRecordState = JoinRecord;
 type SolanaRpc = Rpc<SolanaRpcApi>;
 
 /** Reads a batcher config via the generated `Batcher` decoder. */
-export async function getBatcher(rpc: SolanaRpc, batcher: Address, config?: FetchAccountConfig): Promise<BatcherState> {
-  const account = await fetchBatcher(rpc, batcher, config);
+export async function getBatcher(rpc: SolanaRpc, batcher: Address): Promise<BatcherState> {
+  const account = await fetchBatcher(rpc, batcher);
   return account.data;
 }
 
 /**
  * Reads a `(batch, user)` join record via the generated `JoinRecord` decoder — derive the address
  * with `deriveJoinRecordAddress`. Throws if the record does not exist (the user never joined the
- * batch). `config` is the standard fetch passthrough.
+ * batch).
  */
 export async function getJoinRecord(
   rpc: SolanaRpc,
   joinRecord: Address,
-  config?: FetchAccountConfig,
 ): Promise<JoinRecordState> {
-  const account = await fetchJoinRecord(rpc, joinRecord, config);
+  const account = await fetchJoinRecord(rpc, joinRecord);
   return account.data;
 }
 
@@ -46,14 +45,13 @@ export async function getJoinRecord(
 export async function getCurrentBatch(
   rpc: SolanaRpc,
   roots: VaultDemoRoots,
-  config?: FetchAccountConfig,
 ): Promise<{ index: bigint; addresses: BatchAddresses; state: BatchState }> {
-  const batcher = await getBatcher(rpc, roots.batcher, config);
+  const batcher = await getBatcher(rpc, roots.batcher);
   if (batcher.nextBatchIndex === 0n) {
     throw new Error(`batcher ${roots.batcher} has opened no batches yet (nextBatchIndex is 0)`);
   }
   const index = batcher.nextBatchIndex - 1n;
-  return getBatchByIndex(rpc, roots, index, config);
+  return getBatchByIndex(rpc, roots, index);
 }
 
 /** Reads one pinned historical or current batch by its index. */
@@ -61,10 +59,9 @@ export async function getBatchByIndex(
   rpc: SolanaRpc,
   roots: VaultDemoRoots,
   index: bigint,
-  config?: FetchAccountConfig,
 ): Promise<{ index: bigint; addresses: BatchAddresses; state: BatchState }> {
   const addresses = await deriveBatchAddresses(roots, index);
-  const account = await fetchBatch(rpc, addresses.batch, config);
+  const account = await fetchBatch(rpc, addresses.batch);
   return { index, addresses, state: account.data };
 }
 
@@ -72,7 +69,6 @@ export async function getBatchByIndex(
 export function getEncryptedStore(
   client: Pick<FhevmSolanaBaseClient, 'fetchEncryptedStore'>,
   address: Address,
-  config?: FetchAccountConfig,
 ): Promise<SolanaEncryptedStore> {
-  return client.fetchEncryptedStore(address, config);
+  return client.fetchEncryptedStore(address);
 }

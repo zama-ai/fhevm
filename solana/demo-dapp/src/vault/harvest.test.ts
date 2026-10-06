@@ -107,7 +107,7 @@ describe('Solana demo vault harvest', () => {
       totalAssets: 125_000_000n,
       totalShares: 100_000_000n,
     });
-    expect(getTokenAccountBalance).toHaveBeenCalledWith(vaultTokenAccount, undefined);
-    expect(getTokenSupply).toHaveBeenCalledWith(shareMint, undefined);
+    expect(getTokenAccountBalance).toHaveBeenCalledWith(vaultTokenAccount);
+    expect(getTokenSupply).toHaveBeenCalledWith(shareMint);
   });
 });
