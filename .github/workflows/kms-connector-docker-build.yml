@@ -126,6 +126,8 @@ jobs:
         gw-listener:
           - .github/workflows/kms-connector-docker-build.yml
           - kms-connector/crates/gw-listener/**
+          - shared/kms-context/**
+          - host-contracts/rust_bindings/**
           - kms-connector/crates/utils/**
           - kms-connector/Cargo.*
           - gateway-contracts/rust_bindings/**
@@ -145,6 +147,8 @@ jobs:
           - .github/workflows/kms-connector-docker-build.yml
           - kms-connector/crates/api/**
           - kms-connector/crates/kms-worker/**
+          - solana/crates/zama-solana-merkle-proofs/**
+          - solana/crates/zama-solana-acl/**
           - kms-connector/crates/utils/**
           - kms-connector/Cargo.*
           - gateway-contracts/rust_bindings/**

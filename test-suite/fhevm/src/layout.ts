@@ -5,6 +5,7 @@ import { getAddressEncoder } from "@solana/kit";
 import { existsSync } from "node:fs";
 import path from "node:path";
 
+import { BRINGUP_KMS_CONTEXT_HEX } from "../../../solana/deploy/src/constants";
 import { programIdsFor, readSolanaEnvironment } from "../../../solana/deploy/src/environment";
 import type {
   HostChainScenario,
@@ -232,8 +233,8 @@ export const SOLANA_ACL_PROGRAM: `0x${string}` = `0x${Buffer.from(
 // tag 0x07 in the high byte ‖ u64 context id 1 in the low 8 bytes). This is the `extraData` a
 // certificate request carries minus its 0x01 version byte, and the id bring-up stores in the
 // Solana `KmsContext` PDA — the host compares the full 32 bytes, it does not truncate.
-export const SOLANA_DEFAULT_PUBLIC_DECRYPT_CONTEXT =
-  "0x0700000000000000000000000000000000000000000000000000000000000001";
+export const SOLANA_DEFAULT_PUBLIC_DECRYPT_CONTEXT: `0x${string}` =
+  `0x${BRINGUP_KMS_CONTEXT_HEX}`;
 
 /** Per-operator coprocessor DB name: instance 0 → `coprocessor`, N → `coprocessor_N`. */
 export const coprocessorDatabaseName = (instanceIndex: number) =>

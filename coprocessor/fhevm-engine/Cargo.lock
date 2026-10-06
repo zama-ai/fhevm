@@ -9529,7 +9529,6 @@ dependencies = [
  "request-authorization",
  "reqwest 0.12.28",
  "serde",
- "serde_bytes",
  "serde_json",
  "serial_test",
  "solana-client",
@@ -9544,6 +9543,7 @@ dependencies = [
  "utoipa",
  "zama-host",
  "zama-solana-acl",
+ "zama-solana-merkle-proofs",
 ]
 
 [[package]]
@@ -13643,6 +13643,16 @@ dependencies = [
  "sha3 0.10.8",
  "solana-keccak-hasher",
  "solana-sha256-hasher",
+]
+
+[[package]]
+name = "zama-solana-merkle-proofs"
+version = "0.1.0"
+dependencies = [
+ "serde",
+ "serde_bytes",
+ "utoipa",
+ "zama-solana-acl",
 ]
 
 [[package]]

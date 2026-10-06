@@ -1,3 +1,4 @@
+use kms_context::KMS_CONTEXT_COUNTER_BASE;
 mod common;
 
 use crate::common::{mock_event_on_gw, poll_db_for_event, start_test_listener};
@@ -8,9 +9,7 @@ use connector_utils::{
         rand::{rand_solana_handle, solana_user_decryption_event},
         setup::TestInstanceBuilder,
     },
-    types::{
-        KMS_CONTEXT_COUNTER_BASE, ProtocolEventKind, solana_request::SolanaPublicDecryptionRequest,
-    },
+    types::{ProtocolEventKind, solana_request::SolanaPublicDecryptionRequest},
 };
 use gw_listener::core::publish_context_and_epoch;
 use rstest::rstest;

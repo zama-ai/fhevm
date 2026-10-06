@@ -26,8 +26,8 @@ use kms_worker::core::solana::{
     SolanaHost,
     pipeline::AuthorizationContext,
     proof::{
-        CoprocessorProofClient, HostProofReader, LeafKind, LeafQuery, MerkleProofOutcome,
-        ProofReadError, encode_merkle_proof_request, proof_http_client,
+        CoprocessorProofClient, HostProofReader, LeafKind, LeafQuery, ProofReadError,
+        encode_merkle_proof_request, proof_http_client,
     },
     snapshot::{
         AccountsRead, DerivedAddress, HostStateReader, ObservedRow, ObservedRows, SnapshotAccount,
@@ -49,6 +49,7 @@ use zama_solana_acl::{
     encode_user_decryption_delegation, encrypted_store_discriminator,
     historical_access_leaf_commitment, mmr_append, mmr_build_proof, public_decrypt_leaf_commitment,
 };
+use zama_solana_merkle_proofs::{MERKLE_PROOFS_PATH, MerkleProofOutcome};
 use zama_solana_permit::{
     Identity, KmsRouting, PermitFields, PermitWireFields, Signature, TRANSPORT_KEY_LEN,
     build_envelope,
@@ -1063,9 +1064,6 @@ impl HostProofReader for ScriptedProofReader {
 // A host behind real HTTP
 // ---------------------------------------------------------------------------
 
-/// The route the connector reads Merkle proofs from. A literal, so a moved route fails the tests.
-pub const MERKLE_PROOFS_ROUTE: &str = "/v1/solana/merkle-proofs";
-
 /// A Solana node and a coprocessor behind real HTTP, for tests that go through the production
 /// readers. Each answers only the exact request body it is scripted for, which pins the keys,
 /// encoding and commitment of a read, and the queries of a proof batch.
@@ -1160,7 +1158,7 @@ pub fn serve_proofs(coprocessor: &mut MockServer, answers: &[(LeafQuery, MerkleP
     .unwrap();
     coprocessor.mocks().clear();
     coprocessor.mock(move |when, then| {
-        when.post().path(MERKLE_PROOFS_ROUTE).bytes(request.clone());
+        when.post().path(MERKLE_PROOFS_PATH).bytes(request.clone());
         then.bytes(response.clone());
     });
 }

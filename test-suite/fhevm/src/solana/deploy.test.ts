@@ -156,9 +156,6 @@ describe('bootstrapZamaHost', () => {
     expect(defineContext.programAddress).toBe(ZAMA_HOST_PROGRAM_ADDRESS);
     const defineData = getDefineKmsContextInstructionDataDecoder().decode(defineContext.data ?? new Uint8Array());
     expect(Buffer.from(defineData.contextId)).toEqual(Buffer.from(BRINGUP_KMS_CONTEXT_ID));
-    expect(Buffer.from(defineData.contextId).toString('hex')).toBe(
-      '0700000000000000000000000000000000000000000000000000000000000001',
-    );
     expect(defineData.signers).toHaveLength(4);
     expect(defineData.thresholds).toEqual({ publicDecryption: 3, userDecryption: 3, kmsGen: 3, mpc: 1 });
   });

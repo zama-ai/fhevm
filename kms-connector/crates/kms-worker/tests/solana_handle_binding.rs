@@ -30,13 +30,14 @@ use kms_worker::core::solana::{
     failure::AuthorizationFailure,
     handle_binding::{HEDGE_DELAY, HandleBindingFailure, check_handle_binding, verify_proofs},
     pipeline::authorize_request,
-    proof::{LeafKind, LeafQuery, MerkleProofOutcome, ProofReadError, proof_http_client},
+    proof::{LeafKind, LeafQuery, ProofReadError, proof_http_client},
 };
 use rstest::rstest;
 use solana_pubkey::Pubkey;
 use solana_support::*;
 use std::time::Duration;
 use zama_solana_acl::{historical_access_leaf_commitment, public_decrypt_leaf_commitment};
+use zama_solana_merkle_proofs::MerkleProofOutcome;
 
 /// Resolves an encrypted store the way the pipeline does, so the binding rules are
 /// exercised against a validated account rather than a hand-made value.

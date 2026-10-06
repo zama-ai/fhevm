@@ -20,11 +20,6 @@ use alloy::{
 use anyhow::anyhow;
 use kms_grpc::kms::v1::RequestId;
 
-/// Mirrors `KMS_CONTEXT_COUNTER_BASE` from `host-contracts/contracts/shared/Constants.sol`.
-pub const KMS_CONTEXT_COUNTER_BASE: U256 = U256::from_be_bytes([
-    7, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
-]);
-
 /// Mirrors `DEFAULT_EPOCH_ID` from `host-contracts/contracts/shared/Constants.sol`: the KMS
 /// fallback epoch ID when no epoch is specified. Format: [0x08 type tag | 31 counter bytes].
 pub const DEFAULT_EPOCH_ID: U256 = U256::from_be_bytes([

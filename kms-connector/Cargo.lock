@@ -3964,6 +3964,7 @@ dependencies = [
  "fhevm_gateway_bindings",
  "fhevm_host_bindings",
  "humantime-serde",
+ "kms-context",
  "opentelemetry",
  "prometheus",
  "rstest",
@@ -4861,6 +4862,7 @@ dependencies = [
  "url",
  "user-decryption-signature",
  "zama-solana-acl",
+ "zama-solana-merkle-proofs",
  "zama-solana-permit",
  "zama-solana-request",
 ]
@@ -11027,6 +11029,15 @@ dependencies = [
  "sha3 0.10.8",
  "solana-keccak-hasher",
  "solana-sha256-hasher",
+]
+
+[[package]]
+name = "zama-solana-merkle-proofs"
+version = "0.1.0"
+dependencies = [
+ "serde",
+ "serde_bytes",
+ "zama-solana-acl",
 ]
 
 [[package]]
