@@ -22,7 +22,6 @@ const CONFIRM_INTERVAL_MS = 400;
 
 export type HostDeployContext = {
   readonly rpc: Rpc<SolanaRpcApi>;
-  readonly finalizedSignatures?: Signature[];
   beforeSubmit?: (signature: Signature, lastValidBlockHeight: bigint) => Promise<void>;
   sendTransaction(payer: TransactionSigner, instructions: readonly Instruction[]): Promise<void>;
 };
@@ -31,10 +30,8 @@ const sleep = (ms: number): Promise<void> => new Promise((resolve) => setTimeout
 
 export const createHostDeployContext = (rpcUrl: string, signal?: AbortSignal): HostDeployContext => {
   const rpc = createSolanaRpc(rpcUrl);
-  const finalizedSignatures: Signature[] = [];
   const context: HostDeployContext = {
     rpc,
-    finalizedSignatures,
     async sendTransaction(payer, instructions) {
       signal?.throwIfAborted();
       const { value: latestBlockhash } = await rpc.getLatestBlockhash({ commitment: 'finalized' }).send();
@@ -61,7 +58,6 @@ export const createHostDeployContext = (rpcUrl: string, signal?: AbortSignal): H
         }
         const level = status?.confirmationStatus;
         if (level === 'finalized') {
-          finalizedSignatures.push(signature);
           return;
         }
         if (Date.now() >= deadline) {

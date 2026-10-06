@@ -2144,6 +2144,19 @@ transaction, and the restart alarm are then the only trace, and the replay repai
 host-listener README restores the rows. Whether other providers keep this order is
 fhevm-internal#2087.
 
+Archive catch-up applies the same bound to each transaction. `getBlock` with `transactionDetails:
+"accounts"` lists each transaction's signatures, account keys and error without instruction data or
+logs, and `getTransaction` fetches each successful transaction that names the host. The listing
+still grows with the block's transaction count and account keys. A block filled with transactions
+that load many lookup-table keys could list hundreds of megabytes (estimate, not measured), which a
+provider can refuse or not return within the archive client's 30-second timeout; catch-up then
+retries that block. A provider that does return it can exhaust the pod's memory: the RPC client
+holds the whole response and its parsed JSON, and catch-up fetches up to 8 blocks at once. The pod
+then restarts at the same slot for as long as catch-up needs that block. Listing blocks with
+`transactionDetails: "signatures"` and selecting the host's transactions with
+`getSignaturesForAddress` would cost about 90 bytes per transaction, but it relies on the archive's
+address index being complete, which nothing checks (DD-059).
+
 On a cluster with several validators a slot can have more than one bank: Alpenglow can replace a
 slot's bank and signals it with `EntryUpdateParent`. Yellowstone v16 buffers each bank by `bank_id`
 and drops a replaced or losing bank (`yellowstone-grpc-geyser/src/block_reconstruction_v2.rs` at
@@ -2166,19 +2179,6 @@ that bank.
   yet (fhevm-internal#2105).
 
 The single local validator never replaces a bank, so no local test exercises this.
-
-Archive catch-up applies the same bound to each transaction. `getBlock` with `transactionDetails:
-"accounts"` lists each transaction's signatures, account keys and error without instruction data or
-logs, and `getTransaction` fetches each successful transaction that names the host. The listing
-still grows with the block's transaction count and account keys. A block filled with transactions
-that load many lookup-table keys could list hundreds of megabytes (estimate, not measured), which a
-provider can refuse or not return within the archive client's 30-second timeout; catch-up then
-retries that block. A provider that does return it can exhaust the pod's memory: the RPC client
-holds the whole response and its parsed JSON, and catch-up fetches up to 8 blocks at once. The pod
-then restarts at the same slot for as long as catch-up needs that block. Listing blocks with
-`transactionDetails: "signatures"` and selecting the host's transactions with
-`getSignaturesForAddress` would cost about 90 bytes per transaction, but it relies on the archive's
-address index being complete, which nothing checks (DD-059).
 
 Rejected alternatives:
 
@@ -2682,7 +2682,7 @@ the indexer's lag. Mixing commitments would cost retries, never a wrong answer: 
 verifies each proof against the Store's live peaks. A proof built at an older leaf count still
 verifies while the appends since then left the leaf's peak intact. A proof built ahead of the
 observed count is cut down to it (`MmrProof::for_leaf_count`). Otherwise the request fails with
-`ProofDoesNotVerify` or `ProofRecordBehind`, both retried.
+`ProofDoesNotVerify`, `ProofRecordBehind`, `LeafIndexOutOfRange` or `NoLeaf`, all retried.
 
 Rejected alternative: keep `confirmed` and add reorg unwind to the listener and the Merkle indexer.
 It needs a rollback path through computations and the leaf record, and still cannot take back a
@@ -2694,9 +2694,9 @@ A client that waits for less than `finalized`, such as a third-party wallet, can
 decryption before its grant is finalized. Neither service turns that into a terminal refusal:
 
 - the KMS connector records every outcome of such a read as recoverable. An absent Store, a missing
-  leaf (`NoLeaf`), a record behind the chain (`ProofRecordBehind`), a proof that no longer verifies
-  (`ProofDoesNotVerify`) and a delegation that is not live are ACL denials that a later attempt may
-  clear. Pinned by
+  leaf (`NoLeaf`), a record behind the chain (`ProofRecordBehind`), a leaf beyond the observed count
+  (`LeafIndexOutOfRange`), a proof that no longer verifies (`ProofDoesNotVerify`) and a delegation
+  that is not live are ACL denials that a later attempt may clear. Pinned by
   `every_solana_authorization_failure_is_recorded_as_written`,
   `every_solana_public_decrypt_failure_is_recorded_as_written` and
   `a_missing_delegation_rejects_its_entry`;
@@ -2704,8 +2704,8 @@ decryption before its grant is finalized. Neither service turns that into a term
   `retry_interval_ms`) before the refusal stands. Pinned by
   `a_grant_that_finalizes_after_the_first_row_read_passes` and
   `rows_still_dead_on_the_last_attempt_refuse`. The example policy, three reads one second apart,
-  covers Alpenglow's finality, not TowerBFT's 12.8 s. A refusal that stands costs
-  `(max_attempts - 1) × retry_interval_ms` of extra reads: two seconds with that policy.
+  covers Alpenglow's finality, not TowerBFT's 12.8 s. A refusal that stands costs at least
+  `(max_attempts - 1) × retry_interval_ms` of waiting: two seconds with that policy.
 
 On a cluster with several validators a slot can have more than one bank. How Yellowstone v16
 delivers one bank per slot at `finalized`, and what the follower guarantees from it, is in DD-062.
