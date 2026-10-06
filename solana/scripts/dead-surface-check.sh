@@ -18,10 +18,10 @@
 #      One that nothing references at all — not a test, not its own module — is simply dead.
 #      This one reads a narrower surface than it counts against: which declarations it collects, and
 #      which trees it deliberately leaves alone, are written out at the check itself.
-#   7. Every tree swept above is a CI trigger for this script: a check that does not run on a change
+#   7. Every swept tree is a CI trigger for this script: a check that does not run on a change
 #      to the tree it protects is the same hole as a check that does not fire.
 #   8. Hand-written PDA derivations and seed literals (DD-072): a recipe the program already declares,
-#      restated in a client, drifts silently. Today's copies are an allow-list that can only shrink.
+#      restated in a client, drifts silently. Counts are checked; review rejects new allow-list entries.
 #
 # References are counted against a PRODUCTION INDEX (see `build_index`): test files and
 # `#[cfg(test)]` / `describe(` regions are dropped, and comments are stripped, so neither a
@@ -53,7 +53,7 @@ SELF_TEST=0
 run_check() { [ -z "${DEAD_SURFACE_ONLY_CHECK:-}" ] || [ "${DEAD_SURFACE_ONLY_CHECK}" = "$1" ]; }
 
 # An unrecognised value ran zero checks and printed "clean" with status 0 — a green, entirely vacuous
-# run, and the only tell was the absence of the seven headers, which nothing asserted. A typo, a
+# run, and the only tell was the absence of the eight headers, which nothing asserted. A typo, a
 # leftover repo variable, or an earlier job writing GITHUB_ENV would have silenced the whole gate.
 case "${DEAD_SURFACE_ONLY_CHECK:-}" in
   '' | 1 | 2 | 3 | 4 | 5 | 6 | 7 | 8) ;;
@@ -228,51 +228,48 @@ SEED_SOURCES=(
   solana/programs
   solana/crates/zama-solana-acl
 )
-# Today's hand-written derivations, as `path|count|what removes it`. The count is the number of
-# production lines in the file that derive a PDA or spell a seed. Check 8 fails when a file holds
-# more (a new copy) and when it holds fewer (the entry must shrink, and go at zero), so the list
-# can only get shorter. Nothing in the script stops a new entry from being added; review does.
-# Keyed by path, not line, so an unrelated edit to a listed file does not invalidate the entry.
-# PR 1b and PR 1c are fhevm-internal#2108 task 2: Anchor seeds in zama-host and confidential-token,
-# then in the demo batcher and demo vault.
+# Check 8 covers every Solana-dependent engine crate (their Cargo.toml dependencies), plus the
+# whole relayer and connector adapter trees. Keep these roots covered by the CI trigger filter.
+HAND_DERIVATION_ROOTS=(
+  relayer/src
+  kms-connector/crates
+  coprocessor/fhevm-engine/host-listener
+  coprocessor/fhevm-engine/solana-host-follower
+  coprocessor/fhevm-engine/solana-merkle-proof-service
+  coprocessor/fhevm-engine/tfhe-worker
+)
+# Today's hand-written derivations, as `path|count|tracking task`. Counts are production lines
+# deriving a PDA or spelling a seed. Over, under, zero and missing files fail. The script checks
+# counts; review rejects new entries. Keyed by path so unrelated edits do not invalidate an entry.
 HAND_DERIVATIONS_ALLOWED=(
-  # zama-host and confidential-token recipes: PR 1b declares every PDA in the IDL, so Codama
-  # generates the finders and the builders' account defaults, the event authority included.
-  "sdk/js-sdk/src/solana/actions/revokePermits.ts|3|PR 1b"
-  "sdk/js-sdk/src/solana/actions/userDecryptionDelegation.ts|2|PR 1b"
-  "sdk/js-sdk/src/solana/cleartext/authorization.ts|1|PR 1b"
-  "sdk/js-sdk/src/solana/encryptedStore.ts|2|PR 1b"
-  "sdk/js-sdk/src/solana/transientStore.ts|2|PR 1b"
-  "solana/demo-dapp/src/vault/actions/discloseSecp.ts|2|PR 1b"
-  "solana/demo-dapp/src/vault/joinBatch.ts|1|PR 1b"
-  "test-suite/fhevm/src/solana/token-vertical.ts|2|PR 1b"
-  # The demo's transfer builder goes with the @fhevm/solana-confidential-token package.
-  "solana/demo-dapp/src/vault/actions/confidentialTransfer.ts|2|fhevm-internal#2108 task 5"
-  # Mixed: PR 1b removes the zama-host and confidential-token recipes, and PR 1c the demo batcher's
-  # and demo vault's, once those programs declare Anchor seeds. Solana infra replaces the PDAs of
-  # other programs with their maintained @solana-program/* finders. The program account stores its
-  # programData address, but @solana-program/loader-v3 0.7.0 ships no decoder for it, so one helper
-  # in solana/deploy keeps the derivation until it does.
-  "solana/deploy/src/bootstrap.ts|3|PR 1b (event authority); Solana infra (programData: the one helper until loader-v3 decodes the program account)"
-  "test-suite/fhevm/src/solana/provision.ts|3|PR 1b (event authority); Solana infra (programData: import the solana/deploy helper)"
-  "test-suite/fhevm/src/solana/spl.ts|3|PR 1b (vault authority); Solana infra (@solana-program/token findAssociatedTokenPda)"
-  "solana/demo-dapp/src/vault/internal/tokenAccounts.ts|1|PR 1b (stores); Solana infra (@solana-program/token findAssociatedTokenPda)"
-  "solana/deploy/src/recover.ts|5|PR 1b (confidential-token); PR 1c (batcher, demo vault)"
-  "solana/demo-dapp/src/vault/internal/batcherPdas.ts|3|PR 1b (stores, event authority); PR 1c (batch)"
-  "solana/demo-dapp/src/vault/internal/addressLookupTable.ts|1|Solana infra (@solana-program/address-lookup-table findAddressLookupTablePda)"
-  "test-suite/fhevm/demo/seed.ts|2|PR 1c (demo vault shares)"
-  # Off-chain Rust: copro, through one seed-list function per recipe in zama-solana-acl.
-  "coprocessor/fhevm-engine/solana-host-follower/src/host.rs|1|copro"
-  "coprocessor/fhevm-engine/solana-merkle-proof-service/src/store_check.rs|1|copro"
-  "kms-connector/crates/kms-worker/src/core/solana/encrypted_store.rs|1|copro"
-  "kms-connector/crates/kms-worker/src/core/solana/mod.rs|2|copro"
-  "relayer/src/host/solana_delegation_precheck.rs|2|copro"
+  "sdk/js-sdk/src/solana/actions/revokePermits.ts|4|fhevm-internal#2108 task 2 (Anchor seeds)"
+  "sdk/js-sdk/src/solana/actions/userDecryptionDelegation.ts|3|fhevm-internal#2108 task 2 (Anchor seeds)"
+  "sdk/js-sdk/src/solana/cleartext/authorization.ts|4|fhevm-internal#2108 task 2 (Anchor seeds)"
+  "sdk/js-sdk/src/solana/encryptedStore.ts|3|fhevm-internal#2108 task 2 (Anchor seeds)"
+  "sdk/js-sdk/src/solana/transientStore.ts|3|fhevm-internal#2108 task 2 (Anchor seeds)"
+  "solana/demo-dapp/src/vault/actions/discloseSecp.ts|3|fhevm-internal#2108 task 2 (Anchor seeds)"
+  "solana/demo-dapp/src/vault/joinBatch.ts|2|fhevm-internal#2108 task 2 (Anchor seeds)"
+  "test-suite/fhevm/src/solana/token-vertical.ts|3|fhevm-internal#2108 task 2 (Anchor seeds)"
+  "solana/demo-dapp/src/vault/actions/confidentialTransfer.ts|3|fhevm-internal#2108 task 5"
+  "solana/deploy/src/bootstrap.ts|4|fhevm-internal#2108 task 2 (programData: the one solana/deploy helper)"
+  "test-suite/fhevm/src/solana/provision.ts|4|fhevm-internal#2108 task 2 (programData: the one solana/deploy helper)"
+  "test-suite/fhevm/src/solana/spl.ts|4|fhevm-internal#2108 task 2 (@solana-program/token findAssociatedTokenPda)"
+  "solana/demo-dapp/src/vault/internal/tokenAccounts.ts|2|fhevm-internal#2108 task 2 (@solana-program/token findAssociatedTokenPda)"
+  "solana/deploy/src/recover.ts|6|fhevm-internal#2108 task 2 (Anchor seeds)"
+  "solana/demo-dapp/src/vault/internal/batcherPdas.ts|4|fhevm-internal#2108 task 2 (Anchor seeds)"
+  "solana/demo-dapp/src/vault/internal/addressLookupTable.ts|2|fhevm-internal#2108 task 2 (@solana-program/address-lookup-table findAddressLookupTablePda)"
+  "test-suite/fhevm/demo/seed.ts|3|fhevm-internal#2108 task 2 (Anchor seeds)"
+  "coprocessor/fhevm-engine/solana-host-follower/src/host.rs|1|fhevm-internal#2108 task 2 (zama-solana-acl seed lists)"
+  "coprocessor/fhevm-engine/solana-merkle-proof-service/src/store_check.rs|1|fhevm-internal#2108 task 2 (zama-solana-acl seed lists)"
+  "kms-connector/crates/kms-worker/src/core/solana/encrypted_store.rs|1|fhevm-internal#2108 task 2 (zama-solana-acl seed lists)"
+  "kms-connector/crates/kms-worker/src/core/solana/mod.rs|2|fhevm-internal#2108 task 2 (zama-solana-acl seed lists)"
+  "relayer/src/host/solana_delegation_precheck.rs|2|fhevm-internal#2108 task 2 (zama-solana-acl seed lists)"
 )
 # The self-test drives the allow-list arms through the environment, as checks 4 and 5 do.
 [ -n "${DEAD_SURFACE_EXTRA_HAND_DERIVATION:-}" ] && \
   HAND_DERIVATIONS_ALLOWED+=("${DEAD_SURFACE_EXTRA_HAND_DERIVATION}")
-for root in "${SEED_SOURCES[@]}"; do
-  [ -e "$root" ] || { echo "dead-surface-check: seed source does not exist: $root" >&2; exit 2; }
+for root in "${SEED_SOURCES[@]}" "${HAND_DERIVATION_ROOTS[@]}"; do
+  [ -e "$root" ] || { echo "dead-surface-check: check 8 root does not exist: $root" >&2; exit 2; }
 done
 
 # `target/` holds generated crates (mime_guess ships a word list containing half the dictionary);
@@ -298,7 +295,10 @@ SELFTEST_FIXTURES=(
   solana/crates/zama-fhe/src/dead_surface_selftest.rs
   solana/crates/zama-fhe/src/dead_surface_selftest_caller.rs
   solana/programs/zama-host/src/dead_surface_selftest.rs
+  solana/programs/confidential-token/src/dead_surface_selftest.rs
   solana/demo-dapp/src/deadSurfaceSelftest.ts
+  relayer/src/core/dead_surface_selftest.rs
+  coprocessor/fhevm-engine/tfhe-worker/dead_surface_selftest.rs
 )
 # A fixture left behind by an interrupted `--self-test` is indistinguishable from a real violation,
 # so every later run reports a bogus finding — observed once as a phantom `app_account` hit printed
@@ -320,7 +320,7 @@ trap 'rm -f "$INDEX" "$ALIAS_LABELS"' EXIT
 build_index() {
   local files
   files=$(grep -rl '' --include='*.rs' --include='*.ts' --include='*.tsx' "${EXCLUDES[@]}" \
-    "${RUST_ROOTS[@]}" "${TS_ROOTS[@]}" kms-connector/crates 2>/dev/null | sort -u)
+    "${RUST_ROOTS[@]}" "${TS_ROOTS[@]}" "${HAND_DERIVATION_ROOTS[@]}" 2>/dev/null | sort -u)
   local file
   for file in $files; do
     case "$file" in
@@ -1011,7 +1011,7 @@ if run_check 7; then
   # root. Both `relayer/` files were exactly that until the filter above learned them.
   for root in "${ALL_ROOTS[@]}" "${FHE_ROOTS[@]}" "${SENTINEL_ROOTS[@]}" "${SENTINEL_FILES[@]}" \
     "${RETROFIT_JUSTIFICATIONS[@]%%|*}" "${KMS_EXTRA_ROOTS[@]}" "${SEED_SOURCES[@]}" \
-    "${HAND_DERIVATIONS_ALLOWED[@]%%|*}" ${DEAD_SURFACE_EXTRA_ROOT:-}; do
+    "${HAND_DERIVATION_ROOTS[@]}" "${HAND_DERIVATIONS_ALLOWED[@]%%|*}" ${DEAD_SURFACE_EXTRA_ROOT:-}; do
     if ! root_is_triggered "$root"; then
       echo "UNTRIGGERED ROOT: ${root} is swept by this script but no path in ${TRIGGER_WORKFLOW}'s dead-surface filter matches it — a change there would not run this check"
       fail=1
@@ -1027,10 +1027,19 @@ if run_check 8; then
   # that restates a recipe is a pin, and fails loudly when the recipe moves. Generated clients,
   # the seed sources and solana/test-kit (test support) are the other exemptions.
   #
+  # Seed sources are exempt from the client sweep, so check PendingBurn's one raw literal here.
+  # Runtime ConstraintSeeds tests cover which seed each derivation site uses.
+  raw_sites=$( (grep -rHo --include='*.rs' 'b"pending-burn"' solana/programs/confidential-token/src || true) \
+    | cut -d: -f1)
+  if [ "$raw_sites" != 'solana/programs/confidential-token/src/constants.rs' ]; then
+    echo "PENDING-BURN SEED COPY: expected one raw literal, in confidential-token/src/constants.rs"
+    fail=1
+  fi
+
   # The seeds are read from the sources, plus Anchor's event-CPI seed, which no program declares.
   # A seed literal is a byte string naming one, a quoted multi-word seed anywhere in code, or any
-  # seed string handed to `.encode(`. A one-word seed (`batch`, `vault`) is ordinary vocabulary
-  # outside those two forms; a derivation that uses it is still caught by its call.
+  # seed string handed to `.encode(`, `Buffer.from(` or `utf8ToBytes(`. A one-word seed
+  # (`batch`, `vault`) is ordinary vocabulary outside these forms; its derivation is still caught.
   seed_names=$( (grep -rhoE '_SEED: &\[u8\] = b"[^"]+"|seeds = \[b"[^"]+"' --include='*.rs' \
     "${SEED_SOURCES[@]}" || true) | sed -E 's/.*b"([^"]+)"$/\1/' | sort -u)
   seed_names="${seed_names}
@@ -1044,10 +1053,12 @@ __event_authority"
   all_seeds=$(printf '%s\n' "$seed_names" | sed '/^$/d' | paste -sd '|' -)
   multi_word_seeds=$(printf '%s\n' "$seed_names" | grep -E -- '-|^__' | paste -sd '|' -)
   quote="[\"'\`]"
-  derivation="getProgramDerivedAddress\(|findProgramAddress(Sync)?\(|(try_)?find_program_address\(|create_program_address\("
-  seed_literal="b\"(${all_seeds})\"|${quote}(${multi_word_seeds})${quote}|\.encode\([[:space:]]*${quote}(${all_seeds})${quote}"
+  derivation="\b(getProgramDerivedAddress|findProgramAddress(Sync)?|createProgramAddress(Sync)?)\b|(try_)?find_program_address\(|create_program_address\("
+  seed_literal="b\"(${all_seeds})\"|${quote}(${multi_word_seeds})${quote}|(\.encode|Buffer\.from|utf8ToBytes)\([[:space:]]*${quote}(${all_seeds})${quote}"
+  seed_exclusions=$(printf '%s\n' "${SEED_SOURCES[@]}" solana/test-kit \
+    | sed 's|^|^|; s|$|/|' | paste -sd '|' -)
   hand_hits=$( (grep -E "^[^:]+:[0-9]+:.*(${derivation}|${seed_literal})" "$INDEX" || true) \
-    | (grep -vE '^[^:]*/generated/|^solana/programs/|^solana/crates/zama-solana-acl/|^solana/test-kit/' || true) )
+    | (grep -vE "^[^:]*/generated/|${seed_exclusions}" || true) )
   hand_counts=$(printf '%s\n' "$hand_hits" | sed '/^$/d' | cut -d: -f1 | sort | uniq -c)
   while read -r count file; do
     [ -n "$file" ] || continue
@@ -1252,8 +1263,8 @@ FIXTURES
   # Check 7: a swept root outside every triggering path. Driven through the environment rather than
   # a fixture file, since the thing under test is the root list itself.
   expect_fires "untriggered-root sweep" \
-    "UNTRIGGERED ROOT: coprocessor/fhevm-engine/tfhe-worker" "" 7 \
-    env DEAD_SURFACE_EXTRA_ROOT=coprocessor/fhevm-engine/tfhe-worker bash "$SELF"
+    "UNTRIGGERED ROOT: dead-surface-selftest-untriggered" "" 7 \
+    env DEAD_SURFACE_EXTRA_ROOT=dead-surface-selftest-untriggered bash "$SELF"
   # Check 8: one fixture per form a hand-written recipe takes, each in a file the allow-list does not
   # name, so the expected text is the new-copy report.
   fixture="solana/crates/zama-fhe/src/dead_surface_selftest.rs"
@@ -1265,11 +1276,22 @@ FIXTURES
     rm -f "$path"
   done <<FIXTURES
 TypeScript call|${ts_fixture}|export const f = async (p: Address) => getProgramDerivedAddress({ programAddress: p, seeds: [] });
+TypeScript alias import|${ts_fixture}|import { getProgramDerivedAddress as derive } from '@solana/kit';
+TypeScript by-reference assignment|${ts_fixture}|const d = getProgramDerivedAddress;
+TypeScript createProgramAddress|${ts_fixture}|const p = createProgramAddress(seeds, program);
+TypeScript Buffer seed|${ts_fixture}|const s = Buffer.from('vault');
+TypeScript utf8 seed|${ts_fixture}|const s = utf8ToBytes('transient');
 TypeScript encoded seed|${ts_fixture}|export const s = new TextEncoder().encode('transient');
 TypeScript quoted seed|${ts_fixture}|export const s = 'host-config';
 Rust call|${fixture}|pub fn f(p: &Pubkey) -> Pubkey { Pubkey::find_program_address(&[], p).0 }
 Rust seed literal|${fixture}|pub const S: &[u8] = b"rand-nonce";
+Relayer outside host|relayer/src/core/dead_surface_selftest.rs|pub const S: &[u8] = b"rand-nonce";
+Engine crate outside src|coprocessor/fhevm-engine/tfhe-worker/dead_surface_selftest.rs|pub const S: &[u8] = b"rand-nonce";
 FIXTURES
+  pending_burn_fixture="solana/programs/confidential-token/src/dead_surface_selftest.rs"
+  printf 'pub const S: &[u8] = b"pending-burn";\n' > "$pending_burn_fixture"
+  expect_fires "PendingBurn raw seed copy" "PENDING-BURN SEED COPY:" "" 8 bash "$SELF"
+  rm -f "$pending_burn_fixture"
   # The allow-list arms, through the environment: a file over its count, under it, at zero, and gone.
   printf "export const a = 'host-config';\nexport const b = 'kms-context';\n" > "$ts_fixture"
   expect_fires "hand-derivation allow-list (over its count)" \

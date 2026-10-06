@@ -22,9 +22,9 @@ handwritten client, or an adapter with its own PDA or instruction code, is not a
 - PDA recipes are Anchor `seeds = [...]` constraints in the programs. Off-chain Rust takes them from
   the program crate or from `zama-solana-acl`.
 - A golden test catches an accidental change; it is not a second source.
-- Behaviour mirrors, such as the SDK's cleartext client, stay pinned by the shared fixtures in
-  `solana/test-fixtures`.
+- Pending Elias's decision: behaviour mirrors, such as the SDK's cleartext client, stay pinned by
+  the shared fixtures in `solana/test-fixtures`.
 
 The decision and its compatibility rule are DD-072 in `docs/DESIGN_DECISIONS.md`. Check 8 of
 `scripts/dead-surface-check.sh` enforces the PDA part. Its `HAND_DERIVATIONS_ALLOWED` list holds
-today's copies and may only shrink.
+today's copies and checks their counts. Review rejects new entries.
