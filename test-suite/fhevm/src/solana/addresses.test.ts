@@ -11,6 +11,7 @@ import {
   SOLANA_HOST_CHAIN_ID,
   solanaUserDecryptContext,
 } from "./addresses";
+import { BRINGUP_KMS_CONTEXT_HEX } from "../../../../solana/deploy/src/constants";
 
 const ADDRESS_A = "0x000000000000000000000000000000000000aaaa";
 const ADDRESS_B = "0x1111111111111111111111111111111111111111";
@@ -72,7 +73,7 @@ describe("readActiveKmsPair", () => {
     const addressesPath = await writeHostArtifact(`PROTOCOL_CONFIG_CONTRACT_ADDRESS=${ADDRESS_B}`);
     // A fresh stack's first pair: both ids are type-tagged (0x07 / 0x08 in the high byte), so
     // neither is ever zero — the exact property that makes a seeded zero epoch unservable.
-    const contextId = (7n << 248n) | 1n;
+    const contextId = BigInt(`0x${BRINGUP_KMS_CONTEXT_HEX}`);
     const epochId = (8n << 248n) | 1n;
     globalThis.fetch = (async (_url: string | URL | Request, options?: RequestInit) => {
       const request = JSON.parse(String(options?.body)) as { id: number; params: [{ to?: string }?] };
