@@ -362,3 +362,144 @@ async fn quorum_rejection_discards_retained_proof_without_replay() -> anyhow::Re
     run_handle.await??;
     Ok(())
 }
+
+/// Issue #2115: a GCS listener whose first boot happens only after the proposal
+/// activated (late-joining operator, or a restart onto a fresh gcs schema) must
+/// rewind to `gw_start_block` and (re)ingest the dry-run window from its start,
+/// instead of tailing from the Gateway tip and leaving a never-scanned gap that
+/// still satisfies the `gw_listener_last_block >= gw_start_block` gates.
+#[tokio::test]
+#[serial(db)]
+async fn gcs_rewind_on_activated_window_ingests_window_start() -> anyhow::Result<()> {
+    let mut env = TestEnvironment::new().await?;
+    env.conf.gcs_mode = true;
+
+    // The green schema's watermark table: the rewind writes it by its
+    // qualified name (in production the controller's create_gcs_schema makes
+    // it before the proposal activates).
+    let gcs_schema = fhevm_engine_common::database::GCS_SCHEMA_QUOTED;
+    sqlx::query(&format!("DROP SCHEMA IF EXISTS {gcs_schema} CASCADE"))
+        .execute(&env.db_pool)
+        .await?;
+    sqlx::query(&format!("CREATE SCHEMA {gcs_schema}"))
+        .execute(&env.db_pool)
+        .await?;
+    sqlx::query(&format!(
+        "CREATE TABLE {gcs_schema}.gw_listener_last_block
+             (LIKE public.gw_listener_last_block INCLUDING ALL)"
+    ))
+    .execute(&env.db_pool)
+    .await?;
+
+    // Make this binary "green": the live consensus version is one behind the
+    // compiled one, as it is for a real GCS stack before cutover. Without this
+    // the stack-version listener would reconcile the listener out of GCS mode.
+    sqlx::query(
+        "UPDATE versioning SET consensus_version = consensus_version - 1 WHERE singleton = TRUE",
+    )
+    .execute(&env.db_pool)
+    .await?;
+
+    let provider = ProviderBuilder::new()
+        .wallet(env.wallet.clone())
+        .connect_ws(WsConnect::new(env.anvil.ws_endpoint_url()))
+        .await?;
+    let input_verification = InputVerification::deploy(&provider).await?;
+
+    // Emit the proof request BEFORE the listener ever runs: it lands in the
+    // block that becomes the dry-run window start, which the listener never
+    // tailed.
+    let request = input_verification.verifyProofRequest(
+        U256::from(42),
+        PrivateKeySigner::random().address(),
+        PrivateKeySigner::random().address(),
+        (&[1u8; 2048]).into(),
+        Vec::<u8>::new().into(),
+    );
+    let receipt = request.send().await?.get_receipt().await?;
+    assert!(receipt.status());
+    let gw_start_block = receipt.block_number.expect("mined request block");
+
+    // Activate the dry-run window at that block. `proposal_id` stays NULL so
+    // the synthetic-input plan does not apply in this test.
+    sqlx::query(
+        "INSERT INTO upgrade_state (stack_role, host_chain_id, state, status, gw_start_block)
+         VALUES ('GCS', $1, 'UpgradeActivated', 'in_progress', $2)",
+    )
+    .bind(12345i64)
+    .bind(i64::try_from(gw_start_block)?)
+    .execute(&env.db_pool)
+    .await?;
+
+    // Let the Gateway tip move past the window start, so a first boot that
+    // merely tailed from the tip would never scan it.
+    while provider.get_block_number().await? < gw_start_block + 2 {
+        sleep(Duration::from_millis(200)).await;
+    }
+
+    let gw_listener = GatewayListener::new(
+        *input_verification.address(),
+        env.conf.clone(),
+        env.cancel_token.clone(),
+        provider.clone(),
+    );
+    let db_pool = env.db_pool.clone();
+    let run_handle = tokio::spawn(async move { gw_listener.run(db_pool).await });
+
+    // The listener must rewind its scan cursor to `gw_start_block - 1` and
+    // (re)ingest the window from its start, picking up the pre-boot request.
+    for retry in 0..=RETRY_EVENT_TO_DB {
+        sleep(RETRY_DELAY).await;
+        let row: Option<(i64, Option<i64>)> =
+            sqlx::query_as("SELECT chain_id, block_number FROM verify_proofs")
+                .fetch_optional(&env.db_pool)
+                .await?;
+        if let Some((chain_id, block_number)) = row {
+            assert_eq!(chain_id, 42);
+            assert_eq!(block_number, Some(i64::try_from(gw_start_block)?));
+            break;
+        }
+        assert!(
+            retry < RETRY_EVENT_TO_DB,
+            "Timed out waiting for the window-start proof request to be ingested"
+        );
+    }
+
+    // The rewind is latched on the proposal, so it happens once: a restart
+    // mid-window must not discard scan progress by rewinding again.
+    let latched = sqlx::query_scalar::<_, bool>(
+        "SELECT gw_window_rewound FROM upgrade_state WHERE stack_role = 'GCS'",
+    )
+    .fetch_one(&env.db_pool)
+    .await?;
+    assert!(latched, "the rewind must latch gw_window_rewound");
+
+    // The rewound watermark went to the GCS namespace.
+    let gcs_watermark = sqlx::query_scalar::<_, Option<i64>>(&format!(
+        "SELECT last_block_num FROM {gcs_schema}.gw_listener_last_block WHERE dummy_id = true"
+    ))
+    .fetch_one(&env.db_pool)
+    .await?;
+    assert_eq!(
+        gcs_watermark,
+        Some(i64::try_from(gw_start_block)? - 1),
+        "the rewind must persist gw_start_block - 1 into the gcs schema's watermark"
+    );
+
+    env.cancel_token.cancel();
+    run_handle.await??;
+
+    // Restore the shared-database state for the other tests.
+    sqlx::query(&format!("DROP SCHEMA {gcs_schema} CASCADE"))
+        .execute(&env.db_pool)
+        .await?;
+    sqlx::query("DELETE FROM upgrade_state WHERE stack_role = 'GCS' AND host_chain_id = 12345")
+        .execute(&env.db_pool)
+        .await?;
+    sqlx::query(
+        "UPDATE versioning SET consensus_version = consensus_version + 1 WHERE singleton = TRUE",
+    )
+    .execute(&env.db_pool)
+    .await?;
+    Ok(())
+}

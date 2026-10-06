@@ -2791,6 +2791,10 @@ async fn rollback_dry_run(
                    last_error = $4,
                    host_consensus_reached = FALSE, gw_consensus_reached = FALSE,
                    gw_dry_run_started = FALSE,
+                   -- The gw-listener's once-per-proposal rewind latch. The rolled-back
+                   -- window is dead and its schema is dropped; the next attempt must
+                   -- align to its own gw_start_block from scratch.
+                   gw_window_rewound = FALSE,
                    -- Cleared with the latches: the rolled-back window's schema is dropped, and the
                    -- next attempt injects at a different block (or fork) and so derives a different
                    -- hash. A stale marker would leave cutover matching nothing while the real rows
