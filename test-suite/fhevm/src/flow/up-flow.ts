@@ -130,6 +130,7 @@ import {
   probeBootstrap,
   waitForCoprocessorKeyMaterial,
   waitForBootstrap,
+  restartZkproofWorker,
   waitForContainer,
   waitForCoprocessor,
   waitForCoprocessorServices,
@@ -732,14 +733,6 @@ const coprocessorDbsSeeded = async (state: Pick<State, "scenario">) =>
     ),
   )).every(Boolean);
 
-const restartZkproofWorker = async (index: number, reason: string) => {
-  const container = toServiceName("zkproof-worker", index);
-  console.log(`[coprocessor] restarting ${container} (${reason})`);
-  await run(["docker", "stop", container]);
-  await run(["docker", "start", container]);
-  await waitForContainer(container, "running");
-};
-
 const restartZkproofWorkers = async (state: Pick<State, "scenario">, reason: string) => {
   for (let index = 0; index < topologyForState(state).count; index += 1) {
     await restartZkproofWorker(index, reason);
@@ -1322,7 +1315,7 @@ export const runStep = async (state: State, step: StepName) => {
       // Imported lazily so an EVM-only `up` never loads the Solana client stack.
       for (const chain of hostChainsForState(state).filter((c) => c.type === "solana")) {
         const { provisionSolanaHostNode } = await import("../solana/deploy");
-        const { zamaHostId } = await provisionSolanaHostNode();
+        const { zamaHostId } = await provisionSolanaHostNode(topologyForState(state));
         console.log(`  ${chain.key}: zama_host=${zamaHostId}`);
       }
       break;

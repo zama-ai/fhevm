@@ -28,6 +28,7 @@ import { restartDemoSolanaListener } from '../../demo/lifecycle';
 import { REPO_ROOT } from '../../src/layout';
 import { DEFAULT_SOLANA_ENVIRONMENT } from '../../../../solana/deploy/src/environment';
 import { readGatewayBootstrapInputs } from '../../src/solana/addresses';
+import { readStackTopology } from '../../src/solana/deploy';
 import { userDecryptExpect } from '../../src/solana/fhe-vertical';
 import { deployHostProgram } from '../../../../solana/deploy/src/deploy-host';
 import { incrementCounter, initializeCounter } from '../../src/solana/specimens';
@@ -99,7 +100,7 @@ test.skipIf(upgradeEnv.network !== 'localnet' || !upgradeEnv.capabilities.protoc
     const artifactsDir = path.join(REPO_ROOT, 'solana/target/deploy');
     const bootstrap = {
       gateway: await readGatewayBootstrapInputs({ gatewayRpcUrl: env.gatewayRpcUrl }),
-      coprocessorThreshold: Number(process.env.COPROCESSOR_THRESHOLD ?? 1),
+      coprocessorThreshold: (await readStackTopology()).threshold,
       kmsCorruptionThreshold: Number(process.env.KMS_THRESHOLD ?? 0),
     };
     const rollout = (directory: string, upgrade: boolean) =>

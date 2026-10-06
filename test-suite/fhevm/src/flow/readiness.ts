@@ -126,6 +126,15 @@ export const waitForContainer = async (container: string, want: "running" | "hea
   }
 };
 
+/** Restarts coprocessor `index`'s zkproof-worker, which reads host chains only at startup. */
+export const restartZkproofWorker = async (index: number, reason: string) => {
+  const container = toServiceName("zkproof-worker", index);
+  console.log(`[coprocessor] restarting ${container} (${reason})`);
+  await run(["docker", "stop", container]);
+  await run(["docker", "start", container]);
+  await waitForContainer(container, "running");
+};
+
 /** Waits until container logs contain the requested pattern. */
 export const waitForLog = async (container: string, pattern: RegExp) => {
   for (let attempt = 0; attempt <= 90; attempt += 1) {
