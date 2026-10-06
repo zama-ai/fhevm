@@ -173,7 +173,6 @@ async fn grouped_outputs_preserve_order_permissions_and_replay_counts(
     Ok(())
 }
 
-#[cfg(feature = "solana")]
 #[tokio::test]
 async fn solana_records_reach_the_shared_sql_and_scheduler_path(
 ) -> anyhow::Result<()> {
@@ -326,7 +325,6 @@ async fn solana_records_reach_the_shared_sql_and_scheduler_path(
     Ok(())
 }
 
-#[cfg(feature = "solana")]
 #[tokio::test]
 async fn solana_block_priority_preserves_transaction_origins_replay_and_slow_parents(
 ) -> anyhow::Result<()> {

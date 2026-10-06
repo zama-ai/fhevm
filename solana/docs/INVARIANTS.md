@@ -624,8 +624,8 @@ instruction-data bytes and CU at its largest passing size. These are host-instru
 overhead and application CPIs.
 Pinned by `rejects_more_than_max_ops`, `cost_snapshot_fhe_execute_max_steps` and `cost_snapshot_boundary_sweeps`.
 
-**34. [OPERATIONAL]** Reconstruction fixtures compile only under
-`--features solana`; coverage exists only where CI passes that flag.
+**34. [RETIRED]** The host listener always compiles its Solana modules; the `solana` cargo
+feature that gated them is gone.
 
 **47. [RETIRED]** The standalone proof service is gone (Solana access control RFC, DD-048). The
 leaf record lives in each coprocessor's Merkle proof service database, written

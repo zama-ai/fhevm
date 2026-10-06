@@ -8,8 +8,6 @@ license.workspace = true
 test-failpoints = ["consumer/test-failpoints"]
 default = []
 test_bypass_key_extraction = []
-# The Solana host listener and its reconstruction.
-solana = ["dep:solana-host-follower", "dep:zama-host", "dep:anchor-lang"]
 
 [[bin]]
 path = "src/bin/main.rs"
@@ -33,7 +31,6 @@ path = "src/bin/solana_host_listener.rs"
 name = "solana_host_listener"
 test = false
 bench = false
-required-features = ["solana"]
 
 [[bin]]
 path = "src/bin/migration_test_key.rs"
@@ -73,14 +70,14 @@ union-find = { workspace = true}
 
 url = "2.5.7"
 solana-sdk = "3.0"
-# Solana reconstruction (the `solana` feature).
+# Solana reconstruction.
 # no-entrypoint builds the program crate as a host library so we can call its
 # deterministic computed_*_handle functions directly (parity, not a copy).
-zama-host = { path = "../../../solana/programs/zama-host", default-features = false, features = ["no-entrypoint", "decode"], optional = true }
+zama-host = { path = "../../../solana/programs/zama-host", default-features = false, features = ["no-entrypoint", "decode"] }
 # AnchorDeserialize for reusing zama-host's FheExecuteArgs to decode the fhe_execute batch.
-anchor-lang = { version = "1.2.0", optional = true }
+anchor-lang = "1.2.0"
 # Follows the zama-host program over Yellowstone gRPC.
-solana-host-follower = { path = "../solana-host-follower", optional = true }
+solana-host-follower = { path = "../solana-host-follower" }
 
 # local dependencies
 fhevm-engine-common = { path = "../fhevm-engine-common" }
