@@ -108,6 +108,7 @@ export const createInstance = async () => {
     relayerUrl,
     gatewayChainId: gatewayChainID,
     chainId: hostChainID,
+    cleartext: network.name === 'localcleartext',
     ...(auth ? { auth } : {}),
   };
   return FhevmSdk.create(cfg);

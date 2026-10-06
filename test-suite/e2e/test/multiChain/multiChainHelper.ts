@@ -122,6 +122,7 @@ export async function createInstance(chain: ChainConfig) {
     relayerUrl,
     gatewayChainId,
     chainId: chain.chainId,
+    cleartext: false,
   };
   return FhevmSdk.create(cfg);
 }

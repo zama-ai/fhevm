@@ -27,7 +27,7 @@ Options:
   --ethlib viem            Run only the viem test suite.
   --ethlib ethers,viem     Run both suites (default).
   --ethlib none            Start Anvil + deploy only; wait for Anvil to exit (no tests run).
-  --foundry-profile <name> Required Foundry profile to use. Expected: v12 or v13.
+  --foundry-profile <name> Required Foundry profile to use. Expected: v12, v13 or intree (with --ethlib none).
   --use-pack               Use vitest-manual-pack.config.ts instead of vitest.config.ts.
   --skip-fhetest           Deploy only the FHEVM stack, not TFHETest.sol (FHETest).
   --verbose                Print Anvil logs to the console instead of redirecting to a file.
@@ -119,12 +119,19 @@ esac
 
 case "$PROFILE" in
     v12|v13) ;;
+    intree)
+        # The SDK suites target the release slots; intree serves the repository's own e2e and parity tests.
+        if [[ "$RUN_NONE" -ne 1 ]]; then
+            echo "Error: --foundry-profile intree only starts the host. Use it with --ethlib none." >&2
+            exit 1
+        fi
+        ;;
     "")
-        echo "Error: --foundry-profile is required. Expected: v12 or v13." >&2
+        echo "Error: --foundry-profile is required. Expected: v12, v13 or intree." >&2
         exit 1
         ;;
     *)
-        echo "Error: unsupported --foundry-profile '$PROFILE'. Expected: v12 or v13." >&2
+        echo "Error: unsupported --foundry-profile '$PROFILE'. Expected: v12, v13 or intree." >&2
         exit 1
         ;;
 esac
@@ -149,6 +156,13 @@ anvil_setup_vars() {
     READY_TIMEOUT="${READY_TIMEOUT:-30}"
     export FOUNDRY_PROFILE="$PROFILE"
     CLEAR_TEXT_CHAIN="localcleartext_${PROFILE}"
+    ANVIL_ARGS=(--port "$PORT" --chain-id "$CHAIN_ID" --disable-code-size-limit)
+    if [[ "$PROFILE" == "intree" ]]; then
+        # Same accounts and block cadence as the e2e host node
+        # (test-suite/fhevm/docker-compose/host-node-docker-compose.yml): the e2e suites sign
+        # with up to 120 accounts of this mnemonic and wait for blocks without sending transactions.
+        ANVIL_ARGS+=(--block-time 1 --accounts 120 --mnemonic "${MNEMONIC:-adapt mosquito move limb mobile illegal tree voyage juice mosquito burger raise father hope layer}")
+    fi
 }
 
 anvil_check_deps() {
@@ -190,12 +204,11 @@ anvil_start_and_wait() {
     ANVIL_PID=""
     if [[ "${VERBOSE:-0}" -eq 1 ]]; then
         echo "🚚 Starting Anvil on $RPC_URL..."
-        anvil --port "$PORT" --chain-id "$CHAIN_ID" --disable-code-size-limit &
+        anvil "${ANVIL_ARGS[@]}" &
     else
         ANVIL_LOG="${TMPDIR:-/tmp}/anvil-${PORT}.log"
         echo "🚚 Starting Anvil on $RPC_URL (log: $ANVIL_LOG)..."
-        anvil --port "$PORT" --chain-id "$CHAIN_ID" --disable-code-size-limit \
-            >"$ANVIL_LOG" 2>&1 &
+        anvil "${ANVIL_ARGS[@]}" >"$ANVIL_LOG" 2>&1 &
     fi
     ANVIL_PID=$!
 

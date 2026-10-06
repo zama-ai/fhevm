@@ -63,7 +63,8 @@ Usage: fhevm-deploy.sh [options]
 Options:
   --chain <name>        FHEVM chain (mainnet | testnet | devnet | localcleartext | localstack) [default: localcleartext].
                         Precedence: --chain flag > \$CHAIN env > $chain_default
-  --profile <name>      Foundry profile (v12 | v13 | latest) [default: $profile_default].
+  --profile <name>      Foundry profile (v12 | v13 | latest | intree) [default: $profile_default].
+                        intree: the cleartext overlay on the repository's own host-contracts.
   --dry-run             Print precomputed FHEVM host addresses and exit. No anvil, no broadcast,
                         no addresses file written.
   -h, --help            Show this help.
@@ -130,6 +131,7 @@ fhevm_host_addresses_file="$(fhevm_host_addresses_file "$profile")"
 case "$profile" in
     v12) host_contracts_version="v0.12.0" ;;
     v13) host_contracts_version="v0.13.0" ;;
+    intree) host_contracts_version="intree" ;;
     *)
         echo "❌ Error: cannot resolve host_contracts_version for profile '$profile'" >&2
         exit 1

@@ -6,6 +6,9 @@ via_ir = false
 src = "src"
 out = "out"
 allow_paths = ["../../.."]
+# The in-tree host-contracts include the LayerZero bridge, which needs dependencies this workspace does not install.
+# The cleartext host deploys no bridge; ACL only imports bridge/interfaces.
+skip = ["src/intree/host-contracts/contracts/bridge/*.sol"]
 fs_permissions = [
     { access = "read", path = "out" },
     { access = "read", path = "../../.." },
@@ -13,6 +16,7 @@ fs_permissions = [
     { access = "write", path = "src/latest/host-contracts/addresses" },
     { access = "write", path = "src/v0.12.0/host-contracts/addresses" },
     { access = "write", path = "src/v0.13.0/host-contracts/addresses" },
+    { access = "write", path = "src/intree/host-contracts/addresses" },
 ]
 remappings = [
     "forge-std/=dependencies/forge-std-1.11.0/src/",
@@ -76,4 +80,17 @@ remappings = [
     "@fhevm/cleartext/=./src/v0.13.0/cleartext/",
     "@fhevm/host-contracts-0.13.0/=./src/v0.13.0/host-contracts/",
     "@fhevm/cleartext-0.13.0/=./src/v0.13.0/cleartext/",
+]
+
+[profile.intree]
+remappings = [
+    "forge-std/=dependencies/forge-std-1.11.0/src/",
+    "encrypted-types/=dependencies/@encrypted-types-0.0.4/",
+    "@openzeppelin-contracts-5.1.0/=dependencies/@openzeppelin-contracts-5.1.0/",
+    "@openzeppelin-contracts-upgradeable-5.1.0/=dependencies/@openzeppelin-contracts-upgradeable-5.1.0/",
+    "@openzeppelin/contracts/=dependencies/@openzeppelin-contracts-5.1.0/",
+    "@openzeppelin/contracts-upgradeable/=dependencies/@openzeppelin-contracts-upgradeable-5.1.0/",
+    "@fhevm/solidity/=../../../library-solidity/",
+    "@fhevm/host-contracts/=./src/intree/host-contracts/",
+    "@fhevm/cleartext/=./src/intree/cleartext/",
 ]

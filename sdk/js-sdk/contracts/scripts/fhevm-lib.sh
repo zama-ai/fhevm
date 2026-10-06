@@ -203,21 +203,21 @@ verify_balance() {
 # fhevm contracts workspace. On invalid input, prints an error and EXITS the
 # calling process with status 1 (fail-fast; intended for script entry).
 #
-# Supported: v12 | v13 | latest
+# Supported: v12 | v13 | latest | intree
 #
 # Usage: fhevm_assert_foundry_profile <profile>
 fhevm_assert_foundry_profile() {
     local profile="$1"
     case "$profile" in
-        v12|v13|latest)
+        v12|v13|latest|intree)
             return 0
             ;;
         "")
-            echo "❌ Foundry profile is required (expected: v12 | v13 | latest)" >&2
+            echo "❌ Foundry profile is required (expected: v12 | v13 | latest | intree)" >&2
             exit 1
             ;;
         *)
-            echo "❌ unsupported Foundry profile '$profile' (expected: v12 | v13 | latest)" >&2
+            echo "❌ unsupported Foundry profile '$profile' (expected: v12 | v13 | latest | intree)" >&2
             exit 1
             ;;
     esac
@@ -228,7 +228,7 @@ fhevm_assert_foundry_profile() {
 # sdk/js-sdk/contracts/scripts/).
 #
 # Usage: fhevm_host_addresses_file <profile>
-#   <profile>: v12 | v13 | latest
+#   <profile>: v12 | v13 | latest | intree
 #
 #   addresses_file="$(fhevm_host_addresses_file v13)"
 fhevm_host_addresses_file() {
@@ -246,8 +246,11 @@ fhevm_host_addresses_file() {
         latest)
             printf '%s/src/latest/host-contracts/addresses/FHEVMHostAddresses.sol\n' "$contracts_dir"
             ;;
+        intree)
+            printf '%s/src/intree/host-contracts/addresses/FHEVMHostAddresses.sol\n' "$contracts_dir"
+            ;;
         *)
-            echo "fhevm_host_addresses_file: unsupported profile '$profile' (expected: v12 | v13 | latest)" >&2
+            echo "fhevm_host_addresses_file: unsupported profile '$profile' (expected: v12 | v13 | latest | intree)" >&2
             return 1
             ;;
     esac
