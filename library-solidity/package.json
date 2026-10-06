@@ -56,7 +56,6 @@
     "@types/fs-extra": "^9.0.13",
     "@types/mocha": "^10.0.0",
     "@types/node": "^20.14.9",
-    "@zama-fhe/relayer-sdk": "^0.3.0-2",
     "bigint-buffer": "^1.1.5",
     "chai": "^4.3.7",
     "chalk": "^4.1.2",
