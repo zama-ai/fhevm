@@ -1,8 +1,7 @@
 import * as authorization from './authorization.js';
 import * as envelope from '../permit/envelope.js';
 import * as storeValues from './storeValues.js';
-import * as hostConfigAccount from '../internal/generated/zamaHost/accounts/hostConfig.js';
-import * as kmsContextAccount from '../internal/generated/zamaHost/accounts/kmsContext.js';
+import * as zamaHost from '@fhevm/solana-zama-host';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { address, getAddressEncoder, type Address } from '@solana/kit';
 import type { FhevmSolanaChain } from '../../core/types/fhevmSolanaChain.js';
@@ -107,12 +106,12 @@ describe('cleartextPublicDecryptCertifier', () => {
       if (value === undefined) throw new Error('unknown store');
       return value;
     });
-    vi.spyOn(hostConfigAccount, 'fetchHostConfig').mockResolvedValue({
+    vi.spyOn(zamaHost, 'fetchHostConfig').mockResolvedValue({
       data: { gatewayChainId: 7n, decryptionContract },
-    } as unknown as Awaited<ReturnType<typeof hostConfigAccount.fetchHostConfig>>);
-    vi.spyOn(kmsContextAccount, 'fetchKmsContext').mockResolvedValue({
+    } as unknown as Awaited<ReturnType<typeof zamaHost.fetchHostConfig>>);
+    vi.spyOn(zamaHost, 'fetchKmsContext').mockResolvedValue({
       data: { signers: kmsSigners, thresholds: { publicDecryption: 1 } },
-    } as unknown as Awaited<ReturnType<typeof kmsContextAccount.fetchKmsContext>>);
+    } as unknown as Awaited<ReturnType<typeof zamaHost.fetchKmsContext>>);
 
     const claim = await certify(batch);
 
@@ -204,9 +203,7 @@ describe('cleartextUserDecryptExecution', () => {
     }) as unknown as Parameters<ReturnType<typeof cleartextUserDecryptExecution>['execute']>[0]['session'];
   const entries = [{ handle: permitHandle, ownerAddress: bytes(signer), encryptedStore: identity(0xea) }];
   const kmsContext = (destroyed: boolean) =>
-    ({ data: { destroyed, signers: [kmsSigner] } }) as unknown as Awaited<
-      ReturnType<typeof kmsContextAccount.fetchKmsContext>
-    >;
+    ({ data: { destroyed, signers: [kmsSigner] } }) as unknown as Awaited<ReturnType<typeof zamaHost.fetchKmsContext>>;
   const execute = (
     options?: RelayerUserDecryptOptions,
     { attempts, start = now - 10n }: { attempts?: number; start?: bigint } = {},
@@ -226,9 +223,9 @@ describe('cleartextUserDecryptExecution', () => {
     return (error as SolanaUserDecryptRunError).rejection;
   };
   const hostOnChain = (chainId: bigint) =>
-    vi.mocked(hostConfigAccount.fetchHostConfig).mockResolvedValue({
+    vi.mocked(zamaHost.fetchHostConfig).mockResolvedValue({
       data: { chainId, gatewayChainId, decryptionContract },
-    } as unknown as Awaited<ReturnType<typeof hostConfigAccount.fetchHostConfig>>);
+    } as unknown as Awaited<ReturnType<typeof zamaHost.fetchHostConfig>>);
   const badSignature = () =>
     vi.mocked(envelope.verifySolanaPermitSignature).mockImplementation(() => {
       throw new Error('bad signature');
@@ -236,9 +233,9 @@ describe('cleartextUserDecryptExecution', () => {
 
   beforeEach(() => {
     vi.useFakeTimers();
-    vi.spyOn(hostConfigAccount, 'fetchHostConfig');
+    vi.spyOn(zamaHost, 'fetchHostConfig');
     hostOnChain(hostChainId);
-    vi.spyOn(kmsContextAccount, 'fetchKmsContext').mockResolvedValue(kmsContext(false));
+    vi.spyOn(zamaHost, 'fetchKmsContext').mockResolvedValue(kmsContext(false));
     vi.spyOn(storeValues, 'fetchCleartextStoreValue').mockResolvedValue(new Uint8Array([1]));
     vi.spyOn(envelope, 'verifySolanaPermitSignature').mockReturnValue(undefined);
     vi.spyOn(authorization, 'solanaRelayerDelegationRefusal').mockResolvedValue(undefined);
@@ -309,7 +306,7 @@ describe('cleartextUserDecryptExecution', () => {
   });
 
   it("retries a window the gateway refuses, before the Connector's checks", async () => {
-    vi.mocked(kmsContextAccount.fetchKmsContext).mockResolvedValue(kmsContext(true));
+    vi.mocked(zamaHost.fetchKmsContext).mockResolvedValue(kmsContext(true));
     for (const start of [now + 600n, now - 3_700n]) {
       expect(await firstRejection(start)).toMatchObject({ kind: 'failed', label: 'internal_server_error' });
     }
@@ -318,14 +315,12 @@ describe('cleartextUserDecryptExecution', () => {
 
   it('judges every attempt against the KMS context as it is then', async () => {
     lagOnce();
-    vi.mocked(kmsContextAccount.fetchKmsContext)
-      .mockResolvedValueOnce(kmsContext(false))
-      .mockResolvedValue(kmsContext(true));
+    vi.mocked(zamaHost.fetchKmsContext).mockResolvedValueOnce(kmsContext(false)).mockResolvedValue(kmsContext(true));
     const outcome = execute().catch((error: unknown) => error);
     await untilBackoff();
     await vi.advanceTimersByTimeAsync(2_000);
     expect(String(await outcome)).toMatch(/KmsContextDestroyed: KMS context .* is destroyed/);
-    expect(kmsContextAccount.fetchKmsContext).toHaveBeenCalledTimes(2);
+    expect(zamaHost.fetchKmsContext).toHaveBeenCalledTimes(2);
   });
 
   it('answers once the leaf record catches up', async () => {
@@ -340,8 +335,8 @@ describe('cleartextUserDecryptExecution', () => {
     const controller = new AbortController();
     controller.abort();
     await expect(execute({ signal: controller.signal })).rejects.toBeInstanceOf(RelayerAbortError);
-    expect(kmsContextAccount.fetchKmsContext).not.toHaveBeenCalled();
-    expect(hostConfigAccount.fetchHostConfig).not.toHaveBeenCalled();
+    expect(zamaHost.fetchKmsContext).not.toHaveBeenCalled();
+    expect(zamaHost.fetchHostConfig).not.toHaveBeenCalled();
   });
 
   it('stops waiting between attempts when the signal aborts', async () => {
@@ -351,12 +346,12 @@ describe('cleartextUserDecryptExecution', () => {
     await untilBackoff();
     controller.abort();
     expect(await outcome).toBeInstanceOf(RelayerAbortError);
-    expect(kmsContextAccount.fetchKmsContext).toHaveBeenCalledTimes(1);
+    expect(zamaHost.fetchKmsContext).toHaveBeenCalledTimes(1);
   });
 
   it('ends an attempt stalled on a host read at the caller timeout, and aborts the read', async () => {
     const { signals, read } = stalled();
-    vi.mocked(kmsContextAccount.fetchKmsContext).mockImplementation(read);
+    vi.mocked(zamaHost.fetchKmsContext).mockImplementation(read);
     const outcome = execute({ timeout: 1_000 }).catch((error: unknown) => error);
     await until(() => signals.length > 0);
     await vi.advanceTimersByTimeAsync(1_000);

@@ -9,7 +9,7 @@ import {
   getCancelDispatchInstructionDataDecoder,
 } from './internal/generated/confidentialBatcher/instructions/cancelDispatch.js';
 import { CONFIDENTIAL_BATCHER_PROGRAM_ADDRESS } from './internal/generated/confidentialBatcher/programAddress.js';
-import { ZAMA_HOST_PROGRAM_ADDRESS } from '@fhevm/sdk/solana/host';
+import { ZAMA_HOST_PROGRAM_ADDRESS } from '@fhevm/solana-zama-host';
 import { CONFIDENTIAL_TOKEN_PROGRAM_ADDRESS } from '@fhevm/confidential-token';
 
 const utf8 = (value: string): Uint8Array => new TextEncoder().encode(value);

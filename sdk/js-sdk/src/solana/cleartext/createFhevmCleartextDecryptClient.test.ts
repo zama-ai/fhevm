@@ -1,8 +1,7 @@
 import * as authorization from './authorization.js';
 import * as storeValues from './storeValues.js';
 import * as revokePermits from '../actions/revokePermits.js';
-import * as hostConfigAccount from '../internal/generated/zamaHost/accounts/hostConfig.js';
-import * as kmsContextAccount from '../internal/generated/zamaHost/accounts/kmsContext.js';
+import * as zamaHost from '@fhevm/solana-zama-host';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { createSolanaRpc } from '@solana/kit';
 import type { FhevmSolanaChain } from '../../core/types/fhevmSolanaChain.js';
@@ -49,12 +48,12 @@ describe('createFhevmCleartextDecryptClient', () => {
   it('signs a permit and answers a user decryption without the KMS WASM', async () => {
     setFhevmRuntimeConfig({});
     vi.spyOn(revokePermits, 'fetchSolanaPermitInvalidation').mockResolvedValue(0n);
-    vi.spyOn(hostConfigAccount, 'fetchHostConfig').mockResolvedValue({
+    vi.spyOn(zamaHost, 'fetchHostConfig').mockResolvedValue({
       data: { chainId: chain.id, gatewayChainId: 7n, decryptionContract },
-    } as unknown as Awaited<ReturnType<typeof hostConfigAccount.fetchHostConfig>>);
-    vi.spyOn(kmsContextAccount, 'fetchKmsContext').mockResolvedValue({
+    } as unknown as Awaited<ReturnType<typeof zamaHost.fetchHostConfig>>);
+    vi.spyOn(zamaHost, 'fetchKmsContext').mockResolvedValue({
       data: { destroyed: false, signers: [kmsSigner] },
-    } as unknown as Awaited<ReturnType<typeof kmsContextAccount.fetchKmsContext>>);
+    } as unknown as Awaited<ReturnType<typeof zamaHost.fetchKmsContext>>);
     vi.spyOn(authorization, 'solanaRelayerDelegationRefusal').mockResolvedValue(undefined);
     vi.spyOn(authorization, 'judgeSolanaUserDecryption').mockResolvedValue({ authorized: true });
     vi.spyOn(storeValues, 'fetchCleartextStoreValue').mockResolvedValue(Uint8Array.of(42));

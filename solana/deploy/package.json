@@ -3,9 +3,11 @@
   "private": true,
   "type": "module",
   "scripts": {
+    "postinstall": "rm -rf node_modules/@fhevm/solana-zama-host && ln -s ../../../clients/zama-host node_modules/@fhevm/solana-zama-host",
     "check": "tsc --noEmit"
   },
   "dependencies": {
+    "@fhevm/solana-zama-host": "file:../clients/zama-host",
     "@solana/kit": "6.10.0",
     "@solana/program-client-core": "6.10.0",
     "viem": "^2.46.3"

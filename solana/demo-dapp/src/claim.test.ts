@@ -1,5 +1,5 @@
 import { appendTransientStoreInstructions, prepareTransientStore } from '@fhevm/sdk/solana';
-import { ZAMA_HOST_PROGRAM_ADDRESS } from '@fhevm/sdk/solana/host';
+import { ZAMA_HOST_PROGRAM_ADDRESS } from '@fhevm/solana-zama-host';
 import { address } from '@solana/kit';
 import { beforeEach, describe, expect, test, vi } from 'vitest';
 

@@ -30,10 +30,14 @@ import { abortableSleep } from '../../core/base/timeout.js';
 import { createSolanaUserDecryptDeadline } from '../userDecrypt/deadline.js';
 import { verifySolanaUserDecryptPlaintexts } from '../userDecrypt/response.js';
 import { solanaPublicDecryptExtraData } from '../actions/publicDecryptCertificate.js';
-import { findHostConfigPda } from '../internal/generated/zamaHost/pdas/hostConfig.js';
-import { findKmsContextPda } from '../internal/generated/zamaHost/pdas/kmsContext.js';
-import { fetchHostConfig, type HostConfig } from '../internal/generated/zamaHost/accounts/hostConfig.js';
-import { fetchKmsContext, type KmsContext } from '../internal/generated/zamaHost/accounts/kmsContext.js';
+import {
+  fetchHostConfig,
+  fetchKmsContext,
+  findHostConfigPda,
+  findKmsContextPda,
+  type HostConfig,
+  type KmsContext,
+} from '@fhevm/solana-zama-host';
 import { solanaHostProgram } from '../clients/createFhevmBaseClient.js';
 import { signAsCleartextParty } from './parties.js';
 import { verifySolanaPermitSignature } from '../permit/envelope.js';

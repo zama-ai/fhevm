@@ -14,14 +14,15 @@ import type { RelayerPublicDecryptOptions } from '../../core/types/relayer.js';
 import type { SolanaPublicDecryptCertifier, SolanaPublicHandleEntry } from './publicDecryptCertificate.js';
 import { MAX_SOLANA_DECRYPT_HANDLES } from '../userDecrypt/request.js';
 import { solanaPublicDecryptExtraData } from './publicDecryptCertificate.js';
-import { findHostConfigPda } from '../internal/generated/zamaHost/pdas/hostConfig.js';
-import { findKmsContextPda } from '../internal/generated/zamaHost/pdas/kmsContext.js';
-import { getHostConfigDecoder, HOST_CONFIG_DISCRIMINATOR } from '../internal/generated/zamaHost/accounts/hostConfig.js';
 import {
+  findHostConfigPda,
+  findKmsContextPda,
+  getHostConfigDecoder,
   getKmsContextDecoder,
   getKmsContextEncoder,
+  HOST_CONFIG_DISCRIMINATOR,
   KMS_CONTEXT_DISCRIMINATOR,
-} from '../internal/generated/zamaHost/accounts/kmsContext.js';
+} from '@fhevm/solana-zama-host';
 import { keccak_256 } from '@noble/hashes/sha3.js';
 import { bytesToHex, concatBytes, hexToBytes, unsafeBytesEquals } from '../../core/base/bytes.js';
 import { recoverAddress } from '../../core/base/sign.js';

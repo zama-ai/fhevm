@@ -3,7 +3,7 @@ import { base58 } from '@scure/base';
 import { findJoinRecordPda } from './generated/confidentialBatcher/pdas/joinRecord.js';
 
 import { solanaEncryptedStoreAddress } from '@fhevm/sdk/solana';
-import { ZAMA_HOST_PROGRAM_ADDRESS } from '@fhevm/sdk/solana/host';
+import { ZAMA_HOST_PROGRAM_ADDRESS } from '@fhevm/solana-zama-host';
 import { CONFIDENTIAL_BATCHER_PROGRAM_ADDRESS } from './generated/confidentialBatcher/programAddress.js';
 import { CONFIDENTIAL_TOKEN_PROGRAM_ADDRESS, findPendingBurnPda, findTokenAccountPda } from '@fhevm/confidential-token';
 

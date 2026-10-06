@@ -21,6 +21,7 @@
 
 # SDK / Dev-Ex ownership
 /sdk/js-sdk/ @zama-ai/dev-ex
+/solana/clients/zama-host/ @zama-ai/dev-ex
 /library-solidity/ @zama-ai/dev-ex
 /relayer/ @zama-ai/dev-ex
 /relayer-http/ @zama-ai/dev-ex

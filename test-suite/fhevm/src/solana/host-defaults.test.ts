@@ -1,7 +1,9 @@
 import { expect, test } from 'bun:test';
 import { address, createNoopSigner, getProgramDerivedAddress } from '@solana/kit';
-import { getInitializeHostConfigInstructionAsync } from '../../../../solana/deploy/src/generated/zamaHost/instructions/initializeHostConfig';
-import { getDefineKmsContextInstructionAsync } from '../../../../solana/deploy/src/generated/zamaHost/instructions/defineKmsContext';
+import {
+  getDefineKmsContextInstructionAsync,
+  getInitializeHostConfigInstructionAsync,
+} from '@fhevm/solana-zama-host';
 
 const programAddress = address('11111111111111111111111111111111');
 const admin = createNoopSigner(programAddress);

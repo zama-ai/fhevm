@@ -3,15 +3,17 @@ import { describe, expect, test } from 'bun:test';
 
 import { BRINGUP_KMS_CONTEXT_ID, type GatewayBootstrapInputs } from './addresses';
 import { bootstrapZamaHost, kmsCertificateThreshold, lifecycleComposeProject } from './deploy';
-import { getHostConfigEncoder } from '../../../../solana/deploy/src/generated/zamaHost/accounts/hostConfig';
-import { KMS_CONTEXT_DISCRIMINATOR } from '../../../../solana/deploy/src/generated/zamaHost/accounts/kmsContext';
 import {
+  findHostConfigPda,
+  findKmsContextPda,
+  findRandNoncePda,
   getDefineKmsContextInstructionDataDecoder,
   getDefineKmsContextInstructionDataEncoder,
-} from '../../../../solana/deploy/src/generated/zamaHost/instructions/defineKmsContext';
-import { getInitializeHostConfigInstructionDataDecoder } from '../../../../solana/deploy/src/generated/zamaHost/instructions/initializeHostConfig';
-import { findHostConfigPda, findKmsContextPda, findRandNoncePda } from '../../../../solana/deploy/src/generated/zamaHost/pdas/index.js';
-import { ZAMA_HOST_PROGRAM_ADDRESS } from '../../../../solana/deploy/src/generated/zamaHost/programAddress.js';
+  getHostConfigEncoder,
+  getInitializeHostConfigInstructionDataDecoder,
+  KMS_CONTEXT_DISCRIMINATOR,
+  ZAMA_HOST_PROGRAM_ADDRESS,
+} from '@fhevm/solana-zama-host';
 import { zamaHostProgramDataAddress } from './provision';
 import type { HostDeployContext } from '../../../../solana/deploy/src/send';
 

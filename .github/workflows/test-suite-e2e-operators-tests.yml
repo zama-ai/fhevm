@@ -146,6 +146,15 @@ jobs:
           username: ${{ secrets.CGR_USERNAME }}
           password: ${{ secrets.CGR_PASSWORD }}
 
+      - name: Setup Node
+        uses: actions/setup-node@395ad3262231945c25e8478fd5baf05154b1d79f # v6.1.0
+        with:
+          node-version: 24
+
+      # The deployer and the CLI import @fhevm/solana-zama-host, a built package.
+      - name: Build the zama-host client
+        run: npm run --prefix solana/clients/zama-host setup
+
       - name: Install Solana deployer dependencies
         working-directory: solana/deploy
         run: bun install --frozen-lockfile

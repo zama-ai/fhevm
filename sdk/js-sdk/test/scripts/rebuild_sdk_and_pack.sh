@@ -3,6 +3,9 @@ set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 ROOT_DIR=$(cd "$SCRIPT_DIR/../.." && pwd)
+# The SDK depends on @fhevm/solana-zama-host by version, so the packed SDK installs only next to
+# a packed zama-host client.
+ZAMA_HOST_DIR=$(cd "$ROOT_DIR/../../solana/clients/zama-host" && pwd)
 MANUAL_PACK_DIRNAME="manual-pack"
 PACK_DIR="$SCRIPT_DIR/../$MANUAL_PACK_DIRNAME"
 
@@ -20,10 +23,14 @@ NC='\033[0m'
 echo -e "${GREEN}Cleaning existing tarball from $PACK_DIR${NC}"
 
 # Clean stale tarballs before packing
-rm -f "$PACK_DIR"/fhevm-sdk-*.tgz
+rm -f "$PACK_DIR"/fhevm-sdk-*.tgz "$PACK_DIR"/fhevm-solana-zama-host-*.tgz
 
 mkdir -p "$PACK_DIR"
 PACK_DIR=$(cd "$PACK_DIR" && pwd)
+
+# The SDK compiles against the package's dist, so build the package first.
+echo -e "${GREEN}Building @fhevm/solana-zama-host...${NC}"
+(cd "$ZAMA_HOST_DIR" && npm run build)
 
 # Build
 if [[ "$SKIP_BUILD" -eq 1 ]]; then
@@ -36,13 +43,17 @@ fi
 # Pack from src/ which holds the real package.json for distribution
 echo -e "${GREEN}Packing project...${NC}"
 (cd "$ROOT_DIR/src" && npm pack --pack-destination "$PACK_DIR")
+(cd "$ZAMA_HOST_DIR" && npm pack --pack-destination "$PACK_DIR")
 
-# Resolve the newly created tarball
+# Resolve the newly created tarballs
 TARBALL=$(echo "$PACK_DIR"/fhevm-sdk-*.tgz)
 [[ -f "$TARBALL" ]] || { echo "Error: tarball not found in $PACK_DIR" >&2; exit 1; }
+ZAMA_HOST_TARBALL=$(echo "$PACK_DIR"/fhevm-solana-zama-host-*.tgz)
+[[ -f "$ZAMA_HOST_TARBALL" ]] || { echo "Error: zama-host tarball not found in $PACK_DIR" >&2; exit 1; }
 
 TARBALL_NAME=$(basename "$TARBALL")
-echo -e "${GREEN}Packed: ${TARBALL_NAME}${NC}"
+ZAMA_HOST_TARBALL_NAME=$(basename "$ZAMA_HOST_TARBALL")
+echo -e "${GREEN}Packed: ${TARBALL_NAME} ${ZAMA_HOST_TARBALL_NAME}${NC}"
 
 # Read peer dep versions from the root package.json
 ETHERS_VERSION=$(node -p "require('$ROOT_DIR/package.json').devDependencies.ethers")
@@ -56,7 +67,8 @@ cat > "$PACK_DIR/package.json" <<EOF
   "version": "1.0.0",
   "private": true,
   "dependencies": {
-    "@fhevm/sdk": "file:${TARBALL_NAME}"
+    "@fhevm/sdk": "file:${TARBALL_NAME}",
+    "@fhevm/solana-zama-host": "file:${ZAMA_HOST_TARBALL_NAME}"
   },
   "devDependencies": {
     "ethers": "${ETHERS_VERSION}",

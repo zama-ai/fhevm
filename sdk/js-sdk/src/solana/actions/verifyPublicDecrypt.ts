@@ -2,7 +2,7 @@ import type { Address, Instruction } from '@solana/kit';
 
 import { hexToBytes } from '../../core/base/bytes.js';
 import type { SolanaPublicDecryptCertificateClaim } from './publicDecryptCertificate.js';
-import { getVerifyPublicDecryptInstructionAsync } from '../internal/generated/zamaHost/instructions/verifyPublicDecrypt.js';
+import { getVerifyPublicDecryptInstructionAsync } from '@fhevm/solana-zama-host';
 
 /**
  * The certificate payload the stateless host verifier consumes, decoded from a relayer

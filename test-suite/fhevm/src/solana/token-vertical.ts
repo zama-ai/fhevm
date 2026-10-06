@@ -10,7 +10,7 @@ import { getAddressEncoder, getProgramDerivedAddress, type Address, type Transac
 
 import { associatedTokenAddress, SPL_TOKEN_PROGRAM_ADDRESS } from "./spl";
 import { BRINGUP_KMS_CONTEXT_ID } from "./addresses";
-import { findKmsContextPda } from "../../../../solana/deploy/src/generated/zamaHost/pdas/index.js";
+import { findKmsContextPda } from "@fhevm/solana-zama-host";
 import { certificateCleartext, type PublicDecryptCertificate } from "./public-decrypt";
 import { hostConfigAddress, type SolanaProvisioningContext } from "./provision";
 import { vaultModule, sdkVerifyModule } from "./lazy-modules";

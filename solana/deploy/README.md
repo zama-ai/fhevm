@@ -74,6 +74,8 @@ and stop that Job before releasing the lock; never delete it to bypass another o
 ## Program commands
 
 ```sh
+# `check` and the CLI import @fhevm/solana-zama-host, so build it first.
+npm run --prefix solana/clients/zama-host setup
 bun install --cwd solana/deploy --frozen-lockfile
 bash solana/scripts/build-programs.sh preview-env zama_host confidential_token
 docker build -f solana/deploy/Dockerfile -t solana-programs:<sha> .

@@ -122,12 +122,7 @@
       "import": "./_esm/core/actions/host/index.js",
       "default": "./_cjs/core/actions/host/index.js"
     },
-    "./package.json": "./package.json",
-    "./solana/host": {
-      "types": "./_types/solana/host.d.ts",
-      "import": "./_esm/solana/host.js",
-      "default": "./_cjs/solana/host.js"
-    }
+    "./package.json": "./package.json"
   },
   "peerDependencies": {
     "ethers": ">=6.8.0",
@@ -146,6 +141,7 @@
     }
   },
   "dependencies": {
+    "@fhevm/solana-zama-host": "0.15.0-0",
     "@noble/curves": "2.0.1",
     "@noble/hashes": "2.0.1",
     "@scure/base": "1.2.6",

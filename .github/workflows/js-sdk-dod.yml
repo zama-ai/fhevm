@@ -26,6 +26,8 @@ on:
       - feature/solana
     paths:
       - "sdk/js-sdk/**"
+      # The zama-host client the SDK depends on, built by the SDK's postinstall.
+      - "solana/clients/zama-host/**"
       - ".github/workflows/js-sdk-dod.yml"
   workflow_dispatch:
     inputs:

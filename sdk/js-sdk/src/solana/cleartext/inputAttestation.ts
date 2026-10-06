@@ -13,8 +13,7 @@ import { createCoprocessorEip712Domain } from '../../core/coprocessor/createCopr
 import { InputProofError } from '../../core/errors/InputProofError.js';
 import { unpackWithProofPacked } from '../../core/modules/encrypt/mock.js';
 import { solanaHostProgram } from '../clients/createFhevmBaseClient.js';
-import { findHostConfigPda } from '../internal/generated/zamaHost/pdas/hostConfig.js';
-import { fetchHostConfig } from '../internal/generated/zamaHost/accounts/hostConfig.js';
+import { fetchHostConfig, findHostConfigPda } from '@fhevm/solana-zama-host';
 import { signAsCleartextParty } from './parties.js';
 import { CIPHERTEXT_VERIFICATION_TYPE, INPUT_VALUE_LEN } from '../internal/hostConstants.js';
 import { uint256ToBytes32 } from '../../core/base/uint.js';

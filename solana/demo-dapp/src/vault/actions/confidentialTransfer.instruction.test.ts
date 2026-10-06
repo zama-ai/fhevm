@@ -1,5 +1,5 @@
 import { INSTRUCTIONS_SYSVAR_ADDRESS, prepareTransientStore } from '@fhevm/sdk/solana';
-import { ZAMA_HOST_PROGRAM_ADDRESS } from '@fhevm/sdk/solana/host';
+import { ZAMA_HOST_PROGRAM_ADDRESS } from '@fhevm/solana-zama-host';
 import { describe, expect, it } from 'vitest';
 
 import { AccountRole, address, type Address, type TransactionSigner } from '@solana/kit';

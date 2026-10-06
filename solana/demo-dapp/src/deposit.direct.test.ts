@@ -1,8 +1,10 @@
 import { beforeEach, describe, expect, test, vi } from 'vitest';
 import { address, generateKeyPairSigner, getCompiledTransactionMessageDecoder, decompileTransactionMessage, type Blockhash } from '@solana/kit';
-import { OPEN_TRANSIENT_STORE_DISCRIMINATOR } from '@fhevm/sdk/solana/host';
-import { CLOSE_TRANSIENT_STORE_DISCRIMINATOR } from '@fhevm/sdk/solana/host';
-import { ZAMA_HOST_PROGRAM_ADDRESS } from '@fhevm/sdk/solana/host';
+import {
+  CLOSE_TRANSIENT_STORE_DISCRIMINATOR,
+  OPEN_TRANSIENT_STORE_DISCRIMINATOR,
+  ZAMA_HOST_PROGRAM_ADDRESS,
+} from '@fhevm/solana-zama-host';
 
 const mocks = vi.hoisted(() => ({
   encryptValues: vi.fn(),

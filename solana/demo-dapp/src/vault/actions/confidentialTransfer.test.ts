@@ -25,7 +25,7 @@ import {
 import { base58 } from '@scure/base';
 
 import { confidentialTransfer, type SolanaConfidentialTransferParameters } from './confidentialTransfer.js';
-import { ZAMA_HOST_PROGRAM_ADDRESS } from '@fhevm/sdk/solana/host';
+import { ZAMA_HOST_PROGRAM_ADDRESS } from '@fhevm/solana-zama-host';
 import { associatedTokenAddress, TOKEN_PROGRAM_ADDRESS } from '../internal/tokenAccounts.js';
 import { CONFIDENTIAL_TOKEN_PROGRAM_ADDRESS } from '@fhevm/confidential-token';
 

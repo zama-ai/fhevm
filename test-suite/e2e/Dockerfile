@@ -43,6 +43,8 @@ RUN npm ci && \
 COPY library-solidity ./library-solidity
 COPY test-suite/e2e ./test-suite/e2e
 COPY sdk/js-sdk ./sdk/js-sdk
+# The SDK depends on @fhevm/solana-zama-host; its `npm ci` postinstall builds this client.
+COPY solana/clients/zama-host ./solana/clients/zama-host
 
 # sdk/js-sdk is no longer an npm workspace member: install its own deps
 # standalone using its own lockfile, then point test-suite/e2e's @fhevm/sdk at

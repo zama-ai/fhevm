@@ -7,8 +7,10 @@
  */
 
 export * from './closeTransientStore.js';
+export * from './defineKmsContext.js';
 export * from './delegateForUserDecryption.js';
 export * from './fheExecute.js';
+export * from './initializeHostConfig.js';
 export * from './makeStoreHandlePublic.js';
 export * from './openTransientStore.js';
 export * from './revokeDelegationForUserDecryption.js';

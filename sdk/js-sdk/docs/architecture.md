@@ -164,9 +164,10 @@ request; they never prompt the wallet again. Public decryption follows the EVM r
 HTTP/poll timeout budget. Its signal also cancels account reads; RPC timeouts remain
 the native transport's policy.
 
-`@fhevm/sdk/solana/host` separately exposes the selected generated host instruction
-builders, codecs and PDA finder. Applications and the demo consume package
-exports rather than SDK source paths or internal runtime actions. This PoC cleanup
+The generated zama-host instruction builders, codecs and PDA finders live in the
+`@fhevm/solana-zama-host` package (`solana/clients/zama-host`). The SDK depends on
+it and does not re-export it. Applications and the demo import it directly rather
+than SDK source paths or internal runtime actions. This PoC cleanup
 intentionally removes the formerly exported low-level permit and user-decrypt
 helpers. No compatibility aliases are retained; consumers use the client actions.
 
