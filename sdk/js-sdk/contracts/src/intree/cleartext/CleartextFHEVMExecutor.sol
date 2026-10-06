@@ -73,16 +73,13 @@ contract CleartextFHEVMExecutor is FHEVMExecutor {
     function trivialEncrypt(uint256 pt, FheType toType) public override returns (bytes32 result) {
         // result = super.trivialEncrypt(pt, toType);
         // plaintexts[result] = CleartextArithmetic.normalizePlaintextToType(pt, uint8(toType));
-        uint256 supportedTypes = (1 << uint8(FheType.Bool)) + (1 << uint8(FheType.Uint8)) + (1 << uint8(FheType.Uint16))
-            + (1 << uint8(FheType.Uint32)) + (1 << uint8(FheType.Uint64)) + (1 << uint8(FheType.Uint128))
-            + (1 << uint8(FheType.Uint160)) + (1 << uint8(FheType.Uint256));
-
-        if ((1 << uint8(toType)) & supportedTypes == 0) revert UnsupportedType();
+        // As in production: UnsupportedType for an unsupported type, ScalarOutOfRange for a value wider than it.
+        _checkScalarRange(pt, toType);
         result = keccak256(abi.encodePacked(Operators.trivialEncrypt, pt, toType, acl, block.chainid));
         result = _appendMetadataToPrehandle(result, toType);
         hcuLimit.checkHCUForTrivialEncrypt(toType, result, msg.sender);
         //acl.allowTransient(result, msg.sender);
-        acl.allowTransientWithCleartext(result, msg.sender, CleartextArithmetic.normalizePlaintextToType(pt, toType));
+        acl.allowTransientWithCleartext(result, msg.sender, pt);
 
         emit TrivialEncrypt(msg.sender, pt, toType, result);
     }
@@ -180,6 +177,8 @@ contract CleartextFHEVMExecutor is FHEVMExecutor {
 
             rhsValue = rhsCleartext;
         } else {
+            _checkScalarRange(uint256(rhs), lhsType);
+            if ((op == Operators.fheDiv || op == Operators.fheRem) && rhs == bytes32(0)) revert DivisionByZero();
             rhsValue = uint256(rhs);
         }
 
