@@ -73,15 +73,26 @@ fn dedup_material_requests(requests: &mut Vec<SolanaMaterialRequest>) {
     requests.retain(|request| seen.insert(request.handle));
 }
 
-// Solana computations and ciphertext-material preparation are scheduled as
-// soon as their instruction confirms. The KMS independently validates the live
-// EncryptedStore PDA and any MMR proof before releasing plaintext, so this eager
-// work can waste cycles after a rare rollback but cannot authorize decryption.
+/// Maps one transaction's records to computation logs and material requests. A step output is
+/// allowed, and so becomes a block producer, only when the transaction writes it into an encrypted
+/// store, which is also when it requests the output's material. Every other output dies with the
+/// transaction's TransientStore: the tfhe-worker computes it only for an allowed consumer in the
+/// same transaction, as EVM computes a value that no `Allowed` event persists. The KMS validates the
+/// live EncryptedStore and any MMR proof before releasing plaintext, so work scheduled on a block
+/// that later rolls back is wasted but cannot authorize decryption.
 pub fn normalize_solana_records_for_db(
     records: impl IntoIterator<Item = SolanaHostRecord>,
     transaction_id: TransactionId,
     block: SolanaBlockMeta,
 ) -> Result<(Vec<LogTfhe>, Vec<SolanaMaterialRequest>), String> {
+    let records: Vec<SolanaHostRecord> = records.into_iter().collect();
+    let stored: HashSet<Handle> = records
+        .iter()
+        .filter_map(|record| match record {
+            SolanaHostRecord::MaterialRequest(request) => Some(request.handle),
+            _ => None,
+        })
+        .collect();
     let mut tfhe_logs = Vec::new();
     let mut material_requests = Vec::new();
     for (record_index, record) in records.into_iter().enumerate() {
@@ -132,7 +143,12 @@ pub fn normalize_solana_records_for_db(
             "Solana computation in slot {}, transaction ID {transaction_id}, record {record_index}: {reason}",
             block.block_number,
         ))?;
-        tfhe_logs.push(to_log_tfhe(computation, transaction_id, block));
+        tfhe_logs.push(to_log_tfhe(
+            computation,
+            transaction_id,
+            block,
+            &stored,
+        ));
     }
 
     dedup_material_requests(&mut material_requests);
@@ -274,9 +290,15 @@ fn to_log_tfhe(
     computation: Computation,
     transaction_id: TransactionId,
     block: SolanaBlockMeta,
+    stored: &HashSet<Handle>,
 ) -> LogTfhe {
     LogTfhe {
-        allowed_outputs: computation.outputs().iter().copied().collect(),
+        allowed_outputs: computation
+            .outputs()
+            .iter()
+            .copied()
+            .filter(|output| stored.contains(output))
+            .collect(),
         computation,
         transaction_hash: Some(transaction_id),
         block_number: block.block_number,
@@ -799,56 +821,90 @@ mod tests {
                 block_hash: [1; 32],
                 parent_hash: [0; 32],
             },
+            &HashSet::from([handle(3)]),
         );
 
         assert_eq!(log.transaction_hash, Some(tx_id));
         assert_eq!(log.block_number, 42);
         assert_eq!(log.block_timestamp, block_timestamp);
-        assert!(!log.allowed_outputs.is_empty());
+        assert_eq!(log.allowed_outputs, HashSet::from([handle(3)]));
         assert_eq!(log.log_index, None);
         assert!(log.is_executor_minted);
         assert!(log.operand_boundary_mask.is_none());
     }
 
-    #[test]
-    fn compute_is_eager_regardless_of_same_tx_allow_signal() {
-        // Historically, the execution's compute would only be marked
-        // materializable when an allow for its result landed in the same tx.
-        // Under eager compute (RFC-024 Q11), it is unconditionally scheduled;
-        // KMS independently gates plaintext release against Solana ACL state.
-        let tx_id = TransactionId::from([7_u8; 64]);
-        let block_timestamp = PrimitiveDateTime::new(
-            Date::from_calendar_date(2026, Month::May, 9).unwrap(),
-            Time::MIDNIGHT,
-        );
+    fn block() -> SolanaBlockMeta {
+        SolanaBlockMeta {
+            block_number: 42,
+            block_timestamp: PrimitiveDateTime::new(
+                Date::from_calendar_date(2026, Month::May, 9).unwrap(),
+                Time::MIDNIGHT,
+            ),
+            block_hash: [1; 32],
+            parent_hash: [0; 32],
+        }
+    }
 
+    fn trivial(result: u8) -> SolanaHostRecord {
+        SolanaHostRecord::TrivialEncrypt(TrivialEncrypt {
+            version: EVENT_VERSION,
+            plaintext: [result; 32],
+            fhe_type: 5,
+            result: [result; 32],
+        })
+    }
+
+    fn stored(handle: u8) -> SolanaHostRecord {
+        SolanaHostRecord::MaterialRequest(material_request([handle; 32]))
+    }
+
+    #[test]
+    fn only_an_output_its_transaction_stores_is_allowed() {
         let (tfhe_logs, material_requests) = normalize_solana_records_for_db(
-            [
-                SolanaHostRecord::TrivialEncrypt(TrivialEncrypt {
-                    version: EVENT_VERSION,
-                    plaintext: [55; 32],
-                    fhe_type: 5,
-                    result: [3; 32],
-                }),
-                SolanaHostRecord::MaterialRequest(material_request([3; 32])),
-            ],
-            tx_id,
-            SolanaBlockMeta {
-                block_number: 42,
-                block_timestamp,
-                block_hash: [1; 32],
-                parent_hash: [0; 32],
-            },
+            [trivial(3), trivial(4), stored(4)],
+            TransactionId::from([7_u8; 64]),
+            block(),
         )
         .unwrap();
 
-        assert_eq!(tfhe_logs.len(), 1);
         assert!(
-            !tfhe_logs[0].allowed_outputs.is_empty(),
-            "eager compute: schedulable independent of the allow signal"
+            tfhe_logs[0].allowed_outputs.is_empty(),
+            "an output no store write names dies with the transaction"
         );
-        // The persistent handle is queued directly for material preparation.
-        assert_eq!(material_requests.len(), 1);
+        assert_eq!(tfhe_logs[1].allowed_outputs, HashSet::from([handle(4)]));
+        assert_eq!(material_requests, [material_request([4; 32])]);
+    }
+
+    /// Trivial-encrypt handles depend on the plaintext alone, so two executions of one transaction
+    /// can produce the same handle. The listener inserts one row per handle and transaction, the
+    /// first, so it must be allowed when any execution stores the handle.
+    #[test]
+    fn a_handle_produced_twice_is_allowed_when_a_later_execution_stores_it() {
+        let (tfhe_logs, _) = normalize_solana_records_for_db(
+            [trivial(3), trivial(3), stored(3)],
+            TransactionId::from([7_u8; 64]),
+            block(),
+        )
+        .unwrap();
+
+        for log in &tfhe_logs {
+            assert_eq!(log.allowed_outputs, HashSet::from([handle(3)]));
+        }
+    }
+
+    /// `make_store_handle_public` writes a handle an earlier transaction produced, which allows
+    /// none of this transaction's outputs.
+    #[test]
+    fn storing_an_older_handle_allows_no_output() {
+        let (tfhe_logs, material_requests) = normalize_solana_records_for_db(
+            [trivial(3), stored(9)],
+            TransactionId::from([8_u8; 64]),
+            block(),
+        )
+        .unwrap();
+
+        assert!(tfhe_logs[0].allowed_outputs.is_empty());
+        assert_eq!(material_requests, [material_request([9; 32])]);
     }
 
     #[test]
@@ -881,43 +937,6 @@ mod tests {
         assert!(material_requests
             .iter()
             .any(|request| request.handle == handle(2)));
-    }
-
-    #[test]
-    fn unrelated_allow_handle_does_not_affect_eager_compute_result() {
-        // An allow for a DIFFERENT handle is irrelevant either way under eager
-        // compute: this compute is schedulable regardless.
-        let tx_id = TransactionId::from([8_u8; 64]);
-        let block_timestamp = PrimitiveDateTime::new(
-            Date::from_calendar_date(2026, Month::May, 9).unwrap(),
-            Time::MIDNIGHT,
-        );
-
-        let (tfhe_logs, _) = normalize_solana_records_for_db(
-            [
-                SolanaHostRecord::TrivialEncrypt(TrivialEncrypt {
-                    version: EVENT_VERSION,
-                    plaintext: [55; 32],
-                    fhe_type: 5,
-                    result: [3; 32],
-                }),
-                SolanaHostRecord::MaterialRequest(material_request([4; 32])),
-            ],
-            tx_id,
-            SolanaBlockMeta {
-                block_number: 42,
-                block_timestamp,
-                block_hash: [1; 32],
-                parent_hash: [0; 32],
-            },
-        )
-        .unwrap();
-
-        assert_eq!(tfhe_logs.len(), 1);
-        assert!(
-            !tfhe_logs[0].allowed_outputs.is_empty(),
-            "eager compute: always schedulable"
-        );
     }
 
     #[test]
@@ -976,16 +995,8 @@ mod tests {
             "block ingestion assigns indexes across transaction groups"
         );
         assert!(
-            !tfhe_logs[0].allowed_outputs.is_empty(),
-            "eager compute: always schedulable"
-        );
-        assert!(
-            !tfhe_logs[1].allowed_outputs.is_empty(),
-            "eager compute: always schedulable"
-        );
-        assert!(
-            !tfhe_logs[2].allowed_outputs.is_empty(),
-            "eager compute: always schedulable"
+            tfhe_logs.iter().all(|log| log.allowed_outputs.is_empty()),
+            "a transaction that stores nothing allows nothing"
         );
         assert_eq!(tfhe_logs[0].computation.operation(), O::FheTrivialEncrypt);
         assert_eq!(tfhe_logs[1].computation.operation(), O::FheRand);

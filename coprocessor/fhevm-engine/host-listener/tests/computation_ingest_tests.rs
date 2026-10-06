@@ -180,6 +180,7 @@ async fn solana_records_reach_the_shared_sql_and_scheduler_path(
     use host_listener::solana_adapter::{
         hold_back_computations, insert_solana_block_records,
         HeldBackComputation, SolanaBlockMeta, SolanaHostRecord,
+        SolanaMaterialRequest,
     };
     use zama_host::{
         records::{FheMulDiv, TrivialEncrypt},
@@ -223,13 +224,16 @@ async fn solana_records_reach_the_shared_sql_and_scheduler_path(
                     scalar: false,
                     result: [4; 32],
                 }),
+                SolanaHostRecord::MaterialRequest(SolanaMaterialRequest {
+                    handle: Handle::repeat_byte(4),
+                }),
             ],
         )],
         block,
         0,
     )
     .await?;
-    assert_eq!(stats.inserted_records, 2);
+    assert_eq!(stats.inserted_records, 3);
     let row = sqlx::query("SELECT dependencies, is_scalar, operand_boundary_mask, transaction_id, is_allowed FROM computations WHERE output_handle = $1")
         .bind(vec![4_u8; 32]).fetch_one(&mut *tx).await?;
     assert_eq!(
@@ -243,6 +247,17 @@ async fn solana_records_reach_the_shared_sql_and_scheduler_path(
     assert_eq!(row.get::<Vec<u8>, _>("operand_boundary_mask")[31], 2);
     assert_eq!(row.get::<Vec<u8>, _>("transaction_id"), vec![7_u8; 64]);
     assert!(row.get::<bool, _>("is_allowed"));
+    let (intermediate_allowed, intermediate_completed): (bool, bool) =
+        sqlx::query_as(
+            "SELECT is_allowed, is_completed FROM computations WHERE output_handle = $1",
+        )
+        .bind(vec![1_u8; 32])
+        .fetch_one(&mut *tx)
+        .await?;
+    assert!(
+        !intermediate_allowed && intermediate_completed,
+        "an output the transaction does not store is computed only for its consumer"
+    );
     let producers: Vec<(Vec<u8>, i64, Vec<u8>)> = sqlx::query_as(
         "SELECT handle, producer_block_number, producer_block_hash FROM handle_producer_block ORDER BY handle",
     )
@@ -250,10 +265,8 @@ async fn solana_records_reach_the_shared_sql_and_scheduler_path(
     .await?;
     assert_eq!(
         producers,
-        [[1_u8; 32], [4; 32]]
-            .map(|handle| (handle.to_vec(), 4, vec![5; 32]))
-            .to_vec(),
-        "every Solana output records the slot and block hash that produced it"
+        vec![(vec![4; 32], 4, vec![5; 32])],
+        "only the stored output records the block that produced it"
     );
     assert_eq!(
         sqlx::query_scalar::<_, i64>("SELECT count(*) FROM dependence_chain")
@@ -262,7 +275,7 @@ async fn solana_records_reach_the_shared_sql_and_scheduler_path(
         1
     );
 
-    // A held-back producer becomes the terminal error the tfhe-worker drains its
+    // A held-back intermediate becomes the terminal error the tfhe-worker drains its
     // consumers for; its consumer is left for the worker to drain.
     let held = hold_back_computations(
         &mut tx,
@@ -368,7 +381,7 @@ async fn solana_block_priority_preserves_transaction_origins_replay_and_slow_par
     let ids = [1, 2, 3].map(|n| TransactionId::from([n; 64]));
     let records = vec![
         (ids[0], vec![trivial(1), material(1), material(1)]),
-        (ids[1], vec![add(1, 2)]),
+        (ids[1], vec![add(1, 2), material(2)]),
         (ids[2], vec![trivial(3), material(3)]),
     ];
     let mut tx = pool.begin().await?;
@@ -376,8 +389,8 @@ async fn solana_block_priority_preserves_transaction_origins_replay_and_slow_par
         insert_solana_block_records(&db, &mut tx, records.clone(), block, 1)
             .await?;
     assert_eq!(stats.tfhe_events, 3);
-    assert_eq!(stats.material_requests, 2);
-    assert_eq!(stats.inserted_records, 5);
+    assert_eq!(stats.material_requests, 3);
+    assert_eq!(stats.inserted_records, 6);
     let rows = sqlx::query("SELECT c.output_handle, c.dependence_chain_id, c.schedule_order, c.operand_boundary_mask, d.schedule_priority FROM computations c JOIN dependence_chain d ON c.dependence_chain_id = d.dependence_chain_id ORDER BY c.output_handle")
         .fetch_all(&mut *tx).await?;
     assert_eq!(rows.len(), 3);
@@ -441,8 +454,8 @@ async fn solana_block_priority_preserves_transaction_origins_replay_and_slow_par
         &db,
         &mut tx,
         [
-            (TransactionId::from([4; 64]), vec![add(2, 4)]),
-            (TransactionId::from([5; 64]), vec![add(2, 5)]),
+            (TransactionId::from([4; 64]), vec![add(2, 4), material(4)]),
+            (TransactionId::from([5; 64]), vec![add(2, 5), material(5)]),
         ],
         next,
         10,

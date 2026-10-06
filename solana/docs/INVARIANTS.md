@@ -371,11 +371,11 @@ Pinned by `matches_on_chain_append_and_authorizes`, `one_serving_coprocessor_car
 `an_inconsistent_answer_does_not_replace_a_denial`. A client cannot supply a proof: the request
 (`SolanaUserDecryptRequest`) has no proof field, and `the_decoder_is_strict` rejects trailing bytes.
 
-**31. [HOLDS]** Coprocessor scheduling is decoupled from authorization: eager
-scheduling can waste compute on a minority fork; it can never release
-plaintext.
-Pinned by `compute_is_eager_regardless_of_same_tx_allow_signal` and
-`unrelated_allow_handle_does_not_affect_eager_compute_result`.
+**31. [HOLDS]** Coprocessor scheduling is decoupled from authorization: the
+listener schedules every output a confirmed transaction stores (DD-069), which
+can waste compute on a minority fork; it can never release plaintext.
+Pinned by `only_an_output_its_transaction_stores_is_allowed` and
+`storing_an_older_handle_allows_no_output`.
 
 **32. [GAP]** No reorg unwind on the listener path; minority-fork work is never
 rolled back (safe only because of #31). The operator repair of DD-056 does not

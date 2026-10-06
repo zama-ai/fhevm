@@ -42,7 +42,7 @@ Each component owns exactly one kind of trust decision:
 | Component                      | Where                            | Decides                                                                                                                                                                                                                                                                                                              |
 | ------------------------------ | -------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | `zama-host` program            | `solana/programs/zama-host`      | All on-chain authorization: who may execute on which values, input attestations (threshold secp256k1, verified on-chain), public-decrypt certificates, HCU caps.                                                                                                                                                     |
-| Coprocessor listener + workers | `coprocessor/fhevm-engine`       | Nothing. The listener reconstructs executions from transaction bytes and schedules FHE compute eagerly; the Merkle proof service records the MMR leaves from the same bytes and serves their proofs; a wrong fork wastes compute but cannot release plaintext, and every proof is verified against live on-chain peaks by the connector (INVARIANTS #30, #31).          |
+| Coprocessor listener + workers | `coprocessor/fhevm-engine`       | Nothing. The listener reconstructs executions from transaction bytes and schedules the FHE compute of the outputs a transaction stores; the Merkle proof service records the MMR leaves from the same bytes and serves their proofs; a wrong fork wastes compute but cannot release plaintext, and every proof is verified against live on-chain peaks by the connector (INVARIANTS #30, #31).          |
 | Gateway + relayer              | `gateway-contracts/`, `relayer/` | Routing, fees, and request-shape conformance only. User requests are signed; neither can alter who asks or for what (INVARIANTS #42).                                                                                                                                                                                |
 | KMS connector                  | `kms-connector/`                 | Decrypt authorization. Each KMS party's connector independently re-verifies the user's ed25519 signature, reads the encrypted store from the host chain, fetches the allow leaf's proof from the coprocessors, and verifies it with the same compiled `zama_solana_acl` code the program runs (INVARIANTS #42, #45). |
 | KMS core                       | `zama-ai/kms` repo               | Chain-blind threshold decryption; binds each response to the requester's typed pubkey and encryption key.                                                                                                                                                                                                            |
@@ -84,9 +84,10 @@ trusted for authorization.
   application it runs as is `(program, scope)` — the program proven from the
   authority's seeds, the scope an account that program owns (DD-047). That pair is
   what the HCU meter charges and the deny list names.
-- **Eager scheduling, decoupled authorization.** The coprocessor computes on
-  confirmed (not finalized) state and never unwinds; safety comes from the
-  KMS re-checking the chain at decrypt time (DD-025, DD-034).
+- **Scheduling at confirmed, decoupled authorization.** The coprocessor
+  computes the outputs a transaction stores on confirmed (not finalized) state
+  and never unwinds; safety comes from the KMS re-checking the chain at decrypt
+  time (DD-025, DD-069).
 
 The numbered decision log with rationale and status is
 [`docs/DESIGN_DECISIONS.md`](docs/DESIGN_DECISIONS.md) — read it before

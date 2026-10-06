@@ -20,6 +20,7 @@ later decision replaced only part of a live entry, the replaced wording is under
 | DD-019 Confidential Transfer Persists Only Final Balance And Transferred-Amount ACL Records                | DD-049                       |
 | DD-022 Witness PDAs Created Before The secp Consume (request → consume-once)                               | DD-040, DD-045               |
 | DD-032 `EncryptedValue` + MMR Replaces Keyed-Nonce `AclRecord` (RFC-024)                                   | DD-049                       |
+| DD-034 Eager Compute Scheduling For Solana (Q11 Option A)                                                  | DD-069                       |
 | DD-035 Standalone Untrusted Solana MMR Proof Service                                                       | DD-048                       |
 | DD-036 Burn-Redemption Consume Authorizes By MMR Public-Decrypt Proof, Not Live Handle                     | DD-045                       |
 | DD-037 `fhe_execute` Events — `emit_cpi!`-Only, No `emit!` Log Fallback (DD-033 addendum)                  | DD-038                       |
@@ -434,6 +435,34 @@ handle, `leaf_count`, the peaks and the bump (`181 + 32·peaks` bytes, at most 2
 handle it installs and the host seals one keccak `HistoricalAccessLeaf` per key, then the public
 leaf when the output is `make_public`; a user decrypt of the current handle proves the same leaf a
 historical one does. "Subject" left the vocabulary with the list (GLOSSARY.md).
+
+## DD-034: Eager Compute Scheduling For Solana (Q11 Option A)
+
+Status: replaced by DD-069. Only an output its transaction writes into an EncryptedStore is
+allowed and recorded as a block producer, as on EVM. What follows is decision history.
+
+Context:
+
+Under the old model, ACL "allow" signals gated whether the coprocessor would schedule an FHE
+computation at all. With handles living in Store slots, that gate no
+longer maps cleanly onto MMR-based historical authorization.
+
+Decision:
+
+Solana computations are inserted eager/schedulable immediately. Concrete persistent handles are also
+inserted directly into `pbs_computations` for SnS preparation. The coprocessor does not decide decrypt
+availability; the KMS connector reads the Store and verifies the leaf proof.
+
+Rationale:
+
+Reorg unwind stays unimplemented on the Solana listener path (DD-025/DD-028). A minority-fork
+computation can waste work, but KMS authorization is independent of coprocessor scheduling and material
+preparation.
+
+Consequences:
+
+Coprocessor scheduling and decrypt authorization are decoupled for Solana. Material can be prepared
+before a decrypt request; plaintext is released only after KMS authorization succeeds.
 
 ## DD-035: Standalone Untrusted Solana MMR Proof Service
 

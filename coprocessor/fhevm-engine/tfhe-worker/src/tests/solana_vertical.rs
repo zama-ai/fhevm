@@ -23,12 +23,14 @@ use anchor_spl::token::spl_token;
 use fhevm_engine_common::{tfhe_ops::current_ciphertext_version, types::SupportedFheCiphertexts};
 use host_listener::{
     database::tfhe_event_propagate::{Handle, TransactionId},
-    solana_adapter::{insert_solana_block_records, SolanaBlockMeta, SolanaHostRecord},
+    solana_adapter::{
+        insert_solana_block_records, SolanaBlockMeta, SolanaHostRecord, SolanaMaterialRequest,
+    },
     solana_reconstruct::reconstruct_fhe_execute,
 };
 use litesvm::{types::TransactionMetadata, LiteSVM};
 use serial_test::serial;
-use solana_host_follower::host::{decode_fhe_execute_args, decode_fhe_executed_event};
+use solana_host_follower::host::{host_operations, DecodedInstruction, HostOperation};
 use solana_sdk::{
     account::Account,
     clock::Clock,
@@ -193,9 +195,19 @@ async fn confidential_transfer_reconstructs_computes_and_decrypts(
         &harness.listener_db,
         &mut db_tx,
         [&diverged, &transfer].map(|outcome| {
+            let material_requests = outcome.stored.iter().map(|handle| {
+                SolanaHostRecord::MaterialRequest(SolanaMaterialRequest {
+                    handle: Handle::from(*handle),
+                })
+            });
             (
                 TransactionId::from(outcome.signature),
-                outcome.events.clone(),
+                outcome
+                    .events
+                    .iter()
+                    .cloned()
+                    .chain(material_requests)
+                    .collect(),
             )
         }),
         block_meta(&fixture.svm)?,
@@ -249,6 +261,11 @@ fn run_transfer(
     let transfer = transfer_ix(fixture, outputs, amount_handle);
     let (meta, account_keys, signature) =
         send_with_meta(&mut fixture.svm, &fixture.alice, transfer);
+    let alice_handle = current_handle(&fixture.svm, outputs.alice);
+    let bob_handle = current_handle(&fixture.svm, outputs.bob);
+    let (events, stored) = reconstruct_transfer(fixture, &meta, &account_keys);
+    // Only stored outputs are computed, so both new balances must be store writes.
+    assert!(stored.contains(&alice_handle) && stored.contains(&bob_handle));
     // The final transient store close clears transaction return data. Read the app event here;
     // runtime-tests separately checks the token's immediate CPI return channel.
     let transferred_handle = meta
@@ -268,10 +285,11 @@ fn run_transfer(
         .transferred_handle;
     TransferOutcome {
         signature,
-        alice_handle: current_handle(&fixture.svm, outputs.alice),
-        bob_handle: current_handle(&fixture.svm, outputs.bob),
+        alice_handle,
+        bob_handle,
         transferred_handle,
-        events: reconstruct_transfer_events(fixture, &meta, &account_keys),
+        events,
+        stored,
     }
 }
 
@@ -293,35 +311,51 @@ fn block_meta(svm: &LiteSVM) -> Result<SolanaBlockMeta, Box<dyn std::error::Erro
 struct TransferOutcome {
     signature: Signature,
     events: Vec<SolanaHostRecord>,
+    /// The handles the transfer writes into encrypted stores, in write order.
+    stored: Vec<[u8; 32]>,
     alice_handle: [u8; 32],
     bob_handle: [u8; 32],
     transferred_handle: [u8; 32],
 }
 
-fn reconstruct_transfer_events(
+/// The transfer's computation records and the handles it stores, decoded as the listener decodes
+/// a transaction's host instructions.
+fn reconstruct_transfer(
     fixture: &TokenFixture,
     meta: &TransactionMetadata,
     account_keys: &[Pubkey],
-) -> Vec<SolanaHostRecord> {
-    let mut host_instructions = meta
+) -> (Vec<SolanaHostRecord>, Vec<[u8; 32]>) {
+    let host_instructions: Vec<DecodedInstruction> = meta
         .inner_instructions
         .iter()
         .flatten()
         .filter(|inner| *inner.instruction.program_id(account_keys) == fixture.host_program_id)
-        .map(|inner| inner.instruction.data.as_slice());
-    let batch = host_instructions
-        .by_ref()
-        .find_map(decode_fhe_execute_args)
-        .expect("confidential transfer must CPI into zama-host fhe_execute");
-    let event = host_instructions
-        .find_map(decode_fhe_executed_event)
-        .expect("fhe_execute must emit its FheExecutedEvent");
+        .map(|inner| DecodedInstruction {
+            data: inner.instruction.data.clone(),
+            accounts: inner
+                .instruction
+                .accounts
+                .iter()
+                .map(|&index| account_keys[usize::from(index)].to_bytes())
+                .collect(),
+        })
+        .collect();
     let clock = fixture.svm.get_sysvar::<Clock>();
+    let operations = host_operations(&host_instructions, clock.slot)
+        .expect("the token's host instructions must decode");
+    let [HostOperation::FheExecute {
+        args: batch,
+        event,
+        store_writes,
+    }] = operations.as_slice()
+    else {
+        panic!("confidential transfer must CPI into zama-host fhe_execute once");
+    };
     assert_eq!(event.previous_bank_hash, PREVIOUS_BANK_HASH);
     assert_eq!(event.unix_timestamp, clock.unix_timestamp);
     let rebuilt = reconstruct_fhe_execute(
-        &batch,
-        &event,
+        batch,
+        event,
         host::ID,
         host::SOLANA_POC_CHAIN_ID,
         &mut std::collections::HashSet::new(),
@@ -332,7 +366,8 @@ fn reconstruct_transfer_events(
         "the listener must re-derive every handle the host emitted: {:?}",
         rebuilt.mismatches
     );
-    rebuilt.records
+    let stored = store_writes.iter().map(|write| write.handle).collect();
+    (rebuilt.records, stored)
 }
 
 struct TokenFixture {
