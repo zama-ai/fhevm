@@ -17,7 +17,7 @@ use anyhow::anyhow;
 use connector_utils::{
     monitoring::otlp::PropagationContext,
     types::{
-        KMS_CONTEXT_COUNTER_BASE, ProtocolEvent,
+        ProtocolEvent,
         db::{EventType, RequestSource, invalidate_kms_context, invalidate_kms_epoch},
     },
 };
@@ -31,6 +31,7 @@ use fhevm_host_bindings::{
         ProtocolConfigEvents, ProtocolConfigInstance,
     },
 };
+use kms_context::KMS_CONTEXT_COUNTER_BASE;
 use sqlx::{Pool, Postgres};
 use std::collections::HashSet;
 use tokio::select;

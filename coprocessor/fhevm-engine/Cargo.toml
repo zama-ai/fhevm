@@ -22,6 +22,7 @@ edition = "2021"
 license = "BSD-3-Clause-Clear"
 
 [workspace.dependencies]
+zama-solana-merkle-proofs = { path = "../../solana/crates/zama-solana-merkle-proofs" }
 alloy = { version = "2.2.0", default-features = false, features = [
     "essentials",
     "std",

@@ -26,8 +26,8 @@ use kms_worker::core::solana::{
     SolanaHost,
     pipeline::AuthorizationContext,
     proof::{
-        CoprocessorProofClient, HostProofReader, LeafKind, LeafQuery, MerkleProofOutcome,
-        ProofReadError, encode_merkle_proof_request, proof_http_client,
+        CoprocessorProofClient, HostProofReader, LeafKind, LeafQuery, ProofReadError,
+        encode_merkle_proof_request, proof_http_client,
     },
     snapshot::{
         AccountsRead, DerivedAddress, HostStateReader, ObservedRow, ObservedRows, SnapshotAccount,
@@ -49,6 +49,7 @@ use zama_solana_acl::{
     encode_user_decryption_delegation, encrypted_store_discriminator,
     historical_access_leaf_commitment, mmr_append, mmr_build_proof, public_decrypt_leaf_commitment,
 };
+use zama_solana_merkle_proofs::MerkleProofOutcome;
 use zama_solana_permit::{
     Identity, KmsRouting, PermitFields, PermitWireFields, Signature, TRANSPORT_KEY_LEN,
     build_envelope,

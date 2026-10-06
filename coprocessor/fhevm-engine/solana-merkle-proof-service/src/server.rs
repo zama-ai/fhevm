@@ -46,17 +46,21 @@ use prometheus::{
     register_histogram, register_int_counter_vec, Histogram, IntCounterVec,
 };
 use request_authorization::Authorization;
-use serde::{de::DeserializeOwned, Deserialize, Serialize};
-use serde_bytes::ByteArray;
+use serde::{de::DeserializeOwned, Serialize};
 use sqlx::PgPool;
 use tokio::{net::TcpListener, sync::Semaphore};
 use tokio_util::sync::CancellationToken;
 use tracing::{error, info};
 use utoipa::{
     openapi::security::{ApiKey, ApiKeyValue, SecurityScheme},
-    Modify, OpenApi, ToSchema,
+    Modify, OpenApi,
 };
 use zama_solana_acl::mmr_verify;
+use zama_solana_merkle_proofs::{
+    ErrorCode, ErrorResponse, LeafQuery, LeafQueryKind, MerkleProofOutcome,
+    MerkleProofRequest, MerkleProofResponse, MAX_LEAVES_PER_REQUEST,
+    MERKLE_PROOFS_PATH,
+};
 
 use crate::{
     answer_cache::{Admission, AnswerCache},
@@ -67,13 +71,8 @@ use crate::{
     unix_now_secs,
 };
 
-/// Most leaves one request may ask for.
-const MAX_LEAVES_PER_REQUEST: usize = 64;
-
 /// Comfortably above [`MAX_LEAVES_PER_REQUEST`] queries.
 const MAX_REQUEST_BYTES: usize = 64 * 1024;
-
-pub const MERKLE_PROOFS_PATH: &str = "/v1/solana/merkle-proofs";
 
 const CBOR: &str = "application/cbor";
 
@@ -267,134 +266,19 @@ async fn proof_server_healthz(State(state): State<AppState>) -> StatusCode {
     healthz(State(state.pool)).await
 }
 
-// --- Wire types -----------------------------------------------------------------
+// --- HTTP errors -----------------------------------------------------------------
 
-/// Which leaf authorizes the decrypt.
-#[derive(
-    Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize, ToSchema,
-)]
-#[serde(rename_all = "snake_case")]
-pub enum LeafQueryKind {
-    /// A historical-access leaf: `key` was allowed on `handle`.
-    Allowed,
-    /// A public-decrypt leaf: `handle` was made public.
-    Public,
-}
-
-/// One leaf to prove. Byte fields are 32-byte CBOR byte strings.
-#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize, ToSchema)]
-#[serde(rename_all = "camelCase")]
-pub struct LeafQuery {
-    /// The encrypted store account whose MMR holds the leaf.
-    #[serde(with = "serde_bytes")]
-    #[schema(value_type = String, format = Binary)]
-    pub encrypted_store: [u8; 32],
-    #[serde(with = "serde_bytes")]
-    #[schema(value_type = String, format = Binary)]
-    pub handle: [u8; 32],
-    pub kind: LeafQueryKind,
-    /// The allowed key; required for `allowed`, absent for `public`.
-    #[serde(
-        default,
-        skip_serializing_if = "Option::is_none",
-        with = "serde_bytes"
-    )]
-    #[schema(value_type = Option<String>, format = Binary)]
-    pub key: Option<[u8; 32]>,
-}
-
-#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize, ToSchema)]
-#[serde(rename_all = "camelCase")]
-pub struct MerkleProofRequest {
-    /// At most [`MAX_LEAVES_PER_REQUEST`] entries; answered in order.
-    pub leaves: Vec<LeafQuery>,
-}
-
-/// The answer for one queried leaf, in request order.
-#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize, ToSchema)]
-#[serde(rename_all = "camelCase", tag = "status")]
-pub enum MerkleProofOutcome {
-    /// The leaf is recorded. `leafCount` is the history the record had sealed
-    /// when it built the proof; the caller verifies the path against the
-    /// on-chain account's peaks and retries when the record is behind the
-    /// chain (`leafCount` smaller).
-    #[serde(rename_all = "camelCase")]
-    Found {
-        leaf_index: u64,
-        leaf_count: u64,
-        /// Authentication path from the leaf to its peak, 32-byte byte strings.
-        #[schema(value_type = Vec<String>)]
-        siblings: Vec<ByteArray<32>>,
-    },
-    /// The account is recorded but no such leaf is, at `leafCount` leaves. Either
-    /// it was never sealed or the record has not reached the block that sealed it.
-    #[serde(rename_all = "camelCase")]
-    NotFound { leaf_count: u64 },
-    /// The record never saw this account.
-    UnknownAccount,
-    /// This record is known to disagree with the chain for this leaf: the store
-    /// check quarantined the store, or the leaf's commitment or path does not
-    /// match the recorded peaks. The caller asks another coprocessor.
-    Inconsistent,
-}
-
-#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize, ToSchema)]
-#[serde(rename_all = "camelCase")]
-pub struct MerkleProofResponse {
-    pub proofs: Vec<MerkleProofOutcome>,
-}
-
-/// Error codes, in the vocabulary of the Direct HTTP Decryption Endpoint RFC.
-#[derive(
-    Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize, ToSchema,
-)]
-#[serde(rename_all = "snake_case")]
-pub enum ErrorCode {
-    /// Malformed body, missing key, too many leaves.
-    Malformed,
-    /// The request signature is missing, malformed or expired, or its signer is
-    /// not the tx-sender of a node in a live KMS context.
-    SenderAuthenticationFailed,
-    /// The leaf record could not be read or is inconsistent, or the KMS
-    /// tx-sender set is not read yet; retry later.
-    UpstreamTransient,
-    /// The signer is over its leaves per second or holds as many signed
-    /// requests as it may, or no database connection freed in time; ask another
-    /// coprocessor or retry later.
-    RateLimited,
-}
-
-impl ErrorCode {
-    fn http_status(self) -> StatusCode {
-        match self {
-            Self::Malformed => StatusCode::BAD_REQUEST,
-            Self::SenderAuthenticationFailed => StatusCode::UNAUTHORIZED,
-            Self::UpstreamTransient => StatusCode::BAD_GATEWAY,
-            Self::RateLimited => StatusCode::TOO_MANY_REQUESTS,
-        }
-    }
-
-    fn retryable(self) -> bool {
-        matches!(self, Self::UpstreamTransient | Self::RateLimited)
-    }
-
-    /// The code as the wire spells it, for the request metric.
-    fn label(self) -> &'static str {
-        match self {
-            Self::Malformed => "malformed",
-            Self::SenderAuthenticationFailed => "sender_authentication_failed",
-            Self::UpstreamTransient => "upstream_transient",
-            Self::RateLimited => "rate_limited",
-        }
+fn http_status(code: ErrorCode) -> StatusCode {
+    match code {
+        ErrorCode::Malformed => StatusCode::BAD_REQUEST,
+        ErrorCode::SenderAuthenticationFailed => StatusCode::UNAUTHORIZED,
+        ErrorCode::UpstreamTransient => StatusCode::BAD_GATEWAY,
+        ErrorCode::RateLimited => StatusCode::TOO_MANY_REQUESTS,
     }
 }
 
-#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize, ToSchema)]
-#[serde(rename_all = "camelCase")]
-pub struct ErrorResponse {
-    pub code: ErrorCode,
-    pub message: String,
-    pub retryable: bool,
+fn retryable(code: ErrorCode) -> bool {
+    matches!(code, ErrorCode::UpstreamTransient | ErrorCode::RateLimited)
 }
 
 #[derive(Clone)]
@@ -419,11 +303,11 @@ impl HttpError {
 impl IntoResponse for HttpError {
     fn into_response(self) -> Response {
         (
-            self.code.http_status(),
+            http_status(self.code),
             Cbor(ErrorResponse {
                 code: self.code,
                 message: self.message,
-                retryable: self.code.retryable(),
+                retryable: retryable(self.code),
             }),
         )
             .into_response()
@@ -487,7 +371,7 @@ async fn merkle_proofs(
     let status = match &answer {
         Ok(Served { repeat: true, .. }) => "cached",
         Ok(Served { repeat: false, .. }) => "ok",
-        Err(error) => error.code.label(),
+        Err(error) => error.code.as_str(),
     };
     REQUESTS.with_label_values(&[status]).inc();
     REQUEST_DURATION.observe(started.elapsed().as_secs_f64());
@@ -799,7 +683,7 @@ async fn prove_leaf(
     Ok(MerkleProofOutcome::Found {
         leaf_index: proof.leaf_index,
         leaf_count,
-        siblings: proof.siblings.into_iter().map(ByteArray::new).collect(),
+        siblings: proof.siblings,
     })
 }
 
@@ -877,6 +761,17 @@ mod tests {
     /// connector decodes.
     #[test]
     fn wire_matches_the_shared_fixture() {
+        for code in [
+            ErrorCode::Malformed,
+            ErrorCode::SenderAuthenticationFailed,
+            ErrorCode::UpstreamTransient,
+            ErrorCode::RateLimited,
+        ] {
+            assert_eq!(
+                serde_json::to_value(code).expect("serialize error code"),
+                code.as_str()
+            );
+        }
         let fixture: serde_json::Value = serde_json::from_str(
             &std::fs::read_to_string(MERKLE_PROOFS_FIXTURE)
                 .expect("read fixture"),
@@ -916,7 +811,7 @@ mod tests {
                 MerkleProofOutcome::Found {
                     leaf_index: 1,
                     leaf_count: 3,
-                    siblings: vec![ByteArray::new([0x5B; 32])],
+                    siblings: vec![[0x5B; 32]],
                 },
                 MerkleProofOutcome::NotFound { leaf_count: 3 },
                 MerkleProofOutcome::UnknownAccount,
@@ -1244,7 +1139,7 @@ mod tests {
         let found = MerkleProofOutcome::Found {
             leaf_index: 999_999,
             leaf_count: 1_000_000,
-            siblings: vec![ByteArray::new([0x5B; 32]); 20],
+            siblings: vec![[0x5B; 32]; 20],
         };
         let answer = encode_cbor(&MerkleProofResponse {
             proofs: vec![found; MAX_LEAVES_PER_REQUEST],

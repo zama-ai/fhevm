@@ -17,6 +17,7 @@ user-decryption-signature.workspace = true
 kms-context.workspace = true
 request-authorization.workspace = true
 zama-solana-acl.workspace = true
+zama-solana-merkle-proofs.workspace = true
 zama-solana-permit.workspace = true
 zama-solana-request.workspace = true
 

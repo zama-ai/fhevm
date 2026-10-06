@@ -6,24 +6,18 @@ use alloy::primitives::B256;
 use connector_utils::config::KmsWallet;
 use rand::seq::SliceRandom;
 use request_authorization::KeyRegistry;
-use serde::{Deserialize, Serialize};
-use serde_bytes::ByteArray;
 use solana_pubkey::Pubkey;
 use std::{
     future::Future,
     time::{Duration, SystemTime, UNIX_EPOCH},
 };
 use url::Url;
+use zama_solana_merkle_proofs::{
+    ErrorResponse, LeafQuery as WireLeaf, LeafQueryKind as WireLeafKind, MAX_LEAVES_PER_REQUEST,
+    MERKLE_PROOFS_PATH, MerkleProofOutcome, MerkleProofRequest, MerkleProofResponse,
+};
 
 use crate::monitoring::metrics::SOLANA_PROOF_ANSWER_COUNTER;
-
-/// The coprocessor route that answers Merkle proof queries. The same literal as the coprocessor's
-/// `MERKLE_PROOFS_PATH`; the shared vectors pin the request and response bytes.
-pub const MERKLE_PROOFS_PATH: &str = "/v1/solana/merkle-proofs";
-
-/// The coprocessor's cap on queries per read. A validated request stays below it: it has at most
-/// `MAX_REQUEST_HANDLES` entries.
-const MAX_LEAVES_PER_READ: usize = 64;
 
 #[derive(Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Debug)]
 pub enum LeafKind {
@@ -38,30 +32,6 @@ pub struct LeafQuery {
     pub encrypted_store: Pubkey,
     pub handle: B256,
     pub kind: LeafKind,
-}
-
-/// What the record said about one query.
-#[derive(Clone, PartialEq, Eq, Debug, Deserialize)]
-#[serde(
-    rename_all = "camelCase",
-    tag = "status",
-    rename_all_fields = "camelCase"
-)]
-pub enum MerkleProofOutcome {
-    /// `leaf_count` is how many leaves the record had sealed when it built the proof. The
-    /// verifier checks the siblings against the on-chain peaks, not this number.
-    Found {
-        leaf_index: u64,
-        leaf_count: u64,
-        #[serde(deserialize_with = "decode_siblings")]
-        siblings: Vec<[u8; 32]>,
-    },
-    /// The record knows the account and has no such leaf in the history it has sealed.
-    NotFound { leaf_count: u64 },
-    /// The record has never seen this account.
-    UnknownAccount,
-    /// The coprocessor knows its record disagrees with the chain for this leaf.
-    Inconsistent,
 }
 
 /// Implemented by [`CoprocessorProofClient`]; tests drive authorization with canned proofs.
@@ -116,33 +86,7 @@ pub enum ProofReadError {
     ResponseLengthMismatch { requested: usize, returned: usize },
 }
 
-// ------------------------------------------------------------------------------------------
-// The HTTP transport: CBOR bodies over HTTP/2. Field names mirror
-// `coprocessor/fhevm-engine/solana-merkle-proof-service/src/server.rs`.
-
-#[derive(Serialize)]
-struct MerkleProofRequest {
-    leaves: Vec<WireLeaf>,
-}
-
-#[derive(Serialize)]
-#[serde(rename_all = "camelCase")]
-struct WireLeaf {
-    #[serde(with = "serde_bytes")]
-    encrypted_store: [u8; 32],
-    #[serde(with = "serde_bytes")]
-    handle: [u8; 32],
-    kind: WireLeafKind,
-    #[serde(skip_serializing_if = "Option::is_none", with = "serde_bytes")]
-    key: Option<[u8; 32]>,
-}
-
-#[derive(Serialize)]
-#[serde(rename_all = "snake_case")]
-enum WireLeafKind {
-    Allowed,
-    Public,
-}
+// The HTTP transport: CBOR bodies over HTTP/2.
 
 impl From<&LeafQuery> for WireLeaf {
     fn from(query: &LeafQuery) -> Self {
@@ -159,19 +103,6 @@ impl From<&LeafQuery> for WireLeaf {
     }
 }
 
-#[derive(Deserialize)]
-struct MerkleProofResponse {
-    proofs: Vec<MerkleProofOutcome>,
-}
-
-/// The coprocessor's error body, shaped as the Direct HTTP Decryption Endpoint RFC defines it,
-/// read only to report it.
-#[derive(Deserialize)]
-struct ErrorResponse {
-    code: String,
-    message: String,
-}
-
 /// The CBOR body asking for `queries`.
 pub fn encode_merkle_proof_request(queries: &[LeafQuery]) -> Vec<u8> {
     let request = MerkleProofRequest {
@@ -181,16 +112,6 @@ pub fn encode_merkle_proof_request(queries: &[LeafQuery]) -> Vec<u8> {
     ciborium::into_writer(&request, &mut body)
         .expect("a Merkle proof request has no fallible fields");
     body
-}
-
-fn decode_siblings<'de, D: serde::Deserializer<'de>>(
-    deserializer: D,
-) -> Result<Vec<[u8; 32]>, D::Error> {
-    let siblings = Vec::<ByteArray<32>>::deserialize(deserializer)?;
-    if siblings.len() > zama_solana_acl::MAX_MMR_PEAKS {
-        return Err(serde::de::Error::custom("too many proof siblings"));
-    }
-    Ok(siblings.into_iter().map(ByteArray::into_array).collect())
 }
 
 /// Decodes exactly one CBOR item filling `body`.
@@ -343,7 +264,7 @@ impl HostProofReader for CoprocessorProofClient {
         // At most 64 answers, each with at most 64 siblings of 34 bytes and under 128 bytes of
         // other fields.
         const MAX_RESPONSE_BYTES: usize =
-            MAX_LEAVES_PER_READ * (zama_solana_acl::MAX_MMR_PEAKS * 34 + 128);
+            MAX_LEAVES_PER_REQUEST * (zama_solana_acl::MAX_MMR_PEAKS * 34 + 128);
         let mut body = Vec::new();
         while let Some(chunk) = response
             .chunk()
@@ -359,7 +280,7 @@ impl HostProofReader for CoprocessorProofClient {
         if !status.is_success() {
             let error = decode_cbor::<ErrorResponse>(&body).map_or_else(
                 |_| String::new(),
-                |error| format!(" {}: {}", error.code, error.message),
+                |error| format!(" {}: {}", error.code.as_str(), error.message),
             );
             return Err(failed(format!("HTTP {status}{error}")));
         }
@@ -397,7 +318,7 @@ mod tests {
         assert_eq!(fixture["path"], MERKLE_PROOFS_PATH);
         assert_eq!(
             fixture["maxLeavesPerRequest"],
-            serde_json::json!(MAX_LEAVES_PER_READ)
+            serde_json::json!(MAX_LEAVES_PER_REQUEST)
         );
         let queries = [
             LeafQuery {

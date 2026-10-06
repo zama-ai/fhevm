@@ -43,6 +43,7 @@ jobs:
               - solana/crates/program-environment/**
               - solana/crates/zama-fhe/**
               - solana/crates/zama-solana-acl/**
+              - solana/crates/zama-solana-merkle-proofs/**
               - solana/crates/zama-solana-transaction/**
               - solana/crates/solana-ed25519-instruction/**
               # The Merkle proof server's wire tests read the fixture the connector parses.

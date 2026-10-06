@@ -1,0 +1,21 @@
+[package]
+name = "zama-solana-merkle-proofs"
+version = "0.1.0"
+description = "Shared CBOR wire types for Solana Merkle proof requests and responses"
+# Standalone (no workspace inheritance), like zama-solana-acl: the KMS connector
+# Docker builds consume this path dependency without the solana workspace root.
+authors = ["Zama"]
+edition = "2021"
+license = "BSD-3-Clause-Clear"
+
+[features]
+openapi = ["dep:utoipa"]
+
+[dependencies]
+serde = { version = "1", features = ["derive"] }
+serde_bytes = "0.11.19"
+utoipa = { version = "5.4.0", optional = true }
+zama-solana-acl = { path = "../zama-solana-acl" }
+
+[dev-dependencies]
+ciborium = "0.2.2"

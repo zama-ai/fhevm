@@ -31,6 +31,7 @@ kms-context = { path = "../shared/kms-context" }
 request-authorization = { path = "../shared/request-authorization" }
 ciphertext-attestation = { path = "../shared/ciphertext-attestation", features = ["client"] }
 zama-solana-acl = { path = "../solana/crates/zama-solana-acl" }
+zama-solana-merkle-proofs = { path = "../solana/crates/zama-solana-merkle-proofs" }
 zama-solana-permit = { path = "../solana/crates/zama-solana-permit" }
 zama-solana-request = { path = "../solana/crates/zama-solana-request" }
 

@@ -32,6 +32,7 @@ COPY kms-connector ./kms-connector
 # The proxy needs none of the Solana crates, but cargo loads every workspace member's path
 # dependencies (`../solana/crates/*`, see kms-connector/Cargo.toml) even for `-p proxy`.
 COPY solana/crates/zama-solana-acl ./solana/crates/zama-solana-acl
+COPY solana/crates/zama-solana-merkle-proofs ./solana/crates/zama-solana-merkle-proofs
 COPY solana/crates/zama-solana-permit ./solana/crates/zama-solana-permit
 COPY solana/crates/zama-solana-request ./solana/crates/zama-solana-request
 

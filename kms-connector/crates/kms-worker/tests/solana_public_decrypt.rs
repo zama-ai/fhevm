@@ -20,10 +20,7 @@ use alloy::primitives::{B256, U256};
 use connector_utils::types::solana_request::SolanaPublicDecryptionRequest;
 use kms_worker::core::event_processor::{ProcessingError, ProcessingErrorKind, RequestCheckError};
 use kms_worker::core::solana::{
-    SolanaHost,
-    proof::{LeafQuery, MerkleProofOutcome},
-    public_decrypt::check_public_decrypt,
-    snapshot::SolanaRpcClient,
+    SolanaHost, proof::LeafQuery, public_decrypt::check_public_decrypt, snapshot::SolanaRpcClient,
 };
 use mocktail::{StatusCode, server::MockServer};
 use solana_pubkey::Pubkey;
@@ -31,6 +28,7 @@ use solana_support::{
     APP_PROGRAM, AUTHORITY, EncryptedStoreFixture, FHE_TYPE_UINT64, HttpHost, LABEL,
     MERKLE_PROOFS_ROUTE, PROGRAM_ID, handle, proof_client, pubkey, serve_proofs, solana_host,
 };
+use zama_solana_merkle_proofs::MerkleProofOutcome;
 
 /// An account whose current handle was made public, then replaced: the public leaf survives
 /// the update because it names the handle, not the slot the handle occupied.

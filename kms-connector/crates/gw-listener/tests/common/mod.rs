@@ -14,7 +14,7 @@ use connector_utils::{
         },
         setup::TestInstance,
     },
-    types::{KMS_CONTEXT_COUNTER_BASE, ProtocolEventKind, db::ParamsTypeDb},
+    types::{ProtocolEventKind, db::ParamsTypeDb},
 };
 use fhevm_gateway_bindings::decryption::{
     Decryption::{
@@ -34,6 +34,7 @@ use fhevm_host_bindings::{
         KmsContextDestroyed, KmsEpochDestroyed, NewKmsContext, NewKmsEpoch,
     },
 };
+use kms_context::KMS_CONTEXT_COUNTER_BASE;
 
 use gw_listener::core::{Config, EthereumListener, EventListener, GatewayListener};
 use sqlx::{Pool, Postgres, Row, postgres::PgRow};

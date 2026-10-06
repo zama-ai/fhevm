@@ -21,7 +21,7 @@ use kms_worker::core::solana::{
     failure::AuthorizationFailure,
     handle_binding::HandleBindingFailure,
     pipeline::authorize_request,
-    proof::{LeafKind, LeafQuery, MerkleProofOutcome, ProofReadError},
+    proof::{LeafKind, LeafQuery, ProofReadError},
     public_decrypt::{PublicDecryptFailure, check_public_decrypt},
     snapshot::{SnapshotAccount, SnapshotError},
     watermark::{WatermarkFailure, WindowFailure},
@@ -30,6 +30,7 @@ use serde_json::{Value, json};
 use solana_pubkey::Pubkey;
 use solana_support::*;
 use zama_solana_acl::WILDCARD_APP;
+use zama_solana_merkle_proofs::MerkleProofOutcome;
 
 const FIXTURE: &str = concat!(
     env!("CARGO_MANIFEST_DIR"),

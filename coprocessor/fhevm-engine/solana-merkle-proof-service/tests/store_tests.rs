@@ -19,11 +19,7 @@ use solana_host_follower::BlockCheckpoint;
 use solana_merkle_proof_service::kms_tx_senders::{
     KmsTxSenderSet, KmsTxSenders,
 };
-use solana_merkle_proof_service::server::{
-    ErrorCode, ErrorResponse, HttpServer, LeafQuery, LeafQueryKind,
-    MerkleProofOutcome, MerkleProofRequest, MerkleProofResponse,
-    MERKLE_PROOFS_PATH,
-};
+use solana_merkle_proof_service::server::HttpServer;
 use solana_merkle_proof_service::store::{
     leaf_commitment, load_block_leaves, load_checkpoint, load_served_store,
     load_store_cursors, reduce_block_leaves, store_block_leaves,
@@ -35,6 +31,10 @@ use tokio_util::sync::CancellationToken;
 use zama_solana_acl::{
     encrypted_store_discriminator, mmr_append, mmr_verify, EncryptedStore,
     MmrProof,
+};
+use zama_solana_merkle_proofs::{
+    ErrorCode, ErrorResponse, LeafQuery, LeafQueryKind, MerkleProofOutcome,
+    MerkleProofRequest, MerkleProofResponse, MERKLE_PROOFS_PATH,
 };
 
 const ACCOUNT: [u8; 32] = [0xAC; 32];
@@ -283,7 +283,7 @@ async fn leaf_record_round_trips_and_serves_verifiable_proofs(
             siblings,
         } => {
             assert_eq!(*leaf_count, 3);
-            let siblings = siblings.iter().map(|sibling| **sibling).collect();
+            let siblings = siblings.clone();
             assert!(mmr_verify(
                 &recorded_peaks,
                 3,
@@ -484,7 +484,7 @@ async fn prove_leaves_of_a_store(
             handle(leaf_index),
             key(leaf_index),
         );
-        let siblings = siblings.iter().map(|sibling| **sibling).collect();
+        let siblings = siblings.clone();
         assert!(mmr_verify(
             &state.peaks,
             leaves,

@@ -7,7 +7,7 @@
 //! holds no grant, a shorter one may still catch up.
 
 use super::encrypted_store::ResolvedEncryptedStore;
-use super::proof::{HostProofReader, LeafQuery, MerkleProofOutcome, ProofReadError, check_length};
+use super::proof::{HostProofReader, LeafQuery, ProofReadError, check_length};
 use crate::monitoring::metrics::SOLANA_PROOF_ANSWER_COUNTER;
 use alloy::primitives::B256;
 use futures::stream::{FuturesUnordered, StreamExt};
@@ -16,6 +16,7 @@ use std::{cmp::Ordering, time::Duration};
 use zama_solana_acl::{
     AclError, EncryptedStore, MmrProof, authorize_state_historical, authorize_state_public,
 };
+use zama_solana_merkle_proofs::MerkleProofOutcome;
 
 /// How long a proof read may run before the next coprocessor is asked as well. A proof read takes
 /// tens of milliseconds, so a coprocessor slower than this is most likely stalled or overloaded.

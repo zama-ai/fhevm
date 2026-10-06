@@ -5,6 +5,7 @@ members = [
     "crates/solana-ed25519-instruction",
     "crates/zama-fhe",
     "crates/zama-solana-acl",
+    "crates/zama-solana-merkle-proofs",
     "crates/zama-solana-permit",
     "crates/zama-solana-request",
     "crates/zama-solana-transaction",

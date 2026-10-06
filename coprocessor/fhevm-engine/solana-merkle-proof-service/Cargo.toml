@@ -29,7 +29,6 @@ clap = { workspace = true }
 governor = "0.6.3"
 prometheus = { workspace = true }
 serde = { workspace = true, features = ["derive"] }
-serde_bytes = "0.11.19"
 sqlx = { workspace = true }
 thiserror = { workspace = true }
 tokio = { workspace = true }
@@ -49,6 +48,7 @@ request-authorization = { path = "../../../shared/request-authorization" }
 solana-host-follower = { path = "../solana-host-follower" }
 # Leaf commitments and MMR of the leaf record, shared with the on-chain host.
 zama-solana-acl = { path = "../../../solana/crates/zama-solana-acl" }
+zama-solana-merkle-proofs = { workspace = true, features = ["openapi"] }
 
 [dev-dependencies]
 # Encodes host instructions for the indexer tests' blocks.
