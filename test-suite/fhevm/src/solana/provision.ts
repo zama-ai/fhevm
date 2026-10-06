@@ -164,7 +164,7 @@ export const createProvisioningContext = (
     instructions: readonly Instruction[],
     options: SendTransactionOptions = {},
   ): Promise<string> => {
-    const { value: latestBlockhash } = await rpc.getLatestBlockhash().send();
+    const { value: latestBlockhash } = await rpc.getLatestBlockhash({ commitment: 'finalized' }).send();
     const base = setTransactionMessageFeePayerSigner(payer, createTransactionMessage({ version: 0 }));
     const withLifetime = setTransactionMessageLifetimeUsingBlockhash(latestBlockhash, base);
     const message = appendTransactionMessageInstructions(
@@ -175,7 +175,7 @@ export const createProvisioningContext = (
     assertIsTransactionWithBlockhashLifetime(signedTransaction);
     await sendAndConfirm(signedTransaction, {
       commitment: 'finalized',
-      ...(options.skipPreflight ? { skipPreflight: true } : {}),
+      ...(options.skipPreflight ? { skipPreflight: true } : { preflightCommitment: 'finalized' }),
     });
     return getSignatureFromTransaction(signedTransaction);
   };
@@ -242,7 +242,7 @@ export const createSplMint = async (
   params: { readonly authority: TransactionSigner; readonly decimals: number },
 ): Promise<Address> => {
   const mint = await generateKeyPairSigner();
-  const rent = await context.rpc.getMinimumBalanceForRentExemption(SPL_MINT_ACCOUNT_SPACE).send();
+  const rent = await context.rpc.getMinimumBalanceForRentExemption(SPL_MINT_ACCOUNT_SPACE, { commitment: 'finalized' }).send();
   await context.sendTransaction(params.authority, [
     createAccountInstruction({
       payer: params.authority,

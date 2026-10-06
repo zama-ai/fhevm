@@ -352,8 +352,8 @@ export interface SolanaUserDecryptionDelegationRows {
  *
  * @param rpc - The Solana RPC to read through.
  * @param tuple - The delegation tuple.
- * @param config - Standard fetch passthrough, e.g. `{ commitment: 'finalized' }`, plus the
- * `programAddress` of the deployment.
+ * @param config - Standard fetch passthrough, plus the `programAddress` of the deployment. The
+ * reads are at `finalized` unless it names another commitment.
  * @throws If an existing zama-host-owned account does not decode as a delegation record of the
  * queried tuple with the canonical bump.
  */
@@ -363,7 +363,8 @@ export async function fetchSolanaUserDecryptionDelegation(
   config: FetchAccountConfig & SolanaZamaHostAddressConfig,
 ): Promise<SolanaUserDecryptionDelegationRows> {
   // Split off before the fetch: `programAddress` is this module's key, not RPC passthrough.
-  const { programAddress, ...fetchConfig } = config;
+  const { programAddress, ...passthrough } = config;
+  const fetchConfig = { commitment: 'finalized' as const, ...passthrough };
   const wildcardTuple: SolanaUserDecryptionDelegationTuple = { ...tuple, ...SOLANA_WILDCARD_APP };
   const [exactPda, wildcardPda] = await Promise.all([
     solanaUserDecryptionDelegationPda(tuple, programAddress),

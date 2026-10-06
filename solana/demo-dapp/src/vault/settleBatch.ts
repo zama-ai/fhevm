@@ -73,7 +73,7 @@ export async function settleBatch(
   let burnedTotalHandle: Uint8Array;
   if (options.batchIndex !== undefined) {
     addresses = await deriveBatchAddresses(roots, options.batchIndex);
-    const batch = await fetchBatch(rpc, addresses.batch);
+    const batch = await fetchBatch(rpc, addresses.batch, { commitment: 'finalized' });
     burnedTotalHandle = new Uint8Array(batch.data.burnedTotalHandle);
   } else {
     const current = await getCurrentBatch(rpc, roots);

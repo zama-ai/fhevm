@@ -34,7 +34,7 @@ export async function buildHarvestInstruction(
   parameters: SolanaVaultHarvestParameters,
   config?: FetchAccountConfig,
 ): Promise<Instruction> {
-  const vault = await fetchVault(rpc, parameters.vault, config);
+  const vault = await fetchVault(rpc, parameters.vault, { commitment: 'finalized', ...config });
   return getHarvestInstruction({
     donor: parameters.donor,
     vault: parameters.vault,
@@ -55,9 +55,8 @@ export async function getVaultMetrics(
   vaultAddress: Address,
   config?: FetchAccountConfig,
 ): Promise<SolanaVaultMetrics> {
-  const vault = await fetchVault(rpc, vaultAddress, config);
-  const commitment = config?.commitment;
-  const rpcConfig = commitment === undefined ? {} : { commitment };
+  const rpcConfig = { commitment: config?.commitment ?? 'finalized' };
+  const vault = await fetchVault(rpc, vaultAddress, { ...config, ...rpcConfig });
   const [assets, shares] = await Promise.all([
     rpc.getTokenAccountBalance(vault.data.vaultTokenAccount, rpcConfig).send(),
     rpc.getTokenSupply(vault.data.shareMint, rpcConfig).send(),

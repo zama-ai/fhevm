@@ -191,14 +191,14 @@ describe.skipIf(!runsDemoScenarios)("solana deposit-arc scenario", () => {
         instructions: readonly Instruction[],
         computeUnitLimit: number = WRAP_COMPUTE_UNIT_LIMIT,
       ): Promise<void> => {
-        const { value: latestBlockhash } = await rpc.getLatestBlockhash().send();
+        const { value: latestBlockhash } = await rpc.getLatestBlockhash({ commitment: "finalized" }).send();
         const base = setTransactionMessageFeePayerSigner(payer, createTransactionMessage({ version: 0 }));
         const withLifetime = setTransactionMessageLifetimeUsingBlockhash(latestBlockhash, base);
         const withComputeLimit = setTransactionMessageComputeUnitLimit(computeUnitLimit, withLifetime);
         const message = appendTransactionMessageInstructions(instructions, withComputeLimit);
         const signedTransaction = await signTransactionMessageWithSigners(message);
         assertIsTransactionWithBlockhashLifetime(signedTransaction);
-        await sendAndConfirm(signedTransaction, { commitment: "finalized" });
+        await sendAndConfirm(signedTransaction, { commitment: "finalized", preflightCommitment: "finalized" });
       };
 
 

@@ -68,7 +68,7 @@ const buildUsdcMinter = async (options: {
 
   return async (recipient: Address, baseUnits: bigint): Promise<string> => {
     const ata = await associatedTokenAddress(recipient, options.mint, SPL_TOKEN_PROGRAM_ADDRESS);
-    const { value: latestBlockhash } = await rpc.getLatestBlockhash().send();
+    const { value: latestBlockhash } = await rpc.getLatestBlockhash({ commitment: "finalized" }).send();
     const base = setTransactionMessageFeePayerSigner(authority, createTransactionMessage({ version: 0 }));
     const withLifetime = setTransactionMessageLifetimeUsingBlockhash(latestBlockhash, base);
     const message = appendTransactionMessageInstructions(
@@ -82,7 +82,7 @@ const buildUsdcMinter = async (options: {
     // The message was given a blockhash lifetime above; narrow the signed tx so the blockhash-based
     // send factory accepts it (kit's signer returns the generic lifetime union).
     assertIsTransactionWithBlockhashLifetime(signedTransaction);
-    await sendAndConfirm(signedTransaction, { commitment: "finalized" });
+    await sendAndConfirm(signedTransaction, { commitment: "finalized", preflightCommitment: "finalized" });
     return getSignatureFromTransaction(signedTransaction);
   };
 };

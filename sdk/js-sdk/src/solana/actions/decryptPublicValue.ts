@@ -149,12 +149,13 @@ export async function decryptPublicValues(
   const [configAddress, configBump] = await findHostConfigPda({ programAddress });
   const initial = getHostConfigDecoder().decode(
     read(
-      await fetchEncodedAccount(client.rpc, configAddress, signal === undefined ? {} : { abortSignal: signal }).catch(
-        (error: unknown) => {
-          checkAbort();
-          throw error;
-        },
-      ),
+      await fetchEncodedAccount(client.rpc, configAddress, {
+        commitment: 'finalized',
+        ...(signal === undefined ? {} : { abortSignal: signal }),
+      }).catch((error: unknown) => {
+        checkAbort();
+        throw error;
+      }),
       HOST_CONFIG_DISCRIMINATOR,
     ),
   );
@@ -166,11 +167,10 @@ export async function decryptPublicValues(
   // Read the requested context after the response. A rotation preserves an old live context;
   // destruction invalidates it. Do not substitute the new current context for the signed one.
   const [contextAddress, contextBump] = await findKmsContextPda({ contextId }, { programAddress });
-  const [configAccount, contextAccount] = await fetchEncodedAccounts(
-    client.rpc,
-    [configAddress, contextAddress],
-    signal === undefined ? {} : { abortSignal: signal },
-  ).catch((error: unknown) => {
+  const [configAccount, contextAccount] = await fetchEncodedAccounts(client.rpc, [configAddress, contextAddress], {
+    commitment: 'finalized',
+    ...(signal === undefined ? {} : { abortSignal: signal }),
+  }).catch((error: unknown) => {
     checkAbort();
     throw error;
   });

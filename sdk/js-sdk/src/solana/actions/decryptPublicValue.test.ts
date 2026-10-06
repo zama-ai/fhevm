@@ -200,7 +200,10 @@ describe('public decrypt client account-to-plaintext flow', () => {
     const value = await f.client.decryptPublicValue({ handle, encryptedStore: store });
     expect(value.type).toBe('uint64');
     expect(value.value).toBe(42n);
-    expect(f.rpc.getMultipleAccounts).toHaveBeenCalledWith([f.configAddress, f.contextAddress], expect.anything());
+    expect(f.rpc.getMultipleAccounts).toHaveBeenCalledWith(
+      [f.configAddress, f.contextAddress],
+      expect.objectContaining({ commitment: 'finalized' }),
+    );
     expect(f.request).toHaveBeenCalledWith(expect.anything(), expect.objectContaining({ contextId }));
   });
   it("reads accounts under the chain's host program, not the bundled one", async () => {
@@ -307,6 +310,10 @@ describe('public decrypt client account-to-plaintext flow', () => {
     expect(f.request).toHaveBeenCalledTimes(1);
     expect(f.request).toHaveBeenCalledWith(expect.anything(), { entries, contextId, options: undefined });
     expect(f.rpc.getAccountInfo).toHaveBeenCalledTimes(1);
+    expect(f.rpc.getAccountInfo).toHaveBeenCalledWith(
+      f.configAddress,
+      expect.objectContaining({ commitment: 'finalized' }),
+    );
     expect(f.rpc.getMultipleAccounts).toHaveBeenCalledTimes(1);
   });
   it('rejects a batch certificate whose cleartext is short by one handle', async () => {

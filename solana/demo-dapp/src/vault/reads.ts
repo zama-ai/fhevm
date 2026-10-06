@@ -18,23 +18,26 @@ export type JoinRecordState = JoinRecord;
 
 type SolanaRpc = Rpc<SolanaRpcApi>;
 
+/** Every read is at `finalized` unless the caller's `config` names another commitment. */
+const finalized = (config?: FetchAccountConfig): FetchAccountConfig => ({ commitment: 'finalized', ...config });
+
 /** Reads a batcher config via the generated `Batcher` decoder. */
 export async function getBatcher(rpc: SolanaRpc, batcher: Address, config?: FetchAccountConfig): Promise<BatcherState> {
-  const account = await fetchBatcher(rpc, batcher, config);
+  const account = await fetchBatcher(rpc, batcher, finalized(config));
   return account.data;
 }
 
 /**
  * Reads a `(batch, user)` join record via the generated `JoinRecord` decoder — derive the address
  * with `deriveJoinRecordAddress`. Throws if the record does not exist (the user never joined the
- * batch). `config` is the standard fetch passthrough, e.g. `{ commitment: 'finalized' }`.
+ * batch). `config` is the standard fetch passthrough.
  */
 export async function getJoinRecord(
   rpc: SolanaRpc,
   joinRecord: Address,
   config?: FetchAccountConfig,
 ): Promise<JoinRecordState> {
-  const account = await fetchJoinRecord(rpc, joinRecord, config);
+  const account = await fetchJoinRecord(rpc, joinRecord, finalized(config));
   return account.data;
 }
 
@@ -64,7 +67,7 @@ export async function getBatchByIndex(
   config?: FetchAccountConfig,
 ): Promise<{ index: bigint; addresses: BatchAddresses; state: BatchState }> {
   const addresses = await deriveBatchAddresses(roots, index);
-  const account = await fetchBatch(rpc, addresses.batch, config);
+  const account = await fetchBatch(rpc, addresses.batch, finalized(config));
   return { index, addresses, state: account.data };
 }
 
@@ -74,5 +77,5 @@ export function getEncryptedStore(
   address: Address,
   config?: FetchAccountConfig,
 ): Promise<SolanaEncryptedStore> {
-  return client.fetchEncryptedStore(address, config);
+  return client.fetchEncryptedStore(address, finalized(config));
 }

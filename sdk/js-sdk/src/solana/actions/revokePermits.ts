@@ -55,13 +55,17 @@ export async function buildRevokePermitsInstruction(params: {
   );
 }
 
-/** Reads the canonical watermark. Missing accounts have never invalidated a permit. */
+/**
+ * Reads the canonical watermark, at `finalized` unless `config` names another commitment. Missing
+ * accounts have never invalidated a permit.
+ */
 export async function fetchSolanaPermitInvalidation(
   rpc: SolanaRpc,
   user: Address,
   config: FetchAccountConfig & { readonly programAddress: Address },
 ): Promise<bigint> {
-  const { programAddress, ...fetchConfig } = config;
+  const { programAddress, ...passthrough } = config;
+  const fetchConfig = { commitment: 'finalized' as const, ...passthrough };
   const pda = await getProgramDerivedAddress({
     programAddress,
     seeds: [SOLANA_PERMIT_INVALIDATION_SEED, getAddressEncoder().encode(user)],

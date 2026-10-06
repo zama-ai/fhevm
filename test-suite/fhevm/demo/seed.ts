@@ -160,7 +160,7 @@ const main = async (): Promise<void> => {
   }
 
   // 1. Mock-USDC SPL mint (create account + initialize), owned by the classic token program.
-  const mintRent = await rpc.getMinimumBalanceForRentExemption(SPL_MINT_ACCOUNT_SPACE).send();
+  const mintRent = await rpc.getMinimumBalanceForRentExemption(SPL_MINT_ACCOUNT_SPACE, { commitment: "finalized" }).send();
   await send(deployer, [
     createAccountInstruction({
       payer: deployer,

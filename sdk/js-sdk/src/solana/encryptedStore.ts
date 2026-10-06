@@ -143,7 +143,7 @@ export function decodeSolanaEncryptedStore(data: Uint8Array, accountName: string
  *
  * @param rpc - The Solana RPC to read through.
  * @param address - The account's address.
- * @param config - Standard fetch passthrough, e.g. `{ commitment: 'finalized' }`.
+ * @param config - Standard fetch passthrough. The read is at `finalized` unless it names another commitment.
  * @param expectedOwner - The host program expected to own the account. When given, an account
  * owned by anyone else — e.g. a system account somebody created by transferring lamports to the
  * PDA — is reported as such instead of failing deeper in the decoder as a phantom layout drift.
@@ -155,7 +155,7 @@ export async function fetchSolanaEncryptedStore(
   config?: FetchAccountConfig,
   expectedOwner?: Address,
 ): Promise<SolanaEncryptedStore> {
-  const account = await fetchEncodedAccount(rpc, address, config);
+  const account = await fetchEncodedAccount(rpc, address, { commitment: 'finalized', ...config });
   if (!account.exists) {
     throw new Error(`EncryptedStore account ${address} does not exist`);
   }

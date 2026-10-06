@@ -58,7 +58,7 @@ const deploy = (action = 'deploy', overrides: Record<string, string> = {}, targe
 };
 const hostData = async () => {
   const [config] = await findHostConfigPda();
-  return (await rpc.getAccountInfo(config, { encoding: 'base64' }).send()).value?.data;
+  return (await rpc.getAccountInfo(config, { commitment: 'finalized', encoding: 'base64' }).send()).value?.data;
 };
 
 beforeAll(async () => {

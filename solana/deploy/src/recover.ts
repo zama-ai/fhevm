@@ -359,7 +359,7 @@ export async function recoverPreview(
   if (reset) {
     // Last: callers no longer need application roots or host encrypted state.
     for (const name of ['confidential_batcher', 'confidential_token', 'demo_vault', 'zama_host'] as const) {
-      if ((await context.rpc.getAccountInfo(programs[name], { encoding: 'base64' }).send()).value) {
+      if ((await context.rpc.getAccountInfo(programs[name], { commitment: 'finalized', encoding: 'base64' }).send()).value) {
         await wipeZamaHost(context, { payer, programAddress: programs[name] });
       }
     }

@@ -347,16 +347,18 @@ export async function depositToVault(
           .getSignatureStatuses([shieldJournal.signature as Signature], { searchTransactionHistory: true })
           .send()
       ).value[0];
-      if (status !== null && status.err === null) {
+      if (status !== null && status.err !== null) {
+        clearShieldJournal(session);
+      } else if (status?.confirmationStatus === 'finalized') {
         writeShieldJournal(session, { ...shieldJournal, state: 'confirmed' });
         shieldAlreadyConfirmed = true;
-      } else if (status !== null) {
-        clearShieldJournal(session);
+      } else if (
+        status !== null ||
+        (await rpc.getBlockHeight({ commitment: 'finalized' }).send()) <= BigInt(shieldJournal.lastValidBlockHeight)
+      ) {
+        // Landed below finalized, or still within its blockhash lifetime.
+        throw new Error('The shield transaction is still being confirmed. Try again shortly.');
       } else {
-        const currentBlockHeight = await rpc.getBlockHeight({ commitment: 'finalized' }).send();
-        if (currentBlockHeight <= BigInt(shieldJournal.lastValidBlockHeight)) {
-          throw new Error('The shield transaction is still being confirmed. Try again shortly.');
-        }
         clearShieldJournal(session);
       }
     }
