@@ -25,9 +25,9 @@ use solana_merkle_proof_service::server::{
     MERKLE_PROOFS_PATH,
 };
 use solana_merkle_proof_service::store::{
-    leaf_commitment, load_block_leaves, load_checkpoint, load_served_store,
-    load_store_cursors, reduce_block_leaves, store_block_leaves,
-    store_checkpoint, EncryptedStoreCursor, TransactionStoreWrites,
+    leaf_commitment, load_checkpoint, load_served_store, load_store_cursors,
+    reduce_block_leaves, store_block_leaves, store_checkpoint,
+    EncryptedStoreCursor, TransactionStoreWrites,
 };
 use solana_merkle_proof_service::store_check::{check_stores, StoreAccounts};
 use solana_sdk::{account::Account, pubkey::Pubkey};
@@ -228,13 +228,6 @@ async fn leaf_record_round_trips_and_serves_verifiable_proofs(
         .expect("account recorded");
     assert_eq!(served.cursor, second.stores[&ACCOUNT]);
     assert!(!served.quarantined);
-    let mut tx = pool.begin().await?;
-    assert_eq!(
-        load_block_leaves(&mut tx, 11).await?,
-        BTreeMap::from([(ACCOUNT, second.leaves.clone())]),
-        "leaves persist with their semantics and block position"
-    );
-    tx.rollback().await?;
     assert_eq!(load_served_store(&pool, [0xFF; 32]).await?, None);
 
     // The HTTP route builds proofs from the same rows.

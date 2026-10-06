@@ -1335,7 +1335,8 @@ This supersedes older per-value PDA seeds, StoredValue/PersistentOutput APIs, st
 ### DD-056, replaced in part by DD-066
 
 DD-066 moved the leaves to the Merkle indexer, which records them with the emitted handles. The
-listener's replay repair leaves the record alone.
+listener's replay repair leaves the record alone. The indexer skips its matching checkpoint
+block; rewinding its checkpoint does not repair its Store cursors.
 
 > The listener pairs each host `fhe_execute` with the one `FheExecutedEvent` from the host program
 > that follows it before the next host `fhe_execute`. Only the host can sign its event authority, so
@@ -1380,7 +1381,8 @@ the public leaf against the Store it is given (INVARIANTS #22). The Solana entry
 ### DD-062, replaced in part by DD-066
 
 DD-066 moved the stop at a Store write that does not continue the record from the listener to the
-Merkle indexer.
+Merkle indexer. The indexer now skips its matching checkpoint block (DD-066); a broken
+record must be rebuilt or restored.
 
 > If the transaction wrote a Store, the next write to that Store does not continue its recorded leaf
 > count, and the listener stops there until the leaf record, `solana_encrypted_state_nodes`

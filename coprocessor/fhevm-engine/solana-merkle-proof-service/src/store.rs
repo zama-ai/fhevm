@@ -9,11 +9,9 @@
 //! around it load the touched stores, persist the reduction, and move the checkpoint, all in
 //! one transaction per block.
 //!
-//! A block at or below the highest slot the record applied ([`load_recorded_through`]) is a
-//! replay: its recomputed leaves ([`replay_block_leaves`]) must equal every leaf recorded at
-//! that slot ([`load_block_leaves`]), so a replay that adds, drops or changes a leaf stops the
-//! indexer. Moving the checkpoint back therefore re-verifies the record and cannot repair it; a
-//! wrong record is rebuilt from the start slot or restored from a dump.
+//! The indexer skips the checkpoint block when its hash matches. An older slot or a
+//! conflicting hash stops it. A wrong record is rebuilt from the start slot or restored from
+//! a dump; moving the checkpoint back does not rewind the store cursors.
 //!
 //! Each append also records the MMR nodes it completes, so a proof reads its path by
 //! position ([`load_proof`]) instead of rebuilding the mountain from every leaf. Node
@@ -65,16 +63,6 @@ pub enum LeafKind {
     PublicDecrypt = 1,
 }
 
-impl LeafKind {
-    pub fn from_i16(value: i16) -> Option<Self> {
-        match value {
-            0 => Some(Self::HistoricalAccess),
-            1 => Some(Self::PublicDecrypt),
-            _ => None,
-        }
-    }
-}
-
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct StagedLeaf {
     pub encrypted_store: [u8; 32],
@@ -122,8 +110,6 @@ pub enum LeafReduceError {
         declared: u64,
         recorded: u64,
     },
-    #[error("leaf count overflow on encrypted store {}", bs58::encode(encrypted_store).into_string())]
-    LeafCountOverflow { encrypted_store: [u8; 32] },
     #[error("MMR append failed on encrypted store {}: {error:?}", bs58::encode(encrypted_store).into_string())]
     Mmr {
         encrypted_store: [u8; 32],
@@ -163,41 +149,6 @@ pub fn reduce_block_leaves(
     Ok(reduction)
 }
 
-/// Recomputes the leaves of a block the record already applied, by store in leaf order. Each
-/// write must continue the block's previous write on its store; the result must equal the
-/// leaves recorded at the block's slot ([`load_block_leaves`]).
-pub fn replay_block_leaves(
-    transactions: &[TransactionStoreWrites],
-) -> Result<BTreeMap<[u8; 32], Vec<StagedLeaf>>, LeafReduceError> {
-    let mut leaves: BTreeMap<[u8; 32], Vec<StagedLeaf>> = BTreeMap::new();
-    let mut cursors = BTreeMap::new();
-    for transaction in transactions {
-        for write in &transaction.sources {
-            let store = write.encrypted_store;
-            let cursor =
-                *cursors.entry(store).or_insert(write.previous_leaf_count);
-            if write.previous_leaf_count != cursor {
-                return Err(LeafReduceError::PreviousLeafCountMismatch {
-                    encrypted_store: store,
-                    declared: write.previous_leaf_count,
-                    recorded: cursor,
-                });
-            }
-            cursors.insert(store, leaf_count_after(write, cursor)?);
-            for (leaf_index, key) in (cursor..).zip(leaf_keys(write)) {
-                leaves.entry(store).or_default().push(staged(
-                    store,
-                    leaf_index,
-                    write.handle,
-                    key,
-                    transaction.transaction_index,
-                ));
-            }
-        }
-    }
-    Ok(leaves)
-}
-
 /// The key of each leaf `write` seals, in order: one per allowed key, then `None` for the
 /// public-decrypt leaf.
 fn leaf_keys(
@@ -205,19 +156,6 @@ fn leaf_keys(
 ) -> impl Iterator<Item = Option<[u8; 32]>> + '_ {
     let keyed = write.allowed_keys.iter().map(|key| Some(*key));
     keyed.chain(write.make_public.then_some(None))
-}
-
-fn leaf_count_after(
-    write: &EncryptedStoreWrite,
-    leaf_count: u64,
-) -> Result<u64, LeafReduceError> {
-    u64::try_from(write.allowed_keys.len())
-        .ok()
-        .and_then(|count| count.checked_add(u64::from(write.make_public)))
-        .and_then(|count| leaf_count.checked_add(count))
-        .ok_or(LeafReduceError::LeafCountOverflow {
-            encrypted_store: write.encrypted_store,
-        })
 }
 
 fn apply_write(
@@ -523,20 +461,18 @@ pub async fn store_block_leaves(
 }
 
 /// Moves the record's checkpoint to `checkpoint`, inside the transaction that applied its block,
-/// so a restart resumes exactly after the recorded work. `recorded_through` only grows, so
-/// blocks replayed after a rewound checkpoint stay replays.
+/// so a restart resumes exactly after the recorded work.
 pub async fn store_checkpoint(
     tx: &mut Transaction<'_>,
     checkpoint: &BlockCheckpoint,
 ) -> Result<(), SqlxError> {
     sqlx::query!(
         r#"
-        INSERT INTO checkpoint (singleton, slot, block_hash, recorded_through)
-        VALUES (1, $1, $2, $1)
+        INSERT INTO checkpoint (singleton, slot, block_hash)
+        VALUES (1, $1, $2)
         ON CONFLICT (singleton) DO UPDATE SET
             slot = EXCLUDED.slot,
             block_hash = EXCLUDED.block_hash,
-            recorded_through = GREATEST(checkpoint.recorded_through, EXCLUDED.slot),
             updated_at = NOW()
         "#,
         sql_i64(checkpoint.slot, "checkpoint slot")?,
@@ -547,28 +483,14 @@ pub async fn store_checkpoint(
     Ok(())
 }
 
-/// Locks the checkpoint and returns the highest slot the record applied. A block at or below
-/// it is a replay: a block handed again after its dropped `apply` committed, or a block up to
-/// `recorded_through` after the checkpoint was moved back.
-pub async fn load_recorded_through(
-    tx: &mut Transaction<'_>,
-) -> Result<Option<u64>, SqlxError> {
-    sqlx::query_scalar!(
-        "SELECT recorded_through FROM checkpoint WHERE singleton = 1 FOR UPDATE"
-    )
-    .fetch_optional(tx.as_mut())
-    .await?
-    .map(|slot| sql_u64(slot, "recorded_through"))
-    .transpose()
-}
-
-pub async fn load_checkpoint(
-    pool: &sqlx::PgPool,
+/// Loads and locks the checkpoint until the executor's transaction ends.
+pub async fn load_checkpoint<'e>(
+    executor: impl sqlx::PgExecutor<'e>,
 ) -> Result<Option<BlockCheckpoint>, SqlxError> {
     let row = sqlx::query!(
-        "SELECT slot, block_hash FROM checkpoint WHERE singleton = 1"
+        "SELECT slot, block_hash FROM checkpoint WHERE singleton = 1 FOR UPDATE"
     )
-    .fetch_optional(pool)
+    .fetch_optional(executor)
     .await?;
     row.map(|row| {
         Ok(BlockCheckpoint {
@@ -850,62 +772,6 @@ async fn load_nodes_at(
         .collect())
 }
 
-/// Every leaf recorded at `slot`, by store in leaf order. A replayed block's
-/// [`replay_block_leaves`] must equal this exactly.
-pub async fn load_block_leaves(
-    tx: &mut Transaction<'_>,
-    slot: u64,
-) -> Result<BTreeMap<[u8; 32], Vec<StagedLeaf>>, SqlxError> {
-    let rows = sqlx::query!(
-        r#"
-        SELECT encrypted_store, leaf_index, commitment, leaf_kind, handle, allowed_key,
-               transaction_index
-        FROM leaves
-        WHERE block_slot = $1
-        ORDER BY encrypted_store, leaf_index
-        "#,
-        sql_i64(slot, "block_slot")?,
-    )
-    .fetch_all(tx.as_mut())
-    .await?;
-    let mut recorded: BTreeMap<[u8; 32], Vec<StagedLeaf>> = BTreeMap::new();
-    for row in rows {
-        let leaf = leaf_row(
-            &row.encrypted_store,
-            row.leaf_index,
-            &row.commitment,
-            row.leaf_kind,
-            &row.handle,
-            row.allowed_key.as_deref(),
-            row.transaction_index,
-        )?;
-        recorded.entry(leaf.encrypted_store).or_default().push(leaf);
-    }
-    Ok(recorded)
-}
-
-fn leaf_row(
-    encrypted_store: &[u8],
-    leaf_index: i64,
-    commitment: &[u8],
-    leaf_kind: i16,
-    handle: &[u8],
-    allowed_key: Option<&[u8]>,
-    transaction_index: i64,
-) -> Result<StagedLeaf, SqlxError> {
-    Ok(StagedLeaf {
-        encrypted_store: bytes32(encrypted_store)?,
-        leaf_index: sql_u64(leaf_index, "leaf_index")?,
-        commitment: bytes32(commitment)?,
-        kind: LeafKind::from_i16(leaf_kind).ok_or_else(|| {
-            SqlxError::Decode(format!("unknown leaf_kind {leaf_kind}").into())
-        })?,
-        handle: bytes32(handle)?,
-        key: allowed_key.map(bytes32).transpose()?,
-        transaction_index: sql_u64(transaction_index, "transaction_index")?,
-    })
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -1033,27 +899,6 @@ mod tests {
         );
     }
 
-    /// A replayed block recomputes the leaves its first application recorded.
-    #[test]
-    fn replaying_a_block_recomputes_its_leaves() {
-        let block = [transaction(vec![
-            write(0, [1; 32], vec![OWNER], false),
-            write(1, [2; 32], vec![OWNER], true),
-        ])];
-        let first = reduce_block_leaves(&block, BTreeMap::new()).unwrap();
-        assert_eq!(
-            replay_block_leaves(&block).unwrap(),
-            BTreeMap::from([(STORE, first.leaves)])
-        );
-    }
-
-    /// A write that seals no leaf replays to nothing, as the record holds nothing for it.
-    #[test]
-    fn a_zero_leaf_write_replays_to_no_leaves() {
-        let block = [transaction(vec![write(4, [1; 32], vec![], false)])];
-        assert!(replay_block_leaves(&block).unwrap().is_empty());
-    }
-
     /// Growing a store one block at a time, the recorded nodes and leaves hold every
     /// path at every size, and the peaks of every smaller size: read by position, each equals
     /// the one rebuilt from all leaves.
@@ -1114,23 +959,5 @@ mod tests {
             }
             stores = reduction.stores;
         }
-    }
-
-    /// A replayed write that does not continue the block's previous write on its store is a
-    /// gap even when it seals no leaf, which the comparison with the recorded leaves misses.
-    #[test]
-    fn a_replay_must_be_contiguous_within_its_block() {
-        let writes = vec![
-            write(0, [1; 32], vec![OWNER], false),
-            write(2, [2; 32], vec![], false),
-        ];
-        assert_eq!(
-            replay_block_leaves(&[transaction(writes)]),
-            Err(LeafReduceError::PreviousLeafCountMismatch {
-                encrypted_store: STORE,
-                declared: 2,
-                recorded: 1,
-            })
-        );
     }
 }

@@ -10,9 +10,8 @@ use sqlx::PgPool;
 use tracing::info;
 
 use crate::store::{
-    load_block_leaves, load_recorded_through, load_store_cursors,
-    reduce_block_leaves, replay_block_leaves, store_block_leaves,
-    store_checkpoint, TransactionStoreWrites,
+    load_checkpoint, load_store_cursors, reduce_block_leaves,
+    store_block_leaves, store_checkpoint, TransactionStoreWrites,
 };
 
 pub struct MerkleIndexerSink {
@@ -59,13 +58,39 @@ impl IndexerStart {
 }
 
 /// Applies one sealed block: its leaves, nodes and store cursors, and the checkpoint. A block
-/// the record already applied must reproduce the leaves recorded at its slot and writes nothing
-/// else.
+/// at the checkpoint with the same hash writes nothing. A conflicting hash or an older slot
+/// stops the indexer because the finalized follower cannot roll back.
 async fn apply_block(
     pool: &PgPool,
     prepared: &PreparedBlock,
 ) -> Result<(), IngestFailure> {
     let block = &prepared.block;
+    let mut db_tx = pool
+        .begin()
+        .await
+        .map_err(|err| IngestFailure::retryable(err).context("open db tx"))?;
+    let checkpoint = load_checkpoint(db_tx.as_mut()).await.map_err(|err| {
+        IngestFailure::retryable(err).context("load checkpoint")
+    })?;
+    if let Some(checkpoint) = checkpoint {
+        if block.slot < checkpoint.slot {
+            return Err(IngestFailure::fatal(anyhow!(
+                "finalized block at slot {} is below the recorded checkpoint at slot {}; the follower cannot hand an older block",
+                block.slot,
+                checkpoint.slot
+            )));
+        }
+        if block.slot == checkpoint.slot {
+            if block.block_hash != checkpoint.block_hash {
+                return Err(IngestFailure::fatal(anyhow!(
+                    "finalized block hash differs from the recorded checkpoint at slot {}",
+                    block.slot
+                )));
+            }
+            return Ok(());
+        }
+    }
+
     let mut writes = Vec::new();
     for transaction in &prepared.transactions {
         let operations = host_operations(&transaction.instructions, block.slot)
@@ -84,58 +109,25 @@ async fn apply_block(
         }
     }
 
-    let mut db_tx = pool
-        .begin()
+    let mut written: Vec<[u8; 32]> = writes
+        .iter()
+        .flat_map(|transaction| transaction.sources.iter())
+        .map(|write| write.encrypted_store)
+        .collect();
+    written.sort_unstable();
+    written.dedup();
+    let existing =
+        load_store_cursors(&mut db_tx, &written)
+            .await
+            .map_err(|err| {
+                IngestFailure::retryable(err).context("load encrypted stores")
+            })?;
+    let reduction = reduce_block_leaves(&writes, existing)
+        .map_err(|err| IngestFailure::fatal(err).context("reduce leaves"))?;
+    store_block_leaves(&mut db_tx, block.slot, &reduction)
         .await
-        .map_err(|err| IngestFailure::retryable(err).context("open db tx"))?;
-    let recorded_through =
-        load_recorded_through(&mut db_tx).await.map_err(|err| {
-            IngestFailure::retryable(err).context("load checkpoint")
-        })?;
-    let mut recorded_leaves = 0;
-    if recorded_through.is_some_and(|through| block.slot <= through) {
-        // Anything but the recorded leaves means the record and the chain disagree about
-        // history the proofs already cover.
-        let replayed = replay_block_leaves(&writes).map_err(|err| {
-            IngestFailure::fatal(err).context("replay leaves")
-        })?;
-        let recorded = load_block_leaves(&mut db_tx, block.slot)
-            .await
-            .map_err(|err| {
-                IngestFailure::retryable(err).context("load recorded leaves")
-            })?;
-        if replayed != recorded {
-            return Err(IngestFailure::fatal(anyhow!(
-                "replayed slot {} does not reproduce its recorded leaves",
-                block.slot
-            )));
-        }
-    } else {
-        let mut written: Vec<[u8; 32]> = writes
-            .iter()
-            .flat_map(|transaction| transaction.sources.iter())
-            .map(|write| write.encrypted_store)
-            .collect();
-        written.sort_unstable();
-        written.dedup();
-        let existing =
-            load_store_cursors(&mut db_tx, &written)
-                .await
-                .map_err(|err| {
-                    IngestFailure::retryable(err)
-                        .context("load encrypted stores")
-                })?;
-        let reduction =
-            reduce_block_leaves(&writes, existing).map_err(|err| {
-                IngestFailure::fatal(err).context("reduce leaves")
-            })?;
-        store_block_leaves(&mut db_tx, block.slot, &reduction)
-            .await
-            .map_err(|err| {
-                IngestFailure::retryable(err).context("store leaves")
-            })?;
-        recorded_leaves = reduction.leaves.len();
-    }
+        .map_err(|err| IngestFailure::retryable(err).context("store leaves"))?;
+    let recorded_leaves = reduction.leaves.len();
     store_checkpoint(&mut db_tx, &block.checkpoint())
         .await
         .map_err(|err| {
