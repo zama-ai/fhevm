@@ -256,6 +256,34 @@ interface IProtocolConfig is IProtocolConfigBase {
     error InvalidProposalId();
 
     // -----------------------------------------------------------------------------------------
+    // View functions
+    // -----------------------------------------------------------------------------------------
+
+    /**
+     * @notice Returns the context anchor recorded when NewKmsContext was emitted.
+     * @dev Canonical-only. The canonical definition and bootstrap paths record the anchor. The replica
+     *      paths (`initializeFromCanonical` and `mirrorKmsContextAndEpoch`) do not record it. On a
+     *      replica this returns `(0, 0x0)` for every mirrored context. Cross-chain verification tooling
+     *      must not compare the anchor on a replica.
+     * @param contextId The context ID.
+     * @return emissionBlockNumber The block where NewKmsContext was emitted, or 0 on a replica.
+     * @return contextInfoHash Hash of the emitted context payload, or 0x0 on a replica.
+     */
+    function getKmsContextAnchor(
+        uint256 contextId
+    ) external view returns (uint256 emissionBlockNumber, bytes32 contextInfoHash);
+
+    /**
+     * @notice Returns the previous-committee confirmation quorum cached for a context at define time.
+     * @dev The `(n - t)` target that `confirmKmsContextCreation` requires from the previous committee.
+     *      Returns 0 for a context that was never a switch target or whose bookkeeping was cleared on
+     *      destruction.
+     * @param kmsContextId The context ID.
+     * @return The cached previous-committee confirmation target.
+     */
+    function getContextCreationPreviousTxSenderThreshold(uint256 kmsContextId) external view returns (uint256);
+
+    // -----------------------------------------------------------------------------------------
     // State-changing functions
     // -----------------------------------------------------------------------------------------
 

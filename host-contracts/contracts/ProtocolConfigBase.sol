@@ -122,17 +122,6 @@ abstract contract ProtocolConfigBase is IProtocolConfigBase {
     }
 
     /// @inheritdoc IProtocolConfigBase
-    function getKmsContextAnchor(
-        uint256 contextId
-    ) external view virtual returns (uint256 emissionBlockNumber, bytes32 contextInfoHash) {
-        if (!_kmsContextExists(contextId)) {
-            revert InvalidKmsContext(contextId);
-        }
-        KmsContextAnchor memory anchor = _getProtocolConfigStorage().contextAnchors[contextId];
-        return (anchor.emissionBlockNumber, anchor.contextInfoHash);
-    }
-
-    /// @inheritdoc IProtocolConfigBase
     function isValidKmsContext(uint256 kmsContextId) external view virtual returns (bool) {
         return _isValidKmsContext(kmsContextId);
     }
@@ -140,11 +129,6 @@ abstract contract ProtocolConfigBase is IProtocolConfigBase {
     /// @inheritdoc IProtocolConfigBase
     function isLiveKmsContext(uint256 kmsContextId) external view virtual returns (bool) {
         return _isLiveKmsContext(kmsContextId);
-    }
-
-    /// @inheritdoc IProtocolConfigBase
-    function getContextCreationPreviousTxSenderThreshold(uint256 kmsContextId) external view virtual returns (uint256) {
-        return _getProtocolConfigStorage().contextCreationPreviousTxSenderThreshold[kmsContextId];
     }
 
     /// @inheritdoc IProtocolConfigBase

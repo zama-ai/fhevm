@@ -524,6 +524,22 @@ contract ProtocolConfig is IProtocolConfig, ProtocolConfigBase, UUPSUpgradeableE
             );
     }
 
+    /// @inheritdoc IProtocolConfig
+    function getKmsContextAnchor(
+        uint256 contextId
+    ) external view virtual returns (uint256 emissionBlockNumber, bytes32 contextInfoHash) {
+        if (!_kmsContextExists(contextId)) {
+            revert InvalidKmsContext(contextId);
+        }
+        KmsContextAnchor memory anchor = _getProtocolConfigStorage().contextAnchors[contextId];
+        return (anchor.emissionBlockNumber, anchor.contextInfoHash);
+    }
+
+    /// @inheritdoc IProtocolConfig
+    function getContextCreationPreviousTxSenderThreshold(uint256 kmsContextId) external view virtual returns (uint256) {
+        return _getProtocolConfigStorage().contextCreationPreviousTxSenderThreshold[kmsContextId];
+    }
+
     // -----------------------------------------------------------------------------------------
     // Internal
     // -----------------------------------------------------------------------------------------
