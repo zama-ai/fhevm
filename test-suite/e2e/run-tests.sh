@@ -114,10 +114,17 @@ if [ "$NO_COMPILE" = true ]; then
   HARDHAT_OPTS+=" --no-compile "
 fi
 
-echo hardhat test ${HARDHAT_OPTS} --grep "$GREP_TEXT" --network "$NETWORK"
+TEST_COMMAND=(npx hardhat test)
+NETWORK_OPTS=(--network "$NETWORK")
+if [ "$NETWORK" = "localcleartext" ]; then
+  TEST_COMMAND=(npm run test:localcleartext --)
+  NETWORK_OPTS=()
+fi
+
+echo "${TEST_COMMAND[@]}" ${HARDHAT_OPTS} --grep "$GREP_TEXT" "${NETWORK_OPTS[@]}"
 
 # Run the tests
-if npx hardhat test ${HARDHAT_OPTS} --grep "$GREP_TEXT" --network "$NETWORK"; then
+if "${TEST_COMMAND[@]}" ${HARDHAT_OPTS} --grep "$GREP_TEXT" "${NETWORK_OPTS[@]}"; then
   echo -e "\n${GREEN}✓ Tests completed successfully!${RESET}"
 else
   echo -e "\n${RED}✗ Tests failed!${RESET}"
