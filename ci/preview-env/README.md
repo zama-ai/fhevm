@@ -69,7 +69,7 @@ ci/preview-env/
 │   └── values-postgres-listener-e2e.yaml # `common` chart overlay: in-cluster Postgres, dedicated to the listener's cursor DB
 ├── kms-connector/
 │   ├── values-kms-connector-e2e.yaml       # kms-connector overlay
-│   ├── values-kms-connector-polygon-e2e.yaml # additive overlay: adds the Polygon host chain to hostChains (deploy_polygon)
+│   ├── values-kms-connector-polygon-e2e.yaml # additive overlay: adds the Polygon host chain (deploy_polygon)
 │   └── values-postgres-connector-e2e.yaml  # `common` chart overlay: in-cluster Postgres, dedicated to kms-connector
 ├── observability/
 │   ├── values-prometheus-e2e.yaml # `common` chart overlay (raw objects): in-namespace Prometheus, endpoints-SD scraping
@@ -478,7 +478,8 @@ Polygon **reuses the ETH-activated KMS key** — there is no second keygen cerem
   `postgres-listener-polygon-<i>`) publishes chain-`80002` events to the **same**
   per-party Redis; the Polygon consumer filters them out by `--chain-id`.
 - The relayer gets a second `host_chains` entry and the kms-connector a second
-  `hostChains` entry (`values-kms-connector-polygon-e2e.yaml`) so host ACL checks cover
+  host chain (`values-kms-connector-polygon-e2e.yaml`, both the chart 2.x
+  `hostChains` map and the chart 1.5.3 flat keys) so host ACL checks cover
   Polygon ciphertexts.
 - Chain `80002` is registered into the shared GatewayConfig by a second
   `addHostChainsToGatewayConfig` call (`values-gateway-add-host-chains-polygon-e2e.yaml`,
