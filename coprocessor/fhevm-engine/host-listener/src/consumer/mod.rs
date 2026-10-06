@@ -7,6 +7,7 @@ use alloy::rpc::types::Log;
 use alloy_primitives::LogData;
 use anyhow::Result;
 use tokio::sync::RwLock;
+use tokio::task::{JoinError, JoinHandle};
 use tokio::time::{interval_at, sleep, Instant, MissedTickBehavior};
 use tokio_util::sync::CancellationToken;
 use tracing::{error, info, warn};
@@ -455,11 +456,11 @@ pub async fn run_consumer(config: ConsumerConfig) -> Result<()> {
         client.cancel_token.clone(),
     );
 
-    // ...and when it does, stop reading. Only the live flow is cancelled: the
-    // stats observer and the identity migration below are children of the
-    // parent token and keep running until shutdown. The group cannot be
-    // released while something is still blocked in `XREADGROUP` on it, so the
-    // release happens after this loop has returned, not here.
+    // ...and when it does, stop reading. Only the two read flows are
+    // cancelled: the stats observer and the identity migration below are
+    // children of the parent token and keep running until shutdown. A group
+    // cannot be released while something is still blocked in `XREADGROUP` on
+    // it, so the release happens after both flows have returned, not here.
     spawn_retirement_watcher(
         stack_mode.clone(),
         client.clone(),
@@ -582,13 +583,12 @@ pub async fn run_consumer(config: ConsumerConfig) -> Result<()> {
         client.cancel_token.cancelled().await;
         Ok(Ok(()))
     } else {
-        let live_run = tokio::spawn(client.consume(handle_block.clone()));
-        let final_run = tokio::spawn(client.consume_final(handle_block));
-        // Either flow ending stops the consumer; cancelling below stops the other.
-        tokio::select! {
-            result = live_run => result,
-            result = final_run => result,
-        }
+        first_flow_to_return(
+            &client.cancel_token,
+            tokio::spawn(client.consume(handle_block.clone())),
+            tokio::spawn(client.consume_final(handle_block)),
+        )
+        .await
     };
     info!(
         chain_id = %config.chain_id,
@@ -599,8 +599,8 @@ pub async fn run_consumer(config: ConsumerConfig) -> Result<()> {
         error!(error = %err, "Consumer stats background task failed");
     }
 
-    // The read loop has returned, so nothing is on these groups any more and
-    // they can go. A retired build's cursors never move again, and the broker's
+    // Both read flows have returned, so nothing is on these groups any more
+    // and they can go. A retired build's cursors never move again, and the broker's
     // trimmer will not reclaim past the furthest-behind group on a stream, so
     // leaving them pins the backlog until the hard ceiling cuts it. Only this
     // build's own groups are released: the streams, their entries and the
@@ -776,13 +776,17 @@ fn spawn_kms_activations<A: AwsS3Interface + Clone + 'static>(
     });
 }
 
-/// Stop the live flow once the cutover retires this stack.
+/// Stop the read flows once the cutover retires this stack.
 ///
-/// `spawn_stack_version_listener` sets `paused` but leaves the reader running,
-/// which is correct while the stack is up: the handler acks and drops, so the
-/// cursor keeps moving and nothing is pinned. It is only once the pods go that
-/// a frozen cursor starts holding the stream. Stopping the reader here is what
-/// lets the caller release the group afterwards.
+/// `spawn_stack_version_listener` sets `paused` but leaves the readers
+/// running, which is correct while the stack is up: the handler acks and
+/// drops, so the cursors keep moving and nothing is pinned. It is only once
+/// the pods go that a frozen cursor starts holding the stream. Stopping the
+/// readers here is what lets the caller release the groups afterwards.
+///
+/// Both flows are cancelled, not just the live one. They read different
+/// streams under the same identity and each holds a group of its own, so a
+/// release that only one of them has stopped for is a release racing a reader.
 ///
 /// Polled rather than signaled: `paused` is a plain flag, and a load every
 /// [`RETIREMENT_POLL_INTERVAL`] costs nothing next to reacting to it late.
@@ -801,10 +805,43 @@ fn spawn_retirement_watcher(
         )
         .await
         {
-            warn!("Stack retired by cutover: stopping the consumer read loop");
+            warn!("Stack retired by cutover: stopping the consumer read loops");
             client.cancel_live();
+            client.cancel_final();
         }
     });
+}
+
+/// Return as soon as one of the two read flows does, having stopped the other
+/// and waited for it to return too.
+///
+/// Both flows read under the same identity, each holding a consumer group of
+/// its own, and the caller releases those groups once this returns. A group
+/// cannot be released while a reader is still blocked in `XREADGROUP` on it,
+/// so the second flow has to be waited for and not merely cancelled: dropping
+/// its [`JoinHandle`] detaches the task rather than stopping it, which is what
+/// `tokio::select!` over two handles does on its own.
+///
+/// The result reported is the first flow's. Whichever returned first is the
+/// one that decided the shutdown; the other was told to stop and its result
+/// says nothing the caller did not already cause.
+async fn first_flow_to_return<T>(
+    cancel: &CancellationToken,
+    mut live: JoinHandle<T>,
+    mut finalized: JoinHandle<T>,
+) -> Result<T, JoinError> {
+    tokio::select! {
+        result = &mut live => {
+            cancel.cancel();
+            let _ = finalized.await;
+            result
+        }
+        result = &mut finalized => {
+            cancel.cancel();
+            let _ = live.await;
+            result
+        }
+    }
 }
 
 /// Resolve to `true` once the stack is retired, or `false` if shutdown came
@@ -942,5 +979,52 @@ mod tests {
         cancel.cancel();
 
         assert!(!awaiting_retirement(|| false, &cancel, TICK).await);
+    }
+
+    /// A read flow that is still unwinding when its sibling returns is waited
+    /// for, not left running.
+    ///
+    /// The caller releases both consumer groups as soon as this returns. A
+    /// flow still inside `XREADGROUP` at that point would have its group
+    /// destroyed underneath it — which is what happens if the losing
+    /// `JoinHandle` is dropped instead of awaited, because dropping one
+    /// detaches its task.
+    #[tokio::test]
+    async fn the_flow_that_did_not_return_first_is_waited_for() {
+        for live_returns_first in [true, false] {
+            let cancel = CancellationToken::new();
+            let unwound = Arc::new(AtomicBool::new(false));
+
+            let returning = tokio::spawn(async {});
+            let reading = {
+                let cancel = cancel.clone();
+                let unwound = Arc::clone(&unwound);
+                tokio::spawn(async move {
+                    cancel.cancelled().await;
+                    // The blocking read it is still sitting in.
+                    sleep(TICK * 4).await;
+                    unwound.store(true, Ordering::SeqCst);
+                })
+            };
+
+            let (live, finalized) = if live_returns_first {
+                (returning, reading)
+            } else {
+                (reading, returning)
+            };
+            tokio::time::timeout(
+                Duration::from_secs(5),
+                first_flow_to_return(&cancel, live, finalized),
+            )
+            .await
+            .expect("the other flow must be told to stop, not just waited on")
+            .expect("neither flow panics");
+
+            assert!(
+                unwound.load(Ordering::SeqCst),
+                "the group release that follows must not begin while the \
+                 other flow is still reading (live first: {live_returns_first})"
+            );
+        }
     }
 }
