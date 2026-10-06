@@ -420,7 +420,7 @@ if run_check 1; then
     for variant in $variants; do
       # Deliberate tombstones keep their positional error code; their doc comment says so.
       context=$(grep -B3 -E "^    ${variant},\$" "$file" || true)
-      if echo "$context" | grep -qiE 'ordinals stay stable|code stability|stability\)|retired|legacy \(unused'; then
+      if grep -qiE 'ordinals stay stable|code stability|stability\)|retired|legacy \(unused' <<< "$context"; then
         continue
       fi
       # Boundary-anchored, not a substring match: `::InvalidKmsContext` must not be kept alive by
@@ -464,7 +464,7 @@ if run_check 2; then
         # exactly what the header promises cannot happen. The `emit!`/`emit_cpi!` arm above was
         # already index-based; this arm was not.
         if (grep -F "${constructing_file}:" "$INDEX" | grep -A4 'emit_event_cpi(' || true) \
-          | grep -qE "\b${event}\b"; then
+          | grep -E "\b${event}\b" >/dev/null; then
           manual=1
         fi
       done
@@ -544,7 +544,7 @@ if run_check 3; then
         [ -n "$record" ] || continue
         content=${record#*:}
         content=${content#*:}
-        printf '%s\n' "$content" | grep -qiE "$exceptions" || printf '%s\n' "$record"
+        grep -qiE "$exceptions" <<< "$content" || printf '%s\n' "$record"
       done)
     fi
     if [ -n "$hits" ]; then
@@ -788,14 +788,14 @@ if run_check 4; then
     context=$(sed -n "${start},${line}p" "$file" \
       | sed -E -e 's#^[[:space:]]*//+!?[[:space:]]*##' -e 's#^[[:space:]]*\*[[:space:]]*##' \
       | tr '\n' ' ' | tr -s ' ')
-    if ! echo "$context" | grep -qiE "$JUSTIFICATION"; then
+    if ! grep -qiE "$JUSTIFICATION" <<< "$context"; then
       echo "UNJUSTIFIED RETROFIT SENTINEL: ${hit}"
       fail=1
     fi
   done <<< "$retrofit_hits"
   for file in "${SENTINEL_FILES[@]}"; do
     [ -f "$file" ] || { echo "MISSING SENTINEL FILE: ${file} (update SENTINEL_FILES)"; fail=1; continue; }
-    if ! echo "$sentinel_seen" | grep -qF " ${file}"; then
+    if ! grep -qF " ${file}" <<< "$sentinel_seen"; then
       echo "STALE SENTINEL ENTRY: ${file} has no production retrofit left (drop it from SENTINEL_FILES)"
       fail=1
     fi
@@ -908,7 +908,7 @@ if run_check 6; then
         return
       fi
     fi
-    if ! head -40 "$file" | grep -qF "$API_SURFACE_MARKER"; then
+    if ! head -40 "$file" | grep -F "$API_SURFACE_MARKER" >/dev/null; then
       echo "UNDECLARED EXPORT: ${file}: ${kind} ${name} (no production caller outside its file, and the file does not state an audience — add a '${API_SURFACE_MARKER} ...' line, drop the export, or remove it)"
       fail=1
     fi
@@ -1046,7 +1046,7 @@ if run_check 8; then
 __event_authority"
   # An empty or truncated set would leave the literal arm matching nothing while the check stays
   # green, which is the failure this script exists to prevent.
-  if ! printf '%s\n' "$seed_names" | grep -qx 'host-config'; then
+  if ! grep -qx 'host-config' <<< "$seed_names"; then
     echo "SEED SET VACUOUS: no 'host-config' among the seeds read from ${SEED_SOURCES[*]}"
     fail=1
   fi
@@ -1063,7 +1063,7 @@ __event_authority"
   while read -r count file; do
     [ -n "$file" ] || continue
     entry=$(printf '%s\n' ${HAND_DERIVATIONS_ALLOWED[@]+"${HAND_DERIVATIONS_ALLOWED[@]}"} \
-      | awk -F'|' -v f="$file" '$1 == f { print; exit }')
+      | awk -F'|' -v f="$file" '$1 == f && !found { print; found=1 }')
     allowed=0
     [ -n "$entry" ] && { allowed=${entry#*|}; allowed=${allowed%%|*}; }
     if [ "$count" -gt "$allowed" ]; then
@@ -1080,7 +1080,7 @@ __event_authority"
     if [ ! -f "$file" ]; then
       echo "MISSING HAND-DERIVATION FILE: ${file} (drop it from HAND_DERIVATIONS_ALLOWED)"
       fail=1
-    elif ! printf '%s\n' "$hand_counts" | grep -qE "^[[:space:]]*[0-9]+ ${file}$"; then
+    elif ! grep -qE "^[[:space:]]*[0-9]+ ${file}$" <<< "$hand_counts"; then
       echo "STALE HAND-DERIVATION ENTRY: ${file} has 0 — drop it from HAND_DERIVATIONS_ALLOWED"
       fail=1
     fi
@@ -1110,10 +1110,12 @@ if [ "$SELF_TEST" -eq 1 ]; then
     local out status
     out=$(DEAD_SURFACE_ONLY_CHECK="$only" "$@" </dev/null 2>&1) && status=0 || status=$?
     if [ "$status" -eq 0 ]; then
-      echo "SELF-TEST HOLE: ${what} did not fire on a violating fixture"
+      echo "SELF-TEST HOLE: ${what} exited ${status}, did not fire on a violating fixture"
+      printf '%s\n' "$out" | sed 's/^/    /'
       self_test_fail=1
-    elif ! printf '%s\n' "$out" | grep -qF "$expect"; then
+    elif ! grep -qF "$expect" <<< "$out"; then
       echo "SELF-TEST HOLE: ${what} exited ${status} without reporting: ${expect}"
+      printf '%s\n' "$out" | sed 's/^/    /'
       self_test_fail=1
     else
       echo "  ok: ${what} fires"
@@ -1170,7 +1172,7 @@ FIXTURES
   # itself as exercised by another entry's fixture.
   while IFS= read -r label; do
     [ -n "$label" ] || continue
-    if ! printf '%s\n' "$covered_labels" | grep -qxF "$label"; then
+    if ! grep -qxF "$label" <<< "$covered_labels"; then
       echo "SELF-TEST HOLE: alias entry '${label}' has no fixture in this block"
       self_test_fail=1
     fi
