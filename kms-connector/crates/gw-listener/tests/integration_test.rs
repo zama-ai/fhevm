@@ -63,7 +63,7 @@ async fn test_kms_context_destroyed_invalidates_cache() -> anyhow::Result<()> {
     publish_context_and_epoch(test_instance.db(), other_context_id, U256::from(2)).await?;
 
     for context_id in [destroyed_context_id, uncached_context_id] {
-        info!("Destroying KMS context #{context_id} on Anvil...");
+        info!("Destroying KMS context #{context_id:#066x} on Anvil...");
         test_instance
             .protocol_config_contract()
             .destroyKmsContext(context_id)
@@ -109,7 +109,7 @@ async fn test_kms_epoch_destroyed_invalidates_cache() -> anyhow::Result<()> {
     }
 
     for epoch_id in [destroyed_epoch_id, uncached_epoch_id] {
-        info!("Destroying KMS epoch #{epoch_id} on Anvil...");
+        info!("Destroying KMS epoch #{epoch_id:#066x} on Anvil...");
         test_instance
             .protocol_config_contract()
             .destroyKmsEpoch(epoch_id)
@@ -157,11 +157,11 @@ async fn poll_db_until_invalid(db: &Pool<Postgres>, table: &str, id: U256) -> an
     let start = std::time::Instant::now();
     loop {
         if fetch_valid_flag(db, table, id).await? == Some(false) {
-            info!("#{id} invalidated in the {table} cache!");
+            info!("#{id:#066x} invalidated in the {table} cache!");
             return Ok(());
         }
         if start.elapsed() > timeout {
-            anyhow::bail!("Timed out waiting for #{id} invalidation in the {table} cache");
+            anyhow::bail!("Timed out waiting for #{id:#066x} invalidation in the {table} cache");
         }
         tokio::time::sleep(poll_interval).await;
     }
