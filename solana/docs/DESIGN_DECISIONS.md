@@ -99,6 +99,7 @@ are written as one narrative instead.
 | [DD-069](#dd-069-only-an-output-its-transaction-stores-is-computed-and-recorded-as-a-block-producer)                                      | adopted                                  | Only an output its transaction stores is computed and recorded as a block producer                                             |
 | [DD-070](#dd-070-solana-is-read-at-finalized-commitment)                                                                                  | adopted                                  | Solana is read at finalized commitment                                                                                         |
 | [DD-071](#dd-071-the-listener-records-each-solana-block-as-a-finalized-host-block-numbered-by-height)                                     | adopted                                  | The listener records each Solana block as a finalized host block, numbered by height                                           |
+| [DD-072](#dd-072-every-on-chain-data-fact-has-one-source-and-clients-generate-or-import-it)                                               | adopted                                  | Every on-chain data fact has one source, and clients generate or import it                                                     |
 
 ## DD-002: Keep App Store And Host ACL Store Separate
 
@@ -2828,3 +2829,76 @@ Not settled by the decisions above. Forward requirements are detailed in
   token account through `check_underlying_ata_not_frozen`, treating an uninitialized address as not
   frozen; `cancel_pending_burn` is not freeze-gated. What these checks do not reach is
   fhevm-internal#1981.
+
+## DD-072: Every on-chain data fact has one source, and clients generate or import it
+
+Status: adopted
+
+Context:
+
+An on-chain data fact is anything a client must agree with byte for byte: PDA seeds and the recipe
+that derives an address from them, how an instruction is built, account and event layouts and their
+decoders, types, structs and constants. Several are restated by hand today. The SDK spells the zama-host seeds and derives
+stores, transient stores, delegations and permit watermarks itself. The deployment, the demo dapp
+and the test suite derive event authorities and other programs' PDAs. The KMS connector, the
+relayer, the host follower and the Merkle proof service rebuild store and delegation addresses in
+Rust.
+
+A restated copy agrees with the program only until one of them changes, and on Solana the mismatch
+is silent. A wrong recipe still yields a valid address: the instruction built on it fails an account
+constraint, or the read finds no account. Third-party dapps make it worse: they generate or vendor a
+client once and do not regenerate it.
+
+Decision:
+
+Every on-chain data fact has one source. A client generates its code from that source or imports it
+through a single entry point. Nothing is restated by hand: a handwritten client, or an adapter with
+its own PDA or instruction-building code, is not acceptable. The norm is the program's IDL rendered
+by Codama, or a shared Rust crate. A golden test catches an accidental change; it is not a second
+source.
+
+- PDA recipes live in the programs, as Anchor `seeds = [...]` constraints. The bump is stored in the
+  account wherever checking the address again would otherwise cost compute. The IDL then declares
+  every PDA, and Codama generates the `find*Pda` helpers and the builders' account defaults from it.
+  This settles fhevm-internal#2108 open question 5 for Anchor seeds and reverses its earlier
+  proposal of Codama visitors in the codegen script, which would restate the seeds in JS.
+- Off-chain Rust takes a recipe from the program crate, or from `zama-solana-acl` for the store,
+  delegation and permit-invalidation recipes, through one seed-list function per recipe.
+- The rule covers data facts. A behaviour mirror, code that re-implements on-chain logic such as the
+  SDK's cleartext client, is not generated. It stays pinned to the program by shared fixtures
+  (`solana/test-fixtures`).
+
+`solana/scripts/dead-surface-check.sh` check 8 enforces the PDA part. It fails on
+`getProgramDerivedAddress` and `findProgramAddress` in TypeScript, on `find_program_address` and
+`create_program_address` in Rust, and on seed literals, in production code outside generated
+clients, the programs, `zama-solana-acl` and `solana/test-kit`. It reads the seed literals from
+those sources. Tests are not swept: a test that restates a recipe is a pin and fails loudly when the
+recipe moves. Today's copies are listed in `HAND_DERIVATIONS_ALLOWED`, each with its count of lines
+and what removes it. The list can only shrink.
+
+Compatibility:
+
+Nothing on Solana is deployed, the dapps included. Until it is, Solana code keeps no backward
+compatibility: a recipe, a layout or a discriminator changes in place, the old path is deleted, and no
+fallback or compatibility branch is written for it. EVM paths keep their compatibility, because they
+have consumers and a release policy. After deployment, a change to an on-chain data fact breaks every
+client that has not regenerated, third-party dapps included. From then on, avoid breaking changes and
+keep forward and backward compatibility as far as possible.
+
+Rationale:
+
+The program is where a recipe is enforced, so it is the only place a copy cannot drift from. Anchor
+`seeds` put the recipe in the IDL, where every generator can read it: the JS clients today, and Rust
+or other clients later. A Codama visitor would keep a JS-only copy, and a test per PDA would be needed
+to hold it to the program.
+
+Consequences:
+
+- PR 1b adds the missing `seeds` to zama-host and confidential-token, regenerates the clients, deletes
+  the TypeScript copies and shrinks the allow-list. A golden test pins every PDA address for fixed
+  inputs, so a recipe change is a deliberate edit.
+- The off-chain Rust derivations move behind `zama-solana-acl` seed-list functions in a follow-up.
+- PDAs of other programs (the BPF loader's program data, associated token accounts, address lookup
+  tables) are facts of those programs. They should come from those programs' clients.
+
+Pinned by `dead-surface-check.sh` check 8 and its `--self-test` fixtures.
