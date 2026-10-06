@@ -100,8 +100,9 @@ const main = async (): Promise<void> => {
   // The shared provisioning send/confirm/fund closures, at the seeder's own CU ceiling.
   const provisioning = await openProvisioning(env, { computeUnitLimit: SEED_COMPUTE_UNIT_LIMIT });
   const { rpc } = provisioning;
-  const send = (payer: TransactionSigner, instructions: readonly Instruction[]): Promise<void> =>
-    provisioning.sendTransaction(payer, instructions);
+  const send = async (payer: TransactionSigner, instructions: readonly Instruction[]): Promise<void> => {
+    await provisioning.sendTransaction(payer, instructions);
+  };
 
   // Actors. The deployer drives provisioning; the keeper pays confidential-mint account rent and
   // is the wrapper authority used by settlement/cancellation. The separate mock-USDC mint

@@ -15,15 +15,18 @@ const TARGET = 2;
 const DETECTOR = "coprocessor2-consensus-detector";
 const FIXTURE_PATH = "/tmp/manifest-lifecycle-fixture.json";
 const HEX32 = /^0x[0-9a-f]{64}$/i;
+const DECIMAL = /^(0|[1-9][0-9]*)$/;
 
-type Fixture = { chainId: number; root: string; child?: string; rootBlock: number; rootBlockHash: string; blocked?: string; independent?: string };
+/** The handles a manifest-lifecycle fixture produces. `chainId` is decimal: a Solana chain id exceeds 2^53. */
+export type Fixture = { chainId: string; root: string; child?: string; rootBlock: number; rootBlockHash: string; blocked?: string; independent?: string };
+export type ManifestFixturePhase = "seed graph" | "submit consumers";
 type Archive = { id: number; publisher: string; object_key: string; body: string; bucket: string };
 type Material = { digest: string; bytes: string; version: string };
 type Finding = { handle: string; detection_kind: string; reason: string; is_contained: boolean; healed_at: string | null; target: string | null };
 type Query = (database: string, sql: string) => Promise<string>;
 
 export function validateFixture(value: Fixture): Fixture {
-  assert(Number.isSafeInteger(value.chainId) && value.chainId >= 0, "invalid fixture chain");
+  assert(typeof value.chainId === "string" && DECIMAL.test(value.chainId), "invalid fixture chain");
   assert(Number.isSafeInteger(value.rootBlock) && value.rootBlock > 0, "invalid fixture block");
   for (const handle of [value.root, value.rootBlockHash]) assert(typeof handle === "string" && HEX32.test(handle), "missing/invalid fixture identity");
   for (const handle of [value.child, value.blocked, value.independent]) {
@@ -31,6 +34,27 @@ export function validateFixture(value: Fixture): Fixture {
   }
   if (value.child !== undefined) assert.notEqual(value.root, value.child, "fixture must have a distinct descendant");
   return value;
+}
+
+/** The coprocessor's EVM host chain id, in decimal. */
+export async function readEvmHostChainId(): Promise<string> {
+  const chainId = (await readEnvFile(envPath("coprocessor"))).CHAIN_ID;
+  assert(chainId !== undefined && DECIMAL.test(chainId), "coprocessor CHAIN_ID is missing/invalid");
+  return chainId;
+}
+
+/**
+ * The fixture the hardhat `manifest lifecycle fixture` writes in the test-suite container. Its
+ * chain id is a JSON number, which is exact for an EVM chain id.
+ */
+export async function readContainerFixture(): Promise<Fixture> {
+  const written = JSON.parse((await run(["docker", "exec", TEST_SUITE_CONTAINER, "cat", FIXTURE_PATH])).stdout);
+  return validateFixture({ ...written, chainId: String(written.chainId) });
+}
+
+/** Removes the hardhat fixture file, so a phase cannot read a previous run's fixture. */
+export async function removeContainerFixture(): Promise<void> {
+  await run(["docker", "exec", TEST_SUITE_CONTAINER, "rm", "-f", FIXTURE_PATH]);
 }
 
 export type PublicationReadiness = {
@@ -96,12 +120,10 @@ export async function runManifestLifecycleProfile(
     if (error.code === "ENOENT") return false;
     throw error;
   })) throw new PreflightError(`Remove the existing injection configuration before starting a fresh exercise: ${configPath}`);
-  const env = await readEnvFile(envPath("coprocessor"));
-  const chainId = Number(env.CHAIN_ID);
-  assert(Number.isSafeInteger(chainId) && chainId >= 0, "coprocessor CHAIN_ID is missing/invalid");
+  const chainId = await readEvmHostChainId();
   const q = (index: number, sql: string) => query(coprocessorDatabaseName(index), sql);
   const json = async <T>(index: number, sql: string): Promise<T> => JSON.parse(await q(index, sql));
-  const fixture = async () => validateFixture(JSON.parse((await run(["docker", "exec", TEST_SUITE_CONTAINER, "cat", FIXTURE_PATH])).stdout));
+  const fixture = readContainerFixture;
   const report: Record<string, unknown> = { target: TARGET, chainId };
   let stopped = false;
   let f: Fixture | undefined;
@@ -121,7 +143,7 @@ export async function runManifestLifecycleProfile(
     }
     await run(["docker", "stop", DETECTOR]);
     stopped = true;
-    await run(["docker", "exec", TEST_SUITE_CONTAINER, "rm", "-f", FIXTURE_PATH]);
+    await removeContainerFixture();
     await runFixture("seed graph");
     f = await fixture();
     assert.equal(f.chainId, chainId);
@@ -148,8 +170,11 @@ export async function runManifestLifecycleProfile(
     const injected = flippedDigest(original.digest);
     report.originalDigest = original.digest;
     report.injectedDigest = injected;
+    // The detector parses chain_id as an i64 JSON number.
+    const injectedChainId = Number(chainId);
+    assert(Number.isSafeInteger(injectedChainId), `chain ${chainId} does not fit the injection file's JSON number`);
     // Resume publication as soon as fixture computation/upload checks pass.
-    await fs.writeFile(`${configPath}.tmp`, JSON.stringify({ enabled: true, pause_healing: true, chain_id: chainId, handle: f.root, fault: "ct64_digest_bit_flip" }));
+    await fs.writeFile(`${configPath}.tmp`, JSON.stringify({ enabled: true, pause_healing: true, chain_id: injectedChainId, handle: f.root, fault: "ct64_digest_bit_flip" }));
     await fs.rename(`${configPath}.tmp`, configPath);
     await run(["docker", "start", DETECTOR]);
     stopped = false;

@@ -433,6 +433,34 @@ describe("render-compose", () => {
     });
   });
 
+  test("solana-manifest-lifecycle publishes Solana at every height, as the EVM chains", async () => {
+    const solanaState: State = {
+      ...state,
+      scenario: resolveScenarioFile(
+        path.join("/tmp", "solana-manifest-lifecycle.yaml"),
+        await loadCoprocessorScenario("solana-manifest-lifecycle"),
+      ),
+    };
+    await withTempStateDir(async () => {
+      await mkdir(path.dirname(envPath("coprocessor")), { recursive: true });
+      const coprocessorEnv = `CHAIN_ID=${DEFAULT_CHAIN_ID}\nHOST_CHAIN_0_ID=${DEFAULT_CHAIN_ID}\n`;
+      for (const name of ["coprocessor", "coprocessor.1", "coprocessor.2"]) await writeFile(envPath(name), coprocessorEnv);
+      await generateComposeOverrides(solanaState, stackSpecForState(solanaState));
+      const doc = YAML.parse(await readFile(composePath("coprocessor"), "utf8")) as {
+        services: Record<string, { command?: string[] }>;
+      };
+      for (const detector of ["coprocessor", "coprocessor1", "coprocessor2"].map((prefix) => `${prefix}-consensus-detector`)) {
+        const cadenceFlags = (doc.services[detector]?.command ?? []).filter((item) =>
+          item.startsWith("--manifest-publication-cadence="));
+        expect(cadenceFlags.sort()).toEqual([
+          `--manifest-publication-cadence=${DEFAULT_CHAIN_ID}:1`,
+          `--manifest-publication-cadence=${ANVIL_CHAIN_ID}:1`,
+          "--manifest-publication-cadence=72057594037940281:1",
+        ].sort());
+      }
+    });
+  });
+
   test("does not request host-listener consumer services for legacy coprocessor bundles", () => {
     const legacyState: State = {
       ...state,

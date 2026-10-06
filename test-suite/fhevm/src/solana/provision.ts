@@ -30,6 +30,7 @@ import {
   type Address,
   type Instruction,
   type Rpc,
+  type Signature,
   type SolanaRpcApi,
   type TransactionSigner,
 } from '@solana/kit';
@@ -107,12 +108,15 @@ export type SendTransactionOptions = {
 
 export type SolanaProvisioningContext = {
   readonly rpc: Rpc<SolanaRpcApi>;
-  /** Signs `instructions` with `payer` plus any account-embedded signers, sends, and confirms. */
+  /**
+   * Signs `instructions` with `payer` plus any account-embedded signers, sends, waits until the
+   * transaction is finalized, and resolves its signature.
+   */
   sendTransaction(
     payer: TransactionSigner,
     instructions: readonly Instruction[],
     options?: SendTransactionOptions,
-  ): Promise<void>;
+  ): Promise<Signature>;
   /**
    * Brings `recipient` to at least `sol` SOL and waits for the confirmation: a validator airdrop of
    * the full amount when the context has no funder, otherwise a System transfer of the shortfall
@@ -163,7 +167,7 @@ export const createProvisioningContext = (
     payer: TransactionSigner,
     instructions: readonly Instruction[],
     options: SendTransactionOptions = {},
-  ): Promise<string> => {
+  ): Promise<Signature> => {
     const { value: latestBlockhash } = await rpc.getLatestBlockhash({ commitment: 'finalized' }).send();
     const base = setTransactionMessageFeePayerSigner(payer, createTransactionMessage({ version: 0 }));
     const withLifetime = setTransactionMessageLifetimeUsingBlockhash(latestBlockhash, base);
@@ -179,9 +183,7 @@ export const createProvisioningContext = (
     });
     return getSignatureFromTransaction(signedTransaction);
   };
-  const sendTransaction: SolanaProvisioningContext['sendTransaction'] = async (payer, instructions, options) => {
-    await sendAndConfirmSigned(payer, instructions, options);
-  };
+  const sendTransaction: SolanaProvisioningContext['sendTransaction'] = sendAndConfirmSigned;
   const fundSol: SolanaProvisioningContext['fundSol'] = async (recipient, sol) => {
     const amount = solToLamports(sol);
     const funder = contextOptions.funder;

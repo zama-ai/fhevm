@@ -3,19 +3,17 @@ import assert from "node:assert/strict";
 import fs from "node:fs/promises";
 import path from "node:path";
 import { PreflightError } from "../errors";
-import { coprocessorDatabaseName, envPath, TEST_SUITE_CONTAINER } from "../layout";
+import { coprocessorDatabaseName, TEST_SUITE_CONTAINER } from "../layout";
 import { MANIFEST_INJECTION_PATH, manifestInjectionDir } from "../manifest-drift";
 import { topologyForState } from "../stack-spec/stack-spec";
 import type { State } from "../types";
-import { readEnvFile } from "../utils/fs";
 import { run } from "../utils/process";
 import { captureDriftTables } from "./manifest-drift-report";
-import { validateFixture, waitForManifestCondition } from "./manifest-lifecycle";
+import { type Fixture, type ManifestFixturePhase, waitForManifestCondition } from "./manifest-lifecycle";
 
 type Descriptor = { handle: string; status: string; ct64_digest?: string };
 type Archive = { id: number; publication_block_number: number; object_key: string; body: string; bucket: string };
 const NODES = [0, 1, 2];
-const FIXTURE_PATH = "/tmp/manifest-lifecycle-fixture.json";
 const detector = (index: number) => `coprocessor${index || ""}-consensus-detector`;
 
 export function assertHealthyDescriptor(descriptors: Descriptor[], handle: string, digest: string) {
@@ -25,14 +23,22 @@ export function assertHealthyDescriptor(descriptors: Descriptor[], handle: strin
   assert.equal(matches[0]!.ct64_digest?.toLowerCase(), digest.toLowerCase(), "manifest ct64 digest differs from uploaded material");
 }
 
+/**
+ * Runs the fixture on the host chain `chainId` (decimal) and checks that every node computes,
+ * publishes and verifies each handle in quorum without drift. `runFixture` runs one phase and
+ * returns the fixture so far.
+ */
 export async function runManifestLifecycleNoDriftProfile(
   state: State,
   query: (database: string, sql: string) => Promise<string>,
-  runFixture: (phase: "seed graph" | "submit consumers") => Promise<void>,
+  chainId: string,
+  runFixture: (phase: ManifestFixturePhase) => Promise<Fixture>,
 ) {
   const topology = topologyForState(state);
   if (topology.count !== 3 || topology.threshold !== 2 || state.scenario.kind !== "coprocessor-consensus") {
-    throw new PreflightError("manifest-lifecycle-no-drift requires --scenario manifest-lifecycle (three nodes, quorum two)");
+    throw new PreflightError(
+      "manifest-lifecycle-no-drift requires --scenario manifest-lifecycle or solana-manifest-lifecycle (three nodes, quorum two)",
+    );
   }
   for (const node of NODES) {
     const [container] = JSON.parse((await run(["docker", "inspect", detector(node)])).stdout);
@@ -43,22 +49,24 @@ export async function runManifestLifecycleNoDriftProfile(
       () => { throw new PreflightError(`node ${node} has an injection configuration; use a fresh stack`); },
       (error: NodeJS.ErrnoException) => { if (error.code !== "ENOENT") throw error; });
   }
-  const env = await readEnvFile(envPath("coprocessor"));
-  const chainId = Number(env.CHAIN_ID);
-  assert(Number.isSafeInteger(chainId) && chainId >= 0);
   const q = (node: number, sql: string) => query(coprocessorDatabaseName(node), sql);
   const json = async <T>(node: number, sql: string): Promise<T> => JSON.parse(await q(node, sql));
-  const readFixture = async () => validateFixture(JSON.parse((await run(["docker", "exec", TEST_SUITE_CONTAINER, "cat", FIXTURE_PATH])).stdout));
   const report: Record<string, unknown> = { chainId, checkpoints: [] };
   const reportPath = path.join(manifestInjectionDir(2), "no-drift-report.json");
   try {
     for (const node of NODES) assert.equal(await q(node, "SELECT count(*) FROM drifted_handle"), "0", `node ${node} already has drift findings; use a fresh stack`);
-    await run(["docker", "exec", TEST_SUITE_CONTAINER, "rm", "-f", FIXTURE_PATH]);
     for (const phase of ["seed graph", "submit consumers"] as const) {
-      await runFixture(phase);
-      const fixture = await readFixture();
+      const fixture = await runFixture(phase);
       assert.equal(fixture.chainId, chainId);
       report.fixture = fixture;
+      // The quorum check below compares block numbers with rootBlock, so it must be the number
+      // every node records for the root's block.
+      for (const node of NODES) {
+        await waitForManifestCondition(`node ${node} host row for fixture block ${fixture.rootBlock}`, () => q(node,
+          `SELECT EXISTS(SELECT 1 FROM host_chain_blocks_valid WHERE chain_id=${chainId}
+            AND block_number=${fixture.rootBlock} AND block_hash=decode('${fixture.rootBlockHash.slice(2)}','hex'))`),
+        value => value === "t");
+      }
       const handles = phase === "seed graph" ? [fixture.root, fixture.child] : [fixture.blocked, fixture.independent];
       assert(handles.every(handle => handle !== undefined), "fixture omitted expected handles");
       for (const handle of handles as string[]) {

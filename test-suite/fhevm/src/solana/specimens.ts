@@ -10,7 +10,7 @@ import { INSTRUCTIONS_SYSVAR_ADDRESS, appendTransientStoreInstructions, prepareT
 // rendered into `./internal/generated/{encryptedCounter,depChain}` by the SDK's `codegen:solana`
 // script from the committed IDLs.
 
-import { type Address, type Instruction, type TransactionSigner } from "@solana/kit";
+import { type Address, type Instruction, type Signature, type TransactionSigner } from "@solana/kit";
 
 import { solanaEncryptedStoreAddress, type SolanaDelegationApplication } from "@fhevm/sdk/solana";
 
@@ -49,6 +49,8 @@ export type SpecimenValue = {
 export type SpecimenHandle = {
   readonly value: SpecimenValue;
   readonly handle: Uint8Array;
+  /** The transaction that installed `handle`. */
+  readonly signature: Signature;
 };
 
 const specimenValue = async (
@@ -126,8 +128,10 @@ const writeSpecimenValue = async (
 ): Promise<SpecimenHandle> => {
   const transientStore = await prepareTransientStore({ payer: owner, host: ZAMA_HOST_PROGRAM_ADDRESS });
   const instruction = await buildInstruction(transientStore);
-  await context.sendTransaction(owner, appendTransientStoreInstructions(transientStore, [instruction]), { skipPreflight: true });
-  return { value, handle: await currentHandle(context, value.encryptedStore, value.key) };
+  const signature = await context.sendTransaction(owner, appendTransientStoreInstructions(transientStore, [instruction]), {
+    skipPreflight: true,
+  });
+  return { value, handle: await currentHandle(context, value.encryptedStore, value.key), signature };
 };
 
 /** Creates `owner`'s counter at 0. */
