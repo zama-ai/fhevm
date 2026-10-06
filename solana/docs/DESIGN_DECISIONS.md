@@ -611,17 +611,17 @@ is never orphaned (DD-070).
 
 Options considered:
 
-- (A) Eager-materialize and gate decrypt release on a separate finality check.
+- (A) Eager-materialize and gate decrypt release on a separate finality check. Superseded by
+  DD-070: every reader is at `finalized`, so the gate would check nothing.
 - (B) Keep the two-step dormant model + add transitive subgraph activation via a recursive CTE
-  (activate the whole producing subgraph when the released handle is allowed).
-- (C) Slot-level finality gate.
+  (activate the whole producing subgraph when the released handle is allowed). Rejected: the
+  dormant/activate model and transient eval intermediates were designed separately and do not
+  compose.
+- (C) Slot-level finality gate. Superseded by DD-070, as (A).
 
 The accepted design is eager materialization from the listener's finalized ingest with no separate
 gate: the KMS connector revalidates authorization at the plaintext-release boundary, reading the
 chain at `finalized` (DD-070). KMS remains the only plaintext-release boundary.
-
-The dormant/activate model and transient eval intermediates were designed separately and do not
-compose. A gate in front of the KMS adds nothing once every reader is at `finalized`.
 
 Open for debate:
 
@@ -2144,6 +2144,29 @@ transaction, and the restart alarm are then the only trace, and the replay repai
 host-listener README restores the rows. Whether other providers keep this order is
 fhevm-internal#2087.
 
+On a cluster with several validators a slot can have more than one bank: Alpenglow can replace a
+slot's bank and signals it with `EntryUpdateParent`. Yellowstone v16 buffers each bank by `bank_id`
+and drops a replaced or losing bank (`yellowstone-grpc-geyser/src/block_reconstruction_v2.rs` at
+`bfd1d7e`). At `finalized` (DD-070) it sends one frozen bank per slot: the bank a Finalized or
+Confirmed status names, or, when Finalized reaches the slot only from a descendant, the slot's one
+remaining bank. The slot's transactions, its `Block` and `BlockMeta`, and its status all come from
+that bank.
+
+- Safety: the follower applies a block only when it names the last applied block by parent slot
+  and parent block hash (`a_slot_that_does_not_extend_the_last_halts`), so a block built on a
+  replaced bank is never applied. That a block's transactions and its block meta come from the
+  same bank is an assumption on the provider (INVARIANTS #69): the follower does not compare their
+  `bank_id`.
+- Liveness: a block that does not extend the last applied one is a fail-closed error. The host
+  listener or the Merkle indexer exits, and the pod restart replays from the checkpoint. Yellowstone
+  v16 emits a slot's Finalized before the ancestors that only inherit it, so a descendant can arrive
+  first; the replay after the restart delivers both in slot order. A slot left between two banks
+  that no status names is never delivered at `finalized`, so the follower exits at its child on
+  every restart while that slot is inside the provider's replay window. Nothing repairs that case
+  yet (fhevm-internal#2105).
+
+The single local validator never replaces a bank, so no local test exercises this.
+
 Archive catch-up applies the same bound to each transaction. `getBlock` with `transactionDetails:
 "accounts"` lists each transaction's signatures, account keys and error without instruction data or
 logs, and `getTransaction` fetches each successful transaction that names the host. The listing
@@ -2625,12 +2648,12 @@ treats a block as settled: at `confirmed` a supermajority has voted for the bloc
 it can no longer be rolled back.
 
 What `finalized` costs depends on the consensus. Under TowerBFT, which mainnet runs today, a block
-finalizes 32 slots, about 12.8 s, after it is confirmed. Under Alpenglow a block is final once its
-votes certify it, and `confirmed` and `finalized` name the same slot. Devnet runs Alpenglow (feature
-`A1pengvuM6JEcyNuTnMqepBKhwHE3N6PmUrdATGawhJS`, active since epoch 1167), where a block was final a
-median of 408 ms after it completed. The local validator runs Agave 4.3.0 with `--alpenglow`
-(TESTING.md), where a block is final as it completes; the same validator on TowerBFT finalized
-14.9 s later.
+finalizes 32 slots, about 12.8 s, after it is confirmed. Under Alpenglow (SIMD-0326) a block is
+final once its votes certify it, and `confirmed` and `finalized` name the same slot. Devnet runs
+Alpenglow (feature `A1pengvuM6JEcyNuTnMqepBKhwHE3N6PmUrdATGawhJS`, active since epoch 1167), where a
+block was final a median of 408 ms, and at the 90th percentile 585 ms, after it completed. The
+local validator runs Agave 4.3.0 with `--alpenglow` (TESTING.md), where a block is final as it
+completes; the same validator on TowerBFT finalized 14.9 s later.
 
 Decision:
 
@@ -2656,10 +2679,10 @@ finalized chain, where EVM host ACL reads take the node's latest block
 
 The leaf record and the Store the connector reads are both at `finalized`, so they differ only by
 the indexer's lag. Mixing commitments would cost retries, never a wrong answer: the connector
-verifies each proof against the Store's live peaks, and a proof built at an older leaf count often
-still verifies, because an append merges only some peaks and the connector extends the proof to the
-live count (`MmrProof::for_leaf_count`). When it does not, the request fails with `NoLeaf` or
-`ProofRecordBehind`, which are retried.
+verifies each proof against the Store's live peaks. A proof built at an older leaf count still
+verifies while the appends since then left the leaf's peak intact. A proof built ahead of the
+observed count is cut down to it (`MmrProof::for_leaf_count`). Otherwise the request fails with
+`ProofDoesNotVerify` or `ProofRecordBehind`, both retried.
 
 Rejected alternative: keep `confirmed` and add reorg unwind to the listener and the Merkle indexer.
 It needs a rollback path through computations and the leaf record, and still cannot take back a
@@ -2671,8 +2694,9 @@ A client that waits for less than `finalized`, such as a third-party wallet, can
 decryption before its grant is finalized. Neither service turns that into a terminal refusal:
 
 - the KMS connector records every outcome of such a read as recoverable. An absent Store, a missing
-  leaf (`NoLeaf`), a record behind the chain (`ProofRecordBehind`) and a delegation that is not live
-  are ACL denials that a later attempt may clear. Pinned by
+  leaf (`NoLeaf`), a record behind the chain (`ProofRecordBehind`), a proof that no longer verifies
+  (`ProofDoesNotVerify`) and a delegation that is not live are ACL denials that a later attempt may
+  clear. Pinned by
   `every_solana_authorization_failure_is_recorded_as_written`,
   `every_solana_public_decrypt_failure_is_recorded_as_written` and
   `a_missing_delegation_rejects_its_entry`;
@@ -2683,25 +2707,8 @@ decryption before its grant is finalized. Neither service turns that into a term
   covers Alpenglow's finality, not TowerBFT's 12.8 s. A refusal that stands costs
   `(max_attempts - 1) × retry_interval_ms` of extra reads: two seconds with that policy.
 
-Yellowstone v16 sends a block at `finalized` in the order DD-062 relies on: its transactions, then
-`Block` and `BlockMeta`, then the slot status, all from one frozen bank. On a cluster with several
-validators a slot can have more than one bank: Alpenglow can replace a slot's bank and signals it
-with `EntryUpdateParent`. Yellowstone v16 buffers each bank by `bank_id` and drops a replaced or
-losing bank (`yellowstone-grpc-geyser/src/block_reconstruction_v2.rs` at `bfd1d7e`). At `finalized`
-it delivers only the bank a Finalized or Confirmed status names, or, when Finalized reaches the
-slot only from a descendant, the slot's one remaining bank.
-
-- Safety: the follower applies a block only when it names the last applied block by parent slot
-  and parent block hash (DD-062, `a_slot_that_does_not_extend_the_last_halts`). A block built on
-  a replaced bank is never applied. That a block's transactions and its block meta come from the
-  same bank rests on Yellowstone v16: the follower does not compare their `bank_id`.
-- Liveness: a block that does not extend the last applied one stops the follower. Yellowstone emits
-  a slot's Finalized before the ancestors that inherit it, so a descendant can arrive before such
-  an ancestor; the restart replays from the checkpoint in slot order, which delivers both. A slot
-  left between two banks that no status names is never delivered at `finalized`, and the follower
-  stays stopped at its child until an operator acts.
-
-The single local validator never replaces a bank, so no local test exercises this.
+On a cluster with several validators a slot can have more than one bank. How Yellowstone v16
+delivers one bank per slot at `finalized`, and what the follower guarantees from it, is in DD-062.
 
 Pinned by `request_subscribes_to_host_transactions_and_block_meta` (the subscription),
 `finalized_rpc_preserves_order_null_accounts_and_context_slot` (the KMS snapshot) and

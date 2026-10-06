@@ -6,8 +6,10 @@
 //! as it arrives (`prepare_rpc_transaction`); the block must extend the checkpoint as the stream's
 //! validator requires, and is applied through the same path, so the database ends as
 //! uninterrupted streaming leaves it.
-//! Catch-up stops at the slot the archive had finalized when it started, well inside the
-//! stream's replay window, so the stream takes over however fast the chain moves.
+//! Catch-up stops at the slot the archive had finalized when it started, and the stream resumes
+//! from there. When Yellowstone lags the archive node and has not reached that slot, the stream's
+//! replay does not begin at the checkpoint slot, which is fatal ("inclusive replay did not begin
+//! at checkpoint slot"); a restart heals it once Yellowstone has caught up.
 
 use std::future::Future;
 

@@ -78,8 +78,8 @@ fn dedup_material_requests(requests: &mut Vec<SolanaMaterialRequest>) {
 /// store, which is also when it requests the output's material. Every other output dies with the
 /// transaction's TransientStore: the tfhe-worker computes it only for an allowed consumer in the
 /// same transaction, as EVM computes a value that no `Allowed` event persists. The KMS validates the
-/// live EncryptedStore and any MMR proof before releasing plaintext, so work scheduled on a block
-/// that later rolls back is wasted but cannot authorize decryption.
+/// live EncryptedStore and any MMR proof before releasing plaintext, so a scheduled computation
+/// authorizes no decryption.
 pub fn normalize_solana_records_for_db(
     records: impl IntoIterator<Item = SolanaHostRecord>,
     transaction_id: TransactionId,

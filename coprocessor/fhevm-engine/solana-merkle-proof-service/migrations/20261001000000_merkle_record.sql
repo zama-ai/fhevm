@@ -1,5 +1,5 @@
 -- The leaf record of Solana encrypted stores, rebuilt by the Merkle indexer from
--- confirmed blocks since the zama-host deployment. The KMS connector reads inclusion proofs
+-- finalized blocks since the zama-host deployment. The KMS connector reads inclusion proofs
 -- from it and verifies them against the on-chain store's peaks; the record itself is never
 -- trusted for authorization.
 

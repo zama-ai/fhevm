@@ -1932,7 +1932,7 @@ solanaHostListener:
   merkleDatabaseUrl: ""
   # Records every encrypted store's leaves, reading the listener's Solana env.
   # It resumes from its checkpoint; on an empty database it starts at `startSlot`,
-  # a confirmed block before the first encrypted store was created, such as the
+  # a finalized block before the first encrypted store was created, such as the
   # zama-host deployment slot. A store first seen above leaf zero stops it.
   merkleIndexer:
     startSlot: ""

@@ -1,6 +1,6 @@
 # Protocol invariants — Solana fhevm
 
-Last synced: 2026-09-24.
+Last synced: 2026-10-06.
 
 Every entry carries a stable number and a tag. Numbers are never reused: an
 entry that dies is retired in place. The tags:
@@ -385,7 +385,14 @@ DD-056 replays the same slots into computation rows and leaves the leaf record
 alone. A block the Merkle indexer replays must reproduce
 the leaves it recorded for it, or the indexer stops (DD-066).
 Pinned by `request_subscribes_to_host_transactions_and_block_meta` and
-`a_slot_that_does_not_extend_the_last_halts`.
+`a_slot_that_does_not_extend_the_last_halts`. This also rests on #69.
+
+**69. [ASSUMPTION]** The Yellowstone provider assembles each slot it sends at
+`finalized` from a single bank: the slot's transactions and its block meta come
+from the same bank. Yellowstone v16 does (DD-062). The listener and the Merkle
+indexer check each block's parent slot and parent block hash, not the bank of
+each transaction. Nothing checks the provider's Yellowstone version yet
+(fhevm-internal#2105).
 
 **33. [RISK]** Nothing pins a deployed program build to the listener and
 Merkle indexer builds. #28 takes the followed program id as an input, so a

@@ -1224,20 +1224,23 @@ mod tests {
     /// `answers`, and counts the reads.
     async fn scripted_rpc(
         answers: Vec<(u64, Vec<Option<RawAccount>>)>,
-    ) -> (String, std::sync::Arc<std::sync::atomic::AtomicUsize>) {
+    ) -> (String, std::sync::Arc<std::sync::Mutex<Vec<Option<u64>>>>) {
         use base64::Engine as _;
-        use std::sync::{atomic::AtomicUsize, Arc, Mutex};
+        use std::sync::{Arc, Mutex};
 
         let answers = Arc::new(Mutex::new(std::collections::VecDeque::from(answers)));
-        let reads = Arc::new(AtomicUsize::new(0));
-        let counted = reads.clone();
+        let required_slots = Arc::new(Mutex::new(Vec::new()));
+        let recorded = required_slots.clone();
         let app = axum::Router::new().route(
             "/",
-            axum::routing::post(move || {
+            axum::routing::post(move |axum::Json(request): axum::Json<serde_json::Value>| {
                 let answers = answers.clone();
-                let counted = counted.clone();
+                let recorded = recorded.clone();
                 async move {
-                    counted.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+                    recorded
+                        .lock()
+                        .expect("required slots lock")
+                        .push(request["params"][1]["minContextSlot"].as_u64());
                     let (slot, accounts) = answers
                         .lock()
                         .expect("answers lock")
@@ -1272,14 +1275,15 @@ mod tests {
             .expect("bind the scripted RPC");
         let addr = listener.local_addr().expect("scripted RPC addr");
         tokio::spawn(async move { axum::serve(listener, app).await });
-        (format!("http://{addr}"), reads)
+        (format!("http://{addr}"), required_slots)
     }
 
-    /// Runs the delegated-entry check for one entry against `answers`, with `max_attempts`.
+    /// Runs the delegated-entry check for one entry against `answers`, with `max_attempts`. Read
+    /// `n` answers at slot `100 + n`. Returns the outcome and the `minContextSlot` of each read.
     async fn check_one_delegated_entry(
         max_attempts: u32,
         rows: Vec<Vec<Option<RawAccount>>>,
-    ) -> (Result<(), HostAclError>, usize) {
+    ) -> (Result<(), HostAclError>, Vec<Option<u64>>) {
         use super::super::solana_delegation_precheck::tests::{
             encrypted_store_for, APP_PROGRAM, DELEGATE, DELEGATOR, PROGRAM_ID, SCOPE,
         };
@@ -1291,7 +1295,7 @@ mod tests {
             .enumerate()
             .map(|(read, accounts)| (100 + read as u64, accounts))
             .collect();
-        let (url, reads) = scripted_rpc(answers).await;
+        let (url, required_slots) = scripted_rpc(answers).await;
         let chain_id = zama_solana_request::host_chain::solana_host_chain_id(12345);
         let checker = HostAclChecker::new(
             &[HostChainConfig {
@@ -1316,16 +1320,18 @@ mod tests {
                 }],
             )
             .await;
-        (outcome, reads.load(std::sync::atomic::Ordering::SeqCst))
+        let required_slots = required_slots.lock().expect("required slots lock").clone();
+        (outcome, required_slots)
     }
 
     /// A client that waited for less than `finalized` can ask before its grant is finalized: the
-    /// rows are read again on the retry policy, and the request passes once the grant shows.
+    /// rows are read again on the retry policy, and the request passes once the grant shows. Each
+    /// row read requires the slot of the read before it.
     #[tokio::test]
     async fn a_grant_that_finalizes_after_the_first_row_read_passes() {
         use super::super::solana_delegation_precheck::tests::{clock, live_exact, row, NOW};
 
-        let (outcome, reads) = check_one_delegated_entry(
+        let (outcome, required_slots) = check_one_delegated_entry(
             3,
             vec![
                 vec![None, None, Some(clock(NOW))],
@@ -1334,7 +1340,11 @@ mod tests {
         )
         .await;
         assert!(outcome.is_ok(), "{outcome:?}");
-        assert_eq!(reads, 3, "the store read and two row reads");
+        assert_eq!(
+            required_slots,
+            [None, Some(100), Some(101)],
+            "the store read, then two row reads, each at or after the previous read's slot"
+        );
     }
 
     /// Rows still dead on the last attempt the retry policy allows refuse the entry.
@@ -1343,11 +1353,11 @@ mod tests {
         use super::super::solana_delegation_precheck::tests::{clock, NOW};
 
         let dead = || vec![None, None, Some(clock(NOW))];
-        let (outcome, reads) = check_one_delegated_entry(2, vec![dead(), dead()]).await;
+        let (outcome, required_slots) = check_one_delegated_entry(2, vec![dead(), dead()]).await;
         assert!(
             matches!(outcome, Err(HostAclError::NotAllowed { count: 1, .. })),
             "{outcome:?}"
         );
-        assert_eq!(reads, 3, "the store read and two row reads");
+        assert_eq!(required_slots.len(), 3, "the store read and two row reads");
     }
 }

@@ -27,8 +27,7 @@ export async function getBatcher(rpc: SolanaRpc, batcher: Address, config?: Fetc
 /**
  * Reads a `(batch, user)` join record via the generated `JoinRecord` decoder — derive the address
  * with `deriveJoinRecordAddress`. Throws if the record does not exist (the user never joined the
- * batch). `config` is the standard fetch passthrough, e.g. `{ commitment: 'finalized' }` to observe
- * a claim before finalization.
+ * batch). `config` is the standard fetch passthrough, e.g. `{ commitment: 'finalized' }`.
  */
 export async function getJoinRecord(
   rpc: SolanaRpc,

@@ -11,7 +11,7 @@ name: solana-e2e
 #
 # Computation ingestion is Yellowstone off-chain reconstruction: the host listener feeds the
 # coprocessor from gRPC, and the Merkle indexer recomputes every allow leaf from the same
-# confirmed instruction stream. A green suite ends by checking that record against the chain.
+# finalized instruction stream. A green suite ends by checking that record against the chain.
 #
 # The lifecycle bring-up also deploys and seeds the confidential-vault demo (#1760). After the e2e
 # phases, the same job refreshes that still-owned boot:

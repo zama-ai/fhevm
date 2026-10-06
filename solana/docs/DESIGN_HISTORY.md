@@ -960,6 +960,15 @@ caught empty-contracts / wrong-sig being accepted on the EVM path.
 Branching on the chain type keeps EVM strictness intact while admitting Solana. The CI integration
 test that caught the regression now passes for both. This entry only keeps that split.
 
+### DD-028, replaced in part by DD-070
+
+DD-070 moved the listener's ingest to `finalized`, where no block is orphaned.
+
+> - **Solana on-chain REORG handling is NOT wired** into the listener's block-status machine: the Solana
+>   Yellowstone listener reconstructs at `confirmed` and inserts directly, bypassing the EVM
+>   `host_chain_blocks_valid` / `block_history.rs` substrate. KMS authorization remains independent;
+>   reorg unwind would recover wasted work (DD-025).
+
 ### DD-033, replaced in part by DD-066
 
 DD-066 moved the leaf reconstruction from the host listener to the Merkle indexer.
