@@ -2901,8 +2901,9 @@ Consequences:
 - The off-chain Rust derivations move behind `zama-solana-acl` seed-list functions (copro).
 - PDAs of other programs are facts of those programs and come from their maintained clients:
   `findAssociatedTokenPda` from `@solana-program/token` and `findAddressLookupTablePda` from
-  `@solana-program/address-lookup-table`. The BPF loader's program data has no maintained finder
-  (`@solana-program/loader-v3` 0.7.0 exports none), so its two derivations stay listed until one
-  exists.
+  `@solana-program/address-lookup-table`. The BPF loader's program data address is stored in the
+  program account, so the chain is its source and a client reads it rather than derives it.
+  `@solana-program/loader-v3` 0.7.0 ships no decoder for that account, so until one does, a single
+  helper in `solana/deploy` derives it and the test suite imports that helper.
 
 Pinned by `dead-surface-check.sh` check 8 and its `--self-test` fixtures.

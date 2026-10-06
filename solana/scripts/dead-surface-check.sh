@@ -250,10 +250,11 @@ HAND_DERIVATIONS_ALLOWED=(
   "solana/demo-dapp/src/vault/actions/confidentialTransfer.ts|2|fhevm-internal#2108 task 5"
   # Mixed: PR 1b removes the zama-host and confidential-token recipes, and PR 1c the demo batcher's
   # and demo vault's, once those programs declare Anchor seeds. Solana infra replaces the PDAs of
-  # other programs with their maintained @solana-program/* finders. The BPF loader's programData has
-  # none: @solana-program/loader-v3 0.7.0 exports no finder.
-  "solana/deploy/src/bootstrap.ts|3|PR 1b (event authority); Solana infra (programData: no maintained finder)"
-  "test-suite/fhevm/src/solana/provision.ts|3|PR 1b (event authority); Solana infra (programData: no maintained finder)"
+  # other programs with their maintained @solana-program/* finders. The program account stores its
+  # programData address, but @solana-program/loader-v3 0.7.0 ships no decoder for it, so one helper
+  # in solana/deploy keeps the derivation until it does.
+  "solana/deploy/src/bootstrap.ts|3|PR 1b (event authority); Solana infra (programData: the one helper until loader-v3 decodes the program account)"
+  "test-suite/fhevm/src/solana/provision.ts|3|PR 1b (event authority); Solana infra (programData: import the solana/deploy helper)"
   "test-suite/fhevm/src/solana/spl.ts|3|PR 1b (vault authority); Solana infra (@solana-program/token findAssociatedTokenPda)"
   "solana/demo-dapp/src/vault/internal/tokenAccounts.ts|1|PR 1b (stores); Solana infra (@solana-program/token findAssociatedTokenPda)"
   "solana/deploy/src/recover.ts|5|PR 1b (confidential-token); PR 1c (batcher, demo vault)"
