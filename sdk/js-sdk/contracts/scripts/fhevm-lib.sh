@@ -223,6 +223,27 @@ fhevm_assert_foundry_profile() {
     esac
 }
 
+# Resolves the slot directory name for a given Foundry profile. Each slot has its
+# host contracts under src/<slot>/ and its deploy scripts under scripts/<slot>/.
+#
+# Usage: fhevm_slot <profile>
+#   <profile>: v12 | v13 | latest | intree
+#
+#   slot="$(fhevm_slot v13)"   # v0.13.0
+fhevm_slot() {
+    local profile="$1"
+    case "$profile" in
+        v12) printf 'v0.12.0\n' ;;
+        v13) printf 'v0.13.0\n' ;;
+        latest) printf 'latest\n' ;;
+        intree) printf 'intree\n' ;;
+        *)
+            echo "fhevm_slot: unsupported profile '$profile' (expected: v12 | v13 | latest | intree)" >&2
+            return 1
+            ;;
+    esac
+}
+
 # Resolves the FHEVMHostAddresses.sol path for a given Foundry profile.
 # Path is computed relative to this library's location (assumes layout under
 # sdk/js-sdk/contracts/scripts/).
@@ -232,28 +253,10 @@ fhevm_assert_foundry_profile() {
 #
 #   addresses_file="$(fhevm_host_addresses_file v13)"
 fhevm_host_addresses_file() {
-    local profile="$1"
-    local contracts_dir
+    local slot contracts_dir
+    slot="$(fhevm_slot "$1")" || return 1
     contracts_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
-
-    case "$profile" in
-        v12)
-            printf '%s/src/v0.12.0/host-contracts/addresses/FHEVMHostAddresses.sol\n' "$contracts_dir"
-            ;;
-        v13)
-            printf '%s/src/v0.13.0/host-contracts/addresses/FHEVMHostAddresses.sol\n' "$contracts_dir"
-            ;;
-        latest)
-            printf '%s/src/latest/host-contracts/addresses/FHEVMHostAddresses.sol\n' "$contracts_dir"
-            ;;
-        intree)
-            printf '%s/src/intree/host-contracts/addresses/FHEVMHostAddresses.sol\n' "$contracts_dir"
-            ;;
-        *)
-            echo "fhevm_host_addresses_file: unsupported profile '$profile' (expected: v12 | v13 | latest | intree)" >&2
-            return 1
-            ;;
-    esac
+    printf '%s/src/%s/host-contracts/addresses/FHEVMHostAddresses.sol\n' "$contracts_dir" "$slot"
 }
 
 # Reads a single contract address from a chain TS file by key.
