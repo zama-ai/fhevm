@@ -6,9 +6,8 @@ via_ir = false
 src = "src"
 out = "out"
 allow_paths = ["../../.."]
-# The in-tree host-contracts include the LayerZero bridge, which needs dependencies this workspace does not install.
-# The cleartext host deploys no bridge; ACL only imports bridge/interfaces.
-skip = ["src/intree/host-contracts/contracts/bridge/*.sol"]
+# The release slots never compile the intree slot.
+skip = ["src/intree/**", "scripts/intree/**"]
 fs_permissions = [
     { access = "read", path = "out" },
     { access = "read", path = "../../.." },
@@ -83,6 +82,9 @@ remappings = [
 ]
 
 [profile.intree]
+# The in-tree host-contracts include the LayerZero bridge, which needs dependencies this workspace does not install.
+# The cleartext host deploys no bridge; ACL only imports bridge/interfaces.
+skip = ["src/intree/host-contracts/contracts/bridge/*.sol"]
 remappings = [
     "forge-std/=dependencies/forge-std-1.11.0/src/",
     "encrypted-types/=dependencies/@encrypted-types-0.0.4/",
@@ -94,3 +96,8 @@ remappings = [
     "@fhevm/host-contracts/=./src/intree/host-contracts/",
     "@fhevm/cleartext/=./src/intree/cleartext/",
 ]
+
+# forge lint resolves the symlinked host-contracts through their real path, where the relative
+# `../addresses` imports do not exist, and `[lint] ignore` does not stop that resolution.
+[profile.intree.lint]
+lint_on_build = false
