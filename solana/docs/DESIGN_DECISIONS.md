@@ -1864,8 +1864,8 @@ refuses a Solana chain whose checkpoint is not the block at `H`: from a checkpoi
 listener would never re-ingest what it deleted. `revert_coprocessor_db_state.sh` runs both when
 given `SOLANA_SLOT` and `SOLANA_BLOCK_HASH`. On restart the listener replays from `S` and inserts
 the rows again as new work. The replay leaves the leaf record alone:
-the Merkle indexer keeps it in its own database, and a block the indexer replays must reproduce the
-leaves it recorded, or the indexer stops (DD-066). So a replay repairs computation rows, not a bug
+the Merkle indexer keeps it in its own database and skips its checkpoint block when the hash
+matches (DD-066). So a replay repairs computation rows, not a bug
 that recorded wrong leaves. A replay older than the provider's replay window comes from the archive
 RPC (DD-059), so `S` must be in the archive's history, and nothing checks that before the rows are
 deleted. The runbook is in the host-listener README.
@@ -2140,7 +2140,7 @@ without applying the slot. A transaction that a recent slot did not hold stops i
 recorded without it, and the restart resumes from the checkpoint, past that slot. If the
 transaction wrote a Store, the next write to that Store does not continue its recorded leaf count,
 and the Merkle indexer, which follows the same stream, stops there until its record is rebuilt
-(DD-066): a replay computes leaves the record does not hold and stops too. The listener continues
+(DD-066). Moving its checkpoint back does not repair the record. The listener continues
 without the transaction's computation rows. The error, which names the slot and the
 transaction, and the restart alarm are then the only trace, and the replay repair in the
 host-listener README restores the rows. Whether other providers keep this order is
@@ -2364,12 +2364,11 @@ binaries:
   deployment slot, whose hash it reads from the archive endpoint. It never starts at the tip. It
   stops on a Store first seen above leaf zero (`UnrecordedHistory`) and on a leaf count that
   skips.
-- The checkpoint also keeps `recorded_through`, the highest slot ever applied. A block at or below
-  it is a replay. Its writes must reproduce every leaf recorded at its slot, across all Stores, or
-  the indexer stops and writes nothing. A replay that changes, adds or drops a leaf therefore
-  stops it. Moving the checkpoint back re-verifies the record: the indexer checks each block up
-  to `recorded_through` and appends only after it. It cannot repair a wrong record, which is
-  rebuilt from the start slot into an empty database or restored from another record's dump.
+- Re-handing the checkpoint block with the same hash writes nothing. A different hash at that
+  slot or a block below it stops the indexer. The finalized follower applies one block at a time
+  and filters older redeliveries. Moving the checkpoint back does not rewind the Store cursors:
+  re-applying recorded leaves fails on their previous leaf count. A wrong record is rebuilt from
+  the start slot into an empty database or restored from another record's dump.
 - `solana_merkle_proof_server` serves the proofs from that database over
   `POST /v1/solana/merkle-proofs` (DD-063, DD-064).
 
@@ -2518,9 +2517,9 @@ Status: adopted
 
 Recorded in zama-ai/fhevm#4221.
 
-The indexer refuses a replayed block that changes the record (DD-066), but nothing compared the
-record with the chain. A record restored from a diverged dump, edited by hand, damaged on disk or
-built by an indexer bug served proofs that the KMS connector rejected one by one. Nobody was told,
+Checking each new write's previous leaf count (DD-066) did not compare the recorded peaks with
+the chain. A record restored from a diverged dump, edited by hand, damaged on disk or built by
+an indexer bug served proofs that the KMS connector rejected one by one. Nobody was told,
 and the connector paid a failed read per request until someone looked.
 
 Decision:

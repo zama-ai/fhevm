@@ -1,4 +1,4 @@
-//! The indexer sink against a real Postgres: a record built through crashes, replays or a
+//! The indexer sink against a real Postgres: a record built through crashes, redeliveries or a
 //! dump and restore is the record an uninterrupted run builds, and its peaks are the peaks the
 //! chain's own MMR appends produce.
 
@@ -14,7 +14,7 @@ use solana_host_follower::{
     BlockSink, IngestFailure, PreparedBlock, PreparedTransaction, SealedBlock,
 };
 use solana_merkle_proof_service::indexer::{IndexerStart, MerkleIndexerSink};
-use solana_merkle_proof_service::store::load_checkpoint;
+use solana_merkle_proof_service::store::{load_checkpoint, LeafReduceError};
 use solana_merkle_proof_service::MIGRATOR;
 use solana_sdk::signature::Signature;
 use sqlx::postgres::PgPoolOptions;
@@ -158,7 +158,7 @@ struct Record {
     stores: Vec<StoreRow>,
     leaves: Vec<LeafRow>,
     nodes: Vec<NodeRow>,
-    checkpoint: Option<(i64, Vec<u8>, i64)>,
+    checkpoint: Option<(i64, Vec<u8>)>,
 }
 
 impl Record {
@@ -186,7 +186,7 @@ impl Record {
             .await
             .unwrap(),
             checkpoint: sqlx::query_as(
-                "SELECT slot, block_hash, recorded_through FROM checkpoint",
+                "SELECT slot, block_hash FROM checkpoint",
             )
                 .fetch_optional(pool)
                 .await
@@ -300,16 +300,13 @@ async fn a_record_built_through_crashes_is_the_uninterrupted_record() {
     assert_eq!(Record::read(&pool).await, expected);
 }
 
-/// Moving the checkpoint back replays the later blocks, which must reproduce the record. A
-/// replayed block that changes, adds or drops a leaf stops the indexer and leaves the record as
-/// it was.
+/// Rewinding only the checkpoint leaves the store cursors ahead of the block's writes.
 #[tokio::test]
 #[serial(db)]
-async fn replayed_blocks_must_reproduce_the_record() {
+async fn a_rewound_checkpoint_cannot_reapply_recorded_leaves() {
     let blocks = blocks();
     let (_db, pool) = support::record_db().await;
     apply_all(&pool, &blocks).await;
-    let expected = Record::read(&pool).await;
 
     let rewind = &blocks[4].block;
     sqlx::query("UPDATE checkpoint SET slot = $1, block_hash = $2")
@@ -318,48 +315,76 @@ async fn replayed_blocks_must_reproduce_the_record() {
         .execute(&pool)
         .await
         .unwrap();
-    apply_all(&pool, &blocks[5..]).await;
-    assert_eq!(Record::read(&pool).await, expected);
+    let before = Record::read(&pool).await;
+    let checkpoint: String = sqlx::query_scalar(
+        "SELECT row_to_json(checkpoint)::text FROM checkpoint",
+    )
+    .fetch_one(&pool)
+    .await
+    .unwrap();
 
-    // Slot 106 writes both stores, slot 105 only the first.
-    let both = blocks[6].clone();
-    assert_eq!(both.transactions.len(), 2);
-    let first_only = blocks[5].clone();
-    assert_eq!(first_only.transactions.len(), 1);
-    let first_leaf_at = |block: &PreparedBlock, store: usize| {
-        expected
-            .leaves
-            .iter()
-            .find(|leaf| {
-                leaf.0 == STORES[store] && leaf.6 == block.block.slot as i64
-            })
-            .map(|leaf| leaf.1 as u64)
+    let failure = apply(&pool, &blocks[5]).await.unwrap_err();
+    assert!(failure.is_fatal(), "{failure}");
+    let expected_error = LeafReduceError::PreviousLeafCountMismatch {
+        encrypted_store: STORES[0],
+        declared: chain_peaks(&blocks[..5])[&STORES[0]].0,
+        recorded: before.stores[0].1 as u64,
     };
-
-    let mut changed = first_only.clone();
-    changed.transactions[0].instructions[0] = make_public(
-        STORES[0],
-        [0xEE; 32],
-        first_leaf_at(&first_only, 0).unwrap(),
+    assert!(
+        format!("{failure:?}").contains(&expected_error.to_string()),
+        "{failure:?}"
     );
-    let mut added = first_only.clone();
-    let second_count = expected.stores[1].1 as u64;
-    added.transactions.push(PreparedTransaction {
-        signature: Signature::from([0xAD; 64]),
-        index: 1,
-        instructions: vec![make_public(STORES[1], [0xEE; 32], second_count)],
-    });
-    let mut dropped = both.clone();
-    dropped.transactions.pop();
-    assert!(first_leaf_at(&both, 1).is_some());
+    assert_eq!(Record::read(&pool).await, before);
+    assert_eq!(
+        sqlx::query_scalar::<_, String>(
+            "SELECT row_to_json(checkpoint)::text FROM checkpoint",
+        )
+        .fetch_one(&pool)
+        .await
+        .unwrap(),
+        checkpoint
+    );
+}
 
-    for (case, forged) in
-        [("changed", changed), ("added", added), ("dropped", dropped)]
-    {
-        let failure = apply(&pool, &forged).await.unwrap_err();
-        assert!(failure.is_fatal(), "{case}: {failure}");
-        assert_eq!(Record::read(&pool).await, expected, "{case}");
+#[tokio::test]
+#[serial(db)]
+async fn only_the_matching_checkpoint_block_can_be_rehanded() {
+    let blocks = blocks();
+    let (_db, pool) = support::record_db().await;
+    apply_all(&pool, &blocks[..3]).await;
+    let before = Record::read(&pool).await;
+    let checkpoint: String = sqlx::query_scalar(
+        "SELECT row_to_json(checkpoint)::text FROM checkpoint",
+    )
+    .fetch_one(&pool)
+    .await
+    .unwrap();
+
+    apply(&pool, &blocks[2]).await.unwrap();
+    assert_eq!(Record::read(&pool).await, before);
+    let mut conflicting = blocks[2].clone();
+    conflicting.block.block_hash = [0xEE; 32];
+    for (block, message) in [
+        (
+            &conflicting,
+            "block hash differs from the recorded checkpoint",
+        ),
+        (&blocks[1], "below the recorded checkpoint"),
+    ] {
+        let failure = apply(&pool, block).await.unwrap_err();
+        assert!(failure.is_fatal(), "{failure}");
+        assert!(failure.to_string().contains(message), "{failure}");
+        assert_eq!(Record::read(&pool).await, before);
     }
+    assert_eq!(
+        sqlx::query_scalar::<_, String>(
+            "SELECT row_to_json(checkpoint)::text FROM checkpoint",
+        )
+        .fetch_one(&pool)
+        .await
+        .unwrap(),
+        checkpoint
+    );
 }
 
 /// A store whose first write the record sees already held leaves was created before the

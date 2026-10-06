@@ -29,9 +29,6 @@ CREATE TABLE leaves (
 CREATE INDEX leaves_semantic_idx
     ON leaves (encrypted_store, leaf_kind, handle, allowed_key, leaf_index);
 
--- A replayed block is compared with every leaf recorded at its slot.
-CREATE INDEX leaves_block_slot_idx ON leaves (block_slot);
-
 -- The MMR nodes of height 1 and above, written in the transaction that appends the leaves
 -- completing them. A proof takes its path from here by position; height-0 siblings are leaf
 -- rows. Node (height, node_index) covers leaves [node_index << height, (node_index + 1) << height).
@@ -52,15 +49,11 @@ CREATE TABLE quarantined_stores (
     detected_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
 
--- The last sealed block the indexer applied, written in that block's transaction so a restart
--- resumes exactly after the recorded work. `recorded_through` is the highest slot ever applied:
--- moving `slot` back replays the blocks up to it, each checked against its recorded leaves, so a
--- rewind re-verifies the record and never rewrites it.
+-- The last finalized block the indexer applied, written in that block's transaction.
+-- Re-handing this slot with the same hash writes nothing; a conflicting hash or older slot fails.
 CREATE TABLE checkpoint (
     singleton SMALLINT PRIMARY KEY DEFAULT 1 CHECK (singleton = 1),
     slot BIGINT NOT NULL CHECK (slot >= 0),
     block_hash BYTEA NOT NULL CHECK (octet_length(block_hash) = 32),
-    recorded_through BIGINT NOT NULL,
-    updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-    CHECK (recorded_through >= slot)
+    updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );

@@ -382,8 +382,8 @@ blocks (DD-070), so they schedule and record no work on a minority fork and
 have no reorg to unwind. Each block must name the last applied one by parent
 slot and parent block hash, or the stream stops (DD-062). The operator repair of
 DD-056 replays the same slots into computation rows and leaves the leaf record
-alone. A block the Merkle indexer replays must reproduce
-the leaves it recorded for it, or the indexer stops (DD-066).
+alone. Re-handing the Merkle indexer's checkpoint block with the same hash writes
+nothing; a conflicting hash or older slot stops it (DD-066).
 Pinned by `request_subscribes_to_host_transactions_and_block_meta` and
 `a_slot_that_does_not_extend_the_last_halts`. This also rests on #69.
 

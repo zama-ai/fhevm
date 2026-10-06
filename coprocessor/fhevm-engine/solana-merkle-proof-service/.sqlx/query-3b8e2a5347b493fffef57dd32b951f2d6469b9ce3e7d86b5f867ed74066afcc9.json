@@ -1,6 +1,6 @@
 {
   "db_name": "PostgreSQL",
-  "query": "SELECT slot, block_hash FROM checkpoint WHERE singleton = 1",
+  "query": "SELECT slot, block_hash FROM checkpoint WHERE singleton = 1 FOR UPDATE",
   "describe": {
     "columns": [
       {
@@ -22,5 +22,5 @@
       false
     ]
   },
-  "hash": "c24ab3c2580d5ddc87a47cecc1421696bfbccfac43b20cdc1e32d3ec1ef12396"
+  "hash": "3b8e2a5347b493fffef57dd32b951f2d6469b9ce3e7d86b5f867ed74066afcc9"
 }

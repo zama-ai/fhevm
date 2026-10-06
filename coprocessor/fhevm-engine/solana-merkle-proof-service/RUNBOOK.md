@@ -72,8 +72,9 @@ divergence.
    `pg_dump` must be the server's major version or newer, and `pg_restore` the version of the
    `pg_dump` that made the archive or newer.
 4. **Start the indexer.** Scale `<release>-solana-merkle-indexer` to 1. It resumes after the
-   dump's checkpoint. The first block it replays must carry the checkpoint's hash; when it does
-   not, the indexer stops, and the dump is from another fork: take an older dump.
+   dump's checkpoint. The follower verifies that block's hash and skips it. A different hash
+   stops the indexer: take an older dump. Re-handing the matching checkpoint block to the
+   indexer also writes nothing.
 5. **Wait for a clean store check.** Re-admit only when all three hold:
    - the indexer's lag alarm has cleared: `time() -
      solana_host_follower_applied_block_timestamp_seconds{service=~".*-solana-merkle-indexer"}`
