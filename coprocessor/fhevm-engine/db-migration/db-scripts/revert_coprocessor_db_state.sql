@@ -77,8 +77,11 @@ BEGIN
       LEFT JOIN host_chain_blocks_valid host
         ON host.chain_id = _chain_id AND host.block_hash = checkpoint.block_hash
      WHERE checkpoint.singleton = 1;
-    IF FOUND AND _checkpoint_height IS NULL THEN
-      RAISE EXCEPTION 'the Solana listener checkpoint at slot % names no recorded block; run rewind_solana_listener_checkpoint.sql to a recorded block first', _checkpoint_slot;
+    IF NOT FOUND THEN
+      RAISE EXCEPTION 'the Solana listener has no checkpoint; it has applied no block to revert';
+    END IF;
+    IF _checkpoint_height IS NULL THEN
+      RAISE EXCEPTION 'the Solana listener checkpoint at slot % names no recorded block; it was never recorded or its row was pruned (finalized rows 10000 heights below the tip and older than 7 days); run rewind_solana_listener_checkpoint.sql to a recorded block first', _checkpoint_slot;
     END IF;
     IF _checkpoint_height <> _to_block_number THEN
       RAISE EXCEPTION 'the Solana listener checkpoint is at block height %, not %; run rewind_solana_listener_checkpoint.sql to the block at height % first', _checkpoint_height, _to_block_number, _to_block_number;

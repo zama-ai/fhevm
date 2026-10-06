@@ -51,7 +51,7 @@ static HANDLE_CHECK_FAILURES: LazyLock<IntCounterVec> = LazyLock::new(|| {
 });
 
 /// Old finalized block rows are pruned once every this many heights, after the block commits.
-/// Each pass deletes at most `BLOCKS_VALID_PRUNE_BATCH` (1,000) rows.
+/// Each pass deletes at most `BLOCKS_VALID_PRUNE_BATCH` rows.
 const PRUNE_EVERY_HEIGHTS: u64 = 100;
 
 #[derive(Clone, Debug)]
@@ -90,7 +90,8 @@ impl BlockSink for SolanaListenerSink<'_> {
 }
 
 /// Applies one sealed block in one database transaction: every covered
-/// transaction's compute rows and the checkpoint.
+/// transaction's compute rows, the block's `host_chain_blocks_valid` row and
+/// the checkpoint.
 async fn apply_block(
     db: &Database,
     config: &SolanaListenerConfig,
@@ -714,6 +715,7 @@ mod apply_block_tests {
     use super::apply_block;
     use super::test_support::{
         config, context, encoded_execution, event_instruction, with_events,
+        STATE,
     };
     use crate::database::solana_checkpoint::load_checkpoint;
     use crate::database::tfhe_event_propagate::Database;
@@ -729,7 +731,8 @@ mod apply_block_tests {
     use sqlx::Row;
     use test_harness::instance::{setup_test_db, ImportMode};
     use zama_host::state::{
-        FheBinaryOpCode, FheExecuteArgs, FheExecuteOperand, FheExecuteStep,
+        ExecutionResultRef, FheBinaryOpCode, FheExecuteArgs, FheExecuteEffect,
+        FheExecuteOperand, FheExecuteStep,
     };
 
     /// The value added to [`two_steps`]'s first result.
@@ -865,6 +868,20 @@ mod apply_block_tests {
         .unwrap()
     }
 
+    /// The host row a finalized block at `height` writes.
+    fn finalized(
+        height: i64,
+        hash: u8,
+        parent: u8,
+    ) -> (i64, Vec<u8>, Vec<u8>, String) {
+        (
+            height,
+            vec![hash; 32],
+            vec![parent; 32],
+            "finalized".to_owned(),
+        )
+    }
+
     async fn new_db() -> (test_harness::instance::DBInstance, Database) {
         let instance = setup_test_db(ImportMode::None).await.expect("test db");
         let db = Database::new(
@@ -878,21 +895,43 @@ mod apply_block_tests {
     }
 
     /// Slots 40, 41, 43 and 44, with slot 42 skipped, are heights 38 to 41: the rows step by
-    /// one and each names its parent, as the manifest ranges require.
+    /// one and each names its parent, as the manifest ranges require. The output stored at
+    /// slot 43 is produced at height 40, the block number the detector joins on.
     #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
     async fn rows_are_numbered_by_height_across_a_skipped_slot() {
         let (_instance, db) = new_db().await;
+        let mut accounts = vec![[0; 32]; zama_host::FHE_EXECUTE_FIXED_ACCOUNTS];
+        accounts.push(STATE);
+        let stored = DecodedInstruction {
+            accounts,
+            data: encoded_execution(FheExecuteArgs {
+                execution_store_index: 0,
+                account_count: 1,
+                dictionary: vec![[0x33; 32]],
+                steps: vec![FheExecuteStep::TrivialEncrypt {
+                    plaintext: [1; 32],
+                    fhe_type: 5,
+                }],
+                effects: vec![FheExecuteEffect {
+                    result: ExecutionResultRef {
+                        step_index: 0,
+                        output_index: 0,
+                    },
+                    store_index: 0,
+                    previous_leaf_count: 0,
+                    slot: None,
+                    allow_indexes: vec![0],
+                    make_public: false,
+                    grants: vec![],
+                }],
+                returned_results: vec![],
+            }),
+        };
         let mut slot_43 = empty(43, 40, [0x43; 32], [0x41; 32]);
         slot_43.transactions = vec![PreparedTransaction {
             signature: Signature::from([1; 64]),
             index: 0,
-            instructions: with_events([execution(
-                vec![FheExecuteStep::TrivialEncrypt {
-                    plaintext: [1; 32],
-                    fhe_type: 5,
-                }],
-                vec![],
-            )]),
+            instructions: with_events([stored]),
         }];
         for block in [
             empty(40, 38, [0x40; 32], [0x39; 32]),
@@ -904,14 +943,6 @@ mod apply_block_tests {
         }
 
         let pool = db.pool().await;
-        let finalized = |height, hash: u8, parent: u8| {
-            (
-                height,
-                vec![hash; 32],
-                vec![parent; 32],
-                "finalized".to_owned(),
-            )
-        };
         assert_eq!(
             host_rows(&pool).await,
             vec![
@@ -927,6 +958,13 @@ mod apply_block_tests {
                 .await
                 .unwrap();
         assert_eq!(computed_at, vec![40]);
+        let produced_at: Vec<i64> = sqlx::query_scalar(
+            "SELECT producer_block_number FROM handle_producer_block",
+        )
+        .fetch_all(&pool)
+        .await
+        .unwrap();
+        assert_eq!(produced_at, vec![40]);
         assert_eq!(load_checkpoint(&pool).await.unwrap().unwrap().slot, 44);
     }
 
@@ -998,38 +1036,14 @@ mod apply_block_tests {
             }],
         };
 
-        let instance = setup_test_db(ImportMode::None).await.expect("test db");
+        let (instance, db) = new_db().await;
         let chain_id = ChainId::from_canonical_u64(config().chain_id);
-        let db = Database::new(&instance.db_url, chain_id, 100)
-            .await
-            .unwrap();
         let pool = db.pool().await;
-        for block in [&slot_41, &slot_42] {
-            apply_block(&db, &config(), block).await.unwrap();
-        }
-        // The worker drained the consumer of the held step.
-        sqlx::query("UPDATE computations SET is_error = true, error_message = 'drained' WHERE output_handle = $1")
-            .bind(consumer.to_vec())
-            .execute(&pool)
-            .await
-            .unwrap();
-
         sqlx::query("INSERT INTO host_chains (chain_id, name, acl_contract_address) VALUES ($1, 'solana', '') ON CONFLICT DO NOTHING")
             .bind(chain_id.as_i64())
             .execute(&pool)
             .await
             .unwrap();
-        let finalized = |height, hash: u8, parent: u8| {
-            (
-                height,
-                vec![hash; 32],
-                vec![parent; 32],
-                "finalized".to_owned(),
-            )
-        };
-        let both_rows =
-            vec![finalized(39, 0x41, 0x40), finalized(40, 0x42, 0x41)];
-        assert_eq!(host_rows(&pool).await, both_rows);
 
         // A refused script leaves its session in the aborted transaction, as psql would
         // before exiting, so it runs on a connection of its own.
@@ -1048,6 +1062,23 @@ mod apply_block_tests {
             .unwrap_err()
             .to_string()
         };
+        let unstarted = refused_revert(39).await;
+        assert!(unstarted.contains("has no checkpoint"), "{unstarted}");
+
+        for block in [&slot_41, &slot_42] {
+            apply_block(&db, &config(), block).await.unwrap();
+        }
+        // The worker drained the consumer of the held step.
+        sqlx::query("UPDATE computations SET is_error = true, error_message = 'drained' WHERE output_handle = $1")
+            .bind(consumer.to_vec())
+            .execute(&pool)
+            .await
+            .unwrap();
+
+        let both_rows =
+            vec![finalized(39, 0x41, 0x40), finalized(40, 0x42, 0x41)];
+        assert_eq!(host_rows(&pool).await, both_rows);
+
         // Slot 41 is height 39; the checkpoint is still at slot 42, height 40.
         let ahead = refused_revert(39).await;
         assert!(ahead.contains("at block height 40, not 39"), "{ahead}");
@@ -1093,6 +1124,14 @@ mod apply_block_tests {
         );
         assert_eq!(host_rows(&pool).await, both_rows);
         assert_eq!(load_checkpoint(&pool).await.unwrap().unwrap().slot, 42);
+
+        let unrecorded =
+            test_harness::db_utils::rewind_solana_listener_checkpoint_sql(
+                30, [0x30; 32],
+            );
+        sqlx::raw_sql(&unrecorded).execute(&pool).await.unwrap();
+        let pruned = refused_revert(39).await;
+        assert!(pruned.contains("names no recorded block"), "{pruned}");
     }
 
     /// A block whose second transaction emits a wrong handle for its first step: that step
@@ -1129,14 +1168,7 @@ mod apply_block_tests {
                 },
             ],
         };
-        let instance = setup_test_db(ImportMode::None).await.expect("test db");
-        let db = Database::new(
-            &instance.db_url,
-            ChainId::from_canonical_u64(config().chain_id),
-            100,
-        )
-        .await
-        .unwrap();
+        let (_instance, db) = new_db().await;
         let failures_before = handle_check_failures();
 
         apply_block(&db, &config(), &block).await.unwrap();

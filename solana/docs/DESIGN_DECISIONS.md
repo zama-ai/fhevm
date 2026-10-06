@@ -2746,8 +2746,10 @@ Merkle record and the logs. Example: slots 100, 102 and 103, with 101 skipped, a
   is written. `mark_block_as_valid` records an ingested finalized block without refusing a parent
   that disagrees, so the listener checks the parent first.
 - The row is `finalized` when it is recorded, since the listener reads at `finalized` (DD-070) and
-  never unwinds a block (INVARIANTS #32). Only manifest discovery and pruning read the status of a
-  Solana row.
+  never unwinds a block (INVARIANTS #32). Every reader of `host_chain_blocks_valid` sees Solana rows
+  as it sees EVM rows: manifest discovery, pruning, the upgrade controller's `check_dry_run_ready`,
+  and the consensus detector's state-hash writer and GCS watermark. A Solana chain's
+  `consensus_epoch_block_window.start_block` is therefore a block height.
 - Every 100 heights, after the commit, the listener prunes old finalized rows with
   `prune_finalized_block_history`, as EVM ingest does after a finalization pass.
 - The detector's default cadence for a Solana chain id is 150 heights, about one minute at 400 ms
@@ -2755,23 +2757,31 @@ Merkle record and the logs. Example: slots 100, 102 and 103, with 101 skipped, a
 
 Rejected alternative: number rows by slot. A skipped slot breaks the contiguity checks every
 coprocessor runs on its peers' manifests (`shared/block-manifest/src/lib.rs`), the aligned history
-windows, the n−1 parent check of `update_block_as_finalized`, and the `mod cadence` trigger, since a
-skipped multiple never comes due. Fixing them is a wire change across the EVM network, and the parent
-hashes already prove that no block is missing.
+windows, the n−1 parent check of `update_block_as_finalized`, and the `mod cadence` trigger, since
+a skipped multiple never comes due. Fixing them is a wire change across the EVM network, and the
+parent hashes already prove that no block is missing.
 
 Consequences:
 
 Apart from pruning, only the operator repair of DD-056 removes a recorded Solana block.
 `revert_coprocessor_db_state.sql` reads the height of the checkpoint block from its row. It refuses
-a Solana chain whose checkpoint names no recorded block, or is not the block at `to_block_number`,
-and names both heights.
+a Solana chain whose listener has no checkpoint, whose checkpoint names no recorded block, or whose
+checkpoint is not the block at `to_block_number`, and names both heights.
 `revert_coprocessor_db_state.sh` takes the rewind slot as `SOLANA_SLOT`, apart from the height in
-`TO_BLOCK_NUMBER`. The gw-listener's automatic drift revert runs the same script, so on a Solana chain
-it refuses until an operator rewinds the checkpoint.
+`TO_BLOCK_NUMBER`. The gw-listener's automatic drift revert runs the same script, so on a Solana
+chain it refuses until an operator rewinds the checkpoint.
+
+A repair reaches back only as far as the host rows. `prune_finalized_block_history` deletes
+finalized rows more than 10,000 heights below the tip and older than 7 days, so the rewind slot must
+be newer than the 7-day retention. The revert refuses a checkpoint at a pruned block, and a replay
+from one would stop at the parent check. A deeper replay is out of scope.
 
 A revert deletes the host rows above `to_block_number` but not their `block_manifest_state` rows, as
-on EVM. No chain prunes `block_manifest_state`: Solana adds about 216,000 rows a day per
-coprocessor, against about 7,200 for Ethereum. Both are tracked in fhevm-internal#2123.
+on EVM. The replay records the same blocks at the same heights, so those rows close again, and a
+sealed but unpublished one is resealed. A manifest already published for a block above
+`to_block_number` keeps its pre-revert content. No chain prunes `block_manifest_state`: Solana adds
+about 216,000 rows a day per coprocessor, against about 7,200 for Ethereum. Both are tracked in
+fhevm-internal#2123.
 
 Pinned by `rows_are_numbered_by_height_across_a_skipped_slot`,
 `an_incomplete_block_or_a_wrong_parent_writes_nothing`,

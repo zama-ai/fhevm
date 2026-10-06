@@ -185,7 +185,11 @@ slot neither serves cannot be re-ingested. Take a database backup before step 2.
 1. Stop all coprocessor services, as for any revert. Pick `S`, a slot that
    produced a block before the first failing slot, and take its `blockHeight`
    `H` and its `blockhash` from `getBlock S`, the hash decoded from base58 to
-   hex. The listener numbers rows by block height, not by slot.
+   hex. The listener numbers rows by block height, not by slot. `S` must be
+   newer than the 7-day host-row retention: `prune_finalized_block_history`
+   deletes finalized rows more than 10,000 heights below the tip and older than
+   7 days, and the revert refuses a checkpoint whose block has no row. A deeper
+   replay is out of scope.
 2. Run `db-migration/revert_coprocessor_db_state.sh` with `CHAIN_ID`,
    `TO_BLOCK_NUMBER=H`, `SOLANA_SLOT=S` and `SOLANA_BLOCK_HASH=<hex>`. It first
    moves the listener checkpoint back to `S`
