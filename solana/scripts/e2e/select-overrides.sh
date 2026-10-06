@@ -47,7 +47,7 @@ lock_keys_for() {
   case "$1" in
     gateway-contracts) echo "GATEWAY_VERSION" ;;
     host-contracts) echo "HOST_VERSION" ;;
-    coprocessor) echo "COPROCESSOR_DB_MIGRATION_VERSION COPROCESSOR_HOST_LISTENER_VERSION COPROCESSOR_GW_LISTENER_VERSION COPROCESSOR_TFHE_WORKER_VERSION COPROCESSOR_ZKPROOF_WORKER_VERSION COPROCESSOR_SNS_WORKER_VERSION COPROCESSOR_TX_SENDER_VERSION" ;;
+    coprocessor) echo "COPROCESSOR_DB_MIGRATION_VERSION COPROCESSOR_HOST_LISTENER_VERSION COPROCESSOR_GW_LISTENER_VERSION COPROCESSOR_TFHE_WORKER_VERSION COPROCESSOR_ZKPROOF_WORKER_VERSION COPROCESSOR_SNS_WORKER_VERSION COPROCESSOR_TX_SENDER_VERSION COPROCESSOR_CONSENSUS_DETECTOR_VERSION" ;;
     relayer) echo "RELAYER_VERSION RELAYER_MIGRATE_VERSION" ;;
     kms-connector) echo "CONNECTOR_DB_MIGRATION_VERSION CONNECTOR_GW_LISTENER_VERSION CONNECTOR_KMS_WORKER_VERSION CONNECTOR_TX_SENDER_VERSION" ;;
     *) echo "unknown group $1" >&2; return 1 ;;
@@ -60,7 +60,7 @@ images_for() {
   case "$1" in
     gateway-contracts) echo "fhevm/gateway-contracts" ;;
     host-contracts) echo "fhevm/host-contracts" ;;
-    coprocessor) echo "fhevm/coprocessor/db-migration fhevm/coprocessor/host-listener fhevm/coprocessor/gw-listener fhevm/coprocessor/tfhe-worker fhevm/coprocessor/zkproof-worker fhevm/coprocessor/sns-worker fhevm/coprocessor/tx-sender" ;;
+    coprocessor) echo "fhevm/coprocessor/db-migration fhevm/coprocessor/host-listener fhevm/coprocessor/gw-listener fhevm/coprocessor/tfhe-worker fhevm/coprocessor/zkproof-worker fhevm/coprocessor/sns-worker fhevm/coprocessor/tx-sender fhevm/coprocessor/consensus-detector" ;;
     relayer) echo "fhevm/relayer fhevm/relayer-migrate" ;;
     kms-connector) echo "fhevm/kms-connector/db-migration fhevm/kms-connector/gw-listener fhevm/kms-connector/kms-worker fhevm/kms-connector/tx-sender" ;;
     *) echo "unknown group $1" >&2; return 1 ;;

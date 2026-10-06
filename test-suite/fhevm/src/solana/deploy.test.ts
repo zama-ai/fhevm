@@ -13,7 +13,7 @@ import { getInitializeHostConfigInstructionDataDecoder } from '../../../../solan
 import { findHostConfigPda, findKmsContextPda, findRandNoncePda } from '../../../../solana/deploy/src/generated/zamaHost/pdas/index.js';
 import { ZAMA_HOST_PROGRAM_ADDRESS } from '../../../../solana/deploy/src/generated/zamaHost/programAddress.js';
 import { zamaHostProgramDataAddress } from './provision';
-import type { SolanaProvisioningContext } from './provision';
+import type { HostDeployContext } from '../../../../solana/deploy/src/send';
 
 const address20 = (byte: number): Uint8Array => new Uint8Array(20).fill(byte);
 
@@ -90,7 +90,7 @@ const fakeContext = async (hostConfigExists: boolean, payer: Address, kmsContext
       sent.push([...instructions]);
     },
     async fundSol() {},
-  } as unknown as SolanaProvisioningContext;
+  } as unknown as HostDeployContext;
   return { context, sent };
 };
 

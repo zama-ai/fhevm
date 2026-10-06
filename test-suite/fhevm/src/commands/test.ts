@@ -3,7 +3,14 @@ import path from "node:path";
 import { createBlueGreenManifestChecks } from "./blue-green-manifests";
 import { DRY_RUN_DRIFT_CLEANUP_SQL, GCS_SCHEMA_SQL, dryRunDriftInstallSql } from "./blue-green-dry-run-drift";
 import { runManifestLifecycleNoDriftProfile } from "./manifest-lifecycle-no-drift";
-import { runManifestLifecycleProfile } from "./manifest-lifecycle";
+import {
+  type ManifestFixturePhase,
+  readContainerFixture,
+  readEvmHostChainId,
+  removeContainerFixture,
+  runManifestLifecycleProfile,
+} from "./manifest-lifecycle";
+import { hostChainsForState } from "../flow/topology";
 import { runManifestHealingProfile } from "./manifest-healing";
 import { runRetainedMaterial } from "../consensus/retained-material-run";
 import { withRolloutSupervisor } from "../consensus/rollout-supervision";
@@ -2081,18 +2088,31 @@ export const test = async (testName: string | undefined, options: TestOptions) =
       ));
     }
     if (name === "manifest-lifecycle" || name === "manifest-lifecycle-no-drift") {
-      const runManifestProfile = name === "manifest-lifecycle" ? runManifestLifecycleProfile : runManifestLifecycleNoDriftProfile;
-      return runLogged(name, Date.now(), () => runManifestProfile(
-        state,
-        (database, sql) => scalarQuery(database, sql, postgresRuntime()),
-        async (phase) => {
-          const result = await runWithHeartbeat(buildTestContainerArgs(
-            runTestsArgs({ ...options, parallel: false, grep: `manifest lifecycle fixture ${phase}` }),
-            ["-e", "RUN_MANIFEST_LIFECYCLE=1"],
-          ), `manifest lifecycle ${phase}`);
-          assertMatchedTests(result.stdout + result.stderr, `manifest lifecycle ${phase}`);
-        },
-      ));
+      const query = (database: string, sql: string) => scalarQuery(database, sql, postgresRuntime());
+      const runHardhatFixture = async (phase: ManifestFixturePhase | "seed root") => {
+        const result = await runWithHeartbeat(buildTestContainerArgs(
+          runTestsArgs({ ...options, parallel: false, grep: `manifest lifecycle fixture ${phase}` }),
+          ["-e", "RUN_MANIFEST_LIFECYCLE=1"],
+        ), `manifest lifecycle ${phase}`);
+        assertMatchedTests(result.stdout + result.stderr, `manifest lifecycle ${phase}`);
+      };
+      if (name === "manifest-lifecycle") {
+        return runLogged(name, Date.now(), () => runManifestLifecycleProfile(state, query, runHardhatFixture));
+      }
+      // A scenario with a Solana host exercises it; the EVM host is covered by `manifest-lifecycle`.
+      const solanaHost = hostChainsForState(state).find((chain) => chain.type === "solana");
+      if (solanaHost) {
+        const { createSolanaManifestFixture } = await import("../solana/manifest-lifecycle-fixture");
+        return runLogged(name, Date.now(), () =>
+          runManifestLifecycleNoDriftProfile(state, query, solanaHost.chainId, createSolanaManifestFixture()));
+      }
+      return runLogged(name, Date.now(), async () => {
+        await removeContainerFixture();
+        await runManifestLifecycleNoDriftProfile(state, query, await readEvmHostChainId(), async (phase) => {
+          await runHardhatFixture(phase);
+          return readContainerFixture();
+        });
+      });
     }
     if (name === "kms-generation") {
       return runKmsGenerationProfile(state, runUserDecryption);

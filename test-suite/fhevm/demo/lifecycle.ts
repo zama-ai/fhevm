@@ -2177,14 +2177,14 @@ export const restartDemoSolanaListener = async (): Promise<void> =>
       throw new Error('listener restart requires a healthy, exactly-owned demo core stack');
     }
     // Bootstrap commands must load before the stack installs its Solana dependency graph.
-    const { readCoprocessorDatabaseUrl, startHostListener } = await import("../src/solana/deploy");
+    const { startHostListeners } = await import("../src/solana/deploy");
     const { programIdsFor, readSolanaEnvironment } = await import("../../../solana/deploy/src/environment");
     const runtimeDir = path.join(DEMO_RUNTIME_DIR, manifest.bootId);
     const logDir = path.join(runtimeDir, 'logs');
     await stopOwnedProcess('listener', manifest.processes.listener);
-    await startHostListener({
+    await startHostListeners({
       zamaHostId: programIdsFor(readSolanaEnvironment()).zamaHost,
-      databaseUrl: await readCoprocessorDatabaseUrl(),
+      coprocessorCount: 1,
       grpcUrl: process.env.GRPC_URL ?? LOCAL_SOLANA_ENDPOINTS.listenerGrpc,
       logDir,
       lifecycleDir: runtimeDir,

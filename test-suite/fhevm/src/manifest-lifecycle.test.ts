@@ -1,7 +1,7 @@
 import { describe, expect, test } from "bun:test";
 import { assertRestoredMaterial, publicationReady, flippedDigest, validateFixture, waitForManifestCondition } from "./commands/manifest-lifecycle";
 
-const fixture = { chainId: 12345, rootBlock: 42, rootBlockHash: `0x${"42".repeat(32)}`, root: `0x${"51".repeat(32)}`, child: `0x${"52".repeat(32)}` };
+const fixture = { chainId: "12345", rootBlock: 42, rootBlockHash: `0x${"42".repeat(32)}`, root: `0x${"51".repeat(32)}`, child: `0x${"52".repeat(32)}` };
 
 describe("manifest lifecycle oracle", () => {
   test("readiness distinguishes publication from registry and epoch prerequisites", () => {
@@ -16,10 +16,17 @@ describe("manifest lifecycle oracle", () => {
   test("rejects incomplete or unsafe fixture identities before composing SQL", () => {
     expect(validateFixture(fixture)).toEqual(fixture);
     expect(() => validateFixture({ ...fixture, root: "0x'" })).toThrow();
-    expect(() => validateFixture({ ...fixture, chainId: NaN })).toThrow();
+    for (const chainId of ["", "-1", "012", "1.5", "12345 OR true"]) {
+      expect(() => validateFixture({ ...fixture, chainId })).toThrow();
+    }
     expect(() => validateFixture({ ...fixture, rootBlock: 1.5 })).toThrow();
     expect(() => validateFixture({ ...fixture, child: fixture.root })).toThrow();
     expect(() => validateFixture({ ...fixture, root: undefined as unknown as string })).toThrow();
+  });
+
+  test("a Solana chain id above 2^53 stays exact", () => {
+    const solana = { ...fixture, chainId: "72057594037940281" };
+    expect(validateFixture(solana).chainId).toBe("72057594037940281");
   });
 
   test("single-root fixtures omit descendants but still validate their identities", () => {

@@ -185,6 +185,8 @@ export const SOLANA_VALIDATOR_RPC_PORT = 8899;
 export const SOLANA_VALIDATOR_WS_PORT = 8900;
 export const SOLANA_MERKLE_PROOF_PORT = 8080;
 export const SOLANA_LISTENER_HEALTH_PORT = 8081;
+/** Coprocessor `index`'s Solana host listener health port, 100 apart so none meets another service. */
+export const solanaListenerHealthPort = (index: number): number => SOLANA_LISTENER_HEALTH_PORT + 100 * index;
 export const SOLANA_MERKLE_INDEXER_HEALTH_PORT = 8082;
 export const SOLANA_LISTENER_GRPC_PORT = 10000;
 // The cleartext stack's own validator (`src/solana/cleartext-stack.ts`), clear of the real stack's.

@@ -111,12 +111,19 @@ LOCK="$ROOT/.fhevm/state/locks/sha-$BASE_SHA.json"
 #    tags (space-separated KEY=TAG entries, see select-overrides.sh).
 # shellcheck source=/dev/null
 source "$FHEVM/solana-images.env"
+#    The pinned base commit publishes no consensus-detector image. A source-built coprocessor group
+#    builds it, so its lock key takes the host-listener tag, as fhevm-cli does for release bundles;
+#    a published group gets it from SOLANA_E2E_LOCK_PINS.
+DETECTOR_BUILT_FROM_SOURCE=0
+case " $SOLANA_E2E_OVERRIDES " in *" coprocessor "*) DETECTOR_BUILT_FROM_SOURCE=1 ;; esac
 # shellcheck disable=SC2086 # SOLANA_E2E_LOCK_PINS is a space-separated KEY=TAG list, one arg each
-python3 - "$LOCK" "CORE_VERSION=$CORE_VERSION" $SOLANA_E2E_LOCK_PINS <<'PY'
+python3 - "$LOCK" "$DETECTOR_BUILT_FROM_SOURCE" "CORE_VERSION=$CORE_VERSION" $SOLANA_E2E_LOCK_PINS <<'PY'
 import json, sys
 p = sys.argv[1]
 d = json.load(open(p))
-for pin in sys.argv[2:]:
+if sys.argv[2] == "1":
+    d["env"]["COPROCESSOR_CONSENSUS_DETECTOR_VERSION"] = d["env"]["COPROCESSOR_HOST_LISTENER_VERSION"]
+for pin in sys.argv[3:]:
     key, _, tag = pin.partition("=")
     d["env"][key] = tag
     print(f"[clean-e2e] pinned {key}={tag} in {p}")

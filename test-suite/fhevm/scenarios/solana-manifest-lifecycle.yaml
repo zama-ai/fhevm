@@ -1,0 +1,47 @@
+version: 1
+kind: coprocessor-consensus
+name: Solana manifest lifecycle
+description: >-
+  The `solana` scenario with three coprocessors at quorum two, each running its own Solana host
+  listener, for `fhevm-cli test manifest-lifecycle-no-drift` against Solana handles. The detector
+  flags match `manifest-lifecycle`. Every chain, Solana included, publishes a manifest at every
+  height: the profile looks each fixture handle up in the manifest of its own producer block.
+hostChains:
+  - key: host
+    chainId: "12345"
+    rpcPort: 8545
+  - key: solana
+    type: solana
+    chainId: "72057594037940281"
+    rpcPort: 8899
+topology:
+  count: 3
+  threshold: 2
+instances:
+  - index: 0
+    args:
+      consensus-detector:
+        - --dangerous-drift-injection=/manifest-drift/injection.json
+        - --manifest-discovery-interval=1s
+        - --manifest-verification-retry-count=300
+        - --manifest-publication-cadence=72057594037940281:1
+    env:
+      DRIFT_AUTO_REVERT_ENABLED: "false"
+  - index: 1
+    args:
+      consensus-detector:
+        - --dangerous-drift-injection=/manifest-drift/injection.json
+        - --manifest-discovery-interval=1s
+        - --manifest-verification-retry-count=300
+        - --manifest-publication-cadence=72057594037940281:1
+    env:
+      DRIFT_AUTO_REVERT_ENABLED: "false"
+  - index: 2
+    args:
+      consensus-detector:
+        - --dangerous-drift-injection=/manifest-drift/injection.json
+        - --manifest-discovery-interval=1s
+        - --manifest-verification-retry-count=300
+        - --manifest-publication-cadence=72057594037940281:1
+    env:
+      DRIFT_AUTO_REVERT_ENABLED: "false"

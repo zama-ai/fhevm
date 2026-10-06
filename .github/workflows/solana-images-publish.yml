@@ -117,6 +117,12 @@ jobs:
             rust_toolchain: coprocessor/fhevm-engine/rust-toolchain.toml
             context: .
             target: prod
+          - name: coprocessor-consensus-detector
+            image: fhevm/coprocessor/consensus-detector
+            dockerfile: coprocessor/fhevm-engine/consensus-detector/Dockerfile
+            rust_toolchain: coprocessor/fhevm-engine/rust-toolchain.toml
+            context: .
+            target: prod
           - name: relayer
             image: fhevm/relayer
             dockerfile: relayer/docker/relayer/Dockerfile

@@ -17,19 +17,25 @@ import { deployHostProgram } from '../../../../solana/deploy/src/deploy-host';
 import { deployProgramArtifacts } from '../../../../solana/deploy/src/deploy-programs';
 import { integerEnv } from '../../../../solana/deploy/src/gateway';
 import {
+  COPROCESSOR_DB_CONTAINER,
   REPO_ROOT,
   SOLANA_MERKLE_PROOF_PORT,
-  SOLANA_LISTENER_HEALTH_PORT,
   SOLANA_MERKLE_DATABASE,
   SOLANA_MERKLE_DB_COMPONENT,
   SOLANA_MERKLE_DB_CONTAINER,
   SOLANA_MERKLE_INDEXER_HEALTH_PORT,
   SOLANA_MERKLE_POSTGRES_PORT,
   STATE_DIR,
+  STATE_FILE,
+  coprocessorDatabaseName,
   envPath,
+  solanaListenerHealthPort,
 } from '../layout';
-import { waitForContainer } from '../flow/readiness';
+import { restartZkproofWorker, waitForContainer } from '../flow/readiness';
 import { composeUp } from '../flow/runtime-compose';
+import { topologyForState } from '../stack-spec/stack-spec';
+import { loadState } from '../state/state';
+import type { Topology } from '../types';
 import { LOCAL_SOLANA_ENDPOINTS } from './endpoints';
 import { readEnvFile } from '../utils/fs';
 import { run, runStreaming } from '../utils/process';
@@ -65,13 +71,14 @@ const buildPrograms = async (): Promise<void> => {
 const deployPrograms = async (
   deployerKeypairPath: string,
   gateway: Awaited<ReturnType<typeof readGatewayBootstrapInputs>>,
+  coprocessorThreshold: number,
 ): Promise<string> => {
   const ids = await deployHostProgram({
     rpcUrl: VALIDATOR_RPC_URL,
     deployerKeypairPath,
     artifactsDir: ARTIFACTS_DIR,
     gateway,
-    coprocessorThreshold: integerEnv('COPROCESSOR_THRESHOLD', 1),
+    coprocessorThreshold,
     kmsCorruptionThreshold: integerEnv('KMS_THRESHOLD', 0),
   });
   await deployProgramArtifacts({
@@ -86,12 +93,22 @@ const deployPrograms = async (
   return ids.zama_host!;
 };
 
-/** The coprocessor DB URL from the generated env, repointed at the host-published port. */
-export const readCoprocessorDatabaseUrl = async (): Promise<string> => {
-  const environment = await readEnvFile(envPath('coprocessor'));
+/**
+ * Coprocessor `index`'s DB URL from its generated env, repointed at the host-published port.
+ * Coprocessor 0 owns the unsuffixed `coprocessor` env.
+ */
+export const readCoprocessorDatabaseUrl = async (index = 0): Promise<string> => {
+  const environment = await readEnvFile(envPath(index === 0 ? 'coprocessor' : `coprocessor.${index}`));
   const url = environment.DATABASE_URL;
-  if (!url) throw new Error('missing DATABASE_URL in the generated coprocessor env');
+  if (!url) throw new Error(`missing DATABASE_URL in the generated env of coprocessor ${index}`);
   return url.replace('@db:', '@127.0.0.1:');
+};
+
+/** The running stack's coprocessor topology, which sizes the Solana listeners and the HostConfig threshold. */
+export const readStackTopology = async (): Promise<Topology> => {
+  const state = await loadState();
+  if (!state) throw new Error(`no fhevm-cli state at ${STATE_FILE}; run fhevm-cli up first`);
+  return topologyForState(state);
 };
 
 /** Both Postgres containers read their credentials from the generated `database.env`. */
@@ -149,51 +166,28 @@ export const gatewayAddHostChainArgs = (composeProject: string): string[] => [
 ];
 
 /**
- * Registers the Solana host chain in the coprocessor DB (host_chains i64 + keyset mirror) and on
- * the gateway (GatewayConfig.addHostChain). Both depend on the freshly-deployed program id and
+ * Registers the Solana host chain in every coprocessor's DB (host_chains i64 + keyset mirror) and
+ * on the gateway (GatewayConfig.addHostChain). Both depend on the freshly-deployed program id and
  * post-keygen state, which is why they live here and not in the fhevm-cli config generator.
  */
 const registerSolanaHostChain = async (parameters: {
   readonly zamaHostId: string;
   readonly composeProject: string;
+  readonly coprocessorCount: number;
 }): Promise<void> => {
   // The relax-chain-id migration is baked into the db-migration override; apply idempotently as a
   // safety net.
-  const migration = path.join(
-    ENGINE_DIR,
-    'db-migration',
-    'migrations',
-    '20260605120000_relax_chain_id_checks_for_solana_host.sql',
-  );
-  await run(['docker', 'exec', '-i', 'coprocessor-and-kms-db', 'psql', '-U', 'postgres', '-d', 'coprocessor'], {
-    input: await Bun.file(migration).text(),
-    allowFailure: true,
-  });
-  await run([
-    'docker',
-    'exec',
-    'coprocessor-and-kms-db',
-    'psql',
-    '-U',
-    'postgres',
-    '-d',
-    'coprocessor',
-    '-c',
-    registerSolanaCoprocessorSql(parameters.zamaHostId, '12345'),
-  ]);
-  // zkproof-worker loads the host-chains cache once at startup (fhevm-engine-common
-  // HostChainsCache), so it must be restarted to pick up the freshly-registered Solana host —
-  // mirroring fhevm-cli's own registerExtraChainInCoprocessor (insert row + restart).
-  await run(['docker', 'restart', 'coprocessor-zkproof-worker']);
-  await until(
-    async () => {
-      const running = await run(['docker', 'inspect', '-f', '{{.State.Running}}', 'coprocessor-zkproof-worker'], {
-        allowFailure: true,
-      });
-      return running.stdout.trim() === 'true';
-    },
-    { timeoutMs: 30_000, intervalMs: 1_000, description: 'zkproof-worker restart' },
-  );
+  const migration = await Bun.file(
+    path.join(ENGINE_DIR, 'db-migration', 'migrations', '20260605120000_relax_chain_id_checks_for_solana_host.sql'),
+  ).text();
+  for (let index = 0; index < parameters.coprocessorCount; index += 1) {
+    const psql = ['docker', 'exec', '-i', COPROCESSOR_DB_CONTAINER, 'psql', '-U', 'postgres', '-d', coprocessorDatabaseName(index)];
+    await run(psql, { input: migration, allowFailure: true });
+    await run([...psql, '-c', registerSolanaCoprocessorSql(parameters.zamaHostId, '12345')]);
+    // zkproof-worker loads the host-chains cache once at startup (fhevm-engine-common
+    // HostChainsCache), as fhevm-cli's registerExtraChainInCoprocessor does for an EVM chain.
+    await restartZkproofWorker(index, 'after registering the Solana host chain');
+  }
 
   const gatewayVersion = (
     await run(['docker', 'inspect', 'gateway-sc-add-network', '--format', '{{.Config.Image}}'])
@@ -215,7 +209,8 @@ const registerSolanaHostChain = async (parameters: {
 };
 
 /**
- * Builds and runs the Solana host-listener against the validator + DB. Always rebuilt from THIS
+ * Builds and runs one Solana host-listener per coprocessor against the validator and that
+ * coprocessor's DB, as each preview coprocessor runs its own. Always rebuilt from THIS
  * worktree's source: its event decoders are generated (build.rs -> OUT_DIR) from the program
  * IDLs, so a stale prebuilt binary silently decodes zero events when the program's event layout
  * has moved (it drops every event whose generated struct no longer matches), leaving the
@@ -225,32 +220,71 @@ const registerSolanaHostChain = async (parameters: {
  * `FheExecutedEvent`, and re-derives the handles only as a check.
  * Handle-derivation params are auto-detected from the on-chain HostConfig PDA at startup.
  */
-export const startHostListener = async (parameters: {
+export const startHostListeners = async (parameters: {
   readonly zamaHostId: string;
-  readonly databaseUrl: string;
+  readonly coprocessorCount: number;
   readonly grpcUrl: string;
   readonly logDir: string;
   readonly lifecycleDir?: string;
 }): Promise<void> => {
   await replaceSolanaProcess('solana_host_listener', parameters.lifecycleDir);
   await buildSolanaBinary('solana_host_listener', HOST_LISTENER_PACKAGE);
-  await spawnSolanaProcess(
-    'solana_host_listener',
+  for (let index = 0; index < parameters.coprocessorCount; index += 1) {
+    // Coprocessor 0 keeps the unsuffixed log and pid names the demo lifecycle reads.
+    const suffix = index === 0 ? '' : `-${index}`;
+    await spawnSolanaProcess(
+      'solana_host_listener',
+      [
+        '--grpc-url',
+        parameters.grpcUrl,
+        '--database-url',
+        await readCoprocessorDatabaseUrl(index),
+        '--url',
+        VALIDATOR_RPC_URL,
+        '--program-id',
+        parameters.zamaHostId,
+        '--http-port',
+        String(solanaListenerHealthPort(index)),
+      ],
+      path.join(parameters.logDir, `host-listener${suffix}.log`),
+      parameters.lifecycleDir && path.join(parameters.lifecycleDir, `listener${suffix}.pid`),
+    );
+  }
+};
+
+/** Coprocessor `index`'s listener checkpoint slot, or 0 before it has recorded a block. */
+const listenerCheckpointSlot = async (index: number): Promise<bigint> => {
+  const result = await run(
     [
-      '--grpc-url',
-      parameters.grpcUrl,
-      '--database-url',
-      parameters.databaseUrl,
-      '--url',
-      VALIDATOR_RPC_URL,
-      '--program-id',
-      parameters.zamaHostId,
-      '--http-port',
-      String(SOLANA_LISTENER_HEALTH_PORT),
+      'docker',
+      'exec',
+      COPROCESSOR_DB_CONTAINER,
+      'psql',
+      '-U',
+      'postgres',
+      '-d',
+      coprocessorDatabaseName(index),
+      '-tAc',
+      'SELECT COALESCE(MAX(slot), 0) FROM solana_listener_checkpoint',
     ],
-    path.join(parameters.logDir, 'host-listener.log'),
-    parameters.lifecycleDir && path.join(parameters.lifecycleDir, 'listener.pid'),
+    { allowFailure: true },
   );
+  return result.code === 0 ? BigInt(result.stdout.trim()) : 0n;
+};
+
+/**
+ * Waits until every listener's checkpoint moves past `startSlots`. The listeners run detached, so
+ * one that fails at startup, or that is up but receives no finalized blocks, fails here rather
+ * than as a stalled scenario. Preview checks the same.
+ */
+const waitForListenerCheckpoints = async (startSlots: readonly bigint[]): Promise<void> => {
+  for (const [index, startSlot] of startSlots.entries()) {
+    await until(async () => (await listenerCheckpointSlot(index)) > startSlot, {
+      description: `coprocessor ${index}'s Solana listener checkpoint to pass slot ${startSlot}`,
+      timeoutMs: 120_000,
+      intervalMs: 1_000,
+    });
+  }
 };
 
 /**
@@ -396,8 +430,11 @@ const evmHex = (bytes: Uint8Array): string => `0x${Buffer.from(bytes).toString('
  * The validator and host-listener are detached (`unref`, own log descriptors), so this returns
  * once they are up rather than waiting on them.
  */
-export const provisionSolanaHostNode = async (): Promise<{ zamaHostId: string }> => {
+export const provisionSolanaHostNode = async (topology: Topology): Promise<{ zamaHostId: string }> => {
   const lifecycleDir = process.env.DEMO_LIFECYCLE_DIR || undefined;
+  if (lifecycleDir && topology.count !== 1) {
+    throw new Error(`the demo lifecycle owns one Solana listener; the topology has ${topology.count} coprocessors`);
+  }
   const composeProject = lifecycleComposeProject(lifecycleDir);
   const logDir = process.env.SOLANA_LOG_DIR ?? '/tmp';
   // Deployer/fee-payer wallet: airdrop, program deploy, and the bootstrap all sign with it, and it
@@ -431,19 +468,23 @@ export const provisionSolanaHostNode = async (): Promise<{ zamaHostId: string }>
     genesisUpgradeablePrograms: genesisDeployedPrograms(deployerKeypairPath),
   });
   await airdropDeployFees(deployerKeypairPath);
-  const zamaHostId = await deployPrograms(deployerKeypairPath, gateway);
+  const zamaHostId = await deployPrograms(deployerKeypairPath, gateway, topology.threshold);
   // Before any app creates an encrypted store, so the Merkle record holds every store from leaf 0.
   const merkleStartSlot = await finalizedSlot();
 
   console.log('==> [3/4] register Solana host chain (coprocessor DB + gateway)');
-  await registerSolanaHostChain({ zamaHostId, composeProject });
+  await registerSolanaHostChain({ zamaHostId, composeProject, coprocessorCount: topology.count });
 
-  console.log('==> [4/4] run Solana host-listener, Merkle indexer and Merkle proof server');
-  const databaseUrl = await readCoprocessorDatabaseUrl();
+  console.log(
+    `==> [4/4] run ${topology.count} Solana host-listener(s), and coprocessor 0's Merkle indexer and Merkle proof server`,
+  );
   const grpcUrl = process.env.GRPC_URL ?? LOCAL_SOLANA_ENDPOINTS.listenerGrpc;
-  await startHostListener({ zamaHostId, databaseUrl, grpcUrl, logDir, lifecycleDir });
+  const listenerStartSlots = await Promise.all(
+    Array.from({ length: topology.count }, (_, index) => listenerCheckpointSlot(index)),
+  );
+  await startHostListeners({ zamaHostId, coprocessorCount: topology.count, grpcUrl, logDir, lifecycleDir });
   await startMerkleDatabase();
-  const merkleUrl = merkleDatabaseUrl(databaseUrl);
+  const merkleUrl = merkleDatabaseUrl(await readCoprocessorDatabaseUrl());
   await startMerkleIndexer({
     zamaHostId,
     databaseUrl: merkleUrl,
@@ -459,6 +500,7 @@ export const provisionSolanaHostNode = async (): Promise<{ zamaHostId: string }>
     logDir,
     lifecycleDir,
   });
+  await waitForListenerCheckpoints(listenerStartSlots);
 
   console.log(
     `==> Solana side-stack ready. zama_host=${zamaHostId} host_chain_id=${SOLANA_HOST_CHAIN_ID}`,
@@ -467,7 +509,7 @@ export const provisionSolanaHostNode = async (): Promise<{ zamaHostId: string }>
 };
 
 if (import.meta.main) {
-  await provisionSolanaHostNode();
+  await provisionSolanaHostNode(await readStackTopology());
   // The validator and host-listener are detached children; exit explicitly instead of waiting on
   // anything they hold open.
   process.exit(0);
