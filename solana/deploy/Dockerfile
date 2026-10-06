@@ -55,6 +55,7 @@ RUN npm run setup
 
 FROM --platform=linux/amd64 oven/bun:1.3.14-debian AS bundle
 COPY --from=zama-host /src/solana/clients/zama-host /src/solana/clients/zama-host
+COPY solana/clients/confidential-token /src/solana/clients/confidential-token
 WORKDIR /src/solana/deploy
 COPY solana/deploy/package.json solana/deploy/bun.lock ./
 RUN bun install --frozen-lockfile --production \
