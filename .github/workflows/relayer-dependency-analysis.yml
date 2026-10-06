@@ -30,6 +30,9 @@ jobs:
             rust-files:
               - .github/workflows/relayer-dependency-analysis.yml
               - relayer/**
+              - solana/crates/zama-solana-acl/**
+              - solana/crates/zama-solana-permit/**
+              - solana/crates/zama-solana-request/**
   dependencies-check:
     name: relayer-dependency-analysis/dependencies-check (bpr)
     needs: check-changes

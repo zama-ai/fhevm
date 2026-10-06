@@ -6,6 +6,7 @@
 mod common;
 
 use common::{bytes32, derive_chain_id, CHAIN_ID, GENESIS_HASH_HEX};
+use zama_solana_acl::host_chain::is_solana_host_chain_id;
 
 /// A cluster of the public registry: its genesis hash and the encoded chain id.
 const PUBLIC_CLUSTER_REGISTRY: [(&str, &str, u64); 3] = [
@@ -46,9 +47,8 @@ fn the_fixture_chain_id_is_derived_from_the_fixture_genesis() {
 fn every_derived_chain_id_has_solana_type_byte() {
     for seed in 0u8..=255 {
         let genesis = [seed; 32];
-        assert_eq!(
-            derive_chain_id(&genesis) >> 56,
-            0x01,
+        assert!(
+            is_solana_host_chain_id(derive_chain_id(&genesis)),
             "genesis [{seed}; 32] derived an id without type byte 0x01"
         );
     }
