@@ -1,5 +1,5 @@
 import { appendTransientStoreInstructions, prepareTransientStore } from '@fhevm/sdk/solana';
-import { createSolanaRpc, getAddressEncoder, type Address, type TransactionSigner } from '@solana/kit';
+import { getAddressEncoder, type Address, type TransactionSigner } from '@solana/kit';
 import {
   LOOKUP_TABLE_DEACTIVATION_COOLDOWN_SLOTS,
   LOOKUP_TABLE_STILL_ACTIVE,
@@ -15,7 +15,7 @@ import {
 } from './vault/index.js';
 
 import { BatchStatus, isBatchFinished, type VaultDirection } from './batchTypes';
-import type { DemoConfig } from './demoConfig';
+import { createFinalizedRpc, type DemoConfig } from './demoConfig';
 import { sendTransaction } from './sendTransaction';
 import { vaultRoots } from './vaultRoots';
 
@@ -38,8 +38,8 @@ const lookupTablePrefixLength = async (
   lookupTable: Address,
   expectedAddresses: readonly Address[],
 ): Promise<number | null> => {
-  const account = await createSolanaRpc(config.rpcUrl)
-    .getAccountInfo(lookupTable, { commitment: 'finalized', encoding: 'base64' })
+  const account = await createFinalizedRpc(config.rpcUrl)
+    .getAccountInfo(lookupTable, { encoding: 'base64' })
     .send();
   if (account.value === null || account.value.owner !== LOOKUP_TABLE_PROGRAM) return null;
   const encoded = account.value.data as readonly [string, 'base64'];
@@ -168,7 +168,7 @@ const retireFinishedLookupTables = async (
   registryPath: string,
   activeLookupTable: Address,
 ): Promise<void> => {
-  const rpc = createSolanaRpc(config.rpcUrl);
+  const rpc = createFinalizedRpc(config.rpcUrl);
   const roots = vaultRoots(config, direction);
   const registry = await readRegistry(registryPath);
   const keyPrefix = `${config.chainId}:${config.batchers[direction].batcher}:`;
@@ -183,7 +183,7 @@ const retireFinishedLookupTables = async (
     for (const table of [entry.table, ...(entry.retired ?? [])]) candidates.set(table, batchIndex);
   }
   candidates.delete(activeLookupTable);
-  const currentSlot = await rpc.getSlot({ commitment: 'finalized' }).send();
+  const currentSlot = await rpc.getSlot().send();
   const closed = new Set<string>();
   // One read per batch, not per table: a batch with several retired tables is common after a
   // partial provisioning run.
@@ -195,7 +195,7 @@ const retireFinishedLookupTables = async (
     if (memoized !== undefined) return memoized;
     let finished = false;
     try {
-      const batch = await getBatchByIndex(rpc, roots, batchIndex, { commitment: 'finalized' });
+      const batch = await getBatchByIndex(rpc, roots, batchIndex);
       finished = isBatchFinished(batch.state.status);
     } catch {
       // An unreadable batch account is not evidence that settlement is over, so the table stays.
@@ -207,7 +207,7 @@ const retireFinishedLookupTables = async (
   for (const [table, batchIndex] of candidates) {
     try {
       const account = await rpc
-        .getAccountInfo(table as Address, { commitment: 'finalized', encoding: 'base64' })
+        .getAccountInfo(table as Address, { encoding: 'base64' })
         .send();
       if (account.value === null || account.value.owner !== LOOKUP_TABLE_PROGRAM) {
         closed.add(table);
@@ -283,17 +283,17 @@ export const reclaimFinishedBatchAuthorities = async (
   keeper: TransactionSigner,
   direction: VaultDirection,
 ): Promise<number> => {
-  const rpc = createSolanaRpc(config.rpcUrl);
+  const rpc = createFinalizedRpc(config.rpcUrl);
   const roots = vaultRoots(config, direction);
-  const batcher = await getBatcher(rpc, roots.batcher, { commitment: 'finalized' });
+  const batcher = await getBatcher(rpc, roots.batcher);
   let reclaimed = 0;
   const first = batcher.nextBatchIndex > RECLAIM_SCAN_WINDOW ? batcher.nextBatchIndex - RECLAIM_SCAN_WINDOW : 0n;
   for (let index = first; index < batcher.nextBatchIndex; index += 1n) {
     try {
-      const batch = await getBatchByIndex(rpc, roots, index, { commitment: 'finalized' });
+      const batch = await getBatchByIndex(rpc, roots, index);
       if (!isBatchFinished(batch.state.status)) continue;
       const { value: lamports } = await rpc
-        .getBalance(batch.addresses.batchAuthority, { commitment: 'finalized' })
+        .getBalance(batch.addresses.batchAuthority)
         .send();
       if (lamports === 0n) continue;
       await sendTransaction(
@@ -332,15 +332,15 @@ export const prepareNextBatch = async (
   direction: VaultDirection,
   registryPath: string,
 ): Promise<PreparedBatch> => {
-  const rpc = createSolanaRpc(config.rpcUrl);
+  const rpc = createFinalizedRpc(config.rpcUrl);
   const roots = vaultRoots(config, direction);
-  const current = await getCurrentBatch(rpc, roots, { commitment: 'finalized' });
+  const current = await getCurrentBatch(rpc, roots);
   if (current.state.status === BatchStatus.Dispatched) {
     throw new Error(`The current ${direction} batch is still settling`);
   }
 
   const batchIndex = current.state.status === BatchStatus.Pending ? current.index : current.index + 1n;
-  const recentSlot = await rpc.getSlot({ commitment: 'finalized' }).send();
+  const recentSlot = await rpc.getSlot().send();
   const transientStore = await prepareTransientStore({ payer: keeper, host: config.programs.host });
   const prepared = await openBatchForBatcher({
     transientStore: transientStore,

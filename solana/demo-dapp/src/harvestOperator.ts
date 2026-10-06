@@ -1,7 +1,7 @@
-import { createSolanaRpc, type Address, type TransactionSigner } from "@solana/kit";
+import { type Address, type TransactionSigner } from "@solana/kit";
 import { buildHarvestInstruction, getVaultMetrics } from "./vault/index.js";
 
-import type { DemoConfig } from "./demoConfig";
+import { createFinalizedRpc, type DemoConfig } from "./demoConfig";
 import { sendTransaction } from "./sendTransaction";
 import type { VaultMetrics } from "./batchTypes";
 import {
@@ -20,9 +20,7 @@ export const donationForOneYear = (metrics: VaultMetrics): bigint => {
 };
 
 export const readDemoVaultMetrics = async (config: DemoConfig): Promise<VaultMetrics> => {
-  const metrics = await getVaultMetrics(createSolanaRpc(config.rpcUrl), config.vault, {
-    commitment: "finalized",
-  });
+  const metrics = await getVaultMetrics(createFinalizedRpc(config.rpcUrl), config.vault);
   return { totalAssets: metrics.totalAssets, totalShares: metrics.totalShares };
 };
 
@@ -35,7 +33,7 @@ export const harvestDemoVault = async (
   keeper: TransactionSigner,
   mintUnderlying: UnderlyingMinter,
 ): Promise<{ readonly before: VaultMetrics; readonly after: VaultMetrics }> => {
-  const rpc = createSolanaRpc(config.rpcUrl);
+  const rpc = createFinalizedRpc(config.rpcUrl);
   const before = await readDemoVaultMetrics(config);
   const donation = donationForOneYear(before);
 

@@ -1,4 +1,4 @@
-import { address, getAddressDecoder, type Address } from "@solana/kit";
+import { address, createDefaultRpcTransport, createRpc, createSolanaRpcApi, DEFAULT_RPC_CONFIG, getAddressDecoder, type Address } from "@solana/kit";
 import { hexToBytes } from "@fhevm/sdk/base";
 
 export type DemoNetwork = "localnet" | "devnet";
@@ -179,3 +179,8 @@ export const parseRuntimeDemoConfig = (value: unknown, demoBootId: string): Demo
 
 export const parseDemoConfigResponse = (value: unknown): DemoConfig =>
   parseDemoConfig(object(value, "demo config response").config);
+
+export const createFinalizedRpc = (url: string) => createRpc({
+  api: createSolanaRpcApi({ ...DEFAULT_RPC_CONFIG, defaultCommitment: 'finalized' }),
+  transport: createDefaultRpcTransport({ url }),
+});

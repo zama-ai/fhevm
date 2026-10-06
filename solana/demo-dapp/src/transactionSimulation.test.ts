@@ -6,7 +6,6 @@ const mocks = vi.hoisted(() => ({
 }));
 
 vi.mock("@solana/kit", () => ({
-  createSolanaRpc: vi.fn(),
   getBase64EncodedWireTransaction: mocks.encode,
 }));
 

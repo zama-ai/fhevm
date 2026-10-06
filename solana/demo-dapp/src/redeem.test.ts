@@ -10,9 +10,9 @@ const mocks = vi.hoisted(() => ({
   getSignatureStatuses: vi.fn(),
 }));
 
-vi.mock('@solana/kit', async (importOriginal) => ({
-  ...(await importOriginal<typeof import('@solana/kit')>()),
-  createSolanaRpc: () => ({
+vi.mock('./demoConfig', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('./demoConfig')>()),
+  createFinalizedRpc: () => ({
     getAccountInfo: mocks.getAccountInfo,
     getSignatureStatuses: mocks.getSignatureStatuses,
   }),

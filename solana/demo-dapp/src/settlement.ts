@@ -1,6 +1,5 @@
 import type { Bytes32Hex } from '@fhevm/sdk/types';
 import {
-  createSolanaRpc,
   createSolanaRpcSubscriptions,
   type Address,
   type Signature,
@@ -32,7 +31,7 @@ import {
   type BatchTarget,
   type VaultDirection,
 } from './batchTypes';
-import type { DemoConfig } from './demoConfig';
+import { createFinalizedRpc, type DemoConfig } from './demoConfig';
 import { sendTransaction } from './sendTransaction';
 import { vaultRoots } from './vaultRoots';
 
@@ -65,10 +64,8 @@ const currentPinnedBatch = async (
   position: BatchTarget,
   direction: VaultDirection,
 ) => {
-  const rpc = createSolanaRpc(session.config.rpcUrl);
-  const batch = await getBatchByIndex(rpc, vaultRoots(session.config, direction), position.batchIndex, {
-    commitment: 'finalized',
-  });
+  const rpc = createFinalizedRpc(session.config.rpcUrl);
+  const batch = await getBatchByIndex(rpc, vaultRoots(session.config, direction), position.batchIndex);
   if (batch.index !== position.batchIndex || batch.addresses.batch !== position.batch) {
     throw new Error(`Batch reference ${position.batch} does not match index ${position.batchIndex}`);
   }
@@ -82,8 +79,8 @@ export const readVaultLifecycle = async (
 ): Promise<BatchLifecycle> => {
   const { rpc, batch } = await currentPinnedBatch(session, position, direction);
   if (batch.state.status === BatchStatus.Pending) {
-    const batcher = await getBatcher(rpc, vaultRoots(session.config, direction).batcher, { commitment: 'finalized' });
-    const currentSlot = await rpc.getSlot({ commitment: 'finalized' }).send();
+    const batcher = await getBatcher(rpc, vaultRoots(session.config, direction).batcher);
+    const currentSlot = await rpc.getSlot().send();
     const dispatchableAt = batch.state.openedSlot + batcher.minBatchAgeSlots;
     return {
       kind: 'awaiting-dispatch',
@@ -95,10 +92,8 @@ export const readVaultLifecycle = async (
   }
   if (batch.state.status === BatchStatus.Settled) {
     const recordAddress = await deriveJoinRecordAddress(position.batch, session.signer.address);
-    const exists = (await rpc.getAccountInfo(recordAddress, { encoding: "base64", commitment: "finalized" }).send()).value !== null;
-    const joinRecord = exists ? await getJoinRecord(rpc, recordAddress, {
-      commitment: 'finalized',
-    }) : null;
+    const exists = (await rpc.getAccountInfo(recordAddress, { encoding: "base64" }).send()).value !== null;
+    const joinRecord = exists ? await getJoinRecord(rpc, recordAddress) : null;
     return {
       kind: 'settled',
       totalJoined: batch.state.totalJoined,
@@ -119,8 +114,8 @@ export const dispatchVaultBatch = async (
   const roots = vaultRoots(session.config, direction);
   const { rpc, batch } = await currentPinnedBatch(session, position, direction);
   if (batch.state.status >= BatchStatus.Dispatched) return null;
-  const batcher = await getBatcher(rpc, roots.batcher, { commitment: 'finalized' });
-  const currentSlot = await rpc.getSlot({ commitment: 'finalized' }).send();
+  const batcher = await getBatcher(rpc, roots.batcher);
+  const currentSlot = await rpc.getSlot().send();
   if (currentSlot < batch.state.openedSlot + batcher.minBatchAgeSlots) {
     throw new Error('The batch is not old enough to dispatch yet');
   }
@@ -212,8 +207,8 @@ export const settleVaultBatch = async (
 
 /** User-signed rent return after claim/cancel. Refunding records still authorize quit. */
 export const closeSpentJoinRecord = async (session: DemoUserSession, position: BatchTarget): Promise<void> => {
-  const rpc = createSolanaRpc(session.config.rpcUrl);
+  const rpc = createFinalizedRpc(session.config.rpcUrl);
   const record = await deriveJoinRecordAddress(position.batch, session.signer.address);
-  if ((await rpc.getAccountInfo(record, { encoding: 'base64', commitment: 'finalized' }).send()).value === null) return;
+  if ((await rpc.getAccountInfo(record, { encoding: 'base64' }).send()).value === null) return;
   await sendTransaction(session.config, session.signer, [await buildCloseJoinRecordInstruction({ user: session.signer, batch: position.batch, joinRecord: record })], 100_000);
 };

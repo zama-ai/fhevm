@@ -19,7 +19,6 @@ import {
   appendTransactionMessageInstructions,
   assertIsTransactionWithBlockhashLifetime,
   createKeyPairSignerFromBytes,
-  createSolanaRpc,
   createSolanaRpcSubscriptions,
   createTransactionMessage,
   getSignatureFromTransaction,
@@ -37,6 +36,7 @@ import { harvestDemoVault, readDemoVaultMetrics, type UnderlyingMinter } from "@
 import { dispatchVaultBatch, settleVaultBatch, type DemoOperatorSession } from "@demo-dapp/settlement";
 import { openProvisioning } from "../e2e/harness/solana/provisioning";
 import { DEMO_OPERATOR_PORT, solanaBatchLookupTablesPath } from "../src/layout";
+import { createFinalizedRpc } from "../../../solana/deploy/src/send";
 import { LOCAL_SOLANA_ENDPOINTS } from "../src/solana/endpoints";
 import {
   associatedTokenAddress,
@@ -61,14 +61,14 @@ const buildUsdcMinter = async (options: {
   readonly mint: Address;
   readonly mintAuthorityKeypairPath: string;
 }): Promise<UnderlyingMinter> => {
-  const rpc = createSolanaRpc(options.rpcUrl);
+  const rpc = createFinalizedRpc(options.rpcUrl);
   const rpcSubscriptions = createSolanaRpcSubscriptions(options.wsUrl);
   const sendAndConfirm = sendAndConfirmTransactionFactory({ rpc, rpcSubscriptions });
   const authority = await loadSigner(options.mintAuthorityKeypairPath);
 
   return async (recipient: Address, baseUnits: bigint): Promise<string> => {
     const ata = await associatedTokenAddress(recipient, options.mint, SPL_TOKEN_PROGRAM_ADDRESS);
-    const { value: latestBlockhash } = await rpc.getLatestBlockhash({ commitment: "finalized" }).send();
+    const { value: latestBlockhash } = await rpc.getLatestBlockhash().send();
     const base = setTransactionMessageFeePayerSigner(authority, createTransactionMessage({ version: 0 }));
     const withLifetime = setTransactionMessageLifetimeUsingBlockhash(latestBlockhash, base);
     const message = appendTransactionMessageInstructions(

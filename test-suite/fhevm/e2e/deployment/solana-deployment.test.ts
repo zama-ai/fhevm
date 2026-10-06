@@ -1,6 +1,6 @@
+import { createFinalizedRpc } from '../../../../solana/deploy/src/send';
 // Real validator + PostgreSQL, with a fixed gateway committee fixture. The full e2e suite
 // separately exercises the real gateway/KMS/coprocessor and confidential decryption.
-import { createSolanaRpc } from '@solana/kit';
 import { afterAll, beforeAll, expect, test } from 'bun:test';
 import { cp, mkdir, mkdtemp, readFile, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
@@ -15,7 +15,7 @@ import { run, runStreaming } from '../../src/utils/process';
 
 const solana = path.join(REPO_ROOT, 'solana');
 const rpcUrl = 'http://127.0.0.1:18999';
-const rpc = createSolanaRpc(rpcUrl);
+const rpc = createFinalizedRpc(rpcUrl);
 const container = `solana-deploy-test-${process.pid}`;
 let directory = '';
 let databaseUrl = '';
@@ -58,7 +58,7 @@ const deploy = (action = 'deploy', overrides: Record<string, string> = {}, targe
 };
 const hostData = async () => {
   const [config] = await findHostConfigPda();
-  return (await rpc.getAccountInfo(config, { commitment: 'finalized', encoding: 'base64' }).send()).value?.data;
+  return (await rpc.getAccountInfo(config, { encoding: 'base64' }).send()).value?.data;
 };
 
 beforeAll(async () => {

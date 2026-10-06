@@ -68,7 +68,7 @@ const main = async () => {
     const context = createHostDeployContext(requiredEnv('SOLANA_RPC_URL'));
     for (const program of SOLANA_DEPLOY_PROGRAMS) {
       const names = { zama_host: programIds.zamaHost, confidential_token: programIds.confidentialToken, demo_vault: programIds.demoVault, confidential_batcher: programIds.confidentialBatcher };
-      if (!(await context.rpc.getAccountInfo(names[program], { commitment: 'finalized', encoding: 'base64' }).send()).value) continue;
+      if (!(await context.rpc.getAccountInfo(names[program], { encoding: 'base64' }).send()).value) continue;
       await deployProgramArtifacts({ rpcUrl: requiredEnv('SOLANA_RPC_URL'), deployerKeypairPath: await resolveDeployerKeypairPath(), artifactsDir: ARTIFACTS_DIR, programs: [program], programKeypairPaths: {}, upgrade: true, environment });
     }
   } else if (target === 'environment' && (action === 'recover' || action === 'recover-funding' || action === 'reset')) {

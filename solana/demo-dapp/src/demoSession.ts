@@ -1,7 +1,6 @@
 import {
   createKeyPairSignerFromBytes,
   createSignableMessage,
-  createSolanaRpc,
   type Address,
   type TransactionSigner,
 } from '@solana/kit';
@@ -22,7 +21,7 @@ import {
 
 import { loadOrCreateBurnerSecretKey } from './burnerWallet';
 import { demoApiFetch, demoFaucetFetch } from './demoAuthorization';
-import { parseDemoConfigResponse, type DemoConfig } from './demoConfig';
+import { createFinalizedRpc, parseDemoConfigResponse, type DemoConfig } from './demoConfig';
 
 export { parseDemoConfigResponse, type DemoConfig } from './demoConfig';
 
@@ -146,14 +145,14 @@ export const readDemoWalletBalances = async (
   config: DemoConfig,
   owner: Address,
 ): Promise<readonly [solLamports: bigint, usdcBaseUnits: bigint]> => {
-  const rpc = createSolanaRpc(config.rpcUrl);
+  const rpc = createFinalizedRpc(config.rpcUrl);
   const [sol, tokenAccounts] = await Promise.all([
-    rpc.getBalance(owner, { commitment: 'finalized' }).send(),
+    rpc.getBalance(owner).send(),
     rpc
       .getTokenAccountsByOwner(
         owner,
         { mint: config.mints.joinUnderlying },
-        { commitment: 'finalized', encoding: 'jsonParsed' },
+        { encoding: 'jsonParsed' },
       )
       .send(),
   ]);

@@ -1,3 +1,4 @@
+import { createFinalizedRpc } from './demoConfig';
 import { appendTransientStoreInstructions, prepareTransientStore } from '@fhevm/sdk/solana';
 import {
   address,
@@ -6,7 +7,6 @@ import {
   assertIsTransactionWithBlockhashLifetime,
   assertIsTransactionWithinSizeLimit,
   compileTransaction,
-  createSolanaRpc,
   createSolanaRpcSubscriptions,
   createTransactionMessage,
   getAddressEncoder,
@@ -188,7 +188,7 @@ const readActiveDeposit = (session: DemoSession): StoredDeposit | null => {
 };
 
 export const reconcileDepositTransaction = async (
-  rpc: ReturnType<typeof createSolanaRpc>,
+  rpc: ReturnType<typeof createFinalizedRpc>,
   transaction: SubmittedDepositTransaction,
 ): Promise<'pending' | 'retry'> => {
   const status = (
@@ -196,14 +196,14 @@ export const reconcileDepositTransaction = async (
   ).value[0];
   if (status !== null && status.err !== null) return 'retry';
   if (status === null) {
-    const currentBlockHeight = await rpc.getBlockHeight({ commitment: 'finalized' }).send();
+    const currentBlockHeight = await rpc.getBlockHeight().send();
     if (currentBlockHeight > BigInt(transaction.lastValidBlockHeight)) return 'retry';
   }
   return 'pending';
 };
 
 export const reconcileSavedDeposit = async (
-  rpc: ReturnType<typeof createSolanaRpc>,
+  rpc: ReturnType<typeof createFinalizedRpc>,
   session: DemoSession,
   saved: StoredDeposit,
 ): Promise<BatchPosition | null> => {
@@ -214,7 +214,7 @@ export const reconcileSavedDeposit = async (
     return null;
   }
   const joinRecord = await deriveJoinRecordAddress(saved.batch, session.signer.address);
-  const account = await rpc.getAccountInfo(joinRecord, { commitment: 'finalized', encoding: 'base64' }).send();
+  const account = await rpc.getAccountInfo(joinRecord, { encoding: 'base64' }).send();
   if (account.value !== null) {
     if (saved.transaction !== undefined) {
       recordTransactionEvidence(session, { label: 'Deposit', signature: saved.transaction.signature as Signature });
@@ -239,15 +239,15 @@ export const reconcileSavedDeposit = async (
 };
 
 export async function findExistingDeposit(session: DemoSession): Promise<BatchPosition | null> {
-  const rpc = createSolanaRpc(session.config.rpcUrl);
+  const rpc = createFinalizedRpc(session.config.rpcUrl);
   const saved = readActiveDeposit(session);
   if (saved !== null) {
     const reconciled = await reconcileSavedDeposit(rpc, session, saved);
     if (reconciled !== null) return reconciled;
   }
-  const batch = await getCurrentBatch(rpc, depositRoots(session), { commitment: 'finalized' });
+  const batch = await getCurrentBatch(rpc, depositRoots(session));
   const joinRecord = await deriveJoinRecordAddress(batch.addresses.batch, session.signer.address);
-  const account = await rpc.getAccountInfo(joinRecord, { commitment: 'finalized', encoding: 'base64' }).send();
+  const account = await rpc.getAccountInfo(joinRecord, { encoding: 'base64' }).send();
   if (account.value === null) return null;
   clearShieldJournal(session);
   const result = { batchIndex: batch.index, batch: batch.addresses.batch, amountBaseUnits: 0n };
@@ -270,7 +270,7 @@ export async function depositToVault(
   session.assertActive();
   const { config, signer } = session;
   const amountBaseUnits = usdcToBaseUnits(amount);
-  const rpc = createSolanaRpc(config.rpcUrl);
+  const rpc = createFinalizedRpc(config.rpcUrl);
   const rpcSubscriptions = createSolanaRpcSubscriptions(config.wsUrl);
   const sendAndConfirm = sendAndConfirmTransactionFactory({ rpc, rpcSubscriptions });
   const roots = depositRoots(session);
@@ -287,14 +287,14 @@ export async function depositToVault(
   }
   const batch =
     target === undefined
-      ? await getCurrentBatch(rpc, roots, { commitment: 'finalized' })
-      : await getBatchByIndex(rpc, roots, target.batchIndex, { commitment: 'finalized' });
+      ? await getCurrentBatch(rpc, roots)
+      : await getBatchByIndex(rpc, roots, target.batchIndex);
   if (target !== undefined && (batch.index !== target.batchIndex || batch.addresses.batch !== target.batch)) {
     throw new Error('The prepared deposit batch no longer matches the requested batch');
   }
   const joinRecord = await deriveJoinRecordAddress(batch.addresses.batch, signer.address);
   const joinRecordAccount = await rpc
-    .getAccountInfo(joinRecord, { commitment: 'finalized', encoding: 'base64' })
+    .getAccountInfo(joinRecord, { encoding: 'base64' })
     .send();
   if (joinRecordAccount.value !== null) {
     clearShieldJournal(session);
@@ -311,7 +311,7 @@ export async function depositToVault(
     computeUnitLimit: number,
     beforeSend?: (journal: Omit<ShieldJournal, 'amountBaseUnits' | 'state'>) => void,
   ): Promise<Signature> => {
-    const { value: latestBlockhash } = await rpc.getLatestBlockhash({ commitment: 'finalized' }).send();
+    const { value: latestBlockhash } = await rpc.getLatestBlockhash().send();
     const base = setTransactionMessageFeePayerSigner(signer, createTransactionMessage({ version: 0 }));
     const withLifetime = setTransactionMessageLifetimeUsingBlockhash(latestBlockhash, base);
     const withComputeLimit = setTransactionMessageComputeUnitLimit(computeUnitLimit, withLifetime);
@@ -354,7 +354,7 @@ export async function depositToVault(
         shieldAlreadyConfirmed = true;
       } else if (
         status !== null ||
-        (await rpc.getBlockHeight({ commitment: 'finalized' }).send()) <= BigInt(shieldJournal.lastValidBlockHeight)
+        (await rpc.getBlockHeight().send()) <= BigInt(shieldJournal.lastValidBlockHeight)
       ) {
         // Landed below finalized, or still within its blockhash lifetime.
         throw new Error('The shield transaction is still being confirmed. Try again shortly.');

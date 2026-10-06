@@ -10,9 +10,12 @@ const mocks = vi.hoisted(() => ({
   tokenAccountAddress: vi.fn(),
 }));
 
+vi.mock('./demoConfig', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('./demoConfig')>()),
+  createFinalizedRpc: vi.fn(() => ({ getAccountInfo: mocks.getAccountInfo })),
+}));
 vi.mock('@solana/kit', async (importOriginal) => ({
   ...(await importOriginal<typeof import('@solana/kit')>()),
-  createSolanaRpc: vi.fn(() => ({ getAccountInfo: mocks.getAccountInfo })),
   getAddressEncoder: vi.fn(() => ({ encode: () => new Uint8Array(32) })),
 }));
 vi.mock('@fhevm/sdk/solana', async (importOriginal) => ({

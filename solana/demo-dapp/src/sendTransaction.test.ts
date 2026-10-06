@@ -16,13 +16,16 @@ const mocks = vi.hoisted(() => ({
   simulateUnsigned: vi.fn(),
 }));
 
+vi.mock('./demoConfig', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('./demoConfig')>()),
+  createFinalizedRpc: mocks.createRpc,
+}));
 vi.mock('@solana/kit', () => ({
   appendTransactionMessageInstructions: mocks.appendInstructions,
   assertIsFullySignedTransaction: vi.fn(),
   assertIsTransactionWithBlockhashLifetime: vi.fn(),
   assertIsTransactionWithinSizeLimit: vi.fn(),
   compileTransaction: mocks.compileTransaction,
-  createSolanaRpc: mocks.createRpc,
   createSolanaRpcSubscriptions: mocks.createRpcSubscriptions,
   createTransactionMessage: mocks.createTransactionMessage,
   getSignatureFromTransaction: mocks.getSignature,

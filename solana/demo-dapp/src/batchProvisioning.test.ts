@@ -30,8 +30,11 @@ const rpc = {
   getSlot: () => ({ send: () => mocks.getSlotSend() }),
 };
 
+vi.mock('./demoConfig', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('./demoConfig')>()),
+  createFinalizedRpc: () => rpc,
+}));
 vi.mock('@solana/kit', () => ({
-  createSolanaRpc: () => rpc,
   getAddressEncoder: () => ({ encode: () => new Uint8Array(32) }),
 }));
 

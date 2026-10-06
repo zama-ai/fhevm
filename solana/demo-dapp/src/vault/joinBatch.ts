@@ -171,7 +171,7 @@ export async function joinBatch(
     signatures,
   });
 
-  const { value: latestBlockhash } = await parameters.rpc.getLatestBlockhash({ commitment: 'finalized' }).send();
+  const { value: latestBlockhash } = await parameters.rpc.getLatestBlockhash().send();
   const message = pipe(
     createTransactionMessage({ version: 0 }),
     (m) => setTransactionMessageFeePayerSigner(parameters.payer, m),

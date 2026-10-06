@@ -73,7 +73,7 @@ export async function settleBatch(
   let burnedTotalHandle: Uint8Array;
   if (options.batchIndex !== undefined) {
     addresses = await deriveBatchAddresses(roots, options.batchIndex);
-    const batch = await fetchBatch(rpc, addresses.batch, { commitment: 'finalized' });
+    const batch = await fetchBatch(rpc, addresses.batch);
     burnedTotalHandle = new Uint8Array(batch.data.burnedTotalHandle);
   } else {
     const current = await getCurrentBatch(rpc, roots);
@@ -123,7 +123,7 @@ export async function settleBatch(
     authorityFundingLamports: options.authorityFundingLamports,
   });
 
-  const { value: latestBlockhash } = await rpc.getLatestBlockhash({ commitment: 'finalized' }).send();
+  const { value: latestBlockhash } = await rpc.getLatestBlockhash().send();
   const transaction = await buildAndSignSettleTransaction({
     instructions: appendTransientStoreInstructions(transientStore, [settleInstruction]),
     feePayer: keeper,

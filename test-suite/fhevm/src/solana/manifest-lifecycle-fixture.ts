@@ -23,12 +23,11 @@ const producerBlock = async (
   signature: Signature,
 ): Promise<Pick<Fixture, 'rootBlock' | 'rootBlockHash'>> => {
   const transaction = await rpc
-    .getTransaction(signature, { commitment: 'finalized', encoding: 'json', maxSupportedTransactionVersion: 0 })
+    .getTransaction(signature, { encoding: 'json', maxSupportedTransactionVersion: 0 })
     .send();
   if (!transaction) throw new Error(`transaction ${signature} is not finalized`);
   const block = await rpc
     .getBlock(transaction.slot, {
-      commitment: 'finalized',
       maxSupportedTransactionVersion: 0,
       rewards: false,
       transactionDetails: 'none',

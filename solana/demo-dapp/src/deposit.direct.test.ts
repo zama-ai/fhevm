@@ -20,9 +20,12 @@ const rpc = {
   getAccountInfo: vi.fn(() => ({ send: vi.fn().mockResolvedValue({ value: null }) })),
 };
 
+vi.mock('./demoConfig', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('./demoConfig')>()),
+  createFinalizedRpc: () => rpc,
+}));
 vi.mock('@solana/kit', async (importOriginal) => ({
   ...await importOriginal<typeof import('@solana/kit')>(),
-  createSolanaRpc: () => rpc,
   createSolanaRpcSubscriptions: () => ({}),
   sendAndConfirmTransactionFactory: () => mocks.send,
 }));
