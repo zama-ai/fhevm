@@ -119,12 +119,16 @@ library CleartextArithmetic {
         return clamp(a ^ b, bitWidth);
     }
 
+    // tfhe-rs >= 1.7.0 returns 0 when the shift amount reaches the bit width
+    // (test-suite/e2e/test/fhevmOperations/shiftSemantics.ts, OVERSHIFT_RETURNS_ZERO). Rotates keep the modulo.
     function shl(uint256 a, uint256 b, uint256 bitWidth) internal pure returns (uint256) {
-        return clamp(a << (b % bitWidth), bitWidth);
+        if (b >= bitWidth) return 0;
+        return clamp(a << b, bitWidth);
     }
 
     function shr(uint256 a, uint256 b, uint256 bitWidth) internal pure returns (uint256) {
-        return clamp(a >> (b % bitWidth), bitWidth);
+        if (b >= bitWidth) return 0;
+        return clamp(a >> b, bitWidth);
     }
 
     function rotl(uint256 a, uint256 b, uint256 bitWidth) internal pure returns (uint256) {

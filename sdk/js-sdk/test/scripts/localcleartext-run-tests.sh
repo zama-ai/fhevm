@@ -161,7 +161,8 @@ anvil_setup_vars() {
         # Same accounts and block cadence as the e2e host node
         # (test-suite/fhevm/docker-compose/host-node-docker-compose.yml): the e2e suites sign
         # with up to 120 accounts of this mnemonic and wait for blocks without sending transactions.
-        ANVIL_ARGS+=(--block-time 1 --accounts 120 --mnemonic "${MNEMONIC:-adapt mosquito move limb mobile illegal tree voyage juice mosquito burger raise father hope layer}")
+        # --mixed-mining still mines each transaction immediately, which keeps the feedback loop fast.
+        ANVIL_ARGS+=(--block-time 1 --mixed-mining --accounts 120 --mnemonic "${MNEMONIC:-adapt mosquito move limb mobile illegal tree voyage juice mosquito burger raise father hope layer}")
     fi
 }
 

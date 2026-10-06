@@ -21,6 +21,11 @@ contract CleartextFHEVMExecutor is FHEVMExecutor {
     error UnsupportedCleartextBinaryOp(Operators op);
     error UnsupportedCleartextUnaryOp(Operators op);
     error UnsupportedCleartextTernaryOp(Operators op);
+    error UnsupportedCleartextNaryOp(Operators op);
+
+    /// @dev Same values as FHEVMExecutor's private FHE_MUL_DIV_FACTOR2_ENCRYPTED and FHE_MUL_DIV_FACTOR2_SCALAR.
+    bytes1 private constant MUL_DIV_FACTOR2_ENCRYPTED = 0x01;
+    bytes1 private constant MUL_DIV_FACTOR2_SCALAR = 0x03;
     error CleartextNotFoundInProof(bytes32 inputHandle);
     error CleartextVerificationMismatch(uint256 index, bytes32 expected, bytes32 extracted);
     error CleartextVerificationLengthMismatch(uint256 clearValuesLength, uint256 numHandles);
@@ -257,6 +262,82 @@ contract CleartextFHEVMExecutor is FHEVMExecutor {
         // if (op == Operators.fheIfThenElse) {
         //     plaintexts[result] = CleartextArithmetic.fheIfThenElse(plaintexts[lhs], plaintexts[middle], plaintexts[rhs]);
         // }
+    }
+
+    /// @dev fheSum. The sum wraps at the type width, like the other cleartext arithmetic.
+    function _naryOp(Operators op, bytes32[] calldata values, FheType resultType)
+        internal
+        override
+        returns (bytes32 result)
+    {
+        if (op != Operators.fheSum) revert UnsupportedCleartextNaryOp(op);
+        uint256 bitWidth = FheTypeBitWidth.bitWidthForType(uint8(resultType));
+        uint256 total;
+        for (uint256 i = 0; i < values.length; i++) {
+            if (_typeOf(values[i]) != resultType) revert IncompatibleTypes();
+            total = CleartextArithmetic.clamp(total + _allowedCleartext(values[i]), bitWidth);
+        }
+        result = keccak256(abi.encodePacked(op, values.length, values, acl, block.chainid));
+        result = _appendMetadataToPrehandle(result, resultType);
+        acl.allowTransientWithCleartext(result, msg.sender, total);
+    }
+
+    /// @dev fheIsIn.
+    function _naryOp(Operators op, bytes32 value, bytes32[] calldata values, FheType resultType)
+        internal
+        override
+        returns (bytes32 result)
+    {
+        if (op != Operators.fheIsIn) revert UnsupportedCleartextNaryOp(op);
+        uint256 needle = _allowedCleartext(value);
+        FheType valueType = _typeOf(value);
+        uint256 found;
+        for (uint256 i = 0; i < values.length; i++) {
+            if (_typeOf(values[i]) != valueType) revert IncompatibleTypes();
+            if (_allowedCleartext(values[i]) == needle) found = 1;
+        }
+        result = keccak256(abi.encodePacked(op, values.length, value, values, acl, block.chainid));
+        result = _appendMetadataToPrehandle(result, resultType);
+        acl.allowTransientWithCleartext(result, msg.sender, found);
+    }
+
+    /// @dev fheMulDiv. Factors are at most 64 bits, so the product cannot overflow; the quotient is truncated
+    ///      to the result width.
+    function _mulDivOp(
+        Operators op,
+        bytes32 factor1,
+        bytes32 factor2,
+        bytes32 divisor,
+        bytes1 scalarByte,
+        FheType resultType
+    ) internal override returns (bytes32 result) {
+        if (scalarByte != MUL_DIV_FACTOR2_ENCRYPTED && scalarByte != MUL_DIV_FACTOR2_SCALAR) {
+            revert InvalidMulDivScalarByte();
+        }
+        uint256 factor1Value = _allowedCleartext(factor1);
+        uint256 factor2Value;
+        if (scalarByte == MUL_DIV_FACTOR2_ENCRYPTED) {
+            if (resultType != _typeOf(factor2)) revert IncompatibleTypes();
+            factor2Value = _allowedCleartext(factor2);
+        } else {
+            _checkScalarRange(uint256(factor2), resultType);
+            factor2Value = uint256(factor2);
+        }
+        _checkScalarRange(uint256(divisor), resultType);
+        if (divisor == bytes32(0)) revert DivisionByZero();
+
+        result = keccak256(abi.encodePacked(op, factor1, factor2, divisor, scalarByte, acl, block.chainid));
+        result = _appendMetadataToPrehandle(result, resultType);
+        uint256 quotient = (factor1Value * factor2Value) / uint256(divisor);
+        acl.allowTransientWithCleartext(
+            result, msg.sender, CleartextArithmetic.clamp(quotient, FheTypeBitWidth.bitWidthForType(uint8(resultType)))
+        );
+    }
+
+    function _allowedCleartext(bytes32 ct) private view returns (uint256 cleartext) {
+        bool allowed;
+        (allowed, cleartext) = acl.isAllowedWithCleartext(ct, msg.sender);
+        if (!allowed) revert ACLNotAllowed(ct, msg.sender);
     }
 
     // function _verifyCleartexts(
