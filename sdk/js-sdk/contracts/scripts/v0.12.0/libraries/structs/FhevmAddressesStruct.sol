@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: BSD-3-Clause-Clear
 pragma solidity ^0.8.24;
 
-import {Signer} from "./SignerStruct.sol";
+import {Signer} from "../../../libraries/structs/SignerStruct.sol";
 
 /// @notice Holds the six deterministic CREATE addresses produced by the FHEVM
 ///         host deployment nonce layout.

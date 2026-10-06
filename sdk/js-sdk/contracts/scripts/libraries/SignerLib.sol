@@ -2,20 +2,10 @@
 pragma solidity ^0.8.24;
 
 import {VmSafe} from "forge-std/Vm.sol";
+import {AssertLib} from "./AssertLib.sol";
 import {Signer} from "./structs/SignerStruct.sol";
 
 library SignerLib {
-    function boxMessage(string memory message) private pure returns (string memory) {
-        return string.concat(
-            "\n",
-            "================================================================================\n",
-            message,
-            "\n",
-            "================================================================================\n",
-            "\n"
-        );
-    }
-
     /// Resolves a `Signer` from a family of env vars.
     ///
     /// Resolution order:
@@ -55,7 +45,7 @@ library SignerLib {
 
         require(
             vm.envExists(mnemonicEnv),
-            boxMessage(
+            AssertLib.boxMessage(
                 string.concat(
                     "At least one of the following env vars must be set:\n",
                     "  - ",
@@ -82,7 +72,10 @@ library SignerLib {
         view
         returns (Signer memory)
     {
-        require(vm.envExists(mnemonicEnv), boxMessage(string.concat("Env var must be set:\n", "  - ", mnemonicEnv)));
+        require(
+            vm.envExists(mnemonicEnv),
+            AssertLib.boxMessage(string.concat("Env var must be set:\n", "  - ", mnemonicEnv))
+        );
         return _deriveSignerFromMnemonicEnv(vm, mnemonicEnv, _resolveMnemonicIndexFromEnv(vm, mnemonicEnv, 0));
     }
 
@@ -120,7 +113,7 @@ library SignerLib {
             return defaultIndex;
         }
         uint256 raw = vm.envUint(mnemonicIndexEnv);
-        require(raw <= type(uint32).max, boxMessage(string.concat(mnemonicIndexEnv, " exceeds uint32")));
+        require(raw <= type(uint32).max, AssertLib.boxMessage(string.concat(mnemonicIndexEnv, " exceeds uint32")));
         return uint32(raw);
     }
 
@@ -129,14 +122,17 @@ library SignerLib {
         view
         returns (Signer[] memory)
     {
-        require(vm.envExists(mnemonicEnv), boxMessage(string.concat("Env var must be set:\n", "  - ", mnemonicEnv)));
+        require(
+            vm.envExists(mnemonicEnv),
+            AssertLib.boxMessage(string.concat("Env var must be set:\n", "  - ", mnemonicEnv))
+        );
 
         uint32 mnemonicStartIndex = _resolveMnemonicIndexFromEnv(vm, mnemonicEnv, defaultStartIndex);
 
         uint32 num = 1;
         if (vm.envExists(numEnv)) {
             uint256 raw = vm.envUint(numEnv);
-            require(raw <= type(uint32).max, boxMessage(string.concat(numEnv, " exceeds uint32")));
+            require(raw <= type(uint32).max, AssertLib.boxMessage(string.concat(numEnv, " exceeds uint32")));
             num = uint32(raw);
         }
 

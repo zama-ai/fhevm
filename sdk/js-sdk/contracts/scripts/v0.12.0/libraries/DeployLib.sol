@@ -23,8 +23,8 @@ import {CleartextInputVerifier} from "../../../src/v0.12.0/cleartext/CleartextIn
 import {CleartextHCULimit} from "../../../src/v0.12.0/cleartext/CleartextHCULimit.sol";
 
 import {FhevmAddresses} from "./structs/FhevmAddressesStruct.sol";
-import {AssertLib} from "./AssertLib.sol";
-import {Signer, SignerLib} from "./SignerLib.sol";
+import {AssertLib} from "../../libraries/AssertLib.sol";
+import {Signer, SignerLib} from "../../libraries/SignerLib.sol";
 import {FhevmConfigLib} from "./FhevmConfigLib.sol";
 
 import {
