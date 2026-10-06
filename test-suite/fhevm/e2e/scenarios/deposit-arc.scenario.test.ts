@@ -519,7 +519,7 @@ describe.skipIf(!runsDemoScenarios)("solana deposit-arc scenario", () => {
         trust: {
           // Party ids follow the registry order — the same assumption the EVM SDK path makes.
           kmsSigners: config.kmsSigners.map((signer, index) => ({ partyId: index + 1, address: signer })),
-          kmsContextId: asBytes32Hex(`0x${BigInt(config.userDecryptContextId).toString(16).padStart(64, "0")}`),
+          kmsContextId: asBytes32Hex(solanaUserDecryptContext(config.userDecryptContextId)),
           kmsEpochId: asBytes32Hex(config.kmsEpochId),
           fheParameter: config.fheParameter,
           gatewayEip712Domain: {
