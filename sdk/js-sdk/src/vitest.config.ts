@@ -6,6 +6,8 @@ export default defineConfig({
     exclude: ['src/index.hello.test.ts', 'src/wasm/**/type-check.test.ts'],
     reporters: ['verbose'],
     passWithNoTests: false,
+    // Tests spy on this package's exports; an externalized ESM namespace cannot be spied on.
+    server: { deps: { inline: ['@fhevm/solana-zama-host'] } },
     typecheck: { enabled: true, tsconfig: 'tsconfig.type-tests.json' },
     coverage: {
       provider: 'v8',
