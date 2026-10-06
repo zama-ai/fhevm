@@ -32,12 +32,16 @@ jobs:
               - .github/actions/setup-rust-and-protoc/**
               - coprocessor/fhevm-engine/**
               - host-contracts/rust_bindings/**
-              # host-listener's solana feature compiles these as path
-              # dependencies, so editing them can break a clippy lane that no other filter watches.
+              # Path dependencies of this workspace, direct or transitive, so editing them can break
+              # a clippy lane that no other filter watches.
               - solana/programs/zama-host/**
+              - solana/programs/confidential-token/**
               - solana/environments/**
+              - solana/crates/program-environment/**
+              - solana/crates/zama-fhe/**
               - solana/crates/zama-solana-acl/**
               - solana/crates/zama-solana-transaction/**
+              - solana/crates/solana-ed25519-instruction/**
               # consensus-detector depends on these crates by path. Clippy of the
               # engine compiles them, but does not run their own tests.
               - shared/block-manifest/**
