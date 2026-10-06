@@ -1,6 +1,7 @@
+import { createFinalizedRpc } from '@fhevm/solana-zama-host';
 import { encryptedStoreHandle } from '@fhevm/sdk/solana';
 import { BALANCE_KEY } from './vault/internal/tokenAccounts.js';
-import { createSolanaRpc, getAddressEncoder, type Address } from '@solana/kit';
+import { getAddressEncoder, type Address } from '@solana/kit';
 import {
   createFhevmDecryptClient,
   createFhevmBaseClient,
@@ -63,7 +64,7 @@ const revealConfidentialBalance = async (
 ): Promise<RevealedBalance> => {
   const tokenAccount = await tokenAccountAddress(mint, session.signer.address);
   const encryptedStore = await tokenStateAddress(mint, tokenAccount);
-  const rpc = createSolanaRpc(session.config.rpcUrl);
+  const rpc = createFinalizedRpc(session.config.rpcUrl);
   const encodeAddress = (value: Address): Uint8Array => new Uint8Array(getAddressEncoder().encode(value));
   // The permit covers this token program's values under this mint, and nothing else.
   const permitScope = { program: session.config.programs.token, scope: mint };
@@ -89,9 +90,7 @@ const revealConfidentialBalance = async (
   }
   const trust = demoTrust(session.config);
   const client = createFhevmDecryptClient({ chain, rpc, trust });
-  const state = await getEncryptedStore(client, encryptedStore, {
-    commitment: 'finalized',
-  });
+  const state = await getEncryptedStore(client, encryptedStore);
   await client.ready;
   const startedAt = performance.now();
   // One confirmation per (wallet, permit scope, KMS route) and validity window: repeated views of
@@ -144,7 +143,7 @@ const revealConfidentialBalance = async (
 };
 
 const createReadClient = (session: DemoSession) => createFhevmBaseClient({
-  rpc: createSolanaRpc(session.config.rpcUrl),
+  rpc: createFinalizedRpc(session.config.rpcUrl),
   chain: defineFhevmSolanaChain({
     id: BigInt(session.config.chainId),
     fhevm: { relayerUrl: session.config.relayerUrl, programs: { host: { address: session.config.aclProgram as Bytes32Hex } } },
@@ -157,7 +156,6 @@ export const readClaimedSharesHandle = async (session: DemoSession): Promise<str
   const state = await getEncryptedStore(
     createReadClient(session),
     await tokenStateAddress(mint, tokenAccount),
-    { commitment: 'finalized' },
   );
   return handleHex(encryptedStoreHandle(state, BALANCE_KEY));
 };
@@ -168,7 +166,6 @@ export const readClaimedUsdcHandle = async (session: DemoSession): Promise<strin
   const state = await getEncryptedStore(
     createReadClient(session),
     await tokenStateAddress(mint, tokenAccount),
-    { commitment: 'finalized' },
   );
   return handleHex(encryptedStoreHandle(state, BALANCE_KEY));
 };
@@ -179,9 +176,7 @@ export const readConfidentialBalanceEvidence = async (
 ): Promise<ConfidentialBalanceEvidence> => {
   const tokenAccount = await tokenAccountAddress(mint, session.signer.address);
   const encryptedStore = await tokenStateAddress(mint, tokenAccount);
-  const state = await getEncryptedStore(createReadClient(session), encryptedStore, {
-    commitment: 'finalized',
-  });
+  const state = await getEncryptedStore(createReadClient(session), encryptedStore);
   return {
     encryptedStore,
     handle: handleHex(encryptedStoreHandle(state, BALANCE_KEY)),
@@ -191,8 +186,8 @@ export const readConfidentialBalanceEvidence = async (
 
 export const hasConfidentialBalanceAccount = async (session: DemoSession, mint: Address): Promise<boolean> => {
   const tokenAccount = await tokenAccountAddress(mint, session.signer.address);
-  const account = await createSolanaRpc(session.config.rpcUrl)
-    .getAccountInfo(tokenAccount, { commitment: 'finalized', encoding: 'base64' })
+  const account = await createFinalizedRpc(session.config.rpcUrl)
+    .getAccountInfo(tokenAccount, { encoding: 'base64' })
     .send();
   if (account.value === null || account.value.owner === '11111111111111111111111111111111') return false;
   if (account.value.owner !== session.config.programs.token) {

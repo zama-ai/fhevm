@@ -1,5 +1,5 @@
 import { appendTransientStoreInstructions, prepareTransientStore } from '@fhevm/sdk/solana';
-import { createSolanaRpc, type Address, type Instruction, type Signature, type TransactionSigner } from '@solana/kit';
+import { type Address, type Instruction, type Signature, type TransactionSigner } from '@solana/kit';
 import {
   buildClaimInstruction as buildVaultClaimInstruction,
   buildInitializeTokenAccountInstruction,
@@ -11,6 +11,7 @@ import {
 } from './vault/index.js';
 
 import { BatchStatus, type BatchTarget, type VaultDirection } from './batchTypes';
+import { createFinalizedRpc } from '@fhevm/solana-zama-host';
 import type { DemoConfig } from './demoConfig';
 import { sendTransaction } from './sendTransaction';
 import { vaultRoots } from './vaultRoots';
@@ -29,17 +30,15 @@ const readClaimStore = async (
   direction: VaultDirection,
   user: Address,
 ) => {
-  const rpc = createSolanaRpc(session.config.rpcUrl);
+  const rpc = createFinalizedRpc(session.config.rpcUrl);
   const roots = vaultRoots(session.config, direction);
-  const batch = await getBatchByIndex(rpc, roots, position.batchIndex, { commitment: 'finalized' });
+  const batch = await getBatchByIndex(rpc, roots, position.batchIndex);
   if (batch.index !== position.batchIndex || batch.addresses.batch !== position.batch) {
     throw new Error(`Batch reference ${position.batch} does not match index ${position.batchIndex}`);
   }
   if (batch.state.status !== BatchStatus.Settled) throw new Error('The batch has not settled yet');
 
-  const joinRecord = await getJoinRecord(rpc, await deriveJoinRecordAddress(position.batch, user), {
-    commitment: 'finalized',
-  });
+  const joinRecord = await getJoinRecord(rpc, await deriveJoinRecordAddress(position.batch, user));
   if (joinRecord.batch !== position.batch || joinRecord.user !== user) {
     throw new Error('The join record does not match the requested batch and user');
   }
@@ -56,7 +55,7 @@ const buildClaimInstructions = async (
   if (claimed) return null;
 
   const payoutTokenAccount = await tokenAccountAddress(roots.payoutConfidentialMint, user);
-  const account = (await rpc.getAccountInfo(payoutTokenAccount, { commitment: 'finalized', encoding: 'base64' }).send())
+  const account = (await rpc.getAccountInfo(payoutTokenAccount, { encoding: 'base64' }).send())
     .value;
   if (account !== null && account.owner !== session.config.programs.token && account.owner !== SYSTEM_PROGRAM_ADDRESS) {
     throw new Error(`Payout account ${payoutTokenAccount} is owned by an unexpected program`);

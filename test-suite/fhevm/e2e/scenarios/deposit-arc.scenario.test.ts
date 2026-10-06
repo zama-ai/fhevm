@@ -1,4 +1,5 @@
 import { asBytes32Hex } from '@fhevm/sdk/base';
+import { createFinalizedRpc } from '@fhevm/solana-zama-host';
 import { LOCAL_SOLANA_ENDPOINTS } from "../../src/solana/endpoints";
 import {
   appendTransientStoreInstructions,
@@ -25,7 +26,6 @@ import {
   appendTransactionMessageInstructions,
   assertIsTransactionWithBlockhashLifetime,
   createKeyPairSignerFromBytes,
-  createSolanaRpc,
   createSolanaRpcSubscriptions,
   createTransactionMessage,
   getAddressEncoder,
@@ -189,7 +189,7 @@ describe.skipIf(!runsDemoScenarios)("solana deposit-arc scenario", () => {
         throw new Error(`operator /demo-faucet/mint-usdc failed (${mintUsdc.status}): ${await mintUsdc.text()}`);
       }
 
-      const rpc = createSolanaRpc(env.rpcUrl);
+      const rpc = createFinalizedRpc(env.rpcUrl);
       const rpcSubscriptions = createSolanaRpcSubscriptions(env.wsUrl);
       const sendAndConfirm = sendAndConfirmTransactionFactory({ rpc, rpcSubscriptions });
 
@@ -199,7 +199,7 @@ describe.skipIf(!runsDemoScenarios)("solana deposit-arc scenario", () => {
         instructions: readonly Instruction[],
         computeUnitLimit: number = WRAP_COMPUTE_UNIT_LIMIT,
       ): Promise<void> => {
-        const { value: latestBlockhash } = await rpc.getLatestBlockhash({ commitment: "finalized" }).send();
+        const { value: latestBlockhash } = await rpc.getLatestBlockhash().send();
         const base = setTransactionMessageFeePayerSigner(payer, createTransactionMessage({ version: 0 }));
         const withLifetime = setTransactionMessageLifetimeUsingBlockhash(latestBlockhash, base);
         const withComputeLimit = setTransactionMessageComputeUnitLimit(computeUnitLimit, withLifetime);
@@ -221,7 +221,7 @@ describe.skipIf(!runsDemoScenarios)("solana deposit-arc scenario", () => {
       const missingTokenAccountMints: Address[] = [];
       for (const mint of [config.mints.joinConfidential, config.mints.payoutConfidential]) {
         const tokenAccount = await vault.tokenAccountAddress(mint, alice.address);
-        const existing = await rpc.getAccountInfo(tokenAccount, { encoding: "base64", commitment: "finalized" }).send();
+        const existing = await rpc.getAccountInfo(tokenAccount, { encoding: "base64" }).send();
         if (existing.value === null) missingTokenAccountMints.push(mint);
       }
       if (missingTokenAccountMints.length > 0) {
@@ -259,7 +259,7 @@ describe.skipIf(!runsDemoScenarios)("solana deposit-arc scenario", () => {
       // revert".
       // Read at the commitment `send` waited for.
       const aliceCusdc = await vault.tokenAccountAddress(config.mints.joinConfidential, alice.address);
-      const account = await rpc.getAccountInfo(aliceCusdc, { encoding: "base64", commitment: "finalized" }).send();
+      const account = await rpc.getAccountInfo(aliceCusdc, { encoding: "base64" }).send();
       expect(account.value).not.toBeNull();
       expect(account.value?.owner).toBe(vault.CONFIDENTIAL_TOKEN_PROGRAM_ADDRESS);
 
@@ -362,7 +362,7 @@ describe.skipIf(!runsDemoScenarios)("solana deposit-arc scenario", () => {
         // joinBatch waits for `finalized`; read the record at that commitment.
         const joinRecord = await vault.deriveJoinRecordAddress(batch, alice.address);
         const joinRecordAccount = await rpc
-          .getAccountInfo(joinRecord, { encoding: "base64", commitment: "finalized" })
+          .getAccountInfo(joinRecord, { encoding: "base64" })
           .send();
         expect(joinRecordAccount.value).not.toBeNull();
         expect(joinRecordAccount.value?.owner).toBe(vault.CONFIDENTIAL_BATCHER_PROGRAM_ADDRESS);
@@ -388,7 +388,7 @@ describe.skipIf(!runsDemoScenarios)("solana deposit-arc scenario", () => {
       const dispatchableAtSlot = batchBeforeJoin.state.openedSlot + minBatchAgeSlots;
       console.log(`deposit-arc dispatch: waiting for batch to reach min dispatch age (slot ${dispatchableAtSlot})...`);
       await until(
-        async () => (await rpc.getSlot({ commitment: "finalized" }).send()) >= dispatchableAtSlot,
+        async () => (await rpc.getSlot().send()) >= dispatchableAtSlot,
         { description: `batch reaches its minimum dispatch age (slot ${dispatchableAtSlot})`, timeoutMs: 120_000 },
       );
 
@@ -483,7 +483,7 @@ describe.skipIf(!runsDemoScenarios)("solana deposit-arc scenario", () => {
       // keeper only the rent actually consumed, not 0.2 SOL per batch. The claim below then proves
       // claims never needed those lamports.
       console.log("deposit-arc settle: keeper reclaiming the batch authority's unspent funding...");
-      const authorityFundingLeft = (await rpc.getBalance(batchAuthority, { commitment: "finalized" }).send()).value;
+      const authorityFundingLeft = (await rpc.getBalance(batchAuthority).send()).value;
       expect(authorityFundingLeft > 0n).toBe(true);
       await send(
         keeper,
@@ -498,7 +498,7 @@ describe.skipIf(!runsDemoScenarios)("solana deposit-arc scenario", () => {
         ],
         RENT_HYGIENE_COMPUTE_UNIT_LIMIT,
       );
-      expect((await rpc.getBalance(batchAuthority, { commitment: "finalized" }).send()).value === 0n).toBe(true);
+      expect((await rpc.getBalance(batchAuthority).send()).value === 0n).toBe(true);
 
 
       // Claim into Alice's payout balance, then decrypt that balance to verify the transfer
@@ -574,7 +574,6 @@ describe.skipIf(!runsDemoScenarios)("solana deposit-arc scenario", () => {
       const joinRecordAfterClaim = await vault.getJoinRecord(
         rpc,
         await vault.deriveJoinRecordAddress(batch, alice.address),
-        { commitment: "finalized" },
       );
       expect(joinRecordAfterClaim.user).toBe(alice.address);
       expect(joinRecordAfterClaim.claimed).toBe(true);
@@ -602,7 +601,7 @@ describe.skipIf(!runsDemoScenarios)("solana deposit-arc scenario", () => {
       console.log("deposit-arc close: alice closing her spent join record...");
       const joinRecordAddress = await vault.deriveJoinRecordAddress(batch, alice.address);
       await send(alice, [await vault.buildCloseJoinRecordInstruction({ user: alice, batch })], RENT_HYGIENE_COMPUTE_UNIT_LIMIT);
-      const closedRecord = await rpc.getAccountInfo(joinRecordAddress, { commitment: "finalized" }).send();
+      const closedRecord = await rpc.getAccountInfo(joinRecordAddress).send();
       expect(closedRecord.value).toBeNull();
 
       // Proof-of-run for the `demo:smoke` gate. `bun test` exits 0 when every matched test is
@@ -636,13 +635,13 @@ test.skipIf(!runsDemoScenarios)(
       JSON.parse(await fs.readFile(resolveDemoConfigPath(), 'utf8')), authorization.bootId,
     );
     const dappConfig = await readConfig();
-    const rpc = createSolanaRpc(env.rpcUrl);
+    const rpc = createFinalizedRpc(env.rpcUrl);
     const rpcSubscriptions = createSolanaRpcSubscriptions(env.wsUrl);
     const roots = depositRoots(config);
     const personas = await loadPersonas(env, { alice: demoKeypairs(env).alice, keeper: demoKeypairs(env).keeper });
     await personas.fund(personas.roles.keeper!, 0.2);
     await prepareNextBatch(dappConfig, keeper, 'deposit', solanaBatchLookupTablesPath);
-    const current = await vault.getCurrentBatch(rpc, roots, { commitment: 'finalized' });
+    const current = await vault.getCurrentBatch(rpc, roots);
     expect(current.state.status).toBe(BATCH_STATUS_PENDING);
     // Never cancel another participant's work, including an earlier failed run.
     expect(current.state.joinCount).toBe(0n);
@@ -683,7 +682,7 @@ test.skipIf(!runsDemoScenarios)(
     const userTokenAccount = await vault.tokenAccountAddress(mint, alice.address);
     const userBalanceStore = await vault.tokenStateAddress(mint, userTokenAccount);
     const readAmount = async (store: Address, key = 'balance_________________________'): Promise<bigint> => {
-      const state = await decrypt.fetchEncryptedStore(store, { commitment: 'finalized' });
+      const state = await decrypt.fetchEncryptedStore(store);
       const handle = encryptedStoreHandle(state, new TextEncoder().encode(key));
       await waitForSnsCommit(`0x${Buffer.from(handle).toString('hex')}`, env.coprocessorDbPsql);
       const values = await decrypt.decryptValues({ session: permit,
@@ -707,12 +706,12 @@ test.skipIf(!runsDemoScenarios)(
         tokenProgram: vault.TOKEN_PROGRAM_ADDRESS, hostConfig: config.hostConfig, computeUnitLimit: JOIN_COMPUTE_UNIT_LIMIT,
       });
     });
-    expect((await vault.getBatchByIndex(rpc, roots, current.index, { commitment: 'finalized' })).state.joinCount).toBe(1n);
+    expect((await vault.getBatchByIndex(rpc, roots, current.index)).state.joinCount).toBe(1n);
     expect(await readAmount(userBalanceStore)).toBe(beforeJoin - amount);
     const joinStore = await vault.joinStoreAddress(batch, alice.address);
     expect(await readAmount(joinStore, 'joined_amount___________________')).toBe(amount);
-    const batcher = await vault.getBatcher(rpc, roots.batcher, { commitment: 'finalized' });
-    await until(async () => (await rpc.getSlot({ commitment: 'finalized' }).send()) >=
+    const batcher = await vault.getBatcher(rpc, roots.batcher);
+    await until(async () => (await rpc.getSlot().send()) >=
       current.state.openedSlot + batcher.minBatchAgeSlots, { description: 'refund batch dispatch age', timeoutMs: 120_000 });
     const session = async () => {
       await personas.fund(personas.roles.keeper!, 0.2);
@@ -721,8 +720,8 @@ test.skipIf(!runsDemoScenarios)(
     };
     expect(await dispatchVaultBatch(await session(), position, 'deposit')).not.toBeNull();
     const pendingBurn = await vault.pendingBurnAddress(mint, batchJoinTokenAccount);
-    const account = () => rpc.getAccountInfo(pendingBurn, { encoding: 'base64', commitment: 'finalized' }).send();
-    const dispatched = await vault.getBatchByIndex(rpc, roots, current.index, { commitment: 'finalized' });
+    const account = () => rpc.getAccountInfo(pendingBurn, { encoding: 'base64' }).send();
+    const dispatched = await vault.getBatchByIndex(rpc, roots, current.index);
     expect(dispatched.state.status).toBe(BATCH_STATUS_DISPATCHED);
     expect(dispatched.state.joinCount).toBe(1n);
     const pendingBefore = (await account()).value;
@@ -735,12 +734,12 @@ test.skipIf(!runsDemoScenarios)(
       transientStore: keeperTransientStore, payer: keeper, batcher: roots.batcher, batch, joinConfidentialMint: mint,
       hostConfig: config.hostConfig, authorityFundingLamports: BigInt(config.authorityFundingLamports),
     })]), JOIN_COMPUTE_UNIT_LIMIT);
-    expect((await vault.getBatchByIndex(rpc, roots, current.index, { commitment: 'finalized' })).state.status).toBe(BATCH_STATUS_REFUNDING);
+    expect((await vault.getBatchByIndex(rpc, roots, current.index)).state.status).toBe(BATCH_STATUS_REFUNDING);
     expect((await account()).value).toBeNull();
     await sendTransaction(dappConfig, keeper, [await vault.buildReclaimBatchAuthorityInstruction({
       authority: keeper, batcher: roots.batcher, batch, batchAuthority, joinConfidentialMint: mint,
     })], RENT_HYGIENE_COMPUTE_UNIT_LIMIT);
-    expect((await rpc.getBalance(batchAuthority, { commitment: 'finalized' }).send()).value === 0n).toBe(true);
+    expect((await rpc.getBalance(batchAuthority).send()).value === 0n).toBe(true);
     const quit = await vault.buildQuitInstruction({
       transientStore, user: alice, payer: alice, batcher: roots.batcher, batch,
       joinConfidentialMint: mint, joinUnderlyingMint: roots.joinUnderlyingMint,

@@ -1,7 +1,6 @@
 import {
   createKeyPairSignerFromBytes,
   createSignableMessage,
-  createSolanaRpc,
   type Address,
   type TransactionSigner,
 } from '@solana/kit';
@@ -15,6 +14,7 @@ import { getWalletAccountFeature } from '@wallet-standard/ui';
 import { getWalletAccountForUiWalletAccount_DO_NOT_USE_OR_YOU_WILL_BE_FIRED } from '@wallet-standard/ui-registry';
 import { solanaPermitWalletFromSecretKey, type SolanaPermitWallet } from '@fhevm/sdk/solana';
 import {
+  createFinalizedRpc,
   getZamaHostErrorMessage,
   ZAMA_HOST_PROGRAM_ADDRESS,
   type ZamaHostError,
@@ -146,14 +146,14 @@ export const readDemoWalletBalances = async (
   config: DemoConfig,
   owner: Address,
 ): Promise<readonly [solLamports: bigint, usdcBaseUnits: bigint]> => {
-  const rpc = createSolanaRpc(config.rpcUrl);
+  const rpc = createFinalizedRpc(config.rpcUrl);
   const [sol, tokenAccounts] = await Promise.all([
-    rpc.getBalance(owner, { commitment: 'finalized' }).send(),
+    rpc.getBalance(owner).send(),
     rpc
       .getTokenAccountsByOwner(
         owner,
         { mint: config.mints.joinUnderlying },
-        { commitment: 'finalized', encoding: 'jsonParsed' },
+        { encoding: 'jsonParsed' },
       )
       .send(),
   ]);

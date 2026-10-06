@@ -60,7 +60,7 @@ export async function getOrCreateConfidentialTokenAccountInstruction(
   parameters: SolanaVaultInitializeTokenAccountParameters,
 ): Promise<Instruction | null> {
   const [tokenAccount] = await findTokenAccountPda({ mint: parameters.mint, owner: parameters.owner });
-  const account = await rpc.getAccountInfo(tokenAccount, { commitment: 'finalized', encoding: 'base64' }).send();
+  const account = await rpc.getAccountInfo(tokenAccount, { encoding: 'base64' }).send();
   if (!needsConfidentialTokenAccountInitialization(account.value?.owner ?? null)) return null;
   return buildInitializeTokenAccountInstruction(parameters);
 }

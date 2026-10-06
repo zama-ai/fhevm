@@ -14,7 +14,6 @@ import {
   appendTransactionMessageInstructions,
   assertIsTransactionWithBlockhashLifetime,
   createKeyPairSignerFromBytes,
-  createSolanaRpc,
   createSolanaRpcSubscriptions,
   createTransactionMessage,
   fetchEncodedAccount,
@@ -38,6 +37,7 @@ import {
 import type { Bytes32Hex } from '@fhevm/sdk/types';
 
 import {
+  createFinalizedRpc,
   decodeHostConfig,
   findHostConfigPda,
   HOST_CONFIG_DISCRIMINATOR,
@@ -163,7 +163,7 @@ export const createProvisioningContext = (
   contextOptions: ProvisioningContextOptions = {},
 ): SolanaProvisioningContext => {
   const computeUnitLimit = contextOptions.computeUnitLimit ?? PROVISIONING_COMPUTE_UNIT_LIMIT;
-  const rpc = createSolanaRpc(rpcUrl);
+  const rpc = createFinalizedRpc(rpcUrl);
   const rpcSubscriptions = createSolanaRpcSubscriptions(wsUrl);
   const sendAndConfirm = sendAndConfirmTransactionFactory({ rpc, rpcSubscriptions });
   const sendAndConfirmSigned = async (
@@ -171,7 +171,7 @@ export const createProvisioningContext = (
     instructions: readonly Instruction[],
     options: SendTransactionOptions = {},
   ): Promise<Signature> => {
-    const { value: latestBlockhash } = await rpc.getLatestBlockhash({ commitment: 'finalized' }).send();
+    const { value: latestBlockhash } = await rpc.getLatestBlockhash().send();
     const base = setTransactionMessageFeePayerSigner(payer, createTransactionMessage({ version: 0 }));
     const withLifetime = setTransactionMessageLifetimeUsingBlockhash(latestBlockhash, base);
     const message = appendTransactionMessageInstructions(
@@ -191,7 +191,7 @@ export const createProvisioningContext = (
     const amount = solToLamports(sol);
     const funder = contextOptions.funder;
     if (funder) {
-      const { value: balance } = await rpc.getBalance(recipient, { commitment: 'finalized' }).send();
+      const { value: balance } = await rpc.getBalance(recipient).send();
       if (balance >= amount) return null;
       const shortfall = amount - balance;
       return sendAndConfirmSigned(funder, [transferSolInstruction({ from: funder, to: recipient, lamports: shortfall })]);
@@ -209,7 +209,7 @@ export const createProvisioningContext = (
     }
   };
   const sweepSol: SolanaProvisioningContext['sweepSol'] = async (from, to) => {
-    const { value: balance } = await rpc.getBalance(from.address, { commitment: 'finalized' }).send();
+    const { value: balance } = await rpc.getBalance(from.address).send();
     const payer = contextOptions.funder ?? from;
     const amount = payer.address === from.address ? balance - TRANSACTION_FEE_LAMPORTS : balance;
     if (amount <= 0n) return null;
@@ -247,7 +247,7 @@ export const createSplMint = async (
   params: { readonly authority: TransactionSigner; readonly decimals: number },
 ): Promise<Address> => {
   const mint = await generateKeyPairSigner();
-  const rent = await context.rpc.getMinimumBalanceForRentExemption(SPL_MINT_ACCOUNT_SPACE, { commitment: 'finalized' }).send();
+  const rent = await context.rpc.getMinimumBalanceForRentExemption(SPL_MINT_ACCOUNT_SPACE).send();
   await context.sendTransaction(params.authority, [
     createAccountInstruction({
       payer: params.authority,
@@ -372,7 +372,7 @@ export const wrapUnderlying = async (
  */
 export const readHostChainId = async (context: SolanaProvisioningContext): Promise<bigint> => {
   const vault = await vaultModule();
-  const configInfo = await fetchEncodedAccount(context.rpc, await hostConfigAddress(), { commitment: 'finalized' });
+  const configInfo = await fetchEncodedAccount(context.rpc, await hostConfigAddress());
   if (
     !configInfo.exists ||
     configInfo.programAddress !== vault.ZAMA_HOST_PROGRAM_ADDRESS ||
@@ -428,12 +428,12 @@ export const readTokenBalanceStore = async (
   const tokenAccount = await vault.tokenAccountAddress(mint, owner);
   const encryptedStoreAddress = await vault.tokenStateAddress(mint, tokenAccount);
 
-  const tokenAccountInfo = await fetchEncodedAccount(context.rpc, tokenAccount, { commitment: 'finalized' });
+  const tokenAccountInfo = await fetchEncodedAccount(context.rpc, tokenAccount);
   if (!tokenAccountInfo.exists || tokenAccountInfo.programAddress !== vault.CONFIDENTIAL_TOKEN_PROGRAM_ADDRESS) {
     throw new Error(`confidential token account for (${mint}, ${owner}) is missing or not program-owned`);
   }
 
-  const state = await fetchSolanaEncryptedStore(context.rpc, encryptedStoreAddress, { commitment: 'finalized' }, ZAMA_HOST_PROGRAM_ADDRESS);
+  const state = await fetchSolanaEncryptedStore(context.rpc, encryptedStoreAddress, undefined, ZAMA_HOST_PROGRAM_ADDRESS);
   if (
     state.program !== vault.CONFIDENTIAL_TOKEN_PROGRAM_ADDRESS ||
     state.authority !== tokenAccount ||

@@ -14,10 +14,9 @@
 import { mkdir, rm, writeFile } from 'node:fs/promises';
 import path from 'node:path';
 
-import { createSolanaRpc } from '@solana/kit';
-
 import { bootstrapZamaHost } from '../../../../solana/deploy/src/bootstrap';
 import { evmAddressBytes } from '../../../../solana/deploy/src/gateway';
+import { createFinalizedRpc } from '@fhevm/solana-zama-host';
 import { createHostDeployContext } from '../../../../solana/deploy/src/send';
 import { solanaPubkeyFromKeypairFile } from '../generate/solana';
 import {
@@ -58,7 +57,7 @@ export type CleartextStack = {
  */
 export const startCleartextStack = async (): Promise<CleartextStack> => {
   const rpcUrl = CLEARTEXT_SOLANA_ENDPOINTS.validatorRpc;
-  const rpc = createSolanaRpc(rpcUrl);
+  const rpc = createFinalizedRpc(rpcUrl);
   // Starting would wipe the ledger under a running one.
   if ((await rpc.getHealth().send().catch(() => undefined)) === 'ok') {
     throw new Error(`a cleartext stack already runs at ${rpcUrl}; stop it, or run \`bun test\` against it`);

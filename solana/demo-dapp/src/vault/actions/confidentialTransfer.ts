@@ -156,7 +156,7 @@ export async function confidentialTransfer(
           ],
         }
       : transferInstruction;
-  const { value: latestBlockhash } = await parameters.rpc.getLatestBlockhash({ commitment: 'finalized' }).send();
+  const { value: latestBlockhash } = await parameters.rpc.getLatestBlockhash().send();
   const message = pipe(
     createTransactionMessage({ version: 0 }),
     (m) => setTransactionMessageFeePayerSigner(feePayer, m),

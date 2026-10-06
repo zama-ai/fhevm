@@ -2,9 +2,10 @@
 // leaf count and peaks for every EncryptedStore as the chain. A record that drifted serves proofs
 // the connector rejects against the on-chain peaks, so a green run also proves the record.
 
+import { createFinalizedRpc } from '@fhevm/solana-zama-host';
 import { createHash } from "node:crypto";
 
-import { type Base58EncodedBytes, createSolanaRpc, getAddressDecoder, getBase58Decoder } from "@solana/kit";
+import { type Base58EncodedBytes, getAddressDecoder, getBase58Decoder } from "@solana/kit";
 
 import { run } from "../utils/process";
 import { until } from "../utils/until";
@@ -65,7 +66,7 @@ export const assertMerkleRecordMatchesChain = async (input: {
   readonly merkleDbPsql: readonly string[];
 }): Promise<void> => {
   const { decodeSolanaEncryptedStore } = await sdkVerifyModule();
-  const rpc = createSolanaRpc(input.rpcUrl);
+  const rpc = createFinalizedRpc(input.rpcUrl);
   const addressDecoder = getAddressDecoder();
   const program = addressDecoder.decode(Buffer.from(input.aclProgram.slice(2), "hex"));
   const psql = [...input.merkleDbPsql, "-tAc"];
@@ -75,7 +76,6 @@ export const assertMerkleRecordMatchesChain = async (input: {
     async () => {
       const { context, value: accounts } = await rpc
         .getProgramAccounts(program, {
-          commitment: "finalized",
           encoding: "base64",
           withContext: true,
           filters: [{ memcmp: { offset: 0n, bytes: discriminator, encoding: "base58" } }],

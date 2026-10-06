@@ -4,7 +4,6 @@ import {
   assertIsTransactionWithBlockhashLifetime,
   assertIsTransactionWithinSizeLimit,
   compileTransaction,
-  createSolanaRpc,
   createSolanaRpcSubscriptions,
   createTransactionMessage,
   getSignatureFromTransaction,
@@ -18,6 +17,7 @@ import {
   type TransactionSigner,
 } from "@solana/kit";
 
+import { createFinalizedRpc } from '@fhevm/solana-zama-host';
 import type { DemoConfig } from "./demoConfig";
 import {
   simulateSignedTransactionLocally,
@@ -30,10 +30,10 @@ export const sendTransaction = async (
   instructions: readonly Instruction[],
   computeUnitLimit: number,
 ): Promise<Signature> => {
-  const rpc = createSolanaRpc(config.rpcUrl);
+  const rpc = createFinalizedRpc(config.rpcUrl);
   const rpcSubscriptions = createSolanaRpcSubscriptions(config.wsUrl);
   const sendAndConfirm = sendAndConfirmTransactionFactory({ rpc, rpcSubscriptions });
-  const { value: latestBlockhash } = await rpc.getLatestBlockhash({ commitment: "finalized" }).send();
+  const { value: latestBlockhash } = await rpc.getLatestBlockhash().send();
   const base = setTransactionMessageFeePayerSigner(payer, createTransactionMessage({ version: 0 }));
   const withLifetime = setTransactionMessageLifetimeUsingBlockhash(latestBlockhash, base);
   const withComputeLimit = setTransactionMessageComputeUnitLimit(computeUnitLimit, withLifetime);

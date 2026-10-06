@@ -2,7 +2,7 @@
 // KMS public-decrypt certificate of a public handle, and user-decrypt a handle through the permit
 // path.
 
-import { createSolanaRpc, getAddressEncoder, type Address } from '@solana/kit';
+import { getAddressEncoder, type Address } from '@solana/kit';
 
 import { asBytes32Hex, hexToBytes } from '@fhevm/sdk/base';
 import {
@@ -10,7 +10,7 @@ import {
   encryptedStoreHandle,
 } from '@fhevm/sdk/solana';
 
-import { ZAMA_HOST_PROGRAM_ADDRESS } from '@fhevm/solana-zama-host';
+import { createFinalizedRpc, ZAMA_HOST_PROGRAM_ADDRESS } from '@fhevm/solana-zama-host';
 import { solanaUserDecryptContext } from './addresses';
 import { certificateCleartext, type PublicDecryptCertificate } from './public-decrypt';
 import type { SolanaProvisioningContext } from './provision';
@@ -55,7 +55,7 @@ export const currentHandle = async (
     await fetchSolanaEncryptedStore(
       context.rpc,
       encryptedStore,
-      { commitment: 'finalized' },
+      undefined,
       ZAMA_HOST_PROGRAM_ADDRESS,
     ),
     key,
@@ -76,7 +76,7 @@ const publicDecryptClient = async (config: FheVerticalConfig) => {
     fhevm: { relayerUrl: config.relayerUrl, programs: { host: { address: asBytes32Hex(config.verifyingProgramId) } } },
   });
   solana.setFhevmRuntimeConfig({ auth: { type: 'ApiKeyHeader', value: apiKey() } });
-  return solana.createFhevmPublicDecryptClient({ chain, rpc: createSolanaRpc(config.rpcUrl) });
+  return solana.createFhevmPublicDecryptClient({ chain, rpc: createFinalizedRpc(config.rpcUrl) });
 };
 
 /**
@@ -139,7 +139,7 @@ export const userDecryptExpect = async (
   solana.setFhevmRuntimeConfig({ auth: { type: 'ApiKeyHeader', value: apiKey() } });
   const client = solana.createFhevmDecryptClient({
     chain,
-    rpc: createSolanaRpc(config.rpcUrl),
+    rpc: createFinalizedRpc(config.rpcUrl),
     // Whom the client believes. Signer party ids follow the registry order, the same
     // first-is-party-one assumption the EVM SDK path makes.
     trust: {

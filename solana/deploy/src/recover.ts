@@ -63,13 +63,13 @@ export async function recoverPreview(
   await mkdir(directory, { recursive: true, mode: 0o700 });
   const programs = deployedProgramIds(environment);
   const journal = await journalRecovery(context, directory);
-  const before = (await context.rpc.getBalance(payer.address, { commitment: 'finalized' }).send()).value;
+  const before = (await context.rpc.getBalance(payer.address).send()).value;
   const inventory = [];
   const finishedBatches = new Set<string>();
   const liveBatches = new Set<string>();
   for (const [name, program] of Object.entries(fundingOnly ? {} : programs)) {
     for (const item of await context.rpc
-      .getProgramAccounts(program, { encoding: 'base64', commitment: 'finalized' })
+      .getProgramAccounts(program, { encoding: 'base64' })
       .send()) {
       inventory.push({
         name,
@@ -135,7 +135,7 @@ export async function recoverPreview(
             ? decodeAddress(data, 40)
             : undefined;
       if (mint) {
-        const info = (await context.rpc.getAccountInfo(mint, { encoding: 'base64', commitment: 'finalized' }).send())
+        const info = (await context.rpc.getAccountInfo(mint, { encoding: 'base64' }).send())
           .value;
         if (info?.owner === TOKEN)
           retained.push({
@@ -154,7 +154,7 @@ export async function recoverPreview(
         .getTokenAccountsByOwner(
           authority.address,
           { programId: TOKEN },
-          { encoding: 'base64', commitment: 'finalized' },
+          { encoding: 'base64' },
         )
         .send();
       for (const token of tokens.value) {
@@ -172,7 +172,7 @@ export async function recoverPreview(
         });
       }
       const info = (
-        await context.rpc.getAccountInfo(authority.address, { encoding: 'base64', commitment: 'finalized' }).send()
+        await context.rpc.getAccountInfo(authority.address, { encoding: 'base64' }).send()
       ).value;
       if (info?.owner === SYSTEM && info.lamports > 0n) {
         await send({
@@ -219,7 +219,7 @@ export async function recoverPreview(
           programAddress: programs.confidential_batcher,
           seeds: [new TextEncoder().encode('batch-authority'), getAddressEncoder().encode(item.address)],
         });
-        if ((await context.rpc.getBalance(authority, { commitment: 'finalized' }).send()).value > 0n)
+        if ((await context.rpc.getBalance(authority).send()).value > 0n)
           await send(
             await getReclaimBatchAuthorityInstructionAsync(
               {
@@ -252,7 +252,7 @@ export async function recoverPreview(
   const pendingTables = new Map<Address, TransactionSigner>();
   for (const wallet of fundingOnly ? [] : wallets.values()) {
     const tokens = await context.rpc
-      .getTokenAccountsByOwner(wallet.address, { programId: TOKEN }, { encoding: 'base64', commitment: 'finalized' })
+      .getTokenAccountsByOwner(wallet.address, { programId: TOKEN }, { encoding: 'base64' })
       .send();
     for (const token of tokens.value) {
       const data = Buffer.from(token.account.data[0], 'base64');
@@ -282,7 +282,6 @@ export async function recoverPreview(
       const tables = await context.rpc
         .getProgramAccounts(ALT, {
           encoding: 'base64',
-          commitment: 'finalized',
           filters: [{ memcmp: { offset: 22n, bytes: wallet.address, encoding: 'base58' } }],
         })
         .send();
@@ -309,10 +308,10 @@ export async function recoverPreview(
   // Start every cooldown before waiting, including tables owned by different wallets.
   const tableDeadline = Date.now() + 10 * 60_000;
   while (pendingTables.size > 0) {
-    const finalizedSlot = await context.rpc.getSlot({ commitment: 'finalized' }).send();
+    const finalizedSlot = await context.rpc.getSlot().send();
     for (const [table, wallet] of pendingTables) {
       const info = (
-        await context.rpc.getAccountInfo(table, { encoding: 'base64', commitment: 'finalized' }).send()
+        await context.rpc.getAccountInfo(table, { encoding: 'base64' }).send()
       ).value;
       if (!info) {
         pendingTables.delete(table);
@@ -338,7 +337,7 @@ export async function recoverPreview(
     for (const program of runId ? [] : Object.values(programs)) {
       const buffer = await createKeyPairSignerFromBytes(await uploadBufferBytes(deployerPath, program));
       const account = (
-        await context.rpc.getAccountInfo(buffer.address, { encoding: 'base64', commitment: 'finalized' }).send()
+        await context.rpc.getAccountInfo(buffer.address, { encoding: 'base64' }).send()
       ).value;
       if (!account) continue;
       const data = Buffer.from(account.data[0], 'base64');
@@ -359,14 +358,14 @@ export async function recoverPreview(
   if (reset) {
     // Last: callers no longer need application roots or host encrypted state.
     for (const name of ['confidential_batcher', 'confidential_token', 'demo_vault', 'zama_host'] as const) {
-      if ((await context.rpc.getAccountInfo(programs[name], { commitment: 'finalized', encoding: 'base64' }).send()).value) {
+      if ((await context.rpc.getAccountInfo(programs[name], { encoding: 'base64' }).send()).value) {
         await wipeZamaHost(context, { payer, programAddress: programs[name] });
       }
     }
   }
   for (const wallet of wallets.values()) {
     if (wallet.address === payer.address) continue;
-    const balance = (await context.rpc.getBalance(wallet.address, { commitment: 'finalized' }).send()).value;
+    const balance = (await context.rpc.getBalance(wallet.address).send()).value;
     if (balance > 0n) {
       const amount = Buffer.alloc(8);
       amount.writeBigUInt64LE(balance);
@@ -376,7 +375,7 @@ export async function recoverPreview(
         data: Buffer.concat([u32(2), amount]),
       });
     }
-    if ((await context.rpc.getBalance(wallet.address, { commitment: 'finalized' }).send()).value !== 0n)
+    if ((await context.rpc.getBalance(wallet.address).send()).value !== 0n)
       throw new Error(`wallet ${wallet.address} still holds recoverable SOL`);
   }
   for (const name of await readdir(directory)) {
@@ -384,7 +383,7 @@ export async function recoverPreview(
     const entry = JSON.parse(await readFile(path.join(directory, name), 'utf8')) as { mints?: string[] };
     for (const mint of entry.mints ?? []) {
       const info = (
-        await context.rpc.getAccountInfo(address(mint), { encoding: 'base64', commitment: 'finalized' }).send()
+        await context.rpc.getAccountInfo(address(mint), { encoding: 'base64' }).send()
       ).value;
       if (info?.owner === TOKEN)
         retained.push({
@@ -396,7 +395,7 @@ export async function recoverPreview(
   }
   for (const program of Object.values(programs)) {
     for (const account of [program, await programDataAddressFor(program)]) {
-      const info = (await context.rpc.getAccountInfo(account, { encoding: 'base64', commitment: 'finalized' }).send())
+      const info = (await context.rpc.getAccountInfo(account, { encoding: 'base64' }).send())
         .value;
       if (info)
         retained.push({
@@ -409,7 +408,7 @@ export async function recoverPreview(
   if (!reset)
     for (const item of inventory) {
       const info = (
-        await context.rpc.getAccountInfo(item.address, { encoding: 'base64', commitment: 'finalized' }).send()
+        await context.rpc.getAccountInfo(item.address, { encoding: 'base64' }).send()
       ).value;
       if (info)
         retained.push({
@@ -423,7 +422,6 @@ export async function recoverPreview(
       const remaining = await context.rpc
         .getProgramAccounts(TOKEN, {
           encoding: 'base64',
-          commitment: 'finalized',
           filters: [{ dataSize: 165n }, { memcmp: { offset: 0n, bytes: mint, encoding: 'base58' } }],
         })
         .send();
@@ -434,23 +432,23 @@ export async function recoverPreview(
           reason: 'preview mint token account has no recovered signing key',
         });
     }
-  const after = (await context.rpc.getBalance(payer.address, { commitment: 'finalized' }).send()).value;
+  const after = (await context.rpc.getBalance(payer.address).send()).value;
   const transactions = [];
   let fees = 0n;
   let netRecovered = 0n;
   for (const { signature, lastValidBlockHeight } of await journal.receipts()) {
     let transaction = await context.rpc
-      .getTransaction(signature, { commitment: 'finalized', encoding: 'json', maxSupportedTransactionVersion: 1 })
+      .getTransaction(signature, { encoding: 'json', maxSupportedTransactionVersion: 1 })
       .send();
     for (let attempt = 0; transaction === null && attempt < 20; attempt++) {
       await sleep(1_000);
       transaction = await context.rpc
-        .getTransaction(signature, { commitment: 'finalized', encoding: 'json', maxSupportedTransactionVersion: 1 })
+        .getTransaction(signature, { encoding: 'json', maxSupportedTransactionVersion: 1 })
         .send();
     }
     if (
       !transaction &&
-      (await context.rpc.getBlockHeight({ commitment: 'finalized' }).send()) > BigInt(lastValidBlockHeight)
+      (await context.rpc.getBlockHeight().send()) > BigInt(lastValidBlockHeight)
     ) {
       const status = (await context.rpc.getSignatureStatuses([signature], { searchTransactionHistory: true }).send())
         .value[0];

@@ -1,4 +1,5 @@
-import { createSolanaRpc, getBase64EncodedWireTransaction, type Transaction } from '@solana/kit';
+import type { createFinalizedRpc } from '@fhevm/solana-zama-host';
+import { getBase64EncodedWireTransaction, type Transaction } from '@solana/kit';
 
 type SimulationValue = {
   readonly err: unknown;
@@ -20,7 +21,7 @@ export const assertSimulationSucceeded = (label: string, simulation: SimulationV
 };
 
 const simulateTransactionLocally = async (
-  rpc: ReturnType<typeof createSolanaRpc>,
+  rpc: ReturnType<typeof createFinalizedRpc>,
   transaction: Transaction,
   label: string,
   sigVerify: boolean,
@@ -37,13 +38,13 @@ const simulateTransactionLocally = async (
 };
 
 export const simulateUnsignedTransactionLocally = async (
-  rpc: ReturnType<typeof createSolanaRpc>,
+  rpc: ReturnType<typeof createFinalizedRpc>,
   transaction: Transaction,
   label: string,
 ): Promise<void> => simulateTransactionLocally(rpc, transaction, label, false);
 
 export const simulateSignedTransactionLocally = async (
-  rpc: ReturnType<typeof createSolanaRpc>,
+  rpc: ReturnType<typeof createFinalizedRpc>,
   transaction: Transaction,
   label: string,
 ): Promise<void> => simulateTransactionLocally(rpc, transaction, label, true);

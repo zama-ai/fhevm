@@ -4,9 +4,9 @@ import { expect, test, vi } from 'vitest';
 import { DeveloperEvidence } from './DeveloperEvidence';
 import { initialDemoState, type DemoController } from './useDemoController';
 
-vi.mock('@solana/kit', async (importOriginal) => ({
-  ...(await importOriginal<typeof import('@solana/kit')>()),
-  createSolanaRpc: () => ({
+vi.mock('@fhevm/solana-zama-host', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('@fhevm/solana-zama-host')>()),
+  createFinalizedRpc: () => ({
     getSignaturesForAddress: () => ({ send: async () => [] }),
     getTransaction: () => ({ send: async () => null }),
   }),

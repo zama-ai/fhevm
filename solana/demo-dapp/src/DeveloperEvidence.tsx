@@ -1,6 +1,7 @@
-import { createSolanaRpc, type Address, type Signature } from '@solana/kit';
+import { type Address, type Signature } from '@solana/kit';
 import { useEffect, useMemo, useState } from 'react';
 
+import { createFinalizedRpc } from '@fhevm/solana-zama-host';
 import type { DemoNetwork } from './demoConfig';
 import { readDecryptionEvidence, readTransactionEvidence, type DecryptionEvidenceRecord } from './evidenceStore';
 import {
@@ -110,11 +111,11 @@ export function DeveloperEvidence({ controller }: { readonly controller: DemoCon
     const load = async () => {
       setLoading(true);
       try {
-        const rpc = createSolanaRpc(session.config.rpcUrl);
+        const rpc = createFinalizedRpc(session.config.rpcUrl);
         const signatureLists = await Promise.all(
           addresses.map(async ({ address, label }) => ({
             label,
-            signatures: await rpc.getSignaturesForAddress(address, { commitment: 'finalized', limit: 4 }).send(),
+            signatures: await rpc.getSignaturesForAddress(address, { limit: 4 }).send(),
           })),
         );
         const discoveredTransactions = signatureLists
@@ -131,7 +132,6 @@ export function DeveloperEvidence({ controller }: { readonly controller: DemoCon
           transactionCandidates.map(async ({ label, signature }): Promise<TransactionEvidence> => {
             const transaction = await rpc
               .getTransaction(signature, {
-                commitment: 'finalized',
                 encoding: 'jsonParsed',
                 maxSupportedTransactionVersion: 1,
               })

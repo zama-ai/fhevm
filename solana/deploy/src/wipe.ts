@@ -38,7 +38,6 @@ const assertUpgradeAuthority = async (context: HostDeployContext, params: WipeZa
   // The ProgramData account holds the whole bytecode; only its 45-byte metadata header is needed.
   const { value } = await context.rpc
     .getAccountInfo(programData, {
-      commitment: 'finalized',
       encoding: 'base64',
       dataSlice: { offset: 0, length: PROGRAM_DATA_AUTHORITY_OFFSET + 1 + 32 },
     })
@@ -62,7 +61,6 @@ const ownedAccounts = async (
 ): Promise<Address[]> => {
   const accounts = await context.rpc
     .getProgramAccounts(programAddress, {
-      commitment: 'finalized',
       encoding: 'base64',
       dataSlice: { offset: 0, length: 0 },
       minContextSlot,
@@ -91,7 +89,7 @@ export const wipeZamaHost = async (context: HostDeployContext, params: WipeZamaH
   }
   // Re-list no earlier than a slot observed after the last confirmation, so a pooled RPC endpoint
   // cannot report zero accounts from a node that has not yet seen the last transaction.
-  const slot = await context.rpc.getSlot({ commitment: 'finalized' }).send();
+  const slot = await context.rpc.getSlot().send();
   const remaining = await ownedAccounts(context, params.programAddress, slot);
   if (remaining.length > 0) {
     throw new Error(`${remaining.length} program-owned accounts remain after the wipe: ${remaining.join(', ')}`);

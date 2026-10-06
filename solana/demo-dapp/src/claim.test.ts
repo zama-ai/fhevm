@@ -12,15 +12,12 @@ const mocks = vi.hoisted(() => ({
   send: vi.fn(),
 }));
 
-vi.mock('@solana/kit', async (importOriginal) => {
-  const original = await importOriginal<typeof import('@solana/kit')>();
-  return {
-    ...original,
-    createSolanaRpc: () => ({
+vi.mock('@fhevm/solana-zama-host', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('@fhevm/solana-zama-host')>()),
+  createFinalizedRpc: () => ({
       getAccountInfo: () => ({ send: mocks.accountInfo }),
     }),
-  };
-});
+}));
 vi.mock('./vault/index.js', () => ({
   TOKEN_PROGRAM_ADDRESS: 'TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA',
   buildClaimInstruction: mocks.buildClaim,

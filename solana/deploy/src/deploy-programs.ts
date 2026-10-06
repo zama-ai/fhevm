@@ -1,4 +1,5 @@
-import { address, createSolanaRpc } from '@solana/kit';
+import { createFinalizedRpc } from '@fhevm/solana-zama-host';
+import { address } from '@solana/kit';
 import { createHmac, createPrivateKey, createPublicKey } from 'node:crypto';
 import { writeKeypairJson, parseKeypairBytes } from './keypair';
 import { spawn } from 'node:child_process';
@@ -69,7 +70,7 @@ export const deployProgramArtifacts = async (parameters: {
 }): Promise<Partial<Record<SolanaDeployProgram, string>>> => {
   parameters.signal?.throwIfAborted();
   const declared = declaredProgramId(parameters.environment ?? DEFAULT_SOLANA_ENVIRONMENT);
-  const rpc = createSolanaRpc(parameters.rpcUrl);
+  const rpc = createFinalizedRpc(parameters.rpcUrl);
   const authority = await addressOf(parameters.deployerKeypairPath);
   const configPath = path.join(path.dirname(parameters.deployerKeypairPath), 'solana-cli-config.json');
   await writeFile(
@@ -111,7 +112,7 @@ export const deployProgramArtifacts = async (parameters: {
     let exists: boolean;
     try {
       exists =
-        (await rpc.getAccountInfo(address(programId), { encoding: 'base64', commitment: 'finalized' }).send()).value !==
+        (await rpc.getAccountInfo(address(programId), { encoding: 'base64' }).send()).value !==
         null;
     } catch {
       throw new Error(`cannot inspect ${program}; check RPC connectivity`);
@@ -179,7 +180,7 @@ export const deployProgramArtifacts = async (parameters: {
     if (!Number.isSafeInteger(info.lastDeploySlot)) throw new Error('Solana CLI returned an invalid deployment slot');
     // The loader activates new bytecode in the next slot. Use the same commitment as bootstrap.
     const deadline = Date.now() + 60_000;
-    while ((await rpc.getSlot({ commitment: 'finalized' }).send()) <= BigInt(info.lastDeploySlot)) {
+    while ((await rpc.getSlot().send()) <= BigInt(info.lastDeploySlot)) {
       parameters.signal?.throwIfAborted();
       if (Date.now() > deadline) throw new Error(`${program} did not become active within 60 seconds`);
       await new Promise((resolve) => setTimeout(resolve, 400));

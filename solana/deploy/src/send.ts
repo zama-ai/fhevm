@@ -8,7 +8,6 @@ import {
   type TransactionSigner,
   appendTransactionMessageInstructions,
   assertIsTransactionWithBlockhashLifetime,
-  createSolanaRpc,
   createTransactionMessage,
   getBase64EncodedWireTransaction,
   getSignatureFromTransaction,
@@ -16,6 +15,7 @@ import {
   setTransactionMessageLifetimeUsingBlockhash,
   signTransactionMessageWithSigners,
 } from '@solana/kit';
+import { createFinalizedRpc } from '@fhevm/solana-zama-host';
 
 const CONFIRM_TIMEOUT_MS = 60_000;
 const CONFIRM_INTERVAL_MS = 400;
@@ -29,12 +29,12 @@ export type HostDeployContext = {
 const sleep = (ms: number): Promise<void> => new Promise((resolve) => setTimeout(resolve, ms));
 
 export const createHostDeployContext = (rpcUrl: string, signal?: AbortSignal): HostDeployContext => {
-  const rpc = createSolanaRpc(rpcUrl);
+  const rpc = createFinalizedRpc(rpcUrl);
   const context: HostDeployContext = {
     rpc,
     async sendTransaction(payer, instructions) {
       signal?.throwIfAborted();
-      const { value: latestBlockhash } = await rpc.getLatestBlockhash({ commitment: 'finalized' }).send();
+      const { value: latestBlockhash } = await rpc.getLatestBlockhash().send();
       const base = setTransactionMessageFeePayerSigner(payer, createTransactionMessage({ version: 0 }));
       const withLifetime = setTransactionMessageLifetimeUsingBlockhash(latestBlockhash, base);
       const message = appendTransactionMessageInstructions([...instructions], withLifetime);

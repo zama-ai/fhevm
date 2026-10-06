@@ -20,7 +20,7 @@ function addr(fill: number): Address {
 
 
 describe('getJoinRecord', () => {
-  it('decodes the record fields and forwards the fetch config (e.g. commitment)', async () => {
+  it('decodes the record fields using the RPC defaults', async () => {
     const data = getJoinRecordEncoder().encode({
       batch: addr(4),
       user: addr(100),
@@ -29,13 +29,12 @@ describe('getJoinRecord', () => {
     });
     fetchEncodedAccount.mockResolvedValue({ exists: true, address: addr(9), data });
 
-    const record = await getJoinRecord({} as never, addr(9), { commitment: 'finalized' });
+    const record = await getJoinRecord({} as never, addr(9));
     expect(record.batch).toBe(addr(4));
     expect(record.user).toBe(addr(100));
     expect('joinedEncryptedValue' in record).toBe(false);
     expect(record.claimed).toBe(true);
-    // The commitment rides through to the underlying account fetch.
-    expect(fetchEncodedAccount).toHaveBeenLastCalledWith({}, addr(9), { commitment: 'finalized' });
+    expect(fetchEncodedAccount).toHaveBeenLastCalledWith({}, addr(9), undefined);
   });
 
   it('throws when the user never joined the batch (no record)', async () => {
