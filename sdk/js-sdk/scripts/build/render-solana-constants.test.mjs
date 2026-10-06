@@ -1,5 +1,5 @@
 import { strict as assert } from 'node:assert';
-import { test } from 'node:test';
+import { test } from 'vitest';
 import { constantNodeFromAnchorV01 } from '@codama/nodes-from-anchor';
 import { renderProgramConstants } from './render-solana-constants.mjs';
 

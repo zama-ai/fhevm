@@ -2,7 +2,7 @@ import { defineConfig } from 'vitest/config';
 
 export default defineConfig({
   test: {
-    include: ['src/**/*.test.ts'],
+    include: ['src/**/*.test.ts', 'scripts/build/render-solana-constants.test.mjs'],
     exclude: ['src/index.hello.test.ts', 'src/wasm/**/type-check.test.ts'],
     reporters: ['verbose'],
     passWithNoTests: false,
