@@ -17,7 +17,6 @@
     }
   },
   "include": [
-    "solana-two-holder-transfer.ts",
     "src/cli.ts",
     "src/layout.ts",
     "src/types.ts",

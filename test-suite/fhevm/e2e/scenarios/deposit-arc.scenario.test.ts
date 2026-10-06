@@ -2,6 +2,7 @@ import { asBytes32Hex } from '@fhevm/sdk/base';
 import { LOCAL_SOLANA_ENDPOINTS } from "../../src/solana/endpoints";
 import { appendTransientStoreInstructions, prepareTransientStore } from "@fhevm/sdk/solana";
 import { encryptedStoreHandle } from "@fhevm/sdk/solana";
+import * as solanaSdk from "@fhevm/sdk/solana";
 // Live vault deposit: fund → wrap → join → dispatch → public decrypt → settle → claim → user decrypt.
 // Run through `demo:smoke` against a seeded demo with its faucet running. On-chain assertions
 // check each transition; the final KMS/WASM decrypt checks the encrypted payout amount.
@@ -30,7 +31,7 @@ import {
 } from "@solana/kit";
 
 import { loadPersonas, until } from "../harness";
-import { withHostReachableFetch } from "../harness/solana/sdkEncrypt";
+import { withHostReachableFetch } from "../../src/utils/fs";
 import { waitForSnsCommit } from "../../src/solana/sns";
 import { solanaDemoSmokeMarkerPath } from "../../src/layout";
 import { targetsCleartext } from "../../src/solana/target";
@@ -82,8 +83,6 @@ const BATCH_STATUS_REFUNDING = 4;
 import * as vault from "@demo-dapp/vault/index.js";
 import type { FhevmSolanaChain } from "@fhevm/sdk/solana";
 import type { Bytes32Hex } from "@fhevm/sdk/types";
-
-const loadSolanaSdkModule = () => import('@fhevm/sdk/solana');
 
 /** Loads a 64-byte Solana keypair file into a kit `TransactionSigner`. */
 const loadSigner = async (keypairPath: string): Promise<TransactionSigner> => {
@@ -298,7 +297,6 @@ describe.skipIf(!runsDemoScenarios)("solana deposit-arc scenario", () => {
       // after the patch is restored and still need these bindings. The runtime auth config set here
       // is process-global and also serves settle's certificate phase (its runtime consumes only
       // `runtime.config.auth`), so it is not set a second time there.
-      const solanaSdk = await loadSolanaSdkModule();
       solanaSdk.setFhevmRuntimeConfig({
         auth: { type: "ApiKeyHeader", value: process.env.ZAMA_FHEVM_API_KEY ?? "local" },
       });
@@ -620,7 +618,6 @@ test.skipIf(!runsDemoScenarios)(
     const { associatedTokenAddress, tokenEventAuthorityAddress, zamaEventAuthorityAddress } =
       await import('@demo-dapp/vault/internal/tokenAccounts');
     const { solanaBatchLookupTablesPath } = await import('../../src/layout');
-    const sdk = await loadSolanaSdkModule();
     const aliceBytes = Uint8Array.from(JSON.parse(await fs.readFile(demoKeypairs(env).alice, 'utf8')));
     const alice = await createKeyPairSignerFromBytes(aliceBytes);
     const keeper = await loadSigner(demoKeypairs(env).keeper);
@@ -661,11 +658,11 @@ test.skipIf(!runsDemoScenarios)(
       transientStore, owner: alice, mint, underlyingMint: roots.joinUnderlyingMint,
       tokenProgram: vault.TOKEN_PROGRAM_ADDRESS, hostConfig: config.hostConfig, amount,
     })]), WRAP_COMPUTE_UNIT_LIMIT);
-    sdk.setFhevmRuntimeConfig({ auth: { type: 'ApiKeyHeader', value: process.env.ZAMA_FHEVM_API_KEY ?? 'local' } });
-    const chain = sdk.defineFhevmSolanaChain({ id: BigInt(config.chainId), fhevm: {
+    solanaSdk.setFhevmRuntimeConfig({ auth: { type: 'ApiKeyHeader', value: process.env.ZAMA_FHEVM_API_KEY ?? 'local' } });
+    const chain = solanaSdk.defineFhevmSolanaChain({ id: BigInt(config.chainId), fhevm: {
       relayerUrl: env.relayerUrl, programs: { host: { address: asBytes32Hex(config.aclProgram) } },
     } });
-    const decrypt = sdk.createFhevmDecryptClient({ chain, rpc, trust: {
+    const decrypt = solanaSdk.createFhevmDecryptClient({ chain, rpc, trust: {
       kmsSigners: config.kmsSigners.map((address, index) => ({ partyId: index + 1, address })),
       kmsContextId: asBytes32Hex(`0x${BigInt(config.userDecryptContextId).toString(16).padStart(64, '0')}`),
       kmsEpochId: asBytes32Hex(config.kmsEpochId), fheParameter: config.fheParameter,
@@ -673,7 +670,7 @@ test.skipIf(!runsDemoScenarios)(
         verifyingContract: config.gatewayDecryptionContract },
     } });
     await decrypt.ready;
-    const permit = await decrypt.signPermit({ wallet: sdk.solanaPermitWalletFromSecretKey(aliceBytes), durationSeconds: 3600n });
+    const permit = await decrypt.signPermit({ wallet: solanaSdk.solanaPermitWalletFromSecretKey(aliceBytes), durationSeconds: 3600n });
     const userTokenAccount = await vault.tokenAccountAddress(mint, alice.address);
     const userBalanceStore = await vault.tokenStateAddress(mint, userTokenAccount);
     const readAmount = async (store: Address, key = 'balance_________________________'): Promise<bigint> => {
@@ -690,7 +687,7 @@ test.skipIf(!runsDemoScenarios)(
     const beforeJoin = await readAmount(userBalanceStore);
     expect(beforeJoin >= amount).toBe(true);
     await withHostReachableFetch(async () => {
-      const encrypt = sdk.createFhevmEncryptClient({ chain, rpc });
+      const encrypt = solanaSdk.createFhevmEncryptClient({ chain, rpc });
       const { inputProof } = await encrypt.encryptValues({
         contractAddress: addressToBytes32Hex(vault.CONFIDENTIAL_TOKEN_PROGRAM_ADDRESS),
         userAddress: addressToBytes32Hex(alice.address), values: [{ type: 'uint64', value: amount }],

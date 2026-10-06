@@ -1,7 +1,6 @@
 import { describe, expect, test } from "bun:test";
 
 import {
-  parseTransferWorkerResult,
   runSolanaTwoHolderTransfer,
   solanaUserDecryptContext,
   type BalanceStore,
@@ -10,8 +9,8 @@ import {
 } from "./two-holder-transfer";
 
 const hex32 = (byte: string) => `0x${byte.repeat(64)}`;
-const alice = { owner: "1".repeat(32), keypairPath: "/alice.json", secretKey: hex32("1") };
-const bob = { owner: "2".repeat(32), keypairPath: "/bob.json", secretKey: hex32("2") };
+const alice = { owner: "1".repeat(32), secretKey: hex32("1") };
+const bob = { owner: "2".repeat(32), secretKey: hex32("2") };
 const scenario: TwoHolderScenario = {
   mint: "3".repeat(32),
   underlyingMint: "9".repeat(32),
@@ -28,7 +27,7 @@ const balance = (owner: string, handleByte: string): BalanceStore => ({
   chainId: "72057594037940281",
 });
 
-describe("solana-two-holder-transfer", () => {
+describe("two-holder transfer", () => {
   test("proves initial balances, transfers once, then proves both latest balances", async () => {
     const events: string[] = [];
     let reads = 0;
@@ -96,13 +95,5 @@ describe("solana-two-holder-transfer", () => {
     expect(solanaUserDecryptContext("1")).toBe(`0x${"0".repeat(63)}1`);
     expect(() => solanaUserDecryptContext("0x01")).toThrow("unsigned decimal integer");
     expect(() => solanaUserDecryptContext((1n << 256n).toString())).toThrow("fit in 32 bytes");
-  });
-
-  test("strictly validates the one-shot SDK worker result", () => {
-    const result = { version: 1, signature: "9".repeat(88), inputHandle: hex32("1") };
-    expect(() => parseTransferWorkerResult(JSON.stringify(result))).not.toThrow();
-    expect(() => parseTransferWorkerResult(JSON.stringify({ ...result, extra: true }))).toThrow(
-      "malformed versioned JSON",
-    );
   });
 });

@@ -438,10 +438,6 @@ describe("demo lifecycle collision policy", () => {
       path.join(import.meta.dir, "../../../.github/workflows/solana-e2e.yml"),
       "utf8",
     );
-    const twoHolderTransfer = await fs.readFile(
-      path.join(import.meta.dir, "../src/solana/two-holder-transfer.ts"),
-      "utf8",
-    );
     const demoViteConfig = await fs.readFile(
       path.join(import.meta.dir, "../../../solana/demo-dapp/vite.config.ts"),
       "utf8",
@@ -481,13 +477,9 @@ describe("demo lifecycle collision policy", () => {
       }
     }
     expect(workflow).toContain("run: bun run demo reseed --direct");
-    // bun, not node: the SDK worker imports the demo dapp's vault module (TS sources resolved
-    // through tsconfig paths), which node's type-stripping cannot resolve.
-    expect(twoHolderTransfer).toContain('run(["bun", SDK_WORKER]');
     // The dev server serves a static page and proxies `/api`; no keeper code runs under Vite SSR.
     expect(demoViteConfig).not.toContain("ssrLoadModule");
     expect(workflow).not.toContain("--preserve-symlinks");
-    expect(twoHolderTransfer).not.toContain("--preserve-symlinks");
     // Both consumers must reach the SDK through a symlink into its live source tree: bun installs
     // a `file:` dependency as a snapshot copy that goes stale on every SDK rebuild, so each
     // consumer's postinstall replaces the copy with the symlink. (bun's `link:` protocol names a

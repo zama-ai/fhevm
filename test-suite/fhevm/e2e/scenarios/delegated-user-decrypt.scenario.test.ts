@@ -34,6 +34,7 @@ import {
   getI64Decoder,
   type Address,
 } from "@solana/kit";
+import * as solana from "@fhevm/sdk/solana";
 import type { SolanaDecryptTrust } from "@fhevm/sdk/solana";
 
 import { currentHandle, userDecryptExpect } from "../../src/solana/fhe-vertical";
@@ -71,12 +72,6 @@ const addressBytes = (address: Address): Uint8Array => new Uint8Array(getAddress
 /** How long past the host's current time every grant here lives: well beyond one arc. */
 const EXPIRY_SECONDS_AHEAD = 3_600n;
 type Bytes32Hex = SolanaDecryptTrust["kmsContextId"];
-
-type SdkSolanaModule = typeof import("@fhevm/sdk/solana");
-const sdkSolana = async (): Promise<SdkSolanaModule> => {
-  const solanaModule = "@fhevm/sdk/solana";
-  return (await import(solanaModule)) as SdkSolanaModule;
-};
 
 /** The delegate's decrypt of the delegator's value: the permit is the delegate's, `ownerAddress` names whose allow. */
 const delegatedDecrypt = (
@@ -120,7 +115,6 @@ describe("solana delegated user-decrypt", () => {
     async () => {
       const setup = await verticalSetup();
       const { stack, context, wallet, config } = setup;
-      const solana = await sdkSolana();
       const chain = solana.defineFhevmSolanaChain({
         id: BigInt(config.chainId),
         fhevm: { relayerUrl: config.relayerUrl, programs: { host: { address: config.verifyingProgramId as Bytes32Hex } } },
@@ -260,7 +254,6 @@ describe("solana delegated user-decrypt", () => {
       }
       const setup = await verticalSetup();
       const { env, stack, context, config } = setup;
-      const solana = await sdkSolana();
       const hostProgram = solana.solanaHostProgram(
         solana.defineFhevmSolanaChain({
           id: BigInt(config.chainId),

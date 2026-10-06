@@ -32,21 +32,6 @@ import { pause, shellEscape, unpause } from "../flow/up-flow";
 import { hostReachableRpcUrl, readEnvFile } from "../utils/fs";
 import { composeEnv, run, runWithHeartbeat } from "../utils/process";
 import { loadState } from "../state/state";
-import {
-  SOLANA_CURRENT_USER_DECRYPT_DESCRIPTION,
-  SOLANA_CURRENT_USER_DECRYPT_PROFILE,
-  runSolanaCurrentUserDecrypt,
-} from "../solana/current-user-decrypt";
-import {
-  SOLANA_PUBLIC_DECRYPT_DESCRIPTION,
-  SOLANA_PUBLIC_DECRYPT_PROFILE,
-  runSolanaPublicDecrypt,
-} from "../solana/public-decrypt";
-import {
-  SOLANA_TWO_HOLDER_TRANSFER_DESCRIPTION,
-  SOLANA_TWO_HOLDER_TRANSFER_PROFILE,
-  runSolanaTwoHolderTransfer,
-} from "../solana/two-holder-transfer";
 import { topologyForState } from "../stack-spec/stack-spec";
 import {
   COPROCESSOR_DB_CONTAINER,
@@ -122,9 +107,6 @@ const TEST_PROFILE_NAMES = [
   "kms-generation-abort",
   "light",
   "rollout-standard",
-  SOLANA_CURRENT_USER_DECRYPT_PROFILE,
-  SOLANA_PUBLIC_DECRYPT_PROFILE,
-  SOLANA_TWO_HOLDER_TRANSFER_PROFILE,
   "standard",
   "standard-shard-compute",
   "standard-shard-decryption",
@@ -202,9 +184,6 @@ const TEST_PROFILE_DESCRIPTIONS: Partial<Record<(typeof TEST_PROFILE_NAMES)[numb
   "coprocessor-db-state-revert": "Run coprocessor DB state revert checks.",
   "kms-generation":
     "Audit the on-chain key/CRS generation state (KMSGeneration contract) and prove the 2t+1 decryption quorum (threshold-mode KMS).",
-  [SOLANA_CURRENT_USER_DECRYPT_PROFILE]: SOLANA_CURRENT_USER_DECRYPT_DESCRIPTION,
-  [SOLANA_PUBLIC_DECRYPT_PROFILE]: SOLANA_PUBLIC_DECRYPT_DESCRIPTION,
-  [SOLANA_TWO_HOLDER_TRANSFER_PROFILE]: SOLANA_TWO_HOLDER_TRANSFER_DESCRIPTION,
   "kms-generation-abort":
     "Abort an in-flight keygen and crsgen, prove the contract and every kms-connector retire the requests, then prove the pipeline recovers with a fresh keygen/crsgen to full activation. Disruptive: rotates the active key/CRS — run last or re-up afterwards.",
   "kms-context-switch":
@@ -1913,26 +1892,9 @@ export const test = async (testName: string | undefined, options: TestOptions) =
     throw new PreflightError(`Unknown test profile ${testName}. Valid: ${TEST_PROFILE_NAMES.join(", ")}`);
   }
   validateNamedProfileGrep(testName, options.grep);
-  if (testName === SOLANA_CURRENT_USER_DECRYPT_PROFILE) {
-    console.log(`[test] ${SOLANA_CURRENT_USER_DECRYPT_PROFILE}`);
-    const started = Date.now();
-    await runLogged(SOLANA_CURRENT_USER_DECRYPT_PROFILE, started, runSolanaCurrentUserDecrypt);
-    return;
-  }
-  if (testName === SOLANA_PUBLIC_DECRYPT_PROFILE) {
-    console.log(`[test] ${SOLANA_PUBLIC_DECRYPT_PROFILE}`);
-    await runSolanaPublicDecrypt();
-    return;
-  }
   const state = await loadState();
   if (!state?.discovery?.actualFheKeyId) {
     throw new PreflightError("Stack has not completed bootstrap; run `fhevm-cli up` first");
-  }
-  if (testName === SOLANA_TWO_HOLDER_TRANSFER_PROFILE) {
-    console.log(`[test] ${SOLANA_TWO_HOLDER_TRANSFER_PROFILE}`);
-    const started = Date.now();
-    await runLogged(SOLANA_TWO_HOLDER_TRANSFER_PROFILE, started, runSolanaTwoHolderTransfer);
-    return;
   }
 
   const ciphertextDriftRequirement = () => {

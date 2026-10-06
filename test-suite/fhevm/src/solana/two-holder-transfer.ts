@@ -1,19 +1,15 @@
 import { recordRunWallet } from "./recovery";
-import fs from "node:fs/promises";
-import os from "node:os";
-import path from "node:path";
 
-import { address, getAddressEncoder, type Address, type TransactionSigner } from "@solana/kit";
+import { address, createSolanaRpcSubscriptions, getAddressEncoder, type Address, type TransactionSigner } from "@solana/kit";
 
-import { REPO_ROOT, SOLANA_ACL_PROGRAM, coprocessorDbPsql } from "../layout";
-import { LOCAL_SOLANA_ENDPOINTS } from "./endpoints";
 import { bytes32HexFromId } from "./addresses";
-import { runSolanaCurrentUserDecrypt } from "./current-user-decrypt";
+import { vaultModule } from "./lazy-modules";
 import {
   createConfidentialMint,
   createProvisioningContext,
   createSplMint,
   generateSolanaKeypair,
+  hostConfigAddress,
   initializeConfidentialTokenAccount,
   loadKeypairSigner,
   mintSplTo,
@@ -22,29 +18,13 @@ import {
   type BalanceStore,
   type SolanaProvisioningContext,
 } from "./provision";
-import { waitForSnsCommit } from "./sns";
-import { readDecryptTrustInputs } from "./target";
-import { run } from "../utils/process";
+import { loadSolanaSdk, readDecryptTrustInputs } from "./target";
+import { withHostReachableFetch } from "../utils/fs";
 import { timed } from "../utils/timing";
 
 export type { BalanceStore };
 
-export const SOLANA_TWO_HOLDER_TRANSFER_PROFILE = "solana-two-holder-transfer";
-export const SOLANA_TWO_HOLDER_TRANSFER_DESCRIPTION =
-  "Transfer an SDK-encrypted euint64 between two real Solana holders and decrypt both latest balances.";
-
-const RPC_URL = LOCAL_SOLANA_ENDPOINTS.validatorRpc;
-const GATEWAY_RPC_URL = LOCAL_SOLANA_ENDPOINTS.gatewayRpc;
-const HOST_RPC_URL = LOCAL_SOLANA_ENDPOINTS.hostRpc;
-const WS_URL = LOCAL_SOLANA_ENDPOINTS.validatorWs;
-const RELAYER_URL = LOCAL_SOLANA_ENDPOINTS.relayer;
-const ACL_PROGRAM = SOLANA_ACL_PROGRAM;
-const SDK_WORKER = path.join(REPO_ROOT, "test-suite/fhevm/solana-two-holder-transfer.ts");
-const CLI_DIR = path.join(REPO_ROOT, "test-suite/fhevm");
-const SIGNATURE = /^[1-9A-HJ-NP-Za-km-z]{87,88}$/;
-const BYTES32 = /^0x[0-9a-f]{64}$/i;
-
-export type Holder = { owner: string; keypairPath: string; secretKey: string };
+export type Holder = { owner: string; secretKey: string };
 export type TwoHolderScenario = {
   mint: string;
   underlyingMint: string;
@@ -52,24 +32,20 @@ export type TwoHolderScenario = {
   bob: Holder;
 };
 
-/**
- * The stack endpoints and identities the real transfer arc binds to. Defaults reproduce the local
- * clean-e2e stack (the constants above); the e2e harness injects these from `loadEnv()` so the same
- * arc can target another environment without editing this file.
- */
+/** The stack endpoints and identities the real transfer arc binds to, injected from `loadEnv()`. */
 export type TwoHolderConfig = {
   readonly rpcUrl: string;
   readonly wsUrl: string;
   readonly relayerUrl: string;
   readonly gatewayRpcUrl: string;
   readonly hostRpcUrl: string;
-  readonly aclProgram: string;
+  readonly aclProgram: `0x${string}`;
   /**
-   * Explicit user-decrypt context override as bytes32 hex. When absent, the decrypts use the
-   * active KMS context read live from the deployed `ProtocolConfig` — the pair the KMS Connector
-   * actually serves.
+   * Explicit user-decrypt context override, as an unsigned decimal. When absent, the decrypts use
+   * the active KMS context read live from the deployed `ProtocolConfig` — the pair the KMS
+   * Connector actually serves.
    */
-  readonly userDecryptContext: string | undefined;
+  readonly userDecryptContextId: string | undefined;
   /** SOL each holder starts with: Alice pays every provisioning rent and the arc's fees, Bob his own account. */
   readonly funding: { readonly primarySol: number; readonly secondarySol: number };
   /** Resolves once a handle's ciphertext is decryptable: the SNS commit on the real stack. */
@@ -87,33 +63,6 @@ export type TwoHolderDependencies = {
   cleanup(scenario: TwoHolderScenario | undefined): Promise<void>;
 };
 
-const parseJsonLine = (output: string): unknown => {
-  const line = output.trim().split(/\r?\n/).at(-1);
-  if (!line) throw new Error("command did not emit final-line JSON");
-  return JSON.parse(line) as unknown;
-};
-
-const isRecord = (value: unknown): value is Record<string, unknown> =>
-  typeof value === "object" && value !== null && !Array.isArray(value);
-
-const hasExactKeys = (value: Record<string, unknown>, keys: readonly string[]) =>
-  Object.keys(value).sort().join(",") === [...keys].sort().join(",");
-
-export const parseTransferWorkerResult = (output: string): void => {
-  const value = parseJsonLine(output);
-  if (
-    !isRecord(value) ||
-    !hasExactKeys(value, ["version", "signature", "inputHandle"]) ||
-    value.version !== 1 ||
-    typeof value.signature !== "string" ||
-    !SIGNATURE.test(value.signature) ||
-    typeof value.inputHandle !== "string" ||
-    !BYTES32.test(value.inputHandle)
-  ) {
-    throw new Error("SDK transfer worker returned malformed versioned JSON");
-  }
-};
-
 export const solanaUserDecryptContext = (decimal: string): string => {
   if (!/^\d+$/.test(decimal)) throw new Error("user-decrypt context id must be an unsigned decimal integer");
   const value = BigInt(decimal);
@@ -121,29 +70,18 @@ export const solanaUserDecryptContext = (decimal: string): string => {
   return `0x${value.toString(16).padStart(64, "0")}`;
 };
 
-const resolveConfig = (config: Partial<TwoHolderConfig>): TwoHolderConfig => ({
-  rpcUrl: config.rpcUrl ?? RPC_URL,
-  wsUrl: config.wsUrl ?? WS_URL,
-  relayerUrl: config.relayerUrl ?? RELAYER_URL,
-  gatewayRpcUrl: config.gatewayRpcUrl ?? GATEWAY_RPC_URL,
-  hostRpcUrl: config.hostRpcUrl ?? HOST_RPC_URL,
-  aclProgram: config.aclProgram ?? ACL_PROGRAM,
-  userDecryptContext: config.userDecryptContext,
-  funding: config.funding ?? { primarySol: 10, secondarySol: 5 },
-  funderKeypairPath: config.funderKeypairPath,
-  waitForHandle: config.waitForHandle ?? ((handle) => waitForSnsCommit(handle, coprocessorDbPsql())),
-});
+const addressHex = (value: string): `0x${string}` =>
+  `0x${Buffer.from(getAddressEncoder().encode(address(value))).toString("hex")}`;
 
-export const createRealTwoHolderDependencies = (config: Partial<TwoHolderConfig> = {}): TwoHolderDependencies => {
-  const cfg = resolveConfig(config);
+export const createRealTwoHolderDependencies = (cfg: TwoHolderConfig): TwoHolderDependencies => {
   let provisioned: SolanaProvisioningContext | undefined;
   const context = (): SolanaProvisioningContext => {
     if (!provisioned) throw new Error("two-holder transfer: provision() must run first");
     return provisioned;
   };
-  let scenarioDir: string | undefined;
-  // The holders' signers, kept so cleanup can return their SOL to the funder on a live cluster.
-  const holders: TransactionSigner[] = [];
+  // The holders' signers by owner: Alice signs the transfer, and cleanup returns their SOL to the
+  // funder on a live cluster.
+  const signers = new Map<string, TransactionSigner>();
   let funderAddress: Address | undefined;
   return {
     async provision() {
@@ -151,24 +89,16 @@ export const createRealTwoHolderDependencies = (config: Partial<TwoHolderConfig>
       funderAddress = funder?.address;
       provisioned = createProvisioningContext(cfg.rpcUrl, cfg.wsUrl, { funder });
       const context = provisioned;
-      scenarioDir = await fs.mkdtemp(path.join(os.tmpdir(), "fhevm-solana-two-holder-"));
-      // Both holders are fresh keypairs written under the scenario dir: the SDK transfer worker
-      // subprocess loads Alice's file, and the user-decrypt secret is the 32-byte seed.
-      const createHolder = async (name: string) => {
+      // Fresh keypairs; the user-decrypt secret is the 32-byte seed.
+      const createHolder = async () => {
         const { signer, bytes } = await generateSolanaKeypair();
         if (funder) await recordRunWallet({ signer, bytes });
-        const keypairPath = path.join(scenarioDir!, `${name}.json`);
-        await fs.writeFile(keypairPath, JSON.stringify(Array.from(bytes)), { mode: 0o600 });
-        const holder: Holder = {
-          owner: signer.address,
-          keypairPath,
-          secretKey: `0x${Buffer.from(bytes.subarray(0, 32)).toString("hex")}`,
-        };
-        holders.push(signer);
+        signers.set(signer.address, signer);
+        const holder: Holder = { owner: signer.address, secretKey: `0x${Buffer.from(bytes.subarray(0, 32)).toString("hex")}` };
         return { signer, holder };
       };
-      const alice = await createHolder("alice");
-      const bob = await createHolder("bob");
+      const alice = await createHolder();
+      const bob = await createHolder();
       // Alice pays every provisioning rent + fee (mints, escrow, wrap, later the transfer itself);
       // Bob only pays his own confidential token account.
       await context.fundSol(alice.signer.address, cfg.funding.primarySol);
@@ -195,67 +125,94 @@ export const createRealTwoHolderDependencies = (config: Partial<TwoHolderConfig>
     waitForHandle: cfg.waitForHandle,
     async transfer(scenario, alice, bob) {
       if (alice.chainId !== bob.chainId) throw new Error("Alice and Bob balance handles disagree on chain id");
-      // bun, not node: the worker imports the demo dapp's vault module (TS sources resolved
-      // through tsconfig paths), which node's type-stripping cannot resolve.
-      const result = await run(["bun", SDK_WORKER], {
-        cwd: CLI_DIR,
-        env: {
-          TRANSFER_RPC_URL: cfg.rpcUrl,
-          TRANSFER_WS_URL: cfg.wsUrl,
-          TRANSFER_RELAYER_URL: cfg.relayerUrl,
-          TRANSFER_ACL_PROGRAM: cfg.aclProgram,
-          TRANSFER_CHAIN_ID: alice.chainId,
-          TRANSFER_OWNER_KEYPAIR: scenario.alice.keypairPath,
-          TRANSFER_OWNER: scenario.alice.owner,
-          TRANSFER_RECIPIENT: scenario.bob.owner,
-          TRANSFER_MINT: scenario.mint,
-          TRANSFER_UNDERLYING_MINT: scenario.underlyingMint,
-          TRANSFER_FROM_ACCOUNT: alice.tokenAccount,
-          TRANSFER_TO_ACCOUNT: bob.tokenAccount,
-          TRANSFER_FROM_STATE: alice.encryptedStore,
-          TRANSFER_TO_STATE: bob.encryptedStore,
+      const owner = signers.get(scenario.alice.owner);
+      if (owner === undefined) throw new Error("two-holder transfer: Alice's signer was not provisioned here");
+      const [solana, vault, { asBytes32Hex }] = await Promise.all([
+        loadSolanaSdk(),
+        vaultModule(),
+        import("@fhevm/sdk/base"),
+      ]);
+      const aclProgramAddress = asBytes32Hex(cfg.aclProgram);
+      const chain = solana.defineFhevmSolanaChain({
+        id: BigInt(alice.chainId),
+        fhevm: { relayerUrl: cfg.relayerUrl, programs: { host: { address: aclProgramAddress } } },
+      });
+      solana.setFhevmRuntimeConfig({ auth: { type: "ApiKeyHeader", value: process.env.ZAMA_FHEVM_API_KEY ?? "local" } });
+      const rpc = context().rpc;
+      // The attestation binds the amount to (user = owner, contract = the confidential-token
+      // program), the contract identity the token requires for a transfer amount.
+      const { inputProof } = await withHostReachableFetch(() =>
+        solana.createFhevmEncryptClient({ chain, rpc }).encryptValues({
+          contractAddress: asBytes32Hex(addressHex(vault.CONFIDENTIAL_TOKEN_PROGRAM_ADDRESS)),
+          userAddress: asBytes32Hex(addressHex(owner.address)),
+          values: [{ type: "uint64", value: 400n }],
+        }),
+      );
+      await vault.confidentialTransfer(
+        { solanaChain: chain, aclProgramAddress },
+        {
+          rpc,
+          rpcSubscriptions: createSolanaRpcSubscriptions(cfg.wsUrl),
+          inputProof,
+          inputIndex: 0,
+          owner,
+          feePayer: owner,
+          mint: address(scenario.mint),
+          underlyingMint: address(scenario.underlyingMint),
+          tokenProgram: vault.TOKEN_PROGRAM_ADDRESS,
+          fromAccount: address(alice.tokenAccount),
+          toAccount: address(bob.tokenAccount),
+          toOwner: address(scenario.bob.owner),
+          fromStore: address(alice.encryptedStore),
+          toStore: address(bob.encryptedStore),
+          hostConfig: await hostConfigAddress(),
         },
-      });
-      parseTransferWorkerResult(result.stdout);
+      );
     },
-    decrypt: async (scenario, holder, state, expected) => {
-      // The permit path's trust inputs; party ids follow the signer registry order inside the runner.
+    decrypt: async (_scenario, holder, state, expected) => {
+      // Loaded here, not at the top: `bun test src` runs this module's orchestration test without
+      // the SDK installed.
+      const { userDecryptExpect } = await import("./fhe-vertical");
       const trust = await readDecryptTrustInputs(cfg);
-      return runSolanaCurrentUserDecrypt({
-        UD_RPC_URL: cfg.rpcUrl,
-        UD_RELAYER_URL: cfg.relayerUrl,
-        UD_CONTRACTS_CHAIN_ID: state.chainId,
-        UD_HANDLE: state.currentHandle,
-        // The balance account the probe derived and verified; the Connector reads it and proves
-        // the owner's allow leaf itself.
-        UD_ENCRYPTED_STORE: `0x${Buffer.from(getAddressEncoder().encode(address(state.encryptedStore))).toString("hex")}`,
-        UD_SECRET_KEY: holder.secretKey,
-        UD_CONTEXT_ID: cfg.userDecryptContext ?? bytes32HexFromId(trust.kmsContextId),
-        UD_EPOCH_ID: bytes32HexFromId(trust.kmsEpochId),
-        UD_VERIFYING_PROGRAM_ID: cfg.aclProgram,
-        UD_KMS_SIGNERS: trust.kmsSigners.join(","),
-        UD_GATEWAY_CHAIN_ID: trust.gatewayChainId.toString(),
-        UD_GATEWAY_DECRYPTION_CONTRACT: trust.decryptionContract,
-        UD_EXPECTED: expected.toString(),
-      });
+      return userDecryptExpect(
+        {
+          rpcUrl: cfg.rpcUrl,
+          relayerUrl: cfg.relayerUrl,
+          chainId: BigInt(state.chainId),
+          userDecryptContextId: cfg.userDecryptContextId ?? trust.kmsContextId.toString(),
+          verifyingProgramId: cfg.aclProgram,
+          kmsSigners: trust.kmsSigners,
+          kmsEpochId: bytes32HexFromId(trust.kmsEpochId),
+          fheParameter: "test",
+          gatewayChainId: trust.gatewayChainId.toString(),
+          gatewayDecryptionContract: trust.decryptionContract,
+        },
+        {
+          // The balance account the probe derived and verified; the Connector reads it and proves
+          // the owner's allow leaf itself.
+          encryptedStore: address(state.encryptedStore),
+          handle: Uint8Array.from(Buffer.from(state.currentHandle.slice(2), "hex")),
+          secretKey: holder.secretKey,
+          expected,
+        },
+      );
     },
     async cleanup() {
-      if (scenarioDir) await fs.rm(scenarioDir, { recursive: true, force: true });
-      scenarioDir = undefined;
       // Transfer-funded holders give their unspent SOL back; airdropped ones keep it (it is free).
       if (funderAddress !== undefined && provisioned !== undefined) {
-        for (const holder of holders.splice(0)) {
+        for (const holder of signers.values()) {
           await provisioned.sweepSol(holder, funderAddress).catch((error: unknown) => {
             console.warn(`sweeping ${holder.address} back to the funder failed: ${String(error)}`);
           });
         }
+        signers.clear();
       }
     },
   };
 };
 
 /** Runs one real two-holder transfer and proves both current balances through independent SDK decrypts. */
-export const runSolanaTwoHolderTransfer = async (dependencies: TwoHolderDependencies = createRealTwoHolderDependencies()) => {
+export const runSolanaTwoHolderTransfer = async (dependencies: TwoHolderDependencies) => {
   let scenario: TwoHolderScenario | undefined;
   try {
     const provisioned = await timed("provision two holders (mints, wrap 1000)", () => dependencies.provision());
@@ -279,7 +236,7 @@ export const runSolanaTwoHolderTransfer = async (dependencies: TwoHolderDependen
     await dependencies.waitForHandle(finalBob.currentHandle);
     await timed("user decrypt alice=600", () => dependencies.decrypt(provisioned, provisioned.alice, finalAlice, 600n));
     await timed("user decrypt bob=400", () => dependencies.decrypt(provisioned, provisioned.bob, finalBob, 400n));
-    console.log("[solana-two-holder-transfer] Alice=600 Bob=400");
+    console.log("[two-holder-transfer] Alice=600 Bob=400");
   } finally {
     await dependencies.cleanup(scenario);
   }
