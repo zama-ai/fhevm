@@ -35,6 +35,9 @@ jobs:
               # The off-chain readiness verdict (retriable vs terminal) lives in this crate, so
               # a change confined to it still has to run the relayer's own suites.
               - shared/ciphertext-attestation/**
+              - solana/crates/zama-solana-acl/**
+              - solana/crates/zama-solana-permit/**
+              - solana/crates/zama-solana-request/**
 
   unit-test:
     name: relayer-test/unit-test (bpr)
