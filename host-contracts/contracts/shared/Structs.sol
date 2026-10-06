@@ -61,3 +61,17 @@ struct ChainUpgradeWindow {
     /// @notice Last block GCS replays in dry-run, inclusive
     uint64 endBlock;
 }
+
+/**
+ * @notice Thresholds used for KMS consensus.
+ * @param publicDecryption Minimum signatures required for public decryption verification.
+ * @param userDecryption Minimum signatures required for user decryption verification.
+ * @param kmsGen Minimum signatures required for key/CRS generation consensus.
+ * @param mpc MPC fault threshold `t`: max faulty or malicious MPC nodes tolerated.
+ */
+struct KmsThresholds {
+    uint256 publicDecryption;
+    uint256 userDecryption;
+    uint256 kmsGen;
+    uint256 mpc;
+}
