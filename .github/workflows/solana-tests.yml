@@ -207,6 +207,8 @@ jobs:
       # committed IDLs. Its `--check` mode ran in no workflow, so a client could keep describing an
       # instruction the program no longer has — and the confidential-token client had in fact
       # drifted. The codegen lives with the SDK, so it runs off the graph the previous step installed.
+      # This is the only gate: the SDK `build` does not run it, so the EVM SDK image and publish
+      # need no Solana paths. The demo-dapp filter above names every IDL and generated output.
       - name: Check the dapp's generated program clients still match the committed IDLs
         working-directory: sdk/js-sdk
         run: npm run codegen:solana:check
