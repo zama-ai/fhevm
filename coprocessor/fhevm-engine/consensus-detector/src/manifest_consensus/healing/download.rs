@@ -4,7 +4,9 @@ use std::time::Duration;
 use alloy_primitives::{Address, B256, U256};
 use aws_sdk_s3::Client;
 use block_manifest::{LEGACY_CONSENSUS_EPOCH, S3_METADATA_CONSENSUS_EPOCH_KEY};
-use ciphertext_attestation::{s3_ct64_key, CiphertextAttestation, S3_METADATA_ATTESTATION_KEY};
+use ciphertext_attestation::{
+    s3_ct64_key, Attestation, CiphertextAttestation, CiphertextRef, S3_METADATA_ATTESTATION_KEY,
+};
 use tokio::time::timeout;
 
 use crate::manifest_consensus::verification::peer_manifest_source::s3_bucket_location;
@@ -189,8 +191,7 @@ impl Ct64Source for S3Ct64Source {
         })?;
         attestation
             .verify(
-                handle,
-                coprocessor_context_id,
+                &CiphertextRef::new(handle, coprocessor_context_id),
                 expected_signer.unwrap_or(attestation.signer),
             )
             .map_err(|err| {

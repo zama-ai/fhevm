@@ -14,8 +14,8 @@ use base64::Engine;
 use block_manifest::S3_METADATA_CONSENSUS_EPOCH_KEY;
 use bytesize::ByteSize;
 use ciphertext_attestation::{
-    s3_ct128_key, s3_ct64_key, CiphertextAttestation, CiphertextAttestationPayload,
-    CiphertextFormat, Version, S3_METADATA_ATTESTATION_KEY,
+    s3_ct128_key, s3_ct64_key, Attestation, CiphertextAttestation, CiphertextAttestationPayload,
+    CiphertextFormat, CiphertextRef, Version, S3_METADATA_ATTESTATION_KEY,
 };
 use fhevm_engine_common::chain_id::ChainId;
 use fhevm_engine_common::database::EVENT_CIPHERTEXTS_UPLOADED;
@@ -512,8 +512,7 @@ fn validate_existing_attestation(
     }
     actual
         .verify(
-            expected.handle,
-            expected.coprocessor_context_id,
+            &CiphertextRef::new(expected.handle, expected.coprocessor_context_id),
             expected_signer,
         )
         .map_err(|err| format!("attestation verification failed: {err}"))?;

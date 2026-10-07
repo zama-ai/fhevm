@@ -13,8 +13,8 @@ use aws_config::BehaviorVersion;
 #[cfg(not(feature = "gpu"))]
 use aws_sdk_s3::{error::SdkError, operation::head_object::HeadObjectError};
 use ciphertext_attestation::{
-    CiphertextAttestation, CiphertextFormat, S3_CT128_KEY_PREFIX, S3_CT64_KEY_PREFIX,
-    S3_METADATA_ATTESTATION_KEY,
+    Attestation, CiphertextAttestation, CiphertextFormat, CiphertextRef, S3_CT128_KEY_PREFIX,
+    S3_CT64_KEY_PREFIX, S3_METADATA_ATTESTATION_KEY,
 };
 use fhevm_engine_common::chain_id::ChainId;
 use fhevm_engine_common::db_keys::DbKeyId;
@@ -1255,8 +1255,10 @@ async fn assert_ciphertext_uploaded(
     let attestation: CiphertextAttestation = serde_json::from_str(attestation_json)?;
     let signer = PrivateKeySigner::from_str(&hex::encode(&test_env.private_key))?;
     attestation.verify(
-        B256::from_slice(handle),
-        crate::aws_upload::COPROCESSOR_CONTEXT_ID_1,
+        &CiphertextRef::new(
+            B256::from_slice(handle),
+            crate::aws_upload::COPROCESSOR_CONTEXT_ID_1,
+        ),
         signer.address(),
     )?;
     assert_eq!(
