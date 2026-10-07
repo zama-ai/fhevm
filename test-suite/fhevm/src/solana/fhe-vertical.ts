@@ -15,7 +15,7 @@ import { solanaUserDecryptContext } from './addresses';
 import { certificateCleartext, type PublicDecryptCertificate } from './public-decrypt';
 import type { SolanaProvisioningContext } from './provision';
 import { loadSolanaSdk } from './target';
-import { expectUserDecryptValue } from './user-decrypt-result';
+import { expectCleartext, userDecryptScalar } from './user-decrypt-result';
 
 const hex = (bytes: Uint8Array): string => `0x${Buffer.from(bytes).toString('hex')}`;
 const addressBytes = (value: Address): Uint8Array => new Uint8Array(getAddressEncoder().encode(value));
@@ -114,22 +114,22 @@ export const publicDecryptValues = async (
   return values.map(({ value }) => value);
 };
 
+export type UserDecryptConfig = Omit<FheVerticalConfig, 'publicDecryptContextId'>;
+
+export type UserDecryptParams = {
+  readonly encryptedStore: Address;
+  readonly handle: Uint8Array;
+  /** The signer's 32-byte ed25519 seed, 0x-hex. */
+  readonly secretKey: string;
+  readonly ownerAddress?: Address | undefined;
+};
+
 /**
  * Runs the permit-path user decrypt of `handle` (current or since replaced — the Connector proves
- * the allow leaf either way) as the wallet behind `secretKey`, and asserts the cleartext equals
- * `expected`. `ownerAddress` names the delegator on a delegated entry.
+ * the allow leaf either way) as the wallet behind `secretKey`, and returns the cleartext.
+ * `ownerAddress` names the delegator on a delegated entry.
  */
-export const userDecryptExpect = async (
-  config: Omit<FheVerticalConfig, 'publicDecryptContextId'>,
-  params: {
-    readonly encryptedStore: Address;
-    readonly handle: Uint8Array;
-    /** The signer's 32-byte ed25519 seed, 0x-hex. */
-    readonly secretKey: string;
-    readonly expected: bigint;
-    readonly ownerAddress?: Address | undefined;
-  },
-): Promise<bigint> => {
+export const userDecrypt = async (config: UserDecryptConfig, params: UserDecryptParams): Promise<bigint> => {
   const solana = await loadSolanaSdk();
   const chain = solana.defineFhevmSolanaChain({
     id: config.chainId,
@@ -167,5 +167,11 @@ export const userDecryptExpect = async (
       },
     ],
   });
-  return expectUserDecryptValue(clearValues, params.expected);
+  return userDecryptScalar(clearValues);
 };
+
+/** `userDecrypt`, asserting the cleartext equals `expected`. */
+export const userDecryptExpect = async (
+  config: UserDecryptConfig,
+  params: UserDecryptParams & { readonly expected: bigint },
+): Promise<bigint> => expectCleartext(await userDecrypt(config, params), params.expected);

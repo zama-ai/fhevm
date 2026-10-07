@@ -20,6 +20,8 @@ name: solana-e2e
 #     (fund -> init accounts -> wrap -> join -> dispatch -> settle -> claim -> decrypt), hard-gated
 #   - browser-reality: same-origin relayer proxy checks, and
 #     the operator reachable from the dApp origin with the current boot capability
+# Last, the EVM vs Solana parity cases (test-suite/fhevm/e2e/parity) run the same values on the
+# stack's EVM host and its Solana host and compare what each reader decrypted.
 # The two demo programs (demo_vault, confidential_batcher) deploy from committed keypairs under
 # solana/scripts/demo/demo-keypairs/ (see its README).
 #
@@ -291,6 +293,22 @@ jobs:
         # Check the same-origin relayer proxy without browser API credentials, then verify
         # operator authorization and the dApp's proxied current-boot config.
         run: bun run demo:check-browser
+
+      # The parity case deploys EncryptedERC20 from its hardhat artifact. It compiles after the
+      # bring-up, which renders E2ECoprocessorConfigLocal.sol with this stack's addresses, and after
+      # the demo steps, which must run without a root node_modules tree (see the SDK install above).
+      - name: Compile the e2e contracts for the parity case
+        id: parity-compile
+        if: ${{ !cancelled() && steps.demo-reseed.outcome == 'success' }}
+        run: |
+          npm ci
+          cd test-suite/e2e
+          npx hardhat compile
+
+      - name: EVM vs Solana parity (same cases on both hosts of the stack)
+        if: ${{ !cancelled() && steps.parity-compile.outcome == 'success' }}
+        working-directory: test-suite/fhevm
+        run: bun run test:e2e e2e/parity
 
       - name: Collect stack logs on failure
         if: ${{ failure() }}
