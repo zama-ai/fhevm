@@ -7,6 +7,7 @@
  */
 
 export * from './coprocessorInputAttestation.js';
+export * from './encryptedSlot.js';
 export * from './executionResultRef.js';
 export * from './fheBinaryOpCode.js';
 export * from './fheExecutedEvent.js';

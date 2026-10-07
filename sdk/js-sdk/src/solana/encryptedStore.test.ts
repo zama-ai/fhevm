@@ -1,20 +1,11 @@
-// The hand-rolled EncryptedStore account decoder, pinned byte by byte.
-//
-// There is no IDL to generate this from, so the layout lives in two places by construction: the
-// crate's struct and this decoder. What these tests pin is everything that keeps that duplication
-// honest — the field order, the realloc rule (trailing capacity only in whole 32-byte elements),
-// and the MMR invariant (as many peaks as the leaf count has set bits), which is checked
-// independently so a misaligned decode fails loudly instead of returning shifted fields.
+// The EncryptedStore account decoder: the generated layout plus the checks it leaves out — the
+// discriminator, the realloc rule (trailing capacity only in whole 32-byte elements), and the MMR
+// invariant (as many peaks as the leaf count has set bits), which is checked independently so a
+// misaligned decode fails loudly instead of returning shifted fields.
 
 import { describe, expect, it, vi } from 'vitest';
-import { getProgramDerivedAddress, type Address } from '@solana/kit';
 import { base58 } from '@scure/base';
-import {
-  decodeSolanaEncryptedStore,
-  fetchSolanaEncryptedStore,
-  solanaEncryptedStoreAddress,
-  type SolanaRpc,
-} from './encryptedStore.js';
+import { decodeSolanaEncryptedStore, fetchSolanaEncryptedStore, type SolanaRpc } from './encryptedStore.js';
 
 ////////////////////////////////////////////////////////////////////////////////
 // Account bytes, built the way the program writes them
@@ -111,20 +102,6 @@ describe('decoding an EncryptedStore account', () => {
     const data = accountData({});
     data[0] = data[0]! ^ 0xff;
     expect(() => decodeSolanaEncryptedStore(data, 'the fixture account')).toThrow('discriminator');
-  });
-});
-
-describe('the account address', () => {
-  const address = (fill: number) => base58.encode(bytes32(fill)) as Address;
-  const HOST_PROGRAM = address(0x99);
-
-  it('is the PDA of the tag and the four identity fields, in that order', async () => {
-    const seeds = { program: address(0x11), authority: address(0x22), scope: address(0x33) };
-    const [expected] = await getProgramDerivedAddress({
-      programAddress: HOST_PROGRAM,
-      seeds: [new TextEncoder().encode('encrypted-state'), bytes32(0x11), bytes32(0x22), bytes32(0x33)],
-    });
-    expect(await solanaEncryptedStoreAddress(HOST_PROGRAM, seeds)).toBe(expected);
   });
 });
 

@@ -6,5 +6,7 @@
  * @see https://github.com/codama-idl/codama
  */
 
+export * from './encryptedStore.js';
 export * from './hostConfig.js';
 export * from './kmsContext.js';
+export * from './userDecryptionDelegation.js';

@@ -4,7 +4,6 @@ import { base58 } from '@scure/base';
 
 import {
   deriveBatchAddresses,
-  deriveJoinRecordAddress,
   deriveSettleAccounts,
   deriveSettleLookupTableAddresses,
   SETTLE_ALT_FIELD_ORDER,
@@ -43,16 +42,6 @@ describe('deriveBatchAddresses', () => {
     expect(a0.batch).not.toBe(a1.batch);
     // Every field is a distinct 44-ish char base58 address; none is empty.
     for (const value of Object.values(a0)) expect(typeof value).toBe('string');
-  });
-});
-
-describe('deriveJoinRecordAddress', () => {
-  it('is user-specific', async () => {
-    const r = roots();
-    const { batch } = await deriveBatchAddresses(r, 0n);
-    const forAlice = await deriveJoinRecordAddress(batch, addr(100));
-    const forBob = await deriveJoinRecordAddress(batch, addr(101));
-    expect(forAlice).not.toBe(forBob);
   });
 });
 

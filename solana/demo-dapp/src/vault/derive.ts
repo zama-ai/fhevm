@@ -11,7 +11,6 @@ import {
   findBatchAuthorityPda,
   findBatchJoinUnderlyingPda,
   findBatchPayoutUnderlyingPda,
-  findJoinRecordPda,
 } from './internal/generated/confidentialBatcher/pdas/index.js';
 import {
   findPendingBurnPda,
@@ -91,12 +90,6 @@ export async function deriveBatchAddresses(roots: VaultDemoRoots, batchIndex: bi
     batchBurnedAmountStore: await tokenStoreAddress(roots.joinConfidentialMint, batchJoinTokenAccount),
     batchPayoutBalanceStore: await tokenStoreAddress(roots.payoutConfidentialMint, batchPayoutTokenAccount),
   };
-}
-
-/** The user's per-batch join record PDA — the companion derivation `deriveBatchAddresses` omits (it needs a user). */
-export async function deriveJoinRecordAddress(batch: Address, user: Address): Promise<Address> {
-  const [joinRecord] = await findJoinRecordPda({ batch, user });
-  return joinRecord;
 }
 
 /**

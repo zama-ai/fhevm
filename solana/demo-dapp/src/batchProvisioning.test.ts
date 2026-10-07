@@ -47,7 +47,7 @@ vi.mock('@solana-program/address-lookup-table', async (importOriginal) => ({
 
 vi.mock('./vault/index.js', () => ({
   getExtendLookupTableInstructions: mocks.extend,
-  buildReclaimBatchAuthorityInstruction: mocks.reclaim,
+  getReclaimBatchAuthorityInstructionAsync: mocks.reclaim,
   getBatcher: mocks.getBatcher,
   getBatchByIndex: mocks.getBatchByIndex,
   getCurrentBatch: mocks.getCurrentBatch,

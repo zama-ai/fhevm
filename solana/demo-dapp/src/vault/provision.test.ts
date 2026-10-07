@@ -5,8 +5,6 @@ import { describe, expect, it } from 'vitest';
 import { address, type Address, type TransactionSigner } from '@solana/kit';
 import { base58 } from '@scure/base';
 
-import { buildInitializeVaultInstruction } from './initializeVault.js';
-import { buildInitializeBatcherInstruction, BatchDirection } from './initializeBatcher.js';
 import { buildInitializeMintInstruction } from './initializeMint.js';
 import {
   buildInitializeTokenAccountInstruction,
@@ -15,15 +13,6 @@ import {
 import { buildWrapUsdcInstruction } from './wrapUsdc.js';
 import { openBatchForBatcher } from './openBatchForBatcher.js';
 import type { VaultDemoRoots } from './derive.js';
-import {
-  INITIALIZE_VAULT_DISCRIMINATOR,
-  getInitializeVaultInstructionDataDecoder,
-} from './internal/generated/demoVault/instructions/initializeVault.js';
-import { DEMO_VAULT_PROGRAM_ADDRESS } from './internal/generated/demoVault/programAddress.js';
-import {
-  INITIALIZE_BATCHER_DISCRIMINATOR,
-  getInitializeBatcherInstructionDataDecoder,
-} from './internal/generated/confidentialBatcher/instructions/initializeBatcher.js';
 import { CONFIDENTIAL_BATCHER_PROGRAM_ADDRESS } from './internal/generated/confidentialBatcher/programAddress.js';
 import { INITIALIZE_MINT_DISCRIMINATOR, getInitializeMintInstructionDataDecoder, INITIALIZE_TOKEN_ACCOUNT_DISCRIMINATOR, getInitializeTokenAccountInstructionDataDecoder, WRAP_USDC_DISCRIMINATOR, getWrapUsdcInstructionDataDecoder, CONFIDENTIAL_TOKEN_PROGRAM_ADDRESS } from '@fhevm/confidential-token';
 
@@ -37,37 +26,6 @@ function signer(a: Address): TransactionSigner {
 const HOST_CONFIG = addr(200);
 
 describe('vault provisioning builders', () => {
-  it('initialize_vault: correct program, discriminator, and the eight vault accounts', async () => {
-    const payer = signer(addr(1));
-    const instruction = await buildInitializeVaultInstruction({
-      payer,
-      vault: signer(addr(2)),
-      underlyingMint: addr(3),
-    });
-    expect(instruction.programAddress).toBe(DEMO_VAULT_PROGRAM_ADDRESS);
-    expect(instruction.accounts).toHaveLength(8);
-    expect(instruction.accounts?.[0]?.address).toBe(payer.address);
-    const decoded = getInitializeVaultInstructionDataDecoder().decode(instruction.data!);
-    expect(Array.from(decoded.discriminator)).toEqual(Array.from(INITIALIZE_VAULT_DISCRIMINATOR));
-  });
-
-  it('initialize_batcher: encodes the min-age slots and the direction enum', async () => {
-    const instruction = buildInitializeBatcherInstruction({
-      payer: signer(addr(1)),
-      batcher: signer(addr(2)),
-      joinConfidentialMint: addr(3),
-      payoutConfidentialMint: addr(4),
-      vault: addr(5),
-      minBatchAgeSlots: 25,
-      direction: BatchDirection.Deposit,
-    });
-    expect(instruction.programAddress).toBe(CONFIDENTIAL_BATCHER_PROGRAM_ADDRESS);
-    const decoded = getInitializeBatcherInstructionDataDecoder().decode(instruction.data!);
-    expect(Array.from(decoded.discriminator)).toEqual(Array.from(INITIALIZE_BATCHER_DISCRIMINATOR));
-    expect(decoded.minBatchAgeSlots).toBe(25n);
-    expect(decoded.direction).toBe(BatchDirection.Deposit);
-  });
-
   it('initialize_mint: right program + discriminator (encrypted store/event PDAs derived internally)', async () => {
     const instruction = await buildInitializeMintInstruction({
       transientStore: await prepareTransientStore({ payer: signer(addr(1)), host: ZAMA_HOST_PROGRAM_ADDRESS }),

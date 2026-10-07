@@ -19,7 +19,6 @@ export const INPUT_VALUE_LEN: Readonly<Partial<Record<number, number>>> = { 0: 2
 
 /** Anchor's `EVENT_IX_TAG_LE`, which heads every event the host emits by self-CPI. */
 export const EVENT_IX_TAG = Uint8Array.of(228, 69, 165, 46, 81, 203, 154, 29);
-export const FHE_EXECUTED_EVENT_DISCRIMINATOR = Uint8Array.of(234, 26, 200, 201, 187, 114, 93, 208);
 export const EVENT_VERSION = 1;
 
 /** `eip712`: the domain type of every certificate the host verifies, and the input attestation's type. */

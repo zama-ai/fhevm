@@ -120,9 +120,11 @@ const targets = [
         'initializeHostConfig',
         'defineKmsContext',
       ]),
-      // Read back live: the SDK's decrypt trust inputs and the deployment's chain-id cross-check.
-      accounts: new Set(['hostConfig', 'kmsContext']),
+      // Read back live: the SDK's decrypt trust inputs, the deployment's chain-id cross-check, the
+      // encrypted stores and the user-decryption delegation records.
+      accounts: new Set(['hostConfig', 'kmsContext', 'encryptedStore', 'userDecryptionDelegation']),
       definedTypes: new Set([
+        'encryptedSlot',
         'kmsThresholds',
         'pauseFlags',
         'coprocessorInputAttestation',
@@ -459,7 +461,7 @@ for (const target of targets) {
   writeFileSync(`${temporaryGeneratedPath}/programAddress.ts`, target.programAddress(program, anchorIdl));
   writeFileSync(
     `${temporaryGeneratedPath}/constants.ts`,
-    renderProgramConstants(program.constants, anchorIdl.constants ?? []),
+    renderProgramConstants(program.constants, anchorIdl.constants ?? [], anchorIdl.events ?? []),
   );
   rmSync(`${temporaryGeneratedPath}/programs`, { force: true, recursive: true });
   rmSync(`${temporaryGeneratedPath}/index.ts`, { force: true });

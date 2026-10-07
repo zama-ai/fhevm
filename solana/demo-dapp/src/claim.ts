@@ -6,7 +6,7 @@ import { type Address, type Instruction, type Signature, type TransactionSigner 
 import {
   buildClaimInstruction as buildVaultClaimInstruction,
   buildInitializeTokenAccountInstruction,
-  deriveJoinRecordAddress,
+  findJoinRecordPda,
   getBatchByIndex,
   getJoinRecord,
 } from './vault/index.js';
@@ -37,7 +37,7 @@ const readClaimStore = async (
   }
   if (batch.state.status !== BatchStatus.Settled) throw new Error('The batch has not settled yet');
 
-  const joinRecord = await getJoinRecord(rpc, await deriveJoinRecordAddress(position.batch, user));
+  const joinRecord = await getJoinRecord(rpc, (await findJoinRecordPda({ batch: position.batch, user: user }))[0]);
   if (joinRecord.batch !== position.batch || joinRecord.user !== user) {
     throw new Error('The join record does not match the requested batch and user');
   }

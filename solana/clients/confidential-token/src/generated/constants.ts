@@ -8,3 +8,18 @@ export const TOTAL_SUPPLY_KEY: Uint8Array = new Uint8Array([
   116, 111, 116, 97, 108, 95, 115, 117, 112, 112, 108, 121, 95, 95, 95, 95, 95, 95, 95, 95, 95, 95, 95, 95, 95, 95, 95,
   95, 95, 95, 95, 95,
 ]);
+export const BALANCE_HANDLE_UPDATED_EVENT_DISCRIMINATOR: Uint8Array = new Uint8Array([
+  218, 115, 100, 232, 176, 152, 68, 72,
+]);
+export const BURN_REDEEMED_EVENT_DISCRIMINATOR: Uint8Array = new Uint8Array([6, 82, 161, 171, 88, 140, 98, 152]);
+export const CONFIDENTIAL_BURN_EVENT_DISCRIMINATOR: Uint8Array = new Uint8Array([218, 41, 125, 0, 227, 226, 179, 50]);
+export const CONFIDENTIAL_TRANSFER_EVENT_DISCRIMINATOR: Uint8Array = new Uint8Array([
+  24, 221, 223, 133, 221, 78, 35, 85,
+]);
+export const HANDLE_DISCLOSED_EVENT_DISCRIMINATOR: Uint8Array = new Uint8Array([134, 63, 113, 175, 107, 120, 122, 51]);
+export const PENDING_BURN_CANCELLED_EVENT_DISCRIMINATOR: Uint8Array = new Uint8Array([
+  74, 214, 156, 105, 131, 213, 242, 119,
+]);
+export const TOTAL_SUPPLY_HANDLE_UPDATED_EVENT_DISCRIMINATOR: Uint8Array = new Uint8Array([
+  140, 218, 185, 16, 174, 158, 75, 70,
+]);

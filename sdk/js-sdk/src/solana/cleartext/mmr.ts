@@ -1,5 +1,6 @@
 import { concatBytes, unsafeBytesEquals } from '../../core/base/bytes.js';
 import { keccak_256 } from '@noble/hashes/sha3.js';
+import type { ReadonlyUint8Array } from '@solana/kit';
 
 /**
  * MMR primitives of the Zama Solana `EncryptedStore` ACL (RFC 035), for the cleartext client's
@@ -222,7 +223,7 @@ function popcount64(value: bigint): number {
  * `leafCount`. Matches `zama_solana_acl::mmr::mmr_verify`.
  */
 export function mmrVerify(
-  peaks: readonly Uint8Array[],
+  peaks: readonly ReadonlyUint8Array[],
   leafCount: bigint,
   commitment: Uint8Array,
   proof: MmrProof,
@@ -264,7 +265,7 @@ export function mmrVerify(
 /** Matches `zama_solana_acl::authorize_state_historical`: one allow of `key` on `handle` is proven. */
 export function verifyHistoricalAccessProof(
   encryptedStore: Uint8Array,
-  peaks: readonly Uint8Array[],
+  peaks: readonly ReadonlyUint8Array[],
   leafCount: bigint,
   handle: Uint8Array,
   key: Uint8Array,
@@ -277,7 +278,7 @@ export function verifyHistoricalAccessProof(
 /** Matches `zama_solana_acl::authorize_state_public`: `handle` was made public, at exactly this leaf. */
 export function verifyPublicDecryptProof(
   encryptedStore: Uint8Array,
-  peaks: readonly Uint8Array[],
+  peaks: readonly ReadonlyUint8Array[],
   leafCount: bigint,
   handle: Uint8Array,
   proof: MmrProof,

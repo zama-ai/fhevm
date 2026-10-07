@@ -7,10 +7,13 @@ export { buildCancelDispatchInstruction, type SolanaVaultCancelDispatchParameter
 export { settleBatch, type SolanaVaultSettleOptions } from './settleBatch.js';
 export { buildClaimInstruction, type SolanaVaultClaimParameters } from './claim.js';
 export {
-  buildReclaimBatchAuthorityInstruction,
-  type SolanaVaultReclaimBatchAuthorityParameters,
-} from './reclaimBatchAuthority.js';
-export { buildCloseJoinRecordInstruction, type SolanaVaultCloseJoinRecordParameters } from './closeJoinRecord.js';
+  getCloseJoinRecordInstructionAsync,
+  getInitializeBatcherInstruction,
+  getReclaimBatchAuthorityInstructionAsync,
+} from './internal/generated/confidentialBatcher/instructions/index.js';
+export { BatchDirection } from './internal/generated/confidentialBatcher/types/batchDirection.js';
+export { findJoinRecordPda } from './internal/generated/confidentialBatcher/pdas/index.js';
+export { getInitializeVaultInstructionAsync } from './internal/generated/demoVault/instructions/initializeVault.js';
 export {
   buildHarvestInstruction,
   getVaultMetrics,
@@ -19,15 +22,8 @@ export {
 } from './harvest.js';
 export { openBatch, type SolanaVaultOpenBatchParameters, type SolanaVaultOpenBatchResult } from './openBatch.js';
 
-// One-time provisioning builders the demo seeder drives (fhevm-internal#1760). Kept on the vault
-// surface — the seeder is their only caller — and shaped as thin, root-taking actions: each derives
-// its encrypted store/event PDAs internally so the seeder passes semantic roots, never hand-rolled accounts.
-export { buildInitializeVaultInstruction, type SolanaVaultInitializeVaultParameters } from './initializeVault.js';
-export {
-  buildInitializeBatcherInstruction,
-  BatchDirection,
-  type SolanaVaultInitializeBatcherParameters,
-} from './initializeBatcher.js';
+// One-time provisioning builders the demo seeder drives (fhevm-internal#1760). Each derives its
+// encrypted store/event PDAs internally so the seeder passes semantic roots, never hand-rolled accounts.
 export { buildInitializeMintInstruction, type SolanaVaultInitializeMintParameters } from './initializeMint.js';
 export {
   buildInitializeTokenAccountInstruction,
@@ -52,7 +48,6 @@ export { DEMO_VAULT_PROGRAM_ADDRESS } from './internal/generated/demoVault/progr
 
 export {
   deriveBatchAddresses,
-  deriveJoinRecordAddress,
   deriveSettleAccounts,
   deriveSettleLookupTableAddresses,
   settleAccountsToLookupTableAddresses,

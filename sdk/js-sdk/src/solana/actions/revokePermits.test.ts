@@ -3,11 +3,7 @@ import { describe, expect, it, vi } from 'vitest';
 import { AccountRole, address, type Address } from '@solana/kit';
 import { base58 } from '@scure/base';
 
-import {
-  buildRevokePermitsInstruction,
-  solanaPermitInvalidationAddress,
-  fetchSolanaPermitInvalidation,
-} from './revokePermits.js';
+import { buildRevokePermitsInstruction, fetchSolanaPermitInvalidation } from './revokePermits.js';
 import { ZAMA_HOST_PROGRAM_ADDRESS } from '@fhevm/solana-zama-host';
 
 function addr(fill: number): Address {
@@ -27,12 +23,6 @@ const user = addr(0x44);
 const WATERMARK_ADDRESS = '37au5bsVuGt2JKKPQLE8hAdkcXf2LjfnmRKBvxt5Yzep';
 const REVOKE_PERMITS_DATA = '3319597d7d5ac882';
 const SYSTEM_PROGRAM = '11111111111111111111111111111111';
-
-describe('solanaPermitInvalidationAddress', () => {
-  it('derives the canonical watermark address the host program derives', async () => {
-    expect(await solanaPermitInvalidationAddress(user, ZAMA_HOST_PROGRAM_ADDRESS)).toBe(WATERMARK_ADDRESS);
-  });
-});
 
 describe('buildRevokePermitsInstruction', () => {
   it('builds the exact bytes the host program decodes', async () => {
