@@ -1228,7 +1228,7 @@ export const runStep = async (state: State, step: StepName) => {
       // Imported lazily so an EVM-only `up` never loads the Solana client stack.
       for (const chain of hostChainsForState(state).filter((c) => c.type === "solana")) {
         const { provisionSolanaHostNode } = await import("../solana/deploy");
-        const { zamaHostId } = await provisionSolanaHostNode(topologyForState(state));
+        const { zamaHostId } = await provisionSolanaHostNode(state);
         console.log(`  ${chain.key}: zama_host=${zamaHostId}`);
       }
       break;

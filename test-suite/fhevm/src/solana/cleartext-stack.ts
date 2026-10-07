@@ -126,6 +126,8 @@ export const startCleartextStack = async (): Promise<CleartextStack> => {
         coprocessorSigners: SOLANA_CLEARTEXT_SIGNER_ADDRESSES.coprocessor.map(evmAddressBytes),
         kmsSigners: SOLANA_CLEARTEXT_SIGNER_ADDRESSES.kms.map(evmAddressBytes),
       },
+      // One cleartext KMS signer, as an EVM cleartext deployment registers.
+      kmsCorruptionThreshold: 0,
     });
     return { rpcUrl, deployerKeypairPath, stop };
   } catch (error) {

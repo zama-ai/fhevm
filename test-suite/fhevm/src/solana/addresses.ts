@@ -5,7 +5,8 @@
 // call`) with the same reads done in-process, so the bootstrap tracks whatever signer the running
 // stack actually generated — no hardcoded values.
 
-import { createPublicClient, http, parseAbi } from "viem";
+import type { KmsThresholds } from "@fhevm/solana-zama-host";
+import { type ContractFunctionName, createPublicClient, http, parseAbi } from "viem";
 
 import {
   evmAddressBytes,
@@ -72,6 +73,31 @@ export const readActiveKmsPair = async (parameters: {
     functionName: "getCurrentKmsContextAndEpoch",
   });
   return { kmsContextId: contextId, kmsEpochId: epochId };
+};
+
+const PROTOCOL_CONFIG_THRESHOLDS_ABI = parseAbi([
+  "function getPublicDecryptionThreshold() view returns (uint256)",
+  "function getUserDecryptionThreshold() view returns (uint256)",
+  "function getKmsGenThreshold() view returns (uint256)",
+  "function getMpcThreshold() view returns (uint256)",
+]);
+
+/** The current KMS context's thresholds in the primary host chain's `ProtocolConfig`. */
+export const readEvmKmsThresholds = async (parameters: {
+  readonly hostRpcUrl: string;
+  readonly addressesPath?: string;
+}): Promise<KmsThresholds> => {
+  const address = (await readProtocolConfigAddress(parameters.addressesPath)) as `0x${string}`;
+  const client = createPublicClient({ transport: http(parameters.hostRpcUrl) });
+  const read = async (functionName: ContractFunctionName<typeof PROTOCOL_CONFIG_THRESHOLDS_ABI>) =>
+    Number(await client.readContract({ address, abi: PROTOCOL_CONFIG_THRESHOLDS_ABI, functionName }));
+  const [publicDecryption, userDecryption, kmsGen, mpc] = await Promise.all([
+    read("getPublicDecryptionThreshold"),
+    read("getUserDecryptionThreshold"),
+    read("getKmsGenThreshold"),
+    read("getMpcThreshold"),
+  ]);
+  return { publicDecryption, userDecryption, kmsGen, mpc };
 };
 
 /** The primary host chain's `ProtocolConfig`, from the fhevm-cli address artifact. */

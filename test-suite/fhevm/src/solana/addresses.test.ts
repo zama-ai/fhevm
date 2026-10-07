@@ -3,10 +3,13 @@ import { mkdtemp, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
 
+import { toFunctionSelector } from "viem";
+
 import {
   bytes32HexFromId,
   evmAddressBytes,
   readActiveKmsPair,
+  readEvmKmsThresholds,
   readGatewayBootstrapInputs,
   SOLANA_HOST_CHAIN_ID,
   solanaUserDecryptContext,
@@ -93,6 +96,38 @@ describe("readActiveKmsPair", () => {
     await expect(readActiveKmsPair({ hostRpcUrl: "http://unused", addressesPath })).rejects.toThrow(
       "missing PROTOCOL_CONFIG_CONTRACT_ADDRESS",
     );
+  });
+});
+
+describe("readEvmKmsThresholds", () => {
+  const originalFetch = globalThis.fetch;
+  afterEach(() => {
+    globalThis.fetch = originalFetch;
+  });
+
+  test("reads each threshold of the current KMS context from ProtocolConfig", async () => {
+    const dir = await mkdtemp(path.join(tmpdir(), "host-addresses-"));
+    const addressesPath = path.join(dir, ".env.host");
+    await writeFile(addressesPath, `PROTOCOL_CONFIG_CONTRACT_ADDRESS=${ADDRESS_B}`);
+    const values: Record<string, number> = {
+      [toFunctionSelector("getPublicDecryptionThreshold()")]: 3,
+      [toFunctionSelector("getUserDecryptionThreshold()")]: 4,
+      [toFunctionSelector("getKmsGenThreshold()")]: 5,
+      [toFunctionSelector("getMpcThreshold()")]: 1,
+    };
+    globalThis.fetch = (async (_url: string | URL | Request, options?: RequestInit) => {
+      const request = JSON.parse(String(options?.body)) as { id: number; params: [{ to?: string; data?: string }] };
+      expect(request.params[0].to).toBe(ADDRESS_B);
+      const value = values[request.params[0].data!.slice(0, 10)]!;
+      return new Response(JSON.stringify({ jsonrpc: "2.0", id: request.id, result: `0x${word(value.toString(16))}` }));
+    }) as typeof fetch;
+
+    expect(await readEvmKmsThresholds({ hostRpcUrl: "http://127.0.0.1:8545", addressesPath })).toEqual({
+      publicDecryption: 3,
+      userDecryption: 4,
+      kmsGen: 5,
+      mpc: 1,
+    });
   });
 });
 

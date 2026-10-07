@@ -12,10 +12,12 @@
 import { closeSync, openSync } from 'node:fs';
 import path from 'node:path';
 
+import type { KmsThresholds } from '@fhevm/solana-zama-host';
+import type { Address } from '@solana/kit';
+
 import { registerSolanaCoprocessorSql } from '../../../../solana/deploy/src/coprocessor';
 import { deployHostProgram } from '../../../../solana/deploy/src/deploy-host';
 import { deployProgramArtifacts } from '../../../../solana/deploy/src/deploy-programs';
-import { integerEnv } from '../../../../solana/deploy/src/gateway';
 import {
   COPROCESSOR_DB_CONTAINER,
   REPO_ROOT,
@@ -35,12 +37,18 @@ import { restartZkproofWorker, waitForContainer } from '../flow/readiness';
 import { composeUp } from '../flow/runtime-compose';
 import { topologyForState } from '../stack-spec/stack-spec';
 import { loadState } from '../state/state';
-import type { Topology } from '../types';
+import type { State } from '../types';
 import { LOCAL_SOLANA_ENDPOINTS } from './endpoints';
 import { readEnvFile } from '../utils/fs';
 import { run, runStreaming } from '../utils/process';
 import { until } from '../utils/until';
-import { SOLANA_HOST_CHAIN_ID, readGatewayBootstrapInputs, readProtocolConfigAddress } from './addresses';
+import {
+  BRINGUP_KMS_CONTEXT_ID,
+  SOLANA_HOST_CHAIN_ID,
+  readEvmKmsThresholds,
+  readGatewayBootstrapInputs,
+  readProtocolConfigAddress,
+} from './addresses';
 import {
   SOLANA_E2E_PROGRAMS,
   SOLANA_SPECIMEN_PROGRAMS,
@@ -71,16 +79,16 @@ const buildPrograms = async (): Promise<void> => {
 const deployPrograms = async (
   deployerKeypairPath: string,
   gateway: Awaited<ReturnType<typeof readGatewayBootstrapInputs>>,
-  coprocessorThreshold: number,
+  thresholds: ReturnType<typeof bootstrapThresholdsForState>,
 ): Promise<string> => {
   const ids = await deployHostProgram({
     rpcUrl: VALIDATOR_RPC_URL,
     deployerKeypairPath,
     artifactsDir: ARTIFACTS_DIR,
     gateway,
-    coprocessorThreshold,
-    kmsCorruptionThreshold: integerEnv('KMS_THRESHOLD', 0),
+    ...thresholds,
   });
+  await assertKmsThresholdsMatchEvmHost(ids.zama_host!);
   await deployProgramArtifacts({
     rpcUrl: VALIDATOR_RPC_URL,
     deployerKeypairPath,
@@ -104,11 +112,45 @@ export const readCoprocessorDatabaseUrl = async (index = 0): Promise<string> => 
   return url.replace('@db:', '@127.0.0.1:');
 };
 
-/** The running stack's coprocessor topology, which sizes the Solana listeners and the HostConfig threshold. */
-export const readStackTopology = async (): Promise<Topology> => {
+/** The running stack's fhevm-cli state. */
+export const readStackState = async (): Promise<State> => {
   const state = await loadState();
   if (!state) throw new Error(`no fhevm-cli state at ${STATE_FILE}; run fhevm-cli up first`);
-  return topologyForState(state);
+  return state;
+};
+
+/**
+ * The host bootstrap thresholds, from the scenario the EVM stack was rendered from: the
+ * coprocessor topology and the KMS corruption threshold t.
+ */
+export const bootstrapThresholdsForState = (state: Pick<State, 'scenario'>) => ({
+  coprocessorThreshold: topologyForState(state).threshold,
+  kmsCorruptionThreshold: state.scenario.kms.threshold,
+});
+
+/** Throws unless the Solana KMS context carries the thresholds of the EVM host's KMS context. */
+export const assertKmsThresholdsMatch = (solana: KmsThresholds, evm: KmsThresholds): void => {
+  const mismatches = (Object.keys(evm) as (keyof KmsThresholds)[])
+    .filter((name) => solana[name] !== evm[name])
+    .map((name) => `${name}: solana=${solana[name]} evm=${evm[name]}`);
+  if (mismatches.length) {
+    throw new Error(`Solana KMS context thresholds differ from the EVM ProtocolConfig: ${mismatches.join(', ')}`);
+  }
+};
+
+/**
+ * Both hosts accept certificates from the same KMS, so they must ask for the same number of
+ * signatures. A threshold set too low still passes every functional test, so it is checked here.
+ */
+const assertKmsThresholdsMatchEvmHost = async (zamaHostId: string): Promise<void> => {
+  const { createSolanaRpc } = await import('@solana/kit');
+  const { fetchKmsContext, findKmsContextPda } = await import('@fhevm/solana-zama-host');
+  const [kmsContext] = await findKmsContextPda(
+    { contextId: BRINGUP_KMS_CONTEXT_ID },
+    { programAddress: zamaHostId as Address },
+  );
+  const solana = (await fetchKmsContext(createSolanaRpc(VALIDATOR_RPC_URL), kmsContext)).data.thresholds;
+  assertKmsThresholdsMatch(solana, await readEvmKmsThresholds({ hostRpcUrl: LOCAL_SOLANA_ENDPOINTS.hostRpc }));
 };
 
 /** Both Postgres containers read their credentials from the generated `database.env`. */
@@ -430,7 +472,8 @@ const evmHex = (bytes: Uint8Array): string => `0x${Buffer.from(bytes).toString('
  * The validator and host-listener are detached (`unref`, own log descriptors), so this returns
  * once they are up rather than waiting on them.
  */
-export const provisionSolanaHostNode = async (topology: Topology): Promise<{ zamaHostId: string }> => {
+export const provisionSolanaHostNode = async (state: State): Promise<{ zamaHostId: string }> => {
+  const topology = topologyForState(state);
   const lifecycleDir = process.env.DEMO_LIFECYCLE_DIR || undefined;
   if (lifecycleDir && topology.count !== 1) {
     throw new Error(`the demo lifecycle owns one Solana listener; the topology has ${topology.count} coprocessors`);
@@ -468,7 +511,7 @@ export const provisionSolanaHostNode = async (topology: Topology): Promise<{ zam
     genesisUpgradeablePrograms: genesisDeployedPrograms(deployerKeypairPath),
   });
   await airdropDeployFees(deployerKeypairPath);
-  const zamaHostId = await deployPrograms(deployerKeypairPath, gateway, topology.threshold);
+  const zamaHostId = await deployPrograms(deployerKeypairPath, gateway, bootstrapThresholdsForState(state));
   // Before any app creates an encrypted store, so the Merkle record holds every store from leaf 0.
   const merkleStartSlot = await finalizedSlot();
 
@@ -509,7 +552,7 @@ export const provisionSolanaHostNode = async (topology: Topology): Promise<{ zam
 };
 
 if (import.meta.main) {
-  await provisionSolanaHostNode(await readStackTopology());
+  await provisionSolanaHostNode(await readStackState());
   // The validator and host-listener are detached children; exit explicitly instead of waiting on
   // anything they hold open.
   process.exit(0);

@@ -31,8 +31,8 @@ import type { HostDeployContext } from './send';
 
 /**
  * Derives the on-chain certificate threshold (matching signatures a certificate needs) from the
- * KMS corruption threshold t. A centralized KMS (t=0) signs with one key; a threshold-mode KMS
- * needs 2t+1 matching signatures, and KMS core requires parties == 3t+1.
+ * KMS corruption threshold t: 2t+1 matching signatures, with parties == 3t+1. t=0 is the single
+ * signer of a cleartext host.
  */
 export const kmsCertificateThreshold = (kmsCorruptionThreshold: number, registeredSignerCount: number): number => {
   if (!Number.isSafeInteger(kmsCorruptionThreshold) || kmsCorruptionThreshold < 0 || kmsCorruptionThreshold > 255) {
@@ -65,8 +65,8 @@ export type BootstrapZamaHostParams = {
    * keeps the live flow green while the full registered set is stored (EVM `InputVerifier` parity).
    */
   readonly coprocessorThreshold?: number;
-  /** KMS corruption threshold t; 0 is the centralized PoC default. */
-  readonly kmsCorruptionThreshold?: number;
+  /** KMS corruption threshold t. */
+  readonly kmsCorruptionThreshold: number;
   /** Program id to bootstrap. Defaults to the generated client's id. */
   readonly programAddress?: Address;
   /** Validate existing bindings without sending initialization transactions. */
@@ -104,7 +104,7 @@ export const validateBootstrapInputs = (params: BootstrapZamaHostParams): void =
   ) {
     throw new Error('gateway contract addresses must be nonzero 20-byte addresses');
   }
-  kmsCertificateThreshold(params.kmsCorruptionThreshold ?? 0, params.gateway.kmsSigners.length);
+  kmsCertificateThreshold(params.kmsCorruptionThreshold, params.gateway.kmsSigners.length);
 };
 
 export const bootstrapZamaHost = async (context: HostDeployContext, params: BootstrapZamaHostParams): Promise<void> => {
@@ -117,7 +117,7 @@ export const bootstrapZamaHost = async (context: HostDeployContext, params: Boot
   const shared = { eventAuthority, program: programAddress, hostConfig } as const;
   const ixConfig = { programAddress } as const;
 
-  const kmsCorruptionThreshold = params.kmsCorruptionThreshold ?? 0;
+  const kmsCorruptionThreshold = params.kmsCorruptionThreshold;
   const certificateThreshold = kmsCertificateThreshold(kmsCorruptionThreshold, params.gateway.kmsSigners.length);
   const existing = await fetchEncodedAccount(context.rpc, hostConfig);
 

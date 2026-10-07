@@ -12,7 +12,7 @@ export const deployHostProgram = async (
     readonly chainId?: bigint;
     readonly gateway: GatewayBootstrapInputs;
     readonly coprocessorThreshold?: number;
-    readonly kmsCorruptionThreshold?: number;
+    readonly kmsCorruptionThreshold: number;
   },
 ) => {
   const programAddress = programIdsFor(parameters.environment ?? DEFAULT_SOLANA_ENVIRONMENT).zamaHost;

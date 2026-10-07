@@ -2,7 +2,13 @@ import { type Address, type Instruction, type TransactionSigner, generateKeyPair
 import { describe, expect, test } from 'bun:test';
 
 import { BRINGUP_KMS_CONTEXT_ID, type GatewayBootstrapInputs } from './addresses';
-import { bootstrapZamaHost, kmsCertificateThreshold, lifecycleComposeProject } from './deploy';
+import {
+  assertKmsThresholdsMatch,
+  bootstrapThresholdsForState,
+  bootstrapZamaHost,
+  kmsCertificateThreshold,
+  lifecycleComposeProject,
+} from './deploy';
 import {
   findHostConfigPda,
   findKmsContextPda,
@@ -15,9 +21,12 @@ import {
   ZAMA_HOST_PROGRAM_ADDRESS,
 } from '@fhevm/solana-zama-host';
 import { zamaHostProgramDataAddress } from './provision';
+import { loadCoprocessorScenario, resolveScenarioFile } from '../scenario/resolve';
 import type { HostDeployContext } from '../../../../solana/deploy/src/send';
 
 const address20 = (byte: number): Uint8Array => new Uint8Array(20).fill(byte);
+
+const kmsCorruptionThreshold = 1;
 
 const gateway: GatewayBootstrapInputs = {
   gatewayChainId: 55555n,
@@ -71,7 +80,7 @@ const fakeContext = async (hostConfigExists: boolean, payer: Address, kmsContext
                             getDefineKmsContextInstructionDataEncoder().encode({
                               contextId: BRINGUP_KMS_CONTEXT_ID,
                               signers: [...gateway.kmsSigners],
-                              thresholds: { publicDecryption: 1, userDecryption: 1, kmsGen: 1, mpc: 0 },
+                              thresholds: { publicDecryption: 3, userDecryption: 3, kmsGen: 3, mpc: 1 },
                             }),
                           ).subarray(8),
                           Buffer.from([0, 0]),
@@ -134,11 +143,27 @@ describe('kmsCertificateThreshold', () => {
   });
 });
 
+describe('host bootstrap thresholds', () => {
+  test('come from the scenario the EVM stack was rendered from', async () => {
+    const scenario = resolveScenarioFile('/tmp/solana.yaml', await loadCoprocessorScenario('solana'));
+    expect(bootstrapThresholdsForState({ scenario })).toEqual({
+      coprocessorThreshold: scenario.topology.threshold,
+      kmsCorruptionThreshold: scenario.kms.threshold,
+    });
+  });
+
+  test('a Solana KMS context that differs from the EVM one fails', () => {
+    const evm = { publicDecryption: 3, userDecryption: 3, kmsGen: 3, mpc: 1 };
+    expect(() => assertKmsThresholdsMatch(evm, evm)).not.toThrow();
+    expect(() => assertKmsThresholdsMatch({ ...evm, userDecryption: 1 }, evm)).toThrow('userDecryption: solana=1 evm=3');
+  });
+});
+
 describe('bootstrapZamaHost', () => {
   test('fresh validator: initializes the host config, then defines KMS context 1', async () => {
     const payer = await generateKeyPairSigner();
     const { context, sent } = await fakeContext(false, payer.address);
-    await bootstrapZamaHost(context, { payer, gateway, kmsCorruptionThreshold: 1 });
+    await bootstrapZamaHost(context, { payer, gateway, kmsCorruptionThreshold });
 
     expect(sent).toHaveLength(2);
     const [[initialize], [defineContext]] = sent;
@@ -164,7 +189,7 @@ describe('bootstrapZamaHost', () => {
     const payer = await generateKeyPairSigner();
     const { context, sent } = await fakeContext(false, payer.address);
     const programAddress = (await generateKeyPairSigner()).address;
-    await bootstrapZamaHost(context, { payer, gateway, programAddress });
+    await bootstrapZamaHost(context, { payer, gateway, kmsCorruptionThreshold, programAddress });
     const [givenNonce] = await findRandNoncePda({ programAddress });
     const [defaultNonce] = await findRandNoncePda();
     const accounts = sent[0][0].accounts!.map((account) => account.address);
@@ -175,12 +200,11 @@ describe('bootstrapZamaHost', () => {
   test('configured validator: skips initialize_host_config, still defines the context', async () => {
     const payer = await generateKeyPairSigner();
     const { context, sent } = await fakeContext(true, payer.address);
-    await bootstrapZamaHost(context, { payer, gateway });
+    await bootstrapZamaHost(context, { payer, gateway, kmsCorruptionThreshold });
 
     expect(sent).toHaveLength(1);
     const defineData = getDefineKmsContextInstructionDataDecoder().decode(sent[0][0].data ?? new Uint8Array());
-    // Centralized default: t=0, so every certificate threshold is 1 and mpc mirrors t.
-    expect(defineData.thresholds).toEqual({ publicDecryption: 1, userDecryption: 1, kmsGen: 1, mpc: 0 });
+    expect(defineData.thresholds).toEqual({ publicDecryption: 3, userDecryption: 3, kmsGen: 3, mpc: 1 });
   });
 
   test('refuses a corruption threshold the registered signer set cannot satisfy', async () => {
@@ -198,7 +222,9 @@ describe('bootstrapZamaHost', () => {
   test('refuses a different gateway without submitting transactions', async () => {
     const payer = await generateKeyPairSigner();
     const { context, sent } = await fakeContext(true, payer.address);
-    await expect(bootstrapZamaHost(context, { payer, gateway: { ...gateway, gatewayChainId: 999n } })).rejects.toThrow(
+    await expect(
+      bootstrapZamaHost(context, { payer, gateway: { ...gateway, gatewayChainId: 999n }, kmsCorruptionThreshold }),
+    ).rejects.toThrow(
       'does not match',
     );
     expect(sent).toHaveLength(0);
@@ -207,7 +233,7 @@ describe('bootstrapZamaHost', () => {
   test('already bootstrapped: skips both initialize_host_config and define_kms_context', async () => {
     const payer = await generateKeyPairSigner();
     const { context, sent } = await fakeContext(true, payer.address, true);
-    await bootstrapZamaHost(context, { payer, gateway });
+    await bootstrapZamaHost(context, { payer, gateway, kmsCorruptionThreshold });
     expect(sent).toHaveLength(0);
   });
 });
@@ -227,7 +253,9 @@ test('first-deploy preflight rejects malformed inputs without sending initializa
     { gateway: { ...gateway, kmsSigners: [address20(0)] } },
     { gateway: { ...gateway, coprocessorSigners: [address20(1), address20(1)] } },
   ]) {
-    await expect(bootstrapZamaHost(context, { payer, gateway, validateOnly: true, ...invalid })).rejects.toThrow();
+    await expect(
+      bootstrapZamaHost(context, { payer, gateway, kmsCorruptionThreshold, validateOnly: true, ...invalid }),
+    ).rejects.toThrow();
   }
   expect(sent).toHaveLength(0);
 });
