@@ -1,3 +1,4 @@
+import { tokenStoreAddress } from './internal/encryptedStores.js';
 import { findEventAuthorityPda as findZamaEventAuthorityPda } from '@fhevm/solana-zama-host';
 import { findAssociatedTokenPda, TOKEN_PROGRAM_ADDRESS } from '@solana-program/token';
 import type { Address } from '@solana/kit';
@@ -6,13 +7,19 @@ import {
   findVaultTokenAccountPda,
 } from './internal/generated/demoVault/pdas/index.js';
 import {
+  findBatchPda,
   findBatchAuthorityPda,
   findBatchJoinUnderlyingPda,
   findBatchPayoutUnderlyingPda,
   findJoinRecordPda,
 } from './internal/generated/confidentialBatcher/pdas/index.js';
-import { batchAddress, tokenStateAddress, pendingBurnAddress, tokenAccountAddress } from './internal/batcherPdas.js';
-import { findTotalSupplyAuthorityPda, findVaultAuthorityPda as findMintVaultAuthorityPda, findEventAuthorityPda as findTokenEventAuthorityPda } from '@fhevm/confidential-token';
+import {
+  findPendingBurnPda,
+  findTokenAccountPda,
+  findTotalSupplyAuthorityPda,
+  findVaultAuthorityPda as findMintVaultAuthorityPda,
+  findEventAuthorityPda as findTokenEventAuthorityPda,
+} from '@fhevm/confidential-token';
 
 /**
  * The immutable roots of one batcher's demo topology — the addresses a real integrator (or the
@@ -66,10 +73,10 @@ export interface BatchAddresses {
  * roots' mints — the same derivations the on-chain `settle` handler resolves as `#[account(seeds)]`.
  */
 export async function deriveBatchAddresses(roots: VaultDemoRoots, batchIndex: bigint): Promise<BatchAddresses> {
-  const batch = await batchAddress(roots.batcher, batchIndex);
+  const batch = (await findBatchPda({ batcher: roots.batcher, index: batchIndex }))[0];
   const [batchAuthority] = await findBatchAuthorityPda({ batch });
-  const batchJoinTokenAccount = await tokenAccountAddress(roots.joinConfidentialMint, batchAuthority);
-  const batchPayoutTokenAccount = await tokenAccountAddress(roots.payoutConfidentialMint, batchAuthority);
+  const batchJoinTokenAccount = (await findTokenAccountPda({ mint: roots.joinConfidentialMint, owner: batchAuthority }))[0];
+  const batchPayoutTokenAccount = (await findTokenAccountPda({ mint: roots.payoutConfidentialMint, owner: batchAuthority }))[0];
   const [batchJoinUnderlying] = await findBatchJoinUnderlyingPda({ batch });
   const [batchPayoutUnderlying] = await findBatchPayoutUnderlyingPda({ batch });
   return {
@@ -81,8 +88,8 @@ export async function deriveBatchAddresses(roots: VaultDemoRoots, batchIndex: bi
     batchPayoutUnderlying,
     // Burned amount: the join mint's `burned_amount` value of the batch's join token account.
     // Payout balance: the payout mint's `balance` value of the batch's payout token account.
-    batchBurnedAmountStore: await tokenStateAddress(roots.joinConfidentialMint, batchJoinTokenAccount),
-    batchPayoutBalanceStore: await tokenStateAddress(roots.payoutConfidentialMint, batchPayoutTokenAccount),
+    batchBurnedAmountStore: await tokenStoreAddress(roots.joinConfidentialMint, batchJoinTokenAccount),
+    batchPayoutBalanceStore: await tokenStoreAddress(roots.payoutConfidentialMint, batchPayoutTokenAccount),
   };
 }
 
@@ -213,7 +220,7 @@ export async function deriveSettleAccounts(
     }))[0],
     joinMintVaultAuthority,
     batchBurnedAmountStore: batch.batchBurnedAmountStore,
-    pendingBurn: await pendingBurnAddress(roots.joinConfidentialMint, batch.batchJoinTokenAccount),
+    pendingBurn: (await findPendingBurnPda({ mint: roots.joinConfidentialMint, tokenAccount: batch.batchJoinTokenAccount }))[0],
     hostConfig: roots.hostConfig,
     kmsContext: roots.kmsContext,
     vault: roots.vault,
@@ -233,6 +240,6 @@ export async function deriveSettleAccounts(
     // Total supply: domain = payout mint, encrypted store authority = its total-supply
     // authority, encrypted value label =
     // `total_supply`.
-    payoutTotalSupplyStore: await tokenStateAddress(roots.payoutConfidentialMint, payoutTotalSupplyAuthority),
+    payoutTotalSupplyStore: await tokenStoreAddress(roots.payoutConfidentialMint, payoutTotalSupplyAuthority),
   };
 }

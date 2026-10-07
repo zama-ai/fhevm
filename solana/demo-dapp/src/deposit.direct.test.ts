@@ -54,7 +54,6 @@ vi.mock('./vault/index.js', () => ({
   getOrCreateConfidentialTokenAccountInstruction: mocks.buildInitialize,
   getJoinRecord: vi.fn(),
   joinBatch: mocks.joinBatch,
-  tokenAccountAddress: vi.fn(),
 }));
 
 vi.mock('./encryptionKey', () => ({

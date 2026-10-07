@@ -1,6 +1,12 @@
-import { findVaultAuthorityPda, findTotalSupplyAuthorityPda, getVaultAuthorityPdaSeeds, getTotalSupplyAuthorityPdaSeeds } from '@fhevm/confidential-token';
+import {
+  CONFIDENTIAL_MINT_DISCRIMINATOR,
+  getConfidentialMintDecoder,
+  findVaultAuthorityPda,
+  findTotalSupplyAuthorityPda,
+  getVaultAuthorityPdaSeeds,
+  getTotalSupplyAuthorityPdaSeeds,
+} from '@fhevm/confidential-token';
 // Exhaustive preview reset. Public account inventory is written before any state is closed.
-import { createHash } from 'node:crypto';
 import { mkdir, readFile, readdir, writeFile } from 'node:fs/promises';
 import path from 'node:path';
 import {
@@ -8,8 +14,6 @@ import {
   address,
   createKeyPairSignerFromBytes,
   getAddressDecoder,
-  getAddressEncoder,
-  getProgramDerivedAddress,
   isSome,
   type Address,
   type Instruction,
@@ -35,18 +39,49 @@ import { loadKeypairSigner } from './keypair';
 import type { HostDeployContext } from './send';
 import { journalRecovery } from './recovery-journal';
 import { wipeZamaHost } from './wipe';
-
-import { getVaultDecoder } from '../../demo-dapp/src/vault/internal/generated/demoVault/accounts/vault';
-import { getBatchDecoder } from '../../demo-dapp/src/vault/internal/generated/confidentialBatcher/accounts/batch';
-import { getBatcherDecoder } from '../../demo-dapp/src/vault/internal/generated/confidentialBatcher/accounts/batcher';
-import { getJoinRecordDecoder } from '../../demo-dapp/src/vault/internal/generated/confidentialBatcher/accounts/joinRecord';
+import { VAULT_DISCRIMINATOR, getVaultDecoder } from '../../demo-dapp/src/vault/internal/generated/demoVault/accounts/vault';
+import {
+  BATCH_DISCRIMINATOR,
+  getBatchDecoder,
+} from '../../demo-dapp/src/vault/internal/generated/confidentialBatcher/accounts/batch';
+import {
+  BATCHER_DISCRIMINATOR,
+  getBatcherDecoder,
+} from '../../demo-dapp/src/vault/internal/generated/confidentialBatcher/accounts/batcher';
+import {
+  JOIN_RECORD_DISCRIMINATOR,
+  getJoinRecordDecoder,
+} from '../../demo-dapp/src/vault/internal/generated/confidentialBatcher/accounts/joinRecord';
 import { BatchStatus } from '../../demo-dapp/src/vault/internal/generated/confidentialBatcher/types/batchStatus';
-import { getReclaimBatchAuthorityInstructionAsync } from '../../demo-dapp/src/vault/internal/generated/confidentialBatcher/instructions/reclaimBatchAuthority';
-import { getCloseJoinRecordInstruction } from '../../demo-dapp/src/vault/internal/generated/confidentialBatcher/instructions/closeJoinRecord';
+import {
+  getReclaimBatchAuthorityInstructionAsync,
+} from '../../demo-dapp/src/vault/internal/generated/confidentialBatcher/instructions/reclaimBatchAuthority';
+import {
+  getCloseJoinRecordInstruction,
+} from '../../demo-dapp/src/vault/internal/generated/confidentialBatcher/instructions/closeJoinRecord';
+import {
+  findBatchAuthorityPda,
+  getBatchAuthorityPdaSeeds,
+} from '../../demo-dapp/src/vault/internal/generated/confidentialBatcher/pdas/batchAuthority';
+import {
+  findVaultAuthorityPda as findDemoVaultAuthorityPda,
+  getVaultAuthorityPdaSeeds as getDemoVaultAuthorityPdaSeeds,
+} from '../../demo-dapp/src/vault/internal/generated/demoVault/pdas/vaultAuthority';
+import {
+  getPreviewCloseTokenInstruction as getBatcherPreviewCloseTokenInstruction,
+} from '../../demo-dapp/src/vault/internal/generated/confidentialBatcher/instructions/previewCloseToken';
+import {
+  getPreviewDrainInstruction as getBatcherPreviewDrainInstruction,
+} from '../../demo-dapp/src/vault/internal/generated/confidentialBatcher/instructions/previewDrain';
+import {
+  getPreviewCloseTokenInstruction as getVaultPreviewCloseTokenInstruction,
+} from '../../demo-dapp/src/vault/internal/generated/demoVault/instructions/previewCloseToken';
+import {
+  getPreviewDrainInstruction as getVaultPreviewDrainInstruction,
+} from '../../demo-dapp/src/vault/internal/generated/demoVault/instructions/previewDrain';
 
 const SYSTEM = address('11111111111111111111111111111111');
 const LOADER = address('BPFLoaderUpgradeab1e11111111111111111111111');
-const discriminator = (name: string) => createHash('sha256').update(name).digest().subarray(0, 8);
 const u32 = (n: number) => {
   const b = Buffer.alloc(4);
   b.writeUInt32LE(n);
@@ -55,8 +90,6 @@ const u32 = (n: number) => {
 const writable = (a: Address) => ({ address: a, role: AccountRole.WRITABLE });
 const signer = (s: TransactionSigner) => ({ address: s.address, role: AccountRole.READONLY_SIGNER, signer: s });
 const decodeAddress = (b: Uint8Array, offset: number) => getAddressDecoder().decode(b, offset);
-const encodeSeeds = (seeds: readonly Uint8Array[]) =>
-  Buffer.concat([u32(seeds.length), ...seeds.flatMap((s) => [u32(s.length), Buffer.from(s)])]);
 const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
 
 export async function recoverPreview(
@@ -95,7 +128,7 @@ export async function recoverPreview(
   }
   for (const item of inventory) {
     const bytes = Buffer.from(item.data, 'base64');
-    if (item.name === 'confidential_batcher' && bytes.subarray(0, 8).equals(discriminator('account:Batch'))) {
+    if (item.name === 'confidential_batcher' && bytes.subarray(0, 8).equals(Buffer.from(BATCH_DISCRIMINATOR))) {
       const batch = getBatchDecoder().decode(bytes);
       ([BatchStatus.Settled, BatchStatus.Canceled, BatchStatus.Refunding].includes(batch.status)
         ? finishedBatches
@@ -112,13 +145,13 @@ export async function recoverPreview(
   }
   for (const item of inventory) {
     const bytes = Buffer.from(item.data, 'base64');
-    if (
-      (item.name === 'confidential_token' && bytes.subarray(0, 8).equals(discriminator('account:ConfidentialMint'))) ||
-      (item.name === 'demo_vault' && bytes.subarray(0, 8).equals(discriminator('account:Vault')))
-    )
-      knownMints.add(decodeAddress(bytes, 40));
-    if (item.name === 'demo_vault' && bytes.subarray(0, 8).equals(discriminator('account:Vault')))
-      knownMints.add(getVaultDecoder().decode(bytes).underlyingMint);
+    if (item.name === 'confidential_token' && bytes.subarray(0, 8).equals(Buffer.from(CONFIDENTIAL_MINT_DISCRIMINATOR)))
+      knownMints.add(getConfidentialMintDecoder().decode(bytes).underlyingMint);
+    if (item.name === 'demo_vault' && bytes.subarray(0, 8).equals(Buffer.from(VAULT_DISCRIMINATOR))) {
+      const vault = getVaultDecoder().decode(bytes);
+      knownMints.add(vault.shareMint);
+      knownMints.add(vault.underlyingMint);
+    }
   }
   await journal.persist('inventory-recovery.json', JSON.stringify({ mints: [...knownMints] }));
   const send = (instruction: Instruction) => context.sendTransaction(payer, [instruction]);
@@ -128,13 +161,9 @@ export async function recoverPreview(
     // Derive all external signing authorities while their discovery accounts still exist.
     for (const item of inventory) {
       const data = Buffer.from(item.data, 'base64');
-      const isTokenMint = item.name === 'confidential_token' && data.subarray(0, 8).equals(discriminator('account:ConfidentialMint'));
-      const roots =
-        item.name === 'demo_vault' && data.subarray(0, 8).equals(discriminator('account:Vault'))
-          ? ['authority']
-          : item.name === 'confidential_batcher' && data.subarray(0, 8).equals(discriminator('account:Batch'))
-            ? ['batch-authority']
-            : [];
+      const isTokenMint = item.name === 'confidential_token' && data.subarray(0, 8).equals(Buffer.from(CONFIDENTIAL_MINT_DISCRIMINATOR));
+      const isVault = item.name === 'demo_vault' && data.subarray(0, 8).equals(Buffer.from(VAULT_DISCRIMINATOR));
+      const isBatch = item.name === 'confidential_batcher' && data.subarray(0, 8).equals(Buffer.from(BATCH_DISCRIMINATOR));
       if (isTokenMint) {
         for (const [finder, seedEncoder] of [
           [findVaultAuthorityPda, getVaultAuthorityPdaSeeds],
@@ -145,17 +174,21 @@ export async function recoverPreview(
           authorities.push({ program: item.program, address: derived, seeds: [...seedEncoder(seeds).map(bytes => Uint8Array.from(bytes)), new Uint8Array([bump])] });
         }
       }
-      for (const root of roots) {
-        const seeds = [new TextEncoder().encode(root), Uint8Array.from(getAddressEncoder().encode(item.address))];
-        const [derived, bump] = await getProgramDerivedAddress({ programAddress: item.program, seeds });
-        authorities.push({ program: item.program, address: derived, seeds: [...seeds, new Uint8Array([bump])] });
+      if (isVault) {
+        const seeds = { vault: item.address };
+        const [derived, bump] = await findDemoVaultAuthorityPda(seeds, { programAddress: item.program });
+        authorities.push({ program: item.program, address: derived, seeds: [...getDemoVaultAuthorityPdaSeeds(seeds).map(bytes => Uint8Array.from(bytes)), new Uint8Array([bump])] });
       }
-      const mint =
-        item.name === 'demo_vault' && roots.length
-          ? decodeAddress(data, 40)
-          : isTokenMint
-            ? decodeAddress(data, 40)
-            : undefined;
+      if (isBatch) {
+        const seeds = { batch: item.address };
+        const [derived, bump] = await findBatchAuthorityPda(seeds, { programAddress: item.program });
+        authorities.push({ program: item.program, address: derived, seeds: [...getBatchAuthorityPdaSeeds(seeds).map(bytes => Uint8Array.from(bytes)), new Uint8Array([bump])] });
+      }
+      const mint = isVault
+        ? getVaultDecoder().decode(data).shareMint
+        : isTokenMint
+          ? getConfidentialMintDecoder().decode(data).underlyingMint
+          : undefined;
       if (mint) {
         const info = (await context.rpc.getAccountInfo(mint, { encoding: 'base64' }).send())
           .value;
@@ -168,10 +201,14 @@ export async function recoverPreview(
       }
     }
     for (const authority of authorities) {
-      const admin = [
-        { ...signer(payer), role: AccountRole.WRITABLE_SIGNER },
-        { address: await programDataAddressFor(authority.program), role: AccountRole.READONLY },
-      ];
+      const programData = await programDataAddressFor(authority.program);
+      // Confidential-token shares this ABI; check-zama-host-idl.sh compares its admin-sweep IDL.
+      const closeToken = authority.program === programs.confidential_batcher
+        ? getBatcherPreviewCloseTokenInstruction
+        : getVaultPreviewCloseTokenInstruction;
+      const drain = authority.program === programs.confidential_batcher
+        ? getBatcherPreviewDrainInstruction
+        : getVaultPreviewDrainInstruction;
       const tokens = await context.rpc
         .getTokenAccountsByOwner(
           authority.address,
@@ -181,27 +218,27 @@ export async function recoverPreview(
         .send();
       for (const token of tokens.value) {
         const { mint } = getTokenDecoder().decode(Buffer.from(token.account.data[0], 'base64'));
-        await send({
-          programAddress: authority.program,
-          accounts: [
-            ...admin,
-            { address: authority.address, role: AccountRole.READONLY },
-            writable(token.pubkey),
-            writable(mint),
-            { address: TOKEN, role: AccountRole.READONLY },
-          ],
-          data: Buffer.concat([discriminator('global:preview_close_token'), encodeSeeds(authority.seeds)]),
-        });
+        await send(closeToken({
+          admin: payer,
+          programData,
+          authority: authority.address,
+          account: token.pubkey,
+          mint,
+          tokenProgram: TOKEN,
+          seeds: authority.seeds,
+        }, { programAddress: authority.program }));
       }
       const info = (
         await context.rpc.getAccountInfo(authority.address, { encoding: 'base64' }).send()
       ).value;
       if (info?.owner === SYSTEM && info.lamports > 0n) {
-        await send({
-          programAddress: authority.program,
-          accounts: [...admin, writable(authority.address), { address: SYSTEM, role: AccountRole.READONLY }],
-          data: Buffer.concat([discriminator('global:preview_drain'), encodeSeeds(authority.seeds)]),
-        });
+        await send(drain({
+          admin: payer,
+          programData,
+          authority: authority.address,
+          systemProgram: SYSTEM,
+          seeds: authority.seeds,
+        }, { programAddress: authority.program }));
       }
     }
   }
@@ -224,23 +261,23 @@ export async function recoverPreview(
         const batcherData = byAddress.get(batch.batcher);
         if (!batcherData) throw new Error(`missing batcher ${batch.batcher}`);
         const batcherBytes = Buffer.from(batcherData.data, 'base64');
-        if (!batcherBytes.subarray(0, 8).equals(discriminator('account:Batcher')))
+        if (!batcherBytes.subarray(0, 8).equals(Buffer.from(BATCHER_DISCRIMINATOR)))
           throw new Error('Invalid batcher account');
         const mint = getBatcherDecoder().decode(batcherBytes).joinConfidentialMint;
         const mintData = byAddress.get(mint);
         if (!mintData) throw new Error(`missing confidential mint ${mint}`);
         const mintBytes = Buffer.from(mintData.data, 'base64');
-        if (mintBytes.length < 72 || !mintBytes.subarray(0, 8).equals(discriminator('account:ConfidentialMint')))
+        if (!mintBytes.subarray(0, 8).equals(Buffer.from(CONFIDENTIAL_MINT_DISCRIMINATOR)))
           throw new Error('Invalid confidential mint');
-        const keeper = wallets.get(decodeAddress(mintBytes, 8));
+        const keeper = wallets.get(getConfidentialMintDecoder().decode(mintBytes).authority);
         if (!keeper) {
           retained.push({ address: item.address, lamports: item.lamports, reason: 'missing batch reclaim signer' });
           continue;
         }
-        const [authority] = await getProgramDerivedAddress({
-          programAddress: programs.confidential_batcher,
-          seeds: [new TextEncoder().encode('batch-authority'), getAddressEncoder().encode(item.address)],
-        });
+        const [authority] = await findBatchAuthorityPda(
+          { batch: item.address },
+          { programAddress: item.program },
+        );
         if ((await context.rpc.getBalance(authority).send()).value > 0n)
           await send(
             await getReclaimBatchAuthorityInstructionAsync(
@@ -255,12 +292,15 @@ export async function recoverPreview(
             ),
           );
       }
-      if (bytes.subarray(0, 8).equals(discriminator('account:JoinRecord'))) {
+      if (bytes.subarray(0, 8).equals(Buffer.from(JOIN_RECORD_DISCRIMINATOR))) {
         const join = getJoinRecordDecoder().decode(bytes);
         const user = wallets.get(join.user);
         const batchData = byAddress.get(join.batch);
         if (!user || !batchData) continue;
-        const state = getBatchDecoder().decode(Buffer.from(batchData.data, 'base64')).status;
+        const batchBytes = Buffer.from(batchData.data, 'base64');
+        if (!batchBytes.subarray(0, 8).equals(Buffer.from(BATCH_DISCRIMINATOR)))
+          throw new Error('Invalid batch account');
+        const state = getBatchDecoder().decode(batchBytes).status;
         if (state === BatchStatus.Canceled || (state === BatchStatus.Settled && join.claimed))
           await send(
             getCloseJoinRecordInstruction(

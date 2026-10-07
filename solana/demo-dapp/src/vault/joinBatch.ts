@@ -1,6 +1,10 @@
 import { findAssociatedTokenPda } from '@solana-program/token';
 import { findEventAuthorityPda } from '@fhevm/solana-zama-host';
-import { INSTRUCTIONS_SYSVAR_ADDRESS, appendTransientStoreInstructions, prepareTransientStore } from '@fhevm/sdk/solana';
+import {
+  INSTRUCTIONS_SYSVAR_ADDRESS,
+  appendTransientStoreInstructions,
+  prepareTransientStore,
+} from '@fhevm/sdk/solana';
 import {
   address,
   assertIsFullySignedTransaction,
@@ -26,20 +30,15 @@ import {
   type TransactionSigner,
 } from '@solana/kit';
 import { base58 } from '@scure/base';
-
 import { hexToBytes } from '@fhevm/sdk/base';
 import { bytes32HexToHandle } from '@fhevm/sdk/solana';
 import type { FhevmSolanaChain } from '@fhevm/sdk/solana';
 import type { Bytes32Hex } from '@fhevm/sdk/types';
 import type { SolanaInputProof } from '@fhevm/sdk/solana';
 import { getJoinInstructionAsync } from './internal/generated/confidentialBatcher/instructions/join.js';
-import {
-  tokenStateAddress,
-  findBatchAuthorityPda,
-  joinStoreAddress,
-  tokenAccountAddress,
-} from './internal/batcherPdas.js';
-import { ZAMA_HOST_PROGRAM_ADDRESS, CONFIDENTIAL_TOKEN_PROGRAM_ADDRESS } from '@fhevm/confidential-token';
+import { findBatchAuthorityPda } from './internal/generated/confidentialBatcher/pdas/index.js';
+import { joinStoreAddress, tokenStoreAddress } from './internal/encryptedStores.js';
+import { findTokenAccountPda, ZAMA_HOST_PROGRAM_ADDRESS, CONFIDENTIAL_TOKEN_PROGRAM_ADDRESS } from '@fhevm/confidential-token';
 
 /**
  * Joins a batch with a coprocessor-attested confidential amount of the batcher's join token. This
@@ -130,8 +129,8 @@ export async function joinBatch(
   });
 
   const [batchAuthority] = await findBatchAuthorityPda({ batch: parameters.batch });
-  const userTokenAccount = await tokenAccountAddress(joinConfidentialMint, user.address);
-  const batchJoinTokenAccount = await tokenAccountAddress(joinConfidentialMint, batchAuthority);
+  const userTokenAccount = (await findTokenAccountPda({ mint: joinConfidentialMint, owner: user.address }))[0];
+  const batchJoinTokenAccount = (await findTokenAccountPda({ mint: joinConfidentialMint, owner: batchAuthority }))[0];
   const joinStore = await joinStoreAddress(parameters.batch, user.address);
   const transientStore = await prepareTransientStore({ payer: parameters.payer, host: zamaHostProgramAddress });
   const instruction = await getJoinInstructionAsync({
@@ -153,8 +152,8 @@ export async function joinBatch(
     }))[0],
     userTokenAccount,
     batchJoinTokenAccount,
-    userBalanceStore: await tokenStateAddress(joinConfidentialMint, userTokenAccount),
-    batchBalanceStore: await tokenStateAddress(joinConfidentialMint, batchJoinTokenAccount),
+    userBalanceStore: await tokenStoreAddress(joinConfidentialMint, userTokenAccount),
+    batchBalanceStore: await tokenStoreAddress(joinConfidentialMint, batchJoinTokenAccount),
     joinStore,
     transientStore: transientStore.address,
     instructions: INSTRUCTIONS_SYSVAR_ADDRESS,

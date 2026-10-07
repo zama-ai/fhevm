@@ -25,7 +25,6 @@ vi.mock('./vault/index.js', () => ({
   deriveJoinRecordAddress: vi.fn(async () => address('SysvarC1ock11111111111111111111111111111111')),
   getBatchByIndex: mocks.getBatch,
   getJoinRecord: mocks.getJoinRecord,
-  tokenAccountAddress: vi.fn(async () => address('SysvarRent111111111111111111111111111111111')),
 }));
 vi.mock('./sendTransaction', () => ({ sendTransaction: mocks.send }));
 

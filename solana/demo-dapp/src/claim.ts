@@ -1,3 +1,4 @@
+import { findTokenAccountPda } from '@fhevm/confidential-token';
 import { TOKEN_PROGRAM_ADDRESS } from '@solana-program/token';
 import { appendTransientStoreInstructions, prepareTransientStore } from '@fhevm/sdk/solana';
 import { type Address, type Instruction, type Signature, type TransactionSigner } from '@solana/kit';
@@ -7,9 +8,7 @@ import {
   deriveJoinRecordAddress,
   getBatchByIndex,
   getJoinRecord,
-  tokenAccountAddress,
 } from './vault/index.js';
-
 import { BatchStatus, type BatchTarget, type VaultDirection } from './batchTypes';
 import { createFinalizedRpc } from '@fhevm/solana-zama-host';
 import type { DemoConfig } from './demoConfig';
@@ -54,7 +53,7 @@ const buildClaimInstructions = async (
   const { rpc, roots, claimed } = await readClaimStore(session, position, direction, user);
   if (claimed) return null;
 
-  const payoutTokenAccount = await tokenAccountAddress(roots.payoutConfidentialMint, user);
+  const payoutTokenAccount = (await findTokenAccountPda({ mint: roots.payoutConfidentialMint, owner: user }))[0];
   const account = (await rpc.getAccountInfo(payoutTokenAccount, { encoding: 'base64' }).send())
     .value;
   if (account !== null && account.owner !== session.config.programs.token && account.owner !== SYSTEM_PROGRAM_ADDRESS) {

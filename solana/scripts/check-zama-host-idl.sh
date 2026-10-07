@@ -6,7 +6,7 @@
 #   bash scripts/check-zama-host-idl.sh
 #
 # When: before Mollusk runtime tests; what CI runs for IDL/ABI sync checks.
-# Writes: target/deploy only (does not update goldens; see sync-zama-host-idl.sh).
+# Writes: target/deploy and target/idl only (does not update goldens; see sync-zama-host-idl.sh).
 set -euo pipefail
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
@@ -45,7 +45,38 @@ if LC_ALL=C grep -qaF "$marker" target/deploy/zama_host.so; then
   exit 1
 fi
 
-bash "$ROOT/scripts/build-demo-idls.sh"
+bash "$ROOT/scripts/build-demo-idls.sh" --preview-cleanup
+
+# Recovery reuses the demo builders under confidential-token's program address.
+python3 - <<'PYTHON'
+import json
+from pathlib import Path
+
+def cleanup_abi(path, name):
+    instructions = json.loads(Path(path).read_text())["instructions"]
+    instruction = next((item for item in instructions if item["name"] == name), None)
+    if instruction is None:
+        raise SystemExit(f"PREVIEW CLEANUP ABI: {path} lacks {name}")
+    def accounts(items):
+        return [
+            meta
+            for item in items
+            for meta in (accounts(item["accounts"]) if "accounts" in item else [{
+                "name": item["name"],
+                "writable": item.get("writable", False),
+                "signer": item.get("signer", False),
+            }])
+        ]
+    return instruction["discriminator"], accounts(instruction["accounts"]), instruction["args"]
+
+for name in ("preview_close_token", "preview_drain"):
+    token = cleanup_abi("target/idl/confidential_token_admin_sweep.json", name)
+    for program in ("confidential_batcher", "demo_vault"):
+        path = f"demo-dapp/idl/{program}.json"
+        if cleanup_abi(path, name) != token:
+            raise SystemExit(f"PREVIEW CLEANUP ABI: {program}.{name} differs from confidential-token's admin-sweep definition")
+print("preview cleanup ABI: confidential-token, confidential-batcher and demo-vault agree")
+PYTHON
 
 python3 scripts/check_solana_abi.py --root "$ROOT"
 python3 scripts/authority_table.py --root "$ROOT"

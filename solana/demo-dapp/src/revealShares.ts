@@ -1,4 +1,7 @@
-import { BALANCE_KEY } from '@fhevm/confidential-token';
+import {
+  findTokenAccountPda,
+  BALANCE_KEY,
+} from '@fhevm/confidential-token';
 import { createFinalizedRpc } from '@fhevm/solana-zama-host';
 import { encryptedStoreHandle } from '@fhevm/sdk/solana';
 import { getAddressEncoder, type Address } from '@solana/kit';
@@ -9,8 +12,7 @@ import {
   setFhevmRuntimeConfig,
   type SolanaDecryptTrust,
 } from '@fhevm/sdk/solana';
-import { tokenStateAddress, getEncryptedStore, tokenAccountAddress } from './vault/index.js';
-
+import { getEncryptedStore, tokenStoreAddress } from './vault/index.js';
 import type { DemoSession } from './demoSession';
 import { permitSessionFor } from './permitCache';
 import { recordDecryptionEvidence } from './evidenceStore';
@@ -62,8 +64,8 @@ const revealConfidentialBalance = async (
   mint: DemoSession['config']['mints']['joinConfidential'],
   label: 'cShares' | 'cUSDC',
 ): Promise<RevealedBalance> => {
-  const tokenAccount = await tokenAccountAddress(mint, session.signer.address);
-  const encryptedStore = await tokenStateAddress(mint, tokenAccount);
+  const tokenAccount = (await findTokenAccountPda({ mint, owner: session.signer.address }))[0];
+  const encryptedStore = await tokenStoreAddress(mint, tokenAccount);
   const rpc = createFinalizedRpc(session.config.rpcUrl);
   const encodeAddress = (value: Address): Uint8Array => new Uint8Array(getAddressEncoder().encode(value));
   // The permit covers this token program's values under this mint, and nothing else.
@@ -152,20 +154,20 @@ const createReadClient = (session: DemoSession) => createFhevmBaseClient({
 
 export const readClaimedSharesHandle = async (session: DemoSession): Promise<string> => {
   const mint = session.config.mints.payoutConfidential;
-  const tokenAccount = await tokenAccountAddress(mint, session.signer.address);
+  const tokenAccount = (await findTokenAccountPda({ mint, owner: session.signer.address }))[0];
   const state = await getEncryptedStore(
     createReadClient(session),
-    await tokenStateAddress(mint, tokenAccount),
+    await tokenStoreAddress(mint, tokenAccount),
   );
   return handleHex(encryptedStoreHandle(state, BALANCE_KEY));
 };
 
 export const readClaimedUsdcHandle = async (session: DemoSession): Promise<string> => {
   const mint = session.config.mints.joinConfidential;
-  const tokenAccount = await tokenAccountAddress(mint, session.signer.address);
+  const tokenAccount = (await findTokenAccountPda({ mint, owner: session.signer.address }))[0];
   const state = await getEncryptedStore(
     createReadClient(session),
-    await tokenStateAddress(mint, tokenAccount),
+    await tokenStoreAddress(mint, tokenAccount),
   );
   return handleHex(encryptedStoreHandle(state, BALANCE_KEY));
 };
@@ -174,8 +176,8 @@ export const readConfidentialBalanceEvidence = async (
   session: DemoSession,
   mint: DemoSession['config']['mints']['joinConfidential'],
 ): Promise<ConfidentialBalanceEvidence> => {
-  const tokenAccount = await tokenAccountAddress(mint, session.signer.address);
-  const encryptedStore = await tokenStateAddress(mint, tokenAccount);
+  const tokenAccount = (await findTokenAccountPda({ mint, owner: session.signer.address }))[0];
+  const encryptedStore = await tokenStoreAddress(mint, tokenAccount);
   const state = await getEncryptedStore(createReadClient(session), encryptedStore);
   return {
     encryptedStore,
@@ -185,7 +187,7 @@ export const readConfidentialBalanceEvidence = async (
 };
 
 export const hasConfidentialBalanceAccount = async (session: DemoSession, mint: Address): Promise<boolean> => {
-  const tokenAccount = await tokenAccountAddress(mint, session.signer.address);
+  const tokenAccount = (await findTokenAccountPda({ mint, owner: session.signer.address }))[0];
   const account = await createFinalizedRpc(session.config.rpcUrl)
     .getAccountInfo(tokenAccount, { encoding: 'base64' })
     .send();

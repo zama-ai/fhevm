@@ -1,7 +1,11 @@
+import { tokenStoreAddress } from './internal/encryptedStores.js';
 import { INSTRUCTIONS_SYSVAR_ADDRESS, type TransientStore } from '@fhevm/sdk/solana';
 import type { Address, GetAccountInfoApi, Instruction, Rpc, TransactionSigner } from '@solana/kit';
-import { getInitializeTokenAccountInstructionAsync, findTokenAccountPda, CONFIDENTIAL_TOKEN_PROGRAM_ADDRESS } from '@fhevm/confidential-token';
-import { tokenStateAddress } from './internal/batcherPdas.js';
+import {
+  getInitializeTokenAccountInstructionAsync,
+  findTokenAccountPda,
+  CONFIDENTIAL_TOKEN_PROGRAM_ADDRESS,
+} from '@fhevm/confidential-token';
 
 export type SolanaVaultInitializeTokenAccountParameters = {
   readonly transientStore: TransientStore;
@@ -41,7 +45,7 @@ export async function buildInitializeTokenAccountInstruction(
     owner: parameters.owner,
     mint: parameters.mint,
     tokenAccount,
-    balanceEncryptedStore: await tokenStateAddress(parameters.mint, tokenAccount),
+    balanceEncryptedStore: await tokenStoreAddress(parameters.mint, tokenAccount),
     hostConfig: parameters.hostConfig,
     program: CONFIDENTIAL_TOKEN_PROGRAM_ADDRESS,
   });

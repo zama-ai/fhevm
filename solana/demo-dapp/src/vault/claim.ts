@@ -1,11 +1,14 @@
 import { findEventAuthorityPda as findZamaEventAuthorityPda } from '@fhevm/solana-zama-host';
-import { findEventAuthorityPda as findTokenEventAuthorityPda } from '@fhevm/confidential-token';
+import {
+  findTokenAccountPda,
+  findEventAuthorityPda as findTokenEventAuthorityPda,
+} from '@fhevm/confidential-token';
 import { findAssociatedTokenPda } from '@solana-program/token';
 import { INSTRUCTIONS_SYSVAR_ADDRESS, type TransientStore } from '@fhevm/sdk/solana';
 import type { Address, Instruction, TransactionSigner } from '@solana/kit';
-
 import { getClaimInstructionAsync } from './internal/generated/confidentialBatcher/instructions/claim.js';
-import { findBatchAuthorityPda, joinStoreAddress, tokenAccountAddress, tokenStateAddress } from './internal/batcherPdas.js';
+import { findBatchAuthorityPda } from './internal/generated/confidentialBatcher/pdas/index.js';
+import { joinStoreAddress, tokenStoreAddress } from './internal/encryptedStores.js';
 
 /**
  * Roots for a permissionless claim. The builder derives the JoinRecord and payout States,
@@ -40,8 +43,8 @@ export type SolanaVaultClaimParameters = {
 export async function buildClaimInstruction(parameters: SolanaVaultClaimParameters): Promise<Instruction> {
   const { user, payoutConfidentialMint } = parameters;
   const [batchAuthority] = await findBatchAuthorityPda({ batch: parameters.batch });
-  const batchPayoutTokenAccount = await tokenAccountAddress(payoutConfidentialMint, batchAuthority);
-  const userPayoutTokenAccount = await tokenAccountAddress(payoutConfidentialMint, user);
+  const batchPayoutTokenAccount = (await findTokenAccountPda({ mint: payoutConfidentialMint, owner: batchAuthority }))[0];
+  const userPayoutTokenAccount = (await findTokenAccountPda({ mint: payoutConfidentialMint, owner: user }))[0];
   const joinStore = await joinStoreAddress(parameters.batch, user);
   const instruction = await getClaimInstructionAsync({
     transientStore: parameters.transientStore.address,
@@ -66,8 +69,8 @@ export async function buildClaimInstruction(parameters: SolanaVaultClaimParamete
     }))[0],
     batchPayoutTokenAccount,
     userPayoutTokenAccount,
-    batchPayoutBalanceStore: await tokenStateAddress(payoutConfidentialMint, batchPayoutTokenAccount),
-    userPayoutBalanceStore: await tokenStateAddress(payoutConfidentialMint, userPayoutTokenAccount),
+    batchPayoutBalanceStore: await tokenStoreAddress(payoutConfidentialMint, batchPayoutTokenAccount),
+    userPayoutBalanceStore: await tokenStoreAddress(payoutConfidentialMint, userPayoutTokenAccount),
     zamaEventAuthority: (await findZamaEventAuthorityPda())[0],
     hostConfig: parameters.hostConfig,
     confidentialTokenEventAuthority: (await findTokenEventAuthorityPda())[0],

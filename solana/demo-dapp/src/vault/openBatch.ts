@@ -1,5 +1,4 @@
 import type { Address, Instruction } from '@solana/kit';
-
 import {
   getOpenBatchInstructionAsync,
   type OpenBatchAsyncInput,
@@ -11,7 +10,7 @@ import {
 import { getExtendLookupTableInstructions } from './internal/addressLookupTable.js';
 
 export type SolanaVaultOpenBatchParameters = {
-  /** Accounts + `authorityFundingLamports` for the batcher `open_batch` instruction. */
+  /** Accounts, `index` + `authorityFundingLamports` for the batcher `open_batch` instruction. */
   readonly openBatch: OpenBatchAsyncInput;
   /**
    * A recent, finalized slot used to derive the per-batch settle lookup table address. The table's

@@ -1,13 +1,13 @@
 import { beforeEach, describe, expect, test, vi } from 'vitest';
 
 const mocks = vi.hoisted(() => ({
-  tokenStateAddress: vi.fn(),
+  tokenStoreAddress: vi.fn(),
   createFhevmDecryptClient: vi.fn(),
   decryptValues: vi.fn(),
   getAccountInfo: vi.fn(),
   getEncryptedStore: vi.fn(),
   signPermit: vi.fn(),
-  tokenAccountAddress: vi.fn(),
+  findTokenAccountPda: vi.fn(),
 }));
 
 vi.mock('@fhevm/solana-zama-host', async (importOriginal) => ({
@@ -25,9 +25,13 @@ vi.mock('@fhevm/sdk/solana', async (importOriginal) => ({
   setFhevmRuntimeConfig: vi.fn(),
 }));
 vi.mock('./vault/index.js', () => ({
-  tokenStateAddress: mocks.tokenStateAddress,
+  tokenStoreAddress: mocks.tokenStoreAddress,
   getEncryptedStore: mocks.getEncryptedStore,
-  tokenAccountAddress: mocks.tokenAccountAddress,
+}));
+
+vi.mock('@fhevm/confidential-token', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('@fhevm/confidential-token')>()),
+  findTokenAccountPda: mocks.findTokenAccountPda,
 }));
 
 import type { DemoSession } from './demoSession';
@@ -90,8 +94,8 @@ describe('confidential balance reveal evidence', () => {
       signPermit: mocks.signPermit,
       decryptValues: mocks.decryptValues,
     });
-    mocks.tokenAccountAddress.mockResolvedValue('token-account');
-    mocks.tokenStateAddress.mockResolvedValue('encrypted-value-account');
+    mocks.findTokenAccountPda.mockResolvedValue(['token-account', 255]);
+    mocks.tokenStoreAddress.mockResolvedValue('encrypted-value-account');
     mocks.getEncryptedStore.mockResolvedValue({
       slots: [
         { key: new TextEncoder().encode('balance_________________________'), handle: new Uint8Array(32).fill(0x12) },
@@ -182,7 +186,7 @@ describe('confidential balance reveal evidence', () => {
 describe('confidential balance account discovery', () => {
   beforeEach(() => {
     vi.clearAllMocks();
-    mocks.tokenAccountAddress.mockResolvedValue('token-account');
+    mocks.findTokenAccountPda.mockResolvedValue(['token-account', 255]);
   });
 
   test('distinguishes absent and initialized canonical accounts', async () => {

@@ -20,7 +20,7 @@
 #      which trees it deliberately leaves alone, are written out at the check itself.
 #   7. Every swept tree is a CI trigger for this script: a check that does not run on a change
 #      to the tree it protects is the same hole as a check that does not fire.
-#   8. Hand-written PDA derivations and seed literals (DD-072): a recipe the program already declares,
+#   8. Hand-written PDA derivations, seed literals and Anchor discriminators (DD-072): a recipe the program already declares,
 #      restated in a client, drifts silently. Counts are checked; review rejects new allow-list entries.
 #
 # References are counted against a PRODUCTION INDEX (see `build_index`): test files and
@@ -238,14 +238,15 @@ HAND_DERIVATION_ROOTS=(
   coprocessor/fhevm-engine/solana-merkle-proof-service
   coprocessor/fhevm-engine/tfhe-worker
 )
-# Today's hand-written derivations, as `path|count|tracking task`. Counts are production lines
-# deriving a PDA or spelling a seed. Over, under, zero and missing files fail. The script checks
+# Today's hand-written copies, as `path|count|tracking task`. Counts are production lines
+# deriving a PDA, spelling a seed or building an Anchor discriminator. Over, under, zero and missing files fail. The script checks
 # counts; review rejects new entries. Keyed by path so unrelated edits do not invalidate an entry.
 HAND_DERIVATIONS_ALLOWED=(
+  "sdk/js-sdk/src/solana/encryptedStore.ts|1|PR 2 (SDK split): generated EncryptedStore and UserDecryptionDelegation decoders"
+  "sdk/js-sdk/src/solana/actions/userDecryptionDelegation.ts|1|PR 2 (SDK split): generated EncryptedStore and UserDecryptionDelegation decoders"
+  "test-suite/fhevm/src/solana/merkle-record.ts|1|PR 2 (SDK split): generated EncryptedStore and UserDecryptionDelegation decoders"
+  "solana/deploy/src/wipe.ts|1|Elias decision: wipe.ts admin-sweep"
   "solana/deploy/src/bootstrap.ts|2|fhevm-internal#2108 task 2 (programData: the one solana/deploy helper)"
-  "solana/deploy/src/recover.ts|5|fhevm-internal#2108 task 2 (Anchor seeds)"
-  "solana/demo-dapp/src/vault/internal/batcherPdas.ts|3|fhevm-internal#2108 task 2 (Anchor seeds)"
-  "test-suite/fhevm/demo/seed.ts|3|fhevm-internal#2108 task 2 (Anchor seeds)"
 )
 # The self-test drives the allow-list arms through the environment, as checks 4 and 5 do.
 [ -n "${DEAD_SURFACE_EXTRA_HAND_DERIVATION:-}" ] && \
@@ -279,6 +280,8 @@ SELFTEST_FIXTURES=(
   solana/programs/zama-host/src/dead_surface_selftest.rs
   solana/programs/confidential-token/src/dead_surface_selftest.rs
   solana/demo-dapp/src/deadSurfaceSelftest.ts
+  solana/demo-dapp/src/deadSurfaceHashSelftest.ts
+  solana/demo-dapp/src/deadSurfaceBytesSelftest.ts
   relayer/src/core/dead_surface_selftest.rs
   coprocessor/fhevm-engine/tfhe-worker/dead_surface_selftest.rs
 )
@@ -1002,7 +1005,7 @@ if run_check 7; then
 fi
 
 if run_check 8; then
-  echo "== 8. hand-written PDA derivations, seed literals and scope labels =="
+  echo "== 8. hand-written PDA derivations, seed literals and Anchor discriminators =="
   # DD-072: every PDA recipe has one source, the program's Anchor `seeds` (or zama-solana-acl for the
   # off-chain Rust recipes), and clients generate or import it. A second copy drifts silently, and a
   # third-party dapp never regenerates. Reads the production index, so tests are not swept: a test
@@ -1045,6 +1048,39 @@ __event_authority"
     | sed 's|^|^|; s|$|/|' | paste -sd '|' -)
   hand_hits=$( (grep -E "^[^:]+:[0-9]+:.*(${derivation}|${seed_literal})" "$INDEX" || true) \
     | (grep -vE "^[^:]*/generated/|${seed_exclusions}" || true) )
+  # Hash input and discriminator byte arrays may span lines; match indexed production code per file.
+  anchor_hits=$(python3 - "$INDEX" "$seed_exclusions" <<'PYTHON'
+import re
+import sys
+from collections import defaultdict
+
+files = defaultdict(list)
+for entry in open(sys.argv[1]):
+    path, line, code = entry.rstrip("\n").split(":", 2)
+    if "/generated/" not in path and not re.search(sys.argv[2], entry):
+        files[path].append((int(line), code))
+quote = r"[\"'`]"
+anchor_literal = quote + r"(?:global|account|event):[^\"'`]*" + quote
+hash_call = r"(?:\b(?:createHash|hash|sha256|digest|discriminator)\b|\.update\s*\()"
+byte_array = re.compile(r"\b\w*DISCRIMINATOR\w*\b(?:[^=;]|\[[^\]]*;[^\]]*\])*=\s*(?:(?:new\s+Uint8Array|Uint8Array\.from)\s*\(\s*)?\[([^\]]*)\]", re.I)
+for path, lines in files.items():
+    code = "\n".join(text for _, text in lines)
+    hits = set()
+    # Statements retain multiline calls, while unrelated hashes in a file do not license a literal.
+    for statement in re.finditer(r"[^;]+(?:;|$)", code):
+        if re.search(hash_call, statement[0]):
+            for literal in re.finditer(anchor_literal, statement[0]):
+                hits.add(code.count("\n", 0, statement.start() + literal.start()))
+    for match in byte_array.finditer(code):
+        values = [value.strip() for value in match[1].split(",") if value.strip()]
+        if len(values) == 8 and all(re.fullmatch(r"(?:[0-9]+|0[xX][0-9a-fA-F]+)", value) and 0 <= int(value, 16 if value.lower().startswith("0x") else 10) <= 255 for value in values):
+            hits.add(code.count("\n", 0, match.start()))
+    for hit in sorted(hits):
+        line, text = lines[hit]
+        print(f"{path}:{line}:{text}")
+PYTHON
+  )
+  hand_hits=$(printf '%s\n%s\n' "$hand_hits" "$anchor_hits" | sed '/^$/d' | sort -u)
   hand_counts=$(printf '%s\n' "$hand_hits" | sed '/^$/d' | cut -d: -f1 | sort | uniq -c)
   while read -r count file; do
     [ -n "$file" ] || continue
@@ -1053,7 +1089,7 @@ __event_authority"
     allowed=0
     [ -n "$entry" ] && { allowed=${entry#*|}; allowed=${allowed%%|*}; }
     if [ "$count" -gt "$allowed" ]; then
-      echo "HAND-WRITTEN PDA DERIVATION: ${file} has ${count} production line(s) deriving a PDA or spelling a seed, ${allowed} allowed — generate or import the recipe (DD-072):"
+      echo "HAND-WRITTEN PDA/ANCHOR COPY: ${file} has ${count} production line(s) deriving a PDA, spelling a seed or building a discriminator, ${allowed} allowed — generate or import the recipe (DD-072):"
       printf '%s\n' "$hand_hits" | (grep -F "${file}:" || true) | sed 's/^/    /'
       fail=1
     elif [ "$count" -lt "$allowed" ]; then
@@ -1260,7 +1296,7 @@ FIXTURES
   while IFS='|' read -r form path content; do
     [ -n "$form" ] || continue
     printf '%s\n' "$content" > "$path"
-    expect_fires "hand-derivation sweep (${form})" "HAND-WRITTEN PDA DERIVATION: ${path} has 1" "" 8 bash "$SELF"
+    expect_fires "hand-derivation sweep (${form})" "HAND-WRITTEN PDA/ANCHOR COPY: ${path} has 1" "" 8 bash "$SELF"
     rm -f "$path"
   done <<FIXTURES
 TypeScript call|${ts_fixture}|export const f = async (p: Address) => getProgramDerivedAddress({ programAddress: p, seeds: [] });
@@ -1278,6 +1314,21 @@ Rust seed literal|${fixture}|pub const S: &[u8] = b"rand-nonce";
 Relayer outside host|relayer/src/core/dead_surface_selftest.rs|pub const S: &[u8] = b"rand-nonce";
 Engine crate outside src|coprocessor/fhevm-engine/tfhe-worker/dead_surface_selftest.rs|pub const S: &[u8] = b"rand-nonce";
 FIXTURES
+  hash_fixture="solana/demo-dapp/src/deadSurfaceHashSelftest.ts"
+  bytes_fixture="solana/demo-dapp/src/deadSurfaceBytesSelftest.ts"
+  cat > "$hash_fixture" <<'FIXTURE'
+const bytes = createHash('sha256').update(
+  `global:preview_drain`
+).digest().subarray(0, 8);
+FIXTURE
+  expect_fires "Anchor discriminator sweep (hashed input)" "HAND-WRITTEN PDA/ANCHOR COPY: ${hash_fixture} has 1" "" 8 bash "$SELF"
+  cat > "$bytes_fixture" <<'FIXTURE'
+const PREVIEW_DISCRIMINATOR = new Uint8Array([
+  1, 2, 3, 4, 5, 6, 7, 8,
+]);
+FIXTURE
+  expect_fires "Anchor discriminator sweep (byte array)" "HAND-WRITTEN PDA/ANCHOR COPY: ${bytes_fixture} has 1" "" 8 bash "$SELF"
+  rm -f "$hash_fixture" "$bytes_fixture"
   pending_burn_fixture="solana/programs/confidential-token/src/dead_surface_selftest.rs"
   printf 'pub const S: &[u8] = b"pending-burn";\n' > "$pending_burn_fixture"
   expect_fires "PendingBurn raw seed copy" "PENDING-BURN SEED COPY:" "" 8 bash "$SELF"
@@ -1285,7 +1336,7 @@ FIXTURES
   # The allow-list arms, through the environment: a file over its count, under it, at zero, and gone.
   printf "export const a = 'host-config';\nexport const b = 'kms-context';\n" > "$ts_fixture"
   expect_fires "hand-derivation allow-list (over its count)" \
-    "HAND-WRITTEN PDA DERIVATION: ${ts_fixture} has 2 production line(s) deriving a PDA or spelling a seed, 1 allowed" "" 8 \
+    "HAND-WRITTEN PDA/ANCHOR COPY: ${ts_fixture} has 2 production line(s) deriving a PDA, spelling a seed or building a discriminator, 1 allowed" "" 8 \
     env "DEAD_SURFACE_EXTRA_HAND_DERIVATION=${ts_fixture}|1|self-test" bash "$SELF"
   expect_fires "hand-derivation allow-list (under its count)" \
     "STALE HAND-DERIVATION ENTRY: ${ts_fixture} has 2, the allow-list says 3" "" 8 \

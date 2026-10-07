@@ -1,4 +1,8 @@
-import { INSTRUCTIONS_SYSVAR_ADDRESS, appendTransientStoreInstructions, prepareTransientStore } from "@fhevm/sdk/solana";
+import {
+  INSTRUCTIONS_SYSVAR_ADDRESS,
+  appendTransientStoreInstructions,
+  prepareTransientStore,
+} from "@fhevm/sdk/solana";
 // token-vertical — the typed confidential-token consume arc the token scenario drives:
 // burn (attested external amount) -> seal -> KMS-certified public decrypt -> redeem + disclose.
 //
@@ -7,7 +11,6 @@ import { INSTRUCTIONS_SYSVAR_ADDRESS, appendTransientStoreInstructions, prepareT
 // from the same on-chain seeds.
 
 import { type Address, type TransactionSigner } from "@solana/kit";
-
 import { TOKEN_PROGRAM_ADDRESS as SPL_TOKEN_PROGRAM_ADDRESS, findAssociatedTokenPda } from "@solana-program/token";
 import { BRINGUP_KMS_CONTEXT_ID } from "./addresses";
 import { findKmsContextPda } from "@fhevm/solana-zama-host";
@@ -15,6 +18,8 @@ import { certificateCleartext, type PublicDecryptCertificate } from "./public-de
 import { hostConfigAddress, type SolanaProvisioningContext } from "./provision";
 import { vaultModule, sdkVerifyModule } from "./lazy-modules";
 import {
+  findPendingBurnPda,
+  findTokenAccountPda,
   getConfidentialBurnInstructionAsync,
   getRedeemBurnedAmountInstructionAsync,
   getMakeTokenAccountHandlePublicInstructionAsync,
@@ -52,11 +57,11 @@ export type ConfidentialBurnTarget = {
 /** Derives the burn-facing accounts for `owner`'s confidential token account under `mint`. */
 export const confidentialBurnTarget = async (mint: Address, owner: Address): Promise<ConfidentialBurnTarget> => {
   const vault = await vaultModule();
-  const tokenAccount = await vault.tokenAccountAddress(mint, owner);
+  const tokenAccount = (await findTokenAccountPda({ mint, owner }))[0];
   return {
     tokenAccount,
-    pendingBurn: await vault.pendingBurnAddress(mint, tokenAccount),
-    burnedAmountStore: await vault.tokenStateAddress(mint, tokenAccount),
+    pendingBurn: (await findPendingBurnPda({ mint, tokenAccount }))[0],
+    burnedAmountStore: await vault.tokenStoreAddress(mint, tokenAccount),
   };
 };
 
@@ -64,7 +69,7 @@ export const confidentialBurnTarget = async (mint: Address, owner: Address): Pro
 export const totalSupplyStore = async (mint: Address): Promise<Address> => {
   const vault = await vaultModule();
   const [totalSupplyAuthority] = await findTotalSupplyAuthorityPda({ mint });
-  return vault.tokenStateAddress(mint, totalSupplyAuthority);
+  return vault.tokenStoreAddress(mint, totalSupplyAuthority);
 };
 
 /**
@@ -98,7 +103,7 @@ export const confidentialBurn = async (
       mint: params.underlyingMint,
     }))[0],
     tokenAccount: target.tokenAccount,
-    balanceStore: await vault.tokenStateAddress(params.mint, target.tokenAccount),
+    balanceStore: await vault.tokenStoreAddress(params.mint, target.tokenAccount),
     totalSupplyStore: await totalSupplyStore(params.mint),
     pendingBurn: target.pendingBurn,
     zamaEventAuthority: await eventAuthority(ZAMA_HOST_PROGRAM_ADDRESS),
