@@ -153,7 +153,9 @@ impl TransactionHelper {
                     tx_metric_type,
                     transaction_start_time.elapsed().as_millis() as f64,
                 );
-                hook.on_failure(&job_id, &error.to_string()).await?;
+                // RPC revert messages may contain NUL bytes, which PostgreSQL text rejects.
+                hook.on_failure(&job_id, &error.to_string().replace('\0', "\\0"))
+                    .await?;
                 return Err(EventProcessingError::from(error));
             }
         };
@@ -174,7 +176,9 @@ impl TransactionHelper {
                     tx_metric_type,
                     transaction_start_time.elapsed().as_millis() as f64,
                 );
-                hook.on_failure(&job_id, &error.to_string()).await?;
+                // RPC revert messages may contain NUL bytes, which PostgreSQL text rejects.
+                hook.on_failure(&job_id, &error.to_string().replace('\0', "\\0"))
+                    .await?;
                 return Err(EventProcessingError::from(error));
             }
         };
