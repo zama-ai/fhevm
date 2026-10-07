@@ -24,17 +24,26 @@
 //!
 //! Selected by whether the old identity differs from the one this build uses:
 //!
-//! - **Rename** (`old != current`) — the predecessor owns its own filter row
-//!   and its own four streams. Stop the publisher writing to them
-//!   (`unregister_contracts`), *then* delete them. That order is the whole
-//!   point: the reverse recreates every stream on the next published event, and
-//!   leaves a filter row pointing at streams nobody reads, which is exactly the
-//!   shape of the 25 September incident.
+//! - **Rename** (`old != current`) — the predecessor owns its own filter rows
+//!   and its own four streams. Stop the publisher writing to them, *then*
+//!   delete them. That order is the whole point: the reverse recreates every
+//!   stream on the next published event, and leaves a filter row pointing at
+//!   streams nobody reads, which is exactly the shape of the 25 September
+//!   incident.
 //!
-//!   Ordering those two calls is necessary but not sufficient, because only the
-//!   second is synchronous. `unregister_contracts` publishes a *command*; the
-//!   filter row it removes lives in the listener's database and goes away some
-//!   time later. Deleting the streams in the same breath therefore deletes them
+//!   Stopping the publisher means both of its halves. A watcher registers two
+//!   rows per contract, a live one and a FINAL one, and removal matches the
+//!   type, so dropping the live row on its own leaves the final row still
+//!   routing to `{old}.final-event`. Both streams go in the same
+//!   [`delete_streams`](ListenerConsumer::delete_streams) call, and final
+//!   traffic only arrives at the chain's finality cadence — tens of minutes on
+//!   Ethereum — so a final stream whose row is still live reads as perfectly
+//!   quiet for the whole of the drain window below. See [`unregister`].
+//!
+//!   Ordering those two steps is necessary but not sufficient, because only the
+//!   second is synchronous. Unregistering publishes a *command*; the filter
+//!   rows it removes live in the listener's database and go away some time
+//!   later. Deleting the streams in the same breath therefore deletes them
 //!   while publishing is still in flight — and a publisher that finds its
 //!   stream missing does not recreate it. It parks on the existence check and
 //!   retries for ever, and because fan-out is sequential that stalls every
@@ -327,6 +336,17 @@ async fn start_draining(
     Ok(subject.write_positions().await?)
 }
 
+/// Remove every filter row the predecessor holds for these contracts.
+///
+/// A watcher registers two rows per contract — a live one and a FINAL one —
+/// and `remove_filter` matches on the type, so they are distinct keys and
+/// neither call can remove the other's row. Leaving the final row behind would
+/// leave the publisher writing to a stream that the drain below is about to
+/// delete.
+///
+/// Removing a row that is not there deletes nothing and is not an error. That
+/// is what lets this be re-sent on every sample, and what lets it run against a
+/// predecessor old enough to have registered no final filters at all.
 async fn unregister(
     subject: &ListenerConsumer,
     contracts: &[Address],
@@ -335,6 +355,7 @@ async fn unregister(
         return Ok(());
     }
     subject.unregister_contracts(contracts).await?;
+    subject.unregister_final_contracts(contracts).await?;
     Ok(())
 }
 
