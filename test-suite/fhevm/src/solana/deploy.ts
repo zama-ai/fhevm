@@ -12,8 +12,8 @@
 import { closeSync, openSync } from 'node:fs';
 import path from 'node:path';
 
-import { type KmsThresholds, fetchKmsContext, findKmsContextPda } from '@fhevm/solana-zama-host';
-import { type Address, createSolanaRpc } from '@solana/kit';
+import { type KmsThresholds, createFinalizedRpc, fetchKmsContext, findKmsContextPda } from '@fhevm/solana-zama-host';
+import type { Address } from '@solana/kit';
 
 import { registerSolanaCoprocessorSql } from '../../../../solana/deploy/src/coprocessor';
 import { deployHostProgram } from '../../../../solana/deploy/src/deploy-host';
@@ -147,7 +147,7 @@ const assertKmsThresholdsMatchEvmHost = async (zamaHostId: string): Promise<void
     { contextId: BRINGUP_KMS_CONTEXT_ID },
     { programAddress: zamaHostId as Address },
   );
-  const solana = (await fetchKmsContext(createSolanaRpc(VALIDATOR_RPC_URL), kmsContext)).data.thresholds;
+  const solana = (await fetchKmsContext(createFinalizedRpc(VALIDATOR_RPC_URL), kmsContext)).data.thresholds;
   assertKmsThresholdsMatch(solana, await readEvmKmsThresholds({ hostRpcUrl: LOCAL_SOLANA_ENDPOINTS.hostRpc }));
 };
 
