@@ -1,6 +1,4 @@
 //! Program-specific errors returned by dep-chain instructions.
-//!
-//! Append new variants at the tail only; error codes are part of the app ABI.
 
 use anchor_lang::prelude::*;
 

@@ -2089,136 +2089,116 @@
   "errors": [
     {
       "code": 6000,
-      "name": "DepositMintVaultMismatch",
-      "msg": "deposit confidential mint does not wrap the vault underlying mint"
-    },
-    {
-      "code": 6001,
-      "name": "SharesMintVaultMismatch",
-      "msg": "shares confidential mint does not wrap the vault share mint"
-    },
-    {
-      "code": 6002,
       "name": "ConfidentialMintMismatch",
       "msg": "confidential mint does not match the batcher config"
     },
     {
-      "code": 6003,
+      "code": 6001,
       "name": "VaultMismatch",
       "msg": "vault does not match the batcher config"
     },
     {
-      "code": 6004,
+      "code": 6002,
       "name": "BatchBatcherMismatch",
       "msg": "batch does not belong to this batcher"
     },
     {
-      "code": 6005,
+      "code": 6003,
       "name": "PreviousBatchMismatch",
       "msg": "previous batch account missing or not the immediately preceding batch"
     },
     {
-      "code": 6006,
+      "code": 6004,
       "name": "PreviousBatchStillPending",
       "msg": "previous batch is still pending"
     },
     {
-      "code": 6007,
+      "code": 6005,
       "name": "BatchNotPending",
       "msg": "batch is not pending"
     },
     {
-      "code": 6008,
+      "code": 6006,
       "name": "BatchNotDispatched",
       "msg": "batch is not dispatched"
     },
     {
-      "code": 6009,
+      "code": 6007,
       "name": "BatchNotSettled",
       "msg": "batch is not settled"
     },
     {
-      "code": 6010,
+      "code": 6008,
       "name": "BatchTooYoung",
       "msg": "batch is younger than the minimum batch age"
     },
     {
-      "code": 6011,
+      "code": 6009,
       "name": "DerivedAccountMismatch",
       "msg": "account does not match its canonical derived address"
     },
     {
-      "code": 6012,
+      "code": 6010,
       "name": "EncryptedStoreInvalid",
       "msg": "encrypted store is invalid"
     },
     {
-      "code": 6013,
+      "code": 6011,
       "name": "InvalidFheExecution",
       "msg": "invalid FHE execution"
     },
     {
-      "code": 6014,
+      "code": 6012,
       "name": "AlreadyClaimed",
       "msg": "payout already claimed for this join record"
     },
     {
-      "code": 6015,
-      "name": "ShareRateOverflow",
-      "msg": "share rate does not fit u64"
-    },
-    {
-      "code": 6016,
+      "code": 6013,
       "name": "BatchIndexOverflow",
       "msg": "batch index overflowed"
     },
     {
-      "code": 6017,
-      "name": "ShareBalanceUnderflow",
-      "msg": "batch share balance decreased across the vault deposit"
-    },
-    {
-      "code": 6018,
+      "code": 6014,
       "name": "JoinMintVaultMismatch",
       "msg": "join confidential mint does not wrap the vault mint this direction requires"
     },
     {
-      "code": 6019,
+      "code": 6015,
       "name": "PayoutMintVaultMismatch",
       "msg": "payout confidential mint does not wrap the vault mint this direction requires"
     },
     {
-      "code": 6020,
+      "code": 6016,
       "name": "PayoutBalanceUnderflow",
       "msg": "batch payout balance decreased across the vault phase"
     },
     {
-      "code": 6021,
+      "code": 6017,
       "name": "BatchNotRefundable",
       "msg": "batch does not accept refunds"
     },
     {
-      "code": 6022,
+      "code": 6018,
       "name": "CancelAuthorityMismatch",
       "msg": "cancel authority does not match the join confidential mint authority"
     },
     {
-      "code": 6023,
+      "code": 6019,
       "name": "BatchStillLive",
       "msg": "batch is still live; authority funding is reclaimable after settle, cancel or refund"
     },
     {
-      "code": 6024,
+      "code": 6020,
       "name": "ReclaimAuthorityMismatch",
       "msg": "reclaim authority does not match the join confidential mint authority"
     },
     {
-      "code": 6025,
+      "code": 6021,
       "name": "JoinRecordStillLive",
       "msg": "join record is still live; close it after claiming or once the batch is canceled"
     },
     {
-      "code": 6026,
+      "code": 6022,
       "name": "BatchIndexMismatch",
       "msg": "batch index does not match the next batch index"
     }

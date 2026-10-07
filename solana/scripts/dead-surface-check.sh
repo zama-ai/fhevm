@@ -397,23 +397,24 @@ if run_check 1; then
   echo "== 1. error variants with zero references =="
   error_files=$(grep -rln '#\[error_code\]' solana/programs solana/crates --include='*.rs')
   for file in $error_files; do
-    # Variant names: capitalized identifiers directly followed by `,` at enum-body indentation.
-    variants=$(grep -oE '^    ([A-Z][A-Za-z0-9]+),' "$file" | sed -E 's/^    ([A-Za-z0-9]+),/\1/')
-    for variant in $variants; do
-      # Deliberate tombstones keep their positional error code; their doc comment says so.
-      context=$(grep -B3 -E "^    ${variant},\$" "$file" || true)
-      if grep -qiE 'ordinals stay stable|code stability|stability\)|retired|legacy \(unused' <<< "$context"; then
-        continue
-      fi
-      # Boundary-anchored, not a substring match: `::InvalidKmsContext` must not be kept alive by
-      # `::InvalidKmsContextId`, and pairs like that exist today (`InvalidInputHandle` sits inside
-      # four longer variants, so the substring form counted 8 references where 2 are real).
-      hits=$(index_refs "::${variant}([^A-Za-z0-9_]|$)" "$file")
+    # `Enum Variant` pairs: capitalized identifiers directly followed by `,` at enum-body
+    # indentation, under the `pub enum` that declares them.
+    pairs=$(awk '
+      /^pub enum [A-Za-z0-9_]+/ { enum = $3; sub(/[^A-Za-z0-9_].*$/, "", enum) }
+      enum != "" && /^    [A-Z][A-Za-z0-9]+,/ { variant = $1; sub(/,$/, "", variant); print enum, variant }
+    ' "$file")
+    while read -r enum variant; do
+      [ -n "$variant" ] || continue
+      # Anchored on the enum and on both boundaries. The bare `::Variant` form let a same-named
+      # variant of another program's enum vouch for this one (`ZamaHostError::InvalidKmsContext`
+      # kept `ConfidentialTokenError::InvalidKmsContext` alive), and `::InvalidKmsContext` must not
+      # be kept alive by `::InvalidKmsContextId` either.
+      hits=$(index_refs "(^|[^A-Za-z0-9_])${enum}::${variant}([^A-Za-z0-9_]|$)" "$file")
       if [ "$hits" -eq 0 ]; then
-        echo "DEAD ERROR VARIANT: ${variant} (declared in ${file}, zero production references)"
+        echo "DEAD ERROR VARIANT: ${enum}::${variant} (declared in ${file}, zero production references)"
         fail=1
       fi
-    done
+    done <<< "$pairs"
   done
 fi
 
@@ -1252,13 +1253,25 @@ FIXTURES
   # Check 1: an error variant nothing references. Two things had to be true for this fixture to
   # exercise the check rather than a neighbour: the file must carry `#[error_code]`, which is how
   # check 1 finds enums, and the variant must be indented four spaces and end in a comma, which is
-  # the shape the variant-name grep matches. It also must not look like a tombstone — the sweep
-  # exempts variants whose doc comment says the code is retained for ordinal stability.
+  # the shape the variant-name grep matches.
   printf '#[error_code]\npub enum DeadSurfaceSelftestError {\n    DeadSurfaceSelftestUnreferenced,\n}\n' \
     > "$fixture"
   expect_fires "dead-error-variant sweep" \
-    "DEAD ERROR VARIANT: DeadSurfaceSelftestUnreferenced" "" 1 bash "$SELF"
-  rm -f "$fixture"
+    "DEAD ERROR VARIANT: DeadSurfaceSelftestError::DeadSurfaceSelftestUnreferenced" "" 1 bash "$SELF"
+  # A comment calling the variant a kept-for-stability tombstone does not exempt it: nothing is
+  # deployed, so no error code is held in place.
+  printf '#[error_code]\npub enum DeadSurfaceSelftestError {\n    /// Legacy (unused; kept for code stability).\n    DeadSurfaceSelftestTombstone,\n}\n' \
+    > "$fixture"
+  expect_fires "dead-error-variant sweep (tombstone comment)" \
+    "DEAD ERROR VARIANT: DeadSurfaceSelftestError::DeadSurfaceSelftestTombstone" "" 1 bash "$SELF"
+  # A same-named variant of another enum is not a reference to this one.
+  caller_fixture="solana/crates/zama-fhe/src/dead_surface_selftest_caller.rs"
+  printf '#[error_code]\npub enum DeadSurfaceSelftestError {\n    DeadSurfaceSelftestShared,\n}\n' \
+    > "$fixture"
+  printf 'pub fn f() -> u32 { OtherSelftestError::DeadSurfaceSelftestShared as u32 }\n' > "$caller_fixture"
+  expect_fires "dead-error-variant sweep (same name, other enum)" \
+    "DEAD ERROR VARIANT: DeadSurfaceSelftestError::DeadSurfaceSelftestShared" "" 1 bash "$SELF"
+  rm -f "$fixture" "$caller_fixture"
   # Check 5: the justification prose for a reused-value retrofit. The check pins phrases in real
   # files, so a fixture cannot violate it by planting a file — it would have to delete prose from
   # one. `DEAD_SURFACE_EXTRA_RETROFIT` adds an entry instead, which is the same code path: both
@@ -1274,7 +1287,6 @@ FIXTURES
   # Check 6b: an export whose only references come from tests, in a file that never says who its
   # audience is. Needs two fixtures — without a caller this is 6a (zero references anywhere), and
   # the two arms report differently, which is what the expected text distinguishes.
-  caller_fixture="solana/crates/zama-fhe/src/dead_surface_selftest_caller.rs"
   printf 'pub fn dead_surface_selftest_test_only() {}\n' > "$fixture"
   printf '#[cfg(test)]\nmod tests {\n    #[test]\n    fn t() { super::super::dead_surface_selftest_test_only(); }\n}\n' \
     > "$caller_fixture"
