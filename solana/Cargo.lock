@@ -5198,6 +5198,7 @@ dependencies = [
  "serde_json",
  "solana-program",
  "solana-sdk",
+ "zama-fhe",
  "zama-host",
 ]
 
