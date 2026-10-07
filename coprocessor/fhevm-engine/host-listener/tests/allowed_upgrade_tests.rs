@@ -251,3 +251,115 @@ async fn allowed_first_insert_unchanged() -> anyhow::Result<()> {
     assert_eq!(schedulable(&pool, tx_hash).await?, 1);
     Ok(())
 }
+
+async fn replay_with_different_chain(cleanup: bool) -> anyhow::Result<()> {
+    let (mut db, pool, instance) = setup().await?;
+    let parent = block();
+    let parent_tx = FixedBytes::<32>::with_last_byte(0xa0);
+    let child_tx = FixedBytes::<32>::with_last_byte(0xa1);
+    let input = FixedBytes::<32>::with_last_byte(0x10);
+    let output = FixedBytes::<32>::with_last_byte(0x11);
+    ingest(
+        &mut db,
+        &parent,
+        vec![
+            rpc_log(&trivial_encrypt(input), &parent, parent_tx, 0),
+            rpc_log(&allowed(input), &parent, parent_tx, 1),
+        ],
+        false,
+    )
+    .await?;
+    let child = BlockSummary {
+        number: 101,
+        hash: FixedBytes::with_last_byte(0xb2),
+        parent_hash: parent.hash,
+        timestamp: parent.timestamp + 1,
+    };
+    let op = TfheContract::FheAdd {
+        caller: Address::ZERO,
+        lhs: input,
+        rhs: input,
+        scalarByte: FixedBytes::ZERO,
+        result: output,
+    };
+    ingest(
+        &mut db,
+        &child,
+        vec![rpc_log(&op, &child, child_tx, 0)],
+        false,
+    )
+    .await?;
+    let original: Vec<u8> = sqlx::query_scalar(
+        "SELECT dependence_chain_id FROM computations WHERE output_handle = $1",
+    )
+    .bind(output.to_vec())
+    .fetch_one(&pool)
+    .await?;
+    assert_eq!(original, parent_tx.to_vec());
+    sqlx::query(
+        "UPDATE computations SET is_completed = TRUE WHERE output_handle = $1",
+    )
+    .bind(input.to_vec())
+    .execute(&pool)
+    .await?;
+    assert_eq!(computation_flags(&pool, output).await?, (false, true));
+    sqlx::query("UPDATE dependence_chain SET status = 'processed'")
+        .execute(&pool)
+        .await?;
+    // Simulate normal worker cleanup of an old processed chain.
+    if cleanup {
+        sqlx::query(
+            "DELETE FROM dependence_chain WHERE dependence_chain_id = $1",
+        )
+        .bind(original)
+        .execute(&pool)
+        .await?;
+    }
+    // A fresh catch-up process no longer has the original in-memory chain cache.
+    let mut replay_db =
+        Database::new(&instance.db_url, ChainId::try_from(42_u64)?, 128)
+            .await?;
+    ingest(
+        &mut replay_db,
+        &child,
+        vec![
+            rpc_log(&op, &child, child_tx, 0),
+            rpc_log(&allowed(output), &child, child_tx, 1),
+        ],
+        true,
+    )
+    .await?;
+    assert_eq!(computation_flags(&pool, output).await?, (true, false));
+    let persisted_chain: Vec<u8> = sqlx::query_scalar(
+        "SELECT dependence_chain_id FROM computations WHERE output_handle = $1",
+    )
+    .bind(output.to_vec())
+    .fetch_one(&pool)
+    .await?;
+    assert_eq!(persisted_chain, parent_tx.to_vec());
+    assert_eq!(chain_status(&pool, parent_tx).await?, "updated");
+    // The cold replay inferred the child's transaction as a separate chain.
+    assert_eq!(chain_status(&pool, child_tx).await?, "updated");
+    let reachable: i64 = sqlx::query_scalar(
+        "SELECT count(*) FROM computations c JOIN dependence_chain dc USING (dependence_chain_id)
+         WHERE c.output_handle = $1 AND c.is_allowed AND NOT c.is_completed
+         AND NOT c.is_error AND dc.status = 'updated'
+         AND dc.dependency_count = 0 AND dc.worker_id IS NULL"
+    ).bind(output.to_vec()).fetch_one(&pool).await?;
+    assert_eq!(reachable, 1, "upgraded work must have a schedulable chain");
+    Ok(())
+}
+
+#[tokio::test]
+#[serial(db)]
+async fn computation_upgrade_requeues_original_chain_with_different_replay_chain(
+) -> anyhow::Result<()> {
+    replay_with_different_chain(false).await
+}
+
+#[tokio::test]
+#[serial(db)]
+async fn computation_upgrade_recreates_cleaned_up_original_chain(
+) -> anyhow::Result<()> {
+    replay_with_different_chain(true).await
+}

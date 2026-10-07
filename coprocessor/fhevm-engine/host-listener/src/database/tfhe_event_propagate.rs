@@ -450,13 +450,21 @@ impl Database {
                 "Computation upgraded to allowed, re-queueing its dependence chain"
             );
             if let Some(dependence_chain_id) = row.dependence_chain_id {
+                // Cleanup may have removed the original processed chain,
+                // and this listener's cache may assign a different chain on
+                // replay. Recreate the stored chain so its work is reachable.
+                // For existing chains, preserve ownership and dependencies.
                 sqlx::query!(
                     r#"
-                    UPDATE dependence_chain
+                    INSERT INTO dependence_chain (
+                        dependence_chain_id, status, last_updated_at
+                    )
+                    VALUES ($1, 'updated', $2::timestamp)
+                    ON CONFLICT (dependence_chain_id) DO UPDATE
                     SET status = 'updated'
-                    WHERE dependence_chain_id = $1
                     "#,
                     dependence_chain_id,
+                    log.block_timestamp,
                 )
                 .execute(tx.deref_mut())
                 .await?;
