@@ -1,7 +1,5 @@
-//! Fixtures shared by the host test binaries: `host_mollusk.rs` (behavior),
-//! `host_admin_mollusk.rs` (admin setters), `user_decryption_delegation_mollusk.rs`
-//! (delegation), and `fhe_execute_boundary.rs` (the capacity instrument). Each binary compiles this module into itself, so a helper used by only one of
-//! them is expected.
+//! Fixtures shared by the host test binaries that declare `mod host_fixtures;`. Each binary
+//! compiles this module into itself, so a helper used by only one of them is expected.
 #![allow(dead_code)]
 
 use anchor_lang::prelude::system_program;
@@ -237,7 +235,7 @@ pub fn created_public_batch(
     created_public_steps: &[usize],
 ) -> CreatedPublicBatch {
     let payer = Pubkey::new_unique();
-    persistent_creates_batch(
+    store_outputs_execution(
         step_count,
         created_public_steps,
         payer,
@@ -249,9 +247,9 @@ pub fn created_public_batch(
 
 /// [`created_public_batch`] with caller-fixed keys (for boundary sweeps recorded in the cost
 /// snapshot: PDA bump searches are part of measured compute, so recorded profiles need stable
-/// keys), a caller-chosen `make_public` — `false` gives the plain persistent create, the shape
+/// keys), a caller-chosen `make_public` — `false` gives the private Store output, the shape
 /// `zama-fhe`'s `heap_budget/` measures on the app side — and the keys every output allows.
-pub fn persistent_creates_batch(
+pub fn store_outputs_execution(
     step_count: usize,
     created_public_steps: &[usize],
     payer: Pubkey,

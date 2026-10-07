@@ -26,8 +26,8 @@ use zama_solana_test_kit::{
 
 mod host_fixtures;
 use host_fixtures::{
-    fhe_execute_ix, fixture_scope, host_config_account, persistent_creates_batch,
-    sole_store_authority, store_authority, CreatedPublicBatch,
+    fhe_execute_ix, fixture_scope, host_config_account, sole_store_authority, store_authority,
+    store_outputs_execution, CreatedPublicBatch,
 };
 
 /// Allow keys per output on the wide-allow shapes. The host caps nothing here — each allow is one
@@ -150,7 +150,7 @@ fn assert_swept_boundary(profile: &str, sweep: &SweptBoundary) {
     );
 }
 
-/// A dependent transient chain closing in one persistent create: every step adds a scalar to the
+/// A dependent transient chain closing in one Store output: every step adds a scalar to the
 /// previous step's transient result. This is the transient-heavy shape `dep-chain` and the
 /// load-smoke scenario drive, and the lightest per-step shape in the matrix. The fixed `program`
 /// key doubles as the payer so every recorded address stays put.
@@ -426,7 +426,7 @@ fn attestation_per_step_case(steps: usize, program: Pubkey) -> ProbeCase {
 
 fn all_created_public_case(steps: usize, program: Pubkey) -> ProbeCase {
     let all: Vec<usize> = (0..steps).collect();
-    persistent_creates_batch(
+    store_outputs_execution(
         steps,
         &all,
         program,
@@ -437,12 +437,12 @@ fn all_created_public_case(steps: usize, program: Pubkey) -> ProbeCase {
     .into()
 }
 
-/// Every step writes a plain persistent create (no `make_public`) — the exact shape
+/// Every step writes a private Store output (no `make_public`) — the exact shape
 /// `zama-fhe`'s `heap_budget/` measures on the app side, so its host-side wall is on record
 /// next to the app-side byte count that motivates the single step ceiling.
 fn all_private_creates_case(steps: usize, program: Pubkey) -> ProbeCase {
     let all: Vec<usize> = (0..steps).collect();
-    persistent_creates_batch(
+    store_outputs_execution(
         steps,
         &all,
         program,
@@ -457,7 +457,7 @@ fn all_private_creates_case(steps: usize, program: Pubkey) -> ProbeCase {
 /// composite between the chain and all-created-public extremes.
 fn mixed_chain_creates_case(steps: usize, program: Pubkey) -> ProbeCase {
     let creates: Vec<usize> = (0..steps).step_by(4).collect();
-    persistent_creates_batch(
+    store_outputs_execution(
         steps,
         &creates,
         program,
@@ -475,7 +475,7 @@ fn mixed_chain_creates_case(steps: usize, program: Pubkey) -> ProbeCase {
 fn allow_heavy_creates_case(steps: usize, program: Pubkey) -> ProbeCase {
     let all: Vec<usize> = (0..steps).collect();
     let allows = allow_keys(0x50, WIDE_ALLOW_COUNT);
-    persistent_creates_batch(
+    store_outputs_execution(
         steps,
         &all,
         program,
@@ -492,7 +492,7 @@ fn allow_heavy_creates_case(steps: usize, program: Pubkey) -> ProbeCase {
 fn allow_heavy_public_creates_case(steps: usize, program: Pubkey) -> ProbeCase {
     let all: Vec<usize> = (0..steps).collect();
     let allows = allow_keys(0x60, WIDE_ALLOW_COUNT);
-    persistent_creates_batch(
+    store_outputs_execution(
         steps,
         &all,
         program,
@@ -584,10 +584,9 @@ struct BoundaryShape {
 /// The whole frontier as data: every swept shape, its builder, and its pin. The sweeps, the
 /// snapshot, and the printer all walk this one table, so a new axis is one new row.
 ///
-/// No row is now limited by `instruction_trace`: the common-path create is one CPI, so 20
-/// creates plus the executed event sit well under 64. That floor is `zama-fhe`'s
-/// `INSTRUCTION_TRACE_FLOOR`; squat creates that would exhaust the trace are a worst-case number
-/// on `FheExecutionCost`, not a swept shape.
+/// No row is limited by `instruction_trace`: an execution creates no accounts, and `zama-fhe`'s
+/// worst case (`FheExecutionCost::instruction_trace_worst_case`: the floor, a rent top-up per
+/// Store output and a lazy meter creation) stays under 64 at the step ceiling.
 fn boundary_shapes() -> Vec<BoundaryShape> {
     let shape = |profile: &'static str,
                  min_steps: usize,

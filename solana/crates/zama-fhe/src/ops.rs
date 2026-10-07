@@ -7,13 +7,13 @@
 //!
 //! Every method validates its operands, then appends through
 //! [`FheExecutionBuilder::commit_step`] in `builder.rs` — the admission machine that owns the
-//! step cap and the trace check. Heap admission is [`crate::heap_tally::HeapBudget`]: intern
+//! step, CPI packet and build heap ceilings. Heap admission is [`crate::heap_tally::HeapBudget`]: intern
 //! tables grow through `try_push`. `verified_input` registers attestations on the same budget;
 //! it is not a step.
 
 use zama_host::{
-    max_reduction_operands, scalar_is_zero_for_type, CoprocessorInputAttestation, FheBinaryOpCode,
-    FheExecuteStep, FheTernaryOpCode, FheUnaryOpCode,
+    is_mul_div_fhe_type, max_reduction_operands, scalar_is_zero_for_type,
+    CoprocessorInputAttestation, FheBinaryOpCode, FheExecuteStep, FheTernaryOpCode, FheUnaryOpCode,
 };
 
 use crate::acl::BoundedU64UpperBound;
@@ -42,8 +42,10 @@ impl<'id> FheExecutionBuilder<'id> {
         if handle_fhe_type(attestation.input_handle) != T::FHE_TYPE.byte() {
             return Err(FheExecutionError::UnsupportedFheType);
         }
+        // Unreachable: the build heap budget stops registration near 32 attestations, and 256 of
+        // at least 117 serialized bytes each could not fit the CPI packet anyway.
         let attestation_index = u8::try_from(self.verified_inputs.len())
-            .map_err(|_| FheExecutionError::TooManySteps)?;
+            .map_err(|_| FheExecutionError::ExceedsCpiInstructionDataLimit)?;
         let input_handle = attestation.input_handle;
         // The attestation moves in — its tables are the app's own bytes — but the registry
         // vector itself grows by doubling, and that growth is builder cost admitted against
@@ -216,8 +218,6 @@ impl<'id> FheExecutionBuilder<'id> {
         })?;
         Ok(Encrypted::from_operand(Operand::transient(step_index)))
     }
-
-    // --- Binary ops not yet exposed as named methods ---
 
     pub fn mul<T: FheUint>(
         &mut self,
@@ -548,8 +548,7 @@ impl<'id> FheExecutionBuilder<'id> {
         }
         let fhe_type = T::FHE_TYPE.byte();
         validate_uint_fhe_type(fhe_type)?;
-        // fheMulDiv factor1 caps at Uint64 (EVM + coprocessor); reject Uint128.
-        if !matches!(fhe_type, 2..=5) {
+        if !is_mul_div_fhe_type(fhe_type) {
             return Err(FheExecutionError::UnsupportedFheType);
         }
         // Divisor must be non-zero once truncated to the operand type (EVM DivisionByZero parity).
