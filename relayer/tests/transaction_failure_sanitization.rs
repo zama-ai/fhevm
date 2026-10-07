@@ -48,8 +48,11 @@ impl TxLifecycleHooks for RecordingHook {
     }
 }
 
-#[tokio::test]
-async fn transaction_rpc_nul_is_sanitized_before_failure_hook() {
+const NUL_REVERT: &str = "execution reverted\0binary detail";
+
+/// Sends one transaction to a mock RPC that `reject`s it, and returns the reason the
+/// failure hook was given.
+async fn failure_reason_for(reject: impl FnOnce(&MockServer, Address)) -> String {
     let target = Address::repeat_byte(0x42);
     let mock = MockServer::new(MockConfig {
         port: 0,
@@ -57,11 +60,7 @@ async fn transaction_rpc_nul_is_sanitized_before_failure_hook() {
         ..MockConfig::new()
     });
     mock.set_code(target, Bytes::from_static(&[0x60, 0x00]));
-    mock.on_transaction(
-        move |params| params.to == Some(target),
-        Response::Error("execution reverted\0binary detail".to_owned()),
-        UsageLimit::Once,
-    );
+    reject(&mock, target);
     let server = mock.start().await.expect("start mock RPC server");
 
     let config_path = format!(
@@ -100,12 +99,12 @@ async fn transaction_rpc_nul_is_sanitized_before_failure_hook() {
         result.is_err(),
         "the RPC rejection must fail the transaction"
     );
-    let reason = hook
-        .failure_reason
-        .lock()
-        .await
-        .clone()
-        .expect("failure hook was called");
+    server.shutdown().await.expect("stop mock RPC server");
+    let reason = hook.failure_reason.lock().await.clone();
+    reason.expect("failure hook was called")
+}
+
+fn assert_nul_escaped(reason: &str) {
     assert!(
         reason.contains("execution reverted\\0binary detail"),
         "{reason}"
@@ -114,6 +113,30 @@ async fn transaction_rpc_nul_is_sanitized_before_failure_hook() {
         !reason.contains('\0'),
         "failure reason still contains a NUL byte"
     );
+}
 
-    server.shutdown().await.expect("stop mock RPC server");
+#[tokio::test]
+async fn transaction_rpc_nul_is_sanitized_before_failure_hook() {
+    let reason = failure_reason_for(|mock, target| {
+        mock.on_transaction(
+            move |params| params.to == Some(target),
+            Response::Error(NUL_REVERT.to_owned()),
+            UsageLimit::Once,
+        );
+    })
+    .await;
+    assert_nul_escaped(&reason);
+}
+
+#[tokio::test]
+async fn gas_estimation_rpc_nul_is_sanitized_before_failure_hook() {
+    let reason = failure_reason_for(|mock, target| {
+        mock.on_estimate_gas(
+            move |params| params.to == target,
+            Response::Error(NUL_REVERT.to_owned()),
+            UsageLimit::Once,
+        );
+    })
+    .await;
+    assert_nul_escaped(&reason);
 }

@@ -316,6 +316,20 @@ impl MockServer {
             .add_call_pattern(Arc::new(predicate), response, usage);
     }
 
+    /// Register mock response for gas estimations matching predicate.
+    /// Unmatched estimations return the configured gas limit.
+    pub fn on_estimate_gas(
+        &self,
+        predicate: impl Fn(&CallParams) -> bool + Send + Sync + 'static,
+        response: Response,
+        usage: UsageLimit,
+    ) {
+        debug!("Registering gas estimation pattern");
+
+        self.pattern_matcher
+            .add_estimate_gas_pattern(Arc::new(predicate), response, usage);
+    }
+
     /// Register a dynamic mock response that can inspect the request.
     pub fn on_call_dynamic(
         &self,

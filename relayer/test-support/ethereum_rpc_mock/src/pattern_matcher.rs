@@ -104,11 +104,15 @@ pub type TransactionPattern = Pattern<TxParams, Response>;
 /// Call pattern that matches call requests and resolves via [`CallResponder`].
 pub type CallPattern = Pattern<CallParams, CallResponder>;
 
+/// Gas-estimation pattern that matches `eth_estimateGas` requests.
+pub type EstimateGasPattern = Pattern<CallParams, Response>;
+
 /// Pattern matcher that stores and matches patterns against requests
 #[derive(Debug, Clone)]
 pub struct PatternMatcher {
     transaction_patterns: Arc<RwLock<Vec<TransactionPattern>>>,
     call_patterns: Arc<RwLock<Vec<CallPattern>>>,
+    estimate_gas_patterns: Arc<RwLock<Vec<EstimateGasPattern>>>,
 }
 
 impl PatternMatcher {
@@ -117,6 +121,7 @@ impl PatternMatcher {
         Self {
             transaction_patterns: Arc::new(RwLock::new(Vec::new())),
             call_patterns: Arc::new(RwLock::new(Vec::new())),
+            estimate_gas_patterns: Arc::new(RwLock::new(Vec::new())),
         }
     }
 
@@ -200,9 +205,24 @@ impl PatternMatcher {
         );
     }
 
+    /// Add gas-estimation pattern that matches requests with predicate
+    pub fn add_estimate_gas_pattern(
+        &self,
+        predicate: PredicateFn<CallParams>,
+        response: Response,
+        usage: UsageLimit,
+    ) {
+        Self::add_pattern(&self.estimate_gas_patterns, predicate, response, usage);
+    }
+
     /// Find matching transaction pattern for given parameters
     pub fn find_transaction_match(&self, tx_params: &TxParams) -> Option<Response> {
         Self::find_match(&self.transaction_patterns, tx_params)
+    }
+
+    /// Find matching gas-estimation pattern for given parameters
+    pub fn find_estimate_gas_match(&self, call_params: &CallParams) -> Option<Response> {
+        Self::find_match(&self.estimate_gas_patterns, call_params)
     }
 
     /// Find matching call pattern for given parameters.
@@ -226,10 +246,11 @@ impl PatternMatcher {
         None
     }
 
-    /// Clear all patterns from both collections
+    /// Clear all patterns from every collection
     pub fn clear_all_patterns(&self) {
         self.transaction_patterns.write().unwrap().clear();
         self.call_patterns.write().unwrap().clear();
+        self.estimate_gas_patterns.write().unwrap().clear();
     }
 }
 
