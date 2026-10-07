@@ -155,8 +155,20 @@ class ZkProofBuilderImpl implements ZkProofBuilder {
       readonly fhevmContext: FhevmClientFrozenContext;
     },
   ): Promise<ZkProof> {
+    const chainId = context.chain.id;
+    this.#assertProvable(chainId);
+    if (isSolanaHostChainId(chainId)) {
+      throw new ZkProofError({
+        message: 'Use buildSolana() for Solana host chains',
+      });
+    }
+    if (!isEvmHostChainId(chainId)) {
+      throw new ZkProofError({
+        message: 'build() requires an EVM host chain (type byte 0x00)',
+      });
+    }
+
     const {
-      chainId,
       aclContractAddress,
       ciphertextWithZkProof,
       extraData: finalExtraData,
@@ -168,17 +180,6 @@ class ZkProofBuilderImpl implements ZkProofBuilder {
       asBytesHex(extraData),
       fhevmContext,
     );
-
-    if (isSolanaHostChainId(chainId)) {
-      throw new ZkProofError({
-        message: 'Use buildSolana() for Solana host chains',
-      });
-    }
-    if (!isEvmHostChainId(chainId)) {
-      throw new ZkProofError({
-        message: 'build() requires an EVM host chain (type byte 0x00)',
-      });
-    }
 
     return toZkProof(
       {
@@ -210,9 +211,17 @@ class ZkProofBuilderImpl implements ZkProofBuilder {
       readonly userAddress: string;
     },
   ): Promise<SolanaZkProof> {
+    const chainId = context.chain.id;
+    this.#assertProvable(chainId);
+    if (!isSolanaHostChainId(chainId)) {
+      throw new ZkProofError({
+        message: 'buildSolana() requires a Solana host chain (type byte 0x01)',
+      });
+    }
+
     // Solana input-proof extraData is fixed (`0x00`): the host binding lives in the 128-byte aux
     // (`buildInputProofMetaData`), and SolanaZkProof carries no extraData field.
-    const { chainId, aclContractAddress, ciphertextWithZkProof } = await this.#encodeAndProve(
+    const { aclContractAddress, ciphertextWithZkProof } = await this.#encodeAndProve(
       context,
       context.aclProgramAddress,
       contractAddress,
@@ -221,15 +230,9 @@ class ZkProofBuilderImpl implements ZkProofBuilder {
       createFhevmClientFrozenContext({}),
     );
 
-    if (!isSolanaHostChainId(chainId)) {
-      throw new ZkProofError({
-        message: 'buildSolana() requires a Solana host chain (type byte 0x01)',
-      });
-    }
-
     return toSolanaZkProof(
       {
-        chainId: BigInt(chainId),
+        chainId,
         aclContractAddress,
         contractAddress,
         userAddress,
@@ -245,8 +248,8 @@ class ZkProofBuilderImpl implements ZkProofBuilder {
   //////////////////////////////////////////////////////////////////////////////
 
   /**
-   * Shared proof-generation core for {@link build} and {@link buildSolana}: validates
-   * inputs, assembles the host-appropriate input-proof aux, and produces the packed
+   * Shared proof-generation core for {@link build} and {@link buildSolana}: fetches the
+   * FHE key, assembles the host-appropriate input-proof aux, and produces the packed
    * proven ciphertext. The aux layout is chosen by host chain type inside
    * `buildInputProofMetaData`; the caller wraps the result in the matching proof type.
    */
@@ -258,29 +261,12 @@ class ZkProofBuilderImpl implements ZkProofBuilder {
     extraData: BytesHex,
     fhevmContext: FhevmClientFrozenContext,
   ): Promise<{
-    readonly chainId: bigint | number;
     readonly aclContractAddress: string;
     readonly ciphertextWithZkProof: Uint8Array;
     readonly extraData: BytesHex;
   }> {
     const fheEncryptionKeyWasm = await fetchFheEncryptionKeyWasm(context, { fhevmContext });
-
-    if (this.#totalBits === 0) {
-      throw new ZkProofError({
-        message: `Encrypted input must contain at least one value`,
-      });
-    }
-
-    // should be guaranteed at this point
-    assert(this.#totalBits <= this.#bitsCapacity);
-
     const chainId = context.chain.id;
-
-    if (!isUint64(chainId)) {
-      throw new ZkProofError({
-        message: `Invalid chain ID uint64: ${chainId}`,
-      });
-    }
 
     // Prover side of the input-proof auxiliary data. It MUST agree with the
     // coprocessor zkproof-worker verifier byte-for-byte: EVM hosts use the
@@ -302,11 +288,31 @@ class ZkProofBuilderImpl implements ZkProofBuilder {
       });
 
     return {
-      chainId,
       aclContractAddress,
       ciphertextWithZkProof: ciphertextWithZKProofBytes,
       extraData: finalExtraData,
     };
+  }
+
+  /**
+   * The checks {@link build} and {@link buildSolana} run before choosing their host and before
+   * any key fetch or proof work: a non-empty input and a uint64 chain id.
+   */
+  #assertProvable(chainId: bigint | number): void {
+    if (this.#totalBits === 0) {
+      throw new ZkProofError({
+        message: `Encrypted input must contain at least one value`,
+      });
+    }
+
+    // should be guaranteed at this point
+    assert(this.#totalBits <= this.#bitsCapacity);
+
+    if (!isUint64(chainId)) {
+      throw new ZkProofError({
+        message: `Invalid chain ID uint64: ${chainId}`,
+      });
+    }
   }
 
   #checkLimit(encryptionBits: EncryptionBits): void {

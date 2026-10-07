@@ -7,31 +7,28 @@
 // The Connector has its own taxonomy for why it refused a request. That classification does not
 // reach a client: when the Connector refuses, no response is produced, and what the SDK observes is a
 // request that was accepted and never answered. So the action is inferred here from what is
-// observable — the relayer's machine-readable label, the HTTP-level overload signal, and the absence
-// of an answer — rather than read off the wire. The unanswered request is retried unchanged: its one
-// transient cause a client can act on is a leaf the coprocessors had not indexed yet when the
-// Connector asked, and the same bytes a moment later are the repair.
+// observable — the relayer's machine-readable label and the absence of an answer — rather than read
+// off the wire. The unanswered request is retried unchanged: its one transient cause a client can act
+// on is a leaf the coprocessors had not indexed yet when the Connector asked, and the same bytes a
+// moment later are the repair.
 
 /** What the transport saw instead of an answer. */
 export type SolanaUserDecryptRejection =
   /** The relayer refused the submission: it never became a job. `label` is its machine-readable one. */
   | { readonly kind: 'refused'; readonly label: string; readonly message?: string }
-  /** The relayer is over capacity and named a delay, in seconds. */
-  | { readonly kind: 'overloaded'; readonly retryAfterSeconds: number }
   /** The job ran and ended in failure. */
   | { readonly kind: 'failed'; readonly label: string; readonly message?: string }
   /** The job was accepted and produced nothing. This is what a Connector refusal looks like from here. */
   | { readonly kind: 'unanswered' };
 
-/** What to do about a rejection. */
-export type SolanaUserDecryptRecovery =
-  /** Submit the same bytes again, no sooner than this many seconds from now. */
-  | { readonly action: 'retry-unchanged'; readonly afterSeconds: number }
-  /** Nothing this layer can do repairs it. */
-  | { readonly action: 'give-up' };
+/**
+ * What to do about a rejection: submit the same bytes again after the session's backoff, or stop
+ * because nothing this layer can do repairs it.
+ */
+export type SolanaUserDecryptRecovery = 'retry-unchanged' | 'give-up';
 
-/** How long to wait when the relayer refused for a reason of its own and named no delay. */
-export const SOLANA_USER_DECRYPT_DEFAULT_RETRY_SECONDS = 2;
+/** The wait before the first resubmission; the session doubles it with each attempt made. */
+export const SOLANA_USER_DECRYPT_RETRY_SECONDS = 2;
 
 /**
  * The action each relayer label implies.
@@ -44,7 +41,7 @@ export const SOLANA_USER_DECRYPT_DEFAULT_RETRY_SECONDS = 2;
  * A label not in this table is given up on. That is the safer of the two mistakes: an unknown label
  * treated as retryable becomes a client that hammers the relayer over something no delay repairs.
  */
-export const SOLANA_USER_DECRYPT_LABEL_ACTIONS: Readonly<Record<string, 'retry-unchanged' | 'give-up'>> = {
+export const SOLANA_USER_DECRYPT_LABEL_ACTIONS: Readonly<Record<string, SolanaUserDecryptRecovery>> = {
   malformed_json: 'give-up',
   missing_fields: 'give-up',
   validation_failed: 'give-up',
@@ -79,16 +76,8 @@ export function classifySolanaUserDecryptRejection(rejection: SolanaUserDecryptR
     case 'refused':
     case 'failed':
       return actionForLabel(rejection.label);
-    case 'overloaded':
-      return {
-        action: 'retry-unchanged',
-        afterSeconds:
-          Number.isFinite(rejection.retryAfterSeconds) && rejection.retryAfterSeconds > 0
-            ? rejection.retryAfterSeconds
-            : SOLANA_USER_DECRYPT_DEFAULT_RETRY_SECONDS,
-      };
     case 'unanswered':
-      return { action: 'retry-unchanged', afterSeconds: SOLANA_USER_DECRYPT_DEFAULT_RETRY_SECONDS };
+      return 'retry-unchanged';
   }
 }
 
@@ -98,9 +87,5 @@ export function classifySolanaUserDecryptRejection(rejection: SolanaUserDecryptR
  * @param label - The relayer's machine-readable label, exactly as sent.
  */
 function actionForLabel(label: string): SolanaUserDecryptRecovery {
-  const action = SOLANA_USER_DECRYPT_LABEL_ACTIONS[label];
-  if (action === 'retry-unchanged') {
-    return { action: 'retry-unchanged', afterSeconds: SOLANA_USER_DECRYPT_DEFAULT_RETRY_SECONDS };
-  }
-  return { action: 'give-up' };
+  return SOLANA_USER_DECRYPT_LABEL_ACTIONS[label] === 'retry-unchanged' ? 'retry-unchanged' : 'give-up';
 }

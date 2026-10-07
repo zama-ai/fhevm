@@ -8,11 +8,7 @@
 
 import { readFileSync } from 'node:fs';
 import { describe, expect, it } from 'vitest';
-import {
-  SOLANA_USER_DECRYPT_DEFAULT_RETRY_SECONDS,
-  SOLANA_USER_DECRYPT_LABEL_ACTIONS,
-  classifySolanaUserDecryptRejection,
-} from './index.js';
+import { SOLANA_USER_DECRYPT_LABEL_ACTIONS, classifySolanaUserDecryptRejection } from './index.js';
 
 const ERROR_SOURCE = new URL('../../../../../relayer/src/http/endpoints/v2/types/error.rs', import.meta.url);
 
@@ -55,7 +51,7 @@ describe('a refused submission', () => {
   it.each(['validation_failed', 'malformed_json', 'missing_fields', 'host_chain_id_not_supported'])(
     'gives up on %s',
     (label) => {
-      expect(classifySolanaUserDecryptRejection({ kind: 'refused', label })).toEqual({ action: 'give-up' });
+      expect(classifySolanaUserDecryptRejection({ kind: 'refused', label })).toBe('give-up');
     },
   );
 
@@ -65,53 +61,28 @@ describe('a refused submission', () => {
   it.each(['protocol_paused', 'internal_server_error', 'response_timed_out', 'host_acl_failed'])(
     'retries the same bytes after %s',
     (label) => {
-      expect(classifySolanaUserDecryptRejection({ kind: 'refused', label })).toEqual({
-        action: 'retry-unchanged',
-        afterSeconds: SOLANA_USER_DECRYPT_DEFAULT_RETRY_SECONDS,
-      });
+      expect(classifySolanaUserDecryptRejection({ kind: 'refused', label })).toBe('retry-unchanged');
     },
   );
 
   it('gives up on a label it does not know', () => {
-    expect(classifySolanaUserDecryptRejection({ kind: 'refused', label: 'a_label_from_a_later_version' })).toEqual({
-      action: 'give-up',
-    });
-  });
-});
-
-describe('an overloaded relayer', () => {
-  it('is retried with the delay it asked for, not one of our own', () => {
-    expect(classifySolanaUserDecryptRejection({ kind: 'overloaded', retryAfterSeconds: 17 })).toEqual({
-      action: 'retry-unchanged',
-      afterSeconds: 17,
-    });
-  });
-
-  it.each([0, -1, NaN, Infinity])('falls back to the default delay for invalid delay %s', (retryAfterSeconds) => {
-    expect(classifySolanaUserDecryptRejection({ kind: 'overloaded', retryAfterSeconds })).toEqual({
-      action: 'retry-unchanged',
-      afterSeconds: SOLANA_USER_DECRYPT_DEFAULT_RETRY_SECONDS,
-    });
+    expect(classifySolanaUserDecryptRejection({ kind: 'refused', label: 'a_label_from_a_later_version' })).toBe(
+      'give-up',
+    );
   });
 });
 
 describe('a job that produced nothing', () => {
   it('retries an unanswered request unchanged', () => {
-    expect(classifySolanaUserDecryptRejection({ kind: 'unanswered' })).toEqual({
-      action: 'retry-unchanged',
-      afterSeconds: SOLANA_USER_DECRYPT_DEFAULT_RETRY_SECONDS,
-    });
+    expect(classifySolanaUserDecryptRejection({ kind: 'unanswered' })).toBe('retry-unchanged');
   });
 });
 
 describe('a failed job', () => {
   it('follows the same label table as a refusal', () => {
-    expect(classifySolanaUserDecryptRejection({ kind: 'failed', label: 'internal_server_error' })).toEqual({
-      action: 'retry-unchanged',
-      afterSeconds: SOLANA_USER_DECRYPT_DEFAULT_RETRY_SECONDS,
-    });
-    expect(classifySolanaUserDecryptRejection({ kind: 'failed', label: 'not_allowed_on_host_acl' })).toEqual({
-      action: 'give-up',
-    });
+    expect(classifySolanaUserDecryptRejection({ kind: 'failed', label: 'internal_server_error' })).toBe(
+      'retry-unchanged',
+    );
+    expect(classifySolanaUserDecryptRejection({ kind: 'failed', label: 'not_allowed_on_host_acl' })).toBe('give-up');
   });
 });

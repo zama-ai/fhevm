@@ -2,9 +2,8 @@
 //
 // Submitting and waiting live in `RelayerAsyncRequest` — the POST/GET job loop, the Retry-After
 // waits, the global timeout, and the 429, which it waits out at the wire with the server's own
-// delay and the same bytes. That last point is why this transport never produces the `overloaded`
-// rejection: by the time an outcome reaches the port, every wait the relayer asked for has already
-// been served, closer to the wire than the session's backoff could serve it.
+// delay and the same bytes. So by the time an outcome reaches the port, every wait the relayer asked
+// for has already been served, closer to the wire than the session's backoff could serve it.
 //
 // What belongs here is translation, in both directions: the request body goes through verbatim
 // (it is already the relayer's wire shape), and the class's outcomes come back as the port's — an

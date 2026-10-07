@@ -17,7 +17,7 @@ import { describe, expect, it, vi } from 'vitest';
 import {
   MAX_SOLANA_DECRYPT_HANDLES,
   SOLANA_USER_DECRYPT_DEFAULT_ATTEMPTS,
-  SOLANA_USER_DECRYPT_DEFAULT_RETRY_SECONDS,
+  SOLANA_USER_DECRYPT_RETRY_SECONDS,
   SolanaUserDecryptRequestError,
   SolanaUserDecryptRunError,
   runSolanaUserDecrypt,
@@ -152,58 +152,27 @@ describe('a rejection nothing repairs', () => {
   });
 });
 
-describe('an overloaded relayer', () => {
-  it('is waited out for the delay it named, and given the very same bytes', async () => {
-    const { submit, transport } = scriptedTransport([
-      rejectedWith({ kind: 'overloaded', retryAfterSeconds: 3 }),
-      answered,
-    ]);
+describe('a request the Connector left unanswered', () => {
+  // The leaf the Connector asked the coprocessors for may not have been indexed yet when it asked.
+  // The request itself is right, so the same bytes are submitted again after a wait.
+  it('is submitted again unchanged, under the same signature, after the default wait', async () => {
+    const { submit, transport } = scriptedTransport([rejectedWith({ kind: 'unanswered' }), answered]);
     const { clock, delay } = recordingClock();
     const permit = signedPermit();
 
     const result = await runSolanaUserDecrypt({ signedPermit: permit, entries: ENTRIES, transport, clock });
 
     expect(result.attempts).toBe(2);
-    expect(delay).toHaveBeenCalledExactlyOnceWith(3);
+    expect(delay).toHaveBeenCalledExactlyOnceWith(SOLANA_USER_DECRYPT_RETRY_SECONDS);
     const [first, second] = submit.mock.calls.map((call) => call[0]);
     expect(second).toBe(first);
     expect((second as { signature: string }).signature).toBe(bytesToHex(permit.signature));
   });
 });
 
-describe('a request the Connector left unanswered', () => {
-  // The leaf the Connector asked the coprocessors for may not have been indexed yet when it asked.
-  // The request itself is right, so the same bytes are submitted again after a wait.
-  it('is submitted again unchanged, after the default wait', async () => {
-    const { submit, transport } = scriptedTransport([rejectedWith({ kind: 'unanswered' }), answered]);
-    const { clock, delay } = recordingClock();
-
-    const result = await runSolanaUserDecrypt({ signedPermit: signedPermit(), entries: ENTRIES, transport, clock });
-
-    expect(result.attempts).toBe(2);
-    expect(delay).toHaveBeenCalledExactlyOnceWith(SOLANA_USER_DECRYPT_DEFAULT_RETRY_SECONDS);
-    const [first, second] = submit.mock.calls.map((call) => call[0]);
-    expect(second).toBe(first);
-  });
-});
-
 describe('the backoff between attempts', () => {
   // Constant-rate retries spend the whole budget in a burst against a service that needed time. The
   // wait doubles with each attempt made.
-  it('doubles the relayer-named delay on each unchanged retry', async () => {
-    const { transport } = scriptedTransport([
-      rejectedWith({ kind: 'overloaded', retryAfterSeconds: 3 }),
-      rejectedWith({ kind: 'overloaded', retryAfterSeconds: 3 }),
-      answered,
-    ]);
-    const { clock, delay } = recordingClock();
-
-    const result = await runSolanaUserDecrypt({ signedPermit: signedPermit(), entries: ENTRIES, transport, clock });
-
-    expect(result.attempts).toBe(3);
-    expect(delay.mock.calls).toEqual([[3], [6]]);
-  });
-
   it('waits before every resubmission of an unanswered request, and the wait grows', async () => {
     const { transport } = scriptedTransport([rejectedWith({ kind: 'unanswered' })]);
     const { clock, delay } = recordingClock();
@@ -212,9 +181,9 @@ describe('the backoff between attempts', () => {
 
     // Four attempts and three waits between them: the last rejection is reported, not waited on.
     expect(delay.mock.calls).toEqual([
-      [SOLANA_USER_DECRYPT_DEFAULT_RETRY_SECONDS],
-      [SOLANA_USER_DECRYPT_DEFAULT_RETRY_SECONDS * 2],
-      [SOLANA_USER_DECRYPT_DEFAULT_RETRY_SECONDS * 4],
+      [SOLANA_USER_DECRYPT_RETRY_SECONDS],
+      [SOLANA_USER_DECRYPT_RETRY_SECONDS * 2],
+      [SOLANA_USER_DECRYPT_RETRY_SECONDS * 4],
     ]);
   });
 });

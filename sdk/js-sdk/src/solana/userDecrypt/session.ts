@@ -1,7 +1,7 @@
 // One permit, as many requests as it takes.
 //
 // The permit is signed once and the request is disposable. This runner is where that asymmetry pays
-// off: an overloaded relayer, a service that was briefly unreachable and a leaf the coprocessors had
+// off: a rate-limited relayer, a service that was briefly unreachable and a leaf the coprocessors had
 // not yet indexed when the Connector asked are all answered by submitting the same bytes again under
 // the same signature. The wallet is not among this module's inputs at all — it takes a permit that is
 // already signed, so no path through here can produce a second prompt.
@@ -14,7 +14,7 @@
 import type { SolanaUserDecryptRejection } from './failure.js';
 import type { SolanaUserDecryptHandleEntry, SolanaUserDecryptRequestJson } from './request.js';
 import type { SolanaSignedPermit } from '../permit/index.js';
-import { classifySolanaUserDecryptRejection } from './failure.js';
+import { SOLANA_USER_DECRYPT_RETRY_SECONDS, classifySolanaUserDecryptRejection } from './failure.js';
 import { buildSolanaUserDecryptRequest } from './request.js';
 
 /** What the transport got back: an answer, or a reason there is none. */
@@ -104,12 +104,12 @@ export async function runSolanaUserDecrypt<TResponse>(run: {
     // An unrepairable rejection and a spent budget end the same way: with the rejection last seen
     // and the count of what it cost to see it.
     const recovery = classifySolanaUserDecryptRejection(outcome.rejection);
-    if (recovery.action === 'give-up' || attempts >= budget) {
+    if (recovery === 'give-up' || attempts >= budget) {
       throw new SolanaUserDecryptRunError(outcome.rejection, attempts);
     }
 
     // The wait before the next submission doubles with each attempt already made: a fault that
     // survived a retry is not one immediate resubmission away.
-    await run.clock.delay(recovery.afterSeconds * 2 ** (attempts - 1));
+    await run.clock.delay(SOLANA_USER_DECRYPT_RETRY_SECONDS * 2 ** (attempts - 1));
   }
 }

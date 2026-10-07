@@ -20,7 +20,7 @@ export { executeSolanaUserDecrypt, solanaUserDecryptRequestInputs } from './exec
 export type { SolanaPermitSession, SolanaUserDecryptVerification } from './execute.js';
 
 export {
-  SOLANA_USER_DECRYPT_DEFAULT_RETRY_SECONDS,
+  SOLANA_USER_DECRYPT_RETRY_SECONDS,
   SOLANA_USER_DECRYPT_LABEL_ACTIONS,
   classifySolanaUserDecryptRejection,
 } from './failure.js';
