@@ -12,7 +12,7 @@ COPY gateway-contracts ./gateway-contracts
 
 # Compiled gateway-contracts for gw-listener
 WORKDIR /app/gateway-contracts
-RUN npm install && \
+RUN npm ci && \
     DOTENV_CONFIG_PATH=.env.example npx hardhat task:deployAllGatewayContracts
 
 # Stage 1: Build GW Listener
