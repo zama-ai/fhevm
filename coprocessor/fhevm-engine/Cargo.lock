@@ -9374,6 +9374,7 @@ dependencies = [
  "tracing",
  "yellowstone-grpc-proto",
  "zama-host",
+ "zama-solana-acl",
  "zama-solana-transaction",
 ]
 
@@ -13642,6 +13643,7 @@ dependencies = [
  "borsh",
  "sha2 0.10.9",
  "sha3 0.10.8",
+ "solana-address 2.6.1",
  "solana-keccak-hasher",
  "solana-sha256-hasher",
 ]

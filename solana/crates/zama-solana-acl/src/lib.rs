@@ -6,9 +6,8 @@
 //! the decrypt-authorization rules. Sharing this crate makes the host↔KMS lockstep type-level
 //! instead of a convention checked by tests.
 //!
-//! Deliberately solana-version-agnostic (pure `borsh` + hashing, pubkeys as raw `[u8; 32]`) so
-//! the on-chain programs and the connector can share it. PDA derivation stays on each side; this
-//! crate provides the exact seed list through [`EncryptedStore::seeds`].
+//! Solana-version-agnostic on-chain, with pubkeys as raw `[u8; 32]`. Off-chain PDA finders
+//! use `solana-address` so readers with different Solana versions share the same recipes.
 //!
 //! Hashing: leaf commitments and MMR nodes use keccak256, the hash the EVM ACL (RFC 034) uses,
 //! so the two chains share one leaf encoding and one proof verifier. Anchor account
@@ -27,15 +26,19 @@ pub mod account;
 pub use account::{AccountView, SYSTEM_PROGRAM_ID};
 
 pub mod encrypted_store;
+#[cfg(not(target_os = "solana"))]
+pub use encrypted_store::{create_encrypted_store_address, validate_store};
 pub use encrypted_store::{
-    decode_encrypted_store, encrypted_store_discriminator, validate_store, EncryptedSlot,
-    EncryptedStore, StoreRejection, ENCRYPTED_STORE_SEED, MAX_STORE_SLOTS,
+    decode_encrypted_store, encrypted_store_discriminator, EncryptedSlot, EncryptedStore,
+    StoreRejection, ENCRYPTED_STORE_SEED, MAX_STORE_SLOTS,
 };
 
 pub mod clock;
 pub use clock::{decode_clock_unix_timestamp, encode_clock, CLOCK_SYSVAR_ID, SYSVAR_OWNER_ID};
 
 pub mod delegation;
+#[cfg(not(target_os = "solana"))]
+pub use delegation::find_delegation_record_address;
 pub use delegation::{
     decode_user_decryption_delegation, delegation_seeds, encode_user_decryption_delegation,
     judge_delegation, judge_delegation_row, DeadRow, DelegationRow, DelegationVerdict, RowVerdict,
@@ -43,11 +46,25 @@ pub use delegation::{
     WILDCARD_APP,
 };
 pub mod permit_invalidation;
+#[cfg(not(target_os = "solana"))]
+pub use permit_invalidation::find_permit_invalidation_address;
 pub use permit_invalidation::{
     decode_permit_invalidation, encode_permit_invalidation, PermitInvalidationRecord,
     PERMIT_INVALIDATION_DISCRIMINATOR, PERMIT_INVALIDATION_SEED,
 };
 pub mod host_chain;
+
+/// Seed of the singleton host config PDA: `[seed]`.
+pub const HOST_CONFIG_SEED: &[u8] = b"host-config";
+
+#[cfg(not(target_os = "solana"))]
+pub fn find_host_config_address(host_program: &[u8; 32]) -> ([u8; 32], u8) {
+    let (address, bump) = solana_address::Address::find_program_address(
+        &[HOST_CONFIG_SEED],
+        &solana_address::Address::new_from_array(*host_program),
+    );
+    (address.to_bytes(), bump)
+}
 
 pub mod history;
 pub use history::{

@@ -10,6 +10,18 @@ use crate::AclError;
 /// Seed of the per-user record PDA: `[seed, user]`.
 pub const PERMIT_INVALIDATION_SEED: &[u8] = b"permit-invalidation";
 
+#[cfg(not(target_os = "solana"))]
+pub fn find_permit_invalidation_address(
+    host_program: &[u8; 32],
+    user: &[u8; 32],
+) -> ([u8; 32], u8) {
+    let (address, bump) = solana_address::Address::find_program_address(
+        &[PERMIT_INVALIDATION_SEED, user],
+        &solana_address::Address::new_from_array(*host_program),
+    );
+    (address.to_bytes(), bump)
+}
+
 const ANCHOR_DISCRIMINATOR_LEN: usize = 8;
 const BODY_LEN: usize = 32 + 8 + 1;
 

@@ -18,8 +18,9 @@
 //! judges the same bytes with. Everything but the two RPC reads in `acl_checker` is pure here.
 
 use zama_solana_acl::{
-    decode_clock_unix_timestamp, delegation_seeds, judge_delegation, judge_delegation_row,
-    validate_store, AccountView, DelegationVerdict, EncryptedStore, CLOCK_SYSVAR_ID, WILDCARD_APP,
+    decode_clock_unix_timestamp, find_delegation_record_address, judge_delegation,
+    judge_delegation_row, validate_store, AccountView, DelegationVerdict, CLOCK_SYSVAR_ID,
+    WILDCARD_APP,
 };
 
 /// One fetched account, exactly as the RPC returned it.
@@ -85,7 +86,6 @@ pub(crate) fn store_application(
         &program_id,
         &encrypted_store_key,
         encrypted_store.map(RawAccount::view),
-        |store| encrypted_store_address(store, program_id),
     )
     .ok()
     .map(|store| AppScope {
@@ -258,21 +258,6 @@ pub(crate) fn judge_planned_entries(
         .collect())
 }
 
-/// The address an encrypted store's own fields derive, with its stored bump: the
-/// connector's rule for "this account is the one the entry names", run here on the same fields.
-/// `None` when the stored bump does not give a valid PDA.
-fn encrypted_store_address(store: &EncryptedStore, program_id: [u8; 32]) -> Option<[u8; 32]> {
-    let bump = [store.bump];
-    let mut seeds: Vec<&[u8]> = store.seeds().to_vec();
-    seeds.push(&bump);
-    solana_pubkey::Pubkey::create_program_address(
-        &seeds,
-        &solana_pubkey::Pubkey::new_from_array(program_id),
-    )
-    .ok()
-    .map(|address| address.to_bytes())
-}
-
 /// Both delegation rows of one `(delegator, delegate)` couple: the application's row and the
 /// wildcard row it falls back to. The seed tuple is pinned against the host program's own
 /// derivation by fixture literals shared with the runtime-test SDK cross-pins.
@@ -282,17 +267,15 @@ fn delegation_rows(
     app: AppScope,
     program_id: [u8; 32],
 ) -> [RowAddress; 2] {
-    let program_id = solana_pubkey::Pubkey::new_from_array(program_id);
     [app, AppScope::WILDCARD].map(|app| {
-        let (address, bump) = solana_pubkey::Pubkey::find_program_address(
-            &delegation_seeds(delegator, delegate, &app.program, &app.scope),
+        let (address, bump) = find_delegation_record_address(
             &program_id,
+            delegator,
+            delegate,
+            &app.program,
+            &app.scope,
         );
-        RowAddress {
-            address: address.to_bytes(),
-            bump,
-            app,
-        }
+        RowAddress { address, bump, app }
     })
 }
 
@@ -301,7 +284,7 @@ pub(crate) mod tests {
     use super::*;
     use zama_solana_acl::{
         encode_clock, encode_user_decryption_delegation, encrypted_store_discriminator,
-        UserDecryptionDelegationRecord, SYSTEM_PROGRAM_ID, SYSVAR_OWNER_ID,
+        EncryptedStore, UserDecryptionDelegationRecord, SYSTEM_PROGRAM_ID, SYSVAR_OWNER_ID,
     };
 
     pub(crate) const PROGRAM_ID: [u8; 32] = [7; 32];

@@ -7454,6 +7454,7 @@ dependencies = [
  "borsh",
  "sha2 0.10.9",
  "sha3 0.10.9",
+ "solana-address",
  "solana-keccak-hasher",
  "solana-sha256-hasher",
 ]

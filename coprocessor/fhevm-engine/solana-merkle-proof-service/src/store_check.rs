@@ -301,19 +301,11 @@ fn judge(
     store: &[u8; 32],
     account: Option<&Account>,
 ) -> OnChain {
-    let store_address = |chain: &zama_solana_acl::EncryptedStore| {
-        let bump = [chain.bump];
-        let mut seeds: Vec<&[u8]> = chain.seeds().to_vec();
-        seeds.push(&bump);
-        Pubkey::create_program_address(&seeds, host_program)
-            .ok()
-            .map(|address| address.to_bytes())
-    };
     let view = account.map(|account| AccountView {
         owner: account.owner.as_array(),
         data: &account.data,
     });
-    match validate_store(host_program.as_array(), store, view, store_address) {
+    match validate_store(host_program.as_array(), store, view) {
         Ok(chain) => OnChain::Store {
             leaf_count: chain.leaf_count,
             peaks: chain.peaks,

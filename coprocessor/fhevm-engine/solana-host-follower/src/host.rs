@@ -80,10 +80,9 @@ pub async fn host_chain_id(
     rpc: &RpcClient,
     program_id: &Pubkey,
 ) -> Result<u64> {
-    let (host_config, _) = Pubkey::find_program_address(
-        &[zama_host::constants::HOST_CONFIG_SEED],
-        program_id,
-    );
+    let (host_config, _) =
+        zama_solana_acl::find_host_config_address(program_id.as_array());
+    let host_config = Pubkey::new_from_array(host_config);
     let account = rpc
         .get_account(&host_config)
         .await

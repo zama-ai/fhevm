@@ -4,8 +4,7 @@
 pub const EVENT_VERSION: u8 = 1;
 /// Localnet sentinel used by tests and helpers that do not receive host config.
 pub const SOLANA_POC_CHAIN_ID: u64 = zama_solana_acl::host_chain::solana_host_chain_id(12345);
-/// Seed of the singleton host config PDA: `[seed]`.
-pub const HOST_CONFIG_SEED: &[u8] = b"host-config";
+pub use zama_solana_acl::HOST_CONFIG_SEED;
 /// Seed prefix for KMS context PDAs (one per `kmsContextId`, mirroring ProtocolConfig).
 pub const KMS_CONTEXT_SEED: &[u8] = b"kms-context";
 /// Seed prefix for application `(program, scope)` deny-list records.
