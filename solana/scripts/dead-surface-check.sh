@@ -3,7 +3,7 @@
 #
 # Checks, each mechanically re-runnable so "nothing on this list can regenerate":
 #   1. Error variants nobody references: a variant declared in a program/crate error enum with
-#      zero `::Variant` references in production code is dead surface.
+#      zero `Enum::Variant` references in production code is dead surface.
 #   2. `#[event]` structs never emitted: an Anchor event that nothing hands to an emission cannot be
 #      observed and only bloats the IDL. Constructing one is not enough. Both emission paths in the
 #      tree count — the `emit!`/`emit_cpi!` macros the app programs use, and zama-host's shared
@@ -238,9 +238,10 @@ HAND_DERIVATION_ROOTS=(
   coprocessor/fhevm-engine/solana-merkle-proof-service
   coprocessor/fhevm-engine/tfhe-worker
 )
-# Today's hand-written copies, as `path|count|tracking task, or why the copy is permanent`. Counts are production lines
-# deriving a PDA, spelling a seed or building an Anchor discriminator. Over, under, zero and missing files fail. The script checks
-# counts; review rejects new entries. Keyed by path so unrelated edits do not invalidate an entry.
+# Today's hand-written copies, as `path|count|tracking task, or why the copy is permanent`.
+# Counts are production lines deriving a PDA, spelling a seed or building an Anchor discriminator.
+# Over, under, zero and missing files fail. The script checks counts; review rejects new entries.
+# Keyed by path so unrelated edits do not invalidate an entry.
 HAND_DERIVATIONS_ALLOWED=(
   "solana/deploy/src/wipe.ts|1|permanent: admin-sweep is preview-only and deliberately absent from the public zama-host IDL; bytes pinned by host_admin_mollusk.rs"
   "solana/deploy/src/bootstrap.ts|2|fhevm-internal#2108 task 2 (programData: the one solana/deploy helper)"
@@ -1253,7 +1254,7 @@ FIXTURES
   # Check 1: an error variant nothing references. Two things had to be true for this fixture to
   # exercise the check rather than a neighbour: the file must carry `#[error_code]`, which is how
   # check 1 finds enums, and the variant must be indented four spaces and end in a comma, which is
-  # the shape the variant-name grep matches.
+  # the shape check 1 reads as a variant of the enclosing `pub enum`.
   printf '#[error_code]\npub enum DeadSurfaceSelftestError {\n    DeadSurfaceSelftestUnreferenced,\n}\n' \
     > "$fixture"
   expect_fires "dead-error-variant sweep" \
