@@ -106,7 +106,7 @@ impl FheExecution {
         let mut builder = FheExecutionBuilder::new(store);
         let selected = build(&mut builder)?;
         let crate::operand::OperandKind::Transient { producer_index } = selected.operand().0 else {
-            return Err(crate::FheExecutionBuildError::ResultNotProduced);
+            return Err(crate::FheExecutionError::ResultNotProduced);
         };
         let execution = builder.finish_returning(vec![zama_host::ExecutionResultRef {
             step_index: producer_index,

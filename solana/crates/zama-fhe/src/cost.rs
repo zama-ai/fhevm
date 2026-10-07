@@ -24,7 +24,7 @@ pub const APP_HEAP_RESERVE_BYTES: usize = 8 * 1024;
 /// request from the program heap: the builder tallies every byte it asks the allocator for —
 /// validated byte-for-byte against a counting allocator in `heap_budget/` — and `finish`
 /// rejects an execution over this budget with
-/// [`FheExecutionBuildError::ExceedsBuildHeapBudget`](crate::FheExecutionBuildError::ExceedsBuildHeapBudget),
+/// [`FheExecutionError::ExceedsBuildHeapBudget`](crate::FheExecutionError::ExceedsBuildHeapBudget),
 /// because on the never-freeing bump region an over-budget build aborts the instruction with
 /// no error at all.
 ///

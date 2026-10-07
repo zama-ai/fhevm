@@ -167,8 +167,7 @@ pub fn wrap_usdc<'info>(ctx: Context<'info, WrapUsdc<'info>>, amount: u64) -> Re
             builder.output(new_total_supply, total_supply_output.output())?;
             Ok(())
         },
-    )
-    .map_err(invalid_execution)?;
+    )?;
     let execution_accounts = fhe::ExecutionAccountSet::for_execution(
         &execution,
         [

@@ -13,7 +13,7 @@
 //! Attestation embeds [`HeapBudget::admit`] then clone. [`TalliedVec::into_inner`] is the
 //! wire seam (`FheExecuteStep`, `FheExecuteArgs`).
 
-use crate::{FheExecutionBuildError, Result};
+use crate::{FheExecutionError, Result};
 
 /// `RawVec`'s first non-zero capacity for an element size — the other half of the growth model
 /// [`pushes_request`] and [`invoke_table_heap_bytes`] share.
@@ -69,7 +69,7 @@ impl HeapBudget {
     pub(crate) fn admit(&mut self, upcoming: usize) -> Result<()> {
         let next = self.total.saturating_add(upcoming);
         if next > crate::cost::BUILD_HEAP_BUDGET_BYTES {
-            return Err(FheExecutionBuildError::ExceedsBuildHeapBudget);
+            return Err(FheExecutionError::ExceedsBuildHeapBudget);
         }
         self.total = next;
         Ok(())

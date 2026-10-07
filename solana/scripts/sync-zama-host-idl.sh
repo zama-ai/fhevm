@@ -23,6 +23,7 @@ EXPECTED_SOLANA="${EXPECTED_SOLANA:-4.3.0}"
 bash "$ROOT/scripts/install-sbf-tools.sh"
 NO_DNA=1 anchor build --ignore-keys
 bash "$ROOT/scripts/build-demo-idls.sh"
+bash "$ROOT/scripts/build-zama-fhe-errors.sh"
 
 # Writes every vendored IDL, including the demo and specimen programs whose copies
 # live with their consumers. The list they come from is check_solana_abi.py's, the

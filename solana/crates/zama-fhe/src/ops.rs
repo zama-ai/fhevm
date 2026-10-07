@@ -26,7 +26,7 @@ use crate::validate::{
     handle_fhe_type, operand_fhe_type, validate_binary_step, validate_supported_fhe_type,
     validate_ternary_step, validate_uint_fhe_type, validate_unary_step,
 };
-use crate::{FheExecutionBuildError, Result};
+use crate::{FheExecutionError, Result};
 
 impl<'id> FheExecutionBuilder<'id> {
     /// Introduces a coprocessor-attested external input as a transient operand — the Solana analog
@@ -40,10 +40,10 @@ impl<'id> FheExecutionBuilder<'id> {
         attestation: CoprocessorInputAttestation,
     ) -> Result<Encrypted<'id, T>> {
         if handle_fhe_type(attestation.input_handle) != T::FHE_TYPE.byte() {
-            return Err(FheExecutionBuildError::UnsupportedFheType);
+            return Err(FheExecutionError::UnsupportedFheType);
         }
         let attestation_index = u8::try_from(self.verified_inputs.len())
-            .map_err(|_| FheExecutionBuildError::TooManySteps)?;
+            .map_err(|_| FheExecutionError::TooManySteps)?;
         let input_handle = attestation.input_handle;
         // The attestation moves in — its tables are the app's own bytes — but the registry
         // vector itself grows by doubling, and that growth is builder cost admitted against
@@ -109,7 +109,7 @@ impl<'id> FheExecutionBuilder<'id> {
         // The host requires the left operand to be an encrypted handle; only the
         // RHS may be a plaintext scalar. Catch this before the CPI.
         if matches!(lhs.0, OperandKind::Scalar(_)) {
-            return Err(FheExecutionBuildError::ScalarLhsOperand);
+            return Err(FheExecutionError::ScalarLhsOperand);
         }
         validate_binary_step(op, &lhs, &rhs, output_fhe_type, self.steps.len(), |index| {
             self.produced_types.get(index as usize).copied()
@@ -138,7 +138,7 @@ impl<'id> FheExecutionBuilder<'id> {
         let if_true = if_true.into().operand();
         let if_false = if_false.into().operand();
         let output_fhe_type =
-            self.encrypted_operand_type(&if_true, FheExecutionBuildError::ScalarEncryptedOperand)?;
+            self.encrypted_operand_type(&if_true, FheExecutionError::ScalarEncryptedOperand)?;
         let output_fhe_type = output_fhe_type.byte();
         validate_ternary_step(
             &control,
@@ -516,7 +516,7 @@ impl<'id> FheExecutionBuilder<'id> {
         validate_uint_fhe_type(fhe_type)?;
         let value_op = value.into().operand();
         if matches!(value_op.0, OperandKind::Scalar(_)) {
-            return Err(FheExecutionBuildError::ScalarEncryptedOperand);
+            return Err(FheExecutionError::ScalarEncryptedOperand);
         }
         let max_operands = max_reduction_operands(fhe_type);
         let set = set.into_iter();
@@ -544,18 +544,18 @@ impl<'id> FheExecutionBuilder<'id> {
         let lhs = factor1.into().operand();
         let rhs = binary_rhs_operand(factor2);
         if matches!(lhs.0, OperandKind::Scalar(_)) {
-            return Err(FheExecutionBuildError::ScalarLhsOperand);
+            return Err(FheExecutionError::ScalarLhsOperand);
         }
         let fhe_type = T::FHE_TYPE.byte();
         validate_uint_fhe_type(fhe_type)?;
         // fheMulDiv factor1 caps at Uint64 (EVM + coprocessor); reject Uint128.
         if !matches!(fhe_type, 2..=5) {
-            return Err(FheExecutionBuildError::UnsupportedFheType);
+            return Err(FheExecutionError::UnsupportedFheType);
         }
         // Divisor must be non-zero once truncated to the operand type (EVM DivisionByZero parity).
         let divisor_bytes = divisor.bytes();
         if scalar_is_zero_for_type(divisor_bytes, fhe_type) {
-            return Err(FheExecutionBuildError::MulDivDivisorZero);
+            return Err(FheExecutionError::MulDivDivisorZero);
         }
         let step_index = self.commit_step(fhe_type, |lowering| {
             let factor1 = lowering.operand(lhs)?;
@@ -579,7 +579,7 @@ impl<'id> FheExecutionBuilder<'id> {
     ) -> Result<Operand> {
         let output_fhe_type = output_fhe_type.byte();
         if matches!(operand.0, OperandKind::Scalar(_)) {
-            return Err(FheExecutionBuildError::ScalarEncryptedOperand);
+            return Err(FheExecutionError::ScalarEncryptedOperand);
         }
         validate_unary_step(op, &operand, output_fhe_type, self.steps.len(), |index| {
             self.produced_types.get(index as usize).copied()
@@ -599,7 +599,7 @@ impl<'id> FheExecutionBuilder<'id> {
     fn encrypted_operand_type(
         &self,
         operand: &Operand,
-        scalar_error: FheExecutionBuildError,
+        scalar_error: FheExecutionError,
     ) -> Result<FheType> {
         let fhe_type = operand_fhe_type(operand, self.steps.len(), &|index| {
             self.produced_types.get(index as usize).copied()

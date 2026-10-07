@@ -35,6 +35,7 @@ import {
 } from 'codama';
 import { format, resolveConfig } from 'prettier';
 import { renderProgramConstants } from './render-solana-constants.mjs';
+import { renderErrorTable } from './render-solana-error-table.mjs';
 
 const sdkRoot = fileURLToPath(new URL('../..', import.meta.url));
 const check = process.argv.includes('--check');
@@ -108,6 +109,11 @@ const targets = [
     generatedPath: `${sdkRoot}/../../solana/clients/zama-host/src/generated`,
     // Codama's isZamaHostError / getZamaHostErrorMessage / error constants.
     keepErrors: true,
+    // The zama-fhe crate's codes, which app programs return from the CPIs it builds.
+    errorTable: {
+      name: 'zamaFhe',
+      path: `${sdkRoot}/../../solana/crates/zama-fhe/idl/zama_fhe_errors.json`,
+    },
     keep: {
       instructions: new Set([
         // The transaction lifecycle pair, the stateless verifier, and the self-custody
@@ -490,6 +496,12 @@ for (const target of targets) {
     `${temporaryGeneratedPath}/constants.ts`,
     renderProgramConstants(program.constants, anchorIdl.constants ?? [], anchorIdl.events ?? []),
   );
+  if (target.errorTable) {
+    writeFileSync(
+      `${temporaryGeneratedPath}/${target.errorTable.name}Errors.ts`,
+      renderErrorTable(target.errorTable.name, JSON.parse(readFileSync(target.errorTable.path, 'utf8'))),
+    );
+  }
   rmSync(`${temporaryGeneratedPath}/programs`, { force: true, recursive: true });
   rmSync(`${temporaryGeneratedPath}/index.ts`, { force: true });
 

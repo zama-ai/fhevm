@@ -485,11 +485,6 @@
   "errors": [
     {
       "code": 6000,
-      "name": "InvalidFheExecution",
-      "msg": "FHE execution failed to build or resolve"
-    },
-    {
-      "code": 6001,
       "name": "CountValueInvalid",
       "msg": "counter encrypted store address mismatch"
     }

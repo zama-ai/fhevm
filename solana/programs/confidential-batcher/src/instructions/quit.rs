@@ -171,8 +171,7 @@ pub fn quit<'info>(ctx: Context<'info, Quit<'info>>) -> Result<()> {
             let zero = builder.trivial_encrypt_u64(0)?;
             builder.output(zero, output)?;
             Ok(zero)
-        })
-        .map_err(fhe::invalid_execution)?;
+        })?;
     fhe::JoinExecute {
         batch: batch_key,
         user,

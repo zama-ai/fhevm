@@ -76,8 +76,7 @@ pub fn initialize_mint<'info>(ctx: Context<'info, InitializeMint<'info>>) -> Res
         let new_total_supply = builder.trivial_encrypt_u64(0)?;
         builder.output(new_total_supply, total_supply_output.output())?;
         Ok(())
-    })
-    .map_err(invalid_execution)?;
+    })?;
     let execution_accounts = fhe::ExecutionAccountSet::for_execution(
         &execution,
         [total_supply_output.account_info()],

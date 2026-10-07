@@ -46,6 +46,7 @@ if LC_ALL=C grep -qaF "$marker" target/deploy/zama_host.so; then
 fi
 
 bash "$ROOT/scripts/build-demo-idls.sh" --preview-cleanup
+bash "$ROOT/scripts/build-zama-fhe-errors.sh"
 
 # Recovery reuses the demo builders under confidential-token's program address.
 python3 - <<'PYTHON'

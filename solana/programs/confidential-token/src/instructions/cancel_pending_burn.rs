@@ -147,8 +147,7 @@ pub fn cancel_pending_burn<'info>(ctx: Context<'info, CancelPendingBurn<'info>>)
             builder.output(new_total_supply, total_supply_output.output())?;
             Ok(())
         },
-    )
-    .map_err(invalid_execution)?;
+    )?;
     let execution_accounts = fhe::ExecutionAccountSet::for_execution(
         &execution,
         [

@@ -493,16 +493,11 @@
   "errors": [
     {
       "code": 6000,
-      "name": "InvalidFheExecution",
-      "msg": "FHE execution failed to build or resolve"
-    },
-    {
-      "code": 6001,
       "name": "TailValueInvalid",
       "msg": "tail encrypted store mismatch"
     },
     {
-      "code": 6002,
+      "code": 6001,
       "name": "InvalidChainLength",
       "msg": "chain length must be between 1 and 32 steps"
     }

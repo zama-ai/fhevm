@@ -11,7 +11,7 @@ use zama_host::{CoprocessorInputAttestation, FheExecuteEffect, FheExecuteOperand
 use crate::accounts::{ExecutionAccountMeta, ExecutionAccountPurpose};
 use crate::heap_tally::{HeapBudget, TalliedVec};
 use crate::operand::{Operand, OperandKind};
-use crate::{FheExecutionBuildError, Result};
+use crate::{FheExecutionError, Result};
 
 /// What one in-place account widening changed, small enough to record without allocating. The
 /// record is only complete because the widening in [`StepTables::account_index`] does exactly
@@ -122,11 +122,10 @@ impl<'b> StepTables<'b> {
             if promoted {
                 self.promotions.try_push(self.budget, (index, undo))?;
             }
-            return u8::try_from(index)
-                .map_err(|_| FheExecutionBuildError::TooManyRemainingAccounts);
+            return u8::try_from(index).map_err(|_| FheExecutionError::TooManyRemainingAccounts);
         }
         let index = u8::try_from(self.remaining_accounts.len())
-            .map_err(|_| FheExecutionBuildError::TooManyRemainingAccounts)?;
+            .map_err(|_| FheExecutionError::TooManyRemainingAccounts)?;
         self.remaining_accounts.try_push(self.budget, required)?;
         Ok(index)
     }
@@ -135,11 +134,10 @@ impl<'b> StepTables<'b> {
     /// byte-for-byte.
     pub(crate) fn dictionary_index(&mut self, bytes: [u8; 32]) -> Result<u8> {
         if let Some(index) = self.dictionary.iter().position(|entry| *entry == bytes) {
-            return u8::try_from(index)
-                .map_err(|_| FheExecutionBuildError::TooManyDictionaryEntries);
+            return u8::try_from(index).map_err(|_| FheExecutionError::TooManyDictionaryEntries);
         }
         let index = u8::try_from(self.dictionary.len())
-            .map_err(|_| FheExecutionBuildError::TooManyDictionaryEntries)?;
+            .map_err(|_| FheExecutionError::TooManyDictionaryEntries)?;
         self.dictionary.try_push(self.budget, bytes)?;
         Ok(index)
     }
@@ -197,7 +195,7 @@ pub(crate) fn lower_operand(
 
         OperandKind::Transient { producer_index } => {
             if producer_index as usize >= produced_count {
-                return Err(FheExecutionBuildError::InvalidTransientReference);
+                return Err(FheExecutionError::InvalidTransientReference);
             }
             Ok(FheExecuteOperand::EarlierStep { producer_index })
         }
@@ -206,7 +204,7 @@ pub(crate) fn lower_operand(
         } => {
             let attestation = verified_inputs
                 .get(attestation_index as usize)
-                .ok_or(FheExecutionBuildError::MissingVerifiedInput)?;
+                .ok_or(FheExecutionError::MissingVerifiedInput)?;
             // Admit from the borrowed tables, then clone. On the never-freeing bump a rejected
             // embed must not have already spent those bytes.
             tables.budget.admit(
@@ -233,7 +231,7 @@ pub(crate) fn lower_effect(
 ) -> Result<FheExecuteEffect> {
     crate::validate::validate_allow_keys(&output.allows)?;
     if output.grants.len() > zama_host::MAX_TRANSIENT_GRANTS {
-        return Err(FheExecutionBuildError::TooManyResultGrants);
+        return Err(FheExecutionError::TooManyResultGrants);
     }
     let store_index = tables.account_index(
         if output.slot.is_some() || !output.allows.is_empty() || output.make_public {

@@ -9,7 +9,7 @@ use crate::operand::*;
 use crate::store::{StoreId, StoreOutput};
 use crate::types::*;
 use crate::validate::{validate_binary_step, validate_unary_step};
-use crate::FheExecutionBuildError;
+use crate::FheExecutionError;
 use anchor_lang::prelude::Pubkey;
 #[cfg(feature = "cpi")]
 use anchor_lang::{prelude::AccountInfo, Key};
@@ -265,7 +265,7 @@ fn verified_input_rejects_type_mismatch() {
     let mut builder = FheExecutionBuilder::new(execution_authority(primary_authority));
     assert_eq!(
         builder.verified_input::<Uint<64>>(attestation).unwrap_err(),
-        FheExecutionBuildError::UnsupportedFheType
+        FheExecutionError::UnsupportedFheType
     );
 }
 
@@ -284,14 +284,14 @@ fn batch_build_propagates_closure_and_finish_errors() {
         Ok(_) => panic!("invalid execution unexpectedly built"),
         Err(error) => error,
     };
-    assert_eq!(error, FheExecutionBuildError::UnsupportedBinaryOutputType);
+    assert_eq!(error, FheExecutionError::UnsupportedBinaryOutputType);
 
     let error = match FheExecution::build(execution_authority(primary_authority), |_builder| Ok(()))
     {
         Ok(_) => panic!("empty execution unexpectedly built"),
         Err(error) => error,
     };
-    assert_eq!(error, FheExecutionBuildError::EmptySteps);
+    assert_eq!(error, FheExecutionError::EmptySteps);
 }
 
 #[test]
@@ -314,7 +314,7 @@ fn finish_preflights_lowered_remaining_account_indices() {
 
     assert_eq!(
         builder.finish().unwrap_err(),
-        FheExecutionBuildError::InvalidRemainingAccountReference
+        FheExecutionError::InvalidRemainingAccountReference
     );
 }
 
@@ -338,7 +338,7 @@ fn finish_preflights_lowered_transient_order_and_account_uniqueness() {
 
     assert_eq!(
         builder.finish().unwrap_err(),
-        FheExecutionBuildError::InvalidTransientReference
+        FheExecutionError::InvalidTransientReference
     );
 
     let input_key = test_store_slot(primary_authority, 1);
@@ -355,7 +355,7 @@ fn finish_preflights_lowered_transient_order_and_account_uniqueness() {
 
     assert_eq!(
         builder.finish().unwrap_err(),
-        FheExecutionBuildError::InvalidRemainingAccountReference
+        FheExecutionError::InvalidRemainingAccountReference
     );
 }
 
@@ -368,7 +368,7 @@ fn finish_rejects_dictionary_entry_no_step_references() {
 
     assert_eq!(
         builder.finish().unwrap_err(),
-        FheExecutionBuildError::UnreferencedDictionaryEntry
+        FheExecutionError::UnreferencedDictionaryEntry
     );
 }
 
@@ -387,27 +387,206 @@ fn finish_rejects_dictionary_index_past_dictionary_end() {
 
     assert_eq!(
         builder.finish().unwrap_err(),
-        FheExecutionBuildError::DictionaryIndexOutOfBounds
+        FheExecutionError::DictionaryIndexOutOfBounds
+    );
+}
+
+/// A built one-output execution under a fresh authority, with that authority and the output's
+/// account.
+#[cfg(feature = "cpi")]
+fn one_output_execution() -> (FheExecution, Pubkey, Pubkey) {
+    let authority = Pubkey::new_unique();
+    let input_key = test_store_slot(authority, 1);
+    let output_key = test_store_slot(authority, 7);
+    let output_acl = output_key.address();
+    let balance = typed_store_slot::<Uint<64>>(balance_handle(1), input_key).unwrap();
+    let mut builder = FheExecutionBuilder::new(execution_authority(authority));
+    let result = builder.add(balance, Scalar::<Uint<64>>::u64(1)).unwrap();
+    builder
+        .output(result, store_output(output_key).allow(authority))
+        .unwrap();
+    (builder.finish().unwrap(), authority, output_acl)
+}
+
+/// [`one_output_execution`], resolved and ready to invoke.
+#[cfg(feature = "cpi")]
+fn resolved_execution() -> (FheExecution, ResolvedExecutionAccounts<'static>, Pubkey) {
+    let (execution, authority, output_acl) = one_output_execution();
+    let resolved = execution
+        .resolve_accounts(
+            vec![account_info(output_acl, true)],
+            vec![account_info(authority, false)],
+        )
+        .unwrap();
+    (execution, resolved, authority)
+}
+
+#[cfg(feature = "cpi")]
+fn cpi_accounts(
+    program: Pubkey,
+    authority: Pubkey,
+    deny_scope_records: usize,
+) -> crate::ExecutionCpiAccounts<'static> {
+    crate::ExecutionCpiAccounts {
+        payer: account_info(Pubkey::new_unique(), true),
+        authority: account_info(authority, false),
+        host_config: account_info(Pubkey::new_unique(), false),
+        deny_scope_records: (0..deny_scope_records)
+            .map(|_| account_info(Pubkey::new_unique(), false))
+            .collect(),
+        system_program: account_info(Pubkey::new_unique(), false),
+        hcu_block_meter: None,
+        hcu_trusted_app_record: None,
+        rand_nonce: None,
+        transient_store: account_info(Pubkey::new_unique(), true),
+        instructions: account_info(Pubkey::new_unique(), false),
+        event_authority: account_info(Pubkey::new_unique(), false),
+        program: account_info(program, false),
+    }
+}
+
+#[cfg(feature = "cpi")]
+fn assert_crate_error(
+    error: anchor_lang::error::Error,
+    expected: FheExecutionError,
+) -> anchor_lang::error::AnchorError {
+    match error {
+        anchor_lang::error::Error::AnchorError(error) => {
+            assert_eq!(error.error_code_number, u32::from(expected));
+            assert_eq!(error.error_name, expected.name());
+            *error
+        }
+        other => panic!("unexpected error: {other:?}"),
+    }
+}
+
+// Off-chain, `invoke_signed` panics (it is only supported on `target_os = "solana"`), so each
+// invoke error below proves the check ran before the CPI.
+#[cfg(feature = "cpi")]
+#[test]
+fn invoke_refuses_a_program_other_than_zama_host() {
+    let (execution, resolved, authority) = resolved_execution();
+    let substitute = Pubkey::new_unique();
+    let result = execution.invoke(cpi_accounts(substitute, authority, 0), &resolved, &[]);
+    let error = assert_crate_error(result.unwrap_err(), FheExecutionError::HostProgramMismatch);
+    match error.compared_values {
+        Some(anchor_lang::error::ComparedValues::Pubkeys((received, expected))) => {
+            assert_eq!((received, expected), (substitute, zama_host::ID));
+        }
+        other => panic!("expected the received and expected program ids, got {other:?}"),
+    }
+}
+
+#[cfg(feature = "cpi")]
+#[test]
+fn invoke_refuses_an_authority_other_than_the_execution_authority() {
+    let (execution, resolved, _) = resolved_execution();
+    let result = execution.invoke(
+        cpi_accounts(zama_host::ID, Pubkey::new_unique(), 0),
+        &resolved,
+        &[],
+    );
+    assert_crate_error(
+        result.unwrap_err(),
+        FheExecutionError::ExecutionAuthorityMismatch,
     );
 }
 
 #[cfg(feature = "cpi")]
 #[test]
+fn invoke_refuses_accounts_resolved_for_another_execution() {
+    let (execution, _, authority) = resolved_execution();
+    let (_, other_resolved, _) = resolved_execution();
+    let result = execution.invoke(
+        cpi_accounts(zama_host::ID, authority, 0),
+        &other_resolved,
+        &[],
+    );
+    assert_crate_error(
+        result.unwrap_err(),
+        FheExecutionError::MissingDynamicAccount,
+    );
+}
+
+#[cfg(feature = "cpi")]
+#[test]
+fn invoke_reports_too_many_accounts_once_deny_records_are_appended() {
+    let (execution, resolved, authority) = resolved_execution();
+    // The build-time check passed: the overflow comes only from the deny records added here.
+    assert!(execution.remaining_accounts.len() <= usize::from(u8::MAX));
+    let deny_records = usize::from(u8::MAX) + 1 - execution.remaining_accounts.len();
+    let result = execution.invoke(
+        cpi_accounts(zama_host::ID, authority, deny_records),
+        &resolved,
+        &[],
+    );
+    assert_crate_error(
+        result.unwrap_err(),
+        FheExecutionError::TooManyRemainingAccounts,
+    );
+}
+
+#[cfg(feature = "cpi")]
+#[test]
+fn resolution_errors_convert_to_their_crate_codes() {
+    let (execution, authority, output_acl) = one_output_execution();
+    let output = || account_info(output_acl, true);
+    let signer = || account_info(authority, false);
+    let stranger = || account_info(Pubkey::new_unique(), false);
+    let cases = [
+        (
+            vec![output(), output()],
+            vec![signer()],
+            FheExecutionError::DuplicateDynamicAccount,
+        ),
+        (
+            vec![output(), stranger()],
+            vec![signer()],
+            FheExecutionError::UnexpectedDynamicAccount,
+        ),
+        (
+            vec![],
+            vec![signer()],
+            FheExecutionError::MissingDynamicAccount,
+        ),
+        (
+            vec![account_info(output_acl, false)],
+            vec![signer()],
+            FheExecutionError::DynamicAccountNotWritable,
+        ),
+        (
+            vec![output()],
+            vec![signer(), signer()],
+            FheExecutionError::DuplicateStoreAuthority,
+        ),
+        (
+            vec![output()],
+            vec![signer(), stranger()],
+            FheExecutionError::UnexpectedStoreAuthority,
+        ),
+        (
+            vec![output()],
+            vec![],
+            FheExecutionError::MissingStoreAuthority,
+        ),
+    ];
+    for (dynamic_accounts, authorities, expected) in cases {
+        let error = execution
+            .resolve_accounts(dynamic_accounts, authorities)
+            .unwrap_err();
+        assert_crate_error(error.into(), expected);
+    }
+}
+
+#[test]
+fn error_codes_start_at_the_reserved_offset() {
+    assert_eq!(u32::from(FheExecutionError::MissingStoreSlot), 10_000);
+}
+
+#[cfg(feature = "cpi")]
+#[test]
 fn resolve_accounts_requires_the_cpi_authority_witness() {
-    let primary_authority = Pubkey::new_unique();
-    let input_key = test_store_slot(primary_authority, 1);
-    let output_key = test_store_slot(primary_authority, 7);
-    let output_acl = output_key.address();
-    let balance = typed_store_slot::<Uint<64>>(balance_handle(1), input_key).unwrap();
-    let mut builder = FheExecutionBuilder::new(execution_authority(primary_authority));
-    builder
-        .add(balance, Scalar::<Uint<64>>::u64(1))
-        .and_then(|result| {
-            builder.output(result, store_output(output_key).allow(primary_authority))?;
-            Ok(result)
-        })
-        .unwrap();
-    let execution = builder.finish().unwrap();
+    let (execution, primary_authority, output_acl) = one_output_execution();
 
     // The execution's own authority is an output authority like any other: the caller passes its
     // account info, and leaving it out is an error rather than something the SDK fills in.
@@ -894,7 +1073,7 @@ fn rejects_invalid_references_and_types() {
             FheType::UINT64,
         )
         .unwrap_err();
-    assert_eq!(error, FheExecutionBuildError::InvalidTransientReference);
+    assert_eq!(error, FheExecutionError::InvalidTransientReference);
 
     let mut builder = FheExecutionBuilder::new(execution_authority(primary_authority));
     let error = builder
@@ -905,7 +1084,7 @@ fn rejects_invalid_references_and_types() {
             FheType::UINT64,
         )
         .unwrap_err();
-    assert_eq!(error, FheExecutionBuildError::UnsupportedBinaryOutputType);
+    assert_eq!(error, FheExecutionError::UnsupportedBinaryOutputType);
 
     let input_key = test_store_slot(primary_authority, 1);
     let input = typed_store_slot::<Uint<64>>(balance_handle(1), input_key).unwrap();
@@ -919,10 +1098,7 @@ fn rejects_invalid_references_and_types() {
             FheType::UINT64,
         )
         .unwrap_err();
-    assert_eq!(
-        current_index,
-        FheExecutionBuildError::InvalidTransientReference
-    );
+    assert_eq!(current_index, FheExecutionError::InvalidTransientReference);
 
     let future_index = builder
         .binary_op(
@@ -932,10 +1108,7 @@ fn rejects_invalid_references_and_types() {
             FheType::UINT64,
         )
         .unwrap_err();
-    assert_eq!(
-        future_index,
-        FheExecutionBuildError::InvalidTransientReference
-    );
+    assert_eq!(future_index, FheExecutionError::InvalidTransientReference);
 
     let invalid_rhs = builder
         .binary_op(
@@ -945,10 +1118,7 @@ fn rejects_invalid_references_and_types() {
             FheType::UINT64,
         )
         .unwrap_err();
-    assert_eq!(
-        invalid_rhs,
-        FheExecutionBuildError::InvalidTransientReference
-    );
+    assert_eq!(invalid_rhs, FheExecutionError::InvalidTransientReference);
 }
 
 #[test]
@@ -959,7 +1129,7 @@ fn validates_execution_authority_pubkey() {
         Ok(_) => panic!("invalid encrypted store authority unexpectedly built"),
         Err(error) => error,
     };
-    assert_eq!(error, FheExecutionBuildError::InvalidExecutionAuthority);
+    assert_eq!(error, FheExecutionError::InvalidExecutionAuthority);
 }
 
 #[test]
@@ -977,7 +1147,7 @@ fn binary_validation_rejects_host_type_mismatches() {
         .unwrap_err();
     // Add gates its output to uint types, and the operand must equal that output type, so a
     // Bool lhs against a Uint64 output is a type mismatch (host + client agree).
-    assert_eq!(error, FheExecutionBuildError::BinaryOperandTypeMismatch);
+    assert_eq!(error, FheExecutionError::BinaryOperandTypeMismatch);
 
     let mut builder = FheExecutionBuilder::new(execution_authority(primary_authority));
     let error = builder
@@ -988,7 +1158,7 @@ fn binary_validation_rejects_host_type_mismatches() {
             FheType::UINT64,
         )
         .unwrap_err();
-    assert_eq!(error, FheExecutionBuildError::BinaryOperandTypeMismatch);
+    assert_eq!(error, FheExecutionError::BinaryOperandTypeMismatch);
 }
 
 #[test]
@@ -1012,7 +1182,7 @@ fn unary_validation_rejects_same_type_cast_and_bad_operand_types() {
                 FheType::UINT64
             )
             .unwrap_err(),
-        FheExecutionBuildError::UnsupportedFheType
+        FheExecutionError::UnsupportedFheType
     );
     // EVM cast type sets: a Bool input casts to a uint (Bool -> Uint32) is accepted...
     assert!(builder
@@ -1031,7 +1201,7 @@ fn unary_validation_rejects_same_type_cast_and_bad_operand_types() {
                 FheType::BOOL
             )
             .unwrap_err(),
-        FheExecutionBuildError::UnsupportedFheType
+        FheExecutionError::UnsupportedFheType
     );
     assert_eq!(
         validate_unary_step(
@@ -1042,7 +1212,7 @@ fn unary_validation_rejects_same_type_cast_and_bad_operand_types() {
             |_| None,
         )
         .unwrap_err(),
-        FheExecutionBuildError::UnsupportedFheType
+        FheExecutionError::UnsupportedFheType
     );
     assert_eq!(
         builder
@@ -1052,7 +1222,7 @@ fn unary_validation_rejects_same_type_cast_and_bad_operand_types() {
                 FheType::UINT64
             )
             .unwrap_err(),
-        FheExecutionBuildError::UnsupportedFheType
+        FheExecutionError::UnsupportedFheType
     );
     assert_eq!(
         builder
@@ -1062,7 +1232,7 @@ fn unary_validation_rejects_same_type_cast_and_bad_operand_types() {
                 FheType::UINT64
             )
             .unwrap_err(),
-        FheExecutionBuildError::UnsupportedFheType
+        FheExecutionError::UnsupportedFheType
     );
     assert_eq!(
         validate_unary_step(
@@ -1073,7 +1243,7 @@ fn unary_validation_rejects_same_type_cast_and_bad_operand_types() {
             |_| None,
         )
         .unwrap_err(),
-        FheExecutionBuildError::UnsupportedFheType
+        FheExecutionError::UnsupportedFheType
     );
     // Neg rejects a Bool operand (EVM fheNeg supportedTypes = Uint8..Uint128).
     assert_eq!(
@@ -1084,7 +1254,7 @@ fn unary_validation_rejects_same_type_cast_and_bad_operand_types() {
                 FheType::BOOL
             )
             .unwrap_err(),
-        FheExecutionBuildError::UnsupportedFheType
+        FheExecutionError::UnsupportedFheType
     );
 }
 
@@ -1103,7 +1273,7 @@ fn mul_div_rejects_zero_divisor() {
                 Scalar::<Uint<64>>::u64(0)
             )
             .unwrap_err(),
-        FheExecutionBuildError::MulDivDivisorZero
+        FheExecutionError::MulDivDivisorZero
     );
 }
 
@@ -1117,13 +1287,13 @@ fn div_rem_require_nonzero_scalar_divisor() {
         typed_store_slot::<Uint<64>>(balance_handle(2), test_store_slot(auth, 2)).unwrap();
     assert_eq!(
         builder.div(lhs, enc_divisor).unwrap_err(),
-        FheExecutionBuildError::DivisorMustBeScalar
+        FheExecutionError::DivisorMustBeScalar
     );
     // A zero scalar divisor is rejected.
     let lhs2 = typed_store_slot::<Uint<64>>(balance_handle(1), test_store_slot(auth, 1)).unwrap();
     assert_eq!(
         builder.rem(lhs2, Scalar::<Uint<64>>::u64(0)).unwrap_err(),
-        FheExecutionBuildError::DivisionByZero
+        FheExecutionError::DivisionByZero
     );
     // A non-zero scalar divisor is accepted.
     let lhs3 = typed_store_slot::<Uint<64>>(balance_handle(1), test_store_slot(auth, 1)).unwrap();
@@ -1164,19 +1334,19 @@ fn builder_exposes_the_host_operator_type_surface() {
     let u256 = foreign_operand(typed_handle(3, 8u8));
     assert_eq!(
         validate_binary_step(FheBinaryOpCode::Xor, &u256, &u256, 8u8, 0, |_| None).unwrap_err(),
-        FheExecutionBuildError::UnsupportedFheType
+        FheExecutionError::UnsupportedFheType
     );
     assert_eq!(
         validate_unary_step(FheUnaryOpCode::Neg, &u256, 8u8, 0, |_| None).unwrap_err(),
-        FheExecutionBuildError::UnsupportedFheType
+        FheExecutionError::UnsupportedFheType
     );
     assert_eq!(
         FheType::from_host_byte(7u8).unwrap_err(),
-        FheExecutionBuildError::UnsupportedFheType
+        FheExecutionError::UnsupportedFheType
     );
     assert_eq!(
         FheType::from_host_byte(8u8).unwrap_err(),
-        FheExecutionBuildError::UnsupportedFheType
+        FheExecutionError::UnsupportedFheType
     );
 }
 
@@ -1237,7 +1407,7 @@ fn mixed_scopes_are_rejected_at_the_step_that_mixes() {
     let steps_before = builder.steps.len();
     assert_eq!(
         builder.add(other, Scalar::<Uint<64>>::u64(1)).unwrap_err(),
-        FheExecutionBuildError::MixedScopes
+        FheExecutionError::MixedScopes
     );
     assert_eq!(
         builder
@@ -1246,7 +1416,7 @@ fn mixed_scopes_are_rejected_at_the_step_that_mixes() {
                 store_output(TestStoreSlot::new(other_app, authority, [3; 32]))
             )
             .unwrap_err(),
-        FheExecutionBuildError::MixedScopes
+        FheExecutionError::MixedScopes
     );
     assert_eq!(builder.steps.len(), steps_before);
     assert_eq!(builder.finish().unwrap().app(), app());
@@ -1270,7 +1440,7 @@ fn typed_handle_constructor_rejects_mismatched_handle_tag() {
         test_store_slot(Pubkey::new_unique(), 7),
     )
     .unwrap_err();
-    assert_eq!(error, FheExecutionBuildError::UnsupportedFheType);
+    assert_eq!(error, FheExecutionError::UnsupportedFheType);
 }
 
 #[test]
@@ -1278,11 +1448,11 @@ fn store_slot_rejects_unsupported_handle_type_bytes() {
     let key = test_store_slot(Pubkey::new_unique(), 1);
     assert_eq!(
         typed_store_slot::<Uint<64>>(typed_handle(1, 7u8), key.clone()).unwrap_err(),
-        FheExecutionBuildError::UnsupportedFheType
+        FheExecutionError::UnsupportedFheType
     );
     assert_eq!(
         typed_store_slot::<Uint<64>>(typed_handle(1, 8u8), key).unwrap_err(),
-        FheExecutionBuildError::UnsupportedFheType
+        FheExecutionError::UnsupportedFheType
     );
 }
 
@@ -1290,9 +1460,9 @@ fn store_slot_rejects_unsupported_handle_type_bytes() {
 fn rand_rejects_unsupported_type_like_host() {
     let mut builder = FheExecutionBuilder::new(execution_authority(Pubkey::new_unique()));
     let error = builder.rand_raw(7u8).unwrap_err();
-    assert_eq!(error, FheExecutionBuildError::UnsupportedFheType);
+    assert_eq!(error, FheExecutionError::UnsupportedFheType);
     let error = builder.rand_raw(8u8).unwrap_err();
-    assert_eq!(error, FheExecutionBuildError::UnsupportedFheType);
+    assert_eq!(error, FheExecutionError::UnsupportedFheType);
 }
 
 /// `rand_bounded_u64` is the builder's only typed constructor for `FheExecuteStep::RandBounded`, an
@@ -1323,7 +1493,7 @@ fn lowers_bounded_rand_step_and_rejects_non_power_of_two_bounds() {
 
     assert_eq!(
         BoundedU64UpperBound::power_of_two(3).unwrap_err(),
-        FheExecutionBuildError::InvalidRandomUpperBound
+        FheExecutionError::InvalidRandomUpperBound
     );
 }
 
@@ -1332,7 +1502,7 @@ fn finish_rejects_empty_steps() {
     let primary_authority = Pubkey::new_unique();
     assert!(matches!(
         FheExecutionBuilder::new(execution_authority(primary_authority)).finish(),
-        Err(FheExecutionBuildError::EmptySteps)
+        Err(FheExecutionError::EmptySteps)
     ));
 }
 
@@ -1350,7 +1520,7 @@ fn rejects_more_than_max_ops() {
     let error = builder
         .add(balance, Scalar::<Uint<64>>::u64(99))
         .unwrap_err();
-    assert_eq!(error, FheExecutionBuildError::TooManySteps);
+    assert_eq!(error, FheExecutionError::TooManySteps);
 }
 
 #[test]
@@ -1429,7 +1599,7 @@ fn step_that_fails_after_interning_leaves_the_builder_untouched() {
     let other = typed_store_slot::<Uint<64>>(balance_handle(2), foreign).unwrap();
     assert_eq!(
         builder.add(fresh, other).unwrap_err(),
-        FheExecutionBuildError::MixedScopes
+        FheExecutionError::MixedScopes
     );
     assert_eq!(builder.remaining_accounts, accounts_before);
     assert_eq!(builder.dictionary, dictionary_before);

@@ -14,14 +14,14 @@
 //! The app must also budget its own allocations and the surrounding transaction:
 //!
 //! - **Steps** — the host's `MAX_FHE_EXECUTION_STEPS`, the one step ceiling
-//!   ([`FheExecutionBuildError::TooManySteps`]), gated in [`FheExecutionBuilder::commit_step`].
+//!   ([`FheExecutionError::TooManySteps`]), gated in [`FheExecutionBuilder::commit_step`].
 //! - **CPI packet** — the serialized packet must fit the 10 KiB a CPI may carry, counted
-//!   exactly at `finish` ([`FheExecutionBuildError::ExceedsCpiInstructionDataLimit`]).
+//!   exactly at `finish` ([`FheExecutionError::ExceedsCpiInstructionDataLimit`]).
 //! - **Build heap** — the builder admits every byte it requests from the allocator against
 //!   [`crate::BUILD_HEAP_BUDGET_BYTES`] before the allocator serves it ([`HeapBudget`]), leaving
 //!   [`crate::APP_HEAP_RESERVE_BYTES`] for what it genuinely cannot see: Anchor's account
 //!   deserialization and the app's own allocations
-//!   ([`FheExecutionBuildError::ExceedsBuildHeapBudget`]). Intern tables grow through
+//!   ([`FheExecutionError::ExceedsBuildHeapBudget`]). Intern tables grow through
 //!   `TalliedVec::try_push` (there is no `DerefMut` to the `Vec`); exact-size `Vec` sites go
 //!   through `try_with_capacity`; attestation embeds `admit` then clone. Packet and
 //!   invoke terms land at `finish`, where they are first known. The tally is validated
@@ -47,7 +47,7 @@ use crate::heap_tally::{HeapBudget, TalliedVec};
 use crate::lower::{lower_effect, lower_operand, StepTables};
 use crate::operand::{BuilderIdentity, Operand, OperandKind};
 use crate::validate::{validate_authority, validate_lowered_execution};
-use crate::{FheExecutionBuildError, Result};
+use crate::{FheExecutionError, Result};
 
 /// Pubkey-oriented builder for `FheExecuteArgs`.
 ///
@@ -131,10 +131,10 @@ impl StepLowering<'_> {
         let mut lowered = TalliedVec::try_with_capacity(self.budget(), reserved)?;
         for operand in operands {
             if matches!(operand.0, OperandKind::Scalar(_)) {
-                return Err(FheExecutionBuildError::ScalarEncryptedOperand);
+                return Err(FheExecutionError::ScalarEncryptedOperand);
             }
             if lowered.len() == max {
-                return Err(FheExecutionBuildError::TooManyReductionOperands);
+                return Err(FheExecutionError::TooManyReductionOperands);
             }
             let lowered_op = self.operand(operand)?;
             lowered.try_push(self.budget(), lowered_op)?;
@@ -150,7 +150,7 @@ impl StepLowering<'_> {
             return Ok(());
         }
         if self.app != app {
-            return Err(FheExecutionBuildError::MixedScopes);
+            return Err(FheExecutionError::MixedScopes);
         }
         Ok(())
     }
@@ -164,7 +164,7 @@ impl<'id> FheExecutionBuilder<'id> {
     /// entrypoint's fixed 32 KB bump heap, which is never freed, so a clone-and-swap rollback would
     /// make the heap cost of an execution grow with the square of its step count.
     ///
-    /// This is also the canonical [`TooManySteps`](FheExecutionBuildError::TooManySteps) gate:
+    /// This is also the canonical [`TooManySteps`](FheExecutionError::TooManySteps) gate:
     /// steps only ever grow through here, so the op methods and `finish` do not re-check it.
     /// Heap admission lives on [`HeapBudget`]: intern tables grow through `try_push`, exact-size
     /// `Vec` sites through `try_with_capacity`. Packet and invoke land at `finish`.
@@ -177,10 +177,10 @@ impl<'id> FheExecutionBuilder<'id> {
         // Checked before the step interns anything, so a build stopped here leaves the tables
         // exactly at the host's cap.
         if self.steps.len() >= MAX_FHE_EXECUTION_STEPS {
-            return Err(FheExecutionBuildError::TooManySteps);
+            return Err(FheExecutionError::TooManySteps);
         }
         let op_index =
-            u8::try_from(self.steps.len()).map_err(|_| FheExecutionBuildError::TooManySteps)?;
+            u8::try_from(self.steps.len()).map_err(|_| FheExecutionError::TooManySteps)?;
         let Self {
             store,
             steps,
@@ -229,13 +229,13 @@ impl<'id> FheExecutionBuilder<'id> {
         output: crate::StoreOutput,
     ) -> Result<()> {
         let OperandKind::Transient { producer_index } = value.operand().0 else {
-            return Err(FheExecutionBuildError::ResultNotProduced);
+            return Err(FheExecutionError::ResultNotProduced);
         };
         if usize::from(producer_index) >= self.steps.len() {
-            return Err(FheExecutionBuildError::InvalidTransientReference);
+            return Err(FheExecutionError::InvalidTransientReference);
         }
         if self.effects.len() == zama_host::MAX_FHE_EXECUTION_EFFECTS {
-            return Err(FheExecutionBuildError::TooManyEffects);
+            return Err(FheExecutionError::TooManyEffects);
         }
         let mut lowering = StepLowering {
             steps_len: self.steps.len(),
@@ -263,7 +263,7 @@ impl<'id> FheExecutionBuilder<'id> {
                         .as_ref()
                         .is_some_and(|previous| previous.key_index == slot.key_index)
             }) {
-                return Err(FheExecutionBuildError::DuplicateSlotWrite);
+                return Err(FheExecutionError::DuplicateSlotWrite);
             }
         }
         advance_store_history(&mut effect, &self.effects)?;
@@ -337,7 +337,7 @@ impl<'id> FheExecutionBuilder<'id> {
     ) -> Result<FheExecution> {
         validate_authority(self.store.authority())?;
         if self.steps.is_empty() {
-            return Err(FheExecutionBuildError::EmptySteps);
+            return Err(FheExecutionError::EmptySteps);
         }
         let dynamic_accounts = self
             .remaining_accounts
@@ -358,7 +358,7 @@ impl<'id> FheExecutionBuilder<'id> {
                 value_authorities,
             );
         let account_count = u8::try_from(self.remaining_accounts.len())
-            .map_err(|_| FheExecutionBuildError::TooManyRemainingAccounts)?;
+            .map_err(|_| FheExecutionError::TooManyRemainingAccounts)?;
         let args = FheExecuteArgs {
             execution_store_index: 0,
             returned_results,
@@ -373,7 +373,7 @@ impl<'id> FheExecutionBuilder<'id> {
         // undeliverable execution fails with a typed error instead of aborting the invoke.
         let packet_bytes = crate::execution::packet_byte_count(&args);
         if packet_bytes > crate::cost::CPI_INSTRUCTION_DATA_LIMIT {
-            return Err(FheExecutionBuildError::ExceedsCpiInstructionDataLimit);
+            return Err(FheExecutionError::ExceedsCpiInstructionDataLimit);
         }
         // Packet and invoke tables are everything still uncharged. Finish's used-entry
         // bitmaps live on the stack: wire indexes are `u8`.
@@ -381,7 +381,7 @@ impl<'id> FheExecutionBuilder<'id> {
             .budget
             .fits_with(return_allocation + packet_bytes + invoke_heap_bytes)
         {
-            return Err(FheExecutionBuildError::ExceedsBuildHeapBudget);
+            return Err(FheExecutionError::ExceedsBuildHeapBudget);
         }
         let mut used_accounts = [false; 256];
         let mut used_dictionary = [false; 256];
@@ -425,11 +425,11 @@ fn advance_store_history(
         .filter(|earlier| earlier.store_index == effect.store_index)
     {
         if earlier.previous_leaf_count != expected {
-            return Err(FheExecutionBuildError::StoreHistoryMismatch);
+            return Err(FheExecutionError::StoreHistoryMismatch);
         }
         expected = expected
             .checked_add(earlier.allow_indexes.len() as u64 + u64::from(earlier.make_public))
-            .ok_or(FheExecutionBuildError::StoreHistoryMismatch)?;
+            .ok_or(FheExecutionError::StoreHistoryMismatch)?;
     }
     effect.previous_leaf_count = expected;
     Ok(())

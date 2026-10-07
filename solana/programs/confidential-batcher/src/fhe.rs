@@ -3,13 +3,6 @@
 use crate::errors::BatcherError;
 use anchor_lang::prelude::*;
 
-pub(crate) fn invalid_execution(
-    error: zama_fhe::FheExecutionBuildError,
-) -> anchor_lang::error::Error {
-    msg!("invalid FHE execution: {:?}", error);
-    error!(BatcherError::InvalidFheExecution)
-}
-
 pub(crate) fn read_state(info: &AccountInfo) -> Result<zama_host::EncryptedStore> {
     require_keys_eq!(
         *info.owner,
@@ -48,11 +41,7 @@ impl<'info> JoinExecute<'_, 'info> {
     ) -> Result<[u8; 32]> {
         let resolved = execution
             .execution()
-            .resolve_accounts(dynamic, [self.record.clone()])
-            .map_err(|error| {
-                msg!("invalid execution accounts: {:?}", error);
-                error!(BatcherError::InvalidFheExecution)
-            })?;
+            .resolve_accounts(dynamic, [self.record.clone()])?;
         let bump = [self.bump];
         let seeds: &[&[u8]] = &[
             crate::constants::JOIN_RECORD_SEED,
