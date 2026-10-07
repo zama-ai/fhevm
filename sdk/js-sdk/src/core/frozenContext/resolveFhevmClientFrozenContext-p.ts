@@ -85,7 +85,8 @@ export async function resolveFhevmClientFrozenContext(fhevm: FhevmBase<FhevmChai
   assertIsHostContractVersionOf(aclVersion, 'ACL');
   assertIsHostContractVersionOf(inputVerifierVersion, 'InputVerifier');
   assertIsHostContractVersionOf(kmsVerifierVersion, 'KMSVerifier');
-  if (protocolConfigVersion !== undefined) {
+  // Non-canonical host chains run a ProtocolConfigReplica at the ProtocolConfig address.
+  if (protocolConfigVersion !== undefined && protocolConfigVersion.contractName !== 'ProtocolConfigReplica') {
     assertIsHostContractVersionOf(protocolConfigVersion, 'ProtocolConfig');
   }
 
@@ -96,7 +97,7 @@ export async function resolveFhevmClientFrozenContext(fhevm: FhevmBase<FhevmChai
       ACL: aclVersion,
       InputVerifier: inputVerifierVersion,
       KMSVerifier: kmsVerifierVersion,
-      ...(protocolConfigVersion === undefined ? {} : { ProtocolConfig: protocolConfigVersion }),
+      ...(protocolConfigVersion === undefined ? {} : { [protocolConfigVersion.contractName]: protocolConfigVersion }),
     },
     protocolVersion: protocolContext.protocolVersion,
     pubKeyCrsVersion: protocolContext.pubKeyCrsVersion,
