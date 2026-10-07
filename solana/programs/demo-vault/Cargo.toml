@@ -24,3 +24,6 @@ program-environment = { path = "../../crates/program-environment" }
 [dependencies]
 anchor-lang = "1.2.0"
 anchor-spl = { version = "1.2.0", default-features = false, features = ["mint", "token", "token_2022", "token_2022_extensions"] }
+
+[dev-dependencies]
+serde_json = "1"

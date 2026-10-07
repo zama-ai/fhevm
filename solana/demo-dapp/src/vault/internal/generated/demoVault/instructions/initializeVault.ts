@@ -10,8 +10,10 @@ import {
   combineCodec,
   fixDecoderSize,
   fixEncoderSize,
+  getAddressEncoder,
   getBytesDecoder,
   getBytesEncoder,
+  getProgramDerivedAddress,
   getStructDecoder,
   getStructEncoder,
   SOLANA_ERROR__PROGRAM_CLIENTS__INSUFFICIENT_ACCOUNT_METAS,
@@ -37,7 +39,6 @@ import {
   getAddressFromResolvedInstructionAccount,
   type ResolvedInstructionAccount,
 } from '@solana/program-client-core';
-import { findShareMintPda, findVaultAuthorityPda, findVaultTokenAccountPda } from '../pdas/index.js';
 import { DEMO_VAULT_PROGRAM_ADDRESS } from '../programAddress.js';
 
 export const INITIALIZE_VAULT_DISCRIMINATOR: ReadonlyUint8Array = new Uint8Array([48, 191, 163, 44, 71, 129, 63, 164]);
@@ -188,18 +189,30 @@ export async function getInitializeVaultInstructionAsync<
 
   // Resolve default values.
   if (!accounts.vaultAuthority.value) {
-    accounts.vaultAuthority.value = await findVaultAuthorityPda({
-      vault: getAddressFromResolvedInstructionAccount('vault', accounts.vault.value),
+    accounts.vaultAuthority.value = await getProgramDerivedAddress({
+      programAddress,
+      seeds: [
+        getBytesEncoder().encode(new Uint8Array([97, 117, 116, 104, 111, 114, 105, 116, 121])),
+        getAddressEncoder().encode(getAddressFromResolvedInstructionAccount('vault', accounts.vault.value)),
+      ],
     });
   }
   if (!accounts.shareMint.value) {
-    accounts.shareMint.value = await findShareMintPda({
-      vault: getAddressFromResolvedInstructionAccount('vault', accounts.vault.value),
+    accounts.shareMint.value = await getProgramDerivedAddress({
+      programAddress,
+      seeds: [
+        getBytesEncoder().encode(new Uint8Array([115, 104, 97, 114, 101, 115])),
+        getAddressEncoder().encode(getAddressFromResolvedInstructionAccount('vault', accounts.vault.value)),
+      ],
     });
   }
   if (!accounts.vaultTokenAccount.value) {
-    accounts.vaultTokenAccount.value = await findVaultTokenAccountPda({
-      vault: getAddressFromResolvedInstructionAccount('vault', accounts.vault.value),
+    accounts.vaultTokenAccount.value = await getProgramDerivedAddress({
+      programAddress,
+      seeds: [
+        getBytesEncoder().encode(new Uint8Array([117, 110, 100, 101, 114, 108, 121, 105, 110, 103])),
+        getAddressEncoder().encode(getAddressFromResolvedInstructionAccount('vault', accounts.vault.value)),
+      ],
     });
   }
   if (!accounts.tokenProgram.value) {

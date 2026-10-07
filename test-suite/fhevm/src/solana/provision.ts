@@ -9,7 +9,6 @@
 // the live-client read from `$HOME`) is what lets the arc target any stack the harness injects.
 
 import fs from 'node:fs/promises';
-
 import {
   appendTransactionMessageInstructions,
   assertIsTransactionWithBlockhashLifetime,
@@ -39,10 +38,8 @@ import {
   getInitializeMint2Instruction,
   getMintToInstruction,
 } from '@solana-program/token';
-
 import type { Bytes32Hex } from '@fhevm/sdk/types';
 import { programDataAddressFor } from '../../../../solana/deploy/src/bootstrap';
-
 import {
   createFinalizedRpc,
   decodeHostConfig,
@@ -50,14 +47,12 @@ import {
   HOST_CONFIG_DISCRIMINATOR,
   ZAMA_HOST_PROGRAM_ADDRESS,
 } from '@fhevm/solana-zama-host';
-
 import {
   buildVaultUnderlyingEscrowAtaInstruction,
   createAccountInstruction,
   setComputeUnitLimitInstruction,
   transferSolInstruction,
 } from './spl';
-
 import { vaultModule, sdkVerifyModule } from './lazy-modules';
 
 // The vault/SDK loaders live in lazy-modules.ts — see there for why they must stay dynamic
@@ -69,7 +64,7 @@ import { vaultModule, sdkVerifyModule } from './lazy-modules';
 const PROVISIONING_COMPUTE_UNIT_LIMIT = 1_400_000;
 const LAMPORTS_PER_SOL = 1_000_000_000n;
 const EUINT64_FHE_TYPE_ID = 5;
-import { BALANCE_KEY as BALANCE_LABEL } from '@fhevm/confidential-token';
+import { CONFIDENTIAL_TOKEN_PROGRAM_ADDRESS, findTokenAccountPda, BALANCE_KEY as BALANCE_LABEL } from '@fhevm/confidential-token';
 
 const bytesEqual = (a: Uint8Array, b: Uint8Array): boolean =>
   a.length === b.length && a.every((byte, index) => byte === b[index]);
@@ -300,7 +295,7 @@ export const createConfidentialMint = async (
   ]));
   const escrow = await buildVaultUnderlyingEscrowAtaInstruction({
     payer: params.authority,
-    tokenProgram: vault.CONFIDENTIAL_TOKEN_PROGRAM_ADDRESS,
+    tokenProgram: CONFIDENTIAL_TOKEN_PROGRAM_ADDRESS,
     confidentialMint: mint.address,
     underlyingMint: params.underlyingMint,
   });
@@ -412,17 +407,17 @@ export const readTokenBalanceStore = async (
   const vault = await vaultModule();
   const { bytes32HexToHandle, encryptedStoreHandle, fetchSolanaEncryptedStore } = await sdkVerifyModule();
   const { mint, owner } = params;
-  const tokenAccount = await vault.tokenAccountAddress(mint, owner);
-  const encryptedStoreAddress = await vault.tokenStateAddress(mint, tokenAccount);
+  const tokenAccount = (await findTokenAccountPda({ mint, owner }))[0];
+  const encryptedStoreAddress = await vault.tokenStoreAddress(mint, tokenAccount);
 
   const tokenAccountInfo = await fetchEncodedAccount(context.rpc, tokenAccount);
-  if (!tokenAccountInfo.exists || tokenAccountInfo.programAddress !== vault.CONFIDENTIAL_TOKEN_PROGRAM_ADDRESS) {
+  if (!tokenAccountInfo.exists || tokenAccountInfo.programAddress !== CONFIDENTIAL_TOKEN_PROGRAM_ADDRESS) {
     throw new Error(`confidential token account for (${mint}, ${owner}) is missing or not program-owned`);
   }
 
   const state = await fetchSolanaEncryptedStore(context.rpc, encryptedStoreAddress, ZAMA_HOST_PROGRAM_ADDRESS);
   if (
-    state.program !== vault.CONFIDENTIAL_TOKEN_PROGRAM_ADDRESS ||
+    state.program !== CONFIDENTIAL_TOKEN_PROGRAM_ADDRESS ||
     state.authority !== tokenAccount ||
     state.scope !== mint
   ) {

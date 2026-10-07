@@ -10,16 +10,18 @@ import {
   getAddressEncoder,
   getBytesEncoder,
   getProgramDerivedAddress,
+  getU64Encoder,
   type Address,
   type ProgramDerivedAddress,
 } from '@solana/kit';
 
-export type BatchAuthoritySeeds = {
-  batch: Address;
+export type BatchSeeds = {
+  batcher: Address;
+  index: number | bigint;
 };
 
-export async function findBatchAuthorityPda(
-  seeds: BatchAuthoritySeeds,
+export async function findBatchPda(
+  seeds: BatchSeeds,
   config: { programAddress?: Address | undefined } = {},
 ): Promise<ProgramDerivedAddress> {
   const {
@@ -27,13 +29,10 @@ export async function findBatchAuthorityPda(
   } = config;
   return await getProgramDerivedAddress({
     programAddress,
-    seeds: getBatchAuthorityPdaSeeds(seeds),
+    seeds: [
+      getBytesEncoder().encode(new Uint8Array([98, 97, 116, 99, 104])),
+      getAddressEncoder().encode(seeds.batcher),
+      getU64Encoder().encode(seeds.index),
+    ],
   });
-}
-
-export function getBatchAuthorityPdaSeeds(seeds: BatchAuthoritySeeds) {
-  return [
-    getBytesEncoder().encode(new Uint8Array([98, 97, 116, 99, 104, 45, 97, 117, 116, 104, 111, 114, 105, 116, 121])),
-    getAddressEncoder().encode(seeds.batch),
-  ];
 }

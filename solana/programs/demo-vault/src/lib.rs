@@ -106,3 +106,11 @@ pub mod demo_vault {
         instructions::harvest(ctx, amount)
     }
 }
+
+#[cfg(test)]
+mod pda_vectors {
+    include!("../../../test-fixtures/pda/pda_vectors.rs");
+}
+
+#[cfg(test)]
+mod pda_golden;

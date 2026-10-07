@@ -377,6 +377,16 @@
         ]
       },
       "value": "[116, 97, 105, 108, 95, 95, 95, 95, 95, 95, 95, 95, 95, 95, 95, 95, 95, 95, 95, 95, 95, 95, 95, 95, 95, 95, 95, 95, 95, 95, 95, 95]"
+    },
+    {
+      "name": "MAX_CHAIN_LINKS",
+      "docs": [
+        "The deepest chain one `extend` can carry: the host's `MAX_FHE_EXECUTION_STEPS`, the one step",
+        "ceiling for executions built on-chain and off (see the module docs — extending at this depth",
+        "is what verifies the maximum execution fits the fixed program heap)."
+      ],
+      "type": "u8",
+      "value": "32"
     }
   ]
 }

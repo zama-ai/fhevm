@@ -1,4 +1,10 @@
-import { findEventAuthorityPda as findTokenEventAuthorityPda } from '@fhevm/confidential-token';
+import {
+  CONFIDENTIAL_TOKEN_PROGRAM_ADDRESS,
+  ZAMA_HOST_PROGRAM_ADDRESS,
+  findPendingBurnPda,
+  findTokenAccountPda,
+  findEventAuthorityPda as findTokenEventAuthorityPda,
+} from '@fhevm/confidential-token';
 import { findAssociatedTokenPda, TOKEN_PROGRAM_ADDRESS } from "@solana-program/token";
 import { asBytes32Hex } from '@fhevm/sdk/base';
 import { createFinalizedRpc, findEventAuthorityPda as findZamaEventAuthorityPda } from '@fhevm/solana-zama-host';
@@ -21,9 +27,7 @@ import {
 
 import fs from "node:fs/promises";
 import path from "node:path";
-
 import { describe, expect, test } from "bun:test";
-
 import {
   appendTransactionMessageInstructions,
   assertIsTransactionWithBlockhashLifetime,
@@ -40,7 +44,6 @@ import {
   type Instruction,
   type TransactionSigner,
 } from "@solana/kit";
-
 import { loadPersonas, until } from "../harness";
 import { withHostReachableFetch } from "../../src/utils/fs";
 import { waitForSnsCommit } from "../../src/solana/sns";
@@ -222,7 +225,7 @@ describe.skipIf(!runsDemoScenarios)("solana deposit-arc scenario", () => {
       // that created them, so only the missing ones are initialized.
       const missingTokenAccountMints: Address[] = [];
       for (const mint of [config.mints.joinConfidential, config.mints.payoutConfidential]) {
-        const tokenAccount = await vault.tokenAccountAddress(mint, alice.address);
+        const tokenAccount = (await findTokenAccountPda({ mint, owner: alice.address }))[0];
         const existing = await rpc.getAccountInfo(tokenAccount, { encoding: "base64" }).send();
         if (existing.value === null) missingTokenAccountMints.push(mint);
       }
@@ -260,7 +263,7 @@ describe.skipIf(!runsDemoScenarios)("solana deposit-arc scenario", () => {
       // state the join phase consumes next. This is the wrap phase's real state check, beyond "did not
       // revert".
       // Read at the commitment `send` waited for.
-      const aliceCusdc = await vault.tokenAccountAddress(config.mints.joinConfidential, alice.address);
+      const aliceCusdc = (await findTokenAccountPda({ mint: config.mints.joinConfidential, owner: alice.address }))[0];
       const account = await rpc.getAccountInfo(aliceCusdc, { encoding: "base64" }).send();
       expect(account.value).not.toBeNull();
       expect(account.value?.owner).toBe(vault.CONFIDENTIAL_TOKEN_PROGRAM_ADDRESS);
@@ -508,7 +511,7 @@ describe.skipIf(!runsDemoScenarios)("solana deposit-arc scenario", () => {
       // is cumulative (a persistent cluster carries her earlier claims), so the assertion is on the
       // delta: the balance is decrypted before and after the claim.
       const payoutMint = config.mints.payoutConfidential;
-      const claimValueAccount = await vault.tokenStateAddress(payoutMint, await vault.tokenAccountAddress(payoutMint, alice.address));
+      const claimValueAccount = await vault.tokenStoreAddress(payoutMint, (await findTokenAccountPda({ mint: payoutMint, owner: alice.address }))[0]);
       const balanceHandleKey = new TextEncoder().encode("balance_________________________");
       const aliceWallet = solanaPermitWalletFromSecretKey(aliceKeypairBytes);
       const decryptChain = defineFhevmSolanaChain({
@@ -679,8 +682,8 @@ test.skipIf(!runsDemoScenarios)(
     } });
     await decrypt.ready;
     const permit = await decrypt.signPermit({ wallet: solanaPermitWalletFromSecretKey(aliceBytes), durationSeconds: 3600n });
-    const userTokenAccount = await vault.tokenAccountAddress(mint, alice.address);
-    const userBalanceStore = await vault.tokenStateAddress(mint, userTokenAccount);
+    const userTokenAccount = (await findTokenAccountPda({ mint, owner: alice.address }))[0];
+    const userBalanceStore = await vault.tokenStoreAddress(mint, userTokenAccount);
     const readAmount = async (store: Address, key = 'balance_________________________'): Promise<bigint> => {
       const state = await decrypt.fetchEncryptedStore(store);
       const handle = encryptedStoreHandle(state, new TextEncoder().encode(key));
@@ -719,7 +722,7 @@ test.skipIf(!runsDemoScenarios)(
         relayerApiKey: process.env.ZAMA_FHEVM_API_KEY ?? 'local' };
     };
     expect(await dispatchVaultBatch(await session(), position, 'deposit')).not.toBeNull();
-    const pendingBurn = await vault.pendingBurnAddress(mint, batchJoinTokenAccount);
+    const pendingBurn = (await findPendingBurnPda({ mint, tokenAccount: batchJoinTokenAccount }))[0];
     const account = () => rpc.getAccountInfo(pendingBurn, { encoding: 'base64' }).send();
     const dispatched = await vault.getBatchByIndex(rpc, roots, current.index);
     expect(dispatched.state.status).toBe(BATCH_STATUS_DISPATCHED);
@@ -753,7 +756,7 @@ test.skipIf(!runsDemoScenarios)(
         tokenProgram: TOKEN_PROGRAM_ADDRESS,
         mint: roots.joinUnderlyingMint,
       }))[0],
-      batchJoinTokenAccount, userTokenAccount, batchBalanceStore: await vault.tokenStateAddress(mint, batchJoinTokenAccount),
+      batchJoinTokenAccount, userTokenAccount, batchBalanceStore: await vault.tokenStoreAddress(mint, batchJoinTokenAccount),
       userBalanceStore, joinStore, hostConfig: config.hostConfig,
       zamaEventAuthority: (await findZamaEventAuthorityPda())[0], confidentialTokenEventAuthority: (await findTokenEventAuthorityPda())[0],
     });

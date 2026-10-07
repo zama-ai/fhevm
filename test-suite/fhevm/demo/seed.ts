@@ -33,11 +33,8 @@ import { appendTransientStoreInstructions, prepareTransientStore } from "@fhevm/
 //   7. derive host/kms roots and write the demo-config JSON (`writeDemoConfig`, which re-parses).
 
 import fs from "node:fs/promises";
-
 import {
   generateKeyPairSigner,
-  getAddressEncoder,
-  getProgramDerivedAddress,
   type Address,
   type Instruction,
   type TransactionSigner,
@@ -47,7 +44,6 @@ import {
   getMintSize,
   getInitializeMint2Instruction,
 } from "@solana-program/token";
-
 import { loadEnv } from "../e2e/harness/loadEnv";
 import { openProvisioning } from "../e2e/harness/solana/provisioning";
 import {
@@ -80,8 +76,6 @@ const SEED_COMPUTE_UNIT_LIMIT = 800_000;
 const DEMO_MIN_BATCH_AGE_SLOTS = 25n;
 // Lamports the batch authority is funded with (from the payer) to cover its owner-charged rent.
 const BATCH_AUTHORITY_FUNDING_LAMPORTS = 100_000_000n;
-const addressEncoder = getAddressEncoder();
-const encodeAddress = (value: Address): Uint8Array => new Uint8Array(addressEncoder.encode(value));
 
 
 
@@ -149,11 +143,7 @@ const main = async (): Promise<void> => {
         "this validator and confirm it initialized KMS context 1, then re-run demo:seed.",
     );
   }
-  // The vault's share mint (payout underlying) is a demo_vault PDA of the vault account: [b"shares", vault].
-  const [shareMint] = await getProgramDerivedAddress({
-    programAddress: vault.DEMO_VAULT_PROGRAM_ADDRESS,
-    seeds: [new TextEncoder().encode("shares"), encodeAddress(vaultAccount.address)],
-  });
+  const [shareMint] = await vault.findShareMintPda({ vault: vaultAccount.address });
 
   if (env.network === "devnet") {
     await fs.writeFile(`${recoveryDirectory()}/inventory-${mockUsdcMint.address}.json`, JSON.stringify({

@@ -84,6 +84,7 @@ jobs:
               - test-suite/fhevm/**
               - relayer/src/**
             demo-dapp:
+              - solana/test-fixtures/pda/**
               - .github/workflows/solana-tests.yml
               - solana/demo-dapp/**
               - solana/clients/confidential-token/**
@@ -101,6 +102,7 @@ jobs:
               - solana/programs/encrypted-counter/idl/**
               - solana/programs/dep-chain/idl/**
             test-suite-fhevm:
+              - solana/test-fixtures/pda/**
               - solana/deploy/**
               - .github/workflows/solana-tests.yml
               - test-suite/fhevm/**

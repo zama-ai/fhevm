@@ -72,15 +72,11 @@ export {
 } from './reads.js';
 
 export { settleTotalFromCleartext } from './internal/cleartext.js';
-export {
-  batchAddress,
-  tokenAccountAddress,
-  pendingBurnAddress,
-  tokenStateAddress,
-  joinStoreAddress,
-} from './internal/batcherPdas.js';
+export { joinStoreAddress, tokenStoreAddress } from './internal/encryptedStores.js';
 export {
   MAX_EXTEND_ADDRESSES_PER_TRANSACTION,
   getExtendLookupTableInstructions,
 } from './internal/addressLookupTable.js';
 export { CONFIDENTIAL_BATCHER_PROGRAM_ADDRESS } from './internal/generated/confidentialBatcher/programAddress.js';
+
+export { findShareMintPda } from './internal/generated/demoVault/pdas/index.js';

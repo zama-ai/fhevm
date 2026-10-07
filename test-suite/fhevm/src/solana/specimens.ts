@@ -29,10 +29,9 @@ import { hostConfigAddress, type SolanaProvisioningContext } from "./provision";
 
 // Byte-identical to the specimens' `encrypted_*_label` functions.
 import { COUNT_KEY as COUNT_LABEL } from "./internal/generated/encryptedCounter/constants.js";
-import { ENCRYPTED_TAIL_LABEL as TAIL_LABEL } from "./internal/generated/depChain/constants.js";
+import { MAX_CHAIN_LINKS, ENCRYPTED_TAIL_LABEL as TAIL_LABEL } from "./internal/generated/depChain/constants.js";
 
-/** The host's per-execution step ceiling, which `dep_chain::extend` promises exactly. */
-export const MAX_CHAIN_LINKS = 32;
+export { MAX_CHAIN_LINKS };
 
 /** One specimen-owned encrypted value: who owns it, which program controls it, where it lives. */
 export type SpecimenValue = {

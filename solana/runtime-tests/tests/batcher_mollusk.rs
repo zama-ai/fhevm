@@ -244,6 +244,7 @@ impl UserKeys {
 
 /// Per-batch derived addresses, resolved for the fixture's direction.
 struct BatchKeys {
+    index: u64,
     batch: Pubkey,
     batch_authority: Pubkey,
     join_token_account: Pubkey,
@@ -266,6 +267,7 @@ impl BatchKeys {
         let payout_token_account =
             token::token_account_address(payout_mint.mint, batch_authority).0;
         Self {
+            index,
             batch,
             batch_authority,
             join_token_account,
@@ -692,6 +694,7 @@ fn open_batch_ix(
             system_program: system_program::ID,
         },
         batcher::instruction::OpenBatch {
+            index: keys.index,
             authority_funding_lamports: AUTHORITY_FUNDING,
         },
     )
@@ -2681,6 +2684,24 @@ fn mollusk_open_batch_requires_previous_batch_not_pending() {
         &context,
         &open_batch_ix(&fixture, &next, None),
         &[batcher_error(batcher::BatcherError::PreviousBatchMismatch)],
+    );
+}
+
+#[test]
+fn mollusk_open_batch_rejects_wrong_next_index() {
+    let fixture = BatcherFixture::new(batcher::BatchDirection::Deposit);
+    let context = fixture_context(mollusk(), fixture.accounts(0, 0));
+    let keys = initialize_and_open_first_batch(&context, &fixture, 0);
+    let wrong = BatchKeys::new(&fixture, 2);
+    ensure_open_batch_accounts(&context, &fixture, &wrong);
+    check_batcher_instruction(
+        &context,
+        &open_batch_ix(&fixture, &wrong, Some(keys.batch)),
+        &[batcher_error(batcher::BatcherError::BatchIndexMismatch)],
+    );
+    assert_eq!(
+        read_account::<batcher::Batcher>(&context, fixture.batcher).next_batch_index,
+        1
     );
 }
 

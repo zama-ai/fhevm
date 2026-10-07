@@ -12,10 +12,12 @@ import {
   combineCodec,
   fixDecoderSize,
   fixEncoderSize,
+  getAddressEncoder,
   getArrayDecoder,
   getArrayEncoder,
   getBytesDecoder,
   getBytesEncoder,
+  getProgramDerivedAddress,
   getStructDecoder,
   getStructEncoder,
   getU32Decoder,
@@ -48,7 +50,6 @@ import {
   getAddressFromResolvedInstructionAccount,
   type ResolvedInstructionAccount,
 } from '@solana/program-client-core';
-import { findBatchAuthorityPda, findJoinRecordPda } from '../pdas/index.js';
 import { CONFIDENTIAL_BATCHER_PROGRAM_ADDRESS } from '../programAddress.js';
 
 export const JOIN_DISCRIMINATOR: ReadonlyUint8Array = new Uint8Array([206, 55, 2, 106, 113, 220, 17, 163]);
@@ -430,14 +431,24 @@ export async function getJoinInstructionAsync<
 
   // Resolve default values.
   if (!accounts.batchAuthority.value) {
-    accounts.batchAuthority.value = await findBatchAuthorityPda({
-      batch: getAddressFromResolvedInstructionAccount('batch', accounts.batch.value),
+    accounts.batchAuthority.value = await getProgramDerivedAddress({
+      programAddress,
+      seeds: [
+        getBytesEncoder().encode(
+          new Uint8Array([98, 97, 116, 99, 104, 45, 97, 117, 116, 104, 111, 114, 105, 116, 121]),
+        ),
+        getAddressEncoder().encode(getAddressFromResolvedInstructionAccount('batch', accounts.batch.value)),
+      ],
     });
   }
   if (!accounts.joinRecord.value) {
-    accounts.joinRecord.value = await findJoinRecordPda({
-      batch: getAddressFromResolvedInstructionAccount('batch', accounts.batch.value),
-      user: getAddressFromResolvedInstructionAccount('user', accounts.user.value),
+    accounts.joinRecord.value = await getProgramDerivedAddress({
+      programAddress,
+      seeds: [
+        getBytesEncoder().encode(new Uint8Array([106, 111, 105, 110, 45, 114, 101, 99, 111, 114, 100])),
+        getAddressEncoder().encode(getAddressFromResolvedInstructionAccount('batch', accounts.batch.value)),
+        getAddressEncoder().encode(getAddressFromResolvedInstructionAccount('user', accounts.user.value)),
+      ],
     });
   }
   if (!accounts.zamaProgram.value) {

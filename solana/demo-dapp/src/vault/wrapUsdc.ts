@@ -1,3 +1,4 @@
+import { tokenStoreAddress } from './internal/encryptedStores.js';
 import { findAssociatedTokenPda } from '@solana-program/token';
 import { INSTRUCTIONS_SYSVAR_ADDRESS, type TransientStore } from '@fhevm/sdk/solana';
 import type { Address, Instruction, TransactionSigner } from '@solana/kit';
@@ -8,7 +9,6 @@ import {
   findTotalSupplyAuthorityPda,
   CONFIDENTIAL_TOKEN_PROGRAM_ADDRESS,
 } from '@fhevm/confidential-token';
-import { tokenStateAddress } from './internal/batcherPdas.js';
 
 export type SolanaVaultWrapUsdcParameters = {
   readonly transientStore: TransientStore;
@@ -56,8 +56,8 @@ export async function buildWrapUsdcInstruction(parameters: SolanaVaultWrapUsdcPa
       tokenProgram: parameters.tokenProgram,
       mint: underlyingMint,
     }))[0],
-    balanceStore: await tokenStateAddress(mint, tokenAccount),
-    totalSupplyStore: await tokenStateAddress(mint, totalSupplyAuthority),
+    balanceStore: await tokenStoreAddress(mint, tokenAccount),
+    totalSupplyStore: await tokenStoreAddress(mint, totalSupplyAuthority),
     hostConfig: parameters.hostConfig,
     tokenProgram: parameters.tokenProgram,
     program: CONFIDENTIAL_TOKEN_PROGRAM_ADDRESS,

@@ -1,6 +1,8 @@
 {
   "inputs": {
     "authority": "25iczLYW2S2qo1KbqvFNJbtmc5nqJectwCejxTe3hiXY",
+    "batchIndex": "72623859790382856",
+    "batcher": "G8r6kyQd2ToxoqMAa46UpgRSP7YhPsRTA5HE5Wxf71ca",
     "contextId": [
       48,
       49,
@@ -43,9 +45,35 @@
     "program": "FAWs7E52LZmXR5YzFy4aXanfBjNtXV2qooQVtkmBa3cL",
     "scope": "AjLTJt9oic3qebLZg9zyYegQrQibWnVrTRxjR7NjLMp2",
     "tokenAccount": "3ARMH9zfVCnU2TKiphU4xcEyWdA45fc1sjKEtYMdf3gr",
-    "user": "5KporntzQkHiVMKxnFuUGcwPKhtVdhaFkneEkhnoZi1U"
+    "user": "5KporntzQkHiVMKxnFuUGcwPKhtVdhaFkneEkhnoZi1U",
+    "vault": "7VEGSRoKLHnxxFLCjpLsaddo8ncwBjYVdqyEcsDyUNL6"
   },
   "programs": {
+    "confidentialBatcher": {
+      "id": "DAVFjzkMrUZnX9wqbYbAGiPTHQPTmdZ2C9kNsuSykJHb",
+      "pdas": {
+        "batch": {
+          "address": "GXxDBKewYQsr7zkfzjAQzM6662D2bcL7k6SrgUJJgRRi",
+          "bump": 255
+        },
+        "batchAuthority": {
+          "address": "H3pifsoGy3J4yD6257W1NRxT4AQ3wbeHyAio8gvmDqG9",
+          "bump": 253
+        },
+        "batchJoinUnderlying": {
+          "address": "DkPng9RVfLkksV3fcfMmZFNWRZ17edivKCcmQ1kkhgFL",
+          "bump": 253
+        },
+        "batchPayoutUnderlying": {
+          "address": "7BfiQeNggAY7vkCtN5eKaiBddRnRBpc7Y2uk4Rk9Xfgh",
+          "bump": 252
+        },
+        "joinRecord": {
+          "address": "7VxyxDPbichAkC1vwVAaCYETYpXEvqXfGrajcTuPAVEU",
+          "bump": 255
+        }
+      }
+    },
     "confidentialToken": {
       "id": "FAWs7E52LZmXR5YzFy4aXanfBjNtXV2qooQVtkmBa3cL",
       "pdas": {
@@ -67,6 +95,49 @@
         },
         "vaultAuthority": {
           "address": "DCYsWmuDTGpKD1E8qFi9XxZTjD21yR9wybSn6bYx6gVx",
+          "bump": 255
+        }
+      }
+    },
+    "demoVault": {
+      "id": "DKuvkbkqo71fnbTsSNFzGCH1gT7FhKZU45bMqTSxxSFH",
+      "pdas": {
+        "shareMint": {
+          "address": "3ry3smM9zkUnurcmGsj1bfXPtsEG5RgE4v5tamuJAh4r",
+          "bump": 255
+        },
+        "vaultAuthority": {
+          "address": "PCt2yJHVPw3hWhVvS8BPSdR2DRA7ipwSbnS7oGwxiEz",
+          "bump": 255
+        },
+        "vaultTokenAccount": {
+          "address": "6GzUK3f7g5QA1a2Sz6iodXiT1mwo5DArdnzwjhjNRSaD",
+          "bump": 255
+        }
+      }
+    },
+    "depChain": {
+      "id": "HFx5mNcWLvhj2WU8CA9QEhuW6BZVNwA3g7UvPwVzfHx4",
+      "pdas": {
+        "chain": {
+          "address": "9A34vWZXdv7x5WETat5CkAUvZtM8V6vXyFsUChQ7ceNv",
+          "bump": 255
+        },
+        "chainAuthority": {
+          "address": "9RHFdqSYJUdDyLxxdvgmE7B3x1JwyeQYT487NN2mt3Q3",
+          "bump": 255
+        }
+      }
+    },
+    "encryptedCounter": {
+      "id": "6zEiFjcGjYaVDmVETVPRQB2p6vk9zj6aPbXCKGVuS8wj",
+      "pdas": {
+        "counter": {
+          "address": "5z8cUjbUgN3SnaBDZvjt48MKn2rP1R9CR1J5juLtVyE6",
+          "bump": 254
+        },
+        "counterAuthority": {
+          "address": "nTfRm9hZMPNpA6dUNyL1euJiuBV8YrjSdwrfPqaECWW",
           "bump": 255
         }
       }

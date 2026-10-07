@@ -8,3 +8,5 @@
 
 export * from './harvest.js';
 export * from './initializeVault.js';
+export * from './previewCloseToken.js';
+export * from './previewDrain.js';

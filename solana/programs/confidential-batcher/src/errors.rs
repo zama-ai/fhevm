@@ -89,4 +89,7 @@ pub enum BatcherError {
     /// A join record closes only after its payout is claimed or its batch is canceled.
     #[msg("join record is still live; close it after claiming or once the batch is canceled")]
     JoinRecordStillLive,
+    /// The supplied index must open the next batch.
+    #[msg("batch index does not match the next batch index")]
+    BatchIndexMismatch,
 }

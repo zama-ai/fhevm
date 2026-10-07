@@ -1,11 +1,13 @@
+import { tokenStoreAddress } from './internal/encryptedStores.js';
+import { findBatchPda } from './internal/generated/confidentialBatcher/pdas/index.js';
 import { findEventAuthorityPda as findZamaEventAuthorityPda } from '@fhevm/solana-zama-host';
-import { findEventAuthorityPda as findTokenEventAuthorityPda } from '@fhevm/confidential-token';
+import {
+  findEventAuthorityPda as findTokenEventAuthorityPda,
+} from '@fhevm/confidential-token';
 import { INSTRUCTIONS_SYSVAR_ADDRESS, type TransientStore } from '@fhevm/sdk/solana';
 import type { TransactionSigner } from '@solana/kit';
-
 import { openBatch, type SolanaVaultOpenBatchResult } from './openBatch.js';
 import { deriveBatchAddresses, deriveSettleLookupTableAddresses, type VaultDemoRoots } from './derive.js';
-import { batchAddress, tokenStateAddress } from './internal/batcherPdas.js';
 
 export type SolanaVaultOpenBatchForBatcherParameters = {
   readonly transientStore: TransientStore;
@@ -35,18 +37,19 @@ export async function openBatchForBatcher(
   const { roots, batchIndex, payer } = parameters;
   const batch = await deriveBatchAddresses(roots, batchIndex);
   // The first batch has no predecessor; a later batch must name the immediately preceding one.
-  const previousBatch = batchIndex === 0n ? undefined : await batchAddress(roots.batcher, batchIndex - 1n);
+  const previousBatch = batchIndex === 0n ? undefined : (await findBatchPda({ batcher: roots.batcher, index: batchIndex - 1n }))[0];
   return openBatch({
     openBatch: {
       transientStore: parameters.transientStore.address,
       instructions: INSTRUCTIONS_SYSVAR_ADDRESS,
       payer,
       batcher: roots.batcher,
+      index: batchIndex,
       ...(previousBatch === undefined ? {} : { previousBatch }),
       batch: batch.batch,
       joinConfidentialMint: roots.joinConfidentialMint,
       batchJoinTokenAccount: batch.batchJoinTokenAccount,
-      batchJoinBalanceStore: await tokenStateAddress(roots.joinConfidentialMint, batch.batchJoinTokenAccount),
+      batchJoinBalanceStore: await tokenStoreAddress(roots.joinConfidentialMint, batch.batchJoinTokenAccount),
       payoutConfidentialMint: roots.payoutConfidentialMint,
       batchPayoutTokenAccount: batch.batchPayoutTokenAccount,
       batchPayoutBalanceStore: batch.batchPayoutBalanceStore,

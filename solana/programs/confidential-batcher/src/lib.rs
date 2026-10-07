@@ -111,8 +111,12 @@ pub mod confidential_batcher {
     /// the payer to the batch authority PDA, which pays the rent the token
     /// CPIs charge to the account owner. Unspent funding stays on the PDA until
     /// the batch is finished and `reclaim_batch_authority` returns it.
-    pub fn open_batch(ctx: Context<OpenBatch>, authority_funding_lamports: u64) -> Result<()> {
-        instructions::open_batch(ctx, authority_funding_lamports)
+    pub fn open_batch(
+        ctx: Context<OpenBatch>,
+        index: u64,
+        authority_funding_lamports: u64,
+    ) -> Result<()> {
+        instructions::open_batch(ctx, index, authority_funding_lamports)
     }
 
     /// Joins the pending batch with the batcher's join token: one user-signed
@@ -198,3 +202,11 @@ pub mod confidential_batcher {
         instructions::close_join_record(ctx)
     }
 }
+
+#[cfg(test)]
+mod pda_vectors {
+    include!("../../../test-fixtures/pda/pda_vectors.rs");
+}
+
+#[cfg(test)]
+mod pda_golden;

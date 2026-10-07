@@ -12,10 +12,12 @@ import {
   combineCodec,
   fixDecoderSize,
   fixEncoderSize,
+  getAddressEncoder,
   getArrayDecoder,
   getArrayEncoder,
   getBytesDecoder,
   getBytesEncoder,
+  getProgramDerivedAddress,
   getStructDecoder,
   getStructEncoder,
   getU32Decoder,
@@ -45,7 +47,6 @@ import {
   getAddressFromResolvedInstructionAccount,
   type ResolvedInstructionAccount,
 } from '@solana/program-client-core';
-import { findBatchAuthorityPda, findBatchJoinUnderlyingPda, findBatchPayoutUnderlyingPda } from '../pdas/index.js';
 import { CONFIDENTIAL_BATCHER_PROGRAM_ADDRESS } from '../programAddress.js';
 
 export const SETTLE_DISCRIMINATOR: ReadonlyUint8Array = new Uint8Array([175, 42, 185, 87, 144, 131, 102, 212]);
@@ -554,18 +555,40 @@ export async function getSettleInstructionAsync<
 
   // Resolve default values.
   if (!accounts.batchAuthority.value) {
-    accounts.batchAuthority.value = await findBatchAuthorityPda({
-      batch: getAddressFromResolvedInstructionAccount('batch', accounts.batch.value),
+    accounts.batchAuthority.value = await getProgramDerivedAddress({
+      programAddress,
+      seeds: [
+        getBytesEncoder().encode(
+          new Uint8Array([98, 97, 116, 99, 104, 45, 97, 117, 116, 104, 111, 114, 105, 116, 121]),
+        ),
+        getAddressEncoder().encode(getAddressFromResolvedInstructionAccount('batch', accounts.batch.value)),
+      ],
     });
   }
   if (!accounts.batchJoinUnderlying.value) {
-    accounts.batchJoinUnderlying.value = await findBatchJoinUnderlyingPda({
-      batch: getAddressFromResolvedInstructionAccount('batch', accounts.batch.value),
+    accounts.batchJoinUnderlying.value = await getProgramDerivedAddress({
+      programAddress,
+      seeds: [
+        getBytesEncoder().encode(
+          new Uint8Array([
+            98, 97, 116, 99, 104, 45, 106, 111, 105, 110, 45, 117, 110, 100, 101, 114, 108, 121, 105, 110, 103,
+          ]),
+        ),
+        getAddressEncoder().encode(getAddressFromResolvedInstructionAccount('batch', accounts.batch.value)),
+      ],
     });
   }
   if (!accounts.batchPayoutUnderlying.value) {
-    accounts.batchPayoutUnderlying.value = await findBatchPayoutUnderlyingPda({
-      batch: getAddressFromResolvedInstructionAccount('batch', accounts.batch.value),
+    accounts.batchPayoutUnderlying.value = await getProgramDerivedAddress({
+      programAddress,
+      seeds: [
+        getBytesEncoder().encode(
+          new Uint8Array([
+            98, 97, 116, 99, 104, 45, 112, 97, 121, 111, 117, 116, 45, 117, 110, 100, 101, 114, 108, 121, 105, 110, 103,
+          ]),
+        ),
+        getAddressEncoder().encode(getAddressFromResolvedInstructionAccount('batch', accounts.batch.value)),
+      ],
     });
   }
   if (!accounts.zamaProgram.value) {

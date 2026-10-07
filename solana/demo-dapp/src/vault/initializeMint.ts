@@ -1,7 +1,11 @@
+import { tokenStoreAddress } from './internal/encryptedStores.js';
 import { INSTRUCTIONS_SYSVAR_ADDRESS, type TransientStore } from '@fhevm/sdk/solana';
 import type { Address, Instruction, TransactionSigner } from '@solana/kit';
-import { getInitializeMintInstructionAsync, findTotalSupplyAuthorityPda, CONFIDENTIAL_TOKEN_PROGRAM_ADDRESS } from '@fhevm/confidential-token';
-import { tokenStateAddress } from './internal/batcherPdas.js';
+import {
+  getInitializeMintInstructionAsync,
+  findTotalSupplyAuthorityPda,
+  CONFIDENTIAL_TOKEN_PROGRAM_ADDRESS,
+} from '@fhevm/confidential-token';
 
 export type SolanaVaultInitializeMintParameters = {
   readonly transientStore: TransientStore;
@@ -31,7 +35,7 @@ export async function buildInitializeMintInstruction(
     authority: parameters.authority,
     mint: parameters.mint,
     underlyingMint: parameters.underlyingMint,
-    totalSupplyEncryptedStore: await tokenStateAddress(parameters.mint.address, totalSupplyAuthority),
+    totalSupplyEncryptedStore: await tokenStoreAddress(parameters.mint.address, totalSupplyAuthority),
     hostConfig: parameters.hostConfig,
     program: CONFIDENTIAL_TOKEN_PROGRAM_ADDRESS,
   });
