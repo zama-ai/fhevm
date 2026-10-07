@@ -356,9 +356,13 @@ mod tests {
     };
     use tokio_util::sync::CancellationToken;
     use yellowstone_grpc_proto::prelude::{
-        BlockHeight, SubscribeUpdateBlockMeta, SubscribeUpdateTransaction,
-        UnixTimestamp,
+        subscribe_update::UpdateOneof, BlockHeight, CompiledInstruction,
+        Message as GrpcMessage, MessageHeader, SubscribeUpdate,
+        SubscribeUpdateBlockMeta, SubscribeUpdateTransaction,
+        SubscribeUpdateTransactionInfo, Transaction as GrpcTransaction,
+        TransactionConfig, TransactionStatusMeta, UnixTimestamp,
     };
+    use yellowstone_grpc_proto::prost::Message as _;
 
     use super::super::test_support::{config, ZAMA_HOST};
     use super::super::wire_fixtures::{
@@ -366,9 +370,9 @@ mod tests {
         storing_app_transaction, Transaction, BLOCK_TIME,
     };
     use super::super::{
-        accept_transaction, apply_prepared_block, BlockCheckpoint, BlockSink,
-        FatalIngestError, IngestFailure, IngestionProgress, PreparedBlock,
-        PreparedTransaction, StartPosition,
+        accept_transaction, apply_prepared_block, prepare_transaction,
+        BlockCheckpoint, BlockSink, FatalIngestError, IngestFailure,
+        IngestionProgress, PreparedBlock, PreparedTransaction, StartPosition,
     };
     use super::{
         block_checkpoint, catch_up, extends_checkpoint, fetch_block,
@@ -855,6 +859,145 @@ mod tests {
                 ),
             ]
         );
+    }
+
+    /// A captured v1 transaction as Yellowstone streams it, rendered from its `getTransaction`
+    /// JSON the way the geyser plugin's `create_message` renders a v1 message: versioned, with no
+    /// lookups and with its `config` set. The capture's v1 calls have no inner instructions.
+    fn streamed_v1(fetched: &Value) -> SubscribeUpdate {
+        let base58 = |value: &Value| {
+            bs58::decode(value.as_str().unwrap()).into_vec().unwrap()
+        };
+        let small =
+            |value: &Value| u32::try_from(value.as_u64().unwrap()).unwrap();
+        let message = &fetched["transaction"]["message"];
+        let header = &message["header"];
+        let config = &message["transactionConfig"];
+        let optional = |field: &str| config[field].as_u64();
+        assert_eq!(fetched["version"], 1);
+        assert_eq!(fetched["meta"]["innerInstructions"], serde_json::json!([]));
+        let signature = base58(&fetched["transaction"]["signatures"][0]);
+        SubscribeUpdate {
+            update_oneof: Some(UpdateOneof::Transaction(
+                SubscribeUpdateTransaction {
+                    transaction: Some(SubscribeUpdateTransactionInfo {
+                        signature: signature.clone(),
+                        is_vote: false,
+                        transaction: Some(GrpcTransaction {
+                            signatures: vec![signature],
+                            message: Some(GrpcMessage {
+                                header: Some(MessageHeader {
+                                    num_required_signatures: small(
+                                        &header["numRequiredSignatures"],
+                                    ),
+                                    num_readonly_signed_accounts: small(
+                                        &header["numReadonlySignedAccounts"],
+                                    ),
+                                    num_readonly_unsigned_accounts: small(
+                                        &header["numReadonlyUnsignedAccounts"],
+                                    ),
+                                }),
+                                account_keys: message["accountKeys"]
+                                    .as_array()
+                                    .unwrap()
+                                    .iter()
+                                    .map(base58)
+                                    .collect(),
+                                recent_blockhash: base58(
+                                    &message["recentBlockhash"],
+                                ),
+                                instructions: message["instructions"]
+                                    .as_array()
+                                    .unwrap()
+                                    .iter()
+                                    .map(|instruction| CompiledInstruction {
+                                        program_id_index: small(
+                                            &instruction["programIdIndex"],
+                                        ),
+                                        accounts: instruction["accounts"]
+                                            .as_array()
+                                            .unwrap()
+                                            .iter()
+                                            .map(|index| {
+                                                u8::try_from(
+                                                    index.as_u64().unwrap(),
+                                                )
+                                                .unwrap()
+                                            })
+                                            .collect(),
+                                        data: base58(&instruction["data"]),
+                                    })
+                                    .collect(),
+                                versioned: true,
+                                address_table_lookups: vec![],
+                                config: Some(TransactionConfig {
+                                    priority_fee: optional("priorityFee"),
+                                    compute_unit_limit: optional(
+                                        "computeUnitLimit",
+                                    )
+                                    .map(|limit| u32::try_from(limit).unwrap()),
+                                    loaded_accounts_data_size_limit: optional(
+                                        "loadedAccountsDataSizeLimit",
+                                    )
+                                    .map(|limit| u32::try_from(limit).unwrap()),
+                                    heap_size: optional("heapSize").map(
+                                        |size| u32::try_from(size).unwrap(),
+                                    ),
+                                }),
+                            }),
+                        }),
+                        meta: Some(TransactionStatusMeta::default()),
+                        index: fetched["transactionIndex"].as_u64().unwrap(),
+                    }),
+                    slot: fetched["slot"].as_u64().unwrap(),
+                    ..Default::default()
+                },
+            )),
+            ..Default::default()
+        }
+    }
+
+    /// The stream resolves each captured v1 transaction as the archive does. Each update crosses
+    /// the protobuf wire, so a decoder that drops the v1 `config` fails here.
+    #[tokio::test]
+    async fn the_stream_resolves_devnet_v1_transactions_as_the_archive_does() {
+        let capture: Value = serde_json::from_str(DEVNET_SLOT).unwrap();
+        let program = DEVNET_PROGRAM.parse().unwrap();
+        let archive = RpcClient::new_sender(
+            DevnetNode(capture.clone()),
+            RpcClientConfig::with_commitment(CommitmentConfig::finalized()),
+        );
+        let archived = fetch_block(&archive, 506_183_762, &program)
+            .await
+            .unwrap()
+            .transactions;
+
+        let mut streamed = capture["getTransaction"]
+            .as_object()
+            .unwrap()
+            .values()
+            .map(|encodings| {
+                let bytes = streamed_v1(&encodings["json"]).encode_to_vec();
+                let Some(UpdateOneof::Transaction(update)) =
+                    SubscribeUpdate::decode(bytes.as_slice())
+                        .unwrap()
+                        .update_oneof
+                else {
+                    panic!("a transaction update")
+                };
+                let info = update.transaction.unwrap();
+                let message =
+                    info.transaction.as_ref().unwrap().message.as_ref();
+                assert!(
+                    message.unwrap().config.is_some(),
+                    "the decoded message keeps its v1 config"
+                );
+                prepare_transaction(info, &program).unwrap().unwrap()
+            })
+            .collect::<Vec<_>>();
+        streamed.sort_by_key(|transaction| transaction.index);
+        assert_eq!(archived.len(), 2);
+        assert_eq!(streamed, archived);
     }
 
     fn sealed(
