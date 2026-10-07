@@ -77,6 +77,7 @@ function snapshot(path) {
 const targets = [
   {
     idlPath: idlUrl('confidential_token.json'),
+    linkHostPdas: true,
     generatedPath: `${sdkRoot}/../../solana/clients/confidential-token/src/generated`,
     // Omit `keep`: render the full instruction/account/type/PDA surface. Events stay
     // pruned below; constants render separately. Errors stay pruned except
@@ -158,6 +159,7 @@ const targets = [
     // authority to be a PDA of its program, so the scenarios drive this specimen — the smallest
     // complete consumer — instead of signing fhe_execute from a wallet.
     idlPath: specimenIdlUrl('encrypted-counter', 'encrypted_counter.json'),
+    linkHostPdas: true,
     generatedPath: `${sdkRoot}/../../test-suite/fhevm/src/solana/internal/generated/encryptedCounter`,
     keep: {
       instructions: new Set(['initialize', 'increment']),
@@ -177,6 +179,7 @@ const targets = [
     // The dep-chain specimen client for the load-smoke scenario: `extend` packs the host's full
     // 32-step ceiling into one dependent execution, the shape the coprocessor cannot parallelize.
     idlPath: specimenIdlUrl('dep-chain', 'dep_chain.json'),
+    linkHostPdas: true,
     generatedPath: `${sdkRoot}/../../test-suite/fhevm/src/solana/internal/generated/depChain`,
     keep: {
       instructions: new Set(['initialize', 'extend']),
@@ -198,6 +201,7 @@ const targets = [
     // vault module's on-chain reads use (fhevm-internal#1760 reads.ts — generated decoders, never
     // hand-rolled borsh).
     idlPath: demoIdlUrl('confidential_batcher.json'),
+    linkHostPdas: true,
     generatedPath: `${sdkRoot}/../../solana/demo-dapp/src/vault/internal/generated/confidentialBatcher`,
     keep: {
       instructions: new Set([
@@ -301,14 +305,8 @@ for (const target of targets) {
     );
   }
   const foreignPdaLinks = {};
-  if (
-    [
-      idlUrl('confidential_token.json'),
-      demoIdlUrl('confidential_batcher.json'),
-      specimenIdlUrl('dep-chain', 'dep_chain.json'),
-      specimenIdlUrl('encrypted-counter', 'encrypted_counter.json'),
-    ].includes(target.idlPath)
-  ) {
+  // Targets whose accounts pin zama-host PDAs default them through the `@fhevm/solana-zama-host` finders.
+  if (target.linkHostPdas) {
     const hostIdl = JSON.parse(readFileSync(idlUrl('zama_host.json'), 'utf8'));
     const hostPdas = [...rootNodeFromAnchor(hostIdl).program.pdas, eventAuthority];
     // updateInstructionsVisitor fills local seed defaults and drops a linked PDA's programId.

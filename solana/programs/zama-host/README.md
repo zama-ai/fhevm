@@ -71,9 +71,9 @@ Its payer funds rent and receives the refund; the payer acquires no handle permi
 An application declares the host config and the host event authority as host PDAs, as `confidential-token` does:
 `seeds = [zama_host::HOST_CONFIG_SEED], bump = host_config.bump, seeds::program = zama_host::ID` on a
 `Box<Account<'info, zama_host::HostConfig>>`, and `seeds = [b"__event_authority"], bump =
-zama_host::EVENT_AUTHORITY_AND_BUMP.1, seeds::program = zama_host::ID`. Its IDL then carries both PDAs, so the
-Codama builders derive them with the `@fhevm/solana-zama-host` finders under the `zamaProgram` account, and
-callers do not pass them.
+zama_host::EVENT_AUTHORITY_AND_BUMP.1, seeds::program = zama_host::ID`. Its IDL then carries both PDAs. When its
+codegen target sets `linkHostPdas`, the Codama builders derive them with the `@fhevm/solana-zama-host` finders under
+the `zamaProgram` account, and callers do not pass them.
 
 `fhe_execute` takes an explicit canonical producing `EncryptedStore` and that Store authority's signature. It runs
 1–32 ordered operations: Binary, Ternary, Unary, TrivialEncrypt, Rand, RandBounded, Sum, IsIn and MulDiv. The Rust SDK
