@@ -1,6 +1,7 @@
 /**
  * Generates compose overrides for local builds, scenario instances, and compatibility-adjusted service commands.
  */
+import { consumerOnlyHostListeners, isLegacyHostListener } from "../host-listener-mode";
 import { execFileSync } from "node:child_process";
 import { readFileSync, statSync } from "node:fs";
 import fs from "node:fs/promises";
@@ -600,6 +601,7 @@ export const serviceNameList = (
   const includeUpgradeController = supportsUpgradeController(state);
   const suffixes = GROUP_SERVICE_SUFFIXES.coprocessor.filter(
     (suffix) =>
+      (!consumerOnlyHostListeners(state.scenario) || !isLegacyHostListener(suffix)) &&
       (includeConsumer || suffix !== "host-listener-consumer") &&
       (includeConsensusDetector || suffix !== "consensus-detector") &&
       (includeUpgradeController || suffix !== "upgrade-controller"),
@@ -724,6 +726,9 @@ const buildCoprocessorOverride = async (plan: StackSpec) => {
   if (!plan.coprocessor) {
     return next;
   }
+  if (plan.coprocessor?.hostListenerMode === "consumer" && !supportsHostListenerConsumer(plan)) {
+    throw new Error("consumer-only scenarios require a host-consumer capable version bundle");
+  }
   const compat = compatPolicyForState(plan);
   const inheritedBuildServices = coprocessorBuildServices(plan);
   const excludedServices = new Set([
@@ -810,6 +815,9 @@ const buildCoprocessorOverride = async (plan: StackSpec) => {
             [bcsMigrationName]: { condition: "service_completed_successfully" },
           };
         }
+      }
+      if (plan.coprocessor.hostListenerMode === "consumer" && isLegacyHostListener(suffix)) {
+        adjusted.profiles = ["legacy-host-listeners"];
       }
       applyCoprocessorSource(adjusted, name, sourceInstance, locallyBuilt, plan.e2ePublicRuntime, plan.versions.env);
       if (instance.index > 0 && adjusted.depends_on && typeof adjusted.depends_on === "object") {
@@ -1042,6 +1050,22 @@ const buildComposeOverride = async (component: string, plan: StackSpec) => {
     }
     services[name] = next;
   }
+  if (component === "listener-core" && plan.coprocessor?.hostListenerMode === "consumer") {
+    const original = template.services["listener-publisher-for-anvil"];
+    const mount = (original.volumes as string[]).find((value) => value.endsWith(":/config.yaml:ro"))!;
+    const config = YAML.parse(await fs.readFile(mount.slice(0, -":/config.yaml:ro".length), "utf8"));
+    for (const chain of hostChainRuntimes(plan.hostChains)) {
+      const name = chain.isDefault ? "listener-publisher-for-anvil" : `listener-publisher-${chain.key}`;
+      const chainConfig = structuredClone(config);
+      chainConfig.blockchain.chain_id = Number(chain.chainId);
+      chainConfig.blockchain.rpc_url = `http://${chain.node}:${chain.rpcPort}`;
+      chainConfig.database.db_url = `postgres://postgres:postgres@coprocessor-and-kms-db:5432/listener_${chain.chainId}`;
+      const file = path.join(COMPOSE_OUT_DIR, `${name}.yaml`);
+      await fs.writeFile(file, YAML.stringify(chainConfig));
+      services[name] = { ...original, ...(services["listener-publisher-for-anvil"] ?? {}),
+        container_name: name, profiles: [name], volumes: [`${file}:/config.yaml:ro`] };
+    }
+  }
   if (component === "test-suite") {
     applyDockerSocketRuntime(services);
   }
@@ -1123,9 +1147,14 @@ const buildExtraCoprocessorListenerOverride = async (
     // Multi-chain overrides don't apply to blue-green (single chain).
     return { ...doc, services };
   }
+  if (plan.coprocessor?.hostListenerMode === "consumer" && !supportsHostListenerConsumer(plan)) {
+    throw new Error("consumer-only scenarios require a host-consumer capable version bundle");
+  }
   const compat = compatPolicyForState(plan);
   const inheritedBuildServices = coprocessorBuildServices(plan);
-  const listenerServices = ["coprocessor-host-listener", "coprocessor-host-listener-poller"];
+  const listenerServices = plan.coprocessor.hostListenerMode === "consumer"
+    ? ["coprocessor-host-listener-consumer", "coprocessor-host-listener", "coprocessor-host-listener-poller"]
+    : ["coprocessor-host-listener", "coprocessor-host-listener-poller"];
   const { suffix: chainSuffix } = hostChainNames(chain.key, defaultChain.key);
   for (const instance of plan.coprocessor.instances) {
     const localServices =
@@ -1155,6 +1184,18 @@ const buildExtraCoprocessorListenerOverride = async (
         locallyBuilt ? {} : argPolicy.coprocessorDropFlags,
       );
       adjusted.container_name = cloneName;
+      if (plan.coprocessor.hostListenerMode === "consumer" && isLegacyHostListener(suffix)) {
+        adjusted.profiles = ["legacy-host-listeners"];
+      }
+      // As on the default chain, each operator's consumer needs its own broker
+      // queue: a shared service name load-balances blocks between operators.
+      if (
+        suffix === "host-listener-consumer" &&
+        Array.isArray(adjusted.command) &&
+        !adjusted.command.some((argument: string) => argument === "--service-name" || argument.startsWith("--service-name="))
+      ) {
+        adjusted.command = [...adjusted.command, `--service-name=${cloneName}`];
+      }
       // Extra chains keep their env canonical id (default chain), so they don't decode proposals.
       applyCoprocessorSource(adjusted, baseName, instance, locallyBuilt, plan.e2ePublicRuntime, plan.versions.env);
       delete adjusted.depends_on;
@@ -1213,9 +1254,10 @@ const buildExtraCoprocessorListenerOverride = async (
 };
 
 /** Lists which components need generated compose overrides for a runtime plan. */
-export const generatedComposeComponents = (plan: Pick<StackSpec, "overrides" | "kms">) =>
+export const generatedComposeComponents = (plan: Pick<StackSpec, "overrides" | "kms" | "coprocessor">) =>
   new Set([
     "coprocessor",
+    ...(plan.coprocessor?.hostListenerMode === "consumer" ? ["listener-core"] : []),
     // Always generated: it carries the host Docker socket wiring for the e2e runner,
     // which depends on host facts rather than on any local build override.
     "test-suite",
