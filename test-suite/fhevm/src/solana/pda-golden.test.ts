@@ -163,9 +163,9 @@ describe("demo and specimen PDA golden", () => {
         batchJoinBalanceStore: key("authority"), payoutConfidentialMint: key("mint"),
         batchPayoutTokenAccount: key("tokenAccount"), batchPayoutBalanceStore: key("authority"),
         joinUnderlyingMint: key("mint"), payoutUnderlyingMint: key("mint"),
-        zamaEventAuthority: key("authority"), transientStore: key("authority"),
+        transientStore: key("authority"),
         instructions: address("Sysvar1nstructions1111111111111111111111111"),
-        hostConfig: key("authority"), confidentialTokenEventAuthority: key("authority"),
+        confidentialTokenEventAuthority: key("authority"),
         authorityFundingLamports: 0n,
       }, config);
       const parsed = parseOpenBatchInstruction(instruction);
@@ -173,6 +173,8 @@ describe("demo and specimen PDA golden", () => {
       expect(parsed.data.index).toBe(index);
       expect(parsed.accounts.batch.address).toBe(batch[0]);
       expect(parsed.accounts.batchAuthority.address).toBe(authority[0]);
+      expect(parsed.accounts.hostConfig.address).toBe((await host.findHostConfigPda())[0]);
+      expect(parsed.accounts.zamaEventAuthority.address).toBe((await host.findEventAuthorityPda())[0]);
       expect(parsed.accounts.batchJoinUnderlying.address).toBe((await batcherPdas.findBatchJoinUnderlyingPda({ batch: batch[0] }, config))[0]);
       expect(parsed.accounts.batchPayoutUnderlying.address).toBe((await batcherPdas.findBatchPayoutUnderlyingPda({ batch: batch[0] }, config))[0]);
       expect(await getProgramDerivedAddress({ programAddress, seeds: batcherPdas.getBatchAuthorityPdaSeeds({ batch: batch[0] }) })).toEqual(authority);
@@ -190,8 +192,7 @@ describe("demo and specimen PDA golden", () => {
       expect(parsed.vaultTokenAccount.address).toBe((await vaultPdas.findVaultTokenAccountPda({ vault }, config))[0]);
       expect(await getProgramDerivedAddress({ programAddress, seeds: vaultPdas.getVaultAuthorityPdaSeeds({ vault }) })).toEqual(authority);
       const specimenInput = {
-        owner: createNoopSigner(key("owner")), encryptedStore: key("authority"), hostConfig: key("authority"),
-        zamaEventAuthority: key("authority"), transientStore: key("authority"),
+        owner: createNoopSigner(key("owner")), encryptedStore: key("authority"), transientStore: key("authority"),
         instructions: address("Sysvar1nstructions1111111111111111111111111"),
       };
       const chainConfig = { programAddress: override ?? DEP_CHAIN_PROGRAM_ADDRESS };
@@ -199,11 +200,15 @@ describe("demo and specimen PDA golden", () => {
       const chainAccounts = parseChain(await initializeChain(specimenInput, chainConfig)).accounts;
       expect(chainAccounts.chain.address).toBe(chain);
       expect(chainAccounts.chainAuthority.address).toBe((await chainPdas.findChainAuthorityPda({ chain }, chainConfig))[0]);
+      expect(chainAccounts.hostConfig.address).toBe((await host.findHostConfigPda())[0]);
+      expect(chainAccounts.zamaEventAuthority.address).toBe((await host.findEventAuthorityPda())[0]);
       const counterConfig = { programAddress: override ?? ENCRYPTED_COUNTER_PROGRAM_ADDRESS };
       const counter = (await counterPdas.findCounterPda({ owner: key("owner") }, counterConfig))[0];
       const counterAccounts = parseCounter(await initializeCounter(specimenInput, counterConfig)).accounts;
       expect(counterAccounts.counter.address).toBe(counter);
       expect(counterAccounts.counterAuthority.address).toBe((await counterPdas.findCounterAuthorityPda({ counter }, counterConfig))[0]);
+      expect(counterAccounts.hostConfig.address).toBe((await host.findHostConfigPda())[0]);
+      expect(counterAccounts.zamaEventAuthority.address).toBe((await host.findEventAuthorityPda())[0]);
     });
   }
 });

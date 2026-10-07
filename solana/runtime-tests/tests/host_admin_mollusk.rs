@@ -929,24 +929,55 @@ fn mollusk_close_owned_accounts_rejects_finalized_program() {
 fn close_owned_accounts_wire_format_matches_deployer() {
     // The instruction is absent from the vendored IDL (it is feature-gated), so
     // solana/deploy/src/wipe.ts hand-builds it: discriminator, then admin (writable signer) and
-    // program_data (readonly) ahead of the targets. Keep the two in sync.
+    // program_data (readonly) ahead of the writable targets. This reads the bytes and roles from
+    // wipe.ts itself, so a change on either side fails here.
     use anchor_lang::{Discriminator, ToAccountMetas};
+    const WIPE_TS: &str = include_str!("../../deploy/src/wipe.ts");
+    let literal = WIPE_TS
+        .split_once("const CLOSE_OWNED_ACCOUNTS_DISCRIMINATOR = new Uint8Array([")
+        .and_then(|(_, rest)| rest.split_once("]);"))
+        .expect("wipe.ts declares CLOSE_OWNED_ACCOUNTS_DISCRIMINATOR")
+        .0;
+    let deployer_discriminator: Vec<u8> = literal
+        .split(',')
+        .map(|byte| byte.trim().parse().expect("a u8 literal"))
+        .collect();
     assert_eq!(
         host::instruction::CloseOwnedAccounts::DISCRIMINATOR,
-        &[36, 68, 214, 114, 46, 227, 146, 228]
+        deployer_discriminator.as_slice()
     );
+
+    let accounts = WIPE_TS
+        .split_once("accounts: [")
+        .and_then(|(_, rest)| rest.split_once("data: CLOSE_OWNED_ACCOUNTS_DISCRIMINATOR"))
+        .expect("wipe.ts builds the instruction's account list")
+        .0;
+    let deployer_roles: Vec<(bool, bool)> = accounts
+        .split("AccountRole.")
+        .skip(1)
+        .map(|rest| {
+            let role = rest
+                .split(|c: char| !c.is_ascii_uppercase() && c != '_')
+                .next();
+            match role {
+                Some("WRITABLE_SIGNER") => (true, true),
+                Some("READONLY") => (false, false),
+                Some("WRITABLE") => (true, false),
+                _ => panic!("unexpected role in wipe.ts: {role:?}"),
+            }
+        })
+        .collect();
     let admin = Pubkey::new_unique();
     let program_data = bpf_loader_upgradeable::get_program_data_address(&host::ID);
-    let metas = host::accounts::CloseOwnedAccounts {
+    let mut program_roles: Vec<(bool, bool)> = host::accounts::CloseOwnedAccounts {
         admin,
         program_data,
     }
-    .to_account_metas(None);
-    assert_eq!(
-        metas,
-        vec![
-            solana_sdk::instruction::AccountMeta::new(admin, true),
-            solana_sdk::instruction::AccountMeta::new_readonly(program_data, false),
-        ]
-    );
+    .to_account_metas(None)
+    .iter()
+    .map(|meta| (meta.is_writable, meta.is_signer))
+    .collect();
+    // Every target follows as a writable remaining account.
+    program_roles.push((true, false));
+    assert_eq!(deployer_roles, program_roles);
 }

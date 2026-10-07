@@ -7,8 +7,9 @@ import {
 } from './internal/generated/confidentialBatcher/instructions/quit.js';
 
 /**
- * Accounts for the batcher `quit` instruction. `batchAuthority` and `joinRecord` default to their
- * PDAs; the batcher/token/system program ids default to their compiled addresses.
+ * Accounts for the batcher `quit` instruction. `batchAuthority`, `joinRecord`, `hostConfig` and
+ * `zamaEventAuthority` default to their PDAs; the batcher/token/system program ids default to their
+ * compiled addresses.
  */
 export type SolanaVaultQuitParameters = Omit<QuitAsyncInput, 'transientStore' | 'instructions'> & {
   readonly transientStore: TransientStore;

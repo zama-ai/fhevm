@@ -37,8 +37,6 @@ describe('buildQuitInstruction', () => {
       batchBalanceStore: addr(9),
       userBalanceStore: addr(10),
       joinStore: addr(12),
-      zamaEventAuthority: addr(13),
-      hostConfig: addr(14),
       confidentialTokenEventAuthority: addr(15),
     });
 

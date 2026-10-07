@@ -83,8 +83,8 @@ pub struct Settle<'info> {
     /// CHECK: pending-burn PDA for the batch token account; closed by the token redeem CPI.
     #[account(mut)]
     pub pending_burn: UncheckedAccount<'info>,
-    /// CHECK: ZamaHost config PDA; validated by host/token CPIs.
-    pub host_config: UncheckedAccount<'info>,
+    #[account(seeds = [zama_host::HOST_CONFIG_SEED], bump = host_config.bump, seeds::program = zama_host::ID)]
+    pub host_config: Box<Account<'info, zama_host::HostConfig>>,
     /// CHECK: KMS context the certificate names (any live context); validated by the
     /// verifier CPI.
     pub kms_context: UncheckedAccount<'info>,
@@ -128,7 +128,8 @@ pub struct Settle<'info> {
     #[account(mut)]
     pub payout_total_supply_store: UncheckedAccount<'info>,
 
-    /// CHECK: ZamaHost event-CPI authority; validated by the host program.
+    /// CHECK: Anchor event CPI authority for the Zama host program.
+    #[account(seeds = [b"__event_authority"], bump = zama_host::EVENT_AUTHORITY_AND_BUMP.1, seeds::program = zama_host::ID)]
     pub zama_event_authority: UncheckedAccount<'info>,
     /// CHECK: shared transaction transient store, validated by ZamaHost.
     #[account(mut)]

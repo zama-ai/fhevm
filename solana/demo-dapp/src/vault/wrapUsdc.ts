@@ -20,8 +20,6 @@ export type SolanaVaultWrapUsdcParameters = {
   readonly underlyingMint: Address;
   /** Token program that owns `underlyingMint` (`Tokenkeg` or Token-2022). */
   readonly tokenProgram: Address;
-  /** zama-host config PDA used for handle derivation. */
-  readonly hostConfig: Address;
   /** Public underlying amount to escrow and rotate into the confidential balance. */
   readonly amount: number | bigint;
 };
@@ -58,7 +56,6 @@ export async function buildWrapUsdcInstruction(parameters: SolanaVaultWrapUsdcPa
     }))[0],
     balanceStore: await tokenStoreAddress(mint, tokenAccount),
     totalSupplyStore: await tokenStoreAddress(mint, totalSupplyAuthority),
-    hostConfig: parameters.hostConfig,
     tokenProgram: parameters.tokenProgram,
     program: CONFIDENTIAL_TOKEN_PROGRAM_ADDRESS,
     amount: parameters.amount,

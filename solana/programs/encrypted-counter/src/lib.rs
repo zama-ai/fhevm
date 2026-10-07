@@ -164,9 +164,10 @@ pub struct Initialize<'info> {
     /// CHECK: created by the host at the counter's canonical state address.
     #[account(mut, address = counter_state_id(counter.key()).address() @ CounterError::CountValueInvalid)]
     pub encrypted_store: UncheckedAccount<'info>,
-    /// CHECK: ZamaHost config PDA; validated by the host program.
-    pub host_config: UncheckedAccount<'info>,
-    /// CHECK: ZamaHost event-CPI authority; validated by the host program.
+    #[account(seeds = [zama_host::HOST_CONFIG_SEED], bump = host_config.bump, seeds::program = zama_host::ID)]
+    pub host_config: Box<Account<'info, zama_host::HostConfig>>,
+    /// CHECK: Anchor event CPI authority for the Zama host program.
+    #[account(seeds = [b"__event_authority"], bump = zama_host::EVENT_AUTHORITY_AND_BUMP.1, seeds::program = zama_host::ID)]
     pub zama_event_authority: UncheckedAccount<'info>,
     /// CHECK: shared transaction transient store, validated by ZamaHost.
     #[account(mut)]
@@ -189,9 +190,10 @@ pub struct Increment<'info> {
     /// Host-owned dictionary holding the current count and decrypt history.
     #[account(mut, address = counter_state_id(counter.key()).address() @ CounterError::CountValueInvalid)]
     pub encrypted_store: Box<Account<'info, zama_host::EncryptedStore>>,
-    /// CHECK: ZamaHost config PDA; validated by the host program.
-    pub host_config: UncheckedAccount<'info>,
-    /// CHECK: ZamaHost event-CPI authority; validated by the host program.
+    #[account(seeds = [zama_host::HOST_CONFIG_SEED], bump = host_config.bump, seeds::program = zama_host::ID)]
+    pub host_config: Box<Account<'info, zama_host::HostConfig>>,
+    /// CHECK: Anchor event CPI authority for the Zama host program.
+    #[account(seeds = [b"__event_authority"], bump = zama_host::EVENT_AUTHORITY_AND_BUMP.1, seeds::program = zama_host::ID)]
     pub zama_event_authority: UncheckedAccount<'info>,
     /// CHECK: shared transaction transient store, validated by ZamaHost.
     #[account(mut)]

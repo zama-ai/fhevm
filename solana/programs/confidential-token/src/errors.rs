@@ -52,15 +52,6 @@ pub enum ConfidentialTokenError {
     /// msg.sender)`: computing on a value is admitted by its authority's signature.
     #[msg("amount value spender does not control the amount")]
     AmountSpendAuthorityMismatch,
-    /// The KMS EIP-712 public-decrypt certificate failed secp256k1 threshold verification.
-    #[msg("KMS public-decrypt certificate is invalid")]
-    InvalidKmsCertificate,
-    /// The host gateway verifier config (KMS signer / decryption contract) is unset.
-    #[msg("gateway verifier config is not set")]
-    GatewayVerifierConfigUnset,
-    /// The provided KMS context is not the request-pinned context or has been destroyed.
-    #[msg("KMS context is not valid for this request")]
-    InvalidKmsContext,
     /// Internal FHE execution construction failed before the host CPI.
     #[msg("FHE execution is invalid")]
     InvalidFheExecution,

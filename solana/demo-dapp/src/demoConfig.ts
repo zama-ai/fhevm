@@ -25,7 +25,6 @@ export type DemoConfig = {
   /** The gateway Decryption contract — the EIP-712 verifying contract of KMS node signatures. */
   readonly gatewayDecryptionContract: `0x${string}`;
   readonly authorityFundingLamports: string;
-  readonly hostConfig: Address;
   readonly kmsContext: Address;
   readonly vault: Address;
   readonly programs: {
@@ -140,7 +139,6 @@ export const parseDemoConfig = (value: unknown): DemoConfig => {
     gatewayChainId: string(raw.gatewayChainId, "demo config.gatewayChainId"),
     gatewayDecryptionContract: hexBytes(raw.gatewayDecryptionContract, "demo config.gatewayDecryptionContract", 20),
     authorityFundingLamports: string(raw.authorityFundingLamports, "demo config.authorityFundingLamports"),
-    hostConfig: address(string(raw.hostConfig, "demo config.hostConfig")),
     kmsContext: address(string(raw.kmsContext, "demo config.kmsContext")),
     vault: address(string(raw.vault, "demo config.vault")),
     programs: {

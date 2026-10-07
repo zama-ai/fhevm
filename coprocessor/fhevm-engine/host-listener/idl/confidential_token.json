@@ -4414,131 +4414,116 @@
     },
     {
       "code": 6015,
-      "name": "InvalidKmsCertificate",
-      "msg": "KMS public-decrypt certificate is invalid"
-    },
-    {
-      "code": 6016,
-      "name": "GatewayVerifierConfigUnset",
-      "msg": "gateway verifier config is not set"
-    },
-    {
-      "code": 6017,
-      "name": "InvalidKmsContext",
-      "msg": "KMS context is not valid for this request"
-    },
-    {
-      "code": 6018,
       "name": "InvalidFheExecution",
       "msg": "FHE execution is invalid"
     },
     {
-      "code": 6019,
+      "code": 6016,
       "name": "DuplicateFheExecuteAccount",
       "msg": "fhe_execute account list contains a duplicate account"
     },
     {
-      "code": 6020,
+      "code": 6017,
       "name": "UnexpectedFheExecuteAccount",
       "msg": "fhe_execute account list contains an unexpected account"
     },
     {
-      "code": 6021,
+      "code": 6018,
       "name": "MissingFheExecuteAccount",
       "msg": "FHE execution is missing a required dynamic account"
     },
     {
-      "code": 6022,
+      "code": 6019,
       "name": "FheExecuteAccountNotWritable",
       "msg": "fhe_execute dynamic account must be writable"
     },
     {
-      "code": 6023,
+      "code": 6020,
       "name": "DuplicateFheOutputAuthority",
       "msg": "fhe_execute output authority list contains a duplicate authority"
     },
     {
-      "code": 6024,
+      "code": 6021,
       "name": "UnexpectedFheOutputAuthority",
       "msg": "fhe_execute output authority list contains an unexpected authority"
     },
     {
-      "code": 6025,
+      "code": 6022,
       "name": "MissingFheOutputAuthority",
       "msg": "FHE execution is missing a required output authority"
     },
     {
-      "code": 6026,
+      "code": 6023,
       "name": "VerifierReturnDataInvalid",
       "msg": "public-decrypt verifier return data is invalid"
     },
     {
-      "code": 6027,
+      "code": 6024,
       "name": "DisclosedHandleMismatch",
       "msg": "disclosed handle does not match the pinned handle"
     },
     {
-      "code": 6028,
+      "code": 6025,
       "name": "CleartextExceedsEuint64",
       "msg": "certified cleartext exceeds euint64 width"
     },
     {
-      "code": 6029,
+      "code": 6026,
       "name": "PendingBurnAddressMismatch",
       "msg": "pending burn address does not match"
     },
     {
-      "code": 6030,
+      "code": 6027,
       "name": "PendingBurnAlreadyInitialized",
       "msg": "pending burn is already initialized"
     },
     {
-      "code": 6031,
+      "code": 6028,
       "name": "PendingBurnHandleNotCurrent",
       "msg": "pending burn handle is not the burned amount current handle"
     },
     {
-      "code": 6032,
+      "code": 6029,
       "name": "PendingBurnMismatch",
       "msg": "pending burn fields do not match"
     },
     {
-      "code": 6033,
+      "code": 6030,
       "name": "UnderlyingTokenProgramMismatch",
       "msg": "underlying token program does not match"
     },
     {
-      "code": 6034,
+      "code": 6031,
       "name": "UnsupportedToken2022Extension",
       "msg": "unsupported Token-2022 extension"
     },
     {
-      "code": 6035,
+      "code": 6032,
       "name": "UnderlyingTokenAccountFrozen",
       "msg": "underlying token account is frozen"
     },
     {
-      "code": 6036,
+      "code": 6033,
       "name": "DisclosedValueBindingMismatch",
       "msg": "disclosed value does not match its declared token state field"
     },
     {
-      "code": 6037,
+      "code": 6034,
       "name": "EncryptedStoreAuthorityMismatch",
       "msg": "encrypted store authority does not match token account"
     },
     {
-      "code": 6038,
+      "code": 6035,
       "name": "TokenEncryptedStoreMismatch",
       "msg": "token encrypted store is not canonical"
     },
     {
-      "code": 6039,
+      "code": 6036,
       "name": "UnderlyingAssociatedAccountMismatch",
       "msg": "underlying associated token account does not match"
     },
     {
-      "code": 6040,
+      "code": 6037,
       "name": "ResultGrantMismatch",
       "msg": "invalid result grant accounts or self-transfer result request"
     }

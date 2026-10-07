@@ -15,8 +15,6 @@ export type SolanaVaultInitializeMintParameters = {
   readonly mint: TransactionSigner;
   /** The underlying SPL mint this confidential mint wraps. */
   readonly underlyingMint: Address;
-  /** zama-host config PDA used for handle derivation. */
-  readonly hostConfig: Address;
 };
 
 /**
@@ -36,7 +34,6 @@ export async function buildInitializeMintInstruction(
     mint: parameters.mint,
     underlyingMint: parameters.underlyingMint,
     totalSupplyEncryptedStore: await tokenStoreAddress(parameters.mint.address, totalSupplyAuthority),
-    hostConfig: parameters.hostConfig,
     program: CONFIDENTIAL_TOKEN_PROGRAM_ADDRESS,
   });
 }

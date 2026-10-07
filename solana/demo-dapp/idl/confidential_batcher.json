@@ -111,10 +111,130 @@
           "writable": true
         },
         {
-          "name": "host_config"
+          "name": "host_config",
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  104,
+                  111,
+                  115,
+                  116,
+                  45,
+                  99,
+                  111,
+                  110,
+                  102,
+                  105,
+                  103
+                ]
+              }
+            ],
+            "program": {
+              "kind": "const",
+              "value": [
+                184,
+                37,
+                100,
+                59,
+                121,
+                191,
+                68,
+                153,
+                255,
+                49,
+                204,
+                254,
+                138,
+                41,
+                122,
+                160,
+                235,
+                48,
+                168,
+                160,
+                204,
+                31,
+                35,
+                25,
+                232,
+                33,
+                118,
+                193,
+                180,
+                214,
+                94,
+                113
+              ]
+            }
+          }
         },
         {
-          "name": "zama_event_authority"
+          "name": "zama_event_authority",
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  95,
+                  95,
+                  101,
+                  118,
+                  101,
+                  110,
+                  116,
+                  95,
+                  97,
+                  117,
+                  116,
+                  104,
+                  111,
+                  114,
+                  105,
+                  116,
+                  121
+                ]
+              }
+            ],
+            "program": {
+              "kind": "const",
+              "value": [
+                184,
+                37,
+                100,
+                59,
+                121,
+                191,
+                68,
+                153,
+                255,
+                49,
+                204,
+                254,
+                138,
+                41,
+                122,
+                160,
+                235,
+                48,
+                168,
+                160,
+                204,
+                31,
+                35,
+                25,
+                232,
+                33,
+                118,
+                193,
+                180,
+                214,
+                94,
+                113
+              ]
+            }
+          }
         },
         {
           "name": "transient_store",
@@ -320,7 +440,70 @@
           "writable": true
         },
         {
-          "name": "zama_event_authority"
+          "name": "zama_event_authority",
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  95,
+                  95,
+                  101,
+                  118,
+                  101,
+                  110,
+                  116,
+                  95,
+                  97,
+                  117,
+                  116,
+                  104,
+                  111,
+                  114,
+                  105,
+                  116,
+                  121
+                ]
+              }
+            ],
+            "program": {
+              "kind": "const",
+              "value": [
+                184,
+                37,
+                100,
+                59,
+                121,
+                191,
+                68,
+                153,
+                255,
+                49,
+                204,
+                254,
+                138,
+                41,
+                122,
+                160,
+                235,
+                48,
+                168,
+                160,
+                204,
+                31,
+                35,
+                25,
+                232,
+                33,
+                118,
+                193,
+                180,
+                214,
+                94,
+                113
+              ]
+            }
+          }
         },
         {
           "name": "zama_program",
@@ -330,7 +513,64 @@
           "address": "DPq5y89RDZPq9NcMh9X1NgjBWgYmSXg3QoipSBV3ZMzQ"
         },
         {
-          "name": "host_config"
+          "name": "host_config",
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  104,
+                  111,
+                  115,
+                  116,
+                  45,
+                  99,
+                  111,
+                  110,
+                  102,
+                  105,
+                  103
+                ]
+              }
+            ],
+            "program": {
+              "kind": "const",
+              "value": [
+                184,
+                37,
+                100,
+                59,
+                121,
+                191,
+                68,
+                153,
+                255,
+                49,
+                204,
+                254,
+                138,
+                41,
+                122,
+                160,
+                235,
+                48,
+                168,
+                160,
+                204,
+                31,
+                35,
+                25,
+                232,
+                33,
+                118,
+                193,
+                180,
+                214,
+                94,
+                113
+              ]
+            }
+          }
         },
         {
           "name": "confidential_token_event_authority"
@@ -557,7 +797,70 @@
           "writable": true
         },
         {
-          "name": "zama_event_authority"
+          "name": "zama_event_authority",
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  95,
+                  95,
+                  101,
+                  118,
+                  101,
+                  110,
+                  116,
+                  95,
+                  97,
+                  117,
+                  116,
+                  104,
+                  111,
+                  114,
+                  105,
+                  116,
+                  121
+                ]
+              }
+            ],
+            "program": {
+              "kind": "const",
+              "value": [
+                184,
+                37,
+                100,
+                59,
+                121,
+                191,
+                68,
+                153,
+                255,
+                49,
+                204,
+                254,
+                138,
+                41,
+                122,
+                160,
+                235,
+                48,
+                168,
+                160,
+                204,
+                31,
+                35,
+                25,
+                232,
+                33,
+                118,
+                193,
+                180,
+                214,
+                94,
+                113
+              ]
+            }
+          }
         },
         {
           "name": "transient_store",
@@ -574,7 +877,64 @@
           "address": "DPq5y89RDZPq9NcMh9X1NgjBWgYmSXg3QoipSBV3ZMzQ"
         },
         {
-          "name": "host_config"
+          "name": "host_config",
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  104,
+                  111,
+                  115,
+                  116,
+                  45,
+                  99,
+                  111,
+                  110,
+                  102,
+                  105,
+                  103
+                ]
+              }
+            ],
+            "program": {
+              "kind": "const",
+              "value": [
+                184,
+                37,
+                100,
+                59,
+                121,
+                191,
+                68,
+                153,
+                255,
+                49,
+                204,
+                254,
+                138,
+                41,
+                122,
+                160,
+                235,
+                48,
+                168,
+                160,
+                204,
+                31,
+                35,
+                25,
+                232,
+                33,
+                118,
+                193,
+                180,
+                214,
+                94,
+                113
+              ]
+            }
+          }
         },
         {
           "name": "confidential_token_event_authority"
@@ -842,7 +1202,70 @@
           "name": "instructions"
         },
         {
-          "name": "zama_event_authority"
+          "name": "zama_event_authority",
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  95,
+                  95,
+                  101,
+                  118,
+                  101,
+                  110,
+                  116,
+                  95,
+                  97,
+                  117,
+                  116,
+                  104,
+                  111,
+                  114,
+                  105,
+                  116,
+                  121
+                ]
+              }
+            ],
+            "program": {
+              "kind": "const",
+              "value": [
+                184,
+                37,
+                100,
+                59,
+                121,
+                191,
+                68,
+                153,
+                255,
+                49,
+                204,
+                254,
+                138,
+                41,
+                122,
+                160,
+                235,
+                48,
+                168,
+                160,
+                204,
+                31,
+                35,
+                25,
+                232,
+                33,
+                118,
+                193,
+                180,
+                214,
+                94,
+                113
+              ]
+            }
+          }
         },
         {
           "name": "zama_program",
@@ -852,7 +1275,64 @@
           "address": "DPq5y89RDZPq9NcMh9X1NgjBWgYmSXg3QoipSBV3ZMzQ"
         },
         {
-          "name": "host_config"
+          "name": "host_config",
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  104,
+                  111,
+                  115,
+                  116,
+                  45,
+                  99,
+                  111,
+                  110,
+                  102,
+                  105,
+                  103
+                ]
+              }
+            ],
+            "program": {
+              "kind": "const",
+              "value": [
+                184,
+                37,
+                100,
+                59,
+                121,
+                191,
+                68,
+                153,
+                255,
+                49,
+                204,
+                254,
+                138,
+                41,
+                122,
+                160,
+                235,
+                48,
+                168,
+                160,
+                204,
+                31,
+                35,
+                25,
+                232,
+                33,
+                118,
+                193,
+                180,
+                214,
+                94,
+                113
+              ]
+            }
+          }
         },
         {
           "name": "confidential_token_event_authority"
@@ -1122,7 +1602,70 @@
           }
         },
         {
-          "name": "zama_event_authority"
+          "name": "zama_event_authority",
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  95,
+                  95,
+                  101,
+                  118,
+                  101,
+                  110,
+                  116,
+                  95,
+                  97,
+                  117,
+                  116,
+                  104,
+                  111,
+                  114,
+                  105,
+                  116,
+                  121
+                ]
+              }
+            ],
+            "program": {
+              "kind": "const",
+              "value": [
+                184,
+                37,
+                100,
+                59,
+                121,
+                191,
+                68,
+                153,
+                255,
+                49,
+                204,
+                254,
+                138,
+                41,
+                122,
+                160,
+                235,
+                48,
+                168,
+                160,
+                204,
+                31,
+                35,
+                25,
+                232,
+                33,
+                118,
+                193,
+                180,
+                214,
+                94,
+                113
+              ]
+            }
+          }
         },
         {
           "name": "transient_store",
@@ -1139,7 +1682,64 @@
           "address": "DPq5y89RDZPq9NcMh9X1NgjBWgYmSXg3QoipSBV3ZMzQ"
         },
         {
-          "name": "host_config"
+          "name": "host_config",
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  104,
+                  111,
+                  115,
+                  116,
+                  45,
+                  99,
+                  111,
+                  110,
+                  102,
+                  105,
+                  103
+                ]
+              }
+            ],
+            "program": {
+              "kind": "const",
+              "value": [
+                184,
+                37,
+                100,
+                59,
+                121,
+                191,
+                68,
+                153,
+                255,
+                49,
+                204,
+                254,
+                138,
+                41,
+                122,
+                160,
+                235,
+                48,
+                168,
+                160,
+                204,
+                31,
+                35,
+                25,
+                232,
+                33,
+                118,
+                193,
+                180,
+                214,
+                94,
+                113
+              ]
+            }
+          }
         },
         {
           "name": "confidential_token_event_authority"
@@ -1437,7 +2037,70 @@
           "writable": true
         },
         {
-          "name": "zama_event_authority"
+          "name": "zama_event_authority",
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  95,
+                  95,
+                  101,
+                  118,
+                  101,
+                  110,
+                  116,
+                  95,
+                  97,
+                  117,
+                  116,
+                  104,
+                  111,
+                  114,
+                  105,
+                  116,
+                  121
+                ]
+              }
+            ],
+            "program": {
+              "kind": "const",
+              "value": [
+                184,
+                37,
+                100,
+                59,
+                121,
+                191,
+                68,
+                153,
+                255,
+                49,
+                204,
+                254,
+                138,
+                41,
+                122,
+                160,
+                235,
+                48,
+                168,
+                160,
+                204,
+                31,
+                35,
+                25,
+                232,
+                33,
+                118,
+                193,
+                180,
+                214,
+                94,
+                113
+              ]
+            }
+          }
         },
         {
           "name": "transient_store",
@@ -1454,7 +2117,64 @@
           "address": "DPq5y89RDZPq9NcMh9X1NgjBWgYmSXg3QoipSBV3ZMzQ"
         },
         {
-          "name": "host_config"
+          "name": "host_config",
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  104,
+                  111,
+                  115,
+                  116,
+                  45,
+                  99,
+                  111,
+                  110,
+                  102,
+                  105,
+                  103
+                ]
+              }
+            ],
+            "program": {
+              "kind": "const",
+              "value": [
+                184,
+                37,
+                100,
+                59,
+                121,
+                191,
+                68,
+                153,
+                255,
+                49,
+                204,
+                254,
+                138,
+                41,
+                122,
+                160,
+                235,
+                48,
+                168,
+                160,
+                204,
+                31,
+                35,
+                25,
+                232,
+                33,
+                118,
+                193,
+                180,
+                214,
+                94,
+                113
+              ]
+            }
+          }
         },
         {
           "name": "confidential_token_event_authority"
@@ -1719,7 +2439,64 @@
           "writable": true
         },
         {
-          "name": "host_config"
+          "name": "host_config",
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  104,
+                  111,
+                  115,
+                  116,
+                  45,
+                  99,
+                  111,
+                  110,
+                  102,
+                  105,
+                  103
+                ]
+              }
+            ],
+            "program": {
+              "kind": "const",
+              "value": [
+                184,
+                37,
+                100,
+                59,
+                121,
+                191,
+                68,
+                153,
+                255,
+                49,
+                204,
+                254,
+                138,
+                41,
+                122,
+                160,
+                235,
+                48,
+                168,
+                160,
+                204,
+                31,
+                35,
+                25,
+                232,
+                33,
+                118,
+                193,
+                180,
+                214,
+                94,
+                113
+              ]
+            }
+          }
         },
         {
           "name": "kms_context",
@@ -1825,7 +2602,70 @@
           "writable": true
         },
         {
-          "name": "zama_event_authority"
+          "name": "zama_event_authority",
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  95,
+                  95,
+                  101,
+                  118,
+                  101,
+                  110,
+                  116,
+                  95,
+                  97,
+                  117,
+                  116,
+                  104,
+                  111,
+                  114,
+                  105,
+                  116,
+                  121
+                ]
+              }
+            ],
+            "program": {
+              "kind": "const",
+              "value": [
+                184,
+                37,
+                100,
+                59,
+                121,
+                191,
+                68,
+                153,
+                255,
+                49,
+                204,
+                254,
+                138,
+                41,
+                122,
+                160,
+                235,
+                48,
+                168,
+                160,
+                204,
+                31,
+                35,
+                25,
+                232,
+                33,
+                118,
+                193,
+                180,
+                214,
+                94,
+                113
+              ]
+            }
+          }
         },
         {
           "name": "transient_store",
@@ -2089,136 +2929,116 @@
   "errors": [
     {
       "code": 6000,
-      "name": "DepositMintVaultMismatch",
-      "msg": "deposit confidential mint does not wrap the vault underlying mint"
-    },
-    {
-      "code": 6001,
-      "name": "SharesMintVaultMismatch",
-      "msg": "shares confidential mint does not wrap the vault share mint"
-    },
-    {
-      "code": 6002,
       "name": "ConfidentialMintMismatch",
       "msg": "confidential mint does not match the batcher config"
     },
     {
-      "code": 6003,
+      "code": 6001,
       "name": "VaultMismatch",
       "msg": "vault does not match the batcher config"
     },
     {
-      "code": 6004,
+      "code": 6002,
       "name": "BatchBatcherMismatch",
       "msg": "batch does not belong to this batcher"
     },
     {
-      "code": 6005,
+      "code": 6003,
       "name": "PreviousBatchMismatch",
       "msg": "previous batch account missing or not the immediately preceding batch"
     },
     {
-      "code": 6006,
+      "code": 6004,
       "name": "PreviousBatchStillPending",
       "msg": "previous batch is still pending"
     },
     {
-      "code": 6007,
+      "code": 6005,
       "name": "BatchNotPending",
       "msg": "batch is not pending"
     },
     {
-      "code": 6008,
+      "code": 6006,
       "name": "BatchNotDispatched",
       "msg": "batch is not dispatched"
     },
     {
-      "code": 6009,
+      "code": 6007,
       "name": "BatchNotSettled",
       "msg": "batch is not settled"
     },
     {
-      "code": 6010,
+      "code": 6008,
       "name": "BatchTooYoung",
       "msg": "batch is younger than the minimum batch age"
     },
     {
-      "code": 6011,
+      "code": 6009,
       "name": "DerivedAccountMismatch",
       "msg": "account does not match its canonical derived address"
     },
     {
-      "code": 6012,
+      "code": 6010,
       "name": "EncryptedStoreInvalid",
       "msg": "encrypted store is invalid"
     },
     {
-      "code": 6013,
+      "code": 6011,
       "name": "InvalidFheExecution",
       "msg": "invalid FHE execution"
     },
     {
-      "code": 6014,
+      "code": 6012,
       "name": "AlreadyClaimed",
       "msg": "payout already claimed for this join record"
     },
     {
-      "code": 6015,
-      "name": "ShareRateOverflow",
-      "msg": "share rate does not fit u64"
-    },
-    {
-      "code": 6016,
+      "code": 6013,
       "name": "BatchIndexOverflow",
       "msg": "batch index overflowed"
     },
     {
-      "code": 6017,
-      "name": "ShareBalanceUnderflow",
-      "msg": "batch share balance decreased across the vault deposit"
-    },
-    {
-      "code": 6018,
+      "code": 6014,
       "name": "JoinMintVaultMismatch",
       "msg": "join confidential mint does not wrap the vault mint this direction requires"
     },
     {
-      "code": 6019,
+      "code": 6015,
       "name": "PayoutMintVaultMismatch",
       "msg": "payout confidential mint does not wrap the vault mint this direction requires"
     },
     {
-      "code": 6020,
+      "code": 6016,
       "name": "PayoutBalanceUnderflow",
       "msg": "batch payout balance decreased across the vault phase"
     },
     {
-      "code": 6021,
+      "code": 6017,
       "name": "BatchNotRefundable",
       "msg": "batch does not accept refunds"
     },
     {
-      "code": 6022,
+      "code": 6018,
       "name": "CancelAuthorityMismatch",
       "msg": "cancel authority does not match the join confidential mint authority"
     },
     {
-      "code": 6023,
+      "code": 6019,
       "name": "BatchStillLive",
       "msg": "batch is still live; authority funding is reclaimable after settle, cancel or refund"
     },
     {
-      "code": 6024,
+      "code": 6020,
       "name": "ReclaimAuthorityMismatch",
       "msg": "reclaim authority does not match the join confidential mint authority"
     },
     {
-      "code": 6025,
+      "code": 6021,
       "name": "JoinRecordStillLive",
       "msg": "join record is still live; close it after claiming or once the batch is canceled"
     },
     {
-      "code": 6026,
+      "code": 6022,
       "name": "BatchIndexMismatch",
       "msg": "batch index does not match the next batch index"
     }
@@ -2851,6 +3671,166 @@
       }
     },
     {
+      "name": "HostConfig",
+      "docs": [
+        "Singleton host configuration and authority surface.",
+        "",
+        "`HostConfig` is the runtime switchboard for this PoC. Each paused area rejects the",
+        "instructions it covers (`PauseFlags`)."
+      ],
+      "type": {
+        "kind": "struct",
+        "fields": [
+          {
+            "name": "admin",
+            "docs": [
+              "Program administrator allowed to update config flags."
+            ],
+            "type": "pubkey"
+          },
+          {
+            "name": "chain_id",
+            "docs": [
+              "Host-chain id included in handle derivation."
+            ],
+            "type": "u64"
+          },
+          {
+            "name": "gateway_chain_id",
+            "docs": [
+              "EVM gateway chain id used in the coprocessor/KMS EIP-712 domain separators."
+            ],
+            "type": "u64"
+          },
+          {
+            "name": "input_verification_contract",
+            "docs": [
+              "EVM `InputVerification` contract address: the EIP-712 verifying contract for",
+              "coprocessor `CiphertextVerification` input attestations."
+            ],
+            "type": {
+              "array": [
+                "u8",
+                20
+              ]
+            }
+          },
+          {
+            "name": "coprocessor_signers",
+            "docs": [
+              "Registered coprocessor EVM signer set for input attestations (EVM `InputVerifier`",
+              "parity). Fixed-capacity so `HostConfig` keeps a pinned byte layout; only the first",
+              "`coprocessor_signer_count` entries are active, the rest are zero padding."
+            ],
+            "type": {
+              "array": [
+                {
+                  "array": [
+                    "u8",
+                    20
+                  ]
+                },
+                8
+              ]
+            }
+          },
+          {
+            "name": "coprocessor_signer_count",
+            "docs": [
+              "Number of active entries in `coprocessor_signers`."
+            ],
+            "type": "u8"
+          },
+          {
+            "name": "coprocessor_threshold",
+            "docs": [
+              "Minimum distinct valid signatures (n-of-m) required over an input attestation;",
+              "`1 <= coprocessor_threshold <= coprocessor_signer_count`."
+            ],
+            "type": "u8"
+          },
+          {
+            "name": "decryption_contract",
+            "docs": [
+              "EVM `Decryption` contract address: the EIP-712 verifying contract for KMS",
+              "`PublicDecryptVerification` certificates (disclose/redeem)."
+            ],
+            "type": {
+              "array": [
+                "u8",
+                20
+              ]
+            }
+          },
+          {
+            "name": "current_kms_context_id",
+            "docs": [
+              "Active KMS context id (mirrors `ProtocolConfig.getCurrentKmsContextId`). The",
+              "signer set + thresholds live in the `KmsContext` PDA at this id; `[0; 32]` means",
+              "none defined yet. Updated by `define_kms_context`."
+            ],
+            "type": {
+              "array": [
+                "u8",
+                32
+              ]
+            }
+          },
+          {
+            "name": "paused",
+            "docs": [
+              "Host areas currently stopped. A pauser sets them; only the admin clears them (DD-058)."
+            ],
+            "type": {
+              "defined": {
+                "name": "PauseFlags"
+              }
+            }
+          },
+          {
+            "name": "grant_deny_list_enabled",
+            "docs": [
+              "Enables the deny list: a denied application `(program, scope)` cannot compute, allow, or make a handle public."
+            ],
+            "type": "bool"
+          },
+          {
+            "name": "max_hcu_per_tx",
+            "docs": [
+              "Max total HCU summed over one `fhe_execute` execution. `u64::MAX` = unlimited",
+              "(enforcement off); `0` is rejected at set time."
+            ],
+            "type": "u64"
+          },
+          {
+            "name": "max_hcu_depth_per_tx",
+            "docs": [
+              "Max critical-path (depth) HCU within one `fhe_execute` execution. `u64::MAX` =",
+              "unlimited; `0` is rejected at set time."
+            ],
+            "type": "u64"
+          },
+          {
+            "name": "hcu_block_cap_per_app",
+            "docs": [
+              "Per-app HCU budget per slot, enforced in `fhe_execute`. `u64::MAX` = unrestricted (the ship",
+              "default; short-circuits, touching no meter); `0` = ban untrusted apps (trusted still",
+              "bypass) — the one knob where `0` is a real semantic; any other value is the metering band",
+              "(must be `>= max_hcu_per_tx` unless that is unlimited)."
+            ],
+            "type": "u64"
+          },
+          {
+            "name": "bump",
+            "docs": [
+              "PDA bump for `PDA(\"host-config\")`."
+            ],
+            "type": "u8"
+          }
+        ]
+      }
+    },
+    {
       "name": "JoinRecord",
       "docs": [
         "Per-(batch, user) join record. The encrypted amount itself lives in the batcher-owned",
@@ -2971,6 +3951,42 @@
                 32
               ]
             }
+          }
+        ]
+      }
+    },
+    {
+      "name": "PauseFlags",
+      "docs": [
+        "The host areas a pauser can stop, each matching an area EVM pauses on its own (DD-058). As",
+        "the argument of `pause` and `unpause`, a set field names an area to change."
+      ],
+      "type": {
+        "kind": "struct",
+        "fields": [
+          {
+            "name": "execution",
+            "docs": [
+              "`fhe_execute`, with the allows, transient grants and public releases it writes (EVM ACL",
+              "pause, which stops execution through `allowTransient`)."
+            ],
+            "type": "bool"
+          },
+          {
+            "name": "verified_inputs",
+            "docs": [
+              "`fhe_execute` steps that consume a coprocessor-attested input (Gateway",
+              "`InputVerification` pause)."
+            ],
+            "type": "bool"
+          },
+          {
+            "name": "acl_writes",
+            "docs": [
+              "ACL writes outside an execution: Store creation, `make_store_handle_public` and",
+              "user-decryption delegation (EVM ACL pause)."
+            ],
+            "type": "bool"
           }
         ]
       }

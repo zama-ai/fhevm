@@ -92,10 +92,130 @@
           "writable": true
         },
         {
-          "name": "host_config"
+          "name": "host_config",
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  104,
+                  111,
+                  115,
+                  116,
+                  45,
+                  99,
+                  111,
+                  110,
+                  102,
+                  105,
+                  103
+                ]
+              }
+            ],
+            "program": {
+              "kind": "const",
+              "value": [
+                184,
+                37,
+                100,
+                59,
+                121,
+                191,
+                68,
+                153,
+                255,
+                49,
+                204,
+                254,
+                138,
+                41,
+                122,
+                160,
+                235,
+                48,
+                168,
+                160,
+                204,
+                31,
+                35,
+                25,
+                232,
+                33,
+                118,
+                193,
+                180,
+                214,
+                94,
+                113
+              ]
+            }
+          }
         },
         {
-          "name": "zama_event_authority"
+          "name": "zama_event_authority",
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  95,
+                  95,
+                  101,
+                  118,
+                  101,
+                  110,
+                  116,
+                  95,
+                  97,
+                  117,
+                  116,
+                  104,
+                  111,
+                  114,
+                  105,
+                  116,
+                  121
+                ]
+              }
+            ],
+            "program": {
+              "kind": "const",
+              "value": [
+                184,
+                37,
+                100,
+                59,
+                121,
+                191,
+                68,
+                153,
+                255,
+                49,
+                204,
+                254,
+                138,
+                41,
+                122,
+                160,
+                235,
+                48,
+                168,
+                160,
+                204,
+                31,
+                35,
+                25,
+                232,
+                33,
+                118,
+                193,
+                180,
+                214,
+                94,
+                113
+              ]
+            }
+          }
         },
         {
           "name": "transient_store",
@@ -203,10 +323,130 @@
           "writable": true
         },
         {
-          "name": "host_config"
+          "name": "host_config",
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  104,
+                  111,
+                  115,
+                  116,
+                  45,
+                  99,
+                  111,
+                  110,
+                  102,
+                  105,
+                  103
+                ]
+              }
+            ],
+            "program": {
+              "kind": "const",
+              "value": [
+                184,
+                37,
+                100,
+                59,
+                121,
+                191,
+                68,
+                153,
+                255,
+                49,
+                204,
+                254,
+                138,
+                41,
+                122,
+                160,
+                235,
+                48,
+                168,
+                160,
+                204,
+                31,
+                35,
+                25,
+                232,
+                33,
+                118,
+                193,
+                180,
+                214,
+                94,
+                113
+              ]
+            }
+          }
         },
         {
-          "name": "zama_event_authority"
+          "name": "zama_event_authority",
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  95,
+                  95,
+                  101,
+                  118,
+                  101,
+                  110,
+                  116,
+                  95,
+                  97,
+                  117,
+                  116,
+                  104,
+                  111,
+                  114,
+                  105,
+                  116,
+                  121
+                ]
+              }
+            ],
+            "program": {
+              "kind": "const",
+              "value": [
+                184,
+                37,
+                100,
+                59,
+                121,
+                191,
+                68,
+                153,
+                255,
+                49,
+                204,
+                254,
+                138,
+                41,
+                122,
+                160,
+                235,
+                48,
+                168,
+                160,
+                204,
+                31,
+                35,
+                25,
+                232,
+                33,
+                118,
+                193,
+                180,
+                214,
+                94,
+                113
+              ]
+            }
+          }
         },
         {
           "name": "transient_store",
@@ -346,6 +586,202 @@
           {
             "name": "bump",
             "type": "u8"
+          }
+        ]
+      }
+    },
+    {
+      "name": "HostConfig",
+      "docs": [
+        "Singleton host configuration and authority surface.",
+        "",
+        "`HostConfig` is the runtime switchboard for this PoC. Each paused area rejects the",
+        "instructions it covers (`PauseFlags`)."
+      ],
+      "type": {
+        "kind": "struct",
+        "fields": [
+          {
+            "name": "admin",
+            "docs": [
+              "Program administrator allowed to update config flags."
+            ],
+            "type": "pubkey"
+          },
+          {
+            "name": "chain_id",
+            "docs": [
+              "Host-chain id included in handle derivation."
+            ],
+            "type": "u64"
+          },
+          {
+            "name": "gateway_chain_id",
+            "docs": [
+              "EVM gateway chain id used in the coprocessor/KMS EIP-712 domain separators."
+            ],
+            "type": "u64"
+          },
+          {
+            "name": "input_verification_contract",
+            "docs": [
+              "EVM `InputVerification` contract address: the EIP-712 verifying contract for",
+              "coprocessor `CiphertextVerification` input attestations."
+            ],
+            "type": {
+              "array": [
+                "u8",
+                20
+              ]
+            }
+          },
+          {
+            "name": "coprocessor_signers",
+            "docs": [
+              "Registered coprocessor EVM signer set for input attestations (EVM `InputVerifier`",
+              "parity). Fixed-capacity so `HostConfig` keeps a pinned byte layout; only the first",
+              "`coprocessor_signer_count` entries are active, the rest are zero padding."
+            ],
+            "type": {
+              "array": [
+                {
+                  "array": [
+                    "u8",
+                    20
+                  ]
+                },
+                8
+              ]
+            }
+          },
+          {
+            "name": "coprocessor_signer_count",
+            "docs": [
+              "Number of active entries in `coprocessor_signers`."
+            ],
+            "type": "u8"
+          },
+          {
+            "name": "coprocessor_threshold",
+            "docs": [
+              "Minimum distinct valid signatures (n-of-m) required over an input attestation;",
+              "`1 <= coprocessor_threshold <= coprocessor_signer_count`."
+            ],
+            "type": "u8"
+          },
+          {
+            "name": "decryption_contract",
+            "docs": [
+              "EVM `Decryption` contract address: the EIP-712 verifying contract for KMS",
+              "`PublicDecryptVerification` certificates (disclose/redeem)."
+            ],
+            "type": {
+              "array": [
+                "u8",
+                20
+              ]
+            }
+          },
+          {
+            "name": "current_kms_context_id",
+            "docs": [
+              "Active KMS context id (mirrors `ProtocolConfig.getCurrentKmsContextId`). The",
+              "signer set + thresholds live in the `KmsContext` PDA at this id; `[0; 32]` means",
+              "none defined yet. Updated by `define_kms_context`."
+            ],
+            "type": {
+              "array": [
+                "u8",
+                32
+              ]
+            }
+          },
+          {
+            "name": "paused",
+            "docs": [
+              "Host areas currently stopped. A pauser sets them; only the admin clears them (DD-058)."
+            ],
+            "type": {
+              "defined": {
+                "name": "PauseFlags"
+              }
+            }
+          },
+          {
+            "name": "grant_deny_list_enabled",
+            "docs": [
+              "Enables the deny list: a denied application `(program, scope)` cannot compute, allow, or make a handle public."
+            ],
+            "type": "bool"
+          },
+          {
+            "name": "max_hcu_per_tx",
+            "docs": [
+              "Max total HCU summed over one `fhe_execute` execution. `u64::MAX` = unlimited",
+              "(enforcement off); `0` is rejected at set time."
+            ],
+            "type": "u64"
+          },
+          {
+            "name": "max_hcu_depth_per_tx",
+            "docs": [
+              "Max critical-path (depth) HCU within one `fhe_execute` execution. `u64::MAX` =",
+              "unlimited; `0` is rejected at set time."
+            ],
+            "type": "u64"
+          },
+          {
+            "name": "hcu_block_cap_per_app",
+            "docs": [
+              "Per-app HCU budget per slot, enforced in `fhe_execute`. `u64::MAX` = unrestricted (the ship",
+              "default; short-circuits, touching no meter); `0` = ban untrusted apps (trusted still",
+              "bypass) — the one knob where `0` is a real semantic; any other value is the metering band",
+              "(must be `>= max_hcu_per_tx` unless that is unlimited)."
+            ],
+            "type": "u64"
+          },
+          {
+            "name": "bump",
+            "docs": [
+              "PDA bump for `PDA(\"host-config\")`."
+            ],
+            "type": "u8"
+          }
+        ]
+      }
+    },
+    {
+      "name": "PauseFlags",
+      "docs": [
+        "The host areas a pauser can stop, each matching an area EVM pauses on its own (DD-058). As",
+        "the argument of `pause` and `unpause`, a set field names an area to change."
+      ],
+      "type": {
+        "kind": "struct",
+        "fields": [
+          {
+            "name": "execution",
+            "docs": [
+              "`fhe_execute`, with the allows, transient grants and public releases it writes (EVM ACL",
+              "pause, which stops execution through `allowTransient`)."
+            ],
+            "type": "bool"
+          },
+          {
+            "name": "verified_inputs",
+            "docs": [
+              "`fhe_execute` steps that consume a coprocessor-attested input (Gateway",
+              "`InputVerification` pause)."
+            ],
+            "type": "bool"
+          },
+          {
+            "name": "acl_writes",
+            "docs": [
+              "ACL writes outside an execution: Store creation, `make_store_handle_public` and",
+              "user-decryption delegation (EVM ACL pause)."
+            ],
+            "type": "bool"
           }
         ]
       }

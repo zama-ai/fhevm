@@ -376,7 +376,6 @@ export async function depositToVault(
       payer: signer,
       owner: signer.address,
       mint: config.mints.joinConfidential,
-      hostConfig: config.hostConfig,
     });
     const shieldInstructions: Instruction[] = initializeJoinTokenAccount === null ? [] : [initializeJoinTokenAccount];
     shieldInstructions.push(
@@ -386,7 +385,6 @@ export async function depositToVault(
         mint: config.mints.joinConfidential,
         underlyingMint: config.mints.joinUnderlying,
         tokenProgram: TOKEN_PROGRAM_ADDRESS,
-        hostConfig: config.hostConfig,
         amount: amountBaseUnits,
       }),
     );
@@ -450,7 +448,6 @@ export async function depositToVault(
       joinConfidentialMint: roots.joinConfidentialMint,
       joinUnderlyingMint: roots.joinUnderlyingMint,
       tokenProgram: TOKEN_PROGRAM_ADDRESS,
-      hostConfig: config.hostConfig,
       computeUnitLimit: JOIN_COMPUTE_UNIT_LIMIT,
       onTransactionSigned: (transaction) => {
         session.assertActive();

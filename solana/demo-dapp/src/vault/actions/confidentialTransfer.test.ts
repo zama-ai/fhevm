@@ -89,7 +89,6 @@ async function parameters(overrides: Partial<SolanaConfidentialTransferParameter
     toOwner: key(10),
     fromStore: key(6),
     toStore: key(7),
-    hostConfig: key(8),
     ...overrides,
   } satisfies SolanaConfidentialTransferParameters;
 }

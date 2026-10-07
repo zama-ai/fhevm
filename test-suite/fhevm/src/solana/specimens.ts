@@ -23,9 +23,9 @@ import {
 } from "./internal/generated/encryptedCounter/instructions/index.js";
 import { findCounterAuthorityPda, findCounterPda } from "./internal/generated/encryptedCounter/pdas/index.js";
 import { ENCRYPTED_COUNTER_PROGRAM_ADDRESS } from "./internal/generated/encryptedCounter/programAddress.js";
-import { ZAMA_HOST_PROGRAM_ADDRESS, findEncryptedStorePda, findEventAuthorityPda as findZamaEventAuthorityPda } from "@fhevm/solana-zama-host";
+import { ZAMA_HOST_PROGRAM_ADDRESS, findEncryptedStorePda } from "@fhevm/solana-zama-host";
 import { currentHandle } from "./fhe-vertical";
-import { hostConfigAddress, type SolanaProvisioningContext } from "./provision";
+import type { SolanaProvisioningContext } from "./provision";
 
 // Byte-identical to the specimens' `encrypted_*_label` functions.
 import { COUNT_KEY as COUNT_LABEL } from "./internal/generated/encryptedCounter/constants.js";
@@ -81,11 +81,6 @@ export const chainValue = async (owner: Address): Promise<SpecimenValue> => {
   return specimenValue(DEP_CHAIN_PROGRAM_ADDRESS, owner, chain, chainAuthority, TAIL_LABEL);
 };
 
-const hostAccounts = async () => ({
-  hostConfig: await hostConfigAddress(),
-  zamaEventAuthority: (await findZamaEventAuthorityPda())[0],
-});
-
 const instructionAccounts = (transientStore: TransientStore) => ({
   transientStore: transientStore.address,
   instructions: INSTRUCTIONS_SYSVAR_ADDRESS,
@@ -101,7 +96,6 @@ export const buildInitializeCounterInstruction = async (owner: TransactionSigner
     ...instructionAccounts(transientStore),
     owner,
     encryptedStore: (await counterValue(owner.address)).encryptedStore,
-    ...(await hostAccounts()),
   });
 
 /** `encrypted_counter::increment`: adds `amount` to the count; the owner is allowed on the new handle. */
@@ -110,7 +104,6 @@ export const buildIncrementCounterInstruction = async (owner: TransactionSigner,
     ...instructionAccounts(transientStore),
     owner,
     encryptedStore: (await counterValue(owner.address)).encryptedStore,
-    ...(await hostAccounts()),
     amount,
   });
 
@@ -163,7 +156,7 @@ export const initializeChain = async (
     context,
     owner,
     value,
-    async (transientStore) => getInitializeChainInstructionAsync({ ...instructionAccounts(transientStore), owner, encryptedStore: value.encryptedStore, ...(await hostAccounts()) }),
+    async (transientStore) => getInitializeChainInstructionAsync({ ...instructionAccounts(transientStore), owner, encryptedStore: value.encryptedStore }),
   );
 };
 
@@ -186,7 +179,6 @@ export const extendChain = async (
       ...instructionAccounts(transientStore),
       owner,
       encryptedStore: value.encryptedStore,
-      ...(await hostAccounts()),
       links: params.links,
       amount: params.amount,
     }),

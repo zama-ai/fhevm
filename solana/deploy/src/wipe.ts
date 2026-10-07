@@ -1,7 +1,7 @@
 // Closes every account the host program owns so the next deployment starts from nothing.
 // `close_owned_accounts` exists only in `admin-sweep` builds (`preview-env.json` enables it), so it is
-// absent from the vendored IDL and the Codama client. Its wire format is pinned by
-// solana/runtime-tests/tests/host_admin_mollusk.rs.
+// absent from the vendored IDL and the Codama client. solana/runtime-tests/tests/host_admin_mollusk.rs
+// reads the discriminator and account roles from this file and checks them against the program.
 import {
   AccountRole,
   type Address,

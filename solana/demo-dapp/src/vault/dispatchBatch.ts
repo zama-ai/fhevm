@@ -1,5 +1,4 @@
 import { tokenStoreAddress } from './internal/encryptedStores.js';
-import { findEventAuthorityPda as findZamaEventAuthorityPda } from '@fhevm/solana-zama-host';
 import {
   findPendingBurnPda,
   findTokenAccountPda,
@@ -34,8 +33,6 @@ export type SolanaVaultDispatchParameters = {
   readonly joinUnderlyingMint: Address;
   /** Token program that owns `joinUnderlyingMint` (`Tokenkeg` or Token-2022). */
   readonly tokenProgram: Address;
-  /** ZamaHost config PDA (demo-config `hostConfig`). */
-  readonly hostConfig: Address;
 };
 
 /**
@@ -67,8 +64,6 @@ export async function buildDispatchBatchInstruction(parameters: SolanaVaultDispa
     batchBalanceStore: await tokenStoreAddress(joinConfidentialMint, batchJoinTokenAccount),
     totalSupplyStore: await tokenStoreAddress(joinConfidentialMint, totalSupplyAuthority),
     pendingBurn: (await findPendingBurnPda({ mint: joinConfidentialMint, tokenAccount: batchJoinTokenAccount }))[0],
-    zamaEventAuthority: (await findZamaEventAuthorityPda())[0],
-    hostConfig: parameters.hostConfig,
     confidentialTokenEventAuthority: (await findTokenEventAuthorityPda())[0],
   });
 }
