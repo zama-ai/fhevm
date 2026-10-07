@@ -82,19 +82,22 @@ You only need:
 - `MNEMONIC`
 - `ZAMA_FHEVM_API_KEY` (mainnet only)
 
-**For devnet**, use the pre-configured `.env.devnet` (all addresses included):
+**For devnet** (runs on Sepolia), use the pre-configured `.env.devnet` (all addresses included):
 
 ```shell
-DOTENV_CONFIG_PATH=./.env.devnet npx hardhat run --network devnet scripts/smoke-inputflow.ts
+DOTENV_CONFIG_PATH=./.env.devnet npx hardhat run --network sepolia scripts/smoke-inputflow.ts
 ```
 
 **For other networks** (staging, custom), set all variables manually - see `.env.example`.
 
 Network-specific RPC URLs:
 
-- staging/zwsDev: `RPC_URL` (defaults to localhost:8545)
+- staging: `RPC_URL` (defaults to localhost:8545)
 - sepolia: `SEPOLIA_ETH_RPC_URL` (falls back to `RPC_URL`)
 - mainnet: `MAINNET_ETH_RPC_URL` (falls back to `RPC_URL`)
+- polygon / polygonAmoy: `POLYGON_RPC_URL` / `POLYGON_AMOY_RPC_URL` (fall back to `RPC_URL`)
+- bnb / bnbTestnet: `BNB_RPC_URL` / `BNB_TESTNET_RPC_URL` (fall back to `RPC_URL`)
+- hoodi: `HOODI_RPC_URL` (falls back to `RPC_URL`)
 
 For pod deployments, just set `RPC_URL` - it works for all networks.
 
@@ -142,7 +145,6 @@ cast wallet address --mnemonic "your mnemonic here" --mnemonic-index 2
 
 ```shell
 cd test-suite/e2e
-npx hardhat run --network zwsDev scripts/smoke-inputflow.ts
 npx hardhat run --network sepolia scripts/smoke-inputflow.ts
 npx hardhat run --network mainnet scripts/smoke-inputflow.ts
 ```

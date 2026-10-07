@@ -74,14 +74,13 @@ task('test', async (taskArgs, hre, runSuper) => {
 
 const chainIds = {
   localNative: 8009,
-  devnetNative: 9000,
   localCoprocessor: 12345,
   staging: 12345,
-  zwsDev: 1337,
   sepolia: 11155111,
   mainnet: 1,
   polygon: 137,
   polygonAmoy: 80002,
+  bnb: 56,
   bnbTestnet: 97,
   hoodi: 560048,
   localCoprocessorL1: 123456,
@@ -106,7 +105,6 @@ function getChainConfig(chain: keyof typeof chainIds): NetworkUserConfig {
 
   switch (chain) {
     case 'staging':
-    case 'zwsDev':
       jsonRpcUrl = process.env.RPC_URL ?? vars.get('RPC_URL', defaultRpcUrl);
       if (shouldWarn && jsonRpcUrl === defaultRpcUrl) {
         console.warn(`WARN: RPC_URL not set for network '${chain}'. Using default: ${defaultRpcUrl}`);
@@ -146,6 +144,15 @@ function getChainConfig(chain: keyof typeof chainIds): NetworkUserConfig {
           throw new Error('POLYGON_AMOY_RPC_URL (or RPC_URL) is required for polygonAmoy network');
         }
         jsonRpcUrl = 'https://rpc-amoy.polygon.technology'; // placeholder for config validation
+      }
+      break;
+    case 'bnb':
+      jsonRpcUrl = process.env.BNB_RPC_URL || vars.get('BNB_RPC_URL', '') || process.env.RPC_URL;
+      if (!jsonRpcUrl) {
+        if (shouldWarn) {
+          throw new Error('BNB_RPC_URL (or RPC_URL) is required for bnb network');
+        }
+        jsonRpcUrl = 'https://bsc-dataseed.bnbchain.org'; // placeholder for config validation
       }
       break;
     case 'bnbTestnet':
@@ -232,11 +239,11 @@ const config: HardhatUserConfig = {
       },
     },
     staging: getChainConfig('staging'),
-    zwsDev: getChainConfig('zwsDev'),
     sepolia: getChainConfig('sepolia'),
     mainnet: getChainConfig('mainnet'),
     polygon: getChainConfig('polygon'),
     polygonAmoy: getChainConfig('polygonAmoy'),
+    bnb: getChainConfig('bnb'),
     bnbTestnet: getChainConfig('bnbTestnet'),
     hoodi: getChainConfig('hoodi'),
     localNative: getChainConfig('localNative'),
@@ -279,18 +286,7 @@ const config: HardhatUserConfig = {
     apiKey: {
       mainnet: process.env.ETHERSCAN_API_KEY!,
       sepolia: process.env.ETHERSCAN_API_KEY!,
-      zwsDev: 'empty',
     },
-    customChains: [
-      {
-        network: 'zwsDev',
-        chainId: 1337,
-        urls: {
-          apiURL: 'http://l1-blockscout-zws-dev-blockscout-stack-blockscout-svc.ethereum-blockchain/api',
-          browserURL: 'https://l1-explorer-zws-dev.diplodocus-boa.ts.net',
-        },
-      },
-    ],
   },
   // warnings: {
   //   "*": {
