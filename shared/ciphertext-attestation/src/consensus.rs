@@ -85,7 +85,7 @@ pub type ConsensusOutcome<A = CiphertextAttestation> =
     Result<ResolvedConsensus<A>, ConsensusCheckError<A>>;
 
 impl<A: Attestation> ConsensusRound<A> {
-    /// Opens the round: one slot per registered Coprocessor, all [`CoprocessorReply::Outstanding`].
+    /// Opens the round: one slot per registered Coprocessor, all outstanding.
     pub fn open(
         subject: A::Subject,
         entries: impl IntoIterator<Item = CoprocessorEntry>,
@@ -144,7 +144,7 @@ impl<A: Attestation> ConsensusRound<A> {
         self.record(signer, CoprocessorReply::NoReply)
     }
 
-    /// Ends the round, turning every slot still outstanding into [`CoprocessorReply::NoReply`].
+    /// Ends the round, turning every slot still outstanding into a missing reply.
     pub fn close(mut self) -> ConsensusOutcome<A> {
         for (_, reply) in &mut self.replies {
             if matches!(reply, CoprocessorReply::Outstanding) {
@@ -289,7 +289,8 @@ fn format_addrs(addrs: &[Address]) -> String {
 mod tests {
     use super::*;
     use crate::{
-        CiphertextAttestationPayload, CiphertextFormat, CiphertextRef, ConsensusMaterial, Version,
+        CiphertextAttestationPayload, CiphertextFormat, CiphertextRef, ConsensusMaterial,
+        ciphertext::Version,
     };
     use alloy_primitives::{B256, U256};
     use alloy_signer_local::PrivateKeySigner;

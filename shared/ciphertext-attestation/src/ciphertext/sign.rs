@@ -11,7 +11,10 @@
 
 use crate::{
     AttestationError, CiphertextAttestation, CiphertextAttestationPayload, CiphertextRef,
-    ConsensusMaterial, DOMAIN_TAG, Version, consensus::Attestation, keccak_b256,
+    ConsensusMaterial,
+    ciphertext::{CIPHERTEXT_DOMAIN_TAG, Version},
+    consensus::Attestation,
+    keccak_b256,
 };
 use alloy_primitives::{Address, B256, Signature};
 use alloy_signer::Signer;
@@ -27,7 +30,7 @@ impl CiphertextAttestationPayload {
         match self.version {
             Version::V1 => {
                 let mut out = Vec::with_capacity(V1_PAYLOAD_LEN);
-                out.extend_from_slice(&DOMAIN_TAG);
+                out.extend_from_slice(&CIPHERTEXT_DOMAIN_TAG);
                 out.push(self.version as u8);
                 out.extend_from_slice(self.handle.as_slice());
                 out.extend_from_slice(&self.key_id.to_be_bytes::<32>());

@@ -4,7 +4,7 @@ use alloy::{
     signers::local::PrivateKeySigner,
 };
 use ciphertext_attestation::{
-    CiphertextAttestationPayload, CiphertextFormat, S3_CT128_KEY_PREFIX, Version,
+    CiphertextAttestationPayload, CiphertextFormat, S3_CT128_KEY_PREFIX, ciphertext::Version,
 };
 use std::{path::PathBuf, str::FromStr, time::Duration};
 use testcontainers::{

@@ -3,8 +3,8 @@ use std::{collections::HashMap, panic::AssertUnwindSafe, time::Duration, time::I
 use alloy_primitives::{Address, B256, U256};
 use aws_sdk_s3::{error::SdkError, primitives::ByteStream, types::MetadataDirective, Client};
 use ciphertext_attestation::{
-    s3_ct128_key, s3_ct64_key, Attestation, CiphertextAttestation, CiphertextAttestationPayload,
-    CiphertextFormat, CiphertextRef, Version, S3_METADATA_ATTESTATION_KEY,
+    ciphertext::Version, s3_ct128_key, s3_ct64_key, Attestation, CiphertextAttestation,
+    CiphertextAttestationPayload, CiphertextFormat, CiphertextRef, S3_METADATA_ATTESTATION_KEY,
 };
 use fhevm_engine_common::{types::CoproSigner, utils::to_hex};
 use futures::{stream::FuturesUnordered, FutureExt, StreamExt};

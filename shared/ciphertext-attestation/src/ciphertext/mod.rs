@@ -1,6 +1,6 @@
 //! RFC-023 ciphertext attestation: wire types, S3 layout, signing and consensus material.
 
-use crate::{Version, hex_bytes};
+use crate::{AttestationError, hex_bytes};
 use alloy_primitives::{Address, B256, U256};
 use serde::{Deserialize, Serialize};
 
@@ -8,7 +8,35 @@ pub mod consensus;
 pub mod sign;
 
 /// Domain separator for the canonical signed payload.
-pub const DOMAIN_TAG: [u8; 8] = *b"FHEVMCTA";
+pub const CIPHERTEXT_DOMAIN_TAG: [u8; 8] = *b"FHEVMCTA";
+
+/// Versioned encoding of the ciphertext attestation.
+///
+/// The version byte is part of the signed payload, so a stripped or downgraded `version` field
+/// flips signature recovery and is caught at verification time.
+#[derive(Copy, Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(try_from = "u8", into = "u8")]
+#[repr(u8)]
+pub enum Version {
+    V1 = 1,
+}
+
+impl TryFrom<u8> for Version {
+    type Error = AttestationError;
+
+    fn try_from(value: u8) -> Result<Self, Self::Error> {
+        match value {
+            1 => Ok(Version::V1),
+            other => Err(AttestationError::UnsupportedVersion(other)),
+        }
+    }
+}
+
+impl From<Version> for u8 {
+    fn from(v: Version) -> u8 {
+        v as u8
+    }
+}
 
 /// Ceiling on the serialized size of an SNS ciphertext in bytes.
 pub const MAX_SNS_CIPHERTEXT_SERIALIZED_SIZE: u64 = 66 * 1024 * 1024;

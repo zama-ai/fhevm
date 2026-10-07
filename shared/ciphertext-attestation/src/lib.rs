@@ -6,7 +6,6 @@
 //! See RFC-023 (Off-chain ciphertext commits handling).
 
 use alloy_primitives::{Address, B256};
-use serde::{Deserialize, Serialize};
 use sha3::{Digest, Keccak256};
 
 pub mod ciphertext;
@@ -14,8 +13,8 @@ pub mod consensus;
 
 pub use ciphertext::{
     COPROCESSOR_CONTEXT_ID_V1, CiphertextAttestation, CiphertextAttestationPayload,
-    CiphertextFormat, DOMAIN_TAG, MAX_SNS_CIPHERTEXT_SERIALIZED_SIZE, S3_CT64_KEY_PREFIX,
-    S3_CT128_KEY_PREFIX, S3_METADATA_ATTESTATION_HEADER, S3_METADATA_ATTESTATION_KEY,
+    CiphertextFormat, MAX_SNS_CIPHERTEXT_SERIALIZED_SIZE, S3_CT64_KEY_PREFIX, S3_CT128_KEY_PREFIX,
+    S3_METADATA_ATTESTATION_HEADER, S3_METADATA_ATTESTATION_KEY,
     consensus::{CiphertextRef, ConsensusMaterial},
     s3_ct64_key, s3_ct128_key,
 };
@@ -33,33 +32,6 @@ pub use client::{
     FetchAttestationError, FetchCiphertextError, RegistryError,
     fetch_attestations_and_check_consensus,
 };
-
-/// Versioned encoding of the attestation. The version byte is part of the signed
-/// payload, so a stripped or downgraded `version` field flips signature recovery
-/// and is caught at verification time.
-#[derive(Copy, Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(try_from = "u8", into = "u8")]
-#[repr(u8)]
-pub enum Version {
-    V1 = 1,
-}
-
-impl TryFrom<u8> for Version {
-    type Error = AttestationError;
-
-    fn try_from(value: u8) -> Result<Self, Self::Error> {
-        match value {
-            1 => Ok(Version::V1),
-            other => Err(AttestationError::UnsupportedVersion(other)),
-        }
-    }
-}
-
-impl From<Version> for u8 {
-    fn from(v: Version) -> u8 {
-        v as u8
-    }
-}
 
 #[derive(Debug, thiserror::Error)]
 pub enum AttestationError {
