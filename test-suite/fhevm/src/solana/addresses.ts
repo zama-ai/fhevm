@@ -27,10 +27,14 @@ export { evmAddressBytes, type GatewayBootstrapInputs };
  * address artifact (`.fhevm/runtime/addresses/gateway/.env.gateway`), signer sets and chain id
  * live from the gateway RPC.
  */
-// The one ProtocolConfig getter the user-decrypt trust inputs need: the currently active KMS
-// context/epoch pair, the pair the KMS Connector validates every signed permit route against.
+// The ProtocolConfig getters the Solana side reads: the active KMS context/epoch pair the KMS
+// Connector validates every signed permit route against, and that context's thresholds.
 const PROTOCOL_CONFIG_ABI = parseAbi([
   "function getCurrentKmsContextAndEpoch() view returns (uint256 contextId, uint256 epochId)",
+  "function getPublicDecryptionThreshold() view returns (uint256)",
+  "function getUserDecryptionThreshold() view returns (uint256)",
+  "function getKmsGenThreshold() view returns (uint256)",
+  "function getMpcThreshold() view returns (uint256)",
 ]);
 
 /** The active KMS context/epoch pair declared by the deployed protocol configuration. */
@@ -75,13 +79,6 @@ export const readActiveKmsPair = async (parameters: {
   return { kmsContextId: contextId, kmsEpochId: epochId };
 };
 
-const PROTOCOL_CONFIG_THRESHOLDS_ABI = parseAbi([
-  "function getPublicDecryptionThreshold() view returns (uint256)",
-  "function getUserDecryptionThreshold() view returns (uint256)",
-  "function getKmsGenThreshold() view returns (uint256)",
-  "function getMpcThreshold() view returns (uint256)",
-]);
-
 /** The current KMS context's thresholds in the primary host chain's `ProtocolConfig`. */
 export const readEvmKmsThresholds = async (parameters: {
   readonly hostRpcUrl: string;
@@ -89,8 +86,9 @@ export const readEvmKmsThresholds = async (parameters: {
 }): Promise<KmsThresholds> => {
   const address = (await readProtocolConfigAddress(parameters.addressesPath)) as `0x${string}`;
   const client = createPublicClient({ transport: http(parameters.hostRpcUrl) });
-  const read = async (functionName: ContractFunctionName<typeof PROTOCOL_CONFIG_THRESHOLDS_ABI>) =>
-    Number(await client.readContract({ address, abi: PROTOCOL_CONFIG_THRESHOLDS_ABI, functionName }));
+  const read = async (
+    functionName: Exclude<ContractFunctionName<typeof PROTOCOL_CONFIG_ABI>, "getCurrentKmsContextAndEpoch">,
+  ) => Number(await client.readContract({ address, abi: PROTOCOL_CONFIG_ABI, functionName }));
   const [publicDecryption, userDecryption, kmsGen, mpc] = await Promise.all([
     read("getPublicDecryptionThreshold"),
     read("getUserDecryptionThreshold"),

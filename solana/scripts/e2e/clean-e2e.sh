@@ -29,10 +29,9 @@
 #   - relayer           : bytes32 host identity, Solana user-decrypt calldata + ed25519 seam
 #   - kms-connector     : Solana user-decrypt vertical (gw-listener + kms-worker)
 #
-# Because `kms-signer` discovers each kms-core's ACTUAL signer and registers it on-chain,
-# and `bootstrap` triggers keygen into THOSE kms-cores, the trust model is consistent by
-# construction -- the failure mode of hand-swapping the kms-core (signer + FHE key drift)
-# cannot occur. MAINNET-safe: validator pinned to 127.0.0.1:8899.
+# `kms-signer` discovers each kms-core's ACTUAL signer and registers it on-chain, and
+# `bootstrap` triggers keygen into those kms-cores. MAINNET-safe: validator pinned to
+# 127.0.0.1:8899.
 set -euo pipefail
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../../.." && pwd)"

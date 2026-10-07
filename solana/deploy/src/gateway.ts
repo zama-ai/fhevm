@@ -64,9 +64,13 @@ export const requiredEnv = (name: string): string => {
   return value;
 };
 
-export const integerEnv = (name: string, fallback: number): number => {
+/** A non-negative integer env value; required when there is no fallback. */
+export const integerEnv = (name: string, fallback?: number): number => {
   const raw = process.env[name];
-  if (raw === undefined || raw === '') return fallback;
+  if (raw === undefined || raw === '') {
+    if (fallback === undefined) throw new Error(`missing required env ${name}`);
+    return fallback;
+  }
   const value = Number(raw);
   if (!Number.isSafeInteger(value) || value < 0) throw new Error(`${name} must be a non-negative integer`);
   return value;

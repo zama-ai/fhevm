@@ -12,8 +12,8 @@
 import { closeSync, openSync } from 'node:fs';
 import path from 'node:path';
 
-import type { KmsThresholds } from '@fhevm/solana-zama-host';
-import type { Address } from '@solana/kit';
+import { type KmsThresholds, fetchKmsContext, findKmsContextPda } from '@fhevm/solana-zama-host';
+import { type Address, createSolanaRpc } from '@solana/kit';
 
 import { registerSolanaCoprocessorSql } from '../../../../solana/deploy/src/coprocessor';
 import { deployHostProgram } from '../../../../solana/deploy/src/deploy-host';
@@ -143,8 +143,6 @@ export const assertKmsThresholdsMatch = (solana: KmsThresholds, evm: KmsThreshol
  * signatures. A threshold set too low still passes every functional test, so it is checked here.
  */
 const assertKmsThresholdsMatchEvmHost = async (zamaHostId: string): Promise<void> => {
-  const { createSolanaRpc } = await import('@solana/kit');
-  const { fetchKmsContext, findKmsContextPda } = await import('@fhevm/solana-zama-host');
   const [kmsContext] = await findKmsContextPda(
     { contextId: BRINGUP_KMS_CONTEXT_ID },
     { programAddress: zamaHostId as Address },

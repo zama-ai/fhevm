@@ -36,12 +36,12 @@ import type { HostDeployContext } from './send';
  */
 export const kmsCertificateThreshold = (kmsCorruptionThreshold: number, registeredSignerCount: number): number => {
   if (!Number.isSafeInteger(kmsCorruptionThreshold) || kmsCorruptionThreshold < 0 || kmsCorruptionThreshold > 255) {
-    throw new Error('KMS_THRESHOLD must be an unsigned byte');
+    throw new Error('KMS corruption threshold t must be an unsigned byte');
   }
   const certificateThreshold = 2 * kmsCorruptionThreshold + 1;
   if (certificateThreshold > registeredSignerCount) {
     throw new Error(
-      `KMS_THRESHOLD=${kmsCorruptionThreshold} needs 2t+1=${certificateThreshold} certificate ` +
+      `KMS corruption threshold t=${kmsCorruptionThreshold} needs 2t+1=${certificateThreshold} certificate ` +
         `signatures but only ${registeredSignerCount} KMS signers are registered on the gateway`,
     );
   }
@@ -117,7 +117,7 @@ export const bootstrapZamaHost = async (context: HostDeployContext, params: Boot
   const shared = { eventAuthority, program: programAddress, hostConfig } as const;
   const ixConfig = { programAddress } as const;
 
-  const kmsCorruptionThreshold = params.kmsCorruptionThreshold;
+  const { kmsCorruptionThreshold } = params;
   const certificateThreshold = kmsCertificateThreshold(kmsCorruptionThreshold, params.gateway.kmsSigners.length);
   const existing = await fetchEncodedAccount(context.rpc, hostConfig);
 

@@ -118,7 +118,7 @@ const main = async () => {
         programKeypairPath: programKeypairPaths.zama_host,
         gateway,
         coprocessorThreshold: integerEnv('COPROCESSOR_THRESHOLD', 1),
-        kmsCorruptionThreshold: Number(requiredEnv('KMS_THRESHOLD')),
+        kmsCorruptionThreshold: integerEnv('KMS_THRESHOLD'),
       });
     } else {
       ids = await deployProgramArtifacts({ ...parameters, programs, programKeypairPaths });

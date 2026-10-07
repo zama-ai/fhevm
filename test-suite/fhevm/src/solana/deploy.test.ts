@@ -146,10 +146,8 @@ describe('kmsCertificateThreshold', () => {
 describe('host bootstrap thresholds', () => {
   test('come from the scenario the EVM stack was rendered from', async () => {
     const scenario = resolveScenarioFile('/tmp/solana.yaml', await loadCoprocessorScenario('solana'));
-    expect(bootstrapThresholdsForState({ scenario })).toEqual({
-      coprocessorThreshold: scenario.topology.threshold,
-      kmsCorruptionThreshold: scenario.kms.threshold,
-    });
+    // `solana` omits `kms`, so it runs the default 4-party cluster with t=1.
+    expect(bootstrapThresholdsForState({ scenario })).toEqual({ coprocessorThreshold: 1, kmsCorruptionThreshold: 1 });
   });
 
   test('a Solana KMS context that differs from the EVM one fails', () => {
