@@ -83,6 +83,17 @@ SPECIMEN_PROGRAMS = {
 # layout mirrors, the dapp's Codama codegen — is checked against the new shape first.
 EXPECTED_IDL_SPEC = "0.1.0"
 
+# Error tables of library crates. Anchor writes only a program's own errors into its IDL, so the
+# codes zama-fhe returns from inside app programs reach no IDL; build-zama-fhe-errors.sh writes the
+# table from the crate's `#[error_code]` the same way, and the SDK codegen renders it. Not an IDL,
+# so it is copied and compared but has no spec version.
+ERROR_TABLES = {
+    "zama_fhe_errors": {
+        "target_idl": "target/idl/zama_fhe_errors.json",
+        "vendored_idl": "crates/zama-fhe/idl/zama_fhe_errors.json",
+    },
+}
+
 
 def idl_spec_errors(root: pathlib.Path, which: str) -> list[str]:
     """Check the IDL format version of every IDL, on whichever side `which` names."""
@@ -112,6 +123,11 @@ def vendored_idls() -> dict[str, dict[str, Any]]:
     and compared by nothing.
     """
     return {**PROGRAMS, **DEMO_PROGRAMS, **SPECIMEN_PROGRAMS}
+
+
+def vendored_build_outputs() -> dict[str, dict[str, Any]]:
+    """Every committed copy of a build output: the IDLs and the library error tables."""
+    return {**vendored_idls(), **ERROR_TABLES}
 
 
 PINNED_SCHEMAS = [
@@ -204,7 +220,7 @@ def main() -> int:
             for error in spec_errors:
                 print(f"error: {error}", file=sys.stderr)
             return 1
-        for spec in vendored_idls().values():
+        for spec in vendored_build_outputs().values():
             shutil.copyfile(
                 root / spec["target_idl"],
                 (root / spec["vendored_idl"]).resolve(),
@@ -220,7 +236,7 @@ def main() -> int:
         return 0
 
     errors: list[str] = idl_spec_errors(root, "vendored_idl")
-    for program, spec in vendored_idls().items():
+    for program, spec in vendored_build_outputs().items():
         target = root / spec["target_idl"]
         vendored = (root / spec["vendored_idl"]).resolve()
         if not target.exists():

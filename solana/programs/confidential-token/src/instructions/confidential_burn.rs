@@ -492,8 +492,7 @@ fn execute_burn<'info>(
             let new_total_supply = builder.sub(total_supply, burned)?;
             builder.output(new_total_supply, total_supply_output.output())?;
             Ok(())
-        })
-        .map_err(invalid_execution)?;
+        })?;
     // Persistent output accounts are the same for both arms; the existing-value arm adds the
     // amount encrypted store as a read-only persistent input operand the execution now
     // requires, and its authority's signature when the signing owner controls it directly.

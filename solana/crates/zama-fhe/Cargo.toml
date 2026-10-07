@@ -9,6 +9,7 @@ license.workspace = true
 [features]
 default = []
 cpi = ["zama-host/cpi"]
+idl-build = ["anchor-lang/idl-build", "zama-host/idl-build"]
 
 [dependencies]
 anchor-lang = "1.2.0"

@@ -243,6 +243,38 @@ impl ExecutionAccountResolutionError {
     }
 }
 
+/// The error code alone cannot name the account, so the offending pubkey is logged first.
+#[cfg(feature = "cpi")]
+impl From<ExecutionAccountResolutionError> for anchor_lang::error::Error {
+    fn from(error: ExecutionAccountResolutionError) -> Self {
+        anchor_lang::prelude::msg!("fhe_execute account: {}", error.pubkey());
+        match error {
+            ExecutionAccountResolutionError::DuplicateDynamicAccount { .. } => {
+                crate::FheExecutionError::DuplicateDynamicAccount
+            }
+            ExecutionAccountResolutionError::UnexpectedDynamicAccount { .. } => {
+                crate::FheExecutionError::UnexpectedDynamicAccount
+            }
+            ExecutionAccountResolutionError::MissingDynamicAccount { .. } => {
+                crate::FheExecutionError::MissingDynamicAccount
+            }
+            ExecutionAccountResolutionError::DynamicAccountNotWritable { .. } => {
+                crate::FheExecutionError::DynamicAccountNotWritable
+            }
+            ExecutionAccountResolutionError::DuplicateStoreAuthority { .. } => {
+                crate::FheExecutionError::DuplicateStoreAuthority
+            }
+            ExecutionAccountResolutionError::UnexpectedStoreAuthority { .. } => {
+                crate::FheExecutionError::UnexpectedStoreAuthority
+            }
+            ExecutionAccountResolutionError::MissingStoreAuthority { .. } => {
+                crate::FheExecutionError::MissingStoreAuthority
+            }
+        }
+        .into()
+    }
+}
+
 /// Ordered dynamic accounts resolved from an [`FheExecution`].
 #[cfg(feature = "cpi")]
 #[derive(Debug)]

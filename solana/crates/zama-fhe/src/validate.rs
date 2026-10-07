@@ -10,7 +10,7 @@ use zama_host::{
 
 use crate::accounts::ExecutionAccountMeta;
 use crate::operand::{Operand, OperandKind};
-use crate::{FheExecutionBuildError, Result};
+use crate::{FheExecutionError, Result};
 
 pub(crate) fn validate_lowered_execution(
     steps: &[FheExecuteStep],
@@ -23,20 +23,20 @@ pub(crate) fn validate_lowered_execution(
     debug_assert_eq!(used_accounts.len(), remaining_accounts.len());
     debug_assert_eq!(used_dictionary.len(), dictionary.len());
     if u8::try_from(remaining_accounts.len()).is_err() {
-        return Err(FheExecutionBuildError::TooManyRemainingAccounts);
+        return Err(FheExecutionError::TooManyRemainingAccounts);
     }
     if u8::try_from(dictionary.len()).is_err() {
-        return Err(FheExecutionBuildError::TooManyDictionaryEntries);
+        return Err(FheExecutionError::TooManyDictionaryEntries);
     }
     for (index, account) in remaining_accounts.iter().enumerate() {
         if account.pubkey == Pubkey::default() || account.purposes.is_empty() {
-            return Err(FheExecutionBuildError::InvalidRemainingAccountReference);
+            return Err(FheExecutionError::InvalidRemainingAccountReference);
         }
         if remaining_accounts[index + 1..]
             .iter()
             .any(|candidate| candidate.pubkey == account.pubkey)
         {
-            return Err(FheExecutionBuildError::InvalidRemainingAccountReference);
+            return Err(FheExecutionError::InvalidRemainingAccountReference);
         }
         // A Store authority is found by key, never by wire index: it counts as used by the
         // operand or output whose authority it is.
@@ -50,16 +50,16 @@ pub(crate) fn validate_lowered_execution(
     }
     for effect in effects {
         if usize::from(effect.result.step_index) >= steps.len() || effect.result.output_index != 0 {
-            return Err(FheExecutionBuildError::InvalidTransientReference);
+            return Err(FheExecutionError::InvalidTransientReference);
         }
         validate_lowered_effect(effect, used_accounts, used_dictionary)?;
     }
     if used_accounts.iter().any(|used| !*used) {
-        return Err(FheExecutionBuildError::InvalidRemainingAccountReference);
+        return Err(FheExecutionError::InvalidRemainingAccountReference);
     }
     // Mirrors the host's whole-execution dictionary hygiene rule: every interned entry must be referenced.
     if used_dictionary.iter().any(|used| !*used) {
-        return Err(FheExecutionBuildError::UnreferencedDictionaryEntry);
+        return Err(FheExecutionError::UnreferencedDictionaryEntry);
     }
     Ok(())
 }
@@ -189,15 +189,13 @@ fn validate_lowered_encrypted_operand(
 
         FheExecuteOperand::EarlierStep { producer_index } => {
             if usize::from(*producer_index) >= step_index {
-                return Err(FheExecutionBuildError::InvalidTransientReference);
+                return Err(FheExecutionError::InvalidTransientReference);
             }
         }
         FheExecuteOperand::VerifiedInput { .. } => {
             // No remaining account: the attestation is carried inline and verified in-execution.
         }
-        FheExecuteOperand::Scalar { .. } => {
-            return Err(FheExecutionBuildError::ScalarEncryptedOperand)
-        }
+        FheExecuteOperand::Scalar { .. } => return Err(FheExecutionError::ScalarEncryptedOperand),
     }
     Ok(())
 }
@@ -233,7 +231,7 @@ fn validate_lowered_effect(
 fn mark_lowered_account(used_accounts: &mut [bool], index: u8) -> Result<()> {
     let used = used_accounts
         .get_mut(usize::from(index))
-        .ok_or(FheExecutionBuildError::InvalidRemainingAccountReference)?;
+        .ok_or(FheExecutionError::InvalidRemainingAccountReference)?;
     *used = true;
     Ok(())
 }
@@ -241,7 +239,7 @@ fn mark_lowered_account(used_accounts: &mut [bool], index: u8) -> Result<()> {
 fn mark_lowered_dictionary_entry(used_dictionary: &mut [bool], index: u8) -> Result<()> {
     let used = used_dictionary
         .get_mut(usize::from(index))
-        .ok_or(FheExecutionBuildError::DictionaryIndexOutOfBounds)?;
+        .ok_or(FheExecutionError::DictionaryIndexOutOfBounds)?;
     *used = true;
     Ok(())
 }
@@ -261,35 +259,35 @@ where
     validate_supported_binary_output_type(op, output_fhe_type)?;
 
     let lhs_type = operand_fhe_type(lhs, produced_count, &produced_type)?
-        .ok_or(FheExecutionBuildError::ScalarLhsOperand)?;
+        .ok_or(FheExecutionError::ScalarLhsOperand)?;
     match op {
         // Eq/Ne accept Bool and Uint8..Uint128; ordered comparisons Uint8..Uint128.
         FheBinaryOpCode::Eq | FheBinaryOpCode::Ne => {
             if !is_supported_fhe_type(lhs_type) {
-                return Err(FheExecutionBuildError::UnsupportedFheType);
+                return Err(FheExecutionError::UnsupportedFheType);
             }
         }
         FheBinaryOpCode::Ge | FheBinaryOpCode::Gt | FheBinaryOpCode::Le | FheBinaryOpCode::Lt => {
             if !is_supported_uint_fhe_type(lhs_type) {
-                return Err(FheExecutionBuildError::UnsupportedFheType);
+                return Err(FheExecutionError::UnsupportedFheType);
             }
         }
         // Div/Rem: divisor must be a plaintext scalar (EVM `IsNotScalar`), non-zero after truncation.
         FheBinaryOpCode::Div | FheBinaryOpCode::Rem => {
             if lhs_type != output_fhe_type {
-                return Err(FheExecutionBuildError::BinaryOperandTypeMismatch);
+                return Err(FheExecutionError::BinaryOperandTypeMismatch);
             }
             match &rhs.0 {
                 OperandKind::Scalar(value) => {
                     if scalar_is_zero_for_type(*value, output_fhe_type) {
-                        return Err(FheExecutionBuildError::DivisionByZero);
+                        return Err(FheExecutionError::DivisionByZero);
                     }
                 }
                 OperandKind::StoreSlot { .. }
                 | OperandKind::Granted { .. }
                 | OperandKind::Transient { .. }
                 | OperandKind::VerifiedInput { .. } => {
-                    return Err(FheExecutionBuildError::DivisorMustBeScalar)
+                    return Err(FheExecutionError::DivisorMustBeScalar)
                 }
             }
         }
@@ -307,13 +305,13 @@ where
         | FheBinaryOpCode::Min
         | FheBinaryOpCode::Max => {
             if lhs_type != output_fhe_type {
-                return Err(FheExecutionBuildError::BinaryOperandTypeMismatch);
+                return Err(FheExecutionError::BinaryOperandTypeMismatch);
             }
         }
     }
     if let Some(rhs_type) = operand_fhe_type(rhs, produced_count, &produced_type)? {
         if rhs_type != lhs_type {
-            return Err(FheExecutionBuildError::BinaryOperandTypeMismatch);
+            return Err(FheExecutionError::BinaryOperandTypeMismatch);
         }
     }
     Ok(())
@@ -332,36 +330,36 @@ where
 {
     validate_supported_fhe_type(output_fhe_type)?;
     if !unary_output_type_ok(op, output_fhe_type) {
-        return Err(FheExecutionBuildError::UnsupportedFheType);
+        return Err(FheExecutionError::UnsupportedFheType);
     }
     let operand_type = operand_fhe_type(operand, produced_count, &produced_type)?
-        .ok_or(FheExecutionBuildError::ScalarEncryptedOperand)?;
+        .ok_or(FheExecutionError::ScalarEncryptedOperand)?;
     validate_supported_fhe_type(operand_type)?;
     match op {
         FheUnaryOpCode::Neg => {
             if !is_supported_uint_fhe_type(operand_type) {
-                return Err(FheExecutionBuildError::UnsupportedFheType);
+                return Err(FheExecutionError::UnsupportedFheType);
             }
             if operand_type != output_fhe_type {
-                return Err(FheExecutionBuildError::BinaryOperandTypeMismatch);
+                return Err(FheExecutionError::BinaryOperandTypeMismatch);
             }
         }
         FheUnaryOpCode::Not => {
             if !is_supported_fhe_type(operand_type) {
-                return Err(FheExecutionBuildError::UnsupportedFheType);
+                return Err(FheExecutionError::UnsupportedFheType);
             }
             if operand_type != output_fhe_type {
-                return Err(FheExecutionBuildError::BinaryOperandTypeMismatch);
+                return Err(FheExecutionError::BinaryOperandTypeMismatch);
             }
         }
         FheUnaryOpCode::Cast => {
             // Cast input set: Bool | Uint8..Uint128 (no eaddress/Uint160). Solana host max is euint128.
             if !is_supported_fhe_type(operand_type) {
-                return Err(FheExecutionBuildError::UnsupportedFheType);
+                return Err(FheExecutionError::UnsupportedFheType);
             }
             // Same-type cast is rejected (EVM InvalidType parity).
             if operand_type == output_fhe_type {
-                return Err(FheExecutionBuildError::UnsupportedFheType);
+                return Err(FheExecutionError::UnsupportedFheType);
             }
         }
     }
@@ -383,14 +381,14 @@ where
     validate_supported_fhe_type(output_fhe_type)?;
 
     let control_type = operand_fhe_type(control, produced_count, &produced_type)?
-        .ok_or(FheExecutionBuildError::ScalarEncryptedOperand)?;
+        .ok_or(FheExecutionError::ScalarEncryptedOperand)?;
     let true_type = operand_fhe_type(if_true, produced_count, &produced_type)?
-        .ok_or(FheExecutionBuildError::ScalarEncryptedOperand)?;
+        .ok_or(FheExecutionError::ScalarEncryptedOperand)?;
     let false_type = operand_fhe_type(if_false, produced_count, &produced_type)?
-        .ok_or(FheExecutionBuildError::ScalarEncryptedOperand)?;
+        .ok_or(FheExecutionError::ScalarEncryptedOperand)?;
 
     if control_type != 0 || true_type != output_fhe_type || false_type != output_fhe_type {
-        return Err(FheExecutionBuildError::TernaryOperandTypeMismatch);
+        return Err(FheExecutionError::TernaryOperandTypeMismatch);
     }
     Ok(())
 }
@@ -409,11 +407,11 @@ where
         }
         OperandKind::Transient { producer_index } => {
             if *producer_index as usize >= produced_count {
-                return Err(FheExecutionBuildError::InvalidTransientReference);
+                return Err(FheExecutionError::InvalidTransientReference);
             }
             produced_type(*producer_index)
                 .map(Some)
-                .ok_or(FheExecutionBuildError::InvalidTransientReference)
+                .ok_or(FheExecutionError::InvalidTransientReference)
         }
         OperandKind::VerifiedInput { input_handle, .. } => Ok(Some(handle_fhe_type(*input_handle))),
         OperandKind::Scalar(_) => Ok(None),
@@ -426,7 +424,7 @@ pub(crate) fn validate_supported_binary_output_type(
 ) -> Result<()> {
     validate_supported_fhe_type(output_fhe_type)?;
     if !binary_output_type_ok(op, output_fhe_type) {
-        return Err(FheExecutionBuildError::UnsupportedBinaryOutputType);
+        return Err(FheExecutionError::UnsupportedBinaryOutputType);
     }
     Ok(())
 }
@@ -435,7 +433,7 @@ pub(crate) fn validate_supported_fhe_type(fhe_type: u8) -> Result<()> {
     if is_supported_fhe_type(fhe_type) {
         Ok(())
     } else {
-        Err(FheExecutionBuildError::UnsupportedFheType)
+        Err(FheExecutionError::UnsupportedFheType)
     }
 }
 
@@ -443,7 +441,7 @@ pub(crate) fn validate_uint_fhe_type(fhe_type: u8) -> Result<()> {
     if is_supported_uint_fhe_type(fhe_type) {
         Ok(())
     } else {
-        Err(FheExecutionBuildError::UnsupportedFheType)
+        Err(FheExecutionError::UnsupportedFheType)
     }
 }
 
@@ -451,7 +449,7 @@ pub(crate) fn validate_uint_fhe_type(fhe_type: u8) -> Result<()> {
 pub(crate) fn validate_allow_keys(keys: &[Pubkey]) -> Result<()> {
     for (index, key) in keys.iter().enumerate() {
         if *key == Pubkey::default() || keys[..index].contains(key) {
-            return Err(FheExecutionBuildError::InvalidAllowKey);
+            return Err(FheExecutionError::InvalidAllowKey);
         }
     }
     Ok(())
@@ -459,7 +457,7 @@ pub(crate) fn validate_allow_keys(keys: &[Pubkey]) -> Result<()> {
 
 pub(crate) fn validate_authority(authority: Pubkey) -> Result<()> {
     if authority == Pubkey::default() {
-        return Err(FheExecutionBuildError::InvalidExecutionAuthority);
+        return Err(FheExecutionError::InvalidExecutionAuthority);
     }
     Ok(())
 }

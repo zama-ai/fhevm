@@ -106,9 +106,7 @@ pub(crate) fn uint64_operand(
     state: &zama_host::EncryptedStore,
     key: [u8; 32],
 ) -> Result<zama_fhe::Uint64Handle> {
-    zama_fhe::Store::new(state)
-        .get(key)
-        .map_err(|_| error!(ConfidentialTokenError::InvalidFheExecution))
+    zama_fhe::Store::new(state).get(key).map_err(Into::into)
 }
 
 /// The deny record witnesses for one `fhe_execute` CPI: exactly one remaining account per
@@ -324,9 +322,7 @@ impl<'info> ExecutionAccountSet<'info> {
             .iter()
             .map(StoreAuthority::account_info)
             .collect::<Vec<_>>();
-        let accounts = execution
-            .resolve_accounts(available_accounts, store_authority_accounts)
-            .map_err(map_execution_account_resolution_error)?;
+        let accounts = execution.resolve_accounts(available_accounts, store_authority_accounts)?;
 
         Ok(Self {
             accounts,
@@ -351,35 +347,6 @@ impl<'info> ExecutionAccountSet<'info> {
 
     fn resolved_accounts(&self) -> &zama_fhe::ResolvedExecutionAccounts<'info> {
         &self.accounts
-    }
-}
-
-fn map_execution_account_resolution_error(
-    error: zama_fhe::ExecutionAccountResolutionError,
-) -> Error {
-    msg!("invalid fhe_execute account set: {:?}", error);
-    match error {
-        zama_fhe::ExecutionAccountResolutionError::DuplicateDynamicAccount { .. } => {
-            error!(ConfidentialTokenError::DuplicateFheExecuteAccount)
-        }
-        zama_fhe::ExecutionAccountResolutionError::UnexpectedDynamicAccount { .. } => {
-            error!(ConfidentialTokenError::UnexpectedFheExecuteAccount)
-        }
-        zama_fhe::ExecutionAccountResolutionError::MissingDynamicAccount { .. } => {
-            error!(ConfidentialTokenError::MissingFheExecuteAccount)
-        }
-        zama_fhe::ExecutionAccountResolutionError::DynamicAccountNotWritable { .. } => {
-            error!(ConfidentialTokenError::FheExecuteAccountNotWritable)
-        }
-        zama_fhe::ExecutionAccountResolutionError::DuplicateStoreAuthority { .. } => {
-            error!(ConfidentialTokenError::DuplicateFheOutputAuthority)
-        }
-        zama_fhe::ExecutionAccountResolutionError::UnexpectedStoreAuthority { .. } => {
-            error!(ConfidentialTokenError::UnexpectedFheOutputAuthority)
-        }
-        zama_fhe::ExecutionAccountResolutionError::MissingStoreAuthority { .. } => {
-            error!(ConfidentialTokenError::MissingFheOutputAuthority)
-        }
     }
 }
 
@@ -477,151 +444,4 @@ fn invoke_with_authorities<'info, R>(
         },
         &signer_seeds,
     )
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    fn balance_handle(tag: u8) -> [u8; 32] {
-        let mut handle = [tag; 32];
-        handle[30] = crate::BALANCE_FHE_TYPE;
-        handle
-    }
-
-    fn account_info(pubkey: Pubkey, is_writable: bool) -> AccountInfo<'static> {
-        let key = Box::leak(Box::new(pubkey));
-        let owner = Box::leak(Box::new(System::id()));
-        let lamports = Box::leak(Box::new(0));
-        let data = Box::leak(Vec::new().into_boxed_slice());
-        AccountInfo::new(key, false, is_writable, lamports, data, owner, false)
-    }
-
-    // The signer model is irrelevant to these tests — they resolve authorities by address, and the
-    // seeds are only used when actually signing a CPI, which a host unit test never does.
-    fn store_authority(pubkey: Pubkey) -> StoreAuthority<'static> {
-        StoreAuthority::external(account_info(pubkey, false))
-    }
-
-    fn sample_plan() -> (zama_fhe::FheExecution, Pubkey, Pubkey) {
-        let authority = Pubkey::new_unique();
-        let input_account = zama_host::EncryptedStore {
-            program: crate::ID,
-            authority,
-            scope: Pubkey::new_from_array([1; 32]),
-            slots: vec![zama_host::EncryptedSlot {
-                key: [1; 32],
-                handle: balance_handle(1),
-            }],
-            leaf_count: 0,
-            peaks: vec![],
-            bump: 0,
-        };
-        let state = zama_fhe::Store::new(&input_account);
-        let state_address = state.id().address();
-        let input = state.get::<zama_fhe::Uint<64>>([1; 32]).unwrap();
-        let execution = zama_fhe::FheExecution::build(state.id(), |builder| {
-            let result = builder.add(input, zama_fhe::Scalar::<zama_fhe::Uint<64>>::u64(1))?;
-            builder.output(result, state.set([2; 32]).allow(authority))?;
-            Ok(())
-        })
-        .unwrap();
-        (execution, state_address, authority)
-    }
-
-    fn token_error_number(error: Error) -> u32 {
-        match error {
-            Error::AnchorError(error) => error.error_code_number,
-            other => panic!("unexpected error: {other:?}"),
-        }
-    }
-
-    fn assert_token_error(error: Error, expected: ConfidentialTokenError) {
-        assert_eq!(
-            token_error_number(error),
-            token_error_number(error!(expected))
-        );
-    }
-
-    #[test]
-    fn batch_account_set_maps_dynamic_account_errors() {
-        let (execution, state_address, authority) = sample_plan();
-
-        let error = ExecutionAccountSet::for_execution(
-            &execution,
-            vec![
-                account_info(state_address, true),
-                account_info(state_address, true),
-            ],
-            vec![store_authority(authority)],
-        )
-        .err()
-        .unwrap();
-        assert_token_error(error, ConfidentialTokenError::DuplicateFheExecuteAccount);
-
-        let error = ExecutionAccountSet::for_execution(
-            &execution,
-            vec![
-                account_info(state_address, true),
-                account_info(Pubkey::new_unique(), false),
-            ],
-            vec![store_authority(authority)],
-        )
-        .err()
-        .unwrap();
-        assert_token_error(error, ConfidentialTokenError::UnexpectedFheExecuteAccount);
-
-        let error = ExecutionAccountSet::for_execution(
-            &execution,
-            vec![],
-            vec![store_authority(authority)],
-        )
-        .err()
-        .unwrap();
-        assert_token_error(error, ConfidentialTokenError::MissingFheExecuteAccount);
-
-        let error = ExecutionAccountSet::for_execution(
-            &execution,
-            vec![account_info(state_address, false)],
-            vec![store_authority(authority)],
-        )
-        .err()
-        .unwrap();
-        assert_token_error(error, ConfidentialTokenError::FheExecuteAccountNotWritable);
-    }
-
-    #[test]
-    fn batch_account_set_maps_store_authority_errors() {
-        let (execution, state_address, authority) = sample_plan();
-
-        let error = ExecutionAccountSet::for_execution(
-            &execution,
-            vec![account_info(state_address, true)],
-            vec![store_authority(authority), store_authority(authority)],
-        )
-        .err()
-        .unwrap();
-        assert_token_error(error, ConfidentialTokenError::DuplicateFheOutputAuthority);
-
-        let error = ExecutionAccountSet::for_execution(
-            &execution,
-            vec![account_info(state_address, true)],
-            vec![
-                store_authority(authority),
-                store_authority(Pubkey::new_unique()),
-            ],
-        )
-        .err()
-        .unwrap();
-        assert_token_error(error, ConfidentialTokenError::UnexpectedFheOutputAuthority);
-
-        let error = ExecutionAccountSet::for_execution(
-            &execution,
-            vec![account_info(state_address, true)],
-            Vec::new(),
-        )
-        .err()
-        .unwrap();
-        assert_token_error(error, ConfidentialTokenError::MissingFheOutputAuthority);
-    }
 }

@@ -87,7 +87,7 @@ pub(crate) fn balance_handle(tag: u8) -> [u8; 32] {
 pub(crate) fn try_measure<F>(
     name: String,
     build: F,
-) -> std::result::Result<MeasuredShape, crate::FheExecutionBuildError>
+) -> std::result::Result<MeasuredShape, crate::FheExecutionError>
 where
     F: for<'id> FnOnce(&mut FheExecutionBuilder<'id>) -> crate::Result<()>,
 {

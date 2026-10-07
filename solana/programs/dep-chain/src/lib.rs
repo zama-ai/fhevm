@@ -90,14 +90,11 @@ pub mod dep_chain {
             let result = builder.trivial_encrypt_u64(0)?;
             builder.output(result, output)?;
             Ok(())
-        })
-        .map_err(invalid_execution)?;
-        let resolved = execution
-            .resolve_accounts(
-                [ctx.accounts.encrypted_store.to_account_info()],
-                [ctx.accounts.chain_authority.to_account_info()],
-            )
-            .map_err(invalid_execution_accounts)?;
+        })?;
+        let resolved = execution.resolve_accounts(
+            [ctx.accounts.encrypted_store.to_account_info()],
+            [ctx.accounts.chain_authority.to_account_info()],
+        )?;
         execution.invoke(
             ExecutionCpiAccounts {
                 payer: ctx.accounts.owner.to_account_info(),
@@ -129,9 +126,7 @@ pub mod dep_chain {
         );
         let chain = ctx.accounts.chain.key();
         let state = Store::new(&ctx.accounts.encrypted_store);
-        let operand = state
-            .get::<Uint<64>>(encrypted_tail_label())
-            .map_err(invalid_execution)?;
+        let operand = state.get::<Uint<64>>(encrypted_tail_label())?;
         let output = state
             .set(encrypted_tail_label())
             .allow(ctx.accounts.owner.key());
@@ -142,14 +137,11 @@ pub mod dep_chain {
             }
             builder.output(value, output)?;
             Ok(())
-        })
-        .map_err(invalid_execution)?;
-        let resolved = execution
-            .resolve_accounts(
-                [ctx.accounts.encrypted_store.to_account_info()],
-                [ctx.accounts.chain_authority.to_account_info()],
-            )
-            .map_err(invalid_execution_accounts)?;
+        })?;
+        let resolved = execution.resolve_accounts(
+            [ctx.accounts.encrypted_store.to_account_info()],
+            [ctx.accounts.chain_authority.to_account_info()],
+        )?;
         let bump = [ctx.accounts.chain.authority_bump];
         let authority_seeds: &[&[u8]] = &[CHAIN_AUTHORITY_SEED, chain.as_ref(), &bump];
         execution.invoke(
@@ -171,18 +163,6 @@ pub mod dep_chain {
             &[authority_seeds],
         )
     }
-}
-
-fn invalid_execution(error: zama_fhe::FheExecutionBuildError) -> anchor_lang::error::Error {
-    msg!("invalid FHE execution: {:?}", error);
-    error!(DepChainError::InvalidFheExecution)
-}
-
-fn invalid_execution_accounts(
-    error: zama_fhe::ExecutionAccountResolutionError,
-) -> anchor_lang::error::Error {
-    msg!("invalid dep-chain fhe_execute accounts: {:?}", error);
-    error!(DepChainError::InvalidFheExecution)
 }
 
 #[derive(Accounts)]

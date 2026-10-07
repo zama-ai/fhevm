@@ -17,6 +17,8 @@ use anchor_lang::prelude::Pubkey;
 use crate::accounts::ResolvedExecutionAccounts;
 #[cfg(feature = "cpi")]
 use crate::execution::FheExecution;
+#[cfg(feature = "cpi")]
+use crate::FheExecutionError;
 
 /// The fixed accounts of one `fhe_execute` CPI. The per-execution ones — the application's deny
 /// record and the host's rand nonce — are derived from the built execution: `FheExecution::app`
@@ -44,6 +46,10 @@ pub struct ExecutionCpiAccounts<'info> {
     pub transient_store: AccountInfo<'info>,
     pub instructions: AccountInfo<'info>,
     pub event_authority: AccountInfo<'info>,
+    /// Must be `zama_host::ID`, which is compiled from the `PROGRAM_ENVIRONMENT` the app is built
+    /// with, so an app build targets exactly one Zama deployment; a build outside this workspace
+    /// gets `preview-env` unless it sets the variable (DD-053). Any other account fails with
+    /// [`FheExecutionError::HostProgramMismatch`], logging the received and expected ids.
     pub program: AccountInfo<'info>,
 }
 
@@ -81,8 +87,17 @@ fn invoke_execution_signed_with_resolver<'info, R>(
 where
     R: ExecutionAccountResolver<'info> + ?Sized,
 {
+    if accounts.program.key() != zama_host::ID {
+        return Err(
+            anchor_lang::error::Error::from(FheExecutionError::HostProgramMismatch)
+                .with_pubkeys((accounts.program.key(), zama_host::ID)),
+        );
+    }
     if accounts.authority.key() != execution.authority() {
-        return Err(anchor_lang::error::ErrorCode::ConstraintAddress.into());
+        return Err(
+            anchor_lang::error::Error::from(FheExecutionError::ExecutionAuthorityMismatch)
+                .with_pubkeys((accounts.authority.key(), execution.authority())),
+        );
     }
     let deny_scope_records = accounts.deny_scope_records;
     let fixed_accounts = zama_host::cpi::accounts::FheExecute {
@@ -106,10 +121,10 @@ where
     // place: `invoke` consumed the execution, so nothing can observe the mutation.
     execution.args.account_count =
         u8::try_from(execution.remaining_accounts.len() + deny_scope_records.len())
-            .map_err(|_| anchor_lang::error::ErrorCode::AccountNotEnoughKeys)?;
+            .map_err(|_| FheExecutionError::TooManyRemainingAccounts)?;
 
     let instruction = Instruction {
-        program_id: fixed_accounts.program.key(),
+        program_id: zama_host::ID,
         accounts: account_metas,
         data: crate::execution::fhe_execute_instruction_data(&execution.args),
     };
@@ -142,7 +157,7 @@ where
     for required in &execution.remaining_accounts {
         let account = resolver
             .resolve_execution_account(required.pubkey)
-            .ok_or(anchor_lang::error::ErrorCode::AccountNotEnoughKeys)?;
+            .ok_or(FheExecutionError::MissingDynamicAccount)?;
         let meta = if required.is_writable {
             AccountMeta::new(required.pubkey, required.is_signer)
         } else {

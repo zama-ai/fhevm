@@ -86,8 +86,7 @@ pub fn initialize_token_account<'info>(
             let new_balance = builder.trivial_encrypt_u64(0)?;
             builder.output(new_balance, balance_output.output())?;
             Ok(())
-        })
-        .map_err(invalid_execution)?;
+        })?;
     let execution_accounts = fhe::ExecutionAccountSet::for_execution(
         &execution,
         [balance_output.account_info()],

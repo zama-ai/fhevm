@@ -130,14 +130,11 @@ pub fn join<'info>(
     let transferred = transfer_to_batch(&ctx, amount_attestation, authority_seeds)?;
     let account = fhe::read_state(&ctx.accounts.join_store)?;
     let state = zama_fhe::Store::new(&account);
-    let amount = state
-        .granted::<zama_fhe::Uint<64>>(transferred)
-        .map_err(fhe::invalid_execution)?;
+    let amount = state.granted::<zama_fhe::Uint<64>>(transferred)?;
     let previous = account
         .get(&joined_amount_key())
         .map(|_| state.get::<zama_fhe::Uint<64>>(joined_amount_key()))
-        .transpose()
-        .map_err(fhe::invalid_execution)?;
+        .transpose()?;
     let output = state.set(joined_amount_key()).allow(user);
     let execution = zama_fhe::FheExecution::build_returning(state.id(), |builder| {
         let joined = match previous {
@@ -146,8 +143,7 @@ pub fn join<'info>(
         };
         builder.output(joined, output)?;
         Ok(joined)
-    })
-    .map_err(fhe::invalid_execution)?;
+    })?;
     let joined_handle = fhe::JoinExecute {
         batch: batch_key,
         user,

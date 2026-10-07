@@ -72,7 +72,7 @@ fn the_tally_never_crosses_the_budget_even_transiently() {
                 let result = builder.is_in(value, (0..60).map(|_| value));
                 probe(builder, &probes);
                 if let Err(error) = result {
-                    assert_eq!(error, crate::FheExecutionBuildError::ExceedsBuildHeapBudget);
+                    assert_eq!(error, crate::FheExecutionError::ExceedsBuildHeapBudget);
                     rejections.set(rejections.get() + 1);
                     break;
                 }
@@ -81,7 +81,7 @@ fn the_tally_never_crosses_the_budget_even_transiently() {
             probe(builder, &probes);
             assert_eq!(
                 oversized.unwrap_err(),
-                crate::FheExecutionBuildError::ExceedsBuildHeapBudget,
+                crate::FheExecutionError::ExceedsBuildHeapBudget,
             );
             Ok(())
         },
@@ -112,8 +112,8 @@ fn the_tally_never_crosses_the_budget_even_transiently() {
                     Err(error) => {
                         assert!(matches!(
                             error,
-                            crate::FheExecutionBuildError::ExceedsBuildHeapBudget
-                                | crate::FheExecutionBuildError::TooManyDictionaryEntries
+                            crate::FheExecutionError::ExceedsBuildHeapBudget
+                                | crate::FheExecutionError::TooManyDictionaryEntries
                         ));
                         rejections.set(rejections.get() + 1);
                     }
@@ -144,7 +144,7 @@ fn the_tally_never_crosses_the_budget_even_transiently() {
                 };
                 probe(builder, &probes);
                 if let Err(error) = result {
-                    assert_eq!(error, crate::FheExecutionBuildError::ExceedsBuildHeapBudget);
+                    assert_eq!(error, crate::FheExecutionError::ExceedsBuildHeapBudget);
                     rejections.set(rejections.get() + 1);
                     break;
                 }
@@ -220,7 +220,7 @@ fn the_shapes_past_each_ceiling_are_rejected_with_their_own_error() {
             MAX_FHE_EXECUTION_STEPS,
             WIDE_ALLOW_LIST,
         ))),
-        crate::FheExecutionBuildError::TooManyDictionaryEntries,
+        crate::FheExecutionError::TooManyDictionaryEntries,
     );
     // A full-depth all-update execution with four-key audiences outgrows the budget during the
     // build itself — its dictionary doubles past the up-front reservation — so the per-step
@@ -233,7 +233,7 @@ fn the_shapes_past_each_ceiling_are_rejected_with_their_own_error() {
             MAX_FHE_EXECUTION_STEPS,
             4,
         ))),
-        crate::FheExecutionBuildError::ExceedsBuildHeapBudget,
+        crate::FheExecutionError::ExceedsBuildHeapBudget,
     );
     // One attestation past the buildable maximum trips a typed admission error, not a runtime
     // abort.
@@ -242,8 +242,8 @@ fn the_shapes_past_each_ceiling_are_rejected_with_their_own_error() {
     assert!(
         matches!(
             over,
-            crate::FheExecutionBuildError::ExceedsBuildHeapBudget
-                | crate::FheExecutionBuildError::ExceedsCpiInstructionDataLimit
+            crate::FheExecutionError::ExceedsBuildHeapBudget
+                | crate::FheExecutionError::ExceedsCpiInstructionDataLimit
         ),
         "attestations x{}: expected a typed admission error, got {over:?}",
         count + 1,

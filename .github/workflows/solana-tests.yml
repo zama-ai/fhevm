@@ -101,6 +101,7 @@ jobs:
               - solana/deploy/src/generated/**
               - solana/programs/encrypted-counter/idl/**
               - solana/programs/dep-chain/idl/**
+              - solana/crates/zama-fhe/idl/**
             test-suite-fhevm:
               - solana/test-fixtures/pda/**
               - solana/deploy/**

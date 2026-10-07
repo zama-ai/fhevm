@@ -2,7 +2,9 @@ import { address, getProgramDerivedAddress, SOLANA_ERROR__INSTRUCTION_ERROR__CUS
 import { describe, expect, it } from 'vitest';
 import {
   getVerifyPublicDecryptInstructionAsync,
+  isZamaFheError,
   isZamaHostError,
+  ZAMA_FHE_ERROR__HOST_PROGRAM_MISMATCH,
   ZAMA_HOST_ERROR__TRANSIENT_STORE_NOT_OPENED,
   ZAMA_HOST_PROGRAM_ADDRESS,
 } from '@fhevm/solana-zama-host';
@@ -62,5 +64,21 @@ describe('generated host error helpers', () => {
         instructions: {},
       }),
     ).toBe(false);
+  });
+});
+
+describe('generated zama-fhe error table', () => {
+  const custom = (code: number) => new SolanaError(SOLANA_ERROR__INSTRUCTION_ERROR__CUSTOM, { code, index: 0 });
+
+  it('identifies a crate code whichever app program raised it', () => {
+    expect(isZamaFheError(custom(ZAMA_FHE_ERROR__HOST_PROGRAM_MISMATCH))).toBe(true);
+    expect(isZamaFheError(custom(ZAMA_FHE_ERROR__HOST_PROGRAM_MISMATCH), ZAMA_FHE_ERROR__HOST_PROGRAM_MISMATCH)).toBe(
+      true,
+    );
+  });
+
+  it("does not claim an app program's own codes", () => {
+    expect(isZamaFheError(custom(6000))).toBe(false);
+    expect(isZamaFheError(new Error('not a Solana error'))).toBe(false);
   });
 });

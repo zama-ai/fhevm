@@ -6,3 +6,4 @@ export * from './generated/types/index.js';
 export * from './generated/programAddress.js';
 export * from './generated/constants.js';
 export * from './finalizedRpc.js';
+export * from './generated/zamaFheErrors.js';
