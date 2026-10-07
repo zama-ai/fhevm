@@ -365,7 +365,7 @@ describe.skipIf(!runsDemoScenarios)("solana deposit-arc scenario", () => {
         // merely that a transaction landed; the join-count increment pins it to the same batch.
         console.log("deposit-arc join: asserting join record + join count on-chain...");
         // joinBatch waits for `finalized`; read the record at that commitment.
-        const joinRecord = await vault.deriveJoinRecordAddress(batch, alice.address);
+        const joinRecord = (await vault.findJoinRecordPda({ batch: batch, user: alice.address }))[0];
         const joinRecordAccount = await rpc
           .getAccountInfo(joinRecord, { encoding: "base64" })
           .send();
@@ -493,7 +493,7 @@ describe.skipIf(!runsDemoScenarios)("solana deposit-arc scenario", () => {
       await send(
         keeper,
         [
-          await vault.buildReclaimBatchAuthorityInstruction({
+          await vault.getReclaimBatchAuthorityInstructionAsync({
             authority: keeper,
             batcher: roots.batcher,
             batch,
@@ -578,7 +578,7 @@ describe.skipIf(!runsDemoScenarios)("solana deposit-arc scenario", () => {
       // `send` waits for `finalized`; read the record at that commitment.
       const joinRecordAfterClaim = await vault.getJoinRecord(
         rpc,
-        await vault.deriveJoinRecordAddress(batch, alice.address),
+        (await vault.findJoinRecordPda({ batch: batch, user: alice.address }))[0],
       );
       expect(joinRecordAfterClaim.user).toBe(alice.address);
       expect(joinRecordAfterClaim.claimed).toBe(true);
@@ -604,8 +604,8 @@ describe.skipIf(!runsDemoScenarios)("solana deposit-arc scenario", () => {
       // Step 16: with the payout claimed, alice's join record has nothing left to do; she closes it
       // and gets its rent back. The joined-amount encrypted store stays (its ACL grants are hers).
       console.log("deposit-arc close: alice closing her spent join record...");
-      const joinRecordAddress = await vault.deriveJoinRecordAddress(batch, alice.address);
-      await send(alice, [await vault.buildCloseJoinRecordInstruction({ user: alice, batch })], RENT_HYGIENE_COMPUTE_UNIT_LIMIT);
+      const joinRecordAddress = (await vault.findJoinRecordPda({ batch: batch, user: alice.address }))[0];
+      await send(alice, [await vault.getCloseJoinRecordInstructionAsync({ user: alice, batch })], RENT_HYGIENE_COMPUTE_UNIT_LIMIT);
       const closedRecord = await rpc.getAccountInfo(joinRecordAddress).send();
       expect(closedRecord.value).toBeNull();
 
@@ -739,7 +739,7 @@ test.skipIf(!runsDemoScenarios)(
     })]), JOIN_COMPUTE_UNIT_LIMIT);
     expect((await vault.getBatchByIndex(rpc, roots, current.index)).state.status).toBe(BATCH_STATUS_REFUNDING);
     expect((await account()).value).toBeNull();
-    await sendTransaction(dappConfig, keeper, [await vault.buildReclaimBatchAuthorityInstruction({
+    await sendTransaction(dappConfig, keeper, [await vault.getReclaimBatchAuthorityInstructionAsync({
       authority: keeper, batcher: roots.batcher, batch, batchAuthority, joinConfidentialMint: mint,
     })], RENT_HYGIENE_COMPUTE_UNIT_LIMIT);
     expect((await rpc.getBalance(batchAuthority).send()).value === 0n).toBe(true);

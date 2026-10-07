@@ -44,7 +44,7 @@ vi.mock('./vault/index.js', () => ({
   TOKEN_PROGRAM_ADDRESS: 'TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA',
   buildWrapUsdcInstruction: mocks.buildWrap,
   deriveBatchAddresses: vi.fn(),
-  deriveJoinRecordAddress: vi.fn().mockResolvedValue('11111111111111111111111111111111'),
+  findJoinRecordPda: vi.fn().mockResolvedValue(['11111111111111111111111111111111', 255]),
   getBatchByIndex: vi.fn(),
   getBatcher: vi.fn(),
   getCurrentBatch: vi.fn().mockResolvedValue({

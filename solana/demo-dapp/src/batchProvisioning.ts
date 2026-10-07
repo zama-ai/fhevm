@@ -7,7 +7,7 @@ import {
   getDeactivateLookupTableInstruction,
 } from '@solana-program/address-lookup-table';
 import {
-  buildReclaimBatchAuthorityInstruction,
+  getReclaimBatchAuthorityInstructionAsync,
   getBatchByIndex,
   getBatcher,
   getCurrentBatch,
@@ -301,7 +301,7 @@ export const reclaimFinishedBatchAuthorities = async (
         config,
         keeper,
         [
-          await buildReclaimBatchAuthorityInstruction({
+          await getReclaimBatchAuthorityInstructionAsync({
             authority: keeper,
             batcher: roots.batcher,
             batch: batch.addresses.batch,

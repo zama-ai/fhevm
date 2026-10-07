@@ -25,7 +25,7 @@ import { createFhevmEncryptClient, defineFhevmSolanaChain, setFhevmRuntimeConfig
 import {
   buildWrapUsdcInstruction,
   deriveBatchAddresses,
-  deriveJoinRecordAddress,
+  findJoinRecordPda,
   getBatchByIndex,
   getCurrentBatch,
   getOrCreateConfidentialTokenAccountInstruction,
@@ -213,7 +213,7 @@ export const reconcileSavedDeposit = async (
     clearShieldJournal(session);
     return null;
   }
-  const joinRecord = await deriveJoinRecordAddress(saved.batch, session.signer.address);
+  const joinRecord = (await findJoinRecordPda({ batch: saved.batch, user: session.signer.address }))[0];
   const account = await rpc.getAccountInfo(joinRecord, { encoding: 'base64' }).send();
   if (account.value !== null) {
     if (saved.transaction !== undefined) {
@@ -246,7 +246,7 @@ export async function findExistingDeposit(session: DemoSession): Promise<BatchPo
     if (reconciled !== null) return reconciled;
   }
   const batch = await getCurrentBatch(rpc, depositRoots(session));
-  const joinRecord = await deriveJoinRecordAddress(batch.addresses.batch, session.signer.address);
+  const joinRecord = (await findJoinRecordPda({ batch: batch.addresses.batch, user: session.signer.address }))[0];
   const account = await rpc.getAccountInfo(joinRecord, { encoding: 'base64' }).send();
   if (account.value === null) return null;
   clearShieldJournal(session);
@@ -292,7 +292,7 @@ export async function depositToVault(
   if (target !== undefined && (batch.index !== target.batchIndex || batch.addresses.batch !== target.batch)) {
     throw new Error('The prepared deposit batch no longer matches the requested batch');
   }
-  const joinRecord = await deriveJoinRecordAddress(batch.addresses.batch, signer.address);
+  const joinRecord = (await findJoinRecordPda({ batch: batch.addresses.batch, user: signer.address }))[0];
   const joinRecordAccount = await rpc
     .getAccountInfo(joinRecord, { encoding: 'base64' })
     .send();

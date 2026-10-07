@@ -16,12 +16,12 @@ import {
 } from '@fhevm/sdk/solana';
 import {
   buildDispatchBatchInstruction,
-  buildReclaimBatchAuthorityInstruction,
-  deriveJoinRecordAddress,
+  getReclaimBatchAuthorityInstructionAsync,
+  findJoinRecordPda,
   getBatchByIndex,
   getBatcher,
   getJoinRecord,
-  buildCloseJoinRecordInstruction,
+  getCloseJoinRecordInstructionAsync,
   settleBatch,
 } from './vault/index.js';
 
@@ -92,7 +92,7 @@ export const readVaultLifecycle = async (
     return { kind: 'dispatched' };
   }
   if (batch.state.status === BatchStatus.Settled) {
-    const recordAddress = await deriveJoinRecordAddress(position.batch, session.signer.address);
+    const recordAddress = (await findJoinRecordPda({ batch: position.batch, user: session.signer.address }))[0];
     const exists = (await rpc.getAccountInfo(recordAddress, { encoding: "base64" }).send()).value !== null;
     const joinRecord = exists ? await getJoinRecord(rpc, recordAddress) : null;
     return {
@@ -188,7 +188,7 @@ export const settleVaultBatch = async (
       session.keeper,
       [
         getDeactivateLookupTableInstruction({ address: lookupTableAddress, authority: session.keeper }),
-        await buildReclaimBatchAuthorityInstruction({
+        await getReclaimBatchAuthorityInstructionAsync({
           authority: session.keeper,
           batcher: roots.batcher,
           batch: batch.addresses.batch,
@@ -209,7 +209,7 @@ export const settleVaultBatch = async (
 /** User-signed rent return after claim/cancel. Refunding records still authorize quit. */
 export const closeSpentJoinRecord = async (session: DemoUserSession, position: BatchTarget): Promise<void> => {
   const rpc = createFinalizedRpc(session.config.rpcUrl);
-  const record = await deriveJoinRecordAddress(position.batch, session.signer.address);
+  const record = (await findJoinRecordPda({ batch: position.batch, user: session.signer.address }))[0];
   if ((await rpc.getAccountInfo(record, { encoding: 'base64' }).send()).value === null) return;
-  await sendTransaction(session.config, session.signer, [await buildCloseJoinRecordInstruction({ user: session.signer, batch: position.batch, joinRecord: record })], 100_000);
+  await sendTransaction(session.config, session.signer, [await getCloseJoinRecordInstructionAsync({ user: session.signer, batch: position.batch, joinRecord: record })], 100_000);
 };

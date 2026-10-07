@@ -3,7 +3,7 @@ import { beforeEach, describe, expect, test, vi } from 'vitest';
 
 const mocks = vi.hoisted(() => ({
   deriveBatchAddresses: vi.fn(),
-  deriveJoinRecordAddress: vi.fn(),
+  findJoinRecordPda: vi.fn(),
   getAccountInfo: vi.fn(),
   getCurrentBatch: vi.fn(),
   getJoinRecord: vi.fn(),
@@ -20,7 +20,7 @@ vi.mock('@fhevm/solana-zama-host', async (importOriginal) => ({
 vi.mock('./vault/index.js', () => ({
   TOKEN_PROGRAM_ADDRESS: 'TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA',
   deriveBatchAddresses: mocks.deriveBatchAddresses,
-  deriveJoinRecordAddress: mocks.deriveJoinRecordAddress,
+  findJoinRecordPda: mocks.findJoinRecordPda,
   getCurrentBatch: mocks.getCurrentBatch,
   getJoinRecord: mocks.getJoinRecord,
 }));
@@ -92,7 +92,7 @@ describe('redeem recovery', () => {
     );
     mocks.getCurrentBatch.mockResolvedValue({ index: 1n });
     mocks.deriveBatchAddresses.mockResolvedValue({ batch: nextBatch });
-    mocks.deriveJoinRecordAddress.mockResolvedValue(joinRecord);
+    mocks.findJoinRecordPda.mockResolvedValue([joinRecord, 255]);
     mocks.getAccountInfo.mockReturnValue({ send: async () => ({ value: {} }) });
     mocks.getJoinRecord.mockResolvedValue({ claimed: true });
 
@@ -127,7 +127,7 @@ describe('redeem recovery', () => {
     );
     mocks.getCurrentBatch.mockResolvedValue({ index: 1n });
     mocks.deriveBatchAddresses.mockResolvedValue({ batch: nextBatch });
-    mocks.deriveJoinRecordAddress.mockResolvedValue(joinRecord);
+    mocks.findJoinRecordPda.mockResolvedValue([joinRecord, 255]);
     mocks.getAccountInfo.mockReturnValue({ send: async () => ({ value: {} }) });
     mocks.getJoinRecord.mockResolvedValue({ claimed: false });
 
@@ -166,7 +166,7 @@ describe('redeem recovery', () => {
       }),
     );
     mocks.deriveBatchAddresses.mockResolvedValue({ batch: nextBatch });
-    mocks.deriveJoinRecordAddress.mockResolvedValue(joinRecord);
+    mocks.findJoinRecordPda.mockResolvedValue([joinRecord, 255]);
     mocks.getAccountInfo.mockReturnValue({ send: async () => ({ value: {} }) });
     mocks.getJoinRecord.mockResolvedValue({ claimed: false });
 
@@ -191,7 +191,7 @@ describe('redeem recovery', () => {
     const key = `fhevm-solana-demo:completed-redeem:localnet:${nextBatch}:${signer}`;
     localStorage.setItem(key, JSON.stringify({ batchIndex: '1', batch: nextBatch }));
     mocks.deriveBatchAddresses.mockResolvedValue({ batch: nextBatch });
-    mocks.deriveJoinRecordAddress.mockResolvedValue(joinRecord);
+    mocks.findJoinRecordPda.mockResolvedValue([joinRecord, 255]);
     mocks.getAccountInfo.mockReturnValue({ send: async () => Promise.reject(new Error('RPC unavailable')) });
 
     await expect(findCompletedRedeem(session)).rejects.toThrow('RPC unavailable');

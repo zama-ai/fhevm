@@ -170,7 +170,7 @@ const main = async (): Promise<void> => {
 
   // 2. Vault (creates the share mint + program token account as PDAs).
   await send(deployer, [
-    await vault.buildInitializeVaultInstruction({
+    await vault.getInitializeVaultInstructionAsync({
       payer: deployer,
       vault: vaultAccount,
       underlyingMint: mockUsdcMint.address,
@@ -219,7 +219,7 @@ const main = async (): Promise<void> => {
 
   // 4. Batchers: deposit (join cUSDC → payout cShares) and redeem (the reverse).
   await send(deployer, [
-    vault.buildInitializeBatcherInstruction({
+    vault.getInitializeBatcherInstruction({
       payer: deployer,
       batcher: depositBatcher,
       joinConfidentialMint: cUsdcMint.address,
@@ -230,7 +230,7 @@ const main = async (): Promise<void> => {
     }),
   ]);
   await send(deployer, [
-    vault.buildInitializeBatcherInstruction({
+    vault.getInitializeBatcherInstruction({
       payer: deployer,
       batcher: redeemBatcher,
       joinConfidentialMint: cSharesMint.address,

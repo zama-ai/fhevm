@@ -26,7 +26,7 @@ export async function getBatcher(rpc: SolanaRpc, batcher: Address): Promise<Batc
 
 /**
  * Reads a `(batch, user)` join record via the generated `JoinRecord` decoder — derive the address
- * with `deriveJoinRecordAddress`. Throws if the record does not exist (the user never joined the
+ * with the generated `findJoinRecordPda`. Throws if the record does not exist (the user never joined the
  * batch).
  */
 export async function getJoinRecord(

@@ -10,7 +10,7 @@ import {
 import { createFhevmEncryptClient, defineFhevmSolanaChain, setFhevmRuntimeConfig } from '@fhevm/sdk/solana';
 import {
   deriveBatchAddresses,
-  deriveJoinRecordAddress,
+  findJoinRecordPda,
   getCurrentBatch,
   getBatchByIndex,
   getJoinRecord,
@@ -119,7 +119,7 @@ export const findCompletedRedeem = async (session: DemoSession): Promise<BatchPo
     return null;
   }
   const rpc = createFinalizedRpc(session.config.rpcUrl);
-  const joinRecord = await deriveJoinRecordAddress(position.batch, session.signer.address);
+  const joinRecord = (await findJoinRecordPda({ batch: position.batch, user: session.signer.address }))[0];
   const account = await rpc.getAccountInfo(joinRecord, { encoding: 'base64' }).send();
   if (account.value === null) {
     // A claimed join may have returned its rent. Keep the local completion record only
@@ -250,7 +250,7 @@ export const findExistingRedeem = async (session: DemoSession): Promise<BatchPos
     if (index === oldestIndex) break;
   }
   for (const candidate of candidates) {
-    const joinRecord = await deriveJoinRecordAddress(candidate.batch, session.signer.address);
+    const joinRecord = (await findJoinRecordPda({ batch: candidate.batch, user: session.signer.address }))[0];
     const account = await rpc.getAccountInfo(joinRecord, { encoding: 'base64' }).send();
     if (account.value === null) continue;
     const join = await getJoinRecord(rpc, joinRecord);
@@ -292,7 +292,7 @@ export const joinRedeemBatch = async (
   if (saved !== null) {
     const savedAddresses = await deriveBatchAddresses(roots, saved.batchIndex);
     if (savedAddresses.batch === saved.batch) {
-      const savedJoinRecord = await deriveJoinRecordAddress(saved.batch, signer.address);
+      const savedJoinRecord = (await findJoinRecordPda({ batch: saved.batch, user: signer.address }))[0];
       const savedJoin = await rpc
         .getAccountInfo(savedJoinRecord, { encoding: 'base64' })
         .send();
@@ -322,7 +322,7 @@ export const joinRedeemBatch = async (
     }
   }
   const batch = await getCurrentBatch(rpc, roots);
-  const joinRecord = await deriveJoinRecordAddress(batch.addresses.batch, signer.address);
+  const joinRecord = (await findJoinRecordPda({ batch: batch.addresses.batch, user: signer.address }))[0];
   const existing = await rpc.getAccountInfo(joinRecord, { encoding: 'base64' }).send();
   if (existing.value !== null) {
     const join = await getJoinRecord(rpc, joinRecord);
