@@ -70,8 +70,7 @@ const DECRYPT_INTERVAL_MS = 5_000;
 const LEG_DEADLINE_MS = 25 * 60_000;
 const STDERR_TAIL_LINES = 40;
 
-// One line per error: a table row must not break on a message that spans lines.
-const message = (error: unknown) => (error instanceof Error ? error.message : String(error)).replace(/\s+/g, " ").trim();
+const message = (error: unknown) => (error instanceof Error ? error.message : String(error));
 
 /**
  * Rejects when `deadline` passes before `attempt` settles. `until` checks its deadline only between
@@ -168,8 +167,10 @@ const show = (result: StepResult | undefined): string => {
   if (result === undefined) return "not run";
   const timing = `${(result.ms / 1000).toFixed(1)}s, ${result.attempts} attempt${result.attempts === 1 ? "" : "s"}`;
   if (result.kind === "value") return `${result.value} (${timing})`;
-  if (result.kind === "denied") return `denied: ${result.reason} (${timing})`;
-  return `error: ${result.message} (${timing})`;
+  // A table cell must stay on its row, and an SDK message can span lines.
+  const oneLine = (text: string) => text.replace(/\s+/g, " ").trim();
+  if (result.kind === "denied") return `denied: ${oneLine(result.reason)} (${timing})`;
+  return `error: ${oneLine(result.message)} (${timing})`;
 };
 
 const matches = (result: StepResult | undefined, expected: Outcome): boolean =>
