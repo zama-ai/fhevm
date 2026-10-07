@@ -238,11 +238,11 @@ HAND_DERIVATION_ROOTS=(
   coprocessor/fhevm-engine/solana-merkle-proof-service
   coprocessor/fhevm-engine/tfhe-worker
 )
-# Today's hand-written copies, as `path|count|tracking task`. Counts are production lines
+# Today's hand-written copies, as `path|count|tracking task, or why the copy is permanent`. Counts are production lines
 # deriving a PDA, spelling a seed or building an Anchor discriminator. Over, under, zero and missing files fail. The script checks
 # counts; review rejects new entries. Keyed by path so unrelated edits do not invalidate an entry.
 HAND_DERIVATIONS_ALLOWED=(
-  "solana/deploy/src/wipe.ts|1|Elias decision: wipe.ts admin-sweep"
+  "solana/deploy/src/wipe.ts|1|permanent: admin-sweep is preview-only and deliberately absent from the public zama-host IDL; bytes pinned by host_admin_mollusk.rs"
   "solana/deploy/src/bootstrap.ts|2|fhevm-internal#2108 task 2 (programData: the one solana/deploy helper)"
 )
 # The self-test drives the allow-list arms through the environment, as checks 4 and 5 do.
