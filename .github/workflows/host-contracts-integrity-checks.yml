@@ -45,6 +45,15 @@ jobs:
               - host-contracts/contracts/**
               - host-contracts/lib/**
               - host-contracts/codegen.config.json
+              # The formatter inputs and the remaining generated outputs: a change to
+              # either can break the check without touching the codegen sources.
+              - package-lock.json
+              - library-solidity/.prettierrc.json
+              - host-contracts/.prettierrc.json
+              - library-solidity/examples/tests/**
+              - library-solidity/test/fhevmOperations/**
+              - host-contracts/examples/tests/**
+              - host-contracts/test/fhevmOperations/**
 
   contract-integrity-checks:
     name: host-contracts-integrity-checks/contract-integrity-checks (bpr)
