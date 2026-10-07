@@ -896,10 +896,6 @@ pub fn get_op_size_on_gpu(
                     SupportedFheCiphertexts::FheUint128(b),
                 ) => Ok(a.get_left_shift_size_on_gpu(b)),
                 (
-                    SupportedFheCiphertexts::FheUint160(a),
-                    SupportedFheCiphertexts::FheUint160(b),
-                ) => Ok(a.get_left_shift_size_on_gpu(b)),
-                (
                     SupportedFheCiphertexts::FheUint256(a),
                     SupportedFheCiphertexts::FheUint256(b),
                 ) => Ok(a.get_left_shift_size_on_gpu(b)),
@@ -932,9 +928,6 @@ pub fn get_op_size_on_gpu(
                 }
                 (SupportedFheCiphertexts::FheUint128(a), SupportedFheCiphertexts::Scalar(b)) => {
                     Ok(a.get_left_shift_size_on_gpu(to_be_u128_bit(b)))
-                }
-                (SupportedFheCiphertexts::FheUint160(a), SupportedFheCiphertexts::Scalar(b)) => {
-                    Ok(a.get_left_shift_size_on_gpu(to_be_u160_bit(b)))
                 }
                 (SupportedFheCiphertexts::FheUint256(a), SupportedFheCiphertexts::Scalar(b)) => {
                     Ok(a.get_left_shift_size_on_gpu(to_be_u256_bit(b)))
@@ -978,10 +971,6 @@ pub fn get_op_size_on_gpu(
                     SupportedFheCiphertexts::FheUint128(b),
                 ) => Ok(a.get_right_shift_size_on_gpu(b)),
                 (
-                    SupportedFheCiphertexts::FheUint160(a),
-                    SupportedFheCiphertexts::FheUint160(b),
-                ) => Ok(a.get_right_shift_size_on_gpu(b)),
-                (
                     SupportedFheCiphertexts::FheUint256(a),
                     SupportedFheCiphertexts::FheUint256(b),
                 ) => Ok(a.get_right_shift_size_on_gpu(b)),
@@ -1014,9 +1003,6 @@ pub fn get_op_size_on_gpu(
                 }
                 (SupportedFheCiphertexts::FheUint128(a), SupportedFheCiphertexts::Scalar(b)) => {
                     Ok(a.get_right_shift_size_on_gpu(to_be_u128_bit(b)))
-                }
-                (SupportedFheCiphertexts::FheUint160(a), SupportedFheCiphertexts::Scalar(b)) => {
-                    Ok(a.get_right_shift_size_on_gpu(to_be_u160_bit(b)))
                 }
                 (SupportedFheCiphertexts::FheUint256(a), SupportedFheCiphertexts::Scalar(b)) => {
                     Ok(a.get_right_shift_size_on_gpu(to_be_u256_bit(b)))
@@ -1060,10 +1046,6 @@ pub fn get_op_size_on_gpu(
                     SupportedFheCiphertexts::FheUint128(b),
                 ) => Ok(a.get_rotate_left_size_on_gpu(b)),
                 (
-                    SupportedFheCiphertexts::FheUint160(a),
-                    SupportedFheCiphertexts::FheUint160(b),
-                ) => Ok(a.get_rotate_left_size_on_gpu(b)),
-                (
                     SupportedFheCiphertexts::FheUint256(a),
                     SupportedFheCiphertexts::FheUint256(b),
                 ) => Ok(a.get_rotate_left_size_on_gpu(b)),
@@ -1096,9 +1078,6 @@ pub fn get_op_size_on_gpu(
                 }
                 (SupportedFheCiphertexts::FheUint128(a), SupportedFheCiphertexts::Scalar(b)) => {
                     Ok(a.get_rotate_left_size_on_gpu(to_be_u128_bit(b)))
-                }
-                (SupportedFheCiphertexts::FheUint160(a), SupportedFheCiphertexts::Scalar(b)) => {
-                    Ok(a.get_rotate_left_size_on_gpu(to_be_u160_bit(b)))
                 }
                 (SupportedFheCiphertexts::FheUint256(a), SupportedFheCiphertexts::Scalar(b)) => {
                     Ok(a.get_rotate_left_size_on_gpu(to_be_u256_bit(b)))
@@ -1142,10 +1121,6 @@ pub fn get_op_size_on_gpu(
                     SupportedFheCiphertexts::FheUint128(b),
                 ) => Ok(a.get_rotate_right_size_on_gpu(b)),
                 (
-                    SupportedFheCiphertexts::FheUint160(a),
-                    SupportedFheCiphertexts::FheUint160(b),
-                ) => Ok(a.get_rotate_right_size_on_gpu(b)),
-                (
                     SupportedFheCiphertexts::FheUint256(a),
                     SupportedFheCiphertexts::FheUint256(b),
                 ) => Ok(a.get_rotate_right_size_on_gpu(b)),
@@ -1178,9 +1153,6 @@ pub fn get_op_size_on_gpu(
                 }
                 (SupportedFheCiphertexts::FheUint128(a), SupportedFheCiphertexts::Scalar(b)) => {
                     Ok(a.get_rotate_right_size_on_gpu(to_be_u128_bit(b)))
-                }
-                (SupportedFheCiphertexts::FheUint160(a), SupportedFheCiphertexts::Scalar(b)) => {
-                    Ok(a.get_rotate_right_size_on_gpu(to_be_u160_bit(b)))
                 }
                 (SupportedFheCiphertexts::FheUint256(a), SupportedFheCiphertexts::Scalar(b)) => {
                     Ok(a.get_rotate_right_size_on_gpu(to_be_u256_bit(b)))
