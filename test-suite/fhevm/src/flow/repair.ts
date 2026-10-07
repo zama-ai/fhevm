@@ -4,6 +4,7 @@ import {
   supportsHostListenerConsumer,
   supportsUpgradeController,
 } from "../compat/compat";
+import { consumerOnlyHostListeners, isLegacyHostListener, listenerCoreServices } from "../host-listener-mode";
 import { GCS_ONLY_SUFFIXES } from "../generate/compose";
 import { hasLocalCoprocessorInstance } from "../scenario/resolve";
 import { topologyForState } from "../stack-spec/stack-spec";
@@ -23,6 +24,7 @@ import { extraHostChains, hostChainsForState } from "./topology";
 
 const UPGRADEABLE_GROUPS = ["coprocessor", "kms-connector", "kms-core", "kms", "listener-core", "relayer", "test-suite"] as const;
 export type UpgradeGroup = (typeof UPGRADEABLE_GROUPS)[number];
+const CLI_UPGRADEABLE_GROUPS: readonly UpgradeGroup[] = ["coprocessor", "listener-core", "relayer", "test-suite"];
 const UPGRADE_VERSION_KEYS: Record<UpgradeGroup, string[]> = {
   "coprocessor": [
     "COPROCESSOR_DB_MIGRATION_VERSION",
@@ -57,7 +59,6 @@ const UPGRADE_VERSION_KEYS: Record<UpgradeGroup, string[]> = {
   "relayer": ["RELAYER_VERSION", "RELAYER_MIGRATE_VERSION"],
   "test-suite": ["TEST_SUITE_VERSION"],
 };
-const LISTENER_CORE_SERVICES = ["listener-redis", "listener-publisher-for-anvil"];
 type UpgradeComponentPlan = {
   component: string;
   services: string[];
@@ -76,19 +77,21 @@ const kmsConnectorServices = (state: { versions?: State["versions"]; overrides: 
   GROUP_BUILD_SERVICES["kms-connector"].filter(
     (service) => !KMS_CONNECTOR_HTTP_SERVICES.includes(service) || supportsConnectorHttpForState(state),
   );
-const coprocessorRuntimeSuffixes = (state: { versions?: State["versions"] }) =>
+const coprocessorRuntimeSuffixes = (state: { versions?: State["versions"]; scenario?: State["scenario"] }) =>
   GROUP_SERVICE_SUFFIXES.coprocessor.filter(
     (service) =>
+      (!state.scenario || !consumerOnlyHostListeners(state.scenario) || !isLegacyHostListener(service)) &&
       service !== "db-migration" &&
       (service !== "host-listener-consumer" || supportsConsumerForState(state)) &&
       (service !== "consensus-detector" || supportsConsensusDetectorForState(state)) &&
       (service !== "upgrade-controller" || supportsUpgradeControllerForState(state)),
   );
-const coprocessorListenerSuffixes = (state: { versions?: State["versions"] }) =>
-  coprocessorRuntimeSuffixes(state).filter((service) => /^host-listener(?:-poller)?$/.test(service));
-const coprocessorServices = (state: { versions?: State["versions"] }) =>
+const coprocessorListenerSuffixes = (state: { versions?: State["versions"]; scenario?: State["scenario"] }) =>
+  coprocessorRuntimeSuffixes(state).filter((service) => state.scenario && consumerOnlyHostListeners(state.scenario) ? service === "host-listener-consumer" : /^host-listener(?:-poller)?$/.test(service));
+const coprocessorServices = (state: { versions?: State["versions"]; scenario?: State["scenario"] }) =>
   GROUP_BUILD_SERVICES.coprocessor.filter(
     (service) =>
+      (!state.scenario || !consumerOnlyHostListeners(state.scenario) || !isLegacyHostListener(service.replace(/^coprocessor-/, ""))) &&
       (service !== "coprocessor-host-listener-consumer" || supportsConsumerForState(state)) &&
       (service !== "coprocessor-consensus-detector" || supportsConsensusDetectorForState(state)) &&
       (service !== "coprocessor-upgrade-controller" || supportsUpgradeControllerForState(state)),
@@ -109,7 +112,7 @@ export const resumeSteadyStateServices = (state: State) => {
       "gateway-node",
       ...chains.filter((chain) => chain.type !== "solana").map((chain) => chain.node),
     ],
-    ...(supportsHostListenerConsumer(state) ? { "listener-core": ["listener-redis", "listener-publisher-for-anvil"] } : {}),
+    ...(supportsHostListenerConsumer(state) ? { "listener-core": ["listener-redis", ...listenerCoreServices(state.scenario)] } : {}),
     "coprocessor": [
       ...Array.from({ length: topology.count }, (_, index) => {
         const prefix = index === 0 ? "coprocessor-" : `coprocessor${index}-`;
@@ -157,8 +160,8 @@ export const multiChainCoprocessorUpgradeTargets = (
 ) => {
   const restartableSuffixes = new Set(
     runtimeServices.flatMap((service) => {
-      const match = service.match(/^coprocessor\d*-(host-listener(?:-poller)?)$/);
-      return match ? [match[1]] : [];
+      const match = service.match(/^coprocessor\d*-(host-listener(?:-poller|-consumer)?)$/);
+      return match && (match[1] !== "host-listener-consumer" || consumerOnlyHostListeners(state.scenario)) ? [match[1]] : [];
     }),
   );
   return extraHostChains(state).map((chain) => {
@@ -180,35 +183,21 @@ export const resolveUpgradePlan = (
   groupValue: string | undefined,
   options: { lockFile?: boolean } = {},
 ) => {
-  if (!groupValue || !UPGRADEABLE_GROUPS.includes(groupValue as UpgradeGroup)) {
-    throw new Error(`upgrade expects one of ${UPGRADEABLE_GROUPS.join(", ")}`);
-  }
-  const group = groupValue as UpgradeGroup;
-  const lockFileMode = options.lockFile === true;
-  // A threshold KMS Core and its matching Connector are one rollout unit. Generic group upgrades
-  // cannot preserve that boundary, so threshold deployments must use the paired operator primitive.
-  if ((group === "kms" || group === "kms-core" || group === "kms-connector") && state.scenario.kms.mode === "threshold") {
+  if (groupValue === "kms" || groupValue === "kms-core" || groupValue === "kms-connector") {
     throw new Error(
-      `upgrade ${group} is not supported for a threshold-mode KMS cluster; use the operator-paired rollout primitive`,
+      groupValue === "kms-connector"
+        ? "upgrade kms-connector is not supported yet; use `upgrade kms`"
+        : `upgrade ${groupValue} is handled per operator`,
     );
   }
-  if (group === "kms") {
-    if (!lockFileMode) {
-      throw new Error("upgrade kms requires --lock-file");
-    }
-    const core = splitServices("core", ["kms-core"]);
-    const connector = splitServices("kms-connector", kmsConnectorServices(state));
-    return upgradePlan(group, [core, connector], ["base", "kms-connector"]);
+  if (!groupValue || !CLI_UPGRADEABLE_GROUPS.includes(groupValue as UpgradeGroup)) {
+    throw new Error(`upgrade expects one of ${[...CLI_UPGRADEABLE_GROUPS, "kms", "kms-core"].join(", ")}`);
   }
-  if (group === "kms-core") {
-    if (!lockFileMode) {
-      throw new Error("upgrade kms-core requires --lock-file");
-    }
-    return upgradePlan(group, [splitServices("core", ["kms-core"])], ["base"]);
-  }
+  const group = groupValue as Exclude<UpgradeGroup, "kms" | "kms-core" | "kms-connector">;
+  const lockFileMode = options.lockFile === true;
   if (group === "listener-core") {
     if (lockFileMode) {
-      return upgradePlan(group, [splitServices("listener-core", LISTENER_CORE_SERVICES)], ["listener-core"]);
+      return upgradePlan(group, [splitServices("listener-core", ["listener-redis", ...listenerCoreServices(state.scenario)])], ["listener-core"]);
     }
   }
   const groupOverrides = state.overrides.filter((item) => item.group === group);
@@ -223,7 +212,7 @@ export const resolveUpgradePlan = (
     throw new Error(`No runtime component registered for ${group}`);
   }
   const selectedServices = groupOverrides.flatMap((item) => item.services ?? []);
-  const groupServices = group === "kms-connector" ? kmsConnectorServices(state) : GROUP_BUILD_SERVICES[group];
+  const groupServices = GROUP_BUILD_SERVICES[group];
   const fullGroupServices = groupOverrides.length && !selectedServices.length
     ? group === "coprocessor"
       ? coprocessorServices(state)

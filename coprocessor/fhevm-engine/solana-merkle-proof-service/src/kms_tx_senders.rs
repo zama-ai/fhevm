@@ -200,9 +200,8 @@ mod tests {
         rpc::types::Log,
         sol_types::{SolEvent, SolValue},
     };
-    use fhevm_host_bindings::protocol_config::{
-        IProtocolConfig::KmsThresholds,
-        ProtocolConfig::{self, KmsNodeParams, NewKmsContext},
+    use fhevm_host_bindings::protocol_config::ProtocolConfig::{
+        self, KmsNodeParams, KmsThresholds, NewKmsContext,
     };
     use kms_context::context_info_hash;
 

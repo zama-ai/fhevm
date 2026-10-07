@@ -5,9 +5,8 @@ use alloy::primitives::{Address, FixedBytes, U256};
 use fhevm_gateway_bindings::decryption::{
     Decryption::SolanaUserDecryptionRequest, IDecryption::RequestValiditySeconds,
 };
-use fhevm_host_bindings::protocol_config::{
-    IProtocolConfig::KmsThresholds,
-    ProtocolConfig::{KmsNodeParams, PcrValues},
+use fhevm_host_bindings::protocol_config::ProtocolConfig::{
+    KmsNodeParams, KmsThresholds, PcrValues,
 };
 use rand::Rng;
 use zama_solana_acl::host_chain::{EVM_CHAIN_TYPE, solana_host_chain_id};

@@ -5,7 +5,7 @@ import fs from "node:fs/promises";
 import path from "node:path";
 
 import type { StackSpec } from "../stack-spec/stack-spec";
-import { renderKmsCoreConfig, renderRelayerConfig } from "./config";
+import { renderRelayerConfig } from "./config";
 import {
   KMS_THRESHOLD_CONFIG_NAME,
   KMS_THRESHOLD_SPARE_CONFIG_NAME,
@@ -17,7 +17,6 @@ import {
   renderThresholdGenKeysConfig,
   renderThresholdSpareConfig,
 } from "./kms-core";
-import { kmsPartyIds } from "../kms-party";
 import { buildGatewayScSwapEnv, buildHostScSwapEnv, renderEnvMaps, type WalletMaterial } from "./env";
 import {
   renderE2ECoprocessorConfigSolidity,
@@ -36,8 +35,6 @@ import {
   e2eCoprocessorConfigSolidityPath,
   ENV_DIR,
   GENERATED_CONFIG_DIR,
-  TEMPLATE_KMS_CORE_CONFIG_LEGACY,
-  TEMPLATE_KMS_CORE_CONFIG_MODERN,
   TEMPLATE_KMS_CORE_CONFIG_THRESHOLD,
   TEMPLATE_ENV_DIR,
   TEMPLATE_RELAYER_CONFIG,
@@ -46,7 +43,6 @@ import {
   gatewayAddressesSolidityPath,
   hostChainAddressesPath,
   hostChainAddressesSolidityPath,
-  kmsCoreConfigPath,
   paymentBridgingAddressesSolidityPath,
   relayerConfigPath,
   versionsEnvPath,
@@ -127,46 +123,36 @@ export const generateRuntime = async (state: State, plan: StackSpec) => {
     relayerConfigPath,
     renderRelayerConfig(state, await fs.readFile(TEMPLATE_RELAYER_CONFIG, "utf8"), plan),
   );
-  await fs.writeFile(
-    kmsCoreConfigPath,
-    renderKmsCoreConfig(
-      state,
-      await fs.readFile(TEMPLATE_KMS_CORE_CONFIG_LEGACY, "utf8"),
-      await fs.readFile(TEMPLATE_KMS_CORE_CONFIG_MODERN, "utf8"),
-    ),
+  // Emit the single cluster-shared core config (checked-in template with the peer roster
+  // injected). Per-party values come from KMS_CORE__* env, so one file is mounted into every
+  // kms-core-{i}.
+  const thresholdTemplate = await fs.readFile(TEMPLATE_KMS_CORE_CONFIG_THRESHOLD, "utf8");
+  await writeWritableFile(
+    path.join(GENERATED_CONFIG_DIR, KMS_THRESHOLD_CONFIG_NAME),
+    renderThresholdCoreConfig(thresholdTemplate, plan.kms),
   );
-  // Threshold mode: emit the single cluster-shared core config (checked-in template
-  // with the peer roster injected). Per-party values come from KMS_CORE__* env, so one
-  // file is mounted into every kms-core-{i}. Centralized mode ignores it.
-  if (plan.kms.mode === "threshold") {
-    const thresholdTemplate = await fs.readFile(TEMPLATE_KMS_CORE_CONFIG_THRESHOLD, "utf8");
+  for (const [nodeId, associations] of Object.entries(plan.kmsMigrationByNodeId ?? {})) {
+    const party = Number(nodeId);
+    if (!Number.isInteger(party) || party < 1 || party > plan.kms.parties) throw new Error(`Invalid KMS migration party ${nodeId}`);
+    const config = party > plan.kms.committeeSize
+      ? renderThresholdSpareConfig(thresholdTemplate) : renderThresholdCoreConfig(thresholdTemplate, plan.kms);
+    await writeWritableFile(path.join(GENERATED_CONFIG_DIR, kmsMigrationConfigName(party)), config + renderKmsMigration(associations));
+  }
+  // One gen-keys config per party, for core images whose CLI takes only --config-file.
+  const renderOptions = kmsRenderOptionsFor(plan.versions.env.CORE_VERSION);
+  for (let partyId = 1; partyId <= plan.kms.parties; partyId += 1) {
     await writeWritableFile(
-      path.join(GENERATED_CONFIG_DIR, KMS_THRESHOLD_CONFIG_NAME),
-      renderThresholdCoreConfig(thresholdTemplate, plan.kms),
+      path.join(GENERATED_CONFIG_DIR, kmsThresholdGenKeysConfigName(partyId)),
+      renderThresholdGenKeysConfig(partyId, renderOptions),
     );
-    for (const [nodeId, associations] of Object.entries(plan.kmsMigrationByNodeId ?? {})) {
-      const party = Number(nodeId);
-      if (!Number.isInteger(party) || party < 1 || party > plan.kms.parties) throw new Error(`Invalid KMS migration party ${nodeId}`);
-      const config = party > plan.kms.committeeSize
-        ? renderThresholdSpareConfig(thresholdTemplate) : renderThresholdCoreConfig(thresholdTemplate, plan.kms);
-      await writeWritableFile(path.join(GENERATED_CONFIG_DIR, kmsMigrationConfigName(party)), config + renderKmsMigration(associations));
-    }
-    // Spare cores (parties > committeeSize) mount a peers=None config so they boot idle and join a
-    // committee dynamically via a context switch.
-    if (plan.kms.parties > plan.kms.committeeSize) {
-      await writeWritableFile(
-        path.join(GENERATED_CONFIG_DIR, KMS_THRESHOLD_SPARE_CONFIG_NAME),
-        renderThresholdSpareConfig(thresholdTemplate),
-      );
-    }
-    // Per-party kms-gen-keys configs, for core images that only take `--config-file`.
-    const renderOptions = kmsRenderOptionsFor(plan.versions.env.CORE_VERSION);
-    for (const partyId of kmsPartyIds(plan.kms.parties)) {
-      await writeWritableFile(
-        path.join(GENERATED_CONFIG_DIR, kmsThresholdGenKeysConfigName(partyId)),
-        renderThresholdGenKeysConfig(partyId, renderOptions),
-      );
-    }
+  }
+  // Spare cores (parties > committeeSize) mount a peers=None config so they boot idle and join a
+  // committee dynamically via a context switch.
+  if (plan.kms.parties > plan.kms.committeeSize) {
+    await writeWritableFile(
+      path.join(GENERATED_CONFIG_DIR, KMS_THRESHOLD_SPARE_CONFIG_NAME),
+      renderThresholdSpareConfig(thresholdTemplate),
+    );
   }
   await writeWritableFile(gatewayAddressesPath, renderGatewayAddressesEnv(state));
   await writeWritableFile(gatewayAddressesSolidityPath, renderGatewayAddressesSolidity(state));

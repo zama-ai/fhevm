@@ -159,8 +159,7 @@ const applyDiscoveryEnv = (
   state: Pick<State, "discovery">,
   plan: StackSpec,
 ) => {
-  // One registered signer per party; centralized is just the single-signer case. Each address
-  // is discovered from its PUB-p{i} prefix (party 1 = PUB for the centralized core).
+  // One registered signer per party, each discovered from its party's public vault prefix.
   (state.discovery?.kmsSigners ?? []).forEach((address, index) => {
     envs["gateway-sc"][`KMS_SIGNER_ADDRESS_${index}`] = address;
     envs["host-sc"][`KMS_SIGNER_ADDRESS_${index}`] = address;
@@ -291,29 +290,7 @@ const applyProtocolConfigKmsGlobals = (
 };
 
 /**
- * Centralized mode: the single KMS node's ProtocolConfig params the threshold path sets per-node.
- * The rest (tx-sender, IP, storage URL, signer, CA cert) already come from the templates and
- * discovery. storagePrefix is "PUB" for the centralized core (PUB-p{i} is threshold-only), so it
- * tracks the discovered objectStoreKeyPrefix. Must run after applyDiscoveryEnv.
- */
-const applyKmsCentralizedHostEnv = (
-  envs: Record<string, Record<string, string>>,
-  plan: StackSpec,
-  state: Pick<State, "discovery" | "bootstrapPending">,
-) => {
-  if (plan.kms.mode === "threshold") {
-    return;
-  }
-  const hostSc = envs["host-sc"];
-  // A bootstrapped core is upgraded after keygen; name the core that will serve, not the one generating.
-  applyProtocolConfigKmsGlobals(hostSc, plan, state.bootstrapPending?.target.env.CORE_VERSION);
-  hostSc.KMS_NODE_PARTY_ID_0 = "1";
-  hostSc.KMS_NODE_MPC_IDENTITY_0 = kmsCoreName(1);
-  hostSc.KMS_NODE_STORAGE_PREFIX_0 = state.discovery?.objectStoreKeyPrefix ?? "PUB";
-};
-
-/**
- * Threshold mode only: sets gateway-sc KMS counts/thresholds + per-party
+ * Sets gateway-sc KMS counts/thresholds + per-party
  * tx-sender wallets, and points the base (party-1) connector at kms-core.
  * Returns the per-party connection info so connector instance envs for parties
  * 2..N can be cloned AFTER discovery has rewritten the base connector env.
@@ -323,10 +300,8 @@ const applyKmsThresholdGatewayEnv = async (
   envs: Record<string, Record<string, string>>,
   plan: StackSpec,
   deriveWallet: (mnemonic: string, index: number) => Promise<WalletMaterial>,
+  bootstrapCoreVersion?: string,
 ): Promise<KmsParty[]> => {
-  if (plan.kms.mode !== "threshold") {
-    return [];
-  }
   const { parties, threshold, committeeSize } = plan.kms;
   if (parties > KMS_NODE_WALLET_INDICES.length) {
     throw new Error(`KMS parties ${parties} exceeds supported ${KMS_NODE_WALLET_INDICES.length}`);
@@ -344,8 +319,7 @@ const applyKmsThresholdGatewayEnv = async (
   // host-sc deploy reads MPC_THRESHOLD too (ProtocolConfig). applyHostScKmsEnv
   // mirrors the other KMS thresholds gateway->host but NOT MPC_THRESHOLD, and
   // the host-sc template default (1) only happens to match t=1. Set it here so
-  // host and gateway agree for every topology (e.g. 7 parties / t=2). Scoped to
-  // threshold mode so the centralized template default is left untouched.
+  // host and gateway agree for every topology (e.g. 7 parties / t=2).
   envs["host-sc"].MPC_THRESHOLD = String(threshold);
   // Decryption/keygen consensus needs 2t+1 matching responses (reconstruction
   // threshold; matches the KMS core-client `num_reconstruct`).
@@ -354,7 +328,7 @@ const applyKmsThresholdGatewayEnv = async (
   gw.USER_DECRYPTION_THRESHOLD = reconstruct;
   gw.KMS_GENERATION_THRESHOLD = reconstruct;
 
-  applyProtocolConfigKmsGlobals(hostSc, plan);
+  applyProtocolConfigKmsGlobals(hostSc, plan, bootstrapCoreVersion);
 
   const result: KmsParty[] = [];
   for (let party = 1; party <= parties; party += 1) {
@@ -390,8 +364,7 @@ const applyKmsThresholdGatewayEnv = async (
   return result;
 };
 
-const isKmsSwapTopology = (plan: StackSpec) =>
-  plan.kms.mode === "threshold" && plan.kms.parties > plan.kms.committeeSize;
+const isKmsSwapTopology = (plan: StackSpec) => plan.kms.parties > plan.kms.committeeSize;
 
 /** Node swap: maps the trailing committee slots onto the spare cores (parties beyond
  * committeeSize). For 5 parties / committee 4 / 1 spare this overwrites slot 3 (node 4) with the
@@ -545,7 +518,7 @@ const applyConnectorHttpEnv = (envs: Record<string, Record<string, string>>, pla
         .map((party) => `https://${kmsConnectorPrefix(party)}-proxy:${proxyPort}`)
         .join(",")
     : "";
-  envs["test-suite"].KMS_THRESHOLD = plan.kms.mode === "threshold" ? String(plan.kms.threshold) : "0";
+  envs["test-suite"].KMS_THRESHOLD = String(plan.kms.threshold);
 };
 
 /** Renders component and per-instance env maps from state, topology, and discovery. */
@@ -562,12 +535,16 @@ export const renderEnvMaps = async (
     throw new Error("Missing default host chain");
   }
   applyTopologyEnv(envs, plan);
-  const kmsParties = await applyKmsThresholdGatewayEnv(envs, plan, deriveWallet);
+  const kmsParties = await applyKmsThresholdGatewayEnv(
+    envs,
+    plan,
+    deriveWallet,
+    state.bootstrapPending?.target.env.CORE_VERSION,
+  );
   applyHostScKmsEnv(envs);
   applyBaseRuntimeEnv(envs, state);
   applyCompatEnv(envs, plan);
   applyDiscoveryEnv(envs, state, plan);
-  applyKmsCentralizedHostEnv(envs, plan, state);
   envs["host-node"].RPC_URL = `http://${defaultChain.node}:${defaultChain.rpcPort}`;
   envs["host-node"].HOST_NODE_PORT = String(defaultChain.rpcPort);
   envs["host-node"].HOST_NODE_CHAIN_ID = defaultChain.chainId;
@@ -716,8 +693,6 @@ export const renderEnvMaps = async (
   const versionsEnv: Record<string, string> = { ...plan.versions.env, ...compat.composeEnv };
   // Bind keygen/crsgen triggers explicitly to the selected parameter family.
   // Do not inherit a stale Test value when opting into Default test keygen.
-  if (plan.kms.mode === "threshold") {
-    versionsEnv.KEYGEN_PARAMS_TYPE = plan.kms.fheParams === "Test" ? "1" : "0";
-  }
+  versionsEnv.KEYGEN_PARAMS_TYPE = plan.kms.fheParams === "Test" ? "1" : "0";
   return { componentEnvs: envs, instanceEnvs, versionsEnv };
 };

@@ -1,3 +1,5 @@
+import { coprocessorHealthContainers, listenerContainersForChain } from "./flow/readiness";
+import { resumeSteadyStateServices, multiChainCoprocessorUpgradeTargets } from "./flow/repair";
 import { describe, expect, test } from "bun:test";
 import { statSync } from "node:fs";
 import { mkdir, mkdtemp, readFile, readdir, rm, writeFile } from "node:fs/promises";
@@ -269,7 +271,7 @@ describe("render-compose", () => {
     });
   });
 
-  test("selects the published centralized core repository for an older release", async () => {
+  test("selects the published pre-0.15 core repository for an older release", async () => {
     await withTempStateDir(async () => {
       await mkdir(path.dirname(envPath("coprocessor")), { recursive: true });
       await writeFile(envPath("coprocessor"), "\n");
@@ -277,23 +279,11 @@ describe("render-compose", () => {
       const pinned = structuredClone(state);
       pinned.versions.env.CORE_VERSION = "v0.14.0-1";
       await generateComposeOverrides(pinned, stackSpecForState(pinned));
-      const doc = YAML.parse(await readFile(composePath("core"), "utf8"));
-      expect(doc.services["kms-core"].image).toBe("ghcr.io/zama-ai/kms/core-service:v0.14.0-1");
+      const doc = YAML.parse(await readFile(composePath("core-threshold"), "utf8"));
+      for (const core of ["kms-core", "kms-core-2", "kms-core-3", "kms-core-4"]) {
+        expect(doc.services[core].image).toBe("ghcr.io/zama-ai/kms/core-service:v0.14.0-1");
+      }
     });
-  });
-
-  test("persists kms-core private vault, supplies both keygen CLI formats and names the secrets volume", async () => {
-    const doc = await loadMergedComposeDoc("core");
-    const objectStore = (await loadMergedComposeDoc("object-store")) as typeof doc & {
-      volumes?: Record<string, { name?: string }>;
-    };
-    const volumes = doc.services["kms-core"]?.volumes as string[] | undefined;
-    const entrypoint = JSON.stringify(doc.services["kms-core"]?.entrypoint);
-    expect(doc.services["kms-core"]?.user).toBe("root");
-    expect(volumes).toContain("fhevm_kms_core_keys:/app/kms/core/service/keys");
-    expect(entrypoint).toContain("--public-storage");
-    expect(entrypoint).toContain("--config-file /tmp/kms-gen-keys.toml");
-    expect(objectStore.volumes?.object_store_secrets?.name).toBe("fhevm_object_store_secrets");
   });
 
   test("keeps localhost object-store URLs reachable from the e2e container", async () => {
@@ -514,12 +504,14 @@ describe("render-compose", () => {
         ),
       },
     };
-    expect(serviceNameList(withoutEndpoint, "kms-connector")).toEqual([
-      "kms-connector-db-migration",
-      "kms-connector-gw-listener",
-      "kms-connector-kms-worker",
-      "kms-connector-tx-sender",
-    ]);
+    expect(serviceNameList(withoutEndpoint, "kms-connector")).toEqual(
+      ["kms-connector", "kms-connector-2", "kms-connector-3", "kms-connector-4"].flatMap((prefix) => [
+        `${prefix}-db-migration`,
+        `${prefix}-gw-listener`,
+        `${prefix}-kms-worker`,
+        `${prefix}-tx-sender`,
+      ]),
+    );
 
     const withEndpoint: State = {
       ...state,
@@ -533,7 +525,7 @@ describe("render-compose", () => {
 
     const threshold: State = {
       ...withEndpoint,
-      scenario: testDefaultScenario({ kms: { mode: "threshold", parties: 4, threshold: 1, committeeSize: 4, fheParams: "Test" } }),
+      scenario: testDefaultScenario({ kms: { parties: 4, threshold: 1, committeeSize: 4, fheParams: "Test" } }),
     };
     const services = serviceNameList(threshold, "kms-connector");
     expect(services).toContain("kms-connector-endpoint");
@@ -639,7 +631,7 @@ describe("render-compose", () => {
         const overridden: State = {
           ...state,
           overrides: [{ group: "coprocessor" }, { group: "kms-connector" }],
-          scenario: testDefaultScenario({ kms: { mode: "threshold", parties: 4, threshold: 1, committeeSize: 4, fheParams: "Test" } }),
+          scenario: testDefaultScenario({ kms: { parties: 4, threshold: 1, committeeSize: 4, fheParams: "Test" } }),
         };
         await generateComposeOverrides(overridden, stackSpecForState(overridden));
         expect(await platformOf("kms-connector", "kms-connector-endpoint")).toBe("linux/arm64");
@@ -1724,5 +1716,66 @@ test("manifest lifecycle mounts a separate initially empty injection directory o
       expect(service.volumes).toContainEqual(manifestInjectionMount(index));
       expect(await readdir(manifestInjectionDir(index))).toEqual([]);
     }
+  });
+});
+
+describe("consumer-only host ingestion", () => {
+  test("renders one consumer per operator and chain and an isolated producer per chain", async () => {
+    await withTempStateDir(async () => {
+      const consumerState: State = {
+        ...state,
+        scenario: resolveScenarioFile("consumer.yaml", parseCoprocessorScenario(
+          await readFile(path.join(TEMPLATE_COMPOSE_DIR, "../scenarios/two-of-three-multi-chain-consumer.yaml"), "utf8"),
+        )),
+      };
+      await mkdir(path.dirname(envPath("coprocessor")), { recursive: true });
+      for (const name of ["coprocessor", "coprocessor.1", "coprocessor.2", "coprocessor-chain-b.0", "coprocessor-chain-b.1", "coprocessor-chain-b.2", "host-sc", "host-sc-chain-b"]) {
+        await writeFile(envPath(name), "\n");
+      }
+      await generateComposeOverrides(consumerState, stackSpecForState(consumerState));
+      const main = await loadMergedComposeDoc("coprocessor");
+      const extra = YAML.parse(await readFile(composePath("coprocessor-chain-b"), "utf8")) as {
+        services: Record<string, { command: string[]; profiles?: string[] }>;
+      };
+      const legacy = (service: { profiles?: unknown }) =>
+        (service.profiles as string[] | undefined)?.includes("legacy-host-listeners") ?? false;
+      const active = Object.values(main.services).filter((service) => !legacy(service));
+      expect(active.filter((service) => (service.command as string[] | undefined)?.[0] === "host_listener_consumer")).toHaveLength(3);
+      expect(active.some((service) => ["host_listener", "host_listener_poller"].includes((service.command as string[] | undefined)?.[0] ?? ""))).toBe(false);
+      expect(Object.values(main.services).filter(legacy)).toHaveLength(6);
+      const extraConsumers = Object.fromEntries(Object.entries(extra.services).filter(([, service]) => !legacy(service)));
+      expect(Object.keys(extraConsumers)).toHaveLength(3);
+      for (const [name, service] of Object.entries(extraConsumers)) {
+        expect(service.command[0]).toBe("host_listener_consumer");
+        // A shared service name would load-balance blocks between operators.
+        expect(service.command).toContain(`--service-name=${name}`);
+      }
+      expect(Object.values(extra.services).filter(legacy)).toHaveLength(6);
+
+      const startup = serviceNameList(consumerState, "coprocessor").filter((name) => name.includes("host-listener"));
+      expect(startup).toEqual([
+        "coprocessor-host-listener-consumer", "coprocessor1-host-listener-consumer", "coprocessor2-host-listener-consumer",
+      ]);
+      const runtime = coprocessorHealthContainers(consumerState);
+      expect(runtime.filter((name) => name.includes("host-listener"))).toEqual(startup);
+      const secondary = listenerContainersForChain(consumerState, "chain-b");
+      expect(secondary).toEqual(Object.keys(extraConsumers));
+      expect(multiChainCoprocessorUpgradeTargets(consumerState, runtime)[0].services).toEqual(secondary);
+      const resumed = resumeSteadyStateServices(consumerState);
+      expect(resumed.coprocessor?.filter((name) => name.includes("host-listener"))).toEqual([...startup, ...secondary]);
+      expect(resumed["listener-core"]).toEqual(["listener-redis", "listener-publisher-for-anvil", "listener-publisher-chain-b"]);
+
+      const core = await loadMergedComposeDoc("listener-core");
+      for (const [name, chain, rpc] of [
+        ["listener-publisher-for-anvil", 12345, "http://host-node:8545"],
+        ["listener-publisher-chain-b", 67890, "http://host-node-chain-b:8547"],
+      ] as const) {
+        const file = (core.services[name].volumes as string[])[0].replace(":/config.yaml:ro", "");
+        const config = YAML.parse(await readFile(file, "utf8"));
+        expect(config.blockchain.chain_id).toBe(chain);
+        expect(config.blockchain.rpc_url).toBe(rpc);
+        expect(config.database.db_url).toEndWith(`/listener_${chain}`);
+      }
+    });
   });
 });

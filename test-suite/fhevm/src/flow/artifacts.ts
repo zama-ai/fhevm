@@ -1,3 +1,4 @@
+import { COMPOSE_OUT_DIR, hostChainRuntimes } from "../layout";
 import { ensureLockSnapshot } from "../resolve/bundle-store";
 import { generateRuntime } from "../generate";
 import { requiresMultichainAclAddress } from "../compat/compat";
@@ -12,7 +13,6 @@ import {
   gatewayAddressesPath,
   gatewayAddressesSolidityPath,
   paymentBridgingAddressesSolidityPath,
-  kmsCoreConfigPath,
   relayerConfigPath,
   versionsEnvPath,
   envPath,
@@ -70,24 +70,25 @@ export const runtimeArtifactPaths = (state: State) => {
   const topology = topologyForState(state);
   const defaultChain = defaultHostChain(state);
   const plan = stackSpecForState(state);
-  const thresholdConfigPaths = plan.kms.mode === "threshold"
-    ? [
-        path.join(GENERATED_CONFIG_DIR, KMS_THRESHOLD_CONFIG_NAME),
-        ...Array.from({ length: plan.kms.parties }, (_, index) =>
-          path.join(GENERATED_CONFIG_DIR, kmsThresholdGenKeysConfigName(index + 1)),
-        ),
-        ...(plan.kms.parties > plan.kms.committeeSize
-          ? [path.join(GENERATED_CONFIG_DIR, KMS_THRESHOLD_SPARE_CONFIG_NAME)]
-          : []),
-      ]
-    : [];
+  const thresholdConfigPaths = [
+    path.join(GENERATED_CONFIG_DIR, KMS_THRESHOLD_CONFIG_NAME),
+    ...Array.from({ length: plan.kms.parties }, (_, index) =>
+      path.join(GENERATED_CONFIG_DIR, kmsThresholdGenKeysConfigName(index + 1)),
+    ),
+    ...(plan.kms.parties > plan.kms.committeeSize
+      ? [path.join(GENERATED_CONFIG_DIR, KMS_THRESHOLD_SPARE_CONFIG_NAME)]
+      : []),
+  ];
   return [
     versionsEnvPath,
     relayerConfigPath,
-    kmsCoreConfigPath,
     ...thresholdConfigPaths,
     ...COMPONENTS.map(envPath),
     ...[...generatedComposeComponents(plan)].map(composePath),
+    ...(plan.coprocessor?.hostListenerMode === "consumer"
+      ? hostChainRuntimes(plan.hostChains).map((chain) => path.join(COMPOSE_OUT_DIR,
+        `${chain.isDefault ? "listener-publisher-for-anvil" : `listener-publisher-${chain.key}`}.yaml`))
+      : []),
     ...Array.from({ length: Math.max(0, topology.count - 1) }, (_, index) => envPath(`coprocessor.${index + 1}`)),
     ...(state.discovery
       ? [

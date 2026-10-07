@@ -82,4 +82,3 @@ services:
 
 volumes:
   object_store_secrets:
-    name: fhevm_object_store_secrets

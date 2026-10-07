@@ -298,7 +298,7 @@ bootstrap: {}
       ).toThrow("bootstrap.tag must be a non-empty release tag");
     });
 
-    test("rejects bootstrap for a threshold KMS cluster", () => {
+    test("accepts bootstrap for a threshold KMS cluster", () => {
       const parsed = parseBlueGreenScenario(`
 version: 1
 kind: blue-green
@@ -312,8 +312,28 @@ kms:
 bootstrap:
   tag: v0.14.2-0
 `);
+      const resolved = resolveBlueGreenScenario("/tmp/bootstrap.yaml", parsed);
+      expect(resolved.kms.parties).toBe(4);
+      expect(resolved.bootstrap).toEqual({ tag: "v0.14.2-0" });
+    });
+
+    test("rejects bootstrap with spare KMS parties", () => {
+      const parsed = parseBlueGreenScenario(`
+version: 1
+kind: blue-green
+gcs:
+  source: { mode: local }
+kms:
+  mode: threshold
+  parties: 5
+  threshold: 1
+  committeeSize: 4
+  fheParams: Test
+bootstrap:
+  tag: v0.14.2-0
+`);
       expect(() => resolveBlueGreenScenario("/tmp/bootstrap.yaml", parsed)).toThrow(
-        "bootstrap is only supported with a centralized KMS",
+        "bootstrap does not support spare KMS parties",
       );
     });
 

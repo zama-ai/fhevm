@@ -1,8 +1,9 @@
 // SPDX-License-Identifier: BSD-3-Clause-Clear
 pragma solidity ^0.8.24;
 
-import {KmsNode, KmsNodeParams, PcrValues, ChainUpgradeWindow} from "../shared/Structs.sol";
+import {KmsThresholds, KmsNodeParams, PcrValues, ChainUpgradeWindow} from "../shared/Structs.sol";
 import {IKMSGeneration} from "./IKMSGeneration.sol";
+import {IProtocolConfigBase} from "./IProtocolConfigBase.sol";
 
 /**
  * @title Interface for the ProtocolConfig contract.
@@ -13,21 +14,7 @@ import {IKMSGeneration} from "./IKMSGeneration.sol";
  * only through the owner-only mirror functions, which copy already-finalized Ethereum state without
  * replaying confirmations.
  */
-interface IProtocolConfig {
-    /**
-     * @notice Thresholds used for KMS consensus.
-     * @param publicDecryption Minimum signatures required for public decryption verification.
-     * @param userDecryption Minimum signatures required for user decryption verification.
-     * @param kmsGen Minimum signatures required for key/CRS generation consensus.
-     * @param mpc MPC fault threshold `t`: max faulty or malicious MPC nodes tolerated.
-     */
-    struct KmsThresholds {
-        uint256 publicDecryption;
-        uint256 userDecryption;
-        uint256 kmsGen;
-        uint256 mpc;
-    }
-
+interface IProtocolConfig is IProtocolConfigBase {
     /**
      * @notice A signed keygen result attested by a KMS signer during epoch activation.
      * @param prepKeygenId The preprocessing keygen ID the key derives from.
@@ -192,43 +179,6 @@ interface IProtocolConfig {
     // Errors
     // -----------------------------------------------------------------------------------------
 
-    /// @notice The KMS nodes array is empty.
-    error EmptyKmsNodes();
-
-    /// @notice A KMS node has a null tx sender address.
-    error KmsNodeNullTxSender();
-
-    /// @notice A KMS node has a null signer address.
-    error KmsNodeNullSigner();
-
-    /// @notice A KMS tx sender address is already registered in this context.
-    /// @param txSender The duplicate tx sender address.
-    error KmsTxSenderAlreadyRegistered(address txSender);
-
-    /// @notice A KMS signer address is already registered in this context.
-    /// @param signer The duplicate signer address.
-    error KmsSignerAlreadyRegistered(address signer);
-
-    /// @notice A threshold is zero.
-    /// @param thresholdName The name of the invalid threshold.
-    error InvalidNullThreshold(string thresholdName);
-
-    /// @notice A threshold exceeds the node count.
-    /// @param thresholdName The name of the invalid threshold.
-    /// @param threshold The invalid threshold value.
-    /// @param nodeCount The number of nodes.
-    error InvalidHighThreshold(string thresholdName, uint256 threshold, uint256 nodeCount);
-
-    /// @notice The KMS signer set exceeds the proof format limit (`uint8` signature count in the
-    ///         `decryptionProof` payload consumed by `KMSVerifier`).
-    /// @param signerCount The number of signers in the rejected set.
-    /// @param maxAllowed The maximum size the proof format can carry.
-    error KmsSignerSetExceedsProofFormatLimit(uint256 signerCount, uint256 maxAllowed);
-
-    /// @notice The context ID does not exist or has been destroyed.
-    /// @param kmsContextId The invalid context ID.
-    error InvalidKmsContext(uint256 kmsContextId);
-
     /// @notice Cannot destroy the latest active context.
     /// @param kmsContextId The latest active context ID.
     error LatestActiveKmsContextCannotBeDestroyed(uint256 kmsContextId);
@@ -236,10 +186,6 @@ interface IProtocolConfig {
     /// @notice Cannot destroy the latest active epoch.
     /// @param epochId The latest active epoch ID.
     error LatestActiveKmsEpochCannotBeDestroyed(uint256 epochId);
-
-    /// @notice The epoch ID is invalid or not in the required lifecycle state for this operation.
-    /// @param epochId The epoch ID.
-    error InvalidKmsEpoch(uint256 epochId);
 
     /// @notice The KMS context is not pending.
     /// @param kmsContextId The context ID.
@@ -279,11 +225,6 @@ interface IProtocolConfig {
     /// @param txSender The transaction sender.
     error EpochActivationSignerDoesNotMatchTxSender(address signer, address txSender);
 
-    /// @notice The mirrored context ID is not strictly greater than the latest activated one.
-    /// @param contextId The rejected context ID.
-    /// @param latestActiveKmsContextId The most recently activated mirrored context ID.
-    error NonIncreasingKmsContextId(uint256 contextId, uint256 latestActiveKmsContextId);
-
     /// @notice The mirrored epoch ID is not strictly greater than the latest known one.
     /// @param epochId The rejected epoch ID.
     /// @param currentEpochId The latest known epoch ID.
@@ -313,6 +254,34 @@ interface IProtocolConfig {
 
     /// @notice The supplied `proposalId` is zero.
     error InvalidProposalId();
+
+    // -----------------------------------------------------------------------------------------
+    // View functions
+    // -----------------------------------------------------------------------------------------
+
+    /**
+     * @notice Returns the context anchor recorded when NewKmsContext was emitted.
+     * @dev Canonical-only. The canonical definition and bootstrap paths record the anchor. The replica
+     *      paths (`initializeFromCanonical` and `mirrorKmsContextAndEpoch`) do not record it. On a
+     *      replica this returns `(0, 0x0)` for every mirrored context. Cross-chain verification tooling
+     *      must not compare the anchor on a replica.
+     * @param contextId The context ID.
+     * @return emissionBlockNumber The block where NewKmsContext was emitted, or 0 on a replica.
+     * @return contextInfoHash Hash of the emitted context payload, or 0x0 on a replica.
+     */
+    function getKmsContextAnchor(
+        uint256 contextId
+    ) external view returns (uint256 emissionBlockNumber, bytes32 contextInfoHash);
+
+    /**
+     * @notice Returns the previous-committee confirmation quorum cached for a context at define time.
+     * @dev The `(n - t)` target that `confirmKmsContextCreation` requires from the previous committee.
+     *      Returns 0 for a context that was never a switch target or whose bookkeeping was cleared on
+     *      destruction.
+     * @param kmsContextId The context ID.
+     * @return The cached previous-committee confirmation target.
+     */
+    function getContextCreationPreviousTxSenderThreshold(uint256 kmsContextId) external view returns (uint256);
 
     // -----------------------------------------------------------------------------------------
     // State-changing functions
@@ -432,185 +401,4 @@ interface IProtocolConfig {
      * @param epochId The canonical epoch ID to mirror; must exceed the latest known epoch ID.
      */
     function mirrorKmsEpoch(uint256 contextId, uint256 epochId) external;
-
-    /**
-     * @notice Returns the active KMS context and epoch IDs.
-     * @return contextId The active context ID.
-     * @return epochId The active epoch ID.
-     */
-    function getCurrentKmsContextAndEpoch() external view returns (uint256 contextId, uint256 epochId);
-
-    /**
-     * @notice Returns the context anchor recorded when NewKmsContext was emitted.
-     * @dev Canonical-only. The canonical definition and bootstrap paths record the anchor. The replica
-     *      paths (`initializeFromCanonical` and `mirrorKmsContextAndEpoch`) do not record it. On a
-     *      replica this returns `(0, 0x0)` for every mirrored context. Cross-chain verification tooling
-     *      must not compare the anchor on a replica.
-     * @param contextId The context ID.
-     * @return emissionBlockNumber The block where NewKmsContext was emitted, or 0 on a replica.
-     * @return contextInfoHash Hash of the emitted context payload, or 0x0 on a replica.
-     */
-    function getKmsContextAnchor(
-        uint256 contextId
-    ) external view returns (uint256 emissionBlockNumber, bytes32 contextInfoHash);
-
-    /**
-     * @notice Checks whether an epoch is active and belongs to the given KMS context.
-     * @param kmsContextId The context ID the epoch must belong to.
-     * @param epochId The epoch ID to check.
-     * @return True if the epoch is active and owned by the context.
-     */
-    function isValidEpochForContext(uint256 kmsContextId, uint256 epochId) external view returns (bool);
-
-    /**
-     * @notice Returns the active KMS context ID.
-     * @return The active context ID.
-     */
-    function getCurrentKmsContextId() external view returns (uint256);
-
-    /**
-     * @notice Returns the KMS context ID allocation counter: the latest issued context ID.
-     * @dev This is the allocation frontier, always `>= getCurrentKmsContextId()`. It differs from the
-     *      active context ID while a context is Pending or Created (an in-flight context switch).
-     * @return The latest issued context ID.
-     */
-    function getCurrentKmsContextIdCounter() external view returns (uint256);
-
-    /**
-     * @notice Checks whether a KMS context ID is valid (exists, is not destroyed, and is active).
-     * @param kmsContextId The context ID to check.
-     * @return True if the context is valid.
-     */
-    function isValidKmsContext(uint256 kmsContextId) external view returns (bool);
-
-    /**
-     * @notice Checks whether a KMS context exists and has not been destroyed.
-     * @dev Unlike `isValidKmsContext`, this returns true for a Pending or Created context, so it
-     *      distinguishes an in-flight context switch from a destroyed or never-issued context.
-     * @param kmsContextId The context ID to check.
-     * @return True if the context exists and is not destroyed.
-     */
-    function isLiveKmsContext(uint256 kmsContextId) external view returns (bool);
-
-    /**
-     * @notice Returns the previous-committee confirmation quorum cached for a context at define time.
-     * @dev The `(n - t)` target that `confirmKmsContextCreation` requires from the previous committee.
-     *      Returns 0 for a context that was never a switch target or whose bookkeeping was cleared on
-     *      destruction.
-     * @param kmsContextId The context ID.
-     * @return The cached previous-committee confirmation target.
-     */
-    function getContextCreationPreviousTxSenderThreshold(uint256 kmsContextId) external view returns (uint256);
-
-    /**
-     * @notice Returns the signer addresses for the current active context.
-     * @return The list of signer addresses.
-     */
-    function getKmsSigners() external view returns (address[] memory);
-
-    /**
-     * @notice Returns the signer addresses for a given context.
-     * @param kmsContextId The context ID.
-     * @return The list of signer addresses.
-     */
-    function getKmsSignersForContext(uint256 kmsContextId) external view returns (address[] memory);
-
-    /**
-     * @notice Checks whether an address is a signer in the current active context.
-     * @param signer The address to check.
-     * @return True if the address is a signer in the current context.
-     */
-    function isKmsSigner(address signer) external view returns (bool);
-
-    /**
-     * @notice Checks whether an address is a signer in the given context.
-     * @param kmsContextId The context ID.
-     * @param signer The address to check.
-     * @return True if the address is a signer.
-     */
-    function isKmsSignerForContext(uint256 kmsContextId, address signer) external view returns (bool);
-
-    /**
-     * @notice Returns the KMS nodes for a given context.
-     * @param kmsContextId The context ID.
-     * @return The list of KMS nodes.
-     */
-    function getKmsNodesForContext(uint256 kmsContextId) external view returns (KmsNode[] memory);
-
-    /**
-     * @notice Checks whether an address is a tx sender in the given context.
-     * @param kmsContextId The context ID.
-     * @param txSender The address to check.
-     * @return True if the address is a KMS tx sender.
-     */
-    function isKmsTxSenderForContext(uint256 kmsContextId, address txSender) external view returns (bool);
-
-    /**
-     * @notice Returns the KmsNode metadata for a tx sender in the given context.
-     * @param kmsContextId The context ID.
-     * @param txSender The tx sender address.
-     * @return The KmsNode struct.
-     */
-    function getKmsNodeForContext(uint256 kmsContextId, address txSender) external view returns (KmsNode memory);
-
-    /**
-     * @notice Returns the current public decryption threshold (for the active context).
-     * @return The public decryption threshold.
-     */
-    function getPublicDecryptionThreshold() external view returns (uint256);
-
-    /**
-     * @notice Returns the public decryption threshold for a given context.
-     * @param kmsContextId The context ID.
-     * @return The public decryption threshold for the context.
-     */
-    function getPublicDecryptionThresholdForContext(uint256 kmsContextId) external view returns (uint256);
-
-    /**
-     * @notice Returns the current user decryption threshold (for the active context).
-     * @return The user decryption threshold.
-     */
-    function getUserDecryptionThreshold() external view returns (uint256);
-
-    /**
-     * @notice Returns the user decryption threshold for a given context.
-     * @param kmsContextId The context ID.
-     * @return The user decryption threshold for the context.
-     */
-    function getUserDecryptionThresholdForContext(uint256 kmsContextId) external view returns (uint256);
-
-    /**
-     * @notice Returns the current kmsGen threshold (for the active context).
-     * @return The kmsGen threshold.
-     */
-    function getKmsGenThreshold() external view returns (uint256);
-
-    /**
-     * @notice Returns the kmsGen threshold for a given context.
-     * @dev The other threshold getters require an `Active` context. This one returns a value for any
-     *      live context, whatever its state, so the kmsGen threshold stays readable even before the
-     *      context becomes `Active`.
-     * @param kmsContextId The context ID.
-     * @return The kmsGen threshold for the context.
-     */
-    function getKmsGenThresholdForContext(uint256 kmsContextId) external view returns (uint256);
-
-    /**
-     * @notice Returns the current MPC threshold (for the active context).
-     * @return The MPC threshold.
-     */
-    function getMpcThreshold() external view returns (uint256);
-
-    /**
-     * @notice Returns the MPC threshold for a given context.
-     * @param kmsContextId The context ID.
-     * @return The MPC threshold for the context.
-     */
-    function getMpcThresholdForContext(uint256 kmsContextId) external view returns (uint256);
-
-    /**
-     * @notice Returns the contract version.
-     * @return The version string.
-     */
-    function getVersion() external pure returns (string memory);
 }

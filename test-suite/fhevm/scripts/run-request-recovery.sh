@@ -23,6 +23,8 @@ case "$CASE_ID" in
   *) echo "unknown request case $CASE_ID" >&2; exit 2 ;;
 esac
 KMS=kms-connector-kms-worker
+# Every party's KMS worker: with a threshold KMS, pausing one party still leaves a decryption quorum.
+mapfile -t KMS_WORKERS < <(docker ps --format '{{.Names}}' | grep -E '^kms-connector(-[0-9]+)?-kms-worker$')
 SUITE_PID=""
 BASELINE_OWNED=0
 BASELINE="${SC_CASE_BASELINE:-}"
@@ -86,7 +88,10 @@ if [[ "$(sc_restart_budget "$TARGET")" == exhausted ]]; then
 fi
 # KMS is the durable downstream hold for both cases. The relayer remains live
 # long enough to accept and submit the request before its own crash is applied.
-sc_pause "$KMS" || fail 'cannot hold KMS processing'
+((${#KMS_WORKERS[@]})) || fail 'no running KMS worker to hold'
+for worker in "${KMS_WORKERS[@]}"; do
+  sc_pause "$worker" || fail "cannot hold KMS processing on $worker"
+done
 docker exec "$TEST_CONTAINER" sh -c 'rm -f "$1"/request-*.json' sh "$HANDSHAKE_DIR"
 sp_exec \
   -e RUN_REQUEST_RECOVERY=1 -e "FAILURE_CASE_ID=$CASE_ID" \
@@ -135,7 +140,9 @@ if [[ "$policy" == no ]]; then
   auto_restart=not_evaluated
 fi
 after="$(sc_wait_replaced "$TARGET" "$before" 120)" || fail 'request owner was not replaced'
-[[ "$TARGET" == "$KMS" ]] || sc_resume "$KMS" || fail 'cannot release KMS'
+for worker in "${KMS_WORKERS[@]}"; do
+  [[ "$worker" == "$TARGET" ]] || sc_resume "$worker" || fail "cannot release KMS on $worker"
+done
 ack true 'accepted request owner was killed and restarted' || fail 'cannot release client polling'
 wait "$SUITE_PID"; suite_status=$?
 SUITE_PID=""

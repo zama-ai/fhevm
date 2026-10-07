@@ -1,5 +1,6 @@
 import { assertOneWorkerPerQueue } from "./queue-ownership";
 export { assertOneWorkerPerQueue, classifyStray, parseWorkerDatabase, strayWorkerPids } from "./queue-ownership";
+import { consumerOnlyHostListeners, isLegacyHostListener } from "../host-listener-mode";
 import {
   bootstrapUsesHostKmsGeneration,
   kmsConnectorUsesHostKmsGeneration,
@@ -36,8 +37,7 @@ const KMS_CONNECTOR_DECRYPTION_READY =
 const KMS_CONNECTOR_KMS_GENERATION_READY =
   /Started KMSGeneration polling from block|Started Ethereum polling from block|Last block polled updated for chain ethereum|Last block polled updated for \d+\/\d+ event types in \[[^\]]*PrepKeygenRequest[^\]]*\]/;
 
-/** Number of KMS connector instances: one per party in threshold mode, else one. */
-// `kms.parties` is the canonical connector/party count: 1 for centralized, N for threshold.
+/** Number of KMS connector instances: one per party. */
 const kmsConnectorPartyCount = (state: State) => state.scenario.kms.parties;
 
 /** gw-listener / kms-worker / tx-sender (+ endpoint and proxy when the bundle ships them) health containers across every KMS party. */
@@ -234,6 +234,7 @@ export const coprocessorHealthContainers = (state: Pick<State, "scenario" | "ver
   }
   const suffixes = GROUP_SERVICE_SUFFIXES.coprocessor.filter(
     (suffix) =>
+      (!consumerOnlyHostListeners(state.scenario) || !isLegacyHostListener(suffix)) &&
       !suffix.includes("migration") &&
       (suffix !== "host-listener-consumer" || supportsHostListenerConsumer(state)) &&
       (suffix !== "consensus-detector" || supportsConsensusDetector(state)) &&
@@ -314,8 +315,10 @@ export const waitForCoprocessorServices = async (state: State, skipMigration: bo
     if (withMigration && !skipMigration) {
       await waitForContainer(`${prefix}db-migration`, "complete");
     }
-    await waitForContainer(`${prefix}host-listener`, "running");
-    await waitForContainer(`${prefix}host-listener-poller`, "running");
+    if (!consumerOnlyHostListeners(state.scenario)) {
+      await waitForContainer(`${prefix}host-listener`, "running");
+      await waitForContainer(`${prefix}host-listener-poller`, "running");
+    }
     if (supportsHostListenerConsumer(state)) {
       await waitForContainer(`${prefix}host-listener-consumer`, "running");
     }
@@ -358,8 +361,12 @@ const waitForExtraChainCoprocessorListeners = async (state: Pick<State, "scenari
   const topology = topologyForState(state);
   for (let index = 0; index < topology.count; index += 1) {
     const prefix = index === 0 ? "coprocessor-" : `coprocessor${index}-`;
-    await waitForContainer(`${prefix}host-listener${suffix}`, "running");
-    await waitForContainer(`${prefix}host-listener-poller${suffix}`, "running");
+    if (consumerOnlyHostListeners(state.scenario)) {
+      await waitForContainer(`${prefix}host-listener-consumer${suffix}`, "running");
+    } else {
+      await waitForContainer(`${prefix}host-listener${suffix}`, "running");
+      await waitForContainer(`${prefix}host-listener-poller${suffix}`, "running");
+    }
   }
 };
 
@@ -369,7 +376,9 @@ export const listenerContainersForChain = (state: Pick<State, "scenario">, chain
   const topology = topologyForState(state);
   return Array.from({ length: topology.count }, (_, index) => {
     const prefix = index === 0 ? "coprocessor-" : `coprocessor${index}-`;
-    return [`${prefix}host-listener${suffix}`, `${prefix}host-listener-poller${suffix}`];
+    return consumerOnlyHostListeners(state.scenario)
+      ? [`${prefix}host-listener-consumer${suffix}`]
+      : [`${prefix}host-listener${suffix}`, `${prefix}host-listener-poller${suffix}`];
   }).flat();
 };
 
@@ -379,10 +388,8 @@ export const waitForStableChainListeners = async (state: Pick<State, "scenario">
   await postBootHealthGate(listenerContainersForChain(state, chainKey));
 };
 
-/** Object-store prefixes that hold a party's VerfAddress. Centralized stores it under
- * `PUB/PUB` (or legacy `PUB`); a threshold-mode cluster stores party i under its own prefix. */
-const verfAddressPrefixes = (parties: number, party: number): string[] =>
-  parties === 1 ? ["PUB/PUB", "PUB"] : [kmsPublicPrefix(party)];
+/** Object-store prefix that holds a party's VerfAddress: party i stores it under its own prefix. */
+const verfAddressPrefixes = (party: number): string[] => [kmsPublicPrefix(party)];
 
 /** Extracts a signing-key handle from an S3 ListObjects response for a public KMS prefix. */
 export const signerHandleFromListObjects = (xml: string, prefix: string): string | null => {
@@ -449,8 +456,7 @@ const fetchCaCert = async (prefix: string, handle: string): Promise<string> => {
 };
 
 /**
- * Discovers the KMS signer addresses after bootstrap: one for a centralized node,
- * one per party for a threshold-mode cluster (`parties` is 1 in the centralized case).
+ * Discovers the KMS signer addresses after bootstrap, one per party.
  * The signing-key handle is scraped from the core logs and is shared across parties;
  * each party's address lives at its own object-store prefix.
  */
@@ -467,7 +473,7 @@ export const discoverKmsSigners = async (
       const caCerts: string[] = [];
       let objectStoreKeyPrefix = "";
       for (let party = 1; party <= parties; party += 1) {
-        const prefixes = verfAddressPrefixes(parties, party);
+        const prefixes = verfAddressPrefixes(party);
         const found = await fetchVerfAddress(prefixes, handle);
         if (!found) {
           lastFailure = `party ${party}: no VerfAddress/${handle} under ${prefixes.join(" or ")}`;
@@ -869,8 +875,8 @@ export const waitForCoprocessorKeyMaterial = async (state: State, attempts = 150
 
 /** Waits for the kms-connector runtime services to become ready. */
 export const waitForKmsConnector = async (state: State) => {
-  // Threshold runs one connector per party; every party must be ready or the
-  // on-chain 2t+1 quorum can never be reached. Centralized = a single party.
+  // One connector per party; every party must be ready or the on-chain 2t+1
+  // quorum can never be reached.
   for (let party = 1; party <= kmsConnectorPartyCount(state); party += 1) {
     await waitForKmsConnectorParty(state, party);
   }

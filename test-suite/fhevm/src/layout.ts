@@ -40,7 +40,6 @@ const statePaths = (root: string) => {
     STATE_FILE: path.join(persistedStateDir, "state.json"),
     versionsEnvPath: path.join(envDir, "versions.env"),
     relayerConfigPath: path.join(generatedConfigDir, "relayer.yaml"),
-    kmsCoreConfigPath: path.join(generatedConfigDir, "kms-core.toml"),
     gatewayAddressesPath: path.join(addressDir, "gateway", ".env.gateway"),
     SOLANA_RUNTIME_DIR: solanaRuntimeDir,
     /** The seeded demo config (`demo:seed` writes it; the operator, dapp and smoke read it). */
@@ -68,7 +67,6 @@ export let GENERATED_CONFIG_DIR = currentStatePaths.GENERATED_CONFIG_DIR;
 export let STATE_FILE = currentStatePaths.STATE_FILE;
 export let versionsEnvPath = currentStatePaths.versionsEnvPath;
 export let relayerConfigPath = currentStatePaths.relayerConfigPath;
-export let kmsCoreConfigPath = currentStatePaths.kmsCoreConfigPath;
 export let gatewayAddressesPath = currentStatePaths.gatewayAddressesPath;
 export let SOLANA_RUNTIME_DIR = currentStatePaths.SOLANA_RUNTIME_DIR;
 export let solanaDemoConfigPath = currentStatePaths.solanaDemoConfigPath;
@@ -96,7 +94,6 @@ export const setStateDir = (root = process.env.FHEVM_STATE_DIR ?? DEFAULT_STATE_
   STATE_FILE = currentStatePaths.STATE_FILE;
   versionsEnvPath = currentStatePaths.versionsEnvPath;
   relayerConfigPath = currentStatePaths.relayerConfigPath;
-  kmsCoreConfigPath = currentStatePaths.kmsCoreConfigPath;
   gatewayAddressesPath = currentStatePaths.gatewayAddressesPath;
   SOLANA_RUNTIME_DIR = currentStatePaths.SOLANA_RUNTIME_DIR;
   solanaDemoConfigPath = currentStatePaths.solanaDemoConfigPath;
@@ -119,14 +116,6 @@ const TEMPLATE_CONFIG_DIR = path.join(TEMPLATE_DIR, "config");
 export const TEMPLATE_COMPOSE_DIR = path.join(CLI_DIR, "docker-compose");
 const STATIC_CONFIG_DIR = path.join(CLI_DIR, "static", "config");
 export const TEMPLATE_RELAYER_CONFIG = path.join(TEMPLATE_CONFIG_DIR, "relayer.yaml");
-export const TEMPLATE_KMS_CORE_CONFIG_LEGACY = path.join(
-  TEMPLATE_CONFIG_DIR,
-  "kms-core-legacy.toml",
-);
-export const TEMPLATE_KMS_CORE_CONFIG_MODERN = path.join(
-  TEMPLATE_CONFIG_DIR,
-  "kms-core-modern.toml",
-);
 export const TEMPLATE_KMS_CORE_CONFIG_THRESHOLD = path.join(
   TEMPLATE_CONFIG_DIR,
   "kms-core-threshold.toml",
@@ -257,7 +246,6 @@ export const realLzEndpointFor = (chainKey: string): string | undefined =>
 export const COMPONENTS = [
   "object-store",
   "database",
-  "core",
   "core-threshold",
   "gateway-node",
   "host-node",
@@ -275,7 +263,7 @@ export const COMPONENT_BY_STEP: Record<StepName, string[]> = {
   "preflight": [],
   "resolve": [],
   "generate": [],
-  "base": ["object-store", "core", "database", "host-node", "gateway-node"],
+  "base": ["object-store", "core-threshold", "database", "host-node", "gateway-node"],
   "kms-signer": [],
   "gateway-deploy": ["gateway-mocked-payment", "gateway-sc"],
   "host-deploy": ["host-sc"],

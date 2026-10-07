@@ -1,6 +1,7 @@
 /**
  * Generates compose overrides for local builds, scenario instances, and compatibility-adjusted service commands.
  */
+import { consumerOnlyHostListeners, isLegacyHostListener } from "../host-listener-mode";
 import { execFileSync } from "node:child_process";
 import { readFileSync, statSync } from "node:fs";
 import fs from "node:fs/promises";
@@ -48,12 +49,6 @@ export type ComposeDoc = Record<string, unknown> & {
 const LOCAL_BUILD_TAG = "fhevm-local";
 /** Returns the local image tag used for a specific coprocessor instance. */
 const localInstanceTag = (index: number) => `${LOCAL_BUILD_TAG}-i${index}`;
-
-/** The pinned centralized kms-core image has no arm64 manifest; only that service uses emulation on Apple Silicon. */
-export const centralizedKmsCorePlatform = (
-  platform: NodeJS.Platform = process.platform,
-  arch: string = process.arch,
-): "linux/amd64" | undefined => (platform === "darwin" && arch === "arm64" ? "linux/amd64" : undefined);
 
 /**
  * Template `platform` pins select amd64 from published images that list no other platform. A local
@@ -616,6 +611,7 @@ export const serviceNameList = (
   const includeUpgradeController = supportsUpgradeController(state);
   const suffixes = GROUP_SERVICE_SUFFIXES.coprocessor.filter(
     (suffix) =>
+      (!consumerOnlyHostListeners(state.scenario) || !isLegacyHostListener(suffix)) &&
       (includeConsumer || suffix !== "host-listener-consumer") &&
       (includeConsensusDetector || suffix !== "consensus-detector") &&
       (includeUpgradeController || suffix !== "upgrade-controller"),
@@ -740,6 +736,9 @@ const buildCoprocessorOverride = async (plan: StackSpec) => {
   if (!plan.coprocessor) {
     return next;
   }
+  if (plan.coprocessor?.hostListenerMode === "consumer" && !supportsHostListenerConsumer(plan)) {
+    throw new Error("consumer-only scenarios require a host-consumer capable version bundle");
+  }
   const compat = compatPolicyForState(plan);
   const inheritedBuildServices = coprocessorBuildServices(plan);
   const excludedServices = new Set([
@@ -832,6 +831,9 @@ const buildCoprocessorOverride = async (plan: StackSpec) => {
           };
         }
       }
+      if (plan.coprocessor.hostListenerMode === "consumer" && isLegacyHostListener(suffix)) {
+        adjusted.profiles = ["legacy-host-listeners"];
+      }
       applyCoprocessorSource(adjusted, name, sourceInstance, locallyBuilt, plan.e2ePublicRuntime, plan.versions.env);
       if (instance.index > 0 && adjusted.depends_on && typeof adjusted.depends_on === "object") {
         adjusted.depends_on = rewriteCoprocessorDependsOn(
@@ -923,8 +925,8 @@ const buildCoprocessorOverride = async (plan: StackSpec) => {
  * Each party's services read `kms-connector[.i].env` (own core endpoint, signer
  * key, DB) and depend on that party's own db-migration.
  *
- * `--override kms-connector` behaves exactly as in centralized mode: overridden
- * services run the locally built image on EVERY party. Only the party-1 (base
+ * `--override kms-connector` makes overridden services run the locally built
+ * image on EVERY party. Only the party-1 (base
  * name) clone carries the build spec — maybeBuild builds by base service name —
  * so the image is built once and parties 2..N reference the same tag. Without
  * an override every party runs the resolved published image (secure threshold
@@ -1031,20 +1033,8 @@ const buildComposeOverride = async (component: string, plan: StackSpec) => {
   if (component === "coprocessor") {
     return buildCoprocessorOverride(plan);
   }
-  if (component === "core") {
-    const platform = centralizedKmsCorePlatform();
-    return {
-      services: {
-        "kms-core": {
-          image: kmsRenderOptionsFor(plan.versions.env.CORE_VERSION).coreImage,
-          ...(platform === undefined ? {} : { platform }),
-        },
-      },
-    };
-  }
   if (component === "core-threshold") {
-    // Dedicated threshold-cluster component (gen-keys + N cores + kms-init).
-    // Separate from `core` so it never merges with the centralized template.
+    // The KMS cluster component (gen-keys + N cores + kms-init).
     return buildKmsThresholdOverride(
       plan.kms,
       kmsRenderOptionsFor(plan.versions.env.CORE_VERSION),
@@ -1052,7 +1042,7 @@ const buildComposeOverride = async (component: string, plan: StackSpec) => {
       plan.kmsMigrationByNodeId,
     );
   }
-  if (component === "kms-connector" && plan.kms.mode === "threshold") {
+  if (component === "kms-connector") {
     // One connector per KMS party (each cores↔connector pair is independent).
     return buildKmsConnectorOverride(plan);
   }
@@ -1070,6 +1060,22 @@ const buildComposeOverride = async (component: string, plan: StackSpec) => {
       next.build = build;
     }
     services[name] = next;
+  }
+  if (component === "listener-core" && plan.coprocessor?.hostListenerMode === "consumer") {
+    const original = template.services["listener-publisher-for-anvil"];
+    const mount = (original.volumes as string[]).find((value) => value.endsWith(":/config.yaml:ro"))!;
+    const config = YAML.parse(await fs.readFile(mount.slice(0, -":/config.yaml:ro".length), "utf8"));
+    for (const chain of hostChainRuntimes(plan.hostChains)) {
+      const name = chain.isDefault ? "listener-publisher-for-anvil" : `listener-publisher-${chain.key}`;
+      const chainConfig = structuredClone(config);
+      chainConfig.blockchain.chain_id = Number(chain.chainId);
+      chainConfig.blockchain.rpc_url = `http://${chain.node}:${chain.rpcPort}`;
+      chainConfig.database.db_url = `postgres://postgres:postgres@coprocessor-and-kms-db:5432/listener_${chain.chainId}`;
+      const file = path.join(COMPOSE_OUT_DIR, `${name}.yaml`);
+      await fs.writeFile(file, YAML.stringify(chainConfig));
+      services[name] = { ...original, ...(services["listener-publisher-for-anvil"] ?? {}),
+        container_name: name, profiles: [name], volumes: [`${file}:/config.yaml:ro`] };
+    }
   }
   if (component === "test-suite") {
     applyDockerSocketRuntime(services);
@@ -1152,9 +1158,14 @@ const buildExtraCoprocessorListenerOverride = async (
     // Multi-chain overrides don't apply to blue-green (single chain).
     return { ...doc, services };
   }
+  if (plan.coprocessor?.hostListenerMode === "consumer" && !supportsHostListenerConsumer(plan)) {
+    throw new Error("consumer-only scenarios require a host-consumer capable version bundle");
+  }
   const compat = compatPolicyForState(plan);
   const inheritedBuildServices = coprocessorBuildServices(plan);
-  const listenerServices = ["coprocessor-host-listener", "coprocessor-host-listener-poller"];
+  const listenerServices = plan.coprocessor.hostListenerMode === "consumer"
+    ? ["coprocessor-host-listener-consumer", "coprocessor-host-listener", "coprocessor-host-listener-poller"]
+    : ["coprocessor-host-listener", "coprocessor-host-listener-poller"];
   const { suffix: chainSuffix } = hostChainNames(chain.key, defaultChain.key);
   for (const instance of plan.coprocessor.instances) {
     const localServices =
@@ -1184,6 +1195,18 @@ const buildExtraCoprocessorListenerOverride = async (
         locallyBuilt ? {} : argPolicy.coprocessorDropFlags,
       );
       adjusted.container_name = cloneName;
+      if (plan.coprocessor.hostListenerMode === "consumer" && isLegacyHostListener(suffix)) {
+        adjusted.profiles = ["legacy-host-listeners"];
+      }
+      // As on the default chain, each operator's consumer needs its own broker
+      // queue: a shared service name load-balances blocks between operators.
+      if (
+        suffix === "host-listener-consumer" &&
+        Array.isArray(adjusted.command) &&
+        !adjusted.command.some((argument: string) => argument === "--service-name" || argument.startsWith("--service-name="))
+      ) {
+        adjusted.command = [...adjusted.command, `--service-name=${cloneName}`];
+      }
       // Extra chains keep their env canonical id (default chain), so they don't decode proposals.
       applyCoprocessorSource(adjusted, baseName, instance, locallyBuilt, plan.e2ePublicRuntime, plan.versions.env);
       delete adjusted.depends_on;
@@ -1242,13 +1265,15 @@ const buildExtraCoprocessorListenerOverride = async (
 };
 
 /** Lists which components need generated compose overrides for a runtime plan. */
-export const generatedComposeComponents = (plan: Pick<StackSpec, "overrides" | "kms">) =>
+export const generatedComposeComponents = (plan: Pick<StackSpec, "overrides" | "kms" | "coprocessor">) =>
   new Set([
     "coprocessor",
+    ...(plan.coprocessor?.hostListenerMode === "consumer" ? ["listener-core"] : []),
     // Always generated: it carries the host Docker socket wiring for the e2e runner,
     // which depends on host facts rather than on any local build override.
     "test-suite",
-    ...(plan.kms.mode === "threshold" ? ["core-threshold", "kms-connector"] : ["core"]),
+    "core-threshold",
+    "kms-connector",
     ...plan.overrides.flatMap((override) => GROUP_BUILD_COMPONENTS[override.group]),
   ]);
 

@@ -9,7 +9,7 @@ on:
   workflow_dispatch:
     inputs:
       run-threshold-legs:
-        description: "Also run the non-gating threshold-KMS legs (keygen, context-switch, node-swap)"
+        description: "Also run the non-gating secure-keygen KMS legs (keygen and 2t+1 quorum, context-switch, node-swap)"
         type: boolean
         default: false
       run-blue-green-leg:
@@ -239,8 +239,10 @@ jobs:
 
   # The standard suite is sharded into three parallel legs (compute / decryption /
   # stateful), each booting its own stack — wall-clock is bounded by the slowest
-  # shard instead of the full sequential suite. Together the shards run exactly
-  # the standard-suite profiles (enforced by a unit test in the fhevm CLI). All
+  # shard instead of the full sequential suite. Every leg runs a threshold KMS: the
+  # shards use a 4-party cluster with insecure (fast) keygen, while the threshold,
+  # abort and context-switch legs below run the secure MPC keygen. Together the
+  # shards run exactly the standard-suite profiles (enforced by a unit test in the fhevm CLI). All
   # three are merge-queue gates in .mergify.yml. This job keeps the historical
   # `run-e2e-tests` id so the `run-e2e-tests / fhevm-e2e-test` check name stays
   # valid while the mergify config transition lands.
@@ -279,6 +281,38 @@ jobs:
       relayer-version: ${{ needs.create-e2e-tests-input.outputs.relayer-version }}
       scenario: two-of-three-multi-chain
       test-profile: standard-shard-compute
+      test-suite-version: ${{ needs.create-e2e-tests-input.outputs.test-suite-version }}
+
+  run-e2e-tests-consumer-stack:
+    needs: [create-e2e-tests-input]
+    if: *build-trigger-condition
+    uses:
+      ./.github/workflows/test-suite-e2e-tests.yml
+    permissions: *e2e_permissions
+    secrets: *e2e_secrets
+    with:
+      orchestrated: true
+      build: false
+      coprocessor-db-migration-version: ${{ needs.create-e2e-tests-input.outputs.coprocessor-db-migration-version }}
+      coprocessor-gw-listener-version: ${{ needs.create-e2e-tests-input.outputs.coprocessor-gw-listener-version }}
+      coprocessor-host-listener-version: ${{ needs.create-e2e-tests-input.outputs.coprocessor-host-listener-version }}
+      coprocessor-sns-worker-version: ${{ needs.create-e2e-tests-input.outputs.coprocessor-sns-worker-version }}
+      coprocessor-tfhe-worker-version: ${{ needs.create-e2e-tests-input.outputs.coprocessor-tfhe-worker-version }}
+      coprocessor-tx-sender-version: ${{ needs.create-e2e-tests-input.outputs.coprocessor-tx-sender-version }}
+      coprocessor-zkproof-worker-version: ${{ needs.create-e2e-tests-input.outputs.coprocessor-zkproof-worker-version }}
+      coprocessor-consensus-detector-version: ${{ needs.create-e2e-tests-input.outputs.coprocessor-consensus-detector-version }}
+      coprocessor-upgrade-controller-version: ${{ needs.create-e2e-tests-input.outputs.coprocessor-upgrade-controller-version }}
+      listener-core-version: ${{ needs.create-e2e-tests-input.outputs.listener-core-version }}
+      connector-versions: ${{ needs.create-e2e-tests-input.outputs.connector-versions }}
+      gateway-version: ${{ needs.create-e2e-tests-input.outputs.gateway-version }}
+      host-version: ${{ needs.create-e2e-tests-input.outputs.host-version }}
+      kms-core-version: ${{ needs.create-e2e-tests-input.outputs.kms-core-version }}
+      lock-artifact-name: ${{ needs.create-e2e-tests-input.outputs.lock-artifact-name }}
+      relayer-migrate-version: ${{ needs.create-e2e-tests-input.outputs.relayer-migrate-version }}
+      relayer-version: ${{ needs.create-e2e-tests-input.outputs.relayer-version }}
+      # Host ingestion by listener-core and host-consumers only.
+      scenario: two-of-three-multi-chain-consumer
+      test-profile: standard
       test-suite-version: ${{ needs.create-e2e-tests-input.outputs.test-suite-version }}
 
   run-e2e-tests-shard-decryption:
