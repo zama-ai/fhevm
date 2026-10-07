@@ -390,7 +390,12 @@ impl Database {
     ) -> Result<bool, SqlxError> {
         let is_scalar = !scalar_byte.is_zero();
         let output_handle = result.to_vec();
-        let query = sqlx::query!(
+        // A computation first ingested without its ACL allow event (e.g. a
+        // partial get_logs during reorg recovery) is stored as not allowed and
+        // already completed, so it is never scheduled. When a later ingestion
+        // of the same event sees it allowed, upgrade the row while its
+        // ciphertext does not exist yet, and re-queue its dependence chain.
+        let row = sqlx::query!(
             r#"
             INSERT INTO computations (
                 output_handle,
@@ -407,7 +412,17 @@ impl Database {
                 block_number
             )
             VALUES ($1, $2, $3, $4, $5, $6, $7, NOW(), $8::timestamp, $9, $10, $11)
-            ON CONFLICT (output_handle, transaction_id) DO NOTHING
+            ON CONFLICT (output_handle, transaction_id) DO UPDATE
+            SET is_allowed = TRUE,
+                is_completed = FALSE,
+                completed_at = NULL
+            WHERE EXCLUDED.is_allowed
+              AND NOT computations.is_allowed
+              AND NOT EXISTS (
+                  SELECT 1 FROM ciphertexts ct
+                  WHERE ct.handle = computations.output_handle
+              )
+            RETURNING (xmax = 0) AS "inserted!", dependence_chain_id
             "#,
             output_handle,
             &dependencies,
@@ -423,11 +438,39 @@ impl Database {
             !log.is_allowed,
             self.chain_id.as_i64(),
             log.block_number as i64
-        );
-        query
-            .execute(tx.deref_mut())
-            .await
-            .map(|result| result.rows_affected() > 0)
+        )
+        .fetch_optional(tx.deref_mut())
+        .await?;
+        let Some(row) = row else {
+            return Ok(false);
+        };
+        if !row.inserted {
+            warn!(
+                output_handle = to_hex(&output_handle),
+                "Computation upgraded to allowed, re-queuing its dependence chain"
+            );
+            if let Some(dependence_chain_id) = row.dependence_chain_id {
+                // Cleanup may have removed the original processed chain,
+                // and this listener's cache may assign a different chain on
+                // replay. Recreate the stored chain so its work is reachable.
+                // For existing chains, preserve ownership and dependencies.
+                sqlx::query!(
+                    r#"
+                    INSERT INTO dependence_chain (
+                        dependence_chain_id, status, last_updated_at
+                    )
+                    VALUES ($1, 'updated', $2::timestamp)
+                    ON CONFLICT (dependence_chain_id) DO UPDATE
+                    SET status = 'updated'
+                    "#,
+                    dependence_chain_id,
+                    log.block_timestamp,
+                )
+                .execute(tx.deref_mut())
+                .await?;
+            }
+        }
+        Ok(true)
     }
 
     #[rustfmt::skip]
