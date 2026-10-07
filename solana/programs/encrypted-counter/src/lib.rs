@@ -48,10 +48,8 @@ pub mod encrypted_counter {
                 },
                 &[authority_seeds],
             ),
-            zama_host::instructions::CreateEncryptedStoreArgs {
-                program: crate::ID,
-                authority_seeds: authority_seeds.iter().map(|seed| seed.to_vec()).collect(),
-            },
+            crate::ID,
+            authority_seeds.iter().map(|seed| seed.to_vec()).collect(),
         )?;
         let info = ctx.accounts.encrypted_store.to_account_info();
         let account =

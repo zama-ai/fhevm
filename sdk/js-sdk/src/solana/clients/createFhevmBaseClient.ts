@@ -1,6 +1,6 @@
 import type { Fhevm } from '../../core/types/coreFhevmClient.js';
 import type { FhevmRuntime } from '../../core/types/coreFhevmRuntime.js';
-import type { Address, FetchAccountConfig } from '@solana/kit';
+import type { Address } from '@solana/kit';
 import { getAddressDecoder } from '@solana/kit';
 import type { FhevmSolanaChain } from '../../core/types/fhevmSolanaChain.js';
 import type { FheEncryptionKeyBytes } from '../../core/types/fheEncryptionKey.js';
@@ -63,12 +63,10 @@ export function solanaClientSurface<C extends FhevmSolanaChain>(
     get ready() {
       return core.ready;
     },
-    fetchEncryptedStore: (address: Address, config?: FetchAccountConfig) =>
-      fetchSolanaEncryptedStore(rpc, address, config, programAddress),
-    fetchUserDecryptionDelegation: (tuple: SolanaUserDecryptionDelegationTuple, config?: FetchAccountConfig) =>
-      fetchSolanaUserDecryptionDelegation(rpc, tuple, { ...config, programAddress }),
-    fetchPermitInvalidation: (user: Address, config?: FetchAccountConfig) =>
-      fetchSolanaPermitInvalidation(rpc, user, { ...config, programAddress }),
+    fetchEncryptedStore: (address: Address) => fetchSolanaEncryptedStore(rpc, address, programAddress),
+    fetchUserDecryptionDelegation: (tuple: SolanaUserDecryptionDelegationTuple) =>
+      fetchSolanaUserDecryptionDelegation(rpc, tuple, { programAddress }),
+    fetchPermitInvalidation: (user: Address) => fetchSolanaPermitInvalidation(rpc, user, { programAddress }),
   };
 }
 
@@ -78,15 +76,14 @@ export type FhevmSolanaBaseClient<C extends FhevmSolanaChain = FhevmSolanaChain>
   readonly rpc: SolanaRpc;
   readonly init: () => Promise<void>;
   readonly ready: Promise<void>;
-  readonly fetchEncryptedStore: (
-    address: Address,
-    config?: FetchAccountConfig,
-  ) => ReturnType<typeof fetchSolanaEncryptedStore>;
+  /** Reads an encrypted store owned by this chain's host program at `finalized`. */
+  readonly fetchEncryptedStore: (address: Address) => ReturnType<typeof fetchSolanaEncryptedStore>;
+  /** Reads the application's and wildcard delegation rows at `finalized`. */
   readonly fetchUserDecryptionDelegation: (
     tuple: SolanaUserDecryptionDelegationTuple,
-    config?: FetchAccountConfig,
   ) => ReturnType<typeof fetchSolanaUserDecryptionDelegation>;
-  readonly fetchPermitInvalidation: (user: Address, config?: FetchAccountConfig) => Promise<bigint>;
+  /** Reads the user's permit watermark at `finalized`. */
+  readonly fetchPermitInvalidation: (user: Address) => Promise<bigint>;
 };
 
 /** Creates a Solana client whose chain reads share the supplied native Kit RPC. */

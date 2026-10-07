@@ -10,8 +10,10 @@ import {
   combineCodec,
   fixDecoderSize,
   fixEncoderSize,
+  getAddressEncoder,
   getBytesDecoder,
   getBytesEncoder,
+  getProgramDerivedAddress,
   getStructDecoder,
   getStructEncoder,
   SOLANA_ERROR__PROGRAM_CLIENTS__INSUFFICIENT_ACCOUNT_METAS,
@@ -32,7 +34,11 @@ import {
   type WritableAccount,
   type WritableSignerAccount,
 } from '@solana/kit';
-import { getAccountMetaFactory, type ResolvedInstructionAccount } from '@solana/program-client-core';
+import {
+  getAccountMetaFactory,
+  getAddressFromResolvedInstructionAccount,
+  type ResolvedInstructionAccount,
+} from '@solana/program-client-core';
 import { ZAMA_HOST_PROGRAM_ADDRESS } from '../programAddress.js';
 
 export const OPEN_TRANSIENT_STORE_DISCRIMINATOR: ReadonlyUint8Array = new Uint8Array([
@@ -86,6 +92,90 @@ export function getOpenTransientStoreInstructionDataCodec(): FixedSizeCodec<
   OpenTransientStoreInstructionData
 > {
   return combineCodec(getOpenTransientStoreInstructionDataEncoder(), getOpenTransientStoreInstructionDataDecoder());
+}
+
+export type OpenTransientStoreAsyncInput<
+  TAccountPayer extends string = string,
+  TAccountTransientStore extends string = string,
+  TAccountInstructions extends string = string,
+  TAccountSystemProgram extends string = string,
+> = {
+  payer: TransactionSigner<TAccountPayer>;
+  transientStore?: Address<TAccountTransientStore>;
+  instructions?: Address<TAccountInstructions>;
+  systemProgram?: Address<TAccountSystemProgram>;
+};
+
+export async function getOpenTransientStoreInstructionAsync<
+  TAccountPayer extends string,
+  TAccountTransientStore extends string,
+  TAccountInstructions extends string,
+  TAccountSystemProgram extends string,
+  TProgramAddress extends Address = typeof ZAMA_HOST_PROGRAM_ADDRESS,
+>(
+  input: OpenTransientStoreAsyncInput<
+    TAccountPayer,
+    TAccountTransientStore,
+    TAccountInstructions,
+    TAccountSystemProgram
+  >,
+  config?: { programAddress?: TProgramAddress },
+): Promise<
+  OpenTransientStoreInstruction<
+    TProgramAddress,
+    TAccountPayer,
+    TAccountTransientStore,
+    TAccountInstructions,
+    TAccountSystemProgram
+  >
+> {
+  // Program address.
+  const programAddress = config?.programAddress ?? ZAMA_HOST_PROGRAM_ADDRESS;
+
+  // Original accounts.
+  const originalAccounts = {
+    payer: { value: input.payer ?? null, isWritable: true },
+    transientStore: { value: input.transientStore ?? null, isWritable: true },
+    instructions: { value: input.instructions ?? null, isWritable: false },
+    systemProgram: { value: input.systemProgram ?? null, isWritable: false },
+  };
+  const accounts = originalAccounts as Record<keyof typeof originalAccounts, ResolvedInstructionAccount>;
+
+  // Resolve default values.
+  if (!accounts.transientStore.value) {
+    accounts.transientStore.value = await getProgramDerivedAddress({
+      programAddress,
+      seeds: [
+        getBytesEncoder().encode(new Uint8Array([116, 114, 97, 110, 115, 105, 101, 110, 116])),
+        getAddressEncoder().encode(getAddressFromResolvedInstructionAccount('payer', accounts.payer.value)),
+      ],
+    });
+  }
+  if (!accounts.instructions.value) {
+    accounts.instructions.value =
+      'Sysvar1nstructions1111111111111111111111111' as Address<'Sysvar1nstructions1111111111111111111111111'>;
+  }
+  if (!accounts.systemProgram.value) {
+    accounts.systemProgram.value = '11111111111111111111111111111111' as Address<'11111111111111111111111111111111'>;
+  }
+
+  const getAccountMeta = getAccountMetaFactory(programAddress, 'programId');
+  return Object.freeze({
+    accounts: [
+      getAccountMeta('payer', accounts.payer),
+      getAccountMeta('transientStore', accounts.transientStore),
+      getAccountMeta('instructions', accounts.instructions),
+      getAccountMeta('systemProgram', accounts.systemProgram),
+    ],
+    data: getOpenTransientStoreInstructionDataEncoder().encode({}),
+    programAddress,
+  } as OpenTransientStoreInstruction<
+    TProgramAddress,
+    TAccountPayer,
+    TAccountTransientStore,
+    TAccountInstructions,
+    TAccountSystemProgram
+  >);
 }
 
 export type OpenTransientStoreInput<

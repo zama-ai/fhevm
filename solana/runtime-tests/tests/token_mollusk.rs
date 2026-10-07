@@ -2298,6 +2298,120 @@ fn mollusk_confidential_transfer_rejects_balance_in_another_mints_scope() {
     );
 }
 
+// Only the named foreign PDA is replaced in each caller. The transaction helper scopes the
+// error to the token instruction; an empty CPI trace excludes a host-side seeds rejection.
+fn assert_transfer_rejects_foreign_seeds(context: &Ctx, fixture: &TokenFixture, ix: &Instruction) {
+    let result = check_token_instruction(
+        context,
+        ix,
+        &[anchor_error(anchor_lang::error::ErrorCode::ConstraintSeeds)],
+    );
+    assert!(result.inner_instructions.is_empty());
+    assert_eq!(
+        read_store_handle(context, fixture.alice_balance_store, token::balance_key()),
+        fixture.alice_initial,
+    );
+    assert_eq!(
+        read_store_handle(context, fixture.bob_balance_store, token::balance_key()),
+        fixture.bob_initial,
+    );
+}
+
+#[test]
+fn mollusk_confidential_transfer_rejects_foreign_from_store_seeds() {
+    let fixture = TokenFixture::new();
+    let other = TokenFixture::new();
+    let mut accounts = fixture.base_accounts();
+    accounts.insert(
+        other.alice_balance_store,
+        other
+            .base_accounts()
+            .remove(&other.alice_balance_store)
+            .unwrap(),
+    );
+    let context = fixture_context(mollusk(), accounts);
+    let ix = confidential_transfer_ix(
+        &fixture,
+        fixture.alice_token,
+        fixture.bob_token,
+        other.alice_balance_store,
+        fixture.bob_balance_store,
+        sender_attestation(&fixture, 36, 0),
+    );
+    assert_transfer_rejects_foreign_seeds(&context, &fixture, &ix);
+}
+
+#[test]
+fn mollusk_confidential_transfer_rejects_foreign_to_store_seeds() {
+    let fixture = TokenFixture::new();
+    let other = TokenFixture::new();
+    let mut accounts = fixture.base_accounts();
+    accounts.insert(
+        other.bob_balance_store,
+        other
+            .base_accounts()
+            .remove(&other.bob_balance_store)
+            .unwrap(),
+    );
+    let context = fixture_context(mollusk(), accounts);
+    let ix = confidential_transfer_ix(
+        &fixture,
+        fixture.alice_token,
+        fixture.bob_token,
+        fixture.alice_balance_store,
+        other.bob_balance_store,
+        sender_attestation(&fixture, 36, 0),
+    );
+    assert_transfer_rejects_foreign_seeds(&context, &fixture, &ix);
+}
+
+#[test]
+fn mollusk_confidential_transfer_rejects_foreign_host_config_seeds() {
+    let fixture = TokenFixture::new();
+    let mut accounts = fixture.base_accounts();
+    let noncanonical_config = Pubkey::new_unique();
+    accounts.insert(noncanonical_config, accounts[&fixture.host_config].clone());
+    let context = fixture_context(mollusk(), accounts);
+    // A valid self-transfer returns before the host CPI, so removing the token constraint succeeds.
+    let mut ix = confidential_transfer_ix(
+        &fixture,
+        fixture.alice_token,
+        fixture.alice_token,
+        fixture.alice_balance_store,
+        fixture.alice_balance_store,
+        sender_attestation(&fixture, 36, 0),
+    );
+    ix.accounts
+        .iter_mut()
+        .find(|meta| meta.pubkey == fixture.host_config)
+        .expect("host config account")
+        .pubkey = noncanonical_config;
+    assert_transfer_rejects_foreign_seeds(&context, &fixture, &ix);
+}
+
+#[test]
+fn mollusk_confidential_transfer_rejects_foreign_zama_event_authority_seeds() {
+    let fixture = TokenFixture::new();
+    let mut accounts = fixture.base_accounts();
+    let noncanonical_authority = Pubkey::new_unique();
+    accounts.insert(noncanonical_authority, system_account(0));
+    let context = fixture_context(mollusk(), accounts);
+    let mut ix = confidential_transfer_ix(
+        &fixture,
+        fixture.alice_token,
+        fixture.bob_token,
+        fixture.alice_balance_store,
+        fixture.bob_balance_store,
+        sender_attestation(&fixture, 36, 0),
+    );
+    ix.accounts
+        .iter_mut()
+        .find(|meta| meta.pubkey == event_authority(host::id()))
+        .expect("host event authority account")
+        .pubkey = noncanonical_authority;
+    assert_transfer_rejects_foreign_seeds(&context, &fixture, &ix);
+}
+
 /// Mint A's token accounts with mint B's balance stores, so the write would land in B's scope. B is
 /// a real `ConfidentialMint` owned by the token program, and the stores sit at the addresses B
 /// derives, so the token's mint binding refuses the pair with `MintMismatch` before the
@@ -2338,7 +2452,7 @@ fn mollusk_confidential_transfer_rejects_another_confidential_mint() {
     check_token_instruction(
         &context,
         &ix,
-        &[token_error(token::ConfidentialTokenError::MintMismatch)],
+        &[anchor_error(anchor_lang::error::ErrorCode::ConstraintSeeds)],
     );
     assert_eq!(
         read_store_handle(&context, alice_store, token::balance_key()),
@@ -4528,11 +4642,7 @@ fn mollusk_wrap_usdc_rejects_noncanonical_vault() {
     assert_eq!(read_spl_amount(&context, user_usdc), 1_000);
 }
 
-/// `total_supply_authority` is declared `seeds = [b"total-supply", mint.key()], bump`, so Anchor
-/// itself derives and enforces the canonical PDA before the handler's (structurally identical,
-/// defense-in-depth) `TotalSupplyAuthorityMismatch` re-check ever runs: any non-canonical account
-/// is rejected by Anchor's own seeds constraint first. Substituting the canonical PDA for a
-/// *different* mint reaches exactly that: `ConstraintSeeds`, not the token error.
+/// Anchor rejects a total-supply authority for a different mint before the handler runs.
 #[test]
 fn mollusk_wrap_usdc_rejects_wrong_total_supply_authority_pda() {
     let fixture = BurnRedeemFixture::new();

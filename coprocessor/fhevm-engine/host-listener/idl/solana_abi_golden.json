@@ -92,7 +92,7 @@
       "fixture_len": 44,
       "name": "allow_balance_viewers",
       "program": "confidential_token",
-      "schema_hash": "079cd5113c2930b175d8e2f86ed29f91cdb63248f3c4f8518a3ba1ca50de98c8"
+      "schema_hash": "3aaa1846961fb2652b9e3584d6d370277b29945b33f7459a3dc30373c4fce46d"
     },
     {
       "category": "instruction_args",
@@ -100,7 +100,7 @@
       "fixture_len": 44,
       "name": "allow_total_supply_viewers",
       "program": "confidential_token",
-      "schema_hash": "42b0ed99b627af7999818694e10addd53a0e0f8f0e2a1a5474fb2bebcd738714"
+      "schema_hash": "4a9df6ccb3a904962daa10be1abf4e991db90abd4df9d107035fd26e01422c21"
     },
     {
       "category": "instruction_args",
@@ -108,7 +108,7 @@
       "fixture_len": 8,
       "name": "cancel_pending_burn",
       "program": "confidential_token",
-      "schema_hash": "5d4e3318938914909fab1e607d692a3f5086ec410079b6707a64198350e981e9"
+      "schema_hash": "2e1a48c78dc7d1227c63643506d697459505bb1f7e3e73b86e420ce2cfdd5f7a"
     },
     {
       "category": "instruction_args",
@@ -116,7 +116,7 @@
       "fixture_len": 225,
       "name": "confidential_burn",
       "program": "confidential_token",
-      "schema_hash": "2ffd053498534f93fc2c62e73e94cf6cfb091fb076d72470836fe96f103bbb90"
+      "schema_hash": "7187ff79d85ad392fc6a104ec551f7c161a7f729ef255a45713ec3c73bb8b110"
     },
     {
       "category": "instruction_args",
@@ -124,7 +124,7 @@
       "fixture_len": 40,
       "name": "confidential_burn_from_value",
       "program": "confidential_token",
-      "schema_hash": "1654c1e03eeb483a68e9a823e318de66726fc05cd3e594ed30ef21d53748106f"
+      "schema_hash": "baa46a7971be2639d2d2614223cf54669ad873c611729ebac83dccbd25140966"
     },
     {
       "category": "instruction_args",
@@ -132,7 +132,7 @@
       "fixture_len": 225,
       "name": "confidential_transfer",
       "program": "confidential_token",
-      "schema_hash": "22f5dd2203f5a4fb18511133fd462d29c52cee858993d488b023ad4480a99f84"
+      "schema_hash": "f6cb2c371a1a67d7d83a0d89d6ea26e2d72434f81306be6c401d146a50097262"
     },
     {
       "category": "instruction_args",
@@ -140,7 +140,7 @@
       "fixture_len": 41,
       "name": "confidential_transfer_from_value",
       "program": "confidential_token",
-      "schema_hash": "25afa931941061403212256c7c4b59b9a3261860e1874effcfa0d32cd3920f05"
+      "schema_hash": "29fc13f8e7707e4ded0a1376617759056c50d90cc9a31c20a5b4835ca0791f89"
     },
     {
       "category": "instruction_args",
@@ -148,7 +148,7 @@
       "fixture_len": 148,
       "name": "disclose_secp",
       "program": "confidential_token",
-      "schema_hash": "95f769d25687f85f68fe49582dd6093cae9a2e627dd8f34174845afa56f37db8"
+      "schema_hash": "18157fdab7e11f25525f2afaf841b0566f004c7d84031ea5181c65d17fb60044"
     },
     {
       "category": "instruction_args",
@@ -156,7 +156,7 @@
       "fixture_len": 8,
       "name": "initialize_mint",
       "program": "confidential_token",
-      "schema_hash": "80420340ca8b88a685e4ddb66bba69ea7f05c7189fccc3e892f730405601840f"
+      "schema_hash": "9d240c3f5b24302c2e05b17e1437a04f9d0c079a8183e43695fc36e0c145a299"
     },
     {
       "category": "instruction_args",
@@ -164,7 +164,7 @@
       "fixture_len": 8,
       "name": "initialize_token_account",
       "program": "confidential_token",
-      "schema_hash": "b9208ddc7659c3abfaccd148afa2e99fb7d88f4b6c81603d674b1e1007197645"
+      "schema_hash": "5ac4a7638fc6905b6ecf6bff1655b539a59ebd83ac14723302b75cac8add51a0"
     },
     {
       "category": "instruction_args",
@@ -172,7 +172,7 @@
       "fixture_len": 41,
       "name": "make_token_account_handle_public",
       "program": "confidential_token",
-      "schema_hash": "6a332ac939481b1b3c898b837ca6a61fa57f67c3fa02e40603eb094c13c62c8b"
+      "schema_hash": "12243915306c8d8adc6f105871fc9676a8567f5f82c35885a318e0524157dee4"
     },
     {
       "category": "instruction_args",
@@ -180,7 +180,7 @@
       "fixture_len": 40,
       "name": "make_total_supply_handle_public",
       "program": "confidential_token",
-      "schema_hash": "8a48bc4d00ded7fbf8f60c43dc4a725534653e0377aeb6775c6b0c0694416c03"
+      "schema_hash": "c5d68fe3303f8332f82f062974594c50b982c5e309aa7868b2e03c50888215e1"
     },
     {
       "category": "instruction_args",
@@ -188,7 +188,7 @@
       "fixture_len": 124,
       "name": "redeem_burned_amount",
       "program": "confidential_token",
-      "schema_hash": "ff7be7d850d23b3dfdb829cab4d8151191ee50ceee1a326a3af21768c53b6717"
+      "schema_hash": "a82d9ab02c4164fc5e729a6a0132eb7e1987b99c2b494ea134398821962d1e76"
     },
     {
       "category": "instruction_args",
@@ -196,7 +196,7 @@
       "fixture_len": 16,
       "name": "wrap_usdc",
       "program": "confidential_token",
-      "schema_hash": "2dd91ce60a7943a656694f48a043ad8678bd37d4301d3f3859f5f3b632b4ab2d"
+      "schema_hash": "85004ebf156f4cbfa50b51de2e3216b428ce36e8fcdeba409c13e1ae58f7ad1b"
     },
     {
       "category": "account",
@@ -300,7 +300,7 @@
       "fixture_len": 8,
       "name": "close_transient_store",
       "program": "zama_host",
-      "schema_hash": "dacfbd8b5cf6dca2b31d0ed526e77df342658e1e00909fb4e30e08d2df0c6144"
+      "schema_hash": "839922e7f366028bcba9dacac1b77daf5c7df5d49d47ad0870250b61b0e92b04"
     },
     {
       "category": "instruction_args",
@@ -308,7 +308,7 @@
       "fixture_len": 51,
       "name": "create_encrypted_store",
       "program": "zama_host",
-      "schema_hash": "e786c44cc5574064484e480186c5d7f486d79b0b33fe42913858038319bf85a9"
+      "schema_hash": "1aea96115a6c505e2ba448336b173140ca5ee1f963bf0128da51b3cd0b8f69b3"
     },
     {
       "category": "instruction_args",
@@ -324,7 +324,7 @@
       "fixture_len": 80,
       "name": "delegate_for_user_decryption",
       "program": "zama_host",
-      "schema_hash": "6f68b010b564df1cda206e70c01cf8462695d769a974fee2787fff57e8aecaf7"
+      "schema_hash": "37396965b8abbf723c81d9b1e7ef9b6d88b739508e6ae0d83d374c1cd7adb486"
     },
     {
       "category": "instruction_args",
@@ -356,7 +356,7 @@
       "fixture_len": 80,
       "name": "make_store_handle_public",
       "program": "zama_host",
-      "schema_hash": "6a51c1f41d111bf01b945f968c9580a584ac1800cd9cfe34ffb2c011101dcb49"
+      "schema_hash": "f9bd4ed379d1a06c8371f35c42741c0244722b471fd4c459a608fac0f86c2536"
     },
     {
       "category": "instruction_args",
@@ -364,7 +364,7 @@
       "fixture_len": 8,
       "name": "open_transient_store",
       "program": "zama_host",
-      "schema_hash": "c59f685946c6fc593ffd7317442c0add72b2f8b94c2fcb4e6a4bbaa8bac6d6c1"
+      "schema_hash": "ca341edfaabeb4ac4c3809de7592f5d3381b7102e67199c3870f9db8c091c37c"
     },
     {
       "category": "instruction_args",
@@ -380,7 +380,7 @@
       "fixture_len": 8,
       "name": "revoke_delegation_for_user_decryption",
       "program": "zama_host",
-      "schema_hash": "9b48ee4eb11b0d1a4256db2068925f3c4dd510f8a16cd0138084bb3216e6ae7e"
+      "schema_hash": "304673eafaf8a4e81c7b22018e49911a451026c5a000d2d4989f2cff5050bd28"
     },
     {
       "category": "instruction_args",
@@ -388,7 +388,7 @@
       "fixture_len": 8,
       "name": "revoke_permits",
       "program": "zama_host",
-      "schema_hash": "0a83caefd47020112857b9b721617acf1d7b5601e50e9d399c5476b7241f5abf"
+      "schema_hash": "00c623688daffe0aa197f798335f660cb526cd8c8bf39b44655653666e1b4a8f"
     },
     {
       "category": "instruction_args",
@@ -412,7 +412,7 @@
       "fixture_len": 73,
       "name": "set_deny_scope",
       "program": "zama_host",
-      "schema_hash": "567d6f38b29e4712a98312be08c3c8ae99b705dd5855ed5c4cf06c0acc830a59"
+      "schema_hash": "501e4a8010c29d032d412e2b1f9a1de2a28d37bb4f2b48f16c0babe494162d35"
     },
     {
       "category": "instruction_args",
@@ -436,7 +436,7 @@
       "fixture_len": 73,
       "name": "set_hcu_app_trusted",
       "program": "zama_host",
-      "schema_hash": "6acf42c26102f73e68802247f52a949224ec851581929e8e6d8f967d23f43bb2"
+      "schema_hash": "ed45ea99736978e29179cf29ff444c43fcd974305571fc93bc2cff54ad7ef0e2"
     },
     {
       "category": "instruction_args",
@@ -468,7 +468,7 @@
       "fixture_len": 41,
       "name": "set_pauser",
       "program": "zama_host",
-      "schema_hash": "8be2fb09fa6bc7d1aedd8cd0cf64b4f0374164270fa78e8092ca0d02a36f6792"
+      "schema_hash": "d4f27dfd9acb2041b3c6cedf2ed11f98ecbb5f9ad6d550ecd6cfac4ee7d25aa6"
     },
     {
       "category": "instruction_args",

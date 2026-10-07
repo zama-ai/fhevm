@@ -2,36 +2,25 @@ import {
   fetchEncodedAccount,
   fixDecoderSize,
   getAddressDecoder,
-  getAddressEncoder,
   getArrayDecoder,
   getBytesDecoder,
-  getProgramDerivedAddress,
   getStructDecoder,
   getU32Decoder,
   getU64Decoder,
   getU8Decoder,
   type Address,
-  type FetchAccountConfig,
   type ReadonlyUint8Array,
   type Rpc,
   type SolanaRpcApi,
 } from '@solana/kit';
 
+import { findEncryptedStorePda, type EncryptedStoreSeeds } from '@fhevm/solana-zama-host';
+
 /** The RPC shape this module reads through — `@solana/kit`'s standard API surface. */
 export type SolanaRpc = Rpc<SolanaRpcApi>;
 
-/** The PDA seed prefix of an encrypted store: `[seed, program, authority, scope]`. */
-export const SOLANA_ENCRYPTED_STORE_SEED = new TextEncoder().encode('encrypted-state');
-
 /** The three fields that, with the host program, name one encrypted store. */
-export interface SolanaEncryptedStoreSeeds {
-  /** The application program the value belongs to. */
-  readonly program: Address;
-  /** The PDA of `program` that controls the value. */
-  readonly authority: Address;
-  /** The scope: the address of an account `program` owns. */
-  readonly scope: Address;
-}
+export type SolanaEncryptedStoreSeeds = Readonly<EncryptedStoreSeeds>;
 
 /**
  * The canonical address of an encrypted store: the same
@@ -45,16 +34,7 @@ export async function solanaEncryptedStoreAddress(
   hostProgramId: Address,
   seeds: SolanaEncryptedStoreSeeds,
 ): Promise<Address> {
-  const addressEncoder = getAddressEncoder();
-  const [address] = await getProgramDerivedAddress({
-    programAddress: hostProgramId,
-    seeds: [
-      SOLANA_ENCRYPTED_STORE_SEED,
-      addressEncoder.encode(seeds.program),
-      addressEncoder.encode(seeds.authority),
-      addressEncoder.encode(seeds.scope),
-    ],
-  });
+  const [address] = await findEncryptedStorePda(seeds, { programAddress: hostProgramId });
   return address;
 }
 
@@ -139,11 +119,10 @@ export function decodeSolanaEncryptedStore(data: Uint8Array, accountName: string
 }
 
 /**
- * Reads one EncryptedStore account and decodes it.
+ * Reads one EncryptedStore account at `finalized` and decodes it.
  *
  * @param rpc - The Solana RPC to read through.
  * @param address - The account's address.
- * @param config - Standard fetch passthrough. The read is at `finalized` unless it names another commitment.
  * @param expectedOwner - The host program expected to own the account. When given, an account
  * owned by anyone else — e.g. a system account somebody created by transferring lamports to the
  * PDA — is reported as such instead of failing deeper in the decoder as a phantom layout drift.
@@ -152,10 +131,9 @@ export function decodeSolanaEncryptedStore(data: Uint8Array, accountName: string
 export async function fetchSolanaEncryptedStore(
   rpc: SolanaRpc,
   address: Address,
-  config?: FetchAccountConfig,
   expectedOwner?: Address,
 ): Promise<SolanaEncryptedStore> {
-  const account = await fetchEncodedAccount(rpc, address, { commitment: 'finalized', ...config });
+  const account = await fetchEncodedAccount(rpc, address, { commitment: 'finalized' });
   if (!account.exists) {
     throw new Error(`EncryptedStore account ${address} does not exist`);
   }

@@ -13,16 +13,28 @@ import { dirname, resolve } from 'node:path';
 import { tmpdir } from 'node:os';
 import { fileURLToPath } from 'node:url';
 
+import { getBase58Decoder } from '@solana/kit';
+
 import { rootNodeFromAnchor } from '@codama/nodes-from-anchor';
 import { renderVisitor } from '@codama/renderers-js';
 import {
+  accountValueNode,
+  bottomUpTransformerVisitor,
+  constantPdaSeedNodeFromBytes,
   createFromRoot,
   definedTypeNode,
+  pdaLinkNode,
+  pdaNode,
+  pdaSeedValueNode,
+  pdaValueNode,
+  publicKeyValueNode,
+  programIdValueNode,
   deleteNodesVisitor,
   updateInstructionsVisitor,
   updateProgramsVisitor,
 } from 'codama';
 import { format, resolveConfig } from 'prettier';
+import { renderProgramConstants } from './render-solana-constants.mjs';
 
 const sdkRoot = fileURLToPath(new URL('../..', import.meta.url));
 const check = process.argv.includes('--check');
@@ -66,8 +78,8 @@ const targets = [
   {
     idlPath: idlUrl('confidential_token.json'),
     generatedPath: `${sdkRoot}/../../solana/clients/confidential-token/src/generated`,
-    // Omit `keep`: render the full instruction/account/type/PDA surface. Events and
-    // constants are still pruned below for every target. Errors stay pruned except
+    // Omit `keep`: render the full instruction/account/type/PDA surface. Events stay
+    // pruned below; constants render separately. Errors stay pruned except
     // the zama-host client (`keepErrors`).
     programAddress(program, anchorIdl) {
       const zamaHostProgramAddress = anchorIdl.instructions
@@ -129,7 +141,6 @@ const targets = [
       events: new Set(['fheExecutedEvent']),
       // The generated builders default their host_config and rand_nonce accounts to these
       // same-program PDAs; the SDK and the deployment derive hostConfig and kmsContext directly.
-      pdas: new Set(['hostConfig', 'kmsContext', 'randNonce']),
     },
     programAddress(program) {
       return (
@@ -244,6 +255,14 @@ const targets = [
   },
 ];
 
+// Anchor's event_cpi macro emits an address constraint, so its implicit PDA needs one render default.
+const eventAuthority = pdaNode({
+  name: 'eventAuthority',
+  seeds: [
+    constantPdaSeedNodeFromBytes('base58', getBase58Decoder().decode(new TextEncoder().encode('__event_authority'))),
+  ],
+});
+
 let stale = false;
 const deploymentProgramIds = {};
 for (const target of targets) {
@@ -254,6 +273,84 @@ for (const target of targets) {
   const anchorIdl = JSON.parse(readFileSync(target.idlPath, 'utf8'));
   deploymentProgramIds[anchorIdl.metadata.name] = anchorIdl.address;
   const codama = createFromRoot(rootNodeFromAnchor(anchorIdl));
+  const product = [idlUrl('zama_host.json'), idlUrl('confidential_token.json')].includes(target.idlPath);
+  if (product) {
+    codama.update(
+      updateProgramsVisitor({
+        [codama.getRoot().program.name]: { pdas: [...codama.getRoot().program.pdas, eventAuthority] },
+      }),
+    );
+    codama.update(
+      updateInstructionsVisitor(
+        Object.fromEntries(
+          codama.getRoot().program.instructions.map(({ name, accounts }) => [
+            name,
+            {
+              accounts: Object.fromEntries(
+                accounts
+                  .filter(({ name }) => name === 'eventAuthority' || name === 'program')
+                  .map(({ name }) => [
+                    name,
+                    { defaultValue: name === 'eventAuthority' ? pdaValueNode(eventAuthority) : programIdValueNode() },
+                  ]),
+              ),
+            },
+          ]),
+        ),
+      ),
+    );
+  }
+  const foreignPdaLinks = {};
+  if (target.idlPath === idlUrl('confidential_token.json')) {
+    const hostIdl = JSON.parse(readFileSync(idlUrl('zama_host.json'), 'utf8'));
+    const hostPdas = [...rootNodeFromAnchor(hostIdl).program.pdas, eventAuthority];
+    // updateInstructionsVisitor fills local seed defaults and drops a linked PDA's programId.
+    // Preserve the foreign program binding instead of resolving it against this program's PDAs.
+    codama.update(
+      bottomUpTransformerVisitor([
+        {
+          select: '[instructionAccountNode]',
+          transform(account) {
+            const value = account.defaultValue;
+            const foreign = value?.pda;
+            if (foreign?.kind !== 'pdaNode' || foreign.programId !== hostIdl.address) return account;
+            const matches = hostPdas.filter(
+              (pda) =>
+                pda.seeds.length === foreign.seeds.length &&
+                pda.seeds.every(
+                  (seed, i) =>
+                    seed.kind === 'variablePdaSeedNode' || JSON.stringify(seed) === JSON.stringify(foreign.seeds[i]),
+                ),
+            );
+            if (matches.length !== 1) throw new Error(`Cannot link foreign PDA: ${account.name}`);
+            const hostPda = matches[0];
+            foreignPdaLinks[hostPda.name] = 'zamaHost';
+            const seeds = hostPda.seeds.flatMap((seed, i) => {
+              if (seed.kind !== 'variablePdaSeedNode') return [];
+              const source = foreign.seeds[i];
+              let binding =
+                source.kind === 'variablePdaSeedNode'
+                  ? value.seeds.find(({ name }) => name === source.name)?.value
+                  : source.value;
+              if (
+                seed.type.kind === 'publicKeyTypeNode' &&
+                binding?.kind === 'bytesValueNode' &&
+                binding.encoding === 'base58'
+              ) {
+                binding = publicKeyValueNode(binding.data);
+              }
+              if (!binding) throw new Error(`Missing foreign PDA seed: ${account.name}.${seed.name}`);
+              return [pdaSeedValueNode(seed.name, binding)];
+            });
+            return {
+              ...account,
+              defaultValue: pdaValueNode(pdaLinkNode(hostPda.name), seeds, accountValueNode('zamaProgram')),
+            };
+          },
+        },
+      ]),
+    );
+  }
   const program = codama.getRoot().program;
   const keep = target.keep;
   if (keep) {
@@ -277,7 +374,7 @@ for (const target of targets) {
           ...program.definedTypes
             .filter(({ name }) => !keep.definedTypes.has(name))
             .map(({ name }) => `[definedTypeNode]${name}`),
-          ...program.pdas.filter(({ name }) => !keep.pdas.has(name)).map(({ name }) => `[pdaNode]${name}`),
+          ...program.pdas.filter(({ name }) => keep.pdas && !keep.pdas.has(name)).map(({ name }) => `[pdaNode]${name}`),
         ]
       : []),
     ...(target.keepErrors ? [] : program.errors.map(({ name }) => `[errorNode]${name}`)),
@@ -296,6 +393,26 @@ for (const target of targets) {
           ],
         },
       }),
+    );
+  }
+  // An optional PDA is an opt-in account. Its presence can take a write lock or change policy,
+  // so absence must stay absence; callers that need it use the generated finder.
+  if ([idlUrl('zama_host.json'), idlUrl('confidential_token.json')].includes(target.idlPath)) {
+    codama.update(
+      updateInstructionsVisitor(
+        Object.fromEntries(
+          codama.getRoot().program.instructions.map(({ name, accounts }) => [
+            name,
+            {
+              accounts: Object.fromEntries(
+                accounts
+                  .filter((account) => account.isOptional && account.defaultValue?.kind === 'pdaValueNode')
+                  .map((account) => [account.name, { defaultValue: undefined }]),
+              ),
+            },
+          ]),
+        ),
+      ),
     );
   }
   // Codama's linked PDA resolver drops the instruction's programAddress override.
@@ -323,20 +440,52 @@ for (const target of targets) {
       generatedFolder: 'generated',
       kitImportStrategy: 'rootOnly',
       syncPackageJson: false,
+      linkOverrides: { pdas: foreignPdaLinks },
+      dependencyMap: { zamaHost: '@fhevm/solana-zama-host' },
+      dependencyVersions: {
+        '@fhevm/solana-zama-host': JSON.parse(
+          readFileSync(`${sdkRoot}/../../solana/clients/zama-host/package.json`, 'utf8'),
+        ).version,
+      },
     }),
   );
   writeFileSync(`${temporaryGeneratedPath}/programAddress.ts`, target.programAddress(program, anchorIdl));
+  writeFileSync(
+    `${temporaryGeneratedPath}/constants.ts`,
+    renderProgramConstants(program.constants, anchorIdl.constants ?? []),
+  );
   rmSync(`${temporaryGeneratedPath}/programs`, { force: true, recursive: true });
   rmSync(`${temporaryGeneratedPath}/index.ts`, { force: true });
 
   // The SDK builds with NodeNext. Codama renders extensionless relative imports, so make its
   // deterministic output executable without hand-editing generated files.
+  // Recovery needs the canonical seeds to sign for these two authorities.
+  const seedEncoderFiles = new Set(
+    target.idlPath === idlUrl('confidential_token.json') ? ['vaultAuthority.ts', 'totalSupplyAuthority.ts'] : [],
+  );
   for (const entry of readdirSync(temporaryGeneratedPath, { recursive: true, withFileTypes: true })) {
     if (!entry.isFile() || !entry.name.endsWith('.ts')) continue;
     const file = `${entry.parentPath}/${entry.name}`;
-    const source = readFileSync(file, 'utf8')
+    let source = readFileSync(file, 'utf8')
       .replace(/(['"])\.\.\/programs\1/g, '$1../programAddress$1')
       .replaceAll('@solana/kit/program-client-core', '@solana/program-client-core');
+    if (file.includes('/pdas/') && seedEncoderFiles.has(entry.name)) {
+      let renderedSeedEncoder = false;
+      source = source.replace(
+        /(export async function find(\w+)Pda\([\s\S]*?return await getProgramDerivedAddress\(\{\s*programAddress,\s*)seeds: (\[[\s\S]*?\]),(\s*\}\);\s*\})/,
+        (_, prefix, name, seeds, suffix) => {
+          renderedSeedEncoder = true;
+          const seedType = source.includes(`export type ${name}Seeds`) ? `${name}Seeds` : undefined;
+          return (
+            `${prefix}seeds: get${name}PdaSeeds(${seedType ? 'seeds' : ''}),${suffix}\n` +
+            `\nexport function get${name}PdaSeeds(${seedType ? `seeds: ${seedType}` : ''}) {\n` +
+            `  return ${seeds};\n}\n`
+          );
+        },
+      );
+      if (!renderedSeedEncoder) throw new Error(`Cannot render PDA seed encoder: ${file}`);
+      seedEncoderFiles.delete(entry.name);
+    }
     writeFileSync(
       file,
       await format(
@@ -351,6 +500,9 @@ for (const target of targets) {
         { ...prettierOptions, parser: 'typescript' },
       ),
     );
+  }
+  if (seedEncoderFiles.size > 0) {
+    throw new Error(`Missing PDA seed encoder files: ${[...seedEncoderFiles].join(', ')}`);
   }
 
   if (check) {

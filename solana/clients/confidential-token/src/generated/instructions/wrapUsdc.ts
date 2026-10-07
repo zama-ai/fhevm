@@ -6,12 +6,14 @@
  * @see https://github.com/codama-idl/codama
  */
 
+import { findEventAuthorityPda, findHostConfigPda } from '@fhevm/solana-zama-host';
 import {
   combineCodec,
   fixDecoderSize,
   fixEncoderSize,
   getBytesDecoder,
   getBytesEncoder,
+  getProgramDerivedAddress,
   getStructDecoder,
   getStructEncoder,
   getU64Decoder,
@@ -70,7 +72,7 @@ export type WrapUsdcInstruction<
   TAccountHcuBlockMeter extends string | AccountMeta<string> = string,
   TAccountHcuTrustedAppRecord extends string | AccountMeta<string> = string,
   TAccountEventAuthority extends string | AccountMeta<string> = string,
-  TAccountProgram extends string | AccountMeta<string> = string,
+  TAccountProgram extends string | AccountMeta<string> = 'FAWs7E52LZmXR5YzFy4aXanfBjNtXV2qooQVtkmBa3cL',
   TRemainingAccounts extends readonly AccountMeta<string>[] = [],
 > = Instruction<TProgram> &
   InstructionWithData<ReadonlyUint8Array> &
@@ -181,13 +183,13 @@ export type WrapUsdcAsyncInput<
   balanceStore: Address<TAccountBalanceStore>;
   /** Stable total-supply encrypted store; read for the current handle and replaced by this execution. */
   totalSupplyStore: Address<TAccountTotalSupplyStore>;
-  zamaEventAuthority: Address<TAccountZamaEventAuthority>;
+  zamaEventAuthority?: Address<TAccountZamaEventAuthority>;
   transientStore: Address<TAccountTransientStore>;
   instructions: Address<TAccountInstructions>;
   /** ZamaHost program used for FHE operations. */
   zamaProgram?: Address<TAccountZamaProgram>;
   /** ZamaHost config used for handle derivation. */
-  hostConfig: Address<TAccountHostConfig>;
+  hostConfig?: Address<TAccountHostConfig>;
   /** Classic Token or Token-2022 program owning the underlying mint and token accounts. */
   tokenProgram?: Address<TAccountTokenProgram>;
   /** System program used for ACL account creation. */
@@ -202,8 +204,8 @@ export type WrapUsdcAsyncInput<
    * means the mint is metered.
    */
   hcuTrustedAppRecord?: Address<TAccountHcuTrustedAppRecord>;
-  eventAuthority: Address<TAccountEventAuthority>;
-  program: Address<TAccountProgram>;
+  eventAuthority?: Address<TAccountEventAuthority>;
+  program?: Address<TAccountProgram>;
   amount: WrapUsdcInstructionDataArgs['amount'];
 };
 
@@ -340,12 +342,36 @@ export async function getWrapUsdcInstructionAsync<
     accounts.zamaProgram.value =
       'DPq5y89RDZPq9NcMh9X1NgjBWgYmSXg3QoipSBV3ZMzQ' as Address<'DPq5y89RDZPq9NcMh9X1NgjBWgYmSXg3QoipSBV3ZMzQ'>;
   }
+  if (!accounts.zamaEventAuthority.value) {
+    accounts.zamaEventAuthority.value = await findEventAuthorityPda({
+      programAddress: getAddressFromResolvedInstructionAccount('zamaProgram', accounts.zamaProgram.value),
+    });
+  }
+  if (!accounts.hostConfig.value) {
+    accounts.hostConfig.value = await findHostConfigPda({
+      programAddress: getAddressFromResolvedInstructionAccount('zamaProgram', accounts.zamaProgram.value),
+    });
+  }
   if (!accounts.tokenProgram.value) {
     accounts.tokenProgram.value =
       'TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA' as Address<'TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA'>;
   }
   if (!accounts.systemProgram.value) {
     accounts.systemProgram.value = '11111111111111111111111111111111' as Address<'11111111111111111111111111111111'>;
+  }
+  if (!accounts.eventAuthority.value) {
+    accounts.eventAuthority.value = await getProgramDerivedAddress({
+      programAddress,
+      seeds: [
+        getBytesEncoder().encode(
+          new Uint8Array([95, 95, 101, 118, 101, 110, 116, 95, 97, 117, 116, 104, 111, 114, 105, 116, 121]),
+        ),
+      ],
+    });
+  }
+  if (!accounts.program.value) {
+    accounts.program.value = programAddress;
+    accounts.program.isWritable = false;
   }
 
   const getAccountMeta = getAccountMetaFactory(programAddress, 'programId');
@@ -464,7 +490,7 @@ export type WrapUsdcInput<
    */
   hcuTrustedAppRecord?: Address<TAccountHcuTrustedAppRecord>;
   eventAuthority: Address<TAccountEventAuthority>;
-  program: Address<TAccountProgram>;
+  program?: Address<TAccountProgram>;
   amount: WrapUsdcInstructionDataArgs['amount'];
 };
 
@@ -595,6 +621,10 @@ export function getWrapUsdcInstruction<
   }
   if (!accounts.systemProgram.value) {
     accounts.systemProgram.value = '11111111111111111111111111111111' as Address<'11111111111111111111111111111111'>;
+  }
+  if (!accounts.program.value) {
+    accounts.program.value = programAddress;
+    accounts.program.isWritable = false;
   }
 
   const getAccountMeta = getAccountMetaFactory(programAddress, 'programId');

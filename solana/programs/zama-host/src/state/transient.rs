@@ -38,9 +38,16 @@ impl TransientStore {
     pub const SPACE: usize = 8 + std::mem::size_of::<Self>();
 
     pub fn validate(&self, address: Pubkey) -> Result<()> {
-        let (expected, bump) = transient_store_address(self.payer);
+        let expected = Pubkey::create_program_address(
+            &[TRANSIENT_SEED, self.payer.as_ref(), &[self.bump]],
+            &crate::ID,
+        )
+        .map_err(|_| error!(ZamaHostError::TransientAccountInvalid))?;
         require_keys_eq!(address, expected, ZamaHostError::TransientAccountInvalid);
-        require!(self.bump == bump, ZamaHostError::TransientAccountInvalid);
+        self.validate_shape()
+    }
+
+    pub(crate) fn validate_shape(&self) -> Result<()> {
         require!(
             usize::from(self.result_count) <= MAX_TRANSIENT_RESULTS
                 && usize::from(self.grant_count) <= MAX_TRANSIENT_GRANTS,
@@ -137,3 +144,29 @@ pub fn is_transient_store_len(len: usize) -> bool {
 }
 
 const _: () = assert!(TransientStore::SPACE <= 10_240);
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use bytemuck::Zeroable;
+
+    #[test]
+    fn validation_rejects_out_of_bounds_counts() {
+        let mut store = TransientStore::zeroed();
+        let (address, bump) = transient_store_address(store.payer);
+        store.bump = bump;
+        store.result_count = MAX_TRANSIENT_RESULTS as u16;
+        store.grant_count = MAX_TRANSIENT_GRANTS as u16;
+        store.validate_shape().unwrap();
+        store.validate(address).unwrap();
+        assert!(store.validate(Pubkey::new_unique()).is_err());
+
+        store.result_count += 1;
+        assert!(store.validate_shape().is_err());
+        assert!(store.validate(address).is_err());
+        store.result_count -= 1;
+        store.grant_count += 1;
+        assert!(store.validate_shape().is_err());
+        assert!(store.validate(address).is_err());
+    }
+}

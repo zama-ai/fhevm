@@ -6,6 +6,7 @@
  * @see https://github.com/codama-idl/codama
  */
 
+import { findEventAuthorityPda, findHostConfigPda } from '@fhevm/solana-zama-host';
 import {
   combineCodec,
   fixDecoderSize,
@@ -16,6 +17,7 @@ import {
   getArrayEncoder,
   getBytesDecoder,
   getBytesEncoder,
+  getProgramDerivedAddress,
   getStructDecoder,
   getStructEncoder,
   SOLANA_ERROR__PROGRAM_CLIENTS__INSUFFICIENT_ACCOUNT_METAS,
@@ -69,7 +71,7 @@ export type AllowTotalSupplyViewersInstruction<
   TAccountHcuBlockMeter extends string | AccountMeta<string> = string,
   TAccountHcuTrustedAppRecord extends string | AccountMeta<string> = string,
   TAccountEventAuthority extends string | AccountMeta<string> = string,
-  TAccountProgram extends string | AccountMeta<string> = string,
+  TAccountProgram extends string | AccountMeta<string> = 'FAWs7E52LZmXR5YzFy4aXanfBjNtXV2qooQVtkmBa3cL',
   TRemainingAccounts extends readonly AccountMeta<string>[] = [],
 > = Instruction<TProgram> &
   InstructionWithData<ReadonlyUint8Array> &
@@ -168,8 +170,8 @@ export type AllowTotalSupplyViewersAsyncInput<
   totalSupplyAuthority?: Address<TAccountTotalSupplyAuthority>;
   /** Encrypted total-supply value; read for the current handle and replaced. */
   totalSupplyStore: Address<TAccountTotalSupplyStore>;
-  hostConfig: Address<TAccountHostConfig>;
-  zamaEventAuthority: Address<TAccountZamaEventAuthority>;
+  hostConfig?: Address<TAccountHostConfig>;
+  zamaEventAuthority?: Address<TAccountZamaEventAuthority>;
   transientStore: Address<TAccountTransientStore>;
   instructions: Address<TAccountInstructions>;
   zamaProgram?: Address<TAccountZamaProgram>;
@@ -184,8 +186,8 @@ export type AllowTotalSupplyViewersAsyncInput<
    * means the mint is metered.
    */
   hcuTrustedAppRecord?: Address<TAccountHcuTrustedAppRecord>;
-  eventAuthority: Address<TAccountEventAuthority>;
-  program: Address<TAccountProgram>;
+  eventAuthority?: Address<TAccountEventAuthority>;
+  program?: Address<TAccountProgram>;
   viewers: AllowTotalSupplyViewersInstructionDataArgs['viewers'];
 };
 
@@ -293,8 +295,32 @@ export async function getAllowTotalSupplyViewersInstructionAsync<
     accounts.zamaProgram.value =
       'DPq5y89RDZPq9NcMh9X1NgjBWgYmSXg3QoipSBV3ZMzQ' as Address<'DPq5y89RDZPq9NcMh9X1NgjBWgYmSXg3QoipSBV3ZMzQ'>;
   }
+  if (!accounts.hostConfig.value) {
+    accounts.hostConfig.value = await findHostConfigPda({
+      programAddress: getAddressFromResolvedInstructionAccount('zamaProgram', accounts.zamaProgram.value),
+    });
+  }
+  if (!accounts.zamaEventAuthority.value) {
+    accounts.zamaEventAuthority.value = await findEventAuthorityPda({
+      programAddress: getAddressFromResolvedInstructionAccount('zamaProgram', accounts.zamaProgram.value),
+    });
+  }
   if (!accounts.systemProgram.value) {
     accounts.systemProgram.value = '11111111111111111111111111111111' as Address<'11111111111111111111111111111111'>;
+  }
+  if (!accounts.eventAuthority.value) {
+    accounts.eventAuthority.value = await getProgramDerivedAddress({
+      programAddress,
+      seeds: [
+        getBytesEncoder().encode(
+          new Uint8Array([95, 95, 101, 118, 101, 110, 116, 95, 97, 117, 116, 104, 111, 114, 105, 116, 121]),
+        ),
+      ],
+    });
+  }
+  if (!accounts.program.value) {
+    accounts.program.value = programAddress;
+    accounts.program.isWritable = false;
   }
 
   const getAccountMeta = getAccountMetaFactory(programAddress, 'programId');
@@ -380,7 +406,7 @@ export type AllowTotalSupplyViewersInput<
    */
   hcuTrustedAppRecord?: Address<TAccountHcuTrustedAppRecord>;
   eventAuthority: Address<TAccountEventAuthority>;
-  program: Address<TAccountProgram>;
+  program?: Address<TAccountProgram>;
   viewers: AllowTotalSupplyViewersInstructionDataArgs['viewers'];
 };
 
@@ -483,6 +509,10 @@ export function getAllowTotalSupplyViewersInstruction<
   }
   if (!accounts.systemProgram.value) {
     accounts.systemProgram.value = '11111111111111111111111111111111' as Address<'11111111111111111111111111111111'>;
+  }
+  if (!accounts.program.value) {
+    accounts.program.value = programAddress;
+    accounts.program.isWritable = false;
   }
 
   const getAccountMeta = getAccountMetaFactory(programAddress, 'programId');

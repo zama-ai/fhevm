@@ -1,10 +1,8 @@
-import { getProgramDerivedAddress, type Address, type Instruction } from '@solana/kit';
+import { type Address, type Instruction } from '@solana/kit';
 
 import type { SolanaPublicDecryptCertificateClaim } from '@fhevm/sdk/solana';
 import { verifyPublicDecryptArgsFromClaim } from '@fhevm/sdk/solana';
-import { getDiscloseSecpInstruction, CONFIDENTIAL_TOKEN_PROGRAM_ADDRESS } from '@fhevm/confidential-token';
-
-const EVENT_AUTHORITY_SEED = new TextEncoder().encode('__event_authority');
+import { getDiscloseSecpInstruction, findEventAuthorityPda, CONFIDENTIAL_TOKEN_PROGRAM_ADDRESS } from '@fhevm/confidential-token';
 
 /** Accounts for the confidential-token `disclose_secp` consume instruction. */
 export type SolanaDiscloseSecpAccounts = {
@@ -13,15 +11,6 @@ export type SolanaDiscloseSecpAccounts = {
   /** ZamaHost config account forwarded to the host verifier. */
   readonly hostConfig: Address;
 };
-
-async function tokenEventAuthority(): Promise<Address> {
-  return (
-    await getProgramDerivedAddress({
-      programAddress: CONFIDENTIAL_TOKEN_PROGRAM_ADDRESS,
-      seeds: [EVENT_AUTHORITY_SEED],
-    })
-  )[0];
-}
 
 /**
  * Builds the confidential-token `disclose_secp` instruction from a certificate claim. The
@@ -41,7 +30,7 @@ export async function buildDiscloseSecpInstruction(
   return getDiscloseSecpInstruction({
     kmsContext: accounts.kmsContext,
     hostConfig: accounts.hostConfig,
-    eventAuthority: await tokenEventAuthority(),
+    eventAuthority: (await findEventAuthorityPda())[0],
     program: CONFIDENTIAL_TOKEN_PROGRAM_ADDRESS,
     handle: args.handle,
     cleartext: args.cleartext,

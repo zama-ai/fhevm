@@ -242,21 +242,12 @@ HAND_DERIVATION_ROOTS=(
 # deriving a PDA or spelling a seed. Over, under, zero and missing files fail. The script checks
 # counts; review rejects new entries. Keyed by path so unrelated edits do not invalidate an entry.
 HAND_DERIVATIONS_ALLOWED=(
-  "sdk/js-sdk/src/solana/actions/revokePermits.ts|4|fhevm-internal#2108 task 2 (Anchor seeds)"
-  "sdk/js-sdk/src/solana/actions/userDecryptionDelegation.ts|3|fhevm-internal#2108 task 2 (Anchor seeds)"
-  "sdk/js-sdk/src/solana/cleartext/authorization.ts|4|fhevm-internal#2108 task 2 (Anchor seeds)"
-  "sdk/js-sdk/src/solana/encryptedStore.ts|3|fhevm-internal#2108 task 2 (Anchor seeds)"
-  "sdk/js-sdk/src/solana/transientStore.ts|3|fhevm-internal#2108 task 2 (Anchor seeds)"
-  "solana/demo-dapp/src/vault/actions/discloseSecp.ts|3|fhevm-internal#2108 task 2 (Anchor seeds)"
-  "solana/demo-dapp/src/vault/joinBatch.ts|2|fhevm-internal#2108 task 2 (Anchor seeds)"
-  "test-suite/fhevm/src/solana/token-vertical.ts|3|fhevm-internal#2108 task 2 (Anchor seeds)"
-  "solana/demo-dapp/src/vault/actions/confidentialTransfer.ts|3|fhevm-internal#2108 task 5"
-  "solana/deploy/src/bootstrap.ts|4|fhevm-internal#2108 task 2 (programData: the one solana/deploy helper)"
-  "test-suite/fhevm/src/solana/provision.ts|4|fhevm-internal#2108 task 2 (programData: the one solana/deploy helper)"
-  "test-suite/fhevm/src/solana/spl.ts|4|fhevm-internal#2108 task 2 (@solana-program/token findAssociatedTokenPda)"
+  "solana/deploy/src/bootstrap.ts|2|fhevm-internal#2108 task 2 (programData: the one solana/deploy helper)"
+  "test-suite/fhevm/src/solana/provision.ts|2|fhevm-internal#2108 task 2 (programData: the one solana/deploy helper)"
+  "test-suite/fhevm/src/solana/spl.ts|2|fhevm-internal#2108 task 2 (@solana-program/token findAssociatedTokenPda)"
   "solana/demo-dapp/src/vault/internal/tokenAccounts.ts|2|fhevm-internal#2108 task 2 (@solana-program/token findAssociatedTokenPda)"
-  "solana/deploy/src/recover.ts|6|fhevm-internal#2108 task 2 (Anchor seeds)"
-  "solana/demo-dapp/src/vault/internal/batcherPdas.ts|4|fhevm-internal#2108 task 2 (Anchor seeds)"
+  "solana/deploy/src/recover.ts|5|fhevm-internal#2108 task 2 (Anchor seeds)"
+  "solana/demo-dapp/src/vault/internal/batcherPdas.ts|3|fhevm-internal#2108 task 2 (Anchor seeds)"
   "solana/demo-dapp/src/vault/internal/addressLookupTable.ts|2|fhevm-internal#2108 task 2 (@solana-program/address-lookup-table findAddressLookupTablePda)"
   "test-suite/fhevm/demo/seed.ts|3|fhevm-internal#2108 task 2 (Anchor seeds)"
   "coprocessor/fhevm-engine/solana-host-follower/src/host.rs|1|fhevm-internal#2108 task 2 (zama-solana-acl seed lists)"
@@ -1020,7 +1011,7 @@ if run_check 7; then
 fi
 
 if run_check 8; then
-  echo "== 8. hand-written PDA derivations and seed literals =="
+  echo "== 8. hand-written PDA derivations, seed literals and scope labels =="
   # DD-072: every PDA recipe has one source, the program's Anchor `seeds` (or zama-solana-acl for the
   # off-chain Rust recipes), and clients generate or import it. A second copy drifts silently, and a
   # third-party dapp never regenerates. Reads the production index, so tests are not swept: a test
@@ -1036,13 +1027,17 @@ if run_check 8; then
     fail=1
   fi
 
-  # The seeds are read from the sources, plus Anchor's event-CPI seed, which no program declares.
+  # Read the recipes from the programs; include Anchor's seed for the remaining event_cpi macros.
   # A seed literal is a byte string naming one, a quoted multi-word seed anywhere in code, or any
   # seed string handed to `.encode(`, `Buffer.from(` or `utf8ToBytes(`. A one-word seed
   # (`batch`, `vault`) is ordinary vocabulary outside these forms; its derivation is still caught.
   seed_names=$( (grep -rhoE '_SEED: &\[u8\] = b"[^"]+"|seeds = \[b"[^"]+"' --include='*.rs' \
     "${SEED_SOURCES[@]}" || true) | sed -E 's/.*b"([^"]+)"$/\1/' | sort -u)
+  # Scope labels are 32-byte words padded with underscores, unlike binary/domain constants.
+  label_names=$( (grep -rhoE 'b"[a-z][a-z0-9_]{30}_"' --include='*.rs' \
+    solana/programs || true) | sed -E 's/^b"([^"]+)"$/\1/' | sort -u)
   seed_names="${seed_names}
+${label_names}
 __event_authority"
   # An empty or truncated set would leave the literal arm matching nothing while the check stays
   # green, which is the failure this script exists to prevent.
@@ -1051,7 +1046,7 @@ __event_authority"
     fail=1
   fi
   all_seeds=$(printf '%s\n' "$seed_names" | sed '/^$/d' | paste -sd '|' -)
-  multi_word_seeds=$(printf '%s\n' "$seed_names" | grep -E -- '-|^__' | paste -sd '|' -)
+  multi_word_seeds=$(printf '%s\n' "$seed_names" | grep -E -- '-|^__|_{2,}' | paste -sd '|' -)
   quote="[\"'\`]"
   derivation="\b(getProgramDerivedAddress|findProgramAddress(Sync)?|createProgramAddress(Sync)?)\b|(try_)?find_program_address\(|create_program_address\("
   seed_literal="b\"(${all_seeds})\"|${quote}(${multi_word_seeds})${quote}|(\.encode|Buffer\.from|utf8ToBytes)\([[:space:]]*${quote}(${all_seeds})${quote}"
@@ -1284,6 +1279,8 @@ TypeScript createProgramAddress|${ts_fixture}|const p = createProgramAddress(see
 TypeScript Buffer seed|${ts_fixture}|const s = Buffer.from('vault');
 TypeScript utf8 seed|${ts_fixture}|const s = utf8ToBytes('transient');
 TypeScript encoded seed|${ts_fixture}|export const s = new TextEncoder().encode('transient');
+TypeScript encoded scope label|${ts_fixture}|export const s = new TextEncoder().encode('balance_________________________');
+Rust scope label|${fixture}|pub const S: [u8; 32] = *b"balance_________________________";
 TypeScript quoted seed|${ts_fixture}|export const s = 'host-config';
 Rust call|${fixture}|pub fn f(p: &Pubkey) -> Pubkey { Pubkey::find_program_address(&[], p).0 }
 Rust seed literal|${fixture}|pub const S: &[u8] = b"rand-nonce";

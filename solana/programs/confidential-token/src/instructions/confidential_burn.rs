@@ -17,22 +17,23 @@ pub struct ConfidentialBurn<'info> {
     /// CHECK: ATA of `token_account.owner` on `underlying_mint`. Uninitialized → not frozen.
     pub owner_ata: UncheckedAccount<'info>,
     /// Token account whose balance is decreased.
-    #[account(mut)]
+    #[account(mut, seeds = [b"token-account", mint.key().as_ref(), token_account.owner.as_ref()], bump = token_account.bump)]
     pub token_account: Box<Account<'info, ConfidentialTokenAccount>>,
     /// CHECK: Mint-scoped encrypted store authority for total-supply handles.
     #[account(seeds = [b"total-supply", mint.key().as_ref()], bump)]
     pub total_supply_authority: UncheckedAccount<'info>,
     /// Stable balance encrypted store; read for the current handle and replaced by this execution.
-    #[account(mut, address = encrypted_store_address(mint.key(), token_account.key()).0)]
+    #[account(mut)]
     pub balance_store: Box<Account<'info, zama_host::EncryptedStore>>,
     /// Stable total-supply encrypted store; read for the current handle and replaced by this execution.
-    #[account(mut, address = encrypted_store_address(mint.key(), total_supply_authority_address(mint.key()).0).0)]
+    #[account(mut)]
     pub total_supply_store: Box<Account<'info, zama_host::EncryptedStore>>,
     /// CHECK: single pending-burn PDA for this token account, created after `fhe_execute`.
     /// A burn is rejected before execution while this account is already initialized.
-    #[account(mut)]
+    #[account(mut, seeds = [PENDING_BURN_SEED, mint.key().as_ref(), token_account.key().as_ref()], bump)]
     pub pending_burn: UncheckedAccount<'info>,
     /// CHECK: Anchor event CPI authority for the Zama host program.
+    #[account(seeds = [b"__event_authority"], bump = zama_host::EVENT_AUTHORITY_AND_BUMP.1, seeds::program = zama_host::ID)]
     pub zama_event_authority: UncheckedAccount<'info>,
     /// CHECK: shared transaction transient store, validated by ZamaHost.
     #[account(mut)]
@@ -42,6 +43,7 @@ pub struct ConfidentialBurn<'info> {
     /// ZamaHost program used for FHE operations.
     pub zama_program: Program<'info, ZamaHost>,
     /// ZamaHost config used for handle derivation.
+    #[account(seeds = [zama_host::HOST_CONFIG_SEED], bump = host_config.bump, seeds::program = zama_host::ID)]
     pub host_config: Box<Account<'info, zama_host::HostConfig>>,
     /// System program used for ACL account creation and the pending-burn PDA.
     pub system_program: Program<'info, System>,
@@ -60,6 +62,8 @@ impl<'info> ConfidentialBurn<'info> {
     fn as_burn_accounts<'a>(
         &'a self,
         remaining_accounts: &'a [AccountInfo<'info>],
+        total_supply_authority_bump: u8,
+        pending_burn_bump: u8,
     ) -> BurnAccounts<'a, 'info> {
         BurnAccounts {
             payer: &self.owner,
@@ -67,9 +71,11 @@ impl<'info> ConfidentialBurn<'info> {
             mint: &self.mint,
             token_account: &self.token_account,
             total_supply_authority: &self.total_supply_authority,
+            total_supply_authority_bump,
             balance_store: self.balance_store.to_account_info(),
             total_supply_store: self.total_supply_store.to_account_info(),
             pending_burn: self.pending_burn.to_account_info(),
+            pending_burn_bump,
             zama_event_authority: &self.zama_event_authority,
             transient_store: &self.transient_store,
             instructions: &self.instructions,
@@ -97,7 +103,11 @@ pub fn confidential_burn<'info>(
     amount_attestation: zama_host::CoprocessorInputAttestation,
 ) -> Result<()> {
     let outcome = execute_burn(
-        ctx.accounts.as_burn_accounts(ctx.remaining_accounts),
+        ctx.accounts.as_burn_accounts(
+            ctx.remaining_accounts,
+            ctx.bumps.total_supply_authority,
+            ctx.bumps.pending_burn,
+        ),
         BurnAmountSource::Attested(amount_attestation),
     )?;
     emit_cpi!(ConfidentialBurnEvent {
@@ -158,20 +168,20 @@ pub struct ConfidentialBurnFromValue<'info> {
     /// CHECK: ATA of `token_account.owner` on `underlying_mint`. Uninitialized → not frozen.
     pub owner_ata: UncheckedAccount<'info>,
     /// Token account whose balance is decreased.
-    #[account(mut)]
+    #[account(mut, seeds = [b"token-account", mint.key().as_ref(), token_account.owner.as_ref()], bump = token_account.bump)]
     pub token_account: Box<Account<'info, ConfidentialTokenAccount>>,
     /// CHECK: Mint-scoped encrypted store authority for total-supply handles.
     #[account(seeds = [b"total-supply", mint.key().as_ref()], bump)]
     pub total_supply_authority: UncheckedAccount<'info>,
     /// Stable balance encrypted store; read for the current handle and replaced by this execution.
-    #[account(mut, address = encrypted_store_address(mint.key(), token_account.key()).0)]
+    #[account(mut)]
     pub balance_store: Box<Account<'info, zama_host::EncryptedStore>>,
     /// Stable total-supply encrypted store; read for the current handle and replaced by this execution.
-    #[account(mut, address = encrypted_store_address(mint.key(), total_supply_authority_address(mint.key()).0).0)]
+    #[account(mut)]
     pub total_supply_store: Box<Account<'info, zama_host::EncryptedStore>>,
     /// CHECK: single pending-burn PDA for this token account, created after `fhe_execute`.
     /// A burn is rejected before execution while this account is already initialized.
-    #[account(mut)]
+    #[account(mut, seeds = [PENDING_BURN_SEED, mint.key().as_ref(), token_account.key().as_ref()], bump)]
     pub pending_burn: UncheckedAccount<'info>,
     /// The existing encrypted amount to burn: a computed `euint64` handle. Read-only persistent
     /// operand — never replaced, never consumed. Its address is the canonical PDA of its own
@@ -180,6 +190,7 @@ pub struct ConfidentialBurnFromValue<'info> {
     /// authorizing through `invoke_signed`), or when it is one of the burner's own token values.
     pub amount_store: Box<Account<'info, zama_host::EncryptedStore>>,
     /// CHECK: Anchor event CPI authority for the Zama host program.
+    #[account(seeds = [b"__event_authority"], bump = zama_host::EVENT_AUTHORITY_AND_BUMP.1, seeds::program = zama_host::ID)]
     pub zama_event_authority: UncheckedAccount<'info>,
     /// CHECK: shared transaction transient store, validated by ZamaHost.
     #[account(mut)]
@@ -189,6 +200,7 @@ pub struct ConfidentialBurnFromValue<'info> {
     /// ZamaHost program used for FHE operations.
     pub zama_program: Program<'info, ZamaHost>,
     /// ZamaHost config used for handle derivation.
+    #[account(seeds = [zama_host::HOST_CONFIG_SEED], bump = host_config.bump, seeds::program = zama_host::ID)]
     pub host_config: Box<Account<'info, zama_host::HostConfig>>,
     /// System program used for ACL account creation and the pending-burn PDA.
     pub system_program: Program<'info, System>,
@@ -207,6 +219,8 @@ impl<'info> ConfidentialBurnFromValue<'info> {
     fn as_burn_accounts<'a>(
         &'a self,
         remaining_accounts: &'a [AccountInfo<'info>],
+        total_supply_authority_bump: u8,
+        pending_burn_bump: u8,
     ) -> BurnAccounts<'a, 'info> {
         BurnAccounts {
             payer: &self.payer,
@@ -214,9 +228,11 @@ impl<'info> ConfidentialBurnFromValue<'info> {
             mint: &self.mint,
             token_account: &self.token_account,
             total_supply_authority: &self.total_supply_authority,
+            total_supply_authority_bump,
             balance_store: self.balance_store.to_account_info(),
             total_supply_store: self.total_supply_store.to_account_info(),
             pending_burn: self.pending_burn.to_account_info(),
+            pending_burn_bump,
             zama_event_authority: &self.zama_event_authority,
             transient_store: &self.transient_store,
             instructions: &self.instructions,
@@ -255,7 +271,11 @@ pub fn confidential_burn_from_value<'info>(
     )?;
     let amount_store_info = amount_store.to_account_info();
     let outcome = execute_burn(
-        ctx.accounts.as_burn_accounts(ctx.remaining_accounts),
+        ctx.accounts.as_burn_accounts(
+            ctx.remaining_accounts,
+            ctx.bumps.total_supply_authority,
+            ctx.bumps.pending_burn,
+        ),
         BurnAmountSource::ExistingValue {
             key,
             amount_store: amount_store_info,
@@ -322,12 +342,14 @@ struct BurnAccounts<'a, 'info> {
     mint: &'a Account<'info, ConfidentialMint>,
     token_account: &'a Account<'info, ConfidentialTokenAccount>,
     total_supply_authority: &'a UncheckedAccount<'info>,
+    total_supply_authority_bump: u8,
     /// Stable balance encrypted store: read for the current handle, then replaced in place as the output.
     balance_store: AccountInfo<'info>,
     /// Stable total-supply encrypted store: read for the current handle, then replaced in place.
     total_supply_store: AccountInfo<'info>,
     /// Single pending-burn PDA opened after the burned handle is known.
     pending_burn: AccountInfo<'info>,
+    pending_burn_bump: u8,
     zama_event_authority: &'a UncheckedAccount<'info>,
     transient_store: &'a UncheckedAccount<'info>,
     instructions: &'a UncheckedAccount<'info>,
@@ -387,9 +409,7 @@ fn execute_burn<'info>(
         &accounts.underlying_mint,
         &accounts.owner_ata,
     )?;
-    // The pending account is checked before the expensive FHE execution. Repeating this check in
-    // `open_pending_burn` keeps creation safe if this helper is ever reordered.
-    assert_pending_burn_available(&accounts.pending_burn, mint_key, token_account_key)?;
+    assert_pending_burn_available(&accounts.pending_burn)?;
 
     if let BurnAmountSource::Attested(amount_attestation) = &amount_source {
         // fromExternal parity: the burn amount is a coprocessor-attested external input authored by
@@ -399,12 +419,12 @@ fn execute_burn<'info>(
         assert_amount_attestation_binding(amount_attestation, owner)?;
     }
 
-    let token_authority = fhe::StoreAuthority::token_account(token_account)?;
+    let token_authority = fhe::StoreAuthority::token_account(token_account);
     let total_supply_authority = fhe::StoreAuthority::total_supply(
         accounts.total_supply_authority,
         mint_key,
-        total_supply_authority_address(mint_key).1,
-    )?;
+        accounts.total_supply_authority_bump,
+    );
     let balance_output = fhe::SlotOutput::new(
         accounts.balance_store.clone(),
         balance_slot(mint_key, token_account_key),
@@ -535,10 +555,13 @@ fn execute_burn<'info>(
         accounts.payer,
         &accounts.pending_burn,
         accounts.system_program,
-        mint_key,
-        owner,
-        token_account_key,
-        burned_handle,
+        PendingBurn {
+            mint: mint_key,
+            owner,
+            token_account: token_account_key,
+            burned_handle,
+            bump: accounts.pending_burn_bump,
+        },
     )?;
 
     Ok(BurnOutcome {
@@ -556,18 +579,8 @@ fn execute_burn<'info>(
     })
 }
 
-/// Verifies that the canonical pending-burn PDA is available for creation.
-fn assert_pending_burn_available(
-    pending_burn_ai: &AccountInfo<'_>,
-    mint: Pubkey,
-    token_account: Pubkey,
-) -> Result<()> {
-    let expected = pending_burn_address(mint, token_account).0;
-    require_keys_eq!(
-        pending_burn_ai.key(),
-        expected,
-        ConfidentialTokenError::PendingBurnAddressMismatch
-    );
+/// Checks that the constrained pending-burn PDA is available for creation.
+fn assert_pending_burn_available(pending_burn_ai: &AccountInfo<'_>) -> Result<()> {
     require!(
         pending_burn_ai.is_writable,
         ConfidentialTokenError::PendingBurnAddressMismatch
@@ -592,20 +605,14 @@ fn open_pending_burn<'info>(
     payer: &Signer<'info>,
     pending_burn_ai: &AccountInfo<'info>,
     system_program: &Program<'info, System>,
-    mint: Pubkey,
-    owner: Pubkey,
-    token_account: Pubkey,
-    burned_handle: [u8; 32],
+    pending: PendingBurn,
 ) -> Result<()> {
-    let (_, bump) = pending_burn_address(mint, token_account);
-    assert_pending_burn_available(pending_burn_ai, mint, token_account)?;
-
     let space = 8 + PendingBurn::SPACE;
-    let bump_seed = [bump];
+    let bump_seed = [pending.bump];
     let seeds: &[&[u8]] = &[
         PENDING_BURN_SEED,
-        mint.as_ref(),
-        token_account.as_ref(),
+        pending.mint.as_ref(),
+        pending.token_account.as_ref(),
         &bump_seed,
     ];
     let rent = fund_allocate_assign(
@@ -627,13 +634,6 @@ fn open_pending_burn<'info>(
         ConfidentialTokenError::PendingBurnAddressMismatch
     );
 
-    let pending = PendingBurn {
-        mint,
-        owner,
-        token_account,
-        burned_handle,
-        bump,
-    };
     let mut data = pending_burn_ai.try_borrow_mut_data()?;
     let mut cursor = &mut data[..];
     pending.try_serialize(&mut cursor)?;

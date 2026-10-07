@@ -1,12 +1,7 @@
 //! Account layouts, PDA helpers, and token value labels.
 //!
-//! Public API surface: off-chain callers that have to derive a token PDA or name an encrypted value
-//! the same way the program does — `runtime-tests`' Mollusk fixtures, and the demo dapp's TypeScript
-//! derivations in `demo-dapp/src/vault/internal/`, which re-declare these labels as byte strings and
-//! quote these function names as the source they must match. Exports here are that contract, so a
-//! label with no on-chain use is not automatically dead — but one with no use anywhere is: the
-//! `transfer_success` and `debit_candidate` labels were deleted once DD-019 stopped creating the
-//! transient store PDAs they named.
+//! Public API surface: app programs and runtime fixtures import the Rust helpers; TypeScript
+//! consumers use the generated client for the same PDA recipes and value-label constants.
 
 pub mod confidential_mint;
 pub mod confidential_token_account;
@@ -92,13 +87,19 @@ pub fn encrypted_store_address(mint: Pubkey, authority: Pubkey) -> (Pubkey, u8) 
 }
 
 /// Fixed encrypted value label for confidential balances.
+#[constant]
+pub const BALANCE_KEY: [u8; 32] = *b"balance_________________________";
+
 pub fn balance_key() -> [u8; 32] {
-    *b"balance_________________________"
+    BALANCE_KEY
 }
 
 /// Fixed encrypted value label for the encrypted total supply.
+#[constant]
+pub const TOTAL_SUPPLY_KEY: [u8; 32] = *b"total_supply____________________";
+
 pub fn total_supply_key() -> [u8; 32] {
-    *b"total_supply____________________"
+    TOTAL_SUPPLY_KEY
 }
 
 /// Fixed encrypted value label for externally verified transfer amounts.

@@ -363,5 +363,20 @@
         ]
       }
     }
+  ],
+  "constants": [
+    {
+      "name": "ENCRYPTED_TAIL_LABEL",
+      "docs": [
+        "Fixed encrypted value label for the chain tail."
+      ],
+      "type": {
+        "array": [
+          "u8",
+          32
+        ]
+      },
+      "value": "[116, 97, 105, 108, 95, 95, 95, 95, 95, 95, 95, 95, 95, 95, 95, 95, 95, 95, 95, 95, 95, 95, 95, 95, 95, 95, 95, 95, 95, 95, 95, 95]"
+    }
   ]
 }

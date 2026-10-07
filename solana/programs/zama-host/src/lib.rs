@@ -74,9 +74,10 @@ pub mod zama_host {
 
     pub fn create_encrypted_store(
         ctx: Context<CreateEncryptedStore>,
-        args: CreateEncryptedStoreArgs,
+        program: Pubkey,
+        authority_seeds: Vec<Vec<u8>>,
     ) -> Result<()> {
-        instructions::create_encrypted_store(ctx, args)
+        instructions::create_encrypted_store(ctx, program, authority_seeds)
     }
 
     pub fn initialize_host_config(
@@ -178,22 +179,22 @@ pub mod zama_host {
     /// (admin-only). The application is a `(program, scope)`.
     pub fn set_hcu_app_trusted(
         ctx: Context<SetHcuAppTrusted>,
-        program: Pubkey,
+        app_program: Pubkey,
         scope: Pubkey,
         trusted: bool,
     ) -> Result<()> {
-        instructions::set_hcu_app_trusted(ctx, program, scope, trusted)
+        instructions::set_hcu_app_trusted(ctx, app_program, scope, trusted)
     }
 
     /// Denies or re-admits an application `(program, scope)`: a denied application can neither
     /// compute nor allow (admin-only).
     pub fn set_deny_scope(
         ctx: Context<SetDenyScope>,
-        program: Pubkey,
+        app_program: Pubkey,
         scope: Pubkey,
         denied: bool,
     ) -> Result<()> {
-        instructions::set_deny_scope(ctx, program, scope, denied)
+        instructions::set_deny_scope(ctx, app_program, scope, denied)
     }
 
     pub fn delegate_for_user_decryption(
@@ -251,3 +252,11 @@ pub mod zama_host {
         instructions::verify_public_decrypt(ctx, handle, cleartext, signatures, extra_data)
     }
 }
+
+#[cfg(test)]
+mod pda_vectors {
+    include!("../../../test-fixtures/pda/pda_vectors.rs");
+}
+
+#[cfg(test)]
+mod pda_golden;

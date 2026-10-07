@@ -1,7 +1,5 @@
 import {
   appendTransactionMessageInstructions,
-  getAddressEncoder,
-  getProgramDerivedAddress,
   type Address,
   type Instruction,
   type TransactionMessage,
@@ -9,6 +7,7 @@ import {
 } from '@solana/kit';
 
 import {
+  findTransientStorePda,
   CLOSE_TRANSIENT_STORE_DISCRIMINATOR,
   getCloseTransientStoreInstruction,
   getOpenTransientStoreInstruction,
@@ -46,15 +45,12 @@ export async function prepareTransientStore(parameters: {
   readonly host: Address;
 }): Promise<TransientStore> {
   const { host, payer } = parameters;
-  const [address] = await getProgramDerivedAddress({
-    programAddress: host,
-    seeds: [new TextEncoder().encode('transient'), getAddressEncoder().encode(payer.address)],
-  });
+  const [address] = await findTransientStorePda({ payer: payer.address }, { programAddress: host });
   const accounts = { transientStore: address, instructions: INSTRUCTIONS_SYSVAR_ADDRESS };
   const transientStore: TransientStore = { address };
   lifecycleByStore.set(transientStore, {
     open: getOpenTransientStoreInstruction({ payer, ...accounts }, { programAddress: host }),
-    close: getCloseTransientStoreInstruction({ ...accounts, refund: payer.address }, { programAddress: host }),
+    close: getCloseTransientStoreInstruction({ ...accounts, payer: payer.address }, { programAddress: host }),
     host,
   });
   return transientStore;

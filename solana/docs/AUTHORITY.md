@@ -54,7 +54,7 @@ check requires its `assert_no_remaining_accounts` call. `?` marks an optional ac
 | Instruction | Signers | Writes | Reads | Calls | Remaining accounts |
 |---|---|---|---|---|---|
 | `open_transient_store` | `payer`: pays rent; no authority | `payer`, `transient_store` | `instructions` | System | — |
-| `close_transient_store` | — | `transient_store`, `refund` | `instructions` | — | — |
+| `close_transient_store` | — | `transient_store`, `payer` | `instructions` | — | — |
 | `fhe_execute` | `payer`: pays rent; no authority<br>`authority`: the authority of the execution store (`execution_store_index`), whose application is metered and seeds the randomness | `payer`, `hcu_block_meter`?, `rand_nonce`?, `transient_store` | `host_config`, `hcu_trusted_app_record`?, `instructions` | System, self (event CPI) | the `EncryptedStore`s it reads or writes, each admitted by its authority's signature (as `authority` or a signing remaining account) and writable when written; the stores that receive grants, read-only and unsigned; the other signing store authorities; and, when the deny list is enabled, the deny record of each application whose store it reads, writes or grants from |
 
 ## Stores and ACL

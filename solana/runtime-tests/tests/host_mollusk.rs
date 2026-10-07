@@ -738,10 +738,8 @@ fn mollusk_create_encrypted_store_rejects_wallet_authority() {
             system_program: system_program::ID,
         },
         host::instruction::CreateEncryptedStore {
-            args: host::instructions::CreateEncryptedStoreArgs {
-                program: app.program(),
-                authority_seeds: vec![],
-            },
+            program: app.program(),
+            authority_seeds: vec![],
         },
     );
     let accounts = vec![
@@ -781,14 +779,12 @@ fn mollusk_create_encrypted_store_rejects_seeds_from_another_program() {
             system_program: system_program::ID,
         },
         host::instruction::CreateEncryptedStore {
-            args: host::instructions::CreateEncryptedStoreArgs {
-                program: claimed_program,
-                authority_seeds: vec![
-                    host_fixtures::VALUE_AUTHORITY_SEED.to_vec(),
-                    app.authority.seed_key.to_bytes().to_vec(),
-                    vec![app.authority.bump],
-                ],
-            },
+            program: claimed_program,
+            authority_seeds: vec![
+                host_fixtures::VALUE_AUTHORITY_SEED.to_vec(),
+                app.authority.seed_key.to_bytes().to_vec(),
+                vec![app.authority.bump],
+            ],
         },
     );
     let mut accounts = execution_accounts(payer, &app, host_config, host_config_account);
@@ -1211,8 +1207,10 @@ fn mollusk_make_store_handle_public_rejects_wrong_stored_bump() {
         &mollusk(),
         &ix,
         &accounts,
-        &[custom_error(
-            host::errors::ZamaHostError::EncryptedStorePdaMismatch,
+        &[Check::err(
+            anchor_lang::solana_program::program_error::ProgramError::Custom(
+                anchor_lang::error::ErrorCode::ConstraintSeeds as u32,
+            ),
         )],
     );
 }
@@ -2377,7 +2375,7 @@ fn set_deny_scope_ix(
             program: host::id(),
         },
         host::instruction::SetDenyScope {
-            program: app.program,
+            app_program: app.program,
             scope: app.scope,
             denied,
         },
@@ -2461,7 +2459,7 @@ fn set_hcu_app_trusted_ix_with_record(
             program: host::id(),
         },
         host::instruction::SetHcuAppTrusted {
-            program: app.program,
+            app_program: app.program,
             scope: app.scope,
             trusted,
         },
@@ -2979,8 +2977,10 @@ fn mollusk_set_hcu_app_trusted_rejects_wrong_record_pda() {
     check_host_context(
         &context,
         &set_hcu_app_trusted_ix_with_record(admin, admin, host_config, wrong_record, app, true),
-        &[custom_error(
-            host::errors::ZamaHostError::HcuTrustedAppRecordMismatch,
+        &[Check::err(
+            anchor_lang::solana_program::program_error::ProgramError::Custom(
+                anchor_lang::error::ErrorCode::ConstraintSeeds as u32,
+            ),
         )],
     );
     assert!(read_hcu_trusted_app_record(&context, host::hcu_trusted_app_address(app).0).is_none());
@@ -4059,14 +4059,12 @@ fn create_encrypted_store_ix(
             system_program: system_program::ID,
         },
         host::instruction::CreateEncryptedStore {
-            args: host::instructions::CreateEncryptedStoreArgs {
-                program: app.program(),
-                authority_seeds: vec![
-                    host_fixtures::VALUE_AUTHORITY_SEED.to_vec(),
-                    app.authority.seed_key.to_bytes().to_vec(),
-                    vec![app.authority.bump],
-                ],
-            },
+            program: app.program(),
+            authority_seeds: vec![
+                host_fixtures::VALUE_AUTHORITY_SEED.to_vec(),
+                app.authority.seed_key.to_bytes().to_vec(),
+                vec![app.authority.bump],
+            ],
         },
     )
 }
@@ -5099,7 +5097,11 @@ fn mollusk_verify_public_decrypt_rejects_non_canonical_kms_context() {
         &mollusk(),
         &ix,
         &accounts,
-        &[custom_error(host::errors::ZamaHostError::InvalidKmsContext)],
+        &[Check::err(
+            anchor_lang::solana_program::program_error::ProgramError::Custom(
+                anchor_lang::error::ErrorCode::ConstraintSeeds as u32,
+            ),
+        )],
     );
 }
 

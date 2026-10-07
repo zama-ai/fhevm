@@ -39,6 +39,7 @@ import type { Bytes32Hex } from '@fhevm/sdk/types';
 import {
   createFinalizedRpc,
   decodeHostConfig,
+  findEventAuthorityPda,
   findHostConfigPda,
   HOST_CONFIG_DISCRIMINATOR,
   ZAMA_HOST_PROGRAM_ADDRESS,
@@ -68,8 +69,7 @@ import { vaultModule, sdkVerifyModule } from './lazy-modules';
 const PROVISIONING_COMPUTE_UNIT_LIMIT = 1_400_000;
 const LAMPORTS_PER_SOL = 1_000_000_000n;
 const EUINT64_FHE_TYPE_ID = 5;
-// Byte-identical to `confidential_token::state`: the label of a token account's balance value.
-const BALANCE_LABEL = new TextEncoder().encode('balance_________________________');
+import { BALANCE_KEY as BALANCE_LABEL } from '@fhevm/confidential-token';
 
 const addressEncoder = getAddressEncoder();
 
@@ -84,10 +84,7 @@ export const hostConfigAddress = async (): Promise<Address> => {
 
 /** The zama-host program's Anchor event-authority PDA (`[b"__event_authority"]`). */
 export const zamaEventAuthorityAddress = async (): Promise<Address> => {
-  const [eventAuthority] = await getProgramDerivedAddress({
-    programAddress: ZAMA_HOST_PROGRAM_ADDRESS,
-    seeds: [new TextEncoder().encode('__event_authority')],
-  });
+  const [eventAuthority] = await findEventAuthorityPda();
   return eventAuthority;
 };
 
@@ -433,7 +430,7 @@ export const readTokenBalanceStore = async (
     throw new Error(`confidential token account for (${mint}, ${owner}) is missing or not program-owned`);
   }
 
-  const state = await fetchSolanaEncryptedStore(context.rpc, encryptedStoreAddress, undefined, ZAMA_HOST_PROGRAM_ADDRESS);
+  const state = await fetchSolanaEncryptedStore(context.rpc, encryptedStoreAddress, ZAMA_HOST_PROGRAM_ADDRESS);
   if (
     state.program !== vault.CONFIDENTIAL_TOKEN_PROGRAM_ADDRESS ||
     state.authority !== tokenAccount ||

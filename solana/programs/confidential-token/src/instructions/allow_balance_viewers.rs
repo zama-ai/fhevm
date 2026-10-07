@@ -28,10 +28,12 @@ pub struct AllowBalanceViewers<'info> {
     )]
     pub token_account: Box<Account<'info, ConfidentialTokenAccount>>,
     /// Stable balance encrypted store; read for the current handle and replaced.
-    #[account(mut, address = encrypted_store_address(mint.key(), token_account.key()).0)]
+    #[account(mut)]
     pub balance_store: Box<Account<'info, zama_host::EncryptedStore>>,
+    #[account(seeds = [zama_host::HOST_CONFIG_SEED], bump = host_config.bump, seeds::program = zama_host::ID)]
     pub host_config: Box<Account<'info, zama_host::HostConfig>>,
     /// CHECK: Anchor event CPI authority for the Zama host program.
+    #[account(seeds = [b"__event_authority"], bump = zama_host::EVENT_AUTHORITY_AND_BUMP.1, seeds::program = zama_host::ID)]
     pub zama_event_authority: UncheckedAccount<'info>,
     /// CHECK: shared transaction transient store, validated by ZamaHost.
     #[account(mut)]
@@ -68,6 +70,7 @@ pub struct MakeTokenAccountHandlePublic<'info> {
     /// CHECK: canonical host account and exact token state binding are validated in the handler.
     #[account(mut)]
     pub encrypted_store: UncheckedAccount<'info>,
+    #[account(seeds = [zama_host::HOST_CONFIG_SEED], bump = host_config.bump, seeds::program = zama_host::ID)]
     pub host_config: Box<Account<'info, zama_host::HostConfig>>,
     pub zama_program: Program<'info, ZamaHost>,
     pub system_program: Program<'info, System>,
@@ -111,7 +114,7 @@ pub fn allow_balance_viewers<'info>(
         },
         balance_store,
         balance_slot(mint_key, token_account.key()),
-        fhe::StoreAuthority::token_account(token_account)?,
+        fhe::StoreAuthority::token_account(token_account),
         std::iter::once(owner).chain(viewers),
     )?;
     emit_cpi!(BalanceHandleUpdatedEvent {

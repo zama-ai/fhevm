@@ -27,7 +27,7 @@ pub struct RevokePermits<'info> {
     pub user: Signer<'info>,
     /// CHECK: validated manually against the canonical watermark address for `user`,
     /// then created if absent.
-    #[account(mut)]
+    #[account(mut, seeds = [PERMIT_INVALIDATION_SEED, user.key().as_ref()], bump)]
     pub invalidation: UncheckedAccount<'info>,
     /// System program, used when the watermark account has to be created.
     pub system_program: Program<'info, System>,
@@ -50,12 +50,7 @@ pub fn revoke_permits(ctx: Context<RevokePermits>) -> Result<()> {
     // The address is derived from the signer, which is what keys the watermark to an
     // identity: an account belonging to anyone else is simply not at this address, so
     // "move somebody else's watermark" has nowhere to land.
-    let (expected_address, bump) = permit_invalidation_address(user);
-    require_keys_eq!(
-        invalidation.key(),
-        expected_address,
-        ZamaHostError::PermitInvalidationPdaMismatch
-    );
+    let bump = ctx.bumps.invalidation;
 
     let previous_watermark = if is_uninitialized_pda_account(
         &invalidation,

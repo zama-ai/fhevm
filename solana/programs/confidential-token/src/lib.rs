@@ -213,3 +213,11 @@ pub mod confidential_token {
         instructions::cancel_pending_burn(ctx)
     }
 }
+
+#[cfg(test)]
+mod pda_vectors {
+    include!("../../../test-fixtures/pda/pda_vectors.rs");
+}
+
+#[cfg(test)]
+mod pda_golden;

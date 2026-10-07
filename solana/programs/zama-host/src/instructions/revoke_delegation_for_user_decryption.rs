@@ -4,6 +4,7 @@ use anchor_lang::prelude::*;
 
 use super::common::*;
 use crate::{errors::ZamaHostError, state::*};
+use zama_solana_acl::DELEGATION_SEED;
 
 /// Accounts for revoking a user-decryption delegation.
 #[derive(Accounts)]
@@ -14,7 +15,7 @@ pub struct RevokeDelegationForUserDecryption<'info> {
     #[account(seeds = [HOST_CONFIG_SEED], bump = host_config.bump)]
     pub host_config: Account<'info, HostConfig>,
     /// Delegation record to revoke.
-    #[account(mut)]
+    #[account(mut, seeds = [DELEGATION_SEED, delegation_record.delegator.as_ref(), delegation_record.delegate.as_ref(), delegation_record.program.as_ref(), delegation_record.scope.as_ref()], bump = delegation_record.bump)]
     pub delegation_record: Account<'info, UserDecryptionDelegation>,
 }
 
@@ -37,20 +38,10 @@ pub fn revoke_delegation_for_user_decryption(
         ZamaHostError::InvalidDelegation
     );
     let record = &ctx.accounts.delegation_record;
-    let (expected, bump) = user_decryption_delegation_address(
-        record.delegator,
-        record.delegate,
-        AppScope {
-            program: record.program,
-            scope: record.scope,
-        },
-    );
-    require_keys_eq!(expected, record.key(), ZamaHostError::DelegationPdaMismatch);
     require!(
         record.to_account_info().data_len() == 8 + UserDecryptionDelegation::SPACE,
         ZamaHostError::InvalidDelegation
     );
-    require!(record.bump == bump, ZamaHostError::DelegationPdaMismatch);
     require!(
         record.last_update_slot < clock.slot,
         ZamaHostError::DelegationUpdatedInCurrentSlot

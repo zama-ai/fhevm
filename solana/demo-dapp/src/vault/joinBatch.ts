@@ -1,3 +1,4 @@
+import { findEventAuthorityPda } from '@fhevm/solana-zama-host';
 import { INSTRUCTIONS_SYSVAR_ADDRESS, appendTransientStoreInstructions, prepareTransientStore } from '@fhevm/sdk/solana';
 import {
   address,
@@ -7,7 +8,6 @@ import {
   compileTransaction,
   createTransactionMessage,
   getBase64EncodedWireTransaction,
-  getProgramDerivedAddress,
   getSignatureFromTransaction,
   pipe,
   sendAndConfirmTransactionFactory,
@@ -33,7 +33,6 @@ import type { Bytes32Hex } from '@fhevm/sdk/types';
 import type { SolanaInputProof } from '@fhevm/sdk/solana';
 import { getJoinInstructionAsync } from './internal/generated/confidentialBatcher/instructions/join.js';
 import {
-  EVENT_AUTHORITY_SEED,
   findBatchAuthorityPda,
   joinStoreAddress,
   tokenAccountAddress,
@@ -94,7 +93,7 @@ const assertJoinSimulationSucceeded = (simulation: {
 };
 
 async function eventAuthority(programAddress: Address): Promise<Address> {
-  return (await getProgramDerivedAddress({ programAddress, seeds: [EVENT_AUTHORITY_SEED] }))[0];
+  return (await findEventAuthorityPda({ programAddress }))[0];
 }
 
 /** Builds, simulates, sends, and confirms one batch join. */

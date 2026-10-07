@@ -38,7 +38,12 @@ import {
   type WritableAccount,
   type WritableSignerAccount,
 } from '@solana/kit';
-import { getAccountMetaFactory, type ResolvedInstructionAccount } from '@solana/program-client-core';
+import {
+  getAccountMetaFactory,
+  getAddressFromResolvedInstructionAccount,
+  getNonNullResolvedInstructionInput,
+  type ResolvedInstructionAccount,
+} from '@solana/program-client-core';
 import { ZAMA_HOST_PROGRAM_ADDRESS } from '../programAddress.js';
 
 export const DELEGATE_FOR_USER_DECRYPTION_DISCRIMINATOR: ReadonlyUint8Array = new Uint8Array([
@@ -139,7 +144,7 @@ export type DelegateForUserDecryptionAsyncInput<
   hostConfig?: Address<TAccountHostConfig>;
   /** The application's scope: an account `program` owns, or the wildcard sentinel. */
   scope: Address<TAccountScope>;
-  delegationRecord: Address<TAccountDelegationRecord>;
+  delegationRecord?: Address<TAccountDelegationRecord>;
   /** System program used for account creation. */
   systemProgram?: Address<TAccountSystemProgram>;
   delegate: DelegateForUserDecryptionInstructionDataArgs['delegate'];
@@ -201,6 +206,23 @@ export async function getDelegateForUserDecryptionInstructionAsync<
     accounts.hostConfig.value = await getProgramDerivedAddress({
       programAddress,
       seeds: [getBytesEncoder().encode(new Uint8Array([104, 111, 115, 116, 45, 99, 111, 110, 102, 105, 103]))],
+    });
+  }
+  if (!accounts.delegationRecord.value) {
+    accounts.delegationRecord.value = await getProgramDerivedAddress({
+      programAddress,
+      seeds: [
+        getBytesEncoder().encode(
+          new Uint8Array([
+            117, 115, 101, 114, 45, 100, 101, 99, 114, 121, 112, 116, 105, 111, 110, 45, 100, 101, 108, 101, 103, 97,
+            116, 105, 111, 110,
+          ]),
+        ),
+        getAddressEncoder().encode(getAddressFromResolvedInstructionAccount('delegator', accounts.delegator.value)),
+        getAddressEncoder().encode(getNonNullResolvedInstructionInput('delegate', args.delegate)),
+        getAddressEncoder().encode(getNonNullResolvedInstructionInput('program', args.program)),
+        getAddressEncoder().encode(getAddressFromResolvedInstructionAccount('scope', accounts.scope.value)),
+      ],
     });
   }
   if (!accounts.systemProgram.value) {

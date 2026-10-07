@@ -10,8 +10,10 @@ import {
   combineCodec,
   fixDecoderSize,
   fixEncoderSize,
+  getAddressEncoder,
   getBytesDecoder,
   getBytesEncoder,
+  getProgramDerivedAddress,
   getStructDecoder,
   getStructEncoder,
   SOLANA_ERROR__PROGRAM_CLIENTS__INSUFFICIENT_ACCOUNT_METAS,
@@ -29,7 +31,11 @@ import {
   type ReadonlyUint8Array,
   type WritableAccount,
 } from '@solana/kit';
-import { getAccountMetaFactory, type ResolvedInstructionAccount } from '@solana/program-client-core';
+import {
+  getAccountMetaFactory,
+  getAddressFromResolvedInstructionAccount,
+  type ResolvedInstructionAccount,
+} from '@solana/program-client-core';
 import { ZAMA_HOST_PROGRAM_ADDRESS } from '../programAddress.js';
 
 export const CLOSE_TRANSIENT_STORE_DISCRIMINATOR: ReadonlyUint8Array = new Uint8Array([
@@ -44,7 +50,7 @@ export type CloseTransientStoreInstruction<
   TProgram extends string = typeof ZAMA_HOST_PROGRAM_ADDRESS,
   TAccountInstructions extends string | AccountMeta<string> = 'Sysvar1nstructions1111111111111111111111111',
   TAccountTransientStore extends string | AccountMeta<string> = string,
-  TAccountRefund extends string | AccountMeta<string> = string,
+  TAccountPayer extends string | AccountMeta<string> = string,
   TRemainingAccounts extends readonly AccountMeta<string>[] = [],
 > = Instruction<TProgram> &
   InstructionWithData<ReadonlyUint8Array> &
@@ -52,7 +58,7 @@ export type CloseTransientStoreInstruction<
     [
       TAccountInstructions extends string ? ReadonlyAccount<TAccountInstructions> : TAccountInstructions,
       TAccountTransientStore extends string ? WritableAccount<TAccountTransientStore> : TAccountTransientStore,
-      TAccountRefund extends string ? WritableAccount<TAccountRefund> : TAccountRefund,
+      TAccountPayer extends string ? WritableAccount<TAccountPayer> : TAccountPayer,
       ...TRemainingAccounts,
     ]
   >;
@@ -81,25 +87,27 @@ export function getCloseTransientStoreInstructionDataCodec(): FixedSizeCodec<
   return combineCodec(getCloseTransientStoreInstructionDataEncoder(), getCloseTransientStoreInstructionDataDecoder());
 }
 
-export type CloseTransientStoreInput<
+export type CloseTransientStoreAsyncInput<
   TAccountInstructions extends string = string,
   TAccountTransientStore extends string = string,
-  TAccountRefund extends string = string,
+  TAccountPayer extends string = string,
 > = {
   instructions?: Address<TAccountInstructions>;
-  transientStore: Address<TAccountTransientStore>;
-  refund: Address<TAccountRefund>;
+  transientStore?: Address<TAccountTransientStore>;
+  payer: Address<TAccountPayer>;
 };
 
-export function getCloseTransientStoreInstruction<
+export async function getCloseTransientStoreInstructionAsync<
   TAccountInstructions extends string,
   TAccountTransientStore extends string,
-  TAccountRefund extends string,
+  TAccountPayer extends string,
   TProgramAddress extends Address = typeof ZAMA_HOST_PROGRAM_ADDRESS,
 >(
-  input: CloseTransientStoreInput<TAccountInstructions, TAccountTransientStore, TAccountRefund>,
+  input: CloseTransientStoreAsyncInput<TAccountInstructions, TAccountTransientStore, TAccountPayer>,
   config?: { programAddress?: TProgramAddress },
-): CloseTransientStoreInstruction<TProgramAddress, TAccountInstructions, TAccountTransientStore, TAccountRefund> {
+): Promise<
+  CloseTransientStoreInstruction<TProgramAddress, TAccountInstructions, TAccountTransientStore, TAccountPayer>
+> {
   // Program address.
   const programAddress = config?.programAddress ?? ZAMA_HOST_PROGRAM_ADDRESS;
 
@@ -107,7 +115,64 @@ export function getCloseTransientStoreInstruction<
   const originalAccounts = {
     instructions: { value: input.instructions ?? null, isWritable: false },
     transientStore: { value: input.transientStore ?? null, isWritable: true },
-    refund: { value: input.refund ?? null, isWritable: true },
+    payer: { value: input.payer ?? null, isWritable: true },
+  };
+  const accounts = originalAccounts as Record<keyof typeof originalAccounts, ResolvedInstructionAccount>;
+
+  // Resolve default values.
+  if (!accounts.instructions.value) {
+    accounts.instructions.value =
+      'Sysvar1nstructions1111111111111111111111111' as Address<'Sysvar1nstructions1111111111111111111111111'>;
+  }
+  if (!accounts.transientStore.value) {
+    accounts.transientStore.value = await getProgramDerivedAddress({
+      programAddress,
+      seeds: [
+        getBytesEncoder().encode(new Uint8Array([116, 114, 97, 110, 115, 105, 101, 110, 116])),
+        getAddressEncoder().encode(getAddressFromResolvedInstructionAccount('payer', accounts.payer.value)),
+      ],
+    });
+  }
+
+  const getAccountMeta = getAccountMetaFactory(programAddress, 'programId');
+  return Object.freeze({
+    accounts: [
+      getAccountMeta('instructions', accounts.instructions),
+      getAccountMeta('transientStore', accounts.transientStore),
+      getAccountMeta('payer', accounts.payer),
+    ],
+    data: getCloseTransientStoreInstructionDataEncoder().encode({}),
+    programAddress,
+  } as CloseTransientStoreInstruction<TProgramAddress, TAccountInstructions, TAccountTransientStore, TAccountPayer>);
+}
+
+export type CloseTransientStoreInput<
+  TAccountInstructions extends string = string,
+  TAccountTransientStore extends string = string,
+  TAccountPayer extends string = string,
+> = {
+  instructions?: Address<TAccountInstructions>;
+  transientStore: Address<TAccountTransientStore>;
+  payer: Address<TAccountPayer>;
+};
+
+export function getCloseTransientStoreInstruction<
+  TAccountInstructions extends string,
+  TAccountTransientStore extends string,
+  TAccountPayer extends string,
+  TProgramAddress extends Address = typeof ZAMA_HOST_PROGRAM_ADDRESS,
+>(
+  input: CloseTransientStoreInput<TAccountInstructions, TAccountTransientStore, TAccountPayer>,
+  config?: { programAddress?: TProgramAddress },
+): CloseTransientStoreInstruction<TProgramAddress, TAccountInstructions, TAccountTransientStore, TAccountPayer> {
+  // Program address.
+  const programAddress = config?.programAddress ?? ZAMA_HOST_PROGRAM_ADDRESS;
+
+  // Original accounts.
+  const originalAccounts = {
+    instructions: { value: input.instructions ?? null, isWritable: false },
+    transientStore: { value: input.transientStore ?? null, isWritable: true },
+    payer: { value: input.payer ?? null, isWritable: true },
   };
   const accounts = originalAccounts as Record<keyof typeof originalAccounts, ResolvedInstructionAccount>;
 
@@ -122,11 +187,11 @@ export function getCloseTransientStoreInstruction<
     accounts: [
       getAccountMeta('instructions', accounts.instructions),
       getAccountMeta('transientStore', accounts.transientStore),
-      getAccountMeta('refund', accounts.refund),
+      getAccountMeta('payer', accounts.payer),
     ],
     data: getCloseTransientStoreInstructionDataEncoder().encode({}),
     programAddress,
-  } as CloseTransientStoreInstruction<TProgramAddress, TAccountInstructions, TAccountTransientStore, TAccountRefund>);
+  } as CloseTransientStoreInstruction<TProgramAddress, TAccountInstructions, TAccountTransientStore, TAccountPayer>);
 }
 
 export type ParsedCloseTransientStoreInstruction<
@@ -137,7 +202,7 @@ export type ParsedCloseTransientStoreInstruction<
   accounts: {
     instructions: TAccountMetas[0];
     transientStore: TAccountMetas[1];
-    refund: TAccountMetas[2];
+    payer: TAccountMetas[2];
   };
   data: CloseTransientStoreInstructionData;
 };
@@ -165,7 +230,7 @@ export function parseCloseTransientStoreInstruction<
     accounts: {
       instructions: getNextAccount(),
       transientStore: getNextAccount(),
-      refund: getNextAccount(),
+      payer: getNextAccount(),
     },
     data: getCloseTransientStoreInstructionDataDecoder().decode(instruction.data),
   };

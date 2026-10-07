@@ -333,7 +333,7 @@ fn one_user_cannot_move_another_users_watermark() {
         ],
         &[Check::err(
             anchor_lang::solana_program::program_error::ProgramError::Custom(
-                host::ZamaHostError::PermitInvalidationPdaMismatch.into(),
+                anchor_lang::error::ErrorCode::ConstraintSeeds as u32,
             ),
         )],
     );
@@ -357,7 +357,7 @@ fn one_user_cannot_create_another_users_watermark() {
         ],
         &[Check::err(
             anchor_lang::solana_program::program_error::ProgramError::Custom(
-                host::ZamaHostError::PermitInvalidationPdaMismatch.into(),
+                anchor_lang::error::ErrorCode::ConstraintSeeds as u32,
             ),
         )],
     );
@@ -402,7 +402,7 @@ fn revocation_rejects_a_non_canonical_account() {
         ],
         &[Check::err(
             anchor_lang::solana_program::program_error::ProgramError::Custom(
-                host::ZamaHostError::PermitInvalidationPdaMismatch.into(),
+                anchor_lang::error::ErrorCode::ConstraintSeeds as u32,
             ),
         )],
     );

@@ -5,12 +5,15 @@
     "": {
       "name": "@fhevm/confidential-token",
       "dependencies": {
+        "@fhevm/solana-zama-host": "file:../zama-host",
         "@solana/kit": "6.10.0",
         "@solana/program-client-core": "6.10.0",
       },
     },
   },
   "packages": {
+    "@fhevm/solana-zama-host": ["@fhevm/solana-zama-host@file:../zama-host", { "devDependencies": { "@solana/kit": "6.10.0", "@solana/program-client-core": "6.10.0", "@types/node": "22.20.1", "typescript": "6.0.3" }, "peerDependencies": { "@solana/kit": "6.10.0", "@solana/program-client-core": "6.10.0" } }],
+
     "@solana/accounts": ["@solana/accounts@6.10.0", "", { "dependencies": { "@solana/addresses": "6.10.0", "@solana/codecs-core": "6.10.0", "@solana/codecs-strings": "6.10.0", "@solana/errors": "6.10.0", "@solana/rpc-spec": "6.10.0", "@solana/rpc-types": "6.10.0" }, "peerDependencies": { "typescript": ">=5.4.0" }, "optionalPeers": ["typescript"] }, "sha512-+FxfDOrnifoPlBkF+fr8eeQdgM6xtIgAg9xKMu3WnIz60oZd4Xnry6+ff6t+ePPoZZp397FSg9ZJet68VCWm5Q=="],
 
     "@solana/addresses": ["@solana/addresses@6.10.0", "", { "dependencies": { "@solana/assertions": "6.10.0", "@solana/codecs-core": "6.10.0", "@solana/codecs-strings": "6.10.0", "@solana/errors": "6.10.0", "@solana/nominal-types": "6.10.0" }, "peerDependencies": { "typescript": ">=5.4.0" }, "optionalPeers": ["typescript"] }, "sha512-vEoCGBTxG0HCERAn84KXkrJjl+pDaNzOpZ0qbgcPS98fYxP5yzbKB8SNOY2bzrbkRUmmw5Q3hqTRERemUN2Gcw=="],
@@ -95,12 +98,18 @@
 
     "@solana/transactions": ["@solana/transactions@6.10.0", "", { "dependencies": { "@solana/addresses": "6.10.0", "@solana/codecs-core": "6.10.0", "@solana/codecs-data-structures": "6.10.0", "@solana/codecs-numbers": "6.10.0", "@solana/codecs-strings": "6.10.0", "@solana/errors": "6.10.0", "@solana/functional": "6.10.0", "@solana/instructions": "6.10.0", "@solana/keys": "6.10.0", "@solana/nominal-types": "6.10.0", "@solana/rpc-types": "6.10.0", "@solana/transaction-messages": "6.10.0" }, "peerDependencies": { "typescript": ">=5.4.0" }, "optionalPeers": ["typescript"] }, "sha512-VADSqP9OTYmhrox4pcgDd4+RjVmednXSE0+8Y7SPK4PN1pK5Az2RJ0nSsy0xcTnaOr8mF/crwFktqPrRQwSbQA=="],
 
+    "@types/node": ["@types/node@22.20.1", "", { "dependencies": { "undici-types": "~6.21.0" } }, "sha512-EANqOCF9QFyra+4pfxUcX9STKJpCLjMbObVzljIJomAWSnuSIEAvyzEU53GaajbXJEgdh0iEcPL+DGvpUd4k1Q=="],
+
     "chalk": ["chalk@5.6.2", "", {}, "sha512-7NzBL0rN6fMUW+f7A6Io4h40qQlG+xGmtMxfbnH/K7TAtt8JQWVQK+6g0UXKMeVJoyV5EkkNsErQ8pVD3bLHbA=="],
 
     "commander": ["commander@15.0.0", "", {}, "sha512-z67u4ZhzCL/Tydu1lJARtEZYWbWaN7oYLHbsuzocr6y4N6WZAagG3RQ4FW61V1/0+jImpj293XfrcYnd1qxtPg=="],
 
-    "undici-types": ["undici-types@8.10.2", "", {}, "sha512-7/+aSjzkUoLc92hV22bTW4aGanXf800zbwguhcICs0OAoCF9wDOE4wkopQ+SqfhXZm8mCK8gHpdTs7pZUWzK3w=="],
+    "typescript": ["typescript@6.0.3", "", { "bin": { "tsc": "bin/tsc", "tsserver": "bin/tsserver" } }, "sha512-y2TvuxSZPDyQakkFRPZHKFm+KKVqIisdg9/CZwm9ftvKXLP8NRWj38/ODjNbr43SsoXqNuAisEf1GdCxqWcdBw=="],
+
+    "undici-types": ["undici-types@6.21.0", "", {}, "sha512-iwDZqg0QAGrg9Rav5H4n0M64c3mkR59cJ6wQp+7C4nI0gsmExaedaYLNO44eT4AtBBwjbTiGPMlt2Md0T9H9JQ=="],
 
     "ws": ["ws@8.21.3", "", { "peerDependencies": { "bufferutil": "^4.0.1", "utf-8-validate": ">=5.0.2" }, "optionalPeers": ["bufferutil", "utf-8-validate"] }, "sha512-201TZ/kPWxoPr/OKWjquZR1SWKXcvxdH+e1xrx89b3YbmzLMFCLfnaG1HFIgWzJOEWZ7MvpK++odZufgYR50Rw=="],
+
+    "@solana/rpc-transport-http/undici-types": ["undici-types@8.10.2", "", {}, "sha512-7/+aSjzkUoLc92hV22bTW4aGanXf800zbwguhcICs0OAoCF9wDOE4wkopQ+SqfhXZm8mCK8gHpdTs7pZUWzK3w=="],
   }
 }

@@ -63,7 +63,7 @@ export type DefineKmsContextInstruction<
   TAccountKmsContext extends string | AccountMeta<string> = string,
   TAccountSystemProgram extends string | AccountMeta<string> = '11111111111111111111111111111111',
   TAccountEventAuthority extends string | AccountMeta<string> = string,
-  TAccountProgram extends string | AccountMeta<string> = string,
+  TAccountProgram extends string | AccountMeta<string> = 'DPq5y89RDZPq9NcMh9X1NgjBWgYmSXg3QoipSBV3ZMzQ',
   TRemainingAccounts extends readonly AccountMeta<string>[] = [],
 > = Instruction<TProgram> &
   InstructionWithData<ReadonlyUint8Array> &
@@ -138,8 +138,8 @@ export type DefineKmsContextAsyncInput<
   kmsContext?: Address<TAccountKmsContext>;
   /** System program used for account creation. */
   systemProgram?: Address<TAccountSystemProgram>;
-  eventAuthority: Address<TAccountEventAuthority>;
-  program: Address<TAccountProgram>;
+  eventAuthority?: Address<TAccountEventAuthority>;
+  program?: Address<TAccountProgram>;
   contextId: DefineKmsContextInstructionDataArgs['contextId'];
   signers: DefineKmsContextInstructionDataArgs['signers'];
   thresholds: DefineKmsContextInstructionDataArgs['thresholds'];
@@ -210,6 +210,20 @@ export async function getDefineKmsContextInstructionAsync<
   if (!accounts.systemProgram.value) {
     accounts.systemProgram.value = '11111111111111111111111111111111' as Address<'11111111111111111111111111111111'>;
   }
+  if (!accounts.eventAuthority.value) {
+    accounts.eventAuthority.value = await getProgramDerivedAddress({
+      programAddress,
+      seeds: [
+        getBytesEncoder().encode(
+          new Uint8Array([95, 95, 101, 118, 101, 110, 116, 95, 97, 117, 116, 104, 111, 114, 105, 116, 121]),
+        ),
+      ],
+    });
+  }
+  if (!accounts.program.value) {
+    accounts.program.value = programAddress;
+    accounts.program.isWritable = false;
+  }
 
   const getAccountMeta = getAccountMetaFactory(programAddress, 'programId');
   return Object.freeze({
@@ -251,7 +265,7 @@ export type DefineKmsContextInput<
   /** System program used for account creation. */
   systemProgram?: Address<TAccountSystemProgram>;
   eventAuthority: Address<TAccountEventAuthority>;
-  program: Address<TAccountProgram>;
+  program?: Address<TAccountProgram>;
   contextId: DefineKmsContextInstructionDataArgs['contextId'];
   signers: DefineKmsContextInstructionDataArgs['signers'];
   thresholds: DefineKmsContextInstructionDataArgs['thresholds'];
@@ -304,6 +318,10 @@ export function getDefineKmsContextInstruction<
   // Resolve default values.
   if (!accounts.systemProgram.value) {
     accounts.systemProgram.value = '11111111111111111111111111111111' as Address<'11111111111111111111111111111111'>;
+  }
+  if (!accounts.program.value) {
+    accounts.program.value = programAddress;
+    accounts.program.isWritable = false;
   }
 
   const getAccountMeta = getAccountMetaFactory(programAddress, 'programId');

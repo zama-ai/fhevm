@@ -2893,6 +2893,8 @@ needed to hold it to the program.
 
 Consequences:
 
+- A program that references another program's PDA restates its seeds only where a client default needs them; runtime tests pin that order.
+
 - fhevm-internal#2108 task 2 adds the missing `seeds` to zama-host and confidential-token, then to
   the demo batcher and demo vault, regenerates the clients, deletes the TypeScript copies and
   shrinks the allow-list. A golden test pins every PDA address for fixed inputs, so a recipe change

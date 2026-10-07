@@ -12,8 +12,11 @@ pub const CHAIN_SEED: &[u8] = b"dep-chain";
 pub const CHAIN_AUTHORITY_SEED: &[u8] = b"chain-authority";
 
 /// Fixed encrypted value label for the chain tail.
+#[constant]
+pub const ENCRYPTED_TAIL_LABEL: [u8; 32] = *b"tail____________________________";
+
 pub fn encrypted_tail_label() -> [u8; 32] {
-    *b"tail____________________________"
+    ENCRYPTED_TAIL_LABEL
 }
 
 pub fn chain_address(owner: Pubkey) -> (Pubkey, u8) {

@@ -21,19 +21,20 @@ pub struct ConfidentialTransfer<'info> {
     #[account(dup)]
     pub to_ata: UncheckedAccount<'info>,
     /// Sender token account.
-    #[account(mut)]
+    #[account(mut, seeds = [b"token-account", mint.key().as_ref(), from_account.owner.as_ref()], bump = from_account.bump)]
     pub from_account: Box<Account<'info, ConfidentialTokenAccount>>,
     // Anchor 1 rejects duplicate mutable Account<T> values unless the account opts in.
     // A self-transfer is a supported no-op, so from_account and to_account may be equal.
-    #[account(mut, dup)]
+    #[account(mut, dup, seeds = [b"token-account", mint.key().as_ref(), to_account.owner.as_ref()], bump = to_account.bump)]
     pub to_account: Box<Account<'info, ConfidentialTokenAccount>>,
     /// Sender store: the host reads and updates its balance slot.
-    #[account(mut, address = encrypted_store_address(mint.key(), from_account.key()).0)]
+    #[account(mut, seeds = [zama_host::ENCRYPTED_STORE_SEED, crate::ID.as_ref(), from_account.key().as_ref(), mint.key().as_ref()], bump = from_store.bump, seeds::program = zama_host::ID)]
     pub from_store: Box<Account<'info, zama_host::EncryptedStore>>,
     /// Recipient store: the host reads and updates its balance slot.
-    #[account(mut, dup, address = encrypted_store_address(mint.key(), to_account.key()).0)]
+    #[account(mut, dup, seeds = [zama_host::ENCRYPTED_STORE_SEED, crate::ID.as_ref(), to_account.key().as_ref(), mint.key().as_ref()], bump = to_store.bump, seeds::program = zama_host::ID)]
     pub to_store: Box<Account<'info, zama_host::EncryptedStore>>,
     /// CHECK: Anchor event CPI authority for the Zama host program.
+    #[account(seeds = [b"__event_authority"], bump = zama_host::EVENT_AUTHORITY_AND_BUMP.1, seeds::program = zama_host::ID)]
     pub zama_event_authority: UncheckedAccount<'info>,
     /// CHECK: shared transaction transient store, validated by ZamaHost.
     #[account(mut)]
@@ -43,6 +44,7 @@ pub struct ConfidentialTransfer<'info> {
     /// ZamaHost program used for FHE operations.
     pub zama_program: Program<'info, ZamaHost>,
     /// ZamaHost config used for handle derivation.
+    #[account(seeds = [zama_host::HOST_CONFIG_SEED], bump = host_config.bump, seeds::program = zama_host::ID)]
     pub host_config: Box<Account<'info, zama_host::HostConfig>>,
     /// System program used for ACL account creation.
     pub system_program: Program<'info, System>,
@@ -178,22 +180,23 @@ pub struct ConfidentialTransferFromValue<'info> {
     #[account(dup)]
     pub to_ata: UncheckedAccount<'info>,
     /// Sender token account.
-    #[account(mut)]
+    #[account(mut, seeds = [b"token-account", mint.key().as_ref(), from_account.owner.as_ref()], bump = from_account.bump)]
     pub from_account: Box<Account<'info, ConfidentialTokenAccount>>,
     // Anchor 1 rejects duplicate mutable Account<T> values unless the account opts in.
     // A self-transfer is a supported no-op, so from_account and to_account may be equal.
-    #[account(mut, dup)]
+    #[account(mut, dup, seeds = [b"token-account", mint.key().as_ref(), to_account.owner.as_ref()], bump = to_account.bump)]
     pub to_account: Box<Account<'info, ConfidentialTokenAccount>>,
     /// Sender state: the host reads and updates its balance slot.
-    #[account(mut, address = encrypted_store_address(mint.key(), from_account.key()).0)]
+    #[account(mut, seeds = [zama_host::ENCRYPTED_STORE_SEED, crate::ID.as_ref(), from_account.key().as_ref(), mint.key().as_ref()], bump = from_store.bump, seeds::program = zama_host::ID)]
     pub from_store: Box<Account<'info, zama_host::EncryptedStore>>,
     /// Recipient state: the host reads and updates its balance slot.
-    #[account(mut, dup, address = encrypted_store_address(mint.key(), to_account.key()).0)]
+    #[account(mut, dup, seeds = [zama_host::ENCRYPTED_STORE_SEED, crate::ID.as_ref(), to_account.key().as_ref(), mint.key().as_ref()], bump = to_store.bump, seeds::program = zama_host::ID)]
     pub to_store: Box<Account<'info, zama_host::EncryptedStore>>,
-    /// CHECK: state containing a stored amount, when amount_source is Slot.
+    /// CHECK: store identity is read for the spend gate; the host validates it in the CPI.
     pub amount_store: Option<UncheckedAccount<'info>>,
     pub amount_authority: Option<Signer<'info>>,
     /// CHECK: Anchor event CPI authority for the Zama host program.
+    #[account(seeds = [b"__event_authority"], bump = zama_host::EVENT_AUTHORITY_AND_BUMP.1, seeds::program = zama_host::ID)]
     pub zama_event_authority: UncheckedAccount<'info>,
     /// CHECK: shared transaction transient store, validated by ZamaHost.
     #[account(mut)]
@@ -203,6 +206,7 @@ pub struct ConfidentialTransferFromValue<'info> {
     /// ZamaHost program used for FHE operations.
     pub zama_program: Program<'info, ZamaHost>,
     /// ZamaHost config used for handle derivation.
+    #[account(seeds = [zama_host::HOST_CONFIG_SEED], bump = host_config.bump, seeds::program = zama_host::ID)]
     pub host_config: Box<Account<'info, zama_host::HostConfig>>,
     /// System program used for ACL account creation.
     pub system_program: Program<'info, System>,

@@ -6,7 +6,7 @@ import { INSTRUCTIONS_SYSVAR_ADDRESS, appendTransientStoreInstructions, prepareT
 // product builders. Identities (token account, pending burn, escrow ATAs, KMS context) derive
 // from the same on-chain seeds.
 
-import { getAddressEncoder, getProgramDerivedAddress, type Address, type TransactionSigner } from "@solana/kit";
+import { type Address, type TransactionSigner } from "@solana/kit";
 
 import { associatedTokenAddress, SPL_TOKEN_PROGRAM_ADDRESS } from "./spl";
 import { BRINGUP_KMS_CONTEXT_ID } from "./addresses";
@@ -19,6 +19,7 @@ import {
   getRedeemBurnedAmountInstructionAsync,
   getMakeTokenAccountHandlePublicInstructionAsync,
   getMakeTotalSupplyHandlePublicInstructionAsync,
+  findEventAuthorityPda,
   findTotalSupplyAuthorityPda,
   findVaultAuthorityPda,
   CONFIDENTIAL_TOKEN_PROGRAM_ADDRESS,
@@ -36,10 +37,7 @@ export const kmsContextAddress = async (
 };
 
 const eventAuthority = async (programAddress: Address): Promise<Address> => {
-  const [address] = await getProgramDerivedAddress({
-    programAddress,
-    seeds: [new TextEncoder().encode("__event_authority")],
-  });
+  const [address] = await findEventAuthorityPda({ programAddress });
   return address;
 };
 

@@ -12,8 +12,11 @@ pub const COUNTER_SEED: &[u8] = b"counter";
 pub const COUNTER_AUTHORITY_SEED: &[u8] = b"counter-authority";
 
 /// Dictionary key for the encrypted count.
+#[constant]
+pub const COUNT_KEY: [u8; 32] = *b"count___________________________";
+
 pub fn count_key() -> [u8; 32] {
-    *b"count___________________________"
+    COUNT_KEY
 }
 
 pub fn counter_address(owner: Pubkey) -> (Pubkey, u8) {

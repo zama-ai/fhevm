@@ -14,6 +14,7 @@ import {
 import { BRINGUP_KMS_CONTEXT_ID, SOLANA_HOST_CHAIN_ID } from './constants';
 import type { GatewayBootstrapInputs } from './gateway';
 import {
+  findEventAuthorityPda,
   findHostConfigPda,
   findKmsContextPda,
   findRandNoncePda,
@@ -46,14 +47,6 @@ export const kmsCertificateThreshold = (kmsCorruptionThreshold: number, register
     );
   }
   return certificateThreshold;
-};
-
-const zamaEventAuthorityAddress = async (programAddress: Address) => {
-  const [eventAuthority] = await getProgramDerivedAddress({
-    programAddress,
-    seeds: [new TextEncoder().encode('__event_authority')],
-  });
-  return eventAuthority;
 };
 
 /** BPF upgradeable loader `ProgramData` PDA (`[program_id]` under the loader). */
@@ -118,7 +111,7 @@ export const validateBootstrapInputs = (params: BootstrapZamaHostParams): void =
 export const bootstrapZamaHost = async (context: HostDeployContext, params: BootstrapZamaHostParams): Promise<void> => {
   validateBootstrapInputs(params);
   const programAddress = params.programAddress ?? ZAMA_HOST_PROGRAM_ADDRESS;
-  const eventAuthority = await zamaEventAuthorityAddress(programAddress);
+  const eventAuthority = (await findEventAuthorityPda({ programAddress }))[0];
   const programData = await programDataAddressFor(programAddress);
   const [hostConfig] = await findHostConfigPda({ programAddress });
   const [randNonce] = await findRandNoncePda({ programAddress });

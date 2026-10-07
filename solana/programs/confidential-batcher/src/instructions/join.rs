@@ -122,10 +122,8 @@ pub fn join<'info>(
                 },
                 &[authority_seeds],
             ),
-            zama_host::instructions::CreateEncryptedStoreArgs {
-                program: crate::ID,
-                authority_seeds: authority_seeds.iter().map(|s| s.to_vec()).collect(),
-            },
+            crate::ID,
+            authority_seeds.iter().map(|s| s.to_vec()).collect(),
         )?;
     }
     let transferred = transfer_to_batch(&ctx, amount_attestation, authority_seeds)?;

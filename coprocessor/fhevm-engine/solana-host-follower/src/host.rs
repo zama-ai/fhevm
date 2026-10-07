@@ -384,10 +384,8 @@ mod tests {
     #[test]
     fn other_host_instructions_write_nothing() {
         let data = zama_host::instruction::CreateEncryptedStore {
-            args: zama_host::instructions::CreateEncryptedStoreArgs {
-                program: Pubkey::new_unique(),
-                authority_seeds: vec![vec![12; 40]],
-            },
+            program: Pubkey::new_unique(),
+            authority_seeds: vec![vec![12; 40]],
         }
         .data();
         assert!(host_operations(

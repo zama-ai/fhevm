@@ -6,12 +6,14 @@
  * @see https://github.com/codama-idl/codama
  */
 
+import { findEventAuthorityPda, findHostConfigPda } from '@fhevm/solana-zama-host';
 import {
   combineCodec,
   fixDecoderSize,
   fixEncoderSize,
   getBytesDecoder,
   getBytesEncoder,
+  getProgramDerivedAddress,
   getStructDecoder,
   getStructEncoder,
   SOLANA_ERROR__PROGRAM_CLIENTS__INSUFFICIENT_ACCOUNT_METAS,
@@ -38,7 +40,7 @@ import {
   getAddressFromResolvedInstructionAccount,
   type ResolvedInstructionAccount,
 } from '@solana/program-client-core';
-import { findTotalSupplyAuthorityPda } from '../pdas/index.js';
+import { findPendingBurnPda, findTotalSupplyAuthorityPda } from '../pdas/index.js';
 import { CONFIDENTIAL_TOKEN_PROGRAM_ADDRESS } from '../programAddress.js';
 
 export const CONFIDENTIAL_BURN_FROM_VALUE_DISCRIMINATOR: ReadonlyUint8Array = new Uint8Array([
@@ -71,7 +73,7 @@ export type ConfidentialBurnFromValueInstruction<
   TAccountHcuBlockMeter extends string | AccountMeta<string> = string,
   TAccountHcuTrustedAppRecord extends string | AccountMeta<string> = string,
   TAccountEventAuthority extends string | AccountMeta<string> = string,
-  TAccountProgram extends string | AccountMeta<string> = string,
+  TAccountProgram extends string | AccountMeta<string> = 'FAWs7E52LZmXR5YzFy4aXanfBjNtXV2qooQVtkmBa3cL',
   TRemainingAccounts extends readonly AccountMeta<string>[] = [],
 > = Instruction<TProgram> &
   InstructionWithData<ReadonlyUint8Array> &
@@ -194,7 +196,7 @@ export type ConfidentialBurnFromValueAsyncInput<
   /** Stable total-supply encrypted store; read for the current handle and replaced by this execution. */
   totalSupplyStore: Address<TAccountTotalSupplyStore>;
   /** A burn is rejected before execution while this account is already initialized. */
-  pendingBurn: Address<TAccountPendingBurn>;
+  pendingBurn?: Address<TAccountPendingBurn>;
   /**
    * The existing encrypted amount to burn: a computed `euint64` handle. Read-only persistent
    * operand — never replaced, never consumed. Its address is the canonical PDA of its own
@@ -203,13 +205,13 @@ export type ConfidentialBurnFromValueAsyncInput<
    * authorizing through `invoke_signed`), or when it is one of the burner's own token values.
    */
   amountStore: Address<TAccountAmountStore>;
-  zamaEventAuthority: Address<TAccountZamaEventAuthority>;
+  zamaEventAuthority?: Address<TAccountZamaEventAuthority>;
   transientStore: Address<TAccountTransientStore>;
   instructions: Address<TAccountInstructions>;
   /** ZamaHost program used for FHE operations. */
   zamaProgram?: Address<TAccountZamaProgram>;
   /** ZamaHost config used for handle derivation. */
-  hostConfig: Address<TAccountHostConfig>;
+  hostConfig?: Address<TAccountHostConfig>;
   /** System program used for ACL account creation and the pending-burn PDA. */
   systemProgram?: Address<TAccountSystemProgram>;
   /**
@@ -222,8 +224,8 @@ export type ConfidentialBurnFromValueAsyncInput<
    * means the mint is metered.
    */
   hcuTrustedAppRecord?: Address<TAccountHcuTrustedAppRecord>;
-  eventAuthority: Address<TAccountEventAuthority>;
-  program: Address<TAccountProgram>;
+  eventAuthority?: Address<TAccountEventAuthority>;
+  program?: Address<TAccountProgram>;
   key: ConfidentialBurnFromValueInstructionDataArgs['key'];
 };
 
@@ -351,12 +353,42 @@ export async function getConfidentialBurnFromValueInstructionAsync<
       mint: getAddressFromResolvedInstructionAccount('mint', accounts.mint.value),
     });
   }
+  if (!accounts.pendingBurn.value) {
+    accounts.pendingBurn.value = await findPendingBurnPda({
+      mint: getAddressFromResolvedInstructionAccount('mint', accounts.mint.value),
+      tokenAccount: getAddressFromResolvedInstructionAccount('tokenAccount', accounts.tokenAccount.value),
+    });
+  }
   if (!accounts.zamaProgram.value) {
     accounts.zamaProgram.value =
       'DPq5y89RDZPq9NcMh9X1NgjBWgYmSXg3QoipSBV3ZMzQ' as Address<'DPq5y89RDZPq9NcMh9X1NgjBWgYmSXg3QoipSBV3ZMzQ'>;
   }
+  if (!accounts.zamaEventAuthority.value) {
+    accounts.zamaEventAuthority.value = await findEventAuthorityPda({
+      programAddress: getAddressFromResolvedInstructionAccount('zamaProgram', accounts.zamaProgram.value),
+    });
+  }
+  if (!accounts.hostConfig.value) {
+    accounts.hostConfig.value = await findHostConfigPda({
+      programAddress: getAddressFromResolvedInstructionAccount('zamaProgram', accounts.zamaProgram.value),
+    });
+  }
   if (!accounts.systemProgram.value) {
     accounts.systemProgram.value = '11111111111111111111111111111111' as Address<'11111111111111111111111111111111'>;
+  }
+  if (!accounts.eventAuthority.value) {
+    accounts.eventAuthority.value = await getProgramDerivedAddress({
+      programAddress,
+      seeds: [
+        getBytesEncoder().encode(
+          new Uint8Array([95, 95, 101, 118, 101, 110, 116, 95, 97, 117, 116, 104, 111, 114, 105, 116, 121]),
+        ),
+      ],
+    });
+  }
+  if (!accounts.program.value) {
+    accounts.program.value = programAddress;
+    accounts.program.isWritable = false;
   }
 
   const getAccountMeta = getAccountMetaFactory(programAddress, 'programId');
@@ -486,7 +518,7 @@ export type ConfidentialBurnFromValueInput<
    */
   hcuTrustedAppRecord?: Address<TAccountHcuTrustedAppRecord>;
   eventAuthority: Address<TAccountEventAuthority>;
-  program: Address<TAccountProgram>;
+  program?: Address<TAccountProgram>;
   key: ConfidentialBurnFromValueInstructionDataArgs['key'];
 };
 
@@ -613,6 +645,10 @@ export function getConfidentialBurnFromValueInstruction<
   }
   if (!accounts.systemProgram.value) {
     accounts.systemProgram.value = '11111111111111111111111111111111' as Address<'11111111111111111111111111111111'>;
+  }
+  if (!accounts.program.value) {
+    accounts.program.value = programAddress;
+    accounts.program.isWritable = false;
   }
 
   const getAccountMeta = getAccountMetaFactory(programAddress, 'programId');

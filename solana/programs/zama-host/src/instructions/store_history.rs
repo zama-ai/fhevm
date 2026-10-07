@@ -10,7 +10,7 @@ pub struct MakeStoreHandlePublic<'info> {
     #[account(mut)]
     pub payer: Signer<'info>,
     pub authority: Signer<'info>,
-    #[account(mut)]
+    #[account(mut, seeds = [ENCRYPTED_STORE_SEED, encrypted_store.program.as_ref(), encrypted_store.authority.as_ref(), encrypted_store.scope.as_ref()], bump = encrypted_store.bump)]
     pub encrypted_store: Account<'info, EncryptedStore>,
     #[account(seeds = [HOST_CONFIG_SEED], bump = host_config.bump)]
     pub host_config: Account<'info, HostConfig>,
@@ -28,7 +28,7 @@ pub fn make_store_handle_public(
     assert_not_paused(&ctx.accounts.host_config, PauseArea::AclWrites)?;
     assert_no_remaining_accounts(ctx.remaining_accounts)?;
     let state = &mut ctx.accounts.encrypted_store;
-    state.validate(state.key())?;
+    state.validate_shape()?;
     require_keys_eq!(
         ctx.accounts.authority.key(),
         state.authority,
