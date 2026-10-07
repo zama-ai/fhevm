@@ -1,3 +1,4 @@
+import { SYSTEM_PROGRAM_ADDRESS } from '@solana-program/system';
 import { prepareTransientStore } from '@fhevm/sdk/solana';
 import { describe, expect, it } from 'vitest';
 import { address, getProgramDerivedAddress, type Address, type TransactionSigner } from '@solana/kit';
@@ -80,7 +81,7 @@ describe('buildCancelDispatchInstruction', () => {
       ZAMA_HOST_PROGRAM_ADDRESS,
       await pda(CONFIDENTIAL_TOKEN_PROGRAM_ADDRESS, [utf8('__event_authority')]),
       CONFIDENTIAL_TOKEN_PROGRAM_ADDRESS,
-      address('11111111111111111111111111111111'),
+      SYSTEM_PROGRAM_ADDRESS,
     ];
 
     expect(instruction.programAddress).toBe(CONFIDENTIAL_BATCHER_PROGRAM_ADDRESS);

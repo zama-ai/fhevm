@@ -10,7 +10,6 @@ import {
 import { mkdir, readFile, readdir, writeFile } from 'node:fs/promises';
 import path from 'node:path';
 import {
-  AccountRole,
   address,
   createKeyPairSignerFromBytes,
   getAddressDecoder,
@@ -19,6 +18,8 @@ import {
   type Instruction,
   type TransactionSigner,
 } from '@solana/kit';
+import { getTransferSolInstruction, SYSTEM_PROGRAM_ADDRESS } from '@solana-program/system';
+import { getCloseInstruction, LOADER_V3_PROGRAM_ADDRESS } from '@solana-program/loader-v3';
 import {
   TOKEN_PROGRAM_ADDRESS as TOKEN,
   getBurnInstruction,
@@ -80,15 +81,6 @@ import {
   getPreviewDrainInstruction as getVaultPreviewDrainInstruction,
 } from '../../demo-dapp/src/vault/internal/generated/demoVault/instructions/previewDrain';
 
-const SYSTEM = address('11111111111111111111111111111111');
-const LOADER = address('BPFLoaderUpgradeab1e11111111111111111111111');
-const u32 = (n: number) => {
-  const b = Buffer.alloc(4);
-  b.writeUInt32LE(n);
-  return b;
-};
-const writable = (a: Address) => ({ address: a, role: AccountRole.WRITABLE });
-const signer = (s: TransactionSigner) => ({ address: s.address, role: AccountRole.READONLY_SIGNER, signer: s });
 const decodeAddress = (b: Uint8Array, offset: number) => getAddressDecoder().decode(b, offset);
 const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
 
@@ -231,12 +223,12 @@ export async function recoverPreview(
       const info = (
         await context.rpc.getAccountInfo(authority.address, { encoding: 'base64' }).send()
       ).value;
-      if (info?.owner === SYSTEM && info.lamports > 0n) {
+      if (info?.owner === SYSTEM_PROGRAM_ADDRESS && info.lamports > 0n) {
         await send(drain({
           admin: payer,
           programData,
           authority: authority.address,
-          systemProgram: SYSTEM,
+          systemProgram: SYSTEM_PROGRAM_ADDRESS,
           seeds: authority.seeds,
         }, { programAddress: authority.program }));
       }
@@ -390,19 +382,20 @@ export async function recoverPreview(
         await context.rpc.getAccountInfo(buffer.address, { encoding: 'base64' }).send()
       ).value;
       if (!account) continue;
+      // @solana-program/loader-v3 0.4.0 has no buffer account decoder.
       const data = Buffer.from(account.data[0], 'base64');
       if (
-        account.owner !== LOADER ||
+        account.owner !== LOADER_V3_PROGRAM_ADDRESS ||
         data.readUInt32LE(0) !== 1 ||
         data[4] !== 1 ||
         decodeAddress(data, 5) !== payer.address
       )
         throw new Error(`unexpected upload buffer ${buffer.address}`);
-      await send({
-        programAddress: LOADER,
-        accounts: [writable(buffer.address), writable(payer.address), signer(payer)],
-        data: u32(5),
-      });
+      await send(getCloseInstruction({
+        bufferOrProgramDataAccount: buffer.address,
+        destinationAccount: payer.address,
+        authority: payer,
+      }));
     }
   }
   if (reset) {
@@ -417,13 +410,7 @@ export async function recoverPreview(
     if (wallet.address === payer.address) continue;
     const balance = (await context.rpc.getBalance(wallet.address).send()).value;
     if (balance > 0n) {
-      const amount = Buffer.alloc(8);
-      amount.writeBigUInt64LE(balance);
-      await send({
-        programAddress: SYSTEM,
-        accounts: [{ ...signer(wallet), role: AccountRole.WRITABLE_SIGNER }, writable(payer.address)],
-        data: Buffer.concat([u32(2), amount]),
-      });
+      await send(getTransferSolInstruction({ source: wallet, destination: payer.address, amount: balance }));
     }
     if ((await context.rpc.getBalance(wallet.address).send()).value !== 0n)
       throw new Error(`wallet ${wallet.address} still holds recoverable SOL`);

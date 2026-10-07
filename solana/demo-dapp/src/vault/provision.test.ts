@@ -1,3 +1,4 @@
+import { SYSTEM_PROGRAM_ADDRESS } from '@solana-program/system';
 import { prepareTransientStore } from '@fhevm/sdk/solana';
 import { ZAMA_HOST_PROGRAM_ADDRESS } from '@fhevm/solana-zama-host';
 import { describe, expect, it } from 'vitest';
@@ -114,7 +115,7 @@ describe('vault provisioning builders', () => {
 
     await expect(getOrCreateConfidentialTokenAccountInstruction(rpc(null), parameters)).resolves.not.toBeNull();
     await expect(
-      getOrCreateConfidentialTokenAccountInstruction(rpc(address('11111111111111111111111111111111')), parameters),
+      getOrCreateConfidentialTokenAccountInstruction(rpc(SYSTEM_PROGRAM_ADDRESS), parameters),
     ).resolves.not.toBeNull();
     await expect(
       getOrCreateConfidentialTokenAccountInstruction(rpc(CONFIDENTIAL_TOKEN_PROGRAM_ADDRESS), parameters),

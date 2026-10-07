@@ -1,3 +1,4 @@
+import { SYSTEM_PROGRAM_ADDRESS } from '@solana-program/system';
 import { findTokenAccountPda } from '@fhevm/confidential-token';
 import { TOKEN_PROGRAM_ADDRESS } from '@solana-program/token';
 import { appendTransientStoreInstructions, prepareTransientStore } from '@fhevm/sdk/solana';
@@ -16,7 +17,6 @@ import { sendTransaction } from './sendTransaction';
 import { vaultRoots } from './vaultRoots';
 
 const CLAIM_COMPUTE_UNIT_LIMIT = 1_200_000;
-const SYSTEM_PROGRAM_ADDRESS = '11111111111111111111111111111111';
 
 type ClaimSession = {
   readonly config: DemoConfig;

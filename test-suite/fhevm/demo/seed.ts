@@ -16,7 +16,7 @@ import { appendTransientStoreInstructions, prepareTransientStore } from "@fhevm/
 //      only fails loudly (with remediation) when the host bring-up did not provision it.
 //   1. create the mock-USDC SPL mint (6 decimals, the committed mint-authority as mint authority so
 //      `demo:operator` can later drip it) — `@solana-program/token` instructions; only the System
-//      `CreateAccount` helper comes from `../src/solana/spl`.
+//      `CreateAccount` comes from `@solana-program/system`.
 //   2. `initialize_vault` (demo_vault): creates the vault, its share mint (payout underlying) and the
 //      program-owned underlying token account.
 //   3. `initialize_mint` ×2 (confidential_token): cUSDC wrapping mock USDC, cShares wrapping the share
@@ -39,6 +39,7 @@ import {
   type Instruction,
   type TransactionSigner,
 } from "@solana/kit";
+import { getCreateAccountInstruction } from "@solana-program/system";
 import {
   TOKEN_PROGRAM_ADDRESS as SPL_TOKEN_PROGRAM_ADDRESS,
   getMintSize,
@@ -53,10 +54,7 @@ import {
   readGatewayBootstrapInputs,
 } from "../src/solana/addresses";
 import { hostConfigAddress, loadKeypairSigner } from "../src/solana/provision";
-import {
-  buildVaultUnderlyingEscrowAtaInstruction,
-  createAccountInstruction,
-} from "../src/solana/spl";
+import { buildVaultUnderlyingEscrowAtaInstruction } from "../src/solana/spl";
 import { kmsContextAddress } from "../src/solana/token-vertical";
 import { ensureDemoRecoveryKey, mirrorRecoveryKeys, recoveryDirectory } from "../src/solana/recovery";
 import { demoKeypairs } from "./loadDemoEnv";
@@ -156,12 +154,12 @@ const main = async (): Promise<void> => {
   // 1. Mock-USDC SPL mint (create account + initialize), owned by the classic token program.
   const mintRent = await rpc.getMinimumBalanceForRentExemption(BigInt(getMintSize())).send();
   await send(deployer, [
-    createAccountInstruction({
+    getCreateAccountInstruction({
       payer: deployer,
       newAccount: mockUsdcMint,
       lamports: mintRent,
       space: BigInt(getMintSize()),
-      owner: SPL_TOKEN_PROGRAM_ADDRESS,
+      programAddress: SPL_TOKEN_PROGRAM_ADDRESS,
     }),
     getInitializeMint2Instruction({
       mint: mockUsdcMint.address,

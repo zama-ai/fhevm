@@ -1,21 +1,17 @@
 import { describe, expect, test } from "bun:test";
 
 import { AccountRole, generateKeyPairSigner, type Address } from "@solana/kit";
+import { SYSTEM_PROGRAM_ADDRESS } from "@solana-program/system";
 import {
   findAssociatedTokenPda,
-  getMintSize,
   ASSOCIATED_TOKEN_PROGRAM_ADDRESS,
   TOKEN_PROGRAM_ADDRESS as SPL_TOKEN_PROGRAM_ADDRESS,
 } from "@solana-program/token";
 
 import {
   buildVaultUnderlyingEscrowAtaInstruction,
-  createAccountInstruction,
-  setComputeUnitLimitInstruction,
   vaultAuthorityAddress,
 } from "./spl";
-
-const SYSTEM_PROGRAM_ADDRESS = "11111111111111111111111111111111" as Address;
 
 // Fixed, realistic inputs so the derived escrow is a stable golden: the deployed confidential-token
 // program id (matches the on-chain WrapUsdc failure that motivated this escrow) and two valid mints.
@@ -68,40 +64,5 @@ describe("vault underlying-token escrow (the wrap_usdc / redeem_burned_amount va
     // constraints wrap_usdc enforces (vault_usdc.owner == vault_authority, vault_usdc.mint == underlying).
     expect(instruction.accounts?.[2]?.address).toBe(vaultAuthority);
     expect(instruction.accounts?.[3]?.address).toBe(UNDERLYING_MINT);
-  });
-});
-
-describe("System/ComputeBudget instruction layouts", () => {
-  test("createAccountInstruction encodes tag 0, lamports, space, and the owner program", async () => {
-    const payer = await generateKeyPairSigner();
-    const newAccount = await generateKeyPairSigner();
-    const instruction = createAccountInstruction({
-      payer,
-      newAccount,
-      lamports: 1_461_600n,
-      space: BigInt(getMintSize()),
-      owner: SPL_TOKEN_PROGRAM_ADDRESS,
-    });
-    expect(instruction.programAddress).toBe(SYSTEM_PROGRAM_ADDRESS);
-    const data = instruction.data ?? new Uint8Array();
-    const view = new DataView(data.buffer, data.byteOffset);
-    expect(view.getUint32(0, true)).toBe(0);
-    expect(view.getBigUint64(4, true)).toBe(1_461_600n);
-    expect(view.getBigUint64(12, true)).toBe(82n);
-    // Both the payer and the created account must sign their own creation.
-    expect(instruction.accounts?.map((meta) => meta.role)).toEqual([
-      AccountRole.WRITABLE_SIGNER,
-      AccountRole.WRITABLE_SIGNER,
-    ]);
-    expect(instruction.accounts?.map((meta) => meta.address)).toEqual([payer.address, newAccount.address]);
-  });
-
-  test("setComputeUnitLimitInstruction encodes tag 2 + u32-le units with no accounts", () => {
-    const instruction = setComputeUnitLimitInstruction(1_400_000);
-    expect(instruction.programAddress).toBe("ComputeBudget111111111111111111111111111111" as Address);
-    const data = instruction.data ?? new Uint8Array();
-    expect(data[0]).toBe(2);
-    expect(new DataView(data.buffer, data.byteOffset).getUint32(1, true)).toBe(1_400_000);
-    expect(instruction.accounts).toBeUndefined();
   });
 });

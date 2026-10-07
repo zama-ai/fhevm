@@ -2,9 +2,10 @@ import { test, expect } from 'bun:test';
 import { mkdtemp, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
-import { getAddressEncoder, type Instruction } from '@solana/kit';
+import { AccountRole, createKeyPairSignerFromBytes, getAddressEncoder, type Instruction } from '@solana/kit';
 import { recoverPreview } from '../../../../../solana/deploy/src/recover';
-import { DEFAULT_SOLANA_ENVIRONMENT } from '../../../../../solana/deploy/src/environment';
+import { DEFAULT_SOLANA_ENVIRONMENT, deployedProgramIds } from '../../../../../solana/deploy/src/environment';
+import { uploadBufferBytes } from '../../../../../solana/deploy/src/deploy-programs';
 import type { HostDeployContext } from '../../../../../solana/deploy/src/send';
 import { generateSolanaKeypair } from '../provision';
 
@@ -17,6 +18,9 @@ for (const [resumed, runId] of [[false, undefined], [true, undefined], [true, "c
       const payer = await generateSolanaKeypair();
       const payerPath = path.join(directory, 'payer.json');
       await writeFile(payerPath, JSON.stringify([...payer.bytes]), { mode: 0o600 });
+      const buffer = await createKeyPairSignerFromBytes(await uploadBufferBytes(payerPath, deployedProgramIds(DEFAULT_SOLANA_ENVIRONMENT).zama_host));
+      const loader = 'BPFLoaderUpgradeab1e11111111111111111111111';
+      let bufferData = runId ? null : Buffer.from([1, 0, 0, 0, 1, ...getAddressEncoder().encode(payer.signer.address)]);
       const activeBrowser = await generateSolanaKeypair();
       if (runId) await writeFile(path.join(directory, 'browser-active.json'), JSON.stringify([...activeBrowser.bytes]), { mode: 0o600 });
       const tables = new Map<string, { owner: string; data: Buffer }>();
@@ -47,7 +51,8 @@ for (const [resumed, runId] of [[false, undefined], [true, undefined], [true, "c
               : [],
           ),
           getAccountInfo: (account: string) => result({ value: tables.has(account)
-            ? { data: [tables.get(account)!.data.toString('base64'), 'base64'] } : null }),
+            ? { data: [tables.get(account)!.data.toString('base64'), 'base64'] } : account === buffer.address && bufferData
+              ? { owner: loader, data: [bufferData.toString('base64'), 'base64'] } : null }),
           getSlot: () => {
             // Polling must not begin while another wallet's table is still active.
             expect([...tables.values()].every(table => table.data.readBigUInt64LE(4) === 100n)).toBe(true);
@@ -57,6 +62,17 @@ for (const [resumed, runId] of [[false, undefined], [true, undefined], [true, "c
         },
         sendTransaction: async (_payer: unknown, instructions: Instruction[]) => {
           const instruction = instructions[0]!;
+          if (instruction.programAddress === loader) {
+            expect(Buffer.from(instruction.data!).toString('hex')).toBe('05000000');
+            expect(instruction.accounts!.slice(0, 3)).toMatchObject([
+              { address: buffer.address, role: AccountRole.WRITABLE },
+              { address: payer.signer.address, role: AccountRole.WRITABLE },
+              { address: payer.signer.address, role: AccountRole.READONLY_SIGNER, signer: payer.signer },
+            ]);
+            events.push('buffer-close');
+            bufferData = null;
+            return;
+          }
           const table = instruction.accounts![0]!.address;
           const operation = Buffer.from(instruction.data!).readUInt32LE();
           if (operation === 3) {
@@ -70,8 +86,9 @@ for (const [resumed, runId] of [[false, undefined], [true, undefined], [true, "c
         },
       } as unknown as HostDeployContext;
       await recoverPreview(context, payer.signer, DEFAULT_SOLANA_ENVIRONMENT, directory, !runId, payerPath, false, runId);
-      expect(events).toEqual(resumed ? ['poll', 'close', 'close'] : ['deactivate', 'deactivate', 'poll', 'close', 'close']);
+      expect(events).toEqual([...(resumed ? ['poll', 'close', 'close'] : ['deactivate', 'deactivate', 'poll', 'close', 'close']), ...(runId ? [] : ['buffer-close'])]);
       expect(tables.size).toBe(0);
+      expect(bufferData).toBeNull();
     } finally {
       if (namespace !== undefined) process.env.SOLANA_PREVIEW_NAMESPACE = namespace;
       await rm(directory, { recursive: true, force: true });
