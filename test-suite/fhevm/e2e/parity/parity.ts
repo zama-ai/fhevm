@@ -167,8 +167,10 @@ const show = (result: StepResult | undefined): string => {
   if (result === undefined) return "not run";
   const timing = `${(result.ms / 1000).toFixed(1)}s, ${result.attempts} attempt${result.attempts === 1 ? "" : "s"}`;
   if (result.kind === "value") return `${result.value} (${timing})`;
-  if (result.kind === "denied") return `denied: ${result.reason} (${timing})`;
-  return `error: ${result.message} (${timing})`;
+  // A table cell must stay on its row, and an SDK message can span lines.
+  const oneLine = (text: string) => text.replace(/\s+/g, " ").trim();
+  if (result.kind === "denied") return `denied: ${oneLine(result.reason)} (${timing})`;
+  return `error: ${oneLine(result.message)} (${timing})`;
 };
 
 const matches = (result: StepResult | undefined, expected: Outcome): boolean =>
