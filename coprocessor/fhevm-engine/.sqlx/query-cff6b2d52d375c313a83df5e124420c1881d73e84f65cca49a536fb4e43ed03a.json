@@ -1,0 +1,15 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n                    INSERT INTO dependence_chain (\n                        dependence_chain_id, status, last_updated_at\n                    )\n                    VALUES ($1, 'updated', $2::timestamp)\n                    ON CONFLICT (dependence_chain_id) DO UPDATE\n                    SET status = 'updated'\n                    ",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Bytea",
+        "Timestamp"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "cff6b2d52d375c313a83df5e124420c1881d73e84f65cca49a536fb4e43ed03a"
+}
