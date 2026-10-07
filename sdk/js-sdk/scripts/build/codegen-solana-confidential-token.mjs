@@ -223,9 +223,10 @@ const targets = [
         'previewCloseToken',
         'previewDrain',
       ]),
-      // Anchor inlines the CoprocessorInputAttestation (join) struct directly into the instruction
-      // data. Keep the initializeBatcher direction enum plus batchStatus, which the Batch account
-      // decoder references; confidentialMint/vault stay pruned (account-only).
+      // Codama flattens join's single struct argument (CoprocessorInputAttestation) into the
+      // instruction data, so no type link applies to it. Keep the initializeBatcher direction enum
+      // plus batchStatus, which the Batch account decoder references; confidentialMint/vault stay
+      // pruned (account-only).
       definedTypes: new Set(['batchDirection', 'batchStatus']),
       // Keep the three account decoders the vault-module reads consume: Batcher (direction + mints +
       // vault + min_batch_age_slots + next_batch_index), Batch (status + opened_slot + join_count +
@@ -263,6 +264,10 @@ const targets = [
     },
   },
 ];
+
+// What `@fhevm/solana-zama-host` exports a codec for: its kept types and its kept accounts.
+const hostTarget = targets.find(({ idlPath }) => idlPath === idlUrl('zama_host.json'));
+const hostClientTypes = new Set([...hostTarget.keep.definedTypes, ...hostTarget.keep.accounts]);
 
 // Anchor's event_cpi macro emits an address constraint, so its implicit PDA needs one render default.
 const eventAuthority = pdaNode({
@@ -367,6 +372,11 @@ for (const target of targets) {
         program.definedTypes.filter(({ name }) => hostTypeNames.has(name)).map(({ name }) => [name, 'zamaHost']),
       )
     : {};
+  for (const name of Object.keys(foreignTypeLinks)) {
+    if (!hostClientTypes.has(name)) {
+      throw new Error(`${name} links to @fhevm/solana-zama-host, which does not export it: keep it in the zama-host target`);
+    }
+  }
   const keep = target.keep;
   if (keep) {
     for (const [kind, names] of Object.entries(keep)) {
