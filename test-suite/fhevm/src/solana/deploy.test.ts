@@ -136,10 +136,14 @@ describe('lifecycleComposeProject', () => {
 });
 
 describe('kmsCertificateThreshold', () => {
-  test('derives 2t+1 and validates it against the registered signer count', () => {
+  test('derives 2t+1 and requires a 3t+1 signer committee', () => {
     expect(kmsCertificateThreshold(0, 1)).toBe(1);
     expect(kmsCertificateThreshold(1, 4)).toBe(3);
-    expect(() => kmsCertificateThreshold(1, 2)).toThrow('2t+1=3');
+    expect(kmsCertificateThreshold(4, 13)).toBe(9);
+    expect(() => kmsCertificateThreshold(1, 2)).toThrow('3t+1=4');
+    // t=0 against a 4-party gateway: the 1-of-4 context the threshold check exists to refuse.
+    expect(() => kmsCertificateThreshold(0, 4)).toThrow('3t+1=1');
+    expect(() => kmsCertificateThreshold(1, 5)).toThrow('but 5 are registered');
   });
 });
 
@@ -214,7 +218,7 @@ describe('bootstrapZamaHost', () => {
         gateway: { ...gateway, kmsSigners: [address20(1)] },
         kmsCorruptionThreshold: 1,
       }),
-    ).rejects.toThrow('only 1 KMS signers');
+    ).rejects.toThrow('but 1 are registered');
   });
 
   test('refuses a different gateway without submitting transactions', async () => {
