@@ -1,3 +1,4 @@
+import { SYSTEM_PROGRAM_ADDRESS } from '@solana-program/system';
 import {
   findTokenAccountPda,
   BALANCE_KEY,
@@ -191,7 +192,7 @@ export const hasConfidentialBalanceAccount = async (session: DemoSession, mint: 
   const account = await createFinalizedRpc(session.config.rpcUrl)
     .getAccountInfo(tokenAccount, { encoding: 'base64' })
     .send();
-  if (account.value === null || account.value.owner === '11111111111111111111111111111111') return false;
+  if (account.value === null || account.value.owner === SYSTEM_PROGRAM_ADDRESS) return false;
   if (account.value.owner !== session.config.programs.token) {
     throw new Error('The canonical confidential token account is owned by an unexpected program');
   }

@@ -4,8 +4,8 @@
 // shell out to (`initialize_mint`, `CONSUME_WRAP`, `INITIALIZE_TOKEN_ACCOUNT`, and the
 // `TOKEN_BALANCE_STATE` probe) plus the `spl-token`/`solana` CLI calls around them. Every step is
 // now a `@solana/kit` transaction built from the demo dapp's typed vault module — the same builders
-// `demo/seed.ts` live-verifies on every e2e run — with the official SPL client and the shared
-// System helpers in `./spl.ts`. Binding to explicit signers (instead of the ambient Solana CLI identity
+// `demo/seed.ts` live-verifies on every e2e run — with the official SPL and System clients.
+// Binding to explicit signers (instead of the ambient Solana CLI identity
 // the live-client read from `$HOME`) is what lets the arc target any stack the harness injects.
 
 import fs from 'node:fs/promises';
@@ -20,6 +20,7 @@ import {
   generateKeyPairSigner,
   lamports,
   sendAndConfirmTransactionFactory,
+  setTransactionMessageComputeUnitLimit,
   setTransactionMessageFeePayerSigner,
   setTransactionMessageLifetimeUsingBlockhash,
   signTransactionMessageWithSigners,
@@ -30,6 +31,7 @@ import {
   type SolanaRpcApi,
   type TransactionSigner,
 } from '@solana/kit';
+import { getCreateAccountInstruction, getTransferSolInstruction } from '@solana-program/system';
 import {
   findAssociatedTokenPda,
   TOKEN_PROGRAM_ADDRESS as SPL_TOKEN_PROGRAM_ADDRESS,
@@ -47,12 +49,7 @@ import {
   HOST_CONFIG_DISCRIMINATOR,
   ZAMA_HOST_PROGRAM_ADDRESS,
 } from '@fhevm/solana-zama-host';
-import {
-  buildVaultUnderlyingEscrowAtaInstruction,
-  createAccountInstruction,
-  setComputeUnitLimitInstruction,
-  transferSolInstruction,
-} from './spl';
+import { buildVaultUnderlyingEscrowAtaInstruction } from './spl';
 import { vaultModule, sdkVerifyModule } from './lazy-modules';
 
 // The vault/SDK loaders live in lazy-modules.ts — see there for why they must stay dynamic
@@ -152,10 +149,8 @@ export const createProvisioningContext = (
     const { value: latestBlockhash } = await rpc.getLatestBlockhash().send();
     const base = setTransactionMessageFeePayerSigner(payer, createTransactionMessage({ version: 0 }));
     const withLifetime = setTransactionMessageLifetimeUsingBlockhash(latestBlockhash, base);
-    const message = appendTransactionMessageInstructions(
-      [setComputeUnitLimitInstruction(computeUnitLimit), ...instructions],
-      withLifetime,
-    );
+    const withComputeLimit = setTransactionMessageComputeUnitLimit(computeUnitLimit, withLifetime);
+    const message = appendTransactionMessageInstructions(instructions, withComputeLimit);
     const signedTransaction = await signTransactionMessageWithSigners(message);
     assertIsTransactionWithBlockhashLifetime(signedTransaction);
     await sendAndConfirm(signedTransaction, {
@@ -172,7 +167,7 @@ export const createProvisioningContext = (
       const { value: balance } = await rpc.getBalance(recipient).send();
       if (balance >= amount) return null;
       const shortfall = amount - balance;
-      return sendAndConfirmSigned(funder, [transferSolInstruction({ from: funder, to: recipient, lamports: shortfall })]);
+      return sendAndConfirmSigned(funder, [getTransferSolInstruction({ source: funder, destination: recipient, amount: shortfall })]);
     }
     const signature = await rpc.requestAirdrop(recipient, lamports(amount), { commitment: 'finalized' }).send();
     const deadline = Date.now() + 30_000;
@@ -191,7 +186,7 @@ export const createProvisioningContext = (
     const payer = contextOptions.funder ?? from;
     const amount = payer.address === from.address ? balance - TRANSACTION_FEE_LAMPORTS : balance;
     if (amount <= 0n) return null;
-    return sendAndConfirmSigned(payer, [transferSolInstruction({ from, to, lamports: amount })]);
+    return sendAndConfirmSigned(payer, [getTransferSolInstruction({ source: from, destination: to, amount })]);
   };
   return { rpc, sendTransaction, fundSol, sweepSol };
 };
@@ -227,12 +222,12 @@ export const createSplMint = async (
   const mint = await generateKeyPairSigner();
   const rent = await context.rpc.getMinimumBalanceForRentExemption(BigInt(getMintSize())).send();
   await context.sendTransaction(params.authority, [
-    createAccountInstruction({
+    getCreateAccountInstruction({
       payer: params.authority,
       newAccount: mint,
       lamports: rent,
       space: BigInt(getMintSize()),
-      owner: SPL_TOKEN_PROGRAM_ADDRESS,
+      programAddress: SPL_TOKEN_PROGRAM_ADDRESS,
     }),
     getInitializeMint2Instruction({
       mint: mint.address,

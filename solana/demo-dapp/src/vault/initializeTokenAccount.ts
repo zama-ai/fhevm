@@ -1,3 +1,4 @@
+import { SYSTEM_PROGRAM_ADDRESS } from '@solana-program/system';
 import { tokenStoreAddress } from './internal/encryptedStores.js';
 import { INSTRUCTIONS_SYSVAR_ADDRESS, type TransientStore } from '@fhevm/sdk/solana';
 import type { Address, GetAccountInfoApi, Instruction, Rpc, TransactionSigner } from '@solana/kit';
@@ -18,8 +19,6 @@ export type SolanaVaultInitializeTokenAccountParameters = {
   /** zama-host config PDA used for handle derivation. */
   readonly hostConfig: Address;
 };
-
-const SYSTEM_PROGRAM_ADDRESS = '11111111111111111111111111111111';
 
 /** Returns whether the canonical account is absent or only carries attacker-pre-funded lamports. */
 export function needsConfidentialTokenAccountInitialization(accountOwner: Address | null): boolean {

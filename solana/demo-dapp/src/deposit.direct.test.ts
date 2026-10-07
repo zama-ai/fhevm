@@ -1,5 +1,6 @@
+import { SYSTEM_PROGRAM_ADDRESS } from '@solana-program/system';
 import { beforeEach, describe, expect, test, vi } from 'vitest';
-import { address, generateKeyPairSigner, getCompiledTransactionMessageDecoder, decompileTransactionMessage, type Blockhash } from '@solana/kit';
+import { generateKeyPairSigner, getCompiledTransactionMessageDecoder, decompileTransactionMessage, type Blockhash } from '@solana/kit';
 import {
   CLOSE_TRANSIENT_STORE_DISCRIMINATOR,
   OPEN_TRANSIENT_STORE_DISCRIMINATOR,
@@ -145,7 +146,7 @@ describe('direct cUSDC deposit', () => {
 describe('public USDC deposit', () => {
   test.each([true, false])('shares one transaction context through shielding (initialize=%s)', async (initialize) => {
     const signer = await generateKeyPairSigner();
-    const init = { programAddress: address('11111111111111111111111111111111'), data: new Uint8Array([1]) };
+    const init = { programAddress: SYSTEM_PROGRAM_ADDRESS, data: new Uint8Array([1]) };
     const wrap = { ...init, data: new Uint8Array([2]) };
     mocks.buildInitialize.mockResolvedValue(initialize ? init : null);
     mocks.buildWrap.mockResolvedValue(wrap);

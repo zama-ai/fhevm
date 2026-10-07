@@ -19,6 +19,7 @@ import {
   type Instruction,
   type TransactionSigner,
 } from '@solana/kit';
+import { getTransferSolInstruction, SYSTEM_PROGRAM_ADDRESS } from '@solana-program/system';
 import {
   TOKEN_PROGRAM_ADDRESS as TOKEN,
   getBurnInstruction,
@@ -80,7 +81,6 @@ import {
   getPreviewDrainInstruction as getVaultPreviewDrainInstruction,
 } from '../../demo-dapp/src/vault/internal/generated/demoVault/instructions/previewDrain';
 
-const SYSTEM = address('11111111111111111111111111111111');
 const LOADER = address('BPFLoaderUpgradeab1e11111111111111111111111');
 const u32 = (n: number) => {
   const b = Buffer.alloc(4);
@@ -231,12 +231,12 @@ export async function recoverPreview(
       const info = (
         await context.rpc.getAccountInfo(authority.address, { encoding: 'base64' }).send()
       ).value;
-      if (info?.owner === SYSTEM && info.lamports > 0n) {
+      if (info?.owner === SYSTEM_PROGRAM_ADDRESS && info.lamports > 0n) {
         await send(drain({
           admin: payer,
           programData,
           authority: authority.address,
-          systemProgram: SYSTEM,
+          systemProgram: SYSTEM_PROGRAM_ADDRESS,
           seeds: authority.seeds,
         }, { programAddress: authority.program }));
       }
@@ -417,13 +417,7 @@ export async function recoverPreview(
     if (wallet.address === payer.address) continue;
     const balance = (await context.rpc.getBalance(wallet.address).send()).value;
     if (balance > 0n) {
-      const amount = Buffer.alloc(8);
-      amount.writeBigUInt64LE(balance);
-      await send({
-        programAddress: SYSTEM,
-        accounts: [{ ...signer(wallet), role: AccountRole.WRITABLE_SIGNER }, writable(payer.address)],
-        data: Buffer.concat([u32(2), amount]),
-      });
+      await send(getTransferSolInstruction({ source: wallet, destination: payer.address, amount: balance }));
     }
     if ((await context.rpc.getBalance(wallet.address).send()).value !== 0n)
       throw new Error(`wallet ${wallet.address} still holds recoverable SOL`);

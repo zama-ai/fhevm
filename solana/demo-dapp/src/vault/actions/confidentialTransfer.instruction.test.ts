@@ -1,3 +1,4 @@
+import { SYSTEM_PROGRAM_ADDRESS } from '@solana-program/system';
 import { INSTRUCTIONS_SYSVAR_ADDRESS, prepareTransientStore } from '@fhevm/sdk/solana';
 import { ZAMA_HOST_PROGRAM_ADDRESS } from '@fhevm/solana-zama-host';
 import { describe, expect, it } from 'vitest';
@@ -74,7 +75,7 @@ describe('generated confidentialTransfer instruction', () => {
       [INSTRUCTIONS_SYSVAR_ADDRESS, AccountRole.READONLY],
       [ZAMA_HOST_PROGRAM_ADDRESS, AccountRole.READONLY],
       [hostConfig, AccountRole.READONLY],
-      ['11111111111111111111111111111111', AccountRole.READONLY],
+      [SYSTEM_PROGRAM_ADDRESS, AccountRole.READONLY],
       // HCU witnesses and the optional result State resolve to the program id.
       [CONFIDENTIAL_TOKEN_PROGRAM_ADDRESS, AccountRole.READONLY],
       [CONFIDENTIAL_TOKEN_PROGRAM_ADDRESS, AccountRole.READONLY],

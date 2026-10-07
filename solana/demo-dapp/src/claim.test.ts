@@ -1,3 +1,4 @@
+import { SYSTEM_PROGRAM_ADDRESS } from '@solana-program/system';
 import { appendTransientStoreInstructions, prepareTransientStore } from '@fhevm/sdk/solana';
 import { ZAMA_HOST_PROGRAM_ADDRESS } from '@fhevm/solana-zama-host';
 import { address } from '@solana/kit';
@@ -100,7 +101,7 @@ describe('sponsored payout claim', () => {
   });
 
   test('initializes and claims a pre-funded System-owned payout account', async () => {
-    mocks.accountInfo.mockResolvedValue({ value: { owner: address('11111111111111111111111111111111') } });
+    mocks.accountInfo.mockResolvedValue({ value: { owner: SYSTEM_PROGRAM_ADDRESS } });
 
     await claimBatchPayout({ config, keeper } as never, position, 'deposit', user);
 
