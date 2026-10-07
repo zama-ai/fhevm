@@ -77,9 +77,9 @@ export const ZAMA_FHE_ERROR__DUPLICATE_STORE_AUTHORITY = 10035;
 export const ZAMA_FHE_ERROR__UNEXPECTED_STORE_AUTHORITY = 10036;
 /** MissingStoreAuthority: A value authority required by the execution was not supplied */
 export const ZAMA_FHE_ERROR__MISSING_STORE_AUTHORITY = 10037;
-/** HostProgramMismatch: The host program account is not zama-host (Left: received, Right: expected) */
+/** HostProgramMismatch: The host program account is not zama-host */
 export const ZAMA_FHE_ERROR__HOST_PROGRAM_MISMATCH = 10038;
-/** ExecutionAuthorityMismatch: The authority account is not the execution's authority (Left: received, Right: expected) */
+/** ExecutionAuthorityMismatch: The authority account is not the execution's authority */
 export const ZAMA_FHE_ERROR__EXECUTION_AUTHORITY_MISMATCH = 10039;
 
 export type ZamaFheError =
@@ -164,10 +164,8 @@ const zamaFheErrorMessages: Record<ZamaFheError, string> = {
   [ZAMA_FHE_ERROR__DUPLICATE_STORE_AUTHORITY]: 'A value authority was supplied more than once',
   [ZAMA_FHE_ERROR__UNEXPECTED_STORE_AUTHORITY]: 'A supplied value authority is not required by the execution',
   [ZAMA_FHE_ERROR__MISSING_STORE_AUTHORITY]: 'A value authority required by the execution was not supplied',
-  [ZAMA_FHE_ERROR__HOST_PROGRAM_MISMATCH]:
-    'The host program account is not zama-host (Left: received, Right: expected)',
-  [ZAMA_FHE_ERROR__EXECUTION_AUTHORITY_MISMATCH]:
-    "The authority account is not the execution's authority (Left: received, Right: expected)",
+  [ZAMA_FHE_ERROR__HOST_PROGRAM_MISMATCH]: 'The host program account is not zama-host',
+  [ZAMA_FHE_ERROR__EXECUTION_AUTHORITY_MISMATCH]: "The authority account is not the execution's authority",
 };
 
 export function getZamaFheErrorMessage(code: ZamaFheError): string {

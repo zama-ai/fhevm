@@ -197,12 +197,12 @@ pub enum FheExecutionError {
     UnexpectedStoreAuthority,
     #[msg("A value authority required by the execution was not supplied")]
     MissingStoreAuthority,
-    /// The program account passed for the CPI is not the zama-host program.
-    #[msg("The host program account is not zama-host (Left: received, Right: expected)")]
+    /// The program account passed for the CPI is not the zama-host program. The log's compared
+    /// values are the received key (Left) and `zama_host::ID` (Right).
+    #[msg("The host program account is not zama-host")]
     HostProgramMismatch,
     /// The authority account passed for the CPI is not the authority the execution was built for.
-    #[msg(
-        "The authority account is not the execution's authority (Left: received, Right: expected)"
-    )]
+    /// The log's compared values are the received key (Left) and the execution's authority (Right).
+    #[msg("The authority account is not the execution's authority")]
     ExecutionAuthorityMismatch,
 }

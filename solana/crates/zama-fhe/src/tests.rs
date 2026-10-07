@@ -460,8 +460,8 @@ fn assert_crate_error(
     }
 }
 
-// Off-chain, `invoke_signed` reaches a stub that returns `Ok`, so each invoke error below proves
-// the check ran before the CPI.
+// Off-chain, `invoke_signed` panics (it is only supported on `target_os = "solana"`), so each
+// invoke error below proves the check ran before the CPI.
 #[cfg(feature = "cpi")]
 #[test]
 fn invoke_refuses_a_program_other_than_zama_host() {
@@ -489,6 +489,22 @@ fn invoke_refuses_an_authority_other_than_the_execution_authority() {
     assert_crate_error(
         result.unwrap_err(),
         FheExecutionError::ExecutionAuthorityMismatch,
+    );
+}
+
+#[cfg(feature = "cpi")]
+#[test]
+fn invoke_refuses_accounts_resolved_for_another_execution() {
+    let (execution, _, authority) = resolved_execution();
+    let (_, other_resolved, _) = resolved_execution();
+    let result = execution.invoke(
+        cpi_accounts(zama_host::ID, authority, 0),
+        &other_resolved,
+        &[],
+    );
+    assert_crate_error(
+        result.unwrap_err(),
+        FheExecutionError::MissingDynamicAccount,
     );
 }
 
