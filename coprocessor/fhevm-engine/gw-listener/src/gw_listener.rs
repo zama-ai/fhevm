@@ -226,15 +226,20 @@ impl<P: Provider<Ethereum> + Clone + 'static> GatewayListener<P> {
                     // `gw_window_rewound` latch on that row keeps the rewind to once per
                     // proposal, so a restart never discards scan progress by rewinding again.
                     if self.stack_mode.gcs_mode() {
-                        if let Some(cursor) = align_cursor_to_active_window(
+                        match align_cursor_to_active_window(
                             db_pool,
                             last_processed_block_num,
                             current_block,
                             drift_detector.earliest_open_block(),
                         )
-                        .await?
+                        .await
                         {
-                            last_processed_block_num = Some(cursor);
+                            Ok(Some(cursor)) => last_processed_block_num = Some(cursor),
+                            Ok(None) => {}
+                            Err(e) => {
+                                error!(error = %e, "GCS: window alignment check failed; skipping this tick");
+                                continue;
+                            }
                         }
                     }
 
@@ -611,17 +616,23 @@ impl<P: Provider<Ethereum> + Clone + 'static> GatewayListener<P> {
         // visible (we cannot gate on a `gw_start_block` we have not read yet).
         if self.stack_mode.gcs_mode() {
             if let Some(bn) = block_number {
-                if let Some(gw_start_block) =
-                    active_gcs_window(db_pool).await?.map(|w| w.gw_start_block)
-                {
-                    if bn < gw_start_block {
+                match active_gcs_window(db_pool).await {
+                    Ok(Some(window)) if bn < window.gw_start_block => {
                         info!(
                             zk_proof_id = %request.zkProofId,
                             block_number = bn,
-                            gw_start_block,
+                            gw_start_block = window.gw_start_block,
                             "GCS: proof precedes gw_start_block; skipping pre-window verify_proofs insert"
                         );
                         return Ok(());
+                    }
+                    Ok(_) => {}
+                    // Non-fatal: if the window can't be read, do not skip - insert the proof and
+                    // let the one-shot pre-window prune (the documented backstop) drop it if it is
+                    // pre-snapshot. Tearing down the listener on a transient DB error would be
+                    // worse than a little extra churn.
+                    Err(e) => {
+                        warn!(error = %e, "GCS: pre-window gate check failed; inserting and relying on the prune backstop");
                     }
                 }
             }

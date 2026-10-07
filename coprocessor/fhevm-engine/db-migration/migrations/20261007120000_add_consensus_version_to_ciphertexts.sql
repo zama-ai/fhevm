@@ -4,7 +4,7 @@
 -- on insert: tfhe-worker for compute outputs, zkproof-worker for inputs. A GCS
 -- (green) stack running a newer protocol writes its own version (e.g. 2).
 --
--- The column DEFAULTs to 1 - the blue/baseline consensus version - so that BOTH
+-- The column defaults to 1 - the blue/baseline consensus version - so that BOTH
 --   * rows that already existed before this feature, and
 --   * rows inserted by a stack WITHOUT the stamping code (a released v0.14 blue
 --     stack, which never writes the column),
