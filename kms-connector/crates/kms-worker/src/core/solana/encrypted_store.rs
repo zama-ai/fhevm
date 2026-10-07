@@ -51,19 +51,10 @@ pub fn resolve_encrypted_store(
     program_id: Pubkey,
     account_key: Pubkey,
 ) -> Result<ResolvedEncryptedStore, EncryptedStoreFailure> {
-    let store_address = |store: &EncryptedStore| {
-        let bump = [store.bump];
-        let mut seeds: Vec<&[u8]> = store.seeds().to_vec();
-        seeds.push(&bump);
-        Pubkey::create_program_address(&seeds, &program_id)
-            .ok()
-            .map(|address| address.to_bytes())
-    };
     let encrypted_store = validate_store(
         program_id.as_array(),
         account_key.as_array(),
         account.map(SnapshotAccount::view),
-        store_address,
     )
     .map_err(|rejection| match rejection {
         StoreRejection::Absent => EncryptedStoreFailure::Absent { account_key },

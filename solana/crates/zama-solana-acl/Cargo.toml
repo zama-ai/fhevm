@@ -16,12 +16,12 @@ name = "zama_solana_acl"
 unexpected_cfgs = { level = "warn", check-cfg = ['cfg(target_os, values("solana"))'] }
 
 [dependencies]
-# Pure-Rust, solana-version-agnostic so the on-chain programs, the coprocessor, the
-# relayer and the KMS connector can depend on this one crate.
+# Solana-version-agnostic on-chain; off-chain PDA finders use solana-address 2.x.
 # Software hashes are byte-identical to the on-chain syscall hashers.
 borsh = { version = "1", features = ["derive"] }
 
 [target.'cfg(not(target_os = "solana"))'.dependencies]
+solana-address = { version = "2", default-features = false, features = ["curve25519", "sha2"] }
 # sha256: Anchor account discriminators. keccak256: leaf commitments and MMR
 # nodes, shared with the EVM ACL (RFC 034).
 sha2 = { version = "0.10", default-features = false }
@@ -34,6 +34,7 @@ solana-sha256-hasher = { version = "3.1.0", default-features = false }
 solana-keccak-hasher = { version = "3.1.0", default-features = false }
 
 [dev-dependencies]
+bs58 = "0.5.1"
 # Leaf vector runner: reads and regenerates the shared normative records.
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"

@@ -2,11 +2,8 @@
 //!
 //! One byte-level implementation for every off-chain reader of the record — the KMS connector's
 //! authoritative check and the relayer's advisory pre-check decode the same bytes through this
-//! module, so the two cannot drift on the layout or on what "live" means. What deliberately does
-//! NOT live here is PDA derivation: it needs `find_program_address` (an off-curve check), and
-//! this crate stays free of solana-version-specific dependencies so the on-chain programs and
-//! the off-chain readers can share it whatever Solana version each builds. Each consumer derives
-//! addresses with its own solana-pubkey from the one seed list, [`delegation_seeds`].
+//! module, so the two cannot drift on the layout or on what "live" means. Off-chain readers also
+//! share the PDA finder; on-chain programs use [`delegation_seeds`] without a Solana dependency.
 //!
 //! The layout mirrors `zama-host`'s `UserDecryptionDelegation` (a fixed 161-byte account:
 //! 8-byte Anchor discriminator + 153-byte body) and is pinned against the program's own
@@ -37,6 +34,21 @@ pub fn delegation_seeds<'a>(
     scope: &'a [u8; 32],
 ) -> [&'a [u8]; 5] {
     [DELEGATION_SEED, delegator, delegate, program, scope]
+}
+
+#[cfg(not(target_os = "solana"))]
+pub fn find_delegation_record_address(
+    host_program: &[u8; 32],
+    delegator: &[u8; 32],
+    delegate: &[u8; 32],
+    program: &[u8; 32],
+    scope: &[u8; 32],
+) -> ([u8; 32], u8) {
+    let (address, bump) = solana_address::Address::find_program_address(
+        &delegation_seeds(delegator, delegate, program, scope),
+        &solana_address::Address::new_from_array(*host_program),
+    );
+    (address.to_bytes(), bump)
 }
 
 const ANCHOR_DISCRIMINATOR_LEN: usize = 8;

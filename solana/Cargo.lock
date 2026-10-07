@@ -5109,11 +5109,13 @@ name = "zama-solana-acl"
 version = "0.1.0"
 dependencies = [
  "borsh",
+ "bs58",
  "hex",
  "serde",
  "serde_json",
  "sha2 0.10.9",
  "sha3",
+ "solana-address 2.6.0",
  "solana-keccak-hasher",
  "solana-sha256-hasher",
 ]

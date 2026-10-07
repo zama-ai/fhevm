@@ -250,11 +250,6 @@ HAND_DERIVATIONS_ALLOWED=(
   "solana/demo-dapp/src/vault/internal/batcherPdas.ts|3|fhevm-internal#2108 task 2 (Anchor seeds)"
   "solana/demo-dapp/src/vault/internal/addressLookupTable.ts|2|fhevm-internal#2108 task 2 (@solana-program/address-lookup-table findAddressLookupTablePda)"
   "test-suite/fhevm/demo/seed.ts|3|fhevm-internal#2108 task 2 (Anchor seeds)"
-  "coprocessor/fhevm-engine/solana-host-follower/src/host.rs|1|fhevm-internal#2108 task 2 (zama-solana-acl seed lists)"
-  "coprocessor/fhevm-engine/solana-merkle-proof-service/src/store_check.rs|1|fhevm-internal#2108 task 2 (zama-solana-acl seed lists)"
-  "kms-connector/crates/kms-worker/src/core/solana/encrypted_store.rs|1|fhevm-internal#2108 task 2 (zama-solana-acl seed lists)"
-  "kms-connector/crates/kms-worker/src/core/solana/mod.rs|2|fhevm-internal#2108 task 2 (zama-solana-acl seed lists)"
-  "relayer/src/host/solana_delegation_precheck.rs|2|fhevm-internal#2108 task 2 (zama-solana-acl seed lists)"
 )
 # The self-test drives the allow-list arms through the environment, as checks 4 and 5 do.
 [ -n "${DEAD_SURFACE_EXTRA_HAND_DERIVATION:-}" ] && \

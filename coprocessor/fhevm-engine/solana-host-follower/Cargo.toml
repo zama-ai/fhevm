@@ -45,6 +45,7 @@ yellowstone-grpc-proto = { git = "https://github.com/rpcpool/yellowstone-grpc", 
 zama-host = { path = "../../../solana/programs/zama-host", default-features = false, features = ["no-entrypoint", "decode"] }
 # AnchorDeserialize for zama-host's instruction arguments.
 anchor-lang = "1.2.0"
+zama-solana-acl = { path = "../../../solana/crates/zama-solana-acl" }
 zama-solana-transaction = { path = "../../../solana/crates/zama-solana-transaction" }
 
 [dev-dependencies]

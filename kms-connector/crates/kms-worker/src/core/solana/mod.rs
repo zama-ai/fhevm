@@ -18,7 +18,6 @@ use alloy::primitives::Bytes;
 use proof::CoprocessorProofClient;
 use snapshot::SolanaRpcClient;
 use solana_pubkey::Pubkey;
-use zama_solana_acl::{PERMIT_INVALIDATION_SEED, WILDCARD_APP, delegation_seeds};
 use zama_solana_permit::PermitFields;
 
 /// The readers both Solana decryption paths authorize through, for one host chain.
@@ -27,39 +26,6 @@ pub struct SolanaHost {
     pub program_id: Pubkey,
     pub reader: SolanaRpcClient,
     pub proofs: CoprocessorProofClient,
-}
-
-pub fn permit_invalidation_address(program_id: Pubkey, user: Pubkey) -> (Pubkey, u8) {
-    Pubkey::find_program_address(&[PERMIT_INVALIDATION_SEED, user.as_ref()], &program_id)
-}
-
-/// The delegation row of `delegator → delegate` in the application `(app_program, app_scope)`.
-pub fn delegation_address(
-    program_id: Pubkey,
-    delegator: Pubkey,
-    delegate: Pubkey,
-    app_program: Pubkey,
-    app_scope: Pubkey,
-) -> (Pubkey, u8) {
-    Pubkey::find_program_address(
-        &delegation_seeds(
-            delegator.as_array(),
-            delegate.as_array(),
-            app_program.as_array(),
-            app_scope.as_array(),
-        ),
-        &program_id,
-    )
-}
-
-/// The delegation row of `delegator → delegate` that covers every application.
-pub fn wildcard_delegation_address(
-    program_id: Pubkey,
-    delegator: Pubkey,
-    delegate: Pubkey,
-) -> (Pubkey, u8) {
-    let wildcard = Pubkey::new_from_array(WILDCARD_APP);
-    delegation_address(program_id, delegator, delegate, wildcard, wildcard)
 }
 
 impl UserDecryptionRecipient {
@@ -76,6 +42,7 @@ impl UserDecryptionRecipient {
 mod tests {
     use super::*;
     use alloy::primitives::U256;
+    use zama_solana_acl::{WILDCARD_APP, find_delegation_record_address};
 
     #[test]
     fn a_solana_recipient_is_the_base58_permit_signer() {
@@ -97,23 +64,25 @@ mod tests {
     #[test]
     fn delegation_rows_derive_the_host_programs_addresses() {
         let program_id = Pubkey::from_str_const("DPq5y89RDZPq9NcMh9X1NgjBWgYmSXg3QoipSBV3ZMzQ");
-        let address = |(key, _): (Pubkey, u8)| key.to_string();
-        let key = |byte| Pubkey::new_from_array([byte; 32]);
+        let address = |(key, _): ([u8; 32], u8)| Pubkey::new_from_array(key).to_string();
+        let key = |byte| [byte; 32];
         assert_eq!(
-            address(delegation_address(
-                program_id,
-                key(0x11),
-                key(0x22),
-                key(0x33),
-                key(0x44),
+            address(find_delegation_record_address(
+                program_id.as_array(),
+                &key(0x11),
+                &key(0x22),
+                &key(0x33),
+                &key(0x44),
             )),
             "GkmqVNMzqxopBjPkSkZvuLuDE6Jze3iA3Mq5ZHr6SrtJ"
         );
         assert_eq!(
-            address(wildcard_delegation_address(
-                program_id,
-                key(0x11),
-                key(0x22),
+            address(find_delegation_record_address(
+                program_id.as_array(),
+                &key(0x11),
+                &key(0x22),
+                &WILDCARD_APP,
+                &WILDCARD_APP,
             )),
             "J4BMamYLJvJroFATJp48L6AeQJDQqv86YAQyPqvBcKq1"
         );

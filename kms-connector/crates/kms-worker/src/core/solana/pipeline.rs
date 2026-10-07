@@ -7,11 +7,13 @@ use super::handle_binding::{check_handle_binding, verify_proofs};
 use super::proof::{HostProofReader, LeafKind, LeafQuery};
 use super::snapshot::{DelegationRowKeys, HostObservation, HostStateReader, observe};
 use super::watermark::{check_not_invalidated, check_window, read_watermark};
-use super::{delegation_address, permit_invalidation_address, wildcard_delegation_address};
 use alloy::primitives::B256;
 use connector_utils::types::solana_request::SolanaUserDecryptionRequestV1;
 use solana_pubkey::Pubkey;
 use tracing::info;
+use zama_solana_acl::{
+    WILDCARD_APP, find_delegation_record_address, find_permit_invalidation_address,
+};
 use zama_solana_permit::verify_signature;
 use zama_solana_request::HandleEntry;
 
@@ -54,7 +56,9 @@ pub async fn authorize_request(
     // a delegated request needs a second read, no older than the first. The first read only locates
     // the rows (a store it cannot resolve fails the request there, as the request named it); every
     // rule that authorizes is judged against the last read.
-    let watermark_address = permit_invalidation_address(program_id, signer);
+    let (watermark, bump) =
+        find_permit_invalidation_address(program_id.as_array(), signer.as_array());
+    let watermark_address = (Pubkey::new_from_array(watermark), bump);
     let store_keys: Vec<_> = entries
         .iter()
         .map(|entry| Pubkey::new_from_array(entry.encrypted_store))
@@ -176,16 +180,24 @@ fn delegation_row_keys(
         }
         let store = resolve_encrypted_store(observed.store.as_ref(), program_id, *store_key)
             .map_err(|source| AuthorizationFailure::EncryptedStore { index, source })?;
+        let (exact, exact_bump) = find_delegation_record_address(
+            program_id.as_array(),
+            delegator.as_array(),
+            signer.as_array(),
+            store.program().as_array(),
+            store.scope().as_array(),
+        );
+        let (wildcard, wildcard_bump) = find_delegation_record_address(
+            program_id.as_array(),
+            delegator.as_array(),
+            signer.as_array(),
+            &WILDCARD_APP,
+            &WILDCARD_APP,
+        );
         rows.push(DelegationRowKeys {
             entry: index,
-            exact: delegation_address(
-                program_id,
-                delegator,
-                signer,
-                store.program(),
-                store.scope(),
-            ),
-            wildcard: wildcard_delegation_address(program_id, delegator, signer),
+            exact: (Pubkey::new_from_array(exact), exact_bump),
+            wildcard: (Pubkey::new_from_array(wildcard), wildcard_bump),
         });
     }
     Ok(rows)
