@@ -1,9 +1,13 @@
+import { CONFIDENTIAL_TOKEN_PROGRAM_ADDRESS } from "@fhevm/confidential-token";
+import { ZAMA_HOST_PROGRAM_ADDRESS } from "@fhevm/solana-zama-host";
 import { TOKEN_PROGRAM_ADDRESS } from "@solana-program/token";
 import { recordRunWallet } from "./recovery";
 
 import { address, createSolanaRpcSubscriptions, getAddressEncoder, type Address, type TransactionSigner } from "@solana/kit";
+import { fetchSysvarClock } from "@solana/sysvars";
 
 import { bytes32HexFromId } from "./addresses";
+import { relayerAuth } from "../layout";
 import { vaultModule } from "./lazy-modules";
 import {
   createConfidentialMint,
@@ -20,6 +24,7 @@ import {
   type SolanaProvisioningContext,
 } from "./provision";
 import { loadSolanaSdk, readDecryptTrustInputs } from "./target";
+import { expectCleartext } from "./user-decrypt-result";
 import { withHostReachableFetch } from "../utils/fs";
 import { timed } from "../utils/timing";
 
@@ -56,18 +61,30 @@ export type TwoHolderConfig = {
 };
 
 export type TwoHolderDependencies = {
-  provision(): Promise<TwoHolderScenario>;
+  /** Provisions both holders, with `fund` base units wrapped into Alice's confidential balance. */
+  provision(fund: bigint): Promise<TwoHolderScenario>;
   readBalance(scenario: TwoHolderScenario, holder: Holder): Promise<BalanceStore>;
   waitForHandle(handle: string): Promise<void>;
-  transfer(scenario: TwoHolderScenario, alice: BalanceStore, bob: BalanceStore): Promise<void>;
+  transfer(scenario: TwoHolderScenario, alice: BalanceStore, bob: BalanceStore, amount: bigint): Promise<void>;
   decrypt(scenario: TwoHolderScenario, holder: Holder, state: BalanceStore, expected: bigint): Promise<bigint>;
   cleanup(scenario: TwoHolderScenario | undefined): Promise<void>;
 };
 
+/** The real dependencies, plus the reads and grants a caller composing its own arc needs. */
+export type RealTwoHolderDependencies = TwoHolderDependencies & {
+  /** `holder` user-decrypts `state`'s current handle; `owner` names the delegator on a delegated read. */
+  decryptValue(holder: Holder, state: BalanceStore, owner?: string): Promise<bigint>;
+  /** Alice delegates user decryption of the mint's balances to `delegate` for `seconds` of host time. */
+  grantDecryption(scenario: TwoHolderScenario, delegate: Address, seconds: bigint): Promise<void>;
+};
+
+/** The SPL base units minted to Alice; `provision` wraps `fund` of them. */
+const UNDERLYING_BASE_UNITS = 1_000_000n;
+
 const addressHex = (value: string): `0x${string}` =>
   `0x${Buffer.from(getAddressEncoder().encode(address(value))).toString("hex")}`;
 
-export const createRealTwoHolderDependencies = (cfg: TwoHolderConfig): TwoHolderDependencies => {
+export const createRealTwoHolderDependencies = (cfg: TwoHolderConfig): RealTwoHolderDependencies => {
   let provisioned: SolanaProvisioningContext | undefined;
   const context = (): SolanaProvisioningContext => {
     if (!provisioned) throw new Error("two-holder transfer: provision() must run first");
@@ -77,8 +94,37 @@ export const createRealTwoHolderDependencies = (cfg: TwoHolderConfig): TwoHolder
   // funder on a live cluster.
   const signers = new Map<string, TransactionSigner>();
   let funderAddress: Address | undefined;
+  const decryptValue = async (holder: Holder, state: BalanceStore, owner?: string): Promise<bigint> => {
+    // Loaded here, not at the top: `bun test src` runs this module's orchestration test without
+    // the SDK installed.
+    const { userDecrypt } = await import("./fhe-vertical");
+    const trust = await readDecryptTrustInputs(cfg);
+    return userDecrypt(
+      {
+        rpcUrl: cfg.rpcUrl,
+        relayerUrl: cfg.relayerUrl,
+        chainId: BigInt(state.chainId),
+        userDecryptContextId: cfg.userDecryptContextId ?? trust.kmsContextId.toString(),
+        verifyingProgramId: cfg.aclProgram,
+        kmsSigners: trust.kmsSigners,
+        kmsEpochId: bytes32HexFromId(trust.kmsEpochId),
+        fheParameter: "test",
+        gatewayChainId: trust.gatewayChainId.toString(),
+        gatewayDecryptionContract: trust.decryptionContract,
+      },
+      {
+        // The balance account the probe derived and verified; the Connector reads it and proves
+        // the owner's allow leaf itself.
+        encryptedStore: address(state.encryptedStore),
+        handle: Uint8Array.from(Buffer.from(state.currentHandle.slice(2), "hex")),
+        secretKey: holder.secretKey,
+        ownerAddress: owner === undefined ? undefined : address(owner),
+      },
+    );
+  };
   return {
-    async provision() {
+    async provision(fund) {
+      if (fund > UNDERLYING_BASE_UNITS) throw new RangeError(`the fund of ${fund} exceeds the ${UNDERLYING_BASE_UNITS} base units minted`);
       const funder = cfg.funderKeypairPath === undefined ? undefined : await loadKeypairSigner(cfg.funderKeypairPath);
       funderAddress = funder?.address;
       provisioned = createProvisioningContext(cfg.rpcUrl, cfg.wsUrl, { funder });
@@ -98,18 +144,18 @@ export const createRealTwoHolderDependencies = (cfg: TwoHolderConfig): TwoHolder
       await context.fundSol(alice.signer.address, cfg.funding.primarySol);
       await context.fundSol(bob.signer.address, cfg.funding.secondarySol);
 
-      // The public underlying: a fresh 9-decimals SPL mint with Alice as mint authority, funded
-      // well past the 1000 base units the wrap below rotates into her confidential balance.
+      // The public underlying: a fresh 9-decimals SPL mint with Alice as mint authority; the wrap
+      // below rotates `fund` of its base units into her confidential balance.
       const underlyingMint = await createSplMint(context, { authority: alice.signer, decimals: 9 });
       await mintSplTo(context, {
         authority: alice.signer,
         mint: underlyingMint,
         recipient: alice.signer.address,
-        baseUnits: 1_000_000n,
+        baseUnits: UNDERLYING_BASE_UNITS,
       });
       const mint = await createConfidentialMint(context, { authority: alice.signer, underlyingMint });
       await initializeConfidentialTokenAccount(context, { payer: alice.signer, owner: alice.signer.address, mint });
-      await wrapUnderlying(context, { owner: alice.signer, mint, underlyingMint, amount: 1000n });
+      await wrapUnderlying(context, { owner: alice.signer, mint, underlyingMint, amount: fund });
       await initializeConfidentialTokenAccount(context, { payer: bob.signer, owner: bob.signer.address, mint });
       return { mint, underlyingMint, alice: alice.holder, bob: bob.holder };
     },
@@ -117,7 +163,7 @@ export const createRealTwoHolderDependencies = (cfg: TwoHolderConfig): TwoHolder
       return readTokenBalanceStore(context(), { mint: address(scenario.mint), owner: address(holder.owner) });
     },
     waitForHandle: cfg.waitForHandle,
-    async transfer(scenario, alice, bob) {
+    async transfer(scenario, alice, bob, amount) {
       if (alice.chainId !== bob.chainId) throw new Error("Alice and Bob balance handles disagree on chain id");
       const owner = signers.get(scenario.alice.owner);
       if (owner === undefined) throw new Error("two-holder transfer: Alice's signer was not provisioned here");
@@ -131,15 +177,15 @@ export const createRealTwoHolderDependencies = (cfg: TwoHolderConfig): TwoHolder
         id: BigInt(alice.chainId),
         fhevm: { relayerUrl: cfg.relayerUrl, programs: { host: { address: aclProgramAddress } } },
       });
-      solana.setFhevmRuntimeConfig({ auth: { type: "ApiKeyHeader", value: process.env.ZAMA_FHEVM_API_KEY ?? "local" } });
+      solana.setFhevmRuntimeConfig({ auth: relayerAuth() });
       const rpc = context().rpc;
       // The attestation binds the amount to (user = owner, contract = the confidential-token
       // program), the contract identity the token requires for a transfer amount.
       const { inputProof } = await withHostReachableFetch(() =>
         solana.createFhevmEncryptClient({ chain, rpc }).encryptValues({
-          contractAddress: asBytes32Hex(addressHex(vault.CONFIDENTIAL_TOKEN_PROGRAM_ADDRESS)),
+          contractAddress: asBytes32Hex(addressHex(CONFIDENTIAL_TOKEN_PROGRAM_ADDRESS)),
           userAddress: asBytes32Hex(addressHex(owner.address)),
-          values: [{ type: "uint64", value: 400n }],
+          values: [{ type: "uint64", value: amount }],
         }),
       );
       await vault.confidentialTransfer(
@@ -163,33 +209,26 @@ export const createRealTwoHolderDependencies = (cfg: TwoHolderConfig): TwoHolder
         },
       );
     },
-    decrypt: async (_scenario, holder, state, expected) => {
-      // Loaded here, not at the top: `bun test src` runs this module's orchestration test without
-      // the SDK installed.
-      const { userDecryptExpect } = await import("./fhe-vertical");
-      const trust = await readDecryptTrustInputs(cfg);
-      return userDecryptExpect(
-        {
-          rpcUrl: cfg.rpcUrl,
-          relayerUrl: cfg.relayerUrl,
-          chainId: BigInt(state.chainId),
-          userDecryptContextId: cfg.userDecryptContextId ?? trust.kmsContextId.toString(),
-          verifyingProgramId: cfg.aclProgram,
-          kmsSigners: trust.kmsSigners,
-          kmsEpochId: bytes32HexFromId(trust.kmsEpochId),
-          fheParameter: "test",
-          gatewayChainId: trust.gatewayChainId.toString(),
-          gatewayDecryptionContract: trust.decryptionContract,
-        },
-        {
-          // The balance account the probe derived and verified; the Connector reads it and proves
-          // the owner's allow leaf itself.
-          encryptedStore: address(state.encryptedStore),
-          handle: Uint8Array.from(Buffer.from(state.currentHandle.slice(2), "hex")),
-          secretKey: holder.secretKey,
-          expected,
-        },
-      );
+    decrypt: async (_scenario, holder, state, expected) => expectCleartext(await decryptValue(holder, state), expected),
+    decryptValue,
+    async grantDecryption(scenario, delegate, seconds) {
+      const alice = signers.get(scenario.alice.owner);
+      if (alice === undefined) throw new Error("two-holder transfer: Alice's signer was not provisioned here");
+      const { buildDelegateForUserDecryptionInstruction } = await loadSolanaSdk();
+      const { rpc, sendTransaction } = context();
+      // The host compares the expiry with its Clock sysvar.
+      const { unixTimestamp } = await fetchSysvarClock(rpc);
+      const grant = await buildDelegateForUserDecryptionInstruction({
+        programAddress: ZAMA_HOST_PROGRAM_ADDRESS,
+        payer: alice,
+        delegator: alice,
+        delegate,
+        // A token balance's application: the token program, scoped to the mint.
+        program: CONFIDENTIAL_TOKEN_PROGRAM_ADDRESS,
+        scope: address(scenario.mint),
+        expiresAt: unixTimestamp + seconds,
+      });
+      await sendTransaction(alice, [grant]);
     },
     async cleanup() {
       // Transfer-funded holders give their unspent SOL back; airdropped ones keep it (it is free).
@@ -205,21 +244,29 @@ export const createRealTwoHolderDependencies = (cfg: TwoHolderConfig): TwoHolder
   };
 };
 
-/** Runs one real two-holder transfer and proves both current balances through independent SDK decrypts. */
-export const runSolanaTwoHolderTransfer = async (dependencies: TwoHolderDependencies) => {
+/**
+ * Runs one real two-holder transfer of `amount` out of Alice's `fund`, and proves both current
+ * balances through independent SDK decrypts.
+ */
+export const runSolanaTwoHolderTransfer = async (
+  dependencies: TwoHolderDependencies,
+  { fund, amount }: { fund: bigint; amount: bigint } = { fund: 1000n, amount: 400n },
+) => {
+  if (amount > fund) throw new RangeError(`the transfer of ${amount} exceeds the fund of ${fund}`);
+  const remaining = fund - amount;
   let scenario: TwoHolderScenario | undefined;
   try {
-    const provisioned = await timed("provision two holders (mints, wrap 1000)", () => dependencies.provision());
+    const provisioned = await timed(`provision two holders (mints, wrap ${fund})`, () => dependencies.provision(fund));
     scenario = provisioned;
     const initialAlice = await dependencies.readBalance(provisioned, provisioned.alice);
     const initialBob = await dependencies.readBalance(provisioned, provisioned.bob);
     await dependencies.waitForHandle(initialAlice.currentHandle);
     await dependencies.waitForHandle(initialBob.currentHandle);
-    await timed("user decrypt alice=1000", () => dependencies.decrypt(provisioned, provisioned.alice, initialAlice, 1000n));
+    await timed(`user decrypt alice=${fund}`, () => dependencies.decrypt(provisioned, provisioned.alice, initialAlice, fund));
     await timed("user decrypt bob=0", () => dependencies.decrypt(provisioned, provisioned.bob, initialBob, 0n));
 
-    await timed("encrypt + input proof + confidential transfer(400)", () =>
-      dependencies.transfer(provisioned, initialAlice, initialBob),
+    await timed(`encrypt + input proof + confidential transfer(${amount})`, () =>
+      dependencies.transfer(provisioned, initialAlice, initialBob, amount),
     );
     const finalAlice = await dependencies.readBalance(provisioned, provisioned.alice);
     const finalBob = await dependencies.readBalance(provisioned, provisioned.bob);
@@ -228,9 +275,9 @@ export const runSolanaTwoHolderTransfer = async (dependencies: TwoHolderDependen
     }
     await dependencies.waitForHandle(finalAlice.currentHandle);
     await dependencies.waitForHandle(finalBob.currentHandle);
-    await timed("user decrypt alice=600", () => dependencies.decrypt(provisioned, provisioned.alice, finalAlice, 600n));
-    await timed("user decrypt bob=400", () => dependencies.decrypt(provisioned, provisioned.bob, finalBob, 400n));
-    console.log("[two-holder-transfer] Alice=600 Bob=400");
+    await timed(`user decrypt alice=${remaining}`, () => dependencies.decrypt(provisioned, provisioned.alice, finalAlice, remaining));
+    await timed(`user decrypt bob=${amount}`, () => dependencies.decrypt(provisioned, provisioned.bob, finalBob, amount));
+    console.log(`[two-holder-transfer] Alice=${remaining} Bob=${amount}`);
   } finally {
     await dependencies.cleanup(scenario);
   }

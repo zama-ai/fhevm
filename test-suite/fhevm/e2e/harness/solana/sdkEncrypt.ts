@@ -8,6 +8,7 @@ import { createFinalizedRpc } from '@fhevm/solana-zama-host';
 import { asBytes32Hex } from "@fhevm/sdk/base";
 import type { SolanaSubmitInputProofResult } from "@fhevm/sdk/solana";
 
+import { relayerAuth } from "../../../src/layout";
 import { loadSolanaSdk } from "../../../src/solana/target";
 import { withHostReachableFetch } from "../../../src/utils/fs";
 
@@ -26,9 +27,7 @@ export const submitUint64InputProof = async (parameters: {
   readonly value: bigint;
 }): Promise<SolanaSubmitInputProofResult> => {
   const solanaSdk = await loadSolanaSdk();
-  solanaSdk.setFhevmRuntimeConfig({
-    auth: { type: "ApiKeyHeader", value: process.env.ZAMA_FHEVM_API_KEY ?? "local" },
-  });
+  solanaSdk.setFhevmRuntimeConfig({ auth: relayerAuth() });
   const chain = solanaSdk.defineFhevmSolanaChain({ id: parameters.chainId, fhevm: { relayerUrl: parameters.relayerUrl, programs: { host: { address: asBytes32Hex(parameters.aclProgramAddress) } } } });
   const encryptClient = solanaSdk.createFhevmEncryptClient({
     chain,
