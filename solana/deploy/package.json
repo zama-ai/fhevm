@@ -10,6 +10,7 @@
     "@fhevm/confidential-token": "file:../clients/confidential-token",
     "@fhevm/solana-zama-host": "file:../clients/zama-host",
     "@solana-program/address-lookup-table": "0.12.1",
+    "@solana-program/loader-v3": "0.4.0",
     "@solana-program/system": "0.12.2",
     "@solana-program/token": "0.14.0",
     "@solana/kit": "6.10.0",
