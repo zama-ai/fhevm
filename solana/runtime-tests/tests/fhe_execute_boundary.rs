@@ -27,7 +27,7 @@ use zama_solana_test_kit::{
 mod host_fixtures;
 use host_fixtures::{
     fhe_execute_ix, fixture_scope, host_config_account, sole_store_authority, store_authority,
-    store_outputs_execution, CreatedPublicBatch,
+    store_outputs_execution, StoreOutputsExecution,
 };
 
 /// Allow keys per output on the wide-allow shapes. The host caps nothing here — each allow is one
@@ -67,8 +67,8 @@ struct ProbeCase {
     accounts: Vec<(Pubkey, Account)>,
 }
 
-impl From<CreatedPublicBatch> for ProbeCase {
-    fn from(case: CreatedPublicBatch) -> Self {
+impl From<StoreOutputsExecution> for ProbeCase {
+    fn from(case: StoreOutputsExecution) -> Self {
         ProbeCase {
             instruction: case.instruction,
             accounts: case.accounts,
@@ -453,8 +453,8 @@ fn all_private_creates_case(steps: usize, program: Pubkey) -> ProbeCase {
     .into()
 }
 
-/// Every fourth step persists a created-public output, the rest stay transient — a mid-weight
-/// composite between the chain and all-created-public extremes.
+/// Every fourth step writes a public Store output, the rest stay transient — a mid-weight
+/// composite between the chain and all-public-outputs extremes.
 fn mixed_chain_creates_case(steps: usize, program: Pubkey) -> ProbeCase {
     let creates: Vec<usize> = (0..steps).step_by(4).collect();
     store_outputs_execution(
@@ -468,9 +468,9 @@ fn mixed_chain_creates_case(steps: usize, program: Pubkey) -> ProbeCase {
     .into()
 }
 
-/// Every step creates a persistent output allowed to the wide allow set: eight distinct keys,
-/// each interning its own dictionary entry and each sealed by the host as its own leaf. The
-/// allow-width axis of the create frontier — the builder's build-heap budget stops this shape
+/// Every step writes a Store output allowed to the wide allow set: eight distinct keys, each
+/// interning its own dictionary entry and each sealed by the host as its own leaf. The
+/// allow-width axis of the output frontier — the builder's build-heap budget stops this shape
 /// well below the host's own wall.
 fn allow_heavy_creates_case(steps: usize, program: Pubkey) -> ProbeCase {
     let all: Vec<usize> = (0..steps).collect();
@@ -584,9 +584,9 @@ struct BoundaryShape {
 /// The whole frontier as data: every swept shape, its builder, and its pin. The sweeps, the
 /// snapshot, and the printer all walk this one table, so a new axis is one new row.
 ///
-/// No row is limited by `instruction_trace`: an execution creates no accounts, and `zama-fhe`'s
-/// worst case (`FheExecutionCost::instruction_trace_worst_case`: the floor, a rent top-up per
-/// Store output and a lazy meter creation) stays under 64 at the step ceiling.
+/// No row is limited by `instruction_trace`: an execution creates no per-result accounts, and
+/// `zama-fhe`'s worst case (`FheExecutionCost::instruction_trace_worst_case`: the floor, a rent
+/// top-up per Store output and a lazy meter creation) stays under 64 at the effect ceiling.
 fn boundary_shapes() -> Vec<BoundaryShape> {
     let shape = |profile: &'static str,
                  min_steps: usize,

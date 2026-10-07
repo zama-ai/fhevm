@@ -224,7 +224,7 @@ pub fn fhe_execute_ix_with_extras(
     ix
 }
 
-pub struct CreatedPublicBatch {
+pub struct StoreOutputsExecution {
     pub instruction: Instruction,
     pub accounts: Vec<(Pubkey, Account)>,
     pub outputs: Vec<(u16, Pubkey)>,
@@ -233,7 +233,7 @@ pub struct CreatedPublicBatch {
 pub fn created_public_batch(
     step_count: usize,
     created_public_steps: &[usize],
-) -> CreatedPublicBatch {
+) -> StoreOutputsExecution {
     let payer = Pubkey::new_unique();
     store_outputs_execution(
         step_count,
@@ -251,16 +251,16 @@ pub fn created_public_batch(
 /// `zama-fhe`'s `heap_budget/` measures on the app side — and the keys every output allows.
 pub fn store_outputs_execution(
     step_count: usize,
-    created_public_steps: &[usize],
+    output_steps: &[usize],
     payer: Pubkey,
     authority: StoreAuthority,
     make_public: bool,
     allows: &[Pubkey],
-) -> CreatedPublicBatch {
+) -> StoreOutputsExecution {
     let (host_config, host_config_account) = host_config_account(payer);
     let scope = fixture_scope();
     let (state_address, state) = new_encrypted_store(authority.app(scope), authority.key, []);
-    let output_metas = vec![if created_public_steps.is_empty() {
+    let output_metas = vec![if output_steps.is_empty() {
         readonly(state_address)
     } else {
         writable(state_address)
@@ -273,7 +273,7 @@ pub fn store_outputs_execution(
     let mut dictionary = ExecutionDictionary::default();
 
     for step_index in 0..step_count {
-        if created_public_steps.contains(&step_index) {
+        if output_steps.contains(&step_index) {
             let output_label = label(&format!("created-public-{step_index}"));
             outputs.push((step_index as u16, state_address));
             let mut output = authority.store_output(
@@ -317,7 +317,7 @@ pub fn store_outputs_execution(
         (event_authority(host::id()), Account::default()),
     ];
     accounts.extend(output_accounts);
-    CreatedPublicBatch {
+    StoreOutputsExecution {
         instruction,
         accounts,
         outputs,

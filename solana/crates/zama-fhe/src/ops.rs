@@ -6,8 +6,8 @@
 //! use. The host-side cost table and the operand validation are what keep it honest.
 //!
 //! Every method validates its operands, then appends through
-//! [`FheExecutionBuilder::commit_step`] in `builder.rs` — the admission machine that owns the
-//! step, CPI packet and build heap ceilings. Heap admission is [`crate::heap_tally::HeapBudget`]: intern
+//! [`FheExecutionBuilder::commit_step`], which enforces the step ceiling; `builder.rs` lists all
+//! three ceilings. Heap admission is [`crate::heap_tally::HeapBudget`]: intern
 //! tables grow through `try_push`. `verified_input` registers attestations on the same budget;
 //! it is not a step.
 
@@ -42,8 +42,7 @@ impl<'id> FheExecutionBuilder<'id> {
         if handle_fhe_type(attestation.input_handle) != T::FHE_TYPE.byte() {
             return Err(FheExecutionError::UnsupportedFheType);
         }
-        // Unreachable: the build heap budget stops registration near 32 attestations, and 256 of
-        // at least 117 serialized bytes each could not fit the CPI packet anyway.
+        // 256 attestations of at least 117 serialized bytes each cannot fit the CPI packet.
         let attestation_index = u8::try_from(self.verified_inputs.len())
             .map_err(|_| FheExecutionError::ExceedsCpiInstructionDataLimit)?;
         let input_handle = attestation.input_handle;
@@ -547,7 +546,6 @@ impl<'id> FheExecutionBuilder<'id> {
             return Err(FheExecutionError::ScalarLhsOperand);
         }
         let fhe_type = T::FHE_TYPE.byte();
-        validate_uint_fhe_type(fhe_type)?;
         if !is_mul_div_fhe_type(fhe_type) {
             return Err(FheExecutionError::UnsupportedFheType);
         }
