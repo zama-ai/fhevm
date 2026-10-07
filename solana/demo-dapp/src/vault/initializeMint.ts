@@ -1,7 +1,7 @@
 import { INSTRUCTIONS_SYSVAR_ADDRESS, type TransientStore } from '@fhevm/sdk/solana';
 import type { Address, Instruction, TransactionSigner } from '@solana/kit';
-import { tokenStateAddress, tokenEventAuthorityAddress, zamaEventAuthorityAddress } from './internal/tokenAccounts.js';
 import { getInitializeMintInstructionAsync, findTotalSupplyAuthorityPda, CONFIDENTIAL_TOKEN_PROGRAM_ADDRESS } from '@fhevm/confidential-token';
+import { tokenStateAddress } from './internal/batcherPdas.js';
 
 export type SolanaVaultInitializeMintParameters = {
   readonly transientStore: TransientStore;
@@ -17,9 +17,9 @@ export type SolanaVaultInitializeMintParameters = {
 
 /**
  * Builds `confidential_token::initialize_mint`: creates a confidential mint wrapping `underlyingMint`
- * and its initial (zero) total-supply handle. The total-supply encrypted store and the two Anchor
- * event authorities are derived from the mint here, so the seeder supplies only semantic roots. The
- * seeder assembles and sends the returned instruction.
+ * and its initial (zero) total-supply handle. The total-supply encrypted store is derived from the
+ * mint here, so the seeder supplies only semantic roots. The seeder assembles and sends the
+ * returned instruction.
  */
 export async function buildInitializeMintInstruction(
   parameters: SolanaVaultInitializeMintParameters,
@@ -32,9 +32,7 @@ export async function buildInitializeMintInstruction(
     mint: parameters.mint,
     underlyingMint: parameters.underlyingMint,
     totalSupplyEncryptedStore: await tokenStateAddress(parameters.mint.address, totalSupplyAuthority),
-    zamaEventAuthority: await zamaEventAuthorityAddress(),
     hostConfig: parameters.hostConfig,
-    eventAuthority: await tokenEventAuthorityAddress(),
     program: CONFIDENTIAL_TOKEN_PROGRAM_ADDRESS,
   });
 }

@@ -1,16 +1,12 @@
+import { findEventAuthorityPda as findZamaEventAuthorityPda } from '@fhevm/solana-zama-host';
+import { findEventAuthorityPda as findTokenEventAuthorityPda, findTotalSupplyAuthorityPda } from '@fhevm/confidential-token';
+import { findAssociatedTokenPda } from '@solana-program/token';
 import { INSTRUCTIONS_SYSVAR_ADDRESS, type TransientStore } from '@fhevm/sdk/solana';
 import type { Address, Instruction, TransactionSigner } from '@solana/kit';
 
 import { getDispatchInstructionAsync } from './internal/generated/confidentialBatcher/instructions/dispatch.js';
 
-import { findBatchAuthorityPda, pendingBurnAddress, tokenAccountAddress } from './internal/batcherPdas.js';
-import {
-  associatedTokenAddress,
-  tokenStateAddress,
-  tokenEventAuthorityAddress,
-  totalSupplyAuthorityAddress,
-  zamaEventAuthorityAddress,
-} from './internal/tokenAccounts.js';
+import { findBatchAuthorityPda, pendingBurnAddress, tokenAccountAddress, tokenStateAddress } from './internal/batcherPdas.js';
 
 /**
  * Semantic roots for the batcher `dispatch` instruction. Every other account the on-chain handler
@@ -46,7 +42,7 @@ export async function buildDispatchBatchInstruction(parameters: SolanaVaultDispa
   const { joinConfidentialMint } = parameters;
   const [batchAuthority] = await findBatchAuthorityPda({ batch: parameters.batch });
   const batchJoinTokenAccount = await tokenAccountAddress(joinConfidentialMint, batchAuthority);
-  const totalSupplyAuthority = await totalSupplyAuthorityAddress(joinConfidentialMint);
+  const totalSupplyAuthority = (await findTotalSupplyAuthorityPda({ mint: joinConfidentialMint }))[0];
   return getDispatchInstructionAsync({
     transientStore: parameters.transientStore.address,
     instructions: INSTRUCTIONS_SYSVAR_ADDRESS,
@@ -56,18 +52,18 @@ export async function buildDispatchBatchInstruction(parameters: SolanaVaultDispa
     batchAuthority,
     joinConfidentialMint,
     joinUnderlyingMint: parameters.joinUnderlyingMint,
-    batchAuthorityAta: await associatedTokenAddress(
-      batchAuthority,
-      parameters.joinUnderlyingMint,
-      parameters.tokenProgram,
-    ),
+    batchAuthorityAta: (await findAssociatedTokenPda({
+      owner: batchAuthority,
+      tokenProgram: parameters.tokenProgram,
+      mint: parameters.joinUnderlyingMint,
+    }))[0],
     totalSupplyAuthority,
     batchJoinTokenAccount,
     batchBalanceStore: await tokenStateAddress(joinConfidentialMint, batchJoinTokenAccount),
     totalSupplyStore: await tokenStateAddress(joinConfidentialMint, totalSupplyAuthority),
     pendingBurn: await pendingBurnAddress(joinConfidentialMint, batchJoinTokenAccount),
-    zamaEventAuthority: await zamaEventAuthorityAddress(),
+    zamaEventAuthority: (await findZamaEventAuthorityPda())[0],
     hostConfig: parameters.hostConfig,
-    confidentialTokenEventAuthority: await tokenEventAuthorityAddress(),
+    confidentialTokenEventAuthority: (await findTokenEventAuthorityPda())[0],
   });
 }

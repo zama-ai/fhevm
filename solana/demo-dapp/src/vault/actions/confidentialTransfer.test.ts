@@ -1,3 +1,4 @@
+import { findAssociatedTokenPda, TOKEN_PROGRAM_ADDRESS } from '@solana-program/token';
 import type { EncryptionBits } from '@fhevm/sdk/types';
 import type { Bytes32Hex } from '@fhevm/sdk/types';
 import type { SolanaInputProof } from '@fhevm/sdk/solana';
@@ -26,7 +27,6 @@ import { base58 } from '@scure/base';
 
 import { confidentialTransfer, type SolanaConfidentialTransferParameters } from './confidentialTransfer.js';
 import { ZAMA_HOST_PROGRAM_ADDRESS } from '@fhevm/solana-zama-host';
-import { associatedTokenAddress, TOKEN_PROGRAM_ADDRESS } from '../internal/tokenAccounts.js';
 import { CONFIDENTIAL_TOKEN_PROGRAM_ADDRESS } from '@fhevm/confidential-token';
 
 const CHAIN_ID = 72057594037940281n;
@@ -231,8 +231,16 @@ describe('confidentialTransfer attestation binding', () => {
         { address: key(11), role: AccountRole.READONLY },
       ]);
     }
-    const fromAta = await associatedTokenAddress(params.owner.address, params.underlyingMint, TOKEN_PROGRAM_ADDRESS);
-    const toAta = await associatedTokenAddress(params.toOwner, params.underlyingMint, TOKEN_PROGRAM_ADDRESS);
+    const [fromAta] = await findAssociatedTokenPda({
+      owner: params.owner.address,
+      tokenProgram: TOKEN_PROGRAM_ADDRESS,
+      mint: params.underlyingMint,
+    });
+    const [toAta] = await findAssociatedTokenPda({
+      owner: params.toOwner,
+      tokenProgram: TOKEN_PROGRAM_ADDRESS,
+      mint: params.underlyingMint,
+    });
     expect(message.instructions[2]!.accounts?.[3]).toEqual({
       address: params.underlyingMint,
       role: AccountRole.READONLY,

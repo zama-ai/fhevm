@@ -4,8 +4,8 @@
 // shell out to (`initialize_mint`, `CONSUME_WRAP`, `INITIALIZE_TOKEN_ACCOUNT`, and the
 // `TOKEN_BALANCE_STATE` probe) plus the `spl-token`/`solana` CLI calls around them. Every step is
 // now a `@solana/kit` transaction built from the demo dapp's typed vault module — the same builders
-// `demo/seed.ts` live-verifies on every e2e run — and the shared hand-built SPL instructions in
-// `./spl.ts`. Binding to explicit signers (instead of the ambient Solana CLI identity
+// `demo/seed.ts` live-verifies on every e2e run — with the official SPL client and the shared
+// System helpers in `./spl.ts`. Binding to explicit signers (instead of the ambient Solana CLI identity
 // the live-client read from `$HOME`) is what lets the arc target any stack the harness injects.
 
 import fs from 'node:fs/promises';
@@ -19,7 +19,6 @@ import {
   fetchEncodedAccount,
   getSignatureFromTransaction,
   generateKeyPairSigner,
-  getProgramDerivedAddress,
   lamports,
   sendAndConfirmTransactionFactory,
   setTransactionMessageFeePayerSigner,
@@ -33,6 +32,7 @@ import {
   type TransactionSigner,
 } from '@solana/kit';
 import {
+  findAssociatedTokenPda,
   TOKEN_PROGRAM_ADDRESS as SPL_TOKEN_PROGRAM_ADDRESS,
   getMintSize,
   getCreateAssociatedTokenIdempotentInstruction,
@@ -46,14 +46,12 @@ import { programDataAddressFor } from '../../../../solana/deploy/src/bootstrap';
 import {
   createFinalizedRpc,
   decodeHostConfig,
-  findEventAuthorityPda,
   findHostConfigPda,
   HOST_CONFIG_DISCRIMINATOR,
   ZAMA_HOST_PROGRAM_ADDRESS,
 } from '@fhevm/solana-zama-host';
 
 import {
-  associatedTokenAddress,
   buildVaultUnderlyingEscrowAtaInstruction,
   createAccountInstruction,
   setComputeUnitLimitInstruction,
@@ -80,12 +78,6 @@ const bytesEqual = (a: Uint8Array, b: Uint8Array): boolean =>
 export const hostConfigAddress = async (): Promise<Address> => {
   const [hostConfig] = await findHostConfigPda();
   return hostConfig;
-};
-
-/** The zama-host program's Anchor event-authority PDA (`[b"__event_authority"]`). */
-export const zamaEventAuthorityAddress = async (): Promise<Address> => {
-  const [eventAuthority] = await findEventAuthorityPda();
-  return eventAuthority;
 };
 
 /** BPF upgradeable loader `ProgramData` PDA for zama-host (`[program_id]` under the loader). */
@@ -266,7 +258,11 @@ export const mintSplTo = async (
     readonly baseUnits: bigint;
   },
 ): Promise<Address> => {
-  const ata = await associatedTokenAddress(params.recipient, params.mint, SPL_TOKEN_PROGRAM_ADDRESS);
+  const [ata] = await findAssociatedTokenPda({
+    owner: params.recipient,
+    tokenProgram: SPL_TOKEN_PROGRAM_ADDRESS,
+    mint: params.mint,
+  });
   await context.sendTransaction(params.authority, [
     getCreateAssociatedTokenIdempotentInstruction({ payer: params.authority, ata, owner: params.recipient, mint: params.mint }),
     getMintToInstruction({

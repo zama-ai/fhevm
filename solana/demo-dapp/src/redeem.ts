@@ -1,3 +1,4 @@
+import { TOKEN_PROGRAM_ADDRESS } from '@solana-program/token';
 import { createFinalizedRpc } from '@fhevm/solana-zama-host';
 import {
   address,
@@ -14,7 +15,6 @@ import {
   getBatchByIndex,
   getJoinRecord,
   joinBatch,
-  TOKEN_PROGRAM_ADDRESS,
 } from './vault/index.js';
 
 import { BatchStatus, type BatchPosition } from './batchTypes';

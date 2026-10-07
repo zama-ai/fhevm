@@ -2,13 +2,13 @@ import { describe, expect, test } from "bun:test";
 
 import { AccountRole, generateKeyPairSigner, type Address } from "@solana/kit";
 import {
+  findAssociatedTokenPda,
   getMintSize,
   ASSOCIATED_TOKEN_PROGRAM_ADDRESS,
   TOKEN_PROGRAM_ADDRESS as SPL_TOKEN_PROGRAM_ADDRESS,
 } from "@solana-program/token";
 
 import {
-  associatedTokenAddress,
   buildVaultUnderlyingEscrowAtaInstruction,
   createAccountInstruction,
   setComputeUnitLimitInstruction,
@@ -32,11 +32,11 @@ describe("vault underlying-token escrow (the wrap_usdc / redeem_burned_amount va
       underlyingMint: UNDERLYING_MINT,
     });
     const vaultAuthority = await vaultAuthorityAddress(TOKEN_PROGRAM, CONFIDENTIAL_MINT);
-    const expected = await associatedTokenAddress(
-      vaultAuthority,
-      UNDERLYING_MINT,
-      SPL_TOKEN_PROGRAM_ADDRESS,
-    );
+    const [expected] = await findAssociatedTokenPda({
+      owner: vaultAuthority,
+      tokenProgram: SPL_TOKEN_PROGRAM_ADDRESS,
+      mint: UNDERLYING_MINT,
+    });
     expect(escrow).toBe(expected);
     // Golden: pins the vault_authority PDA + ATA derivation the seed must match the program/SDK on.
     expect(vaultAuthority).toBe("Y5emEtkuiaUP9HgUujdsyWHrqrYyBkYox9E58ZX9kHc" as Address);

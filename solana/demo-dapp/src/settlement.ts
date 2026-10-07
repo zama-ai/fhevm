@@ -1,3 +1,4 @@
+import { TOKEN_PROGRAM_ADDRESS } from '@solana-program/token';
 import type { Bytes32Hex } from '@fhevm/sdk/types';
 import {
   createSolanaRpcSubscriptions,
@@ -22,7 +23,6 @@ import {
   getJoinRecord,
   buildCloseJoinRecordInstruction,
   settleBatch,
-  TOKEN_PROGRAM_ADDRESS,
 } from './vault/index.js';
 
 import {

@@ -1,3 +1,4 @@
+import { findAssociatedTokenPda } from '@solana-program/token';
 import { INSTRUCTIONS_SYSVAR_ADDRESS, type TransientStore } from '@fhevm/sdk/solana';
 import type { Address, Instruction, TransactionSigner } from '@solana/kit';
 import {
@@ -7,12 +8,7 @@ import {
   findTotalSupplyAuthorityPda,
   CONFIDENTIAL_TOKEN_PROGRAM_ADDRESS,
 } from '@fhevm/confidential-token';
-import {
-  associatedTokenAddress,
-  tokenStateAddress,
-  tokenEventAuthorityAddress,
-  zamaEventAuthorityAddress,
-} from './internal/tokenAccounts.js';
+import { tokenStateAddress } from './internal/batcherPdas.js';
 
 export type SolanaVaultWrapUsdcParameters = {
   readonly transientStore: TransientStore;
@@ -34,9 +30,9 @@ export type SolanaVaultWrapUsdcParameters = {
  * Builds `confidential_token::wrap_usdc`: escrows a PUBLIC `amount` of `underlyingMint` from the
  * owner's associated token account and rotates the owner's confidential balance by that amount. The
  * amount is public at the wrap boundary, so — unlike a confidential transfer — this needs NO input
- * proof. The owner's confidential token account, the program's underlying vault, both persistent
- * encrypted stores, and the two Anchor event authorities are derived here from the mints and owner;
- * the seeder/scenario supplies only semantic roots and assembles/sends the returned instruction.
+ * proof. The owner's confidential token account, the program's underlying vault and both persistent
+ * encrypted stores are derived here from the mints and owner; the seeder/scenario supplies only
+ * semantic roots and assembles/sends the returned instruction.
  */
 export async function buildWrapUsdcInstruction(parameters: SolanaVaultWrapUsdcParameters): Promise<Instruction> {
   const { owner, mint, underlyingMint } = parameters;
@@ -50,14 +46,20 @@ export async function buildWrapUsdcInstruction(parameters: SolanaVaultWrapUsdcPa
     mint,
     tokenAccount,
     underlyingMint,
-    userUsdc: await associatedTokenAddress(owner.address, underlyingMint, parameters.tokenProgram),
-    vaultUsdc: await associatedTokenAddress(mintVaultAuthority, underlyingMint, parameters.tokenProgram),
+    userUsdc: (await findAssociatedTokenPda({
+      owner: owner.address,
+      tokenProgram: parameters.tokenProgram,
+      mint: underlyingMint,
+    }))[0],
+    vaultUsdc: (await findAssociatedTokenPda({
+      owner: mintVaultAuthority,
+      tokenProgram: parameters.tokenProgram,
+      mint: underlyingMint,
+    }))[0],
     balanceStore: await tokenStateAddress(mint, tokenAccount),
     totalSupplyStore: await tokenStateAddress(mint, totalSupplyAuthority),
-    zamaEventAuthority: await zamaEventAuthorityAddress(),
     hostConfig: parameters.hostConfig,
     tokenProgram: parameters.tokenProgram,
-    eventAuthority: await tokenEventAuthorityAddress(),
     program: CONFIDENTIAL_TOKEN_PROGRAM_ADDRESS,
     amount: parameters.amount,
   });

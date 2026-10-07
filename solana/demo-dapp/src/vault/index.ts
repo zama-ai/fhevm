@@ -79,7 +79,6 @@ export {
   tokenStateAddress,
   joinStoreAddress,
 } from './internal/batcherPdas.js';
-export { TOKEN_PROGRAM_ADDRESS } from './internal/tokenAccounts.js';
 export {
   MAX_EXTEND_ADDRESSES_PER_TRANSACTION,
   getExtendLookupTableInstructions,

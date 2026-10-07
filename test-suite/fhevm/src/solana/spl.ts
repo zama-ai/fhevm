@@ -8,7 +8,6 @@ import { findVaultAuthorityPda } from '@fhevm/confidential-token';
 import {
   AccountRole,
   getAddressEncoder,
-  getProgramDerivedAddress,
   type AccountMeta,
   type Address,
   type Instruction,
@@ -25,16 +24,6 @@ const COMPUTE_BUDGET_PROGRAM_ADDRESS = "ComputeBudget111111111111111111111111111
 
 const addressEncoder = getAddressEncoder();
 const encodeAddress = (value: Address): Uint8Array => new Uint8Array(addressEncoder.encode(value));
-
-/** Associated token account for `owner` and SPL `mint` under `tokenProgram`. */
-export const associatedTokenAddress = async (
-  owner: Address,
-  mint: Address,
-  tokenProgram: Address,
-): Promise<Address> => {
-  const [ata] = await findAssociatedTokenPda({ owner, tokenProgram, mint });
-  return ata;
-};
 
 /**
  * A signer account meta: the `signer` field rides along at runtime so `signTransactionMessageWithSigners`
@@ -126,11 +115,11 @@ export const buildVaultUnderlyingEscrowAtaInstruction = async (params: {
   readonly underlyingMint: Address;
 }): Promise<{ readonly escrow: Address; readonly instruction: Instruction }> => {
   const vaultAuthority = await vaultAuthorityAddress(params.tokenProgram, params.confidentialMint);
-  const escrow = await associatedTokenAddress(
-    vaultAuthority,
-    params.underlyingMint,
-    SPL_TOKEN_PROGRAM_ADDRESS,
-  );
+  const [escrow] = await findAssociatedTokenPda({
+    owner: vaultAuthority,
+    tokenProgram: SPL_TOKEN_PROGRAM_ADDRESS,
+    mint: params.underlyingMint,
+  });
   return {
     escrow,
     instruction: getCreateAssociatedTokenIdempotentInstruction({

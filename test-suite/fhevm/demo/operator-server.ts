@@ -29,6 +29,7 @@ import {
   type Address,
 } from "@solana/kit";
 import {
+  findAssociatedTokenPda,
   TOKEN_PROGRAM_ADDRESS as SPL_TOKEN_PROGRAM_ADDRESS,
   getCreateAssociatedTokenIdempotentInstruction,
   getMintToInstruction,
@@ -43,7 +44,6 @@ import { openProvisioning } from "../e2e/harness/solana/provisioning";
 import { DEMO_OPERATOR_PORT, solanaBatchLookupTablesPath } from "../src/layout";
 import { createFinalizedRpc } from '@fhevm/solana-zama-host';
 import { LOCAL_SOLANA_ENDPOINTS } from "../src/solana/endpoints";
-import { associatedTokenAddress } from "../src/solana/spl";
 import { readDemoAllowedOriginFromEnv, readDemoAuthorizationFromEnv } from "./authorization";
 import { resolveDemoConfigPath } from "./config";
 import { createEncryptionKeyMaterial } from "./encryptionKeyMaterial";
@@ -67,7 +67,11 @@ const buildUsdcMinter = async (options: {
   const authority = await loadSigner(options.mintAuthorityKeypairPath);
 
   return async (recipient: Address, baseUnits: bigint): Promise<string> => {
-    const ata = await associatedTokenAddress(recipient, options.mint, SPL_TOKEN_PROGRAM_ADDRESS);
+    const [ata] = await findAssociatedTokenPda({
+      owner: recipient,
+      tokenProgram: SPL_TOKEN_PROGRAM_ADDRESS,
+      mint: options.mint,
+    });
     const { value: latestBlockhash } = await rpc.getLatestBlockhash().send();
     const base = setTransactionMessageFeePayerSigner(authority, createTransactionMessage({ version: 0 }));
     const withLifetime = setTransactionMessageLifetimeUsingBlockhash(latestBlockhash, base);

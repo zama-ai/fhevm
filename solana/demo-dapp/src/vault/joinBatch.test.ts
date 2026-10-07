@@ -1,3 +1,4 @@
+import { TOKEN_PROGRAM_ADDRESS } from '@solana-program/token';
 import type { EncryptionBits } from '@fhevm/sdk/types';
 import type { Bytes32Hex } from '@fhevm/sdk/types';
 import type { SolanaInputProof } from '@fhevm/sdk/solana';
@@ -32,7 +33,6 @@ import {
   getCloseTransientStoreInstructionDataDecoder,
   ZAMA_HOST_PROGRAM_ADDRESS,
 } from '@fhevm/solana-zama-host';
-import { TOKEN_PROGRAM_ADDRESS } from './internal/tokenAccounts.js';
 import { CONFIDENTIAL_TOKEN_PROGRAM_ADDRESS } from '@fhevm/confidential-token';
 
 const CHAIN_ID = 72057594037940281n;

@@ -1,3 +1,4 @@
+import { TOKEN_PROGRAM_ADDRESS } from '@solana-program/token';
 import { appendTransientStoreInstructions, prepareTransientStore } from '@fhevm/sdk/solana';
 import { type Address, type Instruction, type Signature, type TransactionSigner } from '@solana/kit';
 import {
@@ -7,7 +8,6 @@ import {
   getBatchByIndex,
   getJoinRecord,
   tokenAccountAddress,
-  TOKEN_PROGRAM_ADDRESS,
 } from './vault/index.js';
 
 import { BatchStatus, type BatchTarget, type VaultDirection } from './batchTypes';

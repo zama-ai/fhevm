@@ -1,3 +1,4 @@
+import { findAssociatedTokenPda } from '@solana-program/token';
 import { INSTRUCTIONS_SYSVAR_ADDRESS, appendTransientStoreInstructions, prepareTransientStore } from '@fhevm/sdk/solana';
 import {
   AccountRole,
@@ -29,7 +30,6 @@ import { bytes32HexToHandle } from '@fhevm/sdk/solana';
 import type { FhevmSolanaChain } from '@fhevm/sdk/solana';
 import type { Bytes32Hex } from '@fhevm/sdk/types';
 import type { SolanaInputProof } from '@fhevm/sdk/solana';
-import { associatedTokenAddress } from '../internal/tokenAccounts.js';
 import { getConfidentialTransferInstruction,
   findEventAuthorityPda, CONFIDENTIAL_TOKEN_PROGRAM_ADDRESS, ZAMA_HOST_PROGRAM_ADDRESS } from '@fhevm/confidential-token';
 
@@ -112,8 +112,16 @@ export async function confidentialTransfer(
     payer: feePayer,
     mint,
     underlyingMint: parameters.underlyingMint,
-    fromAta: await associatedTokenAddress(owner.address, parameters.underlyingMint, parameters.tokenProgram),
-    toAta: await associatedTokenAddress(parameters.toOwner, parameters.underlyingMint, parameters.tokenProgram),
+    fromAta: (await findAssociatedTokenPda({
+      owner: owner.address,
+      tokenProgram: parameters.tokenProgram,
+      mint: parameters.underlyingMint,
+    }))[0],
+    toAta: (await findAssociatedTokenPda({
+      owner: parameters.toOwner,
+      tokenProgram: parameters.tokenProgram,
+      mint: parameters.underlyingMint,
+    }))[0],
     fromAccount: parameters.fromAccount,
     toAccount: parameters.toAccount,
     fromStore: parameters.fromStore,
