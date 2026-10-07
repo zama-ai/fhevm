@@ -140,24 +140,27 @@ const LEG_SCRIPT = path.join(import.meta.dir, "leg.ts");
 
 const runChild = async (caseFile: string, chain: Chain, expectedRuns: number): Promise<LegReport> => {
   const directory = await mkdtemp(path.join(os.tmpdir(), "parity-"));
-  const output = path.join(directory, `${chain}.json`);
-  const child = Bun.spawn(["bun", LEG_SCRIPT, caseFile, chain, output], {
-    stdout: "inherit",
-    stderr: "pipe",
-    timeout: LEG_DEADLINE_MS,
-    killSignal: "SIGKILL",
-  });
-  const [stderr, exitCode] = await Promise.all([new Response(child.stderr).text(), child.exited]);
-  if (stderr) process.stderr.write(stderr.replace(/^/gm, `[${chain} leg] `));
-  const tail = stderr.trimEnd().split("\n").slice(-STDERR_TAIL_LINES).join("\n");
-  const stopped = (why: string): LegReport => ({ stopped: `${chain} leg ${why}${tail ? `\n--- ${chain} leg stderr (tail) ---\n${tail}` : ""}` });
-  if (child.signalCode !== null) return stopped(`killed by ${child.signalCode} (deadline ${LEG_DEADLINE_MS / 60_000} min)`);
-  if (exitCode !== 0) return stopped(`exited ${exitCode}`);
-  const runs = await readFile(output, "utf8").then((text) => JSON.parse(text) as LegRun[]).catch(() => undefined);
-  await rm(directory, { recursive: true, force: true });
-  if (runs === undefined) return stopped("wrote no readable result");
-  if (runs.length !== expectedRuns) return stopped(`wrote ${runs.length} of ${expectedRuns} value sets`);
-  return { runs };
+  try {
+    const output = path.join(directory, `${chain}.json`);
+    const child = Bun.spawn(["bun", LEG_SCRIPT, caseFile, chain, output], {
+      stdout: "inherit",
+      stderr: "pipe",
+      timeout: LEG_DEADLINE_MS,
+      killSignal: "SIGKILL",
+    });
+    const [stderr, exitCode] = await Promise.all([new Response(child.stderr).text(), child.exited]);
+    if (stderr) process.stderr.write(stderr.replace(/^/gm, `[${chain} leg] `));
+    const tail = stderr.trimEnd().split("\n").slice(-STDERR_TAIL_LINES).join("\n");
+    const stopped = (why: string): LegReport => ({ stopped: `${chain} leg ${why}${tail ? `\n--- ${chain} leg stderr (tail) ---\n${tail}` : ""}` });
+    if (child.signalCode !== null) return stopped(`killed by ${child.signalCode} (deadline ${LEG_DEADLINE_MS / 60_000} min)`);
+    if (exitCode !== 0) return stopped(`exited ${exitCode}`);
+    const runs = await readFile(output, "utf8").then((text) => JSON.parse(text) as LegRun[]).catch(() => undefined);
+    if (runs === undefined) return stopped("wrote no readable result");
+    if (runs.length !== expectedRuns) return stopped(`wrote ${runs.length} of ${expectedRuns} value sets`);
+    return { runs };
+  } finally {
+    await rm(directory, { recursive: true, force: true });
+  }
 };
 
 const show = (result: StepResult | undefined): string => {

@@ -146,6 +146,8 @@ if (
 }
 export const PROJECT = configuredComposeProject ?? "fhevm";
 export const RELAYER_PORT = 3000;
+/** The SDK's relayer auth: `ZAMA_FHEVM_API_KEY`, or the placeholder key a local relayer accepts. */
+export const relayerAuth = () => ({ type: "ApiKeyHeader", value: process.env.ZAMA_FHEVM_API_KEY ?? "local" }) as const;
 export const DEFAULT_HOST_RPC_PORT = 8545;
 export const DEFAULT_GATEWAY_RPC_PORT = 8546;
 export const DEFAULT_EXTRA_HOST_RPC_PORT = 8547;

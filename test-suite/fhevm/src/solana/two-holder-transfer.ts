@@ -7,7 +7,7 @@ import { address, createSolanaRpcSubscriptions, getAddressEncoder, type Address,
 import { fetchSysvarClock } from "@solana/sysvars";
 
 import { bytes32HexFromId } from "./addresses";
-import { relayerAuth } from "./endpoints";
+import { relayerAuth } from "../layout";
 import { vaultModule } from "./lazy-modules";
 import {
   createConfidentialMint,
@@ -124,6 +124,7 @@ export const createRealTwoHolderDependencies = (cfg: TwoHolderConfig): RealTwoHo
   };
   return {
     async provision(fund) {
+      if (fund > UNDERLYING_BASE_UNITS) throw new RangeError(`the fund of ${fund} exceeds the ${UNDERLYING_BASE_UNITS} base units minted`);
       const funder = cfg.funderKeypairPath === undefined ? undefined : await loadKeypairSigner(cfg.funderKeypairPath);
       funderAddress = funder?.address;
       provisioned = createProvisioningContext(cfg.rpcUrl, cfg.wsUrl, { funder });
@@ -251,7 +252,7 @@ export const runSolanaTwoHolderTransfer = async (
   dependencies: TwoHolderDependencies,
   { fund, amount }: { fund: bigint; amount: bigint } = { fund: 1000n, amount: 400n },
 ) => {
-  if (amount > fund || fund > UNDERLYING_BASE_UNITS) throw new RangeError(`need amount <= fund <= ${UNDERLYING_BASE_UNITS}, got ${amount} and ${fund}`);
+  if (amount > fund) throw new RangeError(`the transfer of ${amount} exceeds the fund of ${fund}`);
   const remaining = fund - amount;
   let scenario: TwoHolderScenario | undefined;
   try {

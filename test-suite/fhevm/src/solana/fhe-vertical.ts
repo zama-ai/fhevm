@@ -12,7 +12,7 @@ import {
 
 import { createFinalizedRpc, ZAMA_HOST_PROGRAM_ADDRESS } from '@fhevm/solana-zama-host';
 import { solanaUserDecryptContext } from './addresses';
-import { relayerAuth } from './endpoints';
+import { relayerAuth } from '../layout';
 import { certificateCleartext, type PublicDecryptCertificate } from './public-decrypt';
 import type { SolanaProvisioningContext } from './provision';
 import { loadSolanaSdk } from './target';

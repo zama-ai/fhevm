@@ -47,7 +47,7 @@ const solanaRefusal: RefusalReason = (error) =>
   error instanceof SolanaUserDecryptRunError &&
   error.rejection.kind === "failed" &&
   error.rejection.label === "not_allowed_on_host_acl"
-    ? "relayer delegation pre-check: not_allowed_on_host_acl"
+    ? "relayer delegation pre-check"
     : undefined;
 
 let evmHost: Promise<EvmHost> | undefined;

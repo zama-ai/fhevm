@@ -19,8 +19,7 @@ import {
 } from "viem";
 import { mnemonicToAccount, type HDAccount } from "viem/accounts";
 
-import { envPath, REPO_ROOT } from "../../src/layout";
-import { relayerAuth } from "../../src/solana/endpoints";
+import { envPath, relayerAuth, REPO_ROOT } from "../../src/layout";
 import { readEnvFile, withHostReachableFetch } from "../../src/utils/fs";
 import type { TestEnv } from "../harness";
 

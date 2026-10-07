@@ -47,7 +47,7 @@ import {
 import { loadPersonas, until } from "../harness";
 import { withHostReachableFetch } from "../../src/utils/fs";
 import { waitForSnsCommit } from "../../src/solana/sns";
-import { solanaDemoSmokeMarkerPath } from "../../src/layout";
+import { relayerAuth, solanaDemoSmokeMarkerPath } from "../../src/layout";
 import { solanaUserDecryptContext } from "../../src/solana/addresses";
 import { targetsCleartext } from "../../src/solana/target";
 import { depositRoots, resolveDemoConfigPath, type VaultDemoRoots } from "../../demo/config";
@@ -311,9 +311,7 @@ describe.skipIf(!runsDemoScenarios)("solana deposit-arc scenario", () => {
       // after the patch is restored and still need these bindings. The runtime auth config set here
       // is process-global and also serves settle's certificate phase (its runtime consumes only
       // `runtime.config.auth`), so it is not set a second time there.
-      setFhevmRuntimeConfig({
-        auth: { type: "ApiKeyHeader", value: process.env.ZAMA_FHEVM_API_KEY ?? "local" },
-      });
+      setFhevmRuntimeConfig({ auth: relayerAuth() });
       const chain = defineFhevmSolanaChain({
         id: BigInt(config.chainId),
         fhevm: { relayerUrl: env.relayerUrl, programs: { host: { address: asBytes32Hex(config.aclProgram) } } },
@@ -669,7 +667,7 @@ test.skipIf(!runsDemoScenarios)(
       transientStore, owner: alice, mint, underlyingMint: roots.joinUnderlyingMint,
       tokenProgram: TOKEN_PROGRAM_ADDRESS, hostConfig: config.hostConfig, amount,
     })]), WRAP_COMPUTE_UNIT_LIMIT);
-    setFhevmRuntimeConfig({ auth: { type: 'ApiKeyHeader', value: process.env.ZAMA_FHEVM_API_KEY ?? 'local' } });
+    setFhevmRuntimeConfig({ auth: relayerAuth() });
     const chain = defineFhevmSolanaChain({ id: BigInt(config.chainId), fhevm: {
       relayerUrl: env.relayerUrl, programs: { host: { address: asBytes32Hex(config.aclProgram) } },
     } });
@@ -719,7 +717,7 @@ test.skipIf(!runsDemoScenarios)(
     const session = async () => {
       await personas.fund(personas.roles.keeper!, 0.2);
       return { config: await readConfig(), keeper: await loadSigner(demoKeypairs(env).keeper),
-        relayerApiKey: process.env.ZAMA_FHEVM_API_KEY ?? 'local' };
+        relayerApiKey: relayerAuth().value };
     };
     expect(await dispatchVaultBatch(await session(), position, 'deposit')).not.toBeNull();
     const pendingBurn = (await findPendingBurnPda({ mint, tokenAccount: batchJoinTokenAccount }))[0];

@@ -48,6 +48,7 @@ import {
   type SolanaDecryptTrust,
 } from "@fhevm/sdk/solana";
 
+import { relayerAuth } from "../../src/layout";
 import { currentHandle, userDecryptExpect } from "../../src/solana/fhe-vertical";
 import { generateSolanaKeypair } from "../../src/solana/provision";
 import {
@@ -174,7 +175,7 @@ describe("solana delegated user-decrypt", () => {
         // Dedup: the same session, the same bytes, twice — the relayer coalesces them into one
         // job. Asserted at the wire: both POST bodies are byte-identical and both answers carry
         // the same job id. The interception passes everything through untouched.
-        setFhevmRuntimeConfig({ auth: { type: "ApiKeyHeader", value: "local" } });
+        setFhevmRuntimeConfig({ auth: relayerAuth() });
         const trust: SolanaDecryptTrust = {
           kmsSigners: config.kmsSigners.map((address, index) => ({ partyId: index + 1, address })),
           kmsContextId: solanaUserDecryptContext(config.userDecryptContextId) as SolanaDecryptTrust["kmsContextId"],
@@ -361,9 +362,9 @@ describe("solana delegated user-decrypt", () => {
         ...value.application,
       }, { programAddress: hostProgram });
       expect(revokedRows.exact?.expiresAt).toBe(0n);
-      // Pinned the same way as the headless arc above: the label, not the rendered message.
+      // Pinned the same way as the headless arc above: the kind and the label, not the rendered message.
       await expect(delegatedDecrypt(setup, { value, handle, delegateSecretKey })).rejects.toMatchObject({
-        rejection: { label: "not_allowed_on_host_acl" },
+        rejection: { kind: "failed", label: "not_allowed_on_host_acl" },
       });
       await setup.wallets.sweep();
     },
