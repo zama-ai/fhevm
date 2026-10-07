@@ -32,7 +32,6 @@ anchor-lang = { version = "1.2.0", features = ["init-if-needed"] }
 anchor-spl = { version = "1.2.0", default-features = false, features = ["token", "token_2022"] }
 confidential-token = { path = "../confidential-token", features = ["cpi"] }
 demo-vault = { path = "../demo-vault", features = ["cpi"] }
-solana-sha256-hasher = "3.1.0"
 zama-fhe = { path = "../../crates/zama-fhe", features = ["cpi"] }
 zama-host = { path = "../zama-host", features = ["cpi"] }
 

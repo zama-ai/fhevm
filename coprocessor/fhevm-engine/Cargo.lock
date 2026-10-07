@@ -5215,7 +5215,6 @@ dependencies = [
  "lru 0.13.0",
  "primitives",
  "prometheus",
- "reqwest 0.12.28",
  "rustls",
  "serde",
  "serde_json",
@@ -9187,10 +9186,6 @@ dependencies = [
  "qstring",
  "uriparse",
 ]
-
-[[package]]
-name = "solana-ed25519-instruction"
-version = "0.1.0"
 
 [[package]]
 name = "solana-epoch-info"
@@ -13627,11 +13622,9 @@ dependencies = [
  "borsh",
  "bytemuck",
  "program-environment",
- "solana-ed25519-instruction",
  "solana-instructions-sysvar",
  "solana-keccak-hasher",
  "solana-secp256k1-recover",
- "solana-sha256-hasher",
  "solana-sysvar",
  "zama-solana-acl",
 ]

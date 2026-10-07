@@ -41,10 +41,8 @@ program-environment = { path = "../../crates/program-environment" }
 [dependencies]
 anchor-lang = { version = "1.2.0", features = ["event-cpi", "init-if-needed"] }
 solana-keccak-hasher = { version = "3.1.0", features = ["sha3"] }
-solana-sha256-hasher = "3.1.0"
 solana-instructions-sysvar = "3.0.1"
 solana-sysvar = { version = "3.1.1", features = ["bytemuck"] }
-solana-ed25519-instruction = { path = "../../crates/solana-ed25519-instruction" }
 solana-secp256k1-recover = "3.1.1"
 zama-solana-acl = { path = "../../crates/zama-solana-acl" }
 borsh = "1"

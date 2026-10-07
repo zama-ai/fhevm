@@ -25,6 +25,7 @@ bench = false
 path = "src/bin/consumer.rs"
 name = "host_listener_consumer"
 test = false
+bench = false
 
 [[bin]]
 path = "src/bin/solana_host_listener.rs"
@@ -54,7 +55,6 @@ futures-util = { workspace = true }
 hex = { workspace = true }
 lru = { workspace = true }
 prometheus = { workspace = true }
-reqwest = { workspace = true }
 rustls = { workspace = true }
 serde = { workspace = true }
 serde_json = { workspace = true }
