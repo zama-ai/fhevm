@@ -70,7 +70,8 @@ const DECRYPT_INTERVAL_MS = 5_000;
 const LEG_DEADLINE_MS = 25 * 60_000;
 const STDERR_TAIL_LINES = 40;
 
-const message = (error: unknown) => (error instanceof Error ? error.message : String(error));
+// One line per error: a table row must not break on a message that spans lines.
+const message = (error: unknown) => (error instanceof Error ? error.message : String(error)).replace(/\s+/g, " ").trim();
 
 /**
  * Rejects when `deadline` passes before `attempt` settles. `until` checks its deadline only between
