@@ -15,7 +15,8 @@ import { appendTransientStoreInstructions, prepareTransientStore } from "@fhevm/
 //   0. verify the bring-up's kms-context account exists on-chain — the seeder never creates it, it
 //      only fails loudly (with remediation) when the host bring-up did not provision it.
 //   1. create the mock-USDC SPL mint (6 decimals, the committed mint-authority as mint authority so
-//      `demo:operator` can later drip it) — hand-built SPL instructions from `../src/solana/spl`.
+//      `demo:operator` can later drip it) — `@solana-program/token` instructions; only the System
+//      `CreateAccount` helper comes from `../src/solana/spl`.
 //   2. `initialize_vault` (demo_vault): creates the vault, its share mint (payout underlying) and the
 //      program-owned underlying token account.
 //   3. `initialize_mint` ×2 (confidential_token): cUSDC wrapping mock USDC, cShares wrapping the share

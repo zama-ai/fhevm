@@ -4,9 +4,8 @@
 // loopback: the dapp dev server proxies the browser to it and adds the boot capability;
 // `tailscale serve` may front it for direct callers on the tailnet.
 //
-// The SPL instructions are hand-built with `@solana/kit` primitives on purpose: the test-suite
-// carries no `@solana-program/token` dependency; they come from `../src/solana/spl` (shared with
-// the seed). The keeper-side vault logic is the dapp's own operator modules, imported directly.
+// `@solana-program/token` builds the SPL instructions. The keeper-side vault logic is the dapp's own
+// operator modules, imported directly.
 //
 // This process holds a live validator connection and is exercised by the `solana-e2e` workflow's
 // demo phase (which funds the deposit-arc persona through it) and the browser-reality checks. The
