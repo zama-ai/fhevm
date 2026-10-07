@@ -171,8 +171,8 @@ const config: HardhatUserConfig = {
         network: 'mainnet',
         chainId: chainIds.mainnet,
         urls: {
-          apiURL: 'https://explorer-zama-gateway-mainnet.t.conduit.xyz/api',
-          browserURL: 'https://explorer-zama-gateway-mainnet.t.conduit.xyz',
+          apiURL: 'https://explorer.mainnet.zama.org/api',
+          browserURL: 'https://explorer.mainnet.zama.org',
         },
       },
     ],
