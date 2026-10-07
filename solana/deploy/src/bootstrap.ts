@@ -43,7 +43,7 @@ export const kmsCertificateThreshold = (kmsCorruptionThreshold: number, register
   if (registeredSignerCount !== committeeSize) {
     throw new Error(
       `KMS corruption threshold t=${kmsCorruptionThreshold} needs a committee of 3t+1=${committeeSize} ` +
-        `KMS signers but ${registeredSignerCount} are registered on the gateway`,
+        `KMS signers; the gateway has ${registeredSignerCount} registered`,
     );
   }
   return 2 * kmsCorruptionThreshold + 1;

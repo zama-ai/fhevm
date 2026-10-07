@@ -143,7 +143,7 @@ describe('kmsCertificateThreshold', () => {
     expect(() => kmsCertificateThreshold(1, 2)).toThrow('3t+1=4');
     // t=0 against a 4-party gateway: the 1-of-4 context the threshold check exists to refuse.
     expect(() => kmsCertificateThreshold(0, 4)).toThrow('3t+1=1');
-    expect(() => kmsCertificateThreshold(1, 5)).toThrow('but 5 are registered');
+    expect(() => kmsCertificateThreshold(1, 5)).toThrow('the gateway has 5 registered');
   });
 });
 
@@ -218,7 +218,7 @@ describe('bootstrapZamaHost', () => {
         gateway: { ...gateway, kmsSigners: [address20(1)] },
         kmsCorruptionThreshold: 1,
       }),
-    ).rejects.toThrow('but 1 are registered');
+    ).rejects.toThrow('the gateway has 1 registered');
   });
 
   test('refuses a different gateway without submitting transactions', async () => {
