@@ -1,14 +1,11 @@
+import { findEventAuthorityPda as findZamaEventAuthorityPda } from '@fhevm/solana-zama-host';
+import { findEventAuthorityPda as findTokenEventAuthorityPda } from '@fhevm/confidential-token';
+import { findAssociatedTokenPda } from '@solana-program/token';
 import { INSTRUCTIONS_SYSVAR_ADDRESS, type TransientStore } from '@fhevm/sdk/solana';
 import type { Address, Instruction, TransactionSigner } from '@solana/kit';
 
 import { getClaimInstructionAsync } from './internal/generated/confidentialBatcher/instructions/claim.js';
-import { findBatchAuthorityPda, joinStoreAddress, tokenAccountAddress } from './internal/batcherPdas.js';
-import {
-  associatedTokenAddress,
-  tokenStateAddress,
-  tokenEventAuthorityAddress,
-  zamaEventAuthorityAddress,
-} from './internal/tokenAccounts.js';
+import { findBatchAuthorityPda, joinStoreAddress, tokenAccountAddress, tokenStateAddress } from './internal/batcherPdas.js';
 
 /**
  * Roots for a permissionless claim. The builder derives the JoinRecord and payout States,
@@ -57,19 +54,23 @@ export async function buildClaimInstruction(parameters: SolanaVaultClaimParamete
     joinStore,
     payoutConfidentialMint,
     payoutUnderlyingMint: parameters.payoutUnderlyingMint,
-    batchAuthorityPayoutAta: await associatedTokenAddress(
-      batchAuthority,
-      parameters.payoutUnderlyingMint,
-      parameters.tokenProgram,
-    ),
-    userPayoutAta: await associatedTokenAddress(user, parameters.payoutUnderlyingMint, parameters.tokenProgram),
+    batchAuthorityPayoutAta: (await findAssociatedTokenPda({
+      owner: batchAuthority,
+      tokenProgram: parameters.tokenProgram,
+      mint: parameters.payoutUnderlyingMint,
+    }))[0],
+    userPayoutAta: (await findAssociatedTokenPda({
+      owner: user,
+      tokenProgram: parameters.tokenProgram,
+      mint: parameters.payoutUnderlyingMint,
+    }))[0],
     batchPayoutTokenAccount,
     userPayoutTokenAccount,
     batchPayoutBalanceStore: await tokenStateAddress(payoutConfidentialMint, batchPayoutTokenAccount),
     userPayoutBalanceStore: await tokenStateAddress(payoutConfidentialMint, userPayoutTokenAccount),
-    zamaEventAuthority: await zamaEventAuthorityAddress(),
+    zamaEventAuthority: (await findZamaEventAuthorityPda())[0],
     hostConfig: parameters.hostConfig,
-    confidentialTokenEventAuthority: await tokenEventAuthorityAddress(),
+    confidentialTokenEventAuthority: (await findTokenEventAuthorityPda())[0],
   });
   return instruction;
 }

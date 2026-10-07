@@ -1,8 +1,8 @@
+import { findAssociatedTokenPda, TOKEN_PROGRAM_ADDRESS } from '@solana-program/token';
 import type { Address, Instruction, Rpc, SolanaRpcApi, TransactionSigner } from '@solana/kit';
 
 import { fetchVault } from './internal/generated/demoVault/accounts/vault.js';
 import { getHarvestInstruction } from './internal/generated/demoVault/instructions/harvest.js';
-import { associatedTokenAddress, TOKEN_PROGRAM_ADDRESS } from './internal/tokenAccounts.js';
 
 type SolanaRpc = Rpc<SolanaRpcApi>;
 
@@ -38,11 +38,11 @@ export async function buildHarvestInstruction(
     donor: parameters.donor,
     vault: parameters.vault,
     underlyingMint: vault.data.underlyingMint,
-    donorUnderlying: await associatedTokenAddress(
-      parameters.donor.address,
-      vault.data.underlyingMint,
-      TOKEN_PROGRAM_ADDRESS,
-    ),
+    donorUnderlying: (await findAssociatedTokenPda({
+      owner: parameters.donor.address,
+      tokenProgram: TOKEN_PROGRAM_ADDRESS,
+      mint: vault.data.underlyingMint,
+    }))[0],
     vaultTokenAccount: vault.data.vaultTokenAccount,
     amount: parameters.amount,
   });

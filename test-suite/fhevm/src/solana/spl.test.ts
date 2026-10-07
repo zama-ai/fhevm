@@ -1,21 +1,20 @@
 import { describe, expect, test } from "bun:test";
 
 import { AccountRole, generateKeyPairSigner, type Address } from "@solana/kit";
+import {
+  findAssociatedTokenPda,
+  getMintSize,
+  ASSOCIATED_TOKEN_PROGRAM_ADDRESS,
+  TOKEN_PROGRAM_ADDRESS as SPL_TOKEN_PROGRAM_ADDRESS,
+} from "@solana-program/token";
 
 import {
-  SPL_MINT_ACCOUNT_SPACE,
-  associatedTokenAddress,
   buildVaultUnderlyingEscrowAtaInstruction,
   createAccountInstruction,
-  createIdempotentAtaInstruction,
-  initializeMint2Instruction,
-  mintToInstruction,
   setComputeUnitLimitInstruction,
   vaultAuthorityAddress,
 } from "./spl";
 
-const ASSOCIATED_TOKEN_PROGRAM_ADDRESS = "ATokenGPvbdGVxr1b2hvZbsiqW5xWH25efTNsLJA8knL" as Address;
-const SPL_TOKEN_PROGRAM_ADDRESS = "TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA" as Address;
 const SYSTEM_PROGRAM_ADDRESS = "11111111111111111111111111111111" as Address;
 
 // Fixed, realistic inputs so the derived escrow is a stable golden: the deployed confidential-token
@@ -33,11 +32,11 @@ describe("vault underlying-token escrow (the wrap_usdc / redeem_burned_amount va
       underlyingMint: UNDERLYING_MINT,
     });
     const vaultAuthority = await vaultAuthorityAddress(TOKEN_PROGRAM, CONFIDENTIAL_MINT);
-    const expected = await associatedTokenAddress(
-      vaultAuthority,
-      UNDERLYING_MINT,
-      SPL_TOKEN_PROGRAM_ADDRESS,
-    );
+    const [expected] = await findAssociatedTokenPda({
+      owner: vaultAuthority,
+      tokenProgram: SPL_TOKEN_PROGRAM_ADDRESS,
+      mint: UNDERLYING_MINT,
+    });
     expect(escrow).toBe(expected);
     // Golden: pins the vault_authority PDA + ATA derivation the seed must match the program/SDK on.
     expect(vaultAuthority).toBe("Y5emEtkuiaUP9HgUujdsyWHrqrYyBkYox9E58ZX9kHc" as Address);
@@ -56,7 +55,7 @@ describe("vault underlying-token escrow (the wrap_usdc / redeem_burned_amount va
 
     expect(instruction.programAddress).toBe(ASSOCIATED_TOKEN_PROGRAM_ADDRESS);
     expect(Array.from(instruction.data ?? [])).toEqual([1]);
-    expect(instruction.accounts).toEqual([
+    expect(instruction.accounts?.map(({ address, role }) => ({ address, role }))).toEqual([
       { address: payer.address, role: AccountRole.WRITABLE_SIGNER },
       { address: escrow, role: AccountRole.WRITABLE },
       { address: vaultAuthority, role: AccountRole.READONLY },
@@ -64,27 +63,15 @@ describe("vault underlying-token escrow (the wrap_usdc / redeem_burned_amount va
       { address: SYSTEM_PROGRAM_ADDRESS as Address, role: AccountRole.READONLY },
       { address: SPL_TOKEN_PROGRAM_ADDRESS as Address, role: AccountRole.READONLY },
     ]);
+    expect(instruction.accounts?.[0]).toHaveProperty("signer", payer);
     // The escrow is owned by the vault_authority PDA, holding the underlying mint — exactly the
     // constraints wrap_usdc enforces (vault_usdc.owner == vault_authority, vault_usdc.mint == underlying).
     expect(instruction.accounts?.[2]?.address).toBe(vaultAuthority);
     expect(instruction.accounts?.[3]?.address).toBe(UNDERLYING_MINT);
   });
-
-  test("createIdempotentAtaInstruction is a no-data tag-1 instruction", () => {
-    const payer = { address: "11111111111111111111111111111112" as Address } as never;
-    const instruction = createIdempotentAtaInstruction({
-      payer,
-      ata: CONFIDENTIAL_MINT,
-      owner: UNDERLYING_MINT,
-      mint: TOKEN_PROGRAM,
-    });
-    expect(instruction.programAddress).toBe(ASSOCIATED_TOKEN_PROGRAM_ADDRESS);
-    expect(Array.from(instruction.data ?? [])).toEqual([1]);
-    expect(instruction.accounts).toHaveLength(6);
-  });
 });
 
-describe("hand-built System/SPL/ComputeBudget instruction layouts", () => {
+describe("System/ComputeBudget instruction layouts", () => {
   test("createAccountInstruction encodes tag 0, lamports, space, and the owner program", async () => {
     const payer = await generateKeyPairSigner();
     const newAccount = await generateKeyPairSigner();
@@ -92,7 +79,7 @@ describe("hand-built System/SPL/ComputeBudget instruction layouts", () => {
       payer,
       newAccount,
       lamports: 1_461_600n,
-      space: SPL_MINT_ACCOUNT_SPACE,
+      space: BigInt(getMintSize()),
       owner: SPL_TOKEN_PROGRAM_ADDRESS,
     });
     expect(instruction.programAddress).toBe(SYSTEM_PROGRAM_ADDRESS);
@@ -107,40 +94,6 @@ describe("hand-built System/SPL/ComputeBudget instruction layouts", () => {
       AccountRole.WRITABLE_SIGNER,
     ]);
     expect(instruction.accounts?.map((meta) => meta.address)).toEqual([payer.address, newAccount.address]);
-  });
-
-  test("initializeMint2Instruction encodes tag 20, decimals, authority, and no freeze authority", () => {
-    const instruction = initializeMint2Instruction({
-      mint: CONFIDENTIAL_MINT,
-      decimals: 9,
-      mintAuthority: UNDERLYING_MINT,
-    });
-    expect(instruction.programAddress).toBe(SPL_TOKEN_PROGRAM_ADDRESS);
-    const data = instruction.data ?? new Uint8Array();
-    expect(data).toHaveLength(35);
-    expect(data[0]).toBe(20);
-    expect(data[1]).toBe(9);
-    expect(data[34]).toBe(0); // freeze authority COption::None
-    expect(instruction.accounts).toEqual([{ address: CONFIDENTIAL_MINT, role: AccountRole.WRITABLE }]);
-  });
-
-  test("mintToInstruction encodes tag 7 + u64-le amount with [mint(w), destination(w), authority(s)]", async () => {
-    const authority = await generateKeyPairSigner();
-    const instruction = mintToInstruction({
-      mint: CONFIDENTIAL_MINT,
-      destination: UNDERLYING_MINT,
-      authority,
-      baseUnits: 1_000_000n,
-    });
-    expect(instruction.programAddress).toBe(SPL_TOKEN_PROGRAM_ADDRESS);
-    const data = instruction.data ?? new Uint8Array();
-    expect(data[0]).toBe(7);
-    expect(new DataView(data.buffer, data.byteOffset).getBigUint64(1, true)).toBe(1_000_000n);
-    expect(instruction.accounts).toEqual([
-      { address: CONFIDENTIAL_MINT, role: AccountRole.WRITABLE },
-      { address: UNDERLYING_MINT, role: AccountRole.WRITABLE },
-      { address: authority.address, role: AccountRole.READONLY_SIGNER },
-    ]);
   });
 
   test("setComputeUnitLimitInstruction encodes tag 2 + u32-le units with no accounts", () => {

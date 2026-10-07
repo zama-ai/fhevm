@@ -4,8 +4,8 @@
 // shell out to (`initialize_mint`, `CONSUME_WRAP`, `INITIALIZE_TOKEN_ACCOUNT`, and the
 // `TOKEN_BALANCE_STATE` probe) plus the `spl-token`/`solana` CLI calls around them. Every step is
 // now a `@solana/kit` transaction built from the demo dapp's typed vault module — the same builders
-// `demo/seed.ts` live-verifies on every e2e run — and the shared hand-built SPL instructions in
-// `./spl.ts`. Binding to explicit signers (instead of the ambient Solana CLI identity
+// `demo/seed.ts` live-verifies on every e2e run — with the official SPL client and the shared
+// System helpers in `./spl.ts`. Binding to explicit signers (instead of the ambient Solana CLI identity
 // the live-client read from `$HOME`) is what lets the arc target any stack the harness injects.
 
 import fs from 'node:fs/promises';
@@ -19,8 +19,6 @@ import {
   fetchEncodedAccount,
   getSignatureFromTransaction,
   generateKeyPairSigner,
-  getAddressEncoder,
-  getProgramDerivedAddress,
   lamports,
   sendAndConfirmTransactionFactory,
   setTransactionMessageFeePayerSigner,
@@ -33,27 +31,29 @@ import {
   type SolanaRpcApi,
   type TransactionSigner,
 } from '@solana/kit';
+import {
+  findAssociatedTokenPda,
+  TOKEN_PROGRAM_ADDRESS as SPL_TOKEN_PROGRAM_ADDRESS,
+  getMintSize,
+  getCreateAssociatedTokenIdempotentInstruction,
+  getInitializeMint2Instruction,
+  getMintToInstruction,
+} from '@solana-program/token';
 
 import type { Bytes32Hex } from '@fhevm/sdk/types';
+import { programDataAddressFor } from '../../../../solana/deploy/src/bootstrap';
 
 import {
   createFinalizedRpc,
   decodeHostConfig,
-  findEventAuthorityPda,
   findHostConfigPda,
   HOST_CONFIG_DISCRIMINATOR,
   ZAMA_HOST_PROGRAM_ADDRESS,
 } from '@fhevm/solana-zama-host';
 
 import {
-  SPL_MINT_ACCOUNT_SPACE,
-  SPL_TOKEN_PROGRAM_ADDRESS,
-  associatedTokenAddress,
   buildVaultUnderlyingEscrowAtaInstruction,
   createAccountInstruction,
-  createIdempotentAtaInstruction,
-  initializeMint2Instruction,
-  mintToInstruction,
   setComputeUnitLimitInstruction,
   transferSolInstruction,
 } from './spl';
@@ -71,8 +71,6 @@ const LAMPORTS_PER_SOL = 1_000_000_000n;
 const EUINT64_FHE_TYPE_ID = 5;
 import { BALANCE_KEY as BALANCE_LABEL } from '@fhevm/confidential-token';
 
-const addressEncoder = getAddressEncoder();
-
 const bytesEqual = (a: Uint8Array, b: Uint8Array): boolean =>
   a.length === b.length && a.every((byte, index) => byte === b[index]);
 
@@ -82,20 +80,8 @@ export const hostConfigAddress = async (): Promise<Address> => {
   return hostConfig;
 };
 
-/** The zama-host program's Anchor event-authority PDA (`[b"__event_authority"]`). */
-export const zamaEventAuthorityAddress = async (): Promise<Address> => {
-  const [eventAuthority] = await findEventAuthorityPda();
-  return eventAuthority;
-};
-
 /** BPF upgradeable loader `ProgramData` PDA for zama-host (`[program_id]` under the loader). */
-export const zamaHostProgramDataAddress = async (): Promise<Address> => {
-  const [programData] = await getProgramDerivedAddress({
-    programAddress: 'BPFLoaderUpgradeab1e11111111111111111111111' as Address,
-    seeds: [addressEncoder.encode(ZAMA_HOST_PROGRAM_ADDRESS)],
-  });
-  return programData;
-};
+export const zamaHostProgramDataAddress = (): Promise<Address> => programDataAddressFor(ZAMA_HOST_PROGRAM_ADDRESS);
 
 export type SendTransactionOptions = {
   /**
@@ -244,16 +230,16 @@ export const createSplMint = async (
   params: { readonly authority: TransactionSigner; readonly decimals: number },
 ): Promise<Address> => {
   const mint = await generateKeyPairSigner();
-  const rent = await context.rpc.getMinimumBalanceForRentExemption(SPL_MINT_ACCOUNT_SPACE).send();
+  const rent = await context.rpc.getMinimumBalanceForRentExemption(BigInt(getMintSize())).send();
   await context.sendTransaction(params.authority, [
     createAccountInstruction({
       payer: params.authority,
       newAccount: mint,
       lamports: rent,
-      space: SPL_MINT_ACCOUNT_SPACE,
+      space: BigInt(getMintSize()),
       owner: SPL_TOKEN_PROGRAM_ADDRESS,
     }),
-    initializeMint2Instruction({
+    getInitializeMint2Instruction({
       mint: mint.address,
       decimals: params.decimals,
       mintAuthority: params.authority.address,
@@ -272,14 +258,18 @@ export const mintSplTo = async (
     readonly baseUnits: bigint;
   },
 ): Promise<Address> => {
-  const ata = await associatedTokenAddress(params.recipient, params.mint, SPL_TOKEN_PROGRAM_ADDRESS);
+  const [ata] = await findAssociatedTokenPda({
+    owner: params.recipient,
+    tokenProgram: SPL_TOKEN_PROGRAM_ADDRESS,
+    mint: params.mint,
+  });
   await context.sendTransaction(params.authority, [
-    createIdempotentAtaInstruction({ payer: params.authority, ata, owner: params.recipient, mint: params.mint }),
-    mintToInstruction({
+    getCreateAssociatedTokenIdempotentInstruction({ payer: params.authority, ata, owner: params.recipient, mint: params.mint }),
+    getMintToInstruction({
       mint: params.mint,
-      destination: ata,
-      authority: params.authority,
-      baseUnits: params.baseUnits,
+      token: ata,
+      mintAuthority: params.authority,
+      amount: params.baseUnits,
     }),
   ]);
   return ata;

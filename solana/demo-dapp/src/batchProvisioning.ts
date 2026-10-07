@@ -1,15 +1,16 @@
 import { appendTransientStoreInstructions, prepareTransientStore } from '@fhevm/sdk/solana';
-import { getAddressEncoder, type Address, type TransactionSigner } from '@solana/kit';
+import type { Address, TransactionSigner } from '@solana/kit';
 import {
-  LOOKUP_TABLE_DEACTIVATION_COOLDOWN_SLOTS,
-  LOOKUP_TABLE_STILL_ACTIVE,
-  buildReclaimBatchAuthorityInstruction,
-  decodeLookupTableDeactivationSlot,
+  ADDRESS_LOOKUP_TABLE_PROGRAM_ADDRESS,
+  getAddressLookupTableDecoder,
   getCloseLookupTableInstruction,
+  getDeactivateLookupTableInstruction,
+} from '@solana-program/address-lookup-table';
+import {
+  buildReclaimBatchAuthorityInstruction,
   getBatchByIndex,
   getBatcher,
   getCurrentBatch,
-  getDeactivateLookupTableInstruction,
   getExtendLookupTableInstructions,
   openBatchForBatcher,
 } from './vault/index.js';
@@ -29,10 +30,10 @@ const RECLAIM_BATCH_AUTHORITY_COMPUTE_UNIT_LIMIT = 50_000;
  * later than this window (a long-canceled straggler) is reclaimed by hand.
  */
 export const RECLAIM_SCAN_WINDOW = 8n;
-const LOOKUP_TABLE_HEADER_BYTES = 56;
-const LOOKUP_TABLE_PROGRAM = 'AddressLookupTab1e1111111111111111111111111';
-
-const addressEncoder = getAddressEncoder();
+// The client does not export the active-slot sentinel or the runtime's slot-hashes cooldown.
+const LOOKUP_TABLE_STILL_ACTIVE = 0xffff_ffff_ffff_ffffn;
+// The demo waits an extra slot beyond the 512-slot window before attempting to close.
+const LOOKUP_TABLE_DEACTIVATION_COOLDOWN_SLOTS = 513n;
 
 const lookupTablePrefixLength = async (
   config: DemoConfig,
@@ -42,18 +43,17 @@ const lookupTablePrefixLength = async (
   const account = await createFinalizedRpc(config.rpcUrl)
     .getAccountInfo(lookupTable, { encoding: 'base64' })
     .send();
-  if (account.value === null || account.value.owner !== LOOKUP_TABLE_PROGRAM) return null;
+  if (account.value === null || account.value.owner !== ADDRESS_LOOKUP_TABLE_PROGRAM_ADDRESS) return null;
   const encoded = account.value.data as readonly [string, 'base64'];
-  const bytes = Buffer.from(encoded[0], 'base64');
-  if (bytes.length < LOOKUP_TABLE_HEADER_BYTES || (bytes.length - LOOKUP_TABLE_HEADER_BYTES) % 32 !== 0) return null;
-  const addressCount = (bytes.length - LOOKUP_TABLE_HEADER_BYTES) / 32;
-  if (addressCount > expectedAddresses.length) return null;
-  for (let index = 0; index < addressCount; index += 1) {
-    const expected = addressEncoder.encode(expectedAddresses[index]!);
-    const actual = bytes.subarray(LOOKUP_TABLE_HEADER_BYTES + index * 32, LOOKUP_TABLE_HEADER_BYTES + (index + 1) * 32);
-    if (!actual.equals(Buffer.from(expected))) return null;
+  let addresses: Address[];
+  try {
+    ({ addresses } = getAddressLookupTableDecoder().decode(Buffer.from(encoded[0], 'base64')));
+  } catch {
+    return null;
   }
-  return addressCount;
+  if (addresses.length > expectedAddresses.length) return null;
+  if (addresses.some((stored, index) => stored !== expectedAddresses[index])) return null;
+  return addresses.length;
 };
 
 /**
@@ -210,12 +210,12 @@ const retireFinishedLookupTables = async (
       const account = await rpc
         .getAccountInfo(table as Address, { encoding: 'base64' })
         .send();
-      if (account.value === null || account.value.owner !== LOOKUP_TABLE_PROGRAM) {
+      if (account.value === null || account.value.owner !== ADDRESS_LOOKUP_TABLE_PROGRAM_ADDRESS) {
         closed.add(table);
         continue;
       }
       const encoded = account.value.data as readonly [string, 'base64'];
-      const deactivationSlot = decodeLookupTableDeactivationSlot(Buffer.from(encoded[0], 'base64'));
+      const { deactivationSlot } = getAddressLookupTableDecoder().decode(Buffer.from(encoded[0], 'base64'));
       if (deactivationSlot === LOOKUP_TABLE_STILL_ACTIVE) {
         // Reading the state first is what makes this idempotent: the deactivate instruction fails
         // on an already-deactivated table, so an eager deactivation by `settleVaultBatch` and this
@@ -224,7 +224,7 @@ const retireFinishedLookupTables = async (
         await sendTransaction(
           config,
           keeper,
-          [getDeactivateLookupTableInstruction({ lookupTable: table as Address, authority: keeper })],
+          [getDeactivateLookupTableInstruction({ address: table as Address, authority: keeper })],
           LOOKUP_TABLE_COMPUTE_UNIT_LIMIT,
         );
         // Closing has to wait out the cooldown; the next crank picks it up.
@@ -236,7 +236,7 @@ const retireFinishedLookupTables = async (
         keeper,
         [
           getCloseLookupTableInstruction({
-            lookupTable: table as Address,
+            address: table as Address,
             authority: keeper,
             recipient: keeper.address,
           }),

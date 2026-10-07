@@ -1,3 +1,4 @@
+import { TOKEN_PROGRAM_ADDRESS } from '@solana-program/token';
 import type { Bytes32Hex } from '@fhevm/sdk/types';
 import {
   createSolanaRpcSubscriptions,
@@ -5,6 +6,7 @@ import {
   type Signature,
   type TransactionSigner,
 } from '@solana/kit';
+import { getDeactivateLookupTableInstruction } from '@solana-program/address-lookup-table';
 import {
   appendTransientStoreInstructions,
   createFhevmPublicDecryptClient,
@@ -18,11 +20,9 @@ import {
   deriveJoinRecordAddress,
   getBatchByIndex,
   getBatcher,
-  getDeactivateLookupTableInstruction,
   getJoinRecord,
   buildCloseJoinRecordInstruction,
   settleBatch,
-  TOKEN_PROGRAM_ADDRESS,
 } from './vault/index.js';
 
 import {
@@ -187,7 +187,7 @@ export const settleVaultBatch = async (
       session.config,
       session.keeper,
       [
-        getDeactivateLookupTableInstruction({ lookupTable: lookupTableAddress, authority: session.keeper }),
+        getDeactivateLookupTableInstruction({ address: lookupTableAddress, authority: session.keeper }),
         await buildReclaimBatchAuthorityInstruction({
           authority: session.keeper,
           batcher: roots.batcher,

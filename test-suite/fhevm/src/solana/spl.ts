@@ -4,78 +4,31 @@ import { findVaultAuthorityPda } from '@fhevm/confidential-token';
 // `demo/operator-server.ts`). No top-level side effects, so this module is importable by offline
 // tests (unlike the demo entrypoints, which run `await main()` against a live validator on
 // import).
-//
-// The instructions are hand-built with `@solana/kit` primitives on purpose: the test-suite carries
-// no `@solana-program/token` dependency. Layouts cited inline:
-//   - Associated-Token `CreateIdempotent` (tag 1): no data args beyond the tag; accounts
-//     [payer(ws), ata(w), owner, mint, systemProgram, tokenProgram]. Idempotent = a no-op if the ATA
-//     already exists. https://github.com/solana-program/associated-token-account.
-//   - System `CreateAccount` (tag 0 as u32): data = [0:u32, lamports:u64, space:u64, owner:32];
-//     accounts [payer(ws), newAccount(ws)] — both sign.
-//   - SPL Token `InitializeMint2` (tag 20): data = [20, decimals, mintAuthority:32, freezeOption];
-//     accounts [mint(w)]. https://github.com/solana-program/token — `Instruction::InitializeMint2`.
-//   - SPL Token `MintTo` (tag 7): data = [7, amount:u64-le]; accounts
-//     [mint(w), destination(w), authority(s)]. Same source, `Instruction::MintTo`.
-//   - ComputeBudget `SetComputeUnitLimit` (tag 2): data = [2, units:u32-le]; no accounts.
 
 import {
   AccountRole,
   getAddressEncoder,
-  getProgramDerivedAddress,
   type AccountMeta,
   type Address,
   type Instruction,
   type TransactionSigner,
 } from "@solana/kit";
+import {
+  findAssociatedTokenPda,
+  getCreateAssociatedTokenIdempotentInstruction,
+  TOKEN_PROGRAM_ADDRESS as SPL_TOKEN_PROGRAM_ADDRESS,
+} from "@solana-program/token";
 
-// Well-known program ids (same literals the SDK's vault `derive.ts` and the other demo scripts use).
-export const SPL_TOKEN_PROGRAM_ADDRESS = "TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA" as Address;
-const ASSOCIATED_TOKEN_PROGRAM_ADDRESS = "ATokenGPvbdGVxr1b2hvZbsiqW5xWH25efTNsLJA8knL" as Address;
 const SYSTEM_PROGRAM_ADDRESS = "11111111111111111111111111111111" as Address;
 const COMPUTE_BUDGET_PROGRAM_ADDRESS = "ComputeBudget111111111111111111111111111111" as Address;
-/** SPL Token `Mint` account length — the `space` for `CreateAccount` before `InitializeMint2`. */
-export const SPL_MINT_ACCOUNT_SPACE = 82n;
 
 const addressEncoder = getAddressEncoder();
 const encodeAddress = (value: Address): Uint8Array => new Uint8Array(addressEncoder.encode(value));
 
-/** Associated token account for `owner` and SPL `mint` under `tokenProgram`. */
-export const associatedTokenAddress = async (
-  owner: Address,
-  mint: Address,
-  tokenProgram: Address,
-): Promise<Address> => {
-  const [ata] = await getProgramDerivedAddress({
-    programAddress: ASSOCIATED_TOKEN_PROGRAM_ADDRESS,
-    seeds: [encodeAddress(owner), encodeAddress(tokenProgram), encodeAddress(mint)],
-  });
-  return ata;
-};
-
-/** Associated-Token `CreateIdempotent` (tag 1): a no-op when the ATA already exists. */
-export const createIdempotentAtaInstruction = (params: {
-  readonly payer: TransactionSigner;
-  readonly ata: Address;
-  readonly owner: Address;
-  readonly mint: Address;
-}): Instruction => ({
-  programAddress: ASSOCIATED_TOKEN_PROGRAM_ADDRESS,
-  accounts: [
-    { address: params.payer.address, role: AccountRole.WRITABLE_SIGNER },
-    { address: params.ata, role: AccountRole.WRITABLE },
-    { address: params.owner, role: AccountRole.READONLY },
-    { address: params.mint, role: AccountRole.READONLY },
-    { address: SYSTEM_PROGRAM_ADDRESS, role: AccountRole.READONLY },
-    { address: SPL_TOKEN_PROGRAM_ADDRESS, role: AccountRole.READONLY },
-  ],
-  data: new Uint8Array([1]),
-});
-
 /**
  * A signer account meta: the `signer` field rides along at runtime so `signTransactionMessageWithSigners`
- * produces the signature, while the meta stays typed as a plain `AccountMeta` (same shape the demo
- * dapp's address-lookup-table builder uses). Used for the hand-built System `CreateAccount`, whose
- * keypair must sign its own creation.
+ * produces the signature, while the meta stays typed as a plain `AccountMeta`. The hand-built
+ * System `CreateAccount` needs its new keypair to sign its own creation.
  */
 const signerMeta = (signer: TransactionSigner, role: AccountRole): AccountMeta =>
   ({ address: signer.address, role, signer }) as unknown as AccountMeta;
@@ -124,45 +77,6 @@ export const transferSolInstruction = (parameters: {
   };
 };
 
-/** SPL Token `InitializeMint2` (tag 20): sets decimals + mint authority, no freeze authority. */
-export const initializeMint2Instruction = (parameters: {
-  readonly mint: Address;
-  readonly decimals: number;
-  readonly mintAuthority: Address;
-}): Instruction => {
-  const data = new Uint8Array(1 + 1 + 32 + 1);
-  data[0] = 20;
-  data[1] = parameters.decimals;
-  data.set(encodeAddress(parameters.mintAuthority), 2);
-  data[34] = 0; // freeze authority COption::None
-  return {
-    programAddress: SPL_TOKEN_PROGRAM_ADDRESS,
-    accounts: [{ address: parameters.mint, role: AccountRole.WRITABLE }],
-    data,
-  };
-};
-
-/** SPL Token `MintTo` (tag 7): mints `baseUnits` to `destination`, signed by the mint authority. */
-export const mintToInstruction = (params: {
-  readonly mint: Address;
-  readonly destination: Address;
-  readonly authority: TransactionSigner;
-  readonly baseUnits: bigint;
-}): Instruction => {
-  const data = new Uint8Array(9);
-  data[0] = 7;
-  new DataView(data.buffer).setBigUint64(1, params.baseUnits, true);
-  return {
-    programAddress: SPL_TOKEN_PROGRAM_ADDRESS,
-    accounts: [
-      { address: params.mint, role: AccountRole.WRITABLE },
-      { address: params.destination, role: AccountRole.WRITABLE },
-      { address: params.authority.address, role: AccountRole.READONLY_SIGNER },
-    ],
-    data,
-  };
-};
-
 /** ComputeBudget `SetComputeUnitLimit` (tag 2): raises the per-tx CU ceiling for the FHE-heavy CPIs. */
 export const setComputeUnitLimitInstruction = (units: number): Instruction => {
   const data = new Uint8Array(5);
@@ -201,14 +115,14 @@ export const buildVaultUnderlyingEscrowAtaInstruction = async (params: {
   readonly underlyingMint: Address;
 }): Promise<{ readonly escrow: Address; readonly instruction: Instruction }> => {
   const vaultAuthority = await vaultAuthorityAddress(params.tokenProgram, params.confidentialMint);
-  const escrow = await associatedTokenAddress(
-    vaultAuthority,
-    params.underlyingMint,
-    SPL_TOKEN_PROGRAM_ADDRESS,
-  );
+  const [escrow] = await findAssociatedTokenPda({
+    owner: vaultAuthority,
+    tokenProgram: SPL_TOKEN_PROGRAM_ADDRESS,
+    mint: params.underlyingMint,
+  });
   return {
     escrow,
-    instruction: createIdempotentAtaInstruction({
+    instruction: getCreateAssociatedTokenIdempotentInstruction({
       payer: params.payer,
       ata: escrow,
       owner: vaultAuthority,

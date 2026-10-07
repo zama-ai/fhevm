@@ -8,7 +8,7 @@ import { INSTRUCTIONS_SYSVAR_ADDRESS, appendTransientStoreInstructions, prepareT
 
 import { type Address, type TransactionSigner } from "@solana/kit";
 
-import { associatedTokenAddress, SPL_TOKEN_PROGRAM_ADDRESS } from "./spl";
+import { TOKEN_PROGRAM_ADDRESS as SPL_TOKEN_PROGRAM_ADDRESS, findAssociatedTokenPda } from "@solana-program/token";
 import { BRINGUP_KMS_CONTEXT_ID } from "./addresses";
 import { findKmsContextPda } from "@fhevm/solana-zama-host";
 import { certificateCleartext, type PublicDecryptCertificate } from "./public-decrypt";
@@ -92,11 +92,11 @@ export const confidentialBurn = async (
     owner: params.owner,
     mint: params.mint,
     underlyingMint: params.underlyingMint,
-    ownerAta: await associatedTokenAddress(
-      params.owner.address,
-      params.underlyingMint,
-      SPL_TOKEN_PROGRAM_ADDRESS,
-    ),
+    ownerAta: (await findAssociatedTokenPda({
+      owner: params.owner.address,
+      tokenProgram: SPL_TOKEN_PROGRAM_ADDRESS,
+      mint: params.underlyingMint,
+    }))[0],
     tokenAccount: target.tokenAccount,
     balanceStore: await vault.tokenStateAddress(params.mint, target.tokenAccount),
     totalSupplyStore: await totalSupplyStore(params.mint),
@@ -136,16 +136,16 @@ export const redeemBurnedAmount = async (
     mint: params.mint,
     tokenAccount: target.tokenAccount,
     underlyingMint: params.underlyingMint,
-    vaultUsdc: await associatedTokenAddress(
-      vaultAuthority,
-      params.underlyingMint,
-      SPL_TOKEN_PROGRAM_ADDRESS,
-    ),
-    destinationUsdc: await associatedTokenAddress(
-      params.owner.address,
-      params.underlyingMint,
-      SPL_TOKEN_PROGRAM_ADDRESS,
-    ),
+    vaultUsdc: (await findAssociatedTokenPda({
+      owner: vaultAuthority,
+      tokenProgram: SPL_TOKEN_PROGRAM_ADDRESS,
+      mint: params.underlyingMint,
+    }))[0],
+    destinationUsdc: (await findAssociatedTokenPda({
+      owner: params.owner.address,
+      tokenProgram: SPL_TOKEN_PROGRAM_ADDRESS,
+      mint: params.underlyingMint,
+    }))[0],
     burnedAmountStore: target.burnedAmountStore,
     hostConfig: await hostConfigAddress(),
     kmsContext: await kmsContextAddress(),

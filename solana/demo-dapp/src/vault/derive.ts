@@ -1,3 +1,5 @@
+import { findEventAuthorityPda as findZamaEventAuthorityPda } from '@fhevm/solana-zama-host';
+import { findAssociatedTokenPda, TOKEN_PROGRAM_ADDRESS } from '@solana-program/token';
 import type { Address } from '@solana/kit';
 import {
   findVaultAuthorityPda as findDemoVaultAuthorityPda,
@@ -10,8 +12,7 @@ import {
   findJoinRecordPda,
 } from './internal/generated/confidentialBatcher/pdas/index.js';
 import { batchAddress, tokenStateAddress, pendingBurnAddress, tokenAccountAddress } from './internal/batcherPdas.js';
-import { associatedTokenAddress, TOKEN_PROGRAM_ADDRESS, tokenEventAuthorityAddress, zamaEventAuthorityAddress } from './internal/tokenAccounts.js';
-import { findTotalSupplyAuthorityPda, findVaultAuthorityPda as findMintVaultAuthorityPda } from '@fhevm/confidential-token';
+import { findTotalSupplyAuthorityPda, findVaultAuthorityPda as findMintVaultAuthorityPda, findEventAuthorityPda as findTokenEventAuthorityPda } from '@fhevm/confidential-token';
 
 /**
  * The immutable roots of one batcher's demo topology — the addresses a real integrator (or the
@@ -198,18 +199,18 @@ export async function deriveSettleAccounts(
     batchAuthority: batch.batchAuthority,
     batchJoinUnderlying: batch.batchJoinUnderlying,
     batchPayoutUnderlying: batch.batchPayoutUnderlying,
-    zamaEventAuthority: await zamaEventAuthorityAddress(),
-    confidentialTokenEventAuthority: await tokenEventAuthorityAddress(),
+    zamaEventAuthority: (await findZamaEventAuthorityPda())[0],
+    confidentialTokenEventAuthority: (await findTokenEventAuthorityPda())[0],
     batcher: roots.batcher,
     batch: batch.batch,
     joinConfidentialMint: roots.joinConfidentialMint,
     batchJoinTokenAccount: batch.batchJoinTokenAccount,
     joinUnderlyingMint: roots.joinUnderlyingMint,
-    joinMintVaultUnderlying: await associatedTokenAddress(
-      joinMintVaultAuthority,
-      roots.joinUnderlyingMint,
-      TOKEN_PROGRAM_ADDRESS,
-    ),
+    joinMintVaultUnderlying: (await findAssociatedTokenPda({
+      owner: joinMintVaultAuthority,
+      tokenProgram: TOKEN_PROGRAM_ADDRESS,
+      mint: roots.joinUnderlyingMint,
+    }))[0],
     joinMintVaultAuthority,
     batchBurnedAmountStore: batch.batchBurnedAmountStore,
     pendingBurn: await pendingBurnAddress(roots.joinConfidentialMint, batch.batchJoinTokenAccount),
@@ -221,11 +222,11 @@ export async function deriveSettleAccounts(
     payoutConfidentialMint: roots.payoutConfidentialMint,
     payoutUnderlyingMint: roots.payoutUnderlyingMint,
     batchPayoutTokenAccount: batch.batchPayoutTokenAccount,
-    payoutMintVaultUnderlying: await associatedTokenAddress(
-      payoutMintVaultAuthority,
-      roots.payoutUnderlyingMint,
-      TOKEN_PROGRAM_ADDRESS,
-    ),
+    payoutMintVaultUnderlying: (await findAssociatedTokenPda({
+      owner: payoutMintVaultAuthority,
+      tokenProgram: TOKEN_PROGRAM_ADDRESS,
+      mint: roots.payoutUnderlyingMint,
+    }))[0],
     payoutMintVaultAuthority,
     payoutTotalSupplyAuthority,
     batchPayoutBalanceStore: batch.batchPayoutBalanceStore,

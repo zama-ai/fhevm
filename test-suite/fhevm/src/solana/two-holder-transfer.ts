@@ -1,3 +1,4 @@
+import { TOKEN_PROGRAM_ADDRESS } from "@solana-program/token";
 import { recordRunWallet } from "./recovery";
 
 import { address, createSolanaRpcSubscriptions, getAddressEncoder, type Address, type TransactionSigner } from "@solana/kit";
@@ -152,7 +153,7 @@ export const createRealTwoHolderDependencies = (cfg: TwoHolderConfig): TwoHolder
           feePayer: owner,
           mint: address(scenario.mint),
           underlyingMint: address(scenario.underlyingMint),
-          tokenProgram: vault.TOKEN_PROGRAM_ADDRESS,
+          tokenProgram: TOKEN_PROGRAM_ADDRESS,
           fromAccount: address(alice.tokenAccount),
           toAccount: address(bob.tokenAccount),
           toOwner: address(scenario.bob.owner),

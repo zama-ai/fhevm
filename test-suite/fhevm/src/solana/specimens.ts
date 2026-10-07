@@ -23,9 +23,9 @@ import {
 } from "./internal/generated/encryptedCounter/instructions/index.js";
 import { findCounterAuthorityPda, findCounterPda } from "./internal/generated/encryptedCounter/pdas/index.js";
 import { ENCRYPTED_COUNTER_PROGRAM_ADDRESS } from "./internal/generated/encryptedCounter/programAddress.js";
-import { ZAMA_HOST_PROGRAM_ADDRESS } from "@fhevm/solana-zama-host";
+import { ZAMA_HOST_PROGRAM_ADDRESS, findEventAuthorityPda as findZamaEventAuthorityPda } from "@fhevm/solana-zama-host";
 import { currentHandle } from "./fhe-vertical";
-import { hostConfigAddress, zamaEventAuthorityAddress, type SolanaProvisioningContext } from "./provision";
+import { hostConfigAddress, type SolanaProvisioningContext } from "./provision";
 
 // Byte-identical to the specimens' `encrypted_*_label` functions.
 import { COUNT_KEY as COUNT_LABEL } from "./internal/generated/encryptedCounter/constants.js";
@@ -84,7 +84,7 @@ export const chainValue = async (owner: Address): Promise<SpecimenValue> => {
 
 const hostAccounts = async () => ({
   hostConfig: await hostConfigAddress(),
-  zamaEventAuthority: await zamaEventAuthorityAddress(),
+  zamaEventAuthority: (await findZamaEventAuthorityPda())[0],
 });
 
 const instructionAccounts = (transientStore: TransientStore) => ({

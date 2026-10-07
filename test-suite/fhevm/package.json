@@ -21,6 +21,7 @@
     "@fhevm/confidential-token": "file:../../solana/clients/confidential-token",
     "@fhevm/sdk": "file:../../sdk/js-sdk/src",
     "@fhevm/solana-zama-host": "file:../../solana/clients/zama-host",
+    "@solana-program/token": "0.14.0",
     "@solana/kit": "6.10.0",
     "@solana/program-client-core": "6.10.0",
     "citty": "^0.1.6",

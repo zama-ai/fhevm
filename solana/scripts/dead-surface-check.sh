@@ -243,12 +243,8 @@ HAND_DERIVATION_ROOTS=(
 # counts; review rejects new entries. Keyed by path so unrelated edits do not invalidate an entry.
 HAND_DERIVATIONS_ALLOWED=(
   "solana/deploy/src/bootstrap.ts|2|fhevm-internal#2108 task 2 (programData: the one solana/deploy helper)"
-  "test-suite/fhevm/src/solana/provision.ts|2|fhevm-internal#2108 task 2 (programData: the one solana/deploy helper)"
-  "test-suite/fhevm/src/solana/spl.ts|2|fhevm-internal#2108 task 2 (@solana-program/token findAssociatedTokenPda)"
-  "solana/demo-dapp/src/vault/internal/tokenAccounts.ts|2|fhevm-internal#2108 task 2 (@solana-program/token findAssociatedTokenPda)"
   "solana/deploy/src/recover.ts|5|fhevm-internal#2108 task 2 (Anchor seeds)"
   "solana/demo-dapp/src/vault/internal/batcherPdas.ts|3|fhevm-internal#2108 task 2 (Anchor seeds)"
-  "solana/demo-dapp/src/vault/internal/addressLookupTable.ts|2|fhevm-internal#2108 task 2 (@solana-program/address-lookup-table findAddressLookupTablePda)"
   "test-suite/fhevm/demo/seed.ts|3|fhevm-internal#2108 task 2 (Anchor seeds)"
 )
 # The self-test drives the allow-list arms through the environment, as checks 4 and 5 do.

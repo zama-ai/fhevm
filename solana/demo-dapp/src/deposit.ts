@@ -1,3 +1,4 @@
+import { TOKEN_PROGRAM_ADDRESS } from '@solana-program/token';
 import { createFinalizedRpc } from '@fhevm/solana-zama-host';
 import { appendTransientStoreInstructions, prepareTransientStore } from '@fhevm/sdk/solana';
 import {
@@ -29,7 +30,6 @@ import {
   getCurrentBatch,
   getOrCreateConfidentialTokenAccountInstruction,
   joinBatch,
-  TOKEN_PROGRAM_ADDRESS,
 } from './vault/index.js';
 
 import type { BatchPosition, BatchTarget } from './batchTypes';

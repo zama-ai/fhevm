@@ -10,10 +10,24 @@ import {
   getAddressDecoder,
   getAddressEncoder,
   getProgramDerivedAddress,
+  isSome,
   type Address,
   type Instruction,
   type TransactionSigner,
 } from '@solana/kit';
+import {
+  TOKEN_PROGRAM_ADDRESS as TOKEN,
+  getBurnInstruction,
+  getCloseAccountInstruction,
+  getTokenDecoder,
+  getTokenSize,
+} from '@solana-program/token';
+import {
+  ADDRESS_LOOKUP_TABLE_PROGRAM_ADDRESS as ALT,
+  getAddressLookupTableDecoder,
+  getDeactivateLookupTableInstruction,
+  getCloseLookupTableInstruction,
+} from '@solana-program/address-lookup-table';
 import { uploadBufferBytes } from './deploy-programs';
 import { programDataAddressFor } from './bootstrap';
 import { deployedProgramIds, type SolanaEnvironment } from './environment';
@@ -30,10 +44,8 @@ import { BatchStatus } from '../../demo-dapp/src/vault/internal/generated/confid
 import { getReclaimBatchAuthorityInstructionAsync } from '../../demo-dapp/src/vault/internal/generated/confidentialBatcher/instructions/reclaimBatchAuthority';
 import { getCloseJoinRecordInstruction } from '../../demo-dapp/src/vault/internal/generated/confidentialBatcher/instructions/closeJoinRecord';
 
-const TOKEN = address('TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA');
 const SYSTEM = address('11111111111111111111111111111111');
 const LOADER = address('BPFLoaderUpgradeab1e11111111111111111111111');
-const ALT = address('AddressLookupTab1e1111111111111111111111111');
 const discriminator = (name: string) => createHash('sha256').update(name).digest().subarray(0, 8);
 const u32 = (n: number) => {
   const b = Buffer.alloc(4);
@@ -168,14 +180,14 @@ export async function recoverPreview(
         )
         .send();
       for (const token of tokens.value) {
-        const data = Buffer.from(token.account.data[0], 'base64');
+        const { mint } = getTokenDecoder().decode(Buffer.from(token.account.data[0], 'base64'));
         await send({
           programAddress: authority.program,
           accounts: [
             ...admin,
             { address: authority.address, role: AccountRole.READONLY },
             writable(token.pubkey),
-            writable(decodeAddress(data, 0)),
+            writable(mint),
             { address: TOKEN, role: AccountRole.READONLY },
           ],
           data: Buffer.concat([discriminator('global:preview_close_token'), encodeSeeds(authority.seeds)]),
@@ -265,9 +277,8 @@ export async function recoverPreview(
       .getTokenAccountsByOwner(wallet.address, { programId: TOKEN }, { encoding: 'base64' })
       .send();
     for (const token of tokens.value) {
-      const data = Buffer.from(token.account.data[0], 'base64');
-      if (legacyWallets.has(wallet.address) && !knownMints.has(decodeAddress(data, 0))) continue;
-      const amount = data.readBigUInt64LE(64);
+      const { mint, amount } = getTokenDecoder().decode(Buffer.from(token.account.data[0], 'base64'));
+      if (legacyWallets.has(wallet.address) && !knownMints.has(mint)) continue;
       if (amount > 0n && !reset) {
         retained.push({
           address: token.pubkey,
@@ -277,31 +288,24 @@ export async function recoverPreview(
         continue;
       }
       if (amount > 0n)
-        await send({
-          programAddress: TOKEN,
-          accounts: [writable(token.pubkey), writable(decodeAddress(data, 0)), signer(wallet)],
-          data: Buffer.concat([Buffer.from([8]), data.subarray(64, 72)]),
-        });
-      await send({
-        programAddress: TOKEN,
-        accounts: [writable(token.pubkey), writable(payer.address), signer(wallet)],
-        data: new Uint8Array([9]),
-      });
+        await send(getBurnInstruction({ account: token.pubkey, mint, authority: wallet, amount }));
+      await send(getCloseAccountInstruction({ account: token.pubkey, destination: payer.address, owner: wallet }));
     }
     {
       const tables = await context.rpc
         .getProgramAccounts(ALT, {
           encoding: 'base64',
+          // LookupTableMeta.authority's address starts at byte 22; the client exposes no field offsets.
           filters: [{ memcmp: { offset: 22n, bytes: wallet.address, encoding: 'base58' } }],
         })
         .send();
       for (const table of tables) {
-        const bytes = Buffer.from(table.account.data[0], 'base64');
-        if (bytes[21] !== 1 || decodeAddress(bytes, 22) !== wallet.address) continue;
-        const members = [];
-        for (let offset = 56; offset + 32 <= bytes.length; offset += 32) members.push(decodeAddress(bytes, offset));
+        const { authority, addresses: members, deactivationSlot } = getAddressLookupTableDecoder().decode(
+          Buffer.from(table.account.data[0], 'base64'),
+        );
+        if (!isSome(authority) || authority.value !== wallet.address) continue;
         const finished = members.some((a) => finishedBatches.has(a)) && !members.some((a) => liveBatches.has(a));
-        if (!reset && !finished && bytes.readBigUInt64LE(4) === 0xffffffffffffffffn) {
+        if (!reset && !finished && deactivationSlot === 0xffffffffffffffffn) {
           retained.push({
             address: table.pubkey,
             lamports: table.account.lamports.toString(),
@@ -309,8 +313,8 @@ export async function recoverPreview(
           });
           continue;
         }
-        if (bytes.readBigUInt64LE(4) === 0xffffffffffffffffn)
-          await send({ programAddress: ALT, accounts: [writable(table.pubkey), signer(wallet)], data: u32(3) });
+        if (deactivationSlot === 0xffffffffffffffffn)
+          await send(getDeactivateLookupTableInstruction({ address: table.pubkey, authority: wallet }));
         pendingTables.set(table.pubkey, wallet);
       }
     }
@@ -327,13 +331,9 @@ export async function recoverPreview(
         pendingTables.delete(table);
         continue;
       }
-      const deactivated = Buffer.from(info.data[0], 'base64').readBigUInt64LE(4);
+      const { deactivationSlot: deactivated } = getAddressLookupTableDecoder().decode(Buffer.from(info.data[0], 'base64'));
       if (finalizedSlot > deactivated + 513n) {
-        await send({
-          programAddress: ALT,
-          accounts: [writable(table), signer(wallet), writable(payer.address)],
-          data: u32(4),
-        });
+        await send(getCloseLookupTableInstruction({ address: table, authority: wallet, recipient: payer.address }));
         pendingTables.delete(table);
       }
     }
@@ -432,7 +432,8 @@ export async function recoverPreview(
       const remaining = await context.rpc
         .getProgramAccounts(TOKEN, {
           encoding: 'base64',
-          filters: [{ dataSize: 165n }, { memcmp: { offset: 0n, bytes: mint, encoding: 'base58' } }],
+          // Token.mint starts at byte 0; the client exposes no field offsets.
+          filters: [{ dataSize: BigInt(getTokenSize()) }, { memcmp: { offset: 0n, bytes: mint, encoding: 'base58' } }],
         })
         .send();
       for (const item of remaining)

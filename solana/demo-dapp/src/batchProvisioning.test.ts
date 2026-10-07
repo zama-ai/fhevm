@@ -1,4 +1,9 @@
 import { beforeEach, describe, expect, test, vi } from 'vitest';
+import { address, type Address } from '@solana/kit';
+import {
+  ADDRESS_LOOKUP_TABLE_PROGRAM_ADDRESS,
+  getAddressLookupTableEncoder,
+} from '@solana-program/address-lookup-table';
 
 // The lookup-table lifecycle is the demo's only unbounded rent risk: every batch derives a table
 // from a recent slot, and once that slot has passed the address cannot be re-derived. These tests
@@ -16,8 +21,8 @@ const mocks = vi.hoisted(() => ({
   getCurrentBatch: vi.fn(),
   openBatchForBatcher: vi.fn(),
   reclaim: vi.fn((input: { batch: string }) => ({ kind: 'reclaim', ...input })),
-  deactivate: vi.fn((input: { lookupTable: string }) => ({ kind: 'deactivate', ...input })),
-  close: vi.fn((input: { lookupTable: string }) => ({ kind: 'close', ...input })),
+  deactivate: vi.fn((input: { address: string }) => ({ kind: 'deactivate', ...input })),
+  close: vi.fn((input: { address: string }) => ({ kind: 'close', ...input })),
   extend: vi.fn((input: { lookupTable: string }) => [{ kind: 'extend', ...input }]),
   readFile: vi.fn(),
   writeFile: vi.fn(),
@@ -34,16 +39,13 @@ vi.mock('@fhevm/solana-zama-host', async (importOriginal) => ({
   ...(await importOriginal<typeof import('@fhevm/solana-zama-host')>()),
   createFinalizedRpc: () => rpc,
 }));
-vi.mock('@solana/kit', () => ({
-  getAddressEncoder: () => ({ encode: () => new Uint8Array(32) }),
+vi.mock('@solana-program/address-lookup-table', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('@solana-program/address-lookup-table')>()),
+  getCloseLookupTableInstruction: mocks.close,
+  getDeactivateLookupTableInstruction: mocks.deactivate,
 }));
 
 vi.mock('./vault/index.js', () => ({
-  LOOKUP_TABLE_DEACTIVATION_COOLDOWN_SLOTS: 513n,
-  LOOKUP_TABLE_STILL_ACTIVE: 18446744073709551615n,
-  decodeLookupTableDeactivationSlot: (bytes: Buffer) => BigInt(bytes.readBigUInt64LE(4)),
-  getCloseLookupTableInstruction: mocks.close,
-  getDeactivateLookupTableInstruction: mocks.deactivate,
   getExtendLookupTableInstructions: mocks.extend,
   buildReclaimBatchAuthorityInstruction: mocks.reclaim,
   getBatcher: mocks.getBatcher,
@@ -65,7 +67,8 @@ import { ZAMA_HOST_PROGRAM_ADDRESS } from '@fhevm/solana-zama-host';
 import { BatchStatus } from './batchTypes';
 
 const REGISTRY_PATH = '/tmp/registry.json';
-const LOOKUP_TABLE_PROGRAM = 'AddressLookupTab1e1111111111111111111111111';
+const PREFIX_ADDRESS = address('11111111111111111111111111111111');
+const NEXT_ADDRESS = address('So11111111111111111111111111111111111111112');
 
 const config = {
   chainId: 42,
@@ -77,25 +80,20 @@ const config = {
 
 const keeper = { address: '5bV6jUfhDHCQVA1WfKBUnXUsboJgoKgkzkKcxr3joew5' } as never;
 
-/** A lookup-table account whose stored deactivation slot is `deactivationSlot`. */
-const lookupTableAccount = (deactivationSlot: bigint) => {
-  const bytes = Buffer.alloc(56);
-  bytes.writeBigUInt64LE(deactivationSlot, 4);
-  return { value: { owner: LOOKUP_TABLE_PROGRAM, data: [bytes.toString('base64'), 'base64'] } };
+const lookupTableAccount = (deactivationSlot: bigint, addresses: Address[] = []) => {
+  const bytes = getAddressLookupTableEncoder().encode({
+    deactivationSlot,
+    lastExtendedSlot: 0n,
+    lastExtendedSlotStartIndex: 0,
+    authority: null,
+    addresses,
+  });
+  return { value: { owner: ADDRESS_LOOKUP_TABLE_PROGRAM_ADDRESS, data: [Buffer.from(bytes).toString('base64'), 'base64'] } };
 };
 
 const STILL_ACTIVE = 18446744073709551615n;
 
-/**
- * An active lookup table holding one address that is not the one this batch expects. The mocked
- * address encoder returns zeroes, so a non-zero stored address is what makes the prefix mismatch.
- */
-const lookupTableWithForeignAddress = () => {
-  const bytes = Buffer.alloc(56 + 32, 0);
-  bytes.writeBigUInt64LE(STILL_ACTIVE, 4);
-  bytes.fill(0xab, 56);
-  return { value: { owner: LOOKUP_TABLE_PROGRAM, data: [bytes.toString('base64'), 'base64'] } };
-};
+const lookupTableWithForeignAddress = () => lookupTableAccount(STILL_ACTIVE, [PREFIX_ADDRESS]);
 
 /** The last registry object handed to `writeFile`, parsed. */
 const writtenRegistry = (call = -1): Record<string, { table: string; retired?: string[] }> => {
@@ -130,15 +128,15 @@ const prepare = async (tableAccounts: Record<string, ReturnType<typeof lookupTab
 
 const deactivatedTables = (): string[] =>
   mocks.sendTransaction.mock.calls
-    .flatMap((call) => call[2] as { kind: string; lookupTable?: string }[])
+    .flatMap((call) => call[2] as { kind: string; address?: string }[])
     .filter((instruction) => instruction.kind === 'deactivate')
-    .map((instruction) => instruction.lookupTable!);
+    .map((instruction) => instruction.address!);
 
 const closedTables = (): string[] =>
   mocks.sendTransaction.mock.calls
-    .flatMap((call) => call[2] as { kind: string; lookupTable?: string }[])
+    .flatMap((call) => call[2] as { kind: string; address?: string }[])
     .filter((instruction) => instruction.kind === 'close')
-    .map((instruction) => instruction.lookupTable!);
+    .map((instruction) => instruction.address!);
 
 beforeEach(() => {
   vi.clearAllMocks();
@@ -356,6 +354,36 @@ describe('the table address is recorded before it can exist', () => {
     const entry = writtenRegistry(0)['42:batcher-1:1:batch-0']!;
     expect(entry.table).toBe('table-fresh');
     expect(entry.retired).toEqual(['table-orphan']);
+  });
+
+  test('resumes a recorded table from its decoded address prefix', async () => {
+    setRegistryFile({ '42:batcher-1:1:batch-0': { table: 'table-existing' } });
+    mocks.getBatchByIndex.mockResolvedValue({ state: { status: BatchStatus.Dispatched } });
+    mocks.getCurrentBatch.mockResolvedValue({
+      index: 0n,
+      addresses: { batch: 'batch-0' },
+      state: { status: BatchStatus.Settled },
+    });
+    mocks.openBatchForBatcher.mockResolvedValue({
+      lookupTableAddress: 'table-fresh',
+      lookupTableAddresses: [PREFIX_ADDRESS, NEXT_ADDRESS],
+      instructions: [{ kind: 'open' }, { kind: 'create' }],
+    });
+    mocks.getAccountInfoSend.mockImplementation((address: string) =>
+      address === 'table-existing' ? lookupTableAccount(STILL_ACTIVE, [PREFIX_ADDRESS]) : { value: null },
+    );
+
+    const prepared = await prepareNextBatch(config, keeper, 'deposit', REGISTRY_PATH);
+
+    expect(prepared.lookupTable).toBe('table-existing');
+    expect(mocks.extend).toHaveBeenCalledWith({
+      lookupTable: 'table-existing',
+      authority: keeper,
+      payer: keeper,
+      addresses: [NEXT_ADDRESS],
+    });
+    expect(mocks.sendTransaction.mock.calls.flatMap((call) => call[2] as { kind: string }[]))
+      .not.toContainEqual({ kind: 'create' });
   });
 
   test('reads a legacy bare-string record as the batch table', async () => {

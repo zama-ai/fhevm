@@ -1,3 +1,4 @@
+import { findAssociatedTokenPda } from '@solana-program/token';
 import { findEventAuthorityPda } from '@fhevm/solana-zama-host';
 import { INSTRUCTIONS_SYSVAR_ADDRESS, appendTransientStoreInstructions, prepareTransientStore } from '@fhevm/sdk/solana';
 import {
@@ -33,11 +34,11 @@ import type { Bytes32Hex } from '@fhevm/sdk/types';
 import type { SolanaInputProof } from '@fhevm/sdk/solana';
 import { getJoinInstructionAsync } from './internal/generated/confidentialBatcher/instructions/join.js';
 import {
+  tokenStateAddress,
   findBatchAuthorityPda,
   joinStoreAddress,
   tokenAccountAddress,
 } from './internal/batcherPdas.js';
-import { associatedTokenAddress, tokenStateAddress } from './internal/tokenAccounts.js';
 import { ZAMA_HOST_PROGRAM_ADDRESS, CONFIDENTIAL_TOKEN_PROGRAM_ADDRESS } from '@fhevm/confidential-token';
 
 /**
@@ -92,10 +93,6 @@ const assertJoinSimulationSucceeded = (simulation: {
   throw new Error(logs.length > 0 ? `join simulation failed: ${err}\n${logs}` : `join simulation failed: ${err}`);
 };
 
-async function eventAuthority(programAddress: Address): Promise<Address> {
-  return (await findEventAuthorityPda({ programAddress }))[0];
-}
-
 /** Builds, simulates, sends, and confirms one batch join. */
 export async function joinBatch(
   fhevm: { readonly solanaChain: FhevmSolanaChain; readonly aclProgramAddress: Bytes32Hex },
@@ -144,12 +141,16 @@ export async function joinBatch(
     batch: parameters.batch,
     joinConfidentialMint,
     joinUnderlyingMint: parameters.joinUnderlyingMint,
-    userAta: await associatedTokenAddress(user.address, parameters.joinUnderlyingMint, parameters.tokenProgram),
-    batchAuthorityAta: await associatedTokenAddress(
-      batchAuthority,
-      parameters.joinUnderlyingMint,
-      parameters.tokenProgram,
-    ),
+    userAta: (await findAssociatedTokenPda({
+      owner: user.address,
+      tokenProgram: parameters.tokenProgram,
+      mint: parameters.joinUnderlyingMint,
+    }))[0],
+    batchAuthorityAta: (await findAssociatedTokenPda({
+      owner: batchAuthority,
+      tokenProgram: parameters.tokenProgram,
+      mint: parameters.joinUnderlyingMint,
+    }))[0],
     userTokenAccount,
     batchJoinTokenAccount,
     userBalanceStore: await tokenStateAddress(joinConfidentialMint, userTokenAccount),
@@ -157,9 +158,9 @@ export async function joinBatch(
     joinStore,
     transientStore: transientStore.address,
     instructions: INSTRUCTIONS_SYSVAR_ADDRESS,
-    zamaEventAuthority: await eventAuthority(zamaHostProgramAddress),
+    zamaEventAuthority: (await findEventAuthorityPda({ programAddress: zamaHostProgramAddress }))[0],
     hostConfig: parameters.hostConfig,
-    confidentialTokenEventAuthority: await eventAuthority(CONFIDENTIAL_TOKEN_PROGRAM_ADDRESS),
+    confidentialTokenEventAuthority: (await findEventAuthorityPda({ programAddress: CONFIDENTIAL_TOKEN_PROGRAM_ADDRESS }))[0],
     inputHandle: hexToBytes(inputHandle.bytes32Hex),
     ctHandles: handles.map((handle) => hexToBytes(handle.bytes32Hex)),
     handleIndex: inputIndex,

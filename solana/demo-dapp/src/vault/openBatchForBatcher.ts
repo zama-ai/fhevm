@@ -1,10 +1,11 @@
+import { findEventAuthorityPda as findZamaEventAuthorityPda } from '@fhevm/solana-zama-host';
+import { findEventAuthorityPda as findTokenEventAuthorityPda } from '@fhevm/confidential-token';
 import { INSTRUCTIONS_SYSVAR_ADDRESS, type TransientStore } from '@fhevm/sdk/solana';
 import type { TransactionSigner } from '@solana/kit';
 
 import { openBatch, type SolanaVaultOpenBatchResult } from './openBatch.js';
 import { deriveBatchAddresses, deriveSettleLookupTableAddresses, type VaultDemoRoots } from './derive.js';
-import { tokenStateAddress, tokenEventAuthorityAddress, zamaEventAuthorityAddress } from './internal/tokenAccounts.js';
-import { batchAddress } from './internal/batcherPdas.js';
+import { batchAddress, tokenStateAddress } from './internal/batcherPdas.js';
 
 export type SolanaVaultOpenBatchForBatcherParameters = {
   readonly transientStore: TransientStore;
@@ -51,9 +52,9 @@ export async function openBatchForBatcher(
       batchPayoutBalanceStore: batch.batchPayoutBalanceStore,
       joinUnderlyingMint: roots.joinUnderlyingMint,
       payoutUnderlyingMint: roots.payoutUnderlyingMint,
-      zamaEventAuthority: await zamaEventAuthorityAddress(),
+      zamaEventAuthority: (await findZamaEventAuthorityPda())[0],
       hostConfig: roots.hostConfig,
-      confidentialTokenEventAuthority: await tokenEventAuthorityAddress(),
+      confidentialTokenEventAuthority: (await findTokenEventAuthorityPda())[0],
       authorityFundingLamports: parameters.authorityFundingLamports,
     },
     recentSlot: parameters.recentSlot,

@@ -4,9 +4,8 @@
 // loopback: the dapp dev server proxies the browser to it and adds the boot capability;
 // `tailscale serve` may front it for direct callers on the tailnet.
 //
-// The SPL instructions are hand-built with `@solana/kit` primitives on purpose: the test-suite
-// carries no `@solana-program/token` dependency; they come from `../src/solana/spl` (shared with
-// the seed). The keeper-side vault logic is the dapp's own operator modules, imported directly.
+// `@solana-program/token` builds the SPL instructions. The keeper-side vault logic is the dapp's own
+// operator modules, imported directly.
 //
 // This process holds a live validator connection and is exercised by the `solana-e2e` workflow's
 // demo phase (which funds the deposit-arc persona through it) and the browser-reality checks. The
@@ -28,6 +27,12 @@ import {
   signTransactionMessageWithSigners,
   type Address,
 } from "@solana/kit";
+import {
+  findAssociatedTokenPda,
+  TOKEN_PROGRAM_ADDRESS as SPL_TOKEN_PROGRAM_ADDRESS,
+  getCreateAssociatedTokenIdempotentInstruction,
+  getMintToInstruction,
+} from "@solana-program/token";
 
 import { lookupTableForBatch, prepareNextBatch } from "@demo-dapp/batchProvisioning";
 import { claimBatchPayout } from "@demo-dapp/claim";
@@ -38,12 +43,6 @@ import { openProvisioning } from "../e2e/harness/solana/provisioning";
 import { DEMO_OPERATOR_PORT, solanaBatchLookupTablesPath } from "../src/layout";
 import { createFinalizedRpc } from '@fhevm/solana-zama-host';
 import { LOCAL_SOLANA_ENDPOINTS } from "../src/solana/endpoints";
-import {
-  associatedTokenAddress,
-  createIdempotentAtaInstruction,
-  mintToInstruction,
-  SPL_TOKEN_PROGRAM_ADDRESS,
-} from "../src/solana/spl";
 import { readDemoAllowedOriginFromEnv, readDemoAuthorizationFromEnv } from "./authorization";
 import { resolveDemoConfigPath } from "./config";
 import { createEncryptionKeyMaterial } from "./encryptionKeyMaterial";
@@ -67,14 +66,18 @@ const buildUsdcMinter = async (options: {
   const authority = await loadSigner(options.mintAuthorityKeypairPath);
 
   return async (recipient: Address, baseUnits: bigint): Promise<string> => {
-    const ata = await associatedTokenAddress(recipient, options.mint, SPL_TOKEN_PROGRAM_ADDRESS);
+    const [ata] = await findAssociatedTokenPda({
+      owner: recipient,
+      tokenProgram: SPL_TOKEN_PROGRAM_ADDRESS,
+      mint: options.mint,
+    });
     const { value: latestBlockhash } = await rpc.getLatestBlockhash().send();
     const base = setTransactionMessageFeePayerSigner(authority, createTransactionMessage({ version: 0 }));
     const withLifetime = setTransactionMessageLifetimeUsingBlockhash(latestBlockhash, base);
     const message = appendTransactionMessageInstructions(
       [
-        createIdempotentAtaInstruction({ payer: authority, ata, owner: recipient, mint: options.mint }),
-        mintToInstruction({ mint: options.mint, destination: ata, authority, baseUnits }),
+        getCreateAssociatedTokenIdempotentInstruction({ payer: authority, ata, owner: recipient, mint: options.mint }),
+        getMintToInstruction({ mint: options.mint, token: ata, mintAuthority: authority, amount: baseUnits }),
       ],
       withLifetime,
     );
