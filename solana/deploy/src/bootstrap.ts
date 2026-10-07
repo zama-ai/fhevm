@@ -10,6 +10,7 @@ import {
   getAddressEncoder,
   getProgramDerivedAddress,
 } from '@solana/kit';
+import { LOADER_V3_PROGRAM_ADDRESS } from '@solana-program/loader-v3';
 
 import { BRINGUP_KMS_CONTEXT_ID, SOLANA_HOST_CHAIN_ID } from './constants';
 import type { GatewayBootstrapInputs } from './gateway';
@@ -27,8 +28,6 @@ import {
   ZAMA_HOST_PROGRAM_ADDRESS,
 } from '@fhevm/solana-zama-host';
 import type { HostDeployContext } from './send';
-
-const BPF_UPGRADEABLE_LOADER = 'BPFLoaderUpgradeab1e11111111111111111111111' as Address;
 
 /**
  * Derives the on-chain certificate threshold (matching signatures a certificate needs) from the
@@ -52,7 +51,7 @@ export const kmsCertificateThreshold = (kmsCorruptionThreshold: number, register
 /** BPF upgradeable loader `ProgramData` PDA (`[program_id]` under the loader). */
 export const programDataAddressFor = async (programAddress: Address): Promise<Address> => {
   const [programData] = await getProgramDerivedAddress({
-    programAddress: BPF_UPGRADEABLE_LOADER,
+    programAddress: LOADER_V3_PROGRAM_ADDRESS,
     seeds: [getAddressEncoder().encode(programAddress)],
   });
   return programData;
