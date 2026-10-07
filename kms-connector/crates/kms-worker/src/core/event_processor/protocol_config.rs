@@ -1,7 +1,7 @@
 use crate::core::{config::Config, event_processor::ProcessingError};
 use alloy::{
     eips::BlockId,
-    primitives::{FixedBytes, Keccak256, U256},
+    primitives::{B256, FixedBytes, Keccak256, U256},
     providers::Provider,
     rpc::types::Filter,
     sol_types::{SolEvent, SolValue},
@@ -100,7 +100,8 @@ impl<P: Provider> ProtocolConfigProcessor<P> {
     /// Fetch the previous context creation event for the given `NewKmsContext` event.
     ///
     /// Uses the `previousContextId` field to fetch the anchor via `getKmsContextAnchor`, then
-    /// uses the block number to filter for the event.
+    /// uses the block number and the indexed `contextId` to filter for the event. Other
+    /// contexts' `NewKmsContext` events can share the anchor block.
     async fn fetch_previous_context_creation_event(
         &self,
         new_context_event: &NewKmsContext,
@@ -117,6 +118,7 @@ impl<P: Provider> ProtocolConfigProcessor<P> {
         let filter = Filter::new()
             .address(*self.protocol_config_contract.address())
             .event_signature(NewKmsContext::SIGNATURE_HASH)
+            .topic1(B256::from(new_context_event.previousContextId))
             .from_block(previous_context_block)
             .to_block(previous_context_block);
         let anchor_logs = self
@@ -325,4 +327,110 @@ pub fn compute_anchor_event_hash(event: &NewKmsContext) -> FixedBytes<32> {
     let mut hasher = Keccak256::new();
     hasher.update(encoded_data);
     hasher.finalize()
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use alloy::{
+        primitives::{Address, Log as PrimitiveLog},
+        providers::{ProviderBuilder, RootProvider, mock::Asserter},
+        rpc::types::Log,
+        transports::TransportResult,
+    };
+    use fhevm_host_bindings::protocol_config::ProtocolConfig::KmsNodeParams;
+
+    const PROTOCOL_CONFIG: Address = Address::repeat_byte(0xC0);
+    const ANCHOR_BLOCK: u64 = 20;
+
+    /// A node holding `logs`: it answers `eth_getLogs` with the ones the request's filter
+    /// selects, as a node does, and every other call from the mocked client.
+    struct Node {
+        root: RootProvider,
+        logs: Vec<Log>,
+    }
+
+    #[async_trait::async_trait]
+    impl Provider for Node {
+        fn root(&self) -> &RootProvider {
+            &self.root
+        }
+
+        async fn get_logs(&self, filter: &Filter) -> TransportResult<Vec<Log>> {
+            Ok(self
+                .logs
+                .iter()
+                .filter(|log| filter.rpc_matches(log))
+                .cloned()
+                .collect())
+        }
+    }
+
+    fn node(asserter: Asserter, logs: Vec<Log>) -> Node {
+        Node {
+            root: ProviderBuilder::default().connect_mocked_client(asserter),
+            logs,
+        }
+    }
+
+    fn context_event(context_id: u64, tx_sender: Address) -> NewKmsContext {
+        NewKmsContext {
+            contextId: U256::from(context_id),
+            kmsNodeParams: vec![KmsNodeParams {
+                txSenderAddress: tx_sender,
+                ..Default::default()
+            }],
+            ..Default::default()
+        }
+    }
+
+    fn anchor_block_log(event: &NewKmsContext) -> Log {
+        Log {
+            inner: PrimitiveLog {
+                address: PROTOCOL_CONFIG,
+                data: event.encode_log_data(),
+            },
+            // `Filter::rpc_matches` rejects a log without a block hash.
+            block_hash: Some(B256::repeat_byte(0x20)),
+            block_number: Some(ANCHOR_BLOCK),
+            ..Default::default()
+        }
+    }
+
+    /// Another context's event in the anchor block, as when governance destroys a Pending
+    /// context and defines a new one in the same block, is not the previous context's.
+    #[tokio::test]
+    async fn finds_the_previous_context_among_other_contexts_at_its_anchor_block() {
+        let previous = context_event(7, Address::repeat_byte(0xA1));
+        let other = context_event(6, Address::repeat_byte(0xB2));
+        let asserter = Asserter::new();
+        let anchor_hash = compute_anchor_event_hash(&previous);
+        asserter.push_success(&(U256::from(ANCHOR_BLOCK), anchor_hash).abi_encode_sequence());
+        let processor = ProtocolConfigProcessor {
+            domain: Eip712DomainMsg::default(),
+            protocol_config_contract: ProtocolConfigInstance::new(
+                PROTOCOL_CONFIG,
+                node(
+                    asserter,
+                    vec![anchor_block_log(&other), anchor_block_log(&previous)],
+                ),
+            ),
+            kms_generation_contract: KMSGeneration::new(
+                Address::ZERO,
+                node(Asserter::new(), Vec::new()),
+            ),
+        };
+        let new_context = NewKmsContext {
+            contextId: U256::from(8),
+            previousContextId: previous.contextId,
+            ..Default::default()
+        };
+
+        let found = processor
+            .fetch_previous_context_creation_event(&new_context)
+            .await
+            .expect("previous context event");
+
+        assert_eq!(found, previous);
+    }
 }

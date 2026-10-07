@@ -41,6 +41,7 @@ url.workspace = true
 [dev-dependencies]
 ciphertext-attestation = { workspace = true, features = ["test-utils"] }
 connector-utils = { workspace = true, features = ["tests"] }
+async-trait.workspace = true
 mocktail.workspace = true
 rstest.workspace = true
 serial_test.workspace = true
