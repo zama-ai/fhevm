@@ -134,9 +134,7 @@ pub fn claim<'info>(ctx: Context<'info, Claim<'info>>) -> Result<()> {
 
     let account = fhe::read_state(&ctx.accounts.join_store)?;
     let state = zama_fhe::Store::new(&account);
-    let joined = state
-        .get::<zama_fhe::Uint<64>>(joined_amount_key())
-        .map_err(fhe::invalid_execution)?;
+    let joined = state.get::<zama_fhe::Uint<64>>(joined_amount_key())?;
     let payout_state = fhe::read_state(&ctx.accounts.batch_payout_balance_store)?;
     let output = state
         .result()
@@ -150,8 +148,7 @@ pub fn claim<'info>(ctx: Context<'info, Claim<'info>>) -> Result<()> {
         )?;
         builder.output(payout, output)?;
         Ok(payout)
-    })
-    .map_err(fhe::invalid_execution)?;
+    })?;
     let claim_handle = fhe::JoinExecute {
         batch: batch_key,
         user,

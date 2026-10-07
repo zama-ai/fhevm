@@ -106,9 +106,7 @@ pub(crate) fn uint64_operand(
     state: &zama_host::EncryptedStore,
     key: [u8; 32],
 ) -> Result<zama_fhe::Uint64Handle> {
-    zama_fhe::Store::new(state)
-        .get(key)
-        .map_err(|_| error!(ConfidentialTokenError::InvalidFheExecution))
+    zama_fhe::Store::new(state).get(key).map_err(Into::into)
 }
 
 /// The deny record witnesses for one `fhe_execute` CPI: exactly one remaining account per
@@ -324,9 +322,7 @@ impl<'info> ExecutionAccountSet<'info> {
             .iter()
             .map(StoreAuthority::account_info)
             .collect::<Vec<_>>();
-        let accounts = execution
-            .resolve_accounts(available_accounts, store_authority_accounts)
-            .map_err(map_execution_account_resolution_error)?;
+        let accounts = execution.resolve_accounts(available_accounts, store_authority_accounts)?;
 
         Ok(Self {
             accounts,
@@ -351,35 +347,6 @@ impl<'info> ExecutionAccountSet<'info> {
 
     fn resolved_accounts(&self) -> &zama_fhe::ResolvedExecutionAccounts<'info> {
         &self.accounts
-    }
-}
-
-fn map_execution_account_resolution_error(
-    error: zama_fhe::ExecutionAccountResolutionError,
-) -> Error {
-    msg!("invalid fhe_execute account set: {:?}", error);
-    match error {
-        zama_fhe::ExecutionAccountResolutionError::DuplicateDynamicAccount { .. } => {
-            error!(ConfidentialTokenError::DuplicateFheExecuteAccount)
-        }
-        zama_fhe::ExecutionAccountResolutionError::UnexpectedDynamicAccount { .. } => {
-            error!(ConfidentialTokenError::UnexpectedFheExecuteAccount)
-        }
-        zama_fhe::ExecutionAccountResolutionError::MissingDynamicAccount { .. } => {
-            error!(ConfidentialTokenError::MissingFheExecuteAccount)
-        }
-        zama_fhe::ExecutionAccountResolutionError::DynamicAccountNotWritable { .. } => {
-            error!(ConfidentialTokenError::FheExecuteAccountNotWritable)
-        }
-        zama_fhe::ExecutionAccountResolutionError::DuplicateStoreAuthority { .. } => {
-            error!(ConfidentialTokenError::DuplicateFheOutputAuthority)
-        }
-        zama_fhe::ExecutionAccountResolutionError::UnexpectedStoreAuthority { .. } => {
-            error!(ConfidentialTokenError::UnexpectedFheOutputAuthority)
-        }
-        zama_fhe::ExecutionAccountResolutionError::MissingStoreAuthority { .. } => {
-            error!(ConfidentialTokenError::MissingFheOutputAuthority)
-        }
     }
 }
 
@@ -529,22 +496,15 @@ mod tests {
         (execution, state_address, authority)
     }
 
-    fn token_error_number(error: Error) -> u32 {
+    fn assert_execution_error(error: Error, expected: zama_fhe::FheExecutionError) {
         match error {
-            Error::AnchorError(error) => error.error_code_number,
+            Error::AnchorError(error) => assert_eq!(error.error_code_number, u32::from(expected)),
             other => panic!("unexpected error: {other:?}"),
         }
     }
 
-    fn assert_token_error(error: Error, expected: ConfidentialTokenError) {
-        assert_eq!(
-            token_error_number(error),
-            token_error_number(error!(expected))
-        );
-    }
-
     #[test]
-    fn batch_account_set_maps_dynamic_account_errors() {
+    fn batch_account_set_reports_dynamic_account_errors() {
         let (execution, state_address, authority) = sample_plan();
 
         let error = ExecutionAccountSet::for_execution(
@@ -557,7 +517,7 @@ mod tests {
         )
         .err()
         .unwrap();
-        assert_token_error(error, ConfidentialTokenError::DuplicateFheExecuteAccount);
+        assert_execution_error(error, zama_fhe::FheExecutionError::DuplicateDynamicAccount);
 
         let error = ExecutionAccountSet::for_execution(
             &execution,
@@ -569,7 +529,7 @@ mod tests {
         )
         .err()
         .unwrap();
-        assert_token_error(error, ConfidentialTokenError::UnexpectedFheExecuteAccount);
+        assert_execution_error(error, zama_fhe::FheExecutionError::UnexpectedDynamicAccount);
 
         let error = ExecutionAccountSet::for_execution(
             &execution,
@@ -578,7 +538,7 @@ mod tests {
         )
         .err()
         .unwrap();
-        assert_token_error(error, ConfidentialTokenError::MissingFheExecuteAccount);
+        assert_execution_error(error, zama_fhe::FheExecutionError::MissingDynamicAccount);
 
         let error = ExecutionAccountSet::for_execution(
             &execution,
@@ -587,11 +547,14 @@ mod tests {
         )
         .err()
         .unwrap();
-        assert_token_error(error, ConfidentialTokenError::FheExecuteAccountNotWritable);
+        assert_execution_error(
+            error,
+            zama_fhe::FheExecutionError::DynamicAccountNotWritable,
+        );
     }
 
     #[test]
-    fn batch_account_set_maps_store_authority_errors() {
+    fn batch_account_set_reports_store_authority_errors() {
         let (execution, state_address, authority) = sample_plan();
 
         let error = ExecutionAccountSet::for_execution(
@@ -601,7 +564,7 @@ mod tests {
         )
         .err()
         .unwrap();
-        assert_token_error(error, ConfidentialTokenError::DuplicateFheOutputAuthority);
+        assert_execution_error(error, zama_fhe::FheExecutionError::DuplicateStoreAuthority);
 
         let error = ExecutionAccountSet::for_execution(
             &execution,
@@ -613,7 +576,7 @@ mod tests {
         )
         .err()
         .unwrap();
-        assert_token_error(error, ConfidentialTokenError::UnexpectedFheOutputAuthority);
+        assert_execution_error(error, zama_fhe::FheExecutionError::UnexpectedStoreAuthority);
 
         let error = ExecutionAccountSet::for_execution(
             &execution,
@@ -622,6 +585,6 @@ mod tests {
         )
         .err()
         .unwrap();
-        assert_token_error(error, ConfidentialTokenError::MissingFheOutputAuthority);
+        assert_execution_error(error, zama_fhe::FheExecutionError::MissingStoreAuthority);
     }
 }

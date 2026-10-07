@@ -1,0 +1,202 @@
+[
+  {
+    "code": 10000,
+    "name": "MissingStoreSlot",
+    "msg": "A store slot read by the execution is not present"
+  },
+  {
+    "code": 10001,
+    "name": "ResultNotProduced",
+    "msg": "A requested result was not produced by any step"
+  },
+  {
+    "code": 10002,
+    "name": "StoreHistoryMismatch",
+    "msg": "The store history does not match the execution's slot writes"
+  },
+  {
+    "code": 10003,
+    "name": "TooManyResultGrants",
+    "msg": "Too many result grants"
+  },
+  {
+    "code": 10004,
+    "name": "TooManyRemainingAccounts",
+    "msg": "More accounts than fit in the host's u8 account indices"
+  },
+  {
+    "code": 10005,
+    "name": "TooManyDictionaryEntries",
+    "msg": "More dictionary entries than fit in the host's u8 indices"
+  },
+  {
+    "code": 10006,
+    "name": "UnreferencedDictionaryEntry",
+    "msg": "A dictionary entry is not referenced by any step"
+  },
+  {
+    "code": 10007,
+    "name": "DictionaryIndexOutOfBounds",
+    "msg": "A step references a dictionary index out of bounds"
+  },
+  {
+    "code": 10008,
+    "name": "InvalidTransientReference",
+    "msg": "A transient operand references an operation not yet produced"
+  },
+  {
+    "code": 10009,
+    "name": "DuplicateSlotWrite",
+    "msg": "Two effects write the same store slot"
+  },
+  {
+    "code": 10010,
+    "name": "TooManySteps",
+    "msg": "More steps than the host accepts"
+  },
+  {
+    "code": 10011,
+    "name": "TooManyEffects",
+    "msg": "More effects than the host accepts"
+  },
+  {
+    "code": 10012,
+    "name": "ExceedsCpiInstructionDataLimit",
+    "msg": "The fhe_execute packet exceeds the CPI instruction data limit"
+  },
+  {
+    "code": 10013,
+    "name": "ExceedsBuildHeapBudget",
+    "msg": "The execution exceeds the builder's heap budget"
+  },
+  {
+    "code": 10014,
+    "name": "EmptySteps",
+    "msg": "The execution has no steps"
+  },
+  {
+    "code": 10015,
+    "name": "MixedScopes",
+    "msg": "Persistent values of two applications under one authority"
+  },
+  {
+    "code": 10016,
+    "name": "ScalarLhsOperand",
+    "msg": "A scalar was supplied as the left-hand operand"
+  },
+  {
+    "code": 10017,
+    "name": "ScalarEncryptedOperand",
+    "msg": "A scalar was supplied where an encrypted operand is required"
+  },
+  {
+    "code": 10018,
+    "name": "UnsupportedFheType",
+    "msg": "The FHE type is not supported by the host"
+  },
+  {
+    "code": 10019,
+    "name": "InvalidRandomUpperBound",
+    "msg": "The random upper bound is invalid"
+  },
+  {
+    "code": 10020,
+    "name": "UnsupportedBinaryOutputType",
+    "msg": "The binary output type is not valid for the operator"
+  },
+  {
+    "code": 10021,
+    "name": "BinaryOperandTypeMismatch",
+    "msg": "The binary operand types do not match the operator"
+  },
+  {
+    "code": 10022,
+    "name": "TernaryOperandTypeMismatch",
+    "msg": "The ternary operand types do not match the operator"
+  },
+  {
+    "code": 10023,
+    "name": "InvalidAllowKey",
+    "msg": "An allowed key is zero or repeated"
+  },
+  {
+    "code": 10024,
+    "name": "InvalidExecutionAuthority",
+    "msg": "The execution authority is the default pubkey"
+  },
+  {
+    "code": 10025,
+    "name": "InvalidRemainingAccountReference",
+    "msg": "A host account index does not match the execution account list"
+  },
+  {
+    "code": 10026,
+    "name": "MissingVerifiedInput",
+    "msg": "A verified input references an unregistered attestation"
+  },
+  {
+    "code": 10027,
+    "name": "TooManyReductionOperands",
+    "msg": "Too many operands for sum or is_in"
+  },
+  {
+    "code": 10028,
+    "name": "MulDivDivisorZero",
+    "msg": "mul_div divisor is zero"
+  },
+  {
+    "code": 10029,
+    "name": "DivisorMustBeScalar",
+    "msg": "div and rem require a scalar divisor"
+  },
+  {
+    "code": 10030,
+    "name": "DivisionByZero",
+    "msg": "Division by zero"
+  },
+  {
+    "code": 10031,
+    "name": "DuplicateDynamicAccount",
+    "msg": "A dynamic account was supplied more than once"
+  },
+  {
+    "code": 10032,
+    "name": "UnexpectedDynamicAccount",
+    "msg": "A supplied dynamic account is not required by the execution"
+  },
+  {
+    "code": 10033,
+    "name": "MissingDynamicAccount",
+    "msg": "A dynamic account required by the execution was not supplied"
+  },
+  {
+    "code": 10034,
+    "name": "DynamicAccountNotWritable",
+    "msg": "A dynamic account the execution writes was supplied read-only"
+  },
+  {
+    "code": 10035,
+    "name": "DuplicateStoreAuthority",
+    "msg": "A value authority was supplied more than once"
+  },
+  {
+    "code": 10036,
+    "name": "UnexpectedStoreAuthority",
+    "msg": "A supplied value authority is not required by the execution"
+  },
+  {
+    "code": 10037,
+    "name": "MissingStoreAuthority",
+    "msg": "A value authority required by the execution was not supplied"
+  },
+  {
+    "code": 10038,
+    "name": "HostProgramMismatch",
+    "msg": "The host program account is not zama-host"
+  },
+  {
+    "code": 10039,
+    "name": "ExecutionAuthorityMismatch",
+    "msg": "The authority account is not the execution's authority"
+  }
+]

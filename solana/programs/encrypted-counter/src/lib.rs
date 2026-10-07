@@ -60,14 +60,11 @@ pub mod encrypted_counter {
             let result = builder.trivial_encrypt_u64(0)?;
             builder.output(result, output)?;
             Ok(())
-        })
-        .map_err(invalid_execution)?;
-        let resolved = execution
-            .resolve_accounts(
-                [ctx.accounts.encrypted_store.to_account_info()],
-                [ctx.accounts.counter_authority.to_account_info()],
-            )
-            .map_err(invalid_execution_accounts)?;
+        })?;
+        let resolved = execution.resolve_accounts(
+            [ctx.accounts.encrypted_store.to_account_info()],
+            [ctx.accounts.counter_authority.to_account_info()],
+        )?;
         execution.invoke(
             ExecutionCpiAccounts {
                 payer: ctx.accounts.owner.to_account_info(),
@@ -92,23 +89,17 @@ pub mod encrypted_counter {
     pub fn increment<'info>(ctx: Context<'info, Increment<'info>>, amount: u64) -> Result<()> {
         let counter = ctx.accounts.counter.key();
         let state = Store::new(&ctx.accounts.encrypted_store);
-        let operand = state
-            .get::<Uint<64>>(count_key())
-            .map_err(invalid_execution)?;
+        let operand = state.get::<Uint<64>>(count_key())?;
         let output = state.set(count_key()).allow(ctx.accounts.owner.key());
         let execution = FheExecution::build_returning(state.id(), |builder| {
             let count = builder.add(operand, Scalar::<Uint<64>>::u64(amount))?;
             builder.output(count, output)?;
             Ok(count)
-        })
-        .map_err(invalid_execution)?;
-        let resolved = execution
-            .execution()
-            .resolve_accounts(
-                [ctx.accounts.encrypted_store.to_account_info()],
-                [ctx.accounts.counter_authority.to_account_info()],
-            )
-            .map_err(invalid_execution_accounts)?;
+        })?;
+        let resolved = execution.execution().resolve_accounts(
+            [ctx.accounts.encrypted_store.to_account_info()],
+            [ctx.accounts.counter_authority.to_account_info()],
+        )?;
         let bump = [ctx.accounts.counter.authority_bump];
         let authority_seeds: &[&[u8]] = &[COUNTER_AUTHORITY_SEED, counter.as_ref(), &bump];
         let handle = execution.invoke(
@@ -132,18 +123,6 @@ pub mod encrypted_counter {
         anchor_lang::solana_program::program::set_return_data(&handle);
         Ok(())
     }
-}
-
-fn invalid_execution(error: zama_fhe::FheExecutionBuildError) -> anchor_lang::error::Error {
-    msg!("invalid FHE execution: {:?}", error);
-    error!(CounterError::InvalidFheExecution)
-}
-
-fn invalid_execution_accounts(
-    error: zama_fhe::ExecutionAccountResolutionError,
-) -> anchor_lang::error::Error {
-    msg!("invalid counter fhe_execute accounts: {:?}", error);
-    error!(CounterError::InvalidFheExecution)
 }
 
 #[derive(Accounts)]

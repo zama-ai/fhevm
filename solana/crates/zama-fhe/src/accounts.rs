@@ -241,6 +241,37 @@ impl ExecutionAccountResolutionError {
             Self::MissingStoreAuthority { authority } => authority.pubkey(),
         }
     }
+
+    pub fn code(&self) -> crate::FheExecutionError {
+        match self {
+            Self::DuplicateDynamicAccount { .. } => {
+                crate::FheExecutionError::DuplicateDynamicAccount
+            }
+            Self::UnexpectedDynamicAccount { .. } => {
+                crate::FheExecutionError::UnexpectedDynamicAccount
+            }
+            Self::MissingDynamicAccount { .. } => crate::FheExecutionError::MissingDynamicAccount,
+            Self::DynamicAccountNotWritable { .. } => {
+                crate::FheExecutionError::DynamicAccountNotWritable
+            }
+            Self::DuplicateStoreAuthority { .. } => {
+                crate::FheExecutionError::DuplicateStoreAuthority
+            }
+            Self::UnexpectedStoreAuthority { .. } => {
+                crate::FheExecutionError::UnexpectedStoreAuthority
+            }
+            Self::MissingStoreAuthority { .. } => crate::FheExecutionError::MissingStoreAuthority,
+        }
+    }
+}
+
+/// The error code alone cannot name the account, so the offending pubkey is logged first.
+#[cfg(feature = "cpi")]
+impl From<ExecutionAccountResolutionError> for anchor_lang::error::Error {
+    fn from(error: ExecutionAccountResolutionError) -> Self {
+        anchor_lang::prelude::msg!("fhe_execute account: {}", error.pubkey());
+        error.code().into()
+    }
 }
 
 /// Ordered dynamic accounts resolved from an [`FheExecution`].

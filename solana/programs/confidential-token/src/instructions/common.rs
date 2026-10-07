@@ -187,23 +187,15 @@ fn build_transfer_execution(
 ) -> Result<zama_fhe::ReturningFheExecution<zama_fhe::Uint<64>>> {
     let from_store = Box::new(zama_fhe::Store::new(from_account));
     let to_store = Box::new(zama_fhe::Store::new(to_account));
-    let from_balance = from_store
-        .get::<zama_fhe::Uint<64>>(balance_key())
-        .map_err(invalid_execution)?;
-    let to_balance = to_store
-        .get::<zama_fhe::Uint<64>>(balance_key())
-        .map_err(invalid_execution)?;
+    let from_balance = from_store.get::<zama_fhe::Uint<64>>(balance_key())?;
+    let to_balance = to_store.get::<zama_fhe::Uint<64>>(balance_key())?;
     let existing_operand = match (amount_source, stored_amount) {
         (TransferAmountSource::StoreSlot { key, .. }, Some(state)) => {
             Some(fhe::uint64_operand(state, *key)?)
         }
         (TransferAmountSource::Grant { handle }, _) => {
             // The host checks the handle grant to the sender Store in the shared transient store.
-            Some(
-                zama_fhe::Store::new(from_account)
-                    .granted(*handle)
-                    .map_err(invalid_execution)?,
-            )
+            Some(zama_fhe::Store::new(from_account).granted(*handle)?)
         }
         _ => None,
     };
@@ -240,7 +232,7 @@ fn build_transfer_execution(
         )?;
         Ok(transferred)
     })
-    .map_err(invalid_execution)
+    .map_err(Into::into)
 }
 
 fn compute_transfer_handles<'info>(
@@ -349,8 +341,7 @@ pub(crate) fn rewrite_allowing<'info>(
         let result = builder.add(operand, zama_fhe::Scalar::<zama_fhe::Uint<64>>::u64(0))?;
         builder.output(result, output.output())?;
         Ok(())
-    })
-    .map_err(invalid_execution)?;
+    })?;
     let accounts =
         fhe::ExecutionAccountSet::for_execution(&execution, [output.account_info()], [authority])?;
     fhe::execute(fhe::Execute {
@@ -359,13 +350,6 @@ pub(crate) fn rewrite_allowing<'info>(
         execution,
     })?;
     output.handle()
-}
-
-pub(crate) fn invalid_execution(
-    error: zama_fhe::FheExecutionBuildError,
-) -> anchor_lang::error::Error {
-    msg!("invalid FHE execution: {:?}", error);
-    error!(ConfidentialTokenError::InvalidFheExecution)
 }
 
 /// Validates a coprocessor-attested transfer/burn amount (EVM `fromExternal` parity). The host

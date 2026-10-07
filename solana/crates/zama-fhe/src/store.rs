@@ -1,7 +1,7 @@
 use anchor_lang::prelude::Pubkey;
 
 use crate::operand::{Operand, OperandKind};
-use crate::{AppScope, FheExecutionBuildError, FheHandle, FheTyped, Result};
+use crate::{AppScope, FheExecutionError, FheHandle, FheTyped, Result};
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct StoreId {
@@ -52,7 +52,7 @@ impl<'a> Store<'a> {
         let handle = self
             .account
             .get(&key)
-            .ok_or(FheExecutionBuildError::MissingStoreSlot)?;
+            .ok_or(FheExecutionError::MissingStoreSlot)?;
         FheHandle::from_handle_operand(
             handle,
             Operand(OperandKind::StoreSlot {
@@ -140,7 +140,7 @@ mod tests {
             fhe.output(first, store.set([1; 32]).allow(account.authority))?;
             assert_eq!(
                 fhe.output(first, store.set([1; 32])).unwrap_err(),
-                FheExecutionBuildError::DuplicateSlotWrite
+                FheExecutionError::DuplicateSlotWrite
             );
             let second = fhe.add(first, Scalar::<Uint<64>>::u64(1))?;
             fhe.output(second, store.set([2; 32]).make_public())?;

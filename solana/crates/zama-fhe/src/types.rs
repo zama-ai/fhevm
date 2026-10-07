@@ -4,7 +4,7 @@ use std::marker::PhantomData;
 
 use crate::operand::{BuilderIdentity, Operand};
 use crate::validate::{handle_fhe_type, validate_supported_fhe_type};
-use crate::{FheExecutionBuildError, Result};
+use crate::{FheExecutionError, Result};
 
 /// Typed FHE handle tag used by the host ABI.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -129,7 +129,7 @@ impl<T: FheTyped> FheHandle<T> {
         let fhe_type = handle_fhe_type(handle);
         validate_supported_fhe_type(fhe_type)?;
         if fhe_type != T::FHE_TYPE.byte() {
-            return Err(FheExecutionBuildError::UnsupportedFheType);
+            return Err(FheExecutionError::UnsupportedFheType);
         }
         Ok(Self {
             operand,

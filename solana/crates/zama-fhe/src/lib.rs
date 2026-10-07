@@ -24,6 +24,8 @@
 
 #![allow(unexpected_cfgs)]
 
+use anchor_lang::error_code;
+
 mod accounts;
 mod acl;
 mod builder;
@@ -64,39 +66,57 @@ pub use types::{
 };
 
 /// Result type used by the builder helpers.
-pub type Result<T> = std::result::Result<T, FheExecutionBuildError>;
+pub type Result<T> = std::result::Result<T, FheExecutionError>;
 
-/// Builder failures that can be detected before invoking the host program.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum FheExecutionBuildError {
+/// Every failure this crate reports, from building an execution through invoking the host. Codes
+/// start at 10_000, clear of Anchor's own (below 6000) and of every program's `#[error_code]`
+/// range (6000 up), so an app program can return them with `?` and its clients still tell them
+/// apart from its own. Variants are only ever appended: the code is the position.
+#[error_code(offset = 10_000)]
+#[derive(PartialEq, Eq)]
+pub enum FheExecutionError {
+    #[msg("A store slot read by the execution is not present")]
     MissingStoreSlot,
+    #[msg("A requested result was not produced by any step")]
     ResultNotProduced,
+    #[msg("The store history does not match the execution's slot writes")]
     StoreHistoryMismatch,
+    #[msg("Too many result grants")]
     TooManyResultGrants,
-    /// More accounts were referenced than fit in the host's `u8` wire indices.
+    /// More accounts were referenced than fit in the host's `u8` wire indices, counted at build
+    /// and again at invoke once the deny records are appended.
+    #[msg("More accounts than fit in the host's u8 account indices")]
     TooManyRemainingAccounts,
     /// The execution's interned constant dictionary outgrew the host's `u8` wire indices.
+    #[msg("More dictionary entries than fit in the host's u8 indices")]
     TooManyDictionaryEntries,
     /// An interned dictionary entry is not referenced by any step (host parity:
     /// `FheExecuteDictionaryEntryUnreferenced`).
+    #[msg("A dictionary entry is not referenced by any step")]
     UnreferencedDictionaryEntry,
     /// A step referenced a dictionary index past the end of the interned dictionary (host
     /// parity: `FheExecuteDictionaryIndexOutOfBounds`).
+    #[msg("A step references a dictionary index out of bounds")]
     DictionaryIndexOutOfBounds,
     /// A transient operand referenced an operation that has not been produced.
+    #[msg("A transient operand references an operation not yet produced")]
     InvalidTransientReference,
     /// Two effects write the same Store slot in one execution.
+    #[msg("Two effects write the same store slot")]
     DuplicateSlotWrite,
     /// More steps were added than the host accepts (`MAX_FHE_EXECUTION_STEPS`) — the one step
     /// ceiling, on-chain and off. The heap no longer bounds the step count by itself: the
     /// builder's own budget ([`ExceedsBuildHeapBudget`](Self::ExceedsBuildHeapBudget)) holds
     /// every admitted shape inside the fixed 32 KB region, which cannot be raised (DD-046).
+    #[msg("More steps than the host accepts")]
     TooManySteps,
+    #[msg("More effects than the host accepts")]
     TooManyEffects,
     /// The serialized `fhe_execute` packet exceeds the 10 KiB the runtime allows a CPI to
     /// carry ([`CPI_INSTRUCTION_DATA_LIMIT`]), and the packet always travels by CPI — so the
     /// runtime would reject the invoke. Verified-input attestations are the heavy term
     /// (roughly 1 KiB each at maximum size); split them across executions.
+    #[msg("The fhe_execute packet exceeds the CPI instruction data limit")]
     ExceedsCpiInstructionDataLimit,
     /// Building, serializing, and invoking this execution would request more of the program's
     /// fixed, never-freeing 32 KB heap than the builder's budget
@@ -106,43 +126,81 @@ pub enum FheExecutionBuildError {
     /// against a counting allocator), so this fires exactly when the instruction cannot
     /// survive. Fewer persistent outputs, shorter allow lists, or fewer embedded
     /// attestations shrink the shape; splitting the work across executions always works.
+    #[msg("The execution exceeds the builder's heap budget")]
     ExceedsBuildHeapBudget,
     /// `finish` was called with no steps; the host rejects empty executions.
+    #[msg("The execution has no steps")]
     EmptySteps,
     /// Persistent values of two applications `(program, scope)` under the execution's default
     /// authority; the host meters, deny-checks and seeds one application per execution
     /// (`FheExecuteMixedScopes`). Values under an additional signing authority are that
     /// program's own.
+    #[msg("Persistent values of two applications under one authority")]
     MixedScopes,
     /// A scalar was supplied as the left-hand operand. The host invariant is
     /// scalar-RHS-only: the left operand must be an encrypted handle.
+    #[msg("A scalar was supplied as the left-hand operand")]
     ScalarLhsOperand,
     /// A scalar was supplied where the host requires an encrypted operand.
+    #[msg("A scalar was supplied where an encrypted operand is required")]
     ScalarEncryptedOperand,
     /// The declared FHE type is not accepted by the host ABI.
+    #[msg("The FHE type is not supported by the host")]
     UnsupportedFheType,
     /// A bounded random upper bound is zero, not a power of two, or too wide for euint64.
+    #[msg("The random upper bound is invalid")]
     InvalidRandomUpperBound,
     /// The declared binary output type is not valid for the selected operator.
+    #[msg("The binary output type is not valid for the operator")]
     UnsupportedBinaryOutputType,
     /// Binary operand handle types do not match the selected operator.
+    #[msg("The binary operand types do not match the operator")]
     BinaryOperandTypeMismatch,
     /// Ternary operand handle types do not match the selected operator.
+    #[msg("The ternary operand types do not match the operator")]
     TernaryOperandTypeMismatch,
     /// An allowed key is the zero key or repeats another (host parity: `InvalidAllowKey`).
+    #[msg("An allowed key is zero or repeated")]
     InvalidAllowKey,
     /// The fixed encrypted store authority is the default pubkey, so it can never sign.
+    #[msg("The execution authority is the default pubkey")]
     InvalidExecutionAuthority,
     /// A lowered host account index does not match the execution account list.
+    #[msg("A host account index does not match the execution account list")]
     InvalidRemainingAccountReference,
     /// A verified-input operand referenced an attestation not registered with the builder.
+    #[msg("A verified input references an unregistered attestation")]
     MissingVerifiedInput,
     /// `sum`/`is_in` exceeded the coprocessor's max operand count for the type.
+    #[msg("Too many operands for sum or is_in")]
     TooManyReductionOperands,
     /// `mul_div` was given a zero divisor; the host rejects it (EVM DivisionByZero parity).
+    #[msg("mul_div divisor is zero")]
     MulDivDivisorZero,
     /// `div`/`rem` require a plaintext scalar divisor (EVM `IsNotScalar`).
+    #[msg("div and rem require a scalar divisor")]
     DivisorMustBeScalar,
     /// `div`/`rem` divisor is zero once truncated to the operand type (EVM `DivisionByZero`).
+    #[msg("Division by zero")]
     DivisionByZero,
+    #[msg("A dynamic account was supplied more than once")]
+    DuplicateDynamicAccount,
+    #[msg("A supplied dynamic account is not required by the execution")]
+    UnexpectedDynamicAccount,
+    #[msg("A dynamic account required by the execution was not supplied")]
+    MissingDynamicAccount,
+    #[msg("A dynamic account the execution writes was supplied read-only")]
+    DynamicAccountNotWritable,
+    #[msg("A value authority was supplied more than once")]
+    DuplicateStoreAuthority,
+    #[msg("A supplied value authority is not required by the execution")]
+    UnexpectedStoreAuthority,
+    #[msg("A value authority required by the execution was not supplied")]
+    MissingStoreAuthority,
+    /// The program account passed for the CPI is not the zama-host program.
+    #[msg("The host program account is not zama-host")]
+    HostProgramMismatch,
+    /// The authority account passed for the CPI is not the authority the execution was built for.
+    #[msg("The authority account is not the execution's authority")]
+    ExecutionAuthorityMismatch,
 }
