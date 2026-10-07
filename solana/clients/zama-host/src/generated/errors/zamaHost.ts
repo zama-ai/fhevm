@@ -64,132 +64,124 @@ export const ZAMA_HOST_ERROR__DENY_RECORD_MISSING = 0x1786; // 6022
 export const ZAMA_HOST_ERROR__DENY_RECORD_MISMATCH = 0x1787; // 6023
 /** ScopeDenied: application scope is deny-listed */
 export const ZAMA_HOST_ERROR__SCOPE_DENIED = 0x1788; // 6024
-/** DelegationPdaMismatch: delegation record does not match the canonical PDA */
-export const ZAMA_HOST_ERROR__DELEGATION_PDA_MISMATCH = 0x1789; // 6025
 /** InvalidDelegation: delegation tuple is invalid */
-export const ZAMA_HOST_ERROR__INVALID_DELEGATION = 0x178a; // 6026
+export const ZAMA_HOST_ERROR__INVALID_DELEGATION = 0x1789; // 6025
 /** NotDelegatedYet: delegation is not granted */
-export const ZAMA_HOST_ERROR__NOT_DELEGATED_YET = 0x178b; // 6027
+export const ZAMA_HOST_ERROR__NOT_DELEGATED_YET = 0x178a; // 6026
 /** DelegationUpdatedInCurrentSlot: delegation was already updated in the current slot */
-export const ZAMA_HOST_ERROR__DELEGATION_UPDATED_IN_CURRENT_SLOT = 0x178c; // 6028
+export const ZAMA_HOST_ERROR__DELEGATION_UPDATED_IN_CURRENT_SLOT = 0x178b; // 6027
 /** PreviousBankHashUnavailable: previous bank hash is not available */
-export const ZAMA_HOST_ERROR__PREVIOUS_BANK_HASH_UNAVAILABLE = 0x178d; // 6029
+export const ZAMA_HOST_ERROR__PREVIOUS_BANK_HASH_UNAVAILABLE = 0x178c; // 6028
 /** PdaCreationMismatch: PDA creation target is invalid */
-export const ZAMA_HOST_ERROR__PDA_CREATION_MISMATCH = 0x178e; // 6030
+export const ZAMA_HOST_ERROR__PDA_CREATION_MISMATCH = 0x178d; // 6029
 /** InvalidFheExecuteOperationCount: fhe_execute operation count is invalid */
-export const ZAMA_HOST_ERROR__INVALID_FHE_EXECUTE_OPERATION_COUNT = 0x178f; // 6031
+export const ZAMA_HOST_ERROR__INVALID_FHE_EXECUTE_OPERATION_COUNT = 0x178e; // 6030
 /** InvalidFheExecuteAccount: fhe_execute account reference is invalid */
-export const ZAMA_HOST_ERROR__INVALID_FHE_EXECUTE_ACCOUNT = 0x1790; // 6032
+export const ZAMA_HOST_ERROR__INVALID_FHE_EXECUTE_ACCOUNT = 0x178f; // 6031
 /** FheExecuteEarlierStepMissing: fhe_execute transient operand is missing */
-export const ZAMA_HOST_ERROR__FHE_EXECUTE_EARLIER_STEP_MISSING = 0x1791; // 6033
+export const ZAMA_HOST_ERROR__FHE_EXECUTE_EARLIER_STEP_MISSING = 0x1790; // 6032
 /** FheExecuteOutputAlreadyInitialized: fhe_execute persistent output ACL record already exists */
-export const ZAMA_HOST_ERROR__FHE_EXECUTE_OUTPUT_ALREADY_INITIALIZED = 0x1792; // 6034
+export const ZAMA_HOST_ERROR__FHE_EXECUTE_OUTPUT_ALREADY_INITIALIZED = 0x1791; // 6033
 /** FheExecuteRandNonceMissing: fhe_execute rand step requires the rand nonce account */
-export const ZAMA_HOST_ERROR__FHE_EXECUTE_RAND_NONCE_MISSING = 0x1793; // 6035
+export const ZAMA_HOST_ERROR__FHE_EXECUTE_RAND_NONCE_MISSING = 0x1792; // 6034
 /** DuplicateKmsSigner: KMS context signer set contains a duplicate address */
-export const ZAMA_HOST_ERROR__DUPLICATE_KMS_SIGNER = 0x1794; // 6036
+export const ZAMA_HOST_ERROR__DUPLICATE_KMS_SIGNER = 0x1793; // 6035
 /** InputBindContractMismatch: attested contract address does not match the execution's program */
-export const ZAMA_HOST_ERROR__INPUT_BIND_CONTRACT_MISMATCH = 0x1795; // 6037
+export const ZAMA_HOST_ERROR__INPUT_BIND_CONTRACT_MISMATCH = 0x1794; // 6036
 /** HcuTransactionLimitExceeded: FHE op total HCU exceeds the per-transaction limit */
-export const ZAMA_HOST_ERROR__HCU_TRANSACTION_LIMIT_EXCEEDED = 0x1796; // 6038
+export const ZAMA_HOST_ERROR__HCU_TRANSACTION_LIMIT_EXCEEDED = 0x1795; // 6037
 /** HcuTransactionDepthLimitExceeded: FHE op depth HCU exceeds the per-transaction depth limit */
-export const ZAMA_HOST_ERROR__HCU_TRANSACTION_DEPTH_LIMIT_EXCEEDED = 0x1797; // 6039
+export const ZAMA_HOST_ERROR__HCU_TRANSACTION_DEPTH_LIMIT_EXCEEDED = 0x1796; // 6038
 /** HcuUnknownCost: no HCU cost is defined for this op / type / scalar combination */
-export const ZAMA_HOST_ERROR__HCU_UNKNOWN_COST = 0x1798; // 6040
+export const ZAMA_HOST_ERROR__HCU_UNKNOWN_COST = 0x1797; // 6039
 /** HcuLimitOrderingInvalid: HCU limits violate max_hcu_per_tx >= max_hcu_depth_per_tx */
-export const ZAMA_HOST_ERROR__HCU_LIMIT_ORDERING_INVALID = 0x1799; // 6041
+export const ZAMA_HOST_ERROR__HCU_LIMIT_ORDERING_INVALID = 0x1798; // 6040
 /** AttestationChainIdMismatch: attested contract chain id does not match the host chain id */
-export const ZAMA_HOST_ERROR__ATTESTATION_CHAIN_ID_MISMATCH = 0x179a; // 6042
+export const ZAMA_HOST_ERROR__ATTESTATION_CHAIN_ID_MISMATCH = 0x1799; // 6041
 /** EncryptedStorePdaMismatch: encrypted store does not match the canonical PDA */
-export const ZAMA_HOST_ERROR__ENCRYPTED_STORE_PDA_MISMATCH = 0x179b; // 6043
+export const ZAMA_HOST_ERROR__ENCRYPTED_STORE_PDA_MISMATCH = 0x179a; // 6042
 /** PreviousStoreMismatch: encrypted value previous handle does not match the account */
-export const ZAMA_HOST_ERROR__PREVIOUS_STORE_MISMATCH = 0x179c; // 6044
+export const ZAMA_HOST_ERROR__PREVIOUS_STORE_MISMATCH = 0x179b; // 6043
 /** EncryptedStorePublicHandleMismatch: encrypted value public handle does not match the account */
-export const ZAMA_HOST_ERROR__ENCRYPTED_STORE_PUBLIC_HANDLE_MISMATCH = 0x179d; // 6045
+export const ZAMA_HOST_ERROR__ENCRYPTED_STORE_PUBLIC_HANDLE_MISMATCH = 0x179c; // 6044
 /** InvalidAllowKey: encrypted value allowed key is invalid */
-export const ZAMA_HOST_ERROR__INVALID_ALLOW_KEY = 0x179e; // 6046
+export const ZAMA_HOST_ERROR__INVALID_ALLOW_KEY = 0x179d; // 6045
 /** EncryptedStoreMmrInconsistent: encrypted value MMR state is inconsistent */
-export const ZAMA_HOST_ERROR__ENCRYPTED_STORE_MMR_INCONSISTENT = 0x179f; // 6047
+export const ZAMA_HOST_ERROR__ENCRYPTED_STORE_MMR_INCONSISTENT = 0x179e; // 6046
 /** EncryptedStoreMmrPeakCapacityExceeded: encrypted value MMR peak capacity exceeded */
-export const ZAMA_HOST_ERROR__ENCRYPTED_STORE_MMR_PEAK_CAPACITY_EXCEEDED = 0x17a0; // 6048
+export const ZAMA_HOST_ERROR__ENCRYPTED_STORE_MMR_PEAK_CAPACITY_EXCEEDED = 0x179f; // 6047
 /** HcuBlockLimitExceeded: per-app in-slot HCU exceeds the block cap */
-export const ZAMA_HOST_ERROR__HCU_BLOCK_LIMIT_EXCEEDED = 0x17a1; // 6049
+export const ZAMA_HOST_ERROR__HCU_BLOCK_LIMIT_EXCEEDED = 0x17a0; // 6048
 /** HcuBlockMeterMissing: HCU block meter account is required for a metered app */
-export const ZAMA_HOST_ERROR__HCU_BLOCK_METER_MISSING = 0x17a2; // 6050
+export const ZAMA_HOST_ERROR__HCU_BLOCK_METER_MISSING = 0x17a1; // 6049
 /** HcuBlockMeterMismatch: HCU block meter account does not match the canonical PDA */
-export const ZAMA_HOST_ERROR__HCU_BLOCK_METER_MISMATCH = 0x17a3; // 6051
+export const ZAMA_HOST_ERROR__HCU_BLOCK_METER_MISMATCH = 0x17a2; // 6050
 /** HcuTrustedAppRecordMismatch: HCU trusted-app record does not match the canonical PDA */
-export const ZAMA_HOST_ERROR__HCU_TRUSTED_APP_RECORD_MISMATCH = 0x17a4; // 6052
+export const ZAMA_HOST_ERROR__HCU_TRUSTED_APP_RECORD_MISMATCH = 0x17a3; // 6051
 /** HcuBlockCapBelowMaxPerTx: HCU block cap is below max_hcu_per_tx */
-export const ZAMA_HOST_ERROR__HCU_BLOCK_CAP_BELOW_MAX_PER_TX = 0x17a5; // 6053
+export const ZAMA_HOST_ERROR__HCU_BLOCK_CAP_BELOW_MAX_PER_TX = 0x17a4; // 6052
 /** MulDivDivisorZero: fheMulDiv divisor must be non-zero */
-export const ZAMA_HOST_ERROR__MUL_DIV_DIVISOR_ZERO = 0x17a6; // 6054
+export const ZAMA_HOST_ERROR__MUL_DIV_DIVISOR_ZERO = 0x17a5; // 6053
 /** DivisorMustBeScalar: fheDiv/fheRem divisor must be a plaintext scalar */
-export const ZAMA_HOST_ERROR__DIVISOR_MUST_BE_SCALAR = 0x17a7; // 6055
+export const ZAMA_HOST_ERROR__DIVISOR_MUST_BE_SCALAR = 0x17a6; // 6054
 /** DivisionByZero: fheDiv/fheRem divisor must be non-zero */
-export const ZAMA_HOST_ERROR__DIVISION_BY_ZERO = 0x17a8; // 6056
+export const ZAMA_HOST_ERROR__DIVISION_BY_ZERO = 0x17a7; // 6055
 /** InvalidChainTypeByte: host chain id must have type byte 0x01 and the gateway chain id must have type byte 0x00 */
-export const ZAMA_HOST_ERROR__INVALID_CHAIN_TYPE_BYTE = 0x17a9; // 6057
+export const ZAMA_HOST_ERROR__INVALID_CHAIN_TYPE_BYTE = 0x17a8; // 6056
 /** FheExecuteMixedScopes: FHE execution mixes values of different application scopes */
-export const ZAMA_HOST_ERROR__FHE_EXECUTE_MIXED_SCOPES = 0x17aa; // 6058
+export const ZAMA_HOST_ERROR__FHE_EXECUTE_MIXED_SCOPES = 0x17a9; // 6057
 /** InvalidKmsContext: KMS context is destroyed or does not match the certificate's committed context */
-export const ZAMA_HOST_ERROR__INVALID_KMS_CONTEXT = 0x17ab; // 6059
+export const ZAMA_HOST_ERROR__INVALID_KMS_CONTEXT = 0x17aa; // 6058
 /** InvalidKmsCertificate: KMS public-decrypt certificate is invalid */
-export const ZAMA_HOST_ERROR__INVALID_KMS_CERTIFICATE = 0x17ac; // 6060
+export const ZAMA_HOST_ERROR__INVALID_KMS_CERTIFICATE = 0x17ab; // 6059
 /** EmptyCoprocessorSignerSet: coprocessor signer set must not be empty */
-export const ZAMA_HOST_ERROR__EMPTY_COPROCESSOR_SIGNER_SET = 0x17ad; // 6061
+export const ZAMA_HOST_ERROR__EMPTY_COPROCESSOR_SIGNER_SET = 0x17ac; // 6060
 /** TooManyCoprocessorSigners: coprocessor signer set exceeds the maximum size */
-export const ZAMA_HOST_ERROR__TOO_MANY_COPROCESSOR_SIGNERS = 0x17ae; // 6062
+export const ZAMA_HOST_ERROR__TOO_MANY_COPROCESSOR_SIGNERS = 0x17ad; // 6061
 /** InvalidCoprocessorThreshold: coprocessor threshold must be between 1 and the signer count */
-export const ZAMA_HOST_ERROR__INVALID_COPROCESSOR_THRESHOLD = 0x17af; // 6063
+export const ZAMA_HOST_ERROR__INVALID_COPROCESSOR_THRESHOLD = 0x17ae; // 6062
 /** DuplicateCoprocessorSigner: coprocessor signer set contains a duplicate signer */
-export const ZAMA_HOST_ERROR__DUPLICATE_COPROCESSOR_SIGNER = 0x17b0; // 6064
+export const ZAMA_HOST_ERROR__DUPLICATE_COPROCESSOR_SIGNER = 0x17af; // 6063
 /** ZeroCoprocessorSigner: coprocessor signer set contains the zero address */
-export const ZAMA_HOST_ERROR__ZERO_COPROCESSOR_SIGNER = 0x17b1; // 6065
+export const ZAMA_HOST_ERROR__ZERO_COPROCESSOR_SIGNER = 0x17b0; // 6064
 /** ZeroKmsSigner: KMS signer set contains the zero address */
-export const ZAMA_HOST_ERROR__ZERO_KMS_SIGNER = 0x17b2; // 6066
-/** PermitInvalidationPdaMismatch: permit invalidation account is not the canonical account for the signer */
-export const ZAMA_HOST_ERROR__PERMIT_INVALIDATION_PDA_MISMATCH = 0x17b3; // 6067
-/** PermitInvalidationAccountInvalid: permit invalidation account is not a valid watermark record */
-export const ZAMA_HOST_ERROR__PERMIT_INVALIDATION_ACCOUNT_INVALID = 0x17b4; // 6068
+export const ZAMA_HOST_ERROR__ZERO_KMS_SIGNER = 0x17b1; // 6065
 /** ClockBeforeEpoch: clock is before the unix epoch */
-export const ZAMA_HOST_ERROR__CLOCK_BEFORE_EPOCH = 0x17b5; // 6069
+export const ZAMA_HOST_ERROR__CLOCK_BEFORE_EPOCH = 0x17b2; // 6066
 /** FheExecuteDictionaryIndexOutOfBounds: fhe_execute dictionary index out of bounds */
-export const ZAMA_HOST_ERROR__FHE_EXECUTE_DICTIONARY_INDEX_OUT_OF_BOUNDS = 0x17b6; // 6070
+export const ZAMA_HOST_ERROR__FHE_EXECUTE_DICTIONARY_INDEX_OUT_OF_BOUNDS = 0x17b3; // 6067
 /** FheExecuteAccountCountMismatch: fhe_execute declared account count mismatch */
-export const ZAMA_HOST_ERROR__FHE_EXECUTE_ACCOUNT_COUNT_MISMATCH = 0x17b7; // 6071
+export const ZAMA_HOST_ERROR__FHE_EXECUTE_ACCOUNT_COUNT_MISMATCH = 0x17b4; // 6068
 /** FheExecuteDictionaryEntryUnreferenced: fhe_execute dictionary entry is not referenced by any step */
-export const ZAMA_HOST_ERROR__FHE_EXECUTE_DICTIONARY_ENTRY_UNREFERENCED = 0x17b8; // 6072
+export const ZAMA_HOST_ERROR__FHE_EXECUTE_DICTIONARY_ENTRY_UNREFERENCED = 0x17b5; // 6069
 /** HcuLimitZeroReserved: 0 is not a valid HCU limit; use u64::MAX for unlimited */
-export const ZAMA_HOST_ERROR__HCU_LIMIT_ZERO_RESERVED = 0x17b9; // 6073
+export const ZAMA_HOST_ERROR__HCU_LIMIT_ZERO_RESERVED = 0x17b6; // 6070
 /** TransientAccountInvalid: invalid transient workspace account */
-export const ZAMA_HOST_ERROR__TRANSIENT_ACCOUNT_INVALID = 0x17ba; // 6074
+export const ZAMA_HOST_ERROR__TRANSIENT_ACCOUNT_INVALID = 0x17b7; // 6071
 /** TransientCloseMissing: matching final top-level transient_store close is required */
-export const ZAMA_HOST_ERROR__TRANSIENT_CLOSE_MISSING = 0x17bb; // 6075
+export const ZAMA_HOST_ERROR__TRANSIENT_CLOSE_MISSING = 0x17b8; // 6072
 /** TransientCapacityExceeded: transient workspace grant capacity exceeded */
-export const ZAMA_HOST_ERROR__TRANSIENT_CAPACITY_EXCEEDED = 0x17bc; // 6076
+export const ZAMA_HOST_ERROR__TRANSIENT_CAPACITY_EXCEEDED = 0x17b9; // 6073
 /** EncryptedStoreCapacityExceeded: encrypted store slot capacity exceeded */
-export const ZAMA_HOST_ERROR__ENCRYPTED_STORE_CAPACITY_EXCEEDED = 0x17bd; // 6077
+export const ZAMA_HOST_ERROR__ENCRYPTED_STORE_CAPACITY_EXCEEDED = 0x17ba; // 6074
 /** InvalidReturnSelection: invalid execution return selection */
-export const ZAMA_HOST_ERROR__INVALID_RETURN_SELECTION = 0x17be; // 6078
+export const ZAMA_HOST_ERROR__INVALID_RETURN_SELECTION = 0x17bb; // 6075
 /** TransientStoreNotOpened: transient store must be opened for this transaction and closed last */
-export const ZAMA_HOST_ERROR__TRANSIENT_STORE_NOT_OPENED = 0x17bf; // 6079
+export const ZAMA_HOST_ERROR__TRANSIENT_STORE_NOT_OPENED = 0x17bc; // 6076
 /** WalletDelegationThroughCpi: a wallet delegator must delegate in a top-level instruction */
-export const ZAMA_HOST_ERROR__WALLET_DELEGATION_THROUGH_CPI = 0x17c0; // 6080
+export const ZAMA_HOST_ERROR__WALLET_DELEGATION_THROUGH_CPI = 0x17bd; // 6077
 /** VerifiedInputsPaused: verified inputs are paused */
-export const ZAMA_HOST_ERROR__VERIFIED_INPUTS_PAUSED = 0x17c1; // 6081
+export const ZAMA_HOST_ERROR__VERIFIED_INPUTS_PAUSED = 0x17be; // 6078
 /** AclWritesPaused: ACL writes are paused */
-export const ZAMA_HOST_ERROR__ACL_WRITES_PAUSED = 0x17c2; // 6082
+export const ZAMA_HOST_ERROR__ACL_WRITES_PAUSED = 0x17bf; // 6079
 /** NotPauser: signer is not an enabled pauser */
-export const ZAMA_HOST_ERROR__NOT_PAUSER = 0x17c3; // 6083
-/** PauserRecordMismatch: pauser record mismatch */
-export const ZAMA_HOST_ERROR__PAUSER_RECORD_MISMATCH = 0x17c4; // 6084
+export const ZAMA_HOST_ERROR__NOT_PAUSER = 0x17c0; // 6080
 /** WalletPauseThroughCpi: a wallet pauser must pause in a top-level instruction */
-export const ZAMA_HOST_ERROR__WALLET_PAUSE_THROUGH_CPI = 0x17c5; // 6085
+export const ZAMA_HOST_ERROR__WALLET_PAUSE_THROUGH_CPI = 0x17c1; // 6081
 /** EncryptedStoreScopeNotProgramAccount: encrypted store scope is not an account of the store's program */
-export const ZAMA_HOST_ERROR__ENCRYPTED_STORE_SCOPE_NOT_PROGRAM_ACCOUNT = 0x17c6; // 6086
+export const ZAMA_HOST_ERROR__ENCRYPTED_STORE_SCOPE_NOT_PROGRAM_ACCOUNT = 0x17c2; // 6082
 /** DelegationScopeNotProgramAccount: delegation scope is not an account of the delegated program */
-export const ZAMA_HOST_ERROR__DELEGATION_SCOPE_NOT_PROGRAM_ACCOUNT = 0x17c7; // 6087
+export const ZAMA_HOST_ERROR__DELEGATION_SCOPE_NOT_PROGRAM_ACCOUNT = 0x17c3; // 6083
 
 export type ZamaHostError =
   | typeof ZAMA_HOST_ERROR__ACL_WRITES_PAUSED
@@ -197,7 +189,6 @@ export type ZamaHostError =
   | typeof ZAMA_HOST_ERROR__BINARY_OPERAND_TYPE_MISMATCH
   | typeof ZAMA_HOST_ERROR__CLOCK_BEFORE_EPOCH
   | typeof ZAMA_HOST_ERROR__CURRENT_KMS_CONTEXT_CANNOT_BE_DESTROYED
-  | typeof ZAMA_HOST_ERROR__DELEGATION_PDA_MISMATCH
   | typeof ZAMA_HOST_ERROR__DELEGATION_SCOPE_NOT_PROGRAM_ACCOUNT
   | typeof ZAMA_HOST_ERROR__DELEGATION_UPDATED_IN_CURRENT_SLOT
   | typeof ZAMA_HOST_ERROR__DENY_RECORD_MISMATCH
@@ -260,10 +251,7 @@ export type ZamaHostError =
   | typeof ZAMA_HOST_ERROR__MUL_DIV_DIVISOR_ZERO
   | typeof ZAMA_HOST_ERROR__NOT_DELEGATED_YET
   | typeof ZAMA_HOST_ERROR__NOT_PAUSER
-  | typeof ZAMA_HOST_ERROR__PAUSER_RECORD_MISMATCH
   | typeof ZAMA_HOST_ERROR__PDA_CREATION_MISMATCH
-  | typeof ZAMA_HOST_ERROR__PERMIT_INVALIDATION_ACCOUNT_INVALID
-  | typeof ZAMA_HOST_ERROR__PERMIT_INVALIDATION_PDA_MISMATCH
   | typeof ZAMA_HOST_ERROR__PREVIOUS_BANK_HASH_UNAVAILABLE
   | typeof ZAMA_HOST_ERROR__PREVIOUS_STORE_MISMATCH
   | typeof ZAMA_HOST_ERROR__SCOPE_DENIED
@@ -289,7 +277,6 @@ if (process.env['NODE_ENV'] !== 'production') {
     [ZAMA_HOST_ERROR__BINARY_OPERAND_TYPE_MISMATCH]: `binary FHE operand type is incompatible`,
     [ZAMA_HOST_ERROR__CLOCK_BEFORE_EPOCH]: `clock is before the unix epoch`,
     [ZAMA_HOST_ERROR__CURRENT_KMS_CONTEXT_CANNOT_BE_DESTROYED]: `current KMS context cannot be destroyed`,
-    [ZAMA_HOST_ERROR__DELEGATION_PDA_MISMATCH]: `delegation record does not match the canonical PDA`,
     [ZAMA_HOST_ERROR__DELEGATION_SCOPE_NOT_PROGRAM_ACCOUNT]: `delegation scope is not an account of the delegated program`,
     [ZAMA_HOST_ERROR__DELEGATION_UPDATED_IN_CURRENT_SLOT]: `delegation was already updated in the current slot`,
     [ZAMA_HOST_ERROR__DENY_RECORD_MISMATCH]: `deny-list account does not match the canonical PDA`,
@@ -352,10 +339,7 @@ if (process.env['NODE_ENV'] !== 'production') {
     [ZAMA_HOST_ERROR__MUL_DIV_DIVISOR_ZERO]: `fheMulDiv divisor must be non-zero`,
     [ZAMA_HOST_ERROR__NOT_DELEGATED_YET]: `delegation is not granted`,
     [ZAMA_HOST_ERROR__NOT_PAUSER]: `signer is not an enabled pauser`,
-    [ZAMA_HOST_ERROR__PAUSER_RECORD_MISMATCH]: `pauser record mismatch`,
     [ZAMA_HOST_ERROR__PDA_CREATION_MISMATCH]: `PDA creation target is invalid`,
-    [ZAMA_HOST_ERROR__PERMIT_INVALIDATION_ACCOUNT_INVALID]: `permit invalidation account is not a valid watermark record`,
-    [ZAMA_HOST_ERROR__PERMIT_INVALIDATION_PDA_MISMATCH]: `permit invalidation account is not the canonical account for the signer`,
     [ZAMA_HOST_ERROR__PREVIOUS_BANK_HASH_UNAVAILABLE]: `previous bank hash is not available`,
     [ZAMA_HOST_ERROR__PREVIOUS_STORE_MISMATCH]: `encrypted value previous handle does not match the account`,
     [ZAMA_HOST_ERROR__SCOPE_DENIED]: `application scope is deny-listed`,

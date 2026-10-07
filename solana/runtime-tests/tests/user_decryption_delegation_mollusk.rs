@@ -385,8 +385,8 @@ fn a_grant_refuses_a_record_address_owned_by_a_foreign_program() {
             EXPIRES_AT,
         ),
         &accounts,
-        &[custom_error(
-            host::errors::ZamaHostError::PdaCreationMismatch,
+        &[anchor_framework_error_check(
+            anchor_lang::error::ErrorCode::AccountOwnedByWrongProgram,
         )],
     );
 }
@@ -910,31 +910,6 @@ fn a_counter_at_the_maximum_cannot_be_regranted() {
     );
 }
 
-/// A record at the canonical address whose own fields name another tuple is refused. Only
-/// the program writes program-owned bytes, so nothing an attacker can arrange — but a record
-/// that disagrees with its address is corruption, and overwriting it would destroy the
-/// evidence.
-#[test]
-fn an_existing_record_naming_another_tuple_is_rejected() {
-    let actors = actors();
-    let mut existing = live_record(&actors);
-    existing.delegate = Pubkey::new_unique();
-    let accounts = grant_accounts(&actors, record_account(&existing), false);
-
-    mollusk().process_and_validate_instruction(
-        &grant_ix(
-            actors.payer,
-            actors.delegator,
-            actors.record_key,
-            actors.delegate,
-            actors.app,
-            EXPIRES_AT + 100,
-        ),
-        &accounts,
-        &[custom_error(host::errors::ZamaHostError::InvalidDelegation)],
-    );
-}
-
 /// A program-owned account of the wrong size at the record address is not a delegation
 /// record, whatever its first bytes say.
 #[test]
@@ -954,30 +929,8 @@ fn an_existing_record_of_the_wrong_size_is_rejected() {
             EXPIRES_AT + 100,
         ),
         &accounts,
-        &[custom_error(host::errors::ZamaHostError::InvalidDelegation)],
-    );
-}
-
-/// A stored bump other than the canonical one is not this record.
-#[test]
-fn an_existing_record_with_a_non_canonical_bump_is_rejected() {
-    let actors = actors();
-    let mut existing = live_record(&actors);
-    existing.bump = actors.record_bump.wrapping_sub(1);
-    let accounts = grant_accounts(&actors, record_account(&existing), false);
-
-    mollusk().process_and_validate_instruction(
-        &grant_ix(
-            actors.payer,
-            actors.delegator,
-            actors.record_key,
-            actors.delegate,
-            actors.app,
-            EXPIRES_AT + 100,
-        ),
-        &accounts,
-        &[custom_error(
-            host::errors::ZamaHostError::DelegationPdaMismatch,
+        &[anchor_framework_error_check(
+            anchor_lang::error::ErrorCode::AccountDidNotDeserialize,
         )],
     );
 }

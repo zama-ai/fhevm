@@ -5,7 +5,7 @@ use anchor_lang::prelude::*;
 use super::common::*;
 use crate::event_cpi::emit_event_cpi;
 use crate::events::DenyScopeUpdatedEvent;
-use crate::{errors::ZamaHostError, state::*};
+use crate::state::*;
 
 /// Accounts for creating or updating a deny-list record.
 #[derive(Accounts)]
@@ -20,9 +20,15 @@ pub struct SetDenyScope<'info> {
     /// Singleton config PDA.
     #[account(seeds = [HOST_CONFIG_SEED], bump = host_config.bump)]
     pub host_config: Account<'info, HostConfig>,
-    /// CHECK: created or overwritten after canonical deny-list PDA validation.
-    #[account(mut, seeds = [DENY_SCOPE_SEED, app_program.as_ref(), scope.as_ref()], bump)]
-    pub deny_scope_record: UncheckedAccount<'info>,
+    /// The application's deny-list record, created on first use.
+    #[account(
+        init_if_needed,
+        payer = payer,
+        space = 8 + DenyScopeRecord::SPACE,
+        seeds = [DENY_SCOPE_SEED, app_program.as_ref(), scope.as_ref()],
+        bump,
+    )]
+    pub deny_scope_record: Account<'info, DenyScopeRecord>,
     /// System program used for account creation.
     pub system_program: Program<'info, System>,
 }
@@ -36,32 +42,18 @@ pub fn set_deny_scope(
 ) -> Result<()> {
     assert_no_remaining_accounts(ctx.remaining_accounts)?;
     assert_admin(&ctx.accounts.host_config, &ctx.accounts.admin)?;
-    let app = AppScope { program, scope };
-    let bump = ctx.bumps.deny_scope_record;
 
-    let info = ctx.accounts.deny_scope_record.to_account_info();
-    let current = current_deny_status(&info, app, bump)?;
-    if current.unwrap_or(false) == denied {
+    // A record created by this call is zeroed: `denied == false` reads as an absent record does.
+    // The identity is written before the unchanged-state return, so a zeroed record never persists.
+    let record = &mut ctx.accounts.deny_scope_record;
+    record.program = program;
+    record.scope = scope;
+    record.bump = ctx.bumps.deny_scope_record;
+    if record.denied == denied {
         return Ok(());
     }
+    record.denied = denied;
 
-    create_pda_if_needed(
-        &ctx.accounts.payer.to_account_info(),
-        &info,
-        &ctx.accounts.system_program.to_account_info(),
-        8 + DenyScopeRecord::SPACE,
-        &[DENY_SCOPE_SEED, program.as_ref(), scope.as_ref(), &[bump]],
-    )?;
-
-    write_account(
-        &info,
-        &DenyScopeRecord {
-            program,
-            scope,
-            denied,
-            bump,
-        },
-    )?;
     emit_event_cpi(
         &ctx.accounts.event_authority,
         &DenyScopeUpdatedEvent {
@@ -74,23 +66,4 @@ pub fn set_deny_scope(
         },
     )?;
     Ok(())
-}
-
-fn current_deny_status(info: &AccountInfo, app: AppScope, bump: u8) -> Result<Option<bool>> {
-    if is_uninitialized_pda_account(info, ZamaHostError::DenyRecordMismatch)? {
-        return Ok(None);
-    }
-    require_keys_eq!(*info.owner, crate::ID, ZamaHostError::DenyRecordMismatch);
-    require!(
-        info.data_len() == 8 + DenyScopeRecord::SPACE,
-        ZamaHostError::DenyRecordMismatch
-    );
-    let data = info.try_borrow_data()?;
-    let mut data_slice: &[u8] = &data;
-    let record = DenyScopeRecord::try_deserialize(&mut data_slice)?;
-    require!(
-        record.program == app.program && record.scope == app.scope && record.bump == bump,
-        ZamaHostError::DenyRecordMismatch
-    );
-    Ok(Some(record.denied))
 }

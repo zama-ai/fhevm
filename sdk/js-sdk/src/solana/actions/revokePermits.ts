@@ -2,14 +2,19 @@ import type { SolanaRpc } from '../encryptedStore.js';
 import {
   createNoopSigner,
   fetchEncodedAccount,
-  getAddressDecoder,
   type Address,
   type Instruction,
   type MaybeEncodedAccount,
   type ProgramDerivedAddress,
 } from '@solana/kit';
 
-import { findInvalidationPda, getRevokePermitsInstruction } from '@fhevm/solana-zama-host';
+import {
+  findInvalidationPda,
+  getPermitInvalidationDecoder,
+  getPermitInvalidationSize,
+  getRevokePermitsInstruction,
+  PERMIT_INVALIDATION_DISCRIMINATOR,
+} from '@fhevm/solana-zama-host';
 
 /**
  * Builds the `zama_host::revoke_permits` instruction: kills every outstanding permit whose
@@ -68,8 +73,6 @@ export function solanaPermitInvalidationWatermark(
   programAddress: Address,
 ): bigint {
   if (!account.exists) return 0n;
-  // PermitInvalidation is an unchecked Anchor account and therefore absent from the IDL.
-  // Its discriminator and 49-byte layout are pinned in state/permit_invalidation.rs.
   const data = account.data;
   // Anyone can fund a PDA before initialization; the host treats that account as watermark zero.
   if (!account.executable && account.programAddress === '11111111111111111111111111111111' && data.length === 0)
@@ -77,12 +80,14 @@ export function solanaPermitInvalidationWatermark(
   if (
     account.programAddress !== programAddress ||
     account.executable ||
-    data.length !== 49 ||
-    ![0xec, 0x8b, 0xdb, 0xa9, 0xb9, 0x22, 0xe9, 0x88].every((byte, index) => data[index] === byte) ||
-    getAddressDecoder().decode(data.subarray(8, 40)) !== user ||
-    data[48] !== bump
+    data.length !== getPermitInvalidationSize() ||
+    !PERMIT_INVALIDATION_DISCRIMINATOR.every((byte, index) => data[index] === byte)
   ) {
     throw new Error(`Invalid permit invalidation account ${address}`);
   }
-  return new DataView(data.buffer, data.byteOffset, data.byteLength).getBigUint64(40, true);
+  const record = getPermitInvalidationDecoder().decode(data);
+  if (record.user !== user || record.bump !== bump) {
+    throw new Error(`Invalid permit invalidation account ${address}`);
+  }
+  return record.invalidationWatermark;
 }

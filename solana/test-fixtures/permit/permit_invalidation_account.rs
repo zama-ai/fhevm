@@ -1,10 +1,10 @@
 //! Schema of the byte-exact `PermitInvalidation` account fixture.
 //!
-//! The account is written by the host program's `revoke_permits` instruction, which takes
-//! it as an unchecked account — so its layout reaches no generated interface description,
-//! and the KMS Connector reads the raw bytes out of a Solana account snapshot through
-//! `zama_solana_acl::decode_permit_invalidation`. This file and
-//! `permit_invalidation_account_v1.json` are that contract: the JSON carries the bytes of
+//! The account is written by the host program's `revoke_permits` instruction. Two decoders
+//! read it: the SDK's, generated from the IDL, and the KMS Connector's
+//! `zama_solana_acl::decode_permit_invalidation`, which reads the raw bytes out of a Solana
+//! account snapshot without the framework. This file and
+//! `permit_invalidation_account_v1.json` pin the bytes both read: the JSON carries the bytes of
 //! one account the program really wrote, together with a table saying where each value
 //! sits inside them, and this file is the Rust half a consumer includes with `#[path]` to
 //! deserialize it.
@@ -18,7 +18,7 @@
 //!   reach that range.
 //! * **The field table is the normative layout, not a comment on it.** Offsets and
 //!   lengths are stated per field rather than implied by a struct definition, because the
-//!   consumer that reads this account has no struct definition to derive them from.
+//!   KMS Connector's decoder has no struct definition to derive them from.
 //!
 //! Only serde is required, so this file compiles in any consumer's test target.
 

@@ -355,6 +355,9 @@
         },
         {
           "name": "delegation_record",
+          "docs": [
+            "The `delegator → delegate` record for the application, created on first grant."
+          ],
           "writable": true,
           "pda": {
             "seeds": [
@@ -1205,7 +1208,8 @@
         {
           "name": "invalidation",
           "docs": [
-            "then created if absent."
+            "The user's watermark, created on first revocation. The address is derived from the",
+            "signer, so another user's watermark is never at this address."
           ],
           "writable": true,
           "pda": {
@@ -1459,6 +1463,9 @@
         },
         {
           "name": "deny_scope_record",
+          "docs": [
+            "The application's deny-list record, created on first use."
+          ],
           "writable": true,
           "pda": {
             "seeds": [
@@ -1720,6 +1727,9 @@
         },
         {
           "name": "hcu_trusted_app_record",
+          "docs": [
+            "The application's trust-registry record, created on first use."
+          ],
           "writable": true,
           "pda": {
             "seeds": [
@@ -2024,6 +2034,9 @@
         },
         {
           "name": "pauser_record",
+          "docs": [
+            "The pauser's record, created on first use."
+          ],
           "writable": true,
           "pda": {
             "seeds": [
@@ -2231,6 +2244,19 @@
   ],
   "accounts": [
     {
+      "name": "DenyScopeRecord",
+      "discriminator": [
+        226,
+        93,
+        157,
+        161,
+        141,
+        175,
+        48,
+        171
+      ]
+    },
+    {
       "name": "EncryptedStore",
       "discriminator": [
         161,
@@ -2241,6 +2267,19 @@
         30,
         46,
         118
+      ]
+    },
+    {
+      "name": "HcuTrustedAppRecord",
+      "discriminator": [
+        49,
+        51,
+        88,
+        15,
+        105,
+        106,
+        130,
+        226
       ]
     },
     {
@@ -2280,6 +2319,19 @@
         74,
         132,
         71
+      ]
+    },
+    {
+      "name": "PermitInvalidation",
+      "discriminator": [
+        236,
+        139,
+        219,
+        169,
+        185,
+        34,
+        233,
+        136
       ]
     },
     {
@@ -2543,316 +2595,296 @@
     },
     {
       "code": 6025,
-      "name": "DelegationPdaMismatch",
-      "msg": "delegation record does not match the canonical PDA"
-    },
-    {
-      "code": 6026,
       "name": "InvalidDelegation",
       "msg": "delegation tuple is invalid"
     },
     {
-      "code": 6027,
+      "code": 6026,
       "name": "NotDelegatedYet",
       "msg": "delegation is not granted"
     },
     {
-      "code": 6028,
+      "code": 6027,
       "name": "DelegationUpdatedInCurrentSlot",
       "msg": "delegation was already updated in the current slot"
     },
     {
-      "code": 6029,
+      "code": 6028,
       "name": "PreviousBankHashUnavailable",
       "msg": "previous bank hash is not available"
     },
     {
-      "code": 6030,
+      "code": 6029,
       "name": "PdaCreationMismatch",
       "msg": "PDA creation target is invalid"
     },
     {
-      "code": 6031,
+      "code": 6030,
       "name": "InvalidFheExecuteOperationCount",
       "msg": "fhe_execute operation count is invalid"
     },
     {
-      "code": 6032,
+      "code": 6031,
       "name": "InvalidFheExecuteAccount",
       "msg": "fhe_execute account reference is invalid"
     },
     {
-      "code": 6033,
+      "code": 6032,
       "name": "FheExecuteEarlierStepMissing",
       "msg": "fhe_execute transient operand is missing"
     },
     {
-      "code": 6034,
+      "code": 6033,
       "name": "FheExecuteOutputAlreadyInitialized",
       "msg": "fhe_execute persistent output ACL record already exists"
     },
     {
-      "code": 6035,
+      "code": 6034,
       "name": "FheExecuteRandNonceMissing",
       "msg": "fhe_execute rand step requires the rand nonce account"
     },
     {
-      "code": 6036,
+      "code": 6035,
       "name": "DuplicateKmsSigner",
       "msg": "KMS context signer set contains a duplicate address"
     },
     {
-      "code": 6037,
+      "code": 6036,
       "name": "InputBindContractMismatch",
       "msg": "attested contract address does not match the execution's program"
     },
     {
-      "code": 6038,
+      "code": 6037,
       "name": "HcuTransactionLimitExceeded",
       "msg": "FHE op total HCU exceeds the per-transaction limit"
     },
     {
-      "code": 6039,
+      "code": 6038,
       "name": "HcuTransactionDepthLimitExceeded",
       "msg": "FHE op depth HCU exceeds the per-transaction depth limit"
     },
     {
-      "code": 6040,
+      "code": 6039,
       "name": "HcuUnknownCost",
       "msg": "no HCU cost is defined for this op / type / scalar combination"
     },
     {
-      "code": 6041,
+      "code": 6040,
       "name": "HcuLimitOrderingInvalid",
       "msg": "HCU limits violate max_hcu_per_tx >= max_hcu_depth_per_tx"
     },
     {
-      "code": 6042,
+      "code": 6041,
       "name": "AttestationChainIdMismatch",
       "msg": "attested contract chain id does not match the host chain id"
     },
     {
-      "code": 6043,
+      "code": 6042,
       "name": "EncryptedStorePdaMismatch",
       "msg": "encrypted store does not match the canonical PDA"
     },
     {
-      "code": 6044,
+      "code": 6043,
       "name": "PreviousStoreMismatch",
       "msg": "encrypted value previous handle does not match the account"
     },
     {
-      "code": 6045,
+      "code": 6044,
       "name": "EncryptedStorePublicHandleMismatch",
       "msg": "encrypted value public handle does not match the account"
     },
     {
-      "code": 6046,
+      "code": 6045,
       "name": "InvalidAllowKey",
       "msg": "encrypted value allowed key is invalid"
     },
     {
-      "code": 6047,
+      "code": 6046,
       "name": "EncryptedStoreMmrInconsistent",
       "msg": "encrypted value MMR state is inconsistent"
     },
     {
-      "code": 6048,
+      "code": 6047,
       "name": "EncryptedStoreMmrPeakCapacityExceeded",
       "msg": "encrypted value MMR peak capacity exceeded"
     },
     {
-      "code": 6049,
+      "code": 6048,
       "name": "HcuBlockLimitExceeded",
       "msg": "per-app in-slot HCU exceeds the block cap"
     },
     {
-      "code": 6050,
+      "code": 6049,
       "name": "HcuBlockMeterMissing",
       "msg": "HCU block meter account is required for a metered app"
     },
     {
-      "code": 6051,
+      "code": 6050,
       "name": "HcuBlockMeterMismatch",
       "msg": "HCU block meter account does not match the canonical PDA"
     },
     {
-      "code": 6052,
+      "code": 6051,
       "name": "HcuTrustedAppRecordMismatch",
       "msg": "HCU trusted-app record does not match the canonical PDA"
     },
     {
-      "code": 6053,
+      "code": 6052,
       "name": "HcuBlockCapBelowMaxPerTx",
       "msg": "HCU block cap is below max_hcu_per_tx"
     },
     {
-      "code": 6054,
+      "code": 6053,
       "name": "MulDivDivisorZero",
       "msg": "fheMulDiv divisor must be non-zero"
     },
     {
-      "code": 6055,
+      "code": 6054,
       "name": "DivisorMustBeScalar",
       "msg": "fheDiv/fheRem divisor must be a plaintext scalar"
     },
     {
-      "code": 6056,
+      "code": 6055,
       "name": "DivisionByZero",
       "msg": "fheDiv/fheRem divisor must be non-zero"
     },
     {
-      "code": 6057,
+      "code": 6056,
       "name": "InvalidChainTypeByte",
       "msg": "host chain id must have type byte 0x01 and the gateway chain id must have type byte 0x00"
     },
     {
-      "code": 6058,
+      "code": 6057,
       "name": "FheExecuteMixedScopes",
       "msg": "FHE execution mixes values of different application scopes"
     },
     {
-      "code": 6059,
+      "code": 6058,
       "name": "InvalidKmsContext",
       "msg": "KMS context is destroyed or does not match the certificate's committed context"
     },
     {
-      "code": 6060,
+      "code": 6059,
       "name": "InvalidKmsCertificate",
       "msg": "KMS public-decrypt certificate is invalid"
     },
     {
-      "code": 6061,
+      "code": 6060,
       "name": "EmptyCoprocessorSignerSet",
       "msg": "coprocessor signer set must not be empty"
     },
     {
-      "code": 6062,
+      "code": 6061,
       "name": "TooManyCoprocessorSigners",
       "msg": "coprocessor signer set exceeds the maximum size"
     },
     {
-      "code": 6063,
+      "code": 6062,
       "name": "InvalidCoprocessorThreshold",
       "msg": "coprocessor threshold must be between 1 and the signer count"
     },
     {
-      "code": 6064,
+      "code": 6063,
       "name": "DuplicateCoprocessorSigner",
       "msg": "coprocessor signer set contains a duplicate signer"
     },
     {
-      "code": 6065,
+      "code": 6064,
       "name": "ZeroCoprocessorSigner",
       "msg": "coprocessor signer set contains the zero address"
     },
     {
-      "code": 6066,
+      "code": 6065,
       "name": "ZeroKmsSigner",
       "msg": "KMS signer set contains the zero address"
     },
     {
-      "code": 6067,
-      "name": "PermitInvalidationPdaMismatch",
-      "msg": "permit invalidation account is not the canonical account for the signer"
-    },
-    {
-      "code": 6068,
-      "name": "PermitInvalidationAccountInvalid",
-      "msg": "permit invalidation account is not a valid watermark record"
-    },
-    {
-      "code": 6069,
+      "code": 6066,
       "name": "ClockBeforeEpoch",
       "msg": "clock is before the unix epoch"
     },
     {
-      "code": 6070,
+      "code": 6067,
       "name": "FheExecuteDictionaryIndexOutOfBounds",
       "msg": "fhe_execute dictionary index out of bounds"
     },
     {
-      "code": 6071,
+      "code": 6068,
       "name": "FheExecuteAccountCountMismatch",
       "msg": "fhe_execute declared account count mismatch"
     },
     {
-      "code": 6072,
+      "code": 6069,
       "name": "FheExecuteDictionaryEntryUnreferenced",
       "msg": "fhe_execute dictionary entry is not referenced by any step"
     },
     {
-      "code": 6073,
+      "code": 6070,
       "name": "HcuLimitZeroReserved",
       "msg": "0 is not a valid HCU limit; use u64::MAX for unlimited"
     },
     {
-      "code": 6074,
+      "code": 6071,
       "name": "TransientAccountInvalid",
       "msg": "invalid transient workspace account"
     },
     {
-      "code": 6075,
+      "code": 6072,
       "name": "TransientCloseMissing",
       "msg": "matching final top-level transient_store close is required"
     },
     {
-      "code": 6076,
+      "code": 6073,
       "name": "TransientCapacityExceeded",
       "msg": "transient workspace grant capacity exceeded"
     },
     {
-      "code": 6077,
+      "code": 6074,
       "name": "EncryptedStoreCapacityExceeded",
       "msg": "encrypted store slot capacity exceeded"
     },
     {
-      "code": 6078,
+      "code": 6075,
       "name": "InvalidReturnSelection",
       "msg": "invalid execution return selection"
     },
     {
-      "code": 6079,
+      "code": 6076,
       "name": "TransientStoreNotOpened",
       "msg": "transient store must be opened for this transaction and closed last"
     },
     {
-      "code": 6080,
+      "code": 6077,
       "name": "WalletDelegationThroughCpi",
       "msg": "a wallet delegator must delegate in a top-level instruction"
     },
     {
-      "code": 6081,
+      "code": 6078,
       "name": "VerifiedInputsPaused",
       "msg": "verified inputs are paused"
     },
     {
-      "code": 6082,
+      "code": 6079,
       "name": "AclWritesPaused",
       "msg": "ACL writes are paused"
     },
     {
-      "code": 6083,
+      "code": 6080,
       "name": "NotPauser",
       "msg": "signer is not an enabled pauser"
     },
     {
-      "code": 6084,
-      "name": "PauserRecordMismatch",
-      "msg": "pauser record mismatch"
-    },
-    {
-      "code": 6085,
+      "code": 6081,
       "name": "WalletPauseThroughCpi",
       "msg": "a wallet pauser must pause in a top-level instruction"
     },
     {
-      "code": 6086,
+      "code": 6082,
       "name": "EncryptedStoreScopeNotProgramAccount",
       "msg": "encrypted store scope is not an account of the store's program"
     },
     {
-      "code": 6087,
+      "code": 6083,
       "name": "DelegationScopeNotProgramAccount",
       "msg": "delegation scope is not an account of the delegated program"
     }
@@ -2952,6 +2984,47 @@
                 ]
               }
             }
+          }
+        ]
+      }
+    },
+    {
+      "name": "DenyScopeRecord",
+      "docs": [
+        "Optional deny-list record for one application `(program, scope)`. A denied application can",
+        "neither compute nor allow: `fhe_execute` and `make_handle_public` fail closed on it, the way",
+        "the EVM ACL blocks a denied `msg.sender` on `allow`."
+      ],
+      "type": {
+        "kind": "struct",
+        "fields": [
+          {
+            "name": "program",
+            "docs": [
+              "The application program this record governs."
+            ],
+            "type": "pubkey"
+          },
+          {
+            "name": "scope",
+            "docs": [
+              "The scope this record governs: an account of `program`."
+            ],
+            "type": "pubkey"
+          },
+          {
+            "name": "denied",
+            "docs": [
+              "Whether `(program, scope)` is currently denied."
+            ],
+            "type": "bool"
+          },
+          {
+            "name": "bump",
+            "docs": [
+              "PDA bump for `PDA(\"deny-scope\", program, scope)`."
+            ],
+            "type": "u8"
           }
         ]
       }
@@ -3906,6 +3979,50 @@
       }
     },
     {
+      "name": "HcuTrustedAppRecord",
+      "docs": [
+        "Trust-registry record marking an application as bypassing the per-app HCU block cap.",
+        "",
+        "This is the inverse of [`DenyScopeRecord`](super::DenyScopeRecord): the deny list fails",
+        "*closed* on presence, whereas absence here means \"untrusted\" (metered), and only a present,",
+        "program-owned record with `trusted == true` bypasses the cap. Admin-only writer; long-lived.",
+        "The direct analog of EVM's `blockHCUWhitelist`."
+      ],
+      "type": {
+        "kind": "struct",
+        "fields": [
+          {
+            "name": "program",
+            "docs": [
+              "The application program this record governs."
+            ],
+            "type": "pubkey"
+          },
+          {
+            "name": "scope",
+            "docs": [
+              "The scope this record governs: an account of `program`."
+            ],
+            "type": "pubkey"
+          },
+          {
+            "name": "trusted",
+            "docs": [
+              "When true, the application bypasses the per-app block cap entirely (no meter, no charge)."
+            ],
+            "type": "bool"
+          },
+          {
+            "name": "bump",
+            "docs": [
+              "PDA bump for `PDA(\"hcu-trusted\", program, scope)`."
+            ],
+            "type": "u8"
+          }
+        ]
+      }
+    },
+    {
       "name": "HostConfig",
       "docs": [
         "Singleton host configuration and authority surface.",
@@ -4516,6 +4633,52 @@
               "Slot in which this update was applied."
             ],
             "type": "u64"
+          }
+        ]
+      }
+    },
+    {
+      "name": "PermitInvalidation",
+      "docs": [
+        "One per user: the moment of that user's most recent permit revocation.",
+        "",
+        "A permit whose validity window starts before this moment is dead, permanently.",
+        "There is no list to walk and nothing to enumerate, which is what keeps revocation",
+        "one transaction of constant work.",
+        "",
+        "The moment also bounds what revocation reaches: a permit pre-signed with a start",
+        "still in the future opens later than this watermark and survives it. Request-time",
+        "checks refuse a permit before its window opens, but once it does, an earlier",
+        "revocation does not kill it. The EVM side accepts the same limitation deliberately,",
+        "so a reader of this account must not assume a stronger guarantee than EVM gives.",
+        "",
+        "A missing account reads as watermark zero. There is no migration and no",
+        "initialization step: a user who has never revoked anything simply has no account."
+      ],
+      "type": {
+        "kind": "struct",
+        "fields": [
+          {
+            "name": "user",
+            "docs": [
+              "The user whose permits this watermark governs. Stored although it is implied by",
+              "the address, so a decoded account can be checked against the key it came from."
+            ],
+            "type": "pubkey"
+          },
+          {
+            "name": "invalidation_watermark",
+            "docs": [
+              "Unix seconds of the last revocation. Never decreases."
+            ],
+            "type": "u64"
+          },
+          {
+            "name": "bump",
+            "docs": [
+              "PDA bump for this account."
+            ],
+            "type": "u8"
           }
         ]
       }

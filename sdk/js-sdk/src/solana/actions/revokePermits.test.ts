@@ -1,9 +1,20 @@
 import { readFileSync } from 'node:fs';
 import { describe, expect, it, vi } from 'vitest';
-import { AccountRole, address, type Address } from '@solana/kit';
+import {
+  AccountRole,
+  address,
+  lamports,
+  type Address,
+  type MaybeEncodedAccount,
+  type ProgramDerivedAddressBump,
+} from '@solana/kit';
 import { base58 } from '@scure/base';
 
-import { buildRevokePermitsInstruction, fetchSolanaPermitInvalidation } from './revokePermits.js';
+import {
+  buildRevokePermitsInstruction,
+  fetchSolanaPermitInvalidation,
+  solanaPermitInvalidationWatermark,
+} from './revokePermits.js';
 import { ZAMA_HOST_PROGRAM_ADDRESS } from '@fhevm/solana-zama-host';
 
 function addr(fill: number): Address {
@@ -41,13 +52,14 @@ describe('buildRevokePermitsInstruction', () => {
   });
 });
 
+const fixture = JSON.parse(
+  readFileSync(
+    new URL('../../../../../solana/test-fixtures/permit/permit_invalidation_account_v1.json', import.meta.url),
+    'utf8',
+  ),
+);
+
 it('reads the account fixture produced by the Rust host', async () => {
-  const fixture = JSON.parse(
-    readFileSync(
-      new URL('../../../../../solana/test-fixtures/permit/permit_invalidation_account_v1.json', import.meta.url),
-      'utf8',
-    ),
-  );
   const fixtureUser = address(fixture.fields.find((field: { name: string }) => field.name === 'user').value_base58);
   const send = vi.fn().mockResolvedValue({
     value: {
@@ -68,4 +80,37 @@ it('reads the account fixture produced by the Rust host', async () => {
     address(fixture.address.address_base58),
     expect.objectContaining({ commitment: 'finalized' }),
   );
+});
+
+describe('solanaPermitInvalidationWatermark', () => {
+  const fixtureUser = address(fixture.fields.find((field: { name: string }) => field.name === 'user').value_base58);
+  const programAddress = address(fixture.program.id_base58);
+  const recordAddress = address(fixture.address.address_base58);
+  const account: MaybeEncodedAccount = {
+    exists: true,
+    address: recordAddress,
+    programAddress,
+    data: new Uint8Array(Buffer.from(fixture.account.data_hex, 'hex')),
+    executable: false,
+    lamports: lamports(1n),
+    space: BigInt(fixture.account.data_len),
+  };
+  const bump = fixture.address.bump as ProgramDerivedAddressBump;
+
+  it('throws on a record naming another user', () => {
+    expect(() => solanaPermitInvalidationWatermark(account, [recordAddress, bump], addr(0x45), programAddress)).toThrow(
+      'Invalid permit invalidation account',
+    );
+  });
+
+  it('throws on a record storing a bump that is not the one of its address', () => {
+    expect(() =>
+      solanaPermitInvalidationWatermark(
+        account,
+        [recordAddress, (bump - 1) as ProgramDerivedAddressBump],
+        fixtureUser,
+        programAddress,
+      ),
+    ).toThrow('Invalid permit invalidation account');
+  });
 });

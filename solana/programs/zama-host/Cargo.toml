@@ -39,7 +39,7 @@ cleartext = []
 program-environment = { path = "../../crates/program-environment" }
 
 [dependencies]
-anchor-lang = { version = "1.2.0", features = ["event-cpi"] }
+anchor-lang = { version = "1.2.0", features = ["event-cpi", "init-if-needed"] }
 solana-keccak-hasher = { version = "3.1.0", features = ["sha3"] }
 solana-sha256-hasher = "3.1.0"
 solana-instructions-sysvar = "3.0.1"

@@ -86,9 +86,6 @@ pub enum ZamaHostError {
     /// The application `(program, scope)` is denied: it can neither compute nor allow.
     #[msg("application scope is deny-listed")]
     ScopeDenied,
-    /// A delegation account is not the canonical PDA for its tuple.
-    #[msg("delegation record does not match the canonical PDA")]
-    DelegationPdaMismatch,
     /// A delegation tuple is self-referential, expired, or otherwise invalid.
     #[msg("delegation tuple is invalid")]
     InvalidDelegation,
@@ -239,18 +236,6 @@ pub enum ZamaHostError {
     /// The KMS signer set contains the zero address, which can never be a valid recovered EVM signer.
     #[msg("KMS signer set contains the zero address")]
     ZeroKmsSigner,
-    /// The supplied invalidation account is not at the canonical watermark address for
-    /// the signing user, or its stored bump is not the canonical one. The watermark is
-    /// keyed by the signer precisely so that one user cannot move another user's
-    /// watermark; this is where that is enforced.
-    #[msg("permit invalidation account is not the canonical account for the signer")]
-    PermitInvalidationPdaMismatch,
-    /// The account at the canonical watermark address is not a watermark record this
-    /// program wrote: owned by another program, of the wrong size, carrying another
-    /// record type's discriminator, or naming a different user than the signer. Rejected
-    /// rather than reinterpreted or overwritten.
-    #[msg("permit invalidation account is not a valid watermark record")]
-    PermitInvalidationAccountInvalid,
     /// The runtime clock reports a time before the unix epoch. The watermark is an
     /// unsigned number of seconds, and coercing a negative time into it would jump the
     /// watermark to the far future and kill every permit the user will ever sign — so
@@ -297,9 +282,6 @@ pub enum ZamaHostError {
     /// The signer's pauser record is disabled.
     #[msg("signer is not an enabled pauser")]
     NotPauser,
-    /// The pauser record is not the canonical PDA of the pauser, or is malformed.
-    #[msg("pauser record mismatch")]
-    PauserRecordMismatch,
     /// A wallet pauser called `pause` through CPI. Its signature reaches every program of the
     /// transaction it signed, so it must pause at the top level.
     #[msg("a wallet pauser must pause in a top-level instruction")]

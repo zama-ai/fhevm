@@ -10,7 +10,7 @@ use anchor_lang::prelude::*;
 use super::common::*;
 use crate::event_cpi::emit_event_cpi;
 use crate::events::HcuAppTrustUpdatedEvent;
-use crate::{errors::ZamaHostError, state::*};
+use crate::state::*;
 
 /// Accounts for creating or updating an HCU trust-registry record.
 #[derive(Accounts)]
@@ -25,9 +25,15 @@ pub struct SetHcuAppTrusted<'info> {
     /// Singleton config PDA.
     #[account(seeds = [HOST_CONFIG_SEED], bump = host_config.bump)]
     pub host_config: Account<'info, HostConfig>,
-    /// CHECK: created or overwritten after canonical ("hcu-trusted", program, scope) PDA validation.
-    #[account(mut, seeds = [HCU_TRUSTED_APP_SEED, app_program.as_ref(), scope.as_ref()], bump)]
-    pub hcu_trusted_app_record: UncheckedAccount<'info>,
+    /// The application's trust-registry record, created on first use.
+    #[account(
+        init_if_needed,
+        payer = payer,
+        space = 8 + HcuTrustedAppRecord::SPACE,
+        seeds = [HCU_TRUSTED_APP_SEED, app_program.as_ref(), scope.as_ref()],
+        bump,
+    )]
+    pub hcu_trusted_app_record: Account<'info, HcuTrustedAppRecord>,
     /// System program used for account creation.
     pub system_program: Program<'info, System>,
 }
@@ -41,37 +47,18 @@ pub fn set_hcu_app_trusted(
 ) -> Result<()> {
     assert_no_remaining_accounts(ctx.remaining_accounts)?;
     assert_admin(&ctx.accounts.host_config, &ctx.accounts.admin)?;
-    let app = AppScope { program, scope };
-    let bump = ctx.bumps.hcu_trusted_app_record;
 
-    let info = ctx.accounts.hcu_trusted_app_record.to_account_info();
-    let current = current_trusted_status(&info, app, bump)?;
-    if current.unwrap_or(false) == trusted {
+    // A record created by this call is zeroed: `trusted == false` reads as an absent record does.
+    // The identity is written before the unchanged-state return, so a zeroed record never persists.
+    let record = &mut ctx.accounts.hcu_trusted_app_record;
+    record.program = program;
+    record.scope = scope;
+    record.bump = ctx.bumps.hcu_trusted_app_record;
+    if record.trusted == trusted {
         return Ok(());
     }
+    record.trusted = trusted;
 
-    create_pda_if_needed(
-        &ctx.accounts.payer.to_account_info(),
-        &info,
-        &ctx.accounts.system_program.to_account_info(),
-        8 + HcuTrustedAppRecord::SPACE,
-        &[
-            HCU_TRUSTED_APP_SEED,
-            program.as_ref(),
-            scope.as_ref(),
-            &[bump],
-        ],
-    )?;
-
-    write_account(
-        &info,
-        &HcuTrustedAppRecord {
-            program,
-            scope,
-            trusted,
-            bump,
-        },
-    )?;
     emit_event_cpi(
         &ctx.accounts.event_authority,
         &HcuAppTrustUpdatedEvent {
@@ -84,29 +71,4 @@ pub fn set_hcu_app_trusted(
         },
     )?;
     Ok(())
-}
-
-/// Reads the current trust flag for `app`: `None` when the record is absent (system-owned + empty),
-/// otherwise the stored `trusted` after validating owner / length / PDA identity / bump.
-fn current_trusted_status(info: &AccountInfo, app: AppScope, bump: u8) -> Result<Option<bool>> {
-    if is_uninitialized_pda_account(info, ZamaHostError::HcuTrustedAppRecordMismatch)? {
-        return Ok(None);
-    }
-    require_keys_eq!(
-        *info.owner,
-        crate::ID,
-        ZamaHostError::HcuTrustedAppRecordMismatch
-    );
-    require!(
-        info.data_len() == 8 + HcuTrustedAppRecord::SPACE,
-        ZamaHostError::HcuTrustedAppRecordMismatch
-    );
-    let data = info.try_borrow_data()?;
-    let mut data_slice: &[u8] = &data;
-    let record = HcuTrustedAppRecord::try_deserialize(&mut data_slice)?;
-    require!(
-        record.program == app.program && record.scope == app.scope && record.bump == bump,
-        ZamaHostError::HcuTrustedAppRecordMismatch
-    );
-    Ok(Some(record.trusted))
 }
