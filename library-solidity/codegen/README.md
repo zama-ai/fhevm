@@ -20,6 +20,14 @@ cd tests-suite/e2e
 npm run codegen
 ```
 
+### To rebuild the codegen after modifications in the codegen codebase
+
+```sh
+# @fhevm/solidity package
+cd library-solidity/codegen
+npm run rebuild
+```
+
 ### To Regenerate Random Overloads (optional)
 
 ```sh
