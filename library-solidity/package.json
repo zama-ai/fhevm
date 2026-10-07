@@ -1,7 +1,7 @@
 {
   "name": "@fhevm/solidity",
   "description": "A Solidity library for interacting with fhevm protocol",
-  "version": "0.13.4",
+  "version": "0.13.6",
   "engines": {
     "node": ">=20.0.0"
   },
