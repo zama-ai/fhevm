@@ -73,6 +73,40 @@ describe("two-holder transfer", () => {
     ]);
   });
 
+  test("derives the provisioned fund, the transfer and every expected balance from the amounts", async () => {
+    const calls: string[] = [];
+    let reads = 0;
+    const dependencies: TwoHolderDependencies = {
+      provision: async (fund) => {
+        calls.push(`provision:${fund}`);
+        return scenario;
+      },
+      readBalance: async (_scenario, holder) => balance(holder.owner, reads++ < 2 ? (holder === alice ? "1" : "2") : holder === alice ? "3" : "4"),
+      waitForHandle: async () => undefined,
+      transfer: async (_scenario, _alice, _bob, amount) => {
+        calls.push(`transfer:${amount}`);
+      },
+      decrypt: async (_scenario, holder, _state, expected) => {
+        calls.push(`decrypt:${holder === alice ? "alice" : "bob"}:${expected}`);
+        return expected;
+      },
+      cleanup: async () => undefined,
+    };
+
+    await runSolanaTwoHolderTransfer(dependencies, { fund: 50n, amount: 20n });
+
+    expect(calls).toEqual(["provision:50", "decrypt:alice:50", "decrypt:bob:0", "transfer:20", "decrypt:alice:30", "decrypt:bob:20"]);
+  });
+
+  test("refuses an amount above the fund before provisioning", async () => {
+    const dependencies = {
+      provision: async () => {
+        throw new Error("provisioned");
+      },
+    } as unknown as TwoHolderDependencies;
+    await expect(runSolanaTwoHolderTransfer(dependencies, { fund: 10n, amount: 11n })).rejects.toThrow(RangeError);
+  });
+
   test("rejects a stale post-transfer handle and still cleans up", async () => {
     let cleaned = false;
     let reads = 0;

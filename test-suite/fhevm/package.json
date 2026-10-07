@@ -25,6 +25,7 @@
     "@solana-program/token": "0.14.0",
     "@solana/kit": "6.10.0",
     "@solana/program-client-core": "6.10.0",
+    "@solana/sysvars": "6.10.0",
     "citty": "^0.1.6",
     "viem": "^2.46.3",
     "yaml": "^2.8.1"

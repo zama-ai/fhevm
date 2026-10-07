@@ -1,8 +1,7 @@
-/**
- * Checks a single-entry user decrypt returned exactly one scalar cleartext equal to `expected`, and
- * returns it. Kept free of SDK imports so the offline suite can test it.
- */
-export const expectUserDecryptValue = (clearValues: readonly { readonly value: unknown }[], expected: bigint): bigint => {
+// Kept free of SDK imports so the offline suite can test these checks.
+
+/** Checks a single-entry user decrypt returned exactly one scalar cleartext, and returns it. */
+export const userDecryptScalar = (clearValues: readonly { readonly value: unknown }[]): bigint => {
   if (clearValues.length !== 1) {
     throw new Error(`user-decrypt returned ${clearValues.length} clear values; expected exactly 1`);
   }
@@ -15,7 +14,11 @@ export const expectUserDecryptValue = (clearValues: readonly { readonly value: u
   ) {
     throw new Error('user-decrypt returned a non-scalar cleartext');
   }
-  const value = BigInt(decrypted);
+  return BigInt(decrypted);
+};
+
+/** Returns `value` when it equals `expected`. */
+export const expectCleartext = (value: bigint, expected: bigint): bigint => {
   if (value !== expected) {
     throw new Error(`user-decrypt cleartext ${value} != expected ${expected}`);
   }
