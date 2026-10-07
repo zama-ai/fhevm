@@ -74,7 +74,8 @@ jobs:
     # to 72 min (run 29830123609). The demo phase adds ~2 min on the already-built stack. The
     # owned-boot status gate before reseed fails fast if an e2e phase degraded the stack. 120
     # rather than the bash-era 90: the token-vertical scenario (its own 20-min budget) landed
-    # after the 72-min tail was measured.
+    # after the 72-min tail was measured. The EVM vs Solana parity steps add ~5 min (hardhat
+    # compile ~1.5 min, parity ~3 min in run 37605151601), with a 25-min deadline per leg.
     timeout-minutes: 120
     permissions:
       contents: "read" # checkout

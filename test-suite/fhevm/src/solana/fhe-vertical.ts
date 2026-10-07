@@ -12,6 +12,7 @@ import {
 
 import { createFinalizedRpc, ZAMA_HOST_PROGRAM_ADDRESS } from '@fhevm/solana-zama-host';
 import { solanaUserDecryptContext } from './addresses';
+import { relayerAuth } from './endpoints';
 import { certificateCleartext, type PublicDecryptCertificate } from './public-decrypt';
 import type { SolanaProvisioningContext } from './provision';
 import { loadSolanaSdk } from './target';
@@ -19,7 +20,6 @@ import { expectCleartext, userDecryptScalar } from './user-decrypt-result';
 
 const hex = (bytes: Uint8Array): string => `0x${Buffer.from(bytes).toString('hex')}`;
 const addressBytes = (value: Address): Uint8Array => new Uint8Array(getAddressEncoder().encode(value));
-const apiKey = (): string => process.env.ZAMA_FHEVM_API_KEY ?? 'local';
 
 /** The environment facts every vertical decrypt binds to. */
 export type FheVerticalConfig = {
@@ -74,7 +74,7 @@ const publicDecryptClient = async (config: FheVerticalConfig) => {
     id: config.chainId,
     fhevm: { relayerUrl: config.relayerUrl, programs: { host: { address: asBytes32Hex(config.verifyingProgramId) } } },
   });
-  solana.setFhevmRuntimeConfig({ auth: { type: 'ApiKeyHeader', value: apiKey() } });
+  solana.setFhevmRuntimeConfig({ auth: relayerAuth() });
   return solana.createFhevmPublicDecryptClient({ chain, rpc: createFinalizedRpc(config.rpcUrl) });
 };
 
@@ -135,7 +135,7 @@ export const userDecrypt = async (config: UserDecryptConfig, params: UserDecrypt
     id: config.chainId,
     fhevm: { relayerUrl: config.relayerUrl, programs: { host: { address: asBytes32Hex(config.verifyingProgramId) } } },
   });
-  solana.setFhevmRuntimeConfig({ auth: { type: 'ApiKeyHeader', value: apiKey() } });
+  solana.setFhevmRuntimeConfig({ auth: relayerAuth() });
   const client = solana.createFhevmDecryptClient({
     chain,
     rpc: createFinalizedRpc(config.rpcUrl),

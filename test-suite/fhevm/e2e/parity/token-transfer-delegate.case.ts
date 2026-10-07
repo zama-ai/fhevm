@@ -21,17 +21,18 @@ const STEP = {
   payeeReadsOwner: "B:balance(A)",
 } as const;
 
-/** How long the grant to C lives, past the host's clock. */
+/** How long A's grant to C lives on both chains, past the host's clock. */
 const GRANT_SECONDS = 3_600n;
 const ACL_ABI = parseAbi([
   "function delegateForUserDecryption(address delegate, address contractAddress, uint64 expirationDate)",
 ]);
 
-// Each chain's refusal of B reading A's balance is the first authorization check on its user path.
-// Each classifier accepts that one path only, so a refusal that moves elsewhere fails the case.
-// Neither proves the KMS would refuse: that belongs to the KMS authorization tests.
+// B asks to read A's balance as A's delegate, which A never granted, so both chains answer the same
+// question: did A delegate to B? Each refusal is the first authorization check on its chain's user
+// path, and each classifier accepts that one path only, so a refusal that moves elsewhere fails the
+// case. Neither proves the KMS would refuse: that belongs to the KMS authorization tests.
 
-/** EVM: the SDK reads the ACL and refuses before any request reaches the relayer. */
+/** EVM: the SDK's delegation check reads the ACL and refuses before any request reaches the relayer. */
 const evmRefusal: RefusalReason = (error) =>
   // SDK errors all carry the name `FhevmErrorBase` and their classes are not exported
   // (zama-ai/fhevm-internal#2135), so the ACL refusal is recognized by the contract it names.
@@ -116,12 +117,12 @@ export const parityCase: ParityCase<{ fund: bigint; amount: bigint }> = {
     await reads.value(STEP.ownerReadsOwn, evmDecrypt(host, token.address, a, balanceA));
     await reads.value(STEP.payeeReadsOwn, evmDecrypt(host, token.address, b, balanceB));
     await reads.value(STEP.delegateReadsOwner, evmDecrypt(host, token.address, c, balanceA, a));
-    await reads.denied(STEP.payeeReadsOwner, evmDecrypt(host, token.address, b, balanceA), evmRefusal);
+    await reads.denied(STEP.payeeReadsOwner, evmDecrypt(host, token.address, b, balanceA, a), evmRefusal);
   },
   // A and B are fresh run wallets, swept back after the case; C only signs decrypt permits.
   solana: async ({ fund, amount }, reads) => {
     const env = loadEnv();
-    const stack = await ensureUp(env);
+    await ensureUp(env);
     const holders = createRealTwoHolderDependencies({
       rpcUrl: env.rpcUrl,
       wsUrl: env.wsUrl,
@@ -131,8 +132,10 @@ export const parityCase: ParityCase<{ fund: bigint; amount: bigint }> = {
       aclProgram: env.aclProgram,
       funding: env.funding,
       funderKeypairPath: env.capabilities.faucet ? undefined : env.roots.deployerKeypairPath,
-      // Unused here: the reads below retry until the ciphertext is decryptable.
-      waitForHandle: stack.waitForSnsCommit,
+      // The reads below retry until the ciphertext is decryptable; the case reads no coprocessor database.
+      waitForHandle: async () => {
+        throw new Error("the parity case does not wait on the coprocessor database");
+      },
       userDecryptContextId: env.userDecryptContextId,
     });
     let scenario: TwoHolderScenario | undefined;
@@ -141,7 +144,7 @@ export const parityCase: ParityCase<{ fund: bigint; amount: bigint }> = {
       const { alice, bob } = scenario;
       await holders.transfer(scenario, await holders.readBalance(scenario, alice), await holders.readBalance(scenario, bob), amount);
       const carol = await generateSolanaKeypair();
-      await holders.grantDecryption(scenario, carol.signer.address);
+      await holders.grantDecryption(scenario, carol.signer.address, GRANT_SECONDS);
       const delegate: Holder = { owner: carol.signer.address, secretKey: `0x${Buffer.from(carol.bytes.subarray(0, 32)).toString("hex")}` };
       const balanceA = await holders.readBalance(scenario, alice);
       const balanceB = await holders.readBalance(scenario, bob);

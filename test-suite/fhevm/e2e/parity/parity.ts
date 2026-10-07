@@ -8,7 +8,7 @@
 // at once, reads the result each writes, and compares them.
 
 import { beforeAll, describe, expect, test } from "bun:test";
-import { mkdtemp, readFile } from "node:fs/promises";
+import { mkdtemp, readFile, rm } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 
@@ -25,11 +25,15 @@ export type RefusalReason = (error: unknown) => string | undefined;
 
 /** How a leg records its reads. A read that throws is recorded and does not stop the leg. */
 export type Reads = {
-  /** Retries `decrypt` until it answers: the ciphertext or a grant may still be propagating. */
+  /**
+   * Retries `decrypt` until it answers: the ciphertext or a grant may still be propagating. Each
+   * read, including an attempt still in flight, is bounded by `DECRYPT_TIMEOUT_MS`.
+   */
   value(step: string, decrypt: () => Promise<bigint>): Promise<void>;
   /**
-   * One attempt, which must be refused. Run it after the same reader decrypted a value it may read.
-   * Recorded as an error without decrypting when an earlier read in the leg failed.
+   * One attempt, bounded by `DECRYPT_TIMEOUT_MS`, which must be refused. Run it after the same
+   * reader decrypted a value it may read. Recorded as an error without decrypting when an earlier
+   * read in the leg failed.
    */
   denied(step: string, decrypt: () => Promise<bigint>, refusal: RefusalReason): Promise<void>;
 };
@@ -67,6 +71,20 @@ const LEG_DEADLINE_MS = 25 * 60_000;
 const STDERR_TAIL_LINES = 40;
 
 const message = (error: unknown) => (error instanceof Error ? error.message : String(error));
+
+/**
+ * Rejects when `deadline` passes before `attempt` settles. `until` checks its deadline only between
+ * attempts, and one decrypt request can hang past the leg's deadline, which would lose every
+ * value set's result for that chain.
+ */
+const beforeDeadline = <T>(attempt: Promise<T>, deadline: number, step: string): Promise<T> => {
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  const expired = new Promise<never>((_, reject) => {
+    timer = setTimeout(() => reject(new Error(`${step}: no answer within ${DECRYPT_TIMEOUT_MS / 1000}s`)), Math.max(0, deadline - Date.now()));
+  });
+  return Promise.race([attempt, expired]).finally(() => clearTimeout(timer));
+};
+
 const encodeValues = (values: Values) => Object.fromEntries(Object.entries(values).map(([key, value]) => [key, String(value)]));
 
 /** Runs one leg on one value set, recording every read. Used by the child process. */
@@ -81,10 +99,11 @@ export const runLeg = async <V extends Values>(leg: Leg<V>, values: V): Promise<
   const reads: Reads = {
     value: (step, decrypt) =>
       record(step, async (attempt) => {
+        const deadline = Date.now() + DECRYPT_TIMEOUT_MS;
         const value = await until(
           () => {
             attempt();
-            return decrypt();
+            return beforeDeadline(decrypt(), deadline, step);
           },
           { timeoutMs: DECRYPT_TIMEOUT_MS, intervalMs: DECRYPT_INTERVAL_MS, description: step },
         );
@@ -97,11 +116,12 @@ export const runLeg = async <V extends Values>(leg: Leg<V>, values: V): Promise<
         if (failed !== undefined) return { kind: "error", message: `not run: an earlier read in this leg failed (${failed})` };
         attempt();
         try {
-          return { kind: "value", value: String(await decrypt()) };
+          return { kind: "value", value: String(await beforeDeadline(decrypt(), Date.now() + DECRYPT_TIMEOUT_MS, step)) };
         } catch (error) {
           const reason = refusal(error);
           if (reason === undefined) throw error;
-          return { kind: "denied", reason };
+          // The message names the rule that refused, so a change of rule shows in the table.
+          return { kind: "denied", reason: `${reason}: ${message(error)}` };
         }
       }),
   };
@@ -119,7 +139,8 @@ type LegReport = { readonly runs: readonly LegRun[] } | { readonly stopped: stri
 const LEG_SCRIPT = path.join(import.meta.dir, "leg.ts");
 
 const runChild = async (caseFile: string, chain: Chain, expectedRuns: number): Promise<LegReport> => {
-  const output = path.join(await mkdtemp(path.join(os.tmpdir(), "parity-")), `${chain}.json`);
+  const directory = await mkdtemp(path.join(os.tmpdir(), "parity-"));
+  const output = path.join(directory, `${chain}.json`);
   const child = Bun.spawn(["bun", LEG_SCRIPT, caseFile, chain, output], {
     stdout: "inherit",
     stderr: "pipe",
@@ -133,6 +154,7 @@ const runChild = async (caseFile: string, chain: Chain, expectedRuns: number): P
   if (child.signalCode !== null) return stopped(`killed by ${child.signalCode} (deadline ${LEG_DEADLINE_MS / 60_000} min)`);
   if (exitCode !== 0) return stopped(`exited ${exitCode}`);
   const runs = await readFile(output, "utf8").then((text) => JSON.parse(text) as LegRun[]).catch(() => undefined);
+  await rm(directory, { recursive: true, force: true });
   if (runs === undefined) return stopped("wrote no readable result");
   if (runs.length !== expectedRuns) return stopped(`wrote ${runs.length} of ${expectedRuns} value sets`);
   return { runs };
@@ -148,6 +170,10 @@ const show = (result: StepResult | undefined): string => {
 
 const matches = (result: StepResult | undefined, expected: Outcome): boolean =>
   expected === "denied" ? result?.kind === "denied" : result?.kind === "value" && result.value === String(expected);
+
+/** What a reader got, for comparing chains: the cleartext or "denied", whatever the refusal's wording. */
+const outcomeOf = (result: StepResult | undefined): string | undefined =>
+  result?.kind === "value" ? result.value : result?.kind === "denied" ? "denied" : undefined;
 
 /**
  * Registers the case's tests: one child per chain runs every value set, both at once, and one test
@@ -186,12 +212,22 @@ export const parityTests = async (caseFile: string) => {
             .map((leg) => `${leg.chain} ${step}: expected ${is}, got ${show(leg.run?.steps[step])}`),
         );
         const durations = legs.map((leg) => `${leg.chain} ${leg.run === undefined ? "-" : `${(leg.run.ms / 1000).toFixed(1)}s`}`).join("  ");
+        const met = legs.map(
+          (leg) =>
+            `${leg.chain} ${leg.stopped === undefined && expectations.every(({ step, is }) => matches(leg.run?.steps[step], is)) ? "met" : "missed"}`,
+        );
+        // A step agrees when every chain answered it the same way; an error or a missing step never agrees.
+        const disagreements = expectations.flatMap(({ step }) => {
+          const outcomes = legs.map((leg) => (leg.stopped === undefined ? outcomeOf(leg.run?.steps[step]) : undefined));
+          return outcomes.every((outcome) => outcome !== undefined && outcome === outcomes[0]) ? [] : [step];
+        });
         console.log(
           [
             `[parity] ${spec.name} (${label})  ${durations}`,
             ...[["step", "expected", ...CHAINS], ...rows].map((row) => row.join("  |  ")),
             ...failures,
-            `parity: ${misses.length === 0 && failures.length === 0 ? "match" : "differ"}`,
+            `expected values: ${met.join(", ")}`,
+            `chains agree: ${disagreements.length === 0 ? "yes" : `no (${disagreements.join(", ")})`}`,
           ].join("\n"),
         );
         expect([...failures, ...misses]).toEqual([]);

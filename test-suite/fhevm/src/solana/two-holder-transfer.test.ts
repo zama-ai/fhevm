@@ -98,6 +98,15 @@ describe("two-holder transfer", () => {
     expect(calls).toEqual(["provision:50", "decrypt:alice:50", "decrypt:bob:0", "transfer:20", "decrypt:alice:30", "decrypt:bob:20"]);
   });
 
+  test("refuses an amount above the fund before provisioning", async () => {
+    const dependencies = {
+      provision: async () => {
+        throw new Error("provisioned");
+      },
+    } as unknown as TwoHolderDependencies;
+    await expect(runSolanaTwoHolderTransfer(dependencies, { fund: 10n, amount: 11n })).rejects.toThrow(RangeError);
+  });
+
   test("rejects a stale post-transfer handle and still cleans up", async () => {
     let cleaned = false;
     let reads = 0;

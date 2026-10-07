@@ -20,6 +20,7 @@ import {
 import { mnemonicToAccount, type HDAccount } from "viem/accounts";
 
 import { envPath, REPO_ROOT } from "../../src/layout";
+import { relayerAuth } from "../../src/solana/endpoints";
 import { readEnvFile, withHostReachableFetch } from "../../src/utils/fs";
 import type { TestEnv } from "../harness";
 
@@ -45,7 +46,7 @@ export const openEvmHost = async (env: TestEnv) => {
     rpcUrls: { default: { http: [env.hostRpcUrl] } },
   });
   const publicClient = createPublicClient({ chain, transport: http() });
-  setFhevmRuntimeConfig({ auth: { type: "ApiKeyHeader", value: process.env.ZAMA_FHEVM_API_KEY ?? "local" } });
+  setFhevmRuntimeConfig({ auth: relayerAuth() });
   const fhevm = createFhevmClient({
     // The SDK sources resolve their own viem copy, a different patch release with the same client.
     publicClient: publicClient as unknown as Parameters<typeof createFhevmClient>[0]["publicClient"],
@@ -90,5 +91,5 @@ export const openEvmHost = async (env: TestEnv) => {
     return { address: receipt.contractAddress, abi: artifact.abi };
   };
 
-  return { chain, publicClient, fhevm, aclAddress: required("ACL_CONTRACT_ADDRESS") as Address, account, confirm, deploy };
+  return { publicClient, fhevm, aclAddress: fhevm.chain.fhevm.contracts.acl.address as Address, account, confirm, deploy };
 };

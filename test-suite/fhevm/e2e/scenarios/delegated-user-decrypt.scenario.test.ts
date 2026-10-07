@@ -242,11 +242,11 @@ describe("solana delegated user-decrypt", () => {
       }, { programAddress: hostProgram });
       expect(revokedRows.exact?.expiresAt).toBe(0n);
       // The typed label, not the message text: the label IS the relayer's contract, while the
-      // message it is rendered into is prose. `kind` is deliberately left unpinned — it says
-      // whether the client had seen the job queued before the refusal arrived, which is the
-      // transport's timing rather than anything the revocation decides.
+      // message it is rendered into is prose. The kind is always `failed`: the v3 POST does no ACL
+      // check, so the client sees the job queued before any GET, and the relayer's delegation
+      // pre-check (solana/docs/INVARIANTS.md #50) refuses the queued job.
       await expect(delegatedDecrypt(setup, { value, handle, delegateSecretKey })).rejects.toMatchObject({
-        rejection: { label: "not_allowed_on_host_acl" },
+        rejection: { kind: "failed", label: "not_allowed_on_host_acl" },
       });
       await setup.wallets.sweep();
     },

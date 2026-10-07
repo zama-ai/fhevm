@@ -4,8 +4,10 @@ import { TOKEN_PROGRAM_ADDRESS } from "@solana-program/token";
 import { recordRunWallet } from "./recovery";
 
 import { address, createSolanaRpcSubscriptions, getAddressEncoder, type Address, type TransactionSigner } from "@solana/kit";
+import { fetchSysvarClock } from "@solana/sysvars";
 
 import { bytes32HexFromId } from "./addresses";
+import { relayerAuth } from "./endpoints";
 import { vaultModule } from "./lazy-modules";
 import {
   createConfidentialMint,
@@ -72,9 +74,12 @@ export type TwoHolderDependencies = {
 export type RealTwoHolderDependencies = TwoHolderDependencies & {
   /** `holder` user-decrypts `state`'s current handle; `owner` names the delegator on a delegated read. */
   decryptValue(holder: Holder, state: BalanceStore, owner?: string): Promise<bigint>;
-  /** Alice delegates user decryption of the mint's balances to `delegate` for an hour of host time. */
-  grantDecryption(scenario: TwoHolderScenario, delegate: Address): Promise<void>;
+  /** Alice delegates user decryption of the mint's balances to `delegate` for `seconds` of host time. */
+  grantDecryption(scenario: TwoHolderScenario, delegate: Address, seconds: bigint): Promise<void>;
 };
+
+/** The SPL base units minted to Alice; `provision` wraps `fund` of them. */
+const UNDERLYING_BASE_UNITS = 1_000_000n;
 
 const addressHex = (value: string): `0x${string}` =>
   `0x${Buffer.from(getAddressEncoder().encode(address(value))).toString("hex")}`;
@@ -138,14 +143,14 @@ export const createRealTwoHolderDependencies = (cfg: TwoHolderConfig): RealTwoHo
       await context.fundSol(alice.signer.address, cfg.funding.primarySol);
       await context.fundSol(bob.signer.address, cfg.funding.secondarySol);
 
-      // The public underlying: a fresh 9-decimals SPL mint with Alice as mint authority, holding
-      // the `fund` base units the wrap below rotates into her confidential balance.
+      // The public underlying: a fresh 9-decimals SPL mint with Alice as mint authority; the wrap
+      // below rotates `fund` of its base units into her confidential balance.
       const underlyingMint = await createSplMint(context, { authority: alice.signer, decimals: 9 });
       await mintSplTo(context, {
         authority: alice.signer,
         mint: underlyingMint,
         recipient: alice.signer.address,
-        baseUnits: fund,
+        baseUnits: UNDERLYING_BASE_UNITS,
       });
       const mint = await createConfidentialMint(context, { authority: alice.signer, underlyingMint });
       await initializeConfidentialTokenAccount(context, { payer: alice.signer, owner: alice.signer.address, mint });
@@ -171,13 +176,13 @@ export const createRealTwoHolderDependencies = (cfg: TwoHolderConfig): RealTwoHo
         id: BigInt(alice.chainId),
         fhevm: { relayerUrl: cfg.relayerUrl, programs: { host: { address: aclProgramAddress } } },
       });
-      solana.setFhevmRuntimeConfig({ auth: { type: "ApiKeyHeader", value: process.env.ZAMA_FHEVM_API_KEY ?? "local" } });
+      solana.setFhevmRuntimeConfig({ auth: relayerAuth() });
       const rpc = context().rpc;
       // The attestation binds the amount to (user = owner, contract = the confidential-token
       // program), the contract identity the token requires for a transfer amount.
       const { inputProof } = await withHostReachableFetch(() =>
         solana.createFhevmEncryptClient({ chain, rpc }).encryptValues({
-          contractAddress: asBytes32Hex(addressHex(vault.CONFIDENTIAL_TOKEN_PROGRAM_ADDRESS)),
+          contractAddress: asBytes32Hex(addressHex(CONFIDENTIAL_TOKEN_PROGRAM_ADDRESS)),
           userAddress: asBytes32Hex(addressHex(owner.address)),
           values: [{ type: "uint64", value: amount }],
         }),
@@ -205,14 +210,13 @@ export const createRealTwoHolderDependencies = (cfg: TwoHolderConfig): RealTwoHo
     },
     decrypt: async (_scenario, holder, state, expected) => expectCleartext(await decryptValue(holder, state), expected),
     decryptValue,
-    async grantDecryption(scenario, delegate) {
+    async grantDecryption(scenario, delegate, seconds) {
       const alice = signers.get(scenario.alice.owner);
       if (alice === undefined) throw new Error("two-holder transfer: Alice's signer was not provisioned here");
       const { buildDelegateForUserDecryptionInstruction } = await loadSolanaSdk();
       const { rpc, sendTransaction } = context();
-      // The host compares the expiry with its own clock.
-      const hostTime = await rpc.getBlockTime(await rpc.getSlot().send()).send();
-      if (hostTime === null) throw new Error("the host's latest slot has no block time");
+      // The host compares the expiry with its Clock sysvar.
+      const { unixTimestamp } = await fetchSysvarClock(rpc);
       const grant = await buildDelegateForUserDecryptionInstruction({
         programAddress: ZAMA_HOST_PROGRAM_ADDRESS,
         payer: alice,
@@ -221,7 +225,7 @@ export const createRealTwoHolderDependencies = (cfg: TwoHolderConfig): RealTwoHo
         // A token balance's application: the token program, scoped to the mint.
         program: CONFIDENTIAL_TOKEN_PROGRAM_ADDRESS,
         scope: address(scenario.mint),
-        expiresAt: BigInt(hostTime) + 3_600n,
+        expiresAt: unixTimestamp + seconds,
       });
       await sendTransaction(alice, [grant]);
     },
@@ -241,12 +245,13 @@ export const createRealTwoHolderDependencies = (cfg: TwoHolderConfig): RealTwoHo
 
 /**
  * Runs one real two-holder transfer of `amount` out of Alice's `fund`, and proves both current
- * balances through independent SDK decrypts. `amount` must not exceed `fund`.
+ * balances through independent SDK decrypts.
  */
 export const runSolanaTwoHolderTransfer = async (
   dependencies: TwoHolderDependencies,
   { fund, amount }: { fund: bigint; amount: bigint } = { fund: 1000n, amount: 400n },
 ) => {
+  if (amount > fund || fund > UNDERLYING_BASE_UNITS) throw new RangeError(`need amount <= fund <= ${UNDERLYING_BASE_UNITS}, got ${amount} and ${fund}`);
   const remaining = fund - amount;
   let scenario: TwoHolderScenario | undefined;
   try {

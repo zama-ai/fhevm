@@ -41,3 +41,6 @@ export const CLEARTEXT_SOLANA_ENDPOINTS = {
   validatorRpc: loopback(SOLANA_CLEARTEXT_RPC_PORT),
   validatorWs: loopback(SOLANA_CLEARTEXT_RPC_PORT + 1, "ws"),
 } as const;
+
+/** The SDK's relayer auth: `ZAMA_FHEVM_API_KEY`, or the placeholder key a local relayer accepts. */
+export const relayerAuth = () => ({ type: "ApiKeyHeader", value: process.env.ZAMA_FHEVM_API_KEY ?? "local" }) as const;
