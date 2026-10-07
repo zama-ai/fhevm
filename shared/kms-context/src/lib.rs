@@ -127,9 +127,8 @@ mod tests {
         rpc::types::Log,
         transports::TransportResult,
     };
-    use fhevm_host_bindings::protocol_config::{
-        IProtocolConfig::KmsThresholds,
-        ProtocolConfig::{self, KmsNodeParams, PcrValues},
+    use fhevm_host_bindings::protocol_config::ProtocolConfig::{
+        self, KmsNodeParams, KmsThresholds, PcrValues,
     };
 
     const CONTRACT: Address = Address::repeat_byte(0xC0);

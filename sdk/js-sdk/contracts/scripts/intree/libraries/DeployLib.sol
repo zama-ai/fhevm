@@ -17,8 +17,7 @@ import {HCULimit} from "../../../src/intree/host-contracts/contracts/HCULimit.so
 import {PauserSet} from "../../../src/intree/host-contracts/contracts/immutable/PauserSet.sol";
 import {ProtocolConfig} from "../../../src/intree/host-contracts/contracts/ProtocolConfig.sol";
 import {KMSGeneration} from "../../../src/intree/host-contracts/contracts/KMSGeneration.sol";
-import {KmsNode, KmsNodeParams, PcrValues} from "../../../src/intree/host-contracts/contracts/shared/Structs.sol";
-import {IProtocolConfig} from "../../../src/intree/host-contracts/contracts/interfaces/IProtocolConfig.sol";
+import {KmsNode, KmsNodeParams, KmsThresholds, PcrValues} from "../../../src/intree/host-contracts/contracts/shared/Structs.sol";
 
 import {CleartextACL} from "../../../src/intree/cleartext/CleartextACL.sol";
 import {CleartextKMSVerifier} from "../../../src/intree/cleartext/CleartextKMSVerifier.sol";
@@ -348,7 +347,7 @@ library DeployLib {
         KmsNode[] memory initialKmsNodes = FhevmConfigLib.resolveKmsNodesFromEnv(vm);
         uint256 kmsThreshold = FhevmConfigLib.resolveKmsThresholdFromEnv(vm);
 
-        IProtocolConfig.KmsThresholds memory initialThresholds;
+        KmsThresholds memory initialThresholds;
         initialThresholds.kmsGen = kmsThreshold;
         initialThresholds.mpc = kmsThreshold;
         initialThresholds.userDecryption = kmsThreshold;
