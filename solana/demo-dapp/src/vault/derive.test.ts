@@ -27,7 +27,6 @@ function roots(): VaultDemoRoots {
     payoutConfidentialMint: addr(13),
     joinUnderlyingMint: addr(5),
     payoutUnderlyingMint: addr(14),
-    hostConfig: addr(8),
     kmsContext: addr(9),
   };
 }
@@ -102,7 +101,7 @@ describe('settle lookup-table addresses', () => {
       'BBwwKFwNxKrxBmSD6ey2cJ1VJYVkFhJAoBovc38ACjhk',
       'BFahaYhwFQvt2cHGeHg4ujaWcC52RWgHdiEQuV7PT2oA',
       'BgV6GmgySEincRffgdRA8qLX8nUxpuSfjRF76WGrTAPy',
-      'YMN9Qj5jPNp7j14VPcML1B6xGgcPWVZUGLFU3Mnyfaf',
+      '8FL98RBTQ8LviLQ6c9F5j6pdtJPFSbnnTJgh3VVcLeKC',
       'cGfHiC6Kgg3FpFZvgwGcswsCRtp4aBP2fzuXRQPizuN',
       'gBxS1f6uyyGPuW5MzGBukidSb71jdsCb5fZaoSzULE5',
       'CxnAjXqMPmT5xT8dmsFbMgVNgA8HPVa4WVWhCm3gZNL9',

@@ -39,7 +39,6 @@ const keeper = { address: address('SysvarRecentB1ockHashes11111111111111111111')
 const config = {
   rpcUrl: 'http://127.0.0.1:8899',
   wsUrl: 'ws://127.0.0.1:8900',
-  hostConfig: address('SysvarS1otHashes111111111111111111111111111'),
   programs: { token: tokenProgram, host: ZAMA_HOST_PROGRAM_ADDRESS },
   mints: {
     joinUnderlying: address('SysvarStakeHistory1111111111111111111111111'),

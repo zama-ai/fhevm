@@ -83,7 +83,6 @@ const session = {
     wsUrl: 'ws://127.0.0.1:8900',
     relayerUrl: 'http://127.0.0.1:3000',
     aclProgram: '11111111111111111111111111111111',
-    hostConfig: '11111111111111111111111111111111',
     mints: { joinConfidential: '11111111111111111111111111111111' },
     programs: { token: '11111111111111111111111111111111', host: ZAMA_HOST_PROGRAM_ADDRESS },
     batchers: { deposit: { batcher: '11111111111111111111111111111111' } },

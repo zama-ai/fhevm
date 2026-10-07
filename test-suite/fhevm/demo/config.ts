@@ -26,7 +26,7 @@ import type { SolanaNetwork } from "../e2e/harness/loadEnv";
  * Structural mirror of the demo dapp's normative `VaultDemoRoots`
  * (`solana/demo-dapp/src/vault/derive.ts`, importable here as `@demo-dapp/vault/index.js`).
  *
- * The 12-field shape is restated so `depositRoots`/`redeemRoots` stay typed without coupling the
+ * The 11-field shape is restated so `depositRoots`/`redeemRoots` stay typed without coupling the
  * demo-config parser to the dapp module graph; the seed passes these objects straight into
  * `deriveBatchAddresses`, where compatibility is structural. Keep this in lockstep with the vault
  * interface (names/shape are fixed there).
@@ -42,7 +42,6 @@ export type VaultDemoRoots = {
   readonly payoutConfidentialMint: Address;
   readonly joinUnderlyingMint: Address;
   readonly payoutUnderlyingMint: Address;
-  readonly hostConfig: Address;
   readonly kmsContext: Address;
 };
 
@@ -109,7 +108,6 @@ export type SolanaDemoConfig = {
     readonly vault: Address;
     readonly host: Address;
   };
-  readonly hostConfig: Address;
   readonly kmsContext: Address;
   /** The `demo_vault` vault PDA (underlying = mock USDC; share mint created by the program). */
   readonly vault: Address;
@@ -215,7 +213,6 @@ export const parseDemoConfig = (raw: unknown): SolanaDemoConfig => {
       vault: asAddress(programs.vault, "programs.vault"),
       host: asAddress(programs.host, "programs.host"),
     },
-    hostConfig: asAddress(o.hostConfig, "hostConfig"),
     kmsContext: asAddress(o.kmsContext, "kmsContext"),
     vault: asAddress(o.vault, "vault"),
     mints: {
@@ -263,13 +260,12 @@ export const writeDemoConfig = async (config: SolanaDemoConfig, configPath = res
   }
 };
 
-const commonRoots = (config: SolanaDemoConfig): Pick<VaultDemoRoots, "batcherProgram" | "tokenProgram" | "vaultProgram" | "hostProgram" | "vault" | "hostConfig" | "kmsContext"> => ({
+const commonRoots = (config: SolanaDemoConfig): Pick<VaultDemoRoots, "batcherProgram" | "tokenProgram" | "vaultProgram" | "hostProgram" | "vault" | "kmsContext"> => ({
   batcherProgram: config.programs.batcher,
   tokenProgram: config.programs.token,
   vaultProgram: config.programs.vault,
   hostProgram: config.programs.host,
   vault: config.vault,
-  hostConfig: config.hostConfig,
   kmsContext: config.kmsContext,
 });
 

@@ -4,7 +4,7 @@ import { base58 } from '@scure/base';
 
 import type { SolanaPublicDecryptCertificateClaim } from '@fhevm/sdk/solana';
 import { buildDiscloseSecpInstruction } from './discloseSecp.js';
-import { ZAMA_HOST_PROGRAM_ADDRESS } from '@fhevm/solana-zama-host';
+import { findHostConfigPda, ZAMA_HOST_PROGRAM_ADDRESS } from '@fhevm/solana-zama-host';
 import { getDiscloseSecpInstructionDataDecoder, CONFIDENTIAL_TOKEN_PROGRAM_ADDRESS } from '@fhevm/confidential-token';
 
 function addr(fill: number): Address {
@@ -36,14 +36,13 @@ function claim(overrides: Partial<SolanaPublicDecryptCertificateClaim> = {}): So
 describe('buildDiscloseSecpInstruction', () => {
   it('maps a claim onto the token disclose_secp instruction with the right accounts', async () => {
     const kmsContext = addr(7);
-    const hostConfig = addr(9);
-    const instruction = await buildDiscloseSecpInstruction({ kmsContext, hostConfig }, claim());
+    const instruction = await buildDiscloseSecpInstruction({ kmsContext }, claim());
 
     expect(instruction.programAddress).toBe(CONFIDENTIAL_TOKEN_PROGRAM_ADDRESS);
     const addresses = instruction.accounts?.map((a: { readonly address: Address }) => a.address) ?? [];
     // hostConfig, kmsContext, zamaProgram, eventAuthority, program
     expect(addresses).toHaveLength(5);
-    expect(addresses[0]).toBe(hostConfig);
+    expect(addresses[0]).toBe((await findHostConfigPda())[0]);
     expect(addresses[1]).toBe(kmsContext);
     expect(addresses[2]).toBe(ZAMA_HOST_PROGRAM_ADDRESS);
     expect(addresses[4]).toBe(CONFIDENTIAL_TOKEN_PROGRAM_ADDRESS);

@@ -65,7 +65,6 @@ function roots(): VaultDemoRoots {
     payoutConfidentialMint: addr(13),
     joinUnderlyingMint: addr(5),
     payoutUnderlyingMint: addr(14),
-    hostConfig: addr(8),
     kmsContext: addr(9),
   };
 }

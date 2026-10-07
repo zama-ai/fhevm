@@ -35,14 +35,12 @@ describe('buildCancelDispatchInstruction', () => {
     const batcher = addr(2);
     const batch = addr(3);
     const mint = addr(4);
-    const hostConfig = addr(5);
     const instruction = await buildCancelDispatchInstruction({
       transientStore: await prepareTransientStore({ payer, host: ZAMA_HOST_PROGRAM_ADDRESS }),
       payer,
       batcher,
       batch,
       joinConfidentialMint: mint,
-      hostConfig,
       authorityFundingLamports: 7n,
     });
 
@@ -74,7 +72,7 @@ describe('buildCancelDispatchInstruction', () => {
         base58.decode(mint),
         base58.decode(batchJoinTokenAccount),
       ]),
-      hostConfig,
+      await pda(ZAMA_HOST_PROGRAM_ADDRESS, [utf8('host-config')]),
       await pda(ZAMA_HOST_PROGRAM_ADDRESS, [utf8('__event_authority')]),
       await pda(ZAMA_HOST_PROGRAM_ADDRESS, [utf8('transient'), base58.decode(payer.address)]),
       address('Sysvar1nstructions1111111111111111111111111'),

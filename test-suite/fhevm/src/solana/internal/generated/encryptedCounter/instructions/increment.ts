@@ -6,6 +6,7 @@
  * @see https://github.com/codama-idl/codama
  */
 
+import { findEventAuthorityPda, findHostConfigPda } from '@fhevm/solana-zama-host';
 import {
   combineCodec,
   fixDecoderSize,
@@ -132,8 +133,8 @@ export type IncrementAsyncInput<
   counterAuthority?: Address<TAccountCounterAuthority>;
   /** Host-owned dictionary holding the current count and decrypt history. */
   encryptedStore: Address<TAccountEncryptedStore>;
-  hostConfig: Address<TAccountHostConfig>;
-  zamaEventAuthority: Address<TAccountZamaEventAuthority>;
+  hostConfig?: Address<TAccountHostConfig>;
+  zamaEventAuthority?: Address<TAccountZamaEventAuthority>;
   transientStore: Address<TAccountTransientStore>;
   instructions: Address<TAccountInstructions>;
   zamaProgram?: Address<TAccountZamaProgram>;
@@ -233,6 +234,16 @@ export async function getIncrementInstructionAsync<
   if (!accounts.zamaProgram.value) {
     accounts.zamaProgram.value =
       'DPq5y89RDZPq9NcMh9X1NgjBWgYmSXg3QoipSBV3ZMzQ' as Address<'DPq5y89RDZPq9NcMh9X1NgjBWgYmSXg3QoipSBV3ZMzQ'>;
+  }
+  if (!accounts.hostConfig.value) {
+    accounts.hostConfig.value = await findHostConfigPda({
+      programAddress: getAddressFromResolvedInstructionAccount('zamaProgram', accounts.zamaProgram.value),
+    });
+  }
+  if (!accounts.zamaEventAuthority.value) {
+    accounts.zamaEventAuthority.value = await findEventAuthorityPda({
+      programAddress: getAddressFromResolvedInstructionAccount('zamaProgram', accounts.zamaProgram.value),
+    });
   }
   if (!accounts.systemProgram.value) {
     accounts.systemProgram.value = '11111111111111111111111111111111' as Address<'11111111111111111111111111111111'>;

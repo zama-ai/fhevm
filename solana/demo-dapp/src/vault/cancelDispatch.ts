@@ -1,5 +1,4 @@
 import { tokenStoreAddress } from './internal/encryptedStores.js';
-import { findEventAuthorityPda as findZamaEventAuthorityPda } from '@fhevm/solana-zama-host';
 import {
   findPendingBurnPda,
   findTokenAccountPda,
@@ -18,7 +17,6 @@ export type SolanaVaultCancelDispatchParameters = {
   readonly batcher: Address;
   readonly batch: Address;
   readonly joinConfidentialMint: Address;
-  readonly hostConfig: Address;
   readonly authorityFundingLamports?: bigint;
 };
 
@@ -43,8 +41,6 @@ export async function buildCancelDispatchInstruction(
     batchBalanceStore: await tokenStoreAddress(mint, batchJoinTokenAccount),
     totalSupplyStore: await tokenStoreAddress(mint, totalSupplyAuthority),
     pendingBurn: (await findPendingBurnPda({ mint, tokenAccount: batchJoinTokenAccount }))[0],
-    hostConfig: parameters.hostConfig,
-    zamaEventAuthority: (await findZamaEventAuthorityPda())[0],
     confidentialTokenEventAuthority: (await findTokenEventAuthorityPda())[0],
     authorityFundingLamports: parameters.authorityFundingLamports ?? 0n,
   });

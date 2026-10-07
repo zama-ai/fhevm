@@ -70,6 +70,11 @@ function snapshot(path) {
   );
 }
 
+const hostIdl = JSON.parse(readFileSync(idlUrl('zama_host.json'), 'utf8'));
+const hostProgram = rootNodeFromAnchor(hostIdl).program;
+// An app IDL repeats the host types it touches, host accounts included (HostConfig, EncryptedStore, …).
+const hostTypeNames = new Set([...hostProgram.definedTypes, ...hostProgram.accounts].map(({ name }) => name));
+
 // One Codama render per target program. zama-host and confidential-token are product clients
 // under `solana/clients`. confidential-batcher and demo-vault remain dapp-only until they are
 // products. Codegen lives here because the committed IDLs, the Codama toolchain, and the --check
@@ -77,6 +82,7 @@ function snapshot(path) {
 const targets = [
   {
     idlPath: idlUrl('confidential_token.json'),
+    linkHostPdas: true,
     generatedPath: `${sdkRoot}/../../solana/clients/confidential-token/src/generated`,
     // Omit `keep`: render the full instruction/account/type/PDA surface. Events stay
     // pruned below; constants render separately. Errors stay pruned except
@@ -158,6 +164,7 @@ const targets = [
     // authority to be a PDA of its program, so the scenarios drive this specimen — the smallest
     // complete consumer — instead of signing fhe_execute from a wallet.
     idlPath: specimenIdlUrl('encrypted-counter', 'encrypted_counter.json'),
+    linkHostPdas: true,
     generatedPath: `${sdkRoot}/../../test-suite/fhevm/src/solana/internal/generated/encryptedCounter`,
     keep: {
       instructions: new Set(['initialize', 'increment']),
@@ -177,6 +184,7 @@ const targets = [
     // The dep-chain specimen client for the load-smoke scenario: `extend` packs the host's full
     // 32-step ceiling into one dependent execution, the shape the coprocessor cannot parallelize.
     idlPath: specimenIdlUrl('dep-chain', 'dep_chain.json'),
+    linkHostPdas: true,
     generatedPath: `${sdkRoot}/../../test-suite/fhevm/src/solana/internal/generated/depChain`,
     keep: {
       instructions: new Set(['initialize', 'extend']),
@@ -198,6 +206,7 @@ const targets = [
     // vault module's on-chain reads use (fhevm-internal#1760 reads.ts — generated decoders, never
     // hand-rolled borsh).
     idlPath: demoIdlUrl('confidential_batcher.json'),
+    linkHostPdas: true,
     generatedPath: `${sdkRoot}/../../solana/demo-dapp/src/vault/internal/generated/confidentialBatcher`,
     keep: {
       instructions: new Set([
@@ -214,9 +223,10 @@ const targets = [
         'previewCloseToken',
         'previewDrain',
       ]),
-      // Anchor inlines the CoprocessorInputAttestation (join) struct directly into the instruction
-      // data. Keep the initializeBatcher direction enum plus batchStatus, which the Batch account
-      // decoder references; confidentialMint/vault stay pruned (account-only).
+      // Codama flattens join's single struct argument (CoprocessorInputAttestation) into the
+      // instruction data, so no type link applies to it. Keep the initializeBatcher direction enum
+      // plus batchStatus, which the Batch account decoder references; confidentialMint/vault stay
+      // pruned (account-only).
       definedTypes: new Set(['batchDirection', 'batchStatus']),
       // Keep the three account decoders the vault-module reads consume: Batcher (direction + mints +
       // vault + min_batch_age_slots + next_batch_index), Batch (status + opened_slot + join_count +
@@ -254,6 +264,10 @@ const targets = [
     },
   },
 ];
+
+// What `@fhevm/solana-zama-host` exports a codec for: its kept types and its kept accounts.
+const hostTarget = targets.find(({ idlPath }) => idlPath === idlUrl('zama_host.json'));
+const hostClientTypes = new Set([...hostTarget.keep.definedTypes, ...hostTarget.keep.accounts]);
 
 // Anchor's event_cpi macro emits an address constraint, so its implicit PDA needs one render default.
 const eventAuthority = pdaNode({
@@ -301,9 +315,9 @@ for (const target of targets) {
     );
   }
   const foreignPdaLinks = {};
-  if (target.idlPath === idlUrl('confidential_token.json')) {
-    const hostIdl = JSON.parse(readFileSync(idlUrl('zama_host.json'), 'utf8'));
-    const hostPdas = [...rootNodeFromAnchor(hostIdl).program.pdas, eventAuthority];
+  // Targets whose accounts pin zama-host PDAs default them through the `@fhevm/solana-zama-host` finders.
+  if (target.linkHostPdas) {
+    const hostPdas = [...hostProgram.pdas, eventAuthority];
     // updateInstructionsVisitor fills local seed defaults and drops a linked PDA's programId.
     // Preserve the foreign program binding instead of resolving it against this program's PDAs.
     codama.update(
@@ -352,6 +366,17 @@ for (const target of targets) {
     );
   }
   const program = codama.getRoot().program;
+  // Host types render once, in `@fhevm/solana-zama-host`; a linked app client imports them from there.
+  const foreignTypeLinks = target.linkHostPdas
+    ? Object.fromEntries(
+        program.definedTypes.filter(({ name }) => hostTypeNames.has(name)).map(({ name }) => [name, 'zamaHost']),
+      )
+    : {};
+  for (const name of Object.keys(foreignTypeLinks)) {
+    if (!hostClientTypes.has(name)) {
+      throw new Error(`${name} links to @fhevm/solana-zama-host, which does not export it: keep it in the zama-host target`);
+    }
+  }
   const keep = target.keep;
   if (keep) {
     for (const [kind, names] of Object.entries(keep)) {
@@ -377,6 +402,7 @@ for (const target of targets) {
           ...program.pdas.filter(({ name }) => keep.pdas && !keep.pdas.has(name)).map(({ name }) => `[pdaNode]${name}`),
         ]
       : []),
+    ...Object.keys(foreignTypeLinks).map((name) => `[definedTypeNode]${name}`),
     ...(target.keepErrors ? [] : program.errors.map(({ name }) => `[errorNode]${name}`)),
     ...(program.events ?? []).map(({ name }) => `[eventNode]${name}`),
     ...(program.constants ?? []).map(({ name }) => `[constantNode]${name}`),
@@ -417,7 +443,8 @@ for (const target of targets) {
   }
   // Codama's linked PDA resolver drops the instruction's programAddress override.
   // Inline same-program PDA definitions while preserving their argument seed bindings.
-  // Confidential-token's foreign host PDA links would be rebound to the token program here.
+  // PDAs are matched by name. Confidential-token defines its own `eventAuthority`, so its linked host
+  // `eventAuthority` would be rebound to the token program; the other targets define no host PDA name.
   if (
     [
       idlUrl('zama_host.json'),
@@ -449,7 +476,7 @@ for (const target of targets) {
       generatedFolder: 'generated',
       kitImportStrategy: 'rootOnly',
       syncPackageJson: false,
-      linkOverrides: { pdas: foreignPdaLinks },
+      linkOverrides: { pdas: foreignPdaLinks, definedTypes: foreignTypeLinks },
       dependencyMap: { zamaHost: '@fhevm/solana-zama-host' },
       dependencyVersions: {
         '@fhevm/solana-zama-host': JSON.parse(

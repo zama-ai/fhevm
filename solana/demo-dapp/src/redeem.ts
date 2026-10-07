@@ -388,7 +388,6 @@ export const joinRedeemBatch = async (
       joinConfidentialMint: roots.joinConfidentialMint,
       joinUnderlyingMint: roots.joinUnderlyingMint,
       tokenProgram: TOKEN_PROGRAM_ADDRESS,
-      hostConfig: config.hostConfig,
       computeUnitLimit: JOIN_COMPUTE_UNIT_LIMIT,
       onTransactionSigned: (transaction) => {
         session.assertActive();

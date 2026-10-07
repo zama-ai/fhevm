@@ -6,6 +6,7 @@
  * @see https://github.com/codama-idl/codama
  */
 
+import { findEventAuthorityPda, findHostConfigPda } from '@fhevm/solana-zama-host';
 import {
   combineCodec,
   fixDecoderSize,
@@ -177,12 +178,12 @@ export type DispatchAsyncInput<
   batchBalanceStore: Address<TAccountBatchBalanceStore>;
   totalSupplyStore: Address<TAccountTotalSupplyStore>;
   pendingBurn: Address<TAccountPendingBurn>;
-  zamaEventAuthority: Address<TAccountZamaEventAuthority>;
+  zamaEventAuthority?: Address<TAccountZamaEventAuthority>;
   transientStore: Address<TAccountTransientStore>;
   instructions: Address<TAccountInstructions>;
   /** ZamaHost program (FHE compute + ACL). */
   zamaProgram?: Address<TAccountZamaProgram>;
-  hostConfig: Address<TAccountHostConfig>;
+  hostConfig?: Address<TAccountHostConfig>;
   confidentialTokenEventAuthority: Address<TAccountConfidentialTokenEventAuthority>;
   /** confidential-token program composed via CPI. */
   confidentialTokenProgram?: Address<TAccountConfidentialTokenProgram>;
@@ -334,6 +335,16 @@ export async function getDispatchInstructionAsync<
   if (!accounts.zamaProgram.value) {
     accounts.zamaProgram.value =
       'DPq5y89RDZPq9NcMh9X1NgjBWgYmSXg3QoipSBV3ZMzQ' as Address<'DPq5y89RDZPq9NcMh9X1NgjBWgYmSXg3QoipSBV3ZMzQ'>;
+  }
+  if (!accounts.zamaEventAuthority.value) {
+    accounts.zamaEventAuthority.value = await findEventAuthorityPda({
+      programAddress: getAddressFromResolvedInstructionAccount('zamaProgram', accounts.zamaProgram.value),
+    });
+  }
+  if (!accounts.hostConfig.value) {
+    accounts.hostConfig.value = await findHostConfigPda({
+      programAddress: getAddressFromResolvedInstructionAccount('zamaProgram', accounts.zamaProgram.value),
+    });
   }
   if (!accounts.confidentialTokenProgram.value) {
     accounts.confidentialTokenProgram.value =

@@ -66,12 +66,6 @@ import { CONFIDENTIAL_TOKEN_PROGRAM_ADDRESS, findTokenAccountPda, BALANCE_KEY as
 const bytesEqual = (a: Uint8Array, b: Uint8Array): boolean =>
   a.length === b.length && a.every((byte, index) => byte === b[index]);
 
-/** The zama-host singleton `HostConfig` PDA (`[b"host-config"]`) every host-CPI instruction takes. */
-export const hostConfigAddress = async (): Promise<Address> => {
-  const [hostConfig] = await findHostConfigPda();
-  return hostConfig;
-};
-
 /** BPF upgradeable loader `ProgramData` PDA for zama-host (`[program_id]` under the loader). */
 export const zamaHostProgramDataAddress = (): Promise<Address> => programDataAddressFor(ZAMA_HOST_PROGRAM_ADDRESS);
 
@@ -276,7 +270,6 @@ export const createConfidentialMint = async (
 ): Promise<Address> => {
   const vault = await vaultModule();
   const mint = await generateKeyPairSigner();
-  const hostConfig = await hostConfigAddress();
   const { appendTransientStoreInstructions, prepareTransientStore } = await sdkVerifyModule();
   const transientStore = await prepareTransientStore({ payer: params.authority, host: ZAMA_HOST_PROGRAM_ADDRESS });
   await context.sendTransaction(params.authority, appendTransientStoreInstructions(transientStore, [
@@ -285,7 +278,6 @@ export const createConfidentialMint = async (
       authority: params.authority,
       mint,
       underlyingMint: params.underlyingMint,
-      hostConfig,
     }),
   ]));
   const escrow = await buildVaultUnderlyingEscrowAtaInstruction({
@@ -311,7 +303,6 @@ export const initializeConfidentialTokenAccount = async (
     payer: params.payer,
     owner: params.owner,
     mint: params.mint,
-    hostConfig: await hostConfigAddress(),
   });
   if (instruction) await context.sendTransaction(params.payer, appendTransientStoreInstructions(transientStore, [instruction]));
 };
@@ -336,7 +327,6 @@ export const wrapUnderlying = async (
       mint: params.mint,
       underlyingMint: params.underlyingMint,
       tokenProgram: SPL_TOKEN_PROGRAM_ADDRESS,
-      hostConfig: await hostConfigAddress(),
       amount: params.amount,
     }),
   ]));
@@ -349,7 +339,7 @@ export const wrapUnderlying = async (
  */
 export const readHostChainId = async (context: SolanaProvisioningContext): Promise<bigint> => {
   const vault = await vaultModule();
-  const configInfo = await fetchEncodedAccount(context.rpc, await hostConfigAddress());
+  const configInfo = await fetchEncodedAccount(context.rpc, (await findHostConfigPda())[0]);
   if (
     !configInfo.exists ||
     configInfo.programAddress !== vault.ZAMA_HOST_PROGRAM_ADDRESS ||

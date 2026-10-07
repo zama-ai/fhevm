@@ -23,8 +23,6 @@ function signer(a: Address): TransactionSigner {
   return { address: a, signTransactions: async () => [] } as unknown as TransactionSigner;
 }
 
-const HOST_CONFIG = addr(200);
-
 describe('vault provisioning builders', () => {
   it('initialize_mint: right program + discriminator (encrypted store/event PDAs derived internally)', async () => {
     const instruction = await buildInitializeMintInstruction({
@@ -32,7 +30,6 @@ describe('vault provisioning builders', () => {
       authority: signer(addr(1)),
       mint: signer(addr(2)),
       underlyingMint: addr(3),
-      hostConfig: HOST_CONFIG,
     });
     expect(instruction.programAddress).toBe(CONFIDENTIAL_TOKEN_PROGRAM_ADDRESS);
     const decoded = getInitializeMintInstructionDataDecoder().decode(instruction.data!);
@@ -47,7 +44,6 @@ describe('vault provisioning builders', () => {
       payer,
       owner,
       mint: addr(3),
-      hostConfig: HOST_CONFIG,
     });
     expect(instruction.programAddress).toBe(CONFIDENTIAL_TOKEN_PROGRAM_ADDRESS);
     expect(instruction.accounts?.[0]?.address).toBe(payer.address);
@@ -62,7 +58,6 @@ describe('vault provisioning builders', () => {
       payer: signer(addr(1)),
       owner: addr(2),
       mint: addr(3),
-      hostConfig: HOST_CONFIG,
     };
     const rpc = (accountOwner: Address | null) =>
       ({
@@ -90,7 +85,6 @@ describe('vault provisioning builders', () => {
       mint: addr(2),
       underlyingMint: addr(3),
       tokenProgram: address('TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA'),
-      hostConfig: HOST_CONFIG,
       amount: 1_000_000n,
     });
     expect(instruction.programAddress).toBe(CONFIDENTIAL_TOKEN_PROGRAM_ADDRESS);
@@ -111,7 +105,6 @@ describe('vault provisioning builders', () => {
       payoutConfidentialMint: addr(17),
       joinUnderlyingMint: addr(18),
       payoutUnderlyingMint: addr(19),
-      hostConfig: addr(20),
       kmsContext: addr(21),
     };
     const result = await openBatchForBatcher({

@@ -53,7 +53,7 @@ import {
   readActiveKmsPair,
   readGatewayBootstrapInputs,
 } from "../src/solana/addresses";
-import { hostConfigAddress, loadKeypairSigner } from "../src/solana/provision";
+import { loadKeypairSigner } from "../src/solana/provision";
 import { buildVaultUnderlyingEscrowAtaInstruction } from "../src/solana/spl";
 import { kmsContextAddress } from "../src/solana/token-vertical";
 import { ensureDemoRecoveryKey, mirrorRecoveryKeys, recoveryDirectory } from "../src/solana/recovery";
@@ -125,8 +125,7 @@ const main = async (): Promise<void> => {
   const depositBatcher = await generateKeyPairSigner();
   const redeemBatcher = await generateKeyPairSigner();
 
-  // Deterministic host roots: the singleton host config and the bring-up KMS context PDA.
-  const hostConfig = await hostConfigAddress();
+  // Deterministic host root: the bring-up KMS context PDA.
   const kmsContext = await kmsContextAddress();
   // The kms-context account is provisioned by the HOST BRING-UP, not by this seeder — the seeder
   // must never create it (it has neither the authority nor the key material to). But the smoke's
@@ -185,7 +184,6 @@ const main = async (): Promise<void> => {
       authority: keeper,
       mint: cUsdcMint,
       underlyingMint: mockUsdcMint.address,
-      hostConfig,
     }),
   ]));
   await send(deployer, appendTransientStoreInstructions(mintTransientStore, [
@@ -194,7 +192,6 @@ const main = async (): Promise<void> => {
       authority: keeper,
       mint: cSharesMint,
       underlyingMint: shareMint,
-      hostConfig,
     }),
   ]));
 
@@ -247,7 +244,6 @@ const main = async (): Promise<void> => {
     vaultProgram: vault.DEMO_VAULT_PROGRAM_ADDRESS,
     hostProgram: vault.ZAMA_HOST_PROGRAM_ADDRESS,
     vault: vaultAccount.address,
-    hostConfig,
     kmsContext,
   } as const;
   const depositRoots: VaultDemoRoots = {
@@ -334,7 +330,6 @@ const main = async (): Promise<void> => {
       vault: vault.DEMO_VAULT_PROGRAM_ADDRESS,
       host: vault.ZAMA_HOST_PROGRAM_ADDRESS,
     },
-    hostConfig,
     kmsContext,
     vault: vaultAccount.address,
     mints: {

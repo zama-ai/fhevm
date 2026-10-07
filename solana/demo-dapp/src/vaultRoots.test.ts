@@ -16,7 +16,6 @@ const config = {
     payoutConfidential: "cshares",
   },
   vault: "vault",
-  hostConfig: "host-config",
   kmsContext: "kms-context",
 } as unknown as DemoConfig;
 
