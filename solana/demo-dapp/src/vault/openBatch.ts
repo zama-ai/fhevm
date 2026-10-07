@@ -4,7 +4,11 @@ import {
   getOpenBatchInstructionAsync,
   type OpenBatchAsyncInput,
 } from './internal/generated/confidentialBatcher/instructions/openBatch.js';
-import { getCreateLookupTableInstruction, getExtendLookupTableInstructions } from './internal/addressLookupTable.js';
+import {
+  findAddressLookupTablePda,
+  getCreateLookupTableInstruction,
+} from '@solana-program/address-lookup-table';
+import { getExtendLookupTableInstructions } from './internal/addressLookupTable.js';
 
 export type SolanaVaultOpenBatchParameters = {
   /** Accounts + `authorityFundingLamports` for the batcher `open_batch` instruction. */
@@ -45,8 +49,11 @@ export type SolanaVaultOpenBatchResult = {
 export async function openBatch(parameters: SolanaVaultOpenBatchParameters): Promise<SolanaVaultOpenBatchResult> {
   const payer = parameters.openBatch.payer;
   const openBatchInstruction = await getOpenBatchInstructionAsync(parameters.openBatch);
-  const { instruction: createInstruction, lookupTableAddress } = await getCreateLookupTableInstruction({
-    authority: payer,
+  const lookupTablePda = await findAddressLookupTablePda({ authority: payer.address, recentSlot: parameters.recentSlot });
+  const lookupTableAddress = lookupTablePda[0];
+  const createInstruction = getCreateLookupTableInstruction({
+    address: lookupTablePda,
+    authority: payer.address,
     payer,
     recentSlot: parameters.recentSlot,
   });

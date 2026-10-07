@@ -5,6 +5,7 @@ import {
   type Signature,
   type TransactionSigner,
 } from '@solana/kit';
+import { getDeactivateLookupTableInstruction } from '@solana-program/address-lookup-table';
 import {
   appendTransientStoreInstructions,
   createFhevmPublicDecryptClient,
@@ -18,7 +19,6 @@ import {
   deriveJoinRecordAddress,
   getBatchByIndex,
   getBatcher,
-  getDeactivateLookupTableInstruction,
   getJoinRecord,
   buildCloseJoinRecordInstruction,
   settleBatch,
@@ -187,7 +187,7 @@ export const settleVaultBatch = async (
       session.config,
       session.keeper,
       [
-        getDeactivateLookupTableInstruction({ lookupTable: lookupTableAddress, authority: session.keeper }),
+        getDeactivateLookupTableInstruction({ address: lookupTableAddress, authority: session.keeper }),
         await buildReclaimBatchAuthorityInstruction({
           authority: session.keeper,
           batcher: roots.batcher,

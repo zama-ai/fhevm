@@ -8,7 +8,8 @@ import { INSTRUCTIONS_SYSVAR_ADDRESS, appendTransientStoreInstructions, prepareT
 
 import { type Address, type TransactionSigner } from "@solana/kit";
 
-import { associatedTokenAddress, SPL_TOKEN_PROGRAM_ADDRESS } from "./spl";
+import { TOKEN_PROGRAM_ADDRESS as SPL_TOKEN_PROGRAM_ADDRESS } from "@solana-program/token";
+import { associatedTokenAddress } from "./spl";
 import { BRINGUP_KMS_CONTEXT_ID } from "./addresses";
 import { findKmsContextPda } from "@fhevm/solana-zama-host";
 import { certificateCleartext, type PublicDecryptCertificate } from "./public-decrypt";

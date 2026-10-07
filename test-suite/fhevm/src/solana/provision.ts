@@ -32,6 +32,13 @@ import {
   type SolanaRpcApi,
   type TransactionSigner,
 } from '@solana/kit';
+import {
+  TOKEN_PROGRAM_ADDRESS as SPL_TOKEN_PROGRAM_ADDRESS,
+  getMintSize,
+  getCreateAssociatedTokenIdempotentInstruction,
+  getInitializeMint2Instruction,
+  getMintToInstruction,
+} from '@solana-program/token';
 
 import type { Bytes32Hex } from '@fhevm/sdk/types';
 import { programDataAddressFor } from '../../../../solana/deploy/src/bootstrap';
@@ -46,14 +53,9 @@ import {
 } from '@fhevm/solana-zama-host';
 
 import {
-  SPL_MINT_ACCOUNT_SPACE,
-  SPL_TOKEN_PROGRAM_ADDRESS,
   associatedTokenAddress,
   buildVaultUnderlyingEscrowAtaInstruction,
   createAccountInstruction,
-  createIdempotentAtaInstruction,
-  initializeMint2Instruction,
-  mintToInstruction,
   setComputeUnitLimitInstruction,
   transferSolInstruction,
 } from './spl';
@@ -236,16 +238,16 @@ export const createSplMint = async (
   params: { readonly authority: TransactionSigner; readonly decimals: number },
 ): Promise<Address> => {
   const mint = await generateKeyPairSigner();
-  const rent = await context.rpc.getMinimumBalanceForRentExemption(SPL_MINT_ACCOUNT_SPACE).send();
+  const rent = await context.rpc.getMinimumBalanceForRentExemption(BigInt(getMintSize())).send();
   await context.sendTransaction(params.authority, [
     createAccountInstruction({
       payer: params.authority,
       newAccount: mint,
       lamports: rent,
-      space: SPL_MINT_ACCOUNT_SPACE,
+      space: BigInt(getMintSize()),
       owner: SPL_TOKEN_PROGRAM_ADDRESS,
     }),
-    initializeMint2Instruction({
+    getInitializeMint2Instruction({
       mint: mint.address,
       decimals: params.decimals,
       mintAuthority: params.authority.address,
@@ -266,12 +268,12 @@ export const mintSplTo = async (
 ): Promise<Address> => {
   const ata = await associatedTokenAddress(params.recipient, params.mint, SPL_TOKEN_PROGRAM_ADDRESS);
   await context.sendTransaction(params.authority, [
-    createIdempotentAtaInstruction({ payer: params.authority, ata, owner: params.recipient, mint: params.mint }),
-    mintToInstruction({
+    getCreateAssociatedTokenIdempotentInstruction({ payer: params.authority, ata, owner: params.recipient, mint: params.mint }),
+    getMintToInstruction({
       mint: params.mint,
-      destination: ata,
-      authority: params.authority,
-      baseUnits: params.baseUnits,
+      token: ata,
+      mintAuthority: params.authority,
+      amount: params.baseUnits,
     }),
   ]);
   return ata;

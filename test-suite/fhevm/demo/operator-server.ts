@@ -28,6 +28,11 @@ import {
   signTransactionMessageWithSigners,
   type Address,
 } from "@solana/kit";
+import {
+  TOKEN_PROGRAM_ADDRESS as SPL_TOKEN_PROGRAM_ADDRESS,
+  getCreateAssociatedTokenIdempotentInstruction,
+  getMintToInstruction,
+} from "@solana-program/token";
 
 import { lookupTableForBatch, prepareNextBatch } from "@demo-dapp/batchProvisioning";
 import { claimBatchPayout } from "@demo-dapp/claim";
@@ -38,12 +43,7 @@ import { openProvisioning } from "../e2e/harness/solana/provisioning";
 import { DEMO_OPERATOR_PORT, solanaBatchLookupTablesPath } from "../src/layout";
 import { createFinalizedRpc } from '@fhevm/solana-zama-host';
 import { LOCAL_SOLANA_ENDPOINTS } from "../src/solana/endpoints";
-import {
-  associatedTokenAddress,
-  createIdempotentAtaInstruction,
-  mintToInstruction,
-  SPL_TOKEN_PROGRAM_ADDRESS,
-} from "../src/solana/spl";
+import { associatedTokenAddress } from "../src/solana/spl";
 import { readDemoAllowedOriginFromEnv, readDemoAuthorizationFromEnv } from "./authorization";
 import { resolveDemoConfigPath } from "./config";
 import { createEncryptionKeyMaterial } from "./encryptionKeyMaterial";
@@ -73,8 +73,8 @@ const buildUsdcMinter = async (options: {
     const withLifetime = setTransactionMessageLifetimeUsingBlockhash(latestBlockhash, base);
     const message = appendTransactionMessageInstructions(
       [
-        createIdempotentAtaInstruction({ payer: authority, ata, owner: recipient, mint: options.mint }),
-        mintToInstruction({ mint: options.mint, destination: ata, authority, baseUnits }),
+        getCreateAssociatedTokenIdempotentInstruction({ payer: authority, ata, owner: recipient, mint: options.mint }),
+        getMintToInstruction({ mint: options.mint, token: ata, mintAuthority: authority, amount: baseUnits }),
       ],
       withLifetime,
     );

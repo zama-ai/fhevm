@@ -41,6 +41,11 @@ import {
   type Instruction,
   type TransactionSigner,
 } from "@solana/kit";
+import {
+  TOKEN_PROGRAM_ADDRESS as SPL_TOKEN_PROGRAM_ADDRESS,
+  getMintSize,
+  getInitializeMint2Instruction,
+} from "@solana-program/token";
 
 import { loadEnv } from "../e2e/harness/loadEnv";
 import { openProvisioning } from "../e2e/harness/solana/provisioning";
@@ -52,11 +57,8 @@ import {
 } from "../src/solana/addresses";
 import { hostConfigAddress, loadKeypairSigner } from "../src/solana/provision";
 import {
-  SPL_MINT_ACCOUNT_SPACE,
-  SPL_TOKEN_PROGRAM_ADDRESS,
   buildVaultUnderlyingEscrowAtaInstruction,
   createAccountInstruction,
-  initializeMint2Instruction,
 } from "../src/solana/spl";
 import { kmsContextAddress } from "../src/solana/token-vertical";
 import { ensureDemoRecoveryKey, mirrorRecoveryKeys, recoveryDirectory } from "../src/solana/recovery";
@@ -161,16 +163,16 @@ const main = async (): Promise<void> => {
   }
 
   // 1. Mock-USDC SPL mint (create account + initialize), owned by the classic token program.
-  const mintRent = await rpc.getMinimumBalanceForRentExemption(SPL_MINT_ACCOUNT_SPACE).send();
+  const mintRent = await rpc.getMinimumBalanceForRentExemption(BigInt(getMintSize())).send();
   await send(deployer, [
     createAccountInstruction({
       payer: deployer,
       newAccount: mockUsdcMint,
       lamports: mintRent,
-      space: SPL_MINT_ACCOUNT_SPACE,
+      space: BigInt(getMintSize()),
       owner: SPL_TOKEN_PROGRAM_ADDRESS,
     }),
-    initializeMint2Instruction({
+    getInitializeMint2Instruction({
       mint: mockUsdcMint.address,
       decimals: MOCK_USDC_DECIMALS,
       mintAuthority: mintAuthority.address,
