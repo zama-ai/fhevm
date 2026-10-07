@@ -16,7 +16,7 @@ use std::future::Future;
 use std::time::Duration;
 
 use anchor_lang::prelude::Pubkey;
-use anyhow::{anyhow, Context, Result};
+use anyhow::{anyhow, ensure, Context, Result};
 use futures_util::stream::StreamExt;
 use solana_client::nonblocking::rpc_client::RpcClient;
 use solana_sdk::signature::Signature;
@@ -354,6 +354,11 @@ fn resolve_transaction_instructions(
             stack_height: None,
         })
         .collect::<Vec<_>>();
+    // A node that did not record inner instructions would hide every CPI into the host.
+    ensure!(
+        !meta.inner_instructions_none,
+        "transaction meta has no inner instructions"
+    );
     let inner_groups = meta
         .inner_instructions
         .iter()
@@ -577,7 +582,8 @@ fn prepare_transaction(
         signature,
         index: info.index,
         instructions: host_instructions(
-            resolve_transaction_instructions(message, meta)?,
+            resolve_transaction_instructions(message, meta)
+                .with_context(|| format!("transaction {signature}"))?,
             program,
         ),
     }))
@@ -778,10 +784,31 @@ async fn ingest_block(
 
 #[cfg(test)]
 mod account_resolution_tests {
-    use super::{resolve_transaction_instructions, validated_account_keys};
+    use super::test_support::ZAMA_HOST;
+    use super::wire_fixtures::app_transaction;
+    use super::{
+        prepare_transaction, resolve_transaction_instructions,
+        validated_account_keys,
+    };
     use yellowstone_grpc_proto::prelude::{
         Message as TransactionMessage, TransactionError, TransactionStatusMeta,
     };
+
+    #[test]
+    fn a_node_without_inner_instructions_is_refused() {
+        let mut info = app_transaction(8, [2; 32]).grpc_info(0);
+        let meta = info.meta.as_mut().unwrap();
+        meta.inner_instructions.clear();
+        meta.inner_instructions_none = true;
+
+        let error = prepare_transaction(info, &ZAMA_HOST.parse().unwrap())
+            .expect_err("a stream without inner instructions hides host CPIs");
+
+        assert!(
+            format!("{error:#}").contains("no inner instructions"),
+            "{error:#}"
+        );
+    }
 
     #[test]
     fn rejects_malformed_account_key_length() {
