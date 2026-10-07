@@ -289,7 +289,7 @@ async fn get_operation_status(
     operation: &str,
     id: U256,
 ) -> anyhow::Result<OperationStatus> {
-    info!("Getting {operation} #{id} status in DB...");
+    info!("Getting {operation} #{id:#066x} status in DB...");
 
     let query = match operation {
         "PublicDecryptionRequest" => {
