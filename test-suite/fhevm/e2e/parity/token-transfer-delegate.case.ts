@@ -23,27 +23,31 @@ const STEP = {
 
 /** How long the grant to C lives, past the host's clock. */
 const GRANT_SECONDS = 3_600n;
-const RELAYER_NOT_ALLOWED = "not_allowed_on_host_acl";
-
 const ACL_ABI = parseAbi([
   "function delegateForUserDecryption(address delegate, address contractAddress, uint64 expirationDate)",
 ]);
 
-const evmRefusal: RefusalReason = (error) => {
-  // The SDK reads the ACL before it asks the relayer. Its errors all carry the name
-  // `FhevmErrorBase` and the classes are not exported (zama-ai/fhevm-internal#2135), so the ACL
-  // refusal is recognized by the contract it names.
-  if ((error as { contractName?: string } | null)?.contractName === "ACL") return "SDK ACL check";
-  const label = (error as { relayerApiError?: { label?: string } } | null)?.relayerApiError?.label;
-  return label === RELAYER_NOT_ALLOWED ? `relayer: ${label}` : undefined;
-};
+// Each chain's refusal of B reading A's balance is the first authorization check on its user path.
+// Each classifier accepts that one path only, so a refusal that moves elsewhere fails the case.
+// Neither proves the KMS would refuse: that belongs to the KMS authorization tests.
 
-const solanaRefusal: RefusalReason = (error) => {
-  if (!(error instanceof SolanaUserDecryptRunError)) return undefined;
-  const { rejection } = error;
-  if ("label" in rejection && rejection.label === RELAYER_NOT_ALLOWED) return `relayer: ${rejection.label}`;
-  return rejection.kind === "unanswered" ? `unanswered after ${error.attempts} attempt(s)` : undefined;
-};
+/** EVM: the SDK reads the ACL and refuses before any request reaches the relayer. */
+const evmRefusal: RefusalReason = (error) =>
+  // SDK errors all carry the name `FhevmErrorBase` and their classes are not exported
+  // (zama-ai/fhevm-internal#2135), so the ACL refusal is recognized by the contract it names.
+  (error as { contractName?: string } | null)?.contractName === "ACL" ? "SDK ACL check" : undefined;
+
+/**
+ * Solana: B naming A as owner is a delegated entry with no delegation row, which the relayer's
+ * delegation pre-check refuses (solana/docs/INVARIANTS.md #50). The pre-check runs on the queued
+ * job, after the submission was accepted, so the refusal arrives as `failed`.
+ */
+const solanaRefusal: RefusalReason = (error) =>
+  error instanceof SolanaUserDecryptRunError &&
+  error.rejection.kind === "failed" &&
+  error.rejection.label === "not_allowed_on_host_acl"
+    ? "relayer delegation pre-check: not_allowed_on_host_acl"
+    : undefined;
 
 let evmHost: Promise<EvmHost> | undefined;
 

@@ -239,21 +239,28 @@ export const createRealTwoHolderDependencies = (cfg: TwoHolderConfig): RealTwoHo
   };
 };
 
-/** Runs one real two-holder transfer and proves both current balances through independent SDK decrypts. */
-export const runSolanaTwoHolderTransfer = async (dependencies: TwoHolderDependencies) => {
+/**
+ * Runs one real two-holder transfer of `amount` out of Alice's `fund`, and proves both current
+ * balances through independent SDK decrypts. `amount` must not exceed `fund`.
+ */
+export const runSolanaTwoHolderTransfer = async (
+  dependencies: TwoHolderDependencies,
+  { fund, amount }: { fund: bigint; amount: bigint } = { fund: 1000n, amount: 400n },
+) => {
+  const remaining = fund - amount;
   let scenario: TwoHolderScenario | undefined;
   try {
-    const provisioned = await timed("provision two holders (mints, wrap 1000)", () => dependencies.provision(1000n));
+    const provisioned = await timed(`provision two holders (mints, wrap ${fund})`, () => dependencies.provision(fund));
     scenario = provisioned;
     const initialAlice = await dependencies.readBalance(provisioned, provisioned.alice);
     const initialBob = await dependencies.readBalance(provisioned, provisioned.bob);
     await dependencies.waitForHandle(initialAlice.currentHandle);
     await dependencies.waitForHandle(initialBob.currentHandle);
-    await timed("user decrypt alice=1000", () => dependencies.decrypt(provisioned, provisioned.alice, initialAlice, 1000n));
+    await timed(`user decrypt alice=${fund}`, () => dependencies.decrypt(provisioned, provisioned.alice, initialAlice, fund));
     await timed("user decrypt bob=0", () => dependencies.decrypt(provisioned, provisioned.bob, initialBob, 0n));
 
-    await timed("encrypt + input proof + confidential transfer(400)", () =>
-      dependencies.transfer(provisioned, initialAlice, initialBob, 400n),
+    await timed(`encrypt + input proof + confidential transfer(${amount})`, () =>
+      dependencies.transfer(provisioned, initialAlice, initialBob, amount),
     );
     const finalAlice = await dependencies.readBalance(provisioned, provisioned.alice);
     const finalBob = await dependencies.readBalance(provisioned, provisioned.bob);
@@ -262,9 +269,9 @@ export const runSolanaTwoHolderTransfer = async (dependencies: TwoHolderDependen
     }
     await dependencies.waitForHandle(finalAlice.currentHandle);
     await dependencies.waitForHandle(finalBob.currentHandle);
-    await timed("user decrypt alice=600", () => dependencies.decrypt(provisioned, provisioned.alice, finalAlice, 600n));
-    await timed("user decrypt bob=400", () => dependencies.decrypt(provisioned, provisioned.bob, finalBob, 400n));
-    console.log("[two-holder-transfer] Alice=600 Bob=400");
+    await timed(`user decrypt alice=${remaining}`, () => dependencies.decrypt(provisioned, provisioned.alice, finalAlice, remaining));
+    await timed(`user decrypt bob=${amount}`, () => dependencies.decrypt(provisioned, provisioned.bob, finalBob, amount));
+    console.log(`[two-holder-transfer] Alice=${remaining} Bob=${amount}`);
   } finally {
     await dependencies.cleanup(scenario);
   }

@@ -27,7 +27,10 @@ export type RefusalReason = (error: unknown) => string | undefined;
 export type Reads = {
   /** Retries `decrypt` until it answers: the ciphertext or a grant may still be propagating. */
   value(step: string, decrypt: () => Promise<bigint>): Promise<void>;
-  /** One attempt, which must be refused. Run it after the same reader decrypted a value it may read. */
+  /**
+   * One attempt, which must be refused. Run it after the same reader decrypted a value it may read.
+   * Recorded as an error without decrypting when an earlier read in the leg failed.
+   */
   denied(step: string, decrypt: () => Promise<bigint>, refusal: RefusalReason): Promise<void>;
 };
 
@@ -89,6 +92,9 @@ export const runLeg = async <V extends Values>(leg: Leg<V>, values: V): Promise<
       }),
     denied: (step, decrypt, refusal) =>
       record(step, async (attempt) => {
+        // A refusal means nothing when the stack failed a permitted read in this leg.
+        const failed = Object.keys(steps).find((earlier) => steps[earlier]?.kind === "error");
+        if (failed !== undefined) return { kind: "error", message: `not run: an earlier read in this leg failed (${failed})` };
         attempt();
         try {
           return { kind: "value", value: String(await decrypt()) };
