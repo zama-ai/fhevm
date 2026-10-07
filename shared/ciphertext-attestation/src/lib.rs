@@ -11,7 +11,6 @@ use sha3::{Digest, Keccak256};
 
 pub mod ciphertext;
 pub mod consensus;
-pub mod sign;
 
 pub use ciphertext::{
     COPROCESSOR_CONTEXT_ID_V1, CiphertextAttestation, CiphertextAttestationPayload,
