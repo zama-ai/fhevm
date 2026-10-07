@@ -1,0 +1,6 @@
+[profile.default]
+extends = "../../../foundry.base.toml"
+libs = ["node_modules", "../node_modules"]
+solc_version = "0.8.27"
+evm_version = "cancun"
+src = "pkg/contracts"

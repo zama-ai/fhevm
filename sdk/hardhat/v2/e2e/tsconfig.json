@@ -1,0 +1,16 @@
+{
+  "extends": "../../../tsconfig.base.json",
+  "compilerOptions": {
+    "esModuleInterop": true,
+    "ignoreDeprecations": "6.0",
+    "module": "CommonJS",
+    "moduleResolution": "node10",
+    "noEmit": true,
+    "noUncheckedIndexedAccess": false,
+    "rootDir": "..",
+    "types": ["node", "mocha", "chai", "chai-as-promised", "@nomicfoundation/hardhat-chai-matchers"],
+    "verbatimModuleSyntax": false
+  },
+  "include": ["hardhat.config.ts", "test/**/*.ts", "typechain-types/**/*.ts"],
+  "exclude": ["artifacts", "cache", "node_modules"]
+}

@@ -1,0 +1,25 @@
+node_modules
+dependencies
+*.tsbuildinfo
+cache
+# The local anvil snapshot from `npm run generate:genesis`. Not committed and not published: it is a
+# ~280 KB dev convenience for scripts/anvil-fast.sh, reproducible on demand, and it would go stale
+# silently against the contracts it snapshots.
+pkg/state
+
+pkg/ts/_cjs
+pkg/ts/_esm
+pkg/ts/_types
+pkg/ts/_types-cjs
+out
+tarball
+.vitest-cache/
+test/ts/node_modules
+.deploy-config
+broadcast
+.tmp-localhost
+
+# create2-deploy out dirs: one per (chain, deploymentId).
+# The seal inside them IS committed, deliberately and explicitly, with `git add -f` (plan section 9).
+.out
+.out-*
