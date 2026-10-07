@@ -95,7 +95,6 @@ ERROR_TABLES = {
 }
 
 
-
 def idl_spec_errors(root: pathlib.Path, which: str) -> list[str]:
     """Check the IDL format version of every IDL, on whichever side `which` names."""
     errors = []

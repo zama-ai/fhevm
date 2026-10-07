@@ -4,7 +4,6 @@ import { snakeCase } from 'codama';
 // crate's errors appear in no IDL and are raised by whichever app program links the crate, so
 // they render here from the crate's own table (build-zama-fhe-errors.sh), matched on the code.
 export function renderErrorTable(name, errors) {
-  if (errors.length === 0) throw new Error(`${name} error table is empty`);
   const prefix = `${snakeCase(name).toUpperCase()}_ERROR__`;
   const type = `${name[0].toUpperCase()}${name.slice(1)}Error`;
   const constant = ({ name }) => `${prefix}${snakeCase(name).toUpperCase()}`;

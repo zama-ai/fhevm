@@ -112,7 +112,7 @@ const targets = [
     // The zama-fhe crate's codes, which app programs return from the CPIs it builds.
     errorTable: {
       name: 'zamaFhe',
-      path: fileURLToPath(new URL('../../../../solana/crates/zama-fhe/idl/zama_fhe_errors.json', import.meta.url)),
+      path: `${sdkRoot}/../../solana/crates/zama-fhe/idl/zama_fhe_errors.json`,
     },
     keep: {
       instructions: new Set([

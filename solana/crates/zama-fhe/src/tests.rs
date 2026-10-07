@@ -391,9 +391,10 @@ fn finish_rejects_dictionary_index_past_dictionary_end() {
     );
 }
 
-/// A built and resolved one-output execution under a fresh authority, ready to invoke.
+/// A built one-output execution under a fresh authority, with that authority and the output's
+/// account.
 #[cfg(feature = "cpi")]
-fn resolved_execution() -> (FheExecution, ResolvedExecutionAccounts<'static>, Pubkey) {
+fn one_output_execution() -> (FheExecution, Pubkey, Pubkey) {
     let authority = Pubkey::new_unique();
     let input_key = test_store_slot(authority, 1);
     let output_key = test_store_slot(authority, 7);
@@ -404,7 +405,13 @@ fn resolved_execution() -> (FheExecution, ResolvedExecutionAccounts<'static>, Pu
     builder
         .output(result, store_output(output_key).allow(authority))
         .unwrap();
-    let execution = builder.finish().unwrap();
+    (builder.finish().unwrap(), authority, output_acl)
+}
+
+/// [`one_output_execution`], resolved and ready to invoke.
+#[cfg(feature = "cpi")]
+fn resolved_execution() -> (FheExecution, ResolvedExecutionAccounts<'static>, Pubkey) {
+    let (execution, authority, output_acl) = one_output_execution();
     let resolved = execution
         .resolve_accounts(
             vec![account_info(output_acl, true)],
@@ -438,14 +445,12 @@ fn cpi_accounts(
     }
 }
 
-/// Off-chain, `invoke_signed` reaches a stub that returns `Ok`, so each of these errors proves
-/// the check ran before the CPI.
 #[cfg(feature = "cpi")]
-fn assert_invoke_error(
-    result: anchor_lang::prelude::Result<()>,
+fn assert_crate_error(
+    error: anchor_lang::error::Error,
     expected: FheExecutionError,
 ) -> anchor_lang::error::AnchorError {
-    match result.unwrap_err() {
+    match error {
         anchor_lang::error::Error::AnchorError(error) => {
             assert_eq!(error.error_code_number, u32::from(expected));
             assert_eq!(error.error_name, expected.name());
@@ -455,13 +460,15 @@ fn assert_invoke_error(
     }
 }
 
+// Off-chain, `invoke_signed` reaches a stub that returns `Ok`, so each invoke error below proves
+// the check ran before the CPI.
 #[cfg(feature = "cpi")]
 #[test]
 fn invoke_refuses_a_program_other_than_zama_host() {
     let (execution, resolved, authority) = resolved_execution();
     let substitute = Pubkey::new_unique();
     let result = execution.invoke(cpi_accounts(substitute, authority, 0), &resolved, &[]);
-    let error = assert_invoke_error(result, FheExecutionError::HostProgramMismatch);
+    let error = assert_crate_error(result.unwrap_err(), FheExecutionError::HostProgramMismatch);
     match error.compared_values {
         Some(anchor_lang::error::ComparedValues::Pubkeys((received, expected))) => {
             assert_eq!((received, expected), (substitute, zama_host::ID));
@@ -479,7 +486,10 @@ fn invoke_refuses_an_authority_other_than_the_execution_authority() {
         &resolved,
         &[],
     );
-    assert_invoke_error(result, FheExecutionError::ExecutionAuthorityMismatch);
+    assert_crate_error(
+        result.unwrap_err(),
+        FheExecutionError::ExecutionAuthorityMismatch,
+    );
 }
 
 #[cfg(feature = "cpi")]
@@ -494,18 +504,62 @@ fn invoke_reports_too_many_accounts_once_deny_records_are_appended() {
         &resolved,
         &[],
     );
-    assert_invoke_error(result, FheExecutionError::TooManyRemainingAccounts);
+    assert_crate_error(
+        result.unwrap_err(),
+        FheExecutionError::TooManyRemainingAccounts,
+    );
 }
 
 #[cfg(feature = "cpi")]
 #[test]
 fn resolution_errors_convert_to_their_crate_codes() {
-    let (execution, _, authority) = resolved_execution();
-    let error: anchor_lang::error::Error = execution
-        .resolve_accounts(Vec::new(), vec![account_info(authority, false)])
-        .unwrap_err()
-        .into();
-    assert_invoke_error(Err(error), FheExecutionError::MissingDynamicAccount);
+    let (execution, authority, output_acl) = one_output_execution();
+    let output = || account_info(output_acl, true);
+    let signer = || account_info(authority, false);
+    let stranger = || account_info(Pubkey::new_unique(), false);
+    let cases = [
+        (
+            vec![output(), output()],
+            vec![signer()],
+            FheExecutionError::DuplicateDynamicAccount,
+        ),
+        (
+            vec![output(), stranger()],
+            vec![signer()],
+            FheExecutionError::UnexpectedDynamicAccount,
+        ),
+        (
+            vec![],
+            vec![signer()],
+            FheExecutionError::MissingDynamicAccount,
+        ),
+        (
+            vec![account_info(output_acl, false)],
+            vec![signer()],
+            FheExecutionError::DynamicAccountNotWritable,
+        ),
+        (
+            vec![output()],
+            vec![signer(), signer()],
+            FheExecutionError::DuplicateStoreAuthority,
+        ),
+        (
+            vec![output()],
+            vec![signer(), stranger()],
+            FheExecutionError::UnexpectedStoreAuthority,
+        ),
+        (
+            vec![output()],
+            vec![],
+            FheExecutionError::MissingStoreAuthority,
+        ),
+    ];
+    for (dynamic_accounts, authorities, expected) in cases {
+        let error = execution
+            .resolve_accounts(dynamic_accounts, authorities)
+            .unwrap_err();
+        assert_crate_error(error.into(), expected);
+    }
 }
 
 #[test]
@@ -516,20 +570,7 @@ fn error_codes_start_at_the_reserved_offset() {
 #[cfg(feature = "cpi")]
 #[test]
 fn resolve_accounts_requires_the_cpi_authority_witness() {
-    let primary_authority = Pubkey::new_unique();
-    let input_key = test_store_slot(primary_authority, 1);
-    let output_key = test_store_slot(primary_authority, 7);
-    let output_acl = output_key.address();
-    let balance = typed_store_slot::<Uint<64>>(balance_handle(1), input_key).unwrap();
-    let mut builder = FheExecutionBuilder::new(execution_authority(primary_authority));
-    builder
-        .add(balance, Scalar::<Uint<64>>::u64(1))
-        .and_then(|result| {
-            builder.output(result, store_output(output_key).allow(primary_authority))?;
-            Ok(result)
-        })
-        .unwrap();
-    let execution = builder.finish().unwrap();
+    let (execution, primary_authority, output_acl) = one_output_execution();
 
     // The execution's own authority is an output authority like any other: the caller passes its
     // account info, and leaving it out is an error rather than something the SDK fills in.

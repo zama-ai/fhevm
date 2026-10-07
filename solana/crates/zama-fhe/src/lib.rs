@@ -71,7 +71,7 @@ pub type Result<T> = std::result::Result<T, FheExecutionError>;
 /// Every failure this crate reports, from building an execution through invoking the host. Codes
 /// start at 10_000, clear of Anchor's own (below 6000) and of every program's `#[error_code]`
 /// range (6000 up), so an app program can return them with `?` and its clients still tell them
-/// apart from its own. Variants are only ever appended: the code is the position.
+/// apart from its own.
 #[error_code(offset = 10_000)]
 #[derive(PartialEq, Eq)]
 pub enum FheExecutionError {
@@ -198,9 +198,11 @@ pub enum FheExecutionError {
     #[msg("A value authority required by the execution was not supplied")]
     MissingStoreAuthority,
     /// The program account passed for the CPI is not the zama-host program.
-    #[msg("The host program account is not zama-host")]
+    #[msg("The host program account is not zama-host (Left: received, Right: expected)")]
     HostProgramMismatch,
     /// The authority account passed for the CPI is not the authority the execution was built for.
-    #[msg("The authority account is not the execution's authority")]
+    #[msg(
+        "The authority account is not the execution's authority (Left: received, Right: expected)"
+    )]
     ExecutionAuthorityMismatch,
 }

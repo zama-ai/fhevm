@@ -192,11 +192,11 @@
   {
     "code": 10038,
     "name": "HostProgramMismatch",
-    "msg": "The host program account is not zama-host"
+    "msg": "The host program account is not zama-host (Left: received, Right: expected)"
   },
   {
     "code": 10039,
     "name": "ExecutionAuthorityMismatch",
-    "msg": "The authority account is not the execution's authority"
+    "msg": "The authority account is not the execution's authority (Left: received, Right: expected)"
   }
 ]
