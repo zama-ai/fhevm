@@ -1059,7 +1059,7 @@ for entry in open(sys.argv[1]):
 quote = r"[\"'`]"
 anchor_literal = quote + r"(?:global|account|event):[^\"'`]*" + quote
 hash_call = r"(?:\b(?:createHash|hash|sha256|digest|discriminator)\b|\.update\s*\()"
-byte_array = re.compile(r"\b\w*DISCRIMINATOR\w*\b(?:[^=;]|\[[^\]]*;[^\]]*\])*=\s*(?:(?:new\s+Uint8Array|Uint8Array\.from)\s*\(\s*)?\[([^\]]*)\]", re.I)
+byte_array = re.compile(r"\b\w*DISCRIMINATOR\w*\b(?:[^=;]|\[[^\]]*;[^\]]*\])*=\s*(?:(?:(?:new\s+Uint8Array|Uint8Array\.from)\s*\(\s*)?\[([^\]]*)\]|Uint8Array\.of\s*\(([^)]*)\))", re.I)
 for path, lines in files.items():
     code = "\n".join(text for _, text in lines)
     hits = set()
@@ -1069,7 +1069,7 @@ for path, lines in files.items():
             for literal in re.finditer(anchor_literal, statement[0]):
                 hits.add(code.count("\n", 0, statement.start() + literal.start()))
     for match in byte_array.finditer(code):
-        values = [value.strip() for value in match[1].split(",") if value.strip()]
+        values = [value.strip() for value in (match[1] or match[2] or "").split(",") if value.strip()]
         if len(values) == 8 and all(re.fullmatch(r"(?:[0-9]+|0[xX][0-9a-fA-F]+)", value) and 0 <= int(value, 16 if value.lower().startswith("0x") else 10) <= 255 for value in values):
             hits.add(code.count("\n", 0, match.start()))
     for hit in sorted(hits):
@@ -1325,6 +1325,10 @@ const PREVIEW_DISCRIMINATOR = new Uint8Array([
 ]);
 FIXTURE
   expect_fires "Anchor discriminator sweep (byte array)" "HAND-WRITTEN PDA/ANCHOR COPY: ${bytes_fixture} has 1" "" 8 bash "$SELF"
+  cat > "$bytes_fixture" <<'FIXTURE'
+export const PREVIEW_DISCRIMINATOR = Uint8Array.of(1, 2, 3, 4, 5, 6, 7, 8);
+FIXTURE
+  expect_fires "Anchor discriminator sweep (Uint8Array.of)" "HAND-WRITTEN PDA/ANCHOR COPY: ${bytes_fixture} has 1" "" 8 bash "$SELF"
   rm -f "$hash_fixture" "$bytes_fixture"
   pending_burn_fixture="solana/programs/confidential-token/src/dead_surface_selftest.rs"
   printf 'pub const S: &[u8] = b"pending-burn";\n' > "$pending_burn_fixture"

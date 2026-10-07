@@ -19,12 +19,13 @@ import { decodeSolanaEncryptedStore, isSolanaEncryptedStoreData } from '../encry
 import { createRetainedMmr, storeLeafCommitment, type RetainedMmr, type SolanaStoreHistoryEvent } from './mmr.js';
 import {
   FHE_EXECUTE_DISCRIMINATOR,
+  FHE_EXECUTED_EVENT_DISCRIMINATOR,
   getFheExecutedEventDecoder,
   MAKE_STORE_HANDLE_PUBLIC_DISCRIMINATOR,
   parseFheExecuteInstruction,
   parseMakeStoreHandlePublicInstruction,
 } from '@fhevm/solana-zama-host';
-import { EVENT_IX_TAG, EVENT_VERSION, FHE_EXECUTED_EVENT_DISCRIMINATOR } from '../internal/hostConstants.js';
+import { EVENT_IX_TAG, EVENT_VERSION } from '../internal/hostConstants.js';
 
 ////////////////////////////////////////////////////////////////////////////////
 

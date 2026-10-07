@@ -3,8 +3,6 @@
 //! file differs, so a change here reaches the SDK or fails CI.
 //! `ZAMA_UPDATE_SDK_CONSTANTS=1` rewrites the file.
 
-use anchor_lang::Discriminator;
-
 use super::layout::{
     ENTRY_LEN, ENTRY_VALUE_OFFSET, HISTORY_RECORD_LEN, MAGIC, RECORDED, STORE_ACCOUNT_SIZE,
     STORE_HISTORY_COUNT_OFFSET, STORE_HISTORY_LEN, STORE_HISTORY_OFFSET, STORE_SECTION_OFFSET,
@@ -12,7 +10,6 @@ use super::layout::{
 };
 use super::value_len;
 use crate::eip712::{CIPHERTEXT_VERIFICATION_TYPE, DOMAIN_TYPE};
-use crate::events::FheExecutedEvent;
 use crate::EVENT_VERSION;
 
 const SDK_FILE: &str = concat!(
@@ -57,7 +54,6 @@ export const INPUT_VALUE_LEN: Readonly<Partial<Record<number, number>>> = {{ {in
 
 /** Anchor's `EVENT_IX_TAG_LE`, which heads every event the host emits by self-CPI. */
 export const EVENT_IX_TAG = {event_ix_tag};
-export const FHE_EXECUTED_EVENT_DISCRIMINATOR = {fhe_executed};
 export const EVENT_VERSION = {EVENT_VERSION};
 
 /** `eip712`: the domain type of every certificate the host verifies, and the input attestation's type. */
@@ -68,7 +64,6 @@ export const CIPHERTEXT_VERIFICATION_TYPE =
         magic = text(&MAGIC),
         input_value_lens = input_value_lens.join(", "),
         event_ix_tag = bytes(anchor_lang::event::EVENT_IX_TAG_LE),
-        fhe_executed = bytes(FheExecutedEvent::DISCRIMINATOR),
         domain_type = text(DOMAIN_TYPE),
         ciphertext_verification_type = text(CIPHERTEXT_VERIFICATION_TYPE),
     )

@@ -461,7 +461,7 @@ for (const target of targets) {
   writeFileSync(`${temporaryGeneratedPath}/programAddress.ts`, target.programAddress(program, anchorIdl));
   writeFileSync(
     `${temporaryGeneratedPath}/constants.ts`,
-    renderProgramConstants(program.constants, anchorIdl.constants ?? []),
+    renderProgramConstants(program.constants, anchorIdl.constants ?? [], anchorIdl.events ?? []),
   );
   rmSync(`${temporaryGeneratedPath}/programs`, { force: true, recursive: true });
   rmSync(`${temporaryGeneratedPath}/index.ts`, { force: true });
