@@ -7,9 +7,10 @@
 //
 // Usage: npx ts-node --transpile-only scripts/generate-coprocessor-config.ts [--no-compile]
 import dotenv from 'dotenv';
-import { ZeroAddress, getAddress } from 'ethers';
 import { writeFileSync } from 'fs';
 import { resolve } from 'path';
+
+import { readAddress } from './env-validation';
 
 const ENABLE_FLAG = 'E2E_COPROCESSOR_CONFIG_FROM_ENV';
 const OUTPUT_PATH = resolve(__dirname, '..', 'contracts', 'E2ECoprocessorConfigLocal.sol');
@@ -45,24 +46,8 @@ const readAddresses = (): CoprocessorAddresses => {
   const addresses: Partial<CoprocessorAddresses> = {};
 
   for (const [key, name] of Object.entries(REQUIRED_VARS) as [keyof CoprocessorAddresses, string][]) {
-    const value = process.env[name]?.trim();
-    if (!value) {
-      errors.push(`${name} is not set`);
-      continue;
-    }
-    let address: string;
-    try {
-      // getAddress also normalizes to the EIP-55 checksum that solc requires for address literals.
-      address = getAddress(value);
-    } catch {
-      errors.push(`${name} is not a valid address (or has a bad checksum): ${value}`);
-      continue;
-    }
-    if (address === ZeroAddress) {
-      errors.push(`${name} is the zero address`);
-      continue;
-    }
-    addresses[key] = address;
+    const address = readAddress(name, errors);
+    if (address) addresses[key] = address;
   }
 
   if (errors.length) fail(errors);

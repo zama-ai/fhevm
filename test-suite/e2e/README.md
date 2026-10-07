@@ -40,6 +40,45 @@ npm run sdk:registry -- 0.13.2
 Both commands wrap `scripts/install-sdk.sh` (`local`/`registry` modes) — see
 its header comment for details.
 
+## Selecting a chain (`run-tests.sh --chain`)
+
+One container can hold the env vars of several chains and run the tests against any of them:
+
+```shell
+./run-tests.sh --chain bnb -g "test user decrypt"
+```
+
+| `--chain`         | Hardhat network | Chain id |
+| ----------------- | --------------- | -------- |
+| `eth`             | `sepolia`       | 11155111 |
+| `polygon`         | `polygonAmoy`   | 80002    |
+| `bnb`             | `bnbTestnet`    | 97       |
+| `hoodi`           | `hoodi`         | 560048   |
+| `eth-mainnet`     | `mainnet`       | 1        |
+| `polygon-mainnet` | `polygon`       | 137      |
+| `bnb-mainnet`     | `bnb`           | 56       |
+
+The environment (DevNet, Testnet, Mainnet) comes from the env vars themselves; only mainnet chains need the
+`-mainnet` suffix. Each chain reads its own prefixed vars (`ETH_`, `POLYGON_`, `BNB_`, `HOODI_`):
+
+- required: `<PREFIX>_ACL_CONTRACT_ADDRESS`, `<PREFIX>_FHEVM_EXECUTOR_CONTRACT_ADDRESS`,
+  `<PREFIX>_KMS_VERIFIER_CONTRACT_ADDRESS`, `<PREFIX>_INPUT_VERIFIER_CONTRACT_ADDRESS`,
+  `<PREFIX>_PROTOCOL_CONFIG_CONTRACT_ADDRESS`, `<PREFIX>_RPC_URL`
+- optional: `<PREFIX>_HCU_LIMIT_CONTRACT_ADDRESS`
+- shared (unprefixed): `CHAIN_ID_GATEWAY`, `DECRYPTION_ADDRESS`, `INPUT_VERIFICATION_ADDRESS`, `RELAYER_URL`, `MNEMONIC`
+
+`scripts/resolve-chain-env.ts` validates them all before anything else runs: if one is missing or invalid, the run
+fails and lists every problem. Otherwise it exports the unprefixed vars, the network and the chain id, and enables the
+coprocessor config generator (`E2E_COPROCESSOR_CONFIG_FROM_ENV=true`).
+
+Only one `--chain` run is allowed per container at a time: the run holds `e2e.lock` (next to `run-tests.sh`) and a
+second run fails immediately, showing who holds it. A lock left by a run that was killed is detected and replaced.
+Without `--chain`, `run-tests.sh` behaves as before and does not take the lock, so avoid mixing such runs with `--chain`
+runs in the same container. `--chain` cannot be combined with `--no-hardhat-compile`.
+
+Known limitation: other per-chain values that the tests read unprefixed, such as `TEST_INPUT_CONTRACT_ADDRESS` or the
+bridge addresses, are not handled by `--chain`.
+
 ## Unified user-decryption suites
 
 E2E coverage for ERC-1271 smart-account signature verification and the unified
