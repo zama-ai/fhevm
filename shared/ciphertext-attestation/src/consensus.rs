@@ -1,29 +1,9 @@
 //! Attestation consensus evaluation module.
 
-use crate::{CiphertextAttestation, CiphertextFormat};
+use crate::{CiphertextAttestation, ConsensusMaterial};
 use alloy_primitives::{Address, B256, U256};
 use std::{collections::HashMap, num::NonZeroUsize};
 use tracing::{trace, warn};
-
-/// The ciphertext material a consensus group agreed on.
-#[derive(Clone, Debug, Hash, PartialEq, Eq, PartialOrd, Ord)]
-pub struct ConsensusMaterial {
-    pub key_id: U256,
-    pub ciphertext_digest: B256,
-    pub sns_ciphertext_digest: B256,
-    pub format: CiphertextFormat,
-}
-
-impl From<&CiphertextAttestation> for ConsensusMaterial {
-    fn from(att: &CiphertextAttestation) -> Self {
-        Self {
-            key_id: att.key_id,
-            ciphertext_digest: att.ciphertext_digest,
-            sns_ciphertext_digest: att.sns_ciphertext_digest,
-            format: att.format,
-        }
-    }
-}
 
 /// The on-chain identity of a registered Coprocessor.
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -287,7 +267,7 @@ fn format_addrs(addrs: &[Address]) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::{CiphertextAttestationPayload, Version};
+    use crate::{CiphertextAttestationPayload, CiphertextFormat, Version};
     use alloy_signer_local::PrivateKeySigner;
 
     const HANDLE: B256 = B256::repeat_byte(0xAA);
