@@ -41,6 +41,7 @@ declare_id!("HFx5mNcWLvhj2WU8CA9QEhuW6BZVNwA3g7UvPwVzfHx4");
 /// The deepest chain one `extend` can carry: the host's `MAX_FHE_EXECUTION_STEPS`, the one step
 /// ceiling for executions built on-chain and off (see the module docs — extending at this depth
 /// is what verifies the maximum execution fits the fixed program heap).
+#[constant]
 pub const MAX_CHAIN_LINKS: u8 = 32;
 
 /// `extend` promises exactly the host's ceiling; if the host's cap moves, this program's
@@ -240,3 +241,11 @@ pub struct Extend<'info> {
     pub zama_program: Program<'info, ZamaHost>,
     pub system_program: Program<'info, System>,
 }
+
+#[cfg(test)]
+mod pda_vectors {
+    include!("../../../test-fixtures/pda/pda_vectors.rs");
+}
+
+#[cfg(test)]
+mod pda_golden;

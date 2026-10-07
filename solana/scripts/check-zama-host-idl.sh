@@ -45,6 +45,8 @@ if LC_ALL=C grep -qaF "$marker" target/deploy/zama_host.so; then
   exit 1
 fi
 
+bash "$ROOT/scripts/build-demo-idls.sh"
+
 python3 scripts/check_solana_abi.py --root "$ROOT"
 python3 scripts/authority_table.py --root "$ROOT"
 

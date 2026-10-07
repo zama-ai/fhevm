@@ -13,6 +13,7 @@ use super::*;
 
 /// Accounts for opening a batch.
 #[derive(Accounts)]
+#[instruction(index: u64)]
 pub struct OpenBatch<'info> {
     /// Pays batch-account rent and the batch authority funding.
     #[account(mut)]
@@ -28,7 +29,7 @@ pub struct OpenBatch<'info> {
         init,
         payer = payer,
         space = 8 + Batch::SPACE,
-        seeds = [BATCH_SEED, batcher.key().as_ref(), &batcher.next_batch_index.to_le_bytes()],
+        seeds = [BATCH_SEED, batcher.key().as_ref(), &index.to_le_bytes()],
         bump,
     )]
     pub batch: Box<Account<'info, Batch>>,
@@ -101,8 +102,16 @@ pub struct OpenBatch<'info> {
 }
 
 /// Creates the batch and both of its confidential token accounts.
-pub fn open_batch(ctx: Context<OpenBatch>, authority_funding_lamports: u64) -> Result<()> {
-    let index = ctx.accounts.batcher.next_batch_index;
+pub fn open_batch(
+    ctx: Context<OpenBatch>,
+    index: u64,
+    authority_funding_lamports: u64,
+) -> Result<()> {
+    require_eq!(
+        index,
+        ctx.accounts.batcher.next_batch_index,
+        BatcherError::BatchIndexMismatch
+    );
     require_keys_eq!(
         ctx.accounts.join_confidential_mint.key(),
         ctx.accounts.batcher.join_confidential_mint,

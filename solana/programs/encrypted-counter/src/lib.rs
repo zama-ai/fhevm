@@ -201,3 +201,11 @@ pub struct Increment<'info> {
     pub zama_program: Program<'info, ZamaHost>,
     pub system_program: Program<'info, System>,
 }
+
+#[cfg(test)]
+mod pda_vectors {
+    include!("../../../test-fixtures/pda/pda_vectors.rs");
+}
+
+#[cfg(test)]
+mod pda_golden;

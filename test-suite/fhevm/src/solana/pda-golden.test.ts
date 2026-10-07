@@ -1,11 +1,23 @@
+import * as batcherPdas from "../../../../solana/demo-dapp/src/vault/internal/generated/confidentialBatcher/pdas/index.js";
+import * as vaultPdas from "../../../../solana/demo-dapp/src/vault/internal/generated/demoVault/pdas/index.js";
+import * as chainPdas from "./internal/generated/depChain/pdas/index.js";
+import * as counterPdas from "./internal/generated/encryptedCounter/pdas/index.js";
+import { CONFIDENTIAL_BATCHER_PROGRAM_ADDRESS } from "../../../../solana/demo-dapp/src/vault/internal/generated/confidentialBatcher/programAddress.js";
+import { DEMO_VAULT_PROGRAM_ADDRESS } from "../../../../solana/demo-dapp/src/vault/internal/generated/demoVault/programAddress.js";
+import { DEP_CHAIN_PROGRAM_ADDRESS } from "./internal/generated/depChain/programAddress.js";
+import { ENCRYPTED_COUNTER_PROGRAM_ADDRESS } from "./internal/generated/encryptedCounter/programAddress.js";
+import { getOpenBatchInstructionAsync, parseOpenBatchInstruction } from "../../../../solana/demo-dapp/src/vault/internal/generated/confidentialBatcher/instructions/openBatch.js";
+import { getInitializeVaultInstructionAsync, parseInitializeVaultInstruction } from "../../../../solana/demo-dapp/src/vault/internal/generated/demoVault/instructions/initializeVault.js";
+import { getInitializeInstructionAsync as initializeChain, parseInitializeInstruction as parseChain } from "./internal/generated/depChain/instructions/initialize.js";
+import { getInitializeInstructionAsync as initializeCounter, parseInitializeInstruction as parseCounter } from "./internal/generated/encryptedCounter/instructions/initialize.js";
 import { describe, expect, it } from "bun:test";
-import { address, createNoopSigner, type ProgramDerivedAddress } from "@solana/kit";
+import { address, createNoopSigner, getProgramDerivedAddress, type ProgramDerivedAddress } from "@solana/kit";
 import * as host from "@fhevm/solana-zama-host";
 import * as token from "@fhevm/confidential-token";
 import fixture from "../../../../solana/test-fixtures/pda/pda_v1.json";
 
 const input = fixture.inputs;
-const key = (name: Exclude<keyof typeof input, "contextId">) => address(input[name]);
+const key = (name: Exclude<keyof typeof input, "contextId" | "batchIndex">) => address(input[name]);
 
 async function check(
   expected: { id: string; pdas: Record<string, { address: string; bump: number }> },
@@ -101,4 +113,97 @@ describe("program-owned PDA golden", () => {
     expect(explicit.accounts.hcuTrustedAppRecord).toBeUndefined();
   });
 
+});
+
+
+describe("demo and specimen PDA golden", () => {
+  const index = BigInt(input.batchIndex);
+
+  it("pins every confidential-batcher recipe", async () => {
+    const batch = (await batcherPdas.findBatchPda({ batcher: key("batcher"), index }))[0];
+    await check(fixture.programs.confidentialBatcher, CONFIDENTIAL_BATCHER_PROGRAM_ADDRESS, {
+      batch: batcherPdas.findBatchPda({ batcher: key("batcher"), index }),
+      batchAuthority: batcherPdas.findBatchAuthorityPda({ batch }),
+      joinRecord: batcherPdas.findJoinRecordPda({ batch, user: key("user") }),
+      batchJoinUnderlying: batcherPdas.findBatchJoinUnderlyingPda({ batch }),
+      batchPayoutUnderlying: batcherPdas.findBatchPayoutUnderlyingPda({ batch }),
+    });
+  });
+
+  it("pins every demo-vault recipe", async () => {
+    await check(fixture.programs.demoVault, DEMO_VAULT_PROGRAM_ADDRESS, {
+      vaultAuthority: vaultPdas.findVaultAuthorityPda({ vault: key("vault") }),
+      shareMint: vaultPdas.findShareMintPda({ vault: key("vault") }),
+      vaultTokenAccount: vaultPdas.findVaultTokenAccountPda({ vault: key("vault") }),
+    });
+  });
+
+  it("pins every specimen recipe", async () => {
+    const chain = (await chainPdas.findChainPda({ owner: key("owner") }))[0];
+    await check(fixture.programs.depChain, DEP_CHAIN_PROGRAM_ADDRESS, {
+      chain: chainPdas.findChainPda({ owner: key("owner") }),
+      chainAuthority: chainPdas.findChainAuthorityPda({ chain }),
+    });
+    const counter = (await counterPdas.findCounterPda({ owner: key("owner") }))[0];
+    await check(fixture.programs.encryptedCounter, ENCRYPTED_COUNTER_PROGRAM_ADDRESS, {
+      counter: counterPdas.findCounterPda({ owner: key("owner") }),
+      counterAuthority: counterPdas.findCounterAuthorityPda({ counter }),
+    });
+  });
+
+  for (const override of [undefined, key("program")]) {
+    it(`binds open_batch defaults and seed encoders to ${override ?? "the default program"}`, async () => {
+      const programAddress = override ?? CONFIDENTIAL_BATCHER_PROGRAM_ADDRESS;
+      const config = { programAddress };
+      const batch = await batcherPdas.findBatchPda({ batcher: key("batcher"), index }, config);
+      const authority = await batcherPdas.findBatchAuthorityPda({ batch: batch[0] }, config);
+      const instruction = await getOpenBatchInstructionAsync({
+        payer: createNoopSigner(key("payer")), batcher: key("batcher"), index,
+        joinConfidentialMint: key("mint"), batchJoinTokenAccount: key("tokenAccount"),
+        batchJoinBalanceStore: key("authority"), payoutConfidentialMint: key("mint"),
+        batchPayoutTokenAccount: key("tokenAccount"), batchPayoutBalanceStore: key("authority"),
+        joinUnderlyingMint: key("mint"), payoutUnderlyingMint: key("mint"),
+        zamaEventAuthority: key("authority"), transientStore: key("authority"),
+        instructions: address("Sysvar1nstructions1111111111111111111111111"),
+        hostConfig: key("authority"), confidentialTokenEventAuthority: key("authority"),
+        authorityFundingLamports: 0n,
+      }, config);
+      const parsed = parseOpenBatchInstruction(instruction);
+      expect(instruction.programAddress).toBe(programAddress);
+      expect(parsed.data.index).toBe(index);
+      expect(parsed.accounts.batch.address).toBe(batch[0]);
+      expect(parsed.accounts.batchAuthority.address).toBe(authority[0]);
+      expect(parsed.accounts.batchJoinUnderlying.address).toBe((await batcherPdas.findBatchJoinUnderlyingPda({ batch: batch[0] }, config))[0]);
+      expect(parsed.accounts.batchPayoutUnderlying.address).toBe((await batcherPdas.findBatchPayoutUnderlyingPda({ batch: batch[0] }, config))[0]);
+      expect(await getProgramDerivedAddress({ programAddress, seeds: batcherPdas.getBatchAuthorityPdaSeeds({ batch: batch[0] }) })).toEqual(authority);
+    });
+
+    it(`binds vault and specimen defaults to ${override ?? "their default programs"}`, async () => {
+      const programAddress = override ?? DEMO_VAULT_PROGRAM_ADDRESS;
+      const config = { programAddress };
+      const vault = key("vault");
+      const instruction = await getInitializeVaultInstructionAsync({ payer: createNoopSigner(key("payer")), vault: createNoopSigner(vault), underlyingMint: key("mint") }, config);
+      const parsed = parseInitializeVaultInstruction(instruction).accounts;
+      const authority = await vaultPdas.findVaultAuthorityPda({ vault }, config);
+      expect(parsed.vaultAuthority.address).toBe(authority[0]);
+      expect(parsed.shareMint.address).toBe((await vaultPdas.findShareMintPda({ vault }, config))[0]);
+      expect(parsed.vaultTokenAccount.address).toBe((await vaultPdas.findVaultTokenAccountPda({ vault }, config))[0]);
+      expect(await getProgramDerivedAddress({ programAddress, seeds: vaultPdas.getVaultAuthorityPdaSeeds({ vault }) })).toEqual(authority);
+      const specimenInput = {
+        owner: createNoopSigner(key("owner")), encryptedStore: key("authority"), hostConfig: key("authority"),
+        zamaEventAuthority: key("authority"), transientStore: key("authority"),
+        instructions: address("Sysvar1nstructions1111111111111111111111111"),
+      };
+      const chainConfig = { programAddress: override ?? DEP_CHAIN_PROGRAM_ADDRESS };
+      const chain = (await chainPdas.findChainPda({ owner: key("owner") }, chainConfig))[0];
+      const chainAccounts = parseChain(await initializeChain(specimenInput, chainConfig)).accounts;
+      expect(chainAccounts.chain.address).toBe(chain);
+      expect(chainAccounts.chainAuthority.address).toBe((await chainPdas.findChainAuthorityPda({ chain }, chainConfig))[0]);
+      const counterConfig = { programAddress: override ?? ENCRYPTED_COUNTER_PROGRAM_ADDRESS };
+      const counter = (await counterPdas.findCounterPda({ owner: key("owner") }, counterConfig))[0];
+      const counterAccounts = parseCounter(await initializeCounter(specimenInput, counterConfig)).accounts;
+      expect(counterAccounts.counter.address).toBe(counter);
+      expect(counterAccounts.counterAuthority.address).toBe((await counterPdas.findCounterAuthorityPda({ counter }, counterConfig))[0]);
+    });
+  }
 });

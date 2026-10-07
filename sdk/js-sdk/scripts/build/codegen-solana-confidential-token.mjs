@@ -209,6 +209,8 @@ const targets = [
         'claim',
         'reclaimBatchAuthority',
         'closeJoinRecord',
+        'previewCloseToken',
+        'previewDrain',
       ]),
       // Anchor inlines the CoprocessorInputAttestation (join) struct directly into the instruction
       // data. Keep the initializeBatcher direction enum plus batchStatus, which the Batch account
@@ -218,11 +220,7 @@ const targets = [
       // vault + min_batch_age_slots + next_batch_index), Batch (status + opened_slot + join_count +
       // burned_total_handle), and JoinRecord (per-user claim state).
       accounts: new Set(['batch', 'batcher', 'joinRecord']),
-      // Keep every batch-scoped PDA the generated builders resolve (batchAuthority, joinRecord, and
-      // the two plain-SPL accounts): all seed only on the batch (and user), never on the batcher's
-      // next_batch_index, so their find* helpers are pure derivations. The `batch` PDA itself seeds
-      // on batcher.next_batch_index and Codama does not emit a resolver for it — callers pass it in.
-      pdas: new Set(['batchAuthority', 'joinRecord', 'batchJoinUnderlying', 'batchPayoutUnderlying']),
+      pdas: new Set(['batch', 'batchAuthority', 'joinRecord', 'batchJoinUnderlying', 'batchPayoutUnderlying']),
     },
     programAddress(program) {
       return (
@@ -240,7 +238,7 @@ const targets = [
     idlPath: demoIdlUrl('demo_vault.json'),
     generatedPath: `${sdkRoot}/../../solana/demo-dapp/src/vault/internal/generated/demoVault`,
     keep: {
-      instructions: new Set(['initializeVault', 'harvest']),
+      instructions: new Set(['initializeVault', 'harvest', 'previewCloseToken', 'previewDrain']),
       definedTypes: new Set(),
       accounts: new Set(['vault']),
       pdas: new Set(['vaultAuthority', 'shareMint', 'vaultTokenAccount']),
@@ -417,7 +415,16 @@ for (const target of targets) {
   }
   // Codama's linked PDA resolver drops the instruction's programAddress override.
   // Inline same-program PDA definitions while preserving their argument seed bindings.
-  if (target.idlPath === idlUrl('zama_host.json')) {
+  // Confidential-token's foreign host PDA links would be rebound to the token program here.
+  if (
+    [
+      idlUrl('zama_host.json'),
+      demoIdlUrl('confidential_batcher.json'),
+      demoIdlUrl('demo_vault.json'),
+      specimenIdlUrl('dep-chain', 'dep_chain.json'),
+      specimenIdlUrl('encrypted-counter', 'encrypted_counter.json'),
+    ].includes(target.idlPath)
+  ) {
     const updates = Object.fromEntries(
       codama.getRoot().program.instructions.map(({ name, accounts }) => [
         name,
@@ -459,9 +466,15 @@ for (const target of targets) {
 
   // The SDK builds with NodeNext. Codama renders extensionless relative imports, so make its
   // deterministic output executable without hand-editing generated files.
-  // Recovery needs the canonical seeds to sign for these two authorities.
+  // Recovery needs the canonical signing seeds.
   const seedEncoderFiles = new Set(
-    target.idlPath === idlUrl('confidential_token.json') ? ['vaultAuthority.ts', 'totalSupplyAuthority.ts'] : [],
+    target.idlPath === idlUrl('confidential_token.json')
+      ? ['vaultAuthority.ts', 'totalSupplyAuthority.ts']
+      : target.idlPath === demoIdlUrl('confidential_batcher.json')
+        ? ['batchAuthority.ts']
+        : target.idlPath === demoIdlUrl('demo_vault.json')
+          ? ['vaultAuthority.ts']
+          : [],
   );
   for (const entry of readdirSync(temporaryGeneratedPath, { recursive: true, withFileTypes: true })) {
     if (!entry.isFile() || !entry.name.endsWith('.ts')) continue;

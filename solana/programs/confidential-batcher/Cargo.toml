@@ -35,3 +35,6 @@ demo-vault = { path = "../demo-vault", features = ["cpi"] }
 solana-sha256-hasher = "3.1.0"
 zama-fhe = { path = "../../crates/zama-fhe", features = ["cpi"] }
 zama-host = { path = "../zama-host", features = ["cpi"] }
+
+[dev-dependencies]
+serde_json = "1"

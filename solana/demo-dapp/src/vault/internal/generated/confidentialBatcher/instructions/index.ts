@@ -13,6 +13,8 @@ export * from './dispatch.js';
 export * from './initializeBatcher.js';
 export * from './join.js';
 export * from './openBatch.js';
+export * from './previewCloseToken.js';
+export * from './previewDrain.js';
 export * from './quit.js';
 export * from './reclaimBatchAuthority.js';
 export * from './settle.js';

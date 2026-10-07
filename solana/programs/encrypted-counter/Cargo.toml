@@ -21,3 +21,6 @@ idl-build = ["anchor-lang/idl-build", "zama-host/idl-build"]
 anchor-lang = "1.2.0"
 zama-fhe = { path = "../../crates/zama-fhe", features = ["cpi"] }
 zama-host = { path = "../zama-host", features = ["cpi"] }
+
+[dev-dependencies]
+serde_json = "1"

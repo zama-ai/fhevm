@@ -1,21 +1,11 @@
-import { getProgramDerivedAddress, getU64Encoder, type Address } from '@solana/kit';
-import { base58 } from '@scure/base';
+import type { Address } from '@solana/kit';
+import { findBatchPda } from './generated/confidentialBatcher/pdas/batch.js';
 import { findJoinRecordPda } from './generated/confidentialBatcher/pdas/joinRecord.js';
 
 import { solanaEncryptedStoreAddress } from '@fhevm/sdk/solana';
 import { ZAMA_HOST_PROGRAM_ADDRESS } from '@fhevm/solana-zama-host';
 import { CONFIDENTIAL_BATCHER_PROGRAM_ADDRESS } from './generated/confidentialBatcher/programAddress.js';
 import { CONFIDENTIAL_TOKEN_PROGRAM_ADDRESS, findPendingBurnPda, findTokenAccountPda } from '@fhevm/confidential-token';
-
-const encoder = new TextEncoder();
-const BATCH_SEED = encoder.encode('batch');
-async function pda(programAddress: Address, seeds: Uint8Array[]): Promise<Address> {
-  return (await getProgramDerivedAddress({ programAddress, seeds }))[0];
-}
-
-function addressBytes(value: Address): Uint8Array {
-  return base58.decode(value);
-}
 
 /**
  * The canonical `EncryptedStore` PDA of a confidential-token value: the token program's value,
@@ -32,11 +22,7 @@ export function tokenStateAddress(mint: Address, authority: Address): Promise<Ad
 
 /** The batch PDA for a batcher config and zero-based index (`batch_address`). */
 export async function batchAddress(batcher: Address, index: bigint): Promise<Address> {
-  return pda(CONFIDENTIAL_BATCHER_PROGRAM_ADDRESS, [
-    BATCH_SEED,
-    addressBytes(batcher),
-    new Uint8Array(getU64Encoder().encode(index)),
-  ]);
+  return (await findBatchPda({ batcher, index }))[0];
 }
 
 /** The canonical confidential token account for one owner and mint (`token_account_address`). */

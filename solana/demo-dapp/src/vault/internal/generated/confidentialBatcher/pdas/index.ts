@@ -6,6 +6,7 @@
  * @see https://github.com/codama-idl/codama
  */
 
+export * from './batch.js';
 export * from './batchAuthority.js';
 export * from './batchJoinUnderlying.js';
 export * from './batchPayoutUnderlying.js';

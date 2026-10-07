@@ -422,6 +422,33 @@
       "args": []
     },
     {
+      "name": "close_owned_accounts",
+      "docs": [
+        "Preview reset: recover program-owned rent after recovering external accounts."
+      ],
+      "discriminator": [
+        36,
+        68,
+        214,
+        114,
+        46,
+        227,
+        146,
+        228
+      ],
+      "accounts": [
+        {
+          "name": "admin",
+          "writable": true,
+          "signer": true
+        },
+        {
+          "name": "program_data"
+        }
+      ],
+      "args": []
+    },
+    {
       "name": "dispatch",
       "docs": [
         "Dispatches the batch once it is old enough: burns the batch account's",
@@ -926,9 +953,8 @@
                 "path": "batcher"
               },
               {
-                "kind": "account",
-                "path": "batcher.next_batch_index",
-                "account": "Batcher"
+                "kind": "arg",
+                "path": "index"
               }
             ]
           }
@@ -1142,8 +1168,113 @@
       ],
       "args": [
         {
+          "name": "index",
+          "type": "u64"
+        },
+        {
           "name": "authority_funding_lamports",
           "type": "u64"
+        }
+      ]
+    },
+    {
+      "name": "preview_close_token",
+      "docs": [
+        "Preview reset: burn disposable tokens and recover PDA-owned token account rent."
+      ],
+      "discriminator": [
+        64,
+        227,
+        93,
+        185,
+        105,
+        167,
+        223,
+        84
+      ],
+      "accounts": [
+        {
+          "name": "authorization",
+          "accounts": [
+            {
+              "name": "admin",
+              "writable": true,
+              "signer": true
+            },
+            {
+              "name": "program_data"
+            }
+          ]
+        },
+        {
+          "name": "authority"
+        },
+        {
+          "name": "account",
+          "writable": true
+        },
+        {
+          "name": "mint",
+          "writable": true
+        },
+        {
+          "name": "token_program",
+          "address": "TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA"
+        }
+      ],
+      "args": [
+        {
+          "name": "seeds",
+          "type": {
+            "vec": "bytes"
+          }
+        }
+      ]
+    },
+    {
+      "name": "preview_drain",
+      "docs": [
+        "Preview reset: return unused PDA funding to the deployer."
+      ],
+      "discriminator": [
+        229,
+        176,
+        14,
+        73,
+        64,
+        247,
+        65,
+        76
+      ],
+      "accounts": [
+        {
+          "name": "authorization",
+          "accounts": [
+            {
+              "name": "admin",
+              "writable": true,
+              "signer": true
+            },
+            {
+              "name": "program_data"
+            }
+          ]
+        },
+        {
+          "name": "authority",
+          "writable": true
+        },
+        {
+          "name": "system_program",
+          "address": "11111111111111111111111111111111"
+        }
+      ],
+      "args": [
+        {
+          "name": "seeds",
+          "type": {
+            "vec": "bytes"
+          }
         }
       ]
     },
@@ -2085,6 +2216,11 @@
       "code": 6025,
       "name": "JoinRecordStillLive",
       "msg": "join record is still live; close it after claiming or once the batch is canceled"
+    },
+    {
+      "code": 6026,
+      "name": "BatchIndexMismatch",
+      "msg": "batch index does not match the next batch index"
     }
   ],
   "types": [

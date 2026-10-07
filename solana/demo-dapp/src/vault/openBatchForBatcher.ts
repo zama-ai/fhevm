@@ -42,6 +42,7 @@ export async function openBatchForBatcher(
       instructions: INSTRUCTIONS_SYSVAR_ADDRESS,
       payer,
       batcher: roots.batcher,
+      index: batchIndex,
       ...(previousBatch === undefined ? {} : { previousBatch }),
       batch: batch.batch,
       joinConfidentialMint: roots.joinConfidentialMint,

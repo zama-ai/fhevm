@@ -11,6 +11,33 @@
   ],
   "instructions": [
     {
+      "name": "close_owned_accounts",
+      "docs": [
+        "Preview reset: recover program-owned rent after recovering external accounts."
+      ],
+      "discriminator": [
+        36,
+        68,
+        214,
+        114,
+        46,
+        227,
+        146,
+        228
+      ],
+      "accounts": [
+        {
+          "name": "admin",
+          "writable": true,
+          "signer": true
+        },
+        {
+          "name": "program_data"
+        }
+      ],
+      "args": []
+    },
+    {
       "name": "deposit",
       "docs": [
         "Deposits `amount` underlying assets and mints shares at the current price",
@@ -339,6 +366,107 @@
         }
       ],
       "args": []
+    },
+    {
+      "name": "preview_close_token",
+      "docs": [
+        "Preview reset: burn disposable tokens and recover PDA-owned token account rent."
+      ],
+      "discriminator": [
+        64,
+        227,
+        93,
+        185,
+        105,
+        167,
+        223,
+        84
+      ],
+      "accounts": [
+        {
+          "name": "authorization",
+          "accounts": [
+            {
+              "name": "admin",
+              "writable": true,
+              "signer": true
+            },
+            {
+              "name": "program_data"
+            }
+          ]
+        },
+        {
+          "name": "authority"
+        },
+        {
+          "name": "account",
+          "writable": true
+        },
+        {
+          "name": "mint",
+          "writable": true
+        },
+        {
+          "name": "token_program",
+          "address": "TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA"
+        }
+      ],
+      "args": [
+        {
+          "name": "seeds",
+          "type": {
+            "vec": "bytes"
+          }
+        }
+      ]
+    },
+    {
+      "name": "preview_drain",
+      "docs": [
+        "Preview reset: return unused PDA funding to the deployer."
+      ],
+      "discriminator": [
+        229,
+        176,
+        14,
+        73,
+        64,
+        247,
+        65,
+        76
+      ],
+      "accounts": [
+        {
+          "name": "authorization",
+          "accounts": [
+            {
+              "name": "admin",
+              "writable": true,
+              "signer": true
+            },
+            {
+              "name": "program_data"
+            }
+          ]
+        },
+        {
+          "name": "authority",
+          "writable": true
+        },
+        {
+          "name": "system_program",
+          "address": "11111111111111111111111111111111"
+        }
+      ],
+      "args": [
+        {
+          "name": "seeds",
+          "type": {
+            "vec": "bytes"
+          }
+        }
+      ]
     },
     {
       "name": "withdraw",

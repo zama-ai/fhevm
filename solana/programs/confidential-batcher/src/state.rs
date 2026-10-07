@@ -1,8 +1,7 @@
 //! Account layouts, PDA helpers, encrypted-value labels, and the payout math.
 //!
 //! Public API surface: off-chain callers deriving batcher PDAs — `runtime-tests`' `batcher_mollusk`
-//! fixtures, and the demo dapp's `vault/internal/batcherPdas.ts`, which reproduces these derivations
-//! in TypeScript and cites these function names as what it must agree with.
+//! fixtures. TypeScript clients are generated from the Anchor IDL.
 
 use anchor_lang::prelude::*;
 

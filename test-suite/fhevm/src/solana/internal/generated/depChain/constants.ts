@@ -4,3 +4,4 @@ export const ENCRYPTED_TAIL_LABEL: Uint8Array = new Uint8Array([
   116, 97, 105, 108, 95, 95, 95, 95, 95, 95, 95, 95, 95, 95, 95, 95, 95, 95, 95, 95, 95, 95, 95, 95, 95, 95, 95, 95, 95,
   95, 95, 95,
 ]);
+export const MAX_CHAIN_LINKS: number = 32;
