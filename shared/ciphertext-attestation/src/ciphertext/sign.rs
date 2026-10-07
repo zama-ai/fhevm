@@ -10,10 +10,10 @@
 //! provides the domain separation.
 
 use crate::{
-    AttestationError, CiphertextAttestation, CiphertextAttestationPayload, DOMAIN_TAG, Version,
-    keccak_b256,
+    AttestationError, CiphertextAttestation, CiphertextAttestationPayload, CiphertextRef,
+    ConsensusMaterial, DOMAIN_TAG, Version, consensus::Attestation, keccak_b256,
 };
-use alloy_primitives::{Address, B256, Signature, U256};
+use alloy_primitives::{Address, B256, Signature};
 use alloy_signer::Signer;
 
 /// V1 canonical-bytes length:
@@ -65,13 +65,15 @@ impl CiphertextAttestationPayload {
     }
 }
 
-impl CiphertextAttestation {
-    /// Verifies that this attestation was signed by `expected_signer` over `handle` and
-    /// `coprocessor_context_id`.
-    pub fn verify(
+impl Attestation for CiphertextAttestation {
+    type Subject = CiphertextRef;
+    type Material = ConsensusMaterial;
+
+    /// Verifies that this attestation was signed by `expected_signer` over the subject's `handle`
+    /// and `coprocessor_context_id`.
+    fn verify(
         &self,
-        handle: B256,
-        coprocessor_context_id: U256,
+        subject: &CiphertextRef,
         expected_signer: Address,
     ) -> Result<(), AttestationError> {
         if self.signer != expected_signer {
@@ -82,9 +84,9 @@ impl CiphertextAttestation {
         }
         let payload = CiphertextAttestationPayload {
             version: self.version,
-            handle,
+            handle: subject.handle,
             key_id: self.key_id,
-            coprocessor_context_id,
+            coprocessor_context_id: subject.coprocessor_context_id,
             ciphertext_digest: self.ciphertext_digest,
             sns_ciphertext_digest: self.sns_ciphertext_digest,
             format: self.format,
@@ -104,13 +106,17 @@ impl CiphertextAttestation {
         }
         Ok(())
     }
+
+    fn material(&self) -> ConsensusMaterial {
+        ConsensusMaterial::from(self)
+    }
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
     use crate::CiphertextFormat;
-    use alloy_primitives::{b256, uint};
+    use alloy_primitives::{U256, b256, uint};
     use alloy_signer_local::PrivateKeySigner;
 
     const VERSION: Version = Version::V1;
@@ -143,7 +149,8 @@ mod tests {
         let signer = PrivateKeySigner::random();
         let att = signed(&signer).await;
         assert_eq!(att.signer, signer.address());
-        att.verify(HANDLE, CTX, signer.address()).unwrap();
+        att.verify(&CiphertextRef::new(HANDLE, CTX), signer.address())
+            .unwrap();
     }
 
     #[tokio::test]
@@ -153,7 +160,9 @@ mod tests {
         let mut bytes = att.ciphertext_digest.0;
         bytes[0] ^= 0x01;
         att.ciphertext_digest = B256::from(bytes);
-        let err = att.verify(HANDLE, CTX, signer.address()).unwrap_err();
+        let err = att
+            .verify(&CiphertextRef::new(HANDLE, CTX), signer.address())
+            .unwrap_err();
         assert!(matches!(err, AttestationError::SignerMismatch { .. }));
     }
 
@@ -162,7 +171,9 @@ mod tests {
         let signer = PrivateKeySigner::random();
         let att = signed(&signer).await;
         let wrong = b256!("ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff");
-        let err = att.verify(wrong, CTX, signer.address()).unwrap_err();
+        let err = att
+            .verify(&CiphertextRef::new(wrong, CTX), signer.address())
+            .unwrap_err();
         assert!(matches!(err, AttestationError::SignerMismatch { .. }));
     }
 
@@ -170,7 +181,9 @@ mod tests {
     async fn rejects_wrong_coprocessor_context_id() {
         let signer = PrivateKeySigner::random();
         let att = signed(&signer).await;
-        let err = att.verify(HANDLE, U256::ONE, signer.address()).unwrap_err();
+        let err = att
+            .verify(&CiphertextRef::new(HANDLE, U256::ONE), signer.address())
+            .unwrap_err();
         assert!(matches!(err, AttestationError::SignerMismatch { .. }));
     }
 
@@ -180,7 +193,9 @@ mod tests {
         let other = PrivateKeySigner::random();
         let mut att = signed(&signer).await;
         att.signer = other.address();
-        let err = att.verify(HANDLE, CTX, other.address()).unwrap_err();
+        let err = att
+            .verify(&CiphertextRef::new(HANDLE, CTX), other.address())
+            .unwrap_err();
         assert!(matches!(err, AttestationError::SignerMismatch { .. }));
     }
 
@@ -189,7 +204,9 @@ mod tests {
         let signer = PrivateKeySigner::random();
         let other = PrivateKeySigner::random();
         let att = signed(&signer).await;
-        let err = att.verify(HANDLE, CTX, other.address()).unwrap_err();
+        let err = att
+            .verify(&CiphertextRef::new(HANDLE, CTX), other.address())
+            .unwrap_err();
         assert!(matches!(
             err,
             AttestationError::UnexpectedSigner { claimed, expected }
@@ -202,7 +219,9 @@ mod tests {
         let signer = PrivateKeySigner::random();
         let mut att = signed(&signer).await;
         att.key_id = KEY_ID + U256::ONE;
-        let err = att.verify(HANDLE, CTX, signer.address()).unwrap_err();
+        let err = att
+            .verify(&CiphertextRef::new(HANDLE, CTX), signer.address())
+            .unwrap_err();
         assert!(matches!(err, AttestationError::SignerMismatch { .. }));
     }
 
@@ -213,7 +232,9 @@ mod tests {
         let mut bytes = att.sns_ciphertext_digest.0;
         bytes[0] ^= 0x01;
         att.sns_ciphertext_digest = B256::from(bytes);
-        let err = att.verify(HANDLE, CTX, signer.address()).unwrap_err();
+        let err = att
+            .verify(&CiphertextRef::new(HANDLE, CTX), signer.address())
+            .unwrap_err();
         assert!(matches!(err, AttestationError::SignerMismatch { .. }));
     }
 
@@ -222,7 +243,9 @@ mod tests {
         let signer = PrivateKeySigner::random();
         let mut att = signed(&signer).await;
         att.format = CiphertextFormat::CompressedOnCpu;
-        let err = att.verify(HANDLE, CTX, signer.address()).unwrap_err();
+        let err = att
+            .verify(&CiphertextRef::new(HANDLE, CTX), signer.address())
+            .unwrap_err();
         assert!(matches!(err, AttestationError::SignerMismatch { .. }));
     }
 
@@ -231,7 +254,9 @@ mod tests {
         let signer = PrivateKeySigner::random();
         let mut att = signed(&signer).await;
         att.signature.truncate(60);
-        let err = att.verify(HANDLE, CTX, signer.address()).unwrap_err();
+        let err = att
+            .verify(&CiphertextRef::new(HANDLE, CTX), signer.address())
+            .unwrap_err();
         assert!(matches!(err, AttestationError::MalformedSignature { .. }));
     }
 

@@ -17,10 +17,12 @@ pub use ciphertext::{
     COPROCESSOR_CONTEXT_ID_V1, CiphertextAttestation, CiphertextAttestationPayload,
     CiphertextFormat, DOMAIN_TAG, MAX_SNS_CIPHERTEXT_SERIALIZED_SIZE, S3_CT64_KEY_PREFIX,
     S3_CT128_KEY_PREFIX, S3_METADATA_ATTESTATION_HEADER, S3_METADATA_ATTESTATION_KEY,
-    consensus::ConsensusMaterial, s3_ct64_key, s3_ct128_key,
+    consensus::{CiphertextRef, ConsensusMaterial},
+    s3_ct64_key, s3_ct128_key,
 };
 pub use consensus::{
-    ConsensusCheckError, ConsensusOutcome, ConsensusRound, CoprocessorEntry, ResolvedConsensus,
+    Attestation, ConsensusCheckError, ConsensusOutcome, ConsensusRound, CoprocessorEntry,
+    ResolvedConsensus,
 };
 
 #[cfg(feature = "client")]
