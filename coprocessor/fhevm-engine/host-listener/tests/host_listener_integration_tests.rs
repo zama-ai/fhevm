@@ -1119,6 +1119,78 @@ async fn test_slow_lane_off_mode_promotes_all_chains_on_startup_locally(
 
 #[tokio::test]
 #[serial(db)]
+async fn test_slow_lane_reset_waits_for_locked_rows(
+) -> Result<(), anyhow::Error> {
+    let instance = test_harness::instance::setup_test_db(ImportMode::None)
+        .await
+        .map_err(|e| anyhow::anyhow!(e.to_string()))?;
+    let db =
+        Database::new(&instance.db_url, ChainId::try_from(12345_u64)?, 100)
+            .await?;
+    let pool = db.pool.read().await.clone();
+    let statement_timeout: String =
+        sqlx::query_scalar("SHOW statement_timeout")
+            .fetch_one(&pool)
+            .await?;
+    assert_eq!(
+        statement_timeout, "2min",
+        "the reset's row-lock waits are bounded"
+    );
+    sqlx::query(
+        "INSERT INTO dependence_chain
+            (dependence_chain_id, status, last_updated_at, block_timestamp,
+             block_height, schedule_priority)
+         VALUES ($1, 'updated', NOW(), NOW(), 1, 1)",
+    )
+    .bind(vec![1u8; 32])
+    .execute(&pool)
+    .await?;
+    let mut lock = pool.begin().await?;
+    sqlx::query("SELECT dependence_chain_id FROM dependence_chain FOR UPDATE")
+        .fetch_all(&mut *lock)
+        .await?;
+    let promotion = db.promote_all_dep_chains_to_fast_priority();
+    tokio::pin!(promotion);
+    // Drive the reset until it blocks on the locked row. SKIP LOCKED instead
+    // finished here with Ok(0) and left the row Slow.
+    let mut waiting_on_lock = false;
+    for _ in 0..100 {
+        assert!(
+            tokio::time::timeout(
+                std::time::Duration::from_millis(50),
+                &mut promotion
+            )
+            .await
+            .is_err(),
+            "the reset finished while the last Slow row was locked"
+        );
+        waiting_on_lock = sqlx::query_scalar(
+            "SELECT EXISTS (SELECT 1 FROM pg_stat_activity
+             WHERE datname = current_database() AND wait_event_type = 'Lock')",
+        )
+        .fetch_one(&pool)
+        .await?;
+        if waiting_on_lock {
+            break;
+        }
+    }
+    assert!(waiting_on_lock, "the reset never waited for the row lock");
+    lock.commit().await?;
+    assert_eq!(
+        tokio::time::timeout(std::time::Duration::from_secs(5), promotion)
+            .await??,
+        1
+    );
+    let priority: i16 =
+        sqlx::query_scalar("SELECT schedule_priority FROM dependence_chain")
+            .fetch_one(&pool)
+            .await?;
+    assert_eq!(priority, 0);
+    Ok(())
+}
+
+#[tokio::test]
+#[serial(db)]
 async fn test_slow_lane_contention_prefers_fast_chain(
 ) -> Result<(), anyhow::Error> {
     let setup = setup_with_block_time(None, 3.0).await?;
