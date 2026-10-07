@@ -162,7 +162,9 @@ jobs:
   localstack:
     name: dod localstack ${{ matrix.name }}
     if: ${{ github.event_name == 'pull_request' || inputs.mode == 'real' }}
-    runs-on: runs-on=${{ github.run_id }}/runner=16cpu-linux-x64/extras=s3-cache
+    # The 4-party threshold KMS writes its key material during bring-up and fills
+    # the default disk; the other full-stack lanes (test-suite-e2e, solana-e2e) use 160gb.
+    runs-on: runs-on=${{ github.run_id }}/runner=16cpu-linux-x64/volume=160gb/extras=s3-cache
     timeout-minutes: 60
     permissions:
       contents: "read" # checkout the repository
