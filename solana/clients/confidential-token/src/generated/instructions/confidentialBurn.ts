@@ -6,7 +6,14 @@
  * @see https://github.com/codama-idl/codama
  */
 
-import { findEventAuthorityPda, findHostConfigPda } from '@fhevm/solana-zama-host';
+import {
+  findEventAuthorityPda,
+  findHostConfigPda,
+  getCoprocessorInputAttestationDecoder,
+  getCoprocessorInputAttestationEncoder,
+  type CoprocessorInputAttestation,
+  type CoprocessorInputAttestationArgs,
+} from '@fhevm/solana-zama-host';
 import {
   combineCodec,
   fixDecoderSize,
@@ -41,12 +48,6 @@ import {
 } from '@solana/program-client-core';
 import { findPendingBurnPda, findTotalSupplyAuthorityPda } from '../pdas/index.js';
 import { CONFIDENTIAL_TOKEN_PROGRAM_ADDRESS } from '../programAddress.js';
-import {
-  getCoprocessorInputAttestationDecoder,
-  getCoprocessorInputAttestationEncoder,
-  type CoprocessorInputAttestation,
-  type CoprocessorInputAttestationArgs,
-} from '../types/index.js';
 
 export const CONFIDENTIAL_BURN_DISCRIMINATOR: ReadonlyUint8Array = new Uint8Array([4, 132, 56, 237, 159, 77, 135, 180]);
 

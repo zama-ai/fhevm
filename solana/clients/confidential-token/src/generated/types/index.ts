@@ -7,7 +7,6 @@
  */
 
 export * from './balanceHandleUpdateReason.js';
-export * from './coprocessorInputAttestation.js';
 export * from './disclosedValueKind.js';
 export * from './totalSupplyUpdateReason.js';
 export * from './transferInput.js';

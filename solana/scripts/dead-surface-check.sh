@@ -396,35 +396,56 @@ index_refs() {
 
 if run_check 1; then
   echo "== 1. error variants with zero references =="
-  error_files=$(grep -rln '#\[error_code\]' solana/programs solana/crates --include='*.rs')
+  error_files=$(grep -rln '#\[error_code' solana/programs solana/crates --include='*.rs')
   for file in $error_files; do
-    # `Enum Variant` pairs: capitalized identifiers directly followed by `,` at enum-body
-    # indentation, under the enum that declares them, whatever its visibility.
-    pairs=$(awk '
-      /^(pub(\([a-z:]+\))? )?enum [A-Za-z0-9_]+/ {
+    # Each `#[error_code ...]` attribute opens one error enum, whatever its visibility. The enum
+    # yields a `PAIR enum variant` line per capitalized identifier directly followed by `,` at
+    # enum-body indentation, and a `BLOCK first last` line for its own lines. An attribute that is
+    # not followed by a top-level enum, or an enum with no such variant, yields `UNPARSED`, so a
+    # second enum the parser cannot read is reported even when the first one is read.
+    parsed=$(awk '
+      /^[[:space:]]*#\[error_code/ { if (pending) print "UNPARSED"; pending = 1; next }
+      pending && /^(pub(\([^)]*\))? )?enum [A-Za-z0-9_]+/ {
         for (i = 1; i < NF; i++) if ($i == "enum") enum = $(i + 1)
         sub(/[^A-Za-z0-9_].*$/, "", enum)
+        pending = 0; first = NR; variants = 0; next
       }
-      enum != "" && /^    [A-Z][A-Za-z0-9]+,/ { variant = $1; sub(/,$/, "", variant); print enum, variant }
+      pending && /^[[:space:]]*(#\[|\/\/)/ { next }
+      pending { print "UNPARSED"; pending = 0; next }
+      enum != "" && /^}/ {
+        if (variants == 0) print "UNPARSED"
+        print "BLOCK", first, NR
+        enum = ""; next
+      }
+      enum != "" && /^    [A-Z][A-Za-z0-9]+,/ {
+        variant = $1; sub(/,$/, "", variant); print "PAIR", enum, variant; variants++
+      }
+      END { if (pending || enum != "") print "UNPARSED" }
     ' "$file")
-    # An enum shape the parser does not read yields no pairs, and the check would pass without
-    # looking at a single variant.
-    if [ -z "$pairs" ]; then
-      echo "UNPARSED ERROR ENUM: ${file} carries #[error_code] but check 1 read no variants from it"
+    if grep -q '^UNPARSED' <<< "$parsed"; then
+      echo "UNPARSED ERROR ENUM: ${file} declares an #[error_code] enum check 1 cannot read"
       fail=1
     fi
-    while read -r enum variant; do
+    # The declaring file's own production lines count too: an error raised only beside its enum is
+    # live. The enum's own lines do not, so it cannot vouch for itself.
+    own_lines=$(awk -F: -v f="$file" -v blocks="$(sed -n 's/^BLOCK //p' <<< "$parsed" | tr '\n' ' ')" '
+      BEGIN { n = split(blocks, b, " ") }
+      $1 != f { next }
+      { for (i = 1; i < n; i += 2) if ($2 + 0 >= b[i] + 0 && $2 + 0 <= b[i + 1] + 0) next; print }
+    ' "$INDEX" | sed -E 's/^[^:]*:[0-9]+://')
+    while read -r _ enum variant; do
       [ -n "$variant" ] || continue
       # Anchored on the enum and on both boundaries. The bare `::Variant` form let a same-named
       # variant of another program's enum vouch for this one (`ZamaHostError::InvalidKmsContext`
       # kept `ConfidentialTokenError::InvalidKmsContext` alive), and `::InvalidKmsContext` must not
       # be kept alive by `::InvalidKmsContextId` either.
-      hits=$(index_refs "(^|[^A-Za-z0-9_])${enum}::${variant}([^A-Za-z0-9_]|$)" "$file")
+      pattern="(^|[^A-Za-z0-9_])${enum}::${variant}([^A-Za-z0-9_]|$)"
+      hits=$(( $(index_refs "$pattern" "$file") + $(grep -cE "$pattern" <<< "$own_lines" || true) ))
       if [ "$hits" -eq 0 ]; then
         echo "DEAD ERROR VARIANT: ${enum}::${variant} (declared in ${file}, zero production references)"
         fail=1
       fi
-    done <<< "$pairs"
+    done < <(grep '^PAIR ' <<< "$parsed")
   done
 fi
 
@@ -1155,6 +1176,19 @@ ${label}"
       fi
     fi
   }
+  # The opposite: the check must not report `unexpected` on a fixture that is not a violation.
+  expect_silent() {
+    local what="$1" unexpected="$2" only="$3"; shift 3
+    local out
+    out=$(DEAD_SURFACE_ONLY_CHECK="$only" "$@" </dev/null 2>&1) || true
+    if grep -qF "$unexpected" <<< "$out"; then
+      echo "SELF-TEST HOLE: ${what} reported: ${unexpected}"
+      printf '%s\n' "$out" | sed 's/^/    /'
+      self_test_fail=1
+    else
+      echo "  ok: ${what} stays silent"
+    fi
+  }
   # Check 3 (aliases): each retired word must be caught, and the report must name that entry.
   # `solana/crates` is in ALL, CORE and FHE scope at once, so one fixture location serves every
   # entry — the previous split (solana/docs for most, solana/crates for the FHE-scoped one) is why
@@ -1287,10 +1321,26 @@ FIXTURES
     > "$fixture"
   expect_fires "dead-error-variant sweep (pub(crate) enum)" \
     "DEAD ERROR VARIANT: DeadSurfaceSelftestError::DeadSurfaceSelftestCrateVisible" "" 1 bash "$SELF"
-  # An enum the parser cannot read fails instead of passing with nothing checked.
-  printf '#[error_code]\nmod nested {\n    pub enum DeadSurfaceSelftestError {\n        DeadSurfaceSelftestNested,\n    }\n}\n' \
+  printf '#[error_code]\npub(in crate::dead_surface_selftest) enum DeadSurfaceSelftestError {\n    DeadSurfaceSelftestPathVisible,\n}\n' \
     > "$fixture"
-  expect_fires "dead-error-variant sweep (unparsed enum)" \
+  expect_fires "dead-error-variant sweep (pub(in path) enum)" \
+    "DEAD ERROR VARIANT: DeadSurfaceSelftestError::DeadSurfaceSelftestPathVisible" "" 1 bash "$SELF"
+  # An attribute with arguments opens an error enum too. The `#[msg]` naming the variant sits inside
+  # the enum's own block, which does not count as a reference.
+  printf '#[error_code(offset = 6500)]\npub enum DeadSurfaceSelftestError {\n    #[msg("DeadSurfaceSelftestError::DeadSurfaceSelftestOffset")]\n    DeadSurfaceSelftestOffset,\n}\n' \
+    > "$fixture"
+  expect_fires "dead-error-variant sweep (offset enum)" \
+    "DEAD ERROR VARIANT: DeadSurfaceSelftestError::DeadSurfaceSelftestOffset" "" 1 bash "$SELF"
+  # A variant raised only in its declaring file is live.
+  printf '#[error_code]\npub enum DeadSurfaceSelftestError {\n    DeadSurfaceSelftestLocal,\n}\n\npub fn f() -> u32 {\n    DeadSurfaceSelftestError::DeadSurfaceSelftestLocal as u32\n}\n' \
+    > "$fixture"
+  expect_silent "dead-error-variant sweep (variant used in its declaring file)" \
+    "DeadSurfaceSelftestError::DeadSurfaceSelftestLocal" 1 bash "$SELF"
+  # An enum the parser cannot read fails instead of passing with nothing checked, also when a
+  # readable enum follows it in the same file.
+  printf '#[error_code]\nmod nested {\n    pub enum DeadSurfaceSelftestNestedError {\n        DeadSurfaceSelftestNested,\n    }\n}\n\n#[error_code]\npub enum DeadSurfaceSelftestError {\n    DeadSurfaceSelftestAfterNested,\n}\n' \
+    > "$fixture"
+  expect_fires "dead-error-variant sweep (unparsed enum before a readable one)" \
     "UNPARSED ERROR ENUM: ${fixture}" "" 1 bash "$SELF"
   rm -f "$fixture"
   # Check 5: the justification prose for a reused-value retrofit. The check pins phrases in real

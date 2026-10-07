@@ -31,7 +31,7 @@ import {
   ZAMA_HOST_PROGRAM_ADDRESS,
   DisclosedValueKind,
 } from '@fhevm/confidential-token';
-import type { CoprocessorInputAttestationArgs } from '@fhevm/confidential-token';
+import type { CoprocessorInputAttestationArgs } from '@fhevm/solana-zama-host';
 
 /** The zama-host KMS-context PDA for `contextId` (`["kms-context", 32-byte id]`). */
 export const kmsContextAddress = async (

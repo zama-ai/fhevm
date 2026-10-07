@@ -6,7 +6,15 @@
  * @see https://github.com/codama-idl/codama
  */
 
-import { findEncryptedStorePda, findEventAuthorityPda, findHostConfigPda } from '@fhevm/solana-zama-host';
+import {
+  findEncryptedStorePda,
+  findEventAuthorityPda,
+  findHostConfigPda,
+  getCoprocessorInputAttestationDecoder,
+  getCoprocessorInputAttestationEncoder,
+  type CoprocessorInputAttestation,
+  type CoprocessorInputAttestationArgs,
+} from '@fhevm/solana-zama-host';
 import {
   address,
   combineCodec,
@@ -42,12 +50,6 @@ import {
   type ResolvedInstructionAccount,
 } from '@solana/program-client-core';
 import { CONFIDENTIAL_TOKEN_PROGRAM_ADDRESS } from '../programAddress.js';
-import {
-  getCoprocessorInputAttestationDecoder,
-  getCoprocessorInputAttestationEncoder,
-  type CoprocessorInputAttestation,
-  type CoprocessorInputAttestationArgs,
-} from '../types/index.js';
 
 export const CONFIDENTIAL_TRANSFER_DISCRIMINATOR: ReadonlyUint8Array = new Uint8Array([
   97, 79, 128, 58, 134, 222, 73, 143,
