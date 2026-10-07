@@ -54,7 +54,6 @@ describe('buildClaimInstruction', () => {
   const batch = address('Dm6gzuvv47gSSeMyV72nVs9N79AQA7sczD5GBw3XwXHX');
   const payoutConfidentialMint = addr(13);
   const payoutUnderlyingMint = addr(14);
-  const hostConfig = addr(8);
   const SPL_TOKEN = address('TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA');
   const ASSOCIATED_TOKEN = address('ATokenGPvbdGVxr1b2hvZbsiqW5xWH25efTNsLJA8knL');
   const ata = (owner: Address, mint: Address): Promise<Address> =>
@@ -71,7 +70,6 @@ describe('buildClaimInstruction', () => {
       payoutConfidentialMint,
       payoutUnderlyingMint,
       tokenProgram: SPL_TOKEN,
-      hostConfig,
     });
     const instructions = appendTransientStoreInstructions(transientStore, [instruction]);
     expect(instructions).toHaveLength(3);
@@ -118,7 +116,7 @@ describe('buildClaimInstruction', () => {
       await tokenValuePda(payoutConfidentialMint, userPayoutTokenAccount),
       await pda(ZAMA_HOST_PROGRAM_ADDRESS, [utf8('__event_authority')]),
       ZAMA_HOST_PROGRAM_ADDRESS,
-      hostConfig,
+      await pda(ZAMA_HOST_PROGRAM_ADDRESS, [utf8('host-config')]),
       await pda(CONFIDENTIAL_TOKEN_PROGRAM_ADDRESS, [utf8('__event_authority')]),
       CONFIDENTIAL_TOKEN_PROGRAM_ADDRESS,
       SYSTEM_PROGRAM_ADDRESS,
@@ -156,7 +154,6 @@ describe('buildClaimInstruction', () => {
       payoutConfidentialMint,
       payoutUnderlyingMint,
       tokenProgram: SPL_TOKEN,
-      hostConfig,
     });
     const addresses = instruction.accounts!.map((a) => a.address);
     expect(addresses[13]).toBe('4MxNx3UFs82BQ349hySkRZ4YTLuuT77jTpXc1ohbXYnA'); // batchPayoutTokenAccount

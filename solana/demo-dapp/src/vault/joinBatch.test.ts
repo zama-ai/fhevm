@@ -90,7 +90,6 @@ async function parameters(overrides: Partial<SolanaVaultJoinParameters> = {}): P
     joinConfidentialMint,
     joinUnderlyingMint: key(11),
     tokenProgram: TOKEN_PROGRAM_ADDRESS,
-    hostConfig: key(10),
     ...overrides,
   } satisfies SolanaVaultJoinParameters;
 }

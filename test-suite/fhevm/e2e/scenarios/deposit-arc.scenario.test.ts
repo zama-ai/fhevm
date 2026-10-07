@@ -7,7 +7,7 @@ import {
 } from '@fhevm/confidential-token';
 import { findAssociatedTokenPda, TOKEN_PROGRAM_ADDRESS } from "@solana-program/token";
 import { asBytes32Hex } from '@fhevm/sdk/base';
-import { createFinalizedRpc, findEventAuthorityPda as findZamaEventAuthorityPda } from '@fhevm/solana-zama-host';
+import { createFinalizedRpc } from '@fhevm/solana-zama-host';
 import { LOCAL_SOLANA_ENDPOINTS } from "../../src/solana/endpoints";
 import {
   appendTransientStoreInstructions,
@@ -355,7 +355,6 @@ describe.skipIf(!runsDemoScenarios)("solana deposit-arc scenario", () => {
             joinConfidentialMint: joinMint,
             joinUnderlyingMint: roots.joinUnderlyingMint,
             tokenProgram: TOKEN_PROGRAM_ADDRESS,
-            hostConfig: config.hostConfig,
             computeUnitLimit: JOIN_COMPUTE_UNIT_LIMIT,
           },
         );
@@ -414,7 +413,6 @@ describe.skipIf(!runsDemoScenarios)("solana deposit-arc scenario", () => {
             joinConfidentialMint: joinMint,
             joinUnderlyingMint: roots.joinUnderlyingMint,
             tokenProgram: TOKEN_PROGRAM_ADDRESS,
-            hostConfig: config.hostConfig,
           }),
         ]),
         DISPATCH_COMPUTE_UNIT_LIMIT,
@@ -567,7 +565,6 @@ describe.skipIf(!runsDemoScenarios)("solana deposit-arc scenario", () => {
             payoutConfidentialMint: payoutMint,
             payoutUnderlyingMint: roots.payoutUnderlyingMint,
             tokenProgram: TOKEN_PROGRAM_ADDRESS,
-            hostConfig: config.hostConfig,
           }),
         ]),
         CLAIM_COMPUTE_UNIT_LIMIT,
@@ -706,7 +703,7 @@ test.skipIf(!runsDemoScenarios)(
       await vault.joinBatch({ solanaChain: chain, aclProgramAddress: asBytes32Hex(config.aclProgram) }, {
         rpc, rpcSubscriptions, inputProof: inputProof as never, inputIndex: 0, user: alice, payer: alice,
         batcher: roots.batcher, batch, joinConfidentialMint: mint, joinUnderlyingMint: roots.joinUnderlyingMint,
-        tokenProgram: TOKEN_PROGRAM_ADDRESS, hostConfig: config.hostConfig, computeUnitLimit: JOIN_COMPUTE_UNIT_LIMIT,
+        tokenProgram: TOKEN_PROGRAM_ADDRESS, computeUnitLimit: JOIN_COMPUTE_UNIT_LIMIT,
       });
     });
     expect((await vault.getBatchByIndex(rpc, roots, current.index)).state.joinCount).toBe(1n);
@@ -735,7 +732,7 @@ test.skipIf(!runsDemoScenarios)(
     const keeperTransientStore = await prepareTransientStore({ payer: keeper, host: config.programs.host });
     await sendTransaction(dappConfig, keeper, appendTransientStoreInstructions(keeperTransientStore, [await vault.buildCancelDispatchInstruction({
       transientStore: keeperTransientStore, payer: keeper, batcher: roots.batcher, batch, joinConfidentialMint: mint,
-      hostConfig: config.hostConfig, authorityFundingLamports: BigInt(config.authorityFundingLamports),
+      authorityFundingLamports: BigInt(config.authorityFundingLamports),
     })]), JOIN_COMPUTE_UNIT_LIMIT);
     expect((await vault.getBatchByIndex(rpc, roots, current.index)).state.status).toBe(BATCH_STATUS_REFUNDING);
     expect((await account()).value).toBeNull();
@@ -757,8 +754,7 @@ test.skipIf(!runsDemoScenarios)(
         mint: roots.joinUnderlyingMint,
       }))[0],
       batchJoinTokenAccount, userTokenAccount, batchBalanceStore: await vault.tokenStoreAddress(mint, batchJoinTokenAccount),
-      userBalanceStore, joinStore, hostConfig: config.hostConfig,
-      zamaEventAuthority: (await findZamaEventAuthorityPda())[0], confidentialTokenEventAuthority: (await findTokenEventAuthorityPda())[0],
+      userBalanceStore, joinStore, confidentialTokenEventAuthority: (await findTokenEventAuthorityPda())[0],
     });
     await sendTransaction(dappConfig, alice, appendTransientStoreInstructions(transientStore, [quit]), JOIN_COMPUTE_UNIT_LIMIT);
     expect(await readAmount(userBalanceStore)).toBe(beforeJoin);

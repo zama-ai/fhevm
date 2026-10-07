@@ -1,4 +1,3 @@
-import { findEventAuthorityPda as findZamaEventAuthorityPda } from '@fhevm/solana-zama-host';
 import {
   findTokenAccountPda,
   findEventAuthorityPda as findTokenEventAuthorityPda,
@@ -31,8 +30,6 @@ export type SolanaVaultClaimParameters = {
   readonly payoutUnderlyingMint: Address;
   /** Token program that owns `payoutUnderlyingMint` (`Tokenkeg` or Token-2022). */
   readonly tokenProgram: Address;
-  /** ZamaHost config PDA (demo-config `hostConfig`). */
-  readonly hostConfig: Address;
 };
 
 /**
@@ -71,8 +68,6 @@ export async function buildClaimInstruction(parameters: SolanaVaultClaimParamete
     userPayoutTokenAccount,
     batchPayoutBalanceStore: await tokenStoreAddress(payoutConfidentialMint, batchPayoutTokenAccount),
     userPayoutBalanceStore: await tokenStoreAddress(payoutConfidentialMint, userPayoutTokenAccount),
-    zamaEventAuthority: (await findZamaEventAuthorityPda())[0],
-    hostConfig: parameters.hostConfig,
     confidentialTokenEventAuthority: (await findTokenEventAuthorityPda())[0],
   });
   return instruction;

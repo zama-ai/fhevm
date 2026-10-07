@@ -68,7 +68,6 @@ export type SolanaVaultJoinParameters = {
   readonly joinUnderlyingMint: Address;
   /** Token program that owns `joinUnderlyingMint` (`Tokenkeg` or Token-2022). */
   readonly tokenProgram: Address;
-  readonly hostConfig: Address;
   readonly computeUnitLimit?: number | undefined;
   /** Called after successful simulation and immediately before submission, for persistent recovery journals. */
   readonly onTransactionSigned?:
@@ -157,8 +156,6 @@ export async function joinBatch(
     joinStore,
     transientStore: transientStore.address,
     instructions: INSTRUCTIONS_SYSVAR_ADDRESS,
-    zamaEventAuthority: (await findEventAuthorityPda({ programAddress: zamaHostProgramAddress }))[0],
-    hostConfig: parameters.hostConfig,
     confidentialTokenEventAuthority: (await findEventAuthorityPda({ programAddress: CONFIDENTIAL_TOKEN_PROGRAM_ADDRESS }))[0],
     inputHandle: hexToBytes(inputHandle.bytes32Hex),
     ctHandles: handles.map((handle) => hexToBytes(handle.bytes32Hex)),

@@ -133,7 +133,6 @@ export const dispatchVaultBatch = async (
         joinConfidentialMint: roots.joinConfidentialMint,
         joinUnderlyingMint: roots.joinUnderlyingMint,
         tokenProgram: TOKEN_PROGRAM_ADDRESS,
-        hostConfig: session.config.hostConfig,
       }),
     ]),
     DISPATCH_COMPUTE_UNIT_LIMIT,

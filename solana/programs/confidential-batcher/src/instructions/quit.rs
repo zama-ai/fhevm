@@ -60,7 +60,8 @@ pub struct Quit<'info> {
     /// amount, then reset to an encrypted zero by the batcher execution.
     #[account(mut)]
     pub join_store: UncheckedAccount<'info>,
-    /// CHECK: ZamaHost event-CPI authority; validated by the host program.
+    /// CHECK: Anchor event CPI authority for the Zama host program.
+    #[account(seeds = [b"__event_authority"], bump = zama_host::EVENT_AUTHORITY_AND_BUMP.1, seeds::program = zama_host::ID)]
     pub zama_event_authority: UncheckedAccount<'info>,
     /// CHECK: shared transaction transient store, validated by ZamaHost.
     #[account(mut)]
@@ -69,8 +70,8 @@ pub struct Quit<'info> {
     pub instructions: UncheckedAccount<'info>,
     /// ZamaHost program (FHE compute + ACL).
     pub zama_program: Program<'info, ZamaHost>,
-    /// CHECK: ZamaHost config PDA; validated by the host program.
-    pub host_config: UncheckedAccount<'info>,
+    #[account(seeds = [zama_host::HOST_CONFIG_SEED], bump = host_config.bump, seeds::program = zama_host::ID)]
+    pub host_config: Box<Account<'info, zama_host::HostConfig>>,
     /// CHECK: confidential-token event-CPI authority; validated by the token program.
     pub confidential_token_event_authority: UncheckedAccount<'info>,
     /// confidential-token program composed via CPI.

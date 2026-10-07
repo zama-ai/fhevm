@@ -301,7 +301,14 @@ for (const target of targets) {
     );
   }
   const foreignPdaLinks = {};
-  if (target.idlPath === idlUrl('confidential_token.json')) {
+  if (
+    [
+      idlUrl('confidential_token.json'),
+      demoIdlUrl('confidential_batcher.json'),
+      specimenIdlUrl('dep-chain', 'dep_chain.json'),
+      specimenIdlUrl('encrypted-counter', 'encrypted_counter.json'),
+    ].includes(target.idlPath)
+  ) {
     const hostIdl = JSON.parse(readFileSync(idlUrl('zama_host.json'), 'utf8'));
     const hostPdas = [...rootNodeFromAnchor(hostIdl).program.pdas, eventAuthority];
     // updateInstructionsVisitor fills local seed defaults and drops a linked PDA's programId.

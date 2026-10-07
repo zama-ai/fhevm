@@ -1,6 +1,5 @@
 import { tokenStoreAddress } from './internal/encryptedStores.js';
 import { findBatchPda } from './internal/generated/confidentialBatcher/pdas/index.js';
-import { findEventAuthorityPda as findZamaEventAuthorityPda } from '@fhevm/solana-zama-host';
 import {
   findEventAuthorityPda as findTokenEventAuthorityPda,
 } from '@fhevm/confidential-token';
@@ -55,8 +54,6 @@ export async function openBatchForBatcher(
       batchPayoutBalanceStore: batch.batchPayoutBalanceStore,
       joinUnderlyingMint: roots.joinUnderlyingMint,
       payoutUnderlyingMint: roots.payoutUnderlyingMint,
-      zamaEventAuthority: (await findZamaEventAuthorityPda())[0],
-      hostConfig: roots.hostConfig,
       confidentialTokenEventAuthority: (await findTokenEventAuthorityPda())[0],
       authorityFundingLamports: parameters.authorityFundingLamports,
     },
