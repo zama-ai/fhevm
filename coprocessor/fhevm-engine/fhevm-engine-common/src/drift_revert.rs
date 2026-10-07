@@ -9,8 +9,8 @@
 //!
 //! This is COPROCESSOR consensus, NOT host-chain reorg. Drift is two
 //! coprocessors disagreeing on the bitwise representation of a ciphertext for
-//! the same handle (re-randomization / DSA divergence); it fires even on a
-//! chain that never reorgs. On-chain reorgs — the host chain orphaning a block
+//! the same handle (they commit different ciphertext digests to
+//! `CiphertextCommits`); it fires even on a chain that never reorgs. On-chain reorgs — the host chain orphaning a block
 //! the listener already ingested — are a different layer, handled by the
 //! listener's block-history reorg detection (host-listener `cmd/block_history.rs`).
 //! Discriminator: "would it fire on a chain that never reorgs?" yes -> drift.
